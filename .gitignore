@@ -30,6 +30,11 @@ go.work.sum
 # Local git worktrees
 .worktrees/
 
+# Local build artifacts
+.tmp/
+web/node_modules/
+web/dist/
+
 # Editor/IDE
 # .idea/
 # .vscode/
