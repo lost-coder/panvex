@@ -12,6 +12,7 @@ Panvex is a control-plane and web dashboard for managing multiple Telemt nodes.
 - `web` contains the React dashboard.
 - `db/migrations` and `db/queries` contain the initial PostgreSQL schema and sqlc query set.
 - `proto` contains the human-readable gateway contract.
+- local working plans belong in `.tmp/plans/` and stay out of git.
 
 ## Release installer
 
@@ -74,6 +75,11 @@ The PostgreSQL compose file introduces PostgreSQL explicitly and does not change
 
 This is the split development workflow with a standalone Go backend and a Vite development server.
 
+You do not need prebuilt frontend assets for:
+
+- `go build ./...`
+- `go run ./cmd/control-plane`
+
 1. Bootstrap the first local admin:
 
    ```powershell
@@ -125,13 +131,13 @@ This is the split development workflow with a standalone Go backend and a Vite d
    ```sh
    cd web
    npm install
-   npm run build
+   npm run build:embed
    ```
 
-2. Build the control-plane binary with the embedded UI:
+2. Build the control-plane binary with the embedded UI release tag:
 
    ```sh
-   go build -o panvex-control-plane ./cmd/control-plane
+   go build -tags embeddedui -o panvex-control-plane ./cmd/control-plane
    ```
 
 3. Bootstrap the first admin:
@@ -197,6 +203,8 @@ If the control-plane is using PostgreSQL instead of the default SQLite backend, 
 
 - `go build ./...`
 - `npm run build` from `web`
+- `npm run build:embed` from `web`
+- `go build -tags embeddedui ./cmd/control-plane`
 - `bash deploy/install.sh --help`
 - `rg -n "services:|sqlite|postgres|web:" deploy/docker-compose.sqlite.yml deploy/docker-compose.postgres.yml Dockerfile`
 - `go test ./cmd/control-plane -run "TestRunBootstrapAdmin|TestRunResetUserTotp" -v`

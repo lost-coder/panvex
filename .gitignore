@@ -38,9 +38,9 @@ web/dist/
 web/*.tsbuildinfo
 web/*.js
 web/*.d.ts
-cmd/control-plane/ui-dist/*
-!cmd/control-plane/ui-dist/
-!cmd/control-plane/ui-dist/placeholder.txt
+cmd/control-plane/.embedded-ui/
+cmd/control-plane/ui-dist/
+docs/plans/
 
 # Editor/IDE
 # .idea/

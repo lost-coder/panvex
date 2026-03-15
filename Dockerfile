@@ -6,7 +6,7 @@ RUN npm ci
 
 COPY web ./
 COPY cmd/control-plane /src/cmd/control-plane
-RUN npm run build
+RUN npm run build:embed
 
 FROM golang:1.25-alpine AS control-plane-builder
 WORKDIR /src
@@ -36,6 +36,6 @@ ENTRYPOINT ["./panvex-control-plane"]
 FROM nginx:1.29-alpine AS web
 
 COPY deploy/nginx/default.conf /etc/nginx/conf.d/default.conf
-COPY --from=web-builder /src/cmd/control-plane/ui-dist /usr/share/nginx/html
+COPY --from=web-builder /src/cmd/control-plane/.embedded-ui /usr/share/nginx/html
 
 EXPOSE 80

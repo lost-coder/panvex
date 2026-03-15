@@ -224,6 +224,12 @@ func TestResolveEmbeddedUIFilesReturnsNilWithoutIndex(t *testing.T) {
 	}
 }
 
+func TestEmbeddedUIFilesReturnsNilInDefaultBuild(t *testing.T) {
+	if embeddedUIFiles() != nil {
+		t.Fatal("embeddedUIFiles() != nil, want nil without embeddedui build tag")
+	}
+}
+
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 
