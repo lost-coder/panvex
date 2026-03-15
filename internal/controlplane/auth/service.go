@@ -25,10 +25,12 @@ var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
 	// ErrSessionNotFound reports a missing or revoked session identifier.
 	ErrSessionNotFound = errors.New("session not found")
-	// ErrTotpRequired reports a missing second factor for write-capable roles.
+	// ErrTotpRequired reports a missing second factor for a TOTP-enabled account.
 	ErrTotpRequired = errors.New("totp code required")
 	// ErrInvalidTotpCode reports a second factor mismatch.
 	ErrInvalidTotpCode = errors.New("invalid totp code")
+	// ErrTotpSetupNotFound reports a missing or expired pending TOTP setup.
+	ErrTotpSetupNotFound = errors.New("totp setup not found")
 )
 
 // Role identifies the RBAC role assigned to a local operator account.
@@ -37,11 +39,13 @@ type Role string
 const (
 	// RoleViewer can inspect fleet state but cannot mutate it.
 	RoleViewer Role = "viewer"
-	// RoleOperator can execute control-plane commands and requires TOTP.
+	// RoleOperator can execute control-plane commands.
 	RoleOperator Role = "operator"
-	// RoleAdmin can manage security-sensitive settings and requires TOTP.
+	// RoleAdmin can manage security-sensitive settings.
 	RoleAdmin Role = "admin"
 )
+
+const pendingTotpSetupTTL = 10 * time.Minute
 
 // BootstrapInput describes the initial user record to create.
 type BootstrapInput struct {
@@ -63,6 +67,7 @@ type User struct {
 	Username     string
 	PasswordHash string
 	Role         Role
+	TotpEnabled  bool
 	TotpSecret   string
 	CreatedAt    time.Time
 }
@@ -76,43 +81,43 @@ type Session struct {
 
 // Service provides local-account hashing, TOTP, and session issuance.
 type Service struct {
-	mu       sync.Mutex
-	sequence uint64
-	users    map[string]User
-	sessions map[string]Session
+	mu               sync.Mutex
+	sequence         uint64
+	users            map[string]User
+	sessions         map[string]Session
+	pendingTotpSetup map[string]pendingTotpSetup
 	userStore storage.UserStore
 }
 
 // NewService constructs an in-memory local-auth service.
 func NewService() *Service {
 	return &Service{
-		users:    make(map[string]User),
-		sessions: make(map[string]Session),
+		users:            make(map[string]User),
+		sessions:         make(map[string]Session),
+		pendingTotpSetup: make(map[string]pendingTotpSetup),
 	}
 }
 
 // NewServiceWithStore constructs an auth service that persists users through the shared store.
 func NewServiceWithStore(userStore storage.UserStore) *Service {
 	return &Service{
-		users:     make(map[string]User),
-		sessions:  make(map[string]Session),
-		userStore: userStore,
+		users:            make(map[string]User),
+		sessions:         make(map[string]Session),
+		pendingTotpSetup: make(map[string]pendingTotpSetup),
+		userStore:        userStore,
 	}
 }
 
-// BootstrapUser creates a local operator and seeds a TOTP secret when required by the role.
+type pendingTotpSetup struct {
+	Secret    string
+	CreatedAt time.Time
+}
+
+// BootstrapUser creates a local user with TOTP disabled by default.
 func (s *Service) BootstrapUser(input BootstrapInput, now time.Time) (User, string, error) {
 	hash, err := s.HashPassword(input.Password)
 	if err != nil {
 		return User{}, "", err
-	}
-
-	secret := ""
-	if requiresTotp(input.Role) {
-		secret, err = randomBase32(20)
-		if err != nil {
-			return User{}, "", err
-		}
 	}
 
 	if s.userStore == nil {
@@ -125,12 +130,13 @@ func (s *Service) BootstrapUser(input BootstrapInput, now time.Time) (User, stri
 			Username:     input.Username,
 			PasswordHash: hash,
 			Role:         input.Role,
-			TotpSecret:   secret,
+			TotpEnabled:  false,
+			TotpSecret:   "",
 			CreatedAt:    now.UTC(),
 		}
 		s.users[input.Username] = user
 
-		return user, secret, nil
+		return user, "", nil
 	}
 
 	users, err := s.userStore.ListUsers(context.Background())
@@ -146,7 +152,8 @@ func (s *Service) BootstrapUser(input BootstrapInput, now time.Time) (User, stri
 		Username:     input.Username,
 		PasswordHash: hash,
 		Role:         input.Role,
-		TotpSecret:   secret,
+		TotpEnabled:  false,
+		TotpSecret:   "",
 		CreatedAt:    now.UTC(),
 	}
 	s.mu.Unlock()
@@ -159,40 +166,21 @@ func (s *Service) BootstrapUser(input BootstrapInput, now time.Time) (User, stri
 	s.users[input.Username] = user
 	s.mu.Unlock()
 
-	return user, secret, nil
+	return user, "", nil
 }
 
-// Authenticate validates credentials and enforces role-based TOTP requirements.
+// Authenticate validates credentials and enforces TOTP only for users who enabled it.
 func (s *Service) Authenticate(input LoginInput, now time.Time) (Session, error) {
-	s.mu.Lock()
-	userStore := s.userStore
-	s.mu.Unlock()
-
-	var user User
-	if userStore != nil {
-		record, err := userStore.GetUserByUsername(context.Background(), input.Username)
-		if err != nil {
-			if errors.Is(err, storage.ErrNotFound) {
-				return Session{}, ErrInvalidCredentials
-			}
-			return Session{}, err
-		}
-		user = userFromRecord(record)
-	} else {
-		s.mu.Lock()
-		storedUser, ok := s.users[input.Username]
-		s.mu.Unlock()
-		if !ok {
-			return Session{}, ErrInvalidCredentials
-		}
-		user = storedUser
+	user, err := s.loadUserByUsername(input.Username)
+	if err != nil {
+		return Session{}, err
 	}
 
 	if err := s.VerifyPassword(user.PasswordHash, input.Password); err != nil {
 		return Session{}, ErrInvalidCredentials
 	}
 
-	if requiresTotp(user.Role) {
+	if user.TotpEnabled {
 		if strings.TrimSpace(input.TotpCode) == "" {
 			return Session{}, ErrTotpRequired
 		}
@@ -219,6 +207,131 @@ func (s *Service) Authenticate(input LoginInput, now time.Time) (Session, error)
 	s.sessions[session.ID] = session
 
 	return session, nil
+}
+
+// StartTotpSetup creates a short-lived TOTP setup secret for the provided user.
+func (s *Service) StartTotpSetup(userID string, now time.Time) (string, error) {
+	if _, err := s.GetUserByID(userID); err != nil {
+		return "", err
+	}
+
+	secret, err := randomBase32(20)
+	if err != nil {
+		return "", err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.cleanupPendingTotpSetupLocked(now)
+	s.pendingTotpSetup[userID] = pendingTotpSetup{
+		Secret:    secret,
+		CreatedAt: now.UTC(),
+	}
+
+	return secret, nil
+}
+
+// EnableTotp validates a pending setup and persists it as the active user TOTP secret.
+func (s *Service) EnableTotp(userID string, password string, totpCode string, now time.Time) (User, error) {
+	user, err := s.GetUserByID(userID)
+	if err != nil {
+		return User{}, err
+	}
+
+	if err := s.VerifyPassword(user.PasswordHash, password); err != nil {
+		return User{}, ErrInvalidCredentials
+	}
+
+	if strings.TrimSpace(totpCode) == "" {
+		return User{}, ErrTotpRequired
+	}
+
+	s.mu.Lock()
+	s.cleanupPendingTotpSetupLocked(now)
+	setup, ok := s.pendingTotpSetup[userID]
+	s.mu.Unlock()
+	if !ok {
+		return User{}, ErrTotpSetupNotFound
+	}
+
+	expected, err := s.GenerateTotpCode(setup.Secret, now)
+	if err != nil {
+		return User{}, err
+	}
+
+	if subtle.ConstantTimeCompare([]byte(expected), []byte(totpCode)) != 1 {
+		return User{}, ErrInvalidTotpCode
+	}
+
+	user.TotpEnabled = true
+	user.TotpSecret = setup.Secret
+	if err := s.storeUser(user); err != nil {
+		return User{}, err
+	}
+
+	s.mu.Lock()
+	delete(s.pendingTotpSetup, userID)
+	s.mu.Unlock()
+
+	return user, nil
+}
+
+// DisableTotp disables TOTP after validating the current password and active TOTP code.
+func (s *Service) DisableTotp(userID string, password string, totpCode string, now time.Time) (User, error) {
+	user, err := s.GetUserByID(userID)
+	if err != nil {
+		return User{}, err
+	}
+
+	if err := s.VerifyPassword(user.PasswordHash, password); err != nil {
+		return User{}, ErrInvalidCredentials
+	}
+
+	if strings.TrimSpace(totpCode) == "" {
+		return User{}, ErrTotpRequired
+	}
+
+	expected, err := s.GenerateTotpCode(user.TotpSecret, now)
+	if err != nil {
+		return User{}, err
+	}
+
+	if subtle.ConstantTimeCompare([]byte(expected), []byte(totpCode)) != 1 {
+		return User{}, ErrInvalidTotpCode
+	}
+
+	user.TotpEnabled = false
+	user.TotpSecret = ""
+	if err := s.storeUser(user); err != nil {
+		return User{}, err
+	}
+
+	s.mu.Lock()
+	delete(s.pendingTotpSetup, userID)
+	s.mu.Unlock()
+
+	return user, nil
+}
+
+// ResetTotp clears the active TOTP configuration for the provided user.
+func (s *Service) ResetTotp(userID string) (User, error) {
+	user, err := s.GetUserByID(userID)
+	if err != nil {
+		return User{}, err
+	}
+
+	user.TotpEnabled = false
+	user.TotpSecret = ""
+	if err := s.storeUser(user); err != nil {
+		return User{}, err
+	}
+
+	s.mu.Lock()
+	delete(s.pendingTotpSetup, userID)
+	s.mu.Unlock()
+
+	return user, nil
 }
 
 // HashPassword derives an Argon2id hash suitable for local credential storage.
@@ -298,10 +411,6 @@ func randomBase32(size int) (string, error) {
 	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(buf), nil
 }
 
-func requiresTotp(role Role) bool {
-	return role == RoleOperator || role == RoleAdmin
-}
-
 // SnapshotUsers returns a copy of the current local-account state.
 func (s *Service) SnapshotUsers() []User {
 	s.mu.Lock()
@@ -357,6 +466,7 @@ func userToRecord(user User) storage.UserRecord {
 		Username:     user.Username,
 		PasswordHash: user.PasswordHash,
 		Role:         string(user.Role),
+		TotpEnabled:  user.TotpEnabled,
 		TotpSecret:   user.TotpSecret,
 		CreatedAt:    user.CreatedAt.UTC(),
 	}
@@ -368,8 +478,59 @@ func userFromRecord(record storage.UserRecord) User {
 		Username:     record.Username,
 		PasswordHash: record.PasswordHash,
 		Role:         Role(record.Role),
+		TotpEnabled:  record.TotpEnabled,
 		TotpSecret:   record.TotpSecret,
 		CreatedAt:    record.CreatedAt.UTC(),
+	}
+}
+
+func (s *Service) loadUserByUsername(username string) (User, error) {
+	s.mu.Lock()
+	userStore := s.userStore
+	s.mu.Unlock()
+
+	if userStore != nil {
+		record, err := userStore.GetUserByUsername(context.Background(), username)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				return User{}, ErrInvalidCredentials
+			}
+			return User{}, err
+		}
+		return userFromRecord(record), nil
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	user, ok := s.users[username]
+	if !ok {
+		return User{}, ErrInvalidCredentials
+	}
+
+	return user, nil
+}
+
+func (s *Service) storeUser(user User) error {
+	if s.userStore != nil {
+		if err := s.userStore.PutUser(context.Background(), userToRecord(user)); err != nil {
+			return err
+		}
+	}
+
+	s.mu.Lock()
+	s.users[user.Username] = user
+	s.mu.Unlock()
+
+	return nil
+}
+
+func (s *Service) cleanupPendingTotpSetupLocked(now time.Time) {
+	cutoff := now.UTC().Add(-pendingTotpSetupTTL)
+	for userID, setup := range s.pendingTotpSetup {
+		if setup.CreatedAt.Before(cutoff) {
+			delete(s.pendingTotpSetup, userID)
+		}
 	}
 }
 

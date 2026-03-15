@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS users (
     username TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     role TEXT NOT NULL,
+    totp_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     totp_secret TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL
 );
@@ -95,6 +96,10 @@ CREATE TABLE IF NOT EXISTS enrollment_tokens (
 
 // Migrate applies the current PostgreSQL schema to the opened database.
 func Migrate(db *sql.DB) error {
-	_, err := db.Exec(initialSchema)
+	if _, err := db.Exec(initialSchema); err != nil {
+		return err
+	}
+
+	_, err := db.Exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN NOT NULL DEFAULT FALSE`)
 	return err
 }

@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
     username TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     role TEXT NOT NULL,
+    totp_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     totp_secret TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL
 );

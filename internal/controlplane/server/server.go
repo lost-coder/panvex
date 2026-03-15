@@ -114,6 +114,7 @@ func (s *Server) seedUsers(users []auth.User) {
 			Username:     user.Username,
 			PasswordHash: user.PasswordHash,
 			Role:         string(user.Role),
+			TotpEnabled:  user.TotpEnabled,
 			TotpSecret:   user.TotpSecret,
 			CreatedAt:    user.CreatedAt.UTC(),
 		}); err != nil {
@@ -195,6 +196,9 @@ func (s *Server) routes() http.Handler {
 		api.Get("/auth/me", s.handleMe())
 		api.Post("/auth/login", s.handleLogin())
 		api.Post("/auth/logout", s.handleLogout())
+		api.Post("/auth/totp/setup", s.handleTotpSetup())
+		api.Post("/auth/totp/enable", s.handleTotpEnable())
+		api.Post("/auth/totp/disable", s.handleTotpDisable())
 
 		api.Get("/fleet", s.handleFleet())
 		api.Get("/agents", s.handleAgents())
@@ -204,6 +208,8 @@ func (s *Server) routes() http.Handler {
 		api.Get("/audit", s.handleAudit())
 		api.Get("/metrics", s.handleMetrics())
 		api.Get("/events", s.handleEvents())
+		api.Get("/users", s.handleUsers())
+		api.Post("/users/{id}/totp/reset", s.handleResetUserTotp())
 		api.Post("/agents/enrollment-tokens", s.handleCreateEnrollmentToken())
 	})
 	if uiHandler := newUIHandler(s.uiFiles); uiHandler != nil {

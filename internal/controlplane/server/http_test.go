@@ -49,8 +49,9 @@ func TestServerLoginSetsSessionAndReturnsMe(t *testing.T) {
 	}
 
 	var payload struct {
-		Username string `json:"username"`
-		Role     string `json:"role"`
+		Username    string `json:"username"`
+		Role        string `json:"role"`
+		TotpEnabled bool   `json:"totp_enabled"`
 	}
 	if err := json.Unmarshal(meResponse.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
@@ -62,6 +63,10 @@ func TestServerLoginSetsSessionAndReturnsMe(t *testing.T) {
 
 	if payload.Role != string(auth.RoleViewer) {
 		t.Fatalf("payload.Role = %q, want %q", payload.Role, auth.RoleViewer)
+	}
+
+	if payload.TotpEnabled {
+		t.Fatal("payload.TotpEnabled = true, want false")
 	}
 }
 
@@ -106,7 +111,7 @@ func TestServerCreateJobAcceptsOperatorWithTotp(t *testing.T) {
 	server := New(Options{
 		Now: func() time.Time { return now },
 	})
-	_, secret, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	user, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "operator",
 		Password: "operator-password",
 		Role:     auth.RoleOperator,
@@ -122,9 +127,18 @@ func TestServerCreateJobAcceptsOperatorWithTotp(t *testing.T) {
 		ReadOnly:     false,
 	}
 
+	secret, err := server.auth.StartTotpSetup(user.ID, now)
+	if err != nil {
+		t.Fatalf("StartTotpSetup() error = %v", err)
+	}
+
 	code, err := server.auth.GenerateTotpCode(secret, now)
 	if err != nil {
 		t.Fatalf("GenerateTotpCode() error = %v", err)
+	}
+
+	if _, err := server.auth.EnableTotp(user.ID, "operator-password", code, now); err != nil {
+		t.Fatalf("EnableTotp() error = %v", err)
 	}
 
 	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
@@ -144,6 +158,272 @@ func TestServerCreateJobAcceptsOperatorWithTotp(t *testing.T) {
 	}, loginResponse.Result().Cookies())
 	if jobResponse.Code != http.StatusAccepted {
 		t.Fatalf("POST /api/jobs status = %d, want %d", jobResponse.Code, http.StatusAccepted)
+	}
+}
+
+func TestHTTPAuthTotpSetupEnableDisableFlow(t *testing.T) {
+	now := time.Date(2026, time.March, 15, 8, 0, 0, 0, time.UTC)
+	server := New(Options{
+		Now: func() time.Time { return now },
+	})
+	user, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "operator",
+		Password: "operator-password",
+		Role:     auth.RoleOperator,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "operator",
+		"password": "operator-password",
+	}, nil)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
+	}
+	cookies := loginResponse.Result().Cookies()
+
+	meResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/auth/me", nil, cookies)
+	if meResponse.Code != http.StatusOK {
+		t.Fatalf("GET /api/auth/me status = %d, want %d", meResponse.Code, http.StatusOK)
+	}
+
+	var mePayload struct {
+		TotpEnabled bool `json:"totp_enabled"`
+	}
+	if err := json.Unmarshal(meResponse.Body.Bytes(), &mePayload); err != nil {
+		t.Fatalf("json.Unmarshal(me) error = %v", err)
+	}
+	if mePayload.TotpEnabled {
+		t.Fatal("me.totp_enabled = true, want false")
+	}
+
+	setupResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/totp/setup", nil, cookies)
+	if setupResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/totp/setup status = %d, want %d", setupResponse.Code, http.StatusOK)
+	}
+
+	var setupPayload struct {
+		Secret    string `json:"secret"`
+		OTPAuthURL string `json:"otpauth_url"`
+	}
+	if err := json.Unmarshal(setupResponse.Body.Bytes(), &setupPayload); err != nil {
+		t.Fatalf("json.Unmarshal(setup) error = %v", err)
+	}
+	if setupPayload.Secret == "" {
+		t.Fatal("setup.secret = empty, want generated secret")
+	}
+	if setupPayload.OTPAuthURL == "" {
+		t.Fatal("setup.otpauth_url = empty, want generated URL")
+	}
+
+	enableCode, err := server.auth.GenerateTotpCode(setupPayload.Secret, now)
+	if err != nil {
+		t.Fatalf("GenerateTotpCode(enable) error = %v", err)
+	}
+
+	enableResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/totp/enable", map[string]string{
+		"password":  "operator-password",
+		"totp_code": enableCode,
+	}, cookies)
+	if enableResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/totp/enable status = %d, want %d", enableResponse.Code, http.StatusOK)
+	}
+
+	meEnabledResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/auth/me", nil, cookies)
+	if meEnabledResponse.Code != http.StatusOK {
+		t.Fatalf("GET /api/auth/me after enable status = %d, want %d", meEnabledResponse.Code, http.StatusOK)
+	}
+	if err := json.Unmarshal(meEnabledResponse.Body.Bytes(), &mePayload); err != nil {
+		t.Fatalf("json.Unmarshal(me enabled) error = %v", err)
+	}
+	if !mePayload.TotpEnabled {
+		t.Fatal("me.totp_enabled = false after enable, want true")
+	}
+
+	logoutResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/logout", nil, cookies)
+	if logoutResponse.Code != http.StatusNoContent {
+		t.Fatalf("POST /api/auth/logout status = %d, want %d", logoutResponse.Code, http.StatusNoContent)
+	}
+
+	loginWithoutTotp := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "operator",
+		"password": "operator-password",
+	}, nil)
+	if loginWithoutTotp.Code != http.StatusUnauthorized {
+		t.Fatalf("POST /api/auth/login without totp status = %d, want %d", loginWithoutTotp.Code, http.StatusUnauthorized)
+	}
+
+	loginWithTotp := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username":  "operator",
+		"password":  "operator-password",
+		"totp_code": enableCode,
+	}, nil)
+	if loginWithTotp.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login with totp status = %d, want %d", loginWithTotp.Code, http.StatusOK)
+	}
+	cookies = loginWithTotp.Result().Cookies()
+
+	disableCode, err := server.auth.GenerateTotpCode(setupPayload.Secret, now)
+	if err != nil {
+		t.Fatalf("GenerateTotpCode(disable) error = %v", err)
+	}
+
+	disableResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/totp/disable", map[string]string{
+		"password":  "operator-password",
+		"totp_code": disableCode,
+	}, cookies)
+	if disableResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/totp/disable status = %d, want %d", disableResponse.Code, http.StatusOK)
+	}
+
+	meDisabledResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/auth/me", nil, cookies)
+	if meDisabledResponse.Code != http.StatusOK {
+		t.Fatalf("GET /api/auth/me after disable status = %d, want %d", meDisabledResponse.Code, http.StatusOK)
+	}
+	if err := json.Unmarshal(meDisabledResponse.Body.Bytes(), &mePayload); err != nil {
+		t.Fatalf("json.Unmarshal(me disabled) error = %v", err)
+	}
+	if mePayload.TotpEnabled {
+		t.Fatal("me.totp_enabled = true after disable, want false")
+	}
+
+	storedUser, err := server.auth.GetUserByID(user.ID)
+	if err != nil {
+		t.Fatalf("GetUserByID() error = %v", err)
+	}
+	if storedUser.TotpEnabled {
+		t.Fatal("GetUserByID() TotpEnabled = true after disable, want false")
+	}
+}
+
+func TestHTTPUsersTotpResetRequiresAdminAndClearsTarget(t *testing.T) {
+	now := time.Date(2026, time.March, 15, 8, 30, 0, 0, time.UTC)
+	server := New(Options{
+		Now: func() time.Time { return now },
+	})
+	adminUser, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "admin",
+		Password: "admin-password",
+		Role:     auth.RoleAdmin,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser(admin) error = %v", err)
+	}
+	operatorUser, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "operator",
+		Password: "operator-password",
+		Role:     auth.RoleOperator,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser(operator) error = %v", err)
+	}
+
+	secret, err := server.auth.StartTotpSetup(operatorUser.ID, now)
+	if err != nil {
+		t.Fatalf("StartTotpSetup() error = %v", err)
+	}
+	code, err := server.auth.GenerateTotpCode(secret, now)
+	if err != nil {
+		t.Fatalf("GenerateTotpCode() error = %v", err)
+	}
+	if _, err := server.auth.EnableTotp(operatorUser.ID, "operator-password", code, now); err != nil {
+		t.Fatalf("EnableTotp() error = %v", err)
+	}
+
+	viewerUser, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "viewer",
+		Password: "viewer-password",
+		Role:     auth.RoleViewer,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser(viewer) error = %v", err)
+	}
+
+	viewerLogin := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "viewer",
+		"password": "viewer-password",
+	}, nil)
+	if viewerLogin.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login viewer status = %d, want %d", viewerLogin.Code, http.StatusOK)
+	}
+
+	viewerList := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/users", nil, viewerLogin.Result().Cookies())
+	if viewerList.Code != http.StatusForbidden {
+		t.Fatalf("GET /api/users as viewer status = %d, want %d", viewerList.Code, http.StatusForbidden)
+	}
+
+	adminLogin := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "admin",
+		"password": "admin-password",
+	}, nil)
+	if adminLogin.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login admin status = %d, want %d", adminLogin.Code, http.StatusOK)
+	}
+	adminCookies := adminLogin.Result().Cookies()
+
+	usersResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/users", nil, adminCookies)
+	if usersResponse.Code != http.StatusOK {
+		t.Fatalf("GET /api/users status = %d, want %d", usersResponse.Code, http.StatusOK)
+	}
+
+	var usersPayload []struct {
+		ID          string `json:"id"`
+		Role        string `json:"role"`
+		TotpEnabled bool   `json:"totp_enabled"`
+	}
+	if err := json.Unmarshal(usersResponse.Body.Bytes(), &usersPayload); err != nil {
+		t.Fatalf("json.Unmarshal(users) error = %v", err)
+	}
+	if len(usersPayload) != 3 {
+		t.Fatalf("len(users) = %d, want %d", len(usersPayload), 3)
+	}
+
+	resetResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/users/"+operatorUser.ID+"/totp/reset", nil, adminCookies)
+	if resetResponse.Code != http.StatusNoContent {
+		t.Fatalf("POST /api/users/{id}/totp/reset status = %d, want %d", resetResponse.Code, http.StatusNoContent)
+	}
+
+	resetUser, err := server.auth.GetUserByID(operatorUser.ID)
+	if err != nil {
+		t.Fatalf("GetUserByID(reset target) error = %v", err)
+	}
+	if resetUser.TotpEnabled {
+		t.Fatal("GetUserByID(reset target) TotpEnabled = true, want false")
+	}
+
+	operatorLogin := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "operator",
+		"password": "operator-password",
+	}, nil)
+	if operatorLogin.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login operator after reset status = %d, want %d", operatorLogin.Code, http.StatusOK)
+	}
+
+	auditResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/audit", nil, adminCookies)
+	if auditResponse.Code != http.StatusOK {
+		t.Fatalf("GET /api/audit status = %d, want %d", auditResponse.Code, http.StatusOK)
+	}
+
+	var auditPayload []AuditEvent
+	if err := json.Unmarshal(auditResponse.Body.Bytes(), &auditPayload); err != nil {
+		t.Fatalf("json.Unmarshal(audit) error = %v", err)
+	}
+
+	foundResetAudit := false
+	for _, event := range auditPayload {
+		if event.Action == "auth.totp.reset_by_admin" && event.ActorID == adminUser.ID && event.TargetID == operatorUser.ID {
+			foundResetAudit = true
+			break
+		}
+	}
+	if !foundResetAudit {
+		t.Fatalf("audit payload did not contain auth.totp.reset_by_admin for %s", operatorUser.ID)
+	}
+
+	if viewerUser.ID == "" {
+		t.Fatal("viewer user id = empty, want seeded viewer record")
 	}
 }
 
@@ -334,7 +614,7 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 	defer store.Close()
 
 	bootstrap := auth.NewService()
-	user, secret, err := bootstrap.BootstrapUser(auth.BootstrapInput{
+	user, _, err := bootstrap.BootstrapUser(auth.BootstrapInput{
 		Username: "operator",
 		Password: "operator-password",
 		Role:     auth.RoleOperator,
@@ -348,6 +628,18 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 		Users: []auth.User{user},
 		Store: store,
 	})
+
+	secret, err := first.auth.StartTotpSetup(user.ID, now)
+	if err != nil {
+		t.Fatalf("StartTotpSetup() error = %v", err)
+	}
+	enableCode, err := first.auth.GenerateTotpCode(secret, now.Add(10*time.Second))
+	if err != nil {
+		t.Fatalf("GenerateTotpCode(enable) error = %v", err)
+	}
+	if _, err := first.auth.EnableTotp(user.ID, "operator-password", enableCode, now.Add(10*time.Second)); err != nil {
+		t.Fatalf("EnableTotp() error = %v", err)
+	}
 
 	tokenOne, err := first.issueEnrollmentToken(security.EnrollmentScope{
 		EnvironmentID: "prod",

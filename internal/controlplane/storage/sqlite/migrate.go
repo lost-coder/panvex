@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
     username TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     role TEXT NOT NULL,
+    totp_enabled INTEGER NOT NULL DEFAULT 0,
     totp_secret TEXT NOT NULL DEFAULT '',
     created_at_unix INTEGER NOT NULL
 );
@@ -99,6 +100,39 @@ CREATE TABLE IF NOT EXISTS enrollment_tokens (
 
 // Migrate applies the current SQLite schema to the opened database.
 func Migrate(db *sql.DB) error {
-	_, err := db.Exec(initialSchema)
+	if _, err := db.Exec(initialSchema); err != nil {
+		return err
+	}
+
+	return ensureUsersTotpEnabledColumn(db)
+}
+
+func ensureUsersTotpEnabledColumn(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(users)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name string
+		var columnType string
+		var notNull int
+		var defaultValue any
+		var primaryKey int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return err
+		}
+		if name == "totp_enabled" {
+			return nil
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0`)
 	return err
 }

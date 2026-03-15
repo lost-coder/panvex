@@ -140,6 +140,8 @@ This is the split development workflow with a standalone Go backend and a Vite d
    ./panvex-control-plane bootstrap-admin -username admin -password '<strong-password>'
    ```
 
+   The bootstrap user starts with TOTP disabled by default.
+
 4. Start the single-binary release:
 
    ```sh
@@ -147,6 +149,33 @@ This is the split development workflow with a standalone Go backend and a Vite d
    ```
 
    The dashboard is served by the same binary on `http://127.0.0.1:8080`.
+
+## Optional account TOTP
+
+Panvex keeps TOTP optional by default for local accounts, including the first admin.
+
+- Sign in with username and password when TOTP is disabled.
+- Open `Settings` and use `Optional two-factor authentication` to start setup.
+- Confirm setup with the current password and a fresh code from the authenticator app before TOTP becomes active.
+- Disable active TOTP with the current password and current TOTP code.
+
+For multi-user installs, admins can open `Settings` and use `Admin TOTP recovery` to reset another user's TOTP from the web panel.
+
+For emergency recovery on the server, reset a local user's TOTP through the control-plane CLI:
+
+```sh
+./panvex-control-plane reset-user-totp \
+  -username admin
+```
+
+If the control-plane is using PostgreSQL instead of the default SQLite backend, pass the storage flags explicitly:
+
+```sh
+./panvex-control-plane reset-user-totp \
+  -storage-driver postgres \
+  -storage-dsn 'postgres://panvex:password@127.0.0.1:5432/panvex?sslmode=disable' \
+  -username admin
+```
 
 ## Agent quick start
 
@@ -170,6 +199,8 @@ This is the split development workflow with a standalone Go backend and a Vite d
 - `npm run build` from `web`
 - `bash deploy/install.sh --help`
 - `rg -n "services:|sqlite|postgres|web:" deploy/docker-compose.sqlite.yml deploy/docker-compose.postgres.yml Dockerfile`
+- `go test ./cmd/control-plane -run "TestRunBootstrapAdmin|TestRunResetUserTotp" -v`
+- `go test ./internal/controlplane/auth ./internal/controlplane/server -run "TestServiceBootstrapUserLeavesTotpDisabledByDefault|TestServiceAuthenticateAllowsOperatorWithoutTotpWhenDisabled|TestServiceEnableTotpRequiresPendingSetup|TestServiceEnableTotpRequiresValidPasswordAndCode|TestServiceDisableTotpRequiresValidPasswordAndCode|TestServiceResetTotpClearsEnabledState|TestHTTPAuthTotpSetupEnableDisableFlow|TestHTTPUsersTotpResetRequiresAdminAndClearsTarget" -v`
 - `go test ./internal/controlplane/auth ./internal/controlplane/jobs ./internal/controlplane/server ./internal/controlplane/state ./internal/controlplane/storage/migrate ./internal/controlplane/storage/postgres ./internal/controlplane/storage/sqlite -v`
 
 On the current Windows environment, `go test` for `internal/controlplane/config`, `internal/controlplane/presence`, and `internal/controlplane/storage/storagetest` must be executed through compiled test binaries because temporary `.test.exe` launches are denied:

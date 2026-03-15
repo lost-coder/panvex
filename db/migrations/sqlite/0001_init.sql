@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS users (
     username TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     role TEXT NOT NULL,
+    totp_enabled INTEGER NOT NULL DEFAULT 0,
     totp_secret TEXT NOT NULL DEFAULT '',
     created_at_unix INTEGER NOT NULL
 );

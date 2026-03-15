@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build --outDir ../cmd/control-plane/ui-dist --emptyOutDir",
+    "build": "npx tsc --noEmit && npx vite build --outDir ../cmd/control-plane/ui-dist --emptyOutDir && node -e \"require('fs').writeFileSync('../cmd/control-plane/ui-dist/placeholder.txt', 'Build frontend assets into this directory for single-binary release builds.')\"",
     "preview": "vite preview"
   },
   "dependencies": {

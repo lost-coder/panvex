@@ -25,6 +25,7 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 			Username:     "admin",
 			PasswordHash: "argon2id$hash",
 			Role:         "admin",
+			TotpEnabled:  true,
 			TotpSecret:   "SECRET",
 			CreatedAt:    time.Date(2026, time.March, 15, 8, 0, 0, 0, time.UTC),
 		}
@@ -51,6 +52,10 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 			t.Fatalf("GetUserByID() Username = %q, want %q", byID.Username, user.Username)
 		}
 
+		if !byID.TotpEnabled {
+			t.Fatal("GetUserByID() TotpEnabled = false, want true")
+		}
+
 		users, err := store.ListUsers(ctx)
 		if err != nil {
 			t.Fatalf("ListUsers() error = %v", err)
@@ -58,6 +63,10 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 
 		if len(users) != 1 {
 			t.Fatalf("len(ListUsers()) = %d, want 1", len(users))
+		}
+
+		if !users[0].TotpEnabled {
+			t.Fatal("ListUsers()[0].TotpEnabled = false, want true")
 		}
 	})
 

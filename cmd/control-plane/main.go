@@ -8,7 +8,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"time"
 
@@ -42,6 +41,9 @@ func run(args []string) error {
 	}
 	if len(args) > 0 && args[0] == "migrate-storage" {
 		return runMigrateStorage(args[1:])
+	}
+	if len(args) > 0 && args[0] == "reset-user-totp" {
+		return runResetUserTotp(args[1:])
 	}
 
 	return runServe(args)
@@ -148,7 +150,7 @@ func runBootstrapAdmin(args []string) error {
 	}
 
 	service := auth.NewServiceWithStore(store)
-	_, secret, err := service.BootstrapUser(auth.BootstrapInput{
+	_, _, err = service.BootstrapUser(auth.BootstrapInput{
 		Username: *username,
 		Password: *password,
 		Role:     auth.RoleAdmin,
@@ -160,8 +162,61 @@ func runBootstrapAdmin(args []string) error {
 	fmt.Printf("Admin user %q created.\n", *username)
 	fmt.Printf("Storage driver: %s\n", storageConfig.Driver)
 	fmt.Printf("Storage DSN: %s\n", storageConfig.DSN)
-	fmt.Printf("TOTP secret: %s\n", secret)
-	fmt.Printf("otpauth URL: %s\n", buildOTPAuthURL(*username, secret))
+	return nil
+}
+
+func runResetUserTotp(args []string) error {
+	flags := flag.NewFlagSet("reset-user-totp", flag.ContinueOnError)
+	username := flags.String("username", "", "Username to reset TOTP for")
+	storageDriver := flags.String("storage-driver", "", "Persistent storage backend driver")
+	storageDSN := flags.String("storage-dsn", "", "Persistent storage backend DSN")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	if *username == "" {
+		return errors.New("username is required")
+	}
+
+	storageConfig, err := config.ResolveStorage(*storageDriver, *storageDSN)
+	if err != nil {
+		return err
+	}
+
+	store, err := openStore(storageConfig)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+
+	record, err := store.GetUserByUsername(context.Background(), *username)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return fmt.Errorf("user %q not found", *username)
+		}
+		return err
+	}
+
+	service := auth.NewServiceWithStore(store)
+	user, err := service.ResetTotp(record.ID)
+	if err != nil {
+		return err
+	}
+
+	if err := store.AppendAuditEvent(context.Background(), storage.AuditEventRecord{
+		ID:        fmt.Sprintf("audit-cli-%d", time.Now().UTC().UnixNano()),
+		ActorID:   "system",
+		Action:    "auth.totp.reset_by_cli",
+		TargetID:  user.ID,
+		CreatedAt: time.Now().UTC(),
+		Details: map[string]any{
+			"username": user.Username,
+		},
+	}); err != nil {
+		return err
+	}
+
+	fmt.Printf("TOTP reset for user %q.\n", user.Username)
 	return nil
 }
 
@@ -208,8 +263,4 @@ func openStore(configuration config.StorageConfig) (storage.Store, error) {
 	default:
 		return nil, fmt.Errorf("unsupported storage driver %q", configuration.Driver)
 	}
-}
-
-func buildOTPAuthURL(username string, secret string) string {
-	return "otpauth://totp/Panvex:" + url.PathEscape(username) + "?secret=" + url.QueryEscape(secret) + "&issuer=Panvex"
 }
