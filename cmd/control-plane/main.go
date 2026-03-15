@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -17,7 +18,6 @@ import (
 	"github.com/panvex/panvex/internal/controlplane/storage"
 	"github.com/panvex/panvex/internal/controlplane/storage/postgres"
 	"github.com/panvex/panvex/internal/controlplane/storage/sqlite"
-	"github.com/panvex/panvex/internal/controlplane/state"
 	"github.com/panvex/panvex/internal/gatewayrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -26,7 +26,6 @@ import (
 type serveConfig struct {
 	HTTPAddr string
 	GRPCAddr string
-	StateFile string
 	Storage config.StorageConfig
 }
 
@@ -50,11 +49,6 @@ func runServe(args []string) error {
 		return err
 	}
 
-	users, err := loadUsersIfExists(options.StateFile)
-	if err != nil {
-		return err
-	}
-
 	store, err := openStore(options.Storage)
 	if err != nil {
 		return err
@@ -63,7 +57,6 @@ func runServe(args []string) error {
 
 	api := server.New(server.Options{
 		Now:   time.Now,
-		Users: users,
 		Store: store,
 	})
 
@@ -98,7 +91,6 @@ func parseServeConfig(args []string) (serveConfig, error) {
 	flags := flag.NewFlagSet("control-plane", flag.ContinueOnError)
 	httpAddr := flags.String("http-addr", ":8080", "HTTP listen address")
 	grpcAddr := flags.String("grpc-addr", ":8443", "gRPC listen address")
-	stateFile := flags.String("state-file", "data/auth-state.json", "Path to the local auth state file")
 	storageDriver := flags.String("storage-driver", "", "Persistent storage backend driver")
 	storageDSN := flags.String("storage-dsn", "", "Persistent storage backend DSN")
 	if err := flags.Parse(args); err != nil {
@@ -113,16 +105,16 @@ func parseServeConfig(args []string) (serveConfig, error) {
 	return serveConfig{
 		HTTPAddr: *httpAddr,
 		GRPCAddr: *grpcAddr,
-		StateFile: *stateFile,
 		Storage: storage,
 	}, nil
 }
 
 func runBootstrapAdmin(args []string) error {
 	flags := flag.NewFlagSet("bootstrap-admin", flag.ContinueOnError)
-	stateFile := flags.String("state-file", "data/auth-state.json", "Path to the local auth state file")
 	username := flags.String("username", "admin", "Admin username")
 	password := flags.String("password", os.Getenv("PANVEX_BOOTSTRAP_PASSWORD"), "Admin password")
+	storageDriver := flags.String("storage-driver", "", "Persistent storage backend driver")
+	storageDSN := flags.String("storage-dsn", "", "Persistent storage backend DSN")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -131,15 +123,26 @@ func runBootstrapAdmin(args []string) error {
 		return errors.New("password is required through -password or PANVEX_BOOTSTRAP_PASSWORD")
 	}
 
-	existingUsers, err := loadUsersIfExists(*stateFile)
+	storageConfig, err := config.ResolveStorage(*storageDriver, *storageDSN)
+	if err != nil {
+		return err
+	}
+
+	store, err := openStore(storageConfig)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+
+	existingUsers, err := store.ListUsers(context.Background())
 	if err != nil {
 		return err
 	}
 	if len(existingUsers) > 0 {
-		return fmt.Errorf("state file %s already contains users", *stateFile)
+		return errors.New("storage already contains users")
 	}
 
-	service := auth.NewService()
+	service := auth.NewServiceWithStore(store)
 	_, secret, err := service.BootstrapUser(auth.BootstrapInput{
 		Username: *username,
 		Password: *password,
@@ -149,12 +152,9 @@ func runBootstrapAdmin(args []string) error {
 		return err
 	}
 
-	if err := state.SaveUsersFile(*stateFile, service.SnapshotUsers()); err != nil {
-		return err
-	}
-
 	fmt.Printf("Admin user %q created.\n", *username)
-	fmt.Printf("State file: %s\n", *stateFile)
+	fmt.Printf("Storage driver: %s\n", storageConfig.Driver)
+	fmt.Printf("Storage DSN: %s\n", storageConfig.DSN)
 	fmt.Printf("TOTP secret: %s\n", secret)
 	fmt.Printf("otpauth URL: %s\n", buildOTPAuthURL(*username, secret))
 	return nil
@@ -169,19 +169,6 @@ func openStore(configuration config.StorageConfig) (storage.Store, error) {
 	default:
 		return nil, fmt.Errorf("unsupported storage driver %q", configuration.Driver)
 	}
-}
-
-func loadUsersIfExists(path string) ([]auth.User, error) {
-	users, err := state.LoadUsersFile(path)
-	if err == nil {
-		return users, nil
-	}
-
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
-
-	return nil, err
 }
 
 func buildOTPAuthURL(username string, secret string) string {

@@ -19,7 +19,17 @@ Panvex is a control-plane and web dashboard for managing multiple Telemt nodes.
 
    ```powershell
    go run ./cmd/control-plane bootstrap-admin `
-     -state-file data/auth-state.json `
+     -username admin `
+     -password "<strong-password>"
+   ```
+
+   By default this writes the first admin into the SQLite database at `data/panvex.db`.
+   To target PostgreSQL instead:
+
+   ```powershell
+   go run ./cmd/control-plane bootstrap-admin `
+     -storage-driver postgres `
+     -storage-dsn "postgres://panvex:password@127.0.0.1:5432/panvex?sslmode=disable" `
      -username admin `
      -password "<strong-password>"
    ```
@@ -27,7 +37,18 @@ Panvex is a control-plane and web dashboard for managing multiple Telemt nodes.
 2. Start the control-plane:
 
    ```powershell
-   go run ./cmd/control-plane -http-addr :8080 -grpc-addr :8443 -state-file data/auth-state.json
+   go run ./cmd/control-plane -http-addr :8080 -grpc-addr :8443
+   ```
+
+   The default startup backend is SQLite at `data/panvex.db`.
+   To start against PostgreSQL:
+
+   ```powershell
+   go run ./cmd/control-plane `
+     -http-addr :8080 `
+     -grpc-addr :8443 `
+     -storage-driver postgres `
+     -storage-dsn "postgres://panvex:password@127.0.0.1:5432/panvex?sslmode=disable"
    ```
 
 3. Start the web dashboard:
