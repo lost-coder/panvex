@@ -2,6 +2,7 @@ export type MeResponse = {
   id: string;
   username: string;
   role: string;
+  totp_enabled: boolean;
 };
 
 export type FleetResponse = {
@@ -71,6 +72,22 @@ export type EnrollmentTokenResponse = {
   ca_pem: string;
 };
 
+export type TotpSetupResponse = {
+  secret: string;
+  otpauth_url: string;
+};
+
+export type TotpStatusResponse = {
+  totp_enabled: boolean;
+};
+
+export type LocalUser = {
+  id: string;
+  username: string;
+  role: string;
+  totp_enabled: boolean;
+};
+
 export type JobCreateInput = {
   action: string;
   target_agent_ids: string[];
@@ -121,9 +138,28 @@ export const apiClient = {
       method: "POST"
     }),
   me: () => api<MeResponse>(`${apiBasePath}/auth/me`),
+  startTotpSetup: () =>
+    api<TotpSetupResponse>(`${apiBasePath}/auth/totp/setup`, {
+      method: "POST"
+    }),
+  enableTotp: (payload: { password: string; totp_code: string }) =>
+    api<TotpStatusResponse>(`${apiBasePath}/auth/totp/enable`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+  disableTotp: (payload: { password: string; totp_code: string }) =>
+    api<TotpStatusResponse>(`${apiBasePath}/auth/totp/disable`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
   fleet: () => api<FleetResponse>(`${apiBasePath}/fleet`),
   agents: () => api<Agent[]>(`${apiBasePath}/agents`),
   instances: () => api<Instance[]>(`${apiBasePath}/instances`),
+  users: () => api<LocalUser[]>(`${apiBasePath}/users`),
+  resetUserTotp: (userID: string) =>
+    api<void>(`${apiBasePath}/users/${userID}/totp/reset`, {
+      method: "POST"
+    }),
   jobs: () => api<Job[]>(`${apiBasePath}/jobs`),
   audit: () => api<AuditEvent[]>(`${apiBasePath}/audit`),
   metrics: () => api<MetricSnapshot[]>(`${apiBasePath}/metrics`),

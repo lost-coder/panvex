@@ -7,11 +7,12 @@ import {
   createRoute,
   createRouter
 } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { AppShell } from "./components/app-shell";
 import { FleetDetailDrawer } from "./components/fleet-detail-drawer";
+import { SettingsPage } from "./settings-page";
 import {
   apiClient,
   type Agent,
@@ -132,7 +133,7 @@ function LoginPage() {
         <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Panvex</p>
         <h1 className="mt-4 text-4xl font-semibold tracking-tight text-slate-950">Enter the control room</h1>
         <p className="mt-3 text-sm leading-6 text-slate-600">
-          Authenticate with your local operator account to inspect fleet health, dispatch runtime actions, and monitor Telemt nodes in one place.
+          Sign in with your local account to inspect fleet health, manage Telemt nodes, and keep everything in one place.
         </p>
         <form
           className="mt-8 space-y-4"
@@ -144,7 +145,7 @@ function LoginPage() {
         >
           <Field label="Username" value={username} onChange={setUsername} />
           <Field label="Password" type="password" value={password} onChange={setPassword} />
-          <Field label="TOTP code" value={totpCode} onChange={setTotpCode} placeholder="Required for operator and admin" />
+          <Field label="TOTP code" value={totpCode} onChange={setTotpCode} placeholder="Only needed if two-factor authentication is enabled" />
           {error ? <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p> : null}
           <button
             type="submit"
@@ -437,59 +438,6 @@ function AgentsPage() {
   );
 }
 
-function SettingsPage() {
-  const queryClient = useQueryClient();
-  const [environmentID, setEnvironmentID] = useState("prod");
-  const [fleetGroupID, setFleetGroupID] = useState("default");
-  const [ttlSeconds, setTTLSeconds] = useState(600);
-
-  const tokenMutation = useMutation({
-    mutationFn: () =>
-      apiClient.createEnrollmentToken({
-        environment_id: environmentID,
-        fleet_group_id: fleetGroupID,
-        ttl_seconds: ttlSeconds
-      }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["audit"] });
-    }
-  });
-
-  return (
-    <div className="grid gap-6 xl:grid-cols-[0.9fr,1.1fr]">
-      <section className="rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-[0_20px_60px_rgba(37,46,68,0.08)]">
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Enrollment</p>
-        <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Issue agent bootstrap token</h3>
-        <div className="mt-6 space-y-4">
-          <Field label="Environment" value={environmentID} onChange={setEnvironmentID} />
-          <Field label="Fleet group" value={fleetGroupID} onChange={setFleetGroupID} />
-          <Field label="TTL seconds" type="number" value={String(ttlSeconds)} onChange={(value) => setTTLSeconds(Number(value))} />
-          <button
-            type="button"
-            className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800"
-            onClick={() => tokenMutation.mutate()}
-          >
-            {tokenMutation.isPending ? "Issuing..." : "Create token"}
-          </button>
-        </div>
-      </section>
-
-      <section className="rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-[0_20px_60px_rgba(37,46,68,0.08)]">
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Bootstrap artifact</p>
-        <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Latest enrollment package</h3>
-        {tokenMutation.data ? (
-          <div className="mt-6 space-y-4">
-            <CopyBlock label="Enrollment token" value={tokenMutation.data.value} />
-            <CopyBlock label="CA PEM" value={tokenMutation.data.ca_pem} />
-          </div>
-        ) : (
-          <p className="mt-6 text-sm text-slate-600">Issue a token to generate the bootstrap package for a new agent.</p>
-        )}
-      </section>
-    </div>
-  );
-}
-
 function aggregateMetrics(metrics: MetricSnapshot[]) {
   return metrics.map((snapshot) => ({
     label: new Date(snapshot.captured_at).toLocaleTimeString(),
@@ -557,15 +505,6 @@ function Field(props: { label: string; value: string; onChange: (value: string) 
         onChange={(event) => props.onChange(event.target.value)}
       />
     </label>
-  );
-}
-
-function CopyBlock(props: { label: string; value: string }) {
-  return (
-    <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-      <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">{props.label}</div>
-      <pre className="mt-4 overflow-x-auto whitespace-pre-wrap break-all text-sm text-slate-800">{props.value}</pre>
-    </div>
   );
 }
 
