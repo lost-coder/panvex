@@ -1,8 +1,11 @@
 package jobs
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/panvex/panvex/internal/controlplane/storage/sqlite"
 )
 
 func TestServiceEnqueueRejectsDuplicateIdempotencyKey(t *testing.T) {
@@ -60,5 +63,89 @@ func TestServiceEnqueueRejectsMutatingActionForReadOnlyTarget(t *testing.T) {
 
 	if err != ErrReadOnlyTarget {
 		t.Fatalf("Enqueue() error = %v, want %v", err, ErrReadOnlyTarget)
+	}
+}
+
+func TestServiceEnqueueRejectsDuplicateIdempotencyKeyAfterRestart(t *testing.T) {
+	now := time.Date(2026, time.March, 15, 11, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	first := NewServiceWithStore(store)
+	job, err := first.Enqueue(CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            time.Minute,
+		IdempotencyKey: "same-key",
+		ActorID:        "user-1",
+	}, now)
+	if err != nil {
+		t.Fatalf("Enqueue() error = %v", err)
+	}
+
+	restored := NewServiceWithStore(store)
+	if _, err := restored.Enqueue(CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            time.Minute,
+		IdempotencyKey: "same-key",
+		ActorID:        "user-1",
+	}, now.Add(time.Minute)); err != ErrDuplicateIdempotencyKey {
+		t.Fatalf("Enqueue() duplicate after restart error = %v, want %v", err, ErrDuplicateIdempotencyKey)
+	}
+
+	if len(restored.List()) != 1 {
+		t.Fatalf("len(List()) = %d, want %d", len(restored.List()), 1)
+	}
+
+	if restored.List()[0].ID != job.ID {
+		t.Fatalf("restored.List()[0].ID = %q, want %q", restored.List()[0].ID, job.ID)
+	}
+}
+
+func TestServiceRecordResultPersistsTargetsAcrossRestart(t *testing.T) {
+	now := time.Date(2026, time.March, 15, 11, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	first := NewServiceWithStore(store)
+	job, err := first.Enqueue(CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1", "agent-2"},
+		TTL:            time.Minute,
+		IdempotencyKey: "reload-two",
+		ActorID:        "user-1",
+	}, now)
+	if err != nil {
+		t.Fatalf("Enqueue() error = %v", err)
+	}
+
+	first.MarkDelivered("agent-1", job.ID, now.Add(5*time.Second))
+	first.MarkDelivered("agent-2", job.ID, now.Add(5*time.Second))
+	first.RecordResult("agent-1", job.ID, true, "ok", now.Add(10*time.Second))
+	first.RecordResult("agent-2", job.ID, false, "reload failed", now.Add(11*time.Second))
+
+	restored := NewServiceWithStore(store)
+	jobs := restored.List()
+	if len(jobs) != 1 {
+		t.Fatalf("len(List()) = %d, want %d", len(jobs), 1)
+	}
+
+	if jobs[0].Status != StatusFailed {
+		t.Fatalf("jobs[0].Status = %q, want %q", jobs[0].Status, StatusFailed)
+	}
+
+	if len(jobs[0].Targets) != 2 {
+		t.Fatalf("len(jobs[0].Targets) = %d, want %d", len(jobs[0].Targets), 2)
+	}
+
+	if jobs[0].Targets[0].Status == jobs[0].Targets[1].Status {
+		t.Fatalf("target statuses = %q and %q, want one success and one failure", jobs[0].Targets[0].Status, jobs[0].Targets[1].Status)
 	}
 }

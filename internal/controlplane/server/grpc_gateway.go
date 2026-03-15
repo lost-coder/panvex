@@ -111,10 +111,13 @@ func (s *Server) Connect(stream gatewayrpc.Gateway_ConnectServer) error {
 		}
 
 		if message.JobResult != nil {
-			s.appendAudit(agentID, "jobs.result", message.JobResult.JobID, map[string]any{
-				"success": message.JobResult.Success,
-				"message": message.JobResult.Message,
-			})
+			s.recordJobResult(
+				agentID,
+				message.JobResult.JobID,
+				message.JobResult.Success,
+				message.JobResult.Message,
+				time.Unix(message.JobResult.ObservedAtUnix, 0).UTC(),
+			)
 		}
 
 		for _, job := range s.pendingJobsForAgent(agentID) {
@@ -157,11 +160,15 @@ func (s *Server) pendingJobsForAgent(agentID string) []jobs.Job {
 		if s.isJobDelivered(agentID, job.ID) {
 			continue
 		}
-		for _, targetAgentID := range job.TargetAgentIDs {
-			if targetAgentID == agentID {
-				result = append(result, job)
+		for _, target := range job.Targets {
+			if target.AgentID != agentID {
+				continue
+			}
+			if target.Status != jobs.TargetStatusQueued {
 				break
 			}
+			result = append(result, job)
+			break
 		}
 	}
 
@@ -176,6 +183,8 @@ func (s *Server) isJobDelivered(agentID string, jobID string) bool {
 }
 
 func (s *Server) markJobDelivered(agentID string, jobID string) {
+	s.jobs.MarkDelivered(agentID, jobID, s.now())
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -183,4 +192,12 @@ func (s *Server) markJobDelivered(agentID string, jobID string) {
 		s.deliveredJobs[agentID] = make(map[string]bool)
 	}
 	s.deliveredJobs[agentID][jobID] = true
+}
+
+func (s *Server) recordJobResult(agentID string, jobID string, success bool, message string, observedAt time.Time) {
+	s.jobs.RecordResult(agentID, jobID, success, message, observedAt)
+	s.appendAudit(agentID, "jobs.result", jobID, map[string]any{
+		"success": success,
+		"message": message,
+	})
 }

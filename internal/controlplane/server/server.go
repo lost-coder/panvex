@@ -76,6 +76,7 @@ func New(options Options) *Server {
 	}
 	server.authority = authority
 	if options.Store != nil {
+		server.jobs = jobs.NewServiceWithStore(options.Store)
 		server.seedUsers(options.Users)
 		server.auth = auth.NewServiceWithStore(options.Store)
 		server.restoreStoredState()
@@ -143,6 +144,16 @@ func (s *Server) restoreStoredState() {
 		s.metrics = append(s.metrics, snapshot)
 		s.metricSeq = maxPrefixedSequence(s.metricSeq, "metric", snapshot.ID)
 	}
+
+	auditEvents, err := s.store.ListAuditEvents(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	for _, record := range auditEvents {
+		event := auditEventFromRecord(record)
+		s.auditTrail = append(s.auditTrail, event)
+		s.auditSeq = maxPrefixedSequence(s.auditSeq, "audit", event.ID)
+	}
 }
 
 func maxPrefixedSequence(current uint64, prefix string, value string) uint64 {
@@ -192,19 +203,28 @@ func (s *Server) routes() http.Handler {
 
 func (s *Server) appendAudit(actorID string, action string, targetID string, details map[string]any) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	s.auditSeq++
-	s.auditTrail = append(s.auditTrail, AuditEvent{
+	event := AuditEvent{
 		ID:        newSequenceID("audit", s.auditSeq),
 		ActorID:   actorID,
 		Action:    action,
 		TargetID:  targetID,
 		CreatedAt: s.now().UTC(),
 		Details:   details,
-	})
+	}
+	s.mu.Unlock()
+
+	if s.store != nil {
+		if err := s.store.AppendAuditEvent(context.Background(), auditEventToRecord(event)); err != nil {
+			panic(err)
+		}
+	}
+
+	s.mu.Lock()
+	s.auditTrail = append(s.auditTrail, event)
+	s.mu.Unlock()
 	s.events.publish(eventEnvelope{
 		Type: "audit.created",
-		Data: s.auditTrail[len(s.auditTrail)-1],
+		Data: event,
 	})
 }

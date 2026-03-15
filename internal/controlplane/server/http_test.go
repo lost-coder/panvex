@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/panvex/panvex/internal/controlplane/auth"
+	"github.com/panvex/panvex/internal/controlplane/jobs"
 	"github.com/panvex/panvex/internal/controlplane/storage/sqlite"
 	"github.com/panvex/panvex/internal/security"
 )
@@ -319,6 +320,161 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 	}
 	if len(metricsPayload) != 1 {
 		t.Fatalf("len(metrics) = %d, want %d", len(metricsPayload), 1)
+	}
+}
+
+func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
+	now := time.Date(2026, time.March, 15, 11, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	bootstrap := auth.NewService()
+	user, secret, err := bootstrap.BootstrapUser(auth.BootstrapInput{
+		Username: "operator",
+		Password: "operator-password",
+		Role:     auth.RoleOperator,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	first := New(Options{
+		Now: func() time.Time { return now },
+		Users: []auth.User{user},
+		Store: store,
+	})
+
+	tokenOne, err := first.issueEnrollmentToken(security.EnrollmentScope{
+		EnvironmentID: "prod",
+		FleetGroupID:  "ams-1",
+		TTL:           time.Minute,
+	}, now)
+	if err != nil {
+		t.Fatalf("issueEnrollmentToken(agent-1) error = %v", err)
+	}
+	agentOne, err := first.enrollAgent(agentEnrollmentRequest{
+		Token:    tokenOne.Value,
+		NodeName: "node-a",
+		Version:  "1.0.0",
+	}, now.Add(5*time.Second))
+	if err != nil {
+		t.Fatalf("enrollAgent(agent-1) error = %v", err)
+	}
+
+	tokenTwo, err := first.issueEnrollmentToken(security.EnrollmentScope{
+		EnvironmentID: "prod",
+		FleetGroupID:  "ams-1",
+		TTL:           time.Minute,
+	}, now)
+	if err != nil {
+		t.Fatalf("issueEnrollmentToken(agent-2) error = %v", err)
+	}
+	agentTwo, err := first.enrollAgent(agentEnrollmentRequest{
+		Token:    tokenTwo.Value,
+		NodeName: "node-b",
+		Version:  "1.0.0",
+	}, now.Add(6*time.Second))
+	if err != nil {
+		t.Fatalf("enrollAgent(agent-2) error = %v", err)
+	}
+
+	loginCode, err := first.auth.GenerateTotpCode(secret, now.Add(10*time.Second))
+	if err != nil {
+		t.Fatalf("GenerateTotpCode(first) error = %v", err)
+	}
+	loginResponse := performJSONRequest(t, first.Handler(), http.MethodPost, "/auth/login", map[string]string{
+		"username":  "operator",
+		"password":  "operator-password",
+		"totp_code": loginCode,
+	}, nil)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("POST /auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
+	}
+
+	jobResponse := performJSONRequest(t, first.Handler(), http.MethodPost, "/jobs", map[string]any{
+		"action":           "runtime.reload",
+		"target_agent_ids": []string{agentOne.AgentID, agentTwo.AgentID},
+		"idempotency_key":  "reload-both",
+		"ttl_seconds":      60,
+	}, loginResponse.Result().Cookies())
+	if jobResponse.Code != http.StatusAccepted {
+		t.Fatalf("POST /jobs status = %d, want %d", jobResponse.Code, http.StatusAccepted)
+	}
+
+	var createdJob jobs.Job
+	if err := json.Unmarshal(jobResponse.Body.Bytes(), &createdJob); err != nil {
+		t.Fatalf("json.Unmarshal(job) error = %v", err)
+	}
+
+	first.markJobDelivered(agentOne.AgentID, createdJob.ID)
+	first.markJobDelivered(agentTwo.AgentID, createdJob.ID)
+	first.recordJobResult(agentOne.AgentID, createdJob.ID, true, "ok", now.Add(15*time.Second))
+	first.recordJobResult(agentTwo.AgentID, createdJob.ID, false, "reload failed", now.Add(16*time.Second))
+
+	restored := New(Options{
+		Now: func() time.Time { return now.Add(2 * time.Minute) },
+		Users: []auth.User{user},
+		Store: store,
+	})
+	restoredCode, err := restored.auth.GenerateTotpCode(secret, now.Add(2*time.Minute))
+	if err != nil {
+		t.Fatalf("GenerateTotpCode(restored) error = %v", err)
+	}
+	restoredLoginResponse := performJSONRequest(t, restored.Handler(), http.MethodPost, "/auth/login", map[string]string{
+		"username":  "operator",
+		"password":  "operator-password",
+		"totp_code": restoredCode,
+	}, nil)
+	if restoredLoginResponse.Code != http.StatusOK {
+		t.Fatalf("POST /auth/login restored status = %d, want %d", restoredLoginResponse.Code, http.StatusOK)
+	}
+	cookies := restoredLoginResponse.Result().Cookies()
+
+	jobsResponse := performJSONRequest(t, restored.Handler(), http.MethodGet, "/jobs", nil, cookies)
+	if jobsResponse.Code != http.StatusOK {
+		t.Fatalf("GET /jobs status = %d, want %d", jobsResponse.Code, http.StatusOK)
+	}
+	var jobsPayload []jobs.Job
+	if err := json.Unmarshal(jobsResponse.Body.Bytes(), &jobsPayload); err != nil {
+		t.Fatalf("json.Unmarshal(jobs) error = %v", err)
+	}
+	if len(jobsPayload) != 1 {
+		t.Fatalf("len(jobs) = %d, want %d", len(jobsPayload), 1)
+	}
+	if jobsPayload[0].Status != jobs.StatusFailed {
+		t.Fatalf("jobs[0].Status = %q, want %q", jobsPayload[0].Status, jobs.StatusFailed)
+	}
+	if len(jobsPayload[0].Targets) != 2 {
+		t.Fatalf("len(jobs[0].Targets) = %d, want %d", len(jobsPayload[0].Targets), 2)
+	}
+
+	auditResponse := performJSONRequest(t, restored.Handler(), http.MethodGet, "/audit", nil, cookies)
+	if auditResponse.Code != http.StatusOK {
+		t.Fatalf("GET /audit status = %d, want %d", auditResponse.Code, http.StatusOK)
+	}
+	var auditPayload []AuditEvent
+	if err := json.Unmarshal(auditResponse.Body.Bytes(), &auditPayload); err != nil {
+		t.Fatalf("json.Unmarshal(audit) error = %v", err)
+	}
+
+	var sawCreate bool
+	var sawResult bool
+	for _, event := range auditPayload {
+		if event.Action == "jobs.create" {
+			sawCreate = true
+		}
+		if event.Action == "jobs.result" {
+			sawResult = true
+		}
+	}
+	if !sawCreate {
+		t.Fatal("audit trail missing jobs.create event")
+	}
+	if !sawResult {
+		t.Fatal("audit trail missing jobs.result event")
 	}
 }
 

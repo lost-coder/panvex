@@ -117,3 +117,25 @@ func metricSnapshotFromRecord(record storage.MetricSnapshotRecord) MetricSnapsho
 		Values:     record.Values,
 	}
 }
+
+func auditEventToRecord(event AuditEvent) storage.AuditEventRecord {
+	return storage.AuditEventRecord{
+		ID:        event.ID,
+		ActorID:   event.ActorID,
+		Action:    event.Action,
+		TargetID:  event.TargetID,
+		CreatedAt: event.CreatedAt.UTC(),
+		Details:   event.Details,
+	}
+}
+
+func auditEventFromRecord(record storage.AuditEventRecord) AuditEvent {
+	return AuditEvent{
+		ID:        record.ID,
+		ActorID:   record.ActorID,
+		Action:    record.Action,
+		TargetID:  record.TargetID,
+		CreatedAt: record.CreatedAt.UTC(),
+		Details:   record.Details,
+	}
+}
