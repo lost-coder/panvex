@@ -49,6 +49,7 @@ type MetricStore interface {
 // EnrollmentStore persists one-time agent enrollment tokens.
 type EnrollmentStore interface {
 	PutEnrollmentToken(ctx context.Context, token EnrollmentTokenRecord) error
+	ListEnrollmentTokens(ctx context.Context) ([]EnrollmentTokenRecord, error)
 	GetEnrollmentToken(ctx context.Context, value string) (EnrollmentTokenRecord, error)
 	ConsumeEnrollmentToken(ctx context.Context, value string, consumedAt time.Time) (EnrollmentTokenRecord, error)
 }

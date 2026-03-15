@@ -491,6 +491,38 @@ func (s *Store) PutEnrollmentToken(ctx context.Context, token storage.Enrollment
 	return err
 }
 
+func (s *Store) ListEnrollmentTokens(ctx context.Context) ([]storage.EnrollmentTokenRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT value, environment_id, fleet_group_id, issued_at_unix, expires_at_unix, consumed_at_unix
+		FROM enrollment_tokens
+		ORDER BY issued_at_unix, value
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]storage.EnrollmentTokenRecord, 0)
+	for rows.Next() {
+		var token storage.EnrollmentTokenRecord
+		var issuedAt int64
+		var expiresAt int64
+		var consumedAt sql.NullInt64
+		if err := rows.Scan(&token.Value, &token.EnvironmentID, &token.FleetGroupID, &issuedAt, &expiresAt, &consumedAt); err != nil {
+			return nil, err
+		}
+		token.IssuedAt = fromUnix(issuedAt)
+		token.ExpiresAt = fromUnix(expiresAt)
+		if consumedAt.Valid {
+			timeValue := fromUnix(consumedAt.Int64)
+			token.ConsumedAt = &timeValue
+		}
+		result = append(result, token)
+	}
+
+	return result, rows.Err()
+}
+
 func (s *Store) GetEnrollmentToken(ctx context.Context, value string) (storage.EnrollmentTokenRecord, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT value, environment_id, fleet_group_id, issued_at_unix, expires_at_unix, consumed_at_unix

@@ -16,6 +16,7 @@ import (
 	"github.com/panvex/panvex/internal/controlplane/config"
 	"github.com/panvex/panvex/internal/controlplane/server"
 	"github.com/panvex/panvex/internal/controlplane/storage"
+	storagemigrate "github.com/panvex/panvex/internal/controlplane/storage/migrate"
 	"github.com/panvex/panvex/internal/controlplane/storage/postgres"
 	"github.com/panvex/panvex/internal/controlplane/storage/sqlite"
 	"github.com/panvex/panvex/internal/gatewayrpc"
@@ -38,6 +39,9 @@ func main() {
 func run(args []string) error {
 	if len(args) > 0 && args[0] == "bootstrap-admin" {
 		return runBootstrapAdmin(args[1:])
+	}
+	if len(args) > 0 && args[0] == "migrate-storage" {
+		return runMigrateStorage(args[1:])
 	}
 
 	return runServe(args)
@@ -157,6 +161,40 @@ func runBootstrapAdmin(args []string) error {
 	fmt.Printf("Storage DSN: %s\n", storageConfig.DSN)
 	fmt.Printf("TOTP secret: %s\n", secret)
 	fmt.Printf("otpauth URL: %s\n", buildOTPAuthURL(*username, secret))
+	return nil
+}
+
+func runMigrateStorage(args []string) error {
+	flags := flag.NewFlagSet("migrate-storage", flag.ContinueOnError)
+	sourceDriver := flags.String("from-driver", "sqlite", "Source storage backend driver")
+	sourceDSN := flags.String("from-dsn", "", "Source storage backend DSN")
+	targetDriver := flags.String("to-driver", "postgres", "Target storage backend driver")
+	targetDSN := flags.String("to-dsn", "", "Target storage backend DSN")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	summary, err := storagemigrate.Run(context.Background(), storagemigrate.Options{
+		SourceDriver: *sourceDriver,
+		SourceDSN:    *sourceDSN,
+		TargetDriver: *targetDriver,
+		TargetDSN:    *targetDSN,
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Migration completed.\n")
+	fmt.Printf("Users: %d\n", summary.Users)
+	fmt.Printf("Environments: %d\n", summary.Environments)
+	fmt.Printf("Fleet groups: %d\n", summary.FleetGroups)
+	fmt.Printf("Agents: %d\n", summary.Agents)
+	fmt.Printf("Instances: %d\n", summary.Instances)
+	fmt.Printf("Jobs: %d\n", summary.Jobs)
+	fmt.Printf("Job targets: %d\n", summary.JobTargets)
+	fmt.Printf("Audit events: %d\n", summary.AuditEvents)
+	fmt.Printf("Metric snapshots: %d\n", summary.MetricSnapshots)
+	fmt.Printf("Enrollment tokens: %d\n", summary.EnrollmentTokens)
 	return nil
 }
 

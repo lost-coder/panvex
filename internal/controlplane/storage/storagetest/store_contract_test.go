@@ -204,6 +204,15 @@ func (s *memoryStore) PutEnrollmentToken(_ context.Context, token storage.Enroll
 	return nil
 }
 
+func (s *memoryStore) ListEnrollmentTokens(_ context.Context) ([]storage.EnrollmentTokenRecord, error) {
+	result := make([]storage.EnrollmentTokenRecord, 0, len(s.enrollmentTokens))
+	for _, token := range s.enrollmentTokens {
+		result = append(result, token)
+	}
+
+	return result, nil
+}
+
 func (s *memoryStore) GetEnrollmentToken(_ context.Context, value string) (storage.EnrollmentTokenRecord, error) {
 	token, ok := s.enrollmentTokens[value]
 	if !ok {

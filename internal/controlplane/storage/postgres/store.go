@@ -478,6 +478,36 @@ func (s *Store) PutEnrollmentToken(ctx context.Context, token storage.Enrollment
 	return err
 }
 
+func (s *Store) ListEnrollmentTokens(ctx context.Context) ([]storage.EnrollmentTokenRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT value, environment_id, fleet_group_id, issued_at, expires_at, consumed_at
+		FROM enrollment_tokens
+		ORDER BY issued_at, value
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]storage.EnrollmentTokenRecord, 0)
+	for rows.Next() {
+		var token storage.EnrollmentTokenRecord
+		var consumedAt sql.NullTime
+		if err := rows.Scan(&token.Value, &token.EnvironmentID, &token.FleetGroupID, &token.IssuedAt, &token.ExpiresAt, &consumedAt); err != nil {
+			return nil, err
+		}
+		token.IssuedAt = token.IssuedAt.UTC()
+		token.ExpiresAt = token.ExpiresAt.UTC()
+		if consumedAt.Valid {
+			timeValue := consumedAt.Time.UTC()
+			token.ConsumedAt = &timeValue
+		}
+		result = append(result, token)
+	}
+
+	return result, rows.Err()
+}
+
 func (s *Store) GetEnrollmentToken(ctx context.Context, value string) (storage.EnrollmentTokenRecord, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT value, environment_id, fleet_group_id, issued_at, expires_at, consumed_at
