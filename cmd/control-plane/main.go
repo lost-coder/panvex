@@ -5,19 +5,27 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"net/http"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"time"
 
 	"github.com/panvex/panvex/internal/controlplane/auth"
+	"github.com/panvex/panvex/internal/controlplane/config"
 	"github.com/panvex/panvex/internal/controlplane/server"
 	"github.com/panvex/panvex/internal/controlplane/state"
 	"github.com/panvex/panvex/internal/gatewayrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
+
+type serveConfig struct {
+	HTTPAddr string
+	GRPCAddr string
+	StateFile string
+	Storage config.StorageConfig
+}
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -34,15 +42,12 @@ func run(args []string) error {
 }
 
 func runServe(args []string) error {
-	flags := flag.NewFlagSet("control-plane", flag.ContinueOnError)
-	httpAddr := flags.String("http-addr", ":8080", "HTTP listen address")
-	grpcAddr := flags.String("grpc-addr", ":8443", "gRPC listen address")
-	stateFile := flags.String("state-file", "data/auth-state.json", "Path to the local auth state file")
-	if err := flags.Parse(args); err != nil {
+	options, err := parseServeConfig(args)
+	if err != nil {
 		return err
 	}
 
-	users, err := loadUsersIfExists(*stateFile)
+	users, err := loadUsersIfExists(options.StateFile)
 	if err != nil {
 		return err
 	}
@@ -53,11 +58,11 @@ func runServe(args []string) error {
 	})
 
 	httpServer := &http.Server{
-		Addr:    *httpAddr,
+		Addr:    options.HTTPAddr,
 		Handler: api.Handler(),
 	}
 
-	grpcListener, err := net.Listen("tcp", *grpcAddr)
+	grpcListener, err := net.Listen("tcp", options.GRPCAddr)
 	if err != nil {
 		return err
 	}
@@ -67,16 +72,40 @@ func runServe(args []string) error {
 
 	httpErrors := make(chan error, 1)
 	go func() {
-		log.Printf("control-plane http listening on %s", *httpAddr)
+		log.Printf("control-plane http listening on %s", options.HTTPAddr)
 		httpErrors <- httpServer.ListenAndServe()
 	}()
 
-	log.Printf("control-plane grpc listening on %s", *grpcAddr)
+	log.Printf("control-plane grpc listening on %s", options.GRPCAddr)
 	go func() {
 		httpErrors <- grpcServer.Serve(grpcListener)
 	}()
 
 	return <-httpErrors
+}
+
+func parseServeConfig(args []string) (serveConfig, error) {
+	flags := flag.NewFlagSet("control-plane", flag.ContinueOnError)
+	httpAddr := flags.String("http-addr", ":8080", "HTTP listen address")
+	grpcAddr := flags.String("grpc-addr", ":8443", "gRPC listen address")
+	stateFile := flags.String("state-file", "data/auth-state.json", "Path to the local auth state file")
+	storageDriver := flags.String("storage-driver", "", "Persistent storage backend driver")
+	storageDSN := flags.String("storage-dsn", "", "Persistent storage backend DSN")
+	if err := flags.Parse(args); err != nil {
+		return serveConfig{}, err
+	}
+
+	storage, err := config.ResolveStorage(*storageDriver, *storageDSN)
+	if err != nil {
+		return serveConfig{}, err
+	}
+
+	return serveConfig{
+		HTTPAddr: *httpAddr,
+		GRPCAddr: *grpcAddr,
+		StateFile: *stateFile,
+		Storage: storage,
+	}, nil
 }
 
 func runBootstrapAdmin(args []string) error {
