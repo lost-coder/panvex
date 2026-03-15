@@ -1,0 +1,48 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: panvex
+      POSTGRES_USER: panvex
+      POSTGRES_PASSWORD: panvex
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U panvex -d panvex"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - panvex_postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: control-plane
+    command:
+      - ./panvex-control-plane
+      - -http-addr
+      - :8080
+      - -grpc-addr
+      - :8443
+      - -storage-driver
+      - postgres
+      - -storage-dsn
+      - postgres://panvex:panvex@postgres:5432/panvex?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8443:8443"
+
+  web:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: web
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
+volumes:
+  panvex_postgres_data:

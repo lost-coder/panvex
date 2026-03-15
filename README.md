@@ -39,6 +39,37 @@ Installer help is available through:
 bash deploy/install.sh --help
 ```
 
+## Docker deployment
+
+For a split Docker deployment with SQLite:
+
+```sh
+docker compose -f deploy/docker-compose.sqlite.yml up --build -d
+docker compose -f deploy/docker-compose.sqlite.yml exec backend \
+  ./panvex-control-plane bootstrap-admin \
+  -storage-driver sqlite \
+  -storage-dsn /var/lib/panvex/panvex.db \
+  -username admin \
+  -password '<strong-password>'
+```
+
+The dashboard is then available on `http://127.0.0.1:8080`, while the agent gRPC gateway is exposed on `127.0.0.1:8443`.
+
+For a split Docker deployment with PostgreSQL:
+
+```sh
+docker compose -f deploy/docker-compose.postgres.yml up --build -d
+docker compose -f deploy/docker-compose.postgres.yml exec backend \
+  ./panvex-control-plane bootstrap-admin \
+  -storage-driver postgres \
+  -storage-dsn 'postgres://panvex:panvex@postgres:5432/panvex?sslmode=disable' \
+  -username admin \
+  -password '<strong-password>'
+```
+
+The SQLite compose file keeps SQLite as the default storage mode.
+The PostgreSQL compose file introduces PostgreSQL explicitly and does not change the SQLite default path.
+
 ## Control-plane quick start
 
 1. Bootstrap the first local admin:
