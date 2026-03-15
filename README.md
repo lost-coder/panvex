@@ -72,6 +72,8 @@ The PostgreSQL compose file introduces PostgreSQL explicitly and does not change
 
 ## Control-plane quick start
 
+This is the split development workflow with a standalone Go backend and a Vite development server.
+
 1. Bootstrap the first local admin:
 
    ```powershell
@@ -116,6 +118,36 @@ The PostgreSQL compose file introduces PostgreSQL explicitly and does not change
    npm run dev
    ```
 
+## Single-binary release workflow
+
+1. Build the embedded frontend assets:
+
+   ```sh
+   cd web
+   npm install
+   npm run build
+   ```
+
+2. Build the control-plane binary with the embedded UI:
+
+   ```sh
+   go build -o panvex-control-plane ./cmd/control-plane
+   ```
+
+3. Bootstrap the first admin:
+
+   ```sh
+   ./panvex-control-plane bootstrap-admin -username admin -password '<strong-password>'
+   ```
+
+4. Start the single-binary release:
+
+   ```sh
+   ./panvex-control-plane -http-addr :8080 -grpc-addr :8443
+   ```
+
+   The dashboard is served by the same binary on `http://127.0.0.1:8080`.
+
 ## Agent quick start
 
 1. Create an enrollment token from the dashboard Settings screen and save the returned `ca_pem` to a file.
@@ -136,4 +168,18 @@ The PostgreSQL compose file introduces PostgreSQL explicitly and does not change
 
 - `go build ./...`
 - `npm run build` from `web`
-- Package-level Go tests are executed through compiled test binaries because the current Windows environment rejects default `go test` temp executables.
+- `bash deploy/install.sh --help`
+- `rg -n "services:|sqlite|postgres|web:" deploy/docker-compose.sqlite.yml deploy/docker-compose.postgres.yml Dockerfile`
+- `go test ./internal/controlplane/auth ./internal/controlplane/jobs ./internal/controlplane/server ./internal/controlplane/state ./internal/controlplane/storage/migrate ./internal/controlplane/storage/postgres ./internal/controlplane/storage/sqlite -v`
+
+On the current Windows environment, `go test` for `internal/controlplane/config`, `internal/controlplane/presence`, and `internal/controlplane/storage/storagetest` must be executed through compiled test binaries because temporary `.test.exe` launches are denied:
+
+```powershell
+New-Item -ItemType Directory -Force .tmp/tests | Out-Null
+go test -c -o .tmp/tests/config.test.exe ./internal/controlplane/config
+& .\.tmp\tests\config.test.exe --% -test.v
+go test -c -o .tmp/tests/presence.test.exe ./internal/controlplane/presence
+& .\.tmp\tests\presence.test.exe --% -test.v
+go test -c -o .tmp/tests/storagetest.test.exe ./internal/controlplane/storage/storagetest
+& .\.tmp\tests\storagetest.test.exe --% -test.v
+```
