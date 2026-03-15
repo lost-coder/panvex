@@ -1,9 +1,11 @@
 package server
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/panvex/panvex/internal/controlplane/storage/sqlite"
 	"github.com/panvex/panvex/internal/security"
 )
 
@@ -98,5 +100,120 @@ func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T
 
 	if len(server.metrics) != 1 {
 		t.Fatalf("len(server.metrics) = %d, want %d", len(server.metrics), 1)
+	}
+}
+
+func TestServerEnrollmentTokenPersistsAcrossRestart(t *testing.T) {
+	now := time.Date(2026, time.March, 15, 8, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	first := New(Options{
+		Now: func() time.Time { return now },
+		Store: store,
+	})
+	token, err := first.issueEnrollmentToken(security.EnrollmentScope{
+		EnvironmentID: "prod",
+		FleetGroupID:  "ams-1",
+		TTL:           time.Minute,
+	}, now)
+	if err != nil {
+		t.Fatalf("issueEnrollmentToken() error = %v", err)
+	}
+
+	restored := New(Options{
+		Now: func() time.Time { return now.Add(10 * time.Second) },
+		Store: store,
+	})
+	response, err := restored.enrollAgent(agentEnrollmentRequest{
+		Token:    token.Value,
+		NodeName: "node-a",
+		Version:  "1.0.0",
+	}, now.Add(10*time.Second))
+	if err != nil {
+		t.Fatalf("enrollAgent() error = %v", err)
+	}
+
+	if response.AgentID == "" {
+		t.Fatal("response.AgentID = empty, want issued agent identity")
+	}
+}
+
+func TestServerConsumedEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) {
+	now := time.Date(2026, time.March, 15, 8, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	first := New(Options{
+		Now: func() time.Time { return now },
+		Store: store,
+	})
+	token, err := first.issueEnrollmentToken(security.EnrollmentScope{
+		EnvironmentID: "prod",
+		FleetGroupID:  "ams-1",
+		TTL:           time.Minute,
+	}, now)
+	if err != nil {
+		t.Fatalf("issueEnrollmentToken() error = %v", err)
+	}
+
+	if _, err := first.enrollAgent(agentEnrollmentRequest{
+		Token:    token.Value,
+		NodeName: "node-a",
+		Version:  "1.0.0",
+	}, now.Add(10*time.Second)); err != nil {
+		t.Fatalf("enrollAgent() error = %v", err)
+	}
+
+	restored := New(Options{
+		Now: func() time.Time { return now.Add(20 * time.Second) },
+		Store: store,
+	})
+	if _, err := restored.enrollAgent(agentEnrollmentRequest{
+		Token:    token.Value,
+		NodeName: "node-b",
+		Version:  "1.0.1",
+	}, now.Add(20*time.Second)); err != security.ErrEnrollmentTokenConsumed {
+		t.Fatalf("enrollAgent() error = %v, want %v", err, security.ErrEnrollmentTokenConsumed)
+	}
+}
+
+func TestServerExpiredEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) {
+	now := time.Date(2026, time.March, 15, 8, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	first := New(Options{
+		Now: func() time.Time { return now },
+		Store: store,
+	})
+	token, err := first.issueEnrollmentToken(security.EnrollmentScope{
+		EnvironmentID: "prod",
+		FleetGroupID:  "ams-1",
+		TTL:           time.Second,
+	}, now)
+	if err != nil {
+		t.Fatalf("issueEnrollmentToken() error = %v", err)
+	}
+
+	restored := New(Options{
+		Now: func() time.Time { return now.Add(2 * time.Second) },
+		Store: store,
+	})
+	if _, err := restored.enrollAgent(agentEnrollmentRequest{
+		Token:    token.Value,
+		NodeName: "node-b",
+		Version:  "1.0.1",
+	}, now.Add(2*time.Second)); err != security.ErrEnrollmentTokenExpired {
+		t.Fatalf("enrollAgent() error = %v, want %v", err, security.ErrEnrollmentTokenExpired)
 	}
 }

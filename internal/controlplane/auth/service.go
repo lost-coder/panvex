@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha1"
@@ -10,10 +11,12 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/panvex/panvex/internal/controlplane/storage"
 	"golang.org/x/crypto/argon2"
 )
 
@@ -77,6 +80,7 @@ type Service struct {
 	sequence uint64
 	users    map[string]User
 	sessions map[string]Session
+	userStore storage.UserStore
 }
 
 // NewService constructs an in-memory local-auth service.
@@ -84,6 +88,15 @@ func NewService() *Service {
 	return &Service{
 		users:    make(map[string]User),
 		sessions: make(map[string]Session),
+	}
+}
+
+// NewServiceWithStore constructs an auth service that persists users through the shared store.
+func NewServiceWithStore(userStore storage.UserStore) *Service {
+	return &Service{
+		users:     make(map[string]User),
+		sessions:  make(map[string]Session),
+		userStore: userStore,
 	}
 }
 
@@ -102,9 +115,31 @@ func (s *Service) BootstrapUser(input BootstrapInput, now time.Time) (User, stri
 		}
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	if s.userStore == nil {
+		s.mu.Lock()
+		defer s.mu.Unlock()
 
+		s.sequence++
+		user := User{
+			ID:           fmt.Sprintf("user-%06d", s.sequence),
+			Username:     input.Username,
+			PasswordHash: hash,
+			Role:         input.Role,
+			TotpSecret:   secret,
+			CreatedAt:    now.UTC(),
+		}
+		s.users[input.Username] = user
+
+		return user, secret, nil
+	}
+
+	users, err := s.userStore.ListUsers(context.Background())
+	if err != nil {
+		return User{}, "", err
+	}
+
+	s.mu.Lock()
+	s.sequence = maxSequence(s.sequence, maxUserSequence(users))
 	s.sequence++
 	user := User{
 		ID:           fmt.Sprintf("user-%06d", s.sequence),
@@ -114,7 +149,15 @@ func (s *Service) BootstrapUser(input BootstrapInput, now time.Time) (User, stri
 		TotpSecret:   secret,
 		CreatedAt:    now.UTC(),
 	}
+	s.mu.Unlock()
+
+	if err := s.userStore.PutUser(context.Background(), userToRecord(user)); err != nil {
+		return User{}, "", err
+	}
+
+	s.mu.Lock()
 	s.users[input.Username] = user
+	s.mu.Unlock()
 
 	return user, secret, nil
 }
@@ -122,11 +165,27 @@ func (s *Service) BootstrapUser(input BootstrapInput, now time.Time) (User, stri
 // Authenticate validates credentials and enforces role-based TOTP requirements.
 func (s *Service) Authenticate(input LoginInput, now time.Time) (Session, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	userStore := s.userStore
+	s.mu.Unlock()
 
-	user, ok := s.users[input.Username]
-	if !ok {
-		return Session{}, ErrInvalidCredentials
+	var user User
+	if userStore != nil {
+		record, err := userStore.GetUserByUsername(context.Background(), input.Username)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				return Session{}, ErrInvalidCredentials
+			}
+			return Session{}, err
+		}
+		user = userFromRecord(record)
+	} else {
+		s.mu.Lock()
+		storedUser, ok := s.users[input.Username]
+		s.mu.Unlock()
+		if !ok {
+			return Session{}, ErrInvalidCredentials
+		}
+		user = storedUser
 	}
 
 	if err := s.VerifyPassword(user.PasswordHash, input.Password); err != nil {
@@ -147,6 +206,9 @@ func (s *Service) Authenticate(input LoginInput, now time.Time) (Session, error)
 			return Session{}, ErrInvalidTotpCode
 		}
 	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	s.sequence++
 	session := Session{
@@ -266,6 +328,17 @@ func (s *Service) LoadUsers(users []User) {
 
 // GetUserByID returns the user record that owns the provided identifier.
 func (s *Service) GetUserByID(userID string) (User, error) {
+	if s.userStore != nil {
+		record, err := s.userStore.GetUserByID(context.Background(), userID)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				return User{}, ErrInvalidCredentials
+			}
+			return User{}, err
+		}
+		return userFromRecord(record), nil
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -276,6 +349,54 @@ func (s *Service) GetUserByID(userID string) (User, error) {
 	}
 
 	return User{}, ErrInvalidCredentials
+}
+
+func userToRecord(user User) storage.UserRecord {
+	return storage.UserRecord{
+		ID:           user.ID,
+		Username:     user.Username,
+		PasswordHash: user.PasswordHash,
+		Role:         string(user.Role),
+		TotpSecret:   user.TotpSecret,
+		CreatedAt:    user.CreatedAt.UTC(),
+	}
+}
+
+func userFromRecord(record storage.UserRecord) User {
+	return User{
+		ID:           record.ID,
+		Username:     record.Username,
+		PasswordHash: record.PasswordHash,
+		Role:         Role(record.Role),
+		TotpSecret:   record.TotpSecret,
+		CreatedAt:    record.CreatedAt.UTC(),
+	}
+}
+
+func maxUserSequence(users []storage.UserRecord) uint64 {
+	var maxValue uint64
+	for _, user := range users {
+		if !strings.HasPrefix(user.ID, "user-") {
+			continue
+		}
+		value, err := strconv.ParseUint(strings.TrimPrefix(user.ID, "user-"), 10, 64)
+		if err != nil {
+			continue
+		}
+		if value > maxValue {
+			maxValue = value
+		}
+	}
+
+	return maxValue
+}
+
+func maxSequence(left uint64, right uint64) uint64 {
+	if right > left {
+		return right
+	}
+
+	return left
 }
 
 // GetSession returns the current session record for the provided identifier.

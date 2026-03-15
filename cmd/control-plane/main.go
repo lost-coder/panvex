@@ -14,6 +14,9 @@ import (
 	"github.com/panvex/panvex/internal/controlplane/auth"
 	"github.com/panvex/panvex/internal/controlplane/config"
 	"github.com/panvex/panvex/internal/controlplane/server"
+	"github.com/panvex/panvex/internal/controlplane/storage"
+	"github.com/panvex/panvex/internal/controlplane/storage/postgres"
+	"github.com/panvex/panvex/internal/controlplane/storage/sqlite"
 	"github.com/panvex/panvex/internal/controlplane/state"
 	"github.com/panvex/panvex/internal/gatewayrpc"
 	"google.golang.org/grpc"
@@ -52,9 +55,16 @@ func runServe(args []string) error {
 		return err
 	}
 
+	store, err := openStore(options.Storage)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+
 	api := server.New(server.Options{
 		Now:   time.Now,
 		Users: users,
+		Store: store,
 	})
 
 	httpServer := &http.Server{
@@ -148,6 +158,17 @@ func runBootstrapAdmin(args []string) error {
 	fmt.Printf("TOTP secret: %s\n", secret)
 	fmt.Printf("otpauth URL: %s\n", buildOTPAuthURL(*username, secret))
 	return nil
+}
+
+func openStore(configuration config.StorageConfig) (storage.Store, error) {
+	switch configuration.Driver {
+	case config.StorageDriverSQLite:
+		return sqlite.Open(configuration.DSN)
+	case config.StorageDriverPostgres:
+		return postgres.Open(configuration.DSN)
+	default:
+		return nil, fmt.Errorf("unsupported storage driver %q", configuration.Driver)
+	}
 }
 
 func loadUsersIfExists(path string) ([]auth.User, error) {

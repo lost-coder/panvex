@@ -1,10 +1,13 @@
 package server
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/panvex/panvex/internal/controlplane/auth"
+	"github.com/panvex/panvex/internal/controlplane/storage"
 	"github.com/panvex/panvex/internal/security"
 )
 
@@ -42,7 +45,7 @@ func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 			return
 		}
 
-		token, err := s.enrollment.IssueToken(security.EnrollmentScope{
+		token, err := s.issueEnrollmentToken(security.EnrollmentScope{
 			EnvironmentID: request.EnvironmentID,
 			FleetGroupID:  request.FleetGroupID,
 			TTL:           time.Duration(request.TTLSeconds) * time.Second,
@@ -66,4 +69,68 @@ func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 			CAPEM:         s.authority.caPEM,
 		})
 	}
+}
+
+func (s *Server) issueEnrollmentToken(scope security.EnrollmentScope, issuedAt time.Time) (security.EnrollmentToken, error) {
+	token, err := s.enrollment.IssueToken(scope, issuedAt)
+	if err != nil {
+		return security.EnrollmentToken{}, err
+	}
+
+	if s.store == nil {
+		return token, nil
+	}
+
+	if err := s.store.PutEnrollmentToken(context.Background(), storage.EnrollmentTokenRecord{
+		Value:         token.Value,
+		EnvironmentID: token.EnvironmentID,
+		FleetGroupID:  token.FleetGroupID,
+		IssuedAt:      token.IssuedAt.UTC(),
+		ExpiresAt:     token.ExpiresAt.UTC(),
+	}); err != nil {
+		return security.EnrollmentToken{}, err
+	}
+
+	return token, nil
+}
+
+func (s *Server) consumeEnrollmentToken(value string, now time.Time) (security.EnrollmentToken, error) {
+	if s.store == nil {
+		return s.enrollment.ConsumeToken(value, now)
+	}
+
+	token, err := s.store.GetEnrollmentToken(context.Background(), value)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return security.EnrollmentToken{}, security.ErrEnrollmentTokenInvalid
+		}
+		return security.EnrollmentToken{}, err
+	}
+
+	if token.ConsumedAt != nil {
+		return security.EnrollmentToken{}, security.ErrEnrollmentTokenConsumed
+	}
+
+	if now.UTC().After(token.ExpiresAt.UTC()) {
+		return security.EnrollmentToken{}, security.ErrEnrollmentTokenExpired
+	}
+
+	consumed, err := s.store.ConsumeEnrollmentToken(context.Background(), value, now.UTC())
+	if err != nil {
+		if errors.Is(err, storage.ErrConflict) {
+			return security.EnrollmentToken{}, security.ErrEnrollmentTokenConsumed
+		}
+		if errors.Is(err, storage.ErrNotFound) {
+			return security.EnrollmentToken{}, security.ErrEnrollmentTokenInvalid
+		}
+		return security.EnrollmentToken{}, err
+	}
+
+	return security.EnrollmentToken{
+		Value:         consumed.Value,
+		EnvironmentID: consumed.EnvironmentID,
+		FleetGroupID:  consumed.FleetGroupID,
+		IssuedAt:      consumed.IssuedAt.UTC(),
+		ExpiresAt:     consumed.ExpiresAt.UTC(),
+	}, nil
 }

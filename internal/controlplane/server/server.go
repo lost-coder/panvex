@@ -2,6 +2,7 @@ package server
 
 import (
 	"crypto/tls"
+	"context"
 	"net/http"
 	"sync"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/panvex/panvex/internal/controlplane/auth"
 	"github.com/panvex/panvex/internal/controlplane/jobs"
 	"github.com/panvex/panvex/internal/controlplane/presence"
+	"github.com/panvex/panvex/internal/controlplane/storage"
 	"github.com/panvex/panvex/internal/security"
 )
 
@@ -19,12 +21,14 @@ const sessionCookieName = "panvex_session"
 type Options struct {
 	Now   func() time.Time
 	Users []auth.User
+	Store storage.Store
 }
 
 // Server wires local-auth, inventory, jobs, and operator APIs into one HTTP surface.
 type Server struct {
 	auth       *auth.Service
 	enrollment *security.EnrollmentService
+	store      storage.Store
 	jobs       *jobs.Service
 	presence   *presence.Tracker
 	events     *eventHub
@@ -53,6 +57,7 @@ func New(options Options) *Server {
 	server := &Server{
 		auth:       auth.NewService(),
 		enrollment: security.NewEnrollmentService(),
+		store:      options.Store,
 		jobs:       jobs.NewService(),
 		presence:   presence.NewTracker(30*time.Second, 90*time.Second),
 		events:     newEventHub(),
@@ -68,12 +73,42 @@ func New(options Options) *Server {
 		panic(err)
 	}
 	server.authority = authority
-	if len(options.Users) > 0 {
+	if options.Store != nil {
+		server.seedUsers(options.Users)
+		server.auth = auth.NewServiceWithStore(options.Store)
+	} else if len(options.Users) > 0 {
 		server.auth.LoadUsers(options.Users)
 	}
 	server.handler = server.routes()
 
 	return server
+}
+
+func (s *Server) seedUsers(users []auth.User) {
+	if s.store == nil || len(users) == 0 {
+		return
+	}
+
+	records, err := s.store.ListUsers(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	if len(records) > 0 {
+		return
+	}
+
+	for _, user := range users {
+		if err := s.store.PutUser(context.Background(), storage.UserRecord{
+			ID:           user.ID,
+			Username:     user.Username,
+			PasswordHash: user.PasswordHash,
+			Role:         string(user.Role),
+			TotpSecret:   user.TotpSecret,
+			CreatedAt:    user.CreatedAt.UTC(),
+		}); err != nil {
+			panic(err)
+		}
+	}
 }
 
 // Handler returns the configured HTTP handler for the control-plane API.

@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/panvex/panvex/internal/controlplane/auth"
+	"github.com/panvex/panvex/internal/controlplane/storage/sqlite"
 )
 
 func TestServerLoginSetsSessionAndReturnsMe(t *testing.T) {
@@ -138,6 +140,53 @@ func TestServerCreateJobAcceptsOperatorWithTotp(t *testing.T) {
 	}, loginResponse.Result().Cookies())
 	if jobResponse.Code != http.StatusAccepted {
 		t.Fatalf("POST /jobs status = %d, want %d", jobResponse.Code, http.StatusAccepted)
+	}
+}
+
+func TestServerNewDoesNotReseedExistingStoreUsers(t *testing.T) {
+	now := time.Date(2026, time.March, 15, 9, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	seeded := auth.NewServiceWithStore(store)
+	user, _, err := seeded.BootstrapUser(auth.BootstrapInput{
+		Username: "admin",
+		Password: "current-password",
+		Role:     auth.RoleViewer,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	server := New(Options{
+		Now: func() time.Time { return now.Add(time.Minute) },
+		Users: []auth.User{
+			{
+				ID:           user.ID,
+				Username:     user.Username,
+				PasswordHash: "stale-hash",
+				Role:         user.Role,
+				CreatedAt:    user.CreatedAt,
+			},
+		},
+		Store: store,
+	})
+
+	if _, err := server.auth.Authenticate(auth.LoginInput{
+		Username: "admin",
+		Password: "current-password",
+	}, now.Add(2*time.Minute)); err != nil {
+		t.Fatalf("Authenticate() with stored password error = %v", err)
+	}
+
+	if _, err := server.auth.Authenticate(auth.LoginInput{
+		Username: "admin",
+		Password: "stale-password",
+	}, now.Add(2*time.Minute)); err != auth.ErrInvalidCredentials {
+		t.Fatalf("Authenticate() with stale password error = %v, want %v", err, auth.ErrInvalidCredentials)
 	}
 }
 

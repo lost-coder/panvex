@@ -1,8 +1,11 @@
 package auth
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/panvex/panvex/internal/controlplane/storage/sqlite"
 )
 
 func TestServiceAuthenticateRejectsOperatorWithoutTotp(t *testing.T) {
@@ -166,6 +169,44 @@ func TestServiceSnapshotAndLoadUsers(t *testing.T) {
 		Password: "admin-password",
 		TotpCode: code,
 	}, now)
+	if err != nil {
+		t.Fatalf("Authenticate() error = %v", err)
+	}
+
+	if session.UserID != user.ID {
+		t.Fatalf("session.UserID = %q, want %q", session.UserID, user.ID)
+	}
+}
+
+func TestServiceBootstrapUserPersistsThroughStore(t *testing.T) {
+	now := time.Date(2026, time.March, 15, 8, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	service := NewServiceWithStore(store)
+	user, secret, err := service.BootstrapUser(BootstrapInput{
+		Username: "admin",
+		Password: "admin-password",
+		Role:     RoleAdmin,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	restored := NewServiceWithStore(store)
+	code, err := restored.GenerateTotpCode(secret, now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("GenerateTotpCode() error = %v", err)
+	}
+
+	session, err := restored.Authenticate(LoginInput{
+		Username: "admin",
+		Password: "admin-password",
+		TotpCode: code,
+	}, now.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("Authenticate() error = %v", err)
 	}

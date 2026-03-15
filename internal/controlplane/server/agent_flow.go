@@ -38,7 +38,7 @@ type agentSnapshot struct {
 }
 
 func (s *Server) enrollAgent(request agentEnrollmentRequest, now time.Time) (agentEnrollmentResponse, error) {
-	token, err := s.enrollment.ConsumeToken(request.Token, now)
+	token, err := s.consumeEnrollmentToken(request.Token, now)
 	if err != nil {
 		return agentEnrollmentResponse{}, err
 	}
