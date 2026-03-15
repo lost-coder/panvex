@@ -26,6 +26,23 @@ func TestOpenCreatesSQLiteDatabase(t *testing.T) {
 	}
 }
 
+func TestOpenCreatesParentDirectory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "data", "panvex.db")
+
+	store, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Dir(path)); err != nil {
+		t.Fatalf("Stat(parent) error = %v", err)
+	}
+}
+
 func TestStoreContract(t *testing.T) {
 	storagetest.RunStoreContract(t, func(t *testing.T) storage.Store {
 		t.Helper()

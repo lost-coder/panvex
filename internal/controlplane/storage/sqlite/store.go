@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/panvex/panvex/internal/controlplane/storage"
@@ -18,6 +20,10 @@ type Store struct {
 
 // Open opens a SQLite database file, applies the schema, and returns a storage backend.
 func Open(dsn string) (*Store, error) {
+	if err := ensureParentDirectory(dsn); err != nil {
+		return nil, err
+	}
+
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
@@ -41,6 +47,15 @@ func Open(dsn string) (*Store, error) {
 	}
 
 	return &Store{db: db}, nil
+}
+
+func ensureParentDirectory(dsn string) error {
+	parent := filepath.Dir(dsn)
+	if parent == "." || parent == "" {
+		return nil
+	}
+
+	return os.MkdirAll(parent, 0o755)
 }
 
 // Close releases the database handle owned by the store.
