@@ -37,7 +37,6 @@ const loginRoute = createRoute({
 const shellRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "shell",
-  path: "/",
   component: ProtectedShell
 });
 
