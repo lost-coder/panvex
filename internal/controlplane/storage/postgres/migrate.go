@@ -1,17 +1,22 @@
-CREATE TABLE environments (
+package postgres
+
+import "database/sql"
+
+const initialSchema = `
+CREATE TABLE IF NOT EXISTS environments (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL
 );
 
-CREATE TABLE fleet_groups (
+CREATE TABLE IF NOT EXISTS fleet_groups (
     id TEXT PRIMARY KEY,
     environment_id TEXT NOT NULL REFERENCES environments (id),
     name TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL
 );
 
-CREATE TABLE local_users (
+CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     username TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
@@ -20,7 +25,7 @@ CREATE TABLE local_users (
     created_at TIMESTAMPTZ NOT NULL
 );
 
-CREATE TABLE agents (
+CREATE TABLE IF NOT EXISTS agents (
     id TEXT PRIMARY KEY,
     node_name TEXT NOT NULL,
     environment_id TEXT NOT NULL REFERENCES environments (id),
@@ -31,7 +36,7 @@ CREATE TABLE agents (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE telemt_instances (
+CREATE TABLE IF NOT EXISTS telemt_instances (
     id TEXT PRIMARY KEY,
     agent_id TEXT NOT NULL REFERENCES agents (id),
     name TEXT NOT NULL,
@@ -42,18 +47,26 @@ CREATE TABLE telemt_instances (
     updated_at TIMESTAMPTZ NOT NULL
 );
 
-CREATE TABLE jobs (
+CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY,
     action TEXT NOT NULL,
-    target_agent_ids TEXT[] NOT NULL,
     idempotency_key TEXT NOT NULL UNIQUE,
     actor_id TEXT NOT NULL,
     status TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
-    ttl_seconds BIGINT NOT NULL
+    ttl_nanos BIGINT NOT NULL
 );
 
-CREATE TABLE audit_events (
+CREATE TABLE IF NOT EXISTS job_targets (
+    job_id TEXT NOT NULL REFERENCES jobs (id),
+    agent_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    result_text TEXT NOT NULL DEFAULT '',
+    updated_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (job_id, agent_id)
+);
+
+CREATE TABLE IF NOT EXISTS audit_events (
     id TEXT PRIMARY KEY,
     actor_id TEXT NOT NULL,
     action TEXT NOT NULL,
@@ -62,10 +75,26 @@ CREATE TABLE audit_events (
     created_at TIMESTAMPTZ NOT NULL
 );
 
-CREATE TABLE metric_snapshots (
+CREATE TABLE IF NOT EXISTS metric_snapshots (
     id TEXT PRIMARY KEY,
     agent_id TEXT NOT NULL REFERENCES agents (id),
     instance_id TEXT NOT NULL DEFAULT '',
     captured_at TIMESTAMPTZ NOT NULL,
     values JSONB NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS enrollment_tokens (
+    value TEXT PRIMARY KEY,
+    environment_id TEXT NOT NULL,
+    fleet_group_id TEXT NOT NULL,
+    issued_at TIMESTAMPTZ NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    consumed_at TIMESTAMPTZ
+);
+`
+
+// Migrate applies the current PostgreSQL schema to the opened database.
+func Migrate(db *sql.DB) error {
+	_, err := db.Exec(initialSchema)
+	return err
+}
