@@ -8,6 +8,7 @@ type UserRecord struct {
 	Username     string
 	PasswordHash string
 	Role         string
+	TotpEnabled  bool
 	TotpSecret   string
 	CreatedAt    time.Time
 }

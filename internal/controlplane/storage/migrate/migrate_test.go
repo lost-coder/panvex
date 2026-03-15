@@ -44,6 +44,7 @@ func TestCopyRejectsNonEmptyTarget(t *testing.T) {
 		Username:     "admin",
 		PasswordHash: "hash",
 		Role:         "admin",
+		TotpEnabled:  true,
 		TotpSecret:   "secret",
 		CreatedAt:    now,
 	}); err != nil {
@@ -54,6 +55,7 @@ func TestCopyRejectsNonEmptyTarget(t *testing.T) {
 		Username:     "existing",
 		PasswordHash: "hash",
 		Role:         "admin",
+		TotpEnabled:  true,
 		TotpSecret:   "secret",
 		CreatedAt:    now,
 	}); err != nil {
@@ -95,6 +97,10 @@ func TestCopyStoreCopiesAllPersistentEntities(t *testing.T) {
 	}
 	if len(users) != 1 {
 		t.Fatalf("len(target.ListUsers()) = %d, want %d", len(users), 1)
+	}
+
+	if !users[0].TotpEnabled {
+		t.Fatal("target.ListUsers()[0].TotpEnabled = false, want true")
 	}
 
 	jobs, err := target.ListJobs(context.Background())
@@ -144,6 +150,7 @@ func populateSourceStore(t *testing.T, store storage.Store, now time.Time) {
 		Username:     "admin",
 		PasswordHash: "hash",
 		Role:         "admin",
+		TotpEnabled:  true,
 		TotpSecret:   "secret",
 		CreatedAt:    now,
 	}); err != nil {
