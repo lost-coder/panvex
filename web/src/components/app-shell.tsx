@@ -27,7 +27,7 @@ export function AppShell() {
       return;
     }
 
-    const socket = new WebSocket(`${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/events`);
+    const socket = new WebSocket(`${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/api/events`);
     socket.onopen = () => setLive(true);
     socket.onclose = () => setLive(false);
     socket.onmessage = () => {

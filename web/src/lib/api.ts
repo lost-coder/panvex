@@ -78,6 +78,8 @@ export type JobCreateInput = {
   ttl_seconds: number;
 };
 
+const apiBasePath = "/api";
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     credentials: "include",
@@ -110,23 +112,23 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const apiClient = {
   login: (payload: { username: string; password: string; totp_code?: string }) =>
-    api<{ session_id: string }>("/auth/login", {
+    api<{ session_id: string }>(`${apiBasePath}/auth/login`, {
       method: "POST",
       body: JSON.stringify(payload)
     }),
   logout: () =>
-    api<void>("/auth/logout", {
+    api<void>(`${apiBasePath}/auth/logout`, {
       method: "POST"
     }),
-  me: () => api<MeResponse>("/auth/me"),
-  fleet: () => api<FleetResponse>("/fleet"),
-  agents: () => api<Agent[]>("/agents"),
-  instances: () => api<Instance[]>("/instances"),
-  jobs: () => api<Job[]>("/jobs"),
-  audit: () => api<AuditEvent[]>("/audit"),
-  metrics: () => api<MetricSnapshot[]>("/metrics"),
+  me: () => api<MeResponse>(`${apiBasePath}/auth/me`),
+  fleet: () => api<FleetResponse>(`${apiBasePath}/fleet`),
+  agents: () => api<Agent[]>(`${apiBasePath}/agents`),
+  instances: () => api<Instance[]>(`${apiBasePath}/instances`),
+  jobs: () => api<Job[]>(`${apiBasePath}/jobs`),
+  audit: () => api<AuditEvent[]>(`${apiBasePath}/audit`),
+  metrics: () => api<MetricSnapshot[]>(`${apiBasePath}/metrics`),
   createJob: (payload: JobCreateInput) =>
-    api<Job>("/jobs", {
+    api<Job>(`${apiBasePath}/jobs`, {
       method: "POST",
       body: JSON.stringify(payload)
     }),
@@ -135,7 +137,7 @@ export const apiClient = {
     fleet_group_id: string;
     ttl_seconds: number;
   }) =>
-    api<EnrollmentTokenResponse>("/agents/enrollment-tokens", {
+    api<EnrollmentTokenResponse>(`${apiBasePath}/agents/enrollment-tokens`, {
       method: "POST",
       body: JSON.stringify(payload)
     })

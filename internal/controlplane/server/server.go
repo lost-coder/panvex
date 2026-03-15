@@ -3,6 +3,7 @@ package server
 import (
 	"crypto/tls"
 	"context"
+	"io/fs"
 	"net/http"
 	"strconv"
 	"strings"
@@ -17,13 +18,17 @@ import (
 	"github.com/panvex/panvex/internal/security"
 )
 
-const sessionCookieName = "panvex_session"
+const (
+	sessionCookieName = "panvex_session"
+	apiBasePath       = "/api"
+)
 
 // Options defines the runtime dependencies used by the control-plane server.
 type Options struct {
 	Now   func() time.Time
 	Users []auth.User
 	Store storage.Store
+	UIFiles fs.FS
 }
 
 // Server wires local-auth, inventory, jobs, and operator APIs into one HTTP surface.
@@ -31,6 +36,7 @@ type Server struct {
 	auth       *auth.Service
 	enrollment *security.EnrollmentService
 	store      storage.Store
+	uiFiles    fs.FS
 	jobs       *jobs.Service
 	presence   *presence.Tracker
 	events     *eventHub
@@ -60,6 +66,7 @@ func New(options Options) *Server {
 		auth:       auth.NewService(),
 		enrollment: security.NewEnrollmentService(),
 		store:      options.Store,
+		uiFiles:    options.UIFiles,
 		jobs:       jobs.NewService(),
 		presence:   presence.NewTracker(30*time.Second, 90*time.Second),
 		events:     newEventHub(),
@@ -184,19 +191,24 @@ func (s *Server) GRPCTLSConfig() *tls.Config {
 
 func (s *Server) routes() http.Handler {
 	router := chi.NewRouter()
-	router.Get("/auth/me", s.handleMe())
-	router.Post("/auth/login", s.handleLogin())
-	router.Post("/auth/logout", s.handleLogout())
+	router.Route(apiBasePath, func(api chi.Router) {
+		api.Get("/auth/me", s.handleMe())
+		api.Post("/auth/login", s.handleLogin())
+		api.Post("/auth/logout", s.handleLogout())
 
-	router.Get("/fleet", s.handleFleet())
-	router.Get("/agents", s.handleAgents())
-	router.Get("/instances", s.handleInstances())
-	router.Get("/jobs", s.handleJobs())
-	router.Post("/jobs", s.handleCreateJob())
-	router.Get("/audit", s.handleAudit())
-	router.Get("/metrics", s.handleMetrics())
-	router.Get("/events", s.handleEvents())
-	router.Post("/agents/enrollment-tokens", s.handleCreateEnrollmentToken())
+		api.Get("/fleet", s.handleFleet())
+		api.Get("/agents", s.handleAgents())
+		api.Get("/instances", s.handleInstances())
+		api.Get("/jobs", s.handleJobs())
+		api.Post("/jobs", s.handleCreateJob())
+		api.Get("/audit", s.handleAudit())
+		api.Get("/metrics", s.handleMetrics())
+		api.Get("/events", s.handleEvents())
+		api.Post("/agents/enrollment-tokens", s.handleCreateEnrollmentToken())
+	})
+	if uiHandler := newUIHandler(s.uiFiles); uiHandler != nil {
+		router.NotFound(uiHandler)
+	}
 
 	return router
 }
