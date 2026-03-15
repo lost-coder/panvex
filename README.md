@@ -13,6 +13,32 @@ Panvex is a control-plane and web dashboard for managing multiple Telemt nodes.
 - `db/migrations` and `db/queries` contain the initial PostgreSQL schema and sqlc query set.
 - `proto` contains the human-readable gateway contract.
 
+## Release installer
+
+For a single-binary release install, use the release installer:
+
+```sh
+curl -fsSL https://github.com/panvex/panvex/releases/latest/download/install.sh | sh
+```
+
+The installer defaults to SQLite.
+When run as root it installs the binary into `/usr/local/bin`, writes runtime files into `/etc/panvex` and `/var/lib/panvex`, and installs a disabled-but-enabled systemd unit.
+When run without root it installs under `~/.local` and writes a local start script instead of a systemd unit.
+
+To install against PostgreSQL instead:
+
+```sh
+PANVEX_STORAGE_DRIVER=postgres \
+PANVEX_STORAGE_DSN='postgres://panvex:password@127.0.0.1:5432/panvex?sslmode=disable' \
+curl -fsSL https://github.com/panvex/panvex/releases/latest/download/install.sh | sh
+```
+
+Installer help is available through:
+
+```sh
+bash deploy/install.sh --help
+```
+
 ## Control-plane quick start
 
 1. Bootstrap the first local admin:
