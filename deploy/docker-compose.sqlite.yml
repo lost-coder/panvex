@@ -1,0 +1,33 @@
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: control-plane
+    command:
+      - ./panvex-control-plane
+      - -http-addr
+      - :8080
+      - -grpc-addr
+      - :8443
+      - -storage-driver
+      - sqlite
+      - -storage-dsn
+      - /var/lib/panvex/panvex.db
+    ports:
+      - "8443:8443"
+    volumes:
+      - panvex_sqlite_data:/var/lib/panvex
+
+  web:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: web
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
+volumes:
+  panvex_sqlite_data:

@@ -1,0 +1,94 @@
+syntax = "proto3";
+
+package panvex.gateway.v1;
+
+service AgentGateway {
+  rpc Enroll(EnrollRequest) returns (EnrollResponse);
+  rpc RenewCertificate(RenewCertificateRequest) returns (RenewCertificateResponse);
+  rpc Connect(stream ConnectClientMessage) returns (stream ConnectServerMessage);
+}
+
+message EnrollRequest {
+  string token = 1;
+  string node_name = 2;
+  string version = 3;
+}
+
+message EnrollResponse {
+  string agent_id = 1;
+  string certificate_pem = 2;
+  string private_key_pem = 3;
+  string ca_pem = 4;
+  int64 expires_at_unix = 5;
+}
+
+message RenewCertificateRequest {
+  string agent_id = 1;
+}
+
+message RenewCertificateResponse {
+  string certificate_pem = 1;
+  string private_key_pem = 2;
+  string ca_pem = 3;
+  int64 expires_at_unix = 4;
+}
+
+message Heartbeat {
+  string agent_id = 1;
+  string node_name = 2;
+  string environment_id = 3;
+  string fleet_group_id = 4;
+  string version = 5;
+  bool read_only = 6;
+  int64 observed_at_unix = 7;
+}
+
+message InstanceSnapshot {
+  string id = 1;
+  string name = 2;
+  string version = 3;
+  string config_fingerprint = 4;
+  int32 connected_users = 5;
+  bool read_only = 6;
+}
+
+message Snapshot {
+  string agent_id = 1;
+  string node_name = 2;
+  string environment_id = 3;
+  string fleet_group_id = 4;
+  string version = 5;
+  bool read_only = 6;
+  int64 observed_at_unix = 7;
+  repeated InstanceSnapshot instances = 8;
+  map<string, uint64> metrics = 9;
+}
+
+message JobResult {
+  string agent_id = 1;
+  string job_id = 2;
+  bool success = 3;
+  string message = 4;
+  int64 observed_at_unix = 5;
+}
+
+message JobCommand {
+  string id = 1;
+  string action = 2;
+  string idempotency_key = 3;
+  repeated string target_agent_ids = 4;
+}
+
+message ConnectClientMessage {
+  oneof body {
+    Heartbeat heartbeat = 1;
+    Snapshot snapshot = 2;
+    JobResult job_result = 3;
+  }
+}
+
+message ConnectServerMessage {
+  oneof body {
+    JobCommand job = 1;
+  }
+}

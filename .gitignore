@@ -30,6 +30,18 @@ go.work.sum
 # Local git worktrees
 .worktrees/
 
+# Local build artifacts
+.tmp/
+data/
+web/node_modules/
+web/dist/
+web/*.tsbuildinfo
+web/*.js
+web/*.d.ts
+cmd/control-plane/ui-dist/*
+!cmd/control-plane/ui-dist/
+!cmd/control-plane/ui-dist/placeholder.txt
+
 # Editor/IDE
 # .idea/
 # .vscode/
