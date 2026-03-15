@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"net/http"
+	"net/url"
 
 	"github.com/panvex/panvex/internal/controlplane/auth"
 )
@@ -14,9 +15,24 @@ type loginRequest struct {
 }
 
 type meResponse struct {
-	ID       string `json:"id"`
-	Username string `json:"username"`
-	Role     string `json:"role"`
+	ID          string `json:"id"`
+	Username    string `json:"username"`
+	Role        string `json:"role"`
+	TotpEnabled bool   `json:"totp_enabled"`
+}
+
+type updateTotpRequest struct {
+	Password string `json:"password"`
+	TotpCode string `json:"totp_code"`
+}
+
+type totpSetupResponse struct {
+	Secret     string `json:"secret"`
+	OTPAuthURL string `json:"otpauth_url"`
+}
+
+type totpStatusResponse struct {
+	TotpEnabled bool `json:"totp_enabled"`
 }
 
 func (s *Server) handleLogin() http.HandlerFunc {
@@ -100,9 +116,98 @@ func (s *Server) handleMe() http.HandlerFunc {
 
 		s.appendAudit(session.UserID, "auth.me", session.ID, nil)
 		writeJSON(w, http.StatusOK, meResponse{
-			ID:       user.ID,
-			Username: user.Username,
-			Role:     string(user.Role),
+			ID:          user.ID,
+			Username:    user.Username,
+			Role:        string(user.Role),
+			TotpEnabled: user.TotpEnabled,
+		})
+	}
+}
+
+func (s *Server) handleTotpSetup() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		session, user, err := s.requireSession(r)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		secret, err := s.auth.StartTotpSetup(user.ID, s.now())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		s.appendAudit(session.UserID, "auth.totp.setup_started", user.ID, nil)
+		writeJSON(w, http.StatusOK, totpSetupResponse{
+			Secret:     secret,
+			OTPAuthURL: buildTotpAuthURL(user.Username, secret),
+		})
+	}
+}
+
+func (s *Server) handleTotpEnable() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		session, user, err := s.requireSession(r)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		var request updateTotpRequest
+		if err := decodeJSON(r, &request); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid totp payload")
+			return
+		}
+
+		updatedUser, err := s.auth.EnableTotp(user.ID, request.Password, request.TotpCode, s.now())
+		if err != nil {
+			switch {
+			case errors.Is(err, auth.ErrInvalidCredentials), errors.Is(err, auth.ErrTotpRequired), errors.Is(err, auth.ErrInvalidTotpCode):
+				writeError(w, http.StatusUnauthorized, err.Error())
+			case errors.Is(err, auth.ErrTotpSetupNotFound):
+				writeError(w, http.StatusBadRequest, err.Error())
+			default:
+				writeError(w, http.StatusInternalServerError, err.Error())
+			}
+			return
+		}
+
+		s.appendAudit(session.UserID, "auth.totp.enabled", updatedUser.ID, nil)
+		writeJSON(w, http.StatusOK, totpStatusResponse{
+			TotpEnabled: updatedUser.TotpEnabled,
+		})
+	}
+}
+
+func (s *Server) handleTotpDisable() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		session, user, err := s.requireSession(r)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		var request updateTotpRequest
+		if err := decodeJSON(r, &request); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid totp payload")
+			return
+		}
+
+		updatedUser, err := s.auth.DisableTotp(user.ID, request.Password, request.TotpCode, s.now())
+		if err != nil {
+			switch {
+			case errors.Is(err, auth.ErrInvalidCredentials), errors.Is(err, auth.ErrTotpRequired), errors.Is(err, auth.ErrInvalidTotpCode):
+				writeError(w, http.StatusUnauthorized, err.Error())
+			default:
+				writeError(w, http.StatusInternalServerError, err.Error())
+			}
+			return
+		}
+
+		s.appendAudit(session.UserID, "auth.totp.disabled", updatedUser.ID, nil)
+		writeJSON(w, http.StatusOK, totpStatusResponse{
+			TotpEnabled: updatedUser.TotpEnabled,
 		})
 	}
 }
@@ -124,4 +229,8 @@ func (s *Server) requireSession(r *http.Request) (auth.Session, auth.User, error
 	}
 
 	return session, user, nil
+}
+
+func buildTotpAuthURL(username string, secret string) string {
+	return "otpauth://totp/Panvex:" + url.PathEscape(username) + "?secret=" + url.QueryEscape(secret) + "&issuer=Panvex"
 }
