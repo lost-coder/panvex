@@ -11,6 +11,7 @@ import (
 
 	"github.com/panvex/panvex/internal/controlplane/auth"
 	"github.com/panvex/panvex/internal/controlplane/storage/sqlite"
+	"github.com/panvex/panvex/internal/security"
 )
 
 func TestServerLoginSetsSessionAndReturnsMe(t *testing.T) {
@@ -187,6 +188,137 @@ func TestServerNewDoesNotReseedExistingStoreUsers(t *testing.T) {
 		Password: "stale-password",
 	}, now.Add(2*time.Minute)); err != auth.ErrInvalidCredentials {
 		t.Fatalf("Authenticate() with stale password error = %v, want %v", err, auth.ErrInvalidCredentials)
+	}
+}
+
+func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
+	now := time.Date(2026, time.March, 15, 10, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	bootstrap := auth.NewService()
+	user, _, err := bootstrap.BootstrapUser(auth.BootstrapInput{
+		Username: "viewer",
+		Password: "viewer-password",
+		Role:     auth.RoleViewer,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	first := New(Options{
+		Now: func() time.Time { return now },
+		Users: []auth.User{user},
+		Store: store,
+	})
+	token, err := first.issueEnrollmentToken(security.EnrollmentScope{
+		EnvironmentID: "prod",
+		FleetGroupID:  "ams-1",
+		TTL:           time.Minute,
+	}, now)
+	if err != nil {
+		t.Fatalf("issueEnrollmentToken() error = %v", err)
+	}
+
+	identity, err := first.enrollAgent(agentEnrollmentRequest{
+		Token:    token.Value,
+		NodeName: "node-a",
+		Version:  "1.0.0",
+	}, now.Add(10*time.Second))
+	if err != nil {
+		t.Fatalf("enrollAgent() error = %v", err)
+	}
+
+	first.applyAgentSnapshot(agentSnapshot{
+		AgentID:       identity.AgentID,
+		NodeName:      "node-a",
+		EnvironmentID: "prod",
+		FleetGroupID:  "ams-1",
+		Version:       "1.0.0",
+		Instances: []instanceSnapshot{
+			{
+				ID:                "instance-1",
+				Name:              "telemt-a",
+				Version:           "2026.03",
+				ConfigFingerprint: "cfg-1",
+				ConnectedUsers:    42,
+			},
+		},
+		Metrics: map[string]uint64{
+			"requests_total": 128,
+		},
+		ObservedAt: now.Add(15 * time.Second),
+	})
+
+	restored := New(Options{
+		Now: func() time.Time { return now.Add(2 * time.Minute) },
+		Users: []auth.User{user},
+		Store: store,
+	})
+	loginResponse := performJSONRequest(t, restored.Handler(), http.MethodPost, "/auth/login", map[string]string{
+		"username": "viewer",
+		"password": "viewer-password",
+	}, nil)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("POST /auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
+	}
+	cookies := loginResponse.Result().Cookies()
+
+	fleetHTTPResponse := performJSONRequest(t, restored.Handler(), http.MethodGet, "/fleet", nil, cookies)
+	if fleetHTTPResponse.Code != http.StatusOK {
+		t.Fatalf("GET /fleet status = %d, want %d", fleetHTTPResponse.Code, http.StatusOK)
+	}
+	var fleetPayload fleetResponse
+	if err := json.Unmarshal(fleetHTTPResponse.Body.Bytes(), &fleetPayload); err != nil {
+		t.Fatalf("json.Unmarshal(fleet) error = %v", err)
+	}
+	if fleetPayload.TotalAgents != 1 {
+		t.Fatalf("fleet.TotalAgents = %d, want %d", fleetPayload.TotalAgents, 1)
+	}
+	if fleetPayload.TotalInstances != 1 {
+		t.Fatalf("fleet.TotalInstances = %d, want %d", fleetPayload.TotalInstances, 1)
+	}
+	if fleetPayload.MetricSnapshots != 1 {
+		t.Fatalf("fleet.MetricSnapshots = %d, want %d", fleetPayload.MetricSnapshots, 1)
+	}
+
+	agentsResponse := performJSONRequest(t, restored.Handler(), http.MethodGet, "/agents", nil, cookies)
+	if agentsResponse.Code != http.StatusOK {
+		t.Fatalf("GET /agents status = %d, want %d", agentsResponse.Code, http.StatusOK)
+	}
+	var agentsPayload []Agent
+	if err := json.Unmarshal(agentsResponse.Body.Bytes(), &agentsPayload); err != nil {
+		t.Fatalf("json.Unmarshal(agents) error = %v", err)
+	}
+	if len(agentsPayload) != 1 {
+		t.Fatalf("len(agents) = %d, want %d", len(agentsPayload), 1)
+	}
+
+	instancesResponse := performJSONRequest(t, restored.Handler(), http.MethodGet, "/instances", nil, cookies)
+	if instancesResponse.Code != http.StatusOK {
+		t.Fatalf("GET /instances status = %d, want %d", instancesResponse.Code, http.StatusOK)
+	}
+	var instancesPayload []Instance
+	if err := json.Unmarshal(instancesResponse.Body.Bytes(), &instancesPayload); err != nil {
+		t.Fatalf("json.Unmarshal(instances) error = %v", err)
+	}
+	if len(instancesPayload) != 1 {
+		t.Fatalf("len(instances) = %d, want %d", len(instancesPayload), 1)
+	}
+
+	metricsResponse := performJSONRequest(t, restored.Handler(), http.MethodGet, "/metrics", nil, cookies)
+	if metricsResponse.Code != http.StatusOK {
+		t.Fatalf("GET /metrics status = %d, want %d", metricsResponse.Code, http.StatusOK)
+	}
+	var metricsPayload []MetricSnapshot
+	if err := json.Unmarshal(metricsResponse.Body.Bytes(), &metricsPayload); err != nil {
+		t.Fatalf("json.Unmarshal(metrics) error = %v", err)
+	}
+	if len(metricsPayload) != 1 {
+		t.Fatalf("len(metrics) = %d, want %d", len(metricsPayload), 1)
 	}
 }
 

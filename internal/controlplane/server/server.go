@@ -4,6 +4,8 @@ import (
 	"crypto/tls"
 	"context"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -76,6 +78,7 @@ func New(options Options) *Server {
 	if options.Store != nil {
 		server.seedUsers(options.Users)
 		server.auth = auth.NewServiceWithStore(options.Store)
+		server.restoreStoredState()
 	} else if len(options.Users) > 0 {
 		server.auth.LoadUsers(options.Users)
 	}
@@ -109,6 +112,53 @@ func (s *Server) seedUsers(users []auth.User) {
 			panic(err)
 		}
 	}
+}
+
+func (s *Server) restoreStoredState() {
+	agents, err := s.store.ListAgents(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	for _, record := range agents {
+		agent := agentFromRecord(record)
+		s.agents[agent.ID] = agent
+		s.agentSeq = maxPrefixedSequence(s.agentSeq, "agent", agent.ID)
+	}
+
+	instances, err := s.store.ListInstances(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	for _, record := range instances {
+		instance := instanceFromRecord(record)
+		s.instances[instance.ID] = instance
+	}
+
+	metrics, err := s.store.ListMetricSnapshots(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	for _, record := range metrics {
+		snapshot := metricSnapshotFromRecord(record)
+		s.metrics = append(s.metrics, snapshot)
+		s.metricSeq = maxPrefixedSequence(s.metricSeq, "metric", snapshot.ID)
+	}
+}
+
+func maxPrefixedSequence(current uint64, prefix string, value string) uint64 {
+	if !strings.HasPrefix(value, prefix+"-") {
+		return current
+	}
+
+	parsed, err := strconv.ParseUint(strings.TrimPrefix(value, prefix+"-"), 10, 64)
+	if err != nil {
+		return current
+	}
+	if parsed > current {
+		return parsed
+	}
+
+	return current
 }
 
 // Handler returns the configured HTTP handler for the control-plane API.

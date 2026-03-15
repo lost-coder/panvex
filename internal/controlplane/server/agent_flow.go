@@ -1,6 +1,11 @@
 package server
 
-import "time"
+import (
+	"context"
+	"time"
+
+	"github.com/panvex/panvex/internal/controlplane/storage"
+)
 
 type agentEnrollmentRequest struct {
 	Token    string
@@ -46,7 +51,7 @@ func (s *Server) enrollAgent(request agentEnrollmentRequest, now time.Time) (age
 	s.mu.Lock()
 	s.agentSeq++
 	agentID := newSequenceID("agent", s.agentSeq)
-	s.agents[agentID] = Agent{
+	agent := Agent{
 		ID:            agentID,
 		NodeName:      request.NodeName,
 		EnvironmentID: token.EnvironmentID,
@@ -54,6 +59,31 @@ func (s *Server) enrollAgent(request agentEnrollmentRequest, now time.Time) (age
 		Version:       request.Version,
 		LastSeenAt:    now.UTC(),
 	}
+	s.mu.Unlock()
+
+	if s.store != nil {
+		if err := s.store.PutEnvironment(context.Background(), storage.EnvironmentRecord{
+			ID:        token.EnvironmentID,
+			Name:      token.EnvironmentID,
+			CreatedAt: now.UTC(),
+		}); err != nil {
+			return agentEnrollmentResponse{}, err
+		}
+		if err := s.store.PutFleetGroup(context.Background(), storage.FleetGroupRecord{
+			ID:            token.FleetGroupID,
+			EnvironmentID: token.EnvironmentID,
+			Name:          token.FleetGroupID,
+			CreatedAt:     now.UTC(),
+		}); err != nil {
+			return agentEnrollmentResponse{}, err
+		}
+		if err := s.store.PutAgent(context.Background(), agentToRecord(agent)); err != nil {
+			return agentEnrollmentResponse{}, err
+		}
+	}
+
+	s.mu.Lock()
+	s.agents[agentID] = agent
 	s.mu.Unlock()
 
 	issued, err := s.authority.issueClientCertificate(agentID, now)
@@ -85,19 +115,18 @@ func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) {
 	s.presence.Heartbeat(snapshot.AgentID, snapshot.ObservedAt)
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	agent := s.agents[snapshot.AgentID]
+	agent.ID = snapshot.AgentID
 	agent.NodeName = snapshot.NodeName
 	agent.EnvironmentID = snapshot.EnvironmentID
 	agent.FleetGroupID = snapshot.FleetGroupID
 	agent.Version = snapshot.Version
 	agent.ReadOnly = snapshot.ReadOnly
 	agent.LastSeenAt = snapshot.ObservedAt.UTC()
-	s.agents[snapshot.AgentID] = agent
 
+	instances := make([]Instance, 0, len(snapshot.Instances))
 	for _, instance := range snapshot.Instances {
-		s.instances[instance.ID] = Instance{
+		instances = append(instances, Instance{
 			ID:                instance.ID,
 			AgentID:           snapshot.AgentID,
 			Name:              instance.Name,
@@ -106,18 +135,47 @@ func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) {
 			ConnectedUsers:    instance.ConnectedUsers,
 			ReadOnly:          instance.ReadOnly,
 			UpdatedAt:         snapshot.ObservedAt.UTC(),
-		}
+		})
 	}
 
+	var metricSnapshot *MetricSnapshot
 	if len(snapshot.Metrics) > 0 {
 		s.metricSeq++
-		s.metrics = append(s.metrics, MetricSnapshot{
+		metric := MetricSnapshot{
 			ID:         newSequenceID("metric", s.metricSeq),
 			AgentID:    snapshot.AgentID,
 			CapturedAt: snapshot.ObservedAt.UTC(),
 			Values:     snapshot.Metrics,
-		})
+		}
+		metricSnapshot = &metric
 	}
+	s.mu.Unlock()
+
+	if s.store != nil {
+		if err := s.store.PutAgent(context.Background(), agentToRecord(agent)); err != nil {
+			panic(err)
+		}
+		for _, instance := range instances {
+			if err := s.store.PutInstance(context.Background(), instanceToRecord(instance)); err != nil {
+				panic(err)
+			}
+		}
+		if metricSnapshot != nil {
+			if err := s.store.AppendMetricSnapshot(context.Background(), metricSnapshotToRecord(*metricSnapshot)); err != nil {
+				panic(err)
+			}
+		}
+	}
+
+	s.mu.Lock()
+	s.agents[snapshot.AgentID] = agent
+	for _, instance := range instances {
+		s.instances[instance.ID] = instance
+	}
+	if metricSnapshot != nil {
+		s.metrics = append(s.metrics, *metricSnapshot)
+	}
+	s.mu.Unlock()
 
 	s.events.publish(eventEnvelope{
 		Type: "agents.updated",

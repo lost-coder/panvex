@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 	"time"
@@ -100,6 +101,89 @@ func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T
 
 	if len(server.metrics) != 1 {
 		t.Fatalf("len(server.metrics) = %d, want %d", len(server.metrics), 1)
+	}
+}
+
+func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *testing.T) {
+	now := time.Date(2026, time.March, 15, 10, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	first := New(Options{
+		Now: func() time.Time { return now },
+		Store: store,
+	})
+	token, err := first.issueEnrollmentToken(security.EnrollmentScope{
+		EnvironmentID: "prod",
+		FleetGroupID:  "ams-1",
+		TTL:           time.Minute,
+	}, now)
+	if err != nil {
+		t.Fatalf("issueEnrollmentToken() error = %v", err)
+	}
+
+	identity, err := first.enrollAgent(agentEnrollmentRequest{
+		Token:    token.Value,
+		NodeName: "node-a",
+		Version:  "1.0.0",
+	}, now.Add(10*time.Second))
+	if err != nil {
+		t.Fatalf("enrollAgent() error = %v", err)
+	}
+
+	first.applyAgentSnapshot(agentSnapshot{
+		AgentID:       identity.AgentID,
+		NodeName:      "node-a",
+		EnvironmentID: "prod",
+		FleetGroupID:  "ams-1",
+		Version:       "1.0.0",
+		ReadOnly:      true,
+		Instances: []instanceSnapshot{
+			{
+				ID:                "instance-1",
+				Name:              "telemt-a",
+				Version:           "2026.03",
+				ConfigFingerprint: "cfg-1",
+				ConnectedUsers:    42,
+				ReadOnly:          true,
+			},
+		},
+		Metrics: map[string]uint64{
+			"requests_total": 128,
+		},
+		ObservedAt: now.Add(15 * time.Second),
+	})
+
+	restored := New(Options{
+		Now: func() time.Time { return now.Add(time.Minute) },
+		Store: store,
+	})
+
+	restoredAgents, err := restored.store.ListAgents(context.Background())
+	if err != nil {
+		t.Fatalf("ListAgents() error = %v", err)
+	}
+	if len(restoredAgents) != 1 {
+		t.Fatalf("len(ListAgents()) = %d, want %d", len(restoredAgents), 1)
+	}
+
+	restoredInstances, err := restored.store.ListInstances(context.Background())
+	if err != nil {
+		t.Fatalf("ListInstances() error = %v", err)
+	}
+	if len(restoredInstances) != 1 {
+		t.Fatalf("len(ListInstances()) = %d, want %d", len(restoredInstances), 1)
+	}
+
+	restoredMetrics, err := restored.store.ListMetricSnapshots(context.Background())
+	if err != nil {
+		t.Fatalf("ListMetricSnapshots() error = %v", err)
+	}
+	if len(restoredMetrics) != 1 {
+		t.Fatalf("len(ListMetricSnapshots()) = %d, want %d", len(restoredMetrics), 1)
 	}
 }
 
