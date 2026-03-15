@@ -1,0 +1,1 @@
+Build frontend assets into this directory for single-binary release builds.

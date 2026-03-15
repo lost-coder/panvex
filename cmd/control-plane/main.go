@@ -60,8 +60,9 @@ func runServe(args []string) error {
 	defer store.Close()
 
 	api := server.New(server.Options{
-		Now:   time.Now,
-		Store: store,
+		Now:     time.Now,
+		Store:   store,
+		UIFiles: embeddedUIFiles(),
 	})
 
 	httpServer := &http.Server{

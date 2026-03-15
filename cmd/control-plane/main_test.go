@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"io/fs"
 	"path/filepath"
 	"testing"
+	"testing/fstest"
 
 	"github.com/panvex/panvex/internal/controlplane/config"
 	"github.com/panvex/panvex/internal/controlplane/storage/sqlite"
@@ -54,5 +56,33 @@ func TestRunBootstrapAdminWritesAdminIntoSelectedBackend(t *testing.T) {
 
 	if user.Username != "admin" {
 		t.Fatalf("user.Username = %q, want %q", user.Username, "admin")
+	}
+}
+
+func TestResolveEmbeddedUIFilesReturnsUIWhenIndexExists(t *testing.T) {
+	uiFiles := resolveEmbeddedUIFiles(fstest.MapFS{
+		"index.html": &fstest.MapFile{Data: []byte("<html><body>panvex</body></html>")},
+		"assets/app.js": &fstest.MapFile{Data: []byte("console.log('panvex')")},
+	})
+	if uiFiles == nil {
+		t.Fatal("resolveEmbeddedUIFiles() = nil, want embedded UI filesystem")
+	}
+
+	indexFile, err := fs.ReadFile(uiFiles, "index.html")
+	if err != nil {
+		t.Fatalf("fs.ReadFile(index.html) error = %v", err)
+	}
+
+	if string(indexFile) != "<html><body>panvex</body></html>" {
+		t.Fatalf("index.html = %q, want embedded index", string(indexFile))
+	}
+}
+
+func TestResolveEmbeddedUIFilesReturnsNilWithoutIndex(t *testing.T) {
+	uiFiles := resolveEmbeddedUIFiles(fstest.MapFS{
+		"placeholder.txt": &fstest.MapFile{Data: []byte("build frontend assets here")},
+	})
+	if uiFiles != nil {
+		t.Fatal("resolveEmbeddedUIFiles() != nil, want nil when index.html is missing")
 	}
 }
