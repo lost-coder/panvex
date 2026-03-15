@@ -8,7 +8,33 @@ import (
 	"github.com/panvex/panvex/internal/controlplane/storage/sqlite"
 )
 
-func TestServiceAuthenticateRejectsOperatorWithoutTotp(t *testing.T) {
+func TestServiceBootstrapUserLeavesTotpDisabledByDefault(t *testing.T) {
+	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
+	service := NewService()
+
+	user, secret, err := service.BootstrapUser(BootstrapInput{
+		Username: "admin",
+		Password: "admin-password",
+		Role:     RoleAdmin,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	if secret != "" {
+		t.Fatalf("BootstrapUser() secret = %q, want empty", secret)
+	}
+
+	if user.TotpEnabled {
+		t.Fatal("BootstrapUser() TotpEnabled = true, want false")
+	}
+
+	if user.TotpSecret != "" {
+		t.Fatalf("BootstrapUser() TotpSecret = %q, want empty", user.TotpSecret)
+	}
+}
+
+func TestServiceAuthenticateAllowsOperatorWithoutTotpWhenDisabled(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	service := NewService()
 
@@ -21,25 +47,98 @@ func TestServiceAuthenticateRejectsOperatorWithoutTotp(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	if secret == "" {
-		t.Fatal("BootstrapUser() secret = empty, want seeded TOTP secret")
+	if secret != "" {
+		t.Fatalf("BootstrapUser() secret = %q, want empty", secret)
 	}
 
-	_, err = service.Authenticate(LoginInput{
+	session, err := service.Authenticate(LoginInput{
 		Username: "operator",
 		Password: "correct horse battery staple",
 	}, now.Add(30*time.Second))
-	if err == nil {
-		t.Fatal("Authenticate() error = nil, want TOTP requirement failure")
+	if err != nil {
+		t.Fatalf("Authenticate() error = %v", err)
 	}
 
-	if err != ErrTotpRequired {
-		t.Fatalf("Authenticate() error = %v, want %v", err, ErrTotpRequired)
+	if session.UserID != user.ID {
+		t.Fatalf("session.UserID = %q, want %q", session.UserID, user.ID)
+	}
+}
+
+func TestServiceEnableTotpRequiresPendingSetup(t *testing.T) {
+	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
+	service := NewService()
+
+	user, _, err := service.BootstrapUser(BootstrapInput{
+		Username: "operator",
+		Password: "correct horse battery staple",
+		Role:     RoleOperator,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	_, err = service.EnableTotp(user.ID, "correct horse battery staple", "123456", now.Add(30*time.Second))
+	if err == nil {
+		t.Fatal("EnableTotp() error = nil, want pending setup failure")
+	}
+
+	if err != ErrTotpSetupNotFound {
+		t.Fatalf("EnableTotp() error = %v, want %v", err, ErrTotpSetupNotFound)
+	}
+}
+
+func TestServiceEnableTotpRequiresValidPasswordAndCode(t *testing.T) {
+	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
+	service := NewService()
+
+	user, _, err := service.BootstrapUser(BootstrapInput{
+		Username: "operator",
+		Password: "correct horse battery staple",
+		Role:     RoleOperator,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	secret, err := service.StartTotpSetup(user.ID, now.Add(10*time.Second))
+	if err != nil {
+		t.Fatalf("StartTotpSetup() error = %v", err)
 	}
 
 	code, err := service.GenerateTotpCode(secret, now.Add(30*time.Second))
 	if err != nil {
 		t.Fatalf("GenerateTotpCode() error = %v", err)
+	}
+
+	_, err = service.EnableTotp(user.ID, "wrong-password", code, now.Add(30*time.Second))
+	if err == nil {
+		t.Fatal("EnableTotp() error = nil, want password validation failure")
+	}
+
+	if err != ErrInvalidCredentials {
+		t.Fatalf("EnableTotp() error = %v, want %v", err, ErrInvalidCredentials)
+	}
+
+	_, err = service.EnableTotp(user.ID, "correct horse battery staple", "000000", now.Add(30*time.Second))
+	if err == nil {
+		t.Fatal("EnableTotp() error = nil, want TOTP validation failure")
+	}
+
+	if err != ErrInvalidTotpCode {
+		t.Fatalf("EnableTotp() error = %v, want %v", err, ErrInvalidTotpCode)
+	}
+
+	enabledUser, err := service.EnableTotp(user.ID, "correct horse battery staple", code, now.Add(30*time.Second))
+	if err != nil {
+		t.Fatalf("EnableTotp() error = %v", err)
+	}
+
+	if !enabledUser.TotpEnabled {
+		t.Fatal("EnableTotp() TotpEnabled = false, want true")
+	}
+
+	if enabledUser.TotpSecret != secret {
+		t.Fatalf("EnableTotp() TotpSecret = %q, want %q", enabledUser.TotpSecret, secret)
 	}
 
 	session, err := service.Authenticate(LoginInput{
@@ -49,6 +148,82 @@ func TestServiceAuthenticateRejectsOperatorWithoutTotp(t *testing.T) {
 	}, now.Add(30*time.Second))
 	if err != nil {
 		t.Fatalf("Authenticate() error = %v", err)
+	}
+
+	if session.UserID != user.ID {
+		t.Fatalf("session.UserID = %q, want %q", session.UserID, user.ID)
+	}
+}
+
+func TestServiceDisableTotpRequiresValidPasswordAndCode(t *testing.T) {
+	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
+	service := NewService()
+
+	user, _, err := service.BootstrapUser(BootstrapInput{
+		Username: "operator",
+		Password: "correct horse battery staple",
+		Role:     RoleOperator,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	secret, err := service.StartTotpSetup(user.ID, now.Add(10*time.Second))
+	if err != nil {
+		t.Fatalf("StartTotpSetup() error = %v", err)
+	}
+
+	code, err := service.GenerateTotpCode(secret, now.Add(30*time.Second))
+	if err != nil {
+		t.Fatalf("GenerateTotpCode() error = %v", err)
+	}
+
+	if _, err := service.EnableTotp(user.ID, "correct horse battery staple", code, now.Add(30*time.Second)); err != nil {
+		t.Fatalf("EnableTotp() error = %v", err)
+	}
+
+	currentCode, err := service.GenerateTotpCode(secret, now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("GenerateTotpCode() current error = %v", err)
+	}
+
+	_, err = service.DisableTotp(user.ID, "wrong-password", currentCode, now.Add(time.Minute))
+	if err == nil {
+		t.Fatal("DisableTotp() error = nil, want password validation failure")
+	}
+
+	if err != ErrInvalidCredentials {
+		t.Fatalf("DisableTotp() error = %v, want %v", err, ErrInvalidCredentials)
+	}
+
+	_, err = service.DisableTotp(user.ID, "correct horse battery staple", "000000", now.Add(time.Minute))
+	if err == nil {
+		t.Fatal("DisableTotp() error = nil, want TOTP validation failure")
+	}
+
+	if err != ErrInvalidTotpCode {
+		t.Fatalf("DisableTotp() error = %v, want %v", err, ErrInvalidTotpCode)
+	}
+
+	disabledUser, err := service.DisableTotp(user.ID, "correct horse battery staple", currentCode, now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("DisableTotp() error = %v", err)
+	}
+
+	if disabledUser.TotpEnabled {
+		t.Fatal("DisableTotp() TotpEnabled = true, want false")
+	}
+
+	if disabledUser.TotpSecret != "" {
+		t.Fatalf("DisableTotp() TotpSecret = %q, want empty", disabledUser.TotpSecret)
+	}
+
+	session, err := service.Authenticate(LoginInput{
+		Username: "operator",
+		Password: "correct horse battery staple",
+	}, now.Add(2*time.Minute))
+	if err != nil {
+		t.Fatalf("Authenticate() after disable error = %v", err)
 	}
 
 	if session.UserID != user.ID {
@@ -142,7 +317,7 @@ func TestServiceSnapshotAndLoadUsers(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	service := NewService()
 
-	user, secret, err := service.BootstrapUser(BootstrapInput{
+	user, _, err := service.BootstrapUser(BootstrapInput{
 		Username: "admin",
 		Password: "admin-password",
 		Role:     RoleAdmin,
@@ -159,15 +334,13 @@ func TestServiceSnapshotAndLoadUsers(t *testing.T) {
 	restored := NewService()
 	restored.LoadUsers(snapshot)
 
-	code, err := restored.GenerateTotpCode(secret, now)
-	if err != nil {
-		t.Fatalf("GenerateTotpCode() error = %v", err)
+	if snapshot[0].TotpEnabled {
+		t.Fatal("SnapshotUsers()[0].TotpEnabled = true, want false")
 	}
 
 	session, err := restored.Authenticate(LoginInput{
 		Username: "admin",
 		Password: "admin-password",
-		TotpCode: code,
 	}, now)
 	if err != nil {
 		t.Fatalf("Authenticate() error = %v", err)
@@ -175,6 +348,47 @@ func TestServiceSnapshotAndLoadUsers(t *testing.T) {
 
 	if session.UserID != user.ID {
 		t.Fatalf("session.UserID = %q, want %q", session.UserID, user.ID)
+	}
+}
+
+func TestServiceResetTotpClearsEnabledState(t *testing.T) {
+	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
+	service := NewService()
+
+	user, _, err := service.BootstrapUser(BootstrapInput{
+		Username: "operator",
+		Password: "correct horse battery staple",
+		Role:     RoleOperator,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	secret, err := service.StartTotpSetup(user.ID, now.Add(10*time.Second))
+	if err != nil {
+		t.Fatalf("StartTotpSetup() error = %v", err)
+	}
+
+	code, err := service.GenerateTotpCode(secret, now.Add(30*time.Second))
+	if err != nil {
+		t.Fatalf("GenerateTotpCode() error = %v", err)
+	}
+
+	if _, err := service.EnableTotp(user.ID, "correct horse battery staple", code, now.Add(30*time.Second)); err != nil {
+		t.Fatalf("EnableTotp() error = %v", err)
+	}
+
+	resetUser, err := service.ResetTotp(user.ID)
+	if err != nil {
+		t.Fatalf("ResetTotp() error = %v", err)
+	}
+
+	if resetUser.TotpEnabled {
+		t.Fatal("ResetTotp() TotpEnabled = true, want false")
+	}
+
+	if resetUser.TotpSecret != "" {
+		t.Fatalf("ResetTotp() TotpSecret = %q, want empty", resetUser.TotpSecret)
 	}
 }
 
@@ -196,16 +410,18 @@ func TestServiceBootstrapUserPersistsThroughStore(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	restored := NewServiceWithStore(store)
-	code, err := restored.GenerateTotpCode(secret, now.Add(time.Minute))
-	if err != nil {
-		t.Fatalf("GenerateTotpCode() error = %v", err)
+	if secret != "" {
+		t.Fatalf("BootstrapUser() secret = %q, want empty", secret)
 	}
 
+	if user.TotpEnabled {
+		t.Fatal("BootstrapUser() TotpEnabled = true, want false")
+	}
+
+	restored := NewServiceWithStore(store)
 	session, err := restored.Authenticate(LoginInput{
 		Username: "admin",
 		Password: "admin-password",
-		TotpCode: code,
 	}, now.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("Authenticate() error = %v", err)
