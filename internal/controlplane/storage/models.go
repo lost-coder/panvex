@@ -98,4 +98,5 @@ type EnrollmentTokenRecord struct {
 	IssuedAt      time.Time
 	ExpiresAt     time.Time
 	ConsumedAt    *time.Time
+	RevokedAt     *time.Time
 }

@@ -938,6 +938,131 @@ func TestHTTPAgentBootstrapRejectsConsumedToken(t *testing.T) {
 	}
 }
 
+func TestHTTPEnrollmentTokenListAndRevoke(t *testing.T) {
+	now := time.Date(2026, time.March, 16, 14, 20, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := New(Options{
+		Now:   func() time.Time { return now },
+		Store: store,
+	})
+	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "operator",
+		Password: "operator-password",
+		Role:     auth.RoleOperator,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "operator",
+		"password": "operator-password",
+	}, nil)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
+	}
+	cookies := loginResponse.Result().Cookies()
+
+	createResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/agents/enrollment-tokens", map[string]any{
+		"environment_id": "prod",
+		"fleet_group_id": "default",
+		"ttl_seconds":    600,
+	}, cookies)
+	if createResponse.Code != http.StatusCreated {
+		t.Fatalf("POST /api/agents/enrollment-tokens status = %d, want %d", createResponse.Code, http.StatusCreated)
+	}
+
+	var createdToken struct {
+		Value string `json:"value"`
+	}
+	if err := json.Unmarshal(createResponse.Body.Bytes(), &createdToken); err != nil {
+		t.Fatalf("json.Unmarshal(create token) error = %v", err)
+	}
+	if createdToken.Value == "" {
+		t.Fatal("created token value = empty, want active token")
+	}
+
+	listResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/agents/enrollment-tokens", nil, cookies)
+	if listResponse.Code != http.StatusOK {
+		t.Fatalf("GET /api/agents/enrollment-tokens status = %d, want %d", listResponse.Code, http.StatusOK)
+	}
+
+	var listedTokens []struct {
+		Value         string `json:"value"`
+		EnvironmentID string `json:"environment_id"`
+		FleetGroupID  string `json:"fleet_group_id"`
+		Status        string `json:"status"`
+		ExpiresAtUnix int64  `json:"expires_at_unix"`
+	}
+	if err := json.Unmarshal(listResponse.Body.Bytes(), &listedTokens); err != nil {
+		t.Fatalf("json.Unmarshal(list tokens) error = %v", err)
+	}
+	if len(listedTokens) != 1 {
+		t.Fatalf("len(tokens) = %d, want %d", len(listedTokens), 1)
+	}
+	if listedTokens[0].Value != createdToken.Value {
+		t.Fatalf("tokens[0].value = %q, want %q", listedTokens[0].Value, createdToken.Value)
+	}
+	if listedTokens[0].Status != "active" {
+		t.Fatalf("tokens[0].status = %q, want %q", listedTokens[0].Status, "active")
+	}
+	if listedTokens[0].EnvironmentID != "prod" {
+		t.Fatalf("tokens[0].environment_id = %q, want %q", listedTokens[0].EnvironmentID, "prod")
+	}
+	if listedTokens[0].FleetGroupID != "default" {
+		t.Fatalf("tokens[0].fleet_group_id = %q, want %q", listedTokens[0].FleetGroupID, "default")
+	}
+	if listedTokens[0].ExpiresAtUnix <= now.Unix() {
+		t.Fatalf("tokens[0].expires_at_unix = %d, want future expiry", listedTokens[0].ExpiresAtUnix)
+	}
+
+	revokeResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/agents/enrollment-tokens/"+createdToken.Value+"/revoke", nil, cookies)
+	if revokeResponse.Code != http.StatusNoContent {
+		t.Fatalf("POST /api/agents/enrollment-tokens/{value}/revoke status = %d, want %d", revokeResponse.Code, http.StatusNoContent)
+	}
+
+	listRevokedResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/agents/enrollment-tokens", nil, cookies)
+	if listRevokedResponse.Code != http.StatusOK {
+		t.Fatalf("GET /api/agents/enrollment-tokens after revoke status = %d, want %d", listRevokedResponse.Code, http.StatusOK)
+	}
+	if err := json.Unmarshal(listRevokedResponse.Body.Bytes(), &listedTokens); err != nil {
+		t.Fatalf("json.Unmarshal(list revoked tokens) error = %v", err)
+	}
+	if listedTokens[0].Status != "revoked" {
+		t.Fatalf("tokens[0].status after revoke = %q, want %q", listedTokens[0].Status, "revoked")
+	}
+
+	bootstrapResponse := performJSONRequestWithHeaders(
+		t,
+		server.Handler(),
+		http.MethodPost,
+		"https://panel.example.com/api/agent/bootstrap",
+		map[string]string{
+			"node_name": "node-a",
+			"version":   "1.0.0",
+		},
+		nil,
+		map[string]string{
+			"Authorization": "Bearer " + createdToken.Value,
+		},
+	)
+	if bootstrapResponse.Code != http.StatusForbidden {
+		t.Fatalf("POST /api/agent/bootstrap with revoked token status = %d, want %d", bootstrapResponse.Code, http.StatusForbidden)
+	}
+
+	storedToken, err := store.GetEnrollmentToken(context.Background(), createdToken.Value)
+	if err != nil {
+		t.Fatalf("GetEnrollmentToken() error = %v", err)
+	}
+	if storedToken.RevokedAt == nil {
+		t.Fatal("GetEnrollmentToken() RevokedAt = nil, want revoked token")
+	}
+}
+
 func TestHTTPControlRoomShowsFirstServerOnboarding(t *testing.T) {
 	now := time.Date(2026, time.March, 16, 9, 0, 0, 0, time.UTC)
 	server := New(Options{

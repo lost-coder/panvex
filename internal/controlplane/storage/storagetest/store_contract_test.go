@@ -237,3 +237,19 @@ func (s *memoryStore) ConsumeEnrollmentToken(_ context.Context, value string, co
 
 	return token, nil
 }
+
+func (s *memoryStore) RevokeEnrollmentToken(_ context.Context, value string, revokedAt time.Time) (storage.EnrollmentTokenRecord, error) {
+	token, ok := s.enrollmentTokens[value]
+	if !ok {
+		return storage.EnrollmentTokenRecord{}, storage.ErrNotFound
+	}
+
+	if token.RevokedAt != nil || token.ConsumedAt != nil {
+		return token, nil
+	}
+
+	token.RevokedAt = &revokedAt
+	s.enrollmentTokens[value] = token
+
+	return token, nil
+}

@@ -212,7 +212,9 @@ func (s *Server) routes() http.Handler {
 		api.Get("/events", s.handleEvents())
 		api.Get("/users", s.handleUsers())
 		api.Post("/users/{id}/totp/reset", s.handleResetUserTotp())
+		api.Get("/agents/enrollment-tokens", s.handleListEnrollmentTokens())
 		api.Post("/agents/enrollment-tokens", s.handleCreateEnrollmentToken())
+		api.Post("/agents/enrollment-tokens/{value}/revoke", s.handleRevokeEnrollmentToken())
 	})
 	if uiHandler := newUIHandler(s.uiFiles); uiHandler != nil {
 		router.NotFound(uiHandler)

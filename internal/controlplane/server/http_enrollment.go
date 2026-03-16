@@ -8,10 +8,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/panvex/panvex/internal/controlplane/auth"
 	"github.com/panvex/panvex/internal/controlplane/storage"
 	"github.com/panvex/panvex/internal/security"
 )
+
+var errEnrollmentTokenRevoked = errors.New("enrollment token revoked")
 
 type createEnrollmentTokenRequest struct {
 	EnvironmentID string `json:"environment_id"`
@@ -40,6 +43,17 @@ type agentBootstrapResponse struct {
 	CAPEM          string `json:"ca_pem"`
 	GRPCEndpoint   string `json:"grpc_endpoint"`
 	GRPCServerName string `json:"grpc_server_name"`
+}
+
+type enrollmentTokenResponse struct {
+	Value          string `json:"value"`
+	EnvironmentID  string `json:"environment_id"`
+	FleetGroupID   string `json:"fleet_group_id"`
+	Status         string `json:"status"`
+	IssuedAtUnix   int64  `json:"issued_at_unix"`
+	ExpiresAtUnix  int64  `json:"expires_at_unix"`
+	ConsumedAtUnix *int64 `json:"consumed_at_unix,omitempty"`
+	RevokedAtUnix  *int64 `json:"revoked_at_unix,omitempty"`
 }
 
 func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
@@ -112,7 +126,7 @@ func (s *Server) handleAgentBootstrap() http.HandlerFunc {
 		}, s.now())
 		if err != nil {
 			switch err {
-			case security.ErrEnrollmentTokenInvalid, security.ErrEnrollmentTokenConsumed, security.ErrEnrollmentTokenExpired:
+			case security.ErrEnrollmentTokenInvalid, security.ErrEnrollmentTokenConsumed, security.ErrEnrollmentTokenExpired, errEnrollmentTokenRevoked:
 				writeError(w, http.StatusForbidden, err.Error())
 			default:
 				writeError(w, http.StatusInternalServerError, err.Error())
@@ -129,6 +143,78 @@ func (s *Server) handleAgentBootstrap() http.HandlerFunc {
 			GRPCEndpoint:   grpcEndpoint,
 			GRPCServerName: grpcServerName,
 		})
+	}
+}
+
+func (s *Server) handleListEnrollmentTokens() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		_, user, err := s.requireSession(r)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		if user.Role == auth.RoleViewer {
+			writeError(w, http.StatusForbidden, "viewer role cannot manage enrollment tokens")
+			return
+		}
+
+		if s.store == nil {
+			writeError(w, http.StatusServiceUnavailable, "persistent store required")
+			return
+		}
+
+		tokens, err := s.listEnrollmentTokens(s.now())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusOK, tokens)
+	}
+}
+
+func (s *Server) handleRevokeEnrollmentToken() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		session, user, err := s.requireSession(r)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		if user.Role == auth.RoleViewer {
+			writeError(w, http.StatusForbidden, "viewer role cannot manage enrollment tokens")
+			return
+		}
+
+		if s.store == nil {
+			writeError(w, http.StatusServiceUnavailable, "persistent store required")
+			return
+		}
+
+		value := chi.URLParam(r, "value")
+		if value == "" {
+			writeError(w, http.StatusBadRequest, "token value is required")
+			return
+		}
+
+		revoked, changed, err := s.revokeEnrollmentToken(value, s.now())
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				writeError(w, http.StatusNotFound, "enrollment token not found")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if changed {
+			s.appendAudit(session.UserID, "agents.enrollment.revoke", revoked.Value, map[string]any{
+				"environment_id": revoked.EnvironmentID,
+				"fleet_group_id": revoked.FleetGroupID,
+			})
+		}
+
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 
@@ -171,6 +257,9 @@ func (s *Server) consumeEnrollmentToken(value string, now time.Time) (security.E
 	if token.ConsumedAt != nil {
 		return security.EnrollmentToken{}, security.ErrEnrollmentTokenConsumed
 	}
+	if token.RevokedAt != nil {
+		return security.EnrollmentToken{}, errEnrollmentTokenRevoked
+	}
 
 	if now.UTC().After(token.ExpiresAt.UTC()) {
 		return security.EnrollmentToken{}, security.ErrEnrollmentTokenExpired
@@ -179,6 +268,16 @@ func (s *Server) consumeEnrollmentToken(value string, now time.Time) (security.E
 	consumed, err := s.store.ConsumeEnrollmentToken(context.Background(), value, now.UTC())
 	if err != nil {
 		if errors.Is(err, storage.ErrConflict) {
+			latest, latestErr := s.store.GetEnrollmentToken(context.Background(), value)
+			if latestErr != nil {
+				if errors.Is(latestErr, storage.ErrNotFound) {
+					return security.EnrollmentToken{}, security.ErrEnrollmentTokenInvalid
+				}
+				return security.EnrollmentToken{}, latestErr
+			}
+			if latest.RevokedAt != nil {
+				return security.EnrollmentToken{}, errEnrollmentTokenRevoked
+			}
 			return security.EnrollmentToken{}, security.ErrEnrollmentTokenConsumed
 		}
 		if errors.Is(err, storage.ErrNotFound) {
@@ -194,6 +293,70 @@ func (s *Server) consumeEnrollmentToken(value string, now time.Time) (security.E
 		IssuedAt:      consumed.IssuedAt.UTC(),
 		ExpiresAt:     consumed.ExpiresAt.UTC(),
 	}, nil
+}
+
+func (s *Server) listEnrollmentTokens(now time.Time) ([]enrollmentTokenResponse, error) {
+	records, err := s.store.ListEnrollmentTokens(context.Background())
+	if err != nil {
+		return nil, err
+	}
+
+	response := make([]enrollmentTokenResponse, 0, len(records))
+	for _, token := range records {
+		item := enrollmentTokenResponse{
+			Value:         token.Value,
+			EnvironmentID: token.EnvironmentID,
+			FleetGroupID:  token.FleetGroupID,
+			Status:        enrollmentTokenStatus(token, now),
+			IssuedAtUnix:  token.IssuedAt.UTC().Unix(),
+			ExpiresAtUnix: token.ExpiresAt.UTC().Unix(),
+		}
+		if token.ConsumedAt != nil {
+			value := token.ConsumedAt.UTC().Unix()
+			item.ConsumedAtUnix = &value
+		}
+		if token.RevokedAt != nil {
+			value := token.RevokedAt.UTC().Unix()
+			item.RevokedAtUnix = &value
+		}
+		response = append(response, item)
+	}
+
+	return response, nil
+}
+
+func (s *Server) revokeEnrollmentToken(value string, now time.Time) (storage.EnrollmentTokenRecord, bool, error) {
+	token, err := s.store.RevokeEnrollmentToken(context.Background(), value, now.UTC())
+	if err != nil {
+		if errors.Is(err, storage.ErrConflict) {
+			latest, latestErr := s.store.GetEnrollmentToken(context.Background(), value)
+			if latestErr != nil {
+				return storage.EnrollmentTokenRecord{}, false, latestErr
+			}
+			return latest, false, nil
+		}
+		return storage.EnrollmentTokenRecord{}, false, err
+	}
+
+	if token.RevokedAt == nil || !token.RevokedAt.Equal(now.UTC()) {
+		return token, false, nil
+	}
+
+	return token, true, nil
+}
+
+func enrollmentTokenStatus(token storage.EnrollmentTokenRecord, now time.Time) string {
+	if token.RevokedAt != nil {
+		return "revoked"
+	}
+	if token.ConsumedAt != nil {
+		return "consumed"
+	}
+	if now.UTC().After(token.ExpiresAt.UTC()) {
+		return "expired"
+	}
+
+	return "active"
 }
 
 func bearerTokenFromHeader(value string) (string, bool) {

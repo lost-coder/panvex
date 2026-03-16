@@ -126,6 +126,9 @@ func TestCopyStoreCopiesAllPersistentEntities(t *testing.T) {
 	if tokens.ConsumedAt == nil {
 		t.Fatal("target enrollment token ConsumedAt = nil, want copied consumed timestamp")
 	}
+	if tokens.RevokedAt == nil {
+		t.Fatal("target enrollment token RevokedAt = nil, want copied revoked timestamp")
+	}
 }
 
 func openSQLiteStore(t *testing.T, path string) storage.Store {
@@ -241,6 +244,7 @@ func populateSourceStore(t *testing.T, store storage.Store, now time.Time) {
 		IssuedAt:      now,
 		ExpiresAt:     now.Add(time.Minute),
 		ConsumedAt:    &consumedAt,
+		RevokedAt:     &consumedAt,
 	}); err != nil {
 		t.Fatalf("PutEnrollmentToken() error = %v", err)
 	}

@@ -52,6 +52,7 @@ type EnrollmentStore interface {
 	ListEnrollmentTokens(ctx context.Context) ([]EnrollmentTokenRecord, error)
 	GetEnrollmentToken(ctx context.Context, value string) (EnrollmentTokenRecord, error)
 	ConsumeEnrollmentToken(ctx context.Context, value string, consumedAt time.Time) (EnrollmentTokenRecord, error)
+	RevokeEnrollmentToken(ctx context.Context, value string, revokedAt time.Time) (EnrollmentTokenRecord, error)
 }
 
 // Store aggregates the persistence capabilities required by the control-plane.
