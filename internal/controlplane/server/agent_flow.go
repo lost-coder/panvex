@@ -118,8 +118,14 @@ func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) {
 	agent := s.agents[snapshot.AgentID]
 	agent.ID = snapshot.AgentID
 	agent.NodeName = snapshot.NodeName
-	agent.EnvironmentID = snapshot.EnvironmentID
-	agent.FleetGroupID = snapshot.FleetGroupID
+	// Enrollment fixes the agent scope. Runtime snapshots may be stale or misconfigured,
+	// so they must not move an enrolled agent into a different environment or fleet group.
+	if agent.EnvironmentID == "" {
+		agent.EnvironmentID = snapshot.EnvironmentID
+	}
+	if agent.FleetGroupID == "" {
+		agent.FleetGroupID = snapshot.FleetGroupID
+	}
 	agent.Version = snapshot.Version
 	agent.ReadOnly = snapshot.ReadOnly
 	agent.LastSeenAt = snapshot.ObservedAt.UTC()
