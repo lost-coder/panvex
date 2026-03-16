@@ -13,6 +13,8 @@ type Credentials struct {
 	CertificatePEM string    `json:"certificate_pem"`
 	PrivateKeyPEM  string    `json:"private_key_pem"`
 	CAPEM          string    `json:"ca_pem"`
+	GRPCEndpoint   string    `json:"grpc_endpoint"`
+	GRPCServerName string    `json:"grpc_server_name"`
 	ExpiresAt      time.Time `json:"expires_at"`
 }
 

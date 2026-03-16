@@ -43,6 +43,7 @@ type agentBootstrapResponse struct {
 	CAPEM          string `json:"ca_pem"`
 	GRPCEndpoint   string `json:"grpc_endpoint"`
 	GRPCServerName string `json:"grpc_server_name"`
+	ExpiresAtUnix  int64  `json:"expires_at_unix"`
 }
 
 type enrollmentTokenResponse struct {
@@ -142,6 +143,7 @@ func (s *Server) handleAgentBootstrap() http.HandlerFunc {
 			CAPEM:          response.CAPEM,
 			GRPCEndpoint:   grpcEndpoint,
 			GRPCServerName: grpcServerName,
+			ExpiresAtUnix:  response.ExpiresAt.Unix(),
 		})
 	}
 }

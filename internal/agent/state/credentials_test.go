@@ -13,6 +13,8 @@ func TestSaveAndLoadCredentialsRoundTrip(t *testing.T) {
 		CertificatePEM: "cert",
 		PrivateKeyPEM:  "key",
 		CAPEM:          "ca",
+		GRPCEndpoint:   "panel.example.com:8443",
+		GRPCServerName: "panel.example.com",
 		ExpiresAt:      time.Date(2026, time.March, 15, 8, 0, 0, 0, time.UTC),
 	}
 
@@ -27,5 +29,11 @@ func TestSaveAndLoadCredentialsRoundTrip(t *testing.T) {
 
 	if loaded.AgentID != credentials.AgentID {
 		t.Fatalf("loaded.AgentID = %q, want %q", loaded.AgentID, credentials.AgentID)
+	}
+	if loaded.GRPCEndpoint != credentials.GRPCEndpoint {
+		t.Fatalf("loaded.GRPCEndpoint = %q, want %q", loaded.GRPCEndpoint, credentials.GRPCEndpoint)
+	}
+	if loaded.GRPCServerName != credentials.GRPCServerName {
+		t.Fatalf("loaded.GRPCServerName = %q, want %q", loaded.GRPCServerName, credentials.GRPCServerName)
 	}
 }
