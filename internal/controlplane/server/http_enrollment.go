@@ -380,14 +380,18 @@ func bootstrapGatewayAddress(host string) (string, string) {
 		return "127.0.0.1:8443", "control-plane.panvex.internal"
 	}
 
-	serverName := host
+	serverName := "control-plane.panvex.internal"
+	endpointHost := host
 	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
-		serverName = parsedHost
+		endpointHost = parsedHost
 	}
 
-	if strings.Contains(serverName, ":") && !strings.Contains(serverName, "]") {
-		return "[" + serverName + "]:8443", serverName
+	// The gateway certificate still uses the internal control-plane identity.
+	// Keep that TLS server name stable while deriving the network endpoint from
+	// the bootstrap request host.
+	if strings.Contains(endpointHost, ":") && !strings.Contains(endpointHost, "]") {
+		return "[" + endpointHost + "]:8443", serverName
 	}
 
-	return net.JoinHostPort(serverName, "8443"), serverName
+	return net.JoinHostPort(endpointHost, "8443"), serverName
 }

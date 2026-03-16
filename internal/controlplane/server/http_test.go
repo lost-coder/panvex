@@ -838,8 +838,8 @@ func TestHTTPAgentBootstrapConsumesTokenAndReturnsIdentityBundle(t *testing.T) {
 	if payload.GRPCEndpoint != "panel.example.com:8443" {
 		t.Fatalf("bootstrap.grpc_endpoint = %q, want %q", payload.GRPCEndpoint, "panel.example.com:8443")
 	}
-	if payload.GRPCServerName != "panel.example.com" {
-		t.Fatalf("bootstrap.grpc_server_name = %q, want %q", payload.GRPCServerName, "panel.example.com")
+	if payload.GRPCServerName != "control-plane.panvex.internal" {
+		t.Fatalf("bootstrap.grpc_server_name = %q, want %q", payload.GRPCServerName, "control-plane.panvex.internal")
 	}
 
 	storedToken, err := store.GetEnrollmentToken(context.Background(), token.Value)
