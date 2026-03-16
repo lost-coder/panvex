@@ -2,7 +2,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 
-import { apiClient } from "../lib/api";
+import { apiClient, configuredRootPath } from "../lib/api";
+import { buildEventsURL } from "../lib/runtime-path";
 
 const navigation = [
   { to: "/", label: "Dashboard" },
@@ -27,7 +28,7 @@ export function AppShell() {
       return;
     }
 
-    const socket = new WebSocket(`${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/api/events`);
+    const socket = new WebSocket(buildEventsURL(window.location.protocol, window.location.host, configuredRootPath));
     socket.onopen = () => setLive(true);
     socket.onclose = () => setLive(false);
     socket.onmessage = () => {

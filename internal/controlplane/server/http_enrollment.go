@@ -135,7 +135,7 @@ func (s *Server) handleAgentBootstrap() http.HandlerFunc {
 			return
 		}
 
-		grpcEndpoint, grpcServerName := bootstrapGatewayAddress(r.Host)
+		grpcEndpoint, grpcServerName := s.bootstrapGatewayAddress(r.Host)
 		writeJSON(w, http.StatusOK, agentBootstrapResponse{
 			AgentID:        response.AgentID,
 			CertificatePEM: response.CertificatePEM,
@@ -374,7 +374,16 @@ func bearerTokenFromHeader(value string) (string, bool) {
 	return token, true
 }
 
-func bootstrapGatewayAddress(host string) (string, string) {
+func (s *Server) bootstrapGatewayAddress(host string) (string, string) {
+	settings := s.panelSettingsSnapshot()
+	if settings.GRPCPublicEndpoint != "" {
+		return settings.GRPCPublicEndpoint, "control-plane.panvex.internal"
+	}
+
+	return defaultBootstrapGatewayAddress(host)
+}
+
+func defaultBootstrapGatewayAddress(host string) (string, string) {
 	host = strings.TrimSpace(host)
 	if host == "" {
 		return "127.0.0.1:8443", "control-plane.panvex.internal"

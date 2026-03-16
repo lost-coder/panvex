@@ -23,6 +23,12 @@ import (
 var (
 	// ErrInvalidCredentials reports a username or password mismatch.
 	ErrInvalidCredentials = errors.New("invalid credentials")
+	// ErrUserNotFound reports a missing local user record.
+	ErrUserNotFound = errors.New("user not found")
+	// ErrUserAlreadyExists reports a duplicate local username.
+	ErrUserAlreadyExists = errors.New("user already exists")
+	// ErrLastAdminRequired reports an operation that would remove the last admin.
+	ErrLastAdminRequired = errors.New("last admin must remain an admin")
 	// ErrSessionNotFound reports a missing or revoked session identifier.
 	ErrSessionNotFound = errors.New("session not found")
 	// ErrTotpRequired reports a missing second factor for a TOTP-enabled account.
@@ -52,6 +58,14 @@ type BootstrapInput struct {
 	Username string
 	Password string
 	Role     Role
+}
+
+// UpdateUserInput describes the mutable fields for one existing local user.
+type UpdateUserInput struct {
+	UserID      string
+	Username    string
+	Role        Role
+	NewPassword string
 }
 
 // LoginInput describes the operator credentials submitted during login.

@@ -61,18 +61,24 @@ func runServe(args []string) error {
 	}
 	defer store.Close()
 
+	panelRuntime, err := resolvePanelRuntime(store, options)
+	if err != nil {
+		return err
+	}
+
 	api := server.New(server.Options{
-		Now:     time.Now,
-		Store:   store,
-		UIFiles: embeddedUIFiles(),
+		Now:          time.Now,
+		Store:        store,
+		UIFiles:      embeddedUIFiles(),
+		PanelRuntime: panelRuntime,
 	})
 
 	httpServer := &http.Server{
-		Addr:    options.HTTPAddr,
+		Addr:    panelRuntime.HTTPListenAddress,
 		Handler: api.Handler(),
 	}
 
-	grpcListener, err := net.Listen("tcp", options.GRPCAddr)
+	grpcListener, err := net.Listen("tcp", panelRuntime.GRPCListenAddress)
 	if err != nil {
 		return err
 	}
@@ -82,11 +88,15 @@ func runServe(args []string) error {
 
 	httpErrors := make(chan error, 1)
 	go func() {
-		log.Printf("control-plane http listening on %s", options.HTTPAddr)
+		log.Printf("control-plane http listening on %s", panelRuntime.HTTPListenAddress)
+		if panelRuntime.TLSMode == "direct" {
+			httpErrors <- httpServer.ListenAndServeTLS(panelRuntime.TLSCertFile, panelRuntime.TLSKeyFile)
+			return
+		}
 		httpErrors <- httpServer.ListenAndServe()
 	}()
 
-	log.Printf("control-plane grpc listening on %s", options.GRPCAddr)
+	log.Printf("control-plane grpc listening on %s", panelRuntime.GRPCListenAddress)
 	go func() {
 		httpErrors <- grpcServer.Serve(grpcListener)
 	}()
@@ -114,6 +124,37 @@ func parseServeConfig(args []string) (serveConfig, error) {
 		GRPCAddr: *grpcAddr,
 		Storage: storage,
 	}, nil
+}
+
+func resolvePanelRuntime(store storage.Store, configuration serveConfig) (server.PanelRuntime, error) {
+	runtime := server.PanelRuntime{
+		HTTPListenAddress: configuration.HTTPAddr,
+		GRPCListenAddress: configuration.GRPCAddr,
+		TLSMode:           "proxy",
+		RestartSupported:  false,
+	}
+
+	record, err := store.GetPanelSettings(context.Background())
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return runtime, nil
+		}
+		return server.PanelRuntime{}, err
+	}
+
+	if record.HTTPListenAddress != "" {
+		runtime.HTTPListenAddress = record.HTTPListenAddress
+	}
+	runtime.HTTPRootPath = record.HTTPRootPath
+	if record.GRPCListenAddress != "" {
+		runtime.GRPCListenAddress = record.GRPCListenAddress
+	}
+	if record.TLSMode != "" {
+		runtime.TLSMode = record.TLSMode
+	}
+	runtime.TLSCertFile = record.TLSCertFile
+	runtime.TLSKeyFile = record.TLSKeyFile
+	return runtime, nil
 }
 
 func runBootstrapAdmin(args []string) error {

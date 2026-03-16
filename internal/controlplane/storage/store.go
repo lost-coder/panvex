@@ -8,6 +8,7 @@ import (
 // UserStore persists local control-plane user records.
 type UserStore interface {
 	PutUser(ctx context.Context, user UserRecord) error
+	DeleteUser(ctx context.Context, userID string) error
 	GetUserByID(ctx context.Context, userID string) (UserRecord, error)
 	GetUserByUsername(ctx context.Context, username string) (UserRecord, error)
 	ListUsers(ctx context.Context) ([]UserRecord, error)
@@ -55,6 +56,12 @@ type EnrollmentStore interface {
 	RevokeEnrollmentToken(ctx context.Context, value string, revokedAt time.Time) (EnrollmentTokenRecord, error)
 }
 
+// PanelSettingsStore persists operator-managed panel network and TLS settings.
+type PanelSettingsStore interface {
+	PutPanelSettings(ctx context.Context, settings PanelSettingsRecord) error
+	GetPanelSettings(ctx context.Context) (PanelSettingsRecord, error)
+}
+
 // Store aggregates the persistence capabilities required by the control-plane.
 type Store interface {
 	UserStore
@@ -63,6 +70,7 @@ type Store interface {
 	AuditStore
 	MetricStore
 	EnrollmentStore
+	PanelSettingsStore
 
 	Close() error
 }

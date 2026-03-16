@@ -13,6 +13,7 @@ import (
 
 	"github.com/panvex/panvex/internal/controlplane/auth"
 	"github.com/panvex/panvex/internal/controlplane/config"
+	"github.com/panvex/panvex/internal/controlplane/storage"
 	"github.com/panvex/panvex/internal/controlplane/storage/sqlite"
 )
 
@@ -34,6 +35,85 @@ func TestParseServeConfigDefaultsToSQLiteDataFile(t *testing.T) {
 func TestParseServeConfigRejectsPostgresWithoutDSN(t *testing.T) {
 	if _, err := parseServeConfig([]string{"-storage-driver", "postgres"}); err == nil {
 		t.Fatal("parseServeConfig() error = nil, want postgres DSN validation failure")
+	}
+}
+
+func TestResolvePanelRuntimeUsesStoredSettingsWhenPresent(t *testing.T) {
+	now := time.Date(2026, time.March, 16, 22, 10, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	if err := store.PutPanelSettings(context.Background(), storage.PanelSettingsRecord{
+		HTTPPublicURL:      "https://panel.example.com",
+		HTTPRootPath:       "/panvex",
+		GRPCPublicEndpoint: "grpc.panel.example.com:443",
+		HTTPListenAddress:  ":9080",
+		GRPCListenAddress:  ":9443",
+		TLSMode:            "direct",
+		TLSCertFile:        "/etc/panvex-panel/tls/panel.crt",
+		TLSKeyFile:         "/etc/panvex-panel/tls/panel.key",
+		UpdatedAt:          now,
+	}); err != nil {
+		t.Fatalf("PutPanelSettings() error = %v", err)
+	}
+
+	runtime, err := resolvePanelRuntime(store, serveConfig{
+		HTTPAddr: ":8080",
+		GRPCAddr: ":8443",
+	})
+	if err != nil {
+		t.Fatalf("resolvePanelRuntime() error = %v", err)
+	}
+
+	if runtime.HTTPListenAddress != ":9080" {
+		t.Fatalf("runtime.HTTPListenAddress = %q, want %q", runtime.HTTPListenAddress, ":9080")
+	}
+	if runtime.HTTPRootPath != "/panvex" {
+		t.Fatalf("runtime.HTTPRootPath = %q, want %q", runtime.HTTPRootPath, "/panvex")
+	}
+	if runtime.GRPCListenAddress != ":9443" {
+		t.Fatalf("runtime.GRPCListenAddress = %q, want %q", runtime.GRPCListenAddress, ":9443")
+	}
+	if runtime.TLSMode != "direct" {
+		t.Fatalf("runtime.TLSMode = %q, want %q", runtime.TLSMode, "direct")
+	}
+	if runtime.TLSCertFile != "/etc/panvex-panel/tls/panel.crt" {
+		t.Fatalf("runtime.TLSCertFile = %q, want %q", runtime.TLSCertFile, "/etc/panvex-panel/tls/panel.crt")
+	}
+	if runtime.TLSKeyFile != "/etc/panvex-panel/tls/panel.key" {
+		t.Fatalf("runtime.TLSKeyFile = %q, want %q", runtime.TLSKeyFile, "/etc/panvex-panel/tls/panel.key")
+	}
+}
+
+func TestResolvePanelRuntimeFallsBackToServeConfigDefaults(t *testing.T) {
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	runtime, err := resolvePanelRuntime(store, serveConfig{
+		HTTPAddr: ":8080",
+		GRPCAddr: ":8443",
+	})
+	if err != nil {
+		t.Fatalf("resolvePanelRuntime() error = %v", err)
+	}
+
+	if runtime.HTTPListenAddress != ":8080" {
+		t.Fatalf("runtime.HTTPListenAddress = %q, want %q", runtime.HTTPListenAddress, ":8080")
+	}
+	if runtime.HTTPRootPath != "" {
+		t.Fatalf("runtime.HTTPRootPath = %q, want empty", runtime.HTTPRootPath)
+	}
+	if runtime.GRPCListenAddress != ":8443" {
+		t.Fatalf("runtime.GRPCListenAddress = %q, want %q", runtime.GRPCListenAddress, ":8443")
+	}
+	if runtime.TLSMode != "proxy" {
+		t.Fatalf("runtime.TLSMode = %q, want %q", runtime.TLSMode, "proxy")
 	}
 }
 

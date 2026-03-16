@@ -92,3 +92,16 @@ CREATE TABLE IF NOT EXISTS enrollment_tokens (
     consumed_at_unix INTEGER,
     revoked_at_unix INTEGER
 );
+
+CREATE TABLE IF NOT EXISTS panel_settings (
+    scope TEXT PRIMARY KEY,
+    http_public_url TEXT NOT NULL DEFAULT '',
+    http_root_path TEXT NOT NULL DEFAULT '',
+    grpc_public_endpoint TEXT NOT NULL DEFAULT '',
+    http_listen_address TEXT NOT NULL DEFAULT '',
+    grpc_listen_address TEXT NOT NULL DEFAULT '',
+    tls_mode TEXT NOT NULL DEFAULT '',
+    tls_cert_file TEXT NOT NULL DEFAULT '',
+    tls_key_file TEXT NOT NULL DEFAULT '',
+    updated_at_unix INTEGER NOT NULL
+);

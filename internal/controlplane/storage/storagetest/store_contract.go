@@ -15,6 +15,61 @@ type OpenStore func(t *testing.T) storage.Store
 func RunStoreContract(t *testing.T, open OpenStore) {
 	t.Helper()
 
+	t.Run("panel settings round trip", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		settings := storage.PanelSettingsRecord{
+			HTTPPublicURL:      "https://panel.example.com",
+			HTTPRootPath:       "/panvex",
+			GRPCPublicEndpoint: "panel.example.com:8443",
+			HTTPListenAddress:  ":8080",
+			GRPCListenAddress:  ":8443",
+			TLSMode:            "direct",
+			TLSCertFile:        "/etc/panvex-panel/tls/panel.crt",
+			TLSKeyFile:         "/etc/panvex-panel/tls/panel.key",
+			UpdatedAt:          time.Date(2026, time.March, 16, 18, 0, 0, 0, time.UTC),
+		}
+
+		if err := store.PutPanelSettings(ctx, settings); err != nil {
+			t.Fatalf("PutPanelSettings() error = %v", err)
+		}
+
+		stored, err := store.GetPanelSettings(ctx)
+		if err != nil {
+			t.Fatalf("GetPanelSettings() error = %v", err)
+		}
+
+		if stored.HTTPPublicURL != settings.HTTPPublicURL {
+			t.Fatalf("GetPanelSettings() HTTPPublicURL = %q, want %q", stored.HTTPPublicURL, settings.HTTPPublicURL)
+		}
+		if stored.HTTPRootPath != settings.HTTPRootPath {
+			t.Fatalf("GetPanelSettings() HTTPRootPath = %q, want %q", stored.HTTPRootPath, settings.HTTPRootPath)
+		}
+		if stored.GRPCPublicEndpoint != settings.GRPCPublicEndpoint {
+			t.Fatalf("GetPanelSettings() GRPCPublicEndpoint = %q, want %q", stored.GRPCPublicEndpoint, settings.GRPCPublicEndpoint)
+		}
+		if stored.HTTPListenAddress != settings.HTTPListenAddress {
+			t.Fatalf("GetPanelSettings() HTTPListenAddress = %q, want %q", stored.HTTPListenAddress, settings.HTTPListenAddress)
+		}
+		if stored.GRPCListenAddress != settings.GRPCListenAddress {
+			t.Fatalf("GetPanelSettings() GRPCListenAddress = %q, want %q", stored.GRPCListenAddress, settings.GRPCListenAddress)
+		}
+		if stored.TLSMode != settings.TLSMode {
+			t.Fatalf("GetPanelSettings() TLSMode = %q, want %q", stored.TLSMode, settings.TLSMode)
+		}
+		if stored.TLSCertFile != settings.TLSCertFile {
+			t.Fatalf("GetPanelSettings() TLSCertFile = %q, want %q", stored.TLSCertFile, settings.TLSCertFile)
+		}
+		if stored.TLSKeyFile != settings.TLSKeyFile {
+			t.Fatalf("GetPanelSettings() TLSKeyFile = %q, want %q", stored.TLSKeyFile, settings.TLSKeyFile)
+		}
+		if !stored.UpdatedAt.Equal(settings.UpdatedAt) {
+			t.Fatalf("GetPanelSettings() UpdatedAt = %v, want %v", stored.UpdatedAt, settings.UpdatedAt)
+		}
+	})
+
 	t.Run("user create and load round trip", func(t *testing.T) {
 		store := open(t)
 		defer store.Close()
@@ -67,6 +122,34 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 
 		if !users[0].TotpEnabled {
 			t.Fatal("ListUsers()[0].TotpEnabled = false, want true")
+		}
+	})
+
+	t.Run("user delete removes persisted record", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		user := storage.UserRecord{
+			ID:           "user-000002",
+			Username:     "operator",
+			PasswordHash: "argon2id$hash",
+			Role:         "operator",
+			TotpEnabled:  false,
+			TotpSecret:   "",
+			CreatedAt:    time.Date(2026, time.March, 15, 8, 10, 0, 0, time.UTC),
+		}
+
+		if err := store.PutUser(ctx, user); err != nil {
+			t.Fatalf("PutUser() error = %v", err)
+		}
+
+		if err := store.DeleteUser(ctx, user.ID); err != nil {
+			t.Fatalf("DeleteUser() error = %v", err)
+		}
+
+		if _, err := store.GetUserByID(ctx, user.ID); err != storage.ErrNotFound {
+			t.Fatalf("GetUserByID() after DeleteUser error = %v, want %v", err, storage.ErrNotFound)
 		}
 	})
 

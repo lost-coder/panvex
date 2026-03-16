@@ -25,10 +25,11 @@ const (
 
 // Options defines the runtime dependencies used by the control-plane server.
 type Options struct {
-	Now   func() time.Time
-	Users []auth.User
-	Store storage.Store
-	UIFiles fs.FS
+	Now          func() time.Time
+	Users        []auth.User
+	Store        storage.Store
+	UIFiles      fs.FS
+	PanelRuntime PanelRuntime
 }
 
 // Server wires local-auth, inventory, jobs, and operator APIs into one HTTP surface.
@@ -42,6 +43,7 @@ type Server struct {
 	events     *eventHub
 	authority  *certificateAuthority
 	now        func() time.Time
+	panelRuntime PanelRuntime
 
 	mu         sync.RWMutex
 	agentSeq   uint64
@@ -52,6 +54,7 @@ type Server struct {
 	instances  map[string]Instance
 	metrics    []MetricSnapshot
 	auditTrail []AuditEvent
+	panelSettings PanelSettings
 	handler    http.Handler
 }
 
@@ -71,12 +74,14 @@ func New(options Options) *Server {
 		presence:   presence.NewTracker(30*time.Second, 90*time.Second),
 		events:     newEventHub(),
 		now:        now,
+		panelRuntime: defaultPanelRuntime(options.PanelRuntime),
 		agents:     make(map[string]Agent),
 		deliveredJobs: make(map[string]map[string]bool),
 		instances:  make(map[string]Instance),
 		metrics:    make([]MetricSnapshot, 0),
 		auditTrail: make([]AuditEvent, 0),
 	}
+	server.panelSettings = defaultPanelSettings(server.panelRuntime)
 	authority, err := newCertificateAuthority(now())
 	if err != nil {
 		panic(err)
@@ -87,6 +92,7 @@ func New(options Options) *Server {
 		server.seedUsers(options.Users)
 		server.auth = auth.NewServiceWithStore(options.Store)
 		server.restoreStoredState()
+		server.restoreStoredPanelSettings()
 	} else if len(options.Users) > 0 {
 		server.auth.LoadUsers(options.Users)
 	}
@@ -211,16 +217,25 @@ func (s *Server) routes() http.Handler {
 		api.Get("/metrics", s.handleMetrics())
 		api.Get("/events", s.handleEvents())
 		api.Get("/users", s.handleUsers())
+		api.Post("/users", s.handleCreateUser())
+		api.Put("/users/{id}", s.handleUpdateUser())
+		api.Delete("/users/{id}", s.handleDeleteUser())
 		api.Post("/users/{id}/totp/reset", s.handleResetUserTotp())
+		api.Get("/settings/panel", s.handleGetPanelSettings())
+		api.Put("/settings/panel", s.handlePutPanelSettings())
 		api.Get("/agents/enrollment-tokens", s.handleListEnrollmentTokens())
 		api.Post("/agents/enrollment-tokens", s.handleCreateEnrollmentToken())
 		api.Post("/agents/enrollment-tokens/{value}/revoke", s.handleRevokeEnrollmentToken())
 	})
-	if uiHandler := newUIHandler(s.uiFiles); uiHandler != nil {
+	if uiHandler := newUIHandler(s.uiFiles, s.panelRuntime.HTTPRootPath); uiHandler != nil {
 		router.NotFound(uiHandler)
 	}
 
-	return router
+	if s.panelRuntime.HTTPRootPath == "" {
+		return router
+	}
+
+	return stripRootPath(s.panelRuntime.HTTPRootPath, router)
 }
 
 func (s *Server) appendAudit(actorID string, action string, targetID string, details map[string]any) {
