@@ -38,6 +38,7 @@ export function AppShell() {
       void queryClient.invalidateQueries({ queryKey: ["jobs"] });
       void queryClient.invalidateQueries({ queryKey: ["audit"] });
       void queryClient.invalidateQueries({ queryKey: ["metrics"] });
+      void queryClient.invalidateQueries({ queryKey: ["enrollment-tokens"] });
     };
 
     return () => socket.close();
