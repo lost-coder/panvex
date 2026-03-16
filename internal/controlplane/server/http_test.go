@@ -772,6 +772,262 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 	}
 }
 
+func TestHTTPControlRoomShowsFirstServerOnboarding(t *testing.T) {
+	now := time.Date(2026, time.March, 16, 9, 0, 0, 0, time.UTC)
+	server := New(Options{
+		Now: func() time.Time { return now },
+	})
+	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "admin",
+		Password: "admin-password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "admin",
+		"password": "admin-password",
+	}, nil)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
+	}
+
+	controlRoomResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/control-room", nil, loginResponse.Result().Cookies())
+	if controlRoomResponse.Code != http.StatusOK {
+		t.Fatalf("GET /api/control-room status = %d, want %d", controlRoomResponse.Code, http.StatusOK)
+	}
+
+	var payload struct {
+		Onboarding struct {
+			NeedsFirstServer       bool   `json:"needs_first_server"`
+			SetupComplete          bool   `json:"setup_complete"`
+			SuggestedEnvironmentID string `json:"suggested_environment_id"`
+			SuggestedFleetGroupID  string `json:"suggested_fleet_group_id"`
+		} `json:"onboarding"`
+		Fleet fleetResponse `json:"fleet"`
+		Jobs  struct {
+			Total   int `json:"total"`
+			Queued  int `json:"queued"`
+			Running int `json:"running"`
+			Failed  int `json:"failed"`
+		} `json:"jobs"`
+		RecentActivity []AuditEvent `json:"recent_activity"`
+	}
+	if err := json.Unmarshal(controlRoomResponse.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal(control-room) error = %v", err)
+	}
+
+	if !payload.Onboarding.NeedsFirstServer {
+		t.Fatal("onboarding.needs_first_server = false, want true")
+	}
+	if payload.Onboarding.SetupComplete {
+		t.Fatal("onboarding.setup_complete = true, want false")
+	}
+	if payload.Onboarding.SuggestedEnvironmentID != "default" {
+		t.Fatalf("onboarding.suggested_environment_id = %q, want %q", payload.Onboarding.SuggestedEnvironmentID, "default")
+	}
+	if payload.Onboarding.SuggestedFleetGroupID != "default" {
+		t.Fatalf("onboarding.suggested_fleet_group_id = %q, want %q", payload.Onboarding.SuggestedFleetGroupID, "default")
+	}
+	if payload.Fleet.TotalAgents != 0 {
+		t.Fatalf("fleet.total_agents = %d, want %d", payload.Fleet.TotalAgents, 0)
+	}
+	if payload.Jobs.Total != 0 || payload.Jobs.Queued != 0 || payload.Jobs.Running != 0 || payload.Jobs.Failed != 0 {
+		t.Fatalf("jobs summary = %+v, want all zeros", payload.Jobs)
+	}
+	if len(payload.RecentActivity) != 0 {
+		t.Fatalf("len(recent_activity) = %d, want %d", len(payload.RecentActivity), 0)
+	}
+}
+
+func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
+	currentTime := time.Date(2026, time.March, 16, 10, 0, 0, 0, time.UTC)
+	server := New(Options{
+		Now: func() time.Time { return currentTime },
+	})
+	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "admin",
+		Password: "admin-password",
+		Role:     auth.RoleAdmin,
+	}, currentTime); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	server.agents["agent-1"] = Agent{
+		ID:            "agent-1",
+		NodeName:      "node-a",
+		EnvironmentID: "prod",
+		FleetGroupID:  "ams-1",
+		Version:       "1.0.0",
+		LastSeenAt:    currentTime,
+	}
+	server.agents["agent-2"] = Agent{
+		ID:            "agent-2",
+		NodeName:      "node-b",
+		EnvironmentID: "prod",
+		FleetGroupID:  "ams-1",
+		Version:       "1.0.0",
+		LastSeenAt:    currentTime.Add(-45 * time.Second),
+	}
+	server.agents["agent-3"] = Agent{
+		ID:            "agent-3",
+		NodeName:      "node-c",
+		EnvironmentID: "lab",
+		FleetGroupID:  "edge",
+		Version:       "1.0.0",
+		LastSeenAt:    currentTime.Add(-2 * time.Minute),
+	}
+	server.instances["instance-1"] = Instance{
+		ID:             "instance-1",
+		AgentID:        "agent-1",
+		Name:           "telemt-a",
+		Version:        "1.0.0",
+		ConnectedUsers: 27,
+		UpdatedAt:      currentTime,
+	}
+	server.instances["instance-2"] = Instance{
+		ID:             "instance-2",
+		AgentID:        "agent-2",
+		Name:           "telemt-b",
+		Version:        "1.0.0",
+		ConnectedUsers: 8,
+		UpdatedAt:      currentTime.Add(-30 * time.Second),
+	}
+	server.presence.MarkConnected("agent-1", currentTime)
+	server.presence.MarkConnected("agent-2", currentTime.Add(-45*time.Second))
+	server.presence.MarkConnected("agent-3", currentTime.Add(-2*time.Minute))
+
+	queuedJob, err := server.jobs.Enqueue(jobs.CreateJobInput{
+		Action:         jobs.ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            time.Minute,
+		IdempotencyKey: "control-room-queued",
+		ActorID:        "user-1",
+		ReadOnlyAgents: map[string]bool{"agent-1": false},
+	}, currentTime.Add(-2*time.Minute))
+	if err != nil {
+		t.Fatalf("Enqueue(queued) error = %v", err)
+	}
+	runningJob, err := server.jobs.Enqueue(jobs.CreateJobInput{
+		Action:         jobs.ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-2"},
+		TTL:            time.Minute,
+		IdempotencyKey: "control-room-running",
+		ActorID:        "user-1",
+		ReadOnlyAgents: map[string]bool{"agent-2": false},
+	}, currentTime.Add(-90*time.Second))
+	if err != nil {
+		t.Fatalf("Enqueue(running) error = %v", err)
+	}
+	server.jobs.MarkDelivered("agent-2", runningJob.ID, currentTime.Add(-80*time.Second))
+
+	failedJob, err := server.jobs.Enqueue(jobs.CreateJobInput{
+		Action:         jobs.ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-3"},
+		TTL:            time.Minute,
+		IdempotencyKey: "control-room-failed",
+		ActorID:        "user-1",
+		ReadOnlyAgents: map[string]bool{"agent-3": false},
+	}, currentTime.Add(-70*time.Second))
+	if err != nil {
+		t.Fatalf("Enqueue(failed) error = %v", err)
+	}
+	server.jobs.RecordResult("agent-3", failedJob.ID, false, "connection lost", currentTime.Add(-60*time.Second))
+
+	currentTime = currentTime.Add(-30 * time.Second)
+	server.appendAudit("user-1", "agents.enrollment.create", "token-1", map[string]any{
+		"environment_id": "prod",
+	})
+	currentTime = currentTime.Add(10 * time.Second)
+	server.appendAudit("user-1", "jobs.create", queuedJob.ID, map[string]any{
+		"action": string(queuedJob.Action),
+	})
+	currentTime = currentTime.Add(20 * time.Second)
+
+	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "admin",
+		"password": "admin-password",
+	}, nil)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
+	}
+
+	controlRoomResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/control-room", nil, loginResponse.Result().Cookies())
+	if controlRoomResponse.Code != http.StatusOK {
+		t.Fatalf("GET /api/control-room status = %d, want %d", controlRoomResponse.Code, http.StatusOK)
+	}
+
+	var payload struct {
+		Onboarding struct {
+			NeedsFirstServer       bool   `json:"needs_first_server"`
+			SetupComplete          bool   `json:"setup_complete"`
+			SuggestedEnvironmentID string `json:"suggested_environment_id"`
+			SuggestedFleetGroupID  string `json:"suggested_fleet_group_id"`
+		} `json:"onboarding"`
+		Fleet fleetResponse `json:"fleet"`
+		Jobs  struct {
+			Total   int `json:"total"`
+			Queued  int `json:"queued"`
+			Running int `json:"running"`
+			Failed  int `json:"failed"`
+		} `json:"jobs"`
+		RecentActivity []AuditEvent `json:"recent_activity"`
+	}
+	if err := json.Unmarshal(controlRoomResponse.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal(control-room) error = %v", err)
+	}
+
+	if payload.Onboarding.NeedsFirstServer {
+		t.Fatal("onboarding.needs_first_server = true, want false")
+	}
+	if !payload.Onboarding.SetupComplete {
+		t.Fatal("onboarding.setup_complete = false, want true")
+	}
+	if payload.Onboarding.SuggestedEnvironmentID != "prod" {
+		t.Fatalf("onboarding.suggested_environment_id = %q, want %q", payload.Onboarding.SuggestedEnvironmentID, "prod")
+	}
+	if payload.Onboarding.SuggestedFleetGroupID != "ams-1" {
+		t.Fatalf("onboarding.suggested_fleet_group_id = %q, want %q", payload.Onboarding.SuggestedFleetGroupID, "ams-1")
+	}
+	if payload.Fleet.TotalAgents != 3 {
+		t.Fatalf("fleet.total_agents = %d, want %d", payload.Fleet.TotalAgents, 3)
+	}
+	if payload.Fleet.OnlineAgents != 1 {
+		t.Fatalf("fleet.online_agents = %d, want %d", payload.Fleet.OnlineAgents, 1)
+	}
+	if payload.Fleet.DegradedAgents != 1 {
+		t.Fatalf("fleet.degraded_agents = %d, want %d", payload.Fleet.DegradedAgents, 1)
+	}
+	if payload.Fleet.OfflineAgents != 1 {
+		t.Fatalf("fleet.offline_agents = %d, want %d", payload.Fleet.OfflineAgents, 1)
+	}
+	if payload.Fleet.TotalInstances != 2 {
+		t.Fatalf("fleet.total_instances = %d, want %d", payload.Fleet.TotalInstances, 2)
+	}
+	if payload.Jobs.Total != 3 {
+		t.Fatalf("jobs.total = %d, want %d", payload.Jobs.Total, 3)
+	}
+	if payload.Jobs.Queued != 1 {
+		t.Fatalf("jobs.queued = %d, want %d", payload.Jobs.Queued, 1)
+	}
+	if payload.Jobs.Running != 1 {
+		t.Fatalf("jobs.running = %d, want %d", payload.Jobs.Running, 1)
+	}
+	if payload.Jobs.Failed != 1 {
+		t.Fatalf("jobs.failed = %d, want %d", payload.Jobs.Failed, 1)
+	}
+	if len(payload.RecentActivity) != 2 {
+		t.Fatalf("len(recent_activity) = %d, want %d", len(payload.RecentActivity), 2)
+	}
+	if payload.RecentActivity[0].Action != "jobs.create" {
+		t.Fatalf("recent_activity[0].action = %q, want %q", payload.RecentActivity[0].Action, "jobs.create")
+	}
+	if payload.RecentActivity[1].Action != "agents.enrollment.create" {
+		t.Fatalf("recent_activity[1].action = %q, want %q", payload.RecentActivity[1].Action, "agents.enrollment.create")
+	}
+}
+
 func TestHTTPEmbeddedUIFallsBackToIndexForSPARoute(t *testing.T) {
 	now := time.Date(2026, time.March, 15, 12, 0, 0, 0, time.UTC)
 	server := New(Options{

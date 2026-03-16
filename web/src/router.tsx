@@ -11,6 +11,9 @@ import { useState } from "react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { AppShell } from "./components/app-shell";
+import { ControlRoomHero } from "./components/control-room-hero";
+import { ControlRoomOnboarding } from "./components/control-room-onboarding";
+import { ControlRoomSummary } from "./components/control-room-summary";
 import { FleetDetailDrawer } from "./components/fleet-detail-drawer";
 import { SettingsPage } from "./settings-page";
 import {
@@ -96,7 +99,7 @@ function ProtectedShell() {
   });
 
   if (meQuery.isLoading) {
-    return <CenteredMessage title="Loading control room" description="Rebuilding operator context." />;
+    return <CenteredMessage title="Loading Control Room" description="Opening your latest control-plane context." />;
   }
 
   if (meQuery.isError) {
@@ -133,7 +136,7 @@ function LoginPage() {
         <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Panvex</p>
         <h1 className="mt-4 text-4xl font-semibold tracking-tight text-slate-950">Enter the control room</h1>
         <p className="mt-3 text-sm leading-6 text-slate-600">
-          Sign in with your local account to inspect fleet health, manage Telemt nodes, and keep everything in one place.
+          Sign in with your local account to keep server health, Telemt actions, and day-to-day control in one friendly place.
         </p>
         <form
           className="mt-8 space-y-4"
@@ -152,7 +155,7 @@ function LoginPage() {
             className="inline-flex rounded-2xl bg-slate-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-60"
             disabled={loginMutation.isPending}
           >
-            {loginMutation.isPending ? "Authenticating..." : "Open dashboard"}
+            {loginMutation.isPending ? "Authenticating..." : "Enter Control Room"}
           </button>
         </form>
       </div>
@@ -161,61 +164,68 @@ function LoginPage() {
 }
 
 function OverviewPage() {
-  const fleetQuery = useQuery({ queryKey: ["fleet"], queryFn: () => apiClient.fleet() });
+  const controlRoomQuery = useQuery({ queryKey: ["control-room"], queryFn: () => apiClient.controlRoom() });
   const metricsQuery = useQuery({ queryKey: ["metrics"], queryFn: () => apiClient.metrics() });
-  const auditQuery = useQuery({ queryKey: ["audit"], queryFn: () => apiClient.audit() });
 
-  if (fleetQuery.isLoading || auditQuery.isLoading) {
-    return <CenteredMessage title="Loading overview" description="Collecting the latest fleet summary." />;
+  if (controlRoomQuery.isLoading) {
+    return <CenteredMessage title="Loading Control Room" description="Pulling together your latest server summary." />;
   }
 
-  if (fleetQuery.isError || auditQuery.isError) {
-    return <CenteredMessage title="Overview unavailable" description="The dashboard could not load its latest control-plane data." />;
+  if (controlRoomQuery.isError) {
+    return <CenteredMessage title="Control Room is unavailable" description="The overview could not load the latest control-plane summary." />;
   }
 
-  const fleet = fleetQuery.data!;
-  const auditEvents = auditQuery.data ?? [];
+  const controlRoom = controlRoomQuery.data!;
   const chartData = aggregateMetrics(metricsQuery.data ?? []);
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Agents online" value={fleet.online_agents.toString()} tone="emerald" />
-        <MetricCard label="Agents degraded" value={fleet.degraded_agents.toString()} tone="amber" />
-        <MetricCard label="Agents offline" value={fleet.offline_agents.toString()} tone="rose" />
-        <MetricCard label="Instances" value={fleet.total_instances.toString()} tone="slate" />
-      </div>
+      <ControlRoomHero summary={controlRoom} />
+      <ControlRoomOnboarding onboarding={controlRoom.onboarding} />
+      <ControlRoomSummary summary={controlRoom} />
 
       <div className="grid gap-6 xl:grid-cols-[1.2fr,0.8fr]">
         <section className="rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-[0_20px_60px_rgba(37,46,68,0.08)]">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Metric drift</p>
-          <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Connected users trend</h3>
-          <div className="mt-6 h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
-                <defs>
-                  <linearGradient id="connectedUsers" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0f766e" stopOpacity={0.45} />
-                    <stop offset="95%" stopColor="#0f766e" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="4 6" stroke="#d8dee8" vertical={false} />
-                <XAxis dataKey="label" stroke="#64748b" />
-                <YAxis stroke="#64748b" />
-                <Tooltip />
-                <Area type="monotone" dataKey="connectedUsers" stroke="#0f766e" fill="url(#connectedUsers)" strokeWidth={3} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Activity</p>
+          <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Connected users over time</h3>
+          {chartData.length > 0 ? (
+            <div className="mt-6 h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData}>
+                  <defs>
+                    <linearGradient id="connectedUsers" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#0f766e" stopOpacity={0.45} />
+                      <stop offset="95%" stopColor="#0f766e" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="4 6" stroke="#d8dee8" vertical={false} />
+                  <XAxis dataKey="label" stroke="#64748b" />
+                  <YAxis stroke="#64748b" />
+                  <Tooltip />
+                  <Area type="monotone" dataKey="connectedUsers" stroke="#0f766e" fill="url(#connectedUsers)" strokeWidth={3} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <FriendlyEmptyState
+              title="No traffic history yet"
+              description="Once your agent starts sending snapshots, the recent connected-user trend will show up here."
+            />
+          )}
         </section>
 
         <section className="rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-[0_20px_60px_rgba(37,46,68,0.08)]">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Latest events</p>
-          <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Operator and security feed</h3>
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Recent activity</p>
+          <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">What changed most recently</h3>
           <div className="mt-6 space-y-3">
-            {auditEvents.slice(0, 6).map((event) => (
-              <AuditRow key={event.id} event={event} />
-            ))}
+            {controlRoom.recent_activity.length > 0 ? (
+              controlRoom.recent_activity.map((event) => <AuditRow key={event.id} event={event} />)
+            ) : (
+              <FriendlyEmptyState
+                title="Nothing noisy yet"
+                description="Important activity will appear here once you create tokens, run actions, or your first server checks in."
+              />
+            )}
           </div>
         </section>
       </div>
@@ -229,26 +239,40 @@ function FleetPage() {
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
 
   if (agentsQuery.isLoading || instancesQuery.isLoading) {
-    return <CenteredMessage title="Loading fleet" description="Building the latest inventory table." />;
+    return <CenteredMessage title="Loading fleet" description="Gathering the latest server and Telemt inventory." />;
   }
 
   if (agentsQuery.isError || instancesQuery.isError) {
-    return <CenteredMessage title="Fleet unavailable" description="The fleet inventory could not be loaded." />;
+    return <CenteredMessage title="Fleet is unavailable" description="The current server inventory could not be loaded." />;
   }
 
   const agents = agentsQuery.data ?? [];
   const instances = instancesQuery.data ?? [];
+  const singleServerView = agents.length <= 1;
+
+  if (agents.length === 0) {
+    return (
+      <FriendlyEmptyState
+        title="No servers are connected yet"
+        description="Open Control Room to create the first connection token and bring your first Telemt server online."
+      />
+    );
+  }
 
   return (
     <>
       <div className="rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-[0_20px_60px_rgba(37,46,68,0.08)]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Fleet grid</p>
-            <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Nodes and Telemt runtimes</h3>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">{singleServerView ? "Your server" : "Fleet"}</p>
+            <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
+              {singleServerView ? "Your server and its Telemt runtimes" : "Servers and their Telemt runtimes"}
+            </h3>
           </div>
           <p className="max-w-xl text-sm text-slate-600">
-            Dense inventory remains the primary workspace: select a node to inspect local Telemt instances without leaving the table.
+            {singleServerView
+              ? "This page keeps the important details for your connected server close by. Select the row to inspect the local Telemt runtimes without leaving the table."
+              : "Keep your server inventory close by, then open any row to inspect the Telemt runtimes reported by that host."}
           </p>
         </div>
         <div className="mt-6 overflow-x-auto">
@@ -325,7 +349,7 @@ function JobsPage() {
   });
 
   if (jobsQuery.isLoading || agentsQuery.isLoading) {
-    return <CenteredMessage title="Loading jobs" description="Replaying the command queue." />;
+    return <CenteredMessage title="Loading actions" description="Collecting the latest action history and available servers." />;
   }
 
   const agents = agentsQuery.data ?? [];
@@ -334,8 +358,11 @@ function JobsPage() {
   return (
     <div className="grid gap-6 xl:grid-cols-[0.8fr,1.2fr]">
       <section className="rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-[0_20px_60px_rgba(37,46,68,0.08)]">
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Dispatch</p>
-        <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Runtime reload</h3>
+        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Quick action</p>
+        <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Reload a Telemt runtime</h3>
+        <p className="mt-3 text-sm leading-6 text-slate-600">
+          Pick a connected server and send a runtime reload. This is the fastest place to try a routine control action without leaving the panel.
+        </p>
         <div className="mt-6 space-y-4">
           <label className="block">
             <span className="mb-2 block text-sm font-medium text-slate-700">Agent</span>
@@ -344,7 +371,7 @@ function JobsPage() {
               value={selectedAgentID}
               onChange={(event) => setSelectedAgentID(event.target.value)}
             >
-              <option value="">Select agent</option>
+              <option value="">{agents.length === 0 ? "Connect a server first" : "Choose a server"}</option>
               {agents.map((agent) => (
                 <option key={agent.id} value={agent.id}>
                   {agent.node_name} ({agent.id})
@@ -359,7 +386,7 @@ function JobsPage() {
             disabled={!selectedAgentID || createJobMutation.isPending}
             onClick={() => createJobMutation.mutate()}
           >
-            {createJobMutation.isPending ? "Dispatching..." : "Dispatch runtime.reload"}
+            {createJobMutation.isPending ? "Sending action..." : "Run reload"}
           </button>
           {createJobMutation.error ? (
             <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
@@ -370,12 +397,17 @@ function JobsPage() {
       </section>
 
       <section className="rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-[0_20px_60px_rgba(37,46,68,0.08)]">
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Queue</p>
-        <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Recent jobs</h3>
+        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Recent actions</p>
+        <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">What happened most recently</h3>
         <div className="mt-6 space-y-3">
-          {jobs.map((job) => (
-            <JobRow key={job.id} job={job} />
-          ))}
+          {jobs.length > 0 ? (
+            jobs.map((job) => <JobRow key={job.id} job={job} />)
+          ) : (
+            <FriendlyEmptyState
+              title="No actions yet"
+              description="Once you send a control action, the recent history will appear here with the latest status."
+            />
+          )}
         </div>
       </section>
     </div>
@@ -392,11 +424,16 @@ function AuditPage() {
   return (
     <section className="rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-[0_20px_60px_rgba(37,46,68,0.08)]">
       <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Audit</p>
-      <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Immutable event trail</h3>
+      <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Recent security and operator activity</h3>
       <div className="mt-6 space-y-3">
-        {auditQuery.data?.map((event) => (
-          <AuditRow key={event.id} event={event} />
-        ))}
+        {auditQuery.data && auditQuery.data.length > 0 ? (
+          auditQuery.data.map((event) => <AuditRow key={event.id} event={event} />)
+        ) : (
+          <FriendlyEmptyState
+            title="Nothing to review yet"
+            description="Security changes, sign-in events, and operator actions will appear here as the panel starts getting used."
+          />
+        )}
       </div>
     </section>
   );
@@ -406,35 +443,42 @@ function AgentsPage() {
   const agentsQuery = useQuery({ queryKey: ["agents"], queryFn: () => apiClient.agents() });
 
   if (agentsQuery.isLoading) {
-    return <CenteredMessage title="Loading agents" description="Refreshing live node status." />;
+    return <CenteredMessage title="Loading agents" description="Refreshing the latest server cards." />;
   }
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {agentsQuery.data?.map((agent) => (
-        <div key={agent.id} className="rounded-[28px] border border-white/70 bg-white/85 p-5 shadow-[0_20px_60px_rgba(37,46,68,0.08)]">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-lg font-semibold text-slate-950">{agent.node_name}</p>
-              <p className="mt-1 text-sm text-slate-500">{agent.environment_id} / {agent.fleet_group_id}</p>
+    agentsQuery.data && agentsQuery.data.length > 0 ? (
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {agentsQuery.data.map((agent) => (
+          <div key={agent.id} className="rounded-[28px] border border-white/70 bg-white/85 p-5 shadow-[0_20px_60px_rgba(37,46,68,0.08)]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-lg font-semibold text-slate-950">{agent.node_name}</p>
+                <p className="mt-1 text-sm text-slate-500">{agent.environment_id} / {agent.fleet_group_id}</p>
+              </div>
+              <span className={`rounded-full px-3 py-1 text-xs uppercase tracking-[0.22em] ${agent.read_only ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
+                {agent.read_only ? "Read only" : "Writable"}
+              </span>
             </div>
-            <span className={`rounded-full px-3 py-1 text-xs uppercase tracking-[0.22em] ${agent.read_only ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
-              {agent.read_only ? "Read only" : "Writable"}
-            </span>
+            <dl className="mt-6 grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <dt className="text-slate-500">Agent ID</dt>
+                <dd className="mt-1 font-medium text-slate-950">{agent.id}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Version</dt>
+                <dd className="mt-1 font-medium text-slate-950">{agent.version || "unknown"}</dd>
+              </div>
+            </dl>
           </div>
-          <dl className="mt-6 grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <dt className="text-slate-500">Agent ID</dt>
-              <dd className="mt-1 font-medium text-slate-950">{agent.id}</dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">Version</dt>
-              <dd className="mt-1 font-medium text-slate-950">{agent.version || "unknown"}</dd>
-            </div>
-          </dl>
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+    ) : (
+      <FriendlyEmptyState
+        title="No agent cards yet"
+        description="Once your first server connects, each agent will show up here with its current mode and version."
+      />
+    )
   );
 }
 
@@ -445,34 +489,27 @@ function aggregateMetrics(metrics: MetricSnapshot[]) {
   }));
 }
 
-function MetricCard(props: { label: string; value: string; tone: "emerald" | "amber" | "rose" | "slate" }) {
-  const toneClass = {
-    emerald: "from-emerald-500/18 to-emerald-200/10 text-emerald-900",
-    amber: "from-amber-500/18 to-amber-200/10 text-amber-900",
-    rose: "from-rose-500/18 to-rose-200/10 text-rose-900",
-    slate: "from-slate-900/10 to-slate-200/10 text-slate-900"
-  }[props.tone];
-
-  return (
-    <div className={`rounded-[28px] border border-white/70 bg-gradient-to-br ${toneClass} p-5 shadow-[0_20px_60px_rgba(37,46,68,0.08)]`}>
-      <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">{props.label}</div>
-      <div className="mt-5 text-4xl font-semibold tracking-tight">{props.value}</div>
-    </div>
-  );
-}
-
 function JobRow(props: { job: Job }) {
   return (
     <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="font-medium text-slate-950">{props.job.action}</p>
+          <p className="font-medium text-slate-950">{formatActionLabel(props.job.action)}</p>
           <p className="mt-1 text-sm text-slate-600">{props.job.target_agent_ids.join(", ")}</p>
         </div>
         <span className="rounded-full bg-slate-950 px-3 py-1 text-xs uppercase tracking-[0.22em] text-white">
-          {props.job.status}
+          {formatStatusLabel(props.job.status)}
         </span>
       </div>
+    </div>
+  );
+}
+
+function FriendlyEmptyState(props: { title: string; description: string }) {
+  return (
+    <div className="rounded-[28px] border border-dashed border-slate-300 bg-slate-50/80 px-5 py-10 text-center">
+      <h4 className="text-lg font-semibold text-slate-950">{props.title}</h4>
+      <p className="mt-3 text-sm leading-6 text-slate-600">{props.description}</p>
     </div>
   );
 }
@@ -482,7 +519,7 @@ function AuditRow(props: { event: AuditEvent }) {
     <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="font-medium text-slate-950">{props.event.action}</p>
+          <p className="font-medium text-slate-950">{formatActionLabel(props.event.action)}</p>
           <p className="mt-1 text-sm text-slate-600">{props.event.actor_id || "system"} → {props.event.target_id}</p>
         </div>
         <span className="text-xs uppercase tracking-[0.22em] text-slate-500">
@@ -516,10 +553,30 @@ function CenteredMessage(props: { title: string; description: string }) {
         <p className="mt-3 text-sm text-slate-600">{props.description}</p>
         <div className="mt-6">
           <Link to="/login" className="text-sm font-medium text-slate-900 underline underline-offset-4">
-            Return to login
+            Back to sign-in
           </Link>
         </div>
       </div>
     </div>
   );
+}
+
+function formatActionLabel(action: string) {
+  const labels: Record<string, string> = {
+    "agents.enrolled": "Server enrolled",
+    "agents.enrollment.create": "Connection token created",
+    "auth.totp.disabled": "Two-factor disabled",
+    "auth.totp.enabled": "Two-factor enabled",
+    "auth.totp.reset_by_admin": "Two-factor reset by admin",
+    "jobs.create": "Action created",
+    "jobs.result": "Action finished",
+    "runtime.reload": "Reload runtime",
+    "users.create": "Create Telemt user"
+  };
+
+  return labels[action] ?? action.replaceAll(".", " / ");
+}
+
+function formatStatusLabel(status: string) {
+  return status.replaceAll("_", " ");
 }

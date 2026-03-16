@@ -112,6 +112,14 @@ export function SettingsPage() {
 
   return (
     <div className="space-y-6">
+      <section className="rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-[0_20px_60px_rgba(37,46,68,0.08)]">
+        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Settings</p>
+        <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Keep sign-in and server setup close by</h2>
+        <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600">
+          Use this space when you want to connect another server, tighten sign-in security, or help someone on your team recover access without leaving the panel.
+        </p>
+      </section>
+
       <div className="grid gap-6 xl:grid-cols-[0.9fr,1.1fr]">
         <EnrollmentPanel
           environmentID={environmentID}
@@ -154,8 +162,11 @@ function EnrollmentPanel(props: {
 }) {
   return (
     <section className="rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-[0_20px_60px_rgba(37,46,68,0.08)]">
-      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Enrollment</p>
-      <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Issue agent bootstrap token</h3>
+      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Server connection</p>
+      <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Connect another server</h3>
+      <p className="mt-3 text-sm leading-6 text-slate-600">
+        Create a fresh token whenever you want to bring another Telemt server into Panvex. The latest token and CA certificate stay right here for quick copying.
+      </p>
       <div className="mt-6 space-y-4">
         <Field label="Environment" value={props.environmentID} onChange={props.onEnvironmentIDChange} />
         <Field label="Fleet group" value={props.fleetGroupID} onChange={props.onFleetGroupIDChange} />
@@ -170,7 +181,7 @@ function EnrollmentPanel(props: {
           className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800"
           onClick={() => props.tokenMutation.mutate()}
         >
-          {props.tokenMutation.isPending ? "Issuing..." : "Create token"}
+          {props.tokenMutation.isPending ? "Creating token..." : "Create token"}
         </button>
       </div>
       <div className="mt-6">
@@ -180,7 +191,7 @@ function EnrollmentPanel(props: {
             <CopyBlock label="CA PEM" value={props.tokenMutation.data.ca_pem} />
           </div>
         ) : (
-          <p className="text-sm text-slate-600">Issue a token to generate the bootstrap package for a new agent.</p>
+          <p className="text-sm text-slate-600">Create a token here when you want to connect another server through the agent.</p>
         )}
       </div>
     </section>
@@ -290,7 +301,10 @@ function AdminUsersPanel(props: {
   return (
     <section className="rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-[0_20px_60px_rgba(37,46,68,0.08)]">
       <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Local accounts</p>
-      <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Admin TOTP recovery</h3>
+      <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Help someone recover access</h3>
+      <p className="mt-3 text-sm leading-6 text-slate-600">
+        If a teammate loses access to their authenticator app, you can reset TOTP for that account here. Your own account is intentionally excluded from the quick reset action.
+      </p>
       {props.usersQuery.isLoading ? <p className="mt-6 text-sm text-slate-600">Loading local accounts...</p> : null}
       {props.usersQuery.isError ? <ErrorText message={props.usersQuery.error.message} /> : null}
       {props.usersQuery.data ? (
@@ -352,7 +366,16 @@ function Field(props: { label: string; value: string; onChange: (value: string) 
 function CopyBlock(props: { label: string; value: string }) {
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-4">
-      <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">{props.label}</div>
+      <div className="flex items-center justify-between gap-4">
+        <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">{props.label}</div>
+        <button
+          type="button"
+          className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-950"
+          onClick={() => void navigator.clipboard.writeText(props.value)}
+        >
+          Copy
+        </button>
+      </div>
       <pre className="mt-4 overflow-x-auto whitespace-pre-wrap break-all text-sm text-slate-800">{props.value}</pre>
     </div>
   );

@@ -29,6 +29,9 @@ export function FleetDetailDrawer(props: FleetDetailDrawerProps) {
                   <Dialog.Description className="mt-2 text-sm text-slate-600">
                     {props.agent.environment_id} / {props.agent.fleet_group_id}
                   </Dialog.Description>
+                  <p className="mt-3 max-w-md text-sm leading-6 text-slate-600">
+                    This drawer keeps the important details for the selected server close by, including the Telemt runtimes that were last reported by its local agent.
+                  </p>
                 </div>
                 <Dialog.Close className="rounded-full border border-slate-200 px-3 py-1.5 text-sm text-slate-500 transition hover:border-slate-300 hover:text-slate-900">
                   Close
@@ -37,7 +40,7 @@ export function FleetDetailDrawer(props: FleetDetailDrawerProps) {
 
               <section className="mt-8 space-y-5">
                 <div className="grid grid-cols-2 gap-4">
-                  <StatCard label="Agent ID" value={props.agent.id} />
+                  <StatCard label="Server ID" value={props.agent.id} />
                   <StatCard label="Version" value={props.agent.version || "unknown"} />
                   <StatCard label="Read only" value={props.agent.read_only ? "Yes" : "No"} />
                   <StatCard label="Last seen" value={new Date(props.agent.last_seen_at).toLocaleString()} />
@@ -48,7 +51,7 @@ export function FleetDetailDrawer(props: FleetDetailDrawerProps) {
                   <div className="mt-4 space-y-3">
                     {scopedInstances.length === 0 ? (
                       <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-5 text-sm text-slate-500">
-                        No instances reported yet.
+                        This server has not reported any Telemt instances yet.
                       </div>
                     ) : (
                       scopedInstances.map((instance) => (

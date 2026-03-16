@@ -200,6 +200,7 @@ func (s *Server) routes() http.Handler {
 		api.Post("/auth/totp/enable", s.handleTotpEnable())
 		api.Post("/auth/totp/disable", s.handleTotpDisable())
 
+		api.Get("/control-room", s.handleControlRoom())
 		api.Get("/fleet", s.handleFleet())
 		api.Get("/agents", s.handleAgents())
 		api.Get("/instances", s.handleInstances())
