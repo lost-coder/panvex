@@ -9,10 +9,6 @@ import {
 import { useState } from "react";
 
 import {
-  AgentInstallFlow,
-} from "./components/agent-install-flow";
-
-import {
   apiClient,
   type LocalUser,
   type MeResponse,
@@ -79,7 +75,7 @@ export function SettingsPage() {
   });
 
   if (meQuery.isLoading) {
-    return <SettingsState title="Loading settings" description="Refreshing account and enrollment preferences." />;
+    return <SettingsState title="Loading settings" description="Refreshing sign-in and local account preferences." />;
   }
 
   if (meQuery.isError) {
@@ -102,57 +98,29 @@ export function SettingsPage() {
     <div className="space-y-6">
       <section className="rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-[0_20px_60px_rgba(37,46,68,0.08)]">
         <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Settings</p>
-        <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Keep sign-in and server setup close by</h2>
+        <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Keep sign-in and local access under control</h2>
         <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600">
-          Use this space when you want to connect another server, tighten sign-in security, or help someone on your team recover access without leaving the panel.
+          Use this space to tighten sign-in security for your own account and help someone on your team recover access without leaving the panel.
         </p>
       </section>
 
-      <div className="grid gap-6 xl:grid-cols-[0.9fr,1.1fr]">
-        <EnrollmentPanel
-          environmentID="prod"
-          fleetGroupID="default"
-        />
-        <SecurityPanel
-          me={me}
-          pendingSetup={pendingSetup}
-          securityPassword={securityPassword}
-          securityTotpCode={securityTotpCode}
-          onSecurityPasswordChange={setSecurityPassword}
-          onSecurityTotpCodeChange={setSecurityTotpCode}
-          startTotpSetupMutation={startTotpSetupMutation}
-          enableTotpMutation={enableTotpMutation}
-          disableTotpMutation={disableTotpMutation}
-          securityError={securityError}
-        />
-      </div>
+      <SecurityPanel
+        me={me}
+        pendingSetup={pendingSetup}
+        securityPassword={securityPassword}
+        securityTotpCode={securityTotpCode}
+        onSecurityPasswordChange={setSecurityPassword}
+        onSecurityTotpCodeChange={setSecurityTotpCode}
+        startTotpSetupMutation={startTotpSetupMutation}
+        enableTotpMutation={enableTotpMutation}
+        disableTotpMutation={disableTotpMutation}
+        securityError={securityError}
+      />
 
       {me.role === "admin" ? (
         <AdminUsersPanel me={me} usersQuery={usersQuery} resetUserTotpMutation={resetUserTotpMutation} />
       ) : null}
     </div>
-  );
-}
-
-function EnrollmentPanel(props: {
-  environmentID: string;
-  fleetGroupID: string;
-}) {
-  return (
-    <section className="rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-[0_20px_60px_rgba(37,46,68,0.08)]">
-      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Server connection</p>
-      <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Connect another server</h3>
-      <p className="mt-3 text-sm leading-6 text-slate-600">
-        Generate a short-lived token, run the Linux installer on the new host, and watch Panvex confirm the first full agent connection without copying certificate files around.
-      </p>
-      <div className="mt-6">
-        <AgentInstallFlow
-          initialEnvironmentID={props.environmentID}
-          initialFleetGroupID={props.fleetGroupID}
-          createLabel="Create token"
-        />
-      </div>
-    </section>
   );
 }
 

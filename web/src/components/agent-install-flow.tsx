@@ -7,6 +7,7 @@ import {
   type EnrollmentTokenListItem,
   type EnrollmentTokenResponse
 } from "../lib/api";
+import { resolveConnectedAgentID } from "./agent-install-flow-state";
 
 type AgentInstallFlowProps = {
   initialEnvironmentID: string;
@@ -39,6 +40,11 @@ export function AgentInstallFlow(props: AgentInstallFlowProps) {
   const agentsQuery = useQuery({
     queryKey: ["agents"],
     queryFn: () => apiClient.agents()
+  });
+
+  const instancesQuery = useQuery({
+    queryKey: ["instances"],
+    queryFn: () => apiClient.instances()
   });
 
   const createTokenMutation = useMutation({
@@ -85,12 +91,11 @@ export function AgentInstallFlow(props: AgentInstallFlowProps) {
       return;
     }
 
-    const baseline = new Set(baselineAgentIDs);
-    const candidate = (agentsQuery.data ?? []).find((agent) => !baseline.has(agent.id));
-    if (candidate) {
-      setConnectedAgentID(candidate.id);
+    const candidateID = resolveConnectedAgentID(agentsQuery.data ?? [], instancesQuery.data ?? [], baselineAgentIDs);
+    if (candidateID) {
+      setConnectedAgentID(candidateID);
     }
-  }, [agentsQuery.data, baselineAgentIDs, connectedAgentID, trackedToken]);
+  }, [agentsQuery.data, baselineAgentIDs, connectedAgentID, instancesQuery.data, trackedToken]);
 
   const connectedAgent = useMemo(() => {
     return (agentsQuery.data ?? []).find((agent) => agent.id === connectedAgentID) ?? null;
