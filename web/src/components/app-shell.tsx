@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { apiClient } from "../lib/api";
 
 const navigation = [
-  { to: "/", label: "Overview" },
+  { to: "/", label: "Dashboard" },
   { to: "/fleet", label: "Fleet" },
   { to: "/jobs", label: "Jobs" },
   { to: "/audit", label: "Audit" },
@@ -31,6 +31,7 @@ export function AppShell() {
     socket.onopen = () => setLive(true);
     socket.onclose = () => setLive(false);
     socket.onmessage = () => {
+      void queryClient.invalidateQueries({ queryKey: ["control-room"] });
       void queryClient.invalidateQueries({ queryKey: ["fleet"] });
       void queryClient.invalidateQueries({ queryKey: ["agents"] });
       void queryClient.invalidateQueries({ queryKey: ["instances"] });
@@ -43,7 +44,7 @@ export function AppShell() {
   }, [meQuery.data, queryClient]);
 
   const title = useMemo(() => {
-    return navigation.find((item) => item.to === pathname)?.label ?? "Control Room";
+    return navigation.find((item) => item.to === pathname)?.label ?? "Dashboard";
   }, [pathname]);
 
   return (
@@ -53,7 +54,7 @@ export function AppShell() {
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Panvex</p>
             <h1 className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">Control Room</h1>
-            <p className="mt-2 text-sm text-slate-600">Fleet orchestration for Telemt nodes.</p>
+            <p className="mt-2 text-sm text-slate-600">A calm home for your Telemt servers, day-to-day actions, and live health.</p>
           </div>
 
           <nav className="mt-8 space-y-2">
@@ -77,7 +78,7 @@ export function AppShell() {
               <span className={`inline-flex h-2.5 w-2.5 rounded-full ${live ? "bg-emerald-400" : "bg-amber-400"}`} />
             </div>
             <p className="mt-3 text-sm text-white/80">
-              {live ? "Live event stream connected" : "Waiting for event stream"}
+              {live ? "Live updates are flowing in" : "Waiting for the live event stream"}
             </p>
           </div>
         </aside>
@@ -86,8 +87,7 @@ export function AppShell() {
           <header className="rounded-[28px] border border-white/70 bg-white/80 px-5 py-4 shadow-[0_20px_60px_rgba(37,46,68,0.08)] backdrop-blur">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Operations</p>
-                <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">{title}</h2>
+                <h2 className="text-3xl font-semibold tracking-tight text-slate-950">{title}</h2>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
                 {meQuery.data ? (

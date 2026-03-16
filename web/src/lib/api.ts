@@ -14,6 +14,23 @@ export type FleetResponse = {
   metric_snapshots: number;
 };
 
+export type ControlRoomResponse = {
+  onboarding: {
+    needs_first_server: boolean;
+    setup_complete: boolean;
+    suggested_environment_id: string;
+    suggested_fleet_group_id: string;
+  };
+  fleet: FleetResponse;
+  jobs: {
+    total: number;
+    queued: number;
+    running: number;
+    failed: number;
+  };
+  recent_activity: AuditEvent[];
+};
+
 export type Agent = {
   id: string;
   node_name: string;
@@ -152,6 +169,7 @@ export const apiClient = {
       method: "POST",
       body: JSON.stringify(payload)
     }),
+  controlRoom: () => api<ControlRoomResponse>(`${apiBasePath}/control-room`),
   fleet: () => api<FleetResponse>(`${apiBasePath}/fleet`),
   agents: () => api<Agent[]>(`${apiBasePath}/agents`),
   instances: () => api<Instance[]>(`${apiBasePath}/instances`),
