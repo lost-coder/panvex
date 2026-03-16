@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -772,6 +773,171 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 	}
 }
 
+func TestHTTPAgentBootstrapConsumesTokenAndReturnsIdentityBundle(t *testing.T) {
+	now := time.Date(2026, time.March, 16, 14, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := New(Options{
+		Now: func() time.Time { return now },
+		Store: store,
+	})
+	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
+		EnvironmentID: "prod",
+		FleetGroupID:  "default",
+		TTL:           time.Minute,
+	}, now)
+	if err != nil {
+		t.Fatalf("issueEnrollmentToken() error = %v", err)
+	}
+
+	bootstrapResponse := performJSONRequestWithHeaders(
+		t,
+		server.Handler(),
+		http.MethodPost,
+		"https://panel.example.com/api/agent/bootstrap",
+		map[string]string{
+			"node_name": "node-a",
+			"version":   "1.0.0",
+		},
+		nil,
+		map[string]string{
+			"Authorization": "Bearer " + token.Value,
+		},
+	)
+	if bootstrapResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/agent/bootstrap status = %d, want %d", bootstrapResponse.Code, http.StatusOK)
+	}
+
+	var payload struct {
+		AgentID        string `json:"agent_id"`
+		CertificatePEM string `json:"certificate_pem"`
+		PrivateKeyPEM  string `json:"private_key_pem"`
+		CAPEM          string `json:"ca_pem"`
+		GRPCEndpoint   string `json:"grpc_endpoint"`
+		GRPCServerName string `json:"grpc_server_name"`
+	}
+	if err := json.Unmarshal(bootstrapResponse.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal(bootstrap) error = %v", err)
+	}
+	if payload.AgentID == "" {
+		t.Fatal("bootstrap.agent_id = empty, want issued agent identity")
+	}
+	if payload.CertificatePEM == "" {
+		t.Fatal("bootstrap.certificate_pem = empty, want issued certificate")
+	}
+	if payload.PrivateKeyPEM == "" {
+		t.Fatal("bootstrap.private_key_pem = empty, want issued private key")
+	}
+	if payload.CAPEM == "" {
+		t.Fatal("bootstrap.ca_pem = empty, want issued CA")
+	}
+	if payload.GRPCEndpoint != "panel.example.com:8443" {
+		t.Fatalf("bootstrap.grpc_endpoint = %q, want %q", payload.GRPCEndpoint, "panel.example.com:8443")
+	}
+	if payload.GRPCServerName != "panel.example.com" {
+		t.Fatalf("bootstrap.grpc_server_name = %q, want %q", payload.GRPCServerName, "panel.example.com")
+	}
+
+	storedToken, err := store.GetEnrollmentToken(context.Background(), token.Value)
+	if err != nil {
+		t.Fatalf("GetEnrollmentToken() error = %v", err)
+	}
+	if storedToken.ConsumedAt == nil {
+		t.Fatal("GetEnrollmentToken() ConsumedAt = nil, want consumed token")
+	}
+
+	agents, err := store.ListAgents(context.Background())
+	if err != nil {
+		t.Fatalf("ListAgents() error = %v", err)
+	}
+	if len(agents) != 1 {
+		t.Fatalf("len(ListAgents()) = %d, want %d", len(agents), 1)
+	}
+	if agents[0].NodeName != "node-a" {
+		t.Fatalf("ListAgents()[0].NodeName = %q, want %q", agents[0].NodeName, "node-a")
+	}
+}
+
+func TestHTTPAgentBootstrapRejectsConsumedToken(t *testing.T) {
+	now := time.Date(2026, time.March, 16, 14, 10, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := New(Options{
+		Now: func() time.Time { return now },
+		Store: store,
+	})
+	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
+		EnvironmentID: "prod",
+		FleetGroupID:  "default",
+		TTL:           time.Minute,
+	}, now)
+	if err != nil {
+		t.Fatalf("issueEnrollmentToken() error = %v", err)
+	}
+
+	firstResponse := performJSONRequestWithHeaders(
+		t,
+		server.Handler(),
+		http.MethodPost,
+		"https://panel.example.com/api/agent/bootstrap",
+		map[string]string{
+			"node_name": "node-a",
+			"version":   "1.0.0",
+		},
+		nil,
+		map[string]string{
+			"Authorization": "Bearer " + token.Value,
+		},
+	)
+	if firstResponse.Code != http.StatusOK {
+		t.Fatalf("first POST /api/agent/bootstrap status = %d, want %d", firstResponse.Code, http.StatusOK)
+	}
+
+	secondResponse := performJSONRequestWithHeaders(
+		t,
+		server.Handler(),
+		http.MethodPost,
+		"https://panel.example.com/api/agent/bootstrap",
+		map[string]string{
+			"node_name": "node-b",
+			"version":   "1.0.1",
+		},
+		nil,
+		map[string]string{
+			"Authorization": "Bearer " + token.Value,
+		},
+	)
+	if secondResponse.Code != http.StatusForbidden {
+		t.Fatalf("second POST /api/agent/bootstrap status = %d, want %d", secondResponse.Code, http.StatusForbidden)
+	}
+
+	var errorPayload struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(secondResponse.Body.Bytes(), &errorPayload); err != nil {
+		t.Fatalf("json.Unmarshal(error) error = %v", err)
+	}
+	if errorPayload.Error == "" {
+		t.Fatal("bootstrap error payload = empty, want rejection reason")
+	}
+
+	storedToken, err := store.GetEnrollmentToken(context.Background(), token.Value)
+	if err != nil {
+		t.Fatalf("GetEnrollmentToken() error = %v", err)
+	}
+	if storedToken.ConsumedAt == nil {
+		t.Fatal("GetEnrollmentToken() ConsumedAt = nil, want consumed token")
+	}
+}
+
 func TestHTTPControlRoomShowsFirstServerOnboarding(t *testing.T) {
 	now := time.Date(2026, time.March, 16, 9, 0, 0, 0, time.UTC)
 	server := New(Options{
@@ -1118,6 +1284,12 @@ func TestHTTPWithoutEmbeddedUIStillReturnsAPIOnlyNotFound(t *testing.T) {
 func performJSONRequest(t *testing.T, handler http.Handler, method string, path string, body any, cookies []*http.Cookie) *httptest.ResponseRecorder {
 	t.Helper()
 
+	return performJSONRequestWithHeaders(t, handler, method, path, body, cookies, nil)
+}
+
+func performJSONRequestWithHeaders(t *testing.T, handler http.Handler, method string, path string, body any, cookies []*http.Cookie, headers map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+
 	var payload []byte
 	if body != nil {
 		encoded, err := json.Marshal(body)
@@ -1129,6 +1301,9 @@ func performJSONRequest(t *testing.T, handler http.Handler, method string, path 
 
 	request := httptest.NewRequest(method, path, bytes.NewReader(payload))
 	request.Header.Set("Content-Type", "application/json")
+	for key, value := range headers {
+		request.Header.Set(key, value)
+	}
 	for _, cookie := range cookies {
 		request.AddCookie(cookie)
 	}

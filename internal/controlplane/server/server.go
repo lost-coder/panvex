@@ -193,6 +193,7 @@ func (s *Server) GRPCTLSConfig() *tls.Config {
 func (s *Server) routes() http.Handler {
 	router := chi.NewRouter()
 	router.Route(apiBasePath, func(api chi.Router) {
+		api.Post("/agent/bootstrap", s.handleAgentBootstrap())
 		api.Get("/auth/me", s.handleMe())
 		api.Post("/auth/login", s.handleLogin())
 		api.Post("/auth/logout", s.handleLogout())

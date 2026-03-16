@@ -3,7 +3,9 @@ package server
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/panvex/panvex/internal/controlplane/auth"
@@ -24,6 +26,20 @@ type createEnrollmentTokenResponse struct {
 	IssuedAtUnix  int64  `json:"issued_at_unix"`
 	ExpiresAtUnix int64  `json:"expires_at_unix"`
 	CAPEM         string `json:"ca_pem"`
+}
+
+type agentBootstrapRequest struct {
+	NodeName string `json:"node_name"`
+	Version  string `json:"version"`
+}
+
+type agentBootstrapResponse struct {
+	AgentID        string `json:"agent_id"`
+	CertificatePEM string `json:"certificate_pem"`
+	PrivateKeyPEM  string `json:"private_key_pem"`
+	CAPEM          string `json:"ca_pem"`
+	GRPCEndpoint   string `json:"grpc_endpoint"`
+	GRPCServerName string `json:"grpc_server_name"`
 }
 
 func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
@@ -67,6 +83,51 @@ func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 			IssuedAtUnix:  token.IssuedAt.Unix(),
 			ExpiresAtUnix: token.ExpiresAt.Unix(),
 			CAPEM:         s.authority.caPEM,
+		})
+	}
+}
+
+func (s *Server) handleAgentBootstrap() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token, ok := bearerTokenFromHeader(r.Header.Get("Authorization"))
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "missing bootstrap token")
+			return
+		}
+
+		var request agentBootstrapRequest
+		if err := decodeJSON(r, &request); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid bootstrap payload")
+			return
+		}
+		if request.NodeName == "" || request.Version == "" {
+			writeError(w, http.StatusBadRequest, "node_name and version are required")
+			return
+		}
+
+		response, err := s.enrollAgent(agentEnrollmentRequest{
+			Token:    token,
+			NodeName: request.NodeName,
+			Version:  request.Version,
+		}, s.now())
+		if err != nil {
+			switch err {
+			case security.ErrEnrollmentTokenInvalid, security.ErrEnrollmentTokenConsumed, security.ErrEnrollmentTokenExpired:
+				writeError(w, http.StatusForbidden, err.Error())
+			default:
+				writeError(w, http.StatusInternalServerError, err.Error())
+			}
+			return
+		}
+
+		grpcEndpoint, grpcServerName := bootstrapGatewayAddress(r.Host)
+		writeJSON(w, http.StatusOK, agentBootstrapResponse{
+			AgentID:        response.AgentID,
+			CertificatePEM: response.CertificatePEM,
+			PrivateKeyPEM:  response.PrivateKeyPEM,
+			CAPEM:          response.CAPEM,
+			GRPCEndpoint:   grpcEndpoint,
+			GRPCServerName: grpcServerName,
 		})
 	}
 }
@@ -133,4 +194,35 @@ func (s *Server) consumeEnrollmentToken(value string, now time.Time) (security.E
 		IssuedAt:      consumed.IssuedAt.UTC(),
 		ExpiresAt:     consumed.ExpiresAt.UTC(),
 	}, nil
+}
+
+func bearerTokenFromHeader(value string) (string, bool) {
+	if !strings.HasPrefix(value, "Bearer ") {
+		return "", false
+	}
+
+	token := strings.TrimSpace(strings.TrimPrefix(value, "Bearer "))
+	if token == "" {
+		return "", false
+	}
+
+	return token, true
+}
+
+func bootstrapGatewayAddress(host string) (string, string) {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return "127.0.0.1:8443", "control-plane.panvex.internal"
+	}
+
+	serverName := host
+	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+		serverName = parsedHost
+	}
+
+	if strings.Contains(serverName, ":") && !strings.Contains(serverName, "]") {
+		return "[" + serverName + "]:8443", serverName
+	}
+
+	return net.JoinHostPort(serverName, "8443"), serverName
 }
