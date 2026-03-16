@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { resolveConnectedAgentID } from "../src/components/agent-install-flow-state.ts";
+import {
+  buildConnectionJourney,
+  resolveConnectedAgentID
+} from "../src/components/agent-install-flow-state.ts";
 import { type Agent, type Instance } from "../src/lib/api.ts";
 
 test("resolveConnectedAgentID waits for the first runtime instance", () => {
@@ -65,4 +68,19 @@ test("resolveConnectedAgentID accepts a new agent after the first runtime instan
   ];
 
   assert.equal(resolveConnectedAgentID(agents, instances, ["agent-existing"]), "agent-new");
+});
+
+test("buildConnectionJourney highlights the active connection step", () => {
+  assert.deepEqual(
+    buildConnectionJourney("active", false).map((step) => step.state),
+    ["active", "idle", "idle"]
+  );
+  assert.deepEqual(
+    buildConnectionJourney("consumed", false).map((step) => step.state),
+    ["done", "done", "active"]
+  );
+  assert.deepEqual(
+    buildConnectionJourney("consumed", true).map((step) => step.state),
+    ["done", "done", "done"]
+  );
 });

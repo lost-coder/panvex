@@ -7,7 +7,7 @@ import {
   type EnrollmentTokenListItem,
   type EnrollmentTokenResponse
 } from "../lib/api";
-import { resolveConnectedAgentID } from "./agent-install-flow-state";
+import { buildConnectionJourney, resolveConnectedAgentID } from "./agent-install-flow-state";
 
 type AgentInstallFlowProps = {
   initialEnvironmentID: string;
@@ -221,6 +221,12 @@ function ConnectionStatusCard(props: {
         title="Server connected"
         description="The agent finished its first full check-in. You can close this flow or head straight into the connected server."
       >
+        <ConnectionJourneyCard
+          tokenStatus="consumed"
+          connected={true}
+          summary="Panvex has the first full runtime signal from the new server."
+          tone="emerald"
+        />
         <div className="rounded-3xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
           <div className="font-semibold">{props.connectedAgent.node_name}</div>
           <div className="mt-2 text-emerald-800">
@@ -282,7 +288,12 @@ function ConnectionStatusCard(props: {
         title="Finishing the first check-in"
         description="The bootstrap token has already been consumed. Panvex is waiting for the first full runtime signal from the new agent."
       >
-        <WaitingCard status="Finishing connection" />
+        <ConnectionJourneyCard
+          tokenStatus={props.token.status}
+          connected={false}
+          summary="The secure bootstrap is done. Panvex is waiting for the first runtime signal from the agent."
+          tone="sky"
+        />
       </StepCard>
     );
   }
@@ -293,8 +304,13 @@ function ConnectionStatusCard(props: {
       title="Waiting for connection"
       description="Run the installer on the target server. This card updates automatically as soon as the agent checks in."
     >
-      <div className="flex items-center justify-between gap-4 rounded-3xl border border-slate-200 bg-white px-4 py-4">
-        <WaitingCard status="Installer token is active" />
+      <div className="space-y-4 rounded-3xl border border-slate-200 bg-white px-4 py-4">
+        <ConnectionJourneyCard
+          tokenStatus={props.token.status}
+          connected={false}
+          summary="The installer token is active. Start the setup on the Linux host that runs Telemt."
+          tone="sky"
+        />
         <button
           type="button"
           className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:text-slate-950 disabled:opacity-60"
@@ -424,15 +440,84 @@ function ErrorText(props: { message: string }) {
   return <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{props.message}</p>;
 }
 
-function WaitingCard(props: { status: string }) {
+function ConnectionJourneyCard(props: {
+  tokenStatus: "active" | "consumed" | "expired" | "revoked";
+  connected: boolean;
+  summary: string;
+  tone: "emerald" | "sky";
+}) {
+  const steps = buildConnectionJourney(props.tokenStatus, props.connected);
+
   return (
-    <div className="flex items-center gap-4">
-      <div className="flex gap-1.5">
-        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-sky-500 [animation-delay:-0.3s]" />
-        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-sky-500 [animation-delay:-0.15s]" />
-        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-sky-500" />
+    <div className={`rounded-3xl border px-4 py-4 ${props.tone === "emerald" ? "border-emerald-200 bg-emerald-50" : "border-sky-200 bg-sky-50/70"}`}>
+      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_40px_minmax(0,1fr)_40px_minmax(0,1fr)] md:items-center">
+        <ConnectionJourneyStepCard step={steps[0]} tone={props.tone} />
+        <ConnectionJourneyLine fromState={steps[0].state} toState={steps[1].state} />
+        <ConnectionJourneyStepCard step={steps[1]} tone={props.tone} />
+        <ConnectionJourneyLine fromState={steps[1].state} toState={steps[2].state} />
+        <ConnectionJourneyStepCard step={steps[2]} tone={props.tone} />
       </div>
-      <div className="text-sm font-medium text-slate-900">{props.status}</div>
+      <p className={`mt-4 text-sm leading-6 ${props.tone === "emerald" ? "text-emerald-900" : "text-slate-700"}`}>{props.summary}</p>
+    </div>
+  );
+}
+
+function ConnectionJourneyStepCard(props: {
+  step: ReturnType<typeof buildConnectionJourney>[number];
+  tone: "emerald" | "sky";
+}) {
+  const stepClass =
+    props.step.state === "done"
+      ? "border-emerald-200 bg-white text-emerald-900"
+      : props.step.state === "active"
+        ? props.tone === "emerald"
+          ? "border-emerald-300 bg-white text-emerald-900"
+          : "border-sky-300 bg-white text-slate-950"
+        : "border-slate-200 bg-white/80 text-slate-500";
+  const badgeClass =
+    props.step.state === "done"
+      ? "border-emerald-200 bg-emerald-500 text-white"
+      : props.step.state === "active"
+        ? props.tone === "emerald"
+          ? "border-emerald-200 bg-emerald-500 text-white"
+          : "border-sky-200 bg-sky-500 text-white"
+        : "border-slate-200 bg-slate-100 text-slate-500";
+
+  return (
+    <div className={`rounded-[24px] border px-4 py-4 ${stepClass}`}>
+      <div className="flex items-start gap-3">
+        <div className="relative mt-0.5">
+          {props.step.state === "active" ? (
+            <span className={`absolute inset-0 rounded-full opacity-35 ${props.tone === "emerald" ? "bg-emerald-300" : "bg-sky-300"} animate-ping`} />
+          ) : null}
+          <span className={`relative flex h-8 w-8 items-center justify-center rounded-full border text-xs font-semibold uppercase tracking-[0.2em] ${badgeClass}`}>
+            {props.step.state === "done" ? "OK" : props.step.key.charAt(0)}
+          </span>
+        </div>
+        <div className="min-w-0">
+          <div className="text-sm font-semibold">{props.step.label}</div>
+          <div className="mt-1 text-xs leading-5">{props.step.detail}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConnectionJourneyLine(props: {
+  fromState: "idle" | "active" | "done";
+  toState: "idle" | "active" | "done";
+}) {
+  const lineClass =
+    props.fromState === "done"
+      ? "bg-emerald-400"
+      : props.fromState === "active" || props.toState === "active"
+        ? "bg-sky-300"
+        : "bg-slate-200";
+  const pulseClass = props.toState === "active" ? "after:absolute after:inset-y-0 after:left-0 after:w-1/2 after:animate-pulse after:rounded-full after:bg-white/50" : "";
+
+  return (
+    <div className="hidden md:flex md:justify-center">
+      <div className={`relative h-1 w-full rounded-full ${lineClass} ${pulseClass}`} />
     </div>
   );
 }
