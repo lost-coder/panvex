@@ -18,11 +18,13 @@ import { FleetDetailDrawer } from "./components/fleet-detail-drawer";
 import { SettingsPage } from "./settings-page";
 import {
   apiClient,
+  configuredRootPath,
   type Agent,
   type AuditEvent,
   type Job,
   type MetricSnapshot
 } from "./lib/api";
+import { getRouterBasepath } from "./lib/runtime-path";
 
 type RouterContext = {
   queryClient: import("@tanstack/react-query").QueryClient;
@@ -87,6 +89,7 @@ const routeTree = rootRoute.addChildren([
 
 export const router = createRouter({
   routeTree,
+  basepath: getRouterBasepath(configuredRootPath),
   context: {
     queryClient: undefined as never
   }
@@ -572,7 +575,10 @@ function formatActionLabel(action: string) {
     "jobs.create": "Action created",
     "jobs.result": "Action finished",
     "runtime.reload": "Reload runtime",
-    "users.create": "Create Telemt user"
+    "settings.panel.update": "Panel settings updated",
+    "users.create": "Local user created",
+    "users.delete": "Local user deleted",
+    "users.update": "Local user updated"
   };
 
   return labels[action] ?? action.replaceAll(".", " / ");

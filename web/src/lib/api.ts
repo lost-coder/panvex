@@ -1,3 +1,5 @@
+import { resolveAPIBasePath, resolveConfiguredRootPath } from "./runtime-path";
+
 export type MeResponse = {
   id: string;
   username: string;
@@ -116,6 +118,23 @@ export type LocalUser = {
   totp_enabled: boolean;
 };
 
+export type PanelSettingsResponse = {
+  http_public_url: string;
+  http_root_path: string;
+  grpc_public_endpoint: string;
+  http_listen_address: string;
+  grpc_listen_address: string;
+  tls_mode: "proxy" | "direct";
+  tls_cert_file: string;
+  tls_key_file: string;
+  updated_at_unix: number;
+  restart: {
+    supported: boolean;
+    pending: boolean;
+    state: "ready" | "pending" | "unavailable";
+  };
+};
+
 export type JobCreateInput = {
   action: string;
   target_agent_ids: string[];
@@ -123,7 +142,20 @@ export type JobCreateInput = {
   ttl_seconds: number;
 };
 
-const apiBasePath = "/api";
+export type CreateUserInput = {
+  username: string;
+  role: string;
+  password: string;
+};
+
+export type UpdateUserInput = {
+  username: string;
+  role: string;
+  new_password?: string;
+};
+
+export const configuredRootPath = resolveConfiguredRootPath();
+export const apiBasePath = resolveAPIBasePath(configuredRootPath);
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -185,6 +217,35 @@ export const apiClient = {
   agents: () => api<Agent[]>(`${apiBasePath}/agents`),
   instances: () => api<Instance[]>(`${apiBasePath}/instances`),
   users: () => api<LocalUser[]>(`${apiBasePath}/users`),
+  panelSettings: () => api<PanelSettingsResponse>(`${apiBasePath}/settings/panel`),
+  updatePanelSettings: (payload: {
+    http_public_url: string;
+    http_root_path: string;
+    grpc_public_endpoint: string;
+    http_listen_address: string;
+    grpc_listen_address: string;
+    tls_mode: "proxy" | "direct";
+    tls_cert_file: string;
+    tls_key_file: string;
+  }) =>
+    api<PanelSettingsResponse>(`${apiBasePath}/settings/panel`, {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    }),
+  createUser: (payload: CreateUserInput) =>
+    api<LocalUser>(`${apiBasePath}/users`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+  updateUser: (userID: string, payload: UpdateUserInput) =>
+    api<LocalUser>(`${apiBasePath}/users/${userID}`, {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    }),
+  deleteUser: (userID: string) =>
+    api<void>(`${apiBasePath}/users/${userID}`, {
+      method: "DELETE"
+    }),
   resetUserTotp: (userID: string) =>
     api<void>(`${apiBasePath}/users/${userID}/totp/reset`, {
       method: "POST"

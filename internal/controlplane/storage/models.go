@@ -100,3 +100,16 @@ type EnrollmentTokenRecord struct {
 	ConsumedAt    *time.Time
 	RevokedAt     *time.Time
 }
+
+// PanelSettingsRecord stores operator-managed panel network and TLS settings.
+type PanelSettingsRecord struct {
+	HTTPPublicURL      string
+	HTTPRootPath       string
+	GRPCPublicEndpoint string
+	HTTPListenAddress  string
+	GRPCListenAddress  string
+	TLSMode            string
+	TLSCertFile        string
+	TLSKeyFile         string
+	UpdatedAt          time.Time
+}

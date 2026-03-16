@@ -17,6 +17,18 @@ type userResponse struct {
 	TotpEnabled bool   `json:"totp_enabled"`
 }
 
+type createUserRequest struct {
+	Username string `json:"username"`
+	Role     string `json:"role"`
+	Password string `json:"password"`
+}
+
+type updateUserRequest struct {
+	Username    string `json:"username"`
+	Role        string `json:"role"`
+	NewPassword string `json:"new_password"`
+}
+
 func (s *Server) handleUsers() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, user, err := s.requireSession(r)
@@ -47,6 +59,152 @@ func (s *Server) handleUsers() http.HandlerFunc {
 		}
 
 		writeJSON(w, http.StatusOK, response)
+	}
+}
+
+func (s *Server) handleCreateUser() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		session, user, err := s.requireSession(r)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		if user.Role != auth.RoleAdmin {
+			writeError(w, http.StatusForbidden, "admin role required")
+			return
+		}
+
+		var request createUserRequest
+		if err := decodeJSON(r, &request); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid user payload")
+			return
+		}
+
+		createdUser, err := s.auth.CreateUser(auth.BootstrapInput{
+			Username: request.Username,
+			Password: request.Password,
+			Role:     auth.Role(request.Role),
+		}, s.now())
+		if err != nil {
+			switch {
+			case errors.Is(err, auth.ErrUserAlreadyExists):
+				writeError(w, http.StatusConflict, err.Error())
+			default:
+				writeError(w, http.StatusInternalServerError, err.Error())
+			}
+			return
+		}
+
+		s.appendAudit(session.UserID, "users.create", createdUser.ID, map[string]any{
+			"username": createdUser.Username,
+			"role":     createdUser.Role,
+		})
+		writeJSON(w, http.StatusCreated, userResponse{
+			ID:          createdUser.ID,
+			Username:    createdUser.Username,
+			Role:        string(createdUser.Role),
+			TotpEnabled: createdUser.TotpEnabled,
+		})
+	}
+}
+
+func (s *Server) handleUpdateUser() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		session, user, err := s.requireSession(r)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		if user.Role != auth.RoleAdmin {
+			writeError(w, http.StatusForbidden, "admin role required")
+			return
+		}
+
+		targetUserID := chi.URLParam(r, "id")
+		if targetUserID == "" {
+			writeError(w, http.StatusBadRequest, "user id is required")
+			return
+		}
+
+		var request updateUserRequest
+		if err := decodeJSON(r, &request); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid user payload")
+			return
+		}
+
+		updatedUser, err := s.auth.UpdateUser(auth.UpdateUserInput{
+			UserID:      targetUserID,
+			Username:    request.Username,
+			Role:        auth.Role(request.Role),
+			NewPassword: request.NewPassword,
+		}, s.now())
+		if err != nil {
+			switch {
+			case errors.Is(err, auth.ErrUserNotFound):
+				writeError(w, http.StatusNotFound, err.Error())
+			case errors.Is(err, auth.ErrUserAlreadyExists):
+				writeError(w, http.StatusConflict, err.Error())
+			case errors.Is(err, auth.ErrLastAdminRequired):
+				writeError(w, http.StatusBadRequest, err.Error())
+			default:
+				writeError(w, http.StatusInternalServerError, err.Error())
+			}
+			return
+		}
+
+		s.appendAudit(session.UserID, "users.update", updatedUser.ID, map[string]any{
+			"username": updatedUser.Username,
+			"role":     updatedUser.Role,
+		})
+		writeJSON(w, http.StatusOK, userResponse{
+			ID:          updatedUser.ID,
+			Username:    updatedUser.Username,
+			Role:        string(updatedUser.Role),
+			TotpEnabled: updatedUser.TotpEnabled,
+		})
+	}
+}
+
+func (s *Server) handleDeleteUser() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		session, user, err := s.requireSession(r)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		if user.Role != auth.RoleAdmin {
+			writeError(w, http.StatusForbidden, "admin role required")
+			return
+		}
+
+		targetUserID := chi.URLParam(r, "id")
+		if targetUserID == "" {
+			writeError(w, http.StatusBadRequest, "user id is required")
+			return
+		}
+
+		if targetUserID == session.UserID {
+			writeError(w, http.StatusBadRequest, "admin cannot delete own account")
+			return
+		}
+
+		if err := s.auth.DeleteUser(targetUserID); err != nil {
+			switch {
+			case errors.Is(err, auth.ErrUserNotFound):
+				writeError(w, http.StatusNotFound, err.Error())
+			case errors.Is(err, auth.ErrLastAdminRequired):
+				writeError(w, http.StatusBadRequest, err.Error())
+			default:
+				writeError(w, http.StatusInternalServerError, err.Error())
+			}
+			return
+		}
+
+		s.appendAudit(session.UserID, "users.delete", targetUserID, nil)
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 
