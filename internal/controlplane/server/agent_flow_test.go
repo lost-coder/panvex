@@ -187,6 +187,68 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 	}
 }
 
+func TestServerApplyAgentSnapshotKeepsEnrolledScopeWhenSnapshotDiffers(t *testing.T) {
+	now := time.Date(2026, time.March, 16, 11, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := New(Options{
+		Now: func() time.Time { return now },
+		Store: store,
+	})
+	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
+		EnvironmentID: "default",
+		FleetGroupID:  "default",
+		TTL:           time.Minute,
+	}, now)
+	if err != nil {
+		t.Fatalf("issueEnrollmentToken() error = %v", err)
+	}
+
+	identity, err := server.enrollAgent(agentEnrollmentRequest{
+		Token:    token.Value,
+		NodeName: "node-a",
+		Version:  "1.0.0",
+	}, now.Add(10*time.Second))
+	if err != nil {
+		t.Fatalf("enrollAgent() error = %v", err)
+	}
+
+	func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				t.Fatalf("applyAgentSnapshot() panic = %v", recovered)
+			}
+		}()
+
+		server.applyAgentSnapshot(agentSnapshot{
+			AgentID:       identity.AgentID,
+			NodeName:      "node-a",
+			EnvironmentID: "prod",
+			FleetGroupID:  "ams-1",
+			Version:       "1.0.0",
+			ObservedAt:    now.Add(20 * time.Second),
+		})
+	}()
+
+	record, err := store.ListAgents(context.Background())
+	if err != nil {
+		t.Fatalf("ListAgents() error = %v", err)
+	}
+	if len(record) != 1 {
+		t.Fatalf("len(ListAgents()) = %d, want %d", len(record), 1)
+	}
+	if record[0].EnvironmentID != "default" {
+		t.Fatalf("ListAgents()[0].EnvironmentID = %q, want %q", record[0].EnvironmentID, "default")
+	}
+	if record[0].FleetGroupID != "default" {
+		t.Fatalf("ListAgents()[0].FleetGroupID = %q, want %q", record[0].FleetGroupID, "default")
+	}
+}
+
 func TestServerEnrollmentTokenPersistsAcrossRestart(t *testing.T) {
 	now := time.Date(2026, time.March, 15, 8, 0, 0, 0, time.UTC)
 	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
