@@ -185,18 +185,25 @@ If the control-plane is using PostgreSQL instead of the default SQLite backend, 
 
 ## Agent quick start
 
-1. Create an enrollment token from the dashboard Settings screen and save the returned `ca_pem` to a file.
-2. Start the agent:
+1. Create an enrollment token from the dashboard Settings screen.
+2. On the Linux server that runs Telemt, install the agent:
 
-   ```powershell
-   go run ./cmd/agent `
-     -gateway-addr 127.0.0.1:8443 `
-     -gateway-server-name control-plane.panvex.internal `
-     -ca-file control-plane-ca.pem `
-     -enrollment-token "<token>" `
-     -state-file data/agent-state.json `
-     -telemt-url http://127.0.0.1:8080 `
-     -telemt-auth "<telemt-auth>"
+   ```sh
+   curl -fsSL https://github.com/panvex/panvex/releases/latest/download/install-agent.sh | \
+     sudo sh -s -- \
+       --panel-url https://panel.example.com \
+       --enrollment-token "<token>"
+   ```
+
+   The installer downloads the agent, asks for the local Telemt API settings, bootstraps the agent identity through the panel HTTPS API, and starts a `systemd` service.
+
+3. For an advanced manual flow, bootstrap a downloaded binary directly without saving any `ca_pem` file:
+
+   ```sh
+   ./panvex-agent bootstrap \
+     -panel-url https://panel.example.com \
+     -enrollment-token "<token>" \
+     -state-file /var/lib/panvex-agent/agent-state.json
    ```
 
 ## Verification
@@ -206,6 +213,8 @@ If the control-plane is using PostgreSQL instead of the default SQLite backend, 
 - `npm run build:embed` from `web`
 - `go build -tags embeddedui ./cmd/control-plane`
 - `bash deploy/install.sh --help`
+- `bash deploy/install-agent.sh --help`
+- `go test ./cmd/agent ./internal/agent/state -v`
 - `rg -n "services:|sqlite|postgres|web:" deploy/docker-compose.sqlite.yml deploy/docker-compose.postgres.yml Dockerfile`
 - `go test ./cmd/control-plane -run "TestRunBootstrapAdmin|TestRunResetUserTotp" -v`
 - `go test ./internal/controlplane/auth ./internal/controlplane/server -run "TestServiceBootstrapUserLeavesTotpDisabledByDefault|TestServiceAuthenticateAllowsOperatorWithoutTotpWhenDisabled|TestServiceEnableTotpRequiresPendingSetup|TestServiceEnableTotpRequiresValidPasswordAndCode|TestServiceDisableTotpRequiresValidPasswordAndCode|TestServiceResetTotpClearsEnabledState|TestHTTPAuthTotpSetupEnableDisableFlow|TestHTTPUsersTotpResetRequiresAdminAndClearsTarget" -v`

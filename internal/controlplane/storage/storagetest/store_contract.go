@@ -107,6 +107,43 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 		}
 	})
 
+	t.Run("enrollment token revoke state round trip", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		token := storage.EnrollmentTokenRecord{
+			Value:         "token-revoke",
+			EnvironmentID: "prod",
+			FleetGroupID:  "default",
+			IssuedAt:      time.Date(2026, time.March, 15, 8, 30, 0, 0, time.UTC),
+			ExpiresAt:     time.Date(2026, time.March, 15, 8, 45, 0, 0, time.UTC),
+		}
+
+		if err := store.PutEnrollmentToken(ctx, token); err != nil {
+			t.Fatalf("PutEnrollmentToken() error = %v", err)
+		}
+
+		revokedAt := time.Date(2026, time.March, 15, 8, 35, 0, 0, time.UTC)
+		revoked, err := store.RevokeEnrollmentToken(ctx, token.Value, revokedAt)
+		if err != nil {
+			t.Fatalf("RevokeEnrollmentToken() error = %v", err)
+		}
+
+		if revoked.RevokedAt == nil || !revoked.RevokedAt.Equal(revokedAt) {
+			t.Fatalf("RevokeEnrollmentToken() RevokedAt = %v, want %v", revoked.RevokedAt, revokedAt)
+		}
+
+		stored, err := store.GetEnrollmentToken(ctx, token.Value)
+		if err != nil {
+			t.Fatalf("GetEnrollmentToken() error = %v", err)
+		}
+
+		if stored.RevokedAt == nil || !stored.RevokedAt.Equal(revokedAt) {
+			t.Fatalf("GetEnrollmentToken() RevokedAt = %v, want %v", stored.RevokedAt, revokedAt)
+		}
+	})
+
 	t.Run("agent and instance snapshot persistence round trip", func(t *testing.T) {
 		store := open(t)
 		defer store.Close()

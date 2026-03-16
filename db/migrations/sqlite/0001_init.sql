@@ -89,5 +89,6 @@ CREATE TABLE IF NOT EXISTS enrollment_tokens (
     fleet_group_id TEXT NOT NULL,
     issued_at_unix INTEGER NOT NULL,
     expires_at_unix INTEGER NOT NULL,
-    consumed_at_unix INTEGER
+    consumed_at_unix INTEGER,
+    revoked_at_unix INTEGER
 );

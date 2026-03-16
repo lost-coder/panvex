@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"log"
+	"net/http"
 	"os"
 	"time"
 
@@ -25,6 +26,14 @@ func main() {
 }
 
 func run(args []string) error {
+	if len(args) > 0 && args[0] == "bootstrap" {
+		return runBootstrapCommand(args[1:], http.DefaultClient)
+	}
+
+	return runRuntime(args)
+}
+
+func runRuntime(args []string) error {
 	flags := flag.NewFlagSet("agent", flag.ContinueOnError)
 	gatewayAddr := flags.String("gateway-addr", "127.0.0.1:8443", "Control-plane gRPC address")
 	gatewayServerName := flags.String("gateway-server-name", "control-plane.panvex.internal", "Expected control-plane TLS server name")
@@ -46,6 +55,12 @@ func run(args []string) error {
 	credentialsState, err := loadOrEnroll(*stateFile, *gatewayAddr, *gatewayServerName, *caFile, *enrollmentToken, *nodeName, *version)
 	if err != nil {
 		return err
+	}
+	if credentialsState.GRPCEndpoint != "" {
+		*gatewayAddr = credentialsState.GRPCEndpoint
+	}
+	if credentialsState.GRPCServerName != "" {
+		*gatewayServerName = credentialsState.GRPCServerName
 	}
 
 	telemtClient, err := telemt.NewClient(telemt.Config{
@@ -110,6 +125,8 @@ func loadOrEnroll(stateFile string, gatewayAddr string, serverName string, caFil
 		CertificatePEM: response.CertificatePEM,
 		PrivateKeyPEM:  response.PrivateKeyPEM,
 		CAPEM:          response.CAPEM,
+		GRPCEndpoint:   gatewayAddr,
+		GRPCServerName: serverName,
 		ExpiresAt:      time.Unix(response.ExpiresAtUnix, 0).UTC(),
 	}
 	if err := agentstate.Save(stateFile, credentialsState); err != nil {

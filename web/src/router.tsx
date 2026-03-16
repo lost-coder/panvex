@@ -565,6 +565,7 @@ function formatActionLabel(action: string) {
   const labels: Record<string, string> = {
     "agents.enrolled": "Server enrolled",
     "agents.enrollment.create": "Connection token created",
+    "agents.enrollment.revoke": "Connection token revoked",
     "auth.totp.disabled": "Two-factor disabled",
     "auth.totp.enabled": "Two-factor enabled",
     "auth.totp.reset_by_admin": "Two-factor reset by admin",

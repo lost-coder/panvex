@@ -493,23 +493,29 @@ func (s *Store) PutEnrollmentToken(ctx context.Context, token storage.Enrollment
 		consumedAt.Valid = true
 		consumedAt.Int64 = toUnix(*token.ConsumedAt)
 	}
+	var revokedAt sql.NullInt64
+	if token.RevokedAt != nil {
+		revokedAt.Valid = true
+		revokedAt.Int64 = toUnix(*token.RevokedAt)
+	}
 
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO enrollment_tokens (value, environment_id, fleet_group_id, issued_at_unix, expires_at_unix, consumed_at_unix)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO enrollment_tokens (value, environment_id, fleet_group_id, issued_at_unix, expires_at_unix, consumed_at_unix, revoked_at_unix)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(value) DO UPDATE SET
 			environment_id = excluded.environment_id,
 			fleet_group_id = excluded.fleet_group_id,
 			issued_at_unix = excluded.issued_at_unix,
 			expires_at_unix = excluded.expires_at_unix,
-			consumed_at_unix = excluded.consumed_at_unix
-	`, token.Value, token.EnvironmentID, token.FleetGroupID, toUnix(token.IssuedAt), toUnix(token.ExpiresAt), consumedAt)
+			consumed_at_unix = excluded.consumed_at_unix,
+			revoked_at_unix = excluded.revoked_at_unix
+	`, token.Value, token.EnvironmentID, token.FleetGroupID, toUnix(token.IssuedAt), toUnix(token.ExpiresAt), consumedAt, revokedAt)
 	return err
 }
 
 func (s *Store) ListEnrollmentTokens(ctx context.Context) ([]storage.EnrollmentTokenRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT value, environment_id, fleet_group_id, issued_at_unix, expires_at_unix, consumed_at_unix
+		SELECT value, environment_id, fleet_group_id, issued_at_unix, expires_at_unix, consumed_at_unix, revoked_at_unix
 		FROM enrollment_tokens
 		ORDER BY issued_at_unix, value
 	`)
@@ -524,7 +530,8 @@ func (s *Store) ListEnrollmentTokens(ctx context.Context) ([]storage.EnrollmentT
 		var issuedAt int64
 		var expiresAt int64
 		var consumedAt sql.NullInt64
-		if err := rows.Scan(&token.Value, &token.EnvironmentID, &token.FleetGroupID, &issuedAt, &expiresAt, &consumedAt); err != nil {
+		var revokedAt sql.NullInt64
+		if err := rows.Scan(&token.Value, &token.EnvironmentID, &token.FleetGroupID, &issuedAt, &expiresAt, &consumedAt, &revokedAt); err != nil {
 			return nil, err
 		}
 		token.IssuedAt = fromUnix(issuedAt)
@@ -532,6 +539,10 @@ func (s *Store) ListEnrollmentTokens(ctx context.Context) ([]storage.EnrollmentT
 		if consumedAt.Valid {
 			timeValue := fromUnix(consumedAt.Int64)
 			token.ConsumedAt = &timeValue
+		}
+		if revokedAt.Valid {
+			timeValue := fromUnix(revokedAt.Int64)
+			token.RevokedAt = &timeValue
 		}
 		result = append(result, token)
 	}
@@ -541,7 +552,7 @@ func (s *Store) ListEnrollmentTokens(ctx context.Context) ([]storage.EnrollmentT
 
 func (s *Store) GetEnrollmentToken(ctx context.Context, value string) (storage.EnrollmentTokenRecord, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT value, environment_id, fleet_group_id, issued_at_unix, expires_at_unix, consumed_at_unix
+		SELECT value, environment_id, fleet_group_id, issued_at_unix, expires_at_unix, consumed_at_unix, revoked_at_unix
 		FROM enrollment_tokens
 		WHERE value = ?
 	`, value)
@@ -550,7 +561,8 @@ func (s *Store) GetEnrollmentToken(ctx context.Context, value string) (storage.E
 	var issuedAt int64
 	var expiresAt int64
 	var consumedAt sql.NullInt64
-	if err := row.Scan(&token.Value, &token.EnvironmentID, &token.FleetGroupID, &issuedAt, &expiresAt, &consumedAt); err != nil {
+	var revokedAt sql.NullInt64
+	if err := row.Scan(&token.Value, &token.EnvironmentID, &token.FleetGroupID, &issuedAt, &expiresAt, &consumedAt, &revokedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.EnrollmentTokenRecord{}, storage.ErrNotFound
 		}
@@ -562,6 +574,10 @@ func (s *Store) GetEnrollmentToken(ctx context.Context, value string) (storage.E
 	if consumedAt.Valid {
 		timeValue := fromUnix(consumedAt.Int64)
 		token.ConsumedAt = &timeValue
+	}
+	if revokedAt.Valid {
+		timeValue := fromUnix(revokedAt.Int64)
+		token.RevokedAt = &timeValue
 	}
 
 	return token, nil
@@ -575,7 +591,7 @@ func (s *Store) ConsumeEnrollmentToken(ctx context.Context, value string, consum
 	defer tx.Rollback()
 
 	row := tx.QueryRowContext(ctx, `
-		SELECT value, environment_id, fleet_group_id, issued_at_unix, expires_at_unix, consumed_at_unix
+		SELECT value, environment_id, fleet_group_id, issued_at_unix, expires_at_unix, consumed_at_unix, revoked_at_unix
 		FROM enrollment_tokens
 		WHERE value = ?
 	`, value)
@@ -584,23 +600,32 @@ func (s *Store) ConsumeEnrollmentToken(ctx context.Context, value string, consum
 	var issuedAt int64
 	var expiresAt int64
 	var storedConsumedAt sql.NullInt64
-	if err := row.Scan(&token.Value, &token.EnvironmentID, &token.FleetGroupID, &issuedAt, &expiresAt, &storedConsumedAt); err != nil {
+	var storedRevokedAt sql.NullInt64
+	if err := row.Scan(&token.Value, &token.EnvironmentID, &token.FleetGroupID, &issuedAt, &expiresAt, &storedConsumedAt, &storedRevokedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.EnrollmentTokenRecord{}, storage.ErrNotFound
 		}
 		return storage.EnrollmentTokenRecord{}, err
 	}
 
-	if storedConsumedAt.Valid {
+	if storedConsumedAt.Valid || storedRevokedAt.Valid {
 		return storage.EnrollmentTokenRecord{}, storage.ErrConflict
 	}
 
-	if _, err := tx.ExecContext(ctx, `
+	result, err := tx.ExecContext(ctx, `
 		UPDATE enrollment_tokens
 		SET consumed_at_unix = ?
-		WHERE value = ?
-	`, toUnix(consumedAt), value); err != nil {
+		WHERE value = ? AND consumed_at_unix IS NULL AND revoked_at_unix IS NULL
+	`, toUnix(consumedAt), value)
+	if err != nil {
 		return storage.EnrollmentTokenRecord{}, err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return storage.EnrollmentTokenRecord{}, err
+	}
+	if rowsAffected == 0 {
+		return storage.EnrollmentTokenRecord{}, storage.ErrConflict
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -610,6 +635,71 @@ func (s *Store) ConsumeEnrollmentToken(ctx context.Context, value string, consum
 	token.IssuedAt = fromUnix(issuedAt)
 	token.ExpiresAt = fromUnix(expiresAt)
 	token.ConsumedAt = &consumedAt
+	return token, nil
+}
+
+func (s *Store) RevokeEnrollmentToken(ctx context.Context, value string, revokedAt time.Time) (storage.EnrollmentTokenRecord, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return storage.EnrollmentTokenRecord{}, err
+	}
+	defer tx.Rollback()
+
+	row := tx.QueryRowContext(ctx, `
+		SELECT value, environment_id, fleet_group_id, issued_at_unix, expires_at_unix, consumed_at_unix, revoked_at_unix
+		FROM enrollment_tokens
+		WHERE value = ?
+	`, value)
+
+	var token storage.EnrollmentTokenRecord
+	var issuedAt int64
+	var expiresAt int64
+	var storedConsumedAt sql.NullInt64
+	var storedRevokedAt sql.NullInt64
+	if err := row.Scan(&token.Value, &token.EnvironmentID, &token.FleetGroupID, &issuedAt, &expiresAt, &storedConsumedAt, &storedRevokedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return storage.EnrollmentTokenRecord{}, storage.ErrNotFound
+		}
+		return storage.EnrollmentTokenRecord{}, err
+	}
+
+	token.IssuedAt = fromUnix(issuedAt)
+	token.ExpiresAt = fromUnix(expiresAt)
+	if storedConsumedAt.Valid {
+		timeValue := fromUnix(storedConsumedAt.Int64)
+		token.ConsumedAt = &timeValue
+	}
+	if storedRevokedAt.Valid {
+		timeValue := fromUnix(storedRevokedAt.Int64)
+		token.RevokedAt = &timeValue
+		return token, nil
+	}
+	if storedConsumedAt.Valid {
+		return token, nil
+	}
+
+	result, err := tx.ExecContext(ctx, `
+		UPDATE enrollment_tokens
+		SET revoked_at_unix = ?
+		WHERE value = ? AND consumed_at_unix IS NULL AND revoked_at_unix IS NULL
+	`, toUnix(revokedAt), value)
+	if err != nil {
+		return storage.EnrollmentTokenRecord{}, err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return storage.EnrollmentTokenRecord{}, err
+	}
+	if rowsAffected == 0 {
+		return storage.EnrollmentTokenRecord{}, storage.ErrConflict
+	}
+
+	if err := tx.Commit(); err != nil {
+		return storage.EnrollmentTokenRecord{}, err
+	}
+
+	revokedValue := revokedAt.UTC()
+	token.RevokedAt = &revokedValue
 	return token, nil
 }
 

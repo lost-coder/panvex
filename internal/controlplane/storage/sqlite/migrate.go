@@ -94,7 +94,8 @@ CREATE TABLE IF NOT EXISTS enrollment_tokens (
     fleet_group_id TEXT NOT NULL,
     issued_at_unix INTEGER NOT NULL,
     expires_at_unix INTEGER NOT NULL,
-    consumed_at_unix INTEGER
+    consumed_at_unix INTEGER,
+    revoked_at_unix INTEGER
 );
 `
 
@@ -104,7 +105,11 @@ func Migrate(db *sql.DB) error {
 		return err
 	}
 
-	return ensureUsersTotpEnabledColumn(db)
+	if err := ensureUsersTotpEnabledColumn(db); err != nil {
+		return err
+	}
+
+	return ensureEnrollmentTokensRevokedAtColumn(db)
 }
 
 func ensureUsersTotpEnabledColumn(db *sql.DB) error {
@@ -134,5 +139,35 @@ func ensureUsersTotpEnabledColumn(db *sql.DB) error {
 	}
 
 	_, err = db.Exec(`ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0`)
+	return err
+}
+
+func ensureEnrollmentTokensRevokedAtColumn(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(enrollment_tokens)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name string
+		var columnType string
+		var notNull int
+		var defaultValue any
+		var primaryKey int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return err
+		}
+		if name == "revoked_at_unix" {
+			return nil
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`ALTER TABLE enrollment_tokens ADD COLUMN revoked_at_unix INTEGER`)
 	return err
 }

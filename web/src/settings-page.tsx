@@ -10,7 +10,6 @@ import { useState } from "react";
 
 import {
   apiClient,
-  type EnrollmentTokenResponse,
   type LocalUser,
   type MeResponse,
   type TotpStatusResponse,
@@ -19,9 +18,6 @@ import {
 
 export function SettingsPage() {
   const queryClient = useQueryClient();
-  const [environmentID, setEnvironmentID] = useState("prod");
-  const [fleetGroupID, setFleetGroupID] = useState("default");
-  const [ttlSeconds, setTTLSeconds] = useState(600);
   const [securityPassword, setSecurityPassword] = useState("");
   const [securityTotpCode, setSecurityTotpCode] = useState("");
 
@@ -34,18 +30,6 @@ export function SettingsPage() {
     queryKey: ["users"],
     queryFn: () => apiClient.users(),
     enabled: meQuery.data?.role === "admin"
-  });
-
-  const tokenMutation = useMutation({
-    mutationFn: () =>
-      apiClient.createEnrollmentToken({
-        environment_id: environmentID,
-        fleet_group_id: fleetGroupID,
-        ttl_seconds: ttlSeconds
-      }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["audit"] });
-    }
   });
 
   const startTotpSetupMutation = useMutation({
@@ -91,7 +75,7 @@ export function SettingsPage() {
   });
 
   if (meQuery.isLoading) {
-    return <SettingsState title="Loading settings" description="Refreshing account and enrollment preferences." />;
+    return <SettingsState title="Loading settings" description="Refreshing sign-in and local account preferences." />;
   }
 
   if (meQuery.isError) {
@@ -114,87 +98,29 @@ export function SettingsPage() {
     <div className="space-y-6">
       <section className="rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-[0_20px_60px_rgba(37,46,68,0.08)]">
         <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Settings</p>
-        <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Keep sign-in and server setup close by</h2>
+        <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Keep sign-in and local access under control</h2>
         <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600">
-          Use this space when you want to connect another server, tighten sign-in security, or help someone on your team recover access without leaving the panel.
+          Use this space to tighten sign-in security for your own account and help someone on your team recover access without leaving the panel.
         </p>
       </section>
 
-      <div className="grid gap-6 xl:grid-cols-[0.9fr,1.1fr]">
-        <EnrollmentPanel
-          environmentID={environmentID}
-          fleetGroupID={fleetGroupID}
-          ttlSeconds={ttlSeconds}
-          onEnvironmentIDChange={setEnvironmentID}
-          onFleetGroupIDChange={setFleetGroupID}
-          onTTLSecondsChange={setTTLSeconds}
-          tokenMutation={tokenMutation}
-        />
-        <SecurityPanel
-          me={me}
-          pendingSetup={pendingSetup}
-          securityPassword={securityPassword}
-          securityTotpCode={securityTotpCode}
-          onSecurityPasswordChange={setSecurityPassword}
-          onSecurityTotpCodeChange={setSecurityTotpCode}
-          startTotpSetupMutation={startTotpSetupMutation}
-          enableTotpMutation={enableTotpMutation}
-          disableTotpMutation={disableTotpMutation}
-          securityError={securityError}
-        />
-      </div>
+      <SecurityPanel
+        me={me}
+        pendingSetup={pendingSetup}
+        securityPassword={securityPassword}
+        securityTotpCode={securityTotpCode}
+        onSecurityPasswordChange={setSecurityPassword}
+        onSecurityTotpCodeChange={setSecurityTotpCode}
+        startTotpSetupMutation={startTotpSetupMutation}
+        enableTotpMutation={enableTotpMutation}
+        disableTotpMutation={disableTotpMutation}
+        securityError={securityError}
+      />
 
       {me.role === "admin" ? (
         <AdminUsersPanel me={me} usersQuery={usersQuery} resetUserTotpMutation={resetUserTotpMutation} />
       ) : null}
     </div>
-  );
-}
-
-function EnrollmentPanel(props: {
-  environmentID: string;
-  fleetGroupID: string;
-  ttlSeconds: number;
-  onEnvironmentIDChange: (value: string) => void;
-  onFleetGroupIDChange: (value: string) => void;
-  onTTLSecondsChange: (value: number) => void;
-  tokenMutation: UseMutationResult<EnrollmentTokenResponse, Error, void>;
-}) {
-  return (
-    <section className="rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-[0_20px_60px_rgba(37,46,68,0.08)]">
-      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Server connection</p>
-      <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Connect another server</h3>
-      <p className="mt-3 text-sm leading-6 text-slate-600">
-        Create a fresh token whenever you want to bring another Telemt server into Panvex. The latest token and CA certificate stay right here for quick copying.
-      </p>
-      <div className="mt-6 space-y-4">
-        <Field label="Environment" value={props.environmentID} onChange={props.onEnvironmentIDChange} />
-        <Field label="Fleet group" value={props.fleetGroupID} onChange={props.onFleetGroupIDChange} />
-        <Field
-          label="TTL seconds"
-          type="number"
-          value={String(props.ttlSeconds)}
-          onChange={(value) => props.onTTLSecondsChange(Number(value))}
-        />
-        <button
-          type="button"
-          className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800"
-          onClick={() => props.tokenMutation.mutate()}
-        >
-          {props.tokenMutation.isPending ? "Creating token..." : "Create token"}
-        </button>
-      </div>
-      <div className="mt-6">
-        {props.tokenMutation.data ? (
-          <div className="space-y-4">
-            <CopyBlock label="Enrollment token" value={props.tokenMutation.data.value} />
-            <CopyBlock label="CA PEM" value={props.tokenMutation.data.ca_pem} />
-          </div>
-        ) : (
-          <p className="text-sm text-slate-600">Create a token here when you want to connect another server through the agent.</p>
-        )}
-      </div>
-    </section>
   );
 }
 

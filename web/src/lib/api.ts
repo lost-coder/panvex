@@ -89,6 +89,17 @@ export type EnrollmentTokenResponse = {
   ca_pem: string;
 };
 
+export type EnrollmentTokenListItem = {
+  value: string;
+  environment_id: string;
+  fleet_group_id: string;
+  status: "active" | "expired" | "consumed" | "revoked";
+  issued_at_unix: number;
+  expires_at_unix: number;
+  consumed_at_unix?: number;
+  revoked_at_unix?: number;
+};
+
 export type TotpSetupResponse = {
   secret: string;
   otpauth_url: string;
@@ -194,5 +205,10 @@ export const apiClient = {
     api<EnrollmentTokenResponse>(`${apiBasePath}/agents/enrollment-tokens`, {
       method: "POST",
       body: JSON.stringify(payload)
+    }),
+  listEnrollmentTokens: () => api<EnrollmentTokenListItem[]>(`${apiBasePath}/agents/enrollment-tokens`),
+  revokeEnrollmentToken: (value: string) =>
+    api<void>(`${apiBasePath}/agents/enrollment-tokens/${value}/revoke`, {
+      method: "POST"
     })
 };

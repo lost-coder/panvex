@@ -465,23 +465,29 @@ func (s *Store) PutEnrollmentToken(ctx context.Context, token storage.Enrollment
 		consumedAt.Valid = true
 		consumedAt.Time = token.ConsumedAt.UTC()
 	}
+	var revokedAt sql.NullTime
+	if token.RevokedAt != nil {
+		revokedAt.Valid = true
+		revokedAt.Time = token.RevokedAt.UTC()
+	}
 
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO enrollment_tokens (value, environment_id, fleet_group_id, issued_at, expires_at, consumed_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO enrollment_tokens (value, environment_id, fleet_group_id, issued_at, expires_at, consumed_at, revoked_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (value) DO UPDATE
 		SET environment_id = EXCLUDED.environment_id,
 		    fleet_group_id = EXCLUDED.fleet_group_id,
 		    issued_at = EXCLUDED.issued_at,
 		    expires_at = EXCLUDED.expires_at,
-		    consumed_at = EXCLUDED.consumed_at
-	`, token.Value, token.EnvironmentID, token.FleetGroupID, token.IssuedAt.UTC(), token.ExpiresAt.UTC(), consumedAt)
+		    consumed_at = EXCLUDED.consumed_at,
+		    revoked_at = EXCLUDED.revoked_at
+	`, token.Value, token.EnvironmentID, token.FleetGroupID, token.IssuedAt.UTC(), token.ExpiresAt.UTC(), consumedAt, revokedAt)
 	return err
 }
 
 func (s *Store) ListEnrollmentTokens(ctx context.Context) ([]storage.EnrollmentTokenRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT value, environment_id, fleet_group_id, issued_at, expires_at, consumed_at
+		SELECT value, environment_id, fleet_group_id, issued_at, expires_at, consumed_at, revoked_at
 		FROM enrollment_tokens
 		ORDER BY issued_at, value
 	`)
@@ -494,7 +500,8 @@ func (s *Store) ListEnrollmentTokens(ctx context.Context) ([]storage.EnrollmentT
 	for rows.Next() {
 		var token storage.EnrollmentTokenRecord
 		var consumedAt sql.NullTime
-		if err := rows.Scan(&token.Value, &token.EnvironmentID, &token.FleetGroupID, &token.IssuedAt, &token.ExpiresAt, &consumedAt); err != nil {
+		var revokedAt sql.NullTime
+		if err := rows.Scan(&token.Value, &token.EnvironmentID, &token.FleetGroupID, &token.IssuedAt, &token.ExpiresAt, &consumedAt, &revokedAt); err != nil {
 			return nil, err
 		}
 		token.IssuedAt = token.IssuedAt.UTC()
@@ -502,6 +509,10 @@ func (s *Store) ListEnrollmentTokens(ctx context.Context) ([]storage.EnrollmentT
 		if consumedAt.Valid {
 			timeValue := consumedAt.Time.UTC()
 			token.ConsumedAt = &timeValue
+		}
+		if revokedAt.Valid {
+			timeValue := revokedAt.Time.UTC()
+			token.RevokedAt = &timeValue
 		}
 		result = append(result, token)
 	}
@@ -511,14 +522,15 @@ func (s *Store) ListEnrollmentTokens(ctx context.Context) ([]storage.EnrollmentT
 
 func (s *Store) GetEnrollmentToken(ctx context.Context, value string) (storage.EnrollmentTokenRecord, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT value, environment_id, fleet_group_id, issued_at, expires_at, consumed_at
+		SELECT value, environment_id, fleet_group_id, issued_at, expires_at, consumed_at, revoked_at
 		FROM enrollment_tokens
 		WHERE value = $1
 	`, value)
 
 	var token storage.EnrollmentTokenRecord
 	var consumedAt sql.NullTime
-	if err := row.Scan(&token.Value, &token.EnvironmentID, &token.FleetGroupID, &token.IssuedAt, &token.ExpiresAt, &consumedAt); err != nil {
+	var revokedAt sql.NullTime
+	if err := row.Scan(&token.Value, &token.EnvironmentID, &token.FleetGroupID, &token.IssuedAt, &token.ExpiresAt, &consumedAt, &revokedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.EnrollmentTokenRecord{}, storage.ErrNotFound
 		}
@@ -530,6 +542,10 @@ func (s *Store) GetEnrollmentToken(ctx context.Context, value string) (storage.E
 	if consumedAt.Valid {
 		timeValue := consumedAt.Time.UTC()
 		token.ConsumedAt = &timeValue
+	}
+	if revokedAt.Valid {
+		timeValue := revokedAt.Time.UTC()
+		token.RevokedAt = &timeValue
 	}
 
 	return token, nil
@@ -543,30 +559,39 @@ func (s *Store) ConsumeEnrollmentToken(ctx context.Context, value string, consum
 	defer tx.Rollback()
 
 	row := tx.QueryRowContext(ctx, `
-		SELECT value, environment_id, fleet_group_id, issued_at, expires_at, consumed_at
+		SELECT value, environment_id, fleet_group_id, issued_at, expires_at, consumed_at, revoked_at
 		FROM enrollment_tokens
 		WHERE value = $1
 	`, value)
 
 	var token storage.EnrollmentTokenRecord
 	var storedConsumedAt sql.NullTime
-	if err := row.Scan(&token.Value, &token.EnvironmentID, &token.FleetGroupID, &token.IssuedAt, &token.ExpiresAt, &storedConsumedAt); err != nil {
+	var storedRevokedAt sql.NullTime
+	if err := row.Scan(&token.Value, &token.EnvironmentID, &token.FleetGroupID, &token.IssuedAt, &token.ExpiresAt, &storedConsumedAt, &storedRevokedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.EnrollmentTokenRecord{}, storage.ErrNotFound
 		}
 		return storage.EnrollmentTokenRecord{}, err
 	}
 
-	if storedConsumedAt.Valid {
+	if storedConsumedAt.Valid || storedRevokedAt.Valid {
 		return storage.EnrollmentTokenRecord{}, storage.ErrConflict
 	}
 
-	if _, err := tx.ExecContext(ctx, `
+	result, err := tx.ExecContext(ctx, `
 		UPDATE enrollment_tokens
 		SET consumed_at = $1
-		WHERE value = $2
-	`, consumedAt.UTC(), value); err != nil {
+		WHERE value = $2 AND consumed_at IS NULL AND revoked_at IS NULL
+	`, consumedAt.UTC(), value)
+	if err != nil {
 		return storage.EnrollmentTokenRecord{}, err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return storage.EnrollmentTokenRecord{}, err
+	}
+	if rowsAffected == 0 {
+		return storage.EnrollmentTokenRecord{}, storage.ErrConflict
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -577,6 +602,69 @@ func (s *Store) ConsumeEnrollmentToken(ctx context.Context, value string, consum
 	token.ExpiresAt = token.ExpiresAt.UTC()
 	consumedValue := consumedAt.UTC()
 	token.ConsumedAt = &consumedValue
+	return token, nil
+}
+
+func (s *Store) RevokeEnrollmentToken(ctx context.Context, value string, revokedAt time.Time) (storage.EnrollmentTokenRecord, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return storage.EnrollmentTokenRecord{}, err
+	}
+	defer tx.Rollback()
+
+	row := tx.QueryRowContext(ctx, `
+		SELECT value, environment_id, fleet_group_id, issued_at, expires_at, consumed_at, revoked_at
+		FROM enrollment_tokens
+		WHERE value = $1
+	`, value)
+
+	var token storage.EnrollmentTokenRecord
+	var storedConsumedAt sql.NullTime
+	var storedRevokedAt sql.NullTime
+	if err := row.Scan(&token.Value, &token.EnvironmentID, &token.FleetGroupID, &token.IssuedAt, &token.ExpiresAt, &storedConsumedAt, &storedRevokedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return storage.EnrollmentTokenRecord{}, storage.ErrNotFound
+		}
+		return storage.EnrollmentTokenRecord{}, err
+	}
+
+	token.IssuedAt = token.IssuedAt.UTC()
+	token.ExpiresAt = token.ExpiresAt.UTC()
+	if storedConsumedAt.Valid {
+		timeValue := storedConsumedAt.Time.UTC()
+		token.ConsumedAt = &timeValue
+	}
+	if storedRevokedAt.Valid {
+		timeValue := storedRevokedAt.Time.UTC()
+		token.RevokedAt = &timeValue
+		return token, nil
+	}
+	if storedConsumedAt.Valid {
+		return token, nil
+	}
+
+	result, err := tx.ExecContext(ctx, `
+		UPDATE enrollment_tokens
+		SET revoked_at = $1
+		WHERE value = $2 AND consumed_at IS NULL AND revoked_at IS NULL
+	`, revokedAt.UTC(), value)
+	if err != nil {
+		return storage.EnrollmentTokenRecord{}, err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return storage.EnrollmentTokenRecord{}, err
+	}
+	if rowsAffected == 0 {
+		return storage.EnrollmentTokenRecord{}, storage.ErrConflict
+	}
+
+	if err := tx.Commit(); err != nil {
+		return storage.EnrollmentTokenRecord{}, err
+	}
+
+	revokedValue := revokedAt.UTC()
+	token.RevokedAt = &revokedValue
 	return token, nil
 }
 
