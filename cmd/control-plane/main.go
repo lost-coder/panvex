@@ -24,13 +24,25 @@ import (
 )
 
 type serveConfig struct {
-	HTTPAddr string
-	GRPCAddr string
-	Storage config.StorageConfig
+	HTTPAddr    string
+	GRPCAddr    string
+	RestartMode string
+	Storage     config.StorageConfig
 }
+
+const (
+	restartModeDisabled   = "disabled"
+	restartModeSupervised = "supervised"
+	restartExitCode       = 78
+)
+
+var errPanelRestartRequested = errors.New("panel restart requested")
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
+		if errors.Is(err, errPanelRestartRequested) {
+			os.Exit(restartExitCode)
+		}
 		log.Fatal(err)
 	}
 }
@@ -65,12 +77,20 @@ func runServe(args []string) error {
 	if err != nil {
 		return err
 	}
+	restartRequests := make(chan struct{}, 1)
 
 	api := server.New(server.Options{
 		Now:          time.Now,
 		Store:        store,
 		UIFiles:      embeddedUIFiles(),
 		PanelRuntime: panelRuntime,
+		RequestRestart: func() error {
+			select {
+			case restartRequests <- struct{}{}:
+			default:
+			}
+			return nil
+		},
 	})
 
 	httpServer := &http.Server{
@@ -86,7 +106,7 @@ func runServe(args []string) error {
 	grpcServer := grpc.NewServer(grpc.Creds(credentials.NewTLS(api.GRPCTLSConfig())))
 	gatewayrpc.RegisterGatewayServer(grpcServer, api)
 
-	httpErrors := make(chan error, 1)
+	httpErrors := make(chan error, 2)
 	go func() {
 		log.Printf("control-plane http listening on %s", panelRuntime.HTTPListenAddress)
 		if panelRuntime.TLSMode == "direct" {
@@ -101,17 +121,37 @@ func runServe(args []string) error {
 		httpErrors <- grpcServer.Serve(grpcListener)
 	}()
 
-	return <-httpErrors
+	for {
+		select {
+		case <-restartRequests:
+			shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			_ = httpServer.Shutdown(shutdownContext)
+			grpcServer.GracefulStop()
+			_ = grpcListener.Close()
+			return errPanelRestartRequested
+		case err := <-httpErrors:
+			if errors.Is(err, http.ErrServerClosed) {
+				continue
+			}
+			return err
+		}
+	}
 }
 
 func parseServeConfig(args []string) (serveConfig, error) {
 	flags := flag.NewFlagSet("control-plane", flag.ContinueOnError)
 	httpAddr := flags.String("http-addr", ":8080", "HTTP listen address")
 	grpcAddr := flags.String("grpc-addr", ":8443", "gRPC listen address")
+	restartMode := flags.String("restart-mode", restartModeDisabled, "Panel restart mode (disabled or supervised)")
 	storageDriver := flags.String("storage-driver", "", "Persistent storage backend driver")
 	storageDSN := flags.String("storage-dsn", "", "Persistent storage backend DSN")
 	if err := flags.Parse(args); err != nil {
 		return serveConfig{}, err
+	}
+	if *restartMode != restartModeDisabled && *restartMode != restartModeSupervised {
+		return serveConfig{}, fmt.Errorf("unsupported restart mode %q", *restartMode)
 	}
 
 	storage, err := config.ResolveStorage(*storageDriver, *storageDSN)
@@ -120,9 +160,10 @@ func parseServeConfig(args []string) (serveConfig, error) {
 	}
 
 	return serveConfig{
-		HTTPAddr: *httpAddr,
-		GRPCAddr: *grpcAddr,
-		Storage: storage,
+		HTTPAddr:    *httpAddr,
+		GRPCAddr:    *grpcAddr,
+		RestartMode: *restartMode,
+		Storage:     storage,
 	}, nil
 }
 
@@ -131,7 +172,7 @@ func resolvePanelRuntime(store storage.Store, configuration serveConfig) (server
 		HTTPListenAddress: configuration.HTTPAddr,
 		GRPCListenAddress: configuration.GRPCAddr,
 		TLSMode:           "proxy",
-		RestartSupported:  false,
+		RestartSupported:  configuration.RestartMode == restartModeSupervised,
 	}
 
 	record, err := store.GetPanelSettings(context.Background())

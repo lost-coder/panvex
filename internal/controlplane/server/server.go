@@ -30,6 +30,7 @@ type Options struct {
 	Store        storage.Store
 	UIFiles      fs.FS
 	PanelRuntime PanelRuntime
+	RequestRestart func() error
 }
 
 // Server wires local-auth, inventory, jobs, and operator APIs into one HTTP surface.
@@ -44,6 +45,7 @@ type Server struct {
 	authority  *certificateAuthority
 	now        func() time.Time
 	panelRuntime PanelRuntime
+	requestRestart func() error
 
 	mu         sync.RWMutex
 	agentSeq   uint64
@@ -75,6 +77,7 @@ func New(options Options) *Server {
 		events:     newEventHub(),
 		now:        now,
 		panelRuntime: defaultPanelRuntime(options.PanelRuntime),
+		requestRestart: options.RequestRestart,
 		agents:     make(map[string]Agent),
 		deliveredJobs: make(map[string]map[string]bool),
 		instances:  make(map[string]Instance),
@@ -223,6 +226,7 @@ func (s *Server) routes() http.Handler {
 		api.Post("/users/{id}/totp/reset", s.handleResetUserTotp())
 		api.Get("/settings/panel", s.handleGetPanelSettings())
 		api.Put("/settings/panel", s.handlePutPanelSettings())
+		api.Post("/settings/panel/restart", s.handleRestartPanel())
 		api.Get("/agents/enrollment-tokens", s.handleListEnrollmentTokens())
 		api.Post("/agents/enrollment-tokens", s.handleCreateEnrollmentToken())
 		api.Post("/agents/enrollment-tokens/{value}/revoke", s.handleRevokeEnrollmentToken())

@@ -217,3 +217,100 @@ func TestHTTPPanelSettingsMarksRestartUnavailableWhenRuntimeCannotSelfRestart(t 
 		t.Fatalf("restart.state = %q, want %q", payload.Restart.State, "unavailable")
 	}
 }
+
+func TestHTTPPanelRestartRequiresAdminAndInvokesRuntimeHook(t *testing.T) {
+	now := time.Date(2026, time.March, 17, 1, 20, 0, 0, time.UTC)
+	restartRequests := make(chan struct{}, 1)
+	server := New(Options{
+		Now: func() time.Time { return now },
+		PanelRuntime: PanelRuntime{
+			HTTPListenAddress: ":8080",
+			GRPCListenAddress: ":8443",
+			TLSMode:           "proxy",
+			RestartSupported:  true,
+		},
+		RequestRestart: func() error {
+			restartRequests <- struct{}{}
+			return nil
+		},
+	})
+	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "admin",
+		Password: "admin-password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser(admin) error = %v", err)
+	}
+	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "viewer",
+		Password: "viewer-password",
+		Role:     auth.RoleViewer,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser(viewer) error = %v", err)
+	}
+
+	viewerLogin := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "viewer",
+		"password": "viewer-password",
+	}, nil)
+	if viewerLogin.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login viewer status = %d, want %d", viewerLogin.Code, http.StatusOK)
+	}
+
+	viewerRestart := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/settings/panel/restart", nil, viewerLogin.Result().Cookies())
+	if viewerRestart.Code != http.StatusForbidden {
+		t.Fatalf("POST /api/settings/panel/restart as viewer status = %d, want %d", viewerRestart.Code, http.StatusForbidden)
+	}
+
+	adminLogin := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "admin",
+		"password": "admin-password",
+	}, nil)
+	if adminLogin.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login admin status = %d, want %d", adminLogin.Code, http.StatusOK)
+	}
+
+	adminRestart := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/settings/panel/restart", nil, adminLogin.Result().Cookies())
+	if adminRestart.Code != http.StatusAccepted {
+		t.Fatalf("POST /api/settings/panel/restart status = %d, want %d", adminRestart.Code, http.StatusAccepted)
+	}
+
+	select {
+	case <-restartRequests:
+	case <-time.After(time.Second):
+		t.Fatal("request restart hook was not called")
+	}
+}
+
+func TestHTTPPanelRestartRejectsUnsupportedRuntime(t *testing.T) {
+	now := time.Date(2026, time.March, 17, 1, 30, 0, 0, time.UTC)
+	server := New(Options{
+		Now: func() time.Time { return now },
+		PanelRuntime: PanelRuntime{
+			HTTPListenAddress: ":8080",
+			GRPCListenAddress: ":8443",
+			TLSMode:           "proxy",
+			RestartSupported:  false,
+		},
+	})
+	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "admin",
+		Password: "admin-password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "admin",
+		"password": "admin-password",
+	}, nil)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
+	}
+
+	restartResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/settings/panel/restart", nil, loginResponse.Result().Cookies())
+	if restartResponse.Code != http.StatusConflict {
+		t.Fatalf("POST /api/settings/panel/restart status = %d, want %d", restartResponse.Code, http.StatusConflict)
+	}
+}

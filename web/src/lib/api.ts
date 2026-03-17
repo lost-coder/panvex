@@ -232,6 +232,10 @@ export const apiClient = {
       method: "PUT",
       body: JSON.stringify(payload)
     }),
+  restartPanel: () =>
+    api<PanelSettingsResponse>(`${apiBasePath}/settings/panel/restart`, {
+      method: "POST"
+    }),
   createUser: (payload: CreateUserInput) =>
     api<LocalUser>(`${apiBasePath}/users`, {
       method: "POST",
