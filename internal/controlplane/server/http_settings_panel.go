@@ -107,6 +107,37 @@ func (s *Server) handlePutPanelSettings() http.HandlerFunc {
 	}
 }
 
+func (s *Server) handleRestartPanel() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		session, user, err := s.requireSession(r)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		if user.Role != auth.RoleAdmin {
+			writeError(w, http.StatusForbidden, "admin role required")
+			return
+		}
+
+		settings := s.panelSettingsSnapshot()
+		restart := s.panelRestartStatus(settings)
+		if !restart.Supported || s.requestRestart == nil {
+			writeError(w, http.StatusConflict, "panel restart is unavailable in the current runtime")
+			return
+		}
+
+		s.appendAudit(session.UserID, "settings.panel.restart", "panel", map[string]any{
+			"pending_restart": restart.Pending,
+		})
+
+		writeJSON(w, http.StatusAccepted, panelSettingsResponseFromSettings(settings, restart))
+
+		go func() {
+			_ = s.requestRestart()
+		}()
+	}
+}
+
 func panelSettingsResponseFromSettings(settings PanelSettings, restart panelRestartStatus) panelSettingsResponse {
 	return panelSettingsResponse{
 		HTTPPublicURL:      settings.HTTPPublicURL,

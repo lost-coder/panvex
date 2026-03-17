@@ -31,6 +31,7 @@ export function PanelSettingsForm() {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<PanelSettingsDraft>(emptyDraft);
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
+  const [restartRequested, setRestartRequested] = useState(false);
 
   const settingsQuery = useQuery({
     queryKey: ["panel-settings"],
@@ -57,6 +58,15 @@ export function PanelSettingsForm() {
   const saveMutation = useMutation({
     mutationFn: () => apiClient.updatePanelSettings(draft),
     onSuccess: async (response) => {
+      setRestartRequested(false);
+      queryClient.setQueryData(["panel-settings"], response);
+      await queryClient.invalidateQueries({ queryKey: ["audit"] });
+    }
+  });
+  const restartMutation = useMutation({
+    mutationFn: () => apiClient.restartPanel(),
+    onSuccess: async (response) => {
+      setRestartRequested(true);
       queryClient.setQueryData(["panel-settings"], response);
       await queryClient.invalidateQueries({ queryKey: ["audit"] });
     }
@@ -70,8 +80,8 @@ export function PanelSettingsForm() {
     return <SettingsState title="Panel settings are unavailable" description="The control-plane could not load the current panel configuration." />;
   }
 
-  const current = saveMutation.data ?? settingsQuery.data;
-  const errorMessage = saveMutation.error?.message ?? null;
+  const current = restartMutation.data ?? saveMutation.data ?? settingsQuery.data;
+  const errorMessage = restartMutation.error?.message ?? saveMutation.error?.message ?? null;
   const bannerTone =
     current.restart.state === "pending"
       ? "border-amber-200 bg-amber-50 text-amber-900"
@@ -93,20 +103,23 @@ export function PanelSettingsForm() {
                   : "No pending restart"}
             </h4>
             <p className="mt-2 text-sm leading-6 opacity-85">
-              {current.restart.state === "pending"
-                ? "Changes to listeners, TLS, or the HTTP root path are saved, but they will not take effect until the panel restarts."
-                : current.restart.state === "unavailable"
-                  ? "The current process cannot restart itself from the web interface. Save changes here, then restart the panel through its supervisor."
-                  : "Public endpoints are active immediately. Listener and TLS settings only need a restart after they change."}
+              {restartRequested
+                ? "Restart requested. If the panel runs under a supervisor, it should come back with the saved runtime settings shortly."
+                : current.restart.state === "pending"
+                  ? "Changes to listeners, TLS, or the HTTP root path are saved, but they will not take effect until the panel restarts."
+                  : current.restart.state === "unavailable"
+                    ? "The current process cannot restart itself from the web interface. Save changes here, then restart the panel through its supervisor."
+                    : "Public endpoints are active immediately. Listener and TLS settings only need a restart after they change."}
             </p>
           </div>
           <button
             type="button"
             className="rounded-2xl border border-current/20 px-5 py-3 text-sm font-medium opacity-70"
-            disabled={!current.restart.supported}
-            title={current.restart.supported ? "Restart endpoint is not wired in this runtime yet." : "Restart is not available in the current runtime."}
+            disabled={!current.restart.supported || restartMutation.isPending}
+            title={current.restart.supported ? "Restart the supervised panel process." : "Restart is not available in the current runtime."}
+            onClick={() => restartMutation.mutate()}
           >
-            Restart panel
+            {restartMutation.isPending ? "Requesting restart..." : "Restart panel"}
           </button>
         </div>
       </div>

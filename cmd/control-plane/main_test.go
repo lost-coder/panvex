@@ -38,6 +38,17 @@ func TestParseServeConfigRejectsPostgresWithoutDSN(t *testing.T) {
 	}
 }
 
+func TestParseServeConfigAcceptsSupervisedRestartMode(t *testing.T) {
+	configuration, err := parseServeConfig([]string{"-restart-mode", "supervised"})
+	if err != nil {
+		t.Fatalf("parseServeConfig() error = %v", err)
+	}
+
+	if configuration.RestartMode != "supervised" {
+		t.Fatalf("configuration.RestartMode = %q, want %q", configuration.RestartMode, "supervised")
+	}
+}
+
 func TestResolvePanelRuntimeUsesStoredSettingsWhenPresent(t *testing.T) {
 	now := time.Date(2026, time.March, 16, 22, 10, 0, 0, time.UTC)
 	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
@@ -114,6 +125,30 @@ func TestResolvePanelRuntimeFallsBackToServeConfigDefaults(t *testing.T) {
 	}
 	if runtime.TLSMode != "proxy" {
 		t.Fatalf("runtime.TLSMode = %q, want %q", runtime.TLSMode, "proxy")
+	}
+	if runtime.RestartSupported {
+		t.Fatal("runtime.RestartSupported = true, want false")
+	}
+}
+
+func TestResolvePanelRuntimeMarksSupervisedRestartAsSupported(t *testing.T) {
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	runtime, err := resolvePanelRuntime(store, serveConfig{
+		HTTPAddr:     ":8080",
+		GRPCAddr:     ":8443",
+		RestartMode:  "supervised",
+	})
+	if err != nil {
+		t.Fatalf("resolvePanelRuntime() error = %v", err)
+	}
+
+	if !runtime.RestartSupported {
+		t.Fatal("runtime.RestartSupported = false, want true")
 	}
 }
 
