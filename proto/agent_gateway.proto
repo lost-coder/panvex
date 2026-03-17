@@ -36,7 +36,6 @@ message RenewCertificateResponse {
 message Heartbeat {
   string agent_id = 1;
   string node_name = 2;
-  string environment_id = 3;
   string fleet_group_id = 4;
   string version = 5;
   bool read_only = 6;
@@ -52,16 +51,23 @@ message InstanceSnapshot {
   bool read_only = 6;
 }
 
+message ClientUsageSnapshot {
+  string client_id = 1;
+  uint64 traffic_used_bytes = 2;
+  int32 unique_ips_used = 3;
+  int32 active_tcp_conns = 4;
+}
+
 message Snapshot {
   string agent_id = 1;
   string node_name = 2;
-  string environment_id = 3;
   string fleet_group_id = 4;
   string version = 5;
   bool read_only = 6;
   int64 observed_at_unix = 7;
   repeated InstanceSnapshot instances = 8;
   map<string, uint64> metrics = 9;
+  repeated ClientUsageSnapshot clients = 10;
 }
 
 message JobResult {
@@ -70,6 +76,7 @@ message JobResult {
   bool success = 3;
   string message = 4;
   int64 observed_at_unix = 5;
+  string result_json = 6;
 }
 
 message JobCommand {
@@ -77,6 +84,7 @@ message JobCommand {
   string action = 2;
   string idempotency_key = 3;
   repeated string target_agent_ids = 4;
+  string payload_json = 5;
 }
 
 message ConnectClientMessage {

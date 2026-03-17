@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,6 +28,14 @@ const (
 	ActionRuntimeReload Action = "runtime.reload"
 	// ActionUsersCreate creates a Telemt operator account.
 	ActionUsersCreate Action = "users.create"
+	// ActionClientCreate creates one centrally managed Telemt client on the target node.
+	ActionClientCreate Action = "client.create"
+	// ActionClientUpdate updates one centrally managed Telemt client on the target node.
+	ActionClientUpdate Action = "client.update"
+	// ActionClientDelete removes one centrally managed Telemt client from the target node.
+	ActionClientDelete Action = "client.delete"
+	// ActionClientRotateSecret rotates the managed Telemt client secret on the target node.
+	ActionClientRotateSecret Action = "client.rotate_secret"
 )
 
 // Status describes the orchestration lifecycle state of a job.
@@ -62,6 +71,7 @@ type JobTarget struct {
 	AgentID    string       `json:"agent_id"`
 	Status     TargetStatus `json:"status"`
 	ResultText string       `json:"result_text"`
+	ResultJSON string       `json:"result_json"`
 	UpdatedAt  time.Time    `json:"updated_at"`
 }
 
@@ -76,6 +86,7 @@ type Job struct {
 	ActorID        string      `json:"actor_id"`
 	Status         Status      `json:"status"`
 	CreatedAt      time.Time   `json:"created_at"`
+	PayloadJSON    string      `json:"payload_json"`
 }
 
 // CreateJobInput contains the validation inputs required to enqueue a new job.
@@ -86,6 +97,7 @@ type CreateJobInput struct {
 	IdempotencyKey string
 	ActorID        string
 	ReadOnlyAgents map[string]bool
+	PayloadJSON    string
 }
 
 // Service validates orchestration jobs before they enter the delivery queue.
@@ -145,6 +157,7 @@ func (s *Service) Enqueue(input CreateJobInput, now time.Time) (Job, error) {
 		ActorID:        input.ActorID,
 		Status:         StatusQueued,
 		CreatedAt:      now.UTC(),
+		PayloadJSON:    input.PayloadJSON,
 	}
 	for _, agentID := range input.TargetAgentIDs {
 		job.Targets = append(job.Targets, JobTarget{
@@ -171,7 +184,7 @@ func (s *Service) Enqueue(input CreateJobInput, now time.Time) (Job, error) {
 
 func isMutatingAction(action Action) bool {
 	switch action {
-	case ActionUsersCreate, ActionRuntimeReload:
+	case ActionUsersCreate, ActionRuntimeReload, ActionClientCreate, ActionClientUpdate, ActionClientDelete, ActionClientRotateSecret:
 		return true
 	default:
 		return false
@@ -190,6 +203,12 @@ func (s *Service) List() []Job {
 		copyJob.Targets = append([]JobTarget(nil), job.Targets...)
 		result = append(result, copyJob)
 	}
+	sort.Slice(result, func(left int, right int) bool {
+		if result[left].CreatedAt.Equal(result[right].CreatedAt) {
+			return result[left].ID < result[right].ID
+		}
+		return result[left].CreatedAt.Before(result[right].CreatedAt)
+	})
 
 	return result
 }
@@ -205,7 +224,7 @@ func (s *Service) MarkDelivered(agentID string, jobID string, observedAt time.Ti
 }
 
 // RecordResult records the final agent-side execution result for one target.
-func (s *Service) RecordResult(agentID string, jobID string, success bool, message string, observedAt time.Time) {
+func (s *Service) RecordResult(agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) {
 	s.updateTarget(agentID, jobID, observedAt, func(target *JobTarget) {
 		if success {
 			target.Status = TargetStatusSucceeded
@@ -213,6 +232,7 @@ func (s *Service) RecordResult(agentID string, jobID string, success bool, messa
 			target.Status = TargetStatusFailed
 		}
 		target.ResultText = message
+		target.ResultJSON = resultJSON
 	})
 }
 
@@ -330,6 +350,7 @@ func jobToRecord(job Job) storage.JobRecord {
 		CreatedAt:      job.CreatedAt.UTC(),
 		TTL:            job.TTL,
 		IdempotencyKey: job.IdempotencyKey,
+		PayloadJSON:    job.PayloadJSON,
 	}
 }
 
@@ -342,6 +363,7 @@ func jobFromRecord(record storage.JobRecord) Job {
 		ActorID:        record.ActorID,
 		Status:         Status(record.Status),
 		CreatedAt:      record.CreatedAt.UTC(),
+		PayloadJSON:    record.PayloadJSON,
 	}
 }
 
@@ -351,6 +373,7 @@ func jobTargetToRecord(jobID string, target JobTarget) storage.JobTargetRecord {
 		AgentID:    target.AgentID,
 		Status:     string(target.Status),
 		ResultText: target.ResultText,
+		ResultJSON: target.ResultJSON,
 		UpdatedAt:  target.UpdatedAt.UTC(),
 	}
 }
@@ -360,6 +383,7 @@ func jobTargetFromRecord(record storage.JobTargetRecord) JobTarget {
 		AgentID:    record.AgentID,
 		Status:     TargetStatus(record.Status),
 		ResultText: record.ResultText,
+		ResultJSON: record.ResultJSON,
 		UpdatedAt:  record.UpdatedAt.UTC(),
 	}
 }

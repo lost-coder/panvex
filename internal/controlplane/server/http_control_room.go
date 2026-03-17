@@ -16,10 +16,9 @@ type controlRoomResponse struct {
 }
 
 type controlRoomOnboarding struct {
-	NeedsFirstServer       bool   `json:"needs_first_server"`
-	SetupComplete          bool   `json:"setup_complete"`
-	SuggestedEnvironmentID string `json:"suggested_environment_id"`
-	SuggestedFleetGroupID  string `json:"suggested_fleet_group_id"`
+	NeedsFirstServer      bool   `json:"needs_first_server"`
+	SetupComplete         bool   `json:"setup_complete"`
+	SuggestedFleetGroupID string `json:"suggested_fleet_group_id"`
 }
 
 type controlRoomJobs struct {
@@ -57,10 +56,9 @@ func controlRoomOnboardingFromState(agents map[string]Agent, instances map[strin
 
 	setupComplete := len(agents) > 0 || len(instances) > 0
 	response := controlRoomOnboarding{
-		NeedsFirstServer:       !setupComplete,
-		SetupComplete:          setupComplete,
-		SuggestedEnvironmentID: defaultScope,
-		SuggestedFleetGroupID:  defaultScope,
+		NeedsFirstServer:      !setupComplete,
+		SetupComplete:         setupComplete,
+		SuggestedFleetGroupID: defaultScope,
 	}
 
 	var candidate Agent
@@ -73,9 +71,6 @@ func controlRoomOnboardingFromState(agents map[string]Agent, instances map[strin
 	}
 	if !hasCandidate {
 		return response
-	}
-	if candidate.EnvironmentID != "" {
-		response.SuggestedEnvironmentID = candidate.EnvironmentID
 	}
 	if candidate.FleetGroupID != "" {
 		response.SuggestedFleetGroupID = candidate.FleetGroupID

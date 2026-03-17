@@ -75,13 +75,12 @@ func (s *Server) Connect(stream gatewayrpc.Gateway_ConnectServer) error {
 
 		if message.Heartbeat != nil {
 			s.applyAgentSnapshot(agentSnapshot{
-				AgentID:       agentID,
-				NodeName:      message.Heartbeat.NodeName,
-				EnvironmentID: message.Heartbeat.EnvironmentID,
-				FleetGroupID:  message.Heartbeat.FleetGroupID,
-				Version:       message.Heartbeat.Version,
-				ReadOnly:      message.Heartbeat.ReadOnly,
-				ObservedAt:    time.Unix(message.Heartbeat.ObservedAtUnix, 0).UTC(),
+				AgentID:      agentID,
+				NodeName:     message.Heartbeat.NodeName,
+				FleetGroupID: message.Heartbeat.FleetGroupID,
+				Version:      message.Heartbeat.Version,
+				ReadOnly:     message.Heartbeat.ReadOnly,
+				ObservedAt:   time.Unix(message.Heartbeat.ObservedAtUnix, 0).UTC(),
 			})
 		}
 
@@ -97,16 +96,27 @@ func (s *Server) Connect(stream gatewayrpc.Gateway_ConnectServer) error {
 					ReadOnly:          instance.ReadOnly,
 				})
 			}
+			clients := make([]clientUsageSnapshot, 0, len(message.Snapshot.Clients))
+			for _, client := range message.Snapshot.Clients {
+				clients = append(clients, clientUsageSnapshot{
+					ClientID:         client.ClientID,
+					TrafficUsedBytes: client.TrafficUsedBytes,
+					UniqueIPsUsed:    int(client.UniqueIPsUsed),
+					ActiveTCPConns:   int(client.ActiveTCPConns),
+					ObservedAt:       time.Unix(message.Snapshot.ObservedAtUnix, 0).UTC(),
+				})
+			}
 			s.applyAgentSnapshot(agentSnapshot{
-				AgentID:       agentID,
-				NodeName:      message.Snapshot.NodeName,
-				EnvironmentID: message.Snapshot.EnvironmentID,
-				FleetGroupID:  message.Snapshot.FleetGroupID,
-				Version:       message.Snapshot.Version,
-				ReadOnly:      message.Snapshot.ReadOnly,
-				Instances:     instances,
-				Metrics:       message.Snapshot.Metrics,
-				ObservedAt:    time.Unix(message.Snapshot.ObservedAtUnix, 0).UTC(),
+				AgentID:      agentID,
+				NodeName:     message.Snapshot.NodeName,
+				FleetGroupID: message.Snapshot.FleetGroupID,
+				Version:      message.Snapshot.Version,
+				ReadOnly:     message.Snapshot.ReadOnly,
+				Instances:    instances,
+				Clients:      clients,
+				HasClients:   true,
+				Metrics:      message.Snapshot.Metrics,
+				ObservedAt:   time.Unix(message.Snapshot.ObservedAtUnix, 0).UTC(),
 			})
 		}
 
@@ -116,6 +126,7 @@ func (s *Server) Connect(stream gatewayrpc.Gateway_ConnectServer) error {
 				message.JobResult.JobID,
 				message.JobResult.Success,
 				message.JobResult.Message,
+				message.JobResult.ResultJSON,
 				time.Unix(message.JobResult.ObservedAtUnix, 0).UTC(),
 			)
 		}
@@ -127,6 +138,7 @@ func (s *Server) Connect(stream gatewayrpc.Gateway_ConnectServer) error {
 					Action:         string(job.Action),
 					IdempotencyKey: job.IdempotencyKey,
 					TargetAgentIDs: job.TargetAgentIDs,
+					PayloadJSON:    job.PayloadJSON,
 				},
 			}); err != nil {
 				return err
@@ -194,8 +206,9 @@ func (s *Server) markJobDelivered(agentID string, jobID string) {
 	s.deliveredJobs[agentID][jobID] = true
 }
 
-func (s *Server) recordJobResult(agentID string, jobID string, success bool, message string, observedAt time.Time) {
-	s.jobs.RecordResult(agentID, jobID, success, message, observedAt)
+func (s *Server) recordJobResult(agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) {
+	s.jobs.RecordResult(agentID, jobID, success, message, resultJSON, observedAt)
+	s.recordClientJobResult(agentID, jobID, success, message, resultJSON, observedAt)
 	s.appendAudit(agentID, "jobs.result", jobID, map[string]any{
 		"success": success,
 		"message": message,

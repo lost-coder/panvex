@@ -125,7 +125,6 @@ func TestHTTPEnrollmentTokensExposeConfiguredPanelURL(t *testing.T) {
 		http.MethodPost,
 		"https://internal.example.net/panvex/api/agents/enrollment-tokens",
 		map[string]any{
-			"environment_id": "prod",
 			"fleet_group_id": "default",
 			"ttl_seconds":    600,
 		},

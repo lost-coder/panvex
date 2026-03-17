@@ -27,7 +27,7 @@ export function FleetDetailDrawer(props: FleetDetailDrawerProps) {
                     {props.agent.node_name}
                   </Dialog.Title>
                   <Dialog.Description className="mt-2 text-sm text-slate-600">
-                    {props.agent.environment_id} / {props.agent.fleet_group_id}
+                    {props.agent.fleet_group_id || "Ungrouped"}
                   </Dialog.Description>
                   <p className="mt-3 max-w-md text-sm leading-6 text-slate-600">
                     This drawer keeps the important details for the selected server close by, including the Telemt runtimes that were last reported by its local agent.

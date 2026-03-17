@@ -51,8 +51,14 @@ type Server struct {
 	agentSeq   uint64
 	auditSeq   uint64
 	metricSeq  uint64
+	clientSeq  uint64
+	assignmentSeq uint64
 	deliveredJobs map[string]map[string]bool
 	agents     map[string]Agent
+	clients    map[string]managedClient
+	clientAssignments map[string][]managedClientAssignment
+	clientDeployments map[string]map[string]managedClientDeployment
+	clientUsage map[string]map[string]clientUsageSnapshot
 	instances  map[string]Instance
 	metrics    []MetricSnapshot
 	auditTrail []AuditEvent
@@ -79,6 +85,10 @@ func New(options Options) *Server {
 		panelRuntime: defaultPanelRuntime(options.PanelRuntime),
 		requestRestart: options.RequestRestart,
 		agents:     make(map[string]Agent),
+		clients:    make(map[string]managedClient),
+		clientAssignments: make(map[string][]managedClientAssignment),
+		clientDeployments: make(map[string]map[string]managedClientDeployment),
+		clientUsage: make(map[string]map[string]clientUsageSnapshot),
 		deliveredJobs: make(map[string]map[string]bool),
 		instances:  make(map[string]Instance),
 		metrics:    make([]MetricSnapshot, 0),
@@ -95,6 +105,7 @@ func New(options Options) *Server {
 		server.seedUsers(options.Users)
 		server.auth = auth.NewServiceWithStore(options.Store)
 		server.restoreStoredState()
+		server.restoreStoredClients()
 		server.restoreStoredPanelSettings()
 	} else if len(options.Users) > 0 {
 		server.auth.LoadUsers(options.Users)
@@ -216,6 +227,12 @@ func (s *Server) routes() http.Handler {
 		api.Get("/instances", s.handleInstances())
 		api.Get("/jobs", s.handleJobs())
 		api.Post("/jobs", s.handleCreateJob())
+		api.Get("/clients", s.handleClients())
+		api.Post("/clients", s.handleCreateClient())
+		api.Get("/clients/{id}", s.handleClient())
+		api.Put("/clients/{id}", s.handleUpdateClient())
+		api.Delete("/clients/{id}", s.handleDeleteClient())
+		api.Post("/clients/{id}/rotate-secret", s.handleRotateClientSecret())
 		api.Get("/audit", s.handleAudit())
 		api.Get("/metrics", s.handleMetrics())
 		api.Get("/events", s.handleEvents())

@@ -18,8 +18,7 @@ var (
 )
 
 // EnrollmentScope defines where a newly enrolled agent is allowed to attach.
-	type EnrollmentScope struct {
-	EnvironmentID string
+type EnrollmentScope struct {
 	FleetGroupID  string
 	TTL           time.Duration
 }
@@ -27,7 +26,6 @@ var (
 // EnrollmentToken stores the minted token value and the scope bound to it.
 type EnrollmentToken struct {
 	Value         string
-	EnvironmentID string
 	FleetGroupID  string
 	IssuedAt      time.Time
 	ExpiresAt     time.Time
@@ -60,7 +58,6 @@ func (s *EnrollmentService) IssueToken(scope EnrollmentScope, issuedAt time.Time
 
 	token := EnrollmentToken{
 		Value:         value,
-		EnvironmentID: scope.EnvironmentID,
 		FleetGroupID:  scope.FleetGroupID,
 		IssuedAt:      issuedAt.UTC(),
 		ExpiresAt:     issuedAt.UTC().Add(scope.TTL),

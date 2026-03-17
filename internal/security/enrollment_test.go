@@ -11,9 +11,8 @@ func TestEnrollmentServiceConsumeRejectsExpiredToken(t *testing.T) {
 	expiresAt := issuedAt.Add(2 * time.Minute)
 
 	token, err := service.IssueToken(EnrollmentScope{
-		EnvironmentID: "prod",
-		FleetGroupID:  "ams-1",
-		TTL:           2 * time.Minute,
+		FleetGroupID: "ams-1",
+		TTL:          2 * time.Minute,
 	}, issuedAt)
 	if err != nil {
 		t.Fatalf("IssueToken() error = %v", err)
@@ -34,9 +33,8 @@ func TestEnrollmentServiceConsumePreservesScopeAndSingleUse(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 
 	token, err := service.IssueToken(EnrollmentScope{
-		EnvironmentID: "prod",
-		FleetGroupID:  "ams-1",
-		TTL:           5 * time.Minute,
+		FleetGroupID: "ams-1",
+		TTL:          5 * time.Minute,
 	}, now)
 	if err != nil {
 		t.Fatalf("IssueToken() error = %v", err)
@@ -45,10 +43,6 @@ func TestEnrollmentServiceConsumePreservesScopeAndSingleUse(t *testing.T) {
 	consumed, err := service.ConsumeToken(token.Value, now.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("ConsumeToken() error = %v", err)
-	}
-
-	if consumed.EnvironmentID != "prod" {
-		t.Fatalf("EnvironmentID = %q, want %q", consumed.EnvironmentID, "prod")
 	}
 
 	if consumed.FleetGroupID != "ams-1" {

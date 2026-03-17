@@ -143,57 +143,20 @@ func (s *Store) ListUsers(ctx context.Context) ([]storage.UserRecord, error) {
 	return result, rows.Err()
 }
 
-func (s *Store) PutEnvironment(ctx context.Context, environment storage.EnvironmentRecord) error {
+func (s *Store) PutFleetGroup(ctx context.Context, group storage.FleetGroupRecord) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO environments (id, name, created_at_unix)
+		INSERT INTO fleet_groups (id, name, created_at_unix)
 		VALUES (?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name = excluded.name,
 			created_at_unix = excluded.created_at_unix
-	`, environment.ID, environment.Name, toUnix(environment.CreatedAt))
-	return err
-}
-
-func (s *Store) ListEnvironments(ctx context.Context) ([]storage.EnvironmentRecord, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, created_at_unix
-		FROM environments
-		ORDER BY created_at_unix, id
-	`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	result := make([]storage.EnvironmentRecord, 0)
-	for rows.Next() {
-		var environment storage.EnvironmentRecord
-		var createdAt int64
-		if err := rows.Scan(&environment.ID, &environment.Name, &createdAt); err != nil {
-			return nil, err
-		}
-		environment.CreatedAt = fromUnix(createdAt)
-		result = append(result, environment)
-	}
-
-	return result, rows.Err()
-}
-
-func (s *Store) PutFleetGroup(ctx context.Context, group storage.FleetGroupRecord) error {
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO fleet_groups (id, environment_id, name, created_at_unix)
-		VALUES (?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET
-			environment_id = excluded.environment_id,
-			name = excluded.name,
-			created_at_unix = excluded.created_at_unix
-	`, group.ID, group.EnvironmentID, group.Name, toUnix(group.CreatedAt))
+	`, group.ID, group.Name, toUnix(group.CreatedAt))
 	return err
 }
 
 func (s *Store) ListFleetGroups(ctx context.Context) ([]storage.FleetGroupRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, environment_id, name, created_at_unix
+		SELECT id, name, created_at_unix
 		FROM fleet_groups
 		ORDER BY created_at_unix, id
 	`)
@@ -206,7 +169,7 @@ func (s *Store) ListFleetGroups(ctx context.Context) ([]storage.FleetGroupRecord
 	for rows.Next() {
 		var group storage.FleetGroupRecord
 		var createdAt int64
-		if err := rows.Scan(&group.ID, &group.EnvironmentID, &group.Name, &createdAt); err != nil {
+		if err := rows.Scan(&group.ID, &group.Name, &createdAt); err != nil {
 			return nil, err
 		}
 		group.CreatedAt = fromUnix(createdAt)
@@ -217,23 +180,28 @@ func (s *Store) ListFleetGroups(ctx context.Context) ([]storage.FleetGroupRecord
 }
 
 func (s *Store) PutAgent(ctx context.Context, agent storage.AgentRecord) error {
+	var fleetGroupID sql.NullString
+	if agent.FleetGroupID != "" {
+		fleetGroupID.Valid = true
+		fleetGroupID.String = agent.FleetGroupID
+	}
+
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO agents (id, node_name, environment_id, fleet_group_id, version, read_only, last_seen_at_unix)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO agents (id, node_name, fleet_group_id, version, read_only, last_seen_at_unix)
+		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			node_name = excluded.node_name,
-			environment_id = excluded.environment_id,
 			fleet_group_id = excluded.fleet_group_id,
 			version = excluded.version,
 			read_only = excluded.read_only,
 			last_seen_at_unix = excluded.last_seen_at_unix
-	`, agent.ID, agent.NodeName, agent.EnvironmentID, agent.FleetGroupID, agent.Version, boolToInt(agent.ReadOnly), toUnix(agent.LastSeenAt))
+	`, agent.ID, agent.NodeName, fleetGroupID, agent.Version, boolToInt(agent.ReadOnly), toUnix(agent.LastSeenAt))
 	return err
 }
 
 func (s *Store) ListAgents(ctx context.Context) ([]storage.AgentRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, node_name, environment_id, fleet_group_id, version, read_only, last_seen_at_unix
+		SELECT id, node_name, fleet_group_id, version, read_only, last_seen_at_unix
 		FROM agents
 		ORDER BY last_seen_at_unix, id
 	`)
@@ -245,10 +213,14 @@ func (s *Store) ListAgents(ctx context.Context) ([]storage.AgentRecord, error) {
 	result := make([]storage.AgentRecord, 0)
 	for rows.Next() {
 		var agent storage.AgentRecord
+		var fleetGroupID sql.NullString
 		var readOnly int
 		var lastSeenAt int64
-		if err := rows.Scan(&agent.ID, &agent.NodeName, &agent.EnvironmentID, &agent.FleetGroupID, &agent.Version, &readOnly, &lastSeenAt); err != nil {
+		if err := rows.Scan(&agent.ID, &agent.NodeName, &fleetGroupID, &agent.Version, &readOnly, &lastSeenAt); err != nil {
 			return nil, err
+		}
+		if fleetGroupID.Valid {
+			agent.FleetGroupID = fleetGroupID.String
 		}
 		agent.ReadOnly = intToBool(readOnly)
 		agent.LastSeenAt = fromUnix(lastSeenAt)
@@ -303,22 +275,23 @@ func (s *Store) ListInstances(ctx context.Context) ([]storage.InstanceRecord, er
 
 func (s *Store) PutJob(ctx context.Context, job storage.JobRecord) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO jobs (id, action, actor_id, status, created_at_unix, ttl_nanos, idempotency_key)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO jobs (id, action, actor_id, status, created_at_unix, ttl_nanos, idempotency_key, payload_json)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			action = excluded.action,
 			actor_id = excluded.actor_id,
 			status = excluded.status,
 			created_at_unix = excluded.created_at_unix,
 			ttl_nanos = excluded.ttl_nanos,
-			idempotency_key = excluded.idempotency_key
-	`, job.ID, job.Action, job.ActorID, job.Status, toUnix(job.CreatedAt), job.TTL.Nanoseconds(), job.IdempotencyKey)
+			idempotency_key = excluded.idempotency_key,
+			payload_json = excluded.payload_json
+	`, job.ID, job.Action, job.ActorID, job.Status, toUnix(job.CreatedAt), job.TTL.Nanoseconds(), job.IdempotencyKey, job.PayloadJSON)
 	return err
 }
 
 func (s *Store) GetJobByIdempotencyKey(ctx context.Context, idempotencyKey string) (storage.JobRecord, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, action, actor_id, status, created_at_unix, ttl_nanos, idempotency_key
+		SELECT id, action, actor_id, status, created_at_unix, ttl_nanos, idempotency_key, payload_json
 		FROM jobs
 		WHERE idempotency_key = ?
 	`, idempotencyKey)
@@ -326,7 +299,7 @@ func (s *Store) GetJobByIdempotencyKey(ctx context.Context, idempotencyKey strin
 	var job storage.JobRecord
 	var createdAt int64
 	var ttlNanos int64
-	if err := row.Scan(&job.ID, &job.Action, &job.ActorID, &job.Status, &createdAt, &ttlNanos, &job.IdempotencyKey); err != nil {
+	if err := row.Scan(&job.ID, &job.Action, &job.ActorID, &job.Status, &createdAt, &ttlNanos, &job.IdempotencyKey, &job.PayloadJSON); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.JobRecord{}, storage.ErrNotFound
 		}
@@ -340,7 +313,7 @@ func (s *Store) GetJobByIdempotencyKey(ctx context.Context, idempotencyKey strin
 
 func (s *Store) ListJobs(ctx context.Context) ([]storage.JobRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, action, actor_id, status, created_at_unix, ttl_nanos, idempotency_key
+		SELECT id, action, actor_id, status, created_at_unix, ttl_nanos, idempotency_key, payload_json
 		FROM jobs
 		ORDER BY created_at_unix, id
 	`)
@@ -354,7 +327,7 @@ func (s *Store) ListJobs(ctx context.Context) ([]storage.JobRecord, error) {
 		var job storage.JobRecord
 		var createdAt int64
 		var ttlNanos int64
-		if err := rows.Scan(&job.ID, &job.Action, &job.ActorID, &job.Status, &createdAt, &ttlNanos, &job.IdempotencyKey); err != nil {
+		if err := rows.Scan(&job.ID, &job.Action, &job.ActorID, &job.Status, &createdAt, &ttlNanos, &job.IdempotencyKey, &job.PayloadJSON); err != nil {
 			return nil, err
 		}
 		job.CreatedAt = fromUnix(createdAt)
@@ -367,19 +340,20 @@ func (s *Store) ListJobs(ctx context.Context) ([]storage.JobRecord, error) {
 
 func (s *Store) PutJobTarget(ctx context.Context, target storage.JobTargetRecord) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO job_targets (job_id, agent_id, status, result_text, updated_at_unix)
-		VALUES (?, ?, ?, ?, ?)
+		INSERT INTO job_targets (job_id, agent_id, status, result_text, result_json, updated_at_unix)
+		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(job_id, agent_id) DO UPDATE SET
 			status = excluded.status,
 			result_text = excluded.result_text,
+			result_json = excluded.result_json,
 			updated_at_unix = excluded.updated_at_unix
-	`, target.JobID, target.AgentID, target.Status, target.ResultText, toUnix(target.UpdatedAt))
+	`, target.JobID, target.AgentID, target.Status, target.ResultText, target.ResultJSON, toUnix(target.UpdatedAt))
 	return err
 }
 
 func (s *Store) ListJobTargets(ctx context.Context, jobID string) ([]storage.JobTargetRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT job_id, agent_id, status, result_text, updated_at_unix
+		SELECT job_id, agent_id, status, result_text, result_json, updated_at_unix
 		FROM job_targets
 		WHERE job_id = ?
 		ORDER BY agent_id
@@ -393,7 +367,7 @@ func (s *Store) ListJobTargets(ctx context.Context, jobID string) ([]storage.Job
 	for rows.Next() {
 		var target storage.JobTargetRecord
 		var updatedAt int64
-		if err := rows.Scan(&target.JobID, &target.AgentID, &target.Status, &target.ResultText, &updatedAt); err != nil {
+		if err := rows.Scan(&target.JobID, &target.AgentID, &target.Status, &target.ResultText, &target.ResultJSON, &updatedAt); err != nil {
 			return nil, err
 		}
 		target.UpdatedAt = fromUnix(updatedAt)
@@ -488,6 +462,11 @@ func (s *Store) ListMetricSnapshots(ctx context.Context) ([]storage.MetricSnapsh
 }
 
 func (s *Store) PutEnrollmentToken(ctx context.Context, token storage.EnrollmentTokenRecord) error {
+	var fleetGroupID sql.NullString
+	if token.FleetGroupID != "" {
+		fleetGroupID.Valid = true
+		fleetGroupID.String = token.FleetGroupID
+	}
 	var consumedAt sql.NullInt64
 	if token.ConsumedAt != nil {
 		consumedAt.Valid = true
@@ -500,22 +479,21 @@ func (s *Store) PutEnrollmentToken(ctx context.Context, token storage.Enrollment
 	}
 
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO enrollment_tokens (value, environment_id, fleet_group_id, issued_at_unix, expires_at_unix, consumed_at_unix, revoked_at_unix)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO enrollment_tokens (value, fleet_group_id, issued_at_unix, expires_at_unix, consumed_at_unix, revoked_at_unix)
+		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(value) DO UPDATE SET
-			environment_id = excluded.environment_id,
 			fleet_group_id = excluded.fleet_group_id,
 			issued_at_unix = excluded.issued_at_unix,
 			expires_at_unix = excluded.expires_at_unix,
 			consumed_at_unix = excluded.consumed_at_unix,
 			revoked_at_unix = excluded.revoked_at_unix
-	`, token.Value, token.EnvironmentID, token.FleetGroupID, toUnix(token.IssuedAt), toUnix(token.ExpiresAt), consumedAt, revokedAt)
+	`, token.Value, fleetGroupID, toUnix(token.IssuedAt), toUnix(token.ExpiresAt), consumedAt, revokedAt)
 	return err
 }
 
 func (s *Store) ListEnrollmentTokens(ctx context.Context) ([]storage.EnrollmentTokenRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT value, environment_id, fleet_group_id, issued_at_unix, expires_at_unix, consumed_at_unix, revoked_at_unix
+		SELECT value, fleet_group_id, issued_at_unix, expires_at_unix, consumed_at_unix, revoked_at_unix
 		FROM enrollment_tokens
 		ORDER BY issued_at_unix, value
 	`)
@@ -527,12 +505,16 @@ func (s *Store) ListEnrollmentTokens(ctx context.Context) ([]storage.EnrollmentT
 	result := make([]storage.EnrollmentTokenRecord, 0)
 	for rows.Next() {
 		var token storage.EnrollmentTokenRecord
+		var fleetGroupID sql.NullString
 		var issuedAt int64
 		var expiresAt int64
 		var consumedAt sql.NullInt64
 		var revokedAt sql.NullInt64
-		if err := rows.Scan(&token.Value, &token.EnvironmentID, &token.FleetGroupID, &issuedAt, &expiresAt, &consumedAt, &revokedAt); err != nil {
+		if err := rows.Scan(&token.Value, &fleetGroupID, &issuedAt, &expiresAt, &consumedAt, &revokedAt); err != nil {
 			return nil, err
+		}
+		if fleetGroupID.Valid {
+			token.FleetGroupID = fleetGroupID.String
 		}
 		token.IssuedAt = fromUnix(issuedAt)
 		token.ExpiresAt = fromUnix(expiresAt)
@@ -552,23 +534,27 @@ func (s *Store) ListEnrollmentTokens(ctx context.Context) ([]storage.EnrollmentT
 
 func (s *Store) GetEnrollmentToken(ctx context.Context, value string) (storage.EnrollmentTokenRecord, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT value, environment_id, fleet_group_id, issued_at_unix, expires_at_unix, consumed_at_unix, revoked_at_unix
+		SELECT value, fleet_group_id, issued_at_unix, expires_at_unix, consumed_at_unix, revoked_at_unix
 		FROM enrollment_tokens
 		WHERE value = ?
 	`, value)
 
 	var token storage.EnrollmentTokenRecord
+	var fleetGroupID sql.NullString
 	var issuedAt int64
 	var expiresAt int64
 	var consumedAt sql.NullInt64
 	var revokedAt sql.NullInt64
-	if err := row.Scan(&token.Value, &token.EnvironmentID, &token.FleetGroupID, &issuedAt, &expiresAt, &consumedAt, &revokedAt); err != nil {
+	if err := row.Scan(&token.Value, &fleetGroupID, &issuedAt, &expiresAt, &consumedAt, &revokedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.EnrollmentTokenRecord{}, storage.ErrNotFound
 		}
 		return storage.EnrollmentTokenRecord{}, err
 	}
 
+	if fleetGroupID.Valid {
+		token.FleetGroupID = fleetGroupID.String
+	}
 	token.IssuedAt = fromUnix(issuedAt)
 	token.ExpiresAt = fromUnix(expiresAt)
 	if consumedAt.Valid {
@@ -591,17 +577,18 @@ func (s *Store) ConsumeEnrollmentToken(ctx context.Context, value string, consum
 	defer tx.Rollback()
 
 	row := tx.QueryRowContext(ctx, `
-		SELECT value, environment_id, fleet_group_id, issued_at_unix, expires_at_unix, consumed_at_unix, revoked_at_unix
+		SELECT value, fleet_group_id, issued_at_unix, expires_at_unix, consumed_at_unix, revoked_at_unix
 		FROM enrollment_tokens
 		WHERE value = ?
 	`, value)
 
 	var token storage.EnrollmentTokenRecord
+	var fleetGroupID sql.NullString
 	var issuedAt int64
 	var expiresAt int64
 	var storedConsumedAt sql.NullInt64
 	var storedRevokedAt sql.NullInt64
-	if err := row.Scan(&token.Value, &token.EnvironmentID, &token.FleetGroupID, &issuedAt, &expiresAt, &storedConsumedAt, &storedRevokedAt); err != nil {
+	if err := row.Scan(&token.Value, &fleetGroupID, &issuedAt, &expiresAt, &storedConsumedAt, &storedRevokedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.EnrollmentTokenRecord{}, storage.ErrNotFound
 		}
@@ -610,6 +597,10 @@ func (s *Store) ConsumeEnrollmentToken(ctx context.Context, value string, consum
 
 	if storedConsumedAt.Valid || storedRevokedAt.Valid {
 		return storage.EnrollmentTokenRecord{}, storage.ErrConflict
+	}
+
+	if fleetGroupID.Valid {
+		token.FleetGroupID = fleetGroupID.String
 	}
 
 	result, err := tx.ExecContext(ctx, `
@@ -646,23 +637,27 @@ func (s *Store) RevokeEnrollmentToken(ctx context.Context, value string, revoked
 	defer tx.Rollback()
 
 	row := tx.QueryRowContext(ctx, `
-		SELECT value, environment_id, fleet_group_id, issued_at_unix, expires_at_unix, consumed_at_unix, revoked_at_unix
+		SELECT value, fleet_group_id, issued_at_unix, expires_at_unix, consumed_at_unix, revoked_at_unix
 		FROM enrollment_tokens
 		WHERE value = ?
 	`, value)
 
 	var token storage.EnrollmentTokenRecord
+	var fleetGroupID sql.NullString
 	var issuedAt int64
 	var expiresAt int64
 	var storedConsumedAt sql.NullInt64
 	var storedRevokedAt sql.NullInt64
-	if err := row.Scan(&token.Value, &token.EnvironmentID, &token.FleetGroupID, &issuedAt, &expiresAt, &storedConsumedAt, &storedRevokedAt); err != nil {
+	if err := row.Scan(&token.Value, &fleetGroupID, &issuedAt, &expiresAt, &storedConsumedAt, &storedRevokedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.EnrollmentTokenRecord{}, storage.ErrNotFound
 		}
 		return storage.EnrollmentTokenRecord{}, err
 	}
 
+	if fleetGroupID.Valid {
+		token.FleetGroupID = fleetGroupID.String
+	}
 	token.IssuedAt = fromUnix(issuedAt)
 	token.ExpiresAt = fromUnix(expiresAt)
 	if storedConsumedAt.Valid {

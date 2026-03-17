@@ -8,13 +8,12 @@ import (
 
 // Agent stores the control-plane view of a connected host agent.
 type Agent struct {
-	ID            string    `json:"id"`
-	NodeName      string    `json:"node_name"`
-	EnvironmentID string    `json:"environment_id"`
-	FleetGroupID  string    `json:"fleet_group_id"`
-	Version       string    `json:"version"`
-	ReadOnly      bool      `json:"read_only"`
-	LastSeenAt    time.Time `json:"last_seen_at"`
+	ID           string    `json:"id"`
+	NodeName     string    `json:"node_name"`
+	FleetGroupID string    `json:"fleet_group_id"`
+	Version      string    `json:"version"`
+	ReadOnly     bool      `json:"read_only"`
+	LastSeenAt   time.Time `json:"last_seen_at"`
 }
 
 // Instance stores the Telemt runtime metadata discovered through an agent.
@@ -50,25 +49,23 @@ type AuditEvent struct {
 
 func agentToRecord(agent Agent) storage.AgentRecord {
 	return storage.AgentRecord{
-		ID:            agent.ID,
-		NodeName:      agent.NodeName,
-		EnvironmentID: agent.EnvironmentID,
-		FleetGroupID:  agent.FleetGroupID,
-		Version:       agent.Version,
-		ReadOnly:      agent.ReadOnly,
-		LastSeenAt:    agent.LastSeenAt.UTC(),
+		ID:           agent.ID,
+		NodeName:     agent.NodeName,
+		FleetGroupID: agent.FleetGroupID,
+		Version:      agent.Version,
+		ReadOnly:     agent.ReadOnly,
+		LastSeenAt:   agent.LastSeenAt.UTC(),
 	}
 }
 
 func agentFromRecord(record storage.AgentRecord) Agent {
 	return Agent{
-		ID:            record.ID,
-		NodeName:      record.NodeName,
-		EnvironmentID: record.EnvironmentID,
-		FleetGroupID:  record.FleetGroupID,
-		Version:       record.Version,
-		ReadOnly:      record.ReadOnly,
-		LastSeenAt:    record.LastSeenAt.UTC(),
+		ID:           record.ID,
+		NodeName:     record.NodeName,
+		FleetGroupID: record.FleetGroupID,
+		Version:      record.Version,
+		ReadOnly:     record.ReadOnly,
+		LastSeenAt:   record.LastSeenAt.UTC(),
 	}
 }
 

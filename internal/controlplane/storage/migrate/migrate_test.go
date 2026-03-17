@@ -81,8 +81,8 @@ func TestCopyStoreCopiesAllPersistentEntities(t *testing.T) {
 		t.Fatalf("copyStore() error = %v", err)
 	}
 
-	if summary.Users != 1 || summary.Environments != 1 || summary.FleetGroups != 1 {
-		t.Fatalf("summary = %+v, want copied user/environment/group counts", summary)
+	if summary.Users != 1 || summary.FleetGroups != 1 {
+		t.Fatalf("summary = %+v, want copied user/group counts", summary)
 	}
 	if summary.Agents != 1 || summary.Instances != 1 || summary.Jobs != 1 || summary.JobTargets != 1 {
 		t.Fatalf("summary = %+v, want copied agent/instance/job counts", summary)
@@ -159,28 +159,19 @@ func populateSourceStore(t *testing.T, store storage.Store, now time.Time) {
 	}); err != nil {
 		t.Fatalf("PutUser() error = %v", err)
 	}
-	if err := store.PutEnvironment(ctx, storage.EnvironmentRecord{
-		ID:        "prod",
-		Name:      "prod",
-		CreatedAt: now,
-	}); err != nil {
-		t.Fatalf("PutEnvironment() error = %v", err)
-	}
 	if err := store.PutFleetGroup(ctx, storage.FleetGroupRecord{
-		ID:            "ams-1",
-		EnvironmentID: "prod",
-		Name:          "ams-1",
-		CreatedAt:     now,
+		ID:        "ams-1",
+		Name:      "ams-1",
+		CreatedAt: now,
 	}); err != nil {
 		t.Fatalf("PutFleetGroup() error = %v", err)
 	}
 	if err := store.PutAgent(ctx, storage.AgentRecord{
-		ID:            "agent-000001",
-		NodeName:      "node-a",
-		EnvironmentID: "prod",
-		FleetGroupID:  "ams-1",
-		Version:       "1.0.0",
-		LastSeenAt:    now,
+		ID:           "agent-000001",
+		NodeName:     "node-a",
+		FleetGroupID: "ams-1",
+		Version:      "1.0.0",
+		LastSeenAt:   now,
 	}); err != nil {
 		t.Fatalf("PutAgent() error = %v", err)
 	}
@@ -203,6 +194,7 @@ func populateSourceStore(t *testing.T, store storage.Store, now time.Time) {
 		CreatedAt:      now,
 		TTL:            time.Minute,
 		IdempotencyKey: "reload-1",
+		PayloadJSON:    `{"scope":"telemt"}`,
 	}); err != nil {
 		t.Fatalf("PutJob() error = %v", err)
 	}
@@ -211,6 +203,7 @@ func populateSourceStore(t *testing.T, store storage.Store, now time.Time) {
 		AgentID:    "agent-000001",
 		Status:     "failed",
 		ResultText: "reload failed",
+		ResultJSON: `{"accepted":false}`,
 		UpdatedAt:  now.Add(10 * time.Second),
 	}); err != nil {
 		t.Fatalf("PutJobTarget() error = %v", err)
@@ -238,13 +231,12 @@ func populateSourceStore(t *testing.T, store storage.Store, now time.Time) {
 		t.Fatalf("AppendMetricSnapshot() error = %v", err)
 	}
 	if err := store.PutEnrollmentToken(ctx, storage.EnrollmentTokenRecord{
-		Value:         "token-1",
-		EnvironmentID: "prod",
-		FleetGroupID:  "ams-1",
-		IssuedAt:      now,
-		ExpiresAt:     now.Add(time.Minute),
-		ConsumedAt:    &consumedAt,
-		RevokedAt:     &consumedAt,
+		Value:        "token-1",
+		FleetGroupID: "ams-1",
+		IssuedAt:     now,
+		ExpiresAt:    now.Add(time.Minute),
+		ConsumedAt:   &consumedAt,
+		RevokedAt:    &consumedAt,
 	}); err != nil {
 		t.Fatalf("PutEnrollmentToken() error = %v", err)
 	}

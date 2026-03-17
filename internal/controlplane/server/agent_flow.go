@@ -31,15 +31,24 @@ type instanceSnapshot struct {
 }
 
 type agentSnapshot struct {
-	AgentID       string
-	NodeName      string
-	EnvironmentID string
-	FleetGroupID  string
-	Version       string
-	ReadOnly      bool
-	Instances     []instanceSnapshot
-	Metrics       map[string]uint64
-	ObservedAt    time.Time
+	AgentID      string
+	NodeName     string
+	FleetGroupID string
+	Version      string
+	ReadOnly     bool
+	Instances    []instanceSnapshot
+	Clients      []clientUsageSnapshot
+	HasClients   bool
+	Metrics      map[string]uint64
+	ObservedAt   time.Time
+}
+
+type clientUsageSnapshot struct {
+	ClientID         string
+	TrafficUsedBytes uint64
+	UniqueIPsUsed    int
+	ActiveTCPConns   int
+	ObservedAt       time.Time
 }
 
 func (s *Server) enrollAgent(request agentEnrollmentRequest, now time.Time) (agentEnrollmentResponse, error) {
@@ -52,30 +61,23 @@ func (s *Server) enrollAgent(request agentEnrollmentRequest, now time.Time) (age
 	s.agentSeq++
 	agentID := newSequenceID("agent", s.agentSeq)
 	agent := Agent{
-		ID:            agentID,
-		NodeName:      request.NodeName,
-		EnvironmentID: token.EnvironmentID,
-		FleetGroupID:  token.FleetGroupID,
-		Version:       request.Version,
-		LastSeenAt:    now.UTC(),
+		ID:           agentID,
+		NodeName:     request.NodeName,
+		FleetGroupID: token.FleetGroupID,
+		Version:      request.Version,
+		LastSeenAt:   now.UTC(),
 	}
 	s.mu.Unlock()
 
 	if s.store != nil {
-		if err := s.store.PutEnvironment(context.Background(), storage.EnvironmentRecord{
-			ID:        token.EnvironmentID,
-			Name:      token.EnvironmentID,
-			CreatedAt: now.UTC(),
-		}); err != nil {
-			return agentEnrollmentResponse{}, err
-		}
-		if err := s.store.PutFleetGroup(context.Background(), storage.FleetGroupRecord{
-			ID:            token.FleetGroupID,
-			EnvironmentID: token.EnvironmentID,
-			Name:          token.FleetGroupID,
-			CreatedAt:     now.UTC(),
-		}); err != nil {
-			return agentEnrollmentResponse{}, err
+		if token.FleetGroupID != "" {
+			if err := s.store.PutFleetGroup(context.Background(), storage.FleetGroupRecord{
+				ID:        token.FleetGroupID,
+				Name:      token.FleetGroupID,
+				CreatedAt: now.UTC(),
+			}); err != nil {
+				return agentEnrollmentResponse{}, err
+			}
 		}
 		if err := s.store.PutAgent(context.Background(), agentToRecord(agent)); err != nil {
 			return agentEnrollmentResponse{}, err
@@ -93,7 +95,6 @@ func (s *Server) enrollAgent(request agentEnrollmentRequest, now time.Time) (age
 
 	s.appendAudit(agentID, "agents.enrolled", agentID, map[string]any{
 		"node_name":      request.NodeName,
-		"environment_id": token.EnvironmentID,
 		"fleet_group_id": token.FleetGroupID,
 	})
 	s.events.publish(eventEnvelope{
@@ -118,11 +119,8 @@ func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) {
 	agent := s.agents[snapshot.AgentID]
 	agent.ID = snapshot.AgentID
 	agent.NodeName = snapshot.NodeName
-	// Enrollment fixes the agent scope. Runtime snapshots may be stale or misconfigured,
-	// so they must not move an enrolled agent into a different environment or fleet group.
-	if agent.EnvironmentID == "" {
-		agent.EnvironmentID = snapshot.EnvironmentID
-	}
+	// Enrollment fixes the agent group. Runtime snapshots may be stale or misconfigured,
+	// so they must not move an enrolled agent into a different fleet group.
 	if agent.FleetGroupID == "" {
 		agent.FleetGroupID = snapshot.FleetGroupID
 	}
@@ -181,10 +179,29 @@ func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) {
 	if metricSnapshot != nil {
 		s.metrics = append(s.metrics, *metricSnapshot)
 	}
+	if snapshot.HasClients {
+		s.applyClientUsageSnapshot(snapshot.AgentID, snapshot.Clients)
+	}
 	s.mu.Unlock()
 
 	s.events.publish(eventEnvelope{
 		Type: "agents.updated",
 		Data: agent,
 	})
+}
+
+func (s *Server) applyClientUsageSnapshot(agentID string, clients []clientUsageSnapshot) {
+	for clientID, agentUsage := range s.clientUsage {
+		delete(agentUsage, agentID)
+		if len(agentUsage) == 0 {
+			delete(s.clientUsage, clientID)
+		}
+	}
+
+	for _, usage := range clients {
+		if s.clientUsage[usage.ClientID] == nil {
+			s.clientUsage[usage.ClientID] = make(map[string]clientUsageSnapshot)
+		}
+		s.clientUsage[usage.ClientID][agentID] = usage
+	}
 }

@@ -11,6 +11,7 @@ import { useState } from "react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { AppShell } from "./components/app-shell";
+import { ClientDetailPage, ClientsPage, CreateClientPage } from "./clients-page";
 import { ControlRoomHero } from "./components/control-room-hero";
 import { ControlRoomOnboarding } from "./components/control-room-onboarding";
 import { ControlRoomSummary } from "./components/control-room-summary";
@@ -76,6 +77,24 @@ const agentsRoute = createRoute({
   component: AgentsPage
 });
 
+const clientsRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/clients",
+  component: ClientsPage
+});
+
+const clientsNewRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/clients/new",
+  component: CreateClientPage
+});
+
+const clientDetailRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/clients/$clientId",
+  component: ClientDetailPage
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/settings",
@@ -84,7 +103,7 @@ const settingsRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
-  shellRoute.addChildren([overviewRoute, fleetRoute, jobsRoute, auditRoute, agentsRoute, settingsRoute])
+  shellRoute.addChildren([overviewRoute, fleetRoute, jobsRoute, auditRoute, agentsRoute, clientsRoute, clientsNewRoute, clientDetailRoute, settingsRoute])
 ]);
 
 export const router = createRouter({
@@ -283,7 +302,7 @@ function FleetPage() {
             <thead>
               <tr className="text-left text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
                 <th className="px-4 pb-1">Node</th>
-                <th className="px-4 pb-1">Environment</th>
+                <th className="px-4 pb-1">Group</th>
                 <th className="px-4 pb-1">Version</th>
                 <th className="px-4 pb-1">Mode</th>
                 <th className="px-4 pb-1">Last seen</th>
@@ -300,7 +319,7 @@ function FleetPage() {
                     <div className="font-medium text-slate-950">{agent.node_name}</div>
                     <div className="mt-1 text-sm text-slate-500">{agent.id}</div>
                   </td>
-                  <td className="px-4 py-4 text-sm text-slate-700">{agent.environment_id} / {agent.fleet_group_id}</td>
+                  <td className="px-4 py-4 text-sm text-slate-700">{agent.fleet_group_id || "Ungrouped"}</td>
                   <td className="px-4 py-4 text-sm text-slate-700">{agent.version || "unknown"}</td>
                   <td className="px-4 py-4">
                     <span className={`rounded-full px-3 py-1 text-xs uppercase tracking-[0.22em] ${agent.read_only ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
@@ -457,7 +476,7 @@ function AgentsPage() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-lg font-semibold text-slate-950">{agent.node_name}</p>
-                <p className="mt-1 text-sm text-slate-500">{agent.environment_id} / {agent.fleet_group_id}</p>
+                <p className="mt-1 text-sm text-slate-500">{agent.fleet_group_id || "Ungrouped"}</p>
               </div>
               <span className={`rounded-full px-3 py-1 text-xs uppercase tracking-[0.22em] ${agent.read_only ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
                 {agent.read_only ? "Read only" : "Writable"}

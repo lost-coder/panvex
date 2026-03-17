@@ -128,8 +128,8 @@ func TestServiceRecordResultPersistsTargetsAcrossRestart(t *testing.T) {
 
 	first.MarkDelivered("agent-1", job.ID, now.Add(5*time.Second))
 	first.MarkDelivered("agent-2", job.ID, now.Add(5*time.Second))
-	first.RecordResult("agent-1", job.ID, true, "ok", now.Add(10*time.Second))
-	first.RecordResult("agent-2", job.ID, false, "reload failed", now.Add(11*time.Second))
+	first.RecordResult("agent-1", job.ID, true, "ok", "", now.Add(10*time.Second))
+	first.RecordResult("agent-2", job.ID, false, "reload failed", "", now.Add(11*time.Second))
 
 	restored := NewServiceWithStore(store)
 	jobs := restored.List()
@@ -147,5 +147,45 @@ func TestServiceRecordResultPersistsTargetsAcrossRestart(t *testing.T) {
 
 	if jobs[0].Targets[0].Status == jobs[0].Targets[1].Status {
 		t.Fatalf("target statuses = %q and %q, want one success and one failure", jobs[0].Targets[0].Status, jobs[0].Targets[1].Status)
+	}
+}
+
+func TestServicePersistsStructuredClientPayloadAndResultAcrossRestart(t *testing.T) {
+	now := time.Date(2026, time.March, 17, 16, 45, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	first := NewServiceWithStore(store)
+	job, err := first.Enqueue(CreateJobInput{
+		Action:         ActionClientCreate,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            time.Minute,
+		IdempotencyKey: "client-create",
+		ActorID:        "user-1",
+		PayloadJSON:    `{"client_id":"client-1","secret":"secret-1"}`,
+	}, now)
+	if err != nil {
+		t.Fatalf("Enqueue() error = %v", err)
+	}
+
+	first.MarkDelivered("agent-1", job.ID, now.Add(5*time.Second))
+	first.RecordResult("agent-1", job.ID, true, "applied", `{"connection_link":"tg://proxy?server=node-a&secret=secret-1"}`, now.Add(10*time.Second))
+
+	restored := NewServiceWithStore(store)
+	jobs := restored.List()
+	if len(jobs) != 1 {
+		t.Fatalf("len(List()) = %d, want %d", len(jobs), 1)
+	}
+	if jobs[0].PayloadJSON != `{"client_id":"client-1","secret":"secret-1"}` {
+		t.Fatalf("jobs[0].PayloadJSON = %q, want %q", jobs[0].PayloadJSON, `{"client_id":"client-1","secret":"secret-1"}`)
+	}
+	if len(jobs[0].Targets) != 1 {
+		t.Fatalf("len(jobs[0].Targets) = %d, want %d", len(jobs[0].Targets), 1)
+	}
+	if jobs[0].Targets[0].ResultJSON != `{"connection_link":"tg://proxy?server=node-a&secret=secret-1"}` {
+		t.Fatalf("jobs[0].Targets[0].ResultJSON = %q, want %q", jobs[0].Targets[0].ResultJSON, `{"connection_link":"tg://proxy?server=node-a&secret=secret-1"}`)
 	}
 }

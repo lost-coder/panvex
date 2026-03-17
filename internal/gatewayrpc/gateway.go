@@ -49,13 +49,12 @@ type RenewCertificateResponse struct {
 
 // Heartbeat carries lightweight liveness information from the agent.
 type Heartbeat struct {
-	AgentID      string `json:"agent_id"`
-	NodeName     string `json:"node_name"`
-	EnvironmentID string `json:"environment_id"`
-	FleetGroupID string `json:"fleet_group_id"`
-	Version      string `json:"version"`
-	ReadOnly     bool   `json:"read_only"`
-	ObservedAtUnix int64 `json:"observed_at_unix"`
+	AgentID        string `json:"agent_id"`
+	NodeName       string `json:"node_name"`
+	FleetGroupID   string `json:"fleet_group_id"`
+	Version        string `json:"version"`
+	ReadOnly       bool   `json:"read_only"`
+	ObservedAtUnix int64  `json:"observed_at_unix"`
 }
 
 // InstanceSnapshot carries Telemt inventory for one locally managed instance.
@@ -68,17 +67,25 @@ type InstanceSnapshot struct {
 	ReadOnly          bool   `json:"read_only"`
 }
 
+// ClientUsageSnapshot carries current client-level usage observed on one agent.
+type ClientUsageSnapshot struct {
+	ClientID         string `json:"client_id"`
+	TrafficUsedBytes uint64 `json:"traffic_used_bytes"`
+	UniqueIPsUsed    int    `json:"unique_ips_used"`
+	ActiveTCPConns   int    `json:"active_tcp_conns"`
+}
+
 // Snapshot carries the current agent inventory and aggregated metrics.
 type Snapshot struct {
-	AgentID        string            `json:"agent_id"`
-	NodeName       string            `json:"node_name"`
-	EnvironmentID  string            `json:"environment_id"`
-	FleetGroupID   string            `json:"fleet_group_id"`
-	Version        string            `json:"version"`
-	ReadOnly       bool              `json:"read_only"`
-	ObservedAtUnix int64             `json:"observed_at_unix"`
-	Instances      []InstanceSnapshot `json:"instances"`
-	Metrics        map[string]uint64 `json:"metrics"`
+	AgentID        string                `json:"agent_id"`
+	NodeName       string                `json:"node_name"`
+	FleetGroupID   string                `json:"fleet_group_id"`
+	Version        string                `json:"version"`
+	ReadOnly       bool                  `json:"read_only"`
+	ObservedAtUnix int64                 `json:"observed_at_unix"`
+	Instances      []InstanceSnapshot    `json:"instances"`
+	Metrics        map[string]uint64     `json:"metrics"`
+	Clients        []ClientUsageSnapshot `json:"clients"`
 }
 
 // JobCommand carries an accepted control-plane action toward a specific agent.
@@ -87,6 +94,7 @@ type JobCommand struct {
 	Action         string   `json:"action"`
 	IdempotencyKey string   `json:"idempotency_key"`
 	TargetAgentIDs []string `json:"target_agent_ids"`
+	PayloadJSON    string   `json:"payload_json"`
 }
 
 // JobResult carries the execution outcome of one agent-side command.
@@ -96,6 +104,7 @@ type JobResult struct {
 	Success        bool   `json:"success"`
 	Message        string `json:"message"`
 	ObservedAtUnix int64  `json:"observed_at_unix"`
+	ResultJSON     string `json:"result_json"`
 }
 
 // ConnectClientMessage is sent from an agent to the control-plane stream.

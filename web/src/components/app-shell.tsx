@@ -11,6 +11,7 @@ const navigation = [
   { to: "/jobs", label: "Jobs" },
   { to: "/audit", label: "Audit" },
   { to: "/agents", label: "Agents" },
+  { to: "/clients", label: "Clients" },
   { to: "/settings", label: "Settings" }
 ] as const;
 
@@ -40,13 +41,15 @@ export function AppShell() {
       void queryClient.invalidateQueries({ queryKey: ["audit"] });
       void queryClient.invalidateQueries({ queryKey: ["metrics"] });
       void queryClient.invalidateQueries({ queryKey: ["enrollment-tokens"] });
+      void queryClient.invalidateQueries({ queryKey: ["clients"] });
+      void queryClient.invalidateQueries({ queryKey: ["client"] });
     };
 
     return () => socket.close();
   }, [meQuery.data, queryClient]);
 
   const title = useMemo(() => {
-    return navigation.find((item) => item.to === pathname)?.label ?? "Dashboard";
+    return navigation.find((item) => pathname === item.to || (item.to !== "/" && pathname.startsWith(item.to)))?.label ?? "Dashboard";
   }, [pathname]);
 
   return (
