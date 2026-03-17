@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/url"
 	"path"
 	"strings"
 	"time"
@@ -96,6 +98,8 @@ func normalizePanelSettings(settings PanelSettings, runtime PanelRuntime) (Panel
 	if settings.TLSMode == panelTLSModeProxy {
 		settings.TLSCertFile = ""
 		settings.TLSKeyFile = ""
+	} else if settings.TLSCertFile == "" || settings.TLSKeyFile == "" {
+		return PanelSettings{}, errors.New("tls_cert_file and tls_key_file are required when serving tls directly")
 	}
 
 	return settings, nil
@@ -122,6 +126,39 @@ func normalizePanelRootPath(value string) string {
 		return ""
 	}
 	return cleaned
+}
+
+func buildPanelPublicURL(settings PanelSettings, runtime PanelRuntime, requestURL *url.URL, forwardedProto string, requestHost string) string {
+	base := strings.TrimSpace(settings.HTTPPublicURL)
+	if base == "" {
+		scheme := strings.TrimSpace(forwardedProto)
+		if scheme == "" && requestURL != nil {
+			scheme = strings.TrimSpace(requestURL.Scheme)
+		}
+		if scheme == "" {
+			if runtime.TLSMode == panelTLSModeDirect {
+				scheme = "https"
+			} else {
+				scheme = "http"
+			}
+		}
+
+		host := strings.TrimSpace(requestHost)
+		if host == "" && requestURL != nil {
+			host = strings.TrimSpace(requestURL.Host)
+		}
+		if host == "" {
+			return ""
+		}
+
+		base = fmt.Sprintf("%s://%s", scheme, host)
+	}
+
+	if settings.HTTPRootPath == "" {
+		return strings.TrimRight(base, "/")
+	}
+
+	return strings.TrimRight(base, "/") + settings.HTTPRootPath
 }
 
 func panelSettingsToRecord(settings PanelSettings) storage.PanelSettingsRecord {

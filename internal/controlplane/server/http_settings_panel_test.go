@@ -218,6 +218,48 @@ func TestHTTPPanelSettingsMarksRestartUnavailableWhenRuntimeCannotSelfRestart(t 
 	}
 }
 
+func TestHTTPPanelSettingsRejectsDirectTLSWithoutCertificateFiles(t *testing.T) {
+	now := time.Date(2026, time.March, 17, 10, 40, 0, 0, time.UTC)
+	server := New(Options{
+		Now: func() time.Time { return now },
+		PanelRuntime: PanelRuntime{
+			HTTPListenAddress: ":8080",
+			GRPCListenAddress: ":8443",
+			TLSMode:           "proxy",
+			RestartSupported:  true,
+		},
+	})
+	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "admin",
+		Password: "admin-password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "admin",
+		"password": "admin-password",
+	}, nil)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
+	}
+
+	updateResponse := performJSONRequest(t, server.Handler(), http.MethodPut, "/api/settings/panel", map[string]string{
+		"http_public_url":      "https://panel.example.com",
+		"http_root_path":       "/panvex",
+		"grpc_public_endpoint": "grpc.panel.example.com:443",
+		"http_listen_address":  ":8080",
+		"grpc_listen_address":  ":8443",
+		"tls_mode":             "direct",
+		"tls_cert_file":        "",
+		"tls_key_file":         "",
+	}, loginResponse.Result().Cookies())
+	if updateResponse.Code != http.StatusBadRequest {
+		t.Fatalf("PUT /api/settings/panel status = %d, want %d", updateResponse.Code, http.StatusBadRequest)
+	}
+}
+
 func TestHTTPPanelRestartRequiresAdminAndInvokesRuntimeHook(t *testing.T) {
 	now := time.Date(2026, time.March, 17, 1, 20, 0, 0, time.UTC)
 	restartRequests := make(chan struct{}, 1)

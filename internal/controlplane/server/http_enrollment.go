@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -24,6 +25,7 @@ type createEnrollmentTokenRequest struct {
 
 type createEnrollmentTokenResponse struct {
 	Value         string `json:"value"`
+	PanelURL      string `json:"panel_url"`
 	EnvironmentID string `json:"environment_id"`
 	FleetGroupID  string `json:"fleet_group_id"`
 	IssuedAtUnix  int64  `json:"issued_at_unix"`
@@ -48,6 +50,7 @@ type agentBootstrapResponse struct {
 
 type enrollmentTokenResponse struct {
 	Value          string `json:"value"`
+	PanelURL       string `json:"panel_url"`
 	EnvironmentID  string `json:"environment_id"`
 	FleetGroupID   string `json:"fleet_group_id"`
 	Status         string `json:"status"`
@@ -91,8 +94,10 @@ func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 			"fleet_group_id": request.FleetGroupID,
 			"ttl_seconds":    request.TTLSeconds,
 		})
+		settings := s.panelSettingsSnapshot()
 		writeJSON(w, http.StatusCreated, createEnrollmentTokenResponse{
 			Value:         token.Value,
+			PanelURL:      buildPanelPublicURL(settings, s.panelRuntime, r.URL, r.Header.Get("X-Forwarded-Proto"), r.Host),
 			EnvironmentID: token.EnvironmentID,
 			FleetGroupID:  token.FleetGroupID,
 			IssuedAtUnix:  token.IssuedAt.Unix(),
@@ -166,7 +171,7 @@ func (s *Server) handleListEnrollmentTokens() http.HandlerFunc {
 			return
 		}
 
-		tokens, err := s.listEnrollmentTokens(s.now())
+		tokens, err := s.listEnrollmentTokens(s.now(), r.URL, r.Header.Get("X-Forwarded-Proto"), r.Host)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -297,16 +302,19 @@ func (s *Server) consumeEnrollmentToken(value string, now time.Time) (security.E
 	}, nil
 }
 
-func (s *Server) listEnrollmentTokens(now time.Time) ([]enrollmentTokenResponse, error) {
+func (s *Server) listEnrollmentTokens(now time.Time, requestURL *url.URL, forwardedProto string, requestHost string) ([]enrollmentTokenResponse, error) {
 	records, err := s.store.ListEnrollmentTokens(context.Background())
 	if err != nil {
 		return nil, err
 	}
 
+	settings := s.panelSettingsSnapshot()
+	panelURL := buildPanelPublicURL(settings, s.panelRuntime, requestURL, forwardedProto, requestHost)
 	response := make([]enrollmentTokenResponse, 0, len(records))
 	for _, token := range records {
 		item := enrollmentTokenResponse{
 			Value:         token.Value,
+			PanelURL:      panelURL,
 			EnvironmentID: token.EnvironmentID,
 			FleetGroupID:  token.FleetGroupID,
 			Status:        enrollmentTokenStatus(token, now),
