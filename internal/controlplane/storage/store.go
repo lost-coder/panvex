@@ -16,8 +16,6 @@ type UserStore interface {
 
 // FleetStore persists fleet topology and discovered Telemt runtime state.
 type FleetStore interface {
-	PutEnvironment(ctx context.Context, environment EnvironmentRecord) error
-	ListEnvironments(ctx context.Context) ([]EnvironmentRecord, error)
 	PutFleetGroup(ctx context.Context, group FleetGroupRecord) error
 	ListFleetGroups(ctx context.Context) ([]FleetGroupRecord, error)
 	PutAgent(ctx context.Context, agent AgentRecord) error
@@ -62,6 +60,18 @@ type PanelSettingsStore interface {
 	GetPanelSettings(ctx context.Context) (PanelSettingsRecord, error)
 }
 
+// ClientStore persists centrally managed Telemt clients, rollout assignments, and per-node deployment state.
+type ClientStore interface {
+	PutClient(ctx context.Context, client ClientRecord) error
+	GetClientByID(ctx context.Context, clientID string) (ClientRecord, error)
+	ListClients(ctx context.Context) ([]ClientRecord, error)
+	PutClientAssignment(ctx context.Context, assignment ClientAssignmentRecord) error
+	DeleteClientAssignments(ctx context.Context, clientID string) error
+	ListClientAssignments(ctx context.Context, clientID string) ([]ClientAssignmentRecord, error)
+	PutClientDeployment(ctx context.Context, deployment ClientDeploymentRecord) error
+	ListClientDeployments(ctx context.Context, clientID string) ([]ClientDeploymentRecord, error)
+}
+
 // Store aggregates the persistence capabilities required by the control-plane.
 type Store interface {
 	UserStore
@@ -71,6 +81,7 @@ type Store interface {
 	MetricStore
 	EnrollmentStore
 	PanelSettingsStore
+	ClientStore
 
 	Close() error
 }

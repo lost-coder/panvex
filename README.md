@@ -206,6 +206,23 @@ If the control-plane is using PostgreSQL instead of the default SQLite backend, 
      -state-file /var/lib/panvex-agent/agent-state.json
    ```
 
+## Managed clients
+
+Panvex can now manage Telemt clients centrally instead of editing them node by node.
+
+Open `Clients` in the dashboard to:
+
+- create a managed client with generated secret and `user_ad_tag`
+- set Telemt limits such as `max_tcp_conns`, `max_unique_ips`, quota, and expiration
+- assign the client by fleet group or explicit nodes
+- rotate the client secret later without recreating the whole client
+
+After each save, Panvex immediately queues rollout jobs for the selected nodes. Each node returns its own Telegram connection link, so the client detail page shows:
+
+- the current deployment status on every node
+- the latest node-specific connection link
+- aggregated current usage such as traffic, unique IPs, and active TCP connections
+
 ## Verification
 
 - `go build ./...`
@@ -219,15 +236,3 @@ If the control-plane is using PostgreSQL instead of the default SQLite backend, 
 - `go test ./cmd/control-plane -run "TestRunBootstrapAdmin|TestRunResetUserTotp" -v`
 - `go test ./internal/controlplane/auth ./internal/controlplane/server -run "TestServiceBootstrapUserLeavesTotpDisabledByDefault|TestServiceAuthenticateAllowsOperatorWithoutTotpWhenDisabled|TestServiceEnableTotpRequiresPendingSetup|TestServiceEnableTotpRequiresValidPasswordAndCode|TestServiceDisableTotpRequiresValidPasswordAndCode|TestServiceResetTotpClearsEnabledState|TestHTTPAuthTotpSetupEnableDisableFlow|TestHTTPUsersTotpResetRequiresAdminAndClearsTarget" -v`
 - `go test ./internal/controlplane/auth ./internal/controlplane/jobs ./internal/controlplane/server ./internal/controlplane/state ./internal/controlplane/storage/migrate ./internal/controlplane/storage/postgres ./internal/controlplane/storage/sqlite -v`
-
-On the current Windows environment, `go test` for `internal/controlplane/config`, `internal/controlplane/presence`, and `internal/controlplane/storage/storagetest` must be executed through compiled test binaries because temporary `.test.exe` launches are denied:
-
-```powershell
-New-Item -ItemType Directory -Force .tmp/tests | Out-Null
-go test -c -o .tmp/tests/config.test.exe ./internal/controlplane/config
-& .\.tmp\tests\config.test.exe --% -test.v
-go test -c -o .tmp/tests/presence.test.exe ./internal/controlplane/presence
-& .\.tmp\tests\presence.test.exe --% -test.v
-go test -c -o .tmp/tests/storagetest.test.exe ./internal/controlplane/storage/storagetest
-& .\.tmp\tests\storagetest.test.exe --% -test.v
-```

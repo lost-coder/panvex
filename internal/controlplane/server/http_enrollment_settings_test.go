@@ -40,9 +40,8 @@ func TestHTTPAgentBootstrapUsesConfiguredGRPCPublicEndpoint(t *testing.T) {
 		Store: store,
 	})
 	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
-		EnvironmentID: "prod",
-		FleetGroupID:  "default",
-		TTL:           time.Minute,
+		FleetGroupID: "default",
+		TTL:          time.Minute,
 	}, now)
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)

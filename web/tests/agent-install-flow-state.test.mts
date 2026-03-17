@@ -5,14 +5,12 @@ import {
   buildConnectionJourney,
   resolveConnectedAgentID
 } from "../src/components/agent-install-flow-state.ts";
-import { type Agent, type Instance } from "../src/lib/api.ts";
 
 test("resolveConnectedAgentID waits for the first runtime instance", () => {
-  const agents: Agent[] = [
+  const agents = [
     {
       id: "agent-existing",
       node_name: "existing-node",
-      environment_id: "prod",
       fleet_group_id: "default",
       version: "1.0.0",
       read_only: false,
@@ -21,24 +19,22 @@ test("resolveConnectedAgentID waits for the first runtime instance", () => {
     {
       id: "agent-new",
       node_name: "new-node",
-      environment_id: "prod",
       fleet_group_id: "default",
       version: "1.0.0",
       read_only: false,
       last_seen_at: "2026-03-16T12:01:00Z"
     }
   ];
-  const instances: Instance[] = [];
+  const instances = [];
 
   assert.equal(resolveConnectedAgentID(agents, instances, ["agent-existing"]), null);
 });
 
 test("resolveConnectedAgentID accepts a new agent after the first runtime instance appears", () => {
-  const agents: Agent[] = [
+  const agents = [
     {
       id: "agent-existing",
       node_name: "existing-node",
-      environment_id: "prod",
       fleet_group_id: "default",
       version: "1.0.0",
       read_only: false,
@@ -47,14 +43,13 @@ test("resolveConnectedAgentID accepts a new agent after the first runtime instan
     {
       id: "agent-new",
       node_name: "new-node",
-      environment_id: "prod",
       fleet_group_id: "default",
       version: "1.0.0",
       read_only: false,
       last_seen_at: "2026-03-16T12:01:00Z"
     }
   ];
-  const instances: Instance[] = [
+  const instances = [
     {
       id: "telemt-primary",
       agent_id: "agent-new",

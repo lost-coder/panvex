@@ -324,7 +324,6 @@ func runMigrateStorage(args []string) error {
 
 	fmt.Printf("Migration completed.\n")
 	fmt.Printf("Users: %d\n", summary.Users)
-	fmt.Printf("Environments: %d\n", summary.Environments)
 	fmt.Printf("Fleet groups: %d\n", summary.FleetGroups)
 	fmt.Printf("Agents: %d\n", summary.Agents)
 	fmt.Printf("Instances: %d\n", summary.Instances)

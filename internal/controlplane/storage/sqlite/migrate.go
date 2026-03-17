@@ -13,29 +13,19 @@ CREATE TABLE IF NOT EXISTS users (
     created_at_unix INTEGER NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS environments (
+CREATE TABLE IF NOT EXISTS fleet_groups (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     created_at_unix INTEGER NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS fleet_groups (
-    id TEXT PRIMARY KEY,
-    environment_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    created_at_unix INTEGER NOT NULL,
-    FOREIGN KEY (environment_id) REFERENCES environments (id)
-);
-
 CREATE TABLE IF NOT EXISTS agents (
     id TEXT PRIMARY KEY,
     node_name TEXT NOT NULL,
-    environment_id TEXT NOT NULL,
-    fleet_group_id TEXT NOT NULL,
+    fleet_group_id TEXT,
     version TEXT NOT NULL DEFAULT '',
     read_only INTEGER NOT NULL DEFAULT 0,
     last_seen_at_unix INTEGER NOT NULL,
-    FOREIGN KEY (environment_id) REFERENCES environments (id),
     FOREIGN KEY (fleet_group_id) REFERENCES fleet_groups (id)
 );
 
@@ -58,7 +48,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     status TEXT NOT NULL,
     created_at_unix INTEGER NOT NULL,
     ttl_nanos INTEGER NOT NULL,
-    idempotency_key TEXT NOT NULL UNIQUE
+    idempotency_key TEXT NOT NULL UNIQUE,
+    payload_json TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS job_targets (
@@ -66,6 +57,7 @@ CREATE TABLE IF NOT EXISTS job_targets (
     agent_id TEXT NOT NULL,
     status TEXT NOT NULL,
     result_text TEXT NOT NULL DEFAULT '',
+    result_json TEXT NOT NULL DEFAULT '',
     updated_at_unix INTEGER NOT NULL,
     PRIMARY KEY (job_id, agent_id),
     FOREIGN KEY (job_id) REFERENCES jobs (id)
@@ -90,12 +82,52 @@ CREATE TABLE IF NOT EXISTS metric_snapshots (
 
 CREATE TABLE IF NOT EXISTS enrollment_tokens (
     value TEXT PRIMARY KEY,
-    environment_id TEXT NOT NULL,
-    fleet_group_id TEXT NOT NULL,
+    fleet_group_id TEXT,
     issued_at_unix INTEGER NOT NULL,
     expires_at_unix INTEGER NOT NULL,
     consumed_at_unix INTEGER,
     revoked_at_unix INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS clients (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    secret_ciphertext TEXT NOT NULL,
+    user_ad_tag TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    max_tcp_conns INTEGER NOT NULL DEFAULT 0,
+    max_unique_ips INTEGER NOT NULL DEFAULT 0,
+    data_quota_bytes INTEGER NOT NULL DEFAULT 0,
+    expiration_rfc3339 TEXT NOT NULL DEFAULT '',
+    created_at_unix INTEGER NOT NULL,
+    updated_at_unix INTEGER NOT NULL,
+    deleted_at_unix INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS client_assignments (
+    id TEXT PRIMARY KEY,
+    client_id TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    fleet_group_id TEXT,
+    agent_id TEXT,
+    created_at_unix INTEGER NOT NULL,
+    FOREIGN KEY (client_id) REFERENCES clients (id),
+    FOREIGN KEY (fleet_group_id) REFERENCES fleet_groups (id),
+    FOREIGN KEY (agent_id) REFERENCES agents (id)
+);
+
+CREATE TABLE IF NOT EXISTS client_deployments (
+    client_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    desired_operation TEXT NOT NULL,
+    status TEXT NOT NULL,
+    last_error TEXT NOT NULL DEFAULT '',
+    connection_link TEXT NOT NULL DEFAULT '',
+    last_applied_at_unix INTEGER,
+    updated_at_unix INTEGER NOT NULL,
+    PRIMARY KEY (client_id, agent_id),
+    FOREIGN KEY (client_id) REFERENCES clients (id),
+    FOREIGN KEY (agent_id) REFERENCES agents (id)
 );
 
 CREATE TABLE IF NOT EXISTS panel_settings (
@@ -121,8 +153,14 @@ func Migrate(db *sql.DB) error {
 	if err := ensureUsersTotpEnabledColumn(db); err != nil {
 		return err
 	}
+	if err := ensureEnrollmentTokensRevokedAtColumn(db); err != nil {
+		return err
+	}
+	if err := ensureJobsPayloadJSONColumn(db); err != nil {
+		return err
+	}
 
-	return ensureEnrollmentTokensRevokedAtColumn(db)
+	return ensureJobTargetsResultJSONColumn(db)
 }
 
 func ensureUsersTotpEnabledColumn(db *sql.DB) error {
@@ -182,5 +220,65 @@ func ensureEnrollmentTokensRevokedAtColumn(db *sql.DB) error {
 	}
 
 	_, err = db.Exec(`ALTER TABLE enrollment_tokens ADD COLUMN revoked_at_unix INTEGER`)
+	return err
+}
+
+func ensureJobsPayloadJSONColumn(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(jobs)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name string
+		var columnType string
+		var notNull int
+		var defaultValue any
+		var primaryKey int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return err
+		}
+		if name == "payload_json" {
+			return nil
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`ALTER TABLE jobs ADD COLUMN payload_json TEXT NOT NULL DEFAULT ''`)
+	return err
+}
+
+func ensureJobTargetsResultJSONColumn(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(job_targets)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name string
+		var columnType string
+		var notNull int
+		var defaultValue any
+		var primaryKey int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return err
+		}
+		if name == "result_json" {
+			return nil
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`ALTER TABLE job_targets ADD COLUMN result_json TEXT NOT NULL DEFAULT ''`)
 	return err
 }

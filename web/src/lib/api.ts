@@ -20,7 +20,6 @@ export type ControlRoomResponse = {
   onboarding: {
     needs_first_server: boolean;
     setup_complete: boolean;
-    suggested_environment_id: string;
     suggested_fleet_group_id: string;
   };
   fleet: FleetResponse;
@@ -36,7 +35,6 @@ export type ControlRoomResponse = {
 export type Agent = {
   id: string;
   node_name: string;
-  environment_id: string;
   fleet_group_id: string;
   version: string;
   read_only: boolean;
@@ -85,7 +83,6 @@ export type MetricSnapshot = {
 export type EnrollmentTokenResponse = {
   value: string;
   panel_url: string;
-  environment_id: string;
   fleet_group_id: string;
   issued_at_unix: number;
   expires_at_unix: number;
@@ -95,7 +92,6 @@ export type EnrollmentTokenResponse = {
 export type EnrollmentTokenListItem = {
   value: string;
   panel_url: string;
-  environment_id: string;
   fleet_group_id: string;
   status: "active" | "expired" | "consumed" | "revoked";
   issued_at_unix: number;
@@ -118,6 +114,62 @@ export type LocalUser = {
   username: string;
   role: string;
   totp_enabled: boolean;
+};
+
+export type ClientListItem = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  assigned_nodes_count: number;
+  expiration_rfc3339: string;
+  traffic_used_bytes: number;
+  unique_ips_used: number;
+  active_tcp_conns: number;
+  data_quota_bytes: number;
+  last_deploy_status: string;
+};
+
+export type ClientDeployment = {
+  agent_id: string;
+  desired_operation: string;
+  status: string;
+  last_error: string;
+  connection_link: string;
+  last_applied_at_unix: number;
+  updated_at_unix: number;
+};
+
+export type Client = {
+  id: string;
+  name: string;
+  secret: string;
+  user_ad_tag: string;
+  enabled: boolean;
+  traffic_used_bytes: number;
+  unique_ips_used: number;
+  active_tcp_conns: number;
+  max_tcp_conns: number;
+  max_unique_ips: number;
+  data_quota_bytes: number;
+  expiration_rfc3339: string;
+  fleet_group_ids: string[];
+  agent_ids: string[];
+  deployments: ClientDeployment[];
+  created_at_unix: number;
+  updated_at_unix: number;
+  deleted_at_unix: number;
+};
+
+export type ClientInput = {
+  name: string;
+  enabled?: boolean;
+  user_ad_tag?: string;
+  max_tcp_conns: number;
+  max_unique_ips: number;
+  data_quota_bytes: number;
+  expiration_rfc3339: string;
+  fleet_group_ids: string[];
+  agent_ids: string[];
 };
 
 export type PanelSettingsResponse = {
@@ -219,6 +271,26 @@ export const apiClient = {
   agents: () => api<Agent[]>(`${apiBasePath}/agents`),
   instances: () => api<Instance[]>(`${apiBasePath}/instances`),
   users: () => api<LocalUser[]>(`${apiBasePath}/users`),
+  clients: () => api<ClientListItem[]>(`${apiBasePath}/clients`),
+  client: (clientID: string) => api<Client>(`${apiBasePath}/clients/${clientID}`),
+  createClient: (payload: ClientInput) =>
+    api<Client>(`${apiBasePath}/clients`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+  updateClient: (clientID: string, payload: ClientInput) =>
+    api<Client>(`${apiBasePath}/clients/${clientID}`, {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    }),
+  rotateClientSecret: (clientID: string) =>
+    api<Client>(`${apiBasePath}/clients/${clientID}/rotate-secret`, {
+      method: "POST"
+    }),
+  deleteClient: (clientID: string) =>
+    api<void>(`${apiBasePath}/clients/${clientID}`, {
+      method: "DELETE"
+    }),
   panelSettings: () => api<PanelSettingsResponse>(`${apiBasePath}/settings/panel`),
   updatePanelSettings: (payload: {
     http_public_url: string;
@@ -265,7 +337,6 @@ export const apiClient = {
       body: JSON.stringify(payload)
     }),
   createEnrollmentToken: (payload: {
-    environment_id: string;
     fleet_group_id: string;
     ttl_seconds: number;
   }) =>

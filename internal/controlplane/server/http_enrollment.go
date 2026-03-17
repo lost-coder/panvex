@@ -18,15 +18,13 @@ import (
 var errEnrollmentTokenRevoked = errors.New("enrollment token revoked")
 
 type createEnrollmentTokenRequest struct {
-	EnvironmentID string `json:"environment_id"`
-	FleetGroupID  string `json:"fleet_group_id"`
-	TTLSeconds    int    `json:"ttl_seconds"`
+	FleetGroupID string `json:"fleet_group_id"`
+	TTLSeconds   int    `json:"ttl_seconds"`
 }
 
 type createEnrollmentTokenResponse struct {
 	Value         string `json:"value"`
 	PanelURL      string `json:"panel_url"`
-	EnvironmentID string `json:"environment_id"`
 	FleetGroupID  string `json:"fleet_group_id"`
 	IssuedAtUnix  int64  `json:"issued_at_unix"`
 	ExpiresAtUnix int64  `json:"expires_at_unix"`
@@ -51,7 +49,6 @@ type agentBootstrapResponse struct {
 type enrollmentTokenResponse struct {
 	Value          string `json:"value"`
 	PanelURL       string `json:"panel_url"`
-	EnvironmentID  string `json:"environment_id"`
 	FleetGroupID   string `json:"fleet_group_id"`
 	Status         string `json:"status"`
 	IssuedAtUnix   int64  `json:"issued_at_unix"`
@@ -80,9 +77,8 @@ func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 		}
 
 		token, err := s.issueEnrollmentToken(security.EnrollmentScope{
-			EnvironmentID: request.EnvironmentID,
-			FleetGroupID:  request.FleetGroupID,
-			TTL:           time.Duration(request.TTLSeconds) * time.Second,
+			FleetGroupID: request.FleetGroupID,
+			TTL:          time.Duration(request.TTLSeconds) * time.Second,
 		}, s.now())
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
@@ -90,7 +86,6 @@ func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 		}
 
 		s.appendAudit(session.UserID, "agents.enrollment.create", token.Value, map[string]any{
-			"environment_id": request.EnvironmentID,
 			"fleet_group_id": request.FleetGroupID,
 			"ttl_seconds":    request.TTLSeconds,
 		})
@@ -98,7 +93,6 @@ func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 		writeJSON(w, http.StatusCreated, createEnrollmentTokenResponse{
 			Value:         token.Value,
 			PanelURL:      buildPanelPublicURL(settings, s.panelRuntime, r.URL, r.Header.Get("X-Forwarded-Proto"), r.Host),
-			EnvironmentID: token.EnvironmentID,
 			FleetGroupID:  token.FleetGroupID,
 			IssuedAtUnix:  token.IssuedAt.Unix(),
 			ExpiresAtUnix: token.ExpiresAt.Unix(),
@@ -216,7 +210,6 @@ func (s *Server) handleRevokeEnrollmentToken() http.HandlerFunc {
 		}
 		if changed {
 			s.appendAudit(session.UserID, "agents.enrollment.revoke", revoked.Value, map[string]any{
-				"environment_id": revoked.EnvironmentID,
 				"fleet_group_id": revoked.FleetGroupID,
 			})
 		}
@@ -236,11 +229,10 @@ func (s *Server) issueEnrollmentToken(scope security.EnrollmentScope, issuedAt t
 	}
 
 	if err := s.store.PutEnrollmentToken(context.Background(), storage.EnrollmentTokenRecord{
-		Value:         token.Value,
-		EnvironmentID: token.EnvironmentID,
-		FleetGroupID:  token.FleetGroupID,
-		IssuedAt:      token.IssuedAt.UTC(),
-		ExpiresAt:     token.ExpiresAt.UTC(),
+		Value:        token.Value,
+		FleetGroupID: token.FleetGroupID,
+		IssuedAt:     token.IssuedAt.UTC(),
+		ExpiresAt:    token.ExpiresAt.UTC(),
 	}); err != nil {
 		return security.EnrollmentToken{}, err
 	}
@@ -294,11 +286,10 @@ func (s *Server) consumeEnrollmentToken(value string, now time.Time) (security.E
 	}
 
 	return security.EnrollmentToken{
-		Value:         consumed.Value,
-		EnvironmentID: consumed.EnvironmentID,
-		FleetGroupID:  consumed.FleetGroupID,
-		IssuedAt:      consumed.IssuedAt.UTC(),
-		ExpiresAt:     consumed.ExpiresAt.UTC(),
+		Value:        consumed.Value,
+		FleetGroupID: consumed.FleetGroupID,
+		IssuedAt:     consumed.IssuedAt.UTC(),
+		ExpiresAt:    consumed.ExpiresAt.UTC(),
 	}, nil
 }
 
@@ -315,7 +306,6 @@ func (s *Server) listEnrollmentTokens(now time.Time, requestURL *url.URL, forwar
 		item := enrollmentTokenResponse{
 			Value:         token.Value,
 			PanelURL:      panelURL,
-			EnvironmentID: token.EnvironmentID,
 			FleetGroupID:  token.FleetGroupID,
 			Status:        enrollmentTokenStatus(token, now),
 			IssuedAtUnix:  token.IssuedAt.UTC().Unix(),

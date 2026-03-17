@@ -13,30 +13,21 @@ type UserRecord struct {
 	CreatedAt    time.Time
 }
 
-// EnvironmentRecord stores one fleet environment definition.
-type EnvironmentRecord struct {
+// FleetGroupRecord stores one fleet group in the global control-plane namespace.
+type FleetGroupRecord struct {
 	ID        string
 	Name      string
 	CreatedAt time.Time
 }
 
-// FleetGroupRecord stores one fleet group that belongs to an environment.
-type FleetGroupRecord struct {
-	ID            string
-	EnvironmentID string
-	Name          string
-	CreatedAt     time.Time
-}
-
 // AgentRecord stores one enrolled host agent snapshot.
 type AgentRecord struct {
-	ID            string
-	NodeName      string
-	EnvironmentID string
-	FleetGroupID  string
-	Version       string
-	ReadOnly      bool
-	LastSeenAt    time.Time
+	ID           string
+	NodeName     string
+	FleetGroupID string
+	Version      string
+	ReadOnly     bool
+	LastSeenAt   time.Time
 }
 
 // InstanceRecord stores one Telemt runtime observed through an agent.
@@ -60,6 +51,7 @@ type JobRecord struct {
 	CreatedAt      time.Time
 	TTL            time.Duration
 	IdempotencyKey string
+	PayloadJSON    string
 }
 
 // JobTargetRecord stores delivery and result state for one job target.
@@ -68,6 +60,7 @@ type JobTargetRecord struct {
 	AgentID    string
 	Status     string
 	ResultText string
+	ResultJSON string
 	UpdatedAt  time.Time
 }
 
@@ -92,13 +85,12 @@ type MetricSnapshotRecord struct {
 
 // EnrollmentTokenRecord stores one enrollment token and its consumption state.
 type EnrollmentTokenRecord struct {
-	Value         string
-	EnvironmentID string
-	FleetGroupID  string
-	IssuedAt      time.Time
-	ExpiresAt     time.Time
-	ConsumedAt    *time.Time
-	RevokedAt     *time.Time
+	Value        string
+	FleetGroupID string
+	IssuedAt     time.Time
+	ExpiresAt    time.Time
+	ConsumedAt   *time.Time
+	RevokedAt    *time.Time
 }
 
 // PanelSettingsRecord stores operator-managed panel network and TLS settings.
@@ -112,4 +104,42 @@ type PanelSettingsRecord struct {
 	TLSCertFile        string
 	TLSKeyFile         string
 	UpdatedAt          time.Time
+}
+
+// ClientRecord stores one centrally managed Telemt client definition.
+type ClientRecord struct {
+	ID                string
+	Name              string
+	SecretCiphertext  string
+	UserADTag         string
+	Enabled           bool
+	MaxTCPConns       int
+	MaxUniqueIPs      int
+	DataQuotaBytes    int64
+	ExpirationRFC3339 string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	DeletedAt         *time.Time
+}
+
+// ClientAssignmentRecord stores one desired rollout target for a managed client.
+type ClientAssignmentRecord struct {
+	ID           string
+	ClientID     string
+	TargetType   string
+	FleetGroupID string
+	AgentID      string
+	CreatedAt    time.Time
+}
+
+// ClientDeploymentRecord stores the current rollout state for one client on one agent.
+type ClientDeploymentRecord struct {
+	ClientID         string
+	AgentID          string
+	DesiredOperation string
+	Status           string
+	LastError        string
+	ConnectionLink   string
+	LastAppliedAt    *time.Time
+	UpdatedAt        time.Time
 }

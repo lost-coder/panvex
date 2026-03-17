@@ -16,7 +16,6 @@ func TestServerEnrollAgentConsumesTokenAndIssuesIdentity(t *testing.T) {
 		Now: func() time.Time { return now },
 	})
 	token, err := server.enrollment.IssueToken(security.EnrollmentScope{
-		EnvironmentID: "prod",
 		FleetGroupID:  "ams-1",
 		TTL:           time.Minute,
 	}, now)
@@ -48,7 +47,6 @@ func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T
 		Now: func() time.Time { return now },
 	})
 	token, err := server.enrollment.IssueToken(security.EnrollmentScope{
-		EnvironmentID: "prod",
 		FleetGroupID:  "ams-1",
 		TTL:           time.Minute,
 	}, now)
@@ -68,7 +66,6 @@ func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T
 	server.applyAgentSnapshot(agentSnapshot{
 		AgentID:       identity.AgentID,
 		NodeName:      "node-a",
-		EnvironmentID: "prod",
 		FleetGroupID:  "ams-1",
 		Version:       "1.0.0",
 		ReadOnly:      true,
@@ -117,7 +114,6 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 		Store: store,
 	})
 	token, err := first.issueEnrollmentToken(security.EnrollmentScope{
-		EnvironmentID: "prod",
 		FleetGroupID:  "ams-1",
 		TTL:           time.Minute,
 	}, now)
@@ -137,7 +133,6 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 	first.applyAgentSnapshot(agentSnapshot{
 		AgentID:       identity.AgentID,
 		NodeName:      "node-a",
-		EnvironmentID: "prod",
 		FleetGroupID:  "ams-1",
 		Version:       "1.0.0",
 		ReadOnly:      true,
@@ -200,7 +195,6 @@ func TestServerApplyAgentSnapshotKeepsEnrolledScopeWhenSnapshotDiffers(t *testin
 		Store: store,
 	})
 	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
-		EnvironmentID: "default",
 		FleetGroupID:  "default",
 		TTL:           time.Minute,
 	}, now)
@@ -227,7 +221,6 @@ func TestServerApplyAgentSnapshotKeepsEnrolledScopeWhenSnapshotDiffers(t *testin
 		server.applyAgentSnapshot(agentSnapshot{
 			AgentID:       identity.AgentID,
 			NodeName:      "node-a",
-			EnvironmentID: "prod",
 			FleetGroupID:  "ams-1",
 			Version:       "1.0.0",
 			ObservedAt:    now.Add(20 * time.Second),
@@ -240,9 +233,6 @@ func TestServerApplyAgentSnapshotKeepsEnrolledScopeWhenSnapshotDiffers(t *testin
 	}
 	if len(record) != 1 {
 		t.Fatalf("len(ListAgents()) = %d, want %d", len(record), 1)
-	}
-	if record[0].EnvironmentID != "default" {
-		t.Fatalf("ListAgents()[0].EnvironmentID = %q, want %q", record[0].EnvironmentID, "default")
 	}
 	if record[0].FleetGroupID != "default" {
 		t.Fatalf("ListAgents()[0].FleetGroupID = %q, want %q", record[0].FleetGroupID, "default")
@@ -262,7 +252,6 @@ func TestServerEnrollmentTokenPersistsAcrossRestart(t *testing.T) {
 		Store: store,
 	})
 	token, err := first.issueEnrollmentToken(security.EnrollmentScope{
-		EnvironmentID: "prod",
 		FleetGroupID:  "ams-1",
 		TTL:           time.Minute,
 	}, now)
@@ -301,7 +290,6 @@ func TestServerConsumedEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) 
 		Store: store,
 	})
 	token, err := first.issueEnrollmentToken(security.EnrollmentScope{
-		EnvironmentID: "prod",
 		FleetGroupID:  "ams-1",
 		TTL:           time.Minute,
 	}, now)
@@ -343,7 +331,6 @@ func TestServerExpiredEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) {
 		Store: store,
 	})
 	token, err := first.issueEnrollmentToken(security.EnrollmentScope{
-		EnvironmentID: "prod",
 		FleetGroupID:  "ams-1",
 		TTL:           time.Second,
 	}, now)

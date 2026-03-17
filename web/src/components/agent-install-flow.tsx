@@ -12,7 +12,6 @@ import { buildInstallCommand, buildManualInstallCommand, resolvePanelInstallURL 
 import { buildConnectionJourney, resolveConnectedAgentID } from "./agent-install-flow-state";
 
 type AgentInstallFlowProps = {
-  initialEnvironmentID: string;
   initialFleetGroupID: string;
   createLabel: string;
   onFinish?: () => void;
@@ -20,7 +19,6 @@ type AgentInstallFlowProps = {
 
 export function AgentInstallFlow(props: AgentInstallFlowProps) {
   const queryClient = useQueryClient();
-  const [environmentID, setEnvironmentID] = useState(props.initialEnvironmentID);
   const [fleetGroupID, setFleetGroupID] = useState(props.initialFleetGroupID);
   const [ttlSeconds, setTTLSeconds] = useState(600);
   const [agentVersion, setAgentVersion] = useState("latest");
@@ -30,9 +28,8 @@ export function AgentInstallFlow(props: AgentInstallFlowProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
-    setEnvironmentID(props.initialEnvironmentID);
     setFleetGroupID(props.initialFleetGroupID);
-  }, [props.initialEnvironmentID, props.initialFleetGroupID]);
+  }, [props.initialFleetGroupID]);
 
   const tokensQuery = useQuery({
     queryKey: ["enrollment-tokens"],
@@ -52,7 +49,6 @@ export function AgentInstallFlow(props: AgentInstallFlowProps) {
   const createTokenMutation = useMutation({
     mutationFn: () =>
       apiClient.createEnrollmentToken({
-        environment_id: environmentID,
         fleet_group_id: fleetGroupID,
         ttl_seconds: ttlSeconds
       }),
@@ -117,10 +113,9 @@ export function AgentInstallFlow(props: AgentInstallFlowProps) {
         <StepCard
           number="1"
           title="Generate a connection token"
-          description="Pick the environment and group you want to use for the new server. The installer will take care of the secure bootstrap from there."
+          description="Pick a group if you want the new server to land there. The installer will take care of the secure bootstrap from there."
         >
-          <Field label="Environment" value={environmentID} onChange={setEnvironmentID} />
-          <Field label="Group" value={fleetGroupID} onChange={setFleetGroupID} />
+          <Field label="Group (optional)" value={fleetGroupID} onChange={setFleetGroupID} />
           <Field
             label="Token lifetime in seconds"
             type="number"
@@ -234,9 +229,7 @@ function ConnectionStatusCard(props: {
         />
         <div className="rounded-3xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
           <div className="font-semibold">{props.connectedAgent.node_name}</div>
-          <div className="mt-2 text-emerald-800">
-            {props.connectedAgent.environment_id} / {props.connectedAgent.fleet_group_id}
-          </div>
+          <div className="mt-2 text-emerald-800">{props.connectedAgent.fleet_group_id || "Ungrouped"}</div>
           <div className="mt-2 text-emerald-800">Last seen {new Date(props.connectedAgent.last_seen_at).toLocaleString()}</div>
         </div>
         <button
@@ -345,7 +338,6 @@ function toEnrollmentTokenListItem(token: EnrollmentTokenResponse): EnrollmentTo
   return {
     value: token.value,
     panel_url: token.panel_url,
-    environment_id: token.environment_id,
     fleet_group_id: token.fleet_group_id,
     status: "active",
     issued_at_unix: token.issued_at_unix,

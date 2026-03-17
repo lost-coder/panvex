@@ -86,7 +86,6 @@ func TestServerCreateJobRejectsViewerRole(t *testing.T) {
 	server.agents["agent-1"] = Agent{
 		ID:           "agent-1",
 		NodeName:     "node-a",
-		EnvironmentID:"prod",
 		FleetGroupID: "ams-1",
 		ReadOnly:     false,
 	}
@@ -123,7 +122,6 @@ func TestServerCreateJobAcceptsOperatorWithTotp(t *testing.T) {
 	server.agents["agent-1"] = Agent{
 		ID:           "agent-1",
 		NodeName:     "node-a",
-		EnvironmentID:"prod",
 		FleetGroupID: "ams-1",
 		ReadOnly:     false,
 	}
@@ -499,7 +497,6 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 		Store: store,
 	})
 	token, err := first.issueEnrollmentToken(security.EnrollmentScope{
-		EnvironmentID: "prod",
 		FleetGroupID:  "ams-1",
 		TTL:           time.Minute,
 	}, now)
@@ -519,7 +516,6 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 	first.applyAgentSnapshot(agentSnapshot{
 		AgentID:       identity.AgentID,
 		NodeName:      "node-a",
-		EnvironmentID: "prod",
 		FleetGroupID:  "ams-1",
 		Version:       "1.0.0",
 		Instances: []instanceSnapshot{
@@ -643,7 +639,6 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 	}
 
 	tokenOne, err := first.issueEnrollmentToken(security.EnrollmentScope{
-		EnvironmentID: "prod",
 		FleetGroupID:  "ams-1",
 		TTL:           time.Minute,
 	}, now)
@@ -660,7 +655,6 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 	}
 
 	tokenTwo, err := first.issueEnrollmentToken(security.EnrollmentScope{
-		EnvironmentID: "prod",
 		FleetGroupID:  "ams-1",
 		TTL:           time.Minute,
 	}, now)
@@ -706,8 +700,8 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 
 	first.markJobDelivered(agentOne.AgentID, createdJob.ID)
 	first.markJobDelivered(agentTwo.AgentID, createdJob.ID)
-	first.recordJobResult(agentOne.AgentID, createdJob.ID, true, "ok", now.Add(15*time.Second))
-	first.recordJobResult(agentTwo.AgentID, createdJob.ID, false, "reload failed", now.Add(16*time.Second))
+	first.recordJobResult(agentOne.AgentID, createdJob.ID, true, "ok", "", now.Add(15*time.Second))
+	first.recordJobResult(agentTwo.AgentID, createdJob.ID, false, "reload failed", "", now.Add(16*time.Second))
 
 	restored := New(Options{
 		Now: func() time.Time { return now.Add(2 * time.Minute) },
@@ -786,7 +780,6 @@ func TestHTTPAgentBootstrapConsumesTokenAndReturnsIdentityBundle(t *testing.T) {
 		Store: store,
 	})
 	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
-		EnvironmentID: "prod",
 		FleetGroupID:  "default",
 		TTL:           time.Minute,
 	}, now)
@@ -875,7 +868,6 @@ func TestHTTPAgentBootstrapRejectsConsumedToken(t *testing.T) {
 		Store: store,
 	})
 	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
-		EnvironmentID: "prod",
 		FleetGroupID:  "default",
 		TTL:           time.Minute,
 	}, now)
@@ -968,7 +960,6 @@ func TestHTTPEnrollmentTokenListAndRevoke(t *testing.T) {
 	cookies := loginResponse.Result().Cookies()
 
 	createResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/agents/enrollment-tokens", map[string]any{
-		"environment_id": "prod",
 		"fleet_group_id": "default",
 		"ttl_seconds":    600,
 	}, cookies)
@@ -993,7 +984,6 @@ func TestHTTPEnrollmentTokenListAndRevoke(t *testing.T) {
 
 	var listedTokens []struct {
 		Value         string `json:"value"`
-		EnvironmentID string `json:"environment_id"`
 		FleetGroupID  string `json:"fleet_group_id"`
 		Status        string `json:"status"`
 		ExpiresAtUnix int64  `json:"expires_at_unix"`
@@ -1009,9 +999,6 @@ func TestHTTPEnrollmentTokenListAndRevoke(t *testing.T) {
 	}
 	if listedTokens[0].Status != "active" {
 		t.Fatalf("tokens[0].status = %q, want %q", listedTokens[0].Status, "active")
-	}
-	if listedTokens[0].EnvironmentID != "prod" {
-		t.Fatalf("tokens[0].environment_id = %q, want %q", listedTokens[0].EnvironmentID, "prod")
 	}
 	if listedTokens[0].FleetGroupID != "default" {
 		t.Fatalf("tokens[0].fleet_group_id = %q, want %q", listedTokens[0].FleetGroupID, "default")
@@ -1091,10 +1078,9 @@ func TestHTTPControlRoomShowsFirstServerOnboarding(t *testing.T) {
 
 	var payload struct {
 		Onboarding struct {
-			NeedsFirstServer       bool   `json:"needs_first_server"`
-			SetupComplete          bool   `json:"setup_complete"`
-			SuggestedEnvironmentID string `json:"suggested_environment_id"`
-			SuggestedFleetGroupID  string `json:"suggested_fleet_group_id"`
+			NeedsFirstServer      bool   `json:"needs_first_server"`
+			SetupComplete         bool   `json:"setup_complete"`
+			SuggestedFleetGroupID string `json:"suggested_fleet_group_id"`
 		} `json:"onboarding"`
 		Fleet fleetResponse `json:"fleet"`
 		Jobs  struct {
@@ -1114,9 +1100,6 @@ func TestHTTPControlRoomShowsFirstServerOnboarding(t *testing.T) {
 	}
 	if payload.Onboarding.SetupComplete {
 		t.Fatal("onboarding.setup_complete = true, want false")
-	}
-	if payload.Onboarding.SuggestedEnvironmentID != "default" {
-		t.Fatalf("onboarding.suggested_environment_id = %q, want %q", payload.Onboarding.SuggestedEnvironmentID, "default")
 	}
 	if payload.Onboarding.SuggestedFleetGroupID != "default" {
 		t.Fatalf("onboarding.suggested_fleet_group_id = %q, want %q", payload.Onboarding.SuggestedFleetGroupID, "default")
@@ -1148,7 +1131,6 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 	server.agents["agent-1"] = Agent{
 		ID:            "agent-1",
 		NodeName:      "node-a",
-		EnvironmentID: "prod",
 		FleetGroupID:  "ams-1",
 		Version:       "1.0.0",
 		LastSeenAt:    currentTime,
@@ -1156,7 +1138,6 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 	server.agents["agent-2"] = Agent{
 		ID:            "agent-2",
 		NodeName:      "node-b",
-		EnvironmentID: "prod",
 		FleetGroupID:  "ams-1",
 		Version:       "1.0.0",
 		LastSeenAt:    currentTime.Add(-45 * time.Second),
@@ -1164,7 +1145,6 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 	server.agents["agent-3"] = Agent{
 		ID:            "agent-3",
 		NodeName:      "node-c",
-		EnvironmentID: "lab",
 		FleetGroupID:  "edge",
 		Version:       "1.0.0",
 		LastSeenAt:    currentTime.Add(-2 * time.Minute),
@@ -1224,11 +1204,11 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Enqueue(failed) error = %v", err)
 	}
-	server.jobs.RecordResult("agent-3", failedJob.ID, false, "connection lost", currentTime.Add(-60*time.Second))
+	server.jobs.RecordResult("agent-3", failedJob.ID, false, "connection lost", "", currentTime.Add(-60*time.Second))
 
 	currentTime = currentTime.Add(-30 * time.Second)
 	server.appendAudit("user-1", "agents.enrollment.create", "token-1", map[string]any{
-		"environment_id": "prod",
+		"fleet_group_id": "ams-1",
 	})
 	currentTime = currentTime.Add(10 * time.Second)
 	server.appendAudit("user-1", "jobs.create", queuedJob.ID, map[string]any{
@@ -1251,10 +1231,9 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 
 	var payload struct {
 		Onboarding struct {
-			NeedsFirstServer       bool   `json:"needs_first_server"`
-			SetupComplete          bool   `json:"setup_complete"`
-			SuggestedEnvironmentID string `json:"suggested_environment_id"`
-			SuggestedFleetGroupID  string `json:"suggested_fleet_group_id"`
+			NeedsFirstServer      bool   `json:"needs_first_server"`
+			SetupComplete         bool   `json:"setup_complete"`
+			SuggestedFleetGroupID string `json:"suggested_fleet_group_id"`
 		} `json:"onboarding"`
 		Fleet fleetResponse `json:"fleet"`
 		Jobs  struct {
@@ -1274,9 +1253,6 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 	}
 	if !payload.Onboarding.SetupComplete {
 		t.Fatal("onboarding.setup_complete = false, want true")
-	}
-	if payload.Onboarding.SuggestedEnvironmentID != "prod" {
-		t.Fatalf("onboarding.suggested_environment_id = %q, want %q", payload.Onboarding.SuggestedEnvironmentID, "prod")
 	}
 	if payload.Onboarding.SuggestedFleetGroupID != "ams-1" {
 		t.Fatalf("onboarding.suggested_fleet_group_id = %q, want %q", payload.Onboarding.SuggestedFleetGroupID, "ams-1")

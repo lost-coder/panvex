@@ -41,8 +41,7 @@ func runRuntime(args []string) error {
 	enrollmentToken := flags.String("enrollment-token", "", "One-time enrollment token")
 	stateFile := flags.String("state-file", "data/agent-state.json", "Agent credential state file")
 	nodeName := flags.String("node-name", hostName(), "Node name reported to the control-plane")
-	environmentID := flags.String("environment-id", "prod", "Environment identifier reported by the agent")
-	fleetGroupID := flags.String("fleet-group-id", "default", "Fleet group identifier reported by the agent")
+	fleetGroupID := flags.String("fleet-group-id", "", "Fleet group identifier reported by the agent")
 	version := flags.String("version", "dev", "Agent version")
 	telemtURL := flags.String("telemt-url", "http://127.0.0.1:8080", "Local Telemt API URL")
 	telemtAuth := flags.String("telemt-auth", "", "Local Telemt authorization value")
@@ -72,15 +71,14 @@ func runRuntime(args []string) error {
 	}
 
 	agent := runtime.New(runtime.Config{
-		AgentID:       credentialsState.AgentID,
-		NodeName:      *nodeName,
-		EnvironmentID: *environmentID,
-		FleetGroupID:  *fleetGroupID,
-		Version:       *version,
+		AgentID:      credentialsState.AgentID,
+		NodeName:     *nodeName,
+		FleetGroupID: *fleetGroupID,
+		Version:      *version,
 	}, telemtClient)
 
 	for {
-		if err := runConnection(*gatewayAddr, *gatewayServerName, credentialsState, agent, *environmentID, *fleetGroupID, *heartbeat, *snapshot); err != nil {
+		if err := runConnection(*gatewayAddr, *gatewayServerName, credentialsState, agent, *fleetGroupID, *heartbeat, *snapshot); err != nil {
 			log.Printf("agent connection ended: %v", err)
 		}
 		time.Sleep(5 * time.Second)
@@ -136,7 +134,7 @@ func loadOrEnroll(stateFile string, gatewayAddr string, serverName string, caFil
 	return credentialsState, nil
 }
 
-func runConnection(gatewayAddr string, serverName string, credentialsState agentstate.Credentials, agent *runtime.Agent, environmentID string, fleetGroupID string, heartbeatInterval time.Duration, snapshotInterval time.Duration) error {
+func runConnection(gatewayAddr string, serverName string, credentialsState agentstate.Credentials, agent *runtime.Agent, fleetGroupID string, heartbeatInterval time.Duration, snapshotInterval time.Duration) error {
 	certificate, err := tls.X509KeyPair([]byte(credentialsState.CertificatePEM), []byte(credentialsState.PrivateKeyPEM))
 	if err != nil {
 		return err
@@ -183,7 +181,7 @@ func runConnection(gatewayAddr string, serverName string, credentialsState agent
 		}
 	}()
 
-	if err := sendHeartbeatAndSnapshot(outbound, agent, environmentID, fleetGroupID); err != nil {
+	if err := sendHeartbeatAndSnapshot(outbound, agent, fleetGroupID); err != nil {
 		return err
 	}
 
@@ -198,7 +196,7 @@ func runConnection(gatewayAddr string, serverName string, credentialsState agent
 			close(outbound)
 			return err
 		case <-heartbeatTicker.C:
-			outbound <- heartbeatMessage(agent, environmentID, fleetGroupID, time.Now())
+			outbound <- heartbeatMessage(agent, fleetGroupID, time.Now())
 		case <-snapshotTicker.C:
 			snapshot, err := agent.BuildSnapshot(context.Background(), time.Now())
 			if err != nil {
@@ -211,8 +209,8 @@ func runConnection(gatewayAddr string, serverName string, credentialsState agent
 	}
 }
 
-func sendHeartbeatAndSnapshot(outbound chan<- *gatewayrpc.ConnectClientMessage, agent *runtime.Agent, environmentID string, fleetGroupID string) error {
-	outbound <- heartbeatMessage(agent, environmentID, fleetGroupID, time.Now())
+func sendHeartbeatAndSnapshot(outbound chan<- *gatewayrpc.ConnectClientMessage, agent *runtime.Agent, fleetGroupID string) error {
+	outbound <- heartbeatMessage(agent, fleetGroupID, time.Now())
 
 	snapshot, err := agent.BuildSnapshot(context.Background(), time.Now())
 	if err != nil {
@@ -225,12 +223,11 @@ func sendHeartbeatAndSnapshot(outbound chan<- *gatewayrpc.ConnectClientMessage, 
 	return nil
 }
 
-func heartbeatMessage(agent *runtime.Agent, environmentID string, fleetGroupID string, observedAt time.Time) *gatewayrpc.ConnectClientMessage {
+func heartbeatMessage(agent *runtime.Agent, fleetGroupID string, observedAt time.Time) *gatewayrpc.ConnectClientMessage {
 	return &gatewayrpc.ConnectClientMessage{
 		Heartbeat: &gatewayrpc.Heartbeat{
 			AgentID:        agent.AgentID(),
 			NodeName:       agent.NodeName(),
-			EnvironmentID:  environmentID,
 			FleetGroupID:   fleetGroupID,
 			Version:        agent.Version(),
 			ObservedAtUnix: observedAt.UTC().Unix(),

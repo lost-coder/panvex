@@ -15,6 +15,151 @@ type OpenStore func(t *testing.T) storage.Store
 func RunStoreContract(t *testing.T, open OpenStore) {
 	t.Helper()
 
+	t.Run("client, assignment, and deployment round trip", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		group := storage.FleetGroupRecord{
+			ID:        "default",
+			Name:      "Default",
+			CreatedAt: time.Date(2026, time.March, 17, 8, 51, 0, 0, time.UTC),
+		}
+		agent := storage.AgentRecord{
+			ID:           "agent-000001",
+			NodeName:     "node-a",
+			FleetGroupID: group.ID,
+			Version:      "dev",
+			ReadOnly:     false,
+			LastSeenAt:   time.Date(2026, time.March, 17, 8, 52, 0, 0, time.UTC),
+		}
+		deletedAt := time.Date(2026, time.March, 17, 9, 25, 0, 0, time.UTC)
+		lastAppliedAt := time.Date(2026, time.March, 17, 9, 20, 0, 0, time.UTC)
+		client := storage.ClientRecord{
+			ID:               "client-000001",
+			Name:             "alice",
+			SecretCiphertext: "enc:alice-secret",
+			UserADTag:        "0123456789abcdef0123456789abcdef",
+			Enabled:          true,
+			MaxTCPConns:      4,
+			MaxUniqueIPs:     2,
+			DataQuotaBytes:   1073741824,
+			ExpirationRFC3339: "2026-03-31T00:00:00Z",
+			CreatedAt:        time.Date(2026, time.March, 17, 9, 0, 0, 0, time.UTC),
+			UpdatedAt:        time.Date(2026, time.March, 17, 9, 10, 0, 0, time.UTC),
+			DeletedAt:        &deletedAt,
+		}
+		groupAssignment := storage.ClientAssignmentRecord{
+			ID:           "assignment-000001",
+			ClientID:     client.ID,
+			TargetType:   "fleet_group",
+			FleetGroupID: "default",
+			CreatedAt:    time.Date(2026, time.March, 17, 9, 11, 0, 0, time.UTC),
+		}
+		nodeAssignment := storage.ClientAssignmentRecord{
+			ID:         "assignment-000002",
+			ClientID:   client.ID,
+			TargetType: "agent",
+			AgentID:    agent.ID,
+			CreatedAt:  time.Date(2026, time.March, 17, 9, 12, 0, 0, time.UTC),
+		}
+		deployment := storage.ClientDeploymentRecord{
+			ClientID:         client.ID,
+			AgentID:          agent.ID,
+			DesiredOperation: "client.create",
+			Status:           "succeeded",
+			LastError:        "",
+			ConnectionLink:   "tg://proxy?server=node-a&secret=alice",
+			LastAppliedAt:    &lastAppliedAt,
+			UpdatedAt:        time.Date(2026, time.March, 17, 9, 21, 0, 0, time.UTC),
+		}
+
+		if err := store.PutFleetGroup(ctx, group); err != nil {
+			t.Fatalf("PutFleetGroup() error = %v", err)
+		}
+
+		if err := store.PutAgent(ctx, agent); err != nil {
+			t.Fatalf("PutAgent() error = %v", err)
+		}
+
+		if err := store.PutClient(ctx, client); err != nil {
+			t.Fatalf("PutClient() error = %v", err)
+		}
+
+		if err := store.PutClientAssignment(ctx, groupAssignment); err != nil {
+			t.Fatalf("PutClientAssignment(group) error = %v", err)
+		}
+
+		if err := store.PutClientAssignment(ctx, nodeAssignment); err != nil {
+			t.Fatalf("PutClientAssignment(node) error = %v", err)
+		}
+
+		if err := store.PutClientDeployment(ctx, deployment); err != nil {
+			t.Fatalf("PutClientDeployment() error = %v", err)
+		}
+
+		storedClient, err := store.GetClientByID(ctx, client.ID)
+		if err != nil {
+			t.Fatalf("GetClientByID() error = %v", err)
+		}
+
+		if storedClient.Name != client.Name {
+			t.Fatalf("GetClientByID() Name = %q, want %q", storedClient.Name, client.Name)
+		}
+		if storedClient.SecretCiphertext != client.SecretCiphertext {
+			t.Fatalf("GetClientByID() SecretCiphertext = %q, want %q", storedClient.SecretCiphertext, client.SecretCiphertext)
+		}
+		if storedClient.UserADTag != client.UserADTag {
+			t.Fatalf("GetClientByID() UserADTag = %q, want %q", storedClient.UserADTag, client.UserADTag)
+		}
+		if storedClient.DataQuotaBytes != client.DataQuotaBytes {
+			t.Fatalf("GetClientByID() DataQuotaBytes = %d, want %d", storedClient.DataQuotaBytes, client.DataQuotaBytes)
+		}
+		if storedClient.DeletedAt == nil || !storedClient.DeletedAt.Equal(deletedAt) {
+			t.Fatalf("GetClientByID() DeletedAt = %v, want %v", storedClient.DeletedAt, deletedAt)
+		}
+
+		clients, err := store.ListClients(ctx)
+		if err != nil {
+			t.Fatalf("ListClients() error = %v", err)
+		}
+		if len(clients) != 1 {
+			t.Fatalf("len(ListClients()) = %d, want 1", len(clients))
+		}
+
+		assignments, err := store.ListClientAssignments(ctx, client.ID)
+		if err != nil {
+			t.Fatalf("ListClientAssignments() error = %v", err)
+		}
+		if len(assignments) != 2 {
+			t.Fatalf("len(ListClientAssignments()) = %d, want 2", len(assignments))
+		}
+		if err := store.DeleteClientAssignments(ctx, client.ID); err != nil {
+			t.Fatalf("DeleteClientAssignments() error = %v", err)
+		}
+		assignments, err = store.ListClientAssignments(ctx, client.ID)
+		if err != nil {
+			t.Fatalf("ListClientAssignments() after delete error = %v", err)
+		}
+		if len(assignments) != 0 {
+			t.Fatalf("len(ListClientAssignments()) after delete = %d, want 0", len(assignments))
+		}
+
+		deployments, err := store.ListClientDeployments(ctx, client.ID)
+		if err != nil {
+			t.Fatalf("ListClientDeployments() error = %v", err)
+		}
+		if len(deployments) != 1 {
+			t.Fatalf("len(ListClientDeployments()) = %d, want 1", len(deployments))
+		}
+		if deployments[0].ConnectionLink != deployment.ConnectionLink {
+			t.Fatalf("ListClientDeployments()[0].ConnectionLink = %q, want %q", deployments[0].ConnectionLink, deployment.ConnectionLink)
+		}
+		if deployments[0].LastAppliedAt == nil || !deployments[0].LastAppliedAt.Equal(lastAppliedAt) {
+			t.Fatalf("ListClientDeployments()[0].LastAppliedAt = %v, want %v", deployments[0].LastAppliedAt, lastAppliedAt)
+		}
+	})
+
 	t.Run("panel settings round trip", func(t *testing.T) {
 		store := open(t)
 		defer store.Close()
@@ -159,24 +304,22 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 
 		ctx := context.Background()
 		token := storage.EnrollmentTokenRecord{
-			Value:         "token-value",
-			EnvironmentID: "prod",
-			FleetGroupID:  "default",
-			IssuedAt:      time.Date(2026, time.March, 15, 8, 5, 0, 0, time.UTC),
-			ExpiresAt:     time.Date(2026, time.March, 15, 8, 15, 0, 0, time.UTC),
+			Value:        "token-value",
+			FleetGroupID: "default",
+			IssuedAt:     time.Date(2026, time.March, 15, 8, 5, 0, 0, time.UTC),
+			ExpiresAt:    time.Date(2026, time.March, 15, 8, 15, 0, 0, time.UTC),
 		}
 
 		if err := store.PutEnrollmentToken(ctx, token); err != nil {
 			t.Fatalf("PutEnrollmentToken() error = %v", err)
 		}
 
-		stored, err := store.GetEnrollmentToken(ctx, token.Value)
+		loadedToken, err := store.GetEnrollmentToken(ctx, token.Value)
 		if err != nil {
 			t.Fatalf("GetEnrollmentToken() error = %v", err)
 		}
-
-		if stored.EnvironmentID != token.EnvironmentID {
-			t.Fatalf("GetEnrollmentToken() EnvironmentID = %q, want %q", stored.EnvironmentID, token.EnvironmentID)
+		if loadedToken.FleetGroupID != token.FleetGroupID {
+			t.Fatalf("GetEnrollmentToken() FleetGroupID = %q, want %q", loadedToken.FleetGroupID, token.FleetGroupID)
 		}
 
 		consumedAt := time.Date(2026, time.March, 15, 8, 10, 0, 0, time.UTC)
@@ -196,11 +339,10 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 
 		ctx := context.Background()
 		token := storage.EnrollmentTokenRecord{
-			Value:         "token-revoke",
-			EnvironmentID: "prod",
-			FleetGroupID:  "default",
-			IssuedAt:      time.Date(2026, time.March, 15, 8, 30, 0, 0, time.UTC),
-			ExpiresAt:     time.Date(2026, time.March, 15, 8, 45, 0, 0, time.UTC),
+			Value:        "token-revoke",
+			FleetGroupID: "default",
+			IssuedAt:     time.Date(2026, time.March, 15, 8, 30, 0, 0, time.UTC),
+			ExpiresAt:    time.Date(2026, time.March, 15, 8, 45, 0, 0, time.UTC),
 		}
 
 		if err := store.PutEnrollmentToken(ctx, token); err != nil {
@@ -232,25 +374,18 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 		defer store.Close()
 
 		ctx := context.Background()
-		environment := storage.EnvironmentRecord{
-			ID:        "prod",
-			Name:      "Production",
+		group := storage.FleetGroupRecord{
+			ID:        "default",
+			Name:      "Default",
 			CreatedAt: time.Date(2026, time.March, 15, 8, 20, 0, 0, time.UTC),
 		}
-		group := storage.FleetGroupRecord{
-			ID:            "default",
-			EnvironmentID: environment.ID,
-			Name:          "Default",
-			CreatedAt:     environment.CreatedAt,
-		}
 		agent := storage.AgentRecord{
-			ID:            "agent-000001",
-			NodeName:      "node-a",
-			EnvironmentID: environment.ID,
-			FleetGroupID:  group.ID,
-			Version:       "dev",
-			ReadOnly:      false,
-			LastSeenAt:    time.Date(2026, time.March, 15, 8, 25, 0, 0, time.UTC),
+			ID:           "agent-000001",
+			NodeName:     "node-a",
+			FleetGroupID: group.ID,
+			Version:      "dev",
+			ReadOnly:     false,
+			LastSeenAt:   time.Date(2026, time.March, 15, 8, 25, 0, 0, time.UTC),
 		}
 		instance := storage.InstanceRecord{
 			ID:                "instance-000001",
@@ -261,10 +396,6 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 			ConnectedUsers:    42,
 			ReadOnly:          false,
 			UpdatedAt:         agent.LastSeenAt,
-		}
-
-		if err := store.PutEnvironment(ctx, environment); err != nil {
-			t.Fatalf("PutEnvironment() error = %v", err)
 		}
 
 		if err := store.PutFleetGroup(ctx, group); err != nil {
@@ -315,6 +446,7 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 			CreatedAt:      time.Date(2026, time.March, 15, 8, 30, 0, 0, time.UTC),
 			TTL:            time.Minute,
 			IdempotencyKey: "reload-1",
+			PayloadJSON:    `{"scope":"telemt"}`,
 		}
 		target := storage.JobTargetRecord{
 			JobID:      job.ID,
@@ -322,6 +454,7 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 			Status:     "queued",
 			UpdatedAt:  job.CreatedAt,
 			ResultText: "",
+			ResultJSON: `{"accepted":true}`,
 		}
 
 		if err := store.PutJob(ctx, job); err != nil {
@@ -340,6 +473,9 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 		if storedJob.ID != job.ID {
 			t.Fatalf("GetJobByIdempotencyKey() ID = %q, want %q", storedJob.ID, job.ID)
 		}
+		if storedJob.PayloadJSON != job.PayloadJSON {
+			t.Fatalf("GetJobByIdempotencyKey() PayloadJSON = %q, want %q", storedJob.PayloadJSON, job.PayloadJSON)
+		}
 
 		targets, err := store.ListJobTargets(ctx, job.ID)
 		if err != nil {
@@ -348,6 +484,9 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 
 		if len(targets) != 1 {
 			t.Fatalf("len(ListJobTargets()) = %d, want 1", len(targets))
+		}
+		if targets[0].ResultJSON != target.ResultJSON {
+			t.Fatalf("ListJobTargets()[0].ResultJSON = %q, want %q", targets[0].ResultJSON, target.ResultJSON)
 		}
 	})
 

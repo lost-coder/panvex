@@ -43,10 +43,12 @@ func resetForTest(store *Store) error {
 		TRUNCATE TABLE
 			job_targets,
 			jobs,
+			client_deployments,
+			client_assignments,
+			clients,
 			telemt_instances,
 			agents,
 			fleet_groups,
-			environments,
 			users,
 			audit_events,
 			metric_snapshots,

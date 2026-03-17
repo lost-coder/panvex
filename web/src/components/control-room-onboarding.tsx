@@ -60,7 +60,6 @@ export function ControlRoomOnboarding(props: ControlRoomOnboardingProps) {
 
       <div className="mt-6">
         <AgentInstallFlow
-          initialEnvironmentID={props.onboarding.suggested_environment_id}
           initialFleetGroupID={props.onboarding.suggested_fleet_group_id}
           createLabel={props.onboarding.needs_first_server ? "Create first token" : "Create another token"}
           onFinish={() => setExpanded(false)}

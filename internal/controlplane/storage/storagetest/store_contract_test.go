@@ -19,26 +19,31 @@ func TestStoreContractWithMemoryStore(t *testing.T) {
 type memoryStore struct {
 	users              map[string]storage.UserRecord
 	usernames          map[string]string
-	environments       map[string]storage.EnvironmentRecord
 	fleetGroups        map[string]storage.FleetGroupRecord
 	agents             map[string]storage.AgentRecord
 	instances          map[string]storage.InstanceRecord
+	clients            map[string]storage.ClientRecord
+	clientAssignments  map[string]storage.ClientAssignmentRecord
+	clientDeployments  map[string]storage.ClientDeploymentRecord
 	jobs               map[string]storage.JobRecord
 	jobsByKey          map[string]string
 	jobTargets         map[string]storage.JobTargetRecord
 	auditEvents        []storage.AuditEventRecord
 	metricSnapshots    []storage.MetricSnapshotRecord
 	enrollmentTokens   map[string]storage.EnrollmentTokenRecord
+	panelSettings      *storage.PanelSettingsRecord
 }
 
 func newMemoryStore() *memoryStore {
 	return &memoryStore{
 		users:            make(map[string]storage.UserRecord),
 		usernames:        make(map[string]string),
-		environments:     make(map[string]storage.EnvironmentRecord),
 		fleetGroups:      make(map[string]storage.FleetGroupRecord),
 		agents:           make(map[string]storage.AgentRecord),
 		instances:        make(map[string]storage.InstanceRecord),
+		clients:          make(map[string]storage.ClientRecord),
+		clientAssignments: make(map[string]storage.ClientAssignmentRecord),
+		clientDeployments: make(map[string]storage.ClientDeploymentRecord),
 		jobs:             make(map[string]storage.JobRecord),
 		jobsByKey:        make(map[string]string),
 		jobTargets:       make(map[string]storage.JobTargetRecord),
@@ -76,24 +81,21 @@ func (s *memoryStore) GetUserByUsername(_ context.Context, username string) (sto
 	return s.users[userID], nil
 }
 
+func (s *memoryStore) DeleteUser(_ context.Context, userID string) error {
+	user, ok := s.users[userID]
+	if !ok {
+		return storage.ErrNotFound
+	}
+
+	delete(s.users, userID)
+	delete(s.usernames, user.Username)
+	return nil
+}
+
 func (s *memoryStore) ListUsers(_ context.Context) ([]storage.UserRecord, error) {
 	result := make([]storage.UserRecord, 0, len(s.users))
 	for _, user := range s.users {
 		result = append(result, user)
-	}
-
-	return result, nil
-}
-
-func (s *memoryStore) PutEnvironment(_ context.Context, environment storage.EnvironmentRecord) error {
-	s.environments[environment.ID] = environment
-	return nil
-}
-
-func (s *memoryStore) ListEnvironments(_ context.Context) ([]storage.EnvironmentRecord, error) {
-	result := make([]storage.EnvironmentRecord, 0, len(s.environments))
-	for _, environment := range s.environments {
-		result = append(result, environment)
 	}
 
 	return result, nil
@@ -130,6 +132,71 @@ func (s *memoryStore) ListAgents(_ context.Context) ([]storage.AgentRecord, erro
 func (s *memoryStore) PutInstance(_ context.Context, instance storage.InstanceRecord) error {
 	s.instances[instance.ID] = instance
 	return nil
+}
+
+func (s *memoryStore) PutClient(_ context.Context, client storage.ClientRecord) error {
+	s.clients[client.ID] = client
+	return nil
+}
+
+func (s *memoryStore) GetClientByID(_ context.Context, clientID string) (storage.ClientRecord, error) {
+	client, ok := s.clients[clientID]
+	if !ok {
+		return storage.ClientRecord{}, storage.ErrNotFound
+	}
+
+	return client, nil
+}
+
+func (s *memoryStore) ListClients(_ context.Context) ([]storage.ClientRecord, error) {
+	result := make([]storage.ClientRecord, 0, len(s.clients))
+	for _, client := range s.clients {
+		result = append(result, client)
+	}
+
+	return result, nil
+}
+
+func (s *memoryStore) PutClientAssignment(_ context.Context, assignment storage.ClientAssignmentRecord) error {
+	s.clientAssignments[assignment.ID] = assignment
+	return nil
+}
+
+func (s *memoryStore) DeleteClientAssignments(_ context.Context, clientID string) error {
+	for id, assignment := range s.clientAssignments {
+		if assignment.ClientID == clientID {
+			delete(s.clientAssignments, id)
+		}
+	}
+
+	return nil
+}
+
+func (s *memoryStore) ListClientAssignments(_ context.Context, clientID string) ([]storage.ClientAssignmentRecord, error) {
+	result := make([]storage.ClientAssignmentRecord, 0)
+	for _, assignment := range s.clientAssignments {
+		if assignment.ClientID == clientID {
+			result = append(result, assignment)
+		}
+	}
+
+	return result, nil
+}
+
+func (s *memoryStore) PutClientDeployment(_ context.Context, deployment storage.ClientDeploymentRecord) error {
+	s.clientDeployments[fmt.Sprintf("%s/%s", deployment.ClientID, deployment.AgentID)] = deployment
+	return nil
+}
+
+func (s *memoryStore) ListClientDeployments(_ context.Context, clientID string) ([]storage.ClientDeploymentRecord, error) {
+	result := make([]storage.ClientDeploymentRecord, 0)
+	for _, deployment := range s.clientDeployments {
+		if deployment.ClientID == clientID {
+			result = append(result, deployment)
+		}
+	}
+
+	return result, nil
 }
 
 func (s *memoryStore) ListInstances(_ context.Context) ([]storage.InstanceRecord, error) {
@@ -197,6 +264,20 @@ func (s *memoryStore) AppendMetricSnapshot(_ context.Context, snapshot storage.M
 
 func (s *memoryStore) ListMetricSnapshots(_ context.Context) ([]storage.MetricSnapshotRecord, error) {
 	return append([]storage.MetricSnapshotRecord(nil), s.metricSnapshots...), nil
+}
+
+func (s *memoryStore) PutPanelSettings(_ context.Context, settings storage.PanelSettingsRecord) error {
+	copySettings := settings
+	s.panelSettings = &copySettings
+	return nil
+}
+
+func (s *memoryStore) GetPanelSettings(_ context.Context) (storage.PanelSettingsRecord, error) {
+	if s.panelSettings == nil {
+		return storage.PanelSettingsRecord{}, storage.ErrNotFound
+	}
+
+	return *s.panelSettings, nil
 }
 
 func (s *memoryStore) PutEnrollmentToken(_ context.Context, token storage.EnrollmentTokenRecord) error {
