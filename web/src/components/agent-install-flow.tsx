@@ -3,10 +3,12 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import {
   apiClient,
+  configuredRootPath,
   type Agent,
   type EnrollmentTokenListItem,
   type EnrollmentTokenResponse
 } from "../lib/api";
+import { buildInstallCommand, buildManualInstallCommand, resolvePanelInstallURL } from "./agent-install-command";
 import { buildConnectionJourney, resolveConnectedAgentID } from "./agent-install-flow-state";
 
 type AgentInstallFlowProps = {
@@ -101,8 +103,11 @@ export function AgentInstallFlow(props: AgentInstallFlowProps) {
     return (agentsQuery.data ?? []).find((agent) => agent.id === connectedAgentID) ?? null;
   }, [agentsQuery.data, connectedAgentID]);
 
-  const primaryInstallCommand = trackedToken ? buildInstallCommand(trackedToken.value, agentVersion) : "";
-  const manualInstallCommand = trackedToken ? buildManualInstallCommand(trackedToken.value, agentVersion) : "";
+  const panelURL = trackedToken
+    ? resolvePanelInstallURL(trackedToken.panel_url, window.location.origin, configuredRootPath)
+    : "";
+  const primaryInstallCommand = trackedToken ? buildInstallCommand(panelURL, trackedToken.value, agentVersion) : "";
+  const manualInstallCommand = trackedToken ? buildManualInstallCommand(panelURL, trackedToken.value, agentVersion) : "";
   const runtimeEnvExample = buildRuntimeEnvExample();
   const flowError = createTokenMutation.error?.message ?? revokeTokenMutation.error?.message ?? null;
 
@@ -324,37 +329,8 @@ function ConnectionStatusCard(props: {
   );
 }
 
-function buildInstallCommand(tokenValue: string, agentVersion: string) {
-  const versionFlag = agentVersion.trim() !== "" && agentVersion !== "latest" ? ` --version ${agentVersion.trim()}` : "";
-
-  return [
-    "curl -fsSL https://github.com/panvex/panvex/releases/latest/download/install-agent.sh | \\",
-    "  sudo sh -s -- \\",
-    `    --panel-url ${currentPanelURL()} \\`,
-    `    --enrollment-token ${tokenValue}${versionFlag}`
-  ].join("\n");
-}
-
-function buildManualInstallCommand(tokenValue: string, agentVersion: string) {
-  const releaseSegment = agentVersion.trim() !== "" && agentVersion !== "latest" ? `download/${agentVersion.trim()}` : "latest/download";
-
-  return [
-    `curl -fsSL -o panvex-agent.tar.gz https://github.com/panvex/panvex/releases/${releaseSegment}/panvex-agent-linux-<amd64|arm64>.tar.gz`,
-    "tar -xzf panvex-agent.tar.gz",
-    "sudo install -m 0755 panvex-agent /usr/local/bin/panvex-agent",
-    "sudo /usr/local/bin/panvex-agent bootstrap \\",
-    `  -panel-url ${currentPanelURL()} \\`,
-    `  -enrollment-token ${tokenValue} \\`,
-    '  -state-file /var/lib/panvex-agent/agent-state.json'
-  ].join("\n");
-}
-
 function buildRuntimeEnvExample() {
   return ["PANVEX_STATE_FILE=/var/lib/panvex-agent/agent-state.json", "PANVEX_TELEMT_URL=http://127.0.0.1:9091", "PANVEX_TELEMT_AUTH="].join("\n");
-}
-
-function currentPanelURL() {
-  return window.location.origin || "https://panel.example.com";
 }
 
 function resolveTrackedToken(tokens: EnrollmentTokenListItem[], trackedTokenValue: string | null) {
@@ -368,6 +344,7 @@ function resolveTrackedToken(tokens: EnrollmentTokenListItem[], trackedTokenValu
 function toEnrollmentTokenListItem(token: EnrollmentTokenResponse): EnrollmentTokenListItem {
   return {
     value: token.value,
+    panel_url: token.panel_url,
     environment_id: token.environment_id,
     fleet_group_id: token.fleet_group_id,
     status: "active",

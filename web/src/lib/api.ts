@@ -84,6 +84,7 @@ export type MetricSnapshot = {
 
 export type EnrollmentTokenResponse = {
   value: string;
+  panel_url: string;
   environment_id: string;
   fleet_group_id: string;
   issued_at_unix: number;
@@ -93,6 +94,7 @@ export type EnrollmentTokenResponse = {
 
 export type EnrollmentTokenListItem = {
   value: string;
+  panel_url: string;
   environment_id: string;
   fleet_group_id: string;
   status: "active" | "expired" | "consumed" | "revoked";
