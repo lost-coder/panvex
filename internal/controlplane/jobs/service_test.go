@@ -1,10 +1,13 @@
 package jobs
 
 import (
+	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/panvex/panvex/internal/controlplane/storage"
 	"github.com/panvex/panvex/internal/controlplane/storage/sqlite"
 )
 
@@ -188,4 +191,54 @@ func TestServicePersistsStructuredClientPayloadAndResultAcrossRestart(t *testing
 	if jobs[0].Targets[0].ResultJSON != `{"connection_link":"tg://proxy?server=node-a&secret=secret-1"}` {
 		t.Fatalf("jobs[0].Targets[0].ResultJSON = %q, want %q", jobs[0].Targets[0].ResultJSON, `{"connection_link":"tg://proxy?server=node-a&secret=secret-1"}`)
 	}
+}
+
+func TestServiceMarkDeliveredKeepsInMemoryStateWhenPersistenceFails(t *testing.T) {
+	now := time.Date(2026, time.March, 18, 13, 40, 0, 0, time.UTC)
+	sqliteStore, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer sqliteStore.Close()
+
+	store := &failingJobStore{JobStore: sqliteStore}
+	service := NewServiceWithStore(store)
+	job, err := service.Enqueue(CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            time.Minute,
+		IdempotencyKey: "deliver-with-store-error",
+		ActorID:        "user-1",
+	}, now)
+	if err != nil {
+		t.Fatalf("Enqueue() error = %v", err)
+	}
+
+	store.putJobErr = errors.New("put job failed")
+
+	service.MarkDelivered("agent-1", job.ID, now.Add(5*time.Second))
+
+	jobs := service.List()
+	if len(jobs) != 1 {
+		t.Fatalf("len(List()) = %d, want %d", len(jobs), 1)
+	}
+	if jobs[0].Status != StatusRunning {
+		t.Fatalf("jobs[0].Status = %q, want %q", jobs[0].Status, StatusRunning)
+	}
+	if jobs[0].Targets[0].Status != TargetStatusDelivered {
+		t.Fatalf("jobs[0].Targets[0].Status = %q, want %q", jobs[0].Targets[0].Status, TargetStatusDelivered)
+	}
+}
+
+type failingJobStore struct {
+	storage.JobStore
+	putJobErr error
+}
+
+func (s *failingJobStore) PutJob(ctx context.Context, job storage.JobRecord) error {
+	if s.putJobErr != nil {
+		return s.putJobErr
+	}
+
+	return s.JobStore.PutJob(ctx, job)
 }

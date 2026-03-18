@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"path/filepath"
 	"testing"
@@ -354,5 +355,41 @@ func TestHTTPPanelRestartRejectsUnsupportedRuntime(t *testing.T) {
 	restartResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/settings/panel/restart", nil, loginResponse.Result().Cookies())
 	if restartResponse.Code != http.StatusConflict {
 		t.Fatalf("POST /api/settings/panel/restart status = %d, want %d", restartResponse.Code, http.StatusConflict)
+	}
+}
+
+func TestHTTPPanelRestartReturnsInternalErrorWhenRuntimeHookFails(t *testing.T) {
+	now := time.Date(2026, time.March, 18, 13, 0, 0, 0, time.UTC)
+	server := New(Options{
+		Now: func() time.Time { return now },
+		PanelRuntime: PanelRuntime{
+			HTTPListenAddress: ":8080",
+			GRPCListenAddress: ":8443",
+			TLSMode:           "proxy",
+			RestartSupported:  true,
+		},
+		RequestRestart: func() error {
+			return errors.New("restart hook failed")
+		},
+	})
+	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "admin",
+		Password: "admin-password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "admin",
+		"password": "admin-password",
+	}, nil)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
+	}
+
+	restartResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/settings/panel/restart", nil, loginResponse.Result().Cookies())
+	if restartResponse.Code != http.StatusInternalServerError {
+		t.Fatalf("POST /api/settings/panel/restart status = %d, want %d", restartResponse.Code, http.StatusInternalServerError)
 	}
 }

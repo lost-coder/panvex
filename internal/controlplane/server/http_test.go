@@ -71,6 +71,68 @@ func TestServerLoginSetsSessionAndReturnsMe(t *testing.T) {
 	}
 }
 
+func TestServerLoginSetsSecureSessionCookieWhenForwardedProtoIsHTTPS(t *testing.T) {
+	now := time.Date(2026, time.March, 18, 12, 0, 0, 0, time.UTC)
+	server := New(Options{
+		Now: func() time.Time { return now },
+	})
+	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "viewer",
+		Password: "viewer-password",
+		Role:     auth.RoleViewer,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	loginResponse := performJSONRequestWithHeaders(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "viewer",
+		"password": "viewer-password",
+	}, nil, map[string]string{
+		"X-Forwarded-Proto": "https",
+	})
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
+	}
+
+	cookies := loginResponse.Result().Cookies()
+	if len(cookies) == 0 {
+		t.Fatal("POST /api/auth/login returned no cookies")
+	}
+	if !cookies[0].Secure {
+		t.Fatal("session cookie Secure = false, want true")
+	}
+}
+
+func TestServerLoginLeavesSessionCookieInsecureForPlainHTTP(t *testing.T) {
+	now := time.Date(2026, time.March, 18, 12, 10, 0, 0, time.UTC)
+	server := New(Options{
+		Now: func() time.Time { return now },
+	})
+	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "viewer",
+		Password: "viewer-password",
+		Role:     auth.RoleViewer,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "viewer",
+		"password": "viewer-password",
+	}, nil)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
+	}
+
+	cookies := loginResponse.Result().Cookies()
+	if len(cookies) == 0 {
+		t.Fatal("POST /api/auth/login returned no cookies")
+	}
+	if cookies[0].Secure {
+		t.Fatal("session cookie Secure = true, want false")
+	}
+}
+
 func TestServerCreateJobRejectsViewerRole(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	server := New(Options{
@@ -513,7 +575,7 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 		t.Fatalf("enrollAgent() error = %v", err)
 	}
 
-	first.applyAgentSnapshot(agentSnapshot{
+	if err := first.applyAgentSnapshot(agentSnapshot{
 		AgentID:       identity.AgentID,
 		NodeName:      "node-a",
 		FleetGroupID:  "ams-1",
@@ -531,7 +593,9 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 			"requests_total": 128,
 		},
 		ObservedAt: now.Add(15 * time.Second),
-	})
+	}); err != nil {
+		t.Fatalf("applyAgentSnapshot() error = %v", err)
+	}
 
 	restored := New(Options{
 		Now: func() time.Time { return now.Add(2 * time.Minute) },

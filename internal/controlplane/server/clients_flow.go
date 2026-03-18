@@ -202,7 +202,9 @@ func (s *Server) createClient(actorID string, input clientMutationInput, observe
 	if _, err := s.enqueueClientJob(actorID, jobs.ActionClientCreate, client, "", targetAgentIDs, observedAt); err != nil {
 		return managedClient{}, nil, nil, err
 	}
-	s.replaceClientState(client, assignments, deployments)
+	if err := s.replaceClientState(client, assignments, deployments); err != nil {
+		return managedClient{}, nil, nil, err
+	}
 
 	return client, assignments, deployments, nil
 }
@@ -265,7 +267,9 @@ func (s *Server) updateClient(clientID string, actorID string, input clientMutat
 		}
 	}
 
-	s.replaceClientState(currentClient, assignments, deployments)
+	if err := s.replaceClientState(currentClient, assignments, deployments); err != nil {
+		return managedClient{}, nil, nil, err
+	}
 
 	return currentClient, assignments, deployments, nil
 }
@@ -296,7 +300,9 @@ func (s *Server) rotateClientSecret(clientID string, actorID string, observedAt 
 		}
 	}
 
-	s.replaceClientState(currentClient, assignments, deployments)
+	if err := s.replaceClientState(currentClient, assignments, deployments); err != nil {
+		return managedClient{}, nil, nil, err
+	}
 
 	return currentClient, assignments, deployments, nil
 }
@@ -327,9 +333,7 @@ func (s *Server) deleteClient(clientID string, actorID string, observedAt time.T
 		}
 	}
 
-	s.replaceClientState(currentClient, assignments, deployments)
-
-	return nil
+	return s.replaceClientState(currentClient, assignments, deployments)
 }
 
 func (s *Server) enqueueClientJob(actorID string, action jobs.Action, client managedClient, previousName string, targetAgentIDs []string, observedAt time.Time) (jobs.Job, error) {
@@ -370,10 +374,10 @@ func (s *Server) enqueueClientJob(actorID string, action jobs.Action, client man
 	}, observedAt)
 }
 
-func (s *Server) replaceClientState(client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment) {
+func (s *Server) replaceClientState(client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment) error {
 	if s.store != nil {
 		if err := s.persistClientState(context.Background(), client, assignments, deployments); err != nil {
-			panic(err)
+			return err
 		}
 	}
 
@@ -386,6 +390,8 @@ func (s *Server) replaceClientState(client managedClient, assignments []managedC
 	}
 	s.clientDeployments[client.ID] = nextDeployments
 	s.mu.Unlock()
+
+	return nil
 }
 
 func (s *Server) persistClientState(ctx context.Context, client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment) error {

@@ -114,7 +114,7 @@ func (s *Server) enrollAgent(request agentEnrollmentRequest, now time.Time) (age
 	}, nil
 }
 
-func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) {
+func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) error {
 	s.presence.MarkConnected(snapshot.AgentID, snapshot.ObservedAt)
 	s.presence.Heartbeat(snapshot.AgentID, snapshot.ObservedAt)
 
@@ -163,16 +163,16 @@ func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) {
 
 	if s.store != nil {
 		if err := s.store.PutAgent(context.Background(), agentToRecord(agent)); err != nil {
-			panic(err)
+			return err
 		}
 		for _, instance := range instances {
 			if err := s.store.PutInstance(context.Background(), instanceToRecord(instance)); err != nil {
-				panic(err)
+				return err
 			}
 		}
 		if metricSnapshot != nil {
 			if err := s.store.AppendMetricSnapshot(context.Background(), metricSnapshotToRecord(*metricSnapshot)); err != nil {
-				panic(err)
+				return err
 			}
 		}
 	}
@@ -194,6 +194,8 @@ func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) {
 		Type: "agents.updated",
 		Data: agent,
 	})
+
+	return nil
 }
 
 func agentRuntimeFromSnapshot(snapshot gatewayrpc.RuntimeSnapshot, observedAt time.Time) AgentRuntime {

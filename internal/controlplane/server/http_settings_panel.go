@@ -126,15 +126,16 @@ func (s *Server) handleRestartPanel() http.HandlerFunc {
 			return
 		}
 
+		if err := s.requestRestart(); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
 		s.appendAudit(session.UserID, "settings.panel.restart", "panel", map[string]any{
 			"pending_restart": restart.Pending,
 		})
 
 		writeJSON(w, http.StatusAccepted, panelSettingsResponseFromSettings(settings, restart))
-
-		go func() {
-			_ = s.requestRestart()
-		}()
 	}
 }
 
