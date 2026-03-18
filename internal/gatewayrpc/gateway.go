@@ -75,6 +75,73 @@ type ClientUsageSnapshot struct {
 	ActiveTCPConns   int    `json:"active_tcp_conns"`
 }
 
+// RuntimeDCSnapshot carries one DC health row normalized for the control-plane.
+type RuntimeDCSnapshot struct {
+	DC                 int     `json:"dc"`
+	AvailableEndpoints int     `json:"available_endpoints"`
+	AvailablePct       float64 `json:"available_pct"`
+	RequiredWriters    int     `json:"required_writers"`
+	AliveWriters       int     `json:"alive_writers"`
+	CoveragePct        float64 `json:"coverage_pct"`
+	RTTMs              float64 `json:"rtt_ms"`
+	Load               int     `json:"load"`
+}
+
+// RuntimeUpstreamRowSnapshot carries one normalized upstream health row.
+type RuntimeUpstreamRowSnapshot struct {
+	UpstreamID         int     `json:"upstream_id"`
+	RouteKind          string  `json:"route_kind"`
+	Address            string  `json:"address"`
+	Healthy            bool    `json:"healthy"`
+	Fails              int     `json:"fails"`
+	EffectiveLatencyMs float64 `json:"effective_latency_ms"`
+}
+
+// RuntimeUpstreamSnapshot carries the upstream health summary and detail rows.
+type RuntimeUpstreamSnapshot struct {
+	ConfiguredTotal int                         `json:"configured_total"`
+	HealthyTotal    int                         `json:"healthy_total"`
+	UnhealthyTotal  int                         `json:"unhealthy_total"`
+	DirectTotal     int                         `json:"direct_total"`
+	SOCKS5Total     int                         `json:"socks5_total"`
+	Rows            []RuntimeUpstreamRowSnapshot `json:"rows"`
+}
+
+// RuntimeEventSnapshot carries one recent Telemt runtime event.
+type RuntimeEventSnapshot struct {
+	Sequence      uint64 `json:"sequence"`
+	TimestampUnix int64  `json:"timestamp_unix"`
+	EventType     string `json:"event_type"`
+	Context       string `json:"context"`
+}
+
+// RuntimeSnapshot carries the normalized Telemt operator overview for one node.
+type RuntimeSnapshot struct {
+	AcceptingNewConnections bool                  `json:"accepting_new_connections"`
+	MERuntimeReady          bool                  `json:"me_runtime_ready"`
+	ME2DCFallbackEnabled    bool                  `json:"me2dc_fallback_enabled"`
+	UseMiddleProxy          bool                  `json:"use_middle_proxy"`
+	StartupStatus           string                `json:"startup_status"`
+	StartupStage            string                `json:"startup_stage"`
+	StartupProgressPct      float64               `json:"startup_progress_pct"`
+	InitializationStatus    string                `json:"initialization_status"`
+	Degraded                bool                  `json:"degraded"`
+	InitializationStage     string                `json:"initialization_stage"`
+	InitializationProgressPct float64             `json:"initialization_progress_pct"`
+	TransportMode           string                `json:"transport_mode"`
+	CurrentConnections      int                   `json:"current_connections"`
+	CurrentConnectionsME    int                   `json:"current_connections_me"`
+	CurrentConnectionsDirect int                  `json:"current_connections_direct"`
+	ActiveUsers             int                   `json:"active_users"`
+	ConnectionsTotal        uint64                `json:"connections_total"`
+	ConnectionsBadTotal     uint64                `json:"connections_bad_total"`
+	HandshakeTimeoutsTotal  uint64                `json:"handshake_timeouts_total"`
+	ConfiguredUsers         int                   `json:"configured_users"`
+	DCs                     []RuntimeDCSnapshot   `json:"dcs"`
+	Upstreams               RuntimeUpstreamSnapshot `json:"upstreams"`
+	RecentEvents            []RuntimeEventSnapshot `json:"recent_events"`
+}
+
 // Snapshot carries the current agent inventory and aggregated metrics.
 type Snapshot struct {
 	AgentID        string                `json:"agent_id"`
@@ -86,6 +153,7 @@ type Snapshot struct {
 	Instances      []InstanceSnapshot    `json:"instances"`
 	Metrics        map[string]uint64     `json:"metrics"`
 	Clients        []ClientUsageSnapshot `json:"clients"`
+	Runtime        RuntimeSnapshot       `json:"runtime"`
 }
 
 // JobCommand carries an accepted control-plane action toward a specific agent.

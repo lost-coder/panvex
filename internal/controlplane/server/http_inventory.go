@@ -13,6 +13,10 @@ type fleetResponse struct {
 	OfflineAgents   int `json:"offline_agents"`
 	TotalInstances  int `json:"total_instances"`
 	MetricSnapshots int `json:"metric_snapshots"`
+	LiveConnections int `json:"live_connections"`
+	AcceptingNewConnectionsAgents int `json:"accepting_new_connections_agents"`
+	MiddleProxyAgents int `json:"middle_proxy_agents"`
+	DCIssueAgents int `json:"dc_issue_agents"`
 }
 
 func (s *Server) handleFleet() http.HandlerFunc {
@@ -57,7 +61,10 @@ func (s *Server) handleAgents() http.HandlerFunc {
 		defer s.mu.RUnlock()
 
 		response := make([]Agent, 0, len(s.agents))
+		now := s.now()
 		for _, agent := range s.agents {
+			agent.PresenceState = string(s.presence.Evaluate(agent.ID, now))
+			agent.Runtime = normalizeAgentRuntime(agent.Runtime)
 			response = append(response, agent)
 		}
 
@@ -110,4 +117,18 @@ func (s *Server) handleAudit() http.HandlerFunc {
 
 		writeJSON(w, http.StatusOK, s.auditTrail)
 	}
+}
+
+func normalizeAgentRuntime(runtime AgentRuntime) AgentRuntime {
+	if runtime.DCs == nil {
+		runtime.DCs = []RuntimeDC{}
+	}
+	if runtime.Upstreams == nil {
+		runtime.Upstreams = []RuntimeUpstream{}
+	}
+	if runtime.RecentEvents == nil {
+		runtime.RecentEvents = []RuntimeEvent{}
+	}
+
+	return runtime
 }

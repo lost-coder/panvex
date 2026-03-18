@@ -602,6 +602,64 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 	}
 }
 
+func TestHTTPAgentsReturnsEmptyRuntimeSlicesForAgentsWithoutRuntimeSnapshot(t *testing.T) {
+	now := time.Date(2026, time.March, 18, 10, 0, 0, 0, time.UTC)
+	server := New(Options{
+		Now: func() time.Time { return now },
+	})
+	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "viewer",
+		Password: "viewer-password",
+		Role:     auth.RoleViewer,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	server.agents["agent-1"] = Agent{
+		ID:           "agent-1",
+		NodeName:     "node-a",
+		FleetGroupID: "default",
+		Version:      "1.0.0",
+		LastSeenAt:   now,
+	}
+
+	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "viewer",
+		"password": "viewer-password",
+	}, nil)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
+	}
+
+	agentsResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/agents", nil, loginResponse.Result().Cookies())
+	if agentsResponse.Code != http.StatusOK {
+		t.Fatalf("GET /api/agents status = %d, want %d", agentsResponse.Code, http.StatusOK)
+	}
+
+	var payload []struct {
+		Runtime struct {
+			DCs          json.RawMessage `json:"dcs"`
+			Upstreams    json.RawMessage `json:"upstreams"`
+			RecentEvents json.RawMessage `json:"recent_events"`
+		} `json:"runtime"`
+	}
+	if err := json.Unmarshal(agentsResponse.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal(agents) error = %v", err)
+	}
+	if len(payload) != 1 {
+		t.Fatalf("len(agents) = %d, want %d", len(payload), 1)
+	}
+	if string(payload[0].Runtime.DCs) != "[]" {
+		t.Fatalf("runtime.dcs = %s, want []", payload[0].Runtime.DCs)
+	}
+	if string(payload[0].Runtime.Upstreams) != "[]" {
+		t.Fatalf("runtime.upstreams = %s, want []", payload[0].Runtime.Upstreams)
+	}
+	if string(payload[0].Runtime.RecentEvents) != "[]" {
+		t.Fatalf("runtime.recent_events = %s, want []", payload[0].Runtime.RecentEvents)
+	}
+}
+
 func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 	now := time.Date(2026, time.March, 15, 11, 0, 0, 0, time.UTC)
 	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
@@ -1133,6 +1191,25 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 		NodeName:      "node-a",
 		FleetGroupID:  "ams-1",
 		Version:       "1.0.0",
+		Runtime: AgentRuntime{
+			AcceptingNewConnections: true,
+			UseMiddleProxy:          true,
+			TransportMode:           "middle_proxy",
+			CurrentConnections:      42,
+			CurrentConnectionsME:    39,
+			CurrentConnectionsDirect: 3,
+			DCCoveragePct:           100,
+			HealthyUpstreams:        1,
+			TotalUpstreams:          2,
+			RecentEvents: []RuntimeEvent{
+				{
+					Sequence:      5,
+					TimestampUnix: currentTime.Add(-15 * time.Second).Unix(),
+					EventType:     "upstream_recovered",
+					Context:       "dc=2 upstream=1",
+				},
+			},
+		},
 		LastSeenAt:    currentTime,
 	}
 	server.agents["agent-2"] = Agent{
@@ -1140,6 +1217,25 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 		NodeName:      "node-b",
 		FleetGroupID:  "ams-1",
 		Version:       "1.0.0",
+		Runtime: AgentRuntime{
+			AcceptingNewConnections: false,
+			UseMiddleProxy:          false,
+			TransportMode:           "direct",
+			CurrentConnections:      8,
+			CurrentConnectionsME:    0,
+			CurrentConnectionsDirect: 8,
+			DCCoveragePct:           72,
+			HealthyUpstreams:        1,
+			TotalUpstreams:          3,
+			RecentEvents: []RuntimeEvent{
+				{
+					Sequence:      7,
+					TimestampUnix: currentTime.Add(-10 * time.Second).Unix(),
+					EventType:     "dc_coverage_dropped",
+					Context:       "dc=4 coverage=72",
+				},
+			},
+		},
 		LastSeenAt:    currentTime.Add(-45 * time.Second),
 	}
 	server.agents["agent-3"] = Agent{
@@ -1147,6 +1243,17 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 		NodeName:      "node-c",
 		FleetGroupID:  "edge",
 		Version:       "1.0.0",
+		Runtime: AgentRuntime{
+			AcceptingNewConnections: true,
+			UseMiddleProxy:          true,
+			TransportMode:           "middle_proxy",
+			CurrentConnections:      0,
+			CurrentConnectionsME:    0,
+			CurrentConnectionsDirect: 0,
+			DCCoveragePct:           0,
+			HealthyUpstreams:        0,
+			TotalUpstreams:          0,
+		},
 		LastSeenAt:    currentTime.Add(-2 * time.Minute),
 	}
 	server.instances["instance-1"] = Instance{
@@ -1236,6 +1343,7 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 			SuggestedFleetGroupID string `json:"suggested_fleet_group_id"`
 		} `json:"onboarding"`
 		Fleet fleetResponse `json:"fleet"`
+		RecentRuntimeEvents []RuntimeEvent `json:"recent_runtime_events"`
 		Jobs  struct {
 			Total   int `json:"total"`
 			Queued  int `json:"queued"`
@@ -1272,6 +1380,18 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 	if payload.Fleet.TotalInstances != 2 {
 		t.Fatalf("fleet.total_instances = %d, want %d", payload.Fleet.TotalInstances, 2)
 	}
+	if payload.Fleet.LiveConnections != 50 {
+		t.Fatalf("fleet.live_connections = %d, want %d", payload.Fleet.LiveConnections, 50)
+	}
+	if payload.Fleet.AcceptingNewConnectionsAgents != 2 {
+		t.Fatalf("fleet.accepting_new_connections_agents = %d, want %d", payload.Fleet.AcceptingNewConnectionsAgents, 2)
+	}
+	if payload.Fleet.MiddleProxyAgents != 2 {
+		t.Fatalf("fleet.middle_proxy_agents = %d, want %d", payload.Fleet.MiddleProxyAgents, 2)
+	}
+	if payload.Fleet.DCIssueAgents != 1 {
+		t.Fatalf("fleet.dc_issue_agents = %d, want %d", payload.Fleet.DCIssueAgents, 1)
+	}
 	if payload.Jobs.Total != 3 {
 		t.Fatalf("jobs.total = %d, want %d", payload.Jobs.Total, 3)
 	}
@@ -1286,6 +1406,12 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 	}
 	if len(payload.RecentActivity) != 2 {
 		t.Fatalf("len(recent_activity) = %d, want %d", len(payload.RecentActivity), 2)
+	}
+	if len(payload.RecentRuntimeEvents) != 2 {
+		t.Fatalf("len(recent_runtime_events) = %d, want %d", len(payload.RecentRuntimeEvents), 2)
+	}
+	if payload.RecentRuntimeEvents[0].EventType != "dc_coverage_dropped" {
+		t.Fatalf("recent_runtime_events[0].event_type = %q, want %q", payload.RecentRuntimeEvents[0].EventType, "dc_coverage_dropped")
 	}
 	if payload.RecentActivity[0].Action != "jobs.create" {
 		t.Fatalf("recent_activity[0].action = %q, want %q", payload.RecentActivity[0].Action, "jobs.create")

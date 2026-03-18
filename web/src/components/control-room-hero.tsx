@@ -41,8 +41,8 @@ export function ControlRoomHero(props: ControlRoomHeroProps) {
 
         <div className="grid gap-3 sm:grid-cols-3 xl:min-w-[420px]">
           <HeroPill label="Online now" value={String(props.summary.fleet.online_agents)} />
-          <HeroPill label="Telemt runtimes" value={String(props.summary.fleet.total_instances)} />
-          <HeroPill label="Failed actions" value={String(props.summary.jobs.failed)} />
+          <HeroPill label="Live connections" value={String(props.summary.fleet.live_connections)} />
+          <HeroPill label="Middle nodes" value={String(props.summary.fleet.middle_proxy_agents)} />
         </div>
       </div>
 

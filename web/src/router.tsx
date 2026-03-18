@@ -16,6 +16,10 @@ import { ControlRoomHero } from "./components/control-room-hero";
 import { ControlRoomOnboarding } from "./components/control-room-onboarding";
 import { ControlRoomSummary } from "./components/control-room-summary";
 import { FleetDetailDrawer } from "./components/fleet-detail-drawer";
+import { FleetRuntimeModeBadge, FleetRuntimeStatusBadge } from "./components/fleet-runtime-status-badge";
+import { FleetRuntimeConnections, FleetRuntimeDCSummary, FleetRuntimeUpstreamSummary } from "./components/fleet-runtime-summary";
+import { TelemtAttentionPanel } from "./components/telemt-attention-panel";
+import { TelemtRuntimeDistribution } from "./components/telemt-runtime-distribution";
 import { SettingsPage } from "./settings-page";
 import {
   apiClient,
@@ -188,16 +192,18 @@ function LoginPage() {
 function OverviewPage() {
   const controlRoomQuery = useQuery({ queryKey: ["control-room"], queryFn: () => apiClient.controlRoom() });
   const metricsQuery = useQuery({ queryKey: ["metrics"], queryFn: () => apiClient.metrics() });
+  const agentsQuery = useQuery({ queryKey: ["agents"], queryFn: () => apiClient.agents() });
 
-  if (controlRoomQuery.isLoading) {
+  if (controlRoomQuery.isLoading || agentsQuery.isLoading) {
     return <CenteredMessage title="Loading Control Room" description="Pulling together your latest server summary." />;
   }
 
-  if (controlRoomQuery.isError) {
+  if (controlRoomQuery.isError || agentsQuery.isError) {
     return <CenteredMessage title="Control Room is unavailable" description="The overview could not load the latest control-plane summary." />;
   }
 
   const controlRoom = controlRoomQuery.data!;
+  const agents = agentsQuery.data ?? [];
   const chartData = aggregateMetrics(metricsQuery.data ?? []);
 
   return (
@@ -205,6 +211,11 @@ function OverviewPage() {
       <ControlRoomHero summary={controlRoom} />
       <ControlRoomOnboarding onboarding={controlRoom.onboarding} />
       <ControlRoomSummary summary={controlRoom} />
+
+      <div className="grid gap-6 xl:grid-cols-[1.2fr,0.8fr]">
+        <TelemtAttentionPanel agents={agents} />
+        <TelemtRuntimeDistribution summary={controlRoom} />
+      </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.2fr,0.8fr]">
         <section className="rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-[0_20px_60px_rgba(37,46,68,0.08)]">
@@ -237,15 +248,27 @@ function OverviewPage() {
         </section>
 
         <section className="rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-[0_20px_60px_rgba(37,46,68,0.08)]">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Recent activity</p>
-          <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">What changed most recently</h3>
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Recent runtime events</p>
+          <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">What changed inside Telemt most recently</h3>
           <div className="mt-6 space-y-3">
-            {controlRoom.recent_activity.length > 0 ? (
-              controlRoom.recent_activity.map((event) => <AuditRow key={event.id} event={event} />)
+            {controlRoom.recent_runtime_events.length > 0 ? (
+              controlRoom.recent_runtime_events.map((event) => (
+                <div key={`${event.sequence}-${event.timestamp_unix}`} className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="font-medium text-slate-950">{event.event_type.replaceAll("_", " ")}</p>
+                      <p className="mt-1 text-sm text-slate-600">{event.context}</p>
+                    </div>
+                    <span className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                      {new Date(event.timestamp_unix * 1000).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              ))
             ) : (
               <FriendlyEmptyState
-                title="Nothing noisy yet"
-                description="Important activity will appear here once you create tokens, run actions, or your first server checks in."
+                title="No runtime events yet"
+                description="Telemt runtime events will appear here once nodes start reporting route changes, recovery, or coverage drops."
               />
             )}
           </div>
@@ -303,9 +326,12 @@ function FleetPage() {
               <tr className="text-left text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
                 <th className="px-4 pb-1">Node</th>
                 <th className="px-4 pb-1">Group</th>
-                <th className="px-4 pb-1">Version</th>
+                <th className="px-4 pb-1">Status</th>
                 <th className="px-4 pb-1">Mode</th>
-                <th className="px-4 pb-1">Last seen</th>
+                <th className="px-4 pb-1">Connections</th>
+                <th className="px-4 pb-1">DC</th>
+                <th className="px-4 pb-1">Upstreams</th>
+                <th className="px-4 pb-1">Last report</th>
               </tr>
             </thead>
             <tbody>
@@ -320,11 +346,20 @@ function FleetPage() {
                     <div className="mt-1 text-sm text-slate-500">{agent.id}</div>
                   </td>
                   <td className="px-4 py-4 text-sm text-slate-700">{agent.fleet_group_id || "Ungrouped"}</td>
-                  <td className="px-4 py-4 text-sm text-slate-700">{agent.version || "unknown"}</td>
                   <td className="px-4 py-4">
-                    <span className={`rounded-full px-3 py-1 text-xs uppercase tracking-[0.22em] ${agent.read_only ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
-                      {agent.read_only ? "Read only" : "Writable"}
-                    </span>
+                    <FleetRuntimeStatusBadge agent={agent} />
+                  </td>
+                  <td className="px-4 py-4">
+                    <FleetRuntimeModeBadge agent={agent} />
+                  </td>
+                  <td className="px-4 py-4 text-sm text-slate-700">
+                    <FleetRuntimeConnections agent={agent} />
+                  </td>
+                  <td className="px-4 py-4 text-sm text-slate-700">
+                    <FleetRuntimeDCSummary agent={agent} />
+                  </td>
+                  <td className="px-4 py-4 text-sm text-slate-700">
+                    <FleetRuntimeUpstreamSummary agent={agent} />
                   </td>
                   <td className="rounded-r-3xl px-4 py-4 text-sm text-slate-700">
                     {new Date(agent.last_seen_at).toLocaleString()}

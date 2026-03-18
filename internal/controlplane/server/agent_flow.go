@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/panvex/panvex/internal/controlplane/storage"
+	"github.com/panvex/panvex/internal/gatewayrpc"
 )
 
 type agentEnrollmentRequest struct {
@@ -39,6 +40,8 @@ type agentSnapshot struct {
 	Instances    []instanceSnapshot
 	Clients      []clientUsageSnapshot
 	HasClients   bool
+	Runtime      gatewayrpc.RuntimeSnapshot
+	HasRuntime   bool
 	Metrics      map[string]uint64
 	ObservedAt   time.Time
 }
@@ -127,6 +130,9 @@ func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) {
 	agent.Version = snapshot.Version
 	agent.ReadOnly = snapshot.ReadOnly
 	agent.LastSeenAt = snapshot.ObservedAt.UTC()
+	if snapshot.HasRuntime {
+		agent.Runtime = agentRuntimeFromSnapshot(snapshot.Runtime, snapshot.ObservedAt)
+	}
 
 	instances := make([]Instance, 0, len(snapshot.Instances))
 	for _, instance := range snapshot.Instances {
@@ -188,6 +194,78 @@ func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) {
 		Type: "agents.updated",
 		Data: agent,
 	})
+}
+
+func agentRuntimeFromSnapshot(snapshot gatewayrpc.RuntimeSnapshot, observedAt time.Time) AgentRuntime {
+	dcs := make([]RuntimeDC, 0, len(snapshot.DCs))
+	coveragePct := 0.0
+	for index, dc := range snapshot.DCs {
+		dcs = append(dcs, RuntimeDC{
+			DC:                 dc.DC,
+			AvailableEndpoints: dc.AvailableEndpoints,
+			AvailablePct:       dc.AvailablePct,
+			RequiredWriters:    dc.RequiredWriters,
+			AliveWriters:       dc.AliveWriters,
+			CoveragePct:        dc.CoveragePct,
+			RTTMs:              dc.RTTMs,
+			Load:               dc.Load,
+		})
+		if index == 0 || dc.CoveragePct < coveragePct {
+			coveragePct = dc.CoveragePct
+		}
+	}
+
+	upstreams := make([]RuntimeUpstream, 0, len(snapshot.Upstreams.Rows))
+	for _, upstream := range snapshot.Upstreams.Rows {
+		upstreams = append(upstreams, RuntimeUpstream{
+			UpstreamID:         upstream.UpstreamID,
+			RouteKind:          upstream.RouteKind,
+			Address:            upstream.Address,
+			Healthy:            upstream.Healthy,
+			Fails:              upstream.Fails,
+			EffectiveLatencyMs: upstream.EffectiveLatencyMs,
+		})
+	}
+
+	recentEvents := make([]RuntimeEvent, 0, len(snapshot.RecentEvents))
+	for _, event := range snapshot.RecentEvents {
+		recentEvents = append(recentEvents, RuntimeEvent{
+			Sequence:      event.Sequence,
+			TimestampUnix: event.TimestampUnix,
+			EventType:     event.EventType,
+			Context:       event.Context,
+		})
+	}
+
+	return AgentRuntime{
+		AcceptingNewConnections:   snapshot.AcceptingNewConnections,
+		MERuntimeReady:            snapshot.MERuntimeReady,
+		ME2DCFallbackEnabled:      snapshot.ME2DCFallbackEnabled,
+		UseMiddleProxy:            snapshot.UseMiddleProxy,
+		StartupStatus:             snapshot.StartupStatus,
+		StartupStage:              snapshot.StartupStage,
+		StartupProgressPct:        snapshot.StartupProgressPct,
+		InitializationStatus:      snapshot.InitializationStatus,
+		Degraded:                  snapshot.Degraded,
+		InitializationStage:       snapshot.InitializationStage,
+		InitializationProgressPct: snapshot.InitializationProgressPct,
+		TransportMode:             snapshot.TransportMode,
+		CurrentConnections:        snapshot.CurrentConnections,
+		CurrentConnectionsME:      snapshot.CurrentConnectionsME,
+		CurrentConnectionsDirect:  snapshot.CurrentConnectionsDirect,
+		ActiveUsers:               snapshot.ActiveUsers,
+		ConnectionsTotal:          snapshot.ConnectionsTotal,
+		ConnectionsBadTotal:       snapshot.ConnectionsBadTotal,
+		HandshakeTimeoutsTotal:    snapshot.HandshakeTimeoutsTotal,
+		ConfiguredUsers:           snapshot.ConfiguredUsers,
+		DCCoveragePct:             coveragePct,
+		HealthyUpstreams:          snapshot.Upstreams.HealthyTotal,
+		TotalUpstreams:            snapshot.Upstreams.ConfiguredTotal,
+		DCs:                       dcs,
+		Upstreams:                 upstreams,
+		RecentEvents:              recentEvents,
+		UpdatedAt:                 observedAt.UTC(),
+	}
 }
 
 func (s *Server) applyClientUsageSnapshot(agentID string, clients []clientUsageSnapshot) {
