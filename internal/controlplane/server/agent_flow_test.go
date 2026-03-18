@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/panvex/panvex/internal/gatewayrpc"
 	"github.com/panvex/panvex/internal/controlplane/storage/sqlite"
 	"github.com/panvex/panvex/internal/security"
 )
@@ -82,6 +83,8 @@ func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T
 		Metrics: map[string]uint64{
 			"requests_total": 128,
 		},
+		Runtime: gatewayRuntimeSnapshotForTest(),
+		HasRuntime: true,
 		ObservedAt: now.Add(15 * time.Second),
 	})
 
@@ -98,6 +101,12 @@ func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T
 
 	if len(server.metrics) != 1 {
 		t.Fatalf("len(server.metrics) = %d, want %d", len(server.metrics), 1)
+	}
+	if !server.agents[identity.AgentID].Runtime.AcceptingNewConnections {
+		t.Fatal("agent runtime accepting_new_connections = false, want true")
+	}
+	if server.agents[identity.AgentID].Runtime.TransportMode != "middle_proxy" {
+		t.Fatalf("agent runtime transport_mode = %q, want %q", server.agents[identity.AgentID].Runtime.TransportMode, "middle_proxy")
 	}
 }
 
@@ -149,6 +158,8 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 		Metrics: map[string]uint64{
 			"requests_total": 128,
 		},
+		Runtime: gatewayRuntimeSnapshotForTest(),
+		HasRuntime: true,
 		ObservedAt: now.Add(15 * time.Second),
 	})
 
@@ -179,6 +190,58 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 	}
 	if len(restoredMetrics) != 1 {
 		t.Fatalf("len(ListMetricSnapshots()) = %d, want %d", len(restoredMetrics), 1)
+	}
+}
+
+func gatewayRuntimeSnapshotForTest() gatewayrpc.RuntimeSnapshot {
+	return gatewayrpc.RuntimeSnapshot{
+		AcceptingNewConnections:   true,
+		MERuntimeReady:            true,
+		ME2DCFallbackEnabled:      true,
+		UseMiddleProxy:            true,
+		StartupStatus:             "ready",
+		StartupStage:              "serving",
+		StartupProgressPct:        100,
+		InitializationStatus:      "ready",
+		Degraded:                  false,
+		InitializationStage:       "serving",
+		InitializationProgressPct: 100,
+		TransportMode:             "middle_proxy",
+		CurrentConnections:        42,
+		CurrentConnectionsME:      39,
+		CurrentConnectionsDirect:  3,
+		ActiveUsers:               7,
+		ConnectionsTotal:          512,
+		ConnectionsBadTotal:       9,
+		HandshakeTimeoutsTotal:    4,
+		ConfiguredUsers:           12,
+		DCs: []gatewayrpc.RuntimeDCSnapshot{
+			{
+				DC:                 2,
+				AvailableEndpoints: 3,
+				AvailablePct:       100,
+				RequiredWriters:    4,
+				AliveWriters:       4,
+				CoveragePct:        100,
+				RTTMs:              21.5,
+				Load:               18,
+			},
+		},
+		Upstreams: gatewayrpc.RuntimeUpstreamSnapshot{
+			ConfiguredTotal: 2,
+			HealthyTotal:    1,
+			UnhealthyTotal:  1,
+			DirectTotal:     1,
+			SOCKS5Total:     1,
+		},
+		RecentEvents: []gatewayrpc.RuntimeEventSnapshot{
+			{
+				Sequence:      1,
+				TimestampUnix: 1_763_226_400,
+				EventType:     "upstream_recovered",
+				Context:       "dc=2 upstream=1",
+			},
+		},
 	}
 }
 

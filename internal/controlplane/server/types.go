@@ -13,7 +13,70 @@ type Agent struct {
 	FleetGroupID string    `json:"fleet_group_id"`
 	Version      string    `json:"version"`
 	ReadOnly     bool      `json:"read_only"`
+	PresenceState string   `json:"presence_state"`
+	Runtime      AgentRuntime `json:"runtime"`
 	LastSeenAt   time.Time `json:"last_seen_at"`
+}
+
+// RuntimeEvent stores one recent Telemt runtime event normalized by the agent.
+type RuntimeEvent struct {
+	Sequence      uint64 `json:"sequence"`
+	TimestampUnix int64  `json:"timestamp_unix"`
+	EventType     string `json:"event_type"`
+	Context       string `json:"context"`
+}
+
+// RuntimeDC stores one DC health row reported by the local Telemt runtime.
+type RuntimeDC struct {
+	DC                 int     `json:"dc"`
+	AvailableEndpoints int     `json:"available_endpoints"`
+	AvailablePct       float64 `json:"available_pct"`
+	RequiredWriters    int     `json:"required_writers"`
+	AliveWriters       int     `json:"alive_writers"`
+	CoveragePct        float64 `json:"coverage_pct"`
+	RTTMs              float64 `json:"rtt_ms"`
+	Load               int     `json:"load"`
+}
+
+// RuntimeUpstream stores one upstream health row reported by the local Telemt runtime.
+type RuntimeUpstream struct {
+	UpstreamID         int     `json:"upstream_id"`
+	RouteKind          string  `json:"route_kind"`
+	Address            string  `json:"address"`
+	Healthy            bool    `json:"healthy"`
+	Fails              int     `json:"fails"`
+	EffectiveLatencyMs float64 `json:"effective_latency_ms"`
+}
+
+// AgentRuntime stores the normalized Telemt operator overview for one agent.
+type AgentRuntime struct {
+	AcceptingNewConnections   bool              `json:"accepting_new_connections"`
+	MERuntimeReady            bool              `json:"me_runtime_ready"`
+	ME2DCFallbackEnabled      bool              `json:"me2dc_fallback_enabled"`
+	UseMiddleProxy            bool              `json:"use_middle_proxy"`
+	StartupStatus             string            `json:"startup_status"`
+	StartupStage              string            `json:"startup_stage"`
+	StartupProgressPct        float64           `json:"startup_progress_pct"`
+	InitializationStatus      string            `json:"initialization_status"`
+	Degraded                  bool              `json:"degraded"`
+	InitializationStage       string            `json:"initialization_stage"`
+	InitializationProgressPct float64           `json:"initialization_progress_pct"`
+	TransportMode             string            `json:"transport_mode"`
+	CurrentConnections        int               `json:"current_connections"`
+	CurrentConnectionsME      int               `json:"current_connections_me"`
+	CurrentConnectionsDirect  int               `json:"current_connections_direct"`
+	ActiveUsers               int               `json:"active_users"`
+	ConnectionsTotal          uint64            `json:"connections_total"`
+	ConnectionsBadTotal       uint64            `json:"connections_bad_total"`
+	HandshakeTimeoutsTotal    uint64            `json:"handshake_timeouts_total"`
+	ConfiguredUsers           int               `json:"configured_users"`
+	DCCoveragePct             float64           `json:"dc_coverage_pct"`
+	HealthyUpstreams          int               `json:"healthy_upstreams"`
+	TotalUpstreams            int               `json:"total_upstreams"`
+	DCs                       []RuntimeDC       `json:"dcs"`
+	Upstreams                 []RuntimeUpstream `json:"upstreams"`
+	RecentEvents              []RuntimeEvent    `json:"recent_events"`
+	UpdatedAt                 time.Time         `json:"updated_at"`
 }
 
 // Instance stores the Telemt runtime metadata discovered through an agent.

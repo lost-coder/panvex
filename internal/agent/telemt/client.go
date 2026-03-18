@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -32,10 +33,93 @@ type Client struct {
 
 // RuntimeState summarizes the Telemt information the agent reports to the control-plane.
 type RuntimeState struct {
-	Version        string
-	ReadOnly       bool
-	ConnectedUsers int
-	Clients        []ClientUsage
+	Version          string
+	ReadOnly         bool
+	ConnectedUsers   int
+	Gates            RuntimeGates
+	Initialization   RuntimeInitialization
+	ConnectionTotals RuntimeConnectionTotals
+	Summary          RuntimeSummary
+	DCs              []RuntimeDC
+	Upstreams        RuntimeUpstreamSummary
+	RecentEvents     []RuntimeEvent
+	Clients          []ClientUsage
+}
+
+// RuntimeGates carries the operator-facing admission and transport gates.
+type RuntimeGates struct {
+	AcceptingNewConnections bool
+	MERuntimeReady          bool
+	ME2DCFallbackEnabled    bool
+	UseMiddleProxy          bool
+	StartupStatus           string
+	StartupStage            string
+	StartupProgressPct      float64
+}
+
+// RuntimeInitialization carries the current startup and degraded-mode state.
+type RuntimeInitialization struct {
+	Status        string
+	Degraded      bool
+	CurrentStage  string
+	ProgressPct   float64
+	TransportMode string
+}
+
+// RuntimeConnectionTotals carries the current live connection split.
+type RuntimeConnectionTotals struct {
+	CurrentConnections       int
+	CurrentConnectionsME     int
+	CurrentConnectionsDirect int
+	ActiveUsers              int
+}
+
+// RuntimeSummary carries cumulative connection counters used for overview cards.
+type RuntimeSummary struct {
+	ConnectionsTotal        uint64
+	ConnectionsBadTotal     uint64
+	HandshakeTimeoutsTotal  uint64
+	ConfiguredUsers         int
+}
+
+// RuntimeDC carries one operator-facing DC health row.
+type RuntimeDC struct {
+	DC                 int
+	AvailableEndpoints int
+	AvailablePct       float64
+	RequiredWriters    int
+	AliveWriters       int
+	CoveragePct        float64
+	RTTMs              float64
+	Load               int
+}
+
+// RuntimeUpstreamSummary carries the upstream health overview.
+type RuntimeUpstreamSummary struct {
+	ConfiguredTotal int
+	HealthyTotal    int
+	UnhealthyTotal  int
+	DirectTotal     int
+	SOCKS5Total     int
+	Rows            []RuntimeUpstream
+}
+
+// RuntimeUpstream carries one operator-facing upstream row.
+type RuntimeUpstream struct {
+	UpstreamID         int
+	RouteKind          string
+	Address            string
+	Healthy            bool
+	Fails              int
+	EffectiveLatencyMs float64
+}
+
+// RuntimeEvent carries one recent runtime event from Telemt.
+type RuntimeEvent struct {
+	Sequence     uint64
+	TimestampUnix int64
+	EventType    string
+	Context      string
 }
 
 // ManagedClient stores the centrally managed Telemt client fields applied on one node.
@@ -100,8 +184,15 @@ func isLoopbackHost(host string) bool {
 
 // FetchRuntimeState queries the Telemt health, security posture, and summary endpoints.
 func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
-	health := struct {
+	systemInfo := struct {
 		Version string `json:"version"`
+	}{}
+	if err := c.getJSON(ctx, "/v1/system/info", &systemInfo); err != nil {
+		return RuntimeState{}, err
+	}
+
+	health := struct {
+		Status string `json:"status"`
 	}{}
 	if err := c.getJSON(ctx, "/v1/health", &health); err != nil {
 		return RuntimeState{}, err
@@ -114,10 +205,106 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 		return RuntimeState{}, err
 	}
 
+	gates := struct {
+		AcceptingNewConnections bool    `json:"accepting_new_connections"`
+		MERuntimeReady          bool    `json:"me_runtime_ready"`
+		ME2DCFallbackEnabled    bool    `json:"me2dc_fallback_enabled"`
+		UseMiddleProxy          bool    `json:"use_middle_proxy"`
+		StartupStatus           string  `json:"startup_status"`
+		StartupStage            string  `json:"startup_stage"`
+		StartupProgressPct      float64 `json:"startup_progress_pct"`
+	}{}
+	if err := c.getJSON(ctx, "/v1/runtime/gates", &gates); err != nil {
+		return RuntimeState{}, err
+	}
+
+	initialization := struct {
+		Status        string  `json:"status"`
+		Degraded      bool    `json:"degraded"`
+		CurrentStage  string  `json:"current_stage"`
+		ProgressPct   float64 `json:"progress_pct"`
+		TransportMode string  `json:"transport_mode"`
+	}{}
+	if err := c.getJSON(ctx, "/v1/runtime/initialization", &initialization); err != nil {
+		return RuntimeState{}, err
+	}
+
+	connectionSummary := struct {
+		Enabled bool   `json:"enabled"`
+		Reason  string `json:"reason"`
+		Data    struct {
+			Totals struct {
+				CurrentConnections       int `json:"current_connections"`
+				CurrentConnectionsME     int `json:"current_connections_me"`
+				CurrentConnectionsDirect int `json:"current_connections_direct"`
+				ActiveUsers              int `json:"active_users"`
+			} `json:"totals"`
+		} `json:"data"`
+	}{}
+	if err := c.getJSON(ctx, "/v1/runtime/connections/summary", &connectionSummary); err != nil {
+		return RuntimeState{}, err
+	}
+
 	summary := struct {
-		ConnectedUsers int `json:"active_connections"`
+		ConnectionsTotal       uint64 `json:"connections_total"`
+		ConnectionsBadTotal    uint64 `json:"connections_bad_total"`
+		HandshakeTimeoutsTotal uint64 `json:"handshake_timeouts_total"`
+		ConfiguredUsers        int    `json:"configured_users"`
 	}{}
 	if err := c.getJSON(ctx, "/v1/stats/summary", &summary); err != nil {
+		return RuntimeState{}, err
+	}
+
+	dcStatus := struct {
+		DCS []struct {
+			DC                 int     `json:"dc"`
+			AvailableEndpoints int     `json:"available_endpoints"`
+			AvailablePct       float64 `json:"available_pct"`
+			RequiredWriters    int     `json:"required_writers"`
+			AliveWriters       int     `json:"alive_writers"`
+			CoveragePct        float64 `json:"coverage_pct"`
+			RTTMs              float64 `json:"rtt_ms"`
+			Load               int     `json:"load"`
+		} `json:"dcs"`
+	}{}
+	if err := c.getJSON(ctx, "/v1/stats/dcs", &dcStatus); err != nil {
+		return RuntimeState{}, err
+	}
+
+	upstreamStatus := struct {
+		Summary struct {
+			ConfiguredTotal int `json:"configured_total"`
+			HealthyTotal    int `json:"healthy_total"`
+			UnhealthyTotal  int `json:"unhealthy_total"`
+			DirectTotal     int `json:"direct_total"`
+			SOCKS5Total     int `json:"socks5_total"`
+		} `json:"summary"`
+		Upstreams []struct {
+			UpstreamID         int     `json:"upstream_id"`
+			RouteKind          string  `json:"route_kind"`
+			Address            string  `json:"address"`
+			Healthy            bool    `json:"healthy"`
+			Fails              int     `json:"fails"`
+			EffectiveLatencyMs float64 `json:"effective_latency_ms"`
+		} `json:"upstreams"`
+	}{}
+	if err := c.getJSON(ctx, "/v1/stats/upstreams", &upstreamStatus); err != nil {
+		return RuntimeState{}, err
+	}
+
+	recentEvents := struct {
+		Enabled bool   `json:"enabled"`
+		Reason  string `json:"reason"`
+		Data    struct {
+			Events []struct {
+				Sequence      uint64 `json:"seq"`
+				TimestampUnix int64  `json:"ts_epoch_secs"`
+				EventType     string `json:"event_type"`
+				Context       string `json:"context"`
+			} `json:"events"`
+		} `json:"data"`
+	}{}
+	if err := c.getJSON(ctx, "/v1/runtime/events/recent", &recentEvents); err != nil {
 		return RuntimeState{}, err
 	}
 
@@ -127,7 +314,7 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 		ActiveUniqueIPs    int    `json:"active_unique_ips"`
 		TotalOctets        uint64 `json:"total_octets"`
 	}, 0)
-	if err := c.getJSON(ctx, "/v1/users", &users); err != nil {
+	if err := c.getJSON(ctx, "/v1/stats/users", &users); err != nil {
 		return RuntimeState{}, err
 	}
 
@@ -141,11 +328,85 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 		})
 	}
 
+	dcs := make([]RuntimeDC, 0, len(dcStatus.DCS))
+	for _, dc := range dcStatus.DCS {
+		dcs = append(dcs, RuntimeDC{
+			DC:                 dc.DC,
+			AvailableEndpoints: dc.AvailableEndpoints,
+			AvailablePct:       dc.AvailablePct,
+			RequiredWriters:    dc.RequiredWriters,
+			AliveWriters:       dc.AliveWriters,
+			CoveragePct:        dc.CoveragePct,
+			RTTMs:              dc.RTTMs,
+			Load:               dc.Load,
+		})
+	}
+
+	upstreams := make([]RuntimeUpstream, 0, len(upstreamStatus.Upstreams))
+	for _, upstream := range upstreamStatus.Upstreams {
+		upstreams = append(upstreams, RuntimeUpstream{
+			UpstreamID:         upstream.UpstreamID,
+			RouteKind:          upstream.RouteKind,
+			Address:            upstream.Address,
+			Healthy:            upstream.Healthy,
+			Fails:              upstream.Fails,
+			EffectiveLatencyMs: upstream.EffectiveLatencyMs,
+		})
+	}
+
+	events := make([]RuntimeEvent, 0, len(recentEvents.Data.Events))
+	for _, event := range recentEvents.Data.Events {
+		events = append(events, RuntimeEvent{
+			Sequence:      event.Sequence,
+			TimestampUnix: event.TimestampUnix,
+			EventType:     event.EventType,
+			Context:       event.Context,
+		})
+	}
+
 	return RuntimeState{
-		Version:        health.Version,
+		Version:        systemInfo.Version,
 		ReadOnly:       posture.ReadOnly,
-		ConnectedUsers: summary.ConnectedUsers,
-		Clients:        clientUsage,
+		ConnectedUsers: connectionSummary.Data.Totals.CurrentConnections,
+		Gates: RuntimeGates{
+			AcceptingNewConnections: gates.AcceptingNewConnections,
+			MERuntimeReady:          gates.MERuntimeReady,
+			ME2DCFallbackEnabled:    gates.ME2DCFallbackEnabled,
+			UseMiddleProxy:          gates.UseMiddleProxy,
+			StartupStatus:           gates.StartupStatus,
+			StartupStage:            gates.StartupStage,
+			StartupProgressPct:      gates.StartupProgressPct,
+		},
+		Initialization: RuntimeInitialization{
+			Status:        initialization.Status,
+			Degraded:      initialization.Degraded,
+			CurrentStage:  initialization.CurrentStage,
+			ProgressPct:   initialization.ProgressPct,
+			TransportMode: initialization.TransportMode,
+		},
+		ConnectionTotals: RuntimeConnectionTotals{
+			CurrentConnections:       connectionSummary.Data.Totals.CurrentConnections,
+			CurrentConnectionsME:     connectionSummary.Data.Totals.CurrentConnectionsME,
+			CurrentConnectionsDirect: connectionSummary.Data.Totals.CurrentConnectionsDirect,
+			ActiveUsers:              connectionSummary.Data.Totals.ActiveUsers,
+		},
+		Summary: RuntimeSummary{
+			ConnectionsTotal:       summary.ConnectionsTotal,
+			ConnectionsBadTotal:    summary.ConnectionsBadTotal,
+			HandshakeTimeoutsTotal: summary.HandshakeTimeoutsTotal,
+			ConfiguredUsers:        summary.ConfiguredUsers,
+		},
+		DCs: dcs,
+		Upstreams: RuntimeUpstreamSummary{
+			ConfiguredTotal: upstreamStatus.Summary.ConfiguredTotal,
+			HealthyTotal:    upstreamStatus.Summary.HealthyTotal,
+			UnhealthyTotal:  upstreamStatus.Summary.UnhealthyTotal,
+			DirectTotal:     upstreamStatus.Summary.DirectTotal,
+			SOCKS5Total:     upstreamStatus.Summary.SOCKS5Total,
+			Rows:            upstreams,
+		},
+		RecentEvents: events,
+		Clients:      clientUsage,
 	}, nil
 }
 
@@ -238,7 +499,7 @@ func (c *Client) applyClient(ctx context.Context, method string, path string, cl
 			Classic []string `json:"classic"`
 		} `json:"links"`
 	}
-	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+	if err := decodeSuccessData(response.Body, &body); err != nil {
 		return ClientApplyResult{}, err
 	}
 
@@ -263,7 +524,7 @@ func (c *Client) getJSON(ctx context.Context, path string, dest any) error {
 		return fmt.Errorf("telemt request failed with status %d", response.StatusCode)
 	}
 
-	return json.NewDecoder(response.Body).Decode(dest)
+	return decodeSuccessData(response.Body, dest)
 }
 
 func (c *Client) newRequest(ctx context.Context, method string, path string, body any) (*http.Request, error) {
@@ -303,4 +564,21 @@ func preferredConnectionLink(tlsLinks []string, secureLinks []string, classicLin
 	}
 
 	return ""
+}
+
+func decodeSuccessData(body io.Reader, dest any) error {
+	payload, err := io.ReadAll(body)
+	if err != nil {
+		return err
+	}
+
+	var envelope struct {
+		OK   bool            `json:"ok"`
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(payload, &envelope); err == nil && len(envelope.Data) > 0 {
+		return json.Unmarshal(envelope.Data, dest)
+	}
+
+	return json.Unmarshal(payload, dest)
 }

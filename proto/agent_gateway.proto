@@ -58,6 +58,68 @@ message ClientUsageSnapshot {
   int32 active_tcp_conns = 4;
 }
 
+message RuntimeDCSnapshot {
+  int32 dc = 1;
+  int32 available_endpoints = 2;
+  double available_pct = 3;
+  int32 required_writers = 4;
+  int32 alive_writers = 5;
+  double coverage_pct = 6;
+  double rtt_ms = 7;
+  int32 load = 8;
+}
+
+message RuntimeUpstreamRowSnapshot {
+  int32 upstream_id = 1;
+  string route_kind = 2;
+  string address = 3;
+  bool healthy = 4;
+  int32 fails = 5;
+  double effective_latency_ms = 6;
+}
+
+message RuntimeUpstreamSnapshot {
+  int32 configured_total = 1;
+  int32 healthy_total = 2;
+  int32 unhealthy_total = 3;
+  int32 direct_total = 4;
+  int32 socks5_total = 5;
+  repeated RuntimeUpstreamRowSnapshot rows = 6;
+}
+
+message RuntimeEventSnapshot {
+  uint64 sequence = 1;
+  int64 timestamp_unix = 2;
+  string event_type = 3;
+  string context = 4;
+}
+
+message RuntimeSnapshot {
+  bool accepting_new_connections = 1;
+  bool me_runtime_ready = 2;
+  bool me2dc_fallback_enabled = 3;
+  bool use_middle_proxy = 4;
+  string startup_status = 5;
+  string startup_stage = 6;
+  double startup_progress_pct = 7;
+  string initialization_status = 8;
+  bool degraded = 9;
+  string initialization_stage = 10;
+  double initialization_progress_pct = 11;
+  string transport_mode = 12;
+  int32 current_connections = 13;
+  int32 current_connections_me = 14;
+  int32 current_connections_direct = 15;
+  int32 active_users = 16;
+  uint64 connections_total = 17;
+  uint64 connections_bad_total = 18;
+  uint64 handshake_timeouts_total = 19;
+  int32 configured_users = 20;
+  repeated RuntimeDCSnapshot dcs = 21;
+  RuntimeUpstreamSnapshot upstreams = 22;
+  repeated RuntimeEventSnapshot recent_events = 23;
+}
+
 message Snapshot {
   string agent_id = 1;
   string node_name = 2;
@@ -68,6 +130,7 @@ message Snapshot {
   repeated InstanceSnapshot instances = 8;
   map<string, uint64> metrics = 9;
   repeated ClientUsageSnapshot clients = 10;
+  RuntimeSnapshot runtime = 11;
 }
 
 message JobResult {

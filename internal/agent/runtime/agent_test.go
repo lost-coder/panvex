@@ -16,6 +16,71 @@ func TestAgentBuildSnapshotUsesTelemtRuntimeState(t *testing.T) {
 			Version:        "2026.03",
 			ReadOnly:       true,
 			ConnectedUsers: 42,
+			Gates: telemt.RuntimeGates{
+				AcceptingNewConnections: true,
+				MERuntimeReady:          true,
+				ME2DCFallbackEnabled:    true,
+				UseMiddleProxy:          true,
+				StartupStatus:           "ready",
+				StartupStage:            "serving",
+				StartupProgressPct:      100,
+			},
+			Initialization: telemt.RuntimeInitialization{
+				Status:        "ready",
+				Degraded:      false,
+				CurrentStage:  "serving",
+				ProgressPct:   100,
+				TransportMode: "middle_proxy",
+			},
+			ConnectionTotals: telemt.RuntimeConnectionTotals{
+				CurrentConnections:       42,
+				CurrentConnectionsME:     39,
+				CurrentConnectionsDirect: 3,
+				ActiveUsers:              7,
+			},
+			Summary: telemt.RuntimeSummary{
+				ConnectionsTotal:       512,
+				ConnectionsBadTotal:    9,
+				HandshakeTimeoutsTotal: 4,
+				ConfiguredUsers:        12,
+			},
+			DCs: []telemt.RuntimeDC{
+				{
+					DC:                 2,
+					AvailableEndpoints: 3,
+					AvailablePct:       100,
+					RequiredWriters:    4,
+					AliveWriters:       4,
+					CoveragePct:        100,
+					RTTMs:              21.5,
+					Load:               18,
+				},
+			},
+			Upstreams: telemt.RuntimeUpstreamSummary{
+				ConfiguredTotal: 2,
+				HealthyTotal:    1,
+				UnhealthyTotal:  1,
+				DirectTotal:     1,
+				SOCKS5Total:     1,
+				Rows: []telemt.RuntimeUpstream{
+					{
+						UpstreamID:         1,
+						RouteKind:          "direct",
+						Address:            "direct",
+						Healthy:            true,
+						Fails:              0,
+						EffectiveLatencyMs: 11.2,
+					},
+				},
+			},
+			RecentEvents: []telemt.RuntimeEvent{
+				{
+					Sequence:      1,
+					TimestampUnix: 1_763_226_400,
+					EventType:     "upstream_recovered",
+					Context:       "dc=2 upstream=1",
+				},
+			},
 		},
 	}
 	agent := New(Config{
@@ -36,6 +101,27 @@ func TestAgentBuildSnapshotUsesTelemtRuntimeState(t *testing.T) {
 
 	if len(snapshot.Instances) != 1 {
 		t.Fatalf("len(snapshot.Instances) = %d, want %d", len(snapshot.Instances), 1)
+	}
+	if !snapshot.Runtime.AcceptingNewConnections {
+		t.Fatal("snapshot.Runtime.AcceptingNewConnections = false, want true")
+	}
+	if snapshot.Runtime.TransportMode != "middle_proxy" {
+		t.Fatalf("snapshot.Runtime.TransportMode = %q, want %q", snapshot.Runtime.TransportMode, "middle_proxy")
+	}
+	if snapshot.Runtime.CurrentConnectionsME != 39 {
+		t.Fatalf("snapshot.Runtime.CurrentConnectionsME = %d, want %d", snapshot.Runtime.CurrentConnectionsME, 39)
+	}
+	if snapshot.Runtime.ConnectionsTotal != 512 {
+		t.Fatalf("snapshot.Runtime.ConnectionsTotal = %d, want %d", snapshot.Runtime.ConnectionsTotal, 512)
+	}
+	if len(snapshot.Runtime.DCs) != 1 {
+		t.Fatalf("len(snapshot.Runtime.DCs) = %d, want %d", len(snapshot.Runtime.DCs), 1)
+	}
+	if snapshot.Runtime.Upstreams.HealthyTotal != 1 {
+		t.Fatalf("snapshot.Runtime.Upstreams.HealthyTotal = %d, want %d", snapshot.Runtime.Upstreams.HealthyTotal, 1)
+	}
+	if len(snapshot.Runtime.RecentEvents) != 1 {
+		t.Fatalf("len(snapshot.Runtime.RecentEvents) = %d, want %d", len(snapshot.Runtime.RecentEvents), 1)
 	}
 }
 

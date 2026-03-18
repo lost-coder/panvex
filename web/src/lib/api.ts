@@ -14,6 +14,62 @@ export type FleetResponse = {
   offline_agents: number;
   total_instances: number;
   metric_snapshots: number;
+  live_connections: number;
+  accepting_new_connections_agents: number;
+  middle_proxy_agents: number;
+  dc_issue_agents: number;
+};
+
+export type RuntimeEvent = {
+  sequence: number;
+  timestamp_unix: number;
+  event_type: string;
+  context: string;
+};
+
+export type AgentRuntime = {
+  accepting_new_connections: boolean;
+  me_runtime_ready: boolean;
+  me2dc_fallback_enabled: boolean;
+  use_middle_proxy: boolean;
+  startup_status: string;
+  startup_stage: string;
+  startup_progress_pct: number;
+  initialization_status: string;
+  degraded: boolean;
+  initialization_stage: string;
+  initialization_progress_pct: number;
+  transport_mode: string;
+  current_connections: number;
+  current_connections_me: number;
+  current_connections_direct: number;
+  active_users: number;
+  connections_total: number;
+  connections_bad_total: number;
+  handshake_timeouts_total: number;
+  configured_users: number;
+  dc_coverage_pct: number;
+  healthy_upstreams: number;
+  total_upstreams: number;
+  dcs: Array<{
+    dc: number;
+    available_endpoints: number;
+    available_pct: number;
+    required_writers: number;
+    alive_writers: number;
+    coverage_pct: number;
+    rtt_ms: number;
+    load: number;
+  }>;
+  upstreams: Array<{
+    upstream_id: number;
+    route_kind: string;
+    address: string;
+    healthy: boolean;
+    fails: number;
+    effective_latency_ms: number;
+  }>;
+  recent_events: RuntimeEvent[];
 };
 
 export type ControlRoomResponse = {
@@ -30,6 +86,7 @@ export type ControlRoomResponse = {
     failed: number;
   };
   recent_activity: AuditEvent[];
+  recent_runtime_events: RuntimeEvent[];
 };
 
 export type Agent = {
@@ -38,6 +95,8 @@ export type Agent = {
   fleet_group_id: string;
   version: string;
   read_only: boolean;
+  presence_state: string;
+  runtime: AgentRuntime;
   last_seen_at: string;
 };
 

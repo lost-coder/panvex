@@ -115,6 +115,8 @@ func (s *Server) Connect(stream gatewayrpc.Gateway_ConnectServer) error {
 				Instances:    instances,
 				Clients:      clients,
 				HasClients:   true,
+				Runtime:      message.Snapshot.Runtime,
+				HasRuntime:   true,
 				Metrics:      message.Snapshot.Metrics,
 				ObservedAt:   time.Unix(message.Snapshot.ObservedAtUnix, 0).UTC(),
 			})

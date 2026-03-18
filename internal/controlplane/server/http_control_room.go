@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/panvex/panvex/internal/controlplane/jobs"
@@ -9,10 +10,11 @@ import (
 )
 
 type controlRoomResponse struct {
-	Onboarding     controlRoomOnboarding `json:"onboarding"`
-	Fleet          fleetResponse         `json:"fleet"`
-	Jobs           controlRoomJobs       `json:"jobs"`
-	RecentActivity []AuditEvent          `json:"recent_activity"`
+	Onboarding          controlRoomOnboarding `json:"onboarding"`
+	Fleet               fleetResponse         `json:"fleet"`
+	Jobs                controlRoomJobs       `json:"jobs"`
+	RecentActivity      []AuditEvent          `json:"recent_activity"`
+	RecentRuntimeEvents []RuntimeEvent        `json:"recent_runtime_events"`
 }
 
 type controlRoomOnboarding struct {
@@ -40,10 +42,11 @@ func (s *Server) handleControlRoom() http.HandlerFunc {
 
 		s.mu.RLock()
 		response := controlRoomResponse{
-			Onboarding:     controlRoomOnboardingFromState(s.agents, s.instances),
-			Fleet:          controlRoomFleetFromState(s.agents, s.instances, s.metrics, s.presence, now),
-			Jobs:           controlRoomJobsFromList(jobList),
-			RecentActivity: controlRoomRecentActivity(s.auditTrail, 5),
+			Onboarding:          controlRoomOnboardingFromState(s.agents, s.instances),
+			Fleet:               controlRoomFleetFromState(s.agents, s.instances, s.metrics, s.presence, now),
+			Jobs:                controlRoomJobsFromList(jobList),
+			RecentActivity:      controlRoomRecentActivity(s.auditTrail, 5),
+			RecentRuntimeEvents: controlRoomRecentRuntimeEvents(s.agents, 5),
 		}
 		s.mu.RUnlock()
 
@@ -87,6 +90,18 @@ func controlRoomFleetFromState(agents map[string]Agent, instances map[string]Ins
 	}
 
 	for agentID := range agents {
+		agent := agents[agentID]
+		response.LiveConnections += agent.Runtime.CurrentConnections
+		if agent.Runtime.AcceptingNewConnections {
+			response.AcceptingNewConnectionsAgents++
+		}
+		if agent.Runtime.UseMiddleProxy {
+			response.MiddleProxyAgents++
+		}
+		if agent.Runtime.DCCoveragePct > 0 && agent.Runtime.DCCoveragePct < 100 {
+			response.DCIssueAgents++
+		}
+
 		switch tracker.Evaluate(agentID, now) {
 		case presence.StateOnline:
 			response.OnlineAgents++
@@ -98,6 +113,33 @@ func controlRoomFleetFromState(agents map[string]Agent, instances map[string]Ins
 	}
 
 	return response
+}
+
+func controlRoomRecentRuntimeEvents(agents map[string]Agent, limit int) []RuntimeEvent {
+	if limit <= 0 {
+		return []RuntimeEvent{}
+	}
+
+	result := make([]RuntimeEvent, 0)
+	for _, agent := range agents {
+		result = append(result, agent.Runtime.RecentEvents...)
+	}
+	if len(result) == 0 {
+		return []RuntimeEvent{}
+	}
+
+	sort.Slice(result, func(left int, right int) bool {
+		if result[left].TimestampUnix == result[right].TimestampUnix {
+			return result[left].Sequence > result[right].Sequence
+		}
+		return result[left].TimestampUnix > result[right].TimestampUnix
+	})
+
+	if len(result) > limit {
+		result = result[:limit]
+	}
+
+	return result
 }
 
 func controlRoomJobsFromList(jobList []jobs.Job) controlRoomJobs {

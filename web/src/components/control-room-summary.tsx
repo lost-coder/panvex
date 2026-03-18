@@ -5,33 +5,33 @@ type ControlRoomSummaryProps = {
 };
 
 export function ControlRoomSummary(props: ControlRoomSummaryProps) {
-  const needsAttention = props.summary.fleet.degraded_agents + props.summary.fleet.offline_agents;
+  const healthyNodes = Math.max(props.summary.fleet.online_agents - props.summary.fleet.degraded_agents, 0);
 
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       <SummaryCard
-        eyebrow="Servers online"
-        value={String(props.summary.fleet.online_agents)}
-        description={props.summary.fleet.total_agents === 1 ? "The connected server is reporting in." : "Servers with a healthy heartbeat right now."}
+        eyebrow="Healthy nodes"
+        value={String(healthyNodes)}
+        description={healthyNodes === 1 ? "One node looks healthy right now." : "Nodes that are online without degraded runtime signals."}
         tone="emerald"
       />
       <SummaryCard
-        eyebrow="Needs attention"
-        value={String(needsAttention)}
-        description={needsAttention === 0 ? "Nothing looks stale at the moment." : "Servers that are degraded or offline."}
+        eyebrow="Degraded nodes"
+        value={String(props.summary.fleet.degraded_agents)}
+        description={props.summary.fleet.degraded_agents === 0 ? "No degraded runtime signals are active." : "Nodes that are online but need operator attention."}
         tone="amber"
       />
       <SummaryCard
-        eyebrow="Telemt runtimes"
-        value={String(props.summary.fleet.total_instances)}
-        description="Connected Telemt instances discovered through the agent layer."
-        tone="sky"
+        eyebrow="Offline nodes"
+        value={String(props.summary.fleet.offline_agents)}
+        description={props.summary.fleet.offline_agents === 0 ? "Nothing is currently missing from the fleet." : "Nodes that stopped reporting to the control plane."}
+        tone="rose"
       />
       <SummaryCard
-        eyebrow="Failed actions"
-        value={String(props.summary.jobs.failed)}
-        description={props.summary.jobs.failed === 0 ? "No recent failed actions." : "Recent jobs that need a second look."}
-        tone="rose"
+        eyebrow="Live connections"
+        value={String(props.summary.fleet.live_connections)}
+        description="Current MTProto sessions observed across all connected nodes."
+        tone="sky"
       />
     </div>
   );

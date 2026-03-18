@@ -83,6 +83,42 @@ func (a *Agent) BuildSnapshot(ctx context.Context, observedAt time.Time) (*gatew
 		})
 	}
 
+	dcs := make([]gatewayrpc.RuntimeDCSnapshot, 0, len(state.DCs))
+	for _, dc := range state.DCs {
+		dcs = append(dcs, gatewayrpc.RuntimeDCSnapshot{
+			DC:                 dc.DC,
+			AvailableEndpoints: dc.AvailableEndpoints,
+			AvailablePct:       dc.AvailablePct,
+			RequiredWriters:    dc.RequiredWriters,
+			AliveWriters:       dc.AliveWriters,
+			CoveragePct:        dc.CoveragePct,
+			RTTMs:              dc.RTTMs,
+			Load:               dc.Load,
+		})
+	}
+
+	upstreamRows := make([]gatewayrpc.RuntimeUpstreamRowSnapshot, 0, len(state.Upstreams.Rows))
+	for _, upstream := range state.Upstreams.Rows {
+		upstreamRows = append(upstreamRows, gatewayrpc.RuntimeUpstreamRowSnapshot{
+			UpstreamID:         upstream.UpstreamID,
+			RouteKind:          upstream.RouteKind,
+			Address:            upstream.Address,
+			Healthy:            upstream.Healthy,
+			Fails:              upstream.Fails,
+			EffectiveLatencyMs: upstream.EffectiveLatencyMs,
+		})
+	}
+
+	recentEvents := make([]gatewayrpc.RuntimeEventSnapshot, 0, len(state.RecentEvents))
+	for _, event := range state.RecentEvents {
+		recentEvents = append(recentEvents, gatewayrpc.RuntimeEventSnapshot{
+			Sequence:      event.Sequence,
+			TimestampUnix: event.TimestampUnix,
+			EventType:     event.EventType,
+			Context:       event.Context,
+		})
+	}
+
 	return &gatewayrpc.Snapshot{
 		AgentID:        a.config.AgentID,
 		NodeName:       a.config.NodeName,
@@ -104,6 +140,38 @@ func (a *Agent) BuildSnapshot(ctx context.Context, observedAt time.Time) (*gatew
 			"connected_users": uint64(state.ConnectedUsers),
 		},
 		Clients: clients,
+		Runtime: gatewayrpc.RuntimeSnapshot{
+			AcceptingNewConnections:   state.Gates.AcceptingNewConnections,
+			MERuntimeReady:            state.Gates.MERuntimeReady,
+			ME2DCFallbackEnabled:      state.Gates.ME2DCFallbackEnabled,
+			UseMiddleProxy:            state.Gates.UseMiddleProxy,
+			StartupStatus:             state.Gates.StartupStatus,
+			StartupStage:              state.Gates.StartupStage,
+			StartupProgressPct:        state.Gates.StartupProgressPct,
+			InitializationStatus:      state.Initialization.Status,
+			Degraded:                  state.Initialization.Degraded,
+			InitializationStage:       state.Initialization.CurrentStage,
+			InitializationProgressPct: state.Initialization.ProgressPct,
+			TransportMode:             state.Initialization.TransportMode,
+			CurrentConnections:        state.ConnectionTotals.CurrentConnections,
+			CurrentConnectionsME:      state.ConnectionTotals.CurrentConnectionsME,
+			CurrentConnectionsDirect:  state.ConnectionTotals.CurrentConnectionsDirect,
+			ActiveUsers:               state.ConnectionTotals.ActiveUsers,
+			ConnectionsTotal:          state.Summary.ConnectionsTotal,
+			ConnectionsBadTotal:       state.Summary.ConnectionsBadTotal,
+			HandshakeTimeoutsTotal:    state.Summary.HandshakeTimeoutsTotal,
+			ConfiguredUsers:           state.Summary.ConfiguredUsers,
+			DCs:                       dcs,
+			Upstreams: gatewayrpc.RuntimeUpstreamSnapshot{
+				ConfiguredTotal: state.Upstreams.ConfiguredTotal,
+				HealthyTotal:    state.Upstreams.HealthyTotal,
+				UnhealthyTotal:  state.Upstreams.UnhealthyTotal,
+				DirectTotal:     state.Upstreams.DirectTotal,
+				SOCKS5Total:     state.Upstreams.SOCKS5Total,
+				Rows:            upstreamRows,
+			},
+			RecentEvents: recentEvents,
+		},
 	}, nil
 }
 

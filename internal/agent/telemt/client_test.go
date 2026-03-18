@@ -41,19 +41,105 @@ func TestClientFetchRuntimeStateUsesLoopbackAPI(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1/health":
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"version": "2026.03",
+			writeSuccessEnvelope(w, map[string]any{
+				"status": "ok",
 			})
 		case "/v1/security/posture":
-			_ = json.NewEncoder(w).Encode(map[string]any{
+			writeSuccessEnvelope(w, map[string]any{
 				"read_only": true,
 			})
-		case "/v1/stats/summary":
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"active_connections": 42,
+		case "/v1/system/info":
+			writeSuccessEnvelope(w, map[string]any{
+				"version": "2026.03",
 			})
-		case "/v1/users":
-			_ = json.NewEncoder(w).Encode([]map[string]any{
+		case "/v1/runtime/gates":
+			writeSuccessEnvelope(w, map[string]any{
+				"accepting_new_connections": true,
+				"me_runtime_ready":          true,
+				"me2dc_fallback_enabled":   true,
+				"use_middle_proxy":         true,
+				"startup_status":           "ready",
+				"startup_stage":            "serving",
+				"startup_progress_pct":     100.0,
+			})
+		case "/v1/runtime/initialization":
+			writeSuccessEnvelope(w, map[string]any{
+				"status":         "ready",
+				"degraded":       false,
+				"current_stage":  "serving",
+				"progress_pct":   100.0,
+				"transport_mode": "middle_proxy",
+			})
+		case "/v1/runtime/connections/summary":
+			writeSuccessEnvelope(w, map[string]any{
+				"enabled": true,
+				"data": map[string]any{
+					"totals": map[string]any{
+						"current_connections":        42,
+						"current_connections_me":     39,
+						"current_connections_direct": 3,
+						"active_users":               7,
+					},
+				},
+			})
+		case "/v1/stats/summary":
+			writeSuccessEnvelope(w, map[string]any{
+				"connections_total":         512,
+				"connections_bad_total":     9,
+				"handshake_timeouts_total":  4,
+				"configured_users":          12,
+			})
+		case "/v1/stats/dcs":
+			writeSuccessEnvelope(w, map[string]any{
+				"dcs": []map[string]any{
+					{
+						"dc":                  2,
+						"available_endpoints": 3,
+						"available_pct":       100.0,
+						"required_writers":    4,
+						"alive_writers":       4,
+						"coverage_pct":        100.0,
+						"rtt_ms":              21.5,
+						"load":                18,
+					},
+				},
+			})
+		case "/v1/stats/upstreams":
+			writeSuccessEnvelope(w, map[string]any{
+				"summary": map[string]any{
+					"configured_total": 2,
+					"healthy_total":    1,
+					"unhealthy_total":  1,
+					"direct_total":     1,
+					"socks5_total":     1,
+				},
+				"upstreams": []map[string]any{
+					{
+						"upstream_id":           1,
+						"route_kind":            "direct",
+						"address":               "direct",
+						"healthy":               true,
+						"fails":                 0,
+						"effective_latency_ms":  11.2,
+					},
+				},
+			})
+		case "/v1/runtime/events/recent":
+			writeSuccessEnvelope(w, map[string]any{
+				"enabled": true,
+				"data": map[string]any{
+					"events": []map[string]any{
+						{
+							"seq":           1,
+							"ts_epoch_secs": 1_763_226_400,
+							"event_type":    "upstream_recovered",
+							"context":       "dc=2 upstream=1",
+						},
+					},
+				},
+			})
+		case "/v1/stats/users":
+			writeSuccessEnvelope(w, []map[string]any{
 				{
 					"username":            "alice",
 					"current_connections": 3,
@@ -86,6 +172,33 @@ func TestClientFetchRuntimeStateUsesLoopbackAPI(t *testing.T) {
 
 	if state.ConnectedUsers != 42 {
 		t.Fatalf("state.ConnectedUsers = %d, want %d", state.ConnectedUsers, 42)
+	}
+	if !state.Gates.AcceptingNewConnections {
+		t.Fatal("state.Gates.AcceptingNewConnections = false, want true")
+	}
+	if state.Initialization.TransportMode != "middle_proxy" {
+		t.Fatalf("state.Initialization.TransportMode = %q, want %q", state.Initialization.TransportMode, "middle_proxy")
+	}
+	if state.ConnectionTotals.CurrentConnectionsME != 39 {
+		t.Fatalf("state.ConnectionTotals.CurrentConnectionsME = %d, want %d", state.ConnectionTotals.CurrentConnectionsME, 39)
+	}
+	if state.Summary.ConnectionsTotal != 512 {
+		t.Fatalf("state.Summary.ConnectionsTotal = %d, want %d", state.Summary.ConnectionsTotal, 512)
+	}
+	if len(state.DCs) != 1 {
+		t.Fatalf("len(state.DCs) = %d, want %d", len(state.DCs), 1)
+	}
+	if state.DCs[0].CoveragePct != 100 {
+		t.Fatalf("state.DCs[0].CoveragePct = %v, want %v", state.DCs[0].CoveragePct, 100.0)
+	}
+	if state.Upstreams.HealthyTotal != 1 {
+		t.Fatalf("state.Upstreams.HealthyTotal = %d, want %d", state.Upstreams.HealthyTotal, 1)
+	}
+	if len(state.RecentEvents) != 1 {
+		t.Fatalf("len(state.RecentEvents) = %d, want %d", len(state.RecentEvents), 1)
+	}
+	if state.RecentEvents[0].EventType != "upstream_recovered" {
+		t.Fatalf("state.RecentEvents[0].EventType = %q, want %q", state.RecentEvents[0].EventType, "upstream_recovered")
 	}
 	if len(state.Clients) != 1 {
 		t.Fatalf("len(state.Clients) = %d, want %d", len(state.Clients), 1)
@@ -264,4 +377,12 @@ func TestClientDeleteClientCallsTelemtUsersEndpoint(t *testing.T) {
 	if requestPath != "/v1/users/alice" {
 		t.Fatalf("request path = %q, want %q", requestPath, "/v1/users/alice")
 	}
+}
+
+func writeSuccessEnvelope(w http.ResponseWriter, data any) {
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":       true,
+		"data":     data,
+		"revision": "test-revision",
+	})
 }
