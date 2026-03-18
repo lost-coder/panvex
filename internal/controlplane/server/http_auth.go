@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/panvex/panvex/internal/controlplane/auth"
 )
@@ -66,7 +67,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 			Path:     "/",
 			HttpOnly: true,
 			SameSite: http.SameSiteStrictMode,
-			Secure:   false,
+			Secure:   s.sessionCookieSecure(r),
 		})
 		s.appendAudit(session.UserID, "auth.login", session.ID, map[string]any{
 			"username": request.Username,
@@ -98,7 +99,7 @@ func (s *Server) handleLogout() http.HandlerFunc {
 			HttpOnly: true,
 			MaxAge:   -1,
 			SameSite: http.SameSiteStrictMode,
-			Secure:   false,
+			Secure:   s.sessionCookieSecure(r),
 		})
 		s.appendAudit(session.UserID, "auth.logout", session.ID, nil)
 
@@ -233,4 +234,31 @@ func (s *Server) requireSession(r *http.Request) (auth.Session, auth.User, error
 
 func buildTotpAuthURL(username string, secret string) string {
 	return "otpauth://totp/Panvex:" + url.PathEscape(username) + "?secret=" + url.QueryEscape(secret) + "&issuer=Panvex"
+}
+
+func (s *Server) sessionCookieSecure(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+
+	forwardedProto := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0])
+	if strings.EqualFold(forwardedProto, "https") {
+		return true
+	}
+
+	if s.panelRuntime.TLSMode == panelTLSModeDirect {
+		return true
+	}
+
+	settings := s.panelSettingsSnapshot()
+	if settings.HTTPPublicURL == "" {
+		return false
+	}
+
+	parsedURL, err := url.Parse(settings.HTTPPublicURL)
+	if err != nil {
+		return false
+	}
+
+	return strings.EqualFold(parsedURL.Scheme, "https")
 }

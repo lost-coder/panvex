@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"path/filepath"
 	"testing"
@@ -344,7 +345,7 @@ func TestHTTPClientsAggregateUsageAcrossAgentSnapshots(t *testing.T) {
 		t.Fatalf("json.Unmarshal(create) error = %v", err)
 	}
 
-	server.applyAgentSnapshot(agentSnapshot{
+	if err := server.applyAgentSnapshot(agentSnapshot{
 		AgentID:    "agent-000001",
 		NodeName:   "node-a",
 		Version:    "dev",
@@ -359,8 +360,10 @@ func TestHTTPClientsAggregateUsageAcrossAgentSnapshots(t *testing.T) {
 			},
 		},
 		ObservedAt: now.Add(time.Minute),
-	})
-	server.applyAgentSnapshot(agentSnapshot{
+	}); err != nil {
+		t.Fatalf("applyAgentSnapshot(agent-000001) error = %v", err)
+	}
+	if err := server.applyAgentSnapshot(agentSnapshot{
 		AgentID:    "agent-000002",
 		NodeName:   "node-b",
 		Version:    "dev",
@@ -375,7 +378,9 @@ func TestHTTPClientsAggregateUsageAcrossAgentSnapshots(t *testing.T) {
 			},
 		},
 		ObservedAt: now.Add(2 * time.Minute),
-	})
+	}); err != nil {
+		t.Fatalf("applyAgentSnapshot(agent-000002) error = %v", err)
+	}
 
 	detailResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/clients/"+created.ID, nil, cookies)
 	if detailResponse.Code != http.StatusOK {
@@ -398,6 +403,50 @@ func TestHTTPClientsAggregateUsageAcrossAgentSnapshots(t *testing.T) {
 	}
 	if detail.ActiveTCPConns != 7 {
 		t.Fatalf("detail.active_tcp_conns = %d, want %d", detail.ActiveTCPConns, 7)
+	}
+}
+
+func TestHTTPClientsCreateReturnsInternalErrorWhenPersistenceFails(t *testing.T) {
+	now := time.Date(2026, time.March, 18, 13, 30, 0, 0, time.UTC)
+	sqliteStore, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer sqliteStore.Close()
+
+	store := &failingStore{Store: sqliteStore}
+	server := New(Options{
+		Now:   func() time.Time { return now },
+		Store: store,
+	})
+	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "admin",
+		Password: "admin-password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	seedClientTargetAgent(t, store, server, storage.FleetGroupRecord{
+		ID:        "default",
+		Name:      "Default",
+		CreatedAt: now.Add(-2 * time.Minute),
+	}, storage.AgentRecord{
+		ID:           "agent-000001",
+		NodeName:     "node-a",
+		FleetGroupID: "default",
+		Version:      "dev",
+		LastSeenAt:   now.Add(-time.Minute),
+	})
+
+	store.putClientErr = errors.New("put client failed")
+
+	createResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/clients", map[string]any{
+		"name":            "alice",
+		"fleet_group_ids": []string{"default"},
+	}, loginAdminForClients(t, server.Handler()))
+	if createResponse.Code != http.StatusInternalServerError {
+		t.Fatalf("POST /api/clients status = %d, want %d", createResponse.Code, http.StatusInternalServerError)
 	}
 }
 

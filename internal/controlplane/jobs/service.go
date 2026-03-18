@@ -262,16 +262,19 @@ func (s *Service) updateTarget(agentID string, jobID string, observedAt time.Tim
 	job.Status = deriveJobStatus(job.Targets)
 	s.mu.Unlock()
 
+	var persistErr error
 	if s.jobStore != nil {
-		if err := s.persistJob(context.Background(), job); err != nil {
-			panic(err)
-		}
+		persistErr = s.persistJob(context.Background(), job)
 	}
 
 	s.mu.Lock()
 	s.jobs[job.ID] = job
 	s.keys[job.IdempotencyKey] = job.ID
 	s.mu.Unlock()
+
+	if persistErr != nil {
+		return
+	}
 }
 
 func (s *Service) restore() {

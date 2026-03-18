@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -64,7 +65,7 @@ func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T
 		t.Fatalf("enrollAgent() error = %v", err)
 	}
 
-	server.applyAgentSnapshot(agentSnapshot{
+	if err := server.applyAgentSnapshot(agentSnapshot{
 		AgentID:       identity.AgentID,
 		NodeName:      "node-a",
 		FleetGroupID:  "ams-1",
@@ -86,7 +87,9 @@ func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T
 		Runtime: gatewayRuntimeSnapshotForTest(),
 		HasRuntime: true,
 		ObservedAt: now.Add(15 * time.Second),
-	})
+	}); err != nil {
+		t.Fatalf("applyAgentSnapshot() error = %v", err)
+	}
 
 	if state := server.presence.Evaluate(identity.AgentID, now.Add(20*time.Second)); state == "" {
 		t.Fatal("presence state = empty, want tracked presence")
@@ -139,7 +142,7 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 		t.Fatalf("enrollAgent() error = %v", err)
 	}
 
-	first.applyAgentSnapshot(agentSnapshot{
+	if err := first.applyAgentSnapshot(agentSnapshot{
 		AgentID:       identity.AgentID,
 		NodeName:      "node-a",
 		FleetGroupID:  "ams-1",
@@ -161,7 +164,9 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 		Runtime: gatewayRuntimeSnapshotForTest(),
 		HasRuntime: true,
 		ObservedAt: now.Add(15 * time.Second),
-	})
+	}); err != nil {
+		t.Fatalf("applyAgentSnapshot() error = %v", err)
+	}
 
 	restored := New(Options{
 		Now: func() time.Time { return now.Add(time.Minute) },
@@ -190,6 +195,51 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 	}
 	if len(restoredMetrics) != 1 {
 		t.Fatalf("len(ListMetricSnapshots()) = %d, want %d", len(restoredMetrics), 1)
+	}
+}
+
+func TestServerApplyAgentSnapshotReturnsErrorWhenPersistenceFails(t *testing.T) {
+	now := time.Date(2026, time.March, 18, 13, 20, 0, 0, time.UTC)
+	sqliteStore, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer sqliteStore.Close()
+
+	store := &failingStore{Store: sqliteStore}
+	server := New(Options{
+		Now:   func() time.Time { return now },
+		Store: store,
+	})
+	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
+		FleetGroupID: "ams-1",
+		TTL:          time.Minute,
+	}, now)
+	if err != nil {
+		t.Fatalf("issueEnrollmentToken() error = %v", err)
+	}
+
+	identity, err := server.enrollAgent(agentEnrollmentRequest{
+		Token:    token.Value,
+		NodeName: "node-a",
+		Version:  "1.0.0",
+	}, now.Add(10*time.Second))
+	if err != nil {
+		t.Fatalf("enrollAgent() error = %v", err)
+	}
+
+	store.putAgentErr = errors.New("put agent failed")
+
+	if err := server.applyAgentSnapshot(agentSnapshot{
+		AgentID:      identity.AgentID,
+		NodeName:     "node-a",
+		FleetGroupID: "ams-1",
+		Version:      "1.0.0",
+		Runtime:      gatewayRuntimeSnapshotForTest(),
+		HasRuntime:   true,
+		ObservedAt:   now.Add(20 * time.Second),
+	}); err == nil {
+		t.Fatal("applyAgentSnapshot() error = nil, want persistence failure")
 	}
 }
 
@@ -274,21 +324,15 @@ func TestServerApplyAgentSnapshotKeepsEnrolledScopeWhenSnapshotDiffers(t *testin
 		t.Fatalf("enrollAgent() error = %v", err)
 	}
 
-	func() {
-		defer func() {
-			if recovered := recover(); recovered != nil {
-				t.Fatalf("applyAgentSnapshot() panic = %v", recovered)
-			}
-		}()
-
-		server.applyAgentSnapshot(agentSnapshot{
-			AgentID:       identity.AgentID,
-			NodeName:      "node-a",
-			FleetGroupID:  "ams-1",
-			Version:       "1.0.0",
-			ObservedAt:    now.Add(20 * time.Second),
-		})
-	}()
+	if err := server.applyAgentSnapshot(agentSnapshot{
+		AgentID:      identity.AgentID,
+		NodeName:     "node-a",
+		FleetGroupID: "ams-1",
+		Version:      "1.0.0",
+		ObservedAt:   now.Add(20 * time.Second),
+	}); err != nil {
+		t.Fatalf("applyAgentSnapshot() error = %v", err)
+	}
 
 	record, err := store.ListAgents(context.Background())
 	if err != nil {

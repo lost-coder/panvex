@@ -74,14 +74,16 @@ func (s *Server) Connect(stream gatewayrpc.Gateway_ConnectServer) error {
 		}
 
 		if message.Heartbeat != nil {
-			s.applyAgentSnapshot(agentSnapshot{
+			if err := s.applyAgentSnapshot(agentSnapshot{
 				AgentID:      agentID,
 				NodeName:     message.Heartbeat.NodeName,
 				FleetGroupID: message.Heartbeat.FleetGroupID,
 				Version:      message.Heartbeat.Version,
 				ReadOnly:     message.Heartbeat.ReadOnly,
 				ObservedAt:   time.Unix(message.Heartbeat.ObservedAtUnix, 0).UTC(),
-			})
+			}); err != nil {
+				return status.Error(codes.Internal, err.Error())
+			}
 		}
 
 		if message.Snapshot != nil {
@@ -106,7 +108,7 @@ func (s *Server) Connect(stream gatewayrpc.Gateway_ConnectServer) error {
 					ObservedAt:       time.Unix(message.Snapshot.ObservedAtUnix, 0).UTC(),
 				})
 			}
-			s.applyAgentSnapshot(agentSnapshot{
+			if err := s.applyAgentSnapshot(agentSnapshot{
 				AgentID:      agentID,
 				NodeName:     message.Snapshot.NodeName,
 				FleetGroupID: message.Snapshot.FleetGroupID,
@@ -119,7 +121,9 @@ func (s *Server) Connect(stream gatewayrpc.Gateway_ConnectServer) error {
 				HasRuntime:   true,
 				Metrics:      message.Snapshot.Metrics,
 				ObservedAt:   time.Unix(message.Snapshot.ObservedAtUnix, 0).UTC(),
-			})
+			}); err != nil {
+				return status.Error(codes.Internal, err.Error())
+			}
 		}
 
 		if message.JobResult != nil {
