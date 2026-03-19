@@ -349,6 +349,52 @@ func TestClientUpdateClientUsesPreviousNameInPath(t *testing.T) {
 	}
 }
 
+func TestClientCreateClientOmitsEmptyExpiration(t *testing.T) {
+	var requestBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/users" {
+			http.NotFound(w, r)
+			return
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("ReadAll() error = %v", err)
+		}
+		if err := json.Unmarshal(body, &requestBody); err != nil {
+			t.Fatalf("json.Unmarshal(request) error = %v", err)
+		}
+
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"links": map[string]any{
+				"tls": []string{"tg://proxy?server=node-a&secret=tls"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Config{
+		BaseURL:       server.URL,
+		Authorization: "secret",
+	}, server.Client())
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	if _, err := client.CreateClient(context.Background(), ManagedClient{
+		Name:      "alice",
+		Secret:    "secret-1",
+		UserADTag: "0123456789abcdef0123456789abcdef",
+		Enabled:   true,
+	}); err != nil {
+		t.Fatalf("CreateClient() error = %v", err)
+	}
+
+	if _, ok := requestBody["expiration_rfc3339"]; ok {
+		t.Fatal("requestBody contains expiration_rfc3339, want omitted empty expiration")
+	}
+}
+
 func TestClientDeleteClientCallsTelemtUsersEndpoint(t *testing.T) {
 	var requestPath string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -376,6 +422,44 @@ func TestClientDeleteClientCallsTelemtUsersEndpoint(t *testing.T) {
 
 	if requestPath != "/v1/users/alice" {
 		t.Fatalf("request path = %q, want %q", requestPath, "/v1/users/alice")
+	}
+}
+
+func TestClientCreateClientReturnsDetailedTelemtError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/users" {
+			http.NotFound(w, r)
+			return
+		}
+
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":      false,
+			"error":   "bad_request",
+			"message": "secret must contain exactly 32 hexadecimal characters",
+		})
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Config{
+		BaseURL:       server.URL,
+		Authorization: "secret",
+	}, server.Client())
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	_, err = client.CreateClient(context.Background(), ManagedClient{
+		Name:      "alice",
+		Secret:    "secret-1",
+		UserADTag: "0123456789abcdef0123456789abcdef",
+		Enabled:   true,
+	})
+	if err == nil {
+		t.Fatal("CreateClient() error = nil, want detailed Telemt error")
+	}
+	if err.Error() == "apply client failed with status 400" {
+		t.Fatalf("CreateClient() error = %q, want detailed non-generic error", err.Error())
 	}
 }
 

@@ -163,7 +163,7 @@ func (s *Server) createClient(actorID string, input clientMutationInput, observe
 		return managedClient{}, nil, nil, err
 	}
 
-	secret, err := randomHexString(24)
+	secret, err := randomHexString(16)
 	if err != nil {
 		return managedClient{}, nil, nil, err
 	}
@@ -285,7 +285,7 @@ func (s *Server) rotateClientSecret(clientID string, actorID string, observedAt 
 		return managedClient{}, nil, nil, storage.ErrNotFound
 	}
 
-	secret, err := randomHexString(24)
+	secret, err := randomHexString(16)
 	if err != nil {
 		return managedClient{}, nil, nil, err
 	}

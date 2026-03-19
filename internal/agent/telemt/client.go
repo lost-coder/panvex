@@ -424,7 +424,7 @@ func (c *Client) ExecuteRuntimeReload(ctx context.Context) error {
 	defer response.Body.Close()
 
 	if response.StatusCode >= http.StatusBadRequest {
-		return fmt.Errorf("runtime reload failed with status %d", response.StatusCode)
+		return fmt.Errorf("runtime reload failed: %w", decodeAPIError(response.Body, fmt.Sprintf("runtime reload failed with status %d", response.StatusCode)))
 	}
 
 	return nil
@@ -459,7 +459,7 @@ func (c *Client) DeleteClient(ctx context.Context, clientName string) error {
 	defer response.Body.Close()
 
 	if response.StatusCode >= http.StatusBadRequest {
-		return fmt.Errorf("delete client failed with status %d", response.StatusCode)
+		return fmt.Errorf("delete client failed: %w", decodeAPIError(response.Body, fmt.Sprintf("delete client failed with status %d", response.StatusCode)))
 	}
 
 	return nil
@@ -467,14 +467,16 @@ func (c *Client) DeleteClient(ctx context.Context, clientName string) error {
 
 func (c *Client) applyClient(ctx context.Context, method string, path string, client ManagedClient) (ClientApplyResult, error) {
 	payload := map[string]any{
-		"username":            client.Name,
-		"secret":              client.Secret,
-		"user_ad_tag":         client.UserADTag,
-		"enabled":             client.Enabled,
-		"max_tcp_conns":       client.MaxTCPConns,
-		"max_unique_ips":      client.MaxUniqueIPs,
-		"data_quota_bytes":    client.DataQuotaBytes,
-		"expiration_rfc3339":  client.ExpirationRFC3339,
+		"username":         client.Name,
+		"secret":           client.Secret,
+		"user_ad_tag":      client.UserADTag,
+		"enabled":          client.Enabled,
+		"max_tcp_conns":    client.MaxTCPConns,
+		"max_unique_ips":   client.MaxUniqueIPs,
+		"data_quota_bytes": client.DataQuotaBytes,
+	}
+	if strings.TrimSpace(client.ExpirationRFC3339) != "" {
+		payload["expiration_rfc3339"] = client.ExpirationRFC3339
 	}
 
 	request, err := c.newRequest(ctx, method, path, payload)
@@ -489,7 +491,7 @@ func (c *Client) applyClient(ctx context.Context, method string, path string, cl
 	defer response.Body.Close()
 
 	if response.StatusCode >= http.StatusBadRequest {
-		return ClientApplyResult{}, fmt.Errorf("apply client failed with status %d", response.StatusCode)
+		return ClientApplyResult{}, fmt.Errorf("apply client failed: %w", decodeAPIError(response.Body, fmt.Sprintf("apply client failed with status %d", response.StatusCode)))
 	}
 
 	var body struct {
@@ -521,7 +523,7 @@ func (c *Client) getJSON(ctx context.Context, path string, dest any) error {
 	defer response.Body.Close()
 
 	if response.StatusCode >= http.StatusBadRequest {
-		return fmt.Errorf("telemt request failed with status %d", response.StatusCode)
+		return fmt.Errorf("telemt request failed: %w", decodeAPIError(response.Body, fmt.Sprintf("telemt request failed with status %d", response.StatusCode)))
 	}
 
 	return decodeSuccessData(response.Body, dest)
@@ -581,4 +583,60 @@ func decodeSuccessData(body io.Reader, dest any) error {
 	}
 
 	return json.Unmarshal(payload, dest)
+}
+
+func decodeAPIError(body io.Reader, fallback string) error {
+	payload, err := io.ReadAll(body)
+	if err != nil {
+		return err
+	}
+
+	var envelope struct {
+		OK      bool            `json:"ok"`
+		Error   json.RawMessage `json:"error"`
+		Message string          `json:"message"`
+	}
+	if err := json.Unmarshal(payload, &envelope); err == nil {
+		code, message := decodeAPIErrorDetails(envelope.Error)
+		if message == "" {
+			message = strings.TrimSpace(envelope.Message)
+		}
+
+		switch {
+		case code != "" && message != "":
+			return fmt.Errorf("%s: %s", code, message)
+		case code != "":
+			return errors.New(code)
+		case message != "":
+			return fmt.Errorf("%s: %s", fallback, message)
+		}
+	}
+
+	trimmed := strings.Join(strings.Fields(string(payload)), " ")
+	if trimmed != "" {
+		return fmt.Errorf("%s: %s", fallback, trimmed)
+	}
+
+	return errors.New(fallback)
+}
+
+func decodeAPIErrorDetails(raw json.RawMessage) (string, string) {
+	if len(raw) == 0 {
+		return "", ""
+	}
+
+	var code string
+	if err := json.Unmarshal(raw, &code); err == nil {
+		return strings.TrimSpace(code), ""
+	}
+
+	var details struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(raw, &details); err == nil {
+		return strings.TrimSpace(details.Code), strings.TrimSpace(details.Message)
+	}
+
+	return "", ""
 }

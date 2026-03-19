@@ -91,6 +91,9 @@ func TestHTTPClientsCreateTracksDeploymentsAndStructuredJobPayload(t *testing.T)
 	if created.Secret == "" {
 		t.Fatal("created.secret = empty, want generated secret")
 	}
+	if len(created.Secret) != 32 {
+		t.Fatalf("len(created.secret) = %d, want %d", len(created.Secret), 32)
+	}
 	if len(created.UserADTag) != 32 {
 		t.Fatalf("len(created.user_ad_tag) = %d, want %d", len(created.UserADTag), 32)
 	}
@@ -228,6 +231,9 @@ func TestHTTPClientsUpdateRotateAndDeleteQueueLifecycleJobs(t *testing.T) {
 	}
 	if rotated.Secret == "" {
 		t.Fatal("rotated.secret = empty, want regenerated secret")
+	}
+	if len(rotated.Secret) != 32 {
+		t.Fatalf("len(rotated.secret) = %d, want %d", len(rotated.Secret), 32)
 	}
 	if rotated.Secret == created.Secret {
 		t.Fatal("rotated.secret = original secret, want changed secret")

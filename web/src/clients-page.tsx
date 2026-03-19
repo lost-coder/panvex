@@ -9,6 +9,7 @@ import {
   type ClientDeployment,
   type ClientListItem
 } from "./lib/api";
+import { buildClientDeploymentAlert, shouldPollClientDetail } from "./lib/client-deployment-state";
 import { ClientAssignmentPicker, ClientAssignmentSummary } from "./components/client-assignment-picker";
 import {
   clientToForm,
@@ -192,7 +193,11 @@ export function ClientDetailPage() {
   const queryClient = useQueryClient();
   const clientQuery = useQuery({
     queryKey: ["client", clientId],
-    queryFn: () => apiClient.client(clientId)
+    queryFn: () => apiClient.client(clientId),
+    refetchInterval: (query) => {
+      const client = query.state.data as Client | undefined;
+      return client && shouldPollClientDetail(client.deployments) ? 2000 : false;
+    }
   });
   const agentsQuery = useQuery({
     queryKey: ["agents"],
@@ -311,6 +316,10 @@ function ClientEditor(props: ClientEditorProps) {
     () => summarizeAssignments(props.value, props.agents),
     [props.agents, props.value]
   );
+  const deploymentAlert = useMemo(
+    () => (props.client ? buildClientDeploymentAlert(props.client.deployments) : null),
+    [props.client]
+  );
 
   return (
     <div className="space-y-6">
@@ -360,6 +369,18 @@ function ClientEditor(props: ClientEditorProps) {
         {props.submitError ? (
           <div className="mt-6 rounded-3xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
             {props.submitError}
+          </div>
+        ) : null}
+        {deploymentAlert ? (
+          <div
+            className={`mt-6 rounded-3xl px-4 py-3 text-sm ${
+              deploymentAlert.tone === "danger"
+                ? "border border-rose-200 bg-rose-50 text-rose-700"
+                : "border border-amber-200 bg-amber-50 text-amber-800"
+            }`}
+          >
+            <p className="font-medium">{deploymentAlert.title}</p>
+            <p className="mt-1">{deploymentAlert.description}</p>
           </div>
         ) : null}
 
