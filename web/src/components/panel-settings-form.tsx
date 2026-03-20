@@ -205,7 +205,7 @@ export function PanelSettingsForm() {
       <div className="flex items-center justify-end">
         <button
           type="button"
-          className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-60"
+          className="app-button-primary rounded-2xl text-sm font-medium"
           onClick={() => saveMutation.mutate()}
           disabled={saveMutation.isPending}
         >

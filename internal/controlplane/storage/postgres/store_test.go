@@ -53,7 +53,8 @@ func resetForTest(store *Store) error {
 			audit_events,
 			metric_snapshots,
 			enrollment_tokens,
-			panel_settings
+			panel_settings,
+			user_appearance
 		RESTART IDENTITY CASCADE
 	`)
 	return err

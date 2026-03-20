@@ -19,6 +19,7 @@ func TestStoreContractWithMemoryStore(t *testing.T) {
 type memoryStore struct {
 	users              map[string]storage.UserRecord
 	usernames          map[string]string
+	userAppearance     map[string]storage.UserAppearanceRecord
 	fleetGroups        map[string]storage.FleetGroupRecord
 	agents             map[string]storage.AgentRecord
 	instances          map[string]storage.InstanceRecord
@@ -38,6 +39,7 @@ func newMemoryStore() *memoryStore {
 	return &memoryStore{
 		users:            make(map[string]storage.UserRecord),
 		usernames:        make(map[string]string),
+		userAppearance:   make(map[string]storage.UserAppearanceRecord),
 		fleetGroups:      make(map[string]storage.FleetGroupRecord),
 		agents:           make(map[string]storage.AgentRecord),
 		instances:        make(map[string]storage.InstanceRecord),
@@ -89,6 +91,7 @@ func (s *memoryStore) DeleteUser(_ context.Context, userID string) error {
 
 	delete(s.users, userID)
 	delete(s.usernames, user.Username)
+	delete(s.userAppearance, userID)
 	return nil
 }
 
@@ -96,6 +99,33 @@ func (s *memoryStore) ListUsers(_ context.Context) ([]storage.UserRecord, error)
 	result := make([]storage.UserRecord, 0, len(s.users))
 	for _, user := range s.users {
 		result = append(result, user)
+	}
+
+	return result, nil
+}
+
+func (s *memoryStore) PutUserAppearance(_ context.Context, appearance storage.UserAppearanceRecord) error {
+	s.userAppearance[appearance.UserID] = appearance
+	return nil
+}
+
+func (s *memoryStore) GetUserAppearance(_ context.Context, userID string) (storage.UserAppearanceRecord, error) {
+	appearance, ok := s.userAppearance[userID]
+	if !ok {
+		return storage.UserAppearanceRecord{
+			UserID:  userID,
+			Theme:   "system",
+			Density: "comfortable",
+		}, nil
+	}
+
+	return appearance, nil
+}
+
+func (s *memoryStore) ListUserAppearances(_ context.Context) ([]storage.UserAppearanceRecord, error) {
+	result := make([]storage.UserAppearanceRecord, 0, len(s.userAppearance))
+	for _, appearance := range s.userAppearance {
+		result = append(result, appearance)
 	}
 
 	return result, nil

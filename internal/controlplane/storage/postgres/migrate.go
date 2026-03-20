@@ -19,6 +19,13 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMPTZ NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS user_appearance (
+    user_id TEXT PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+    theme TEXT NOT NULL DEFAULT 'system',
+    density TEXT NOT NULL DEFAULT 'comfortable',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT TIMESTAMPTZ 'epoch'
+);
+
 CREATE TABLE IF NOT EXISTS agents (
     id TEXT PRIMARY KEY,
     node_name TEXT NOT NULL,

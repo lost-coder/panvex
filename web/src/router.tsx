@@ -11,6 +11,7 @@ import { useEffect, useState } from "react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { AppShell } from "./components/app-shell";
+import { AppearanceProvider } from "./components/appearance-provider";
 import { ClientDetailPage, ClientsPage, CreateClientPage } from "./clients-page";
 import { ControlRoomHero } from "./components/control-room-hero";
 import { ControlRoomOnboarding } from "./components/control-room-onboarding";
@@ -20,6 +21,7 @@ import { FleetNodeCardGrid } from "./components/fleet-node-card-grid";
 import { FleetRuntimeModeBadge, FleetRuntimeStatusBadge } from "./components/fleet-runtime-status-badge";
 import { FleetRuntimeConnections, FleetRuntimeDCSummary, FleetRuntimeUpstreamSummary } from "./components/fleet-runtime-summary";
 import { FleetNodePage } from "./fleet-node-page";
+import { ProfilePage } from "./profile-page";
 import { TelemtAttentionPanel } from "./components/telemt-attention-panel";
 import { SettingsPage } from "./settings-page";
 import {
@@ -112,9 +114,15 @@ const settingsRoute = createRoute({
   component: SettingsPage
 });
 
+const profileRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/profile",
+  component: ProfilePage
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
-  shellRoute.addChildren([overviewRoute, fleetRoute, fleetNodeRoute, jobsRoute, auditRoute, agentsRoute, clientsRoute, clientsNewRoute, clientDetailRoute, settingsRoute])
+  shellRoute.addChildren([overviewRoute, fleetRoute, fleetNodeRoute, jobsRoute, auditRoute, agentsRoute, clientsRoute, clientsNewRoute, clientDetailRoute, profileRoute, settingsRoute])
 ]);
 
 export const router = createRouter({
@@ -139,7 +147,16 @@ function ProtectedShell() {
     return <Navigate to="/login" />;
   }
 
-  return <AppShell />;
+  const me = meQuery.data;
+  if (!me) {
+    return <Navigate to="/login" />;
+  }
+
+  return (
+    <AppearanceProvider userID={me.id}>
+      <AppShell />
+    </AppearanceProvider>
+  );
 }
 
 function LoginPage() {

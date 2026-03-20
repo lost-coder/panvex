@@ -14,6 +14,13 @@ type UserStore interface {
 	ListUsers(ctx context.Context) ([]UserRecord, error)
 }
 
+// UserAppearanceStore persists per-user appearance preferences.
+type UserAppearanceStore interface {
+	PutUserAppearance(ctx context.Context, appearance UserAppearanceRecord) error
+	GetUserAppearance(ctx context.Context, userID string) (UserAppearanceRecord, error)
+	ListUserAppearances(ctx context.Context) ([]UserAppearanceRecord, error)
+}
+
 // FleetStore persists fleet topology and discovered Telemt runtime state.
 type FleetStore interface {
 	PutFleetGroup(ctx context.Context, group FleetGroupRecord) error
@@ -75,6 +82,7 @@ type ClientStore interface {
 // Store aggregates the persistence capabilities required by the control-plane.
 type Store interface {
 	UserStore
+	UserAppearanceStore
 	FleetStore
 	JobStore
 	AuditStore

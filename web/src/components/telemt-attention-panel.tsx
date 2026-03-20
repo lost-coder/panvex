@@ -16,13 +16,13 @@ export function TelemtAttentionPanel(props: TelemtAttentionPanelProps) {
   const attentionAgents = buildAgentAttentionList(props.agents).slice(0, 5);
 
   return (
-    <section className="rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-[0_20px_60px_rgba(37,46,68,0.08)]">
+    <section className="app-card rounded-[32px]">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Needs attention</p>
-          <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Nodes that deserve the next look</h3>
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--app-text-tertiary)]">Needs attention</p>
+          <h3 className="mt-2 text-2xl font-semibold tracking-tight text-[var(--app-text-primary)]">Nodes that deserve the next look</h3>
         </div>
-        <Link to="/fleet" className="text-sm font-medium text-slate-900 underline underline-offset-4">
+        <Link to="/fleet" className="text-sm font-medium text-[var(--app-text-primary)] underline underline-offset-4">
           Open fleet
         </Link>
       </div>
@@ -35,11 +35,11 @@ export function TelemtAttentionPanel(props: TelemtAttentionPanelProps) {
             const reasons = buildAgentAttentionReasons(agent);
 
             return (
-              <div key={agent.id} className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+              <div key={agent.id} className="app-card-muted rounded-3xl p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="font-medium text-slate-950">{agent.node_name}</p>
-                    <p className="mt-1 text-sm text-slate-600">{agent.runtime.transport_mode || "unknown"} mode in {agent.fleet_group_id || "Ungrouped"}</p>
+                    <p className="font-medium text-[var(--app-text-primary)]">{agent.node_name}</p>
+                    <p className="mt-1 text-sm text-[var(--app-text-secondary)]">{agent.runtime.transport_mode || "unknown"} mode in {agent.fleet_group_id || "Ungrouped"}</p>
                   </div>
                   <span className={statusClassName(status.tone)}>{status.label}</span>
                 </div>
@@ -52,19 +52,19 @@ export function TelemtAttentionPanel(props: TelemtAttentionPanelProps) {
                     ))}
                   </div>
                 ) : null}
-                <div className="mt-4 grid gap-3 text-sm text-slate-600 sm:grid-cols-3">
+                <div className="mt-4 grid gap-3 text-sm text-[var(--app-text-secondary)] sm:grid-cols-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Connections</p>
-                    <p className="mt-2 font-medium text-slate-950">{connections.primary}</p>
-                    <p className="mt-1 text-xs text-slate-500">{connections.secondary}</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--app-text-tertiary)]">Connections</p>
+                    <p className="mt-2 font-medium text-[var(--app-text-primary)]">{connections.primary}</p>
+                    <p className="mt-1 text-xs text-[var(--app-text-tertiary)]">{connections.secondary}</p>
                   </div>
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">DC coverage</p>
-                    <p className="mt-2 font-medium text-slate-950">{Math.round(agent.runtime.dc_coverage_pct)}%</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--app-text-tertiary)]">DC coverage</p>
+                    <p className="mt-2 font-medium text-[var(--app-text-primary)]">{Math.round(agent.runtime.dc_coverage_pct)}%</p>
                   </div>
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Upstreams</p>
-                    <p className="mt-2 font-medium text-slate-950">
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--app-text-tertiary)]">Upstreams</p>
+                    <p className="mt-2 font-medium text-[var(--app-text-primary)]">
                       {agent.runtime.healthy_upstreams}/{agent.runtime.total_upstreams || 0} healthy
                     </p>
                   </div>
@@ -73,7 +73,7 @@ export function TelemtAttentionPanel(props: TelemtAttentionPanelProps) {
                   <Link
                     to="/fleet/$agentId"
                     params={{ agentId: agent.id }}
-                    className="inline-flex rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:text-slate-950"
+                    className="app-button-secondary inline-flex rounded-2xl px-4 py-2.5 text-sm font-medium"
                   >
                     Open node
                   </Link>
@@ -82,9 +82,9 @@ export function TelemtAttentionPanel(props: TelemtAttentionPanelProps) {
             );
           })
         ) : (
-          <div className="rounded-[28px] border border-dashed border-slate-300 bg-slate-50/80 px-5 py-10 text-center">
-            <h4 className="text-lg font-semibold text-slate-950">Nothing urgent right now</h4>
-            <p className="mt-3 text-sm leading-6 text-slate-600">
+          <div className="app-card-muted rounded-[28px] border-dashed px-5 py-10 text-center">
+            <h4 className="text-lg font-semibold text-[var(--app-text-primary)]">Nothing urgent right now</h4>
+            <p className="mt-3 text-sm leading-6 text-[var(--app-text-secondary)]">
               Once a node goes offline or starts degrading, it will show up here first.
             </p>
           </div>

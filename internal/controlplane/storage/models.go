@@ -13,6 +13,14 @@ type UserRecord struct {
 	CreatedAt    time.Time
 }
 
+// UserAppearanceRecord stores one user's persisted appearance preferences.
+type UserAppearanceRecord struct {
+	UserID    string
+	Theme     string
+	Density   string
+	UpdatedAt time.Time
+}
+
 // FleetGroupRecord stores one fleet group in the global control-plane namespace.
 type FleetGroupRecord struct {
 	ID        string

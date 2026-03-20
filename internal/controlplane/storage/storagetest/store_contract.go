@@ -274,6 +274,116 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 		}
 	})
 
+	t.Run("user appearance defaults and round trip", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+
+		defaultAppearance, err := store.GetUserAppearance(ctx, "user-appearance-default")
+		if err != nil {
+			t.Fatalf("GetUserAppearance(default) error = %v", err)
+		}
+		if defaultAppearance.UserID != "user-appearance-default" {
+			t.Fatalf("GetUserAppearance(default) UserID = %q, want %q", defaultAppearance.UserID, "user-appearance-default")
+		}
+		if defaultAppearance.Theme != "system" {
+			t.Fatalf("GetUserAppearance(default) Theme = %q, want %q", defaultAppearance.Theme, "system")
+		}
+		if defaultAppearance.Density != "comfortable" {
+			t.Fatalf("GetUserAppearance(default) Density = %q, want %q", defaultAppearance.Density, "comfortable")
+		}
+		if !defaultAppearance.UpdatedAt.IsZero() {
+			t.Fatalf("GetUserAppearance(default) UpdatedAt = %v, want zero time", defaultAppearance.UpdatedAt)
+		}
+
+		firstAppearance := storage.UserAppearanceRecord{
+			UserID:    "user-appearance-1",
+			Theme:     "dark",
+			Density:   "compact",
+			UpdatedAt: time.Date(2026, time.March, 21, 10, 0, 0, 0, time.UTC),
+		}
+		secondAppearance := storage.UserAppearanceRecord{
+			UserID:    "user-appearance-2",
+			Theme:     "light",
+			Density:   "comfortable",
+			UpdatedAt: time.Date(2026, time.March, 21, 10, 5, 0, 0, time.UTC),
+		}
+
+		if err := store.PutUser(ctx, storage.UserRecord{
+			ID:           firstAppearance.UserID,
+			Username:     "appearance-one",
+			PasswordHash: "argon2id$appearance-one",
+			Role:         "viewer",
+			CreatedAt:    time.Date(2026, time.March, 21, 9, 55, 0, 0, time.UTC),
+		}); err != nil {
+			t.Fatalf("PutUser(first appearance user) error = %v", err)
+		}
+		if err := store.PutUser(ctx, storage.UserRecord{
+			ID:           secondAppearance.UserID,
+			Username:     "appearance-two",
+			PasswordHash: "argon2id$appearance-two",
+			Role:         "operator",
+			CreatedAt:    time.Date(2026, time.March, 21, 9, 56, 0, 0, time.UTC),
+		}); err != nil {
+			t.Fatalf("PutUser(second appearance user) error = %v", err)
+		}
+
+		if err := store.PutUserAppearance(ctx, firstAppearance); err != nil {
+			t.Fatalf("PutUserAppearance(first) error = %v", err)
+		}
+		if err := store.PutUserAppearance(ctx, secondAppearance); err != nil {
+			t.Fatalf("PutUserAppearance(second) error = %v", err)
+		}
+
+		storedFirstAppearance, err := store.GetUserAppearance(ctx, firstAppearance.UserID)
+		if err != nil {
+			t.Fatalf("GetUserAppearance(first) error = %v", err)
+		}
+		if storedFirstAppearance.Theme != firstAppearance.Theme {
+			t.Fatalf("GetUserAppearance(first) Theme = %q, want %q", storedFirstAppearance.Theme, firstAppearance.Theme)
+		}
+		if storedFirstAppearance.Density != firstAppearance.Density {
+			t.Fatalf("GetUserAppearance(first) Density = %q, want %q", storedFirstAppearance.Density, firstAppearance.Density)
+		}
+		if !storedFirstAppearance.UpdatedAt.Equal(firstAppearance.UpdatedAt) {
+			t.Fatalf("GetUserAppearance(first) UpdatedAt = %v, want %v", storedFirstAppearance.UpdatedAt, firstAppearance.UpdatedAt)
+		}
+
+		storedSecondAppearance, err := store.GetUserAppearance(ctx, secondAppearance.UserID)
+		if err != nil {
+			t.Fatalf("GetUserAppearance(second) error = %v", err)
+		}
+		if storedSecondAppearance.Theme != secondAppearance.Theme {
+			t.Fatalf("GetUserAppearance(second) Theme = %q, want %q", storedSecondAppearance.Theme, secondAppearance.Theme)
+		}
+		if storedSecondAppearance.Density != secondAppearance.Density {
+			t.Fatalf("GetUserAppearance(second) Density = %q, want %q", storedSecondAppearance.Density, secondAppearance.Density)
+		}
+		if !storedSecondAppearance.UpdatedAt.Equal(secondAppearance.UpdatedAt) {
+			t.Fatalf("GetUserAppearance(second) UpdatedAt = %v, want %v", storedSecondAppearance.UpdatedAt, secondAppearance.UpdatedAt)
+		}
+
+		appearances, err := store.ListUserAppearances(ctx)
+		if err != nil {
+			t.Fatalf("ListUserAppearances() error = %v", err)
+		}
+		if len(appearances) != 2 {
+			t.Fatalf("len(ListUserAppearances()) = %d, want %d", len(appearances), 2)
+		}
+
+		if err := store.DeleteUser(ctx, firstAppearance.UserID); err != nil {
+			t.Fatalf("DeleteUser(first appearance user) error = %v", err)
+		}
+		appearances, err = store.ListUserAppearances(ctx)
+		if err != nil {
+			t.Fatalf("ListUserAppearances() after DeleteUser error = %v", err)
+		}
+		if len(appearances) != 1 {
+			t.Fatalf("len(ListUserAppearances()) after DeleteUser = %d, want %d", len(appearances), 1)
+		}
+	})
+
 	t.Run("enrollment token create and use round trip", func(t *testing.T) {
 		store := open(t)
 		defer store.Close()

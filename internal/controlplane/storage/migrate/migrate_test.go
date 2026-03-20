@@ -84,6 +84,9 @@ func TestCopyStoreCopiesAllPersistentEntities(t *testing.T) {
 	if summary.Users != 1 || summary.FleetGroups != 1 {
 		t.Fatalf("summary = %+v, want copied user/group counts", summary)
 	}
+	if summary.UserAppearance != 1 {
+		t.Fatalf("summary.UserAppearance = %d, want %d", summary.UserAppearance, 1)
+	}
 	if summary.Agents != 1 || summary.Instances != 1 || summary.Jobs != 1 || summary.JobTargets != 1 {
 		t.Fatalf("summary = %+v, want copied agent/instance/job counts", summary)
 	}
@@ -101,6 +104,17 @@ func TestCopyStoreCopiesAllPersistentEntities(t *testing.T) {
 
 	if !users[0].TotpEnabled {
 		t.Fatal("target.ListUsers()[0].TotpEnabled = false, want true")
+	}
+
+	appearance, err := target.GetUserAppearance(context.Background(), "user-000001")
+	if err != nil {
+		t.Fatalf("target.GetUserAppearance() error = %v", err)
+	}
+	if appearance.Theme != "dark" {
+		t.Fatalf("target.GetUserAppearance() Theme = %q, want %q", appearance.Theme, "dark")
+	}
+	if appearance.Density != "compact" {
+		t.Fatalf("target.GetUserAppearance() Density = %q, want %q", appearance.Density, "compact")
 	}
 
 	jobs, err := target.ListJobs(context.Background())
@@ -131,6 +145,49 @@ func TestCopyStoreCopiesAllPersistentEntities(t *testing.T) {
 	}
 }
 
+func TestCopyStoreCopiesUserAppearanceWithZeroUpdatedAt(t *testing.T) {
+	source := openSQLiteStore(t, filepath.Join(t.TempDir(), "source.db"))
+	defer source.Close()
+	target := openSQLiteStore(t, filepath.Join(t.TempDir(), "target.db"))
+	defer target.Close()
+
+	now := time.Date(2026, time.March, 15, 12, 0, 0, 0, time.UTC)
+	if err := source.PutUser(context.Background(), storage.UserRecord{
+		ID:           "user-000001",
+		Username:     "admin",
+		PasswordHash: "hash",
+		Role:         "admin",
+		TotpEnabled:  true,
+		TotpSecret:   "secret",
+		CreatedAt:    now,
+	}); err != nil {
+		t.Fatalf("source.PutUser() error = %v", err)
+	}
+	if err := source.PutUserAppearance(context.Background(), storage.UserAppearanceRecord{
+		UserID:  "user-000001",
+		Theme:   "dark",
+		Density: "comfortable",
+	}); err != nil {
+		t.Fatalf("source.PutUserAppearance() error = %v", err)
+	}
+
+	summary, err := copyStore(context.Background(), source, target)
+	if err != nil {
+		t.Fatalf("copyStore() error = %v", err)
+	}
+	if summary.UserAppearance != 1 {
+		t.Fatalf("summary.UserAppearance = %d, want %d", summary.UserAppearance, 1)
+	}
+
+	appearance, err := target.GetUserAppearance(context.Background(), "user-000001")
+	if err != nil {
+		t.Fatalf("target.GetUserAppearance() error = %v", err)
+	}
+	if appearance.Theme != "dark" {
+		t.Fatalf("target.GetUserAppearance() Theme = %q, want %q", appearance.Theme, "dark")
+	}
+}
+
 func openSQLiteStore(t *testing.T, path string) storage.Store {
 	t.Helper()
 
@@ -158,6 +215,14 @@ func populateSourceStore(t *testing.T, store storage.Store, now time.Time) {
 		CreatedAt:    now,
 	}); err != nil {
 		t.Fatalf("PutUser() error = %v", err)
+	}
+	if err := store.PutUserAppearance(ctx, storage.UserAppearanceRecord{
+		UserID:    "user-000001",
+		Theme:     "dark",
+		Density:   "compact",
+		UpdatedAt: now.Add(5 * time.Second),
+	}); err != nil {
+		t.Fatalf("PutUserAppearance() error = %v", err)
 	}
 	if err := store.PutFleetGroup(ctx, storage.FleetGroupRecord{
 		ID:        "ams-1",
