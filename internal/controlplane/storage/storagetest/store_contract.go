@@ -167,13 +167,7 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 		ctx := context.Background()
 		settings := storage.PanelSettingsRecord{
 			HTTPPublicURL:      "https://panel.example.com",
-			HTTPRootPath:       "/panvex",
 			GRPCPublicEndpoint: "panel.example.com:8443",
-			HTTPListenAddress:  ":8080",
-			GRPCListenAddress:  ":8443",
-			TLSMode:            "direct",
-			TLSCertFile:        "/etc/panvex-panel/tls/panel.crt",
-			TLSKeyFile:         "/etc/panvex-panel/tls/panel.key",
 			UpdatedAt:          time.Date(2026, time.March, 16, 18, 0, 0, 0, time.UTC),
 		}
 
@@ -189,26 +183,8 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 		if stored.HTTPPublicURL != settings.HTTPPublicURL {
 			t.Fatalf("GetPanelSettings() HTTPPublicURL = %q, want %q", stored.HTTPPublicURL, settings.HTTPPublicURL)
 		}
-		if stored.HTTPRootPath != settings.HTTPRootPath {
-			t.Fatalf("GetPanelSettings() HTTPRootPath = %q, want %q", stored.HTTPRootPath, settings.HTTPRootPath)
-		}
 		if stored.GRPCPublicEndpoint != settings.GRPCPublicEndpoint {
 			t.Fatalf("GetPanelSettings() GRPCPublicEndpoint = %q, want %q", stored.GRPCPublicEndpoint, settings.GRPCPublicEndpoint)
-		}
-		if stored.HTTPListenAddress != settings.HTTPListenAddress {
-			t.Fatalf("GetPanelSettings() HTTPListenAddress = %q, want %q", stored.HTTPListenAddress, settings.HTTPListenAddress)
-		}
-		if stored.GRPCListenAddress != settings.GRPCListenAddress {
-			t.Fatalf("GetPanelSettings() GRPCListenAddress = %q, want %q", stored.GRPCListenAddress, settings.GRPCListenAddress)
-		}
-		if stored.TLSMode != settings.TLSMode {
-			t.Fatalf("GetPanelSettings() TLSMode = %q, want %q", stored.TLSMode, settings.TLSMode)
-		}
-		if stored.TLSCertFile != settings.TLSCertFile {
-			t.Fatalf("GetPanelSettings() TLSCertFile = %q, want %q", stored.TLSCertFile, settings.TLSCertFile)
-		}
-		if stored.TLSKeyFile != settings.TLSKeyFile {
-			t.Fatalf("GetPanelSettings() TLSKeyFile = %q, want %q", stored.TLSKeyFile, settings.TLSKeyFile)
 		}
 		if !stored.UpdatedAt.Equal(settings.UpdatedAt) {
 			t.Fatalf("GetPanelSettings() UpdatedAt = %v, want %v", stored.UpdatedAt, settings.UpdatedAt)

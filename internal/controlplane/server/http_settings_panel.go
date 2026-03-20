@@ -2,6 +2,9 @@ package server
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 
 	"github.com/panvex/panvex/internal/controlplane/auth"
@@ -16,19 +19,15 @@ type panelSettingsResponse struct {
 	TLSMode            string             `json:"tls_mode"`
 	TLSCertFile        string             `json:"tls_cert_file"`
 	TLSKeyFile         string             `json:"tls_key_file"`
+	RuntimeSource      string             `json:"runtime_source"`
+	RuntimeConfigPath  string             `json:"runtime_config_path"`
 	UpdatedAtUnix      int64              `json:"updated_at_unix"`
 	Restart            panelRestartStatus `json:"restart"`
 }
 
 type updatePanelSettingsRequest struct {
 	HTTPPublicURL      string `json:"http_public_url"`
-	HTTPRootPath       string `json:"http_root_path"`
 	GRPCPublicEndpoint string `json:"grpc_public_endpoint"`
-	HTTPListenAddress  string `json:"http_listen_address"`
-	GRPCListenAddress  string `json:"grpc_listen_address"`
-	TLSMode            string `json:"tls_mode"`
-	TLSCertFile        string `json:"tls_cert_file"`
-	TLSKeyFile         string `json:"tls_key_file"`
 }
 
 func (s *Server) handleGetPanelSettings() http.HandlerFunc {
@@ -44,7 +43,7 @@ func (s *Server) handleGetPanelSettings() http.HandlerFunc {
 		}
 
 		settings := s.panelSettingsSnapshot()
-		writeJSON(w, http.StatusOK, panelSettingsResponseFromSettings(settings, s.panelRestartStatus(settings)))
+		writeJSON(w, http.StatusOK, panelSettingsResponseFromSettings(settings, s.panelRuntime, s.panelRestartStatus()))
 	}
 }
 
@@ -60,27 +59,34 @@ func (s *Server) handlePutPanelSettings() http.HandlerFunc {
 			return
 		}
 
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid panel settings payload")
+			return
+		}
+		_ = r.Body.Close()
+
 		var request updatePanelSettingsRequest
-		if err := decodeJSON(r, &request); err != nil {
+		if err := json.Unmarshal(body, &request); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid panel settings payload")
 			return
 		}
 
-		settings, err := normalizePanelSettings(PanelSettings{
-			HTTPPublicURL:      request.HTTPPublicURL,
-			HTTPRootPath:       request.HTTPRootPath,
-			GRPCPublicEndpoint: request.GRPCPublicEndpoint,
-			HTTPListenAddress:  request.HTTPListenAddress,
-			GRPCListenAddress:  request.GRPCListenAddress,
-			TLSMode:            request.TLSMode,
-			TLSCertFile:        request.TLSCertFile,
-			TLSKeyFile:         request.TLSKeyFile,
-			UpdatedAt:          s.now().UTC().Unix(),
-		}, s.panelRuntime)
-		if err != nil {
+		var requestFields map[string]json.RawMessage
+		if err := json.Unmarshal(body, &requestFields); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid panel settings payload")
+			return
+		}
+		if err := rejectRuntimeMutation(requestFields, s.panelRuntime); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+
+		settings := normalizePanelSettings(PanelSettings{
+			HTTPPublicURL:      request.HTTPPublicURL,
+			GRPCPublicEndpoint: request.GRPCPublicEndpoint,
+			UpdatedAt:          s.now().UTC().Unix(),
+		})
 
 		if s.store != nil {
 			if err := s.store.PutPanelSettings(context.Background(), panelSettingsToRecord(settings)); err != nil {
@@ -95,15 +101,11 @@ func (s *Server) handlePutPanelSettings() http.HandlerFunc {
 
 		s.appendAudit(session.UserID, "settings.panel.update", "panel", map[string]any{
 			"http_public_url":      settings.HTTPPublicURL,
-			"http_root_path":       settings.HTTPRootPath,
 			"grpc_public_endpoint": settings.GRPCPublicEndpoint,
-			"http_listen_address":  settings.HTTPListenAddress,
-			"grpc_listen_address":  settings.GRPCListenAddress,
-			"tls_mode":             settings.TLSMode,
 		})
 
-		restart := s.panelRestartStatus(settings)
-		writeJSON(w, http.StatusOK, panelSettingsResponseFromSettings(settings, restart))
+		restart := s.panelRestartStatus()
+		writeJSON(w, http.StatusOK, panelSettingsResponseFromSettings(settings, s.panelRuntime, restart))
 	}
 }
 
@@ -120,7 +122,7 @@ func (s *Server) handleRestartPanel() http.HandlerFunc {
 		}
 
 		settings := s.panelSettingsSnapshot()
-		restart := s.panelRestartStatus(settings)
+		restart := s.panelRestartStatus()
 		if !restart.Supported || s.requestRestart == nil {
 			writeError(w, http.StatusConflict, "panel restart is unavailable in the current runtime")
 			return
@@ -135,21 +137,43 @@ func (s *Server) handleRestartPanel() http.HandlerFunc {
 			"pending_restart": restart.Pending,
 		})
 
-		writeJSON(w, http.StatusAccepted, panelSettingsResponseFromSettings(settings, restart))
+		writeJSON(w, http.StatusAccepted, panelSettingsResponseFromSettings(settings, s.panelRuntime, restart))
 	}
 }
 
-func panelSettingsResponseFromSettings(settings PanelSettings, restart panelRestartStatus) panelSettingsResponse {
+func panelSettingsResponseFromSettings(settings PanelSettings, runtime PanelRuntime, restart panelRestartStatus) panelSettingsResponse {
 	return panelSettingsResponse{
 		HTTPPublicURL:      settings.HTTPPublicURL,
-		HTTPRootPath:       settings.HTTPRootPath,
+		HTTPRootPath:       runtime.HTTPRootPath,
 		GRPCPublicEndpoint: settings.GRPCPublicEndpoint,
-		HTTPListenAddress:  settings.HTTPListenAddress,
-		GRPCListenAddress:  settings.GRPCListenAddress,
-		TLSMode:            settings.TLSMode,
-		TLSCertFile:        settings.TLSCertFile,
-		TLSKeyFile:         settings.TLSKeyFile,
+		HTTPListenAddress:  runtime.HTTPListenAddress,
+		GRPCListenAddress:  runtime.GRPCListenAddress,
+		TLSMode:            runtime.TLSMode,
+		TLSCertFile:        runtime.TLSCertFile,
+		TLSKeyFile:         runtime.TLSKeyFile,
+		RuntimeSource:      runtime.ConfigSource,
+		RuntimeConfigPath:  runtime.ConfigPath,
 		UpdatedAtUnix:      settings.UpdatedAt,
 		Restart:            restart,
 	}
+}
+
+func rejectRuntimeMutation(requestFields map[string]json.RawMessage, runtime PanelRuntime) error {
+	for _, field := range []string{
+		"http_root_path",
+		"http_listen_address",
+		"grpc_listen_address",
+		"tls_mode",
+		"tls_cert_file",
+		"tls_key_file",
+	} {
+		if _, exists := requestFields[field]; !exists {
+			continue
+		}
+		if runtime.ConfigSource == PanelRuntimeSourceConfigFile {
+			return errors.New(field + " is managed by the panel config file")
+		}
+		return errors.New(field + " is a read-only runtime value")
+	}
+	return nil
 }

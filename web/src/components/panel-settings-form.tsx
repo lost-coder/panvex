@@ -7,24 +7,12 @@ import { AccordionSection, ErrorText, Field, SelectField, SettingsState } from "
 
 type PanelSettingsDraft = {
   http_public_url: string;
-  http_root_path: string;
   grpc_public_endpoint: string;
-  http_listen_address: string;
-  grpc_listen_address: string;
-  tls_mode: "proxy" | "direct";
-  tls_cert_file: string;
-  tls_key_file: string;
 };
 
 const emptyDraft: PanelSettingsDraft = {
   http_public_url: "",
-  http_root_path: "",
-  grpc_public_endpoint: "",
-  http_listen_address: "",
-  grpc_listen_address: "",
-  tls_mode: "proxy",
-  tls_cert_file: "",
-  tls_key_file: ""
+  grpc_public_endpoint: ""
 };
 
 export function PanelSettingsForm() {
@@ -45,13 +33,7 @@ export function PanelSettingsForm() {
 
     setDraft({
       http_public_url: settingsQuery.data.http_public_url,
-      http_root_path: settingsQuery.data.http_root_path,
-      grpc_public_endpoint: settingsQuery.data.grpc_public_endpoint,
-      http_listen_address: settingsQuery.data.http_listen_address,
-      grpc_listen_address: settingsQuery.data.grpc_listen_address,
-      tls_mode: settingsQuery.data.tls_mode,
-      tls_cert_file: settingsQuery.data.tls_cert_file,
-      tls_key_file: settingsQuery.data.tls_key_file
+      grpc_public_endpoint: settingsQuery.data.grpc_public_endpoint
     });
   }, [settingsQuery.data]);
 
@@ -82,8 +64,10 @@ export function PanelSettingsForm() {
 
   const current = restartMutation.data ?? saveMutation.data ?? settingsQuery.data;
   const errorMessage = restartMutation.error?.message ?? saveMutation.error?.message ?? null;
+  const runtimeManagedByConfig = current.runtime_source === "config_file";
+  const runtimeConfigPath = current.runtime_config_path || "config.toml";
   const bannerTone =
-    current.restart.state === "pending"
+    restartRequested || runtimeManagedByConfig
       ? "border-amber-200 bg-amber-50 text-amber-900"
       : current.restart.state === "unavailable"
         ? "border-slate-200 bg-slate-100 text-slate-900"
@@ -96,20 +80,22 @@ export function PanelSettingsForm() {
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.22em]">Restart</p>
             <h4 className="mt-2 text-lg font-semibold">
-              {current.restart.state === "pending"
-                ? "Saved changes need a panel restart"
+              {restartRequested
+                ? "Restart requested"
+                : runtimeManagedByConfig
+                ? "Runtime settings are managed in the panel config file"
                 : current.restart.state === "unavailable"
                   ? "Restart is unavailable in the current runtime mode"
-                  : "No pending restart"}
+                  : "Runtime follows the current process startup"}
             </h4>
             <p className="mt-2 text-sm leading-6 opacity-85">
               {restartRequested
                 ? "Restart requested. If the panel runs under a supervisor, it should come back with the saved runtime settings shortly."
-                : current.restart.state === "pending"
-                  ? "Changes to listeners, TLS, or the HTTP root path are saved, but they will not take effect until the panel restarts."
-                  : current.restart.state === "unavailable"
-                    ? "The current process cannot restart itself from the web interface. Save changes here, then restart the panel through its supervisor."
-                    : "Public endpoints are active immediately. Listener and TLS settings only need a restart after they change."}
+                : runtimeManagedByConfig
+                  ? `Public endpoints still save here, but listeners, TLS, and the HTTP root path come from ${runtimeConfigPath}. Edit that file and restart the panel to change runtime behavior.`
+                : current.restart.state === "unavailable"
+                    ? "Public endpoints save here, but runtime values come from the current process startup. Restart the panel through its supervisor after changing startup parameters."
+                    : "Public endpoints save here. Runtime values below are effective values from the running process and can be refreshed by restarting the panel after external config changes."}
             </p>
           </div>
           <button
@@ -139,13 +125,6 @@ export function PanelSettingsForm() {
             helperText="This is the browser-facing URL users open to reach the panel."
           />
           <Field
-            label="HTTP root path"
-            value={draft.http_root_path}
-            onChange={(value) => setDraft((currentDraft) => ({ ...currentDraft, http_root_path: value }))}
-            placeholder="/panvex"
-            helperText="If set, the panel serves its UI, API, and event stream under this prefix."
-          />
-          <Field
             label="gRPC public endpoint"
             value={draft.grpc_public_endpoint}
             onChange={(value) => setDraft((currentDraft) => ({ ...currentDraft, grpc_public_endpoint: value }))}
@@ -157,48 +136,65 @@ export function PanelSettingsForm() {
 
       <AccordionSection
         title="Local listeners and TLS"
-        description="Control how the current process binds on the host and whether it serves TLS directly."
+        description={
+          runtimeManagedByConfig
+            ? `These values are currently loaded from ${runtimeConfigPath} and are shown here for reference.`
+            : "These are the effective runtime values of the current process. Change startup parameters or the panel config file to update them."
+        }
         open={expandedSection === "runtime"}
         onToggle={() => setExpandedSection((currentSection) => toggleAccordionSection(currentSection, "runtime"))}
       >
         <div className="grid gap-4 xl:grid-cols-2">
           <Field
+            label="HTTP root path"
+            value={current.http_root_path}
+            onChange={() => {}}
+            placeholder="/panvex"
+            helperText="If set, the panel serves its UI, API, and event stream under this prefix."
+            disabled
+          />
+          <Field
             label="HTTP listen address"
-            value={draft.http_listen_address}
-            onChange={(value) => setDraft((currentDraft) => ({ ...currentDraft, http_listen_address: value }))}
+            value={current.http_listen_address}
+            onChange={() => {}}
             placeholder=":8080"
+            disabled
           />
           <Field
             label="gRPC listen address"
-            value={draft.grpc_listen_address}
-            onChange={(value) => setDraft((currentDraft) => ({ ...currentDraft, grpc_listen_address: value }))}
+            value={current.grpc_listen_address}
+            onChange={() => {}}
             placeholder=":8443"
+            disabled
           />
           <SelectField
             label="TLS mode"
-            value={draft.tls_mode}
-            onChange={(value) => setDraft((currentDraft) => ({ ...currentDraft, tls_mode: value as "proxy" | "direct" }))}
+            value={current.tls_mode}
+            onChange={() => {}}
             options={[
               { value: "proxy", label: "Behind a reverse proxy" },
               { value: "direct", label: "Serve TLS directly" }
             ]}
             helperText="Choose direct TLS only when the panel itself should present the certificate."
+            disabled
           />
         </div>
 
-        {draft.tls_mode === "direct" ? (
+        {current.tls_mode === "direct" ? (
           <div className="mt-4 grid gap-4 xl:grid-cols-2">
             <Field
               label="Certificate file path"
-              value={draft.tls_cert_file}
-              onChange={(value) => setDraft((currentDraft) => ({ ...currentDraft, tls_cert_file: value }))}
+              value={current.tls_cert_file}
+              onChange={() => {}}
               placeholder="/etc/panvex-panel/tls/panel.crt"
+              disabled
             />
             <Field
               label="Private key file path"
-              value={draft.tls_key_file}
-              onChange={(value) => setDraft((currentDraft) => ({ ...currentDraft, tls_key_file: value }))}
+              value={current.tls_key_file}
+              onChange={() => {}}
               placeholder="/etc/panvex-panel/tls/panel.key"
+              disabled
             />
           </div>
         ) : null}
