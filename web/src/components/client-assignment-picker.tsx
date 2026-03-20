@@ -57,8 +57,8 @@ export function ClientAssignmentPicker(props: ClientAssignmentPickerProps) {
       </button>
 
       {isOpen ? (
-        <div className="fixed inset-0 z-50 bg-slate-950/45 px-4 py-4 sm:flex sm:items-center sm:justify-center sm:p-6">
-          <div className="flex h-full w-full flex-col rounded-[28px] border border-white/70 bg-white shadow-[0_28px_80px_rgba(15,23,42,0.24)] sm:h-auto sm:max-h-[85vh] sm:max-w-2xl">
+        <div className="app-overlay fixed inset-0 z-50 px-4 py-4 sm:flex sm:items-center sm:justify-center sm:p-6">
+          <div className="app-panel-strong flex h-full w-full flex-col rounded-[28px] sm:h-auto sm:max-h-[85vh] sm:max-w-2xl">
             <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">{props.title}</p>

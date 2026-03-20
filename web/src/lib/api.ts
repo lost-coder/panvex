@@ -250,6 +250,12 @@ export type PanelSettingsResponse = {
   };
 };
 
+export type AppearanceSettingsResponse = {
+  theme: "system" | "light" | "dark";
+  density: "comfortable" | "compact";
+  updated_at_unix: number;
+};
+
 export type JobCreateInput = {
   action: string;
   target_agent_ids: string[];
@@ -353,6 +359,15 @@ export const apiClient = {
       method: "DELETE"
     }),
   panelSettings: () => api<PanelSettingsResponse>(`${apiBasePath}/settings/panel`),
+  appearanceSettings: () => api<AppearanceSettingsResponse>(`${apiBasePath}/settings/appearance`),
+  updateAppearanceSettings: (payload: {
+    theme: "system" | "light" | "dark";
+    density: "comfortable" | "compact";
+  }) =>
+    api<AppearanceSettingsResponse>(`${apiBasePath}/settings/appearance`, {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    }),
   updatePanelSettings: (payload: {
     http_public_url: string;
     grpc_public_endpoint: string;

@@ -243,6 +243,8 @@ func (s *Server) routes() http.Handler {
 		api.Post("/users/{id}/totp/reset", s.handleResetUserTotp())
 		api.Get("/settings/panel", s.handleGetPanelSettings())
 		api.Put("/settings/panel", s.handlePutPanelSettings())
+		api.Get("/settings/appearance", s.handleGetUserAppearance())
+		api.Put("/settings/appearance", s.handlePutUserAppearance())
 		api.Post("/settings/panel/restart", s.handleRestartPanel())
 		api.Get("/agents/enrollment-tokens", s.handleListEnrollmentTokens())
 		api.Post("/agents/enrollment-tokens", s.handleCreateEnrollmentToken())

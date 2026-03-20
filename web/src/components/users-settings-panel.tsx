@@ -123,27 +123,27 @@ export function UsersSettingsPanel(props: { me: MeResponse }) {
 
   return (
     <>
-      <div className="rounded-3xl border border-slate-200 bg-slate-50/80 px-5 py-5">
+      <div className="app-card-muted rounded-3xl px-5 py-5">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
-            <div className="text-base font-semibold text-slate-950">Local users</div>
-            <p className="mt-1 text-sm leading-6 text-slate-600">
+            <div className="text-base font-semibold text-[var(--app-text-primary)]">Local users</div>
+            <p className="mt-1 text-sm leading-6 text-[var(--app-text-secondary)]">
               Keep local access compact and manageable with a short list of accounts and small edit flows.
             </p>
           </div>
-          <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+          <span className="app-button-secondary rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em]">
             {usersQuery.data.length} {usersQuery.data.length === 1 ? "user" : "users"}
           </span>
         </div>
 
-        <div className="mt-5 border-t border-slate-200 pt-5">
+        <div className="mt-5 border-t border-[var(--app-border)] pt-5">
         <div className="flex items-center justify-between gap-4">
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-[var(--app-text-secondary)]">
             Most panels only need a couple of local accounts, so create and edit flows stay close by in small modals.
           </p>
           <button
             type="button"
-            className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800"
+            className="app-button-primary rounded-2xl text-sm font-medium"
             onClick={() => setCreateOpen(true)}
           >
             Add user
@@ -153,7 +153,7 @@ export function UsersSettingsPanel(props: { me: MeResponse }) {
         <div className="mt-6 overflow-x-auto">
           <table className="min-w-full border-separate border-spacing-y-3">
             <thead>
-              <tr className="text-left text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+              <tr className="text-left text-xs font-semibold uppercase tracking-[0.22em] text-[var(--app-text-tertiary)]">
                 <th className="px-4 pb-1">User</th>
                 <th className="px-4 pb-1">Role</th>
                 <th className="px-4 pb-1">TOTP</th>
@@ -164,10 +164,10 @@ export function UsersSettingsPanel(props: { me: MeResponse }) {
               {usersQuery.data.map((user) => {
                 const isCurrentUser = user.id === props.me.id;
                 return (
-                  <tr key={user.id} className="rounded-3xl bg-slate-50 text-sm text-slate-700">
+                  <tr key={user.id} className="rounded-3xl bg-[var(--app-surface)] text-sm text-[var(--app-text-secondary)]">
                     <td className="rounded-l-3xl px-4 py-4">
-                      <div className="font-medium text-slate-950">{user.username}</div>
-                      <div className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-500">{isCurrentUser ? "Current account" : user.id}</div>
+                      <div className="font-medium text-[var(--app-text-primary)]">{user.username}</div>
+                      <div className="mt-1 text-xs uppercase tracking-[0.2em] text-[var(--app-text-tertiary)]">{isCurrentUser ? "Current account" : user.id}</div>
                     </td>
                     <td className="px-4 py-4 capitalize">{user.role}</td>
                     <td className="px-4 py-4">{user.totp_enabled ? "Enabled" : "Disabled"}</td>
@@ -175,14 +175,14 @@ export function UsersSettingsPanel(props: { me: MeResponse }) {
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
-                          className="rounded-2xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-800 transition hover:border-slate-400 hover:bg-white"
+                          className="app-button-secondary rounded-2xl px-4 py-2 text-sm font-medium"
                           onClick={() => setEditUser(user)}
                         >
                           Edit
                         </button>
                         <button
                           type="button"
-                          className="rounded-2xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-800 transition hover:border-slate-400 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+                          className="app-button-secondary rounded-2xl px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
                           onClick={() => resetUserTotpMutation.mutate(user.id)}
                           disabled={isCurrentUser || resetUserTotpMutation.isPending}
                           title={isCurrentUser ? "Use the Security tab to manage TOTP for your own account." : undefined}
@@ -249,7 +249,7 @@ export function UsersSettingsPanel(props: { me: MeResponse }) {
           <div className="flex justify-end">
             <button
               type="button"
-              className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-60"
+              className="app-button-primary rounded-2xl text-sm font-medium"
               onClick={() => createUserMutation.mutate()}
               disabled={createUserMutation.isPending}
             >
@@ -294,7 +294,7 @@ export function UsersSettingsPanel(props: { me: MeResponse }) {
           <div className="flex justify-end">
             <button
               type="button"
-              className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-60"
+              className="app-button-primary rounded-2xl text-sm font-medium"
               onClick={() => updateUserMutation.mutate()}
               disabled={updateUserMutation.isPending || !editUser}
             >

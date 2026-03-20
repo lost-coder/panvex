@@ -17,7 +17,7 @@ export function ControlRoomStatusStrip(props: ControlRoomStatusStripProps) {
   ];
 
   return (
-    <section className="rounded-[32px] border border-white/70 bg-white/85 p-4 shadow-[0_20px_60px_rgba(37,46,68,0.08)]">
+    <section className="app-card rounded-[32px] p-4">
       <div className="overflow-x-auto">
         <div className="grid min-w-[860px] grid-cols-7 gap-3">
           {metrics.map((metric) => (
@@ -25,8 +25,8 @@ export function ControlRoomStatusStrip(props: ControlRoomStatusStripProps) {
               key={metric.label}
               className={`rounded-[24px] border px-4 py-4 ${toneClassName(metric.tone)}`}
             >
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">{metric.label}</p>
-              <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">{metric.value}</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--app-text-tertiary)]">{metric.label}</p>
+              <p className="mt-3 text-3xl font-semibold tracking-tight text-[var(--app-text-primary)]">{metric.value}</p>
             </div>
           ))}
         </div>

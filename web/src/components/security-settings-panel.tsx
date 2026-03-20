@@ -60,11 +60,11 @@ export function SecuritySettingsPanel(props: { me: MeResponse }) {
       onToggle={() => setExpandedSection((currentSection) => toggleAccordionSection(currentSection, "totp"))}
       trailing={<StatusBadge enabled={props.me.totp_enabled} />}
     >
-      <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+      <div className="app-card-muted rounded-3xl p-5">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="text-sm font-medium text-slate-950">{props.me.username}</p>
-            <p className="mt-1 text-sm text-slate-600">
+            <p className="text-sm font-medium text-[var(--app-text-primary)]">{props.me.username}</p>
+            <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
               Two-factor authentication is {props.me.totp_enabled ? "enabled" : "disabled"}.
             </p>
           </div>
@@ -82,7 +82,7 @@ export function SecuritySettingsPanel(props: { me: MeResponse }) {
             {securityError ? <ErrorText message={securityError} /> : null}
             <button
               type="button"
-              className="rounded-2xl bg-rose-600 px-5 py-3 text-sm font-medium text-white transition hover:bg-rose-500"
+              className="rounded-2xl bg-rose-600 px-5 py-3 text-sm font-medium text-white transition hover:bg-rose-500 disabled:opacity-60"
               onClick={() => disableTotpMutation.mutate()}
               disabled={disableTotpMutation.isPending}
             >
@@ -105,7 +105,7 @@ export function SecuritySettingsPanel(props: { me: MeResponse }) {
                 {securityError ? <ErrorText message={securityError} /> : null}
                 <button
                   type="button"
-                  className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800"
+                  className="app-button-primary rounded-2xl text-sm font-medium"
                   onClick={() => enableTotpMutation.mutate()}
                   disabled={enableTotpMutation.isPending}
                 >
@@ -114,13 +114,13 @@ export function SecuritySettingsPanel(props: { me: MeResponse }) {
               </>
             ) : (
               <>
-                <p className="text-sm text-slate-600">
+                <p className="text-sm text-[var(--app-text-secondary)]">
                   Start setup to get a secret for your authenticator app. You will confirm it with your password and a fresh code before TOTP is enabled.
                 </p>
                 {securityError ? <ErrorText message={securityError} /> : null}
                 <button
                   type="button"
-                  className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800"
+                  className="app-button-primary rounded-2xl text-sm font-medium"
                   onClick={() => startTotpSetupMutation.mutate()}
                   disabled={startTotpSetupMutation.isPending}
                 >

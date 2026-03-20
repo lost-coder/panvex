@@ -20,8 +20,8 @@ export function FleetDetailDrawer(props: FleetDetailDrawerProps) {
   return (
     <Dialog.Root open={props.open} onOpenChange={props.onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-slate-950/35 backdrop-blur-sm" />
-        <Dialog.Content className="fixed right-4 top-4 bottom-4 z-50 w-[min(520px,calc(100vw-2rem))] overflow-y-auto rounded-[32px] border border-white/70 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.28)]">
+        <Dialog.Overlay className="app-overlay fixed inset-0 backdrop-blur-sm" />
+        <Dialog.Content className="app-panel-strong fixed right-4 top-4 bottom-4 z-50 w-[min(520px,calc(100vw-2rem))] overflow-y-auto rounded-[32px] p-6">
           {props.agent ? (
             <>
               <div className="flex items-start justify-between gap-4">

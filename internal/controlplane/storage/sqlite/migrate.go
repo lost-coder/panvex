@@ -13,6 +13,14 @@ CREATE TABLE IF NOT EXISTS users (
     created_at_unix INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS user_appearance (
+    user_id TEXT PRIMARY KEY,
+    theme TEXT NOT NULL DEFAULT 'system',
+    density TEXT NOT NULL DEFAULT 'comfortable',
+    updated_at_unix INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS fleet_groups (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,

@@ -25,19 +25,19 @@ export function ControlRoomHero(props: ControlRoomHeroProps) {
           : "Everything is reporting in";
 
   return (
-    <section className="relative overflow-hidden rounded-[36px] border border-white/80 bg-[radial-gradient(circle_at_top_left,_rgba(28,95,140,0.18),_transparent_34%),radial-gradient(circle_at_bottom_right,_rgba(12,148,136,0.14),_transparent_28%),linear-gradient(135deg,rgba(255,255,255,0.96),rgba(248,250,252,0.9))] p-6 shadow-[0_24px_80px_rgba(37,46,68,0.12)] lg:p-8">
+    <section className="app-card relative overflow-hidden rounded-[36px] lg:p-8">
       <div className="absolute -right-10 top-0 h-40 w-40 rounded-full bg-sky-300/20 blur-3xl" />
       <div className="absolute bottom-0 left-0 h-32 w-32 rounded-full bg-emerald-300/20 blur-3xl" />
       <div className="relative flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
         <div className="max-w-3xl">
-          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">Panvex</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[var(--app-text-tertiary)]">Panvex</p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <h2 className="text-4xl font-semibold tracking-tight text-slate-950 lg:text-5xl">Control Room</h2>
+            <h2 className="text-4xl font-semibold tracking-tight text-[var(--app-text-primary)] lg:text-5xl">Control Room</h2>
             <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] ${statusTone}`}>
               {statusLabel}
             </span>
           </div>
-          <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-600 lg:text-base">{headline}</p>
+          <p className="mt-4 max-w-2xl text-sm leading-7 text-[var(--app-text-secondary)] lg:text-base">{headline}</p>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-3 xl:min-w-[420px]">
@@ -50,14 +50,14 @@ export function ControlRoomHero(props: ControlRoomHeroProps) {
       <div className="relative mt-6 flex flex-wrap gap-3">
         <button
           type="button"
-          className="inline-flex rounded-2xl bg-slate-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800"
+          className="app-button-primary inline-flex rounded-2xl text-sm font-medium"
           onClick={props.onAddNode}
         >
           Add node
         </button>
         <Link
           to="/clients/new"
-          className="inline-flex rounded-2xl border border-slate-200 bg-white/80 px-5 py-3 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:text-slate-950"
+          className="app-button-secondary inline-flex rounded-2xl text-sm font-medium"
         >
           Create client
         </Link>
@@ -80,9 +80,9 @@ function describeHeadline(summary: ControlRoomResponse): string {
 
 function HeroPill(props: { label: string; value: string }) {
   return (
-    <div className="rounded-[24px] border border-white/80 bg-white/75 px-4 py-4 shadow-[0_18px_36px_rgba(37,46,68,0.08)]">
-      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">{props.label}</p>
-      <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">{props.value}</p>
+    <div className="app-card-muted rounded-[24px] px-4 py-4 shadow-[0_18px_36px_rgba(37,46,68,0.08)]">
+      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--app-text-tertiary)]">{props.label}</p>
+      <p className="mt-3 text-3xl font-semibold tracking-tight text-[var(--app-text-primary)]">{props.value}</p>
     </div>
   );
 }

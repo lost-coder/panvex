@@ -30,6 +30,7 @@ type Options struct {
 // Summary reports how many persistent records the migration copied.
 type Summary struct {
 	Users            int
+	UserAppearance   int
 	FleetGroups      int
 	Agents           int
 	Instances        int
@@ -87,6 +88,17 @@ func copyStore(ctx context.Context, source storage.Store, target storage.Store) 
 		}
 	}
 	summary.Users = len(users)
+
+	appearances, err := source.ListUserAppearances(ctx)
+	if err != nil {
+		return Summary{}, err
+	}
+	for _, appearance := range appearances {
+		if err := target.PutUserAppearance(ctx, appearance); err != nil {
+			return Summary{}, err
+		}
+		summary.UserAppearance++
+	}
 
 	fleetGroups, err := source.ListFleetGroups(ctx)
 	if err != nil {
@@ -187,7 +199,7 @@ func ensureTargetEmpty(ctx context.Context, target storage.Store) error {
 	if err != nil {
 		return err
 	}
-	if counts.Users > 0 || counts.FleetGroups > 0 || counts.Agents > 0 || counts.Instances > 0 || counts.Jobs > 0 || counts.JobTargets > 0 || counts.AuditEvents > 0 || counts.MetricSnapshots > 0 || counts.EnrollmentTokens > 0 {
+	if counts.Users > 0 || counts.UserAppearance > 0 || counts.FleetGroups > 0 || counts.Agents > 0 || counts.Instances > 0 || counts.Jobs > 0 || counts.JobTargets > 0 || counts.AuditEvents > 0 || counts.MetricSnapshots > 0 || counts.EnrollmentTokens > 0 {
 		return ErrTargetNotEmpty
 	}
 
@@ -214,6 +226,12 @@ func listCounts(ctx context.Context, store storage.Store) (Summary, error) {
 		return Summary{}, err
 	}
 	summary.Users = len(users)
+
+	appearances, err := store.ListUserAppearances(ctx)
+	if err != nil {
+		return Summary{}, err
+	}
+	summary.UserAppearance = len(appearances)
 
 	fleetGroups, err := store.ListFleetGroups(ctx)
 	if err != nil {

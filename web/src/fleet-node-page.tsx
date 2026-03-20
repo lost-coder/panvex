@@ -33,7 +33,7 @@ export function FleetNodePage() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-[36px] border border-white/80 bg-[radial-gradient(circle_at_top_left,_rgba(28,95,140,0.16),_transparent_34%),radial-gradient(circle_at_bottom_right,_rgba(12,148,136,0.14),_transparent_28%),linear-gradient(135deg,rgba(255,255,255,0.96),rgba(248,250,252,0.9))] p-6 shadow-[0_24px_80px_rgba(37,46,68,0.12)] lg:p-8">
+      <section className="app-hero-panel rounded-[36px] p-6 lg:p-8">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div className="max-w-3xl">
             <Link to="/fleet" className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500 underline underline-offset-4">
@@ -109,7 +109,7 @@ export function FleetNodePage() {
         />
       </section>
 
-      <section className="rounded-[32px] border border-dashed border-slate-300 bg-slate-50/85 p-6">
+      <section className="app-empty-state rounded-[32px] p-6">
         <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Diagnostics</p>
         <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Deep runtime diagnostics are coming next</h3>
         <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
@@ -143,7 +143,7 @@ function PlaceholderSection(props: { title: string; description: string }) {
 function CenteredMessage(props: { title: string; description: string }) {
   return (
     <div className="flex min-h-[50vh] items-center justify-center">
-      <div className="max-w-lg rounded-[32px] border border-white/70 bg-white/85 p-8 text-center shadow-[0_20px_60px_rgba(37,46,68,0.08)]">
+      <div className="app-panel rounded-[32px] max-w-lg p-8 text-center">
         <h3 className="text-2xl font-semibold tracking-tight text-slate-950">{props.title}</h3>
         <p className="mt-3 text-sm text-slate-600">{props.description}</p>
       </div>

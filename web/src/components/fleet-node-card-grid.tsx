@@ -14,16 +14,16 @@ type FleetNodeCardGridProps = {
 
 export function FleetNodeCardGrid(props: FleetNodeCardGridProps) {
   return (
-    <section className="rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-[0_20px_60px_rgba(37,46,68,0.08)]">
+    <section className="app-card rounded-[32px]">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">All nodes</p>
-          <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Every node at a glance</h3>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--app-text-tertiary)]">All nodes</p>
+          <h3 className="mt-2 text-2xl font-semibold tracking-tight text-[var(--app-text-primary)]">Every node at a glance</h3>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--app-text-secondary)]">
             Scan the whole fleet quickly, then open the node page that needs the next operator decision.
           </p>
         </div>
-        <Link to="/fleet" className="text-sm font-medium text-slate-900 underline underline-offset-4">
+        <Link to="/fleet" className="text-sm font-medium text-[var(--app-text-primary)] underline underline-offset-4">
           Open fleet table
         </Link>
       </div>
@@ -43,11 +43,11 @@ function FleetNodeCard(props: { agent: Agent }) {
   const dcSummary = buildAgentDCIssueSummary(props.agent);
 
   return (
-    <article className="rounded-[28px] border border-slate-200 bg-slate-50/90 p-5 shadow-[0_16px_36px_rgba(37,46,68,0.06)]">
+    <article className="app-card-muted rounded-[28px] p-5 shadow-[0_16px_36px_rgba(37,46,68,0.06)]">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-lg font-semibold tracking-tight text-slate-950">{props.agent.node_name}</p>
-          <p className="mt-1 text-sm text-slate-500">{props.agent.fleet_group_id || "Ungrouped"}</p>
+          <p className="text-lg font-semibold tracking-tight text-[var(--app-text-primary)]">{props.agent.node_name}</p>
+          <p className="mt-1 text-sm text-[var(--app-text-tertiary)]">{props.agent.fleet_group_id || "Ungrouped"}</p>
         </div>
         <span className={statusClassName(status.tone)}>{status.label}</span>
       </div>
@@ -71,13 +71,13 @@ function FleetNodeCard(props: { agent: Agent }) {
       </div>
 
       <div className="mt-5 flex items-center justify-between gap-4">
-        <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
+        <p className="text-xs uppercase tracking-[0.22em] text-[var(--app-text-tertiary)]">
           Last seen {new Date(props.agent.last_seen_at).toLocaleString()}
         </p>
         <Link
           to="/fleet/$agentId"
           params={{ agentId: props.agent.id }}
-          className="inline-flex rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:text-slate-950"
+          className="app-button-secondary inline-flex rounded-2xl px-4 py-2.5 text-sm font-medium"
         >
           View details
         </Link>
@@ -101,10 +101,10 @@ function DCIssueSummaryPanel(props: {
 }) {
   if (props.summary.totalCount === 0) {
     return (
-      <section className="rounded-[24px] border border-dashed border-slate-300 bg-white/75 p-4">
-        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">DC state</p>
-        <p className="mt-3 text-lg font-semibold tracking-tight text-slate-950">No DC data yet</p>
-        <p className="mt-2 text-sm leading-6 text-slate-500">This node has not reported any per-DC coverage details yet.</p>
+      <section className="app-card-muted rounded-[24px] border-dashed p-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--app-text-tertiary)]">DC state</p>
+        <p className="mt-3 text-lg font-semibold tracking-tight text-[var(--app-text-primary)]">No DC data yet</p>
+        <p className="mt-2 text-sm leading-6 text-[var(--app-text-tertiary)]">This node has not reported any per-DC coverage details yet.</p>
       </section>
     );
   }
@@ -113,15 +113,15 @@ function DCIssueSummaryPanel(props: {
   const hiddenIssues = Math.max(props.summary.issueCount - visibleIssues.length, 0);
 
   return (
-    <section className="rounded-[24px] border border-slate-200 bg-white/80 p-4">
-      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">DC state</p>
+    <section className="app-card-muted rounded-[24px] p-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--app-text-tertiary)]">DC state</p>
       <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="text-3xl font-semibold tracking-tight text-emerald-700">{props.summary.okCount} OK</span>
         <span className={props.summary.issueCount > 0 ? "text-3xl font-semibold tracking-tight text-amber-700" : "text-3xl font-semibold tracking-tight text-slate-400"}>
           {props.summary.issueCount} issues
         </span>
       </div>
-      <p className="mt-2 text-xs uppercase tracking-[0.22em] text-slate-500">{props.summary.totalCount} DC total</p>
+      <p className="mt-2 text-xs uppercase tracking-[0.22em] text-[var(--app-text-tertiary)]">{props.summary.totalCount} DC total</p>
 
       <div className="mt-4 flex flex-wrap gap-2">
         {visibleIssues.length > 0 ? (
@@ -148,9 +148,9 @@ function DCIssueSummaryPanel(props: {
 function MetricStack(props: { label: string; value: string; hint: string }) {
   return (
     <div>
-      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">{props.label}</p>
-      <p className="mt-2 text-lg font-semibold tracking-tight text-slate-950">{props.value}</p>
-      <p className="mt-1 text-xs text-slate-500">{props.hint}</p>
+      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--app-text-tertiary)]">{props.label}</p>
+      <p className="mt-2 text-lg font-semibold tracking-tight text-[var(--app-text-primary)]">{props.value}</p>
+      <p className="mt-1 text-xs text-[var(--app-text-tertiary)]">{props.hint}</p>
     </div>
   );
 }
