@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 
 import {
   buildAgentAttentionList,
+  buildAgentAttentionReasons,
   buildAgentConnectionSummary,
+  buildAgentDCIssueSummary,
+  buildAgentDCSegments,
+  buildAgentDCCoverageStage,
   buildAgentModeLabel,
   buildAgentRuntimeStatus
 } from "../src/lib/telemt-runtime-state.ts";
@@ -110,6 +114,197 @@ test("buildAgentAttentionList keeps the most urgent nodes first", () => {
     buildAgentAttentionList([healthyAgent, degradedAgent, offlineAgent]).map((agent) => agent.id),
     ["agent-offline", "agent-degraded"]
   );
+});
+
+test("buildAgentAttentionReasons explains why a node needs attention", () => {
+  const agent = createAgent({
+    runtime: {
+      degraded: true,
+      accepting_new_connections: false,
+      dc_coverage_pct: 72,
+      healthy_upstreams: 1,
+      total_upstreams: 3
+    }
+  });
+
+  assert.deepEqual(buildAgentAttentionReasons(agent).map((reason) => reason.label), [
+    "Runtime degraded",
+    "Admissions paused",
+    "Reduced DC coverage",
+    "Upstreams degraded"
+  ]);
+});
+
+test("buildAgentAttentionReasons collapses offline nodes into one clear reason", () => {
+  const agent = createAgent({
+    presence_state: "offline",
+    runtime: {
+      degraded: true,
+      accepting_new_connections: false,
+      dc_coverage_pct: 0
+    }
+  });
+
+  assert.deepEqual(buildAgentAttentionReasons(agent).map((reason) => reason.label), ["Offline"]);
+});
+
+test("buildAgentDCCoverageStage maps coverage into four discrete stages", () => {
+  assert.equal(
+    buildAgentDCCoverageStage(
+      createAgent({
+        runtime: { dc_coverage_pct: 100 }
+      })
+    ),
+    100
+  );
+  assert.equal(
+    buildAgentDCCoverageStage(
+      createAgent({
+        runtime: { dc_coverage_pct: 84 }
+      })
+    ),
+    66
+  );
+  assert.equal(
+    buildAgentDCCoverageStage(
+      createAgent({
+        runtime: { dc_coverage_pct: 15 }
+      })
+    ),
+    33
+  );
+  assert.equal(
+    buildAgentDCCoverageStage(
+      createAgent({
+        runtime: { dc_coverage_pct: 0 }
+      })
+    ),
+    0
+  );
+});
+
+test("buildAgentDCSegments maps each DC into a radial stage", () => {
+  const agent = createAgent({
+    runtime: {
+      dcs: [
+        {
+          dc: 4,
+          available_endpoints: 6,
+          available_pct: 100,
+          required_writers: 2,
+          alive_writers: 2,
+          coverage_pct: 100,
+          rtt_ms: 42,
+          load: 0.2
+        },
+        {
+          dc: 2,
+          available_endpoints: 5,
+          available_pct: 100,
+          required_writers: 2,
+          alive_writers: 2,
+          coverage_pct: 74,
+          rtt_ms: 38,
+          load: 0.25
+        },
+        {
+          dc: 5,
+          available_endpoints: 3,
+          available_pct: 50,
+          required_writers: 2,
+          alive_writers: 1,
+          coverage_pct: 22,
+          rtt_ms: 91,
+          load: 0.51
+        },
+        {
+          dc: 1,
+          available_endpoints: 0,
+          available_pct: 0,
+          required_writers: 2,
+          alive_writers: 0,
+          coverage_pct: 0,
+          rtt_ms: 0,
+          load: 0
+        }
+      ]
+    }
+  });
+
+  assert.deepEqual(
+    buildAgentDCSegments(agent).map((segment) => ({
+      dc: segment.dc,
+      stage: segment.stage,
+      label: segment.label,
+      stateLabel: segment.stateLabel
+    })),
+    [
+      { dc: 1, stage: 0, label: "DC1", stateLabel: "Down" },
+      { dc: 2, stage: 66, label: "DC2", stateLabel: "Reduced" },
+      { dc: 4, stage: 100, label: "DC4", stateLabel: "Full" },
+      { dc: 5, stage: 33, label: "DC5", stateLabel: "Limited" }
+    ]
+  );
+});
+
+test("buildAgentDCIssueSummary counts OK DCs and sorts issues by severity", () => {
+  const agent = createAgent({
+    runtime: {
+      dcs: [
+        {
+          dc: 4,
+          available_endpoints: 6,
+          available_pct: 100,
+          required_writers: 2,
+          alive_writers: 2,
+          coverage_pct: 100,
+          rtt_ms: 42,
+          load: 0.2
+        },
+        {
+          dc: 2,
+          available_endpoints: 5,
+          available_pct: 100,
+          required_writers: 2,
+          alive_writers: 2,
+          coverage_pct: 74,
+          rtt_ms: 38,
+          load: 0.25
+        },
+        {
+          dc: 5,
+          available_endpoints: 3,
+          available_pct: 50,
+          required_writers: 2,
+          alive_writers: 1,
+          coverage_pct: 22,
+          rtt_ms: 91,
+          load: 0.51
+        },
+        {
+          dc: 1,
+          available_endpoints: 0,
+          available_pct: 0,
+          required_writers: 2,
+          alive_writers: 0,
+          coverage_pct: 0,
+          rtt_ms: 0,
+          load: 0
+        }
+      ]
+    }
+  });
+
+  assert.deepEqual(buildAgentDCIssueSummary(agent), {
+    totalCount: 4,
+    okCount: 1,
+    issueCount: 3,
+    issues: [
+      { dc: 1, label: "DC1 down", stateLabel: "Down", tone: "rose" },
+      { dc: 5, label: "DC5 limited", stateLabel: "Limited", tone: "amber" },
+      { dc: 2, label: "DC2 reduced", stateLabel: "Reduced", tone: "sky" }
+    ]
+  });
 });
 
 function createAgent(overrides: Partial<Agent> = {}): Agent {

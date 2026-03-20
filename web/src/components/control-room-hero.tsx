@@ -4,6 +4,7 @@ import type { ControlRoomResponse } from "../lib/api";
 
 type ControlRoomHeroProps = {
   summary: ControlRoomResponse;
+  onAddNode: () => void;
 };
 
 export function ControlRoomHero(props: ControlRoomHeroProps) {
@@ -47,17 +48,18 @@ export function ControlRoomHero(props: ControlRoomHeroProps) {
       </div>
 
       <div className="relative mt-6 flex flex-wrap gap-3">
-        <Link
-          to="/fleet"
+        <button
+          type="button"
           className="inline-flex rounded-2xl bg-slate-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800"
+          onClick={props.onAddNode}
         >
-          Open fleet
-        </Link>
+          Add node
+        </button>
         <Link
-          to="/settings"
+          to="/clients/new"
           className="inline-flex rounded-2xl border border-slate-200 bg-white/80 px-5 py-3 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:text-slate-950"
         >
-          Open settings
+          Create client
         </Link>
       </div>
     </section>

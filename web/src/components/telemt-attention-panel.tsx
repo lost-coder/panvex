@@ -1,7 +1,12 @@
 import { Link } from "@tanstack/react-router";
 
 import type { Agent } from "../lib/api";
-import { buildAgentAttentionList, buildAgentConnectionSummary, buildAgentRuntimeStatus } from "../lib/telemt-runtime-state";
+import {
+  buildAgentAttentionList,
+  buildAgentAttentionReasons,
+  buildAgentConnectionSummary,
+  buildAgentRuntimeStatus
+} from "../lib/telemt-runtime-state";
 
 type TelemtAttentionPanelProps = {
   agents: Agent[];
@@ -27,6 +32,7 @@ export function TelemtAttentionPanel(props: TelemtAttentionPanelProps) {
           attentionAgents.map((agent) => {
             const status = buildAgentRuntimeStatus(agent);
             const connections = buildAgentConnectionSummary(agent);
+            const reasons = buildAgentAttentionReasons(agent);
 
             return (
               <div key={agent.id} className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
@@ -37,6 +43,15 @@ export function TelemtAttentionPanel(props: TelemtAttentionPanelProps) {
                   </div>
                   <span className={statusClassName(status.tone)}>{status.label}</span>
                 </div>
+                {reasons.length > 0 ? (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {reasons.map((reason) => (
+                      <span key={reason.label} className={reasonClassName(reason.tone)}>
+                        {reason.label}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
                 <div className="mt-4 grid gap-3 text-sm text-slate-600 sm:grid-cols-3">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Connections</p>
@@ -53,6 +68,15 @@ export function TelemtAttentionPanel(props: TelemtAttentionPanelProps) {
                       {agent.runtime.healthy_upstreams}/{agent.runtime.total_upstreams || 0} healthy
                     </p>
                   </div>
+                </div>
+                <div className="mt-4 flex justify-end">
+                  <Link
+                    to="/fleet/$agentId"
+                    params={{ agentId: agent.id }}
+                    className="inline-flex rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:text-slate-950"
+                  >
+                    Open node
+                  </Link>
                 </div>
               </div>
             );
@@ -76,5 +100,13 @@ function statusClassName(tone: "emerald" | "amber" | "rose" | "sky") {
     amber: "rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-amber-800",
     rose: "rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-rose-800",
     sky: "rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-sky-800"
+  }[tone];
+}
+
+function reasonClassName(tone: "emerald" | "amber" | "rose") {
+  return {
+    emerald: "rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-800",
+    amber: "rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-800",
+    rose: "rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-rose-800"
   }[tone];
 }
