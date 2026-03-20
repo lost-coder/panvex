@@ -7,19 +7,20 @@ import {
   createRoute,
   createRouter
 } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { AppShell } from "./components/app-shell";
 import { ClientDetailPage, ClientsPage, CreateClientPage } from "./clients-page";
 import { ControlRoomHero } from "./components/control-room-hero";
 import { ControlRoomOnboarding } from "./components/control-room-onboarding";
-import { ControlRoomSummary } from "./components/control-room-summary";
+import { ControlRoomStatusStrip } from "./components/control-room-status-strip";
 import { FleetDetailDrawer } from "./components/fleet-detail-drawer";
+import { FleetNodeCardGrid } from "./components/fleet-node-card-grid";
 import { FleetRuntimeModeBadge, FleetRuntimeStatusBadge } from "./components/fleet-runtime-status-badge";
 import { FleetRuntimeConnections, FleetRuntimeDCSummary, FleetRuntimeUpstreamSummary } from "./components/fleet-runtime-summary";
+import { FleetNodePage } from "./fleet-node-page";
 import { TelemtAttentionPanel } from "./components/telemt-attention-panel";
-import { TelemtRuntimeDistribution } from "./components/telemt-runtime-distribution";
 import { SettingsPage } from "./settings-page";
 import {
   apiClient,
@@ -61,6 +62,12 @@ const fleetRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/fleet",
   component: FleetPage
+});
+
+const fleetNodeRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/fleet/$agentId",
+  component: FleetNodePage
 });
 
 const jobsRoute = createRoute({
@@ -107,7 +114,7 @@ const settingsRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
-  shellRoute.addChildren([overviewRoute, fleetRoute, jobsRoute, auditRoute, agentsRoute, clientsRoute, clientsNewRoute, clientDetailRoute, settingsRoute])
+  shellRoute.addChildren([overviewRoute, fleetRoute, fleetNodeRoute, jobsRoute, auditRoute, agentsRoute, clientsRoute, clientsNewRoute, clientDetailRoute, settingsRoute])
 ]);
 
 export const router = createRouter({
@@ -193,6 +200,12 @@ function OverviewPage() {
   const controlRoomQuery = useQuery({ queryKey: ["control-room"], queryFn: () => apiClient.controlRoom() });
   const metricsQuery = useQuery({ queryKey: ["metrics"], queryFn: () => apiClient.metrics() });
   const agentsQuery = useQuery({ queryKey: ["agents"], queryFn: () => apiClient.agents() });
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const needsFirstServer = controlRoomQuery.data?.onboarding.needs_first_server ?? false;
+
+  useEffect(() => {
+    setOnboardingOpen(needsFirstServer);
+  }, [needsFirstServer]);
 
   if (controlRoomQuery.isLoading || agentsQuery.isLoading) {
     return <CenteredMessage title="Loading Control Room" description="Pulling together your latest server summary." />;
@@ -206,16 +219,21 @@ function OverviewPage() {
   const agents = agentsQuery.data ?? [];
   const chartData = aggregateMetrics(metricsQuery.data ?? []);
 
+  const handleOpenOnboarding = () => {
+    setOnboardingOpen(true);
+    window.requestAnimationFrame(() => {
+      document.getElementById("dashboard-onboarding")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
+
   return (
     <div className="space-y-6">
-      <ControlRoomHero summary={controlRoom} />
-      <ControlRoomOnboarding onboarding={controlRoom.onboarding} />
-      <ControlRoomSummary summary={controlRoom} />
+      <ControlRoomHero summary={controlRoom} onAddNode={handleOpenOnboarding} />
+      <ControlRoomOnboarding onboarding={controlRoom.onboarding} open={onboardingOpen || controlRoom.onboarding.needs_first_server} onOpenChange={setOnboardingOpen} />
+      <ControlRoomStatusStrip summary={controlRoom} />
 
-      <div className="grid gap-6 xl:grid-cols-[1.2fr,0.8fr]">
-        <TelemtAttentionPanel agents={agents} />
-        <TelemtRuntimeDistribution summary={controlRoom} />
-      </div>
+      <TelemtAttentionPanel agents={agents} />
+      <FleetNodeCardGrid agents={agents} />
 
       <div className="grid gap-6 xl:grid-cols-[1.2fr,0.8fr]">
         <section className="rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-[0_20px_60px_rgba(37,46,68,0.08)]">
@@ -342,7 +360,14 @@ function FleetPage() {
                   onClick={() => setSelectedAgent(agent)}
                 >
                   <td className="rounded-l-3xl px-4 py-4">
-                    <div className="font-medium text-slate-950">{agent.node_name}</div>
+                    <Link
+                      to="/fleet/$agentId"
+                      params={{ agentId: agent.id }}
+                      className="font-medium text-slate-950 hover:underline"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      {agent.node_name}
+                    </Link>
                     <div className="mt-1 text-sm text-slate-500">{agent.id}</div>
                   </td>
                   <td className="px-4 py-4 text-sm text-slate-700">{agent.fleet_group_id || "Ungrouped"}</td>
