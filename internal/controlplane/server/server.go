@@ -94,7 +94,7 @@ func New(options Options) *Server {
 		metrics:    make([]MetricSnapshot, 0),
 		auditTrail: make([]AuditEvent, 0),
 	}
-	server.panelSettings = defaultPanelSettings(server.panelRuntime)
+	server.panelSettings = defaultPanelSettings()
 	authority, err := newCertificateAuthority(now())
 	if err != nil {
 		panic(err)

@@ -93,16 +93,10 @@ type EnrollmentTokenRecord struct {
 	RevokedAt    *time.Time
 }
 
-// PanelSettingsRecord stores operator-managed panel network and TLS settings.
+// PanelSettingsRecord stores operator-managed public access settings for the panel.
 type PanelSettingsRecord struct {
 	HTTPPublicURL      string
-	HTTPRootPath       string
 	GRPCPublicEndpoint string
-	HTTPListenAddress  string
-	GRPCListenAddress  string
-	TLSMode            string
-	TLSCertFile        string
-	TLSKeyFile         string
 	UpdatedAt          time.Time
 }
 

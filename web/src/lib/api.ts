@@ -240,6 +240,8 @@ export type PanelSettingsResponse = {
   tls_mode: "proxy" | "direct";
   tls_cert_file: string;
   tls_key_file: string;
+  runtime_source: "legacy" | "config_file";
+  runtime_config_path: string;
   updated_at_unix: number;
   restart: {
     supported: boolean;
@@ -353,13 +355,7 @@ export const apiClient = {
   panelSettings: () => api<PanelSettingsResponse>(`${apiBasePath}/settings/panel`),
   updatePanelSettings: (payload: {
     http_public_url: string;
-    http_root_path: string;
     grpc_public_endpoint: string;
-    http_listen_address: string;
-    grpc_listen_address: string;
-    tls_mode: "proxy" | "direct";
-    tls_cert_file: string;
-    tls_key_file: string;
   }) =>
     api<PanelSettingsResponse>(`${apiBasePath}/settings/panel`, {
       method: "PUT",

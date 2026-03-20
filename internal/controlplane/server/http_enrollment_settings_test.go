@@ -23,13 +23,7 @@ func TestHTTPAgentBootstrapUsesConfiguredGRPCPublicEndpoint(t *testing.T) {
 
 	if err := store.PutPanelSettings(context.Background(), storage.PanelSettingsRecord{
 		HTTPPublicURL:      "https://panel.example.com",
-		HTTPRootPath:       "",
 		GRPCPublicEndpoint: "grpc.panel.example.com:443",
-		HTTPListenAddress:  ":8080",
-		GRPCListenAddress:  ":8443",
-		TLSMode:            "proxy",
-		TLSCertFile:        "",
-		TLSKeyFile:         "",
 		UpdatedAt:          now,
 	}); err != nil {
 		t.Fatalf("PutPanelSettings() error = %v", err)

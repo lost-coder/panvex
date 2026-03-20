@@ -13,7 +13,7 @@ import (
 	"github.com/panvex/panvex/internal/controlplane/storage/sqlite"
 )
 
-func TestHTTPPanelSettingsRequiresAdminAndPersistsChanges(t *testing.T) {
+func TestHTTPPanelSettingsRequiresAdminAndPersistsSharedEndpointChanges(t *testing.T) {
 	now := time.Date(2026, time.March, 16, 19, 0, 0, 0, time.UTC)
 	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
 	if err != nil {
@@ -74,6 +74,7 @@ func TestHTTPPanelSettingsRequiresAdminAndPersistsChanges(t *testing.T) {
 	}
 
 	var initialPayload struct {
+		HTTPRootPath       string `json:"http_root_path"`
 		HTTPListenAddress string `json:"http_listen_address"`
 		GRPCListenAddress string `json:"grpc_listen_address"`
 		TLSMode           string `json:"tls_mode"`
@@ -85,6 +86,9 @@ func TestHTTPPanelSettingsRequiresAdminAndPersistsChanges(t *testing.T) {
 	}
 	if err := json.Unmarshal(initialResponse.Body.Bytes(), &initialPayload); err != nil {
 		t.Fatalf("json.Unmarshal(initial) error = %v", err)
+	}
+	if initialPayload.HTTPRootPath != "" {
+		t.Fatalf("initial.http_root_path = %q, want empty", initialPayload.HTTPRootPath)
 	}
 	if initialPayload.HTTPListenAddress != ":8080" {
 		t.Fatalf("initial.http_listen_address = %q, want %q", initialPayload.HTTPListenAddress, ":8080")
@@ -107,13 +111,7 @@ func TestHTTPPanelSettingsRequiresAdminAndPersistsChanges(t *testing.T) {
 
 	updateResponse := performJSONRequest(t, server.Handler(), http.MethodPut, "/api/settings/panel", map[string]string{
 		"http_public_url":      "https://panel.example.com",
-		"http_root_path":       "/panvex",
 		"grpc_public_endpoint": "grpc.panel.example.com:443",
-		"http_listen_address":  ":8080",
-		"grpc_listen_address":  ":8443",
-		"tls_mode":             "proxy",
-		"tls_cert_file":        "",
-		"tls_key_file":         "",
 	}, adminCookies)
 	if updateResponse.Code != http.StatusOK {
 		t.Fatalf("PUT /api/settings/panel status = %d, want %d", updateResponse.Code, http.StatusOK)
@@ -135,8 +133,8 @@ func TestHTTPPanelSettingsRequiresAdminAndPersistsChanges(t *testing.T) {
 	if updatedPayload.HTTPPublicURL != "https://panel.example.com" {
 		t.Fatalf("updated.http_public_url = %q, want %q", updatedPayload.HTTPPublicURL, "https://panel.example.com")
 	}
-	if updatedPayload.HTTPRootPath != "/panvex" {
-		t.Fatalf("updated.http_root_path = %q, want %q", updatedPayload.HTTPRootPath, "/panvex")
+	if updatedPayload.HTTPRootPath != "" {
+		t.Fatalf("updated.http_root_path = %q, want empty", updatedPayload.HTTPRootPath)
 	}
 	if updatedPayload.GRPCPublicEndpoint != "grpc.panel.example.com:443" {
 		t.Fatalf("updated.grpc_public_endpoint = %q, want %q", updatedPayload.GRPCPublicEndpoint, "grpc.panel.example.com:443")
@@ -144,11 +142,11 @@ func TestHTTPPanelSettingsRequiresAdminAndPersistsChanges(t *testing.T) {
 	if !updatedPayload.Restart.Supported {
 		t.Fatal("updated.restart.supported = false, want true")
 	}
-	if !updatedPayload.Restart.Pending {
-		t.Fatal("updated.restart.pending = false, want true")
+	if updatedPayload.Restart.Pending {
+		t.Fatal("updated.restart.pending = true, want false")
 	}
-	if updatedPayload.Restart.State != "pending" {
-		t.Fatalf("updated.restart.state = %q, want %q", updatedPayload.Restart.State, "pending")
+	if updatedPayload.Restart.State != "ready" {
+		t.Fatalf("updated.restart.state = %q, want %q", updatedPayload.Restart.State, "ready")
 	}
 
 	storedSettings, err := store.GetPanelSettings(context.Background())
@@ -157,9 +155,6 @@ func TestHTTPPanelSettingsRequiresAdminAndPersistsChanges(t *testing.T) {
 	}
 	if storedSettings.HTTPPublicURL != "https://panel.example.com" {
 		t.Fatalf("stored.http_public_url = %q, want %q", storedSettings.HTTPPublicURL, "https://panel.example.com")
-	}
-	if storedSettings.HTTPRootPath != "/panvex" {
-		t.Fatalf("stored.http_root_path = %q, want %q", storedSettings.HTTPRootPath, "/panvex")
 	}
 	if storedSettings.GRPCPublicEndpoint != "grpc.panel.example.com:443" {
 		t.Fatalf("stored.grpc_public_endpoint = %q, want %q", storedSettings.GRPCPublicEndpoint, "grpc.panel.example.com:443")
@@ -219,7 +214,7 @@ func TestHTTPPanelSettingsMarksRestartUnavailableWhenRuntimeCannotSelfRestart(t 
 	}
 }
 
-func TestHTTPPanelSettingsRejectsDirectTLSWithoutCertificateFiles(t *testing.T) {
+func TestHTTPPanelSettingsRejectsRuntimeMutationsInLegacyMode(t *testing.T) {
 	now := time.Date(2026, time.March, 17, 10, 40, 0, 0, time.UTC)
 	server := New(Options{
 		Now: func() time.Time { return now },
@@ -250,11 +245,149 @@ func TestHTTPPanelSettingsRejectsDirectTLSWithoutCertificateFiles(t *testing.T) 
 		"http_public_url":      "https://panel.example.com",
 		"http_root_path":       "/panvex",
 		"grpc_public_endpoint": "grpc.panel.example.com:443",
-		"http_listen_address":  ":8080",
-		"grpc_listen_address":  ":8443",
+	}, loginResponse.Result().Cookies())
+	if updateResponse.Code != http.StatusBadRequest {
+		t.Fatalf("PUT /api/settings/panel status = %d, want %d", updateResponse.Code, http.StatusBadRequest)
+	}
+}
+
+func TestHTTPPanelSettingsExposesConfigManagedRuntimeAsReadOnly(t *testing.T) {
+	now := time.Date(2026, time.March, 20, 20, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := New(Options{
+		Now:   func() time.Time { return now },
+		Store: store,
+		PanelRuntime: PanelRuntime{
+			HTTPListenAddress: ":18080",
+			HTTPRootPath:      "/runtime",
+			GRPCListenAddress: ":18443",
+			TLSMode:           "direct",
+			TLSCertFile:       "/etc/panvex/tls/panel.crt",
+			TLSKeyFile:        "/etc/panvex/tls/panel.key",
+			RestartSupported:  true,
+			ConfigSource:      PanelRuntimeSourceConfigFile,
+			ConfigPath:        "/etc/panvex/config.toml",
+		},
+	})
+	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "admin",
+		Password: "admin-password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/runtime/api/auth/login", map[string]string{
+		"username": "admin",
+		"password": "admin-password",
+	}, nil)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
+	}
+	cookies := loginResponse.Result().Cookies()
+
+	updateResponse := performJSONRequest(t, server.Handler(), http.MethodPut, "/runtime/api/settings/panel", map[string]string{
+		"http_public_url":      "https://panel.example.com",
+		"grpc_public_endpoint": "grpc.panel.example.com:443",
+	}, cookies)
+	if updateResponse.Code != http.StatusOK {
+		t.Fatalf("PUT /api/settings/panel status = %d, want %d", updateResponse.Code, http.StatusOK)
+	}
+
+	var payload struct {
+		HTTPRootPath       string `json:"http_root_path"`
+		HTTPListenAddress  string `json:"http_listen_address"`
+		GRPCListenAddress  string `json:"grpc_listen_address"`
+		TLSMode            string `json:"tls_mode"`
+		TLSCertFile        string `json:"tls_cert_file"`
+		TLSKeyFile         string `json:"tls_key_file"`
+		RuntimeSource      string `json:"runtime_source"`
+		RuntimeConfigPath  string `json:"runtime_config_path"`
+		Restart            struct {
+			Pending bool   `json:"pending"`
+			State   string `json:"state"`
+		} `json:"restart"`
+	}
+	if err := json.Unmarshal(updateResponse.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if payload.HTTPRootPath != "/runtime" {
+		t.Fatalf("payload.http_root_path = %q, want %q", payload.HTTPRootPath, "/runtime")
+	}
+	if payload.HTTPListenAddress != ":18080" {
+		t.Fatalf("payload.http_listen_address = %q, want %q", payload.HTTPListenAddress, ":18080")
+	}
+	if payload.GRPCListenAddress != ":18443" {
+		t.Fatalf("payload.grpc_listen_address = %q, want %q", payload.GRPCListenAddress, ":18443")
+	}
+	if payload.TLSMode != "direct" {
+		t.Fatalf("payload.tls_mode = %q, want %q", payload.TLSMode, "direct")
+	}
+	if payload.TLSCertFile != "/etc/panvex/tls/panel.crt" {
+		t.Fatalf("payload.tls_cert_file = %q, want %q", payload.TLSCertFile, "/etc/panvex/tls/panel.crt")
+	}
+	if payload.TLSKeyFile != "/etc/panvex/tls/panel.key" {
+		t.Fatalf("payload.tls_key_file = %q, want %q", payload.TLSKeyFile, "/etc/panvex/tls/panel.key")
+	}
+	if payload.RuntimeSource != PanelRuntimeSourceConfigFile {
+		t.Fatalf("payload.runtime_source = %q, want %q", payload.RuntimeSource, PanelRuntimeSourceConfigFile)
+	}
+	if payload.RuntimeConfigPath != "/etc/panvex/config.toml" {
+		t.Fatalf("payload.runtime_config_path = %q, want %q", payload.RuntimeConfigPath, "/etc/panvex/config.toml")
+	}
+	if payload.Restart.Pending {
+		t.Fatal("payload.restart.pending = true, want false")
+	}
+	if payload.Restart.State != "ready" {
+		t.Fatalf("payload.restart.state = %q, want %q", payload.Restart.State, "ready")
+	}
+}
+
+func TestHTTPPanelSettingsRejectsRuntimeMutationsWhenConfigManagesRuntime(t *testing.T) {
+	now := time.Date(2026, time.March, 20, 20, 30, 0, 0, time.UTC)
+	server := New(Options{
+		Now: func() time.Time { return now },
+		PanelRuntime: PanelRuntime{
+			HTTPListenAddress: ":18080",
+			HTTPRootPath:      "/runtime",
+			GRPCListenAddress: ":18443",
+			TLSMode:           "proxy",
+			RestartSupported:  true,
+			ConfigSource:      PanelRuntimeSourceConfigFile,
+			ConfigPath:        "/etc/panvex/config.toml",
+		},
+	})
+	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "admin",
+		Password: "admin-password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/runtime/api/auth/login", map[string]string{
+		"username": "admin",
+		"password": "admin-password",
+	}, nil)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
+	}
+
+	updateResponse := performJSONRequest(t, server.Handler(), http.MethodPut, "/runtime/api/settings/panel", map[string]string{
+		"http_public_url":      "https://panel.example.com",
+		"http_root_path":       "/mutated",
+		"grpc_public_endpoint": "grpc.panel.example.com:443",
+		"http_listen_address":  ":9999",
+		"grpc_listen_address":  ":9998",
 		"tls_mode":             "direct",
-		"tls_cert_file":        "",
-		"tls_key_file":         "",
+		"tls_cert_file":        "/etc/panvex/other.crt",
+		"tls_key_file":         "/etc/panvex/other.key",
 	}, loginResponse.Result().Cookies())
 	if updateResponse.Code != http.StatusBadRequest {
 		t.Fatalf("PUT /api/settings/panel status = %d, want %d", updateResponse.Code, http.StatusBadRequest)

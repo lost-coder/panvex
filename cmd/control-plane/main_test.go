@@ -13,6 +13,7 @@ import (
 
 	"github.com/panvex/panvex/internal/controlplane/auth"
 	"github.com/panvex/panvex/internal/controlplane/config"
+	"github.com/panvex/panvex/internal/controlplane/server"
 	"github.com/panvex/panvex/internal/controlplane/storage"
 	"github.com/panvex/panvex/internal/controlplane/storage/sqlite"
 )
@@ -49,7 +50,124 @@ func TestParseServeConfigAcceptsSupervisedRestartMode(t *testing.T) {
 	}
 }
 
-func TestResolvePanelRuntimeUsesStoredSettingsWhenPresent(t *testing.T) {
+func TestParseServeConfigLoadsConfigFileWhenExplicitlyRequested(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(configPath, []byte(`
+[storage]
+driver = "sqlite"
+dsn = "data/runtime.db"
+
+[http]
+listen_address = ":19080"
+root_path = "/runtime"
+
+[grpc]
+listen_address = ":19443"
+
+[panel]
+restart_mode = "supervised"
+`), 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+
+	configuration, err := parseServeConfig([]string{"-config", configPath})
+	if err != nil {
+		t.Fatalf("parseServeConfig() error = %v", err)
+	}
+
+	if configuration.ConfigPath != configPath {
+		t.Fatalf("configuration.ConfigPath = %q, want %q", configuration.ConfigPath, configPath)
+	}
+	if !configuration.ConfigManagedRuntime {
+		t.Fatal("configuration.ConfigManagedRuntime = false, want true")
+	}
+	expectedDSN := filepath.Join(filepath.Dir(configPath), "data", "runtime.db")
+	if configuration.Storage.DSN != expectedDSN {
+		t.Fatalf("configuration.Storage.DSN = %q, want %q", configuration.Storage.DSN, expectedDSN)
+	}
+	if configuration.HTTPAddr != ":19080" {
+		t.Fatalf("configuration.HTTPAddr = %q, want %q", configuration.HTTPAddr, ":19080")
+	}
+	if configuration.GRPCAddr != ":19443" {
+		t.Fatalf("configuration.GRPCAddr = %q, want %q", configuration.GRPCAddr, ":19443")
+	}
+	if configuration.HTTPRootPath != "/runtime" {
+		t.Fatalf("configuration.HTTPRootPath = %q, want %q", configuration.HTTPRootPath, "/runtime")
+	}
+	if configuration.RestartMode != config.RestartModeSupervised {
+		t.Fatalf("configuration.RestartMode = %q, want %q", configuration.RestartMode, config.RestartModeSupervised)
+	}
+}
+
+func TestParseServeConfigRejectsExplicitLegacyRuntimeFlagsWhenConfigFileIsUsed(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(configPath, []byte(`
+[storage]
+driver = "sqlite"
+dsn = "data/runtime.db"
+`), 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+
+	_, err := parseServeConfig([]string{"-config", configPath, "-http-addr", ":9999"})
+	if err == nil {
+		t.Fatal("parseServeConfig() error = nil, want legacy runtime conflict")
+	}
+}
+
+func TestResolvePanelRuntimeUsesConfigManagedValuesWhenConfigFileIsPresent(t *testing.T) {
+	now := time.Date(2026, time.March, 20, 18, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	if err := store.PutPanelSettings(context.Background(), storage.PanelSettingsRecord{
+		HTTPPublicURL:      "https://panel.example.com",
+		GRPCPublicEndpoint: "grpc.panel.example.com:443",
+		UpdatedAt:          now,
+	}); err != nil {
+		t.Fatalf("PutPanelSettings() error = %v", err)
+	}
+
+	runtime, err := resolvePanelRuntime(serveConfig{
+		HTTPAddr:             ":18080",
+		HTTPRootPath:         "/from-config",
+		GRPCAddr:             ":18443",
+		RestartMode:          config.RestartModeSupervised,
+		TLSMode:              config.PanelTLSModeProxy,
+		ConfigManagedRuntime: true,
+		ConfigPath:           "/etc/panvex/config.toml",
+	})
+	if err != nil {
+		t.Fatalf("resolvePanelRuntime() error = %v", err)
+	}
+
+	if runtime.HTTPListenAddress != ":18080" {
+		t.Fatalf("runtime.HTTPListenAddress = %q, want %q", runtime.HTTPListenAddress, ":18080")
+	}
+	if runtime.HTTPRootPath != "/from-config" {
+		t.Fatalf("runtime.HTTPRootPath = %q, want %q", runtime.HTTPRootPath, "/from-config")
+	}
+	if runtime.GRPCListenAddress != ":18443" {
+		t.Fatalf("runtime.GRPCListenAddress = %q, want %q", runtime.GRPCListenAddress, ":18443")
+	}
+	if runtime.TLSMode != config.PanelTLSModeProxy {
+		t.Fatalf("runtime.TLSMode = %q, want %q", runtime.TLSMode, config.PanelTLSModeProxy)
+	}
+	if runtime.ConfigPath != "/etc/panvex/config.toml" {
+		t.Fatalf("runtime.ConfigPath = %q, want %q", runtime.ConfigPath, "/etc/panvex/config.toml")
+	}
+	if runtime.ConfigSource != server.PanelRuntimeSourceConfigFile {
+		t.Fatalf("runtime.ConfigSource = %q, want %q", runtime.ConfigSource, server.PanelRuntimeSourceConfigFile)
+	}
+	if !runtime.RestartSupported {
+		t.Fatal("runtime.RestartSupported = false, want true")
+	}
+}
+
+func TestResolvePanelRuntimeIgnoresStoredSharedSettingsWhenUsingLegacyStartup(t *testing.T) {
 	now := time.Date(2026, time.March, 16, 22, 10, 0, 0, time.UTC)
 	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
 	if err != nil {
@@ -59,19 +177,13 @@ func TestResolvePanelRuntimeUsesStoredSettingsWhenPresent(t *testing.T) {
 
 	if err := store.PutPanelSettings(context.Background(), storage.PanelSettingsRecord{
 		HTTPPublicURL:      "https://panel.example.com",
-		HTTPRootPath:       "/panvex",
 		GRPCPublicEndpoint: "grpc.panel.example.com:443",
-		HTTPListenAddress:  ":9080",
-		GRPCListenAddress:  ":9443",
-		TLSMode:            "direct",
-		TLSCertFile:        "/etc/panvex-panel/tls/panel.crt",
-		TLSKeyFile:         "/etc/panvex-panel/tls/panel.key",
 		UpdatedAt:          now,
 	}); err != nil {
 		t.Fatalf("PutPanelSettings() error = %v", err)
 	}
 
-	runtime, err := resolvePanelRuntime(store, serveConfig{
+	runtime, err := resolvePanelRuntime(serveConfig{
 		HTTPAddr: ":8080",
 		GRPCAddr: ":8443",
 	})
@@ -79,34 +191,22 @@ func TestResolvePanelRuntimeUsesStoredSettingsWhenPresent(t *testing.T) {
 		t.Fatalf("resolvePanelRuntime() error = %v", err)
 	}
 
-	if runtime.HTTPListenAddress != ":9080" {
-		t.Fatalf("runtime.HTTPListenAddress = %q, want %q", runtime.HTTPListenAddress, ":9080")
+	if runtime.HTTPListenAddress != ":8080" {
+		t.Fatalf("runtime.HTTPListenAddress = %q, want %q", runtime.HTTPListenAddress, ":8080")
 	}
-	if runtime.HTTPRootPath != "/panvex" {
-		t.Fatalf("runtime.HTTPRootPath = %q, want %q", runtime.HTTPRootPath, "/panvex")
+	if runtime.HTTPRootPath != "" {
+		t.Fatalf("runtime.HTTPRootPath = %q, want empty", runtime.HTTPRootPath)
 	}
-	if runtime.GRPCListenAddress != ":9443" {
-		t.Fatalf("runtime.GRPCListenAddress = %q, want %q", runtime.GRPCListenAddress, ":9443")
+	if runtime.GRPCListenAddress != ":8443" {
+		t.Fatalf("runtime.GRPCListenAddress = %q, want %q", runtime.GRPCListenAddress, ":8443")
 	}
-	if runtime.TLSMode != "direct" {
-		t.Fatalf("runtime.TLSMode = %q, want %q", runtime.TLSMode, "direct")
-	}
-	if runtime.TLSCertFile != "/etc/panvex-panel/tls/panel.crt" {
-		t.Fatalf("runtime.TLSCertFile = %q, want %q", runtime.TLSCertFile, "/etc/panvex-panel/tls/panel.crt")
-	}
-	if runtime.TLSKeyFile != "/etc/panvex-panel/tls/panel.key" {
-		t.Fatalf("runtime.TLSKeyFile = %q, want %q", runtime.TLSKeyFile, "/etc/panvex-panel/tls/panel.key")
+	if runtime.TLSMode != "proxy" {
+		t.Fatalf("runtime.TLSMode = %q, want %q", runtime.TLSMode, "proxy")
 	}
 }
 
 func TestResolvePanelRuntimeFallsBackToServeConfigDefaults(t *testing.T) {
-	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
-	if err != nil {
-		t.Fatalf("sqlite.Open() error = %v", err)
-	}
-	defer store.Close()
-
-	runtime, err := resolvePanelRuntime(store, serveConfig{
+	runtime, err := resolvePanelRuntime(serveConfig{
 		HTTPAddr: ":8080",
 		GRPCAddr: ":8443",
 	})
@@ -132,13 +232,7 @@ func TestResolvePanelRuntimeFallsBackToServeConfigDefaults(t *testing.T) {
 }
 
 func TestResolvePanelRuntimeMarksSupervisedRestartAsSupported(t *testing.T) {
-	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
-	if err != nil {
-		t.Fatalf("sqlite.Open() error = %v", err)
-	}
-	defer store.Close()
-
-	runtime, err := resolvePanelRuntime(store, serveConfig{
+	runtime, err := resolvePanelRuntime(serveConfig{
 		HTTPAddr:     ":8080",
 		GRPCAddr:     ":8443",
 		RestartMode:  "supervised",

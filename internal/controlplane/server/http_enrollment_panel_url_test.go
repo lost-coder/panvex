@@ -60,13 +60,7 @@ func TestHTTPEnrollmentTokensExposeConfiguredPanelURL(t *testing.T) {
 		"/panvex/api/settings/panel",
 		map[string]string{
 			"http_public_url":      "https://panel.example.com",
-			"http_root_path":       "/panvex",
 			"grpc_public_endpoint": "grpc.panel.example.com:443",
-			"http_listen_address":  ":8080",
-			"grpc_listen_address":  ":8443",
-			"tls_mode":             "proxy",
-			"tls_cert_file":        "",
-			"tls_key_file":         "",
 		},
 		cookies,
 	)
@@ -105,13 +99,7 @@ func TestHTTPEnrollmentTokensExposeConfiguredPanelURL(t *testing.T) {
 		"/panvex/api/settings/panel",
 		map[string]string{
 			"http_public_url":      "https://panel.example.com",
-			"http_root_path":       "/panvex",
 			"grpc_public_endpoint": "grpc.panel.example.com:443",
-			"http_listen_address":  ":8080",
-			"grpc_listen_address":  ":8443",
-			"tls_mode":             "proxy",
-			"tls_cert_file":        "",
-			"tls_key_file":         "",
 		},
 		adminCookies,
 	)

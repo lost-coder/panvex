@@ -19,15 +19,19 @@ export function Field(props: {
   type?: string;
   placeholder?: string;
   helperText?: string;
+  disabled?: boolean;
 }) {
   return (
     <label className="block">
       <span className="mb-2 block text-sm font-medium text-slate-700">{props.label}</span>
       <input
         type={props.type ?? "text"}
-        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
+        className={`w-full rounded-2xl border px-4 py-3 text-sm ${
+          props.disabled ? "border-slate-200 bg-slate-100 text-slate-500" : "border-slate-200 bg-white text-slate-900"
+        }`}
         value={props.value}
         placeholder={props.placeholder}
+        disabled={props.disabled}
         onChange={(event) => props.onChange(event.target.value)}
       />
       {props.helperText ? <p className="mt-2 text-xs leading-5 text-slate-500">{props.helperText}</p> : null}
@@ -41,13 +45,17 @@ export function SelectField(props: {
   onChange: (value: string) => void;
   options: Array<{ value: string; label: string }>;
   helperText?: string;
+  disabled?: boolean;
 }) {
   return (
     <label className="block">
       <span className="mb-2 block text-sm font-medium text-slate-700">{props.label}</span>
       <select
-        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
+        className={`w-full rounded-2xl border px-4 py-3 text-sm ${
+          props.disabled ? "border-slate-200 bg-slate-100 text-slate-500" : "border-slate-200 bg-white text-slate-900"
+        }`}
         value={props.value}
+        disabled={props.disabled}
         onChange={(event) => props.onChange(event.target.value)}
       >
         {props.options.map((option) => (

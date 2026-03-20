@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/panvex/panvex/internal/controlplane/auth"
@@ -24,17 +25,19 @@ import (
 )
 
 type serveConfig struct {
-	HTTPAddr    string
-	GRPCAddr    string
-	RestartMode string
-	Storage     config.StorageConfig
+	ConfigPath           string
+	ConfigManagedRuntime bool
+	HTTPAddr             string
+	HTTPRootPath         string
+	GRPCAddr             string
+	RestartMode          string
+	TLSMode              string
+	TLSCertFile          string
+	TLSKeyFile           string
+	Storage              config.StorageConfig
 }
 
-const (
-	restartModeDisabled   = "disabled"
-	restartModeSupervised = "supervised"
-	restartExitCode       = 78
-)
+const restartExitCode = 78
 
 var errPanelRestartRequested = errors.New("panel restart requested")
 
@@ -73,7 +76,7 @@ func runServe(args []string) error {
 	}
 	defer store.Close()
 
-	panelRuntime, err := resolvePanelRuntime(store, options)
+	panelRuntime, err := resolvePanelRuntime(options)
 	if err != nil {
 		return err
 	}
@@ -142,59 +145,86 @@ func runServe(args []string) error {
 
 func parseServeConfig(args []string) (serveConfig, error) {
 	flags := flag.NewFlagSet("control-plane", flag.ContinueOnError)
+	configPath := flags.String("config", strings.TrimSpace(os.Getenv("PANVEX_CONFIG")), "Path to runtime config.toml")
 	httpAddr := flags.String("http-addr", ":8080", "HTTP listen address")
 	grpcAddr := flags.String("grpc-addr", ":8443", "gRPC listen address")
-	restartMode := flags.String("restart-mode", restartModeDisabled, "Panel restart mode (disabled or supervised)")
+	restartMode := flags.String("restart-mode", config.RestartModeDisabled, "Panel restart mode (disabled or supervised)")
 	storageDriver := flags.String("storage-driver", "", "Persistent storage backend driver")
 	storageDSN := flags.String("storage-dsn", "", "Persistent storage backend DSN")
 	if err := flags.Parse(args); err != nil {
 		return serveConfig{}, err
 	}
-	if *restartMode != restartModeDisabled && *restartMode != restartModeSupervised {
-		return serveConfig{}, fmt.Errorf("unsupported restart mode %q", *restartMode)
+
+	explicitLegacyFlags := make(map[string]bool)
+	flags.Visit(func(currentFlag *flag.Flag) {
+		explicitLegacyFlags[currentFlag.Name] = true
+	})
+
+	if strings.TrimSpace(*configPath) != "" {
+		for _, flagName := range []string{"http-addr", "grpc-addr", "restart-mode", "storage-driver", "storage-dsn"} {
+			if explicitLegacyFlags[flagName] {
+				return serveConfig{}, fmt.Errorf("flag -%s cannot be used together with -config", flagName)
+			}
+		}
+
+		configuration, err := config.LoadControlPlaneConfig(*configPath)
+		if err != nil {
+			return serveConfig{}, err
+		}
+
+		return serveConfig{
+			ConfigPath:           strings.TrimSpace(*configPath),
+			ConfigManagedRuntime: true,
+			HTTPAddr:             configuration.HTTPListenAddress,
+			HTTPRootPath:         configuration.HTTPRootPath,
+			GRPCAddr:             configuration.GRPCListenAddress,
+			RestartMode:          configuration.RestartMode,
+			TLSMode:              configuration.TLSMode,
+			TLSCertFile:          configuration.TLSCertFile,
+			TLSKeyFile:           configuration.TLSKeyFile,
+			Storage:              configuration.Storage,
+		}, nil
 	}
 
-	storage, err := config.ResolveStorage(*storageDriver, *storageDSN)
+	configuration, err := config.ResolveLegacyControlPlaneConfig(*httpAddr, *grpcAddr, *restartMode, "", *storageDriver, *storageDSN)
 	if err != nil {
 		return serveConfig{}, err
 	}
 
 	return serveConfig{
-		HTTPAddr:    *httpAddr,
-		GRPCAddr:    *grpcAddr,
-		RestartMode: *restartMode,
-		Storage:     storage,
+		ConfigPath:           "",
+		ConfigManagedRuntime: false,
+		HTTPAddr:             configuration.HTTPListenAddress,
+		HTTPRootPath:         configuration.HTTPRootPath,
+		GRPCAddr:             configuration.GRPCListenAddress,
+		RestartMode:          configuration.RestartMode,
+		TLSMode:              configuration.TLSMode,
+		TLSCertFile:          configuration.TLSCertFile,
+		TLSKeyFile:           configuration.TLSKeyFile,
+		Storage:              configuration.Storage,
 	}, nil
 }
 
-func resolvePanelRuntime(store storage.Store, configuration serveConfig) (server.PanelRuntime, error) {
+func resolvePanelRuntime(configuration serveConfig) (server.PanelRuntime, error) {
+	tlsMode := configuration.TLSMode
+	if strings.TrimSpace(tlsMode) == "" {
+		tlsMode = config.PanelTLSModeProxy
+	}
+
 	runtime := server.PanelRuntime{
 		HTTPListenAddress: configuration.HTTPAddr,
+		HTTPRootPath:      configuration.HTTPRootPath,
 		GRPCListenAddress: configuration.GRPCAddr,
-		TLSMode:           "proxy",
-		RestartSupported:  configuration.RestartMode == restartModeSupervised,
+		TLSMode:           tlsMode,
+		TLSCertFile:       configuration.TLSCertFile,
+		TLSKeyFile:        configuration.TLSKeyFile,
+		RestartSupported:  configuration.RestartMode == config.RestartModeSupervised,
+		ConfigSource:      server.PanelRuntimeSourceLegacy,
+		ConfigPath:        configuration.ConfigPath,
 	}
-
-	record, err := store.GetPanelSettings(context.Background())
-	if err != nil {
-		if errors.Is(err, storage.ErrNotFound) {
-			return runtime, nil
-		}
-		return server.PanelRuntime{}, err
+	if configuration.ConfigManagedRuntime {
+		runtime.ConfigSource = server.PanelRuntimeSourceConfigFile
 	}
-
-	if record.HTTPListenAddress != "" {
-		runtime.HTTPListenAddress = record.HTTPListenAddress
-	}
-	runtime.HTTPRootPath = record.HTTPRootPath
-	if record.GRPCListenAddress != "" {
-		runtime.GRPCListenAddress = record.GRPCListenAddress
-	}
-	if record.TLSMode != "" {
-		runtime.TLSMode = record.TLSMode
-	}
-	runtime.TLSCertFile = record.TLSCertFile
-	runtime.TLSKeyFile = record.TLSKeyFile
 	return runtime, nil
 }
 
