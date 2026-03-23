@@ -10,7 +10,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="flex flex-col min-h-screen md:pl-[var(--rail-w)]">
         <TopBar />
         <main
-          className="flex-1 overflow-y-auto p-5 pb-20 md:pb-5"
+          className="flex-1 overflow-y-auto p-3 pb-16 md:p-5 md:pb-5"
           style={{ scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}
         >
           {children}
