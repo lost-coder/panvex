@@ -8,9 +8,10 @@ import {
   redirect,
 } from "@tanstack/react-router";
 
-import { apiClient } from "@/lib/api";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppShell } from "@/components/app-shell";
 import { AppearanceProvider } from "@/components/appearance-provider";
+import { apiClient } from "@/lib/api";
 
 import { DashboardPage } from "@/features/dashboard/dashboard-page";
 import { ServersPage } from "@/features/servers/servers-page";
@@ -32,7 +33,9 @@ function ProtectedShell() {
   });
   return (
     <AppearanceProvider userID={me?.id ?? ""}>
-      <AppShell><Outlet /></AppShell>
+      <TooltipProvider>
+        <AppShell><Outlet /></AppShell>
+      </TooltipProvider>
     </AppearanceProvider>
   );
 }
