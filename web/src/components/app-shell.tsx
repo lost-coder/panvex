@@ -5,25 +5,17 @@ import { TopBar } from "./top-bar";
 
 export function AppShell({ children }: { children: ReactNode }) {
   return (
-    <div
-      className="grid min-h-screen
-        grid-rows-[var(--topbar-h)_1fr] grid-cols-[1fr]
-        md:grid-cols-[var(--rail-w)_1fr] md:grid-rows-[var(--topbar-h)_1fr]"
-      style={{
-        gridTemplateAreas: `
-          'topbar'
-          'main'
-        `,
-      }}
-    >
+    <div className="min-h-screen bg-page">
       <Rail className="hidden md:flex" />
-      <TopBar />
-      <main
-        className="overflow-y-auto p-5 pb-10 bg-page"
-        style={{ gridArea: "main", scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}
-      >
-        {children}
-      </main>
+      <div className="flex flex-col min-h-screen md:pl-[var(--rail-w)]">
+        <TopBar />
+        <main
+          className="flex-1 overflow-y-auto p-5 pb-20 md:pb-5"
+          style={{ scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent" }}
+        >
+          {children}
+        </main>
+      </div>
       <MobileNav className="md:hidden" />
     </div>
   );

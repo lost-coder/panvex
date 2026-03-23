@@ -24,8 +24,7 @@ export function TopBar() {
 
   return (
     <header
-      style={{ gridArea: "topbar" }}
-      className="bg-topbar border-b border-border flex items-center justify-between px-4 md:px-5 z-10 backdrop-blur-[var(--blur)]"
+      className="bg-topbar border-b border-border flex items-center justify-between px-4 md:px-5 z-10 backdrop-blur-[var(--blur)] h-[var(--topbar-h)] sticky top-0"
     >
       <span className="text-[13px] font-semibold text-text-1">{title}</span>
       <div className="flex items-center gap-2">
