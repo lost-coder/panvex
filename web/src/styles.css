@@ -1,0 +1,158 @@
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/ibm-plex-sans/700.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/ibm-plex-mono/600.css";
+
+@import "tailwindcss";
+
+@theme {
+  --color-page: var(--bg-page);
+  --color-surface: var(--bg-surface);
+  --color-card: var(--bg-card);
+  --color-card-hover: var(--bg-card-hover);
+  --color-card-back: var(--bg-card-back);
+  --color-rail: var(--bg-rail);
+  --color-topbar: var(--bg-topbar);
+  --color-input: var(--bg-input);
+  --color-row-hover: var(--bg-row-hover);
+  --color-row-stripe: var(--bg-row-stripe);
+  --color-border: var(--border);
+  --color-border-hover: var(--border-hover);
+  --color-border-active: var(--border-active);
+  --color-text-1: var(--text-1);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-text-4: var(--text-4);
+  --color-accent: var(--accent);
+  --color-accent-bright: var(--accent-bright);
+  --color-accent-dim: var(--accent-dim);
+  --color-good: var(--good);
+  --color-good-text: var(--good-text);
+  --color-good-dim: var(--good-dim);
+  --color-warn: var(--warn);
+  --color-warn-text: var(--warn-text);
+  --color-warn-dim: var(--warn-dim);
+  --color-bad: var(--bad);
+  --color-bad-text: var(--bad-text);
+  --color-bad-dim: var(--bad-dim);
+  --font-sans: var(--font);
+  --font-mono: var(--font-mono);
+  --radius-DEFAULT: var(--radius);
+  --radius-sm: var(--radius-sm);
+  --radius-xs: var(--radius-xs);
+  --shadow-card: var(--shadow-card);
+  --shadow-card-hover: var(--shadow-card-hover);
+}
+
+:root {
+  --rail-w: 56px;
+  --topbar-h: 48px;
+  --radius: 8px;
+  --radius-sm: 6px;
+  --radius-xs: 4px;
+  --font: 'IBM Plex Sans', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+  --blur: blur(12px);
+  --transition: 0.15s ease;
+
+  /* Surfaces — dark */
+  --bg-page: #10161f;
+  --bg-gradient: radial-gradient(circle at top left, rgba(77,104,138,0.24), transparent 28%),
+                 linear-gradient(180deg, #10161f 0%, #171e29 100%);
+  --bg-surface: rgba(22,30,42,0.95);
+  --bg-card: rgba(19,27,38,0.92);
+  --bg-card-hover: rgba(26,36,50,0.95);
+  --bg-card-back: rgba(16,22,31,0.96);
+  --bg-rail: rgba(22,30,42,0.95);
+  --bg-topbar: rgba(22,30,42,0.85);
+  --bg-input: rgba(255,255,255,0.04);
+  --bg-row-hover: rgba(107,146,207,0.06);
+  --bg-row-stripe: rgba(255,255,255,0.01);
+
+  /* Borders — dark */
+  --border: rgba(173,184,198,0.10);
+  --border-hover: rgba(173,184,198,0.18);
+  --border-active: rgba(107,146,207,0.4);
+
+  /* Text — dark */
+  --text-1: #e7edf6;
+  --text-2: #a6b3c3;
+  --text-3: #6b7a8e;
+  --text-4: #4a5568;
+
+  /* Accent — dark */
+  --accent: #6b92cf;
+  --accent-bright: #93b0df;
+  --accent-dim: rgba(107,146,207,0.16);
+
+  /* Semantic — dark */
+  --good: #5ca472;
+  --good-text: #9de0af;
+  --good-dim: rgba(92,164,114,0.14);
+  --warn: #c4923a;
+  --warn-text: #f4d48f;
+  --warn-dim: rgba(196,146,58,0.14);
+  --bad: #d4564a;
+  --bad-text: #ffb2a9;
+  --bad-dim: rgba(212,86,74,0.14);
+
+  /* Shadows — dark */
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.2);
+  --shadow-card-hover: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+:root[data-theme="light"] {
+  --bg-page: #e8ecf2;
+  --bg-gradient: radial-gradient(circle at top left, rgba(77,104,138,0.08), transparent 28%),
+                 linear-gradient(180deg, #e8ecf2 0%, #dfe4ec 100%);
+  --bg-surface: rgba(255,255,255,0.95);
+  --bg-card: #fff;
+  --bg-card-hover: rgba(0,0,0,0.02);
+  --bg-card-back: rgba(245,247,250,0.96);
+  --bg-rail: rgba(255,255,255,0.95);
+  --bg-topbar: rgba(255,255,255,0.85);
+  --bg-input: rgba(0,0,0,0.04);
+  --bg-row-hover: rgba(107,146,207,0.06);
+  --bg-row-stripe: rgba(0,0,0,0.01);
+
+  --border: rgba(0,0,0,0.08);
+  --border-hover: rgba(0,0,0,0.15);
+  --border-active: rgba(74,115,168,0.4);
+
+  --text-1: #1a2332;
+  --text-2: #4a5a6e;
+  --text-3: #7a8a9e;
+  --text-4: #a0aab8;
+
+  --accent: #4a73a8;
+  --accent-bright: #3a63a0;
+  --accent-dim: rgba(74,115,168,0.12);
+
+  --good: #3d8a56;
+  --good-text: #2a7844;
+  --good-dim: rgba(61,138,86,0.10);
+  --warn: #a67a2a;
+  --warn-text: #8a6520;
+  --warn-dim: rgba(166,122,42,0.10);
+  --bad: #c0443a;
+  --bad-text: #b03830;
+  --bad-dim: rgba(192,68,58,0.10);
+
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.06);
+  --shadow-card-hover: 0 4px 12px rgba(0,0,0,0.10);
+}
+
+body {
+  margin: 0;
+  background: var(--bg-gradient), var(--bg-page);
+  background-attachment: fixed;
+  color: var(--text-1);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
