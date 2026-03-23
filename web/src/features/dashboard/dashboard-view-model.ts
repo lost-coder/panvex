@@ -108,14 +108,15 @@ export function buildFleetKpiSummary(
 }
 
 export function buildFleetDcCoverageSummary(agents: Agent[]): FleetDcCoverageSummary {
-  const dcMap = new Map<number, { coverage: number[]; rtts: number[]; serverCount: number }>();
+  const dcMap = new Map<number, { coverage: number[]; rtts: number[]; serverCount: number; healthStates: FleetDcCoverageState[] }>();
 
   for (const agent of agents) {
     for (const dc of agent.runtime?.dcs ?? []) {
-      const entry = dcMap.get(dc.dc) ?? { coverage: [], rtts: [], serverCount: 0 };
+      const entry = dcMap.get(dc.dc) ?? { coverage: [], rtts: [], serverCount: 0, healthStates: [] };
       entry.coverage.push(dc.coverage_pct ?? 0);
       entry.rtts.push(dc.rtt_ms ?? 0);
       entry.serverCount += 1;
+      entry.healthStates.push(coverageToHealth(dc.coverage_pct ?? 0));
       dcMap.set(dc.dc, entry);
     }
   }
@@ -125,13 +126,14 @@ export function buildFleetDcCoverageSummary(agents: Agent[]): FleetDcCoverageSum
     .map(([dc, entry]) => {
       const averageCoveragePct = Math.round(entry.coverage.reduce((total, coverage) => total + coverage, 0) / entry.coverage.length);
       const averageRttMs = Math.round(entry.rtts.reduce((total, rtt) => total + rtt, 0) / entry.rtts.length);
+      const health = resolveFleetDcHealth(entry.healthStates);
 
       return {
         dc,
         serverCount: entry.serverCount,
         averageCoveragePct,
         averageRttMs,
-        health: coverageToHealth(averageCoveragePct),
+        health,
       } satisfies FleetDcCoverageRow;
     });
 
@@ -282,6 +284,10 @@ function getAgentSeverityScore(agent: Agent): number {
     return 3;
   }
 
+  if (agent.presence_state === "degraded") {
+    return 2;
+  }
+
   if (agent.runtime?.degraded) {
     return 2;
   }
@@ -327,6 +333,18 @@ function coverageToHealth(coveragePct: number): FleetDcCoverageState {
   }
 
   return "down";
+}
+
+function resolveFleetDcHealth(healthStates: FleetDcCoverageState[]): FleetDcCoverageState {
+  if (healthStates.includes("down")) {
+    return "down";
+  }
+
+  if (healthStates.includes("partial")) {
+    return "partial";
+  }
+
+  return "ok";
 }
 
 function buildServerCardDcCounts(agent: Agent): {

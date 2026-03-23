@@ -42,6 +42,25 @@ test("sortAgentsBySeverity orders offline before degraded before online", () => 
   assert.deepEqual(agents.map((agent) => agent.id), ["offline", "degraded", "online"]);
 });
 
+test("sortAgentsBySeverity treats degraded presence as degraded", () => {
+  const agents = sortAgentsBySeverity([
+    {
+      id: "healthy",
+      node_name: "healthy",
+      presence_state: "online",
+      runtime: { degraded: false, accepting_new_connections: true, dc_coverage_pct: 100, healthy_upstreams: 2, total_upstreams: 2 },
+    } as any,
+    {
+      id: "presence-degraded",
+      node_name: "presence-degraded",
+      presence_state: "degraded",
+      runtime: { degraded: false, accepting_new_connections: true, dc_coverage_pct: 100, healthy_upstreams: 2, total_upstreams: 2 },
+    } as any,
+  ]);
+
+  assert.deepEqual(agents.map((agent) => agent.id), ["presence-degraded", "healthy"]);
+});
+
 test("extractRecentRuntimeEvents sorts latest runtime events first", () => {
   const events = extractRecentRuntimeEvents([
     {
@@ -94,6 +113,30 @@ test("buildFleetDcCoverageSummary aggregates dc health", () => {
   assert.equal(summary.downCount, 0);
   assert.equal(summary.rows[1]?.dc, 2);
   assert.equal(summary.rows[1]?.health, "partial");
+});
+
+test("buildFleetDcCoverageSummary surfaces down dc coverage when any server is down", () => {
+  const summary = buildFleetDcCoverageSummary([
+    {
+      runtime: {
+        dcs: [
+          { dc: 7, available_endpoints: 2, available_pct: 100, required_writers: 3, alive_writers: 3, coverage_pct: 100, rtt_ms: 10, load: 1 },
+        ],
+      },
+    } as any,
+    {
+      runtime: {
+        dcs: [
+          { dc: 7, available_endpoints: 0, available_pct: 0, required_writers: 3, alive_writers: 0, coverage_pct: 0, rtt_ms: 400, load: 2 },
+        ],
+      },
+    } as any,
+  ]);
+
+  assert.equal(summary.totalDcCount, 1);
+  assert.equal(summary.downCount, 1);
+  assert.equal(summary.rows[0]?.dc, 7);
+  assert.equal(summary.rows[0]?.health, "down");
 });
 
 test("buildServerCardSummary keeps unavailable slots as dashes", () => {
