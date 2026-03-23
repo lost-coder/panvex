@@ -136,9 +136,65 @@ test("buildServerCardSummary keeps unavailable slots as dashes", () => {
   } as any);
 
   assert.equal(summary.locationText, "—");
+  assert.equal(summary.metrics[0]?.label, "Connections");
+  assert.equal(summary.metrics[0]?.value, "12");
   assert.equal(summary.metrics[1]?.value, "—");
   assert.equal(summary.metrics[2]?.value, "—");
   assert.equal(summary.dcTags.length, 0);
+});
+
+test("buildServerCardDetails preserves dc load precision", () => {
+  const details = buildServerCardDetails({
+    id: "server-2",
+    node_name: "node-2",
+    presence_state: "online",
+    fleet_group_id: "group-b",
+    version: "1.2.3",
+    read_only: false,
+    runtime: {
+      me_runtime_ready: true,
+      accepting_new_connections: true,
+      degraded: false,
+      current_connections: 5,
+      current_connections_me: 3,
+      current_connections_direct: 2,
+      active_users: 4,
+      connections_total: 0,
+      connections_bad_total: 0,
+      handshake_timeouts_total: 0,
+      configured_users: 0,
+      dc_coverage_pct: 100,
+      healthy_upstreams: 2,
+      total_upstreams: 2,
+      use_middle_proxy: false,
+      me2dc_fallback_enabled: false,
+      startup_status: "ready",
+      startup_stage: "ready",
+      startup_progress_pct: 100,
+      initialization_status: "ready",
+      initialization_stage: "ready",
+      initialization_progress_pct: 100,
+      transport_mode: "direct",
+      dcs: [
+        {
+          dc: 4,
+          available_endpoints: 1,
+          available_pct: 100,
+          required_writers: 3,
+          alive_writers: 3,
+          coverage_pct: 100,
+          rtt_ms: 18,
+          load: 1.5,
+        },
+      ],
+      upstreams: [],
+      recent_events: [],
+    },
+    last_seen_at: "2026-03-23T10:00:00Z",
+  } as any);
+
+  assert.equal(details.isOffline, false);
+  assert.equal(details.rows[0]?.loadText, "1.5");
 });
 
 test("buildFleetKpiSummary derives fleet totals from control room data", () => {

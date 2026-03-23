@@ -189,7 +189,7 @@ export function buildServerCardSummary(agent: Agent): ServerCardSummary {
     statusText: status.label,
     statusTone: status.tone,
     metrics: [
-      { label: "Clients", value: String(agent.runtime?.current_connections ?? 0) },
+      { label: "Connections", value: String(agent.runtime?.current_connections ?? 0) },
       { label: "CPU", value: "—" },
       { label: "Traffic", value: "—" },
     ],
@@ -219,7 +219,7 @@ export function buildServerCardDetails(agent: Agent): ServerCardDetails {
         rttText: dc.rtt_ms > 0 ? `${Math.round(dc.rtt_ms)}ms` : "—",
         writersText: `${dc.alive_writers}/${dc.required_writers}`,
         coverageText: `${Math.round(dc.coverage_pct ?? 0)}%`,
-        loadText: dc.load > 0 ? String(Math.round(dc.load)) : "—",
+        loadText: String(dc.load),
         health,
       } satisfies ServerCardDcRow;
     });
