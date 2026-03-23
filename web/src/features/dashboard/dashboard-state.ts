@@ -15,3 +15,10 @@ export function useAgentsList() {
     queryFn: () => apiClient.agents(),
   });
 }
+
+export function useDashboardClients() {
+  return useQuery({
+    queryKey: ["clients"],
+    queryFn: () => apiClient.clients(),
+  });
+}
