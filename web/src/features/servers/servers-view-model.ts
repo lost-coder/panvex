@@ -52,7 +52,7 @@ export function buildServerTableRows(agents: Agent[]): ServerTableRow[] {
       cpuText: "—",
       memoryText: "—",
       trafficText: "—",
-      uptimeText: "—",
+      uptimeText: formatUptime(agent.runtime?.uptime_seconds),
       dcAvailableCount,
       dcTotalCount,
       dcSummaryText: dcTotalCount > 0 ? `${dcAvailableCount}/${dcTotalCount}` : "—",
@@ -183,4 +183,30 @@ function compareByKey(
     default:
       return leftRow.serverName.localeCompare(rightRow.serverName, "en", { sensitivity: "base" });
   }
+}
+
+function formatUptime(value: number | undefined): string {
+  if (!Number.isFinite(value) || value === undefined || value <= 0) {
+    return "—";
+  }
+
+  const totalSeconds = Math.floor(value);
+  if (totalSeconds < 60) {
+    return `${totalSeconds}s`;
+  }
+
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  if (totalMinutes < 60) {
+    return `${totalMinutes}m`;
+  }
+
+  const totalHours = Math.floor(totalMinutes / 60);
+  if (totalHours < 24) {
+    const minutes = totalMinutes % 60;
+    return minutes > 0 ? `${totalHours}h ${minutes}m` : `${totalHours}h`;
+  }
+
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
 }

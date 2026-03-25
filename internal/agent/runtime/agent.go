@@ -157,6 +157,7 @@ func (a *Agent) BuildSnapshot(ctx context.Context, observedAt time.Time) (*gatew
 			CurrentConnectionsME:      state.ConnectionTotals.CurrentConnectionsME,
 			CurrentConnectionsDirect:  state.ConnectionTotals.CurrentConnectionsDirect,
 			ActiveUsers:               state.ConnectionTotals.ActiveUsers,
+			UptimeSeconds:             state.UptimeSeconds,
 			ConnectionsTotal:          state.Summary.ConnectionsTotal,
 			ConnectionsBadTotal:       state.Summary.ConnectionsBadTotal,
 			HandshakeTimeoutsTotal:    state.Summary.HandshakeTimeoutsTotal,

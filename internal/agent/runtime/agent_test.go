@@ -15,6 +15,7 @@ func TestAgentBuildSnapshotUsesTelemtRuntimeState(t *testing.T) {
 		state: telemt.RuntimeState{
 			Version:        "2026.03",
 			ReadOnly:       true,
+			UptimeSeconds:  90_061,
 			ConnectedUsers: 42,
 			Gates: telemt.RuntimeGates{
 				AcceptingNewConnections: true,
@@ -113,6 +114,9 @@ func TestAgentBuildSnapshotUsesTelemtRuntimeState(t *testing.T) {
 	}
 	if snapshot.Runtime.ConnectionsTotal != 512 {
 		t.Fatalf("snapshot.Runtime.ConnectionsTotal = %d, want %d", snapshot.Runtime.ConnectionsTotal, 512)
+	}
+	if snapshot.Runtime.UptimeSeconds != 90_061 {
+		t.Fatalf("snapshot.Runtime.UptimeSeconds = %v, want %v", snapshot.Runtime.UptimeSeconds, 90_061)
 	}
 	if len(snapshot.Runtime.DCs) != 1 {
 		t.Fatalf("len(snapshot.Runtime.DCs) = %d, want %d", len(snapshot.Runtime.DCs), 1)

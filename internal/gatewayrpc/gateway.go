@@ -133,6 +133,7 @@ type RuntimeSnapshot struct {
 	CurrentConnectionsME    int                   `json:"current_connections_me"`
 	CurrentConnectionsDirect int                  `json:"current_connections_direct"`
 	ActiveUsers             int                   `json:"active_users"`
+	UptimeSeconds           float64               `json:"uptime_seconds"`
 	ConnectionsTotal        uint64                `json:"connections_total"`
 	ConnectionsBadTotal     uint64                `json:"connections_bad_total"`
 	HandshakeTimeoutsTotal  uint64                `json:"handshake_timeouts_total"`

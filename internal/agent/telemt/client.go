@@ -35,6 +35,7 @@ type Client struct {
 type RuntimeState struct {
 	Version          string
 	ReadOnly         bool
+	UptimeSeconds    float64
 	ConnectedUsers   int
 	Gates            RuntimeGates
 	Initialization   RuntimeInitialization
@@ -185,7 +186,8 @@ func isLoopbackHost(host string) bool {
 // FetchRuntimeState queries the Telemt health, security posture, and summary endpoints.
 func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 	systemInfo := struct {
-		Version string `json:"version"`
+		Version       string  `json:"version"`
+		UptimeSeconds float64 `json:"uptime_seconds"`
 	}{}
 	if err := c.getJSON(ctx, "/v1/system/info", &systemInfo); err != nil {
 		return RuntimeState{}, err
@@ -367,6 +369,7 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 	return RuntimeState{
 		Version:        systemInfo.Version,
 		ReadOnly:       posture.ReadOnly,
+		UptimeSeconds:  systemInfo.UptimeSeconds,
 		ConnectedUsers: connectionSummary.Data.Totals.CurrentConnections,
 		Gates: RuntimeGates{
 			AcceptingNewConnections: gates.AcceptingNewConnections,

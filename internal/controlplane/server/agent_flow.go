@@ -256,6 +256,7 @@ func agentRuntimeFromSnapshot(snapshot gatewayrpc.RuntimeSnapshot, observedAt ti
 		CurrentConnectionsME:      snapshot.CurrentConnectionsME,
 		CurrentConnectionsDirect:  snapshot.CurrentConnectionsDirect,
 		ActiveUsers:               snapshot.ActiveUsers,
+		UptimeSeconds:             snapshot.UptimeSeconds,
 		ConnectionsTotal:          snapshot.ConnectionsTotal,
 		ConnectionsBadTotal:       snapshot.ConnectionsBadTotal,
 		HandshakeTimeoutsTotal:    snapshot.HandshakeTimeoutsTotal,

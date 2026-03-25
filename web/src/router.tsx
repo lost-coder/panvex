@@ -5,6 +5,7 @@ import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
+  lazyRouteComponent,
   redirect,
 } from "@tanstack/react-router";
 
@@ -12,15 +13,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppShell } from "@/components/app-shell";
 import { AppearanceProvider } from "@/components/appearance-provider";
 import { apiClient } from "@/lib/api";
-
-import { DashboardPage } from "@/features/dashboard/dashboard-page";
-import { ServersPage } from "@/features/servers/servers-page";
-import { ServerDetailPage } from "@/features/servers/server-detail-page";
-import { ClientsPage } from "@/features/clients/clients-page";
-import { ClientDetailPage } from "@/features/clients/client-detail-page";
-import { SettingsPage } from "@/features/settings/settings-page";
-import { ProfilePage } from "@/features/profile/profile-page";
-import { LoginPage } from "@/features/login/login-page";
 
 interface RouterContext {
   queryClient: QueryClient;
@@ -41,6 +33,46 @@ function ProtectedShell() {
     </AppearanceProvider>
   );
 }
+
+const LoginPage = lazyRouteComponent(
+  () => import("@/features/login/login-page"),
+  "LoginPage",
+);
+
+const DashboardPage = lazyRouteComponent(
+  () => import("@/features/dashboard/dashboard-page"),
+  "DashboardPage",
+);
+
+const ServersPage = lazyRouteComponent(
+  () => import("@/features/servers/servers-page"),
+  "ServersPage",
+);
+
+const ServerDetailPage = lazyRouteComponent(
+  () => import("@/features/servers/server-detail-page"),
+  "ServerDetailPage",
+);
+
+const ClientsPage = lazyRouteComponent(
+  () => import("@/features/clients/clients-page"),
+  "ClientsPage",
+);
+
+const ClientDetailPage = lazyRouteComponent(
+  () => import("@/features/clients/client-detail-page"),
+  "ClientDetailPage",
+);
+
+const SettingsPage = lazyRouteComponent(
+  () => import("@/features/settings/settings-page"),
+  "SettingsPage",
+);
+
+const ProfilePage = lazyRouteComponent(
+  () => import("@/features/profile/profile-page"),
+  "ProfilePage",
+);
 
 const shellRoute = createRoute({
   getParentRoute: () => rootRoute,

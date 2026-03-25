@@ -23,6 +23,7 @@ test("buildServerTableRows maps agents into display rows with placeholders and d
       runtime: {
         degraded: false,
         accepting_new_connections: true,
+        uptime_seconds: 90061,
         active_users: 342,
         current_connections: 400,
         dc_coverage_pct: 100,
@@ -70,7 +71,7 @@ test("buildServerTableRows maps agents into display rows with placeholders and d
   assert.equal(rows[0]?.cpuText, "—");
   assert.equal(rows[0]?.memoryText, "—");
   assert.equal(rows[0]?.trafficText, "—");
-  assert.equal(rows[0]?.uptimeText, "—");
+  assert.equal(rows[0]?.uptimeText, "1d 1h");
   assert.equal(rows[0]?.dcSummaryText, "2/3");
   assert.deepEqual(rows[0]?.dcSegments, ["ok", "partial", "down"]);
 });

@@ -118,6 +118,7 @@ message RuntimeSnapshot {
   repeated RuntimeDCSnapshot dcs = 21;
   RuntimeUpstreamSnapshot upstreams = 22;
   repeated RuntimeEventSnapshot recent_events = 23;
+  double uptime_seconds = 24;
 }
 
 message Snapshot {

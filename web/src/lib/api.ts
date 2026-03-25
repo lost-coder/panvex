@@ -44,6 +44,7 @@ export type AgentRuntime = {
   current_connections_me: number;
   current_connections_direct: number;
   active_users: number;
+  uptime_seconds: number;
   connections_total: number;
   connections_bad_total: number;
   handshake_timeouts_total: number;

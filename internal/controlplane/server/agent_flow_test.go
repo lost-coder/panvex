@@ -111,6 +111,9 @@ func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T
 	if server.agents[identity.AgentID].Runtime.TransportMode != "middle_proxy" {
 		t.Fatalf("agent runtime transport_mode = %q, want %q", server.agents[identity.AgentID].Runtime.TransportMode, "middle_proxy")
 	}
+	if server.agents[identity.AgentID].Runtime.UptimeSeconds != 90_061 {
+		t.Fatalf("agent runtime uptime_seconds = %v, want %v", server.agents[identity.AgentID].Runtime.UptimeSeconds, 90_061)
+	}
 }
 
 func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *testing.T) {
@@ -257,6 +260,7 @@ func gatewayRuntimeSnapshotForTest() gatewayrpc.RuntimeSnapshot {
 		InitializationStage:       "serving",
 		InitializationProgressPct: 100,
 		TransportMode:             "middle_proxy",
+		UptimeSeconds:             90_061,
 		CurrentConnections:        42,
 		CurrentConnectionsME:      39,
 		CurrentConnectionsDirect:  3,
