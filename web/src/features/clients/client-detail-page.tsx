@@ -1,49 +1,111 @@
-import { SectionPanel } from "@/components/section-panel";
-import { Badge } from "@/components/ui/badge";
+import { useParams, useRouter } from "@tanstack/react-router";
+import { ArrowLeft } from "lucide-react";
 import { useClientDetail } from "./clients-state";
+import { buildClientDetailViewModel } from "./client-detail-view-model";
+import { ClientDetailAssignmentsPanel } from "./client-detail-assignments-panel";
+import { ClientDetailDeploymentTable } from "./client-detail-deployment-table";
+import { ClientDetailHero } from "./client-detail-hero";
+import { ClientDetailIdentityPanel } from "./client-detail-identity-panel";
+import { ClientDetailKpis } from "./client-detail-kpis";
+import { ClientDetailLimitsPanel } from "./client-detail-limits-panel";
+import { ClientDetailUsagePanel } from "./client-detail-usage-panel";
 
-export function ClientDetailPage({ clientId }: { clientId: string }) {
-  const { data: client, isLoading } = useClientDetail(clientId);
+import "./client-detail.css";
+
+export function ClientDetailPage() {
+  const { clientId } = useParams({ strict: false }) as { clientId?: string };
+  const router = useRouter();
+  const { data: client, isLoading, isError } = useClientDetail(clientId ?? "");
 
   if (isLoading) {
     return (
-      <div className="p-6 space-y-4">
-        <div className="animate-pulse bg-surface h-8 w-48 rounded" />
-        <div className="animate-pulse bg-surface h-48 rounded" />
+      <div className="client-detail-page__state">
+        <div className="h-8 w-48 rounded bg-surface animate-pulse" />
       </div>
     );
   }
 
-  if (!client) return <div className="p-6 text-text-3">Client not found.</div>;
+  if (isError) {
+    return (
+      <div className="client-detail-page__state">
+        <button
+          className="client-detail-page__back-button"
+          onClick={() => router.history.back()}
+          type="button"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Clients
+        </button>
+        <p className="text-text-3">Client data is unavailable.</p>
+      </div>
+    );
+  }
+
+  if (!client) {
+    return (
+      <div className="client-detail-page__state">
+        <button
+          className="client-detail-page__back-button"
+          onClick={() => router.history.back()}
+          type="button"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Clients
+        </button>
+        <p className="text-text-3">Client not found.</p>
+      </div>
+    );
+  }
+
+  const viewModel = buildClientDetailViewModel(client);
 
   return (
-    <div className="p-6 space-y-4">
-      <div>
-        <h1 className="text-xl font-bold text-text-1">{client.name}</h1>
-        <p className="text-sm text-text-3 mt-0.5">Client ID: {client.id}</p>
+    <div className="client-detail-page">
+      <ClientDetailHero header={viewModel.header} onBack={() => router.history.back()} />
+      <ClientDetailKpis stats={viewModel.overviewStats} />
+
+      <div className="client-detail-page__secondary-grid">
+        <section className="client-detail-section">
+          <SectionHeading title="Identity & Secret" />
+          <ClientDetailIdentityPanel
+            items={viewModel.identityItems}
+            panelKey={client.id}
+            secret={viewModel.identitySecret}
+          />
+        </section>
+        <section className="client-detail-section">
+          <SectionHeading title="Usage" />
+          <ClientDetailUsagePanel items={viewModel.usageItems} />
+        </section>
       </div>
-      <SectionPanel title="Client Info">
-        <div className="p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-text-3">Status</span>
-            <Badge variant={client.enabled ? "good" : "bad"}>
-              {client.enabled ? "Enabled" : "Disabled"}
-            </Badge>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-text-3">Assigned Servers</span>
-            <span className="text-sm font-semibold text-text-1">{client.agent_ids.length}</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-text-3">Active Connections</span>
-            <span className="text-sm font-semibold text-text-1">{client.active_tcp_conns}</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-text-3">Deployments</span>
-            <span className="text-sm text-text-2">{client.deployments.length}</span>
-          </div>
-        </div>
-      </SectionPanel>
+
+      <div className="client-detail-page__tertiary-grid">
+        <section className="client-detail-section">
+          <SectionHeading title="Limits" />
+          <ClientDetailLimitsPanel items={viewModel.limitItems} />
+        </section>
+        <section className="client-detail-section">
+          <SectionHeading title="Assignments" />
+          <ClientDetailAssignmentsPanel
+            agents={viewModel.assignmentAgents}
+            groups={viewModel.assignmentGroups}
+            summaryText={viewModel.assignmentSummaryText}
+          />
+        </section>
+      </div>
+
+      <section className="client-detail-section">
+        <SectionHeading title="Deployment" />
+        <ClientDetailDeploymentTable rows={viewModel.deploymentRows} />
+      </section>
+    </div>
+  );
+}
+
+function SectionHeading({ title }: { title: string }) {
+  return (
+    <div className="client-detail-section-title">
+      <span className="client-detail-section-title__label">{title}</span>
     </div>
   );
 }

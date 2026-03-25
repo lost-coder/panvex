@@ -1,3 +1,4 @@
+// @ts-nocheck
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -139,7 +140,7 @@ test("buildFleetDcCoverageSummary surfaces down dc coverage when any server is d
   assert.equal(summary.rows[0]?.health, "down");
 });
 
-test("buildServerCardSummary keeps unavailable slots as dashes", () => {
+test("buildServerCardSummary keeps unavailable metric slots as dashes", () => {
   const summary = buildServerCardSummary({
     id: "server-1",
     node_name: "node-1",
@@ -178,12 +179,58 @@ test("buildServerCardSummary keeps unavailable slots as dashes", () => {
     last_seen_at: "2026-03-23T10:00:00Z",
   } as any);
 
-  assert.equal(summary.locationText, "—");
-  assert.equal(summary.metrics[0]?.label, "Connections");
-  assert.equal(summary.metrics[0]?.value, "12");
+  assert.equal(summary.locationText, "group-a");
+  assert.equal(summary.metrics[0]?.label, "Clients");
+  assert.equal(summary.metrics[0]?.value, "4");
   assert.equal(summary.metrics[1]?.value, "—");
   assert.equal(summary.metrics[2]?.value, "—");
   assert.equal(summary.dcTags.length, 0);
+});
+
+test("buildServerCardSummary keeps all metrics unavailable for offline servers", () => {
+  const summary = buildServerCardSummary({
+    id: "server-offline",
+    node_name: "node-offline",
+    presence_state: "offline",
+    fleet_group_id: "",
+    version: "1.2.3",
+    read_only: false,
+    runtime: {
+      me_runtime_ready: false,
+      accepting_new_connections: false,
+      degraded: false,
+      current_connections: 12,
+      current_connections_me: 7,
+      current_connections_direct: 5,
+      active_users: 4,
+      connections_total: 0,
+      connections_bad_total: 0,
+      handshake_timeouts_total: 0,
+      configured_users: 0,
+      dc_coverage_pct: 0,
+      healthy_upstreams: 0,
+      total_upstreams: 0,
+      use_middle_proxy: false,
+      me2dc_fallback_enabled: false,
+      startup_status: "waiting",
+      startup_stage: "waiting",
+      startup_progress_pct: 0,
+      initialization_status: "waiting",
+      initialization_stage: "waiting",
+      initialization_progress_pct: 0,
+      transport_mode: "direct",
+      dcs: [],
+      upstreams: [],
+      recent_events: [],
+    },
+    last_seen_at: "2026-03-23T10:00:00Z",
+  } as any);
+
+  assert.equal(summary.locationText, "Ungrouped");
+  assert.equal(summary.statusText, "Offline");
+  assert.equal(summary.metrics[0]?.value, "—");
+  assert.equal(summary.metrics[1]?.value, "—");
+  assert.equal(summary.metrics[2]?.value, "—");
 });
 
 test("buildServerCardDetails preserves dc load precision", () => {

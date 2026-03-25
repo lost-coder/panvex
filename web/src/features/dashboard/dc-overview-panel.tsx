@@ -1,10 +1,14 @@
 import { Globe } from "lucide-react";
 import type { ReactNode } from "react";
 import { SectionPanel } from "@/components/section-panel";
-import { DcHealthBar } from "@/components/ui/dc-health-bar";
+import type { Agent } from "@/lib/api";
+import {
+  buildFleetDcCoverageSummary,
+  type FleetDcCoverageRow,
+} from "./dashboard-view-model";
 
 interface DcOverviewPanelProps {
-  agents: any[];
+  agents: Agent[];
 }
 
 function getRttColor(rtt: number): string {
@@ -14,35 +18,33 @@ function getRttColor(rtt: number): string {
 }
 
 export function DcOverviewPanel({ agents }: DcOverviewPanelProps) {
-  // Aggregate agents by DC name
-  const dcMap = new Map<string, { servers: any[]; totalRtt: number; rttCount: number }>();
+  const summary = buildFleetDcCoverageSummary(agents);
+  const rows = summary.rows
+    .filter((row) => row.health !== "ok")
+    .sort((left, right) => {
+      const healthDelta = getHealthPriority(right) - getHealthPriority(left);
+      if (healthDelta !== 0) {
+        return healthDelta;
+      }
 
-  for (const agent of agents) {
-    const dcName = agent.dc_name ?? agent.datacenter ?? agent.dc ?? "Unknown";
-    if (!dcMap.has(dcName)) {
-      dcMap.set(dcName, { servers: [], totalRtt: 0, rttCount: 0 });
-    }
-    const entry = dcMap.get(dcName)!;
-    entry.servers.push(agent);
-    const rtt = agent.rtt_ms ?? agent.latency_ms ?? agent.avg_rtt ?? 0;
-    if (rtt > 0) {
-      entry.totalRtt += rtt;
-      entry.rttCount += 1;
-    }
-  }
-
-  const rows = Array.from(dcMap.entries()).map(([dcName, data]) => ({
-    dcName,
-    serverCount: data.servers.length,
-    avgRtt: data.rttCount > 0 ? Math.round(data.totalRtt / data.rttCount) : 0,
-    agents: data.servers,
-  }));
+      return left.dc - right.dc;
+    });
+  const icon: ReactNode = <Globe className="w-4 h-4" />;
+  const affectedLabel = rows.length === 1 ? "1 affected" : `${rows.length} affected`;
 
   return (
-    <SectionPanel icon={<Globe className="w-4 h-4" />} title="DC Overview">
+    <SectionPanel
+      headerRight={
+        <span className="text-[11px] font-semibold text-text-3">
+          {affectedLabel}
+        </span>
+      }
+      icon={icon}
+      title="DC Degradation"
+    >
       {rows.length === 0 ? (
         <div className="flex items-center justify-center p-8">
-          <span className="text-text-3 text-sm">No datacenters found</span>
+          <span className="text-text-3 text-sm">All tracked DCs are healthy.</span>
         </div>
       ) : (
         <table className="w-full">
@@ -56,16 +58,18 @@ export function DcOverviewPanel({ agents }: DcOverviewPanelProps) {
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.dcName} className="border-b border-border last:border-0">
-                <td className="px-4 py-2 text-sm text-text-1 font-medium">{row.dcName}</td>
-                <td className="px-4 py-2 text-sm text-text-2 text-right font-mono">{row.serverCount}</td>
-                <td className={`px-4 py-2 text-sm text-right font-mono ${getRttColor(row.avgRtt)}`}>
-                  {row.avgRtt > 0 ? `${row.avgRtt}ms` : "—"}
+              <tr key={row.dc} className="border-b border-border last:border-0">
+                <td className="px-4 py-2 text-sm text-text-1 font-medium">{row.dc}</td>
+                <td className="px-4 py-2 text-sm text-text-2 text-right font-mono">
+                  {row.serverCount} affected
+                </td>
+                <td className={`px-4 py-2 text-sm text-right font-mono ${getRttColor(row.averageRttMs)}`}>
+                  {row.averageRttMs > 0 ? `${row.averageRttMs}ms` : "—"}
                 </td>
                 <td className="px-4 py-2 text-right">
-                  <div className="flex justify-end">
-                    <DcHealthBar segments={row.agents.map((a: any) => a.presence_state === "online" ? "ok" : a.presence_state === "degraded" ? "partial" : "down")} size="mini" />
-                  </div>
+                  <span className={getHealthClassName(row.health)}>
+                    {getHealthLabel(row.health)}
+                  </span>
                 </td>
               </tr>
             ))}
@@ -74,4 +78,32 @@ export function DcOverviewPanel({ agents }: DcOverviewPanelProps) {
       )}
     </SectionPanel>
   );
+}
+
+function getHealthPriority(row: FleetDcCoverageRow): number {
+  if (row.health === "down") {
+    return 2;
+  }
+
+  if (row.health === "partial") {
+    return 1;
+  }
+
+  return 0;
+}
+
+function getHealthLabel(health: FleetDcCoverageRow["health"]): string {
+  if (health === "down") {
+    return "Down";
+  }
+
+  return "Partial";
+}
+
+function getHealthClassName(health: FleetDcCoverageRow["health"]): string {
+  if (health === "down") {
+    return "text-bad-text text-sm font-semibold";
+  }
+
+  return "text-warn-text text-sm font-semibold";
 }

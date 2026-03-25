@@ -15,7 +15,9 @@ import { apiClient } from "@/lib/api";
 
 import { DashboardPage } from "@/features/dashboard/dashboard-page";
 import { ServersPage } from "@/features/servers/servers-page";
+import { ServerDetailPage } from "@/features/servers/server-detail-page";
 import { ClientsPage } from "@/features/clients/clients-page";
+import { ClientDetailPage } from "@/features/clients/client-detail-page";
 import { SettingsPage } from "@/features/settings/settings-page";
 import { ProfilePage } from "@/features/profile/profile-page";
 import { LoginPage } from "@/features/login/login-page";
@@ -68,10 +70,22 @@ const serversRoute = createRoute({
   component: ServersPage,
 });
 
+const serverDetailRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/servers/$serverId",
+  component: ServerDetailPage,
+});
+
 const clientsRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/clients",
   component: ClientsPage,
+});
+
+const clientDetailRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/clients/$clientId",
+  component: ClientDetailPage,
 });
 
 const settingsRoute = createRoute({
@@ -91,7 +105,9 @@ const routeTree = rootRoute.addChildren([
   shellRoute.addChildren([
     dashboardRoute,
     serversRoute,
+    serverDetailRoute,
     clientsRoute,
+    clientDetailRoute,
     settingsRoute,
     profileRoute,
   ]),

@@ -183,15 +183,16 @@ export function sortAgentsBySeverity(agents: Agent[]): Agent[] {
 export function buildServerCardSummary(agent: Agent): ServerCardSummary {
   const dcSummary = buildServerCardDcCounts(agent);
   const status = mapAgentStatus(agent);
+  const isOffline = status.label === "Offline";
 
   return {
     id: agent.id,
     nameText: agent.node_name,
-    locationText: "—",
+    locationText: agent.fleet_group_id || "Ungrouped",
     statusText: status.label,
     statusTone: status.tone,
     metrics: [
-      { label: "Connections", value: String(agent.runtime?.current_connections ?? 0) },
+      { label: "Clients", value: isOffline ? "—" : String(agent.runtime?.active_users ?? 0) },
       { label: "CPU", value: "—" },
       { label: "Traffic", value: "—" },
     ],

@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npx tsc --noEmit && npx vite build",
-    "build:embed": "npx tsc --noEmit && npx vite build --outDir ../cmd/control-plane/.embedded-ui --emptyOutDir",
+    "build": "node ./node_modules/typescript/bin/tsc --noEmit && node ./node_modules/vite/bin/vite.js build",
+    "build:embed": "node ./node_modules/typescript/bin/tsc --noEmit && node ./node_modules/vite/bin/vite.js build --outDir ../cmd/control-plane/.embedded-ui --emptyOutDir",
     "preview": "vite preview"
   },
   "dependencies": {
