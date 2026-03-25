@@ -5,17 +5,24 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npx tsc --noEmit && npx vite build",
-    "build:embed": "npx tsc --noEmit && npx vite build --outDir ../cmd/control-plane/.embedded-ui --emptyOutDir",
+    "build": "node ./node_modules/typescript/bin/tsc --noEmit && node ./node_modules/vite/bin/vite.js build",
+    "build:embed": "node ./node_modules/typescript/bin/tsc --noEmit && node ./node_modules/vite/bin/vite.js build --outDir ../cmd/control-plane/.embedded-ui --emptyOutDir",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.2.7",
+    "@fontsource/ibm-plex-sans": "^5.2.8",
     "@radix-ui/react-dialog": "^1.1.15",
     "@tanstack/react-query": "^5.90.5",
     "@tanstack/react-router": "^1.139.3",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.577.0",
+    "radix-ui": "^1.4.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "recharts": "^3.3.0"
+    "recharts": "^3.3.0",
+    "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.16",

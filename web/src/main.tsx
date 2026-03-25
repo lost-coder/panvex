@@ -7,12 +7,7 @@ import { router } from "./router";
 import "./styles.css";
 
 const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: 1,
-      refetchOnWindowFocus: false
-    }
-  }
+  defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
 });
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
