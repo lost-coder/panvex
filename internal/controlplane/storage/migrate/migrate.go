@@ -29,16 +29,20 @@ type Options struct {
 
 // Summary reports how many persistent records the migration copied.
 type Summary struct {
-	Users            int
-	UserAppearance   int
-	FleetGroups      int
-	Agents           int
-	Instances        int
-	Jobs             int
-	JobTargets       int
-	AuditEvents      int
-	MetricSnapshots  int
-	EnrollmentTokens int
+	Users             int
+	UserAppearance    int
+	FleetGroups       int
+	Agents            int
+	Instances         int
+	Jobs              int
+	JobTargets        int
+	AuditEvents       int
+	MetricSnapshots   int
+	EnrollmentTokens  int
+	Clients           int
+	ClientAssignments int
+	ClientDeployments int
+	PanelSettings     int
 }
 
 // Run validates the backend pair, opens both stores, and performs one offline copy.
@@ -187,6 +191,50 @@ func copyStore(ctx context.Context, source storage.Store, target storage.Store) 
 	}
 	summary.EnrollmentTokens = len(enrollmentTokens)
 
+	clients, err := source.ListClients(ctx)
+	if err != nil {
+		return Summary{}, err
+	}
+	for _, client := range clients {
+		if err := target.PutClient(ctx, client); err != nil {
+			return Summary{}, err
+		}
+
+		assignments, err := source.ListClientAssignments(ctx, client.ID)
+		if err != nil {
+			return Summary{}, err
+		}
+		for _, assignment := range assignments {
+			if err := target.PutClientAssignment(ctx, assignment); err != nil {
+				return Summary{}, err
+			}
+		}
+		summary.ClientAssignments += len(assignments)
+
+		deployments, err := source.ListClientDeployments(ctx, client.ID)
+		if err != nil {
+			return Summary{}, err
+		}
+		for _, deployment := range deployments {
+			if err := target.PutClientDeployment(ctx, deployment); err != nil {
+				return Summary{}, err
+			}
+		}
+		summary.ClientDeployments += len(deployments)
+	}
+	summary.Clients = len(clients)
+
+	settings, settingsErr := source.GetPanelSettings(ctx)
+	if settingsErr != nil && !errors.Is(settingsErr, storage.ErrNotFound) {
+		return Summary{}, settingsErr
+	}
+	if settingsErr == nil {
+		if err := target.PutPanelSettings(ctx, settings); err != nil {
+			return Summary{}, err
+		}
+		summary.PanelSettings = 1
+	}
+
 	authority, authorityErr := source.GetCertificateAuthority(ctx)
 	if authorityErr != nil && !errors.Is(authorityErr, storage.ErrNotFound) {
 		return Summary{}, authorityErr
@@ -218,8 +266,13 @@ func ensureTargetEmpty(ctx context.Context, target storage.Store) error {
 	if err != nil {
 		return err
 	}
-	if counts.Users > 0 || counts.UserAppearance > 0 || counts.FleetGroups > 0 || counts.Agents > 0 || counts.Instances > 0 || counts.Jobs > 0 || counts.JobTargets > 0 || counts.AuditEvents > 0 || counts.MetricSnapshots > 0 || counts.EnrollmentTokens > 0 {
+	if counts.Users > 0 || counts.UserAppearance > 0 || counts.FleetGroups > 0 || counts.Agents > 0 || counts.Instances > 0 || counts.Jobs > 0 || counts.JobTargets > 0 || counts.AuditEvents > 0 || counts.MetricSnapshots > 0 || counts.EnrollmentTokens > 0 || counts.Clients > 0 || counts.ClientAssignments > 0 || counts.ClientDeployments > 0 || counts.PanelSettings > 0 {
 		return ErrTargetNotEmpty
+	}
+	if _, err := target.GetPanelSettings(ctx); err == nil {
+		return ErrTargetNotEmpty
+	} else if !errors.Is(err, storage.ErrNotFound) {
+		return err
 	}
 	if _, err := target.GetCertificateAuthority(ctx); err == nil {
 		return ErrTargetNotEmpty
@@ -305,6 +358,31 @@ func listCounts(ctx context.Context, store storage.Store) (Summary, error) {
 		return Summary{}, err
 	}
 	summary.EnrollmentTokens = len(enrollmentTokens)
+
+	clients, err := store.ListClients(ctx)
+	if err != nil {
+		return Summary{}, err
+	}
+	summary.Clients = len(clients)
+	for _, client := range clients {
+		assignments, err := store.ListClientAssignments(ctx, client.ID)
+		if err != nil {
+			return Summary{}, err
+		}
+		summary.ClientAssignments += len(assignments)
+
+		deployments, err := store.ListClientDeployments(ctx, client.ID)
+		if err != nil {
+			return Summary{}, err
+		}
+		summary.ClientDeployments += len(deployments)
+	}
+
+	if _, err := store.GetPanelSettings(ctx); err == nil {
+		summary.PanelSettings = 1
+	} else if !errors.Is(err, storage.ErrNotFound) {
+		return Summary{}, err
+	}
 
 	return summary, nil
 }

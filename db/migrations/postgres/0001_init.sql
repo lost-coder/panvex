@@ -1,12 +1,5 @@
-CREATE TABLE IF NOT EXISTS environments (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS fleet_groups (
     id TEXT PRIMARY KEY,
-    environment_id TEXT NOT NULL REFERENCES environments (id),
     name TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL
 );
@@ -21,11 +14,17 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMPTZ NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS user_appearance (
+    user_id TEXT PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+    theme TEXT NOT NULL DEFAULT 'system',
+    density TEXT NOT NULL DEFAULT 'comfortable',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT TIMESTAMPTZ 'epoch'
+);
+
 CREATE TABLE IF NOT EXISTS agents (
     id TEXT PRIMARY KEY,
     node_name TEXT NOT NULL,
-    environment_id TEXT NOT NULL REFERENCES environments (id),
-    fleet_group_id TEXT NOT NULL REFERENCES fleet_groups (id),
+    fleet_group_id TEXT REFERENCES fleet_groups (id),
     version TEXT NOT NULL DEFAULT '',
     read_only BOOLEAN NOT NULL DEFAULT FALSE,
     last_seen_at TIMESTAMPTZ NOT NULL,
@@ -50,7 +49,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     actor_id TEXT NOT NULL,
     status TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
-    ttl_nanos BIGINT NOT NULL
+    ttl_nanos BIGINT NOT NULL,
+    payload_json TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS job_targets (
@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS job_targets (
     agent_id TEXT NOT NULL,
     status TEXT NOT NULL,
     result_text TEXT NOT NULL DEFAULT '',
+    result_json TEXT NOT NULL DEFAULT '',
     updated_at TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (job_id, agent_id)
 );
@@ -81,12 +82,47 @@ CREATE TABLE IF NOT EXISTS metric_snapshots (
 
 CREATE TABLE IF NOT EXISTS enrollment_tokens (
     value TEXT PRIMARY KEY,
-    environment_id TEXT NOT NULL,
-    fleet_group_id TEXT NOT NULL,
+    fleet_group_id TEXT,
     issued_at TIMESTAMPTZ NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL,
     consumed_at TIMESTAMPTZ,
     revoked_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS clients (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    secret_ciphertext TEXT NOT NULL,
+    user_ad_tag TEXT NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    max_tcp_conns BIGINT NOT NULL DEFAULT 0,
+    max_unique_ips BIGINT NOT NULL DEFAULT 0,
+    data_quota_bytes BIGINT NOT NULL DEFAULT 0,
+    expiration_rfc3339 TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    deleted_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS client_assignments (
+    id TEXT PRIMARY KEY,
+    client_id TEXT NOT NULL REFERENCES clients (id),
+    target_type TEXT NOT NULL,
+    fleet_group_id TEXT REFERENCES fleet_groups (id),
+    agent_id TEXT REFERENCES agents (id),
+    created_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS client_deployments (
+    client_id TEXT NOT NULL REFERENCES clients (id),
+    agent_id TEXT NOT NULL REFERENCES agents (id),
+    desired_operation TEXT NOT NULL,
+    status TEXT NOT NULL,
+    last_error TEXT NOT NULL DEFAULT '',
+    connection_link TEXT NOT NULL DEFAULT '',
+    last_applied_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (client_id, agent_id)
 );
 
 CREATE TABLE IF NOT EXISTS panel_settings (
@@ -99,5 +135,12 @@ CREATE TABLE IF NOT EXISTS panel_settings (
     tls_mode TEXT NOT NULL DEFAULT '',
     tls_cert_file TEXT NOT NULL DEFAULT '',
     tls_key_file TEXT NOT NULL DEFAULT '',
+    updated_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS certificate_authority (
+    scope TEXT PRIMARY KEY,
+    ca_pem TEXT NOT NULL,
+    private_key_pem TEXT NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL
 );
