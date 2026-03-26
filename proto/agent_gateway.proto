@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package panvex.gateway.v1;
 
+option go_package = "github.com/panvex/panvex/internal/gatewayrpc";
+
 service AgentGateway {
   rpc Enroll(EnrollRequest) returns (EnrollResponse);
   rpc RenewCertificate(RenewCertificateRequest) returns (RenewCertificateResponse);
@@ -53,9 +55,15 @@ message InstanceSnapshot {
 
 message ClientUsageSnapshot {
   string client_id = 1;
-  uint64 traffic_used_bytes = 2;
+  uint64 traffic_delta_bytes = 2;
   int32 unique_ips_used = 3;
   int32 active_tcp_conns = 4;
+  int32 active_unique_ips = 5;
+}
+
+message ClientIPSnapshot {
+  string client_id = 1;
+  repeated string active_ips = 2;
 }
 
 message RuntimeDCSnapshot {
@@ -132,6 +140,9 @@ message Snapshot {
   map<string, uint64> metrics = 9;
   repeated ClientUsageSnapshot clients = 10;
   RuntimeSnapshot runtime = 11;
+  repeated ClientIPSnapshot client_ips = 12;
+  int32 total_active_connections = 13;
+  int32 total_active_users = 14;
 }
 
 message JobResult {
@@ -151,16 +162,47 @@ message JobCommand {
   string payload_json = 5;
 }
 
+message ClientDataRequest {
+  enum RequestType {
+    SINGLE_CLIENT = 0;
+    FULL_SNAPSHOT = 1;
+  }
+  RequestType type = 1;
+  string client_name = 2;
+  string request_id = 3;
+}
+
+message ClientDataResponse {
+  string request_id = 1;
+  repeated ClientDetailRecord clients = 2;
+}
+
+message ClientDetailRecord {
+  string client_id = 1;
+  string client_name = 2;
+  uint64 total_octets = 3;
+  int32 current_connections = 4;
+  int32 active_unique_ips = 5;
+  repeated string active_ip_list = 6;
+  string connection_link = 7;
+  int32 max_tcp_conns = 8;
+  string expiration = 9;
+  uint64 data_quota_bytes = 10;
+  int32 max_unique_ips = 11;
+}
+
 message ConnectClientMessage {
   oneof body {
     Heartbeat heartbeat = 1;
     Snapshot snapshot = 2;
     JobResult job_result = 3;
+    ClientDataResponse client_data_response = 4;
   }
 }
 
 message ConnectServerMessage {
   oneof body {
     JobCommand job = 1;
+    ClientDataRequest client_data_request = 2;
   }
 }
