@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
+	"time"
 )
 
 var (
@@ -18,17 +20,35 @@ var (
 	ErrNonLoopbackEndpoint = errors.New("telemt endpoint must resolve to loopback")
 )
 
+// defaultSlowDataTTL bounds staleness for heavier Telemt endpoints while reducing repeated local reads.
+const defaultSlowDataTTL = 2 * time.Minute
+
 // Config contains the local Telemt API location and authorization secret.
 type Config struct {
 	BaseURL       string
+	MetricsURL    string
 	Authorization string
 }
 
 // Client accesses the Telemt control API through a loopback-only endpoint.
 type Client struct {
 	baseURL       *url.URL
+	metricsURL    *url.URL
 	authorization string
 	httpClient    *http.Client
+	mu            sync.RWMutex
+	slowDataTTL   time.Duration
+	slowFetchedAt time.Time
+	slowData      slowRuntimeState
+	hasSlowData   bool
+}
+
+// slowRuntimeState stores data from heavier Telemt endpoints that tolerate short-lived staleness.
+type slowRuntimeState struct {
+	Version       string
+	UptimeSeconds float64
+	Upstreams     RuntimeUpstreamSummary
+	RecentEvents  []RuntimeEvent
 }
 
 // RuntimeState summarizes the Telemt information the agent reports to the control-plane.
@@ -142,6 +162,7 @@ type ClientUsage struct {
 	ClientName       string
 	TrafficUsedBytes uint64
 	UniqueIPsUsed    int
+	CurrentIPsUsed   int
 	ActiveTCPConns   int
 }
 
@@ -161,14 +182,27 @@ func NewClient(config Config, httpClient *http.Client) (*Client, error) {
 		return nil, ErrNonLoopbackEndpoint
 	}
 
+	var metricsURL *url.URL
+	if strings.TrimSpace(config.MetricsURL) != "" {
+		metricsURL, err = url.Parse(config.MetricsURL)
+		if err != nil {
+			return nil, err
+		}
+		if !isLoopbackHost(metricsURL.Hostname()) {
+			return nil, ErrNonLoopbackEndpoint
+		}
+	}
+
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
 
 	return &Client{
 		baseURL:       parsed,
+		metricsURL:    metricsURL,
 		authorization: config.Authorization,
 		httpClient:    httpClient,
+		slowDataTTL:   defaultSlowDataTTL,
 	}, nil
 }
 
@@ -185,14 +219,6 @@ func isLoopbackHost(host string) bool {
 
 // FetchRuntimeState queries the Telemt health, security posture, and summary endpoints.
 func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
-	systemInfo := struct {
-		Version       string  `json:"version"`
-		UptimeSeconds float64 `json:"uptime_seconds"`
-	}{}
-	if err := c.getJSON(ctx, "/v1/system/info", &systemInfo); err != nil {
-		return RuntimeState{}, err
-	}
-
 	health := struct {
 		Status string `json:"status"`
 	}{}
@@ -273,63 +299,6 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 		return RuntimeState{}, err
 	}
 
-	upstreamStatus := struct {
-		Summary struct {
-			ConfiguredTotal int `json:"configured_total"`
-			HealthyTotal    int `json:"healthy_total"`
-			UnhealthyTotal  int `json:"unhealthy_total"`
-			DirectTotal     int `json:"direct_total"`
-			SOCKS5Total     int `json:"socks5_total"`
-		} `json:"summary"`
-		Upstreams []struct {
-			UpstreamID         int     `json:"upstream_id"`
-			RouteKind          string  `json:"route_kind"`
-			Address            string  `json:"address"`
-			Healthy            bool    `json:"healthy"`
-			Fails              int     `json:"fails"`
-			EffectiveLatencyMs float64 `json:"effective_latency_ms"`
-		} `json:"upstreams"`
-	}{}
-	if err := c.getJSON(ctx, "/v1/stats/upstreams", &upstreamStatus); err != nil {
-		return RuntimeState{}, err
-	}
-
-	recentEvents := struct {
-		Enabled bool   `json:"enabled"`
-		Reason  string `json:"reason"`
-		Data    struct {
-			Events []struct {
-				Sequence      uint64 `json:"seq"`
-				TimestampUnix int64  `json:"ts_epoch_secs"`
-				EventType     string `json:"event_type"`
-				Context       string `json:"context"`
-			} `json:"events"`
-		} `json:"data"`
-	}{}
-	if err := c.getJSON(ctx, "/v1/runtime/events/recent", &recentEvents); err != nil {
-		return RuntimeState{}, err
-	}
-
-	users := make([]struct {
-		Username           string `json:"username"`
-		CurrentConnections int    `json:"current_connections"`
-		ActiveUniqueIPs    int    `json:"active_unique_ips"`
-		TotalOctets        uint64 `json:"total_octets"`
-	}, 0)
-	if err := c.getJSON(ctx, "/v1/stats/users", &users); err != nil {
-		return RuntimeState{}, err
-	}
-
-	clientUsage := make([]ClientUsage, 0, len(users))
-	for _, user := range users {
-		clientUsage = append(clientUsage, ClientUsage{
-			ClientName:       user.Username,
-			TrafficUsedBytes: user.TotalOctets,
-			UniqueIPsUsed:    user.ActiveUniqueIPs,
-			ActiveTCPConns:   user.CurrentConnections,
-		})
-	}
-
 	dcs := make([]RuntimeDC, 0, len(dcStatus.DCS))
 	for _, dc := range dcStatus.DCS {
 		dcs = append(dcs, RuntimeDC{
@@ -344,32 +313,41 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 		})
 	}
 
-	upstreams := make([]RuntimeUpstream, 0, len(upstreamStatus.Upstreams))
-	for _, upstream := range upstreamStatus.Upstreams {
-		upstreams = append(upstreams, RuntimeUpstream{
-			UpstreamID:         upstream.UpstreamID,
-			RouteKind:          upstream.RouteKind,
-			Address:            upstream.Address,
-			Healthy:            upstream.Healthy,
-			Fails:              upstream.Fails,
-			EffectiveLatencyMs: upstream.EffectiveLatencyMs,
-		})
+	now := time.Now().UTC()
+	slowData := slowRuntimeState{}
+	useCachedSlowData := false
+	if c.slowDataTTL > 0 {
+		c.mu.RLock()
+		if c.hasSlowData && now.Sub(c.slowFetchedAt) < c.slowDataTTL {
+			slowData = c.slowData
+			useCachedSlowData = true
+		}
+		c.mu.RUnlock()
+	}
+	if !useCachedSlowData {
+		fetchedSlowData, err := c.fetchSlowRuntimeState(ctx)
+		if err != nil {
+			return RuntimeState{}, err
+		}
+		slowData = fetchedSlowData
+		if c.slowDataTTL > 0 {
+			c.mu.Lock()
+			c.slowData = fetchedSlowData
+			c.slowFetchedAt = now
+			c.hasSlowData = true
+			c.mu.Unlock()
+		}
 	}
 
-	events := make([]RuntimeEvent, 0, len(recentEvents.Data.Events))
-	for _, event := range recentEvents.Data.Events {
-		events = append(events, RuntimeEvent{
-			Sequence:      event.Sequence,
-			TimestampUnix: event.TimestampUnix,
-			EventType:     event.EventType,
-			Context:       event.Context,
-		})
+	users, err := c.fetchClientUsage(ctx)
+	if err != nil {
+		return RuntimeState{}, err
 	}
 
 	return RuntimeState{
-		Version:        systemInfo.Version,
+		Version:        slowData.Version,
 		ReadOnly:       posture.ReadOnly,
-		UptimeSeconds:  systemInfo.UptimeSeconds,
+		UptimeSeconds:  slowData.UptimeSeconds,
 		ConnectedUsers: connectionSummary.Data.Totals.CurrentConnections,
 		Gates: RuntimeGates{
 			AcceptingNewConnections: gates.AcceptingNewConnections,
@@ -400,6 +378,97 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 			ConfiguredUsers:        summary.ConfiguredUsers,
 		},
 		DCs: dcs,
+		Upstreams:    slowData.Upstreams,
+		RecentEvents: slowData.RecentEvents,
+		Clients:      users,
+	}, nil
+}
+
+// fetchSlowRuntimeState reads the heavier Telemt endpoints that do not need live refresh on every snapshot.
+func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, error) {
+	systemInfo := struct {
+		Version       string  `json:"version"`
+		UptimeSeconds float64 `json:"uptime_seconds"`
+	}{}
+	if err := c.getJSON(ctx, "/v1/system/info", &systemInfo); err != nil {
+		return slowRuntimeState{}, err
+	}
+
+	upstreamStatus := struct {
+		Summary struct {
+			ConfiguredTotal int `json:"configured_total"`
+			HealthyTotal    int `json:"healthy_total"`
+			UnhealthyTotal  int `json:"unhealthy_total"`
+			DirectTotal     int `json:"direct_total"`
+			SOCKS5Total     int `json:"socks5_total"`
+		} `json:"summary"`
+		Upstreams []struct {
+			UpstreamID         int     `json:"upstream_id"`
+			RouteKind          string  `json:"route_kind"`
+			Address            string  `json:"address"`
+			Healthy            bool    `json:"healthy"`
+			Fails              int     `json:"fails"`
+			EffectiveLatencyMs float64 `json:"effective_latency_ms"`
+		} `json:"upstreams"`
+	}{}
+	if err := c.getJSON(ctx, "/v1/stats/upstreams", &upstreamStatus); err != nil {
+		return slowRuntimeState{}, err
+	}
+
+	recentEvents := struct {
+		Enabled bool   `json:"enabled"`
+		Reason  string `json:"reason"`
+		Data    struct {
+			Events []struct {
+				Sequence      uint64 `json:"seq"`
+				TimestampUnix int64  `json:"ts_epoch_secs"`
+				EventType     string `json:"event_type"`
+				Context       string `json:"context"`
+			} `json:"events"`
+		} `json:"data"`
+	}{}
+	// Recent events are advisory diagnostics. A temporary read failure must not suppress
+	// the core operator snapshot built from health, gates, connections, summary, and DC state.
+	if err := c.getJSON(ctx, "/v1/runtime/events/recent", &recentEvents); err != nil {
+		recentEvents = struct {
+			Enabled bool   `json:"enabled"`
+			Reason  string `json:"reason"`
+			Data    struct {
+				Events []struct {
+					Sequence      uint64 `json:"seq"`
+					TimestampUnix int64  `json:"ts_epoch_secs"`
+					EventType     string `json:"event_type"`
+					Context       string `json:"context"`
+				} `json:"events"`
+			} `json:"data"`
+		}{}
+	}
+
+	upstreams := make([]RuntimeUpstream, 0, len(upstreamStatus.Upstreams))
+	for _, upstream := range upstreamStatus.Upstreams {
+		upstreams = append(upstreams, RuntimeUpstream{
+			UpstreamID:         upstream.UpstreamID,
+			RouteKind:          upstream.RouteKind,
+			Address:            upstream.Address,
+			Healthy:            upstream.Healthy,
+			Fails:              upstream.Fails,
+			EffectiveLatencyMs: upstream.EffectiveLatencyMs,
+		})
+	}
+
+	events := make([]RuntimeEvent, 0, len(recentEvents.Data.Events))
+	for _, event := range recentEvents.Data.Events {
+		events = append(events, RuntimeEvent{
+			Sequence:      event.Sequence,
+			TimestampUnix: event.TimestampUnix,
+			EventType:     event.EventType,
+			Context:       event.Context,
+		})
+	}
+
+	return slowRuntimeState{
+		Version:       systemInfo.Version,
+		UptimeSeconds: systemInfo.UptimeSeconds,
 		Upstreams: RuntimeUpstreamSummary{
 			ConfiguredTotal: upstreamStatus.Summary.ConfiguredTotal,
 			HealthyTotal:    upstreamStatus.Summary.HealthyTotal,
@@ -409,8 +478,88 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 			Rows:            upstreams,
 		},
 		RecentEvents: events,
-		Clients:      clientUsage,
 	}, nil
+}
+
+func (c *Client) fetchClientUsage(ctx context.Context) ([]ClientUsage, error) {
+	users := make([]struct {
+		Username           string `json:"username"`
+		CurrentConnections int    `json:"current_connections"`
+		ActiveUniqueIPs    int    `json:"active_unique_ips"`
+		RecentUniqueIPs    int    `json:"recent_unique_ips"`
+		TotalOctets        uint64 `json:"total_octets"`
+	}, 0)
+	if err := c.getJSON(ctx, "/v1/stats/users", &users); err != nil {
+		return nil, err
+	}
+
+	clientUsage := make([]ClientUsage, 0, len(users))
+	for _, user := range users {
+		clientUsage = append(clientUsage, ClientUsage{
+			ClientName:       user.Username,
+			TrafficUsedBytes: user.TotalOctets,
+			UniqueIPsUsed:    user.RecentUniqueIPs,
+			CurrentIPsUsed:   user.ActiveUniqueIPs,
+			ActiveTCPConns:   user.CurrentConnections,
+		})
+	}
+
+	return clientUsage, nil
+}
+
+// FetchClientUsageFromMetrics fetches the Prometheus /metrics endpoint and returns per-client usage.
+// metricsURL must be configured; returns an error if it is nil.
+func (c *Client) FetchClientUsageFromMetrics(ctx context.Context) ([]ClientUsage, error) {
+	if c.metricsURL == nil {
+		return nil, errors.New("telemt metrics endpoint is not configured")
+	}
+
+	endpoint := *c.metricsURL
+	endpoint.Path = "/metrics"
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Authorization", c.authorization)
+
+	response, err := c.httpClient.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode >= http.StatusBadRequest {
+		return nil, fmt.Errorf("telemt metrics request failed with status %d", response.StatusCode)
+	}
+
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	parsed := ParseUserMetrics(string(body))
+	result := make([]ClientUsage, 0, len(parsed))
+	for username, m := range parsed {
+		result = append(result, ClientUsage{
+			ClientName:       username,
+			TrafficUsedBytes: m.OctetsFromClient + m.OctetsToClient,
+			ActiveTCPConns:   m.CurrentConnections,
+			CurrentIPsUsed:   m.UniqueIPsCurrent,
+		})
+	}
+
+	return result, nil
+}
+
+// FetchActiveIPs fetches the /v1/stats/users/active-ips endpoint and returns per-user active IPs.
+func (c *Client) FetchActiveIPs(ctx context.Context) ([]UserActiveIPs, error) {
+	var users []UserActiveIPs
+	if err := c.getJSON(ctx, "/v1/stats/users/active-ips", &users); err != nil {
+		return nil, err
+	}
+
+	return users, nil
 }
 
 // ExecuteRuntimeReload invokes the Telemt runtime reload endpoint.
