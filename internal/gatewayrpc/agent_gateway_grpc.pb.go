@@ -19,7 +19,6 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AgentGateway_Enroll_FullMethodName           = "/panvex.gateway.v1.AgentGateway/Enroll"
 	AgentGateway_RenewCertificate_FullMethodName = "/panvex.gateway.v1.AgentGateway/RenewCertificate"
 	AgentGateway_Connect_FullMethodName          = "/panvex.gateway.v1.AgentGateway/Connect"
 )
@@ -28,7 +27,6 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type AgentGatewayClient interface {
-	Enroll(ctx context.Context, in *EnrollRequest, opts ...grpc.CallOption) (*EnrollResponse, error)
 	RenewCertificate(ctx context.Context, in *RenewCertificateRequest, opts ...grpc.CallOption) (*RenewCertificateResponse, error)
 	Connect(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ConnectClientMessage, ConnectServerMessage], error)
 }
@@ -39,16 +37,6 @@ type agentGatewayClient struct {
 
 func NewAgentGatewayClient(cc grpc.ClientConnInterface) AgentGatewayClient {
 	return &agentGatewayClient{cc}
-}
-
-func (c *agentGatewayClient) Enroll(ctx context.Context, in *EnrollRequest, opts ...grpc.CallOption) (*EnrollResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(EnrollResponse)
-	err := c.cc.Invoke(ctx, AgentGateway_Enroll_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 func (c *agentGatewayClient) RenewCertificate(ctx context.Context, in *RenewCertificateRequest, opts ...grpc.CallOption) (*RenewCertificateResponse, error) {
@@ -78,7 +66,6 @@ type AgentGateway_ConnectClient = grpc.BidiStreamingClient[ConnectClientMessage,
 // All implementations should embed UnimplementedAgentGatewayServer
 // for forward compatibility.
 type AgentGatewayServer interface {
-	Enroll(context.Context, *EnrollRequest) (*EnrollResponse, error)
 	RenewCertificate(context.Context, *RenewCertificateRequest) (*RenewCertificateResponse, error)
 	Connect(grpc.BidiStreamingServer[ConnectClientMessage, ConnectServerMessage]) error
 }
@@ -90,9 +77,6 @@ type AgentGatewayServer interface {
 // pointer dereference when methods are called.
 type UnimplementedAgentGatewayServer struct{}
 
-func (UnimplementedAgentGatewayServer) Enroll(context.Context, *EnrollRequest) (*EnrollResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Enroll not implemented")
-}
 func (UnimplementedAgentGatewayServer) RenewCertificate(context.Context, *RenewCertificateRequest) (*RenewCertificateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RenewCertificate not implemented")
 }
@@ -117,24 +101,6 @@ func RegisterAgentGatewayServer(s grpc.ServiceRegistrar, srv AgentGatewayServer)
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&AgentGateway_ServiceDesc, srv)
-}
-
-func _AgentGateway_Enroll_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(EnrollRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AgentGatewayServer).Enroll(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: AgentGateway_Enroll_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AgentGatewayServer).Enroll(ctx, req.(*EnrollRequest))
-	}
-	return interceptor(ctx, in, info, handler)
 }
 
 func _AgentGateway_RenewCertificate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -169,10 +135,6 @@ var AgentGateway_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "panvex.gateway.v1.AgentGateway",
 	HandlerType: (*AgentGatewayServer)(nil),
 	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "Enroll",
-			Handler:    _AgentGateway_Enroll_Handler,
-		},
 		{
 			MethodName: "RenewCertificate",
 			Handler:    _AgentGateway_RenewCertificate_Handler,

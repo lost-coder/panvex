@@ -59,6 +59,7 @@ type AgentRuntime struct {
 	StartupProgressPct        float64           `json:"startup_progress_pct"`
 	InitializationStatus      string            `json:"initialization_status"`
 	Degraded                  bool              `json:"degraded"`
+	LifecycleState            string            `json:"lifecycle_state"`
 	InitializationStage       string            `json:"initialization_stage"`
 	InitializationProgressPct float64           `json:"initialization_progress_pct"`
 	TransportMode             string            `json:"transport_mode"`

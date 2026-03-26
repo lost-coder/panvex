@@ -58,11 +58,11 @@ func TestClientFetchRuntimeStateUsesLoopbackAPI(t *testing.T) {
 			writeSuccessEnvelope(w, map[string]any{
 				"accepting_new_connections": true,
 				"me_runtime_ready":          true,
-				"me2dc_fallback_enabled":   true,
-				"use_middle_proxy":         true,
-				"startup_status":           "ready",
-				"startup_stage":            "serving",
-				"startup_progress_pct":     100.0,
+				"me2dc_fallback_enabled":    true,
+				"use_middle_proxy":          true,
+				"startup_status":            "ready",
+				"startup_stage":             "serving",
+				"startup_progress_pct":      100.0,
 			})
 		case "/v1/runtime/initialization":
 			writeSuccessEnvelope(w, map[string]any{
@@ -86,10 +86,10 @@ func TestClientFetchRuntimeStateUsesLoopbackAPI(t *testing.T) {
 			})
 		case "/v1/stats/summary":
 			writeSuccessEnvelope(w, map[string]any{
-				"connections_total":         512,
-				"connections_bad_total":     9,
-				"handshake_timeouts_total":  4,
-				"configured_users":          12,
+				"connections_total":        512,
+				"connections_bad_total":    9,
+				"handshake_timeouts_total": 4,
+				"configured_users":         12,
 			})
 		case "/v1/stats/dcs":
 			writeSuccessEnvelope(w, map[string]any{
@@ -117,12 +117,12 @@ func TestClientFetchRuntimeStateUsesLoopbackAPI(t *testing.T) {
 				},
 				"upstreams": []map[string]any{
 					{
-						"upstream_id":           1,
-						"route_kind":            "direct",
-						"address":               "direct",
-						"healthy":               true,
-						"fails":                 0,
-						"effective_latency_ms":  11.2,
+						"upstream_id":          1,
+						"route_kind":           "direct",
+						"address":              "direct",
+						"healthy":              true,
+						"fails":                0,
+						"effective_latency_ms": 11.2,
 					},
 				},
 			})
@@ -440,10 +440,10 @@ func TestClientFetchRuntimeStateAllowsRecentEventsFailure(t *testing.T) {
 			})
 		case "/v1/stats/summary":
 			writeSuccessEnvelope(w, map[string]any{
-				"connections_total":         128,
-				"connections_bad_total":     1,
-				"handshake_timeouts_total":  0,
-				"configured_users":          4,
+				"connections_total":        128,
+				"connections_bad_total":    1,
+				"handshake_timeouts_total": 0,
+				"configured_users":         4,
 			})
 		case "/v1/stats/dcs":
 			writeSuccessEnvelope(w, map[string]any{
@@ -816,12 +816,15 @@ telemt_user_unique_ips_current{user="bob"} 1
 		t.Fatalf("FetchClientUsageFromMetrics() error = %v", err)
 	}
 
-	if len(usage) != 2 {
-		t.Fatalf("len(usage) = %d, want 2", len(usage))
+	if usage.UptimeSeconds != 0 {
+		t.Fatalf("usage.UptimeSeconds = %v, want 0 when metric is absent", usage.UptimeSeconds)
+	}
+	if len(usage.Users) != 2 {
+		t.Fatalf("len(usage.Users) = %d, want 2", len(usage.Users))
 	}
 
-	byName := make(map[string]ClientUsage, len(usage))
-	for _, u := range usage {
+	byName := make(map[string]ClientUsage, len(usage.Users))
+	for _, u := range usage.Users {
 		byName[u.ClientName] = u
 	}
 
@@ -851,6 +854,38 @@ telemt_user_unique_ips_current{user="bob"} 1
 	}
 	if bob.CurrentIPsUsed != 1 {
 		t.Fatalf("bob.CurrentIPsUsed = %d, want 1", bob.CurrentIPsUsed)
+	}
+}
+
+func TestClientFetchClientUsageFromMetricsParsesUptime(t *testing.T) {
+	const metricsPayload = `# TYPE telemt_uptime_seconds gauge
+telemt_uptime_seconds 123.5
+telemt_user_octets_from_client{user="alice"} 10
+telemt_user_octets_to_client{user="alice"} 20
+telemt_user_connections_current{user="alice"} 1
+telemt_user_unique_ips_current{user="alice"} 1
+`
+
+	metricsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		_, _ = w.Write([]byte(metricsPayload))
+	}))
+	defer metricsServer.Close()
+
+	client, err := NewClient(Config{
+		BaseURL:    "http://127.0.0.1:19999",
+		MetricsURL: metricsServer.URL,
+	}, metricsServer.Client())
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	usage, err := client.FetchClientUsageFromMetrics(context.Background())
+	if err != nil {
+		t.Fatalf("FetchClientUsageFromMetrics() error = %v", err)
+	}
+	if usage.UptimeSeconds != 123.5 {
+		t.Fatalf("usage.UptimeSeconds = %v, want 123.5", usage.UptimeSeconds)
 	}
 }
 

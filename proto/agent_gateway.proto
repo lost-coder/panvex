@@ -5,23 +5,8 @@ package panvex.gateway.v1;
 option go_package = "github.com/panvex/panvex/internal/gatewayrpc";
 
 service AgentGateway {
-  rpc Enroll(EnrollRequest) returns (EnrollResponse);
   rpc RenewCertificate(RenewCertificateRequest) returns (RenewCertificateResponse);
   rpc Connect(stream ConnectClientMessage) returns (stream ConnectServerMessage);
-}
-
-message EnrollRequest {
-  string token = 1;
-  string node_name = 2;
-  string version = 3;
-}
-
-message EnrollResponse {
-  string agent_id = 1;
-  string certificate_pem = 2;
-  string private_key_pem = 3;
-  string ca_pem = 4;
-  int64 expires_at_unix = 5;
 }
 
 message RenewCertificateRequest {
@@ -143,6 +128,8 @@ message Snapshot {
   repeated ClientIPSnapshot client_ips = 12;
   int32 total_active_connections = 13;
   int32 total_active_users = 14;
+  bool has_client_usage = 15;
+  bool has_client_ips = 16;
 }
 
 message JobResult {

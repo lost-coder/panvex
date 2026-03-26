@@ -12,6 +12,73 @@ import (
 	agentstate "github.com/panvex/panvex/internal/agent/state"
 )
 
+func TestLoadRuntimeCredentialsReturnsSavedState(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "agent-state.json")
+	expected := agentstate.Credentials{
+		AgentID:        "agent-123",
+		CertificatePEM: "cert-pem",
+		PrivateKeyPEM:  "key-pem",
+		CAPEM:          "ca-pem",
+		GRPCEndpoint:   "grpc.panel.example.com:443",
+		GRPCServerName: "grpc.panel.example.com",
+	}
+	if err := agentstate.Save(statePath, expected); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	credentials, err := loadRuntimeCredentials(statePath)
+	if err != nil {
+		t.Fatalf("loadRuntimeCredentials() error = %v", err)
+	}
+	if credentials.AgentID != expected.AgentID {
+		t.Fatalf("credentials.AgentID = %q, want %q", credentials.AgentID, expected.AgentID)
+	}
+	if credentials.GRPCEndpoint != expected.GRPCEndpoint {
+		t.Fatalf("credentials.GRPCEndpoint = %q, want %q", credentials.GRPCEndpoint, expected.GRPCEndpoint)
+	}
+}
+
+func TestLoadRuntimeCredentialsRequiresBootstrapState(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "missing-agent-state.json")
+
+	_, err := loadRuntimeCredentials(statePath)
+	if err == nil {
+		t.Fatal("loadRuntimeCredentials() error = nil, want bootstrap requirement")
+	}
+	if !strings.Contains(err.Error(), "bootstrap the agent first") {
+		t.Fatalf("loadRuntimeCredentials() error = %q, want bootstrap guidance", err.Error())
+	}
+}
+
+func TestReconnectDelayCapsBackoff(t *testing.T) {
+	if delay := reconnectDelay(1); delay != time.Second {
+		t.Fatalf("reconnectDelay(1) = %v, want %v", delay, time.Second)
+	}
+	if delay := reconnectDelay(3); delay != 4*time.Second {
+		t.Fatalf("reconnectDelay(3) = %v, want %v", delay, 4*time.Second)
+	}
+	if delay := reconnectDelay(10); delay != 15*time.Second {
+		t.Fatalf("reconnectDelay(10) = %v, want %v", delay, 15*time.Second)
+	}
+}
+
+func TestNewConnectionScheduleDisablesZeroIntervals(t *testing.T) {
+	schedule := newConnectionSchedule(15*time.Second, time.Minute, 0, 25*time.Second, 0)
+
+	if !schedule.config(pollHeartbeat).Enabled {
+		t.Fatal("heartbeat poll disabled, want enabled")
+	}
+	if schedule.config(pollHeartbeat).Interval != 15*time.Second {
+		t.Fatalf("heartbeat interval = %v, want %v", schedule.config(pollHeartbeat).Interval, 15*time.Second)
+	}
+	if schedule.config(pollUsage).Enabled {
+		t.Fatal("usage poll enabled, want disabled for zero interval")
+	}
+	if schedule.config(pollIPUpload).Enabled {
+		t.Fatal("ip upload enabled, want disabled for zero interval")
+	}
+}
+
 func TestRunBootstrapCommandSavesIssuedState(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "agent-state.json")
 

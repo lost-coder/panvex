@@ -10,6 +10,56 @@ import (
 	"github.com/panvex/panvex/internal/gatewayrpc"
 )
 
+func TestAgentBuildSnapshotMarksLifecycleRegressionAsDegraded(t *testing.T) {
+	client := &fakeTelemtClient{
+		state: telemt.RuntimeState{
+			Version:        "2026.03",
+			ReadOnly:       false,
+			UptimeSeconds:  120,
+			ConnectedUsers: 8,
+			Gates: telemt.RuntimeGates{
+				AcceptingNewConnections: false,
+				MERuntimeReady:          false,
+				ME2DCFallbackEnabled:    false,
+				UseMiddleProxy:          true,
+				StartupStatus:           "ready",
+				StartupStage:            "serving",
+				StartupProgressPct:      100,
+			},
+			Initialization: telemt.RuntimeInitialization{
+				Status:        "ready",
+				Degraded:      false,
+				CurrentStage:  "serving",
+				ProgressPct:   100,
+				TransportMode: "middle_proxy",
+			},
+		},
+	}
+	agent := New(Config{AgentID: "agent-1", NodeName: "node-a", FleetGroupID: "ams-1", Version: "1.0.0"}, client)
+
+	if _, err := agent.BuildRuntimeSnapshot(context.Background(), time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("first BuildRuntimeSnapshot() error = %v", err)
+	}
+
+	client.state.Gates.StartupStatus = "starting"
+	client.state.Gates.StartupStage = "booting"
+	client.state.Gates.StartupProgressPct = 10
+	client.state.Initialization.Status = "starting"
+	client.state.Initialization.CurrentStage = "booting"
+	client.state.Initialization.ProgressPct = 10
+
+	snapshot, err := agent.BuildRuntimeSnapshot(context.Background(), time.Date(2026, time.March, 14, 8, 1, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("second BuildRuntimeSnapshot() error = %v", err)
+	}
+	if !snapshot.Runtime.Degraded {
+		t.Fatal("snapshot.Runtime.Degraded = false, want true for lifecycle regression")
+	}
+	if snapshot.Runtime.StartupStatus != "starting" {
+		t.Fatalf("snapshot.Runtime.StartupStatus = %q, want %q", snapshot.Runtime.StartupStatus, "starting")
+	}
+}
+
 func TestAgentBuildSnapshotUsesTelemtRuntimeState(t *testing.T) {
 	client := &fakeTelemtClient{
 		state: telemt.RuntimeState{
@@ -91,7 +141,7 @@ func TestAgentBuildSnapshotUsesTelemtRuntimeState(t *testing.T) {
 		Version:      "1.0.0",
 	}, client)
 
-	snapshot, err := agent.BuildSnapshot(context.Background(), time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC))
+	snapshot, err := agent.BuildRuntimeSnapshot(context.Background(), time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("BuildSnapshot() error = %v", err)
 	}
@@ -152,7 +202,7 @@ func TestAgentBuildSnapshotIncludesClientUsageEntries(t *testing.T) {
 		Version:      "1.0.0",
 	}, client)
 
-	snapshot, err := agent.BuildSnapshot(context.Background(), time.Date(2026, time.March, 14, 8, 5, 0, 0, time.UTC))
+	snapshot, err := agent.BuildUsageSnapshot(context.Background(), time.Date(2026, time.March, 14, 8, 5, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("BuildSnapshot() error = %v", err)
 	}
@@ -210,8 +260,8 @@ func TestAgentHandleJobCreatesManagedClientAndReturnsConnectionLink(t *testing.T
 	}, client)
 
 	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
-		Id:     "job-2",
-		Action: "client.create",
+		Id:          "job-2",
+		Action:      "client.create",
 		PayloadJson: `{"client_id":"client-1","name":"alice","secret":"secret-1","user_ad_tag":"0123456789abcdef0123456789abcdef","enabled":true,"max_tcp_conns":4,"max_unique_ips":2,"data_quota_bytes":1024,"expiration_rfc3339":"2026-04-01T00:00:00Z"}`,
 	}, time.Date(2026, time.March, 17, 18, 0, 0, 0, time.UTC))
 
@@ -246,8 +296,8 @@ func TestAgentHandleJobUpdatesManagedClientUsingPreviousName(t *testing.T) {
 	}, client)
 
 	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
-		Id:     "job-3",
-		Action: "client.update",
+		Id:          "job-3",
+		Action:      "client.update",
 		PayloadJson: `{"client_id":"client-1","previous_name":"alice","name":"alice-new","secret":"secret-2","user_ad_tag":"0123456789abcdef0123456789abcdef","enabled":true}`,
 	}, time.Date(2026, time.March, 17, 18, 5, 0, 0, time.UTC))
 
@@ -312,15 +362,15 @@ func TestAgentBuildSnapshotMapsTelemtClientNamesBackToManagedClientIDs(t *testin
 	}, client)
 
 	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
-		Id:     "job-5",
-		Action: "client.create",
+		Id:          "job-5",
+		Action:      "client.create",
 		PayloadJson: `{"client_id":"client-1","name":"alice","secret":"secret-1","user_ad_tag":"0123456789abcdef0123456789abcdef","enabled":true}`,
 	}, time.Date(2026, time.March, 17, 18, 15, 0, 0, time.UTC))
 	if !result.Success {
 		t.Fatalf("HandleJob() Success = false, want true, message = %q", result.Message)
 	}
 
-	snapshot, err := agent.BuildSnapshot(context.Background(), time.Date(2026, time.March, 17, 18, 16, 0, 0, time.UTC))
+	snapshot, err := agent.BuildUsageSnapshot(context.Background(), time.Date(2026, time.March, 17, 18, 16, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("BuildSnapshot() error = %v", err)
 	}
@@ -334,6 +384,9 @@ func TestAgentBuildSnapshotMapsTelemtClientNamesBackToManagedClientIDs(t *testin
 
 type fakeTelemtClient struct {
 	state             telemt.RuntimeState
+	metricsUsage      []telemt.ClientUsage
+	metricsUptime     float64
+	activeIPs         []telemt.UserActiveIPs
 	reloadCalled      bool
 	createdClient     telemt.ManagedClient
 	updatedClient     telemt.ManagedClient
@@ -344,6 +397,21 @@ type fakeTelemtClient struct {
 
 func (c *fakeTelemtClient) FetchRuntimeState(context.Context) (telemt.RuntimeState, error) {
 	return c.state, nil
+}
+
+func (c *fakeTelemtClient) FetchClientUsageFromMetrics(context.Context) (telemt.ClientUsageMetricsSnapshot, error) {
+	usage := c.metricsUsage
+	if usage == nil {
+		usage = c.state.Clients
+	}
+	return telemt.ClientUsageMetricsSnapshot{
+		Users:         usage,
+		UptimeSeconds: c.metricsUptime,
+	}, nil
+}
+
+func (c *fakeTelemtClient) FetchActiveIPs(context.Context) ([]telemt.UserActiveIPs, error) {
+	return c.activeIPs, nil
 }
 
 func (c *fakeTelemtClient) ExecuteRuntimeReload(context.Context) error {

@@ -14,26 +14,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Enroll consumes a bootstrap token and returns an agent identity plus mTLS material.
-func (s *Server) Enroll(_ context.Context, request *gatewayrpc.EnrollRequest) (*gatewayrpc.EnrollResponse, error) {
-	response, err := s.enrollAgent(agentEnrollmentRequest{
-		Token:    request.Token,
-		NodeName: request.NodeName,
-		Version:  request.Version,
-	}, s.now())
-	if err != nil {
-		return nil, status.Error(codes.PermissionDenied, err.Error())
-	}
-
-	return &gatewayrpc.EnrollResponse{
-		AgentId:        response.AgentID,
-		CertificatePem: response.CertificatePEM,
-		PrivateKeyPem:  response.PrivateKeyPEM,
-		CaPem:          response.CAPEM,
-		ExpiresAtUnix:  response.ExpiresAt.Unix(),
-	}, nil
-}
-
 // RenewCertificate rotates the short-lived mTLS material for an authenticated agent.
 func (s *Server) RenewCertificate(ctx context.Context, request *gatewayrpc.RenewCertificateRequest) (*gatewayrpc.RenewCertificateResponse, error) {
 	agentID, err := authenticatedAgentID(ctx)
@@ -105,7 +85,15 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 					TrafficUsedBytes: client.TrafficDeltaBytes,
 					UniqueIPsUsed:    int(client.UniqueIpsUsed),
 					ActiveTCPConns:   int(client.ActiveTcpConns),
+					ActiveUniqueIPs:  int(client.ActiveUniqueIps),
 					ObservedAt:       time.Unix(snap.ObservedAtUnix, 0).UTC(),
+				})
+			}
+			clientIPs := make([]clientIPSnapshot, 0, len(snap.ClientIps))
+			for _, clientIP := range snap.ClientIps {
+				clientIPs = append(clientIPs, clientIPSnapshot{
+					ClientID:  clientIP.ClientId,
+					ActiveIPs: append([]string(nil), clientIP.ActiveIps...),
 				})
 			}
 			if err := s.applyAgentSnapshot(agentSnapshot{
@@ -116,7 +104,9 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 				ReadOnly:     snap.ReadOnly,
 				Instances:    instances,
 				Clients:      clients,
-				HasClients:   true,
+				HasClients:   snap.HasClientUsage,
+				ClientIPs:    clientIPs,
+				HasClientIPs: snap.HasClientIps,
 				Runtime:      snap.Runtime,
 				HasRuntime:   snap.Runtime != nil,
 				Metrics:      snap.Metrics,

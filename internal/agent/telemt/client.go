@@ -97,10 +97,10 @@ type RuntimeConnectionTotals struct {
 
 // RuntimeSummary carries cumulative connection counters used for overview cards.
 type RuntimeSummary struct {
-	ConnectionsTotal        uint64
-	ConnectionsBadTotal     uint64
-	HandshakeTimeoutsTotal  uint64
-	ConfiguredUsers         int
+	ConnectionsTotal       uint64
+	ConnectionsBadTotal    uint64
+	HandshakeTimeoutsTotal uint64
+	ConfiguredUsers        int
 }
 
 // RuntimeDC carries one operator-facing DC health row.
@@ -137,10 +137,10 @@ type RuntimeUpstream struct {
 
 // RuntimeEvent carries one recent runtime event from Telemt.
 type RuntimeEvent struct {
-	Sequence     uint64
+	Sequence      uint64
 	TimestampUnix int64
-	EventType    string
-	Context      string
+	EventType     string
+	Context       string
 }
 
 // ManagedClient stores the centrally managed Telemt client fields applied on one node.
@@ -377,7 +377,7 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 			HandshakeTimeoutsTotal: summary.HandshakeTimeoutsTotal,
 			ConfiguredUsers:        summary.ConfiguredUsers,
 		},
-		DCs: dcs,
+		DCs:          dcs,
 		Upstreams:    slowData.Upstreams,
 		RecentEvents: slowData.RecentEvents,
 		Clients:      users,
@@ -507,11 +507,16 @@ func (c *Client) fetchClientUsage(ctx context.Context) ([]ClientUsage, error) {
 	return clientUsage, nil
 }
 
+type ClientUsageMetricsSnapshot struct {
+	Users         []ClientUsage
+	UptimeSeconds float64
+}
+
 // FetchClientUsageFromMetrics fetches the Prometheus /metrics endpoint and returns per-client usage.
 // metricsURL must be configured; returns an error if it is nil.
-func (c *Client) FetchClientUsageFromMetrics(ctx context.Context) ([]ClientUsage, error) {
+func (c *Client) FetchClientUsageFromMetrics(ctx context.Context) (ClientUsageMetricsSnapshot, error) {
 	if c.metricsURL == nil {
-		return nil, errors.New("telemt metrics endpoint is not configured")
+		return ClientUsageMetricsSnapshot{}, errors.New("telemt metrics endpoint is not configured")
 	}
 
 	endpoint := *c.metricsURL
@@ -519,28 +524,28 @@ func (c *Client) FetchClientUsageFromMetrics(ctx context.Context) ([]ClientUsage
 
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
 	if err != nil {
-		return nil, err
+		return ClientUsageMetricsSnapshot{}, err
 	}
 	request.Header.Set("Authorization", c.authorization)
 
 	response, err := c.httpClient.Do(request)
 	if err != nil {
-		return nil, err
+		return ClientUsageMetricsSnapshot{}, err
 	}
 	defer response.Body.Close()
 
 	if response.StatusCode >= http.StatusBadRequest {
-		return nil, fmt.Errorf("telemt metrics request failed with status %d", response.StatusCode)
+		return ClientUsageMetricsSnapshot{}, fmt.Errorf("telemt metrics request failed with status %d", response.StatusCode)
 	}
 
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
-		return nil, err
+		return ClientUsageMetricsSnapshot{}, err
 	}
 
-	parsed := ParseUserMetrics(string(body))
-	result := make([]ClientUsage, 0, len(parsed))
-	for username, m := range parsed {
+	parsed := ParseMetricsSnapshot(string(body))
+	result := make([]ClientUsage, 0, len(parsed.Users))
+	for username, m := range parsed.Users {
 		result = append(result, ClientUsage{
 			ClientName:       username,
 			TrafficUsedBytes: m.OctetsFromClient + m.OctetsToClient,
@@ -549,7 +554,10 @@ func (c *Client) FetchClientUsageFromMetrics(ctx context.Context) ([]ClientUsage
 		})
 	}
 
-	return result, nil
+	return ClientUsageMetricsSnapshot{
+		Users:         result,
+		UptimeSeconds: parsed.UptimeSeconds,
+	}, nil
 }
 
 // FetchActiveIPs fetches the /v1/stats/users/active-ips endpoint and returns per-user active IPs.
@@ -648,8 +656,8 @@ func (c *Client) applyClient(ctx context.Context, method string, path string, cl
 
 	var body struct {
 		Links struct {
-			TLS    []string `json:"tls"`
-			Secure []string `json:"secure"`
+			TLS     []string `json:"tls"`
+			Secure  []string `json:"secure"`
 			Classic []string `json:"classic"`
 		} `json:"links"`
 	}

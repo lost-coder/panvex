@@ -64,143 +64,7 @@ func (x ClientDataRequest_RequestType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ClientDataRequest_RequestType.Descriptor instead.
 func (ClientDataRequest_RequestType) EnumDescriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{16, 0}
-}
-
-type EnrollRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
-	NodeName      string                 `protobuf:"bytes,2,opt,name=node_name,json=nodeName,proto3" json:"node_name,omitempty"`
-	Version       string                 `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *EnrollRequest) Reset() {
-	*x = EnrollRequest{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[0]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *EnrollRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*EnrollRequest) ProtoMessage() {}
-
-func (x *EnrollRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[0]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use EnrollRequest.ProtoReflect.Descriptor instead.
-func (*EnrollRequest) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *EnrollRequest) GetToken() string {
-	if x != nil {
-		return x.Token
-	}
-	return ""
-}
-
-func (x *EnrollRequest) GetNodeName() string {
-	if x != nil {
-		return x.NodeName
-	}
-	return ""
-}
-
-func (x *EnrollRequest) GetVersion() string {
-	if x != nil {
-		return x.Version
-	}
-	return ""
-}
-
-type EnrollResponse struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	AgentId        string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
-	CertificatePem string                 `protobuf:"bytes,2,opt,name=certificate_pem,json=certificatePem,proto3" json:"certificate_pem,omitempty"`
-	PrivateKeyPem  string                 `protobuf:"bytes,3,opt,name=private_key_pem,json=privateKeyPem,proto3" json:"private_key_pem,omitempty"`
-	CaPem          string                 `protobuf:"bytes,4,opt,name=ca_pem,json=caPem,proto3" json:"ca_pem,omitempty"`
-	ExpiresAtUnix  int64                  `protobuf:"varint,5,opt,name=expires_at_unix,json=expiresAtUnix,proto3" json:"expires_at_unix,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *EnrollResponse) Reset() {
-	*x = EnrollResponse{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *EnrollResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*EnrollResponse) ProtoMessage() {}
-
-func (x *EnrollResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use EnrollResponse.ProtoReflect.Descriptor instead.
-func (*EnrollResponse) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *EnrollResponse) GetAgentId() string {
-	if x != nil {
-		return x.AgentId
-	}
-	return ""
-}
-
-func (x *EnrollResponse) GetCertificatePem() string {
-	if x != nil {
-		return x.CertificatePem
-	}
-	return ""
-}
-
-func (x *EnrollResponse) GetPrivateKeyPem() string {
-	if x != nil {
-		return x.PrivateKeyPem
-	}
-	return ""
-}
-
-func (x *EnrollResponse) GetCaPem() string {
-	if x != nil {
-		return x.CaPem
-	}
-	return ""
-}
-
-func (x *EnrollResponse) GetExpiresAtUnix() int64 {
-	if x != nil {
-		return x.ExpiresAtUnix
-	}
-	return 0
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{14, 0}
 }
 
 type RenewCertificateRequest struct {
@@ -212,7 +76,7 @@ type RenewCertificateRequest struct {
 
 func (x *RenewCertificateRequest) Reset() {
 	*x = RenewCertificateRequest{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[2]
+	mi := &file_proto_agent_gateway_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -224,7 +88,7 @@ func (x *RenewCertificateRequest) String() string {
 func (*RenewCertificateRequest) ProtoMessage() {}
 
 func (x *RenewCertificateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[2]
+	mi := &file_proto_agent_gateway_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -237,7 +101,7 @@ func (x *RenewCertificateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewCertificateRequest.ProtoReflect.Descriptor instead.
 func (*RenewCertificateRequest) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{2}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *RenewCertificateRequest) GetAgentId() string {
@@ -259,7 +123,7 @@ type RenewCertificateResponse struct {
 
 func (x *RenewCertificateResponse) Reset() {
 	*x = RenewCertificateResponse{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[3]
+	mi := &file_proto_agent_gateway_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -271,7 +135,7 @@ func (x *RenewCertificateResponse) String() string {
 func (*RenewCertificateResponse) ProtoMessage() {}
 
 func (x *RenewCertificateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[3]
+	mi := &file_proto_agent_gateway_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -284,7 +148,7 @@ func (x *RenewCertificateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewCertificateResponse.ProtoReflect.Descriptor instead.
 func (*RenewCertificateResponse) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{3}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *RenewCertificateResponse) GetCertificatePem() string {
@@ -329,7 +193,7 @@ type Heartbeat struct {
 
 func (x *Heartbeat) Reset() {
 	*x = Heartbeat{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[4]
+	mi := &file_proto_agent_gateway_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -341,7 +205,7 @@ func (x *Heartbeat) String() string {
 func (*Heartbeat) ProtoMessage() {}
 
 func (x *Heartbeat) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[4]
+	mi := &file_proto_agent_gateway_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -354,7 +218,7 @@ func (x *Heartbeat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Heartbeat.ProtoReflect.Descriptor instead.
 func (*Heartbeat) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{4}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Heartbeat) GetAgentId() string {
@@ -413,7 +277,7 @@ type InstanceSnapshot struct {
 
 func (x *InstanceSnapshot) Reset() {
 	*x = InstanceSnapshot{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[5]
+	mi := &file_proto_agent_gateway_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -425,7 +289,7 @@ func (x *InstanceSnapshot) String() string {
 func (*InstanceSnapshot) ProtoMessage() {}
 
 func (x *InstanceSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[5]
+	mi := &file_proto_agent_gateway_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -438,7 +302,7 @@ func (x *InstanceSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstanceSnapshot.ProtoReflect.Descriptor instead.
 func (*InstanceSnapshot) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{5}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *InstanceSnapshot) GetId() string {
@@ -496,7 +360,7 @@ type ClientUsageSnapshot struct {
 
 func (x *ClientUsageSnapshot) Reset() {
 	*x = ClientUsageSnapshot{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[6]
+	mi := &file_proto_agent_gateway_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -508,7 +372,7 @@ func (x *ClientUsageSnapshot) String() string {
 func (*ClientUsageSnapshot) ProtoMessage() {}
 
 func (x *ClientUsageSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[6]
+	mi := &file_proto_agent_gateway_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -521,7 +385,7 @@ func (x *ClientUsageSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientUsageSnapshot.ProtoReflect.Descriptor instead.
 func (*ClientUsageSnapshot) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{6}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ClientUsageSnapshot) GetClientId() string {
@@ -569,7 +433,7 @@ type ClientIPSnapshot struct {
 
 func (x *ClientIPSnapshot) Reset() {
 	*x = ClientIPSnapshot{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[7]
+	mi := &file_proto_agent_gateway_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -581,7 +445,7 @@ func (x *ClientIPSnapshot) String() string {
 func (*ClientIPSnapshot) ProtoMessage() {}
 
 func (x *ClientIPSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[7]
+	mi := &file_proto_agent_gateway_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -594,7 +458,7 @@ func (x *ClientIPSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientIPSnapshot.ProtoReflect.Descriptor instead.
 func (*ClientIPSnapshot) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{7}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ClientIPSnapshot) GetClientId() string {
@@ -627,7 +491,7 @@ type RuntimeDCSnapshot struct {
 
 func (x *RuntimeDCSnapshot) Reset() {
 	*x = RuntimeDCSnapshot{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[8]
+	mi := &file_proto_agent_gateway_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -639,7 +503,7 @@ func (x *RuntimeDCSnapshot) String() string {
 func (*RuntimeDCSnapshot) ProtoMessage() {}
 
 func (x *RuntimeDCSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[8]
+	mi := &file_proto_agent_gateway_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -652,7 +516,7 @@ func (x *RuntimeDCSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeDCSnapshot.ProtoReflect.Descriptor instead.
 func (*RuntimeDCSnapshot) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{8}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *RuntimeDCSnapshot) GetDc() int32 {
@@ -725,7 +589,7 @@ type RuntimeUpstreamRowSnapshot struct {
 
 func (x *RuntimeUpstreamRowSnapshot) Reset() {
 	*x = RuntimeUpstreamRowSnapshot{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[9]
+	mi := &file_proto_agent_gateway_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -737,7 +601,7 @@ func (x *RuntimeUpstreamRowSnapshot) String() string {
 func (*RuntimeUpstreamRowSnapshot) ProtoMessage() {}
 
 func (x *RuntimeUpstreamRowSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[9]
+	mi := &file_proto_agent_gateway_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -750,7 +614,7 @@ func (x *RuntimeUpstreamRowSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeUpstreamRowSnapshot.ProtoReflect.Descriptor instead.
 func (*RuntimeUpstreamRowSnapshot) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{9}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *RuntimeUpstreamRowSnapshot) GetUpstreamId() int32 {
@@ -809,7 +673,7 @@ type RuntimeUpstreamSnapshot struct {
 
 func (x *RuntimeUpstreamSnapshot) Reset() {
 	*x = RuntimeUpstreamSnapshot{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[10]
+	mi := &file_proto_agent_gateway_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -821,7 +685,7 @@ func (x *RuntimeUpstreamSnapshot) String() string {
 func (*RuntimeUpstreamSnapshot) ProtoMessage() {}
 
 func (x *RuntimeUpstreamSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[10]
+	mi := &file_proto_agent_gateway_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -834,7 +698,7 @@ func (x *RuntimeUpstreamSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeUpstreamSnapshot.ProtoReflect.Descriptor instead.
 func (*RuntimeUpstreamSnapshot) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{10}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *RuntimeUpstreamSnapshot) GetConfiguredTotal() int32 {
@@ -891,7 +755,7 @@ type RuntimeEventSnapshot struct {
 
 func (x *RuntimeEventSnapshot) Reset() {
 	*x = RuntimeEventSnapshot{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[11]
+	mi := &file_proto_agent_gateway_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -903,7 +767,7 @@ func (x *RuntimeEventSnapshot) String() string {
 func (*RuntimeEventSnapshot) ProtoMessage() {}
 
 func (x *RuntimeEventSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[11]
+	mi := &file_proto_agent_gateway_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -916,7 +780,7 @@ func (x *RuntimeEventSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeEventSnapshot.ProtoReflect.Descriptor instead.
 func (*RuntimeEventSnapshot) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{11}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *RuntimeEventSnapshot) GetSequence() uint64 {
@@ -979,7 +843,7 @@ type RuntimeSnapshot struct {
 
 func (x *RuntimeSnapshot) Reset() {
 	*x = RuntimeSnapshot{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[12]
+	mi := &file_proto_agent_gateway_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -991,7 +855,7 @@ func (x *RuntimeSnapshot) String() string {
 func (*RuntimeSnapshot) ProtoMessage() {}
 
 func (x *RuntimeSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[12]
+	mi := &file_proto_agent_gateway_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1004,7 +868,7 @@ func (x *RuntimeSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeSnapshot.ProtoReflect.Descriptor instead.
 func (*RuntimeSnapshot) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{12}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *RuntimeSnapshot) GetAcceptingNewConnections() bool {
@@ -1190,13 +1054,15 @@ type Snapshot struct {
 	ClientIps              []*ClientIPSnapshot    `protobuf:"bytes,12,rep,name=client_ips,json=clientIps,proto3" json:"client_ips,omitempty"`
 	TotalActiveConnections int32                  `protobuf:"varint,13,opt,name=total_active_connections,json=totalActiveConnections,proto3" json:"total_active_connections,omitempty"`
 	TotalActiveUsers       int32                  `protobuf:"varint,14,opt,name=total_active_users,json=totalActiveUsers,proto3" json:"total_active_users,omitempty"`
+	HasClientUsage         bool                   `protobuf:"varint,15,opt,name=has_client_usage,json=hasClientUsage,proto3" json:"has_client_usage,omitempty"`
+	HasClientIps           bool                   `protobuf:"varint,16,opt,name=has_client_ips,json=hasClientIps,proto3" json:"has_client_ips,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
 
 func (x *Snapshot) Reset() {
 	*x = Snapshot{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[13]
+	mi := &file_proto_agent_gateway_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1208,7 +1074,7 @@ func (x *Snapshot) String() string {
 func (*Snapshot) ProtoMessage() {}
 
 func (x *Snapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[13]
+	mi := &file_proto_agent_gateway_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1221,7 +1087,7 @@ func (x *Snapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Snapshot.ProtoReflect.Descriptor instead.
 func (*Snapshot) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{13}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Snapshot) GetAgentId() string {
@@ -1315,6 +1181,20 @@ func (x *Snapshot) GetTotalActiveUsers() int32 {
 	return 0
 }
 
+func (x *Snapshot) GetHasClientUsage() bool {
+	if x != nil {
+		return x.HasClientUsage
+	}
+	return false
+}
+
+func (x *Snapshot) GetHasClientIps() bool {
+	if x != nil {
+		return x.HasClientIps
+	}
+	return false
+}
+
 type JobResult struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	AgentId        string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
@@ -1329,7 +1209,7 @@ type JobResult struct {
 
 func (x *JobResult) Reset() {
 	*x = JobResult{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[14]
+	mi := &file_proto_agent_gateway_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1341,7 +1221,7 @@ func (x *JobResult) String() string {
 func (*JobResult) ProtoMessage() {}
 
 func (x *JobResult) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[14]
+	mi := &file_proto_agent_gateway_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1354,7 +1234,7 @@ func (x *JobResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobResult.ProtoReflect.Descriptor instead.
 func (*JobResult) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{14}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *JobResult) GetAgentId() string {
@@ -1412,7 +1292,7 @@ type JobCommand struct {
 
 func (x *JobCommand) Reset() {
 	*x = JobCommand{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[15]
+	mi := &file_proto_agent_gateway_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1424,7 +1304,7 @@ func (x *JobCommand) String() string {
 func (*JobCommand) ProtoMessage() {}
 
 func (x *JobCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[15]
+	mi := &file_proto_agent_gateway_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1437,7 +1317,7 @@ func (x *JobCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobCommand.ProtoReflect.Descriptor instead.
 func (*JobCommand) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{15}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *JobCommand) GetId() string {
@@ -1486,7 +1366,7 @@ type ClientDataRequest struct {
 
 func (x *ClientDataRequest) Reset() {
 	*x = ClientDataRequest{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[16]
+	mi := &file_proto_agent_gateway_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1498,7 +1378,7 @@ func (x *ClientDataRequest) String() string {
 func (*ClientDataRequest) ProtoMessage() {}
 
 func (x *ClientDataRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[16]
+	mi := &file_proto_agent_gateway_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1511,7 +1391,7 @@ func (x *ClientDataRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientDataRequest.ProtoReflect.Descriptor instead.
 func (*ClientDataRequest) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{16}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ClientDataRequest) GetType() ClientDataRequest_RequestType {
@@ -1545,7 +1425,7 @@ type ClientDataResponse struct {
 
 func (x *ClientDataResponse) Reset() {
 	*x = ClientDataResponse{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[17]
+	mi := &file_proto_agent_gateway_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1557,7 +1437,7 @@ func (x *ClientDataResponse) String() string {
 func (*ClientDataResponse) ProtoMessage() {}
 
 func (x *ClientDataResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[17]
+	mi := &file_proto_agent_gateway_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1570,7 +1450,7 @@ func (x *ClientDataResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientDataResponse.ProtoReflect.Descriptor instead.
 func (*ClientDataResponse) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{17}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ClientDataResponse) GetRequestId() string {
@@ -1606,7 +1486,7 @@ type ClientDetailRecord struct {
 
 func (x *ClientDetailRecord) Reset() {
 	*x = ClientDetailRecord{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[18]
+	mi := &file_proto_agent_gateway_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1618,7 +1498,7 @@ func (x *ClientDetailRecord) String() string {
 func (*ClientDetailRecord) ProtoMessage() {}
 
 func (x *ClientDetailRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[18]
+	mi := &file_proto_agent_gateway_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1631,7 +1511,7 @@ func (x *ClientDetailRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientDetailRecord.ProtoReflect.Descriptor instead.
 func (*ClientDetailRecord) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{18}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ClientDetailRecord) GetClientId() string {
@@ -1726,7 +1606,7 @@ type ConnectClientMessage struct {
 
 func (x *ConnectClientMessage) Reset() {
 	*x = ConnectClientMessage{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[19]
+	mi := &file_proto_agent_gateway_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1738,7 +1618,7 @@ func (x *ConnectClientMessage) String() string {
 func (*ConnectClientMessage) ProtoMessage() {}
 
 func (x *ConnectClientMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[19]
+	mi := &file_proto_agent_gateway_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1751,7 +1631,7 @@ func (x *ConnectClientMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectClientMessage.ProtoReflect.Descriptor instead.
 func (*ConnectClientMessage) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{19}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ConnectClientMessage) GetBody() isConnectClientMessage_Body {
@@ -1838,7 +1718,7 @@ type ConnectServerMessage struct {
 
 func (x *ConnectServerMessage) Reset() {
 	*x = ConnectServerMessage{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[20]
+	mi := &file_proto_agent_gateway_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1850,7 +1730,7 @@ func (x *ConnectServerMessage) String() string {
 func (*ConnectServerMessage) ProtoMessage() {}
 
 func (x *ConnectServerMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[20]
+	mi := &file_proto_agent_gateway_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1863,7 +1743,7 @@ func (x *ConnectServerMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectServerMessage.ProtoReflect.Descriptor instead.
 func (*ConnectServerMessage) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{20}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ConnectServerMessage) GetBody() isConnectServerMessage_Body {
@@ -1911,17 +1791,7 @@ var File_proto_agent_gateway_proto protoreflect.FileDescriptor
 
 const file_proto_agent_gateway_proto_rawDesc = "" +
 	"\n" +
-	"\x19proto/agent_gateway.proto\x12\x11panvex.gateway.v1\"\\\n" +
-	"\rEnrollRequest\x12\x14\n" +
-	"\x05token\x18\x01 \x01(\tR\x05token\x12\x1b\n" +
-	"\tnode_name\x18\x02 \x01(\tR\bnodeName\x12\x18\n" +
-	"\aversion\x18\x03 \x01(\tR\aversion\"\xbb\x01\n" +
-	"\x0eEnrollResponse\x12\x19\n" +
-	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12'\n" +
-	"\x0fcertificate_pem\x18\x02 \x01(\tR\x0ecertificatePem\x12&\n" +
-	"\x0fprivate_key_pem\x18\x03 \x01(\tR\rprivateKeyPem\x12\x15\n" +
-	"\x06ca_pem\x18\x04 \x01(\tR\x05caPem\x12&\n" +
-	"\x0fexpires_at_unix\x18\x05 \x01(\x03R\rexpiresAtUnix\"4\n" +
+	"\x19proto/agent_gateway.proto\x12\x11panvex.gateway.v1\"4\n" +
 	"\x17RenewCertificateRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\"\xaa\x01\n" +
 	"\x18RenewCertificateResponse\x12'\n" +
@@ -2009,7 +1879,7 @@ const file_proto_agent_gateway_proto_rawDesc = "" +
 	"\x03dcs\x18\x15 \x03(\v2$.panvex.gateway.v1.RuntimeDCSnapshotR\x03dcs\x12H\n" +
 	"\tupstreams\x18\x16 \x01(\v2*.panvex.gateway.v1.RuntimeUpstreamSnapshotR\tupstreams\x12L\n" +
 	"\rrecent_events\x18\x17 \x03(\v2'.panvex.gateway.v1.RuntimeEventSnapshotR\frecentEvents\x12%\n" +
-	"\x0euptime_seconds\x18\x18 \x01(\x01R\ruptimeSeconds\"\xb8\x05\n" +
+	"\x0euptime_seconds\x18\x18 \x01(\x01R\ruptimeSeconds\"\x88\x06\n" +
 	"\bSnapshot\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x1b\n" +
 	"\tnode_name\x18\x02 \x01(\tR\bnodeName\x12$\n" +
@@ -2025,7 +1895,9 @@ const file_proto_agent_gateway_proto_rawDesc = "" +
 	"\n" +
 	"client_ips\x18\f \x03(\v2#.panvex.gateway.v1.ClientIPSnapshotR\tclientIps\x128\n" +
 	"\x18total_active_connections\x18\r \x01(\x05R\x16totalActiveConnections\x12,\n" +
-	"\x12total_active_users\x18\x0e \x01(\x05R\x10totalActiveUsers\x1a:\n" +
+	"\x12total_active_users\x18\x0e \x01(\x05R\x10totalActiveUsers\x12(\n" +
+	"\x10has_client_usage\x18\x0f \x01(\bR\x0ehasClientUsage\x12$\n" +
+	"\x0ehas_client_ips\x18\x10 \x01(\bR\fhasClientIps\x1a:\n" +
 	"\fMetricsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\"\xbc\x01\n" +
@@ -2083,9 +1955,8 @@ const file_proto_agent_gateway_proto_rawDesc = "" +
 	"\x14ConnectServerMessage\x121\n" +
 	"\x03job\x18\x01 \x01(\v2\x1d.panvex.gateway.v1.JobCommandH\x00R\x03job\x12V\n" +
 	"\x13client_data_request\x18\x02 \x01(\v2$.panvex.gateway.v1.ClientDataRequestH\x00R\x11clientDataRequestB\x06\n" +
-	"\x04body2\xab\x02\n" +
-	"\fAgentGateway\x12M\n" +
-	"\x06Enroll\x12 .panvex.gateway.v1.EnrollRequest\x1a!.panvex.gateway.v1.EnrollResponse\x12k\n" +
+	"\x04body2\xdc\x01\n" +
+	"\fAgentGateway\x12k\n" +
 	"\x10RenewCertificate\x12*.panvex.gateway.v1.RenewCertificateRequest\x1a+.panvex.gateway.v1.RenewCertificateResponse\x12_\n" +
 	"\aConnect\x12'.panvex.gateway.v1.ConnectClientMessage\x1a'.panvex.gateway.v1.ConnectServerMessage(\x010\x01B.Z,github.com/panvex/panvex/internal/gatewayrpcb\x06proto3"
 
@@ -2102,58 +1973,54 @@ func file_proto_agent_gateway_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_agent_gateway_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_proto_agent_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
+var file_proto_agent_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_proto_agent_gateway_proto_goTypes = []any{
 	(ClientDataRequest_RequestType)(0), // 0: panvex.gateway.v1.ClientDataRequest.RequestType
-	(*EnrollRequest)(nil),              // 1: panvex.gateway.v1.EnrollRequest
-	(*EnrollResponse)(nil),             // 2: panvex.gateway.v1.EnrollResponse
-	(*RenewCertificateRequest)(nil),    // 3: panvex.gateway.v1.RenewCertificateRequest
-	(*RenewCertificateResponse)(nil),   // 4: panvex.gateway.v1.RenewCertificateResponse
-	(*Heartbeat)(nil),                  // 5: panvex.gateway.v1.Heartbeat
-	(*InstanceSnapshot)(nil),           // 6: panvex.gateway.v1.InstanceSnapshot
-	(*ClientUsageSnapshot)(nil),        // 7: panvex.gateway.v1.ClientUsageSnapshot
-	(*ClientIPSnapshot)(nil),           // 8: panvex.gateway.v1.ClientIPSnapshot
-	(*RuntimeDCSnapshot)(nil),          // 9: panvex.gateway.v1.RuntimeDCSnapshot
-	(*RuntimeUpstreamRowSnapshot)(nil), // 10: panvex.gateway.v1.RuntimeUpstreamRowSnapshot
-	(*RuntimeUpstreamSnapshot)(nil),    // 11: panvex.gateway.v1.RuntimeUpstreamSnapshot
-	(*RuntimeEventSnapshot)(nil),       // 12: panvex.gateway.v1.RuntimeEventSnapshot
-	(*RuntimeSnapshot)(nil),            // 13: panvex.gateway.v1.RuntimeSnapshot
-	(*Snapshot)(nil),                   // 14: panvex.gateway.v1.Snapshot
-	(*JobResult)(nil),                  // 15: panvex.gateway.v1.JobResult
-	(*JobCommand)(nil),                 // 16: panvex.gateway.v1.JobCommand
-	(*ClientDataRequest)(nil),          // 17: panvex.gateway.v1.ClientDataRequest
-	(*ClientDataResponse)(nil),         // 18: panvex.gateway.v1.ClientDataResponse
-	(*ClientDetailRecord)(nil),         // 19: panvex.gateway.v1.ClientDetailRecord
-	(*ConnectClientMessage)(nil),       // 20: panvex.gateway.v1.ConnectClientMessage
-	(*ConnectServerMessage)(nil),       // 21: panvex.gateway.v1.ConnectServerMessage
-	nil,                                // 22: panvex.gateway.v1.Snapshot.MetricsEntry
+	(*RenewCertificateRequest)(nil),    // 1: panvex.gateway.v1.RenewCertificateRequest
+	(*RenewCertificateResponse)(nil),   // 2: panvex.gateway.v1.RenewCertificateResponse
+	(*Heartbeat)(nil),                  // 3: panvex.gateway.v1.Heartbeat
+	(*InstanceSnapshot)(nil),           // 4: panvex.gateway.v1.InstanceSnapshot
+	(*ClientUsageSnapshot)(nil),        // 5: panvex.gateway.v1.ClientUsageSnapshot
+	(*ClientIPSnapshot)(nil),           // 6: panvex.gateway.v1.ClientIPSnapshot
+	(*RuntimeDCSnapshot)(nil),          // 7: panvex.gateway.v1.RuntimeDCSnapshot
+	(*RuntimeUpstreamRowSnapshot)(nil), // 8: panvex.gateway.v1.RuntimeUpstreamRowSnapshot
+	(*RuntimeUpstreamSnapshot)(nil),    // 9: panvex.gateway.v1.RuntimeUpstreamSnapshot
+	(*RuntimeEventSnapshot)(nil),       // 10: panvex.gateway.v1.RuntimeEventSnapshot
+	(*RuntimeSnapshot)(nil),            // 11: panvex.gateway.v1.RuntimeSnapshot
+	(*Snapshot)(nil),                   // 12: panvex.gateway.v1.Snapshot
+	(*JobResult)(nil),                  // 13: panvex.gateway.v1.JobResult
+	(*JobCommand)(nil),                 // 14: panvex.gateway.v1.JobCommand
+	(*ClientDataRequest)(nil),          // 15: panvex.gateway.v1.ClientDataRequest
+	(*ClientDataResponse)(nil),         // 16: panvex.gateway.v1.ClientDataResponse
+	(*ClientDetailRecord)(nil),         // 17: panvex.gateway.v1.ClientDetailRecord
+	(*ConnectClientMessage)(nil),       // 18: panvex.gateway.v1.ConnectClientMessage
+	(*ConnectServerMessage)(nil),       // 19: panvex.gateway.v1.ConnectServerMessage
+	nil,                                // 20: panvex.gateway.v1.Snapshot.MetricsEntry
 }
 var file_proto_agent_gateway_proto_depIdxs = []int32{
-	10, // 0: panvex.gateway.v1.RuntimeUpstreamSnapshot.rows:type_name -> panvex.gateway.v1.RuntimeUpstreamRowSnapshot
-	9,  // 1: panvex.gateway.v1.RuntimeSnapshot.dcs:type_name -> panvex.gateway.v1.RuntimeDCSnapshot
-	11, // 2: panvex.gateway.v1.RuntimeSnapshot.upstreams:type_name -> panvex.gateway.v1.RuntimeUpstreamSnapshot
-	12, // 3: panvex.gateway.v1.RuntimeSnapshot.recent_events:type_name -> panvex.gateway.v1.RuntimeEventSnapshot
-	6,  // 4: panvex.gateway.v1.Snapshot.instances:type_name -> panvex.gateway.v1.InstanceSnapshot
-	22, // 5: panvex.gateway.v1.Snapshot.metrics:type_name -> panvex.gateway.v1.Snapshot.MetricsEntry
-	7,  // 6: panvex.gateway.v1.Snapshot.clients:type_name -> panvex.gateway.v1.ClientUsageSnapshot
-	13, // 7: panvex.gateway.v1.Snapshot.runtime:type_name -> panvex.gateway.v1.RuntimeSnapshot
-	8,  // 8: panvex.gateway.v1.Snapshot.client_ips:type_name -> panvex.gateway.v1.ClientIPSnapshot
+	8,  // 0: panvex.gateway.v1.RuntimeUpstreamSnapshot.rows:type_name -> panvex.gateway.v1.RuntimeUpstreamRowSnapshot
+	7,  // 1: panvex.gateway.v1.RuntimeSnapshot.dcs:type_name -> panvex.gateway.v1.RuntimeDCSnapshot
+	9,  // 2: panvex.gateway.v1.RuntimeSnapshot.upstreams:type_name -> panvex.gateway.v1.RuntimeUpstreamSnapshot
+	10, // 3: panvex.gateway.v1.RuntimeSnapshot.recent_events:type_name -> panvex.gateway.v1.RuntimeEventSnapshot
+	4,  // 4: panvex.gateway.v1.Snapshot.instances:type_name -> panvex.gateway.v1.InstanceSnapshot
+	20, // 5: panvex.gateway.v1.Snapshot.metrics:type_name -> panvex.gateway.v1.Snapshot.MetricsEntry
+	5,  // 6: panvex.gateway.v1.Snapshot.clients:type_name -> panvex.gateway.v1.ClientUsageSnapshot
+	11, // 7: panvex.gateway.v1.Snapshot.runtime:type_name -> panvex.gateway.v1.RuntimeSnapshot
+	6,  // 8: panvex.gateway.v1.Snapshot.client_ips:type_name -> panvex.gateway.v1.ClientIPSnapshot
 	0,  // 9: panvex.gateway.v1.ClientDataRequest.type:type_name -> panvex.gateway.v1.ClientDataRequest.RequestType
-	19, // 10: panvex.gateway.v1.ClientDataResponse.clients:type_name -> panvex.gateway.v1.ClientDetailRecord
-	5,  // 11: panvex.gateway.v1.ConnectClientMessage.heartbeat:type_name -> panvex.gateway.v1.Heartbeat
-	14, // 12: panvex.gateway.v1.ConnectClientMessage.snapshot:type_name -> panvex.gateway.v1.Snapshot
-	15, // 13: panvex.gateway.v1.ConnectClientMessage.job_result:type_name -> panvex.gateway.v1.JobResult
-	18, // 14: panvex.gateway.v1.ConnectClientMessage.client_data_response:type_name -> panvex.gateway.v1.ClientDataResponse
-	16, // 15: panvex.gateway.v1.ConnectServerMessage.job:type_name -> panvex.gateway.v1.JobCommand
-	17, // 16: panvex.gateway.v1.ConnectServerMessage.client_data_request:type_name -> panvex.gateway.v1.ClientDataRequest
-	1,  // 17: panvex.gateway.v1.AgentGateway.Enroll:input_type -> panvex.gateway.v1.EnrollRequest
-	3,  // 18: panvex.gateway.v1.AgentGateway.RenewCertificate:input_type -> panvex.gateway.v1.RenewCertificateRequest
-	20, // 19: panvex.gateway.v1.AgentGateway.Connect:input_type -> panvex.gateway.v1.ConnectClientMessage
-	2,  // 20: panvex.gateway.v1.AgentGateway.Enroll:output_type -> panvex.gateway.v1.EnrollResponse
-	4,  // 21: panvex.gateway.v1.AgentGateway.RenewCertificate:output_type -> panvex.gateway.v1.RenewCertificateResponse
-	21, // 22: panvex.gateway.v1.AgentGateway.Connect:output_type -> panvex.gateway.v1.ConnectServerMessage
-	20, // [20:23] is the sub-list for method output_type
-	17, // [17:20] is the sub-list for method input_type
+	17, // 10: panvex.gateway.v1.ClientDataResponse.clients:type_name -> panvex.gateway.v1.ClientDetailRecord
+	3,  // 11: panvex.gateway.v1.ConnectClientMessage.heartbeat:type_name -> panvex.gateway.v1.Heartbeat
+	12, // 12: panvex.gateway.v1.ConnectClientMessage.snapshot:type_name -> panvex.gateway.v1.Snapshot
+	13, // 13: panvex.gateway.v1.ConnectClientMessage.job_result:type_name -> panvex.gateway.v1.JobResult
+	16, // 14: panvex.gateway.v1.ConnectClientMessage.client_data_response:type_name -> panvex.gateway.v1.ClientDataResponse
+	14, // 15: panvex.gateway.v1.ConnectServerMessage.job:type_name -> panvex.gateway.v1.JobCommand
+	15, // 16: panvex.gateway.v1.ConnectServerMessage.client_data_request:type_name -> panvex.gateway.v1.ClientDataRequest
+	1,  // 17: panvex.gateway.v1.AgentGateway.RenewCertificate:input_type -> panvex.gateway.v1.RenewCertificateRequest
+	18, // 18: panvex.gateway.v1.AgentGateway.Connect:input_type -> panvex.gateway.v1.ConnectClientMessage
+	2,  // 19: panvex.gateway.v1.AgentGateway.RenewCertificate:output_type -> panvex.gateway.v1.RenewCertificateResponse
+	19, // 20: panvex.gateway.v1.AgentGateway.Connect:output_type -> panvex.gateway.v1.ConnectServerMessage
+	19, // [19:21] is the sub-list for method output_type
+	17, // [17:19] is the sub-list for method input_type
 	17, // [17:17] is the sub-list for extension type_name
 	17, // [17:17] is the sub-list for extension extendee
 	0,  // [0:17] is the sub-list for field type_name
@@ -2164,13 +2031,13 @@ func file_proto_agent_gateway_proto_init() {
 	if File_proto_agent_gateway_proto != nil {
 		return
 	}
-	file_proto_agent_gateway_proto_msgTypes[19].OneofWrappers = []any{
+	file_proto_agent_gateway_proto_msgTypes[17].OneofWrappers = []any{
 		(*ConnectClientMessage_Heartbeat)(nil),
 		(*ConnectClientMessage_Snapshot)(nil),
 		(*ConnectClientMessage_JobResult)(nil),
 		(*ConnectClientMessage_ClientDataResponse)(nil),
 	}
-	file_proto_agent_gateway_proto_msgTypes[20].OneofWrappers = []any{
+	file_proto_agent_gateway_proto_msgTypes[18].OneofWrappers = []any{
 		(*ConnectServerMessage_Job)(nil),
 		(*ConnectServerMessage_ClientDataRequest)(nil),
 	}
@@ -2180,7 +2047,7 @@ func file_proto_agent_gateway_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_agent_gateway_proto_rawDesc), len(file_proto_agent_gateway_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   22,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

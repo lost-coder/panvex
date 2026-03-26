@@ -13,30 +13,38 @@ type UserMetrics struct {
 	UniqueIPsCurrent   int
 }
 
-// ParseUserMetrics parses a Prometheus text-format payload and returns per-user metrics.
-// Only the four known telemt_user_* metric names are extracted; all other lines are ignored.
-// The returned map is keyed by username and is never nil.
-func ParseUserMetrics(text string) map[string]*UserMetrics {
-	result := make(map[string]*UserMetrics)
+type MetricsSnapshot struct {
+	Users         map[string]*UserMetrics
+	UptimeSeconds float64
+}
+
+// ParseMetricsSnapshot parses a Prometheus text-format payload and returns per-user metrics plus process uptime.
+func ParseMetricsSnapshot(text string) MetricsSnapshot {
+	result := MetricsSnapshot{
+		Users: make(map[string]*UserMetrics),
+	}
 
 	for _, line := range strings.Split(text, "\n") {
 		line = strings.TrimSpace(line)
 
-		// Skip comments and empty lines.
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 
-		// We only care about lines that carry a {user="..."} label.
+		if strings.HasPrefix(line, "telemt_uptime_seconds ") {
+			valuePart := strings.TrimSpace(strings.TrimPrefix(line, "telemt_uptime_seconds "))
+			if v, err := strconv.ParseFloat(valuePart, 64); err == nil {
+				result.UptimeSeconds = v
+			}
+			continue
+		}
+
 		userStart := strings.Index(line, `{user="`)
 		if userStart == -1 {
 			continue
 		}
 
-		// Extract metric name (everything before the label set).
 		metricName := line[:userStart]
-
-		// Verify it is one of the four supported names.
 		switch metricName {
 		case "telemt_user_octets_from_client",
 			"telemt_user_octets_to_client",
@@ -46,7 +54,6 @@ func ParseUserMetrics(text string) map[string]*UserMetrics {
 			continue
 		}
 
-		// Extract username: content between {user=" and the closing "}.
 		rest := line[userStart+len(`{user="`):]
 		quoteEnd := strings.Index(rest, `"`)
 		if quoteEnd == -1 {
@@ -57,24 +64,20 @@ func ParseUserMetrics(text string) map[string]*UserMetrics {
 			continue
 		}
 
-		// Extract value: the token after the closing "} separator.
 		afterLabel := rest[quoteEnd+1:]
-		// afterLabel should start with "} <value>"
 		braceClose := strings.Index(afterLabel, "}")
 		if braceClose == -1 {
 			continue
 		}
 		valuePart := strings.TrimSpace(afterLabel[braceClose+1:])
-		// Strip any inline comment or timestamp (take first token).
 		if spaceIdx := strings.IndexAny(valuePart, " \t"); spaceIdx != -1 {
 			valuePart = valuePart[:spaceIdx]
 		}
 
-		// Ensure the user entry exists.
-		if _, ok := result[username]; !ok {
-			result[username] = &UserMetrics{}
+		if _, ok := result.Users[username]; !ok {
+			result.Users[username] = &UserMetrics{}
 		}
-		m := result[username]
+		m := result.Users[username]
 
 		switch metricName {
 		case "telemt_user_octets_from_client":
@@ -97,4 +100,9 @@ func ParseUserMetrics(text string) map[string]*UserMetrics {
 	}
 
 	return result
+}
+
+// ParseUserMetrics parses a Prometheus text-format payload and returns per-user metrics only.
+func ParseUserMetrics(text string) map[string]*UserMetrics {
+	return ParseMetricsSnapshot(text).Users
 }

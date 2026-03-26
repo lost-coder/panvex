@@ -246,6 +246,44 @@ func TestServerApplyAgentSnapshotReturnsErrorWhenPersistenceFails(t *testing.T) 
 	}
 }
 
+func TestServerApplyAgentSnapshotTracksRuntimeLifecycleState(t *testing.T) {
+	now := time.Date(2026, time.March, 16, 11, 0, 0, 0, time.UTC)
+	server := New(Options{Now: func() time.Time { return now }})
+	token, err := server.issueEnrollmentToken(security.EnrollmentScope{FleetGroupID: "ams-1", TTL: time.Minute}, now)
+	if err != nil {
+		t.Fatalf("issueEnrollmentToken() error = %v", err)
+	}
+	identity, err := server.enrollAgent(agentEnrollmentRequest{Token: token.Value, NodeName: "node-a", Version: "1.0.0"}, now.Add(10*time.Second))
+	if err != nil {
+		t.Fatalf("enrollAgent() error = %v", err)
+	}
+
+	runtime := gatewayRuntimeSnapshotForTest()
+	runtime.StartupStatus = "starting"
+	runtime.StartupStage = "booting"
+	runtime.StartupProgressPct = 10
+	runtime.InitializationStatus = "starting"
+	runtime.InitializationStage = "booting"
+	runtime.InitializationProgressPct = 10
+	runtime.Degraded = true
+
+	if err := server.applyAgentSnapshot(agentSnapshot{
+		AgentID:      identity.AgentID,
+		NodeName:     "node-a",
+		FleetGroupID: "ams-1",
+		Version:      "1.0.0",
+		Runtime:      runtime,
+		HasRuntime:   true,
+		ObservedAt:   now.Add(20 * time.Second),
+	}); err != nil {
+		t.Fatalf("applyAgentSnapshot() error = %v", err)
+	}
+
+	if server.agents[identity.AgentID].Runtime.LifecycleState != "degraded" {
+		t.Fatalf("runtime lifecycle_state = %q, want %q", server.agents[identity.AgentID].Runtime.LifecycleState, "degraded")
+	}
+}
+
 func gatewayRuntimeSnapshotForTest() *gatewayrpc.RuntimeSnapshot {
 	return &gatewayrpc.RuntimeSnapshot{
 		AcceptingNewConnections:   true,

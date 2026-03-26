@@ -40,6 +40,8 @@ type agentSnapshot struct {
 	Instances    []instanceSnapshot
 	Clients      []clientUsageSnapshot
 	HasClients   bool
+	ClientIPs    []clientIPSnapshot
+	HasClientIPs bool
 	Runtime      *gatewayrpc.RuntimeSnapshot
 	HasRuntime   bool
 	Metrics      map[string]uint64
@@ -51,7 +53,13 @@ type clientUsageSnapshot struct {
 	TrafficUsedBytes uint64
 	UniqueIPsUsed    int
 	ActiveTCPConns   int
+	ActiveUniqueIPs  int
 	ObservedAt       time.Time
+}
+
+type clientIPSnapshot struct {
+	ClientID  string
+	ActiveIPs []string
 }
 
 func (s *Server) enrollAgent(request agentEnrollmentRequest, now time.Time) (agentEnrollmentResponse, error) {
@@ -188,6 +196,9 @@ func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) error {
 	if snapshot.HasClients {
 		s.applyClientUsageSnapshot(snapshot.AgentID, snapshot.Clients)
 	}
+	if snapshot.HasClientIPs {
+		s.applyClientIPSnapshot(snapshot.AgentID, snapshot.ClientIPs)
+	}
 	s.mu.Unlock()
 
 	s.events.publish(eventEnvelope{
@@ -196,6 +207,23 @@ func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) error {
 	})
 
 	return nil
+}
+
+func runtimeLifecycleState(snapshot *gatewayrpc.RuntimeSnapshot) string {
+	switch {
+	case snapshot == nil:
+		return "unknown"
+	case snapshot.Degraded:
+		return "degraded"
+	case snapshot.InitializationStatus != "" && snapshot.InitializationStatus != "ready":
+		return snapshot.InitializationStatus
+	case snapshot.StartupStatus != "" && snapshot.StartupStatus != "ready":
+		return snapshot.StartupStatus
+	case !snapshot.AcceptingNewConnections || !snapshot.MeRuntimeReady:
+		return "starting"
+	default:
+		return "ready"
+	}
 }
 
 func agentRuntimeFromSnapshot(snapshot *gatewayrpc.RuntimeSnapshot, observedAt time.Time) AgentRuntime {
@@ -256,6 +284,7 @@ func agentRuntimeFromSnapshot(snapshot *gatewayrpc.RuntimeSnapshot, observedAt t
 		StartupProgressPct:        snapshot.StartupProgressPct,
 		InitializationStatus:      snapshot.InitializationStatus,
 		Degraded:                  snapshot.Degraded,
+		LifecycleState:            runtimeLifecycleState(snapshot),
 		InitializationStage:       snapshot.InitializationStage,
 		InitializationProgressPct: snapshot.InitializationProgressPct,
 		TransportMode:             snapshot.TransportMode,
@@ -279,17 +308,46 @@ func agentRuntimeFromSnapshot(snapshot *gatewayrpc.RuntimeSnapshot, observedAt t
 }
 
 func (s *Server) applyClientUsageSnapshot(agentID string, clients []clientUsageSnapshot) {
-	for clientID, agentUsage := range s.clientUsage {
-		delete(agentUsage, agentID)
-		if len(agentUsage) == 0 {
-			delete(s.clientUsage, clientID)
-		}
-	}
-
+	seen := make(map[string]struct{}, len(clients))
 	for _, usage := range clients {
+		seen[usage.ClientID] = struct{}{}
 		if s.clientUsage[usage.ClientID] == nil {
 			s.clientUsage[usage.ClientID] = make(map[string]clientUsageSnapshot)
 		}
-		s.clientUsage[usage.ClientID][agentID] = usage
+		current := s.clientUsage[usage.ClientID][agentID]
+		current.ClientID = usage.ClientID
+		current.TrafficUsedBytes += usage.TrafficUsedBytes
+		current.UniqueIPsUsed = usage.UniqueIPsUsed
+		current.ActiveTCPConns = usage.ActiveTCPConns
+		current.ActiveUniqueIPs = usage.ActiveUniqueIPs
+		current.ObservedAt = usage.ObservedAt
+		s.clientUsage[usage.ClientID][agentID] = current
+	}
+
+	for clientID, usageByAgent := range s.clientUsage {
+		if _, ok := usageByAgent[agentID]; !ok {
+			continue
+		}
+		if _, ok := seen[clientID]; ok {
+			continue
+		}
+		delete(usageByAgent, agentID)
+		if len(usageByAgent) == 0 {
+			delete(s.clientUsage, clientID)
+		}
+	}
+}
+
+func (s *Server) applyClientIPSnapshot(agentID string, clients []clientIPSnapshot) {
+	for _, snapshot := range clients {
+		usageByAgent := s.clientUsage[snapshot.ClientID]
+		if usageByAgent == nil {
+			usageByAgent = make(map[string]clientUsageSnapshot)
+			s.clientUsage[snapshot.ClientID] = usageByAgent
+		}
+		current := usageByAgent[agentID]
+		current.ClientID = snapshot.ClientID
+		current.ActiveUniqueIPs = len(snapshot.ActiveIPs)
+		usageByAgent[agentID] = current
 	}
 }
