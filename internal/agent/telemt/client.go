@@ -728,8 +728,10 @@ func preferredConnectionLink(tlsLinks []string, secureLinks []string, classicLin
 	return ""
 }
 
+const maxResponseBodySize = 10 << 20 // 10 MiB
+
 func decodeSuccessData(body io.Reader, dest any) error {
-	payload, err := io.ReadAll(body)
+	payload, err := io.ReadAll(io.LimitReader(body, maxResponseBodySize))
 	if err != nil {
 		return err
 	}
@@ -746,7 +748,7 @@ func decodeSuccessData(body io.Reader, dest any) error {
 }
 
 func decodeAPIError(body io.Reader, fallback string) error {
-	payload, err := io.ReadAll(body)
+	payload, err := io.ReadAll(io.LimitReader(body, maxResponseBodySize))
 	if err != nil {
 		return err
 	}

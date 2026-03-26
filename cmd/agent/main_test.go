@@ -267,6 +267,50 @@ func TestRefreshRuntimeCredentialsIfNeededRenewsAndPersistsExpiringState(t *test
 	}
 }
 
+func TestRefreshRuntimeCredentialsIfNeededSkipsZeroExpiryState(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "agent-state.json")
+	now := time.Date(2026, time.March, 19, 10, 0, 0, 0, time.UTC)
+	current := agentstate.Credentials{
+		AgentID:        "agent-123",
+		CertificatePEM: "old-cert",
+		PrivateKeyPEM:  "old-key",
+		CAPEM:          "old-ca",
+		GRPCEndpoint:   "panel.example.com:8443",
+		GRPCServerName: "panel.example.com",
+	}
+	if err := agentstate.Save(statePath, current); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	renewer := &fakeCertificateRenewer{
+		response: &gatewayrpc.RenewCertificateResponse{
+			CertificatePem: "new-cert",
+			PrivateKeyPem:  "new-key",
+			CaPem:          "new-ca",
+			ExpiresAtUnix:  now.Add(30 * 24 * time.Hour).Unix(),
+		},
+	}
+
+	updated, err := refreshRuntimeCredentialsIfNeeded(context.Background(), statePath, current, renewer, now)
+	if err != nil {
+		t.Fatalf("refreshRuntimeCredentialsIfNeeded() error = %v", err)
+	}
+	if renewer.request != nil {
+		t.Fatal("renewer.request != nil, want no renewal call")
+	}
+	if updated != current {
+		t.Fatalf("updated = %#v, want %#v", updated, current)
+	}
+
+	persisted, err := agentstate.Load(statePath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if persisted != current {
+		t.Fatalf("persisted = %#v, want %#v", persisted, current)
+	}
+}
+
 type fakeCertificateRenewer struct {
 	request  *gatewayrpc.RenewCertificateRequest
 	response *gatewayrpc.RenewCertificateResponse

@@ -369,7 +369,7 @@ func runtimeCredentialsNeedRefresh(current agentstate.Credentials, now time.Time
 		return false
 	}
 	if current.ExpiresAt.IsZero() {
-		return true
+		return false
 	}
 
 	return !now.Add(runtimeCertificateRenewWindow).Before(current.ExpiresAt.UTC())
