@@ -187,8 +187,27 @@ func copyStore(ctx context.Context, source storage.Store, target storage.Store) 
 	}
 	summary.EnrollmentTokens = len(enrollmentTokens)
 
+	authority, authorityErr := source.GetCertificateAuthority(ctx)
+	if authorityErr != nil && !errors.Is(authorityErr, storage.ErrNotFound) {
+		return Summary{}, authorityErr
+	}
+	if authorityErr == nil {
+		if err := target.PutCertificateAuthority(ctx, authority); err != nil {
+			return Summary{}, err
+		}
+	}
+
 	if err := verifyCounts(ctx, target, summary); err != nil {
 		return Summary{}, err
+	}
+	if authorityErr == nil {
+		storedAuthority, getErr := target.GetCertificateAuthority(ctx)
+		if getErr != nil {
+			return Summary{}, getErr
+		}
+		if storedAuthority.CAPEM != authority.CAPEM || storedAuthority.PrivateKeyPEM != authority.PrivateKeyPEM || !storedAuthority.UpdatedAt.Equal(authority.UpdatedAt) {
+			return Summary{}, fmt.Errorf("migration verification failed: expected persisted certificate authority to round-trip")
+		}
 	}
 
 	return summary, nil
@@ -201,6 +220,11 @@ func ensureTargetEmpty(ctx context.Context, target storage.Store) error {
 	}
 	if counts.Users > 0 || counts.UserAppearance > 0 || counts.FleetGroups > 0 || counts.Agents > 0 || counts.Instances > 0 || counts.Jobs > 0 || counts.JobTargets > 0 || counts.AuditEvents > 0 || counts.MetricSnapshots > 0 || counts.EnrollmentTokens > 0 {
 		return ErrTargetNotEmpty
+	}
+	if _, err := target.GetCertificateAuthority(ctx); err == nil {
+		return ErrTargetNotEmpty
+	} else if !errors.Is(err, storage.ErrNotFound) {
+		return err
 	}
 
 	return nil

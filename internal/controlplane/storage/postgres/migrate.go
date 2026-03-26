@@ -142,6 +142,13 @@ CREATE TABLE IF NOT EXISTS panel_settings (
     tls_key_file TEXT NOT NULL DEFAULT '',
     updated_at TIMESTAMPTZ NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS certificate_authority (
+    scope TEXT PRIMARY KEY,
+    ca_pem TEXT NOT NULL,
+    private_key_pem TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL
+);
 `
 
 // Migrate applies the current PostgreSQL schema to the opened database.

@@ -426,6 +426,82 @@ func TestServerEnrollmentTokenPersistsAcrossRestart(t *testing.T) {
 	}
 }
 
+func TestServerRestoresPersistedCertificateAuthority(t *testing.T) {
+	now := time.Date(2026, time.March, 19, 8, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	first := New(Options{
+		Now:   func() time.Time { return now },
+		Store: store,
+	})
+	firstAuthority := first.authority.caPEM
+	if firstAuthority == "" {
+		t.Fatal("first.authority.caPEM = empty, want persisted authority")
+	}
+
+	restored := New(Options{
+		Now:   func() time.Time { return now.Add(30 * time.Second) },
+		Store: store,
+	})
+	if restored.authority.caPEM != firstAuthority {
+		t.Fatalf("restored.authority.caPEM = %q, want %q", restored.authority.caPEM, firstAuthority)
+	}
+}
+
+func TestServerEnrollmentIssuesOperationalCertificateLifetime(t *testing.T) {
+	now := time.Date(2026, time.March, 19, 8, 0, 0, 0, time.UTC)
+	server := New(Options{
+		Now: func() time.Time { return now },
+	})
+	token, err := server.enrollment.IssueToken(security.EnrollmentScope{
+		FleetGroupID: "ams-1",
+		TTL:          time.Minute,
+	}, now)
+	if err != nil {
+		t.Fatalf("IssueToken() error = %v", err)
+	}
+
+	issuedAt := now.Add(10 * time.Second)
+	response, err := server.enrollAgent(agentEnrollmentRequest{
+		Token:    token.Value,
+		NodeName: "node-a",
+		Version:  "1.0.0",
+	}, issuedAt)
+	if err != nil {
+		t.Fatalf("enrollAgent() error = %v", err)
+	}
+
+	if lifetime := response.ExpiresAt.Sub(issuedAt); lifetime != 30*24*time.Hour {
+		t.Fatalf("certificate lifetime = %v, want %v", lifetime, 30*24*time.Hour)
+	}
+}
+
+func TestServerRecordsStartupErrorInsteadOfPanickingOnRestoreFailure(t *testing.T) {
+	now := time.Date(2026, time.March, 19, 8, 30, 0, 0, time.UTC)
+	sqliteStore, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer sqliteStore.Close()
+
+	store := &failingStore{
+		Store:        sqliteStore,
+		listAgentsErr: errors.New("list agents failed"),
+	}
+	server := New(Options{
+		Now:   func() time.Time { return now },
+		Store: store,
+	})
+
+	if server.StartupError() == nil {
+		t.Fatal("StartupError() = nil, want restore failure")
+	}
+}
+
 func TestServerConsumedEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) {
 	now := time.Date(2026, time.March, 15, 8, 0, 0, 0, time.UTC)
 	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))

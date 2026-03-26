@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 	"time"
@@ -59,14 +60,14 @@ type aggregatedClientUsage struct {
 	ActiveTCPConns   int
 }
 
-func (s *Server) restoreStoredClients() {
+func (s *Server) restoreStoredClients() error {
 	if s.store == nil {
-		return
+		return nil
 	}
 
 	records, err := s.store.ListClients(context.Background())
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	for _, record := range records {
@@ -76,7 +77,7 @@ func (s *Server) restoreStoredClients() {
 
 		assignments, err := s.store.ListClientAssignments(context.Background(), client.ID)
 		if err != nil {
-			panic(err)
+			return err
 		}
 		s.clientAssignments[client.ID] = make([]managedClientAssignment, 0, len(assignments))
 		for _, assignmentRecord := range assignments {
@@ -87,7 +88,7 @@ func (s *Server) restoreStoredClients() {
 
 		deployments, err := s.store.ListClientDeployments(context.Background(), client.ID)
 		if err != nil {
-			panic(err)
+			return err
 		}
 		if s.clientDeployments[client.ID] == nil {
 			s.clientDeployments[client.ID] = make(map[string]managedClientDeployment)
@@ -97,6 +98,8 @@ func (s *Server) restoreStoredClients() {
 			s.clientDeployments[client.ID][deployment.AgentID] = deployment
 		}
 	}
+
+	return nil
 }
 
 func (s *Server) listClientsSnapshot() []managedClient {
@@ -519,7 +522,7 @@ func (s *Server) recordClientJobResult(agentID string, jobID string, success boo
 
 	if s.store != nil {
 		if err := s.store.PutClientDeployment(context.Background(), clientDeploymentToRecord(deployment)); err != nil {
-			panic(err)
+			log.Printf("control-plane client deployment persistence failed for client %q on agent %q: %v", payload.ClientID, agentID, err)
 		}
 	}
 

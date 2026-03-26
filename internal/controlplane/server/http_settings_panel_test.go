@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -248,6 +249,42 @@ func TestHTTPPanelSettingsRejectsRuntimeMutationsInLegacyMode(t *testing.T) {
 	}, loginResponse.Result().Cookies())
 	if updateResponse.Code != http.StatusBadRequest {
 		t.Fatalf("PUT /api/settings/panel status = %d, want %d", updateResponse.Code, http.StatusBadRequest)
+	}
+}
+
+func TestHTTPPanelSettingsRejectsOversizedPayload(t *testing.T) {
+	now := time.Date(2026, time.March, 17, 11, 0, 0, 0, time.UTC)
+	server := New(Options{
+		Now: func() time.Time { return now },
+		PanelRuntime: PanelRuntime{
+			HTTPListenAddress: ":8080",
+			GRPCListenAddress: ":8443",
+			TLSMode:           "proxy",
+			RestartSupported:  true,
+		},
+	})
+	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "admin",
+		Password: "admin-password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "admin",
+		"password": "admin-password",
+	}, nil)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
+	}
+
+	updateResponse := performJSONRequest(t, server.Handler(), http.MethodPut, "/api/settings/panel", map[string]string{
+		"http_public_url":      "https://panel.example.com/" + strings.Repeat("a", maxPanelSettingsBodyBytes),
+		"grpc_public_endpoint": "grpc.panel.example.com:443",
+	}, loginResponse.Result().Cookies())
+	if updateResponse.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("PUT /api/settings/panel status = %d, want %d", updateResponse.Code, http.StatusRequestEntityTooLarge)
 	}
 }
 

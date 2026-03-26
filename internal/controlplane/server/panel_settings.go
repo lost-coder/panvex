@@ -149,20 +149,21 @@ func panelSettingsFromRecord(record storage.PanelSettingsRecord) PanelSettings {
 	}
 }
 
-func (s *Server) restoreStoredPanelSettings() {
+func (s *Server) restoreStoredPanelSettings() error {
 	if s.store == nil {
-		return
+		return nil
 	}
 
 	record, err := s.store.GetPanelSettings(context.Background())
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
-			return
+			return nil
 		}
-		panic(err)
+		return err
 	}
 
 	s.panelSettings = normalizePanelSettings(panelSettingsFromRecord(record))
+	return nil
 }
 
 func (s *Server) panelSettingsSnapshot() PanelSettings {

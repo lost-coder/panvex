@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -8,8 +9,17 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"time"
+
+	"github.com/panvex/panvex/internal/controlplane/storage"
+)
+
+const (
+	certificateAuthorityLifetime = 5 * 365 * 24 * time.Hour
+	serverCertificateLifetime    = 365 * 24 * time.Hour
+	agentCertificateLifetime     = 30 * 24 * time.Hour
 )
 
 type issuedCertificate struct {
@@ -44,7 +54,7 @@ func newCertificateAuthority(now time.Time) (*certificateAuthority, error) {
 			Organization: []string{"Panvex"},
 		},
 		NotBefore:             now.Add(-time.Minute),
-		NotAfter:              now.Add(365 * 24 * time.Hour),
+		NotAfter:              now.Add(certificateAuthorityLifetime),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 		BasicConstraintsValid: true,
 		IsCA:                  true,
@@ -55,6 +65,82 @@ func newCertificateAuthority(now time.Time) (*certificateAuthority, error) {
 		return nil, err
 	}
 
+	return buildCertificateAuthority(certificate, privateKey, encodePEM("CERTIFICATE", der), now)
+}
+
+func loadOrCreateCertificateAuthority(store storage.CertificateAuthorityStore, now time.Time) (*certificateAuthority, error) {
+	if store == nil {
+		return newCertificateAuthority(now)
+	}
+
+	record, err := store.GetCertificateAuthority(context.Background())
+	if err == nil {
+		return certificateAuthorityFromRecord(record, now)
+	}
+	if !errors.Is(err, storage.ErrNotFound) {
+		return nil, err
+	}
+
+	authority, err := newCertificateAuthority(now)
+	if err != nil {
+		return nil, err
+	}
+
+	record, err = authority.record(now)
+	if err != nil {
+		return nil, err
+	}
+	if err := store.PutCertificateAuthority(context.Background(), record); err != nil {
+		return nil, err
+	}
+
+	return authority, nil
+}
+
+func certificateAuthorityFromRecord(record storage.CertificateAuthorityRecord, now time.Time) (*certificateAuthority, error) {
+	certificateBlock, _ := pem.Decode([]byte(record.CAPEM))
+	if certificateBlock == nil {
+		return nil, errors.New("failed to decode persisted control-plane CA certificate")
+	}
+
+	certificate, err := x509.ParseCertificate(certificateBlock.Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	privateKeyBlock, _ := pem.Decode([]byte(record.PrivateKeyPEM))
+	if privateKeyBlock == nil {
+		return nil, errors.New("failed to decode persisted control-plane CA private key")
+	}
+
+	privateKey, err := parseAuthorityPrivateKey(privateKeyBlock.Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	return buildCertificateAuthority(certificate, privateKey, record.CAPEM, now)
+}
+
+func parseAuthorityPrivateKey(encoded []byte) (*ecdsa.PrivateKey, error) {
+	privateKey, err := x509.ParseECPrivateKey(encoded)
+	if err == nil {
+		return privateKey, nil
+	}
+
+	parsedKey, pkcs8Err := x509.ParsePKCS8PrivateKey(encoded)
+	if pkcs8Err != nil {
+		return nil, err
+	}
+
+	ecdsaKey, ok := parsedKey.(*ecdsa.PrivateKey)
+	if !ok {
+		return nil, errors.New("persisted control-plane CA private key must be ECDSA")
+	}
+
+	return ecdsaKey, nil
+}
+
+func buildCertificateAuthority(certificate *x509.Certificate, privateKey *ecdsa.PrivateKey, caPEM string, now time.Time) (*certificateAuthority, error) {
 	serverPair, err := issueServerCertificate(certificate, privateKey, now)
 	if err != nil {
 		return nil, err
@@ -63,8 +149,21 @@ func newCertificateAuthority(now time.Time) (*certificateAuthority, error) {
 	return &certificateAuthority{
 		certificate:       certificate,
 		privateKey:        privateKey,
-		caPEM:             encodePEM("CERTIFICATE", der),
+		caPEM:             caPEM,
 		serverCertificate: serverPair,
+	}, nil
+}
+
+func (a *certificateAuthority) record(now time.Time) (storage.CertificateAuthorityRecord, error) {
+	privateDER, err := x509.MarshalECPrivateKey(a.privateKey)
+	if err != nil {
+		return storage.CertificateAuthorityRecord{}, err
+	}
+
+	return storage.CertificateAuthorityRecord{
+		CAPEM:         a.caPEM,
+		PrivateKeyPEM: encodePEM("EC PRIVATE KEY", privateDER),
+		UpdatedAt:     now.UTC(),
 	}, nil
 }
 
@@ -79,7 +178,7 @@ func (a *certificateAuthority) issueClientCertificate(commonName string, now tim
 		return issuedCertificate{}, err
 	}
 
-	expiresAt := now.Add(24 * time.Hour)
+	expiresAt := now.Add(agentCertificateLifetime)
 	certificate := &x509.Certificate{
 		SerialNumber: serial,
 		Subject: pkix.Name{
@@ -154,7 +253,7 @@ func issueServerCertificate(caCertificate *x509.Certificate, caKey *ecdsa.Privat
 		},
 		DNSNames:     []string{"localhost", "control-plane.panvex.internal"},
 		NotBefore:    now.Add(-time.Minute),
-		NotAfter:     now.Add(365 * 24 * time.Hour),
+		NotAfter:     now.Add(serverCertificateLifetime),
 		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}

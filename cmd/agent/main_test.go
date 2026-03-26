@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,8 @@ import (
 	"time"
 
 	agentstate "github.com/panvex/panvex/internal/agent/state"
+	"github.com/panvex/panvex/internal/gatewayrpc"
+	"google.golang.org/grpc"
 )
 
 func TestLoadRuntimeCredentialsReturnsSavedState(t *testing.T) {
@@ -214,4 +217,67 @@ func TestRunBootstrapCommandAllowsOverwriteWithForce(t *testing.T) {
 	if credentials.AgentID != "agent-new" {
 		t.Fatalf("credentials.AgentID = %q, want %q", credentials.AgentID, "agent-new")
 	}
+}
+
+func TestRefreshRuntimeCredentialsIfNeededRenewsAndPersistsExpiringState(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "agent-state.json")
+	now := time.Date(2026, time.March, 19, 10, 0, 0, 0, time.UTC)
+	current := agentstate.Credentials{
+		AgentID:        "agent-123",
+		CertificatePEM: "old-cert",
+		PrivateKeyPEM:  "old-key",
+		CAPEM:          "old-ca",
+		GRPCEndpoint:   "panel.example.com:8443",
+		GRPCServerName: "panel.example.com",
+		ExpiresAt:      now.Add(30 * time.Minute),
+	}
+	if err := agentstate.Save(statePath, current); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	renewer := &fakeCertificateRenewer{
+		response: &gatewayrpc.RenewCertificateResponse{
+			CertificatePem: "new-cert",
+			PrivateKeyPem:  "new-key",
+			CaPem:          "new-ca",
+			ExpiresAtUnix:  now.Add(30 * 24 * time.Hour).Unix(),
+		},
+	}
+
+	updated, err := refreshRuntimeCredentialsIfNeeded(context.Background(), statePath, current, renewer, now)
+	if err != nil {
+		t.Fatalf("refreshRuntimeCredentialsIfNeeded() error = %v", err)
+	}
+	if renewer.request == nil {
+		t.Fatal("renewer.request = nil, want renewal call")
+	}
+	if renewer.request.GetAgentId() != current.AgentID {
+		t.Fatalf("renewer.request.AgentId = %q, want %q", renewer.request.GetAgentId(), current.AgentID)
+	}
+	if updated.CertificatePEM != "new-cert" {
+		t.Fatalf("updated.CertificatePEM = %q, want %q", updated.CertificatePEM, "new-cert")
+	}
+
+	persisted, err := agentstate.Load(statePath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if persisted.CertificatePEM != "new-cert" {
+		t.Fatalf("persisted.CertificatePEM = %q, want %q", persisted.CertificatePEM, "new-cert")
+	}
+}
+
+type fakeCertificateRenewer struct {
+	request  *gatewayrpc.RenewCertificateRequest
+	response *gatewayrpc.RenewCertificateResponse
+	err      error
+}
+
+func (r *fakeCertificateRenewer) RenewCertificate(_ context.Context, request *gatewayrpc.RenewCertificateRequest, _ ...grpc.CallOption) (*gatewayrpc.RenewCertificateResponse, error) {
+	r.request = request
+	if r.err != nil {
+		return nil, r.err
+	}
+
+	return r.response, nil
 }

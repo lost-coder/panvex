@@ -33,6 +33,7 @@ type memoryStore struct {
 	metricSnapshots    []storage.MetricSnapshotRecord
 	enrollmentTokens   map[string]storage.EnrollmentTokenRecord
 	panelSettings      *storage.PanelSettingsRecord
+	certificateAuthority *storage.CertificateAuthorityRecord
 }
 
 func newMemoryStore() *memoryStore {
@@ -308,6 +309,20 @@ func (s *memoryStore) GetPanelSettings(_ context.Context) (storage.PanelSettings
 	}
 
 	return *s.panelSettings, nil
+}
+
+func (s *memoryStore) PutCertificateAuthority(_ context.Context, authority storage.CertificateAuthorityRecord) error {
+	copyAuthority := authority
+	s.certificateAuthority = &copyAuthority
+	return nil
+}
+
+func (s *memoryStore) GetCertificateAuthority(_ context.Context) (storage.CertificateAuthorityRecord, error) {
+	if s.certificateAuthority == nil {
+		return storage.CertificateAuthorityRecord{}, storage.ErrNotFound
+	}
+
+	return *s.certificateAuthority, nil
 }
 
 func (s *memoryStore) PutEnrollmentToken(_ context.Context, token storage.EnrollmentTokenRecord) error {

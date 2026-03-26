@@ -103,6 +103,38 @@ func TestServerLoginSetsSecureSessionCookieWhenForwardedProtoIsHTTPS(t *testing.
 	}
 }
 
+func TestServerLoginDoesNotPanicWhenAuditPersistenceFails(t *testing.T) {
+	now := time.Date(2026, time.March, 19, 9, 0, 0, 0, time.UTC)
+	sqliteStore, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer sqliteStore.Close()
+
+	store := &failingStore{Store: sqliteStore}
+	server := New(Options{
+		Now:   func() time.Time { return now },
+		Store: store,
+	})
+	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "viewer",
+		Password: "viewer-password",
+		Role:     auth.RoleViewer,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	store.appendAuditEventErr = io.ErrUnexpectedEOF
+
+	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "viewer",
+		"password": "viewer-password",
+	}, nil)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
+	}
+}
+
 func TestServerLoginLeavesSessionCookieInsecureForPlainHTTP(t *testing.T) {
 	now := time.Date(2026, time.March, 18, 12, 10, 0, 0, time.UTC)
 	server := New(Options{

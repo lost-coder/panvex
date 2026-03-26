@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"context"
 	"io/fs"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -64,6 +65,7 @@ type Server struct {
 	auditTrail []AuditEvent
 	panelSettings PanelSettings
 	handler    http.Handler
+	startupErr error
 }
 
 // New constructs a control-plane server with in-memory state suitable for local development.
@@ -95,18 +97,38 @@ func New(options Options) *Server {
 		auditTrail: make([]AuditEvent, 0),
 	}
 	server.panelSettings = defaultPanelSettings()
-	authority, err := newCertificateAuthority(now())
+	authority, err := loadOrCreateCertificateAuthority(options.Store, now())
 	if err != nil {
-		panic(err)
+		server.startupErr = err
+	} else {
+		server.authority = authority
 	}
-	server.authority = authority
 	if options.Store != nil {
 		server.jobs = jobs.NewServiceWithStore(options.Store)
-		server.seedUsers(options.Users)
 		server.auth = auth.NewServiceWithStore(options.Store)
-		server.restoreStoredState()
-		server.restoreStoredClients()
-		server.restoreStoredPanelSettings()
+		if err := server.jobs.StartupError(); err != nil && server.startupErr == nil {
+			server.startupErr = err
+		}
+		if server.startupErr == nil {
+			if err := server.seedUsers(options.Users); err != nil {
+				server.startupErr = err
+			}
+		}
+		if server.startupErr == nil {
+			if err := server.restoreStoredState(); err != nil {
+				server.startupErr = err
+			}
+		}
+		if server.startupErr == nil {
+			if err := server.restoreStoredClients(); err != nil {
+				server.startupErr = err
+			}
+		}
+		if server.startupErr == nil {
+			if err := server.restoreStoredPanelSettings(); err != nil {
+				server.startupErr = err
+			}
+		}
 	} else if len(options.Users) > 0 {
 		server.auth.LoadUsers(options.Users)
 	}
@@ -115,17 +137,17 @@ func New(options Options) *Server {
 	return server
 }
 
-func (s *Server) seedUsers(users []auth.User) {
+func (s *Server) seedUsers(users []auth.User) error {
 	if s.store == nil || len(users) == 0 {
-		return
+		return nil
 	}
 
 	records, err := s.store.ListUsers(context.Background())
 	if err != nil {
-		panic(err)
+		return err
 	}
 	if len(records) > 0 {
-		return
+		return nil
 	}
 
 	for _, user := range users {
@@ -138,15 +160,17 @@ func (s *Server) seedUsers(users []auth.User) {
 			TotpSecret:   user.TotpSecret,
 			CreatedAt:    user.CreatedAt.UTC(),
 		}); err != nil {
-			panic(err)
+			return err
 		}
 	}
+
+	return nil
 }
 
-func (s *Server) restoreStoredState() {
+func (s *Server) restoreStoredState() error {
 	agents, err := s.store.ListAgents(context.Background())
 	if err != nil {
-		panic(err)
+		return err
 	}
 	for _, record := range agents {
 		agent := agentFromRecord(record)
@@ -156,7 +180,7 @@ func (s *Server) restoreStoredState() {
 
 	instances, err := s.store.ListInstances(context.Background())
 	if err != nil {
-		panic(err)
+		return err
 	}
 	for _, record := range instances {
 		instance := instanceFromRecord(record)
@@ -165,7 +189,7 @@ func (s *Server) restoreStoredState() {
 
 	metrics, err := s.store.ListMetricSnapshots(context.Background())
 	if err != nil {
-		panic(err)
+		return err
 	}
 	for _, record := range metrics {
 		snapshot := metricSnapshotFromRecord(record)
@@ -175,13 +199,15 @@ func (s *Server) restoreStoredState() {
 
 	auditEvents, err := s.store.ListAuditEvents(context.Background())
 	if err != nil {
-		panic(err)
+		return err
 	}
 	for _, record := range auditEvents {
 		event := auditEventFromRecord(record)
 		s.auditTrail = append(s.auditTrail, event)
 		s.auditSeq = maxPrefixedSequence(s.auditSeq, "audit", event.ID)
 	}
+
+	return nil
 }
 
 func maxPrefixedSequence(current uint64, prefix string, value string) uint64 {
@@ -203,6 +229,11 @@ func maxPrefixedSequence(current uint64, prefix string, value string) uint64 {
 // Handler returns the configured HTTP handler for the control-plane API.
 func (s *Server) Handler() http.Handler {
 	return s.handler
+}
+
+// StartupError reports the first initialization error encountered while restoring persisted state.
+func (s *Server) StartupError() error {
+	return s.startupErr
 }
 
 // GRPCTLSConfig returns the TLS configuration used by the agent gateway listener.
@@ -276,7 +307,7 @@ func (s *Server) appendAudit(actorID string, action string, targetID string, det
 
 	if s.store != nil {
 		if err := s.store.AppendAuditEvent(context.Background(), auditEventToRecord(event)); err != nil {
-			panic(err)
+			log.Printf("control-plane audit persistence failed for action %q: %v", action, err)
 		}
 	}
 

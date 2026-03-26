@@ -67,6 +67,12 @@ type PanelSettingsStore interface {
 	GetPanelSettings(ctx context.Context) (PanelSettingsRecord, error)
 }
 
+// CertificateAuthorityStore persists the control-plane root CA required for agent mTLS continuity.
+type CertificateAuthorityStore interface {
+	PutCertificateAuthority(ctx context.Context, authority CertificateAuthorityRecord) error
+	GetCertificateAuthority(ctx context.Context) (CertificateAuthorityRecord, error)
+}
+
 // ClientStore persists centrally managed Telemt clients, rollout assignments, and per-node deployment state.
 type ClientStore interface {
 	PutClient(ctx context.Context, client ClientRecord) error
@@ -89,6 +95,7 @@ type Store interface {
 	MetricStore
 	EnrollmentStore
 	PanelSettingsStore
+	CertificateAuthorityStore
 	ClientStore
 
 	Close() error

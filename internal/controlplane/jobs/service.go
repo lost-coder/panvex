@@ -107,6 +107,7 @@ type Service struct {
 	jobs      map[string]Job
 	keys      map[string]string
 	jobStore  storage.JobStore
+	startupErr error
 }
 
 // NewService constructs an in-memory job validation and storage service.
@@ -124,8 +125,13 @@ func NewServiceWithStore(jobStore storage.JobStore) *Service {
 		keys:     make(map[string]string),
 		jobStore: jobStore,
 	}
-	service.restore()
+	service.startupErr = service.restore()
 	return service
+}
+
+// StartupError reports the first restore error encountered while loading persisted job state.
+func (s *Service) StartupError() error {
+	return s.startupErr
 }
 
 // Enqueue validates the job input and records the queued job.
@@ -277,16 +283,16 @@ func (s *Service) updateTarget(agentID string, jobID string, observedAt time.Tim
 	}
 }
 
-func (s *Service) restore() {
+func (s *Service) restore() error {
 	jobsFromStore, err := s.jobStore.ListJobs(context.Background())
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	for _, record := range jobsFromStore {
 		targetRecords, err := s.jobStore.ListJobTargets(context.Background(), record.ID)
 		if err != nil {
-			panic(err)
+			return err
 		}
 
 		job := jobFromRecord(record)
@@ -302,6 +308,8 @@ func (s *Service) restore() {
 		s.keys[job.IdempotencyKey] = job.ID
 		s.sequence = maxJobSequence(s.sequence, job.ID)
 	}
+
+	return nil
 }
 
 func (s *Service) persistJob(ctx context.Context, job Job) error {

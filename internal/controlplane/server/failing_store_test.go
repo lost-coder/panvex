@@ -9,12 +9,15 @@ import (
 type failingStore struct {
 	storage.Store
 
-	putAgentErr            error
-	putInstanceErr         error
+	putAgentErr             error
+	listAgentsErr           error
+	listUsersErr            error
+	putInstanceErr          error
 	appendMetricSnapshotErr error
-	putClientErr           error
-	putClientAssignmentErr error
-	putClientDeploymentErr error
+	appendAuditEventErr     error
+	putClientErr            error
+	putClientAssignmentErr  error
+	putClientDeploymentErr  error
 }
 
 func (s *failingStore) PutAgent(ctx context.Context, agent storage.AgentRecord) error {
@@ -23,6 +26,22 @@ func (s *failingStore) PutAgent(ctx context.Context, agent storage.AgentRecord) 
 	}
 
 	return s.Store.PutAgent(ctx, agent)
+}
+
+func (s *failingStore) ListAgents(ctx context.Context) ([]storage.AgentRecord, error) {
+	if s.listAgentsErr != nil {
+		return nil, s.listAgentsErr
+	}
+
+	return s.Store.ListAgents(ctx)
+}
+
+func (s *failingStore) ListUsers(ctx context.Context) ([]storage.UserRecord, error) {
+	if s.listUsersErr != nil {
+		return nil, s.listUsersErr
+	}
+
+	return s.Store.ListUsers(ctx)
 }
 
 func (s *failingStore) PutInstance(ctx context.Context, instance storage.InstanceRecord) error {
@@ -39,6 +58,14 @@ func (s *failingStore) AppendMetricSnapshot(ctx context.Context, snapshot storag
 	}
 
 	return s.Store.AppendMetricSnapshot(ctx, snapshot)
+}
+
+func (s *failingStore) AppendAuditEvent(ctx context.Context, event storage.AuditEventRecord) error {
+	if s.appendAuditEventErr != nil {
+		return s.appendAuditEventErr
+	}
+
+	return s.Store.AppendAuditEvent(ctx, event)
 }
 
 func (s *failingStore) PutClient(ctx context.Context, client storage.ClientRecord) error {

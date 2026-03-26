@@ -20,6 +20,13 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
+const (
+	runtimeCertificateRenewWindow = 24 * time.Hour
+	runtimeCertificateRenewRetry  = time.Minute
+)
+
+var errRuntimeCredentialsRefreshed = errors.New("runtime credentials refreshed")
+
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		log.Fatal(err)
@@ -85,8 +92,16 @@ func runRuntime(args []string) error {
 
 	reconnectAttempt := 0
 	for {
-		err := runConnection(*gatewayAddr, *gatewayServerName, credentialsState, agent, schedule)
-		if err == nil {
+		credentialsState, err = renewRuntimeCredentialsIfNeeded(context.Background(), *stateFile, *gatewayAddr, *gatewayServerName, credentialsState, time.Now())
+		if err != nil {
+			reconnectAttempt++
+			log.Printf("agent certificate refresh failed: %v", err)
+			time.Sleep(reconnectDelay(reconnectAttempt))
+			continue
+		}
+
+		credentialsState, err = runConnection(*gatewayAddr, *gatewayServerName, *stateFile, credentialsState, agent, schedule)
+		if err == nil || errors.Is(err, errRuntimeCredentialsRefreshed) {
 			reconnectAttempt = 0
 			continue
 		}
@@ -167,22 +182,22 @@ func sendError(sendErrors chan<- error, err error) {
 	}
 }
 
-func runConnection(gatewayAddr string, serverName string, credentialsState agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule) error {
+func runConnection(gatewayAddr string, serverName string, stateFile string, credentialsState agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule) (agentstate.Credentials, error) {
 	certificate, err := tls.X509KeyPair([]byte(credentialsState.CertificatePEM), []byte(credentialsState.PrivateKeyPEM))
 	if err != nil {
-		return err
+		return credentialsState, err
 	}
 
 	conn, err := dialGateway(context.Background(), gatewayAddr, serverName, credentialsState.CAPEM, &certificate)
 	if err != nil {
-		return err
+		return credentialsState, err
 	}
 	defer conn.Close()
 
 	client := gatewayrpc.NewAgentGatewayClient(conn)
 	stream, err := client.Connect(context.Background())
 	if err != nil {
-		return err
+		return credentialsState, err
 	}
 
 	outbound := make(chan *gatewayrpc.ConnectClientMessage, 32)
@@ -216,7 +231,7 @@ func runConnection(gatewayAddr string, serverName string, credentialsState agent
 
 	if err := sendInitialMessages(outbound, agent); err != nil {
 		close(outbound)
-		return err
+		return credentialsState, err
 	}
 
 	heartbeatTicker := newTicker(schedule.config(pollHeartbeat))
@@ -239,12 +254,16 @@ func runConnection(gatewayAddr string, serverName string, credentialsState agent
 	if ipUploadTicker != nil {
 		defer ipUploadTicker.Stop()
 	}
+	credentialRefreshTimer := newRuntimeCredentialRefreshTimer(credentialsState, time.Now())
+	if credentialRefreshTimer != nil {
+		defer credentialRefreshTimer.Stop()
+	}
 
 	for {
 		select {
 		case err := <-sendErrors:
 			close(outbound)
-			return err
+			return credentialsState, err
 		case <-tickerChan(heartbeatTicker):
 			outbound <- heartbeatMessage(agent, time.Now())
 		case <-tickerChan(runtimeTicker):
@@ -265,6 +284,18 @@ func runConnection(gatewayAddr string, serverName string, credentialsState agent
 			outbound <- &gatewayrpc.ConnectClientMessage{
 				Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: snapshot},
 			}
+		case <-timerChan(credentialRefreshTimer):
+			updatedCredentials, err := refreshRuntimeCredentialsIfNeeded(context.Background(), stateFile, credentialsState, client, time.Now())
+			if err != nil {
+				log.Printf("agent certificate renewal failed: %v", err)
+				resetRuntimeCredentialRefreshTimer(credentialRefreshTimer, runtimeCertificateRenewRetry)
+				continue
+			}
+			if updatedCredentials != credentialsState {
+				close(outbound)
+				return updatedCredentials, errRuntimeCredentialsRefreshed
+			}
+			resetRuntimeCredentialRefreshTimer(credentialRefreshTimer, runtimeCredentialRefreshDelay(credentialsState, time.Now()))
 		case <-tickerChan(ipPollTicker):
 			if err := agent.PollActiveIPs(context.Background()); err != nil {
 				log.Printf("agent ip poll failed: %v", err)
@@ -281,11 +312,115 @@ func runConnection(gatewayAddr string, serverName string, credentialsState agent
 	}
 }
 
+type certificateRenewer interface {
+	RenewCertificate(context.Context, *gatewayrpc.RenewCertificateRequest, ...grpc.CallOption) (*gatewayrpc.RenewCertificateResponse, error)
+}
+
+func renewRuntimeCredentialsIfNeeded(ctx context.Context, stateFile string, gatewayAddr string, serverName string, current agentstate.Credentials, now time.Time) (agentstate.Credentials, error) {
+	if !runtimeCredentialsNeedRefresh(current, now) {
+		return current, nil
+	}
+
+	certificate, err := tls.X509KeyPair([]byte(current.CertificatePEM), []byte(current.PrivateKeyPEM))
+	if err != nil {
+		return current, err
+	}
+
+	conn, err := dialGateway(ctx, gatewayAddr, serverName, current.CAPEM, &certificate)
+	if err != nil {
+		return current, err
+	}
+	defer conn.Close()
+
+	return refreshRuntimeCredentialsIfNeeded(ctx, stateFile, current, gatewayrpc.NewAgentGatewayClient(conn), now)
+}
+
+func refreshRuntimeCredentialsIfNeeded(ctx context.Context, stateFile string, current agentstate.Credentials, renewer certificateRenewer, now time.Time) (agentstate.Credentials, error) {
+	if !runtimeCredentialsNeedRefresh(current, now) {
+		return current, nil
+	}
+
+	response, err := renewer.RenewCertificate(ctx, &gatewayrpc.RenewCertificateRequest{
+		AgentId: current.AgentID,
+	})
+	if err != nil {
+		return current, err
+	}
+
+	updated := current
+	updated.CertificatePEM = response.GetCertificatePem()
+	updated.PrivateKeyPEM = response.GetPrivateKeyPem()
+	updated.CAPEM = response.GetCaPem()
+	if response.GetExpiresAtUnix() > 0 {
+		updated.ExpiresAt = time.Unix(response.GetExpiresAtUnix(), 0).UTC()
+	} else {
+		updated.ExpiresAt = time.Time{}
+	}
+
+	if err := agentstate.Save(stateFile, updated); err != nil {
+		return current, err
+	}
+
+	return updated, nil
+}
+
+func runtimeCredentialsNeedRefresh(current agentstate.Credentials, now time.Time) bool {
+	if current.AgentID == "" {
+		return false
+	}
+	if current.ExpiresAt.IsZero() {
+		return true
+	}
+
+	return !now.Add(runtimeCertificateRenewWindow).Before(current.ExpiresAt.UTC())
+}
+
+func runtimeCredentialRefreshDelay(current agentstate.Credentials, now time.Time) time.Duration {
+	if runtimeCredentialsNeedRefresh(current, now) {
+		return 0
+	}
+
+	refreshAt := current.ExpiresAt.UTC().Add(-runtimeCertificateRenewWindow)
+	if !refreshAt.After(now) {
+		return 0
+	}
+
+	return refreshAt.Sub(now)
+}
+
+func newRuntimeCredentialRefreshTimer(current agentstate.Credentials, now time.Time) *time.Timer {
+	if current.ExpiresAt.IsZero() {
+		return nil
+	}
+
+	return time.NewTimer(runtimeCredentialRefreshDelay(current, now))
+}
+
+func resetRuntimeCredentialRefreshTimer(timer *time.Timer, delay time.Duration) {
+	if timer == nil {
+		return
+	}
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
+	timer.Reset(delay)
+}
+
 func tickerChan(ticker *time.Ticker) <-chan time.Time {
 	if ticker == nil {
 		return nil
 	}
 	return ticker.C
+}
+
+func timerChan(timer *time.Timer) <-chan time.Time {
+	if timer == nil {
+		return nil
+	}
+	return timer.C
 }
 
 func sendInitialMessages(outbound chan<- *gatewayrpc.ConnectClientMessage, agent *runtime.Agent) error {

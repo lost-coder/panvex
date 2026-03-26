@@ -456,6 +456,68 @@ func TestHTTPClientsCreateReturnsInternalErrorWhenPersistenceFails(t *testing.T)
 	}
 }
 
+func TestRecordClientJobResultDoesNotPanicWhenDeploymentPersistenceFails(t *testing.T) {
+	now := time.Date(2026, time.March, 19, 9, 15, 0, 0, time.UTC)
+	sqliteStore, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer sqliteStore.Close()
+
+	store := &failingStore{Store: sqliteStore}
+	server := New(Options{
+		Now:   func() time.Time { return now },
+		Store: store,
+	})
+	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "admin",
+		Password: "admin-password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	seedClientTargetAgent(t, store, server, storage.FleetGroupRecord{
+		ID:        "default",
+		Name:      "Default",
+		CreatedAt: now.Add(-2 * time.Minute),
+	}, storage.AgentRecord{
+		ID:           "agent-000001",
+		NodeName:     "node-a",
+		FleetGroupID: "default",
+		Version:      "dev",
+		LastSeenAt:   now.Add(-time.Minute),
+	})
+
+	client, _, _, err := server.createClient("user-000001", clientMutationInput{
+		Name:          "alice",
+		FleetGroupIDs: []string{"default"},
+	}, now)
+	if err != nil {
+		t.Fatalf("createClient() error = %v", err)
+	}
+
+	jobList := server.jobs.List()
+	if len(jobList) != 1 {
+		t.Fatalf("len(jobs.List()) = %d, want %d", len(jobList), 1)
+	}
+
+	store.putClientDeploymentErr = errors.New("put client deployment failed")
+
+	server.recordClientJobResult("agent-000001", jobList[0].ID, true, "ok", `{"connection_link":"tg://proxy?secret=abc"}`, now.Add(time.Minute))
+
+	detailClient, _, deployments, err := server.clientDetailSnapshot(client.ID)
+	if err != nil {
+		t.Fatalf("clientDetailSnapshot() error = %v", err)
+	}
+	if detailClient.ID != client.ID {
+		t.Fatalf("detailClient.ID = %q, want %q", detailClient.ID, client.ID)
+	}
+	if len(deployments) != 1 {
+		t.Fatalf("len(deployments) = %d, want %d", len(deployments), 1)
+	}
+}
+
 func loginAdminForClients(t *testing.T, handler http.Handler) []*http.Cookie {
 	t.Helper()
 

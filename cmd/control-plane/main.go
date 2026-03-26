@@ -95,6 +95,9 @@ func runServe(args []string) error {
 			return nil
 		},
 	})
+	if err := api.StartupError(); err != nil {
+		return err
+	}
 
 	httpServer := &http.Server{
 		Addr:    panelRuntime.HTTPListenAddress,

@@ -150,6 +150,13 @@ CREATE TABLE IF NOT EXISTS panel_settings (
     tls_key_file TEXT NOT NULL DEFAULT '',
     updated_at_unix INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS certificate_authority (
+    scope TEXT PRIMARY KEY,
+    ca_pem TEXT NOT NULL,
+    private_key_pem TEXT NOT NULL,
+    updated_at_unix INTEGER NOT NULL
+);
 `
 
 // Migrate applies the current SQLite schema to the opened database.

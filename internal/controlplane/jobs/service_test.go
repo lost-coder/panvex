@@ -230,9 +230,22 @@ func TestServiceMarkDeliveredKeepsInMemoryStateWhenPersistenceFails(t *testing.T
 	}
 }
 
+func TestNewServiceWithStoreRecordsRestoreError(t *testing.T) {
+	store := &failingJobStore{
+		listJobsErr: errors.New("list jobs failed"),
+	}
+
+	service := NewServiceWithStore(store)
+
+	if service.StartupError() == nil {
+		t.Fatal("StartupError() = nil, want restore failure")
+	}
+}
+
 type failingJobStore struct {
 	storage.JobStore
-	putJobErr error
+	putJobErr  error
+	listJobsErr error
 }
 
 func (s *failingJobStore) PutJob(ctx context.Context, job storage.JobRecord) error {
@@ -241,4 +254,15 @@ func (s *failingJobStore) PutJob(ctx context.Context, job storage.JobRecord) err
 	}
 
 	return s.JobStore.PutJob(ctx, job)
+}
+
+func (s *failingJobStore) ListJobs(ctx context.Context) ([]storage.JobRecord, error) {
+	if s.listJobsErr != nil {
+		return nil, s.listJobsErr
+	}
+	if s.JobStore == nil {
+		return nil, nil
+	}
+
+	return s.JobStore.ListJobs(ctx)
 }

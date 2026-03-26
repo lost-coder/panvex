@@ -108,6 +108,13 @@ type PanelSettingsRecord struct {
 	UpdatedAt          time.Time
 }
 
+// CertificateAuthorityRecord stores the persisted control-plane root CA material.
+type CertificateAuthorityRecord struct {
+	CAPEM         string
+	PrivateKeyPEM string
+	UpdatedAt      time.Time
+}
+
 // ClientRecord stores one centrally managed Telemt client definition.
 type ClientRecord struct {
 	ID                string

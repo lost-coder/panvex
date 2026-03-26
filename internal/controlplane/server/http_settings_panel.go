@@ -30,6 +30,8 @@ type updatePanelSettingsRequest struct {
 	GRPCPublicEndpoint string `json:"grpc_public_endpoint"`
 }
 
+const maxPanelSettingsBodyBytes = 16 * 1024
+
 func (s *Server) handleGetPanelSettings() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, user, err := s.requireSession(r)
@@ -59,8 +61,14 @@ func (s *Server) handlePutPanelSettings() http.HandlerFunc {
 			return
 		}
 
+		r.Body = http.MaxBytesReader(w, r.Body, maxPanelSettingsBodyBytes)
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
+			var maxBytesError *http.MaxBytesError
+			if errors.As(err, &maxBytesError) {
+				writeError(w, http.StatusRequestEntityTooLarge, "panel settings payload too large")
+				return
+			}
 			writeError(w, http.StatusBadRequest, "invalid panel settings payload")
 			return
 		}

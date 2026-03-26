@@ -143,6 +143,17 @@ func TestCopyStoreCopiesAllPersistentEntities(t *testing.T) {
 	if tokens.RevokedAt == nil {
 		t.Fatal("target enrollment token RevokedAt = nil, want copied revoked timestamp")
 	}
+
+	authority, err := target.GetCertificateAuthority(context.Background())
+	if err != nil {
+		t.Fatalf("target.GetCertificateAuthority() error = %v", err)
+	}
+	if authority.CAPEM != "ca-pem" {
+		t.Fatalf("target.GetCertificateAuthority() CAPEM = %q, want %q", authority.CAPEM, "ca-pem")
+	}
+	if authority.PrivateKeyPEM != "ca-key-pem" {
+		t.Fatalf("target.GetCertificateAuthority() PrivateKeyPEM = %q, want %q", authority.PrivateKeyPEM, "ca-key-pem")
+	}
 }
 
 func TestCopyStoreCopiesUserAppearanceWithZeroUpdatedAt(t *testing.T) {
@@ -304,5 +315,12 @@ func populateSourceStore(t *testing.T, store storage.Store, now time.Time) {
 		RevokedAt:    &consumedAt,
 	}); err != nil {
 		t.Fatalf("PutEnrollmentToken() error = %v", err)
+	}
+	if err := store.PutCertificateAuthority(ctx, storage.CertificateAuthorityRecord{
+		CAPEM:         "ca-pem",
+		PrivateKeyPEM: "ca-key-pem",
+		UpdatedAt:     now.Add(15 * time.Second),
+	}); err != nil {
+		t.Fatalf("PutCertificateAuthority() error = %v", err)
 	}
 }
