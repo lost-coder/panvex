@@ -26,10 +26,10 @@ func (s *Server) Enroll(_ context.Context, request *gatewayrpc.EnrollRequest) (*
 	}
 
 	return &gatewayrpc.EnrollResponse{
-		AgentID:        response.AgentID,
-		CertificatePEM: response.CertificatePEM,
-		PrivateKeyPEM:  response.PrivateKeyPEM,
-		CAPEM:          response.CAPEM,
+		AgentId:        response.AgentID,
+		CertificatePem: response.CertificatePEM,
+		PrivateKeyPem:  response.PrivateKeyPEM,
+		CaPem:          response.CAPEM,
 		ExpiresAtUnix:  response.ExpiresAt.Unix(),
 	}, nil
 }
@@ -40,7 +40,7 @@ func (s *Server) RenewCertificate(ctx context.Context, request *gatewayrpc.Renew
 	if err != nil {
 		return nil, err
 	}
-	if agentID != request.AgentID {
+	if agentID != request.AgentId {
 		return nil, status.Error(codes.PermissionDenied, "certificate agent mismatch")
 	}
 
@@ -50,15 +50,15 @@ func (s *Server) RenewCertificate(ctx context.Context, request *gatewayrpc.Renew
 	}
 
 	return &gatewayrpc.RenewCertificateResponse{
-		CertificatePEM: issued.CertificatePEM,
-		PrivateKeyPEM:  issued.PrivateKeyPEM,
-		CAPEM:          issued.CAPEM,
+		CertificatePem: issued.CertificatePEM,
+		PrivateKeyPem:  issued.PrivateKeyPEM,
+		CaPem:          issued.CAPEM,
 		ExpiresAtUnix:  issued.ExpiresAt.Unix(),
 	}, nil
 }
 
 // Connect accepts live heartbeats, snapshots, and job results from one authenticated agent.
-func (s *Server) Connect(stream gatewayrpc.Gateway_ConnectServer) error {
+func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 	agentID, err := authenticatedAgentID(stream.Context())
 	if err != nil {
 		return err
@@ -73,78 +73,80 @@ func (s *Server) Connect(stream gatewayrpc.Gateway_ConnectServer) error {
 			return err
 		}
 
-		if message.Heartbeat != nil {
+		if hb := message.GetHeartbeat(); hb != nil {
 			if err := s.applyAgentSnapshot(agentSnapshot{
 				AgentID:      agentID,
-				NodeName:     message.Heartbeat.NodeName,
-				FleetGroupID: message.Heartbeat.FleetGroupID,
-				Version:      message.Heartbeat.Version,
-				ReadOnly:     message.Heartbeat.ReadOnly,
-				ObservedAt:   time.Unix(message.Heartbeat.ObservedAtUnix, 0).UTC(),
+				NodeName:     hb.NodeName,
+				FleetGroupID: hb.FleetGroupId,
+				Version:      hb.Version,
+				ReadOnly:     hb.ReadOnly,
+				ObservedAt:   time.Unix(hb.ObservedAtUnix, 0).UTC(),
 			}); err != nil {
 				return status.Error(codes.Internal, err.Error())
 			}
 		}
 
-		if message.Snapshot != nil {
-			instances := make([]instanceSnapshot, 0, len(message.Snapshot.Instances))
-			for _, instance := range message.Snapshot.Instances {
+		if snap := message.GetSnapshot(); snap != nil {
+			instances := make([]instanceSnapshot, 0, len(snap.Instances))
+			for _, instance := range snap.Instances {
 				instances = append(instances, instanceSnapshot{
-					ID:                instance.ID,
+					ID:                instance.Id,
 					Name:              instance.Name,
 					Version:           instance.Version,
 					ConfigFingerprint: instance.ConfigFingerprint,
-					ConnectedUsers:    instance.ConnectedUsers,
+					ConnectedUsers:    int(instance.ConnectedUsers),
 					ReadOnly:          instance.ReadOnly,
 				})
 			}
-			clients := make([]clientUsageSnapshot, 0, len(message.Snapshot.Clients))
-			for _, client := range message.Snapshot.Clients {
+			clients := make([]clientUsageSnapshot, 0, len(snap.Clients))
+			for _, client := range snap.Clients {
 				clients = append(clients, clientUsageSnapshot{
-					ClientID:         client.ClientID,
-					TrafficUsedBytes: client.TrafficUsedBytes,
-					UniqueIPsUsed:    int(client.UniqueIPsUsed),
-					ActiveTCPConns:   int(client.ActiveTCPConns),
-					ObservedAt:       time.Unix(message.Snapshot.ObservedAtUnix, 0).UTC(),
+					ClientID:         client.ClientId,
+					TrafficUsedBytes: client.TrafficDeltaBytes,
+					UniqueIPsUsed:    int(client.UniqueIpsUsed),
+					ActiveTCPConns:   int(client.ActiveTcpConns),
+					ObservedAt:       time.Unix(snap.ObservedAtUnix, 0).UTC(),
 				})
 			}
 			if err := s.applyAgentSnapshot(agentSnapshot{
 				AgentID:      agentID,
-				NodeName:     message.Snapshot.NodeName,
-				FleetGroupID: message.Snapshot.FleetGroupID,
-				Version:      message.Snapshot.Version,
-				ReadOnly:     message.Snapshot.ReadOnly,
+				NodeName:     snap.NodeName,
+				FleetGroupID: snap.FleetGroupId,
+				Version:      snap.Version,
+				ReadOnly:     snap.ReadOnly,
 				Instances:    instances,
 				Clients:      clients,
 				HasClients:   true,
-				Runtime:      message.Snapshot.Runtime,
-				HasRuntime:   true,
-				Metrics:      message.Snapshot.Metrics,
-				ObservedAt:   time.Unix(message.Snapshot.ObservedAtUnix, 0).UTC(),
+				Runtime:      snap.Runtime,
+				HasRuntime:   snap.Runtime != nil,
+				Metrics:      snap.Metrics,
+				ObservedAt:   time.Unix(snap.ObservedAtUnix, 0).UTC(),
 			}); err != nil {
 				return status.Error(codes.Internal, err.Error())
 			}
 		}
 
-		if message.JobResult != nil {
+		if jr := message.GetJobResult(); jr != nil {
 			s.recordJobResult(
 				agentID,
-				message.JobResult.JobID,
-				message.JobResult.Success,
-				message.JobResult.Message,
-				message.JobResult.ResultJSON,
-				time.Unix(message.JobResult.ObservedAtUnix, 0).UTC(),
+				jr.JobId,
+				jr.Success,
+				jr.Message,
+				jr.ResultJson,
+				time.Unix(jr.ObservedAtUnix, 0).UTC(),
 			)
 		}
 
 		for _, job := range s.pendingJobsForAgent(agentID) {
 			if err := stream.Send(&gatewayrpc.ConnectServerMessage{
-				Job: &gatewayrpc.JobCommand{
-					ID:             job.ID,
-					Action:         string(job.Action),
-					IdempotencyKey: job.IdempotencyKey,
-					TargetAgentIDs: job.TargetAgentIDs,
-					PayloadJSON:    job.PayloadJSON,
+				Body: &gatewayrpc.ConnectServerMessage_Job{
+					Job: &gatewayrpc.JobCommand{
+						Id:             job.ID,
+						Action:         string(job.Action),
+						IdempotencyKey: job.IdempotencyKey,
+						TargetAgentIds: job.TargetAgentIDs,
+						PayloadJson:    job.PayloadJSON,
+					},
 				},
 			}); err != nil {
 				return err

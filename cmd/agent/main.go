@@ -108,7 +108,7 @@ func loadOrEnroll(stateFile string, gatewayAddr string, serverName string, caFil
 	}
 	defer conn.Close()
 
-	client := gatewayrpc.NewGatewayClient(conn)
+	client := gatewayrpc.NewAgentGatewayClient(conn)
 	response, err := client.Enroll(context.Background(), &gatewayrpc.EnrollRequest{
 		Token:    enrollmentToken,
 		NodeName: nodeName,
@@ -119,10 +119,10 @@ func loadOrEnroll(stateFile string, gatewayAddr string, serverName string, caFil
 	}
 
 	credentialsState = agentstate.Credentials{
-		AgentID:        response.AgentID,
-		CertificatePEM: response.CertificatePEM,
-		PrivateKeyPEM:  response.PrivateKeyPEM,
-		CAPEM:          response.CAPEM,
+		AgentID:        response.AgentId,
+		CertificatePEM: response.CertificatePem,
+		PrivateKeyPEM:  response.PrivateKeyPem,
+		CAPEM:          response.CaPem,
 		GRPCEndpoint:   gatewayAddr,
 		GRPCServerName: serverName,
 		ExpiresAt:      time.Unix(response.ExpiresAtUnix, 0).UTC(),
@@ -146,7 +146,7 @@ func runConnection(gatewayAddr string, serverName string, credentialsState agent
 	}
 	defer conn.Close()
 
-	client := gatewayrpc.NewGatewayClient(conn)
+	client := gatewayrpc.NewAgentGatewayClient(conn)
 	stream, err := client.Connect(context.Background())
 	if err != nil {
 		return err
@@ -170,13 +170,13 @@ func runConnection(gatewayAddr string, serverName string, credentialsState agent
 				sendErrors <- err
 				return
 			}
-			if message.Job == nil {
+			if message.GetJob() == nil {
 				continue
 			}
 
-			result := agent.HandleJob(context.Background(), message.Job, time.Now())
+			result := agent.HandleJob(context.Background(), message.GetJob(), time.Now())
 			outbound <- &gatewayrpc.ConnectClientMessage{
-				JobResult: result,
+				Body: &gatewayrpc.ConnectClientMessage_JobResult{JobResult: result},
 			}
 		}
 	}()
@@ -203,7 +203,7 @@ func runConnection(gatewayAddr string, serverName string, credentialsState agent
 				return err
 			}
 			outbound <- &gatewayrpc.ConnectClientMessage{
-				Snapshot: snapshot,
+				Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: snapshot},
 			}
 		}
 	}
@@ -218,19 +218,21 @@ func sendHeartbeatAndSnapshot(outbound chan<- *gatewayrpc.ConnectClientMessage, 
 	}
 
 	outbound <- &gatewayrpc.ConnectClientMessage{
-		Snapshot: snapshot,
+		Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: snapshot},
 	}
 	return nil
 }
 
 func heartbeatMessage(agent *runtime.Agent, fleetGroupID string, observedAt time.Time) *gatewayrpc.ConnectClientMessage {
 	return &gatewayrpc.ConnectClientMessage{
-		Heartbeat: &gatewayrpc.Heartbeat{
-			AgentID:        agent.AgentID(),
-			NodeName:       agent.NodeName(),
-			FleetGroupID:   fleetGroupID,
-			Version:        agent.Version(),
-			ObservedAtUnix: observedAt.UTC().Unix(),
+		Body: &gatewayrpc.ConnectClientMessage_Heartbeat{
+			Heartbeat: &gatewayrpc.Heartbeat{
+				AgentId:        agent.AgentID(),
+				NodeName:       agent.NodeName(),
+				FleetGroupId:   fleetGroupID,
+				Version:        agent.Version(),
+				ObservedAtUnix: observedAt.UTC().Unix(),
+			},
 		},
 	}
 }
@@ -252,7 +254,6 @@ func dialGateway(ctx context.Context, gatewayAddr string, serverName string, caP
 
 	return grpc.NewClient(gatewayAddr,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
-		grpc.WithDefaultCallOptions(grpc.CallContentSubtype(gatewayrpc.JSONCodecName)),
 	)
 }
 

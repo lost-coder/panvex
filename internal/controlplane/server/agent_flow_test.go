@@ -246,11 +246,11 @@ func TestServerApplyAgentSnapshotReturnsErrorWhenPersistenceFails(t *testing.T) 
 	}
 }
 
-func gatewayRuntimeSnapshotForTest() gatewayrpc.RuntimeSnapshot {
-	return gatewayrpc.RuntimeSnapshot{
+func gatewayRuntimeSnapshotForTest() *gatewayrpc.RuntimeSnapshot {
+	return &gatewayrpc.RuntimeSnapshot{
 		AcceptingNewConnections:   true,
-		MERuntimeReady:            true,
-		ME2DCFallbackEnabled:      true,
+		MeRuntimeReady:           true,
+		Me2DcFallbackEnabled:     true,
 		UseMiddleProxy:            true,
 		StartupStatus:             "ready",
 		StartupStage:              "serving",
@@ -262,33 +262,33 @@ func gatewayRuntimeSnapshotForTest() gatewayrpc.RuntimeSnapshot {
 		TransportMode:             "middle_proxy",
 		UptimeSeconds:             90_061,
 		CurrentConnections:        42,
-		CurrentConnectionsME:      39,
-		CurrentConnectionsDirect:  3,
+		CurrentConnectionsMe:     39,
+		CurrentConnectionsDirect: 3,
 		ActiveUsers:               7,
 		ConnectionsTotal:          512,
 		ConnectionsBadTotal:       9,
 		HandshakeTimeoutsTotal:    4,
 		ConfiguredUsers:           12,
-		DCs: []gatewayrpc.RuntimeDCSnapshot{
+		Dcs: []*gatewayrpc.RuntimeDCSnapshot{
 			{
-				DC:                 2,
+				Dc:                 2,
 				AvailableEndpoints: 3,
 				AvailablePct:       100,
 				RequiredWriters:    4,
 				AliveWriters:       4,
 				CoveragePct:        100,
-				RTTMs:              21.5,
+				RttMs:              21.5,
 				Load:               18,
 			},
 		},
-		Upstreams: gatewayrpc.RuntimeUpstreamSnapshot{
+		Upstreams: &gatewayrpc.RuntimeUpstreamSnapshot{
 			ConfiguredTotal: 2,
 			HealthyTotal:    1,
 			UnhealthyTotal:  1,
 			DirectTotal:     1,
-			SOCKS5Total:     1,
+			Socks5Total:     1,
 		},
-		RecentEvents: []gatewayrpc.RuntimeEventSnapshot{
+		RecentEvents: []*gatewayrpc.RuntimeEventSnapshot{
 			{
 				Sequence:      1,
 				TimestampUnix: 1_763_226_400,

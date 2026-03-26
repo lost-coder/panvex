@@ -40,7 +40,7 @@ type agentSnapshot struct {
 	Instances    []instanceSnapshot
 	Clients      []clientUsageSnapshot
 	HasClients   bool
-	Runtime      gatewayrpc.RuntimeSnapshot
+	Runtime      *gatewayrpc.RuntimeSnapshot
 	HasRuntime   bool
 	Metrics      map[string]uint64
 	ObservedAt   time.Time
@@ -130,7 +130,7 @@ func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) error {
 	agent.Version = snapshot.Version
 	agent.ReadOnly = snapshot.ReadOnly
 	agent.LastSeenAt = snapshot.ObservedAt.UTC()
-	if snapshot.HasRuntime {
+	if snapshot.HasRuntime && snapshot.Runtime != nil {
 		agent.Runtime = agentRuntimeFromSnapshot(snapshot.Runtime, snapshot.ObservedAt)
 	}
 
@@ -198,33 +198,40 @@ func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) error {
 	return nil
 }
 
-func agentRuntimeFromSnapshot(snapshot gatewayrpc.RuntimeSnapshot, observedAt time.Time) AgentRuntime {
-	dcs := make([]RuntimeDC, 0, len(snapshot.DCs))
+func agentRuntimeFromSnapshot(snapshot *gatewayrpc.RuntimeSnapshot, observedAt time.Time) AgentRuntime {
+	dcs := make([]RuntimeDC, 0, len(snapshot.Dcs))
 	coveragePct := 0.0
-	for index, dc := range snapshot.DCs {
+	for index, dc := range snapshot.Dcs {
 		dcs = append(dcs, RuntimeDC{
-			DC:                 dc.DC,
-			AvailableEndpoints: dc.AvailableEndpoints,
+			DC:                 int(dc.Dc),
+			AvailableEndpoints: int(dc.AvailableEndpoints),
 			AvailablePct:       dc.AvailablePct,
-			RequiredWriters:    dc.RequiredWriters,
-			AliveWriters:       dc.AliveWriters,
+			RequiredWriters:    int(dc.RequiredWriters),
+			AliveWriters:       int(dc.AliveWriters),
 			CoveragePct:        dc.CoveragePct,
-			RTTMs:              dc.RTTMs,
-			Load:               dc.Load,
+			RTTMs:              dc.RttMs,
+			Load:               int(dc.Load),
 		})
 		if index == 0 || dc.CoveragePct < coveragePct {
 			coveragePct = dc.CoveragePct
 		}
 	}
 
-	upstreams := make([]RuntimeUpstream, 0, len(snapshot.Upstreams.Rows))
-	for _, upstream := range snapshot.Upstreams.Rows {
+	var upstreamRows []*gatewayrpc.RuntimeUpstreamRowSnapshot
+	var healthyTotal, configuredTotal int32
+	if snapshot.Upstreams != nil {
+		upstreamRows = snapshot.Upstreams.Rows
+		healthyTotal = snapshot.Upstreams.HealthyTotal
+		configuredTotal = snapshot.Upstreams.ConfiguredTotal
+	}
+	upstreams := make([]RuntimeUpstream, 0, len(upstreamRows))
+	for _, upstream := range upstreamRows {
 		upstreams = append(upstreams, RuntimeUpstream{
-			UpstreamID:         upstream.UpstreamID,
+			UpstreamID:         int(upstream.UpstreamId),
 			RouteKind:          upstream.RouteKind,
 			Address:            upstream.Address,
 			Healthy:            upstream.Healthy,
-			Fails:              upstream.Fails,
+			Fails:              int(upstream.Fails),
 			EffectiveLatencyMs: upstream.EffectiveLatencyMs,
 		})
 	}
@@ -241,8 +248,8 @@ func agentRuntimeFromSnapshot(snapshot gatewayrpc.RuntimeSnapshot, observedAt ti
 
 	return AgentRuntime{
 		AcceptingNewConnections:   snapshot.AcceptingNewConnections,
-		MERuntimeReady:            snapshot.MERuntimeReady,
-		ME2DCFallbackEnabled:      snapshot.ME2DCFallbackEnabled,
+		MERuntimeReady:            snapshot.MeRuntimeReady,
+		ME2DCFallbackEnabled:      snapshot.Me2DcFallbackEnabled,
 		UseMiddleProxy:            snapshot.UseMiddleProxy,
 		StartupStatus:             snapshot.StartupStatus,
 		StartupStage:              snapshot.StartupStage,
@@ -252,18 +259,18 @@ func agentRuntimeFromSnapshot(snapshot gatewayrpc.RuntimeSnapshot, observedAt ti
 		InitializationStage:       snapshot.InitializationStage,
 		InitializationProgressPct: snapshot.InitializationProgressPct,
 		TransportMode:             snapshot.TransportMode,
-		CurrentConnections:        snapshot.CurrentConnections,
-		CurrentConnectionsME:      snapshot.CurrentConnectionsME,
-		CurrentConnectionsDirect:  snapshot.CurrentConnectionsDirect,
-		ActiveUsers:               snapshot.ActiveUsers,
+		CurrentConnections:        int(snapshot.CurrentConnections),
+		CurrentConnectionsME:      int(snapshot.CurrentConnectionsMe),
+		CurrentConnectionsDirect:  int(snapshot.CurrentConnectionsDirect),
+		ActiveUsers:               int(snapshot.ActiveUsers),
 		UptimeSeconds:             snapshot.UptimeSeconds,
 		ConnectionsTotal:          snapshot.ConnectionsTotal,
 		ConnectionsBadTotal:       snapshot.ConnectionsBadTotal,
 		HandshakeTimeoutsTotal:    snapshot.HandshakeTimeoutsTotal,
-		ConfiguredUsers:           snapshot.ConfiguredUsers,
+		ConfiguredUsers:           int(snapshot.ConfiguredUsers),
 		DCCoveragePct:             coveragePct,
-		HealthyUpstreams:          snapshot.Upstreams.HealthyTotal,
-		TotalUpstreams:            snapshot.Upstreams.ConfiguredTotal,
+		HealthyUpstreams:          int(healthyTotal),
+		TotalUpstreams:            int(configuredTotal),
 		DCs:                       dcs,
 		Upstreams:                 upstreams,
 		RecentEvents:              recentEvents,

@@ -107,7 +107,7 @@ func runServe(args []string) error {
 	}
 
 	grpcServer := grpc.NewServer(grpc.Creds(credentials.NewTLS(api.GRPCTLSConfig())))
-	gatewayrpc.RegisterGatewayServer(grpcServer, api)
+	gatewayrpc.RegisterAgentGatewayServer(grpcServer, api)
 
 	httpErrors := make(chan error, 2)
 	go func() {

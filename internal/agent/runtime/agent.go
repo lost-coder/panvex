@@ -66,7 +66,7 @@ func (a *Agent) BuildSnapshot(ctx context.Context, observedAt time.Time) (*gatew
 		return nil, err
 	}
 
-	clients := make([]gatewayrpc.ClientUsageSnapshot, 0, len(state.Clients))
+	clients := make([]*gatewayrpc.ClientUsageSnapshot, 0, len(state.Clients))
 	for _, client := range state.Clients {
 		clientID := client.ClientID
 		if clientID == "" && client.ClientName != "" {
@@ -75,43 +75,43 @@ func (a *Agent) BuildSnapshot(ctx context.Context, observedAt time.Time) (*gatew
 		if clientID == "" {
 			continue
 		}
-		clients = append(clients, gatewayrpc.ClientUsageSnapshot{
-			ClientID:         clientID,
-			TrafficUsedBytes: client.TrafficUsedBytes,
-			UniqueIPsUsed:    client.UniqueIPsUsed,
-			ActiveTCPConns:   client.ActiveTCPConns,
+		clients = append(clients, &gatewayrpc.ClientUsageSnapshot{
+			ClientId:         clientID,
+			TrafficDeltaBytes: client.TrafficUsedBytes,
+			UniqueIpsUsed:    int32(client.UniqueIPsUsed),
+			ActiveTcpConns:   int32(client.ActiveTCPConns),
 		})
 	}
 
-	dcs := make([]gatewayrpc.RuntimeDCSnapshot, 0, len(state.DCs))
+	dcs := make([]*gatewayrpc.RuntimeDCSnapshot, 0, len(state.DCs))
 	for _, dc := range state.DCs {
-		dcs = append(dcs, gatewayrpc.RuntimeDCSnapshot{
-			DC:                 dc.DC,
-			AvailableEndpoints: dc.AvailableEndpoints,
+		dcs = append(dcs, &gatewayrpc.RuntimeDCSnapshot{
+			Dc:                 int32(dc.DC),
+			AvailableEndpoints: int32(dc.AvailableEndpoints),
 			AvailablePct:       dc.AvailablePct,
-			RequiredWriters:    dc.RequiredWriters,
-			AliveWriters:       dc.AliveWriters,
+			RequiredWriters:    int32(dc.RequiredWriters),
+			AliveWriters:       int32(dc.AliveWriters),
 			CoveragePct:        dc.CoveragePct,
-			RTTMs:              dc.RTTMs,
-			Load:               dc.Load,
+			RttMs:              dc.RTTMs,
+			Load:               int32(dc.Load),
 		})
 	}
 
-	upstreamRows := make([]gatewayrpc.RuntimeUpstreamRowSnapshot, 0, len(state.Upstreams.Rows))
+	upstreamRows := make([]*gatewayrpc.RuntimeUpstreamRowSnapshot, 0, len(state.Upstreams.Rows))
 	for _, upstream := range state.Upstreams.Rows {
-		upstreamRows = append(upstreamRows, gatewayrpc.RuntimeUpstreamRowSnapshot{
-			UpstreamID:         upstream.UpstreamID,
+		upstreamRows = append(upstreamRows, &gatewayrpc.RuntimeUpstreamRowSnapshot{
+			UpstreamId:         int32(upstream.UpstreamID),
 			RouteKind:          upstream.RouteKind,
 			Address:            upstream.Address,
 			Healthy:            upstream.Healthy,
-			Fails:              upstream.Fails,
+			Fails:              int32(upstream.Fails),
 			EffectiveLatencyMs: upstream.EffectiveLatencyMs,
 		})
 	}
 
-	recentEvents := make([]gatewayrpc.RuntimeEventSnapshot, 0, len(state.RecentEvents))
+	recentEvents := make([]*gatewayrpc.RuntimeEventSnapshot, 0, len(state.RecentEvents))
 	for _, event := range state.RecentEvents {
-		recentEvents = append(recentEvents, gatewayrpc.RuntimeEventSnapshot{
+		recentEvents = append(recentEvents, &gatewayrpc.RuntimeEventSnapshot{
 			Sequence:      event.Sequence,
 			TimestampUnix: event.TimestampUnix,
 			EventType:     event.EventType,
@@ -120,19 +120,19 @@ func (a *Agent) BuildSnapshot(ctx context.Context, observedAt time.Time) (*gatew
 	}
 
 	return &gatewayrpc.Snapshot{
-		AgentID:        a.config.AgentID,
+		AgentId:        a.config.AgentID,
 		NodeName:       a.config.NodeName,
-		FleetGroupID:   a.config.FleetGroupID,
+		FleetGroupId:   a.config.FleetGroupID,
 		Version:        a.config.Version,
 		ReadOnly:       state.ReadOnly,
 		ObservedAtUnix: observedAt.UTC().Unix(),
-		Instances: []gatewayrpc.InstanceSnapshot{
+		Instances: []*gatewayrpc.InstanceSnapshot{
 			{
-				ID:                "telemt-primary",
+				Id:                "telemt-primary",
 				Name:              "telemt-primary",
 				Version:           state.Version,
 				ConfigFingerprint: "runtime",
-				ConnectedUsers:    state.ConnectedUsers,
+				ConnectedUsers:    int32(state.ConnectedUsers),
 				ReadOnly:          state.ReadOnly,
 			},
 		},
@@ -140,10 +140,10 @@ func (a *Agent) BuildSnapshot(ctx context.Context, observedAt time.Time) (*gatew
 			"connected_users": uint64(state.ConnectedUsers),
 		},
 		Clients: clients,
-		Runtime: gatewayrpc.RuntimeSnapshot{
+		Runtime: &gatewayrpc.RuntimeSnapshot{
 			AcceptingNewConnections:   state.Gates.AcceptingNewConnections,
-			MERuntimeReady:            state.Gates.MERuntimeReady,
-			ME2DCFallbackEnabled:      state.Gates.ME2DCFallbackEnabled,
+			MeRuntimeReady:           state.Gates.MERuntimeReady,
+			Me2DcFallbackEnabled:     state.Gates.ME2DCFallbackEnabled,
 			UseMiddleProxy:            state.Gates.UseMiddleProxy,
 			StartupStatus:             state.Gates.StartupStatus,
 			StartupStage:              state.Gates.StartupStage,
@@ -153,22 +153,22 @@ func (a *Agent) BuildSnapshot(ctx context.Context, observedAt time.Time) (*gatew
 			InitializationStage:       state.Initialization.CurrentStage,
 			InitializationProgressPct: state.Initialization.ProgressPct,
 			TransportMode:             state.Initialization.TransportMode,
-			CurrentConnections:        state.ConnectionTotals.CurrentConnections,
-			CurrentConnectionsME:      state.ConnectionTotals.CurrentConnectionsME,
-			CurrentConnectionsDirect:  state.ConnectionTotals.CurrentConnectionsDirect,
-			ActiveUsers:               state.ConnectionTotals.ActiveUsers,
+			CurrentConnections:        int32(state.ConnectionTotals.CurrentConnections),
+			CurrentConnectionsMe:     int32(state.ConnectionTotals.CurrentConnectionsME),
+			CurrentConnectionsDirect: int32(state.ConnectionTotals.CurrentConnectionsDirect),
+			ActiveUsers:               int32(state.ConnectionTotals.ActiveUsers),
 			UptimeSeconds:             state.UptimeSeconds,
 			ConnectionsTotal:          state.Summary.ConnectionsTotal,
 			ConnectionsBadTotal:       state.Summary.ConnectionsBadTotal,
 			HandshakeTimeoutsTotal:    state.Summary.HandshakeTimeoutsTotal,
-			ConfiguredUsers:           state.Summary.ConfiguredUsers,
-			DCs:                       dcs,
-			Upstreams: gatewayrpc.RuntimeUpstreamSnapshot{
-				ConfiguredTotal: state.Upstreams.ConfiguredTotal,
-				HealthyTotal:    state.Upstreams.HealthyTotal,
-				UnhealthyTotal:  state.Upstreams.UnhealthyTotal,
-				DirectTotal:     state.Upstreams.DirectTotal,
-				SOCKS5Total:     state.Upstreams.SOCKS5Total,
+			ConfiguredUsers:           int32(state.Summary.ConfiguredUsers),
+			Dcs:                       dcs,
+			Upstreams: &gatewayrpc.RuntimeUpstreamSnapshot{
+				ConfiguredTotal: int32(state.Upstreams.ConfiguredTotal),
+				HealthyTotal:    int32(state.Upstreams.HealthyTotal),
+				UnhealthyTotal:  int32(state.Upstreams.UnhealthyTotal),
+				DirectTotal:     int32(state.Upstreams.DirectTotal),
+				Socks5Total:     int32(state.Upstreams.SOCKS5Total),
 				Rows:            upstreamRows,
 			},
 			RecentEvents: recentEvents,
@@ -179,8 +179,8 @@ func (a *Agent) BuildSnapshot(ctx context.Context, observedAt time.Time) (*gatew
 // HandleJob executes a supported job command and returns an execution result envelope.
 func (a *Agent) HandleJob(ctx context.Context, job *gatewayrpc.JobCommand, observedAt time.Time) *gatewayrpc.JobResult {
 	result := &gatewayrpc.JobResult{
-		AgentID:        a.config.AgentID,
-		JobID:          job.ID,
+		AgentId:        a.config.AgentID,
+		JobId:          job.Id,
 		ObservedAtUnix: observedAt.UTC().Unix(),
 	}
 
@@ -207,7 +207,7 @@ func (a *Agent) HandleJob(ctx context.Context, job *gatewayrpc.JobCommand, obser
 			DataQuotaBytes    int64  `json:"data_quota_bytes"`
 			ExpirationRFC3339 string `json:"expiration_rfc3339"`
 		}
-		if err := json.Unmarshal([]byte(job.PayloadJSON), &payload); err != nil {
+		if err := json.Unmarshal([]byte(job.PayloadJson), &payload); err != nil {
 			result.Message = fmt.Sprintf("invalid client payload: %v", err)
 			return result
 		}
@@ -233,7 +233,7 @@ func (a *Agent) HandleJob(ctx context.Context, job *gatewayrpc.JobCommand, obser
 			}
 			result.Success = true
 			result.Message = "client created"
-			result.ResultJSON = marshalClientJobResult(applyResult)
+			result.ResultJson = marshalClientJobResult(applyResult)
 			a.setClientName(payload.ClientID, managedClient.Name)
 			return result
 		case "client.update", "client.rotate_secret":
@@ -248,7 +248,7 @@ func (a *Agent) HandleJob(ctx context.Context, job *gatewayrpc.JobCommand, obser
 			} else {
 				result.Message = "client updated"
 			}
-			result.ResultJSON = marshalClientJobResult(applyResult)
+			result.ResultJson = marshalClientJobResult(applyResult)
 			a.setClientName(payload.ClientID, managedClient.Name)
 			return result
 		default:

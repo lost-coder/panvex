@@ -109,8 +109,8 @@ func TestAgentBuildSnapshotUsesTelemtRuntimeState(t *testing.T) {
 	if snapshot.Runtime.TransportMode != "middle_proxy" {
 		t.Fatalf("snapshot.Runtime.TransportMode = %q, want %q", snapshot.Runtime.TransportMode, "middle_proxy")
 	}
-	if snapshot.Runtime.CurrentConnectionsME != 39 {
-		t.Fatalf("snapshot.Runtime.CurrentConnectionsME = %d, want %d", snapshot.Runtime.CurrentConnectionsME, 39)
+	if snapshot.Runtime.CurrentConnectionsMe != 39 {
+		t.Fatalf("snapshot.Runtime.CurrentConnectionsMe = %d, want %d", snapshot.Runtime.CurrentConnectionsMe, 39)
 	}
 	if snapshot.Runtime.ConnectionsTotal != 512 {
 		t.Fatalf("snapshot.Runtime.ConnectionsTotal = %d, want %d", snapshot.Runtime.ConnectionsTotal, 512)
@@ -118,8 +118,8 @@ func TestAgentBuildSnapshotUsesTelemtRuntimeState(t *testing.T) {
 	if snapshot.Runtime.UptimeSeconds != 90_061 {
 		t.Fatalf("snapshot.Runtime.UptimeSeconds = %v, want %v", snapshot.Runtime.UptimeSeconds, 90_061)
 	}
-	if len(snapshot.Runtime.DCs) != 1 {
-		t.Fatalf("len(snapshot.Runtime.DCs) = %d, want %d", len(snapshot.Runtime.DCs), 1)
+	if len(snapshot.Runtime.Dcs) != 1 {
+		t.Fatalf("len(snapshot.Runtime.Dcs) = %d, want %d", len(snapshot.Runtime.Dcs), 1)
 	}
 	if snapshot.Runtime.Upstreams.HealthyTotal != 1 {
 		t.Fatalf("snapshot.Runtime.Upstreams.HealthyTotal = %d, want %d", snapshot.Runtime.Upstreams.HealthyTotal, 1)
@@ -160,11 +160,11 @@ func TestAgentBuildSnapshotIncludesClientUsageEntries(t *testing.T) {
 	if len(snapshot.Clients) != 1 {
 		t.Fatalf("len(snapshot.Clients) = %d, want %d", len(snapshot.Clients), 1)
 	}
-	if snapshot.Clients[0].ClientID != "client-1" {
-		t.Fatalf("snapshot.Clients[0].ClientID = %q, want %q", snapshot.Clients[0].ClientID, "client-1")
+	if snapshot.Clients[0].ClientId != "client-1" {
+		t.Fatalf("snapshot.Clients[0].ClientId = %q, want %q", snapshot.Clients[0].ClientId, "client-1")
 	}
-	if snapshot.Clients[0].TrafficUsedBytes != 1024 {
-		t.Fatalf("snapshot.Clients[0].TrafficUsedBytes = %d, want %d", snapshot.Clients[0].TrafficUsedBytes, 1024)
+	if snapshot.Clients[0].TrafficDeltaBytes != 1024 {
+		t.Fatalf("snapshot.Clients[0].TrafficDeltaBytes = %d, want %d", snapshot.Clients[0].TrafficDeltaBytes, 1024)
 	}
 }
 
@@ -178,17 +178,17 @@ func TestAgentHandleJobExecutesRuntimeReload(t *testing.T) {
 	}, client)
 
 	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
-		ID:             "job-1",
+		Id:             "job-1",
 		Action:         "runtime.reload",
 		IdempotencyKey: "key-1",
-		PayloadJSON:    `{"scope":"telemt"}`,
+		PayloadJson:    `{"scope":"telemt"}`,
 	}, time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC))
 
 	if !result.Success {
 		t.Fatalf("HandleJob() Success = false, want true, message = %q", result.Message)
 	}
-	if result.ResultJSON != "" {
-		t.Fatalf("HandleJob() ResultJSON = %q, want empty string", result.ResultJSON)
+	if result.ResultJson != "" {
+		t.Fatalf("HandleJob() ResultJson = %q, want empty string", result.ResultJson)
 	}
 
 	if !client.reloadCalled {
@@ -210,9 +210,9 @@ func TestAgentHandleJobCreatesManagedClientAndReturnsConnectionLink(t *testing.T
 	}, client)
 
 	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
-		ID:     "job-2",
+		Id:     "job-2",
 		Action: "client.create",
-		PayloadJSON: `{"client_id":"client-1","name":"alice","secret":"secret-1","user_ad_tag":"0123456789abcdef0123456789abcdef","enabled":true,"max_tcp_conns":4,"max_unique_ips":2,"data_quota_bytes":1024,"expiration_rfc3339":"2026-04-01T00:00:00Z"}`,
+		PayloadJson: `{"client_id":"client-1","name":"alice","secret":"secret-1","user_ad_tag":"0123456789abcdef0123456789abcdef","enabled":true,"max_tcp_conns":4,"max_unique_ips":2,"data_quota_bytes":1024,"expiration_rfc3339":"2026-04-01T00:00:00Z"}`,
 	}, time.Date(2026, time.March, 17, 18, 0, 0, 0, time.UTC))
 
 	if !result.Success {
@@ -221,7 +221,7 @@ func TestAgentHandleJobCreatesManagedClientAndReturnsConnectionLink(t *testing.T
 	var payload struct {
 		ConnectionLink string `json:"connection_link"`
 	}
-	if err := json.Unmarshal([]byte(result.ResultJSON), &payload); err != nil {
+	if err := json.Unmarshal([]byte(result.ResultJson), &payload); err != nil {
 		t.Fatalf("json.Unmarshal(ResultJSON) error = %v", err)
 	}
 	if payload.ConnectionLink != "tg://proxy?server=node-a&secret=create" {
@@ -246,9 +246,9 @@ func TestAgentHandleJobUpdatesManagedClientUsingPreviousName(t *testing.T) {
 	}, client)
 
 	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
-		ID:     "job-3",
+		Id:     "job-3",
 		Action: "client.update",
-		PayloadJSON: `{"client_id":"client-1","previous_name":"alice","name":"alice-new","secret":"secret-2","user_ad_tag":"0123456789abcdef0123456789abcdef","enabled":true}`,
+		PayloadJson: `{"client_id":"client-1","previous_name":"alice","name":"alice-new","secret":"secret-2","user_ad_tag":"0123456789abcdef0123456789abcdef","enabled":true}`,
 	}, time.Date(2026, time.March, 17, 18, 5, 0, 0, time.UTC))
 
 	if !result.Success {
@@ -272,9 +272,9 @@ func TestAgentHandleJobDeletesManagedClient(t *testing.T) {
 	}, client)
 
 	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
-		ID:          "job-4",
+		Id:          "job-4",
 		Action:      "client.delete",
-		PayloadJSON: `{"client_id":"client-1","name":"alice"}`,
+		PayloadJson: `{"client_id":"client-1","name":"alice"}`,
 	}, time.Date(2026, time.March, 17, 18, 10, 0, 0, time.UTC))
 
 	if !result.Success {
@@ -312,9 +312,9 @@ func TestAgentBuildSnapshotMapsTelemtClientNamesBackToManagedClientIDs(t *testin
 	}, client)
 
 	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
-		ID:     "job-5",
+		Id:     "job-5",
 		Action: "client.create",
-		PayloadJSON: `{"client_id":"client-1","name":"alice","secret":"secret-1","user_ad_tag":"0123456789abcdef0123456789abcdef","enabled":true}`,
+		PayloadJson: `{"client_id":"client-1","name":"alice","secret":"secret-1","user_ad_tag":"0123456789abcdef0123456789abcdef","enabled":true}`,
 	}, time.Date(2026, time.March, 17, 18, 15, 0, 0, time.UTC))
 	if !result.Success {
 		t.Fatalf("HandleJob() Success = false, want true, message = %q", result.Message)
@@ -327,8 +327,8 @@ func TestAgentBuildSnapshotMapsTelemtClientNamesBackToManagedClientIDs(t *testin
 	if len(snapshot.Clients) != 1 {
 		t.Fatalf("len(snapshot.Clients) = %d, want %d", len(snapshot.Clients), 1)
 	}
-	if snapshot.Clients[0].ClientID != "client-1" {
-		t.Fatalf("snapshot.Clients[0].ClientID = %q, want %q", snapshot.Clients[0].ClientID, "client-1")
+	if snapshot.Clients[0].ClientId != "client-1" {
+		t.Fatalf("snapshot.Clients[0].ClientId = %q, want %q", snapshot.Clients[0].ClientId, "client-1")
 	}
 }
 
