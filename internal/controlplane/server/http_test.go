@@ -1379,7 +1379,7 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 		IdempotencyKey: "control-room-queued",
 		ActorID:        "user-1",
 		ReadOnlyAgents: map[string]bool{"agent-1": false},
-	}, currentTime.Add(-2*time.Minute))
+	}, currentTime.Add(-20*time.Second))
 	if err != nil {
 		t.Fatalf("Enqueue(queued) error = %v", err)
 	}
@@ -1390,7 +1390,7 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 		IdempotencyKey: "control-room-running",
 		ActorID:        "user-1",
 		ReadOnlyAgents: map[string]bool{"agent-2": false},
-	}, currentTime.Add(-90*time.Second))
+	}, currentTime.Add(-25*time.Second))
 	if err != nil {
 		t.Fatalf("Enqueue(running) error = %v", err)
 	}

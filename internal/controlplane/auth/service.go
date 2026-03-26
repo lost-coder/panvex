@@ -37,6 +37,8 @@ var (
 	ErrInvalidTotpCode = errors.New("invalid totp code")
 	// ErrTotpSetupNotFound reports a missing or expired pending TOTP setup.
 	ErrTotpSetupNotFound = errors.New("totp setup not found")
+	// ErrPasswordTooWeak reports a password that does not meet minimum requirements.
+	ErrPasswordTooWeak = errors.New("password must be at least 8 characters")
 )
 
 // Role identifies the RBAC role assigned to a local operator account.
@@ -51,7 +53,18 @@ const (
 	RoleAdmin Role = "admin"
 )
 
-const pendingTotpSetupTTL = 10 * time.Minute
+const (
+	pendingTotpSetupTTL = 10 * time.Minute
+	sessionTTL          = 24 * time.Hour
+	minPasswordLength   = 8
+)
+
+func validatePasswordComplexity(password string) error {
+	if len(password) < minPasswordLength {
+		return ErrPasswordTooWeak
+	}
+	return nil
+}
 
 // BootstrapInput describes the initial user record to create.
 type BootstrapInput struct {
@@ -95,12 +108,13 @@ type Session struct {
 
 // Service provides local-account hashing, TOTP, and session issuance.
 type Service struct {
-	mu               sync.Mutex
+	mu               sync.RWMutex
 	sequence         uint64
 	users            map[string]User
 	sessions         map[string]Session
 	pendingTotpSetup map[string]pendingTotpSetup
-	userStore storage.UserStore
+	userStore        storage.UserStore
+	now              func() time.Time
 }
 
 // NewService constructs an in-memory local-auth service.
@@ -109,6 +123,7 @@ func NewService() *Service {
 		users:            make(map[string]User),
 		sessions:         make(map[string]Session),
 		pendingTotpSetup: make(map[string]pendingTotpSetup),
+		now:              time.Now,
 	}
 }
 
@@ -119,7 +134,19 @@ func NewServiceWithStore(userStore storage.UserStore) *Service {
 		sessions:         make(map[string]Session),
 		pendingTotpSetup: make(map[string]pendingTotpSetup),
 		userStore:        userStore,
+		now:              time.Now,
 	}
+}
+
+// SetNow overrides the clock used for time-sensitive auth checks.
+func (s *Service) SetNow(now func() time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if now == nil {
+		s.now = time.Now
+		return
+	}
+	s.now = now
 }
 
 type pendingTotpSetup struct {
@@ -129,6 +156,10 @@ type pendingTotpSetup struct {
 
 // BootstrapUser creates a local user with TOTP disabled by default.
 func (s *Service) BootstrapUser(input BootstrapInput, now time.Time) (User, string, error) {
+	if err := validatePasswordComplexity(input.Password); err != nil {
+		return User{}, "", err
+	}
+
 	hash, err := s.HashPassword(input.Password)
 	if err != nil {
 		return User{}, "", err
@@ -199,12 +230,7 @@ func (s *Service) Authenticate(input LoginInput, now time.Time) (Session, error)
 			return Session{}, ErrTotpRequired
 		}
 
-		expected, err := s.GenerateTotpCode(user.TotpSecret, now)
-		if err != nil {
-			return Session{}, err
-		}
-
-		if subtle.ConstantTimeCompare([]byte(expected), []byte(input.TotpCode)) != 1 {
+		if !s.verifyTotpCode(user.TotpSecret, input.TotpCode, now) {
 			return Session{}, ErrInvalidTotpCode
 		}
 	}
@@ -213,8 +239,12 @@ func (s *Service) Authenticate(input LoginInput, now time.Time) (Session, error)
 	defer s.mu.Unlock()
 
 	s.sequence++
+	sessionID, err := randomSessionID()
+	if err != nil {
+		return Session{}, err
+	}
 	session := Session{
-		ID:        fmt.Sprintf("session-%06d", s.sequence),
+		ID:        sessionID,
 		UserID:    user.ID,
 		CreatedAt: now.UTC(),
 	}
@@ -269,12 +299,7 @@ func (s *Service) EnableTotp(userID string, password string, totpCode string, no
 		return User{}, ErrTotpSetupNotFound
 	}
 
-	expected, err := s.GenerateTotpCode(setup.Secret, now)
-	if err != nil {
-		return User{}, err
-	}
-
-	if subtle.ConstantTimeCompare([]byte(expected), []byte(totpCode)) != 1 {
+	if !s.verifyTotpCode(setup.Secret, totpCode, now) {
 		return User{}, ErrInvalidTotpCode
 	}
 
@@ -306,12 +331,7 @@ func (s *Service) DisableTotp(userID string, password string, totpCode string, n
 		return User{}, ErrTotpRequired
 	}
 
-	expected, err := s.GenerateTotpCode(user.TotpSecret, now)
-	if err != nil {
-		return User{}, err
-	}
-
-	if subtle.ConstantTimeCompare([]byte(expected), []byte(totpCode)) != 1 {
+	if !s.verifyTotpCode(user.TotpSecret, totpCode, now) {
 		return User{}, ErrInvalidTotpCode
 	}
 
@@ -329,6 +349,7 @@ func (s *Service) DisableTotp(userID string, password string, totpCode string, n
 }
 
 // ResetTotp clears the active TOTP configuration for the provided user.
+// Callers must verify that the authenticated principal is authorized to reset TOTP for the target user.
 func (s *Service) ResetTotp(userID string) (User, error) {
 	user, err := s.GetUserByID(userID)
 	if err != nil {
@@ -425,10 +446,19 @@ func randomBase32(size int) (string, error) {
 	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(buf), nil
 }
 
+func randomSessionID() (string, error) {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+
+	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
 // SnapshotUsers returns a copy of the current local-account state.
 func (s *Service) SnapshotUsers() []User {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	result := make([]User, 0, len(s.users))
 	for _, user := range s.users {
@@ -462,8 +492,8 @@ func (s *Service) GetUserByID(userID string) (User, error) {
 		return userFromRecord(record), nil
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	for _, user := range s.users {
 		if user.ID == userID {
@@ -499,9 +529,9 @@ func userFromRecord(record storage.UserRecord) User {
 }
 
 func (s *Service) loadUserByUsername(username string) (User, error) {
-	s.mu.Lock()
+	s.mu.RLock()
 	userStore := s.userStore
-	s.mu.Unlock()
+	s.mu.RUnlock()
 
 	if userStore != nil {
 		record, err := userStore.GetUserByUsername(context.Background(), username)
@@ -514,8 +544,8 @@ func (s *Service) loadUserByUsername(username string) (User, error) {
 		return userFromRecord(record), nil
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	user, ok := s.users[username]
 	if !ok {
@@ -546,6 +576,20 @@ func (s *Service) cleanupPendingTotpSetupLocked(now time.Time) {
 			delete(s.pendingTotpSetup, userID)
 		}
 	}
+}
+
+func (s *Service) verifyTotpCode(secret string, code string, now time.Time) bool {
+	trimmedCode := strings.TrimSpace(code)
+	for _, candidateTime := range []time.Time{now.Add(-30 * time.Second), now, now.Add(30 * time.Second)} {
+		expected, err := s.GenerateTotpCode(secret, candidateTime)
+		if err != nil {
+			continue
+		}
+		if subtle.ConstantTimeCompare([]byte(expected), []byte(trimmedCode)) == 1 {
+			return true
+		}
+	}
+	return false
 }
 
 func maxUserSequence(users []storage.UserRecord) uint64 {
@@ -581,6 +625,10 @@ func (s *Service) GetSession(sessionID string) (Session, error) {
 
 	session, ok := s.sessions[sessionID]
 	if !ok {
+		return Session{}, ErrSessionNotFound
+	}
+	if s.now().UTC().After(session.CreatedAt.Add(sessionTTL)) {
+		delete(s.sessions, sessionID)
 		return Session{}, ErrSessionNotFound
 	}
 

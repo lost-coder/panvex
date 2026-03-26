@@ -133,6 +133,8 @@ func New(options Options) *Server {
 		server.auth.LoadUsers(options.Users)
 	}
 	server.handler = server.routes()
+	server.auth.SetNow(now)
+	server.jobs.SetNow(now)
 
 	return server
 }
@@ -303,6 +305,7 @@ func (s *Server) appendAudit(actorID string, action string, targetID string, det
 		CreatedAt: s.now().UTC(),
 		Details:   details,
 	}
+	s.auditTrail = append(s.auditTrail, event)
 	s.mu.Unlock()
 
 	if s.store != nil {
@@ -311,9 +314,6 @@ func (s *Server) appendAudit(actorID string, action string, targetID string, det
 		}
 	}
 
-	s.mu.Lock()
-	s.auditTrail = append(s.auditTrail, event)
-	s.mu.Unlock()
 	s.events.publish(eventEnvelope{
 		Type: "audit.created",
 		Data: event,

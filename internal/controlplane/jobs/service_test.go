@@ -194,7 +194,7 @@ func TestServicePersistsStructuredClientPayloadAndResultAcrossRestart(t *testing
 }
 
 func TestServiceMarkDeliveredKeepsInMemoryStateWhenPersistenceFails(t *testing.T) {
-	now := time.Date(2026, time.March, 18, 13, 40, 0, 0, time.UTC)
+	now := time.Now().UTC()
 	sqliteStore, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
 	if err != nil {
 		t.Fatalf("sqlite.Open() error = %v", err)
@@ -227,6 +227,38 @@ func TestServiceMarkDeliveredKeepsInMemoryStateWhenPersistenceFails(t *testing.T
 	}
 	if jobs[0].Targets[0].Status != TargetStatusDelivered {
 		t.Fatalf("jobs[0].Targets[0].Status = %q, want %q", jobs[0].Targets[0].Status, TargetStatusDelivered)
+	}
+}
+
+func TestServiceListProjectsExpiredQueuedJobsAsFailed(t *testing.T) {
+	service := NewService()
+	now := time.Now().UTC().Add(-2 * time.Minute)
+
+	job, err := service.Enqueue(CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            time.Minute,
+		IdempotencyKey: "expired-job",
+		ActorID:        "user-1",
+	}, now)
+	if err != nil {
+		t.Fatalf("Enqueue() error = %v", err)
+	}
+
+	jobs := service.List()
+	if len(jobs) != 1 {
+		t.Fatalf("len(List()) = %d, want %d", len(jobs), 1)
+	}
+	if jobs[0].ID != job.ID {
+		t.Fatalf("jobs[0].ID = %q, want %q", jobs[0].ID, job.ID)
+	}
+	if jobs[0].Status != StatusFailed {
+		t.Fatalf("jobs[0].Status = %q, want %q", jobs[0].Status, StatusFailed)
+	}
+
+	stored := service.jobs[job.ID]
+	if stored.Status != StatusQueued {
+		t.Fatalf("stored.Status = %q, want %q", stored.Status, StatusQueued)
 	}
 }
 

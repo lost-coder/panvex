@@ -165,9 +165,12 @@ func authenticatedAgentID(ctx context.Context) (string, error) {
 
 func (s *Server) pendingJobsForAgent(agentID string) []jobs.Job {
 	allJobs := s.jobs.List()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	result := make([]jobs.Job, 0)
 	for _, job := range allJobs {
-		if s.isJobDelivered(agentID, job.ID) {
+		if s.deliveredJobs[agentID][job.ID] {
 			continue
 		}
 		for _, target := range job.Targets {

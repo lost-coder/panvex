@@ -488,14 +488,13 @@ func (s *Server) recordClientJobResult(agentID string, jobID string, success boo
 		return
 	}
 
-	s.mu.RLock()
+	s.mu.Lock()
 	client, ok := s.clients[payload.ClientID]
 	if !ok {
-		s.mu.RUnlock()
+		s.mu.Unlock()
 		return
 	}
 	deployment := s.clientDeployments[payload.ClientID][agentID]
-	s.mu.RUnlock()
 
 	deployment.ClientID = payload.ClientID
 	deployment.AgentID = agentID
@@ -520,18 +519,17 @@ func (s *Server) recordClientJobResult(agentID string, jobID string, success boo
 		deployment.LastError = message
 	}
 
-	if s.store != nil {
-		if err := s.store.PutClientDeployment(context.Background(), clientDeploymentToRecord(deployment)); err != nil {
-			log.Printf("control-plane client deployment persistence failed for client %q on agent %q: %v", payload.ClientID, agentID, err)
-		}
-	}
-
-	s.mu.Lock()
 	if s.clientDeployments[payload.ClientID] == nil {
 		s.clientDeployments[payload.ClientID] = make(map[string]managedClientDeployment)
 	}
 	s.clientDeployments[payload.ClientID][agentID] = deployment
 	s.clients[payload.ClientID] = client
+
+	if s.store != nil {
+		if err := s.store.PutClientDeployment(context.Background(), clientDeploymentToRecord(deployment)); err != nil {
+			log.Printf("control-plane client deployment persistence failed for client %q on agent %q: %v", payload.ClientID, agentID, err)
+		}
+	}
 	s.mu.Unlock()
 }
 

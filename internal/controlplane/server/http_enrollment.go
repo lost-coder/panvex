@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -81,7 +82,8 @@ func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 			TTL:          time.Duration(request.TTLSeconds) * time.Second,
 		}, s.now())
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			log.Printf("create enrollment token failed: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 
@@ -129,7 +131,8 @@ func (s *Server) handleAgentBootstrap() http.HandlerFunc {
 			case security.ErrEnrollmentTokenInvalid, security.ErrEnrollmentTokenConsumed, security.ErrEnrollmentTokenExpired, errEnrollmentTokenRevoked:
 				writeError(w, http.StatusForbidden, err.Error())
 			default:
-				writeError(w, http.StatusInternalServerError, err.Error())
+				log.Printf("agent bootstrap failed for node %q: %v", request.NodeName, err)
+				writeError(w, http.StatusInternalServerError, "internal error")
 			}
 			return
 		}
@@ -167,7 +170,8 @@ func (s *Server) handleListEnrollmentTokens() http.HandlerFunc {
 
 		tokens, err := s.listEnrollmentTokens(s.now(), r.URL, r.Header.Get("X-Forwarded-Proto"), r.Host)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			log.Printf("list enrollment tokens failed: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 
@@ -205,7 +209,8 @@ func (s *Server) handleRevokeEnrollmentToken() http.HandlerFunc {
 				writeError(w, http.StatusNotFound, "enrollment token not found")
 				return
 			}
-			writeError(w, http.StatusInternalServerError, err.Error())
+			log.Printf("revoke enrollment token failed for value %q: %v", value, err)
+			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 		if changed {

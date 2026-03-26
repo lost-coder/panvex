@@ -71,6 +71,9 @@ func (s *Service) UpdateUser(input UpdateUserInput, now time.Time) (User, error)
 	user.Username = updatedUsername
 	user.Role = input.Role
 	if strings.TrimSpace(input.NewPassword) != "" {
+		if err := validatePasswordComplexity(input.NewPassword); err != nil {
+			return User{}, err
+		}
 		hash, err := s.HashPassword(input.NewPassword)
 		if err != nil {
 			return User{}, err

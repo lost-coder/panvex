@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"sort"
 
@@ -69,10 +70,7 @@ type clientDetailResponse struct {
 
 func (s *Server) handleClients() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, user, ok := s.requireClientsAccess(w, r); !ok {
-			return
-		} else if user.Role == auth.RoleViewer {
-			writeError(w, http.StatusForbidden, "viewer role cannot access clients")
+		if _, _, ok := s.requireClientsAccess(w, r); !ok {
 			return
 		}
 
@@ -81,7 +79,8 @@ func (s *Server) handleClients() http.HandlerFunc {
 		for _, client := range clients {
 			_, assignments, deployments, err := s.clientDetailSnapshot(client.ID)
 			if err != nil {
-				writeError(w, http.StatusInternalServerError, err.Error())
+				log.Printf("load client detail failed for client %q: %v", client.ID, err)
+				writeError(w, http.StatusInternalServerError, "internal error")
 				return
 			}
 			usage := s.aggregatedClientUsage(client.ID)
@@ -139,7 +138,7 @@ func (s *Server) handleCreateClient() http.HandlerFunc {
 			"agent_ids":        assignmentAgentIDs(assignments),
 			"target_agent_ids": deploymentAgentIDsFromResponses(deployments),
 		})
-		writeJSON(w, http.StatusCreated, s.buildClientDetailResponse(client, assignments, deployments))
+		writeJSON(w, http.StatusCreated, s.buildClientDetailResponse(client, assignments, deployments, true))
 	}
 }
 
@@ -161,11 +160,12 @@ func (s *Server) handleClient() http.HandlerFunc {
 				writeError(w, http.StatusNotFound, err.Error())
 				return
 			}
-			writeError(w, http.StatusInternalServerError, err.Error())
+			log.Printf("load client failed for client %q: %v", clientID, err)
+			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 
-		writeJSON(w, http.StatusOK, s.buildClientDetailResponse(client, assignments, deployments))
+		writeJSON(w, http.StatusOK, s.buildClientDetailResponse(client, assignments, deployments, false))
 	}
 }
 
@@ -208,7 +208,7 @@ func (s *Server) handleUpdateClient() http.HandlerFunc {
 			"fleet_group_ids": assignmentFleetGroupIDs(assignments),
 			"agent_ids":       assignmentAgentIDs(assignments),
 		})
-		writeJSON(w, http.StatusOK, s.buildClientDetailResponse(client, assignments, deployments))
+		writeJSON(w, http.StatusOK, s.buildClientDetailResponse(client, assignments, deployments, false))
 	}
 }
 
@@ -226,9 +226,8 @@ func (s *Server) handleDeleteClient() http.HandlerFunc {
 		}
 
 		if err := s.deleteClient(clientID, session.UserID, s.now()); err != nil {
-			if !handleClientMutationError(w, err) {
-				return
-			}
+			handleClientMutationError(w, err)
+			return
 		}
 
 		s.appendAudit(session.UserID, "clients.delete", clientID, nil)
@@ -255,7 +254,7 @@ func (s *Server) handleRotateClientSecret() http.HandlerFunc {
 		}
 
 		s.appendAudit(session.UserID, "clients.rotate_secret", client.ID, nil)
-		writeJSON(w, http.StatusOK, s.buildClientDetailResponse(client, assignments, deployments))
+		writeJSON(w, http.StatusOK, s.buildClientDetailResponse(client, assignments, deployments, true))
 	}
 }
 
@@ -286,21 +285,26 @@ func handleClientMutationError(w http.ResponseWriter, err error) bool {
 	case errors.Is(err, jobs.ErrReadOnlyTarget):
 		writeError(w, http.StatusConflict, err.Error())
 	default:
-		writeError(w, http.StatusInternalServerError, err.Error())
+		log.Printf("client mutation failed: %v", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
 	}
 
 	return false
 }
 
-func (s *Server) buildClientDetailResponse(client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment) clientDetailResponse {
+func (s *Server) buildClientDetailResponse(client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment, showSecret bool) clientDetailResponse {
 	usage := s.aggregatedClientUsage(client.ID)
 	fleetGroupIDs := assignmentFleetGroupIDs(assignments)
 	agentIDs := assignmentAgentIDs(assignments)
+	secret := ""
+	if showSecret {
+		secret = client.Secret
+	}
 
 	response := clientDetailResponse{
 		ID:                client.ID,
 		Name:              client.Name,
-		Secret:            client.Secret,
+		Secret:            secret,
 		UserADTag:         client.UserADTag,
 		Enabled:           client.Enabled,
 		TrafficUsedBytes:  usage.TrafficUsedBytes,

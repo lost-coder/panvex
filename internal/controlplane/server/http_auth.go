@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -56,7 +57,8 @@ func (s *Server) handleLogin() http.HandlerFunc {
 			case errors.Is(err, auth.ErrTotpRequired), errors.Is(err, auth.ErrInvalidTotpCode):
 				writeError(w, http.StatusUnauthorized, err.Error())
 			default:
-				writeError(w, http.StatusInternalServerError, err.Error())
+				log.Printf("auth login failed: %v", err)
+				writeError(w, http.StatusInternalServerError, "internal error")
 			}
 			return
 		}
@@ -109,13 +111,12 @@ func (s *Server) handleLogout() http.HandlerFunc {
 
 func (s *Server) handleMe() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session, user, err := s.requireSession(r)
+		_, user, err := s.requireSession(r)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
 
-		s.appendAudit(session.UserID, "auth.me", session.ID, nil)
 		writeJSON(w, http.StatusOK, meResponse{
 			ID:          user.ID,
 			Username:    user.Username,
@@ -135,7 +136,8 @@ func (s *Server) handleTotpSetup() http.HandlerFunc {
 
 		secret, err := s.auth.StartTotpSetup(user.ID, s.now())
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			log.Printf("start totp setup failed for user %q: %v", user.ID, err)
+			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 
@@ -169,7 +171,8 @@ func (s *Server) handleTotpEnable() http.HandlerFunc {
 			case errors.Is(err, auth.ErrTotpSetupNotFound):
 				writeError(w, http.StatusBadRequest, err.Error())
 			default:
-				writeError(w, http.StatusInternalServerError, err.Error())
+				log.Printf("enable totp failed for user %q: %v", user.ID, err)
+				writeError(w, http.StatusInternalServerError, "internal error")
 			}
 			return
 		}
@@ -201,7 +204,8 @@ func (s *Server) handleTotpDisable() http.HandlerFunc {
 			case errors.Is(err, auth.ErrInvalidCredentials), errors.Is(err, auth.ErrTotpRequired), errors.Is(err, auth.ErrInvalidTotpCode):
 				writeError(w, http.StatusUnauthorized, err.Error())
 			default:
-				writeError(w, http.StatusInternalServerError, err.Error())
+				log.Printf("disable totp failed for user %q: %v", user.ID, err)
+				writeError(w, http.StatusInternalServerError, "internal error")
 			}
 			return
 		}

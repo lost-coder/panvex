@@ -277,6 +277,7 @@ func TestServiceHashAndVerifyPassword(t *testing.T) {
 func TestServiceSessionLifecycle(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	service := NewService()
+	service.SetNow(func() time.Time { return now.Add(time.Minute) })
 
 	user, _, err := service.BootstrapUser(BootstrapInput{
 		Username: "viewer",

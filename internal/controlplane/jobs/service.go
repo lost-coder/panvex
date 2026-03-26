@@ -102,12 +102,13 @@ type CreateJobInput struct {
 
 // Service validates orchestration jobs before they enter the delivery queue.
 type Service struct {
-	mu       sync.Mutex
-	sequence uint64
+	mu        sync.Mutex
+	sequence  uint64
 	jobs      map[string]Job
 	keys      map[string]string
 	jobStore  storage.JobStore
 	startupErr error
+	now       func() time.Time
 }
 
 // NewService constructs an in-memory job validation and storage service.
@@ -115,6 +116,7 @@ func NewService() *Service {
 	return &Service{
 		jobs: make(map[string]Job),
 		keys: make(map[string]string),
+		now:  time.Now,
 	}
 }
 
@@ -124,6 +126,7 @@ func NewServiceWithStore(jobStore storage.JobStore) *Service {
 		jobs:     make(map[string]Job),
 		keys:     make(map[string]string),
 		jobStore: jobStore,
+		now:      time.Now,
 	}
 	service.startupErr = service.restore()
 	return service
@@ -134,18 +137,29 @@ func (s *Service) StartupError() error {
 	return s.startupErr
 }
 
+// SetNow overrides the clock used for time-sensitive job checks.
+func (s *Service) SetNow(now func() time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if now == nil {
+		s.now = time.Now
+		return
+	}
+	s.now = now
+}
+
 // Enqueue validates the job input and records the queued job.
 func (s *Service) Enqueue(input CreateJobInput, now time.Time) (Job, error) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if _, exists := s.keys[input.IdempotencyKey]; exists {
-		s.mu.Unlock()
 		return Job{}, ErrDuplicateIdempotencyKey
 	}
 
 	if isMutatingAction(input.Action) {
 		for _, targetAgentID := range input.TargetAgentIDs {
 			if input.ReadOnlyAgents[targetAgentID] {
-				s.mu.Unlock()
 				return Job{}, ErrReadOnlyTarget
 			}
 		}
@@ -172,7 +186,6 @@ func (s *Service) Enqueue(input CreateJobInput, now time.Time) (Job, error) {
 			UpdatedAt: now.UTC(),
 		})
 	}
-	s.mu.Unlock()
 
 	if s.jobStore != nil {
 		if err := s.persistJob(context.Background(), job); err != nil {
@@ -180,8 +193,6 @@ func (s *Service) Enqueue(input CreateJobInput, now time.Time) (Job, error) {
 		}
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.jobs[job.ID] = job
 	s.keys[input.IdempotencyKey] = job.ID
 
@@ -202,11 +213,15 @@ func (s *Service) List() []Job {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	now := s.now().UTC()
 	result := make([]Job, 0, len(s.jobs))
 	for _, job := range s.jobs {
 		copyJob := job
 		copyJob.TargetAgentIDs = append([]string(nil), job.TargetAgentIDs...)
 		copyJob.Targets = append([]JobTarget(nil), job.Targets...)
+		if job.TTL > 0 && (job.Status == StatusQueued || job.Status == StatusRunning) && now.After(job.CreatedAt.Add(job.TTL)) {
+			copyJob.Status = StatusFailed
+		}
 		result = append(result, copyJob)
 	}
 	sort.Slice(result, func(left int, right int) bool {
@@ -244,9 +259,10 @@ func (s *Service) RecordResult(agentID string, jobID string, success bool, messa
 
 func (s *Service) updateTarget(agentID string, jobID string, observedAt time.Time, mutate func(target *JobTarget)) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	job, ok := s.jobs[jobID]
 	if !ok {
-		s.mu.Unlock()
 		return
 	}
 
@@ -261,25 +277,17 @@ func (s *Service) updateTarget(agentID string, jobID string, observedAt time.Tim
 		break
 	}
 	if !updated {
-		s.mu.Unlock()
 		return
 	}
 
 	job.Status = deriveJobStatus(job.Targets)
-	s.mu.Unlock()
-
-	var persistErr error
-	if s.jobStore != nil {
-		persistErr = s.persistJob(context.Background(), job)
-	}
-
-	s.mu.Lock()
 	s.jobs[job.ID] = job
 	s.keys[job.IdempotencyKey] = job.ID
-	s.mu.Unlock()
 
-	if persistErr != nil {
-		return
+	if s.jobStore != nil {
+		if err := s.persistJob(context.Background(), job); err != nil {
+			return
+		}
 	}
 }
 

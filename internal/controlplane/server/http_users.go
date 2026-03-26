@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"log"
 	"net/http"
 	"sort"
 
@@ -44,7 +45,8 @@ func (s *Server) handleUsers() http.HandlerFunc {
 
 		users, err := s.listUsers()
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			log.Printf("list users failed: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 
@@ -90,8 +92,11 @@ func (s *Server) handleCreateUser() http.HandlerFunc {
 			switch {
 			case errors.Is(err, auth.ErrUserAlreadyExists):
 				writeError(w, http.StatusConflict, err.Error())
+			case errors.Is(err, auth.ErrPasswordTooWeak):
+				writeError(w, http.StatusBadRequest, err.Error())
 			default:
-				writeError(w, http.StatusInternalServerError, err.Error())
+				log.Printf("create user failed for username %q: %v", request.Username, err)
+				writeError(w, http.StatusInternalServerError, "internal error")
 			}
 			return
 		}
@@ -148,8 +153,11 @@ func (s *Server) handleUpdateUser() http.HandlerFunc {
 				writeError(w, http.StatusConflict, err.Error())
 			case errors.Is(err, auth.ErrLastAdminRequired):
 				writeError(w, http.StatusBadRequest, err.Error())
+			case errors.Is(err, auth.ErrPasswordTooWeak):
+				writeError(w, http.StatusBadRequest, err.Error())
 			default:
-				writeError(w, http.StatusInternalServerError, err.Error())
+				log.Printf("update user failed for user %q: %v", targetUserID, err)
+				writeError(w, http.StatusInternalServerError, "internal error")
 			}
 			return
 		}
@@ -198,7 +206,8 @@ func (s *Server) handleDeleteUser() http.HandlerFunc {
 			case errors.Is(err, auth.ErrLastAdminRequired):
 				writeError(w, http.StatusBadRequest, err.Error())
 			default:
-				writeError(w, http.StatusInternalServerError, err.Error())
+				log.Printf("delete user failed for user %q: %v", targetUserID, err)
+				writeError(w, http.StatusInternalServerError, "internal error")
 			}
 			return
 		}
@@ -237,7 +246,8 @@ func (s *Server) handleResetUserTotp() http.HandlerFunc {
 				writeError(w, http.StatusNotFound, "user not found")
 				return
 			}
-			writeError(w, http.StatusInternalServerError, err.Error())
+			log.Printf("reset user totp failed for user %q: %v", targetUserID, err)
+			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 

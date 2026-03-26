@@ -66,6 +66,7 @@ func (s *EnrollmentService) IssueToken(scope EnrollmentScope, issuedAt time.Time
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.cleanupExpiredLocked(issuedAt)
 	s.tokens[token.Value] = storedEnrollmentToken{
 		token: token,
 	}
@@ -80,21 +81,35 @@ func (s *EnrollmentService) ConsumeToken(value string, now time.Time) (Enrollmen
 
 	stored, ok := s.tokens[value]
 	if !ok {
+		s.cleanupExpiredLocked(now)
 		return EnrollmentToken{}, ErrEnrollmentTokenInvalid
 	}
 
 	if stored.consumed {
+		s.cleanupExpiredLocked(now)
 		return EnrollmentToken{}, ErrEnrollmentTokenConsumed
 	}
 
 	if now.UTC().After(stored.token.ExpiresAt) {
+		delete(s.tokens, value)
+		s.cleanupExpiredLocked(now)
 		return EnrollmentToken{}, ErrEnrollmentTokenExpired
 	}
 
 	stored.consumed = true
 	s.tokens[value] = stored
-
 	return stored.token, nil
+}
+
+func (s *EnrollmentService) cleanupExpiredLocked(now time.Time) {
+	for value, stored := range s.tokens {
+		if stored.consumed {
+			continue
+		}
+		if now.UTC().After(stored.token.ExpiresAt) {
+			delete(s.tokens, value)
+		}
+	}
 }
 
 func randomToken(size int) (string, error) {

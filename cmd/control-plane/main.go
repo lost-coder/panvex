@@ -112,7 +112,7 @@ func runServe(args []string) error {
 	grpcServer := grpc.NewServer(grpc.Creds(credentials.NewTLS(api.GRPCTLSConfig())))
 	gatewayrpc.RegisterAgentGatewayServer(grpcServer, api)
 
-	httpErrors := make(chan error, 2)
+	httpErrors := make(chan error, 4)
 	go func() {
 		log.Printf("control-plane http listening on %s", panelRuntime.HTTPListenAddress)
 		if panelRuntime.TLSMode == "direct" {
@@ -131,11 +131,11 @@ func runServe(args []string) error {
 		select {
 		case <-restartRequests:
 			shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
 
 			_ = httpServer.Shutdown(shutdownContext)
 			grpcServer.GracefulStop()
 			_ = grpcListener.Close()
+			cancel()
 			return errPanelRestartRequested
 		case err := <-httpErrors:
 			if errors.Is(err, http.ErrServerClosed) {
