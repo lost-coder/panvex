@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"log"
 	"net/http"
 )
 
@@ -31,7 +32,8 @@ func (s *Server) handleGetUserAppearance() http.HandlerFunc {
 				writeError(w, http.StatusServiceUnavailable, err.Error())
 				return
 			}
-			writeError(w, http.StatusInternalServerError, err.Error())
+			log.Printf("get user appearance failed for user %q: %v", user.ID, err)
+			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 
@@ -69,7 +71,8 @@ func (s *Server) handlePutUserAppearance() http.HandlerFunc {
 				writeError(w, http.StatusServiceUnavailable, err.Error())
 				return
 			}
-			writeError(w, http.StatusInternalServerError, err.Error())
+			log.Printf("put user appearance failed for user %q: %v", user.ID, err)
+			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 

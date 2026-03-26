@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 
 	"github.com/panvex/panvex/internal/controlplane/auth"
@@ -98,7 +99,8 @@ func (s *Server) handlePutPanelSettings() http.HandlerFunc {
 
 		if s.store != nil {
 			if err := s.store.PutPanelSettings(context.Background(), panelSettingsToRecord(settings)); err != nil {
-				writeError(w, http.StatusInternalServerError, err.Error())
+				log.Printf("put panel settings failed: %v", err)
+				writeError(w, http.StatusInternalServerError, "internal error")
 				return
 			}
 		}
@@ -137,7 +139,8 @@ func (s *Server) handleRestartPanel() http.HandlerFunc {
 		}
 
 		if err := s.requestRestart(); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			log.Printf("panel restart request failed: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 
