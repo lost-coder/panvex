@@ -23,6 +23,9 @@ var (
 // defaultSlowDataTTL bounds staleness for heavier Telemt endpoints while reducing repeated local reads.
 const defaultSlowDataTTL = 2 * time.Minute
 
+// defaultRequestTimeout bounds local Telemt API calls to prevent indefinite request hangs.
+const defaultRequestTimeout = 15 * time.Second
+
 // Config contains the local Telemt API location and authorization secret.
 type Config struct {
 	BaseURL       string
@@ -194,7 +197,9 @@ func NewClient(config Config, httpClient *http.Client) (*Client, error) {
 	}
 
 	if httpClient == nil {
-		httpClient = http.DefaultClient
+		httpClient = &http.Client{
+			Timeout: defaultRequestTimeout,
+		}
 	}
 
 	return &Client{

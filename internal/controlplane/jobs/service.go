@@ -44,12 +44,14 @@ type Status string
 const (
 	// StatusQueued marks a job that is accepted and waiting for delivery.
 	StatusQueued Status = "queued"
-	// StatusRunning marks a job with at least one target already delivered.
+	// StatusRunning marks a job with at least one target already sent or acknowledged.
 	StatusRunning Status = "running"
 	// StatusSucceeded marks a job whose targets completed successfully.
 	StatusSucceeded Status = "succeeded"
 	// StatusFailed marks a job with at least one failed target.
 	StatusFailed Status = "failed"
+	// StatusExpired marks a job that exceeded its TTL before all targets completed.
+	StatusExpired Status = "expired"
 )
 
 // TargetStatus describes the lifecycle state for one target inside a job.
@@ -58,12 +60,18 @@ type TargetStatus string
 const (
 	// TargetStatusQueued marks a target waiting for agent delivery.
 	TargetStatusQueued TargetStatus = "queued"
-	// TargetStatusDelivered marks a target already delivered to the agent.
-	TargetStatusDelivered TargetStatus = "delivered"
+	// TargetStatusSent marks a target command that was sent to an active agent stream.
+	TargetStatusSent TargetStatus = "sent"
+	// TargetStatusDelivered remains as a compatibility alias for historical code paths.
+	TargetStatusDelivered TargetStatus = TargetStatusSent
+	// TargetStatusAcknowledged marks a target command accepted by the agent runtime queue.
+	TargetStatusAcknowledged TargetStatus = "acknowledged"
 	// TargetStatusSucceeded marks a target that completed successfully.
 	TargetStatusSucceeded TargetStatus = "succeeded"
 	// TargetStatusFailed marks a target that completed with an execution error.
 	TargetStatusFailed TargetStatus = "failed"
+	// TargetStatusExpired marks a target that was never fully completed before TTL elapsed.
+	TargetStatusExpired TargetStatus = "expired"
 )
 
 // JobTarget stores delivery and result state for one agent targeted by a job.
@@ -102,31 +110,44 @@ type CreateJobInput struct {
 
 // Service validates orchestration jobs before they enter the delivery queue.
 type Service struct {
-	mu        sync.Mutex
-	sequence  uint64
-	jobs      map[string]Job
-	keys      map[string]string
-	jobStore  storage.JobStore
+	mu         sync.Mutex
+	sequence   uint64
+	updateSeq  uint64
+	jobs       map[string]Job
+	agentJobs  map[string]map[string]struct{}
+	keys       map[string]string
+	jobVersion map[string]uint64
+	jobStore   storage.JobStore
 	startupErr error
-	now       func() time.Time
+	now        func() time.Time
+}
+
+type persistCandidate struct {
+	jobID   string
+	version uint64
+	job     Job
 }
 
 // NewService constructs an in-memory job validation and storage service.
 func NewService() *Service {
 	return &Service{
-		jobs: make(map[string]Job),
-		keys: make(map[string]string),
-		now:  time.Now,
+		jobs:       make(map[string]Job),
+		agentJobs:  make(map[string]map[string]struct{}),
+		keys:       make(map[string]string),
+		jobVersion: make(map[string]uint64),
+		now:        time.Now,
 	}
 }
 
 // NewServiceWithStore constructs a job service that persists state through the shared store.
 func NewServiceWithStore(jobStore storage.JobStore) *Service {
 	service := &Service{
-		jobs:     make(map[string]Job),
-		keys:     make(map[string]string),
-		jobStore: jobStore,
-		now:      time.Now,
+		jobs:       make(map[string]Job),
+		agentJobs:  make(map[string]map[string]struct{}),
+		keys:       make(map[string]string),
+		jobVersion: make(map[string]uint64),
+		jobStore:   jobStore,
+		now:        time.Now,
 	}
 	service.startupErr = service.restore()
 	return service
@@ -194,7 +215,10 @@ func (s *Service) Enqueue(input CreateJobInput, now time.Time) (Job, error) {
 	}
 
 	s.jobs[job.ID] = job
+	s.syncJobTargetsIndexLocked(job)
 	s.keys[input.IdempotencyKey] = job.ID
+	s.updateSeq++
+	s.jobVersion[job.ID] = s.updateSeq
 
 	return job, nil
 }
@@ -210,20 +234,18 @@ func isMutatingAction(action Action) bool {
 
 // List returns a snapshot of the queued jobs known to the service.
 func (s *Service) List() []Job {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	var candidates []persistCandidate
 
+	s.mu.Lock()
 	now := s.now().UTC()
+	candidates = s.expireJobsLocked(now)
+
 	result := make([]Job, 0, len(s.jobs))
 	for _, job := range s.jobs {
-		copyJob := job
-		copyJob.TargetAgentIDs = append([]string(nil), job.TargetAgentIDs...)
-		copyJob.Targets = append([]JobTarget(nil), job.Targets...)
-		if job.TTL > 0 && (job.Status == StatusQueued || job.Status == StatusRunning) && now.After(job.CreatedAt.Add(job.TTL)) {
-			copyJob.Status = StatusFailed
-		}
-		result = append(result, copyJob)
+		result = append(result, cloneJob(job))
 	}
+	s.mu.Unlock()
+
 	sort.Slice(result, func(left int, right int) bool {
 		if result[left].CreatedAt.Equal(result[right].CreatedAt) {
 			return result[left].ID < result[right].ID
@@ -231,22 +253,92 @@ func (s *Service) List() []Job {
 		return result[left].CreatedAt.Before(result[right].CreatedAt)
 	})
 
+	for _, candidate := range candidates {
+		s.persistLatestJobVersion(candidate.jobID, candidate.version, candidate.job)
+	}
+
 	return result
 }
 
-// MarkDelivered records that one target has been accepted by the agent stream.
+// PendingForAgent returns queued and stale-sent jobs for one agent in creation order.
+func (s *Service) PendingForAgent(agentID string, retryAfter time.Duration) []Job {
+	var candidates []persistCandidate
+
+	s.mu.Lock()
+	now := s.now().UTC()
+	candidates = s.expireJobsLocked(now)
+
+	jobsForAgent := s.agentJobs[agentID]
+	result := make([]Job, 0, len(jobsForAgent))
+	for jobID := range jobsForAgent {
+		job, ok := s.jobs[jobID]
+		if !ok {
+			continue
+		}
+		for _, target := range job.Targets {
+			if target.AgentID != agentID {
+				continue
+			}
+			include := false
+			switch target.Status {
+			case TargetStatusQueued:
+				include = true
+			case TargetStatusSent:
+				if target.UpdatedAt.IsZero() || !now.Before(target.UpdatedAt.Add(retryAfter)) {
+					include = true
+				}
+			}
+			if include {
+				result = append(result, cloneJob(job))
+			}
+			break
+		}
+	}
+	s.mu.Unlock()
+
+	sort.Slice(result, func(left int, right int) bool {
+		if result[left].CreatedAt.Equal(result[right].CreatedAt) {
+			return result[left].ID < result[right].ID
+		}
+		return result[left].CreatedAt.Before(result[right].CreatedAt)
+	})
+
+	for _, candidate := range candidates {
+		s.persistLatestJobVersion(candidate.jobID, candidate.version, candidate.job)
+	}
+
+	return result
+}
+
+// MarkDelivered records that one target command has been sent to an active agent stream.
 func (s *Service) MarkDelivered(agentID string, jobID string, observedAt time.Time) {
 	s.updateTarget(agentID, jobID, observedAt, func(target *JobTarget) {
-		if target.Status == TargetStatusSucceeded || target.Status == TargetStatusFailed {
+		if target.Status == TargetStatusSucceeded || target.Status == TargetStatusFailed || target.Status == TargetStatusExpired || target.Status == TargetStatusAcknowledged {
 			return
 		}
-		target.Status = TargetStatusDelivered
+		target.Status = TargetStatusSent
+	})
+}
+
+// MarkAcknowledged records that one target command has been accepted by the agent runtime queue.
+func (s *Service) MarkAcknowledged(agentID string, jobID string, observedAt time.Time) {
+	s.updateTarget(agentID, jobID, observedAt, func(target *JobTarget) {
+		if target.Status == TargetStatusSucceeded || target.Status == TargetStatusFailed || target.Status == TargetStatusExpired {
+			return
+		}
+		if target.Status != TargetStatusSent && target.Status != TargetStatusAcknowledged {
+			return
+		}
+		target.Status = TargetStatusAcknowledged
 	})
 }
 
 // RecordResult records the final agent-side execution result for one target.
 func (s *Service) RecordResult(agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) {
 	s.updateTarget(agentID, jobID, observedAt, func(target *JobTarget) {
+		if target.Status == TargetStatusExpired {
+			return
+		}
 		if success {
 			target.Status = TargetStatusSucceeded
 		} else {
@@ -258,11 +350,19 @@ func (s *Service) RecordResult(agentID string, jobID string, success bool, messa
 }
 
 func (s *Service) updateTarget(agentID string, jobID string, observedAt time.Time, mutate func(target *JobTarget)) {
+	var (
+		candidates []persistCandidate
+	)
+
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	candidates = s.expireJobsLocked(s.now().UTC())
 
 	job, ok := s.jobs[jobID]
 	if !ok {
+		s.mu.Unlock()
+		for _, candidate := range candidates {
+			s.persistLatestJobVersion(candidate.jobID, candidate.version, candidate.job)
+		}
 		return
 	}
 
@@ -277,18 +377,109 @@ func (s *Service) updateTarget(agentID string, jobID string, observedAt time.Tim
 		break
 	}
 	if !updated {
+		s.mu.Unlock()
+		for _, candidate := range candidates {
+			s.persistLatestJobVersion(candidate.jobID, candidate.version, candidate.job)
+		}
 		return
 	}
 
 	job.Status = deriveJobStatus(job.Targets)
 	s.jobs[job.ID] = job
+	s.syncJobTargetsIndexLocked(job)
 	s.keys[job.IdempotencyKey] = job.ID
 
 	if s.jobStore != nil {
-		if err := s.persistJob(context.Background(), job); err != nil {
-			return
-		}
+		s.updateSeq++
+		s.jobVersion[job.ID] = s.updateSeq
+		candidates = append(candidates, persistCandidate{
+			jobID:   job.ID,
+			version: s.updateSeq,
+			job:     cloneJob(job),
+		})
 	}
+	s.mu.Unlock()
+
+	for _, candidate := range candidates {
+		s.persistLatestJobVersion(candidate.jobID, candidate.version, candidate.job)
+	}
+}
+
+func (s *Service) expireJobsLocked(now time.Time) []persistCandidate {
+	if s.jobStore == nil {
+		for _, job := range s.jobs {
+			if !jobShouldExpire(job, now) {
+				continue
+			}
+
+			updated := false
+			for index := range job.Targets {
+				target := &job.Targets[index]
+				if target.Status == TargetStatusSucceeded || target.Status == TargetStatusFailed || target.Status == TargetStatusExpired {
+					continue
+				}
+				target.Status = TargetStatusExpired
+				target.UpdatedAt = now.UTC()
+				updated = true
+			}
+			if !updated && job.Status == StatusExpired {
+				continue
+			}
+
+			job.Status = StatusExpired
+			s.jobs[job.ID] = job
+			s.syncJobTargetsIndexLocked(job)
+			s.keys[job.IdempotencyKey] = job.ID
+		}
+
+		return nil
+	}
+
+	candidates := make([]persistCandidate, 0)
+	for _, job := range s.jobs {
+		if !jobShouldExpire(job, now) {
+			continue
+		}
+
+		updated := false
+		for index := range job.Targets {
+			target := &job.Targets[index]
+			if target.Status == TargetStatusSucceeded || target.Status == TargetStatusFailed || target.Status == TargetStatusExpired {
+				continue
+			}
+			target.Status = TargetStatusExpired
+			target.UpdatedAt = now.UTC()
+			updated = true
+		}
+		if !updated && job.Status == StatusExpired {
+			continue
+		}
+
+		job.Status = StatusExpired
+		s.jobs[job.ID] = job
+		s.syncJobTargetsIndexLocked(job)
+		s.keys[job.IdempotencyKey] = job.ID
+		s.updateSeq++
+		s.jobVersion[job.ID] = s.updateSeq
+		candidates = append(candidates, persistCandidate{
+			jobID:   job.ID,
+			version: s.updateSeq,
+			job:     cloneJob(job),
+		})
+	}
+
+	return candidates
+}
+
+func jobShouldExpire(job Job, now time.Time) bool {
+	if job.TTL <= 0 {
+		return false
+	}
+	if job.Status != StatusQueued && job.Status != StatusRunning {
+		return false
+	}
+
+	return now.After(job.CreatedAt.Add(job.TTL))
 }
 
 func (s *Service) restore() error {
@@ -313,8 +504,11 @@ func (s *Service) restore() error {
 		}
 
 		s.jobs[job.ID] = job
+		s.syncJobTargetsIndexLocked(job)
 		s.keys[job.IdempotencyKey] = job.ID
 		s.sequence = maxJobSequence(s.sequence, job.ID)
+		s.updateSeq++
+		s.jobVersion[job.ID] = s.updateSeq
 	}
 
 	return nil
@@ -333,17 +527,75 @@ func (s *Service) persistJob(ctx context.Context, job Job) error {
 	return nil
 }
 
+func (s *Service) persistLatestJobVersion(jobID string, persistedVersion uint64, persistedJob Job) {
+	for {
+		if err := s.persistJob(context.Background(), persistedJob); err != nil {
+			return
+		}
+
+		s.mu.Lock()
+		currentVersion, ok := s.jobVersion[jobID]
+		if !ok || currentVersion == persistedVersion {
+			s.mu.Unlock()
+			return
+		}
+		latest, ok := s.jobs[jobID]
+		if !ok {
+			s.mu.Unlock()
+			return
+		}
+		persistedVersion = currentVersion
+		persistedJob = cloneJob(latest)
+		s.mu.Unlock()
+	}
+}
+
+func cloneJob(job Job) Job {
+	cloned := job
+	cloned.TargetAgentIDs = append([]string(nil), job.TargetAgentIDs...)
+	cloned.Targets = append([]JobTarget(nil), job.Targets...)
+	return cloned
+}
+
+func (s *Service) syncJobTargetsIndexLocked(job Job) {
+	for _, target := range job.Targets {
+		if target.AgentID == "" {
+			continue
+		}
+		if target.Status == TargetStatusQueued || target.Status == TargetStatusSent {
+			if s.agentJobs[target.AgentID] == nil {
+				s.agentJobs[target.AgentID] = make(map[string]struct{})
+			}
+			s.agentJobs[target.AgentID][job.ID] = struct{}{}
+			continue
+		}
+
+		agentJobs := s.agentJobs[target.AgentID]
+		if agentJobs == nil {
+			continue
+		}
+		delete(agentJobs, job.ID)
+		if len(agentJobs) == 0 {
+			delete(s.agentJobs, target.AgentID)
+		}
+	}
+}
+
 func deriveJobStatus(targets []JobTarget) Status {
 	allSucceeded := len(targets) > 0
 	anyProgress := false
+	anyExpired := false
 	for _, target := range targets {
 		switch target.Status {
 		case TargetStatusFailed:
 			return StatusFailed
 		case TargetStatusSucceeded:
 			anyProgress = true
-		case TargetStatusDelivered:
+		case TargetStatusSent, TargetStatusAcknowledged:
 			anyProgress = true
+			allSucceeded = false
+		case TargetStatusExpired:
+			anyExpired = true
 			allSucceeded = false
 		default:
 			allSucceeded = false
@@ -352,6 +604,9 @@ func deriveJobStatus(targets []JobTarget) Status {
 
 	if allSucceeded {
 		return StatusSucceeded
+	}
+	if anyExpired {
+		return StatusExpired
 	}
 	if anyProgress {
 		return StatusRunning
@@ -400,11 +655,19 @@ func jobTargetToRecord(jobID string, target JobTarget) storage.JobTargetRecord {
 func jobTargetFromRecord(record storage.JobTargetRecord) JobTarget {
 	return JobTarget{
 		AgentID:    record.AgentID,
-		Status:     TargetStatus(record.Status),
+		Status:     normalizedTargetStatus(TargetStatus(record.Status)),
 		ResultText: record.ResultText,
 		ResultJSON: record.ResultJSON,
 		UpdatedAt:  record.UpdatedAt.UTC(),
 	}
+}
+
+func normalizedTargetStatus(status TargetStatus) TargetStatus {
+	if status == "delivered" {
+		return TargetStatusSent
+	}
+
+	return status
 }
 
 func maxJobSequence(current uint64, jobID string) uint64 {

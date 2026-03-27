@@ -141,6 +141,12 @@ message JobResult {
   string result_json = 6;
 }
 
+message JobAcknowledgement {
+  string agent_id = 1;
+  string job_id = 2;
+  int64 observed_at_unix = 3;
+}
+
 message JobCommand {
   string id = 1;
   string action = 2;
@@ -183,7 +189,8 @@ message ConnectClientMessage {
     Heartbeat heartbeat = 1;
     Snapshot snapshot = 2;
     JobResult job_result = 3;
-    ClientDataResponse client_data_response = 4;
+    JobAcknowledgement job_acknowledgement = 4;
+    ClientDataResponse client_data_response = 5;
   }
 }
 

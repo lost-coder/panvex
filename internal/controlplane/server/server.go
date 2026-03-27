@@ -49,13 +49,15 @@ type Server struct {
 	requestRestart func() error
 
 	mu         sync.RWMutex
+	sessionMu  sync.RWMutex
 	agentSeq   uint64
+	sessionSeq uint64
 	auditSeq   uint64
 	metricSeq  uint64
 	clientSeq  uint64
 	assignmentSeq uint64
-	deliveredJobs map[string]map[string]bool
 	agents     map[string]Agent
+	agentSessions map[string]*agentStreamSession
 	clients    map[string]managedClient
 	clientAssignments map[string][]managedClientAssignment
 	clientDeployments map[string]map[string]managedClientDeployment
@@ -91,7 +93,7 @@ func New(options Options) *Server {
 		clientAssignments: make(map[string][]managedClientAssignment),
 		clientDeployments: make(map[string]map[string]managedClientDeployment),
 		clientUsage: make(map[string]map[string]clientUsageSnapshot),
-		deliveredJobs: make(map[string]map[string]bool),
+		agentSessions: make(map[string]*agentStreamSession),
 		instances:  make(map[string]Instance),
 		metrics:    make([]MetricSnapshot, 0),
 		auditTrail: make([]AuditEvent, 0),

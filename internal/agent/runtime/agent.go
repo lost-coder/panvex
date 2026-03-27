@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -38,6 +39,15 @@ type runtimeLifecycleState struct {
 	initializationPct    float64
 }
 
+const defaultCompletedJobRetention = 2 * time.Hour
+
+type completedJobRecord struct {
+	CompletedAt time.Time
+	Success     bool
+	Message     string
+	ResultJSON  string
+}
+
 // Agent builds snapshots and executes control-plane commands against local Telemt.
 type Agent struct {
 	config Config
@@ -50,6 +60,8 @@ type Agent struct {
 	lastMetricsUptime float64
 	lastRuntimeUptime float64
 	lastLifecycle     runtimeLifecycleState
+	completedJobs     map[string]completedJobRecord
+	completedJobRetention time.Duration
 	ipCollector       *telemt.IPCollector
 }
 
@@ -61,6 +73,8 @@ func New(config Config, client telemtClient) *Agent {
 		clientNames:     make(map[string]string),
 		lastOctets:      make(map[string]uint64),
 		lastConnections: make(map[string]int),
+		completedJobs:   make(map[string]completedJobRecord),
+		completedJobRetention: defaultCompletedJobRetention,
 		ipCollector:     telemt.NewIPCollector(),
 	}
 }
@@ -330,13 +344,18 @@ func (a *Agent) baseSnapshot(observedAt time.Time) *gatewayrpc.Snapshot {
 
 // HandleJob executes a supported job command and returns an execution result envelope.
 func (a *Agent) HandleJob(ctx context.Context, job *gatewayrpc.JobCommand, observedAt time.Time) *gatewayrpc.JobResult {
-	result := &gatewayrpc.JobResult{
-		AgentId:        a.config.AgentID,
-		JobId:          job.Id,
-		ObservedAtUnix: observedAt.UTC().Unix(),
+	if cachedResult, ok := a.findCompletedJobResult(job.GetId(), observedAt); ok {
+		return cachedResult
 	}
 
-	switch job.Action {
+	result := &gatewayrpc.JobResult{
+		AgentId:        a.config.AgentID,
+		JobId:          job.GetId(),
+		ObservedAtUnix: observedAt.UTC().Unix(),
+	}
+	defer a.rememberCompletedJobResult(job.GetId(), result, observedAt)
+
+	switch job.GetAction() {
 	case "runtime.reload":
 		if err := a.telemt.ExecuteRuntimeReload(ctx); err != nil {
 			result.Message = err.Error()
@@ -359,7 +378,7 @@ func (a *Agent) HandleJob(ctx context.Context, job *gatewayrpc.JobCommand, obser
 			DataQuotaBytes    int64  `json:"data_quota_bytes"`
 			ExpirationRFC3339 string `json:"expiration_rfc3339"`
 		}
-		if err := json.Unmarshal([]byte(job.PayloadJson), &payload); err != nil {
+		if err := json.Unmarshal([]byte(job.GetPayloadJson()), &payload); err != nil {
 			result.Message = fmt.Sprintf("invalid client payload: %v", err)
 			return result
 		}
@@ -376,7 +395,7 @@ func (a *Agent) HandleJob(ctx context.Context, job *gatewayrpc.JobCommand, obser
 			ExpirationRFC3339: payload.ExpirationRFC3339,
 		}
 
-		switch job.Action {
+		switch job.GetAction() {
 		case "client.create":
 			applyResult, err := a.telemt.CreateClient(ctx, managedClient)
 			if err != nil {
@@ -395,7 +414,7 @@ func (a *Agent) HandleJob(ctx context.Context, job *gatewayrpc.JobCommand, obser
 				return result
 			}
 			result.Success = true
-			if job.Action == "client.rotate_secret" {
+			if job.GetAction() == "client.rotate_secret" {
 				result.Message = "client secret rotated"
 			} else {
 				result.Message = "client updated"
@@ -414,8 +433,66 @@ func (a *Agent) HandleJob(ctx context.Context, job *gatewayrpc.JobCommand, obser
 			return result
 		}
 	default:
-		result.Message = fmt.Sprintf("unsupported action %s", job.Action)
+		result.Message = fmt.Sprintf("unsupported action %s", job.GetAction())
 		return result
+	}
+}
+
+func (a *Agent) findCompletedJobResult(jobID string, observedAt time.Time) (*gatewayrpc.JobResult, bool) {
+	if strings.TrimSpace(jobID) == "" {
+		return nil, false
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.pruneCompletedJobsLocked(observedAt)
+
+	completed, ok := a.completedJobs[jobID]
+	if !ok {
+		return nil, false
+	}
+
+	return &gatewayrpc.JobResult{
+		AgentId:        a.config.AgentID,
+		JobId:          jobID,
+		Success:        completed.Success,
+		Message:        completed.Message,
+		ResultJson:     completed.ResultJSON,
+		ObservedAtUnix: observedAt.UTC().Unix(),
+	}, true
+}
+
+func (a *Agent) rememberCompletedJobResult(jobID string, result *gatewayrpc.JobResult, observedAt time.Time) {
+	if strings.TrimSpace(jobID) == "" || result == nil {
+		return
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.pruneCompletedJobsLocked(observedAt)
+	a.completedJobs[jobID] = completedJobRecord{
+		CompletedAt: observedAt.UTC(),
+		Success:     result.Success,
+		Message:     result.Message,
+		ResultJSON:  result.ResultJson,
+	}
+}
+
+func (a *Agent) pruneCompletedJobsLocked(now time.Time) {
+	if a.completedJobRetention <= 0 {
+		return
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+
+	cutoff := now.Add(-a.completedJobRetention)
+	for jobID, completed := range a.completedJobs {
+		if completed.CompletedAt.Before(cutoff) {
+			delete(a.completedJobs, jobID)
+		}
 	}
 }
 

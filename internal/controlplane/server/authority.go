@@ -228,7 +228,7 @@ func (a *certificateAuthority) serverTLSConfig() *tls.Config {
 
 	return &tls.Config{
 		Certificates: []tls.Certificate{a.serverCertificate},
-		ClientAuth:   tls.VerifyClientCertIfGiven,
+		ClientAuth:   tls.RequireAndVerifyClientCert,
 		ClientCAs:    pool,
 		MinVersion:   tls.VersionTLS13,
 	}

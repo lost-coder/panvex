@@ -8,8 +8,8 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/panvex/panvex/internal/agent/runtime"
@@ -23,6 +23,11 @@ import (
 const (
 	runtimeCertificateRenewWindow = 24 * time.Hour
 	runtimeCertificateRenewRetry  = time.Minute
+	gatewayStreamConnectTimeout   = 15 * time.Second
+	certificateRefreshTimeout     = 15 * time.Second
+	jobExecutionTimeout           = 45 * time.Second
+	runtimeOperationTimeout       = 20 * time.Second
+	jobQueueCapacity              = 16
 )
 
 var errRuntimeCredentialsRefreshed = errors.New("runtime credentials refreshed")
@@ -35,7 +40,7 @@ func main() {
 
 func run(args []string) error {
 	if len(args) > 0 && args[0] == "bootstrap" {
-		return runBootstrapCommand(args[1:], http.DefaultClient)
+		return runBootstrapCommand(args[1:], nil)
 	}
 
 	return runRuntime(args)
@@ -92,7 +97,9 @@ func runRuntime(args []string) error {
 
 	reconnectAttempt := 0
 	for {
-		credentialsState, err = renewRuntimeCredentialsIfNeeded(context.Background(), *stateFile, *gatewayAddr, *gatewayServerName, credentialsState, time.Now())
+		refreshCtx, cancelRefresh := context.WithTimeout(context.Background(), certificateRefreshTimeout)
+		credentialsState, err = renewRuntimeCredentialsIfNeeded(refreshCtx, *stateFile, *gatewayAddr, *gatewayServerName, credentialsState, time.Now())
+		cancelRefresh()
 		if err != nil {
 			reconnectAttempt++
 			log.Printf("agent certificate refresh failed: %v", err)
@@ -132,6 +139,14 @@ const (
 	pollIPUpload  pollingGroup = "ip_upload"
 )
 
+type jobPipeline string
+
+const (
+	jobPipelineRuntimeReload jobPipeline = "runtime_reload"
+	jobPipelineClientMutation jobPipeline = "client_mutation"
+	jobPipelineDefault       jobPipeline = "default"
+)
+
 type pollingGroupConfig struct {
 	Enabled  bool
 	Interval time.Duration
@@ -155,6 +170,63 @@ func newConnectionSchedule(heartbeat time.Duration, runtimeSnapshot time.Duratio
 
 func (s connectionSchedule) config(group pollingGroup) pollingGroupConfig {
 	return s.groups[group]
+}
+
+func jobPipelineForAction(action string) jobPipeline {
+	switch action {
+	case "runtime.reload":
+		return jobPipelineRuntimeReload
+	case "client.create", "client.update", "client.rotate_secret", "client.delete":
+		return jobPipelineClientMutation
+	default:
+		return jobPipelineDefault
+	}
+}
+
+func jobWorkerCountForPipeline(pipeline jobPipeline) int {
+	switch pipeline {
+	case jobPipelineRuntimeReload:
+		return 2
+	case jobPipelineClientMutation:
+		return 1
+	default:
+		return 1
+	}
+}
+
+type jobInflightTracker struct {
+	mu    sync.Mutex
+	jobIDs map[string]struct{}
+}
+
+func newJobInflightTracker() *jobInflightTracker {
+	return &jobInflightTracker{
+		jobIDs: make(map[string]struct{}),
+	}
+}
+
+func (t *jobInflightTracker) reserve(jobID string) bool {
+	if jobID == "" {
+		return false
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if _, exists := t.jobIDs[jobID]; exists {
+		return false
+	}
+	t.jobIDs[jobID] = struct{}{}
+	return true
+}
+
+func (t *jobInflightTracker) release(jobID string) {
+	if jobID == "" {
+		return
+	}
+
+	t.mu.Lock()
+	delete(t.jobIDs, jobID)
+	t.mu.Unlock()
 }
 
 func reconnectDelay(attempt int) time.Duration {
@@ -182,6 +254,217 @@ func sendError(sendErrors chan<- error, err error) {
 	}
 }
 
+func enqueueReceivedJob(
+	connectionCtx context.Context,
+	agentID string,
+	tracker *jobInflightTracker,
+	jobQueues map[jobPipeline]chan *gatewayrpc.JobCommand,
+	criticalOutbound chan<- *gatewayrpc.ConnectClientMessage,
+	job *gatewayrpc.JobCommand,
+) bool {
+	if job == nil {
+		return false
+	}
+
+	jobID := job.GetId()
+	if jobID != "" && !tracker.reserve(jobID) {
+		select {
+		case <-connectionCtx.Done():
+			return false
+		case criticalOutbound <- jobAcknowledgementMessage(agentID, jobID, time.Now()):
+			return true
+		}
+	}
+
+	targetQueue := jobQueues[jobPipelineForAction(job.GetAction())]
+	select {
+	case <-connectionCtx.Done():
+		tracker.release(jobID)
+		return false
+	case targetQueue <- job:
+	}
+
+	select {
+	case <-connectionCtx.Done():
+		tracker.release(jobID)
+		return false
+	case criticalOutbound <- jobAcknowledgementMessage(agentID, jobID, time.Now()):
+		return true
+	}
+}
+
+func startJobWorkers(
+	connectionCtx context.Context,
+	agent *runtime.Agent,
+	tracker *jobInflightTracker,
+	jobQueues map[jobPipeline]chan *gatewayrpc.JobCommand,
+	criticalOutbound chan<- *gatewayrpc.ConnectClientMessage,
+) {
+	for pipeline, queue := range jobQueues {
+		workerCount := jobWorkerCountForPipeline(pipeline)
+		for workerIndex := 0; workerIndex < workerCount; workerIndex++ {
+			go runJobWorker(connectionCtx, agent, tracker, queue, criticalOutbound)
+		}
+	}
+}
+
+func runJobWorker(
+	connectionCtx context.Context,
+	agent *runtime.Agent,
+	tracker *jobInflightTracker,
+	jobQueue <-chan *gatewayrpc.JobCommand,
+	criticalOutbound chan<- *gatewayrpc.ConnectClientMessage,
+) {
+	for {
+		var job *gatewayrpc.JobCommand
+		select {
+		case <-connectionCtx.Done():
+			return
+		case job = <-jobQueue:
+		}
+		if job == nil {
+			continue
+		}
+		jobID := job.GetId()
+
+		jobCtx, cancelJob := context.WithTimeout(connectionCtx, jobExecutionTimeout)
+		result := agent.HandleJob(jobCtx, job, time.Now())
+		cancelJob()
+
+		select {
+		case <-connectionCtx.Done():
+			tracker.release(jobID)
+			return
+		case criticalOutbound <- &gatewayrpc.ConnectClientMessage{
+			Body: &gatewayrpc.ConnectClientMessage_JobResult{JobResult: result},
+		}:
+		}
+		tracker.release(jobID)
+	}
+}
+
+func startPollingWorkers(
+	connectionCtx context.Context,
+	schedule connectionSchedule,
+	agent *runtime.Agent,
+	telemetryOutbound chan<- *gatewayrpc.ConnectClientMessage,
+) {
+	startPeriodicPollingWorker(connectionCtx, schedule.config(pollHeartbeat), func(observedAt time.Time) {
+		if enqueueOutboundMessage(connectionCtx, telemetryOutbound, heartbeatMessage(agent, observedAt)) {
+			return
+		}
+		if connectionCtx.Err() == nil {
+			log.Printf("agent heartbeat dropped due to outbound backpressure")
+		}
+	})
+
+	startPeriodicPollingWorker(connectionCtx, schedule.config(pollRuntime), func(observedAt time.Time) {
+		runtimeCtx, cancelRuntime := context.WithTimeout(connectionCtx, runtimeOperationTimeout)
+		snapshot, err := agent.BuildRuntimeSnapshot(runtimeCtx, observedAt)
+		cancelRuntime()
+		if err != nil {
+			log.Printf("agent runtime snapshot failed: %v", err)
+			return
+		}
+		if enqueueOutboundMessage(connectionCtx, telemetryOutbound, &gatewayrpc.ConnectClientMessage{
+			Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: snapshot},
+		}) {
+			return
+		}
+		if connectionCtx.Err() == nil {
+			log.Printf("agent runtime snapshot dropped due to outbound backpressure")
+		}
+	})
+
+	startPeriodicPollingWorker(connectionCtx, schedule.config(pollUsage), func(observedAt time.Time) {
+		usageCtx, cancelUsage := context.WithTimeout(connectionCtx, runtimeOperationTimeout)
+		snapshot, err := agent.BuildUsageSnapshot(usageCtx, observedAt)
+		cancelUsage()
+		if err != nil {
+			log.Printf("agent usage snapshot failed: %v", err)
+			return
+		}
+		if enqueueOutboundMessage(connectionCtx, telemetryOutbound, &gatewayrpc.ConnectClientMessage{
+			Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: snapshot},
+		}) {
+			return
+		}
+		if connectionCtx.Err() == nil {
+			log.Printf("agent usage snapshot dropped due to outbound backpressure")
+		}
+	})
+
+	startPeriodicPollingWorker(connectionCtx, schedule.config(pollIPPoll), func(observedAt time.Time) {
+		ipPollCtx, cancelIPPoll := context.WithTimeout(connectionCtx, runtimeOperationTimeout)
+		err := agent.PollActiveIPs(ipPollCtx)
+		cancelIPPoll()
+		if err != nil {
+			log.Printf("agent ip poll failed: %v", err)
+		}
+	})
+
+	startPeriodicPollingWorker(connectionCtx, schedule.config(pollIPUpload), func(observedAt time.Time) {
+		snapshot := agent.BuildIPSnapshot(observedAt)
+		if len(snapshot.ClientIps) == 0 {
+			return
+		}
+		if enqueueOutboundMessage(connectionCtx, telemetryOutbound, &gatewayrpc.ConnectClientMessage{
+			Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: snapshot},
+		}) {
+			return
+		}
+		if connectionCtx.Err() == nil {
+			log.Printf("agent ip snapshot dropped due to outbound backpressure")
+		}
+	})
+}
+
+func startPeriodicPollingWorker(
+	connectionCtx context.Context,
+	config pollingGroupConfig,
+	run func(observedAt time.Time),
+) {
+	if !config.Enabled || config.Interval <= 0 {
+		return
+	}
+
+	go func() {
+		ticker := time.NewTicker(config.Interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-connectionCtx.Done():
+				return
+			case observedAt := <-ticker.C:
+				run(observedAt.UTC())
+			}
+		}
+	}()
+}
+
+func enqueueOutboundMessage(
+	connectionCtx context.Context,
+	outbound chan<- *gatewayrpc.ConnectClientMessage,
+	message *gatewayrpc.ConnectClientMessage,
+) bool {
+	if message == nil {
+		return false
+	}
+	if connectionCtx.Err() != nil {
+		return false
+	}
+
+	select {
+	case <-connectionCtx.Done():
+		return false
+	case outbound <- message:
+		return true
+	default:
+		return false
+	}
+}
+
 func runConnection(gatewayAddr string, serverName string, stateFile string, credentialsState agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule) (agentstate.Credentials, error) {
 	certificate, err := tls.X509KeyPair([]byte(credentialsState.CertificatePEM), []byte(credentialsState.PrivateKeyPEM))
 	if err != nil {
@@ -195,17 +478,51 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 	defer conn.Close()
 
 	client := gatewayrpc.NewAgentGatewayClient(conn)
-	stream, err := client.Connect(context.Background())
+	streamConnectCtx, cancelStreamConnect := context.WithTimeout(context.Background(), gatewayStreamConnectTimeout)
+	stream, err := client.Connect(streamConnectCtx)
+	cancelStreamConnect()
 	if err != nil {
 		return credentialsState, err
 	}
 
-	outbound := make(chan *gatewayrpc.ConnectClientMessage, 32)
+	connectionCtx, cancelConnection := context.WithCancel(stream.Context())
+	defer cancelConnection()
+
+	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 32)
+	telemetryOutbound := make(chan *gatewayrpc.ConnectClientMessage, 64)
+	jobInflight := newJobInflightTracker()
+	jobQueues := map[jobPipeline]chan *gatewayrpc.JobCommand{
+		jobPipelineRuntimeReload: make(chan *gatewayrpc.JobCommand, jobQueueCapacity),
+		jobPipelineClientMutation: make(chan *gatewayrpc.JobCommand, jobQueueCapacity),
+		jobPipelineDefault:       make(chan *gatewayrpc.JobCommand, jobQueueCapacity),
+	}
 	sendErrors := make(chan error, 1)
+	sendErrorAndCancel := func(err error) {
+		sendError(sendErrors, err)
+		cancelConnection()
+	}
+
 	go func() {
-		for message := range outbound {
+		for {
+			var message *gatewayrpc.ConnectClientMessage
+			select {
+			case <-connectionCtx.Done():
+				return
+			case message = <-criticalOutbound:
+			default:
+				select {
+				case <-connectionCtx.Done():
+					return
+				case message = <-criticalOutbound:
+				case message = <-telemetryOutbound:
+				}
+			}
+
+			if message == nil {
+				continue
+			}
 			if err := stream.Send(message); err != nil {
-				sendError(sendErrors, err)
+				sendErrorAndCancel(err)
 				return
 			}
 		}
@@ -215,99 +532,49 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 		for {
 			message, err := stream.Recv()
 			if err != nil {
-				sendError(sendErrors, err)
+				sendErrorAndCancel(err)
 				return
 			}
-			if message.GetJob() == nil {
+			job := message.GetJob()
+			if job == nil {
 				continue
 			}
 
-			result := agent.HandleJob(context.Background(), message.GetJob(), time.Now())
-			outbound <- &gatewayrpc.ConnectClientMessage{
-				Body: &gatewayrpc.ConnectClientMessage_JobResult{JobResult: result},
-			}
+			enqueueReceivedJob(connectionCtx, agent.AgentID(), jobInflight, jobQueues, criticalOutbound, job)
 		}
 	}()
+	startJobWorkers(connectionCtx, agent, jobInflight, jobQueues, criticalOutbound)
 
-	if err := sendInitialMessages(outbound, agent); err != nil {
-		close(outbound)
+	if err := sendInitialMessages(criticalOutbound, agent); err != nil {
+		cancelConnection()
 		return credentialsState, err
 	}
 
-	heartbeatTicker := newTicker(schedule.config(pollHeartbeat))
-	if heartbeatTicker != nil {
-		defer heartbeatTicker.Stop()
-	}
-	runtimeTicker := newTicker(schedule.config(pollRuntime))
-	if runtimeTicker != nil {
-		defer runtimeTicker.Stop()
-	}
-	usageTicker := newTicker(schedule.config(pollUsage))
-	if usageTicker != nil {
-		defer usageTicker.Stop()
-	}
-	ipPollTicker := newTicker(schedule.config(pollIPPoll))
-	if ipPollTicker != nil {
-		defer ipPollTicker.Stop()
-	}
-	ipUploadTicker := newTicker(schedule.config(pollIPUpload))
-	if ipUploadTicker != nil {
-		defer ipUploadTicker.Stop()
-	}
 	credentialRefreshTimer := newRuntimeCredentialRefreshTimer(credentialsState, time.Now())
 	if credentialRefreshTimer != nil {
 		defer credentialRefreshTimer.Stop()
 	}
+	startPollingWorkers(connectionCtx, schedule, agent, telemetryOutbound)
 
 	for {
 		select {
 		case err := <-sendErrors:
-			close(outbound)
+			cancelConnection()
 			return credentialsState, err
-		case <-tickerChan(heartbeatTicker):
-			outbound <- heartbeatMessage(agent, time.Now())
-		case <-tickerChan(runtimeTicker):
-			snapshot, err := agent.BuildRuntimeSnapshot(context.Background(), time.Now())
-			if err != nil {
-				log.Printf("agent runtime snapshot failed: %v", err)
-				continue
-			}
-			outbound <- &gatewayrpc.ConnectClientMessage{
-				Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: snapshot},
-			}
-		case <-tickerChan(usageTicker):
-			snapshot, err := agent.BuildUsageSnapshot(context.Background(), time.Now())
-			if err != nil {
-				log.Printf("agent usage snapshot failed: %v", err)
-				continue
-			}
-			outbound <- &gatewayrpc.ConnectClientMessage{
-				Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: snapshot},
-			}
 		case <-timerChan(credentialRefreshTimer):
-			updatedCredentials, err := refreshRuntimeCredentialsIfNeeded(context.Background(), stateFile, credentialsState, client, time.Now())
+			refreshCtx, cancelRefresh := context.WithTimeout(connectionCtx, certificateRefreshTimeout)
+			updatedCredentials, err := refreshRuntimeCredentialsIfNeeded(refreshCtx, stateFile, credentialsState, client, time.Now())
+			cancelRefresh()
 			if err != nil {
 				log.Printf("agent certificate renewal failed: %v", err)
 				resetRuntimeCredentialRefreshTimer(credentialRefreshTimer, runtimeCertificateRenewRetry)
 				continue
 			}
 			if updatedCredentials != credentialsState {
-				close(outbound)
+				cancelConnection()
 				return updatedCredentials, errRuntimeCredentialsRefreshed
 			}
 			resetRuntimeCredentialRefreshTimer(credentialRefreshTimer, runtimeCredentialRefreshDelay(credentialsState, time.Now()))
-		case <-tickerChan(ipPollTicker):
-			if err := agent.PollActiveIPs(context.Background()); err != nil {
-				log.Printf("agent ip poll failed: %v", err)
-			}
-		case <-tickerChan(ipUploadTicker):
-			snapshot := agent.BuildIPSnapshot(time.Now())
-			if len(snapshot.ClientIps) == 0 {
-				continue
-			}
-			outbound <- &gatewayrpc.ConnectClientMessage{
-				Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: snapshot},
-			}
 		}
 	}
 }
@@ -426,7 +693,9 @@ func timerChan(timer *time.Timer) <-chan time.Time {
 func sendInitialMessages(outbound chan<- *gatewayrpc.ConnectClientMessage, agent *runtime.Agent) error {
 	outbound <- heartbeatMessage(agent, time.Now())
 
-	runtimeSnapshot, err := agent.BuildRuntimeSnapshot(context.Background(), time.Now())
+	runtimeCtx, cancelRuntime := context.WithTimeout(context.Background(), runtimeOperationTimeout)
+	runtimeSnapshot, err := agent.BuildRuntimeSnapshot(runtimeCtx, time.Now())
+	cancelRuntime()
 	if err != nil {
 		return err
 	}
@@ -434,7 +703,9 @@ func sendInitialMessages(outbound chan<- *gatewayrpc.ConnectClientMessage, agent
 		Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: runtimeSnapshot},
 	}
 
-	usageSnapshot, err := agent.BuildUsageSnapshot(context.Background(), time.Now())
+	usageCtx, cancelUsage := context.WithTimeout(context.Background(), runtimeOperationTimeout)
+	usageSnapshot, err := agent.BuildUsageSnapshot(usageCtx, time.Now())
+	cancelUsage()
 	if err != nil {
 		return err
 	}
@@ -442,7 +713,8 @@ func sendInitialMessages(outbound chan<- *gatewayrpc.ConnectClientMessage, agent
 		Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: usageSnapshot},
 	}
 
-	if err := agent.PollActiveIPs(context.Background()); err == nil {
+	ipPollCtx, cancelIPPoll := context.WithTimeout(context.Background(), runtimeOperationTimeout)
+	if err := agent.PollActiveIPs(ipPollCtx); err == nil {
 		ipSnapshot := agent.BuildIPSnapshot(time.Now())
 		if len(ipSnapshot.ClientIps) > 0 {
 			outbound <- &gatewayrpc.ConnectClientMessage{
@@ -450,6 +722,7 @@ func sendInitialMessages(outbound chan<- *gatewayrpc.ConnectClientMessage, agent
 			}
 		}
 	}
+	cancelIPPoll()
 
 	return nil
 }
@@ -462,6 +735,18 @@ func heartbeatMessage(agent *runtime.Agent, observedAt time.Time) *gatewayrpc.Co
 				NodeName:       agent.NodeName(),
 				FleetGroupId:   agent.FleetGroupID(),
 				Version:        agent.Version(),
+				ObservedAtUnix: observedAt.UTC().Unix(),
+			},
+		},
+	}
+}
+
+func jobAcknowledgementMessage(agentID string, jobID string, observedAt time.Time) *gatewayrpc.ConnectClientMessage {
+	return &gatewayrpc.ConnectClientMessage{
+		Body: &gatewayrpc.ConnectClientMessage_JobAcknowledgement{
+			JobAcknowledgement: &gatewayrpc.JobAcknowledgement{
+				AgentId:        agentID,
+				JobId:          jobID,
 				ObservedAtUnix: observedAt.UTC().Unix(),
 			},
 		},
