@@ -39,6 +39,22 @@ func TestNewClientAcceptsLoopbackEndpoint(t *testing.T) {
 	}
 }
 
+func TestNewClientUsesTimedHTTPClientWhenDefaulted(t *testing.T) {
+	client, err := NewClient(Config{
+		BaseURL: "http://127.0.0.1:8080",
+	}, nil)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	if client.httpClient == nil {
+		t.Fatal("client.httpClient = nil, want allocated client")
+	}
+	if client.httpClient.Timeout <= 0 {
+		t.Fatalf("client.httpClient.Timeout = %s, want > 0", client.httpClient.Timeout)
+	}
+}
+
 func TestClientFetchRuntimeStateUsesLoopbackAPI(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

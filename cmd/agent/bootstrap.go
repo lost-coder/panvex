@@ -17,6 +17,7 @@ import (
 )
 
 const agentBootstrapPath = "/api/agent/bootstrap"
+const bootstrapRequestTimeout = 15 * time.Second
 
 type bootstrapConfig struct {
 	PanelURL        string
@@ -103,7 +104,9 @@ func bootstrapAgent(ctx context.Context, client *http.Client, config bootstrapCo
 	request.Header.Set("Content-Type", "application/json")
 
 	if client == nil {
-		client = http.DefaultClient
+		client = &http.Client{
+			Timeout: bootstrapRequestTimeout,
+		}
 	}
 
 	response, err := client.Do(request)

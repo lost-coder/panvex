@@ -246,6 +246,68 @@ func TestAgentHandleJobExecutesRuntimeReload(t *testing.T) {
 	}
 }
 
+func TestAgentHandleJobDeduplicatesRepeatedDelivery(t *testing.T) {
+	client := &fakeTelemtClient{}
+	agent := New(Config{
+		AgentID:      "agent-1",
+		NodeName:     "node-a",
+		FleetGroupID: "ams-1",
+		Version:      "1.0.0",
+	}, client)
+
+	job := &gatewayrpc.JobCommand{
+		Id:             "job-duplicate",
+		Action:         "runtime.reload",
+		IdempotencyKey: "key-dup",
+	}
+
+	first := agent.HandleJob(context.Background(), job, time.Date(2026, time.March, 18, 10, 0, 0, 0, time.UTC))
+	second := agent.HandleJob(context.Background(), job, time.Date(2026, time.March, 18, 10, 0, 5, 0, time.UTC))
+
+	if !first.Success {
+		t.Fatalf("first HandleJob() Success = false, want true, message = %q", first.Message)
+	}
+	if !second.Success {
+		t.Fatalf("second HandleJob() Success = false, want true, message = %q", second.Message)
+	}
+	if second.Message != first.Message {
+		t.Fatalf("second HandleJob() Message = %q, want %q", second.Message, first.Message)
+	}
+	if client.reloadCalls != 1 {
+		t.Fatalf("reload call count = %d, want %d", client.reloadCalls, 1)
+	}
+}
+
+func TestAgentHandleJobReexecutesAfterDedupRetentionWindow(t *testing.T) {
+	client := &fakeTelemtClient{}
+	agent := New(Config{
+		AgentID:      "agent-1",
+		NodeName:     "node-a",
+		FleetGroupID: "ams-1",
+		Version:      "1.0.0",
+	}, client)
+	agent.completedJobRetention = time.Second
+
+	job := &gatewayrpc.JobCommand{
+		Id:             "job-expired-cache",
+		Action:         "runtime.reload",
+		IdempotencyKey: "key-expired-cache",
+	}
+
+	first := agent.HandleJob(context.Background(), job, time.Date(2026, time.March, 18, 10, 0, 0, 0, time.UTC))
+	second := agent.HandleJob(context.Background(), job, time.Date(2026, time.March, 18, 10, 0, 2, 0, time.UTC))
+
+	if !first.Success {
+		t.Fatalf("first HandleJob() Success = false, want true, message = %q", first.Message)
+	}
+	if !second.Success {
+		t.Fatalf("second HandleJob() Success = false, want true, message = %q", second.Message)
+	}
+	if client.reloadCalls != 2 {
+		t.Fatalf("reload call count = %d, want %d", client.reloadCalls, 2)
+	}
+}
+
 func TestAgentHandleJobCreatesManagedClientAndReturnsConnectionLink(t *testing.T) {
 	client := &fakeTelemtClient{
 		createResult: telemt.ClientApplyResult{
@@ -388,6 +450,7 @@ type fakeTelemtClient struct {
 	metricsUptime     float64
 	activeIPs         []telemt.UserActiveIPs
 	reloadCalled      bool
+	reloadCalls       int
 	createdClient     telemt.ManagedClient
 	updatedClient     telemt.ManagedClient
 	deletedClientName string
@@ -415,6 +478,7 @@ func (c *fakeTelemtClient) FetchActiveIPs(context.Context) ([]telemt.UserActiveI
 }
 
 func (c *fakeTelemtClient) ExecuteRuntimeReload(context.Context) error {
+	c.reloadCalls++
 	c.reloadCalled = true
 	return nil
 }

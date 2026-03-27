@@ -15,6 +15,196 @@ import (
 	"google.golang.org/grpc"
 )
 
+func TestJobPipelineForActionRoutesRuntimeReload(t *testing.T) {
+	pipeline := jobPipelineForAction("runtime.reload")
+	if pipeline != jobPipelineRuntimeReload {
+		t.Fatalf("jobPipelineForAction(runtime.reload) = %q, want %q", pipeline, jobPipelineRuntimeReload)
+	}
+}
+
+func TestJobPipelineForActionRoutesClientMutations(t *testing.T) {
+	clientActions := []string{
+		"client.create",
+		"client.update",
+		"client.rotate_secret",
+		"client.delete",
+	}
+	for _, action := range clientActions {
+		pipeline := jobPipelineForAction(action)
+		if pipeline != jobPipelineClientMutation {
+			t.Fatalf("jobPipelineForAction(%q) = %q, want %q", action, pipeline, jobPipelineClientMutation)
+		}
+	}
+}
+
+func TestJobPipelineForActionRoutesUnknownActionsToDefault(t *testing.T) {
+	pipeline := jobPipelineForAction("users.create")
+	if pipeline != jobPipelineDefault {
+		t.Fatalf("jobPipelineForAction(users.create) = %q, want %q", pipeline, jobPipelineDefault)
+	}
+}
+
+func TestJobWorkerCountForPipelineMatchesConcurrencyPolicy(t *testing.T) {
+	if count := jobWorkerCountForPipeline(jobPipelineRuntimeReload); count != 2 {
+		t.Fatalf("jobWorkerCountForPipeline(runtime_reload) = %d, want %d", count, 2)
+	}
+	if count := jobWorkerCountForPipeline(jobPipelineClientMutation); count != 1 {
+		t.Fatalf("jobWorkerCountForPipeline(client_mutation) = %d, want %d", count, 1)
+	}
+	if count := jobWorkerCountForPipeline(jobPipelineDefault); count != 1 {
+		t.Fatalf("jobWorkerCountForPipeline(default) = %d, want %d", count, 1)
+	}
+}
+
+func TestEnqueueOutboundMessageReturnsTrueWhenQueued(t *testing.T) {
+	connectionCtx := context.Background()
+	outbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
+	message := heartbeatMessageForTest("node-a")
+
+	queued := enqueueOutboundMessage(connectionCtx, outbound, message)
+	if !queued {
+		t.Fatal("enqueueOutboundMessage() = false, want true")
+	}
+	if len(outbound) != 1 {
+		t.Fatalf("len(outbound) = %d, want %d", len(outbound), 1)
+	}
+}
+
+func TestEnqueueOutboundMessageReturnsFalseWhenQueueFull(t *testing.T) {
+	connectionCtx := context.Background()
+	outbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
+	outbound <- heartbeatMessageForTest("stale")
+
+	queued := enqueueOutboundMessage(connectionCtx, outbound, heartbeatMessageForTest("latest"))
+	if queued {
+		t.Fatal("enqueueOutboundMessage() = true, want false")
+	}
+	if len(outbound) != 1 {
+		t.Fatalf("len(outbound) = %d, want %d", len(outbound), 1)
+	}
+}
+
+func TestEnqueueOutboundMessageReturnsFalseWhenContextCancelled(t *testing.T) {
+	connectionCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	outbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
+	queued := enqueueOutboundMessage(connectionCtx, outbound, heartbeatMessageForTest("node-a"))
+	if queued {
+		t.Fatal("enqueueOutboundMessage() = true, want false")
+	}
+	if len(outbound) != 0 {
+		t.Fatalf("len(outbound) = %d, want %d", len(outbound), 0)
+	}
+}
+
+func TestJobInflightTrackerReserveRelease(t *testing.T) {
+	tracker := newJobInflightTracker()
+
+	if !tracker.reserve("job-1") {
+		t.Fatal("reserve(job-1) = false, want true")
+	}
+	if tracker.reserve("job-1") {
+		t.Fatal("reserve(job-1) = true, want false for duplicate")
+	}
+
+	tracker.release("job-1")
+
+	if !tracker.reserve("job-1") {
+		t.Fatal("reserve(job-1) after release = false, want true")
+	}
+}
+
+func TestEnqueueReceivedJobQueuesAndAcknowledges(t *testing.T) {
+	connectionCtx := context.Background()
+	tracker := newJobInflightTracker()
+	jobQueues := map[jobPipeline]chan *gatewayrpc.JobCommand{
+		jobPipelineRuntimeReload: make(chan *gatewayrpc.JobCommand, 1),
+		jobPipelineClientMutation: make(chan *gatewayrpc.JobCommand, 1),
+		jobPipelineDefault:       make(chan *gatewayrpc.JobCommand, 1),
+	}
+	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
+	job := &gatewayrpc.JobCommand{
+		Id:     "job-1",
+		Action: "runtime.reload",
+	}
+
+	queued := enqueueReceivedJob(connectionCtx, "agent-1", tracker, jobQueues, criticalOutbound, job)
+	if !queued {
+		t.Fatal("enqueueReceivedJob() = false, want true")
+	}
+	if len(jobQueues[jobPipelineRuntimeReload]) != 1 {
+		t.Fatalf("len(runtime reload queue) = %d, want %d", len(jobQueues[jobPipelineRuntimeReload]), 1)
+	}
+	if len(criticalOutbound) != 1 {
+		t.Fatalf("len(criticalOutbound) = %d, want %d", len(criticalOutbound), 1)
+	}
+
+	ack := <-criticalOutbound
+	if ack.GetJobAcknowledgement() == nil {
+		t.Fatal("ack body = nil, want job acknowledgement")
+	}
+	if ack.GetJobAcknowledgement().GetJobId() != "job-1" {
+		t.Fatalf("ack job id = %q, want %q", ack.GetJobAcknowledgement().GetJobId(), "job-1")
+	}
+}
+
+func TestEnqueueReceivedJobSkipsDuplicateQueueEntry(t *testing.T) {
+	connectionCtx := context.Background()
+	tracker := newJobInflightTracker()
+	jobQueues := map[jobPipeline]chan *gatewayrpc.JobCommand{
+		jobPipelineRuntimeReload: make(chan *gatewayrpc.JobCommand, 2),
+		jobPipelineClientMutation: make(chan *gatewayrpc.JobCommand, 1),
+		jobPipelineDefault:       make(chan *gatewayrpc.JobCommand, 1),
+	}
+	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 2)
+	job := &gatewayrpc.JobCommand{
+		Id:     "job-dup",
+		Action: "runtime.reload",
+	}
+
+	firstQueued := enqueueReceivedJob(connectionCtx, "agent-1", tracker, jobQueues, criticalOutbound, job)
+	secondQueued := enqueueReceivedJob(connectionCtx, "agent-1", tracker, jobQueues, criticalOutbound, job)
+
+	if !firstQueued {
+		t.Fatal("first enqueueReceivedJob() = false, want true")
+	}
+	if !secondQueued {
+		t.Fatal("second enqueueReceivedJob() = false, want true")
+	}
+	if len(jobQueues[jobPipelineRuntimeReload]) != 1 {
+		t.Fatalf("len(runtime reload queue) = %d, want %d", len(jobQueues[jobPipelineRuntimeReload]), 1)
+	}
+	if len(criticalOutbound) != 2 {
+		t.Fatalf("len(criticalOutbound) = %d, want %d", len(criticalOutbound), 2)
+	}
+}
+
+func TestEnqueueReceivedJobQueuesCommandWithoutIdentifier(t *testing.T) {
+	connectionCtx := context.Background()
+	tracker := newJobInflightTracker()
+	jobQueues := map[jobPipeline]chan *gatewayrpc.JobCommand{
+		jobPipelineRuntimeReload: make(chan *gatewayrpc.JobCommand, 1),
+		jobPipelineClientMutation: make(chan *gatewayrpc.JobCommand, 1),
+		jobPipelineDefault:       make(chan *gatewayrpc.JobCommand, 1),
+	}
+	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
+	job := &gatewayrpc.JobCommand{
+		Action: "runtime.reload",
+	}
+
+	queued := enqueueReceivedJob(connectionCtx, "agent-1", tracker, jobQueues, criticalOutbound, job)
+	if !queued {
+		t.Fatal("enqueueReceivedJob() = false, want true")
+	}
+	if len(jobQueues[jobPipelineRuntimeReload]) != 1 {
+		t.Fatalf("len(runtime reload queue) = %d, want %d", len(jobQueues[jobPipelineRuntimeReload]), 1)
+	}
+	if len(criticalOutbound) != 1 {
+		t.Fatalf("len(criticalOutbound) = %d, want %d", len(criticalOutbound), 1)
+	}
+}
+
 func TestLoadRuntimeCredentialsReturnsSavedState(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "agent-state.json")
 	expected := agentstate.Credentials{
@@ -38,6 +228,19 @@ func TestLoadRuntimeCredentialsReturnsSavedState(t *testing.T) {
 	}
 	if credentials.GRPCEndpoint != expected.GRPCEndpoint {
 		t.Fatalf("credentials.GRPCEndpoint = %q, want %q", credentials.GRPCEndpoint, expected.GRPCEndpoint)
+	}
+}
+
+func heartbeatMessageForTest(nodeName string) *gatewayrpc.ConnectClientMessage {
+	return &gatewayrpc.ConnectClientMessage{
+		Body: &gatewayrpc.ConnectClientMessage_Heartbeat{
+			Heartbeat: &gatewayrpc.Heartbeat{
+				NodeName:       nodeName,
+				FleetGroupId:   "default",
+				Version:        "1.0.0",
+				ObservedAtUnix: 1,
+			},
+		},
 	}
 }
 

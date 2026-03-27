@@ -1403,11 +1403,11 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 		IdempotencyKey: "control-room-failed",
 		ActorID:        "user-1",
 		ReadOnlyAgents: map[string]bool{"agent-3": false},
-	}, currentTime.Add(-70*time.Second))
+	}, currentTime.Add(-50*time.Second))
 	if err != nil {
 		t.Fatalf("Enqueue(failed) error = %v", err)
 	}
-	server.jobs.RecordResult("agent-3", failedJob.ID, false, "connection lost", "", currentTime.Add(-60*time.Second))
+	server.jobs.RecordResult("agent-3", failedJob.ID, false, "connection lost", "", currentTime.Add(-40*time.Second))
 
 	currentTime = currentTime.Add(-30 * time.Second)
 	server.appendAudit("user-1", "agents.enrollment.create", "token-1", map[string]any{

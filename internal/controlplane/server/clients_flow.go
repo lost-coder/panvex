@@ -366,7 +366,7 @@ func (s *Server) enqueueClientJob(actorID string, action jobs.Action, client man
 	}
 	s.mu.RUnlock()
 
-	return s.jobs.Enqueue(jobs.CreateJobInput{
+	job, err := s.jobs.Enqueue(jobs.CreateJobInput{
 		Action:         action,
 		TargetAgentIDs: targetAgentIDs,
 		TTL:            clientJobTTL,
@@ -375,6 +375,12 @@ func (s *Server) enqueueClientJob(actorID string, action jobs.Action, client man
 		ReadOnlyAgents: readOnlyAgents,
 		PayloadJSON:    string(payloadJSON),
 	}, observedAt)
+	if err != nil {
+		return jobs.Job{}, err
+	}
+	s.notifyAgentSessions(job.TargetAgentIDs)
+
+	return job, nil
 }
 
 func (s *Server) replaceClientState(client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment) error {
@@ -524,13 +530,13 @@ func (s *Server) recordClientJobResult(agentID string, jobID string, success boo
 	}
 	s.clientDeployments[payload.ClientID][agentID] = deployment
 	s.clients[payload.ClientID] = client
+	s.mu.Unlock()
 
 	if s.store != nil {
 		if err := s.store.PutClientDeployment(context.Background(), clientDeploymentToRecord(deployment)); err != nil {
 			log.Printf("control-plane client deployment persistence failed for client %q on agent %q: %v", payload.ClientID, agentID, err)
 		}
 	}
-	s.mu.Unlock()
 }
 
 func (s *Server) jobByID(jobID string) (jobs.Job, bool) {

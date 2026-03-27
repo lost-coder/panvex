@@ -78,6 +78,7 @@ func (s *Server) enrollAgent(request agentEnrollmentRequest, now time.Time) (age
 		Version:      request.Version,
 		LastSeenAt:   now.UTC(),
 	}
+	s.mu.Unlock()
 
 	if s.store != nil {
 		if token.FleetGroupID != "" {
@@ -86,16 +87,15 @@ func (s *Server) enrollAgent(request agentEnrollmentRequest, now time.Time) (age
 				Name:      token.FleetGroupID,
 				CreatedAt: now.UTC(),
 			}); err != nil {
-				s.mu.Unlock()
 				return agentEnrollmentResponse{}, err
 			}
 		}
 		if err := s.store.PutAgent(context.Background(), agentToRecord(agent)); err != nil {
-			s.mu.Unlock()
 			return agentEnrollmentResponse{}, err
 		}
 	}
 
+	s.mu.Lock()
 	s.agents[agentID] = agent
 	agentEvent := agent
 	s.mu.Unlock()
@@ -168,26 +168,25 @@ func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) error {
 		}
 		metricSnapshot = &metric
 	}
+	s.mu.Unlock()
 
 	if s.store != nil {
 		if err := s.store.PutAgent(context.Background(), agentToRecord(agent)); err != nil {
-			s.mu.Unlock()
 			return err
 		}
 		for _, instance := range instances {
 			if err := s.store.PutInstance(context.Background(), instanceToRecord(instance)); err != nil {
-				s.mu.Unlock()
 				return err
 			}
 		}
 		if metricSnapshot != nil {
 			if err := s.store.AppendMetricSnapshot(context.Background(), metricSnapshotToRecord(*metricSnapshot)); err != nil {
-				s.mu.Unlock()
 				return err
 			}
 		}
 	}
 
+	s.mu.Lock()
 	s.agents[snapshot.AgentID] = agent
 	for _, instance := range instances {
 		s.instances[instance.ID] = instance
