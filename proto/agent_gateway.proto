@@ -114,6 +114,24 @@ message RuntimeSnapshot {
   double uptime_seconds = 24;
 }
 
+message RuntimeDiagnosticsSnapshot {
+  string state = 1;
+  string state_reason = 2;
+  string system_info_json = 3;
+  string effective_limits_json = 4;
+  string security_posture_json = 5;
+  string minimal_all_json = 6;
+  string me_pool_json = 7;
+}
+
+message RuntimeSecurityInventorySnapshot {
+  string state = 1;
+  string state_reason = 2;
+  bool enabled = 3;
+  int32 entries_total = 4;
+  string entries_json = 5;
+}
+
 message Snapshot {
   string agent_id = 1;
   string node_name = 2;
@@ -130,6 +148,8 @@ message Snapshot {
   int32 total_active_users = 14;
   bool has_client_usage = 15;
   bool has_client_ips = 16;
+  RuntimeDiagnosticsSnapshot runtime_diagnostics = 17;
+  RuntimeSecurityInventorySnapshot runtime_security_inventory = 18;
 }
 
 message JobResult {

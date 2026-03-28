@@ -10,26 +10,27 @@ import (
 
 func (s *Store) PutUserAppearance(ctx context.Context, appearance storage.UserAppearanceRecord) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO user_appearance (user_id, theme, density, updated_at_unix)
-		VALUES (?, ?, ?, ?)
+		INSERT INTO user_appearance (user_id, theme, density, help_mode, updated_at_unix)
+		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(user_id) DO UPDATE SET
 			theme = excluded.theme,
 			density = excluded.density,
+			help_mode = excluded.help_mode,
 			updated_at_unix = excluded.updated_at_unix
-	`, appearance.UserID, appearance.Theme, appearance.Density, toUnix(appearance.UpdatedAt))
+	`, appearance.UserID, appearance.Theme, appearance.Density, appearance.HelpMode, toUnix(appearance.UpdatedAt))
 	return err
 }
 
 func (s *Store) GetUserAppearance(ctx context.Context, userID string) (storage.UserAppearanceRecord, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT user_id, theme, density, updated_at_unix
+		SELECT user_id, theme, density, help_mode, updated_at_unix
 		FROM user_appearance
 		WHERE user_id = ?
 	`, userID)
 
 	var appearance storage.UserAppearanceRecord
 	var updatedAt int64
-	if err := row.Scan(&appearance.UserID, &appearance.Theme, &appearance.Density, &updatedAt); err != nil {
+	if err := row.Scan(&appearance.UserID, &appearance.Theme, &appearance.Density, &appearance.HelpMode, &updatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return defaultUserAppearanceRecord(userID), nil
 		}
@@ -42,7 +43,7 @@ func (s *Store) GetUserAppearance(ctx context.Context, userID string) (storage.U
 
 func (s *Store) ListUserAppearances(ctx context.Context) ([]storage.UserAppearanceRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT user_id, theme, density, updated_at_unix
+		SELECT user_id, theme, density, help_mode, updated_at_unix
 		FROM user_appearance
 		ORDER BY user_id ASC
 	`)
@@ -55,7 +56,7 @@ func (s *Store) ListUserAppearances(ctx context.Context) ([]storage.UserAppearan
 	for rows.Next() {
 		var appearance storage.UserAppearanceRecord
 		var updatedAt int64
-		if err := rows.Scan(&appearance.UserID, &appearance.Theme, &appearance.Density, &updatedAt); err != nil {
+		if err := rows.Scan(&appearance.UserID, &appearance.Theme, &appearance.Density, &appearance.HelpMode, &updatedAt); err != nil {
 			return nil, err
 		}
 		appearance.UpdatedAt = fromUnix(updatedAt)
@@ -73,5 +74,6 @@ func defaultUserAppearanceRecord(userID string) storage.UserAppearanceRecord {
 		UserID:  userID,
 		Theme:   "system",
 		Density: "comfortable",
+		HelpMode: "basic",
 	}
 }

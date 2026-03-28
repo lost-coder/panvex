@@ -41,6 +41,13 @@ func TestStoreContract(t *testing.T) {
 func resetForTest(store *Store) error {
 	_, err := store.db.Exec(`
 		TRUNCATE TABLE
+			telemt_runtime_events,
+			telemt_runtime_upstreams_current,
+			telemt_runtime_dcs_current,
+			telemt_diagnostics_current,
+			telemt_security_inventory_current,
+			telemt_runtime_current,
+			telemt_detail_boosts,
 			job_targets,
 			jobs,
 			client_deployments,

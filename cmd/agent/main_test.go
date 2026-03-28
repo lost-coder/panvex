@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/panvex/panvex/internal/agent/runtime"
+	"github.com/panvex/panvex/internal/agent/telemt"
 	agentstate "github.com/panvex/panvex/internal/agent/state"
 	"github.com/panvex/panvex/internal/gatewayrpc"
 	"google.golang.org/grpc"
@@ -19,6 +21,13 @@ func TestJobPipelineForActionRoutesRuntimeReload(t *testing.T) {
 	pipeline := jobPipelineForAction("runtime.reload")
 	if pipeline != jobPipelineRuntimeReload {
 		t.Fatalf("jobPipelineForAction(runtime.reload) = %q, want %q", pipeline, jobPipelineRuntimeReload)
+	}
+}
+
+func TestJobPipelineForActionRoutesDiagnosticsRefreshToRuntimePipeline(t *testing.T) {
+	pipeline := jobPipelineForAction("telemetry.refresh_diagnostics")
+	if pipeline != jobPipelineRuntimeReload {
+		t.Fatalf("jobPipelineForAction(telemetry.refresh_diagnostics) = %q, want %q", pipeline, jobPipelineRuntimeReload)
 	}
 }
 
@@ -53,6 +62,117 @@ func TestJobWorkerCountForPipelineMatchesConcurrencyPolicy(t *testing.T) {
 	}
 	if count := jobWorkerCountForPipeline(jobPipelineDefault); count != 1 {
 		t.Fatalf("jobWorkerCountForPipeline(default) = %d, want %d", count, 1)
+	}
+}
+
+func TestShouldSendRuntimeSnapshotAfterJobOnlyForSuccessfulDiagnosticsRefresh(t *testing.T) {
+	if !shouldSendRuntimeSnapshotAfterJob("telemetry.refresh_diagnostics", true) {
+		t.Fatal("shouldSendRuntimeSnapshotAfterJob(refresh, true) = false, want true")
+	}
+	if shouldSendRuntimeSnapshotAfterJob("telemetry.refresh_diagnostics", false) {
+		t.Fatal("shouldSendRuntimeSnapshotAfterJob(refresh, false) = true, want false")
+	}
+	if shouldSendRuntimeSnapshotAfterJob("runtime.reload", true) {
+		t.Fatal("shouldSendRuntimeSnapshotAfterJob(runtime.reload, true) = true, want false")
+	}
+}
+
+func TestRunJobWorkerSendsDiagnosticsSnapshotBeforeSuccessResult(t *testing.T) {
+	connectionCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	telemtClient := &fakeDiagnosticsRefreshTelemtClient{
+		state: telemt.RuntimeState{
+			Version: "2026.03",
+			Gates: telemt.RuntimeGates{
+				AcceptingNewConnections: true,
+				MERuntimeReady:          true,
+				StartupStatus:           "ready",
+				StartupStage:            "steady_state",
+				StartupProgressPct:      100,
+			},
+			Initialization: telemt.RuntimeInitialization{
+				Status:        "ready",
+				CurrentStage:  "steady_state",
+				ProgressPct:   100,
+				TransportMode: "direct",
+			},
+			ConnectionTotals: telemt.RuntimeConnectionTotals{
+				CurrentConnections: 4,
+				ActiveUsers:        2,
+			},
+			Diagnostics: telemt.RuntimeDiagnostics{
+				State:          "fresh",
+				SystemInfoJSON: `{"version":"2026.03"}`,
+			},
+		},
+	}
+	agent := runtime.New(runtime.Config{
+		AgentID:      "agent-1",
+		NodeName:     "node-a",
+		FleetGroupID: "default",
+		Version:      "test",
+	}, telemtClient)
+
+	tracker := newJobInflightTracker()
+	jobQueue := make(chan *gatewayrpc.JobCommand, 1)
+	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 4)
+
+	go runJobWorker(connectionCtx, agent, tracker, jobQueue, criticalOutbound)
+
+	jobQueue <- &gatewayrpc.JobCommand{
+		Id:     "job-refresh",
+		Action: "telemetry.refresh_diagnostics",
+	}
+
+	first := <-criticalOutbound
+	second := <-criticalOutbound
+
+	if first.GetSnapshot() == nil {
+		t.Fatal("first outbound message = nil snapshot, want diagnostics snapshot first")
+	}
+	if second.GetJobResult() == nil {
+		t.Fatal("second outbound message = nil job result, want success result after snapshot")
+	}
+	if !second.GetJobResult().GetSuccess() {
+		t.Fatalf("job result success = false, want true: %s", second.GetJobResult().GetMessage())
+	}
+}
+
+func TestRunJobWorkerMarksDiagnosticsRefreshFailedWhenSnapshotBuildFails(t *testing.T) {
+	connectionCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	telemtClient := &fakeDiagnosticsRefreshTelemtClient{
+		fetchErrAfterInvalidation: true,
+	}
+	agent := runtime.New(runtime.Config{
+		AgentID:      "agent-1",
+		NodeName:     "node-a",
+		FleetGroupID: "default",
+		Version:      "test",
+	}, telemtClient)
+
+	tracker := newJobInflightTracker()
+	jobQueue := make(chan *gatewayrpc.JobCommand, 1)
+	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 2)
+
+	go runJobWorker(connectionCtx, agent, tracker, jobQueue, criticalOutbound)
+
+	jobQueue <- &gatewayrpc.JobCommand{
+		Id:     "job-refresh-fail",
+		Action: "telemetry.refresh_diagnostics",
+	}
+
+	message := <-criticalOutbound
+	if message.GetJobResult() == nil {
+		t.Fatal("outbound message = nil job result, want failure result")
+	}
+	if message.GetJobResult().GetSuccess() {
+		t.Fatal("job result success = true, want false when snapshot build fails")
+	}
+	if !strings.Contains(message.GetJobResult().GetMessage(), "diagnostics refresh failed") {
+		t.Fatalf("job result message = %q, want diagnostics refresh failure", message.GetJobResult().GetMessage())
 	}
 }
 
@@ -518,6 +638,47 @@ type fakeCertificateRenewer struct {
 	request  *gatewayrpc.RenewCertificateRequest
 	response *gatewayrpc.RenewCertificateResponse
 	err      error
+}
+
+type fakeDiagnosticsRefreshTelemtClient struct {
+	state                     telemt.RuntimeState
+	invalidateSlowDataCalls   int
+	fetchErrAfterInvalidation bool
+}
+
+func (c *fakeDiagnosticsRefreshTelemtClient) FetchRuntimeState(context.Context) (telemt.RuntimeState, error) {
+	if c.fetchErrAfterInvalidation && c.invalidateSlowDataCalls > 0 {
+		return telemt.RuntimeState{}, context.DeadlineExceeded
+	}
+	return c.state, nil
+}
+
+func (c *fakeDiagnosticsRefreshTelemtClient) FetchClientUsageFromMetrics(context.Context) (telemt.ClientUsageMetricsSnapshot, error) {
+	return telemt.ClientUsageMetricsSnapshot{}, nil
+}
+
+func (c *fakeDiagnosticsRefreshTelemtClient) FetchActiveIPs(context.Context) ([]telemt.UserActiveIPs, error) {
+	return nil, nil
+}
+
+func (c *fakeDiagnosticsRefreshTelemtClient) ExecuteRuntimeReload(context.Context) error {
+	return nil
+}
+
+func (c *fakeDiagnosticsRefreshTelemtClient) CreateClient(context.Context, telemt.ManagedClient) (telemt.ClientApplyResult, error) {
+	return telemt.ClientApplyResult{}, nil
+}
+
+func (c *fakeDiagnosticsRefreshTelemtClient) UpdateClient(context.Context, telemt.ManagedClient) (telemt.ClientApplyResult, error) {
+	return telemt.ClientApplyResult{}, nil
+}
+
+func (c *fakeDiagnosticsRefreshTelemtClient) DeleteClient(context.Context, string) error {
+	return nil
+}
+
+func (c *fakeDiagnosticsRefreshTelemtClient) InvalidateSlowDataCache() {
+	c.invalidateSlowDataCalls++
 }
 
 func (r *fakeCertificateRenewer) RenewCertificate(_ context.Context, request *gatewayrpc.RenewCertificateRequest, _ ...grpc.CallOption) (*gatewayrpc.RenewCertificateResponse, error) {

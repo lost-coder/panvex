@@ -20,6 +20,7 @@ type telemtClient interface {
 	CreateClient(context.Context, telemt.ManagedClient) (telemt.ClientApplyResult, error)
 	UpdateClient(context.Context, telemt.ManagedClient) (telemt.ClientApplyResult, error)
 	DeleteClient(context.Context, string) error
+	InvalidateSlowDataCache()
 }
 
 // Config describes the control-plane identity reported by the agent.
@@ -228,6 +229,22 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 		},
 		RecentEvents: recentEvents,
 	}
+	snapshot.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{
+		State:               state.Diagnostics.State,
+		StateReason:         state.Diagnostics.StateReason,
+		SystemInfoJson:      state.Diagnostics.SystemInfoJSON,
+		EffectiveLimitsJson: state.Diagnostics.EffectiveLimitsJSON,
+		SecurityPostureJson: state.Diagnostics.SecurityPostureJSON,
+		MinimalAllJson:      state.Diagnostics.MinimalAllJSON,
+		MePoolJson:          state.Diagnostics.MEPoolJSON,
+	}
+	snapshot.RuntimeSecurityInventory = &gatewayrpc.RuntimeSecurityInventorySnapshot{
+		State:       state.SecurityInventory.State,
+		StateReason: state.SecurityInventory.StateReason,
+		Enabled:     state.SecurityInventory.Enabled,
+		EntriesTotal: int32(state.SecurityInventory.EntriesTotal),
+		EntriesJson: state.SecurityInventory.EntriesJSON,
+	}
 	snapshot.TotalActiveConnections = int32(state.ConnectionTotals.CurrentConnections)
 	snapshot.TotalActiveUsers = int32(state.ConnectionTotals.ActiveUsers)
 
@@ -360,6 +377,11 @@ func (a *Agent) HandleJob(ctx context.Context, job *gatewayrpc.JobCommand, obser
 
 		result.Success = true
 		result.Message = "runtime reloaded"
+		return result
+	case "telemetry.refresh_diagnostics":
+		a.telemt.InvalidateSlowDataCache()
+		result.Success = true
+		result.Message = "diagnostics refresh requested"
 		return result
 	case "client.create", "client.update", "client.rotate_secret", "client.delete":
 		var payload struct {

@@ -273,3 +273,68 @@ test("buildServerDetailViewModel does not round event age up to the next unit", 
 
   assert.equal(viewModel.recentEventItems[0]?.time, "59 min ago");
 });
+
+test("buildServerDetailViewModel maps me and routing diagnostics from telemetry detail payload", () => {
+  const agent = createAgent();
+
+  const viewModel = buildServerDetailViewModel(agent, {
+    nowMs: Date.parse("2026-03-24T12:00:00Z"),
+    detail: {
+      server: {
+        agent,
+        severity: "warn",
+        reason: "Runtime is degraded",
+        runtime_freshness: {
+          state: "fresh",
+          observed_at_unix: Math.floor(Date.parse("2026-03-24T11:58:00Z") / 1000),
+        },
+        detail_boost: {
+          active: true,
+          expires_at_unix: Math.floor(Date.parse("2026-03-24T12:10:00Z") / 1000),
+          remaining_seconds: 600,
+        },
+      },
+      diagnostics: {
+        state: "fresh",
+        state_reason: "",
+        system_info: {},
+        effective_limits: {},
+        security_posture: {},
+        minimal_all: {
+          enabled: true,
+          data: {
+            network_path: [
+              { dc: 2, selected_ip: "149.154.167.40" },
+              { dc: 4, selected_ip: "149.154.167.91" },
+            ],
+          },
+        },
+        me_pool: {
+          enabled: true,
+          data: {
+            active_generation: 7,
+            warm_generation: 8,
+            pending_hardswap_generation: 9,
+          },
+        },
+      },
+      security_inventory: {
+        state: "fresh",
+        state_reason: "",
+        enabled: true,
+        entries_total: 2,
+        entries: ["10.0.0.0/24", "192.168.0.0/24"],
+      },
+    },
+  });
+
+  assert.equal(viewModel.meDiagnosticsStateText, "Fresh");
+  assert.equal(viewModel.meDiagnosticsRows[0]?.label, "Active Generation");
+  assert.equal(viewModel.meDiagnosticsRows[0]?.valueText, "7");
+  assert.equal(viewModel.meDiagnosticsRows[1]?.valueText, "8");
+  assert.equal(viewModel.meDiagnosticsRows[2]?.valueText, "9");
+  assert.equal(viewModel.routingRows[0]?.label, "DC 2 Path");
+  assert.equal(viewModel.routingRows[0]?.valueText, "149.154.167.40");
+  assert.equal(viewModel.routingRows[1]?.label, "DC 4 Path");
+  assert.equal(viewModel.routingRows[1]?.valueText, "149.154.167.91");
+});

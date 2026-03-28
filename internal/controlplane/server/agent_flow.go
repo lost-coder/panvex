@@ -44,6 +44,8 @@ type agentSnapshot struct {
 	HasClientIPs bool
 	Runtime      *gatewayrpc.RuntimeSnapshot
 	HasRuntime   bool
+	RuntimeDiagnostics *gatewayrpc.RuntimeDiagnosticsSnapshot
+	RuntimeSecurityInventory *gatewayrpc.RuntimeSecurityInventorySnapshot
 	Metrics      map[string]uint64
 	ObservedAt   time.Time
 }
@@ -181,6 +183,48 @@ func (s *Server) applyAgentSnapshotWithContext(ctx context.Context, snapshot age
 	if s.store != nil {
 		if err := s.store.PutAgent(ctx, agentToRecord(agent)); err != nil {
 			return err
+		}
+		if snapshot.HasRuntime && snapshot.Runtime != nil {
+			if err := s.store.PutTelemetryRuntimeCurrent(ctx, runtimeCurrentRecordFromAgent(agent)); err != nil {
+				return err
+			}
+			if err := s.store.ReplaceTelemetryRuntimeDCs(ctx, agent.ID, runtimeDCRecordsFromAgent(agent)); err != nil {
+				return err
+			}
+			if err := s.store.ReplaceTelemetryRuntimeUpstreams(ctx, agent.ID, runtimeUpstreamRecordsFromAgent(agent)); err != nil {
+				return err
+			}
+			if err := s.store.AppendTelemetryRuntimeEvents(ctx, agent.ID, runtimeEventRecordsFromAgent(agent)); err != nil {
+				return err
+			}
+			if snapshot.RuntimeDiagnostics != nil {
+				if err := s.store.PutTelemetryDiagnosticsCurrent(ctx, storage.TelemetryDiagnosticsCurrentRecord{
+					AgentID:             agent.ID,
+					ObservedAt:          snapshot.ObservedAt.UTC(),
+					State:               snapshot.RuntimeDiagnostics.State,
+					StateReason:         snapshot.RuntimeDiagnostics.StateReason,
+					SystemInfoJSON:      snapshot.RuntimeDiagnostics.SystemInfoJson,
+					EffectiveLimitsJSON: snapshot.RuntimeDiagnostics.EffectiveLimitsJson,
+					SecurityPostureJSON: snapshot.RuntimeDiagnostics.SecurityPostureJson,
+					MinimalAllJSON:      snapshot.RuntimeDiagnostics.MinimalAllJson,
+					MEPoolJSON:          snapshot.RuntimeDiagnostics.MePoolJson,
+				}); err != nil {
+					return err
+				}
+			}
+			if snapshot.RuntimeSecurityInventory != nil {
+				if err := s.store.PutTelemetrySecurityInventoryCurrent(ctx, storage.TelemetrySecurityInventoryCurrentRecord{
+					AgentID:      agent.ID,
+					ObservedAt:   snapshot.ObservedAt.UTC(),
+					State:        snapshot.RuntimeSecurityInventory.State,
+					StateReason:  snapshot.RuntimeSecurityInventory.StateReason,
+					Enabled:      snapshot.RuntimeSecurityInventory.Enabled,
+					EntriesTotal: int(snapshot.RuntimeSecurityInventory.EntriesTotal),
+					EntriesJSON:  snapshot.RuntimeSecurityInventory.EntriesJson,
+				}); err != nil {
+					return err
+				}
+			}
 		}
 		for _, instance := range instances {
 			if err := s.store.PutInstance(ctx, instanceToRecord(instance)); err != nil {

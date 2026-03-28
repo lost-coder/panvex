@@ -1,5 +1,6 @@
 import { useState } from "react";
-import type { Agent } from "@/lib/api";
+import type { TelemetryServerSummary } from "@/lib/api";
+import type { TelemetryHelpMode } from "../telemetry/help-metadata";
 import {
   buildServerCardDetails,
   buildServerCardSummary,
@@ -9,15 +10,15 @@ import { ServerCardSummary } from "./server-card-summary";
 
 import "./server-card.css";
 
-export function ServerCard({ agent }: { agent: Agent }) {
+export function ServerCard({ item, helpMode = "basic" }: { item: TelemetryServerSummary; helpMode?: TelemetryHelpMode }) {
   const [expanded, setExpanded] = useState(false);
-  const summary = buildServerCardSummary(agent);
-  const details = buildServerCardDetails(agent);
-  const lastContactAgeText = formatLastContactAge(agent.last_seen_at);
+  const summary = buildServerCardSummary(item);
+  const details = buildServerCardDetails(item);
+  const lastContactAgeText = formatLastContactAge(item.agent.last_seen_at);
   const lastSeenText = `Last contact: ${lastContactAgeText}`;
   const hintText = details.isOffline
     ? `Server unavailable - last contact ${lastContactAgeText}`
-    : "Press for DC details";
+    : `${item.reason} - press for DC details`;
 
   return (
     <article className="server-card-shell" data-expanded={expanded}>
@@ -30,6 +31,7 @@ export function ServerCard({ agent }: { agent: Agent }) {
         >
           <ServerCardSummary
             expanded={expanded}
+            helpMode={helpMode}
             hintText={hintText}
             summary={summary}
           />
@@ -37,8 +39,9 @@ export function ServerCard({ agent }: { agent: Agent }) {
         <ServerCardDetails
           details={details}
           expanded={expanded}
+          helpMode={helpMode}
           lastSeenText={lastSeenText}
-          serverId={agent.id}
+          serverId={item.agent.id}
         />
       </div>
     </article>

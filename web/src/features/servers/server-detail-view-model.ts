@@ -1,4 +1,4 @@
-import type { Agent, RuntimeEvent } from "../../lib/api";
+import type { Agent, RuntimeEvent, TelemetryServerDetailResponse, TelemetryServerSummary } from "../../lib/api";
 
 type DetailTone = "good" | "warn" | "bad" | "accent";
 
@@ -12,6 +12,9 @@ export interface ServerDetailViewModel {
     lastSeenText: string;
     readOnlyText: string;
     certificateRecoveryText: string;
+    reasonText: string;
+    freshnessText: string;
+    detailBoostText: string;
   };
   overviewStats: Array<{
     label: string;
@@ -65,20 +68,69 @@ export interface ServerDetailViewModel {
     time: string;
     status: DetailTone;
   }>;
+  diagnosticsRows: Array<{
+    label: string;
+    valueText: string;
+  }>;
+  securityRows: Array<{
+    label: string;
+    valueText: string;
+  }>;
+  meDiagnosticsRows: Array<{
+    label: string;
+    valueText: string;
+  }>;
+  routingRows: Array<{
+    label: string;
+    valueText: string;
+  }>;
+  whitelistEntries: string[];
+  diagnosticsStateText: string;
+  securityStateText: string;
+  meDiagnosticsStateText: string;
 }
 
 const integerFormatter = new Intl.NumberFormat("en-US");
 const shortMonths = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 export function buildServerDetailViewModel(
-  agent: Agent,
-  options?: { nowMs?: number }
+  input: TelemetryServerSummary | Agent,
+  options?: { nowMs?: number; detail?: TelemetryServerDetailResponse }
 ): ServerDetailViewModel {
+  const summary = "agent" in input ? input : {
+    agent: input,
+    severity: input.presence_state === "offline" ? "bad" : input.presence_state === "degraded" || input.runtime?.degraded ? "warn" : "good",
+    reason: input.presence_state === "offline"
+      ? "Agent heartbeat is offline"
+      : input.runtime?.degraded
+        ? "Runtime is degraded"
+        : "Node is ready",
+    runtime_freshness: {
+      state: "fresh",
+      observed_at_unix: input.last_seen_at ? Math.floor(Date.parse(input.last_seen_at) / 1000) : 0,
+    },
+    detail_boost: {
+      active: false,
+      expires_at_unix: 0,
+      remaining_seconds: 0,
+    },
+  };
+  const agent = summary.agent;
   const nowMs = options?.nowMs ?? Date.now();
+  const detail = options?.detail;
   const status = resolveServerStatus(agent);
   const runtime = agent.runtime;
   const healthyUpstreams = runtime?.healthy_upstreams ?? 0;
   const totalUpstreams = runtime?.total_upstreams ?? 0;
+  const diagnosticsRows = buildDiagnosticsRows(detail);
+  const securityRows = buildSecurityRows(detail);
+  const meDiagnosticsRows = buildMEDiagnosticsRows(detail);
+  const routingRows = buildRoutingRows(detail);
+  const mePool = asRecord(detail?.diagnostics?.me_pool);
+  const meDiagnosticsStateText = buildSectionStateText(
+    mePool.enabled === false ? "disabled" : detail?.diagnostics?.state,
+    stringValue(mePool.reason) !== "—" ? stringValue(mePool.reason) : detail?.diagnostics?.state_reason
+  );
 
   return {
     header: {
@@ -90,6 +142,9 @@ export function buildServerDetailViewModel(
       lastSeenText: formatDateTime(agent.last_seen_at),
       readOnlyText: agent.read_only ? "Read-only" : "Writable",
       certificateRecoveryText: formatCertificateRecovery(agent.certificate_recovery),
+      reasonText: summary.reason,
+      freshnessText: humanizeToken(summary.runtime_freshness.state || "unknown"),
+      detailBoostText: summary.detail_boost.active ? "Boost active" : "Boost off",
     },
     overviewStats: [
       {
@@ -239,6 +294,14 @@ export function buildServerDetailViewModel(
         time: formatRelativeTimestamp(event, nowMs),
         status: mapEventTone(event.event_type || ""),
       })),
+    diagnosticsRows,
+    securityRows,
+    meDiagnosticsRows,
+    routingRows,
+    whitelistEntries: detail?.security_inventory?.entries ?? [],
+    diagnosticsStateText: buildSectionStateText(detail?.diagnostics?.state, detail?.diagnostics?.state_reason),
+    securityStateText: buildSectionStateText(detail?.security_inventory?.state, detail?.security_inventory?.state_reason),
+    meDiagnosticsStateText,
   };
 }
 
@@ -461,4 +524,134 @@ function mapEventTone(eventType: string): DetailTone {
   }
 
   return "accent";
+}
+
+function buildDiagnosticsRows(detail: TelemetryServerDetailResponse | undefined): Array<{ label: string; valueText: string }> {
+  if (!detail) {
+    return [];
+  }
+
+  const systemInfo = detail.diagnostics?.system_info ?? {};
+  const limits = detail.diagnostics?.effective_limits ?? {};
+  const userIPPolicy = asRecord(limits.user_ip_policy);
+  const middleProxy = asRecord(limits.middle_proxy);
+
+  return [
+    { label: "Telemt Version", valueText: stringValue(systemInfo.version) },
+    { label: "Target", valueText: compactJoin([stringValue(systemInfo.target_os), stringValue(systemInfo.target_arch)], " / ") },
+    { label: "Build Profile", valueText: stringValue(systemInfo.build_profile) },
+    { label: "Git Commit", valueText: stringValue(systemInfo.git_commit) },
+    { label: "Config Hash", valueText: stringValue(systemInfo.config_hash) },
+    { label: "Config Reloads", valueText: numberValue(systemInfo.config_reload_count) },
+    { label: "Update Every", valueText: secondsValue(limits.update_every_secs) },
+    { label: "ME Reinit", valueText: secondsValue(limits.me_reinit_every_secs) },
+    { label: "Force Close", valueText: secondsValue(limits.me_pool_force_close_secs) },
+    { label: "IP Policy", valueText: stringValue(userIPPolicy.mode) },
+    { label: "IP Window", valueText: secondsValue(userIPPolicy.window_secs) },
+    { label: "Floor Mode", valueText: stringValue(middleProxy.floor_mode) },
+    { label: "Writer Pick Mode", valueText: stringValue(middleProxy.writer_pick_mode) },
+  ].filter((row) => row.valueText !== "—");
+}
+
+function buildSecurityRows(detail: TelemetryServerDetailResponse | undefined): Array<{ label: string; valueText: string }> {
+  if (!detail) {
+    return [];
+  }
+
+  const posture = detail.diagnostics?.security_posture ?? {};
+  return [
+    { label: "API Read-Only", valueText: boolValue(posture.api_read_only) },
+    { label: "Whitelist Enabled", valueText: boolValue(posture.api_whitelist_enabled) },
+    { label: "Whitelist Entries", valueText: numberValue(posture.api_whitelist_entries) },
+    { label: "Auth Header", valueText: boolValue(posture.api_auth_header_enabled) },
+    { label: "Proxy Protocol", valueText: boolValue(posture.proxy_protocol_enabled) },
+    { label: "Log Level", valueText: stringValue(posture.log_level) },
+    { label: "Telemetry Core", valueText: boolValue(posture.telemetry_core_enabled) },
+    { label: "Telemetry User", valueText: boolValue(posture.telemetry_user_enabled) },
+    { label: "Telemetry ME", valueText: stringValue(posture.telemetry_me_level) },
+  ].filter((row) => row.valueText !== "—");
+}
+
+function buildMEDiagnosticsRows(detail: TelemetryServerDetailResponse | undefined): Array<{ label: string; valueText: string }> {
+  if (!detail) {
+    return [];
+  }
+
+  const mePool = asRecord(detail.diagnostics?.me_pool);
+  const mePoolData = asRecord(mePool.data);
+  return [
+    { label: "Active Generation", valueText: numberValue(mePoolData.active_generation) },
+    { label: "Warm Generation", valueText: numberValue(mePoolData.warm_generation) },
+    { label: "Pending Hardswap", valueText: numberValue(mePoolData.pending_hardswap_generation) },
+  ].filter((row) => row.valueText !== "—");
+}
+
+function buildRoutingRows(detail: TelemetryServerDetailResponse | undefined): Array<{ label: string; valueText: string }> {
+  if (!detail) {
+    return [];
+  }
+
+  const minimalAll = asRecord(detail.diagnostics?.minimal_all);
+  const minimalData = asRecord(minimalAll.data);
+  const networkPath = Array.isArray(minimalData.network_path) ? minimalData.network_path : [];
+  return networkPath
+    .map((row) => asRecord(row))
+    .map((row) => ({
+      label: `DC ${numberValue(row.dc) === "—" ? "?" : numberValue(row.dc)} Path`,
+      valueText: stringValue(row.selected_ip),
+    }))
+    .filter((row) => row.valueText !== "—");
+}
+
+function buildSectionStateText(state: string | undefined, reason: string | undefined): string {
+  if (!state) {
+    return "No diagnostics data yet";
+  }
+  if (!reason) {
+    return humanizeToken(state);
+  }
+  return `${humanizeToken(state)}: ${humanizeToken(reason)}`;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return value as Record<string, unknown>;
+}
+
+function stringValue(value: unknown): string {
+  if (typeof value === "string" && value.trim() !== "") {
+    return value;
+  }
+  return "—";
+}
+
+function numberValue(value: unknown): string {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return formatInteger(value);
+  }
+  return "—";
+}
+
+function secondsValue(value: unknown): string {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return `${formatInteger(value)}s`;
+  }
+  return "—";
+}
+
+function boolValue(value: unknown): string {
+  if (typeof value === "boolean") {
+    return value ? "Yes" : "No";
+  }
+  return "—";
+}
+
+function compactJoin(values: string[], separator: string): string {
+  const filtered = values.filter((value) => value && value !== "—");
+  if (filtered.length === 0) {
+    return "—";
+  }
+  return filtered.join(separator);
 }

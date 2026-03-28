@@ -58,6 +58,13 @@ export function ProfilePage() {
             </div>
             <Button variant="secondary" size="sm">Change</Button>
           </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-text-1">Parameter Help</p>
+              <p className="text-xs text-text-3 mt-0.5">{appearance?.help_mode ?? "basic"}</p>
+            </div>
+            <Button variant="secondary" size="sm">Change</Button>
+          </div>
         </div>
       </SectionPanel>
 

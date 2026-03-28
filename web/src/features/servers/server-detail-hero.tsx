@@ -5,15 +5,27 @@ import type { ServerDetailViewModel } from "./server-detail-view-model";
 export function ServerDetailHero({
   header,
   onBack,
+  onDiagnosticsRefreshAction,
   onRecoveryAction,
+  onDetailBoostAction,
+  diagnosticsRefreshActionLabel,
   recoveryActionLabel,
+  detailBoostActionLabel,
+  diagnosticsRefreshActionPending = false,
   recoveryActionPending = false,
+  detailBoostActionPending = false,
 }: {
   header: ServerDetailViewModel["header"];
   onBack: () => void;
+  onDiagnosticsRefreshAction?: () => void;
   onRecoveryAction?: () => void;
+  onDetailBoostAction?: () => void;
+  diagnosticsRefreshActionLabel?: string;
   recoveryActionLabel?: string;
+  detailBoostActionLabel?: string;
+  diagnosticsRefreshActionPending?: boolean;
   recoveryActionPending?: boolean;
+  detailBoostActionPending?: boolean;
 }) {
   return (
     <section className="server-detail-hero server-detail-surface">
@@ -32,6 +44,26 @@ export function ServerDetailHero({
             {recoveryActionPending ? "Updating Recovery..." : recoveryActionLabel}
           </button>
         ) : null}
+        {onDiagnosticsRefreshAction ? (
+          <button
+            className="server-detail-hero__recovery-action"
+            disabled={diagnosticsRefreshActionPending}
+            onClick={onDiagnosticsRefreshAction}
+            type="button"
+          >
+            {diagnosticsRefreshActionPending ? "Refreshing Diagnostics..." : diagnosticsRefreshActionLabel}
+          </button>
+        ) : null}
+        {onDetailBoostAction ? (
+          <button
+            className="server-detail-hero__recovery-action"
+            disabled={detailBoostActionPending}
+            onClick={onDetailBoostAction}
+            type="button"
+          >
+            {detailBoostActionPending ? "Updating Boost..." : detailBoostActionLabel}
+          </button>
+        ) : null}
       </div>
       <div className="server-detail-hero__body">
         <div className="server-detail-hero__content">
@@ -43,8 +75,8 @@ export function ServerDetailHero({
             </Badge>
           </div>
           <p className="server-detail-hero__summary">
-            Runtime status, DC coverage, upstream health, and recent events from the latest
-            reported snapshot for this server.
+            {header.reasonText}. Runtime status, DC coverage, upstream health, and recent events
+            from the latest reported snapshot for this server.
           </p>
         </div>
         <dl className="server-detail-hero__meta">
@@ -52,6 +84,8 @@ export function ServerDetailHero({
           <MetaPill label="Version" value={header.versionText} />
           <MetaPill label="Last seen" value={header.lastSeenText} />
           <MetaPill label="Mode" value={header.readOnlyText} />
+          <MetaPill label="Freshness" value={header.freshnessText} />
+          <MetaPill label="Boost" value={header.detailBoostText} />
           <MetaPill label="Recovery" value={header.certificateRecoveryText} />
         </dl>
       </div>

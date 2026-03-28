@@ -54,6 +54,9 @@ test("ServersPage renders template-style header, filters, view toggle, and share
     "@tanstack/react-router": {
       useRouter: () => ({ navigate: () => undefined }),
     },
+    "@/features/profile/profile-state": {
+      useAppearanceSettings: () => ({ data: { help_mode: "basic" } }),
+    },
     "@/components/toolbar": {
       Toolbar: ({ search, filters, viewToggle }) =>
         React.createElement(
@@ -91,32 +94,21 @@ test("ServersPage renders template-style header, filters, view toggle, and share
     },
     "./servers-state": {
       useServers: () => ({
-        data: Array.from({ length: 9 }, (_, index) => ({
-          id: `agent-${index + 1}`,
-          node_name: `server-${index + 1}`,
-          fleet_group_id: index % 2 === 0 ? "core" : "",
-          presence_state: index === 0 ? "offline" : index === 1 ? "degraded" : "online",
-          version: "1.2.3",
-          read_only: false,
-          last_seen_at: "2026-03-24T10:00:00Z",
-          runtime: {
-            degraded: index === 1,
-            accepting_new_connections: index !== 0,
-            active_users: index + 1,
-            current_connections: index + 1,
-            dc_coverage_pct: index === 0 ? 0 : 100,
-            healthy_upstreams: index === 0 ? 0 : 2,
-            total_upstreams: 2,
-            dcs: [],
-          },
-        })),
+        data: {
+          servers: Array.from({ length: 9 }, (_, index) => ({
+            agent: {
+              id: `agent-${index + 1}`,
+              node_name: `server-${index + 1}`,
+            },
+          })),
+        },
         isLoading: false,
         isError: false,
       }),
     },
     "./servers-view-model": {
-      buildServerFilterCounts: () => ({ all: 9, online: 7, issues: 2, offline: 1 }),
-      buildServerTableRows: (agents) => agents.map((agent) => ({ id: agent.id, serverName: agent.node_name })),
+      buildServerFilterCounts: () => ({ all: 9, healthy: 7, issues: 2, stale: 1 }),
+      buildServerTableRows: (items) => items.map((item) => ({ id: item.agent.id, serverName: item.agent.node_name })),
       filterServerTableRows: (rows) => rows,
       paginateServerTableRows: (rows) => ({ rows: rows.slice(0, 8), totalPages: 2 }),
       sortServerTableRows: (rows) => rows,
@@ -126,12 +118,12 @@ test("ServersPage renders template-style header, filters, view toggle, and share
   const markup = renderToStaticMarkup(React.createElement(ServersPage));
 
   assert.match(markup, /Servers/);
-  assert.match(markup, /Manage MTProxy nodes/);
-  assert.match(markup, /data-slot="search-placeholder">Search servers/);
+  assert.match(markup, /Triage Telemt nodes by health, freshness, and transport state/);
+  assert.match(markup, /data-slot="search-placeholder">Search servers, reasons, or events/);
   assert.match(markup, /All:9/);
-  assert.match(markup, /Online:7/);
+  assert.match(markup, /Healthy:7/);
   assert.match(markup, /Issues:2/);
-  assert.match(markup, /Offline:1/);
+  assert.match(markup, /Stale:1/);
   assert.match(markup, /data-slot="view-toggle">table/);
   assert.match(markup, /data-slot="server-table">rows:8/);
   assert.match(markup, /data-slot="pagination">1\/2/);

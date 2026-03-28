@@ -1,6 +1,7 @@
 import React from "react";
 import { CircleOff, Undo2 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
+import { getTelemetryFieldHelp, type TelemetryHelpMode } from "../telemetry/help-metadata";
 
 import type { ServerCardDetails as ServerCardDetailsModel } from "./dashboard-view-model";
 
@@ -9,6 +10,7 @@ type ServerCardDetailsProps = {
   serverId: string;
   lastSeenText: string;
   expanded?: boolean;
+  helpMode?: TelemetryHelpMode;
 };
 
 export function ServerCardDetails({
@@ -16,6 +18,7 @@ export function ServerCardDetails({
   serverId,
   lastSeenText,
   expanded = true,
+  helpMode = "basic",
 }: ServerCardDetailsProps) {
   return (
     <div className="server-card-details" aria-hidden={!expanded}>
@@ -37,34 +40,39 @@ export function ServerCardDetails({
           <div className="server-card-offline-last-seen">{lastSeenText}</div>
         </div>
       ) : (
-        <table className="server-card-table">
-          <thead>
-            <tr>
-              <th />
-              <th>DC</th>
-              <th>RTT</th>
-              <th>Writers</th>
-              <th>Coverage</th>
-            </tr>
-          </thead>
-          <tbody>
-            {details.rows.map((row) => (
-              <tr key={row.dc}>
-                <td>
-                  <span className="server-card-row-status" data-tone={row.health} />
-                </td>
-                <td className="server-card-table-name">{row.dcText}</td>
-                <td className="server-card-rtt" data-tone={getRttTone(row.rttText)}>
-                  {row.rttText}
-                </td>
-                <td>{row.writersText}</td>
-                <td className="server-card-coverage" data-tone={row.health}>
-                  {row.coverageText}
-                </td>
+        <>
+          <table className="server-card-table">
+            <thead>
+              <tr>
+                <th />
+                <th>DC</th>
+                <th>RTT</th>
+                <th>Writers</th>
+                <th>Coverage</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {details.rows.map((row) => (
+                <tr key={row.dc}>
+                  <td>
+                    <span className="server-card-row-status" data-tone={row.health} />
+                  </td>
+                  <td className="server-card-table-name">{row.dcText}</td>
+                  <td className="server-card-rtt" data-tone={getRttTone(row.rttText)}>
+                    {row.rttText}
+                  </td>
+                  <td>{row.writersText}</td>
+                  <td className="server-card-coverage" data-tone={row.health}>
+                    {row.coverageText}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {helpMode === "full" && getTelemetryFieldHelp("DC Health") ? (
+            <div className="mt-3 text-[11px] text-text-3">{getTelemetryFieldHelp("DC Health")}</div>
+          ) : null}
+        </>
       )}
 
       <Link

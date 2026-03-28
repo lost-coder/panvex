@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useRouter } from "@tanstack/react-router";
 import { List } from "lucide-react";
 import { Pagination } from "@/components/pagination";
+import { useAppearanceSettings } from "@/features/profile/profile-state";
 import { Toolbar } from "@/components/toolbar";
 import { FilterChip } from "@/components/ui/filter-chip";
 import { ViewToggle } from "@/components/ui/view-toggle";
@@ -22,14 +23,17 @@ const PAGE_SIZE = 8;
 
 export function ServersPage() {
   const router = useRouter();
-  const { data: agents = [], isLoading, isError } = useServers();
+  const { data, isLoading, isError } = useServers();
+  const appearanceQuery = useAppearanceSettings();
   const [filter, setFilter] = useState<ServerTableFilter>("all");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [sortKey, setSortKey] = useState<ServerTableSortKey>("server");
   const [sortDir, setSortDir] = useState<ServerTableSortDir>("asc");
 
-  const rows = buildServerTableRows(agents);
+  const rows = buildServerTableRows(data?.servers ?? []);
+  const helpMode = appearanceQuery.data?.help_mode ?? "basic";
+  const showHelp = helpMode !== "off";
   const filterCounts = buildServerFilterCounts(rows);
   const filteredRows = filterServerTableRows(rows, { filter, search });
   const sortedRows = sortServerTableRows(filteredRows, sortKey, sortDir);
@@ -42,9 +46,9 @@ export function ServersPage() {
     <div className="flex gap-2">
       {([
         ["all", "All"],
-        ["online", "Online"],
+        ["healthy", "Healthy"],
         ["issues", "Issues"],
-        ["offline", "Offline"],
+        ["stale", "Stale"],
       ] as Array<[ServerTableFilter, string]>).map(([filterKey, label]) => (
         <FilterChip
           key={filterKey}
@@ -76,9 +80,14 @@ export function ServersPage() {
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-[22px] font-extrabold tracking-[-0.03em] text-text-1">Servers</h1>
-          <p className="mt-1 text-sm text-text-3">Manage MTProxy nodes</p>
+          <p className="mt-1 text-sm text-text-3">Triage Telemt nodes by health, freshness, and transport state</p>
         </div>
       </header>
+      {showHelp ? (
+        <div className="rounded border border-border bg-surface px-3 py-2 text-sm text-text-3">
+          Use this table for fleet triage: health explains why a node needs attention, freshness shows how current the signal is, and runtime, DC, and upstream columns help decide whether to open the full server page.
+        </div>
+      ) : null}
 
       <Toolbar
         filters={filters}
@@ -87,7 +96,7 @@ export function ServersPage() {
             setSearch(value);
             setPage(1);
           },
-          placeholder: "Search servers",
+          placeholder: "Search servers, reasons, or events",
           value: search,
         }}
         viewToggle={
@@ -112,6 +121,7 @@ export function ServersPage() {
       ) : (
         <ServerTable
           footer={footer}
+          helpMode={helpMode}
           onRowClick={(row) => router.navigate({ params: { serverId: row.id }, to: "/servers/$serverId" })}
           onSort={(nextSortKey) => {
             setPage(1);

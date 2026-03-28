@@ -64,6 +64,19 @@ async function loadServerTable() {
       return {};
     }
 
+    if (specifier.includes("telemetry/help-metadata")) {
+      return {
+        getTelemetryFieldHelp: (label: string) => {
+          const copy: Record<string, string> = {
+            Health: "Primary operator diagnosis for why the node needs attention right now.",
+            Freshness: "Telemetry freshness shows whether the latest runtime summary is still current enough for triage.",
+            Upstreams: "Outbound route health summary for the node's current upstream set.",
+          };
+          return copy[label];
+        },
+      };
+    }
+
     return realRequire(specifier);
   };
 
@@ -95,19 +108,16 @@ test("ServerTable renders agreed columns, placeholders, group text, dc summary, 
           groupText: "Ungrouped",
           statusText: "Degraded",
           statusTone: "degraded",
-          presenceState: "online",
+          reasonText: "Telemetry is stale",
+          freshnessText: "Fresh",
+          freshnessRank: 1,
+          admissionText: "Open",
+          runtimeText: "Direct • 342 conns",
+          dcSummaryText: "2/3",
+          upstreamSummaryText: "1 / 2 healthy",
+          eventText: "No recent events",
           isIssue: true,
           severity: 2,
-          clientsValue: 342,
-          clientsText: "342",
-          cpuText: "—",
-          memoryText: "—",
-          trafficText: "—",
-          uptimeText: "—",
-          dcAvailableCount: 2,
-          dcTotalCount: 3,
-          dcSummaryText: "2/3",
-          dcSegments: ["ok", "partial", "down"],
         },
       ],
       sortDir: "asc",
@@ -116,15 +126,50 @@ test("ServerTable renders agreed columns, placeholders, group text, dc summary, 
   );
 
   assert.match(markup, /Server/);
-  assert.match(markup, /Status/);
-  assert.match(markup, /Clients/);
-  assert.match(markup, /CPU/);
-  assert.match(markup, /Memory/);
-  assert.match(markup, /DC/);
-  assert.match(markup, /Traffic/);
-  assert.match(markup, /Uptime/);
+  assert.match(markup, /Health/);
+  assert.match(markup, /Freshness/);
+  assert.match(markup, /Runtime/);
+  assert.match(markup, /DC Health/);
+  assert.match(markup, /Upstreams/);
+  assert.match(markup, /Events/);
   assert.match(markup, /Ungrouped/);
   assert.match(markup, /2\/3/);
   assert.match(markup, /data-slot="server-footer"/);
   assert.doesNotMatch(markup, /Actions/);
+});
+
+test("ServerTable renders field help copy in full help mode", async () => {
+  const ServerTable = await loadServerTable();
+  const markup = renderToStaticMarkup(
+    React.createElement(ServerTable, {
+      footer: null,
+      helpMode: "full",
+      onSort: () => undefined,
+      rows: [
+        {
+          id: "agent-2",
+          serverName: "de-fra-02",
+          groupText: "eu-edge",
+          statusText: "Attention",
+          statusTone: "degraded",
+          reasonText: "Telemetry is stale",
+          freshnessText: "Stale",
+          freshnessRank: 2,
+          admissionText: "Closed",
+          runtimeText: "Direct • 12 conns",
+          dcSummaryText: "73% across 4 DCs",
+          upstreamSummaryText: "1 / 3 healthy",
+          eventText: "DC 4 coverage dropped below quorum",
+          isIssue: true,
+          severity: 2,
+        },
+      ],
+      sortDir: "asc",
+      sortKey: "server",
+    })
+  );
+
+  assert.match(markup, /Primary operator diagnosis for why the node needs attention right now\./);
+  assert.match(markup, /Telemetry freshness shows whether the latest runtime summary is still current enough for triage\./);
+  assert.match(markup, /Outbound route health summary for the node(?:&#x27;|')s current upstream set\./);
 });

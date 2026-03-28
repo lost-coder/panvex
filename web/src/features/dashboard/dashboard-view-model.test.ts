@@ -182,8 +182,8 @@ test("buildServerCardSummary keeps unavailable metric slots as dashes", () => {
   assert.equal(summary.locationText, "group-a");
   assert.equal(summary.metrics[0]?.label, "Clients");
   assert.equal(summary.metrics[0]?.value, "4");
-  assert.equal(summary.metrics[1]?.value, "—");
-  assert.equal(summary.metrics[2]?.value, "—");
+  assert.equal(summary.metrics[1]?.value, "Fresh");
+  assert.equal(summary.metrics[2]?.value, "Boost off");
   assert.equal(summary.dcTags.length, 0);
 });
 
@@ -229,8 +229,8 @@ test("buildServerCardSummary keeps all metrics unavailable for offline servers",
   assert.equal(summary.locationText, "Ungrouped");
   assert.equal(summary.statusText, "Offline");
   assert.equal(summary.metrics[0]?.value, "—");
-  assert.equal(summary.metrics[1]?.value, "—");
-  assert.equal(summary.metrics[2]?.value, "—");
+  assert.equal(summary.metrics[1]?.value, "Fresh");
+  assert.equal(summary.metrics[2]?.value, "Boost off");
 });
 
 test("buildServerCardDetails preserves dc load precision", () => {

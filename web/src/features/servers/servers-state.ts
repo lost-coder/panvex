@@ -1,18 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "../../lib/api";
-
-export function useServers() {
-  return useQuery({
-    queryKey: ["agents"],
-    queryFn: () => apiClient.agents(),
-    refetchInterval: 15_000,
-  });
-}
-
-export function useServerDetail(agentId: string) {
-  const { data: agents = [] } = useServers();
-  return agents.find(a => a.id === agentId) ?? null;
-}
+export { useActivateTelemetryDetailBoost, useRefreshTelemetryDiagnostics, useTelemetryServerDetail as useServerDetail, useTelemetryServers as useServers } from "../telemetry/telemetry-state";
+import { invalidateTelemetryQueries } from "../telemetry/telemetry-query-invalidation";
 
 export function useAllowAgentCertificateRecovery() {
   const queryClient = useQueryClient();
@@ -20,8 +9,8 @@ export function useAllowAgentCertificateRecovery() {
   return useMutation({
     mutationFn: ({ agentID, ttlSeconds = 900 }: { agentID: string; ttlSeconds?: number }) =>
       apiClient.allowAgentCertificateRecovery(agentID, { ttl_seconds: ttlSeconds }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["agents"] });
+    onSuccess: async (_payload, variables) => {
+      await invalidateTelemetryQueries(queryClient, variables.agentID);
     },
   });
 }
@@ -32,8 +21,8 @@ export function useRevokeAgentCertificateRecovery() {
   return useMutation({
     mutationFn: ({ agentID }: { agentID: string }) =>
       apiClient.revokeAgentCertificateRecovery(agentID),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["agents"] });
+    onSuccess: async (_payload, variables) => {
+      await invalidateTelemetryQueries(queryClient, variables.agentID);
     },
   });
 }
@@ -46,5 +35,6 @@ export function useServerRecoveryAccess() {
 
   return {
     canManageRecovery: me?.role === "admin",
+    canRefreshDiagnostics: me?.role === "admin" || me?.role === "operator",
   };
 }

@@ -66,6 +66,7 @@ type Server struct {
 	clientSeq  uint64
 	assignmentSeq uint64
 	agents     map[string]Agent
+	detailBoosts map[string]time.Time
 	agentSessions map[string]*agentStreamSession
 	clients    map[string]managedClient
 	clientAssignments map[string][]managedClientAssignment
@@ -101,6 +102,7 @@ func New(options Options) *Server {
 		agentBootstrapRateLimiter: newFixedWindowRateLimiter(httpAgentBootstrapRateLimitPerWindow, defaultRateLimitWindow),
 		grpcConnectRateLimiter: newFixedWindowRateLimiter(grpcConnectRateLimitPerWindow, defaultRateLimitWindow),
 		agents:     make(map[string]Agent),
+		detailBoosts: make(map[string]time.Time),
 		clients:    make(map[string]managedClient),
 		clientAssignments: make(map[string][]managedClientAssignment),
 		clientDeployments: make(map[string]map[string]managedClientDeployment),
@@ -233,7 +235,7 @@ func (s *Server) restoreStoredState() error {
 		s.auditSeq = maxPrefixedSequence(s.auditSeq, "audit", event.ID)
 	}
 
-	return nil
+	return s.restoreStoredTelemetry()
 }
 
 func maxPrefixedSequence(current uint64, prefix string, value string) uint64 {
@@ -290,8 +292,12 @@ func (s *Server) routes() http.Handler {
 			authenticated.Get("/audit", s.handleAudit())
 			authenticated.Get("/metrics", s.handleMetrics())
 			authenticated.Get("/events", s.handleEvents())
-			authenticated.Get("/settings/appearance", s.handleGetUserAppearance())
-			authenticated.Put("/settings/appearance", s.handlePutUserAppearance())
+		authenticated.Get("/settings/appearance", s.handleGetUserAppearance())
+		authenticated.Put("/settings/appearance", s.handlePutUserAppearance())
+		authenticated.Get("/telemetry/dashboard", s.handleTelemetryDashboard())
+		authenticated.Get("/telemetry/servers", s.handleTelemetryServers())
+		authenticated.Get("/telemetry/servers/{id}", s.handleTelemetryServerDetail())
+		authenticated.Post("/telemetry/servers/{id}/detail-boost", s.handleTelemetryServerDetailBoost())
 
 			authenticated.Group(func(operator chi.Router) {
 				operator.Use(s.requireMinimumRole(auth.RoleOperator))
@@ -302,6 +308,7 @@ func (s *Server) routes() http.Handler {
 				operator.Put("/clients/{id}", s.handleUpdateClient())
 				operator.Delete("/clients/{id}", s.handleDeleteClient())
 				operator.Post("/clients/{id}/rotate-secret", s.handleRotateClientSecret())
+				operator.Post("/telemetry/servers/{id}/refresh-diagnostics", s.handleTelemetryServerRefreshDiagnostics())
 				operator.Get("/agents/enrollment-tokens", s.handleListEnrollmentTokens())
 				operator.Post("/agents/enrollment-tokens", s.handleCreateEnrollmentToken())
 				operator.Post("/agents/enrollment-tokens/{value}/revoke", s.handleRevokeEnrollmentToken())

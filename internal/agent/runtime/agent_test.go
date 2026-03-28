@@ -132,6 +132,20 @@ func TestAgentBuildSnapshotUsesTelemtRuntimeState(t *testing.T) {
 					Context:       "dc=2 upstream=1",
 				},
 			},
+			Diagnostics: telemt.RuntimeDiagnostics{
+				State:               "fresh",
+				SystemInfoJSON:      `{"version":"2026.03","config_hash":"cfg-1"}`,
+				EffectiveLimitsJSON: `{"update_every_secs":5}`,
+				SecurityPostureJSON: `{"api_read_only":true}`,
+				MinimalAllJSON:      `{"enabled":true}`,
+				MEPoolJSON:          `{"enabled":true}`,
+			},
+			SecurityInventory: telemt.RuntimeSecurityInventory{
+				State:       "fresh",
+				Enabled:     true,
+				EntriesTotal: 2,
+				EntriesJSON: `["10.0.0.0/24","192.168.0.0/24"]`,
+			},
 		},
 	}
 	agent := New(Config{
@@ -176,6 +190,18 @@ func TestAgentBuildSnapshotUsesTelemtRuntimeState(t *testing.T) {
 	}
 	if len(snapshot.Runtime.RecentEvents) != 1 {
 		t.Fatalf("len(snapshot.Runtime.RecentEvents) = %d, want %d", len(snapshot.Runtime.RecentEvents), 1)
+	}
+	if snapshot.RuntimeDiagnostics == nil {
+		t.Fatal("snapshot.RuntimeDiagnostics = nil, want diagnostics payload")
+	}
+	if snapshot.RuntimeDiagnostics.SystemInfoJson == "" {
+		t.Fatal("snapshot.RuntimeDiagnostics.SystemInfoJson = empty, want system info payload")
+	}
+	if snapshot.RuntimeSecurityInventory == nil {
+		t.Fatal("snapshot.RuntimeSecurityInventory = nil, want security inventory payload")
+	}
+	if snapshot.RuntimeSecurityInventory.EntriesTotal != 2 {
+		t.Fatalf("snapshot.RuntimeSecurityInventory.EntriesTotal = %d, want %d", snapshot.RuntimeSecurityInventory.EntriesTotal, 2)
 	}
 }
 
@@ -397,6 +423,28 @@ func TestAgentHandleJobDeletesManagedClient(t *testing.T) {
 	}
 }
 
+func TestAgentHandleJobRefreshDiagnosticsInvalidatesSlowData(t *testing.T) {
+	client := &fakeTelemtClient{}
+	agent := New(Config{
+		AgentID:      "agent-1",
+		NodeName:     "node-a",
+		FleetGroupID: "ams-1",
+		Version:      "1.0.0",
+	}, client)
+
+	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
+		Id:     "job-refresh",
+		Action: "telemetry.refresh_diagnostics",
+	}, time.Date(2026, time.March, 30, 9, 0, 0, 0, time.UTC))
+
+	if !result.Success {
+		t.Fatalf("HandleJob() Success = false, want true, message = %q", result.Message)
+	}
+	if client.invalidateSlowDataCalls != 1 {
+		t.Fatalf("invalidateSlowDataCalls = %d, want %d", client.invalidateSlowDataCalls, 1)
+	}
+}
+
 func TestAgentBuildSnapshotMapsTelemtClientNamesBackToManagedClientIDs(t *testing.T) {
 	client := &fakeTelemtClient{
 		createResult: telemt.ClientApplyResult{
@@ -456,6 +504,7 @@ type fakeTelemtClient struct {
 	deletedClientName string
 	createResult      telemt.ClientApplyResult
 	updateResult      telemt.ClientApplyResult
+	invalidateSlowDataCalls int
 }
 
 func (c *fakeTelemtClient) FetchRuntimeState(context.Context) (telemt.RuntimeState, error) {
@@ -496,4 +545,8 @@ func (c *fakeTelemtClient) UpdateClient(_ context.Context, client telemt.Managed
 func (c *fakeTelemtClient) DeleteClient(_ context.Context, clientName string) error {
 	c.deletedClientName = clientName
 	return nil
+}
+
+func (c *fakeTelemtClient) InvalidateSlowDataCache() {
+	c.invalidateSlowDataCalls++
 }

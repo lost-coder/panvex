@@ -42,6 +42,17 @@ async function loadServerCardDetails() {
       };
     }
 
+    if (specifier.includes("telemetry/help-metadata")) {
+      return {
+        getTelemetryFieldHelp: (label: string) => {
+          if (label === "DC Health") {
+            return "Aggregate Telegram data center coverage and health summary for the node.";
+          }
+          return undefined;
+        },
+      };
+    }
+
     return realRequire(specifier);
   };
 

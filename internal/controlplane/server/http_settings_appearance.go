@@ -9,12 +9,14 @@ import (
 type appearanceSettingsResponse struct {
 	Theme         string `json:"theme"`
 	Density       string `json:"density"`
+	HelpMode      string `json:"help_mode"`
 	UpdatedAtUnix int64  `json:"updated_at_unix"`
 }
 
 type updateAppearanceSettingsRequest struct {
-	Theme   string `json:"theme"`
-	Density string `json:"density"`
+	Theme    string `json:"theme"`
+	Density  string `json:"density"`
+	HelpMode string `json:"help_mode"`
 }
 
 func (s *Server) handleGetUserAppearance() http.HandlerFunc {
@@ -39,6 +41,7 @@ func (s *Server) handleGetUserAppearance() http.HandlerFunc {
 		writeJSON(w, http.StatusOK, appearanceSettingsResponse{
 			Theme:         appearance.Theme,
 			Density:       appearance.Density,
+			HelpMode:      appearance.HelpMode,
 			UpdatedAtUnix: appearance.UpdatedAt,
 		})
 	}
@@ -58,7 +61,7 @@ func (s *Server) handlePutUserAppearance() http.HandlerFunc {
 			return
 		}
 
-		appearance, ok := validateUserAppearance(request.Theme, request.Density)
+		appearance, ok := validateUserAppearance(request.Theme, request.Density, request.HelpMode)
 		if !ok {
 			writeError(w, http.StatusBadRequest, "appearance values are invalid")
 			return
@@ -78,6 +81,7 @@ func (s *Server) handlePutUserAppearance() http.HandlerFunc {
 		writeJSON(w, http.StatusOK, appearanceSettingsResponse{
 			Theme:         appearance.Theme,
 			Density:       appearance.Density,
+			HelpMode:      appearance.HelpMode,
 			UpdatedAtUnix: appearance.UpdatedAt,
 		})
 	}

@@ -324,6 +324,9 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 		if defaultAppearance.Density != "comfortable" {
 			t.Fatalf("GetUserAppearance(default) Density = %q, want %q", defaultAppearance.Density, "comfortable")
 		}
+		if defaultAppearance.HelpMode != "basic" {
+			t.Fatalf("GetUserAppearance(default) HelpMode = %q, want %q", defaultAppearance.HelpMode, "basic")
+		}
 		if !defaultAppearance.UpdatedAt.IsZero() {
 			t.Fatalf("GetUserAppearance(default) UpdatedAt = %v, want zero time", defaultAppearance.UpdatedAt)
 		}
@@ -332,12 +335,14 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 			UserID:    "user-appearance-1",
 			Theme:     "dark",
 			Density:   "compact",
+			HelpMode:  "full",
 			UpdatedAt: time.Date(2026, time.March, 21, 10, 0, 0, 0, time.UTC),
 		}
 		secondAppearance := storage.UserAppearanceRecord{
 			UserID:    "user-appearance-2",
 			Theme:     "light",
 			Density:   "comfortable",
+			HelpMode:  "off",
 			UpdatedAt: time.Date(2026, time.March, 21, 10, 5, 0, 0, time.UTC),
 		}
 
@@ -377,6 +382,9 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 		if storedFirstAppearance.Density != firstAppearance.Density {
 			t.Fatalf("GetUserAppearance(first) Density = %q, want %q", storedFirstAppearance.Density, firstAppearance.Density)
 		}
+		if storedFirstAppearance.HelpMode != firstAppearance.HelpMode {
+			t.Fatalf("GetUserAppearance(first) HelpMode = %q, want %q", storedFirstAppearance.HelpMode, firstAppearance.HelpMode)
+		}
 		if !storedFirstAppearance.UpdatedAt.Equal(firstAppearance.UpdatedAt) {
 			t.Fatalf("GetUserAppearance(first) UpdatedAt = %v, want %v", storedFirstAppearance.UpdatedAt, firstAppearance.UpdatedAt)
 		}
@@ -390,6 +398,9 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 		}
 		if storedSecondAppearance.Density != secondAppearance.Density {
 			t.Fatalf("GetUserAppearance(second) Density = %q, want %q", storedSecondAppearance.Density, secondAppearance.Density)
+		}
+		if storedSecondAppearance.HelpMode != secondAppearance.HelpMode {
+			t.Fatalf("GetUserAppearance(second) HelpMode = %q, want %q", storedSecondAppearance.HelpMode, secondAppearance.HelpMode)
 		}
 		if !storedSecondAppearance.UpdatedAt.Equal(secondAppearance.UpdatedAt) {
 			t.Fatalf("GetUserAppearance(second) UpdatedAt = %v, want %v", storedSecondAppearance.UpdatedAt, secondAppearance.UpdatedAt)
@@ -780,6 +791,264 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 
 		if len(snapshots) != 1 {
 			t.Fatalf("len(ListMetricSnapshots()) = %d, want 1", len(snapshots))
+		}
+	})
+
+	t.Run("telemetry current-state round trip", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		group := storage.FleetGroupRecord{
+			ID:        "default",
+			Name:      "Default",
+			CreatedAt: time.Date(2026, time.March, 28, 10, 0, 0, 0, time.UTC),
+		}
+		agent := storage.AgentRecord{
+			ID:           "agent-telemetry-1",
+			NodeName:     "telemt-a",
+			FleetGroupID: group.ID,
+			Version:      "dev",
+			ReadOnly:     false,
+			LastSeenAt:   time.Date(2026, time.March, 28, 10, 1, 0, 0, time.UTC),
+		}
+		runtime := storage.TelemetryRuntimeCurrentRecord{
+			AgentID:                   agent.ID,
+			ObservedAt:                time.Date(2026, time.March, 28, 10, 2, 0, 0, time.UTC),
+			State:                     "fresh",
+			StateReason:               "",
+			ReadOnly:                  false,
+			AcceptingNewConnections:   true,
+			MERuntimeReady:            true,
+			ME2DCFallbackEnabled:      true,
+			UseMiddleProxy:            false,
+			StartupStatus:             "ready",
+			StartupStage:              "steady_state",
+			StartupProgressPct:        100,
+			InitializationStatus:      "ready",
+			Degraded:                  false,
+			InitializationStage:       "steady_state",
+			InitializationProgressPct: 100,
+			TransportMode:             "direct",
+			CurrentConnections:        120,
+			CurrentConnectionsME:      70,
+			CurrentConnectionsDirect:  50,
+			ActiveUsers:               95,
+			UptimeSeconds:             3600,
+			ConnectionsTotal:          1024,
+			ConnectionsBadTotal:       12,
+			HandshakeTimeoutsTotal:    2,
+			ConfiguredUsers:           4096,
+			DCCoveragePct:             83,
+			HealthyUpstreams:          2,
+			TotalUpstreams:            3,
+		}
+		dcs := []storage.TelemetryRuntimeDCRecord{
+			{
+				AgentID:            agent.ID,
+				DC:                 2,
+				ObservedAt:         runtime.ObservedAt,
+				AvailableEndpoints: 4,
+				AvailablePct:       100,
+				RequiredWriters:    6,
+				AliveWriters:       5,
+				CoveragePct:        83.3,
+				RTTMs:              42,
+				Load:               0.7,
+			},
+		}
+		upstreams := []storage.TelemetryRuntimeUpstreamRecord{
+			{
+				AgentID:            agent.ID,
+				UpstreamID:         1,
+				ObservedAt:         runtime.ObservedAt,
+				RouteKind:          "direct",
+				Address:            "fra-core-01:443",
+				Healthy:            true,
+				Fails:              0,
+				EffectiveLatencyMs: 19,
+			},
+		}
+		events := []storage.TelemetryRuntimeEventRecord{
+			{
+				AgentID:    agent.ID,
+				Sequence:   41,
+				ObservedAt: runtime.ObservedAt,
+				Timestamp:  time.Date(2026, time.March, 28, 10, 1, 30, 0, time.UTC),
+				EventType:  "dc_quorum_warning",
+				Context:    "DC 2 coverage dropped below quorum",
+				Severity:   "warn",
+			},
+		}
+		diagnostics := storage.TelemetryDiagnosticsCurrentRecord{
+			AgentID:             agent.ID,
+			ObservedAt:          time.Date(2026, time.March, 28, 10, 2, 30, 0, time.UTC),
+			State:               "fresh",
+			StateReason:         "",
+			SystemInfoJSON:      `{"version":"1.0.0"}`,
+			EffectiveLimitsJSON: `{"max_tcp_conns":4}`,
+			SecurityPostureJSON: `{"read_only":false}`,
+			MinimalAllJSON:      `{"enabled":true}`,
+			MEPoolJSON:          `{"enabled":true}`,
+		}
+		security := storage.TelemetrySecurityInventoryCurrentRecord{
+			AgentID:      agent.ID,
+			ObservedAt:   time.Date(2026, time.March, 28, 10, 3, 0, 0, time.UTC),
+			State:        "fresh",
+			StateReason:  "",
+			Enabled:      true,
+			EntriesTotal: 2,
+			EntriesJSON:  `["10.0.0.0/24","192.168.0.0/24"]`,
+		}
+
+		if err := store.PutFleetGroup(ctx, group); err != nil {
+			t.Fatalf("PutFleetGroup() error = %v", err)
+		}
+		if err := store.PutAgent(ctx, agent); err != nil {
+			t.Fatalf("PutAgent() error = %v", err)
+		}
+		if err := store.PutTelemetryRuntimeCurrent(ctx, runtime); err != nil {
+			t.Fatalf("PutTelemetryRuntimeCurrent() error = %v", err)
+		}
+		if err := store.ReplaceTelemetryRuntimeDCs(ctx, agent.ID, dcs); err != nil {
+			t.Fatalf("ReplaceTelemetryRuntimeDCs() error = %v", err)
+		}
+		if err := store.ReplaceTelemetryRuntimeUpstreams(ctx, agent.ID, upstreams); err != nil {
+			t.Fatalf("ReplaceTelemetryRuntimeUpstreams() error = %v", err)
+		}
+		if err := store.AppendTelemetryRuntimeEvents(ctx, agent.ID, events); err != nil {
+			t.Fatalf("AppendTelemetryRuntimeEvents() error = %v", err)
+		}
+		if err := store.PutTelemetryDiagnosticsCurrent(ctx, diagnostics); err != nil {
+			t.Fatalf("PutTelemetryDiagnosticsCurrent() error = %v", err)
+		}
+		if err := store.PutTelemetrySecurityInventoryCurrent(ctx, security); err != nil {
+			t.Fatalf("PutTelemetrySecurityInventoryCurrent() error = %v", err)
+		}
+
+		storedRuntime, err := store.GetTelemetryRuntimeCurrent(ctx, agent.ID)
+		if err != nil {
+			t.Fatalf("GetTelemetryRuntimeCurrent() error = %v", err)
+		}
+		if storedRuntime.CurrentConnections != runtime.CurrentConnections {
+			t.Fatalf("GetTelemetryRuntimeCurrent() CurrentConnections = %d, want %d", storedRuntime.CurrentConnections, runtime.CurrentConnections)
+		}
+
+		storedRuntimes, err := store.ListTelemetryRuntimeCurrent(ctx)
+		if err != nil {
+			t.Fatalf("ListTelemetryRuntimeCurrent() error = %v", err)
+		}
+		if len(storedRuntimes) != 1 {
+			t.Fatalf("len(ListTelemetryRuntimeCurrent()) = %d, want 1", len(storedRuntimes))
+		}
+
+		storedDCs, err := store.ListTelemetryRuntimeDCs(ctx, agent.ID)
+		if err != nil {
+			t.Fatalf("ListTelemetryRuntimeDCs() error = %v", err)
+		}
+		if len(storedDCs) != 1 {
+			t.Fatalf("len(ListTelemetryRuntimeDCs()) = %d, want 1", len(storedDCs))
+		}
+		if storedDCs[0].CoveragePct != dcs[0].CoveragePct {
+			t.Fatalf("ListTelemetryRuntimeDCs()[0].CoveragePct = %v, want %v", storedDCs[0].CoveragePct, dcs[0].CoveragePct)
+		}
+
+		storedUpstreams, err := store.ListTelemetryRuntimeUpstreams(ctx, agent.ID)
+		if err != nil {
+			t.Fatalf("ListTelemetryRuntimeUpstreams() error = %v", err)
+		}
+		if len(storedUpstreams) != 1 {
+			t.Fatalf("len(ListTelemetryRuntimeUpstreams()) = %d, want 1", len(storedUpstreams))
+		}
+		if storedUpstreams[0].Address != upstreams[0].Address {
+			t.Fatalf("ListTelemetryRuntimeUpstreams()[0].Address = %q, want %q", storedUpstreams[0].Address, upstreams[0].Address)
+		}
+
+		storedEvents, err := store.ListTelemetryRuntimeEvents(ctx, agent.ID, 10)
+		if err != nil {
+			t.Fatalf("ListTelemetryRuntimeEvents() error = %v", err)
+		}
+		if len(storedEvents) != 1 {
+			t.Fatalf("len(ListTelemetryRuntimeEvents()) = %d, want 1", len(storedEvents))
+		}
+		if storedEvents[0].EventType != events[0].EventType {
+			t.Fatalf("ListTelemetryRuntimeEvents()[0].EventType = %q, want %q", storedEvents[0].EventType, events[0].EventType)
+		}
+
+		storedDiagnostics, err := store.GetTelemetryDiagnosticsCurrent(ctx, agent.ID)
+		if err != nil {
+			t.Fatalf("GetTelemetryDiagnosticsCurrent() error = %v", err)
+		}
+		if storedDiagnostics.SystemInfoJSON != diagnostics.SystemInfoJSON {
+			t.Fatalf("GetTelemetryDiagnosticsCurrent() SystemInfoJSON = %q, want %q", storedDiagnostics.SystemInfoJSON, diagnostics.SystemInfoJSON)
+		}
+
+		storedSecurity, err := store.GetTelemetrySecurityInventoryCurrent(ctx, agent.ID)
+		if err != nil {
+			t.Fatalf("GetTelemetrySecurityInventoryCurrent() error = %v", err)
+		}
+		if storedSecurity.EntriesTotal != security.EntriesTotal {
+			t.Fatalf("GetTelemetrySecurityInventoryCurrent() EntriesTotal = %d, want %d", storedSecurity.EntriesTotal, security.EntriesTotal)
+		}
+	})
+
+	t.Run("telemetry detail boost round trip", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		group := storage.FleetGroupRecord{
+			ID:        "default",
+			Name:      "Default",
+			CreatedAt: time.Date(2026, time.March, 28, 11, 0, 0, 0, time.UTC),
+		}
+		agent := storage.AgentRecord{
+			ID:           "agent-boost-1",
+			NodeName:     "telemt-b",
+			FleetGroupID: group.ID,
+			Version:      "dev",
+			ReadOnly:     false,
+			LastSeenAt:   time.Date(2026, time.March, 28, 11, 1, 0, 0, time.UTC),
+		}
+		boost := storage.TelemetryDetailBoostRecord{
+			AgentID:   agent.ID,
+			ExpiresAt: time.Date(2026, time.March, 28, 11, 10, 0, 0, time.UTC),
+			UpdatedAt: time.Date(2026, time.March, 28, 11, 2, 0, 0, time.UTC),
+		}
+
+		if err := store.PutFleetGroup(ctx, group); err != nil {
+			t.Fatalf("PutFleetGroup() error = %v", err)
+		}
+		if err := store.PutAgent(ctx, agent); err != nil {
+			t.Fatalf("PutAgent() error = %v", err)
+		}
+		if err := store.PutTelemetryDetailBoost(ctx, boost); err != nil {
+			t.Fatalf("PutTelemetryDetailBoost() error = %v", err)
+		}
+
+		boosts, err := store.ListTelemetryDetailBoosts(ctx)
+		if err != nil {
+			t.Fatalf("ListTelemetryDetailBoosts() error = %v", err)
+		}
+		if len(boosts) != 1 {
+			t.Fatalf("len(ListTelemetryDetailBoosts()) = %d, want 1", len(boosts))
+		}
+		if boosts[0].AgentID != boost.AgentID {
+			t.Fatalf("ListTelemetryDetailBoosts()[0].AgentID = %q, want %q", boosts[0].AgentID, boost.AgentID)
+		}
+		if !boosts[0].ExpiresAt.Equal(boost.ExpiresAt) {
+			t.Fatalf("ListTelemetryDetailBoosts()[0].ExpiresAt = %v, want %v", boosts[0].ExpiresAt, boost.ExpiresAt)
+		}
+
+		if err := store.DeleteTelemetryDetailBoost(ctx, boost.AgentID); err != nil {
+			t.Fatalf("DeleteTelemetryDetailBoost() error = %v", err)
+		}
+		boosts, err = store.ListTelemetryDetailBoosts(ctx)
+		if err != nil {
+			t.Fatalf("ListTelemetryDetailBoosts() after delete error = %v", err)
+		}
+		if len(boosts) != 0 {
+			t.Fatalf("len(ListTelemetryDetailBoosts()) after delete = %d, want 0", len(boosts))
 		}
 	})
 }

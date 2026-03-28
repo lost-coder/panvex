@@ -13,6 +13,7 @@ import {
 test("buildServerTableRows maps agents into display rows with placeholders and dc summaries", () => {
   const rows = buildServerTableRows([
     {
+      agent: {
       id: "agent-1",
       node_name: "de-fra-01",
       fleet_group_id: "core-eu",
@@ -29,6 +30,7 @@ test("buildServerTableRows maps agents into display rows with placeholders and d
         dc_coverage_pct: 100,
         healthy_upstreams: 2,
         total_upstreams: 2,
+        transport_mode: "direct",
         dcs: [
           {
             dc: 1,
@@ -62,23 +64,26 @@ test("buildServerTableRows maps agents into display rows with placeholders and d
           },
         ],
       },
+      },
+      severity: "good",
+      reason: "Node is ready",
+      runtime_freshness: { state: "fresh" },
+      detail_boost: { active: false },
     } as any,
   ]);
 
   assert.equal(rows[0]?.serverName, "de-fra-01");
   assert.equal(rows[0]?.groupText, "core-eu");
-  assert.equal(rows[0]?.clientsText, "342");
-  assert.equal(rows[0]?.cpuText, "—");
-  assert.equal(rows[0]?.memoryText, "—");
-  assert.equal(rows[0]?.trafficText, "—");
-  assert.equal(rows[0]?.uptimeText, "1d 1h");
-  assert.equal(rows[0]?.dcSummaryText, "2/3");
-  assert.deepEqual(rows[0]?.dcSegments, ["ok", "partial", "down"]);
+  assert.equal(rows[0]?.freshnessText, "Fresh");
+  assert.equal(rows[0]?.runtimeText, "Direct • 400 conns");
+  assert.equal(rows[0]?.dcSummaryText, "100% across 3 DCs");
+  assert.equal(rows[0]?.upstreamSummaryText, "2 / 2 healthy");
 });
 
 test("buildServerFilterCounts and filterServerTableRows treat degraded and offline nodes as issues", () => {
   const rows = buildServerTableRows([
     {
+      agent: {
       id: "healthy",
       node_name: "healthy",
       fleet_group_id: "",
@@ -96,8 +101,14 @@ test("buildServerFilterCounts and filterServerTableRows treat degraded and offli
         total_upstreams: 2,
         dcs: [],
       },
+      },
+      severity: "good",
+      reason: "Node is ready",
+      runtime_freshness: { state: "fresh" },
+      detail_boost: { active: false },
     } as any,
     {
+      agent: {
       id: "degraded",
       node_name: "degraded",
       fleet_group_id: "",
@@ -115,8 +126,14 @@ test("buildServerFilterCounts and filterServerTableRows treat degraded and offli
         total_upstreams: 2,
         dcs: [],
       },
+      },
+      severity: "warn",
+      reason: "Runtime is degraded",
+      runtime_freshness: { state: "fresh" },
+      detail_boost: { active: false },
     } as any,
     {
+      agent: {
       id: "offline",
       node_name: "offline",
       fleet_group_id: "",
@@ -134,6 +151,11 @@ test("buildServerFilterCounts and filterServerTableRows treat degraded and offli
         total_upstreams: 0,
         dcs: [],
       },
+      },
+      severity: "bad",
+      reason: "Agent heartbeat is offline",
+      runtime_freshness: { state: "stale" },
+      detail_boost: { active: false },
     } as any,
   ]);
 
@@ -141,9 +163,9 @@ test("buildServerFilterCounts and filterServerTableRows treat degraded and offli
   const issues = filterServerTableRows(rows, { filter: "issues", search: "" });
 
   assert.equal(counts.all, 3);
-  assert.equal(counts.online, 1);
+  assert.equal(counts.healthy, 1);
   assert.equal(counts.issues, 2);
-  assert.equal(counts.offline, 1);
+  assert.equal(counts.stale, 1);
   assert.deepEqual(issues.map((row) => row.id), ["degraded", "offline"]);
 });
 

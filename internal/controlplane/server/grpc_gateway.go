@@ -407,6 +407,8 @@ func (s *Server) processRegularAgentMessage(
 			HasClientIPs: snap.HasClientIps,
 			Runtime:      snap.Runtime,
 			HasRuntime:   snap.Runtime != nil,
+			RuntimeDiagnostics: snap.RuntimeDiagnostics,
+			RuntimeSecurityInventory: snap.RuntimeSecurityInventory,
 			Metrics:      snap.Metrics,
 			ObservedAt:   time.Unix(snap.ObservedAtUnix, 0).UTC(),
 		})

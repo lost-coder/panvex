@@ -760,3 +760,5 @@ func (c *fakeRuntimeReloadClient) UpdateClient(context.Context, telemt.ManagedCl
 func (c *fakeRuntimeReloadClient) DeleteClient(context.Context, string) error {
 	return nil
 }
+
+func (c *fakeRuntimeReloadClient) InvalidateSlowDataCache() {}

@@ -177,11 +177,21 @@ func jobPipelineForAction(action string) jobPipeline {
 	switch action {
 	case "runtime.reload":
 		return jobPipelineRuntimeReload
+	case "telemetry.refresh_diagnostics":
+		return jobPipelineRuntimeReload
 	case "client.create", "client.update", "client.rotate_secret", "client.delete":
 		return jobPipelineClientMutation
 	default:
 		return jobPipelineDefault
 	}
+}
+
+func shouldSendRuntimeSnapshotAfterJob(action string, success bool) bool {
+	if !success {
+		return false
+	}
+
+	return action == "telemetry.refresh_diagnostics"
 }
 
 func jobWorkerCountForPipeline(pipeline jobPipeline) int {
@@ -332,6 +342,24 @@ func runJobWorker(
 		result := agent.HandleJob(jobCtx, job, time.Now())
 		cancelJob()
 
+		if shouldSendRuntimeSnapshotAfterJob(job.GetAction(), result.Success) {
+			runtimeCtx, cancelRuntime := context.WithTimeout(connectionCtx, runtimeOperationTimeout)
+			snapshot, err := agent.BuildRuntimeSnapshot(runtimeCtx, time.Now())
+			cancelRuntime()
+			if err != nil {
+				result.Success = false
+				result.Message = "diagnostics refresh failed: " + err.Error()
+			} else {
+				select {
+				case <-connectionCtx.Done():
+					tracker.release(jobID)
+					return
+				case criticalOutbound <- &gatewayrpc.ConnectClientMessage{
+					Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: snapshot},
+				}:
+				}
+			}
+		}
 		select {
 		case <-connectionCtx.Done():
 			tracker.release(jobID)

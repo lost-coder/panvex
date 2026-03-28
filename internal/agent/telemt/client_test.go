@@ -64,11 +64,81 @@ func TestClientFetchRuntimeStateUsesLoopbackAPI(t *testing.T) {
 			})
 		case "/v1/security/posture":
 			writeSuccessEnvelope(w, map[string]any{
-				"read_only": true,
+				"read_only":                true,
+				"api_read_only":            true,
+				"api_whitelist_enabled":    true,
+				"api_whitelist_entries":    2,
+				"api_auth_header_enabled":  true,
+				"proxy_protocol_enabled":   false,
+				"log_level":                "normal",
+				"telemetry_core_enabled":   true,
+				"telemetry_user_enabled":   true,
+				"telemetry_me_level":       "debug",
 			})
 		case "/v1/system/info":
 			writeSuccessEnvelope(w, map[string]any{
-				"version": "2026.03",
+				"version":                       "2026.03",
+				"target_arch":                   "x86_64",
+				"target_os":                     "linux",
+				"build_profile":                 "release",
+				"git_commit":                    "abc123",
+				"build_time_utc":                "2026-03-27T10:00:00Z",
+				"rustc_version":                 "1.87.0",
+				"process_started_at_epoch_secs": 1_763_226_000,
+				"uptime_seconds":                3600.0,
+				"config_path":                   "/etc/telemt/config.toml",
+				"config_hash":                   "cfg-hash",
+				"config_reload_count":           3,
+				"last_config_reload_epoch_secs": 1_763_225_900,
+			})
+		case "/v1/limits/effective":
+			writeSuccessEnvelope(w, map[string]any{
+				"update_every_secs":       5,
+				"me_reinit_every_secs":    30,
+				"me_pool_force_close_secs": 120,
+				"timeouts": map[string]any{
+					"client_handshake_secs": 10,
+					"tg_connect_secs":       8,
+				},
+				"upstream": map[string]any{
+					"connect_retry_attempts": 3,
+					"connect_budget_ms":      1500,
+				},
+				"middle_proxy": map[string]any{
+					"floor_mode":            "adaptive",
+					"me2dc_fallback":        true,
+					"writer_pick_mode":      "sorted_rr",
+				},
+				"user_ip_policy": map[string]any{
+					"mode":        "combined",
+					"window_secs": 600,
+				},
+			})
+		case "/v1/security/whitelist":
+			writeSuccessEnvelope(w, map[string]any{
+				"generated_at_epoch_secs": 1_763_226_500,
+				"enabled":                 true,
+				"entries_total":           2,
+				"entries":                 []string{"10.0.0.0/24", "192.168.0.0/24"},
+			})
+		case "/v1/stats/minimal/all":
+			writeSuccessEnvelope(w, map[string]any{
+				"enabled":                 true,
+				"generated_at_epoch_secs": 1_763_226_550,
+				"data": map[string]any{
+					"network_path": []map[string]any{
+						{"dc": 2, "selected_ip": "149.154.167.40"},
+					},
+				},
+			})
+		case "/v1/runtime/me_pool_state":
+			writeSuccessEnvelope(w, map[string]any{
+				"enabled":                 true,
+				"generated_at_epoch_secs": 1_763_226_560,
+				"data": map[string]any{
+					"active_generation": 7,
+					"warm_generation":   8,
+				},
 			})
 		case "/v1/runtime/gates":
 			writeSuccessEnvelope(w, map[string]any{
@@ -213,6 +283,30 @@ func TestClientFetchRuntimeStateUsesLoopbackAPI(t *testing.T) {
 	if state.Upstreams.HealthyTotal != 1 {
 		t.Fatalf("state.Upstreams.HealthyTotal = %d, want %d", state.Upstreams.HealthyTotal, 1)
 	}
+	if state.Diagnostics.SystemInfoJSON == "" {
+		t.Fatal("state.Diagnostics.SystemInfoJSON = empty, want system info payload")
+	}
+	if state.Diagnostics.EffectiveLimitsJSON == "" {
+		t.Fatal("state.Diagnostics.EffectiveLimitsJSON = empty, want effective limits payload")
+	}
+	if state.Diagnostics.SecurityPostureJSON == "" {
+		t.Fatal("state.Diagnostics.SecurityPostureJSON = empty, want security posture payload")
+	}
+	if state.Diagnostics.MinimalAllJSON == "" {
+		t.Fatal("state.Diagnostics.MinimalAllJSON = empty, want minimal runtime payload")
+	}
+	if state.Diagnostics.MEPoolJSON == "" {
+		t.Fatal("state.Diagnostics.MEPoolJSON = empty, want me pool payload")
+	}
+	if !state.SecurityInventory.Enabled {
+		t.Fatal("state.SecurityInventory.Enabled = false, want true")
+	}
+	if state.SecurityInventory.EntriesTotal != 2 {
+		t.Fatalf("state.SecurityInventory.EntriesTotal = %d, want %d", state.SecurityInventory.EntriesTotal, 2)
+	}
+	if state.SecurityInventory.EntriesJSON == "" {
+		t.Fatal("state.SecurityInventory.EntriesJSON = empty, want whitelist payload")
+	}
 	if len(state.RecentEvents) != 1 {
 		t.Fatalf("len(state.RecentEvents) = %d, want %d", len(state.RecentEvents), 1)
 	}
@@ -233,6 +327,105 @@ func TestClientFetchRuntimeStateUsesLoopbackAPI(t *testing.T) {
 	}
 	if state.Clients[0].CurrentIPsUsed != 2 {
 		t.Fatalf("state.Clients[0].CurrentIPsUsed = %d, want %d", state.Clients[0].CurrentIPsUsed, 2)
+	}
+}
+
+func TestClientFetchRuntimeStatePreservesDisabledDiagnosticsWithoutFailingFastRuntime(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/health":
+			writeSuccessEnvelope(w, map[string]any{"status": "ok"})
+		case "/v1/security/posture":
+			writeSuccessEnvelope(w, map[string]any{"read_only": false})
+		case "/v1/system/info":
+			writeSuccessEnvelope(w, map[string]any{"version": "2026.03", "uptime_seconds": 120.0})
+		case "/v1/limits/effective":
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "message": "limits unavailable"})
+		case "/v1/security/whitelist":
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "message": "whitelist unavailable"})
+		case "/v1/stats/minimal/all":
+			writeSuccessEnvelope(w, map[string]any{"enabled": false, "reason": "feature_disabled"})
+		case "/v1/runtime/me_pool_state":
+			writeSuccessEnvelope(w, map[string]any{"enabled": false, "reason": "source_unavailable"})
+		case "/v1/runtime/gates":
+			writeSuccessEnvelope(w, map[string]any{
+				"accepting_new_connections": true,
+				"me_runtime_ready":          true,
+				"me2dc_fallback_enabled":    false,
+				"use_middle_proxy":          false,
+				"startup_status":            "ready",
+				"startup_stage":             "steady_state",
+				"startup_progress_pct":      100.0,
+			})
+		case "/v1/runtime/initialization":
+			writeSuccessEnvelope(w, map[string]any{
+				"status":         "ready",
+				"degraded":       false,
+				"current_stage":  "steady_state",
+				"progress_pct":   100.0,
+				"transport_mode": "direct",
+			})
+		case "/v1/runtime/connections/summary":
+			writeSuccessEnvelope(w, map[string]any{
+				"enabled": true,
+				"data": map[string]any{
+					"totals": map[string]any{
+						"current_connections":        12,
+						"current_connections_me":     0,
+						"current_connections_direct": 12,
+						"active_users":               5,
+					},
+				},
+			})
+		case "/v1/stats/summary":
+			writeSuccessEnvelope(w, map[string]any{
+				"connections_total":        128,
+				"connections_bad_total":    1,
+				"handshake_timeouts_total": 0,
+				"configured_users":         4,
+			})
+		case "/v1/stats/dcs":
+			writeSuccessEnvelope(w, map[string]any{"dcs": []map[string]any{}})
+		case "/v1/stats/upstreams":
+			writeSuccessEnvelope(w, map[string]any{"summary": map[string]any{}, "upstreams": []map[string]any{}})
+		case "/v1/runtime/events/recent":
+			writeSuccessEnvelope(w, map[string]any{"enabled": false, "reason": "feature_disabled"})
+		case "/v1/stats/users":
+			writeSuccessEnvelope(w, []map[string]any{})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Config{
+		BaseURL:       server.URL,
+		Authorization: "secret",
+	}, server.Client())
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	state, err := client.FetchRuntimeState(context.Background())
+	if err != nil {
+		t.Fatalf("FetchRuntimeState() error = %v", err)
+	}
+	if state.ConnectedUsers != 12 {
+		t.Fatalf("state.ConnectedUsers = %d, want %d", state.ConnectedUsers, 12)
+	}
+	if state.Diagnostics.State != "unavailable" {
+		t.Fatalf("state.Diagnostics.State = %q, want %q", state.Diagnostics.State, "unavailable")
+	}
+	if state.SecurityInventory.State != "unavailable" {
+		t.Fatalf("state.SecurityInventory.State = %q, want %q", state.SecurityInventory.State, "unavailable")
+	}
+	if state.Diagnostics.MinimalAllJSON == "" {
+		t.Fatal("state.Diagnostics.MinimalAllJSON = empty, want disabled payload")
+	}
+	if state.Diagnostics.MEPoolJSON == "" {
+		t.Fatal("state.Diagnostics.MEPoolJSON = empty, want unavailable payload")
 	}
 }
 

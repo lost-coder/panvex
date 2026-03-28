@@ -52,6 +52,26 @@ type MetricStore interface {
 	ListMetricSnapshots(ctx context.Context) ([]MetricSnapshotRecord, error)
 }
 
+// TelemetryStore persists current Telemt telemetry projections and recent runtime events.
+type TelemetryStore interface {
+	PutTelemetryRuntimeCurrent(ctx context.Context, record TelemetryRuntimeCurrentRecord) error
+	GetTelemetryRuntimeCurrent(ctx context.Context, agentID string) (TelemetryRuntimeCurrentRecord, error)
+	ListTelemetryRuntimeCurrent(ctx context.Context) ([]TelemetryRuntimeCurrentRecord, error)
+	ReplaceTelemetryRuntimeDCs(ctx context.Context, agentID string, records []TelemetryRuntimeDCRecord) error
+	ListTelemetryRuntimeDCs(ctx context.Context, agentID string) ([]TelemetryRuntimeDCRecord, error)
+	ReplaceTelemetryRuntimeUpstreams(ctx context.Context, agentID string, records []TelemetryRuntimeUpstreamRecord) error
+	ListTelemetryRuntimeUpstreams(ctx context.Context, agentID string) ([]TelemetryRuntimeUpstreamRecord, error)
+	AppendTelemetryRuntimeEvents(ctx context.Context, agentID string, records []TelemetryRuntimeEventRecord) error
+	ListTelemetryRuntimeEvents(ctx context.Context, agentID string, limit int) ([]TelemetryRuntimeEventRecord, error)
+	PutTelemetryDiagnosticsCurrent(ctx context.Context, record TelemetryDiagnosticsCurrentRecord) error
+	GetTelemetryDiagnosticsCurrent(ctx context.Context, agentID string) (TelemetryDiagnosticsCurrentRecord, error)
+	PutTelemetrySecurityInventoryCurrent(ctx context.Context, record TelemetrySecurityInventoryCurrentRecord) error
+	GetTelemetrySecurityInventoryCurrent(ctx context.Context, agentID string) (TelemetrySecurityInventoryCurrentRecord, error)
+	PutTelemetryDetailBoost(ctx context.Context, record TelemetryDetailBoostRecord) error
+	ListTelemetryDetailBoosts(ctx context.Context) ([]TelemetryDetailBoostRecord, error)
+	DeleteTelemetryDetailBoost(ctx context.Context, agentID string) error
+}
+
 // EnrollmentStore persists one-time agent enrollment tokens.
 type EnrollmentStore interface {
 	PutEnrollmentToken(ctx context.Context, token EnrollmentTokenRecord) error
@@ -102,6 +122,7 @@ type Store interface {
 	JobStore
 	AuditStore
 	MetricStore
+	TelemetryStore
 	EnrollmentStore
 	AgentCertificateRecoveryGrantStore
 	PanelSettingsStore

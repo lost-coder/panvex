@@ -1,10 +1,9 @@
-import type { Agent } from "../../lib/api";
+import type { TelemetryServerSummary } from "../../lib/api";
 
-export type ServerTableFilter = "all" | "online" | "issues" | "offline";
-export type ServerTableSortKey = "server" | "status" | "clients" | "cpu" | "memory" | "dc" | "traffic" | "uptime";
+export type ServerTableFilter = "all" | "healthy" | "issues" | "stale";
+export type ServerTableSortKey = "server" | "status" | "freshness" | "runtime" | "dc" | "upstreams" | "events";
 export type ServerTableSortDir = "asc" | "desc";
 export type ServerStatusTone = "online" | "degraded" | "offline";
-export type DcSegmentTone = "ok" | "partial" | "down";
 
 export interface ServerTableRow {
   id: string;
@@ -12,51 +11,46 @@ export interface ServerTableRow {
   groupText: string;
   statusText: string;
   statusTone: ServerStatusTone;
-  presenceState: string;
+  reasonText: string;
+  freshnessText: string;
+  freshnessRank: number;
+  admissionText: string;
+  runtimeText: string;
+  dcSummaryText: string;
+  upstreamSummaryText: string;
+  eventText: string;
   isIssue: boolean;
   severity: number;
-  clientsValue: number;
-  clientsText: string;
-  cpuText: string;
-  memoryText: string;
-  trafficText: string;
-  uptimeText: string;
-  dcAvailableCount: number;
-  dcTotalCount: number;
-  dcSummaryText: string;
-  dcSegments: DcSegmentTone[];
 }
 
 const numberFormatter = new Intl.NumberFormat("en-US");
 
-export function buildServerTableRows(agents: Agent[]): ServerTableRow[] {
-  return agents.map((agent) => {
-    const statusTone = resolveServerStatusTone(agent);
-    const dcs = agent.runtime?.dcs ?? [];
-    const dcSegments = dcs.map(resolveDcSegmentTone);
-    const dcAvailableCount = dcs.filter((dc) => (dc.coverage_pct ?? 0) > 0).length;
-    const dcTotalCount = dcs.length;
-    const clientsValue = agent.runtime?.active_users ?? 0;
+export function buildServerTableRows(items: TelemetryServerSummary[]): ServerTableRow[] {
+  return items.map((item) => {
+    const summary = normalizeTelemetryServerSummary(item);
+    const agent = summary.agent;
+    const statusTone = resolveServerStatusTone(agent, summary.severity);
+    const firstEvent = [...(agent.runtime?.recent_events ?? [])]
+      .sort((left, right) => right.timestamp_unix - left.timestamp_unix || right.sequence - left.sequence)[0];
 
     return {
       id: agent.id,
       serverName: agent.node_name,
       groupText: agent.fleet_group_id || "Ungrouped",
-      statusText: statusTone.charAt(0).toUpperCase() + statusTone.slice(1),
+      statusText: statusTone === "offline" ? "Offline" : statusTone === "degraded" ? "Attention" : "Healthy",
       statusTone,
-      presenceState: agent.presence_state,
-      isIssue: statusTone !== "online",
-      severity: statusTone === "offline" ? 3 : statusTone === "degraded" ? 2 : 1,
-      clientsValue,
-      clientsText: statusTone === "offline" ? "—" : numberFormatter.format(clientsValue),
-      cpuText: "—",
-      memoryText: "—",
-      trafficText: "—",
-      uptimeText: formatUptime(agent.runtime?.uptime_seconds),
-      dcAvailableCount,
-      dcTotalCount,
-      dcSummaryText: dcTotalCount > 0 ? `${dcAvailableCount}/${dcTotalCount}` : "—",
-      dcSegments,
+      reasonText: summary.reason,
+      freshnessText: humanizeFreshness(summary.runtime_freshness.state),
+      freshnessRank: freshnessRank(summary.runtime_freshness.state),
+      admissionText: agent.runtime?.accepting_new_connections ? "Open" : "Closed",
+      runtimeText: `${humanizeToken(agent.runtime?.transport_mode || "unknown")} • ${numberFormatter.format(agent.runtime?.current_connections ?? 0)} conns`,
+      dcSummaryText: agent.runtime?.dcs?.length
+        ? `${Math.round(agent.runtime?.dc_coverage_pct ?? 0)}% across ${agent.runtime?.dcs.length ?? 0} DCs`
+        : "No DC data",
+      upstreamSummaryText: `${numberFormatter.format(agent.runtime?.healthy_upstreams ?? 0)} / ${numberFormatter.format(agent.runtime?.total_upstreams ?? 0)} healthy`,
+      eventText: firstEvent ? firstEvent.context || humanizeToken(firstEvent.event_type) : "No recent events",
+      isIssue: summary.severity !== "good" || summary.runtime_freshness.state !== "fresh",
+      severity: summary.severity === "bad" ? 3 : summary.severity === "warn" ? 2 : 1,
     };
   });
 }
@@ -64,24 +58,21 @@ export function buildServerTableRows(agents: Agent[]): ServerTableRow[] {
 export function buildServerFilterCounts(rows: ServerTableRow[]) {
   return {
     all: rows.length,
-    online: rows.filter((row) => !row.isIssue).length,
+    healthy: rows.filter((row) => !row.isIssue).length,
     issues: rows.filter((row) => row.isIssue).length,
-    offline: rows.filter((row) => row.statusTone === "offline").length,
+    stale: rows.filter((row) => row.freshnessRank >= 2).length,
   };
 }
 
-export function filterServerTableRows(
-  rows: ServerTableRow[],
-  options: { filter: ServerTableFilter; search: string }
-) {
+export function filterServerTableRows(rows: ServerTableRow[], options: { filter: ServerTableFilter; search: string }) {
   const normalizedSearch = options.search.trim().toLowerCase();
 
   return rows.filter((row) => {
     const matchesFilter =
       options.filter === "all" ||
-      (options.filter === "online" && !row.isIssue) ||
+      (options.filter === "healthy" && !row.isIssue) ||
       (options.filter === "issues" && row.isIssue) ||
-      (options.filter === "offline" && row.statusTone === "offline");
+      (options.filter === "stale" && row.freshnessRank >= 2);
 
     if (!matchesFilter) {
       return false;
@@ -91,24 +82,17 @@ export function filterServerTableRows(
       return true;
     }
 
-    return [
-      row.serverName,
-      row.groupText,
-      row.statusText,
-    ].some((value) => value.toLowerCase().includes(normalizedSearch));
+    return [row.serverName, row.groupText, row.reasonText, row.eventText].some((value) =>
+      value.toLowerCase().includes(normalizedSearch)
+    );
   });
 }
 
-export function sortServerTableRows(
-  rows: ServerTableRow[],
-  sortKey: ServerTableSortKey,
-  sortDir: ServerTableSortDir
-) {
+export function sortServerTableRows(rows: ServerTableRow[], sortKey: ServerTableSortKey, sortDir: ServerTableSortDir) {
   const direction = sortDir === "asc" ? 1 : -1;
 
   return [...rows].sort((leftRow, rightRow) => {
     const comparison = compareByKey(leftRow, rightRow, sortKey);
-
     if (comparison !== 0) {
       return comparison * direction;
     }
@@ -117,11 +101,7 @@ export function sortServerTableRows(
   });
 }
 
-export function paginateServerTableRows(
-  rows: ServerTableRow[],
-  page: number,
-  pageSize: number
-) {
+export function paginateServerTableRows(rows: ServerTableRow[], page: number, pageSize: number) {
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const safePage = Math.min(Math.max(page, 1), totalPages);
   const startIndex = (safePage - 1) * pageSize;
@@ -132,81 +112,99 @@ export function paginateServerTableRows(
   };
 }
 
-function resolveServerStatusTone(agent: Agent): ServerStatusTone {
+function resolveServerStatusTone(
+  agent: TelemetryServerSummary["agent"],
+  severity: TelemetryServerSummary["severity"]
+): ServerStatusTone {
   if (agent.presence_state === "offline") {
     return "offline";
   }
-
-  if (agent.presence_state === "degraded" || agent.runtime?.degraded) {
+  if (severity !== "good") {
     return "degraded";
   }
-
   return "online";
 }
 
-function resolveDcSegmentTone(dc: Agent["runtime"]["dcs"][number]): DcSegmentTone {
-  if ((dc.coverage_pct ?? 0) >= 100) {
-    return "ok";
-  }
-
-  if ((dc.coverage_pct ?? 0) > 0) {
-    return "partial";
-  }
-
-  return "down";
+function humanizeToken(value: string): string {
+  return value
+    .split(/[_-]+/g)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
-function compareByKey(
-  leftRow: ServerTableRow,
-  rightRow: ServerTableRow,
-  sortKey: ServerTableSortKey
-) {
+function humanizeFreshness(value: string): string {
+  switch (value) {
+    case "fresh":
+      return "Fresh";
+    case "stale":
+      return "Stale";
+    case "disabled":
+      return "Disabled";
+    case "unavailable":
+      return "Unavailable";
+    default:
+      return "Pending";
+  }
+}
+
+function freshnessRank(value: string): number {
+  switch (value) {
+    case "stale":
+      return 2;
+    case "unavailable":
+    case "disabled":
+      return 3;
+    case "fresh":
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+function compareByKey(leftRow: ServerTableRow, rightRow: ServerTableRow, sortKey: ServerTableSortKey) {
   switch (sortKey) {
     case "status":
       return leftRow.severity - rightRow.severity;
-    case "clients":
-      return leftRow.clientsValue - rightRow.clientsValue;
+    case "freshness":
+      return leftRow.freshnessRank - rightRow.freshnessRank;
+    case "runtime":
+      return leftRow.runtimeText.localeCompare(rightRow.runtimeText, "en", { sensitivity: "base" });
     case "dc":
-      return (
-        leftRow.dcAvailableCount - rightRow.dcAvailableCount ||
-        leftRow.dcTotalCount - rightRow.dcTotalCount
-      );
-    case "cpu":
-      return leftRow.cpuText.localeCompare(rightRow.cpuText, "en", { sensitivity: "base" });
-    case "memory":
-      return leftRow.memoryText.localeCompare(rightRow.memoryText, "en", { sensitivity: "base" });
-    case "traffic":
-      return leftRow.trafficText.localeCompare(rightRow.trafficText, "en", { sensitivity: "base" });
-    case "uptime":
-      return leftRow.uptimeText.localeCompare(rightRow.uptimeText, "en", { sensitivity: "base" });
+      return leftRow.dcSummaryText.localeCompare(rightRow.dcSummaryText, "en", { sensitivity: "base" });
+    case "upstreams":
+      return leftRow.upstreamSummaryText.localeCompare(rightRow.upstreamSummaryText, "en", { sensitivity: "base" });
+    case "events":
+      return leftRow.eventText.localeCompare(rightRow.eventText, "en", { sensitivity: "base" });
     case "server":
     default:
       return leftRow.serverName.localeCompare(rightRow.serverName, "en", { sensitivity: "base" });
   }
 }
 
-function formatUptime(value: number | undefined): string {
-  if (!Number.isFinite(value) || value === undefined || value <= 0) {
-    return "—";
+function normalizeTelemetryServerSummary(input: TelemetryServerSummary | any): TelemetryServerSummary {
+  if (input && "agent" in input) {
+    return input;
   }
 
-  const totalSeconds = Math.floor(value);
-  if (totalSeconds < 60) {
-    return `${totalSeconds}s`;
-  }
+  const severity = input?.presence_state === "offline"
+    ? "bad"
+    : input?.presence_state === "degraded" || input?.runtime?.degraded
+      ? "warn"
+      : "good";
 
-  const totalMinutes = Math.floor(totalSeconds / 60);
-  if (totalMinutes < 60) {
-    return `${totalMinutes}m`;
-  }
-
-  const totalHours = Math.floor(totalMinutes / 60);
-  if (totalHours < 24) {
-    const minutes = totalMinutes % 60;
-    return minutes > 0 ? `${totalHours}h ${minutes}m` : `${totalHours}h`;
-  }
-
-  const days = Math.floor(totalHours / 24);
-  const hours = totalHours % 24;
-  return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+  return {
+    agent: input,
+    severity,
+    reason: severity === "bad" ? "Agent heartbeat is offline" : severity === "warn" ? "Runtime is degraded" : "Node is ready",
+    runtime_freshness: {
+      state: "fresh",
+      observed_at_unix: input?.last_seen_at ? Math.floor(Date.parse(input.last_seen_at) / 1000) : 0,
+    },
+    detail_boost: {
+      active: false,
+      expires_at_unix: 0,
+      remaining_seconds: 0,
+    },
+  };
 }

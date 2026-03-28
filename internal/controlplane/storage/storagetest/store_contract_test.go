@@ -23,6 +23,13 @@ type memoryStore struct {
 	fleetGroups        map[string]storage.FleetGroupRecord
 	agents             map[string]storage.AgentRecord
 	instances          map[string]storage.InstanceRecord
+	telemetryRuntimeCurrent map[string]storage.TelemetryRuntimeCurrentRecord
+	telemetryRuntimeDCs map[string][]storage.TelemetryRuntimeDCRecord
+	telemetryRuntimeUpstreams map[string][]storage.TelemetryRuntimeUpstreamRecord
+	telemetryRuntimeEvents map[string][]storage.TelemetryRuntimeEventRecord
+	telemetryDiagnosticsCurrent map[string]storage.TelemetryDiagnosticsCurrentRecord
+	telemetrySecurityCurrent map[string]storage.TelemetrySecurityInventoryCurrentRecord
+	telemetryDetailBoosts map[string]storage.TelemetryDetailBoostRecord
 	clients            map[string]storage.ClientRecord
 	clientAssignments  map[string]storage.ClientAssignmentRecord
 	clientDeployments  map[string]storage.ClientDeploymentRecord
@@ -45,6 +52,13 @@ func newMemoryStore() *memoryStore {
 		fleetGroups:      make(map[string]storage.FleetGroupRecord),
 		agents:           make(map[string]storage.AgentRecord),
 		instances:        make(map[string]storage.InstanceRecord),
+		telemetryRuntimeCurrent: make(map[string]storage.TelemetryRuntimeCurrentRecord),
+		telemetryRuntimeDCs: make(map[string][]storage.TelemetryRuntimeDCRecord),
+		telemetryRuntimeUpstreams: make(map[string][]storage.TelemetryRuntimeUpstreamRecord),
+		telemetryRuntimeEvents: make(map[string][]storage.TelemetryRuntimeEventRecord),
+		telemetryDiagnosticsCurrent: make(map[string]storage.TelemetryDiagnosticsCurrentRecord),
+		telemetrySecurityCurrent: make(map[string]storage.TelemetrySecurityInventoryCurrentRecord),
+		telemetryDetailBoosts: make(map[string]storage.TelemetryDetailBoostRecord),
 		clients:          make(map[string]storage.ClientRecord),
 		clientAssignments: make(map[string]storage.ClientAssignmentRecord),
 		clientDeployments: make(map[string]storage.ClientDeploymentRecord),
@@ -119,6 +133,7 @@ func (s *memoryStore) GetUserAppearance(_ context.Context, userID string) (stora
 			UserID:  userID,
 			Theme:   "system",
 			Density: "comfortable",
+			HelpMode: "basic",
 		}, nil
 	}
 
@@ -164,6 +179,108 @@ func (s *memoryStore) ListAgents(_ context.Context) ([]storage.AgentRecord, erro
 
 func (s *memoryStore) PutInstance(_ context.Context, instance storage.InstanceRecord) error {
 	s.instances[instance.ID] = instance
+	return nil
+}
+
+func (s *memoryStore) PutTelemetryRuntimeCurrent(_ context.Context, record storage.TelemetryRuntimeCurrentRecord) error {
+	s.telemetryRuntimeCurrent[record.AgentID] = record
+	return nil
+}
+
+func (s *memoryStore) GetTelemetryRuntimeCurrent(_ context.Context, agentID string) (storage.TelemetryRuntimeCurrentRecord, error) {
+	record, ok := s.telemetryRuntimeCurrent[agentID]
+	if !ok {
+		return storage.TelemetryRuntimeCurrentRecord{}, storage.ErrNotFound
+	}
+
+	return record, nil
+}
+
+func (s *memoryStore) ListTelemetryRuntimeCurrent(_ context.Context) ([]storage.TelemetryRuntimeCurrentRecord, error) {
+	result := make([]storage.TelemetryRuntimeCurrentRecord, 0, len(s.telemetryRuntimeCurrent))
+	for _, record := range s.telemetryRuntimeCurrent {
+		result = append(result, record)
+	}
+
+	return result, nil
+}
+
+func (s *memoryStore) ReplaceTelemetryRuntimeDCs(_ context.Context, agentID string, records []storage.TelemetryRuntimeDCRecord) error {
+	s.telemetryRuntimeDCs[agentID] = append([]storage.TelemetryRuntimeDCRecord(nil), records...)
+	return nil
+}
+
+func (s *memoryStore) ListTelemetryRuntimeDCs(_ context.Context, agentID string) ([]storage.TelemetryRuntimeDCRecord, error) {
+	return append([]storage.TelemetryRuntimeDCRecord(nil), s.telemetryRuntimeDCs[agentID]...), nil
+}
+
+func (s *memoryStore) ReplaceTelemetryRuntimeUpstreams(_ context.Context, agentID string, records []storage.TelemetryRuntimeUpstreamRecord) error {
+	s.telemetryRuntimeUpstreams[agentID] = append([]storage.TelemetryRuntimeUpstreamRecord(nil), records...)
+	return nil
+}
+
+func (s *memoryStore) ListTelemetryRuntimeUpstreams(_ context.Context, agentID string) ([]storage.TelemetryRuntimeUpstreamRecord, error) {
+	return append([]storage.TelemetryRuntimeUpstreamRecord(nil), s.telemetryRuntimeUpstreams[agentID]...), nil
+}
+
+func (s *memoryStore) AppendTelemetryRuntimeEvents(_ context.Context, agentID string, records []storage.TelemetryRuntimeEventRecord) error {
+	s.telemetryRuntimeEvents[agentID] = append(s.telemetryRuntimeEvents[agentID], records...)
+	return nil
+}
+
+func (s *memoryStore) ListTelemetryRuntimeEvents(_ context.Context, agentID string, limit int) ([]storage.TelemetryRuntimeEventRecord, error) {
+	records := append([]storage.TelemetryRuntimeEventRecord(nil), s.telemetryRuntimeEvents[agentID]...)
+	if limit > 0 && len(records) > limit {
+		records = records[len(records)-limit:]
+	}
+
+	return records, nil
+}
+
+func (s *memoryStore) PutTelemetryDiagnosticsCurrent(_ context.Context, record storage.TelemetryDiagnosticsCurrentRecord) error {
+	s.telemetryDiagnosticsCurrent[record.AgentID] = record
+	return nil
+}
+
+func (s *memoryStore) GetTelemetryDiagnosticsCurrent(_ context.Context, agentID string) (storage.TelemetryDiagnosticsCurrentRecord, error) {
+	record, ok := s.telemetryDiagnosticsCurrent[agentID]
+	if !ok {
+		return storage.TelemetryDiagnosticsCurrentRecord{}, storage.ErrNotFound
+	}
+
+	return record, nil
+}
+
+func (s *memoryStore) PutTelemetrySecurityInventoryCurrent(_ context.Context, record storage.TelemetrySecurityInventoryCurrentRecord) error {
+	s.telemetrySecurityCurrent[record.AgentID] = record
+	return nil
+}
+
+func (s *memoryStore) GetTelemetrySecurityInventoryCurrent(_ context.Context, agentID string) (storage.TelemetrySecurityInventoryCurrentRecord, error) {
+	record, ok := s.telemetrySecurityCurrent[agentID]
+	if !ok {
+		return storage.TelemetrySecurityInventoryCurrentRecord{}, storage.ErrNotFound
+	}
+
+	return record, nil
+}
+
+func (s *memoryStore) PutTelemetryDetailBoost(_ context.Context, record storage.TelemetryDetailBoostRecord) error {
+	s.telemetryDetailBoosts[record.AgentID] = record
+	return nil
+}
+
+func (s *memoryStore) ListTelemetryDetailBoosts(_ context.Context) ([]storage.TelemetryDetailBoostRecord, error) {
+	result := make([]storage.TelemetryDetailBoostRecord, 0, len(s.telemetryDetailBoosts))
+	for _, record := range s.telemetryDetailBoosts {
+		result = append(result, record)
+	}
+
+	return result, nil
+}
+
+func (s *memoryStore) DeleteTelemetryDetailBoost(_ context.Context, agentID string) error {
+	delete(s.telemetryDetailBoosts, agentID)
 	return nil
 }
 

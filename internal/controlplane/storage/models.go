@@ -18,7 +18,109 @@ type UserAppearanceRecord struct {
 	UserID    string
 	Theme     string
 	Density   string
+	HelpMode  string
 	UpdatedAt time.Time
+}
+
+// TelemetryRuntimeCurrentRecord stores one node's latest fast Telemt runtime summary.
+type TelemetryRuntimeCurrentRecord struct {
+	AgentID                   string
+	ObservedAt                time.Time
+	State                     string
+	StateReason               string
+	ReadOnly                  bool
+	AcceptingNewConnections   bool
+	MERuntimeReady            bool
+	ME2DCFallbackEnabled      bool
+	UseMiddleProxy            bool
+	StartupStatus             string
+	StartupStage              string
+	StartupProgressPct        float64
+	InitializationStatus      string
+	Degraded                  bool
+	InitializationStage       string
+	InitializationProgressPct float64
+	TransportMode             string
+	CurrentConnections        int
+	CurrentConnectionsME      int
+	CurrentConnectionsDirect  int
+	ActiveUsers               int
+	UptimeSeconds             float64
+	ConnectionsTotal          uint64
+	ConnectionsBadTotal       uint64
+	HandshakeTimeoutsTotal    uint64
+	ConfiguredUsers           int
+	DCCoveragePct             float64
+	HealthyUpstreams          int
+	TotalUpstreams            int
+}
+
+// TelemetryRuntimeDCRecord stores one node's latest DC health row.
+type TelemetryRuntimeDCRecord struct {
+	AgentID             string
+	DC                  int
+	ObservedAt          time.Time
+	AvailableEndpoints  int
+	AvailablePct        float64
+	RequiredWriters     int
+	AliveWriters        int
+	CoveragePct         float64
+	RTTMs               float64
+	Load                float64
+}
+
+// TelemetryRuntimeUpstreamRecord stores one node's latest upstream health row.
+type TelemetryRuntimeUpstreamRecord struct {
+	AgentID             string
+	UpstreamID          int
+	ObservedAt          time.Time
+	RouteKind           string
+	Address             string
+	Healthy             bool
+	Fails               int
+	EffectiveLatencyMs  float64
+}
+
+// TelemetryRuntimeEventRecord stores one recent runtime event observed for a node.
+type TelemetryRuntimeEventRecord struct {
+	AgentID      string
+	Sequence     int64
+	ObservedAt   time.Time
+	Timestamp    time.Time
+	EventType    string
+	Context      string
+	Severity     string
+}
+
+// TelemetryDiagnosticsCurrentRecord stores the latest slower diagnostics payloads for one node.
+type TelemetryDiagnosticsCurrentRecord struct {
+	AgentID              string
+	ObservedAt           time.Time
+	State                string
+	StateReason          string
+	SystemInfoJSON       string
+	EffectiveLimitsJSON  string
+	SecurityPostureJSON  string
+	MinimalAllJSON       string
+	MEPoolJSON           string
+}
+
+// TelemetrySecurityInventoryCurrentRecord stores the latest security inventory payload for one node.
+type TelemetrySecurityInventoryCurrentRecord struct {
+	AgentID      string
+	ObservedAt   time.Time
+	State        string
+	StateReason  string
+	Enabled      bool
+	EntriesTotal int
+	EntriesJSON  string
+}
+
+// TelemetryDetailBoostRecord stores one persisted detail boost window for a node.
+type TelemetryDetailBoostRecord struct {
+	AgentID    string
+	ExpiresAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // FleetGroupRecord stores one fleet group in the global control-plane namespace.

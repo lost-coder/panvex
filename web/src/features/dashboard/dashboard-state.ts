@@ -1,20 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "../../lib/api";
-
-export function useDashboardData() {
-  return useQuery({
-    queryKey: ["control-room"],
-    queryFn: () => apiClient.controlRoom(),
-    refetchInterval: 15_000,
-  });
-}
-
-export function useAgentsList() {
-  return useQuery({
-    queryKey: ["agents"],
-    queryFn: () => apiClient.agents(),
-  });
-}
+export { useTelemetryDashboard as useDashboardData } from "../telemetry/telemetry-state";
+export { useTelemetryServers as useAgentsList } from "../telemetry/telemetry-state";
 
 export function useDashboardClients() {
   return useQuery({

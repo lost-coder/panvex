@@ -24,10 +24,25 @@ async function loadServerCardSummary() {
     },
     fileName: componentPath,
   }).outputText;
-  const require = createRequire(import.meta.url);
+  const realRequire = createRequire(import.meta.url);
   const module = { exports: {} as Record<string, unknown> };
+  const mockRequire = (specifier: string) => {
+    if (specifier.includes("telemetry/help-metadata")) {
+      return {
+        getTelemetryFieldHelp: (label: string) => {
+          const copy: Record<string, string> = {
+            Freshness: "Telemetry freshness shows whether the latest runtime summary is still current enough for triage.",
+            Boost: "Detail boost temporarily raises diagnostics refresh priority for one node while the operator is investigating it.",
+          };
+          return copy[label];
+        },
+      };
+    }
+
+    return realRequire(specifier);
+  };
   const context = vm.createContext({
-    require,
+    require: mockRequire,
     module,
     exports: module.exports,
     __filename: componentPath,
@@ -110,4 +125,36 @@ test("ServerCardSummary renders an offline summary hint without the expand CTA t
 
   assert.match(markup, /Server unavailable - last contact 15 min ago/);
   assert.doesNotMatch(markup, /Press for DC details/);
+});
+
+test("ServerCardSummary renders metric help copy in full help mode", async () => {
+  const ServerCardSummary = await loadServerCardSummary();
+  const markup = renderToStaticMarkup(
+    React.createElement(ServerCardSummary, {
+      summary: {
+        id: "server-3",
+        nameText: "de-fra-03",
+        locationText: "Frankfurt, DE",
+        statusText: "Online",
+        statusTone: "good",
+        metrics: [
+          { label: "Clients", value: "128" },
+          { label: "Freshness", value: "Fresh" },
+          { label: "Boost", value: "Boost off" },
+        ],
+        dcCounts: {
+          ok: 12,
+          partial: 0,
+          down: 0,
+        },
+        dcTags: ["ok", "ok", "ok"],
+      },
+      expanded: false,
+      hintText: "Press for DC details",
+      helpMode: "full",
+    })
+  );
+
+  assert.match(markup, /Telemetry freshness shows whether the latest runtime summary is still current enough for triage\./);
+  assert.match(markup, /Detail boost temporarily raises diagnostics refresh priority for one node while the operator is investigating it\./);
 });

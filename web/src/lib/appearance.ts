@@ -2,6 +2,7 @@ import type { AppearanceSettingsResponse } from "./api";
 
 export type AppearanceTheme = "system" | "light" | "dark";
 export type AppearanceDensity = "comfortable" | "compact";
+export type AppearanceHelpMode = "off" | "basic" | "full";
 export type EffectiveAppearance = {
   theme: "light" | "dark";
   density: AppearanceDensity;
@@ -9,11 +10,13 @@ export type EffectiveAppearance = {
 export type AppearanceDraft = {
   theme: AppearanceTheme;
   density: AppearanceDensity;
+  helpMode: AppearanceHelpMode;
 };
 
 export const defaultAppearanceSettings: AppearanceSettingsResponse = {
   theme: "system",
   density: "comfortable",
+  help_mode: "basic",
   updated_at_unix: 0
 };
 
@@ -27,6 +30,7 @@ export function normalizeAppearanceSettings(
   return {
     theme: normalizeAppearanceTheme(settings?.theme),
     density: normalizeAppearanceDensity(settings?.density),
+    help_mode: normalizeAppearanceHelpMode(settings?.help_mode),
     updated_at_unix: typeof settings?.updated_at_unix === "number" ? settings.updated_at_unix : 0
   };
 }
@@ -37,7 +41,8 @@ export function buildAppearanceDraft(
   const normalized = normalizeAppearanceSettings(settings);
   return {
     theme: normalized.theme,
-    density: normalized.density
+    density: normalized.density,
+    helpMode: normalized.help_mode
   };
 }
 
@@ -78,6 +83,14 @@ export function normalizeAppearanceDensity(value: string | undefined): Appearanc
   }
 
   return "comfortable";
+}
+
+export function normalizeAppearanceHelpMode(value: string | undefined): AppearanceHelpMode {
+  if (value === "off" || value === "full") {
+    return value;
+  }
+
+  return "basic";
 }
 
 export function applyAppearanceAttributes(

@@ -36,6 +36,8 @@ const (
 	ActionClientDelete Action = "client.delete"
 	// ActionClientRotateSecret rotates the managed Telemt client secret on the target node.
 	ActionClientRotateSecret Action = "client.rotate_secret"
+	// ActionTelemetryRefreshDiagnostics forces a fresh slow-diagnostics pull on the target node.
+	ActionTelemetryRefreshDiagnostics Action = "telemetry.refresh_diagnostics"
 )
 
 // Status describes the orchestration lifecycle state of a job.

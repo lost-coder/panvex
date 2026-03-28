@@ -60,6 +60,9 @@ function createViewModel() {
       lastSeenText: "24 Mar 2026, 11:58 UTC",
       readOnlyText: "Writable",
       certificateRecoveryText: "Not allowed",
+      reasonText: "Runtime is degraded",
+      freshnessText: "Fresh",
+      detailBoostText: "Boost off",
     },
     overviewStats: [
       { label: "Active Users", valueText: "382", secondaryText: "Reported edge users" },
@@ -125,6 +128,25 @@ function createViewModel() {
         status: "bad",
       },
     ],
+    diagnosticsRows: [
+      { label: "Telemt Version", valueText: "2026.03" },
+      { label: "Config Hash", valueText: "cfg-1" },
+    ],
+    securityRows: [
+      { label: "API Read-Only", valueText: "No" },
+      { label: "Whitelist Entries", valueText: "2" },
+    ],
+    meDiagnosticsRows: [
+      { label: "Active Generation", valueText: "7" },
+      { label: "Warm Generation", valueText: "8" },
+    ],
+    routingRows: [
+      { label: "DC 2 Path", valueText: "149.154.167.40" },
+    ],
+    whitelistEntries: ["10.0.0.0/24", "192.168.0.0/24"],
+    diagnosticsStateText: "Fresh",
+    securityStateText: "Fresh",
+    meDiagnosticsStateText: "Fresh",
   };
 }
 
@@ -136,13 +158,14 @@ function createBaseMocks(overrides = {}) {
     },
     "./server-detail.css": {},
     "./server-detail-hero": {
-      ServerDetailHero: ({ header, onBack, onRecoveryAction, recoveryActionLabel }) =>
+      ServerDetailHero: ({ header, onBack, onRecoveryAction, onDiagnosticsRefreshAction, recoveryActionLabel, diagnosticsRefreshActionLabel }) =>
         React.createElement(
           "section",
           {
             className: "server-detail-hero",
             "data-back-handler": typeof onBack === "function",
             "data-recovery-handler": typeof onRecoveryAction === "function",
+            "data-diagnostics-refresh-handler": typeof onDiagnosticsRefreshAction === "function",
           },
           [
             "Back to Servers",
@@ -159,6 +182,7 @@ function createBaseMocks(overrides = {}) {
             "Recovery",
             header.certificateRecoveryText,
             "Latest reported snapshot",
+            diagnosticsRefreshActionLabel ?? "Diagnostics refresh unavailable",
             recoveryActionLabel ?? "Recovery action unavailable",
           ].join("|")
         ),
@@ -221,10 +245,49 @@ function createBaseMocks(overrides = {}) {
           items.map((item) => `${item.text}|${item.time}`).join("||")
         ),
     },
-      "./servers-state": {
-        useServers: () => ({
-          data: [{ id: "agent-fra-01", node_name: "de-fra-01" }],
+    "./server-detail-diagnostics-panel": {
+      ServerDetailDiagnosticsPanel: ({ stateText, rows }) =>
+        React.createElement(
+          "section",
+          { className: "server-detail-diagnostics-panel" },
+          [stateText, ...rows.map((row) => `${row.label}|${row.valueText}`)].join("||")
+        ),
+    },
+    "./server-detail-security-panel": {
+      ServerDetailSecurityPanel: ({ stateText, rows, entries }) =>
+        React.createElement(
+          "section",
+          { className: "server-detail-security-panel" },
+          [stateText, ...rows.map((row) => `${row.label}|${row.valueText}`), ...entries].join("||")
+        ),
+    },
+    "./server-detail-me-diagnostics-panel": {
+      ServerDetailMeDiagnosticsPanel: ({ stateText, meRows, routingRows }) =>
+        React.createElement(
+          "section",
+          { className: "server-detail-me-diagnostics-panel" },
+          [stateText, ...meRows.map((row) => `${row.label}|${row.valueText}`), ...routingRows.map((row) => `${row.label}|${row.valueText}`)].join("||")
+        ),
+    },
+    "@/features/profile/profile-state": {
+      useAppearanceSettings: () => ({ data: { help_mode: "basic" } }),
+    },
+    "./servers-state": {
+        useServerDetail: () => ({
+          data: {
+            server: { agent: { id: "agent-fra-01", node_name: "de-fra-01" }, detail_boost: { active: false } },
+            diagnostics: {},
+            security_inventory: { entries: [] },
+          },
           isLoading: false,
+        }),
+        useActivateTelemetryDetailBoost: () => ({
+          isPending: false,
+          mutate: () => undefined,
+        }),
+        useRefreshTelemetryDiagnostics: () => ({
+          isPending: false,
+          mutate: () => undefined,
         }),
         useAllowAgentCertificateRecovery: () => ({
           isPending: false,
@@ -236,6 +299,7 @@ function createBaseMocks(overrides = {}) {
         }),
         useServerRecoveryAccess: () => ({
           canManageRecovery: true,
+          canRefreshDiagnostics: true,
         }),
       },
     "./server-detail-view-model": {
@@ -261,6 +325,7 @@ test("ServerDetailPage renders the approved first-slice detail layout", () => {
   assert.match(markup, /server-detail-upstreams-table/);
   assert.match(markup, /server-detail-events-panel/);
   assert.match(markup, /Back to Servers/);
+  assert.match(markup, /Refresh Diagnostics/);
   assert.match(markup, /Allow Certificate Recovery/);
   assert.match(markup, /de-fra-01/);
   assert.match(markup, /Degraded/);
@@ -277,13 +342,20 @@ test("ServerDetailPage renders the approved first-slice detail layout", () => {
   assert.match(markup, /Connections/);
   assert.match(markup, /Upstreams/);
   assert.match(markup, /Recent Events/);
+  assert.match(markup, /System &amp; Limits/);
+  assert.match(markup, /Security &amp; Whitelist/);
+  assert.match(markup, /ME &amp; Routing Diagnostics/);
   assert.match(markup, /Latest reported snapshot/);
   assert.match(markup, /Reported totals/);
   assert.match(markup, /DC 2 coverage dropped below quorum\|2 min ago/);
   assert.match(markup, /ams-relay-02:443/);
+  assert.match(markup, /Telemt Version\|2026.03/);
+  assert.match(markup, /API Read-Only\|No/);
+  assert.match(markup, /Active Generation\|7/);
+  assert.match(markup, /DC 2 Path\|149\.154\.167\.40/);
   assert.match(
     markup,
-    /server-detail-hero.*server-detail-kpis.*DC Health.*server-detail-page__secondary-grid.*Runtime State.*Connections.*server-detail-page__tertiary-grid.*Upstreams.*Recent Events/s
+    /server-detail-hero.*server-detail-kpis.*DC Health.*server-detail-page__secondary-grid.*Runtime State.*Connections.*server-detail-page__tertiary-grid.*Upstreams.*Recent Events.*server-detail-page__tertiary-grid.*System &amp; Limits.*Security &amp; Whitelist.*ME &amp; Routing Diagnostics/s
   );
 });
 
@@ -295,9 +367,17 @@ test("ServerDetailPage renders a not-found state when the requested server is mi
         useRouter: () => ({ history: { back: () => undefined } }),
       },
       "./servers-state": {
-        useServers: () => ({
-          data: [],
+        useServerDetail: () => ({
+          data: undefined,
           isLoading: false,
+        }),
+        useActivateTelemetryDetailBoost: () => ({
+          isPending: false,
+          mutate: () => undefined,
+        }),
+        useRefreshTelemetryDiagnostics: () => ({
+          isPending: false,
+          mutate: () => undefined,
         }),
         useAllowAgentCertificateRecovery: () => ({
           isPending: false,
@@ -309,6 +389,7 @@ test("ServerDetailPage renders a not-found state when the requested server is mi
         }),
         useServerRecoveryAccess: () => ({
           canManageRecovery: true,
+          canRefreshDiagnostics: true,
         }),
       },
     })
@@ -323,10 +404,18 @@ test("ServerDetailPage renders an error state when the servers query fails", () 
   const ServerDetailPage = loadServerDetailPage(
     createBaseMocks({
       "./servers-state": {
-        useServers: () => ({
+        useServerDetail: () => ({
           data: undefined,
           isLoading: false,
           isError: true,
+        }),
+        useActivateTelemetryDetailBoost: () => ({
+          isPending: false,
+          mutate: () => undefined,
+        }),
+        useRefreshTelemetryDiagnostics: () => ({
+          isPending: false,
+          mutate: () => undefined,
         }),
         useAllowAgentCertificateRecovery: () => ({
           isPending: false,
@@ -338,6 +427,7 @@ test("ServerDetailPage renders an error state when the servers query fails", () 
         }),
         useServerRecoveryAccess: () => ({
           canManageRecovery: true,
+          canRefreshDiagnostics: true,
         }),
       },
     })
@@ -352,9 +442,21 @@ test("ServerDetailPage hides the recovery action for non-admin users", () => {
   const ServerDetailPage = loadServerDetailPage(
     createBaseMocks({
       "./servers-state": {
-        useServers: () => ({
-          data: [{ id: "agent-fra-01", node_name: "de-fra-01" }],
+        useServerDetail: () => ({
+          data: {
+            server: { agent: { id: "agent-fra-01", node_name: "de-fra-01" }, detail_boost: { active: false } },
+            diagnostics: {},
+            security_inventory: { entries: [] },
+          },
           isLoading: false,
+        }),
+        useActivateTelemetryDetailBoost: () => ({
+          isPending: false,
+          mutate: () => undefined,
+        }),
+        useRefreshTelemetryDiagnostics: () => ({
+          isPending: false,
+          mutate: () => undefined,
         }),
         useAllowAgentCertificateRecovery: () => ({
           isPending: false,
@@ -366,6 +468,7 @@ test("ServerDetailPage hides the recovery action for non-admin users", () => {
         }),
         useServerRecoveryAccess: () => ({
           canManageRecovery: false,
+          canRefreshDiagnostics: false,
         }),
       },
     })
@@ -381,17 +484,32 @@ test("ServerDetailPage renders a revoke action when a recovery window is already
   const ServerDetailPage = loadServerDetailPage(
     createBaseMocks({
       "./servers-state": {
-        useServers: () => ({
-          data: [{
-            id: "agent-fra-01",
-            node_name: "de-fra-01",
-            certificate_recovery: {
-              status: "allowed",
-              issued_at_unix: 1711281600,
-              expires_at_unix: 1711282500,
+        useServerDetail: () => ({
+          data: {
+            server: {
+              agent: {
+                id: "agent-fra-01",
+                node_name: "de-fra-01",
+                certificate_recovery: {
+                  status: "allowed",
+                  issued_at_unix: 1711281600,
+                  expires_at_unix: 1711282500,
+                },
+              },
+              detail_boost: { active: false },
             },
-          }],
+            diagnostics: {},
+            security_inventory: { entries: [] },
+          },
           isLoading: false,
+        }),
+        useActivateTelemetryDetailBoost: () => ({
+          isPending: false,
+          mutate: () => undefined,
+        }),
+        useRefreshTelemetryDiagnostics: () => ({
+          isPending: false,
+          mutate: () => undefined,
         }),
         useAllowAgentCertificateRecovery: () => ({
           isPending: false,
@@ -403,6 +521,7 @@ test("ServerDetailPage renders a revoke action when a recovery window is already
         }),
         useServerRecoveryAccess: () => ({
           canManageRecovery: true,
+          canRefreshDiagnostics: true,
         }),
       },
       "./server-detail-view-model": {

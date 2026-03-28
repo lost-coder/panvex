@@ -98,6 +98,74 @@ export type ControlRoomResponse = {
   recent_runtime_events: RuntimeEvent[];
 };
 
+export type TelemetryFreshness = {
+  state: "fresh" | "stale" | "unavailable" | "disabled" | "never_collected";
+  observed_at_unix: number;
+};
+
+export type TelemetryDetailBoost = {
+  active: boolean;
+  expires_at_unix: number;
+  remaining_seconds: number;
+};
+
+export type TelemetryDiagnosticsRefreshResponse = {
+  job_id: string;
+  status: string;
+};
+
+export type TelemetryServerSummary = {
+  agent: Agent;
+  severity: "good" | "warn" | "bad";
+  reason: string;
+  runtime_freshness: TelemetryFreshness;
+  detail_boost: TelemetryDetailBoost;
+};
+
+export type TelemetryAttentionItem = {
+  agent_id: string;
+  node_name: string;
+  fleet_group_id: string;
+  severity: "good" | "warn" | "bad";
+  reason: string;
+  presence_state: string;
+  runtime: AgentRuntime;
+  runtime_freshness: TelemetryFreshness;
+  detail_boost: TelemetryDetailBoost;
+};
+
+export type TelemetryDashboardResponse = {
+  fleet: FleetResponse;
+  attention: TelemetryAttentionItem[];
+  server_cards: TelemetryServerSummary[];
+  runtime_distribution: Record<string, number>;
+  recent_runtime_events: RuntimeEvent[];
+};
+
+export type TelemetryServersResponse = {
+  servers: TelemetryServerSummary[];
+};
+
+export type TelemetryServerDetailResponse = {
+  server: TelemetryServerSummary;
+  diagnostics: {
+    state: string;
+    state_reason: string;
+    system_info: Record<string, unknown>;
+    effective_limits: Record<string, unknown>;
+    security_posture: Record<string, unknown>;
+    minimal_all: Record<string, unknown>;
+    me_pool: Record<string, unknown>;
+  };
+  security_inventory: {
+    state: string;
+    state_reason: string;
+    enabled: boolean;
+    entries_total: number;
+    entries: string[];
+  };
+};
+
 export type Agent = {
   id: string;
   node_name: string;
@@ -263,6 +331,7 @@ export type PanelSettingsResponse = {
 export type AppearanceSettingsResponse = {
   theme: "system" | "light" | "dark";
   density: "comfortable" | "compact";
+  help_mode: "off" | "basic" | "full";
   updated_at_unix: number;
 };
 
@@ -344,6 +413,17 @@ export const apiClient = {
       body: JSON.stringify(payload)
     }),
   controlRoom: () => api<ControlRoomResponse>(`${apiBasePath}/control-room`),
+  telemetryDashboard: () => api<TelemetryDashboardResponse>(`${apiBasePath}/telemetry/dashboard`),
+  telemetryServers: () => api<TelemetryServersResponse>(`${apiBasePath}/telemetry/servers`),
+  telemetryServer: (agentID: string) => api<TelemetryServerDetailResponse>(`${apiBasePath}/telemetry/servers/${agentID}`),
+  activateTelemetryDetailBoost: (agentID: string) =>
+    api<TelemetryDetailBoost>(`${apiBasePath}/telemetry/servers/${agentID}/detail-boost`, {
+      method: "POST"
+    }),
+  refreshTelemetryDiagnostics: (agentID: string) =>
+    api<TelemetryDiagnosticsRefreshResponse>(`${apiBasePath}/telemetry/servers/${agentID}/refresh-diagnostics`, {
+      method: "POST"
+    }),
   fleet: () => api<FleetResponse>(`${apiBasePath}/fleet`),
   agents: () => api<Agent[]>(`${apiBasePath}/agents`),
   instances: () => api<Instance[]>(`${apiBasePath}/instances`),
@@ -373,6 +453,7 @@ export const apiClient = {
   updateAppearanceSettings: (payload: {
     theme: "system" | "light" | "dark";
     density: "comfortable" | "compact";
+    help_mode: "off" | "basic" | "full";
   }) =>
     api<AppearanceSettingsResponse>(`${apiBasePath}/settings/appearance`, {
       method: "PUT",

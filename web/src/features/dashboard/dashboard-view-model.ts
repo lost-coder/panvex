@@ -1,8 +1,9 @@
 import type {
   Agent,
   ClientListItem,
-  ControlRoomResponse,
+  FleetResponse,
   RuntimeEvent,
+  TelemetryServerSummary,
 } from "../../lib/api";
 
 export type FleetKpiSummary = {
@@ -85,11 +86,11 @@ export function sumFleetTraffic(clients: ClientListItem[]): number {
 }
 
 export function buildFleetKpiSummary(
-  controlRoom: ControlRoomResponse | undefined,
+  dashboard: { fleet: FleetResponse } | undefined,
   agents: Agent[],
   clients: ClientListItem[]
 ): FleetKpiSummary {
-  const fleet = controlRoom?.fleet;
+  const fleet = dashboard?.fleet;
   const severityCounts = countAgentSeverities(agents);
   const dcCoverageValues = agents
     .map((agent) => agent.runtime?.dc_coverage_pct ?? 0)
@@ -180,10 +181,14 @@ export function sortAgentsBySeverity(agents: Agent[]): Agent[] {
   });
 }
 
-export function buildServerCardSummary(agent: Agent): ServerCardSummary {
+export function buildServerCardSummary(summaryItem: TelemetryServerSummary): ServerCardSummary {
+  const summary = normalizeTelemetryServerSummary(summaryItem);
+  const agent = summary.agent;
   const dcSummary = buildServerCardDcCounts(agent);
-  const status = mapAgentStatus(agent);
+  const status = mapAgentStatus(agent, summary.severity);
   const isOffline = status.label === "Offline";
+  const freshnessText = humanizeToken(summary.runtime_freshness.state || "unknown");
+  const boostText = summary.detail_boost.active ? "Boost on" : "Boost off";
 
   return {
     id: agent.id,
@@ -193,15 +198,16 @@ export function buildServerCardSummary(agent: Agent): ServerCardSummary {
     statusTone: status.tone,
     metrics: [
       { label: "Clients", value: isOffline ? "—" : String(agent.runtime?.active_users ?? 0) },
-      { label: "CPU", value: "—" },
-      { label: "Traffic", value: "—" },
+      { label: "Freshness", value: freshnessText },
+      { label: "Boost", value: boostText },
     ],
     dcCounts: dcSummary.counts,
     dcTags: dcSummary.tags,
   };
 }
 
-export function buildServerCardDetails(agent: Agent): ServerCardDetails {
+export function buildServerCardDetails(summaryItem: TelemetryServerSummary): ServerCardDetails {
+  const agent = normalizeTelemetryServerSummary(summaryItem).agent;
   const isOffline = agent.presence_state === "offline";
 
   if (isOffline) {
@@ -312,16 +318,28 @@ function getAgentSeverityScore(agent: Agent): number {
   return 1;
 }
 
-function mapAgentStatus(agent: Agent): { label: string; tone: "good" | "warn" | "bad" } {
+function mapAgentStatus(agent: Agent, severity?: TelemetryServerSummary["severity"]): { label: string; tone: "good" | "warn" | "bad" } {
   if (agent.presence_state === "offline") {
     return { label: "Offline", tone: "bad" };
   }
 
-  if (getAgentSeverityScore(agent) > 1) {
+  if (severity === "bad" || severity === "warn" || getAgentSeverityScore(agent) > 1) {
     return { label: "Degraded", tone: "warn" };
   }
 
   return { label: "Online", tone: "good" };
+}
+
+function humanizeToken(value: string): string {
+  if (!value) {
+    return "Unknown";
+  }
+
+  return value
+    .split(/[_-]+/g)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function coverageToHealth(coveragePct: number): FleetDcCoverageState {
@@ -391,4 +409,31 @@ function countAgentSeverities(agents: Agent[]): {
     },
     { online: 0, degraded: 0, offline: 0 }
   );
+}
+
+function normalizeTelemetryServerSummary(input: TelemetryServerSummary | Agent): TelemetryServerSummary {
+  if ("agent" in input) {
+    return input;
+  }
+
+  const severity = input.presence_state === "offline"
+    ? "bad"
+    : input.presence_state === "degraded" || input.runtime?.degraded
+      ? "warn"
+      : "good";
+
+  return {
+    agent: input,
+    severity,
+    reason: severity === "bad" ? "Agent heartbeat is offline" : severity === "warn" ? "Runtime is degraded" : "Node is ready",
+    runtime_freshness: {
+      state: "fresh",
+      observed_at_unix: input.last_seen_at ? Math.floor(Date.parse(input.last_seen_at) / 1000) : 0,
+    },
+    detail_boost: {
+      active: false,
+      expires_at_unix: 0,
+      remaining_seconds: 0,
+    },
+  };
 }

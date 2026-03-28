@@ -1,5 +1,6 @@
 import React from "react";
 import { ArrowRight } from "lucide-react";
+import { getTelemetryFieldHelp, type TelemetryHelpMode } from "../telemetry/help-metadata";
 
 import type { ServerCardSummary as ServerCardSummaryModel } from "./dashboard-view-model";
 
@@ -7,6 +8,7 @@ type ServerCardSummaryProps = {
   summary: ServerCardSummaryModel;
   expanded: boolean;
   hintText: string;
+  helpMode?: TelemetryHelpMode;
 };
 
 type DcCountItem = {
@@ -20,6 +22,7 @@ export function ServerCardSummary({
   summary,
   expanded,
   hintText,
+  helpMode = "basic",
 }: ServerCardSummaryProps) {
   const countItems = buildDcCountItems(summary);
   const showExpandIcon = summary.statusText !== "Offline";
@@ -42,6 +45,11 @@ export function ServerCardSummary({
           <div key={metric.label} className="server-card-metric">
             <div className="server-card-metric-value">{metric.value}</div>
             <div className="server-card-metric-label">{metric.label}</div>
+            {helpMode === "full" && getTelemetryFieldHelp(metric.label) ? (
+              <div className="mt-1 text-[10px] leading-4 text-text-3">
+                {getTelemetryFieldHelp(metric.label)}
+              </div>
+            ) : null}
           </div>
         ))}
       </div>

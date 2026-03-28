@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 
+import { invalidateTelemetryQueries } from "@/features/telemetry/telemetry-query-invalidation";
 import { buildEventsURL, resolveConfiguredRootPath } from "@/lib/runtime-path";
 
 type EventEnvelope = {
@@ -33,13 +34,14 @@ export function EventsSynchronizer() {
     let reconnectTimerID: number | null = null;
     let stopped = false;
 
-    const invalidateLiveQueries = () => {
-      queryClient.invalidateQueries({ queryKey: ["control-room"] });
-      queryClient.invalidateQueries({ queryKey: ["agents"] });
-      queryClient.invalidateQueries({ queryKey: ["clients"] });
-      queryClient.invalidateQueries({
+    const invalidateLiveQueries = async () => {
+      await queryClient.invalidateQueries({ queryKey: ["control-room"] });
+      await queryClient.invalidateQueries({ queryKey: ["agents"] });
+      await queryClient.invalidateQueries({ queryKey: ["clients"] });
+      await queryClient.invalidateQueries({
         predicate: (query) => query.queryKey[0] === "client",
       });
+      await invalidateTelemetryQueries(queryClient);
     };
 
     const scheduleReconnect = () => {
@@ -79,7 +81,7 @@ export function EventsSynchronizer() {
           return;
         }
 
-        invalidateLiveQueries();
+        void invalidateLiveQueries();
       };
 
       socket.onerror = () => {

@@ -86,12 +86,15 @@ function createDefaultMocks(overrides = {}) {
         React.createElement("section", { "data-slot": "dc-overview-panel" }, "dc-overview-panel"),
     },
     "./server-card": {
-      ServerCard: ({ agent }) =>
+      ServerCard: ({ item }) =>
         React.createElement(
           "article",
           { "data-slot": "server-card" },
-          `server-card:${agent.id}`
+          `server-card:${item.agent.id}`
         ),
+    },
+    "@/features/profile/profile-state": {
+      useAppearanceSettings: () => ({ data: { help_mode: "basic" } }),
     },
     "./dashboard-state": {
       useDashboardData: () => ({
@@ -108,12 +111,16 @@ function createDefaultMocks(overrides = {}) {
             middle_proxy_agents: 0,
             dc_issue_agents: 0,
           },
+          attention: [
+            { agent_id: "server-a", node_name: "server-a", reason: "Telemetry is stale", severity: "warn", runtime_freshness: { state: "stale" } },
+          ],
+          server_cards: [
+            { agent: { id: "server-a" }, runtime_freshness: { state: "fresh" }, detail_boost: { active: false } },
+            { agent: { id: "server-b" }, runtime_freshness: { state: "fresh" }, detail_boost: { active: false } },
+          ],
+          runtime_distribution: { direct: 2 },
+          recent_runtime_events: [],
         },
-        isLoading: false,
-        isError: false,
-      }),
-      useAgentsList: () => ({
-        data: [{ id: "server-a" }, { id: "server-b" }],
         isLoading: false,
         isError: false,
       }),
@@ -141,7 +148,6 @@ function createDefaultMocks(overrides = {}) {
         downCount: 2,
         rows: [],
       }),
-      sortAgentsBySeverity: (agents) => agents,
     },
     ...overrides,
   };
@@ -163,7 +169,7 @@ test("DashboardPage renders the server grid before the lower operational panels"
 
   assert.match(
     markup,
-    /Fleet Overview.*data-slot="summary-row".*Servers.*data-slot="server-grid".*server-card:server-a.*server-card:server-b.*Operational Context.*data-slot="dc-overview-panel".*data-slot="activity-panel"/s
+    /Fleet Overview.*data-slot="summary-row".*Attention Queue.*server-card:server-a.*server-card:server-b.*Operational Context.*data-slot="activity-panel"/s
   );
   assert.match(
     markup,
@@ -176,7 +182,6 @@ test("DashboardPage renders an inline error state when dashboard queries fail", 
     createDefaultMocks({
       "./dashboard-state": {
         useDashboardData: () => ({ data: undefined, isLoading: false, isError: true }),
-        useAgentsList: () => ({ data: [], isLoading: false, isError: false }),
         useDashboardClients: () => ({ data: [], isLoading: false, isError: false }),
       },
     })
