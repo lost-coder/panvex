@@ -1,6 +1,11 @@
 import { useParams, useRouter } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-import { useAllowAgentCertificateRecovery, useServers } from "./servers-state";
+import {
+  useAllowAgentCertificateRecovery,
+  useRevokeAgentCertificateRecovery,
+  useServerRecoveryAccess,
+  useServers,
+} from "./servers-state";
 import { buildServerDetailViewModel } from "./server-detail-view-model";
 import { ServerDetailConnectionsPanel } from "./server-detail-connections-panel";
 import { ServerDetailDcTable } from "./server-detail-dc-table";
@@ -17,6 +22,8 @@ export function ServerDetailPage() {
   const router = useRouter();
   const { data: agents = [], isLoading, isError } = useServers();
   const allowCertificateRecovery = useAllowAgentCertificateRecovery();
+  const revokeCertificateRecovery = useRevokeAgentCertificateRecovery();
+  const { canManageRecovery } = useServerRecoveryAccess();
   const agent = agents.find((candidate) => candidate.id === (serverId ?? ""));
 
   if (isLoading) {
@@ -60,16 +67,26 @@ export function ServerDetailPage() {
   }
 
   const viewModel = buildServerDetailViewModel(agent);
+  const recoveryStatus = agent.certificate_recovery?.status;
+  const showRecoveryAction = canManageRecovery;
+  const isRecoveryAllowed = recoveryStatus === "allowed";
+  const recoveryActionLabel = isRecoveryAllowed ? "Revoke Certificate Recovery" : "Allow Certificate Recovery";
+  const recoveryActionPending = allowCertificateRecovery.isPending || revokeCertificateRecovery.isPending;
 
   return (
     <div className="server-detail-page">
       <ServerDetailHero
-        allowCertificateRecoveryPending={allowCertificateRecovery.isPending}
         header={viewModel.header}
-        onAllowCertificateRecovery={() => {
+        onRecoveryAction={showRecoveryAction ? () => {
+          if (isRecoveryAllowed) {
+            revokeCertificateRecovery.mutate({ agentID: agent.id });
+            return;
+          }
           allowCertificateRecovery.mutate({ agentID: agent.id, ttlSeconds: 900 });
-        }}
+        } : undefined}
         onBack={() => router.history.back()}
+        recoveryActionLabel={showRecoveryAction ? recoveryActionLabel : undefined}
+        recoveryActionPending={recoveryActionPending}
       />
       <ServerDetailKpis stats={viewModel.overviewStats} />
 

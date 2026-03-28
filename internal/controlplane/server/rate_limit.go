@@ -116,16 +116,24 @@ func (s *Server) withRateLimit(limiter *fixedWindowRateLimiter, keyFn func(*http
 }
 
 func requestClientRateLimitKey(r *http.Request) string {
-	forwardedFor := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
-	if forwardedFor != "" {
-		return forwardedFor
-	}
-
 	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		forwardedFor := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
+		if forwardedFor != "" && remoteAddrTrustsForwardedFor(host) {
+			return forwardedFor
+		}
 		if strings.TrimSpace(host) != "" {
 			return host
 		}
 	}
 
 	return strings.TrimSpace(r.RemoteAddr)
+}
+
+func remoteAddrTrustsForwardedFor(host string) bool {
+	if strings.EqualFold(strings.TrimSpace(host), "localhost") {
+		return true
+	}
+
+	ip := net.ParseIP(strings.TrimSpace(host))
+	return ip != nil && ip.IsLoopback()
 }

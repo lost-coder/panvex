@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -98,7 +97,7 @@ func (s *Server) handlePutPanelSettings() http.HandlerFunc {
 		})
 
 		if s.store != nil {
-			if err := s.store.PutPanelSettings(context.Background(), panelSettingsToRecord(settings)); err != nil {
+			if err := s.store.PutPanelSettings(r.Context(), panelSettingsToRecord(settings)); err != nil {
 				log.Printf("put panel settings failed: %v", err)
 				writeError(w, http.StatusInternalServerError, "internal error")
 				return
@@ -109,7 +108,7 @@ func (s *Server) handlePutPanelSettings() http.HandlerFunc {
 		s.panelSettings = settings
 		s.mu.Unlock()
 
-		s.appendAudit(session.UserID, "settings.panel.update", "panel", map[string]any{
+		s.appendAuditWithContext(r.Context(), session.UserID, "settings.panel.update", "panel", map[string]any{
 			"http_public_url":      settings.HTTPPublicURL,
 			"grpc_public_endpoint": settings.GRPCPublicEndpoint,
 		})
@@ -144,7 +143,7 @@ func (s *Server) handleRestartPanel() http.HandlerFunc {
 			return
 		}
 
-		s.appendAudit(session.UserID, "settings.panel.restart", "panel", map[string]any{
+		s.appendAuditWithContext(r.Context(), session.UserID, "settings.panel.restart", "panel", map[string]any{
 			"pending_restart": restart.Pending,
 		})
 

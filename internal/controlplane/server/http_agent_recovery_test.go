@@ -267,6 +267,50 @@ func TestHTTPAgentCertificateRecoveryGrantCreateResponseRoundTrip(t *testing.T) 
 	}
 }
 
+func TestHTTPAgentCertificateRecoveryGrantRejectsExcessiveTTL(t *testing.T) {
+	now := time.Date(2026, time.March, 28, 12, 25, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := New(Options{
+		Now:   func() time.Time { return now },
+		Store: store,
+	})
+	seedRecoveryTestAgent(t, server, store, now)
+	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "admin",
+		Password: "admin-password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "admin",
+		"password": "admin-password",
+	}, nil)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
+	}
+
+	createResponse := performJSONRequest(
+		t,
+		server.Handler(),
+		http.MethodPost,
+		"/api/agents/agent-1/certificate-recovery-grants",
+		map[string]any{
+			"ttl_seconds": 86400,
+		},
+		loginResponse.Result().Cookies(),
+	)
+	if createResponse.Code != http.StatusBadRequest {
+		t.Fatalf("POST /api/agents/{id}/certificate-recovery-grants excessive ttl status = %d, want %d", createResponse.Code, http.StatusBadRequest)
+	}
+}
+
 func TestHTTPAgentsExposeCertificateRecoveryStatus(t *testing.T) {
 	now := time.Date(2026, time.March, 28, 12, 40, 0, 0, time.UTC)
 	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))

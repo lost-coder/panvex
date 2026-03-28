@@ -13,6 +13,7 @@ import (
 	"errors"
 	"flag"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -179,11 +180,34 @@ func agentEndpointURL(panelURL string, path string) (string, error) {
 	if parsed.Scheme == "" || parsed.Host == "" {
 		return "", errors.New("bootstrap requires an absolute -panel-url")
 	}
+	if !panelURLUsesSecureTransport(parsed) {
+		return "", errors.New("bootstrap requires https panel_url unless it targets loopback")
+	}
 
 	parsed.Path = strings.TrimRight(parsed.Path, "/") + path
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
 	return parsed.String(), nil
+}
+
+func panelURLUsesSecureTransport(parsed *url.URL) bool {
+	if parsed == nil {
+		return false
+	}
+	if strings.EqualFold(parsed.Scheme, "https") {
+		return true
+	}
+	if !strings.EqualFold(parsed.Scheme, "http") {
+		return false
+	}
+
+	host := strings.TrimSpace(parsed.Hostname())
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func recoverRuntimeCredentialsIfNeeded(ctx context.Context, stateFile string, current agentstate.Credentials, client *http.Client, now time.Time) (agentstate.Credentials, error) {

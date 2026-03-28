@@ -71,7 +71,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 			SameSite: http.SameSiteStrictMode,
 			Secure:   s.sessionCookieSecure(r),
 		})
-		s.appendAudit(session.UserID, "auth.login", session.ID, map[string]any{
+		s.appendAuditWithContext(r.Context(), session.UserID, "auth.login", session.ID, map[string]any{
 			"username": request.Username,
 		})
 
@@ -103,7 +103,7 @@ func (s *Server) handleLogout() http.HandlerFunc {
 			SameSite: http.SameSiteStrictMode,
 			Secure:   s.sessionCookieSecure(r),
 		})
-		s.appendAudit(session.UserID, "auth.logout", session.ID, nil)
+		s.appendAuditWithContext(r.Context(), session.UserID, "auth.logout", session.ID, nil)
 
 		w.WriteHeader(http.StatusNoContent)
 	}
@@ -141,7 +141,7 @@ func (s *Server) handleTotpSetup() http.HandlerFunc {
 			return
 		}
 
-		s.appendAudit(session.UserID, "auth.totp.setup_started", user.ID, nil)
+		s.appendAuditWithContext(r.Context(), session.UserID, "auth.totp.setup_started", user.ID, nil)
 		writeJSON(w, http.StatusOK, totpSetupResponse{
 			Secret:     secret,
 			OTPAuthURL: buildTotpAuthURL(user.Username, secret),
@@ -177,7 +177,7 @@ func (s *Server) handleTotpEnable() http.HandlerFunc {
 			return
 		}
 
-		s.appendAudit(session.UserID, "auth.totp.enabled", updatedUser.ID, nil)
+		s.appendAuditWithContext(r.Context(), session.UserID, "auth.totp.enabled", updatedUser.ID, nil)
 		writeJSON(w, http.StatusOK, totpStatusResponse{
 			TotpEnabled: updatedUser.TotpEnabled,
 		})
@@ -210,7 +210,7 @@ func (s *Server) handleTotpDisable() http.HandlerFunc {
 			return
 		}
 
-		s.appendAudit(session.UserID, "auth.totp.disabled", updatedUser.ID, nil)
+		s.appendAuditWithContext(r.Context(), session.UserID, "auth.totp.disabled", updatedUser.ID, nil)
 		writeJSON(w, http.StatusOK, totpStatusResponse{
 			TotpEnabled: updatedUser.TotpEnabled,
 		})

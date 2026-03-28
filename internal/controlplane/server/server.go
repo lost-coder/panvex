@@ -334,6 +334,10 @@ func (s *Server) routes() http.Handler {
 }
 
 func (s *Server) appendAudit(actorID string, action string, targetID string, details map[string]any) {
+	s.appendAuditWithContext(context.Background(), actorID, action, targetID, details)
+}
+
+func (s *Server) appendAuditWithContext(ctx context.Context, actorID string, action string, targetID string, details map[string]any) {
 	s.mu.Lock()
 	s.auditSeq++
 	event := AuditEvent{
@@ -353,7 +357,7 @@ func (s *Server) appendAudit(actorID string, action string, targetID string, det
 	s.mu.Unlock()
 
 	if s.store != nil {
-		if err := s.store.AppendAuditEvent(context.Background(), auditEventToRecord(event)); err != nil {
+		if err := s.store.AppendAuditEvent(ctx, auditEventToRecord(event)); err != nil {
 			log.Printf("control-plane audit persistence failed for action %q: %v", action, err)
 		}
 	}

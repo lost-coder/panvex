@@ -25,3 +25,26 @@ export function useAllowAgentCertificateRecovery() {
     },
   });
 }
+
+export function useRevokeAgentCertificateRecovery() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ agentID }: { agentID: string }) =>
+      apiClient.revokeAgentCertificateRecovery(agentID),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["agents"] });
+    },
+  });
+}
+
+export function useServerRecoveryAccess() {
+  const { data: me } = useQuery({
+    queryKey: ["me"],
+    queryFn: () => apiClient.me(),
+  });
+
+  return {
+    canManageRecovery: me?.role === "admin",
+  };
+}

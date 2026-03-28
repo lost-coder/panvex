@@ -43,7 +43,7 @@ func (s *Server) handleUsers() http.HandlerFunc {
 			return
 		}
 
-		users, err := s.listUsers()
+		users, err := s.listUsersWithContext(r.Context())
 		if err != nil {
 			log.Printf("list users failed: %v", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
@@ -101,7 +101,7 @@ func (s *Server) handleCreateUser() http.HandlerFunc {
 			return
 		}
 
-		s.appendAudit(session.UserID, "users.create", createdUser.ID, map[string]any{
+		s.appendAuditWithContext(r.Context(), session.UserID, "users.create", createdUser.ID, map[string]any{
 			"username": createdUser.Username,
 			"role":     createdUser.Role,
 		})
@@ -162,7 +162,7 @@ func (s *Server) handleUpdateUser() http.HandlerFunc {
 			return
 		}
 
-		s.appendAudit(session.UserID, "users.update", updatedUser.ID, map[string]any{
+		s.appendAuditWithContext(r.Context(), session.UserID, "users.update", updatedUser.ID, map[string]any{
 			"username": updatedUser.Username,
 			"role":     updatedUser.Role,
 		})
@@ -212,7 +212,7 @@ func (s *Server) handleDeleteUser() http.HandlerFunc {
 			return
 		}
 
-		s.appendAudit(session.UserID, "users.delete", targetUserID, nil)
+		s.appendAuditWithContext(r.Context(), session.UserID, "users.delete", targetUserID, nil)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -251,12 +251,16 @@ func (s *Server) handleResetUserTotp() http.HandlerFunc {
 			return
 		}
 
-		s.appendAudit(session.UserID, "auth.totp.reset_by_admin", targetUserID, nil)
+		s.appendAuditWithContext(r.Context(), session.UserID, "auth.totp.reset_by_admin", targetUserID, nil)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
 
 func (s *Server) listUsers() ([]auth.User, error) {
+	return s.listUsersWithContext(context.Background())
+}
+
+func (s *Server) listUsersWithContext(ctx context.Context) ([]auth.User, error) {
 	if s.store == nil {
 		users := s.auth.SnapshotUsers()
 		sort.Slice(users, func(left int, right int) bool {
@@ -268,7 +272,7 @@ func (s *Server) listUsers() ([]auth.User, error) {
 		return users, nil
 	}
 
-	records, err := s.store.ListUsers(context.Background())
+	records, err := s.store.ListUsers(ctx)
 	if err != nil {
 		return nil, err
 	}

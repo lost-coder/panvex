@@ -141,13 +141,15 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 		for {
 			select {
 			case <-connectionCtx.Done():
-				drainPriorityAuditEffects(priorityAuditEffects, s.appendAudit)
+				drainPriorityAuditEffects(priorityAuditEffects, func(actorID string, action string, targetID string, details map[string]any) {
+					s.appendAuditWithContext(connectionCtx, actorID, action, targetID, details)
+				})
 				return
 			case effect := <-priorityAuditEffects:
 				if effect.action == "" {
 					continue
 				}
-				s.appendAudit(effect.actorID, effect.action, effect.targetID, effect.details)
+				s.appendAuditWithContext(connectionCtx, effect.actorID, effect.action, effect.targetID, effect.details)
 			}
 		}
 	}()
@@ -156,13 +158,16 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 		for {
 			select {
 			case <-connectionCtx.Done():
-				drainPriorityResultEffects(priorityResultEffects, s.recordClientJobResult)
+				drainPriorityResultEffects(priorityResultEffects, func(agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) {
+					s.recordClientJobResultWithContext(connectionCtx, agentID, jobID, success, message, resultJSON, observedAt)
+				})
 				return
 			case effect := <-priorityResultEffects:
 				if effect.jobID == "" {
 					continue
 				}
-				s.recordClientJobResult(
+				s.recordClientJobResultWithContext(
+					connectionCtx,
 					effect.agentID,
 					effect.jobID,
 					effect.success,
@@ -178,13 +183,15 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 		for {
 			select {
 			case <-connectionCtx.Done():
-				drainRegularSnapshots(regularSnapshots, s.applyAgentSnapshot)
+				drainRegularSnapshots(regularSnapshots, func(snapshot agentSnapshot) error {
+					return s.applyAgentSnapshotWithContext(connectionCtx, snapshot)
+				})
 				return
 			case snapshot := <-regularSnapshots:
 				if snapshot.AgentID == "" {
 					continue
 				}
-				if err := s.applyAgentSnapshot(snapshot); err != nil {
+				if err := s.applyAgentSnapshotWithContext(connectionCtx, snapshot); err != nil {
 					processErrorAndCancel(err)
 					return
 				}
@@ -442,7 +449,7 @@ func (s *Server) processPriorityAgentMessageAsync(
 			resultJSON: jr.ResultJson,
 			observedAt: observedAt,
 		}) {
-			s.recordClientJobResult(agentID, jr.JobId, jr.Success, jr.Message, jr.ResultJson, observedAt)
+			s.recordClientJobResultWithContext(connectionCtx, agentID, jr.JobId, jr.Success, jr.Message, jr.ResultJson, observedAt)
 		}
 		details := map[string]any{
 			"success": jr.Success,
@@ -454,7 +461,7 @@ func (s *Server) processPriorityAgentMessageAsync(
 			targetID: jr.JobId,
 			details:  details,
 		}) {
-			s.appendAudit(agentID, "jobs.result", jr.JobId, details)
+			s.appendAuditWithContext(connectionCtx, agentID, "jobs.result", jr.JobId, details)
 		}
 	}
 	if ack := message.GetJobAcknowledgement(); ack != nil {
@@ -470,7 +477,7 @@ func (s *Server) processPriorityAgentMessageAsync(
 			targetID: ack.JobId,
 			details:  map[string]any{},
 		}) {
-			s.appendAudit(agentID, "jobs.acknowledged", ack.JobId, map[string]any{})
+			s.appendAuditWithContext(connectionCtx, agentID, "jobs.acknowledged", ack.JobId, map[string]any{})
 		}
 	}
 

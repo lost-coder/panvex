@@ -5,13 +5,15 @@ import type { ServerDetailViewModel } from "./server-detail-view-model";
 export function ServerDetailHero({
   header,
   onBack,
-  onAllowCertificateRecovery,
-  allowCertificateRecoveryPending = false,
+  onRecoveryAction,
+  recoveryActionLabel,
+  recoveryActionPending = false,
 }: {
   header: ServerDetailViewModel["header"];
   onBack: () => void;
-  onAllowCertificateRecovery?: () => void;
-  allowCertificateRecoveryPending?: boolean;
+  onRecoveryAction?: () => void;
+  recoveryActionLabel?: string;
+  recoveryActionPending?: boolean;
 }) {
   return (
     <section className="server-detail-hero server-detail-surface">
@@ -20,14 +22,14 @@ export function ServerDetailHero({
           <ArrowLeft className="h-4 w-4" />
           Back to Servers
         </button>
-        {onAllowCertificateRecovery ? (
+        {onRecoveryAction ? (
           <button
             className="server-detail-hero__recovery-action"
-            disabled={allowCertificateRecoveryPending}
-            onClick={onAllowCertificateRecovery}
+            disabled={recoveryActionPending}
+            onClick={onRecoveryAction}
             type="button"
           >
-            {allowCertificateRecoveryPending ? "Enabling Recovery..." : "Allow Certificate Recovery"}
+            {recoveryActionPending ? "Updating Recovery..." : recoveryActionLabel}
           </button>
         ) : null}
       </div>

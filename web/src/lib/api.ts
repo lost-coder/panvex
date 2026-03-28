@@ -429,6 +429,10 @@ export const apiClient = {
       method: "POST",
       body: JSON.stringify(payload ?? {})
     }),
+  revokeAgentCertificateRecovery: (agentID: string) =>
+    api<AgentCertificateRecovery>(`${apiBasePath}/agents/${agentID}/certificate-recovery-grants/revoke`, {
+      method: "POST"
+    }),
   listEnrollmentTokens: () => api<EnrollmentTokenListItem[]>(`${apiBasePath}/agents/enrollment-tokens`),
   revokeEnrollmentToken: (value: string) =>
     api<void>(`${apiBasePath}/agents/enrollment-tokens/${value}/revoke`, {

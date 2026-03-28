@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"errors"
 	"log"
 	"net/http"
@@ -26,7 +25,7 @@ func (s *Server) handleGetUserAppearance() http.HandlerFunc {
 			return
 		}
 
-		appearance, err := s.getUserAppearance(context.Background(), user.ID)
+		appearance, err := s.getUserAppearance(r.Context(), user.ID)
 		if err != nil {
 			if errors.Is(err, errUserAppearanceStoreRequired) {
 				writeError(w, http.StatusServiceUnavailable, err.Error())
@@ -66,7 +65,7 @@ func (s *Server) handlePutUserAppearance() http.HandlerFunc {
 		}
 		appearance.UpdatedAt = s.now().UTC().Unix()
 
-		if err := s.putUserAppearance(context.Background(), user.ID, appearance); err != nil {
+		if err := s.putUserAppearance(r.Context(), user.ID, appearance); err != nil {
 			if errors.Is(err, errUserAppearanceStoreRequired) {
 				writeError(w, http.StatusServiceUnavailable, err.Error())
 				return

@@ -116,7 +116,7 @@ func (s *Server) handleCreateClient() http.HandlerFunc {
 			return
 		}
 
-		client, assignments, deployments, err := s.createClient(session.UserID, clientMutationInput{
+		client, assignments, deployments, err := s.createClientWithContext(r.Context(), session.UserID, clientMutationInput{
 			Name:              request.Name,
 			Enabled:           request.Enabled,
 			UserADTag:         request.UserADTag,
@@ -131,7 +131,7 @@ func (s *Server) handleCreateClient() http.HandlerFunc {
 			return
 		}
 
-		s.appendAudit(session.UserID, "clients.create", client.ID, map[string]any{
+		s.appendAuditWithContext(r.Context(), session.UserID, "clients.create", client.ID, map[string]any{
 			"name":             client.Name,
 			"enabled":          client.Enabled,
 			"fleet_group_ids":  assignmentFleetGroupIDs(assignments),
@@ -188,7 +188,7 @@ func (s *Server) handleUpdateClient() http.HandlerFunc {
 			return
 		}
 
-		client, assignments, deployments, err := s.updateClient(clientID, session.UserID, clientMutationInput{
+		client, assignments, deployments, err := s.updateClientWithContext(r.Context(), clientID, session.UserID, clientMutationInput{
 			Name:              request.Name,
 			Enabled:           request.Enabled,
 			UserADTag:         request.UserADTag,
@@ -203,7 +203,7 @@ func (s *Server) handleUpdateClient() http.HandlerFunc {
 			return
 		}
 
-		s.appendAudit(session.UserID, "clients.update", client.ID, map[string]any{
+		s.appendAuditWithContext(r.Context(), session.UserID, "clients.update", client.ID, map[string]any{
 			"name":            client.Name,
 			"fleet_group_ids": assignmentFleetGroupIDs(assignments),
 			"agent_ids":       assignmentAgentIDs(assignments),
@@ -225,12 +225,12 @@ func (s *Server) handleDeleteClient() http.HandlerFunc {
 			return
 		}
 
-		if err := s.deleteClient(clientID, session.UserID, s.now()); err != nil {
+		if err := s.deleteClientWithContext(r.Context(), clientID, session.UserID, s.now()); err != nil {
 			handleClientMutationError(w, err)
 			return
 		}
 
-		s.appendAudit(session.UserID, "clients.delete", clientID, nil)
+		s.appendAuditWithContext(r.Context(), session.UserID, "clients.delete", clientID, nil)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -248,12 +248,12 @@ func (s *Server) handleRotateClientSecret() http.HandlerFunc {
 			return
 		}
 
-		client, assignments, deployments, err := s.rotateClientSecret(clientID, session.UserID, s.now())
+		client, assignments, deployments, err := s.rotateClientSecretWithContext(r.Context(), clientID, session.UserID, s.now())
 		if !handleClientMutationError(w, err) {
 			return
 		}
 
-		s.appendAudit(session.UserID, "clients.rotate_secret", client.ID, nil)
+		s.appendAuditWithContext(r.Context(), session.UserID, "clients.rotate_secret", client.ID, nil)
 		writeJSON(w, http.StatusOK, s.buildClientDetailResponse(client, assignments, deployments, true))
 	}
 }

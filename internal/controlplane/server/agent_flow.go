@@ -63,7 +63,11 @@ type clientIPSnapshot struct {
 }
 
 func (s *Server) enrollAgent(request agentEnrollmentRequest, now time.Time) (agentEnrollmentResponse, error) {
-	token, err := s.consumeEnrollmentToken(request.Token, now)
+	return s.enrollAgentWithContext(context.Background(), request, now)
+}
+
+func (s *Server) enrollAgentWithContext(ctx context.Context, request agentEnrollmentRequest, now time.Time) (agentEnrollmentResponse, error) {
+	token, err := s.consumeEnrollmentTokenWithContext(ctx, request.Token, now)
 	if err != nil {
 		return agentEnrollmentResponse{}, err
 	}
@@ -82,7 +86,7 @@ func (s *Server) enrollAgent(request agentEnrollmentRequest, now time.Time) (age
 
 	if s.store != nil {
 		if token.FleetGroupID != "" {
-			if err := s.store.PutFleetGroup(context.Background(), storage.FleetGroupRecord{
+			if err := s.store.PutFleetGroup(ctx, storage.FleetGroupRecord{
 				ID:        token.FleetGroupID,
 				Name:      token.FleetGroupID,
 				CreatedAt: now.UTC(),
@@ -90,7 +94,7 @@ func (s *Server) enrollAgent(request agentEnrollmentRequest, now time.Time) (age
 				return agentEnrollmentResponse{}, err
 			}
 		}
-		if err := s.store.PutAgent(context.Background(), agentToRecord(agent)); err != nil {
+		if err := s.store.PutAgent(ctx, agentToRecord(agent)); err != nil {
 			return agentEnrollmentResponse{}, err
 		}
 	}
@@ -105,7 +109,7 @@ func (s *Server) enrollAgent(request agentEnrollmentRequest, now time.Time) (age
 		return agentEnrollmentResponse{}, err
 	}
 
-	s.appendAudit(agentID, "agents.enrolled", agentID, map[string]any{
+	s.appendAuditWithContext(ctx, agentID, "agents.enrolled", agentID, map[string]any{
 		"node_name":      request.NodeName,
 		"fleet_group_id": token.FleetGroupID,
 	})
@@ -124,6 +128,10 @@ func (s *Server) enrollAgent(request agentEnrollmentRequest, now time.Time) (age
 }
 
 func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) error {
+	return s.applyAgentSnapshotWithContext(context.Background(), snapshot)
+}
+
+func (s *Server) applyAgentSnapshotWithContext(ctx context.Context, snapshot agentSnapshot) error {
 	s.presence.MarkConnected(snapshot.AgentID, snapshot.ObservedAt)
 	s.presence.Heartbeat(snapshot.AgentID, snapshot.ObservedAt)
 
@@ -171,16 +179,16 @@ func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) error {
 	s.mu.Unlock()
 
 	if s.store != nil {
-		if err := s.store.PutAgent(context.Background(), agentToRecord(agent)); err != nil {
+		if err := s.store.PutAgent(ctx, agentToRecord(agent)); err != nil {
 			return err
 		}
 		for _, instance := range instances {
-			if err := s.store.PutInstance(context.Background(), instanceToRecord(instance)); err != nil {
+			if err := s.store.PutInstance(ctx, instanceToRecord(instance)); err != nil {
 				return err
 			}
 		}
 		if metricSnapshot != nil {
-			if err := s.store.AppendMetricSnapshot(context.Background(), metricSnapshotToRecord(*metricSnapshot)); err != nil {
+			if err := s.store.AppendMetricSnapshot(ctx, metricSnapshotToRecord(*metricSnapshot)); err != nil {
 				return err
 			}
 		}

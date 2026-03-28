@@ -77,7 +77,7 @@ func (s *Server) handleCreateJob() http.HandlerFunc {
 		}
 		s.notifyAgentSessions(job.TargetAgentIDs)
 
-		s.appendAudit(session.UserID, "jobs.create", job.ID, map[string]any{
+		s.appendAuditWithContext(r.Context(), session.UserID, "jobs.create", job.ID, map[string]any{
 			"action":            request.Action,
 			"target_agent_ids":  request.TargetAgentIDs,
 			"idempotency_key":   request.IdempotencyKey,

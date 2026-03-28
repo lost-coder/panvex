@@ -154,6 +154,10 @@ func (s *Server) clientDetailSnapshot(clientID string) (managedClient, []managed
 }
 
 func (s *Server) createClient(actorID string, input clientMutationInput, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
+	return s.createClientWithContext(context.Background(), actorID, input, observedAt)
+}
+
+func (s *Server) createClientWithContext(ctx context.Context, actorID string, input clientMutationInput, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
 	observedAt = observedAt.UTC()
 
 	name := strings.TrimSpace(input.Name)
@@ -205,7 +209,7 @@ func (s *Server) createClient(actorID string, input clientMutationInput, observe
 	if _, err := s.enqueueClientJob(actorID, jobs.ActionClientCreate, client, "", targetAgentIDs, observedAt); err != nil {
 		return managedClient{}, nil, nil, err
 	}
-	if err := s.replaceClientState(client, assignments, deployments); err != nil {
+	if err := s.replaceClientStateWithContext(ctx, client, assignments, deployments); err != nil {
 		return managedClient{}, nil, nil, err
 	}
 
@@ -213,6 +217,10 @@ func (s *Server) createClient(actorID string, input clientMutationInput, observe
 }
 
 func (s *Server) updateClient(clientID string, actorID string, input clientMutationInput, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
+	return s.updateClientWithContext(context.Background(), clientID, actorID, input, observedAt)
+}
+
+func (s *Server) updateClientWithContext(ctx context.Context, clientID string, actorID string, input clientMutationInput, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
 	observedAt = observedAt.UTC()
 
 	currentClient, _, currentDeployments, err := s.clientDetailSnapshot(clientID)
@@ -270,7 +278,7 @@ func (s *Server) updateClient(clientID string, actorID string, input clientMutat
 		}
 	}
 
-	if err := s.replaceClientState(currentClient, assignments, deployments); err != nil {
+	if err := s.replaceClientStateWithContext(ctx, currentClient, assignments, deployments); err != nil {
 		return managedClient{}, nil, nil, err
 	}
 
@@ -278,6 +286,10 @@ func (s *Server) updateClient(clientID string, actorID string, input clientMutat
 }
 
 func (s *Server) rotateClientSecret(clientID string, actorID string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
+	return s.rotateClientSecretWithContext(context.Background(), clientID, actorID, observedAt)
+}
+
+func (s *Server) rotateClientSecretWithContext(ctx context.Context, clientID string, actorID string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
 	observedAt = observedAt.UTC()
 
 	currentClient, assignments, deployments, err := s.clientDetailSnapshot(clientID)
@@ -303,7 +315,7 @@ func (s *Server) rotateClientSecret(clientID string, actorID string, observedAt 
 		}
 	}
 
-	if err := s.replaceClientState(currentClient, assignments, deployments); err != nil {
+	if err := s.replaceClientStateWithContext(ctx, currentClient, assignments, deployments); err != nil {
 		return managedClient{}, nil, nil, err
 	}
 
@@ -311,6 +323,10 @@ func (s *Server) rotateClientSecret(clientID string, actorID string, observedAt 
 }
 
 func (s *Server) deleteClient(clientID string, actorID string, observedAt time.Time) error {
+	return s.deleteClientWithContext(context.Background(), clientID, actorID, observedAt)
+}
+
+func (s *Server) deleteClientWithContext(ctx context.Context, clientID string, actorID string, observedAt time.Time) error {
 	observedAt = observedAt.UTC()
 
 	currentClient, assignments, deployments, err := s.clientDetailSnapshot(clientID)
@@ -336,7 +352,7 @@ func (s *Server) deleteClient(clientID string, actorID string, observedAt time.T
 		}
 	}
 
-	return s.replaceClientState(currentClient, assignments, deployments)
+	return s.replaceClientStateWithContext(ctx, currentClient, assignments, deployments)
 }
 
 func (s *Server) enqueueClientJob(actorID string, action jobs.Action, client managedClient, previousName string, targetAgentIDs []string, observedAt time.Time) (jobs.Job, error) {
@@ -384,8 +400,12 @@ func (s *Server) enqueueClientJob(actorID string, action jobs.Action, client man
 }
 
 func (s *Server) replaceClientState(client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment) error {
+	return s.replaceClientStateWithContext(context.Background(), client, assignments, deployments)
+}
+
+func (s *Server) replaceClientStateWithContext(ctx context.Context, client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment) error {
 	if s.store != nil {
-		if err := s.persistClientState(context.Background(), client, assignments, deployments); err != nil {
+		if err := s.persistClientState(ctx, client, assignments, deployments); err != nil {
 			return err
 		}
 	}
@@ -478,6 +498,10 @@ func (s *Server) resolveClientTargetAgentIDs(assignments []managedClientAssignme
 }
 
 func (s *Server) recordClientJobResult(agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) {
+	s.recordClientJobResultWithContext(context.Background(), agentID, jobID, success, message, resultJSON, observedAt)
+}
+
+func (s *Server) recordClientJobResultWithContext(ctx context.Context, agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) {
 	job, ok := s.jobByID(jobID)
 	if !ok {
 		return
@@ -533,7 +557,7 @@ func (s *Server) recordClientJobResult(agentID string, jobID string, success boo
 	s.mu.Unlock()
 
 	if s.store != nil {
-		if err := s.store.PutClientDeployment(context.Background(), clientDeploymentToRecord(deployment)); err != nil {
+		if err := s.store.PutClientDeployment(ctx, clientDeploymentToRecord(deployment)); err != nil {
 			log.Printf("control-plane client deployment persistence failed for client %q on agent %q: %v", payload.ClientID, agentID, err)
 		}
 	}

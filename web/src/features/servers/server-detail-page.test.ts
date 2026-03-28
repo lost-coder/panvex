@@ -136,13 +136,13 @@ function createBaseMocks(overrides = {}) {
     },
     "./server-detail.css": {},
     "./server-detail-hero": {
-      ServerDetailHero: ({ header, onBack, onAllowCertificateRecovery }) =>
+      ServerDetailHero: ({ header, onBack, onRecoveryAction, recoveryActionLabel }) =>
         React.createElement(
           "section",
           {
             className: "server-detail-hero",
             "data-back-handler": typeof onBack === "function",
-            "data-recovery-handler": typeof onAllowCertificateRecovery === "function",
+            "data-recovery-handler": typeof onRecoveryAction === "function",
           },
           [
             "Back to Servers",
@@ -159,7 +159,7 @@ function createBaseMocks(overrides = {}) {
             "Recovery",
             header.certificateRecoveryText,
             "Latest reported snapshot",
-            typeof onAllowCertificateRecovery === "function" ? "Allow Certificate Recovery" : "Recovery action unavailable",
+            recoveryActionLabel ?? "Recovery action unavailable",
           ].join("|")
         ),
     },
@@ -230,6 +230,13 @@ function createBaseMocks(overrides = {}) {
           isPending: false,
           mutate: () => undefined,
         }),
+        useRevokeAgentCertificateRecovery: () => ({
+          isPending: false,
+          mutate: () => undefined,
+        }),
+        useServerRecoveryAccess: () => ({
+          canManageRecovery: true,
+        }),
       },
     "./server-detail-view-model": {
       buildServerDetailViewModel: () => createViewModel(),
@@ -296,6 +303,13 @@ test("ServerDetailPage renders a not-found state when the requested server is mi
           isPending: false,
           mutate: () => undefined,
         }),
+        useRevokeAgentCertificateRecovery: () => ({
+          isPending: false,
+          mutate: () => undefined,
+        }),
+        useServerRecoveryAccess: () => ({
+          canManageRecovery: true,
+        }),
       },
     })
   );
@@ -318,6 +332,13 @@ test("ServerDetailPage renders an error state when the servers query fails", () 
           isPending: false,
           mutate: () => undefined,
         }),
+        useRevokeAgentCertificateRecovery: () => ({
+          isPending: false,
+          mutate: () => undefined,
+        }),
+        useServerRecoveryAccess: () => ({
+          canManageRecovery: true,
+        }),
       },
     })
   );
@@ -325,4 +346,78 @@ test("ServerDetailPage renders an error state when the servers query fails", () 
   const markup = renderToStaticMarkup(React.createElement(ServerDetailPage));
 
   assert.match(markup, /Server data is unavailable/i);
+});
+
+test("ServerDetailPage hides the recovery action for non-admin users", () => {
+  const ServerDetailPage = loadServerDetailPage(
+    createBaseMocks({
+      "./servers-state": {
+        useServers: () => ({
+          data: [{ id: "agent-fra-01", node_name: "de-fra-01" }],
+          isLoading: false,
+        }),
+        useAllowAgentCertificateRecovery: () => ({
+          isPending: false,
+          mutate: () => undefined,
+        }),
+        useRevokeAgentCertificateRecovery: () => ({
+          isPending: false,
+          mutate: () => undefined,
+        }),
+        useServerRecoveryAccess: () => ({
+          canManageRecovery: false,
+        }),
+      },
+    })
+  );
+
+  const markup = renderToStaticMarkup(React.createElement(ServerDetailPage));
+
+  assert.doesNotMatch(markup, /Allow Certificate Recovery/);
+  assert.match(markup, /Recovery action unavailable/);
+});
+
+test("ServerDetailPage renders a revoke action when a recovery window is already open", () => {
+  const ServerDetailPage = loadServerDetailPage(
+    createBaseMocks({
+      "./servers-state": {
+        useServers: () => ({
+          data: [{
+            id: "agent-fra-01",
+            node_name: "de-fra-01",
+            certificate_recovery: {
+              status: "allowed",
+              issued_at_unix: 1711281600,
+              expires_at_unix: 1711282500,
+            },
+          }],
+          isLoading: false,
+        }),
+        useAllowAgentCertificateRecovery: () => ({
+          isPending: false,
+          mutate: () => undefined,
+        }),
+        useRevokeAgentCertificateRecovery: () => ({
+          isPending: false,
+          mutate: () => undefined,
+        }),
+        useServerRecoveryAccess: () => ({
+          canManageRecovery: true,
+        }),
+      },
+      "./server-detail-view-model": {
+        buildServerDetailViewModel: () => ({
+          ...createViewModel(),
+          header: {
+            ...createViewModel().header,
+            certificateRecoveryText: "Allowed until 24 Mar 2026, 12:15 UTC",
+          },
+        }),
+      },
+    })
+  );
+
+  const markup = renderToStaticMarkup(React.createElement(ServerDetailPage));
+
+  assert.match(markup, /Revoke Certificate Recovery/);
 });
