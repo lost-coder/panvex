@@ -231,10 +231,6 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 	snapshot.TotalActiveConnections = int32(state.ConnectionTotals.CurrentConnections)
 	snapshot.TotalActiveUsers = int32(state.ConnectionTotals.ActiveUsers)
 
-	a.mu.Lock()
-	a.lastRuntimeUptime = state.UptimeSeconds
-	a.mu.Unlock()
-
 	return snapshot, nil
 }
 

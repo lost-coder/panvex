@@ -5,16 +5,32 @@ import type { ServerDetailViewModel } from "./server-detail-view-model";
 export function ServerDetailHero({
   header,
   onBack,
+  onAllowCertificateRecovery,
+  allowCertificateRecoveryPending = false,
 }: {
   header: ServerDetailViewModel["header"];
   onBack: () => void;
+  onAllowCertificateRecovery?: () => void;
+  allowCertificateRecoveryPending?: boolean;
 }) {
   return (
     <section className="server-detail-hero server-detail-surface">
-      <button className="server-detail-hero__back" onClick={onBack} type="button">
-        <ArrowLeft className="h-4 w-4" />
-        Back to Servers
-      </button>
+      <div className="server-detail-hero__toolbar">
+        <button className="server-detail-hero__back" onClick={onBack} type="button">
+          <ArrowLeft className="h-4 w-4" />
+          Back to Servers
+        </button>
+        {onAllowCertificateRecovery ? (
+          <button
+            className="server-detail-hero__recovery-action"
+            disabled={allowCertificateRecoveryPending}
+            onClick={onAllowCertificateRecovery}
+            type="button"
+          >
+            {allowCertificateRecoveryPending ? "Enabling Recovery..." : "Allow Certificate Recovery"}
+          </button>
+        ) : null}
+      </div>
       <div className="server-detail-hero__body">
         <div className="server-detail-hero__content">
           <div className="server-detail-hero__eyebrow">Latest reported snapshot</div>
@@ -34,6 +50,7 @@ export function ServerDetailHero({
           <MetaPill label="Version" value={header.versionText} />
           <MetaPill label="Last seen" value={header.lastSeenText} />
           <MetaPill label="Mode" value={header.readOnlyText} />
+          <MetaPill label="Recovery" value={header.certificateRecoveryText} />
         </dl>
       </div>
     </section>

@@ -101,6 +101,16 @@ type EnrollmentTokenRecord struct {
 	RevokedAt    *time.Time
 }
 
+// AgentCertificateRecoveryGrantRecord stores one administrator-approved certificate recovery window.
+type AgentCertificateRecoveryGrantRecord struct {
+	AgentID   string
+	IssuedBy  string
+	IssuedAt  time.Time
+	ExpiresAt time.Time
+	UsedAt    *time.Time
+	RevokedAt *time.Time
+}
+
 // PanelSettingsRecord stores operator-managed public access settings for the panel.
 type PanelSettingsRecord struct {
 	HTTPPublicURL      string

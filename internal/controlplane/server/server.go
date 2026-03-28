@@ -20,8 +20,14 @@ import (
 )
 
 const (
-	sessionCookieName = "panvex_session"
-	apiBasePath       = "/api"
+	sessionCookieName         = "panvex_session"
+	apiBasePath               = "/api"
+	maxInMemoryMetricSnapshots = 512
+	maxInMemoryAuditEvents     = 1024
+	httpLoginRateLimitPerWindow = 30
+	httpAgentBootstrapRateLimitPerWindow = 30
+	grpcConnectRateLimitPerWindow = 30
+	defaultRateLimitWindow = time.Minute
 )
 
 // Options defines the runtime dependencies used by the control-plane server.
@@ -47,6 +53,9 @@ type Server struct {
 	now        func() time.Time
 	panelRuntime PanelRuntime
 	requestRestart func() error
+	loginRateLimiter *fixedWindowRateLimiter
+	agentBootstrapRateLimiter *fixedWindowRateLimiter
+	grpcConnectRateLimiter *fixedWindowRateLimiter
 
 	mu         sync.RWMutex
 	sessionMu  sync.RWMutex
@@ -88,6 +97,9 @@ func New(options Options) *Server {
 		now:        now,
 		panelRuntime: defaultPanelRuntime(options.PanelRuntime),
 		requestRestart: options.RequestRestart,
+		loginRateLimiter: newFixedWindowRateLimiter(httpLoginRateLimitPerWindow, defaultRateLimitWindow),
+		agentBootstrapRateLimiter: newFixedWindowRateLimiter(httpAgentBootstrapRateLimitPerWindow, defaultRateLimitWindow),
+		grpcConnectRateLimiter: newFixedWindowRateLimiter(grpcConnectRateLimitPerWindow, defaultRateLimitWindow),
 		agents:     make(map[string]Agent),
 		clients:    make(map[string]managedClient),
 		clientAssignments: make(map[string][]managedClientAssignment),
@@ -95,8 +107,8 @@ func New(options Options) *Server {
 		clientUsage: make(map[string]map[string]clientUsageSnapshot),
 		agentSessions: make(map[string]*agentStreamSession),
 		instances:  make(map[string]Instance),
-		metrics:    make([]MetricSnapshot, 0),
-		auditTrail: make([]AuditEvent, 0),
+		metrics:    make([]MetricSnapshot, 0, maxInMemoryMetricSnapshots),
+		auditTrail: make([]AuditEvent, 0, maxInMemoryAuditEvents),
 	}
 	server.panelSettings = defaultPanelSettings()
 	authority, err := loadOrCreateCertificateAuthority(options.Store, now())
@@ -197,7 +209,12 @@ func (s *Server) restoreStoredState() error {
 	}
 	for _, record := range metrics {
 		snapshot := metricSnapshotFromRecord(record)
-		s.metrics = append(s.metrics, snapshot)
+		if len(s.metrics) < maxInMemoryMetricSnapshots {
+			s.metrics = append(s.metrics, snapshot)
+		} else {
+			copy(s.metrics, s.metrics[1:])
+			s.metrics[len(s.metrics)-1] = snapshot
+		}
 		s.metricSeq = maxPrefixedSequence(s.metricSeq, "metric", snapshot.ID)
 	}
 
@@ -207,7 +224,12 @@ func (s *Server) restoreStoredState() error {
 	}
 	for _, record := range auditEvents {
 		event := auditEventFromRecord(record)
-		s.auditTrail = append(s.auditTrail, event)
+		if len(s.auditTrail) < maxInMemoryAuditEvents {
+			s.auditTrail = append(s.auditTrail, event)
+		} else {
+			copy(s.auditTrail, s.auditTrail[1:])
+			s.auditTrail[len(s.auditTrail)-1] = event
+		}
 		s.auditSeq = maxPrefixedSequence(s.auditSeq, "audit", event.ID)
 	}
 
@@ -248,42 +270,57 @@ func (s *Server) GRPCTLSConfig() *tls.Config {
 func (s *Server) routes() http.Handler {
 	router := chi.NewRouter()
 	router.Route(apiBasePath, func(api chi.Router) {
-		api.Post("/agent/bootstrap", s.handleAgentBootstrap())
-		api.Get("/auth/me", s.handleMe())
-		api.Post("/auth/login", s.handleLogin())
-		api.Post("/auth/logout", s.handleLogout())
-		api.Post("/auth/totp/setup", s.handleTotpSetup())
-		api.Post("/auth/totp/enable", s.handleTotpEnable())
-		api.Post("/auth/totp/disable", s.handleTotpDisable())
+		api.With(s.withRateLimit(s.agentBootstrapRateLimiter, requestClientRateLimitKey)).Post("/agent/bootstrap", s.handleAgentBootstrap())
+		api.With(s.withRateLimit(s.agentBootstrapRateLimiter, requestClientRateLimitKey)).Post("/agent/recover-certificate", s.handleAgentCertificateRecovery())
+		api.With(s.withRateLimit(s.loginRateLimiter, requestClientRateLimitKey)).Post("/auth/login", s.handleLogin())
 
-		api.Get("/control-room", s.handleControlRoom())
-		api.Get("/fleet", s.handleFleet())
-		api.Get("/agents", s.handleAgents())
-		api.Get("/instances", s.handleInstances())
-		api.Get("/jobs", s.handleJobs())
-		api.Post("/jobs", s.handleCreateJob())
-		api.Get("/clients", s.handleClients())
-		api.Post("/clients", s.handleCreateClient())
-		api.Get("/clients/{id}", s.handleClient())
-		api.Put("/clients/{id}", s.handleUpdateClient())
-		api.Delete("/clients/{id}", s.handleDeleteClient())
-		api.Post("/clients/{id}/rotate-secret", s.handleRotateClientSecret())
-		api.Get("/audit", s.handleAudit())
-		api.Get("/metrics", s.handleMetrics())
-		api.Get("/events", s.handleEvents())
-		api.Get("/users", s.handleUsers())
-		api.Post("/users", s.handleCreateUser())
-		api.Put("/users/{id}", s.handleUpdateUser())
-		api.Delete("/users/{id}", s.handleDeleteUser())
-		api.Post("/users/{id}/totp/reset", s.handleResetUserTotp())
-		api.Get("/settings/panel", s.handleGetPanelSettings())
-		api.Put("/settings/panel", s.handlePutPanelSettings())
-		api.Get("/settings/appearance", s.handleGetUserAppearance())
-		api.Put("/settings/appearance", s.handlePutUserAppearance())
-		api.Post("/settings/panel/restart", s.handleRestartPanel())
-		api.Get("/agents/enrollment-tokens", s.handleListEnrollmentTokens())
-		api.Post("/agents/enrollment-tokens", s.handleCreateEnrollmentToken())
-		api.Post("/agents/enrollment-tokens/{value}/revoke", s.handleRevokeEnrollmentToken())
+		api.Group(func(authenticated chi.Router) {
+			authenticated.Use(s.requireAuthenticatedSession())
+			authenticated.Get("/auth/me", s.handleMe())
+			authenticated.Post("/auth/logout", s.handleLogout())
+			authenticated.Post("/auth/totp/setup", s.handleTotpSetup())
+			authenticated.Post("/auth/totp/enable", s.handleTotpEnable())
+			authenticated.Post("/auth/totp/disable", s.handleTotpDisable())
+
+			authenticated.Get("/control-room", s.handleControlRoom())
+			authenticated.Get("/fleet", s.handleFleet())
+			authenticated.Get("/agents", s.handleAgents())
+			authenticated.Get("/instances", s.handleInstances())
+			authenticated.Get("/jobs", s.handleJobs())
+			authenticated.Get("/audit", s.handleAudit())
+			authenticated.Get("/metrics", s.handleMetrics())
+			authenticated.Get("/events", s.handleEvents())
+			authenticated.Get("/settings/appearance", s.handleGetUserAppearance())
+			authenticated.Put("/settings/appearance", s.handlePutUserAppearance())
+
+			authenticated.Group(func(operator chi.Router) {
+				operator.Use(s.requireMinimumRole(auth.RoleOperator))
+				operator.Post("/jobs", s.handleCreateJob())
+				operator.Get("/clients", s.handleClients())
+				operator.Post("/clients", s.handleCreateClient())
+				operator.Get("/clients/{id}", s.handleClient())
+				operator.Put("/clients/{id}", s.handleUpdateClient())
+				operator.Delete("/clients/{id}", s.handleDeleteClient())
+				operator.Post("/clients/{id}/rotate-secret", s.handleRotateClientSecret())
+				operator.Get("/agents/enrollment-tokens", s.handleListEnrollmentTokens())
+				operator.Post("/agents/enrollment-tokens", s.handleCreateEnrollmentToken())
+				operator.Post("/agents/enrollment-tokens/{value}/revoke", s.handleRevokeEnrollmentToken())
+			})
+
+			authenticated.Group(func(admin chi.Router) {
+				admin.Use(s.requireMinimumRole(auth.RoleAdmin))
+				admin.Get("/users", s.handleUsers())
+				admin.Post("/users", s.handleCreateUser())
+				admin.Put("/users/{id}", s.handleUpdateUser())
+				admin.Delete("/users/{id}", s.handleDeleteUser())
+				admin.Post("/users/{id}/totp/reset", s.handleResetUserTotp())
+				admin.Post("/agents/{id}/certificate-recovery-grants", s.handleCreateAgentCertificateRecoveryGrant())
+				admin.Post("/agents/{id}/certificate-recovery-grants/revoke", s.handleRevokeAgentCertificateRecoveryGrant())
+				admin.Get("/settings/panel", s.handleGetPanelSettings())
+				admin.Put("/settings/panel", s.handlePutPanelSettings())
+				admin.Post("/settings/panel/restart", s.handleRestartPanel())
+			})
+		})
 	})
 	if uiHandler := newUIHandler(s.uiFiles, s.panelRuntime.HTTPRootPath); uiHandler != nil {
 		router.NotFound(uiHandler)
@@ -307,7 +344,12 @@ func (s *Server) appendAudit(actorID string, action string, targetID string, det
 		CreatedAt: s.now().UTC(),
 		Details:   details,
 	}
-	s.auditTrail = append(s.auditTrail, event)
+	if len(s.auditTrail) < maxInMemoryAuditEvents {
+		s.auditTrail = append(s.auditTrail, event)
+	} else {
+		copy(s.auditTrail, s.auditTrail[1:])
+		s.auditTrail[len(s.auditTrail)-1] = event
+	}
 	s.mu.Unlock()
 
 	if s.store != nil {

@@ -14,6 +14,7 @@ type Agent struct {
 	Version      string    `json:"version"`
 	ReadOnly     bool      `json:"read_only"`
 	PresenceState string   `json:"presence_state"`
+	CertificateRecovery *agentCertificateRecoveryGrantResponse `json:"certificate_recovery,omitempty"`
 	Runtime      AgentRuntime `json:"runtime"`
 	LastSeenAt   time.Time `json:"last_seen_at"`
 }

@@ -1,9 +1,11 @@
 package server
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/panvex/panvex/internal/controlplane/presence"
+	"github.com/panvex/panvex/internal/controlplane/storage"
 )
 
 type fleetResponse struct {
@@ -56,14 +58,30 @@ func (s *Server) handleAgents() http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
+		now := s.now()
+		recoveryGrants := make(map[string]storage.AgentCertificateRecoveryGrantRecord)
+		if s.store != nil {
+			loadedGrants, err := s.store.ListAgentCertificateRecoveryGrants(r.Context())
+			if err != nil {
+				log.Printf("list agent certificate recovery grants failed: %v", err)
+				writeError(w, http.StatusInternalServerError, "internal error")
+				return
+			}
+			for _, grant := range loadedGrants {
+				recoveryGrants[grant.AgentID] = grant
+			}
+		}
 
 		s.mu.RLock()
 		defer s.mu.RUnlock()
 
 		response := make([]Agent, 0, len(s.agents))
-		now := s.now()
 		for _, agent := range s.agents {
 			agent.PresenceState = string(s.presence.Evaluate(agent.ID, now))
+			if grant, ok := recoveryGrants[agent.ID]; ok {
+				recovery := agentCertificateRecoveryGrantResponseFromRecord(grant, now)
+				agent.CertificateRecovery = &recovery
+			}
 			agent.Runtime = normalizeAgentRuntime(agent.Runtime)
 			response = append(response, agent)
 		}

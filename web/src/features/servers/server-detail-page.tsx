@@ -1,6 +1,6 @@
 import { useParams, useRouter } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-import { useServers } from "./servers-state";
+import { useAllowAgentCertificateRecovery, useServers } from "./servers-state";
 import { buildServerDetailViewModel } from "./server-detail-view-model";
 import { ServerDetailConnectionsPanel } from "./server-detail-connections-panel";
 import { ServerDetailDcTable } from "./server-detail-dc-table";
@@ -16,6 +16,7 @@ export function ServerDetailPage() {
   const { serverId } = useParams({ strict: false }) as { serverId?: string };
   const router = useRouter();
   const { data: agents = [], isLoading, isError } = useServers();
+  const allowCertificateRecovery = useAllowAgentCertificateRecovery();
   const agent = agents.find((candidate) => candidate.id === (serverId ?? ""));
 
   if (isLoading) {
@@ -62,7 +63,14 @@ export function ServerDetailPage() {
 
   return (
     <div className="server-detail-page">
-      <ServerDetailHero header={viewModel.header} onBack={() => router.history.back()} />
+      <ServerDetailHero
+        allowCertificateRecoveryPending={allowCertificateRecovery.isPending}
+        header={viewModel.header}
+        onAllowCertificateRecovery={() => {
+          allowCertificateRecovery.mutate({ agentID: agent.id, ttlSeconds: 900 });
+        }}
+        onBack={() => router.history.back()}
+      />
       <ServerDetailKpis stats={viewModel.overviewStats} />
 
       <section className="server-detail-section">

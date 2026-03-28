@@ -218,6 +218,10 @@ func (s *Server) handleTotpDisable() http.HandlerFunc {
 }
 
 func (s *Server) requireSession(r *http.Request) (auth.Session, auth.User, error) {
+	if session, user, ok := requestAuthContext(r); ok {
+		return session, user, nil
+	}
+
 	cookie, err := r.Cookie(sessionCookieName)
 	if err != nil {
 		return auth.Session{}, auth.User{}, err

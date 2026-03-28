@@ -65,7 +65,12 @@ func newCertificateAuthority(now time.Time) (*certificateAuthority, error) {
 		return nil, err
 	}
 
-	return buildCertificateAuthority(certificate, privateKey, encodePEM("CERTIFICATE", der), now)
+	parsedCertificate, err := x509.ParseCertificate(der)
+	if err != nil {
+		return nil, err
+	}
+
+	return buildCertificateAuthority(parsedCertificate, privateKey, encodePEM("CERTIFICATE", der), now)
 }
 
 func loadOrCreateCertificateAuthority(store storage.CertificateAuthorityStore, now time.Time) (*certificateAuthority, error) {

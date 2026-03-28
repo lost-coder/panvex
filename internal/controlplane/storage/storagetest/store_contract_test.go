@@ -32,6 +32,7 @@ type memoryStore struct {
 	auditEvents        []storage.AuditEventRecord
 	metricSnapshots    []storage.MetricSnapshotRecord
 	enrollmentTokens   map[string]storage.EnrollmentTokenRecord
+	agentCertificateRecoveryGrants map[string]storage.AgentCertificateRecoveryGrantRecord
 	panelSettings      *storage.PanelSettingsRecord
 	certificateAuthority *storage.CertificateAuthorityRecord
 }
@@ -53,6 +54,7 @@ func newMemoryStore() *memoryStore {
 		auditEvents:      make([]storage.AuditEventRecord, 0),
 		metricSnapshots:  make([]storage.MetricSnapshotRecord, 0),
 		enrollmentTokens: make(map[string]storage.EnrollmentTokenRecord),
+		agentCertificateRecoveryGrants: make(map[string]storage.AgentCertificateRecoveryGrantRecord),
 	}
 }
 
@@ -378,4 +380,55 @@ func (s *memoryStore) RevokeEnrollmentToken(_ context.Context, value string, rev
 	s.enrollmentTokens[value] = token
 
 	return token, nil
+}
+
+func (s *memoryStore) PutAgentCertificateRecoveryGrant(_ context.Context, grant storage.AgentCertificateRecoveryGrantRecord) error {
+	s.agentCertificateRecoveryGrants[grant.AgentID] = grant
+	return nil
+}
+
+func (s *memoryStore) ListAgentCertificateRecoveryGrants(_ context.Context) ([]storage.AgentCertificateRecoveryGrantRecord, error) {
+	result := make([]storage.AgentCertificateRecoveryGrantRecord, 0, len(s.agentCertificateRecoveryGrants))
+	for _, grant := range s.agentCertificateRecoveryGrants {
+		result = append(result, grant)
+	}
+
+	return result, nil
+}
+
+func (s *memoryStore) GetAgentCertificateRecoveryGrant(_ context.Context, agentID string) (storage.AgentCertificateRecoveryGrantRecord, error) {
+	grant, ok := s.agentCertificateRecoveryGrants[agentID]
+	if !ok {
+		return storage.AgentCertificateRecoveryGrantRecord{}, storage.ErrNotFound
+	}
+
+	return grant, nil
+}
+
+func (s *memoryStore) UseAgentCertificateRecoveryGrant(_ context.Context, agentID string, usedAt time.Time) (storage.AgentCertificateRecoveryGrantRecord, error) {
+	grant, ok := s.agentCertificateRecoveryGrants[agentID]
+	if !ok {
+		return storage.AgentCertificateRecoveryGrantRecord{}, storage.ErrNotFound
+	}
+	if grant.UsedAt != nil || grant.RevokedAt != nil {
+		return storage.AgentCertificateRecoveryGrantRecord{}, storage.ErrConflict
+	}
+
+	grant.UsedAt = &usedAt
+	s.agentCertificateRecoveryGrants[agentID] = grant
+	return grant, nil
+}
+
+func (s *memoryStore) RevokeAgentCertificateRecoveryGrant(_ context.Context, agentID string, revokedAt time.Time) (storage.AgentCertificateRecoveryGrantRecord, error) {
+	grant, ok := s.agentCertificateRecoveryGrants[agentID]
+	if !ok {
+		return storage.AgentCertificateRecoveryGrantRecord{}, storage.ErrNotFound
+	}
+	if grant.RevokedAt != nil || grant.UsedAt != nil {
+		return grant, nil
+	}
+
+	grant.RevokedAt = &revokedAt
+	s.agentCertificateRecoveryGrants[agentID] = grant
+	return grant, nil
 }

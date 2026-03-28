@@ -355,7 +355,7 @@ func (s *Service) updateTarget(agentID string, jobID string, observedAt time.Tim
 	)
 
 	s.mu.Lock()
-	candidates = s.expireJobsLocked(s.now().UTC())
+	now := s.now().UTC()
 
 	job, ok := s.jobs[jobID]
 	if !ok {
@@ -364,6 +364,35 @@ func (s *Service) updateTarget(agentID string, jobID string, observedAt time.Tim
 			s.persistLatestJobVersion(candidate.jobID, candidate.version, candidate.job)
 		}
 		return
+	}
+
+	if jobShouldExpire(job, now) {
+		updated := false
+		for index := range job.Targets {
+			target := &job.Targets[index]
+			if target.Status == TargetStatusSucceeded || target.Status == TargetStatusFailed || target.Status == TargetStatusExpired {
+				continue
+			}
+			target.Status = TargetStatusExpired
+			target.UpdatedAt = now
+			updated = true
+		}
+		if updated || job.Status != StatusExpired {
+			job.Status = StatusExpired
+			s.jobs[job.ID] = job
+			s.syncJobTargetsIndexLocked(job)
+			s.keys[job.IdempotencyKey] = job.ID
+
+			if s.jobStore != nil {
+				s.updateSeq++
+				s.jobVersion[job.ID] = s.updateSeq
+				candidates = append(candidates, persistCandidate{
+					jobID:   job.ID,
+					version: s.updateSeq,
+					job:     cloneJob(job),
+				})
+			}
+		}
 	}
 
 	updated := false

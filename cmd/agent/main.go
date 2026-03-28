@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -587,6 +588,9 @@ func renewRuntimeCredentialsIfNeeded(ctx context.Context, stateFile string, gate
 	if !runtimeCredentialsNeedRefresh(current, now) {
 		return current, nil
 	}
+	if runtimeCredentialsNeedRecovery(current, now) {
+		return recoverRuntimeCredentialsIfNeeded(ctx, stateFile, current, nil, now)
+	}
 
 	certificate, err := tls.X509KeyPair([]byte(current.CertificatePEM), []byte(current.PrivateKeyPEM))
 	if err != nil {
@@ -640,6 +644,17 @@ func runtimeCredentialsNeedRefresh(current agentstate.Credentials, now time.Time
 	}
 
 	return !now.Add(runtimeCertificateRenewWindow).Before(current.ExpiresAt.UTC())
+}
+
+func runtimeCredentialsNeedRecovery(current agentstate.Credentials, now time.Time) bool {
+	if strings.TrimSpace(current.PanelURL) == "" {
+		return false
+	}
+	if current.ExpiresAt.IsZero() {
+		return false
+	}
+
+	return !current.ExpiresAt.UTC().After(now.UTC())
 }
 
 func runtimeCredentialRefreshDelay(current agentstate.Credentials, now time.Time) time.Duration {

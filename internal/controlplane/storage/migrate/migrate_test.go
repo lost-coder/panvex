@@ -90,8 +90,8 @@ func TestCopyStoreCopiesAllPersistentEntities(t *testing.T) {
 	if summary.Agents != 1 || summary.Instances != 1 || summary.Jobs != 1 || summary.JobTargets != 1 {
 		t.Fatalf("summary = %+v, want copied agent/instance/job counts", summary)
 	}
-	if summary.AuditEvents != 1 || summary.MetricSnapshots != 1 || summary.EnrollmentTokens != 1 {
-		t.Fatalf("summary = %+v, want copied audit/metric/token counts", summary)
+	if summary.AuditEvents != 1 || summary.MetricSnapshots != 1 || summary.EnrollmentTokens != 1 || summary.AgentCertificateRecoveryGrants != 1 {
+		t.Fatalf("summary = %+v, want copied audit/metric/token/recovery counts", summary)
 	}
 
 	users, err := target.ListUsers(context.Background())
@@ -142,6 +142,17 @@ func TestCopyStoreCopiesAllPersistentEntities(t *testing.T) {
 	}
 	if tokens.RevokedAt == nil {
 		t.Fatal("target enrollment token RevokedAt = nil, want copied revoked timestamp")
+	}
+
+	grant, err := target.GetAgentCertificateRecoveryGrant(context.Background(), "agent-000001")
+	if err != nil {
+		t.Fatalf("target.GetAgentCertificateRecoveryGrant() error = %v", err)
+	}
+	if grant.IssuedBy != "user-000001" {
+		t.Fatalf("target.GetAgentCertificateRecoveryGrant() IssuedBy = %q, want %q", grant.IssuedBy, "user-000001")
+	}
+	if grant.UsedAt == nil {
+		t.Fatal("target agent recovery grant UsedAt = nil, want copied used timestamp")
 	}
 
 	authority, err := target.GetCertificateAuthority(context.Background())
@@ -315,6 +326,15 @@ func populateSourceStore(t *testing.T, store storage.Store, now time.Time) {
 		RevokedAt:    &consumedAt,
 	}); err != nil {
 		t.Fatalf("PutEnrollmentToken() error = %v", err)
+	}
+	if err := store.PutAgentCertificateRecoveryGrant(ctx, storage.AgentCertificateRecoveryGrantRecord{
+		AgentID:   "agent-000001",
+		IssuedBy:  "user-000001",
+		IssuedAt:  now.Add(10 * time.Second),
+		ExpiresAt: now.Add(5 * time.Minute),
+		UsedAt:    &consumedAt,
+	}); err != nil {
+		t.Fatalf("PutAgentCertificateRecoveryGrant() error = %v", err)
 	}
 	if err := store.PutCertificateAuthority(ctx, storage.CertificateAuthorityRecord{
 		CAPEM:         "ca-pem",

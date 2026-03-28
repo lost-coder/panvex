@@ -554,6 +554,63 @@ func TestServiceRecordResultDoesNotOverrideExpiredTarget(t *testing.T) {
 	}
 }
 
+func TestServiceUpdateTargetDoesNotExpireUnrelatedJobs(t *testing.T) {
+	baseNow := time.Date(2026, time.March, 26, 11, 0, 0, 0, time.UTC)
+	currentTime := baseNow
+	service := NewService()
+	service.SetNow(func() time.Time {
+		return currentTime
+	})
+
+	expiredJob, err := service.Enqueue(CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-expired"},
+		TTL:            time.Minute,
+		IdempotencyKey: "unrelated-expired",
+		ActorID:        "user-1",
+	}, baseNow)
+	if err != nil {
+		t.Fatalf("Enqueue(expired) error = %v", err)
+	}
+
+	liveJob, err := service.Enqueue(CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-live"},
+		TTL:            time.Hour,
+		IdempotencyKey: "unrelated-live",
+		ActorID:        "user-1",
+	}, baseNow)
+	if err != nil {
+		t.Fatalf("Enqueue(live) error = %v", err)
+	}
+
+	currentTime = baseNow.Add(2 * time.Minute)
+	service.MarkDelivered("agent-live", liveJob.ID, currentTime)
+
+	storedExpired := service.jobs[expiredJob.ID]
+	if storedExpired.Status != StatusQueued {
+		t.Fatalf("stored expired job status = %q, want %q before List()", storedExpired.Status, StatusQueued)
+	}
+	if storedExpired.Targets[0].Status != TargetStatusQueued {
+		t.Fatalf("stored expired target status = %q, want %q before List()", storedExpired.Targets[0].Status, TargetStatusQueued)
+	}
+
+	jobsSnapshot := service.List()
+	for _, listed := range jobsSnapshot {
+		if listed.ID != expiredJob.ID {
+			continue
+		}
+		if listed.Status != StatusExpired {
+			t.Fatalf("listed expired job status = %q, want %q", listed.Status, StatusExpired)
+		}
+		if listed.Targets[0].Status != TargetStatusExpired {
+			t.Fatalf("listed expired target status = %q, want %q", listed.Targets[0].Status, TargetStatusExpired)
+		}
+		return
+	}
+	t.Fatalf("expired job %q not found in List()", expiredJob.ID)
+}
+
 func TestServiceListPersistsExpiredQueuedJobsAcrossRestart(t *testing.T) {
 	now := time.Date(2026, time.March, 19, 10, 0, 0, 0, time.UTC)
 	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))

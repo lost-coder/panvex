@@ -236,6 +236,22 @@ test("buildServerDetailViewModel marks explicit failure events as bad even when 
   assert.equal(viewModel.recentEventItems[0]?.status, "bad");
 });
 
+test("buildServerDetailViewModel exposes certificate recovery status text for the server header", () => {
+  const agent = createAgent({
+    certificate_recovery: {
+      status: "allowed",
+      issued_at_unix: Math.floor(Date.parse("2026-03-24T12:00:00Z") / 1000),
+      expires_at_unix: Math.floor(Date.parse("2026-03-24T12:15:00Z") / 1000),
+    },
+  });
+
+  const viewModel = buildServerDetailViewModel(agent, {
+    nowMs: Date.parse("2026-03-24T12:00:00Z"),
+  });
+
+  assert.equal(viewModel.header.certificateRecoveryText, "Allowed until 24 Mar 2026, 12:15 UTC");
+});
+
 test("buildServerDetailViewModel does not round event age up to the next unit", () => {
   const agent = createAgent({
     runtime: {

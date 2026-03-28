@@ -61,6 +61,15 @@ type EnrollmentStore interface {
 	RevokeEnrollmentToken(ctx context.Context, value string, revokedAt time.Time) (EnrollmentTokenRecord, error)
 }
 
+// AgentCertificateRecoveryGrantStore persists administrator-approved certificate recovery windows.
+type AgentCertificateRecoveryGrantStore interface {
+	PutAgentCertificateRecoveryGrant(ctx context.Context, grant AgentCertificateRecoveryGrantRecord) error
+	ListAgentCertificateRecoveryGrants(ctx context.Context) ([]AgentCertificateRecoveryGrantRecord, error)
+	GetAgentCertificateRecoveryGrant(ctx context.Context, agentID string) (AgentCertificateRecoveryGrantRecord, error)
+	UseAgentCertificateRecoveryGrant(ctx context.Context, agentID string, usedAt time.Time) (AgentCertificateRecoveryGrantRecord, error)
+	RevokeAgentCertificateRecoveryGrant(ctx context.Context, agentID string, revokedAt time.Time) (AgentCertificateRecoveryGrantRecord, error)
+}
+
 // PanelSettingsStore persists operator-managed panel network and TLS settings.
 type PanelSettingsStore interface {
 	PutPanelSettings(ctx context.Context, settings PanelSettingsRecord) error
@@ -94,6 +103,7 @@ type Store interface {
 	AuditStore
 	MetricStore
 	EnrollmentStore
+	AgentCertificateRecoveryGrantStore
 	PanelSettingsStore
 	CertificateAuthorityStore
 	ClientStore

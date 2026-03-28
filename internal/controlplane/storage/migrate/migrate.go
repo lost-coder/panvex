@@ -39,6 +39,7 @@ type Summary struct {
 	AuditEvents       int
 	MetricSnapshots   int
 	EnrollmentTokens  int
+	AgentCertificateRecoveryGrants int
 	Clients           int
 	ClientAssignments int
 	ClientDeployments int
@@ -191,6 +192,17 @@ func copyStore(ctx context.Context, source storage.Store, target storage.Store) 
 	}
 	summary.EnrollmentTokens = len(enrollmentTokens)
 
+	recoveryGrants, err := source.ListAgentCertificateRecoveryGrants(ctx)
+	if err != nil {
+		return Summary{}, err
+	}
+	for _, grant := range recoveryGrants {
+		if err := target.PutAgentCertificateRecoveryGrant(ctx, grant); err != nil {
+			return Summary{}, err
+		}
+	}
+	summary.AgentCertificateRecoveryGrants = len(recoveryGrants)
+
 	clients, err := source.ListClients(ctx)
 	if err != nil {
 		return Summary{}, err
@@ -266,7 +278,7 @@ func ensureTargetEmpty(ctx context.Context, target storage.Store) error {
 	if err != nil {
 		return err
 	}
-	if counts.Users > 0 || counts.UserAppearance > 0 || counts.FleetGroups > 0 || counts.Agents > 0 || counts.Instances > 0 || counts.Jobs > 0 || counts.JobTargets > 0 || counts.AuditEvents > 0 || counts.MetricSnapshots > 0 || counts.EnrollmentTokens > 0 || counts.Clients > 0 || counts.ClientAssignments > 0 || counts.ClientDeployments > 0 || counts.PanelSettings > 0 {
+	if counts.Users > 0 || counts.UserAppearance > 0 || counts.FleetGroups > 0 || counts.Agents > 0 || counts.Instances > 0 || counts.Jobs > 0 || counts.JobTargets > 0 || counts.AuditEvents > 0 || counts.MetricSnapshots > 0 || counts.EnrollmentTokens > 0 || counts.AgentCertificateRecoveryGrants > 0 || counts.Clients > 0 || counts.ClientAssignments > 0 || counts.ClientDeployments > 0 || counts.PanelSettings > 0 {
 		return ErrTargetNotEmpty
 	}
 	if _, err := target.GetPanelSettings(ctx); err == nil {
@@ -358,6 +370,12 @@ func listCounts(ctx context.Context, store storage.Store) (Summary, error) {
 		return Summary{}, err
 	}
 	summary.EnrollmentTokens = len(enrollmentTokens)
+
+	recoveryGrants, err := store.ListAgentCertificateRecoveryGrants(ctx)
+	if err != nil {
+		return Summary{}, err
+	}
+	summary.AgentCertificateRecoveryGrants = len(recoveryGrants)
 
 	clients, err := store.ListClients(ctx)
 	if err != nil {

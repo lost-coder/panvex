@@ -192,7 +192,12 @@ func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) error {
 		s.instances[instance.ID] = instance
 	}
 	if metricSnapshot != nil {
-		s.metrics = append(s.metrics, *metricSnapshot)
+		if len(s.metrics) < maxInMemoryMetricSnapshots {
+			s.metrics = append(s.metrics, *metricSnapshot)
+		} else {
+			copy(s.metrics, s.metrics[1:])
+			s.metrics[len(s.metrics)-1] = *metricSnapshot
+		}
 	}
 	if snapshot.HasClients {
 		s.applyClientUsageSnapshot(snapshot.AgentID, snapshot.Clients)

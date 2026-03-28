@@ -59,6 +59,7 @@ function createViewModel() {
       versionText: "1.14.7",
       lastSeenText: "24 Mar 2026, 11:58 UTC",
       readOnlyText: "Writable",
+      certificateRecoveryText: "Not allowed",
     },
     overviewStats: [
       { label: "Active Users", valueText: "382", secondaryText: "Reported edge users" },
@@ -135,10 +136,14 @@ function createBaseMocks(overrides = {}) {
     },
     "./server-detail.css": {},
     "./server-detail-hero": {
-      ServerDetailHero: ({ header, onBack }) =>
+      ServerDetailHero: ({ header, onBack, onAllowCertificateRecovery }) =>
         React.createElement(
           "section",
-          { className: "server-detail-hero", "data-back-handler": typeof onBack === "function" },
+          {
+            className: "server-detail-hero",
+            "data-back-handler": typeof onBack === "function",
+            "data-recovery-handler": typeof onAllowCertificateRecovery === "function",
+          },
           [
             "Back to Servers",
             header.nameText,
@@ -151,7 +156,10 @@ function createBaseMocks(overrides = {}) {
             header.lastSeenText,
             "Mode",
             header.readOnlyText,
+            "Recovery",
+            header.certificateRecoveryText,
             "Latest reported snapshot",
+            typeof onAllowCertificateRecovery === "function" ? "Allow Certificate Recovery" : "Recovery action unavailable",
           ].join("|")
         ),
     },
@@ -213,12 +221,16 @@ function createBaseMocks(overrides = {}) {
           items.map((item) => `${item.text}|${item.time}`).join("||")
         ),
     },
-    "./servers-state": {
-      useServers: () => ({
-        data: [{ id: "agent-fra-01", node_name: "de-fra-01" }],
-        isLoading: false,
-      }),
-    },
+      "./servers-state": {
+        useServers: () => ({
+          data: [{ id: "agent-fra-01", node_name: "de-fra-01" }],
+          isLoading: false,
+        }),
+        useAllowAgentCertificateRecovery: () => ({
+          isPending: false,
+          mutate: () => undefined,
+        }),
+      },
     "./server-detail-view-model": {
       buildServerDetailViewModel: () => createViewModel(),
     },
@@ -242,11 +254,13 @@ test("ServerDetailPage renders the approved first-slice detail layout", () => {
   assert.match(markup, /server-detail-upstreams-table/);
   assert.match(markup, /server-detail-events-panel/);
   assert.match(markup, /Back to Servers/);
+  assert.match(markup, /Allow Certificate Recovery/);
   assert.match(markup, /de-fra-01/);
   assert.match(markup, /Degraded/);
   assert.match(markup, /Group/);
   assert.match(markup, /Version/);
   assert.match(markup, /Last seen/);
+  assert.match(markup, /Recovery/);
   assert.match(markup, /Active Users/);
   assert.match(markup, /Current Connections/);
   assert.match(markup, /DC Coverage/);
@@ -278,6 +292,10 @@ test("ServerDetailPage renders a not-found state when the requested server is mi
           data: [],
           isLoading: false,
         }),
+        useAllowAgentCertificateRecovery: () => ({
+          isPending: false,
+          mutate: () => undefined,
+        }),
       },
     })
   );
@@ -295,6 +313,10 @@ test("ServerDetailPage renders an error state when the servers query fails", () 
           data: undefined,
           isLoading: false,
           isError: true,
+        }),
+        useAllowAgentCertificateRecovery: () => ({
+          isPending: false,
+          mutate: () => undefined,
         }),
       },
     })

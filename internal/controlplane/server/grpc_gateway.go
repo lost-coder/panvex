@@ -76,6 +76,9 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 	if err != nil {
 		return err
 	}
+	if s.grpcConnectRateLimiter != nil && !s.grpcConnectRateLimiter.Allow(agentID, s.now()) {
+		return status.Error(codes.ResourceExhausted, "connect rate limit exceeded")
+	}
 	session, unregisterSession := s.registerAgentSession(agentID)
 	defer unregisterSession()
 

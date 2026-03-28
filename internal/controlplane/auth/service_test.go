@@ -314,6 +314,48 @@ func TestServiceSessionLifecycle(t *testing.T) {
 	}
 }
 
+func TestServiceGetSessionPrunesOtherExpiredSessions(t *testing.T) {
+	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return now })
+
+	user, _, err := service.BootstrapUser(BootstrapInput{
+		Username: "viewer",
+		Password: "viewer-password",
+		Role:     RoleViewer,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	session, err := service.Authenticate(LoginInput{
+		Username: "viewer",
+		Password: "viewer-password",
+	}, now)
+	if err != nil {
+		t.Fatalf("Authenticate() error = %v", err)
+	}
+
+	service.mu.Lock()
+	service.sessions["session-expired"] = Session{
+		ID:        "session-expired",
+		UserID:    user.ID,
+		CreatedAt: now.Add(-sessionTTL - time.Minute),
+	}
+	service.mu.Unlock()
+
+	if _, err := service.GetSession(session.ID); err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+
+	service.mu.RLock()
+	_, stillPresent := service.sessions["session-expired"]
+	service.mu.RUnlock()
+	if stillPresent {
+		t.Fatal("expired session still present after GetSession()")
+	}
+}
+
 func TestServiceSnapshotAndLoadUsers(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	service := NewService()

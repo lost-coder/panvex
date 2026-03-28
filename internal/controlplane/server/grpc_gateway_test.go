@@ -2,6 +2,9 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"fmt"
 	"io"
 	"testing"
@@ -11,7 +14,11 @@ import (
 	"github.com/panvex/panvex/internal/agent/telemt"
 	"github.com/panvex/panvex/internal/controlplane/jobs"
 	"github.com/panvex/panvex/internal/gatewayrpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
+	"google.golang.org/grpc/status"
 )
 
 func TestServerPendingJobsForAgentIncludesQueuedTarget(t *testing.T) {
@@ -599,6 +606,25 @@ func TestDispatchPendingJobsSendsBoundedBatchAndLeavesRemainderQueued(t *testing
 	}
 }
 
+func TestServerConnectRateLimitRejectsBurstReconnects(t *testing.T) {
+	currentTime := time.Date(2026, time.March, 23, 8, 0, 0, 0, time.UTC)
+	server := New(Options{
+		Now: func() time.Time { return currentTime },
+	})
+	server.grpcConnectRateLimiter = newFixedWindowRateLimiter(1, time.Minute)
+
+	firstStream := newFakeGatewayConnectStream(authenticatedAgentContextForTest("agent-1"))
+	if err := server.Connect(firstStream); err != nil {
+		t.Fatalf("first Connect() error = %v", err)
+	}
+
+	secondStream := newFakeGatewayConnectStream(authenticatedAgentContextForTest("agent-1"))
+	err := server.Connect(secondStream)
+	if status.Code(err) != codes.ResourceExhausted {
+		t.Fatalf("second Connect() code = %v, want %v", status.Code(err), codes.ResourceExhausted)
+	}
+}
+
 func heartbeatMessageForTest(nodeName string) *gatewayrpc.ConnectClientMessage {
 	return &gatewayrpc.ConnectClientMessage{
 		Body: &gatewayrpc.ConnectClientMessage_Heartbeat{
@@ -642,6 +668,21 @@ func enqueueJobForAgent(t *testing.T, server *Server, agentID string, idempotenc
 	}
 
 	return job
+}
+
+func authenticatedAgentContextForTest(agentID string) context.Context {
+	certificate := &x509.Certificate{
+		Subject: pkix.Name{
+			CommonName: agentID,
+		},
+	}
+	return peer.NewContext(context.Background(), &peer.Peer{
+		AuthInfo: credentials.TLSInfo{
+			State: tls.ConnectionState{
+				PeerCertificates: []*x509.Certificate{certificate},
+			},
+		},
+	})
 }
 
 type fakeGatewayConnectStream struct {

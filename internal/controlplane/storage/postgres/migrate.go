@@ -94,6 +94,15 @@ CREATE TABLE IF NOT EXISTS enrollment_tokens (
     revoked_at TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS agent_certificate_recovery_grants (
+    agent_id TEXT PRIMARY KEY REFERENCES agents (id),
+    issued_by TEXT NOT NULL,
+    issued_at TIMESTAMPTZ NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    used_at TIMESTAMPTZ,
+    revoked_at TIMESTAMPTZ
+);
+
 CREATE TABLE IF NOT EXISTS clients (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,

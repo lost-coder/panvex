@@ -97,6 +97,16 @@ CREATE TABLE IF NOT EXISTS enrollment_tokens (
     revoked_at_unix INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS agent_certificate_recovery_grants (
+    agent_id TEXT PRIMARY KEY,
+    issued_by TEXT NOT NULL,
+    issued_at_unix INTEGER NOT NULL,
+    expires_at_unix INTEGER NOT NULL,
+    used_at_unix INTEGER,
+    revoked_at_unix INTEGER,
+    FOREIGN KEY (agent_id) REFERENCES agents (id)
+);
+
 CREATE TABLE IF NOT EXISTS clients (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,

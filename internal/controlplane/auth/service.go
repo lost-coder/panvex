@@ -238,6 +238,7 @@ func (s *Service) Authenticate(input LoginInput, now time.Time) (Session, error)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.cleanupExpiredSessionsLocked(now)
 	s.sequence++
 	sessionID, err := randomSessionID()
 	if err != nil {
@@ -578,6 +579,15 @@ func (s *Service) cleanupPendingTotpSetupLocked(now time.Time) {
 	}
 }
 
+func (s *Service) cleanupExpiredSessionsLocked(now time.Time) {
+	cutoff := now.UTC().Add(-sessionTTL)
+	for sessionID, session := range s.sessions {
+		if session.CreatedAt.Before(cutoff) {
+			delete(s.sessions, sessionID)
+		}
+	}
+}
+
 func (s *Service) verifyTotpCode(secret string, code string, now time.Time) bool {
 	trimmedCode := strings.TrimSpace(code)
 	for _, candidateTime := range []time.Time{now.Add(-30 * time.Second), now, now.Add(30 * time.Second)} {
@@ -623,11 +633,14 @@ func (s *Service) GetSession(sessionID string) (Session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	now := s.now().UTC()
+	s.cleanupExpiredSessionsLocked(now)
+
 	session, ok := s.sessions[sessionID]
 	if !ok {
 		return Session{}, ErrSessionNotFound
 	}
-	if s.now().UTC().After(session.CreatedAt.Add(sessionTTL)) {
+	if now.After(session.CreatedAt.Add(sessionTTL)) {
 		delete(s.sessions, sessionID)
 		return Session{}, ErrSessionNotFound
 	}
@@ -640,6 +653,7 @@ func (s *Service) Logout(sessionID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.cleanupExpiredSessionsLocked(s.now().UTC())
 	if _, ok := s.sessions[sessionID]; !ok {
 		return ErrSessionNotFound
 	}

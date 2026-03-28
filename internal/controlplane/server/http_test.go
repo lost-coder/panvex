@@ -165,6 +165,38 @@ func TestServerLoginLeavesSessionCookieInsecureForPlainHTTP(t *testing.T) {
 	}
 }
 
+func TestServerLoginRateLimitRejectsBurstFromSameClient(t *testing.T) {
+	now := time.Date(2026, time.March, 18, 12, 30, 0, 0, time.UTC)
+	server := New(Options{
+		Now: func() time.Time { return now },
+	})
+	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "viewer",
+		Password: "viewer-password",
+		Role:     auth.RoleViewer,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	for index := 0; index < httpLoginRateLimitPerWindow; index++ {
+		loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+			"username": "viewer",
+			"password": "wrong-password",
+		}, nil)
+		if loginResponse.Code != http.StatusUnauthorized {
+			t.Fatalf("POST /api/auth/login #%d status = %d, want %d", index+1, loginResponse.Code, http.StatusUnauthorized)
+		}
+	}
+
+	limitedResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "viewer",
+		"password": "wrong-password",
+	}, nil)
+	if limitedResponse.Code != http.StatusTooManyRequests {
+		t.Fatalf("POST /api/auth/login over limit status = %d, want %d", limitedResponse.Code, http.StatusTooManyRequests)
+	}
+}
+
 func TestServerCreateJobRejectsViewerRole(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	server := New(Options{
@@ -1081,6 +1113,51 @@ func TestHTTPAgentBootstrapRejectsConsumedToken(t *testing.T) {
 	}
 	if storedToken.ConsumedAt == nil {
 		t.Fatal("GetEnrollmentToken() ConsumedAt = nil, want consumed token")
+	}
+}
+
+func TestHTTPAgentBootstrapRateLimitRejectsBurstFromSameClient(t *testing.T) {
+	now := time.Date(2026, time.March, 16, 14, 15, 0, 0, time.UTC)
+	server := New(Options{
+		Now: func() time.Time { return now },
+	})
+
+	for index := 0; index < httpAgentBootstrapRateLimitPerWindow; index++ {
+		bootstrapResponse := performJSONRequestWithHeaders(
+			t,
+			server.Handler(),
+			http.MethodPost,
+			"https://panel.example.com/api/agent/bootstrap",
+			map[string]string{
+				"node_name": "node-a",
+				"version":   "1.0.0",
+			},
+			nil,
+			map[string]string{
+				"Authorization": "Bearer invalid-token",
+			},
+		)
+		if bootstrapResponse.Code != http.StatusForbidden {
+			t.Fatalf("POST /api/agent/bootstrap #%d status = %d, want %d", index+1, bootstrapResponse.Code, http.StatusForbidden)
+		}
+	}
+
+	limitedResponse := performJSONRequestWithHeaders(
+		t,
+		server.Handler(),
+		http.MethodPost,
+		"https://panel.example.com/api/agent/bootstrap",
+		map[string]string{
+			"node_name": "node-a",
+			"version":   "1.0.0",
+		},
+		nil,
+		map[string]string{
+			"Authorization": "Bearer invalid-token",
+		},
+	)
+	if limitedResponse.Code != http.StatusTooManyRequests {
+		t.Fatalf("POST /api/agent/bootstrap over limit status = %d, want %d", limitedResponse.Code, http.StatusTooManyRequests)
 	}
 }
 

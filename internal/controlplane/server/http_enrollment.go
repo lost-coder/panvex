@@ -2,11 +2,17 @@ package server
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/pem"
 	"errors"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +23,12 @@ import (
 )
 
 var errEnrollmentTokenRevoked = errors.New("enrollment token revoked")
+
+const (
+	agentCertificateRecoveryProofSkew  = 5 * time.Minute
+	agentCertificateRecoveryGraceWindow = 7 * 24 * time.Hour
+	defaultAgentCertificateRecoveryGrantTTL = 15 * time.Minute
+)
 
 type createEnrollmentTokenRequest struct {
 	FleetGroupID string `json:"fleet_group_id"`
@@ -45,6 +57,27 @@ type agentBootstrapResponse struct {
 	GRPCEndpoint   string `json:"grpc_endpoint"`
 	GRPCServerName string `json:"grpc_server_name"`
 	ExpiresAtUnix  int64  `json:"expires_at_unix"`
+}
+
+type agentCertificateRecoveryRequest struct {
+	AgentID            string `json:"agent_id"`
+	CertificatePEM     string `json:"certificate_pem"`
+	ProofTimestampUnix int64  `json:"proof_timestamp_unix"`
+	ProofNonce         string `json:"proof_nonce"`
+	ProofSignature     string `json:"proof_signature"`
+}
+
+type agentCertificateRecoveryGrantRequest struct {
+	TTLSeconds int `json:"ttl_seconds"`
+}
+
+type agentCertificateRecoveryGrantResponse struct {
+	AgentID       string `json:"agent_id"`
+	Status        string `json:"status"`
+	IssuedAtUnix  int64  `json:"issued_at_unix"`
+	ExpiresAtUnix int64  `json:"expires_at_unix"`
+	UsedAtUnix    *int64 `json:"used_at_unix,omitempty"`
+	RevokedAtUnix *int64 `json:"revoked_at_unix,omitempty"`
 }
 
 type enrollmentTokenResponse struct {
@@ -147,6 +180,176 @@ func (s *Server) handleAgentBootstrap() http.HandlerFunc {
 			GRPCServerName: grpcServerName,
 			ExpiresAtUnix:  response.ExpiresAt.Unix(),
 		})
+	}
+}
+
+func (s *Server) handleAgentCertificateRecovery() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.store == nil {
+			writeError(w, http.StatusServiceUnavailable, "persistent store required")
+			return
+		}
+
+		var request agentCertificateRecoveryRequest
+		if err := decodeJSON(r, &request); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid recovery payload")
+			return
+		}
+		if strings.TrimSpace(request.AgentID) == "" || strings.TrimSpace(request.CertificatePEM) == "" || strings.TrimSpace(request.ProofNonce) == "" || strings.TrimSpace(request.ProofSignature) == "" || request.ProofTimestampUnix == 0 {
+			writeError(w, http.StatusBadRequest, "recovery payload is incomplete")
+			return
+		}
+
+		now := s.now().UTC()
+		certificate, err := parseRecoveryCertificate(request.CertificatePEM)
+		if err != nil {
+			writeError(w, http.StatusForbidden, "invalid recovery certificate")
+			return
+		}
+		if err := verifyRecoveryCertificate(certificate, request.AgentID, s.authority.certificate, now); err != nil {
+			writeError(w, http.StatusForbidden, err.Error())
+			return
+		}
+		if err := verifyRecoveryProof(certificate, request.AgentID, request.ProofTimestampUnix, request.ProofNonce, request.ProofSignature, now); err != nil {
+			writeError(w, http.StatusForbidden, err.Error())
+			return
+		}
+
+		s.mu.RLock()
+		agent, exists := s.agents[request.AgentID]
+		s.mu.RUnlock()
+		if !exists {
+			writeError(w, http.StatusForbidden, "agent is not enrolled")
+			return
+		}
+		grant, err := s.store.GetAgentCertificateRecoveryGrant(r.Context(), request.AgentID)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				writeError(w, http.StatusForbidden, "agent certificate recovery is not allowed")
+				return
+			}
+			log.Printf("agent certificate recovery grant lookup failed for agent %q: %v", request.AgentID, err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		if agentCertificateRecoveryGrantStatus(grant, now) != "allowed" {
+			writeError(w, http.StatusForbidden, "agent certificate recovery is not allowed")
+			return
+		}
+
+		issued, err := s.authority.issueClientCertificate(request.AgentID, now)
+		if err != nil {
+			log.Printf("agent certificate recovery failed for agent %q: %v", request.AgentID, err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		if _, err := s.store.UseAgentCertificateRecoveryGrant(r.Context(), request.AgentID, now); err != nil {
+			if errors.Is(err, storage.ErrNotFound) || errors.Is(err, storage.ErrConflict) {
+				writeError(w, http.StatusForbidden, "agent certificate recovery is not allowed")
+				return
+			}
+			log.Printf("agent certificate recovery grant consume failed for agent %q: %v", request.AgentID, err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+
+		s.appendAudit(request.AgentID, "agents.certificate.recovered", request.AgentID, map[string]any{
+			"node_name": agent.NodeName,
+		})
+		grpcEndpoint, grpcServerName := s.bootstrapGatewayAddress(r.Host)
+		writeJSON(w, http.StatusOK, agentBootstrapResponse{
+			AgentID:        request.AgentID,
+			CertificatePEM: issued.CertificatePEM,
+			PrivateKeyPEM:  issued.PrivateKeyPEM,
+			CAPEM:          issued.CAPEM,
+			GRPCEndpoint:   grpcEndpoint,
+			GRPCServerName: grpcServerName,
+			ExpiresAtUnix:  issued.ExpiresAt.Unix(),
+		})
+	}
+}
+
+func (s *Server) handleCreateAgentCertificateRecoveryGrant() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		session, _, err := s.requireSession(r)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		if s.store == nil {
+			writeError(w, http.StatusServiceUnavailable, "persistent store required")
+			return
+		}
+
+		var request agentCertificateRecoveryGrantRequest
+		if err := decodeJSON(r, &request); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid recovery grant payload")
+			return
+		}
+		ttl, err := agentCertificateRecoveryGrantTTL(request.TTLSeconds)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		agentID := chi.URLParam(r, "id")
+		s.mu.RLock()
+		agent, exists := s.agents[agentID]
+		s.mu.RUnlock()
+		if !exists {
+			writeError(w, http.StatusNotFound, "agent not found")
+			return
+		}
+
+		now := s.now().UTC()
+		grant := storage.AgentCertificateRecoveryGrantRecord{
+			AgentID:   agentID,
+			IssuedBy:  session.UserID,
+			IssuedAt:  now,
+			ExpiresAt: now.Add(ttl),
+		}
+		if err := s.store.PutAgentCertificateRecoveryGrant(r.Context(), grant); err != nil {
+			log.Printf("create certificate recovery grant failed for agent %q: %v", agentID, err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+
+		s.appendAudit(session.UserID, "agents.certificate_recovery.allowed", agentID, map[string]any{
+			"node_name":        agent.NodeName,
+			"expires_at_unix":  grant.ExpiresAt.Unix(),
+			"recovery_ttl_sec": int(ttl / time.Second),
+		})
+		writeJSON(w, http.StatusCreated, agentCertificateRecoveryGrantResponseFromRecord(grant, now))
+	}
+}
+
+func (s *Server) handleRevokeAgentCertificateRecoveryGrant() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		session, _, err := s.requireSession(r)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		if s.store == nil {
+			writeError(w, http.StatusServiceUnavailable, "persistent store required")
+			return
+		}
+
+		agentID := chi.URLParam(r, "id")
+		now := s.now().UTC()
+		grant, err := s.store.RevokeAgentCertificateRecoveryGrant(r.Context(), agentID, now)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				writeError(w, http.StatusNotFound, "agent recovery grant not found")
+				return
+			}
+			log.Printf("revoke certificate recovery grant failed for agent %q: %v", agentID, err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+
+		s.appendAudit(session.UserID, "agents.certificate_recovery.revoked", agentID, nil)
+		writeJSON(w, http.StatusOK, agentCertificateRecoveryGrantResponseFromRecord(grant, now))
 	}
 }
 
@@ -362,6 +565,112 @@ func enrollmentTokenStatus(token storage.EnrollmentTokenRecord, now time.Time) s
 	}
 
 	return "active"
+}
+
+func parseRecoveryCertificate(certificatePEM string) (*x509.Certificate, error) {
+	block, _ := pem.Decode([]byte(certificatePEM))
+	if block == nil {
+		return nil, errors.New("failed to decode recovery certificate")
+	}
+
+	return x509.ParseCertificate(block.Bytes)
+}
+
+func verifyRecoveryCertificate(certificate *x509.Certificate, agentID string, authorityCertificate *x509.Certificate, now time.Time) error {
+	if certificate.Subject.CommonName != agentID {
+		return errors.New("recovery certificate agent mismatch")
+	}
+	if authorityCertificate == nil {
+		return errors.New("recovery authority is not available")
+	}
+	if err := certificate.CheckSignatureFrom(authorityCertificate); err != nil {
+		return errors.New("recovery certificate is not signed by control-plane authority")
+	}
+	if certificate.NotBefore.After(now.Add(agentCertificateRecoveryProofSkew)) {
+		return errors.New("recovery certificate is not yet valid")
+	}
+	if now.After(certificate.NotAfter.Add(agentCertificateRecoveryGraceWindow)) {
+		return errors.New("recovery certificate grace window expired")
+	}
+
+	return nil
+}
+
+func verifyRecoveryProof(certificate *x509.Certificate, agentID string, proofTimestampUnix int64, proofNonce string, proofSignature string, now time.Time) error {
+	proofTime := time.Unix(proofTimestampUnix, 0).UTC()
+	if proofTime.Before(now.Add(-agentCertificateRecoveryProofSkew)) || proofTime.After(now.Add(agentCertificateRecoveryProofSkew)) {
+		return errors.New("recovery proof timestamp is out of range")
+	}
+	if len(proofNonce) < 8 || len(proofNonce) > 128 {
+		return errors.New("recovery proof nonce is invalid")
+	}
+
+	signature, err := base64.RawURLEncoding.DecodeString(proofSignature)
+	if err != nil {
+		return errors.New("recovery proof signature is malformed")
+	}
+
+	publicKey, ok := certificate.PublicKey.(*ecdsa.PublicKey)
+	if !ok {
+		return errors.New("recovery certificate key type is unsupported")
+	}
+
+	payload := recoveryProofPayload(agentID, proofTimestampUnix, proofNonce)
+	digest := sha256.Sum256([]byte(payload))
+	if !ecdsa.VerifyASN1(publicKey, digest[:], signature) {
+		return errors.New("recovery proof signature is invalid")
+	}
+
+	return nil
+}
+
+func recoveryProofPayload(agentID string, proofTimestampUnix int64, proofNonce string) string {
+	return agentID + "\n" + strconv.FormatInt(proofTimestampUnix, 10) + "\n" + proofNonce
+}
+
+func agentCertificateRecoveryGrantTTL(ttlSeconds int) (time.Duration, error) {
+	if ttlSeconds < 0 {
+		return 0, errors.New("ttl_seconds must be zero or positive")
+	}
+	if ttlSeconds == 0 {
+		return defaultAgentCertificateRecoveryGrantTTL, nil
+	}
+
+	return time.Duration(ttlSeconds) * time.Second, nil
+}
+
+func agentCertificateRecoveryGrantStatus(grant storage.AgentCertificateRecoveryGrantRecord, now time.Time) string {
+	if grant.RevokedAt != nil {
+		return "revoked"
+	}
+	if grant.UsedAt != nil {
+		return "used"
+	}
+	if !grant.ExpiresAt.After(now) {
+		return "expired"
+	}
+
+	return "allowed"
+}
+
+func agentCertificateRecoveryGrantResponseFromRecord(grant storage.AgentCertificateRecoveryGrantRecord, now time.Time) agentCertificateRecoveryGrantResponse {
+	return agentCertificateRecoveryGrantResponse{
+		AgentID:       grant.AgentID,
+		Status:        agentCertificateRecoveryGrantStatus(grant, now),
+		IssuedAtUnix:  grant.IssuedAt.Unix(),
+		ExpiresAtUnix: grant.ExpiresAt.Unix(),
+		UsedAtUnix:    optionalUnix(grant.UsedAt),
+		RevokedAtUnix: optionalUnix(grant.RevokedAt),
+	}
+}
+
+func optionalUnix(value *time.Time) *int64 {
+	if value == nil {
+		return nil
+	}
+
+	unix := value.Unix()
+	return &unix
 }
 
 func bearerTokenFromHeader(value string) (string, bool) {

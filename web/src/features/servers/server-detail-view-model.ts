@@ -11,6 +11,7 @@ export interface ServerDetailViewModel {
     versionText: string;
     lastSeenText: string;
     readOnlyText: string;
+    certificateRecoveryText: string;
   };
   overviewStats: Array<{
     label: string;
@@ -88,6 +89,7 @@ export function buildServerDetailViewModel(
       versionText: agent.version || "—",
       lastSeenText: formatDateTime(agent.last_seen_at),
       readOnlyText: agent.read_only ? "Read-only" : "Writable",
+      certificateRecoveryText: formatCertificateRecovery(agent.certificate_recovery),
     },
     overviewStats: [
       {
@@ -368,6 +370,33 @@ function formatDateTime(value: string): string {
   const minutes = String(date.getUTCMinutes()).padStart(2, "0");
 
   return `${day} ${month} ${year}, ${hours}:${minutes} UTC`;
+}
+
+function formatCertificateRecovery(recovery: Agent["certificate_recovery"] | undefined): string {
+  if (!recovery) {
+    return "Not allowed";
+  }
+
+  switch (recovery.status) {
+    case "allowed":
+      return `Allowed until ${formatUnixDateTime(recovery.expires_at_unix)}`;
+    case "used":
+      return "Used";
+    case "revoked":
+      return "Revoked";
+    case "expired":
+      return "Expired";
+    default:
+      return "Not allowed";
+  }
+}
+
+function formatUnixDateTime(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "Unknown";
+  }
+
+  return formatDateTime(new Date(value * 1000).toISOString());
 }
 
 function formatRelativeTimestamp(event: RuntimeEvent, nowMs: number): string {

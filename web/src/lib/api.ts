@@ -73,6 +73,14 @@ export type AgentRuntime = {
   recent_events: RuntimeEvent[];
 };
 
+export type AgentCertificateRecovery = {
+  status: "allowed" | "expired" | "used" | "revoked";
+  issued_at_unix: number;
+  expires_at_unix: number;
+  used_at_unix?: number;
+  revoked_at_unix?: number;
+};
+
 export type ControlRoomResponse = {
   onboarding: {
     needs_first_server: boolean;
@@ -97,6 +105,7 @@ export type Agent = {
   version: string;
   read_only: boolean;
   presence_state: string;
+  certificate_recovery?: AgentCertificateRecovery;
   runtime: AgentRuntime;
   last_seen_at: string;
 };
@@ -414,6 +423,11 @@ export const apiClient = {
     api<EnrollmentTokenResponse>(`${apiBasePath}/agents/enrollment-tokens`, {
       method: "POST",
       body: JSON.stringify(payload)
+    }),
+  allowAgentCertificateRecovery: (agentID: string, payload?: { ttl_seconds?: number }) =>
+    api<AgentCertificateRecovery>(`${apiBasePath}/agents/${agentID}/certificate-recovery-grants`, {
+      method: "POST",
+      body: JSON.stringify(payload ?? {})
     }),
   listEnrollmentTokens: () => api<EnrollmentTokenListItem[]>(`${apiBasePath}/agents/enrollment-tokens`),
   revokeEnrollmentToken: (value: string) =>

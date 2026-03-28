@@ -486,6 +486,123 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 		}
 	})
 
+	t.Run("agent certificate recovery grant round trip", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		group := storage.FleetGroupRecord{
+			ID:        "default",
+			Name:      "Default",
+			CreatedAt: time.Date(2026, time.March, 15, 8, 50, 0, 0, time.UTC),
+		}
+		agent := storage.AgentRecord{
+			ID:           "agent-000001",
+			NodeName:     "node-a",
+			FleetGroupID: group.ID,
+			Version:      "dev",
+			ReadOnly:     false,
+			LastSeenAt:   time.Date(2026, time.March, 15, 8, 55, 0, 0, time.UTC),
+		}
+		grant := storage.AgentCertificateRecoveryGrantRecord{
+			AgentID:   agent.ID,
+			IssuedBy:  "user-1",
+			IssuedAt:  time.Date(2026, time.March, 15, 9, 0, 0, 0, time.UTC),
+			ExpiresAt: time.Date(2026, time.March, 15, 9, 15, 0, 0, time.UTC),
+		}
+
+		if err := store.PutFleetGroup(ctx, group); err != nil {
+			t.Fatalf("PutFleetGroup() error = %v", err)
+		}
+		if err := store.PutAgent(ctx, agent); err != nil {
+			t.Fatalf("PutAgent() error = %v", err)
+		}
+		if err := store.PutAgentCertificateRecoveryGrant(ctx, grant); err != nil {
+			t.Fatalf("PutAgentCertificateRecoveryGrant() error = %v", err)
+		}
+
+		loadedGrant, err := store.GetAgentCertificateRecoveryGrant(ctx, grant.AgentID)
+		if err != nil {
+			t.Fatalf("GetAgentCertificateRecoveryGrant() error = %v", err)
+		}
+		if loadedGrant.IssuedBy != grant.IssuedBy {
+			t.Fatalf("GetAgentCertificateRecoveryGrant() IssuedBy = %q, want %q", loadedGrant.IssuedBy, grant.IssuedBy)
+		}
+		if !loadedGrant.ExpiresAt.Equal(grant.ExpiresAt) {
+			t.Fatalf("GetAgentCertificateRecoveryGrant() ExpiresAt = %v, want %v", loadedGrant.ExpiresAt, grant.ExpiresAt)
+		}
+
+		usedAt := time.Date(2026, time.March, 15, 9, 5, 0, 0, time.UTC)
+		usedGrant, err := store.UseAgentCertificateRecoveryGrant(ctx, grant.AgentID, usedAt)
+		if err != nil {
+			t.Fatalf("UseAgentCertificateRecoveryGrant() error = %v", err)
+		}
+		if usedGrant.UsedAt == nil || !usedGrant.UsedAt.Equal(usedAt) {
+			t.Fatalf("UseAgentCertificateRecoveryGrant() UsedAt = %v, want %v", usedGrant.UsedAt, usedAt)
+		}
+
+		reloadedGrant, err := store.GetAgentCertificateRecoveryGrant(ctx, grant.AgentID)
+		if err != nil {
+			t.Fatalf("GetAgentCertificateRecoveryGrant() after use error = %v", err)
+		}
+		if reloadedGrant.UsedAt == nil || !reloadedGrant.UsedAt.Equal(usedAt) {
+			t.Fatalf("GetAgentCertificateRecoveryGrant() after use UsedAt = %v, want %v", reloadedGrant.UsedAt, usedAt)
+		}
+	})
+
+	t.Run("agent certificate recovery grant revoke state round trip", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		group := storage.FleetGroupRecord{
+			ID:        "default",
+			Name:      "Default",
+			CreatedAt: time.Date(2026, time.March, 15, 9, 20, 0, 0, time.UTC),
+		}
+		agent := storage.AgentRecord{
+			ID:           "agent-000002",
+			NodeName:     "node-b",
+			FleetGroupID: group.ID,
+			Version:      "dev",
+			ReadOnly:     false,
+			LastSeenAt:   time.Date(2026, time.March, 15, 9, 25, 0, 0, time.UTC),
+		}
+		grant := storage.AgentCertificateRecoveryGrantRecord{
+			AgentID:   agent.ID,
+			IssuedBy:  "user-2",
+			IssuedAt:  time.Date(2026, time.March, 15, 9, 30, 0, 0, time.UTC),
+			ExpiresAt: time.Date(2026, time.March, 15, 9, 45, 0, 0, time.UTC),
+		}
+
+		if err := store.PutFleetGroup(ctx, group); err != nil {
+			t.Fatalf("PutFleetGroup() error = %v", err)
+		}
+		if err := store.PutAgent(ctx, agent); err != nil {
+			t.Fatalf("PutAgent() error = %v", err)
+		}
+		if err := store.PutAgentCertificateRecoveryGrant(ctx, grant); err != nil {
+			t.Fatalf("PutAgentCertificateRecoveryGrant() error = %v", err)
+		}
+
+		revokedAt := time.Date(2026, time.March, 15, 9, 35, 0, 0, time.UTC)
+		revokedGrant, err := store.RevokeAgentCertificateRecoveryGrant(ctx, grant.AgentID, revokedAt)
+		if err != nil {
+			t.Fatalf("RevokeAgentCertificateRecoveryGrant() error = %v", err)
+		}
+		if revokedGrant.RevokedAt == nil || !revokedGrant.RevokedAt.Equal(revokedAt) {
+			t.Fatalf("RevokeAgentCertificateRecoveryGrant() RevokedAt = %v, want %v", revokedGrant.RevokedAt, revokedAt)
+		}
+
+		storedGrant, err := store.GetAgentCertificateRecoveryGrant(ctx, grant.AgentID)
+		if err != nil {
+			t.Fatalf("GetAgentCertificateRecoveryGrant() after revoke error = %v", err)
+		}
+		if storedGrant.RevokedAt == nil || !storedGrant.RevokedAt.Equal(revokedAt) {
+			t.Fatalf("GetAgentCertificateRecoveryGrant() after revoke RevokedAt = %v, want %v", storedGrant.RevokedAt, revokedAt)
+		}
+	})
+
 	t.Run("agent and instance snapshot persistence round trip", func(t *testing.T) {
 		store := open(t)
 		defer store.Close()

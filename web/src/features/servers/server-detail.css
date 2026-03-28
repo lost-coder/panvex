@@ -103,6 +103,36 @@
   color: var(--text-1);
 }
 
+.server-detail-hero__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.server-detail-hero__recovery-action {
+  background: rgba(107, 146, 207, 0.16);
+  border: 1px solid rgba(107, 146, 207, 0.38);
+  border-radius: 999px;
+  color: var(--text-1);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 10px 14px;
+  text-transform: uppercase;
+}
+
+.server-detail-hero__recovery-action:hover:enabled {
+  background: rgba(107, 146, 207, 0.24);
+}
+
+.server-detail-hero__recovery-action:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
 .server-detail-hero__body {
   display: flex;
   align-items: flex-start;
