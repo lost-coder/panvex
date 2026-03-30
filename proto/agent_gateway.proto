@@ -87,6 +87,19 @@ message RuntimeEventSnapshot {
   string context = 4;
 }
 
+message RuntimeSystemLoadSnapshot {
+  double cpu_usage_pct = 1;
+  uint64 memory_used_bytes = 2;
+  uint64 memory_total_bytes = 3;
+  double memory_usage_pct = 4;
+  uint64 disk_used_bytes = 5;
+  uint64 disk_total_bytes = 6;
+  double disk_usage_pct = 7;
+  double load_1m = 8;
+  double load_5m = 9;
+  double load_15m = 10;
+}
+
 message RuntimeSnapshot {
   bool accepting_new_connections = 1;
   bool me_runtime_ready = 2;
@@ -112,6 +125,7 @@ message RuntimeSnapshot {
   RuntimeUpstreamSnapshot upstreams = 22;
   repeated RuntimeEventSnapshot recent_events = 23;
   double uptime_seconds = 24;
+  RuntimeSystemLoadSnapshot system_load = 25;
 }
 
 message RuntimeDiagnosticsSnapshot {

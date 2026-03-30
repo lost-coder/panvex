@@ -64,7 +64,7 @@ func (x ClientDataRequest_RequestType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ClientDataRequest_RequestType.Descriptor instead.
 func (ClientDataRequest_RequestType) EnumDescriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{17, 0}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{18, 0}
 }
 
 type RenewCertificateRequest struct {
@@ -811,39 +811,156 @@ func (x *RuntimeEventSnapshot) GetContext() string {
 	return ""
 }
 
+type RuntimeSystemLoadSnapshot struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	CpuUsagePct      float64                `protobuf:"fixed64,1,opt,name=cpu_usage_pct,json=cpuUsagePct,proto3" json:"cpu_usage_pct,omitempty"`
+	MemoryUsedBytes  uint64                 `protobuf:"varint,2,opt,name=memory_used_bytes,json=memoryUsedBytes,proto3" json:"memory_used_bytes,omitempty"`
+	MemoryTotalBytes uint64                 `protobuf:"varint,3,opt,name=memory_total_bytes,json=memoryTotalBytes,proto3" json:"memory_total_bytes,omitempty"`
+	MemoryUsagePct   float64                `protobuf:"fixed64,4,opt,name=memory_usage_pct,json=memoryUsagePct,proto3" json:"memory_usage_pct,omitempty"`
+	DiskUsedBytes    uint64                 `protobuf:"varint,5,opt,name=disk_used_bytes,json=diskUsedBytes,proto3" json:"disk_used_bytes,omitempty"`
+	DiskTotalBytes   uint64                 `protobuf:"varint,6,opt,name=disk_total_bytes,json=diskTotalBytes,proto3" json:"disk_total_bytes,omitempty"`
+	DiskUsagePct     float64                `protobuf:"fixed64,7,opt,name=disk_usage_pct,json=diskUsagePct,proto3" json:"disk_usage_pct,omitempty"`
+	Load_1M          float64                `protobuf:"fixed64,8,opt,name=load_1m,json=load1m,proto3" json:"load_1m,omitempty"`
+	Load_5M          float64                `protobuf:"fixed64,9,opt,name=load_5m,json=load5m,proto3" json:"load_5m,omitempty"`
+	Load_15M         float64                `protobuf:"fixed64,10,opt,name=load_15m,json=load15m,proto3" json:"load_15m,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *RuntimeSystemLoadSnapshot) Reset() {
+	*x = RuntimeSystemLoadSnapshot{}
+	mi := &file_proto_agent_gateway_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RuntimeSystemLoadSnapshot) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RuntimeSystemLoadSnapshot) ProtoMessage() {}
+
+func (x *RuntimeSystemLoadSnapshot) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_agent_gateway_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RuntimeSystemLoadSnapshot.ProtoReflect.Descriptor instead.
+func (*RuntimeSystemLoadSnapshot) Descriptor() ([]byte, []int) {
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *RuntimeSystemLoadSnapshot) GetCpuUsagePct() float64 {
+	if x != nil {
+		return x.CpuUsagePct
+	}
+	return 0
+}
+
+func (x *RuntimeSystemLoadSnapshot) GetMemoryUsedBytes() uint64 {
+	if x != nil {
+		return x.MemoryUsedBytes
+	}
+	return 0
+}
+
+func (x *RuntimeSystemLoadSnapshot) GetMemoryTotalBytes() uint64 {
+	if x != nil {
+		return x.MemoryTotalBytes
+	}
+	return 0
+}
+
+func (x *RuntimeSystemLoadSnapshot) GetMemoryUsagePct() float64 {
+	if x != nil {
+		return x.MemoryUsagePct
+	}
+	return 0
+}
+
+func (x *RuntimeSystemLoadSnapshot) GetDiskUsedBytes() uint64 {
+	if x != nil {
+		return x.DiskUsedBytes
+	}
+	return 0
+}
+
+func (x *RuntimeSystemLoadSnapshot) GetDiskTotalBytes() uint64 {
+	if x != nil {
+		return x.DiskTotalBytes
+	}
+	return 0
+}
+
+func (x *RuntimeSystemLoadSnapshot) GetDiskUsagePct() float64 {
+	if x != nil {
+		return x.DiskUsagePct
+	}
+	return 0
+}
+
+func (x *RuntimeSystemLoadSnapshot) GetLoad_1M() float64 {
+	if x != nil {
+		return x.Load_1M
+	}
+	return 0
+}
+
+func (x *RuntimeSystemLoadSnapshot) GetLoad_5M() float64 {
+	if x != nil {
+		return x.Load_5M
+	}
+	return 0
+}
+
+func (x *RuntimeSystemLoadSnapshot) GetLoad_15M() float64 {
+	if x != nil {
+		return x.Load_15M
+	}
+	return 0
+}
+
 type RuntimeSnapshot struct {
-	state                     protoimpl.MessageState   `protogen:"open.v1"`
-	AcceptingNewConnections   bool                     `protobuf:"varint,1,opt,name=accepting_new_connections,json=acceptingNewConnections,proto3" json:"accepting_new_connections,omitempty"`
-	MeRuntimeReady            bool                     `protobuf:"varint,2,opt,name=me_runtime_ready,json=meRuntimeReady,proto3" json:"me_runtime_ready,omitempty"`
-	Me2DcFallbackEnabled      bool                     `protobuf:"varint,3,opt,name=me2dc_fallback_enabled,json=me2dcFallbackEnabled,proto3" json:"me2dc_fallback_enabled,omitempty"`
-	UseMiddleProxy            bool                     `protobuf:"varint,4,opt,name=use_middle_proxy,json=useMiddleProxy,proto3" json:"use_middle_proxy,omitempty"`
-	StartupStatus             string                   `protobuf:"bytes,5,opt,name=startup_status,json=startupStatus,proto3" json:"startup_status,omitempty"`
-	StartupStage              string                   `protobuf:"bytes,6,opt,name=startup_stage,json=startupStage,proto3" json:"startup_stage,omitempty"`
-	StartupProgressPct        float64                  `protobuf:"fixed64,7,opt,name=startup_progress_pct,json=startupProgressPct,proto3" json:"startup_progress_pct,omitempty"`
-	InitializationStatus      string                   `protobuf:"bytes,8,opt,name=initialization_status,json=initializationStatus,proto3" json:"initialization_status,omitempty"`
-	Degraded                  bool                     `protobuf:"varint,9,opt,name=degraded,proto3" json:"degraded,omitempty"`
-	InitializationStage       string                   `protobuf:"bytes,10,opt,name=initialization_stage,json=initializationStage,proto3" json:"initialization_stage,omitempty"`
-	InitializationProgressPct float64                  `protobuf:"fixed64,11,opt,name=initialization_progress_pct,json=initializationProgressPct,proto3" json:"initialization_progress_pct,omitempty"`
-	TransportMode             string                   `protobuf:"bytes,12,opt,name=transport_mode,json=transportMode,proto3" json:"transport_mode,omitempty"`
-	CurrentConnections        int32                    `protobuf:"varint,13,opt,name=current_connections,json=currentConnections,proto3" json:"current_connections,omitempty"`
-	CurrentConnectionsMe      int32                    `protobuf:"varint,14,opt,name=current_connections_me,json=currentConnectionsMe,proto3" json:"current_connections_me,omitempty"`
-	CurrentConnectionsDirect  int32                    `protobuf:"varint,15,opt,name=current_connections_direct,json=currentConnectionsDirect,proto3" json:"current_connections_direct,omitempty"`
-	ActiveUsers               int32                    `protobuf:"varint,16,opt,name=active_users,json=activeUsers,proto3" json:"active_users,omitempty"`
-	ConnectionsTotal          uint64                   `protobuf:"varint,17,opt,name=connections_total,json=connectionsTotal,proto3" json:"connections_total,omitempty"`
-	ConnectionsBadTotal       uint64                   `protobuf:"varint,18,opt,name=connections_bad_total,json=connectionsBadTotal,proto3" json:"connections_bad_total,omitempty"`
-	HandshakeTimeoutsTotal    uint64                   `protobuf:"varint,19,opt,name=handshake_timeouts_total,json=handshakeTimeoutsTotal,proto3" json:"handshake_timeouts_total,omitempty"`
-	ConfiguredUsers           int32                    `protobuf:"varint,20,opt,name=configured_users,json=configuredUsers,proto3" json:"configured_users,omitempty"`
-	Dcs                       []*RuntimeDCSnapshot     `protobuf:"bytes,21,rep,name=dcs,proto3" json:"dcs,omitempty"`
-	Upstreams                 *RuntimeUpstreamSnapshot `protobuf:"bytes,22,opt,name=upstreams,proto3" json:"upstreams,omitempty"`
-	RecentEvents              []*RuntimeEventSnapshot  `protobuf:"bytes,23,rep,name=recent_events,json=recentEvents,proto3" json:"recent_events,omitempty"`
-	UptimeSeconds             float64                  `protobuf:"fixed64,24,opt,name=uptime_seconds,json=uptimeSeconds,proto3" json:"uptime_seconds,omitempty"`
+	state                     protoimpl.MessageState     `protogen:"open.v1"`
+	AcceptingNewConnections   bool                       `protobuf:"varint,1,opt,name=accepting_new_connections,json=acceptingNewConnections,proto3" json:"accepting_new_connections,omitempty"`
+	MeRuntimeReady            bool                       `protobuf:"varint,2,opt,name=me_runtime_ready,json=meRuntimeReady,proto3" json:"me_runtime_ready,omitempty"`
+	Me2DcFallbackEnabled      bool                       `protobuf:"varint,3,opt,name=me2dc_fallback_enabled,json=me2dcFallbackEnabled,proto3" json:"me2dc_fallback_enabled,omitempty"`
+	UseMiddleProxy            bool                       `protobuf:"varint,4,opt,name=use_middle_proxy,json=useMiddleProxy,proto3" json:"use_middle_proxy,omitempty"`
+	StartupStatus             string                     `protobuf:"bytes,5,opt,name=startup_status,json=startupStatus,proto3" json:"startup_status,omitempty"`
+	StartupStage              string                     `protobuf:"bytes,6,opt,name=startup_stage,json=startupStage,proto3" json:"startup_stage,omitempty"`
+	StartupProgressPct        float64                    `protobuf:"fixed64,7,opt,name=startup_progress_pct,json=startupProgressPct,proto3" json:"startup_progress_pct,omitempty"`
+	InitializationStatus      string                     `protobuf:"bytes,8,opt,name=initialization_status,json=initializationStatus,proto3" json:"initialization_status,omitempty"`
+	Degraded                  bool                       `protobuf:"varint,9,opt,name=degraded,proto3" json:"degraded,omitempty"`
+	InitializationStage       string                     `protobuf:"bytes,10,opt,name=initialization_stage,json=initializationStage,proto3" json:"initialization_stage,omitempty"`
+	InitializationProgressPct float64                    `protobuf:"fixed64,11,opt,name=initialization_progress_pct,json=initializationProgressPct,proto3" json:"initialization_progress_pct,omitempty"`
+	TransportMode             string                     `protobuf:"bytes,12,opt,name=transport_mode,json=transportMode,proto3" json:"transport_mode,omitempty"`
+	CurrentConnections        int32                      `protobuf:"varint,13,opt,name=current_connections,json=currentConnections,proto3" json:"current_connections,omitempty"`
+	CurrentConnectionsMe      int32                      `protobuf:"varint,14,opt,name=current_connections_me,json=currentConnectionsMe,proto3" json:"current_connections_me,omitempty"`
+	CurrentConnectionsDirect  int32                      `protobuf:"varint,15,opt,name=current_connections_direct,json=currentConnectionsDirect,proto3" json:"current_connections_direct,omitempty"`
+	ActiveUsers               int32                      `protobuf:"varint,16,opt,name=active_users,json=activeUsers,proto3" json:"active_users,omitempty"`
+	ConnectionsTotal          uint64                     `protobuf:"varint,17,opt,name=connections_total,json=connectionsTotal,proto3" json:"connections_total,omitempty"`
+	ConnectionsBadTotal       uint64                     `protobuf:"varint,18,opt,name=connections_bad_total,json=connectionsBadTotal,proto3" json:"connections_bad_total,omitempty"`
+	HandshakeTimeoutsTotal    uint64                     `protobuf:"varint,19,opt,name=handshake_timeouts_total,json=handshakeTimeoutsTotal,proto3" json:"handshake_timeouts_total,omitempty"`
+	ConfiguredUsers           int32                      `protobuf:"varint,20,opt,name=configured_users,json=configuredUsers,proto3" json:"configured_users,omitempty"`
+	Dcs                       []*RuntimeDCSnapshot       `protobuf:"bytes,21,rep,name=dcs,proto3" json:"dcs,omitempty"`
+	Upstreams                 *RuntimeUpstreamSnapshot   `protobuf:"bytes,22,opt,name=upstreams,proto3" json:"upstreams,omitempty"`
+	RecentEvents              []*RuntimeEventSnapshot    `protobuf:"bytes,23,rep,name=recent_events,json=recentEvents,proto3" json:"recent_events,omitempty"`
+	UptimeSeconds             float64                    `protobuf:"fixed64,24,opt,name=uptime_seconds,json=uptimeSeconds,proto3" json:"uptime_seconds,omitempty"`
+	SystemLoad                *RuntimeSystemLoadSnapshot `protobuf:"bytes,25,opt,name=system_load,json=systemLoad,proto3" json:"system_load,omitempty"`
 	unknownFields             protoimpl.UnknownFields
 	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *RuntimeSnapshot) Reset() {
 	*x = RuntimeSnapshot{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[10]
+	mi := &file_proto_agent_gateway_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -855,7 +972,7 @@ func (x *RuntimeSnapshot) String() string {
 func (*RuntimeSnapshot) ProtoMessage() {}
 
 func (x *RuntimeSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[10]
+	mi := &file_proto_agent_gateway_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -868,7 +985,7 @@ func (x *RuntimeSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeSnapshot.ProtoReflect.Descriptor instead.
 func (*RuntimeSnapshot) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{10}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *RuntimeSnapshot) GetAcceptingNewConnections() bool {
@@ -1039,6 +1156,13 @@ func (x *RuntimeSnapshot) GetUptimeSeconds() float64 {
 	return 0
 }
 
+func (x *RuntimeSnapshot) GetSystemLoad() *RuntimeSystemLoadSnapshot {
+	if x != nil {
+		return x.SystemLoad
+	}
+	return nil
+}
+
 type RuntimeDiagnosticsSnapshot struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	State               string                 `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
@@ -1054,7 +1178,7 @@ type RuntimeDiagnosticsSnapshot struct {
 
 func (x *RuntimeDiagnosticsSnapshot) Reset() {
 	*x = RuntimeDiagnosticsSnapshot{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[11]
+	mi := &file_proto_agent_gateway_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1066,7 +1190,7 @@ func (x *RuntimeDiagnosticsSnapshot) String() string {
 func (*RuntimeDiagnosticsSnapshot) ProtoMessage() {}
 
 func (x *RuntimeDiagnosticsSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[11]
+	mi := &file_proto_agent_gateway_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1079,7 +1203,7 @@ func (x *RuntimeDiagnosticsSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeDiagnosticsSnapshot.ProtoReflect.Descriptor instead.
 func (*RuntimeDiagnosticsSnapshot) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{11}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *RuntimeDiagnosticsSnapshot) GetState() string {
@@ -1144,7 +1268,7 @@ type RuntimeSecurityInventorySnapshot struct {
 
 func (x *RuntimeSecurityInventorySnapshot) Reset() {
 	*x = RuntimeSecurityInventorySnapshot{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[12]
+	mi := &file_proto_agent_gateway_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1156,7 +1280,7 @@ func (x *RuntimeSecurityInventorySnapshot) String() string {
 func (*RuntimeSecurityInventorySnapshot) ProtoMessage() {}
 
 func (x *RuntimeSecurityInventorySnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[12]
+	mi := &file_proto_agent_gateway_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1169,7 +1293,7 @@ func (x *RuntimeSecurityInventorySnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeSecurityInventorySnapshot.ProtoReflect.Descriptor instead.
 func (*RuntimeSecurityInventorySnapshot) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{12}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *RuntimeSecurityInventorySnapshot) GetState() string {
@@ -1232,7 +1356,7 @@ type Snapshot struct {
 
 func (x *Snapshot) Reset() {
 	*x = Snapshot{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[13]
+	mi := &file_proto_agent_gateway_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1244,7 +1368,7 @@ func (x *Snapshot) String() string {
 func (*Snapshot) ProtoMessage() {}
 
 func (x *Snapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[13]
+	mi := &file_proto_agent_gateway_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1257,7 +1381,7 @@ func (x *Snapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Snapshot.ProtoReflect.Descriptor instead.
 func (*Snapshot) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{13}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *Snapshot) GetAgentId() string {
@@ -1393,7 +1517,7 @@ type JobResult struct {
 
 func (x *JobResult) Reset() {
 	*x = JobResult{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[14]
+	mi := &file_proto_agent_gateway_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1405,7 +1529,7 @@ func (x *JobResult) String() string {
 func (*JobResult) ProtoMessage() {}
 
 func (x *JobResult) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[14]
+	mi := &file_proto_agent_gateway_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1418,7 +1542,7 @@ func (x *JobResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobResult.ProtoReflect.Descriptor instead.
 func (*JobResult) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{14}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *JobResult) GetAgentId() string {
@@ -1474,7 +1598,7 @@ type JobAcknowledgement struct {
 
 func (x *JobAcknowledgement) Reset() {
 	*x = JobAcknowledgement{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[15]
+	mi := &file_proto_agent_gateway_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1486,7 +1610,7 @@ func (x *JobAcknowledgement) String() string {
 func (*JobAcknowledgement) ProtoMessage() {}
 
 func (x *JobAcknowledgement) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[15]
+	mi := &file_proto_agent_gateway_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1499,7 +1623,7 @@ func (x *JobAcknowledgement) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobAcknowledgement.ProtoReflect.Descriptor instead.
 func (*JobAcknowledgement) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{15}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *JobAcknowledgement) GetAgentId() string {
@@ -1536,7 +1660,7 @@ type JobCommand struct {
 
 func (x *JobCommand) Reset() {
 	*x = JobCommand{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[16]
+	mi := &file_proto_agent_gateway_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1548,7 +1672,7 @@ func (x *JobCommand) String() string {
 func (*JobCommand) ProtoMessage() {}
 
 func (x *JobCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[16]
+	mi := &file_proto_agent_gateway_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1561,7 +1685,7 @@ func (x *JobCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobCommand.ProtoReflect.Descriptor instead.
 func (*JobCommand) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{16}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *JobCommand) GetId() string {
@@ -1610,7 +1734,7 @@ type ClientDataRequest struct {
 
 func (x *ClientDataRequest) Reset() {
 	*x = ClientDataRequest{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[17]
+	mi := &file_proto_agent_gateway_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1622,7 +1746,7 @@ func (x *ClientDataRequest) String() string {
 func (*ClientDataRequest) ProtoMessage() {}
 
 func (x *ClientDataRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[17]
+	mi := &file_proto_agent_gateway_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1635,7 +1759,7 @@ func (x *ClientDataRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientDataRequest.ProtoReflect.Descriptor instead.
 func (*ClientDataRequest) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{17}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ClientDataRequest) GetType() ClientDataRequest_RequestType {
@@ -1669,7 +1793,7 @@ type ClientDataResponse struct {
 
 func (x *ClientDataResponse) Reset() {
 	*x = ClientDataResponse{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[18]
+	mi := &file_proto_agent_gateway_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1681,7 +1805,7 @@ func (x *ClientDataResponse) String() string {
 func (*ClientDataResponse) ProtoMessage() {}
 
 func (x *ClientDataResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[18]
+	mi := &file_proto_agent_gateway_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1694,7 +1818,7 @@ func (x *ClientDataResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientDataResponse.ProtoReflect.Descriptor instead.
 func (*ClientDataResponse) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{18}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ClientDataResponse) GetRequestId() string {
@@ -1730,7 +1854,7 @@ type ClientDetailRecord struct {
 
 func (x *ClientDetailRecord) Reset() {
 	*x = ClientDetailRecord{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[19]
+	mi := &file_proto_agent_gateway_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1742,7 +1866,7 @@ func (x *ClientDetailRecord) String() string {
 func (*ClientDetailRecord) ProtoMessage() {}
 
 func (x *ClientDetailRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[19]
+	mi := &file_proto_agent_gateway_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1755,7 +1879,7 @@ func (x *ClientDetailRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientDetailRecord.ProtoReflect.Descriptor instead.
 func (*ClientDetailRecord) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{19}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ClientDetailRecord) GetClientId() string {
@@ -1851,7 +1975,7 @@ type ConnectClientMessage struct {
 
 func (x *ConnectClientMessage) Reset() {
 	*x = ConnectClientMessage{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[20]
+	mi := &file_proto_agent_gateway_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1863,7 +1987,7 @@ func (x *ConnectClientMessage) String() string {
 func (*ConnectClientMessage) ProtoMessage() {}
 
 func (x *ConnectClientMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[20]
+	mi := &file_proto_agent_gateway_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1876,7 +2000,7 @@ func (x *ConnectClientMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectClientMessage.ProtoReflect.Descriptor instead.
 func (*ConnectClientMessage) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{20}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ConnectClientMessage) GetBody() isConnectClientMessage_Body {
@@ -1978,7 +2102,7 @@ type ConnectServerMessage struct {
 
 func (x *ConnectServerMessage) Reset() {
 	*x = ConnectServerMessage{}
-	mi := &file_proto_agent_gateway_proto_msgTypes[21]
+	mi := &file_proto_agent_gateway_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1990,7 +2114,7 @@ func (x *ConnectServerMessage) String() string {
 func (*ConnectServerMessage) ProtoMessage() {}
 
 func (x *ConnectServerMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_gateway_proto_msgTypes[21]
+	mi := &file_proto_agent_gateway_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2003,7 +2127,7 @@ func (x *ConnectServerMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectServerMessage.ProtoReflect.Descriptor instead.
 func (*ConnectServerMessage) Descriptor() ([]byte, []int) {
-	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{21}
+	return file_proto_agent_gateway_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ConnectServerMessage) GetBody() isConnectServerMessage_Body {
@@ -2113,7 +2237,20 @@ const file_proto_agent_gateway_proto_rawDesc = "" +
 	"\x0etimestamp_unix\x18\x02 \x01(\x03R\rtimestampUnix\x12\x1d\n" +
 	"\n" +
 	"event_type\x18\x03 \x01(\tR\teventType\x12\x18\n" +
-	"\acontext\x18\x04 \x01(\tR\acontext\"\xc5\t\n" +
+	"\acontext\x18\x04 \x01(\tR\acontext\"\x88\x03\n" +
+	"\x19RuntimeSystemLoadSnapshot\x12\"\n" +
+	"\rcpu_usage_pct\x18\x01 \x01(\x01R\vcpuUsagePct\x12*\n" +
+	"\x11memory_used_bytes\x18\x02 \x01(\x04R\x0fmemoryUsedBytes\x12,\n" +
+	"\x12memory_total_bytes\x18\x03 \x01(\x04R\x10memoryTotalBytes\x12(\n" +
+	"\x10memory_usage_pct\x18\x04 \x01(\x01R\x0ememoryUsagePct\x12&\n" +
+	"\x0fdisk_used_bytes\x18\x05 \x01(\x04R\rdiskUsedBytes\x12(\n" +
+	"\x10disk_total_bytes\x18\x06 \x01(\x04R\x0ediskTotalBytes\x12$\n" +
+	"\x0edisk_usage_pct\x18\a \x01(\x01R\fdiskUsagePct\x12\x17\n" +
+	"\aload_1m\x18\b \x01(\x01R\x06load1m\x12\x17\n" +
+	"\aload_5m\x18\t \x01(\x01R\x06load5m\x12\x19\n" +
+	"\bload_15m\x18\n" +
+	" \x01(\x01R\aload15m\"\x94\n" +
+	"\n" +
 	"\x0fRuntimeSnapshot\x12:\n" +
 	"\x19accepting_new_connections\x18\x01 \x01(\bR\x17acceptingNewConnections\x12(\n" +
 	"\x10me_runtime_ready\x18\x02 \x01(\bR\x0emeRuntimeReady\x124\n" +
@@ -2139,7 +2276,9 @@ const file_proto_agent_gateway_proto_rawDesc = "" +
 	"\x03dcs\x18\x15 \x03(\v2$.panvex.gateway.v1.RuntimeDCSnapshotR\x03dcs\x12H\n" +
 	"\tupstreams\x18\x16 \x01(\v2*.panvex.gateway.v1.RuntimeUpstreamSnapshotR\tupstreams\x12L\n" +
 	"\rrecent_events\x18\x17 \x03(\v2'.panvex.gateway.v1.RuntimeEventSnapshotR\frecentEvents\x12%\n" +
-	"\x0euptime_seconds\x18\x18 \x01(\x01R\ruptimeSeconds\"\xb3\x02\n" +
+	"\x0euptime_seconds\x18\x18 \x01(\x01R\ruptimeSeconds\x12M\n" +
+	"\vsystem_load\x18\x19 \x01(\v2,.panvex.gateway.v1.RuntimeSystemLoadSnapshotR\n" +
+	"systemLoad\"\xb3\x02\n" +
 	"\x1aRuntimeDiagnosticsSnapshot\x12\x14\n" +
 	"\x05state\x18\x01 \x01(\tR\x05state\x12!\n" +
 	"\fstate_reason\x18\x02 \x01(\tR\vstateReason\x12(\n" +
@@ -2255,7 +2394,7 @@ func file_proto_agent_gateway_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_agent_gateway_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_proto_agent_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
+var file_proto_agent_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_proto_agent_gateway_proto_goTypes = []any{
 	(ClientDataRequest_RequestType)(0),       // 0: panvex.gateway.v1.ClientDataRequest.RequestType
 	(*RenewCertificateRequest)(nil),          // 1: panvex.gateway.v1.RenewCertificateRequest
@@ -2268,50 +2407,52 @@ var file_proto_agent_gateway_proto_goTypes = []any{
 	(*RuntimeUpstreamRowSnapshot)(nil),       // 8: panvex.gateway.v1.RuntimeUpstreamRowSnapshot
 	(*RuntimeUpstreamSnapshot)(nil),          // 9: panvex.gateway.v1.RuntimeUpstreamSnapshot
 	(*RuntimeEventSnapshot)(nil),             // 10: panvex.gateway.v1.RuntimeEventSnapshot
-	(*RuntimeSnapshot)(nil),                  // 11: panvex.gateway.v1.RuntimeSnapshot
-	(*RuntimeDiagnosticsSnapshot)(nil),       // 12: panvex.gateway.v1.RuntimeDiagnosticsSnapshot
-	(*RuntimeSecurityInventorySnapshot)(nil), // 13: panvex.gateway.v1.RuntimeSecurityInventorySnapshot
-	(*Snapshot)(nil),                         // 14: panvex.gateway.v1.Snapshot
-	(*JobResult)(nil),                        // 15: panvex.gateway.v1.JobResult
-	(*JobAcknowledgement)(nil),               // 16: panvex.gateway.v1.JobAcknowledgement
-	(*JobCommand)(nil),                       // 17: panvex.gateway.v1.JobCommand
-	(*ClientDataRequest)(nil),                // 18: panvex.gateway.v1.ClientDataRequest
-	(*ClientDataResponse)(nil),               // 19: panvex.gateway.v1.ClientDataResponse
-	(*ClientDetailRecord)(nil),               // 20: panvex.gateway.v1.ClientDetailRecord
-	(*ConnectClientMessage)(nil),             // 21: panvex.gateway.v1.ConnectClientMessage
-	(*ConnectServerMessage)(nil),             // 22: panvex.gateway.v1.ConnectServerMessage
-	nil,                                      // 23: panvex.gateway.v1.Snapshot.MetricsEntry
+	(*RuntimeSystemLoadSnapshot)(nil),        // 11: panvex.gateway.v1.RuntimeSystemLoadSnapshot
+	(*RuntimeSnapshot)(nil),                  // 12: panvex.gateway.v1.RuntimeSnapshot
+	(*RuntimeDiagnosticsSnapshot)(nil),       // 13: panvex.gateway.v1.RuntimeDiagnosticsSnapshot
+	(*RuntimeSecurityInventorySnapshot)(nil), // 14: panvex.gateway.v1.RuntimeSecurityInventorySnapshot
+	(*Snapshot)(nil),                         // 15: panvex.gateway.v1.Snapshot
+	(*JobResult)(nil),                        // 16: panvex.gateway.v1.JobResult
+	(*JobAcknowledgement)(nil),               // 17: panvex.gateway.v1.JobAcknowledgement
+	(*JobCommand)(nil),                       // 18: panvex.gateway.v1.JobCommand
+	(*ClientDataRequest)(nil),                // 19: panvex.gateway.v1.ClientDataRequest
+	(*ClientDataResponse)(nil),               // 20: panvex.gateway.v1.ClientDataResponse
+	(*ClientDetailRecord)(nil),               // 21: panvex.gateway.v1.ClientDetailRecord
+	(*ConnectClientMessage)(nil),             // 22: panvex.gateway.v1.ConnectClientMessage
+	(*ConnectServerMessage)(nil),             // 23: panvex.gateway.v1.ConnectServerMessage
+	nil,                                      // 24: panvex.gateway.v1.Snapshot.MetricsEntry
 }
 var file_proto_agent_gateway_proto_depIdxs = []int32{
 	8,  // 0: panvex.gateway.v1.RuntimeUpstreamSnapshot.rows:type_name -> panvex.gateway.v1.RuntimeUpstreamRowSnapshot
 	7,  // 1: panvex.gateway.v1.RuntimeSnapshot.dcs:type_name -> panvex.gateway.v1.RuntimeDCSnapshot
 	9,  // 2: panvex.gateway.v1.RuntimeSnapshot.upstreams:type_name -> panvex.gateway.v1.RuntimeUpstreamSnapshot
 	10, // 3: panvex.gateway.v1.RuntimeSnapshot.recent_events:type_name -> panvex.gateway.v1.RuntimeEventSnapshot
-	4,  // 4: panvex.gateway.v1.Snapshot.instances:type_name -> panvex.gateway.v1.InstanceSnapshot
-	23, // 5: panvex.gateway.v1.Snapshot.metrics:type_name -> panvex.gateway.v1.Snapshot.MetricsEntry
-	5,  // 6: panvex.gateway.v1.Snapshot.clients:type_name -> panvex.gateway.v1.ClientUsageSnapshot
-	11, // 7: panvex.gateway.v1.Snapshot.runtime:type_name -> panvex.gateway.v1.RuntimeSnapshot
-	6,  // 8: panvex.gateway.v1.Snapshot.client_ips:type_name -> panvex.gateway.v1.ClientIPSnapshot
-	12, // 9: panvex.gateway.v1.Snapshot.runtime_diagnostics:type_name -> panvex.gateway.v1.RuntimeDiagnosticsSnapshot
-	13, // 10: panvex.gateway.v1.Snapshot.runtime_security_inventory:type_name -> panvex.gateway.v1.RuntimeSecurityInventorySnapshot
-	0,  // 11: panvex.gateway.v1.ClientDataRequest.type:type_name -> panvex.gateway.v1.ClientDataRequest.RequestType
-	20, // 12: panvex.gateway.v1.ClientDataResponse.clients:type_name -> panvex.gateway.v1.ClientDetailRecord
-	3,  // 13: panvex.gateway.v1.ConnectClientMessage.heartbeat:type_name -> panvex.gateway.v1.Heartbeat
-	14, // 14: panvex.gateway.v1.ConnectClientMessage.snapshot:type_name -> panvex.gateway.v1.Snapshot
-	15, // 15: panvex.gateway.v1.ConnectClientMessage.job_result:type_name -> panvex.gateway.v1.JobResult
-	16, // 16: panvex.gateway.v1.ConnectClientMessage.job_acknowledgement:type_name -> panvex.gateway.v1.JobAcknowledgement
-	19, // 17: panvex.gateway.v1.ConnectClientMessage.client_data_response:type_name -> panvex.gateway.v1.ClientDataResponse
-	17, // 18: panvex.gateway.v1.ConnectServerMessage.job:type_name -> panvex.gateway.v1.JobCommand
-	18, // 19: panvex.gateway.v1.ConnectServerMessage.client_data_request:type_name -> panvex.gateway.v1.ClientDataRequest
-	1,  // 20: panvex.gateway.v1.AgentGateway.RenewCertificate:input_type -> panvex.gateway.v1.RenewCertificateRequest
-	21, // 21: panvex.gateway.v1.AgentGateway.Connect:input_type -> panvex.gateway.v1.ConnectClientMessage
-	2,  // 22: panvex.gateway.v1.AgentGateway.RenewCertificate:output_type -> panvex.gateway.v1.RenewCertificateResponse
-	22, // 23: panvex.gateway.v1.AgentGateway.Connect:output_type -> panvex.gateway.v1.ConnectServerMessage
-	22, // [22:24] is the sub-list for method output_type
-	20, // [20:22] is the sub-list for method input_type
-	20, // [20:20] is the sub-list for extension type_name
-	20, // [20:20] is the sub-list for extension extendee
-	0,  // [0:20] is the sub-list for field type_name
+	11, // 4: panvex.gateway.v1.RuntimeSnapshot.system_load:type_name -> panvex.gateway.v1.RuntimeSystemLoadSnapshot
+	4,  // 5: panvex.gateway.v1.Snapshot.instances:type_name -> panvex.gateway.v1.InstanceSnapshot
+	24, // 6: panvex.gateway.v1.Snapshot.metrics:type_name -> panvex.gateway.v1.Snapshot.MetricsEntry
+	5,  // 7: panvex.gateway.v1.Snapshot.clients:type_name -> panvex.gateway.v1.ClientUsageSnapshot
+	12, // 8: panvex.gateway.v1.Snapshot.runtime:type_name -> panvex.gateway.v1.RuntimeSnapshot
+	6,  // 9: panvex.gateway.v1.Snapshot.client_ips:type_name -> panvex.gateway.v1.ClientIPSnapshot
+	13, // 10: panvex.gateway.v1.Snapshot.runtime_diagnostics:type_name -> panvex.gateway.v1.RuntimeDiagnosticsSnapshot
+	14, // 11: panvex.gateway.v1.Snapshot.runtime_security_inventory:type_name -> panvex.gateway.v1.RuntimeSecurityInventorySnapshot
+	0,  // 12: panvex.gateway.v1.ClientDataRequest.type:type_name -> panvex.gateway.v1.ClientDataRequest.RequestType
+	21, // 13: panvex.gateway.v1.ClientDataResponse.clients:type_name -> panvex.gateway.v1.ClientDetailRecord
+	3,  // 14: panvex.gateway.v1.ConnectClientMessage.heartbeat:type_name -> panvex.gateway.v1.Heartbeat
+	15, // 15: panvex.gateway.v1.ConnectClientMessage.snapshot:type_name -> panvex.gateway.v1.Snapshot
+	16, // 16: panvex.gateway.v1.ConnectClientMessage.job_result:type_name -> panvex.gateway.v1.JobResult
+	17, // 17: panvex.gateway.v1.ConnectClientMessage.job_acknowledgement:type_name -> panvex.gateway.v1.JobAcknowledgement
+	20, // 18: panvex.gateway.v1.ConnectClientMessage.client_data_response:type_name -> panvex.gateway.v1.ClientDataResponse
+	18, // 19: panvex.gateway.v1.ConnectServerMessage.job:type_name -> panvex.gateway.v1.JobCommand
+	19, // 20: panvex.gateway.v1.ConnectServerMessage.client_data_request:type_name -> panvex.gateway.v1.ClientDataRequest
+	1,  // 21: panvex.gateway.v1.AgentGateway.RenewCertificate:input_type -> panvex.gateway.v1.RenewCertificateRequest
+	22, // 22: panvex.gateway.v1.AgentGateway.Connect:input_type -> panvex.gateway.v1.ConnectClientMessage
+	2,  // 23: panvex.gateway.v1.AgentGateway.RenewCertificate:output_type -> panvex.gateway.v1.RenewCertificateResponse
+	23, // 24: panvex.gateway.v1.AgentGateway.Connect:output_type -> panvex.gateway.v1.ConnectServerMessage
+	23, // [23:25] is the sub-list for method output_type
+	21, // [21:23] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_proto_agent_gateway_proto_init() }
@@ -2319,14 +2460,14 @@ func file_proto_agent_gateway_proto_init() {
 	if File_proto_agent_gateway_proto != nil {
 		return
 	}
-	file_proto_agent_gateway_proto_msgTypes[20].OneofWrappers = []any{
+	file_proto_agent_gateway_proto_msgTypes[21].OneofWrappers = []any{
 		(*ConnectClientMessage_Heartbeat)(nil),
 		(*ConnectClientMessage_Snapshot)(nil),
 		(*ConnectClientMessage_JobResult)(nil),
 		(*ConnectClientMessage_JobAcknowledgement)(nil),
 		(*ConnectClientMessage_ClientDataResponse)(nil),
 	}
-	file_proto_agent_gateway_proto_msgTypes[21].OneofWrappers = []any{
+	file_proto_agent_gateway_proto_msgTypes[22].OneofWrappers = []any{
 		(*ConnectServerMessage_Job)(nil),
 		(*ConnectServerMessage_ClientDataRequest)(nil),
 	}
@@ -2336,7 +2477,7 @@ func file_proto_agent_gateway_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_agent_gateway_proto_rawDesc), len(file_proto_agent_gateway_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   23,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
