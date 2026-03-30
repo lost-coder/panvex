@@ -261,6 +261,86 @@ func TestAgentBuildSnapshotUsesTelemtRuntimeState(t *testing.T) {
 	}
 }
 
+func TestAgentBuildSnapshotIncludesSystemLoad(t *testing.T) {
+	client := &fakeTelemtClient{
+		state: telemt.RuntimeState{
+			Version: "2026.03",
+			Gates: telemt.RuntimeGates{
+				AcceptingNewConnections: true,
+				MERuntimeReady:          true,
+				StartupStatus:           "ready",
+				StartupStage:            "serving",
+				StartupProgressPct:      100,
+			},
+			Initialization: telemt.RuntimeInitialization{
+				Status:        "ready",
+				CurrentStage:  "serving",
+				ProgressPct:   100,
+				TransportMode: "middle_proxy",
+			},
+			SystemLoad: telemt.RuntimeSystemLoad{
+				CPUUsagePct:     37.5,
+				MemoryUsedBytes: 6_442_450_944,
+				MemoryTotalBytes: 8_589_934_592,
+				MemoryUsagePct:  75.0,
+				DiskUsedBytes:   214_748_364_800,
+				DiskTotalBytes:  536_870_912_000,
+				DiskUsagePct:    40.0,
+				Load1M:          1.22,
+				Load5M:          0.98,
+				Load15M:         0.73,
+			},
+		},
+	}
+	agent := New(Config{
+		AgentID:      "agent-1",
+		NodeName:     "node-a",
+		FleetGroupID: "ams-1",
+		Version:      "1.0.0",
+	}, client)
+
+	snapshot, err := agent.BuildRuntimeSnapshot(context.Background(), time.Date(2026, time.March, 30, 10, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("BuildRuntimeSnapshot() error = %v", err)
+	}
+	if snapshot.Runtime == nil {
+		t.Fatal("snapshot.Runtime = nil, want runtime payload")
+	}
+	if snapshot.Runtime.SystemLoad == nil {
+		t.Fatal("snapshot.Runtime.SystemLoad = nil, want typed runtime system load payload")
+	}
+	if snapshot.Runtime.SystemLoad.CpuUsagePct != 37.5 {
+		t.Fatalf("snapshot.Runtime.SystemLoad.CpuUsagePct = %v, want %v", snapshot.Runtime.SystemLoad.CpuUsagePct, 37.5)
+	}
+	if snapshot.Runtime.SystemLoad.MemoryUsedBytes != 6_442_450_944 {
+		t.Fatalf("snapshot.Runtime.SystemLoad.MemoryUsedBytes = %d, want %d", snapshot.Runtime.SystemLoad.MemoryUsedBytes, 6_442_450_944)
+	}
+	if snapshot.Runtime.SystemLoad.MemoryTotalBytes != 8_589_934_592 {
+		t.Fatalf("snapshot.Runtime.SystemLoad.MemoryTotalBytes = %d, want %d", snapshot.Runtime.SystemLoad.MemoryTotalBytes, 8_589_934_592)
+	}
+	if snapshot.Runtime.SystemLoad.MemoryUsagePct != 75.0 {
+		t.Fatalf("snapshot.Runtime.SystemLoad.MemoryUsagePct = %v, want %v", snapshot.Runtime.SystemLoad.MemoryUsagePct, 75.0)
+	}
+	if snapshot.Runtime.SystemLoad.DiskUsedBytes != 214_748_364_800 {
+		t.Fatalf("snapshot.Runtime.SystemLoad.DiskUsedBytes = %d, want %d", snapshot.Runtime.SystemLoad.DiskUsedBytes, 214_748_364_800)
+	}
+	if snapshot.Runtime.SystemLoad.DiskTotalBytes != 536_870_912_000 {
+		t.Fatalf("snapshot.Runtime.SystemLoad.DiskTotalBytes = %d, want %d", snapshot.Runtime.SystemLoad.DiskTotalBytes, 536_870_912_000)
+	}
+	if snapshot.Runtime.SystemLoad.DiskUsagePct != 40.0 {
+		t.Fatalf("snapshot.Runtime.SystemLoad.DiskUsagePct = %v, want %v", snapshot.Runtime.SystemLoad.DiskUsagePct, 40.0)
+	}
+	if snapshot.Runtime.SystemLoad.GetLoad_1M() != 1.22 {
+		t.Fatalf("snapshot.Runtime.SystemLoad.GetLoad_1M() = %v, want %v", snapshot.Runtime.SystemLoad.GetLoad_1M(), 1.22)
+	}
+	if snapshot.Runtime.SystemLoad.GetLoad_5M() != 0.98 {
+		t.Fatalf("snapshot.Runtime.SystemLoad.GetLoad_5M() = %v, want %v", snapshot.Runtime.SystemLoad.GetLoad_5M(), 0.98)
+	}
+	if snapshot.Runtime.SystemLoad.GetLoad_15M() != 0.73 {
+		t.Fatalf("snapshot.Runtime.SystemLoad.GetLoad_15M() = %v, want %v", snapshot.Runtime.SystemLoad.GetLoad_15M(), 0.73)
+	}
+}
+
 func TestAgentBuildSnapshotIncludesClientUsageEntries(t *testing.T) {
 	client := &fakeTelemtClient{
 		state: telemt.RuntimeState{

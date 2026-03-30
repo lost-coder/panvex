@@ -249,6 +249,20 @@ func TestClientFetchRuntimeStateUsesLoopbackAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewClient() error = %v", err)
 	}
+	client.systemLoadSampler = func(context.Context) (RuntimeSystemLoad, error) {
+		return RuntimeSystemLoad{
+			CPUUsagePct:      37.5,
+			MemoryUsedBytes:  6_442_450_944,
+			MemoryTotalBytes: 8_589_934_592,
+			MemoryUsagePct:   75.0,
+			DiskUsedBytes:    214_748_364_800,
+			DiskTotalBytes:   536_870_912_000,
+			DiskUsagePct:     40.0,
+			Load1M:           1.22,
+			Load5M:           0.98,
+			Load15M:          0.73,
+		}, nil
+	}
 
 	state, err := client.FetchRuntimeState(context.Background())
 	if err != nil {
@@ -270,6 +284,18 @@ func TestClientFetchRuntimeStateUsesLoopbackAPI(t *testing.T) {
 	}
 	if state.ConnectionTotals.CurrentConnectionsME != 39 {
 		t.Fatalf("state.ConnectionTotals.CurrentConnectionsME = %d, want %d", state.ConnectionTotals.CurrentConnectionsME, 39)
+	}
+	if state.SystemLoad.CPUUsagePct != 37.5 {
+		t.Fatalf("state.SystemLoad.CPUUsagePct = %v, want %v", state.SystemLoad.CPUUsagePct, 37.5)
+	}
+	if state.SystemLoad.MemoryUsagePct != 75.0 {
+		t.Fatalf("state.SystemLoad.MemoryUsagePct = %v, want %v", state.SystemLoad.MemoryUsagePct, 75.0)
+	}
+	if state.SystemLoad.DiskUsagePct != 40.0 {
+		t.Fatalf("state.SystemLoad.DiskUsagePct = %v, want %v", state.SystemLoad.DiskUsagePct, 40.0)
+	}
+	if state.SystemLoad.Load1M != 1.22 {
+		t.Fatalf("state.SystemLoad.Load1M = %v, want %v", state.SystemLoad.Load1M, 1.22)
 	}
 	if state.Summary.ConnectionsTotal != 512 {
 		t.Fatalf("state.Summary.ConnectionsTotal = %d, want %d", state.Summary.ConnectionsTotal, 512)

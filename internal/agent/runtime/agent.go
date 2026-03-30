@@ -255,6 +255,18 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 			Rows:            upstreamRows,
 		},
 		RecentEvents: recentEvents,
+		SystemLoad: &gatewayrpc.RuntimeSystemLoadSnapshot{
+			CpuUsagePct:      state.SystemLoad.CPUUsagePct,
+			MemoryUsedBytes:  state.SystemLoad.MemoryUsedBytes,
+			MemoryTotalBytes: state.SystemLoad.MemoryTotalBytes,
+			MemoryUsagePct:   state.SystemLoad.MemoryUsagePct,
+			DiskUsedBytes:    state.SystemLoad.DiskUsedBytes,
+			DiskTotalBytes:   state.SystemLoad.DiskTotalBytes,
+			DiskUsagePct:     state.SystemLoad.DiskUsagePct,
+			Load_1M:          state.SystemLoad.Load1M,
+			Load_5M:          state.SystemLoad.Load5M,
+			Load_15M:         state.SystemLoad.Load15M,
+		},
 	}
 	snapshot.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{
 		State:               state.Diagnostics.State,

@@ -39,6 +39,7 @@ type Client struct {
 	metricsURL    *url.URL
 	authorization string
 	httpClient    *http.Client
+	systemLoadSampler func(context.Context) (RuntimeSystemLoad, error)
 	mu            sync.RWMutex
 	slowDataTTL   time.Duration
 	slowFetchedAt time.Time
@@ -81,7 +82,22 @@ type RuntimeState struct {
 	RecentEvents     []RuntimeEvent
 	Diagnostics      RuntimeDiagnostics
 	SecurityInventory RuntimeSecurityInventory
+	SystemLoad       RuntimeSystemLoad
 	Clients          []ClientUsage
+}
+
+// RuntimeSystemLoad carries short server load telemetry for trend history charts.
+type RuntimeSystemLoad struct {
+	CPUUsagePct      float64
+	MemoryUsedBytes  uint64
+	MemoryTotalBytes uint64
+	MemoryUsagePct   float64
+	DiskUsedBytes    uint64
+	DiskTotalBytes   uint64
+	DiskUsagePct     float64
+	Load1M           float64
+	Load5M           float64
+	Load15M          float64
 }
 
 // RuntimeDiagnostics carries slower Telemt diagnostics payloads for node detail views.
@@ -241,6 +257,7 @@ func NewClient(config Config, httpClient *http.Client) (*Client, error) {
 		metricsURL:    metricsURL,
 		authorization: config.Authorization,
 		httpClient:    httpClient,
+		systemLoadSampler: collectLocalSystemLoad,
 		slowDataTTL:   defaultSlowDataTTL,
 	}, nil
 }
@@ -391,6 +408,12 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 	if err != nil {
 		return RuntimeState{}, err
 	}
+	systemLoad := RuntimeSystemLoad{}
+	if c.systemLoadSampler != nil {
+		if load, err := c.systemLoadSampler(ctx); err == nil {
+			systemLoad = load
+		}
+	}
 
 	return RuntimeState{
 		Version:        slowData.Version,
@@ -430,6 +453,7 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 		RecentEvents: slowData.RecentEvents,
 		Diagnostics:  slowData.Diagnostics,
 		SecurityInventory: slowData.SecurityInventory,
+		SystemLoad:   systemLoad,
 		Clients:      users,
 	}, nil
 }
