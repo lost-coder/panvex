@@ -60,6 +60,62 @@ func TestAgentBuildSnapshotMarksLifecycleRegressionAsDegraded(t *testing.T) {
 	}
 }
 
+func TestAgentRuntimeSnapshotIntervalUsesFastCadenceDuringInitializationAndCooldown(t *testing.T) {
+	client := &fakeTelemtClient{
+		state: telemt.RuntimeState{
+			Gates: telemt.RuntimeGates{
+				AcceptingNewConnections: false,
+				MERuntimeReady:          false,
+				StartupStatus:           "starting",
+				StartupStage:            "booting",
+				StartupProgressPct:      12,
+			},
+			Initialization: telemt.RuntimeInitialization{
+				Status:        "starting",
+				CurrentStage:  "warming_me_pool",
+				ProgressPct:   18,
+				TransportMode: "direct",
+			},
+		},
+	}
+	agent := New(Config{AgentID: "agent-1", NodeName: "node-a", FleetGroupID: "ams-1", Version: "1.0.0"}, client)
+
+	baseInterval := time.Minute
+	fastInterval := 3 * time.Second
+	now := time.Date(2026, time.March, 29, 18, 0, 0, 0, time.UTC)
+
+	if interval := agent.RuntimeSnapshotInterval(baseInterval, fastInterval, now); interval != baseInterval {
+		t.Fatalf("RuntimeSnapshotInterval() before first runtime snapshot = %v, want %v", interval, baseInterval)
+	}
+
+	if _, err := agent.BuildRuntimeSnapshot(context.Background(), now); err != nil {
+		t.Fatalf("BuildRuntimeSnapshot(initializing) error = %v", err)
+	}
+	if interval := agent.RuntimeSnapshotInterval(baseInterval, fastInterval, now.Add(5*time.Second)); interval != fastInterval {
+		t.Fatalf("RuntimeSnapshotInterval() during initialization = %v, want %v", interval, fastInterval)
+	}
+
+	client.state.Gates.AcceptingNewConnections = true
+	client.state.Gates.MERuntimeReady = true
+	client.state.Gates.StartupStatus = "ready"
+	client.state.Gates.StartupStage = "steady_state"
+	client.state.Gates.StartupProgressPct = 100
+	client.state.Initialization.Status = "ready"
+	client.state.Initialization.CurrentStage = "steady_state"
+	client.state.Initialization.ProgressPct = 100
+
+	readyAt := now.Add(20 * time.Second)
+	if _, err := agent.BuildRuntimeSnapshot(context.Background(), readyAt); err != nil {
+		t.Fatalf("BuildRuntimeSnapshot(ready) error = %v", err)
+	}
+	if interval := agent.RuntimeSnapshotInterval(baseInterval, fastInterval, readyAt.Add(30*time.Second)); interval != fastInterval {
+		t.Fatalf("RuntimeSnapshotInterval() during cooldown = %v, want %v", interval, fastInterval)
+	}
+	if interval := agent.RuntimeSnapshotInterval(baseInterval, fastInterval, readyAt.Add(runtimeInitializationCooldown).Add(time.Second)); interval != baseInterval {
+		t.Fatalf("RuntimeSnapshotInterval() after cooldown = %v, want %v", interval, baseInterval)
+	}
+}
+
 func TestAgentBuildSnapshotUsesTelemtRuntimeState(t *testing.T) {
 	client := &fakeTelemtClient{
 		state: telemt.RuntimeState{

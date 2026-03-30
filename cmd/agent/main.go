@@ -24,6 +24,7 @@ import (
 const (
 	runtimeCertificateRenewWindow = 24 * time.Hour
 	runtimeCertificateRenewRetry  = time.Minute
+	runtimeInitializationFastInterval = 3 * time.Second
 	gatewayStreamConnectTimeout   = 15 * time.Second
 	certificateRefreshTimeout     = 15 * time.Second
 	jobExecutionTimeout           = 45 * time.Second
@@ -95,6 +96,14 @@ func runRuntime(args []string) error {
 	}, telemtClient)
 
 	schedule := newConnectionSchedule(*heartbeat, *runtimeSnapshot, *usageSnapshot, *ipPoll, *ipUpload)
+	log.Printf(
+		"agent starting: agent_id=%s node=%s gateway=%s telemt_api=%s telemt_metrics=%s",
+		credentialsState.AgentID,
+		*nodeName,
+		*gatewayAddr,
+		*telemtURL,
+		*telemtMetricsURL,
+	)
 
 	reconnectAttempt := 0
 	for {
@@ -387,23 +396,7 @@ func startPollingWorkers(
 		}
 	})
 
-	startPeriodicPollingWorker(connectionCtx, schedule.config(pollRuntime), func(observedAt time.Time) {
-		runtimeCtx, cancelRuntime := context.WithTimeout(connectionCtx, runtimeOperationTimeout)
-		snapshot, err := agent.BuildRuntimeSnapshot(runtimeCtx, observedAt)
-		cancelRuntime()
-		if err != nil {
-			log.Printf("agent runtime snapshot failed: %v", err)
-			return
-		}
-		if enqueueOutboundMessage(connectionCtx, telemetryOutbound, &gatewayrpc.ConnectClientMessage{
-			Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: snapshot},
-		}) {
-			return
-		}
-		if connectionCtx.Err() == nil {
-			log.Printf("agent runtime snapshot dropped due to outbound backpressure")
-		}
-	})
+	startRuntimePollingWorker(connectionCtx, schedule.config(pollRuntime), agent, telemetryOutbound)
 
 	startPeriodicPollingWorker(connectionCtx, schedule.config(pollUsage), func(observedAt time.Time) {
 		usageCtx, cancelUsage := context.WithTimeout(connectionCtx, runtimeOperationTimeout)
@@ -472,6 +465,50 @@ func startPeriodicPollingWorker(
 	}()
 }
 
+func startRuntimePollingWorker(
+	connectionCtx context.Context,
+	config pollingGroupConfig,
+	agent *runtime.Agent,
+	telemetryOutbound chan<- *gatewayrpc.ConnectClientMessage,
+) {
+	if !config.Enabled || config.Interval <= 0 {
+		return
+	}
+
+	go func() {
+		for {
+			delay := agent.RuntimeSnapshotInterval(config.Interval, runtimeInitializationFastInterval, time.Now())
+			timer := time.NewTimer(delay)
+			select {
+			case <-connectionCtx.Done():
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+				return
+			case observedAt := <-timer.C:
+				runtimeCtx, cancelRuntime := context.WithTimeout(connectionCtx, runtimeOperationTimeout)
+				snapshot, err := agent.BuildRuntimeSnapshot(runtimeCtx, observedAt.UTC())
+				cancelRuntime()
+				if err != nil {
+					log.Printf("agent runtime snapshot failed: %v", err)
+					continue
+				}
+				if enqueueOutboundMessage(connectionCtx, telemetryOutbound, &gatewayrpc.ConnectClientMessage{
+					Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: snapshot},
+				}) {
+					continue
+				}
+				if connectionCtx.Err() == nil {
+					log.Printf("agent runtime snapshot dropped due to outbound backpressure")
+				}
+			}
+		}
+	}()
+}
+
 func enqueueOutboundMessage(
 	connectionCtx context.Context,
 	outbound chan<- *gatewayrpc.ConnectClientMessage,
@@ -507,12 +544,13 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 	defer conn.Close()
 
 	client := gatewayrpc.NewAgentGatewayClient(conn)
-	streamConnectCtx, cancelStreamConnect := context.WithTimeout(context.Background(), gatewayStreamConnectTimeout)
-	stream, err := client.Connect(streamConnectCtx)
-	cancelStreamConnect()
+	stream, err := connectStreamWithSetupTimeout(gatewayStreamConnectTimeout, func(ctx context.Context) (gatewayrpc.AgentGateway_ConnectClient, error) {
+		return client.Connect(ctx)
+	})
 	if err != nil {
 		return credentialsState, err
 	}
+	log.Printf("agent connected to control-plane: agent_id=%s gateway=%s", agent.AgentID(), gatewayAddr)
 
 	connectionCtx, cancelConnection := context.WithCancel(stream.Context())
 	defer cancelConnection()
@@ -578,6 +616,7 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 		cancelConnection()
 		return credentialsState, err
 	}
+	log.Printf("agent initial sync completed: agent_id=%s node=%s", agent.AgentID(), agent.NodeName())
 
 	credentialRefreshTimer := newRuntimeCredentialRefreshTimer(credentialsState, time.Now())
 	if credentialRefreshTimer != nil {
@@ -733,6 +772,28 @@ func timerChan(timer *time.Timer) <-chan time.Time {
 	return timer.C
 }
 
+func connectStreamWithSetupTimeout(
+	timeout time.Duration,
+	connect func(context.Context) (gatewayrpc.AgentGateway_ConnectClient, error),
+) (gatewayrpc.AgentGateway_ConnectClient, error) {
+	connectCtx, cancelConnect := context.WithCancel(context.Background())
+	var setupTimer *time.Timer
+	if timeout > 0 {
+		setupTimer = time.AfterFunc(timeout, cancelConnect)
+	}
+
+	stream, err := connect(connectCtx)
+	if setupTimer != nil {
+		setupTimer.Stop()
+	}
+	if err != nil {
+		cancelConnect()
+		return nil, err
+	}
+
+	return stream, nil
+}
+
 func sendInitialMessages(outbound chan<- *gatewayrpc.ConnectClientMessage, agent *runtime.Agent) error {
 	outbound <- heartbeatMessage(agent, time.Now())
 
@@ -740,20 +801,22 @@ func sendInitialMessages(outbound chan<- *gatewayrpc.ConnectClientMessage, agent
 	runtimeSnapshot, err := agent.BuildRuntimeSnapshot(runtimeCtx, time.Now())
 	cancelRuntime()
 	if err != nil {
-		return err
+		return fmt.Errorf("initial runtime snapshot failed: %w", err)
 	}
 	outbound <- &gatewayrpc.ConnectClientMessage{
 		Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: runtimeSnapshot},
 	}
+	log.Printf("agent initial runtime snapshot sent: agent_id=%s node=%s", agent.AgentID(), agent.NodeName())
 
 	usageCtx, cancelUsage := context.WithTimeout(context.Background(), runtimeOperationTimeout)
 	usageSnapshot, err := agent.BuildUsageSnapshot(usageCtx, time.Now())
 	cancelUsage()
-	if err != nil {
-		return err
-	}
-	outbound <- &gatewayrpc.ConnectClientMessage{
-		Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: usageSnapshot},
+	if err == nil {
+		outbound <- &gatewayrpc.ConnectClientMessage{
+			Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: usageSnapshot},
+		}
+	} else {
+		log.Printf("agent initial usage snapshot unavailable; continuing without metrics: %v", err)
 	}
 
 	ipPollCtx, cancelIPPoll := context.WithTimeout(context.Background(), runtimeOperationTimeout)
@@ -764,6 +827,8 @@ func sendInitialMessages(outbound chan<- *gatewayrpc.ConnectClientMessage, agent
 				Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: ipSnapshot},
 			}
 		}
+	} else {
+		log.Printf("agent initial ip poll unavailable; continuing without active IPs: %v", err)
 	}
 	cancelIPPoll()
 

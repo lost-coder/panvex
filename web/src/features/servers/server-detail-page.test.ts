@@ -147,6 +147,14 @@ function createViewModel() {
     diagnosticsStateText: "Fresh",
     securityStateText: "Fresh",
     meDiagnosticsStateText: "Fresh",
+    initializationWatch: {
+      visible: false,
+      mode: "hidden",
+      titleText: "",
+      summaryText: "",
+      badgeText: "",
+      cards: [],
+    },
   };
 }
 
@@ -204,14 +212,21 @@ function createBaseMocks(overrides = {}) {
         ),
     },
     "./server-detail-runtime-panel": {
-      ServerDetailRuntimePanel: ({ progressCards, flags }) =>
+      ServerDetailRuntimePanel: ({ flags }) =>
         React.createElement(
           "section",
           { className: "server-detail-runtime-panel" },
           [
-            ...progressCards.map((card) => `${card.label}|${card.valueText}|${card.secondaryText}`),
             ...flags.map((flag) => `${flag.label}|${flag.valueText}|${flag.secondaryText}`),
           ].join("||")
+        ),
+    },
+    "./server-detail-initialization-watch-panel": {
+      ServerDetailInitializationWatchPanel: ({ watch }) =>
+        React.createElement(
+          "section",
+          { className: "server-detail-initialization-watch-panel" },
+          [watch.titleText, watch.summaryText, ...watch.cards.map((card) => `${card.label}|${card.valueText}|${card.secondaryText}`)].join("||")
         ),
     },
     "./server-detail-connections-panel": {
@@ -337,7 +352,7 @@ test("ServerDetailPage renders the approved first-slice detail layout", () => {
   assert.match(markup, /Current Connections/);
   assert.match(markup, /DC Coverage/);
   assert.match(markup, /Healthy Upstreams/);
-  assert.match(markup, /Runtime State/);
+  assert.match(markup, /Admission &amp; Runtime Gates/);
   assert.match(markup, /DC Health/);
   assert.match(markup, /Connections/);
   assert.match(markup, /Upstreams/);
@@ -355,8 +370,37 @@ test("ServerDetailPage renders the approved first-slice detail layout", () => {
   assert.match(markup, /DC 2 Path\|149\.154\.167\.40/);
   assert.match(
     markup,
-    /server-detail-hero.*server-detail-kpis.*DC Health.*server-detail-page__secondary-grid.*Runtime State.*Connections.*server-detail-page__tertiary-grid.*Upstreams.*Recent Events.*server-detail-page__tertiary-grid.*System &amp; Limits.*Security &amp; Whitelist.*ME &amp; Routing Diagnostics/s
+    /server-detail-hero.*server-detail-kpis.*DC Health.*server-detail-page__secondary-grid.*Admission &amp; Runtime Gates.*Connections.*server-detail-page__tertiary-grid.*Upstreams.*Recent Events.*server-detail-page__tertiary-grid.*System &amp; Limits.*Security &amp; Whitelist.*ME &amp; Routing Diagnostics/s
   );
+});
+
+test("ServerDetailPage renders Initialization Watch as a separate section when it is visible", () => {
+  const ServerDetailPage = loadServerDetailPage(
+    createBaseMocks({
+      "./server-detail-view-model": {
+        buildServerDetailViewModel: () => ({
+          ...createViewModel(),
+          initializationWatch: {
+            visible: true,
+            mode: "active",
+            titleText: "Initialization Watch",
+            summaryText: "Live startup progress",
+            badgeText: "Live",
+            cards: [
+              { label: "Startup Status", valueText: "Starting", secondaryText: "me pool bootstrap", progressPct: 42 },
+              { label: "Initialization", valueText: "Starting", secondaryText: "warming me pool", progressPct: 38 },
+            ],
+          },
+        }),
+      },
+    })
+  );
+
+  const markup = renderToStaticMarkup(React.createElement(ServerDetailPage));
+
+  assert.match(markup, /Initialization Watch/);
+  assert.match(markup, /Live startup progress/);
+  assert.match(markup, /Admission &amp; Runtime Gates/);
 });
 
 test("ServerDetailPage renders a not-found state when the requested server is missing", () => {

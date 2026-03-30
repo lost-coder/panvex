@@ -15,6 +15,7 @@ import { ServerDetailDcTable } from "./server-detail-dc-table";
 import { ServerDetailDiagnosticsPanel } from "./server-detail-diagnostics-panel";
 import { ServerDetailEventsPanel } from "./server-detail-events-panel";
 import { ServerDetailHero } from "./server-detail-hero";
+import { ServerDetailInitializationWatchPanel } from "./server-detail-initialization-watch-panel";
 import { ServerDetailKpis } from "./server-detail-kpis";
 import { ServerDetailMeDiagnosticsPanel } from "./server-detail-me-diagnostics-panel";
 import { ServerDetailRuntimePanel } from "./server-detail-runtime-panel";
@@ -117,13 +118,20 @@ export function ServerDetailPage() {
         <ServerDetailDcTable rows={viewModel.dcRows} />
       </section>
 
+      {viewModel.initializationWatch.visible ? (
+        <section className="server-detail-section">
+          <SectionHeading title={viewModel.initializationWatch.titleText} />
+          {showHelp ? <SectionHelp text="Initialization Watch stays visible while Telemt is starting and for a short cooldown after readiness so operators can confirm that startup really stabilized." /> : null}
+          <ServerDetailInitializationWatchPanel watch={viewModel.initializationWatch} />
+        </section>
+      ) : null}
+
       <div className="server-detail-page__secondary-grid">
         <section className="server-detail-section">
-          <SectionHeading title="Runtime State" />
-          {showHelp ? <SectionHelp text="Runtime state explains whether the node can accept new sessions, whether the ME runtime is ready, and which startup stage is still blocking traffic." /> : null}
+          <SectionHeading title="Admission & Runtime Gates" />
+          {showHelp ? <SectionHelp text="Runtime gates explain whether the node can accept new sessions right now and whether the ME runtime is still healthy after startup has already finished." /> : null}
           <ServerDetailRuntimePanel
             flags={viewModel.runtimeFlags}
-            progressCards={viewModel.runtimeProgressCards}
           />
         </section>
         <section className="server-detail-section">

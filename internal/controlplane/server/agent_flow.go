@@ -150,7 +150,17 @@ func (s *Server) applyAgentSnapshotWithContext(ctx context.Context, snapshot age
 	agent.ReadOnly = snapshot.ReadOnly
 	agent.LastSeenAt = snapshot.ObservedAt.UTC()
 	if snapshot.HasRuntime && snapshot.Runtime != nil {
+		previousRuntime := agent.Runtime
 		agent.Runtime = agentRuntimeFromSnapshot(snapshot.Runtime, snapshot.ObservedAt)
+		currentNeedsWatch := runtimeNeedsInitializationWatch(agent.Runtime)
+		previousNeedsWatch := runtimeNeedsInitializationWatch(previousRuntime)
+		if currentNeedsWatch {
+			delete(s.initializationWatchCooldowns, snapshot.AgentID)
+		} else if previousNeedsWatch && !currentNeedsWatch {
+			s.initializationWatchCooldowns[snapshot.AgentID] = snapshot.ObservedAt.UTC().Add(telemetryInitializationWatchCooldown)
+		} else if expiresAt := s.initializationWatchCooldowns[snapshot.AgentID]; !expiresAt.IsZero() && !expiresAt.After(snapshot.ObservedAt.UTC()) {
+			delete(s.initializationWatchCooldowns, snapshot.AgentID)
+		}
 	}
 
 	instances := make([]Instance, 0, len(snapshot.Instances))

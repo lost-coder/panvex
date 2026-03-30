@@ -338,3 +338,118 @@ test("buildServerDetailViewModel maps me and routing diagnostics from telemetry 
   assert.equal(viewModel.routingRows[1]?.label, "DC 4 Path");
   assert.equal(viewModel.routingRows[1]?.valueText, "149.154.167.91");
 });
+
+test("buildServerDetailViewModel exposes initialization watch while Telemt is still starting", () => {
+  const agent = createAgent({
+    runtime: {
+      ...createAgent().runtime,
+      accepting_new_connections: false,
+      me_runtime_ready: false,
+      startup_status: "starting",
+      startup_stage: "me_pool_bootstrap",
+      startup_progress_pct: 42,
+      initialization_status: "starting",
+      initialization_stage: "warming_me_pool",
+      initialization_progress_pct: 38,
+    },
+  });
+
+  const viewModel = buildServerDetailViewModel(agent, {
+    nowMs: Date.parse("2026-03-24T12:00:00Z"),
+    detail: {
+      server: {
+        agent,
+        severity: "warn",
+        reason: "Runtime is degraded",
+        runtime_freshness: {
+          state: "fresh",
+          observed_at_unix: Math.floor(Date.parse("2026-03-24T11:58:00Z") / 1000),
+        },
+        detail_boost: {
+          active: false,
+          expires_at_unix: 0,
+          remaining_seconds: 0,
+        },
+      },
+      initialization_watch: {
+        visible: true,
+        mode: "active",
+        remaining_seconds: 0,
+        completed_at_unix: 0,
+      },
+      diagnostics: {
+        state: "fresh",
+        state_reason: "",
+        system_info: {},
+        effective_limits: {},
+        security_posture: {},
+        minimal_all: {},
+        me_pool: {},
+      },
+      security_inventory: {
+        state: "fresh",
+        state_reason: "",
+        enabled: true,
+        entries_total: 0,
+        entries: [],
+      },
+    },
+  });
+
+  assert.equal(viewModel.initializationWatch.visible, true);
+  assert.equal(viewModel.initializationWatch.mode, "active");
+  assert.equal(viewModel.initializationWatch.titleText, "Initialization Watch");
+  assert.equal(viewModel.initializationWatch.summaryText, "Live startup progress");
+  assert.equal(viewModel.initializationWatch.cards[0]?.label, "Startup Status");
+  assert.equal(viewModel.initializationWatch.cards[0]?.valueText, "Starting");
+  assert.equal(viewModel.initializationWatch.cards[0]?.progressPct, 42);
+});
+
+test("buildServerDetailViewModel hides initialization watch after cooldown expires", () => {
+  const agent = createAgent();
+
+  const viewModel = buildServerDetailViewModel(agent, {
+    nowMs: Date.parse("2026-03-24T12:00:00Z"),
+    detail: {
+      server: {
+        agent,
+        severity: "good",
+        reason: "Node is ready",
+        runtime_freshness: {
+          state: "fresh",
+          observed_at_unix: Math.floor(Date.parse("2026-03-24T11:58:00Z") / 1000),
+        },
+        detail_boost: {
+          active: false,
+          expires_at_unix: 0,
+          remaining_seconds: 0,
+        },
+      },
+      initialization_watch: {
+        visible: false,
+        mode: "hidden",
+        remaining_seconds: 0,
+        completed_at_unix: Math.floor(Date.parse("2026-03-24T11:58:30Z") / 1000),
+      },
+      diagnostics: {
+        state: "fresh",
+        state_reason: "",
+        system_info: {},
+        effective_limits: {},
+        security_posture: {},
+        minimal_all: {},
+        me_pool: {},
+      },
+      security_inventory: {
+        state: "fresh",
+        state_reason: "",
+        enabled: true,
+        entries_total: 0,
+        entries: [],
+      },
+    },
+  });
+
+  assert.equal(viewModel.initializationWatch.visible, false);
+  assert.equal(viewModel.initializationWatch.cards.length, 0);
+});

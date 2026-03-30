@@ -12,7 +12,10 @@ import (
 	controltelemetry "github.com/panvex/panvex/internal/controlplane/telemetry"
 )
 
-const telemetryRuntimeStaleAfter = 30 * time.Second
+const (
+	telemetryRuntimeStaleAfter = 30 * time.Second
+	telemetryInitializationWatchCooldown = 90 * time.Second
+)
 
 type telemetryFreshnessResponse struct {
 	State          string `json:"state"`
@@ -59,8 +62,22 @@ type telemetryServersResponse struct {
 
 type telemetryServerDetailResponse struct {
 	Server            telemetryServerSummary             `json:"server"`
+	InitializationWatch telemetryInitializationWatchResponse `json:"initialization_watch"`
 	Diagnostics       telemetryDiagnosticsResponse       `json:"diagnostics"`
 	SecurityInventory telemetrySecurityInventoryResponse `json:"security_inventory"`
+}
+
+type telemetryInitializationWatchResponse struct {
+	Visible                    bool    `json:"visible"`
+	Mode                       string  `json:"mode"`
+	RemainingSeconds           int64   `json:"remaining_seconds"`
+	CompletedAtUnix            int64   `json:"completed_at_unix"`
+	StartupStatus              string  `json:"startup_status"`
+	StartupStage               string  `json:"startup_stage"`
+	StartupProgressPct         float64 `json:"startup_progress_pct"`
+	InitializationStatus       string  `json:"initialization_status"`
+	InitializationStage        string  `json:"initialization_stage"`
+	InitializationProgressPct  float64 `json:"initialization_progress_pct"`
 }
 
 type telemetryDiagnosticsResponse struct {
@@ -324,6 +341,62 @@ func telemetryBoostStateForAgent(expiresAt time.Time, now time.Time) telemetryDe
 		Active:           boost.Active,
 		ExpiresAtUnix:    boost.ExpiresAtUnix,
 		RemainingSeconds: boost.RemainingSeconds,
+	}
+}
+
+func runtimeNeedsInitializationWatch(runtime AgentRuntime) bool {
+	switch {
+	case runtime.StartupStatus != "" && runtime.StartupStatus != "ready":
+		return true
+	case runtime.InitializationStatus != "" && runtime.InitializationStatus != "ready":
+		return true
+	case !runtime.AcceptingNewConnections || !runtime.MERuntimeReady:
+		return true
+	default:
+		return false
+	}
+}
+
+func telemetryInitializationWatchForAgent(agent Agent, now time.Time, cooldownExpiresAt time.Time) telemetryInitializationWatchResponse {
+	runtime := normalizeAgentRuntime(agent.Runtime)
+	if runtimeNeedsInitializationWatch(runtime) {
+		return telemetryInitializationWatchResponse{
+			Visible:                   true,
+			Mode:                      "active",
+			StartupStatus:             runtime.StartupStatus,
+			StartupStage:              runtime.StartupStage,
+			StartupProgressPct:        runtime.StartupProgressPct,
+			InitializationStatus:      runtime.InitializationStatus,
+			InitializationStage:       runtime.InitializationStage,
+			InitializationProgressPct: runtime.InitializationProgressPct,
+		}
+	}
+
+	if cooldownExpiresAt.After(now.UTC()) {
+		completedAt := cooldownExpiresAt.UTC().Add(-telemetryInitializationWatchCooldown)
+		return telemetryInitializationWatchResponse{
+			Visible:                   true,
+			Mode:                      "cooldown",
+			RemainingSeconds:          int64(cooldownExpiresAt.UTC().Sub(now.UTC()).Seconds()),
+			CompletedAtUnix:           completedAt.Unix(),
+			StartupStatus:             runtime.StartupStatus,
+			StartupStage:              runtime.StartupStage,
+			StartupProgressPct:        runtime.StartupProgressPct,
+			InitializationStatus:      runtime.InitializationStatus,
+			InitializationStage:       runtime.InitializationStage,
+			InitializationProgressPct: runtime.InitializationProgressPct,
+		}
+	}
+
+	return telemetryInitializationWatchResponse{
+		Visible:                   false,
+		Mode:                      "hidden",
+		StartupStatus:             runtime.StartupStatus,
+		StartupStage:              runtime.StartupStage,
+		StartupProgressPct:        runtime.StartupProgressPct,
+		InitializationStatus:      runtime.InitializationStatus,
+		InitializationStage:       runtime.InitializationStage,
+		InitializationProgressPct: runtime.InitializationProgressPct,
 	}
 }
 

@@ -284,6 +284,63 @@ func TestServerApplyAgentSnapshotTracksRuntimeLifecycleState(t *testing.T) {
 	}
 }
 
+func TestServerApplyAgentSnapshotStartsInitializationWatchCooldownAfterReadyTransition(t *testing.T) {
+	now := time.Date(2026, time.March, 29, 18, 0, 0, 0, time.UTC)
+	server := New(Options{Now: func() time.Time { return now }})
+	token, err := server.issueEnrollmentToken(security.EnrollmentScope{FleetGroupID: "ams-1", TTL: time.Minute}, now)
+	if err != nil {
+		t.Fatalf("issueEnrollmentToken() error = %v", err)
+	}
+	identity, err := server.enrollAgent(agentEnrollmentRequest{Token: token.Value, NodeName: "node-a", Version: "1.0.0"}, now.Add(10*time.Second))
+	if err != nil {
+		t.Fatalf("enrollAgent() error = %v", err)
+	}
+
+	initializingRuntime := gatewayRuntimeSnapshotForTest()
+	initializingRuntime.AcceptingNewConnections = false
+	initializingRuntime.MeRuntimeReady = false
+	initializingRuntime.StartupStatus = "starting"
+	initializingRuntime.StartupStage = "me_pool_bootstrap"
+	initializingRuntime.StartupProgressPct = 42
+	initializingRuntime.InitializationStatus = "starting"
+	initializingRuntime.InitializationStage = "warming_me_pool"
+	initializingRuntime.InitializationProgressPct = 38
+
+	if err := server.applyAgentSnapshot(agentSnapshot{
+		AgentID:      identity.AgentID,
+		NodeName:     "node-a",
+		FleetGroupID: "ams-1",
+		Version:      "1.0.0",
+		Runtime:      initializingRuntime,
+		HasRuntime:   true,
+		ObservedAt:   now.Add(20 * time.Second),
+	}); err != nil {
+		t.Fatalf("applyAgentSnapshot(initializing) error = %v", err)
+	}
+
+	if expiresAt := server.initializationWatchCooldowns[identity.AgentID]; !expiresAt.IsZero() {
+		t.Fatalf("initialization watch cooldown during active startup = %v, want zero", expiresAt)
+	}
+
+	readyObservedAt := now.Add(50 * time.Second)
+	if err := server.applyAgentSnapshot(agentSnapshot{
+		AgentID:      identity.AgentID,
+		NodeName:     "node-a",
+		FleetGroupID: "ams-1",
+		Version:      "1.0.0",
+		Runtime:      gatewayRuntimeSnapshotForTest(),
+		HasRuntime:   true,
+		ObservedAt:   readyObservedAt,
+	}); err != nil {
+		t.Fatalf("applyAgentSnapshot(ready) error = %v", err)
+	}
+
+	expectedExpiresAt := readyObservedAt.UTC().Add(telemetryInitializationWatchCooldown)
+	if expiresAt := server.initializationWatchCooldowns[identity.AgentID]; !expiresAt.Equal(expectedExpiresAt) {
+		t.Fatalf("initialization watch cooldown = %v, want %v", expiresAt, expectedExpiresAt)
+	}
+}
+
 func gatewayRuntimeSnapshotForTest() *gatewayrpc.RuntimeSnapshot {
 	return &gatewayrpc.RuntimeSnapshot{
 		AcceptingNewConnections:   true,

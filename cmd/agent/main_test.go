@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -14,6 +16,7 @@ import (
 	"github.com/panvex/panvex/internal/agent/telemt"
 	agentstate "github.com/panvex/panvex/internal/agent/state"
 	"github.com/panvex/panvex/internal/gatewayrpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc"
 )
 
@@ -74,6 +77,90 @@ func TestShouldSendRuntimeSnapshotAfterJobOnlyForSuccessfulDiagnosticsRefresh(t 
 	}
 	if shouldSendRuntimeSnapshotAfterJob("runtime.reload", true) {
 		t.Fatal("shouldSendRuntimeSnapshotAfterJob(runtime.reload, true) = true, want false")
+	}
+}
+
+func TestSendInitialMessagesContinuesWhenUsageMetricsAreUnavailable(t *testing.T) {
+	telemtClient := &fakeInitialSyncTelemtClient{
+		state: telemt.RuntimeState{
+			Version: "2026.03",
+			Gates: telemt.RuntimeGates{
+				AcceptingNewConnections: true,
+				MERuntimeReady:          true,
+				StartupStatus:           "ready",
+				StartupStage:            "steady_state",
+				StartupProgressPct:      100,
+			},
+			Initialization: telemt.RuntimeInitialization{
+				Status:        "ready",
+				CurrentStage:  "steady_state",
+				ProgressPct:   100,
+				TransportMode: "direct",
+			},
+			ConnectionTotals: telemt.RuntimeConnectionTotals{
+				CurrentConnections: 3,
+				ActiveUsers:        2,
+			},
+			Diagnostics: telemt.RuntimeDiagnostics{
+				State:          "fresh",
+				SystemInfoJSON: `{"version":"2026.03"}`,
+			},
+		},
+		metricsErr: errors.New("telemt metrics request failed with status 503"),
+	}
+	agent := runtime.New(runtime.Config{
+		AgentID:      "agent-1",
+		NodeName:     "node-a",
+		FleetGroupID: "default",
+		Version:      "test",
+	}, telemtClient)
+
+	outbound := make(chan *gatewayrpc.ConnectClientMessage, 4)
+	var logs strings.Builder
+	originalWriter := log.Writer()
+	log.SetOutput(&logs)
+	defer log.SetOutput(originalWriter)
+
+	err := sendInitialMessages(outbound, agent)
+	if err != nil {
+		t.Fatalf("sendInitialMessages() error = %v, want nil when only usage metrics are unavailable", err)
+	}
+	if len(outbound) != 2 {
+		t.Fatalf("len(outbound) = %d, want %d (heartbeat + runtime snapshot)", len(outbound), 2)
+	}
+	first := <-outbound
+	second := <-outbound
+	if first.GetHeartbeat() == nil {
+		t.Fatal("first outbound message = nil heartbeat, want heartbeat")
+	}
+	if second.GetSnapshot() == nil {
+		t.Fatal("second outbound message = nil snapshot, want runtime snapshot")
+	}
+	if !strings.Contains(logs.String(), "initial usage snapshot unavailable") {
+		t.Fatalf("logs = %q, want initial usage snapshot warning", logs.String())
+	}
+}
+
+func TestConnectStreamWithSetupTimeoutKeepsStreamContextAliveAfterSuccessfulConnect(t *testing.T) {
+	stream, err := connectStreamWithSetupTimeout(20*time.Millisecond, func(ctx context.Context) (gatewayrpc.AgentGateway_ConnectClient, error) {
+		return &fakeAgentGatewayConnectClient{ctx: ctx}, nil
+	})
+	if err != nil {
+		t.Fatalf("connectStreamWithSetupTimeout() error = %v", err)
+	}
+
+	select {
+	case <-stream.Context().Done():
+		t.Fatal("stream context canceled immediately after successful connect")
+	default:
+	}
+
+	time.Sleep(50 * time.Millisecond)
+
+	select {
+	case <-stream.Context().Done():
+		t.Fatal("stream context canceled after setup timeout elapsed")
+	default:
 	}
 }
 
@@ -639,6 +726,83 @@ type fakeCertificateRenewer struct {
 	response *gatewayrpc.RenewCertificateResponse
 	err      error
 }
+
+type fakeAgentGatewayConnectClient struct {
+	ctx context.Context
+}
+
+func (c *fakeAgentGatewayConnectClient) Header() (metadata.MD, error) {
+	return metadata.MD{}, nil
+}
+
+func (c *fakeAgentGatewayConnectClient) Trailer() metadata.MD {
+	return metadata.MD{}
+}
+
+func (c *fakeAgentGatewayConnectClient) CloseSend() error {
+	return nil
+}
+
+func (c *fakeAgentGatewayConnectClient) Context() context.Context {
+	return c.ctx
+}
+
+func (c *fakeAgentGatewayConnectClient) Send(*gatewayrpc.ConnectClientMessage) error {
+	return nil
+}
+
+func (c *fakeAgentGatewayConnectClient) Recv() (*gatewayrpc.ConnectServerMessage, error) {
+	<-c.ctx.Done()
+	return nil, c.ctx.Err()
+}
+
+func (c *fakeAgentGatewayConnectClient) SendMsg(any) error {
+	return nil
+}
+
+func (c *fakeAgentGatewayConnectClient) RecvMsg(any) error {
+	<-c.ctx.Done()
+	return c.ctx.Err()
+}
+
+type fakeInitialSyncTelemtClient struct {
+	state      telemt.RuntimeState
+	metricsErr error
+	activeIPs  []telemt.UserActiveIPs
+}
+
+func (c *fakeInitialSyncTelemtClient) FetchRuntimeState(context.Context) (telemt.RuntimeState, error) {
+	return c.state, nil
+}
+
+func (c *fakeInitialSyncTelemtClient) FetchClientUsageFromMetrics(context.Context) (telemt.ClientUsageMetricsSnapshot, error) {
+	if c.metricsErr != nil {
+		return telemt.ClientUsageMetricsSnapshot{}, c.metricsErr
+	}
+	return telemt.ClientUsageMetricsSnapshot{}, nil
+}
+
+func (c *fakeInitialSyncTelemtClient) FetchActiveIPs(context.Context) ([]telemt.UserActiveIPs, error) {
+	return c.activeIPs, nil
+}
+
+func (c *fakeInitialSyncTelemtClient) ExecuteRuntimeReload(context.Context) error {
+	return nil
+}
+
+func (c *fakeInitialSyncTelemtClient) CreateClient(context.Context, telemt.ManagedClient) (telemt.ClientApplyResult, error) {
+	return telemt.ClientApplyResult{}, nil
+}
+
+func (c *fakeInitialSyncTelemtClient) UpdateClient(context.Context, telemt.ManagedClient) (telemt.ClientApplyResult, error) {
+	return telemt.ClientApplyResult{}, nil
+}
+
+func (c *fakeInitialSyncTelemtClient) DeleteClient(context.Context, string) error {
+	return nil
+}
+
+func (c *fakeInitialSyncTelemtClient) InvalidateSlowDataCache() {}
 
 type fakeDiagnosticsRefreshTelemtClient struct {
 	state                     telemt.RuntimeState

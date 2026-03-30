@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api";
 import { invalidateTelemetryQueries } from "./telemetry-query-invalidation";
+import { telemetryServerDetailRefetchInterval } from "./telemetry-refetch";
 
 export function useTelemetryDashboard() {
   return useQuery({
@@ -23,9 +24,11 @@ export function useTelemetryServerDetail(agentId: string) {
     queryKey: ["telemetry-server", agentId],
     queryFn: () => apiClient.telemetryServer(agentId),
     enabled: !!agentId,
-    refetchInterval: 15_000,
+    refetchInterval: (query) => telemetryServerDetailRefetchInterval(query.state.data),
   });
 }
+
+export { telemetryServerDetailRefetchInterval };
 
 export function useActivateTelemetryDetailBoost() {
   const queryClient = useQueryClient();

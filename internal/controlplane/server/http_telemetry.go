@@ -105,6 +105,7 @@ func (s *Server) handleTelemetryServerDetail() http.HandlerFunc {
 		s.mu.RLock()
 		agent, ok := s.agents[agentID]
 		boostExpiresAt := s.detailBoosts[agentID]
+		initializationCooldownExpiresAt := s.initializationWatchCooldowns[agentID]
 		s.mu.RUnlock()
 		if !ok {
 			writeError(w, http.StatusNotFound, "server not found")
@@ -137,9 +138,10 @@ func (s *Server) handleTelemetryServerDetail() http.HandlerFunc {
 		}
 
 		writeJSON(w, http.StatusOK, telemetryServerDetailResponse{
-			Server:            telemetrySummaryForAgent(agent, s.presence.Evaluate(agentID, now), now, boostExpiresAt),
-			Diagnostics:       diagnostics,
-			SecurityInventory: securityInventory,
+			Server:              telemetrySummaryForAgent(agent, s.presence.Evaluate(agentID, now), now, boostExpiresAt),
+			InitializationWatch: telemetryInitializationWatchForAgent(agent, now, initializationCooldownExpiresAt),
+			Diagnostics:         diagnostics,
+			SecurityInventory:   securityInventory,
 		})
 	}
 }

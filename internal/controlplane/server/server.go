@@ -67,6 +67,7 @@ type Server struct {
 	assignmentSeq uint64
 	agents     map[string]Agent
 	detailBoosts map[string]time.Time
+	initializationWatchCooldowns map[string]time.Time
 	agentSessions map[string]*agentStreamSession
 	clients    map[string]managedClient
 	clientAssignments map[string][]managedClientAssignment
@@ -103,6 +104,7 @@ func New(options Options) *Server {
 		grpcConnectRateLimiter: newFixedWindowRateLimiter(grpcConnectRateLimitPerWindow, defaultRateLimitWindow),
 		agents:     make(map[string]Agent),
 		detailBoosts: make(map[string]time.Time),
+		initializationWatchCooldowns: make(map[string]time.Time),
 		clients:    make(map[string]managedClient),
 		clientAssignments: make(map[string][]managedClientAssignment),
 		clientDeployments: make(map[string]map[string]managedClientDeployment),

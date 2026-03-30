@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log"
 	"time"
 
 	"github.com/panvex/panvex/internal/controlplane/jobs"
@@ -81,6 +82,7 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 	}
 	session, unregisterSession := s.registerAgentSession(agentID)
 	defer unregisterSession()
+	log.Printf("control-plane accepted agent stream: agent_id=%s", agentID)
 
 	connectionCtx, cancelConnection := context.WithCancel(stream.Context())
 	defer cancelConnection()

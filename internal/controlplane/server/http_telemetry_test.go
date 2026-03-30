@@ -247,3 +247,106 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 		t.Fatal("restored detail boost = false, want persisted boost")
 	}
 }
+
+func TestHTTPTelemetryDetailExposesInitializationWatchActiveAndCooldown(t *testing.T) {
+	now := time.Date(2026, time.March, 29, 16, 0, 0, 0, time.UTC)
+	server := New(Options{Now: func() time.Time { return now }})
+	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "admin",
+		Password: "admin-password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	server.agents["agent-a"] = Agent{
+		ID:           "agent-a",
+		NodeName:     "fra-a",
+		FleetGroupID: "eu",
+		Version:      "1.0.0",
+		Runtime: AgentRuntime{
+			AcceptingNewConnections:   false,
+			MERuntimeReady:            false,
+			StartupStatus:             "starting",
+			StartupStage:              "me_pool_bootstrap",
+			StartupProgressPct:        42,
+			InitializationStatus:      "starting",
+			InitializationStage:       "warming_me_pool",
+			InitializationProgressPct: 38,
+			UpdatedAt:                 now.Add(-5 * time.Second),
+		},
+		LastSeenAt: now.Add(-3 * time.Second),
+	}
+	server.presence.MarkConnected("agent-a", now.Add(-3*time.Second))
+
+	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "admin",
+		"password": "admin-password",
+	}, nil)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
+	}
+	cookies := loginResponse.Result().Cookies()
+
+	activeDetailResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/telemetry/servers/agent-a", nil, cookies)
+	if activeDetailResponse.Code != http.StatusOK {
+		t.Fatalf("GET /api/telemetry/servers/{id} active status = %d, want %d", activeDetailResponse.Code, http.StatusOK)
+	}
+	var activeDetail telemetryServerDetailResponse
+	if err := json.Unmarshal(activeDetailResponse.Body.Bytes(), &activeDetail); err != nil {
+		t.Fatalf("json.Unmarshal(active detail) error = %v", err)
+	}
+	if !activeDetail.InitializationWatch.Visible {
+		t.Fatal("initialization_watch.visible = false, want true while runtime is starting")
+	}
+	if activeDetail.InitializationWatch.Mode != "active" {
+		t.Fatalf("initialization_watch.mode = %q, want %q", activeDetail.InitializationWatch.Mode, "active")
+	}
+
+	server.mu.Lock()
+	agent := server.agents["agent-a"]
+	agent.Runtime.AcceptingNewConnections = true
+	agent.Runtime.MERuntimeReady = true
+	agent.Runtime.StartupStatus = "ready"
+	agent.Runtime.StartupStage = "steady_state"
+	agent.Runtime.StartupProgressPct = 100
+	agent.Runtime.InitializationStatus = "ready"
+	agent.Runtime.InitializationStage = "steady_state"
+	agent.Runtime.InitializationProgressPct = 100
+	agent.Runtime.LifecycleState = "ready"
+	agent.Runtime.UpdatedAt = now.Add(15 * time.Second)
+	server.agents["agent-a"] = agent
+	server.initializationWatchCooldowns["agent-a"] = now.Add(15 * time.Second).Add(telemetryInitializationWatchCooldown)
+	server.mu.Unlock()
+
+	now = now.Add(30 * time.Second)
+
+	cooldownDetailResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/telemetry/servers/agent-a", nil, cookies)
+	if cooldownDetailResponse.Code != http.StatusOK {
+		t.Fatalf("GET /api/telemetry/servers/{id} cooldown status = %d, want %d", cooldownDetailResponse.Code, http.StatusOK)
+	}
+	var cooldownDetail telemetryServerDetailResponse
+	if err := json.Unmarshal(cooldownDetailResponse.Body.Bytes(), &cooldownDetail); err != nil {
+		t.Fatalf("json.Unmarshal(cooldown detail) error = %v", err)
+	}
+	if !cooldownDetail.InitializationWatch.Visible {
+		t.Fatal("initialization_watch.visible = false, want true during ready cooldown")
+	}
+	if cooldownDetail.InitializationWatch.Mode != "cooldown" {
+		t.Fatalf("initialization_watch.mode = %q, want %q", cooldownDetail.InitializationWatch.Mode, "cooldown")
+	}
+
+	now = server.initializationWatchCooldowns["agent-a"].Add(time.Second)
+
+	hiddenDetailResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/telemetry/servers/agent-a", nil, cookies)
+	if hiddenDetailResponse.Code != http.StatusOK {
+		t.Fatalf("GET /api/telemetry/servers/{id} hidden status = %d, want %d", hiddenDetailResponse.Code, http.StatusOK)
+	}
+	var hiddenDetail telemetryServerDetailResponse
+	if err := json.Unmarshal(hiddenDetailResponse.Body.Bytes(), &hiddenDetail); err != nil {
+		t.Fatalf("json.Unmarshal(hidden detail) error = %v", err)
+	}
+	if hiddenDetail.InitializationWatch.Visible {
+		t.Fatal("initialization_watch.visible = true, want false after cooldown expires")
+	}
+}

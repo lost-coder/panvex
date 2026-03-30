@@ -148,6 +148,18 @@ export type TelemetryServersResponse = {
 
 export type TelemetryServerDetailResponse = {
   server: TelemetryServerSummary;
+  initialization_watch: {
+    visible: boolean;
+    mode: "active" | "cooldown" | "hidden";
+    remaining_seconds: number;
+    completed_at_unix: number;
+    startup_status: string;
+    startup_stage: string;
+    startup_progress_pct: number;
+    initialization_status: string;
+    initialization_stage: string;
+    initialization_progress_pct: number;
+  };
   diagnostics: {
     state: string;
     state_reason: string;

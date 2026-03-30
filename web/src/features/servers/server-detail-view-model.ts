@@ -27,6 +27,19 @@ export interface ServerDetailViewModel {
     secondaryText: string;
     progressPct: number;
   }>;
+  initializationWatch: {
+    visible: boolean;
+    mode: "active" | "cooldown" | "hidden";
+    titleText: string;
+    summaryText: string;
+    badgeText: string;
+    cards: Array<{
+      label: string;
+      valueText: string;
+      secondaryText: string;
+      progressPct: number;
+    }>;
+  };
   runtimeFlags: Array<{
     label: string;
     valueText: string;
@@ -126,6 +139,7 @@ export function buildServerDetailViewModel(
   const securityRows = buildSecurityRows(detail);
   const meDiagnosticsRows = buildMEDiagnosticsRows(detail);
   const routingRows = buildRoutingRows(detail);
+  const initializationWatch = buildInitializationWatch(detail, runtime);
   const mePool = asRecord(detail?.diagnostics?.me_pool);
   const meDiagnosticsStateText = buildSectionStateText(
     mePool.enabled === false ? "disabled" : detail?.diagnostics?.state,
@@ -202,6 +216,7 @@ export function buildServerDetailViewModel(
         progressPct: runtime?.accepting_new_connections ? 100 : 0,
       },
     ],
+    initializationWatch,
     runtimeFlags: [
       {
         label: "Accepting New Connections",
@@ -601,6 +616,54 @@ function buildRoutingRows(detail: TelemetryServerDetailResponse | undefined): Ar
       valueText: stringValue(row.selected_ip),
     }))
     .filter((row) => row.valueText !== "—");
+}
+
+function buildInitializationWatch(
+  detail: TelemetryServerDetailResponse | undefined,
+  runtime: Agent["runtime"]
+): ServerDetailViewModel["initializationWatch"] {
+  const watch = detail?.initialization_watch;
+  if (!watch?.visible) {
+    return {
+      visible: false,
+      mode: "hidden",
+      titleText: "",
+      summaryText: "",
+      badgeText: "",
+      cards: [],
+    };
+  }
+
+  const startupStatus = watch.startup_status || runtime?.startup_status || "unknown";
+  const startupStage = watch.startup_stage || runtime?.startup_stage || "unknown";
+  const startupProgress = normalizeProgress(watch.startup_progress_pct ?? runtime?.startup_progress_pct ?? 0);
+  const initializationStatus = watch.initialization_status || runtime?.initialization_status || "unknown";
+  const initializationStage = watch.initialization_stage || runtime?.initialization_stage || "unknown";
+  const initializationProgress = normalizeProgress(
+    watch.initialization_progress_pct ?? runtime?.initialization_progress_pct ?? 0
+  );
+
+  return {
+    visible: true,
+    mode: watch.mode,
+    titleText: watch.mode === "cooldown" ? "Initialization Complete" : "Initialization Watch",
+    summaryText: watch.mode === "cooldown" ? "Recently reached steady state" : "Live startup progress",
+    badgeText: watch.mode === "cooldown" ? "Cooling Down" : "Live",
+    cards: [
+      {
+        label: "Startup Status",
+        valueText: humanizeToken(startupStatus),
+        secondaryText: humanizeToken(startupStage),
+        progressPct: startupProgress,
+      },
+      {
+        label: "Initialization",
+        valueText: humanizeToken(initializationStatus),
+        secondaryText: humanizeToken(initializationStage),
+        progressPct: initializationProgress,
+      },
+    ],
+  };
 }
 
 function buildSectionStateText(state: string | undefined, reason: string | undefined): string {

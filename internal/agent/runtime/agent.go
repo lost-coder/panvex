@@ -41,6 +41,7 @@ type runtimeLifecycleState struct {
 }
 
 const defaultCompletedJobRetention = 2 * time.Hour
+const runtimeInitializationCooldown = 90 * time.Second
 
 type completedJobRecord struct {
 	CompletedAt time.Time
@@ -61,6 +62,8 @@ type Agent struct {
 	lastMetricsUptime float64
 	lastRuntimeUptime float64
 	lastLifecycle     runtimeLifecycleState
+	runtimeInitializationActive bool
+	runtimeInitializationCooldownUntil time.Time
 	completedJobs     map[string]completedJobRecord
 	completedJobRetention time.Duration
 	ipCollector       *telemt.IPCollector
@@ -127,6 +130,19 @@ func startupLifecycleRegressed(previous runtimeLifecycleState, current runtimeLi
 	return false
 }
 
+func runtimeNeedsInitializationWatch(state telemt.RuntimeState) bool {
+	switch {
+	case state.Gates.StartupStatus != "" && state.Gates.StartupStatus != "ready":
+		return true
+	case state.Initialization.Status != "" && state.Initialization.Status != "ready":
+		return true
+	case !state.Gates.AcceptingNewConnections || !state.Gates.MERuntimeReady:
+		return true
+	default:
+		return false
+	}
+}
+
 // BuildRuntimeSnapshot converts the current Telemt runtime state into a gateway snapshot.
 func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) (*gatewayrpc.Snapshot, error) {
 	state, err := a.telemt.FetchRuntimeState(ctx)
@@ -176,6 +192,17 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 	a.mu.Lock()
 	if startupLifecycleRegressed(a.lastLifecycle, lifecycle) {
 		wasRestarting = true
+	}
+	previousInitializationActive := a.runtimeInitializationActive
+	currentInitializationActive := runtimeNeedsInitializationWatch(state)
+	if currentInitializationActive {
+		a.runtimeInitializationActive = true
+		a.runtimeInitializationCooldownUntil = time.Time{}
+	} else {
+		a.runtimeInitializationActive = false
+		if previousInitializationActive {
+			a.runtimeInitializationCooldownUntil = observedAt.UTC().Add(runtimeInitializationCooldown)
+		}
 	}
 	a.lastLifecycle = lifecycle
 	a.lastRuntimeUptime = state.UptimeSeconds
@@ -249,6 +276,28 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 	snapshot.TotalActiveUsers = int32(state.ConnectionTotals.ActiveUsers)
 
 	return snapshot, nil
+}
+
+// RuntimeSnapshotInterval reports the desired runtime polling cadence for the current lifecycle state.
+func (a *Agent) RuntimeSnapshotInterval(baseInterval time.Duration, fastInterval time.Duration, now time.Time) time.Duration {
+	if baseInterval <= 0 {
+		return baseInterval
+	}
+	if fastInterval <= 0 {
+		return baseInterval
+	}
+
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if a.runtimeInitializationActive {
+		return fastInterval
+	}
+	if a.runtimeInitializationCooldownUntil.After(now.UTC()) {
+		return fastInterval
+	}
+
+	return baseInterval
 }
 
 // BuildUsageSnapshot fetches per-client counters from Telemt metrics and emits only changed deltas.
