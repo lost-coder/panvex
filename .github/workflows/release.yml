@@ -1,0 +1,105 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  binaries:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - name: Build panel
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          ext=""; if [ "$GOOS" = "windows" ]; then ext=".exe"; fi
+          go build -o panvex-panel-${GOOS}-${GOARCH}${ext} ./cmd/control-plane
+      - name: Build agent
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          ext=""; if [ "$GOOS" = "windows" ]; then ext=".exe"; fi
+          go build -o panvex-agent-${GOOS}-${GOARCH}${ext} ./cmd/agent
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: panvex-*
+
+  docker:
+    name: Docker Images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build & push panel image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          target: control-plane
+          tags: |
+            ghcr.io/lost-coder/panvex-panel:${{ github.ref_name }}
+            ghcr.io/lost-coder/panvex-panel:latest
+      - name: Build & push web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          target: web
+          tags: |
+            ghcr.io/lost-coder/panvex-web:${{ github.ref_name }}
+            ghcr.io/lost-coder/panvex-web:latest
+
+  release:
+    name: Create Release
+    needs: [binaries]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binaries-*
+          merge-multiple: true
+          path: dist/
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum panvex-* > checksums.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/panvex-*
+            dist/checksums.txt
+            deploy/install.sh
+            deploy/install-agent.sh
