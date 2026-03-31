@@ -41,6 +41,7 @@ web/node_modules/
 web/dist/
 web/*.tsbuildinfo
 web/*.js
+!web/eslint.config.js
 web/*.d.ts
 cmd/control-plane/.embedded-ui/
 cmd/control-plane/ui-dist/
