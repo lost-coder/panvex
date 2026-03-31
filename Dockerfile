@@ -8,7 +8,7 @@ COPY web ./
 COPY cmd/control-plane /src/cmd/control-plane
 RUN npm run build:embed
 
-FROM golang:1.25-alpine AS control-plane-builder
+FROM golang:1.26-alpine AS control-plane-builder
 WORKDIR /src
 
 RUN apk add --no-cache build-base
