@@ -22,8 +22,9 @@ linters:
   exclusions:
     rules:
       - path: internal/dbsqlc
+        text: ".*"
       - path: internal/gatewayrpc
-    rules:
+        text: ".*"
       - linters:
           - errcheck
         text: "tx.Rollback"
