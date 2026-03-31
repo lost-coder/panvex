@@ -6,11 +6,8 @@ run:
 linters:
   enable:
     - errcheck
-    - gosimple
     - govet
-    - ineffassign
     - staticcheck
-    - unused
     - gocritic
     - gosec
     - misspell
