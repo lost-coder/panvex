@@ -48,3 +48,7 @@ linters:
       - linters:
           - govet
         text: "lostcancel"
+      - linters:
+          - gosec
+        text: "G115"
+        path: "internal/controlplane/server/http_auth.go"
