@@ -21,8 +21,8 @@ linters:
         - G505
   exclusions:
     paths:
-      - internal/dbsqlc
-      - internal/gatewayrpc
+      - internal/dbsqlc$
+      - internal/gatewayrpc$
     rules:
       - linters:
           - errcheck
