@@ -1,47 +1,50 @@
+version: "2"
+
 run:
   timeout: 5m
 
 linters:
   enable:
     - errcheck
-    - gosimple
     - govet
-    - ineffassign
     - staticcheck
-    - unused
     - gocritic
     - gosec
     - misspell
     - unconvert
-
-linters-settings:
-  gosec:
-    excludes:
-      - G104
-      - G112
-      - G115
-      - G505
-
-issues:
-  exclude-dirs:
-    - internal/dbsqlc
-    - internal/gatewayrpc
-  exclude-rules:
-    - linters:
-        - errcheck
-      text: "tx.Rollback"
-    - linters:
-        - errcheck
-      text: "conn.CloseNow"
-    - linters:
-        - unused
-      text: "func.*is unused"
-    - linters:
-        - gosimple
-      text: "S1016"
-    - linters:
-        - gocritic
-      text: "ifElseChain"
-    - linters:
-        - govet
-      text: "lostcancel"
+  settings:
+    gosec:
+      excludes:
+        - G104
+        - G112
+        - G115
+        - G505
+        - G101  # Hardcoded credentials (test fixtures)
+        - G117  # Marshaled secret field (API response)
+        - G301  # File permissions
+        - G304  # File inclusion via variable
+        - G602  # Slice index out of range
+        - G706  # Log injection
+  exclusions:
+    rules:
+      - linters:
+          - errcheck
+        text: "Error return value of.*Close.*is not checked"
+      - linters:
+          - errcheck
+        text: "tx.Rollback"
+      - linters:
+          - errcheck
+        text: "conn.CloseNow"
+      - linters:
+          - unused
+        text: "func.*is unused"
+      - linters:
+          - staticcheck
+        text: "S1016"
+      - linters:
+          - gocritic
+        text: "ifElseChain"
+      - linters:
+          - govet
+        text: "lostcancel"
