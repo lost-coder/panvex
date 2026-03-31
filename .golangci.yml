@@ -1,0 +1,47 @@
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gocritic
+    - gosec
+    - misspell
+    - unconvert
+
+linters-settings:
+  gosec:
+    excludes:
+      - G104
+      - G112
+      - G115
+      - G505
+
+issues:
+  exclude-dirs:
+    - internal/dbsqlc
+    - internal/gatewayrpc
+  exclude-rules:
+    - linters:
+        - errcheck
+      text: "tx.Rollback"
+    - linters:
+        - errcheck
+      text: "conn.CloseNow"
+    - linters:
+        - unused
+      text: "func.*is unused"
+    - linters:
+        - gosimple
+      text: "S1016"
+    - linters:
+        - gocritic
+      text: "ifElseChain"
+    - linters:
+        - govet
+      text: "lostcancel"
