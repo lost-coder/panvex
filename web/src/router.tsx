@@ -56,9 +56,9 @@ function ProtectedShell() {
   );
 }
 
-const LoginPage = lazyRouteComponent(
-  () => import("@/features/login/login-page"),
-  "LoginPage",
+const LoginContainer = lazyRouteComponent(
+  () => import("@/containers/LoginContainer").then((m) => ({ default: m.LoginContainer })),
+  "default",
 );
 
 const DashboardContainer = lazyRouteComponent(
@@ -89,14 +89,14 @@ const ClientDetailContainer = lazyRouteComponent(
   "default",
 );
 
-const SettingsPage = lazyRouteComponent(
-  () => import("@/features/settings/settings-page"),
-  "SettingsPage",
+const SettingsContainer = lazyRouteComponent(
+  () => import("@/containers/SettingsContainer").then((m) => ({ default: m.SettingsContainer })),
+  "default",
 );
 
-const ProfilePage = lazyRouteComponent(
-  () => import("@/features/profile/profile-page"),
-  "ProfilePage",
+const ProfileContainer = lazyRouteComponent(
+  () => import("@/containers/ProfileContainer").then((m) => ({ default: m.ProfileContainer })),
+  "default",
 );
 
 const shellRoute = createRoute({
@@ -112,7 +112,7 @@ const shellRoute = createRoute({
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
-  component: LoginPage,
+  component: LoginContainer,
 });
 
 const dashboardRoute = createRoute({
@@ -148,13 +148,13 @@ const clientDetailRoute = createRoute({
 const settingsRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/settings",
-  component: SettingsPage,
+  component: SettingsContainer,
 });
 
 const profileRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/profile",
-  component: ProfilePage,
+  component: ProfileContainer,
 });
 
 const routeTree = rootRoute.addChildren([
