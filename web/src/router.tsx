@@ -11,7 +11,7 @@ import {
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppShell } from "@/components/app-shell";
-import { AppearanceProvider } from "@/components/appearance-provider";
+import { AppearanceProvider } from "@/providers/AppearanceProvider";
 import { apiClient } from "@/lib/api";
 
 interface RouterContext {

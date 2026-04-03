@@ -3,7 +3,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import React from "react";
 import ReactDOM from "react-dom/client";
 
-import { EventsSynchronizer } from "./components/events-synchronizer";
+import { EventsSynchronizer } from "./providers/EventsSynchronizer";
 import { router } from "./router";
 import "./styles.css";
 
