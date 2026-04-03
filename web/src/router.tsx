@@ -69,14 +69,14 @@ const DashboardContainer = lazyRouteComponent(
   "default",
 );
 
-const ServersPage = lazyRouteComponent(
-  () => import("@/features/servers/servers-page"),
-  "ServersPage",
+const ServersContainer = lazyRouteComponent(
+  () => import("@/containers/ServersContainer").then((m) => ({ default: m.ServersContainer })),
+  "default",
 );
 
-const ServerDetailPage = lazyRouteComponent(
-  () => import("@/features/servers/server-detail-page"),
-  "ServerDetailPage",
+const ServerDetailContainer = lazyRouteComponent(
+  () => import("@/containers/ServerDetailContainer").then((m) => ({ default: m.ServerDetailContainer })),
+  "default",
 );
 
 const ClientsPage = lazyRouteComponent(
@@ -124,13 +124,13 @@ const dashboardRoute = createRoute({
 const serversRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/servers",
-  component: ServersPage,
+  component: ServersContainer,
 });
 
 const serverDetailRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/servers/$serverId",
-  component: ServerDetailPage,
+  component: ServerDetailContainer,
 });
 
 const clientsRoute = createRoute({
