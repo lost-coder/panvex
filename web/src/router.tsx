@@ -79,14 +79,14 @@ const ServerDetailContainer = lazyRouteComponent(
   "default",
 );
 
-const ClientsPage = lazyRouteComponent(
-  () => import("@/features/clients/clients-page"),
-  "ClientsPage",
+const ClientsContainer = lazyRouteComponent(
+  () => import("@/containers/ClientsContainer").then((m) => ({ default: m.ClientsContainer })),
+  "default",
 );
 
-const ClientDetailPage = lazyRouteComponent(
-  () => import("@/features/clients/client-detail-page"),
-  "ClientDetailPage",
+const ClientDetailContainer = lazyRouteComponent(
+  () => import("@/containers/ClientDetailContainer").then((m) => ({ default: m.ClientDetailContainer })),
+  "default",
 );
 
 const SettingsPage = lazyRouteComponent(
@@ -136,13 +136,13 @@ const serverDetailRoute = createRoute({
 const clientsRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/clients",
-  component: ClientsPage,
+  component: ClientsContainer,
 });
 
 const clientDetailRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/clients/$clientId",
-  component: ClientDetailPage,
+  component: ClientDetailContainer,
 });
 
 const settingsRoute = createRoute({
