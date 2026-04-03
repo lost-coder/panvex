@@ -1,5 +1,5 @@
 import type { ServerListItem } from "@panvex/ui";
-import type { ServerDetailPageProps } from "@panvex/ui";
+import type { ServerDetailPageProps, InitCardProps } from "@panvex/ui";
 import type {
   TelemetryServersResponse,
   TelemetryServerDetailResponse,
@@ -57,6 +57,27 @@ export function transformServerList(
   raw: TelemetryServersResponse
 ): ServerListItem[] {
   return (raw.servers ?? []).map(summaryToListItem);
+}
+
+export function transformInitState(
+  raw: TelemetryServerDetailResponse
+): InitCardProps | undefined {
+  const iw = raw.initialization_watch;
+  if (!iw?.visible) return undefined;
+
+  const runtime = raw.server?.agent?.runtime;
+  return {
+    stage: iw.initialization_stage || iw.startup_stage || "initializing",
+    progressPct: iw.initialization_progress_pct ?? iw.startup_progress_pct ?? 0,
+    attempt: 1,
+    retryLimit: 1,
+    elapsedSecs: iw.completed_at_unix > 0
+      ? 0
+      : iw.remaining_seconds > 0
+        ? iw.remaining_seconds
+        : 0,
+    degraded: runtime?.degraded ?? false,
+  };
 }
 
 export function transformServerDetail(

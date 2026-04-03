@@ -4,7 +4,7 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 
 export function ServerDetailContainer() {
   const { serverId } = useParams({ strict: false });
-  const { server, isLoading } = useServerDetail(serverId ?? "");
+  const { server, initState, isLoading } = useServerDetail(serverId ?? "");
   const navigate = useNavigate();
 
   if (isLoading || !server) {
@@ -14,6 +14,7 @@ export function ServerDetailContainer() {
   return (
     <ServerDetailPage
       server={server}
+      initState={initState}
       onBack={() => navigate({ to: "/servers" })}
     />
   );

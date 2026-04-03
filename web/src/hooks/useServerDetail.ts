@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import type { ServerDetailPageProps } from "@panvex/ui";
+import type { ServerDetailPageProps, InitCardProps } from "@panvex/ui";
 import { apiClient } from "@/lib/api";
-import { transformServerDetail } from "@/lib/transforms/servers";
+import { transformServerDetail, transformInitState } from "@/lib/transforms/servers";
 
 export function useServerDetail(serverId: string) {
   const query = useQuery({
@@ -15,5 +15,9 @@ export function useServerDetail(serverId: string) {
     ? transformServerDetail(query.data)
     : undefined;
 
-  return { server, isLoading: query.isLoading, error: query.error };
+  const initState: InitCardProps | undefined = query.data
+    ? transformInitState(query.data)
+    : undefined;
+
+  return { server, initState, isLoading: query.isLoading, error: query.error };
 }
