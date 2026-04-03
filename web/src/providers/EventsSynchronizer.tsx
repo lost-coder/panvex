@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 
-import { invalidateTelemetryQueries } from "@/features/telemetry/telemetry-query-invalidation";
+import { invalidateTelemetryQueries } from "@/lib/telemetry-query-invalidation";
 import { buildEventsURL, resolveConfiguredRootPath } from "@/lib/runtime-path";
 
 type EventEnvelope = {
