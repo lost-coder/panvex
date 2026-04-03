@@ -19,5 +19,7 @@ export function useServerDetail(serverId: string) {
     ? transformInitState(query.data)
     : undefined;
 
-  return { server, initState, isLoading: query.isLoading, error: query.error };
+  const lastUpdatedAt = query.dataUpdatedAt ? new Date(query.dataUpdatedAt) : undefined;
+
+  return { server, initState, lastUpdatedAt, isLoading: query.isLoading, error: query.error };
 }

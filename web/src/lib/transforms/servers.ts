@@ -63,7 +63,7 @@ export function transformInitState(
   raw: TelemetryServerDetailResponse
 ): InitCardProps | undefined {
   const iw = raw.initialization_watch;
-  if (!iw?.visible) return undefined;
+  if (!iw?.visible || iw.mode !== "active") return undefined;
 
   const runtime = raw.server?.agent?.runtime;
   return {
