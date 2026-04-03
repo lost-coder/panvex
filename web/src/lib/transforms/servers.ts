@@ -65,6 +65,12 @@ export function transformInitState(
   const iw = raw.initialization_watch;
   if (!iw?.visible || iw.mode !== "active") return undefined;
 
+  // Don't show init card if both init and startup report ready —
+  // backend may still flag visible=true due to gate delays
+  const initReady = !iw.initialization_status || iw.initialization_status === "ready";
+  const startupReady = !iw.startup_status || iw.startup_status === "ready";
+  if (initReady && startupReady) return undefined;
+
   const runtime = raw.server?.agent?.runtime;
   return {
     stage: iw.initialization_stage || iw.startup_stage || "initializing",
