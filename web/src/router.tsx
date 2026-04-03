@@ -7,10 +7,12 @@ import {
   createRouter,
   lazyRouteComponent,
   redirect,
+  useNavigate,
+  useRouterState,
 } from "@tanstack/react-router";
+import { LayoutDashboard, Server, Users, Settings } from "lucide-react";
 
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { AppShell } from "@/components/app-shell";
+import { AppShell, type NavItem } from "@panvex/ui";
 import { AppearanceProvider } from "@/providers/AppearanceProvider";
 import { apiClient } from "@/lib/api";
 
@@ -20,16 +22,36 @@ interface RouterContext {
 
 const rootRoute = createRootRouteWithContext<RouterContext>()({ component: Outlet });
 
+const NAV_ITEMS: NavItem[] = [
+  { id: "/", label: "Dashboard", icon: <LayoutDashboard size={20} /> },
+  { id: "/servers", label: "Servers", icon: <Server size={20} /> },
+  { id: "/clients", label: "Clients", icon: <Users size={20} /> },
+  { id: "/settings", label: "Settings", icon: <Settings size={20} /> },
+];
+
 function ProtectedShell() {
   const { data: me } = useQuery({
     queryKey: ["me"],
     queryFn: () => apiClient.me(),
   });
+  const navigate = useNavigate();
+  const { location } = useRouterState();
+
+  const activeId =
+    NAV_ITEMS.find(
+      (item) => item.id !== "/" && location.pathname.startsWith(item.id),
+    )?.id ?? "/";
+
   return (
     <AppearanceProvider userID={me?.id ?? ""}>
-      <TooltipProvider>
-        <AppShell><Outlet /></AppShell>
-      </TooltipProvider>
+      <AppShell
+        navItems={NAV_ITEMS}
+        activeId={activeId}
+        brand="Panvex"
+        onNavigate={(id) => navigate({ to: id })}
+      >
+        <Outlet />
+      </AppShell>
     </AppearanceProvider>
   );
 }
@@ -39,9 +61,12 @@ const LoginPage = lazyRouteComponent(
   "LoginPage",
 );
 
-const DashboardPage = lazyRouteComponent(
-  () => import("@/features/dashboard/dashboard-page"),
-  "DashboardPage",
+const DashboardContainer = lazyRouteComponent(
+  () =>
+    import("@/containers/DashboardContainer").then((m) => ({
+      default: m.DashboardContainer,
+    })),
+  "default",
 );
 
 const ServersPage = lazyRouteComponent(
@@ -93,7 +118,7 @@ const loginRoute = createRoute({
 const dashboardRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/",
-  component: DashboardPage,
+  component: DashboardContainer,
 });
 
 const serversRoute = createRoute({
