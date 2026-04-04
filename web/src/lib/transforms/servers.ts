@@ -9,6 +9,16 @@ import type {
 
 type Severity = "ok" | "warn" | "error";
 
+function num(v: unknown): number {
+  return typeof v === "number" ? v : 0;
+}
+
+function rec(v: unknown): Record<string, unknown> {
+  return (v != null && typeof v === "object" && !Array.isArray(v))
+    ? v as Record<string, unknown>
+    : {};
+}
+
 function mapSeverity(s: "good" | "warn" | "bad"): Severity {
   if (s === "good") return "ok";
   if (s === "bad") return "error";
@@ -83,6 +93,76 @@ export function transformInitState(
         ? iw.remaining_seconds
         : 0,
     degraded: runtime?.degraded ?? false,
+  };
+}
+
+function transformMePool(
+  blob: Record<string, unknown>,
+  runtime: Agent["runtime"] | undefined,
+): ServerDetailPageProps["server"]["mePool"] {
+  if (!blob || blob.enabled !== true) return undefined;
+
+  const data = rec(blob.data);
+  const generations = rec(data.generations);
+  const hardswap = rec(data.hardswap);
+  const writers = rec(data.writers);
+  const contour = rec(writers.contour);
+  const health = rec(writers.health);
+  const refill = rec(data.refill);
+  const byDcRaw = Array.isArray(refill.by_dc) ? refill.by_dc : [];
+
+  const aliveWriters = num(writers.alive_non_draining);
+  const totalDcGroups = runtime?.dcs?.length ?? 0;
+  const requiredWriters = (runtime?.dcs ?? []).reduce(
+    (sum, dc) => sum + (dc.required_writers ?? 0), 0,
+  );
+
+  return {
+    enabled: true,
+    summary: {
+      aliveWriters,
+      availableEndpoints: 0,
+      availablePct: 0,
+      configuredDcGroups: totalDcGroups,
+      configuredEndpoints: 0,
+      coveragePct: runtime?.dc_coverage_pct ?? 0,
+      freshAliveWriters: aliveWriters,
+      freshCoveragePct: runtime?.dc_coverage_pct ?? 0,
+      requiredWriters,
+    },
+    generations: {
+      active: num(generations.active_generation),
+      warm: num(generations.warm_generation),
+      pendingHardswap: num(generations.pending_hardswap_generation),
+      pendingHardswapAgeSecs: num(generations.pending_hardswap_age_secs) || undefined,
+      drainingGenerations: Array.isArray(generations.draining_generations)
+        ? generations.draining_generations.map(Number)
+        : [],
+    },
+    hardswap: {
+      enabled: hardswap.enabled === true,
+      pending: hardswap.pending === true,
+    },
+    contour: {
+      active: num(contour.active),
+      warm: num(contour.warm),
+      draining: num(contour.draining),
+    },
+    writersHealth: {
+      healthy: num(health.healthy),
+      degraded: num(health.degraded),
+      draining: num(health.draining),
+    },
+    refill: {
+      inflightEndpoints: num(refill.inflight_endpoints_total),
+      inflightDcs: num(refill.inflight_dc_total),
+      byDc: byDcRaw.map((e: Record<string, unknown>) => ({
+        dc: num(e.dc),
+        family: String(e.family ?? ""),
+        inflight: num(e.inflight),
+      })),
+    },
+    writersList: [],
   };
 }
 
@@ -193,6 +273,11 @@ export function transformServerDetail(
         : 0,
   };
 
+  const mePool = transformMePool(
+    detail.diagnostics?.me_pool as Record<string, unknown>,
+    runtime,
+  );
+
   return {
     id: agent?.id ?? "",
     name: agent?.node_name ?? "",
@@ -202,6 +287,7 @@ export function transformServerDetail(
     dcs,
     connections,
     summary,
+    mePool,
     upstreams,
     events,
     eventsDroppedTotal: 0,
