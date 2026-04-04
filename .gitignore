@@ -30,6 +30,11 @@ go.work.sum
 # Claude Code local config
 .claude
 .claude.local.md
+.superpowers/
+
+# Root-level package files (from plugins, not project)
+/package.json
+/package-lock.json
 
 # Local git worktrees
 .worktrees/
