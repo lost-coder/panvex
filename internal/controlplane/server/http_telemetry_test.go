@@ -72,7 +72,7 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 			DCCoveragePct:             73,
 			HealthyUpstreams:          1,
 			TotalUpstreams:            3,
-			UpdatedAt:                 now.Add(-45 * time.Second),
+			UpdatedAt:                 now.Add(-120 * time.Second),
 			DCs: []RuntimeDC{{DC: 4, AvailableEndpoints: 4, AvailablePct: 100, RequiredWriters: 6, AliveWriters: 4, CoveragePct: 73, RTTMs: 64, Load: 2}},
 			RecentEvents: []RuntimeEvent{{Sequence: 2, TimestampUnix: now.Add(-20 * time.Second).Unix(), EventType: "dc_coverage_dropped", Context: "dc=4 coverage=73"}},
 		},

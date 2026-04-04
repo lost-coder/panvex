@@ -19,7 +19,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
-      - run: go test ./...
+      - run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-coverage
+          path: coverage.out
 
   panel-build:
     name: Build Binaries
@@ -49,30 +55,42 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: panvex
+      - uses: actions/checkout@v4
+        with:
+          repository: lost-coder/panvex-ui
+          path: ui
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - run: npm ci
-        working-directory: web
-      - run: npm run build
-        working-directory: web
+      - name: Build UI kit
+        working-directory: ui
+        run: npm ci && npm run build
+      - name: Install and build frontend
+        working-directory: panvex/web
+        run: npm ci && npm run build
 
   frontend-lint:
     name: Frontend Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: panvex
+      - uses: actions/checkout@v4
+        with:
+          repository: lost-coder/panvex-ui
+          path: ui
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - run: npm ci
-        working-directory: web
-      - run: npm run lint
-        working-directory: web
+      - name: Build UI kit
+        working-directory: ui
+        run: npm ci && npm run build
+      - name: Lint frontend
+        working-directory: panvex/web
+        run: npm ci && npm run lint
 
   buf-lint:
     name: Protobuf Lint
