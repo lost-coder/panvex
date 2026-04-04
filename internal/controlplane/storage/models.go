@@ -103,6 +103,7 @@ type TelemetryDiagnosticsCurrentRecord struct {
 	SecurityPostureJSON  string
 	MinimalAllJSON       string
 	MEPoolJSON           string
+	DcsJSON              string
 }
 
 // TelemetrySecurityInventoryCurrentRecord stores the latest security inventory payload for one node.

@@ -109,6 +109,7 @@ type RuntimeDiagnostics struct {
 	SecurityPostureJSON string
 	MinimalAllJSON      string
 	MEPoolJSON          string
+	DcsJSON             string
 }
 
 // RuntimeSecurityInventory carries whitelist inventory data used by security detail sections.
@@ -549,6 +550,11 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, e
 	} else if diagnostics.State == "fresh" {
 		diagnostics.State = "unavailable"
 		diagnostics.StateReason = "me_pool_unavailable"
+	}
+
+	dcsDetail := map[string]any{}
+	if err := c.getJSON(ctx, "/v1/stats/dcs", &dcsDetail); err == nil {
+		diagnostics.DcsJSON = marshalJSON(dcsDetail)
 	}
 
 	securityInventory := RuntimeSecurityInventory{

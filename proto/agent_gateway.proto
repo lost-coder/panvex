@@ -136,6 +136,7 @@ message RuntimeDiagnosticsSnapshot {
   string security_posture_json = 5;
   string minimal_all_json = 6;
   string me_pool_json = 7;
+  string dcs_json = 8;
 }
 
 message RuntimeSecurityInventorySnapshot {

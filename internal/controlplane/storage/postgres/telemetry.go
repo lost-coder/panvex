@@ -303,9 +303,9 @@ func (s *Store) PutTelemetryDiagnosticsCurrent(ctx context.Context, record stora
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO telemt_diagnostics_current (
 			agent_id, observed_at, state, state_reason, system_info_json, effective_limits_json,
-			security_posture_json, minimal_all_json, me_pool_json
+			security_posture_json, minimal_all_json, me_pool_json, dcs_json
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (agent_id) DO UPDATE
 		SET observed_at = EXCLUDED.observed_at,
 		    state = EXCLUDED.state,
@@ -314,22 +314,23 @@ func (s *Store) PutTelemetryDiagnosticsCurrent(ctx context.Context, record stora
 		    effective_limits_json = EXCLUDED.effective_limits_json,
 		    security_posture_json = EXCLUDED.security_posture_json,
 		    minimal_all_json = EXCLUDED.minimal_all_json,
-		    me_pool_json = EXCLUDED.me_pool_json
-	`, record.AgentID, record.ObservedAt.UTC(), record.State, record.StateReason, record.SystemInfoJSON, record.EffectiveLimitsJSON, record.SecurityPostureJSON, record.MinimalAllJSON, record.MEPoolJSON)
+		    me_pool_json = EXCLUDED.me_pool_json,
+		    dcs_json = EXCLUDED.dcs_json
+	`, record.AgentID, record.ObservedAt.UTC(), record.State, record.StateReason, record.SystemInfoJSON, record.EffectiveLimitsJSON, record.SecurityPostureJSON, record.MinimalAllJSON, record.MEPoolJSON, record.DcsJSON)
 	return err
 }
 
 func (s *Store) GetTelemetryDiagnosticsCurrent(ctx context.Context, agentID string) (storage.TelemetryDiagnosticsCurrentRecord, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT agent_id, observed_at, state, state_reason, system_info_json, effective_limits_json,
-		       security_posture_json, minimal_all_json, me_pool_json
+		       security_posture_json, minimal_all_json, me_pool_json, dcs_json
 		FROM telemt_diagnostics_current
 		WHERE agent_id = $1
 	`, agentID)
 
 	var record storage.TelemetryDiagnosticsCurrentRecord
 	if err := row.Scan(&record.AgentID, &record.ObservedAt, &record.State, &record.StateReason, &record.SystemInfoJSON,
-		&record.EffectiveLimitsJSON, &record.SecurityPostureJSON, &record.MinimalAllJSON, &record.MEPoolJSON); err != nil {
+		&record.EffectiveLimitsJSON, &record.SecurityPostureJSON, &record.MinimalAllJSON, &record.MEPoolJSON, &record.DcsJSON); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.TelemetryDiagnosticsCurrentRecord{}, storage.ErrNotFound
 		}

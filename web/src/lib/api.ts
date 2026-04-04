@@ -168,6 +168,7 @@ export type TelemetryServerDetailResponse = {
     security_posture: Record<string, unknown>;
     minimal_all: Record<string, unknown>;
     me_pool: Record<string, unknown>;
+    dcs_detail: Record<string, unknown>;
   };
   security_inventory: {
     state: string;

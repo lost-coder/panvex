@@ -133,6 +133,7 @@ CREATE TABLE IF NOT EXISTS telemt_diagnostics_current (
     security_posture_json TEXT NOT NULL DEFAULT '{}',
     minimal_all_json TEXT NOT NULL DEFAULT '{}',
     me_pool_json TEXT NOT NULL DEFAULT '{}',
+    dcs_json TEXT NOT NULL DEFAULT '{}',
     FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
 );
 

@@ -7,11 +7,13 @@ import {
   createRouter,
   lazyRouteComponent,
   redirect,
+  useNavigate,
+  useRouterState,
 } from "@tanstack/react-router";
+import { LayoutDashboard, Server, Users, Settings } from "lucide-react";
 
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { AppShell } from "@/components/app-shell";
-import { AppearanceProvider } from "@/components/appearance-provider";
+import { AppShell, type NavItem } from "@panvex/ui";
+import { AppearanceProvider } from "@/providers/AppearanceProvider";
 import { apiClient } from "@/lib/api";
 
 interface RouterContext {
@@ -20,58 +22,81 @@ interface RouterContext {
 
 const rootRoute = createRootRouteWithContext<RouterContext>()({ component: Outlet });
 
+const NAV_ITEMS: NavItem[] = [
+  { id: "/", label: "Dashboard", icon: <LayoutDashboard size={20} /> },
+  { id: "/servers", label: "Servers", icon: <Server size={20} /> },
+  { id: "/clients", label: "Clients", icon: <Users size={20} /> },
+  { id: "/settings", label: "Settings", icon: <Settings size={20} /> },
+];
+
 function ProtectedShell() {
   const { data: me } = useQuery({
     queryKey: ["me"],
     queryFn: () => apiClient.me(),
   });
+  const navigate = useNavigate();
+  const { location } = useRouterState();
+
+  const activeId =
+    NAV_ITEMS.find(
+      (item) => item.id !== "/" && location.pathname.startsWith(item.id),
+    )?.id ?? "/";
+
   return (
     <AppearanceProvider userID={me?.id ?? ""}>
-      <TooltipProvider>
-        <AppShell><Outlet /></AppShell>
-      </TooltipProvider>
+      <AppShell
+        navItems={NAV_ITEMS}
+        activeId={activeId}
+        brand="Panvex"
+        onNavigate={(id) => navigate({ to: id })}
+      >
+        <Outlet />
+      </AppShell>
     </AppearanceProvider>
   );
 }
 
-const LoginPage = lazyRouteComponent(
-  () => import("@/features/login/login-page"),
-  "LoginPage",
+const LoginContainer = lazyRouteComponent(
+  () => import("@/containers/LoginContainer").then((m) => ({ default: m.LoginContainer })),
+  "default",
 );
 
-const DashboardPage = lazyRouteComponent(
-  () => import("@/features/dashboard/dashboard-page"),
-  "DashboardPage",
+const DashboardContainer = lazyRouteComponent(
+  () =>
+    import("@/containers/DashboardContainer").then((m) => ({
+      default: m.DashboardContainer,
+    })),
+  "default",
 );
 
-const ServersPage = lazyRouteComponent(
-  () => import("@/features/servers/servers-page"),
-  "ServersPage",
+const ServersContainer = lazyRouteComponent(
+  () => import("@/containers/ServersContainer").then((m) => ({ default: m.ServersContainer })),
+  "default",
 );
 
-const ServerDetailPage = lazyRouteComponent(
-  () => import("@/features/servers/server-detail-page"),
-  "ServerDetailPage",
+const ServerDetailContainer = lazyRouteComponent(
+  () => import("@/containers/ServerDetailContainer").then((m) => ({ default: m.ServerDetailContainer })),
+  "default",
 );
 
-const ClientsPage = lazyRouteComponent(
-  () => import("@/features/clients/clients-page"),
-  "ClientsPage",
+const ClientsContainer = lazyRouteComponent(
+  () => import("@/containers/ClientsContainer").then((m) => ({ default: m.ClientsContainer })),
+  "default",
 );
 
-const ClientDetailPage = lazyRouteComponent(
-  () => import("@/features/clients/client-detail-page"),
-  "ClientDetailPage",
+const ClientDetailContainer = lazyRouteComponent(
+  () => import("@/containers/ClientDetailContainer").then((m) => ({ default: m.ClientDetailContainer })),
+  "default",
 );
 
-const SettingsPage = lazyRouteComponent(
-  () => import("@/features/settings/settings-page"),
-  "SettingsPage",
+const SettingsContainer = lazyRouteComponent(
+  () => import("@/containers/SettingsContainer").then((m) => ({ default: m.SettingsContainer })),
+  "default",
 );
 
-const ProfilePage = lazyRouteComponent(
-  () => import("@/features/profile/profile-page"),
-  "ProfilePage",
+const ProfileContainer = lazyRouteComponent(
+  () => import("@/containers/ProfileContainer").then((m) => ({ default: m.ProfileContainer })),
+  "default",
 );
 
 const shellRoute = createRoute({
@@ -87,49 +112,49 @@ const shellRoute = createRoute({
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
-  component: LoginPage,
+  component: LoginContainer,
 });
 
 const dashboardRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/",
-  component: DashboardPage,
+  component: DashboardContainer,
 });
 
 const serversRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/servers",
-  component: ServersPage,
+  component: ServersContainer,
 });
 
 const serverDetailRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/servers/$serverId",
-  component: ServerDetailPage,
+  component: ServerDetailContainer,
 });
 
 const clientsRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/clients",
-  component: ClientsPage,
+  component: ClientsContainer,
 });
 
 const clientDetailRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/clients/$clientId",
-  component: ClientDetailPage,
+  component: ClientDetailContainer,
 });
 
 const settingsRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/settings",
-  component: SettingsPage,
+  component: SettingsContainer,
 });
 
 const profileRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/profile",
-  component: ProfilePage,
+  component: ProfileContainer,
 });
 
 const routeTree = rootRoute.addChildren([
