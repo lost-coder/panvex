@@ -124,6 +124,7 @@ func (s *Server) handleTelemetryServerDetail() http.HandlerFunc {
 					SecurityPosture: decodeJSONMap(record.SecurityPostureJSON),
 					MinimalAll:      decodeJSONMap(record.MinimalAllJSON),
 					MEPool:          decodeJSONMap(record.MEPoolJSON),
+					DcsDetail:       decodeJSONMap(record.DcsJSON),
 				}
 			}
 			if record, err := s.store.GetTelemetrySecurityInventoryCurrent(r.Context(), agentID); err == nil {

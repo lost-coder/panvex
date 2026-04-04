@@ -185,24 +185,44 @@ export function transformServerDetail(
     readOnly: agent?.read_only ?? false,
   };
 
+  // Build a lookup from dcs_detail diagnostics blob for endpoints/floor data
+  const dcsDetailBlob = detail.diagnostics?.dcs_detail as Record<string, unknown> | undefined;
+  const dcsDetailArray = Array.isArray(dcsDetailBlob?.dcs) ? dcsDetailBlob!.dcs as Record<string, unknown>[] : [];
+  const dcsDetailMap = new Map<number, Record<string, unknown>>();
+  for (const d of dcsDetailArray) {
+    if (typeof d.dc === "number") dcsDetailMap.set(d.dc, d);
+  }
+
   const dcs: ServerDetailPageProps["server"]["dcs"] = (
     runtime?.dcs ?? []
-  ).map((dc) => ({
-    dc: dc.dc,
-    endpoints: [],
-    endpointWriters: [],
-    availableEndpoints: dc.available_endpoints ?? 0,
-    availablePct: dc.available_pct ?? 0,
-    requiredWriters: dc.required_writers ?? 0,
-    aliveWriters: dc.alive_writers ?? 0,
-    coveragePct: dc.coverage_pct ?? 0,
-    floorMin: 0,
-    floorTarget: 0,
-    floorMax: 0,
-    floorCapped: false,
-    rttMs: dc.rtt_ms > 0 ? dc.rtt_ms : undefined,
-    load: dc.load ?? 0,
-  }));
+  ).map((dc) => {
+    const detail = dcsDetailMap.get(dc.dc);
+    const endpoints = Array.isArray(detail?.endpoints)
+      ? (detail!.endpoints as string[])
+      : [];
+    const endpointWriters = Array.isArray(detail?.endpoint_writers)
+      ? (detail!.endpoint_writers as Array<Record<string, unknown>>).map((ew) => ({
+          endpoint: String(ew.endpoint ?? ""),
+          activeWriters: num(ew.active_writers),
+        }))
+      : [];
+    return {
+      dc: dc.dc,
+      endpoints,
+      endpointWriters,
+      availableEndpoints: dc.available_endpoints ?? 0,
+      availablePct: dc.available_pct ?? 0,
+      requiredWriters: dc.required_writers ?? 0,
+      aliveWriters: dc.alive_writers ?? 0,
+      coveragePct: dc.coverage_pct ?? 0,
+      floorMin: num(detail?.floor_min),
+      floorTarget: num(detail?.floor_target),
+      floorMax: num(detail?.floor_max),
+      floorCapped: detail?.floor_capped === true,
+      rttMs: dc.rtt_ms > 0 ? dc.rtt_ms : undefined,
+      load: dc.load ?? 0,
+    };
+  });
 
   const connections: ServerDetailPageProps["server"]["connections"] = {
     current: runtime?.current_connections ?? 0,

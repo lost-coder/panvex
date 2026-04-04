@@ -1172,6 +1172,7 @@ type RuntimeDiagnosticsSnapshot struct {
 	SecurityPostureJson string                 `protobuf:"bytes,5,opt,name=security_posture_json,json=securityPostureJson,proto3" json:"security_posture_json,omitempty"`
 	MinimalAllJson      string                 `protobuf:"bytes,6,opt,name=minimal_all_json,json=minimalAllJson,proto3" json:"minimal_all_json,omitempty"`
 	MePoolJson          string                 `protobuf:"bytes,7,opt,name=me_pool_json,json=mePoolJson,proto3" json:"me_pool_json,omitempty"`
+	DcsJson             string                 `protobuf:"bytes,8,opt,name=dcs_json,json=dcsJson,proto3" json:"dcs_json,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -1251,6 +1252,13 @@ func (x *RuntimeDiagnosticsSnapshot) GetMinimalAllJson() string {
 func (x *RuntimeDiagnosticsSnapshot) GetMePoolJson() string {
 	if x != nil {
 		return x.MePoolJson
+	}
+	return ""
+}
+
+func (x *RuntimeDiagnosticsSnapshot) GetDcsJson() string {
+	if x != nil {
+		return x.DcsJson
 	}
 	return ""
 }
@@ -2278,7 +2286,7 @@ const file_proto_agent_gateway_proto_rawDesc = "" +
 	"\rrecent_events\x18\x17 \x03(\v2'.panvex.gateway.v1.RuntimeEventSnapshotR\frecentEvents\x12%\n" +
 	"\x0euptime_seconds\x18\x18 \x01(\x01R\ruptimeSeconds\x12M\n" +
 	"\vsystem_load\x18\x19 \x01(\v2,.panvex.gateway.v1.RuntimeSystemLoadSnapshotR\n" +
-	"systemLoad\"\xb3\x02\n" +
+	"systemLoad\"\xce\x02\n" +
 	"\x1aRuntimeDiagnosticsSnapshot\x12\x14\n" +
 	"\x05state\x18\x01 \x01(\tR\x05state\x12!\n" +
 	"\fstate_reason\x18\x02 \x01(\tR\vstateReason\x12(\n" +
@@ -2287,7 +2295,8 @@ const file_proto_agent_gateway_proto_rawDesc = "" +
 	"\x15security_posture_json\x18\x05 \x01(\tR\x13securityPostureJson\x12(\n" +
 	"\x10minimal_all_json\x18\x06 \x01(\tR\x0eminimalAllJson\x12 \n" +
 	"\fme_pool_json\x18\a \x01(\tR\n" +
-	"mePoolJson\"\xbd\x01\n" +
+	"mePoolJson\x12\x19\n" +
+	"\bdcs_json\x18\b \x01(\tR\adcsJson\"\xbd\x01\n" +
 	" RuntimeSecurityInventorySnapshot\x12\x14\n" +
 	"\x05state\x18\x01 \x01(\tR\x05state\x12!\n" +
 	"\fstate_reason\x18\x02 \x01(\tR\vstateReason\x12\x18\n" +

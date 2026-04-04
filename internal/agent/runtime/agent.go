@@ -276,6 +276,7 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 		SecurityPostureJson: state.Diagnostics.SecurityPostureJSON,
 		MinimalAllJson:      state.Diagnostics.MinimalAllJSON,
 		MePoolJson:          state.Diagnostics.MEPoolJSON,
+		DcsJson:             state.Diagnostics.DcsJSON,
 	}
 	snapshot.RuntimeSecurityInventory = &gatewayrpc.RuntimeSecurityInventorySnapshot{
 		State:       state.SecurityInventory.State,

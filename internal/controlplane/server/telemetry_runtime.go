@@ -88,6 +88,7 @@ type telemetryDiagnosticsResponse struct {
 	SecurityPosture map[string]any `json:"security_posture"`
 	MinimalAll      map[string]any `json:"minimal_all"`
 	MEPool          map[string]any `json:"me_pool"`
+	DcsDetail       map[string]any `json:"dcs_detail"`
 }
 
 type telemetrySecurityInventoryResponse struct {

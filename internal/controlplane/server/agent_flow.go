@@ -218,6 +218,7 @@ func (s *Server) applyAgentSnapshotWithContext(ctx context.Context, snapshot age
 					SecurityPostureJSON: snapshot.RuntimeDiagnostics.SecurityPostureJson,
 					MinimalAllJSON:      snapshot.RuntimeDiagnostics.MinimalAllJson,
 					MEPoolJSON:          snapshot.RuntimeDiagnostics.MePoolJson,
+					DcsJSON:             snapshot.RuntimeDiagnostics.DcsJson,
 				}); err != nil {
 					return err
 				}

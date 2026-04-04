@@ -610,8 +610,8 @@ func TestClientFetchRuntimeStateCachesSlowEndpointsWithinTTL(t *testing.T) {
 	if counts["/v1/runtime/connections/summary"] != 2 {
 		t.Fatalf("connection summary requests = %d, want %d", counts["/v1/runtime/connections/summary"], 2)
 	}
-	if counts["/v1/stats/dcs"] != 2 {
-		t.Fatalf("dc requests = %d, want %d", counts["/v1/stats/dcs"], 2)
+	if counts["/v1/stats/dcs"] != 3 {
+		t.Fatalf("dc requests = %d, want %d (2 fast + 1 slow)", counts["/v1/stats/dcs"], 3)
 	}
 	if counts["/v1/system/info"] != 1 {
 		t.Fatalf("system info requests = %d, want %d", counts["/v1/system/info"], 1)

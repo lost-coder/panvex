@@ -126,7 +126,8 @@ CREATE TABLE IF NOT EXISTS telemt_diagnostics_current (
     effective_limits_json TEXT NOT NULL DEFAULT '{}',
     security_posture_json TEXT NOT NULL DEFAULT '{}',
     minimal_all_json TEXT NOT NULL DEFAULT '{}',
-    me_pool_json TEXT NOT NULL DEFAULT '{}'
+    me_pool_json TEXT NOT NULL DEFAULT '{}',
+    dcs_json TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS telemt_security_inventory_current (
