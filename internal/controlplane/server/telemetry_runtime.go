@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	telemetryRuntimeStaleAfter = 30 * time.Second
+	telemetryRuntimeStaleAfter = 90 * time.Second
 	telemetryInitializationWatchCooldown = 90 * time.Second
 )
 

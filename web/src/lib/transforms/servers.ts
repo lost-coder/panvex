@@ -39,7 +39,7 @@ function mapDcs(
     dc: dc.dc,
     status:
       dc.coverage_pct >= 99.5 ? "ok" : dc.coverage_pct > 0 ? "warn" : "error",
-    rttMs: dc.rtt_ms > 0 ? dc.rtt_ms : null,
+    rttMs: dc.rtt_ms > 0 ? Math.round(dc.rtt_ms * 10) / 10 : null,
     coveragePct: dc.coverage_pct,
     load: dc.load,
   }));
@@ -219,7 +219,7 @@ export function transformServerDetail(
       floorTarget: num(detail?.floor_target),
       floorMax: num(detail?.floor_max),
       floorCapped: detail?.floor_capped === true,
-      rttMs: dc.rtt_ms > 0 ? dc.rtt_ms : undefined,
+      rttMs: dc.rtt_ms > 0 ? Math.round(dc.rtt_ms * 10) / 10 : undefined,
       load: dc.load ?? 0,
     };
   });
