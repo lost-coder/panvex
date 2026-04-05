@@ -322,6 +322,35 @@ export type ClientInput = {
   agent_ids: string[];
 };
 
+export type DiscoveredClientConflict = {
+  type: "same_secret_different_names" | "same_name_different_secrets";
+  related_ids: string[];
+};
+
+export type DiscoveredClient = {
+  id: string;
+  agent_id: string;
+  node_name: string;
+  client_name: string;
+  status: "pending_review" | "adopted" | "ignored";
+  total_octets: number;
+  current_connections: number;
+  active_unique_ips: number;
+  connection_link: string;
+  max_tcp_conns: number;
+  max_unique_ips: number;
+  data_quota_bytes: number;
+  expiration: string;
+  discovered_at_unix: number;
+  updated_at_unix: number;
+  conflicts?: DiscoveredClientConflict[];
+};
+
+export type AdoptDiscoveredClientResponse = {
+  client_id: string;
+  name: string;
+};
+
 export type PanelSettingsResponse = {
   http_public_url: string;
   http_root_path: string;
@@ -531,5 +560,14 @@ export const apiClient = {
   revokeEnrollmentToken: (value: string) =>
     api<void>(`${apiBasePath}/agents/enrollment-tokens/${value}/revoke`, {
       method: "POST"
-    })
+    }),
+  discoveredClients: () => api<DiscoveredClient[]>(`${apiBasePath}/discovered-clients`),
+  adoptDiscoveredClient: (id: string) =>
+    api<AdoptDiscoveredClientResponse>(`${apiBasePath}/discovered-clients/${id}/adopt`, {
+      method: "POST"
+    }),
+  ignoreDiscoveredClient: (id: string) =>
+    api<void>(`${apiBasePath}/discovered-clients/${id}/ignore`, {
+      method: "POST"
+    }),
 };

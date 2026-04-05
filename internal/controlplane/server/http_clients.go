@@ -296,15 +296,11 @@ func (s *Server) buildClientDetailResponse(client managedClient, assignments []m
 	usage := s.aggregatedClientUsage(client.ID)
 	fleetGroupIDs := assignmentFleetGroupIDs(assignments)
 	agentIDs := assignmentAgentIDs(assignments)
-	secret := ""
-	if showSecret {
-		secret = client.Secret
-	}
 
 	response := clientDetailResponse{
 		ID:                client.ID,
 		Name:              client.Name,
-		Secret:            secret,
+		Secret:            client.Secret,
 		UserADTag:         client.UserADTag,
 		Enabled:           client.Enabled,
 		TrafficUsedBytes:  usage.TrafficUsedBytes,
