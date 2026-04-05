@@ -15,5 +15,5 @@ export function useClientDetail(clientId: string) {
     ? transformClientDetail(query.data)
     : undefined;
 
-  return { client, isLoading: query.isLoading, error: query.error };
+  return { client, raw: query.data, isLoading: query.isLoading, error: query.error };
 }

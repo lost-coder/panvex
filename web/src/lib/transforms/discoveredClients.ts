@@ -1,5 +1,6 @@
 import type { DiscoveredClientItem } from "@panvex/ui";
 import type { DiscoveredClient as ApiDiscoveredClient } from "../api";
+import { parseConnectionLink } from "./clients";
 
 export function transformDiscoveredClientList(
   raw: ApiDiscoveredClient[]
@@ -13,7 +14,7 @@ export function transformDiscoveredClientList(
     totalOctets: dc.total_octets,
     currentConnections: dc.current_connections,
     activeUniqueIps: dc.active_unique_ips,
-    connectionLink: dc.connection_link,
+    links: parseConnectionLink(dc.connection_link),
     maxTcpConns: dc.max_tcp_conns,
     maxUniqueIps: dc.max_unique_ips,
     dataQuotaBytes: dc.data_quota_bytes,
