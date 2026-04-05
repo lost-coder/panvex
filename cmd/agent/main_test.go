@@ -802,6 +802,14 @@ func (c *fakeInitialSyncTelemtClient) DeleteClient(context.Context, string) erro
 	return nil
 }
 
+func (c *fakeInitialSyncTelemtClient) FetchSystemInfo(context.Context) (telemt.SystemInfo, error) {
+	return telemt.SystemInfo{}, nil
+}
+
+func (c *fakeInitialSyncTelemtClient) FetchDiscoveredUsers(context.Context, string) ([]telemt.DiscoveredUser, error) {
+	return nil, nil
+}
+
 func (c *fakeInitialSyncTelemtClient) InvalidateSlowDataCache() {}
 
 type fakeDiagnosticsRefreshTelemtClient struct {
@@ -839,6 +847,14 @@ func (c *fakeDiagnosticsRefreshTelemtClient) UpdateClient(context.Context, telem
 
 func (c *fakeDiagnosticsRefreshTelemtClient) DeleteClient(context.Context, string) error {
 	return nil
+}
+
+func (c *fakeDiagnosticsRefreshTelemtClient) FetchSystemInfo(context.Context) (telemt.SystemInfo, error) {
+	return telemt.SystemInfo{}, nil
+}
+
+func (c *fakeDiagnosticsRefreshTelemtClient) FetchDiscoveredUsers(context.Context, string) ([]telemt.DiscoveredUser, error) {
+	return nil, nil
 }
 
 func (c *fakeDiagnosticsRefreshTelemtClient) InvalidateSlowDataCache() {
