@@ -69,6 +69,23 @@ type ClientDeployment struct {
 	UpdatedAt        pgtype.Timestamptz
 }
 
+type DiscoveredClient struct {
+	ID                 string
+	AgentID            string
+	ClientName         string
+	Status             string
+	TotalOctets        int64
+	CurrentConnections int32
+	ActiveUniqueIps    int32
+	ConnectionLink     string
+	MaxTcpConns        int32
+	MaxUniqueIps       int32
+	DataQuotaBytes     int64
+	Expiration         string
+	DiscoveredAt       pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+}
+
 type EnrollmentToken struct {
 	Value        string
 	FleetGroupID pgtype.Text
