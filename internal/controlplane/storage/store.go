@@ -114,6 +114,16 @@ type ClientStore interface {
 	ListClientDeployments(ctx context.Context, clientID string) ([]ClientDeploymentRecord, error)
 }
 
+// DiscoveredClientStore persists Telemt users found on agents that are not managed by the panel.
+type DiscoveredClientStore interface {
+	PutDiscoveredClient(ctx context.Context, record DiscoveredClientRecord) error
+	ListDiscoveredClients(ctx context.Context) ([]DiscoveredClientRecord, error)
+	ListDiscoveredClientsByAgent(ctx context.Context, agentID string) ([]DiscoveredClientRecord, error)
+	GetDiscoveredClient(ctx context.Context, id string) (DiscoveredClientRecord, error)
+	UpdateDiscoveredClientStatus(ctx context.Context, id string, status string, updatedAt time.Time) error
+	DeleteDiscoveredClient(ctx context.Context, id string) error
+}
+
 // Store aggregates the persistence capabilities required by the control-plane.
 type Store interface {
 	UserStore
@@ -128,6 +138,7 @@ type Store interface {
 	PanelSettingsStore
 	CertificateAuthorityStore
 	ClientStore
+	DiscoveredClientStore
 
 	Close() error
 }

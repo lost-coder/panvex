@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -27,6 +28,7 @@ const clientJobTTL = 10 * time.Minute
 
 type clientMutationInput struct {
 	Name              string
+	Secret            string
 	Enabled           *bool
 	UserADTag         string
 	MaxTCPConns       int
@@ -170,9 +172,16 @@ func (s *Server) createClientWithContext(ctx context.Context, actorID string, in
 		return managedClient{}, nil, nil, err
 	}
 
-	secret, err := randomHexString(16)
-	if err != nil {
-		return managedClient{}, nil, nil, err
+	secret := strings.TrimSpace(input.Secret)
+	if secret != "" {
+		if !isValidHexSecret(secret) {
+			return managedClient{}, nil, nil, fmt.Errorf("invalid secret format: must be 32 hex characters")
+		}
+	} else {
+		secret, err = randomHexString(16)
+		if err != nil {
+			return managedClient{}, nil, nil, err
+		}
 	}
 
 	expirationRFC3339, err := normalizedExpiration(input.ExpirationRFC3339)
@@ -730,4 +739,10 @@ func randomHexString(size int) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(buffer), nil
+}
+
+var hexSecret32 = regexp.MustCompile(`^[0-9a-fA-F]{32}$`)
+
+func isValidHexSecret(s string) bool {
+	return hexSecret32.MatchString(s)
 }

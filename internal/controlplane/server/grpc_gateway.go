@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"time"
@@ -230,6 +231,11 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 			return
 		}
 
+		// Request a full client list from the agent for user discovery.
+		if err := sendClientDataRequest(stream, fmt.Sprintf("discovery-%s-%d", agentID, time.Now().Unix())); err != nil {
+			log.Printf("control-plane client discovery request failed for agent %s: %v", agentID, err)
+		}
+
 		for {
 			select {
 			case <-connectionCtx.Done():
@@ -414,6 +420,11 @@ func (s *Server) processRegularAgentMessage(
 			Metrics:      snap.Metrics,
 			ObservedAt:   time.Unix(snap.ObservedAtUnix, 0).UTC(),
 		})
+		return nil
+	}
+
+	if resp := message.GetClientDataResponse(); resp != nil {
+		go s.reconcileDiscoveredClients(connectionCtx, agentID, resp.GetClients(), s.now())
 		return nil
 	}
 

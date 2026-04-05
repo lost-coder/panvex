@@ -265,3 +265,22 @@ type ClientDeploymentRecord struct {
 	LastAppliedAt    *time.Time
 	UpdatedAt        time.Time
 }
+
+// DiscoveredClientRecord stores one Telemt user found on an agent that is not managed by the panel.
+type DiscoveredClientRecord struct {
+	ID                string
+	AgentID           string
+	ClientName        string
+	Secret            string
+	Status            string
+	TotalOctets       uint64
+	CurrentConnections int
+	ActiveUniqueIPs   int
+	ConnectionLink    string
+	MaxTCPConns       int
+	MaxUniqueIPs      int
+	DataQuotaBytes    int64
+	Expiration        string
+	DiscoveredAt      time.Time
+	UpdatedAt         time.Time
+}

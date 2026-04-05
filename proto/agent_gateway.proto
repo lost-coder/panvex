@@ -217,6 +217,9 @@ message ClientDetailRecord {
   string expiration = 9;
   uint64 data_quota_bytes = 10;
   int32 max_unique_ips = 11;
+  string secret = 12;
+  string user_ad_tag = 13;
+  bool enabled = 14;
 }
 
 message ConnectClientMessage {
