@@ -89,6 +89,11 @@ const ClientDetailContainer = lazyRouteComponent(
   "default",
 );
 
+const DiscoveredClientsContainer = lazyRouteComponent(
+  () => import("@/containers/DiscoveredClientsContainer").then((m) => ({ default: m.DiscoveredClientsContainer })),
+  "default",
+);
+
 const SettingsContainer = lazyRouteComponent(
   () => import("@/containers/SettingsContainer").then((m) => ({ default: m.SettingsContainer })),
   "default",
@@ -145,6 +150,12 @@ const clientDetailRoute = createRoute({
   component: ClientDetailContainer,
 });
 
+const discoveredClientsRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/clients/discovered",
+  component: DiscoveredClientsContainer,
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/settings",
@@ -164,6 +175,7 @@ const routeTree = rootRoute.addChildren([
     serversRoute,
     serverDetailRoute,
     clientsRoute,
+    discoveredClientsRoute,
     clientDetailRoute,
     settingsRoute,
     profileRoute,

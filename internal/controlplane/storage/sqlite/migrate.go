@@ -294,7 +294,65 @@ func Migrate(db *sql.DB) error {
 		return err
 	}
 
-	return ensureJobTargetsResultJSONColumn(db)
+	if err := ensureJobTargetsResultJSONColumn(db); err != nil {
+		return err
+	}
+
+	_, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS discovered_clients (
+			id TEXT PRIMARY KEY,
+			agent_id TEXT NOT NULL,
+			client_name TEXT NOT NULL,
+			secret TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT 'pending_review',
+			total_octets INTEGER NOT NULL DEFAULT 0,
+			current_connections INTEGER NOT NULL DEFAULT 0,
+			active_unique_ips INTEGER NOT NULL DEFAULT 0,
+			connection_link TEXT NOT NULL DEFAULT '',
+			max_tcp_conns INTEGER NOT NULL DEFAULT 0,
+			max_unique_ips INTEGER NOT NULL DEFAULT 0,
+			data_quota_bytes INTEGER NOT NULL DEFAULT 0,
+			expiration TEXT NOT NULL DEFAULT '',
+			discovered_at_unix INTEGER NOT NULL,
+			updated_at_unix INTEGER NOT NULL,
+			UNIQUE (agent_id, client_name),
+			FOREIGN KEY (agent_id) REFERENCES agents (id)
+		)
+	`)
+	if err != nil {
+		return err
+	}
+
+	// Add secret column to existing discovered_clients tables (migration).
+	return ensureDiscoveredClientsSecretColumn(db)
+}
+
+func ensureDiscoveredClientsSecretColumn(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(discovered_clients)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name, columnType string
+		var notNull int
+		var defaultValue any
+		var primaryKey int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return err
+		}
+		if name == "secret" {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`ALTER TABLE discovered_clients ADD COLUMN secret TEXT NOT NULL DEFAULT ''`)
+	return err
 }
 
 func ensureUsersTotpEnabledColumn(db *sql.DB) error {

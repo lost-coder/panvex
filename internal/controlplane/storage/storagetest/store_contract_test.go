@@ -40,6 +40,7 @@ type memoryStore struct {
 	metricSnapshots    []storage.MetricSnapshotRecord
 	enrollmentTokens   map[string]storage.EnrollmentTokenRecord
 	agentCertificateRecoveryGrants map[string]storage.AgentCertificateRecoveryGrantRecord
+	discoveredClients  map[string]storage.DiscoveredClientRecord
 	panelSettings      *storage.PanelSettingsRecord
 	certificateAuthority *storage.CertificateAuthorityRecord
 }
@@ -69,6 +70,7 @@ func newMemoryStore() *memoryStore {
 		metricSnapshots:  make([]storage.MetricSnapshotRecord, 0),
 		enrollmentTokens: make(map[string]storage.EnrollmentTokenRecord),
 		agentCertificateRecoveryGrants: make(map[string]storage.AgentCertificateRecoveryGrantRecord),
+		discoveredClients: make(map[string]storage.DiscoveredClientRecord),
 	}
 }
 
@@ -548,4 +550,65 @@ func (s *memoryStore) RevokeAgentCertificateRecoveryGrant(_ context.Context, age
 	grant.RevokedAt = &revokedAt
 	s.agentCertificateRecoveryGrants[agentID] = grant
 	return grant, nil
+}
+
+func (s *memoryStore) PutDiscoveredClient(_ context.Context, record storage.DiscoveredClientRecord) error {
+	// Match UPSERT behavior: key by (agent_id, client_name).
+	for id, existing := range s.discoveredClients {
+		if existing.AgentID == record.AgentID && existing.ClientName == record.ClientName {
+			if existing.Status == "ignored" {
+				record.Status = existing.Status
+			}
+			record.ID = id
+			s.discoveredClients[id] = record
+			return nil
+		}
+	}
+	s.discoveredClients[record.ID] = record
+	return nil
+}
+
+func (s *memoryStore) ListDiscoveredClients(_ context.Context) ([]storage.DiscoveredClientRecord, error) {
+	result := make([]storage.DiscoveredClientRecord, 0, len(s.discoveredClients))
+	for _, r := range s.discoveredClients {
+		result = append(result, r)
+	}
+	return result, nil
+}
+
+func (s *memoryStore) ListDiscoveredClientsByAgent(_ context.Context, agentID string) ([]storage.DiscoveredClientRecord, error) {
+	result := make([]storage.DiscoveredClientRecord, 0)
+	for _, r := range s.discoveredClients {
+		if r.AgentID == agentID {
+			result = append(result, r)
+		}
+	}
+	return result, nil
+}
+
+func (s *memoryStore) GetDiscoveredClient(_ context.Context, id string) (storage.DiscoveredClientRecord, error) {
+	r, ok := s.discoveredClients[id]
+	if !ok {
+		return storage.DiscoveredClientRecord{}, storage.ErrNotFound
+	}
+	return r, nil
+}
+
+func (s *memoryStore) UpdateDiscoveredClientStatus(_ context.Context, id string, status string, updatedAt time.Time) error {
+	r, ok := s.discoveredClients[id]
+	if !ok {
+		return storage.ErrNotFound
+	}
+	r.Status = status
+	r.UpdatedAt = updatedAt
+	s.discoveredClients[id] = r
+	return nil
+}
+
+func (s *memoryStore) DeleteDiscoveredClient(_ context.Context, id string) error {
+	if _, ok := s.discoveredClients[id]; !ok {
+		return storage.ErrNotFound
+	}
+	delete(s.discoveredClients, id)
+	return nil
 }
