@@ -1,11 +1,15 @@
+import { useState } from "react";
 import { ClientDetailPage, Spinner } from "@panvex/ui";
 import { useClientDetail } from "@/hooks/useClientDetail";
+import { useClientMutations } from "@/hooks/useClientMutations";
 import { useNavigate, useParams } from "@tanstack/react-router";
 
 export function ClientDetailContainer() {
   const { clientId } = useParams({ strict: false });
-  const { client, isLoading } = useClientDetail(clientId ?? "");
+  const { client, raw, isLoading } = useClientDetail(clientId ?? "");
+  const { editMutation, rotateMutation } = useClientMutations(clientId ?? "", raw);
   const navigate = useNavigate();
+  const [secretPending, setSecretPending] = useState(false);
 
   if (isLoading || !client) {
     return <div className="flex items-center justify-center h-64"><Spinner /></div>;
@@ -15,6 +19,17 @@ export function ClientDetailContainer() {
     <ClientDetailPage
       client={client}
       onBack={() => navigate({ to: "/clients" })}
+      onEdit={async (data) => {
+        await editMutation.mutateAsync(data);
+      }}
+      editLoading={editMutation.isPending}
+      editError={editMutation.error?.message}
+      onRotateSecret={async () => {
+        await rotateMutation.mutateAsync();
+        setSecretPending(true);
+      }}
+      secretRotating={rotateMutation.isPending}
+      secretPendingRedeploy={secretPending}
     />
   );
 }
