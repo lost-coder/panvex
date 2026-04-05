@@ -16,6 +16,7 @@ import (
 	"github.com/panvex/panvex/internal/controlplane/jobs"
 	"github.com/panvex/panvex/internal/controlplane/presence"
 	"github.com/panvex/panvex/internal/controlplane/storage"
+	"github.com/panvex/panvex/internal/gatewayrpc"
 	"github.com/panvex/panvex/internal/security"
 )
 
@@ -42,6 +43,7 @@ type Options struct {
 
 // Server wires local-auth, inventory, jobs, and operator APIs into one HTTP surface.
 type Server struct {
+	gatewayrpc.UnimplementedAgentGatewayServer
 	auth       *auth.Service
 	enrollment *security.EnrollmentService
 	store      storage.Store
@@ -65,6 +67,7 @@ type Server struct {
 	metricSeq  uint64
 	clientSeq  uint64
 	assignmentSeq uint64
+	discoveredClientSeq uint64
 	agents     map[string]Agent
 	detailBoosts map[string]time.Time
 	initializationWatchCooldowns map[string]time.Time
@@ -139,6 +142,11 @@ func New(options Options) *Server {
 		}
 		if server.startupErr == nil {
 			if err := server.restoreStoredClients(); err != nil {
+				server.startupErr = err
+			}
+		}
+		if server.startupErr == nil {
+			if err := server.restoreStoredDiscoveredClients(); err != nil {
 				server.startupErr = err
 			}
 		}
@@ -310,6 +318,9 @@ func (s *Server) routes() http.Handler {
 				operator.Put("/clients/{id}", s.handleUpdateClient())
 				operator.Delete("/clients/{id}", s.handleDeleteClient())
 				operator.Post("/clients/{id}/rotate-secret", s.handleRotateClientSecret())
+				operator.Get("/discovered-clients", s.handleDiscoveredClients())
+				operator.Post("/discovered-clients/{id}/adopt", s.handleAdoptDiscoveredClient())
+				operator.Post("/discovered-clients/{id}/ignore", s.handleIgnoreDiscoveredClient())
 				operator.Post("/telemetry/servers/{id}/refresh-diagnostics", s.handleTelemetryServerRefreshDiagnostics())
 				operator.Get("/agents/enrollment-tokens", s.handleListEnrollmentTokens())
 				operator.Post("/agents/enrollment-tokens", s.handleCreateEnrollmentToken())

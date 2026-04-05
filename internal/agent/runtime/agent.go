@@ -16,6 +16,8 @@ type telemtClient interface {
 	FetchRuntimeState(context.Context) (telemt.RuntimeState, error)
 	FetchClientUsageFromMetrics(context.Context) (telemt.ClientUsageMetricsSnapshot, error)
 	FetchActiveIPs(context.Context) ([]telemt.UserActiveIPs, error)
+	FetchSystemInfo(context.Context) (telemt.SystemInfo, error)
+	FetchDiscoveredUsers(ctx context.Context, configPath string) ([]telemt.DiscoveredUser, error)
 	ExecuteRuntimeReload(context.Context) error
 	CreateClient(context.Context, telemt.ManagedClient) (telemt.ClientApplyResult, error)
 	UpdateClient(context.Context, telemt.ManagedClient) (telemt.ClientApplyResult, error)
@@ -25,10 +27,11 @@ type telemtClient interface {
 
 // Config describes the control-plane identity reported by the agent.
 type Config struct {
-	AgentID      string
-	NodeName     string
-	FleetGroupID string
-	Version      string
+	AgentID          string
+	NodeName         string
+	FleetGroupID     string
+	Version          string
+	TelemtConfigPath string
 }
 
 type runtimeLifecycleState struct {
@@ -574,6 +577,56 @@ func (a *Agent) pruneCompletedJobsLocked(now time.Time) {
 			delete(a.completedJobs, jobID)
 		}
 	}
+}
+
+// HandleClientDataRequest fetches all configured Telemt users and returns them as ClientDetailRecords.
+// This enables the control-plane to discover users that exist on the server but are not managed by the panel.
+func (a *Agent) HandleClientDataRequest(ctx context.Context, requestID string) *gatewayrpc.ClientDataResponse {
+	configPath := a.resolveTelemtConfigPath(ctx)
+
+	users, err := a.telemt.FetchDiscoveredUsers(ctx, configPath)
+	if err != nil {
+		return &gatewayrpc.ClientDataResponse{RequestId: requestID}
+	}
+
+	records := make([]*gatewayrpc.ClientDetailRecord, 0, len(users))
+	for _, u := range users {
+		clientID := a.clientIDForName(u.Username)
+		records = append(records, &gatewayrpc.ClientDetailRecord{
+			ClientId:           clientID,
+			ClientName:         u.Username,
+			Secret:             u.Secret,
+			UserAdTag:          u.UserADTag,
+			Enabled:            u.Enabled,
+			TotalOctets:        u.TotalOctets,
+			CurrentConnections: int32(u.CurrentConnections),
+			ActiveUniqueIps:    int32(u.ActiveUniqueIPs),
+			ConnectionLink:     u.ConnectionLink,
+			MaxTcpConns:        int32(u.MaxTCPConns),
+			MaxUniqueIps:       int32(u.MaxUniqueIPs),
+			DataQuotaBytes:     u.DataQuotaBytes,
+			Expiration:         u.ExpirationRFC3339,
+		})
+	}
+
+	return &gatewayrpc.ClientDataResponse{
+		RequestId: requestID,
+		Clients:   records,
+	}
+}
+
+// resolveTelemtConfigPath returns the path to the Telemt config file.
+// Priority: explicit config setting → /v1/system/info API response.
+func (a *Agent) resolveTelemtConfigPath(ctx context.Context) string {
+	if a.config.TelemtConfigPath != "" {
+		return a.config.TelemtConfigPath
+	}
+
+	info, err := a.telemt.FetchSystemInfo(ctx)
+	if err != nil {
+		return ""
+	}
+	return info.ConfigPath
 }
 
 func marshalClientJobResult(result telemt.ClientApplyResult) string {

@@ -59,6 +59,7 @@ func runRuntime(args []string) error {
 	telemtURL := flags.String("telemt-url", "http://127.0.0.1:8080", "Local Telemt API URL")
 	telemtMetricsURL := flags.String("telemt-metrics-url", "http://127.0.0.1:8081", "Local Telemt metrics URL")
 	telemtAuth := flags.String("telemt-auth", "", "Local Telemt authorization value")
+	telemtConfigPath := flags.String("telemt-config-path", "", "Path to Telemt config file (optional, auto-detected via API if empty)")
 	heartbeat := flags.Duration("heartbeat-interval", 15*time.Second, "Heartbeat interval")
 	runtimeSnapshot := flags.Duration("snapshot-interval", time.Minute, "Runtime snapshot interval")
 	usageSnapshot := flags.Duration("usage-interval", 3*time.Minute, "Client usage snapshot interval")
@@ -89,10 +90,11 @@ func runRuntime(args []string) error {
 	}
 
 	agent := runtime.New(runtime.Config{
-		AgentID:      credentialsState.AgentID,
-		NodeName:     *nodeName,
-		FleetGroupID: *fleetGroupID,
-		Version:      *version,
+		AgentID:          credentialsState.AgentID,
+		NodeName:         *nodeName,
+		FleetGroupID:     *fleetGroupID,
+		Version:          *version,
+		TelemtConfigPath: *telemtConfigPath,
 	}, telemtClient)
 
 	schedule := newConnectionSchedule(*heartbeat, *runtimeSnapshot, *usageSnapshot, *ipPoll, *ipUpload)
@@ -602,12 +604,14 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 				sendErrorAndCancel(err)
 				return
 			}
-			job := message.GetJob()
-			if job == nil {
+			if job := message.GetJob(); job != nil {
+				enqueueReceivedJob(connectionCtx, agent.AgentID(), jobInflight, jobQueues, criticalOutbound, job)
 				continue
 			}
-
-			enqueueReceivedJob(connectionCtx, agent.AgentID(), jobInflight, jobQueues, criticalOutbound, job)
+			if req := message.GetClientDataRequest(); req != nil {
+				go handleClientDataRequest(connectionCtx, agent, criticalOutbound, req)
+				continue
+			}
 		}
 	}()
 	startJobWorkers(connectionCtx, agent, jobInflight, jobQueues, criticalOutbound)
@@ -879,6 +883,24 @@ func dialGateway(ctx context.Context, gatewayAddr string, serverName string, caP
 	return grpc.NewClient(gatewayAddr,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
 	)
+}
+
+func handleClientDataRequest(
+	connectionCtx context.Context,
+	agent *runtime.Agent,
+	criticalOutbound chan<- *gatewayrpc.ConnectClientMessage,
+	req *gatewayrpc.ClientDataRequest,
+) {
+	reqCtx, cancel := context.WithTimeout(connectionCtx, runtimeOperationTimeout)
+	response := agent.HandleClientDataRequest(reqCtx, req.GetRequestId())
+	cancel()
+
+	select {
+	case <-connectionCtx.Done():
+	case criticalOutbound <- &gatewayrpc.ConnectClientMessage{
+		Body: &gatewayrpc.ConnectClientMessage_ClientDataResponse{ClientDataResponse: response},
+	}:
+	}
 }
 
 func hostName() string {

@@ -762,3 +762,11 @@ func (c *fakeRuntimeReloadClient) DeleteClient(context.Context, string) error {
 }
 
 func (c *fakeRuntimeReloadClient) InvalidateSlowDataCache() {}
+
+func (c *fakeRuntimeReloadClient) FetchSystemInfo(context.Context) (telemt.SystemInfo, error) {
+	return telemt.SystemInfo{}, nil
+}
+
+func (c *fakeRuntimeReloadClient) FetchDiscoveredUsers(_ context.Context, _ string) ([]telemt.DiscoveredUser, error) {
+	return nil, nil
+}

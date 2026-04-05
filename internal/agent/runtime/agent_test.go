@@ -686,3 +686,11 @@ func (c *fakeTelemtClient) DeleteClient(_ context.Context, clientName string) er
 func (c *fakeTelemtClient) InvalidateSlowDataCache() {
 	c.invalidateSlowDataCalls++
 }
+
+func (c *fakeTelemtClient) FetchSystemInfo(context.Context) (telemt.SystemInfo, error) {
+	return telemt.SystemInfo{}, nil
+}
+
+func (c *fakeTelemtClient) FetchDiscoveredUsers(_ context.Context, _ string) ([]telemt.DiscoveredUser, error) {
+	return nil, nil
+}
