@@ -262,6 +262,17 @@ func (s *Service) List() []Job {
 	return result
 }
 
+// ExpireStale proactively expires jobs that exceeded their TTL.
+func (s *Service) ExpireStale() {
+	s.mu.Lock()
+	candidates := s.expireJobsLocked(s.now().UTC())
+	s.mu.Unlock()
+
+	for _, candidate := range candidates {
+		s.persistLatestJobVersion(candidate.jobID, candidate.version, candidate.job)
+	}
+}
+
 // PendingForAgent returns queued and stale-sent jobs for one agent in creation order.
 func (s *Service) PendingForAgent(agentID string, retryAfter time.Duration) []Job {
 	var candidates []persistCandidate

@@ -374,12 +374,14 @@ func (s *Server) appendAuditWithContext(ctx context.Context, actorID string, act
 		copy(s.auditTrail, s.auditTrail[1:])
 		s.auditTrail[len(s.auditTrail)-1] = event
 	}
+	var persistErr error
+	if s.store != nil {
+		persistErr = s.store.AppendAuditEvent(ctx, auditEventToRecord(event))
+	}
 	s.mu.Unlock()
 
-	if s.store != nil {
-		if err := s.store.AppendAuditEvent(ctx, auditEventToRecord(event)); err != nil {
-			log.Printf("control-plane audit persistence failed for action %q: %v", action, err)
-		}
+	if persistErr != nil {
+		log.Printf("control-plane audit persistence failed for action %q: %v", action, persistErr)
 	}
 
 	s.events.publish(eventEnvelope{

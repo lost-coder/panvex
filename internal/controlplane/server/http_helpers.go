@@ -10,7 +10,11 @@ type errorResponse struct {
 	Error string `json:"error"`
 }
 
+// maxRequestBodyBytes limits the size of incoming JSON request bodies.
+const maxRequestBodyBytes = 1 << 20 // 1 MB
+
 func decodeJSON(r *http.Request, dest any) error {
+	r.Body = http.MaxBytesReader(nil, r.Body, maxRequestBodyBytes)
 	defer r.Body.Close()
 	return json.NewDecoder(r.Body).Decode(dest)
 }

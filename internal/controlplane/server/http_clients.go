@@ -50,7 +50,7 @@ type clientDeploymentResponse struct {
 type clientDetailResponse struct {
 	ID                string                     `json:"id"`
 	Name              string                     `json:"name"`
-	Secret            string                     `json:"secret"`
+	Secret            string                     `json:"secret,omitempty"`
 	UserADTag         string                     `json:"user_ad_tag"`
 	Enabled           bool                       `json:"enabled"`
 	TrafficUsedBytes  uint64                     `json:"traffic_used_bytes"`
@@ -297,10 +297,15 @@ func (s *Server) buildClientDetailResponse(client managedClient, assignments []m
 	fleetGroupIDs := assignmentFleetGroupIDs(assignments)
 	agentIDs := assignmentAgentIDs(assignments)
 
+	var secret string
+	if showSecret {
+		secret = client.Secret
+	}
+
 	response := clientDetailResponse{
 		ID:                client.ID,
 		Name:              client.Name,
-		Secret:            client.Secret,
+		Secret:            secret,
 		UserADTag:         client.UserADTag,
 		Enabled:           client.Enabled,
 		TrafficUsedBytes:  usage.TrafficUsedBytes,

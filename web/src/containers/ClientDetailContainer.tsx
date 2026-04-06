@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ClientDetailPage, Spinner } from "@panvex/ui";
 import { useClientDetail } from "@/hooks/useClientDetail";
 import { useClientMutations } from "@/hooks/useClientMutations";
@@ -10,6 +10,13 @@ export function ClientDetailContainer() {
   const { editMutation, rotateMutation } = useClientMutations(clientId ?? "", raw);
   const navigate = useNavigate();
   const [secretPending, setSecretPending] = useState(false);
+
+  // Reset pending state when fresh server data arrives after rotation
+  useEffect(() => {
+    if (raw && secretPending) {
+      setSecretPending(false);
+    }
+  }, [raw]);
 
   if (isLoading || !client) {
     return <div className="flex items-center justify-center h-64"><Spinner /></div>;

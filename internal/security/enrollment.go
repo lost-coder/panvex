@@ -103,12 +103,10 @@ func (s *EnrollmentService) ConsumeToken(value string, now time.Time) (Enrollmen
 
 func (s *EnrollmentService) cleanupExpiredLocked(now time.Time) {
 	for value, stored := range s.tokens {
-		if stored.consumed {
-			continue
-		}
 		if now.UTC().After(stored.token.ExpiresAt) {
 			delete(s.tokens, value)
 		}
+		_ = stored // consumed tokens are also cleaned once expired
 	}
 }
 

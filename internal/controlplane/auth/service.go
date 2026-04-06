@@ -9,6 +9,7 @@ import (
 	"encoding/base32"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strconv"
@@ -106,6 +107,12 @@ type Session struct {
 	CreatedAt time.Time
 }
 
+// totpUseKey identifies a consumed TOTP code for replay prevention.
+type totpUseKey struct {
+	UserID string
+	Code   string
+}
+
 // Service provides local-account hashing, TOTP, and session issuance.
 type Service struct {
 	mu               sync.RWMutex
@@ -113,6 +120,7 @@ type Service struct {
 	users            map[string]User
 	sessions         map[string]Session
 	pendingTotpSetup map[string]pendingTotpSetup
+	consumedTotp     map[totpUseKey]time.Time
 	userStore        storage.UserStore
 	now              func() time.Time
 }
@@ -123,6 +131,7 @@ func NewService() *Service {
 		users:            make(map[string]User),
 		sessions:         make(map[string]Session),
 		pendingTotpSetup: make(map[string]pendingTotpSetup),
+		consumedTotp:     make(map[totpUseKey]time.Time),
 		now:              time.Now,
 	}
 }
@@ -133,6 +142,7 @@ func NewServiceWithStore(userStore storage.UserStore) *Service {
 		users:            make(map[string]User),
 		sessions:         make(map[string]Session),
 		pendingTotpSetup: make(map[string]pendingTotpSetup),
+		consumedTotp:     make(map[totpUseKey]time.Time),
 		userStore:        userStore,
 		now:              time.Now,
 	}
@@ -169,9 +179,13 @@ func (s *Service) BootstrapUser(input BootstrapInput, now time.Time) (User, stri
 		s.mu.Lock()
 		defer s.mu.Unlock()
 
+		id, err := randomUserID()
+		if err != nil {
+			return User{}, "", err
+		}
 		s.sequence++
 		user := User{
-			ID:           fmt.Sprintf("user-%06d", s.sequence),
+			ID:           id,
 			Username:     input.Username,
 			PasswordHash: hash,
 			Role:         input.Role,
@@ -192,8 +206,13 @@ func (s *Service) BootstrapUser(input BootstrapInput, now time.Time) (User, stri
 	s.mu.Lock()
 	s.sequence = maxSequence(s.sequence, maxUserSequence(users))
 	s.sequence++
+	id, err := randomUserID()
+	if err != nil {
+		s.mu.Unlock()
+		return User{}, "", err
+	}
 	user := User{
-		ID:           fmt.Sprintf("user-%06d", s.sequence),
+		ID:           id,
 		Username:     input.Username,
 		PasswordHash: hash,
 		Role:         input.Role,
@@ -201,13 +220,12 @@ func (s *Service) BootstrapUser(input BootstrapInput, now time.Time) (User, stri
 		TotpSecret:   "",
 		CreatedAt:    now.UTC(),
 	}
-	s.mu.Unlock()
 
 	if err := s.userStore.PutUser(context.Background(), userToRecord(user)); err != nil {
+		s.sequence--
+		s.mu.Unlock()
 		return User{}, "", err
 	}
-
-	s.mu.Lock()
 	s.users[input.Username] = user
 	s.mu.Unlock()
 
@@ -237,6 +255,15 @@ func (s *Service) Authenticate(input LoginInput, now time.Time) (Session, error)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Reject replayed TOTP codes within the acceptance window.
+	if user.TotpEnabled {
+		key := totpUseKey{UserID: user.ID, Code: strings.TrimSpace(input.TotpCode)}
+		if _, used := s.consumedTotp[key]; used {
+			return Session{}, ErrInvalidTotpCode
+		}
+		s.consumedTotp[key] = now.UTC()
+	}
 
 	s.cleanupExpiredSessionsLocked(now)
 	s.sequence++
@@ -586,6 +613,14 @@ func (s *Service) cleanupExpiredSessionsLocked(now time.Time) {
 			delete(s.sessions, sessionID)
 		}
 	}
+
+	// Remove consumed TOTP codes older than the acceptance window (3 × 30s).
+	totpCutoff := now.UTC().Add(-90 * time.Second)
+	for key, usedAt := range s.consumedTotp {
+		if usedAt.Before(totpCutoff) {
+			delete(s.consumedTotp, key)
+		}
+	}
 }
 
 func (s *Service) verifyTotpCode(secret string, code string, now time.Time) bool {
@@ -626,6 +661,14 @@ func maxSequence(left uint64, right uint64) uint64 {
 	}
 
 	return left
+}
+
+func randomUserID() (string, error) {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return "user-" + hex.EncodeToString(buf), nil
 }
 
 // GetSession returns the current session record for the provided identifier.
