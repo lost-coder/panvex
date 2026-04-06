@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -276,7 +277,11 @@ func runBootstrapAdmin(args []string) error {
 
 	fmt.Printf("Admin user %q created.\n", *username)
 	fmt.Printf("Storage driver: %s\n", storageConfig.Driver)
-	fmt.Printf("Storage DSN: %s\n", storageConfig.DSN)
+	if parsed, err := url.Parse(storageConfig.DSN); err == nil {
+		fmt.Printf("Storage DSN: %s\n", parsed.Redacted())
+	} else {
+		fmt.Printf("Storage DSN: ***\n")
+	}
 	return nil
 }
 

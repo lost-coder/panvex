@@ -33,11 +33,15 @@ export function useDiscoveredClients() {
 
   const adoptManyMutation = useMutation({
     mutationFn: async (ids: string[]) => {
-      for (const id of ids) {
-        await apiClient.adoptDiscoveredClient(id);
+      const results = await Promise.allSettled(
+        ids.map((id) => apiClient.adoptDiscoveredClient(id)),
+      );
+      const failed = results.filter((r) => r.status === "rejected");
+      if (failed.length > 0) {
+        throw new Error(`Failed to adopt ${failed.length} of ${ids.length} clients`);
       }
     },
-    onSuccess: () => {
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["discovered-clients"] });
       queryClient.invalidateQueries({ queryKey: ["clients"] });
     },
@@ -45,11 +49,15 @@ export function useDiscoveredClients() {
 
   const ignoreManyMutation = useMutation({
     mutationFn: async (ids: string[]) => {
-      for (const id of ids) {
-        await apiClient.ignoreDiscoveredClient(id);
+      const results = await Promise.allSettled(
+        ids.map((id) => apiClient.ignoreDiscoveredClient(id)),
+      );
+      const failed = results.filter((r) => r.status === "rejected");
+      if (failed.length > 0) {
+        throw new Error(`Failed to ignore ${failed.length} of ${ids.length} clients`);
       }
     },
-    onSuccess: () => {
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["discovered-clients"] });
     },
   });

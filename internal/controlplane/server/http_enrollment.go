@@ -20,7 +20,10 @@ var errEnrollmentTokenRevoked = errors.New("enrollment token revoked")
 
 const (
 	agentCertificateRecoveryProofSkew  = 5 * time.Minute
-	agentCertificateRecoveryGraceWindow = 7 * 24 * time.Hour
+	// agentCertificateRecoveryGraceWindow defines how long after certificate
+	// expiry an agent can still use the recovery flow. Shorter values reduce
+	// the attack surface of a compromised agent credential.
+	agentCertificateRecoveryGraceWindow = 24 * time.Hour
 	defaultAgentCertificateRecoveryGrantTTL = 15 * time.Minute
 	maxAgentCertificateRecoveryGrantTTL = time.Hour
 )
