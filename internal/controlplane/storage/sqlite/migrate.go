@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS agents (
     version TEXT NOT NULL DEFAULT '',
     read_only INTEGER NOT NULL DEFAULT 0,
     last_seen_at_unix INTEGER NOT NULL,
+    created_at_unix INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (fleet_group_id) REFERENCES fleet_groups (id)
 );
 
@@ -324,7 +325,16 @@ func Migrate(db *sql.DB) error {
 	}
 
 	// Add secret column to existing discovered_clients tables (migration).
-	return ensureDiscoveredClientsSecretColumn(db)
+	if err := ensureDiscoveredClientsSecretColumn(db); err != nil {
+		return err
+	}
+
+	// Align agents schema with PostgreSQL (created_at_unix column).
+	if err := ensureAgentsCreatedAtColumn(db); err != nil {
+		return err
+	}
+
+	return ensureIndexes(db)
 }
 
 func ensureDiscoveredClientsSecretColumn(db *sql.DB) error {
@@ -502,5 +512,51 @@ func ensureUserAppearanceHelpModeColumn(db *sql.DB) error {
 	}
 
 	_, err = db.Exec(`ALTER TABLE user_appearance ADD COLUMN help_mode TEXT NOT NULL DEFAULT 'basic'`)
+	return err
+}
+
+func ensureAgentsCreatedAtColumn(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(agents)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name string
+		var columnType string
+		var notNull int
+		var defaultValue any
+		var primaryKey int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return err
+		}
+		if name == "created_at_unix" {
+			return nil
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`ALTER TABLE agents ADD COLUMN created_at_unix INTEGER NOT NULL DEFAULT 0`)
+	return err
+}
+
+// ensureIndexes creates performance indexes for frequently queried columns.
+func ensureIndexes(db *sql.DB) error {
+	_, err := db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_agents_last_seen_at ON agents (last_seen_at_unix);
+		CREATE INDEX IF NOT EXISTS idx_agents_fleet_group_id ON agents (fleet_group_id);
+		CREATE INDEX IF NOT EXISTS idx_telemt_instances_agent_id ON telemt_instances (agent_id);
+		CREATE INDEX IF NOT EXISTS idx_client_assignments_client_id ON client_assignments (client_id);
+		CREATE INDEX IF NOT EXISTS idx_client_deployments_client_id ON client_deployments (client_id);
+		CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs (created_at_unix);
+		CREATE INDEX IF NOT EXISTS idx_audit_events_created_at ON audit_events (created_at_unix);
+		CREATE INDEX IF NOT EXISTS idx_metric_snapshots_agent_captured ON metric_snapshots (agent_id, captured_at_unix);
+		CREATE INDEX IF NOT EXISTS idx_discovered_clients_agent_id ON discovered_clients (agent_id)
+	`)
 	return err
 }

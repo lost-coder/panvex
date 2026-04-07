@@ -282,7 +282,7 @@ func Migrate(db *sql.DB) error {
 		return err
 	}
 
-	_, err := db.Exec(`
+	if _, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS discovered_clients (
 			id TEXT PRIMARY KEY,
 			agent_id TEXT NOT NULL REFERENCES agents (id),
@@ -300,6 +300,45 @@ func Migrate(db *sql.DB) error {
 			updated_at TIMESTAMPTZ NOT NULL,
 			UNIQUE (agent_id, client_name)
 		)
+	`); err != nil {
+		return err
+	}
+
+	// Align discovered_clients schema with SQLite (secret column).
+	if _, err := db.Exec(`ALTER TABLE discovered_clients ADD COLUMN IF NOT EXISTS secret TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+
+	// Add ON DELETE CASCADE to client_assignments and client_deployments FKs.
+	// Best-effort: constraint names follow PostgreSQL auto-naming convention.
+	db.Exec(`
+		DO $$ BEGIN
+			ALTER TABLE client_assignments DROP CONSTRAINT IF EXISTS client_assignments_client_id_fkey;
+			ALTER TABLE client_assignments ADD CONSTRAINT client_assignments_client_id_fkey
+				FOREIGN KEY (client_id) REFERENCES clients (id) ON DELETE CASCADE;
+		EXCEPTION WHEN others THEN NULL;
+		END $$
+	`)
+	db.Exec(`
+		DO $$ BEGIN
+			ALTER TABLE client_deployments DROP CONSTRAINT IF EXISTS client_deployments_client_id_fkey;
+			ALTER TABLE client_deployments ADD CONSTRAINT client_deployments_client_id_fkey
+				FOREIGN KEY (client_id) REFERENCES clients (id) ON DELETE CASCADE;
+		EXCEPTION WHEN others THEN NULL;
+		END $$
+	`)
+
+	// Performance indexes for frequently queried columns.
+	_, err := db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_agents_last_seen_at ON agents (last_seen_at);
+		CREATE INDEX IF NOT EXISTS idx_agents_fleet_group_id ON agents (fleet_group_id);
+		CREATE INDEX IF NOT EXISTS idx_telemt_instances_agent_id ON telemt_instances (agent_id);
+		CREATE INDEX IF NOT EXISTS idx_client_assignments_client_id ON client_assignments (client_id);
+		CREATE INDEX IF NOT EXISTS idx_client_deployments_client_id ON client_deployments (client_id);
+		CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs (created_at);
+		CREATE INDEX IF NOT EXISTS idx_audit_events_created_at ON audit_events (created_at);
+		CREATE INDEX IF NOT EXISTS idx_metric_snapshots_agent_captured ON metric_snapshots (agent_id, captured_at);
+		CREATE INDEX IF NOT EXISTS idx_discovered_clients_agent_id ON discovered_clients (agent_id)
 	`)
 	return err
 }

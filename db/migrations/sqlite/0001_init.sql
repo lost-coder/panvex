@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS agents (
     version TEXT NOT NULL DEFAULT '',
     read_only INTEGER NOT NULL DEFAULT 0,
     last_seen_at_unix INTEGER NOT NULL,
+    created_at_unix INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (fleet_group_id) REFERENCES fleet_groups (id)
 );
 
