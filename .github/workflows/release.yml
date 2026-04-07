@@ -46,7 +46,7 @@ jobs:
         run: |
           ext=""; if [ "$GOOS" = "windows" ]; then ext=".exe"; fi
           go build -o panvex-agent-${GOOS}-${GOARCH}${ext} ./cmd/agent
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: binaries-${{ matrix.goos }}-${{ matrix.goarch }}
           path: panvex-*
