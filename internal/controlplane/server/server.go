@@ -281,6 +281,8 @@ func (s *Server) GRPCTLSConfig() *tls.Config {
 
 func (s *Server) routes() http.Handler {
 	router := chi.NewRouter()
+	router.Use(securityHeaders)
+	router.Use(csrfOriginCheck)
 	router.Route(apiBasePath, func(api chi.Router) {
 		api.With(s.withRateLimit(s.agentBootstrapRateLimiter, requestClientRateLimitKey)).Post("/agent/bootstrap", s.handleAgentBootstrap())
 		api.With(s.withRateLimit(s.agentBootstrapRateLimiter, requestClientRateLimitKey)).Post("/agent/recover-certificate", s.handleAgentCertificateRecovery())
