@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/panvex/panvex/internal/controlplane/storage"
 	"golang.org/x/crypto/argon2"
@@ -39,7 +40,7 @@ var (
 	// ErrTotpSetupNotFound reports a missing or expired pending TOTP setup.
 	ErrTotpSetupNotFound = errors.New("totp setup not found")
 	// ErrPasswordTooWeak reports a password that does not meet minimum requirements.
-	ErrPasswordTooWeak = errors.New("password must be at least 8 characters")
+	ErrPasswordTooWeak = errors.New("password must be at least 12 characters with uppercase, lowercase, and a digit")
 )
 
 // Role identifies the RBAC role assigned to a local operator account.
@@ -57,11 +58,27 @@ const (
 const (
 	pendingTotpSetupTTL = 10 * time.Minute
 	sessionTTL          = 24 * time.Hour
-	minPasswordLength   = 8
+	minPasswordLength = 12
 )
 
+// validatePasswordComplexity requires at least 12 characters with a mix of
+// uppercase, lowercase, and digits.
 func validatePasswordComplexity(password string) error {
 	if len(password) < minPasswordLength {
+		return ErrPasswordTooWeak
+	}
+	var hasUpper, hasLower, hasDigit bool
+	for _, r := range password {
+		switch {
+		case unicode.IsUpper(r):
+			hasUpper = true
+		case unicode.IsLower(r):
+			hasLower = true
+		case unicode.IsDigit(r):
+			hasDigit = true
+		}
+	}
+	if !hasUpper || !hasLower || !hasDigit {
 		return ErrPasswordTooWeak
 	}
 	return nil

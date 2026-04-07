@@ -25,7 +25,7 @@ func TestServerLoginSetsSessionAndReturnsMe(t *testing.T) {
 	})
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "viewer",
-		Password: "viewer-password",
+		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
@@ -33,7 +33,7 @@ func TestServerLoginSetsSessionAndReturnsMe(t *testing.T) {
 
 	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
-		"password": "viewer-password",
+		"password": "Viewer1password",
 	}, nil)
 	if loginResponse.Code != http.StatusOK {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
@@ -78,7 +78,7 @@ func TestServerLoginSetsSecureSessionCookieWhenForwardedProtoIsHTTPS(t *testing.
 	})
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "viewer",
-		Password: "viewer-password",
+		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
@@ -86,7 +86,7 @@ func TestServerLoginSetsSecureSessionCookieWhenForwardedProtoIsHTTPS(t *testing.
 
 	loginResponse := performJSONRequestWithHeaders(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
-		"password": "viewer-password",
+		"password": "Viewer1password",
 	}, nil, map[string]string{
 		"X-Forwarded-Proto": "https",
 	})
@@ -118,7 +118,7 @@ func TestServerLoginDoesNotPanicWhenAuditPersistenceFails(t *testing.T) {
 	})
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "viewer",
-		Password: "viewer-password",
+		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
@@ -128,7 +128,7 @@ func TestServerLoginDoesNotPanicWhenAuditPersistenceFails(t *testing.T) {
 
 	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
-		"password": "viewer-password",
+		"password": "Viewer1password",
 	}, nil)
 	if loginResponse.Code != http.StatusOK {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
@@ -142,7 +142,7 @@ func TestServerLoginLeavesSessionCookieInsecureForPlainHTTP(t *testing.T) {
 	})
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "viewer",
-		Password: "viewer-password",
+		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
@@ -150,7 +150,7 @@ func TestServerLoginLeavesSessionCookieInsecureForPlainHTTP(t *testing.T) {
 
 	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
-		"password": "viewer-password",
+		"password": "Viewer1password",
 	}, nil)
 	if loginResponse.Code != http.StatusOK {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
@@ -172,7 +172,7 @@ func TestServerLoginRateLimitRejectsBurstFromSameClient(t *testing.T) {
 	})
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "viewer",
-		Password: "viewer-password",
+		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
@@ -204,7 +204,7 @@ func TestServerCreateJobRejectsViewerRole(t *testing.T) {
 	})
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "viewer",
-		Password: "viewer-password",
+		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
@@ -218,7 +218,7 @@ func TestServerCreateJobRejectsViewerRole(t *testing.T) {
 
 	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
-		"password": "viewer-password",
+		"password": "Viewer1password",
 	}, nil)
 
 	jobResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/jobs", map[string]any{
@@ -239,7 +239,7 @@ func TestServerCreateJobAcceptsOperatorWithTotp(t *testing.T) {
 	})
 	user, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "operator",
-		Password: "operator-password",
+		Password: "Operator1password",
 		Role:     auth.RoleOperator,
 	}, now)
 	if err != nil {
@@ -262,13 +262,13 @@ func TestServerCreateJobAcceptsOperatorWithTotp(t *testing.T) {
 		t.Fatalf("GenerateTotpCode() error = %v", err)
 	}
 
-	if _, err := server.auth.EnableTotp(user.ID, "operator-password", code, now); err != nil {
+	if _, err := server.auth.EnableTotp(user.ID, "Operator1password", code, now); err != nil {
 		t.Fatalf("EnableTotp() error = %v", err)
 	}
 
 	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username":  "operator",
-		"password":  "operator-password",
+		"password":  "Operator1password",
 		"totp_code": code,
 	}, nil)
 	if loginResponse.Code != http.StatusOK {
@@ -293,7 +293,7 @@ func TestHTTPAuthTotpSetupEnableDisableFlow(t *testing.T) {
 	})
 	user, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "operator",
-		Password: "operator-password",
+		Password: "Operator1password",
 		Role:     auth.RoleOperator,
 	}, now)
 	if err != nil {
@@ -302,7 +302,7 @@ func TestHTTPAuthTotpSetupEnableDisableFlow(t *testing.T) {
 
 	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "operator",
-		"password": "operator-password",
+		"password": "Operator1password",
 	}, nil)
 	if loginResponse.Code != http.StatusOK {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
@@ -349,7 +349,7 @@ func TestHTTPAuthTotpSetupEnableDisableFlow(t *testing.T) {
 	}
 
 	enableResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/totp/enable", map[string]string{
-		"password":  "operator-password",
+		"password":  "Operator1password",
 		"totp_code": enableCode,
 	}, cookies)
 	if enableResponse.Code != http.StatusOK {
@@ -374,7 +374,7 @@ func TestHTTPAuthTotpSetupEnableDisableFlow(t *testing.T) {
 
 	loginWithoutTotp := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "operator",
-		"password": "operator-password",
+		"password": "Operator1password",
 	}, nil)
 	if loginWithoutTotp.Code != http.StatusUnauthorized {
 		t.Fatalf("POST /api/auth/login without totp status = %d, want %d", loginWithoutTotp.Code, http.StatusUnauthorized)
@@ -382,7 +382,7 @@ func TestHTTPAuthTotpSetupEnableDisableFlow(t *testing.T) {
 
 	loginWithTotp := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username":  "operator",
-		"password":  "operator-password",
+		"password":  "Operator1password",
 		"totp_code": enableCode,
 	}, nil)
 	if loginWithTotp.Code != http.StatusOK {
@@ -396,7 +396,7 @@ func TestHTTPAuthTotpSetupEnableDisableFlow(t *testing.T) {
 	}
 
 	disableResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/totp/disable", map[string]string{
-		"password":  "operator-password",
+		"password":  "Operator1password",
 		"totp_code": disableCode,
 	}, cookies)
 	if disableResponse.Code != http.StatusOK {
@@ -430,7 +430,7 @@ func TestHTTPUsersTotpResetRequiresAdminAndClearsTarget(t *testing.T) {
 	})
 	adminUser, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
-		Password: "admin-password",
+		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
 	}, now)
 	if err != nil {
@@ -438,7 +438,7 @@ func TestHTTPUsersTotpResetRequiresAdminAndClearsTarget(t *testing.T) {
 	}
 	operatorUser, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "operator",
-		Password: "operator-password",
+		Password: "Operator1password",
 		Role:     auth.RoleOperator,
 	}, now)
 	if err != nil {
@@ -453,13 +453,13 @@ func TestHTTPUsersTotpResetRequiresAdminAndClearsTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateTotpCode() error = %v", err)
 	}
-	if _, err := server.auth.EnableTotp(operatorUser.ID, "operator-password", code, now); err != nil {
+	if _, err := server.auth.EnableTotp(operatorUser.ID, "Operator1password", code, now); err != nil {
 		t.Fatalf("EnableTotp() error = %v", err)
 	}
 
 	viewerUser, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "viewer",
-		Password: "viewer-password",
+		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
 	}, now)
 	if err != nil {
@@ -468,7 +468,7 @@ func TestHTTPUsersTotpResetRequiresAdminAndClearsTarget(t *testing.T) {
 
 	viewerLogin := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
-		"password": "viewer-password",
+		"password": "Viewer1password",
 	}, nil)
 	if viewerLogin.Code != http.StatusOK {
 		t.Fatalf("POST /api/auth/login viewer status = %d, want %d", viewerLogin.Code, http.StatusOK)
@@ -481,7 +481,7 @@ func TestHTTPUsersTotpResetRequiresAdminAndClearsTarget(t *testing.T) {
 
 	adminLogin := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
-		"password": "admin-password",
+		"password": "Admin1password",
 	}, nil)
 	if adminLogin.Code != http.StatusOK {
 		t.Fatalf("POST /api/auth/login admin status = %d, want %d", adminLogin.Code, http.StatusOK)
@@ -520,7 +520,7 @@ func TestHTTPUsersTotpResetRequiresAdminAndClearsTarget(t *testing.T) {
 
 	operatorLogin := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "operator",
-		"password": "operator-password",
+		"password": "Operator1password",
 	}, nil)
 	if operatorLogin.Code != http.StatusOK {
 		t.Fatalf("POST /api/auth/login operator after reset status = %d, want %d", operatorLogin.Code, http.StatusOK)
@@ -563,7 +563,7 @@ func TestServerNewDoesNotReseedExistingStoreUsers(t *testing.T) {
 	seeded := auth.NewServiceWithStore(store)
 	user, _, err := seeded.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
-		Password: "current-password",
+		Password: "Current1password",
 		Role:     auth.RoleViewer,
 	}, now)
 	if err != nil {
@@ -586,14 +586,14 @@ func TestServerNewDoesNotReseedExistingStoreUsers(t *testing.T) {
 
 	if _, err := server.auth.Authenticate(auth.LoginInput{
 		Username: "admin",
-		Password: "current-password",
+		Password: "Current1password",
 	}, now.Add(2*time.Minute)); err != nil {
 		t.Fatalf("Authenticate() with stored password error = %v", err)
 	}
 
 	if _, err := server.auth.Authenticate(auth.LoginInput{
 		Username: "admin",
-		Password: "stale-password",
+		Password: "Stale1password",
 	}, now.Add(2*time.Minute)); err != auth.ErrInvalidCredentials {
 		t.Fatalf("Authenticate() with stale password error = %v, want %v", err, auth.ErrInvalidCredentials)
 	}
@@ -610,7 +610,7 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 	bootstrap := auth.NewService()
 	user, _, err := bootstrap.BootstrapUser(auth.BootstrapInput{
 		Username: "viewer",
-		Password: "viewer-password",
+		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
 	}, now)
 	if err != nil {
@@ -668,7 +668,7 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 	})
 	loginResponse := performJSONRequest(t, restored.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
-		"password": "viewer-password",
+		"password": "Viewer1password",
 	}, nil)
 	if loginResponse.Code != http.StatusOK {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
@@ -737,7 +737,7 @@ func TestHTTPAgentsReturnsEmptyRuntimeSlicesForAgentsWithoutRuntimeSnapshot(t *t
 	})
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "viewer",
-		Password: "viewer-password",
+		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
@@ -753,7 +753,7 @@ func TestHTTPAgentsReturnsEmptyRuntimeSlicesForAgentsWithoutRuntimeSnapshot(t *t
 
 	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
-		"password": "viewer-password",
+		"password": "Viewer1password",
 	}, nil)
 	if loginResponse.Code != http.StatusOK {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
@@ -799,7 +799,7 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 	bootstrap := auth.NewService()
 	user, _, err := bootstrap.BootstrapUser(auth.BootstrapInput{
 		Username: "operator",
-		Password: "operator-password",
+		Password: "Operator1password",
 		Role:     auth.RoleOperator,
 	}, now)
 	if err != nil {
@@ -820,7 +820,7 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateTotpCode(enable) error = %v", err)
 	}
-	if _, err := first.auth.EnableTotp(user.ID, "operator-password", enableCode, now.Add(10*time.Second)); err != nil {
+	if _, err := first.auth.EnableTotp(user.ID, "Operator1password", enableCode, now.Add(10*time.Second)); err != nil {
 		t.Fatalf("EnableTotp() error = %v", err)
 	}
 
@@ -862,7 +862,7 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 	}
 	loginResponse := performJSONRequest(t, first.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username":  "operator",
-		"password":  "operator-password",
+		"password":  "Operator1password",
 		"totp_code": loginCode,
 	}, nil)
 	if loginResponse.Code != http.StatusOK {
@@ -900,7 +900,7 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 	}
 	restoredLoginResponse := performJSONRequest(t, restored.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username":  "operator",
-		"password":  "operator-password",
+		"password":  "Operator1password",
 		"totp_code": restoredCode,
 	}, nil)
 	if restoredLoginResponse.Code != http.StatusOK {
@@ -1175,7 +1175,7 @@ func TestHTTPEnrollmentTokenListAndRevoke(t *testing.T) {
 	})
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "operator",
-		Password: "operator-password",
+		Password: "Operator1password",
 		Role:     auth.RoleOperator,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
@@ -1183,7 +1183,7 @@ func TestHTTPEnrollmentTokenListAndRevoke(t *testing.T) {
 
 	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "operator",
-		"password": "operator-password",
+		"password": "Operator1password",
 	}, nil)
 	if loginResponse.Code != http.StatusOK {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
@@ -1288,7 +1288,7 @@ func TestHTTPControlRoomShowsFirstServerOnboarding(t *testing.T) {
 	})
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
-		Password: "admin-password",
+		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
@@ -1296,7 +1296,7 @@ func TestHTTPControlRoomShowsFirstServerOnboarding(t *testing.T) {
 
 	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
-		"password": "admin-password",
+		"password": "Admin1password",
 	}, nil)
 	if loginResponse.Code != http.StatusOK {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
@@ -1353,7 +1353,7 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 	})
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
-		Password: "admin-password",
+		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
 	}, currentTime); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
@@ -1498,7 +1498,7 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 
 	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
-		"password": "admin-password",
+		"password": "Admin1password",
 	}, nil)
 	if loginResponse.Code != http.StatusOK {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
@@ -1648,7 +1648,7 @@ func TestHTTPEmbeddedUIDoesNotShadowAPIRoutes(t *testing.T) {
 	})
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "viewer",
-		Password: "viewer-password",
+		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
@@ -1656,7 +1656,7 @@ func TestHTTPEmbeddedUIDoesNotShadowAPIRoutes(t *testing.T) {
 
 	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
-		"password": "viewer-password",
+		"password": "Viewer1password",
 	}, nil)
 
 	meResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/auth/me", nil, loginResponse.Result().Cookies())
