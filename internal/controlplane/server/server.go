@@ -58,6 +58,7 @@ type Server struct {
 	loginRateLimiter *fixedWindowRateLimiter
 	agentBootstrapRateLimiter *fixedWindowRateLimiter
 	grpcConnectRateLimiter *fixedWindowRateLimiter
+	loginLockout *accountLockoutTracker
 
 	mu         sync.RWMutex
 	sessionMu  sync.RWMutex
@@ -105,6 +106,7 @@ func New(options Options) *Server {
 		loginRateLimiter: newFixedWindowRateLimiter(httpLoginRateLimitPerWindow, defaultRateLimitWindow),
 		agentBootstrapRateLimiter: newFixedWindowRateLimiter(httpAgentBootstrapRateLimitPerWindow, defaultRateLimitWindow),
 		grpcConnectRateLimiter: newFixedWindowRateLimiter(grpcConnectRateLimitPerWindow, defaultRateLimitWindow),
+		loginLockout: newAccountLockoutTracker(),
 		agents:     make(map[string]Agent),
 		detailBoosts: make(map[string]time.Time),
 		initializationWatchCooldowns: make(map[string]time.Time),

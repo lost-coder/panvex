@@ -1,0 +1,82 @@
+package server
+
+import (
+	"sync"
+	"time"
+)
+
+const (
+	accountLockoutMaxAttempts = 5
+	accountLockoutDuration   = 15 * time.Minute
+)
+
+// accountLockoutTracker tracks consecutive failed login attempts per username
+// and temporarily locks accounts after too many failures.
+type accountLockoutTracker struct {
+	mu       sync.Mutex
+	accounts map[string]lockoutEntry
+}
+
+type lockoutEntry struct {
+	failures int
+	lockedAt time.Time
+}
+
+func newAccountLockoutTracker() *accountLockoutTracker {
+	return &accountLockoutTracker{
+		accounts: make(map[string]lockoutEntry),
+	}
+}
+
+// IsLocked returns true if the account is currently locked out.
+func (t *accountLockoutTracker) IsLocked(username string, now time.Time) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	entry, ok := t.accounts[username]
+	if !ok {
+		return false
+	}
+	if entry.failures < accountLockoutMaxAttempts {
+		return false
+	}
+	if now.Sub(entry.lockedAt) >= accountLockoutDuration {
+		delete(t.accounts, username)
+		return false
+	}
+	return true
+}
+
+// RecordFailure increments the failure counter for a username.
+func (t *accountLockoutTracker) RecordFailure(username string, now time.Time) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	entry := t.accounts[username]
+	entry.failures++
+	if entry.failures >= accountLockoutMaxAttempts {
+		entry.lockedAt = now
+	}
+	t.accounts[username] = entry
+
+	t.cleanupLocked(now)
+}
+
+// RecordSuccess clears the failure counter after a successful login.
+func (t *accountLockoutTracker) RecordSuccess(username string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	delete(t.accounts, username)
+}
+
+func (t *accountLockoutTracker) cleanupLocked(now time.Time) {
+	if len(t.accounts) < 512 {
+		return
+	}
+	for username, entry := range t.accounts {
+		if entry.failures >= accountLockoutMaxAttempts && now.Sub(entry.lockedAt) >= accountLockoutDuration {
+			delete(t.accounts, username)
+		}
+	}
+}

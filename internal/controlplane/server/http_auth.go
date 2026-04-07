@@ -45,12 +45,20 @@ func (s *Server) handleLogin() http.HandlerFunc {
 			return
 		}
 
+		if s.loginLockout.IsLocked(request.Username, s.now()) {
+			writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
+			return
+		}
+
 		session, err := s.auth.Authenticate(auth.LoginInput{
 			Username: request.Username,
 			Password: request.Password,
 			TotpCode: request.TotpCode,
 		}, s.now())
 		if err != nil {
+			if errors.Is(err, auth.ErrInvalidCredentials) {
+				s.loginLockout.RecordFailure(request.Username, s.now())
+			}
 			switch {
 			case errors.Is(err, auth.ErrInvalidCredentials):
 				writeError(w, http.StatusUnauthorized, err.Error())
@@ -62,6 +70,8 @@ func (s *Server) handleLogin() http.HandlerFunc {
 			}
 			return
 		}
+
+		s.loginLockout.RecordSuccess(request.Username)
 
 		http.SetCookie(w, &http.Cookie{
 			Name:     sessionCookieName,
