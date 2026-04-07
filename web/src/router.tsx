@@ -1,4 +1,4 @@
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useQuery } from "@tanstack/react-query";
 import {
   Outlet,
@@ -35,12 +35,22 @@ function ProtectedShell() {
     queryFn: () => apiClient.me(),
   });
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { location } = useRouterState();
 
   const activeId =
     NAV_ITEMS.find(
       (item) => item.id !== "/" && location.pathname.startsWith(item.id),
     )?.id ?? "/";
+
+  const handleLogout = async () => {
+    try {
+      await apiClient.logout();
+    } finally {
+      queryClient.clear();
+      navigate({ to: "/login" });
+    }
+  };
 
   return (
     <AppearanceProvider userID={me?.id ?? ""}>
@@ -49,6 +59,7 @@ function ProtectedShell() {
         activeId={activeId}
         brand="Panvex"
         onNavigate={(id) => navigate({ to: id })}
+        onLogout={handleLogout}
       >
         <Outlet />
       </AppShell>
