@@ -115,6 +115,11 @@ const ProfileContainer = lazyRouteComponent(
   "default",
 );
 
+const UsersContainer = lazyRouteComponent(
+  () => import("@/containers/UsersContainer").then((m) => ({ default: m.UsersContainer })),
+  "default",
+);
+
 const shellRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "shell",
@@ -179,6 +184,12 @@ const profileRoute = createRoute({
   component: ProfileContainer,
 });
 
+const usersRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/settings/users",
+  component: UsersContainer,
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   shellRoute.addChildren([
@@ -189,6 +200,7 @@ const routeTree = rootRoute.addChildren([
     discoveredClientsRoute,
     clientDetailRoute,
     settingsRoute,
+    usersRoute,
     profileRoute,
   ]),
 ]);
