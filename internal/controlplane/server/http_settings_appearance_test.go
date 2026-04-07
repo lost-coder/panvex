@@ -26,7 +26,7 @@ func TestHTTPAppearanceSettingsReadDefaultsAndPersistCurrentUserValues(t *testin
 	})
 	user, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "viewer",
-		Password: "viewer-password",
+		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
 	}, now)
 	if err != nil {
@@ -35,7 +35,7 @@ func TestHTTPAppearanceSettingsReadDefaultsAndPersistCurrentUserValues(t *testin
 
 	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
-		"password": "viewer-password",
+		"password": "Viewer1password",
 	}, nil)
 	if loginResponse.Code != http.StatusOK {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
@@ -132,7 +132,7 @@ func TestHTTPAppearanceSettingsRejectsUnauthorizedAndInvalidValues(t *testing.T)
 	})
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "viewer",
-		Password: "viewer-password",
+		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
@@ -154,7 +154,7 @@ func TestHTTPAppearanceSettingsRejectsUnauthorizedAndInvalidValues(t *testing.T)
 
 	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
-		"password": "viewer-password",
+		"password": "Viewer1password",
 	}, nil)
 	if loginResponse.Code != http.StatusOK {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
@@ -196,7 +196,7 @@ func TestHTTPAppearanceSettingsRequirePersistentStore(t *testing.T) {
 	})
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "viewer",
-		Password: "viewer-password",
+		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
@@ -204,7 +204,7 @@ func TestHTTPAppearanceSettingsRequirePersistentStore(t *testing.T) {
 
 	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
-		"password": "viewer-password",
+		"password": "Viewer1password",
 	}, nil)
 	if loginResponse.Code != http.StatusOK {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)

@@ -25,7 +25,7 @@ func TestHTTPUsersCreateUpdateDeleteRoundTrip(t *testing.T) {
 	})
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
-		Password: "admin-password",
+		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
@@ -33,7 +33,7 @@ func TestHTTPUsersCreateUpdateDeleteRoundTrip(t *testing.T) {
 
 	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
-		"password": "admin-password",
+		"password": "Admin1password",
 	}, nil)
 	if loginResponse.Code != http.StatusOK {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
@@ -43,7 +43,7 @@ func TestHTTPUsersCreateUpdateDeleteRoundTrip(t *testing.T) {
 	createResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/users", map[string]string{
 		"username": "operator",
 		"role":     "operator",
-		"password": "operator-password",
+		"password": "Operator1password",
 	}, cookies)
 	if createResponse.Code != http.StatusCreated {
 		t.Fatalf("POST /api/users status = %d, want %d", createResponse.Code, http.StatusCreated)
@@ -74,7 +74,7 @@ func TestHTTPUsersCreateUpdateDeleteRoundTrip(t *testing.T) {
 	updateResponse := performJSONRequest(t, server.Handler(), http.MethodPut, "/api/users/"+createdUser.ID, map[string]string{
 		"username":     "viewer-renamed",
 		"role":         "viewer",
-		"new_password": "viewer-password",
+		"new_password": "Viewer1password",
 	}, cookies)
 	if updateResponse.Code != http.StatusOK {
 		t.Fatalf("PUT /api/users/{id} status = %d, want %d", updateResponse.Code, http.StatusOK)
@@ -97,7 +97,7 @@ func TestHTTPUsersCreateUpdateDeleteRoundTrip(t *testing.T) {
 
 	userLogin := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer-renamed",
-		"password": "viewer-password",
+		"password": "Viewer1password",
 	}, nil)
 	if userLogin.Code != http.StatusOK {
 		t.Fatalf("POST /api/auth/login updated user status = %d, want %d", userLogin.Code, http.StatusOK)
@@ -138,7 +138,7 @@ func TestHTTPUsersRejectSelfDeleteAndLastAdminDemotion(t *testing.T) {
 	})
 	adminUser, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
-		Password: "admin-password",
+		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
 	}, now)
 	if err != nil {
@@ -147,7 +147,7 @@ func TestHTTPUsersRejectSelfDeleteAndLastAdminDemotion(t *testing.T) {
 
 	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
-		"password": "admin-password",
+		"password": "Admin1password",
 	}, nil)
 	if loginResponse.Code != http.StatusOK {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)

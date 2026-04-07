@@ -63,7 +63,7 @@ func TestHTTPAgentCertificateRecoveryConsumesAdminGrant(t *testing.T) {
 	seedRecoveryTestAgent(t, server, store, now)
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
-		Password: "admin-password",
+		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
@@ -71,7 +71,7 @@ func TestHTTPAgentCertificateRecoveryConsumesAdminGrant(t *testing.T) {
 
 	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
-		"password": "admin-password",
+		"password": "Admin1password",
 	}, nil)
 	if loginResponse.Code != http.StatusOK {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
@@ -216,7 +216,7 @@ func TestHTTPAgentCertificateRecoveryGrantCreateResponseRoundTrip(t *testing.T) 
 	seedRecoveryTestAgent(t, server, store, now)
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
-		Password: "admin-password",
+		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
@@ -224,7 +224,7 @@ func TestHTTPAgentCertificateRecoveryGrantCreateResponseRoundTrip(t *testing.T) 
 
 	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
-		"password": "admin-password",
+		"password": "Admin1password",
 	}, nil)
 	if loginResponse.Code != http.StatusOK {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
@@ -282,7 +282,7 @@ func TestHTTPAgentCertificateRecoveryGrantRejectsExcessiveTTL(t *testing.T) {
 	seedRecoveryTestAgent(t, server, store, now)
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
-		Password: "admin-password",
+		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
@@ -290,7 +290,7 @@ func TestHTTPAgentCertificateRecoveryGrantRejectsExcessiveTTL(t *testing.T) {
 
 	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
-		"password": "admin-password",
+		"password": "Admin1password",
 	}, nil)
 	if loginResponse.Code != http.StatusOK {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
@@ -326,7 +326,7 @@ func TestHTTPAgentsExposeCertificateRecoveryStatus(t *testing.T) {
 	seedRecoveryTestAgent(t, server, store, now)
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
-		Password: "admin-password",
+		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
@@ -334,7 +334,7 @@ func TestHTTPAgentsExposeCertificateRecoveryStatus(t *testing.T) {
 
 	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
-		"password": "admin-password",
+		"password": "Admin1password",
 	}, nil)
 	if loginResponse.Code != http.StatusOK {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)

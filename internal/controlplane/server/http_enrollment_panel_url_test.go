@@ -31,7 +31,7 @@ func TestHTTPEnrollmentTokensExposeConfiguredPanelURL(t *testing.T) {
 	})
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "operator",
-		Password: "operator-password",
+		Password: "Operator1password",
 		Role:     auth.RoleOperator,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
@@ -44,7 +44,7 @@ func TestHTTPEnrollmentTokensExposeConfiguredPanelURL(t *testing.T) {
 		"/panvex/api/auth/login",
 		map[string]string{
 			"username": "operator",
-			"password": "operator-password",
+			"password": "Operator1password",
 		},
 		nil,
 	)
@@ -70,7 +70,7 @@ func TestHTTPEnrollmentTokensExposeConfiguredPanelURL(t *testing.T) {
 
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
-		Password: "admin-password",
+		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser(admin) error = %v", err)
@@ -83,7 +83,7 @@ func TestHTTPEnrollmentTokensExposeConfiguredPanelURL(t *testing.T) {
 		"/panvex/api/auth/login",
 		map[string]string{
 			"username": "admin",
-			"password": "admin-password",
+			"password": "Admin1password",
 		},
 		nil,
 	)

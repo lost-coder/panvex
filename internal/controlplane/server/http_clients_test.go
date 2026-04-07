@@ -29,7 +29,7 @@ func TestHTTPClientsCreateTracksDeploymentsAndStructuredJobPayload(t *testing.T)
 	})
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
-		Password: "admin-password",
+		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
@@ -161,7 +161,7 @@ func TestHTTPClientsUpdateRotateAndDeleteQueueLifecycleJobs(t *testing.T) {
 	})
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
-		Password: "admin-password",
+		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
@@ -276,7 +276,7 @@ func TestHTTPClientsRejectInvalidUserADTag(t *testing.T) {
 	})
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
-		Password: "admin-password",
+		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
@@ -306,7 +306,7 @@ func TestHTTPClientsAggregateUsageAcrossAgentSnapshots(t *testing.T) {
 	})
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
-		Password: "admin-password",
+		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
@@ -427,7 +427,7 @@ func TestHTTPClientsCreateReturnsInternalErrorWhenPersistenceFails(t *testing.T)
 	})
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
-		Password: "admin-password",
+		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
@@ -471,7 +471,7 @@ func TestRecordClientJobResultDoesNotPanicWhenDeploymentPersistenceFails(t *test
 	})
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
-		Password: "admin-password",
+		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
@@ -523,7 +523,7 @@ func loginAdminForClients(t *testing.T, handler http.Handler) []*http.Cookie {
 
 	loginResponse := performJSONRequest(t, handler, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
-		"password": "admin-password",
+		"password": "Admin1password",
 	}, nil)
 	if loginResponse.Code != http.StatusOK {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
