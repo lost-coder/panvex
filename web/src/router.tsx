@@ -120,6 +120,11 @@ const UsersContainer = lazyRouteComponent(
   "default",
 );
 
+const ActivityContainer = lazyRouteComponent(
+  () => import("@/containers/ActivityContainer").then((m) => ({ default: m.ActivityContainer })),
+  "default",
+);
+
 const EnrollmentTokensContainer = lazyRouteComponent(
   () => import("@/containers/EnrollmentTokensContainer").then((m) => ({ default: m.EnrollmentTokensContainer })),
   "default",
@@ -201,6 +206,12 @@ const enrollmentTokensRoute = createRoute({
   component: EnrollmentTokensContainer,
 });
 
+const activityRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/activity",
+  component: ActivityContainer,
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   shellRoute.addChildren([
@@ -213,6 +224,7 @@ const routeTree = rootRoute.addChildren([
     settingsRoute,
     usersRoute,
     enrollmentTokensRoute,
+    activityRoute,
     profileRoute,
   ]),
 ]);
