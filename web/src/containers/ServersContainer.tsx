@@ -19,6 +19,7 @@ export function ServersContainer() {
       autoThreshold={10}
       onViewModeChange={setMode}
       onServerClick={(id) => navigate({ to: "/servers/$serverId", params: { serverId: id } })}
+      onManageTokens={() => navigate({ to: "/servers/enrollment" })}
     />
   );
 }
