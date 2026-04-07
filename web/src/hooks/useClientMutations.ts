@@ -25,5 +25,12 @@ export function useClientMutations(clientId: string, rawClient: ApiClient | unde
     },
   });
 
-  return { editMutation, rotateMutation };
+  const deleteMutation = useMutation({
+    mutationFn: () => apiClient.deleteClient(clientId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["clients"] });
+    },
+  });
+
+  return { editMutation, rotateMutation, deleteMutation };
 }

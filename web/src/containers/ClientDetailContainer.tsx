@@ -7,7 +7,7 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 export function ClientDetailContainer() {
   const { clientId } = useParams({ strict: false });
   const { client, raw, isLoading } = useClientDetail(clientId ?? "");
-  const { editMutation, rotateMutation } = useClientMutations(clientId ?? "", raw);
+  const { editMutation, rotateMutation, deleteMutation } = useClientMutations(clientId ?? "", raw);
   const navigate = useNavigate();
   const [secretPending, setSecretPending] = useState(false);
 
@@ -37,6 +37,10 @@ export function ClientDetailContainer() {
       }}
       secretRotating={rotateMutation.isPending}
       secretPendingRedeploy={secretPending}
+      onDelete={async () => {
+        await deleteMutation.mutateAsync();
+        navigate({ to: "/clients" });
+      }}
     />
   );
 }
