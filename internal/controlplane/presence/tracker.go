@@ -64,6 +64,13 @@ func (t *Tracker) Heartbeat(agentID string, observedAt time.Time) {
 	t.agentTimestamps[agentID] = presence
 }
 
+// Remove deletes an agent from the presence tracker entirely.
+func (t *Tracker) Remove(agentID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.agentTimestamps, agentID)
+}
+
 // Evaluate returns the derived liveness state for the requested agent.
 func (t *Tracker) Evaluate(agentID string, now time.Time) State {
 	t.mu.RLock()
