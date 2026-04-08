@@ -1,10 +1,14 @@
 import { ServerDetailPage, Spinner } from "@panvex/ui";
 import { useServerDetail } from "@/hooks/useServerDetail";
+import { useServerMutations } from "@/hooks/useServerMutations";
 import { useNavigate, useParams } from "@tanstack/react-router";
+import { transformAgentConnection } from "@/lib/transforms/servers";
 
 export function ServerDetailContainer() {
   const { serverId } = useParams({ strict: false });
-  const { server, initState, lastUpdatedAt, isLoading } = useServerDetail(serverId ?? "");
+  const { server, initState, lastUpdatedAt, raw, isLoading } = useServerDetail(serverId ?? "");
+  const { allowCertRecoveryMutation, revokeCertRecoveryMutation, boostDetailMutation } =
+    useServerMutations(serverId ?? "");
   const navigate = useNavigate();
 
   if (isLoading || !server) {
@@ -17,6 +21,10 @@ export function ServerDetailContainer() {
       initState={initState}
       lastUpdatedAt={lastUpdatedAt}
       onBack={() => navigate({ to: "/servers" })}
+      onBoostDetail={() => boostDetailMutation.mutate()}
+      agentConnection={transformAgentConnection(raw?.server?.agent)}
+      onAllowReEnrollment={() => allowCertRecoveryMutation.mutate()}
+      onRevokeGrant={() => revokeCertRecoveryMutation.mutate()}
     />
   );
 }

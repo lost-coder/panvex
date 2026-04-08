@@ -21,5 +21,5 @@ export function useServerDetail(serverId: string) {
 
   const lastUpdatedAt = query.dataUpdatedAt ? new Date(query.dataUpdatedAt) : undefined;
 
-  return { server, initState, lastUpdatedAt, isLoading: query.isLoading, error: query.error };
+  return { server, initState, lastUpdatedAt, raw: query.data, isLoading: query.isLoading, error: query.error };
 }
