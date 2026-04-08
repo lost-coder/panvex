@@ -12,16 +12,19 @@ export function useServerMutations(serverId: string) {
   const allowCertRecoveryMutation = useMutation({
     mutationFn: () => apiClient.allowAgentCertificateRecovery(serverId),
     onSuccess: invalidateServer,
+    onError: (err) => console.error("Failed to allow certificate recovery:", err),
   });
 
   const revokeCertRecoveryMutation = useMutation({
     mutationFn: () => apiClient.revokeAgentCertificateRecovery(serverId),
     onSuccess: invalidateServer,
+    onError: (err) => console.error("Failed to revoke certificate recovery:", err),
   });
 
   const boostDetailMutation = useMutation({
     mutationFn: () => apiClient.activateTelemetryDetailBoost(serverId),
     onSuccess: invalidateServer,
+    onError: (err) => console.error("Failed to activate detail boost:", err),
   });
 
   return {
