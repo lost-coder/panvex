@@ -6,6 +6,7 @@ export function useServerMutations(serverId: string) {
 
   const invalidateServer = () => {
     qc.invalidateQueries({ queryKey: ["telemetry", "server", serverId] });
+    qc.invalidateQueries({ queryKey: ["telemetry", "servers"] });
   };
 
   const allowCertRecoveryMutation = useMutation({

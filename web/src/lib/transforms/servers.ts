@@ -326,10 +326,12 @@ export function transformAgentConnection(
     ? new Date(agent.last_seen_at)
     : new Date();
 
-  // Approximate cert dates: exact cert NotBefore/NotAfter are not exposed in the API.
+  // Approximate cert dates: the API does not expose mTLS cert NotBefore/NotAfter.
+  // We use last_seen_at as a proxy for issuedAt (the agent was alive, so the cert was valid).
+  // expiresAt is estimated as issuedAt + 30-day cert lifetime.
   const now = new Date();
-  const approxExpiresAt = new Date(lastSeen.getTime() + CERT_LIFETIME_DAYS * 24 * 60 * 60 * 1000);
-  const approxIssuedAt = new Date(approxExpiresAt.getTime() - CERT_LIFETIME_DAYS * 24 * 60 * 60 * 1000);
+  const approxIssuedAt = lastSeen;
+  const approxExpiresAt = new Date(approxIssuedAt.getTime() + CERT_LIFETIME_DAYS * 24 * 60 * 60 * 1000);
   const remainingMs = approxExpiresAt.getTime() - now.getTime();
   const remainingDays = Math.max(0, Math.ceil(remainingMs / (24 * 60 * 60 * 1000)));
 
