@@ -1,5 +1,5 @@
 import type { ServerListItem } from "@panvex/ui";
-import type { ServerDetailPageProps, InitCardProps } from "@panvex/ui";
+import type { ServerDetailPageProps, InitCardProps, AgentConnectionData } from "@panvex/ui";
 import type {
   TelemetryServersResponse,
   TelemetryServerDetailResponse,
@@ -312,4 +312,59 @@ export function transformServerDetail(
     events,
     eventsDroppedTotal: 0,
   };
+}
+
+// Agent mTLS certificates have a 30-day validity period.
+const CERT_LIFETIME_DAYS = 30;
+
+export function transformAgentConnection(
+  agent: Agent | undefined,
+): AgentConnectionData | undefined {
+  if (!agent) return undefined;
+
+  const lastSeen = agent.last_seen_at
+    ? new Date(agent.last_seen_at)
+    : new Date();
+
+  // Approximate cert dates: exact cert NotBefore/NotAfter are not exposed in the API.
+  const now = new Date();
+  const approxExpiresAt = new Date(lastSeen.getTime() + CERT_LIFETIME_DAYS * 24 * 60 * 60 * 1000);
+  const approxIssuedAt = new Date(approxExpiresAt.getTime() - CERT_LIFETIME_DAYS * 24 * 60 * 60 * 1000);
+  const remainingMs = approxExpiresAt.getTime() - now.getTime();
+  const remainingDays = Math.max(0, Math.ceil(remainingMs / (24 * 60 * 60 * 1000)));
+
+  const recovery = agent.certificate_recovery;
+
+  return {
+    presenceState: (agent.presence_state === "online"
+      ? "online"
+      : agent.presence_state === "degraded"
+        ? "degraded"
+        : "offline") as AgentConnectionData["presenceState"],
+    lastSeenAt: formatLastSeen(lastSeen),
+    agentId: agent.id,
+    version: agent.version || "unknown",
+    fleetGroup: agent.fleet_group_id || "default",
+    certificate: {
+      issuedAt: approxIssuedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+      expiresAt: approxExpiresAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+      remainingDays,
+    },
+    recoveryGrant: recovery && recovery.status !== "expired"
+      ? {
+          status: recovery.status as "allowed" | "used" | "revoked",
+          expiresAtUnix: recovery.expires_at_unix,
+        }
+      : undefined,
+  };
+}
+
+function formatLastSeen(date: Date): string {
+  const now = Date.now();
+  const diffSecs = Math.floor((now - date.getTime()) / 1000);
+  if (diffSecs < 10) return "just now";
+  if (diffSecs < 60) return `${diffSecs}s ago`;
+  if (diffSecs < 3600) return `${Math.floor(diffSecs / 60)}m ago`;
+  if (diffSecs < 86400) return `${Math.floor(diffSecs / 3600)}h ago`;
+  return `${Math.floor(diffSecs / 86400)}d ago`;
 }
