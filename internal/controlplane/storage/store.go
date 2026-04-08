@@ -27,8 +27,11 @@ type FleetStore interface {
 	ListFleetGroups(ctx context.Context) ([]FleetGroupRecord, error)
 	PutAgent(ctx context.Context, agent AgentRecord) error
 	ListAgents(ctx context.Context) ([]AgentRecord, error)
+	DeleteAgent(ctx context.Context, agentID string) error
+	UpdateAgentNodeName(ctx context.Context, agentID string, nodeName string) error
 	PutInstance(ctx context.Context, instance InstanceRecord) error
 	ListInstances(ctx context.Context) ([]InstanceRecord, error)
+	DeleteInstancesByAgent(ctx context.Context, agentID string) error
 }
 
 // JobStore persists orchestration jobs and per-target result state.

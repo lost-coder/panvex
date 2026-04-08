@@ -27,9 +27,22 @@ export function useServerMutations(serverId: string) {
     onError: (err) => console.error("Failed to activate detail boost:", err),
   });
 
+  const renameMutation = useMutation({
+    mutationFn: (nodeName: string) => apiClient.renameAgent(serverId, nodeName),
+    onSuccess: invalidateServer,
+    onError: (err) => console.error("Failed to rename agent:", err),
+  });
+
+  const deregisterMutation = useMutation({
+    mutationFn: () => apiClient.deregisterAgent(serverId),
+    onError: (err) => console.error("Failed to deregister agent:", err),
+  });
+
   return {
     allowCertRecoveryMutation,
     revokeCertRecoveryMutation,
     boostDetailMutation,
+    renameMutation,
+    deregisterMutation,
   };
 }

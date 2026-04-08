@@ -179,6 +179,33 @@ func (s *memoryStore) ListAgents(_ context.Context) ([]storage.AgentRecord, erro
 	return result, nil
 }
 
+func (s *memoryStore) DeleteAgent(_ context.Context, agentID string) error {
+	if _, ok := s.agents[agentID]; !ok {
+		return storage.ErrNotFound
+	}
+	delete(s.agents, agentID)
+	return nil
+}
+
+func (s *memoryStore) UpdateAgentNodeName(_ context.Context, agentID string, nodeName string) error {
+	agent, ok := s.agents[agentID]
+	if !ok {
+		return storage.ErrNotFound
+	}
+	agent.NodeName = nodeName
+	s.agents[agentID] = agent
+	return nil
+}
+
+func (s *memoryStore) DeleteInstancesByAgent(_ context.Context, agentID string) error {
+	for id, inst := range s.instances {
+		if inst.AgentID == agentID {
+			delete(s.instances, id)
+		}
+	}
+	return nil
+}
+
 func (s *memoryStore) PutInstance(_ context.Context, instance storage.InstanceRecord) error {
 	s.instances[instance.ID] = instance
 	return nil
