@@ -191,6 +191,11 @@ export type Agent = {
   last_seen_at: string;
 };
 
+export type FleetGroupEntry = {
+  id: string;
+  agent_count: number;
+};
+
 export type Instance = {
   id: string;
   agent_id: string;
@@ -570,4 +575,14 @@ export const apiClient = {
     api<void>(`${apiBasePath}/discovered-clients/${id}/ignore`, {
       method: "POST"
     }),
+  renameAgent: (agentID: string, nodeName: string) =>
+    api<Agent>(`${apiBasePath}/agents/${agentID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ node_name: nodeName })
+    }),
+  deregisterAgent: (agentID: string) =>
+    api<void>(`${apiBasePath}/agents/${agentID}`, {
+      method: "DELETE"
+    }),
+  fleetGroups: () => api<FleetGroupEntry[]>(`${apiBasePath}/fleet-groups`),
 };
