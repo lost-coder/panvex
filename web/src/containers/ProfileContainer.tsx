@@ -51,6 +51,7 @@ export function ProfileContainer() {
           throw err;
         }
       }}
+      totpSetupLoading={setupMutation.isPending}
       totpEnableLoading={enableMutation.isPending}
       totpDisableLoading={disableMutation.isPending}
       totpError={totpError}
