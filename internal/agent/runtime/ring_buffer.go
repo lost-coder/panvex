@@ -90,16 +90,26 @@ func (b *RuntimeRingBuffer) DrainAndAggregate() *gatewayrpc.Snapshot {
 		load15Last = sl.Load_15M
 	}
 
+	// Net bytes: use last sample (cumulative counters — delta computed by control-plane).
+	lastSL := last.Snapshot.GetRuntime().GetSystemLoad()
+	var netSent, netRecv uint64
+	if lastSL != nil {
+		netSent = lastSL.NetBytesSent
+		netRecv = lastSL.NetBytesRecv
+	}
+
 	result.Runtime.AggregatedSystemLoad = &gatewayrpc.AggregatedSystemLoad{
-		CpuPctAvg:  cpuSum / float64(n),
-		CpuPctMax:  cpuMax,
-		MemPctAvg:  memSum / float64(n),
-		MemPctMax:  memMax,
-		DiskPctAvg: diskSum / float64(n),
-		DiskPctMax: diskMax,
-		Load_1M:    load1Last,
-		Load_5M:    load5Last,
-		Load_15M:   load15Last,
+		CpuPctAvg:    cpuSum / float64(n),
+		CpuPctMax:    cpuMax,
+		MemPctAvg:    memSum / float64(n),
+		MemPctMax:    memMax,
+		DiskPctAvg:   diskSum / float64(n),
+		DiskPctMax:   diskMax,
+		Load_1M:      load1Last,
+		Load_5M:      load5Last,
+		Load_15M:     load15Last,
+		NetBytesSent: netSent,
+		NetBytesRecv: netRecv,
 	}
 
 	// Aggregate connections: avg + max

@@ -420,6 +420,8 @@ func systemLoadFromSnapshot(load *gatewayrpc.RuntimeSystemLoadSnapshot) RuntimeS
 		Load1M:           load.Load_1M,
 		Load5M:           load.Load_5M,
 		Load15M:          load.Load_15M,
+		NetBytesSent:     load.NetBytesSent,
+		NetBytesRecv:     load.NetBytesRecv,
 	}
 }
 
@@ -448,6 +450,8 @@ func serverLoadPointFromSnapshot(agent Agent, snapshot agentSnapshot) storage.Se
 		record.Load1M = agg.Load_1M
 		record.Load5M = agg.Load_5M
 		record.Load15M = agg.Load_15M
+		record.NetBytesSent = agg.NetBytesSent
+		record.NetBytesRecv = agg.NetBytesRecv
 	} else if sl := rt.GetSystemLoad(); sl != nil {
 		record.CPUPctAvg = sl.CpuUsagePct
 		record.CPUPctMax = sl.CpuUsagePct
@@ -458,6 +462,8 @@ func serverLoadPointFromSnapshot(agent Agent, snapshot agentSnapshot) storage.Se
 		record.Load1M = sl.Load_1M
 		record.Load5M = sl.Load_5M
 		record.Load15M = sl.Load_15M
+		record.NetBytesSent = sl.NetBytesSent
+		record.NetBytesRecv = sl.NetBytesRecv
 	}
 
 	if agg := rt.GetAggregatedConnections(); agg != nil {

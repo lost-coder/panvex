@@ -8,6 +8,7 @@ import (
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/load"
 	"github.com/shirou/gopsutil/v4/mem"
+	"github.com/shirou/gopsutil/v4/net"
 )
 
 func collectLocalSystemLoad(ctx context.Context) (RuntimeSystemLoad, error) {
@@ -37,6 +38,11 @@ func collectLocalSystemLoad(ctx context.Context) (RuntimeSystemLoad, error) {
 		systemLoad.Load1M = averages.Load1
 		systemLoad.Load5M = averages.Load5
 		systemLoad.Load15M = averages.Load15
+	}
+
+	if counters, err := net.IOCountersWithContext(ctx, false); err == nil && len(counters) > 0 {
+		systemLoad.NetBytesSent = counters[0].BytesSent
+		systemLoad.NetBytesRecv = counters[0].BytesRecv
 	}
 
 	return systemLoad, nil
