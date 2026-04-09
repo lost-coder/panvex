@@ -27,7 +27,7 @@ const (
 	runtimeInitializationFastInterval = 3 * time.Second
 	gatewayStreamConnectTimeout   = 15 * time.Second
 	certificateRefreshTimeout     = 15 * time.Second
-	jobExecutionTimeout           = 45 * time.Second
+	jobExecutionTimeout           = 30 * time.Second
 	runtimeOperationTimeout       = 20 * time.Second
 	jobQueueCapacity              = 16
 )
@@ -490,8 +490,16 @@ func startRuntimePollWorker(
 	}
 
 	go func() {
+		consecutiveFailures := 0
 		for {
 			delay := agent.RuntimeSnapshotInterval(config.Interval, runtimeInitializationFastInterval, time.Now())
+			if consecutiveFailures > 0 {
+				backoff := time.Duration(consecutiveFailures) * config.Interval
+				if backoff > 5*time.Minute {
+					backoff = 5 * time.Minute
+				}
+				delay = backoff
+			}
 			timer := time.NewTimer(delay)
 			select {
 			case <-connectionCtx.Done():
@@ -507,9 +515,13 @@ func startRuntimePollWorker(
 				snapshot, err := agent.BuildRuntimeSnapshot(runtimeCtx, observedAt.UTC())
 				cancelRuntime()
 				if err != nil {
-					log.Printf("agent runtime poll failed: %v", err)
+					consecutiveFailures++
+					if consecutiveFailures <= 3 || consecutiveFailures%10 == 0 {
+						log.Printf("agent runtime poll failed (attempt %d): %v", consecutiveFailures, err)
+					}
 					continue
 				}
+				consecutiveFailures = 0
 				buffer.Push(runtime.RuntimeSample{
 					ObservedAt: observedAt.UTC(),
 					Snapshot:   snapshot,

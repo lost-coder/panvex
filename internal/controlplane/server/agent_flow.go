@@ -247,11 +247,12 @@ func (s *Server) applyAgentSnapshotWithContext(ctx context.Context, snapshot age
 		}
 		if snapshot.HasRuntime && snapshot.Runtime != nil {
 			if err := s.store.AppendServerLoadPoint(ctx, serverLoadPointFromSnapshot(agent, snapshot)); err != nil {
-				log.Printf("append server load point failed: %v", err)
+				log.Printf("timeseries: append server load failed for agent %s: %v", agent.ID, err)
 			}
 			for _, dcPoint := range dcHealthPointsFromSnapshot(agent, snapshot) {
 				if err := s.store.AppendDCHealthPoint(ctx, dcPoint); err != nil {
-					log.Printf("append dc health point failed: %v", err)
+					log.Printf("timeseries: append dc health failed for agent %s dc %d: %v", agent.ID, dcPoint.DC, err)
+					break
 				}
 			}
 		}
@@ -283,6 +284,7 @@ func (s *Server) applyAgentSnapshotWithContext(ctx context.Context, snapshot age
 
 	if snapshot.HasClientIPs && s.store != nil {
 		now := snapshot.ObservedAt.UTC()
+		var ipErrors int
 		for _, clientIP := range snapshot.ClientIPs {
 			for _, ip := range clientIP.ActiveIPs {
 				if err := s.store.UpsertClientIPHistory(ctx, storage.ClientIPHistoryRecord{
@@ -292,9 +294,15 @@ func (s *Server) applyAgentSnapshotWithContext(ctx context.Context, snapshot age
 					FirstSeen: now,
 					LastSeen:  now,
 				}); err != nil {
-					log.Printf("upsert client ip history failed: %v", err)
+					ipErrors++
+					if ipErrors == 1 {
+						log.Printf("timeseries: upsert client ip history failed for agent %s: %v", snapshot.AgentID, err)
+					}
 				}
 			}
+		}
+		if ipErrors > 1 {
+			log.Printf("timeseries: %d additional client ip upsert errors suppressed for agent %s", ipErrors-1, snapshot.AgentID)
 		}
 	}
 
