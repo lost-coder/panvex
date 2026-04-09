@@ -98,6 +98,8 @@ message RuntimeSystemLoadSnapshot {
   double load_1m = 8;
   double load_5m = 9;
   double load_15m = 10;
+  uint64 net_bytes_sent = 11;
+  uint64 net_bytes_recv = 12;
 }
 
 message AggregatedSystemLoad {
@@ -110,6 +112,8 @@ message AggregatedSystemLoad {
   double load_1m = 7;
   double load_5m = 8;
   double load_15m = 9;
+  uint64 net_bytes_sent = 10;
+  uint64 net_bytes_recv = 11;
 }
 
 message AggregatedConnections {
