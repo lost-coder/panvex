@@ -23,6 +23,7 @@ message RenewCertificateResponse {
 message Heartbeat {
   string agent_id = 1;
   string node_name = 2;
+  reserved 3; // was removed in early development
   string fleet_group_id = 4;
   string version = 5;
   bool read_only = 6;

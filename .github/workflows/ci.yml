@@ -64,6 +64,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
+          cache: npm
+          cache-dependency-path: "*/package-lock.json"
       - name: Build UI kit
         working-directory: ui
         run: npm ci && npm run build
@@ -85,6 +87,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
+          cache: npm
+          cache-dependency-path: "*/package-lock.json"
       - name: Build UI kit
         working-directory: ui
         run: npm ci && npm run build

@@ -18,6 +18,7 @@ type RuntimeRingBuffer struct {
 	mu      sync.Mutex
 	samples []RuntimeSample
 	cap     int
+	dropped uint64
 }
 
 func NewRuntimeRingBuffer(capacity int) *RuntimeRingBuffer {
@@ -34,9 +35,17 @@ func (b *RuntimeRingBuffer) Push(sample RuntimeSample) {
 	if len(b.samples) >= b.cap {
 		copy(b.samples, b.samples[1:])
 		b.samples[len(b.samples)-1] = sample
+		b.dropped++
 	} else {
 		b.samples = append(b.samples, sample)
 	}
+}
+
+// DroppedCount returns the number of samples dropped due to capacity overflow.
+func (b *RuntimeRingBuffer) DroppedCount() uint64 {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.dropped
 }
 
 // DrainAndAggregate returns a single aggregated snapshot from all buffered samples,
