@@ -24,6 +24,7 @@ func TestEnrollAgentWithContextUsesCallerContextForPersistence(t *testing.T) {
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
+	defer server.Close()
 
 	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
 		FleetGroupID: "ams",
@@ -46,7 +47,10 @@ func TestEnrollAgentWithContextUsesCallerContextForPersistence(t *testing.T) {
 	}
 }
 
-func TestApplyAgentSnapshotWithContextUsesCallerContextForPersistence(t *testing.T) {
+// TestApplyAgentSnapshotWithContextSucceedsRegardlessOfCallerContext verifies
+// that snapshot application always succeeds because persistence is handled
+// asynchronously by the batch writer with its own context.
+func TestApplyAgentSnapshotWithContextSucceedsRegardlessOfCallerContext(t *testing.T) {
 	now := time.Date(2026, time.March, 29, 10, 15, 0, 0, time.UTC)
 	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
 	if err != nil {
@@ -66,6 +70,7 @@ func TestApplyAgentSnapshotWithContextUsesCallerContextForPersistence(t *testing
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
+	defer server.Close()
 	server.agents["agent-1"] = Agent{
 		ID:           "agent-1",
 		NodeName:     "node-a",
@@ -77,6 +82,7 @@ func TestApplyAgentSnapshotWithContextUsesCallerContextForPersistence(t *testing
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
+	// Cancelled context should not prevent in-memory state update.
 	err = server.applyAgentSnapshotWithContext(ctx, agentSnapshot{
 		AgentID:      "agent-1",
 		NodeName:     "node-a",
@@ -84,7 +90,14 @@ func TestApplyAgentSnapshotWithContextUsesCallerContextForPersistence(t *testing
 		Version:      "1.0.1",
 		ObservedAt:   now,
 	})
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("applyAgentSnapshotWithContext() error = %v, want %v", err, context.Canceled)
+	if err != nil {
+		t.Fatalf("applyAgentSnapshotWithContext() error = %v, want nil (async persistence)", err)
+	}
+
+	server.mu.RLock()
+	agent := server.agents["agent-1"]
+	server.mu.RUnlock()
+	if agent.Version != "1.0.1" {
+		t.Fatalf("agent.Version = %q, want %q", agent.Version, "1.0.1")
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"context"
 	"io/fs"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -82,9 +81,10 @@ type Server struct {
 	auditTrail []AuditEvent
 	panelSettings PanelSettings
 	retention  RetentionSettings
-	handler    http.Handler
-	startupErr error
-	stopRollup context.CancelFunc
+	handler      http.Handler
+	startupErr   error
+	stopRollup   context.CancelFunc
+	batchWriter  *storeBatchWriter
 }
 
 // New constructs a control-plane server with in-memory state suitable for local development.
@@ -170,14 +170,22 @@ func New(options Options) *Server {
 	server.stopRollup = rollupCancel
 	server.startTimeseriesRollupWorker(rollupCtx)
 
+	if server.store != nil {
+		server.batchWriter = newStoreBatchWriter(server.store)
+		server.batchWriter.Start()
+	}
+
 	return server
 }
 
-// Close stops background workers. It should be called before closing the
-// storage backend so that in-flight writes can complete.
+// Close stops background workers and drains pending writes. It should be
+// called before closing the storage backend.
 func (s *Server) Close() {
 	if s.stopRollup != nil {
 		s.stopRollup()
+	}
+	if s.batchWriter != nil {
+		s.batchWriter.Stop()
 	}
 }
 
@@ -386,7 +394,7 @@ func (s *Server) appendAudit(actorID string, action string, targetID string, det
 	s.appendAuditWithContext(context.Background(), actorID, action, targetID, details)
 }
 
-func (s *Server) appendAuditWithContext(ctx context.Context, actorID string, action string, targetID string, details map[string]any) {
+func (s *Server) appendAuditWithContext(_ context.Context, actorID string, action string, targetID string, details map[string]any) {
 	s.mu.Lock()
 	s.auditSeq++
 	event := AuditEvent{
@@ -403,14 +411,12 @@ func (s *Server) appendAuditWithContext(ctx context.Context, actorID string, act
 		copy(s.auditTrail, s.auditTrail[1:])
 		s.auditTrail[len(s.auditTrail)-1] = event
 	}
-	var persistErr error
-	if s.store != nil {
-		persistErr = s.store.AppendAuditEvent(ctx, auditEventToRecord(event))
-	}
 	s.mu.Unlock()
 
-	if persistErr != nil {
-		log.Printf("control-plane audit persistence failed for action %q: %v", action, persistErr)
+	// Persist asynchronously via the batch writer so DB latency does not
+	// block callers holding s.mu.
+	if s.batchWriter != nil {
+		s.batchWriter.audit.Enqueue(auditEventToRecord(event))
 	}
 
 	s.events.publish(eventEnvelope{

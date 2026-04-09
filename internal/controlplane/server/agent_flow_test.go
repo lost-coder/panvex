@@ -171,10 +171,13 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 		t.Fatalf("applyAgentSnapshot() error = %v", err)
 	}
 
+	first.Close()
+
 	restored := New(Options{
 		Now: func() time.Time { return now.Add(time.Minute) },
 		Store: store,
 	})
+	defer restored.Close()
 
 	restoredAgents, err := restored.store.ListAgents(context.Background())
 	if err != nil {
@@ -201,7 +204,10 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 	}
 }
 
-func TestServerApplyAgentSnapshotReturnsErrorWhenPersistenceFails(t *testing.T) {
+// TestServerApplyAgentSnapshotUpdatesInMemoryStateEvenWhenPersistenceFails verifies
+// that the in-memory state is always updated regardless of DB write failures, since
+// persistence is now handled asynchronously by the batch writer.
+func TestServerApplyAgentSnapshotUpdatesInMemoryStateEvenWhenPersistenceFails(t *testing.T) {
 	now := time.Date(2026, time.March, 18, 13, 20, 0, 0, time.UTC)
 	sqliteStore, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
 	if err != nil {
@@ -214,6 +220,7 @@ func TestServerApplyAgentSnapshotReturnsErrorWhenPersistenceFails(t *testing.T) 
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
+	defer server.Close()
 	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
 		FleetGroupID: "ams-1",
 		TTL:          time.Minute,
@@ -233,6 +240,7 @@ func TestServerApplyAgentSnapshotReturnsErrorWhenPersistenceFails(t *testing.T) 
 
 	store.putAgentErr = errors.New("put agent failed")
 
+	// Async batch writer means persistence failures do not block the caller.
 	if err := server.applyAgentSnapshot(agentSnapshot{
 		AgentID:      identity.AgentID,
 		NodeName:     "node-a",
@@ -241,8 +249,19 @@ func TestServerApplyAgentSnapshotReturnsErrorWhenPersistenceFails(t *testing.T) 
 		Runtime:      gatewayRuntimeSnapshotForTest(),
 		HasRuntime:   true,
 		ObservedAt:   now.Add(20 * time.Second),
-	}); err == nil {
-		t.Fatal("applyAgentSnapshot() error = nil, want persistence failure")
+	}); err != nil {
+		t.Fatalf("applyAgentSnapshot() error = %v, want nil (async persistence)", err)
+	}
+
+	// In-memory state should still reflect the snapshot.
+	server.mu.RLock()
+	agent, exists := server.agents[identity.AgentID]
+	server.mu.RUnlock()
+	if !exists {
+		t.Fatal("agent not found in in-memory state after snapshot with failing store")
+	}
+	if agent.Version != "1.0.0" {
+		t.Fatalf("agent.Version = %q, want %q", agent.Version, "1.0.0")
 	}
 }
 
@@ -406,6 +425,7 @@ func TestServerApplyAgentSnapshotKeepsEnrolledScopeWhenSnapshotDiffers(t *testin
 		Now: func() time.Time { return now },
 		Store: store,
 	})
+	defer server.Close()
 	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
 		FleetGroupID:  "default",
 		TTL:           time.Minute,
@@ -457,6 +477,7 @@ func TestServerEnrollmentTokenPersistsAcrossRestart(t *testing.T) {
 		Now: func() time.Time { return now },
 		Store: store,
 	})
+	defer first.Close()
 	token, err := first.issueEnrollmentToken(security.EnrollmentScope{
 		FleetGroupID:  "ams-1",
 		TTL:           time.Minute,
@@ -469,6 +490,7 @@ func TestServerEnrollmentTokenPersistsAcrossRestart(t *testing.T) {
 		Now: func() time.Time { return now.Add(10 * time.Second) },
 		Store: store,
 	})
+	defer restored.Close()
 	response, err := restored.enrollAgent(agentEnrollmentRequest{
 		Token:    token.Value,
 		NodeName: "node-a",
@@ -495,6 +517,7 @@ func TestServerRestoresPersistedCertificateAuthority(t *testing.T) {
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
+	defer first.Close()
 	firstAuthority := first.authority.caPEM
 	if firstAuthority == "" {
 		t.Fatal("first.authority.caPEM = empty, want persisted authority")
@@ -504,6 +527,7 @@ func TestServerRestoresPersistedCertificateAuthority(t *testing.T) {
 		Now:   func() time.Time { return now.Add(30 * time.Second) },
 		Store: store,
 	})
+	defer restored.Close()
 	if restored.authority.caPEM != firstAuthority {
 		t.Fatalf("restored.authority.caPEM = %q, want %q", restored.authority.caPEM, firstAuthority)
 	}
@@ -553,6 +577,7 @@ func TestServerRecordsStartupErrorInsteadOfPanickingOnRestoreFailure(t *testing.
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
+	defer server.Close()
 
 	if server.StartupError() == nil {
 		t.Fatal("StartupError() = nil, want restore failure")
@@ -571,6 +596,7 @@ func TestServerConsumedEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) 
 		Now: func() time.Time { return now },
 		Store: store,
 	})
+	defer first.Close()
 	token, err := first.issueEnrollmentToken(security.EnrollmentScope{
 		FleetGroupID:  "ams-1",
 		TTL:           time.Minute,
@@ -591,6 +617,7 @@ func TestServerConsumedEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) 
 		Now: func() time.Time { return now.Add(20 * time.Second) },
 		Store: store,
 	})
+	defer restored.Close()
 	if _, err := restored.enrollAgent(agentEnrollmentRequest{
 		Token:    token.Value,
 		NodeName: "node-b",
@@ -612,6 +639,7 @@ func TestServerExpiredEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) {
 		Now: func() time.Time { return now },
 		Store: store,
 	})
+	defer first.Close()
 	token, err := first.issueEnrollmentToken(security.EnrollmentScope{
 		FleetGroupID:  "ams-1",
 		TTL:           time.Second,
@@ -624,6 +652,7 @@ func TestServerExpiredEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) {
 		Now: func() time.Time { return now.Add(2 * time.Second) },
 		Store: store,
 	})
+	defer restored.Close()
 	if _, err := restored.enrollAgent(agentEnrollmentRequest{
 		Token:    token.Value,
 		NodeName: "node-b",
