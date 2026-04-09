@@ -25,9 +25,12 @@ RUN go build -o /out/panvex-control-plane ./cmd/control-plane
 FROM alpine:3.22 AS control-plane
 WORKDIR /app
 
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates && \
+    addgroup -S panvex && adduser -S panvex -G panvex
 
 COPY --from=control-plane-builder /out/panvex-control-plane ./panvex-control-plane
+
+USER panvex
 
 EXPOSE 8080 8443
 

@@ -57,7 +57,10 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		}, s.now())
 		if err != nil {
 			if errors.Is(err, auth.ErrInvalidCredentials) {
-				s.loginLockout.RecordFailure(request.Username, s.now())
+				if s.loginLockout.CheckAndRecordFailure(request.Username, s.now()) {
+					writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
+					return
+				}
 			}
 			switch {
 			case errors.Is(err, auth.ErrInvalidCredentials):
