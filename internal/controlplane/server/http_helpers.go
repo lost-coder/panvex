@@ -8,13 +8,26 @@ import (
 
 type errorResponse struct {
 	Error string `json:"error"`
+	Code  string `json:"code,omitempty"`
+}
+
+func writeErrorWithCode(w http.ResponseWriter, status int, message string, code string) {
+	writeJSON(w, status, errorResponse{Error: message, Code: code})
 }
 
 // maxRequestBodyBytes limits the size of incoming JSON request bodies.
 const maxRequestBodyBytes = 1 << 20 // 1 MB
 
+// maxBodySize applies a request body size limit as middleware, preventing
+// oversized payloads from consuming server memory.
+func maxBodySize(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+		next.ServeHTTP(w, r)
+	})
+}
+
 func decodeJSON(r *http.Request, dest any) error {
-	r.Body = http.MaxBytesReader(nil, r.Body, maxRequestBodyBytes)
 	defer r.Body.Close()
 	return json.NewDecoder(r.Body).Decode(dest)
 }
@@ -35,4 +48,13 @@ func newSequenceID(prefix string, value uint64) string {
 
 func leftPad(value uint64) string {
 	return fmt.Sprintf("%07d", value)
+}
+
+// maskToken returns a truncated preview of a secret token for safe inclusion
+// in audit logs and non-privileged responses.
+func maskToken(value string) string {
+	if len(value) <= 8 {
+		return "***"
+	}
+	return value[:8] + "..."
 }

@@ -74,6 +74,10 @@ func newMemoryStore() *memoryStore {
 	}
 }
 
+func (s *memoryStore) Ping(_ context.Context) error {
+	return nil
+}
+
 func (s *memoryStore) Close() error {
 	return nil
 }
