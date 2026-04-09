@@ -337,3 +337,20 @@ type ClientIPHistoryRecord struct {
 	FirstSeen time.Time
 	LastSeen  time.Time
 }
+
+// ServerLoadHourlyRecord stores one hourly rollup of server load metrics.
+type ServerLoadHourlyRecord struct {
+	AgentID         string
+	BucketHour      time.Time
+	CPUPctAvg       float64
+	CPUPctMax       float64
+	MemPctAvg       float64
+	MemPctMax       float64
+	ConnectionsAvg  float64
+	ConnectionsMax  int
+	ActiveUsersAvg  float64
+	ActiveUsersMax  int
+	DCCoverageMin   float64
+	DCCoverageAvg   float64
+	SampleCount     int
+}

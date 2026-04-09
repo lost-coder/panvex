@@ -400,7 +400,24 @@ func Migrate(db *sql.DB) error {
 			PRIMARY KEY (agent_id, client_id, ip_address)
 		);
 		CREATE INDEX IF NOT EXISTS idx_client_ip_last_seen ON client_ip_history (last_seen);
-		CREATE INDEX IF NOT EXISTS idx_client_ip_client ON client_ip_history (client_id, last_seen DESC)
+		CREATE INDEX IF NOT EXISTS idx_client_ip_client ON client_ip_history (client_id, last_seen DESC);
+
+		CREATE TABLE IF NOT EXISTS ts_server_load_hourly (
+			agent_id          TEXT NOT NULL,
+			bucket_hour       TIMESTAMPTZ NOT NULL,
+			cpu_pct_avg       REAL,
+			cpu_pct_max       REAL,
+			mem_pct_avg       REAL,
+			mem_pct_max       REAL,
+			connections_avg   REAL,
+			connections_max   INTEGER,
+			active_users_avg  REAL,
+			active_users_max  INTEGER,
+			dc_coverage_min   REAL,
+			dc_coverage_avg   REAL,
+			sample_count      INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (agent_id, bucket_hour)
+		)
 	`)
 	return err
 }
