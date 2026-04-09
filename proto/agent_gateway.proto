@@ -100,6 +100,38 @@ message RuntimeSystemLoadSnapshot {
   double load_15m = 10;
 }
 
+message AggregatedSystemLoad {
+  double cpu_pct_avg = 1;
+  double cpu_pct_max = 2;
+  double mem_pct_avg = 3;
+  double mem_pct_max = 4;
+  double disk_pct_avg = 5;
+  double disk_pct_max = 6;
+  double load_1m = 7;
+  double load_5m = 8;
+  double load_15m = 9;
+}
+
+message AggregatedConnections {
+  int32 connections_avg = 1;
+  int32 connections_max = 2;
+  int32 connections_me_avg = 3;
+  int32 connections_direct_avg = 4;
+  int32 active_users_avg = 5;
+  int32 active_users_max = 6;
+}
+
+message AggregatedDCHealth {
+  int32 dc = 1;
+  double coverage_pct_avg = 2;
+  double coverage_pct_min = 3;
+  double rtt_ms_avg = 4;
+  double rtt_ms_max = 5;
+  int32 alive_writers_min = 6;
+  int32 required_writers = 7;
+  int32 load_max = 8;
+}
+
 message RuntimeSnapshot {
   bool accepting_new_connections = 1;
   bool me_runtime_ready = 2;
@@ -126,6 +158,10 @@ message RuntimeSnapshot {
   repeated RuntimeEventSnapshot recent_events = 23;
   double uptime_seconds = 24;
   RuntimeSystemLoadSnapshot system_load = 25;
+  AggregatedSystemLoad aggregated_system_load = 26;
+  AggregatedConnections aggregated_connections = 27;
+  repeated AggregatedDCHealth aggregated_dcs = 28;
+  int32 aggregation_samples = 29;
 }
 
 message RuntimeDiagnosticsSnapshot {
