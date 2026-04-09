@@ -284,3 +284,56 @@ type DiscoveredClientRecord struct {
 	DiscoveredAt      time.Time
 	UpdatedAt         time.Time
 }
+
+// ServerLoadPointRecord stores one aggregated runtime snapshot for timeseries.
+type ServerLoadPointRecord struct {
+	AgentID               string
+	CapturedAt            time.Time
+	CPUPctAvg             float64
+	CPUPctMax             float64
+	MemPctAvg             float64
+	MemPctMax             float64
+	DiskPctAvg            float64
+	DiskPctMax            float64
+	Load1M                float64
+	Load5M                float64
+	Load15M               float64
+	ConnectionsAvg        int
+	ConnectionsMax        int
+	ConnectionsMEAvg      int
+	ConnectionsDirectAvg  int
+	ActiveUsersAvg        int
+	ActiveUsersMax        int
+	ConnectionsTotal      uint64
+	ConnectionsBadTotal   uint64
+	HandshakeTimeoutsTotal uint64
+	DCCoverageMinPct      float64
+	DCCoverageAvgPct      float64
+	HealthyUpstreams      int
+	TotalUpstreams        int
+	SampleCount           int
+}
+
+// DCHealthPointRecord stores one aggregated DC health snapshot.
+type DCHealthPointRecord struct {
+	AgentID         string
+	CapturedAt      time.Time
+	DC              int
+	CoveragePctAvg  float64
+	CoveragePctMin  float64
+	RTTMsAvg        float64
+	RTTMsMax        float64
+	AliveWritersMin int
+	RequiredWriters int
+	LoadMax         int
+	SampleCount     int
+}
+
+// ClientIPHistoryRecord stores one unique IP seen for a client on an agent.
+type ClientIPHistoryRecord struct {
+	AgentID   string
+	ClientID  string
+	IPAddress string
+	FirstSeen time.Time
+	LastSeen  time.Time
+}

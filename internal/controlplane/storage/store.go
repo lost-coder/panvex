@@ -127,6 +127,19 @@ type DiscoveredClientStore interface {
 	DeleteDiscoveredClient(ctx context.Context, id string) error
 }
 
+// TimeseriesStore persists historical metric points for server load, DC health, and client IPs.
+type TimeseriesStore interface {
+	AppendServerLoadPoint(ctx context.Context, record ServerLoadPointRecord) error
+	ListServerLoadPoints(ctx context.Context, agentID string, from time.Time, to time.Time) ([]ServerLoadPointRecord, error)
+	PruneServerLoadPoints(ctx context.Context, olderThan time.Time) (int64, error)
+	AppendDCHealthPoint(ctx context.Context, record DCHealthPointRecord) error
+	ListDCHealthPoints(ctx context.Context, agentID string, from time.Time, to time.Time) ([]DCHealthPointRecord, error)
+	PruneDCHealthPoints(ctx context.Context, olderThan time.Time) (int64, error)
+	UpsertClientIPHistory(ctx context.Context, record ClientIPHistoryRecord) error
+	ListClientIPHistory(ctx context.Context, clientID string, from time.Time, to time.Time) ([]ClientIPHistoryRecord, error)
+	PruneClientIPHistory(ctx context.Context, olderThan time.Time) (int64, error)
+}
+
 // Store aggregates the persistence capabilities required by the control-plane.
 type Store interface {
 	UserStore
@@ -142,6 +155,7 @@ type Store interface {
 	CertificateAuthorityStore
 	ClientStore
 	DiscoveredClientStore
+	TimeseriesStore
 
 	Close() error
 }
