@@ -675,3 +675,15 @@ func (s *memoryStore) ListClientIPHistory(_ context.Context, _ string, _ time.Ti
 func (s *memoryStore) PruneClientIPHistory(_ context.Context, _ time.Time) (int64, error) {
 	return 0, nil
 }
+
+func (s *memoryStore) RollupServerLoadHourly(_ context.Context, _ time.Time) error {
+	return nil
+}
+
+func (s *memoryStore) ListServerLoadHourly(_ context.Context, _ string, _ time.Time, _ time.Time) ([]storage.ServerLoadHourlyRecord, error) {
+	return nil, nil
+}
+
+func (s *memoryStore) PruneServerLoadHourly(_ context.Context, _ time.Time) (int64, error) {
+	return 0, nil
+}

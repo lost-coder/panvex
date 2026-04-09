@@ -593,6 +593,22 @@ func ensureTimeseriesTables(db *sql.DB) error {
 			sample_count     INTEGER NOT NULL DEFAULT 1,
 			PRIMARY KEY (agent_id, dc, captured_at_unix)
 		);
+		CREATE TABLE IF NOT EXISTS ts_server_load_hourly (
+			agent_id          TEXT NOT NULL,
+			bucket_hour_unix  INTEGER NOT NULL,
+			cpu_pct_avg       REAL,
+			cpu_pct_max       REAL,
+			mem_pct_avg       REAL,
+			mem_pct_max       REAL,
+			connections_avg   REAL,
+			connections_max   INTEGER,
+			active_users_avg  REAL,
+			active_users_max  INTEGER,
+			dc_coverage_min   REAL,
+			dc_coverage_avg   REAL,
+			sample_count      INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (agent_id, bucket_hour_unix)
+		);
 		CREATE TABLE IF NOT EXISTS client_ip_history (
 			agent_id    TEXT NOT NULL,
 			client_id   TEXT NOT NULL,
