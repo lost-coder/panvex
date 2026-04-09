@@ -287,6 +287,7 @@ func (s *Server) GRPCTLSConfig() *tls.Config {
 func (s *Server) routes() http.Handler {
 	router := chi.NewRouter()
 	router.Use(securityHeaders)
+	router.Use(maxBodySize)
 	router.Use(csrfOriginCheck)
 	router.Get("/healthz", handleHealthz())
 	router.Get("/readyz", s.handleReadyz())
