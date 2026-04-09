@@ -476,7 +476,7 @@ func TestReconnectDelayCapsBackoff(t *testing.T) {
 }
 
 func TestNewConnectionScheduleDisablesZeroIntervals(t *testing.T) {
-	schedule := newConnectionSchedule(15*time.Second, time.Minute, 0, 25*time.Second, 0)
+	schedule := newConnectionSchedule(15*time.Second, 15*time.Second, time.Minute, 0, 25*time.Second, 0)
 
 	if !schedule.config(pollHeartbeat).Enabled {
 		t.Fatal("heartbeat poll disabled, want enabled")
