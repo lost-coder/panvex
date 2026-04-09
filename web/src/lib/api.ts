@@ -71,6 +71,18 @@ export type AgentRuntime = {
     effective_latency_ms: number;
   }>;
   recent_events: RuntimeEvent[];
+  system_load?: {
+    cpu_usage_pct: number;
+    memory_used_bytes: number;
+    memory_total_bytes: number;
+    memory_usage_pct: number;
+    disk_used_bytes: number;
+    disk_total_bytes: number;
+    disk_usage_pct: number;
+    load_1m: number;
+    load_5m: number;
+    load_15m: number;
+  };
 };
 
 export type AgentCertificateRecovery = {
