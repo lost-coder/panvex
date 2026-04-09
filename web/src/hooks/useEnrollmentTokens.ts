@@ -34,5 +34,5 @@ export function useEnrollmentTokens() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["enrollmentTokens"] }),
   });
 
-  return { tokens, isLoading: query.isLoading, createToken, revokeToken };
+  return { tokens, isLoading: query.isLoading, error: query.error, createToken, revokeToken };
 }

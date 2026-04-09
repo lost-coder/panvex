@@ -3,15 +3,20 @@ import { useServersList } from "@/hooks/useServersList";
 import { useFleetGroups } from "@/hooks/useFleetGroups";
 import { useViewMode } from "@/hooks/useViewMode";
 import { useNavigate } from "@tanstack/react-router";
+import { ErrorState } from "@/components/ErrorState";
 
 export function ServersContainer() {
-  const { servers, isLoading } = useServersList();
+  const { servers, isLoading, error } = useServersList();
   const { fleetGroups } = useFleetGroups();
   const { resolveMode, setMode } = useViewMode("servers");
   const navigate = useNavigate();
 
   if (isLoading) {
     return <div className="flex items-center justify-center h-64"><Spinner /></div>;
+  }
+
+  if (error) {
+    return <ErrorState message={error.message} onRetry={() => window.location.reload()} />;
   }
 
   return (
