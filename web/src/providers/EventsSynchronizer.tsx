@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 
+import { apiClient } from "@/lib/api";
 import { invalidateTelemetryQueries } from "@/lib/telemetry-query-invalidation";
 import { buildEventsURL, resolveConfiguredRootPath } from "@/lib/runtime-path";
 
@@ -57,7 +58,16 @@ export function EventsSynchronizer() {
         void invalidateLiveQueries();
       };
       socket.onerror = () => { socket?.close(); };
-      socket.onclose = () => { scheduleReconnect(); };
+      socket.onclose = () => {
+        // Check if session is still valid before reconnecting.
+        // If expired, redirect to login instead of looping with 401s.
+        apiClient.me().then(() => {
+          scheduleReconnect();
+        }).catch(() => {
+          stopped = true;
+          window.location.href = "/login";
+        });
+      };
     };
     connect();
     return () => {

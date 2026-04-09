@@ -35,6 +35,7 @@ export function useServerMutations(serverId: string) {
 
   const deregisterMutation = useMutation({
     mutationFn: () => apiClient.deregisterAgent(serverId),
+    onSuccess: invalidateServer,
     onError: (err) => console.error("Failed to deregister agent:", err),
   });
 

@@ -4,7 +4,7 @@ import { apiClient } from "@/lib/api";
 
 export function useProfile() {
   const query = useQuery({
-    queryKey: ["profile", "me"],
+    queryKey: ["me"],
     queryFn: () => apiClient.me(),
   });
 

@@ -183,7 +183,7 @@ func (s *Store) RollupServerLoadHourly(ctx context.Context, bucketHour time.Time
 	bucketStart := toUnix(bucketHour.Truncate(time.Hour))
 	bucketEnd := bucketStart + 3600
 	_, err := s.db.ExecContext(ctx, `
-		INSERT OR IGNORE INTO ts_server_load_hourly (
+		INSERT INTO ts_server_load_hourly (
 			agent_id, bucket_hour_unix,
 			cpu_pct_avg, cpu_pct_max, mem_pct_avg, mem_pct_max,
 			connections_avg, connections_max, active_users_avg, active_users_max,
@@ -196,6 +196,18 @@ func (s *Store) RollupServerLoadHourly(ctx context.Context, bucketHour time.Time
 		FROM ts_server_load
 		WHERE captured_at_unix >= ? AND captured_at_unix < ?
 		GROUP BY agent_id
+		ON CONFLICT (agent_id, bucket_hour_unix) DO UPDATE SET
+			cpu_pct_avg = EXCLUDED.cpu_pct_avg,
+			cpu_pct_max = EXCLUDED.cpu_pct_max,
+			mem_pct_avg = EXCLUDED.mem_pct_avg,
+			mem_pct_max = EXCLUDED.mem_pct_max,
+			connections_avg = EXCLUDED.connections_avg,
+			connections_max = EXCLUDED.connections_max,
+			active_users_avg = EXCLUDED.active_users_avg,
+			active_users_max = EXCLUDED.active_users_max,
+			dc_coverage_min = EXCLUDED.dc_coverage_min,
+			dc_coverage_avg = EXCLUDED.dc_coverage_avg,
+			sample_count = EXCLUDED.sample_count
 	`, bucketStart, bucketStart, bucketEnd)
 	return err
 }

@@ -481,6 +481,14 @@ export type UpdateUserInput = {
 export const configuredRootPath = resolveConfiguredRootPath();
 export const apiBasePath = resolveAPIBasePath(configuredRootPath);
 
+export class ApiError extends Error {
+  code?: string;
+  constructor(message: string, code?: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     credentials: "include",
@@ -497,15 +505,17 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     let message = `Request failed with status ${response.status}`;
+    let code: string | undefined;
     try {
-      const payload = (await response.json()) as { error?: string };
+      const payload = (await response.json()) as { error?: string; code?: string };
       if (payload.error) {
         message = payload.error;
       }
+      code = payload.code;
     } catch {
       // Ignore JSON parsing failures for error responses.
     }
-    throw new Error(message);
+    throw new ApiError(message, code);
   }
 
   return (await response.json()) as T;

@@ -1,6 +1,8 @@
 package server
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"time"
@@ -56,11 +58,18 @@ func (s *Server) handleCreateJob() http.HandlerFunc {
 		}
 		s.mu.RUnlock()
 
+		idempotencyKey := request.IdempotencyKey
+		if idempotencyKey == "" {
+			var buf [16]byte
+			_, _ = rand.Read(buf[:])
+			idempotencyKey = hex.EncodeToString(buf[:])
+		}
+
 		job, err := s.jobs.Enqueue(jobs.CreateJobInput{
 			Action:         jobs.Action(request.Action),
 			TargetAgentIDs: request.TargetAgentIDs,
 			TTL:            time.Duration(request.TTLSeconds) * time.Second,
-			IdempotencyKey: request.IdempotencyKey,
+			IdempotencyKey: idempotencyKey,
 			ActorID:        session.UserID,
 			ReadOnlyAgents: readOnlyAgents,
 		}, s.now())
