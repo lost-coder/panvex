@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"github.com/panvex/panvex/internal/controlplane/storage"
@@ -247,6 +248,16 @@ func (s *Server) applyAgentSnapshotWithContext(ctx context.Context, snapshot age
 				return err
 			}
 		}
+		if snapshot.HasRuntime && snapshot.Runtime != nil {
+			if err := s.store.AppendServerLoadPoint(ctx, serverLoadPointFromSnapshot(agent, snapshot)); err != nil {
+				log.Printf("append server load point failed: %v", err)
+			}
+			for _, dcPoint := range dcHealthPointsFromSnapshot(agent, snapshot) {
+				if err := s.store.AppendDCHealthPoint(ctx, dcPoint); err != nil {
+					log.Printf("append dc health point failed: %v", err)
+				}
+			}
+		}
 	}
 
 	s.mu.Lock()
@@ -269,6 +280,23 @@ func (s *Server) applyAgentSnapshotWithContext(ctx context.Context, snapshot age
 		s.applyClientIPSnapshot(snapshot.AgentID, snapshot.ClientIPs)
 	}
 	s.mu.Unlock()
+
+	if snapshot.HasClientIPs && s.store != nil {
+		now := snapshot.ObservedAt.UTC()
+		for _, clientIP := range snapshot.ClientIPs {
+			for _, ip := range clientIP.ActiveIPs {
+				if err := s.store.UpsertClientIPHistory(ctx, storage.ClientIPHistoryRecord{
+					AgentID:   snapshot.AgentID,
+					ClientID:  clientIP.ClientID,
+					IPAddress: ip,
+					FirstSeen: now,
+					LastSeen:  now,
+				}); err != nil {
+					log.Printf("upsert client ip history failed: %v", err)
+				}
+			}
+		}
+	}
 
 	s.events.publish(eventEnvelope{
 		Type: "agents.updated",
@@ -393,6 +421,123 @@ func systemLoadFromSnapshot(load *gatewayrpc.RuntimeSystemLoadSnapshot) RuntimeS
 		Load5M:           load.Load_5M,
 		Load15M:          load.Load_15M,
 	}
+}
+
+func serverLoadPointFromSnapshot(agent Agent, snapshot agentSnapshot) storage.ServerLoadPointRecord {
+	rt := snapshot.Runtime
+	record := storage.ServerLoadPointRecord{
+		AgentID:                agent.ID,
+		CapturedAt:             snapshot.ObservedAt.UTC(),
+		ConnectionsTotal:       agent.Runtime.ConnectionsTotal,
+		ConnectionsBadTotal:    agent.Runtime.ConnectionsBadTotal,
+		HandshakeTimeoutsTotal: agent.Runtime.HandshakeTimeoutsTotal,
+		HealthyUpstreams:       agent.Runtime.HealthyUpstreams,
+		TotalUpstreams:         agent.Runtime.TotalUpstreams,
+		DCCoverageMinPct:       agent.Runtime.DCCoveragePct,
+		DCCoverageAvgPct:       agent.Runtime.DCCoveragePct,
+		SampleCount:            1,
+	}
+
+	if agg := rt.GetAggregatedSystemLoad(); agg != nil {
+		record.CPUPctAvg = agg.CpuPctAvg
+		record.CPUPctMax = agg.CpuPctMax
+		record.MemPctAvg = agg.MemPctAvg
+		record.MemPctMax = agg.MemPctMax
+		record.DiskPctAvg = agg.DiskPctAvg
+		record.DiskPctMax = agg.DiskPctMax
+		record.Load1M = agg.Load_1M
+		record.Load5M = agg.Load_5M
+		record.Load15M = agg.Load_15M
+	} else if sl := rt.GetSystemLoad(); sl != nil {
+		record.CPUPctAvg = sl.CpuUsagePct
+		record.CPUPctMax = sl.CpuUsagePct
+		record.MemPctAvg = sl.MemoryUsagePct
+		record.MemPctMax = sl.MemoryUsagePct
+		record.DiskPctAvg = sl.DiskUsagePct
+		record.DiskPctMax = sl.DiskUsagePct
+		record.Load1M = sl.Load_1M
+		record.Load5M = sl.Load_5M
+		record.Load15M = sl.Load_15M
+	}
+
+	if agg := rt.GetAggregatedConnections(); agg != nil {
+		record.ConnectionsAvg = int(agg.ConnectionsAvg)
+		record.ConnectionsMax = int(agg.ConnectionsMax)
+		record.ConnectionsMEAvg = int(agg.ConnectionsMeAvg)
+		record.ConnectionsDirectAvg = int(agg.ConnectionsDirectAvg)
+		record.ActiveUsersAvg = int(agg.ActiveUsersAvg)
+		record.ActiveUsersMax = int(agg.ActiveUsersMax)
+	} else {
+		record.ConnectionsAvg = agent.Runtime.CurrentConnections
+		record.ConnectionsMax = agent.Runtime.CurrentConnections
+		record.ConnectionsMEAvg = agent.Runtime.CurrentConnectionsME
+		record.ConnectionsDirectAvg = agent.Runtime.CurrentConnectionsDirect
+		record.ActiveUsersAvg = agent.Runtime.ActiveUsers
+		record.ActiveUsersMax = agent.Runtime.ActiveUsers
+	}
+
+	if rt.GetAggregationSamples() > 0 {
+		record.SampleCount = int(rt.GetAggregationSamples())
+	}
+
+	// Compute DC coverage from aggregated DCs if available.
+	if aggDCs := rt.GetAggregatedDcs(); len(aggDCs) > 0 {
+		minCov := aggDCs[0].CoveragePctMin
+		avgSum := 0.0
+		for _, dc := range aggDCs {
+			if dc.CoveragePctMin < minCov {
+				minCov = dc.CoveragePctMin
+			}
+			avgSum += dc.CoveragePctAvg
+		}
+		record.DCCoverageMinPct = minCov
+		record.DCCoverageAvgPct = avgSum / float64(len(aggDCs))
+	}
+
+	return record
+}
+
+func dcHealthPointsFromSnapshot(agent Agent, snapshot agentSnapshot) []storage.DCHealthPointRecord {
+	rt := snapshot.Runtime
+	capturedAt := snapshot.ObservedAt.UTC()
+
+	if aggDCs := rt.GetAggregatedDcs(); len(aggDCs) > 0 {
+		points := make([]storage.DCHealthPointRecord, 0, len(aggDCs))
+		for _, dc := range aggDCs {
+			points = append(points, storage.DCHealthPointRecord{
+				AgentID:         agent.ID,
+				CapturedAt:      capturedAt,
+				DC:              int(dc.Dc),
+				CoveragePctAvg:  dc.CoveragePctAvg,
+				CoveragePctMin:  dc.CoveragePctMin,
+				RTTMsAvg:        dc.RttMsAvg,
+				RTTMsMax:        dc.RttMsMax,
+				AliveWritersMin: int(dc.AliveWritersMin),
+				RequiredWriters: int(dc.RequiredWriters),
+				LoadMax:         int(dc.LoadMax),
+				SampleCount:     int(rt.GetAggregationSamples()),
+			})
+		}
+		return points
+	}
+
+	points := make([]storage.DCHealthPointRecord, 0, len(rt.GetDcs()))
+	for _, dc := range rt.GetDcs() {
+		points = append(points, storage.DCHealthPointRecord{
+			AgentID:         agent.ID,
+			CapturedAt:      capturedAt,
+			DC:              int(dc.Dc),
+			CoveragePctAvg:  dc.CoveragePct,
+			CoveragePctMin:  dc.CoveragePct,
+			RTTMsAvg:        dc.RttMs,
+			RTTMsMax:        dc.RttMs,
+			AliveWritersMin: int(dc.AliveWriters),
+			RequiredWriters: int(dc.RequiredWriters),
+			LoadMax:         int(dc.Load),
+			SampleCount:     1,
+		})
+	}
+	return points
 }
 
 func (s *Server) applyClientUsageSnapshot(agentID string, clients []clientUsageSnapshot) {
