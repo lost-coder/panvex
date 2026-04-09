@@ -2,12 +2,14 @@ import { useState, useEffect } from "react";
 import { ClientDetailPage, Spinner } from "@panvex/ui";
 import { useClientDetail } from "@/hooks/useClientDetail";
 import { useClientMutations } from "@/hooks/useClientMutations";
+import { useClientIPHistory } from "@/hooks/useClientIPHistory";
 import { useNavigate, useParams } from "@tanstack/react-router";
 
 export function ClientDetailContainer() {
   const { clientId } = useParams({ strict: false });
   const { client, raw, isLoading } = useClientDetail(clientId ?? "");
   const { editMutation, rotateMutation, deleteMutation } = useClientMutations(clientId ?? "", raw);
+  const { ips, totalUnique } = useClientIPHistory(clientId ?? "");
   const navigate = useNavigate();
   const [secretPending, setSecretPending] = useState(false);
 
@@ -41,6 +43,7 @@ export function ClientDetailContainer() {
         await deleteMutation.mutateAsync();
         navigate({ to: "/clients" });
       }}
+      ipHistory={ips.length > 0 ? { ips, totalUnique } : undefined}
     />
   );
 }
