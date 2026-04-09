@@ -17,8 +17,8 @@ func (s *Store) AppendServerLoadPoint(ctx context.Context, record storage.Server
 			active_users_avg, active_users_max,
 			connections_total, connections_bad_total, handshake_timeouts_total,
 			dc_coverage_min_pct, dc_coverage_avg_pct,
-			healthy_upstreams, total_upstreams, sample_count
-		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			healthy_upstreams, total_upstreams, net_bytes_sent, net_bytes_recv, sample_count
+		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 	`,
 		record.AgentID, toUnix(record.CapturedAt),
 		record.CPUPctAvg, record.CPUPctMax, record.MemPctAvg, record.MemPctMax,
@@ -27,7 +27,7 @@ func (s *Store) AppendServerLoadPoint(ctx context.Context, record storage.Server
 		record.ActiveUsersAvg, record.ActiveUsersMax,
 		record.ConnectionsTotal, record.ConnectionsBadTotal, record.HandshakeTimeoutsTotal,
 		record.DCCoverageMinPct, record.DCCoverageAvgPct,
-		record.HealthyUpstreams, record.TotalUpstreams, record.SampleCount,
+		record.HealthyUpstreams, record.TotalUpstreams, record.NetBytesSent, record.NetBytesRecv, record.SampleCount,
 	)
 	return err
 }
@@ -41,7 +41,7 @@ func (s *Store) ListServerLoadPoints(ctx context.Context, agentID string, from t
 			active_users_avg, active_users_max,
 			connections_total, connections_bad_total, handshake_timeouts_total,
 			dc_coverage_min_pct, dc_coverage_avg_pct,
-			healthy_upstreams, total_upstreams, sample_count
+			healthy_upstreams, total_upstreams, net_bytes_sent, net_bytes_recv, sample_count
 		FROM ts_server_load
 		WHERE agent_id = ? AND captured_at_unix >= ? AND captured_at_unix <= ?
 		ORDER BY captured_at_unix
@@ -63,7 +63,7 @@ func (s *Store) ListServerLoadPoints(ctx context.Context, agentID string, from t
 			&r.ActiveUsersAvg, &r.ActiveUsersMax,
 			&r.ConnectionsTotal, &r.ConnectionsBadTotal, &r.HandshakeTimeoutsTotal,
 			&r.DCCoverageMinPct, &r.DCCoverageAvgPct,
-			&r.HealthyUpstreams, &r.TotalUpstreams, &r.SampleCount,
+			&r.HealthyUpstreams, &r.TotalUpstreams, &r.NetBytesSent, &r.NetBytesRecv, &r.SampleCount,
 		); err != nil {
 			return nil, err
 		}

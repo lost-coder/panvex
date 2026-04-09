@@ -823,6 +823,8 @@ type RuntimeSystemLoadSnapshot struct {
 	Load_1M          float64                `protobuf:"fixed64,8,opt,name=load_1m,json=load1m,proto3" json:"load_1m,omitempty"`
 	Load_5M          float64                `protobuf:"fixed64,9,opt,name=load_5m,json=load5m,proto3" json:"load_5m,omitempty"`
 	Load_15M         float64                `protobuf:"fixed64,10,opt,name=load_15m,json=load15m,proto3" json:"load_15m,omitempty"`
+	NetBytesSent     uint64                 `protobuf:"varint,11,opt,name=net_bytes_sent,json=netBytesSent,proto3" json:"net_bytes_sent,omitempty"`
+	NetBytesRecv     uint64                 `protobuf:"varint,12,opt,name=net_bytes_recv,json=netBytesRecv,proto3" json:"net_bytes_recv,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -927,6 +929,20 @@ func (x *RuntimeSystemLoadSnapshot) GetLoad_15M() float64 {
 	return 0
 }
 
+func (x *RuntimeSystemLoadSnapshot) GetNetBytesSent() uint64 {
+	if x != nil {
+		return x.NetBytesSent
+	}
+	return 0
+}
+
+func (x *RuntimeSystemLoadSnapshot) GetNetBytesRecv() uint64 {
+	if x != nil {
+		return x.NetBytesRecv
+	}
+	return 0
+}
+
 type AggregatedSystemLoad struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CpuPctAvg     float64                `protobuf:"fixed64,1,opt,name=cpu_pct_avg,json=cpuPctAvg,proto3" json:"cpu_pct_avg,omitempty"`
@@ -938,6 +954,8 @@ type AggregatedSystemLoad struct {
 	Load_1M       float64                `protobuf:"fixed64,7,opt,name=load_1m,json=load1m,proto3" json:"load_1m,omitempty"`
 	Load_5M       float64                `protobuf:"fixed64,8,opt,name=load_5m,json=load5m,proto3" json:"load_5m,omitempty"`
 	Load_15M      float64                `protobuf:"fixed64,9,opt,name=load_15m,json=load15m,proto3" json:"load_15m,omitempty"`
+	NetBytesSent  uint64                 `protobuf:"varint,10,opt,name=net_bytes_sent,json=netBytesSent,proto3" json:"net_bytes_sent,omitempty"`
+	NetBytesRecv  uint64                 `protobuf:"varint,11,opt,name=net_bytes_recv,json=netBytesRecv,proto3" json:"net_bytes_recv,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1031,6 +1049,20 @@ func (x *AggregatedSystemLoad) GetLoad_5M() float64 {
 func (x *AggregatedSystemLoad) GetLoad_15M() float64 {
 	if x != nil {
 		return x.Load_15M
+	}
+	return 0
+}
+
+func (x *AggregatedSystemLoad) GetNetBytesSent() uint64 {
+	if x != nil {
+		return x.NetBytesSent
+	}
+	return 0
+}
+
+func (x *AggregatedSystemLoad) GetNetBytesRecv() uint64 {
+	if x != nil {
+		return x.NetBytesRecv
 	}
 	return 0
 }
@@ -2593,7 +2625,7 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\x0etimestamp_unix\x18\x02 \x01(\x03R\rtimestampUnix\x12\x1d\n" +
 	"\n" +
 	"event_type\x18\x03 \x01(\tR\teventType\x12\x18\n" +
-	"\acontext\x18\x04 \x01(\tR\acontext\"\x88\x03\n" +
+	"\acontext\x18\x04 \x01(\tR\acontext\"\xd4\x03\n" +
 	"\x19RuntimeSystemLoadSnapshot\x12\"\n" +
 	"\rcpu_usage_pct\x18\x01 \x01(\x01R\vcpuUsagePct\x12*\n" +
 	"\x11memory_used_bytes\x18\x02 \x01(\x04R\x0fmemoryUsedBytes\x12,\n" +
@@ -2605,7 +2637,9 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\aload_1m\x18\b \x01(\x01R\x06load1m\x12\x17\n" +
 	"\aload_5m\x18\t \x01(\x01R\x06load5m\x12\x19\n" +
 	"\bload_15m\x18\n" +
-	" \x01(\x01R\aload15m\"\xa7\x02\n" +
+	" \x01(\x01R\aload15m\x12$\n" +
+	"\x0enet_bytes_sent\x18\v \x01(\x04R\fnetBytesSent\x12$\n" +
+	"\x0enet_bytes_recv\x18\f \x01(\x04R\fnetBytesRecv\"\xf3\x02\n" +
 	"\x14AggregatedSystemLoad\x12\x1e\n" +
 	"\vcpu_pct_avg\x18\x01 \x01(\x01R\tcpuPctAvg\x12\x1e\n" +
 	"\vcpu_pct_max\x18\x02 \x01(\x01R\tcpuPctMax\x12\x1e\n" +
@@ -2617,7 +2651,10 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"diskPctMax\x12\x17\n" +
 	"\aload_1m\x18\a \x01(\x01R\x06load1m\x12\x17\n" +
 	"\aload_5m\x18\b \x01(\x01R\x06load5m\x12\x19\n" +
-	"\bload_15m\x18\t \x01(\x01R\aload15m\"\xa1\x02\n" +
+	"\bload_15m\x18\t \x01(\x01R\aload15m\x12$\n" +
+	"\x0enet_bytes_sent\x18\n" +
+	" \x01(\x04R\fnetBytesSent\x12$\n" +
+	"\x0enet_bytes_recv\x18\v \x01(\x04R\fnetBytesRecv\"\xa1\x02\n" +
 	"\x15AggregatedConnections\x12'\n" +
 	"\x0fconnections_avg\x18\x01 \x01(\x05R\x0econnectionsAvg\x12'\n" +
 	"\x0fconnections_max\x18\x02 \x01(\x05R\x0econnectionsMax\x12,\n" +

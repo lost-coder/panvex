@@ -98,6 +98,8 @@ type RuntimeSystemLoad struct {
 	Load1M           float64
 	Load5M           float64
 	Load15M          float64
+	NetBytesSent     uint64
+	NetBytesRecv     uint64
 }
 
 // RuntimeDiagnostics carries slower Telemt diagnostics payloads for node detail views.
