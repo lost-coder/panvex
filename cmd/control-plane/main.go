@@ -75,7 +75,7 @@ func runServe(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer store.Close()
+	defer store.Close() // closed after api.Close() stops background workers
 
 	panelRuntime, err := resolvePanelRuntime(options)
 	if err != nil {
@@ -96,6 +96,7 @@ func runServe(args []string) error {
 			return nil
 		},
 	})
+	defer api.Close()
 	if err := api.StartupError(); err != nil {
 		return err
 	}
