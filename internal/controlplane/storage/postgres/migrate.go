@@ -370,6 +370,8 @@ func Migrate(db *sql.DB) error {
 			dc_coverage_avg_pct     REAL NOT NULL DEFAULT 0,
 			healthy_upstreams       INTEGER NOT NULL DEFAULT 0,
 			total_upstreams         INTEGER NOT NULL DEFAULT 0,
+			net_bytes_sent          BIGINT NOT NULL DEFAULT 0,
+			net_bytes_recv          BIGINT NOT NULL DEFAULT 0,
 			sample_count            INTEGER NOT NULL DEFAULT 1,
 			PRIMARY KEY (agent_id, captured_at)
 		);

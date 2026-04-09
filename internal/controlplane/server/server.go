@@ -317,6 +317,9 @@ func (s *Server) routes() http.Handler {
 		authenticated.Get("/telemetry/servers", s.handleTelemetryServers())
 		authenticated.Get("/telemetry/servers/{id}", s.handleTelemetryServerDetail())
 		authenticated.Post("/telemetry/servers/{id}/detail-boost", s.handleTelemetryServerDetailBoost())
+		authenticated.Get("/telemetry/servers/{id}/history/load", s.handleServerLoadHistory())
+		authenticated.Get("/telemetry/servers/{id}/history/dc", s.handleDCHealthHistory())
+		authenticated.Get("/clients/{id}/history/ips", s.handleClientIPHistory())
 
 			authenticated.Group(func(operator chi.Router) {
 				operator.Use(s.requireMinimumRole(auth.RoleOperator))

@@ -269,6 +269,8 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 			Load_1M:          state.SystemLoad.Load1M,
 			Load_5M:          state.SystemLoad.Load5M,
 			Load_15M:         state.SystemLoad.Load15M,
+			NetBytesSent:     state.SystemLoad.NetBytesSent,
+			NetBytesRecv:     state.SystemLoad.NetBytesRecv,
 		},
 	}
 	snapshot.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{

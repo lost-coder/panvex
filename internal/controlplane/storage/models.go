@@ -311,6 +311,8 @@ type ServerLoadPointRecord struct {
 	DCCoverageAvgPct      float64
 	HealthyUpstreams      int
 	TotalUpstreams        int
+	NetBytesSent          uint64
+	NetBytesRecv          uint64
 	SampleCount           int
 }
 
