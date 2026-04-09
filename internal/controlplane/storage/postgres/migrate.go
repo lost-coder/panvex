@@ -340,5 +340,67 @@ func Migrate(db *sql.DB) error {
 		CREATE INDEX IF NOT EXISTS idx_metric_snapshots_agent_captured ON metric_snapshots (agent_id, captured_at);
 		CREATE INDEX IF NOT EXISTS idx_discovered_clients_agent_id ON discovered_clients (agent_id)
 	`)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS ts_server_load (
+			agent_id                TEXT NOT NULL,
+			captured_at             TIMESTAMPTZ NOT NULL,
+			cpu_pct_avg             REAL NOT NULL DEFAULT 0,
+			cpu_pct_max             REAL NOT NULL DEFAULT 0,
+			mem_pct_avg             REAL NOT NULL DEFAULT 0,
+			mem_pct_max             REAL NOT NULL DEFAULT 0,
+			disk_pct_avg            REAL NOT NULL DEFAULT 0,
+			disk_pct_max            REAL NOT NULL DEFAULT 0,
+			load_1m                 REAL NOT NULL DEFAULT 0,
+			load_5m                 REAL NOT NULL DEFAULT 0,
+			load_15m                REAL NOT NULL DEFAULT 0,
+			connections_avg         INTEGER NOT NULL DEFAULT 0,
+			connections_max         INTEGER NOT NULL DEFAULT 0,
+			connections_me_avg      INTEGER NOT NULL DEFAULT 0,
+			connections_direct_avg  INTEGER NOT NULL DEFAULT 0,
+			active_users_avg        INTEGER NOT NULL DEFAULT 0,
+			active_users_max        INTEGER NOT NULL DEFAULT 0,
+			connections_total       BIGINT NOT NULL DEFAULT 0,
+			connections_bad_total   BIGINT NOT NULL DEFAULT 0,
+			handshake_timeouts_total BIGINT NOT NULL DEFAULT 0,
+			dc_coverage_min_pct     REAL NOT NULL DEFAULT 0,
+			dc_coverage_avg_pct     REAL NOT NULL DEFAULT 0,
+			healthy_upstreams       INTEGER NOT NULL DEFAULT 0,
+			total_upstreams         INTEGER NOT NULL DEFAULT 0,
+			sample_count            INTEGER NOT NULL DEFAULT 1,
+			PRIMARY KEY (agent_id, captured_at)
+		);
+		CREATE INDEX IF NOT EXISTS idx_ts_server_load_time ON ts_server_load (agent_id, captured_at DESC);
+
+		CREATE TABLE IF NOT EXISTS ts_dc_health (
+			agent_id         TEXT NOT NULL,
+			captured_at      TIMESTAMPTZ NOT NULL,
+			dc               INTEGER NOT NULL,
+			coverage_pct_avg REAL NOT NULL DEFAULT 0,
+			coverage_pct_min REAL NOT NULL DEFAULT 0,
+			rtt_ms_avg       REAL NOT NULL DEFAULT 0,
+			rtt_ms_max       REAL NOT NULL DEFAULT 0,
+			alive_writers_min INTEGER NOT NULL DEFAULT 0,
+			required_writers INTEGER NOT NULL DEFAULT 0,
+			load_max         INTEGER NOT NULL DEFAULT 0,
+			sample_count     INTEGER NOT NULL DEFAULT 1,
+			PRIMARY KEY (agent_id, dc, captured_at)
+		);
+		CREATE INDEX IF NOT EXISTS idx_ts_dc_health_time ON ts_dc_health (agent_id, captured_at DESC);
+
+		CREATE TABLE IF NOT EXISTS client_ip_history (
+			agent_id    TEXT NOT NULL,
+			client_id   TEXT NOT NULL,
+			ip_address  TEXT NOT NULL,
+			first_seen  TIMESTAMPTZ NOT NULL,
+			last_seen   TIMESTAMPTZ NOT NULL,
+			PRIMARY KEY (agent_id, client_id, ip_address)
+		);
+		CREATE INDEX IF NOT EXISTS idx_client_ip_last_seen ON client_ip_history (last_seen);
+		CREATE INDEX IF NOT EXISTS idx_client_ip_client ON client_ip_history (client_id, last_seen DESC)
+	`)
 	return err
 }
