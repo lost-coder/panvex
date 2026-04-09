@@ -62,6 +62,29 @@ func (t *accountLockoutTracker) RecordFailure(username string, now time.Time) {
 	t.cleanupLocked(now)
 }
 
+// CheckAndRecordFailure atomically checks lockout and records a failure.
+// Returns true if the account is locked (failure is NOT recorded when locked).
+func (t *accountLockoutTracker) CheckAndRecordFailure(username string, now time.Time) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	entry, ok := t.accounts[username]
+	if ok && entry.failures >= accountLockoutMaxAttempts {
+		if now.Sub(entry.lockedAt) < accountLockoutDuration {
+			return true
+		}
+		entry = lockoutEntry{}
+	}
+
+	entry.failures++
+	if entry.failures >= accountLockoutMaxAttempts {
+		entry.lockedAt = now
+	}
+	t.accounts[username] = entry
+	t.cleanupLocked(now)
+	return false
+}
+
 // RecordSuccess clears the failure counter after a successful login.
 func (t *accountLockoutTracker) RecordSuccess(username string) {
 	t.mu.Lock()

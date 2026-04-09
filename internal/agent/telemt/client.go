@@ -381,11 +381,11 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 		})
 	}
 
-	now := time.Now().UTC()
 	slowData := slowRuntimeState{}
 	useCachedSlowData := false
 	if c.slowDataTTL > 0 {
 		c.mu.RLock()
+		now := time.Now().UTC()
 		if c.hasSlowData && now.Sub(c.slowFetchedAt) < c.slowDataTTL {
 			slowData = c.slowData
 			useCachedSlowData = true
@@ -401,7 +401,7 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 		if c.slowDataTTL > 0 {
 			c.mu.Lock()
 			c.slowData = fetchedSlowData
-			c.slowFetchedAt = now
+			c.slowFetchedAt = time.Now().UTC()
 			c.hasSlowData = true
 			c.mu.Unlock()
 		}
