@@ -372,7 +372,26 @@ func agentRuntimeFromSnapshot(snapshot *gatewayrpc.RuntimeSnapshot, observedAt t
 		DCs:                       dcs,
 		Upstreams:                 upstreams,
 		RecentEvents:              recentEvents,
+		SystemLoad:                systemLoadFromSnapshot(snapshot.SystemLoad),
 		UpdatedAt:                 observedAt.UTC(),
+	}
+}
+
+func systemLoadFromSnapshot(load *gatewayrpc.RuntimeSystemLoadSnapshot) RuntimeSystemLoad {
+	if load == nil {
+		return RuntimeSystemLoad{}
+	}
+	return RuntimeSystemLoad{
+		CPUUsagePct:      load.CpuUsagePct,
+		MemoryUsedBytes:  load.MemoryUsedBytes,
+		MemoryTotalBytes: load.MemoryTotalBytes,
+		MemoryUsagePct:   load.MemoryUsagePct,
+		DiskUsedBytes:    load.DiskUsedBytes,
+		DiskTotalBytes:   load.DiskTotalBytes,
+		DiskUsagePct:     load.DiskUsagePct,
+		Load1M:           load.Load_1M,
+		Load5M:           load.Load_5M,
+		Load15M:          load.Load_15M,
 	}
 }
 
