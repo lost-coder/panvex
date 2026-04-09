@@ -354,6 +354,8 @@ func (s *Server) routes() http.Handler {
 				admin.Get("/settings/panel", s.handleGetPanelSettings())
 				admin.Put("/settings/panel", s.handlePutPanelSettings())
 				admin.Post("/settings/panel/restart", s.handleRestartPanel())
+				admin.Get("/settings/retention", s.handleGetRetentionSettings())
+				admin.Put("/settings/retention", s.handlePutRetentionSettings())
 			})
 		})
 	})
