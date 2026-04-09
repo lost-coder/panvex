@@ -10,6 +10,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
+	"log"
 	"math/big"
 	"time"
 
@@ -80,7 +81,19 @@ func loadOrCreateCertificateAuthority(store storage.CertificateAuthorityStore, n
 
 	record, err := store.GetCertificateAuthority(context.Background())
 	if err == nil {
-		return certificateAuthorityFromRecord(record, now)
+		authority, err := certificateAuthorityFromRecord(record, now)
+		if err != nil {
+			return nil, err
+		}
+		remaining := authority.certificate.NotAfter.Sub(now)
+		if remaining <= 0 {
+			log.Printf("WARNING: control-plane CA certificate expired %s ago — regenerating", -remaining)
+			return regenerateCertificateAuthority(store, now)
+		}
+		if remaining < 30*24*time.Hour {
+			log.Printf("WARNING: control-plane CA certificate expires in %s", remaining.Round(time.Hour))
+		}
+		return authority, nil
 	}
 	if !errors.Is(err, storage.ErrNotFound) {
 		return nil, err
@@ -99,6 +112,21 @@ func loadOrCreateCertificateAuthority(store storage.CertificateAuthorityStore, n
 		return nil, err
 	}
 
+	return authority, nil
+}
+
+func regenerateCertificateAuthority(store storage.CertificateAuthorityStore, now time.Time) (*certificateAuthority, error) {
+	authority, err := newCertificateAuthority(now)
+	if err != nil {
+		return nil, err
+	}
+	record, err := authority.record(now)
+	if err != nil {
+		return nil, err
+	}
+	if err := store.PutCertificateAuthority(context.Background(), record); err != nil {
+		return nil, err
+	}
 	return authority, nil
 }
 
