@@ -3,16 +3,21 @@ import { useNavigate } from "@tanstack/react-router";
 import { useSettings } from "@/hooks/useSettings";
 import { useProfile } from "@/hooks/useProfile";
 import { useRetentionSettings } from "@/hooks/useRetentionSettings";
+import { ErrorState } from "@/components/ErrorState";
 
 export function SettingsContainer() {
   const navigate = useNavigate();
-  const { settings, isLoading, saveAppearance, savePanelSettings } = useSettings();
+  const { settings, isLoading, error, saveAppearance, savePanelSettings } = useSettings();
   const { profile } = useProfile();
   const { retention, save: saveRetention } = useRetentionSettings();
   const isAdmin = profile?.role === "admin";
 
   if (isLoading || !settings) {
     return <div className="flex items-center justify-center h-64"><Spinner /></div>;
+  }
+
+  if (error) {
+    return <ErrorState message={error.message} onRetry={() => window.location.reload()} />;
   }
 
   return (

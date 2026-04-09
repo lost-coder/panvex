@@ -1,0 +1,14 @@
+#!/bin/bash
+set -e
+
+echo "=== Pre-push: Go lint ==="
+~/go/bin/golangci-lint run ./...
+
+echo "=== Pre-push: Go tests ==="
+go test ./...
+
+echo "=== Pre-push: Frontend type-check + build ==="
+cd web
+npm run build
+
+echo "=== Pre-push: all checks passed ==="
