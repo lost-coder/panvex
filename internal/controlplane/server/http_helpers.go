@@ -8,6 +8,11 @@ import (
 
 type errorResponse struct {
 	Error string `json:"error"`
+	Code  string `json:"code,omitempty"`
+}
+
+func writeErrorWithCode(w http.ResponseWriter, status int, message string, code string) {
+	writeJSON(w, status, errorResponse{Error: message, Code: code})
 }
 
 // maxRequestBodyBytes limits the size of incoming JSON request bodies.
@@ -43,4 +48,13 @@ func newSequenceID(prefix string, value uint64) string {
 
 func leftPad(value uint64) string {
 	return fmt.Sprintf("%07d", value)
+}
+
+// maskToken returns a truncated preview of a secret token for safe inclusion
+// in audit logs and non-privileged responses.
+func maskToken(value string) string {
+	if len(value) <= 8 {
+		return "***"
+	}
+	return value[:8] + "..."
 }
