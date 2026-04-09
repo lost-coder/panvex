@@ -38,12 +38,21 @@ func Open(dsn string) (*Store, error) {
 		return nil, err
 	}
 
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
+
 	if err := db.Ping(); err != nil {
 		db.Close()
 		return nil, err
 	}
 
 	return &Store{db: db}, nil
+}
+
+// Ping verifies that the database connection is alive.
+func (s *Store) Ping(ctx context.Context) error {
+	return s.db.PingContext(ctx)
 }
 
 // Close releases the database handle owned by the store.
