@@ -13,8 +13,16 @@ type errorResponse struct {
 // maxRequestBodyBytes limits the size of incoming JSON request bodies.
 const maxRequestBodyBytes = 1 << 20 // 1 MB
 
+// maxBodySize applies a request body size limit as middleware, preventing
+// oversized payloads from consuming server memory.
+func maxBodySize(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+		next.ServeHTTP(w, r)
+	})
+}
+
 func decodeJSON(r *http.Request, dest any) error {
-	r.Body = http.MaxBytesReader(nil, r.Body, maxRequestBodyBytes)
 	defer r.Body.Close()
 	return json.NewDecoder(r.Body).Decode(dest)
 }

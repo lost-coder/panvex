@@ -28,17 +28,17 @@ func (s *Server) registerAgentSession(agentID string) (*agentStreamSession, func
 }
 
 func (s *Server) notifyAgentSession(agentID string) {
+	// The send must happen under RLock to prevent a concurrent deregister from
+	// closing the wake channel between the map lookup and the send.
 	s.sessionMu.RLock()
 	session := s.agentSessions[agentID]
+	if session != nil {
+		select {
+		case session.wake <- struct{}{}:
+		default:
+		}
+	}
 	s.sessionMu.RUnlock()
-	if session == nil {
-		return
-	}
-
-	select {
-	case session.wake <- struct{}{}:
-	default:
-	}
 }
 
 func (s *Server) notifyAgentSessions(agentIDs []string) {

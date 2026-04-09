@@ -89,7 +89,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		})
 
 		writeJSON(w, http.StatusOK, map[string]string{
-			"session_id": session.ID,
+			"status": "ok",
 		})
 	}
 }

@@ -14,7 +14,9 @@ func (s *Server) handleEvents() http.HandlerFunc {
 			return
 		}
 
-		conn, err := websocket.Accept(w, r, nil)
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+			OriginPatterns: []string{r.Host},
+		})
 		if err != nil {
 			return
 		}
