@@ -81,6 +81,7 @@ type Server struct {
 	metrics    []MetricSnapshot
 	auditTrail []AuditEvent
 	panelSettings PanelSettings
+	retention  RetentionSettings
 	handler    http.Handler
 	startupErr error
 }
@@ -120,6 +121,7 @@ func New(options Options) *Server {
 		auditTrail: make([]AuditEvent, 0, maxInMemoryAuditEvents),
 	}
 	server.panelSettings = defaultPanelSettings()
+	server.retention = defaultRetentionSettings()
 	authority, err := loadOrCreateCertificateAuthority(options.Store, now())
 	if err != nil {
 		server.startupErr = err
@@ -163,6 +165,7 @@ func New(options Options) *Server {
 	server.handler = server.routes()
 	server.auth.SetNow(now)
 	server.jobs.SetNow(now)
+	server.startTimeseriesRollupWorker(context.Background())
 
 	return server
 }
