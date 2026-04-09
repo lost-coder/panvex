@@ -265,6 +265,14 @@ export type FleetGroupEntry = {
   agent_count: number;
 };
 
+export type RetentionSettings = {
+  ts_raw_seconds: number;
+  ts_hourly_seconds: number;
+  ts_dc_seconds: number;
+  ip_history_seconds: number;
+  event_history_seconds: number;
+};
+
 export type Instance = {
   id: string;
   agent_id: string;
@@ -675,4 +683,10 @@ export const apiClient = {
     const qs = params.toString();
     return api<ClientIPHistoryResponse>(`${apiBasePath}/clients/${clientID}/history/ips${qs ? "?" + qs : ""}`);
   },
+  getRetentionSettings: () => api<RetentionSettings>(`${apiBasePath}/settings/retention`),
+  putRetentionSettings: (settings: RetentionSettings) =>
+    api<RetentionSettings>(`${apiBasePath}/settings/retention`, {
+      method: "PUT",
+      body: JSON.stringify(settings),
+    }),
 };

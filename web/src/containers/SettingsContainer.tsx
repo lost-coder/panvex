@@ -2,11 +2,14 @@ import { SettingsPage, Spinner } from "@panvex/ui";
 import { useNavigate } from "@tanstack/react-router";
 import { useSettings } from "@/hooks/useSettings";
 import { useProfile } from "@/hooks/useProfile";
+import { useRetentionSettings } from "@/hooks/useRetentionSettings";
 
 export function SettingsContainer() {
   const navigate = useNavigate();
   const { settings, isLoading, saveAppearance, savePanelSettings } = useSettings();
   const { profile } = useProfile();
+  const { retention, save: saveRetention } = useRetentionSettings();
+  const isAdmin = profile?.role === "admin";
 
   if (isLoading || !settings) {
     return <div className="flex items-center justify-center h-64"><Spinner /></div>;
@@ -25,7 +28,9 @@ export function SettingsContainer() {
         density: s.density,
         help_mode: s.helpMode,
       })}
-      onManageUsers={profile?.role === "admin" ? () => navigate({ to: "/settings/users" }) : undefined}
+      onManageUsers={isAdmin ? () => navigate({ to: "/settings/users" }) : undefined}
+      retentionSettings={isAdmin && retention ? retention : undefined}
+      onRetentionChange={isAdmin ? (s) => saveRetention.mutate(s) : undefined}
     />
   );
 }
