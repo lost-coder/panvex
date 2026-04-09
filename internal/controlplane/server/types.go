@@ -79,7 +79,22 @@ type AgentRuntime struct {
 	DCs                       []RuntimeDC       `json:"dcs"`
 	Upstreams                 []RuntimeUpstream `json:"upstreams"`
 	RecentEvents              []RuntimeEvent    `json:"recent_events"`
+	SystemLoad                RuntimeSystemLoad `json:"system_load"`
 	UpdatedAt                 time.Time         `json:"updated_at"`
+}
+
+// RuntimeSystemLoad carries server resource utilization metrics.
+type RuntimeSystemLoad struct {
+	CPUUsagePct      float64 `json:"cpu_usage_pct"`
+	MemoryUsedBytes  uint64  `json:"memory_used_bytes"`
+	MemoryTotalBytes uint64  `json:"memory_total_bytes"`
+	MemoryUsagePct   float64 `json:"memory_usage_pct"`
+	DiskUsedBytes    uint64  `json:"disk_used_bytes"`
+	DiskTotalBytes   uint64  `json:"disk_total_bytes"`
+	DiskUsagePct     float64 `json:"disk_usage_pct"`
+	Load1M           float64 `json:"load_1m"`
+	Load5M           float64 `json:"load_5m"`
+	Load15M          float64 `json:"load_15m"`
 }
 
 // Instance stores the Telemt runtime metadata discovered through an agent.
