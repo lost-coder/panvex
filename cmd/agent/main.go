@@ -61,10 +61,12 @@ func runRuntime(args []string) error {
 	telemtAuth := flags.String("telemt-auth", "", "Local Telemt authorization value")
 	telemtConfigPath := flags.String("telemt-config-path", "", "Path to Telemt config file (optional, auto-detected via API if empty)")
 	heartbeat := flags.Duration("heartbeat-interval", 15*time.Second, "Heartbeat interval")
-	runtimeSnapshot := flags.Duration("snapshot-interval", time.Minute, "Runtime snapshot interval")
-	usageSnapshot := flags.Duration("usage-interval", 3*time.Minute, "Client usage snapshot interval")
-	ipPoll := flags.Duration("ip-poll-interval", 25*time.Second, "Client IP polling interval")
-	ipUpload := flags.Duration("ip-upload-interval", 3*time.Minute, "Client IP upload interval")
+	runtimePoll := flags.Duration("runtime-poll-interval", 15*time.Second, "How often the agent polls Telemt for runtime data")
+	runtimeUpload := flags.Duration("runtime-upload-interval", time.Minute, "How often aggregated runtime snapshots are sent to the control-plane")
+	runtimeSnapshot := flags.Duration("snapshot-interval", 0, "Deprecated: use -runtime-poll-interval and -runtime-upload-interval")
+	usageSnapshot := flags.Duration("usage-interval", 2*time.Minute, "Client usage snapshot interval")
+	ipPoll := flags.Duration("ip-poll-interval", 15*time.Second, "Client IP polling interval")
+	ipUpload := flags.Duration("ip-upload-interval", time.Minute, "Client IP upload interval")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -97,7 +99,12 @@ func runRuntime(args []string) error {
 		TelemtConfigPath: *telemtConfigPath,
 	}, telemtClient)
 
-	schedule := newConnectionSchedule(*heartbeat, *runtimeSnapshot, *usageSnapshot, *ipPoll, *ipUpload)
+	// Backward compatibility: if deprecated --snapshot-interval is set, use it for both poll and upload.
+	if *runtimeSnapshot > 0 {
+		*runtimePoll = *runtimeSnapshot
+		*runtimeUpload = *runtimeSnapshot
+	}
+	schedule := newConnectionSchedule(*heartbeat, *runtimePoll, *runtimeUpload, *usageSnapshot, *ipPoll, *ipUpload)
 	log.Printf(
 		"agent starting: agent_id=%s node=%s gateway=%s telemt_api=%s telemt_metrics=%s",
 		credentialsState.AgentID,
@@ -144,11 +151,12 @@ func loadRuntimeCredentials(stateFile string) (agentstate.Credentials, error) {
 type pollingGroup string
 
 const (
-	pollHeartbeat pollingGroup = "heartbeat"
-	pollRuntime   pollingGroup = "runtime"
-	pollUsage     pollingGroup = "usage"
-	pollIPPoll    pollingGroup = "ip_poll"
-	pollIPUpload  pollingGroup = "ip_upload"
+	pollHeartbeat      pollingGroup = "heartbeat"
+	pollRuntime        pollingGroup = "runtime"
+	pollRuntimeUpload  pollingGroup = "runtime_upload"
+	pollUsage          pollingGroup = "usage"
+	pollIPPoll         pollingGroup = "ip_poll"
+	pollIPUpload       pollingGroup = "ip_upload"
 )
 
 type jobPipeline string
@@ -168,14 +176,15 @@ type connectionSchedule struct {
 	groups map[pollingGroup]pollingGroupConfig
 }
 
-func newConnectionSchedule(heartbeat time.Duration, runtimeSnapshot time.Duration, usageSnapshot time.Duration, ipPoll time.Duration, ipUpload time.Duration) connectionSchedule {
+func newConnectionSchedule(heartbeat time.Duration, runtimePoll time.Duration, runtimeUpload time.Duration, usageSnapshot time.Duration, ipPoll time.Duration, ipUpload time.Duration) connectionSchedule {
 	return connectionSchedule{
 		groups: map[pollingGroup]pollingGroupConfig{
-			pollHeartbeat: {Enabled: heartbeat > 0, Interval: heartbeat},
-			pollRuntime:   {Enabled: runtimeSnapshot > 0, Interval: runtimeSnapshot},
-			pollUsage:     {Enabled: usageSnapshot > 0, Interval: usageSnapshot},
-			pollIPPoll:    {Enabled: ipPoll > 0, Interval: ipPoll},
-			pollIPUpload:  {Enabled: ipUpload > 0, Interval: ipUpload},
+			pollHeartbeat:     {Enabled: heartbeat > 0, Interval: heartbeat},
+			pollRuntime:       {Enabled: runtimePoll > 0, Interval: runtimePoll},
+			pollRuntimeUpload: {Enabled: runtimeUpload > 0, Interval: runtimeUpload},
+			pollUsage:         {Enabled: usageSnapshot > 0, Interval: usageSnapshot},
+			pollIPPoll:        {Enabled: ipPoll > 0, Interval: ipPoll},
+			pollIPUpload:      {Enabled: ipUpload > 0, Interval: ipUpload},
 		},
 	}
 }
@@ -398,7 +407,9 @@ func startPollingWorkers(
 		}
 	})
 
-	startRuntimePollingWorker(connectionCtx, schedule.config(pollRuntime), agent, telemetryOutbound)
+	runtimeBuffer := runtime.NewRuntimeRingBuffer(8)
+	startRuntimePollWorker(connectionCtx, schedule.config(pollRuntime), agent, runtimeBuffer)
+	startRuntimeUploadWorker(connectionCtx, schedule.config(pollRuntimeUpload), runtimeBuffer, telemetryOutbound)
 
 	startPeriodicPollingWorker(connectionCtx, schedule.config(pollUsage), func(observedAt time.Time) {
 		usageCtx, cancelUsage := context.WithTimeout(connectionCtx, runtimeOperationTimeout)
@@ -467,11 +478,12 @@ func startPeriodicPollingWorker(
 	}()
 }
 
-func startRuntimePollingWorker(
+// startRuntimePollWorker polls Telemt at a fast interval and stores samples in the ring buffer.
+func startRuntimePollWorker(
 	connectionCtx context.Context,
 	config pollingGroupConfig,
 	agent *runtime.Agent,
-	telemetryOutbound chan<- *gatewayrpc.ConnectClientMessage,
+	buffer *runtime.RuntimeRingBuffer,
 ) {
 	if !config.Enabled || config.Interval <= 0 {
 		return
@@ -495,7 +507,40 @@ func startRuntimePollingWorker(
 				snapshot, err := agent.BuildRuntimeSnapshot(runtimeCtx, observedAt.UTC())
 				cancelRuntime()
 				if err != nil {
-					log.Printf("agent runtime snapshot failed: %v", err)
+					log.Printf("agent runtime poll failed: %v", err)
+					continue
+				}
+				buffer.Push(runtime.RuntimeSample{
+					ObservedAt: observedAt.UTC(),
+					Snapshot:   snapshot,
+				})
+			}
+		}
+	}()
+}
+
+// startRuntimeUploadWorker drains the ring buffer, aggregates samples, and sends one snapshot.
+func startRuntimeUploadWorker(
+	connectionCtx context.Context,
+	config pollingGroupConfig,
+	buffer *runtime.RuntimeRingBuffer,
+	telemetryOutbound chan<- *gatewayrpc.ConnectClientMessage,
+) {
+	if !config.Enabled || config.Interval <= 0 {
+		return
+	}
+
+	go func() {
+		ticker := time.NewTicker(config.Interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-connectionCtx.Done():
+				return
+			case <-ticker.C:
+				snapshot := buffer.DrainAndAggregate()
+				if snapshot == nil {
 					continue
 				}
 				if enqueueOutboundMessage(connectionCtx, telemetryOutbound, &gatewayrpc.ConnectClientMessage{
@@ -504,7 +549,7 @@ func startRuntimePollingWorker(
 					continue
 				}
 				if connectionCtx.Err() == nil {
-					log.Printf("agent runtime snapshot dropped due to outbound backpressure")
+					log.Printf("agent runtime upload dropped due to outbound backpressure")
 				}
 			}
 		}
