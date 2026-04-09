@@ -178,3 +178,65 @@ func (s *Store) PruneClientIPHistory(ctx context.Context, olderThan time.Time) (
 	}
 	return result.RowsAffected()
 }
+
+func (s *Store) RollupServerLoadHourly(ctx context.Context, bucketHour time.Time) error {
+	bucketStart := toUnix(bucketHour.Truncate(time.Hour))
+	bucketEnd := bucketStart + 3600
+	_, err := s.db.ExecContext(ctx, `
+		INSERT OR IGNORE INTO ts_server_load_hourly (
+			agent_id, bucket_hour_unix,
+			cpu_pct_avg, cpu_pct_max, mem_pct_avg, mem_pct_max,
+			connections_avg, connections_max, active_users_avg, active_users_max,
+			dc_coverage_min, dc_coverage_avg, sample_count
+		)
+		SELECT agent_id, ?,
+			AVG(cpu_pct_avg), MAX(cpu_pct_max), AVG(mem_pct_avg), MAX(mem_pct_max),
+			AVG(connections_avg), MAX(connections_max), AVG(active_users_avg), MAX(active_users_max),
+			MIN(dc_coverage_min_pct), AVG(dc_coverage_avg_pct), COUNT(*)
+		FROM ts_server_load
+		WHERE captured_at_unix >= ? AND captured_at_unix < ?
+		GROUP BY agent_id
+	`, bucketStart, bucketStart, bucketEnd)
+	return err
+}
+
+func (s *Store) ListServerLoadHourly(ctx context.Context, agentID string, from time.Time, to time.Time) ([]storage.ServerLoadHourlyRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT agent_id, bucket_hour_unix,
+			cpu_pct_avg, cpu_pct_max, mem_pct_avg, mem_pct_max,
+			connections_avg, connections_max, active_users_avg, active_users_max,
+			dc_coverage_min, dc_coverage_avg, sample_count
+		FROM ts_server_load_hourly
+		WHERE agent_id = ? AND bucket_hour_unix >= ? AND bucket_hour_unix <= ?
+		ORDER BY bucket_hour_unix
+	`, agentID, toUnix(from), toUnix(to))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []storage.ServerLoadHourlyRecord
+	for rows.Next() {
+		var r storage.ServerLoadHourlyRecord
+		var bucketUnix int64
+		if err := rows.Scan(
+			&r.AgentID, &bucketUnix,
+			&r.CPUPctAvg, &r.CPUPctMax, &r.MemPctAvg, &r.MemPctMax,
+			&r.ConnectionsAvg, &r.ConnectionsMax, &r.ActiveUsersAvg, &r.ActiveUsersMax,
+			&r.DCCoverageMin, &r.DCCoverageAvg, &r.SampleCount,
+		); err != nil {
+			return nil, err
+		}
+		r.BucketHour = fromUnix(bucketUnix)
+		result = append(result, r)
+	}
+	return result, rows.Err()
+}
+
+func (s *Store) PruneServerLoadHourly(ctx context.Context, olderThan time.Time) (int64, error) {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM ts_server_load_hourly WHERE bucket_hour_unix < ?`, toUnix(olderThan))
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
