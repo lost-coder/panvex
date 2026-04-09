@@ -55,3 +55,5 @@ docs/plans/
 # Editor/IDE
 # .idea/
 # .vscode/
+agent
+control-plane
