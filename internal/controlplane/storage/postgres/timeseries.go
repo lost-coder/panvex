@@ -17,8 +17,8 @@ func (s *Store) AppendServerLoadPoint(ctx context.Context, record storage.Server
 			active_users_avg, active_users_max,
 			connections_total, connections_bad_total, handshake_timeouts_total,
 			dc_coverage_min_pct, dc_coverage_avg_pct,
-			healthy_upstreams, total_upstreams, sample_count
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
+			healthy_upstreams, total_upstreams, net_bytes_sent, net_bytes_recv, sample_count
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
 		ON CONFLICT (agent_id, captured_at) DO NOTHING
 	`,
 		record.AgentID, record.CapturedAt.UTC(),
@@ -28,7 +28,7 @@ func (s *Store) AppendServerLoadPoint(ctx context.Context, record storage.Server
 		record.ActiveUsersAvg, record.ActiveUsersMax,
 		record.ConnectionsTotal, record.ConnectionsBadTotal, record.HandshakeTimeoutsTotal,
 		record.DCCoverageMinPct, record.DCCoverageAvgPct,
-		record.HealthyUpstreams, record.TotalUpstreams, record.SampleCount,
+		record.HealthyUpstreams, record.TotalUpstreams, record.NetBytesSent, record.NetBytesRecv, record.SampleCount,
 	)
 	return err
 }
@@ -42,7 +42,7 @@ func (s *Store) ListServerLoadPoints(ctx context.Context, agentID string, from t
 			active_users_avg, active_users_max,
 			connections_total, connections_bad_total, handshake_timeouts_total,
 			dc_coverage_min_pct, dc_coverage_avg_pct,
-			healthy_upstreams, total_upstreams, sample_count
+			healthy_upstreams, total_upstreams, net_bytes_sent, net_bytes_recv, sample_count
 		FROM ts_server_load
 		WHERE agent_id = $1 AND captured_at >= $2 AND captured_at <= $3
 		ORDER BY captured_at
@@ -63,7 +63,7 @@ func (s *Store) ListServerLoadPoints(ctx context.Context, agentID string, from t
 			&r.ActiveUsersAvg, &r.ActiveUsersMax,
 			&r.ConnectionsTotal, &r.ConnectionsBadTotal, &r.HandshakeTimeoutsTotal,
 			&r.DCCoverageMinPct, &r.DCCoverageAvgPct,
-			&r.HealthyUpstreams, &r.TotalUpstreams, &r.SampleCount,
+			&r.HealthyUpstreams, &r.TotalUpstreams, &r.NetBytesSent, &r.NetBytesRecv, &r.SampleCount,
 		); err != nil {
 			return nil, err
 		}

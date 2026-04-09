@@ -203,6 +203,63 @@ export type Agent = {
   last_seen_at: string;
 };
 
+export type ServerLoadPoint = {
+  AgentID: string;
+  CapturedAt: string;
+  CPUPctAvg: number;
+  CPUPctMax: number;
+  MemPctAvg: number;
+  MemPctMax: number;
+  DiskPctAvg: number;
+  DiskPctMax: number;
+  Load1M: number;
+  ConnectionsAvg: number;
+  ConnectionsMax: number;
+  ActiveUsersAvg: number;
+  ActiveUsersMax: number;
+  DCCoverageMinPct: number;
+  HealthyUpstreams: number;
+  TotalUpstreams: number;
+  NetBytesSent: number;
+  NetBytesRecv: number;
+  SampleCount: number;
+};
+
+export type ServerLoadHistoryResponse = {
+  points: ServerLoadPoint[];
+  resolution: "raw" | "hourly";
+};
+
+export type DCHealthPoint = {
+  AgentID: string;
+  CapturedAt: string;
+  DC: number;
+  CoveragePctAvg: number;
+  CoveragePctMin: number;
+  RTTMsAvg: number;
+  RTTMsMax: number;
+  AliveWritersMin: number;
+  RequiredWriters: number;
+  SampleCount: number;
+};
+
+export type DCHealthHistoryResponse = {
+  points: DCHealthPoint[];
+};
+
+export type ClientIPEntry = {
+  AgentID: string;
+  ClientID: string;
+  IPAddress: string;
+  FirstSeen: string;
+  LastSeen: string;
+};
+
+export type ClientIPHistoryResponse = {
+  ips: ClientIPEntry[];
+  total_unique: number;
+};
+
 export type FleetGroupEntry = {
   id: string;
   agent_count: number;
@@ -597,4 +654,25 @@ export const apiClient = {
       method: "DELETE"
     }),
   fleetGroups: () => api<FleetGroupEntry[]>(`${apiBasePath}/fleet-groups`),
+  serverLoadHistory: (agentID: string, from?: string, to?: string) => {
+    const params = new URLSearchParams();
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+    const qs = params.toString();
+    return api<ServerLoadHistoryResponse>(`${apiBasePath}/telemetry/servers/${agentID}/history/load${qs ? "?" + qs : ""}`);
+  },
+  dcHealthHistory: (agentID: string, from?: string, to?: string) => {
+    const params = new URLSearchParams();
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+    const qs = params.toString();
+    return api<DCHealthHistoryResponse>(`${apiBasePath}/telemetry/servers/${agentID}/history/dc${qs ? "?" + qs : ""}`);
+  },
+  clientIPHistory: (clientID: string, from?: string, to?: string) => {
+    const params = new URLSearchParams();
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+    const qs = params.toString();
+    return api<ClientIPHistoryResponse>(`${apiBasePath}/clients/${clientID}/history/ips${qs ? "?" + qs : ""}`);
+  },
 };

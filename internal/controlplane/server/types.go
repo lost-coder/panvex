@@ -95,6 +95,8 @@ type RuntimeSystemLoad struct {
 	Load1M           float64 `json:"load_1m"`
 	Load5M           float64 `json:"load_5m"`
 	Load15M          float64 `json:"load_15m"`
+	NetBytesSent     uint64  `json:"net_bytes_sent"`
+	NetBytesRecv     uint64  `json:"net_bytes_recv"`
 }
 
 // Instance stores the Telemt runtime metadata discovered through an agent.
