@@ -264,19 +264,20 @@ func (s *Service) Authenticate(input LoginInput, now time.Time) (Session, error)
 		if strings.TrimSpace(input.TotpCode) == "" {
 			return Session{}, ErrTotpRequired
 		}
-
-		if !s.verifyTotpCode(user.TotpSecret, input.TotpCode, now) {
-			return Session{}, ErrInvalidTotpCode
-		}
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Reject replayed TOTP codes within the acceptance window.
+	// TOTP verification and replay check must both happen under the lock to
+	// prevent a TOCTOU race where two concurrent requests with the same code
+	// both pass verification before either records consumption.
 	if user.TotpEnabled {
 		key := totpUseKey{UserID: user.ID, Code: strings.TrimSpace(input.TotpCode)}
 		if _, used := s.consumedTotp[key]; used {
+			return Session{}, ErrInvalidTotpCode
+		}
+		if !s.verifyTotpCode(user.TotpSecret, input.TotpCode, now) {
 			return Session{}, ErrInvalidTotpCode
 		}
 		s.consumedTotp[key] = now.UTC()

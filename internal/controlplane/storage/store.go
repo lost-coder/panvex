@@ -160,5 +160,7 @@ type Store interface {
 	DiscoveredClientStore
 	TimeseriesStore
 
+	// Ping verifies that the database connection is alive.
+	Ping(ctx context.Context) error
 	Close() error
 }

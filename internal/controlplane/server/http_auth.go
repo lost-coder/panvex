@@ -64,9 +64,11 @@ func (s *Server) handleLogin() http.HandlerFunc {
 			}
 			switch {
 			case errors.Is(err, auth.ErrInvalidCredentials):
-				writeError(w, http.StatusUnauthorized, err.Error())
-			case errors.Is(err, auth.ErrTotpRequired), errors.Is(err, auth.ErrInvalidTotpCode):
-				writeError(w, http.StatusUnauthorized, err.Error())
+				writeErrorWithCode(w, http.StatusUnauthorized, err.Error(), "invalid_credentials")
+			case errors.Is(err, auth.ErrTotpRequired):
+				writeErrorWithCode(w, http.StatusUnauthorized, err.Error(), "totp_required")
+			case errors.Is(err, auth.ErrInvalidTotpCode):
+				writeErrorWithCode(w, http.StatusUnauthorized, err.Error(), "totp_invalid")
 			default:
 				log.Printf("auth login failed: %v", err)
 				writeError(w, http.StatusInternalServerError, "internal error")
@@ -89,7 +91,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		})
 
 		writeJSON(w, http.StatusOK, map[string]string{
-			"session_id": session.ID,
+			"status": "ok",
 		})
 	}
 }

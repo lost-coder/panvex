@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useRouter } from "@tanstack/react-router";
 import { LoginPage } from "@panvex/ui";
-import { apiClient } from "@/lib/api";
+import { apiClient, ApiError } from "@/lib/api";
 
 export function LoginContainer() {
   const router = useRouter();
@@ -17,12 +17,12 @@ export function LoginContainer() {
       await apiClient.login({ username, password });
       router.navigate({ to: "/" });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.toLowerCase().includes("totp")) {
+      if (err instanceof ApiError && (err.code === "totp_required" || err.code === "totp_invalid")) {
         setSavedCredentials({ username, password });
         setStage("totp");
         setError(undefined);
       } else {
+        const msg = err instanceof Error ? err.message : String(err);
         setError(msg || "Login failed.");
       }
     } finally {

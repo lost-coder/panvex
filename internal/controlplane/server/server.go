@@ -84,6 +84,7 @@ type Server struct {
 	retention  RetentionSettings
 	handler    http.Handler
 	startupErr error
+	stopRollup context.CancelFunc
 }
 
 // New constructs a control-plane server with in-memory state suitable for local development.
@@ -165,9 +166,19 @@ func New(options Options) *Server {
 	server.handler = server.routes()
 	server.auth.SetNow(now)
 	server.jobs.SetNow(now)
-	server.startTimeseriesRollupWorker(context.Background())
+	rollupCtx, rollupCancel := context.WithCancel(context.Background())
+	server.stopRollup = rollupCancel
+	server.startTimeseriesRollupWorker(rollupCtx)
 
 	return server
+}
+
+// Close stops background workers. It should be called before closing the
+// storage backend so that in-flight writes can complete.
+func (s *Server) Close() {
+	if s.stopRollup != nil {
+		s.stopRollup()
+	}
 }
 
 func (s *Server) seedUsers(users []auth.User) error {
@@ -287,6 +298,7 @@ func (s *Server) GRPCTLSConfig() *tls.Config {
 func (s *Server) routes() http.Handler {
 	router := chi.NewRouter()
 	router.Use(securityHeaders)
+	router.Use(maxBodySize)
 	router.Use(csrfOriginCheck)
 	router.Get("/healthz", handleHealthz())
 	router.Get("/readyz", s.handleReadyz())

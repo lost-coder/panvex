@@ -118,7 +118,7 @@ func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 			return
 		}
 
-		s.appendAuditWithContext(r.Context(), session.UserID, "agents.enrollment.create", token.Value, map[string]any{
+		s.appendAuditWithContext(r.Context(), session.UserID, "agents.enrollment.create", maskToken(token.Value), map[string]any{
 			"fleet_group_id": request.FleetGroupID,
 			"ttl_seconds":    request.TTLSeconds,
 		})
@@ -245,7 +245,7 @@ func (s *Server) handleRevokeEnrollmentToken() http.HandlerFunc {
 			return
 		}
 		if changed {
-			s.appendAuditWithContext(r.Context(), session.UserID, "agents.enrollment.revoke", revoked.Value, map[string]any{
+			s.appendAuditWithContext(r.Context(), session.UserID, "agents.enrollment.revoke", maskToken(revoked.Value), map[string]any{
 				"fleet_group_id": revoked.FleetGroupID,
 			})
 		}

@@ -58,6 +58,11 @@ func ensureParentDirectory(dsn string) error {
 	return os.MkdirAll(parent, 0o755)
 }
 
+// Ping verifies that the database connection is alive.
+func (s *Store) Ping(ctx context.Context) error {
+	return s.db.PingContext(ctx)
+}
+
 // Close releases the database handle owned by the store.
 func (s *Store) Close() error {
 	return s.db.Close()
