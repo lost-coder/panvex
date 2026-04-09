@@ -24,6 +24,7 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
+	defer server.Close()
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
@@ -224,6 +225,7 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 		Now:   func() time.Time { return now.Add(time.Minute) },
 		Store: store,
 	})
+	defer restored.Close()
 	restored.agents["agent-a"] = server.agents["agent-a"]
 	restored.presence.MarkConnected("agent-a", now.Add(-5*time.Second))
 

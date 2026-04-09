@@ -27,6 +27,7 @@ func TestHTTPClientsCreateTracksDeploymentsAndStructuredJobPayload(t *testing.T)
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
+	defer server.Close()
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
@@ -159,6 +160,7 @@ func TestHTTPClientsUpdateRotateAndDeleteQueueLifecycleJobs(t *testing.T) {
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
+	defer server.Close()
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
@@ -304,6 +306,7 @@ func TestHTTPClientsAggregateUsageAcrossAgentSnapshots(t *testing.T) {
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
+	defer server.Close()
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
@@ -425,6 +428,7 @@ func TestHTTPClientsCreateReturnsInternalErrorWhenPersistenceFails(t *testing.T)
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
+	defer server.Close()
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
@@ -469,6 +473,7 @@ func TestRecordClientJobResultDoesNotPanicWhenDeploymentPersistenceFails(t *test
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
+	defer server.Close()
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",

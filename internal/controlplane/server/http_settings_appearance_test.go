@@ -24,6 +24,7 @@ func TestHTTPAppearanceSettingsReadDefaultsAndPersistCurrentUserValues(t *testin
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
+	defer server.Close()
 	user, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",
@@ -130,6 +131,7 @@ func TestHTTPAppearanceSettingsRejectsUnauthorizedAndInvalidValues(t *testing.T)
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
+	defer server.Close()
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",

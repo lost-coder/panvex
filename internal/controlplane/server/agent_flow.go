@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"github.com/panvex/panvex/internal/controlplane/storage"
@@ -134,7 +133,9 @@ func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) error {
 	return s.applyAgentSnapshotWithContext(context.Background(), snapshot)
 }
 
-func (s *Server) applyAgentSnapshotWithContext(ctx context.Context, snapshot agentSnapshot) error {
+func (s *Server) applyAgentSnapshotWithContext(_ context.Context, snapshot agentSnapshot) error {
+	// Single lock section: build all state objects AND commit to in-memory maps
+	// atomically. No DB I/O happens under the lock.
 	s.mu.Lock()
 	agent := s.agents[snapshot.AgentID]
 	agent.ID = snapshot.AgentID
@@ -186,79 +187,8 @@ func (s *Server) applyAgentSnapshotWithContext(ctx context.Context, snapshot age
 		}
 		metricSnapshot = &metric
 	}
-	s.mu.Unlock()
 
-	if s.store != nil {
-		if err := s.store.PutAgent(ctx, agentToRecord(agent)); err != nil {
-			return err
-		}
-		if snapshot.HasRuntime && snapshot.Runtime != nil {
-			if err := s.store.PutTelemetryRuntimeCurrent(ctx, runtimeCurrentRecordFromAgent(agent)); err != nil {
-				return err
-			}
-			if err := s.store.ReplaceTelemetryRuntimeDCs(ctx, agent.ID, runtimeDCRecordsFromAgent(agent)); err != nil {
-				return err
-			}
-			if err := s.store.ReplaceTelemetryRuntimeUpstreams(ctx, agent.ID, runtimeUpstreamRecordsFromAgent(agent)); err != nil {
-				return err
-			}
-			if err := s.store.AppendTelemetryRuntimeEvents(ctx, agent.ID, runtimeEventRecordsFromAgent(agent)); err != nil {
-				return err
-			}
-			if snapshot.RuntimeDiagnostics != nil {
-				if err := s.store.PutTelemetryDiagnosticsCurrent(ctx, storage.TelemetryDiagnosticsCurrentRecord{
-					AgentID:             agent.ID,
-					ObservedAt:          snapshot.ObservedAt.UTC(),
-					State:               snapshot.RuntimeDiagnostics.State,
-					StateReason:         snapshot.RuntimeDiagnostics.StateReason,
-					SystemInfoJSON:      snapshot.RuntimeDiagnostics.SystemInfoJson,
-					EffectiveLimitsJSON: snapshot.RuntimeDiagnostics.EffectiveLimitsJson,
-					SecurityPostureJSON: snapshot.RuntimeDiagnostics.SecurityPostureJson,
-					MinimalAllJSON:      snapshot.RuntimeDiagnostics.MinimalAllJson,
-					MEPoolJSON:          snapshot.RuntimeDiagnostics.MePoolJson,
-					DcsJSON:             snapshot.RuntimeDiagnostics.DcsJson,
-				}); err != nil {
-					return err
-				}
-			}
-			if snapshot.RuntimeSecurityInventory != nil {
-				if err := s.store.PutTelemetrySecurityInventoryCurrent(ctx, storage.TelemetrySecurityInventoryCurrentRecord{
-					AgentID:      agent.ID,
-					ObservedAt:   snapshot.ObservedAt.UTC(),
-					State:        snapshot.RuntimeSecurityInventory.State,
-					StateReason:  snapshot.RuntimeSecurityInventory.StateReason,
-					Enabled:      snapshot.RuntimeSecurityInventory.Enabled,
-					EntriesTotal: int(snapshot.RuntimeSecurityInventory.EntriesTotal),
-					EntriesJSON:  snapshot.RuntimeSecurityInventory.EntriesJson,
-				}); err != nil {
-					return err
-				}
-			}
-		}
-		for _, instance := range instances {
-			if err := s.store.PutInstance(ctx, instanceToRecord(instance)); err != nil {
-				return err
-			}
-		}
-		if metricSnapshot != nil {
-			if err := s.store.AppendMetricSnapshot(ctx, metricSnapshotToRecord(*metricSnapshot)); err != nil {
-				return err
-			}
-		}
-		if snapshot.HasRuntime && snapshot.Runtime != nil {
-			if err := s.store.AppendServerLoadPoint(ctx, serverLoadPointFromSnapshot(agent, snapshot)); err != nil {
-				log.Printf("timeseries: append server load failed for agent %s: %v", agent.ID, err)
-			}
-			for _, dcPoint := range dcHealthPointsFromSnapshot(agent, snapshot) {
-				if err := s.store.AppendDCHealthPoint(ctx, dcPoint); err != nil {
-					log.Printf("timeseries: append dc health failed for agent %s dc %d: %v", agent.ID, dcPoint.DC, err)
-					break
-				}
-			}
-		}
-	}
-
-	s.mu.Lock()
+	// Commit to in-memory maps within the same lock section.
 	s.agents[snapshot.AgentID] = agent
 	for _, instance := range instances {
 		s.instances[instance.ID] = instance
@@ -279,32 +209,74 @@ func (s *Server) applyAgentSnapshotWithContext(ctx context.Context, snapshot age
 	}
 	s.mu.Unlock()
 
-	s.presence.MarkConnected(snapshot.AgentID, snapshot.ObservedAt)
-	s.presence.Heartbeat(snapshot.AgentID, snapshot.ObservedAt)
-
-	if snapshot.HasClientIPs && s.store != nil {
-		now := snapshot.ObservedAt.UTC()
-		var ipErrors int
-		for _, clientIP := range snapshot.ClientIPs {
-			for _, ip := range clientIP.ActiveIPs {
-				if err := s.store.UpsertClientIPHistory(ctx, storage.ClientIPHistoryRecord{
-					AgentID:   snapshot.AgentID,
-					ClientID:  clientIP.ClientID,
-					IPAddress: ip,
-					FirstSeen: now,
-					LastSeen:  now,
-				}); err != nil {
-					ipErrors++
-					if ipErrors == 1 {
-						log.Printf("timeseries: upsert client ip history failed for agent %s: %v", snapshot.AgentID, err)
-					}
+	// Enqueue all DB writes asynchronously via the batch writer. No DB I/O
+	// blocks the caller — the background flush goroutine handles persistence.
+	if s.batchWriter != nil {
+		s.batchWriter.agents.Enqueue(agentToRecord(agent))
+		for _, instance := range instances {
+			s.batchWriter.instances.Enqueue(instanceToRecord(instance))
+		}
+		if metricSnapshot != nil {
+			s.batchWriter.metrics.Enqueue(metricSnapshotToRecord(*metricSnapshot))
+		}
+		if snapshot.HasRuntime && snapshot.Runtime != nil {
+			unit := telemetryWriteUnit{agentID: agent.ID}
+			rec := runtimeCurrentRecordFromAgent(agent)
+			unit.runtime = &rec
+			unit.dcs = runtimeDCRecordsFromAgent(agent)
+			unit.upstreams = runtimeUpstreamRecordsFromAgent(agent)
+			unit.events = runtimeEventRecordsFromAgent(agent)
+			if snapshot.RuntimeDiagnostics != nil {
+				diag := storage.TelemetryDiagnosticsCurrentRecord{
+					AgentID:             agent.ID,
+					ObservedAt:          snapshot.ObservedAt.UTC(),
+					State:               snapshot.RuntimeDiagnostics.State,
+					StateReason:         snapshot.RuntimeDiagnostics.StateReason,
+					SystemInfoJSON:      snapshot.RuntimeDiagnostics.SystemInfoJson,
+					EffectiveLimitsJSON: snapshot.RuntimeDiagnostics.EffectiveLimitsJson,
+					SecurityPostureJSON: snapshot.RuntimeDiagnostics.SecurityPostureJson,
+					MinimalAllJSON:      snapshot.RuntimeDiagnostics.MinimalAllJson,
+					MEPoolJSON:          snapshot.RuntimeDiagnostics.MePoolJson,
+					DcsJSON:             snapshot.RuntimeDiagnostics.DcsJson,
+				}
+				unit.diagnostics = &diag
+			}
+			if snapshot.RuntimeSecurityInventory != nil {
+				sec := storage.TelemetrySecurityInventoryCurrentRecord{
+					AgentID:      agent.ID,
+					ObservedAt:   snapshot.ObservedAt.UTC(),
+					State:        snapshot.RuntimeSecurityInventory.State,
+					StateReason:  snapshot.RuntimeSecurityInventory.StateReason,
+					Enabled:      snapshot.RuntimeSecurityInventory.Enabled,
+					EntriesTotal: int(snapshot.RuntimeSecurityInventory.EntriesTotal),
+					EntriesJSON:  snapshot.RuntimeSecurityInventory.EntriesJson,
+				}
+				unit.security = &sec
+			}
+			s.batchWriter.telemetry.Enqueue(unit)
+			s.batchWriter.serverLoad.Enqueue(serverLoadPointFromSnapshot(agent, snapshot))
+			for _, dcPoint := range dcHealthPointsFromSnapshot(agent, snapshot) {
+				s.batchWriter.dcHealth.Enqueue(dcPoint)
+			}
+		}
+		if snapshot.HasClientIPs {
+			now := snapshot.ObservedAt.UTC()
+			for _, clientIP := range snapshot.ClientIPs {
+				for _, ip := range clientIP.ActiveIPs {
+					s.batchWriter.clientIPs.Enqueue(storage.ClientIPHistoryRecord{
+						AgentID:   snapshot.AgentID,
+						ClientID:  clientIP.ClientID,
+						IPAddress: ip,
+						FirstSeen: now,
+						LastSeen:  now,
+					})
 				}
 			}
 		}
-		if ipErrors > 1 {
-			log.Printf("timeseries: %d additional client ip upsert errors suppressed for agent %s", ipErrors-1, snapshot.AgentID)
-		}
 	}
+
+	s.presence.MarkConnected(snapshot.AgentID, snapshot.ObservedAt)
+	s.presence.Heartbeat(snapshot.AgentID, snapshot.ObservedAt)
 
 	s.events.publish(eventEnvelope{
 		Type: "agents.updated",

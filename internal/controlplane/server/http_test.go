@@ -116,6 +116,7 @@ func TestServerLoginDoesNotPanicWhenAuditPersistenceFails(t *testing.T) {
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
+	defer server.Close()
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",
@@ -583,6 +584,7 @@ func TestServerNewDoesNotReseedExistingStoreUsers(t *testing.T) {
 		},
 		Store: store,
 	})
+	defer server.Close()
 
 	if _, err := server.auth.Authenticate(auth.LoginInput{
 		Username: "admin",
@@ -661,11 +663,14 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 		t.Fatalf("applyAgentSnapshot() error = %v", err)
 	}
 
+	first.Close()
+
 	restored := New(Options{
 		Now: func() time.Time { return now.Add(2 * time.Minute) },
 		Users: []auth.User{user},
 		Store: store,
 	})
+	defer restored.Close()
 	loginResponse := performJSONRequest(t, restored.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
 		"password": "Viewer1password",
@@ -889,11 +894,14 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 	first.recordJobResult(agentOne.AgentID, createdJob.ID, true, "ok", "", now.Add(15*time.Second))
 	first.recordJobResult(agentTwo.AgentID, createdJob.ID, false, "reload failed", "", now.Add(16*time.Second))
 
+	first.Close()
+
 	restored := New(Options{
 		Now: func() time.Time { return now.Add(2 * time.Minute) },
 		Users: []auth.User{user},
 		Store: store,
 	})
+	defer restored.Close()
 	restoredCode, err := restored.auth.GenerateTotpCode(secret, now.Add(2*time.Minute))
 	if err != nil {
 		t.Fatalf("GenerateTotpCode(restored) error = %v", err)
@@ -965,6 +973,7 @@ func TestHTTPAgentBootstrapConsumesTokenAndReturnsIdentityBundle(t *testing.T) {
 		Now: func() time.Time { return now },
 		Store: store,
 	})
+	defer server.Close()
 	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
 		FleetGroupID:  "default",
 		TTL:           time.Minute,
@@ -1053,6 +1062,7 @@ func TestHTTPAgentBootstrapRejectsConsumedToken(t *testing.T) {
 		Now: func() time.Time { return now },
 		Store: store,
 	})
+	defer server.Close()
 	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
 		FleetGroupID:  "default",
 		TTL:           time.Minute,
@@ -1173,6 +1183,7 @@ func TestHTTPEnrollmentTokenListAndRevoke(t *testing.T) {
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
+	defer server.Close()
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "operator",
 		Password: "Operator1password",
