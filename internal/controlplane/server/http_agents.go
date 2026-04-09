@@ -81,15 +81,17 @@ func (s *Server) handleDeregisterAgent() http.HandlerFunc {
 		}
 
 		// 1. Close gRPC stream by removing the agent stream session.
+		//    The wake channel must be closed while sessionMu is held to prevent
+		//    a concurrent notifyAgentSession from sending to a closed channel.
 		s.sessionMu.Lock()
 		streamSession, hasStream := s.agentSessions[agentID]
 		if hasStream {
 			delete(s.agentSessions, agentID)
+			if streamSession.wake != nil {
+				close(streamSession.wake)
+			}
 		}
 		s.sessionMu.Unlock()
-		if hasStream && streamSession.wake != nil {
-			close(streamSession.wake)
-		}
 
 		// 2. Revoke any pending certificate recovery grant.
 		if s.store != nil {

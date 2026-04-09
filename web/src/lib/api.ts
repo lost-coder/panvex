@@ -513,7 +513,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const apiClient = {
   login: (payload: { username: string; password: string; totp_code?: string }) =>
-    api<{ session_id: string }>(`${apiBasePath}/auth/login`, {
+    api<{ status: string }>(`${apiBasePath}/auth/login`, {
       method: "POST",
       body: JSON.stringify(payload)
     }),
