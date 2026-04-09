@@ -1707,6 +1707,10 @@ func performJSONRequestWithHeaders(t *testing.T, handler http.Handler, method st
 	for _, cookie := range cookies {
 		request.AddCookie(cookie)
 	}
+	// Simulate browser Origin header for cookie-authenticated requests to pass CSRF check.
+	if len(cookies) > 0 && request.Header.Get("Origin") == "" {
+		request.Header.Set("Origin", "http://"+request.Host)
+	}
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
