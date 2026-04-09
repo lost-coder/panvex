@@ -639,3 +639,39 @@ func (s *memoryStore) DeleteDiscoveredClient(_ context.Context, id string) error
 	delete(s.discoveredClients, id)
 	return nil
 }
+
+func (s *memoryStore) AppendServerLoadPoint(_ context.Context, _ storage.ServerLoadPointRecord) error {
+	return nil
+}
+
+func (s *memoryStore) ListServerLoadPoints(_ context.Context, _ string, _ time.Time, _ time.Time) ([]storage.ServerLoadPointRecord, error) {
+	return nil, nil
+}
+
+func (s *memoryStore) PruneServerLoadPoints(_ context.Context, _ time.Time) (int64, error) {
+	return 0, nil
+}
+
+func (s *memoryStore) AppendDCHealthPoint(_ context.Context, _ storage.DCHealthPointRecord) error {
+	return nil
+}
+
+func (s *memoryStore) ListDCHealthPoints(_ context.Context, _ string, _ time.Time, _ time.Time) ([]storage.DCHealthPointRecord, error) {
+	return nil, nil
+}
+
+func (s *memoryStore) PruneDCHealthPoints(_ context.Context, _ time.Time) (int64, error) {
+	return 0, nil
+}
+
+func (s *memoryStore) UpsertClientIPHistory(_ context.Context, _ storage.ClientIPHistoryRecord) error {
+	return nil
+}
+
+func (s *memoryStore) ListClientIPHistory(_ context.Context, _ string, _ time.Time, _ time.Time) ([]storage.ClientIPHistoryRecord, error) {
+	return nil, nil
+}
+
+func (s *memoryStore) PruneClientIPHistory(_ context.Context, _ time.Time) (int64, error) {
+	return 0, nil
+}
