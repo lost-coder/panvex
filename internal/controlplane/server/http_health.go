@@ -7,7 +7,7 @@ func handleHealthz() http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	}
 }
 
@@ -18,10 +18,10 @@ func (s *Server) handleReadyz() http.HandlerFunc {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		if s.authority == nil {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			w.Write([]byte("not ready: certificate authority not initialized"))
+			_, _ = w.Write([]byte("not ready: certificate authority not initialized"))
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	}
 }
