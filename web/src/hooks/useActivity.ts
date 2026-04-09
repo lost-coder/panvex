@@ -43,5 +43,6 @@ export function useActivity() {
     jobs,
     auditEvents,
     isLoading: jobsQuery.isLoading || auditQuery.isLoading,
+    error: jobsQuery.error ?? auditQuery.error,
   };
 }

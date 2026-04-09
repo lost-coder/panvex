@@ -1,9 +1,10 @@
 import { DiscoveredClientsPage, Spinner } from "@panvex/ui";
 import { useDiscoveredClients } from "@/hooks/useDiscoveredClients";
 import { useNavigate } from "@tanstack/react-router";
+import { ErrorState } from "@/components/ErrorState";
 
 export function DiscoveredClientsContainer() {
-  const { discoveredClients, isLoading, adopt, ignore, adoptMany, ignoreMany, isAdopting, isIgnoring } =
+  const { discoveredClients, isLoading, error, adopt, ignore, adoptMany, ignoreMany, isAdopting, isIgnoring } =
     useDiscoveredClients();
   const navigate = useNavigate();
 
@@ -13,6 +14,10 @@ export function DiscoveredClientsContainer() {
         <Spinner />
       </div>
     );
+  }
+
+  if (error) {
+    return <ErrorState message={error.message} onRetry={() => window.location.reload()} />;
   }
 
   return (

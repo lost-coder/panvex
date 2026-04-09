@@ -229,10 +229,27 @@ const routeTree = rootRoute.addChildren([
   ]),
 ]);
 
+function NotFound() {
+  const navigate = useNavigate();
+  return (
+    <div className="flex flex-col items-center justify-center h-screen gap-4 text-fg-muted">
+      <span className="text-6xl font-bold text-fg/20">404</span>
+      <p className="text-sm">Page not found</p>
+      <button
+        onClick={() => navigate({ to: "/" })}
+        className="px-4 py-2 text-sm bg-accent text-white rounded-xs hover:bg-accent/90 transition-colors"
+      >
+        Go to Dashboard
+      </button>
+    </div>
+  );
+}
+
 export const router = createRouter({
   routeTree,
   context: { queryClient: undefined! },
   basepath: (window as any).__BASE_PATH__ ?? "/",
+  defaultNotFoundComponent: NotFound,
 });
 
 declare module "@tanstack/react-router" {

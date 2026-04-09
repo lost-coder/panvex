@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { ServerDetailPage, Spinner } from "@panvex/ui";
+import { ErrorState } from "@/components/ErrorState";
 import type { MetricsPoint } from "@panvex/ui";
 import { useServerDetail } from "@/hooks/useServerDetail";
 import { useServerMutations } from "@/hooks/useServerMutations";
@@ -47,7 +48,7 @@ function toMetricsPoints(
 
 export function ServerDetailContainer() {
   const { serverId } = useParams({ strict: false });
-  const { server, initState, lastUpdatedAt, raw, isLoading } = useServerDetail(serverId ?? "");
+  const { server, initState, lastUpdatedAt, raw, isLoading, error } = useServerDetail(serverId ?? "");
   const {
     allowCertRecoveryMutation,
     revokeCertRecoveryMutation,
@@ -65,6 +66,10 @@ export function ServerDetailContainer() {
 
   if (isLoading || !server) {
     return <div className="flex items-center justify-center h-64"><Spinner /></div>;
+  }
+
+  if (error) {
+    return <ErrorState message={error.message} onRetry={() => window.location.reload()} />;
   }
 
   return (
