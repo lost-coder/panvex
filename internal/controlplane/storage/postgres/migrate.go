@@ -311,7 +311,7 @@ func Migrate(db *sql.DB) error {
 
 	// Add ON DELETE CASCADE to client_assignments and client_deployments FKs.
 	// Best-effort: constraint names follow PostgreSQL auto-naming convention.
-	db.Exec(`
+	_, _ = db.Exec(`
 		DO $$ BEGIN
 			ALTER TABLE client_assignments DROP CONSTRAINT IF EXISTS client_assignments_client_id_fkey;
 			ALTER TABLE client_assignments ADD CONSTRAINT client_assignments_client_id_fkey
@@ -319,7 +319,7 @@ func Migrate(db *sql.DB) error {
 		EXCEPTION WHEN others THEN NULL;
 		END $$
 	`)
-	db.Exec(`
+	_, _ = db.Exec(`
 		DO $$ BEGIN
 			ALTER TABLE client_deployments DROP CONSTRAINT IF EXISTS client_deployments_client_id_fkey;
 			ALTER TABLE client_deployments ADD CONSTRAINT client_deployments_client_id_fkey
