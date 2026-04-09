@@ -135,9 +135,6 @@ func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) error {
 }
 
 func (s *Server) applyAgentSnapshotWithContext(ctx context.Context, snapshot agentSnapshot) error {
-	s.presence.MarkConnected(snapshot.AgentID, snapshot.ObservedAt)
-	s.presence.Heartbeat(snapshot.AgentID, snapshot.ObservedAt)
-
 	s.mu.Lock()
 	agent := s.agents[snapshot.AgentID]
 	agent.ID = snapshot.AgentID
@@ -280,6 +277,9 @@ func (s *Server) applyAgentSnapshotWithContext(ctx context.Context, snapshot age
 		s.applyClientIPSnapshot(snapshot.AgentID, snapshot.ClientIPs)
 	}
 	s.mu.Unlock()
+
+	s.presence.MarkConnected(snapshot.AgentID, snapshot.ObservedAt)
+	s.presence.Heartbeat(snapshot.AgentID, snapshot.ObservedAt)
 
 	if snapshot.HasClientIPs && s.store != nil {
 		now := snapshot.ObservedAt.UTC()

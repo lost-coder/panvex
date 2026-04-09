@@ -37,7 +37,13 @@ func csrfOriginCheck(next http.Handler) http.Handler {
 			origin = r.Header.Get("Referer")
 		}
 		if origin == "" {
-			// No origin information — allow through (non-browser clients, agent calls).
+			// No origin information. If the request carries a session cookie it
+			// originates from a browser that stripped Origin/Referer — block it.
+			// Non-browser clients (agent mTLS, API keys) never send the cookie.
+			if _, err := r.Cookie(sessionCookieName); err == nil {
+				writeError(w, http.StatusForbidden, "missing origin header for cookie-authenticated request")
+				return
+			}
 			next.ServeHTTP(w, r)
 			return
 		}

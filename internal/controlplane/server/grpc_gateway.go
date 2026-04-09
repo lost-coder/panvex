@@ -104,7 +104,15 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 		cancelConnection()
 	}
 
+	recoverGoroutine := func(name string) {
+		if r := recover(); r != nil {
+			log.Printf("control-plane goroutine panic recovered: agent=%s goroutine=%s panic=%v", agentID, name, r)
+			cancelConnection()
+		}
+	}
+
 	go func() {
+		defer recoverGoroutine("receive")
 		for {
 			message, err := stream.Recv()
 			if err != nil {
@@ -123,6 +131,7 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 
 	for workerIndex := 0; workerIndex < priorityInboundWorkerCount; workerIndex++ {
 		go func() {
+			defer recoverGoroutine("priority-inbound")
 			for {
 				select {
 				case <-connectionCtx.Done():
@@ -141,6 +150,7 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 	}
 
 	go func() {
+		defer recoverGoroutine("audit-effects")
 		for {
 			select {
 			case <-connectionCtx.Done():
@@ -158,6 +168,7 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 	}()
 
 	go func() {
+		defer recoverGoroutine("result-effects")
 		for {
 			select {
 			case <-connectionCtx.Done():
@@ -183,6 +194,7 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 	}()
 
 	go func() {
+		defer recoverGoroutine("snapshot-apply")
 		for {
 			select {
 			case <-connectionCtx.Done():
@@ -203,6 +215,7 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 	}()
 
 	go func() {
+		defer recoverGoroutine("regular-inbound")
 		for {
 			select {
 			case <-connectionCtx.Done():
@@ -220,6 +233,7 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 	}()
 
 	go func() {
+		defer recoverGoroutine("job-dispatch")
 		retryTicker := time.NewTicker(jobDispatchRetryInterval)
 		defer retryTicker.Stop()
 
