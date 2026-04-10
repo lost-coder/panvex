@@ -117,7 +117,10 @@ func (s *Server) withRateLimit(limiter *fixedWindowRateLimiter, keyFn func(*http
 
 func (s *Server) requestClientRateLimitKey(r *http.Request) string {
 	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		forwardedFor := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
+		// Use the rightmost X-Forwarded-For entry — the last hop appended
+		// by a trusted proxy. The leftmost entry is attacker-controlled.
+		parts := strings.Split(r.Header.Get("X-Forwarded-For"), ",")
+		forwardedFor := strings.TrimSpace(parts[len(parts)-1])
 		if forwardedFor != "" && s.remoteAddrTrustsForwardedFor(host) {
 			return forwardedFor
 		}
