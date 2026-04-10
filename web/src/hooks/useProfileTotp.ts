@@ -16,7 +16,11 @@ export function useProfileTotp() {
   const enableMutation = useMutation({
     mutationFn: (payload: { password: string; totp_code: string }) =>
       apiClient.enableTotp(payload),
-    onSuccess: invalidateProfile,
+    onSuccess: () => {
+      invalidateProfile();
+      // Clear TOTP secret from mutation cache after successful enable
+      setupMutation.reset();
+    },
     onError: (err) => console.error("Failed to enable TOTP:", err),
   });
 

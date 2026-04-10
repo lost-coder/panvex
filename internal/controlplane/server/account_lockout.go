@@ -94,7 +94,7 @@ func (t *accountLockoutTracker) RecordSuccess(username string) {
 }
 
 func (t *accountLockoutTracker) cleanupLocked(now time.Time) {
-	if len(t.accounts) < 512 {
+	if len(t.accounts) < 64 {
 		return
 	}
 	for username, entry := range t.accounts {
