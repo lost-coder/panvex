@@ -15,6 +15,7 @@ import { LayoutDashboard, Server, Users, Settings } from "lucide-react";
 import { AppShell, type NavItem } from "@panvex/ui";
 import { AppearanceProvider } from "@/providers/AppearanceProvider";
 import { apiClient } from "@/lib/api";
+import { resolveConfiguredRootPath, getRouterBasepath } from "@/lib/runtime-path";
 
 interface RouterContext {
   queryClient: QueryClient;
@@ -248,7 +249,7 @@ function NotFound() {
 export const router = createRouter({
   routeTree,
   context: { queryClient: undefined! },
-  basepath: (window as any).__BASE_PATH__ ?? "/",
+  basepath: getRouterBasepath(resolveConfiguredRootPath()),
   defaultNotFoundComponent: NotFound,
 });
 

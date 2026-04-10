@@ -25,7 +25,7 @@ func (h *eventHub) subscribe() (<-chan eventEnvelope, func()) {
 
 	h.sequence++
 	id := h.sequence
-	ch := make(chan eventEnvelope, 16)
+	ch := make(chan eventEnvelope, 64)
 	h.subscribers[id] = ch
 
 	cancel := func() {
