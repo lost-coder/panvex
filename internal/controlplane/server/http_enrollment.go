@@ -112,6 +112,10 @@ func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 			TTL:          time.Duration(request.TTLSeconds) * time.Second,
 		}, s.now())
 		if err != nil {
+			if errors.Is(err, security.ErrEnrollmentTokenTTLRequired) {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
 			s.logger.Error("create enrollment token failed", "error", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
