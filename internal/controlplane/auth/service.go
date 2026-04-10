@@ -140,6 +140,7 @@ type Service struct {
 	pendingTotpSetup map[string]pendingTotpSetup
 	consumedTotp     map[totpUseKey]time.Time
 	userStore        storage.UserStore
+	sessionStore     storage.SessionStore
 	now              func() time.Time
 }
 
@@ -164,6 +165,50 @@ func NewServiceWithStore(userStore storage.UserStore) *Service {
 		userStore:        userStore,
 		now:              time.Now,
 	}
+}
+
+// SetSessionStore attaches a persistent session store to the auth service.
+// When set, sessions are persisted on creation and loaded on restart.
+func (s *Service) SetSessionStore(sessionStore storage.SessionStore) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sessionStore = sessionStore
+}
+
+// RestoreSessions loads persisted sessions into the in-memory map, discarding
+// any that have exceeded the session TTL. This should be called during startup.
+func (s *Service) RestoreSessions() error {
+	if s.sessionStore == nil {
+		return nil
+	}
+
+	records, err := s.sessionStore.ListSessions(context.Background())
+	if err != nil {
+		return err
+	}
+
+	now := s.now().UTC()
+	cutoff := now.Add(-sessionTTL)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, record := range records {
+		if record.CreatedAt.Before(cutoff) {
+			continue
+		}
+		s.sessions[record.ID] = Session{
+			ID:        record.ID,
+			UserID:    record.UserID,
+			CreatedAt: record.CreatedAt,
+		}
+	}
+
+	// Clean up expired sessions in the store.
+	if err := s.sessionStore.DeleteExpiredSessions(context.Background(), cutoff); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // SetNow overrides the clock used for time-sensitive auth checks.
@@ -296,6 +341,14 @@ func (s *Service) Authenticate(input LoginInput, now time.Time) (Session, error)
 		CreatedAt: now.UTC(),
 	}
 	s.sessions[session.ID] = session
+
+	if s.sessionStore != nil {
+		_ = s.sessionStore.PutSession(context.Background(), storage.SessionRecord{
+			ID:        session.ID,
+			UserID:    session.UserID,
+			CreatedAt: session.CreatedAt,
+		})
+	}
 
 	return session, nil
 }
@@ -722,5 +775,10 @@ func (s *Service) Logout(sessionID string) error {
 	}
 
 	delete(s.sessions, sessionID)
+
+	if s.sessionStore != nil {
+		_ = s.sessionStore.DeleteSession(context.Background(), sessionID)
+	}
+
 	return nil
 }

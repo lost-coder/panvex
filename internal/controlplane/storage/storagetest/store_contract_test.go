@@ -41,6 +41,7 @@ type memoryStore struct {
 	enrollmentTokens   map[string]storage.EnrollmentTokenRecord
 	agentCertificateRecoveryGrants map[string]storage.AgentCertificateRecoveryGrantRecord
 	discoveredClients  map[string]storage.DiscoveredClientRecord
+	sessions           map[string]storage.SessionRecord
 	panelSettings      *storage.PanelSettingsRecord
 	certificateAuthority *storage.CertificateAuthorityRecord
 }
@@ -71,6 +72,7 @@ func newMemoryStore() *memoryStore {
 		enrollmentTokens: make(map[string]storage.EnrollmentTokenRecord),
 		agentCertificateRecoveryGrants: make(map[string]storage.AgentCertificateRecoveryGrantRecord),
 		discoveredClients: make(map[string]storage.DiscoveredClientRecord),
+		sessions:          make(map[string]storage.SessionRecord),
 	}
 }
 
@@ -690,4 +692,42 @@ func (s *memoryStore) ListServerLoadHourly(_ context.Context, _ string, _ time.T
 
 func (s *memoryStore) PruneServerLoadHourly(_ context.Context, _ time.Time) (int64, error) {
 	return 0, nil
+}
+
+func (s *memoryStore) PutSession(_ context.Context, session storage.SessionRecord) error {
+	s.sessions[session.ID] = session
+	return nil
+}
+
+func (s *memoryStore) GetSession(_ context.Context, sessionID string) (storage.SessionRecord, error) {
+	session, ok := s.sessions[sessionID]
+	if !ok {
+		return storage.SessionRecord{}, storage.ErrNotFound
+	}
+	return session, nil
+}
+
+func (s *memoryStore) DeleteSession(_ context.Context, sessionID string) error {
+	if _, ok := s.sessions[sessionID]; !ok {
+		return storage.ErrNotFound
+	}
+	delete(s.sessions, sessionID)
+	return nil
+}
+
+func (s *memoryStore) ListSessions(_ context.Context) ([]storage.SessionRecord, error) {
+	result := make([]storage.SessionRecord, 0, len(s.sessions))
+	for _, session := range s.sessions {
+		result = append(result, session)
+	}
+	return result, nil
+}
+
+func (s *memoryStore) DeleteExpiredSessions(_ context.Context, before time.Time) error {
+	for id, session := range s.sessions {
+		if session.CreatedAt.Before(before) {
+			delete(s.sessions, id)
+		}
+	}
+	return nil
 }

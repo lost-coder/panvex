@@ -143,10 +143,20 @@ type TimeseriesStore interface {
 	PruneServerLoadHourly(ctx context.Context, olderThan time.Time) (int64, error)
 }
 
+// SessionStore persists authenticated user sessions.
+type SessionStore interface {
+	PutSession(ctx context.Context, session SessionRecord) error
+	GetSession(ctx context.Context, sessionID string) (SessionRecord, error)
+	DeleteSession(ctx context.Context, sessionID string) error
+	ListSessions(ctx context.Context) ([]SessionRecord, error)
+	DeleteExpiredSessions(ctx context.Context, before time.Time) error
+}
+
 // Store aggregates the persistence capabilities required by the control-plane.
 type Store interface {
 	UserStore
 	UserAppearanceStore
+	SessionStore
 	FleetStore
 	JobStore
 	AuditStore
