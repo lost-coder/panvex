@@ -9,15 +9,18 @@ import (
 type failingStore struct {
 	storage.Store
 
-	putAgentErr             error
-	listAgentsErr           error
-	listUsersErr            error
-	putInstanceErr          error
-	appendMetricSnapshotErr error
-	appendAuditEventErr     error
-	putClientErr            error
-	putClientAssignmentErr  error
-	putClientDeploymentErr  error
+	putAgentErr              error
+	listAgentsErr            error
+	listUsersErr             error
+	putInstanceErr           error
+	appendMetricSnapshotErr  error
+	appendAuditEventErr      error
+	putClientErr             error
+	putClientAssignmentErr   error
+	putClientDeploymentErr   error
+	updateAgentNodeNameErr   error
+	deleteAgentErr           error
+	deleteInstancesByAgentErr error
 }
 
 func (s *failingStore) PutAgent(ctx context.Context, agent storage.AgentRecord) error {
@@ -90,4 +93,28 @@ func (s *failingStore) PutClientDeployment(ctx context.Context, deployment stora
 	}
 
 	return s.Store.PutClientDeployment(ctx, deployment)
+}
+
+func (s *failingStore) UpdateAgentNodeName(ctx context.Context, agentID string, nodeName string) error {
+	if s.updateAgentNodeNameErr != nil {
+		return s.updateAgentNodeNameErr
+	}
+
+	return s.Store.UpdateAgentNodeName(ctx, agentID, nodeName)
+}
+
+func (s *failingStore) DeleteAgent(ctx context.Context, agentID string) error {
+	if s.deleteAgentErr != nil {
+		return s.deleteAgentErr
+	}
+
+	return s.Store.DeleteAgent(ctx, agentID)
+}
+
+func (s *failingStore) DeleteInstancesByAgent(ctx context.Context, agentID string) error {
+	if s.deleteInstancesByAgentErr != nil {
+		return s.deleteInstancesByAgentErr
+	}
+
+	return s.Store.DeleteInstancesByAgent(ctx, agentID)
 }
