@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"log"
 	"time"
 )
 
@@ -56,7 +55,7 @@ func (s *Server) runTimeseriesRollup(ctx context.Context) {
 	for hoursAgo := 2; hoursAgo >= 1; hoursAgo-- {
 		bucketHour := now.Add(-time.Duration(hoursAgo) * time.Hour).Truncate(time.Hour)
 		if err := s.store.RollupServerLoadHourly(ctx, bucketHour); err != nil {
-			log.Printf("timeseries rollup failed for %s: %v", bucketHour.Format(time.RFC3339), err)
+			s.logger.Error("timeseries rollup failed", "bucket_hour", bucketHour.Format(time.RFC3339), "error", err)
 		}
 	}
 
@@ -64,9 +63,9 @@ func (s *Server) runTimeseriesRollup(ctx context.Context) {
 	if retention.TSRawSeconds > 0 {
 		cutoff := now.Add(-time.Duration(retention.TSRawSeconds) * time.Second)
 		if pruned, err := s.store.PruneServerLoadPoints(ctx, cutoff); err != nil {
-			log.Printf("prune ts_server_load failed: %v", err)
+			s.logger.Error("prune ts_server_load failed", "error", err)
 		} else if pruned > 0 {
-			log.Printf("pruned %d raw server load points older than %s", pruned, cutoff.Format(time.RFC3339))
+			s.logger.Info("pruned raw server load points", "count", pruned, "cutoff", cutoff.Format(time.RFC3339))
 		}
 	}
 
@@ -74,9 +73,9 @@ func (s *Server) runTimeseriesRollup(ctx context.Context) {
 	if retention.TSDCSeconds > 0 {
 		cutoff := now.Add(-time.Duration(retention.TSDCSeconds) * time.Second)
 		if pruned, err := s.store.PruneDCHealthPoints(ctx, cutoff); err != nil {
-			log.Printf("prune ts_dc_health failed: %v", err)
+			s.logger.Error("prune ts_dc_health failed", "error", err)
 		} else if pruned > 0 {
-			log.Printf("pruned %d DC health points older than %s", pruned, cutoff.Format(time.RFC3339))
+			s.logger.Info("pruned DC health points", "count", pruned, "cutoff", cutoff.Format(time.RFC3339))
 		}
 	}
 
@@ -84,9 +83,9 @@ func (s *Server) runTimeseriesRollup(ctx context.Context) {
 	if retention.TSHourlySeconds > 0 {
 		cutoff := now.Add(-time.Duration(retention.TSHourlySeconds) * time.Second)
 		if pruned, err := s.store.PruneServerLoadHourly(ctx, cutoff); err != nil {
-			log.Printf("prune ts_server_load_hourly failed: %v", err)
+			s.logger.Error("prune ts_server_load_hourly failed", "error", err)
 		} else if pruned > 0 {
-			log.Printf("pruned %d hourly rollup points older than %s", pruned, cutoff.Format(time.RFC3339))
+			s.logger.Info("pruned hourly rollup points", "count", pruned, "cutoff", cutoff.Format(time.RFC3339))
 		}
 	}
 
@@ -94,9 +93,9 @@ func (s *Server) runTimeseriesRollup(ctx context.Context) {
 	if retention.IPHistorySeconds > 0 {
 		cutoff := now.Add(-time.Duration(retention.IPHistorySeconds) * time.Second)
 		if pruned, err := s.store.PruneClientIPHistory(ctx, cutoff); err != nil {
-			log.Printf("prune client_ip_history failed: %v", err)
+			s.logger.Error("prune client_ip_history failed", "error", err)
 		} else if pruned > 0 {
-			log.Printf("pruned %d client IP history entries older than %s", pruned, cutoff.Format(time.RFC3339))
+			s.logger.Info("pruned client IP history entries", "count", pruned, "cutoff", cutoff.Format(time.RFC3339))
 		}
 	}
 }
