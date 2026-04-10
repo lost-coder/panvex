@@ -55,7 +55,8 @@ func (s *Server) handleLogin() http.HandlerFunc {
 			TotpCode: request.TotpCode,
 		}, s.now())
 		if err != nil {
-			if errors.Is(err, auth.ErrInvalidCredentials) {
+			// Record lockout-eligible failures: wrong password or wrong TOTP code.
+			if errors.Is(err, auth.ErrInvalidCredentials) || errors.Is(err, auth.ErrInvalidTotpCode) {
 				if s.loginLockout.CheckAndRecordFailure(request.Username, s.now()) {
 					writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
 					return
