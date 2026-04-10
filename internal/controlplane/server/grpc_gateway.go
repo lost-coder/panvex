@@ -59,10 +59,25 @@ func (s *Server) RenewCertificate(ctx context.Context, request *gatewayrpc.Renew
 		return nil, status.Error(codes.PermissionDenied, "certificate agent mismatch")
 	}
 
-	issued, err := s.authority.issueClientCertificate(agentID, s.now())
+	now := s.now()
+	issued, err := s.authority.issueClientCertificate(agentID, now)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+
+	// Update in-memory cert dates so the dashboard reflects the renewal.
+	certIssuedAt := now.UTC()
+	certExpiresAt := issued.ExpiresAt.UTC()
+	s.mu.Lock()
+	if agent, ok := s.agents[agentID]; ok {
+		agent.CertIssuedAt = &certIssuedAt
+		agent.CertExpiresAt = &certExpiresAt
+		s.agents[agentID] = agent
+		if s.batchWriter != nil {
+			s.batchWriter.agents.Enqueue(agentToRecord(agent))
+		}
+	}
+	s.mu.Unlock()
 
 	return &gatewayrpc.RenewCertificateResponse{
 		CertificatePem: issued.CertificatePEM,

@@ -15,6 +15,8 @@ type Agent struct {
 	ReadOnly     bool      `json:"read_only"`
 	PresenceState string   `json:"presence_state"`
 	CertificateRecovery *agentCertificateRecoveryGrantResponse `json:"certificate_recovery,omitempty"`
+	CertIssuedAt  *time.Time `json:"cert_issued_at,omitempty"`
+	CertExpiresAt *time.Time `json:"cert_expires_at,omitempty"`
 	Runtime      AgentRuntime `json:"runtime"`
 	LastSeenAt   time.Time `json:"last_seen_at"`
 }
@@ -132,23 +134,27 @@ type AuditEvent struct {
 
 func agentToRecord(agent Agent) storage.AgentRecord {
 	return storage.AgentRecord{
-		ID:           agent.ID,
-		NodeName:     agent.NodeName,
-		FleetGroupID: agent.FleetGroupID,
-		Version:      agent.Version,
-		ReadOnly:     agent.ReadOnly,
-		LastSeenAt:   agent.LastSeenAt.UTC(),
+		ID:            agent.ID,
+		NodeName:      agent.NodeName,
+		FleetGroupID:  agent.FleetGroupID,
+		Version:       agent.Version,
+		ReadOnly:      agent.ReadOnly,
+		LastSeenAt:    agent.LastSeenAt.UTC(),
+		CertIssuedAt:  agent.CertIssuedAt,
+		CertExpiresAt: agent.CertExpiresAt,
 	}
 }
 
 func agentFromRecord(record storage.AgentRecord) Agent {
 	return Agent{
-		ID:           record.ID,
-		NodeName:     record.NodeName,
-		FleetGroupID: record.FleetGroupID,
-		Version:      record.Version,
-		ReadOnly:     record.ReadOnly,
-		LastSeenAt:   record.LastSeenAt.UTC(),
+		ID:            record.ID,
+		NodeName:      record.NodeName,
+		FleetGroupID:  record.FleetGroupID,
+		Version:       record.Version,
+		ReadOnly:      record.ReadOnly,
+		LastSeenAt:    record.LastSeenAt.UTC(),
+		CertIssuedAt:  record.CertIssuedAt,
+		CertExpiresAt: record.CertExpiresAt,
 	}
 }
 
