@@ -100,8 +100,9 @@ func loadOrCreateCertificateAuthority(store storage.CertificateAuthorityStore, n
 		if remaining < 30*24*time.Hour {
 			slog.Warn("control-plane CA certificate expiring soon", "remaining", remaining.Round(time.Hour).String())
 		}
-		// Re-encrypt if the stored key was plaintext but an encryption key is now configured.
-		if encryptionKey != "" && !isEncryptedPEM(record.PrivateKeyPEM) {
+		// Migrate to the current encryption format if the stored key is
+		// plaintext or uses the legacy SHA-256 derivation.
+		if encryptionKey != "" && needsReEncryption(record.PrivateKeyPEM) {
 			rec, recErr := authority.record(now, encryptionKey)
 			if recErr == nil {
 				_ = store.PutCertificateAuthority(context.Background(), rec)
