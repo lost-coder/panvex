@@ -2,7 +2,6 @@ package server
 
 import (
 	"errors"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -70,7 +69,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 			case errors.Is(err, auth.ErrInvalidTotpCode):
 				writeErrorWithCode(w, http.StatusUnauthorized, err.Error(), "totp_invalid")
 			default:
-				log.Printf("auth login failed: %v", err)
+				s.logger.Error("auth login failed", "error", err)
 				writeError(w, http.StatusInternalServerError, "internal error")
 			}
 			return
@@ -151,7 +150,7 @@ func (s *Server) handleTotpSetup() http.HandlerFunc {
 
 		secret, err := s.auth.StartTotpSetup(user.ID, s.now())
 		if err != nil {
-			log.Printf("start totp setup failed for user %q: %v", user.ID, err)
+			s.logger.Error("start totp setup failed", "user_id", user.ID, "error", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
@@ -186,7 +185,7 @@ func (s *Server) handleTotpEnable() http.HandlerFunc {
 			case errors.Is(err, auth.ErrTotpSetupNotFound):
 				writeError(w, http.StatusBadRequest, err.Error())
 			default:
-				log.Printf("enable totp failed for user %q: %v", user.ID, err)
+				s.logger.Error("enable totp failed", "user_id", user.ID, "error", err)
 				writeError(w, http.StatusInternalServerError, "internal error")
 			}
 			return
@@ -219,7 +218,7 @@ func (s *Server) handleTotpDisable() http.HandlerFunc {
 			case errors.Is(err, auth.ErrInvalidCredentials), errors.Is(err, auth.ErrTotpRequired), errors.Is(err, auth.ErrInvalidTotpCode):
 				writeError(w, http.StatusUnauthorized, err.Error())
 			default:
-				log.Printf("disable totp failed for user %q: %v", user.ID, err)
+				s.logger.Error("disable totp failed", "user_id", user.ID, "error", err)
 				writeError(w, http.StatusInternalServerError, "internal error")
 			}
 			return

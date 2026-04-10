@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -120,7 +121,7 @@ func runServe(args []string) error {
 
 	httpErrors := make(chan error, 4)
 	go func() {
-		log.Printf("control-plane http listening on %s", panelRuntime.HTTPListenAddress)
+		slog.Info("http server listening", "address", panelRuntime.HTTPListenAddress)
 		if panelRuntime.TLSMode == "direct" {
 			httpErrors <- httpServer.ListenAndServeTLS(panelRuntime.TLSCertFile, panelRuntime.TLSKeyFile)
 			return
@@ -128,7 +129,7 @@ func runServe(args []string) error {
 		httpErrors <- httpServer.ListenAndServe()
 	}()
 
-	log.Printf("control-plane grpc listening on %s", panelRuntime.GRPCListenAddress)
+	slog.Info("grpc server listening", "address", panelRuntime.GRPCListenAddress)
 	go func() {
 		httpErrors <- grpcServer.Serve(grpcListener)
 	}()

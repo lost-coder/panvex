@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"errors"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -62,7 +61,7 @@ func (s *Server) handleAgentCertificateRecovery() http.HandlerFunc {
 				writeError(w, http.StatusForbidden, "agent certificate recovery is not allowed")
 				return
 			}
-			log.Printf("agent certificate recovery grant lookup failed for agent %q: %v", request.AgentID, err)
+			s.logger.Error("agent certificate recovery grant lookup failed", "agent_id", request.AgentID, "error", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
@@ -73,7 +72,7 @@ func (s *Server) handleAgentCertificateRecovery() http.HandlerFunc {
 
 		issued, err := s.authority.issueClientCertificate(request.AgentID, now)
 		if err != nil {
-			log.Printf("agent certificate recovery failed for agent %q: %v", request.AgentID, err)
+			s.logger.Error("agent certificate recovery failed", "agent_id", request.AgentID, "error", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
@@ -82,7 +81,7 @@ func (s *Server) handleAgentCertificateRecovery() http.HandlerFunc {
 				writeError(w, http.StatusForbidden, "agent certificate recovery is not allowed")
 				return
 			}
-			log.Printf("agent certificate recovery grant consume failed for agent %q: %v", request.AgentID, err)
+			s.logger.Error("agent certificate recovery grant consume failed", "agent_id", request.AgentID, "error", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
@@ -143,7 +142,7 @@ func (s *Server) handleCreateAgentCertificateRecoveryGrant() http.HandlerFunc {
 			ExpiresAt: now.Add(ttl),
 		}
 		if err := s.store.PutAgentCertificateRecoveryGrant(r.Context(), grant); err != nil {
-			log.Printf("create certificate recovery grant failed for agent %q: %v", agentID, err)
+			s.logger.Error("create certificate recovery grant failed", "agent_id", agentID, "error", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
@@ -177,7 +176,7 @@ func (s *Server) handleRevokeAgentCertificateRecoveryGrant() http.HandlerFunc {
 				writeError(w, http.StatusNotFound, "agent recovery grant not found")
 				return
 			}
-			log.Printf("revoke certificate recovery grant failed for agent %q: %v", agentID, err)
+			s.logger.Error("revoke certificate recovery grant failed", "agent_id", agentID, "error", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
