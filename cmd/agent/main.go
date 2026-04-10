@@ -654,6 +654,9 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 		}
 	}()
 
+	// Limit concurrent ClientDataRequest goroutines to prevent unbounded
+	// growth if the control-plane sends many requests in rapid succession.
+	clientDataSem := make(chan struct{}, 8)
 	go func() {
 		for {
 			message, err := stream.Recv()
@@ -666,7 +669,15 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 				continue
 			}
 			if req := message.GetClientDataRequest(); req != nil {
-				go handleClientDataRequest(connectionCtx, agent, criticalOutbound, req)
+				select {
+				case clientDataSem <- struct{}{}:
+				case <-connectionCtx.Done():
+					return
+				}
+				go func() {
+					defer func() { <-clientDataSem }()
+					handleClientDataRequest(connectionCtx, agent, criticalOutbound, req)
+				}()
 				continue
 			}
 		}
