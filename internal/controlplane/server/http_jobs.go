@@ -20,12 +20,23 @@ type createJobRequest struct {
 
 func (s *Server) handleJobs() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, _, err := s.requireSession(r); err != nil {
+		_, user, err := s.requireSession(r)
+		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
 
-		writeJSON(w, http.StatusOK, s.jobs.List())
+		listed := s.jobs.List()
+
+		// Redact payload for viewers to prevent leaking client secrets
+		// embedded in job payloads for client mutation actions.
+		if user.Role == auth.RoleViewer {
+			for i := range listed {
+				listed[i].PayloadJSON = ""
+			}
+		}
+
+		writeJSON(w, http.StatusOK, listed)
 	}
 }
 
