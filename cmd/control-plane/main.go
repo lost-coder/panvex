@@ -36,6 +36,7 @@ type serveConfig struct {
 	TLSCertFile          string
 	TLSKeyFile           string
 	Storage              config.StorageConfig
+	TrustedProxyCIDRs    []*net.IPNet
 }
 
 const restartExitCode = 78
@@ -88,6 +89,7 @@ func runServe(args []string) error {
 		Store:        store,
 		UIFiles:      embeddedUIFiles(),
 		PanelRuntime: panelRuntime,
+		TrustedProxyCIDRs: options.TrustedProxyCIDRs,
 		RequestRestart: func() error {
 			select {
 			case restartRequests <- struct{}{}:
@@ -156,8 +158,14 @@ func parseServeConfig(args []string) (serveConfig, error) {
 	restartMode := flags.String("restart-mode", config.RestartModeDisabled, "Panel restart mode (disabled or supervised)")
 	storageDriver := flags.String("storage-driver", "", "Persistent storage backend driver")
 	storageDSN := flags.String("storage-dsn", "", "Persistent storage backend DSN")
+	trustedProxyCIDRs := flags.String("trusted-proxy-cidrs", "", "Comma-separated trusted proxy CIDRs for X-Forwarded-For (e.g. 172.16.0.0/12,10.0.0.0/8)")
 	if err := flags.Parse(args); err != nil {
 		return serveConfig{}, err
+	}
+
+	parsedCIDRs, err := parseCIDRList(*trustedProxyCIDRs)
+	if err != nil {
+		return serveConfig{}, fmt.Errorf("invalid -trusted-proxy-cidrs: %w", err)
 	}
 
 	explicitLegacyFlags := make(map[string]bool)
@@ -188,6 +196,7 @@ func parseServeConfig(args []string) (serveConfig, error) {
 			TLSCertFile:          configuration.TLSCertFile,
 			TLSKeyFile:           configuration.TLSKeyFile,
 			Storage:              configuration.Storage,
+			TrustedProxyCIDRs:    parsedCIDRs,
 		}, nil
 	}
 
@@ -207,6 +216,7 @@ func parseServeConfig(args []string) (serveConfig, error) {
 		TLSCertFile:          configuration.TLSCertFile,
 		TLSKeyFile:           configuration.TLSKeyFile,
 		Storage:              configuration.Storage,
+		TrustedProxyCIDRs:    parsedCIDRs,
 	}, nil
 }
 
@@ -372,6 +382,30 @@ func runMigrateStorage(args []string) error {
 	fmt.Printf("Metric snapshots: %d\n", summary.MetricSnapshots)
 	fmt.Printf("Enrollment tokens: %d\n", summary.EnrollmentTokens)
 	return nil
+}
+
+// parseCIDRList splits a comma-separated string of CIDR notations and returns
+// the parsed networks. An empty input returns nil without error.
+func parseCIDRList(raw string) ([]*net.IPNet, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+
+	parts := strings.Split(raw, ",")
+	result := make([]*net.IPNet, 0, len(parts))
+	for _, part := range parts {
+		cidr := strings.TrimSpace(part)
+		if cidr == "" {
+			continue
+		}
+		_, network, err := net.ParseCIDR(cidr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CIDR %q: %w", cidr, err)
+		}
+		result = append(result, network)
+	}
+	return result, nil
 }
 
 func openStore(configuration config.StorageConfig) (storage.Store, error) {

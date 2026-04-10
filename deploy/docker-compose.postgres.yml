@@ -2,11 +2,11 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: panvex
-      POSTGRES_USER: panvex
-      POSTGRES_PASSWORD: panvex
+      POSTGRES_DB: ${POSTGRES_DB:-panvex}
+      POSTGRES_USER: ${POSTGRES_USER:-panvex}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-panvex}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U panvex -d panvex"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-panvex} -d ${POSTGRES_DB:-panvex}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -18,6 +18,9 @@ services:
       context: ..
       dockerfile: Dockerfile
       target: control-plane
+    env_file:
+      - path: .env
+        required: false
     command:
       - ./panvex-control-plane
       - -http-addr
@@ -27,12 +30,13 @@ services:
       - -storage-driver
       - postgres
       - -storage-dsn
-      - postgres://panvex:panvex@postgres:5432/panvex?sslmode=disable
+      # NOTE: sslmode=disable is acceptable for local dev; use sslmode=require or stricter in production.
+      - postgres://${POSTGRES_USER:-panvex}:${POSTGRES_PASSWORD:-panvex}@postgres:5432/${POSTGRES_DB:-panvex}?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
     ports:
-      - "8443:8443"
+      - "127.0.0.1:8443:8443"
 
   web:
     build:

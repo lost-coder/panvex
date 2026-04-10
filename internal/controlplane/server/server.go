@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"context"
 	"io/fs"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -38,6 +39,10 @@ type Options struct {
 	UIFiles      fs.FS
 	PanelRuntime PanelRuntime
 	RequestRestart func() error
+	// TrustedProxyCIDRs lists additional CIDR ranges whose X-Forwarded-For
+	// header is trusted for rate-limit key extraction. Loopback addresses
+	// are always trusted regardless of this setting.
+	TrustedProxyCIDRs []*net.IPNet
 }
 
 // Server wires local-auth, inventory, jobs, and operator APIs into one HTTP surface.
@@ -58,6 +63,7 @@ type Server struct {
 	agentBootstrapRateLimiter *fixedWindowRateLimiter
 	grpcConnectRateLimiter *fixedWindowRateLimiter
 	loginLockout *accountLockoutTracker
+	trustedProxyCIDRs []*net.IPNet
 
 	mu         sync.RWMutex
 	sessionMu  sync.RWMutex
@@ -109,6 +115,7 @@ func New(options Options) *Server {
 		agentBootstrapRateLimiter: newFixedWindowRateLimiter(httpAgentBootstrapRateLimitPerWindow, defaultRateLimitWindow),
 		grpcConnectRateLimiter: newFixedWindowRateLimiter(grpcConnectRateLimitPerWindow, defaultRateLimitWindow),
 		loginLockout: newAccountLockoutTracker(),
+		trustedProxyCIDRs: options.TrustedProxyCIDRs,
 		agents:     make(map[string]Agent),
 		detailBoosts: make(map[string]time.Time),
 		initializationWatchCooldowns: make(map[string]time.Time),
@@ -311,9 +318,9 @@ func (s *Server) routes() http.Handler {
 	router.Get("/healthz", handleHealthz())
 	router.Get("/readyz", s.handleReadyz())
 	router.Route(apiBasePath, func(api chi.Router) {
-		api.With(s.withRateLimit(s.agentBootstrapRateLimiter, requestClientRateLimitKey)).Post("/agent/bootstrap", s.handleAgentBootstrap())
-		api.With(s.withRateLimit(s.agentBootstrapRateLimiter, requestClientRateLimitKey)).Post("/agent/recover-certificate", s.handleAgentCertificateRecovery())
-		api.With(s.withRateLimit(s.loginRateLimiter, requestClientRateLimitKey)).Post("/auth/login", s.handleLogin())
+		api.With(s.withRateLimit(s.agentBootstrapRateLimiter, s.requestClientRateLimitKey)).Post("/agent/bootstrap", s.handleAgentBootstrap())
+		api.With(s.withRateLimit(s.agentBootstrapRateLimiter, s.requestClientRateLimitKey)).Post("/agent/recover-certificate", s.handleAgentCertificateRecovery())
+		api.With(s.withRateLimit(s.loginRateLimiter, s.requestClientRateLimitKey)).Post("/auth/login", s.handleLogin())
 
 		api.Group(func(authenticated chi.Router) {
 			authenticated.Use(s.requireAuthenticatedSession())
