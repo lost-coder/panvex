@@ -101,7 +101,7 @@ func (s *Server) runTimeseriesRollup(ctx context.Context) {
 }
 
 func (s *Server) retentionSettings() RetentionSettings {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.settingsMu.RLock()
+	defer s.settingsMu.RUnlock()
 	return s.retention
 }

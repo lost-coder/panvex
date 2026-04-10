@@ -74,8 +74,11 @@ type Server struct {
 	encryptionKey string
 	logger *slog.Logger
 
-	mu         sync.RWMutex
-	sessionMu  sync.RWMutex
+	mu             sync.RWMutex
+	sessionMu      sync.RWMutex
+	clientsMu      sync.RWMutex
+	metricsAuditMu sync.RWMutex
+	settingsMu     sync.RWMutex
 	agentSeq   uint64
 	sessionSeq uint64
 	auditSeq   uint64
@@ -420,7 +423,7 @@ func (s *Server) appendAudit(actorID string, action string, targetID string, det
 }
 
 func (s *Server) appendAuditWithContext(_ context.Context, actorID string, action string, targetID string, details map[string]any) {
-	s.mu.Lock()
+	s.metricsAuditMu.Lock()
 	s.auditSeq++
 	event := AuditEvent{
 		ID:        newSequenceID("audit", s.auditSeq),
@@ -436,7 +439,7 @@ func (s *Server) appendAuditWithContext(_ context.Context, actorID string, actio
 		copy(s.auditTrail, s.auditTrail[1:])
 		s.auditTrail[len(s.auditTrail)-1] = event
 	}
-	s.mu.Unlock()
+	s.metricsAuditMu.Unlock()
 
 	// Persist asynchronously via the batch writer so DB latency does not
 	// block callers holding s.mu.

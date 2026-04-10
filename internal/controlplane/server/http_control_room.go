@@ -40,12 +40,18 @@ func (s *Server) handleControlRoom() http.HandlerFunc {
 		now := s.now()
 		jobList := s.jobs.List()
 
+		s.metricsAuditMu.RLock()
+		recentActivity := controlRoomRecentActivity(s.auditTrail, 5)
+		metricSnapshots := len(s.metrics)
+		s.metricsAuditMu.RUnlock()
+
 		s.mu.RLock()
+		fleet := controlRoomFleetFromState(s.agents, s.instances, metricSnapshots, s.presence, now)
 		response := controlRoomResponse{
 			Onboarding:          controlRoomOnboardingFromState(s.agents, s.instances),
-			Fleet:               controlRoomFleetFromState(s.agents, s.instances, s.metrics, s.presence, now),
+			Fleet:               fleet,
 			Jobs:                controlRoomJobsFromList(jobList),
-			RecentActivity:      controlRoomRecentActivity(s.auditTrail, 5),
+			RecentActivity:      recentActivity,
 			RecentRuntimeEvents: controlRoomRecentRuntimeEvents(s.agents, 5),
 		}
 		s.mu.RUnlock()
@@ -82,11 +88,11 @@ func controlRoomOnboardingFromState(agents map[string]Agent, instances map[strin
 	return response
 }
 
-func controlRoomFleetFromState(agents map[string]Agent, instances map[string]Instance, metrics []MetricSnapshot, tracker *presence.Tracker, now time.Time) fleetResponse {
+func controlRoomFleetFromState(agents map[string]Agent, instances map[string]Instance, metricSnapshots int, tracker *presence.Tracker, now time.Time) fleetResponse {
 	response := fleetResponse{
 		TotalAgents:     len(agents),
 		TotalInstances:  len(instances),
-		MetricSnapshots: len(metrics),
+		MetricSnapshots: metricSnapshots,
 	}
 
 	for agentID := range agents {
