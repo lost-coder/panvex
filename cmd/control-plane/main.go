@@ -107,8 +107,10 @@ func runServe(args []string) error {
 	}
 
 	httpServer := &http.Server{
-		Addr:    panelRuntime.HTTPListenAddress,
-		Handler: api.Handler(),
+		Addr:              panelRuntime.HTTPListenAddress,
+		Handler:           api.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	grpcListener, err := net.Listen("tcp", panelRuntime.GRPCListenAddress)
