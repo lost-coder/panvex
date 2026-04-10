@@ -38,8 +38,16 @@ func (s *Server) handleRenameAgent() http.HandlerFunc {
 			return
 		}
 
-		// Persist to storage first so a failure does not leave in-memory and
-		// persistent state diverged.
+		// Verify the agent exists in memory before touching the store so a
+		// 404 does not leave an orphaned store update.
+		s.mu.RLock()
+		_, exists := s.agents[agentID]
+		s.mu.RUnlock()
+		if !exists {
+			writeError(w, http.StatusNotFound, "agent not found")
+			return
+		}
+
 		if s.store != nil {
 			if err := s.store.UpdateAgentNodeName(r.Context(), agentID, req.NodeName); err != nil {
 				s.logger.Error("update agent node_name in store failed", "error", err)
