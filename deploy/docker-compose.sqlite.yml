@@ -15,7 +15,7 @@ services:
       - -storage-dsn
       - /var/lib/panvex/panvex.db
     ports:
-      - "8443:8443"
+      - "127.0.0.1:8443:8443"
     volumes:
       - panvex_sqlite_data:/var/lib/panvex
 
