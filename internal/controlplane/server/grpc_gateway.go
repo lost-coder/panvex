@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/panvex/panvex/internal/controlplane/jobs"
@@ -98,7 +98,7 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 	}
 	session, unregisterSession := s.registerAgentSession(agentID)
 	defer unregisterSession()
-	log.Printf("control-plane accepted agent stream: agent_id=%s", agentID)
+	s.logger.Info("accepted agent stream", "agent_id", agentID)
 
 	connectionCtx, cancelConnection := context.WithCancel(stream.Context())
 	defer cancelConnection()
@@ -121,7 +121,7 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 
 	recoverGoroutine := func(name string) {
 		if r := recover(); r != nil {
-			log.Printf("control-plane goroutine panic recovered: agent=%s goroutine=%s panic=%v", agentID, name, r)
+			slog.Error("goroutine panic recovered", "agent_id", agentID, "goroutine", name, "panic", r)
 			cancelConnection()
 		}
 	}
@@ -262,7 +262,7 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 
 		// Request a full client list from the agent for user discovery.
 		if err := sendClientDataRequest(stream, fmt.Sprintf("discovery-%s-%d", agentID, time.Now().Unix())); err != nil {
-			log.Printf("control-plane client discovery request failed for agent %s: %v", agentID, err)
+			s.logger.Error("client discovery request failed", "agent_id", agentID, "error", err)
 		}
 
 		for {

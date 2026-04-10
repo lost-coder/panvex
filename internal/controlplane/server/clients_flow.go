@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"regexp"
 	"sort"
 	"strings"
@@ -567,7 +566,7 @@ func (s *Server) recordClientJobResultWithContext(ctx context.Context, agentID s
 
 	if s.store != nil {
 		if err := s.store.PutClientDeployment(ctx, clientDeploymentToRecord(deployment)); err != nil {
-			log.Printf("control-plane client deployment persistence failed for client %q on agent %q: %v", payload.ClientID, agentID, err)
+			s.logger.Error("client deployment persistence failed", "client_id", payload.ClientID, "agent_id", agentID, "error", err)
 		}
 	}
 }
