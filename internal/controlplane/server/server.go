@@ -153,6 +153,10 @@ func New(options Options) *Server {
 	if options.Store != nil {
 		server.jobs = jobs.NewServiceWithStore(options.Store)
 		server.auth = auth.NewServiceWithStore(options.Store)
+		server.auth.SetSessionStore(options.Store)
+		if err := server.auth.RestoreSessions(); err != nil && server.startupErr == nil {
+			server.startupErr = err
+		}
 		if err := server.jobs.StartupError(); err != nil && server.startupErr == nil {
 			server.startupErr = err
 		}

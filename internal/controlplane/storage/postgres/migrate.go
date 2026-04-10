@@ -352,6 +352,18 @@ func Migrate(db *sql.DB) error {
 		return err
 	}
 
+	if _, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS sessions (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
+		CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+		CREATE INDEX IF NOT EXISTS idx_sessions_created_at ON sessions(created_at)
+	`); err != nil {
+		return err
+	}
+
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS ts_server_load (
 			agent_id                TEXT NOT NULL,

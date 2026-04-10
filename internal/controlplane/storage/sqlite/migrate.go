@@ -346,6 +346,10 @@ func Migrate(db *sql.DB) error {
 		return err
 	}
 
+	if err := ensureSessionsTable(db); err != nil {
+		return err
+	}
+
 	return ensureIndexes(db)
 }
 
@@ -692,6 +696,25 @@ func ensureTimeseriesTables(db *sql.DB) error {
 }
 
 // ensureIndexes creates performance indexes for frequently queried columns.
+func ensureSessionsTable(db *sql.DB) error {
+	_, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS sessions (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			created_at_unix INTEGER NOT NULL
+		)
+	`)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)`)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_sessions_created_at_unix ON sessions(created_at_unix)`)
+	return err
+}
+
 func ensureIndexes(db *sql.DB) error {
 	_, err := db.Exec(`
 		CREATE INDEX IF NOT EXISTS idx_agents_last_seen_at ON agents (last_seen_at_unix);
