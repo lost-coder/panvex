@@ -338,27 +338,28 @@ func (s *Service) EnableTotp(userID string, password string, totpCode string, no
 		return User{}, ErrTotpRequired
 	}
 
+	// Hold the lock through setup lookup and TOTP verification to prevent a
+	// concurrent StartTotpSetup from replacing the pending secret between the
+	// lookup and the code check (TOCTOU).
 	s.mu.Lock()
 	s.cleanupPendingTotpSetupLocked(now)
 	setup, ok := s.pendingTotpSetup[userID]
-	s.mu.Unlock()
 	if !ok {
+		s.mu.Unlock()
 		return User{}, ErrTotpSetupNotFound
 	}
-
 	if !s.verifyTotpCode(setup.Secret, totpCode, now) {
+		s.mu.Unlock()
 		return User{}, ErrInvalidTotpCode
 	}
+	delete(s.pendingTotpSetup, userID)
+	s.mu.Unlock()
 
 	user.TotpEnabled = true
 	user.TotpSecret = setup.Secret
 	if err := s.storeUser(user); err != nil {
 		return User{}, err
 	}
-
-	s.mu.Lock()
-	delete(s.pendingTotpSetup, userID)
-	s.mu.Unlock()
 
 	return user, nil
 }
