@@ -29,6 +29,7 @@ func TestHTTPEnrollmentTokensExposeConfiguredPanelURL(t *testing.T) {
 			TLSMode:           "proxy",
 		},
 	})
+	defer server.Close()
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "operator",
 		Password: "Operator1password",

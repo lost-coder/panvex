@@ -23,6 +23,7 @@ func TestHTTPUsersCreateUpdateDeleteRoundTrip(t *testing.T) {
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
+	defer server.Close()
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
@@ -136,6 +137,7 @@ func TestHTTPUsersRejectSelfDeleteAndLastAdminDemotion(t *testing.T) {
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
+	defer server.Close()
 	adminUser, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",

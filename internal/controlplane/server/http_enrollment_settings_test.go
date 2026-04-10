@@ -33,6 +33,7 @@ func TestHTTPAgentBootstrapUsesConfiguredGRPCPublicEndpoint(t *testing.T) {
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
+	defer server.Close()
 	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
 		FleetGroupID: "default",
 		TTL:          time.Minute,

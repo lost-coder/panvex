@@ -31,6 +31,7 @@ func TestHTTPAgentCertificateRecoveryRejectsWithoutActiveGrant(t *testing.T) {
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
+	defer server.Close()
 	seedRecoveryTestAgent(t, server, store, now)
 
 	request := newAgentCertificateRecoveryRequestForTest(t, server, "agent-1", now)
@@ -60,6 +61,7 @@ func TestHTTPAgentCertificateRecoveryConsumesAdminGrant(t *testing.T) {
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
+	defer server.Close()
 	seedRecoveryTestAgent(t, server, store, now)
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
@@ -213,6 +215,7 @@ func TestHTTPAgentCertificateRecoveryGrantCreateResponseRoundTrip(t *testing.T) 
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
+	defer server.Close()
 	seedRecoveryTestAgent(t, server, store, now)
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
@@ -279,6 +282,7 @@ func TestHTTPAgentCertificateRecoveryGrantRejectsExcessiveTTL(t *testing.T) {
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
+	defer server.Close()
 	seedRecoveryTestAgent(t, server, store, now)
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
@@ -323,6 +327,7 @@ func TestHTTPAgentsExposeCertificateRecoveryStatus(t *testing.T) {
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
+	defer server.Close()
 	seedRecoveryTestAgent(t, server, store, now)
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
