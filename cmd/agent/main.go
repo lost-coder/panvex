@@ -847,8 +847,8 @@ func connectStreamWithSetupTimeout(
 	if setupTimer != nil {
 		setupTimer.Stop()
 	}
+	cancelConnect()
 	if err != nil {
-		cancelConnect()
 		return nil, err
 	}
 
