@@ -37,6 +37,7 @@ type serveConfig struct {
 	TLSKeyFile           string
 	Storage              config.StorageConfig
 	TrustedProxyCIDRs    []*net.IPNet
+	EncryptionKey        string
 }
 
 const restartExitCode = 78
@@ -90,6 +91,7 @@ func runServe(args []string) error {
 		UIFiles:      embeddedUIFiles(),
 		PanelRuntime: panelRuntime,
 		TrustedProxyCIDRs: options.TrustedProxyCIDRs,
+		EncryptionKey: options.EncryptionKey,
 		RequestRestart: func() error {
 			select {
 			case restartRequests <- struct{}{}:
@@ -159,6 +161,7 @@ func parseServeConfig(args []string) (serveConfig, error) {
 	storageDriver := flags.String("storage-driver", "", "Persistent storage backend driver")
 	storageDSN := flags.String("storage-dsn", "", "Persistent storage backend DSN")
 	trustedProxyCIDRs := flags.String("trusted-proxy-cidrs", "", "Comma-separated trusted proxy CIDRs for X-Forwarded-For (e.g. 172.16.0.0/12,10.0.0.0/8)")
+	encryptionKey := flags.String("encryption-key", strings.TrimSpace(os.Getenv("PANVEX_ENCRYPTION_KEY")), "Passphrase for encrypting the CA private key at rest (env: PANVEX_ENCRYPTION_KEY)")
 	if err := flags.Parse(args); err != nil {
 		return serveConfig{}, err
 	}
@@ -197,6 +200,7 @@ func parseServeConfig(args []string) (serveConfig, error) {
 			TLSKeyFile:           configuration.TLSKeyFile,
 			Storage:              configuration.Storage,
 			TrustedProxyCIDRs:    parsedCIDRs,
+		EncryptionKey:        *encryptionKey,
 		}, nil
 	}
 
@@ -217,6 +221,7 @@ func parseServeConfig(args []string) (serveConfig, error) {
 		TLSKeyFile:           configuration.TLSKeyFile,
 		Storage:              configuration.Storage,
 		TrustedProxyCIDRs:    parsedCIDRs,
+		EncryptionKey:        *encryptionKey,
 	}, nil
 }
 

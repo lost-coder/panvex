@@ -43,6 +43,10 @@ type Options struct {
 	// header is trusted for rate-limit key extraction. Loopback addresses
 	// are always trusted regardless of this setting.
 	TrustedProxyCIDRs []*net.IPNet
+	// EncryptionKey, when set, encrypts the CA private key at rest using
+	// AES-256-GCM. The key is derived from this passphrase via SHA-256.
+	// Existing unencrypted keys are transparently migrated on next save.
+	EncryptionKey string
 }
 
 // Server wires local-auth, inventory, jobs, and operator APIs into one HTTP surface.
@@ -64,6 +68,7 @@ type Server struct {
 	grpcConnectRateLimiter *fixedWindowRateLimiter
 	loginLockout *accountLockoutTracker
 	trustedProxyCIDRs []*net.IPNet
+	encryptionKey string
 
 	mu         sync.RWMutex
 	sessionMu  sync.RWMutex
@@ -116,6 +121,7 @@ func New(options Options) *Server {
 		grpcConnectRateLimiter: newFixedWindowRateLimiter(grpcConnectRateLimitPerWindow, defaultRateLimitWindow),
 		loginLockout: newAccountLockoutTracker(),
 		trustedProxyCIDRs: options.TrustedProxyCIDRs,
+		encryptionKey: options.EncryptionKey,
 		agents:     make(map[string]Agent),
 		detailBoosts: make(map[string]time.Time),
 		initializationWatchCooldowns: make(map[string]time.Time),
@@ -130,7 +136,7 @@ func New(options Options) *Server {
 	}
 	server.panelSettings = defaultPanelSettings()
 	server.retention = defaultRetentionSettings()
-	authority, err := loadOrCreateCertificateAuthority(options.Store, now())
+	authority, err := loadOrCreateCertificateAuthority(options.Store, now(), options.EncryptionKey)
 	if err != nil {
 		server.startupErr = err
 	} else {

@@ -74,13 +74,20 @@ func newCertificateAuthority(now time.Time) (*certificateAuthority, error) {
 	return buildCertificateAuthority(parsedCertificate, privateKey, encodePEM("CERTIFICATE", der), now)
 }
 
-func loadOrCreateCertificateAuthority(store storage.CertificateAuthorityStore, now time.Time) (*certificateAuthority, error) {
+func loadOrCreateCertificateAuthority(store storage.CertificateAuthorityStore, now time.Time, encryptionKey string) (*certificateAuthority, error) {
 	if store == nil {
 		return newCertificateAuthority(now)
 	}
 
 	record, err := store.GetCertificateAuthority(context.Background())
 	if err == nil {
+		if encryptionKey != "" {
+			decrypted, decErr := decryptPEM(record.PrivateKeyPEM, encryptionKey)
+			if decErr != nil {
+				return nil, decErr
+			}
+			record.PrivateKeyPEM = decrypted
+		}
 		authority, err := certificateAuthorityFromRecord(record, now)
 		if err != nil {
 			return nil, err
@@ -88,10 +95,17 @@ func loadOrCreateCertificateAuthority(store storage.CertificateAuthorityStore, n
 		remaining := authority.certificate.NotAfter.Sub(now)
 		if remaining <= 0 {
 			log.Printf("WARNING: control-plane CA certificate expired %s ago — regenerating", -remaining)
-			return regenerateCertificateAuthority(store, now)
+			return regenerateCertificateAuthority(store, now, encryptionKey)
 		}
 		if remaining < 30*24*time.Hour {
 			log.Printf("WARNING: control-plane CA certificate expires in %s", remaining.Round(time.Hour))
+		}
+		// Re-encrypt if the stored key was plaintext but an encryption key is now configured.
+		if encryptionKey != "" && !isEncryptedPEM(record.PrivateKeyPEM) {
+			rec, recErr := authority.record(now, encryptionKey)
+			if recErr == nil {
+				_ = store.PutCertificateAuthority(context.Background(), rec)
+			}
 		}
 		return authority, nil
 	}
@@ -104,7 +118,7 @@ func loadOrCreateCertificateAuthority(store storage.CertificateAuthorityStore, n
 		return nil, err
 	}
 
-	record, err = authority.record(now)
+	record, err = authority.record(now, encryptionKey)
 	if err != nil {
 		return nil, err
 	}
@@ -115,12 +129,12 @@ func loadOrCreateCertificateAuthority(store storage.CertificateAuthorityStore, n
 	return authority, nil
 }
 
-func regenerateCertificateAuthority(store storage.CertificateAuthorityStore, now time.Time) (*certificateAuthority, error) {
+func regenerateCertificateAuthority(store storage.CertificateAuthorityStore, now time.Time, encryptionKey string) (*certificateAuthority, error) {
 	authority, err := newCertificateAuthority(now)
 	if err != nil {
 		return nil, err
 	}
-	record, err := authority.record(now)
+	record, err := authority.record(now, encryptionKey)
 	if err != nil {
 		return nil, err
 	}
@@ -187,15 +201,24 @@ func buildCertificateAuthority(certificate *x509.Certificate, privateKey *ecdsa.
 	}, nil
 }
 
-func (a *certificateAuthority) record(now time.Time) (storage.CertificateAuthorityRecord, error) {
+func (a *certificateAuthority) record(now time.Time, encryptionKey string) (storage.CertificateAuthorityRecord, error) {
 	privateDER, err := x509.MarshalECPrivateKey(a.privateKey)
 	if err != nil {
 		return storage.CertificateAuthorityRecord{}, err
 	}
 
+	keyPEM := encodePEM("EC PRIVATE KEY", privateDER)
+	if encryptionKey != "" {
+		encrypted, encErr := encryptPEM(keyPEM, encryptionKey)
+		if encErr != nil {
+			return storage.CertificateAuthorityRecord{}, encErr
+		}
+		keyPEM = encrypted
+	}
+
 	return storage.CertificateAuthorityRecord{
 		CAPEM:         a.caPEM,
-		PrivateKeyPEM: encodePEM("EC PRIVATE KEY", privateDER),
+		PrivateKeyPEM: keyPEM,
 		UpdatedAt:     now.UTC(),
 	}, nil
 }
