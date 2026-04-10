@@ -70,6 +70,8 @@ export type AgentRuntime = {
     fails: number;
     effective_latency_ms: number;
   }>;
+  lifecycle_state?: string;
+  updated_at?: string;
   recent_events: RuntimeEvent[];
   system_load?: {
     cpu_usage_pct: number;
