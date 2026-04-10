@@ -334,6 +334,14 @@ func Migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Add certificate date columns to agents table.
+	if err := ensureAgentsCertIssuedAtColumn(db); err != nil {
+		return err
+	}
+	if err := ensureAgentsCertExpiresAtColumn(db); err != nil {
+		return err
+	}
+
 	if err := ensureTimeseriesTables(db); err != nil {
 		return err
 	}
@@ -546,6 +554,66 @@ func ensureAgentsCreatedAtColumn(db *sql.DB) error {
 	}
 
 	_, err = db.Exec(`ALTER TABLE agents ADD COLUMN created_at_unix INTEGER NOT NULL DEFAULT 0`)
+	return err
+}
+
+func ensureAgentsCertIssuedAtColumn(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(agents)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name string
+		var columnType string
+		var notNull int
+		var defaultValue any
+		var primaryKey int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return err
+		}
+		if name == "cert_issued_at_unix" {
+			return nil
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`ALTER TABLE agents ADD COLUMN cert_issued_at_unix INTEGER`)
+	return err
+}
+
+func ensureAgentsCertExpiresAtColumn(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(agents)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name string
+		var columnType string
+		var notNull int
+		var defaultValue any
+		var primaryKey int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return err
+		}
+		if name == "cert_expires_at_unix" {
+			return nil
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`ALTER TABLE agents ADD COLUMN cert_expires_at_unix INTEGER`)
 	return err
 }
 
