@@ -35,7 +35,11 @@ export function useServerMutations(serverId: string) {
 
   const deregisterMutation = useMutation({
     mutationFn: () => apiClient.deregisterAgent(serverId),
-    onSuccess: invalidateServer,
+    onSuccess: () => {
+      invalidateServer();
+      qc.invalidateQueries({ queryKey: ["agents"] });
+      qc.invalidateQueries({ queryKey: ["control-room"] });
+    },
     onError: (err) => console.error("Failed to deregister agent:", err),
   });
 
