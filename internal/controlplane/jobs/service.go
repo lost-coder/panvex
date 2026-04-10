@@ -406,6 +406,14 @@ func (s *Service) updateTarget(agentID string, jobID string, observedAt time.Tim
 				})
 			}
 		}
+
+		// Do not apply the caller's mutation after expiry — the job status
+		// is final and further target changes could corrupt the state machine.
+		s.mu.Unlock()
+		for _, candidate := range candidates {
+			s.persistLatestJobVersion(candidate.jobID, candidate.version, candidate.job)
+		}
+		return
 	}
 
 	updated := false
