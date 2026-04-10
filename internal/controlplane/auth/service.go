@@ -59,12 +59,13 @@ const (
 	pendingTotpSetupTTL = 10 * time.Minute
 	sessionTTL          = 24 * time.Hour
 	minPasswordLength = 12
+	maxPasswordLength = 1024
 )
 
 // validatePasswordComplexity requires at least 12 characters with a mix of
 // uppercase, lowercase, and digits.
 func validatePasswordComplexity(password string) error {
-	if len(password) < minPasswordLength {
+	if len(password) < minPasswordLength || len(password) > maxPasswordLength {
 		return ErrPasswordTooWeak
 	}
 	var hasUpper, hasLower, hasDigit bool
