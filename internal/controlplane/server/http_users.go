@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"sort"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/panvex/panvex/internal/controlplane/auth"
@@ -16,6 +17,7 @@ type userResponse struct {
 	Username    string `json:"username"`
 	Role        string `json:"role"`
 	TotpEnabled bool   `json:"totp_enabled"`
+	CreatedAt   string `json:"created_at,omitempty"`
 }
 
 type createUserRequest struct {
@@ -52,12 +54,16 @@ func (s *Server) handleUsers() http.HandlerFunc {
 
 		response := make([]userResponse, 0, len(users))
 		for _, listedUser := range users {
-			response = append(response, userResponse{
+			resp := userResponse{
 				ID:          listedUser.ID,
 				Username:    listedUser.Username,
 				Role:        string(listedUser.Role),
 				TotpEnabled: listedUser.TotpEnabled,
-			})
+			}
+			if !listedUser.CreatedAt.IsZero() {
+				resp.CreatedAt = listedUser.CreatedAt.Format(time.RFC3339)
+			}
+			response = append(response, resp)
 		}
 
 		writeJSON(w, http.StatusOK, response)

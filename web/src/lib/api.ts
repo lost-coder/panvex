@@ -346,6 +346,7 @@ export type LocalUser = {
   username: string;
   role: string;
   totp_enabled: boolean;
+  created_at?: string;
 };
 
 export type ClientListItem = {
