@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -182,7 +182,7 @@ func (w *storeBatchWriter) drainAll(ctx context.Context) {
 func (w *storeBatchWriter) flushAudit(ctx context.Context, items []storage.AuditEventRecord) {
 	for _, item := range items {
 		if err := w.store.AppendAuditEvent(ctx, item); err != nil {
-			log.Printf("batch: audit persist failed: %v", err)
+			slog.Warn("batch persist failed", "domain", "audit", "error", err)
 		}
 	}
 }
@@ -190,7 +190,7 @@ func (w *storeBatchWriter) flushAudit(ctx context.Context, items []storage.Audit
 func (w *storeBatchWriter) flushAgents(ctx context.Context, items []storage.AgentRecord) {
 	for _, item := range items {
 		if err := w.store.PutAgent(ctx, item); err != nil {
-			log.Printf("batch: agent persist failed for %s: %v", item.ID, err)
+			slog.Warn("batch persist failed", "domain", "agents", "agent_id", item.ID, "error", err)
 		}
 	}
 }
@@ -198,7 +198,7 @@ func (w *storeBatchWriter) flushAgents(ctx context.Context, items []storage.Agen
 func (w *storeBatchWriter) flushInstances(ctx context.Context, items []storage.InstanceRecord) {
 	for _, item := range items {
 		if err := w.store.PutInstance(ctx, item); err != nil {
-			log.Printf("batch: instance persist failed for %s: %v", item.ID, err)
+			slog.Warn("batch persist failed", "domain", "instances", "instance_id", item.ID, "error", err)
 		}
 	}
 }
@@ -206,7 +206,7 @@ func (w *storeBatchWriter) flushInstances(ctx context.Context, items []storage.I
 func (w *storeBatchWriter) flushMetrics(ctx context.Context, items []storage.MetricSnapshotRecord) {
 	for _, item := range items {
 		if err := w.store.AppendMetricSnapshot(ctx, item); err != nil {
-			log.Printf("batch: metric persist failed: %v", err)
+			slog.Warn("batch persist failed", "domain", "metrics", "error", err)
 		}
 	}
 }
@@ -214,7 +214,7 @@ func (w *storeBatchWriter) flushMetrics(ctx context.Context, items []storage.Met
 func (w *storeBatchWriter) flushServerLoad(ctx context.Context, items []storage.ServerLoadPointRecord) {
 	for _, item := range items {
 		if err := w.store.AppendServerLoadPoint(ctx, item); err != nil {
-			log.Printf("batch: server load persist failed for %s: %v", item.AgentID, err)
+			slog.Warn("batch persist failed", "domain", "server_load", "agent_id", item.AgentID, "error", err)
 		}
 	}
 }
@@ -222,7 +222,7 @@ func (w *storeBatchWriter) flushServerLoad(ctx context.Context, items []storage.
 func (w *storeBatchWriter) flushDCHealth(ctx context.Context, items []storage.DCHealthPointRecord) {
 	for _, item := range items {
 		if err := w.store.AppendDCHealthPoint(ctx, item); err != nil {
-			log.Printf("batch: dc health persist failed: %v", err)
+			slog.Warn("batch persist failed", "domain", "dc_health", "error", err)
 		}
 	}
 }
@@ -230,7 +230,7 @@ func (w *storeBatchWriter) flushDCHealth(ctx context.Context, items []storage.DC
 func (w *storeBatchWriter) flushClientIPs(ctx context.Context, items []storage.ClientIPHistoryRecord) {
 	for _, item := range items {
 		if err := w.store.UpsertClientIPHistory(ctx, item); err != nil {
-			log.Printf("batch: client IP persist failed: %v", err)
+			slog.Warn("batch persist failed", "domain", "client_ips", "error", err)
 		}
 	}
 }
@@ -239,33 +239,33 @@ func (w *storeBatchWriter) flushTelemetry(ctx context.Context, items []telemetry
 	for _, unit := range items {
 		if unit.runtime != nil {
 			if err := w.store.PutTelemetryRuntimeCurrent(ctx, *unit.runtime); err != nil {
-				log.Printf("batch: telemetry runtime persist failed for %s: %v", unit.agentID, err)
+				slog.Warn("batch persist failed", "domain", "telemetry_runtime", "agent_id", unit.agentID, "error", err)
 				continue
 			}
 		}
 		if unit.dcs != nil {
 			if err := w.store.ReplaceTelemetryRuntimeDCs(ctx, unit.agentID, unit.dcs); err != nil {
-				log.Printf("batch: telemetry DCs persist failed for %s: %v", unit.agentID, err)
+				slog.Warn("batch persist failed", "domain", "telemetry_dcs", "agent_id", unit.agentID, "error", err)
 			}
 		}
 		if unit.upstreams != nil {
 			if err := w.store.ReplaceTelemetryRuntimeUpstreams(ctx, unit.agentID, unit.upstreams); err != nil {
-				log.Printf("batch: telemetry upstreams persist failed for %s: %v", unit.agentID, err)
+				slog.Warn("batch persist failed", "domain", "telemetry_upstreams", "agent_id", unit.agentID, "error", err)
 			}
 		}
 		if unit.events != nil {
 			if err := w.store.AppendTelemetryRuntimeEvents(ctx, unit.agentID, unit.events); err != nil {
-				log.Printf("batch: telemetry events persist failed for %s: %v", unit.agentID, err)
+				slog.Warn("batch persist failed", "domain", "telemetry_events", "agent_id", unit.agentID, "error", err)
 			}
 		}
 		if unit.diagnostics != nil {
 			if err := w.store.PutTelemetryDiagnosticsCurrent(ctx, *unit.diagnostics); err != nil {
-				log.Printf("batch: telemetry diagnostics persist failed for %s: %v", unit.agentID, err)
+				slog.Warn("batch persist failed", "domain", "telemetry_diagnostics", "agent_id", unit.agentID, "error", err)
 			}
 		}
 		if unit.security != nil {
 			if err := w.store.PutTelemetrySecurityInventoryCurrent(ctx, *unit.security); err != nil {
-				log.Printf("batch: telemetry security persist failed for %s: %v", unit.agentID, err)
+				slog.Warn("batch persist failed", "domain", "telemetry_security", "agent_id", unit.agentID, "error", err)
 			}
 		}
 	}

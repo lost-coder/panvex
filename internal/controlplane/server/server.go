@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"context"
 	"io/fs"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -47,6 +48,8 @@ type Options struct {
 	// AES-256-GCM. The key is derived from this passphrase via SHA-256.
 	// Existing unencrypted keys are transparently migrated on next save.
 	EncryptionKey string
+	// Logger is the structured logger for the server. If nil, slog.Default() is used.
+	Logger *slog.Logger
 }
 
 // Server wires local-auth, inventory, jobs, and operator APIs into one HTTP surface.
@@ -69,6 +72,7 @@ type Server struct {
 	loginLockout *accountLockoutTracker
 	trustedProxyCIDRs []*net.IPNet
 	encryptionKey string
+	logger *slog.Logger
 
 	mu         sync.RWMutex
 	sessionMu  sync.RWMutex
@@ -122,6 +126,7 @@ func New(options Options) *Server {
 		loginLockout: newAccountLockoutTracker(),
 		trustedProxyCIDRs: options.TrustedProxyCIDRs,
 		encryptionKey: options.EncryptionKey,
+		logger: options.Logger,
 		agents:     make(map[string]Agent),
 		detailBoosts: make(map[string]time.Time),
 		initializationWatchCooldowns: make(map[string]time.Time),
@@ -133,6 +138,9 @@ func New(options Options) *Server {
 		instances:  make(map[string]Instance),
 		metrics:    make([]MetricSnapshot, 0, maxInMemoryMetricSnapshots),
 		auditTrail: make([]AuditEvent, 0, maxInMemoryAuditEvents),
+	}
+	if server.logger == nil {
+		server.logger = slog.Default()
 	}
 	server.panelSettings = defaultPanelSettings()
 	server.retention = defaultRetentionSettings()

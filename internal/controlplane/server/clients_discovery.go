@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 	"time"
@@ -122,7 +121,7 @@ func (s *Server) upsertDiscoveredClient(ctx context.Context, agentID string, rec
 
 	if s.store != nil {
 		if err := s.store.PutDiscoveredClient(ctx, dc); err != nil {
-			log.Printf("control-plane discovered client persistence failed for %q on agent %q: %v", dc.ClientName, agentID, err)
+			s.logger.Error("discovered client persistence failed", "client_name", dc.ClientName, "agent_id", agentID, "error", err)
 			return
 		}
 	}
@@ -228,7 +227,7 @@ func (s *Server) adoptDiscoveredClient(ctx context.Context, id string, actorID s
 
 	// Mark this record and any other discovered records with the same secret as adopted.
 	if err := s.store.UpdateDiscoveredClientStatus(ctx, id, discoveredClientStatusAdopted, observedAt.UTC()); err != nil {
-		log.Printf("control-plane failed to update discovered client status: %v", err)
+		s.logger.Error("failed to update discovered client status", "error", err)
 	}
 	if record.Secret != "" {
 		s.markDuplicateDiscoveredClientsAdopted(ctx, id, record.Secret, observedAt)
@@ -257,7 +256,7 @@ func (s *Server) markDuplicateDiscoveredClientsAdopted(ctx context.Context, excl
 			continue
 		}
 		if err := s.store.UpdateDiscoveredClientStatus(ctx, dc.ID, discoveredClientStatusAdopted, observedAt.UTC()); err != nil {
-			log.Printf("control-plane failed to mark duplicate discovered client %s as adopted: %v", dc.ID, err)
+			s.logger.Error("failed to mark duplicate discovered client as adopted", "discovered_client_id", dc.ID, "error", err)
 		}
 	}
 }

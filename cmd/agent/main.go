@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -105,13 +106,12 @@ func runRuntime(args []string) error {
 		*runtimeUpload = *runtimeSnapshot
 	}
 	schedule := newConnectionSchedule(*heartbeat, *runtimePoll, *runtimeUpload, *usageSnapshot, *ipPoll, *ipUpload)
-	log.Printf(
-		"agent starting: agent_id=%s node=%s gateway=%s telemt_api=%s telemt_metrics=%s",
-		credentialsState.AgentID,
-		*nodeName,
-		*gatewayAddr,
-		*telemtURL,
-		*telemtMetricsURL,
+	slog.Info("agent starting",
+		"agent_id", credentialsState.AgentID,
+		"node", *nodeName,
+		"gateway", *gatewayAddr,
+		"telemt_api", *telemtURL,
+		"telemt_metrics", *telemtMetricsURL,
 	)
 
 	reconnectAttempt := 0
@@ -121,7 +121,7 @@ func runRuntime(args []string) error {
 		cancelRefresh()
 		if err != nil {
 			reconnectAttempt++
-			log.Printf("agent certificate refresh failed: %v", err)
+			slog.Error("certificate refresh failed", "error", err)
 			time.Sleep(reconnectDelay(reconnectAttempt))
 			continue
 		}
@@ -132,7 +132,7 @@ func runRuntime(args []string) error {
 			continue
 		}
 		reconnectAttempt++
-		log.Printf("agent connection ended: %v", err)
+		slog.Error("connection ended", "error", err)
 		time.Sleep(reconnectDelay(reconnectAttempt))
 	}
 }
@@ -403,7 +403,7 @@ func startPollingWorkers(
 			return
 		}
 		if connectionCtx.Err() == nil {
-			log.Printf("agent heartbeat dropped due to outbound backpressure")
+			slog.Warn("heartbeat dropped due to outbound backpressure")
 		}
 	})
 
@@ -416,7 +416,7 @@ func startPollingWorkers(
 		snapshot, err := agent.BuildUsageSnapshot(usageCtx, observedAt)
 		cancelUsage()
 		if err != nil {
-			log.Printf("agent usage snapshot failed: %v", err)
+			slog.Error("usage snapshot failed", "error", err)
 			return
 		}
 		if enqueueOutboundMessage(connectionCtx, telemetryOutbound, &gatewayrpc.ConnectClientMessage{
@@ -425,7 +425,7 @@ func startPollingWorkers(
 			return
 		}
 		if connectionCtx.Err() == nil {
-			log.Printf("agent usage snapshot dropped due to outbound backpressure")
+			slog.Warn("usage snapshot dropped due to outbound backpressure")
 		}
 	})
 
@@ -434,7 +434,7 @@ func startPollingWorkers(
 		err := agent.PollActiveIPs(ipPollCtx)
 		cancelIPPoll()
 		if err != nil {
-			log.Printf("agent ip poll failed: %v", err)
+			slog.Error("ip poll failed", "error", err)
 		}
 	})
 
@@ -449,7 +449,7 @@ func startPollingWorkers(
 			return
 		}
 		if connectionCtx.Err() == nil {
-			log.Printf("agent ip snapshot dropped due to outbound backpressure")
+			slog.Warn("ip snapshot dropped due to outbound backpressure")
 		}
 	})
 }
@@ -517,7 +517,7 @@ func startRuntimePollWorker(
 				if err != nil {
 					consecutiveFailures++
 					if consecutiveFailures <= 3 || consecutiveFailures%10 == 0 {
-						log.Printf("agent runtime poll failed (attempt %d): %v", consecutiveFailures, err)
+						slog.Error("runtime poll failed", "attempt", consecutiveFailures, "error", err)
 					}
 					continue
 				}
@@ -561,7 +561,7 @@ func startRuntimeUploadWorker(
 					continue
 				}
 				if connectionCtx.Err() == nil {
-					log.Printf("agent runtime upload dropped due to outbound backpressure")
+					slog.Warn("runtime upload dropped due to outbound backpressure")
 				}
 			}
 		}
@@ -609,7 +609,7 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 	if err != nil {
 		return credentialsState, err
 	}
-	log.Printf("agent connected to control-plane: agent_id=%s gateway=%s", agent.AgentID(), gatewayAddr)
+	slog.Info("connected to control-plane", "agent_id", agent.AgentID(), "gateway", gatewayAddr)
 
 	connectionCtx, cancelConnection := context.WithCancel(stream.Context())
 	defer cancelConnection()
@@ -677,7 +677,7 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 		cancelConnection()
 		return credentialsState, err
 	}
-	log.Printf("agent initial sync completed: agent_id=%s node=%s", agent.AgentID(), agent.NodeName())
+	slog.Info("initial sync completed", "agent_id", agent.AgentID(), "node", agent.NodeName())
 
 	credentialRefreshTimer := newRuntimeCredentialRefreshTimer(credentialsState, time.Now())
 	if credentialRefreshTimer != nil {
@@ -695,7 +695,7 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 			updatedCredentials, err := refreshRuntimeCredentialsIfNeeded(refreshCtx, stateFile, credentialsState, client, time.Now())
 			cancelRefresh()
 			if err != nil {
-				log.Printf("agent certificate renewal failed: %v", err)
+				slog.Error("certificate renewal failed", "error", err)
 				resetRuntimeCredentialRefreshTimer(credentialRefreshTimer, runtimeCertificateRenewRetry)
 				continue
 			}
@@ -867,7 +867,7 @@ func sendInitialMessages(outbound chan<- *gatewayrpc.ConnectClientMessage, agent
 	outbound <- &gatewayrpc.ConnectClientMessage{
 		Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: runtimeSnapshot},
 	}
-	log.Printf("agent initial runtime snapshot sent: agent_id=%s node=%s", agent.AgentID(), agent.NodeName())
+	slog.Info("initial runtime snapshot sent", "agent_id", agent.AgentID(), "node", agent.NodeName())
 
 	usageCtx, cancelUsage := context.WithTimeout(context.Background(), runtimeOperationTimeout)
 	usageSnapshot, err := agent.BuildUsageSnapshot(usageCtx, time.Now())
@@ -877,7 +877,7 @@ func sendInitialMessages(outbound chan<- *gatewayrpc.ConnectClientMessage, agent
 			Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: usageSnapshot},
 		}
 	} else {
-		log.Printf("agent initial usage snapshot unavailable; continuing without metrics: %v", err)
+		slog.Warn("initial usage snapshot unavailable, continuing without metrics", "error", err)
 	}
 
 	ipPollCtx, cancelIPPoll := context.WithTimeout(context.Background(), runtimeOperationTimeout)
@@ -889,7 +889,7 @@ func sendInitialMessages(outbound chan<- *gatewayrpc.ConnectClientMessage, agent
 			}
 		}
 	} else {
-		log.Printf("agent initial ip poll unavailable; continuing without active IPs: %v", err)
+		slog.Warn("initial ip poll unavailable, continuing without active IPs", "error", err)
 	}
 	cancelIPPoll()
 

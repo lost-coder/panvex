@@ -1,7 +1,6 @@
 package server
 
 import (
-	"log"
 	"net/http"
 	"strings"
 
@@ -43,7 +42,7 @@ func (s *Server) handleRenameAgent() http.HandlerFunc {
 		// persistent state diverged.
 		if s.store != nil {
 			if err := s.store.UpdateAgentNodeName(r.Context(), agentID, req.NodeName); err != nil {
-				log.Printf("update agent node_name in store failed: %v", err)
+				s.logger.Error("update agent node_name in store failed", "error", err)
 				writeError(w, http.StatusInternalServerError, "storage error")
 				return
 			}
@@ -110,15 +109,15 @@ func (s *Server) handleDeregisterAgent() http.HandlerFunc {
 		//    the agent absent from memory but present in the database.
 		if s.store != nil {
 			if _, err := s.store.RevokeAgentCertificateRecoveryGrant(r.Context(), agentID, s.now()); err != nil && err != storage.ErrNotFound {
-				log.Printf("revoke cert recovery grant failed for %s: %v", agentID, err)
+				s.logger.Error("revoke cert recovery grant failed", "agent_id", agentID, "error", err)
 			}
 			if err := s.store.DeleteInstancesByAgent(r.Context(), agentID); err != nil {
-				log.Printf("delete instances by agent failed for %s: %v", agentID, err)
+				s.logger.Error("delete instances by agent failed", "agent_id", agentID, "error", err)
 				writeError(w, http.StatusInternalServerError, "storage error")
 				return
 			}
 			if err := s.store.DeleteAgent(r.Context(), agentID); err != nil && err != storage.ErrNotFound {
-				log.Printf("delete agent from store failed for %s: %v", agentID, err)
+				s.logger.Error("delete agent from store failed", "agent_id", agentID, "error", err)
 				writeError(w, http.StatusInternalServerError, "storage error")
 				return
 			}
