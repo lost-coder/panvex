@@ -199,6 +199,8 @@ export type Agent = {
   read_only: boolean;
   presence_state: string;
   certificate_recovery?: AgentCertificateRecovery;
+  cert_issued_at?: string;
+  cert_expires_at?: string;
   runtime: AgentRuntime;
   last_seen_at: string;
 };

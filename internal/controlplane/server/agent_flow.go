@@ -103,12 +103,25 @@ func (s *Server) enrollAgentWithContext(ctx context.Context, request agentEnroll
 
 	s.mu.Lock()
 	s.agents[agentID] = agent
-	agentEvent := agent
 	s.mu.Unlock()
 
 	issued, err := s.authority.issueClientCertificate(agentID, now)
 	if err != nil {
 		return agentEnrollmentResponse{}, err
+	}
+
+	// Record certificate dates in the agent so they are persisted and
+	// returned via the API instead of being fabricated on the frontend.
+	certIssuedAt := now.UTC()
+	certExpiresAt := issued.ExpiresAt.UTC()
+	s.mu.Lock()
+	storedAgent := s.agents[agentID]
+	storedAgent.CertIssuedAt = &certIssuedAt
+	storedAgent.CertExpiresAt = &certExpiresAt
+	s.agents[agentID] = storedAgent
+	s.mu.Unlock()
+	if s.batchWriter != nil {
+		s.batchWriter.agents.Enqueue(agentToRecord(storedAgent))
 	}
 
 	s.appendAuditWithContext(ctx, agentID, "agents.enrolled", agentID, map[string]any{
@@ -117,7 +130,7 @@ func (s *Server) enrollAgentWithContext(ctx context.Context, request agentEnroll
 	})
 	s.events.publish(eventEnvelope{
 		Type: "agents.enrolled",
-		Data: agentEvent,
+		Data: storedAgent,
 	})
 
 	return agentEnrollmentResponse{
