@@ -852,9 +852,9 @@ func connectStreamWithSetupTimeout(
 		return nil, err
 	}
 
-	// On success the stream owns connectCtx — cancelling it would kill the
-	// stream immediately. The context is cancelled when the stream closes.
-	_ = cancelConnect //nolint: the cancel is transferred to the stream lifecycle
+	// Release the setup context resources. The stream's own context governs
+	// its lifetime independently of connectCtx.
+	cancelConnect()
 	return stream, nil
 }
 
