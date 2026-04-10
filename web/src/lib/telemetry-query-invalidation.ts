@@ -1,9 +1,15 @@
+// Debounce timer to coalesce rapid WebSocket-driven invalidations
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
 export async function invalidateTelemetryQueries(
   queryClient: {
     invalidateQueries: (input: Record<string, unknown>) => Promise<unknown> | unknown;
   },
   agentID?: string
 ) {
+  if (debounceTimer) return;
+  debounceTimer = setTimeout(() => { debounceTimer = null; }, 2000);
+
   await queryClient.invalidateQueries({ queryKey: ["telemetry", "dashboard"] });
   await queryClient.invalidateQueries({ queryKey: ["telemetry", "servers"] });
   if (agentID) {

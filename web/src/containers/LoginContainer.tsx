@@ -36,6 +36,7 @@ export function LoginContainer() {
     setLoading(true);
     try {
       await apiClient.login({ ...savedCredentials, totp_code: totpCode });
+      setSavedCredentials(undefined);
       router.navigate({ to: "/" });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -48,6 +49,7 @@ export function LoginContainer() {
   function handleBack() {
     setStage("credentials");
     setError(undefined);
+    setSavedCredentials(undefined);
   }
 
   return (

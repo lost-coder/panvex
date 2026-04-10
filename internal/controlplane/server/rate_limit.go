@@ -82,7 +82,7 @@ func (l *fixedWindowRateLimiter) Allow(key string, now time.Time) bool {
 }
 
 func (l *fixedWindowRateLimiter) cleanupStaleBucketsLocked(nowNanos int64) {
-	if len(l.buckets) < 1024 {
+	if len(l.buckets) < 128 {
 		return
 	}
 
