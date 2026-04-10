@@ -13,6 +13,13 @@ type UserRecord struct {
 	CreatedAt    time.Time
 }
 
+// SessionRecord stores one authenticated user session.
+type SessionRecord struct {
+	ID        string
+	UserID    string
+	CreatedAt time.Time
+}
+
 // UserAppearanceRecord stores one user's persisted appearance preferences.
 type UserAppearanceRecord struct {
 	UserID    string
