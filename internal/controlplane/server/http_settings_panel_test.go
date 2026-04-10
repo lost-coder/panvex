@@ -32,6 +32,7 @@ func TestHTTPPanelSettingsRequiresAdminAndPersistsSharedEndpointChanges(t *testi
 			RestartSupported:  true,
 		},
 	})
+	defer server.Close()
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
@@ -311,6 +312,7 @@ func TestHTTPPanelSettingsExposesConfigManagedRuntimeAsReadOnly(t *testing.T) {
 			ConfigPath:        "/etc/panvex/config.toml",
 		},
 	})
+	defer server.Close()
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
