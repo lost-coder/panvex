@@ -68,6 +68,7 @@ func (s *Service) UpdateUser(input UpdateUserInput, now time.Time) (User, error)
 		}
 	}
 
+	previousRole := user.Role
 	user.Username = updatedUsername
 	user.Role = input.Role
 	if strings.TrimSpace(input.NewPassword) != "" {
@@ -81,8 +82,23 @@ func (s *Service) UpdateUser(input UpdateUserInput, now time.Time) (User, error)
 		user.PasswordHash = hash
 	}
 
+	passwordChanged := strings.TrimSpace(input.NewPassword) != ""
+	roleDemoted := previousRole != input.Role && isRoleDemotion(previousRole, input.Role)
+
 	if err := s.persistManagedUser(user); err != nil {
 		return User{}, err
+	}
+
+	// Revoke all active sessions when the password changes or the role is
+	// demoted so that stolen sessions cannot outlive credential rotation.
+	if passwordChanged || roleDemoted {
+		s.mu.Lock()
+		for sessionID, session := range s.sessions {
+			if session.UserID == user.ID {
+				delete(s.sessions, sessionID)
+			}
+		}
+		s.mu.Unlock()
 	}
 
 	_ = now
@@ -126,6 +142,25 @@ func (s *Service) DeleteUser(userID string) error {
 	s.mu.Unlock()
 
 	return nil
+}
+
+// isRoleDemotion returns true when the new role has fewer privileges than the
+// previous role. Used to decide whether active sessions should be revoked.
+func isRoleDemotion(previous Role, next Role) bool {
+	return roleWeight(next) < roleWeight(previous)
+}
+
+func roleWeight(r Role) int {
+	switch r {
+	case RoleAdmin:
+		return 3
+	case RoleOperator:
+		return 2
+	case RoleViewer:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func (s *Service) loadManagedUserByID(userID string) (User, error) {
