@@ -132,6 +132,7 @@ func (s *Server) handleDeregisterAgent() http.HandlerFunc {
 		}
 
 		// 4. Clean up in-memory state only after storage succeeds.
+		// Lock ordering: mu -> clientsMu.
 		s.mu.Lock()
 		delete(s.agents, agentID)
 		delete(s.detailBoosts, agentID)
@@ -141,7 +142,9 @@ func (s *Server) handleDeregisterAgent() http.HandlerFunc {
 				delete(s.instances, instID)
 			}
 		}
+		s.clientsMu.Lock()
 		delete(s.clientUsage, agentID)
+		s.clientsMu.Unlock()
 		s.mu.Unlock()
 
 		// 5. Remove from presence tracker.

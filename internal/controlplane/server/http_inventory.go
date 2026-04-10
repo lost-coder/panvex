@@ -27,13 +27,15 @@ func (s *Server) handleFleet() http.HandlerFunc {
 			return
 		}
 
-		s.mu.RLock()
-		defer s.mu.RUnlock()
+		s.metricsAuditMu.RLock()
+		metricSnapshots := len(s.metrics)
+		s.metricsAuditMu.RUnlock()
 
+		s.mu.RLock()
 		response := fleetResponse{
 			TotalAgents:     len(s.agents),
 			TotalInstances:  len(s.instances),
-			MetricSnapshots: len(s.metrics),
+			MetricSnapshots: metricSnapshots,
 		}
 
 		for agentID := range s.agents {
@@ -46,6 +48,7 @@ func (s *Server) handleFleet() http.HandlerFunc {
 				response.OfflineAgents++
 			}
 		}
+		s.mu.RUnlock()
 
 		writeJSON(w, http.StatusOK, response)
 	}
@@ -115,8 +118,8 @@ func (s *Server) handleMetrics() http.HandlerFunc {
 			return
 		}
 
-		s.mu.RLock()
-		defer s.mu.RUnlock()
+		s.metricsAuditMu.RLock()
+		defer s.metricsAuditMu.RUnlock()
 
 		writeJSON(w, http.StatusOK, s.metrics)
 	}
@@ -129,8 +132,8 @@ func (s *Server) handleAudit() http.HandlerFunc {
 			return
 		}
 
-		s.mu.RLock()
-		defer s.mu.RUnlock()
+		s.metricsAuditMu.RLock()
+		defer s.metricsAuditMu.RUnlock()
 
 		writeJSON(w, http.StatusOK, s.auditTrail)
 	}

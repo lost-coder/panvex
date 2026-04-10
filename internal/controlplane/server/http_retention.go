@@ -30,9 +30,9 @@ func (s *Server) handlePutRetentionSettings() http.HandlerFunc {
 
 		settings := normalizeRetentionSettings(req)
 
-		s.mu.Lock()
+		s.settingsMu.Lock()
 		s.retention = settings
-		s.mu.Unlock()
+		s.settingsMu.Unlock()
 
 		writeJSON(w, http.StatusOK, settings)
 	}

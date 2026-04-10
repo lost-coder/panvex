@@ -103,9 +103,9 @@ func (s *Server) handlePutPanelSettings() http.HandlerFunc {
 			}
 		}
 
-		s.mu.Lock()
+		s.settingsMu.Lock()
 		s.panelSettings = settings
-		s.mu.Unlock()
+		s.settingsMu.Unlock()
 
 		s.appendAuditWithContext(r.Context(), session.UserID, "settings.panel.update", "panel", map[string]any{
 			"http_public_url":      settings.HTTPPublicURL,

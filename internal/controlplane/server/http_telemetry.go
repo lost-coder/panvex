@@ -22,6 +22,10 @@ func (s *Server) handleTelemetryDashboard() http.HandlerFunc {
 
 		now := s.now()
 
+		s.metricsAuditMu.RLock()
+		metricSnapshots := len(s.metrics)
+		s.metricsAuditMu.RUnlock()
+
 		s.mu.RLock()
 		items := make([]telemetryServerSummary, 0, len(s.agents))
 		runtimeDistribution := make(map[string]int)
@@ -36,7 +40,7 @@ func (s *Server) handleTelemetryDashboard() http.HandlerFunc {
 			runtimeDistribution[mode]++
 		}
 		recentEvents := controlRoomRecentRuntimeEvents(s.agents, 8)
-		fleet := controlRoomFleetFromState(s.agents, s.instances, s.metrics, s.presence, now)
+		fleet := controlRoomFleetFromState(s.agents, s.instances, metricSnapshots, s.presence, now)
 		s.mu.RUnlock()
 
 		sortTelemetrySummaries(items)
