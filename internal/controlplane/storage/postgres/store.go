@@ -377,7 +377,7 @@ func (s *Store) AppendAuditEvent(ctx context.Context, event storage.AuditEventRe
 func (s *Store) ListAuditEvents(ctx context.Context) ([]storage.AuditEventRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, actor_id, action, target_id, details, created_at
-		FROM audit_events
+		FROM (SELECT * FROM audit_events ORDER BY created_at DESC, id DESC LIMIT 1024) sub
 		ORDER BY created_at, id
 	`)
 	if err != nil {
@@ -418,7 +418,7 @@ func (s *Store) AppendMetricSnapshot(ctx context.Context, snapshot storage.Metri
 func (s *Store) ListMetricSnapshots(ctx context.Context) ([]storage.MetricSnapshotRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, agent_id, instance_id, captured_at, values
-		FROM metric_snapshots
+		FROM (SELECT * FROM metric_snapshots ORDER BY captured_at DESC, id DESC LIMIT 512) sub
 		ORDER BY captured_at, id
 	`)
 	if err != nil {
