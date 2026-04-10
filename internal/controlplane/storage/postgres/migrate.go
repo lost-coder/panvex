@@ -344,6 +344,14 @@ func Migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Add certificate date columns to agents table.
+	if _, err := db.Exec(`ALTER TABLE agents ADD COLUMN IF NOT EXISTS cert_issued_at TIMESTAMPTZ`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`ALTER TABLE agents ADD COLUMN IF NOT EXISTS cert_expires_at TIMESTAMPTZ`); err != nil {
+		return err
+	}
+
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS ts_server_load (
 			agent_id                TEXT NOT NULL,

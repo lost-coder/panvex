@@ -133,12 +133,14 @@ type FleetGroupRecord struct {
 
 // AgentRecord stores one enrolled host agent snapshot.
 type AgentRecord struct {
-	ID           string
-	NodeName     string
-	FleetGroupID string
-	Version      string
-	ReadOnly     bool
-	LastSeenAt   time.Time
+	ID            string
+	NodeName      string
+	FleetGroupID  string
+	Version       string
+	ReadOnly      bool
+	LastSeenAt    time.Time
+	CertIssuedAt  *time.Time
+	CertExpiresAt *time.Time
 }
 
 // InstanceRecord stores one Telemt runtime observed through an agent.
