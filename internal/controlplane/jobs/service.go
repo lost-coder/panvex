@@ -40,6 +40,22 @@ const (
 	ActionTelemetryRefreshDiagnostics Action = "telemetry.refresh_diagnostics"
 )
 
+// IsValidAction reports whether the action is a recognized job type.
+func IsValidAction(a Action) bool {
+	switch a {
+	case ActionRuntimeReload,
+		ActionUsersCreate,
+		ActionClientCreate,
+		ActionClientUpdate,
+		ActionClientDelete,
+		ActionClientRotateSecret,
+		ActionTelemetryRefreshDiagnostics:
+		return true
+	default:
+		return false
+	}
+}
+
 // Status describes the orchestration lifecycle state of a job.
 type Status string
 
