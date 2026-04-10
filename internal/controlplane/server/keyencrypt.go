@@ -155,10 +155,7 @@ func isEncryptedPEM(stored string) bool {
 // needsReEncryption reports whether the stored value should be re-encrypted:
 // either it uses the legacy ENC: format or it is plaintext.
 func needsReEncryption(stored string) bool {
-	if strings.HasPrefix(stored, encryptedPEMPrefixV2) {
-		return false
-	}
-	return true
+	return !strings.HasPrefix(stored, encryptedPEMPrefixV2)
 }
 
 // encryptPEMWithKey encrypts a PEM string using the provided raw AES key and
