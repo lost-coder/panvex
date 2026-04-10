@@ -59,6 +59,11 @@ func (s *Server) handleCreateJob() http.HandlerFunc {
 			return
 		}
 
+		if !jobs.IsValidAction(jobs.Action(request.Action)) {
+			writeError(w, http.StatusBadRequest, "unknown job action")
+			return
+		}
+
 		readOnlyAgents := make(map[string]bool, len(request.TargetAgentIDs))
 		s.mu.RLock()
 		for _, agentID := range request.TargetAgentIDs {
