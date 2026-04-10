@@ -8,7 +8,7 @@ function transformUsers(raw: Awaited<ReturnType<typeof apiClient.users>>): UserL
     username: u.username,
     role: u.role as UserListItem["role"],
     totpEnabled: u.totp_enabled,
-    createdAt: "",
+    createdAt: u.created_at ?? "",
   }));
 }
 

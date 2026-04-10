@@ -438,7 +438,9 @@ func (s *Server) processRegularAgentMessage(
 	}
 
 	if resp := message.GetClientDataResponse(); resp != nil {
-		go s.reconcileDiscoveredClients(connectionCtx, agentID, resp.GetClients(), s.now())
+		// Run synchronously within the regular message processor goroutine
+		// to prevent unbounded goroutine accumulation from repeated responses.
+		s.reconcileDiscoveredClients(connectionCtx, agentID, resp.GetClients(), s.now())
 		return nil
 	}
 
