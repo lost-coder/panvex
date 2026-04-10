@@ -15,6 +15,8 @@ var (
 	ErrEnrollmentTokenExpired = errors.New("enrollment token expired")
 	// ErrEnrollmentTokenInvalid reports an unknown or malformed enrollment token.
 	ErrEnrollmentTokenInvalid = errors.New("enrollment token invalid")
+	// ErrEnrollmentTokenTTLRequired reports a missing or non-positive TTL.
+	ErrEnrollmentTokenTTLRequired = errors.New("enrollment token TTL must be positive")
 )
 
 // EnrollmentScope defines where a newly enrolled agent is allowed to attach.
@@ -51,6 +53,10 @@ func NewEnrollmentService() *EnrollmentService {
 
 // IssueToken mints a token for the provided scope and expiration window.
 func (s *EnrollmentService) IssueToken(scope EnrollmentScope, issuedAt time.Time) (EnrollmentToken, error) {
+	if scope.TTL <= 0 {
+		return EnrollmentToken{}, ErrEnrollmentTokenTTLRequired
+	}
+
 	value, err := randomToken(32)
 	if err != nil {
 		return EnrollmentToken{}, err
