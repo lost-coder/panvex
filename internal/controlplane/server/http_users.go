@@ -31,6 +31,15 @@ type updateUserRequest struct {
 	NewPassword string `json:"new_password"`
 }
 
+func isValidRole(role string) bool {
+	switch auth.Role(role) {
+	case auth.RoleViewer, auth.RoleOperator, auth.RoleAdmin:
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *Server) handleUsers() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, user, err := s.requireSession(r)
@@ -88,6 +97,11 @@ func (s *Server) handleCreateUser() http.HandlerFunc {
 			return
 		}
 
+		if !isValidRole(request.Role) {
+			writeError(w, http.StatusBadRequest, "role must be one of: viewer, operator, admin")
+			return
+		}
+
 		createdUser, err := s.auth.CreateUser(auth.BootstrapInput{
 			Username: request.Username,
 			Password: request.Password,
@@ -141,6 +155,11 @@ func (s *Server) handleUpdateUser() http.HandlerFunc {
 		var request updateUserRequest
 		if err := decodeJSON(r, &request); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid user payload")
+			return
+		}
+
+		if !isValidRole(request.Role) {
+			writeError(w, http.StatusBadRequest, "role must be one of: viewer, operator, admin")
 			return
 		}
 
