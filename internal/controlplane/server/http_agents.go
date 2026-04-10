@@ -39,6 +39,16 @@ func (s *Server) handleRenameAgent() http.HandlerFunc {
 			return
 		}
 
+		// Persist to storage first so a failure does not leave in-memory and
+		// persistent state diverged.
+		if s.store != nil {
+			if err := s.store.UpdateAgentNodeName(r.Context(), agentID, req.NodeName); err != nil {
+				log.Printf("update agent node_name in store failed: %v", err)
+				writeError(w, http.StatusInternalServerError, "storage error")
+				return
+			}
+		}
+
 		s.mu.Lock()
 		agent, exists := s.agents[agentID]
 		if !exists {
@@ -50,12 +60,6 @@ func (s *Server) handleRenameAgent() http.HandlerFunc {
 		agent.NodeName = req.NodeName
 		s.agents[agentID] = agent
 		s.mu.Unlock()
-
-		if s.store != nil {
-			if err := s.store.UpdateAgentNodeName(r.Context(), agentID, req.NodeName); err != nil {
-				log.Printf("update agent node_name in store failed: %v", err)
-			}
-		}
 
 		s.appendAuditWithContext(r.Context(), session.UserID, "agents.rename", agentID, map[string]any{
 			"old_name": oldName,
@@ -93,46 +97,48 @@ func (s *Server) handleDeregisterAgent() http.HandlerFunc {
 		}
 		s.sessionMu.Unlock()
 
-		// 2. Revoke any pending certificate recovery grant.
+		// 2. Verify agent exists before doing any work.
+		s.mu.RLock()
+		_, exists := s.agents[agentID]
+		s.mu.RUnlock()
+		if !exists {
+			writeError(w, http.StatusNotFound, "agent not found")
+			return
+		}
+
+		// 3. Persist deletion to storage first so a failure does not leave
+		//    the agent absent from memory but present in the database.
 		if s.store != nil {
 			if _, err := s.store.RevokeAgentCertificateRecoveryGrant(r.Context(), agentID, s.now()); err != nil && err != storage.ErrNotFound {
 				log.Printf("revoke cert recovery grant failed for %s: %v", agentID, err)
 			}
+			if err := s.store.DeleteInstancesByAgent(r.Context(), agentID); err != nil {
+				log.Printf("delete instances by agent failed for %s: %v", agentID, err)
+				writeError(w, http.StatusInternalServerError, "storage error")
+				return
+			}
+			if err := s.store.DeleteAgent(r.Context(), agentID); err != nil && err != storage.ErrNotFound {
+				log.Printf("delete agent from store failed for %s: %v", agentID, err)
+				writeError(w, http.StatusInternalServerError, "storage error")
+				return
+			}
 		}
 
-		// 3. Clean up in-memory state.
+		// 4. Clean up in-memory state only after storage succeeds.
 		s.mu.Lock()
-		_, exists := s.agents[agentID]
-		if !exists {
-			s.mu.Unlock()
-			writeError(w, http.StatusNotFound, "agent not found")
-			return
-		}
 		delete(s.agents, agentID)
 		delete(s.detailBoosts, agentID)
 		delete(s.initializationWatchCooldowns, agentID)
-		// Remove instances belonging to this agent.
 		for instID, inst := range s.instances {
 			if inst.AgentID == agentID {
 				delete(s.instances, instID)
 			}
 		}
-		// Remove client usage for this agent.
 		delete(s.clientUsage, agentID)
 		s.mu.Unlock()
 
-		// 4. Remove from presence tracker.
+		// 5. Remove from presence tracker.
 		s.presence.Remove(agentID)
-
-		// 5. Persist deletion to storage.
-		if s.store != nil {
-			if err := s.store.DeleteInstancesByAgent(r.Context(), agentID); err != nil {
-				log.Printf("delete instances by agent failed for %s: %v", agentID, err)
-			}
-			if err := s.store.DeleteAgent(r.Context(), agentID); err != nil && err != storage.ErrNotFound {
-				log.Printf("delete agent from store failed for %s: %v", agentID, err)
-			}
-		}
 
 		s.appendAuditWithContext(r.Context(), session.UserID, "agents.deregister", agentID, map[string]any{})
 
