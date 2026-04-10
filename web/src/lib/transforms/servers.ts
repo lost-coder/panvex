@@ -326,13 +326,14 @@ export function transformAgentConnection(
     ? new Date(agent.last_seen_at)
     : new Date();
 
-  // Approximate cert dates: the API does not expose mTLS cert NotBefore/NotAfter.
-  // We use last_seen_at as a proxy for issuedAt (the agent was alive, so the cert was valid).
-  // expiresAt is estimated as issuedAt + 30-day cert lifetime.
+  // Use real certificate dates from the API when available, falling back to
+  // an approximation for agents enrolled before the cert_dates migration.
   const now = new Date();
-  const approxIssuedAt = lastSeen;
-  const approxExpiresAt = new Date(approxIssuedAt.getTime() + CERT_LIFETIME_DAYS * 24 * 60 * 60 * 1000);
-  const remainingMs = approxExpiresAt.getTime() - now.getTime();
+  const certIssuedAt = agent.cert_issued_at ? new Date(agent.cert_issued_at) : lastSeen;
+  const certExpiresAt = agent.cert_expires_at
+    ? new Date(agent.cert_expires_at)
+    : new Date(certIssuedAt.getTime() + CERT_LIFETIME_DAYS * 24 * 60 * 60 * 1000);
+  const remainingMs = certExpiresAt.getTime() - now.getTime();
   const remainingDays = Math.max(0, Math.ceil(remainingMs / (24 * 60 * 60 * 1000)));
 
   const recovery = agent.certificate_recovery;
@@ -348,8 +349,8 @@ export function transformAgentConnection(
     version: agent.version || "unknown",
     fleetGroup: agent.fleet_group_id || "default",
     certificate: {
-      issuedAt: approxIssuedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
-      expiresAt: approxExpiresAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+      issuedAt: certIssuedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+      expiresAt: certExpiresAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
       remainingDays,
     },
     recoveryGrant: recovery && recovery.status !== "expired"
