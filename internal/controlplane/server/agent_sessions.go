@@ -3,6 +3,10 @@ package server
 type agentStreamSession struct {
 	sequence uint64
 	wake     chan struct{}
+	// done is closed when the session is forcefully terminated (e.g. deregister).
+	// Senders must check done before writing to wake to avoid sending on a
+	// channel whose consumer has already exited.
+	done chan struct{}
 }
 
 func (s *Server) registerAgentSession(agentID string) (*agentStreamSession, func()) {
@@ -11,6 +15,7 @@ func (s *Server) registerAgentSession(agentID string) (*agentStreamSession, func
 	session := &agentStreamSession{
 		sequence: s.sessionSeq,
 		wake:     make(chan struct{}, 1),
+		done:     make(chan struct{}),
 	}
 	s.agentSessions[agentID] = session
 	s.sessionMu.Unlock()
@@ -28,12 +33,11 @@ func (s *Server) registerAgentSession(agentID string) (*agentStreamSession, func
 }
 
 func (s *Server) notifyAgentSession(agentID string) {
-	// The send must happen under RLock to prevent a concurrent deregister from
-	// closing the wake channel between the map lookup and the send.
 	s.sessionMu.RLock()
 	session := s.agentSessions[agentID]
 	if session != nil {
 		select {
+		case <-session.done:
 		case session.wake <- struct{}{}:
 		default:
 		}

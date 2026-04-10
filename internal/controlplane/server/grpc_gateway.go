@@ -269,6 +269,8 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 			select {
 			case <-connectionCtx.Done():
 				return
+			case <-session.done:
+				return
 			case <-session.wake:
 			case <-retryTicker.C:
 			}
