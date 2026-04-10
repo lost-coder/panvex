@@ -142,8 +142,13 @@ func TestSendInitialMessagesContinuesWhenUsageMetricsAreUnavailable(t *testing.T
 }
 
 func TestConnectStreamWithSetupTimeoutKeepsStreamContextAliveAfterSuccessfulConnect(t *testing.T) {
+	// Use an independent context for the stream to match real gRPC behavior
+	// where stream.Context() is not derived from the caller's connect context.
+	streamCtx, streamCancel := context.WithCancel(context.Background())
+	defer streamCancel()
+
 	stream, err := connectStreamWithSetupTimeout(20*time.Millisecond, func(ctx context.Context) (gatewayrpc.AgentGateway_ConnectClient, error) {
-		return &fakeAgentGatewayConnectClient{ctx: ctx}, nil
+		return &fakeAgentGatewayConnectClient{ctx: streamCtx}, nil
 	})
 	if err != nil {
 		t.Fatalf("connectStreamWithSetupTimeout() error = %v", err)
