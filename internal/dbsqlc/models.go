@@ -9,13 +9,15 @@ import (
 )
 
 type Agent struct {
-	ID           string
-	NodeName     string
-	FleetGroupID pgtype.Text
-	Version      string
-	ReadOnly     bool
-	LastSeenAt   pgtype.Timestamptz
-	CreatedAt    pgtype.Timestamptz
+	ID            string
+	NodeName      string
+	FleetGroupID  pgtype.Text
+	Version       string
+	ReadOnly      bool
+	LastSeenAt    pgtype.Timestamptz
+	CreatedAt     pgtype.Timestamptz
+	CertIssuedAt  pgtype.Timestamptz
+	CertExpiresAt pgtype.Timestamptz
 }
 
 type AuditEvent struct {
