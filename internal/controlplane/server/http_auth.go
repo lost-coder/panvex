@@ -44,6 +44,11 @@ func (s *Server) handleLogin() http.HandlerFunc {
 			return
 		}
 
+		if len(request.Password) > 1024 {
+			writeError(w, http.StatusBadRequest, "password exceeds maximum length")
+			return
+		}
+
 		if s.loginLockout.IsLocked(request.Username, s.now()) {
 			writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
 			return
