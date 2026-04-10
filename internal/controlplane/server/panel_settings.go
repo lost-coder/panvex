@@ -167,8 +167,8 @@ func (s *Server) restoreStoredPanelSettings() error {
 }
 
 func (s *Server) panelSettingsSnapshot() PanelSettings {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.settingsMu.RLock()
+	defer s.settingsMu.RUnlock()
 
 	return s.panelSettings
 }

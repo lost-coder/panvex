@@ -74,8 +74,8 @@ func (s *Server) reconcileDiscoveredClients(ctx context.Context, agentID string,
 
 // managedClientIdentifiersForAgent returns the set of client names and secrets deployed on an agent.
 func (s *Server) managedClientIdentifiersForAgent(agentID string) (names map[string]struct{}, secrets map[string]struct{}) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.clientsMu.RLock()
+	defer s.clientsMu.RUnlock()
 
 	names = make(map[string]struct{})
 	secrets = make(map[string]struct{})
@@ -96,10 +96,10 @@ func (s *Server) managedClientIdentifiersForAgent(agentID string) (names map[str
 }
 
 func (s *Server) upsertDiscoveredClient(ctx context.Context, agentID string, record *gatewayrpc.ClientDetailRecord, observedAt time.Time) {
-	s.mu.Lock()
+	s.clientsMu.Lock()
 	s.discoveredClientSeq++
 	id := newSequenceID("discovered", s.discoveredClientSeq)
-	s.mu.Unlock()
+	s.clientsMu.Unlock()
 
 	dc := storage.DiscoveredClientRecord{
 		ID:                 id,

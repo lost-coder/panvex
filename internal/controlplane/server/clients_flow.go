@@ -104,8 +104,8 @@ func (s *Server) restoreStoredClients() error {
 }
 
 func (s *Server) listClientsSnapshot() []managedClient {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.clientsMu.RLock()
+	defer s.clientsMu.RUnlock()
 
 	result := make([]managedClient, 0, len(s.clients))
 	for _, client := range s.clients {
@@ -126,8 +126,8 @@ func (s *Server) listClientsSnapshot() []managedClient {
 }
 
 func (s *Server) clientDetailSnapshot(clientID string) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.clientsMu.RLock()
+	defer s.clientsMu.RUnlock()
 
 	client, ok := s.clients[clientID]
 	if !ok {
@@ -424,7 +424,7 @@ func (s *Server) replaceClientStateWithContext(ctx context.Context, client manag
 		}
 	}
 
-	s.mu.Lock()
+	s.clientsMu.Lock()
 	s.clients[client.ID] = client
 	s.clientAssignments[client.ID] = append([]managedClientAssignment(nil), assignments...)
 	nextDeployments := make(map[string]managedClientDeployment, len(deployments))
@@ -432,7 +432,7 @@ func (s *Server) replaceClientStateWithContext(ctx context.Context, client manag
 		nextDeployments[deployment.AgentID] = deployment
 	}
 	s.clientDeployments[client.ID] = nextDeployments
-	s.mu.Unlock()
+	s.clientsMu.Unlock()
 
 	return nil
 }
@@ -532,10 +532,10 @@ func (s *Server) recordClientJobResultWithContext(ctx context.Context, agentID s
 		return
 	}
 
-	s.mu.Lock()
+	s.clientsMu.Lock()
 	client, ok := s.clients[payload.ClientID]
 	if !ok {
-		s.mu.Unlock()
+		s.clientsMu.Unlock()
 		return
 	}
 	deployment := s.clientDeployments[payload.ClientID][agentID]
@@ -568,7 +568,7 @@ func (s *Server) recordClientJobResultWithContext(ctx context.Context, agentID s
 	}
 	s.clientDeployments[payload.ClientID][agentID] = deployment
 	s.clients[payload.ClientID] = client
-	s.mu.Unlock()
+	s.clientsMu.Unlock()
 
 	if s.store != nil {
 		if err := s.store.PutClientDeployment(ctx, clientDeploymentToRecord(deployment)); err != nil {
@@ -588,8 +588,8 @@ func (s *Server) jobByID(jobID string) (jobs.Job, bool) {
 }
 
 func (s *Server) aggregatedClientUsage(clientID string) aggregatedClientUsage {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.clientsMu.RLock()
+	defer s.clientsMu.RUnlock()
 
 	usageByAgent := s.clientUsage[clientID]
 	usage := aggregatedClientUsage{}
@@ -603,16 +603,16 @@ func (s *Server) aggregatedClientUsage(clientID string) aggregatedClientUsage {
 }
 
 func (s *Server) nextClientID() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.clientsMu.Lock()
+	defer s.clientsMu.Unlock()
 
 	s.clientSeq++
 	return newSequenceID("client", s.clientSeq)
 }
 
 func (s *Server) nextClientAssignmentID() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.clientsMu.Lock()
+	defer s.clientsMu.Unlock()
 
 	s.assignmentSeq++
 	return newSequenceID("client-assignment", s.assignmentSeq)

@@ -147,8 +147,9 @@ func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) error {
 }
 
 func (s *Server) applyAgentSnapshotWithContext(_ context.Context, snapshot agentSnapshot) error {
-	// Single lock section: build all state objects AND commit to in-memory maps
-	// atomically. No DB I/O happens under the lock.
+	// Lock section: build all state objects AND commit to in-memory maps
+	// atomically. No DB I/O happens under the locks.
+	// Lock ordering: mu -> clientsMu -> metricsAuditMu.
 	s.mu.Lock()
 	agent := s.agents[snapshot.AgentID]
 	agent.ID = snapshot.AgentID
@@ -189,8 +190,28 @@ func (s *Server) applyAgentSnapshotWithContext(_ context.Context, snapshot agent
 		})
 	}
 
+	// Commit agent and instance maps within mu.
+	s.agents[snapshot.AgentID] = agent
+	for _, instance := range instances {
+		s.instances[instance.ID] = instance
+	}
+
+	// Commit client usage under clientsMu while holding mu.
+	if snapshot.HasClients || snapshot.HasClientIPs {
+		s.clientsMu.Lock()
+		if snapshot.HasClients {
+			s.applyClientUsageSnapshot(snapshot.AgentID, snapshot.Clients)
+		}
+		if snapshot.HasClientIPs {
+			s.applyClientIPSnapshot(snapshot.AgentID, snapshot.ClientIPs)
+		}
+		s.clientsMu.Unlock()
+	}
+
+	// Build and commit metrics under metricsAuditMu while holding mu.
 	var metricSnapshot *MetricSnapshot
 	if len(snapshot.Metrics) > 0 {
+		s.metricsAuditMu.Lock()
 		s.metricSeq++
 		metric := MetricSnapshot{
 			ID:         newSequenceID("metric", s.metricSeq),
@@ -199,26 +220,13 @@ func (s *Server) applyAgentSnapshotWithContext(_ context.Context, snapshot agent
 			Values:     snapshot.Metrics,
 		}
 		metricSnapshot = &metric
-	}
-
-	// Commit to in-memory maps within the same lock section.
-	s.agents[snapshot.AgentID] = agent
-	for _, instance := range instances {
-		s.instances[instance.ID] = instance
-	}
-	if metricSnapshot != nil {
 		if len(s.metrics) < maxInMemoryMetricSnapshots {
 			s.metrics = append(s.metrics, *metricSnapshot)
 		} else {
 			copy(s.metrics, s.metrics[1:])
 			s.metrics[len(s.metrics)-1] = *metricSnapshot
 		}
-	}
-	if snapshot.HasClients {
-		s.applyClientUsageSnapshot(snapshot.AgentID, snapshot.Clients)
-	}
-	if snapshot.HasClientIPs {
-		s.applyClientIPSnapshot(snapshot.AgentID, snapshot.ClientIPs)
+		s.metricsAuditMu.Unlock()
 	}
 	s.mu.Unlock()
 
