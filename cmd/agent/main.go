@@ -847,11 +847,14 @@ func connectStreamWithSetupTimeout(
 	if setupTimer != nil {
 		setupTimer.Stop()
 	}
-	cancelConnect()
 	if err != nil {
+		cancelConnect()
 		return nil, err
 	}
 
+	// On success the stream owns connectCtx — cancelling it would kill the
+	// stream immediately. The context is cancelled when the stream closes.
+	_ = cancelConnect //nolint: the cancel is transferred to the stream lifecycle
 	return stream, nil
 }
 
