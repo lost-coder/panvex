@@ -214,10 +214,12 @@ func (s *Server) createClientWithContext(ctx context.Context, actorID string, in
 	}
 
 	deployments := buildClientDeployments(nil, client.ID, targetAgentIDs, string(jobs.ActionClientCreate), observedAt)
-	if _, err := s.enqueueClientJob(actorID, jobs.ActionClientCreate, client, "", targetAgentIDs, observedAt); err != nil {
+	// Persist client state before enqueuing the job so a failure in
+	// persistence does not leave a dispatched job referencing unknown state.
+	if err := s.replaceClientStateWithContext(ctx, client, assignments, deployments); err != nil {
 		return managedClient{}, nil, nil, err
 	}
-	if err := s.replaceClientStateWithContext(ctx, client, assignments, deployments); err != nil {
+	if _, err := s.enqueueClientJob(actorID, jobs.ActionClientCreate, client, "", targetAgentIDs, observedAt); err != nil {
 		return managedClient{}, nil, nil, err
 	}
 
@@ -273,6 +275,12 @@ func (s *Server) updateClientWithContext(ctx context.Context, clientID string, a
 	targetAgentIDs := s.resolveClientTargetAgentIDs(assignments)
 	deployments := buildClientDeployments(currentDeployments, clientID, targetAgentIDs, string(jobs.ActionClientUpdate), observedAt)
 
+	// Persist client state before enqueuing jobs so a failure in
+	// persistence does not leave dispatched jobs referencing stale state.
+	if err := s.replaceClientStateWithContext(ctx, currentClient, assignments, deployments); err != nil {
+		return managedClient{}, nil, nil, err
+	}
+
 	if len(targetAgentIDs) > 0 {
 		if _, err := s.enqueueClientJob(actorID, jobs.ActionClientUpdate, currentClient, previousName, targetAgentIDs, observedAt); err != nil {
 			return managedClient{}, nil, nil, err
@@ -284,10 +292,6 @@ func (s *Server) updateClientWithContext(ctx context.Context, clientID string, a
 		if _, err := s.enqueueClientJob(actorID, jobs.ActionClientDelete, currentClient, "", removedAgentIDs, observedAt); err != nil {
 			return managedClient{}, nil, nil, err
 		}
-	}
-
-	if err := s.replaceClientStateWithContext(ctx, currentClient, assignments, deployments); err != nil {
-		return managedClient{}, nil, nil, err
 	}
 
 	return currentClient, assignments, deployments, nil
@@ -317,14 +321,16 @@ func (s *Server) rotateClientSecretWithContext(ctx context.Context, clientID str
 
 	targetAgentIDs := s.resolveClientTargetAgentIDs(assignments)
 	deployments = buildClientDeployments(deployments, clientID, targetAgentIDs, string(jobs.ActionClientRotateSecret), observedAt)
+	// Persist the new secret before enqueuing the rotation job so a
+	// persistence failure does not leave a dispatched job with a secret
+	// the control-plane never recorded.
+	if err := s.replaceClientStateWithContext(ctx, currentClient, assignments, deployments); err != nil {
+		return managedClient{}, nil, nil, err
+	}
 	if len(targetAgentIDs) > 0 {
 		if _, err := s.enqueueClientJob(actorID, jobs.ActionClientRotateSecret, currentClient, "", targetAgentIDs, observedAt); err != nil {
 			return managedClient{}, nil, nil, err
 		}
-	}
-
-	if err := s.replaceClientStateWithContext(ctx, currentClient, assignments, deployments); err != nil {
-		return managedClient{}, nil, nil, err
 	}
 
 	return currentClient, assignments, deployments, nil
