@@ -65,7 +65,8 @@ export function EventsSynchronizer() {
           scheduleReconnect();
         }).catch(() => {
           stopped = true;
-          window.location.href = "/login";
+          const rootPath = resolveConfiguredRootPath();
+          window.location.href = rootPath ? `/${rootPath}/login` : "/login";
         });
       };
     };
