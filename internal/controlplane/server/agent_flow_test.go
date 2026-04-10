@@ -627,6 +627,61 @@ func TestServerConsumedEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) 
 	}
 }
 
+func TestEnrollmentSetsCertificateDates(t *testing.T) {
+	now := time.Date(2026, time.April, 10, 9, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := New(Options{
+		Now:   func() time.Time { return now },
+		Store: store,
+	})
+	defer server.Close()
+
+	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
+		FleetGroupID: "ams-1",
+		TTL:          time.Minute,
+	}, now)
+	if err != nil {
+		t.Fatalf("issueEnrollmentToken() error = %v", err)
+	}
+
+	enrolledAt := now.Add(10 * time.Second)
+	identity, err := server.enrollAgent(agentEnrollmentRequest{
+		Token:    token.Value,
+		NodeName: "node-a",
+		Version:  "1.0.0",
+	}, enrolledAt)
+	if err != nil {
+		t.Fatalf("enrollAgent() error = %v", err)
+	}
+
+	server.mu.RLock()
+	agent := server.agents[identity.AgentID]
+	server.mu.RUnlock()
+
+	if agent.CertIssuedAt == nil {
+		t.Fatal("agent.CertIssuedAt = nil, want non-nil")
+	}
+	if agent.CertExpiresAt == nil {
+		t.Fatal("agent.CertExpiresAt = nil, want non-nil")
+	}
+
+	// CertIssuedAt should match the enrollment time.
+	if !agent.CertIssuedAt.Equal(enrolledAt.UTC()) {
+		t.Fatalf("agent.CertIssuedAt = %v, want %v", *agent.CertIssuedAt, enrolledAt.UTC())
+	}
+
+	// CertExpiresAt should be ~30 days after CertIssuedAt.
+	expectedExpiry := enrolledAt.UTC().Add(30 * 24 * time.Hour)
+	if !agent.CertExpiresAt.Equal(expectedExpiry) {
+		t.Fatalf("agent.CertExpiresAt = %v, want %v", *agent.CertExpiresAt, expectedExpiry)
+	}
+}
+
 func TestServerExpiredEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) {
 	now := time.Date(2026, time.March, 15, 8, 0, 0, 0, time.UTC)
 	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))

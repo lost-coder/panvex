@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -1689,6 +1690,144 @@ func TestHTTPWithoutEmbeddedUIStillReturnsAPIOnlyNotFound(t *testing.T) {
 	response := performRequest(t, server.Handler(), http.MethodGet, "/app", nil)
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("GET /app status = %d, want %d", response.Code, http.StatusNotFound)
+	}
+}
+
+func TestRenameAgentReturnsErrorWhenStorageFails(t *testing.T) {
+	now := time.Date(2026, time.April, 10, 9, 0, 0, 0, time.UTC)
+	sqliteStore, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer sqliteStore.Close()
+
+	store := &failingStore{Store: sqliteStore}
+	server := New(Options{
+		Now:   func() time.Time { return now },
+		Store: store,
+	})
+	defer server.Close()
+
+	// Bootstrap an admin user for authentication.
+	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "admin",
+		Password: "Admin1password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "admin",
+		"password": "Admin1password",
+	}, nil)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
+	}
+	cookies := loginResponse.Result().Cookies()
+
+	// Enroll an agent so we have something to rename.
+	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
+		FleetGroupID: "ams-1",
+		TTL:          time.Minute,
+	}, now)
+	if err != nil {
+		t.Fatalf("issueEnrollmentToken() error = %v", err)
+	}
+	identity, err := server.enrollAgent(agentEnrollmentRequest{
+		Token:    token.Value,
+		NodeName: "node-a",
+		Version:  "1.0.0",
+	}, now.Add(10*time.Second))
+	if err != nil {
+		t.Fatalf("enrollAgent() error = %v", err)
+	}
+
+	// Inject storage failure for UpdateAgentNodeName.
+	store.updateAgentNodeNameErr = errors.New("simulated storage failure")
+
+	renameResponse := performJSONRequest(t, server.Handler(), http.MethodPatch, "/api/agents/"+identity.AgentID, map[string]string{
+		"node_name": "node-b",
+	}, cookies)
+	if renameResponse.Code != http.StatusInternalServerError {
+		t.Fatalf("PATCH /api/agents/%s status = %d, want %d", identity.AgentID, renameResponse.Code, http.StatusInternalServerError)
+	}
+
+	// Verify in-memory agent still has the old name.
+	server.mu.RLock()
+	agent := server.agents[identity.AgentID]
+	server.mu.RUnlock()
+	if agent.NodeName != "node-a" {
+		t.Fatalf("agent.NodeName = %q, want %q (old name preserved after storage failure)", agent.NodeName, "node-a")
+	}
+}
+
+func TestDeregisterAgentReturnsErrorWhenStorageFails(t *testing.T) {
+	now := time.Date(2026, time.April, 10, 9, 0, 0, 0, time.UTC)
+	sqliteStore, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer sqliteStore.Close()
+
+	store := &failingStore{Store: sqliteStore}
+	server := New(Options{
+		Now:   func() time.Time { return now },
+		Store: store,
+	})
+	defer server.Close()
+
+	// Bootstrap an admin user for authentication.
+	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "admin",
+		Password: "Admin1password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "admin",
+		"password": "Admin1password",
+	}, nil)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
+	}
+	cookies := loginResponse.Result().Cookies()
+
+	// Enroll an agent so we have something to deregister.
+	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
+		FleetGroupID: "ams-1",
+		TTL:          time.Minute,
+	}, now)
+	if err != nil {
+		t.Fatalf("issueEnrollmentToken() error = %v", err)
+	}
+	identity, err := server.enrollAgent(agentEnrollmentRequest{
+		Token:    token.Value,
+		NodeName: "node-a",
+		Version:  "1.0.0",
+	}, now.Add(10*time.Second))
+	if err != nil {
+		t.Fatalf("enrollAgent() error = %v", err)
+	}
+
+	// Inject storage failure for DeleteInstancesByAgent, which is called first
+	// in the deregister handler before DeleteAgent. A failure here must cause
+	// the handler to return 500 and leave the agent in memory.
+	store.deleteInstancesByAgentErr = errors.New("simulated storage failure")
+
+	deregisterResponse := performJSONRequest(t, server.Handler(), http.MethodDelete, "/api/agents/"+identity.AgentID, nil, cookies)
+	if deregisterResponse.Code != http.StatusInternalServerError {
+		t.Fatalf("DELETE /api/agents/%s status = %d, want %d", identity.AgentID, deregisterResponse.Code, http.StatusInternalServerError)
+	}
+
+	// Verify the agent still exists in-memory.
+	server.mu.RLock()
+	_, exists := server.agents[identity.AgentID]
+	server.mu.RUnlock()
+	if !exists {
+		t.Fatal("agent should still exist in-memory after storage failure during deregister")
 	}
 }
 
