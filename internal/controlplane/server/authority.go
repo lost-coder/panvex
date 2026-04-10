@@ -10,7 +10,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
-	"log"
+	"log/slog"
 	"math/big"
 	"time"
 
@@ -94,11 +94,11 @@ func loadOrCreateCertificateAuthority(store storage.CertificateAuthorityStore, n
 		}
 		remaining := authority.certificate.NotAfter.Sub(now)
 		if remaining <= 0 {
-			log.Printf("WARNING: control-plane CA certificate expired %s ago — regenerating", -remaining)
+			slog.Warn("control-plane CA certificate expired, regenerating", "expired_ago", (-remaining).String())
 			return regenerateCertificateAuthority(store, now, encryptionKey)
 		}
 		if remaining < 30*24*time.Hour {
-			log.Printf("WARNING: control-plane CA certificate expires in %s", remaining.Round(time.Hour))
+			slog.Warn("control-plane CA certificate expiring soon", "remaining", remaining.Round(time.Hour).String())
 		}
 		// Re-encrypt if the stored key was plaintext but an encryption key is now configured.
 		if encryptionKey != "" && !isEncryptedPEM(record.PrivateKeyPEM) {

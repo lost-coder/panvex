@@ -2,7 +2,7 @@ package server
 
 import (
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"sort"
 
@@ -79,7 +79,7 @@ func (s *Server) handleClients() http.HandlerFunc {
 		for _, client := range clients {
 			_, assignments, deployments, err := s.clientDetailSnapshot(client.ID)
 			if err != nil {
-				log.Printf("load client detail failed for client %q: %v", client.ID, err)
+				s.logger.Error("load client detail failed", "client_id", client.ID, "error", err)
 				writeError(w, http.StatusInternalServerError, "internal error")
 				return
 			}
@@ -160,7 +160,7 @@ func (s *Server) handleClient() http.HandlerFunc {
 				writeError(w, http.StatusNotFound, err.Error())
 				return
 			}
-			log.Printf("load client failed for client %q: %v", clientID, err)
+			s.logger.Error("load client failed", "client_id", clientID, "error", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
@@ -285,7 +285,7 @@ func handleClientMutationError(w http.ResponseWriter, err error) bool {
 	case errors.Is(err, jobs.ErrReadOnlyTarget):
 		writeError(w, http.StatusConflict, err.Error())
 	default:
-		log.Printf("client mutation failed: %v", err)
+		slog.Error("client mutation failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 	}
 

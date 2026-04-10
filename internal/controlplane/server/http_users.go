@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"errors"
-	"log"
 	"net/http"
 	"sort"
 	"time"
@@ -47,7 +46,7 @@ func (s *Server) handleUsers() http.HandlerFunc {
 
 		users, err := s.listUsersWithContext(r.Context())
 		if err != nil {
-			log.Printf("list users failed: %v", err)
+			s.logger.Error("list users failed", "error", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
@@ -101,7 +100,7 @@ func (s *Server) handleCreateUser() http.HandlerFunc {
 			case errors.Is(err, auth.ErrPasswordTooWeak):
 				writeError(w, http.StatusBadRequest, err.Error())
 			default:
-				log.Printf("create user failed for username %q: %v", request.Username, err)
+				s.logger.Error("create user failed", "username", request.Username, "error", err)
 				writeError(w, http.StatusInternalServerError, "internal error")
 			}
 			return
@@ -162,7 +161,7 @@ func (s *Server) handleUpdateUser() http.HandlerFunc {
 			case errors.Is(err, auth.ErrPasswordTooWeak):
 				writeError(w, http.StatusBadRequest, err.Error())
 			default:
-				log.Printf("update user failed for user %q: %v", targetUserID, err)
+				s.logger.Error("update user failed", "user_id", targetUserID, "error", err)
 				writeError(w, http.StatusInternalServerError, "internal error")
 			}
 			return
@@ -212,7 +211,7 @@ func (s *Server) handleDeleteUser() http.HandlerFunc {
 			case errors.Is(err, auth.ErrLastAdminRequired):
 				writeError(w, http.StatusBadRequest, err.Error())
 			default:
-				log.Printf("delete user failed for user %q: %v", targetUserID, err)
+				s.logger.Error("delete user failed", "user_id", targetUserID, "error", err)
 				writeError(w, http.StatusInternalServerError, "internal error")
 			}
 			return
@@ -252,7 +251,7 @@ func (s *Server) handleResetUserTotp() http.HandlerFunc {
 				writeError(w, http.StatusNotFound, "user not found")
 				return
 			}
-			log.Printf("reset user totp failed for user %q: %v", targetUserID, err)
+			s.logger.Error("reset user totp failed", "user_id", targetUserID, "error", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
