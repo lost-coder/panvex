@@ -45,11 +45,13 @@ message ClientUsageSnapshot {
   int32 unique_ips_used = 3;
   int32 active_tcp_conns = 4;
   int32 active_unique_ips = 5;
+  string client_name = 6;
 }
 
 message ClientIPSnapshot {
   string client_id = 1;
   repeated string active_ips = 2;
+  string client_name = 3;
 }
 
 message RuntimeDCSnapshot {
