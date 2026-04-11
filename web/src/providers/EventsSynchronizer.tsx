@@ -47,6 +47,8 @@ export function EventsSynchronizer() {
     };
     const connect = () => {
       if (stopped) { return; }
+      // Don't open a WebSocket on the login page — there's no session yet.
+      if (window.location.pathname.endsWith("/login")) { return; }
       const rootPath = resolveConfiguredRootPath();
       const url = buildEventsURL(window.location.protocol, window.location.host, rootPath);
       socket = new WebSocket(url);
@@ -59,6 +61,11 @@ export function EventsSynchronizer() {
       };
       socket.onerror = () => { socket?.close(); };
       socket.onclose = () => {
+        // Already on the login page — nothing to reconnect or redirect to.
+        if (window.location.pathname.endsWith("/login")) {
+          stopped = true;
+          return;
+        }
         // Check if session is still valid before reconnecting.
         // If expired, redirect to login instead of looping with 401s.
         apiClient.me().then(() => {
