@@ -416,9 +416,19 @@ func (s *Server) processRegularAgentMessage(
 			})
 		}
 		clients := make([]clientUsageSnapshot, 0, len(snap.Clients))
+		var usageResolved, usageSkipped int
 		for _, client := range snap.Clients {
+			clientID := client.ClientId
+			if clientID == "" && client.ClientName != "" {
+				clientID = s.resolveClientIDByName(agentID, client.ClientName)
+			}
+			if clientID == "" {
+				usageSkipped++
+				continue
+			}
+			usageResolved++
 			clients = append(clients, clientUsageSnapshot{
-				ClientID:         client.ClientId,
+				ClientID:         clientID,
 				TrafficUsedBytes: client.TrafficDeltaBytes,
 				UniqueIPsUsed:    int(client.UniqueIpsUsed),
 				ActiveTCPConns:   int(client.ActiveTcpConns),
@@ -426,12 +436,28 @@ func (s *Server) processRegularAgentMessage(
 				ObservedAt:       time.Unix(snap.ObservedAtUnix, 0).UTC(),
 			})
 		}
+		if len(snap.Clients) > 0 {
+			s.logger.Info("client usage snapshot received", "agent_id", agentID, "total", len(snap.Clients), "resolved", usageResolved, "skipped", usageSkipped)
+		}
 		clientIPs := make([]clientIPSnapshot, 0, len(snap.ClientIps))
+		var ipResolved, ipSkipped int
 		for _, clientIP := range snap.ClientIps {
+			ipClientID := clientIP.ClientId
+			if ipClientID == "" && clientIP.ClientName != "" {
+				ipClientID = s.resolveClientIDByName(agentID, clientIP.ClientName)
+			}
+			if ipClientID == "" {
+				ipSkipped++
+				continue
+			}
+			ipResolved++
 			clientIPs = append(clientIPs, clientIPSnapshot{
-				ClientID:  clientIP.ClientId,
+				ClientID:  ipClientID,
 				ActiveIPs: append([]string(nil), clientIP.ActiveIps...),
 			})
+		}
+		if len(snap.ClientIps) > 0 {
+			s.logger.Info("client ip snapshot received", "agent_id", agentID, "total", len(snap.ClientIps), "resolved", ipResolved, "skipped", ipSkipped)
 		}
 		enqueueRegularSnapshot(connectionCtx, regularSnapshots, agentSnapshot{
 			AgentID:      agentID,

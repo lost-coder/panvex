@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -84,6 +85,12 @@ func (s *Server) handleClients() http.HandlerFunc {
 				return
 			}
 			usage := s.aggregatedClientUsage(client.ID)
+			uniqueIPs := usage.UniqueIPsUsed
+			if s.store != nil {
+				if count, err := s.store.CountUniqueClientIPs(r.Context(), client.ID); err == nil && count > 0 {
+					uniqueIPs = count
+				}
+			}
 
 			response = append(response, clientListResponse{
 				ID:                 client.ID,
@@ -92,7 +99,7 @@ func (s *Server) handleClients() http.HandlerFunc {
 				AssignedNodesCount: len(s.resolveClientTargetAgentIDs(assignments)),
 				ExpirationRFC3339:  client.ExpirationRFC3339,
 				TrafficUsedBytes:   usage.TrafficUsedBytes,
-				UniqueIPsUsed:      usage.UniqueIPsUsed,
+				UniqueIPsUsed:      uniqueIPs,
 				ActiveTCPConns:     usage.ActiveTCPConns,
 				DataQuotaBytes:     client.DataQuotaBytes,
 				LastDeployStatus:   deriveClientDeployStatus(deployments),
@@ -138,7 +145,7 @@ func (s *Server) handleCreateClient() http.HandlerFunc {
 			"agent_ids":        assignmentAgentIDs(assignments),
 			"target_agent_ids": deploymentAgentIDsFromResponses(deployments),
 		})
-		writeJSON(w, http.StatusCreated, s.buildClientDetailResponse(client, assignments, deployments, true))
+		writeJSON(w, http.StatusCreated, s.buildClientDetailResponse(r.Context(), client, assignments, deployments, true))
 	}
 }
 
@@ -165,7 +172,7 @@ func (s *Server) handleClient() http.HandlerFunc {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, s.buildClientDetailResponse(client, assignments, deployments, false))
+		writeJSON(w, http.StatusOK, s.buildClientDetailResponse(r.Context(), client, assignments, deployments, false))
 	}
 }
 
@@ -208,7 +215,7 @@ func (s *Server) handleUpdateClient() http.HandlerFunc {
 			"fleet_group_ids": assignmentFleetGroupIDs(assignments),
 			"agent_ids":       assignmentAgentIDs(assignments),
 		})
-		writeJSON(w, http.StatusOK, s.buildClientDetailResponse(client, assignments, deployments, false))
+		writeJSON(w, http.StatusOK, s.buildClientDetailResponse(r.Context(), client, assignments, deployments, false))
 	}
 }
 
@@ -254,7 +261,7 @@ func (s *Server) handleRotateClientSecret() http.HandlerFunc {
 		}
 
 		s.appendAuditWithContext(r.Context(), session.UserID, "clients.rotate_secret", client.ID, nil)
-		writeJSON(w, http.StatusOK, s.buildClientDetailResponse(client, assignments, deployments, true))
+		writeJSON(w, http.StatusOK, s.buildClientDetailResponse(r.Context(), client, assignments, deployments, true))
 	}
 }
 
@@ -292,8 +299,14 @@ func handleClientMutationError(w http.ResponseWriter, err error) bool {
 	return false
 }
 
-func (s *Server) buildClientDetailResponse(client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment, showSecret bool) clientDetailResponse {
+func (s *Server) buildClientDetailResponse(ctx context.Context, client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment, showSecret bool) clientDetailResponse {
 	usage := s.aggregatedClientUsage(client.ID)
+	uniqueIPs := usage.UniqueIPsUsed
+	if s.store != nil {
+		if count, err := s.store.CountUniqueClientIPs(ctx, client.ID); err == nil && count > 0 {
+			uniqueIPs = count
+		}
+	}
 	fleetGroupIDs := assignmentFleetGroupIDs(assignments)
 	agentIDs := assignmentAgentIDs(assignments)
 
@@ -309,7 +322,7 @@ func (s *Server) buildClientDetailResponse(client managedClient, assignments []m
 		UserADTag:         client.UserADTag,
 		Enabled:           client.Enabled,
 		TrafficUsedBytes:  usage.TrafficUsedBytes,
-		UniqueIPsUsed:     usage.UniqueIPsUsed,
+		UniqueIPsUsed:     uniqueIPs,
 		ActiveTCPConns:    usage.ActiveTCPConns,
 		MaxTCPConns:       client.MaxTCPConns,
 		MaxUniqueIPs:      client.MaxUniqueIPs,
