@@ -15,9 +15,18 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      "/api/events": {
+        target: "http://127.0.0.1:8080",
+        ws: true,
+        on: {
+          error: () => {},
+          proxyReqWs: (_proxyReq, _req, socket) => {
+            socket.on("error", () => {});
+          },
+        },
+      },
       "/api": {
         target: "http://127.0.0.1:8080",
-        ws: true
       }
     }
   }

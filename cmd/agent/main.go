@@ -863,9 +863,11 @@ func connectStreamWithSetupTimeout(
 		return nil, err
 	}
 
-	// Release the setup context resources. The stream's own context governs
-	// its lifetime independently of connectCtx.
-	cancelConnect()
+	// On success the stream owns connectCtx — cancelling it would kill the
+	// stream immediately because gRPC derives the stream context from the
+	// one passed to Connect(). The context will be released when the stream
+	// closes naturally.
+	_ = cancelConnect //nolint:ineffassign // cancel is transferred to the stream lifecycle
 	return stream, nil
 }
 
@@ -897,6 +899,7 @@ func sendInitialMessages(outbound chan<- *gatewayrpc.ConnectClientMessage, agent
 	ipPollCtx, cancelIPPoll := context.WithTimeout(context.Background(), runtimeOperationTimeout)
 	if err := agent.PollActiveIPs(ipPollCtx); err == nil {
 		ipSnapshot := agent.BuildIPSnapshot(time.Now())
+		slog.Info("initial ip snapshot built", "client_ips_count", len(ipSnapshot.ClientIps))
 		if len(ipSnapshot.ClientIps) > 0 {
 			outbound <- &gatewayrpc.ConnectClientMessage{
 				Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: ipSnapshot},
