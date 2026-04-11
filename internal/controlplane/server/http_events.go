@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 
 	"github.com/coder/websocket"
 )
@@ -15,7 +16,7 @@ func (s *Server) handleEvents() http.HandlerFunc {
 		}
 
 		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-			OriginPatterns: []string{r.Host},
+			OriginPatterns: s.wsOriginPatterns(r),
 		})
 		if err != nil {
 			return
@@ -44,6 +45,29 @@ func (s *Server) handleEvents() http.HandlerFunc {
 			}
 		}
 	}
+}
+
+// wsOriginPatterns returns the allowed WebSocket origin patterns for the given
+// request. When the request arrives from a loopback address the dev proxy port
+// (e.g. Vite on :5173) may differ from the backend port, so we allow any port
+// on loopback hosts in addition to the exact request host.
+func (s *Server) wsOriginPatterns(r *http.Request) []string {
+	patterns := []string{r.Host}
+
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return patterns
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil {
+		return patterns
+	}
+	originHostname := parsed.Hostname()
+	if originHostname == "127.0.0.1" || originHostname == "::1" || originHostname == "localhost" {
+		patterns = append(patterns, originHostname+":*")
+	}
+
+	return patterns
 }
 
 func mustJSON(payload any) []byte {
