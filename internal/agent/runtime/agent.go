@@ -337,27 +337,34 @@ func (a *Agent) BuildUsageSnapshot(ctx context.Context, observedAt time.Time) (*
 		if clientID == "" && client.ClientName != "" {
 			clientID = a.clientIDForNameLocked(client.ClientName)
 		}
-		if clientID == "" {
-			continue
+
+		// Use clientID as tracking key when available, fall back to name.
+		trackingKey := clientID
+		if trackingKey == "" {
+			if client.ClientName == "" {
+				continue
+			}
+			trackingKey = "name:" + client.ClientName
 		}
 
 		currentTotal := client.TrafficUsedBytes
-		previousTotal := a.lastOctets[clientID]
+		previousTotal := a.lastOctets[trackingKey]
 		delta := currentTotal
 		if !restarted && currentTotal >= previousTotal {
 			delta = currentTotal - previousTotal
 		}
-		connectionsChanged := a.lastConnections[clientID] != client.ActiveTCPConns
+		connectionsChanged := a.lastConnections[trackingKey] != client.ActiveTCPConns
 
-		a.lastOctets[clientID] = currentTotal
-		a.lastConnections[clientID] = client.ActiveTCPConns
-		seen[clientID] = struct{}{}
+		a.lastOctets[trackingKey] = currentTotal
+		a.lastConnections[trackingKey] = client.ActiveTCPConns
+		seen[trackingKey] = struct{}{}
 
 		if delta == 0 && !connectionsChanged && client.CurrentIPsUsed == 0 {
 			continue
 		}
 		clients = append(clients, &gatewayrpc.ClientUsageSnapshot{
 			ClientId:          clientID,
+			ClientName:        client.ClientName,
 			TrafficDeltaBytes: delta,
 			UniqueIpsUsed:     int32(client.UniqueIPsUsed),
 			ActiveTcpConns:    int32(client.ActiveTCPConns),
@@ -398,12 +405,13 @@ func (a *Agent) BuildIPSnapshot(observedAt time.Time) *gatewayrpc.Snapshot {
 	clientIPs := make([]*gatewayrpc.ClientIPSnapshot, 0, len(users))
 	for _, user := range users {
 		clientID := a.clientIDForName(user.Username)
-		if clientID == "" {
+		if clientID == "" && user.Username == "" {
 			continue
 		}
 		clientIPs = append(clientIPs, &gatewayrpc.ClientIPSnapshot{
-			ClientId:  clientID,
-			ActiveIps: append([]string(nil), user.ActiveIPs...),
+			ClientId:   clientID,
+			ClientName: user.Username,
+			ActiveIps:  append([]string(nil), user.ActiveIPs...),
 		})
 	}
 	snapshot := a.baseSnapshot(observedAt)
