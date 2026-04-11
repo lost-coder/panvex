@@ -44,6 +44,7 @@ func (s *Server) reconcileDiscoveredClients(ctx context.Context, agentID string,
 
 	managedNames, managedSecrets := s.managedClientIdentifiersForAgent(agentID)
 
+	var discovered, skippedManaged, skippedPanelID int
 	for _, record := range records {
 		clientName := strings.TrimSpace(record.GetClientName())
 		if clientName == "" {
@@ -52,6 +53,7 @@ func (s *Server) reconcileDiscoveredClients(ctx context.Context, agentID string,
 
 		// Skip clients that are already managed by the panel.
 		if _, managed := managedNames[clientName]; managed {
+			skippedManaged++
 			continue
 		}
 
@@ -59,17 +61,21 @@ func (s *Server) reconcileDiscoveredClients(ctx context.Context, agentID string,
 		secret := strings.TrimSpace(record.GetSecret())
 		if secret != "" {
 			if _, managed := managedSecrets[secret]; managed {
+				skippedManaged++
 				continue
 			}
 		}
 
 		// Skip if panel-assigned client_id is present (means panel created it).
 		if strings.TrimSpace(record.GetClientId()) != "" {
+			skippedPanelID++
 			continue
 		}
 
+		discovered++
 		s.upsertDiscoveredClient(ctx, agentID, record, observedAt)
 	}
+	s.logger.Info("reconciled discovered clients", "agent_id", agentID, "total", len(records), "new", discovered, "managed", skippedManaged, "panel_assigned", skippedPanelID)
 }
 
 // managedClientIdentifiersForAgent returns the set of client names and secrets deployed on an agent.
@@ -182,6 +188,16 @@ func (s *Server) adoptDiscoveredClient(ctx context.Context, id string, actorID s
 		return managedClient{}, err
 	}
 
+	// Check if a managed client with the same name+secret already exists
+	// (e.g. adopted from a different node). If so, merge by adding an
+	// assignment and deployment to the existing client instead of creating
+	// a duplicate.
+	if existing, ok := s.findManagedClientByNameAndSecret(record.ClientName, secret); ok {
+		s.logger.Info("adopting discovered client into existing managed client", "discovered_id", id, "client_id", existing.ID, "client_name", record.ClientName, "agent_id", record.AgentID)
+		return s.mergeAdoptIntoExistingClient(ctx, existing, record, actorID, id, observedAt)
+	}
+	s.logger.Info("adopting discovered client as new managed client", "discovered_id", id, "client_name", record.ClientName, "agent_id", record.AgentID, "traffic_bytes", record.TotalOctets, "active_ips", record.ActiveUniqueIPs)
+
 	// Build managed client — no deployment job, user already exists on server.
 	client := managedClient{
 		ID:                s.nextClientID(),
@@ -225,6 +241,9 @@ func (s *Server) adoptDiscoveredClient(ctx context.Context, id string, actorID s
 		return managedClient{}, err
 	}
 
+	// Seed live usage with the stats Telemt already reported for this user.
+	s.seedClientUsage(client.ID, record.AgentID, record.TotalOctets, record.CurrentConnections, record.ActiveUniqueIPs, observedAt)
+
 	// Mark this record and any other discovered records with the same secret as adopted.
 	if err := s.store.UpdateDiscoveredClientStatus(ctx, id, discoveredClientStatusAdopted, observedAt.UTC()); err != nil {
 		s.logger.Error("failed to update discovered client status", "error", err)
@@ -259,6 +278,110 @@ func (s *Server) markDuplicateDiscoveredClientsAdopted(ctx context.Context, excl
 			s.logger.Error("failed to mark duplicate discovered client as adopted", "discovered_client_id", dc.ID, "error", err)
 		}
 	}
+}
+
+// findManagedClientByNameAndSecret returns an existing managed client matching
+// both name and secret. Used to detect when a discovered client on a new node
+// corresponds to an already-adopted client from another node.
+func (s *Server) findManagedClientByNameAndSecret(name string, secret string) (managedClient, bool) {
+	s.clientsMu.RLock()
+	defer s.clientsMu.RUnlock()
+
+	for _, client := range s.clients {
+		if client.DeletedAt != nil {
+			continue
+		}
+		if client.Name == name && client.Secret == secret {
+			return client, true
+		}
+	}
+	return managedClient{}, false
+}
+
+// mergeAdoptIntoExistingClient adds an assignment and deployment for a new agent
+// to an already-managed client, and seeds usage from the discovered record.
+func (s *Server) mergeAdoptIntoExistingClient(
+	ctx context.Context,
+	existing managedClient,
+	record storage.DiscoveredClientRecord,
+	actorID string,
+	discoveredID string,
+	observedAt time.Time,
+) (managedClient, error) {
+	// Build new assignment for this agent.
+	newAssignment := managedClientAssignment{
+		ID:         s.nextClientAssignmentID(),
+		ClientID:   existing.ID,
+		TargetType: clientAssignmentTargetAgent,
+		AgentID:    record.AgentID,
+		CreatedAt:  observedAt,
+	}
+
+	// Build deployment record.
+	appliedAt := observedAt
+	newDeployment := managedClientDeployment{
+		ClientID:         existing.ID,
+		AgentID:          record.AgentID,
+		DesiredOperation: "adopt",
+		Status:           clientDeploymentStatusSucceeded,
+		ConnectionLink:   record.ConnectionLink,
+		LastAppliedAt:    &appliedAt,
+		UpdatedAt:        observedAt,
+	}
+
+	// Merge with existing assignments and deployments.
+	s.clientsMu.RLock()
+	existingAssignments := append([]managedClientAssignment(nil), s.clientAssignments[existing.ID]...)
+	existingDeployments := make([]managedClientDeployment, 0, len(s.clientDeployments[existing.ID])+1)
+	for _, d := range s.clientDeployments[existing.ID] {
+		existingDeployments = append(existingDeployments, d)
+	}
+	s.clientsMu.RUnlock()
+
+	allAssignments := append(existingAssignments, newAssignment)
+	allDeployments := append(existingDeployments, newDeployment)
+
+	existing.UpdatedAt = observedAt
+	if err := s.replaceClientStateWithContext(ctx, existing, allAssignments, allDeployments); err != nil {
+		return managedClient{}, err
+	}
+
+	// Seed usage from this agent's Telemt data.
+	s.seedClientUsage(existing.ID, record.AgentID, record.TotalOctets, record.CurrentConnections, record.ActiveUniqueIPs, observedAt)
+
+	// Mark discovered record as adopted.
+	if err := s.store.UpdateDiscoveredClientStatus(ctx, discoveredID, discoveredClientStatusAdopted, observedAt.UTC()); err != nil {
+		s.logger.Error("failed to update discovered client status", "error", err)
+	}
+	if record.Secret != "" {
+		s.markDuplicateDiscoveredClientsAdopted(ctx, discoveredID, record.Secret, observedAt)
+	}
+
+	s.appendAuditWithContext(ctx, actorID, "clients.adopted_merge", discoveredID, map[string]any{
+		"client_name": record.ClientName,
+		"client_id":   existing.ID,
+		"agent_id":    record.AgentID,
+	})
+
+	return existing, nil
+}
+
+// seedClientUsage initializes the in-memory usage for a client on a specific
+// agent with the values reported by Telemt at discovery time.
+func (s *Server) seedClientUsage(clientID, agentID string, trafficBytes uint64, connections, uniqueIPs int, observedAt time.Time) {
+	s.clientsMu.Lock()
+	if s.clientUsage[clientID] == nil {
+		s.clientUsage[clientID] = make(map[string]clientUsageSnapshot)
+	}
+	s.clientUsage[clientID][agentID] = clientUsageSnapshot{
+		ClientID:         clientID,
+		TrafficUsedBytes: trafficBytes,
+		UniqueIPsUsed:    uniqueIPs,
+		ActiveTCPConns:   connections,
+		ActiveUniqueIPs:  uniqueIPs,
+		ObservedAt:       observedAt,
+	}
+	s.clientsMu.Unlock()
 }
 
 func (s *Server) ignoreDiscoveredClient(ctx context.Context, id string, actorID string, observedAt time.Time) error {

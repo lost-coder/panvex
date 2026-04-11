@@ -282,6 +282,7 @@ func (s *Server) applyAgentSnapshotWithContext(_ context.Context, snapshot agent
 		}
 		if snapshot.HasClientIPs {
 			now := snapshot.ObservedAt.UTC()
+			var ipRecords int
 			for _, clientIP := range snapshot.ClientIPs {
 				for _, ip := range clientIP.ActiveIPs {
 					s.batchWriter.clientIPs.Enqueue(storage.ClientIPHistoryRecord{
@@ -291,7 +292,11 @@ func (s *Server) applyAgentSnapshotWithContext(_ context.Context, snapshot agent
 						FirstSeen: now,
 						LastSeen:  now,
 					})
+					ipRecords++
 				}
+			}
+			if ipRecords > 0 {
+				s.logger.Info("client ip records enqueued", "agent_id", snapshot.AgentID, "clients", len(snapshot.ClientIPs), "ip_records", ipRecords)
 			}
 		}
 	}
@@ -565,16 +570,19 @@ func (s *Server) applyClientUsageSnapshot(agentID string, clients []clientUsageS
 	}
 
 	for clientID, usageByAgent := range s.clientUsage {
-		if _, ok := usageByAgent[agentID]; !ok {
+		current, ok := usageByAgent[agentID]
+		if !ok {
 			continue
 		}
 		if _, ok := seen[clientID]; ok {
 			continue
 		}
-		delete(usageByAgent, agentID)
-		if len(usageByAgent) == 0 {
-			delete(s.clientUsage, clientID)
-		}
+		// Client was not in this snapshot (no changes). Zero out live
+		// gauges (connections, IPs) but preserve accumulated traffic —
+		// deleting the entry would lose the seeded/historical total.
+		current.ActiveTCPConns = 0
+		current.ActiveUniqueIPs = 0
+		usageByAgent[agentID] = current
 	}
 }
 
@@ -587,6 +595,7 @@ func (s *Server) applyClientIPSnapshot(agentID string, clients []clientIPSnapsho
 		}
 		current := usageByAgent[agentID]
 		current.ClientID = snapshot.ClientID
+		current.UniqueIPsUsed = len(snapshot.ActiveIPs)
 		current.ActiveUniqueIPs = len(snapshot.ActiveIPs)
 		usageByAgent[agentID] = current
 	}

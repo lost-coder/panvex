@@ -170,6 +170,12 @@ func (s *Store) ListClientIPHistory(ctx context.Context, clientID string, from t
 	return result, rows.Err()
 }
 
+func (s *Store) CountUniqueClientIPs(ctx context.Context, clientID string) (int, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT ip_address) FROM client_ip_history WHERE client_id = $1`, clientID).Scan(&count)
+	return count, err
+}
+
 func (s *Store) PruneClientIPHistory(ctx context.Context, olderThan time.Time) (int64, error) {
 	result, err := s.db.ExecContext(ctx, `DELETE FROM client_ip_history WHERE last_seen < $1`, olderThan.UTC())
 	if err != nil {

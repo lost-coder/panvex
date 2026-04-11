@@ -137,6 +137,7 @@ type TimeseriesStore interface {
 	PruneDCHealthPoints(ctx context.Context, olderThan time.Time) (int64, error)
 	UpsertClientIPHistory(ctx context.Context, record ClientIPHistoryRecord) error
 	ListClientIPHistory(ctx context.Context, clientID string, from time.Time, to time.Time) ([]ClientIPHistoryRecord, error)
+	CountUniqueClientIPs(ctx context.Context, clientID string) (int, error)
 	PruneClientIPHistory(ctx context.Context, olderThan time.Time) (int64, error)
 	RollupServerLoadHourly(ctx context.Context, bucketHour time.Time) error
 	ListServerLoadHourly(ctx context.Context, agentID string, from time.Time, to time.Time) ([]ServerLoadHourlyRecord, error)

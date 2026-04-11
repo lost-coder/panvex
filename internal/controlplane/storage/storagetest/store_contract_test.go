@@ -678,6 +678,10 @@ func (s *memoryStore) ListClientIPHistory(_ context.Context, _ string, _ time.Ti
 	return nil, nil
 }
 
+func (s *memoryStore) CountUniqueClientIPs(_ context.Context, _ string) (int, error) {
+	return 0, nil
+}
+
 func (s *memoryStore) PruneClientIPHistory(_ context.Context, _ time.Time) (int64, error) {
 	return 0, nil
 }
