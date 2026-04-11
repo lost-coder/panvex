@@ -602,6 +602,27 @@ func (s *Server) aggregatedClientUsage(clientID string) aggregatedClientUsage {
 	return usage
 }
 
+// resolveClientIDByName finds the panel client ID for a given client name
+// assigned to a specific agent. Used when the agent sends usage snapshots
+// without a panel-assigned client_id (e.g. adopted clients).
+func (s *Server) resolveClientIDByName(agentID string, clientName string) string {
+	s.clientsMu.RLock()
+	defer s.clientsMu.RUnlock()
+
+	for clientID, client := range s.clients {
+		if client.Name != clientName {
+			continue
+		}
+		// Verify this client is assigned to the given agent.
+		for _, assignment := range s.clientAssignments[clientID] {
+			if assignment.AgentID == agentID {
+				return clientID
+			}
+		}
+	}
+	return ""
+}
+
 func (s *Server) nextClientID() string {
 	s.clientsMu.Lock()
 	defer s.clientsMu.Unlock()
