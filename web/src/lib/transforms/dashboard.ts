@@ -29,7 +29,7 @@ function mapDcs(
     dc: dc.dc,
     status:
       dc.coverage_pct >= 99.5 ? "ok" : dc.coverage_pct > 0 ? "warn" : "error",
-    rttMs: dc.rtt_ms > 0 ? dc.rtt_ms : null,
+    rttMs: dc.rtt_ms > 0 ? Math.round(dc.rtt_ms * 10) / 10 : null,
     coveragePct: dc.coverage_pct,
     load: dc.load,
   }));
