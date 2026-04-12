@@ -338,11 +338,11 @@ func (s *Server) mergeAdoptIntoExistingClient(
 	}
 	s.clientsMu.RUnlock()
 
-	allAssignments := append(existingAssignments, newAssignment)
-	allDeployments := append(existingDeployments, newDeployment)
+	existingAssignments = append(existingAssignments, newAssignment)
+	existingDeployments = append(existingDeployments, newDeployment)
 
 	existing.UpdatedAt = observedAt
-	if err := s.replaceClientStateWithContext(ctx, existing, allAssignments, allDeployments); err != nil {
+	if err := s.replaceClientStateWithContext(ctx, existing, existingAssignments, existingDeployments); err != nil {
 		return managedClient{}, err
 	}
 
