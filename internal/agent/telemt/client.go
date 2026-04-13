@@ -141,7 +141,10 @@ type RuntimeGates struct {
 	AcceptingNewConnections bool
 	MERuntimeReady          bool
 	ME2DCFallbackEnabled    bool
+	ME2DCFastEnabled        bool
 	UseMiddleProxy          bool
+	RouteMode               string
+	RerouteActive           bool
 	StartupStatus           string
 	StartupStage            string
 	StartupProgressPct      float64
@@ -157,11 +160,21 @@ type RuntimeInitialization struct {
 }
 
 // RuntimeConnectionTotals carries the current live connection split.
+// RuntimeConnectionTopEntry carries one entry from the top-N connections or throughput list.
+type RuntimeConnectionTopEntry struct {
+	Username        string
+	Connections     int
+	ThroughputBytes uint64
+}
+
 type RuntimeConnectionTotals struct {
 	CurrentConnections       int
 	CurrentConnectionsME     int
 	CurrentConnectionsDirect int
 	ActiveUsers              int
+	StaleCacheUsed           bool
+	TopByConnections         []RuntimeConnectionTopEntry
+	TopByThroughput          []RuntimeConnectionTopEntry
 }
 
 // RuntimeSummary carries cumulative connection counters used for overview cards.
@@ -323,7 +336,10 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 		AcceptingNewConnections bool    `json:"accepting_new_connections"`
 		MERuntimeReady          bool    `json:"me_runtime_ready"`
 		ME2DCFallbackEnabled    bool    `json:"me2dc_fallback_enabled"`
+		ME2DCFastEnabled        bool    `json:"me2dc_fast_enabled"`
 		UseMiddleProxy          bool    `json:"use_middle_proxy"`
+		RouteMode               string  `json:"route_mode"`
+		RerouteActive           bool    `json:"reroute_active"`
 		StartupStatus           string  `json:"startup_status"`
 		StartupStage            string  `json:"startup_stage"`
 		StartupProgressPct      float64 `json:"startup_progress_pct"`
@@ -347,12 +363,25 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 		Enabled bool   `json:"enabled"`
 		Reason  string `json:"reason"`
 		Data    struct {
+			Cache struct {
+				StaleCacheUsed bool `json:"stale_cache_used"`
+			} `json:"cache"`
 			Totals struct {
 				CurrentConnections       int `json:"current_connections"`
 				CurrentConnectionsME     int `json:"current_connections_me"`
 				CurrentConnectionsDirect int `json:"current_connections_direct"`
 				ActiveUsers              int `json:"active_users"`
 			} `json:"totals"`
+			Top struct {
+				ByConnections []struct {
+					Username    string `json:"username"`
+					Connections int    `json:"connections"`
+				} `json:"by_connections"`
+				ByThroughput []struct {
+					Username       string `json:"username"`
+					ThroughputBytes uint64 `json:"throughput_bytes"`
+				} `json:"by_throughput"`
+			} `json:"top"`
 		} `json:"data"`
 	}{}
 	if err := c.getJSON(ctx, "/v1/runtime/connections/summary", &connectionSummary); err != nil {
@@ -449,7 +478,10 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 			AcceptingNewConnections: gates.AcceptingNewConnections,
 			MERuntimeReady:          gates.MERuntimeReady,
 			ME2DCFallbackEnabled:    gates.ME2DCFallbackEnabled,
+			ME2DCFastEnabled:        gates.ME2DCFastEnabled,
 			UseMiddleProxy:          gates.UseMiddleProxy,
+			RouteMode:               gates.RouteMode,
+			RerouteActive:           gates.RerouteActive,
 			StartupStatus:           gates.StartupStatus,
 			StartupStage:            gates.StartupStage,
 			StartupProgressPct:      gates.StartupProgressPct,
@@ -461,12 +493,25 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 			ProgressPct:   initialization.ProgressPct,
 			TransportMode: initialization.TransportMode,
 		},
-		ConnectionTotals: RuntimeConnectionTotals{
-			CurrentConnections:       connectionSummary.Data.Totals.CurrentConnections,
-			CurrentConnectionsME:     connectionSummary.Data.Totals.CurrentConnectionsME,
-			CurrentConnectionsDirect: connectionSummary.Data.Totals.CurrentConnectionsDirect,
-			ActiveUsers:              connectionSummary.Data.Totals.ActiveUsers,
-		},
+		ConnectionTotals: func() RuntimeConnectionTotals {
+			topConn := make([]RuntimeConnectionTopEntry, 0, len(connectionSummary.Data.Top.ByConnections))
+			for _, e := range connectionSummary.Data.Top.ByConnections {
+				topConn = append(topConn, RuntimeConnectionTopEntry{Username: e.Username, Connections: e.Connections})
+			}
+			topTput := make([]RuntimeConnectionTopEntry, 0, len(connectionSummary.Data.Top.ByThroughput))
+			for _, e := range connectionSummary.Data.Top.ByThroughput {
+				topTput = append(topTput, RuntimeConnectionTopEntry{Username: e.Username, ThroughputBytes: e.ThroughputBytes})
+			}
+			return RuntimeConnectionTotals{
+				CurrentConnections:       connectionSummary.Data.Totals.CurrentConnections,
+				CurrentConnectionsME:     connectionSummary.Data.Totals.CurrentConnectionsME,
+				CurrentConnectionsDirect: connectionSummary.Data.Totals.CurrentConnectionsDirect,
+				ActiveUsers:              connectionSummary.Data.Totals.ActiveUsers,
+				StaleCacheUsed:           connectionSummary.Data.Cache.StaleCacheUsed,
+				TopByConnections:         topConn,
+				TopByThroughput:          topTput,
+			}
+		}(),
 		Summary: RuntimeSummary{
 			ConnectionsTotal:       summary.ConnectionsTotal,
 			ConnectionsBadTotal:    summary.ConnectionsBadTotal,
