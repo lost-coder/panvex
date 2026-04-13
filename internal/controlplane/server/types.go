@@ -37,18 +37,23 @@ type RuntimeDC struct {
 	RequiredWriters    int     `json:"required_writers"`
 	AliveWriters       int     `json:"alive_writers"`
 	CoveragePct        float64 `json:"coverage_pct"`
+	FreshAliveWriters  int     `json:"fresh_alive_writers"`
+	FreshCoveragePct   float64 `json:"fresh_coverage_pct"`
 	RTTMs              float64 `json:"rtt_ms"`
 	Load               int     `json:"load"`
 }
 
 // RuntimeUpstream stores one upstream health row reported by the local Telemt runtime.
 type RuntimeUpstream struct {
-	UpstreamID         int     `json:"upstream_id"`
-	RouteKind          string  `json:"route_kind"`
-	Address            string  `json:"address"`
-	Healthy            bool    `json:"healthy"`
-	Fails              int     `json:"fails"`
-	EffectiveLatencyMs float64 `json:"effective_latency_ms"`
+	UpstreamID         int      `json:"upstream_id"`
+	RouteKind          string   `json:"route_kind"`
+	Address            string   `json:"address"`
+	Healthy            bool     `json:"healthy"`
+	Fails              int      `json:"fails"`
+	EffectiveLatencyMs float64  `json:"effective_latency_ms"`
+	Weight             int      `json:"weight"`
+	LastCheckAgeSecs   int      `json:"last_check_age_secs"`
+	Scopes             []string `json:"scopes,omitempty"`
 }
 
 // AgentRuntime stores the normalized Telemt operator overview for one agent.

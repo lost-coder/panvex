@@ -164,6 +164,8 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 			CoveragePct:        dc.CoveragePct,
 			RttMs:              dc.RTTMs,
 			Load:               int32(dc.Load),
+			FreshAliveWriters:  int32(dc.FreshAliveWriters),
+			FreshCoveragePct:   dc.FreshCoveragePct,
 		})
 	}
 
@@ -176,6 +178,9 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 			Healthy:            upstream.Healthy,
 			Fails:              int32(upstream.Fails),
 			EffectiveLatencyMs: upstream.EffectiveLatencyMs,
+			Weight:             int32(upstream.Weight),
+			LastCheckAgeSecs:   int32(upstream.LastCheckAgeSecs),
+			Scopes:             upstream.Scopes,
 		})
 	}
 
