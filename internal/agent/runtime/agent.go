@@ -147,6 +147,21 @@ func runtimeNeedsInitializationWatch(state telemt.RuntimeState) bool {
 }
 
 // BuildRuntimeSnapshot converts the current Telemt runtime state into a gateway snapshot.
+func connectionTopEntries(entries []telemt.RuntimeConnectionTopEntry) []*gatewayrpc.ConnectionTopEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	result := make([]*gatewayrpc.ConnectionTopEntry, 0, len(entries))
+	for _, e := range entries {
+		result = append(result, &gatewayrpc.ConnectionTopEntry{
+			Username:        e.Username,
+			Connections:     int32(e.Connections),
+			ThroughputBytes: e.ThroughputBytes,
+		})
+	}
+	return result
+}
+
 func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) (*gatewayrpc.Snapshot, error) {
 	state, err := a.telemt.FetchRuntimeState(ctx)
 	if err != nil {
@@ -235,7 +250,10 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 		AcceptingNewConnections:   state.Gates.AcceptingNewConnections,
 		MeRuntimeReady:            state.Gates.MERuntimeReady,
 		Me2DcFallbackEnabled:      state.Gates.ME2DCFallbackEnabled,
+		Me2DcFastEnabled:          state.Gates.ME2DCFastEnabled,
 		UseMiddleProxy:            state.Gates.UseMiddleProxy,
+		RerouteActive:             state.Gates.RerouteActive,
+		RouteMode:                 state.Gates.RouteMode,
 		StartupStatus:             state.Gates.StartupStatus,
 		StartupStage:              state.Gates.StartupStage,
 		StartupProgressPct:        state.Gates.StartupProgressPct,
@@ -248,6 +266,9 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 		CurrentConnectionsMe:      int32(state.ConnectionTotals.CurrentConnectionsME),
 		CurrentConnectionsDirect:  int32(state.ConnectionTotals.CurrentConnectionsDirect),
 		ActiveUsers:               int32(state.ConnectionTotals.ActiveUsers),
+		StaleCacheUsed:            state.ConnectionTotals.StaleCacheUsed,
+		TopByConnections:          connectionTopEntries(state.ConnectionTotals.TopByConnections),
+		TopByThroughput:           connectionTopEntries(state.ConnectionTotals.TopByThroughput),
 		UptimeSeconds:             state.UptimeSeconds,
 		ConnectionsTotal:          state.Summary.ConnectionsTotal,
 		ConnectionsBadTotal:       state.Summary.ConnectionsBadTotal,
