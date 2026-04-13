@@ -9,6 +9,14 @@ import type {
   RuntimeEvent,
 } from "../api";
 
+function pct1(v: number | undefined | null): number {
+  return v ? Math.round((v ?? 0) * 10) / 10 : 0;
+}
+
+function load2(v: number | undefined | null): number {
+  return v ? Math.round((v ?? 0) * 100) / 100 : 0;
+}
+
 // Map API severity to UI Severity type
 function mapSeverity(s: "good" | "warn" | "bad"): "ok" | "warn" | "error" {
   if (s === "good") return "ok";
@@ -30,8 +38,8 @@ function mapDcs(
     status:
       dc.coverage_pct >= 99.5 ? "ok" : dc.coverage_pct > 0 ? "warn" : "error",
     rttMs: dc.rtt_ms > 0 ? Math.round(dc.rtt_ms * 10) / 10 : null,
-    coveragePct: dc.coverage_pct,
-    load: dc.load,
+    coveragePct: pct1(dc.coverage_pct),
+    load: load2(dc.load),
   }));
 }
 
@@ -43,8 +51,8 @@ function mapAttentionItemToNode(item: TelemetryAttentionItem): DashboardNodeData
     status: mapSeverity(item.severity),
     connections: runtime?.current_connections ?? 0,
     trafficBytes: 0,
-    cpuPct: 0,
-    memPct: 0,
+    cpuPct: pct1(runtime?.system_load?.cpu_usage_pct),
+    memPct: pct1(runtime?.system_load?.memory_usage_pct),
     dcs: mapDcs(runtime?.dcs ?? []),
   };
 }
@@ -125,8 +133,8 @@ export function transformDashboardOverview(
         status: "ok" as const,
         connections: runtime?.current_connections ?? 0,
         trafficBytes: 0,
-        cpuPct: 0,
-        memPct: 0,
+        cpuPct: pct1(runtime?.system_load?.cpu_usage_pct),
+        memPct: pct1(runtime?.system_load?.memory_usage_pct),
         dcs: mapDcs(runtime?.dcs ?? []),
       };
     });

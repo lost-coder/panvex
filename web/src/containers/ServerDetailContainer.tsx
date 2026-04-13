@@ -60,8 +60,12 @@ export function ServerDetailContainer() {
   const [timeRange, setTimeRange] = useState("6h");
 
   const hours = RANGE_HOURS[timeRange] ?? 6;
-  // eslint-disable-next-line react-hooks/purity -- intentional: from must reflect current wall-clock time
-  const from = new Date(Date.now() - hours * 3600_000).toISOString();
+  // Truncate to the minute so the query key stays stable between renders.
+  // The hook's refetchInterval (60 s) handles periodic refresh.
+  const from = useMemo(() => {
+    const truncated = Math.floor(Date.now() / 60_000) * 60_000;
+    return new Date(truncated - hours * 3600_000).toISOString();
+  }, [hours]);
   const { points: rawPoints, resolution } = useServerLoadHistory(serverId ?? "", from);
   const metricsPoints = useMemo(() => toMetricsPoints(rawPoints as any[]), [rawPoints]);
 
