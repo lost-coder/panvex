@@ -39,6 +39,7 @@ type serveConfig struct {
 	Storage              config.StorageConfig
 	TrustedProxyCIDRs    []*net.IPNet
 	EncryptionKey        string
+	LogLevel             string
 }
 
 const restartExitCode = 78
@@ -74,6 +75,9 @@ func runServe(args []string) error {
 		return err
 	}
 
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: parseLogLevel(options.LogLevel)}))
+	slog.SetDefault(logger)
+
 	store, err := openStore(options.Storage)
 	if err != nil {
 		return err
@@ -89,6 +93,7 @@ func runServe(args []string) error {
 	api := server.New(server.Options{
 		Now:          time.Now,
 		Store:        store,
+		Logger:       logger,
 		UIFiles:      embeddedUIFiles(),
 		PanelRuntime: panelRuntime,
 		TrustedProxyCIDRs: options.TrustedProxyCIDRs,
@@ -165,6 +170,7 @@ func parseServeConfig(args []string) (serveConfig, error) {
 	storageDSN := flags.String("storage-dsn", "", "Persistent storage backend DSN")
 	trustedProxyCIDRs := flags.String("trusted-proxy-cidrs", "", "Comma-separated trusted proxy CIDRs for X-Forwarded-For (e.g. 172.16.0.0/12,10.0.0.0/8)")
 	encryptionKey := flags.String("encryption-key", strings.TrimSpace(os.Getenv("PANVEX_ENCRYPTION_KEY")), "Passphrase for encrypting the CA private key at rest (env: PANVEX_ENCRYPTION_KEY)")
+	logLevel := flags.String("log-level", "info", "Log level: debug, info, warn, error")
 	if err := flags.Parse(args); err != nil {
 		return serveConfig{}, err
 	}
@@ -204,6 +210,7 @@ func parseServeConfig(args []string) (serveConfig, error) {
 			Storage:              configuration.Storage,
 			TrustedProxyCIDRs:    parsedCIDRs,
 		EncryptionKey:        *encryptionKey,
+		LogLevel:             *logLevel,
 		}, nil
 	}
 
@@ -225,7 +232,22 @@ func parseServeConfig(args []string) (serveConfig, error) {
 		Storage:              configuration.Storage,
 		TrustedProxyCIDRs:    parsedCIDRs,
 		EncryptionKey:        *encryptionKey,
+		LogLevel:             *logLevel,
 	}, nil
+}
+
+// parseLogLevel maps a human-readable level name to the corresponding slog.Level.
+func parseLogLevel(s string) slog.Level {
+	switch strings.ToLower(s) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
 }
 
 func resolvePanelRuntime(configuration serveConfig) (server.PanelRuntime, error) {

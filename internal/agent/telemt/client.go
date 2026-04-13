@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -39,6 +40,7 @@ type Client struct {
 	metricsURL    *url.URL
 	authorization string
 	httpClient    *http.Client
+	logger        *slog.Logger
 	systemLoadSampler func(context.Context) (RuntimeSystemLoad, error)
 	mu            sync.RWMutex
 	slowDataTTL   time.Duration
@@ -291,6 +293,7 @@ func NewClient(config Config, httpClient *http.Client) (*Client, error) {
 		metricsURL:    metricsURL,
 		authorization: config.Authorization,
 		httpClient:    httpClient,
+		logger:        slog.Default(),
 		systemLoadSampler: collectLocalSystemLoad,
 		slowDataTTL:   defaultSlowDataTTL,
 	}, nil
@@ -315,6 +318,7 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 	if err := c.getJSON(ctx, "/v1/health", &health); err != nil {
 		return RuntimeState{}, err
 	}
+	c.logger.Debug("telemt api call", "path", "/v1/health", "status", health.Status)
 
 	posture := struct {
 		ReadOnly               bool   `json:"read_only"`
@@ -347,6 +351,7 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 	if err := c.getJSON(ctx, "/v1/runtime/gates", &gates); err != nil {
 		return RuntimeState{}, err
 	}
+	c.logger.Debug("telemt api call", "path", "/v1/runtime/gates", "accepting", gates.AcceptingNewConnections)
 
 	initialization := struct {
 		Status        string  `json:"status"`
@@ -387,6 +392,7 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 	if err := c.getJSON(ctx, "/v1/runtime/connections/summary", &connectionSummary); err != nil {
 		return RuntimeState{}, err
 	}
+	c.logger.Debug("telemt api call", "path", "/v1/runtime/connections/summary", "connections", connectionSummary.Data.Totals.CurrentConnections)
 
 	summary := struct {
 		ConnectionsTotal       uint64 `json:"connections_total"`
@@ -415,6 +421,7 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 	if err := c.getJSON(ctx, "/v1/stats/dcs", &dcStatus); err != nil {
 		return RuntimeState{}, err
 	}
+	c.logger.Debug("telemt api call", "path", "/v1/stats/dcs", "dc_count", len(dcStatus.DCS))
 
 	dcs := make([]RuntimeDC, 0, len(dcStatus.DCS))
 	for _, dc := range dcStatus.DCS {
@@ -559,6 +566,7 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, e
 	if err := c.getJSON(ctx, "/v1/stats/upstreams", &upstreamStatus); err != nil {
 		return slowRuntimeState{}, err
 	}
+	c.logger.Debug("telemt api call", "path", "/v1/stats/upstreams", "configured", upstreamStatus.Summary.ConfiguredTotal)
 
 	recentEvents := struct {
 		Enabled bool   `json:"enabled"`
@@ -619,6 +627,7 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, e
 
 	mePool := map[string]any{}
 	if err := c.getJSON(ctx, "/v1/runtime/me_pool_state", &mePool); err == nil {
+		c.logger.Debug("telemt api call", "path", "/v1/runtime/me_pool_state")
 		diagnostics.MEPoolJSON = marshalJSON(mePool)
 	} else if diagnostics.State == "fresh" {
 		diagnostics.State = "unavailable"
@@ -643,6 +652,7 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, e
 		} `json:"summary"`
 	}{}
 	if err := c.getJSON(ctx, "/v1/stats/me-writers", &meWritersResp); err == nil {
+		c.logger.Debug("telemt api call", "path", "/v1/stats/me-writers", "alive_writers", meWritersResp.Summary.AliveWriters)
 		meWritersSummary = RuntimeMeWritersSummary{
 			ConfiguredEndpoints: meWritersResp.Summary.ConfiguredEndpoints,
 			AvailableEndpoints:  meWritersResp.Summary.AvailableEndpoints,
@@ -787,6 +797,7 @@ func (c *Client) FetchClientUsageFromMetrics(ctx context.Context) (ClientUsageMe
 	}
 
 	parsed := ParseMetricsSnapshot(string(body))
+	c.logger.Debug("telemt api call", "path", "/metrics", "user_count", len(parsed.Users))
 	result := make([]ClientUsage, 0, len(parsed.Users))
 	for username, m := range parsed.Users {
 		result = append(result, ClientUsage{
@@ -809,6 +820,7 @@ func (c *Client) FetchActiveIPs(ctx context.Context) ([]UserActiveIPs, error) {
 	if err := c.getJSON(ctx, "/v1/stats/users/active-ips", &users); err != nil {
 		return nil, err
 	}
+	c.logger.Debug("telemt api call", "path", "/v1/stats/users/active-ips", "user_count", len(users))
 
 	return users, nil
 }

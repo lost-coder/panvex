@@ -138,6 +138,7 @@ func (s *Server) handleCreateClient() http.HandlerFunc {
 			return
 		}
 
+		s.logger.Info("client created", "client_id", client.ID, "name", client.Name, "user_id", session.UserID)
 		s.appendAuditWithContext(r.Context(), session.UserID, "clients.create", client.ID, map[string]any{
 			"name":             client.Name,
 			"enabled":          client.Enabled,
@@ -210,6 +211,7 @@ func (s *Server) handleUpdateClient() http.HandlerFunc {
 			return
 		}
 
+		s.logger.Info("client updated", "client_id", client.ID, "name", client.Name, "user_id", session.UserID)
 		s.appendAuditWithContext(r.Context(), session.UserID, "clients.update", client.ID, map[string]any{
 			"name":            client.Name,
 			"fleet_group_ids": assignmentFleetGroupIDs(assignments),
@@ -237,6 +239,7 @@ func (s *Server) handleDeleteClient() http.HandlerFunc {
 			return
 		}
 
+		s.logger.Info("client deleted", "client_id", clientID, "user_id", session.UserID)
 		s.appendAuditWithContext(r.Context(), session.UserID, "clients.delete", clientID, nil)
 		w.WriteHeader(http.StatusNoContent)
 	}
@@ -260,6 +263,7 @@ func (s *Server) handleRotateClientSecret() http.HandlerFunc {
 			return
 		}
 
+		s.logger.Info("client secret rotated", "client_id", client.ID, "user_id", session.UserID)
 		s.appendAuditWithContext(r.Context(), session.UserID, "clients.rotate_secret", client.ID, nil)
 		writeJSON(w, http.StatusOK, s.buildClientDetailResponse(r.Context(), client, assignments, deployments, true))
 	}

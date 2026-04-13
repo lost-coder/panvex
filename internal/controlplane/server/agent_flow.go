@@ -147,6 +147,7 @@ func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) error {
 }
 
 func (s *Server) applyAgentSnapshotWithContext(_ context.Context, snapshot agentSnapshot) error {
+	s.logger.Debug("agent heartbeat applied", "agent_id", snapshot.AgentID, "node", snapshot.NodeName)
 	// Lock section: build all state objects AND commit to in-memory maps
 	// atomically. No DB I/O happens under the locks.
 	// Lock ordering: mu -> clientsMu -> metricsAuditMu.

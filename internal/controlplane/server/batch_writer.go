@@ -180,6 +180,7 @@ func (w *storeBatchWriter) drainAll(ctx context.Context) {
 // overwrite stale DB rows.
 
 func (w *storeBatchWriter) flushAudit(ctx context.Context, items []storage.AuditEventRecord) {
+	slog.Debug("batch flush", "domain", "audit", "count", len(items))
 	for _, item := range items {
 		if err := w.store.AppendAuditEvent(ctx, item); err != nil {
 			slog.Warn("batch persist failed", "domain", "audit", "error", err)
@@ -188,6 +189,7 @@ func (w *storeBatchWriter) flushAudit(ctx context.Context, items []storage.Audit
 }
 
 func (w *storeBatchWriter) flushAgents(ctx context.Context, items []storage.AgentRecord) {
+	slog.Debug("batch flush", "domain", "agents", "count", len(items))
 	for _, item := range items {
 		if err := w.store.PutAgent(ctx, item); err != nil {
 			slog.Warn("batch persist failed", "domain", "agents", "agent_id", item.ID, "error", err)
@@ -196,6 +198,7 @@ func (w *storeBatchWriter) flushAgents(ctx context.Context, items []storage.Agen
 }
 
 func (w *storeBatchWriter) flushInstances(ctx context.Context, items []storage.InstanceRecord) {
+	slog.Debug("batch flush", "domain", "instances", "count", len(items))
 	for _, item := range items {
 		if err := w.store.PutInstance(ctx, item); err != nil {
 			slog.Warn("batch persist failed", "domain", "instances", "instance_id", item.ID, "error", err)
@@ -204,6 +207,7 @@ func (w *storeBatchWriter) flushInstances(ctx context.Context, items []storage.I
 }
 
 func (w *storeBatchWriter) flushMetrics(ctx context.Context, items []storage.MetricSnapshotRecord) {
+	slog.Debug("batch flush", "domain", "metrics", "count", len(items))
 	for _, item := range items {
 		if err := w.store.AppendMetricSnapshot(ctx, item); err != nil {
 			slog.Warn("batch persist failed", "domain", "metrics", "error", err)
@@ -212,6 +216,7 @@ func (w *storeBatchWriter) flushMetrics(ctx context.Context, items []storage.Met
 }
 
 func (w *storeBatchWriter) flushServerLoad(ctx context.Context, items []storage.ServerLoadPointRecord) {
+	slog.Debug("batch flush", "domain", "server_load", "count", len(items))
 	for _, item := range items {
 		if err := w.store.AppendServerLoadPoint(ctx, item); err != nil {
 			slog.Warn("batch persist failed", "domain", "server_load", "agent_id", item.AgentID, "error", err)
@@ -220,6 +225,7 @@ func (w *storeBatchWriter) flushServerLoad(ctx context.Context, items []storage.
 }
 
 func (w *storeBatchWriter) flushDCHealth(ctx context.Context, items []storage.DCHealthPointRecord) {
+	slog.Debug("batch flush", "domain", "dc_health", "count", len(items))
 	for _, item := range items {
 		if err := w.store.AppendDCHealthPoint(ctx, item); err != nil {
 			slog.Warn("batch persist failed", "domain", "dc_health", "error", err)
@@ -228,6 +234,7 @@ func (w *storeBatchWriter) flushDCHealth(ctx context.Context, items []storage.DC
 }
 
 func (w *storeBatchWriter) flushClientIPs(ctx context.Context, items []storage.ClientIPHistoryRecord) {
+	slog.Debug("batch flush", "domain", "client_ips", "count", len(items))
 	for _, item := range items {
 		if err := w.store.UpsertClientIPHistory(ctx, item); err != nil {
 			slog.Warn("batch persist failed", "domain", "client_ips", "error", err)
@@ -236,6 +243,7 @@ func (w *storeBatchWriter) flushClientIPs(ctx context.Context, items []storage.C
 }
 
 func (w *storeBatchWriter) flushTelemetry(ctx context.Context, items []telemetryWriteUnit) {
+	slog.Debug("batch flush", "domain", "telemetry", "count", len(items))
 	for _, unit := range items {
 		if unit.runtime != nil {
 			if err := w.store.PutTelemetryRuntimeCurrent(ctx, *unit.runtime); err != nil {
