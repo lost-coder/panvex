@@ -68,9 +68,12 @@ func runRuntime(args []string) error {
 	usageSnapshot := flags.Duration("usage-interval", 2*time.Minute, "Client usage snapshot interval")
 	ipPoll := flags.Duration("ip-poll-interval", 15*time.Second, "Client IP polling interval")
 	ipUpload := flags.Duration("ip-upload-interval", time.Minute, "Client IP upload interval")
+	logLevel := flags.String("log-level", "info", "Log level: debug, info, warn, error")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
+
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: parseLogLevel(*logLevel)})))
 
 	credentialsState, err := loadRuntimeCredentials(*stateFile)
 	if err != nil {
@@ -361,6 +364,7 @@ func runJobWorker(
 		jobCtx, cancelJob := context.WithTimeout(connectionCtx, jobExecutionTimeout)
 		result := agent.HandleJob(jobCtx, job, time.Now())
 		cancelJob()
+		slog.Debug("job completed", "job_id", jobID, "action", job.GetAction(), "success", result.Success)
 
 		if shouldSendRuntimeSnapshotAfterJob(job.GetAction(), result.Success) {
 			runtimeCtx, cancelRuntime := context.WithTimeout(connectionCtx, runtimeOperationTimeout)
@@ -400,6 +404,7 @@ func startPollingWorkers(
 ) {
 	startPeriodicPollingWorker(connectionCtx, schedule.config(pollHeartbeat), func(observedAt time.Time) {
 		if enqueueOutboundMessage(connectionCtx, telemetryOutbound, heartbeatMessage(agent, observedAt)) {
+			slog.Debug("heartbeat sent", "agent_id", agent.AgentID())
 			return
 		}
 		if connectionCtx.Err() == nil {
@@ -422,6 +427,7 @@ func startPollingWorkers(
 		if enqueueOutboundMessage(connectionCtx, telemetryOutbound, &gatewayrpc.ConnectClientMessage{
 			Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: snapshot},
 		}) {
+			slog.Debug("usage snapshot enqueued", "agent_id", agent.AgentID())
 			return
 		}
 		if connectionCtx.Err() == nil {
@@ -446,6 +452,7 @@ func startPollingWorkers(
 		if enqueueOutboundMessage(connectionCtx, telemetryOutbound, &gatewayrpc.ConnectClientMessage{
 			Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: snapshot},
 		}) {
+			slog.Debug("ip snapshot enqueued", "agent_id", agent.AgentID(), "client_ips", len(snapshot.ClientIps))
 			return
 		}
 		if connectionCtx.Err() == nil {
@@ -558,6 +565,7 @@ func startRuntimeUploadWorker(
 				if enqueueOutboundMessage(connectionCtx, telemetryOutbound, &gatewayrpc.ConnectClientMessage{
 					Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: snapshot},
 				}) {
+					slog.Debug("runtime snapshot enqueued")
 					continue
 				}
 				if connectionCtx.Err() == nil {
@@ -665,6 +673,7 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 				return
 			}
 			if job := message.GetJob(); job != nil {
+				slog.Debug("job received", "job_id", job.GetId(), "action", job.GetAction())
 				enqueueReceivedJob(connectionCtx, agent.AgentID(), jobInflight, jobQueues, criticalOutbound, job)
 				continue
 			}
@@ -984,4 +993,17 @@ func hostName() string {
 	}
 
 	return name
+}
+
+func parseLogLevel(s string) slog.Level {
+	switch strings.ToLower(s) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
 }
