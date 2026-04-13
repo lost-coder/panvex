@@ -185,6 +185,18 @@ message RuntimeSnapshot {
   repeated AggregatedDCHealth aggregated_dcs = 28;
   int32 aggregation_samples = 29;
   RuntimeMeWritersSummary me_writers_summary = 30;
+  bool reroute_active = 31;
+  string route_mode = 32;
+  bool me2dc_fast_enabled = 33;
+  bool stale_cache_used = 34;
+  repeated ConnectionTopEntry top_by_connections = 35;
+  repeated ConnectionTopEntry top_by_throughput = 36;
+}
+
+message ConnectionTopEntry {
+  string username = 1;
+  int32 connections = 2;
+  uint64 throughput_bytes = 3;
 }
 
 message RuntimeDiagnosticsSnapshot {
