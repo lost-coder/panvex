@@ -13,6 +13,18 @@ function num(v: unknown): number {
   return typeof v === "number" ? v : 0;
 }
 
+function pct1(v: number | undefined | null): number {
+  return v ? Math.round((v ?? 0) * 10) / 10 : 0;
+}
+
+function ms1(v: number | undefined | null): number | undefined {
+  return v && v > 0 ? Math.round(v * 10) / 10 : undefined;
+}
+
+function load2(v: number | undefined | null): number {
+  return v ? Math.round((v ?? 0) * 100) / 100 : 0;
+}
+
 function rec(v: unknown): Record<string, unknown> {
   return (v != null && typeof v === "object" && !Array.isArray(v))
     ? v as Record<string, unknown>
@@ -39,9 +51,9 @@ function mapDcs(
     dc: dc.dc,
     status:
       dc.coverage_pct >= 99.5 ? "ok" : dc.coverage_pct > 0 ? "warn" : "error",
-    rttMs: dc.rtt_ms > 0 ? Math.round(dc.rtt_ms * 10) / 10 : null,
-    coveragePct: dc.coverage_pct,
-    load: dc.load,
+    rttMs: ms1(dc.rtt_ms) ?? null,
+    coveragePct: pct1(dc.coverage_pct),
+    load: load2(dc.load),
   }));
 }
 
@@ -54,9 +66,9 @@ function summaryToListItem(card: TelemetryServerSummary): ServerListItem {
     status: mapSeverity(card.severity),
     connections: runtime?.current_connections ?? 0,
     trafficBytes: 0,
-    cpuPct: runtime?.system_load?.cpu_usage_pct ?? 0,
-    memPct: runtime?.system_load?.memory_usage_pct ?? 0,
-    dcCoveragePct: runtime?.dc_coverage_pct ?? 0,
+    cpuPct: pct1(runtime?.system_load?.cpu_usage_pct),
+    memPct: pct1(runtime?.system_load?.memory_usage_pct),
+    dcCoveragePct: pct1(runtime?.dc_coverage_pct),
     uptimeSeconds: runtime?.uptime_seconds ?? 0,
     fleetGroupId: agent?.fleet_group_id ?? "",
     dcs: mapDcs(runtime?.dcs ?? []),
@@ -112,22 +124,35 @@ function transformMePool(
   const byDcRaw = Array.isArray(refill.by_dc) ? refill.by_dc : [];
 
   const aliveWriters = num(writers.alive_non_draining);
-  const totalDcGroups = runtime?.dcs?.length ?? 0;
-  const requiredWriters = (runtime?.dcs ?? []).reduce(
+  const dcs = runtime?.dcs ?? [];
+  const totalDcGroups = dcs.length;
+  const requiredWriters = dcs.reduce(
     (sum, dc) => sum + (dc.required_writers ?? 0), 0,
   );
+
+  // Aggregate DC-level metrics for the ME Pool summary.
+  const totalEndpoints = dcs.reduce((s, dc) => s + (dc.available_endpoints ?? 0), 0);
+  const totalAvailable = dcs.reduce((s, dc) => s + (dc.available_endpoints ?? 0), 0);
+  const configuredEndpoints = num(data.configured_endpoints) ||
+    dcs.reduce((s, dc) => s + (dc.available_endpoints ?? 0) + (dc.required_writers ?? 0), 0);
+  const avgCoverage = totalDcGroups > 0
+    ? dcs.reduce((s, dc) => s + (dc.coverage_pct ?? 0), 0) / totalDcGroups
+    : 0;
+  const avgAvailablePct = totalDcGroups > 0
+    ? dcs.reduce((s, dc) => s + (dc.available_pct ?? 0), 0) / totalDcGroups
+    : 0;
 
   return {
     enabled: true,
     summary: {
       aliveWriters,
-      availableEndpoints: 0,
-      availablePct: 0,
+      availableEndpoints: totalAvailable,
+      availablePct: pct1(avgAvailablePct),
       configuredDcGroups: totalDcGroups,
-      configuredEndpoints: 0,
-      coveragePct: runtime?.dc_coverage_pct ?? 0,
+      configuredEndpoints,
+      coveragePct: pct1(avgCoverage),
       freshAliveWriters: aliveWriters,
-      freshCoveragePct: runtime?.dc_coverage_pct ?? 0,
+      freshCoveragePct: pct1(avgCoverage),
       requiredWriters,
     },
     generations: {
@@ -211,16 +236,16 @@ export function transformServerDetail(
       endpoints,
       endpointWriters,
       availableEndpoints: dc.available_endpoints ?? 0,
-      availablePct: dc.available_pct ?? 0,
+      availablePct: pct1(dc.available_pct),
       requiredWriters: dc.required_writers ?? 0,
       aliveWriters: dc.alive_writers ?? 0,
-      coveragePct: dc.coverage_pct ?? 0,
+      coveragePct: pct1(dc.coverage_pct),
       floorMin: num(detail?.floor_min),
       floorTarget: num(detail?.floor_target),
       floorMax: num(detail?.floor_max),
       floorCapped: detail?.floor_capped === true,
-      rttMs: dc.rtt_ms > 0 ? Math.round(dc.rtt_ms * 10) / 10 : undefined,
-      load: dc.load ?? 0,
+      rttMs: ms1(dc.rtt_ms),
+      load: load2(dc.load),
     };
   });
 
@@ -251,8 +276,7 @@ export function transformServerDetail(
     healthy: u.healthy ?? false,
     fails: u.fails ?? 0,
     lastCheckAgeSecs: 0,
-    effectiveLatencyMs:
-      (u.effective_latency_ms ?? 0) > 0 ? u.effective_latency_ms : undefined,
+    effectiveLatencyMs: ms1(u.effective_latency_ms),
     dc: [],
   }));
 
