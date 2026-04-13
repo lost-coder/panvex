@@ -73,6 +73,8 @@ message RuntimeDCSnapshot {
   double coverage_pct = 6;
   double rtt_ms = 7;
   int32 load = 8;
+  int32 fresh_alive_writers = 9;
+  double fresh_coverage_pct = 10;
 }
 
 message RuntimeUpstreamRowSnapshot {
@@ -82,6 +84,9 @@ message RuntimeUpstreamRowSnapshot {
   bool healthy = 4;
   int32 fails = 5;
   double effective_latency_ms = 6;
+  int32 weight = 7;
+  int32 last_check_age_secs = 8;
+  repeated string scopes = 9;
 }
 
 message RuntimeUpstreamSnapshot {

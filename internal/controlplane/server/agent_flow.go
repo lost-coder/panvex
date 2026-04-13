@@ -340,6 +340,8 @@ func agentRuntimeFromSnapshot(snapshot *gatewayrpc.RuntimeSnapshot, observedAt t
 			RequiredWriters:    int(dc.RequiredWriters),
 			AliveWriters:       int(dc.AliveWriters),
 			CoveragePct:        dc.CoveragePct,
+			FreshAliveWriters:  int(dc.FreshAliveWriters),
+			FreshCoveragePct:   dc.FreshCoveragePct,
 			RTTMs:              dc.RttMs,
 			Load:               int(dc.Load),
 		})
@@ -364,6 +366,9 @@ func agentRuntimeFromSnapshot(snapshot *gatewayrpc.RuntimeSnapshot, observedAt t
 			Healthy:            upstream.Healthy,
 			Fails:              int(upstream.Fails),
 			EffectiveLatencyMs: upstream.EffectiveLatencyMs,
+			Weight:             int(upstream.Weight),
+			LastCheckAgeSecs:   int(upstream.LastCheckAgeSecs),
+			Scopes:             upstream.Scopes,
 		})
 	}
 

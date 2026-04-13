@@ -593,6 +593,8 @@ type RuntimeDCSnapshot struct {
 	CoveragePct        float64                `protobuf:"fixed64,6,opt,name=coverage_pct,json=coveragePct,proto3" json:"coverage_pct,omitempty"`
 	RttMs              float64                `protobuf:"fixed64,7,opt,name=rtt_ms,json=rttMs,proto3" json:"rtt_ms,omitempty"`
 	Load               int32                  `protobuf:"varint,8,opt,name=load,proto3" json:"load,omitempty"`
+	FreshAliveWriters  int32                  `protobuf:"varint,9,opt,name=fresh_alive_writers,json=freshAliveWriters,proto3" json:"fresh_alive_writers,omitempty"`
+	FreshCoveragePct   float64                `protobuf:"fixed64,10,opt,name=fresh_coverage_pct,json=freshCoveragePct,proto3" json:"fresh_coverage_pct,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -683,6 +685,20 @@ func (x *RuntimeDCSnapshot) GetLoad() int32 {
 	return 0
 }
 
+func (x *RuntimeDCSnapshot) GetFreshAliveWriters() int32 {
+	if x != nil {
+		return x.FreshAliveWriters
+	}
+	return 0
+}
+
+func (x *RuntimeDCSnapshot) GetFreshCoveragePct() float64 {
+	if x != nil {
+		return x.FreshCoveragePct
+	}
+	return 0
+}
+
 type RuntimeUpstreamRowSnapshot struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	UpstreamId         int32                  `protobuf:"varint,1,opt,name=upstream_id,json=upstreamId,proto3" json:"upstream_id,omitempty"`
@@ -691,6 +707,9 @@ type RuntimeUpstreamRowSnapshot struct {
 	Healthy            bool                   `protobuf:"varint,4,opt,name=healthy,proto3" json:"healthy,omitempty"`
 	Fails              int32                  `protobuf:"varint,5,opt,name=fails,proto3" json:"fails,omitempty"`
 	EffectiveLatencyMs float64                `protobuf:"fixed64,6,opt,name=effective_latency_ms,json=effectiveLatencyMs,proto3" json:"effective_latency_ms,omitempty"`
+	Weight             int32                  `protobuf:"varint,7,opt,name=weight,proto3" json:"weight,omitempty"`
+	LastCheckAgeSecs   int32                  `protobuf:"varint,8,opt,name=last_check_age_secs,json=lastCheckAgeSecs,proto3" json:"last_check_age_secs,omitempty"`
+	Scopes             []string               `protobuf:"bytes,9,rep,name=scopes,proto3" json:"scopes,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -765,6 +784,27 @@ func (x *RuntimeUpstreamRowSnapshot) GetEffectiveLatencyMs() float64 {
 		return x.EffectiveLatencyMs
 	}
 	return 0
+}
+
+func (x *RuntimeUpstreamRowSnapshot) GetWeight() int32 {
+	if x != nil {
+		return x.Weight
+	}
+	return 0
+}
+
+func (x *RuntimeUpstreamRowSnapshot) GetLastCheckAgeSecs() int32 {
+	if x != nil {
+		return x.LastCheckAgeSecs
+	}
+	return 0
+}
+
+func (x *RuntimeUpstreamRowSnapshot) GetScopes() []string {
+	if x != nil {
+		return x.Scopes
+	}
+	return nil
 }
 
 type RuntimeUpstreamSnapshot struct {
@@ -2722,7 +2762,7 @@ const file_proto_agent_gateway_proto_rawDesc = "" +
 	"\x13fresh_alive_writers\x18\x04 \x01(\x05R\x11freshAliveWriters\x12,\n" +
 	"\x12fresh_coverage_pct\x18\x05 \x01(\x01R\x10freshCoveragePct\x12)\n" +
 	"\x10required_writers\x18\x06 \x01(\x05R\x0frequiredWriters\x12#\n" +
-	"\ralive_writers\x18\a \x01(\x05R\faliveWriters\"\x97\x02\n" +
+	"\ralive_writers\x18\a \x01(\x05R\faliveWriters\"\xf5\x02\n" +
 	"\x11RuntimeDCSnapshot\x12\x0e\n" +
 	"\x02dc\x18\x01 \x01(\x05R\x02dc\x12/\n" +
 	"\x13available_endpoints\x18\x02 \x01(\x05R\x12availableEndpoints\x12#\n" +
@@ -2731,7 +2771,10 @@ const file_proto_agent_gateway_proto_rawDesc = "" +
 	"\ralive_writers\x18\x05 \x01(\x05R\faliveWriters\x12!\n" +
 	"\fcoverage_pct\x18\x06 \x01(\x01R\vcoveragePct\x12\x15\n" +
 	"\x06rtt_ms\x18\a \x01(\x01R\x05rttMs\x12\x12\n" +
-	"\x04load\x18\b \x01(\x05R\x04load\"\xd8\x01\n" +
+	"\x04load\x18\b \x01(\x05R\x04load\x12.\n" +
+	"\x13fresh_alive_writers\x18\t \x01(\x05R\x11freshAliveWriters\x12,\n" +
+	"\x12fresh_coverage_pct\x18\n" +
+	" \x01(\x01R\x10freshCoveragePct\"\xb7\x02\n" +
 	"\x1aRuntimeUpstreamRowSnapshot\x12\x1f\n" +
 	"\vupstream_id\x18\x01 \x01(\x05R\n" +
 	"upstreamId\x12\x1d\n" +
@@ -2740,7 +2783,10 @@ const file_proto_agent_gateway_proto_rawDesc = "" +
 	"\aaddress\x18\x03 \x01(\tR\aaddress\x12\x18\n" +
 	"\ahealthy\x18\x04 \x01(\bR\ahealthy\x12\x14\n" +
 	"\x05fails\x18\x05 \x01(\x05R\x05fails\x120\n" +
-	"\x14effective_latency_ms\x18\x06 \x01(\x01R\x12effectiveLatencyMs\"\x9b\x02\n" +
+	"\x14effective_latency_ms\x18\x06 \x01(\x01R\x12effectiveLatencyMs\x12\x16\n" +
+	"\x06weight\x18\a \x01(\x05R\x06weight\x12-\n" +
+	"\x13last_check_age_secs\x18\b \x01(\x05R\x10lastCheckAgeSecs\x12\x16\n" +
+	"\x06scopes\x18\t \x03(\tR\x06scopes\"\x9b\x02\n" +
 	"\x17RuntimeUpstreamSnapshot\x12)\n" +
 	"\x10configured_total\x18\x01 \x01(\x05R\x0fconfiguredTotal\x12#\n" +
 	"\rhealthy_total\x18\x02 \x01(\x05R\fhealthyTotal\x12'\n" +
