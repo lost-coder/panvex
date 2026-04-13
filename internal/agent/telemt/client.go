@@ -59,12 +59,13 @@ func (c *Client) InvalidateSlowDataCache() {
 
 // slowRuntimeState stores data from heavier Telemt endpoints that tolerate short-lived staleness.
 type slowRuntimeState struct {
-	Version       string
-	UptimeSeconds float64
-	Upstreams     RuntimeUpstreamSummary
-	RecentEvents  []RuntimeEvent
-	Diagnostics   RuntimeDiagnostics
+	Version           string
+	UptimeSeconds     float64
+	Upstreams         RuntimeUpstreamSummary
+	RecentEvents      []RuntimeEvent
+	Diagnostics       RuntimeDiagnostics
 	SecurityInventory RuntimeSecurityInventory
+	MeWritersSummary  RuntimeMeWritersSummary
 }
 
 // RuntimeState summarizes the Telemt information the agent reports to the control-plane.
@@ -82,6 +83,7 @@ type RuntimeState struct {
 	RecentEvents     []RuntimeEvent
 	Diagnostics      RuntimeDiagnostics
 	SecurityInventory RuntimeSecurityInventory
+	MeWritersSummary  RuntimeMeWritersSummary
 	SystemLoad       RuntimeSystemLoad
 	Clients          []ClientUsage
 }
@@ -121,6 +123,17 @@ type RuntimeSecurityInventory struct {
 	Enabled      bool
 	EntriesTotal int
 	EntriesJSON  string
+}
+
+// RuntimeMeWritersSummary carries the ME writers pool aggregate from /v1/stats/me-writers.
+type RuntimeMeWritersSummary struct {
+	ConfiguredEndpoints int
+	AvailableEndpoints  int
+	CoveragePct         float64
+	FreshAliveWriters   int
+	FreshCoveragePct    float64
+	RequiredWriters     int
+	AliveWriters        int
 }
 
 // RuntimeGates carries the operator-facing admission and transport gates.
@@ -454,9 +467,10 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 		DCs:          dcs,
 		Upstreams:    slowData.Upstreams,
 		RecentEvents: slowData.RecentEvents,
-		Diagnostics:  slowData.Diagnostics,
+		Diagnostics:      slowData.Diagnostics,
 		SecurityInventory: slowData.SecurityInventory,
-		SystemLoad:   systemLoad,
+		MeWritersSummary: slowData.MeWritersSummary,
+		SystemLoad:       systemLoad,
 		Clients:      users,
 	}, nil
 }
@@ -559,6 +573,30 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, e
 		diagnostics.DcsJSON = marshalJSON(dcsDetail)
 	}
 
+	meWritersSummary := RuntimeMeWritersSummary{}
+	meWritersResp := struct {
+		Summary struct {
+			ConfiguredEndpoints int     `json:"configured_endpoints"`
+			AvailableEndpoints  int     `json:"available_endpoints"`
+			CoveragePct         float64 `json:"coverage_pct"`
+			FreshAliveWriters   int     `json:"fresh_alive_writers"`
+			FreshCoveragePct    float64 `json:"fresh_coverage_pct"`
+			RequiredWriters     int     `json:"required_writers"`
+			AliveWriters        int     `json:"alive_writers"`
+		} `json:"summary"`
+	}{}
+	if err := c.getJSON(ctx, "/v1/stats/me-writers", &meWritersResp); err == nil {
+		meWritersSummary = RuntimeMeWritersSummary{
+			ConfiguredEndpoints: meWritersResp.Summary.ConfiguredEndpoints,
+			AvailableEndpoints:  meWritersResp.Summary.AvailableEndpoints,
+			CoveragePct:         meWritersResp.Summary.CoveragePct,
+			FreshAliveWriters:   meWritersResp.Summary.FreshAliveWriters,
+			FreshCoveragePct:    meWritersResp.Summary.FreshCoveragePct,
+			RequiredWriters:     meWritersResp.Summary.RequiredWriters,
+			AliveWriters:        meWritersResp.Summary.AliveWriters,
+		}
+	}
+
 	securityInventory := RuntimeSecurityInventory{
 		State:       "fresh",
 		StateReason: "",
@@ -610,9 +648,10 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, e
 			SOCKS5Total:     upstreamStatus.Summary.SOCKS5Total,
 			Rows:            upstreams,
 		},
-		RecentEvents: events,
-		Diagnostics: diagnostics,
+		RecentEvents:     events,
+		Diagnostics:      diagnostics,
 		SecurityInventory: securityInventory,
+		MeWritersSummary: meWritersSummary,
 	}, nil
 }
 

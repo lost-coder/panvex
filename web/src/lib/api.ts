@@ -85,6 +85,15 @@ export type AgentRuntime = {
     load_5m: number;
     load_15m: number;
   };
+  me_writers_summary?: {
+    configured_endpoints: number;
+    available_endpoints: number;
+    coverage_pct: number;
+    fresh_alive_writers: number;
+    fresh_coverage_pct: number;
+    required_writers: number;
+    alive_writers: number;
+  };
 };
 
 export type AgentCertificateRecovery = {

@@ -81,8 +81,9 @@ type AgentRuntime struct {
 	DCs                       []RuntimeDC       `json:"dcs"`
 	Upstreams                 []RuntimeUpstream `json:"upstreams"`
 	RecentEvents              []RuntimeEvent    `json:"recent_events"`
-	SystemLoad                RuntimeSystemLoad `json:"system_load"`
-	UpdatedAt                 time.Time         `json:"updated_at"`
+	SystemLoad                RuntimeSystemLoad          `json:"system_load"`
+	MeWritersSummary          *RuntimeMeWritersSummary   `json:"me_writers_summary,omitempty"`
+	UpdatedAt                 time.Time                  `json:"updated_at"`
 }
 
 // RuntimeSystemLoad carries server resource utilization metrics.
@@ -99,6 +100,17 @@ type RuntimeSystemLoad struct {
 	Load15M          float64 `json:"load_15m"`
 	NetBytesSent     uint64  `json:"net_bytes_sent"`
 	NetBytesRecv     uint64  `json:"net_bytes_recv"`
+}
+
+// RuntimeMeWritersSummary carries the ME writers pool aggregate returned by Telemt.
+type RuntimeMeWritersSummary struct {
+	ConfiguredEndpoints int     `json:"configured_endpoints"`
+	AvailableEndpoints  int     `json:"available_endpoints"`
+	CoveragePct         float64 `json:"coverage_pct"`
+	FreshAliveWriters   int     `json:"fresh_alive_writers"`
+	FreshCoveragePct    float64 `json:"fresh_coverage_pct"`
+	RequiredWriters     int     `json:"required_writers"`
+	AliveWriters        int     `json:"alive_writers"`
 }
 
 // Instance stores the Telemt runtime metadata discovered through an agent.
