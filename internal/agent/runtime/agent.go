@@ -272,6 +272,15 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 			NetBytesSent:     state.SystemLoad.NetBytesSent,
 			NetBytesRecv:     state.SystemLoad.NetBytesRecv,
 		},
+		MeWritersSummary: &gatewayrpc.RuntimeMeWritersSummary{
+			ConfiguredEndpoints: int32(state.MeWritersSummary.ConfiguredEndpoints),
+			AvailableEndpoints:  int32(state.MeWritersSummary.AvailableEndpoints),
+			CoveragePct:         state.MeWritersSummary.CoveragePct,
+			FreshAliveWriters:   int32(state.MeWritersSummary.FreshAliveWriters),
+			FreshCoveragePct:    state.MeWritersSummary.FreshCoveragePct,
+			RequiredWriters:     int32(state.MeWritersSummary.RequiredWriters),
+			AliveWriters:        int32(state.MeWritersSummary.AliveWriters),
+		},
 	}
 	snapshot.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{
 		State:               state.Diagnostics.State,

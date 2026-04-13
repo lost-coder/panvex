@@ -111,24 +111,23 @@ function transformMePool(
   const refill = rec(data.refill);
   const byDcRaw = Array.isArray(refill.by_dc) ? refill.by_dc : [];
 
-  const aliveWriters = num(writers.alive_non_draining);
+  // Prefer real ME writers summary from Telemt /v1/stats/me-writers when available.
+  const mws = runtime?.me_writers_summary;
+  const aliveWriters = mws?.alive_writers ?? num(writers.alive_non_draining);
   const totalDcGroups = runtime?.dcs?.length ?? 0;
-  const requiredWriters = (runtime?.dcs ?? []).reduce(
-    (sum, dc) => sum + (dc.required_writers ?? 0), 0,
-  );
 
   return {
     enabled: true,
     summary: {
       aliveWriters,
-      availableEndpoints: 0,
-      availablePct: 0,
+      availableEndpoints: mws?.available_endpoints ?? 0,
+      availablePct: mws ? Math.round((mws.available_endpoints / Math.max(mws.configured_endpoints, 1)) * 1000) / 10 : 0,
       configuredDcGroups: totalDcGroups,
-      configuredEndpoints: 0,
-      coveragePct: runtime?.dc_coverage_pct ?? 0,
-      freshAliveWriters: aliveWriters,
-      freshCoveragePct: runtime?.dc_coverage_pct ?? 0,
-      requiredWriters,
+      configuredEndpoints: mws?.configured_endpoints ?? 0,
+      coveragePct: Math.round((mws?.coverage_pct ?? runtime?.dc_coverage_pct ?? 0) * 10) / 10,
+      freshAliveWriters: mws?.fresh_alive_writers ?? aliveWriters,
+      freshCoveragePct: Math.round((mws?.fresh_coverage_pct ?? mws?.coverage_pct ?? runtime?.dc_coverage_pct ?? 0) * 10) / 10,
+      requiredWriters: mws?.required_writers ?? 0,
     },
     generations: {
       active: num(generations.active_generation),
