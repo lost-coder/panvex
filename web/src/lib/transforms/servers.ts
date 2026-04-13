@@ -123,37 +123,23 @@ function transformMePool(
   const refill = rec(data.refill);
   const byDcRaw = Array.isArray(refill.by_dc) ? refill.by_dc : [];
 
-  const aliveWriters = num(writers.alive_non_draining);
-  const dcs = runtime?.dcs ?? [];
-  const totalDcGroups = dcs.length;
-  const requiredWriters = dcs.reduce(
-    (sum, dc) => sum + (dc.required_writers ?? 0), 0,
-  );
-
-  // Aggregate DC-level metrics for the ME Pool summary.
-  const totalEndpoints = dcs.reduce((s, dc) => s + (dc.available_endpoints ?? 0), 0);
-  const totalAvailable = dcs.reduce((s, dc) => s + (dc.available_endpoints ?? 0), 0);
-  const configuredEndpoints = num(data.configured_endpoints) ||
-    dcs.reduce((s, dc) => s + (dc.available_endpoints ?? 0) + (dc.required_writers ?? 0), 0);
-  const avgCoverage = totalDcGroups > 0
-    ? dcs.reduce((s, dc) => s + (dc.coverage_pct ?? 0), 0) / totalDcGroups
-    : 0;
-  const avgAvailablePct = totalDcGroups > 0
-    ? dcs.reduce((s, dc) => s + (dc.available_pct ?? 0), 0) / totalDcGroups
-    : 0;
+  // Prefer real ME writers summary from Telemt /v1/stats/me-writers when available.
+  const mws = runtime?.me_writers_summary;
+  const aliveWriters = mws?.alive_writers ?? num(writers.alive_non_draining);
+  const totalDcGroups = runtime?.dcs?.length ?? 0;
 
   return {
     enabled: true,
     summary: {
       aliveWriters,
-      availableEndpoints: totalAvailable,
-      availablePct: pct1(avgAvailablePct),
+      availableEndpoints: mws?.available_endpoints ?? 0,
+      availablePct: pct1(mws ? (mws.available_endpoints / Math.max(mws.configured_endpoints, 1)) * 100 : 0),
       configuredDcGroups: totalDcGroups,
-      configuredEndpoints,
-      coveragePct: pct1(avgCoverage),
-      freshAliveWriters: aliveWriters,
-      freshCoveragePct: pct1(avgCoverage),
-      requiredWriters,
+      configuredEndpoints: mws?.configured_endpoints ?? 0,
+      coveragePct: pct1(mws?.coverage_pct ?? runtime?.dc_coverage_pct),
+      freshAliveWriters: mws?.fresh_alive_writers ?? aliveWriters,
+      freshCoveragePct: pct1(mws?.fresh_coverage_pct ?? mws?.coverage_pct ?? runtime?.dc_coverage_pct),
+      requiredWriters: mws?.required_writers ?? 0,
     },
     generations: {
       active: num(generations.active_generation),
