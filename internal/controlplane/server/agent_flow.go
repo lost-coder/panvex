@@ -332,8 +332,8 @@ func runtimeLifecycleState(snapshot *gatewayrpc.RuntimeSnapshot) string {
 
 func agentRuntimeFromSnapshot(snapshot *gatewayrpc.RuntimeSnapshot, observedAt time.Time) AgentRuntime {
 	dcs := make([]RuntimeDC, 0, len(snapshot.Dcs))
-	coveragePct := 0.0
-	for index, dc := range snapshot.Dcs {
+	coverageSum := 0.0
+	for _, dc := range snapshot.Dcs {
 		dcs = append(dcs, RuntimeDC{
 			DC:                 int(dc.Dc),
 			AvailableEndpoints: int(dc.AvailableEndpoints),
@@ -346,9 +346,11 @@ func agentRuntimeFromSnapshot(snapshot *gatewayrpc.RuntimeSnapshot, observedAt t
 			RTTMs:              dc.RttMs,
 			Load:               int(dc.Load),
 		})
-		if index == 0 || dc.CoveragePct < coveragePct {
-			coveragePct = dc.CoveragePct
-		}
+		coverageSum += dc.CoveragePct
+	}
+	coveragePct := 0.0
+	if len(snapshot.Dcs) > 0 {
+		coveragePct = coverageSum / float64(len(snapshot.Dcs))
 	}
 
 	var upstreamRows []*gatewayrpc.RuntimeUpstreamRowSnapshot
