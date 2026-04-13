@@ -52,6 +52,12 @@ export type AgentRuntime = {
   dc_coverage_pct: number;
   healthy_upstreams: number;
   total_upstreams: number;
+  reroute_active?: boolean;
+  route_mode?: string;
+  me2dc_fast_enabled?: boolean;
+  stale_cache_used?: boolean;
+  top_by_connections?: Array<{ username: string; connections: number }>;
+  top_by_throughput?: Array<{ username: string; throughput_bytes: number }>;
   dcs: Array<{
     dc: number;
     available_endpoints: number;
@@ -59,6 +65,8 @@ export type AgentRuntime = {
     required_writers: number;
     alive_writers: number;
     coverage_pct: number;
+    fresh_alive_writers?: number;
+    fresh_coverage_pct?: number;
     rtt_ms: number;
     load: number;
   }>;
@@ -69,6 +77,9 @@ export type AgentRuntime = {
     healthy: boolean;
     fails: number;
     effective_latency_ms: number;
+    weight?: number;
+    last_check_age_secs?: number;
+    scopes?: string[];
   }>;
   lifecycle_state?: string;
   updated_at?: string;

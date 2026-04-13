@@ -189,7 +189,7 @@ export function transformServerDetail(
     meRuntimeReady: runtime?.me_runtime_ready ?? false,
     useMiddleProxy: runtime?.use_middle_proxy ?? false,
     me2dcFallbackEnabled: runtime?.me2dc_fallback_enabled ?? false,
-    rerouteActive: false,
+    rerouteActive: runtime?.reroute_active ?? false,
     startupStatus: runtime?.startup_status ?? "",
     startupProgressPct: runtime?.startup_progress_pct ?? 0,
     degraded: runtime?.degraded ?? false,
@@ -240,9 +240,17 @@ export function transformServerDetail(
     currentMe: runtime?.current_connections_me ?? 0,
     currentDirect: runtime?.current_connections_direct ?? 0,
     activeUsers: runtime?.active_users ?? 0,
-    staleCacheUsed: false,
-    topByConnections: [],
-    topByThroughput: [],
+    staleCacheUsed: runtime?.stale_cache_used ?? false,
+    topByConnections: (runtime?.top_by_connections ?? []).map((e) => ({
+      username: e.username,
+      connections: e.connections,
+      octets: 0,
+    })),
+    topByThroughput: (runtime?.top_by_throughput ?? []).map((e) => ({
+      username: e.username,
+      connections: 0,
+      octets: e.throughput_bytes,
+    })),
   };
 
   const summary: ServerDetailPageProps["server"]["summary"] = {
@@ -258,10 +266,10 @@ export function transformServerDetail(
     upstreamId: u.upstream_id,
     routeKind: u.route_kind ?? "direct",
     address: u.address ?? "",
-    weight: 1,
+    weight: u.weight ?? 1,
     healthy: u.healthy ?? false,
     fails: u.fails ?? 0,
-    lastCheckAgeSecs: 0,
+    lastCheckAgeSecs: u.last_check_age_secs ?? 0,
     effectiveLatencyMs: ms1(u.effective_latency_ms),
     dc: [],
   }));
