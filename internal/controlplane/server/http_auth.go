@@ -50,6 +50,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		}
 
 		if s.loginLockout.IsLocked(request.Username, s.now()) {
+			s.logger.Info("login attempt on locked account", "username", request.Username)
 			writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
 			return
 		}
@@ -63,6 +64,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 			// Record lockout-eligible failures: wrong password or wrong TOTP code.
 			if errors.Is(err, auth.ErrInvalidCredentials) || errors.Is(err, auth.ErrInvalidTotpCode) {
 				if s.loginLockout.CheckAndRecordFailure(request.Username, s.now()) {
+					s.logger.Info("account locked out", "username", request.Username)
 					writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
 					return
 				}
@@ -82,6 +84,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		}
 
 		s.loginLockout.RecordSuccess(request.Username)
+		s.logger.Info("user logged in", "username", request.Username, "session_id", session.ID)
 
 		http.SetCookie(w, &http.Cookie{
 			Name:     sessionCookieName,
@@ -114,6 +117,7 @@ func (s *Server) handleLogout() http.HandlerFunc {
 			return
 		}
 
+		s.logger.Info("user logged out", "user_id", session.UserID, "session_id", session.ID)
 		http.SetCookie(w, &http.Cookie{
 			Name:     sessionCookieName,
 			Value:    "",

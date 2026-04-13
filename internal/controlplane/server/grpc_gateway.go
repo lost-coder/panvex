@@ -289,15 +289,19 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 		select {
 		case err := <-dispatchErrors:
 			cancelConnection()
+			s.logger.Info("agent stream closed", "agent_id", agentID, "reason", "dispatch_error", "error", err)
 			return err
 		case err := <-processErrors:
 			cancelConnection()
+			s.logger.Info("agent stream closed", "agent_id", agentID, "reason", "process_error", "error", err)
 			return status.Error(codes.Internal, err.Error())
 		case err := <-receiveErrors:
 			cancelConnection()
 			if errors.Is(err, io.EOF) {
+				s.logger.Info("agent stream closed", "agent_id", agentID, "reason", "eof")
 				return nil
 			}
+			s.logger.Info("agent stream closed", "agent_id", agentID, "reason", "receive_error", "error", err)
 			return err
 		}
 	}
@@ -358,6 +362,7 @@ func (s *Server) dispatchPendingJobs(stream gatewayrpc.AgentGateway_ConnectServe
 	}
 
 	for _, job := range pendingJobs {
+		s.logger.Debug("job dispatched to agent", "agent_id", agentID, "job_id", job.ID, "action", string(job.Action))
 		if err := stream.Send(&gatewayrpc.ConnectServerMessage{
 			Body: &gatewayrpc.ConnectServerMessage_Job{
 				Job: &gatewayrpc.JobCommand{
@@ -392,6 +397,7 @@ func (s *Server) processRegularAgentMessage(
 	message *gatewayrpc.ConnectClientMessage,
 ) error {
 	if hb := message.GetHeartbeat(); hb != nil {
+		s.logger.Debug("message received", "agent_id", agentID, "type", "heartbeat")
 		enqueueRegularSnapshot(connectionCtx, regularSnapshots, agentSnapshot{
 			AgentID:      agentID,
 			NodeName:     hb.NodeName,
@@ -404,6 +410,7 @@ func (s *Server) processRegularAgentMessage(
 	}
 
 	if snap := message.GetSnapshot(); snap != nil {
+		s.logger.Debug("message received", "agent_id", agentID, "type", "snapshot")
 		instances := make([]instanceSnapshot, 0, len(snap.Instances))
 		for _, instance := range snap.Instances {
 			instances = append(instances, instanceSnapshot{
@@ -481,6 +488,7 @@ func (s *Server) processRegularAgentMessage(
 	}
 
 	if resp := message.GetClientDataResponse(); resp != nil {
+		s.logger.Debug("message received", "agent_id", agentID, "type", "client_data_response")
 		// Run synchronously within the regular message processor goroutine
 		// to prevent unbounded goroutine accumulation from repeated responses.
 		s.reconcileDiscoveredClients(connectionCtx, agentID, resp.GetClients(), s.now())
@@ -506,6 +514,7 @@ func (s *Server) processPriorityAgentMessageAsync(
 	}
 
 	if jr := message.GetJobResult(); jr != nil {
+		s.logger.Debug("message received", "agent_id", agentID, "type", "job_result", "job_id", jr.JobId, "success", jr.Success)
 		observedAt := time.Unix(jr.ObservedAtUnix, 0).UTC()
 		s.recordJobResultState(
 			agentID,
