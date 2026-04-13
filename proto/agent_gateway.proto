@@ -54,6 +54,16 @@ message ClientIPSnapshot {
   string client_name = 3;
 }
 
+message RuntimeMeWritersSummary {
+  int32 configured_endpoints = 1;
+  int32 available_endpoints = 2;
+  double coverage_pct = 3;
+  int32 fresh_alive_writers = 4;
+  double fresh_coverage_pct = 5;
+  int32 required_writers = 6;
+  int32 alive_writers = 7;
+}
+
 message RuntimeDCSnapshot {
   int32 dc = 1;
   int32 available_endpoints = 2;
@@ -63,6 +73,8 @@ message RuntimeDCSnapshot {
   double coverage_pct = 6;
   double rtt_ms = 7;
   int32 load = 8;
+  int32 fresh_alive_writers = 9;
+  double fresh_coverage_pct = 10;
 }
 
 message RuntimeUpstreamRowSnapshot {
@@ -72,6 +84,9 @@ message RuntimeUpstreamRowSnapshot {
   bool healthy = 4;
   int32 fails = 5;
   double effective_latency_ms = 6;
+  int32 weight = 7;
+  int32 last_check_age_secs = 8;
+  repeated string scopes = 9;
 }
 
 message RuntimeUpstreamSnapshot {
@@ -169,6 +184,19 @@ message RuntimeSnapshot {
   AggregatedConnections aggregated_connections = 27;
   repeated AggregatedDCHealth aggregated_dcs = 28;
   int32 aggregation_samples = 29;
+  RuntimeMeWritersSummary me_writers_summary = 30;
+  bool reroute_active = 31;
+  string route_mode = 32;
+  bool me2dc_fast_enabled = 33;
+  bool stale_cache_used = 34;
+  repeated ConnectionTopEntry top_by_connections = 35;
+  repeated ConnectionTopEntry top_by_throughput = 36;
+}
+
+message ConnectionTopEntry {
+  string username = 1;
+  int32 connections = 2;
+  uint64 throughput_bytes = 3;
 }
 
 message RuntimeDiagnosticsSnapshot {

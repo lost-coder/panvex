@@ -340,6 +340,8 @@ func agentRuntimeFromSnapshot(snapshot *gatewayrpc.RuntimeSnapshot, observedAt t
 			RequiredWriters:    int(dc.RequiredWriters),
 			AliveWriters:       int(dc.AliveWriters),
 			CoveragePct:        dc.CoveragePct,
+			FreshAliveWriters:  int(dc.FreshAliveWriters),
+			FreshCoveragePct:   dc.FreshCoveragePct,
 			RTTMs:              dc.RttMs,
 			Load:               int(dc.Load),
 		})
@@ -364,6 +366,9 @@ func agentRuntimeFromSnapshot(snapshot *gatewayrpc.RuntimeSnapshot, observedAt t
 			Healthy:            upstream.Healthy,
 			Fails:              int(upstream.Fails),
 			EffectiveLatencyMs: upstream.EffectiveLatencyMs,
+			Weight:             int(upstream.Weight),
+			LastCheckAgeSecs:   int(upstream.LastCheckAgeSecs),
+			Scopes:             upstream.Scopes,
 		})
 	}
 
@@ -407,6 +412,7 @@ func agentRuntimeFromSnapshot(snapshot *gatewayrpc.RuntimeSnapshot, observedAt t
 		Upstreams:                 upstreams,
 		RecentEvents:              recentEvents,
 		SystemLoad:                systemLoadFromSnapshot(snapshot.SystemLoad),
+		MeWritersSummary:          meWritersSummaryFromSnapshot(snapshot.MeWritersSummary),
 		UpdatedAt:                 observedAt.UTC(),
 	}
 }
@@ -428,6 +434,21 @@ func systemLoadFromSnapshot(load *gatewayrpc.RuntimeSystemLoadSnapshot) RuntimeS
 		Load15M:          load.Load_15M,
 		NetBytesSent:     load.NetBytesSent,
 		NetBytesRecv:     load.NetBytesRecv,
+	}
+}
+
+func meWritersSummaryFromSnapshot(s *gatewayrpc.RuntimeMeWritersSummary) *RuntimeMeWritersSummary {
+	if s == nil {
+		return nil
+	}
+	return &RuntimeMeWritersSummary{
+		ConfiguredEndpoints: int(s.ConfiguredEndpoints),
+		AvailableEndpoints:  int(s.AvailableEndpoints),
+		CoveragePct:         s.CoveragePct,
+		FreshAliveWriters:   int(s.FreshAliveWriters),
+		FreshCoveragePct:    s.FreshCoveragePct,
+		RequiredWriters:     int(s.RequiredWriters),
+		AliveWriters:        int(s.AliveWriters),
 	}
 }
 

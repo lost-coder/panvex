@@ -147,6 +147,21 @@ func runtimeNeedsInitializationWatch(state telemt.RuntimeState) bool {
 }
 
 // BuildRuntimeSnapshot converts the current Telemt runtime state into a gateway snapshot.
+func connectionTopEntries(entries []telemt.RuntimeConnectionTopEntry) []*gatewayrpc.ConnectionTopEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	result := make([]*gatewayrpc.ConnectionTopEntry, 0, len(entries))
+	for _, e := range entries {
+		result = append(result, &gatewayrpc.ConnectionTopEntry{
+			Username:        e.Username,
+			Connections:     int32(e.Connections),
+			ThroughputBytes: e.ThroughputBytes,
+		})
+	}
+	return result
+}
+
 func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) (*gatewayrpc.Snapshot, error) {
 	state, err := a.telemt.FetchRuntimeState(ctx)
 	if err != nil {
@@ -164,6 +179,8 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 			CoveragePct:        dc.CoveragePct,
 			RttMs:              dc.RTTMs,
 			Load:               int32(dc.Load),
+			FreshAliveWriters:  int32(dc.FreshAliveWriters),
+			FreshCoveragePct:   dc.FreshCoveragePct,
 		})
 	}
 
@@ -176,6 +193,9 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 			Healthy:            upstream.Healthy,
 			Fails:              int32(upstream.Fails),
 			EffectiveLatencyMs: upstream.EffectiveLatencyMs,
+			Weight:             int32(upstream.Weight),
+			LastCheckAgeSecs:   int32(upstream.LastCheckAgeSecs),
+			Scopes:             upstream.Scopes,
 		})
 	}
 
@@ -230,7 +250,10 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 		AcceptingNewConnections:   state.Gates.AcceptingNewConnections,
 		MeRuntimeReady:            state.Gates.MERuntimeReady,
 		Me2DcFallbackEnabled:      state.Gates.ME2DCFallbackEnabled,
+		Me2DcFastEnabled:          state.Gates.ME2DCFastEnabled,
 		UseMiddleProxy:            state.Gates.UseMiddleProxy,
+		RerouteActive:             state.Gates.RerouteActive,
+		RouteMode:                 state.Gates.RouteMode,
 		StartupStatus:             state.Gates.StartupStatus,
 		StartupStage:              state.Gates.StartupStage,
 		StartupProgressPct:        state.Gates.StartupProgressPct,
@@ -243,6 +266,9 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 		CurrentConnectionsMe:      int32(state.ConnectionTotals.CurrentConnectionsME),
 		CurrentConnectionsDirect:  int32(state.ConnectionTotals.CurrentConnectionsDirect),
 		ActiveUsers:               int32(state.ConnectionTotals.ActiveUsers),
+		StaleCacheUsed:            state.ConnectionTotals.StaleCacheUsed,
+		TopByConnections:          connectionTopEntries(state.ConnectionTotals.TopByConnections),
+		TopByThroughput:           connectionTopEntries(state.ConnectionTotals.TopByThroughput),
 		UptimeSeconds:             state.UptimeSeconds,
 		ConnectionsTotal:          state.Summary.ConnectionsTotal,
 		ConnectionsBadTotal:       state.Summary.ConnectionsBadTotal,
@@ -271,6 +297,15 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 			Load_15M:         state.SystemLoad.Load15M,
 			NetBytesSent:     state.SystemLoad.NetBytesSent,
 			NetBytesRecv:     state.SystemLoad.NetBytesRecv,
+		},
+		MeWritersSummary: &gatewayrpc.RuntimeMeWritersSummary{
+			ConfiguredEndpoints: int32(state.MeWritersSummary.ConfiguredEndpoints),
+			AvailableEndpoints:  int32(state.MeWritersSummary.AvailableEndpoints),
+			CoveragePct:         state.MeWritersSummary.CoveragePct,
+			FreshAliveWriters:   int32(state.MeWritersSummary.FreshAliveWriters),
+			FreshCoveragePct:    state.MeWritersSummary.FreshCoveragePct,
+			RequiredWriters:     int32(state.MeWritersSummary.RequiredWriters),
+			AliveWriters:        int32(state.MeWritersSummary.AliveWriters),
 		},
 	}
 	snapshot.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{

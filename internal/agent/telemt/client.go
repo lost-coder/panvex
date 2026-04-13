@@ -59,12 +59,13 @@ func (c *Client) InvalidateSlowDataCache() {
 
 // slowRuntimeState stores data from heavier Telemt endpoints that tolerate short-lived staleness.
 type slowRuntimeState struct {
-	Version       string
-	UptimeSeconds float64
-	Upstreams     RuntimeUpstreamSummary
-	RecentEvents  []RuntimeEvent
-	Diagnostics   RuntimeDiagnostics
+	Version           string
+	UptimeSeconds     float64
+	Upstreams         RuntimeUpstreamSummary
+	RecentEvents      []RuntimeEvent
+	Diagnostics       RuntimeDiagnostics
 	SecurityInventory RuntimeSecurityInventory
+	MeWritersSummary  RuntimeMeWritersSummary
 }
 
 // RuntimeState summarizes the Telemt information the agent reports to the control-plane.
@@ -82,6 +83,7 @@ type RuntimeState struct {
 	RecentEvents     []RuntimeEvent
 	Diagnostics      RuntimeDiagnostics
 	SecurityInventory RuntimeSecurityInventory
+	MeWritersSummary  RuntimeMeWritersSummary
 	SystemLoad       RuntimeSystemLoad
 	Clients          []ClientUsage
 }
@@ -123,12 +125,26 @@ type RuntimeSecurityInventory struct {
 	EntriesJSON  string
 }
 
+// RuntimeMeWritersSummary carries the ME writers pool aggregate from /v1/stats/me-writers.
+type RuntimeMeWritersSummary struct {
+	ConfiguredEndpoints int
+	AvailableEndpoints  int
+	CoveragePct         float64
+	FreshAliveWriters   int
+	FreshCoveragePct    float64
+	RequiredWriters     int
+	AliveWriters        int
+}
+
 // RuntimeGates carries the operator-facing admission and transport gates.
 type RuntimeGates struct {
 	AcceptingNewConnections bool
 	MERuntimeReady          bool
 	ME2DCFallbackEnabled    bool
+	ME2DCFastEnabled        bool
 	UseMiddleProxy          bool
+	RouteMode               string
+	RerouteActive           bool
 	StartupStatus           string
 	StartupStage            string
 	StartupProgressPct      float64
@@ -144,11 +160,21 @@ type RuntimeInitialization struct {
 }
 
 // RuntimeConnectionTotals carries the current live connection split.
+// RuntimeConnectionTopEntry carries one entry from the top-N connections or throughput list.
+type RuntimeConnectionTopEntry struct {
+	Username        string
+	Connections     int
+	ThroughputBytes uint64
+}
+
 type RuntimeConnectionTotals struct {
 	CurrentConnections       int
 	CurrentConnectionsME     int
 	CurrentConnectionsDirect int
 	ActiveUsers              int
+	StaleCacheUsed           bool
+	TopByConnections         []RuntimeConnectionTopEntry
+	TopByThroughput          []RuntimeConnectionTopEntry
 }
 
 // RuntimeSummary carries cumulative connection counters used for overview cards.
@@ -167,6 +193,8 @@ type RuntimeDC struct {
 	RequiredWriters    int
 	AliveWriters       int
 	CoveragePct        float64
+	FreshAliveWriters  int
+	FreshCoveragePct   float64
 	RTTMs              float64
 	Load               int
 }
@@ -189,6 +217,9 @@ type RuntimeUpstream struct {
 	Healthy            bool
 	Fails              int
 	EffectiveLatencyMs float64
+	Weight             int
+	LastCheckAgeSecs   int
+	Scopes             []string
 }
 
 // RuntimeEvent carries one recent runtime event from Telemt.
@@ -305,7 +336,10 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 		AcceptingNewConnections bool    `json:"accepting_new_connections"`
 		MERuntimeReady          bool    `json:"me_runtime_ready"`
 		ME2DCFallbackEnabled    bool    `json:"me2dc_fallback_enabled"`
+		ME2DCFastEnabled        bool    `json:"me2dc_fast_enabled"`
 		UseMiddleProxy          bool    `json:"use_middle_proxy"`
+		RouteMode               string  `json:"route_mode"`
+		RerouteActive           bool    `json:"reroute_active"`
 		StartupStatus           string  `json:"startup_status"`
 		StartupStage            string  `json:"startup_stage"`
 		StartupProgressPct      float64 `json:"startup_progress_pct"`
@@ -329,12 +363,25 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 		Enabled bool   `json:"enabled"`
 		Reason  string `json:"reason"`
 		Data    struct {
+			Cache struct {
+				StaleCacheUsed bool `json:"stale_cache_used"`
+			} `json:"cache"`
 			Totals struct {
 				CurrentConnections       int `json:"current_connections"`
 				CurrentConnectionsME     int `json:"current_connections_me"`
 				CurrentConnectionsDirect int `json:"current_connections_direct"`
 				ActiveUsers              int `json:"active_users"`
 			} `json:"totals"`
+			Top struct {
+				ByConnections []struct {
+					Username    string `json:"username"`
+					Connections int    `json:"connections"`
+				} `json:"by_connections"`
+				ByThroughput []struct {
+					Username       string `json:"username"`
+					ThroughputBytes uint64 `json:"throughput_bytes"`
+				} `json:"by_throughput"`
+			} `json:"top"`
 		} `json:"data"`
 	}{}
 	if err := c.getJSON(ctx, "/v1/runtime/connections/summary", &connectionSummary); err != nil {
@@ -359,6 +406,8 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 			RequiredWriters    int     `json:"required_writers"`
 			AliveWriters       int     `json:"alive_writers"`
 			CoveragePct        float64 `json:"coverage_pct"`
+			FreshAliveWriters  int     `json:"fresh_alive_writers"`
+			FreshCoveragePct   float64 `json:"fresh_coverage_pct"`
 			RTTMs              float64 `json:"rtt_ms"`
 			Load               int     `json:"load"`
 		} `json:"dcs"`
@@ -376,6 +425,8 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 			RequiredWriters:    dc.RequiredWriters,
 			AliveWriters:       dc.AliveWriters,
 			CoveragePct:        dc.CoveragePct,
+			FreshAliveWriters:  dc.FreshAliveWriters,
+			FreshCoveragePct:   dc.FreshCoveragePct,
 			RTTMs:              dc.RTTMs,
 			Load:               dc.Load,
 		})
@@ -427,7 +478,10 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 			AcceptingNewConnections: gates.AcceptingNewConnections,
 			MERuntimeReady:          gates.MERuntimeReady,
 			ME2DCFallbackEnabled:    gates.ME2DCFallbackEnabled,
+			ME2DCFastEnabled:        gates.ME2DCFastEnabled,
 			UseMiddleProxy:          gates.UseMiddleProxy,
+			RouteMode:               gates.RouteMode,
+			RerouteActive:           gates.RerouteActive,
 			StartupStatus:           gates.StartupStatus,
 			StartupStage:            gates.StartupStage,
 			StartupProgressPct:      gates.StartupProgressPct,
@@ -439,12 +493,25 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 			ProgressPct:   initialization.ProgressPct,
 			TransportMode: initialization.TransportMode,
 		},
-		ConnectionTotals: RuntimeConnectionTotals{
-			CurrentConnections:       connectionSummary.Data.Totals.CurrentConnections,
-			CurrentConnectionsME:     connectionSummary.Data.Totals.CurrentConnectionsME,
-			CurrentConnectionsDirect: connectionSummary.Data.Totals.CurrentConnectionsDirect,
-			ActiveUsers:              connectionSummary.Data.Totals.ActiveUsers,
-		},
+		ConnectionTotals: func() RuntimeConnectionTotals {
+			topConn := make([]RuntimeConnectionTopEntry, 0, len(connectionSummary.Data.Top.ByConnections))
+			for _, e := range connectionSummary.Data.Top.ByConnections {
+				topConn = append(topConn, RuntimeConnectionTopEntry{Username: e.Username, Connections: e.Connections})
+			}
+			topTput := make([]RuntimeConnectionTopEntry, 0, len(connectionSummary.Data.Top.ByThroughput))
+			for _, e := range connectionSummary.Data.Top.ByThroughput {
+				topTput = append(topTput, RuntimeConnectionTopEntry{Username: e.Username, ThroughputBytes: e.ThroughputBytes})
+			}
+			return RuntimeConnectionTotals{
+				CurrentConnections:       connectionSummary.Data.Totals.CurrentConnections,
+				CurrentConnectionsME:     connectionSummary.Data.Totals.CurrentConnectionsME,
+				CurrentConnectionsDirect: connectionSummary.Data.Totals.CurrentConnectionsDirect,
+				ActiveUsers:              connectionSummary.Data.Totals.ActiveUsers,
+				StaleCacheUsed:           connectionSummary.Data.Cache.StaleCacheUsed,
+				TopByConnections:         topConn,
+				TopByThroughput:          topTput,
+			}
+		}(),
 		Summary: RuntimeSummary{
 			ConnectionsTotal:       summary.ConnectionsTotal,
 			ConnectionsBadTotal:    summary.ConnectionsBadTotal,
@@ -454,9 +521,10 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 		DCs:          dcs,
 		Upstreams:    slowData.Upstreams,
 		RecentEvents: slowData.RecentEvents,
-		Diagnostics:  slowData.Diagnostics,
+		Diagnostics:      slowData.Diagnostics,
 		SecurityInventory: slowData.SecurityInventory,
-		SystemLoad:   systemLoad,
+		MeWritersSummary: slowData.MeWritersSummary,
+		SystemLoad:       systemLoad,
 		Clients:      users,
 	}, nil
 }
@@ -477,12 +545,15 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, e
 			SOCKS5Total     int `json:"socks5_total"`
 		} `json:"summary"`
 		Upstreams []struct {
-			UpstreamID         int     `json:"upstream_id"`
-			RouteKind          string  `json:"route_kind"`
-			Address            string  `json:"address"`
-			Healthy            bool    `json:"healthy"`
-			Fails              int     `json:"fails"`
-			EffectiveLatencyMs float64 `json:"effective_latency_ms"`
+			UpstreamID         int      `json:"upstream_id"`
+			RouteKind          string   `json:"route_kind"`
+			Address            string   `json:"address"`
+			Healthy            bool     `json:"healthy"`
+			Fails              int      `json:"fails"`
+			EffectiveLatencyMs float64  `json:"effective_latency_ms"`
+			Weight             int      `json:"weight"`
+			LastCheckAgeSecs   int      `json:"last_check_age_secs"`
+			Scopes             []string `json:"scopes"`
 		} `json:"upstreams"`
 	}{}
 	if err := c.getJSON(ctx, "/v1/stats/upstreams", &upstreamStatus); err != nil {
@@ -559,6 +630,30 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, e
 		diagnostics.DcsJSON = marshalJSON(dcsDetail)
 	}
 
+	meWritersSummary := RuntimeMeWritersSummary{}
+	meWritersResp := struct {
+		Summary struct {
+			ConfiguredEndpoints int     `json:"configured_endpoints"`
+			AvailableEndpoints  int     `json:"available_endpoints"`
+			CoveragePct         float64 `json:"coverage_pct"`
+			FreshAliveWriters   int     `json:"fresh_alive_writers"`
+			FreshCoveragePct    float64 `json:"fresh_coverage_pct"`
+			RequiredWriters     int     `json:"required_writers"`
+			AliveWriters        int     `json:"alive_writers"`
+		} `json:"summary"`
+	}{}
+	if err := c.getJSON(ctx, "/v1/stats/me-writers", &meWritersResp); err == nil {
+		meWritersSummary = RuntimeMeWritersSummary{
+			ConfiguredEndpoints: meWritersResp.Summary.ConfiguredEndpoints,
+			AvailableEndpoints:  meWritersResp.Summary.AvailableEndpoints,
+			CoveragePct:         meWritersResp.Summary.CoveragePct,
+			FreshAliveWriters:   meWritersResp.Summary.FreshAliveWriters,
+			FreshCoveragePct:    meWritersResp.Summary.FreshCoveragePct,
+			RequiredWriters:     meWritersResp.Summary.RequiredWriters,
+			AliveWriters:        meWritersResp.Summary.AliveWriters,
+		}
+	}
+
 	securityInventory := RuntimeSecurityInventory{
 		State:       "fresh",
 		StateReason: "",
@@ -586,6 +681,9 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, e
 			Healthy:            upstream.Healthy,
 			Fails:              upstream.Fails,
 			EffectiveLatencyMs: upstream.EffectiveLatencyMs,
+			Weight:             upstream.Weight,
+			LastCheckAgeSecs:   upstream.LastCheckAgeSecs,
+			Scopes:             upstream.Scopes,
 		})
 	}
 
@@ -610,9 +708,10 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, e
 			SOCKS5Total:     upstreamStatus.Summary.SOCKS5Total,
 			Rows:            upstreams,
 		},
-		RecentEvents: events,
-		Diagnostics: diagnostics,
+		RecentEvents:     events,
+		Diagnostics:      diagnostics,
 		SecurityInventory: securityInventory,
+		MeWritersSummary: meWritersSummary,
 	}, nil
 }
 
