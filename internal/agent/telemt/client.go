@@ -551,9 +551,9 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, e
 			Healthy            bool     `json:"healthy"`
 			Fails              int      `json:"fails"`
 			EffectiveLatencyMs float64  `json:"effective_latency_ms"`
-			Weight             int      `json:"weight"`
-			LastCheckAgeSecs   int      `json:"last_check_age_secs"`
-			Scopes             []string `json:"scopes"`
+			Weight             int `json:"weight"`
+			LastCheckAgeSecs   int `json:"last_check_age_secs"`
+			Scopes             any `json:"scopes"`
 		} `json:"upstreams"`
 	}{}
 	if err := c.getJSON(ctx, "/v1/stats/upstreams", &upstreamStatus); err != nil {
@@ -683,7 +683,7 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, e
 			EffectiveLatencyMs: upstream.EffectiveLatencyMs,
 			Weight:             upstream.Weight,
 			LastCheckAgeSecs:   upstream.LastCheckAgeSecs,
-			Scopes:             upstream.Scopes,
+			Scopes:             parseScopes(upstream.Scopes),
 		})
 	}
 
@@ -1044,6 +1044,27 @@ func decodeAPIErrorDetails(raw json.RawMessage) (string, string) {
 	}
 
 	return "", ""
+}
+
+// parseScopes normalizes the Telemt scopes field which may be a single string or an array of strings.
+func parseScopes(v any) []string {
+	switch val := v.(type) {
+	case string:
+		if val == "" {
+			return nil
+		}
+		return []string{val}
+	case []any:
+		result := make([]string, 0, len(val))
+		for _, item := range val {
+			if s, ok := item.(string); ok {
+				result = append(result, s)
+			}
+		}
+		return result
+	default:
+		return nil
+	}
 }
 
 func marshalJSON(value any) string {
