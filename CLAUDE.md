@@ -1,139 +1,86 @@
 # Panvex
 
-Control-plane + agent system for fleet management with embedded web UI.
+Control-plane + web dashboard + agent for managing fleets of Telemt nodes.
+
+## Domain context
+
+Telemt is an MTProxy server for Telegram (Rust + Tokio). It proxies Telegram
+traffic using the MTProto protocol with obfuscation modes: Classic, Secure (dd
+prefix), and Fake TLS (ee prefix + SNI fronting).
+
+Panvex manages multiple Telemt instances centrally:
+- the control-plane exposes an HTTP API and a gRPC gateway
+- each agent runs on a server alongside Telemt, connects to the control-plane
+  over gRPC, and drives Telemt via its local loopback API
+- the web dashboard lets operators manage clients, nodes, fleet groups,
+  enrollment tokens, and jobs
+
+Key domain entities: Node, Client, FleetGroup, EnrollmentToken, Job, Presence.
+
+A "client" in Panvex maps to a Telemt proxy client: it has a secret, limits
+(max_tcp_conns, max_unique_ips, quota, expiry), and is assigned to nodes by
+fleet group or explicitly. After each save, Panvex queues rollout jobs; each
+node returns its own Telegram connection link.
+
+## Repository layout
+
+```
+cmd/control-plane/   HTTP :8080 + gRPC :8443 gateway; embeds web UI via go:embed
+cmd/agent/           Agent binary: bootstrap/enrollment + Telemt API integration
+internal/
+  controlplane/      auth, jobs, presence, state, server (HTTP handlers)
+  agent/             Telemt client, runtime orchestration, agent state
+  gatewayrpc/        shared gRPC transport contract (control-plane <-> agent)
+  dbsqlc/            sqlc-generated DB layer — DO NOT edit manually
+db/
+  migrations/        PostgreSQL schema
+  queries/           SQL source for sqlc
+proto/               Protobuf definitions for gRPC gateway
+web/                 React dashboard
+deploy/              Docker Compose, nginx, install scripts
+.tmp/plans/          Local working plans (gitignored)
+```
+
+## Tech stack
+
+- **Go 1.26**: chi/v5 router, pgx/v5, modernc.org/sqlite, gRPC, WebSocket
+- **React 19**: Vite 7, TailwindCSS 4, TanStack Router + Query, Radix UI, Recharts
+- **Storage**: PostgreSQL (primary) or SQLite (lightweight), managed via sqlc
+- **Deploy**: multi-stage Docker, nginx reverse proxy
+
+## Key conventions
+
+- `internal/dbsqlc/` is auto-generated — edit `db/queries/*.sql`, then run
+  `sqlc generate`
+- Frontend embeds into the binary via `npm run build:embed` ->
+  `cmd/control-plane/.embedded-ui/`; build tag `embeddedui` activates it
+- `config.toml` and `proxy-secret` are local runtime files, not committed
+- Storage driver is selected at startup via `-storage-driver sqlite|postgres`
+  and `-storage-dsn <dsn>`
 
 ## Commands
 
-### Backend (Go)
-
 ```bash
-go build ./cmd/control-plane    # Build control-plane server
-go build ./cmd/agent            # Build agent binary
-go test ./...                   # Run all Go tests
-go test ./cmd/agent/...         # Run agent tests only
-go test ./internal/security/... # Run security tests only
+# Backend
+go build ./...
+go test ./...
+go test ./internal/controlplane/auth ./internal/controlplane/jobs \
+        ./internal/controlplane/server ./internal/controlplane/state \
+        ./internal/controlplane/storage/... -v
+
+# Frontend
+cd web && npm install
+cd web && npm run dev          # Vite dev server
+cd web && npm run build        # type-check + production build
+cd web && npm run build:embed  # build into cmd/control-plane/.embedded-ui
+
+# sqlc
+sqlc generate
+
+# Docker
+docker compose -f deploy/docker-compose.sqlite.yml up --build -d
+docker compose -f deploy/docker-compose.postgres.yml up --build -d
+
+# Bootstrap first admin (SQLite default)
+go run ./cmd/control-plane bootstrap-admin -username admin -password '<pw>'
 ```
-
-### Frontend (web/)
-
-```bash
-cd web && npm install           # Install frontend deps
-cd web && npm run dev           # Vite dev server
-cd web && npm run build         # Production build (type-check + vite build)
-cd web && npm run build:embed   # Build into cmd/control-plane/.embedded-ui for Go embed
-```
-
-### Database (sqlc)
-
-```bash
-sqlc generate                   # Regenerate Go code from SQL queries
-```
-
-Config: `sqlc.yaml` — PostgreSQL engine, queries in `db/queries/`, migrations in `db/migrations/`, output to `internal/dbsqlc/`.
-
-### Docker
-
-```bash
-docker build --target control-plane -t panvex-cp .   # Build control-plane image
-docker build --target web -t panvex-web .             # Build nginx web image
-docker compose -f deploy/docker-compose.postgres.yml up  # Run with PostgreSQL
-docker compose -f deploy/docker-compose.sqlite.yml up    # Run with SQLite
-```
-
-## Architecture
-
-```
-cmd/
-  control-plane/    Main server (HTTP :8080, TLS :8443), embeds web UI via go:embed
-  agent/            Client agent binary with bootstrap/enrollment flow
-internal/
-  controlplane/     Control-plane business logic
-  agent/            Agent-side logic
-  gatewayrpc/       gRPC gateway communication
-  security/         Enrollment, auth, crypto
-  dbsqlc/           Generated database access (sqlc, DO NOT edit manually)
-db/
-  migrations/       PostgreSQL schema migrations
-  queries/          SQL queries for sqlc
-proto/              Protobuf/gRPC definitions
-web/                React frontend (Vite + TailwindCSS 4 + TanStack Router)
-deploy/             Docker Compose configs, nginx conf, install scripts
-```
-
-## Tech Stack
-
-- **Go 1.26** — chi/v5 router, pgx/v5 (PostgreSQL), modernc.org/sqlite, gRPC, WebSocket
-- **React 19** — Vite 7, TailwindCSS 4, TanStack Router + Query, Radix UI, Recharts
-- **DB** — PostgreSQL (primary) or SQLite (lightweight), managed via sqlc
-- **Deploy** — Multi-stage Docker, nginx reverse proxy
-
-## Key Patterns
-
-- `internal/dbsqlc/` is auto-generated by sqlc — edit `db/queries/*.sql` and run `sqlc generate`
-- Frontend embeds into Go binary via `build:embed` script → `cmd/control-plane/.embedded-ui/`
-- `config.toml` — local runtime configuration (not committed)
-- `proxy-secret` — local secret file (not committed)
-- Coding rules and style guidelines are in `AGENTS.md`
-
-# context-mode — MANDATORY routing rules
-
-You have context-mode MCP tools available. These rules are NOT optional — they protect your context window from flooding. A single unrouted command can dump 56 KB into context and waste the entire session.
-
-## BLOCKED commands — do NOT attempt these
-
-### curl / wget — BLOCKED
-Any Bash command containing `curl` or `wget` is intercepted and replaced with an error message. Do NOT retry.
-Instead use:
-- `ctx_fetch_and_index(url, source)` to fetch and index web pages
-- `ctx_execute(language: "javascript", code: "const r = await fetch(...)")` to run HTTP calls in sandbox
-
-### Inline HTTP — BLOCKED
-Any Bash command containing `fetch('http`, `requests.get(`, `requests.post(`, `http.get(`, or `http.request(` is intercepted and replaced with an error message. Do NOT retry with Bash.
-Instead use:
-- `ctx_execute(language, code)` to run HTTP calls in sandbox — only stdout enters context
-
-### WebFetch — BLOCKED
-WebFetch calls are denied entirely. The URL is extracted and you are told to use `ctx_fetch_and_index` instead.
-Instead use:
-- `ctx_fetch_and_index(url, source)` then `ctx_search(queries)` to query the indexed content
-
-## REDIRECTED tools — use sandbox equivalents
-
-### Bash (>20 lines output)
-Bash is ONLY for: `git`, `mkdir`, `rm`, `mv`, `cd`, `ls`, `npm install`, `pip install`, and other short-output commands.
-For everything else, use:
-- `ctx_batch_execute(commands, queries)` — run multiple commands + search in ONE call
-- `ctx_execute(language: "shell", code: "...")` — run in sandbox, only stdout enters context
-
-### Read (for analysis)
-If you are reading a file to **Edit** it → Read is correct (Edit needs content in context).
-If you are reading to **analyze, explore, or summarize** → use `ctx_execute_file(path, language, code)` instead. Only your printed summary enters context. The raw file content stays in the sandbox.
-
-### Grep (large results)
-Grep results can flood context. Use `ctx_execute(language: "shell", code: "grep ...")` to run searches in sandbox. Only your printed summary enters context.
-
-## Tool selection hierarchy
-
-1. **GATHER**: `ctx_batch_execute(commands, queries)` — Primary tool. Runs all commands, auto-indexes output, returns search results. ONE call replaces 30+ individual calls.
-2. **FOLLOW-UP**: `ctx_search(queries: ["q1", "q2", ...])` — Query indexed content. Pass ALL questions as array in ONE call.
-3. **PROCESSING**: `ctx_execute(language, code)` | `ctx_execute_file(path, language, code)` — Sandbox execution. Only stdout enters context.
-4. **WEB**: `ctx_fetch_and_index(url, source)` then `ctx_search(queries)` — Fetch, chunk, index, query. Raw HTML never enters context.
-5. **INDEX**: `ctx_index(content, source)` — Store content in FTS5 knowledge base for later search.
-
-## Subagent routing
-
-When spawning subagents (Agent/Task tool), the routing block is automatically injected into their prompt. Bash-type subagents are upgraded to general-purpose so they have access to MCP tools. You do NOT need to manually instruct subagents about context-mode.
-
-## Output constraints
-
-- Keep responses under 500 words.
-- Write artifacts (code, configs, PRDs) to FILES — never return them as inline text. Return only: file path + 1-line description.
-- When indexing content, use descriptive source labels so others can `ctx_search(source: "label")` later.
-
-## ctx commands
-
-| Command | Action |
-|---------|--------|
-| `ctx stats` | Call the `ctx_stats` MCP tool and display the full output verbatim |
-| `ctx doctor` | Call the `ctx_doctor` MCP tool, run the returned shell command, display as checklist |
-| `ctx upgrade` | Call the `ctx_upgrade` MCP tool, run the returned shell command, display as checklist |
