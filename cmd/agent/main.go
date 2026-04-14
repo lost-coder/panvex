@@ -22,6 +22,13 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
+// Build-time version information, injected via -ldflags.
+var (
+	AgentVersion = "dev"
+	CommitSHA    = "unknown"
+	BuildTime    = "unknown"
+)
+
 const (
 	runtimeCertificateRenewWindow = 24 * time.Hour
 	runtimeCertificateRenewRetry  = time.Minute
@@ -56,7 +63,7 @@ func runRuntime(args []string) error {
 	stateFile := flags.String("state-file", "data/agent-state.json", "Agent credential state file")
 	nodeName := flags.String("node-name", hostName(), "Node name reported to the control-plane")
 	fleetGroupID := flags.String("fleet-group-id", "", "Fleet group identifier reported by the agent")
-	version := flags.String("version", "dev", "Agent version")
+	version := flags.String("version", AgentVersion, "Agent version reported to control-plane")
 	telemtURL := flags.String("telemt-url", "http://127.0.0.1:8080", "Local Telemt API URL")
 	telemtMetricsURL := flags.String("telemt-metrics-url", "http://127.0.0.1:8081", "Local Telemt metrics URL")
 	telemtAuth := flags.String("telemt-auth", "", "Local Telemt authorization value")
