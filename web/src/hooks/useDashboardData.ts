@@ -4,6 +4,7 @@ import { apiClient } from "@/lib/api";
 import {
   transformDashboardOverview,
   transformDashboardTimeline,
+  extractDashboardAgentVersions,
 } from "@/lib/transforms/dashboard";
 
 export function useDashboardData() {
@@ -21,5 +22,10 @@ export function useDashboardData() {
     ? transformDashboardTimeline(query.data)
     : undefined;
 
-  return { overview, timeline, isLoading: query.isLoading, error: query.error };
+  // Map of node id -> agent version for update comparison
+  const agentVersions: Record<string, string> = query.data
+    ? extractDashboardAgentVersions(query.data)
+    : {};
+
+  return { overview, timeline, agentVersions, isLoading: query.isLoading, error: query.error };
 }

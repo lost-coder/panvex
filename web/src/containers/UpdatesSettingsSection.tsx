@@ -1,12 +1,8 @@
 import { useState } from "react";
 import { SettingsGroup, SettingsRow, Button, Input } from "@lost-coder/panvex-ui";
+import { RefreshCw } from "lucide-react";
 import { useUpdates } from "@/hooks/useUpdates";
 import type { UpdateSettings } from "@/lib/api";
-
-function formatTimestamp(unix: number): string {
-  if (!unix) return "Never";
-  return new Date(unix * 1000).toLocaleString();
-}
 
 export function UpdatesSettingsSection() {
   const { query, saveSettings, checkNow, updatePanel } = useUpdates();
@@ -38,94 +34,87 @@ export function UpdatesSettingsSection() {
 
   return (
     <SettingsGroup title="Updates">
-      {/* Current version / panel update */}
-      <SettingsRow
-        label="Panel Version"
-        description={
-          hasNewerPanel
-            ? `Update available: ${state.latest_panel_version}`
-            : "Up to date"
-        }
-      >
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-fg-muted font-mono">{data.current_version || "—"}</span>
-          {hasNewerPanel && (
-            <Button
-              size="sm"
-              disabled={updatePanel.isPending}
-              onClick={() => updatePanel.mutate(state.latest_panel_version)}
-            >
-              {updatePanel.isPending ? "Updating…" : "Update Panel"}
-            </Button>
-          )}
+      {/* Update available banner */}
+      {hasNewerPanel && (
+        <div className="mx-4 mt-3 rounded-lg border border-accent/30 bg-accent/5 px-4 py-3 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-fg">
+              Panel update available
+            </p>
+            <p className="text-xs text-fg-muted">
+              {data.current_version} → {state.latest_panel_version}
+            </p>
+          </div>
+          <Button
+            size="sm"
+            disabled={updatePanel.isPending}
+            onClick={() => updatePanel.mutate(state.latest_panel_version)}
+          >
+            {updatePanel.isPending ? "Updating…" : `Update to ${state.latest_panel_version}`}
+          </Button>
+        </div>
+      )}
+
+      {/* Versions: compact 2-column layout */}
+      <SettingsRow label="Versions">
+        <div className="flex items-center gap-6 text-sm">
+          <div className="flex items-center gap-2">
+            <span className="text-fg-muted">Panel</span>
+            <span className="font-mono text-fg">{data.current_version || "—"}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-fg-muted">Agents</span>
+            <span className="font-mono text-fg">{state.latest_agent_version || "—"}</span>
+          </div>
+          <button
+            className="inline-flex items-center justify-center rounded-md p-1 text-fg-muted hover:text-fg hover:bg-surface-hover transition-colors disabled:opacity-50"
+            disabled={checkNow.isPending}
+            onClick={() => checkNow.mutate()}
+            title="Check for updates"
+          >
+            <RefreshCw className={`h-4 w-4 ${checkNow.isPending ? "animate-spin" : ""}`} />
+          </button>
         </div>
       </SettingsRow>
 
-      {/* Latest agent version */}
-      <SettingsRow
-        label="Latest Agent Version"
-        description="Newest agent release available for deployment"
-      >
-        <span className="text-sm text-fg-muted font-mono">
-          {state.latest_agent_version || "—"}
-        </span>
+      {/* Auto-update toggles: single row with two inline toggles */}
+      <SettingsRow label="Auto-Update">
+        <div className="flex items-center gap-5 text-sm">
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-[var(--color-accent)] cursor-pointer"
+              checked={settings.auto_update_panel}
+              onChange={(e) => applyDraft({ auto_update_panel: e.target.checked })}
+            />
+            <span className="text-fg-muted">Panel</span>
+          </label>
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-[var(--color-accent)] cursor-pointer"
+              checked={settings.auto_update_agents}
+              onChange={(e) => applyDraft({ auto_update_agents: e.target.checked })}
+            />
+            <span className="text-fg-muted">Agents</span>
+          </label>
+        </div>
       </SettingsRow>
 
-      {/* Last checked / check now */}
-      <SettingsRow
-        label="Last Checked"
-        description={formatTimestamp(state.last_checked_at)}
-      >
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={checkNow.isPending}
-          onClick={() => checkNow.mutate()}
-        >
-          {checkNow.isPending ? "Checking…" : "Check Now"}
-        </Button>
-      </SettingsRow>
-
-      {/* Check interval */}
-      <SettingsRow
-        label="Check Interval"
-        description="How often to check for new releases (hours)"
-      >
-        <Input
-          type="number"
-          min={1}
-          className="w-20"
-          value={settings.check_interval_hours}
-          onChange={(e) =>
-            applyDraft({ check_interval_hours: Number(e.target.value) || 1 })
-          }
-        />
-      </SettingsRow>
-
-      {/* Auto-update panel */}
-      <SettingsRow
-        label="Auto-Update Panel"
-        description="Automatically apply panel updates when available"
-      >
-        <input
-          type="checkbox"
-          className="h-4 w-4 accent-[var(--color-accent)] cursor-pointer"
-          checked={settings.auto_update_panel}
-          onChange={(e) => applyDraft({ auto_update_panel: e.target.checked })}
-        />
-      </SettingsRow>
-
-      {/* Auto-update agents */}
-      <SettingsRow
-        label="Auto-Update Agents"
-        description="Automatically push agent updates across the fleet"
-      >
-        <input
-          type="checkbox"
-          className="h-4 w-4 accent-[var(--color-accent)] cursor-pointer"
-          checked={settings.auto_update_agents}
-          onChange={(e) => applyDraft({ auto_update_agents: e.target.checked })}
-        />
+      {/* Check interval: inline input */}
+      <SettingsRow label="Check Interval">
+        <div className="flex items-center gap-2 text-sm">
+          <Input
+            type="number"
+            min={1}
+            className="w-16"
+            value={settings.check_interval_hours}
+            onChange={(e) =>
+              applyDraft({ check_interval_hours: Number(e.target.value) || 1 })
+            }
+          />
+          <span className="text-fg-muted">hours</span>
+        </div>
       </SettingsRow>
 
       {/* Save / cancel */}
@@ -140,7 +129,7 @@ export function UpdatesSettingsSection() {
               disabled={saveSettings.isPending}
               onClick={handleSave}
             >
-              {saveSettings.isPending ? "Saving…" : "Save Update Settings"}
+              {saveSettings.isPending ? "Saving…" : "Save"}
             </Button>
           </div>
         </div>
