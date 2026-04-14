@@ -398,6 +398,7 @@ func (s *Server) routes() http.Handler {
 			authenticated.Get("/audit", s.handleAudit())
 			authenticated.Get("/metrics", s.handleMetrics())
 			authenticated.Get("/events", s.handleEvents())
+			authenticated.Get("/agent/update/binary", s.handleAgentBinaryProxy())
 		authenticated.Get("/settings/appearance", s.handleGetUserAppearance())
 		authenticated.Put("/settings/appearance", s.handlePutUserAppearance())
 		authenticated.Get("/telemetry/dashboard", s.handleTelemetryDashboard())
@@ -426,6 +427,7 @@ func (s *Server) routes() http.Handler {
 				operator.Get("/agents/enrollment-tokens", s.handleListEnrollmentTokens())
 				operator.Post("/agents/enrollment-tokens", s.handleCreateEnrollmentToken())
 				operator.Post("/agents/enrollment-tokens/{value}/revoke", s.handleRevokeEnrollmentToken())
+				operator.Post("/agents/{id}/update", s.handleAgentUpdate())
 			})
 
 			authenticated.Group(func(admin chi.Router) {
