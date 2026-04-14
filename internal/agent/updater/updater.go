@@ -1,6 +1,8 @@
 package updater
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -34,24 +36,30 @@ func Execute(ctx context.Context, payload Payload, logger *slog.Logger) error {
 
 	logger.Info("agent self-update: downloading", "version", payload.Version, "url", url)
 
-	tmpPath, err := downloadToTemp(ctx, url)
+	archivePath, err := downloadToTemp(ctx, url)
 	if err != nil {
 		return fmt.Errorf("download: %w", err)
 	}
 
-	if err := verifyChecksum(tmpPath, payload.ChecksumSHA256); err != nil {
-		_ = os.Remove(tmpPath)
+	if err := verifyChecksum(archivePath, payload.ChecksumSHA256); err != nil {
+		_ = os.Remove(archivePath)
 		return fmt.Errorf("verify: %w", err)
+	}
+
+	binaryPath, err := extractBinaryFromArchive(archivePath)
+	_ = os.Remove(archivePath)
+	if err != nil {
+		return fmt.Errorf("extract: %w", err)
 	}
 
 	currentPath, err := os.Executable()
 	if err != nil {
-		_ = os.Remove(tmpPath)
+		_ = os.Remove(binaryPath)
 		return fmt.Errorf("resolve executable: %w", err)
 	}
 
-	if err := replaceBinary(currentPath, tmpPath, payload.ChecksumSHA256); err != nil {
-		_ = os.Remove(tmpPath)
+	if err := replaceSelf(currentPath, binaryPath); err != nil {
+		_ = os.Remove(binaryPath)
 		return fmt.Errorf("replace: %w", err)
 	}
 
@@ -115,10 +123,48 @@ func verifyChecksum(path, expected string) error {
 	return nil
 }
 
-func replaceBinary(currentPath, newPath, expectedChecksum string) error {
-	if err := verifyChecksum(newPath, expectedChecksum); err != nil {
-		return err
+func extractBinaryFromArchive(archivePath string) (string, error) {
+	f, err := os.Open(archivePath)
+	if err != nil {
+		return "", fmt.Errorf("open archive: %w", err)
 	}
+	defer f.Close()
+
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return "", fmt.Errorf("gzip reader: %w", err)
+	}
+	defer gz.Close()
+
+	tr := tar.NewReader(gz)
+	if _, err := tr.Next(); err != nil {
+		return "", fmt.Errorf("read tar entry: %w", err)
+	}
+
+	tmp, err := os.CreateTemp("", "panvex-agent-binary-*")
+	if err != nil {
+		return "", fmt.Errorf("create temp binary: %w", err)
+	}
+
+	const maxBinarySize = 256 << 20 // 256 MB
+	if _, err := io.Copy(tmp, io.LimitReader(tr, maxBinarySize)); err != nil {
+		tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return "", fmt.Errorf("extract binary: %w", err)
+	}
+	if err := os.Chmod(tmp.Name(), 0755); err != nil { //nolint:gosec // executable binary requires 0755
+		tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return "", fmt.Errorf("chmod binary: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmp.Name())
+		return "", fmt.Errorf("close binary: %w", err)
+	}
+	return tmp.Name(), nil
+}
+
+func replaceSelf(currentPath, newPath string) error {
 	backupPath := currentPath + ".bak"
 	_ = os.Remove(backupPath)
 	if err := os.Rename(currentPath, backupPath); err != nil {

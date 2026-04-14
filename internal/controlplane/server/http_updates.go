@@ -265,22 +265,26 @@ func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksu
 		}
 	}
 
-	tmpPath, err := DownloadBinary(ctx, downloadURL, token)
+	archivePath, err := DownloadArchive(ctx, downloadURL, token)
 	if err != nil {
-		s.logger.Error("panel update: download binary failed", "error", err)
+		s.logger.Error("panel update: download archive failed", "error", err)
 		return
 	}
-	defer func() {
-		// Clean up temp file if it still exists (replace succeeded = moved away).
-		_ = os.Remove(tmpPath)
-	}()
+	defer func() { _ = os.Remove(archivePath) }()
 
 	if expectedChecksum != "" {
-		if err := VerifyChecksum(tmpPath, expectedChecksum); err != nil {
+		if err := VerifyChecksum(archivePath, expectedChecksum); err != nil {
 			s.logger.Error("panel update: checksum verification failed", "error", err)
 			return
 		}
 	}
+
+	binaryPath, err := ExtractBinaryFromArchive(archivePath)
+	if err != nil {
+		s.logger.Error("panel update: extract binary failed", "error", err)
+		return
+	}
+	defer func() { _ = os.Remove(binaryPath) }()
 
 	currentBinary, err := os.Executable()
 	if err != nil {
@@ -288,7 +292,7 @@ func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksu
 		return
 	}
 
-	if err := AtomicReplaceBinary(currentBinary, tmpPath); err != nil {
+	if err := AtomicReplaceBinary(currentBinary, binaryPath); err != nil {
 		s.logger.Error("panel update: atomic replace failed", "error", err)
 		return
 	}

@@ -128,11 +128,11 @@ func ResolveAssetURLs(release *GitHubRelease, component string) (binaryURL, chec
 		return "", ""
 	}
 	arch := runtime.GOARCH
-	binaryName := fmt.Sprintf("panvex-%s-linux-%s", component, arch)
-	checksumName := binaryName + ".sha256"
+	archiveName := fmt.Sprintf("panvex-%s-linux-%s.tar.gz", component, arch)
+	checksumName := archiveName + ".sha256"
 
 	for _, asset := range release.Assets {
-		if asset.Name == binaryName {
+		if asset.Name == archiveName {
 			binaryURL = asset.BrowserDownloadURL
 		}
 		if asset.Name == checksumName {

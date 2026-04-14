@@ -1,6 +1,8 @@
 package server
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -11,9 +13,9 @@ import (
 	"strings"
 )
 
-// DownloadBinary fetches a binary from url into a temporary file and returns
-// its path. The caller is responsible for removing the file when done.
-func DownloadBinary(ctx context.Context, url, token string) (string, error) {
+// DownloadArchive fetches a .tar.gz archive from url into a temporary file
+// and returns its path. The caller is responsible for removing the file.
+func DownloadArchive(ctx context.Context, url, token string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
@@ -25,15 +27,15 @@ func DownloadBinary(ctx context.Context, url, token string) (string, error) {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("download binary: %w", err)
+		return "", fmt.Errorf("download archive: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("download binary: unexpected status %d", resp.StatusCode)
+		return "", fmt.Errorf("download archive: unexpected status %d", resp.StatusCode)
 	}
 
-	tmp, err := os.CreateTemp("", "panvex-update-*")
+	tmp, err := os.CreateTemp("", "panvex-update-*.tar.gz")
 	if err != nil {
 		return "", fmt.Errorf("create temp file: %w", err)
 	}
@@ -41,9 +43,50 @@ func DownloadBinary(ctx context.Context, url, token string) (string, error) {
 	if _, err := io.Copy(tmp, resp.Body); err != nil {
 		tmp.Close()
 		_ = os.Remove(tmp.Name())
-		return "", fmt.Errorf("write binary: %w", err)
+		return "", fmt.Errorf("write archive: %w", err)
 	}
-	if err := tmp.Chmod(0755); err != nil {
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmp.Name())
+		return "", fmt.Errorf("close archive: %w", err)
+	}
+
+	return tmp.Name(), nil
+}
+
+// ExtractBinaryFromArchive extracts the first file from a .tar.gz archive
+// into a temporary executable and returns its path.
+func ExtractBinaryFromArchive(archivePath string) (string, error) {
+	f, err := os.Open(archivePath)
+	if err != nil {
+		return "", fmt.Errorf("open archive: %w", err)
+	}
+	defer f.Close()
+
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return "", fmt.Errorf("gzip reader: %w", err)
+	}
+	defer gz.Close()
+
+	tr := tar.NewReader(gz)
+	hdr, err := tr.Next()
+	if err != nil {
+		return "", fmt.Errorf("read tar entry: %w", err)
+	}
+
+	tmp, err := os.CreateTemp("", "panvex-binary-*")
+	if err != nil {
+		return "", fmt.Errorf("create temp binary: %w", err)
+	}
+
+	const maxBinarySize = 256 << 20 // 256 MB
+	if _, err := io.Copy(tmp, io.LimitReader(tr, maxBinarySize)); err != nil {
+		tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return "", fmt.Errorf("extract binary: %w", err)
+	}
+	_ = hdr // name not needed — archive contains a single binary
+	if err := tmp.Chmod(0755); err != nil { //nolint:gosec // executable binary requires 0755
 		tmp.Close()
 		_ = os.Remove(tmp.Name())
 		return "", fmt.Errorf("chmod binary: %w", err)

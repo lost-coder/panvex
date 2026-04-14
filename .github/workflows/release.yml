@@ -64,13 +64,16 @@ jobs:
               -ldflags "-X main.AgentVersion=${VERSION} -X main.CommitSHA=${SHORT_SHA} -X main.BuildTime=${BUILD_TIME}" \
               -o "${BINARY}" ./cmd/agent
           fi
-          sha256sum "${BINARY}" | awk '{print $1}' > "${BINARY}.sha256"
+          ARCHIVE="${BINARY}.tar.gz"
+          tar czf "${ARCHIVE}" "${BINARY}"
+          sha256sum "${ARCHIVE}" | awk '{print $1}' > "${ARCHIVE}.sha256"
+          rm "${BINARY}"
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
           files: |
-            panvex-*-linux-${{ matrix.arch }}
-            panvex-*-linux-${{ matrix.arch }}.sha256
+            panvex-*-linux-${{ matrix.arch }}.tar.gz
+            panvex-*-linux-${{ matrix.arch }}.tar.gz.sha256
           generate_release_notes: true
