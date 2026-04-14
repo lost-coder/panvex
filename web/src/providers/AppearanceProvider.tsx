@@ -12,12 +12,26 @@ import {
   resolveEffectiveAppearance
 } from "@/lib/appearance";
 
+const SWIPE_NAV_KEY = "panvex_swipe_nav";
+
+function readSwipeNav(): boolean {
+  try {
+    const stored = localStorage.getItem(SWIPE_NAV_KEY);
+    if (stored === "false") return false;
+    return true; // default to true
+  } catch {
+    return true;
+  }
+}
+
 interface AppearanceContextValue {
   swipeNavigation: boolean;
+  setSwipeNavigation: (value: boolean) => void;
 }
 
 const AppearanceContext = React.createContext<AppearanceContextValue>({
   swipeNavigation: true,
+  setSwipeNavigation: () => {},
 });
 
 export function useAppearance() {
@@ -25,6 +39,7 @@ export function useAppearance() {
 }
 
 export function AppearanceProvider(props: { children: ReactNode; userID: string }) {
+  const [swipeNavigation, setSwipeNavigationState] = useState(readSwipeNav);
   const [prefersDark, setPrefersDark] = useState(false);
   const appearanceQuery = useQuery({
     queryKey: getAppearanceQueryKey(props.userID),
@@ -60,8 +75,18 @@ export function AppearanceProvider(props: { children: ReactNode; userID: string 
     return () => { clearAppearanceAttributes(root); };
   }, []);
 
+  const setSwipeNavigation = React.useCallback((value: boolean) => {
+    setSwipeNavigationState(value);
+    try {
+      localStorage.setItem(SWIPE_NAV_KEY, String(value));
+    } catch {
+      // Storage full or unavailable; ignore.
+    }
+  }, []);
+
   const value: AppearanceContextValue = {
-    swipeNavigation: true,
+    swipeNavigation,
+    setSwipeNavigation,
   };
 
   return (
