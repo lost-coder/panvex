@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
@@ -103,6 +104,14 @@ type PanelSettingsStore interface {
 	GetPanelSettings(ctx context.Context) (PanelSettingsRecord, error)
 }
 
+// UpdateConfigStore persists update settings and cached version state as opaque JSON blobs.
+type UpdateConfigStore interface {
+	PutUpdateSettings(ctx context.Context, settings json.RawMessage) error
+	GetUpdateSettings(ctx context.Context) (json.RawMessage, error)
+	PutUpdateState(ctx context.Context, state json.RawMessage) error
+	GetUpdateState(ctx context.Context) (json.RawMessage, error)
+}
+
 // CertificateAuthorityStore persists the control-plane root CA required for agent mTLS continuity.
 type CertificateAuthorityStore interface {
 	PutCertificateAuthority(ctx context.Context, authority CertificateAuthorityRecord) error
@@ -170,6 +179,7 @@ type Store interface {
 	EnrollmentStore
 	AgentCertificateRecoveryGrantStore
 	PanelSettingsStore
+	UpdateConfigStore
 	CertificateAuthorityStore
 	ClientStore
 	DiscoveredClientStore

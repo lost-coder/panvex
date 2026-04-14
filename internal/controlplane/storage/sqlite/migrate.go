@@ -345,6 +345,15 @@ func Migrate(db *sql.DB) error {
 		return err
 	}
 
+	if _, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS update_config (
+			key   TEXT PRIMARY KEY,
+			value TEXT NOT NULL
+		)
+	`); err != nil {
+		return err
+	}
+
 	if err := ensureTimeseriesTables(db); err != nil {
 		return err
 	}

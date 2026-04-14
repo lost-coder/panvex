@@ -118,8 +118,10 @@ type Server struct {
 	instances  map[string]Instance
 	metrics    []MetricSnapshot
 	auditTrail []AuditEvent
-	panelSettings PanelSettings
-	retention  RetentionSettings
+	panelSettings  PanelSettings
+	updateSettings UpdateSettings
+	updateState    UpdateState
+	retention      RetentionSettings
 	handler      http.Handler
 	startupErr   error
 	stopRollup   context.CancelFunc
@@ -172,6 +174,7 @@ func New(options Options) *Server {
 		server.logger = slog.Default()
 	}
 	server.panelSettings = defaultPanelSettings()
+	server.updateSettings = defaultUpdateSettings()
 	server.retention = defaultRetentionSettings()
 	authority, err := loadOrCreateCertificateAuthority(options.Store, now(), options.EncryptionKey)
 	if err != nil {
@@ -211,6 +214,11 @@ func New(options Options) *Server {
 		}
 		if server.startupErr == nil {
 			if err := server.restoreStoredPanelSettings(); err != nil {
+				server.startupErr = err
+			}
+		}
+		if server.startupErr == nil {
+			if err := server.restoreUpdateSettings(); err != nil {
 				server.startupErr = err
 			}
 		}

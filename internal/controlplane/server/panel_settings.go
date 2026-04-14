@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -163,6 +164,61 @@ func (s *Server) restoreStoredPanelSettings() error {
 	}
 
 	s.panelSettings = normalizePanelSettings(panelSettingsFromRecord(record))
+	return nil
+}
+
+// UpdateSettings controls how the panel checks for and applies updates.
+type UpdateSettings struct {
+	CheckIntervalHours  int    `json:"check_interval_hours"`
+	AutoUpdatePanel     bool   `json:"auto_update_panel"`
+	AutoUpdateAgents    bool   `json:"auto_update_agents"`
+	GitHubRepo          string `json:"github_repo"`
+	GitHubToken         string `json:"github_token,omitempty"`
+	AgentDownloadSource string `json:"agent_download_source"`
+}
+
+func defaultUpdateSettings() UpdateSettings {
+	return UpdateSettings{
+		CheckIntervalHours:  6,
+		AutoUpdatePanel:     false,
+		AutoUpdateAgents:    false,
+		GitHubRepo:          "panvex/panvex",
+		AgentDownloadSource: "github",
+	}
+}
+
+// UpdateState caches the latest known versions from GitHub.
+type UpdateState struct {
+	LatestPanelVersion string `json:"latest_panel_version"`
+	LatestAgentVersion string `json:"latest_agent_version"`
+	PanelDownloadURL   string `json:"panel_download_url"`
+	PanelChecksumURL   string `json:"panel_checksum_url"`
+	AgentDownloadURL   string `json:"agent_download_url"`
+	AgentChecksumURL   string `json:"agent_checksum_url"`
+	PanelChangelog     string `json:"panel_changelog"`
+	AgentChangelog     string `json:"agent_changelog"`
+	LastCheckedAt      int64  `json:"last_checked_at"`
+}
+
+func (s *Server) restoreUpdateSettings() error {
+	data, err := s.store.GetUpdateSettings(context.Background())
+	if err != nil {
+		return err
+	}
+	if data != nil {
+		if err := json.Unmarshal(data, &s.updateSettings); err != nil {
+			return err
+		}
+	}
+	data, err = s.store.GetUpdateState(context.Background())
+	if err != nil {
+		return err
+	}
+	if data != nil {
+		if err := json.Unmarshal(data, &s.updateState); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
