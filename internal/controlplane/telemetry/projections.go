@@ -3,7 +3,7 @@ package telemetry
 import (
 	"time"
 
-	"github.com/panvex/panvex/internal/controlplane/presence"
+	"github.com/lost-coder/panvex/internal/controlplane/presence"
 )
 
 // SeverityInput describes the operator-facing runtime state used for severity decisions.

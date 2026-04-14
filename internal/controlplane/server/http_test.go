@@ -13,10 +13,10 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/panvex/panvex/internal/controlplane/auth"
-	"github.com/panvex/panvex/internal/controlplane/jobs"
-	"github.com/panvex/panvex/internal/controlplane/storage/sqlite"
-	"github.com/panvex/panvex/internal/security"
+	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/jobs"
+	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
+	"github.com/lost-coder/panvex/internal/security"
 )
 
 func TestServerLoginSetsSessionAndReturnsMe(t *testing.T) {

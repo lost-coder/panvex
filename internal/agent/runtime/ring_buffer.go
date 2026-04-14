@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/panvex/panvex/internal/gatewayrpc"
+	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
 // RuntimeSample stores one poll result from Telemt + gopsutil.

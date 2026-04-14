@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/panvex/panvex/internal/agent/runtime"
-	"github.com/panvex/panvex/internal/agent/telemt"
-	agentstate "github.com/panvex/panvex/internal/agent/state"
-	"github.com/panvex/panvex/internal/gatewayrpc"
+	"github.com/lost-coder/panvex/internal/agent/runtime"
+	"github.com/lost-coder/panvex/internal/agent/telemt"
+	agentstate "github.com/lost-coder/panvex/internal/agent/state"
+	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc"
 )

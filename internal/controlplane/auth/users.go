@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/panvex/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 // CreateUser creates one local user account with TOTP disabled by default.

@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/panvex/panvex/internal/agent/telemt"
-	"github.com/panvex/panvex/internal/agent/updater"
-	"github.com/panvex/panvex/internal/gatewayrpc"
+	"github.com/lost-coder/panvex/internal/agent/telemt"
+	"github.com/lost-coder/panvex/internal/agent/updater"
+	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
 type telemtClient interface {

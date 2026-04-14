@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	agentstate "github.com/panvex/panvex/internal/agent/state"
+	agentstate "github.com/lost-coder/panvex/internal/agent/state"
 )
 
 func TestRecoverRuntimeCredentialsIfNeededRecoversAndPersistsExpiredState(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/panvex/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 // OpenStore constructs a fresh storage backend for one contract test run.
