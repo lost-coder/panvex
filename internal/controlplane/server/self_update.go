@@ -40,16 +40,16 @@ func DownloadBinary(ctx context.Context, url, token string) (string, error) {
 
 	if _, err := io.Copy(tmp, resp.Body); err != nil {
 		tmp.Close()
-		os.Remove(tmp.Name())
+		_ = os.Remove(tmp.Name())
 		return "", fmt.Errorf("write binary: %w", err)
 	}
 	if err := tmp.Chmod(0755); err != nil {
 		tmp.Close()
-		os.Remove(tmp.Name())
+		_ = os.Remove(tmp.Name())
 		return "", fmt.Errorf("chmod binary: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmp.Name())
+		_ = os.Remove(tmp.Name())
 		return "", fmt.Errorf("close binary: %w", err)
 	}
 
