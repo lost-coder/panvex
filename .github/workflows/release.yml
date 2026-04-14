@@ -2,104 +2,73 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    tags:
+      - 'control-plane/v*'
+      - 'agent/v*'
 
 permissions:
   contents: write
-  packages: write
 
 jobs:
-  binaries:
-    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+  build:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-          - goos: linux
-            goarch: arm64
-          - goos: darwin
-            goarch: amd64
-          - goos: darwin
-            goarch: arm64
-          - goos: windows
-            goarch: amd64
+        arch: [amd64, arm64]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v6
-        with:
-          go-version: "1.26"
-      - name: Build panel
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: "0"
-        run: |
-          ext=""; if [ "$GOOS" = "windows" ]; then ext=".exe"; fi
-          go build -o panvex-panel-${GOOS}-${GOARCH}${ext} ./cmd/control-plane
-      - name: Build agent
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: "0"
-        run: |
-          ext=""; if [ "$GOOS" = "windows" ]; then ext=".exe"; fi
-          go build -o panvex-agent-${GOOS}-${GOARCH}${ext} ./cmd/agent
-      - uses: actions/upload-artifact@v7
-        with:
-          name: binaries-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: panvex-*
 
-  docker:
-    name: Docker Images
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v4
+      - uses: actions/setup-go@v5
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build & push panel image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: true
-          target: control-plane
-          tags: |
-            ghcr.io/lost-coder/panvex-panel:${{ github.ref_name }}
-            ghcr.io/lost-coder/panvex-panel:latest
-      - name: Build & push web image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: true
-          target: web
-          tags: |
-            ghcr.io/lost-coder/panvex-web:${{ github.ref_name }}
-            ghcr.io/lost-coder/panvex-web:latest
+          go-version: '1.26'
 
-  release:
-    name: Create Release
-    needs: [binaries]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/setup-node@v4
         with:
-          pattern: binaries-*
-          merge-multiple: true
-          path: dist/
-      - name: Generate checksums
-        working-directory: dist
-        run: sha256sum panvex-* > checksums.txt
-      - uses: softprops/action-gh-release@v2
+          node-version: '22'
+
+      - name: Determine component from tag
+        id: meta
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          COMPONENT="${TAG%%/*}"
+          VERSION="${TAG#*/}"
+          echo "component=$COMPONENT" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Build frontend (control-plane only)
+        if: steps.meta.outputs.component == 'control-plane'
+        run: |
+          cd ui && npm ci && npm run build
+          cd ../core/web && npm ci && npm run build:embed
+
+      - name: Build binary
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: 0
+        run: |
+          COMPONENT="${{ steps.meta.outputs.component }}"
+          VERSION="${{ steps.meta.outputs.version }}"
+          BINARY="panvex-${COMPONENT}-linux-${{ matrix.arch }}"
+          cd core
+          if [ "$COMPONENT" = "control-plane" ]; then
+            go build -tags embeddedui \
+              -ldflags "-X main.Version=${VERSION} -X main.CommitSHA=${GITHUB_SHA::8} -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              -o "../${BINARY}" ./cmd/control-plane
+          else
+            go build \
+              -ldflags "-X main.AgentVersion=${VERSION} -X main.CommitSHA=${GITHUB_SHA::8} -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              -o "../${BINARY}" ./cmd/agent
+          fi
+          cd ..
+          sha256sum "${BINARY}" | awk '{print $1}' > "${BINARY}.sha256"
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          tag_name: ${{ steps.meta.outputs.tag }}
           files: |
-            dist/panvex-*
-            dist/checksums.txt
-            deploy/install.sh
-            deploy/install-agent.sh
+            panvex-*-linux-${{ matrix.arch }}
+            panvex-*-linux-${{ matrix.arch }}.sha256
+          generate_release_notes: true
