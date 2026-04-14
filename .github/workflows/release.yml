@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: write
-  packages: read
 
 jobs:
   build:
@@ -19,6 +18,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/checkout@v4
+        with:
+          repository: lost-coder/panvex-ui
+          path: ../ui
+
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26'
@@ -26,10 +30,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          registry-url: 'https://npm.pkg.github.com'
-          scope: '@lost-coder'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Determine component from tag
         id: meta
@@ -41,10 +41,13 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
+      - name: Build UI kit (control-plane only)
+        if: steps.meta.outputs.component == 'control-plane'
+        run: |
+          cd ../ui && npm ci && npm run build
+
       - name: Build frontend (control-plane only)
         if: steps.meta.outputs.component == 'control-plane'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd web && npm ci && npm run build:embed
 

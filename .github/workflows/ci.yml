@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: read
-  packages: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -59,17 +58,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: lost-coder/panvex-ui
+          path: ../ui
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
-          registry-url: "https://npm.pkg.github.com"
-          scope: "@lost-coder"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build UI kit
+        working-directory: ../ui
+        run: npm ci && npm run build
       - name: Install and build frontend
         working-directory: web
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm ci && npm run build
 
   frontend-lint:
@@ -77,17 +77,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: lost-coder/panvex-ui
+          path: ../ui
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
-          registry-url: "https://npm.pkg.github.com"
-          scope: "@lost-coder"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build UI kit
+        working-directory: ../ui
+        run: npm ci && npm run build
       - name: Lint frontend
         working-directory: web
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm ci && npm run lint
 
   buf-lint:
