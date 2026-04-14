@@ -62,6 +62,10 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
+          registry-url: "https://npm.pkg.github.com"
+          scope: "@lost-coder"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Install and build frontend
         working-directory: web
         env:
@@ -76,6 +80,10 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
+          registry-url: "https://npm.pkg.github.com"
+          scope: "@lost-coder"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Lint frontend
         working-directory: web
         env:
