@@ -182,7 +182,7 @@ func defaultUpdateSettings() UpdateSettings {
 		CheckIntervalHours:  6,
 		AutoUpdatePanel:     false,
 		AutoUpdateAgents:    false,
-		GitHubRepo:          "panvex/panvex",
+		GitHubRepo:          "lost-coder/panvex",
 		AgentDownloadSource: "github",
 	}
 }
