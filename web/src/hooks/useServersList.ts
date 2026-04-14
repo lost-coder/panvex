@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { ServerListItem } from "@panvex/ui";
+import type { ServerListItem } from "@lost-coder/panvex-ui";
 import { apiClient } from "@/lib/api";
 import { transformServerList } from "@/lib/transforms/servers";
 

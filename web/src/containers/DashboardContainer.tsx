@@ -1,4 +1,4 @@
-import { DashboardPage, Spinner } from "@panvex/ui";
+import { DashboardPage, Spinner } from "@lost-coder/panvex-ui";
 import { useDashboardData } from "@/hooks/useDashboardData";
 import { useDiscoveredClients } from "@/hooks/useDiscoveredClients";
 import { useClientCreate } from "@/hooks/useClientCreate";

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { EnrollmentTokenData } from "@panvex/ui";
+import type { EnrollmentTokenData } from "@lost-coder/panvex-ui";
 import { apiClient } from "@/lib/api";
 
 function transformTokens(raw: Awaited<ReturnType<typeof apiClient.listEnrollmentTokens>>): EnrollmentTokenData[] {

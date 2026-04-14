@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { ClientFormData } from "@panvex/ui";
+import type { ClientFormData } from "@lost-coder/panvex-ui";
 import { apiClient } from "@/lib/api";
 import type { ClientInput } from "@/lib/api";
 

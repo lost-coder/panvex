@@ -1,4 +1,4 @@
-import type { ClientListItem, ClientDetailPageProps, ClientFormData } from "@panvex/ui";
+import type { ClientListItem, ClientDetailPageProps, ClientFormData } from "@lost-coder/panvex-ui";
 import type {
   ClientListItem as ApiClientListItem,
   Client as ApiClient,

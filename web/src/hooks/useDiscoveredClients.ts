@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { DiscoveredClientItem } from "@panvex/ui";
+import type { DiscoveredClientItem } from "@lost-coder/panvex-ui";
 import { apiClient } from "@/lib/api";
 import { transformDiscoveredClientList } from "@/lib/transforms/discoveredClients";
 

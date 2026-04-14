@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { DashboardOverviewData, DashboardTimelineData } from "@panvex/ui";
+import type { DashboardOverviewData, DashboardTimelineData } from "@lost-coder/panvex-ui";
 import { apiClient } from "@/lib/api";
 import {
   transformDashboardOverview,

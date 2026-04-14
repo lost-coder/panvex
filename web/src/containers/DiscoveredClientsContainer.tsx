@@ -1,4 +1,4 @@
-import { DiscoveredClientsPage, Spinner } from "@panvex/ui";
+import { DiscoveredClientsPage, Spinner } from "@lost-coder/panvex-ui";
 import { useDiscoveredClients } from "@/hooks/useDiscoveredClients";
 import { useNavigate } from "@tanstack/react-router";
 import { ErrorState } from "@/components/ErrorState";

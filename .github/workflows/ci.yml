@@ -55,22 +55,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          path: panvex
-      - uses: actions/checkout@v4
-        with:
-          repository: lost-coder/panvex-ui
-          path: ui
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: "*/package-lock.json"
-      - name: Build UI kit
-        working-directory: ui
-        run: npm ci && npm run build
       - name: Install and build frontend
-        working-directory: panvex/web
+        working-directory: web
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm ci && npm run build
 
   frontend-lint:
@@ -78,22 +69,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          path: panvex
-      - uses: actions/checkout@v4
-        with:
-          repository: lost-coder/panvex-ui
-          path: ui
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: "*/package-lock.json"
-      - name: Build UI kit
-        working-directory: ui
-        run: npm ci && npm run build
       - name: Lint frontend
-        working-directory: panvex/web
+        working-directory: web
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm ci && npm run lint
 
   buf-lint:

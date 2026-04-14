@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { UserListItem } from "@panvex/ui";
+import type { UserListItem } from "@lost-coder/panvex-ui";
 import { apiClient } from "@/lib/api";
 
 function transformUsers(raw: Awaited<ReturnType<typeof apiClient.users>>): UserListItem[] {

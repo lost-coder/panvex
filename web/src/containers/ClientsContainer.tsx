@@ -1,4 +1,4 @@
-import { ClientsPage, Spinner } from "@panvex/ui";
+import { ClientsPage, Spinner } from "@lost-coder/panvex-ui";
 import { useClientsList } from "@/hooks/useClientsList";
 import { useDiscoveredClients } from "@/hooks/useDiscoveredClients";
 import { useClientCreate } from "@/hooks/useClientCreate";

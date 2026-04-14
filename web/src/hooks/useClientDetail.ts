@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { ClientDetailPageProps } from "@panvex/ui";
+import type { ClientDetailPageProps } from "@lost-coder/panvex-ui";
 import { apiClient } from "@/lib/api";
 import { transformClientDetail } from "@/lib/transforms/clients";
 

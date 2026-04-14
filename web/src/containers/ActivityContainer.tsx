@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ActivityPage, Spinner } from "@panvex/ui";
+import { ActivityPage, Spinner } from "@lost-coder/panvex-ui";
 import { useActivity } from "@/hooks/useActivity";
 import { ErrorState } from "@/components/ErrorState";
 

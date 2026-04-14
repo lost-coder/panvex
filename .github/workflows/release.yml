@@ -18,13 +18,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Checkout UI kit
-        if: contains(github.ref, 'control-plane/')
-        uses: actions/checkout@v4
-        with:
-          repository: lost-coder/panvex-ui
-          path: ui
-
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26'
@@ -45,10 +38,10 @@ jobs:
 
       - name: Build frontend (control-plane only)
         if: steps.meta.outputs.component == 'control-plane'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cd ui && npm ci && npm run build && cd ..
-          cd web && sed -i 's|"file:../../ui"|"file:../ui"|' package.json
-          npm ci && npm run build:embed
+          cd web && npm ci && npm run build:embed
 
       - name: Build binary
         env:

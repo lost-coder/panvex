@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { UsersManagementPage, Spinner, type UserFormData, type UserFormSheetProps } from "@panvex/ui";
+import { UsersManagementPage, Spinner, type UserFormData, type UserFormSheetProps } from "@lost-coder/panvex-ui";
 import { useUsers } from "@/hooks/useUsers";
 
 type SheetState =
