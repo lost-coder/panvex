@@ -755,7 +755,7 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 			t.Fatalf("AppendAuditEvent() error = %v", err)
 		}
 
-		events, err := store.ListAuditEvents(ctx)
+		events, err := store.ListAuditEvents(ctx, 0)
 		if err != nil {
 			t.Fatalf("ListAuditEvents() error = %v", err)
 		}

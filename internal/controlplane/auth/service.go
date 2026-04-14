@@ -142,6 +142,10 @@ type Service struct {
 	userStore        storage.UserStore
 	sessionStore     storage.SessionStore
 	now              func() time.Time
+	// startedAt records when the service was created. During the first 90
+	// seconds after startup the TOTP verifier skips the past (-30s) window
+	// to prevent replay of codes that may have been consumed before a restart.
+	startedAt time.Time
 }
 
 // NewService constructs an in-memory local-auth service.
@@ -152,6 +156,7 @@ func NewService() *Service {
 		pendingTotpSetup: make(map[string]pendingTotpSetup),
 		consumedTotp:     make(map[totpUseKey]time.Time),
 		now:              time.Now,
+		startedAt:        time.Now(),
 	}
 }
 
@@ -164,6 +169,7 @@ func NewServiceWithStore(userStore storage.UserStore) *Service {
 		consumedTotp:     make(map[totpUseKey]time.Time),
 		userStore:        userStore,
 		now:              time.Now,
+		startedAt:        time.Now(),
 	}
 }
 
@@ -220,6 +226,10 @@ func (s *Service) SetNow(now func() time.Time) {
 		return
 	}
 	s.now = now
+	// Reset the startup timestamp so the TOTP grace period is relative to
+	// the injected clock, not to wall-clock time. Without this, tests using
+	// a synthetic clock would hit the post-restart replay guard incorrectly.
+	s.startedAt = now()
 }
 
 type pendingTotpSetup struct {
@@ -698,7 +708,16 @@ func (s *Service) cleanupExpiredSessionsLocked(now time.Time) {
 
 func (s *Service) verifyTotpCode(secret string, code string, now time.Time) bool {
 	trimmedCode := strings.TrimSpace(code)
+	// During the first 90 seconds after startup, skip the past (-30s) window
+	// to prevent replay of TOTP codes consumed before a restart. The consumed
+	// code map is in-memory only, so after a restart an attacker could replay
+	// a code that was used just before shutdown.
+	elapsed := now.Sub(s.startedAt)
+	skipPastWindow := elapsed >= 0 && elapsed < 90*time.Second
 	for _, candidateTime := range []time.Time{now.Add(-30 * time.Second), now, now.Add(30 * time.Second)} {
+		if skipPastWindow && candidateTime.Before(s.startedAt) {
+			continue
+		}
 		expected, err := s.GenerateTotpCode(secret, candidateTime)
 		if err != nil {
 			continue

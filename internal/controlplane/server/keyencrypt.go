@@ -74,8 +74,10 @@ func decryptPEM(stored string, passphrase string) (string, error) {
 		return decryptPEMv1(stored, passphrase)
 	}
 
-	// No encryption prefix: return plaintext. The caller is responsible for
-	// re-encrypting and persisting the value when a passphrase is configured.
+	// No encryption prefix — the stored value is plaintext.
+	if passphrase != "" {
+		return "", errors.New("CA private key is stored without encryption but an encryption key is configured; re-encrypt the key or remove the encryption key setting")
+	}
 	return stored, nil
 }
 

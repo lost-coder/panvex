@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/panvex/panvex/internal/controlplane/storage"
 )
@@ -297,6 +298,14 @@ func (s *Store) ListTelemetryRuntimeEvents(ctx context.Context, agentID string, 
 	}
 
 	return result, rows.Err()
+}
+
+func (s *Store) PruneTelemetryRuntimeEvents(ctx context.Context, olderThan time.Time) (int64, error) {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM telemt_runtime_events WHERE timestamp_at < $1`, olderThan.UTC())
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 func (s *Store) PutTelemetryDiagnosticsCurrent(ctx context.Context, record storage.TelemetryDiagnosticsCurrentRecord) error {

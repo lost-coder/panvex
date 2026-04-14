@@ -119,29 +119,25 @@ func TestStoreBatchWriterDrainsOnStop(t *testing.T) {
 	w.Start()
 
 	now := time.Now().UTC()
-	w.audit.Enqueue(storage.AuditEventRecord{
-		ID:        "evt-1",
-		ActorID:   "user-1",
-		Action:    "test.action",
-		TargetID:  "target-1",
-		CreatedAt: now,
+	w.agents.Enqueue(storage.AgentRecord{
+		ID:         "agent-1",
+		NodeName:   "node-a",
+		LastSeenAt: now,
 	})
-	w.audit.Enqueue(storage.AuditEventRecord{
-		ID:        "evt-2",
-		ActorID:   "user-1",
-		Action:    "test.action",
-		TargetID:  "target-2",
-		CreatedAt: now,
+	w.agents.Enqueue(storage.AgentRecord{
+		ID:         "agent-2",
+		NodeName:   "node-b",
+		LastSeenAt: now,
 	})
 
 	// Stop triggers a final drain of all buffers.
 	w.Stop()
 
-	events, err := store.ListAuditEvents(context.Background())
+	agents, err := store.ListAgents(context.Background())
 	if err != nil {
-		t.Fatalf("ListAuditEvents() error = %v", err)
+		t.Fatalf("ListAgents() error = %v", err)
 	}
-	if len(events) != 2 {
-		t.Fatalf("ListAuditEvents() returned %d events, want 2", len(events))
+	if len(agents) != 2 {
+		t.Fatalf("ListAgents() returned %d agents, want 2", len(agents))
 	}
 }

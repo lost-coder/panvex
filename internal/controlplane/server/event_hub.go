@@ -1,6 +1,9 @@
 package server
 
-import "sync"
+import (
+	"log/slog"
+	"sync"
+)
 
 type eventEnvelope struct {
 	Type string `json:"type"`
@@ -52,6 +55,7 @@ func (h *eventHub) publish(event eventEnvelope) {
 		select {
 		case subscriber <- event:
 		default:
+			slog.Debug("event dropped for slow subscriber", "event_type", event.Type)
 		}
 	}
 }

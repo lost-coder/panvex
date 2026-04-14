@@ -31,7 +31,9 @@ func (s *Server) startTimeseriesRollupWorker(ctx context.Context) {
 		return
 	}
 
+	s.rollupWg.Add(1)
 	go func() {
+		defer s.rollupWg.Done()
 		ticker := time.NewTicker(rollupInterval)
 		defer ticker.Stop()
 
@@ -96,6 +98,16 @@ func (s *Server) runTimeseriesRollup(ctx context.Context) {
 			s.logger.Error("prune client_ip_history failed", "error", err)
 		} else if pruned > 0 {
 			s.logger.Info("pruned client IP history entries", "count", pruned, "cutoff", cutoff.Format(time.RFC3339))
+		}
+	}
+
+	// 6. Prune telemt runtime events.
+	if retention.EventSeconds > 0 {
+		cutoff := now.Add(-time.Duration(retention.EventSeconds) * time.Second)
+		if pruned, err := s.store.PruneTelemetryRuntimeEvents(ctx, cutoff); err != nil {
+			s.logger.Error("prune telemt_runtime_events failed", "error", err)
+		} else if pruned > 0 {
+			s.logger.Info("pruned telemt runtime events", "count", pruned, "cutoff", cutoff.Format(time.RFC3339))
 		}
 	}
 }

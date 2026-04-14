@@ -115,6 +115,15 @@ func (s *Server) withRateLimit(limiter *fixedWindowRateLimiter, keyFn func(*http
 	}
 }
 
+// requestClientRateLimitKey extracts a per-client key for rate limiting.
+//
+// When the server sits behind a reverse proxy, the function uses the rightmost
+// X-Forwarded-For entry — the hop appended by the last trusted proxy — as the
+// client identity. This only works correctly when TrustedProxyCIDRs (in
+// Options) includes every proxy/load-balancer CIDR that may appear as
+// r.RemoteAddr. If TrustedProxyCIDRs is empty (and the proxy is not on
+// loopback), all requests are keyed by the proxy's own IP and share a single
+// rate-limit bucket, effectively rate-limiting the entire fleet as one client.
 func (s *Server) requestClientRateLimitKey(r *http.Request) string {
 	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 		// Use the rightmost X-Forwarded-For entry — the last hop appended

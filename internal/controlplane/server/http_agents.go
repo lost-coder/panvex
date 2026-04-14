@@ -147,7 +147,13 @@ func (s *Server) handleDeregisterAgent() http.HandlerFunc {
 		s.clientsMu.Unlock()
 		s.mu.Unlock()
 
-		// 5. Remove from presence tracker.
+		// 5. Revoke the agent's certificate so a reconnect attempt with
+		//    still-valid mTLS material is rejected at Connect.
+		s.mu.Lock()
+		s.revokedAgentIDs[agentID] = struct{}{}
+		s.mu.Unlock()
+
+		// 6. Remove from presence tracker.
 		s.presence.Remove(agentID)
 
 		s.appendAuditWithContext(r.Context(), session.UserID, "agents.deregister", agentID, map[string]any{})

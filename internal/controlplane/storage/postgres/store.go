@@ -33,14 +33,14 @@ func Open(dsn string) (*Store, error) {
 		return nil, err
 	}
 
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
+
 	if err := Migrate(db); err != nil {
 		db.Close()
 		return nil, err
 	}
-
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(5 * time.Minute)
 
 	if err := db.Ping(); err != nil {
 		db.Close()
@@ -397,12 +397,15 @@ func (s *Store) AppendAuditEvent(ctx context.Context, event storage.AuditEventRe
 	return err
 }
 
-func (s *Store) ListAuditEvents(ctx context.Context) ([]storage.AuditEventRecord, error) {
+func (s *Store) ListAuditEvents(ctx context.Context, limit int) ([]storage.AuditEventRecord, error) {
+	if limit <= 0 {
+		limit = 1024
+	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, actor_id, action, target_id, details, created_at
-		FROM (SELECT * FROM audit_events ORDER BY created_at DESC, id DESC LIMIT 1024) sub
+		FROM (SELECT * FROM audit_events ORDER BY created_at DESC, id DESC LIMIT $1) sub
 		ORDER BY created_at, id
-	`)
+	`, limit)
 	if err != nil {
 		return nil, err
 	}

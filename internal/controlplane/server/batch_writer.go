@@ -75,7 +75,6 @@ type storeBatchWriter struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
-	audit      *batchBuffer[storage.AuditEventRecord]
 	agents     *batchBuffer[storage.AgentRecord]
 	instances  *batchBuffer[storage.InstanceRecord]
 	metrics    *batchBuffer[storage.MetricSnapshotRecord]
@@ -105,7 +104,6 @@ func newStoreBatchWriter(store storage.Store) *storeBatchWriter {
 		cancel: cancel,
 	}
 
-	w.audit = newBatchBuffer(batchMaxSize, w.flushAudit)
 	w.agents = newBatchBuffer(batchMaxSize, w.flushAgents)
 	w.instances = newBatchBuffer(batchMaxSize, w.flushInstances)
 	w.metrics = newBatchBuffer(batchMaxSize, w.flushMetrics)
@@ -142,29 +140,26 @@ func (w *storeBatchWriter) flushLoop() {
 		case <-w.ctx.Done():
 			return
 		case <-ticker.C:
-			w.drainAll(w.ctx)
-		case <-w.audit.signal:
-			w.audit.Drain(w.ctx)
+			w.drainAll(context.Background())
 		case <-w.agents.signal:
-			w.agents.Drain(w.ctx)
+			w.agents.Drain(context.Background())
 		case <-w.instances.signal:
-			w.instances.Drain(w.ctx)
+			w.instances.Drain(context.Background())
 		case <-w.metrics.signal:
-			w.metrics.Drain(w.ctx)
+			w.metrics.Drain(context.Background())
 		case <-w.serverLoad.signal:
-			w.serverLoad.Drain(w.ctx)
+			w.serverLoad.Drain(context.Background())
 		case <-w.dcHealth.signal:
-			w.dcHealth.Drain(w.ctx)
+			w.dcHealth.Drain(context.Background())
 		case <-w.clientIPs.signal:
-			w.clientIPs.Drain(w.ctx)
+			w.clientIPs.Drain(context.Background())
 		case <-w.telemetry.signal:
-			w.telemetry.Drain(w.ctx)
+			w.telemetry.Drain(context.Background())
 		}
 	}
 }
 
 func (w *storeBatchWriter) drainAll(ctx context.Context) {
-	w.audit.Drain(ctx)
 	w.agents.Drain(ctx)
 	w.instances.Drain(ctx)
 	w.metrics.Drain(ctx)
@@ -178,15 +173,6 @@ func (w *storeBatchWriter) drainAll(ctx context.Context) {
 // corresponding Store method. Errors are logged but not propagated because
 // the in-memory state is already committed and the next snapshot will
 // overwrite stale DB rows.
-
-func (w *storeBatchWriter) flushAudit(ctx context.Context, items []storage.AuditEventRecord) {
-	slog.Debug("batch flush", "domain", "audit", "count", len(items))
-	for _, item := range items {
-		if err := w.store.AppendAuditEvent(ctx, item); err != nil {
-			slog.Warn("batch persist failed", "domain", "audit", "error", err)
-		}
-	}
-}
 
 func (w *storeBatchWriter) flushAgents(ctx context.Context, items []storage.AgentRecord) {
 	slog.Debug("batch flush", "domain", "agents", "count", len(items))

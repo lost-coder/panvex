@@ -46,7 +46,10 @@ type JobStore interface {
 // AuditStore persists immutable operator and security events.
 type AuditStore interface {
 	AppendAuditEvent(ctx context.Context, event AuditEventRecord) error
-	ListAuditEvents(ctx context.Context) ([]AuditEventRecord, error)
+	// ListAuditEvents returns the most recent audit events in ascending
+	// chronological order. limit caps the number of rows returned; values
+	// <= 0 fall back to a hard maximum of 1024.
+	ListAuditEvents(ctx context.Context, limit int) ([]AuditEventRecord, error)
 }
 
 // MetricStore persists aggregated control-plane metric snapshots.
@@ -66,6 +69,7 @@ type TelemetryStore interface {
 	ListTelemetryRuntimeUpstreams(ctx context.Context, agentID string) ([]TelemetryRuntimeUpstreamRecord, error)
 	AppendTelemetryRuntimeEvents(ctx context.Context, agentID string, records []TelemetryRuntimeEventRecord) error
 	ListTelemetryRuntimeEvents(ctx context.Context, agentID string, limit int) ([]TelemetryRuntimeEventRecord, error)
+	PruneTelemetryRuntimeEvents(ctx context.Context, olderThan time.Time) (int64, error)
 	PutTelemetryDiagnosticsCurrent(ctx context.Context, record TelemetryDiagnosticsCurrentRecord) error
 	GetTelemetryDiagnosticsCurrent(ctx context.Context, agentID string) (TelemetryDiagnosticsCurrentRecord, error)
 	PutTelemetrySecurityInventoryCurrent(ctx context.Context, record TelemetrySecurityInventoryCurrentRecord) error

@@ -55,6 +55,12 @@ func (s *Server) RenewCertificate(ctx context.Context, request *gatewayrpc.Renew
 	if err != nil {
 		return nil, err
 	}
+	s.mu.RLock()
+	_, revoked := s.revokedAgentIDs[agentID]
+	s.mu.RUnlock()
+	if revoked {
+		return nil, status.Error(codes.PermissionDenied, "agent certificate has been revoked")
+	}
 	if agentID != request.AgentId {
 		return nil, status.Error(codes.PermissionDenied, "certificate agent mismatch")
 	}
@@ -92,6 +98,12 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 	agentID, err := authenticatedAgentID(stream.Context())
 	if err != nil {
 		return err
+	}
+	s.mu.RLock()
+	_, revoked := s.revokedAgentIDs[agentID]
+	s.mu.RUnlock()
+	if revoked {
+		return status.Error(codes.PermissionDenied, "agent certificate has been revoked")
 	}
 	if s.grpcConnectRateLimiter != nil && !s.grpcConnectRateLimiter.Allow(agentID, s.now()) {
 		return status.Error(codes.ResourceExhausted, "connect rate limit exceeded")
@@ -170,7 +182,7 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 			select {
 			case <-connectionCtx.Done():
 				drainPriorityAuditEffects(priorityAuditEffects, func(actorID string, action string, targetID string, details map[string]any) {
-					s.appendAuditWithContext(connectionCtx, actorID, action, targetID, details)
+					s.appendAuditWithContext(context.Background(), actorID, action, targetID, details)
 				})
 				return
 			case effect := <-priorityAuditEffects:
@@ -188,7 +200,7 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 			select {
 			case <-connectionCtx.Done():
 				drainPriorityResultEffects(priorityResultEffects, func(agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) {
-					s.recordClientJobResultWithContext(connectionCtx, agentID, jobID, success, message, resultJSON, observedAt)
+					s.recordClientJobResultWithContext(context.Background(), agentID, jobID, success, message, resultJSON, observedAt)
 				})
 				return
 			case effect := <-priorityResultEffects:
@@ -214,7 +226,7 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 			select {
 			case <-connectionCtx.Done():
 				drainRegularSnapshots(regularSnapshots, func(snapshot agentSnapshot) error {
-					return s.applyAgentSnapshotWithContext(connectionCtx, snapshot)
+					return s.applyAgentSnapshotWithContext(context.Background(), snapshot)
 				})
 				return
 			case snapshot := <-regularSnapshots:

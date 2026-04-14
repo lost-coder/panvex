@@ -272,6 +272,22 @@ func (s *memoryStore) ListTelemetryRuntimeEvents(_ context.Context, agentID stri
 	return records, nil
 }
 
+func (s *memoryStore) PruneTelemetryRuntimeEvents(_ context.Context, olderThan time.Time) (int64, error) {
+	var pruned int64
+	for agentID, events := range s.telemetryRuntimeEvents {
+		var kept []storage.TelemetryRuntimeEventRecord
+		for _, e := range events {
+			if !e.Timestamp.Before(olderThan) {
+				kept = append(kept, e)
+			} else {
+				pruned++
+			}
+		}
+		s.telemetryRuntimeEvents[agentID] = kept
+	}
+	return pruned, nil
+}
+
 func (s *memoryStore) PutTelemetryDiagnosticsCurrent(_ context.Context, record storage.TelemetryDiagnosticsCurrentRecord) error {
 	s.telemetryDiagnosticsCurrent[record.AgentID] = record
 	return nil
@@ -438,8 +454,12 @@ func (s *memoryStore) AppendAuditEvent(_ context.Context, event storage.AuditEve
 	return nil
 }
 
-func (s *memoryStore) ListAuditEvents(_ context.Context) ([]storage.AuditEventRecord, error) {
-	return append([]storage.AuditEventRecord(nil), s.auditEvents...), nil
+func (s *memoryStore) ListAuditEvents(_ context.Context, limit int) ([]storage.AuditEventRecord, error) {
+	events := append([]storage.AuditEventRecord(nil), s.auditEvents...)
+	if limit > 0 && len(events) > limit {
+		events = events[len(events)-limit:]
+	}
+	return events, nil
 }
 
 func (s *memoryStore) AppendMetricSnapshot(_ context.Context, snapshot storage.MetricSnapshotRecord) error {
