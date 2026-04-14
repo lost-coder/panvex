@@ -56,6 +56,12 @@ type Options struct {
 	EncryptionKey string
 	// Logger is the structured logger for the server. If nil, slog.Default() is used.
 	Logger *slog.Logger
+	// Version is the panel version string (e.g. "v1.2.3" or "dev").
+	Version   string
+	// CommitSHA is the git commit hash baked in at build time.
+	CommitSHA string
+	// BuildTime is the RFC3339 build timestamp baked in at build time.
+	BuildTime string
 }
 
 // Server wires local-auth, inventory, jobs, and operator APIs into one HTTP surface.
@@ -79,6 +85,9 @@ type Server struct {
 	trustedProxyCIDRs []*net.IPNet
 	encryptionKey string
 	logger *slog.Logger
+	version   string
+	commitSHA string
+	buildTime string
 
 	mu             sync.RWMutex
 	sessionMu      sync.RWMutex
@@ -143,6 +152,9 @@ func New(options Options) *Server {
 		trustedProxyCIDRs: options.TrustedProxyCIDRs,
 		encryptionKey: options.EncryptionKey,
 		logger: options.Logger,
+		version:   options.Version,
+		commitSHA: options.CommitSHA,
+		buildTime: options.BuildTime,
 		revokedAgentIDs: make(map[string]struct{}),
 		agents:     make(map[string]Agent),
 		detailBoosts: make(map[string]time.Time),
@@ -362,6 +374,7 @@ func (s *Server) routes() http.Handler {
 
 		api.Group(func(authenticated chi.Router) {
 			authenticated.Use(s.requireAuthenticatedSession())
+			authenticated.Get("/version", s.handleVersion())
 			authenticated.Get("/auth/me", s.handleMe())
 			authenticated.Post("/auth/logout", s.handleLogout())
 			authenticated.Post("/auth/totp/setup", s.handleTotpSetup())
