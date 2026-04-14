@@ -5,6 +5,7 @@ import { useProfile } from "@/hooks/useProfile";
 import { useRetentionSettings } from "@/hooks/useRetentionSettings";
 import { useAppearance } from "@/providers/AppearanceProvider";
 import { ErrorState } from "@/components/ErrorState";
+import { UpdatesSettingsSection } from "./UpdatesSettingsSection";
 
 export function SettingsContainer() {
   const navigate = useNavigate();
@@ -23,24 +24,27 @@ export function SettingsContainer() {
   }
 
   return (
-    <SettingsPage
-      panelSettings={settings.panelSettings}
-      appearanceSettings={settings.appearanceSettings}
-      onPanelSettingsChange={(s) => savePanelSettings.mutate({
-        http_public_url: s.httpPublicUrl,
-        grpc_public_endpoint: s.grpcPublicEndpoint,
-      })}
-      onAppearanceChange={(s) => {
-        setSwipeNavigation(s.swipeNavigation);
-        saveAppearance.mutate({
-          theme: s.theme,
-          density: s.density,
-          help_mode: s.helpMode,
-        });
-      }}
-      onManageUsers={isAdmin ? () => navigate({ to: "/settings/users" }) : undefined}
-      retentionSettings={isAdmin && retention ? retention : undefined}
-      onRetentionChange={isAdmin ? (s) => saveRetention.mutate(s) : undefined}
-    />
+    <>
+      <SettingsPage
+        panelSettings={settings.panelSettings}
+        appearanceSettings={settings.appearanceSettings}
+        onPanelSettingsChange={(s) => savePanelSettings.mutate({
+          http_public_url: s.httpPublicUrl,
+          grpc_public_endpoint: s.grpcPublicEndpoint,
+        })}
+        onAppearanceChange={(s) => {
+          setSwipeNavigation(s.swipeNavigation);
+          saveAppearance.mutate({
+            theme: s.theme,
+            density: s.density,
+            help_mode: s.helpMode,
+          });
+        }}
+        onManageUsers={isAdmin ? () => navigate({ to: "/settings/users" }) : undefined}
+        retentionSettings={isAdmin && retention ? retention : undefined}
+        onRetentionChange={isAdmin ? (s) => saveRetention.mutate(s) : undefined}
+      />
+      {isAdmin && <UpdatesSettingsSection />}
+    </>
   );
 }
