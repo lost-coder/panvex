@@ -38,29 +38,32 @@ func Execute(ctx context.Context, payload Payload, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("download: %w", err)
 	}
-	defer os.Remove(tmpPath)
 
 	if err := verifyChecksum(tmpPath, payload.ChecksumSHA256); err != nil {
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("verify: %w", err)
 	}
 
 	currentPath, err := os.Executable()
 	if err != nil {
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("resolve executable: %w", err)
 	}
 
 	if err := replaceBinary(currentPath, tmpPath, payload.ChecksumSHA256); err != nil {
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("replace: %w", err)
 	}
 
+	// replaceBinary renames tmpPath into place, so no cleanup needed.
 	logger.Info("agent self-update: binary replaced, restarting", "version", payload.Version)
 
 	// Attempt systemd restart. If it fails, exit to let systemd auto-restart.
 	if err := exec.Command("systemctl", "restart", "panvex-agent").Start(); err != nil {
 		logger.Warn("systemctl restart failed, exiting for auto-restart", "error", err)
-		os.Exit(0)
 	}
-	return nil
+	os.Exit(0)
+	return nil // unreachable
 }
 
 func downloadToTemp(ctx context.Context, url string) (string, error) {
@@ -85,10 +88,13 @@ func downloadToTemp(ctx context.Context, url string) (string, error) {
 	}
 	defer tmp.Close()
 	if _, err := io.Copy(tmp, resp.Body); err != nil {
-		os.Remove(tmp.Name())
+		_ = os.Remove(tmp.Name())
 		return "", err
 	}
-	os.Chmod(tmp.Name(), 0755)
+	if err := os.Chmod(tmp.Name(), 0755); err != nil { //nolint:gosec // executable binary requires 0755
+		_ = os.Remove(tmp.Name())
+		return "", err
+	}
 	return tmp.Name(), nil
 }
 
@@ -114,12 +120,12 @@ func replaceBinary(currentPath, newPath, expectedChecksum string) error {
 		return err
 	}
 	backupPath := currentPath + ".bak"
-	os.Remove(backupPath)
+	_ = os.Remove(backupPath)
 	if err := os.Rename(currentPath, backupPath); err != nil {
 		return fmt.Errorf("backup: %w", err)
 	}
 	if err := os.Rename(newPath, currentPath); err != nil {
-		os.Rename(backupPath, currentPath)
+		_ = os.Rename(backupPath, currentPath)
 		return fmt.Errorf("replace: %w", err)
 	}
 	return nil

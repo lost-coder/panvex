@@ -175,7 +175,7 @@ func (s *Server) handleForceUpdateCheck() http.HandlerFunc {
 
 		s.appendAuditWithContext(r.Context(), session.UserID, "settings.updates.check", "panel", nil)
 
-		go s.checkForUpdates(context.Background())
+		go s.checkForUpdates(context.Background()) //nolint:gosec // intentionally detached from request lifecycle
 
 		writeJSON(w, http.StatusAccepted, map[string]string{"status": "checking"})
 	}
@@ -245,7 +245,7 @@ func (s *Server) handlePanelUpdate() http.HandlerFunc {
 			To:     targetVersion,
 		})
 
-		go s.performPanelUpdate(session.UserID, targetVersion, downloadURL, checksumURL, settings.GitHubToken)
+		go s.performPanelUpdate(session.UserID, targetVersion, downloadURL, checksumURL, settings.GitHubToken) //nolint:gosec // intentionally detached from request lifecycle
 	}
 }
 
@@ -272,7 +272,7 @@ func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksu
 	}
 	defer func() {
 		// Clean up temp file if it still exists (replace succeeded = moved away).
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 	}()
 
 	if expectedChecksum != "" {
@@ -421,7 +421,7 @@ func (s *Server) handleAgentBinaryProxy() http.HandlerFunc {
 		url := fmt.Sprintf("https://github.com/%s/releases/download/agent/v%s/%s",
 			settings.GitHubRepo, strings.TrimPrefix(version, "v"), assetName)
 
-		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, url, nil)
+		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, url, nil) //nolint:gosec // URL from admin-configured GitHubRepo
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to create request")
 			return
@@ -431,7 +431,7 @@ func (s *Server) handleAgentBinaryProxy() http.HandlerFunc {
 		}
 		req.Header.Set("Accept", "application/octet-stream")
 
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := http.DefaultClient.Do(req) //nolint:gosec // req URL from trusted admin config
 		if err != nil {
 			writeError(w, http.StatusBadGateway, "failed to download from GitHub")
 			return

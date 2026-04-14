@@ -518,7 +518,7 @@ func runSelfUpdate(args []string) error {
 	if err != nil {
 		return fmt.Errorf("download binary: %w", err)
 	}
-	defer os.Remove(tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }() //nolint:gosec // tmpPath from os.CreateTemp, not user input
 	fmt.Println("Binary downloaded.")
 
 	if expectedChecksum != "" {
