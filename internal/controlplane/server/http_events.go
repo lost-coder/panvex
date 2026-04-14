@@ -2,8 +2,8 @@ package server
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
-	"net/url"
 
 	"github.com/coder/websocket"
 )
@@ -54,17 +54,10 @@ func (s *Server) handleEvents() http.HandlerFunc {
 func (s *Server) wsOriginPatterns(r *http.Request) []string {
 	patterns := []string{r.Host}
 
-	origin := r.Header.Get("Origin")
-	if origin == "" {
-		return patterns
-	}
-	parsed, err := url.Parse(origin)
-	if err != nil {
-		return patterns
-	}
-	originHostname := parsed.Hostname()
-	if originHostname == "127.0.0.1" || originHostname == "::1" || originHostname == "localhost" {
-		patterns = append(patterns, originHostname+":*")
+	remoteHost, _, _ := net.SplitHostPort(r.RemoteAddr)
+	if remoteHost == "127.0.0.1" || remoteHost == "::1" {
+		// Allow any port from loopback connections (development)
+		patterns = append(patterns, "127.0.0.1:*", "localhost:*", "::1:*")
 	}
 
 	return patterns

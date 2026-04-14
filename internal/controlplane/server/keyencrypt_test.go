@@ -28,16 +28,12 @@ func TestEncryptDecryptPEMRoundTrip(t *testing.T) {
 	}
 }
 
-func TestDecryptPEMPlaintextPassthrough(t *testing.T) {
+func TestDecryptPEMPlaintextWithPassphraseReturnsError(t *testing.T) {
 	plainPEM := "-----BEGIN EC PRIVATE KEY-----\nMIGkAgEBBDDfake+key+data+here==\n-----END EC PRIVATE KEY-----\n"
 
-	result, err := decryptPEM(plainPEM, "any-passphrase")
-	if err != nil {
-		t.Fatalf("decryptPEM() error = %v", err)
-	}
-
-	if result != plainPEM {
-		t.Fatalf("decryptPEM() = %q, want original plaintext PEM", result)
+	_, err := decryptPEM(plainPEM, "any-passphrase")
+	if err == nil {
+		t.Fatal("decryptPEM() error = nil, want error for plaintext key with passphrase configured")
 	}
 }
 

@@ -31,6 +31,9 @@ func Open(dsn string) (*Store, error) {
 
 	db.SetMaxOpenConns(1)
 
+	// PRAGMA foreign_keys must be set per-connection. This is safe as long as
+	// MaxOpenConns is 1. If the pool size is ever increased, use a ConnectHook
+	// or append _pragma=foreign_keys(1) to the DSN instead.
 	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		db.Close()
 		return nil, err
@@ -418,12 +421,15 @@ func (s *Store) AppendAuditEvent(ctx context.Context, event storage.AuditEventRe
 	return err
 }
 
-func (s *Store) ListAuditEvents(ctx context.Context) ([]storage.AuditEventRecord, error) {
+func (s *Store) ListAuditEvents(ctx context.Context, limit int) ([]storage.AuditEventRecord, error) {
+	if limit <= 0 {
+		limit = 1024
+	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, actor_id, action, target_id, created_at_unix, details_json
-		FROM (SELECT * FROM audit_events ORDER BY created_at_unix DESC, id DESC LIMIT 1024)
+		FROM (SELECT * FROM audit_events ORDER BY created_at_unix DESC, id DESC LIMIT ?)
 		ORDER BY created_at_unix, id
-	`)
+	`, limit)
 	if err != nil {
 		return nil, err
 	}

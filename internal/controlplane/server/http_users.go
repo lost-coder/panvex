@@ -293,6 +293,10 @@ func (s *Server) listUsersWithContext(ctx context.Context) ([]auth.User, error) 
 			}
 			return users[left].CreatedAt.Before(users[right].CreatedAt)
 		})
+		for i := range users {
+			users[i].PasswordHash = ""
+			users[i].TotpSecret = ""
+		}
 		return users, nil
 	}
 
@@ -304,14 +308,18 @@ func (s *Server) listUsersWithContext(ctx context.Context) ([]auth.User, error) 
 	users := make([]auth.User, 0, len(records))
 	for _, record := range records {
 		users = append(users, auth.User{
-			ID:           record.ID,
-			Username:     record.Username,
-			PasswordHash: record.PasswordHash,
-			Role:         auth.Role(record.Role),
-			TotpEnabled:  record.TotpEnabled,
-			TotpSecret:   record.TotpSecret,
-			CreatedAt:    record.CreatedAt.UTC(),
+			ID:          record.ID,
+			Username:    record.Username,
+			Role:        auth.Role(record.Role),
+			TotpEnabled: record.TotpEnabled,
+			CreatedAt:   record.CreatedAt.UTC(),
 		})
+	}
+
+	// Zero sensitive fields for in-memory users as well.
+	for i := range users {
+		users[i].PasswordHash = ""
+		users[i].TotpSecret = ""
 	}
 
 	return users, nil

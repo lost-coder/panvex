@@ -106,6 +106,9 @@ CREATE TABLE IF NOT EXISTS telemt_runtime_upstreams_current (
     PRIMARY KEY (agent_id, upstream_id)
 );
 
+-- Column name differs between drivers: SQLite uses timestamp_unix (INTEGER)
+-- while Postgres uses timestamp_at (TIMESTAMPTZ). Query implementations in
+-- each driver's telemetry.go must use the correct column name.
 CREATE TABLE IF NOT EXISTS telemt_runtime_events (
     agent_id TEXT NOT NULL REFERENCES agents (id) ON DELETE CASCADE,
     sequence BIGINT NOT NULL,
@@ -423,6 +426,7 @@ func Migrate(db *sql.DB) error {
 		);
 		CREATE INDEX IF NOT EXISTS idx_client_ip_last_seen ON client_ip_history (last_seen);
 		CREATE INDEX IF NOT EXISTS idx_client_ip_client ON client_ip_history (client_id, last_seen DESC);
+		CREATE INDEX IF NOT EXISTS idx_client_ip_client_addr ON client_ip_history (client_id, ip_address);
 
 		CREATE TABLE IF NOT EXISTS ts_server_load_hourly (
 			agent_id          TEXT NOT NULL,
