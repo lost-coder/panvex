@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import type { ViewMode } from "@panvex/ui";
+import type { ViewMode } from "@lost-coder/panvex-ui";
 
 const STORAGE_KEY = "panvex-view-mode";
 

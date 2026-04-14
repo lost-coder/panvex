@@ -2,7 +2,7 @@ import type {
   DashboardOverviewData,
   DashboardTimelineData,
   DashboardNodeData,
-} from "@panvex/ui";
+} from "@lost-coder/panvex-ui";
 import type {
   TelemetryDashboardResponse,
   TelemetryAttentionItem,

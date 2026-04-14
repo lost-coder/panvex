@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { JobListItem, AuditListItem } from "@panvex/ui";
+import type { JobListItem, AuditListItem } from "@lost-coder/panvex-ui";
 import { apiClient } from "@/lib/api";
 
 function transformJobs(raw: Awaited<ReturnType<typeof apiClient.jobs>>): JobListItem[] {

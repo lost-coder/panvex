@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { ServerDetailPageProps, InitCardProps } from "@panvex/ui";
+import type { ServerDetailPageProps, InitCardProps } from "@lost-coder/panvex-ui";
 import { apiClient } from "@/lib/api";
 import { transformServerDetail, transformInitState } from "@/lib/transforms/servers";
 
