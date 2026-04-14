@@ -1,4 +1,4 @@
-import type { DiscoveredClientItem } from "@panvex/ui";
+import type { DiscoveredClientItem } from "@lost-coder/panvex-ui";
 import type { DiscoveredClient as ApiDiscoveredClient } from "../api";
 import { parseConnectionLink } from "./clients";
 

@@ -1,4 +1,4 @@
-import { ServersPage, Spinner } from "@panvex/ui";
+import { ServersPage, Spinner } from "@lost-coder/panvex-ui";
 import { useServersList } from "@/hooks/useServersList";
 import { useFleetGroups } from "@/hooks/useFleetGroups";
 import { useViewMode } from "@/hooks/useViewMode";

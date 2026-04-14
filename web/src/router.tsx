@@ -12,7 +12,7 @@ import {
 } from "@tanstack/react-router";
 import { LayoutDashboard, Server, Users, Settings } from "lucide-react";
 
-import { AppShell, type NavItem } from "@panvex/ui";
+import { AppShell, type NavItem } from "@lost-coder/panvex-ui";
 import { AppearanceProvider } from "@/providers/AppearanceProvider";
 import { apiClient } from "@/lib/api";
 import { resolveConfiguredRootPath, getRouterBasepath } from "@/lib/runtime-path";

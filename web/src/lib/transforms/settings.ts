@@ -1,4 +1,4 @@
-import type { SettingsPageProps } from "@panvex/ui";
+import type { SettingsPageProps } from "@lost-coder/panvex-ui";
 import type {
   PanelSettingsResponse,
   AppearanceSettingsResponse,

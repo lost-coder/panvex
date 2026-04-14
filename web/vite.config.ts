@@ -10,7 +10,7 @@ export default defineConfig({
     dedupe: ["react", "react-dom"],
   },
   optimizeDeps: {
-    include: ["@panvex/ui"],
+    include: ["@lost-coder/panvex-ui"],
   },
   server: {
     host: "0.0.0.0",

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { SettingsGroup, SettingsRow, Button, Input } from "@panvex/ui";
+import { SettingsGroup, SettingsRow, Button, Input } from "@lost-coder/panvex-ui";
 import { useUpdates } from "@/hooks/useUpdates";
 import type { UpdateSettings } from "@/lib/api";
 

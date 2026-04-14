@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { SettingsPageProps } from "@panvex/ui";
+import type { SettingsPageProps } from "@lost-coder/panvex-ui";
 import { apiClient } from "@/lib/api";
 import { transformSettings } from "@/lib/transforms/settings";
 

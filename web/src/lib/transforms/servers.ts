@@ -1,5 +1,5 @@
-import type { ServerListItem } from "@panvex/ui";
-import type { ServerDetailPageProps, InitCardProps, AgentConnectionData } from "@panvex/ui";
+import type { ServerListItem } from "@lost-coder/panvex-ui";
+import type { ServerDetailPageProps, InitCardProps, AgentConnectionData } from "@lost-coder/panvex-ui";
 import type {
   TelemetryServersResponse,
   TelemetryServerDetailResponse,
