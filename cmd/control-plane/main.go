@@ -514,26 +514,33 @@ func runSelfUpdate(args []string) error {
 		fmt.Println("Checksum downloaded.")
 	}
 
-	tmpPath, err := server.DownloadBinary(ctx, binaryURL, *token)
+	archivePath, err := server.DownloadArchive(ctx, binaryURL, *token)
 	if err != nil {
-		return fmt.Errorf("download binary: %w", err)
+		return fmt.Errorf("download archive: %w", err)
 	}
-	defer func() { _ = os.Remove(tmpPath) }() //nolint:gosec // tmpPath from os.CreateTemp, not user input
-	fmt.Println("Binary downloaded.")
+	defer func() { _ = os.Remove(archivePath) }() //nolint:gosec // archivePath from os.CreateTemp, not user input
+	fmt.Println("Archive downloaded.")
 
 	if expectedChecksum != "" {
-		if err := server.VerifyChecksum(tmpPath, expectedChecksum); err != nil {
+		if err := server.VerifyChecksum(archivePath, expectedChecksum); err != nil {
 			return fmt.Errorf("verify checksum: %w", err)
 		}
 		fmt.Println("Checksum verified.")
 	}
+
+	binaryPath, err := server.ExtractBinaryFromArchive(archivePath)
+	if err != nil {
+		return fmt.Errorf("extract binary: %w", err)
+	}
+	defer func() { _ = os.Remove(binaryPath) }() //nolint:gosec // binaryPath from os.CreateTemp
+	fmt.Println("Binary extracted.")
 
 	currentBinary, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve current binary: %w", err)
 	}
 
-	if err := server.AtomicReplaceBinary(currentBinary, tmpPath); err != nil {
+	if err := server.AtomicReplaceBinary(currentBinary, binaryPath); err != nil {
 		return fmt.Errorf("replace binary: %w", err)
 	}
 
