@@ -2,6 +2,7 @@ package storagetest
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -43,6 +44,8 @@ type memoryStore struct {
 	discoveredClients  map[string]storage.DiscoveredClientRecord
 	sessions           map[string]storage.SessionRecord
 	panelSettings      *storage.PanelSettingsRecord
+	updateSettings     json.RawMessage
+	updateState        json.RawMessage
 	certificateAuthority *storage.CertificateAuthorityRecord
 }
 
@@ -483,6 +486,30 @@ func (s *memoryStore) GetPanelSettings(_ context.Context) (storage.PanelSettings
 	}
 
 	return *s.panelSettings, nil
+}
+
+func (s *memoryStore) PutUpdateSettings(_ context.Context, data json.RawMessage) error {
+	s.updateSettings = append(json.RawMessage(nil), data...)
+	return nil
+}
+
+func (s *memoryStore) GetUpdateSettings(_ context.Context) (json.RawMessage, error) {
+	if s.updateSettings == nil {
+		return nil, nil
+	}
+	return append(json.RawMessage(nil), s.updateSettings...), nil
+}
+
+func (s *memoryStore) PutUpdateState(_ context.Context, data json.RawMessage) error {
+	s.updateState = append(json.RawMessage(nil), data...)
+	return nil
+}
+
+func (s *memoryStore) GetUpdateState(_ context.Context) (json.RawMessage, error) {
+	if s.updateState == nil {
+		return nil, nil
+	}
+	return append(json.RawMessage(nil), s.updateState...), nil
 }
 
 func (s *memoryStore) PutCertificateAuthority(_ context.Context, authority storage.CertificateAuthorityRecord) error {
