@@ -3,7 +3,7 @@ import type { SettingsPageProps } from "@panvex/ui";
 import { apiClient } from "@/lib/api";
 import { transformSettings } from "@/lib/transforms/settings";
 
-export function useSettings(swipeNavigation: boolean) {
+export function useSettings(swipeNavigation: boolean = false) {
   const queryClient = useQueryClient();
 
   const panelQuery = useQuery({
