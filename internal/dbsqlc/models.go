@@ -144,6 +144,12 @@ type PanelSetting struct {
 	UpdatedAt          pgtype.Timestamptz
 }
 
+type Session struct {
+	ID        string
+	UserID    string
+	CreatedAt pgtype.Timestamptz
+}
+
 type TelemtInstance struct {
 	ID                string
 	AgentID           string
