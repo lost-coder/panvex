@@ -13,12 +13,12 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/panvex/panvex/internal/controlplane/auth"
-	"github.com/panvex/panvex/internal/controlplane/jobs"
-	"github.com/panvex/panvex/internal/controlplane/presence"
-	"github.com/panvex/panvex/internal/controlplane/storage"
-	"github.com/panvex/panvex/internal/gatewayrpc"
-	"github.com/panvex/panvex/internal/security"
+	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/jobs"
+	"github.com/lost-coder/panvex/internal/controlplane/presence"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/gatewayrpc"
+	"github.com/lost-coder/panvex/internal/security"
 )
 
 const (

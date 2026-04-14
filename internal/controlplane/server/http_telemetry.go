@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/panvex/panvex/internal/controlplane/jobs"
-	"github.com/panvex/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/jobs"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 const telemetryDetailBoostTTL = 10 * time.Minute

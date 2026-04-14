@@ -11,11 +11,11 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/panvex/panvex/internal/controlplane/auth"
-	"github.com/panvex/panvex/internal/controlplane/config"
-	"github.com/panvex/panvex/internal/controlplane/server"
-	"github.com/panvex/panvex/internal/controlplane/storage"
-	"github.com/panvex/panvex/internal/controlplane/storage/sqlite"
+	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/config"
+	"github.com/lost-coder/panvex/internal/controlplane/server"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 )
 
 func TestParseServeConfigDefaultsToSQLiteDataFile(t *testing.T) {

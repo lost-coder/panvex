@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/panvex/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/panvex/panvex/internal/agent/telemt"
-	"github.com/panvex/panvex/internal/gatewayrpc"
+	"github.com/lost-coder/panvex/internal/agent/telemt"
+	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
 func TestAgentBuildSnapshotMarksLifecycleRegressionAsDegraded(t *testing.T) {

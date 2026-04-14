@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/panvex/panvex/internal/controlplane/presence"
+	"github.com/lost-coder/panvex/internal/controlplane/presence"
 )
 
 func TestFreshnessForObservedAtMarksStaleSnapshots(t *testing.T) {

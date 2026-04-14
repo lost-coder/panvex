@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/panvex/panvex/internal/controlplane/storage"
-	"github.com/panvex/panvex/internal/gatewayrpc"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
 const (

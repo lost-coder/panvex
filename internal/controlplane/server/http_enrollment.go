@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/panvex/panvex/internal/controlplane/auth"
-	"github.com/panvex/panvex/internal/controlplane/storage"
-	"github.com/panvex/panvex/internal/security"
+	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/security"
 )
 
 var errEnrollmentTokenRevoked = errors.New("enrollment token revoked")

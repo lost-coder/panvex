@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/panvex/panvex/internal/controlplane/auth"
-	"github.com/panvex/panvex/internal/controlplane/jobs"
+	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 )
 
 type createJobRequest struct {

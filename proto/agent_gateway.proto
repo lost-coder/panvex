@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package panvex.gateway.v1;
 
-option go_package = "github.com/panvex/panvex/internal/gatewayrpc";
+option go_package = "github.com/lost-coder/panvex/internal/gatewayrpc";
 
 service AgentGateway {
   rpc RenewCertificate(RenewCertificateRequest) returns (RenewCertificateResponse);

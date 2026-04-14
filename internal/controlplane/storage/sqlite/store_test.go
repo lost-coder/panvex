@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/panvex/panvex/internal/controlplane/storage"
-	"github.com/panvex/panvex/internal/controlplane/storage/storagetest"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/storage/storagetest"
 )
 
 func TestOpenCreatesSQLiteDatabase(t *testing.T) {

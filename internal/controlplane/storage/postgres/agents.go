@@ -3,7 +3,7 @@ package postgres
 import (
 	"context"
 
-	"github.com/panvex/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 func (s *Store) DeleteAgent(ctx context.Context, agentID string) error {

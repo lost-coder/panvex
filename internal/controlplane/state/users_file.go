@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/panvex/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/auth"
 )
 
 // LoadUsersFile reads the local-auth bootstrap file from disk.

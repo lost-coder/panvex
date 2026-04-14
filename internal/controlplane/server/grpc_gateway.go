@@ -8,8 +8,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/panvex/panvex/internal/controlplane/jobs"
-	"github.com/panvex/panvex/internal/gatewayrpc"
+	"github.com/lost-coder/panvex/internal/controlplane/jobs"
+	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"

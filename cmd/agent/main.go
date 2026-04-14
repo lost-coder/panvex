@@ -14,10 +14,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/panvex/panvex/internal/agent/runtime"
-	agentstate "github.com/panvex/panvex/internal/agent/state"
-	"github.com/panvex/panvex/internal/agent/telemt"
-	"github.com/panvex/panvex/internal/gatewayrpc"
+	"github.com/lost-coder/panvex/internal/agent/runtime"
+	agentstate "github.com/lost-coder/panvex/internal/agent/state"
+	"github.com/lost-coder/panvex/internal/agent/telemt"
+	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )

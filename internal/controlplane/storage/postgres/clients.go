@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"errors"
 
-	"github.com/panvex/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 func (s *Store) PutClient(ctx context.Context, client storage.ClientRecord) error {

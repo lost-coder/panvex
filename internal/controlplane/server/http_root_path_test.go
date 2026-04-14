@@ -7,7 +7,7 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/panvex/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/auth"
 )
 
 func TestHTTPRootPathPrefixesAPIRoutesAndEmbeddedUI(t *testing.T) {

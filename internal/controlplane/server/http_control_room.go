@@ -5,8 +5,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/panvex/panvex/internal/controlplane/jobs"
-	"github.com/panvex/panvex/internal/controlplane/presence"
+	"github.com/lost-coder/panvex/internal/controlplane/jobs"
+	"github.com/lost-coder/panvex/internal/controlplane/presence"
 )
 
 type controlRoomResponse struct {

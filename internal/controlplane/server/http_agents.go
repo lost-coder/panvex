@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/panvex/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 type renameAgentRequest struct {

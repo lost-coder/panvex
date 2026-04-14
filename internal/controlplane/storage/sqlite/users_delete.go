@@ -3,7 +3,7 @@ package sqlite
 import (
 	"context"
 
-	"github.com/panvex/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 func (s *Store) DeleteUser(ctx context.Context, userID string) error {

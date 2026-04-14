@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/panvex/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/auth"
 )
 
 type panelSettingsResponse struct {

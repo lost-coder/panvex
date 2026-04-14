@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/panvex/panvex/internal/controlplane/jobs"
-	"github.com/panvex/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/jobs"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 var (
