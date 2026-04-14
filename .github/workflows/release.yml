@@ -46,8 +46,9 @@ jobs:
       - name: Build frontend (control-plane only)
         if: steps.meta.outputs.component == 'control-plane'
         run: |
-          cd ui && npm ci && npm run build
-          cd ../web && npm ci && npm run build:embed
+          cd ui && npm ci && npm run build && cd ..
+          cd web && sed -i 's|"file:../../ui"|"file:../ui"|' package.json
+          npm ci && npm run build:embed
 
       - name: Build binary
         env:
