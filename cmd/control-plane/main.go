@@ -458,7 +458,7 @@ func parseCIDRList(raw string) ([]*net.IPNet, error) {
 func runSelfUpdate(args []string) error {
 	flags := flag.NewFlagSet("self-update", flag.ContinueOnError)
 	version := flags.String("version", "", "Target version to update to (e.g. 1.2.3)")
-	repo := flags.String("repo", "panvex/panvex", "GitHub repository for release assets")
+	repo := flags.String("repo", "lost-coder/panvex", "GitHub repository for release assets")
 	token := flags.String("token", os.Getenv("GITHUB_TOKEN"), "GitHub token for private repos (env: GITHUB_TOKEN)")
 	force := flags.Bool("force", false, "Force update even if versions match")
 	if err := flags.Parse(args); err != nil {
