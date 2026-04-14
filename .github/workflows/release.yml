@@ -18,6 +18,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Checkout UI kit
+        if: contains(github.ref, 'control-plane/')
+        uses: actions/checkout@v4
+        with:
+          repository: lost-coder/panvex-ui
+          path: ui
+
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26'
@@ -40,28 +47,29 @@ jobs:
         if: steps.meta.outputs.component == 'control-plane'
         run: |
           cd ui && npm ci && npm run build
-          cd ../core/web && npm ci && npm run build:embed
+          cd ../web && npm ci && npm run build:embed
 
       - name: Build binary
         env:
           GOOS: linux
           GOARCH: ${{ matrix.arch }}
           CGO_ENABLED: 0
+          COMPONENT: ${{ steps.meta.outputs.component }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          COMMIT_SHA: ${{ github.sha }}
         run: |
-          COMPONENT="${{ steps.meta.outputs.component }}"
-          VERSION="${{ steps.meta.outputs.version }}"
-          BINARY="panvex-${COMPONENT}-linux-${{ matrix.arch }}"
-          cd core
+          BINARY="panvex-${COMPONENT}-linux-${GOARCH}"
+          BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          SHORT_SHA="${COMMIT_SHA::8}"
           if [ "$COMPONENT" = "control-plane" ]; then
             go build -tags embeddedui \
-              -ldflags "-X main.Version=${VERSION} -X main.CommitSHA=${GITHUB_SHA::8} -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-              -o "../${BINARY}" ./cmd/control-plane
+              -ldflags "-X main.Version=${VERSION} -X main.CommitSHA=${SHORT_SHA} -X main.BuildTime=${BUILD_TIME}" \
+              -o "${BINARY}" ./cmd/control-plane
           else
             go build \
-              -ldflags "-X main.AgentVersion=${VERSION} -X main.CommitSHA=${GITHUB_SHA::8} -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-              -o "../${BINARY}" ./cmd/agent
+              -ldflags "-X main.AgentVersion=${VERSION} -X main.CommitSHA=${SHORT_SHA} -X main.BuildTime=${BUILD_TIME}" \
+              -o "${BINARY}" ./cmd/agent
           fi
-          cd ..
           sha256sum "${BINARY}" | awk '{print $1}' > "${BINARY}.sha256"
 
       - name: Upload release assets
