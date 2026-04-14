@@ -81,6 +81,19 @@ export function transformServerList(
   return (raw.servers ?? []).map(summaryToListItem);
 }
 
+/** Extract a map of agent id -> version string for update comparison. */
+export function extractAgentVersions(
+  raw: TelemetryServersResponse
+): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const s of raw.servers ?? []) {
+    if (s.agent?.id && s.agent.version) {
+      map[s.agent.id] = s.agent.version;
+    }
+  }
+  return map;
+}
+
 export function transformInitState(
   raw: TelemetryServerDetailResponse
 ): InitCardProps | undefined {

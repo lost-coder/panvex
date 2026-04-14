@@ -142,6 +142,19 @@ export function transformDashboardOverview(
   return { kpis, trends, alerts, attentionNodes, healthyNodes };
 }
 
+/** Extract a map of node id -> agent version from dashboard server cards. */
+export function extractDashboardAgentVersions(
+  raw: TelemetryDashboardResponse
+): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const card of raw.server_cards ?? []) {
+    if (card.agent?.id && card.agent.version) {
+      map[card.agent.id] = card.agent.version;
+    }
+  }
+  return map;
+}
+
 function mapEventSeverity(
   eventType: string
 ): "ok" | "warn" | "error" | "info" {

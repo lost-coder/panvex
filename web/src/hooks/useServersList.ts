@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { ServerListItem } from "@lost-coder/panvex-ui";
 import { apiClient } from "@/lib/api";
-import { transformServerList } from "@/lib/transforms/servers";
+import { transformServerList, extractAgentVersions } from "@/lib/transforms/servers";
 
 export function useServersList() {
   const query = useQuery({
@@ -14,5 +14,10 @@ export function useServersList() {
     ? transformServerList(query.data)
     : [];
 
-  return { servers, isLoading: query.isLoading, error: query.error };
+  // Map of server id -> agent version for update comparison
+  const agentVersions: Record<string, string> = query.data
+    ? extractAgentVersions(query.data)
+    : {};
+
+  return { servers, agentVersions, isLoading: query.isLoading, error: query.error };
 }

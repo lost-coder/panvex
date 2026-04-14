@@ -5,7 +5,9 @@ import type { MetricsPoint } from "@lost-coder/panvex-ui";
 import { useServerDetail } from "@/hooks/useServerDetail";
 import { useServerMutations } from "@/hooks/useServerMutations";
 import { useServerLoadHistory } from "@/hooks/useServerHistory";
+import { useUpdates } from "@/hooks/useUpdates";
 import { useNavigate, useParams } from "@tanstack/react-router";
+import { apiClient } from "@/lib/api";
 import { transformAgentConnection } from "@/lib/transforms/servers";
 
 const RANGE_HOURS: Record<string, number> = { "1h": 1, "6h": 6, "24h": 24, "7d": 168 };
@@ -56,8 +58,11 @@ export function ServerDetailContainer() {
     renameMutation,
     deregisterMutation,
   } = useServerMutations(serverId ?? "");
+  const { query: updatesQuery } = useUpdates();
+  const latestAgentVersion = updatesQuery.data?.state.latest_agent_version;
   const navigate = useNavigate();
   const [timeRange, setTimeRange] = useState("6h");
+  const [updateFeedback, setUpdateFeedback] = useState<string | null>(null);
 
   const hours = RANGE_HOURS[timeRange] ?? 6;
   // Truncate to the minute so the query key stays stable between renders.
@@ -82,6 +87,26 @@ export function ServerDetailContainer() {
     return <ErrorState message={error.message} onRetry={() => window.location.reload()} />;
   }
 
+  const baseConnection = transformAgentConnection(raw?.server?.agent);
+  const agentConnection = baseConnection
+    ? {
+        ...baseConnection,
+        latestAgentVersion,
+        onUpdate: serverId
+          ? async () => {
+              setUpdateFeedback(null);
+              try {
+                await apiClient.updateAgent(serverId, latestAgentVersion);
+                setUpdateFeedback("Update initiated");
+              } catch {
+                setUpdateFeedback("Update failed");
+              }
+            }
+          : undefined,
+        updateFeedback,
+      }
+    : undefined;
+
   return (
     <ServerDetailPage
       server={server}
@@ -89,7 +114,7 @@ export function ServerDetailContainer() {
       lastUpdatedAt={lastUpdatedAt}
       onBack={() => navigate({ to: "/servers" })}
       onBoostDetail={() => boostDetailMutation.mutate()}
-      agentConnection={transformAgentConnection(raw?.server?.agent)}
+      agentConnection={agentConnection}
       onAllowReEnrollment={() => allowCertRecoveryMutation.mutate()}
       onRevokeGrant={() => revokeCertRecoveryMutation.mutate()}
       onRename={(name: string) => renameMutation.mutate(name)}
