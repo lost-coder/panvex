@@ -21,7 +21,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: lost-coder/panvex-ui
-          path: ../ui
+          path: .panvex-ui
+
+      - name: Link UI kit
+        run: ln -s "$GITHUB_WORKSPACE/.panvex-ui" "$GITHUB_WORKSPACE/../ui"
 
       - uses: actions/setup-go@v5
         with:
@@ -44,7 +47,7 @@ jobs:
       - name: Build UI kit (control-plane only)
         if: steps.meta.outputs.component == 'control-plane'
         run: |
-          cd ../ui && npm ci && npm run build
+          cd .panvex-ui && npm ci && npm run build
 
       - name: Build frontend (control-plane only)
         if: steps.meta.outputs.component == 'control-plane'
