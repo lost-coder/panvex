@@ -231,6 +231,7 @@ func New(options Options) *Server {
 	rollupCtx, rollupCancel := context.WithCancel(context.Background())
 	server.stopRollup = rollupCancel
 	server.startTimeseriesRollupWorker(rollupCtx)
+	server.startUpdateCheckerWorker(rollupCtx)
 
 	if server.store != nil {
 		server.batchWriter = newStoreBatchWriter(server.store)
