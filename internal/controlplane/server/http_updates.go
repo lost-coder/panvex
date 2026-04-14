@@ -3,10 +3,16 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/panvex/panvex/internal/controlplane/jobs"
 )
 
 type versionResponse struct {
@@ -298,5 +304,150 @@ func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksu
 		if err := s.requestRestart(); err != nil {
 			s.logger.Error("panel update: restart request failed", "error", err)
 		}
+	}
+}
+
+func (s *Server) handleAgentUpdate() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		agentID := chi.URLParam(r, "id")
+
+		s.mu.RLock()
+		agent, exists := s.agents[agentID]
+		s.mu.RUnlock()
+		if !exists {
+			writeError(w, http.StatusNotFound, "agent not found")
+			return
+		}
+
+		var request struct {
+			Version string `json:"version"`
+		}
+		if err := decodeJSON(r, &request); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request")
+			return
+		}
+
+		s.settingsMu.RLock()
+		state := s.updateState
+		settings := s.updateSettings
+		s.settingsMu.RUnlock()
+
+		targetVersion := request.Version
+		if targetVersion == "" {
+			targetVersion = state.LatestAgentVersion
+		}
+		if targetVersion == "" {
+			writeError(w, http.StatusBadRequest, "no agent version available")
+			return
+		}
+
+		downloadURL := state.AgentDownloadURL
+		checksumURL := state.AgentChecksumURL
+		if downloadURL == "" {
+			writeError(w, http.StatusBadRequest, "no download URL available")
+			return
+		}
+
+		// Fetch checksum from GitHub.
+		checkCtx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		checksum, err := DownloadChecksum(checkCtx, checksumURL, settings.GitHubToken)
+		if err != nil {
+			s.logger.Error("agent update: fetch checksum failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to fetch checksum")
+			return
+		}
+
+		// Build job payload.
+		downloadViaPanel := settings.AgentDownloadSource == "panel"
+		payload := map[string]any{
+			"version":            targetVersion,
+			"download_url":       downloadURL,
+			"checksum_sha256":    checksum,
+			"download_via_panel": downloadViaPanel,
+		}
+		if downloadViaPanel {
+			panelURL := s.panelSettings.HTTPPublicURL
+			if panelURL == "" {
+				panelURL = "http://" + r.Host
+			}
+			payload["panel_proxy_url"] = strings.TrimRight(panelURL, "/") +
+				"/api/agent/update/binary?version=" + strings.TrimPrefix(targetVersion, "v") +
+				"&arch=amd64"
+		}
+		payloadJSON, _ := json.Marshal(payload)
+
+		session, _, _ := s.requireSession(r)
+
+		job, err := s.jobs.Enqueue(jobs.CreateJobInput{
+			Action:         jobs.ActionAgentSelfUpdate,
+			TargetAgentIDs: []string{agentID},
+			PayloadJSON:    string(payloadJSON),
+			ActorID:        session.UserID,
+		}, s.now())
+		if err != nil {
+			s.logger.Error("agent update: enqueue job failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to create update job")
+			return
+		}
+
+		s.notifyAgentSessions(job.TargetAgentIDs)
+		s.appendAuditWithContext(r.Context(), session.UserID, "agents.update.dispatched", agentID, map[string]any{
+			"version": targetVersion, "node_name": agent.NodeName,
+		})
+
+		writeJSON(w, http.StatusOK, map[string]any{
+			"job_id":  job.ID,
+			"status":  "dispatched",
+			"version": targetVersion,
+		})
+	}
+}
+
+func (s *Server) handleAgentBinaryProxy() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		version := r.URL.Query().Get("version")
+		arch := r.URL.Query().Get("arch")
+		if version == "" || arch == "" {
+			writeError(w, http.StatusBadRequest, "version and arch query parameters required")
+			return
+		}
+
+		s.settingsMu.RLock()
+		settings := s.updateSettings
+		s.settingsMu.RUnlock()
+
+		assetName := fmt.Sprintf("panvex-agent-linux-%s", arch)
+		url := fmt.Sprintf("https://github.com/%s/releases/download/agent/v%s/%s",
+			settings.GitHubRepo, strings.TrimPrefix(version, "v"), assetName)
+
+		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, url, nil)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to create request")
+			return
+		}
+		if settings.GitHubToken != "" {
+			req.Header.Set("Authorization", "Bearer "+settings.GitHubToken)
+		}
+		req.Header.Set("Accept", "application/octet-stream")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, "failed to download from GitHub")
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			writeError(w, resp.StatusCode, "GitHub returned an error")
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/octet-stream")
+		if resp.ContentLength > 0 {
+			w.Header().Set("Content-Length", strconv.FormatInt(resp.ContentLength, 10))
+		}
+		w.WriteHeader(http.StatusOK)
+		io.Copy(w, resp.Body) //nolint:errcheck
 	}
 }

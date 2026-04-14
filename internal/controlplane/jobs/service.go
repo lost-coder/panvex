@@ -38,6 +38,8 @@ const (
 	ActionClientRotateSecret Action = "client.rotate_secret"
 	// ActionTelemetryRefreshDiagnostics forces a fresh slow-diagnostics pull on the target node.
 	ActionTelemetryRefreshDiagnostics Action = "telemetry.refresh_diagnostics"
+	// ActionAgentSelfUpdate instructs the agent to download and replace its own binary.
+	ActionAgentSelfUpdate Action = "agent.self-update"
 )
 
 // IsValidAction reports whether the action is a recognized job type.
@@ -49,7 +51,8 @@ func IsValidAction(a Action) bool {
 		ActionClientUpdate,
 		ActionClientDelete,
 		ActionClientRotateSecret,
-		ActionTelemetryRefreshDiagnostics:
+		ActionTelemetryRefreshDiagnostics,
+		ActionAgentSelfUpdate:
 		return true
 	default:
 		return false

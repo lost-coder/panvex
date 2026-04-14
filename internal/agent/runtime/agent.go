@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/panvex/panvex/internal/agent/telemt"
+	"github.com/panvex/panvex/internal/agent/updater"
 	"github.com/panvex/panvex/internal/gatewayrpc"
 )
 
@@ -560,6 +562,19 @@ func (a *Agent) HandleJob(ctx context.Context, job *gatewayrpc.JobCommand, obser
 			a.deleteClientName(payload.ClientID)
 			return result
 		}
+	case "agent.self-update":
+		var payload updater.Payload
+		if err := json.Unmarshal([]byte(job.GetPayloadJson()), &payload); err != nil {
+			result.Message = fmt.Sprintf("invalid update payload: %v", err)
+			return result
+		}
+		if err := updater.Execute(ctx, payload, slog.Default()); err != nil {
+			result.Message = err.Error()
+			return result
+		}
+		result.Success = true
+		result.Message = "self-update initiated"
+		return result
 	default:
 		result.Message = fmt.Sprintf("unsupported action %s", job.GetAction())
 		return result
