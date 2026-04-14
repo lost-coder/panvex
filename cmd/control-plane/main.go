@@ -76,6 +76,9 @@ func run(args []string) error {
 	if len(args) > 0 && args[0] == "reset-user-totp" {
 		return runResetUserTotp(args[1:])
 	}
+	if len(args) > 0 && args[0] == "self-update" {
+		return runSelfUpdate(args[1:])
+	}
 
 	return runServe(args)
 }
@@ -450,6 +453,92 @@ func parseCIDRList(raw string) ([]*net.IPNet, error) {
 		result = append(result, network)
 	}
 	return result, nil
+}
+
+func runSelfUpdate(args []string) error {
+	flags := flag.NewFlagSet("self-update", flag.ContinueOnError)
+	version := flags.String("version", "", "Target version to update to (e.g. 1.2.3)")
+	repo := flags.String("repo", "panvex/panvex", "GitHub repository for release assets")
+	token := flags.String("token", os.Getenv("GITHUB_TOKEN"), "GitHub token for private repos (env: GITHUB_TOKEN)")
+	force := flags.Bool("force", false, "Force update even if versions match")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+
+	panel, _, err := server.FetchLatestVersions(ctx, *repo, *token)
+	if err != nil {
+		return fmt.Errorf("fetch latest versions: %w", err)
+	}
+
+	if panel == nil {
+		return errors.New("no control-plane release found")
+	}
+
+	_, latestVersion, ok := server.ParseReleaseTag(panel.TagName)
+	if !ok {
+		return fmt.Errorf("failed to parse release tag %q", panel.TagName)
+	}
+
+	targetVersion := latestVersion
+	if *version != "" {
+		targetVersion = strings.TrimPrefix(*version, "v")
+	}
+
+	currentVersion := strings.TrimPrefix(Version, "v")
+	cmp := server.CompareVersions(targetVersion, currentVersion)
+	if cmp == 0 && !*force {
+		fmt.Printf("Already at version %s. Use --force to re-install.\n", currentVersion)
+		return nil
+	}
+	if cmp < 0 && !*force {
+		fmt.Printf("Target version %s is older than current version %s. Use --force to downgrade.\n", targetVersion, currentVersion)
+		return nil
+	}
+
+	binaryURL, checksumURL := server.ResolveAssetURLs(panel, "control-plane")
+	if binaryURL == "" {
+		return errors.New("no binary download URL found for the current platform")
+	}
+
+	fmt.Printf("Updating from %s to %s ...\n", currentVersion, targetVersion)
+
+	// Download and verify checksum.
+	var expectedChecksum string
+	if checksumURL != "" {
+		expectedChecksum, err = server.DownloadChecksum(ctx, checksumURL, *token)
+		if err != nil {
+			return fmt.Errorf("download checksum: %w", err)
+		}
+		fmt.Println("Checksum downloaded.")
+	}
+
+	tmpPath, err := server.DownloadBinary(ctx, binaryURL, *token)
+	if err != nil {
+		return fmt.Errorf("download binary: %w", err)
+	}
+	defer os.Remove(tmpPath)
+	fmt.Println("Binary downloaded.")
+
+	if expectedChecksum != "" {
+		if err := server.VerifyChecksum(tmpPath, expectedChecksum); err != nil {
+			return fmt.Errorf("verify checksum: %w", err)
+		}
+		fmt.Println("Checksum verified.")
+	}
+
+	currentBinary, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolve current binary: %w", err)
+	}
+
+	if err := server.AtomicReplaceBinary(currentBinary, tmpPath); err != nil {
+		return fmt.Errorf("replace binary: %w", err)
+	}
+
+	fmt.Printf("Updated to v%s. Restart the service to apply.\n", targetVersion)
+	return nil
 }
 
 func openStore(configuration config.StorageConfig) (storage.Store, error) {
