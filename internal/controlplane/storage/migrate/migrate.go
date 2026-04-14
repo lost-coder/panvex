@@ -159,7 +159,7 @@ func copyStore(ctx context.Context, source storage.Store, target storage.Store) 
 	}
 	summary.Jobs = len(jobs)
 
-	auditEvents, err := source.ListAuditEvents(ctx)
+	auditEvents, err := source.ListAuditEvents(ctx, 0)
 	if err != nil {
 		return Summary{}, err
 	}
@@ -353,7 +353,7 @@ func listCounts(ctx context.Context, store storage.Store) (Summary, error) {
 		summary.JobTargets += len(targets)
 	}
 
-	auditEvents, err := store.ListAuditEvents(ctx)
+	auditEvents, err := store.ListAuditEvents(ctx, 0)
 	if err != nil {
 		return Summary{}, err
 	}

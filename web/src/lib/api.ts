@@ -65,8 +65,8 @@ export type AgentRuntime = {
     required_writers: number;
     alive_writers: number;
     coverage_pct: number;
-    fresh_alive_writers?: number;
-    fresh_coverage_pct?: number;
+    fresh_alive_writers: number;
+    fresh_coverage_pct: number;
     rtt_ms: number;
     load: number;
   }>;
@@ -77,14 +77,14 @@ export type AgentRuntime = {
     healthy: boolean;
     fails: number;
     effective_latency_ms: number;
-    weight?: number;
-    last_check_age_secs?: number;
+    weight: number;
+    last_check_age_secs: number;
     scopes?: string[];
   }>;
   lifecycle_state?: string;
   updated_at?: string;
   recent_events: RuntimeEvent[];
-  system_load?: {
+  system_load: {
     cpu_usage_pct: number;
     memory_used_bytes: number;
     memory_total_bytes: number;
@@ -95,6 +95,8 @@ export type AgentRuntime = {
     load_1m: number;
     load_5m: number;
     load_15m: number;
+    net_bytes_sent: number;
+    net_bytes_recv: number;
   };
   me_writers_summary?: {
     configured_endpoints: number;
@@ -308,14 +310,25 @@ export type Instance = {
   updated_at: string;
 };
 
+export type JobTarget = {
+  agent_id: string;
+  status: string;
+  result_text: string;
+  result_json: string;
+  updated_at: string;
+};
+
 export type Job = {
   id: string;
   action: string;
   target_agent_ids: string[];
+  targets: JobTarget[];
+  /** TTL in nanoseconds (Go time.Duration). Divide by 1e9 for seconds. */
   ttl: number;
   idempotency_key: string;
   actor_id: string;
   status: string;
+  payload_json: string;
   created_at: string;
 };
 

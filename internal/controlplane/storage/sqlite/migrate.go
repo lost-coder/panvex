@@ -112,6 +112,9 @@ CREATE TABLE IF NOT EXISTS telemt_runtime_upstreams_current (
     FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
 );
 
+-- Column name differs between drivers: SQLite uses timestamp_unix (INTEGER)
+-- while Postgres uses timestamp_at (TIMESTAMPTZ). Query implementations in
+-- each driver's telemetry.go must use the correct column name.
 CREATE TABLE IF NOT EXISTS telemt_runtime_events (
     agent_id TEXT NOT NULL,
     sequence INTEGER NOT NULL,
@@ -729,7 +732,8 @@ func ensureIndexes(db *sql.DB) error {
 		CREATE INDEX IF NOT EXISTS idx_ts_server_load_time ON ts_server_load (agent_id, captured_at_unix DESC);
 		CREATE INDEX IF NOT EXISTS idx_ts_dc_health_time ON ts_dc_health (agent_id, captured_at_unix DESC);
 		CREATE INDEX IF NOT EXISTS idx_client_ip_last_seen ON client_ip_history (last_seen_unix);
-		CREATE INDEX IF NOT EXISTS idx_client_ip_client ON client_ip_history (client_id, last_seen_unix DESC)
+		CREATE INDEX IF NOT EXISTS idx_client_ip_client ON client_ip_history (client_id, last_seen_unix DESC);
+		CREATE INDEX IF NOT EXISTS idx_client_ip_client_addr ON client_ip_history (client_id, ip_address)
 	`)
 	return err
 }

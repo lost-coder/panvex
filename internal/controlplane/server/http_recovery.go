@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/panvex/panvex/internal/controlplane/auth"
 	"github.com/panvex/panvex/internal/controlplane/storage"
 )
 
@@ -104,9 +105,13 @@ func (s *Server) handleAgentCertificateRecovery() http.HandlerFunc {
 
 func (s *Server) handleCreateAgentCertificateRecoveryGrant() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session, _, err := s.requireSession(r)
+		session, user, err := s.requireSession(r)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		if user.Role != auth.RoleAdmin {
+			writeError(w, http.StatusForbidden, "admin role required")
 			return
 		}
 		if s.store == nil {
@@ -158,9 +163,13 @@ func (s *Server) handleCreateAgentCertificateRecoveryGrant() http.HandlerFunc {
 
 func (s *Server) handleRevokeAgentCertificateRecoveryGrant() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session, _, err := s.requireSession(r)
+		session, user, err := s.requireSession(r)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		if user.Role != auth.RoleAdmin {
+			writeError(w, http.StatusForbidden, "admin role required")
 			return
 		}
 		if s.store == nil {

@@ -35,6 +35,8 @@ export function EventsSynchronizer() {
       await queryClient.invalidateQueries({ queryKey: ["agents"] });
       await queryClient.invalidateQueries({ queryKey: ["clients"] });
       await queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === "client" });
+      await queryClient.invalidateQueries({ queryKey: ["audit"] });
+      await queryClient.invalidateQueries({ queryKey: ["jobs"] });
       await invalidateTelemetryQueries(queryClient);
     };
     const scheduleReconnect = () => {

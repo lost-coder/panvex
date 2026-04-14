@@ -367,7 +367,7 @@ func TestRunResetUserTotpClearsEnabledState(t *testing.T) {
 		t.Fatalf("record.TotpSecret = %q, want empty", record.TotpSecret)
 	}
 
-	events, err := reopened.ListAuditEvents(context.Background())
+	events, err := reopened.ListAuditEvents(context.Background(), 0)
 	if err != nil {
 		t.Fatalf("ListAuditEvents() error = %v", err)
 	}

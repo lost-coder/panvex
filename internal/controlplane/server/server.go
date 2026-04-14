@@ -43,6 +43,12 @@ type Options struct {
 	// TrustedProxyCIDRs lists additional CIDR ranges whose X-Forwarded-For
 	// header is trusted for rate-limit key extraction. Loopback addresses
 	// are always trusted regardless of this setting.
+	//
+	// WARNING: When the control-plane runs behind a non-loopback reverse
+	// proxy and this list is empty, every inbound request resolves to the
+	// proxy's IP for rate-limit keying. All clients then share a single
+	// bucket and will be throttled collectively. Always configure this
+	// field to include every intermediate proxy/load-balancer CIDR.
 	TrustedProxyCIDRs []*net.IPNet
 	// EncryptionKey, when set, encrypts the CA private key at rest using
 	// AES-256-GCM. The key is derived from this passphrase via SHA-256.
@@ -86,6 +92,12 @@ type Server struct {
 	clientSeq  uint64
 	assignmentSeq uint64
 	discoveredClientSeq uint64
+	// revokedAgentIDs tracks deregistered agent IDs whose mTLS certificates
+	// may still be cryptographically valid. The set is checked during gRPC
+	// Connect to deny access. It is not persisted: on restart the set is
+	// empty, which is acceptable because the CA will not have issued new
+	// certificates for deleted agents and existing ones expire within 30 days.
+	revokedAgentIDs map[string]struct{}
 	agents     map[string]Agent
 	detailBoosts map[string]time.Time
 	initializationWatchCooldowns map[string]time.Time
@@ -102,6 +114,7 @@ type Server struct {
 	handler      http.Handler
 	startupErr   error
 	stopRollup   context.CancelFunc
+	rollupWg     sync.WaitGroup
 	batchWriter  *storeBatchWriter
 }
 
@@ -130,6 +143,7 @@ func New(options Options) *Server {
 		trustedProxyCIDRs: options.TrustedProxyCIDRs,
 		encryptionKey: options.EncryptionKey,
 		logger: options.Logger,
+		revokedAgentIDs: make(map[string]struct{}),
 		agents:     make(map[string]Agent),
 		detailBoosts: make(map[string]time.Time),
 		initializationWatchCooldowns: make(map[string]time.Time),
@@ -212,6 +226,9 @@ func (s *Server) Close() {
 	if s.stopRollup != nil {
 		s.stopRollup()
 	}
+	// Wait for the rollup goroutine to finish before closing the store,
+	// so it does not query a closed storage backend.
+	s.rollupWg.Wait()
 	if s.batchWriter != nil {
 		s.batchWriter.Stop()
 	}
@@ -272,29 +289,29 @@ func (s *Server) restoreStoredState() error {
 		return err
 	}
 	for _, record := range metrics {
-		snapshot := metricSnapshotFromRecord(record)
-		if len(s.metrics) < maxInMemoryMetricSnapshots {
-			s.metrics = append(s.metrics, snapshot)
-		} else {
-			copy(s.metrics, s.metrics[1:])
-			s.metrics[len(s.metrics)-1] = snapshot
-		}
-		s.metricSeq = maxPrefixedSequence(s.metricSeq, "metric", snapshot.ID)
+		s.metricSeq = maxPrefixedSequence(s.metricSeq, "metric", record.ID)
+	}
+	// Keep only the most recent entries to avoid O(n²) copy-shift.
+	if len(metrics) > maxInMemoryMetricSnapshots {
+		metrics = metrics[len(metrics)-maxInMemoryMetricSnapshots:]
+	}
+	for _, record := range metrics {
+		s.metrics = append(s.metrics, metricSnapshotFromRecord(record))
 	}
 
-	auditEvents, err := s.store.ListAuditEvents(context.Background())
+	auditEvents, err := s.store.ListAuditEvents(context.Background(), maxInMemoryAuditEvents)
 	if err != nil {
 		return err
 	}
 	for _, record := range auditEvents {
-		event := auditEventFromRecord(record)
-		if len(s.auditTrail) < maxInMemoryAuditEvents {
-			s.auditTrail = append(s.auditTrail, event)
-		} else {
-			copy(s.auditTrail, s.auditTrail[1:])
-			s.auditTrail[len(s.auditTrail)-1] = event
-		}
-		s.auditSeq = maxPrefixedSequence(s.auditSeq, "audit", event.ID)
+		s.auditSeq = maxPrefixedSequence(s.auditSeq, "audit", record.ID)
+	}
+	// Keep only the most recent entries to avoid O(n²) copy-shift.
+	if len(auditEvents) > maxInMemoryAuditEvents {
+		auditEvents = auditEvents[len(auditEvents)-maxInMemoryAuditEvents:]
+	}
+	for _, record := range auditEvents {
+		s.auditTrail = append(s.auditTrail, auditEventFromRecord(record))
 	}
 
 	return s.restoreStoredTelemetry()
@@ -422,7 +439,7 @@ func (s *Server) appendAudit(actorID string, action string, targetID string, det
 	s.appendAuditWithContext(context.Background(), actorID, action, targetID, details)
 }
 
-func (s *Server) appendAuditWithContext(_ context.Context, actorID string, action string, targetID string, details map[string]any) {
+func (s *Server) appendAuditWithContext(ctx context.Context, actorID string, action string, targetID string, details map[string]any) {
 	s.metricsAuditMu.Lock()
 	s.auditSeq++
 	event := AuditEvent{
@@ -441,10 +458,12 @@ func (s *Server) appendAuditWithContext(_ context.Context, actorID string, actio
 	}
 	s.metricsAuditMu.Unlock()
 
-	// Persist asynchronously via the batch writer so DB latency does not
-	// block callers holding s.mu.
-	if s.batchWriter != nil {
-		s.batchWriter.audit.Enqueue(auditEventToRecord(event))
+	// Audit events are immutable records that must survive crashes, so they
+	// are written to storage synchronously instead of via the batch writer.
+	if s.store != nil {
+		if err := s.store.AppendAuditEvent(ctx, auditEventToRecord(event)); err != nil {
+			s.logger.Error("persist audit event failed", "action", action, "error", err)
+		}
 	}
 
 	s.events.publish(eventEnvelope{
