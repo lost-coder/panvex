@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/panvex/panvex/internal/security"
+	"github.com/lost-coder/panvex/internal/security"
 )
 
 const (

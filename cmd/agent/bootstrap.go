@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	agentstate "github.com/panvex/panvex/internal/agent/state"
+	agentstate "github.com/lost-coder/panvex/internal/agent/state"
 )
 
 const agentBootstrapPath = "/api/agent/bootstrap"

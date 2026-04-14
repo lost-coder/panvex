@@ -8,9 +8,9 @@ import (
 	"sort"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/panvex/panvex/internal/controlplane/auth"
-	"github.com/panvex/panvex/internal/controlplane/jobs"
-	"github.com/panvex/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/jobs"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 type clientMutationRequest struct {

@@ -1,4 +1,4 @@
-module github.com/panvex/panvex
+module github.com/lost-coder/panvex
 
 go 1.26.0
 

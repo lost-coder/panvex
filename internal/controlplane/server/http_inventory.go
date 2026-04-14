@@ -3,8 +3,8 @@ package server
 import (
 	"net/http"
 
-	"github.com/panvex/panvex/internal/controlplane/presence"
-	"github.com/panvex/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/presence"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 type fleetResponse struct {

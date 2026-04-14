@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/panvex/panvex/internal/controlplane/presence"
-	"github.com/panvex/panvex/internal/controlplane/storage"
-	controltelemetry "github.com/panvex/panvex/internal/controlplane/telemetry"
+	"github.com/lost-coder/panvex/internal/controlplane/presence"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	controltelemetry "github.com/lost-coder/panvex/internal/controlplane/telemetry"
 )
 
 const (

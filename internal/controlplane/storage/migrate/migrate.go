@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/panvex/panvex/internal/controlplane/storage"
-	"github.com/panvex/panvex/internal/controlplane/storage/postgres"
-	"github.com/panvex/panvex/internal/controlplane/storage/sqlite"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/storage/postgres"
+	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 )
 
 var (

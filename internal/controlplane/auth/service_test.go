@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/panvex/panvex/internal/controlplane/storage/sqlite"
+	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 )
 
 func TestServiceBootstrapUserLeavesTotpDisabledByDefault(t *testing.T) {
