@@ -1,51 +1,206 @@
-# Panvex
+<h1 align="center">
+  <br>
+  <img src="https://img.shields.io/badge/Panvex-Control%20Plane-0ea5e9?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiPjxwYXRoIGQ9Ik0yMiAxMmgtNGwtMyA5TDkgM2wtMyA5SDIiLz48L3N2Zz4=&logoColor=white" alt="Panvex" />
+  <br>
+</h1>
 
-Panvex is a control-plane and web dashboard for managing multiple Telemt nodes.
+<p align="center">
+  <strong>Fleet management control plane for Telemt MTProto proxy nodes</strong>
+</p>
 
-## Repository layout
+<p align="center">
+  <a href="#-quick-install">Quick Install</a> &nbsp;&bull;&nbsp;
+  <a href="#-features">Features</a> &nbsp;&bull;&nbsp;
+  <a href="#%EF%B8%8F-architecture">Architecture</a> &nbsp;&bull;&nbsp;
+  <a href="#-development">Development</a> &nbsp;&bull;&nbsp;
+  <a href="#-docker">Docker</a>
+</p>
 
-- `cmd/control-plane` runs the operator HTTP API and the agent gRPC gateway.
-- `cmd/agent` runs a local agent that talks to Telemt over loopback only.
-- `internal/controlplane/...` contains auth, jobs, presence, state, and server logic.
-- `internal/agent/...` contains Telemt client, runtime orchestration, and agent state helpers.
-- `internal/gatewayrpc` contains the shared gRPC transport contract used by the control-plane and the agent.
-- `web` contains the React dashboard.
-- `db/migrations` and `db/queries` contain the initial PostgreSQL schema and sqlc query set.
-- `proto` contains the human-readable gateway contract.
-- local working plans belong in `.tmp/plans/` and stay out of git.
+<p align="center">
+  <img src="https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white" alt="Go" />
+  <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" alt="React" />
+  <img src="https://img.shields.io/badge/gRPC-mTLS-4285F4?logo=google&logoColor=white" alt="gRPC" />
+  <img src="https://img.shields.io/badge/Linux-only-FCC624?logo=linux&logoColor=black" alt="Linux" />
+</p>
 
-## Release installer
+---
 
-For a single-binary release install, use the release installer:
+## ✨ Features
+
+| | Feature | Description |
+|---|---------|-------------|
+| 📊 | **Fleet Dashboard** | Real-time monitoring with metrics, health indicators, and alerts |
+| 👥 | **Managed Clients** | Centralized client management with secret rotation and quotas |
+| 🤖 | **Agent System** | Lightweight per-node agents with mTLS enrollment and gRPC streaming |
+| 🗄️ | **Dual Storage** | SQLite for dev/lightweight, PostgreSQL for production |
+| 🔄 | **Self-Update** | Panel and agents update themselves from GitHub Releases |
+| 📦 | **Embedded UI** | Single binary ships the React dashboard — no separate web server |
+| 🔐 | **TOTP 2FA** | Optional two-factor authentication for operator accounts |
+| 🛡️ | **RBAC** | Viewer, Operator, and Admin roles with middleware enforcement |
+
+---
+
+## 🚀 Quick Install
+
+### Control Plane
 
 ```sh
-curl -fsSL https://github.com/panvex/panvex/releases/latest/download/install.sh | sh
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lost-coder/panvex/main/deploy/install.sh)"
 ```
 
-The installer defaults to SQLite.
-When run as root it installs the binary into `/usr/local/bin`, writes runtime files into `/etc/panvex` and `/var/lib/panvex`, and installs a disabled-but-enabled systemd unit.
-When run without root it installs under `~/.local` and writes a local start script instead of a systemd unit.
+> Interactive wizard: ports, storage, TLS, firewall, admin account — all configured step by step.
 
-To install against PostgreSQL instead:
+### Agent
 
 ```sh
-PANVEX_STORAGE_DRIVER=postgres \
-PANVEX_STORAGE_DSN='postgres://panvex:password@127.0.0.1:5432/panvex?sslmode=disable' \
-curl -fsSL https://github.com/panvex/panvex/releases/latest/download/install.sh | sh
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lost-coder/panvex/main/deploy/install-agent.sh)"
 ```
 
-Installer help is available through:
+> Requires a panel URL and enrollment token (create one in **Settings → Enrollment Tokens**).
+
+<details>
+<summary>📋 Non-interactive mode (CI / automation)</summary>
 
 ```sh
-bash deploy/install.sh --help
+# Control Plane
+PANVEX_ADMIN_PASS='<password>' \
+PANVEX_HTTP_PORT=8080 \
+PANVEX_GRPC_PORT=8443 \
+  sudo -E bash install.sh
+
+# Agent
+PANVEX_PANEL_URL='https://panel.example.com' \
+PANVEX_ENROLLMENT_TOKEN='<token>' \
+  sudo -E bash install-agent.sh
 ```
 
-## Docker deployment
+Run `bash install.sh --help` for all environment variables.
 
-For a split Docker deployment with SQLite:
+</details>
+
+---
+
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    🌐 Browser                        │
+│           React · TanStack Router/Query              │
+├─────────────────────────────────────────────────────┤
+│              📡 Control Plane (:8080)                │
+│        HTTP API · WebSocket · Embedded UI            │
+├─────────────────────────────────────────────────────┤
+│              🔒 gRPC Gateway (:8443)                 │
+│         mTLS · Bidirectional Stream · Jobs           │
+├─────────────────────────────────────────────────────┤
+│              🤖 Agent (per Telemt node)              │
+│       Heartbeats · Snapshots · Job Execution         │
+└─────────────────────────────────────────────────────┘
+```
+
+<details>
+<summary>📁 Repository Layout</summary>
+
+| Directory | Description |
+|-----------|-------------|
+| `cmd/control-plane` | Control plane server (HTTP + gRPC + embedded UI) |
+| `cmd/agent` | Agent binary with bootstrap and enrollment |
+| `internal/controlplane` | Auth, jobs, presence, storage, server logic |
+| `internal/agent` | Telemt client, runtime, self-updater |
+| `internal/gatewayrpc` | Generated gRPC stubs (protobuf) |
+| `internal/security` | Enrollment, crypto, mTLS CA |
+| `web` | React dashboard (Vite + TailwindCSS 4 + TanStack) |
+| `db/migrations` | PostgreSQL and SQLite schema migrations |
+| `proto` | Protobuf gateway contract |
+| `deploy` | Install scripts, Docker Compose, nginx config |
+
+</details>
+
+<details>
+<summary>🔧 Tech Stack</summary>
+
+| Layer | Technology |
+|-------|------------|
+| Backend | Go 1.26, chi/v5, pgx/v5, modernc.org/sqlite, gRPC |
+| Frontend | React 19, Vite 7, TailwindCSS 4, TanStack Router + Query |
+| UI Kit | [@lost-coder/panvex-ui](https://github.com/lost-coder/panvex-ui) — Radix UI + CVA |
+| Database | PostgreSQL (primary) · SQLite (lightweight) |
+| Deploy | Multi-stage Docker · systemd · nginx |
+
+</details>
+
+---
+
+## 💻 Development
+
+### Prerequisites
+
+- **Go** 1.26+ &nbsp;·&nbsp; **Node.js** 22+ &nbsp;·&nbsp; [sqlc](https://sqlc.dev) &nbsp;·&nbsp; [protoc](https://grpc.io/docs/protoc-installation/) + Go plugins
+
+### Backend
+
+```sh
+go build ./...                    # Build all
+go test ./...                     # Run tests
+go test -race ./...               # Race detector
+golangci-lint run ./...           # Lint
+sqlc generate                     # Regenerate DB code
+```
+
+### Frontend
+
+```sh
+cd web
+npm install                       # Install deps
+npm run dev                       # Dev server (proxies API to :8080)
+npm run build                     # Production build
+npm run lint                      # ESLint
+```
+
+### 🏃 Local Development Flow
+
+**1.** Bootstrap admin:
+
+```sh
+go run ./cmd/control-plane bootstrap-admin \
+  -username admin \
+  -password '<strong-password>'
+```
+
+**2.** Start control plane:
+
+```sh
+go run ./cmd/control-plane -http-addr :8080 -grpc-addr :8443
+```
+
+**3.** Start frontend dev server:
+
+```sh
+cd web && npm run dev
+```
+
+> Dashboard at `http://localhost:5173`, API proxied to `:8080`
+
+<details>
+<summary>📦 Single binary build</summary>
+
+```sh
+cd web && npm run build:embed
+cd .. && go build -tags embeddedui -o panvex-control-plane ./cmd/control-plane
+```
+
+</details>
+
+---
+
+## 🐳 Docker
+
+<details>
+<summary><strong>SQLite</strong> (lightweight)</summary>
 
 ```sh
 docker compose -f deploy/docker-compose.sqlite.yml up --build -d
+
 docker compose -f deploy/docker-compose.sqlite.yml exec backend \
   ./panvex-control-plane bootstrap-admin \
   -storage-driver sqlite \
@@ -54,12 +209,14 @@ docker compose -f deploy/docker-compose.sqlite.yml exec backend \
   -password '<strong-password>'
 ```
 
-The dashboard is then available on `http://127.0.0.1:8080`, while the agent gRPC gateway is exposed on `127.0.0.1:8443`.
+</details>
 
-For a split Docker deployment with PostgreSQL:
+<details>
+<summary><strong>PostgreSQL</strong> (production)</summary>
 
 ```sh
 docker compose -f deploy/docker-compose.postgres.yml up --build -d
+
 docker compose -f deploy/docker-compose.postgres.yml exec backend \
   ./panvex-control-plane bootstrap-admin \
   -storage-driver postgres \
@@ -68,171 +225,76 @@ docker compose -f deploy/docker-compose.postgres.yml exec backend \
   -password '<strong-password>'
 ```
 
-The SQLite compose file keeps SQLite as the default storage mode.
-The PostgreSQL compose file introduces PostgreSQL explicitly and does not change the SQLite default path.
+</details>
 
-## Control-plane quick start
+> Dashboard: `http://localhost:8080` &nbsp;·&nbsp; gRPC: `localhost:8443`
 
-This is the split development workflow with a standalone Go backend and a Vite development server.
+---
 
-You do not need prebuilt frontend assets for:
+## 🤖 Agent Deployment
 
-- `go build ./...`
-- `go run ./cmd/control-plane`
+1. Create an enrollment token: **Settings → Enrollment Tokens**
+2. On each Telemt server:
 
-1. Bootstrap the first local admin:
+```sh
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lost-coder/panvex/main/deploy/install-agent.sh)"
+```
 
-   ```powershell
-   go run ./cmd/control-plane bootstrap-admin `
-     -username admin `
-     -password "<strong-password>"
-   ```
+<details>
+<summary>Manual bootstrap (without installer)</summary>
 
-   By default this writes the first admin into the SQLite database at `data/panvex.db`.
-   To target PostgreSQL instead:
+```sh
+./panvex-agent bootstrap \
+  -panel-url https://panel.example.com \
+  -enrollment-token '<token>' \
+  -state-file /var/lib/panvex-agent/agent-state.json
+```
 
-   ```powershell
-   go run ./cmd/control-plane bootstrap-admin `
-     -storage-driver postgres `
-     -storage-dsn "postgres://panvex:password@127.0.0.1:5432/panvex?sslmode=disable" `
-     -username admin `
-     -password "<strong-password>"
-   ```
+</details>
 
-2. Start the control-plane:
+---
 
-   ```powershell
-   go run ./cmd/control-plane -http-addr :8080 -grpc-addr :8443
-   ```
+## 👥 Managed Clients
 
-   The default startup backend is SQLite at `data/panvex.db`.
-   To start against PostgreSQL:
+Create and manage Telemt clients centrally from the dashboard:
 
-   ```powershell
-   go run ./cmd/control-plane `
-     -http-addr :8080 `
-     -grpc-addr :8443 `
-     -storage-driver postgres `
-     -storage-dsn "postgres://panvex:password@127.0.0.1:5432/panvex?sslmode=disable"
-   ```
+- 🔑 Generate secrets and `user_ad_tag`
+- 📏 Set limits: connections, unique IPs, quota, expiration
+- 🌐 Assign by fleet group or individual nodes
+- 🔄 Rotate secrets without recreating the client
+- 📈 Live deployment status, connection links, and usage per node
 
-3. Start the web dashboard:
+---
 
-   ```powershell
-   cd web
-   npm install
-   npm run dev
-   ```
+## 🔐 Security
 
-## Single-binary release workflow
+**Two-Factor Authentication** — TOTP 2FA is optional. Enable in Profile page.
 
-1. Build the embedded frontend assets:
-
-   ```sh
-   cd web
-   npm install
-   npm run build:embed
-   ```
-
-2. Build the control-plane binary with the embedded UI release tag:
-
-   ```sh
-   go build -tags embeddedui -o panvex-control-plane ./cmd/control-plane
-   ```
-
-3. Bootstrap the first admin:
-
-   ```sh
-   ./panvex-control-plane bootstrap-admin -username admin -password '<strong-password>'
-   ```
-
-   The bootstrap user starts with TOTP disabled by default.
-
-4. Start the single-binary release:
-
-   ```sh
-   ./panvex-control-plane -http-addr :8080 -grpc-addr :8443
-   ```
-
-   The dashboard is served by the same binary on `http://127.0.0.1:8080`.
-
-## Optional account TOTP
-
-Panvex keeps TOTP optional by default for local accounts, including the first admin.
-
-- Sign in with username and password when TOTP is disabled.
-- Open `Settings` and use `Optional two-factor authentication` to start setup.
-- Confirm setup with the current password and a fresh code from the authenticator app before TOTP becomes active.
-- Disable active TOTP with the current password and current TOTP code.
-
-For multi-user installs, admins can open `Settings` and use `Admin TOTP recovery` to reset another user's TOTP from the web panel.
-
-For emergency recovery on the server, reset a local user's TOTP through the control-plane CLI:
+Emergency TOTP reset via CLI:
 
 ```sh
 ./panvex-control-plane reset-user-totp \
+  -storage-driver sqlite \
+  -storage-dsn /var/lib/panvex/panvex.db \
   -username admin
 ```
 
-If the control-plane is using PostgreSQL instead of the default SQLite backend, pass the storage flags explicitly:
+---
 
-```sh
-./panvex-control-plane reset-user-totp \
-  -storage-driver postgres \
-  -storage-dsn 'postgres://panvex:password@127.0.0.1:5432/panvex?sslmode=disable' \
-  -username admin
-```
+## 🔄 Updates
 
-## Agent quick start
+The control plane checks GitHub Releases for new versions automatically.
 
-1. Create an enrollment token from the dashboard Settings screen.
-2. On the Linux server that runs Telemt, install the agent:
+| Method | Command |
+|--------|---------|
+| **Dashboard** | Settings → Updates → *Update Panel* / *Update Agent* |
+| **CLI** | `./panvex-control-plane self-update` |
+| **Auto-update** | Enable in Settings → Updates (disabled by default) |
 
-   ```sh
-   curl -fsSL https://github.com/panvex/panvex/releases/latest/download/install-agent.sh | \
-     sudo sh -s -- \
-       --panel-url https://panel.example.com \
-       --enrollment-token "<token>"
-   ```
+Agents can be updated individually or in bulk. The panel sends an update job via gRPC — the agent downloads and installs the new binary automatically.
 
-   The installer downloads the agent, asks for the local Telemt API settings, bootstraps the agent identity through the panel HTTPS API, and starts a `systemd` service.
+---
 
-3. For an advanced manual flow, bootstrap a downloaded binary directly without saving any `ca_pem` file:
-
-   ```sh
-   ./panvex-agent bootstrap \
-     -panel-url https://panel.example.com \
-     -enrollment-token "<token>" \
-     -state-file /var/lib/panvex-agent/agent-state.json
-   ```
-
-## Managed clients
-
-Panvex can now manage Telemt clients centrally instead of editing them node by node.
-
-Open `Clients` in the dashboard to:
-
-- create a managed client with generated secret and `user_ad_tag`
-- set Telemt limits such as `max_tcp_conns`, `max_unique_ips`, quota, and expiration
-- assign the client by fleet group or explicit nodes
-- rotate the client secret later without recreating the whole client
-
-After each save, Panvex immediately queues rollout jobs for the selected nodes. Each node returns its own Telegram connection link, so the client detail page shows:
-
-- the current deployment status on every node
-- the latest node-specific connection link
-- aggregated current usage such as traffic, unique IPs, and active TCP connections
-
-## Verification
-
-- `go build ./...`
-- `npm run build` from `web`
-- `npm run build:embed` from `web`
-- `go build -tags embeddedui ./cmd/control-plane`
-- `bash deploy/install.sh --help`
-- `bash deploy/install-agent.sh --help`
-- `go test ./cmd/agent ./internal/agent/state -v`
-- `rg -n "services:|sqlite|postgres|web:" deploy/docker-compose.sqlite.yml deploy/docker-compose.postgres.yml Dockerfile`
-- `go test ./cmd/control-plane -run "TestRunBootstrapAdmin|TestRunResetUserTotp" -v`
-- `go test ./internal/controlplane/auth ./internal/controlplane/server -run "TestServiceBootstrapUserLeavesTotpDisabledByDefault|TestServiceAuthenticateAllowsOperatorWithoutTotpWhenDisabled|TestServiceEnableTotpRequiresPendingSetup|TestServiceEnableTotpRequiresValidPasswordAndCode|TestServiceDisableTotpRequiresValidPasswordAndCode|TestServiceResetTotpClearsEnabledState|TestHTTPAuthTotpSetupEnableDisableFlow|TestHTTPUsersTotpResetRequiresAdminAndClearsTarget" -v`
-- `go test ./internal/controlplane/auth ./internal/controlplane/jobs ./internal/controlplane/server ./internal/controlplane/state ./internal/controlplane/storage/migrate ./internal/controlplane/storage/postgres ./internal/controlplane/storage/sqlite -v`
+<p align="center">
+  <sub>Built with ❤️ for Telemt fleet operators</sub>
+</p>
