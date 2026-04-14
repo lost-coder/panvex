@@ -26,6 +26,13 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
+// Build-time version information, injected via -ldflags.
+var (
+	Version   = "dev"
+	CommitSHA = "unknown"
+	BuildTime = "unknown"
+)
+
 type serveConfig struct {
 	ConfigPath           string
 	ConfigManagedRuntime bool
@@ -56,6 +63,10 @@ func main() {
 }
 
 func run(args []string) error {
+	if len(args) > 0 && args[0] == "-version" {
+		fmt.Printf("panvex-control-plane %s (commit: %s, built: %s)\n", Version, CommitSHA, BuildTime)
+		os.Exit(0)
+	}
 	if len(args) > 0 && args[0] == "bootstrap-admin" {
 		return runBootstrapAdmin(args[1:])
 	}
@@ -98,6 +109,9 @@ func runServe(args []string) error {
 		PanelRuntime: panelRuntime,
 		TrustedProxyCIDRs: options.TrustedProxyCIDRs,
 		EncryptionKey: options.EncryptionKey,
+		Version:   Version,
+		CommitSHA: CommitSHA,
+		BuildTime: BuildTime,
 		RequestRestart: func() error {
 			select {
 			case restartRequests <- struct{}{}:
