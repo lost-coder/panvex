@@ -12,7 +12,9 @@ func TestVerifyChecksum(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "binary")
 	content := []byte("test binary content")
-	os.WriteFile(path, content, 0755)
+	if err := os.WriteFile(path, content, 0755); err != nil { //nolint:gosec // test binary
+		t.Fatal(err)
+	}
 
 	hash := sha256.Sum256(content)
 	expected := hex.EncodeToString(hash[:])
@@ -29,8 +31,12 @@ func TestAtomicReplaceBinary(t *testing.T) {
 	dir := t.TempDir()
 	currentPath := filepath.Join(dir, "current")
 	newPath := filepath.Join(dir, "new")
-	os.WriteFile(currentPath, []byte("old"), 0755)
-	os.WriteFile(newPath, []byte("new"), 0755)
+	if err := os.WriteFile(currentPath, []byte("old"), 0755); err != nil { //nolint:gosec // test binary
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(newPath, []byte("new"), 0755); err != nil { //nolint:gosec // test binary
+		t.Fatal(err)
+	}
 
 	if err := AtomicReplaceBinary(currentPath, newPath); err != nil {
 		t.Fatalf("AtomicReplaceBinary() error = %v", err)

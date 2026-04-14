@@ -11,14 +11,18 @@ import (
 func TestReplaceBinary(t *testing.T) {
 	dir := t.TempDir()
 	currentPath := filepath.Join(dir, "panvex-agent")
-	os.WriteFile(currentPath, []byte("old-binary"), 0755)
+	if err := os.WriteFile(currentPath, []byte("old-binary"), 0755); err != nil { //nolint:gosec // test binary
+		t.Fatal(err)
+	}
 
 	newContent := []byte("new-binary")
 	hash := sha256.Sum256(newContent)
 	checksum := hex.EncodeToString(hash[:])
 
 	newPath := filepath.Join(dir, "panvex-agent-new")
-	os.WriteFile(newPath, newContent, 0755)
+	if err := os.WriteFile(newPath, newContent, 0755); err != nil { //nolint:gosec // test binary
+		t.Fatal(err)
+	}
 
 	err := replaceBinary(currentPath, newPath, checksum)
 	if err != nil {
