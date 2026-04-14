@@ -59,3 +59,4 @@ docs/plans/
 # Compiled binaries (root-level only)
 /agent
 /control-plane
+.panvex-ui
