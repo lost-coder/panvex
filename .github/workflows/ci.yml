@@ -61,12 +61,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: lost-coder/panvex-ui
-          path: ../ui
+          path: .panvex-ui
+      - name: Link UI kit
+        run: ln -s "$GITHUB_WORKSPACE/.panvex-ui" "$GITHUB_WORKSPACE/../ui"
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
       - name: Build UI kit
-        working-directory: ../ui
+        working-directory: .panvex-ui
         run: npm ci && npm run build
       - name: Install and build frontend
         working-directory: web
@@ -80,12 +82,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: lost-coder/panvex-ui
-          path: ../ui
+          path: .panvex-ui
+      - name: Link UI kit
+        run: ln -s "$GITHUB_WORKSPACE/.panvex-ui" "$GITHUB_WORKSPACE/../ui"
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
       - name: Build UI kit
-        working-directory: ../ui
+        working-directory: .panvex-ui
         run: npm ci && npm run build
       - name: Lint frontend
         working-directory: web
