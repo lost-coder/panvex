@@ -3,7 +3,7 @@ import type { SettingsPageProps } from "@panvex/ui";
 import { apiClient } from "@/lib/api";
 import { transformSettings } from "@/lib/transforms/settings";
 
-export function useSettings() {
+export function useSettings(swipeNavigation: boolean) {
   const queryClient = useQueryClient();
 
   const panelQuery = useQuery({
@@ -21,7 +21,7 @@ export function useSettings() {
     "panelSettings" | "appearanceSettings"
   > | undefined =
     panelQuery.data && appearanceQuery.data
-      ? transformSettings(panelQuery.data, appearanceQuery.data)
+      ? transformSettings(panelQuery.data, appearanceQuery.data, swipeNavigation)
       : undefined;
 
   const saveAppearance = useMutation({

@@ -6,7 +6,8 @@ import type {
 
 export function transformSettings(
   panel: PanelSettingsResponse,
-  appearance: AppearanceSettingsResponse
+  appearance: AppearanceSettingsResponse,
+  swipeNavigation: boolean
 ): Pick<SettingsPageProps, "panelSettings" | "appearanceSettings"> {
   return {
     panelSettings: {
@@ -17,7 +18,7 @@ export function transformSettings(
       theme: appearance.theme,
       density: appearance.density,
       helpMode: appearance.help_mode,
-      swipeNavigation: false,
+      swipeNavigation,
     },
   };
 }

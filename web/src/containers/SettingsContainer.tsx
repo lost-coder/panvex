@@ -3,11 +3,13 @@ import { useNavigate } from "@tanstack/react-router";
 import { useSettings } from "@/hooks/useSettings";
 import { useProfile } from "@/hooks/useProfile";
 import { useRetentionSettings } from "@/hooks/useRetentionSettings";
+import { useAppearance } from "@/providers/AppearanceProvider";
 import { ErrorState } from "@/components/ErrorState";
 
 export function SettingsContainer() {
   const navigate = useNavigate();
-  const { settings, isLoading, error, saveAppearance, savePanelSettings } = useSettings();
+  const { swipeNavigation, setSwipeNavigation } = useAppearance();
+  const { settings, isLoading, error, saveAppearance, savePanelSettings } = useSettings(swipeNavigation);
   const { profile } = useProfile();
   const { retention, save: saveRetention } = useRetentionSettings();
   const isAdmin = profile?.role === "admin";
@@ -28,11 +30,14 @@ export function SettingsContainer() {
         http_public_url: s.httpPublicUrl,
         grpc_public_endpoint: s.grpcPublicEndpoint,
       })}
-      onAppearanceChange={(s) => saveAppearance.mutate({
-        theme: s.theme,
-        density: s.density,
-        help_mode: s.helpMode,
-      })}
+      onAppearanceChange={(s) => {
+        setSwipeNavigation(s.swipeNavigation);
+        saveAppearance.mutate({
+          theme: s.theme,
+          density: s.density,
+          help_mode: s.helpMode,
+        });
+      }}
       onManageUsers={isAdmin ? () => navigate({ to: "/settings/users" }) : undefined}
       retentionSettings={isAdmin && retention ? retention : undefined}
       onRetentionChange={isAdmin ? (s) => saveRetention.mutate(s) : undefined}

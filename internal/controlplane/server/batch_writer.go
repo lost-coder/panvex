@@ -140,22 +140,18 @@ func (w *storeBatchWriter) flushLoop() {
 		case <-w.ctx.Done():
 			return
 		case <-ticker.C:
-			w.drainAll(context.Background())
 		case <-w.agents.signal:
-			w.agents.Drain(context.Background())
 		case <-w.instances.signal:
-			w.instances.Drain(context.Background())
 		case <-w.metrics.signal:
-			w.metrics.Drain(context.Background())
 		case <-w.serverLoad.signal:
-			w.serverLoad.Drain(context.Background())
 		case <-w.dcHealth.signal:
-			w.dcHealth.Drain(context.Background())
 		case <-w.clientIPs.signal:
-			w.clientIPs.Drain(context.Background())
 		case <-w.telemetry.signal:
-			w.telemetry.Drain(context.Background())
 		}
+		// Any signal (including ticker) triggers a full drain of all buffers.
+		// This prevents signal coalescing from letting individual buffers grow
+		// beyond batchMaxSize for more than one flush cycle.
+		w.drainAll(context.Background())
 	}
 }
 
