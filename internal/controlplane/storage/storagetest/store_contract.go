@@ -2,6 +2,7 @@ package storagetest
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -989,6 +990,201 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 		}
 		if storedSecurity.EntriesTotal != security.EntriesTotal {
 			t.Fatalf("GetTelemetrySecurityInventoryCurrent() EntriesTotal = %d, want %d", storedSecurity.EntriesTotal, security.EntriesTotal)
+		}
+	})
+
+	t.Run("session put get delete round trip", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		session := storage.SessionRecord{
+			ID:        "sess-001",
+			UserID:    "user-001",
+			CreatedAt: time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC),
+		}
+
+		if err := store.PutSession(ctx, session); err != nil {
+			t.Fatalf("PutSession() error = %v", err)
+		}
+
+		got, err := store.GetSession(ctx, session.ID)
+		if err != nil {
+			t.Fatalf("GetSession() error = %v", err)
+		}
+		if got.UserID != session.UserID {
+			t.Fatalf("GetSession().UserID = %q, want %q", got.UserID, session.UserID)
+		}
+
+		sessions, err := store.ListSessions(ctx)
+		if err != nil {
+			t.Fatalf("ListSessions() error = %v", err)
+		}
+		if len(sessions) != 1 {
+			t.Fatalf("len(ListSessions()) = %d, want 1", len(sessions))
+		}
+
+		if err := store.DeleteSession(ctx, session.ID); err != nil {
+			t.Fatalf("DeleteSession() error = %v", err)
+		}
+
+		_, err = store.GetSession(ctx, session.ID)
+		if err == nil {
+			t.Fatal("GetSession() after delete returned nil error, want ErrNotFound")
+		}
+	})
+
+	t.Run("session delete expired removes old sessions", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		old := storage.SessionRecord{
+			ID:        "sess-old",
+			UserID:    "user-001",
+			CreatedAt: time.Date(2026, time.April, 14, 8, 0, 0, 0, time.UTC),
+		}
+		fresh := storage.SessionRecord{
+			ID:        "sess-fresh",
+			UserID:    "user-002",
+			CreatedAt: time.Date(2026, time.April, 15, 12, 0, 0, 0, time.UTC),
+		}
+
+		if err := store.PutSession(ctx, old); err != nil {
+			t.Fatalf("PutSession(old) error = %v", err)
+		}
+		if err := store.PutSession(ctx, fresh); err != nil {
+			t.Fatalf("PutSession(fresh) error = %v", err)
+		}
+
+		cutoff := time.Date(2026, time.April, 15, 0, 0, 0, 0, time.UTC)
+		if err := store.DeleteExpiredSessions(ctx, cutoff); err != nil {
+			t.Fatalf("DeleteExpiredSessions() error = %v", err)
+		}
+
+		sessions, err := store.ListSessions(ctx)
+		if err != nil {
+			t.Fatalf("ListSessions() error = %v", err)
+		}
+		if len(sessions) != 1 {
+			t.Fatalf("len(ListSessions()) after expiry = %d, want 1", len(sessions))
+		}
+		if sessions[0].ID != fresh.ID {
+			t.Fatalf("remaining session ID = %q, want %q", sessions[0].ID, fresh.ID)
+		}
+	})
+
+	t.Run("discovered client put list and delete round trip", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		group := storage.FleetGroupRecord{
+			ID:        "default",
+			Name:      "Default",
+			CreatedAt: time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC),
+		}
+		agent := storage.AgentRecord{
+			ID:           "agent-dc-001",
+			NodeName:     "node-dc",
+			FleetGroupID: group.ID,
+			Version:      "dev",
+			ReadOnly:     false,
+			LastSeenAt:   time.Date(2026, time.April, 15, 10, 1, 0, 0, time.UTC),
+		}
+
+		if err := store.PutFleetGroup(ctx, group); err != nil {
+			t.Fatalf("PutFleetGroup() error = %v", err)
+		}
+		if err := store.PutAgent(ctx, agent); err != nil {
+			t.Fatalf("PutAgent() error = %v", err)
+		}
+
+		dc := storage.DiscoveredClientRecord{
+			ID:           "dc-001",
+			AgentID:      agent.ID,
+			ClientName:   "external-user",
+			Secret:       "abc123",
+			Status:       "new",
+			DiscoveredAt: time.Date(2026, time.April, 15, 10, 5, 0, 0, time.UTC),
+			UpdatedAt:    time.Date(2026, time.April, 15, 10, 5, 0, 0, time.UTC),
+		}
+
+		if err := store.PutDiscoveredClient(ctx, dc); err != nil {
+			t.Fatalf("PutDiscoveredClient() error = %v", err)
+		}
+
+		list, err := store.ListDiscoveredClients(ctx)
+		if err != nil {
+			t.Fatalf("ListDiscoveredClients() error = %v", err)
+		}
+		if len(list) != 1 {
+			t.Fatalf("len(ListDiscoveredClients()) = %d, want 1", len(list))
+		}
+
+		byAgent, err := store.ListDiscoveredClientsByAgent(ctx, agent.ID)
+		if err != nil {
+			t.Fatalf("ListDiscoveredClientsByAgent() error = %v", err)
+		}
+		if len(byAgent) != 1 {
+			t.Fatalf("len(ListDiscoveredClientsByAgent()) = %d, want 1", len(byAgent))
+		}
+
+		got, err := store.GetDiscoveredClient(ctx, dc.ID)
+		if err != nil {
+			t.Fatalf("GetDiscoveredClient() error = %v", err)
+		}
+		if got.ClientName != dc.ClientName {
+			t.Fatalf("GetDiscoveredClient().ClientName = %q, want %q", got.ClientName, dc.ClientName)
+		}
+
+		updatedAt := time.Date(2026, time.April, 15, 10, 10, 0, 0, time.UTC)
+		if err := store.UpdateDiscoveredClientStatus(ctx, dc.ID, "ignored", updatedAt); err != nil {
+			t.Fatalf("UpdateDiscoveredClientStatus() error = %v", err)
+		}
+		got, _ = store.GetDiscoveredClient(ctx, dc.ID)
+		if got.Status != "ignored" {
+			t.Fatalf("status after update = %q, want %q", got.Status, "ignored")
+		}
+
+		if err := store.DeleteDiscoveredClient(ctx, dc.ID); err != nil {
+			t.Fatalf("DeleteDiscoveredClient() error = %v", err)
+		}
+		_, err = store.GetDiscoveredClient(ctx, dc.ID)
+		if err == nil {
+			t.Fatal("GetDiscoveredClient() after delete returned nil error, want ErrNotFound")
+		}
+	})
+
+	t.Run("update config settings and state round trip", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		settings := json.RawMessage(`{"auto_update":true,"channel":"stable"}`)
+		state := json.RawMessage(`{"latest_version":"v1.2.3","checked_at":"2026-04-15T10:00:00Z"}`)
+
+		if err := store.PutUpdateSettings(ctx, settings); err != nil {
+			t.Fatalf("PutUpdateSettings() error = %v", err)
+		}
+		if err := store.PutUpdateState(ctx, state); err != nil {
+			t.Fatalf("PutUpdateState() error = %v", err)
+		}
+
+		gotSettings, err := store.GetUpdateSettings(ctx)
+		if err != nil {
+			t.Fatalf("GetUpdateSettings() error = %v", err)
+		}
+		if string(gotSettings) != string(settings) {
+			t.Fatalf("GetUpdateSettings() = %s, want %s", gotSettings, settings)
+		}
+
+		gotState, err := store.GetUpdateState(ctx)
+		if err != nil {
+			t.Fatalf("GetUpdateState() error = %v", err)
+		}
+		if string(gotState) != string(state) {
+			t.Fatalf("GetUpdateState() = %s, want %s", gotState, state)
 		}
 	})
 
