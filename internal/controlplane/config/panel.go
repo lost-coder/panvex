@@ -33,14 +33,16 @@ var (
 
 // ControlPlaneConfig describes startup-critical control-plane runtime configuration.
 type ControlPlaneConfig struct {
-	Storage           StorageConfig
-	HTTPListenAddress string
-	HTTPRootPath      string
-	GRPCListenAddress string
-	RestartMode       string
-	TLSMode           string
-	TLSCertFile       string
-	TLSKeyFile        string
+	Storage             StorageConfig
+	HTTPListenAddress   string
+	HTTPRootPath        string
+	AgentHTTPRootPath   string
+	PanelAllowedCIDRs   []string
+	GRPCListenAddress   string
+	RestartMode         string
+	TLSMode             string
+	TLSCertFile         string
+	TLSKeyFile          string
 }
 
 type controlPlaneConfigFile struct {
@@ -57,8 +59,10 @@ type controlPlaneStorageSection struct {
 }
 
 type controlPlaneHTTPSection struct {
-	ListenAddress string `toml:"listen_address"`
-	RootPath      string `toml:"root_path"`
+	ListenAddress     string   `toml:"listen_address"`
+	RootPath          string   `toml:"root_path"`
+	AgentRootPath     string   `toml:"agent_root_path"`
+	PanelAllowedCIDRs []string `toml:"panel_allowed_cidrs"`
 }
 
 type controlPlaneGRPCSection struct {
@@ -108,6 +112,8 @@ func LoadControlPlaneConfig(configPath string) (ControlPlaneConfig, error) {
 		Storage:           storage,
 		HTTPListenAddress: fileConfig.HTTP.ListenAddress,
 		HTTPRootPath:      fileConfig.HTTP.RootPath,
+		AgentHTTPRootPath: fileConfig.HTTP.AgentRootPath,
+		PanelAllowedCIDRs: fileConfig.HTTP.PanelAllowedCIDRs,
 		GRPCListenAddress: fileConfig.GRPC.ListenAddress,
 		RestartMode:       fileConfig.Panel.RestartMode,
 		TLSMode:           fileConfig.TLS.Mode,
@@ -128,6 +134,7 @@ func LoadControlPlaneConfig(configPath string) (ControlPlaneConfig, error) {
 func normalizeControlPlaneConfig(configuration ControlPlaneConfig) (ControlPlaneConfig, error) {
 	configuration.HTTPListenAddress = strings.TrimSpace(configuration.HTTPListenAddress)
 	configuration.HTTPRootPath = normalizeControlPlaneRootPath(configuration.HTTPRootPath)
+	configuration.AgentHTTPRootPath = normalizeControlPlaneRootPath(configuration.AgentHTTPRootPath)
 	configuration.GRPCListenAddress = strings.TrimSpace(configuration.GRPCListenAddress)
 	configuration.RestartMode = normalizeRestartMode(configuration.RestartMode)
 	configuration.TLSMode = normalizePanelTLSMode(configuration.TLSMode)

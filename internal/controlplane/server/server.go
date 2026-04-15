@@ -376,91 +376,130 @@ func (s *Server) routes() http.Handler {
 	router.Use(csrfOriginCheck)
 	router.Get("/healthz", handleHealthz())
 	router.Get("/readyz", s.handleReadyz())
+
+	panelPath := s.panelRuntime.HTTPRootPath
+	agentPath := s.panelRuntime.AgentHTTPRootPath
+
+	// Agent routes registered at apiBasePath (no whitelist).
+	// When agentPath differs from panelPath, also register under the
+	// separate agent prefix so they are reachable without stripRootPath.
 	router.Route(apiBasePath, func(api chi.Router) {
-		api.With(s.withRateLimit(s.agentBootstrapRateLimiter, s.requestClientRateLimitKey)).Post("/agent/bootstrap", s.handleAgentBootstrap())
-		api.With(s.withRateLimit(s.agentBootstrapRateLimiter, s.requestClientRateLimitKey)).Post("/agent/recover-certificate", s.handleAgentCertificateRecovery())
-		api.With(s.withRateLimit(s.loginRateLimiter, s.requestClientRateLimitKey)).Post("/auth/login", s.handleLogin())
+		api.With(s.withRateLimit(s.agentBootstrapRateLimiter, s.requestClientRateLimitKey)).
+			Post("/agent/bootstrap", s.handleAgentBootstrap())
+		api.With(s.withRateLimit(s.agentBootstrapRateLimiter, s.requestClientRateLimitKey)).
+			Post("/agent/recover-certificate", s.handleAgentCertificateRecovery())
 
-		api.Group(func(authenticated chi.Router) {
-			authenticated.Use(s.requireAuthenticatedSession())
-			authenticated.Get("/version", s.handleVersion())
-			authenticated.Get("/auth/me", s.handleMe())
-			authenticated.Post("/auth/logout", s.handleLogout())
-			authenticated.Post("/auth/totp/setup", s.handleTotpSetup())
-			authenticated.Post("/auth/totp/enable", s.handleTotpEnable())
-			authenticated.Post("/auth/totp/disable", s.handleTotpDisable())
+		// Panel routes — with optional IP whitelist
+		api.Group(func(panel chi.Router) {
+			if len(s.panelRuntime.PanelAllowedCIDRs) > 0 {
+				panel.Use(ipWhitelistMiddleware(s.panelRuntime.PanelAllowedCIDRs))
+			}
+			panel.With(s.withRateLimit(s.loginRateLimiter, s.requestClientRateLimitKey)).
+				Post("/auth/login", s.handleLogin())
 
-			authenticated.Get("/control-room", s.handleControlRoom())
-			authenticated.Get("/fleet", s.handleFleet())
-			authenticated.Get("/agents", s.handleAgents())
-			authenticated.Get("/instances", s.handleInstances())
-			authenticated.Get("/jobs", s.handleJobs())
-			authenticated.Get("/audit", s.handleAudit())
-			authenticated.Get("/metrics", s.handleMetrics())
-			authenticated.Get("/events", s.handleEvents())
-			authenticated.Get("/agent/update/binary", s.handleAgentBinaryProxy())
-		authenticated.Get("/settings/appearance", s.handleGetUserAppearance())
-		authenticated.Put("/settings/appearance", s.handlePutUserAppearance())
-		authenticated.Get("/telemetry/dashboard", s.handleTelemetryDashboard())
-		authenticated.Get("/telemetry/servers", s.handleTelemetryServers())
-		authenticated.Get("/telemetry/servers/{id}", s.handleTelemetryServerDetail())
-		authenticated.Post("/telemetry/servers/{id}/detail-boost", s.handleTelemetryServerDetailBoost())
-		authenticated.Get("/telemetry/servers/{id}/history/load", s.handleServerLoadHistory())
-		authenticated.Get("/telemetry/servers/{id}/history/dc", s.handleDCHealthHistory())
-		authenticated.Get("/clients/{id}/history/ips", s.handleClientIPHistory())
+			panel.Group(func(authenticated chi.Router) {
+				authenticated.Use(s.requireAuthenticatedSession())
+				authenticated.Get("/version", s.handleVersion())
+				authenticated.Get("/auth/me", s.handleMe())
+				authenticated.Post("/auth/logout", s.handleLogout())
+				authenticated.Post("/auth/totp/setup", s.handleTotpSetup())
+				authenticated.Post("/auth/totp/enable", s.handleTotpEnable())
+				authenticated.Post("/auth/totp/disable", s.handleTotpDisable())
+				authenticated.Get("/control-room", s.handleControlRoom())
+				authenticated.Get("/fleet", s.handleFleet())
+				authenticated.Get("/agents", s.handleAgents())
+				authenticated.Get("/instances", s.handleInstances())
+				authenticated.Get("/jobs", s.handleJobs())
+				authenticated.Get("/audit", s.handleAudit())
+				authenticated.Get("/metrics", s.handleMetrics())
+				authenticated.Get("/events", s.handleEvents())
+				authenticated.Get("/agent/update/binary", s.handleAgentBinaryProxy())
+				authenticated.Get("/settings/appearance", s.handleGetUserAppearance())
+				authenticated.Put("/settings/appearance", s.handlePutUserAppearance())
+				authenticated.Get("/telemetry/dashboard", s.handleTelemetryDashboard())
+				authenticated.Get("/telemetry/servers", s.handleTelemetryServers())
+				authenticated.Get("/telemetry/servers/{id}", s.handleTelemetryServerDetail())
+				authenticated.Post("/telemetry/servers/{id}/detail-boost", s.handleTelemetryServerDetailBoost())
+				authenticated.Get("/telemetry/servers/{id}/history/load", s.handleServerLoadHistory())
+				authenticated.Get("/telemetry/servers/{id}/history/dc", s.handleDCHealthHistory())
+				authenticated.Get("/clients/{id}/history/ips", s.handleClientIPHistory())
 
-			authenticated.Group(func(operator chi.Router) {
-				operator.Use(s.requireMinimumRole(auth.RoleOperator))
-				operator.Post("/jobs", s.handleCreateJob())
-				operator.Get("/clients", s.handleClients())
-				operator.Post("/clients", s.handleCreateClient())
-				operator.Get("/clients/{id}", s.handleClient())
-				operator.Put("/clients/{id}", s.handleUpdateClient())
-				operator.Delete("/clients/{id}", s.handleDeleteClient())
-				operator.Post("/clients/{id}/rotate-secret", s.handleRotateClientSecret())
-				operator.Get("/discovered-clients", s.handleDiscoveredClients())
-				operator.Post("/discovered-clients/{id}/adopt", s.handleAdoptDiscoveredClient())
-				operator.Post("/discovered-clients/{id}/ignore", s.handleIgnoreDiscoveredClient())
-				operator.Post("/telemetry/servers/{id}/refresh-diagnostics", s.handleTelemetryServerRefreshDiagnostics())
-				operator.Get("/fleet-groups", s.handleFleetGroups())
-				operator.Patch("/agents/{id}", s.handleRenameAgent())
-				operator.Get("/agents/enrollment-tokens", s.handleListEnrollmentTokens())
-				operator.Post("/agents/enrollment-tokens", s.handleCreateEnrollmentToken())
-				operator.Post("/agents/enrollment-tokens/{value}/revoke", s.handleRevokeEnrollmentToken())
-				operator.Post("/agents/{id}/update", s.handleAgentUpdate())
-			})
+				authenticated.Group(func(operator chi.Router) {
+					operator.Use(s.requireMinimumRole(auth.RoleOperator))
+					operator.Post("/jobs", s.handleCreateJob())
+					operator.Get("/clients", s.handleClients())
+					operator.Post("/clients", s.handleCreateClient())
+					operator.Get("/clients/{id}", s.handleClient())
+					operator.Put("/clients/{id}", s.handleUpdateClient())
+					operator.Delete("/clients/{id}", s.handleDeleteClient())
+					operator.Post("/clients/{id}/rotate-secret", s.handleRotateClientSecret())
+					operator.Get("/discovered-clients", s.handleDiscoveredClients())
+					operator.Post("/discovered-clients/{id}/adopt", s.handleAdoptDiscoveredClient())
+					operator.Post("/discovered-clients/{id}/ignore", s.handleIgnoreDiscoveredClient())
+					operator.Post("/telemetry/servers/{id}/refresh-diagnostics", s.handleTelemetryServerRefreshDiagnostics())
+					operator.Get("/fleet-groups", s.handleFleetGroups())
+					operator.Patch("/agents/{id}", s.handleRenameAgent())
+					operator.Get("/agents/enrollment-tokens", s.handleListEnrollmentTokens())
+					operator.Post("/agents/enrollment-tokens", s.handleCreateEnrollmentToken())
+					operator.Post("/agents/enrollment-tokens/{value}/revoke", s.handleRevokeEnrollmentToken())
+					operator.Post("/agents/{id}/update", s.handleAgentUpdate())
+				})
 
-			authenticated.Group(func(admin chi.Router) {
-				admin.Use(s.requireMinimumRole(auth.RoleAdmin))
-				admin.Get("/users", s.handleUsers())
-				admin.Post("/users", s.handleCreateUser())
-				admin.Put("/users/{id}", s.handleUpdateUser())
-				admin.Delete("/users/{id}", s.handleDeleteUser())
-				admin.Post("/users/{id}/totp/reset", s.handleResetUserTotp())
-				admin.Post("/agents/{id}/certificate-recovery-grants", s.handleCreateAgentCertificateRecoveryGrant())
-				admin.Post("/agents/{id}/certificate-recovery-grants/revoke", s.handleRevokeAgentCertificateRecoveryGrant())
-				admin.Delete("/agents/{id}", s.handleDeregisterAgent())
-				admin.Get("/settings/panel", s.handleGetPanelSettings())
-				admin.Put("/settings/panel", s.handlePutPanelSettings())
-				admin.Post("/settings/panel/restart", s.handleRestartPanel())
-				admin.Get("/settings/retention", s.handleGetRetentionSettings())
-				admin.Put("/settings/retention", s.handlePutRetentionSettings())
-				admin.Get("/settings/updates", s.handleGetUpdateSettings())
-				admin.Put("/settings/updates", s.handlePutUpdateSettings())
-				admin.Post("/settings/updates/check", s.handleForceUpdateCheck())
-				admin.Post("/settings/panel/update", s.handlePanelUpdate())
+				authenticated.Group(func(admin chi.Router) {
+					admin.Use(s.requireMinimumRole(auth.RoleAdmin))
+					admin.Get("/users", s.handleUsers())
+					admin.Post("/users", s.handleCreateUser())
+					admin.Put("/users/{id}", s.handleUpdateUser())
+					admin.Delete("/users/{id}", s.handleDeleteUser())
+					admin.Post("/users/{id}/totp/reset", s.handleResetUserTotp())
+					admin.Post("/agents/{id}/certificate-recovery-grants", s.handleCreateAgentCertificateRecoveryGrant())
+					admin.Post("/agents/{id}/certificate-recovery-grants/revoke", s.handleRevokeAgentCertificateRecoveryGrant())
+					admin.Delete("/agents/{id}", s.handleDeregisterAgent())
+					admin.Get("/settings/panel", s.handleGetPanelSettings())
+					admin.Put("/settings/panel", s.handlePutPanelSettings())
+					admin.Post("/settings/panel/restart", s.handleRestartPanel())
+					admin.Get("/settings/retention", s.handleGetRetentionSettings())
+					admin.Put("/settings/retention", s.handlePutRetentionSettings())
+					admin.Get("/settings/updates", s.handleGetUpdateSettings())
+					admin.Put("/settings/updates", s.handlePutUpdateSettings())
+					admin.Post("/settings/updates/check", s.handleForceUpdateCheck())
+					admin.Post("/settings/panel/update", s.handlePanelUpdate())
+				})
 			})
 		})
 	})
-	if uiHandler := newUIHandler(s.uiFiles, s.panelRuntime.HTTPRootPath); uiHandler != nil {
+
+	if uiHandler := newUIHandler(s.uiFiles, panelPath); uiHandler != nil {
 		router.NotFound(uiHandler)
 	}
 
-	if s.panelRuntime.HTTPRootPath == "" {
+	// When agentPath is separate from panelPath, create an outer mux that
+	// routes agent-prefixed requests to the agent endpoints directly and
+	// everything else through the normal stripRootPath pipeline.
+	if agentPath != "" && agentPath != panelPath {
+		outer := chi.NewRouter()
+		outer.Use(securityHeaders)
+		outer.Use(maxBodySize)
+		outer.Use(csrfOriginCheck)
+		outer.Route(agentPath+apiBasePath, func(agentAPI chi.Router) {
+			agentAPI.With(s.withRateLimit(s.agentBootstrapRateLimiter, s.requestClientRateLimitKey)).
+				Post("/agent/bootstrap", s.handleAgentBootstrap())
+			agentAPI.With(s.withRateLimit(s.agentBootstrapRateLimiter, s.requestClientRateLimitKey)).
+				Post("/agent/recover-certificate", s.handleAgentCertificateRecovery())
+		})
+		if panelPath != "" {
+			outer.NotFound(stripRootPath(panelPath, router))
+		} else {
+			outer.NotFound(router.ServeHTTP)
+		}
+		return outer
+	}
+
+	if panelPath == "" {
 		return router
 	}
 
-	return stripRootPath(s.panelRuntime.HTTPRootPath, router)
+	return stripRootPath(panelPath, router)
 }
 
 func (s *Server) appendAudit(actorID string, action string, targetID string, details map[string]any) {

@@ -60,8 +60,8 @@ func serveUIIndex(w http.ResponseWriter, r *http.Request, uiFiles fs.FS, rootPat
 			return
 		}
 		rootPathScript := `<script>window.__PANVEX_ROOT_PATH=` + string(rootPathJSON) + `;</script>`
-		if strings.Contains(body, "</head>") {
-			body = strings.Replace(body, "</head>", rootPathScript+"</head>", 1)
+		if strings.Contains(body, "<head>") {
+			body = strings.Replace(body, "<head>", "<head>"+rootPathScript, 1)
 		} else if strings.Contains(body, "<body>") {
 			body = strings.Replace(body, "<body>", "<body>"+rootPathScript, 1)
 		} else {
