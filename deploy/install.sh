@@ -483,6 +483,10 @@ UNINSTALL
     else
       warn "Admin bootstrap failed (account may already exist)"
     fi
+    # Fix ownership: bootstrap-admin runs as root and may create the SQLite
+    # database file owned by root. The service runs as panvex and needs
+    # read-write access.
+    chown -R panvex:panvex "$data_dir"
   fi
 
   # ── Firewall ───────────────────────────────────────────────────────────
