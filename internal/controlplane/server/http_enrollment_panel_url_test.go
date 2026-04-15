@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -160,5 +161,55 @@ func TestHTTPEnrollmentTokensExposeConfiguredPanelURL(t *testing.T) {
 	}
 	if listedTokens[0].PanelURL != "https://panel.example.com/panvex" {
 		t.Fatalf("list.panel_url = %q, want %q", listedTokens[0].PanelURL, "https://panel.example.com/panvex")
+	}
+}
+
+func TestEnrollmentTokenUsesAgentRootPathInPanelURL(t *testing.T) {
+	now := time.Date(2026, time.April, 15, 12, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	srv := New(Options{
+		Now:   func() time.Time { return now },
+		Store: store,
+		PanelRuntime: PanelRuntime{
+			HTTPRootPath:      "/secret-panel",
+			AgentHTTPRootPath: "/agent-api",
+			TLSMode:           "proxy",
+		},
+	})
+	defer srv.Close()
+
+	if _, _, err := srv.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "admin", Password: "Admin1password", Role: auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	loginResp := performJSONRequest(t, srv.Handler(), http.MethodPost, "/secret-panel/api/auth/login",
+		map[string]string{"username": "admin", "password": "Admin1password"}, nil)
+	cookies := loginResp.Result().Cookies()
+
+	createResp := performJSONRequest(t, srv.Handler(), http.MethodPost, "/secret-panel/api/agents/enrollment-tokens",
+		map[string]any{"fleet_group_id": "", "ttl_seconds": 3600}, cookies)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create token status = %d, want %d, body: %s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+
+	var token struct {
+		PanelURL string `json:"panel_url"`
+	}
+	if err := json.Unmarshal(createResp.Body.Bytes(), &token); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if !strings.Contains(token.PanelURL, "/agent-api") {
+		t.Fatalf("panel_url = %q, want to contain /agent-api", token.PanelURL)
+	}
+	if strings.Contains(token.PanelURL, "/secret-panel") {
+		t.Fatalf("panel_url = %q, must NOT contain panel root path", token.PanelURL)
 	}
 }

@@ -98,6 +98,82 @@ restart_mode = "supervised"
 	}
 }
 
+func TestLoadControlPlaneConfigParsesAgentRootPathAndAllowedCIDRs(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(configPath, []byte(`
+[storage]
+driver = "sqlite"
+dsn = "panvex.db"
+
+[http]
+listen_address = ":8888"
+root_path = "/panel"
+agent_root_path = "/agent-api"
+panel_allowed_cidrs = ["10.0.0.0/8", "192.168.1.0/24"]
+
+[grpc]
+listen_address = ":8443"
+
+[tls]
+mode = "proxy"
+
+[panel]
+restart_mode = "disabled"
+`), 0600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg, err := LoadControlPlaneConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadControlPlaneConfig() error = %v", err)
+	}
+	if cfg.AgentHTTPRootPath != "/agent-api" {
+		t.Fatalf("AgentHTTPRootPath = %q, want %q", cfg.AgentHTTPRootPath, "/agent-api")
+	}
+	if len(cfg.PanelAllowedCIDRs) != 2 {
+		t.Fatalf("len(PanelAllowedCIDRs) = %d, want 2", len(cfg.PanelAllowedCIDRs))
+	}
+	if cfg.PanelAllowedCIDRs[0] != "10.0.0.0/8" {
+		t.Fatalf("PanelAllowedCIDRs[0] = %q, want %q", cfg.PanelAllowedCIDRs[0], "10.0.0.0/8")
+	}
+}
+
+func TestLoadControlPlaneConfigEmptyAgentPathAndCIDRs(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(configPath, []byte(`
+[storage]
+driver = "sqlite"
+dsn = "panvex.db"
+
+[http]
+listen_address = ":8080"
+
+[grpc]
+listen_address = ":8443"
+
+[tls]
+mode = "proxy"
+
+[panel]
+restart_mode = "disabled"
+`), 0600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg, err := LoadControlPlaneConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadControlPlaneConfig() error = %v", err)
+	}
+	if cfg.AgentHTTPRootPath != "" {
+		t.Fatalf("AgentHTTPRootPath = %q, want empty", cfg.AgentHTTPRootPath)
+	}
+	if len(cfg.PanelAllowedCIDRs) != 0 {
+		t.Fatalf("len(PanelAllowedCIDRs) = %d, want 0", len(cfg.PanelAllowedCIDRs))
+	}
+}
+
 func TestLoadControlPlaneConfigRebasesRelativePathsToConfigDirectory(t *testing.T) {
 	configDir := filepath.Join(t.TempDir(), "config")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {

@@ -75,7 +75,7 @@ export function EventsSynchronizer() {
         }).catch(() => {
           stopped = true;
           const rootPath = resolveConfiguredRootPath();
-          window.location.href = rootPath ? `/${rootPath}/login` : "/login";
+          window.location.href = rootPath ? `${rootPath}/login` : "/login";
         });
       };
     };

@@ -38,6 +38,8 @@ type serveConfig struct {
 	ConfigManagedRuntime bool
 	HTTPAddr             string
 	HTTPRootPath         string
+	AgentHTTPRootPath    string
+	PanelAllowedCIDRs    []string
 	GRPCAddr             string
 	RestartMode          string
 	TLSMode              string
@@ -219,6 +221,8 @@ func parseServeConfig(args []string) (serveConfig, error) {
 			ConfigManagedRuntime: true,
 			HTTPAddr:             configuration.HTTPListenAddress,
 			HTTPRootPath:         configuration.HTTPRootPath,
+			AgentHTTPRootPath:    configuration.AgentHTTPRootPath,
+			PanelAllowedCIDRs:    configuration.PanelAllowedCIDRs,
 			GRPCAddr:             configuration.GRPCListenAddress,
 			RestartMode:          configuration.RestartMode,
 			TLSMode:              configuration.TLSMode,
@@ -226,8 +230,8 @@ func parseServeConfig(args []string) (serveConfig, error) {
 			TLSKeyFile:           configuration.TLSKeyFile,
 			Storage:              configuration.Storage,
 			TrustedProxyCIDRs:    parsedCIDRs,
-		EncryptionKey:        *encryptionKey,
-		LogLevel:             *logLevel,
+			EncryptionKey:        *encryptionKey,
+			LogLevel:             *logLevel,
 		}, nil
 	}
 
@@ -241,6 +245,8 @@ func parseServeConfig(args []string) (serveConfig, error) {
 		ConfigManagedRuntime: false,
 		HTTPAddr:             configuration.HTTPListenAddress,
 		HTTPRootPath:         configuration.HTTPRootPath,
+		AgentHTTPRootPath:    configuration.AgentHTTPRootPath,
+		PanelAllowedCIDRs:    configuration.PanelAllowedCIDRs,
 		GRPCAddr:             configuration.GRPCListenAddress,
 		RestartMode:          configuration.RestartMode,
 		TLSMode:              configuration.TLSMode,
@@ -287,6 +293,19 @@ func resolvePanelRuntime(configuration serveConfig) (server.PanelRuntime, error)
 	if configuration.ConfigManagedRuntime {
 		runtime.ConfigSource = server.PanelRuntimeSourceConfigFile
 	}
+
+	runtime.AgentHTTPRootPath = configuration.AgentHTTPRootPath
+
+	var panelCIDRs []*net.IPNet
+	for _, cidrStr := range configuration.PanelAllowedCIDRs {
+		_, ipNet, err := net.ParseCIDR(cidrStr)
+		if err != nil {
+			return server.PanelRuntime{}, fmt.Errorf("invalid panel_allowed_cidrs entry %q: %w", cidrStr, err)
+		}
+		panelCIDRs = append(panelCIDRs, ipNet)
+	}
+	runtime.PanelAllowedCIDRs = panelCIDRs
+
 	return runtime, nil
 }
 

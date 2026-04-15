@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"path"
 	"strings"
@@ -24,9 +25,11 @@ const (
 
 // PanelRuntime describes the currently applied network and restart runtime.
 type PanelRuntime struct {
-	HTTPListenAddress string
-	HTTPRootPath      string
-	GRPCListenAddress string
+	HTTPListenAddress  string
+	HTTPRootPath       string
+	AgentHTTPRootPath  string
+	PanelAllowedCIDRs  []*net.IPNet
+	GRPCListenAddress  string
 	TLSMode           string
 	TLSCertFile       string
 	TLSKeyFile        string
@@ -132,6 +135,39 @@ func buildPanelPublicURL(settings PanelSettings, runtime PanelRuntime, requestUR
 	}
 
 	return strings.TrimRight(base, "/") + runtime.HTTPRootPath
+}
+
+func buildAgentPublicURL(settings PanelSettings, runtime PanelRuntime, requestURL *url.URL, forwardedProto string, requestHost string) string {
+	if runtime.AgentHTTPRootPath == "" {
+		return buildPanelPublicURL(settings, runtime, requestURL, forwardedProto, requestHost)
+	}
+
+	base := strings.TrimSpace(settings.HTTPPublicURL)
+	if base == "" {
+		scheme := strings.TrimSpace(forwardedProto)
+		if scheme == "" && requestURL != nil {
+			scheme = strings.TrimSpace(requestURL.Scheme)
+		}
+		if scheme == "" {
+			if runtime.TLSMode == panelTLSModeDirect {
+				scheme = "https"
+			} else {
+				scheme = "http"
+			}
+		}
+
+		host := strings.TrimSpace(requestHost)
+		if host == "" && requestURL != nil {
+			host = strings.TrimSpace(requestURL.Host)
+		}
+		if host == "" {
+			return ""
+		}
+
+		base = fmt.Sprintf("%s://%s", scheme, host)
+	}
+
+	return strings.TrimRight(base, "/") + runtime.AgentHTTPRootPath
 }
 
 func panelSettingsToRecord(settings PanelSettings) storage.PanelSettingsRecord {
