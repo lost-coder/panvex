@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -1865,6 +1867,62 @@ func performJSONRequestWithHeaders(t *testing.T, handler http.Handler, method st
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 	return recorder
+}
+
+func TestPanelBlockedByWhitelistButAgentAllowed(t *testing.T) {
+	now := time.Date(2026, time.April, 15, 14, 0, 0, 0, time.UTC)
+	_, cidr, _ := net.ParseCIDR("10.0.0.0/8")
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	srv := New(Options{
+		Now:   func() time.Time { return now },
+		Store: store,
+		PanelRuntime: PanelRuntime{
+			HTTPRootPath:      "/panel",
+			AgentHTTPRootPath: "/agent",
+			PanelAllowedCIDRs: []*net.IPNet{cidr},
+			TLSMode:           "proxy",
+		},
+	})
+	defer srv.Close()
+
+	handler := srv.Handler()
+
+	// Panel login from non-whitelisted IP — should be blocked
+	loginReq := httptest.NewRequest(http.MethodPost, "/panel/api/auth/login", strings.NewReader(`{}`))
+	loginReq.Header.Set("Content-Type", "application/json")
+	loginReq.RemoteAddr = "203.0.113.5:12345"
+	loginRec := httptest.NewRecorder()
+	handler.ServeHTTP(loginRec, loginReq)
+
+	if loginRec.Code != http.StatusForbidden {
+		t.Fatalf("panel from blocked IP: status = %d, want %d", loginRec.Code, http.StatusForbidden)
+	}
+
+	// Agent bootstrap from same IP — should NOT be blocked
+	bootstrapReq := httptest.NewRequest(http.MethodPost, "/agent/api/agent/bootstrap", strings.NewReader(`{}`))
+	bootstrapReq.Header.Set("Content-Type", "application/json")
+	bootstrapReq.RemoteAddr = "203.0.113.5:12345"
+	bootstrapRec := httptest.NewRecorder()
+	handler.ServeHTTP(bootstrapRec, bootstrapReq)
+
+	if bootstrapRec.Code == http.StatusForbidden {
+		t.Fatalf("agent bootstrap from any IP: status = %d, must not be forbidden", bootstrapRec.Code)
+	}
+
+	// Health check under panel path — also protected by whitelist
+	healthReq := httptest.NewRequest(http.MethodGet, "/panel/healthz", nil)
+	healthReq.RemoteAddr = "10.0.0.1:12345" // whitelisted IP
+	healthRec := httptest.NewRecorder()
+	handler.ServeHTTP(healthRec, healthReq)
+
+	if healthRec.Code != http.StatusOK {
+		t.Fatalf("/panel/healthz from allowed IP status = %d, want %d", healthRec.Code, http.StatusOK)
+	}
 }
 
 func performRequest(t *testing.T, handler http.Handler, method string, path string, body *bytes.Reader) *httptest.ResponseRecorder {

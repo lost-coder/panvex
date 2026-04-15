@@ -128,7 +128,7 @@ func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 		settings := s.panelSettingsSnapshot()
 		writeJSON(w, http.StatusCreated, createEnrollmentTokenResponse{
 			Value:         token.Value,
-			PanelURL:      buildPanelPublicURL(settings, s.panelRuntime, r.URL, r.Header.Get("X-Forwarded-Proto"), r.Host),
+			PanelURL:      buildAgentPublicURL(settings, s.panelRuntime, r.URL, r.Header.Get("X-Forwarded-Proto"), r.Host),
 			FleetGroupID:  token.FleetGroupID,
 			IssuedAtUnix:  token.IssuedAt.Unix(),
 			ExpiresAtUnix: token.ExpiresAt.Unix(),
@@ -351,7 +351,7 @@ func (s *Server) listEnrollmentTokensWithContext(ctx context.Context, now time.T
 	}
 
 	settings := s.panelSettingsSnapshot()
-	panelURL := buildPanelPublicURL(settings, s.panelRuntime, requestURL, forwardedProto, requestHost)
+	panelURL := buildAgentPublicURL(settings, s.panelRuntime, requestURL, forwardedProto, requestHost)
 	response := make([]enrollmentTokenResponse, 0, len(records))
 	for _, token := range records {
 		item := enrollmentTokenResponse{
