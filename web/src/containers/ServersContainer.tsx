@@ -39,6 +39,7 @@ export function ServersContainer() {
       fleetGroups={fleetGroups.map((g) => ({ id: g.id, label: g.id, agentCount: g.agent_count }))}
       onViewModeChange={setMode}
       onServerClick={(id) => navigate({ to: "/servers/$serverId", params: { serverId: id } })}
+      onAddServer={() => navigate({ to: "/servers/add" })}
       onManageTokens={() => navigate({ to: "/servers/enrollment" })}
     />
   );

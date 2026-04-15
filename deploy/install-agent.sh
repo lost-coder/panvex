@@ -199,12 +199,21 @@ install_agent() {
   step "Downloading"
 
   local asset_name="${APP_NAME}-linux-${arch}.tar.gz"
-  local release_path="latest/download"
-  if [ "$version" != "latest" ]; then
-    release_path="download/agent/${version}"
+
+  # Resolve "latest" to the most recent agent/* tag via GitHub API
+  if [ "$version" = "latest" ]; then
+    info "Resolving latest agent version..."
+    local releases_json
+    releases_json=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=20" 2>/dev/null) \
+      || die "Failed to query GitHub releases API"
+    local agent_tag
+    agent_tag=$(echo "$releases_json" | grep -o '"tag_name":\s*"agent/[^"]*"' | head -1 | grep -o 'agent/[^"]*') \
+      || die "No agent release found in repository"
+    info "Latest agent release: $agent_tag"
+    version="${agent_tag#agent/}"
   fi
 
-  local archive_url="https://github.com/${REPO}/releases/${release_path}/${asset_name}"
+  local archive_url="https://github.com/${REPO}/releases/download/agent/${version}/${asset_name}"
   TMP_DIR=$(mktemp -d)
 
   info "Downloading ${asset_name}..."
@@ -534,14 +543,27 @@ run_noninteractive() {
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
   cat <<'EOF'
-Panvex Agent — Interactive Installer
+Panvex Agent — Installer
 
 Usage:
   sudo bash install-agent.sh              Interactive installation wizard
   sudo bash install-agent.sh --help       Show this help
   sudo bash install-agent.sh --dry-run    Show what would be done without executing
 
-Non-interactive mode (set environment variables):
+  # Automatic mode (from enrollment wizard):
+  curl -fsSL .../install-agent.sh | sudo bash -s -- \
+    --panel-url https://panel.example.com \
+    --token <enrollment-token> \
+    --node-name my-node
+
+CLI arguments:
+  --panel-url URL             Panel URL (required for automatic mode)
+  --token TOKEN               Enrollment token (required for automatic mode)
+  --node-name NAME            Node name (default: hostname)
+  --telemt-url URL            Telemt API URL (default: http://127.0.0.1:9091)
+  --telemt-auth HEADER        Telemt authorization header (optional)
+
+Environment variables (alternative to CLI args):
   PANVEX_AGENT_VERSION      Version tag (default: latest)
   PANVEX_PANEL_URL          Panel URL (required)
   PANVEX_ENROLLMENT_TOKEN   Enrollment token (required)
@@ -570,13 +592,41 @@ if [ "${1:-}" = "--dry-run" ]; then
   exit 0
 fi
 
+# ── Parse CLI arguments ──────────────────────────────────────────────────────
+
+_CLI_PANEL_URL=""
+_CLI_ENROLLMENT_TOKEN=""
+_CLI_NODE_NAME=""
+_CLI_TELEMT_URL=""
+_CLI_TELEMT_AUTH=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --panel-url)       _CLI_PANEL_URL="$2"; shift 2 ;;
+    --token|--enrollment-token) _CLI_ENROLLMENT_TOKEN="$2"; shift 2 ;;
+    --node-name)       _CLI_NODE_NAME="$2"; shift 2 ;;
+    --telemt-url)      _CLI_TELEMT_URL="$2"; shift 2 ;;
+    --telemt-auth)     _CLI_TELEMT_AUTH="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+
+# Export as env vars so both modes can use them
+[ -n "$_CLI_PANEL_URL" ]         && export PANVEX_PANEL_URL="$_CLI_PANEL_URL"
+[ -n "$_CLI_ENROLLMENT_TOKEN" ]  && export PANVEX_ENROLLMENT_TOKEN="$_CLI_ENROLLMENT_TOKEN"
+[ -n "$_CLI_NODE_NAME" ]         && export PANVEX_NODE_NAME="$_CLI_NODE_NAME"
+[ -n "$_CLI_TELEMT_URL" ]        && export PANVEX_TELEMT_URL="$_CLI_TELEMT_URL"
+[ -n "$_CLI_TELEMT_AUTH" ]       && export PANVEX_TELEMT_AUTH="$_CLI_TELEMT_AUTH"
+
 # Start installation log
 mkdir -p "$(dirname "$INSTALL_LOG")" 2>/dev/null || true
 exec > >(tee -a "$INSTALL_LOG") 2>&1
 
-# Route to interactive or non-interactive
-if can_prompt; then
+# Route: if required args passed via CLI/env → automatic, otherwise interactive
+if [ -n "${PANVEX_PANEL_URL:-}" ] && [ -n "${PANVEX_ENROLLMENT_TOKEN:-}" ]; then
+  run_noninteractive
+elif can_prompt; then
   run_interactive
 else
-  run_noninteractive
+  die "Missing required arguments. Pass --panel-url and --token, or run interactively. See --help."
 fi
