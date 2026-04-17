@@ -286,7 +286,10 @@ func New(options Options) *Server {
 	}
 
 	if server.store != nil {
-		server.batchWriter = newStoreBatchWriter(server.store)
+		// Pass the Prometheus bundle as the metrics sink so batch writer
+		// errors surface to operators (P2-REL-06 / H14). obs is always set
+		// earlier in New(); nil would fall back to the no-op sink.
+		server.batchWriter = newStoreBatchWriter(server.store, server.obs)
 		server.batchWriter.Start()
 	}
 
