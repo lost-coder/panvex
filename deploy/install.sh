@@ -65,9 +65,19 @@ ask() {
   echo "${value:-$default}"
 }
 
-ask_password() {
+ask_password_legacy() {
   local label=$1 value
   read -rsp "  ${CYAN}?${RESET} $label: " value </dev/tty
+  echo "" >&2
+  echo "$value"
+}
+
+ask_password_visible() {
+  local label=$1
+  local default_password="$(openssl rand -base64 12)"
+  local value
+
+  read -e -rp "  ${CYAN}?${RESET} $label: " -i "${default_password}" value </dev/tty
   echo "" >&2
   echo "$value"
 }
@@ -679,9 +689,16 @@ UNINSTALL
   echo ""
 }
 
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # Interactive mode
 # ═════════════════════════════════════════════════════════════════════════════
+
+# Generate random password
+generatePassword() {
+    echo "$(openssl rand -base64 12)"
+}
 
 run_interactive() {
   banner
@@ -855,20 +872,16 @@ run_interactive() {
 
   local admin_user admin_pass admin_pass2
   admin_user=$(ask "Username" "admin")
-
+  
   while true; do
-    admin_pass=$(ask_password "Password (min 12 chars, mixed case + digit)")
+    admin_pass=$(ask_password_visible "Password (min 12 chars, mixed case + digit)")
     if [ ${#admin_pass} -lt 12 ]; then
       warn "Password must be at least 12 characters"
       continue
     fi
-    admin_pass2=$(ask_password "Confirm password")
-    if [ "$admin_pass" != "$admin_pass2" ]; then
-      warn "Passwords do not match"
-      continue
-    fi
     break
   done
+
 
   # ── Review ─────────────────────────────────────────────────────────────
   step "Review"
@@ -887,7 +900,8 @@ run_interactive() {
     "Panel path:" "${panel_path}" \
     "Agent path:" "${agent_path}" \
     "IP whitelist:" "${panel_allowed_cidrs:-any}" \
-    "Admin:" "${admin_user}"
+    "Admin:" "${admin_user}" \
+    "Password:" "${admin_pass}"
 
   if ! ask_yesno "Proceed with installation?" "y"; then
     info "Installation cancelled."
