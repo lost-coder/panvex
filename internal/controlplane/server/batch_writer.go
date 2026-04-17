@@ -138,6 +138,13 @@ type storeBatchWriter struct {
 	dcHealth   *batchBuffer[storage.DCHealthPointRecord]
 	clientIPs  *batchBuffer[storage.ClientIPHistoryRecord]
 	telemetry  *batchBuffer[telemetryWriteUnit]
+	// auditEvents is the 8th stream (P2-LOG-10 / M-R4 / P7-R6). Audit writes
+	// used to run synchronously on the HTTP request path — a stalled DB froze
+	// login and other handlers. Appending into this buffer is O(1) and the
+	// background flush loop persists rows asynchronously with the shared
+	// retry/classify logic. Critical-stream alerts are emitted via
+	// streamAlerts[audit] so operators can page on persistent audit failures.
+	auditEvents *batchBuffer[storage.AuditEventRecord]
 }
 
 // telemetryWriteUnit groups all per-agent telemetry writes for a single
@@ -182,6 +189,7 @@ func newStoreBatchWriter(store storage.Store, metrics batchMetricsSink) *storeBa
 	w.dcHealth = newBatchBuffer(batchMaxSize, w.flushDCHealth)
 	w.clientIPs = newBatchBuffer(batchMaxSize, w.flushClientIPs)
 	w.telemetry = newBatchBuffer(batchMaxSize, w.flushTelemetry)
+	w.auditEvents = newBatchBuffer(batchMaxSize, w.flushAuditEvents)
 
 	return w
 }
@@ -195,10 +203,51 @@ func (w *storeBatchWriter) Start() {
 // Stop cancels the background goroutine, waits for it to exit, then performs
 // a final drain of all buffers so pending writes are persisted before the
 // store is closed.
+//
+// Deprecated: use StopWithTimeout so graceful shutdown has a bounded flush
+// window (P2-LOG-10 / M-R4). Retained for tests that do not care about the
+// bound.
 func (w *storeBatchWriter) Stop() {
+	_ = w.StopWithTimeout(10 * time.Second)
+}
+
+// StopWithTimeout performs a graceful shutdown of the batch writer. It
+// cancels the background flush loop, waits for it to exit, then performs a
+// final synchronous drain of every buffer so queued rows are persisted
+// before the caller proceeds to close the underlying store. The drain is
+// bounded by `timeout` — if it does not complete in time, StopWithTimeout
+// returns a context.DeadlineExceeded error so the caller can record the
+// partial-flush condition (we do not panic or block indefinitely).
+//
+// Events enqueued AFTER StopWithTimeout begins are still accepted by the
+// lock-free Enqueue path, but they may be dropped if the drain goroutine is
+// already past the per-buffer Drain call — callers that must not lose events
+// should stop upstream producers (HTTP handlers, gRPC streams) before
+// invoking StopWithTimeout.
+func (w *storeBatchWriter) StopWithTimeout(timeout time.Duration) error {
 	w.cancel()
 	w.wg.Wait()
-	w.drainAll(context.Background())
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		w.drainAll(ctx)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		// Wait for the drain goroutine to finish its current flushItem call
+		// so it does not race with store.Close(). flushItem itself cannot
+		// block forever because classifyFlushError + retry will bail on
+		// context.DeadlineExceeded.
+		<-done
+		return ctx.Err()
+	}
 }
 
 func (w *storeBatchWriter) flushLoop() {
@@ -218,6 +267,7 @@ func (w *storeBatchWriter) flushLoop() {
 		case <-w.dcHealth.signal:
 		case <-w.clientIPs.signal:
 		case <-w.telemetry.signal:
+		case <-w.auditEvents.signal:
 		}
 		// Any signal (including ticker) triggers a full drain of all buffers.
 		// This prevents signal coalescing from letting individual buffers grow
@@ -238,6 +288,7 @@ func (w *storeBatchWriter) observeQueueDepths() {
 	w.metrics.SetQueueDepth("dc_health", float64(w.dcHealth.Len()))
 	w.metrics.SetQueueDepth("client_ips", float64(w.clientIPs.Len()))
 	w.metrics.SetQueueDepth("telemetry", float64(w.telemetry.Len()))
+	w.metrics.SetQueueDepth("audit", float64(w.auditEvents.Len()))
 }
 
 func (w *storeBatchWriter) drainAll(ctx context.Context) {
@@ -249,6 +300,12 @@ func (w *storeBatchWriter) drainAll(ctx context.Context) {
 	w.dcHealth.Drain(ctx)
 	w.clientIPs.Drain(ctx)
 	w.telemetry.Drain(ctx)
+	// Drain audit last so earlier streams (which may describe the same
+	// state transitions being audited) land in the store before the audit
+	// rows that reference them. Ordering is best-effort — the store does
+	// not enforce cross-table FKs for audit — but it keeps logs readable
+	// when operators correlate rows by timestamp.
+	w.auditEvents.Drain(ctx)
 }
 
 // classifyFlushError returns "transient" or "persistent" for an error produced
@@ -418,7 +475,11 @@ func (w *storeBatchWriter) retryWithBackoff(op func() error, observeTransient fu
 // set, but the hook is here so the plumbing exists and only the list needs
 // updating when audit async writes land.
 var streamAlerts = map[string]string{
-	// "audit": "audit_persist_failed",
+	// P2-LOG-10 / M-R4 / P7-R6: audit is the CRITICAL stream. Persistent
+	// failures (NOT NULL violation, schema mismatch, retry-exhausted
+	// transient) emit slog.Error with alert=audit_persist_failed so
+	// operator paging rules can match a single stable key.
+	"audit": "audit_persist_failed",
 }
 
 func (w *storeBatchWriter) flushItem(buffer string, logAttrs []any, op func() error) {
@@ -543,6 +604,31 @@ func (w *storeBatchWriter) flushClientIPs(ctx context.Context, items []storage.C
 		item := item
 		w.flushItem("client_ips", nil, func() error {
 			return w.store.UpsertClientIPHistory(ctx, item)
+		})
+	}
+}
+
+// flushAuditEvents persists queued audit events one row at a time through the
+// existing single-row Store API (AppendAuditEvent). The Store interface does
+// not expose a batch AppendAuditEvents method today, so we loop — per
+// P2-LOG-10 scoping: "Prefer batch API if store supports it; else reuse
+// existing single-insert." A batch API could be added later as a pure
+// performance optimisation without changing this call site's contract.
+//
+// Each row goes through flushItem so it inherits the shared retry +
+// classification + metrics observations, and — crucially for P7-R6 — the
+// audit-specific alert key ("alert=audit_persist_failed") surfaces via
+// streamAlerts[audit] when a row cannot be persisted.
+func (w *storeBatchWriter) flushAuditEvents(ctx context.Context, items []storage.AuditEventRecord) {
+	slog.Debug("batch flush", "domain", "audit", "count", len(items))
+	for _, item := range items {
+		item := item
+		w.flushItem("audit", []any{
+			"audit_id", item.ID,
+			"action", item.Action,
+			"actor_id", item.ActorID,
+		}, func() error {
+			return w.store.AppendAuditEvent(ctx, item)
 		})
 	}
 }
