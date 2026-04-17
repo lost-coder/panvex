@@ -694,3 +694,79 @@ func (c *fakeTelemtClient) FetchSystemInfo(context.Context) (telemt.SystemInfo, 
 func (c *fakeTelemtClient) FetchDiscoveredUsers(_ context.Context, _ string) ([]telemt.DiscoveredUser, error) {
 	return nil, nil
 }
+
+// TestAgentUsageSnapshotSeqIsMonotonic verifies that each BuildUsageSnapshot
+// stamps a strictly increasing seq on every ClientUsageSnapshot and invokes
+// the persistence hook with that value. Guards P2-LOG-06 / L-07.
+func TestAgentUsageSnapshotSeqIsMonotonic(t *testing.T) {
+	client := &fakeTelemtClient{
+		state: telemt.RuntimeState{
+			Clients: []telemt.ClientUsage{
+				{ClientID: "client-1", TrafficUsedBytes: 500},
+			},
+		},
+	}
+	var persisted []uint64
+	agent := New(Config{
+		AgentID:         "agent-1",
+		NodeName:        "node-a",
+		PersistUsageSeq: func(seq uint64) error { persisted = append(persisted, seq); return nil },
+	}, client)
+
+	now := time.Date(2026, time.April, 18, 12, 0, 0, 0, time.UTC)
+	first, err := agent.BuildUsageSnapshot(context.Background(), now)
+	if err != nil {
+		t.Fatalf("BuildUsageSnapshot(1) error = %v", err)
+	}
+	if len(first.Clients) == 0 {
+		t.Fatalf("first snapshot has no clients")
+	}
+	if first.Clients[0].Seq != 1 {
+		t.Fatalf("first snapshot seq = %d, want 1", first.Clients[0].Seq)
+	}
+
+	// Advance usage so BuildUsageSnapshot emits another delta.
+	client.state.Clients[0].TrafficUsedBytes = 1300
+	second, err := agent.BuildUsageSnapshot(context.Background(), now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("BuildUsageSnapshot(2) error = %v", err)
+	}
+	if len(second.Clients) == 0 || second.Clients[0].Seq != 2 {
+		t.Fatalf("second snapshot seq = %d, want 2", second.Clients[0].Seq)
+	}
+
+	if got := agent.UsageSeq(); got != 2 {
+		t.Fatalf("UsageSeq() = %d, want 2", got)
+	}
+	if len(persisted) != 2 || persisted[0] != 1 || persisted[1] != 2 {
+		t.Fatalf("persisted = %v, want [1 2]", persisted)
+	}
+}
+
+// TestAgentUsageSeqPersists asserts that InitialUsageSeq resumes the
+// sequence across process restarts so the control-plane never sees a rewind
+// when the agent is simply reconnecting with prior state intact.
+// Guards P2-LOG-06 / L-07.
+func TestAgentUsageSeqPersists(t *testing.T) {
+	client := &fakeTelemtClient{
+		state: telemt.RuntimeState{
+			Clients: []telemt.ClientUsage{{ClientID: "client-1", TrafficUsedBytes: 1}},
+		},
+	}
+	agent := New(Config{
+		AgentID:         "agent-1",
+		NodeName:        "node-a",
+		InitialUsageSeq: 42,
+	}, client)
+
+	snapshot, err := agent.BuildUsageSnapshot(context.Background(), time.Now())
+	if err != nil {
+		t.Fatalf("BuildUsageSnapshot() error = %v", err)
+	}
+	if snapshot.Clients[0].Seq != 43 {
+		t.Fatalf("resumed seq = %d, want 43", snapshot.Clients[0].Seq)
+	}
+	if got := agent.UsageSeq(); got != 43 {
+		t.Fatalf("UsageSeq() = %d, want 43", got)
+	}
+}

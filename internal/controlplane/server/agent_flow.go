@@ -59,6 +59,11 @@ type clientUsageSnapshot struct {
 	ActiveTCPConns   int
 	ActiveUniqueIPs  int
 	ObservedAt       time.Time
+	// Seq is the monotonic per-agent snapshot sequence number (proto field 7).
+	// Zero means the field was absent on the wire (legacy agent or internal
+	// synthetic entry); the dedup path treats zero as "unknown" and accumulates
+	// unconditionally, preserving pre-P2-LOG-06 behavior.
+	Seq uint64
 }
 
 type clientIPSnapshot struct {
@@ -608,6 +613,48 @@ func dcHealthPointsFromSnapshot(agent Agent, snapshot agentSnapshot) []storage.D
 }
 
 func (s *Server) applyClientUsageSnapshot(agentID string, clients []clientUsageSnapshot) {
+	// Determine whether the traffic deltas in this batch should be applied.
+	// All ClientUsageSnapshot entries produced by a single agent tick share
+	// the same seq — inspect the first non-zero value.
+	//
+	// Dedup rules (P2-LOG-06 / L-07):
+	//   * seq == 0 on the wire: legacy agent, fall back to unconditional
+	//     accumulation (old behavior).
+	//   * seq <= lastSeen: duplicate / replay after stream reconnect —
+	//     skip deltas, but still refresh live gauges.
+	//   * lastSeen > 0 && seq == 1: agent restarted with zero-ed counters —
+	//     treat as baseline, skip deltas, just record new seq.
+	//   * otherwise: accept and accumulate.
+	batchSeq := uint64(0)
+	for _, usage := range clients {
+		if usage.Seq != 0 {
+			batchSeq = usage.Seq
+			break
+		}
+	}
+
+	applyTrafficDelta := true
+	if batchSeq > 0 {
+		lastSeen := s.lastUsageSeq[agentID]
+		switch {
+		case lastSeen > 0 && batchSeq == 1:
+			// Agent restart: counters reset to zero on the agent side, so
+			// the incoming "delta" is actually an absolute baseline.
+			// Skip addition to avoid double-counting and rewind the
+			// CP-side cursor so subsequent in-order deltas (seq 2, 3, ...)
+			// are accepted.
+			applyTrafficDelta = false
+			s.lastUsageSeq[agentID] = 1
+		case batchSeq <= lastSeen:
+			// Duplicate or stale (in-flight retry, out-of-order reconnect).
+			// Live gauges may still be refreshed below, but do not
+			// re-accumulate the delta.
+			applyTrafficDelta = false
+		default:
+			s.lastUsageSeq[agentID] = batchSeq
+		}
+	}
+
 	seen := make(map[string]struct{}, len(clients))
 	for _, usage := range clients {
 		seen[usage.ClientID] = struct{}{}
@@ -616,7 +663,9 @@ func (s *Server) applyClientUsageSnapshot(agentID string, clients []clientUsageS
 		}
 		current := s.clientUsage[usage.ClientID][agentID]
 		current.ClientID = usage.ClientID
-		current.TrafficUsedBytes += usage.TrafficUsedBytes
+		if applyTrafficDelta {
+			current.TrafficUsedBytes += usage.TrafficUsedBytes
+		}
 		current.UniqueIPsUsed = usage.UniqueIPsUsed
 		current.ActiveTCPConns = usage.ActiveTCPConns
 		current.ActiveUniqueIPs = usage.ActiveUniqueIPs

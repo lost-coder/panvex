@@ -159,6 +159,12 @@ type Server struct {
 	clientAssignments map[string][]managedClientAssignment
 	clientDeployments map[string]map[string]managedClientDeployment
 	clientUsage map[string]map[string]clientUsageSnapshot
+	// lastUsageSeq tracks the highest client-usage snapshot sequence number
+	// applied per agent. Snapshots whose seq is <= the stored value are
+	// discarded (duplicate/replay). seq == 1 after a non-zero stored value
+	// signals an agent restart: the CP records the new baseline without
+	// double-counting the deltas. See P2-LOG-06 / L-07.
+	lastUsageSeq map[string]uint64
 	instances  map[string]Instance
 	metrics    []MetricSnapshot
 	// auditTrail is a fixed-size ring buffer of the most recent audit events.
@@ -235,6 +241,7 @@ func New(options Options) *Server {
 		clientAssignments: make(map[string][]managedClientAssignment),
 		clientDeployments: make(map[string]map[string]managedClientDeployment),
 		clientUsage: make(map[string]map[string]clientUsageSnapshot),
+		lastUsageSeq: make(map[string]uint64),
 		agentSessions: make(map[string]*agentStreamSession),
 		instances:  make(map[string]Instance),
 		metrics:    make([]MetricSnapshot, 0, maxInMemoryMetricSnapshots),

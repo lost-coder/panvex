@@ -355,8 +355,13 @@ type ClientUsageSnapshot struct {
 	ActiveTcpConns    int32                  `protobuf:"varint,4,opt,name=active_tcp_conns,json=activeTcpConns,proto3" json:"active_tcp_conns,omitempty"`
 	ActiveUniqueIps   int32                  `protobuf:"varint,5,opt,name=active_unique_ips,json=activeUniqueIps,proto3" json:"active_unique_ips,omitempty"`
 	ClientName        string                 `protobuf:"bytes,6,opt,name=client_name,json=clientName,proto3" json:"client_name,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Monotonic per-agent sequence number. Starts at 1 on agent boot and
+	// increments with every snapshot emitted by the agent. The control-plane
+	// uses it to dedup retried/duplicate deltas and to detect restarts
+	// (seq resets to 1). See P2-LOG-06 / L-07.
+	Seq           uint64 `protobuf:"varint,7,opt,name=seq,proto3" json:"seq,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ClientUsageSnapshot) Reset() {
@@ -429,6 +434,13 @@ func (x *ClientUsageSnapshot) GetClientName() string {
 		return x.ClientName
 	}
 	return ""
+}
+
+func (x *ClientUsageSnapshot) GetSeq() uint64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
 }
 
 type ClientIPSnapshot struct {
@@ -2848,7 +2860,7 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x12-\n" +
 	"\x12config_fingerprint\x18\x04 \x01(\tR\x11configFingerprint\x12'\n" +
 	"\x0fconnected_users\x18\x05 \x01(\x05R\x0econnectedUsers\x12\x1b\n" +
-	"\tread_only\x18\x06 \x01(\bR\breadOnly\"\x81\x02\n" +
+	"\tread_only\x18\x06 \x01(\bR\breadOnly\"\x93\x02\n" +
 	"\x13ClientUsageSnapshot\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12.\n" +
 	"\x13traffic_delta_bytes\x18\x02 \x01(\x04R\x11trafficDeltaBytes\x12&\n" +
@@ -2856,7 +2868,8 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\x10active_tcp_conns\x18\x04 \x01(\x05R\x0eactiveTcpConns\x12*\n" +
 	"\x11active_unique_ips\x18\x05 \x01(\x05R\x0factiveUniqueIps\x12\x1f\n" +
 	"\vclient_name\x18\x06 \x01(\tR\n" +
-	"clientName\"o\n" +
+	"clientName\x12\x10\n" +
+	"\x03seq\x18\a \x01(\x04R\x03seq\"o\n" +
 	"\x10ClientIPSnapshot\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12\x1d\n" +
 	"\n" +

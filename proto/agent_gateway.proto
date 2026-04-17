@@ -46,6 +46,11 @@ message ClientUsageSnapshot {
   int32 active_tcp_conns = 4;
   int32 active_unique_ips = 5;
   string client_name = 6;
+  // Monotonic per-agent sequence number. Starts at 1 on agent boot and
+  // increments with every snapshot emitted by the agent. The control-plane
+  // uses it to dedup retried/duplicate deltas and to detect restarts
+  // (seq resets to 1). See P2-LOG-06 / L-07.
+  uint64 seq = 7;
 }
 
 message ClientIPSnapshot {

@@ -152,6 +152,7 @@ func (s *Server) handleDeregisterAgent() http.HandlerFunc {
 		delete(s.agents, agentID)
 		delete(s.detailBoosts, agentID)
 		delete(s.initializationWatchCooldowns, agentID)
+		delete(s.lastUsageSeq, agentID)
 		for instID, inst := range s.instances {
 			if inst.AgentID == agentID {
 				delete(s.instances, instID)
