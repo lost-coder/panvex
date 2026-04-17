@@ -360,13 +360,21 @@ func (s *Server) deleteClientWithContext(ctx context.Context, clientID string, a
 		targetAgentIDs = deploymentAgentIDs(deployments)
 	}
 	deployments = buildClientDeployments(deployments, clientID, targetAgentIDs, string(jobs.ActionClientDelete), observedAt)
+
+	// Persist the tombstone before dispatching the delete job so a persistence
+	// failure does not leave the agent with a removed client while the DB
+	// record still shows DeletedAt=nil (ghost state, see P2-LOG-01 / M-C1).
+	if err := s.replaceClientStateWithContext(ctx, currentClient, assignments, deployments); err != nil {
+		return err
+	}
+
 	if len(targetAgentIDs) > 0 {
 		if _, err := s.enqueueClientJob(actorID, jobs.ActionClientDelete, currentClient, "", targetAgentIDs, observedAt); err != nil {
 			return err
 		}
 	}
 
-	return s.replaceClientStateWithContext(ctx, currentClient, assignments, deployments)
+	return nil
 }
 
 func (s *Server) enqueueClientJob(actorID string, action jobs.Action, client managedClient, previousName string, targetAgentIDs []string, observedAt time.Time) (jobs.Job, error) {
@@ -605,7 +613,21 @@ func (s *Server) aggregatedClientUsage(clientID string) aggregatedClientUsage {
 // resolveClientIDByName finds the panel client ID for a given client name
 // assigned to a specific agent. Used when the agent sends usage snapshots
 // without a panel-assigned client_id (e.g. adopted clients).
+//
+// A client matches when it is either directly assigned to the agent OR
+// assigned to a fleet group the agent belongs to (P2-LOG-07 / M-C3). Without
+// the fleet-group fallback, usage stats for clients attached via fleet-group
+// assignments were silently dropped.
 func (s *Server) resolveClientIDByName(agentID string, clientName string) string {
+	// Read the agent's fleet group under s.mu (which guards s.agents) before
+	// taking s.clientsMu so the two locks are never held simultaneously.
+	s.mu.RLock()
+	agentFleetGroupID := ""
+	if agent, ok := s.agents[agentID]; ok {
+		agentFleetGroupID = agent.FleetGroupID
+	}
+	s.mu.RUnlock()
+
 	s.clientsMu.RLock()
 	defer s.clientsMu.RUnlock()
 
@@ -613,10 +635,16 @@ func (s *Server) resolveClientIDByName(agentID string, clientName string) string
 		if client.Name != clientName {
 			continue
 		}
-		// Verify this client is assigned to the given agent.
 		for _, assignment := range s.clientAssignments[clientID] {
-			if assignment.AgentID == agentID {
-				return clientID
+			switch assignment.TargetType {
+			case clientAssignmentTargetAgent:
+				if assignment.AgentID == agentID {
+					return clientID
+				}
+			case clientAssignmentTargetFleetGroup:
+				if agentFleetGroupID != "" && assignment.FleetGroupID == agentFleetGroupID {
+					return clientID
+				}
 			}
 		}
 	}
