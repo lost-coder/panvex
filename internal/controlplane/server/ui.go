@@ -1,12 +1,19 @@
 package server
 
 import (
-	"encoding/json"
+	"html"
 	"io/fs"
 	"net/http"
 	"path"
+	"regexp"
 	"strings"
 )
+
+// htmlOpenTagPattern matches the opening <html> tag regardless of attributes
+// already present. Used to inject data-root-path for runtime configuration
+// without introducing an inline <script> (which would require CSP
+// 'unsafe-inline').
+var htmlOpenTagPattern = regexp.MustCompile(`(?i)<html\b([^>]*)>`)
 
 func newUIHandler(uiFiles fs.FS, rootPath string) http.HandlerFunc {
 	if uiFiles == nil {
@@ -54,18 +61,20 @@ func serveUIIndex(w http.ResponseWriter, r *http.Request, uiFiles fs.FS, rootPat
 	}
 
 	if rootPath != "" {
-		rootPathJSON, err := json.Marshal(rootPath)
-		if err != nil {
-			http.Error(w, "failed to render ui bootstrap", http.StatusInternalServerError)
-			return
-		}
-		rootPathScript := `<script>window.__PANVEX_ROOT_PATH=` + string(rootPathJSON) + `;</script>`
-		if strings.Contains(body, "<head>") {
-			body = strings.Replace(body, "<head>", "<head>"+rootPathScript, 1)
-		} else if strings.Contains(body, "<body>") {
-			body = strings.Replace(body, "<body>", "<body>"+rootPathScript, 1)
+		// Inject runtime configuration via a data-* attribute on <html>
+		// rather than an inline <script>. Our CSP forbids 'unsafe-inline',
+		// and a data attribute is read at runtime via
+		// document.documentElement.dataset.rootPath (see web/src/lib/runtime-path.ts).
+		escaped := html.EscapeString(rootPath)
+		attr := ` data-root-path="` + escaped + `"`
+		if loc := htmlOpenTagPattern.FindStringSubmatchIndex(body); loc != nil {
+			existingAttrs := body[loc[2]:loc[3]]
+			replacement := "<html" + existingAttrs + attr + ">"
+			body = body[:loc[0]] + replacement + body[loc[1]:]
 		} else {
-			body = rootPathScript + body
+			// No <html> tag found — fall back to prepending a minimal one so
+			// the dataset lookup still works.
+			body = "<html" + attr + ">" + body + "</html>"
 		}
 	}
 

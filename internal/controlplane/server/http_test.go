@@ -1865,9 +1865,15 @@ func performJSONRequestWithHeaders(t *testing.T, handler http.Handler, method st
 	for _, cookie := range cookies {
 		request.AddCookie(cookie)
 	}
-	// Simulate browser Origin header for cookie-authenticated requests to pass CSRF check.
-	if len(cookies) > 0 && request.Header.Get("Origin") == "" {
-		request.Header.Set("Origin", "http://"+request.Host)
+	// Simulate browser Origin header for all state-changing methods so CSRF
+	// middleware accepts the request. Agent endpoints that are exempt from
+	// the Origin requirement (e.g. /api/agent/bootstrap) are unaffected by
+	// the presence of this header.
+	switch method {
+	case http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch:
+		if request.Header.Get("Origin") == "" {
+			request.Header.Set("Origin", "http://"+request.Host)
+		}
 	}
 
 	recorder := httptest.NewRecorder()

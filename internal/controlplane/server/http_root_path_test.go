@@ -58,8 +58,11 @@ func TestHTTPRootPathPrefixesAPIRoutesAndEmbeddedUI(t *testing.T) {
 	if !strings.Contains(body, `/panvex/assets/app.css`) {
 		t.Fatalf("GET /panvex body missing prefixed css asset: %q", body)
 	}
-	if !strings.Contains(body, `window.__PANVEX_ROOT_PATH="/panvex"`) {
+	if !strings.Contains(body, `data-root-path="/panvex"`) {
 		t.Fatalf("GET /panvex body missing injected root path marker: %q", body)
+	}
+	if strings.Contains(body, `window.__PANVEX_ROOT_PATH`) {
+		t.Fatalf("GET /panvex body contains legacy inline root-path script (must be data-attribute): %q", body)
 	}
 
 	uiRoute := performRequest(t, server.Handler(), http.MethodGet, "/panvex/fleet/agent-1", nil)

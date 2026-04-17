@@ -454,7 +454,7 @@ func (s *Server) routes() http.Handler {
 	router.Use(s.metricsMiddleware)
 	router.Use(securityHeaders)
 	router.Use(maxBodySize)
-	router.Use(csrfOriginCheck)
+	router.Use(csrfOriginCheck(s.panelRuntime.HTTPRootPath, s.panelRuntime.AgentHTTPRootPath))
 	router.Get("/healthz", handleHealthz())
 	router.Get("/readyz", s.handleReadyz())
 	// /metrics is registered at the top level (outside the /api group) so
@@ -572,7 +572,7 @@ func (s *Server) routes() http.Handler {
 		outer := chi.NewRouter()
 		outer.Use(securityHeaders)
 		outer.Use(maxBodySize)
-		outer.Use(csrfOriginCheck)
+		outer.Use(csrfOriginCheck(s.panelRuntime.HTTPRootPath, s.panelRuntime.AgentHTTPRootPath))
 		outer.Route(agentPath+apiBasePath, func(agentAPI chi.Router) {
 			agentAPI.With(s.withRateLimit(s.agentBootstrapRateLimiter, s.requestClientRateLimitKey)).
 				Post("/agent/bootstrap", s.handleAgentBootstrap())
