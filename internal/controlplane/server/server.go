@@ -36,6 +36,16 @@ const (
 	// realistic operator workflow (including overnight runs) while
 	// preventing unbounded growth over the lifetime of the process.
 	jobsKeyEvictionTTL = 24 * time.Hour
+	// jobsAckExpiryInterval is how often the jobs service scans for
+	// acknowledged-but-never-resulted targets. Matches the key-eviction
+	// cadence so both workers share the same operational signal.
+	jobsAckExpiryInterval = time.Hour
+	// jobsAckExpiryTTL is the threshold after which an acknowledged target
+	// with no result is transitioned to expired. 2h matches the agent-side
+	// idempotency cache (defaultCompletedJobRetention) so replaying a lost
+	// acknowledged job after this window is never safe — the agent may have
+	// already forgotten it. See P2-LOG-05.
+	jobsAckExpiryTTL = 2 * time.Hour
 	httpLoginRateLimitPerWindow = 30
 	httpAgentBootstrapRateLimitPerWindow = 30
 	grpcConnectRateLimitPerWindow = 30
@@ -312,6 +322,14 @@ func New(options Options) *Server {
 	// idempotency key after a full day.
 	server.rollupWg.Add(1)
 	server.jobs.StartKeyEvictionWorker(rollupCtx, jobsKeyEvictionInterval, jobsKeyEvictionTTL, &server.rollupWg)
+
+	// P2-LOG-05 (L-14): expire acknowledged-but-never-resulted targets
+	// after 2h so jobs do not stay "acknowledged" forever when the agent
+	// restarts between ack and result. The 2h window matches the agent
+	// idempotency cache so the CP gives up in sync with the agent's ability
+	// to safely deduplicate.
+	server.rollupWg.Add(1)
+	server.jobs.StartAcknowledgedExpiryWorker(rollupCtx, jobsAckExpiryInterval, jobsAckExpiryTTL, &server.rollupWg)
 
 	// The metrics poller samples derived gauges (agent connected count,
 	// event-hub subscribers, job queue depth, lockout count) on a 5-second
