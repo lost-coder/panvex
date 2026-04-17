@@ -42,6 +42,12 @@ type metricsCollectors struct {
 
 	batchQueueDepth       *prometheus.GaugeVec
 	batchFlushErrorsTotal *prometheus.CounterVec
+	// P2-REL-06: batch_writer retry + persistence error surfacing (H14).
+	// persist_errors_total mirrors flush_errors_total with the spec-mandated
+	// label names (stream/type instead of buffer/error_type). The older metric
+	// is kept in place so dashboards from P2-OBS-01 keep working.
+	batchPersistErrorsTotal  *prometheus.CounterVec
+	batchPersistRetriesTotal *prometheus.CounterVec
 
 	eventHubDropTotal   prometheus.Counter
 	eventHubSubscribers prometheus.Gauge
@@ -62,9 +68,9 @@ var knownBatchBuffers = []string{
 	"agents",
 	"instances",
 	"metrics",
-	"serverLoad",
-	"dcHealth",
-	"clientIPs",
+	"server_load",
+	"dc_health",
+	"client_ips",
 	"telemetry",
 }
 
@@ -97,6 +103,14 @@ func newMetricsCollectors() *metricsCollectors {
 			Name: "panvex_batch_flush_errors_total",
 			Help: "Total number of batch flush errors by buffer and error_type (transient|persistent).",
 		}, []string{"buffer", "error_type"}),
+		batchPersistErrorsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "panvex_batch_persist_errors_total",
+			Help: "Batch writer persistence errors by stream and type (transient|persistent). A transient increment means an individual retry attempt failed; the persistent counter increments once per item that was ultimately dropped.",
+		}, []string{"stream", "type"}),
+		batchPersistRetriesTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "panvex_batch_persist_retries_total",
+			Help: "Batch writer retry outcomes by stream and outcome (success|exhausted). Success means a retry eventually succeeded; exhausted means all retries were used up and the item was dropped.",
+		}, []string{"stream", "outcome"}),
 		eventHubDropTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "panvex_event_hub_drop_total",
 			Help: "Total number of events dropped because a subscriber channel was full.",
@@ -129,6 +143,8 @@ func newMetricsCollectors() *metricsCollectors {
 		mc.agentConnected,
 		mc.batchQueueDepth,
 		mc.batchFlushErrorsTotal,
+		mc.batchPersistErrorsTotal,
+		mc.batchPersistRetriesTotal,
 		mc.eventHubDropTotal,
 		mc.eventHubSubscribers,
 		mc.jobQueueDepth,
@@ -144,9 +160,43 @@ func newMetricsCollectors() *metricsCollectors {
 		mc.batchQueueDepth.WithLabelValues(buf).Set(0)
 		mc.batchFlushErrorsTotal.WithLabelValues(buf, "transient").Add(0)
 		mc.batchFlushErrorsTotal.WithLabelValues(buf, "persistent").Add(0)
+		mc.batchPersistErrorsTotal.WithLabelValues(buf, "transient").Add(0)
+		mc.batchPersistErrorsTotal.WithLabelValues(buf, "persistent").Add(0)
+		mc.batchPersistRetriesTotal.WithLabelValues(buf, "success").Add(0)
+		mc.batchPersistRetriesTotal.WithLabelValues(buf, "exhausted").Add(0)
 	}
 
 	return mc
+}
+
+// ObserveFlushError satisfies batchMetricsSink. It increments both the legacy
+// panvex_batch_flush_errors_total series and the spec-mandated
+// panvex_batch_persist_errors_total so operators can migrate dashboards
+// without losing history.
+func (mc *metricsCollectors) ObserveFlushError(buffer, errorType string) {
+	if mc == nil {
+		return
+	}
+	mc.batchFlushErrorsTotal.WithLabelValues(buffer, errorType).Inc()
+	mc.batchPersistErrorsTotal.WithLabelValues(buffer, errorType).Inc()
+}
+
+// SetQueueDepth satisfies batchMetricsSink.
+func (mc *metricsCollectors) SetQueueDepth(buffer string, depth float64) {
+	if mc == nil {
+		return
+	}
+	mc.batchQueueDepth.WithLabelValues(buffer).Set(depth)
+}
+
+// ObservePersistRetry records the final outcome of a retry sequence for a
+// single item — "success" when a retry eventually succeeded, "exhausted" when
+// all retry attempts failed and the item was dropped.
+func (mc *metricsCollectors) ObservePersistRetry(stream, outcome string) {
+	if mc == nil {
+		return
+	}
+	mc.batchPersistRetriesTotal.WithLabelValues(stream, outcome).Inc()
 }
 
 // statusBucket maps an HTTP status code to one of {2xx, 3xx, 4xx, 5xx}.
