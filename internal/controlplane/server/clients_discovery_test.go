@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -171,5 +173,297 @@ func TestUpsertDiscoveredClientPreservesIgnoredStatus(t *testing.T) {
 	}
 	if got[0].Status != discoveredClientStatusIgnored {
 		t.Fatalf("Status = %q, want %q (ignored must not be resurrected)", got[0].Status, discoveredClientStatusIgnored)
+	}
+}
+
+// TestAdoptDiscoveredClientConcurrentIsAtomic verifies that concurrent
+// adopt calls on the same discovered record produce exactly ONE managed
+// client — the TOCTOU bug covered by P2-LOG-03 (finding L-11 / M-C5).
+// Before the fix, N goroutines could all read the pending_review record,
+// pass the status check, and each create a managed client with the same
+// name. With adoptMu in place, only one goroutine wins; the others must
+// observe the flipped status and return ErrAlreadyAdopted.
+func TestAdoptDiscoveredClientConcurrentIsAtomic(t *testing.T) {
+	now := time.Date(2026, time.April, 17, 12, 0, 0, 0, time.UTC)
+
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	if err := store.PutFleetGroup(ctx, storage.FleetGroupRecord{
+		ID:        "default",
+		Name:      "Default",
+		CreatedAt: now.Add(-time.Minute),
+	}); err != nil {
+		t.Fatalf("PutFleetGroup() error = %v", err)
+	}
+	agentID := "agent-adopt-race-1"
+	if err := store.PutAgent(ctx, storage.AgentRecord{
+		ID:           agentID,
+		NodeName:     "node-A",
+		FleetGroupID: "default",
+		Version:      "dev",
+		LastSeenAt:   now.Add(-time.Minute),
+	}); err != nil {
+		t.Fatalf("PutAgent() error = %v", err)
+	}
+
+	server := New(Options{
+		Now:   func() time.Time { return now },
+		Store: store,
+	})
+	defer server.Close()
+
+	discoveredID := "discovered-1"
+	if err := store.PutDiscoveredClient(ctx, storage.DiscoveredClientRecord{
+		ID:           discoveredID,
+		AgentID:      agentID,
+		ClientName:   "external-charlie",
+		Secret:       "3333333333333333cccccccccccccccc",
+		Status:       discoveredClientStatusPendingReview,
+		DiscoveredAt: now,
+		UpdatedAt:    now,
+	}); err != nil {
+		t.Fatalf("PutDiscoveredClient() error = %v", err)
+	}
+
+	const workers = 5
+	var (
+		wg         sync.WaitGroup
+		mu         sync.Mutex
+		successes  int
+		alreadyAdopted int
+		otherErrs  []error
+		createdIDs []string
+	)
+
+	start := make(chan struct{})
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			defer wg.Done()
+			<-start
+			client, err := server.adoptDiscoveredClient(ctx, discoveredID, "operator-1", now)
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case err == nil:
+				successes++
+				createdIDs = append(createdIDs, client.ID)
+			case errors.Is(err, ErrAlreadyAdopted):
+				alreadyAdopted++
+			default:
+				otherErrs = append(otherErrs, err)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	if len(otherErrs) != 0 {
+		t.Fatalf("unexpected errors from concurrent adopt: %v", otherErrs)
+	}
+	if successes != 1 {
+		t.Fatalf("concurrent adopt: successes = %d, want 1 (only one goroutine must create the managed client)", successes)
+	}
+	if alreadyAdopted != workers-1 {
+		t.Fatalf("concurrent adopt: alreadyAdopted = %d, want %d (the other goroutines must observe the flipped status)", alreadyAdopted, workers-1)
+	}
+
+	// Verify exactly one managed client with this name exists.
+	server.clientsMu.RLock()
+	var matching []managedClient
+	for _, c := range server.clients {
+		if c.DeletedAt == nil && c.Name == "external-charlie" {
+			matching = append(matching, c)
+		}
+	}
+	server.clientsMu.RUnlock()
+	if len(matching) != 1 {
+		t.Fatalf("managed clients named %q: got %d, want 1", "external-charlie", len(matching))
+	}
+	if len(createdIDs) != 1 || createdIDs[0] != matching[0].ID {
+		t.Fatalf("createdIDs = %v, matching[0].ID = %q (must agree; only the winner created the client)", createdIDs, matching[0].ID)
+	}
+
+	// Discovered record must be in adopted status.
+	dc, err := store.GetDiscoveredClient(ctx, discoveredID)
+	if err != nil {
+		t.Fatalf("GetDiscoveredClient() error = %v", err)
+	}
+	if dc.Status != discoveredClientStatusAdopted {
+		t.Fatalf("discovered status = %q, want %q", dc.Status, discoveredClientStatusAdopted)
+	}
+}
+
+// TestMergeAdoptNoTOCTOU verifies P2-LOG-04 / L-12: concurrent merge-adopts
+// racing against each other cannot silently overwrite state. Before the
+// fix, mergeAdoptIntoExistingClient released clientsMu.RUnlock() before
+// calling replaceClientStateWithContext — two merges racing over the same
+// existing client could each snapshot the old assignment list and one
+// would clobber the other's addition.
+//
+// Two discovered records with the SAME (name, secret) represent the same
+// Telemt user reported on two different nodes, so the product semantics
+// are: the first adopt creates/adds the assignment, the second must see
+// the sibling record already flipped to "adopted" by
+// markDuplicateDiscoveredClientsAdopted and return ErrAlreadyAdopted
+// cleanly. Under adoptMu that second observation is deterministic — there
+// must be no in-between window where a partially-applied merge is visible.
+// The end state must contain exactly one new assignment on the existing
+// client (from the winner), with both discovered records marked adopted.
+func TestMergeAdoptNoTOCTOU(t *testing.T) {
+	now := time.Date(2026, time.April, 17, 12, 0, 0, 0, time.UTC)
+
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	if err := store.PutFleetGroup(ctx, storage.FleetGroupRecord{
+		ID:        "default",
+		Name:      "Default",
+		CreatedAt: now.Add(-time.Minute),
+	}); err != nil {
+		t.Fatalf("PutFleetGroup() error = %v", err)
+	}
+
+	agentA := "agent-merge-A"
+	agentB := "agent-merge-B"
+	for _, id := range []string{agentA, agentB} {
+		if err := store.PutAgent(ctx, storage.AgentRecord{
+			ID:           id,
+			NodeName:     id,
+			FleetGroupID: "default",
+			Version:      "dev",
+			LastSeenAt:   now.Add(-time.Minute),
+		}); err != nil {
+			t.Fatalf("PutAgent(%q) error = %v", id, err)
+		}
+	}
+
+	server := New(Options{
+		Now:   func() time.Time { return now },
+		Store: store,
+	})
+	defer server.Close()
+
+	// Pre-seed an already-adopted managed client that both subsequent
+	// discovered records (on agentA and agentB) will match on
+	// (name, secret). This drives the merge-adopt code path.
+	clientName := "external-dave"
+	clientSecret := "4444444444444444dddddddddddddddd"
+	existing := managedClient{
+		ID:        server.nextClientID(),
+		Name:      clientName,
+		Secret:    clientSecret,
+		Enabled:   true,
+		CreatedAt: now.Add(-time.Hour),
+		UpdatedAt: now.Add(-time.Hour),
+	}
+	// Zero existing assignments/deployments — the merges should each add
+	// one and both must be present at the end.
+	if err := server.replaceClientStateWithContext(ctx, existing, nil, nil); err != nil {
+		t.Fatalf("replaceClientStateWithContext() error = %v", err)
+	}
+
+	// Two discovered records on two different agents, same name+secret.
+	discoveredA := "discovered-merge-A"
+	discoveredB := "discovered-merge-B"
+	for _, tc := range []struct {
+		id      string
+		agentID string
+	}{
+		{discoveredA, agentA},
+		{discoveredB, agentB},
+	} {
+		if err := store.PutDiscoveredClient(ctx, storage.DiscoveredClientRecord{
+			ID:           tc.id,
+			AgentID:      tc.agentID,
+			ClientName:   clientName,
+			Secret:       clientSecret,
+			Status:       discoveredClientStatusPendingReview,
+			DiscoveredAt: now,
+			UpdatedAt:    now,
+		}); err != nil {
+			t.Fatalf("PutDiscoveredClient(%q) error = %v", tc.id, err)
+		}
+	}
+
+	// Fire the two merges concurrently.
+	var (
+		wg   sync.WaitGroup
+		errs [2]error
+	)
+	wg.Add(2)
+	start := make(chan struct{})
+	go func() {
+		defer wg.Done()
+		<-start
+		_, errs[0] = server.adoptDiscoveredClient(ctx, discoveredA, "operator-1", now)
+	}()
+	go func() {
+		defer wg.Done()
+		<-start
+		_, errs[1] = server.adoptDiscoveredClient(ctx, discoveredB, "operator-1", now)
+	}()
+	close(start)
+	wg.Wait()
+
+	var okCount, alreadyCount int
+	for i, err := range errs {
+		switch {
+		case err == nil:
+			okCount++
+		case errors.Is(err, ErrAlreadyAdopted):
+			alreadyCount++
+		default:
+			t.Fatalf("merge-adopt #%d: unexpected error = %v", i, err)
+		}
+	}
+	if okCount != 1 || alreadyCount != 1 {
+		t.Fatalf("merge outcomes: ok=%d already=%d, want ok=1 already=1 (one winner, one sibling flipped by markDuplicate)", okCount, alreadyCount)
+	}
+
+	// The winner must have added exactly one new assignment to the
+	// existing client. Before the fix, if both merges had gotten far
+	// enough to snapshot assignments under RLock, one would clobber the
+	// other; here only one merge wins but we still validate that the
+	// final assignment list is exactly what the winner wrote (no
+	// truncation from a half-applied concurrent merge).
+	server.clientsMu.RLock()
+	assignments := append([]managedClientAssignment(nil), server.clientAssignments[existing.ID]...)
+	deployments := server.clientDeployments[existing.ID]
+	server.clientsMu.RUnlock()
+
+	if len(assignments) != 1 {
+		t.Fatalf("assignments on existing client: got %d, want 1 (exactly the winner's assignment) %+v", len(assignments), assignments)
+	}
+	winnerAgent := assignments[0].AgentID
+	if winnerAgent != agentA && winnerAgent != agentB {
+		t.Fatalf("winner agent = %q, want %q or %q", winnerAgent, agentA, agentB)
+	}
+	if _, ok := deployments[winnerAgent]; !ok {
+		t.Fatalf("deployments missing winner agent %q: %+v", winnerAgent, deployments)
+	}
+	if len(deployments) != 1 {
+		t.Fatalf("deployments on existing client: got %d, want 1 (exactly the winner's deployment) %+v", len(deployments), deployments)
+	}
+
+	// Both discovered records flipped to adopted (winner by direct
+	// update, loser by markDuplicateDiscoveredClientsAdopted).
+	for _, id := range []string{discoveredA, discoveredB} {
+		dc, err := store.GetDiscoveredClient(ctx, id)
+		if err != nil {
+			t.Fatalf("GetDiscoveredClient(%q) error = %v", id, err)
+		}
+		if dc.Status != discoveredClientStatusAdopted {
+			t.Fatalf("discovered %q status = %q, want %q", id, dc.Status, discoveredClientStatusAdopted)
+		}
 	}
 }
