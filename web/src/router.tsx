@@ -14,6 +14,7 @@ import { LayoutDashboard, Server, Users, Settings } from "lucide-react";
 
 import { AppShell, type NavItem } from "@lost-coder/panvex-ui";
 import { AppearanceProvider } from "@/providers/AppearanceProvider";
+import { AuthProvider } from "@/providers/AuthProvider";
 import { apiClient } from "@/lib/api";
 import { resolveConfiguredRootPath, getRouterBasepath } from "@/lib/runtime-path";
 
@@ -21,7 +22,20 @@ interface RouterContext {
   queryClient: QueryClient;
 }
 
-const rootRoute = createRootRouteWithContext<RouterContext>()({ component: Outlet });
+// Root component wraps the route tree in AuthProvider so the global
+// 401 listener (P2-FE-02 / M-C12) is mounted inside both the router
+// (needs useNavigate) and the QueryClientProvider (needs useQueryClient)
+// for every page — login included, so a stale /login tab that receives
+// a 401 still gets its cache cleared.
+function RootComponent() {
+  return (
+    <AuthProvider>
+      <Outlet />
+    </AuthProvider>
+  );
+}
+
+const rootRoute = createRootRouteWithContext<RouterContext>()({ component: RootComponent });
 
 const NAV_ITEMS: NavItem[] = [
   { id: "/", label: "Dashboard", icon: <LayoutDashboard size={20} /> },
