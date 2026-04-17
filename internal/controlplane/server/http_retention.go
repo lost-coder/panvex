@@ -30,9 +30,20 @@ func (s *Server) handlePutRetentionSettings() http.HandlerFunc {
 
 		settings := normalizeRetentionSettings(req)
 
+		// Persist first, then update in-memory under the same mutex.
+		// If PutRetentionSettings fails we keep the previous in-memory
+		// value untouched so the process never returns 200 on a write
+		// that didn't reach the database. (P2-REL-03 / M-R1)
 		s.settingsMu.Lock()
+		defer s.settingsMu.Unlock()
+		if s.store != nil {
+			if err := s.store.PutRetentionSettings(r.Context(), retentionSettingsToRecord(settings)); err != nil {
+				s.logger.Error("put retention settings failed", "error", err)
+				writeError(w, http.StatusInternalServerError, "internal error")
+				return
+			}
+		}
 		s.retention = settings
-		s.settingsMu.Unlock()
 
 		writeJSON(w, http.StatusOK, settings)
 	}
