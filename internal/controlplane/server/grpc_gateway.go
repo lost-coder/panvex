@@ -459,6 +459,9 @@ func (s *Server) processRegularAgentMessage(
 				ActiveTCPConns:   int(client.ActiveTcpConns),
 				ActiveUniqueIPs:  int(client.ActiveUniqueIps),
 				ObservedAt:       time.Unix(snap.ObservedAtUnix, 0).UTC(),
+				// P2-LOG-06 / L-07: carry the agent-side monotonic snapshot
+				// sequence so the CP can dedup replays/restarts.
+				Seq: client.Seq,
 			})
 		}
 		if len(snap.Clients) > 0 {

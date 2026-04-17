@@ -112,12 +112,19 @@ func runRuntime(args []string) error {
 		return err
 	}
 
+	statePath := *stateFile
 	agent := runtime.New(runtime.Config{
 		AgentID:          credentialsState.AgentID,
 		NodeName:         *nodeName,
 		FleetGroupID:     *fleetGroupID,
 		Version:          *version,
 		TelemtConfigPath: *telemtConfigPath,
+		// Resume snapshot sequence across restarts so the control-plane can
+		// dedup duplicate deltas. See P2-LOG-06 / L-07.
+		InitialUsageSeq: credentialsState.UsageSeq,
+		PersistUsageSeq: func(seq uint64) error {
+			return agentstate.SaveUsageSeq(statePath, seq)
+		},
 	}, telemtClient)
 
 	// Backward compatibility: if deprecated --snapshot-interval is set, use it for both poll and upload.
