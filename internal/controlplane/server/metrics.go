@@ -60,6 +60,20 @@ type metricsCollectors struct {
 	auditBufferDepth prometheus.Gauge
 
 	unsignedUpdateFallbackTotal prometheus.Counter
+
+	// P2-REL-04 / P2-REL-05: per-table row count deleted by the retention
+	// worker. Labels are a bounded enum (see retentionPruneTables below) so
+	// cardinality stays safe.
+	retentionPrunedRowsTotal *prometheus.CounterVec
+}
+
+// retentionPruneTables enumerates every table whose retention worker feeds
+// panvex_retention_pruned_rows_total. Adding a new retention worker requires
+// adding the table name here so the series is pre-initialised to zero at
+// startup (keeps PromQL alerts deterministic; see H-style alerting).
+var retentionPruneTables = []string{
+	"audit_events",
+	"metric_snapshots",
 }
 
 // knownBatchBuffers enumerates every batch buffer tracked by
@@ -145,6 +159,10 @@ func newMetricsCollectors() *metricsCollectors {
 			Name: "panvex_unsigned_update_fallback_total",
 			Help: "Total number of panel-update applications that fell back to an unsigned manifest.",
 		}),
+		retentionPrunedRowsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "panvex_retention_pruned_rows_total",
+			Help: "Total rows deleted by the retention worker, labelled by table. Bounded enum: audit_events, metric_snapshots.",
+		}, []string{"table"}),
 	}
 
 	reg.MustRegister(
@@ -162,6 +180,7 @@ func newMetricsCollectors() *metricsCollectors {
 		mc.lockoutActive,
 		mc.auditBufferDepth,
 		mc.unsignedUpdateFallbackTotal,
+		mc.retentionPrunedRowsTotal,
 	)
 
 	// Pre-initialise the per-buffer series to zero so Prometheus rules that
@@ -175,6 +194,13 @@ func newMetricsCollectors() *metricsCollectors {
 		mc.batchPersistErrorsTotal.WithLabelValues(buf, "persistent").Add(0)
 		mc.batchPersistRetriesTotal.WithLabelValues(buf, "success").Add(0)
 		mc.batchPersistRetriesTotal.WithLabelValues(buf, "exhausted").Add(0)
+	}
+
+	// Pre-initialise the retention counters so dashboards never see a gap
+	// for tables that have not yet had a prune opportunity (e.g. a brand
+	// new panel with no audit events older than the cutoff).
+	for _, table := range retentionPruneTables {
+		mc.retentionPrunedRowsTotal.WithLabelValues(table).Add(0)
 	}
 
 	return mc

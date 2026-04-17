@@ -527,6 +527,17 @@ func (s *Store) ListAuditEvents(ctx context.Context, limit int) ([]storage.Audit
 	return result, rows.Err()
 }
 
+// PruneAuditEvents deletes audit_events rows strictly older than before and
+// returns the RowsAffected count. Exec-based to avoid pulling all rows through
+// Go for retention worker efficiency (P2-REL-04).
+func (s *Store) PruneAuditEvents(ctx context.Context, before time.Time) (int64, error) {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM audit_events WHERE created_at_unix < ?`, toUnix(before))
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 func (s *Store) AppendMetricSnapshot(ctx context.Context, snapshot storage.MetricSnapshotRecord) error {
 	valuesJSON, err := encodeJSON(snapshot.Values)
 	if err != nil {
@@ -567,6 +578,16 @@ func (s *Store) ListMetricSnapshots(ctx context.Context) ([]storage.MetricSnapsh
 	}
 
 	return result, rows.Err()
+}
+
+// PruneMetricSnapshots deletes metric_snapshots rows strictly older than
+// before and returns the RowsAffected count (P2-REL-05).
+func (s *Store) PruneMetricSnapshots(ctx context.Context, before time.Time) (int64, error) {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM metric_snapshots WHERE captured_at_unix < ?`, toUnix(before))
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 func (s *Store) PutEnrollmentToken(ctx context.Context, token storage.EnrollmentTokenRecord) error {
