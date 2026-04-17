@@ -54,7 +54,7 @@ All metrics use the `panvex_` prefix.
 | `panvex_http_request_duration_seconds` | Histogram | `method`, `path`, `status` | Request latency, default buckets. `path` is the chi route template (e.g. `/api/clients/{id}`), never a raw URL. `status` is bucketed (`2xx`/`3xx`/`4xx`/`5xx`). |
 | `panvex_http_requests_total` | Counter | `method`, `path`, `status` | Per-route request count (same labels as the histogram). |
 | `panvex_agent_connected` | Gauge | — | Number of agents currently tracked by the presence service. |
-| `panvex_batch_queue_depth` | Gauge | `buffer` | Depth of each batch-writer buffer (`agents`, `instances`, `metrics`, `serverLoad`, `dcHealth`, `clientIPs`, `telemetry`). |
+| `panvex_batch_queue_depth` | Gauge | `buffer` | Depth of each batch-writer buffer (`agents`, `instances`, `metrics`, `server_load`, `dc_health`, `client_ips`, `telemetry`). |
 | `panvex_batch_flush_errors_total` | Counter | `buffer`, `error_type` | Flush failures per buffer, bucketed into `transient` vs `persistent` (downstream task P2-REL-06 wires this). |
 | `panvex_event_hub_drop_total` | Counter | — | Events dropped because a subscriber channel was full. |
 | `panvex_event_hub_subscribers` | Gauge | — | Current number of event-hub subscribers. |

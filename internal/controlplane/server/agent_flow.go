@@ -249,7 +249,7 @@ func (s *Server) applyAgentSnapshotWithContext(_ context.Context, snapshot agent
 			s.batchWriter.instances.Enqueue(instanceToRecord(instance))
 		}
 		if metricSnapshot != nil {
-			s.batchWriter.metrics.Enqueue(metricSnapshotToRecord(*metricSnapshot))
+			s.batchWriter.metricsBuf.Enqueue(metricSnapshotToRecord(*metricSnapshot))
 		}
 		if snapshot.HasRuntime && snapshot.Runtime != nil {
 			unit := telemetryWriteUnit{agentID: agent.ID}
