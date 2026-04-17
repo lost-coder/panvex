@@ -18,6 +18,12 @@ const (
 	discoveredClientStatusIgnored       = "ignored"
 )
 
+// ErrAlreadyAdopted is returned by adoptDiscoveredClient when the discovered
+// record has already been adopted. Previously this was a generic
+// fmt.Errorf("client already adopted"); the sentinel lets tests and HTTP
+// handlers detect the condition reliably via errors.Is (P2-LOG-03 / L-11).
+var ErrAlreadyAdopted = errors.New("client already adopted")
+
 type discoveredClient struct {
 	ID                string
 	AgentID           string
@@ -213,13 +219,24 @@ func (s *Server) adoptDiscoveredClient(ctx context.Context, id string, actorID s
 		return managedClient{}, storage.ErrNotFound
 	}
 
+	// P2-LOG-03 / L-11: serialize the whole read-check-create-mark sequence
+	// under adoptMu so that two concurrent adopts of the same discovered
+	// record cannot both pass the status check and each create a managed
+	// client. The lock also covers mergeAdoptIntoExistingClient (called
+	// below) which closes P2-LOG-04 / L-12.
+	s.adoptMu.Lock()
+	defer s.adoptMu.Unlock()
+
+	// Fresh read under the lock — do NOT trust a record fetched before the
+	// mutex was acquired; another goroutine may have already flipped the
+	// status to "adopted" while we were waiting.
 	record, err := s.store.GetDiscoveredClient(ctx, id)
 	if err != nil {
 		return managedClient{}, err
 	}
 
 	if record.Status == discoveredClientStatusAdopted {
-		return managedClient{}, fmt.Errorf("client already adopted")
+		return managedClient{}, ErrAlreadyAdopted
 	}
 
 	observedAt = observedAt.UTC()
@@ -354,6 +371,14 @@ func (s *Server) findManagedClientByNameAndSecret(name string, secret string) (m
 
 // mergeAdoptIntoExistingClient adds an assignment and deployment for a new agent
 // to an already-managed client, and seeds usage from the discovered record.
+//
+// LOCKING: callers MUST hold s.adoptMu. The RLock/RUnlock below reads the
+// current assignment/deployment lists for the existing client, but before
+// P2-LOG-04 the lock was released before replaceClientStateWithContext ran
+// — a concurrent mutation between the read and the replace would be
+// silently overwritten. With adoptMu held, all adopt-path writes are
+// serialized so the snapshot taken here cannot be invalidated by another
+// adopt/merge. (Audit finding L-12 / M-C6.)
 func (s *Server) mergeAdoptIntoExistingClient(
 	ctx context.Context,
 	existing managedClient,
