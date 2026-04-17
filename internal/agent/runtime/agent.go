@@ -34,6 +34,13 @@ type Config struct {
 	FleetGroupID     string
 	Version          string
 	TelemtConfigPath string
+	// InitialUsageSeq is the last snapshot sequence number persisted from a
+	// previous agent incarnation. On fresh agents it is zero. See P2-LOG-06.
+	InitialUsageSeq uint64
+	// PersistUsageSeq is called (if non-nil) after every BuildUsageSnapshot
+	// so the next run can resume from the last emitted sequence. Errors are
+	// logged but do not fail snapshot emission.
+	PersistUsageSeq func(seq uint64) error
 }
 
 type runtimeLifecycleState struct {
@@ -72,6 +79,13 @@ type Agent struct {
 	completedJobs     map[string]completedJobRecord
 	completedJobRetention time.Duration
 	ipCollector       *telemt.IPCollector
+	// usageSeq is the last monotonic client-usage sequence number emitted
+	// by this agent process. Loaded from persisted state on boot (InitialUsageSeq)
+	// and incremented for every BuildUsageSnapshot. The control-plane dedups
+	// duplicate seqs and resets its baseline when seq rewinds (agent restart
+	// on a fresh state file). See P2-LOG-06 / L-07.
+	usageSeq uint64
+	persistUsageSeq func(seq uint64) error
 }
 
 // New constructs a runtime agent bound to one local Telemt client.
@@ -85,7 +99,17 @@ func New(config Config, client telemtClient) *Agent {
 		completedJobs:   make(map[string]completedJobRecord),
 		completedJobRetention: defaultCompletedJobRetention,
 		ipCollector:     telemt.NewIPCollector(),
+		usageSeq:        config.InitialUsageSeq,
+		persistUsageSeq: config.PersistUsageSeq,
 	}
+}
+
+// UsageSeq returns the last monotonic sequence number emitted on a client-usage
+// snapshot. Exposed for tests and observability.
+func (a *Agent) UsageSeq() uint64 {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.usageSeq
 }
 
 // AgentID returns the persistent control-plane identity of the agent.
@@ -420,9 +444,26 @@ func (a *Agent) BuildUsageSnapshot(ctx context.Context, observedAt time.Time) (*
 		a.lastMetricsUptime = metricsSnapshot.UptimeSeconds
 	}
 
+	// Advance the monotonic per-agent snapshot sequence. The sequence is
+	// stamped on every ClientUsageSnapshot (even on empty deltas) so the
+	// control-plane can dedup retries/replays and detect agent restarts
+	// (seq rewinds to 1). P2-LOG-06 / L-07.
+	a.usageSeq++
+	nextSeq := a.usageSeq
+	for _, client := range clients {
+		client.Seq = nextSeq
+	}
+	persist := a.persistUsageSeq
+
 	snapshot := a.baseSnapshot(observedAt)
 	snapshot.Clients = clients
 	snapshot.HasClientUsage = true
+
+	if persist != nil {
+		if err := persist(nextSeq); err != nil {
+			slog.Warn("persist usage seq failed", "seq", nextSeq, "error", err)
+		}
+	}
 	return snapshot, nil
 }
 

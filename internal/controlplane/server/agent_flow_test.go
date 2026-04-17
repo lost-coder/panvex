@@ -856,6 +856,149 @@ func TestEnrollmentSetsCertificateDates(t *testing.T) {
 	}
 }
 
+// TestTrafficDedupViaSnapshotSeq guards P2-LOG-06 / L-07: two client-usage
+// snapshots carrying the same monotonic seq (e.g. the agent resent an
+// in-flight batch after a stream reconnect) must only contribute traffic
+// once — live gauges may still update.
+func TestTrafficDedupViaSnapshotSeq(t *testing.T) {
+	now := time.Date(2026, time.April, 18, 8, 0, 0, 0, time.UTC)
+	server := New(Options{Now: func() time.Time { return now }})
+	defer server.Close()
+
+	const agentID = "agent-dedup"
+	const clientID = "client-dedup"
+
+	first := []clientUsageSnapshot{{
+		ClientID:         clientID,
+		TrafficUsedBytes: 1000,
+		ActiveTCPConns:   2,
+		ObservedAt:       now,
+		Seq:              5,
+	}}
+	duplicate := []clientUsageSnapshot{{
+		ClientID:         clientID,
+		TrafficUsedBytes: 1000,
+		ActiveTCPConns:   3, // live gauge changed — still accept
+		ObservedAt:       now.Add(time.Second),
+		Seq:              5, // same seq -> duplicate
+	}}
+
+	server.mu.Lock()
+	server.applyClientUsageSnapshot(agentID, first)
+	server.applyClientUsageSnapshot(agentID, duplicate)
+	got := server.clientUsage[clientID][agentID]
+	server.mu.Unlock()
+
+	if got.TrafficUsedBytes != 1000 {
+		t.Fatalf("TrafficUsedBytes = %d, want %d (dedup failed — delta double-counted)", got.TrafficUsedBytes, 1000)
+	}
+	if got.ActiveTCPConns != 3 {
+		t.Fatalf("ActiveTCPConns = %d, want 3 (live gauge must still refresh)", got.ActiveTCPConns)
+	}
+}
+
+// TestUsageSeqResetOnAgentRestart guards P2-LOG-06 / L-07: when seq rewinds
+// from a higher value back to 1 (agent restart, counters back to zero), the
+// incoming "delta" is actually an absolute baseline and must not be added to
+// accumulated traffic. Subsequent in-order snapshots resume accumulation.
+func TestUsageSeqResetOnAgentRestart(t *testing.T) {
+	now := time.Date(2026, time.April, 18, 10, 0, 0, 0, time.UTC)
+	server := New(Options{Now: func() time.Time { return now }})
+	defer server.Close()
+
+	const agentID = "agent-restart"
+	const clientID = "client-restart"
+
+	prior := []clientUsageSnapshot{{
+		ClientID:         clientID,
+		TrafficUsedBytes: 4096,
+		ObservedAt:       now,
+		Seq:              10,
+	}}
+	restart := []clientUsageSnapshot{{
+		ClientID:         clientID,
+		TrafficUsedBytes: 512, // fresh baseline after restart, not a delta
+		ObservedAt:       now.Add(time.Minute),
+		Seq:              1,
+	}}
+	afterRestart := []clientUsageSnapshot{{
+		ClientID:         clientID,
+		TrafficUsedBytes: 200,
+		ObservedAt:       now.Add(2 * time.Minute),
+		Seq:              2,
+	}}
+
+	server.mu.Lock()
+	server.applyClientUsageSnapshot(agentID, prior)
+	server.applyClientUsageSnapshot(agentID, restart)
+	afterReset := server.clientUsage[clientID][agentID].TrafficUsedBytes
+	server.applyClientUsageSnapshot(agentID, afterRestart)
+	final := server.clientUsage[clientID][agentID].TrafficUsedBytes
+	storedSeq := server.lastUsageSeq[agentID]
+	server.mu.Unlock()
+
+	if afterReset != 4096 {
+		t.Fatalf("after restart baseline: TrafficUsedBytes = %d, want 4096 (restart delta must not accumulate)", afterReset)
+	}
+	if final != 4096+200 {
+		t.Fatalf("final TrafficUsedBytes = %d, want %d (post-restart deltas should accumulate)", final, 4096+200)
+	}
+	if storedSeq != 2 {
+		t.Fatalf("lastUsageSeq = %d, want 2", storedSeq)
+	}
+}
+
+// TestUsageDedupIgnoresOutOfOrderStaleSnapshots guards against older seq
+// values arriving after a newer one (e.g. race between in-flight snapshots
+// after reconnect). Stale seqs must not contribute traffic.
+func TestUsageDedupIgnoresOutOfOrderStaleSnapshots(t *testing.T) {
+	now := time.Date(2026, time.April, 18, 11, 0, 0, 0, time.UTC)
+	server := New(Options{Now: func() time.Time { return now }})
+	defer server.Close()
+
+	const agentID = "agent-stale"
+	const clientID = "client-stale"
+
+	server.mu.Lock()
+	server.applyClientUsageSnapshot(agentID, []clientUsageSnapshot{{
+		ClientID: clientID, TrafficUsedBytes: 100, Seq: 7, ObservedAt: now,
+	}})
+	server.applyClientUsageSnapshot(agentID, []clientUsageSnapshot{{
+		ClientID: clientID, TrafficUsedBytes: 999, Seq: 3, ObservedAt: now, // stale
+	}})
+	got := server.clientUsage[clientID][agentID].TrafficUsedBytes
+	server.mu.Unlock()
+
+	if got != 100 {
+		t.Fatalf("TrafficUsedBytes = %d, want 100 (stale seq must be ignored)", got)
+	}
+}
+
+// TestUsageLegacySeqZeroFallsBackToUnconditionalAccumulation preserves the
+// pre-P2-LOG-06 behavior for agents that have not yet been upgraded: when
+// seq == 0 on the wire, the CP accumulates every delta it sees. Dev-stage
+// cutover still keeps this safety net so partial upgrades don't silently
+// drop traffic.
+func TestUsageLegacySeqZeroFallsBackToUnconditionalAccumulation(t *testing.T) {
+	now := time.Date(2026, time.April, 18, 12, 0, 0, 0, time.UTC)
+	server := New(Options{Now: func() time.Time { return now }})
+	defer server.Close()
+
+	const agentID = "agent-legacy"
+	const clientID = "client-legacy"
+	legacy := []clientUsageSnapshot{{ClientID: clientID, TrafficUsedBytes: 500, ObservedAt: now}} // Seq = 0
+
+	server.mu.Lock()
+	server.applyClientUsageSnapshot(agentID, legacy)
+	server.applyClientUsageSnapshot(agentID, legacy)
+	got := server.clientUsage[clientID][agentID].TrafficUsedBytes
+	server.mu.Unlock()
+
+	if got != 1000 {
+		t.Fatalf("legacy accumulation: TrafficUsedBytes = %d, want 1000", got)
+	}
+}
+
 func TestServerExpiredEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) {
 	now := time.Date(2026, time.March, 15, 8, 0, 0, 0, time.UTC)
 	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
