@@ -150,3 +150,34 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/*
+  P2-FE-08 / M-F7: Skip-nav link.
+  - Off-screen by default (not `display: none` — that would make it
+    non-focusable and defeat the purpose).
+  - Slides into the top-left corner on :focus (keyboard Tab), with a
+    high z-index so it floats over the app shell.
+  - Colors use existing design tokens so the link matches theme in both
+    dark and light modes.
+*/
+.skip-link {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 0.5rem 0.875rem;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  font-size: 13px;
+  border-radius: 0 0 var(--radius-sm) 0;
+  text-decoration: none;
+  transform: translateY(-150%);
+  transition: transform 0.15s ease;
+  z-index: 100;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+  outline: 2px solid var(--accent-bright);
+  outline-offset: 2px;
+}
