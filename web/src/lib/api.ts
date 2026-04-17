@@ -1,4 +1,14 @@
+import type { ZodType } from "zod";
+
 import { resolveAPIBasePath, resolveConfiguredRootPath } from "./runtime-path";
+import {
+  agentListSchema,
+  clientListSchema,
+  discoveredClientListSchema,
+  meResponseSchema,
+  versionSchema,
+  type VersionParsed,
+} from "./schemas";
 
 export type MeResponse = {
   id: string;
@@ -551,6 +561,39 @@ export class ApiError extends Error {
 }
 
 /**
+ * Name of the CustomEvent dispatched on window when a response passes the
+ * HTTP checks but fails our Zod schema (P2-FE-01 / DF-10). ToastProvider
+ * (or any other boundary) can subscribe and surface a user-visible
+ * toast; the raw ZodError is attached on `event.detail.error` for
+ * debugging. We fire a DOM CustomEvent rather than importing ToastProvider
+ * directly so that api.ts stays framework-free and testable in isolation.
+ */
+export const API_SCHEMA_MISMATCH_EVENT = "panvex:api-schema-mismatch";
+
+export interface ApiSchemaMismatchDetail {
+  path: string;
+  error: unknown;
+  message: string;
+}
+
+/**
+ * Error thrown on schema validation failure. Separate from ApiError so
+ * React Query can distinguish "server said 500" from "server said 200 but
+ * the shape is wrong" — both are user-visible, but the latter is a bug
+ * that needs to reach engineering not just the user.
+ */
+export class ApiSchemaError extends Error {
+  readonly path: string;
+  readonly cause: unknown;
+  constructor(path: string, cause: unknown) {
+    super(`Response from ${path} did not match expected schema`);
+    this.name = "ApiSchemaError";
+    this.path = path;
+    this.cause = cause;
+  }
+}
+
+/**
  * Name of the CustomEvent dispatched on window when any authenticated
  * HTTP request returns 401 (P2-FE-02 / M-C12 / DF-12). AuthProvider
  * listens for this to clear the React Query cache and route to /login.
@@ -573,7 +616,29 @@ function isAuthBootstrapPath(path: string): boolean {
   );
 }
 
-export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+/**
+ * Core HTTP helper. Three modes:
+ *
+ * 1. No schema — legacy call-site, cast to T (as before). Most endpoints
+ *    still use this path; see the TODO block near the bottom of the
+ *    apiClient object for the opt-in migration list.
+ * 2. Schema provided — response JSON is fed through schema.parse(). On
+ *    failure we:
+ *      a. console.error the ZodError for dev visibility,
+ *      b. dispatch `panvex:api-schema-mismatch` on window so any UI
+ *         boundary (ToastProvider, sentry bridge, etc.) can surface it,
+ *      c. throw an ApiSchemaError so React Query's isError surfaces.
+ *    Importantly we DO NOT fall back to the raw payload — a mismatch
+ *    means the UI was about to read a field it can't trust, and silent
+ *    `undefined` propagation is the exact DF-10 failure mode we're
+ *    eliminating.
+ * 3. 204 No Content — schema skipped (there's no body), returns undefined.
+ */
+export async function api<T>(
+  path: string,
+  init?: RequestInit,
+  schema?: ZodType<T>,
+): Promise<T> {
   const response = await fetch(path, {
     credentials: "include",
     headers: {
@@ -616,7 +681,41 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(message, code);
   }
 
-  return (await response.json()) as T;
+  const json = (await response.json()) as unknown;
+
+  if (!schema) {
+    return json as T;
+  }
+
+  const parsed = schema.safeParse(json);
+  if (!parsed.success) {
+    // Log structurally so that in the browser devtools the operator
+    // sees the exact path → issue mapping that zod produces. We use
+    // console.error rather than a custom slog facade because this file
+    // has no slog dependency yet and the task scopes it out.
+    // eslint-disable-next-line no-console
+    console.error("[api] schema mismatch", {
+      path,
+      issues: parsed.error.issues,
+    });
+
+    if (typeof window !== "undefined") {
+      const detail: ApiSchemaMismatchDetail = {
+        path,
+        error: parsed.error,
+        message: `Unexpected response shape from ${path}`,
+      };
+      window.dispatchEvent(
+        new CustomEvent<ApiSchemaMismatchDetail>(API_SCHEMA_MISMATCH_EVENT, {
+          detail,
+        }),
+      );
+    }
+
+    throw new ApiSchemaError(path, parsed.error);
+  }
+
+  return parsed.data;
 }
 
 export const apiClient = {
@@ -629,7 +728,7 @@ export const apiClient = {
     api<void>(`${apiBasePath}/auth/logout`, {
       method: "POST"
     }),
-  me: () => api<MeResponse>(`${apiBasePath}/auth/me`),
+  me: () => api<MeResponse>(`${apiBasePath}/auth/me`, undefined, meResponseSchema),
   startTotpSetup: () =>
     api<TotpSetupResponse>(`${apiBasePath}/auth/totp/setup`, {
       method: "POST"
@@ -657,10 +756,10 @@ export const apiClient = {
       method: "POST"
     }),
   fleet: () => api<FleetResponse>(`${apiBasePath}/fleet`),
-  agents: () => api<Agent[]>(`${apiBasePath}/agents`),
+  agents: () => api<Agent[]>(`${apiBasePath}/agents`, undefined, agentListSchema),
   instances: () => api<Instance[]>(`${apiBasePath}/instances`),
   users: () => api<LocalUser[]>(`${apiBasePath}/users`),
-  clients: () => api<ClientListItem[]>(`${apiBasePath}/clients`),
+  clients: () => api<ClientListItem[]>(`${apiBasePath}/clients`, undefined, clientListSchema),
   client: (clientID: string) => api<Client>(`${apiBasePath}/clients/${clientID}`),
   createClient: (payload: ClientInput) =>
     api<Client>(`${apiBasePath}/clients`, {
@@ -751,7 +850,12 @@ export const apiClient = {
     api<void>(`${apiBasePath}/agents/enrollment-tokens/${value}/revoke`, {
       method: "POST"
     }),
-  discoveredClients: () => api<DiscoveredClient[]>(`${apiBasePath}/discovered-clients`),
+  discoveredClients: () =>
+    api<DiscoveredClient[]>(
+      `${apiBasePath}/discovered-clients`,
+      undefined,
+      discoveredClientListSchema,
+    ),
   adoptDiscoveredClient: (id: string) =>
     api<AdoptDiscoveredClientResponse>(`${apiBasePath}/discovered-clients/${id}/adopt`, {
       method: "POST"
@@ -815,4 +919,39 @@ export const apiClient = {
       `${apiBasePath}/agents/${agentId}/update`,
       { method: "POST", body: JSON.stringify({ version: version || "" }) }
     ),
+  /**
+   * GET /api/version — returns different shapes by role (P1-SEC-15). The
+   * zod union handles both viewer and operator branches; consumers should
+   * narrow via `isOperatorVersion(v)` from lib/schemas/version.
+   */
+  version: () => api<VersionParsed>(`${apiBasePath}/version`, undefined, versionSchema),
 };
+
+/*
+ * =============================================================================
+ * P2-FE-01 — Zod runtime validation migration status.
+ * =============================================================================
+ *
+ * Migrated (schema-validated):
+ *   - /auth/me                  meResponseSchema
+ *   - /agents                   agentListSchema
+ *   - /clients                  clientListSchema
+ *   - /discovered-clients       discoveredClientListSchema
+ *   - /version                  versionSchema (discriminated viewer/operator)
+ *
+ * TODO(P2-FE-01 follow-up): migrate the remaining endpoints below to
+ * opt-in schemas. They are left as typed-cast today because the risk of
+ * silent field drift is lower for admin-only flows (users, settings) and
+ * the raw telemetry payloads are wide (tens of fields) so schema authoring
+ * is deferred until a new surface is added. Order of priority:
+ *
+ *   1. /control-room            controlRoomSchema (already drafted)
+ *   2. /telemetry/dashboard     dashboardSchema   (already drafted)
+ *   3. /telemetry/servers       derive from dashboardSchema
+ *   4. /telemetry/servers/{id}  new schema (large diagnostics payload)
+ *   5. /clients/{id}            clientSchema (already drafted, not wired
+ *                               because write endpoints share the type)
+ *   6. /users, /jobs, /audit    medium priority
+ *   7. /settings/*              low priority (admin-only)
+ *   8. /fleet, /fleet-groups    low priority (small shapes)
+ */
