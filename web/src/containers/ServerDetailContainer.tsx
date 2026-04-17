@@ -7,14 +7,12 @@ import { useServerMutations } from "@/hooks/useServerMutations";
 import { useServerLoadHistory } from "@/hooks/useServerHistory";
 import { useUpdates } from "@/hooks/useUpdates";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { apiClient } from "@/lib/api";
+import { apiClient, type ServerLoadPoint } from "@/lib/api";
 import { transformAgentConnection } from "@/lib/transforms/servers";
 
 const RANGE_HOURS: Record<string, number> = { "1h": 1, "6h": 6, "24h": 24, "7d": 168 };
 
-function toMetricsPoints(
-  points: { CapturedAt: string; CPUPctAvg: number; CPUPctMax: number; MemPctAvg: number; MemPctMax: number; DiskPctAvg: number; DiskPctMax: number; Load1M: number; ConnectionsAvg: number; ConnectionsMax: number; ActiveUsersAvg: number; ActiveUsersMax: number; DCCoverageMinPct: number; NetBytesSent: number; NetBytesRecv: number }[]
-): MetricsPoint[] {
+function toMetricsPoints(points: ServerLoadPoint[]): MetricsPoint[] {
   return points.map((p, i) => {
     let netUploadMbps = 0;
     let netDownloadMbps = 0;
@@ -77,7 +75,7 @@ export function ServerDetailContainer() {
     return new Date(nowMinute - hours * 3600_000).toISOString();
   }, [hours, nowMinute]);
   const { points: rawPoints, resolution } = useServerLoadHistory(serverId ?? "", from);
-  const metricsPoints = useMemo(() => toMetricsPoints(rawPoints as any[]), [rawPoints]);
+  const metricsPoints = useMemo(() => toMetricsPoints(rawPoints), [rawPoints]);
 
   if (isLoading || !server) {
     return <div className="flex items-center justify-center h-64"><Spinner /></div>;
