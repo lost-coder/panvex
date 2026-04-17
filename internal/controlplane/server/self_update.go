@@ -19,7 +19,12 @@ const maxArchiveSize = 512 << 20 // 512 MB
 
 // DownloadArchive fetches a .tar.gz archive from url into a temporary file
 // and returns its path. The caller is responsible for removing the file.
+// Only URLs whose host is on the GitHub allow-list are accepted, and redirect
+// hops are re-validated against the same list via secureDownloadClient.
 func DownloadArchive(ctx context.Context, url, token string) (string, error) {
+	if err := checkDownloadURL(url); err != nil {
+		return "", fmt.Errorf("download archive: %w", err)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
@@ -29,7 +34,7 @@ func DownloadArchive(ctx context.Context, url, token string) (string, error) {
 	}
 	req.Header.Set("Accept", "application/octet-stream")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := secureDownloadClient().Do(req)
 	if err != nil {
 		return "", fmt.Errorf("download archive: %w", err)
 	}
@@ -117,8 +122,12 @@ func ExtractBinaryFromArchive(archivePath string) (string, error) {
 
 // DownloadChecksum fetches a .sha256 checksum file and returns the hex digest.
 // The file is expected to contain the checksum as the first whitespace-delimited
-// field on the first line.
+// field on the first line. Host allow-list + redirect restriction mirror
+// DownloadArchive.
 func DownloadChecksum(ctx context.Context, url, token string) (string, error) {
+	if err := checkDownloadURL(url); err != nil {
+		return "", fmt.Errorf("download checksum: %w", err)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
@@ -127,7 +136,7 @@ func DownloadChecksum(ctx context.Context, url, token string) (string, error) {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := secureDownloadClient().Do(req)
 	if err != nil {
 		return "", fmt.Errorf("download checksum: %w", err)
 	}
