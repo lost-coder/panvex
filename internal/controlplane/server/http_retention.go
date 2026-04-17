@@ -65,5 +65,11 @@ func normalizeRetentionSettings(s RetentionSettings) RetentionSettings {
 	if s.EventSeconds <= 0 {
 		s.EventSeconds = 86400
 	}
+	if s.AuditEventSeconds <= 0 {
+		s.AuditEventSeconds = 7776000
+	}
+	if s.MetricSnapshotSeconds <= 0 {
+		s.MetricSnapshotSeconds = 2592000
+	}
 	return s
 }

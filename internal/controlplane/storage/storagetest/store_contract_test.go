@@ -498,6 +498,20 @@ func (s *memoryStore) ListAuditEvents(_ context.Context, limit int) ([]storage.A
 	return events, nil
 }
 
+func (s *memoryStore) PruneAuditEvents(_ context.Context, before time.Time) (int64, error) {
+	var pruned int64
+	kept := s.auditEvents[:0]
+	for _, e := range s.auditEvents {
+		if e.CreatedAt.Before(before) {
+			pruned++
+			continue
+		}
+		kept = append(kept, e)
+	}
+	s.auditEvents = kept
+	return pruned, nil
+}
+
 func (s *memoryStore) AppendMetricSnapshot(_ context.Context, snapshot storage.MetricSnapshotRecord) error {
 	s.metricSnapshots = append(s.metricSnapshots, snapshot)
 	return nil
@@ -505,6 +519,20 @@ func (s *memoryStore) AppendMetricSnapshot(_ context.Context, snapshot storage.M
 
 func (s *memoryStore) ListMetricSnapshots(_ context.Context) ([]storage.MetricSnapshotRecord, error) {
 	return append([]storage.MetricSnapshotRecord(nil), s.metricSnapshots...), nil
+}
+
+func (s *memoryStore) PruneMetricSnapshots(_ context.Context, before time.Time) (int64, error) {
+	var pruned int64
+	kept := s.metricSnapshots[:0]
+	for _, m := range s.metricSnapshots {
+		if m.CapturedAt.Before(before) {
+			pruned++
+			continue
+		}
+		kept = append(kept, m)
+	}
+	s.metricSnapshots = kept
+	return pruned, nil
 }
 
 func (s *memoryStore) PutPanelSettings(_ context.Context, settings storage.PanelSettingsRecord) error {
