@@ -16,6 +16,10 @@ type SeverityInput struct {
 	DCCoveragePct           float64
 	HealthyUpstreams        int
 	TotalUpstreams          int
+	// AgentReported is true when the agent has delivered at least one runtime
+	// snapshot. Distinguishes "zero coverage because all DCs are dead" (critical)
+	// from "zero coverage because we have no data yet" (neutral default).
+	AgentReported bool
 }
 
 // FreshnessForObservedAt normalizes runtime freshness from an observed timestamp.
@@ -58,6 +62,8 @@ func SeverityAndReason(input SeverityInput, freshness Freshness) (string, string
 		return "warn", "Startup is still in progress"
 	case input.TotalUpstreams > 0 && input.HealthyUpstreams < input.TotalUpstreams:
 		return "warn", "Some upstreams are unhealthy"
+	case input.AgentReported && input.DCCoveragePct == 0:
+		return "critical", "no reachable DCs"
 	case input.DCCoveragePct > 0 && input.DCCoveragePct < 100:
 		return "warn", "DC coverage is degraded"
 	default:
@@ -68,6 +74,8 @@ func SeverityAndReason(input SeverityInput, freshness Freshness) (string, string
 // SeverityRank orders server summaries by severity.
 func SeverityRank(value string) int {
 	switch value {
+	case "critical":
+		return 4
 	case "bad":
 		return 3
 	case "warn":

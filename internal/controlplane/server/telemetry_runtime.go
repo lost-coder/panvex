@@ -411,6 +411,7 @@ func telemetrySeverityAndReason(agent Agent, presenceState presence.State, fresh
 		DCCoveragePct:           agent.Runtime.DCCoveragePct,
 		HealthyUpstreams:        agent.Runtime.HealthyUpstreams,
 		TotalUpstreams:          agent.Runtime.TotalUpstreams,
+		AgentReported:           !agent.Runtime.UpdatedAt.IsZero(),
 	}, controltelemetry.Freshness{
 		State:          freshness.State,
 		ObservedAtUnix: freshness.ObservedAtUnix,

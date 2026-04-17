@@ -44,3 +44,48 @@ func TestSeverityAndReasonPrefersOfflineOverOtherSignals(t *testing.T) {
 		t.Fatalf("SeverityAndReason() reason = %q, want %q", reason, "Agent heartbeat is offline")
 	}
 }
+
+// TestSeverityAndReasonDCCoverageMatrix covers the DCCoveragePct x AgentReported
+// combinations. Zero coverage from an agent that actually reported runtime is
+// critical ("no reachable DCs"); zero coverage without any agent report is
+// still the neutral default (P2-LOG-08 / M-C8).
+func TestSeverityAndReasonDCCoverageMatrix(t *testing.T) {
+	baseInput := SeverityInput{
+		PresenceState:           presence.StateOnline,
+		ReadOnly:                false,
+		AcceptingNewConnections: true,
+		Degraded:                false,
+		StartupStatus:           "ready",
+	}
+	freshness := Freshness{State: "fresh"}
+
+	cases := []struct {
+		name          string
+		coverage      float64
+		agentReported bool
+		wantSeverity  string
+		wantReason    string
+	}{
+		{"coverage_0_reported", 0, true, "critical", "no reachable DCs"},
+		{"coverage_0_not_reported", 0, false, "good", "Node is ready"},
+		{"coverage_50_reported", 50, true, "warn", "DC coverage is degraded"},
+		{"coverage_50_not_reported", 50, false, "warn", "DC coverage is degraded"},
+		{"coverage_100_reported", 100, true, "good", "Node is ready"},
+		{"coverage_100_not_reported", 100, false, "good", "Node is ready"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			input := baseInput
+			input.DCCoveragePct = tc.coverage
+			input.AgentReported = tc.agentReported
+			severity, reason := SeverityAndReason(input, freshness)
+			if severity != tc.wantSeverity {
+				t.Fatalf("SeverityAndReason() severity = %q, want %q", severity, tc.wantSeverity)
+			}
+			if reason != tc.wantReason {
+				t.Fatalf("SeverityAndReason() reason = %q, want %q", reason, tc.wantReason)
+			}
+		})
+	}
+}

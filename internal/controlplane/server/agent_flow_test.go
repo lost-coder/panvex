@@ -465,6 +465,180 @@ func TestServerApplyAgentSnapshotKeepsEnrolledScopeWhenSnapshotDiffers(t *testin
 	}
 }
 
+// TestApplyAgentSnapshotPrunesStaleInstances verifies that each snapshot is
+// treated as the complete instance set for its agent: previously-reported
+// instances that are absent from a subsequent snapshot must be removed from
+// s.instances so the map cannot leak entries for instances that no longer
+// exist on the agent (P2-LOG-09 / L-04).
+func TestApplyAgentSnapshotPrunesStaleInstances(t *testing.T) {
+	now := time.Date(2026, time.March, 18, 9, 0, 0, 0, time.UTC)
+	server := New(Options{
+		Now: func() time.Time { return now },
+	})
+	defer server.Close()
+
+	token, err := server.enrollment.IssueToken(security.EnrollmentScope{
+		FleetGroupID: "ams-1",
+		TTL:          time.Minute,
+	}, now)
+	if err != nil {
+		t.Fatalf("IssueToken() error = %v", err)
+	}
+	identity, err := server.enrollAgent(agentEnrollmentRequest{
+		Token:    token.Value,
+		NodeName: "node-a",
+		Version:  "1.0.0",
+	}, now)
+	if err != nil {
+		t.Fatalf("enrollAgent() error = %v", err)
+	}
+
+	// Seed three instances for agent A.
+	if err := server.applyAgentSnapshot(agentSnapshot{
+		AgentID:      identity.AgentID,
+		NodeName:     "node-a",
+		FleetGroupID: "ams-1",
+		Version:      "1.0.0",
+		Instances: []instanceSnapshot{
+			{ID: "inst-1", Name: "telemt-1", Version: "2026.03"},
+			{ID: "inst-2", Name: "telemt-2", Version: "2026.03"},
+			{ID: "inst-3", Name: "telemt-3", Version: "2026.03"},
+		},
+		ObservedAt: now.Add(10 * time.Second),
+	}); err != nil {
+		t.Fatalf("applyAgentSnapshot(initial) error = %v", err)
+	}
+
+	server.mu.RLock()
+	initial := len(server.instances)
+	server.mu.RUnlock()
+	if initial != 3 {
+		t.Fatalf("len(server.instances) after seed = %d, want %d", initial, 3)
+	}
+
+	// Apply a new snapshot reporting only two instances — inst-3 must be pruned.
+	if err := server.applyAgentSnapshot(agentSnapshot{
+		AgentID:      identity.AgentID,
+		NodeName:     "node-a",
+		FleetGroupID: "ams-1",
+		Version:      "1.0.0",
+		Instances: []instanceSnapshot{
+			{ID: "inst-1", Name: "telemt-1", Version: "2026.03"},
+			{ID: "inst-2", Name: "telemt-2", Version: "2026.03"},
+		},
+		ObservedAt: now.Add(20 * time.Second),
+	}); err != nil {
+		t.Fatalf("applyAgentSnapshot(pruned) error = %v", err)
+	}
+
+	server.mu.RLock()
+	defer server.mu.RUnlock()
+	if len(server.instances) != 2 {
+		t.Fatalf("len(server.instances) after prune = %d, want %d", len(server.instances), 2)
+	}
+	if _, ok := server.instances["inst-3"]; ok {
+		t.Fatal("server.instances still contains pruned inst-3, want removed")
+	}
+	if _, ok := server.instances["inst-1"]; !ok {
+		t.Fatal("server.instances missing inst-1, want present")
+	}
+	if _, ok := server.instances["inst-2"]; !ok {
+		t.Fatal("server.instances missing inst-2, want present")
+	}
+}
+
+// TestApplyAgentSnapshotDoesNotPruneOtherAgentsInstances verifies that the
+// prune step only removes instances owned by the agent emitting the current
+// snapshot — instances belonging to other agents must never be touched.
+func TestApplyAgentSnapshotDoesNotPruneOtherAgentsInstances(t *testing.T) {
+	now := time.Date(2026, time.March, 18, 9, 0, 0, 0, time.UTC)
+	server := New(Options{
+		Now: func() time.Time { return now },
+	})
+	defer server.Close()
+
+	tokenA, err := server.enrollment.IssueToken(security.EnrollmentScope{
+		FleetGroupID: "ams-1",
+		TTL:          time.Minute,
+	}, now)
+	if err != nil {
+		t.Fatalf("IssueToken(A) error = %v", err)
+	}
+	agentA, err := server.enrollAgent(agentEnrollmentRequest{
+		Token:    tokenA.Value,
+		NodeName: "node-a",
+		Version:  "1.0.0",
+	}, now)
+	if err != nil {
+		t.Fatalf("enrollAgent(A) error = %v", err)
+	}
+
+	tokenB, err := server.enrollment.IssueToken(security.EnrollmentScope{
+		FleetGroupID: "ams-1",
+		TTL:          time.Minute,
+	}, now)
+	if err != nil {
+		t.Fatalf("IssueToken(B) error = %v", err)
+	}
+	agentB, err := server.enrollAgent(agentEnrollmentRequest{
+		Token:    tokenB.Value,
+		NodeName: "node-b",
+		Version:  "1.0.0",
+	}, now)
+	if err != nil {
+		t.Fatalf("enrollAgent(B) error = %v", err)
+	}
+
+	if err := server.applyAgentSnapshot(agentSnapshot{
+		AgentID:      agentA.AgentID,
+		NodeName:     "node-a",
+		FleetGroupID: "ams-1",
+		Instances: []instanceSnapshot{
+			{ID: "inst-a1", Name: "telemt-a1"},
+			{ID: "inst-a2", Name: "telemt-a2"},
+		},
+		ObservedAt: now.Add(10 * time.Second),
+	}); err != nil {
+		t.Fatalf("applyAgentSnapshot(A) error = %v", err)
+	}
+	if err := server.applyAgentSnapshot(agentSnapshot{
+		AgentID:      agentB.AgentID,
+		NodeName:     "node-b",
+		FleetGroupID: "ams-1",
+		Instances: []instanceSnapshot{
+			{ID: "inst-b1", Name: "telemt-b1"},
+		},
+		ObservedAt: now.Add(11 * time.Second),
+	}); err != nil {
+		t.Fatalf("applyAgentSnapshot(B) error = %v", err)
+	}
+
+	// Agent A reports only inst-a1 now. inst-a2 must be pruned; inst-b1 must remain.
+	if err := server.applyAgentSnapshot(agentSnapshot{
+		AgentID:      agentA.AgentID,
+		NodeName:     "node-a",
+		FleetGroupID: "ams-1",
+		Instances: []instanceSnapshot{
+			{ID: "inst-a1", Name: "telemt-a1"},
+		},
+		ObservedAt: now.Add(20 * time.Second),
+	}); err != nil {
+		t.Fatalf("applyAgentSnapshot(A-prune) error = %v", err)
+	}
+
+	server.mu.RLock()
+	defer server.mu.RUnlock()
+	if _, ok := server.instances["inst-a2"]; ok {
+		t.Fatal("inst-a2 still present, want pruned for agent A")
+	}
+	if _, ok := server.instances["inst-a1"]; !ok {
+		t.Fatal("inst-a1 missing, want present for agent A")
+	}
+	if _, ok := server.instances["inst-b1"]; !ok {
+		t.Fatal("inst-b1 missing, must not be touched when agent A reports")
+	}
+}
+
 func TestServerEnrollmentTokenPersistsAcrossRestart(t *testing.T) {
 	now := time.Date(2026, time.March, 15, 8, 0, 0, 0, time.UTC)
 	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
