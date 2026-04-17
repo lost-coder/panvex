@@ -550,6 +550,29 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Name of the CustomEvent dispatched on window when any authenticated
+ * HTTP request returns 401 (P2-FE-02 / M-C12 / DF-12). AuthProvider
+ * listens for this to clear the React Query cache and route to /login.
+ *
+ * Requests to /auth/login and /auth/me are excluded from dispatch to
+ * avoid redirect loops (the login page already renders /login, and
+ * /auth/me is the very check used to bootstrap the session — its 401
+ * must surface normally so the router can decide to redirect).
+ */
+export const SESSION_EXPIRED_EVENT = "panvex:session-expired";
+
+function isAuthBootstrapPath(path: string): boolean {
+  // Strip any root-path prefix; we only care about the /api/... tail.
+  // Match both `/api/auth/login` and `/api/auth/me` (with any query string).
+  const apiIndex = path.indexOf("/api/");
+  const tail = apiIndex >= 0 ? path.slice(apiIndex) : path;
+  return (
+    tail.startsWith("/api/auth/login") ||
+    tail.startsWith("/api/auth/me")
+  );
+}
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     credentials: "include",
@@ -565,6 +588,20 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (!response.ok) {
+    // Global 401 interceptor (P2-FE-02 / M-C12): before this, idle
+    // users whose server session had expired would see stale cached
+    // data plus a cascade of red 401 errors instead of being routed
+    // to /login. Fire a decoupled CustomEvent so AuthProvider (which
+    // owns router + QueryClient access) can clear the cache and
+    // navigate. Skip the auth bootstrap endpoints to avoid loops.
+    if (
+      response.status === 401 &&
+      typeof window !== "undefined" &&
+      !isAuthBootstrapPath(path)
+    ) {
+      window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+    }
+
     let message = `Request failed with status ${response.status}`;
     let code: string | undefined;
     try {
