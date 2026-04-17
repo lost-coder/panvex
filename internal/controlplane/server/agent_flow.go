@@ -203,6 +203,23 @@ func (s *Server) applyAgentSnapshotWithContext(_ context.Context, snapshot agent
 
 	// Commit agent and instance maps within mu.
 	s.agents[snapshot.AgentID] = agent
+	// Each snapshot is the complete instance set for this agent. Prune any
+	// previously-known instances for this agent that are absent from the
+	// incoming set so s.instances does not leak stale entries
+	// (P2-LOG-09 / L-04).
+	liveIDs := make(map[string]struct{}, len(instances))
+	for _, instance := range instances {
+		liveIDs[instance.ID] = struct{}{}
+	}
+	for id, entry := range s.instances {
+		if entry.AgentID != snapshot.AgentID {
+			continue
+		}
+		if _, ok := liveIDs[id]; ok {
+			continue
+		}
+		delete(s.instances, id)
+	}
 	for _, instance := range instances {
 		s.instances[instance.ID] = instance
 	}
