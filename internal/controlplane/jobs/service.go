@@ -179,6 +179,23 @@ func (s *Service) StartupError() error {
 	return s.startupErr
 }
 
+// QueueDepth returns the number of jobs currently in the queued or running
+// state. Exposed for metrics (panvex_job_queue_depth); counts only live jobs
+// so terminal (succeeded/failed/expired) entries do not inflate the gauge.
+func (s *Service) QueueDepth() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	count := 0
+	for _, job := range s.jobs {
+		switch job.Status {
+		case StatusQueued, StatusRunning:
+			count++
+		}
+	}
+	return count
+}
+
 // SetNow overrides the clock used for time-sensitive job checks.
 func (s *Service) SetNow(now func() time.Time) {
 	s.mu.Lock()

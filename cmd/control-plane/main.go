@@ -109,6 +109,13 @@ func runServe(args []string) error {
 	}
 	restartRequests := make(chan struct{}, 1)
 
+	// The Prometheus /metrics scrape endpoint is a silent opt-in: when the
+	// operator sets PANVEX_METRICS_SCRAPE_TOKEN the route is registered and
+	// requires that bearer token; when unset, nothing is exposed. Accepted
+	// only from the environment — never a CLI flag — so the secret does not
+	// leak into process listings or shell history.
+	metricsScrapeToken := strings.TrimSpace(os.Getenv("PANVEX_METRICS_SCRAPE_TOKEN"))
+
 	api := server.New(server.Options{
 		Now:          time.Now,
 		Store:        store,
@@ -120,6 +127,7 @@ func runServe(args []string) error {
 		Version:   Version,
 		CommitSHA: CommitSHA,
 		BuildTime: BuildTime,
+		MetricsScrapeToken: metricsScrapeToken,
 		RequestRestart: func() error {
 			select {
 			case restartRequests <- struct{}{}:

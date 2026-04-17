@@ -68,6 +68,12 @@ type Options struct {
 	CommitSHA string
 	// BuildTime is the RFC3339 build timestamp baked in at build time.
 	BuildTime string
+	// MetricsScrapeToken, when non-empty, enables the GET /metrics endpoint
+	// and requires callers to present `Authorization: Bearer <token>` with a
+	// byte-for-byte match. When empty, the /metrics route is not registered
+	// at all (silent opt-in) so production deployments that never set the env
+	// var cannot accidentally expose runtime telemetry.
+	MetricsScrapeToken string
 }
 
 // Server wires local-auth, inventory, jobs, and operator APIs into one HTTP surface.
@@ -137,6 +143,15 @@ type Server struct {
 	stopRollup   context.CancelFunc
 	rollupWg     sync.WaitGroup
 	batchWriter  *storeBatchWriter
+
+	// obs holds the Prometheus collectors exposed at /metrics. Nil when the
+	// server is constructed without a scrape token — the /metrics route is
+	// not registered in that case, but the field is still nil-checked by the
+	// middleware so HTTP serving remains cheap.
+	obs                 *metricsCollectors
+	metricsScrapeToken  string
+	metricsPollerCancel context.CancelFunc
+	metricsPollerWG     sync.WaitGroup
 }
 
 // New constructs a control-plane server with in-memory state suitable for local development.
@@ -236,6 +251,15 @@ func New(options Options) *Server {
 	} else if len(options.Users) > 0 {
 		server.auth.LoadUsers(options.Users)
 	}
+	// Metrics collectors are always constructed (observation is cheap) but
+	// the /metrics HTTP route is only registered when a scrape token is set.
+	// This keeps the in-process counters available for internal consumption
+	// (e.g. tests, future admin-only endpoints) without exposing them.
+	server.obs = newMetricsCollectors()
+	server.metricsScrapeToken = options.MetricsScrapeToken
+	server.events.setDropHook(func() {
+		server.obs.eventHubDropTotal.Inc()
+	})
 	server.handler = server.routes()
 	server.auth.SetNow(now)
 	server.jobs.SetNow(now)
@@ -243,6 +267,23 @@ func New(options Options) *Server {
 	server.stopRollup = rollupCancel
 	server.startTimeseriesRollupWorker(rollupCtx)
 	server.startUpdateCheckerWorker(rollupCtx)
+
+	// The metrics poller samples derived gauges (agent connected count,
+	// event-hub subscribers, job queue depth, lockout count) on a 5-second
+	// interval. Runs in its own context so Close() can stop it independently
+	// of the rollup workers.
+	//
+	// Gate on MetricsScrapeToken: if no token is configured, the /metrics
+	// endpoint is not registered, so nobody can observe these gauges. Starting
+	// the poller anyway costs little but forces every test using a closure-
+	// captured time source to synchronise the closure with a background
+	// goroutine that samples s.now(). Skipping the poller when metrics are
+	// disabled keeps the race-free clock-mock pattern working for tests.
+	if server.metricsScrapeToken != "" {
+		metricsCtx, metricsCancel := context.WithCancel(context.Background())
+		server.metricsPollerCancel = metricsCancel
+		server.startMetricsPoller(metricsCtx, 5*time.Second)
+	}
 
 	if server.store != nil {
 		server.batchWriter = newStoreBatchWriter(server.store)
@@ -255,6 +296,7 @@ func New(options Options) *Server {
 // Close stops background workers and drains pending writes. It should be
 // called before closing the storage backend.
 func (s *Server) Close() {
+	s.metricsShutdown()
 	if s.stopRollup != nil {
 		s.stopRollup()
 	}
@@ -398,11 +440,21 @@ func (s *Server) GRPCTLSConfig() *tls.Config {
 
 func (s *Server) routes() http.Handler {
 	router := chi.NewRouter()
+	// metricsMiddleware must be the outermost user middleware so every
+	// response — including 401s from ipWhitelist, 429s from rate-limiters,
+	// and 404s from the UI fallback — is observed with its route pattern.
+	router.Use(s.metricsMiddleware)
 	router.Use(securityHeaders)
 	router.Use(maxBodySize)
 	router.Use(csrfOriginCheck)
 	router.Get("/healthz", handleHealthz())
 	router.Get("/readyz", s.handleReadyz())
+	// /metrics is registered at the top level (outside the /api group) so
+	// Prometheus does not need session cookies. It is bearer-token gated in
+	// handleMetrics; when no token is configured, the route is omitted.
+	if s.metricsScrapeToken != "" {
+		router.Method(http.MethodGet, "/metrics", s.handleScrapeMetrics(s.metricsScrapeToken))
+	}
 
 	panelPath := s.panelRuntime.HTTPRootPath
 	agentPath := s.panelRuntime.AgentHTTPRootPath
