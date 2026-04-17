@@ -87,6 +87,13 @@ func (s *Server) handleLogin() http.HandlerFunc {
 				writeErrorWithCode(w, http.StatusUnauthorized, err.Error(), "totp_required")
 			case errors.Is(err, auth.ErrInvalidTotpCode):
 				writeErrorWithCode(w, http.StatusUnauthorized, err.Error(), "totp_invalid")
+			case errors.Is(err, auth.ErrSessionStoreUnavailable):
+				// P2-SEC-07: session persistence failed; no session was
+				// created. Tell the client to retry rather than masking
+				// the failure behind an in-memory-only session that would
+				// silently disappear on the next control-plane restart.
+				s.logger.Error("session store unavailable during login", "username", request.Username, "error", err)
+				writeErrorWithCode(w, http.StatusServiceUnavailable, "session store unavailable", "session_store_unavailable")
 			default:
 				s.logger.Error("auth login failed", "error", err)
 				writeError(w, http.StatusInternalServerError, "internal error")

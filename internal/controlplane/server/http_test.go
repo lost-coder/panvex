@@ -400,7 +400,11 @@ func TestHTTPAuthTotpSetupEnableDisableFlow(t *testing.T) {
 	}
 	cookies = loginWithTotp.Result().Cookies()
 
-	disableCode, err := server.auth.GenerateTotpCode(setupPayload.Secret, now)
+	// P2-SEC-08: DisableTotp now records consumed TOTP codes under the
+	// mutex (mirroring Authenticate), so the same code that succeeded in
+	// the preceding login must not be replayed here. Use a code from the
+	// +30s window instead — still inside the verifier's acceptance set.
+	disableCode, err := server.auth.GenerateTotpCode(setupPayload.Secret, now.Add(30*time.Second))
 	if err != nil {
 		t.Fatalf("GenerateTotpCode(disable) error = %v", err)
 	}
