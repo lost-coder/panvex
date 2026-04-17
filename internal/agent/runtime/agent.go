@@ -193,6 +193,17 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 	if err != nil {
 		return nil, err
 	}
+	// P2-REL-07: telemt.Client.FetchRuntimeState returns Partial=true when at
+	// least one sub-endpoint failed or the per-cycle deadline fired. Still send
+	// the snapshot to the control-plane so operator dashboards do not go dark,
+	// but log a warning so the degradation is visible in the agent journal.
+	if state.Partial {
+		slog.Default().Warn("telemt runtime snapshot is partial",
+			"agent_id", a.config.AgentID,
+			"node_name", a.config.NodeName,
+			"ctx_err", ctx.Err(),
+		)
+	}
 
 	dcs := make([]*gatewayrpc.RuntimeDCSnapshot, 0, len(state.DCs))
 	for _, dc := range state.DCs {
