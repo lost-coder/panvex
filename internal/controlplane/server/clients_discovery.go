@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -102,17 +103,66 @@ func (s *Server) managedClientIdentifiersForAgent(agentID string) (names map[str
 }
 
 func (s *Server) upsertDiscoveredClient(ctx context.Context, agentID string, record *gatewayrpc.ClientDetailRecord, observedAt time.Time) {
-	s.clientsMu.Lock()
-	s.discoveredClientSeq++
-	id := newSequenceID("discovered", s.discoveredClientSeq)
-	s.clientsMu.Unlock()
+	clientName := record.GetClientName()
+
+	// P2-LOG-02 / L-10: before inserting a brand-new row, check whether a
+	// discovered_clients row already exists for (agent_id, client_name).
+	// If yes and it is still pending_review, update the existing row in
+	// place — every agent reconnect triggers a FULL_SNAPSHOT, and without
+	// this dedupe the pending-review list would grow unbounded. The
+	// underlying UNIQUE (agent_id, client_name) constraint is a
+	// belt-and-suspenders guard; this code path also avoids burning a new
+	// sequence ID each time and keeps the audit log free of spurious
+	// "clients.discovered" events for the same user.
+	var (
+		existing      storage.DiscoveredClientRecord
+		haveExisting  bool
+		existingErr   error
+	)
+	if s.store != nil {
+		existing, existingErr = s.store.GetDiscoveredClientByAgentAndName(ctx, agentID, clientName)
+		switch {
+		case existingErr == nil:
+			haveExisting = true
+		case errors.Is(existingErr, storage.ErrNotFound):
+			// no-op: fall through to insert path
+		default:
+			s.logger.Error("discovered client lookup failed", "client_name", clientName, "agent_id", agentID, "error", existingErr)
+			return
+		}
+	}
+
+	var id string
+	if haveExisting {
+		id = existing.ID
+	} else {
+		s.clientsMu.Lock()
+		s.discoveredClientSeq++
+		id = newSequenceID("discovered", s.discoveredClientSeq)
+		s.clientsMu.Unlock()
+	}
+
+	discoveredAt := observedAt.UTC()
+	if haveExisting {
+		discoveredAt = existing.DiscoveredAt
+	}
+
+	status := discoveredClientStatusPendingReview
+	if haveExisting {
+		// Preserve non-pending status (ignored/adopted) across updates; only
+		// refresh mutable observability fields. Without this guard a later
+		// reconcile could resurrect an ignored row back to pending_review.
+		if existing.Status != discoveredClientStatusPendingReview {
+			status = existing.Status
+		}
+	}
 
 	dc := storage.DiscoveredClientRecord{
 		ID:                 id,
 		AgentID:            agentID,
-		ClientName:         record.GetClientName(),
+		ClientName:         clientName,
 		Secret:             record.GetSecret(),
-		Status:             discoveredClientStatusPendingReview,
+		Status:             status,
 		TotalOctets:        record.GetTotalOctets(),
 		CurrentConnections: int(record.GetCurrentConnections()),
 		ActiveUniqueIPs:    int(record.GetActiveUniqueIps()),
@@ -121,7 +171,7 @@ func (s *Server) upsertDiscoveredClient(ctx context.Context, agentID string, rec
 		MaxUniqueIPs:       int(record.GetMaxUniqueIps()),
 		DataQuotaBytes:     int64(record.GetDataQuotaBytes()),
 		Expiration:         record.GetExpiration(),
-		DiscoveredAt:       observedAt.UTC(),
+		DiscoveredAt:       discoveredAt,
 		UpdatedAt:          observedAt.UTC(),
 	}
 
@@ -132,10 +182,14 @@ func (s *Server) upsertDiscoveredClient(ctx context.Context, agentID string, rec
 		}
 	}
 
-	s.appendAuditWithContext(ctx, "system", "clients.discovered", dc.ID, map[string]any{
-		"agent_id":    agentID,
-		"client_name": dc.ClientName,
-	})
+	// Only audit the first-time discovery; subsequent observations of the
+	// same (agent, client) are just re-reports of the same finding.
+	if !haveExisting {
+		s.appendAuditWithContext(ctx, "system", "clients.discovered", dc.ID, map[string]any{
+			"agent_id":    agentID,
+			"client_name": dc.ClientName,
+		})
+	}
 }
 
 func (s *Server) listDiscoveredClients(ctx context.Context) ([]discoveredClient, error) {

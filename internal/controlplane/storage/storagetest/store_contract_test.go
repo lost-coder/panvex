@@ -748,6 +748,15 @@ func (s *memoryStore) GetDiscoveredClient(_ context.Context, id string) (storage
 	return r, nil
 }
 
+func (s *memoryStore) GetDiscoveredClientByAgentAndName(_ context.Context, agentID string, clientName string) (storage.DiscoveredClientRecord, error) {
+	for _, r := range s.discoveredClients {
+		if r.AgentID == agentID && r.ClientName == clientName {
+			return r, nil
+		}
+	}
+	return storage.DiscoveredClientRecord{}, storage.ErrNotFound
+}
+
 func (s *memoryStore) UpdateDiscoveredClientStatus(_ context.Context, id string, status string, updatedAt time.Time) error {
 	r, ok := s.discoveredClients[id]
 	if !ok {

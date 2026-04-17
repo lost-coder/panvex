@@ -108,6 +108,35 @@ func (s *Store) GetDiscoveredClient(ctx context.Context, id string) (storage.Dis
 	return record, nil
 }
 
+func (s *Store) GetDiscoveredClientByAgentAndName(ctx context.Context, agentID string, clientName string) (storage.DiscoveredClientRecord, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, agent_id, client_name, secret, status,
+			total_octets, current_connections, active_unique_ips,
+			connection_link, max_tcp_conns, max_unique_ips,
+			data_quota_bytes, expiration,
+			discovered_at, updated_at
+		FROM discovered_clients
+		WHERE agent_id = $1 AND client_name = $2
+	`, agentID, clientName)
+
+	var record storage.DiscoveredClientRecord
+	if err := row.Scan(
+		&record.ID, &record.AgentID, &record.ClientName, &record.Secret, &record.Status,
+		&record.TotalOctets, &record.CurrentConnections, &record.ActiveUniqueIPs,
+		&record.ConnectionLink, &record.MaxTCPConns, &record.MaxUniqueIPs,
+		&record.DataQuotaBytes, &record.Expiration,
+		&record.DiscoveredAt, &record.UpdatedAt,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return storage.DiscoveredClientRecord{}, storage.ErrNotFound
+		}
+		return storage.DiscoveredClientRecord{}, err
+	}
+	record.DiscoveredAt = record.DiscoveredAt.UTC()
+	record.UpdatedAt = record.UpdatedAt.UTC()
+	return record, nil
+}
+
 func (s *Store) UpdateDiscoveredClientStatus(ctx context.Context, id string, status string, updatedAt time.Time) error {
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE discovered_clients SET status = $1, updated_at = $2 WHERE id = $3
