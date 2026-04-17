@@ -306,6 +306,23 @@ func (s *Server) restoreStoredState() error {
 		s.agents[agent.ID] = agent
 	}
 
+	// Restore persisted agent revocations (P1-SEC-06). Without this, a CP
+	// restart silently forgets the revocation and a deleted agent whose
+	// 30-day client cert is still valid could reconnect over mTLS.
+	revocations, err := s.store.ListAgentRevocations(context.Background())
+	if err != nil {
+		return err
+	}
+	now := s.now()
+	for _, rec := range revocations {
+		if rec.CertExpiresAt.Before(now) {
+			// Cert is already past expiry — the TLS handshake will reject
+			// it on its own, no need to carry the revocation entry.
+			continue
+		}
+		s.revokedAgentIDs[rec.AgentID] = struct{}{}
+	}
+
 	instances, err := s.store.ListInstances(context.Background())
 	if err != nil {
 		return err

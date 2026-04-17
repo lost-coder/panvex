@@ -362,7 +362,30 @@ func Migrate(db *sql.DB) error {
 		return err
 	}
 
+	if err := ensureAgentRevocationsTable(db); err != nil {
+		return err
+	}
+
 	return ensureIndexes(db)
+}
+
+// ensureAgentRevocationsTable creates the agent_revocations table (P1-SEC-06)
+// on first run. The table persists deregistered agent IDs so a CP restart
+// cannot forget a revocation while the underlying mTLS client cert is still
+// cryptographically valid.
+func ensureAgentRevocationsTable(db *sql.DB) error {
+	_, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS agent_revocations (
+			agent_id              TEXT PRIMARY KEY,
+			revoked_at_unix       INTEGER NOT NULL,
+			cert_expires_at_unix  INTEGER NOT NULL
+		)
+	`)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_revocations_cert_expires_at_unix ON agent_revocations(cert_expires_at_unix)`)
+	return err
 }
 
 func ensureDiscoveredClientsSecretColumn(db *sql.DB) error {
