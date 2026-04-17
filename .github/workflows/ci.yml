@@ -87,6 +87,33 @@ jobs:
         working-directory: web
         run: npm ci && npm run build
 
+  frontend-test:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: lost-coder/panvex-ui
+          path: .panvex-ui
+      - name: Link UI kit
+        run: ln -s "$GITHUB_WORKSPACE/.panvex-ui" "$GITHUB_WORKSPACE/../ui"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Build UI kit
+        working-directory: .panvex-ui
+        run: npm ci && npm run build
+      # P2-TEST-01: vitest suite. npm run test = vitest run which exits
+      # non-zero on any failure; coverage is gated by thresholds in
+      # vitest.config.ts so a regression under 40% also fails CI.
+      - name: Run frontend tests
+        working-directory: web
+        run: npm ci && npm run test
+      - name: Run coverage with thresholds
+        working-directory: web
+        run: npm run test:coverage
+
   frontend-lint:
     name: Frontend Lint
     runs-on: ubuntu-latest

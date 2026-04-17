@@ -1,0 +1,4 @@
+# Vitest coverage output (P2-TEST-01). The HTML/JSON artefacts are
+# regenerated locally and uploaded from CI — never commit the report
+# directory.
+coverage/
