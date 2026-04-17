@@ -308,20 +308,53 @@ func (s *Server) adoptDiscoveredClient(ctx context.Context, id string, actorID s
 		},
 	}
 
-	if err := s.replaceClientStateWithContext(ctx, client, assignments, deployments); err != nil {
+	// P2-ARCH-01: the client row, assignments, deployments, discovered-
+	// status flip, and any duplicate-status updates must land atomically.
+	// Before Transact, a panic/error mid-sequence could leave a managed
+	// client without its discovered row flipped, or with only some
+	// assignments persisted. Driving them all through a single Transact
+	// fixes that. The in-memory mirror + usage seed happen only after
+	// the commit succeeds.
+	var duplicateSecret string
+	if err := s.store.Transact(ctx, func(tx storage.Store) error {
+		// Re-read the discovered record inside the tx so another
+		// concurrent adopt on a different control-plane instance cannot
+		// slip past the pre-check. adoptMu covers the current instance;
+		// the tx + re-read covers cross-instance racing.
+		freshRecord, err := tx.GetDiscoveredClient(ctx, id)
+		if err != nil {
+			return err
+		}
+		if freshRecord.Status == discoveredClientStatusAdopted {
+			return ErrAlreadyAdopted
+		}
+
+		if err := persistClientStateVia(ctx, tx, client, assignments, deployments); err != nil {
+			return err
+		}
+		if err := tx.UpdateDiscoveredClientStatus(ctx, id, discoveredClientStatusAdopted, observedAt.UTC()); err != nil {
+			return err
+		}
+		if freshRecord.Secret != "" {
+			if err := markDuplicateDiscoveredClientsAdoptedTx(ctx, tx, id, freshRecord.Secret, observedAt); err != nil {
+				return err
+			}
+			duplicateSecret = freshRecord.Secret
+		}
+		return nil
+	}); err != nil {
 		return managedClient{}, err
 	}
 
+	// Update the in-memory mirror now that the commit succeeded. If this
+	// fails (it can't today; replaceClientStateInMemory never errors when
+	// the store portion is skipped), the reconciler will catch up on the
+	// next snapshot.
+	s.replaceClientStateInMemory(client, assignments, deployments)
+
 	// Seed live usage with the stats Telemt already reported for this user.
 	s.seedClientUsage(client.ID, record.AgentID, record.TotalOctets, record.CurrentConnections, record.ActiveUniqueIPs, observedAt)
-
-	// Mark this record and any other discovered records with the same secret as adopted.
-	if err := s.store.UpdateDiscoveredClientStatus(ctx, id, discoveredClientStatusAdopted, observedAt.UTC()); err != nil {
-		s.logger.Error("failed to update discovered client status", "error", err)
-	}
-	if record.Secret != "" {
-		s.markDuplicateDiscoveredClientsAdopted(ctx, id, record.Secret, observedAt)
-	}
+	_ = duplicateSecret // retained for future logging hooks
 
 	s.appendAuditWithContext(ctx, actorID, "clients.adopted", id, map[string]any{
 		"client_name": record.ClientName,
@@ -349,6 +382,29 @@ func (s *Server) markDuplicateDiscoveredClientsAdopted(ctx context.Context, excl
 			s.logger.Error("failed to mark duplicate discovered client as adopted", "discovered_client_id", dc.ID, "error", err)
 		}
 	}
+}
+
+// markDuplicateDiscoveredClientsAdoptedTx is the Transact-bound twin of
+// markDuplicateDiscoveredClientsAdopted. It operates against the
+// caller-provided Store (typically a tx-bound Store inside Transact)
+// so the duplicate-flip lands in the same atomic unit as the primary
+// adopt writes. Unlike the untransacted variant it surfaces errors to
+// the caller — inside a Transact, failing one write must abort the
+// whole sequence.
+func markDuplicateDiscoveredClientsAdoptedTx(ctx context.Context, store storage.Store, excludeID string, secret string, observedAt time.Time) error {
+	all, err := store.ListDiscoveredClients(ctx)
+	if err != nil {
+		return err
+	}
+	for _, dc := range all {
+		if dc.ID == excludeID || dc.Secret != secret || dc.Status == discoveredClientStatusAdopted {
+			continue
+		}
+		if err := store.UpdateDiscoveredClientStatus(ctx, dc.ID, discoveredClientStatusAdopted, observedAt.UTC()); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // findManagedClientByNameAndSecret returns an existing managed client matching

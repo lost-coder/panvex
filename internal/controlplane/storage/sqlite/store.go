@@ -45,9 +45,25 @@ var sqlitePragmas = []string{
 	"mmap_size=268435456",
 }
 
+// dbExecutor abstracts the query surface shared by *sql.DB and *sql.Tx so
+// that Store methods compose inside Transact without duplication. See
+// P2-ARCH-01 for the design rationale.
+type dbExecutor interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
 // Store persists control-plane records in a local SQLite database.
+//
+// Store methods reference s.db via the dbExecutor interface so the same
+// method bodies can run against a *sql.DB (outside Transact) or a
+// *sql.Tx (inside Transact). s.sqlDB is the pool handle used for
+// lifecycle (Ping, Close, BeginTx); it is nil on transaction-bound
+// Stores to prevent accidental escape from the transaction boundary.
 type Store struct {
-	db *sql.DB
+	db    dbExecutor
+	sqlDB *sql.DB
 }
 
 // Open opens a SQLite database file, applies the schema, and returns a storage
@@ -99,7 +115,110 @@ func Open(dsn string) (*Store, error) {
 		return nil, err
 	}
 
-	return &Store{db: db}, nil
+	return &Store{db: db, sqlDB: db}, nil
+}
+
+// Transact runs fn inside a single SQLite transaction. BEGIN IMMEDIATE
+// acquires the writer lock up front so the first write inside fn cannot
+// fail with SQLITE_BUSY mid-transaction. On fn error or panic the
+// transaction rolls back; on success it commits. SQLite is a single-
+// writer engine, so there is no serialization-retry loop: contention
+// is absorbed by busy_timeout at the connection level (see the pragmas
+// above). See storage.Store.Transact for the full contract.
+func (s *Store) Transact(ctx context.Context, fn storage.TxFn) (retErr error) {
+	if s.sqlDB == nil {
+		return storage.ErrNestedTransact
+	}
+	if fn == nil {
+		return fmt.Errorf("sqlite: Transact requires a non-nil TxFn")
+	}
+
+	// BEGIN IMMEDIATE cannot be issued through BeginTx's options surface;
+	// we issue it explicitly on a dedicated connection, run fn against a
+	// tx-bound Store, then COMMIT / ROLLBACK on the same conn.
+	conn, err := s.sqlDB.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return err
+	}
+
+	committed := false
+	defer func() {
+		if p := recover(); p != nil {
+			_, _ = conn.ExecContext(context.Background(), "ROLLBACK")
+			panic(p)
+		}
+		if !committed {
+			_, _ = conn.ExecContext(context.Background(), "ROLLBACK")
+		}
+	}()
+
+	txStore := &Store{db: connExecutor{conn: conn}, sqlDB: nil}
+	if err := fn(txStore); err != nil {
+		return err
+	}
+
+	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+		return err
+	}
+	committed = true
+	return nil
+}
+
+// connExecutor adapts *sql.Conn to the dbExecutor interface. *sql.Conn
+// already exposes ExecContext/QueryContext/QueryRowContext, but under
+// different method set ownership rules; wrapping keeps tx-bound Stores
+// honest: callers cannot reach through to BeginTx or Close.
+type connExecutor struct {
+	conn *sql.Conn
+}
+
+func (c connExecutor) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return c.conn.ExecContext(ctx, query, args...)
+}
+
+func (c connExecutor) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return c.conn.QueryContext(ctx, query, args...)
+}
+
+func (c connExecutor) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	return c.conn.QueryRowContext(ctx, query, args...)
+}
+
+// txHandle abstracts the commit/rollback surface of *sql.Tx so that
+// internal per-method transactions (e.g. ConsumeEnrollmentToken) can
+// either open a fresh tx (top-level Store) or reuse the caller's tx
+// (Store bound inside Transact) without changing method bodies.
+type txHandle interface {
+	dbExecutor
+	Commit() error
+	Rollback() error
+}
+
+// passthroughTx wraps an already-open transaction so that Commit /
+// Rollback are no-ops: the outer Transact owns the transaction
+// lifecycle and must not have it closed out from under it.
+type passthroughTx struct {
+	dbExecutor
+}
+
+func (p passthroughTx) Commit() error   { return nil }
+func (p passthroughTx) Rollback() error { return nil }
+
+// beginInternalTx returns a txHandle the caller can drive. When the
+// Store is top-level it starts a new transaction; when the Store is
+// already inside a Transact (sqlDB == nil) it returns a passthrough
+// that reuses the current executor, so the caller's writes land in
+// the outer transaction.
+func (s *Store) beginInternalTx(ctx context.Context) (txHandle, error) {
+	if s.sqlDB == nil {
+		return passthroughTx{dbExecutor: s.db}, nil
+	}
+	return s.sqlDB.BeginTx(ctx, nil)
 }
 
 // appendPragmasToDSN rewrites the DSN so that every connection opened by the
@@ -137,12 +256,18 @@ func ensureParentDirectory(dsn string) error {
 
 // Ping verifies that the database connection is alive.
 func (s *Store) Ping(ctx context.Context) error {
-	return s.db.PingContext(ctx)
+	if s.sqlDB == nil {
+		return nil
+	}
+	return s.sqlDB.PingContext(ctx)
 }
 
 // Close releases the database handle owned by the store.
 func (s *Store) Close() error {
-	return s.db.Close()
+	if s.sqlDB == nil {
+		return nil
+	}
+	return s.sqlDB.Close()
 }
 
 func (s *Store) PutUser(ctx context.Context, user storage.UserRecord) error {
@@ -699,7 +824,7 @@ func (s *Store) GetEnrollmentToken(ctx context.Context, value string) (storage.E
 }
 
 func (s *Store) ConsumeEnrollmentToken(ctx context.Context, value string, consumedAt time.Time) (storage.EnrollmentTokenRecord, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginInternalTx(ctx)
 	if err != nil {
 		return storage.EnrollmentTokenRecord{}, err
 	}
@@ -759,7 +884,7 @@ func (s *Store) ConsumeEnrollmentToken(ctx context.Context, value string, consum
 }
 
 func (s *Store) RevokeEnrollmentToken(ctx context.Context, value string, revokedAt time.Time) (storage.EnrollmentTokenRecord, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginInternalTx(ctx)
 	if err != nil {
 		return storage.EnrollmentTokenRecord{}, err
 	}
@@ -892,7 +1017,7 @@ func (s *Store) GetAgentCertificateRecoveryGrant(ctx context.Context, agentID st
 }
 
 func (s *Store) UseAgentCertificateRecoveryGrant(ctx context.Context, agentID string, usedAt time.Time) (storage.AgentCertificateRecoveryGrantRecord, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginInternalTx(ctx)
 	if err != nil {
 		return storage.AgentCertificateRecoveryGrantRecord{}, err
 	}
@@ -940,7 +1065,7 @@ func (s *Store) UseAgentCertificateRecoveryGrant(ctx context.Context, agentID st
 }
 
 func (s *Store) RevokeAgentCertificateRecoveryGrant(ctx context.Context, agentID string, revokedAt time.Time) (storage.AgentCertificateRecoveryGrantRecord, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginInternalTx(ctx)
 	if err != nil {
 		return storage.AgentCertificateRecoveryGrantRecord{}, err
 	}

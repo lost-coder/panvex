@@ -5,11 +5,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"math/rand"
 	"strings"
 	"time"
 
-	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 var (
@@ -17,9 +20,25 @@ var (
 	ErrDSNRequired = errors.New("postgres dsn is required")
 )
 
+// dbExecutor abstracts the query surface shared by *sql.DB and *sql.Tx so
+// that Store methods compose inside Transact without duplication. See
+// P2-ARCH-01 for the design rationale.
+type dbExecutor interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
 // Store persists control-plane records in a PostgreSQL database.
+//
+// Store methods reference s.db via the dbExecutor interface so the same
+// method bodies can run against a *sql.DB (outside Transact) or a
+// *sql.Tx (inside Transact). s.sqlDB is the pool handle used for
+// lifecycle (Ping, Close, BeginTx); it is nil on transaction-bound
+// Stores to prevent accidental escape from the transaction boundary.
 type Store struct {
-	db *sql.DB
+	db    dbExecutor
+	sqlDB *sql.DB
 }
 
 // Open opens a PostgreSQL connection, applies the schema, and returns a storage backend.
@@ -47,17 +66,148 @@ func Open(dsn string) (*Store, error) {
 		return nil, err
 	}
 
-	return &Store{db: db}, nil
+	return &Store{db: db, sqlDB: db}, nil
 }
 
 // Ping verifies that the database connection is alive.
 func (s *Store) Ping(ctx context.Context) error {
-	return s.db.PingContext(ctx)
+	if s.sqlDB == nil {
+		// tx-bound store; a live transaction implies a live connection
+		return nil
+	}
+	return s.sqlDB.PingContext(ctx)
 }
 
 // Close releases the database handle owned by the store.
 func (s *Store) Close() error {
-	return s.db.Close()
+	if s.sqlDB == nil {
+		return nil
+	}
+	return s.sqlDB.Close()
+}
+
+// maxTransactRetries caps how many times Transact retries on a PostgreSQL
+// serialization failure (SQLSTATE 40001). Beyond this the caller is
+// returned the last error; raising the cap risks wedging a request under
+// contention. See P2-ARCH-01.
+const maxTransactRetries = 3
+
+// Transact runs fn inside a single database transaction with
+// read-committed isolation. On serialization failures it retries up
+// to maxTransactRetries times. See storage.Store.Transact for the
+// full contract.
+func (s *Store) Transact(ctx context.Context, fn storage.TxFn) error {
+	if s.sqlDB == nil {
+		// Reached from a tx-bound Store — nested Transact is forbidden.
+		return storage.ErrNestedTransact
+	}
+	if fn == nil {
+		return errors.New("postgres: Transact requires a non-nil TxFn")
+	}
+
+	var lastErr error
+	for attempt := 0; attempt < maxTransactRetries; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		err := s.runTransact(ctx, fn)
+		if err == nil {
+			return nil
+		}
+
+		if !isSerializationFailure(err) {
+			return err
+		}
+		lastErr = err
+
+		if attempt == maxTransactRetries-1 {
+			break
+		}
+
+		// Jittered backoff: (attempt+1)*10ms + 0..10ms jitter.
+		// Respects ctx.Done() so cancellation aborts the wait promptly.
+		backoff := time.Duration(attempt+1)*10*time.Millisecond + time.Duration(rand.Intn(10))*time.Millisecond
+		timer := time.NewTimer(backoff)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		}
+	}
+	return fmt.Errorf("postgres: serialization failure after %d retries: %w", maxTransactRetries, lastErr)
+}
+
+func (s *Store) runTransact(ctx context.Context, fn storage.TxFn) (retErr error) {
+	tx, err := s.sqlDB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		return err
+	}
+
+	txStore := &Store{db: tx, sqlDB: nil}
+
+	defer func() {
+		if p := recover(); p != nil {
+			_ = tx.Rollback()
+			panic(p)
+		}
+		if retErr != nil {
+			_ = tx.Rollback()
+			return
+		}
+		if commitErr := tx.Commit(); commitErr != nil {
+			retErr = commitErr
+		}
+	}()
+
+	if err := fn(txStore); err != nil {
+		return err
+	}
+	return nil
+}
+
+// isSerializationFailure reports whether err originates from a
+// PostgreSQL serialization_failure (SQLSTATE 40001). pgx surfaces it
+// as *pgconn.PgError through database/sql.
+func isSerializationFailure(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "40001"
+	}
+	return false
+}
+
+// txHandle abstracts the commit/rollback surface of *sql.Tx so that
+// internal per-method transactions (e.g. ConsumeEnrollmentToken) can
+// either open a fresh tx (top-level Store) or reuse the caller's tx
+// (Store bound inside Transact) without changing method bodies.
+type txHandle interface {
+	dbExecutor
+	Commit() error
+	Rollback() error
+}
+
+// passthroughTx wraps an already-open transaction so that Commit /
+// Rollback are no-ops: the outer Transact owns the transaction
+// lifecycle and must not have it closed out from under it.
+type passthroughTx struct {
+	dbExecutor
+}
+
+func (p passthroughTx) Commit() error   { return nil }
+func (p passthroughTx) Rollback() error { return nil }
+
+// beginInternalTx returns a txHandle the caller can drive. When the
+// Store is top-level it starts a new read-committed transaction;
+// when the Store is already inside a Transact (sqlDB == nil) it
+// returns a passthrough that reuses the current executor, so the
+// caller's writes land in the outer transaction.
+func (s *Store) beginInternalTx(ctx context.Context) (txHandle, error) {
+	if s.sqlDB == nil {
+		return passthroughTx{dbExecutor: s.db}, nil
+	}
+	return s.sqlDB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 }
 
 func (s *Store) PutUser(ctx context.Context, user storage.UserRecord) error {
@@ -596,7 +746,7 @@ func (s *Store) GetEnrollmentToken(ctx context.Context, value string) (storage.E
 }
 
 func (s *Store) ConsumeEnrollmentToken(ctx context.Context, value string, consumedAt time.Time) (storage.EnrollmentTokenRecord, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginInternalTx(ctx)
 	if err != nil {
 		return storage.EnrollmentTokenRecord{}, err
 	}
@@ -655,7 +805,7 @@ func (s *Store) ConsumeEnrollmentToken(ctx context.Context, value string, consum
 }
 
 func (s *Store) RevokeEnrollmentToken(ctx context.Context, value string, revokedAt time.Time) (storage.EnrollmentTokenRecord, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginInternalTx(ctx)
 	if err != nil {
 		return storage.EnrollmentTokenRecord{}, err
 	}
@@ -777,7 +927,7 @@ func (s *Store) GetAgentCertificateRecoveryGrant(ctx context.Context, agentID st
 }
 
 func (s *Store) UseAgentCertificateRecoveryGrant(ctx context.Context, agentID string, usedAt time.Time) (storage.AgentCertificateRecoveryGrantRecord, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginInternalTx(ctx)
 	if err != nil {
 		return storage.AgentCertificateRecoveryGrantRecord{}, err
 	}
@@ -825,7 +975,7 @@ func (s *Store) UseAgentCertificateRecoveryGrant(ctx context.Context, agentID st
 }
 
 func (s *Store) RevokeAgentCertificateRecoveryGrant(ctx context.Context, agentID string, revokedAt time.Time) (storage.AgentCertificateRecoveryGrantRecord, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginInternalTx(ctx)
 	if err != nil {
 		return storage.AgentCertificateRecoveryGrantRecord{}, err
 	}

@@ -39,7 +39,7 @@ func TestStoreContract(t *testing.T) {
 }
 
 func resetForTest(store *Store) error {
-	_, err := store.db.Exec(`
+	_, err := store.sqlDB.Exec(`
 		TRUNCATE TABLE
 			telemt_runtime_events,
 			telemt_runtime_upstreams_current,

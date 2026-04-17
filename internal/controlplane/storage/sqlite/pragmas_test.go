@@ -17,7 +17,7 @@ func TestOpenAppliesWALPragma(t *testing.T) {
 	store := openTestStore(t)
 
 	var journalMode string
-	if err := store.db.QueryRow("PRAGMA journal_mode").Scan(&journalMode); err != nil {
+	if err := store.sqlDB.QueryRow("PRAGMA journal_mode").Scan(&journalMode); err != nil {
 		t.Fatalf("PRAGMA journal_mode: %v", err)
 	}
 	if !strings.EqualFold(journalMode, "wal") {
@@ -38,7 +38,7 @@ func TestOpenAppliesBusyTimeoutPragma(t *testing.T) {
 
 	const probes = 4
 	for i := 0; i < probes; i++ {
-		conn, err := store.db.Conn(ctx)
+		conn, err := store.sqlDB.Conn(ctx)
 		if err != nil {
 			t.Fatalf("acquire conn %d: %v", i, err)
 		}
@@ -63,7 +63,7 @@ func TestOpenAppliesForeignKeysPragma(t *testing.T) {
 	defer cancel()
 
 	for i := 0; i < 4; i++ {
-		conn, err := store.db.Conn(ctx)
+		conn, err := store.sqlDB.Conn(ctx)
 		if err != nil {
 			t.Fatalf("acquire conn %d: %v", i, err)
 		}
@@ -85,7 +85,7 @@ func TestOpenAppliesSynchronousPragma(t *testing.T) {
 	store := openTestStore(t)
 
 	var sync int
-	if err := store.db.QueryRow("PRAGMA synchronous").Scan(&sync); err != nil {
+	if err := store.sqlDB.QueryRow("PRAGMA synchronous").Scan(&sync); err != nil {
 		t.Fatalf("PRAGMA synchronous: %v", err)
 	}
 	if sync != 1 {
@@ -99,7 +99,7 @@ func TestOpenAppliesTempStorePragma(t *testing.T) {
 	store := openTestStore(t)
 
 	var tempStore int
-	if err := store.db.QueryRow("PRAGMA temp_store").Scan(&tempStore); err != nil {
+	if err := store.sqlDB.QueryRow("PRAGMA temp_store").Scan(&tempStore); err != nil {
 		t.Fatalf("PRAGMA temp_store: %v", err)
 	}
 	if tempStore != 2 {
@@ -112,7 +112,7 @@ func TestOpenAppliesMmapSizePragma(t *testing.T) {
 	store := openTestStore(t)
 
 	var mmapSize int64
-	if err := store.db.QueryRow("PRAGMA mmap_size").Scan(&mmapSize); err != nil {
+	if err := store.sqlDB.QueryRow("PRAGMA mmap_size").Scan(&mmapSize); err != nil {
 		t.Fatalf("PRAGMA mmap_size: %v", err)
 	}
 	if mmapSize != 268435456 {
@@ -146,7 +146,7 @@ func TestConcurrentInsertsDoNotTimeOut(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if _, err := store.db.ExecContext(ctx, `
+	if _, err := store.sqlDB.ExecContext(ctx, `
 		CREATE TABLE pragma_concurrency_probe (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			writer INTEGER NOT NULL,
@@ -167,7 +167,7 @@ func TestConcurrentInsertsDoNotTimeOut(t *testing.T) {
 		go func(writer int) {
 			defer wg.Done()
 			for r := 0; r < rowsPerWriter; r++ {
-				_, err := store.db.ExecContext(ctx,
+				_, err := store.sqlDB.ExecContext(ctx,
 					`INSERT INTO pragma_concurrency_probe (writer, payload) VALUES (?, ?)`,
 					writer, fmt.Sprintf("w%d-r%d", writer, r),
 				)
@@ -187,7 +187,7 @@ func TestConcurrentInsertsDoNotTimeOut(t *testing.T) {
 	}
 
 	var got int
-	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_concurrency_probe`).Scan(&got); err != nil {
+	if err := store.sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_concurrency_probe`).Scan(&got); err != nil {
 		t.Fatalf("count probe rows: %v", err)
 	}
 	if want := writers * rowsPerWriter; got != want {

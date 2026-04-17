@@ -140,7 +140,7 @@ func (s *Store) ListTelemetryRuntimeCurrent(ctx context.Context) ([]storage.Tele
 }
 
 func (s *Store) ReplaceTelemetryRuntimeDCs(ctx context.Context, agentID string, records []storage.TelemetryRuntimeDCRecord) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginInternalTx(ctx)
 	if err != nil {
 		return err
 	}
@@ -193,7 +193,7 @@ func (s *Store) ListTelemetryRuntimeDCs(ctx context.Context, agentID string) ([]
 }
 
 func (s *Store) ReplaceTelemetryRuntimeUpstreams(ctx context.Context, agentID string, records []storage.TelemetryRuntimeUpstreamRecord) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginInternalTx(ctx)
 	if err != nil {
 		return err
 	}
@@ -242,7 +242,7 @@ func (s *Store) ListTelemetryRuntimeUpstreams(ctx context.Context, agentID strin
 }
 
 func (s *Store) AppendTelemetryRuntimeEvents(ctx context.Context, agentID string, records []storage.TelemetryRuntimeEventRecord) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginInternalTx(ctx)
 	if err != nil {
 		return err
 	}

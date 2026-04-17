@@ -205,6 +205,16 @@ type AgentRevocationStore interface {
 	DeleteExpiredAgentRevocations(ctx context.Context, before time.Time) (int64, error)
 }
 
+// TxFn is the callback invoked by Store.Transact. The tx argument
+// implements the full Store interface so that existing methods compose
+// without duplication — see P2-ARCH-01.
+//
+// NOTE: TxFn MUST NOT call tx.Transact recursively. Nested Transact
+// calls on the same connection would deadlock (SQLite) or escalate
+// isolation requirements unpredictably (PostgreSQL). Both backends
+// detect the nested call and return ErrNestedTransact.
+type TxFn func(tx Store) error
+
 // Store aggregates the persistence capabilities required by the control-plane.
 type Store interface {
 	UserStore
@@ -225,6 +235,27 @@ type Store interface {
 	ClientStore
 	DiscoveredClientStore
 	TimeseriesStore
+
+	// Transact runs fn inside a single database transaction. The tx
+	// argument is a Store implementation bound to the transaction:
+	// all mutations performed through it either commit as a unit or
+	// roll back together.
+	//
+	// Contract:
+	//   - On fn returning nil, the transaction commits.
+	//   - On fn returning a non-nil error, the transaction rolls back
+	//     and the error is returned to the caller.
+	//   - On panic inside fn, the transaction rolls back and the panic
+	//     is re-raised.
+	//   - Context cancellation during fn aborts the transaction.
+	//   - PostgreSQL: serialization failures (SQLSTATE 40001) are
+	//     retried up to 3 times automatically. Default isolation is
+	//     read-committed.
+	//   - SQLite: uses BEGIN IMMEDIATE so the writer lock is acquired
+	//     up front. No retry loop (single-writer semantics).
+	//   - TxFn MUST NOT call tx.Transact; nested calls return
+	//     ErrNestedTransact immediately.
+	Transact(ctx context.Context, fn TxFn) error
 
 	// Ping verifies that the database connection is alive.
 	Ping(ctx context.Context) error

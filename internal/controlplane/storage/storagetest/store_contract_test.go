@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,6 +19,11 @@ func TestStoreContractWithMemoryStore(t *testing.T) {
 }
 
 type memoryStore struct {
+	// txMu serializes Transact callbacks so the contract's
+	// "concurrent writers" test observes the contract's exclusivity
+	// guarantee (each Transact runs atomically w.r.t. other Transacts)
+	// without introducing per-field locking across the whole store.
+	txMu               sync.Mutex
 	users              map[string]storage.UserRecord
 	usernames          map[string]string
 	userAppearance     map[string]storage.UserAppearanceRecord
@@ -864,4 +870,186 @@ func (s *memoryStore) DeleteExpiredSessions(_ context.Context, before time.Time)
 		}
 	}
 	return nil
+}
+
+// Transact on the memoryStore implements the contract via snapshot +
+// restore under txMu. Serialization through txMu gives the "concurrent
+// writers" contract test the atomicity it expects; deep-copy snapshot +
+// restore gives it the rollback-on-error semantics. The tx handed to
+// fn is a memoryTxStore whose Transact always returns
+// ErrNestedTransact, enforcing the no-reentrancy contract without
+// deadlocking on txMu.
+func (s *memoryStore) Transact(ctx context.Context, fn storage.TxFn) (retErr error) {
+	if fn == nil {
+		return fmt.Errorf("memoryStore: Transact requires a non-nil TxFn")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	s.txMu.Lock()
+	defer s.txMu.Unlock()
+
+	snap := s.snapshot()
+	defer func() {
+		if p := recover(); p != nil {
+			s.restore(snap)
+			panic(p)
+		}
+		if retErr != nil {
+			s.restore(snap)
+		}
+	}()
+
+	return fn(&memoryTxStore{memoryStore: s})
+}
+
+// memoryTxStore wraps memoryStore during a Transact callback. All
+// Store methods delegate to the underlying memoryStore directly (the
+// callback already runs under txMu), but Transact returns
+// ErrNestedTransact so nested calls are rejected without deadlock.
+type memoryTxStore struct {
+	*memoryStore
+}
+
+func (t *memoryTxStore) Transact(_ context.Context, _ storage.TxFn) error {
+	return storage.ErrNestedTransact
+}
+
+// memoryStoreSnapshot holds a deep copy of every mutable field on
+// memoryStore so Transact can roll back on error.
+type memoryStoreSnapshot struct {
+	users                          map[string]storage.UserRecord
+	usernames                      map[string]string
+	userAppearance                 map[string]storage.UserAppearanceRecord
+	fleetGroups                    map[string]storage.FleetGroupRecord
+	agents                         map[string]storage.AgentRecord
+	instances                      map[string]storage.InstanceRecord
+	telemetryRuntimeCurrent        map[string]storage.TelemetryRuntimeCurrentRecord
+	telemetryRuntimeDCs            map[string][]storage.TelemetryRuntimeDCRecord
+	telemetryRuntimeUpstreams      map[string][]storage.TelemetryRuntimeUpstreamRecord
+	telemetryRuntimeEvents         map[string][]storage.TelemetryRuntimeEventRecord
+	telemetryDiagnosticsCurrent    map[string]storage.TelemetryDiagnosticsCurrentRecord
+	telemetrySecurityCurrent       map[string]storage.TelemetrySecurityInventoryCurrentRecord
+	telemetryDetailBoosts          map[string]storage.TelemetryDetailBoostRecord
+	clients                        map[string]storage.ClientRecord
+	clientAssignments              map[string]storage.ClientAssignmentRecord
+	clientDeployments              map[string]storage.ClientDeploymentRecord
+	jobs                           map[string]storage.JobRecord
+	jobsByKey                      map[string]string
+	jobTargets                     map[string]storage.JobTargetRecord
+	auditEvents                    []storage.AuditEventRecord
+	metricSnapshots                []storage.MetricSnapshotRecord
+	enrollmentTokens               map[string]storage.EnrollmentTokenRecord
+	agentCertificateRecoveryGrants map[string]storage.AgentCertificateRecoveryGrantRecord
+	discoveredClients              map[string]storage.DiscoveredClientRecord
+	sessions                       map[string]storage.SessionRecord
+	agentRevocations               map[string]storage.AgentRevocationRecord
+	panelSettings                  *storage.PanelSettingsRecord
+	retentionSettings              *storage.RetentionSettings
+	updateSettings                 json.RawMessage
+	updateState                    json.RawMessage
+	certificateAuthority           *storage.CertificateAuthorityRecord
+}
+
+func copyMap[K comparable, V any](in map[K]V) map[K]V {
+	if in == nil {
+		return nil
+	}
+	out := make(map[K]V, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func copySliceMap[K comparable, V any](in map[K][]V) map[K][]V {
+	if in == nil {
+		return nil
+	}
+	out := make(map[K][]V, len(in))
+	for k, v := range in {
+		out[k] = append([]V(nil), v...)
+	}
+	return out
+}
+
+func (s *memoryStore) snapshot() memoryStoreSnapshot {
+	snap := memoryStoreSnapshot{
+		users:                          copyMap(s.users),
+		usernames:                      copyMap(s.usernames),
+		userAppearance:                 copyMap(s.userAppearance),
+		fleetGroups:                    copyMap(s.fleetGroups),
+		agents:                         copyMap(s.agents),
+		instances:                      copyMap(s.instances),
+		telemetryRuntimeCurrent:        copyMap(s.telemetryRuntimeCurrent),
+		telemetryRuntimeDCs:            copySliceMap(s.telemetryRuntimeDCs),
+		telemetryRuntimeUpstreams:      copySliceMap(s.telemetryRuntimeUpstreams),
+		telemetryRuntimeEvents:         copySliceMap(s.telemetryRuntimeEvents),
+		telemetryDiagnosticsCurrent:    copyMap(s.telemetryDiagnosticsCurrent),
+		telemetrySecurityCurrent:       copyMap(s.telemetrySecurityCurrent),
+		telemetryDetailBoosts:          copyMap(s.telemetryDetailBoosts),
+		clients:                        copyMap(s.clients),
+		clientAssignments:              copyMap(s.clientAssignments),
+		clientDeployments:              copyMap(s.clientDeployments),
+		jobs:                           copyMap(s.jobs),
+		jobsByKey:                      copyMap(s.jobsByKey),
+		jobTargets:                     copyMap(s.jobTargets),
+		auditEvents:                    append([]storage.AuditEventRecord(nil), s.auditEvents...),
+		metricSnapshots:                append([]storage.MetricSnapshotRecord(nil), s.metricSnapshots...),
+		enrollmentTokens:               copyMap(s.enrollmentTokens),
+		agentCertificateRecoveryGrants: copyMap(s.agentCertificateRecoveryGrants),
+		discoveredClients:              copyMap(s.discoveredClients),
+		sessions:                       copyMap(s.sessions),
+		agentRevocations:               copyMap(s.agentRevocations),
+		updateSettings:                 append(json.RawMessage(nil), s.updateSettings...),
+		updateState:                    append(json.RawMessage(nil), s.updateState...),
+	}
+	if s.panelSettings != nil {
+		ps := *s.panelSettings
+		snap.panelSettings = &ps
+	}
+	if s.retentionSettings != nil {
+		rs := *s.retentionSettings
+		snap.retentionSettings = &rs
+	}
+	if s.certificateAuthority != nil {
+		ca := *s.certificateAuthority
+		snap.certificateAuthority = &ca
+	}
+	return snap
+}
+
+func (s *memoryStore) restore(snap memoryStoreSnapshot) {
+	s.users = snap.users
+	s.usernames = snap.usernames
+	s.userAppearance = snap.userAppearance
+	s.fleetGroups = snap.fleetGroups
+	s.agents = snap.agents
+	s.instances = snap.instances
+	s.telemetryRuntimeCurrent = snap.telemetryRuntimeCurrent
+	s.telemetryRuntimeDCs = snap.telemetryRuntimeDCs
+	s.telemetryRuntimeUpstreams = snap.telemetryRuntimeUpstreams
+	s.telemetryRuntimeEvents = snap.telemetryRuntimeEvents
+	s.telemetryDiagnosticsCurrent = snap.telemetryDiagnosticsCurrent
+	s.telemetrySecurityCurrent = snap.telemetrySecurityCurrent
+	s.telemetryDetailBoosts = snap.telemetryDetailBoosts
+	s.clients = snap.clients
+	s.clientAssignments = snap.clientAssignments
+	s.clientDeployments = snap.clientDeployments
+	s.jobs = snap.jobs
+	s.jobsByKey = snap.jobsByKey
+	s.jobTargets = snap.jobTargets
+	s.auditEvents = snap.auditEvents
+	s.metricSnapshots = snap.metricSnapshots
+	s.enrollmentTokens = snap.enrollmentTokens
+	s.agentCertificateRecoveryGrants = snap.agentCertificateRecoveryGrants
+	s.discoveredClients = snap.discoveredClients
+	s.sessions = snap.sessions
+	s.agentRevocations = snap.agentRevocations
+	s.panelSettings = snap.panelSettings
+	s.retentionSettings = snap.retentionSettings
+	s.updateSettings = snap.updateSettings
+	s.updateState = snap.updateState
+	s.certificateAuthority = snap.certificateAuthority
 }
