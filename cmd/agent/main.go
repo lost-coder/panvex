@@ -20,6 +20,16 @@ import (
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
+)
+
+// Gateway client tuning constants. These mirror the control-plane server side
+// so NAT/middleboxes cannot silently drop an idle TCP connection and so that
+// large discovery snapshots are not truncated by the default 4 MiB cap.
+const (
+	gatewayKeepaliveTime    = 30 * time.Second
+	gatewayKeepaliveTimeout = 10 * time.Second
+	gatewayMaxMessageSize   = 16 * 1024 * 1024
 )
 
 // Build-time version information, injected via -ldflags.
@@ -972,6 +982,15 @@ func dialGateway(ctx context.Context, gatewayAddr string, serverName string, caP
 
 	return grpc.NewClient(gatewayAddr,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                gatewayKeepaliveTime,
+			Timeout:             gatewayKeepaliveTimeout,
+			PermitWithoutStream: true,
+		}),
+		grpc.WithDefaultCallOptions(
+			grpc.MaxCallRecvMsgSize(gatewayMaxMessageSize),
+			grpc.MaxCallSendMsgSize(gatewayMaxMessageSize),
+		),
 	)
 }
 
