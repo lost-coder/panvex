@@ -55,10 +55,21 @@ func (s *Server) handleLogin() http.HandlerFunc {
 			return
 		}
 
+		// P2-SEC-01: capture any pre-authentication session cookie the browser
+		// carried into the login request so we can invalidate it on success.
+		// This closes the session-fixation window: a cookie planted before
+		// login (e.g. via XSS or a shared device) must not remain valid after
+		// the victim authenticates.
+		priorSessionID := ""
+		if existing, err := r.Cookie(sessionCookieName); err == nil {
+			priorSessionID = existing.Value
+		}
+
 		session, err := s.auth.Authenticate(auth.LoginInput{
-			Username: request.Username,
-			Password: request.Password,
-			TotpCode: request.TotpCode,
+			Username:       request.Username,
+			Password:       request.Password,
+			TotpCode:       request.TotpCode,
+			PriorSessionID: priorSessionID,
 		}, s.now())
 		if err != nil {
 			// Record lockout-eligible failures: wrong password or wrong TOTP code.

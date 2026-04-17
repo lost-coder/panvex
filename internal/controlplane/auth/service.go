@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
@@ -105,6 +106,13 @@ type LoginInput struct {
 	Username string
 	Password string
 	TotpCode string
+	// PriorSessionID, if non-empty, identifies a pre-authentication session
+	// cookie that the browser carried into the login request. On successful
+	// authentication the service invalidates this ID in both the in-memory map
+	// and the persistent session store before issuing a fresh session. This
+	// defeats session fixation (an attacker who planted a cookie pre-login
+	// cannot continue to use that ID after the victim authenticates).
+	PriorSessionID string
 }
 
 // User stores the local operator identity.
@@ -363,6 +371,20 @@ func (s *Service) Authenticate(input LoginInput, now time.Time) (Session, error)
 	}
 
 	s.cleanupExpiredSessionsLocked(now)
+
+	// P2-SEC-01: invalidate any pre-authentication session the browser carried
+	// into this login. Without this step, an attacker who planted a session
+	// cookie (e.g. via XSS or a shared kiosk) would retain a valid session ID
+	// after the victim successfully authenticates — classic session fixation.
+	// The new cookie issued to the victim does not by itself revoke the old
+	// one; we must explicitly drop it from the session map and persistent
+	// store. Done here (under the lock) so the invalidation is atomic with
+	// the issuance of the replacement session.
+	priorSessionID := strings.TrimSpace(input.PriorSessionID)
+	if priorSessionID != "" {
+		delete(s.sessions, priorSessionID)
+	}
+
 	s.sequence++
 	sessionID, err := randomSessionID()
 	if err != nil {
@@ -376,6 +398,16 @@ func (s *Service) Authenticate(input LoginInput, now time.Time) (Session, error)
 	s.sessions[session.ID] = session
 
 	if s.sessionStore != nil {
+		// Always purge the prior session ID from the persistent store when
+		// supplied, independent of whether it was present in the in-memory
+		// map. After a CP restart, s.sessions can be empty while the store
+		// still holds the prior ID; skipping the store delete would let the
+		// attacker-planted session resurrect on the next RestoreSessions.
+		if priorSessionID != "" {
+			if err := s.sessionStore.DeleteSession(context.Background(), priorSessionID); err != nil {
+				slog.Warn("auth: failed to delete prior session from store", "error", err)
+			}
+		}
 		_ = s.sessionStore.PutSession(context.Background(), storage.SessionRecord{
 			ID:        session.ID,
 			UserID:    session.UserID,
@@ -384,6 +416,39 @@ func (s *Service) Authenticate(input LoginInput, now time.Time) (Session, error)
 	}
 
 	return session, nil
+}
+
+// RevokeSessionsForUser invalidates every active session belonging to the
+// given user, returning the number of sessions removed. It removes entries
+// from both the in-memory map and the persistent session store so that a
+// subsequent GetSession rejects the old IDs. Callers should invoke this
+// whenever a user's privileges or credentials change in a way that ought to
+// force re-authentication (role change, forced password reset, etc.).
+func (s *Service) RevokeSessionsForUser(userID string) int {
+	if strings.TrimSpace(userID) == "" {
+		return 0
+	}
+
+	s.mu.Lock()
+	toDelete := make([]string, 0)
+	for sessionID, session := range s.sessions {
+		if session.UserID == userID {
+			toDelete = append(toDelete, sessionID)
+		}
+	}
+	for _, sessionID := range toDelete {
+		delete(s.sessions, sessionID)
+	}
+	store := s.sessionStore
+	s.mu.Unlock()
+
+	if store != nil {
+		for _, sessionID := range toDelete {
+			_ = store.DeleteSession(context.Background(), sessionID)
+		}
+	}
+
+	return len(toDelete)
 }
 
 // StartTotpSetup creates a short-lived TOTP setup secret for the provided user.
