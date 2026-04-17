@@ -443,7 +443,18 @@ func (s *Server) handleAgentUpdate() http.HandlerFunc {
 		}
 		payloadJSON, _ := json.Marshal(payload)
 
-		session, _, _ := s.requireSession(r)
+		// P1-SEC-11: never discard the requireSession error. Without this
+		// check a malformed/expired cookie here would fall through with an
+		// empty ActorID in both the job record and the audit event, making
+		// the action untraceable. The handler sits in the operator group so
+		// the middleware already gates access, but we verify again and fail
+		// closed rather than silently anonymising a privileged action.
+		session, _, err := s.requireSession(r)
+		if err != nil {
+			s.logger.Warn("agent update: session check failed in handler body", "error", err)
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
 
 		job, err := s.jobs.Enqueue(jobs.CreateJobInput{
 			Action:         jobs.ActionAgentSelfUpdate,

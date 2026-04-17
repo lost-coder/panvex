@@ -29,6 +29,12 @@ const (
 	httpLoginRateLimitPerWindow = 30
 	httpAgentBootstrapRateLimitPerWindow = 30
 	grpcConnectRateLimitPerWindow = 30
+	// httpSensitiveRateLimitPerWindow caps how often a single authenticated
+	// user (or client IP if no session) may hit privileged write endpoints
+	// (TOTP enable/disable/setup, user CRUD, enrollment-token create, client
+	// secret rotation). Prevents brute-forcing the 6-digit TOTP enable code
+	// and flooding the system with token/rotation churn.
+	httpSensitiveRateLimitPerWindow = 10
 	defaultRateLimitWindow = time.Minute
 )
 
@@ -81,6 +87,7 @@ type Server struct {
 	loginRateLimiter *fixedWindowRateLimiter
 	agentBootstrapRateLimiter *fixedWindowRateLimiter
 	grpcConnectRateLimiter *fixedWindowRateLimiter
+	sensitiveRateLimiter *fixedWindowRateLimiter
 	loginLockout *accountLockoutTracker
 	trustedProxyCIDRs []*net.IPNet
 	encryptionKey string
@@ -150,6 +157,7 @@ func New(options Options) *Server {
 		loginRateLimiter: newFixedWindowRateLimiter(httpLoginRateLimitPerWindow, defaultRateLimitWindow),
 		agentBootstrapRateLimiter: newFixedWindowRateLimiter(httpAgentBootstrapRateLimitPerWindow, defaultRateLimitWindow),
 		grpcConnectRateLimiter: newFixedWindowRateLimiter(grpcConnectRateLimitPerWindow, defaultRateLimitWindow),
+		sensitiveRateLimiter: newFixedWindowRateLimiter(httpSensitiveRateLimitPerWindow, defaultRateLimitWindow),
 		loginLockout: newAccountLockoutTracker(),
 		trustedProxyCIDRs: options.TrustedProxyCIDRs,
 		encryptionKey: options.EncryptionKey,
@@ -402,9 +410,14 @@ func (s *Server) routes() http.Handler {
 				authenticated.Get("/version", s.handleVersion())
 				authenticated.Get("/auth/me", s.handleMe())
 				authenticated.Post("/auth/logout", s.handleLogout())
-				authenticated.Post("/auth/totp/setup", s.handleTotpSetup())
-				authenticated.Post("/auth/totp/enable", s.handleTotpEnable())
-				authenticated.Post("/auth/totp/disable", s.handleTotpDisable())
+				// Sensitive per-user rate limiting applied to any endpoint that
+				// could be brute-forced (TOTP enable 6-digit code) or abused
+				// at scale (enrollment token floods, repeated secret
+				// rotations). Key is session.UserID, falling back to client IP.
+				sensitive := s.withRateLimit(s.sensitiveRateLimiter, s.requestSessionRateLimitKey)
+				authenticated.With(sensitive).Post("/auth/totp/setup", s.handleTotpSetup())
+				authenticated.With(sensitive).Post("/auth/totp/enable", s.handleTotpEnable())
+				authenticated.With(sensitive).Post("/auth/totp/disable", s.handleTotpDisable())
 				authenticated.Get("/control-room", s.handleControlRoom())
 				authenticated.Get("/fleet", s.handleFleet())
 				authenticated.Get("/agents", s.handleAgents())
@@ -431,7 +444,7 @@ func (s *Server) routes() http.Handler {
 					operator.Get("/clients/{id}", s.handleClient())
 					operator.Put("/clients/{id}", s.handleUpdateClient())
 					operator.Delete("/clients/{id}", s.handleDeleteClient())
-					operator.Post("/clients/{id}/rotate-secret", s.handleRotateClientSecret())
+					operator.With(sensitive).Post("/clients/{id}/rotate-secret", s.handleRotateClientSecret())
 					operator.Get("/discovered-clients", s.handleDiscoveredClients())
 					operator.Post("/discovered-clients/{id}/adopt", s.handleAdoptDiscoveredClient())
 					operator.Post("/discovered-clients/{id}/ignore", s.handleIgnoreDiscoveredClient())
@@ -439,7 +452,7 @@ func (s *Server) routes() http.Handler {
 					operator.Get("/fleet-groups", s.handleFleetGroups())
 					operator.Patch("/agents/{id}", s.handleRenameAgent())
 					operator.Get("/agents/enrollment-tokens", s.handleListEnrollmentTokens())
-					operator.Post("/agents/enrollment-tokens", s.handleCreateEnrollmentToken())
+					operator.With(sensitive).Post("/agents/enrollment-tokens", s.handleCreateEnrollmentToken())
 					operator.Post("/agents/enrollment-tokens/{value}/revoke", s.handleRevokeEnrollmentToken())
 					operator.Post("/agents/{id}/update", s.handleAgentUpdate())
 					operator.Get("/agent/update/binary", s.handleAgentBinaryProxy())
@@ -448,10 +461,10 @@ func (s *Server) routes() http.Handler {
 				authenticated.Group(func(admin chi.Router) {
 					admin.Use(s.requireMinimumRole(auth.RoleAdmin))
 					admin.Get("/users", s.handleUsers())
-					admin.Post("/users", s.handleCreateUser())
-					admin.Put("/users/{id}", s.handleUpdateUser())
-					admin.Delete("/users/{id}", s.handleDeleteUser())
-					admin.Post("/users/{id}/totp/reset", s.handleResetUserTotp())
+					admin.With(sensitive).Post("/users", s.handleCreateUser())
+					admin.With(sensitive).Put("/users/{id}", s.handleUpdateUser())
+					admin.With(sensitive).Delete("/users/{id}", s.handleDeleteUser())
+					admin.With(sensitive).Post("/users/{id}/totp/reset", s.handleResetUserTotp())
 					admin.Post("/agents/{id}/certificate-recovery-grants", s.handleCreateAgentCertificateRecoveryGrant())
 					admin.Post("/agents/{id}/certificate-recovery-grants/revoke", s.handleRevokeAgentCertificateRecoveryGrant())
 					admin.Delete("/agents/{id}", s.handleDeregisterAgent())

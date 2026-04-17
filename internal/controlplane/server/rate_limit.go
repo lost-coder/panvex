@@ -141,6 +141,19 @@ func (s *Server) requestClientRateLimitKey(r *http.Request) string {
 	return strings.TrimSpace(r.RemoteAddr)
 }
 
+// requestSessionRateLimitKey returns a per-user key when the request carries
+// an authenticated session, otherwise falls back to the per-IP rate-limit
+// key. Used by sensitiveRateLimiter so one authenticated user cannot
+// brute-force TOTP-enable codes or spam enrollment tokens. "user:" / "ip:"
+// prefixes guarantee there is no collision between an IP whose literal value
+// happens to match a user ID.
+func (s *Server) requestSessionRateLimitKey(r *http.Request) string {
+	if session, _, ok := requestAuthContext(r); ok && session.UserID != "" {
+		return "user:" + session.UserID
+	}
+	return "ip:" + s.requestClientRateLimitKey(r)
+}
+
 // remoteAddrTrustsForwardedFor reports whether the given remote address
 // belongs to a trusted proxy whose X-Forwarded-For header should be used
 // for client identification. Loopback addresses are always trusted;
