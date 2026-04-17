@@ -361,7 +361,28 @@ func New(options Options) *Server {
 
 // Close stops background workers and drains pending writes. It should be
 // called before closing the storage backend.
+//
+// Shutdown ordering (P2-LOG-10 / M-R4 / P7-R6):
+//  1. batchWriter.StopWithTimeout(10s) FIRST — drains the audit-events
+//     queue (and the 7 other streams) before any background goroutine that
+//     might still be producing audits is shut down. This bounds the
+//     worst-case shutdown time at 10s so a wedged DB cannot hang the
+//     process indefinitely, while still giving the DB a realistic window
+//     to absorb in-flight rows.
+//  2. metrics / rollup goroutines stop afterwards.
+//
+// Events enqueued AFTER this point may race with the final drain and can
+// be dropped — upstream callers (HTTP handlers, gRPC streams) must stop
+// before Close() runs to guarantee zero loss.
 func (s *Server) Close() {
+	if s.batchWriter != nil {
+		if err := s.batchWriter.StopWithTimeout(10 * time.Second); err != nil {
+			s.logger.Error("batch writer drain timed out on shutdown",
+				"error", err,
+				"alert", "audit_persist_failed",
+			)
+		}
+	}
 	s.metricsShutdown()
 	if s.stopRollup != nil {
 		s.stopRollup()
@@ -369,9 +390,6 @@ func (s *Server) Close() {
 	// Wait for the rollup goroutine to finish before closing the store,
 	// so it does not query a closed storage backend.
 	s.rollupWg.Wait()
-	if s.batchWriter != nil {
-		s.batchWriter.Stop()
-	}
 }
 
 func (s *Server) seedUsers(users []auth.User) error {
@@ -670,12 +688,23 @@ func (s *Server) appendAuditWithContext(ctx context.Context, actorID string, act
 	s.appendAuditTrailLocked(event)
 	s.metricsAuditMu.Unlock()
 
-	// Audit events are immutable records that must survive crashes, so they
-	// are written to storage synchronously instead of via the batch writer.
-	if s.store != nil {
-		if err := s.store.AppendAuditEvent(ctx, auditEventToRecord(event)); err != nil {
-			s.logger.Error("persist audit event failed", "action", action, "error", err)
-		}
+	// P2-LOG-10 / M-R4 / P7-R6: audit writes no longer block the HTTP
+	// request path. The in-memory ring buffer above (PERF-02) already
+	// serves the /api/audit read path, and storage persistence now runs
+	// asynchronously on the batch writer. Close() drains the queue on
+	// shutdown (StopWithTimeout 10s) so in-flight audit events still
+	// survive a graceful restart. Persistent failures (NOT NULL, schema
+	// mismatch, retry-exhausted) are surfaced by the batch writer with
+	// slog.Error + alert=audit_persist_failed so operators can page on
+	// the audit pipeline independently of other streams.
+	//
+	// ctx is intentionally unused here — the batch writer runs under its
+	// own long-lived context, and the audit record has already been
+	// copied into the ring buffer and captured by the snapshot so there
+	// is nothing the HTTP request's cancellation should abort.
+	_ = ctx
+	if s.batchWriter != nil {
+		s.batchWriter.auditEvents.Enqueue(auditEventToRecord(event))
 	}
 
 	s.events.publish(eventEnvelope{
