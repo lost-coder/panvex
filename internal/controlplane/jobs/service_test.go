@@ -1147,3 +1147,285 @@ func (s *blockingJobStore) PutJob(ctx context.Context, job storage.JobRecord) er
 
 	return s.JobStore.PutJob(ctx, job)
 }
+
+// TestEnqueueReleasesLockDuringPersist verifies P2-PERF-04: Enqueue must not
+// hold the jobs service mutex across the synchronous PutJob/PutJobTarget
+// calls, otherwise every concurrent PendingForAgent is forced to wait for
+// the DB round-trip.
+func TestEnqueueReleasesLockDuringPersist(t *testing.T) {
+	now := time.Date(2026, time.April, 17, 10, 0, 0, 0, time.UTC)
+	sqliteStore, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer sqliteStore.Close()
+
+	store := &blockingJobStore{JobStore: sqliteStore}
+	service := NewServiceWithStore(store)
+	service.SetNow(func() time.Time { return now })
+
+	putJobStarted := make(chan struct{})
+	releasePutJob := make(chan struct{})
+	store.blockNextPutJob(putJobStarted, releasePutJob)
+
+	enqueueDone := make(chan error, 1)
+	go func() {
+		_, err := service.Enqueue(CreateJobInput{
+			Action:         ActionRuntimeReload,
+			TargetAgentIDs: []string{"agent-1"},
+			TTL:            time.Minute,
+			IdempotencyKey: "p2-perf-04-slow-persist",
+			ActorID:        "user-1",
+		}, now)
+		enqueueDone <- err
+	}()
+
+	select {
+	case <-putJobStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("PutJob() did not start, want Enqueue to reach persist phase")
+	}
+
+	// While PutJob is parked, concurrent readers that only need the
+	// in-memory state must not block.
+	pendingDone := make(chan []Job, 1)
+	go func() {
+		pendingDone <- service.PendingForAgent("agent-1", time.Second)
+	}()
+	select {
+	case pending := <-pendingDone:
+		// The in-flight Enqueue has not yet published into s.jobs / s.agentJobs,
+		// so this PendingForAgent call correctly sees zero jobs — the key
+		// point is it did NOT block on the stalled PutJob.
+		if len(pending) != 0 {
+			t.Fatalf("PendingForAgent() = %d jobs, want 0 while persist in-flight", len(pending))
+		}
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("PendingForAgent() blocked on Enqueue's in-flight persist — lock not released")
+	}
+
+	// Other read-only queries should also proceed.
+	depthDone := make(chan int, 1)
+	go func() {
+		depthDone <- service.QueueDepth()
+	}()
+	select {
+	case <-depthDone:
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("QueueDepth() blocked on Enqueue's in-flight persist")
+	}
+
+	close(releasePutJob)
+
+	select {
+	case err := <-enqueueDone:
+		if err != nil {
+			t.Fatalf("Enqueue() error = %v, want nil", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Enqueue() did not complete after PutJob release")
+	}
+
+	// After the persist completes, the job is visible to PendingForAgent.
+	pending := service.PendingForAgent("agent-1", time.Second)
+	if len(pending) != 1 {
+		t.Fatalf("PendingForAgent() after persist = %d, want 1", len(pending))
+	}
+}
+
+// TestEnqueueDuplicateKeyRejectedDuringOutOfLockWindow verifies that while an
+// Enqueue is in its out-of-lock persist phase a second Enqueue with the same
+// idempotency key is rejected with ErrDuplicateIdempotencyKey — the key map
+// reservation guards the race.
+func TestEnqueueDuplicateKeyRejectedDuringOutOfLockWindow(t *testing.T) {
+	now := time.Date(2026, time.April, 17, 10, 0, 0, 0, time.UTC)
+	sqliteStore, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer sqliteStore.Close()
+
+	store := &blockingJobStore{JobStore: sqliteStore}
+	service := NewServiceWithStore(store)
+
+	putJobStarted := make(chan struct{})
+	releasePutJob := make(chan struct{})
+	store.blockNextPutJob(putJobStarted, releasePutJob)
+
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := service.Enqueue(CreateJobInput{
+			Action:         ActionRuntimeReload,
+			TargetAgentIDs: []string{"agent-1"},
+			TTL:            time.Minute,
+			IdempotencyKey: "p2-perf-04-dup-key",
+			ActorID:        "user-1",
+		}, now)
+		firstDone <- err
+	}()
+
+	select {
+	case <-putJobStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first Enqueue did not reach persist phase")
+	}
+
+	// Second Enqueue with the same key — must be rejected immediately even
+	// though the first one has not completed persist yet.
+	_, err = service.Enqueue(CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-2"},
+		TTL:            time.Minute,
+		IdempotencyKey: "p2-perf-04-dup-key",
+		ActorID:        "user-1",
+	}, now)
+	if !errors.Is(err, ErrDuplicateIdempotencyKey) {
+		t.Fatalf("second Enqueue err = %v, want ErrDuplicateIdempotencyKey", err)
+	}
+
+	close(releasePutJob)
+
+	select {
+	case err := <-firstDone:
+		if err != nil {
+			t.Fatalf("first Enqueue err = %v, want nil", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("first Enqueue did not complete after release")
+	}
+
+	// After the in-flight call completes the key is still reserved by the
+	// first job — a third Enqueue must also see the duplicate.
+	_, err = service.Enqueue(CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-3"},
+		TTL:            time.Minute,
+		IdempotencyKey: "p2-perf-04-dup-key",
+		ActorID:        "user-1",
+	}, now)
+	if !errors.Is(err, ErrDuplicateIdempotencyKey) {
+		t.Fatalf("third Enqueue err = %v, want ErrDuplicateIdempotencyKey", err)
+	}
+
+	jobs := service.List()
+	if len(jobs) != 1 {
+		t.Fatalf("len(List()) = %d, want 1 (exactly one winner)", len(jobs))
+	}
+}
+
+// TestEnqueueDuplicateKeyConcurrentExactlyOneWins launches many parallel
+// Enqueue calls with the same idempotency key and asserts exactly one
+// succeeds, the rest see ErrDuplicateIdempotencyKey, and no tentative
+// reservation leaks in s.keys.
+func TestEnqueueDuplicateKeyConcurrentExactlyOneWins(t *testing.T) {
+	now := time.Date(2026, time.April, 17, 10, 0, 0, 0, time.UTC)
+	sqliteStore, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer sqliteStore.Close()
+
+	service := NewServiceWithStore(sqliteStore)
+
+	const workers = 16
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	results := make(chan error, workers)
+	start := make(chan struct{})
+	for i := 0; i < workers; i++ {
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := service.Enqueue(CreateJobInput{
+				Action:         ActionRuntimeReload,
+				TargetAgentIDs: []string{"agent-1"},
+				TTL:            time.Minute,
+				IdempotencyKey: "p2-perf-04-race",
+				ActorID:        "user-1",
+			}, now)
+			results <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+
+	successes := 0
+	duplicates := 0
+	for err := range results {
+		switch {
+		case err == nil:
+			successes++
+		case errors.Is(err, ErrDuplicateIdempotencyKey):
+			duplicates++
+		default:
+			t.Fatalf("unexpected Enqueue error: %v", err)
+		}
+	}
+	if successes != 1 {
+		t.Fatalf("successes = %d, want 1", successes)
+	}
+	if duplicates != workers-1 {
+		t.Fatalf("duplicates = %d, want %d", duplicates, workers-1)
+	}
+	jobs := service.List()
+	if len(jobs) != 1 {
+		t.Fatalf("len(List()) = %d, want 1", len(jobs))
+	}
+}
+
+// TestEnqueuePersistFailureRollsBack verifies P2-PERF-04: when PutJob fails
+// the tentative idempotency-key reservation is rolled back, so the caller
+// (or a retry) can use the same key again and no ghost job lingers in the
+// in-memory maps.
+func TestEnqueuePersistFailureRollsBack(t *testing.T) {
+	now := time.Date(2026, time.April, 17, 10, 0, 0, 0, time.UTC)
+	sqliteStore, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer sqliteStore.Close()
+
+	putErr := errors.New("simulated put-job failure")
+	store := &failingJobStore{JobStore: sqliteStore, putJobErr: putErr}
+	service := NewServiceWithStore(store)
+
+	_, err = service.Enqueue(CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            time.Minute,
+		IdempotencyKey: "p2-perf-04-rollback",
+		ActorID:        "user-1",
+	}, now)
+	if !errors.Is(err, putErr) {
+		t.Fatalf("Enqueue() err = %v, want %v", err, putErr)
+	}
+
+	// No job should be visible in the in-memory state.
+	if jobs := service.List(); len(jobs) != 0 {
+		t.Fatalf("len(List()) = %d, want 0 after rollback", len(jobs))
+	}
+	if depth := service.QueueDepth(); depth != 0 {
+		t.Fatalf("QueueDepth() = %d, want 0 after rollback", depth)
+	}
+	if pending := service.PendingForAgent("agent-1", time.Second); len(pending) != 0 {
+		t.Fatalf("PendingForAgent() = %d, want 0 after rollback", len(pending))
+	}
+
+	// The idempotency-key reservation must be released — a retry with the
+	// same key should now succeed once the store is healthy again.
+	store.putJobErr = nil
+	job, err := service.Enqueue(CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            time.Minute,
+		IdempotencyKey: "p2-perf-04-rollback",
+		ActorID:        "user-1",
+	}, now)
+	if err != nil {
+		t.Fatalf("retry Enqueue() err = %v, want nil", err)
+	}
+	if job.ID == "" {
+		t.Fatalf("retry Enqueue() returned empty job ID")
+	}
+}
