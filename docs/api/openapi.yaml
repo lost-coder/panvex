@@ -1,0 +1,772 @@
+openapi: 3.0.3
+info:
+  title: Panvex Control-Plane API
+  version: "1.0"
+  description: |
+    HTTP API for the Panvex control-plane — fleet management for Telemt MTProto
+    proxy nodes. The API is cookie-authenticated (session) for browser callers,
+    with a separate Bearer token for Prometheus scraping of `/metrics`.
+
+    This spec documents the top 15-20 critical operations. Full endpoint
+    inventory lives in the source — see `internal/controlplane/server/server.go`.
+
+    ## Authentication
+
+    - **Session cookie** (`panvex_session`) — issued by `POST /api/auth/login`
+      and required for all `/api/*` routes except `/auth/login`,
+      `/agent/bootstrap` and `/agent/recover-certificate`.
+    - **Bearer token** — `Authorization: Bearer <token>` protects `/metrics`
+      (token comes from the `PROMETHEUS_SCRAPE_TOKEN` env var, see P2-OBS-01).
+
+    ## Roles
+
+    `viewer < operator < admin`. Responses may differ by role (e.g.
+    `/api/version` strips build fingerprints for viewers). Mutating routes
+    generally require Operator+; panel/retention/user management is Admin only.
+
+    ## Errors
+
+    All error responses use a common JSON envelope:
+
+    ```json
+    { "error": "human-readable message", "code": "optional_machine_code" }
+    ```
+
+    `code` is set for distinguishable cases (e.g. `totp_required`,
+    `totp_invalid`); otherwise only `error` is present.
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+  - url: https://panel.example.com
+    description: Production
+
+tags:
+  - name: auth
+    description: Login, logout, session, TOTP
+  - name: agents
+    description: Agent registry, enrollment, certificate recovery
+  - name: clients
+    description: Managed Telemt clients (CRUD + rotate-secret)
+  - name: discovery
+    description: Discovered clients adopt / merge / ignore
+  - name: settings
+    description: Retention, panel, updates
+  - name: audit
+    description: Audit events
+  - name: events
+    description: Live event stream (WebSocket)
+  - name: version
+    description: Build/version info (role-gated)
+  - name: ops
+    description: Liveness, readiness, metrics
+
+security:
+  - sessionCookie: []
+
+paths:
+  ########################################################################
+  # Auth
+  ########################################################################
+  /api/auth/login:
+    post:
+      tags: [auth]
+      summary: Log in (username + password, optional TOTP)
+      description: |
+        Two-stage flow when TOTP is enabled:
+        1. First POST without `totp_code` returns **401** with
+           `{"error": "...", "code": "totp_required"}`.
+        2. Second POST with `totp_code` completes login and sets the
+           `panvex_session` cookie.
+      security: []   # public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: "Login successful; `Set-Cookie: panvex_session=...`"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+        '401':
+          description: Invalid credentials or missing/invalid TOTP
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                totp_required:
+                  value: { error: "totp code required", code: "totp_required" }
+                totp_invalid:
+                  value: { error: "invalid totp code", code: "totp_invalid" }
+                bad_credentials:
+                  value: { error: "invalid credentials" }
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/auth/logout:
+    post:
+      tags: [auth]
+      summary: Log out current session
+      responses:
+        '204':
+          description: Session revoked; session cookie cleared.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/auth/me:
+    get:
+      tags: [auth]
+      summary: Return the authenticated user
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  ########################################################################
+  # Version (role-gated — P1-SEC-15)
+  ########################################################################
+  /api/version:
+    get:
+      tags: [version]
+      summary: Return control-plane version (build fingerprint gated on role)
+      description: |
+        - **viewer** — `{ "version": "..." }` only.
+        - **operator/admin** — includes `commit_sha` and `build_time`.
+      responses:
+        '200':
+          description: Version payload
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/VersionViewer'
+                  - $ref: '#/components/schemas/VersionOperator'
+              examples:
+                viewer:
+                  summary: Viewer role (build details stripped)
+                  value: { version: "1.4.2" }
+                operator:
+                  summary: Operator/Admin role
+                  value:
+                    version: "1.4.2"
+                    commit_sha: "6c629d5f..."
+                    build_time: "2026-04-17T22:11:03Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  ########################################################################
+  # Agents
+  ########################################################################
+  /api/agents:
+    get:
+      tags: [agents]
+      summary: List enrolled agents
+      responses:
+        '200':
+          description: Array of agents
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Agent' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/agent/bootstrap:
+    post:
+      tags: [agents]
+      summary: Agent enrollment (public, rate-limited)
+      description: |
+        Called by `panvex-agent bootstrap`. Exchanges a one-shot enrollment
+        token for an mTLS client certificate bundle. Public (no session),
+        but protected by a per-IP rate limiter.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentBootstrapRequest'
+      responses:
+        '200':
+          description: Issued certificate + private key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentBootstrapResponse'
+        '401': { description: Unknown/expired enrollment token }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/agent/recover-certificate:
+    post:
+      tags: [agents]
+      summary: Recover agent certificate within grace window
+      description: |
+        Used when an agent has lost its state file but the admin has issued
+        a recovery grant (`POST /api/agents/{id}/certificate-recovery-grants`).
+        Public + rate-limited. Valid only within
+        `agentCertificateRecoveryGraceWindow` (24h).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentCertificateRecoveryRequest'
+      responses:
+        '200':
+          description: Re-issued certificate bundle
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentBootstrapResponse'
+        '401': { description: No active recovery grant }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  ########################################################################
+  # Managed clients
+  ########################################################################
+  /api/clients:
+    get:
+      tags: [clients]
+      summary: List managed clients
+      responses:
+        '200':
+          description: Array of clients
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ClientListItem' }
+    post:
+      tags: [clients]
+      summary: Create a managed client (Operator+)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ClientMutationRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClientDetail' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/clients/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    put:
+      tags: [clients]
+      summary: Update a managed client (Operator+)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ClientMutationRequest' }
+      responses:
+        '200':
+          description: Updated client
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClientDetail' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [clients]
+      summary: Delete a managed client (Operator+)
+      responses:
+        '204': { description: Deleted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/clients/{id}/rotate-secret:
+    post:
+      tags: [clients]
+      summary: Rotate client secret (Operator+, sensitive rate-limited)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Client with new secret
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClientDetail' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  ########################################################################
+  # Discovered clients
+  ########################################################################
+  /api/discovered-clients:
+    get:
+      tags: [discovery]
+      summary: List clients discovered on agents but not yet adopted
+      responses:
+        '200':
+          description: Array of discovered clients
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/DiscoveredClient' }
+
+  /api/discovered-clients/{id}/adopt:
+    post:
+      tags: [discovery]
+      summary: Adopt a discovered client as a managed client (Operator+)
+      description: |
+        If a managed client with the same `(name, secret)` already exists the
+        call performs a **merge-adopt**, linking the discovered record to the
+        existing managed client instead of creating a duplicate.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Managed client (newly created or merged)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClientDetail' }
+        '409':
+          description: Already adopted (see `ErrAlreadyAdopted`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /api/discovered-clients/{id}/ignore:
+    post:
+      tags: [discovery]
+      summary: Mark a discovered client as ignored (Operator+)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Ignored }
+
+  ########################################################################
+  # Settings
+  ########################################################################
+  /api/settings/retention:
+    get:
+      tags: [settings]
+      summary: Get retention windows (Admin)
+      responses:
+        '200':
+          description: Current retention
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RetentionSettings' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [settings]
+      summary: Update retention windows (Admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RetentionSettings' }
+      responses:
+        '200':
+          description: Updated retention
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RetentionSettings' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/settings/panel:
+    get:
+      tags: [settings]
+      summary: Get panel runtime settings (Admin)
+      responses:
+        '200':
+          description: Panel settings snapshot
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PanelSettings' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [settings]
+      summary: Update panel public URL / gRPC endpoint (Admin)
+      description: |
+        Body is capped at 16 KiB. Runtime-only fields
+        (`http_listen_address`, TLS paths, etc.) cannot be mutated and return
+        `400` if supplied.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                http_public_url:      { type: string, format: uri }
+                grpc_public_endpoint: { type: string }
+      responses:
+        '200':
+          description: Updated panel settings
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PanelSettings' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '413': { description: Body exceeds 16 KiB }
+
+  ########################################################################
+  # Audit
+  ########################################################################
+  /api/audit:
+    get:
+      tags: [audit]
+      summary: Recent audit events (up to 1024)
+      responses:
+        '200':
+          description: Array of audit events, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AuditEvent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  ########################################################################
+  # Live events
+  ########################################################################
+  /api/events:
+    get:
+      tags: [events]
+      summary: Live event stream (WebSocket)
+      description: |
+        Authenticated WebSocket endpoint using the session cookie. The client
+        performs an HTTP upgrade; each server-pushed message is a JSON event
+        envelope (`{ type, data }`). Origin is validated: only the request
+        `Host` (plus loopback patterns in development) is accepted.
+
+        This route is **not a standard JSON endpoint** — OpenAPI clients
+        should not attempt to invoke it. It is documented for completeness.
+      responses:
+        '101':
+          description: Switching Protocols (WebSocket upgrade)
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Origin not allowed
+
+  ########################################################################
+  # Ops
+  ########################################################################
+  /healthz:
+    get:
+      tags: [ops]
+      summary: Liveness probe (public)
+      security: []
+      responses:
+        '200':
+          description: ok
+          content:
+            text/plain:
+              schema: { type: string, example: "ok" }
+
+  /readyz:
+    get:
+      tags: [ops]
+      summary: Readiness probe (public)
+      description: |
+        Returns `200 ready` when the CA is initialized and the storage layer
+        responds to a 2s `Ping`. Otherwise `503 not ready`. Body is
+        intentionally generic to avoid leaking internal state.
+      security: []
+      responses:
+        '200':
+          description: ready
+          content:
+            text/plain:
+              schema: { type: string, example: "ready" }
+        '503':
+          description: not ready
+          content:
+            text/plain:
+              schema: { type: string, example: "not ready" }
+
+  /metrics:
+    get:
+      tags: [ops]
+      summary: Prometheus metrics (Bearer auth)
+      security:
+        - bearerScrapeToken: []
+      responses:
+        '200':
+          description: Prometheus text-format metrics
+          content:
+            text/plain:
+              schema: { type: string }
+        '401':
+          description: Missing or invalid bearer token
+          headers:
+            WWW-Authenticate:
+              schema: { type: string, example: 'Bearer realm="panvex-metrics"' }
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: panvex_session
+      description: Session cookie issued by `POST /api/auth/login`.
+    bearerScrapeToken:
+      type: http
+      scheme: bearer
+      description: |
+        Prometheus scrape token (env `PROMETHEUS_SCRAPE_TOKEN`). Used only for
+        `GET /metrics`. Compared in constant time server-side.
+
+  responses:
+    Unauthorized:
+      description: No/invalid session
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: "unauthorized" }
+    Forbidden:
+      description: Caller lacks the required role
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: "admin role required" }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: "not found" }
+    BadRequest:
+      description: Malformed request body or invalid field
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: "invalid request body" }
+    RateLimited:
+      description: Too many requests (per-IP or per-user window)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: "rate limit exceeded" }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Human-readable message
+        code:
+          type: string
+          description: |
+            Machine code for distinguishable cases. Present only when the
+            server sets it (e.g. `totp_required`, `totp_invalid`).
+          nullable: true
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:  { type: string }
+        password:  { type: string, format: password }
+        totp_code:
+          type: string
+          description: 6-digit TOTP code. Required on second-stage call when TOTP is enabled.
+
+    Me:
+      type: object
+      required: [id, username, role, totp_enabled]
+      properties:
+        id:           { type: string }
+        username:     { type: string }
+        role:
+          type: string
+          enum: [viewer, operator, admin]
+        totp_enabled: { type: boolean }
+
+    VersionViewer:
+      type: object
+      required: [version]
+      properties:
+        version: { type: string }
+
+    VersionOperator:
+      allOf:
+        - $ref: '#/components/schemas/VersionViewer'
+        - type: object
+          properties:
+            commit_sha: { type: string }
+            build_time: { type: string, format: date-time }
+
+    Agent:
+      type: object
+      properties:
+        id:                 { type: string, description: "UUID v7" }
+        node_name:          { type: string }
+        fleet_group_id:     { type: string, nullable: true }
+        version:            { type: string }
+        read_only:          { type: boolean }
+        last_seen_unix:     { type: integer, format: int64 }
+        connected:          { type: boolean }
+
+    AgentBootstrapRequest:
+      type: object
+      required: [enrollment_token, node_name]
+      properties:
+        enrollment_token: { type: string }
+        node_name:        { type: string }
+        agent_version:    { type: string, nullable: true }
+
+    AgentBootstrapResponse:
+      type: object
+      properties:
+        agent_id:         { type: string }
+        certificate_pem:  { type: string }
+        private_key_pem:  { type: string }
+        ca_pem:           { type: string }
+        grpc_endpoint:    { type: string }
+        expires_at_unix:  { type: integer, format: int64 }
+
+    AgentCertificateRecoveryRequest:
+      type: object
+      required: [agent_id, recovery_grant]
+      properties:
+        agent_id:       { type: string }
+        recovery_grant: { type: string, description: "Short-lived grant issued by admin" }
+        node_name:      { type: string, nullable: true }
+
+    ClientListItem:
+      type: object
+      properties:
+        id:               { type: string }
+        name:             { type: string }
+        enabled:          { type: boolean }
+        max_tcp_conns:    { type: integer }
+        max_unique_ips:   { type: integer }
+        quota_bytes:      { type: integer, format: int64 }
+        expires_at:       { type: string, nullable: true }
+        created_at_unix:  { type: integer, format: int64 }
+        updated_at_unix:  { type: integer, format: int64 }
+
+    ClientMutationRequest:
+      type: object
+      required: [name]
+      properties:
+        name:            { type: string }
+        secret:          { type: string, description: "32-hex. Omit to auto-generate." }
+        user_ad_tag:     { type: string, nullable: true }
+        enabled:         { type: boolean, default: true }
+        max_tcp_conns:   { type: integer }
+        max_unique_ips:  { type: integer }
+        quota_bytes:     { type: integer, format: int64 }
+        expiration:      { type: string, nullable: true, description: "RFC 3339" }
+        fleet_group_ids: { type: array, items: { type: string } }
+        agent_ids:       { type: array, items: { type: string } }
+
+    ClientDetail:
+      allOf:
+        - $ref: '#/components/schemas/ClientListItem'
+        - type: object
+          properties:
+            secret:      { type: string }
+            user_ad_tag: { type: string, nullable: true }
+            assignments:
+              type: array
+              items:
+                type: object
+                properties:
+                  fleet_group_id: { type: string, nullable: true }
+                  agent_id:       { type: string, nullable: true }
+            deployments:
+              type: array
+              items:
+                type: object
+                properties:
+                  agent_id:         { type: string }
+                  connection_link:  { type: string, nullable: true }
+                  status:           { type: string }
+
+    DiscoveredClient:
+      type: object
+      properties:
+        id:                  { type: string }
+        agent_id:            { type: string }
+        client_name:         { type: string }
+        secret:              { type: string, description: "32-hex, as seen on the agent" }
+        status:
+          type: string
+          enum: [pending_review, adopted, ignored]
+        discovered_at_unix:  { type: integer, format: int64 }
+        updated_at_unix:     { type: integer, format: int64 }
+
+    RetentionSettings:
+      type: object
+      description: Retention windows, in seconds. Zero/negative values reset to defaults.
+      properties:
+        ts_raw_seconds:       { type: integer, description: "Per-snapshot telemetry rows" }
+        ts_hourly_seconds:    { type: integer }
+        ts_dc_seconds:        { type: integer, description: "DC-health samples" }
+        ip_history_seconds:   { type: integer }
+        event_seconds:        { type: integer, description: "Live event buffer" }
+
+    PanelSettings:
+      type: object
+      properties:
+        http_public_url:        { type: string, format: uri }
+        http_root_path:         { type: string }
+        grpc_public_endpoint:   { type: string }
+        http_listen_address:    { type: string, readOnly: true }
+        grpc_listen_address:    { type: string, readOnly: true }
+        tls_mode:               { type: string, readOnly: true }
+        tls_cert_file:          { type: string, readOnly: true }
+        tls_key_file:           { type: string, readOnly: true }
+        runtime_source:         { type: string, readOnly: true }
+        runtime_config_path:    { type: string, readOnly: true }
+        updated_at_unix:        { type: integer, format: int64 }
+        restart:
+          type: object
+          properties:
+            supported: { type: boolean }
+            pending:   { type: boolean }
+
+    AuditEvent:
+      type: object
+      properties:
+        id:              { type: string, example: "audit-0001234" }
+        user_id:         { type: string, nullable: true }
+        action:          { type: string, example: "clients.update" }
+        target:          { type: string, nullable: true }
+        details:
+          type: object
+          additionalProperties: true
+        created_at_unix: { type: integer, format: int64 }
