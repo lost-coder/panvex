@@ -80,6 +80,22 @@ func (t *Tracker) TrackedCount() int {
 	return len(t.agentTimestamps)
 }
 
+// ConnectedAt returns the recorded stream-open timestamp for the given agent.
+// The second return value is false when the agent is not currently tracked.
+// Used by diagnostics and tests (P2-LOG-12 / L-05) to verify that connectedAt
+// reflects the actual stream-open moment rather than being rewritten on every
+// snapshot.
+func (t *Tracker) ConnectedAt(agentID string) (time.Time, bool) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	presence, ok := t.agentTimestamps[agentID]
+	if !ok {
+		return time.Time{}, false
+	}
+	return presence.connectedAt, true
+}
+
 // Evaluate returns the derived liveness state for the requested agent.
 func (t *Tracker) Evaluate(agentID string, now time.Time) State {
 	t.mu.RLock()

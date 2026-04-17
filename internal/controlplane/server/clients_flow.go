@@ -16,6 +16,21 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
+// Lock ordering invariant for the Server struct (P2-LOG-11 / M-C11 / L-08):
+//
+//	s.mu  ->  s.clientsMu  ->  s.metricsAuditMu
+//
+// Whenever two of these locks must be observed together, they MUST be taken
+// in the order above and released in the reverse order. Reverse-order
+// acquisition (e.g. clientsMu -> mu) deadlocks against applyAgentSnapshot,
+// which holds s.mu while briefly taking s.clientsMu for client-usage writes.
+//
+// Functions that need data from BOTH sides (agents and clientAssignments)
+// snapshot the needed fields under the first lock, release it, then take
+// the second lock with a plain local copy — they never nest. See
+// resolveClientTargetAgentIDs and resolveClientIDByName below for the
+// snapshot pattern.
+
 var (
 	errClientNameRequired   = errors.New("client name is required")
 	errClientUserADTag      = errors.New("user_ad_tag must contain exactly 32 hex characters")
@@ -490,21 +505,47 @@ func (s *Server) buildClientAssignments(clientID string, input clientMutationInp
 	return assignments
 }
 
+// resolveClientTargetAgentIDs maps a slice of client assignments to the
+// concrete set of agent IDs they currently resolve to.
+//
+// Lock discipline (P2-LOG-11 / M-C11 / L-08): callers typically obtain
+// `assignments` under s.clientsMu. We MUST NOT hold s.clientsMu while
+// taking s.mu (that would invert the mu -> clientsMu ordering observed
+// by applyAgentSnapshot and would deadlock). To keep the two lock windows
+// disjoint AND avoid iterating s.agents while holding s.mu for the full
+// loop body, we snapshot only the fields needed for resolution (agent ID
+// and fleet-group ID) into local maps, release s.mu, and iterate the
+// caller-provided assignments against those local snapshots.
+//
+// The snapshot can race with a concurrent agent mutation, but callers
+// already tolerate that: the result is used to build deployment rows that
+// are re-reconciled on the next snapshot. The race is therefore benign
+// and, crucially, lock-order-safe.
 func (s *Server) resolveClientTargetAgentIDs(assignments []managedClientAssignment) []string {
+	// Snapshot agents under s.mu then release before iterating assignments.
+	// agentsByID exists only to answer "is this agentID still registered?"
+	// for direct-agent assignments; fleetMembers maps fleetGroupID to the
+	// set of agent IDs in that group for fleet-group assignments.
 	s.mu.RLock()
-	defer s.mu.RUnlock()
+	agentsByID := make(map[string]struct{}, len(s.agents))
+	fleetMembers := make(map[string][]string)
+	for _, agent := range s.agents {
+		agentsByID[agent.ID] = struct{}{}
+		if agent.FleetGroupID != "" {
+			fleetMembers[agent.FleetGroupID] = append(fleetMembers[agent.FleetGroupID], agent.ID)
+		}
+	}
+	s.mu.RUnlock()
 
 	targetAgentIDs := make(map[string]struct{})
 	for _, assignment := range assignments {
 		switch assignment.TargetType {
 		case clientAssignmentTargetFleetGroup:
-			for _, agent := range s.agents {
-				if agent.FleetGroupID == assignment.FleetGroupID {
-					targetAgentIDs[agent.ID] = struct{}{}
-				}
+			for _, agentID := range fleetMembers[assignment.FleetGroupID] {
+				targetAgentIDs[agentID] = struct{}{}
 			}
 		case clientAssignmentTargetAgent:
-			if _, ok := s.agents[assignment.AgentID]; ok {
+			if _, ok := agentsByID[assignment.AgentID]; ok {
 				targetAgentIDs[assignment.AgentID] = struct{}{}
 			}
 		}
