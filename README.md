@@ -295,6 +295,18 @@ Agents can be updated individually or in bulk. The panel sends an update job via
 
 ---
 
+## 📚 Documentation
+
+| Topic | Link |
+|-------|------|
+| Docs index | [`docs/README.md`](docs/README.md) |
+| HTTP API (OpenAPI 3.0) | [`docs/api/openapi.yaml`](docs/api/openapi.yaml) |
+| gRPC gateway reference | [`docs/api/gateway.proto.md`](docs/api/gateway.proto.md) |
+| Architecture Decision Records | [`docs/architecture/adr/`](docs/architecture/adr/) |
+| Operational runbook | [`docs/ops/runbook.md`](docs/ops/runbook.md) |
+
+---
+
 <p align="center">
   <sub>Built with ❤️ for Telemt fleet operators</sub>
 </p>
