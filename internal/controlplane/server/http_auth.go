@@ -279,14 +279,34 @@ func buildTotpAuthURL(username string, secret string) string {
 	return "otpauth://totp/Panvex:" + url.PathEscape(username) + "?secret=" + url.QueryEscape(secret) + "&issuer=Panvex"
 }
 
+// trustedForwardedProto returns the first value of the X-Forwarded-Proto
+// header, but only when the TCP peer is a configured trusted proxy (or
+// loopback). Untrusted peers cannot influence deployment-topology decisions
+// (public URL scheme, Secure cookie flag, ...) by spoofing this header.
+// See DF-2 / P2-SEC-04.
+func (s *Server) trustedForwardedProto(r *http.Request) string {
+	if !remoteAddrIsTrustedProxy(r, s.trustedProxyCIDRs) {
+		return ""
+	}
+	return r.Header.Get("X-Forwarded-Proto")
+}
+
 func (s *Server) sessionCookieSecure(r *http.Request) bool {
 	if r.TLS != nil {
 		return true
 	}
 
-	forwardedProto := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0])
-	if strings.EqualFold(forwardedProto, "https") {
-		return true
+	// DF-2 / P2-SEC-04: only trust X-Forwarded-Proto when the TCP peer is a
+	// configured trusted proxy (or loopback). Otherwise an attacker speaking
+	// plain HTTP directly to the control-plane could send
+	// `X-Forwarded-Proto: https` and trick us into marking the session cookie
+	// Secure, which breaks the Secure-flag contract and can leak the cookie
+	// to passive network observers on the plain-HTTP link.
+	if remoteAddrIsTrustedProxy(r, s.trustedProxyCIDRs) {
+		forwardedProto := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0])
+		if strings.EqualFold(forwardedProto, "https") {
+			return true
+		}
 	}
 
 	if s.panelRuntime.TLSMode == panelTLSModeDirect {

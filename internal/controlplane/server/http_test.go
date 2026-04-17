@@ -74,7 +74,13 @@ func TestServerLoginSetsSessionAndReturnsMe(t *testing.T) {
 	}
 }
 
-func TestServerLoginSetsSecureSessionCookieWhenForwardedProtoIsHTTPS(t *testing.T) {
+// TestServerLoginIgnoresSpoofedForwardedProtoFromUntrustedPeer verifies the
+// P2-SEC-04 fix for DF-2: an untrusted client sending `X-Forwarded-Proto:
+// https` over a plain-HTTP connection must NOT be able to trick the server
+// into issuing a Secure session cookie. The default httptest RemoteAddr
+// (192.0.2.1) is not loopback and not in TrustedProxyCIDRs here, so the XFP
+// header must be ignored.
+func TestServerLoginIgnoresSpoofedForwardedProtoFromUntrustedPeer(t *testing.T) {
 	now := time.Date(2026, time.March, 18, 12, 0, 0, 0, time.UTC)
 	server := New(Options{
 		Now: func() time.Time { return now },
@@ -101,8 +107,8 @@ func TestServerLoginSetsSecureSessionCookieWhenForwardedProtoIsHTTPS(t *testing.
 	if len(cookies) == 0 {
 		t.Fatal("POST /api/auth/login returned no cookies")
 	}
-	if !cookies[0].Secure {
-		t.Fatal("session cookie Secure = false, want true")
+	if cookies[0].Secure {
+		t.Fatal("session cookie Secure = true from untrusted XFP spoof, want false")
 	}
 }
 
