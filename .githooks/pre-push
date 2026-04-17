@@ -1,14 +1,31 @@
 #!/bin/bash
+# Mirrors key CI checks locally. To skip, use `git push --no-verify`.
 set -e
 
 echo "=== Pre-push: Go lint ==="
 ~/go/bin/golangci-lint run ./...
 
-echo "=== Pre-push: Go tests ==="
-go test ./...
+echo "=== Pre-push: Go tests (race) ==="
+go test -race -count=1 ./...
+
+echo "=== Pre-push: Go vulnerability scan ==="
+if command -v govulncheck >/dev/null 2>&1; then
+    govulncheck ./...
+elif [ -x "$HOME/go/bin/govulncheck" ]; then
+    "$HOME/go/bin/govulncheck" ./...
+else
+    echo "!!! govulncheck not installed. Run: make install-tools"
+    exit 1
+fi
 
 echo "=== Pre-push: Frontend type-check + build ==="
 cd web
 npm run build
+
+echo "=== Pre-push: Frontend lint ==="
+npm run lint
+
+echo "=== Pre-push: Frontend audit (high severity) ==="
+npm audit --audit-level=high
 
 echo "=== Pre-push: all checks passed ==="
