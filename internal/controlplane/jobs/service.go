@@ -314,17 +314,37 @@ func (s *Service) SetNow(now func() time.Time) {
 }
 
 // Enqueue validates the job input and records the queued job.
+//
+// P2-PERF-04: The synchronous DB persist (PutJob / PutJobTarget) is performed
+// OUTSIDE the service mutex so concurrent readers such as PendingForAgent are
+// not blocked by slow storage. The work is split into three phases:
+//
+//  1. Reserve under lock — validate input, reserve the idempotency key so
+//     racing Enqueue calls with the same key observe the duplicate
+//     immediately, and allocate a stable job ID.
+//  2. Persist outside lock — run PutJob + PutJobTarget. Any other method that
+//     only needs in-memory state continues to run without contention.
+//  3. Finalize under lock — if persist succeeded, publish the job into the
+//     s.jobs map / agentJobs index and bump the version counter. If persist
+//     failed, roll back the reservation (remove the idempotency key) and
+//     return the error to the caller.
+//
+// While persist is in flight the tentative job is NOT visible via
+// PendingForAgent — it has not been added to s.jobs / s.agentJobs yet. Only
+// the idempotency-key reservation in s.keys lives across the out-of-lock
+// window, which is exactly what's needed to reject duplicate-key races.
 func (s *Service) Enqueue(input CreateJobInput, now time.Time) (Job, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	if _, exists := s.keys[input.IdempotencyKey]; exists {
+		s.mu.Unlock()
 		return Job{}, ErrDuplicateIdempotencyKey
 	}
 
 	if isMutatingAction(input.Action) {
 		for _, targetAgentID := range input.TargetAgentIDs {
 			if input.ReadOnlyAgents[targetAgentID] {
+				s.mu.Unlock()
 				return Job{}, ErrReadOnlyTarget
 			}
 		}
@@ -352,11 +372,29 @@ func (s *Service) Enqueue(input CreateJobInput, now time.Time) (Job, error) {
 		})
 	}
 
+	// Reserve the idempotency key so racing Enqueues with the same key
+	// observe the duplicate while we persist outside the lock. The empty
+	// job ID marks the reservation as tentative; other code paths that
+	// look up keys (e.g. PruneKeys) skip empty values.
+	s.keys[input.IdempotencyKey] = ""
+	s.mu.Unlock()
+
 	if s.jobStore != nil {
 		if err := s.persistJob(context.Background(), job); err != nil {
+			s.mu.Lock()
+			// Only remove if no one else has claimed the slot. We hold the
+			// exclusive right to this key because no other Enqueue could
+			// have flipped the sentinel — duplicates were rejected above.
+			if existing, ok := s.keys[input.IdempotencyKey]; ok && existing == "" {
+				delete(s.keys, input.IdempotencyKey)
+			}
+			s.mu.Unlock()
 			return Job{}, err
 		}
 	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	s.jobs[job.ID] = job
 	s.syncJobTargetsIndexLocked(job)
