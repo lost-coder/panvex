@@ -128,7 +128,7 @@ func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 		settings := s.panelSettingsSnapshot()
 		writeJSON(w, http.StatusCreated, createEnrollmentTokenResponse{
 			Value:         token.Value,
-			PanelURL:      buildAgentPublicURL(settings, s.panelRuntime, r.URL, r.Header.Get("X-Forwarded-Proto"), r.Host),
+			PanelURL:      buildAgentPublicURL(settings, s.panelRuntime, r.URL, s.trustedForwardedProto(r), r.Host),
 			FleetGroupID:  token.FleetGroupID,
 			IssuedAtUnix:  token.IssuedAt.Unix(),
 			ExpiresAtUnix: token.ExpiresAt.Unix(),
@@ -202,7 +202,7 @@ func (s *Server) handleListEnrollmentTokens() http.HandlerFunc {
 			return
 		}
 
-		tokens, err := s.listEnrollmentTokensWithContext(r.Context(), s.now(), r.URL, r.Header.Get("X-Forwarded-Proto"), r.Host)
+		tokens, err := s.listEnrollmentTokensWithContext(r.Context(), s.now(), r.URL, s.trustedForwardedProto(r), r.Host)
 		if err != nil {
 			s.logger.Error("list enrollment tokens failed", "error", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
