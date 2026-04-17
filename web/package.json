@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "node ./node_modules/typescript/bin/tsc --noEmit && node ./node_modules/vite/bin/vite.js build",
-    "build:embed": "node ./node_modules/typescript/bin/tsc --noEmit && node ./node_modules/vite/bin/vite.js build --outDir ../cmd/control-plane/.embedded-ui --emptyOutDir",
+    "build:embed": "node ./node_modules/typescript/bin/tsc --noEmit && node ./node_modules/vite/bin/vite.js build --mode embed --outDir ../cmd/control-plane/.embedded-ui --emptyOutDir",
     "preview": "vite preview",
     "lint": "eslint ."
   },

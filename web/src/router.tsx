@@ -154,9 +154,21 @@ const shellRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "shell",
   component: ProtectedShell,
-  beforeLoad: async () => {
-    try { await apiClient.me(); }
-    catch { throw redirect({ to: "/login" }); }
+  // P2-FE-05 / M-P5: route into the QueryClient cache instead of firing a
+  // fresh `apiClient.me()` on every navigation. ensureQueryData reuses the
+  // same ["me"] entry that ProtectedShell/AuthProvider already read, so a
+  // navigation inside the 30s staleTime is a cache hit — no extra round
+  // trip. A 401 still rejects, and the catch branch redirects to /login.
+  beforeLoad: async ({ context }) => {
+    try {
+      await context.queryClient.ensureQueryData({
+        queryKey: ["me"],
+        queryFn: () => apiClient.me(),
+        staleTime: 30_000,
+      });
+    } catch {
+      throw redirect({ to: "/login" });
+    }
   },
 });
 
