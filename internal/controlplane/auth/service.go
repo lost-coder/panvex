@@ -42,6 +42,11 @@ var (
 	ErrTotpSetupNotFound = errors.New("totp setup not found")
 	// ErrPasswordTooWeak reports a password that does not meet minimum requirements.
 	ErrPasswordTooWeak = errors.New("password must be at least 12 characters with uppercase, lowercase, and a digit")
+	// ErrSessionStoreUnavailable reports that the persistent session store
+	// rejected a write during login. P2-SEC-07: the in-memory session alone
+	// is not acceptable — it would silently disappear on the next control-
+	// plane restart. The handler surfaces this as 503 so the caller retries.
+	ErrSessionStoreUnavailable = errors.New("session store unavailable")
 )
 
 // Role identifies the RBAC role assigned to a local operator account.
@@ -395,8 +400,12 @@ func (s *Service) Authenticate(input LoginInput, now time.Time) (Session, error)
 		UserID:    user.ID,
 		CreatedAt: now.UTC(),
 	}
-	s.sessions[session.ID] = session
 
+	// P2-SEC-07: persist the session before inserting it into the in-memory
+	// map. If the store rejects the write we must NOT create the session at
+	// all — an in-memory-only session would silently disappear on the next
+	// control-plane restart, leaving the operator logged in but unable to
+	// recover cleanly. Surface the failure so the caller retries / fails over.
 	if s.sessionStore != nil {
 		// Always purge the prior session ID from the persistent store when
 		// supplied, independent of whether it was present in the in-memory
@@ -408,12 +417,17 @@ func (s *Service) Authenticate(input LoginInput, now time.Time) (Session, error)
 				slog.Warn("auth: failed to delete prior session from store", "error", err)
 			}
 		}
-		_ = s.sessionStore.PutSession(context.Background(), storage.SessionRecord{
+		if err := s.sessionStore.PutSession(context.Background(), storage.SessionRecord{
 			ID:        session.ID,
 			UserID:    session.UserID,
 			CreatedAt: session.CreatedAt,
-		})
+		}); err != nil {
+			slog.Error("auth: failed to persist session; rejecting login", "user_id", session.UserID, "error", err)
+			return Session{}, fmt.Errorf("%w: %v", ErrSessionStoreUnavailable, err)
+		}
 	}
+
+	s.sessions[session.ID] = session
 
 	return session, nil
 }
@@ -526,23 +540,36 @@ func (s *Service) DisableTotp(userID string, password string, totpCode string, n
 		return User{}, ErrInvalidCredentials
 	}
 
-	if strings.TrimSpace(totpCode) == "" {
+	trimmedCode := strings.TrimSpace(totpCode)
+	if trimmedCode == "" {
 		return User{}, ErrTotpRequired
 	}
 
-	if !s.verifyTotpCode(user.TotpSecret, totpCode, now) {
+	// P2-SEC-08: hold the lock across the replay check, TOTP verification,
+	// and the consumed-code record so two concurrent DisableTotp calls with
+	// the same valid code cannot both pass. Without this, an attacker who
+	// acquires one valid code can race the legitimate operator to disable
+	// their second factor. Mirrors the pattern used in Authenticate.
+	s.mu.Lock()
+	s.cleanupExpiredSessionsLocked(now)
+	key := totpUseKey{UserID: user.ID, Code: trimmedCode}
+	if _, used := s.consumedTotp[key]; used {
+		s.mu.Unlock()
 		return User{}, ErrInvalidTotpCode
 	}
+	if !s.verifyTotpCode(user.TotpSecret, trimmedCode, now) {
+		s.mu.Unlock()
+		return User{}, ErrInvalidTotpCode
+	}
+	s.consumedTotp[key] = now.UTC()
+	delete(s.pendingTotpSetup, userID)
+	s.mu.Unlock()
 
 	user.TotpEnabled = false
 	user.TotpSecret = ""
 	if err := s.storeUser(user); err != nil {
 		return User{}, err
 	}
-
-	s.mu.Lock()
-	delete(s.pendingTotpSetup, userID)
-	s.mu.Unlock()
 
 	return user, nil
 }
@@ -884,7 +911,13 @@ func (s *Service) Logout(sessionID string) error {
 	delete(s.sessions, sessionID)
 
 	if s.sessionStore != nil {
-		_ = s.sessionStore.DeleteSession(context.Background(), sessionID)
+		// P2-SEC-07: logout deletes the session from memory unconditionally;
+		// a store failure here is not fatal because the periodic expiry
+		// sweeper (DeleteExpiredSessions) will eventually reclaim the row.
+		// We still surface it in logs so persistent failures are visible.
+		if err := s.sessionStore.DeleteSession(context.Background(), sessionID); err != nil {
+			slog.Warn("auth: failed to delete session from store on logout", "session_id", sessionID, "error", err)
+		}
 	}
 
 	return nil
