@@ -45,10 +45,15 @@ var retryBackoffs = []time.Duration{
 // ObservePersistRetry is incremented once per item whose retry sequence
 // resolved, with outcome == "success" (retry eventually succeeded) or
 // "exhausted" (all retries failed, item dropped).
+//
+// ObserveFlushDuration is called once per item after its retry sequence
+// resolves, regardless of outcome (success, exhausted, or persistent drop),
+// with the total wall-clock seconds spent across all attempts.
 type batchMetricsSink interface {
 	ObserveFlushError(buffer, errorType string)
 	SetQueueDepth(buffer string, depth float64)
 	ObservePersistRetry(stream, outcome string)
+	ObserveFlushDuration(stream string, seconds float64)
 }
 
 // batchBuffer accumulates items of type T and flushes them either on a timer
@@ -152,9 +157,10 @@ type telemetryWriteUnit struct {
 // writer usable without the metrics subsystem wired in.
 type noopMetricsSink struct{}
 
-func (noopMetricsSink) ObserveFlushError(string, string)   {}
-func (noopMetricsSink) SetQueueDepth(string, float64)      {}
-func (noopMetricsSink) ObservePersistRetry(string, string) {}
+func (noopMetricsSink) ObserveFlushError(string, string)     {}
+func (noopMetricsSink) SetQueueDepth(string, float64)        {}
+func (noopMetricsSink) ObservePersistRetry(string, string)   {}
+func (noopMetricsSink) ObserveFlushDuration(string, float64) {}
 
 func newStoreBatchWriter(store storage.Store, metrics batchMetricsSink) *storeBatchWriter {
 	if metrics == nil {
@@ -416,6 +422,15 @@ var streamAlerts = map[string]string{
 }
 
 func (w *storeBatchWriter) flushItem(buffer string, logAttrs []any, op func() error) {
+	// P2-OBS-03: measure end-to-end flush latency including retries and record
+	// the observation regardless of how the retry sequence resolved. Done via
+	// a deferred closure so early returns (first-try success, retry success)
+	// still emit a sample.
+	start := time.Now()
+	defer func() {
+		w.metrics.ObserveFlushDuration(buffer, time.Since(start).Seconds())
+	}()
+
 	err, outcome := w.retryWithBackoff(op, func() {
 		w.metrics.ObserveFlushError(buffer, "transient")
 	})
