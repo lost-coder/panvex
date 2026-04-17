@@ -27,15 +27,41 @@ func TestMigrateCreatesGooseVersionTable(t *testing.T) {
 		t.Fatalf("goose_db_version table not found: %v", err)
 	}
 
-	// Count applied versions — we expect at least the 7 embedded migrations
-	// (0001..0007). The "> 0" ceiling is there so future migrations don't
+	// Count applied versions — we expect at least the 8 embedded migrations
+	// (0001..0008). The ">=" floor is there so future migrations don't
 	// force a brittle equality assertion.
 	var count int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM goose_db_version WHERE is_applied = 1 AND version_id > 0`).Scan(&count); err != nil {
 		t.Fatalf("count applied versions: %v", err)
 	}
-	if count < 7 {
-		t.Fatalf("expected >= 7 applied goose versions, got %d", count)
+	if count < 8 {
+		t.Fatalf("expected >= 8 applied goose versions, got %d", count)
+	}
+}
+
+// TestMigrateCreatesMissingFKIndexes verifies that migration 0008 creates the
+// four FK/status indexes required by remediation task P2-DB-02. Without these,
+// audit finding DF-22 (missing indexes on high-selectivity foreign keys) stays
+// open — the retention worker and filter APIs would degrade to full scans.
+func TestMigrateCreatesMissingFKIndexes(t *testing.T) {
+	db := openEmptySQLite(t)
+
+	if err := Migrate(db); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+
+	required := []string{
+		"idx_jobs_status",
+		"idx_job_targets_agent_id",
+		"idx_metric_snapshots_captured_at",
+		"idx_enrollment_tokens_fleet_group_id",
+	}
+	for _, name := range required {
+		var found string
+		err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type='index' AND name=?`, name).Scan(&found)
+		if err != nil {
+			t.Fatalf("expected index %q after Migrate: %v", name, err)
+		}
 	}
 }
 
