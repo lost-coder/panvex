@@ -25,3 +25,9 @@ Technical reference for the Panvex control-plane, agents, and operations.
   signing with cosign.
 - [`ops/grafana/`](ops/grafana/) — Grafana dashboards for the Prometheus
   metrics exposed at `/metrics`.
+
+## Compliance
+
+- [`compliance/audit-retention.md`](compliance/audit-retention.md) — audit
+  retention compliance matrix (GDPR, SOX, HIPAA, PCI-DSS, ISO 27001) and
+  the data-subject-request (DSR / right-to-erasure) workflow.
