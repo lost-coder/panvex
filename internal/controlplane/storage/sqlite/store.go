@@ -5,39 +5,89 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	_ "modernc.org/sqlite"
 )
 
+// sqlitePragmas are applied to every pooled connection via the modernc.org/sqlite
+// `_pragma=` DSN parameter. See DF-17 / M-F10 in the remediation plan:
+// without WAL + busy_timeout, any concurrent writer produces SQLITE_BUSY and
+// bottles the SQLite deployment.
+//
+//   - journal_mode = WAL ........ Concurrent readers, serialized writers.
+//     WAL is a database-level setting persisted in the file header; applying
+//     it once upgrades the file permanently. Each connection still reports
+//     `wal` when queried, which the tests rely on.
+//   - synchronous = NORMAL ...... Recommended companion to WAL. Durable across
+//     process crashes; a small window (last committed txn) is exposed to OS /
+//     power loss. FULL is overkill under WAL because the WAL itself provides
+//     crash-consistency for committed transactions. Accepted trade-off for
+//     the control-plane workload — writes are idempotent / re-replayable.
+//   - busy_timeout = 5000 ....... 5-second retry budget for lock contention.
+//     Without this, SQLite returns SQLITE_BUSY immediately.
+//   - foreign_keys = ON ......... FK constraints are off by default in SQLite.
+//   - temp_store = MEMORY ....... Temp tables and indexes live in RAM.
+//   - mmap_size = 268435456 ..... 256 MB mmap window for reads; reduces read
+//     syscalls on hot pages.
+var sqlitePragmas = []string{
+	"journal_mode=WAL",
+	"synchronous=NORMAL",
+	"busy_timeout=5000",
+	"foreign_keys=ON",
+	"temp_store=MEMORY",
+	"mmap_size=268435456",
+}
+
 // Store persists control-plane records in a local SQLite database.
 type Store struct {
 	db *sql.DB
 }
 
-// Open opens a SQLite database file, applies the schema, and returns a storage backend.
+// Open opens a SQLite database file, applies the schema, and returns a storage
+// backend.
+//
+// The DSN must be an on-disk file path. In-memory databases (":memory:") are
+// rejected because WAL mode requires a real file — SQLite silently downgrades
+// journal_mode to "memory" for in-memory databases, which defeats the
+// concurrency guarantees the rest of the control-plane relies on. Tests that
+// need a transient database should use `t.TempDir()` + a filename instead.
 func Open(dsn string) (*Store, error) {
+	if strings.TrimSpace(dsn) == ":memory:" {
+		return nil, fmt.Errorf("sqlite: in-memory DSN not supported; WAL requires an on-disk file")
+	}
+
 	if err := ensureParentDirectory(dsn); err != nil {
 		return nil, err
 	}
 
-	db, err := sql.Open("sqlite", dsn)
+	dsnWithPragmas, err := appendPragmasToDSN(dsn, sqlitePragmas)
 	if err != nil {
 		return nil, err
 	}
 
-	db.SetMaxOpenConns(1)
-
-	// PRAGMA foreign_keys must be set per-connection. This is safe as long as
-	// MaxOpenConns is 1. If the pool size is ever increased, use a ConnectHook
-	// or append _pragma=foreign_keys(1) to the DSN instead.
-	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
-		db.Close()
+	db, err := sql.Open("sqlite", dsnWithPragmas)
+	if err != nil {
 		return nil, err
 	}
+
+	// WAL permits concurrent readers while a single writer holds the log.
+	// Previously MaxOpenConns was pinned to 1 because PRAGMA foreign_keys is
+	// per-connection and we had no way to apply it to every pooled handle.
+	// Pragmas are now applied via the `_pragma=` DSN parameter (see
+	// modernc.org/sqlite conn.newConn -> applyQueryParams), so every
+	// connection inherits them on Open. We can safely allow 4 connections:
+	// one services writes, the rest serve concurrent reads. The 5s
+	// busy_timeout absorbs transient lock contention without surfacing
+	// SQLITE_BUSY to callers.
+	db.SetMaxOpenConns(4)
+	db.SetMaxIdleConns(4)
 
 	if err := Migrate(db); err != nil {
 		db.Close()
@@ -50,6 +100,30 @@ func Open(dsn string) (*Store, error) {
 	}
 
 	return &Store{db: db}, nil
+}
+
+// appendPragmasToDSN rewrites the DSN so that every connection opened by the
+// driver applies the given pragmas at startup. modernc.org/sqlite splits the
+// DSN on the first '?' and parses everything after it as url.Values, then
+// calls `PRAGMA <v>` for each `_pragma=<v>` value on every new connection.
+func appendPragmasToDSN(dsn string, pragmas []string) (string, error) {
+	path := dsn
+	existing := url.Values{}
+
+	if idx := strings.IndexRune(dsn, '?'); idx >= 0 {
+		path = dsn[:idx]
+		parsed, err := url.ParseQuery(dsn[idx+1:])
+		if err != nil {
+			return "", err
+		}
+		existing = parsed
+	}
+
+	for _, p := range pragmas {
+		existing.Add("_pragma", p)
+	}
+
+	return path + "?" + existing.Encode(), nil
 }
 
 func ensureParentDirectory(dsn string) error {
