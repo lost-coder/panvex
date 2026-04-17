@@ -110,6 +110,12 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 	}
 	session, unregisterSession := s.registerAgentSession(agentID)
 	defer unregisterSession()
+	// P2-LOG-12 / L-05: MarkConnected exactly once per stream open, here.
+	// applyAgentSnapshot now only calls Heartbeat so subsequent heartbeat
+	// snapshots do not rewrite connectedAt to "now" and thereby mask short
+	// disconnects. On reconnect, the next Connect() call produces a fresh
+	// MarkConnected and the connectedAt timestamp moves forward.
+	s.presence.MarkConnected(agentID, s.now())
 	s.logger.Info("accepted agent stream", "agent_id", agentID)
 
 	connectionCtx, cancelConnection := context.WithCancel(stream.Context())
