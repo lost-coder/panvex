@@ -305,11 +305,34 @@ func (s *Service) BootstrapUser(input BootstrapInput, now time.Time) (User, stri
 	return user, "", nil
 }
 
+// dummyPasswordHash is used to equalise login latency when the supplied
+// username does not exist, so timing does not leak user-enumeration signal.
+// It is computed once on first use; the derived hash value is discarded
+// (it is never compared for equality), only the Argon2id CPU cost matters.
+var dummyPasswordHash = sync.OnceValue(func() string {
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		// Fall back to a fixed salt — the value is meaningless, we just need
+		// a well-formed input for VerifyPassword to derive on.
+		salt = []byte("panvex-dummy-salt-bytes")
+	}
+	derived := argon2.IDKey([]byte("panvex-timing-dummy"), salt, 3, 64*1024, 2, 32)
+	return fmt.Sprintf("argon2id$%s$%s",
+		base64.RawStdEncoding.EncodeToString(salt),
+		base64.RawStdEncoding.EncodeToString(derived))
+})
+
 // Authenticate validates credentials and enforces TOTP only for users who enabled it.
 func (s *Service) Authenticate(input LoginInput, now time.Time) (Session, error) {
 	user, err := s.loadUserByUsername(input.Username)
 	if err != nil {
-		return Session{}, err
+		// P1-SEC-12: burn Argon2id time on a dummy hash so the response
+		// latency for a nonexistent user matches a real VerifyPassword call.
+		// Without this, an attacker can enumerate valid usernames by timing
+		// because the real path spends ~100 ms in Argon2id and the unknown
+		// path returns in microseconds.
+		_ = s.VerifyPassword(dummyPasswordHash(), input.Password)
+		return Session{}, ErrInvalidCredentials
 	}
 
 	if err := s.VerifyPassword(user.PasswordHash, input.Password); err != nil {
