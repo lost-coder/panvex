@@ -1,3 +1,4 @@
+-- +goose Up
 -- P1-SEC-06: persist the set of deregistered agent IDs so that a control-plane
 -- restart cannot "forget" a revocation. Without this table, an agent whose
 -- admin deleted it but whose 30-day mTLS client cert is still valid could
@@ -14,3 +15,7 @@ CREATE TABLE IF NOT EXISTS agent_revocations (
 
 CREATE INDEX IF NOT EXISTS idx_agent_revocations_cert_expires_at
     ON agent_revocations(cert_expires_at);
+
+-- +goose Down
+DROP INDEX IF EXISTS idx_agent_revocations_cert_expires_at;
+DROP TABLE IF EXISTS agent_revocations;

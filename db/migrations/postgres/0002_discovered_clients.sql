@@ -1,7 +1,9 @@
+-- +goose Up
 CREATE TABLE IF NOT EXISTS discovered_clients (
     id TEXT PRIMARY KEY,
     agent_id TEXT NOT NULL REFERENCES agents (id),
     client_name TEXT NOT NULL,
+    secret TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'pending_review',
     total_octets BIGINT NOT NULL DEFAULT 0,
     current_connections INTEGER NOT NULL DEFAULT 0,
@@ -15,3 +17,6 @@ CREATE TABLE IF NOT EXISTS discovered_clients (
     updated_at TIMESTAMPTZ NOT NULL,
     UNIQUE (agent_id, client_name)
 );
+
+-- +goose Down
+DROP TABLE IF EXISTS discovered_clients;
