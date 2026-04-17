@@ -166,11 +166,20 @@ type SessionStore interface {
 	DeleteExpiredSessions(ctx context.Context, before time.Time) error
 }
 
+// AgentRevocationStore persists deregistered-agent IDs so the revocation set
+// survives control-plane restart. See AgentRevocationRecord in models.go.
+type AgentRevocationStore interface {
+	PutAgentRevocation(ctx context.Context, revocation AgentRevocationRecord) error
+	ListAgentRevocations(ctx context.Context) ([]AgentRevocationRecord, error)
+	DeleteExpiredAgentRevocations(ctx context.Context, before time.Time) (int64, error)
+}
+
 // Store aggregates the persistence capabilities required by the control-plane.
 type Store interface {
 	UserStore
 	UserAppearanceStore
 	SessionStore
+	AgentRevocationStore
 	FleetStore
 	JobStore
 	AuditStore
