@@ -104,6 +104,22 @@ type PanelSettingsStore interface {
 	GetPanelSettings(ctx context.Context) (PanelSettingsRecord, error)
 }
 
+// RetentionSettingsStore persists operator-managed retention windows for
+// timeseries data, runtime events, and client IP history. Returns
+// ErrNotFound when no row has been written yet so the caller can fall
+// back to its own defaults.
+type RetentionSettingsStore interface {
+	GetRetentionSettings(ctx context.Context) (RetentionSettings, error)
+	PutRetentionSettings(ctx context.Context, settings RetentionSettings) error
+}
+
+// RetentionSettings is the storage-layer alias used across the Store
+// interface. Callers in the control-plane server wrap it with their
+// own typed RetentionSettings struct; at the storage boundary this
+// alias keeps the interface decoupled from server internals while
+// reusing the same field layout (see RetentionSettingsRecord).
+type RetentionSettings = RetentionSettingsRecord
+
 // UpdateConfigStore persists update settings and cached version state as opaque JSON blobs.
 type UpdateConfigStore interface {
 	PutUpdateSettings(ctx context.Context, settings json.RawMessage) error
@@ -188,6 +204,7 @@ type Store interface {
 	EnrollmentStore
 	AgentCertificateRecoveryGrantStore
 	PanelSettingsStore
+	RetentionSettingsStore
 	UpdateConfigStore
 	CertificateAuthorityStore
 	ClientStore

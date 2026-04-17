@@ -242,6 +242,17 @@ type PanelSettingsRecord struct {
 	UpdatedAt          time.Time
 }
 
+// RetentionSettingsRecord stores operator-managed timeseries/event retention
+// windows. Persisted as an opaque JSON blob in panel_settings.retention_json
+// so adding new retention knobs never needs another migration.
+type RetentionSettingsRecord struct {
+	TSRawSeconds     int `json:"ts_raw_seconds"`
+	TSHourlySeconds  int `json:"ts_hourly_seconds"`
+	TSDCSeconds      int `json:"ts_dc_seconds"`
+	IPHistorySeconds int `json:"ip_history_seconds"`
+	EventSeconds     int `json:"event_history_seconds"`
+}
+
 // CertificateAuthorityRecord stores the persisted control-plane root CA material.
 type CertificateAuthorityRecord struct {
 	CAPEM         string
