@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"net"
@@ -22,6 +24,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage/postgres"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
+	"github.com/lost-coder/panvex/internal/security"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
@@ -188,9 +191,18 @@ func parseServeConfig(args []string) (serveConfig, error) {
 	storageDriver := flags.String("storage-driver", "", "Persistent storage backend driver")
 	storageDSN := flags.String("storage-dsn", "", "Persistent storage backend DSN")
 	trustedProxyCIDRs := flags.String("trusted-proxy-cidrs", "", "Comma-separated trusted proxy CIDRs for X-Forwarded-For (e.g. 172.16.0.0/12,10.0.0.0/8)")
-	encryptionKey := flags.String("encryption-key", strings.TrimSpace(os.Getenv("PANVEX_ENCRYPTION_KEY")), "Passphrase for encrypting the CA private key at rest (env: PANVEX_ENCRYPTION_KEY)")
+	// CA encryption passphrase is never accepted on the command line because
+	// argv is visible in /proc/<pid>/cmdline and ps output. Sources, in priority
+	// order: --encryption-key-stdin, --encryption-key-file, PANVEX_ENCRYPTION_KEY.
+	encryptionKeyFile := flags.String("encryption-key-file", "", "Path to file containing the passphrase for CA private key encryption")
+	encryptionKeyStdin := flags.Bool("encryption-key-stdin", false, "Read the CA private key encryption passphrase from stdin (single line)")
 	logLevel := flags.String("log-level", "info", "Log level: debug, info, warn, error")
 	if err := flags.Parse(args); err != nil {
+		return serveConfig{}, err
+	}
+
+	encryptionKey, err := resolveEncryptionKey(*encryptionKeyFile, *encryptionKeyStdin)
+	if err != nil {
 		return serveConfig{}, err
 	}
 
@@ -230,7 +242,7 @@ func parseServeConfig(args []string) (serveConfig, error) {
 			TLSKeyFile:           configuration.TLSKeyFile,
 			Storage:              configuration.Storage,
 			TrustedProxyCIDRs:    parsedCIDRs,
-			EncryptionKey:        *encryptionKey,
+			EncryptionKey:        encryptionKey,
 			LogLevel:             *logLevel,
 		}, nil
 	}
@@ -254,7 +266,7 @@ func parseServeConfig(args []string) (serveConfig, error) {
 		TLSKeyFile:           configuration.TLSKeyFile,
 		Storage:              configuration.Storage,
 		TrustedProxyCIDRs:    parsedCIDRs,
-		EncryptionKey:        *encryptionKey,
+		EncryptionKey:        encryptionKey,
 		LogLevel:             *logLevel,
 	}, nil
 }
@@ -450,6 +462,32 @@ func runMigrateStorage(args []string) error {
 	return nil
 }
 
+// resolveEncryptionKey returns the CA private-key passphrase from the most specific
+// source provided. Priority: --encryption-key-stdin > --encryption-key-file >
+// PANVEX_ENCRYPTION_KEY env. The plaintext value is never accepted on the command
+// line because argv leaks via /proc/<pid>/cmdline and ps output.
+func resolveEncryptionKey(keyFile string, keyFromStdin bool) (string, error) {
+	if keyFromStdin {
+		// Accept a single line or a full stream; trim trailing whitespace/newlines.
+		reader := bufio.NewReader(os.Stdin)
+		line, err := reader.ReadString('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return "", fmt.Errorf("read encryption key from stdin: %w", err)
+		}
+		return strings.TrimRight(line, "\r\n\t "), nil
+	}
+	if strings.TrimSpace(keyFile) != "" {
+		data, err := os.ReadFile(keyFile)
+		if err != nil {
+			return "", fmt.Errorf("read -encryption-key-file: %w", err)
+		}
+		// Accept the file content verbatim but strip trailing whitespace so an
+		// operator-edited file with a trailing newline still produces the correct key.
+		return strings.TrimRight(string(data), "\r\n\t "), nil
+	}
+	return strings.TrimSpace(os.Getenv("PANVEX_ENCRYPTION_KEY")), nil
+}
+
 // parseCIDRList splits a comma-separated string of CIDR notations and returns
 // the parsed networks. An empty input returns nil without error.
 func parseCIDRList(raw string) ([]*net.IPNet, error) {
@@ -516,9 +554,12 @@ func runSelfUpdate(args []string) error {
 		return nil
 	}
 
-	binaryURL, checksumURL := server.ResolveAssetURLs(panel, "control-plane")
+	binaryURL, checksumURL, signatureURL := server.ResolveAssetURLs(panel, "control-plane")
 	if binaryURL == "" {
 		return errors.New("no binary download URL found for the current platform")
+	}
+	if signatureURL == "" {
+		return errors.New("release is missing a .sig asset; refusing to install unsigned binary")
 	}
 
 	fmt.Printf("Updating from %s to %s ...\n", currentVersion, targetVersion)
@@ -539,6 +580,21 @@ func runSelfUpdate(args []string) error {
 	}
 	defer func() { _ = os.Remove(archivePath) }() //nolint:gosec // archivePath from os.CreateTemp, not user input
 	fmt.Println("Archive downloaded.")
+
+	// Mandatory signature verification: fetch the detached signature, verify
+	// against the embedded public key before any checksum or extraction.
+	sigBytes, err := server.DownloadSignature(ctx, signatureURL, *token)
+	if err != nil {
+		return fmt.Errorf("download signature: %w", err)
+	}
+	archiveBytes, err := os.ReadFile(archivePath) //nolint:gosec // archivePath from os.CreateTemp
+	if err != nil {
+		return fmt.Errorf("read archive for signature: %w", err)
+	}
+	if err := security.VerifyArtifactBytes(archiveBytes, sigBytes); err != nil {
+		return fmt.Errorf("verify signature: %w", err)
+	}
+	fmt.Println("Signature verified.")
 
 	if expectedChecksum != "" {
 		if err := server.VerifyChecksum(archivePath, expectedChecksum); err != nil {

@@ -13,9 +13,18 @@ import (
 	"strings"
 )
 
+// maxArchiveSize caps the raw .tar.gz download to avoid disk exhaustion when the
+// remote responds with an unbounded or adversarial stream.
+const maxArchiveSize = 512 << 20 // 512 MB
+
 // DownloadArchive fetches a .tar.gz archive from url into a temporary file
 // and returns its path. The caller is responsible for removing the file.
+// Only URLs whose host is on the GitHub allow-list are accepted, and redirect
+// hops are re-validated against the same list via secureDownloadClient.
 func DownloadArchive(ctx context.Context, url, token string) (string, error) {
+	if err := checkDownloadURL(url); err != nil {
+		return "", fmt.Errorf("download archive: %w", err)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
@@ -25,7 +34,7 @@ func DownloadArchive(ctx context.Context, url, token string) (string, error) {
 	}
 	req.Header.Set("Accept", "application/octet-stream")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := secureDownloadClient().Do(req)
 	if err != nil {
 		return "", fmt.Errorf("download archive: %w", err)
 	}
@@ -35,15 +44,27 @@ func DownloadArchive(ctx context.Context, url, token string) (string, error) {
 		return "", fmt.Errorf("download archive: unexpected status %d", resp.StatusCode)
 	}
 
+	// Content-Length pre-check rejects oversized archives before any disk write.
+	if resp.ContentLength > maxArchiveSize {
+		return "", fmt.Errorf("download archive: size %d exceeds limit %d", resp.ContentLength, maxArchiveSize)
+	}
+
 	tmp, err := os.CreateTemp("", "panvex-update-*.tar.gz")
 	if err != nil {
 		return "", fmt.Errorf("create temp file: %w", err)
 	}
 
-	if _, err := io.Copy(tmp, resp.Body); err != nil {
+	// LimitReader(+1) lets us detect when the body would exceed the cap.
+	written, err := io.Copy(tmp, io.LimitReader(resp.Body, maxArchiveSize+1))
+	if err != nil {
 		tmp.Close()
 		_ = os.Remove(tmp.Name())
 		return "", fmt.Errorf("write archive: %w", err)
+	}
+	if written > maxArchiveSize {
+		tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return "", fmt.Errorf("download archive: body exceeds limit %d", maxArchiveSize)
 	}
 	if err := tmp.Close(); err != nil {
 		_ = os.Remove(tmp.Name())
@@ -101,8 +122,12 @@ func ExtractBinaryFromArchive(archivePath string) (string, error) {
 
 // DownloadChecksum fetches a .sha256 checksum file and returns the hex digest.
 // The file is expected to contain the checksum as the first whitespace-delimited
-// field on the first line.
+// field on the first line. Host allow-list + redirect restriction mirror
+// DownloadArchive.
 func DownloadChecksum(ctx context.Context, url, token string) (string, error) {
+	if err := checkDownloadURL(url); err != nil {
+		return "", fmt.Errorf("download checksum: %w", err)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
@@ -111,7 +136,7 @@ func DownloadChecksum(ctx context.Context, url, token string) (string, error) {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := secureDownloadClient().Do(req)
 	if err != nil {
 		return "", fmt.Errorf("download checksum: %w", err)
 	}
@@ -134,6 +159,42 @@ func DownloadChecksum(ctx context.Context, url, token string) (string, error) {
 	// The first field is the hex-encoded SHA256 hash.
 	fields := strings.Fields(line)
 	return fields[0], nil
+}
+
+// DownloadSignature fetches a detached signature file and returns its bytes.
+// Signatures are small (<256 bytes for ECDSA DER), so a 4 KB cap is ample and
+// protects against pathological responses. Host allow-list + redirect
+// restriction mirror DownloadArchive.
+func DownloadSignature(ctx context.Context, url, token string) ([]byte, error) {
+	if err := checkDownloadURL(url); err != nil {
+		return nil, fmt.Errorf("download signature: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	req.Header.Set("Accept", "application/octet-stream")
+
+	resp, err := secureDownloadClient().Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("download signature: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("download signature: unexpected status %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if err != nil {
+		return nil, fmt.Errorf("read signature: %w", err)
+	}
+	if len(body) == 0 {
+		return nil, fmt.Errorf("signature file is empty")
+	}
+	return body, nil
 }
 
 // VerifyChecksum computes the SHA256 of the file at path and compares it to

@@ -43,6 +43,7 @@ type memoryStore struct {
 	agentCertificateRecoveryGrants map[string]storage.AgentCertificateRecoveryGrantRecord
 	discoveredClients  map[string]storage.DiscoveredClientRecord
 	sessions           map[string]storage.SessionRecord
+	agentRevocations   map[string]storage.AgentRevocationRecord
 	panelSettings      *storage.PanelSettingsRecord
 	updateSettings     json.RawMessage
 	updateState        json.RawMessage
@@ -76,6 +77,7 @@ func newMemoryStore() *memoryStore {
 		agentCertificateRecoveryGrants: make(map[string]storage.AgentCertificateRecoveryGrantRecord),
 		discoveredClients: make(map[string]storage.DiscoveredClientRecord),
 		sessions:          make(map[string]storage.SessionRecord),
+		agentRevocations:  make(map[string]storage.AgentRevocationRecord),
 	}
 }
 
@@ -85,6 +87,36 @@ func (s *memoryStore) Ping(_ context.Context) error {
 
 func (s *memoryStore) Close() error {
 	return nil
+}
+
+func (s *memoryStore) PutAgentRevocation(_ context.Context, rec storage.AgentRevocationRecord) error {
+	existing, ok := s.agentRevocations[rec.AgentID]
+	// Mirror the SQL upsert: cert_expires_at is max-merged so we don't shrink
+	// the revocation window if a caller passes an older expiry.
+	if ok && existing.CertExpiresAt.After(rec.CertExpiresAt) {
+		rec.CertExpiresAt = existing.CertExpiresAt
+	}
+	s.agentRevocations[rec.AgentID] = rec
+	return nil
+}
+
+func (s *memoryStore) ListAgentRevocations(_ context.Context) ([]storage.AgentRevocationRecord, error) {
+	out := make([]storage.AgentRevocationRecord, 0, len(s.agentRevocations))
+	for _, r := range s.agentRevocations {
+		out = append(out, r)
+	}
+	return out, nil
+}
+
+func (s *memoryStore) DeleteExpiredAgentRevocations(_ context.Context, before time.Time) (int64, error) {
+	var removed int64
+	for id, rec := range s.agentRevocations {
+		if rec.CertExpiresAt.Before(before) {
+			delete(s.agentRevocations, id)
+			removed++
+		}
+	}
+	return removed, nil
 }
 
 func (s *memoryStore) PutUser(_ context.Context, user storage.UserRecord) error {

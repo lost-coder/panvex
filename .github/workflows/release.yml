@@ -80,6 +80,30 @@ jobs:
           sha256sum "${ARCHIVE}" | awk '{print $1}' > "${ARCHIVE}.sha256"
           rm "${BINARY}"
 
+      # Sign the archive with the release private key. The key material comes
+      # from the PANVEX_SIGNING_KEY secret (PEM-encoded ECDSA P-256); it is
+      # written to a mode-0600 temp file and removed once signing completes.
+      # Verification at runtime uses the matching public key embedded in the
+      # binary at internal/security/signing_key.pub.
+      - name: Sign archive
+        env:
+          SIGNING_KEY: ${{ secrets.PANVEX_SIGNING_KEY }}
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          if [ -z "${SIGNING_KEY:-}" ]; then
+            echo "::error::PANVEX_SIGNING_KEY secret is not configured" >&2
+            exit 1
+          fi
+          ARCHIVE_GLOB="panvex-*-linux-${GOARCH}.tar.gz"
+          KEY_FILE="$(mktemp)"
+          chmod 600 "$KEY_FILE"
+          trap 'shred -u "$KEY_FILE" 2>/dev/null || rm -f "$KEY_FILE"' EXIT
+          printf '%s\n' "$SIGNING_KEY" > "$KEY_FILE"
+          for ARCHIVE in ${ARCHIVE_GLOB}; do
+            openssl dgst -sha256 -sign "$KEY_FILE" -out "${ARCHIVE}.sig" "${ARCHIVE}"
+            echo "Signed ${ARCHIVE} -> ${ARCHIVE}.sig"
+          done
+
       - name: Upload release assets
         uses: softprops/action-gh-release@v3
         with:
@@ -87,4 +111,5 @@ jobs:
           files: |
             panvex-*-linux-${{ matrix.arch }}.tar.gz
             panvex-*-linux-${{ matrix.arch }}.tar.gz.sha256
+            panvex-*-linux-${{ matrix.arch }}.tar.gz.sig
           generate_release_notes: true

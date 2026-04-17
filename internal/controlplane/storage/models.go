@@ -20,6 +20,18 @@ type SessionRecord struct {
 	CreatedAt time.Time
 }
 
+// AgentRevocationRecord tracks one deregistered agent whose mTLS client
+// certificate may still be cryptographically valid. The record survives
+// control-plane restart so a revoked agent cannot silently reconnect.
+// CertExpiresAt is the cert validity cut-off; once the cert has expired
+// the row is eligible for pruning because the cert can no longer
+// authenticate regardless of the revocation list.
+type AgentRevocationRecord struct {
+	AgentID        string
+	RevokedAt      time.Time
+	CertExpiresAt  time.Time
+}
+
 // UserAppearanceRecord stores one user's persisted appearance preferences.
 type UserAppearanceRecord struct {
 	UserID    string

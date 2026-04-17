@@ -29,6 +29,12 @@ const (
 	httpLoginRateLimitPerWindow = 30
 	httpAgentBootstrapRateLimitPerWindow = 30
 	grpcConnectRateLimitPerWindow = 30
+	// httpSensitiveRateLimitPerWindow caps how often a single authenticated
+	// user (or client IP if no session) may hit privileged write endpoints
+	// (TOTP enable/disable/setup, user CRUD, enrollment-token create, client
+	// secret rotation). Prevents brute-forcing the 6-digit TOTP enable code
+	// and flooding the system with token/rotation churn.
+	httpSensitiveRateLimitPerWindow = 10
 	defaultRateLimitWindow = time.Minute
 )
 
@@ -81,6 +87,7 @@ type Server struct {
 	loginRateLimiter *fixedWindowRateLimiter
 	agentBootstrapRateLimiter *fixedWindowRateLimiter
 	grpcConnectRateLimiter *fixedWindowRateLimiter
+	sensitiveRateLimiter *fixedWindowRateLimiter
 	loginLockout *accountLockoutTracker
 	trustedProxyCIDRs []*net.IPNet
 	encryptionKey string
@@ -94,7 +101,10 @@ type Server struct {
 	clientsMu      sync.RWMutex
 	metricsAuditMu sync.RWMutex
 	settingsMu     sync.RWMutex
-	agentSeq   uint64
+	// agentSeq removed (P1-SEC-05): agent IDs are now UUIDv7 so a process
+	// restart cannot re-issue a previously-used ID. Other entity sequences
+	// (session/audit/metric/client) are still monotonic because they do not
+	// participate in mTLS identity.
 	sessionSeq uint64
 	auditSeq   uint64
 	metricSeq  uint64
@@ -150,6 +160,7 @@ func New(options Options) *Server {
 		loginRateLimiter: newFixedWindowRateLimiter(httpLoginRateLimitPerWindow, defaultRateLimitWindow),
 		agentBootstrapRateLimiter: newFixedWindowRateLimiter(httpAgentBootstrapRateLimitPerWindow, defaultRateLimitWindow),
 		grpcConnectRateLimiter: newFixedWindowRateLimiter(grpcConnectRateLimitPerWindow, defaultRateLimitWindow),
+		sensitiveRateLimiter: newFixedWindowRateLimiter(httpSensitiveRateLimitPerWindow, defaultRateLimitWindow),
 		loginLockout: newAccountLockoutTracker(),
 		trustedProxyCIDRs: options.TrustedProxyCIDRs,
 		encryptionKey: options.EncryptionKey,
@@ -293,7 +304,23 @@ func (s *Server) restoreStoredState() error {
 	for _, record := range agents {
 		agent := agentFromRecord(record)
 		s.agents[agent.ID] = agent
-		s.agentSeq = maxPrefixedSequence(s.agentSeq, "agent", agent.ID)
+	}
+
+	// Restore persisted agent revocations (P1-SEC-06). Without this, a CP
+	// restart silently forgets the revocation and a deleted agent whose
+	// 30-day client cert is still valid could reconnect over mTLS.
+	revocations, err := s.store.ListAgentRevocations(context.Background())
+	if err != nil {
+		return err
+	}
+	now := s.now()
+	for _, rec := range revocations {
+		if rec.CertExpiresAt.Before(now) {
+			// Cert is already past expiry — the TLS handshake will reject
+			// it on its own, no need to carry the revocation entry.
+			continue
+		}
+		s.revokedAgentIDs[rec.AgentID] = struct{}{}
 	}
 
 	instances, err := s.store.ListInstances(context.Background())
@@ -392,7 +419,7 @@ func (s *Server) routes() http.Handler {
 		// Panel routes — with optional IP whitelist
 		api.Group(func(panel chi.Router) {
 			if len(s.panelRuntime.PanelAllowedCIDRs) > 0 {
-				panel.Use(ipWhitelistMiddleware(s.panelRuntime.PanelAllowedCIDRs))
+				panel.Use(ipWhitelistMiddleware(s.panelRuntime.PanelAllowedCIDRs, s.trustedProxyCIDRs))
 			}
 			panel.With(s.withRateLimit(s.loginRateLimiter, s.requestClientRateLimitKey)).
 				Post("/auth/login", s.handleLogin())
@@ -402,9 +429,14 @@ func (s *Server) routes() http.Handler {
 				authenticated.Get("/version", s.handleVersion())
 				authenticated.Get("/auth/me", s.handleMe())
 				authenticated.Post("/auth/logout", s.handleLogout())
-				authenticated.Post("/auth/totp/setup", s.handleTotpSetup())
-				authenticated.Post("/auth/totp/enable", s.handleTotpEnable())
-				authenticated.Post("/auth/totp/disable", s.handleTotpDisable())
+				// Sensitive per-user rate limiting applied to any endpoint that
+				// could be brute-forced (TOTP enable 6-digit code) or abused
+				// at scale (enrollment token floods, repeated secret
+				// rotations). Key is session.UserID, falling back to client IP.
+				sensitive := s.withRateLimit(s.sensitiveRateLimiter, s.requestSessionRateLimitKey)
+				authenticated.With(sensitive).Post("/auth/totp/setup", s.handleTotpSetup())
+				authenticated.With(sensitive).Post("/auth/totp/enable", s.handleTotpEnable())
+				authenticated.With(sensitive).Post("/auth/totp/disable", s.handleTotpDisable())
 				authenticated.Get("/control-room", s.handleControlRoom())
 				authenticated.Get("/fleet", s.handleFleet())
 				authenticated.Get("/agents", s.handleAgents())
@@ -413,7 +445,6 @@ func (s *Server) routes() http.Handler {
 				authenticated.Get("/audit", s.handleAudit())
 				authenticated.Get("/metrics", s.handleMetrics())
 				authenticated.Get("/events", s.handleEvents())
-				authenticated.Get("/agent/update/binary", s.handleAgentBinaryProxy())
 				authenticated.Get("/settings/appearance", s.handleGetUserAppearance())
 				authenticated.Put("/settings/appearance", s.handlePutUserAppearance())
 				authenticated.Get("/telemetry/dashboard", s.handleTelemetryDashboard())
@@ -432,7 +463,7 @@ func (s *Server) routes() http.Handler {
 					operator.Get("/clients/{id}", s.handleClient())
 					operator.Put("/clients/{id}", s.handleUpdateClient())
 					operator.Delete("/clients/{id}", s.handleDeleteClient())
-					operator.Post("/clients/{id}/rotate-secret", s.handleRotateClientSecret())
+					operator.With(sensitive).Post("/clients/{id}/rotate-secret", s.handleRotateClientSecret())
 					operator.Get("/discovered-clients", s.handleDiscoveredClients())
 					operator.Post("/discovered-clients/{id}/adopt", s.handleAdoptDiscoveredClient())
 					operator.Post("/discovered-clients/{id}/ignore", s.handleIgnoreDiscoveredClient())
@@ -440,18 +471,19 @@ func (s *Server) routes() http.Handler {
 					operator.Get("/fleet-groups", s.handleFleetGroups())
 					operator.Patch("/agents/{id}", s.handleRenameAgent())
 					operator.Get("/agents/enrollment-tokens", s.handleListEnrollmentTokens())
-					operator.Post("/agents/enrollment-tokens", s.handleCreateEnrollmentToken())
+					operator.With(sensitive).Post("/agents/enrollment-tokens", s.handleCreateEnrollmentToken())
 					operator.Post("/agents/enrollment-tokens/{value}/revoke", s.handleRevokeEnrollmentToken())
 					operator.Post("/agents/{id}/update", s.handleAgentUpdate())
+					operator.Get("/agent/update/binary", s.handleAgentBinaryProxy())
 				})
 
 				authenticated.Group(func(admin chi.Router) {
 					admin.Use(s.requireMinimumRole(auth.RoleAdmin))
 					admin.Get("/users", s.handleUsers())
-					admin.Post("/users", s.handleCreateUser())
-					admin.Put("/users/{id}", s.handleUpdateUser())
-					admin.Delete("/users/{id}", s.handleDeleteUser())
-					admin.Post("/users/{id}/totp/reset", s.handleResetUserTotp())
+					admin.With(sensitive).Post("/users", s.handleCreateUser())
+					admin.With(sensitive).Put("/users/{id}", s.handleUpdateUser())
+					admin.With(sensitive).Delete("/users/{id}", s.handleDeleteUser())
+					admin.With(sensitive).Post("/users/{id}/totp/reset", s.handleResetUserTotp())
 					admin.Post("/agents/{id}/certificate-recovery-grants", s.handleCreateAgentCertificateRecoveryGrant())
 					admin.Post("/agents/{id}/certificate-recovery-grants/revoke", s.handleRevokeAgentCertificateRecoveryGrant())
 					admin.Delete("/agents/{id}", s.handleDeregisterAgent())
