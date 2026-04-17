@@ -71,12 +71,18 @@ func (s *Server) handleAgentCertificateRecovery() http.HandlerFunc {
 			return
 		}
 
-		issued, err := s.authority.issueClientCertificate(request.AgentID, now)
-		if err != nil {
-			s.logger.Error("agent certificate recovery failed", "agent_id", request.AgentID, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
-			return
-		}
+		// P1-SEC-07: consume the grant BEFORE issuing the certificate so a
+		// crash between cert issue and grant consume cannot leave the grant
+		// reusable while a fresh cert is already minted. The grant consume
+		// is an atomic SQL UPDATE — concurrent recovery requests race here
+		// and only the winner proceeds; losers see ErrConflict and fail
+		// closed.
+		//
+		// Trade-off: if cert issuance itself fails after consume, the grant
+		// is lost and the admin must create a new one. This is acceptable
+		// because issuance is in-process and only fails on impossible
+		// conditions (CA unloaded, entropy exhausted) — a much narrower
+		// failure window than the former TOCTOU.
 		if _, err := s.store.UseAgentCertificateRecoveryGrant(r.Context(), request.AgentID, now); err != nil {
 			if errors.Is(err, storage.ErrNotFound) || errors.Is(err, storage.ErrConflict) {
 				writeError(w, http.StatusForbidden, "agent certificate recovery is not allowed")
@@ -84,6 +90,12 @@ func (s *Server) handleAgentCertificateRecovery() http.HandlerFunc {
 			}
 			s.logger.Error("agent certificate recovery grant consume failed", "agent_id", request.AgentID, "error", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		issued, err := s.authority.issueClientCertificate(request.AgentID, now)
+		if err != nil {
+			s.logger.Error("agent certificate recovery cert issue failed after grant consume", "agent_id", request.AgentID, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal error; please recreate recovery grant")
 			return
 		}
 
