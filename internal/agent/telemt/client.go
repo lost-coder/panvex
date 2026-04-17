@@ -27,6 +27,12 @@ const defaultSlowDataTTL = 2 * time.Minute
 // defaultRequestTimeout bounds local Telemt API calls to prevent indefinite request hangs.
 const defaultRequestTimeout = 15 * time.Second
 
+// defaultFetchRuntimeStateDeadline bounds the total duration of a FetchRuntimeState
+// cycle when the caller supplies a context without its own deadline. Without this
+// cap, a hung Telemt subsystem could block the snapshot loop for up to
+// len(subfetches) * defaultRequestTimeout (~150s) on each cycle. See P2-REL-07.
+const defaultFetchRuntimeStateDeadline = 30 * time.Second
+
 // Config contains the local Telemt API location and authorization secret.
 type Config struct {
 	BaseURL       string
@@ -88,6 +94,11 @@ type RuntimeState struct {
 	MeWritersSummary  RuntimeMeWritersSummary
 	SystemLoad       RuntimeSystemLoad
 	Clients          []ClientUsage
+	// Partial indicates that at least one Telemt sub-fetch failed or the
+	// outer context expired during FetchRuntimeState. Downstream callers
+	// should log a warning and may still forward the snapshot to the
+	// control-plane; absent sub-fields fall back to zero values. See P2-REL-07.
+	Partial bool
 }
 
 // RuntimeSystemLoad carries short server load telemetry for trend history charts.
@@ -311,14 +322,43 @@ func isLoopbackHost(host string) bool {
 }
 
 // FetchRuntimeState queries the Telemt health, security posture, and summary endpoints.
+//
+// When the caller's context has no deadline, FetchRuntimeState installs an
+// internal defaultFetchRuntimeStateDeadline (30s) so a hung Telemt subsystem
+// cannot stall the snapshot loop for the cumulative sum of the ten per-request
+// http.Client timeouts (~150s). Callers that already have their own deadline
+// (for example the supervisor loop) are respected as-is. See P2-REL-07.
+//
+// Partial-snapshot semantics: if any sub-fetch fails or ctx expires mid-cycle,
+// FetchRuntimeState returns what it managed to collect with Partial=true and
+// a nil error. Missing sub-fields fall back to zero values. This lets the
+// agent keep heartbeating degraded state to the control-plane instead of
+// dropping whole cycles whenever one endpoint is slow.
 func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, defaultFetchRuntimeStateDeadline)
+		defer cancel()
+	}
+
+	result := RuntimeState{}
+	markPartial := func(path string, err error) {
+		result.Partial = true
+		c.logger.Warn("telemt runtime sub-fetch failed",
+			"path", path,
+			"err", err,
+			"ctx_err", ctx.Err(),
+		)
+	}
+
 	health := struct {
 		Status string `json:"status"`
 	}{}
 	if err := c.getJSON(ctx, "/v1/health", &health); err != nil {
-		return RuntimeState{}, err
+		markPartial("/v1/health", err)
+	} else {
+		c.logger.Debug("telemt api call", "path", "/v1/health", "status", health.Status)
 	}
-	c.logger.Debug("telemt api call", "path", "/v1/health", "status", health.Status)
 
 	posture := struct {
 		ReadOnly               bool   `json:"read_only"`
@@ -333,7 +373,7 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 		TelemetryMELevel       string `json:"telemetry_me_level"`
 	}{}
 	if err := c.getJSON(ctx, "/v1/security/posture", &posture); err != nil {
-		return RuntimeState{}, err
+		markPartial("/v1/security/posture", err)
 	}
 
 	gates := struct {
@@ -349,9 +389,10 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 		StartupProgressPct      float64 `json:"startup_progress_pct"`
 	}{}
 	if err := c.getJSON(ctx, "/v1/runtime/gates", &gates); err != nil {
-		return RuntimeState{}, err
+		markPartial("/v1/runtime/gates", err)
+	} else {
+		c.logger.Debug("telemt api call", "path", "/v1/runtime/gates", "accepting", gates.AcceptingNewConnections)
 	}
-	c.logger.Debug("telemt api call", "path", "/v1/runtime/gates", "accepting", gates.AcceptingNewConnections)
 
 	initialization := struct {
 		Status        string  `json:"status"`
@@ -361,7 +402,7 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 		TransportMode string  `json:"transport_mode"`
 	}{}
 	if err := c.getJSON(ctx, "/v1/runtime/initialization", &initialization); err != nil {
-		return RuntimeState{}, err
+		markPartial("/v1/runtime/initialization", err)
 	}
 
 	connectionSummary := struct {
@@ -390,9 +431,10 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 		} `json:"data"`
 	}{}
 	if err := c.getJSON(ctx, "/v1/runtime/connections/summary", &connectionSummary); err != nil {
-		return RuntimeState{}, err
+		markPartial("/v1/runtime/connections/summary", err)
+	} else {
+		c.logger.Debug("telemt api call", "path", "/v1/runtime/connections/summary", "connections", connectionSummary.Data.Totals.CurrentConnections)
 	}
-	c.logger.Debug("telemt api call", "path", "/v1/runtime/connections/summary", "connections", connectionSummary.Data.Totals.CurrentConnections)
 
 	summary := struct {
 		ConnectionsTotal       uint64 `json:"connections_total"`
@@ -401,7 +443,7 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 		ConfiguredUsers        int    `json:"configured_users"`
 	}{}
 	if err := c.getJSON(ctx, "/v1/stats/summary", &summary); err != nil {
-		return RuntimeState{}, err
+		markPartial("/v1/stats/summary", err)
 	}
 
 	dcStatus := struct {
@@ -419,9 +461,10 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 		} `json:"dcs"`
 	}{}
 	if err := c.getJSON(ctx, "/v1/stats/dcs", &dcStatus); err != nil {
-		return RuntimeState{}, err
+		markPartial("/v1/stats/dcs", err)
+	} else {
+		c.logger.Debug("telemt api call", "path", "/v1/stats/dcs", "dc_count", len(dcStatus.DCS))
 	}
-	c.logger.Debug("telemt api call", "path", "/v1/stats/dcs", "dc_count", len(dcStatus.DCS))
 
 	dcs := make([]RuntimeDC, 0, len(dcStatus.DCS))
 	for _, dc := range dcStatus.DCS {
@@ -451,32 +494,43 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 		c.mu.RUnlock()
 	}
 	if !useCachedSlowData {
-		fetchedSlowData, err := c.fetchSlowRuntimeState(ctx)
+		fetchedSlowData, slowPartial, err := c.fetchSlowRuntimeState(ctx)
 		if err != nil {
-			return RuntimeState{}, err
-		}
-		slowData = fetchedSlowData
-		if c.slowDataTTL > 0 {
-			c.mu.Lock()
-			c.slowData = fetchedSlowData
-			c.slowFetchedAt = time.Now().UTC()
-			c.hasSlowData = true
-			c.mu.Unlock()
+			markPartial("slow_runtime_state", err)
+		} else {
+			slowData = fetchedSlowData
+			if slowPartial {
+				result.Partial = true
+			}
+			// Only cache when we actually obtained a usable slow snapshot; if the
+			// slow bundle itself reported internal degradation we still cache the
+			// payload because its sub-sections carry their own "state" markers.
+			if c.slowDataTTL > 0 {
+				c.mu.Lock()
+				c.slowData = fetchedSlowData
+				c.slowFetchedAt = time.Now().UTC()
+				c.hasSlowData = true
+				c.mu.Unlock()
+			}
 		}
 	}
 
 	users, err := c.fetchClientUsage(ctx)
 	if err != nil {
-		return RuntimeState{}, err
+		markPartial("/v1/stats/users", err)
+		users = nil
 	}
 	systemLoad := RuntimeSystemLoad{}
 	if c.systemLoadSampler != nil {
 		if load, err := c.systemLoadSampler(ctx); err == nil {
 			systemLoad = load
+		} else {
+			markPartial("system_load_sampler", err)
 		}
 	}
 
-	return RuntimeState{
+	partial := result.Partial
+	result = RuntimeState{
 		Version:        slowData.Version,
 		ReadOnly:       posture.ReadOnly || posture.APIReadOnly,
 		UptimeSeconds:  slowData.UptimeSeconds,
@@ -533,15 +587,23 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 		MeWritersSummary: slowData.MeWritersSummary,
 		SystemLoad:       systemLoad,
 		Clients:      users,
-	}, nil
+		Partial:      partial,
+	}
+	return result, nil
 }
 
 // fetchSlowRuntimeState reads the heavier Telemt endpoints that do not need live refresh on every snapshot.
-func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, error) {
+//
+// Returns the collected slow state, a partial flag (true when at least one
+// advisory sub-endpoint failed but the core system/info payload still arrived),
+// and a non-nil error only when the required /v1/system/info payload itself is
+// unreachable. See P2-REL-07.
+func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, bool, error) {
 	systemInfo, err := c.getJSONPayload(ctx, "/v1/system/info")
 	if err != nil {
-		return slowRuntimeState{}, err
+		return slowRuntimeState{}, true, err
 	}
+	partial := false
 
 	upstreamStatus := struct {
 		Summary struct {
@@ -564,9 +626,11 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, e
 		} `json:"upstreams"`
 	}{}
 	if err := c.getJSON(ctx, "/v1/stats/upstreams", &upstreamStatus); err != nil {
-		return slowRuntimeState{}, err
+		partial = true
+		c.logger.Warn("telemt runtime sub-fetch failed", "path", "/v1/stats/upstreams", "err", err, "ctx_err", ctx.Err())
+	} else {
+		c.logger.Debug("telemt api call", "path", "/v1/stats/upstreams", "configured", upstreamStatus.Summary.ConfiguredTotal)
 	}
-	c.logger.Debug("telemt api call", "path", "/v1/stats/upstreams", "configured", upstreamStatus.Summary.ConfiguredTotal)
 
 	recentEvents := struct {
 		Enabled bool   `json:"enabled"`
@@ -583,6 +647,7 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, e
 	// Recent events are advisory diagnostics. A temporary read failure must not suppress
 	// the core operator snapshot built from health, gates, connections, summary, and DC state.
 	if err := c.getJSON(ctx, "/v1/runtime/events/recent", &recentEvents); err != nil {
+		partial = true
 		recentEvents = struct {
 			Enabled bool   `json:"enabled"`
 			Reason  string `json:"reason"`
@@ -606,37 +671,49 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, e
 	if payload, err := c.getJSONPayload(ctx, "/v1/limits/effective"); err == nil {
 		diagnostics.EffectiveLimitsJSON = marshalRawJSON(payload)
 	} else {
+		partial = true
 		diagnostics.State = "unavailable"
 		diagnostics.StateReason = "limits_unavailable"
 	}
 
 	if payload, err := c.getJSONPayload(ctx, "/v1/security/posture"); err == nil {
 		diagnostics.SecurityPostureJSON = marshalRawJSON(payload)
-	} else if diagnostics.State == "fresh" {
-		diagnostics.State = "unavailable"
-		diagnostics.StateReason = "posture_unavailable"
+	} else {
+		partial = true
+		if diagnostics.State == "fresh" {
+			diagnostics.State = "unavailable"
+			diagnostics.StateReason = "posture_unavailable"
+		}
 	}
 
 	minimalAll := map[string]any{}
 	if err := c.getJSON(ctx, "/v1/stats/minimal/all", &minimalAll); err == nil {
 		diagnostics.MinimalAllJSON = marshalJSON(minimalAll)
-	} else if diagnostics.State == "fresh" {
-		diagnostics.State = "unavailable"
-		diagnostics.StateReason = "minimal_runtime_unavailable"
+	} else {
+		partial = true
+		if diagnostics.State == "fresh" {
+			diagnostics.State = "unavailable"
+			diagnostics.StateReason = "minimal_runtime_unavailable"
+		}
 	}
 
 	mePool := map[string]any{}
 	if err := c.getJSON(ctx, "/v1/runtime/me_pool_state", &mePool); err == nil {
 		c.logger.Debug("telemt api call", "path", "/v1/runtime/me_pool_state")
 		diagnostics.MEPoolJSON = marshalJSON(mePool)
-	} else if diagnostics.State == "fresh" {
-		diagnostics.State = "unavailable"
-		diagnostics.StateReason = "me_pool_unavailable"
+	} else {
+		partial = true
+		if diagnostics.State == "fresh" {
+			diagnostics.State = "unavailable"
+			diagnostics.StateReason = "me_pool_unavailable"
+		}
 	}
 
 	dcsDetail := map[string]any{}
 	if err := c.getJSON(ctx, "/v1/stats/dcs", &dcsDetail); err == nil {
 		diagnostics.DcsJSON = marshalJSON(dcsDetail)
+	} else {
+		partial = true
 	}
 
 	meWritersSummary := RuntimeMeWritersSummary{}
@@ -651,7 +728,9 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, e
 			AliveWriters        int     `json:"alive_writers"`
 		} `json:"summary"`
 	}{}
-	if err := c.getJSON(ctx, "/v1/stats/me-writers", &meWritersResp); err == nil {
+	if err := c.getJSON(ctx, "/v1/stats/me-writers", &meWritersResp); err != nil {
+		partial = true
+	} else {
 		c.logger.Debug("telemt api call", "path", "/v1/stats/me-writers", "alive_writers", meWritersResp.Summary.AliveWriters)
 		meWritersSummary = RuntimeMeWritersSummary{
 			ConfiguredEndpoints: meWritersResp.Summary.ConfiguredEndpoints,
@@ -678,6 +757,7 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, e
 		securityInventory.EntriesTotal = whitelist.EntriesTotal
 		securityInventory.EntriesJSON = marshalJSON(whitelist.Entries)
 	} else {
+		partial = true
 		securityInventory.State = "unavailable"
 		securityInventory.StateReason = "whitelist_unavailable"
 	}
@@ -722,7 +802,7 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, e
 		Diagnostics:      diagnostics,
 		SecurityInventory: securityInventory,
 		MeWritersSummary: meWritersSummary,
-	}, nil
+	}, partial, nil
 }
 
 func (c *Client) getJSONPayload(ctx context.Context, path string) (map[string]any, error) {
