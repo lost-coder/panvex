@@ -118,3 +118,22 @@ func trustedClientIPString(r *http.Request, trustedCIDRs []*net.IPNet) string {
 	}
 	return ip.String()
 }
+
+// remoteAddrIsTrustedProxy reports whether the TCP peer on r (r.RemoteAddr)
+// is a loopback address or falls inside one of the configured trusted-proxy
+// CIDRs. This gates trust for any hop-attributable header (X-Forwarded-For,
+// X-Forwarded-Proto, X-Forwarded-Host, X-Real-IP, ...) so an arbitrary
+// untrusted client cannot spoof the deployment topology — e.g. by setting
+// `X-Forwarded-Proto: https` over plain-HTTP to trick the server into
+// marking the session cookie Secure (finding DF-2 / P2-SEC-04).
+func remoteAddrIsTrustedProxy(r *http.Request, trustedCIDRs []*net.IPNet) bool {
+	if r == nil {
+		return false
+	}
+	peerHost, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		peerHost = strings.TrimSpace(r.RemoteAddr)
+	}
+	ip := net.ParseIP(peerHost)
+	return peerIsTrusted(ip, trustedCIDRs)
+}
