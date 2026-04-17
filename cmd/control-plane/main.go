@@ -24,6 +24,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage/postgres"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
+	"github.com/lost-coder/panvex/internal/security"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
@@ -553,9 +554,12 @@ func runSelfUpdate(args []string) error {
 		return nil
 	}
 
-	binaryURL, checksumURL := server.ResolveAssetURLs(panel, "control-plane")
+	binaryURL, checksumURL, signatureURL := server.ResolveAssetURLs(panel, "control-plane")
 	if binaryURL == "" {
 		return errors.New("no binary download URL found for the current platform")
+	}
+	if signatureURL == "" {
+		return errors.New("release is missing a .sig asset; refusing to install unsigned binary")
 	}
 
 	fmt.Printf("Updating from %s to %s ...\n", currentVersion, targetVersion)
@@ -576,6 +580,21 @@ func runSelfUpdate(args []string) error {
 	}
 	defer func() { _ = os.Remove(archivePath) }() //nolint:gosec // archivePath from os.CreateTemp, not user input
 	fmt.Println("Archive downloaded.")
+
+	// Mandatory signature verification: fetch the detached signature, verify
+	// against the embedded public key before any checksum or extraction.
+	sigBytes, err := server.DownloadSignature(ctx, signatureURL, *token)
+	if err != nil {
+		return fmt.Errorf("download signature: %w", err)
+	}
+	archiveBytes, err := os.ReadFile(archivePath) //nolint:gosec // archivePath from os.CreateTemp
+	if err != nil {
+		return fmt.Errorf("read archive for signature: %w", err)
+	}
+	if err := security.VerifyArtifactBytes(archiveBytes, sigBytes); err != nil {
+		return fmt.Errorf("verify signature: %w", err)
+	}
+	fmt.Println("Signature verified.")
 
 	if expectedChecksum != "" {
 		if err := server.VerifyChecksum(archivePath, expectedChecksum); err != nil {

@@ -60,3 +60,9 @@ docs/plans/
 /agent
 /control-plane
 .panvex-ui
+
+# Private signing key material must never be committed. The public key at
+# internal/security/signing_key.pub is the only key that ships in the repo.
+*signing*.key
+*signing-key*.pem
+*.private.pem
