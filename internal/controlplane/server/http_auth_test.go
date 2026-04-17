@@ -309,3 +309,156 @@ func searchSubstring(s, substr string) bool {
 	}
 	return false
 }
+
+// TestLoginRotatesSessionIDOnExistingCookie covers P2-SEC-01 at the HTTP
+// layer: if the browser submits a login request while already carrying a
+// panvex_session cookie, that pre-authentication session must be invalidated
+// server-side. The new cookie returned in the response must have a different
+// value, and the old value must no longer authenticate subsequent requests.
+func TestLoginRotatesSessionIDOnExistingCookie(t *testing.T) {
+	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
+	srv := New(Options{
+		Now: func() time.Time { return now },
+	})
+
+	if _, _, err := srv.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "operator",
+		Password: "Operator1password",
+		Role:     auth.RoleOperator,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	// First login establishes a session whose ID we will treat as the
+	// pre-authentication (potentially planted) cookie value.
+	firstLogin := performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "operator",
+		"password": "Operator1password",
+	}, nil)
+	if firstLogin.Code != http.StatusOK {
+		t.Fatalf("first POST /api/auth/login status = %d, want %d", firstLogin.Code, http.StatusOK)
+	}
+
+	firstCookies := firstLogin.Result().Cookies()
+	var firstSessionID string
+	for _, c := range firstCookies {
+		if c.Name == sessionCookieName {
+			firstSessionID = c.Value
+		}
+	}
+	if firstSessionID == "" {
+		t.Fatal("first login returned no session cookie")
+	}
+
+	// Confirm the first session authenticates /me before we re-login.
+	meBefore := performJSONRequest(t, srv.Handler(), http.MethodGet, "/api/auth/me", nil, firstCookies)
+	if meBefore.Code != http.StatusOK {
+		t.Fatalf("GET /api/auth/me before rotation status = %d, want %d", meBefore.Code, http.StatusOK)
+	}
+
+	// Re-login carrying the prior cookie, as a browser would naturally do.
+	secondLogin := performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "operator",
+		"password": "Operator1password",
+	}, firstCookies)
+	if secondLogin.Code != http.StatusOK {
+		t.Fatalf("second POST /api/auth/login status = %d, want %d", secondLogin.Code, http.StatusOK)
+	}
+
+	secondCookies := secondLogin.Result().Cookies()
+	var secondSessionID string
+	for _, c := range secondCookies {
+		if c.Name == sessionCookieName {
+			secondSessionID = c.Value
+		}
+	}
+	if secondSessionID == "" {
+		t.Fatal("second login returned no session cookie")
+	}
+	if secondSessionID == firstSessionID {
+		t.Fatal("second login session ID matches first; want rotated ID")
+	}
+
+	// The prior cookie must no longer authenticate. Submit /me with only the
+	// old cookie value to isolate that effect.
+	meAfter := performJSONRequest(t, srv.Handler(), http.MethodGet, "/api/auth/me", nil, []*http.Cookie{
+		{Name: sessionCookieName, Value: firstSessionID},
+	})
+	if meAfter.Code != http.StatusUnauthorized {
+		t.Fatalf("GET /api/auth/me with invalidated cookie status = %d, want %d", meAfter.Code, http.StatusUnauthorized)
+	}
+
+	// The new cookie should still authenticate.
+	meFresh := performJSONRequest(t, srv.Handler(), http.MethodGet, "/api/auth/me", nil, []*http.Cookie{
+		{Name: sessionCookieName, Value: secondSessionID},
+	})
+	if meFresh.Code != http.StatusOK {
+		t.Fatalf("GET /api/auth/me with rotated cookie status = %d, want %d", meFresh.Code, http.StatusOK)
+	}
+}
+
+// TestRoleChangeInvalidatesTargetUserSessions covers the privilege-change
+// rotation half of P2-SEC-01: when an admin edits another user's role, that
+// user's outstanding sessions must immediately stop authenticating so the
+// target re-authenticates under the new privilege level.
+func TestRoleChangeInvalidatesTargetUserSessions(t *testing.T) {
+	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
+	srv := New(Options{
+		Now: func() time.Time { return now },
+	})
+
+	if _, _, err := srv.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "admin",
+		Password: "Admin1password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser(admin) error = %v", err)
+	}
+	viewer, _, err := srv.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "viewer",
+		Password: "Viewer1password",
+		Role:     auth.RoleViewer,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser(viewer) error = %v", err)
+	}
+
+	// Viewer logs in and obtains a session.
+	viewerLogin := performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "viewer",
+		"password": "Viewer1password",
+	}, nil)
+	if viewerLogin.Code != http.StatusOK {
+		t.Fatalf("viewer login status = %d, want %d", viewerLogin.Code, http.StatusOK)
+	}
+	viewerCookies := viewerLogin.Result().Cookies()
+
+	// Admin logs in and promotes the viewer to operator.
+	adminLogin := performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "admin",
+		"password": "Admin1password",
+	}, nil)
+	if adminLogin.Code != http.StatusOK {
+		t.Fatalf("admin login status = %d, want %d", adminLogin.Code, http.StatusOK)
+	}
+
+	updateResp := performJSONRequest(t, srv.Handler(), http.MethodPut, "/api/users/"+viewer.ID, map[string]string{
+		"username": "viewer",
+		"role":     string(auth.RoleOperator),
+	}, adminLogin.Result().Cookies())
+	if updateResp.Code != http.StatusOK {
+		t.Fatalf("PUT /api/users/{id} status = %d, want %d", updateResp.Code, http.StatusOK)
+	}
+
+	// Viewer's prior session must no longer authenticate.
+	meAfter := performJSONRequest(t, srv.Handler(), http.MethodGet, "/api/auth/me", nil, viewerCookies)
+	if meAfter.Code != http.StatusUnauthorized {
+		t.Fatalf("viewer /me after role change status = %d, want %d", meAfter.Code, http.StatusUnauthorized)
+	}
+
+	// Admin session is untouched.
+	adminMe := performJSONRequest(t, srv.Handler(), http.MethodGet, "/api/auth/me", nil, adminLogin.Result().Cookies())
+	if adminMe.Code != http.StatusOK {
+		t.Fatalf("admin /me after unrelated role change status = %d, want %d", adminMe.Code, http.StatusOK)
+	}
+}
