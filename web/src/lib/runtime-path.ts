@@ -13,7 +13,20 @@ export function resolveConfiguredRootPath(): string {
     return "";
   }
 
-  return normalizeRootPath((window as Window & { __PANVEX_ROOT_PATH?: string }).__PANVEX_ROOT_PATH);
+  // Runtime root-path is injected by the Go UI handler as a data attribute on
+  // <html> (e.g. <html data-root-path="/panvex">). We avoid inline <script>
+  // bootstrapping because our CSP disallows 'unsafe-inline'. Fall back to the
+  // legacy window.__PANVEX_ROOT_PATH for development tooling that may still
+  // set it externally.
+  const root = document.documentElement;
+  const fromDataset = root ? root.dataset.rootPath : undefined;
+  if (fromDataset !== undefined && fromDataset !== "") {
+    return normalizeRootPath(fromDataset);
+  }
+
+  return normalizeRootPath(
+    (window as Window & { __PANVEX_ROOT_PATH?: string }).__PANVEX_ROOT_PATH,
+  );
 }
 
 export function resolveAPIBasePath(rootPath: string): string {
