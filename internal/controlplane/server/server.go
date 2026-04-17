@@ -101,7 +101,10 @@ type Server struct {
 	clientsMu      sync.RWMutex
 	metricsAuditMu sync.RWMutex
 	settingsMu     sync.RWMutex
-	agentSeq   uint64
+	// agentSeq removed (P1-SEC-05): agent IDs are now UUIDv7 so a process
+	// restart cannot re-issue a previously-used ID. Other entity sequences
+	// (session/audit/metric/client) are still monotonic because they do not
+	// participate in mTLS identity.
 	sessionSeq uint64
 	auditSeq   uint64
 	metricSeq  uint64
@@ -301,7 +304,6 @@ func (s *Server) restoreStoredState() error {
 	for _, record := range agents {
 		agent := agentFromRecord(record)
 		s.agents[agent.ID] = agent
-		s.agentSeq = maxPrefixedSequence(s.agentSeq, "agent", agent.ID)
 	}
 
 	instances, err := s.store.ListInstances(context.Background())

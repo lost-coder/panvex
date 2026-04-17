@@ -2,8 +2,10 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
@@ -74,9 +76,17 @@ func (s *Server) enrollAgentWithContext(ctx context.Context, request agentEnroll
 		return agentEnrollmentResponse{}, err
 	}
 
+	// Agent IDs are UUIDv7 instead of the old monotonic "agent_<N>" scheme
+	// because the old counter was process-local and reset on CP restart,
+	// which could re-issue an ID whose prior owner still held a valid 30-day
+	// client certificate (P1-SEC-05 / C5 CN collision).
+	id7, err := uuid.NewV7()
+	if err != nil {
+		return agentEnrollmentResponse{}, fmt.Errorf("generate agent id: %w", err)
+	}
+	agentID := id7.String()
+
 	s.mu.Lock()
-	s.agentSeq++
-	agentID := newSequenceID("agent", s.agentSeq)
 	agent := Agent{
 		ID:           agentID,
 		NodeName:     request.NodeName,
