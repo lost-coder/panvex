@@ -392,7 +392,7 @@ func (s *Server) routes() http.Handler {
 		// Panel routes — with optional IP whitelist
 		api.Group(func(panel chi.Router) {
 			if len(s.panelRuntime.PanelAllowedCIDRs) > 0 {
-				panel.Use(ipWhitelistMiddleware(s.panelRuntime.PanelAllowedCIDRs))
+				panel.Use(ipWhitelistMiddleware(s.panelRuntime.PanelAllowedCIDRs, s.trustedProxyCIDRs))
 			}
 			panel.With(s.withRateLimit(s.loginRateLimiter, s.requestClientRateLimitKey)).
 				Post("/auth/login", s.handleLogin())

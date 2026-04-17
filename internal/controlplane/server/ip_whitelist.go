@@ -3,10 +3,15 @@ package server
 import (
 	"net"
 	"net/http"
-	"strings"
 )
 
-func ipWhitelistMiddleware(allowed []*net.IPNet) func(http.Handler) http.Handler {
+// ipWhitelistMiddleware enforces that the resolved client IP is contained in
+// at least one of the allowed CIDRs. Client IP resolution goes through
+// resolveTrustedClientIP, which honours trustedProxyCIDRs to decide whether
+// X-Forwarded-For is allowed to override r.RemoteAddr. This closes the
+// leftmost-XFF bypass: with no trusted proxy configured, only r.RemoteAddr is
+// used; with trusted proxies configured, the rightmost untrusted hop wins.
+func ipWhitelistMiddleware(allowed, trustedProxyCIDRs []*net.IPNet) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if len(allowed) == 0 {
@@ -14,8 +19,7 @@ func ipWhitelistMiddleware(allowed []*net.IPNet) func(http.Handler) http.Handler
 				return
 			}
 
-			clientIP := resolveClientIP(r)
-			ip := net.ParseIP(clientIP)
+			ip := resolveTrustedClientIP(r, trustedProxyCIDRs)
 			if ip == nil {
 				writeError(w, http.StatusForbidden, "forbidden")
 				return
@@ -31,19 +35,4 @@ func ipWhitelistMiddleware(allowed []*net.IPNet) func(http.Handler) http.Handler
 			writeError(w, http.StatusForbidden, "forbidden")
 		})
 	}
-}
-
-func resolveClientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.SplitN(xff, ",", 2)
-		if ip := strings.TrimSpace(parts[0]); ip != "" {
-			return ip
-		}
-	}
-
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
 }

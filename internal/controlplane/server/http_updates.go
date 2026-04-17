@@ -12,23 +12,36 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/security"
 )
 
+// versionResponse is the JSON shape returned by GET /api/version.
+// commit_sha and build_time are only populated for Operator+ sessions; for
+// viewers they are omitted via `omitempty` to avoid revealing build
+// fingerprints that make targeted vulnerability research easier.
 type versionResponse struct {
 	Version   string `json:"version"`
-	CommitSHA string `json:"commit_sha"`
-	BuildTime string `json:"build_time"`
+	CommitSHA string `json:"commit_sha,omitempty"`
+	BuildTime string `json:"build_time,omitempty"`
 }
 
 func (s *Server) handleVersion() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, versionResponse{
-			Version:   s.version,
-			CommitSHA: s.commitSHA,
-			BuildTime: s.buildTime,
-		})
+		resp := versionResponse{Version: s.version}
+
+		// Gate commit_sha / build_time on Operator+. The handler is registered
+		// in the `authenticated` group, so any caller reaching here has a
+		// session; we still tolerate requireSession errors by defaulting to
+		// the truncated response.
+		_, user, err := s.requireSession(r)
+		if err == nil && roleRank(user.Role) >= roleRank(auth.RoleOperator) {
+			resp.CommitSHA = s.commitSHA
+			resp.BuildTime = s.buildTime
+		}
+
+		writeJSON(w, http.StatusOK, resp)
 	}
 }
 
