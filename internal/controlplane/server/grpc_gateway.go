@@ -760,7 +760,18 @@ func (s *Server) recordJobResult(agentID string, jobID string, success bool, mes
 }
 
 func (s *Server) recordJobResultState(agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) {
-	s.jobs.RecordResult(agentID, jobID, success, message, resultJSON, observedAt)
+	if !s.jobs.RecordResult(agentID, jobID, success, message, resultJSON, observedAt) {
+		// P2-LOG-05: the job was evicted (terminal-key TTL, acknowledged
+		// expiry worker, or a late result arriving long after the agent's
+		// idempotency window) before this result reached the CP. Warn and
+		// ignore — the agent's own 2h idempotency cache ensures replay
+		// safety, so dropping the late result here is the correct
+		// idempotent safety net.
+		slog.Warn("job result for unknown or evicted job",
+			"agent_id", agentID,
+			"job_id", jobID,
+			"success", success)
+	}
 }
 
 func (s *Server) recordJobAcknowledgedState(agentID string, jobID string, observedAt time.Time) {

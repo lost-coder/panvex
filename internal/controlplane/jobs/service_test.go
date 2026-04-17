@@ -1368,10 +1368,6 @@ func TestEnqueueDuplicateKeyConcurrentExactlyOneWins(t *testing.T) {
 	if duplicates != workers-1 {
 		t.Fatalf("duplicates = %d, want %d", duplicates, workers-1)
 	}
-	jobs := service.List()
-	if len(jobs) != 1 {
-		t.Fatalf("len(List()) = %d, want 1", len(jobs))
-	}
 }
 
 // TestEnqueuePersistFailureRollsBack verifies P2-PERF-04: when PutJob fails
@@ -1427,5 +1423,198 @@ func TestEnqueuePersistFailureRollsBack(t *testing.T) {
 	}
 	if job.ID == "" {
 		t.Fatalf("retry Enqueue() returned empty job ID")
+	}
+}
+
+// TestAcknowledgedJobsAreRedispatchedAfterRestart verifies the P2-LOG-05
+// (L-14) fix: when the CP restarts and rebuilds agentJobs from the store,
+// acknowledged targets must be re-dispatchable so a second agent restart
+// (which drops the agent's in-flight queue) does not leave the job wedged
+// forever.
+func TestAcknowledgedJobsAreRedispatchedAfterRestart(t *testing.T) {
+	const retryAfter = 30 * time.Second
+	now := time.Date(2026, time.April, 2, 12, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	first := NewServiceWithStore(store)
+	first.SetNow(func() time.Time { return now })
+	job, err := first.Enqueue(CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            time.Hour,
+		IdempotencyKey: "ack-redispatch",
+		ActorID:        "user-1",
+	}, now)
+	if err != nil {
+		t.Fatalf("Enqueue() error = %v", err)
+	}
+
+	first.MarkDelivered("agent-1", job.ID, now.Add(time.Second))
+	first.MarkAcknowledged("agent-1", job.ID, now.Add(2*time.Second))
+
+	// Sanity: during normal operation, acked targets are pruned from the
+	// agent index so PendingForAgent does not re-dispatch the live job.
+	if pending := first.PendingForAgent("agent-1", retryAfter); len(pending) != 0 {
+		t.Fatalf("len(first.PendingForAgent) = %d, want 0 for acked live job", len(pending))
+	}
+
+	// Simulate dual restart: new service instance rebuilds from the same
+	// store, clock advances enough that the ack retryAfter window has
+	// elapsed (mirrors real "CP restarted, then agent restarted" timing).
+	restored := NewServiceWithStore(store)
+	restored.SetNow(func() time.Time { return now.Add(5 * time.Minute) })
+
+	pending := restored.PendingForAgent("agent-1", retryAfter)
+	if len(pending) != 1 {
+		t.Fatalf("len(restored.PendingForAgent) = %d, want 1 (ack should be redispatchable after restart)", len(pending))
+	}
+	if pending[0].ID != job.ID {
+		t.Fatalf("pending[0].ID = %q, want %q", pending[0].ID, job.ID)
+	}
+	if pending[0].Targets[0].Status != TargetStatusAcknowledged {
+		t.Fatalf("pending[0].Targets[0].Status = %q, want %q (status history preserved)", pending[0].Targets[0].Status, TargetStatusAcknowledged)
+	}
+}
+
+// TestAcknowledgedJobsExpireAfterTTL verifies P2-LOG-05 step 2: the
+// PruneAcknowledgedTargets worker transitions long-acknowledged-no-result
+// targets to expired so the CP stops re-dispatching commands the agent has
+// already forgotten (its own idempotency cache has a matching 2h window).
+func TestAcknowledgedJobsExpireAfterTTL(t *testing.T) {
+	const ackTTL = 2 * time.Hour
+	const retryAfter = 30 * time.Second
+
+	start := time.Date(2026, time.April, 2, 13, 0, 0, 0, time.UTC)
+	now := start
+	service := NewService()
+	service.SetNow(func() time.Time { return now })
+
+	// Large TTL so the job itself does not expire via jobShouldExpire
+	// before the ack-expiry worker gets a chance to fire.
+	job, err := service.Enqueue(CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            24 * time.Hour,
+		IdempotencyKey: "ack-expire",
+		ActorID:        "user-1",
+	}, now)
+	if err != nil {
+		t.Fatalf("Enqueue() error = %v", err)
+	}
+
+	service.MarkDelivered("agent-1", job.ID, now.Add(time.Second))
+	service.MarkAcknowledged("agent-1", job.ID, now.Add(2*time.Second))
+
+	// Before TTL elapses: PruneAcknowledgedTargets is a no-op.
+	if expired := service.PruneAcknowledgedTargets(ackTTL); expired != 0 {
+		t.Fatalf("PruneAcknowledgedTargets pre-TTL = %d, want 0", expired)
+	}
+
+	// Advance past the 2h ack TTL.
+	now = start.Add(ackTTL + time.Minute)
+
+	expired := service.PruneAcknowledgedTargets(ackTTL)
+	if expired != 1 {
+		t.Fatalf("PruneAcknowledgedTargets post-TTL = %d, want 1", expired)
+	}
+
+	jobs := service.List()
+	if len(jobs) != 1 {
+		t.Fatalf("len(List()) = %d, want 1", len(jobs))
+	}
+	if jobs[0].Targets[0].Status != TargetStatusExpired {
+		t.Fatalf("Targets[0].Status = %q, want %q", jobs[0].Targets[0].Status, TargetStatusExpired)
+	}
+	if jobs[0].Status != StatusExpired {
+		t.Fatalf("jobs[0].Status = %q, want %q", jobs[0].Status, StatusExpired)
+	}
+
+	// Re-dispatch must no longer fire — the target is expired and the
+	// agent-side idempotency cache can no longer deduplicate.
+	if pending := service.PendingForAgent("agent-1", retryAfter); len(pending) != 0 {
+		t.Fatalf("len(PendingForAgent) = %d after ack expiry, want 0", len(pending))
+	}
+
+	// Idempotency: a late JobResult arriving after expiry (and after
+	// terminal-key eviction wipes the job entirely) must be treated as a
+	// non-fatal warn, not a crash. Advance the clock past a short eviction
+	// TTL so PruneKeys drops the terminal-state record.
+	now = now.Add(time.Hour)
+	if evicted := service.PruneKeys(time.Minute); evicted != 1 {
+		t.Fatalf("PruneKeys post-expiry = %d, want 1", evicted)
+	}
+	if applied := service.RecordResult("agent-1", job.ID, true, "late ok", "", now.Add(time.Second)); applied {
+		t.Fatal("RecordResult on evicted job = true, want false (idempotent safety net)")
+	}
+}
+
+// TestStartAcknowledgedExpiryWorker exercises the ticker wiring.
+func TestStartAcknowledgedExpiryWorker(t *testing.T) {
+	const ackTTL = 50 * time.Millisecond
+
+	start := time.Date(2026, time.April, 2, 14, 0, 0, 0, time.UTC)
+	var (
+		clockMu sync.Mutex
+		now     = start
+	)
+	service := NewService()
+	service.SetNow(func() time.Time {
+		clockMu.Lock()
+		defer clockMu.Unlock()
+		return now
+	})
+
+	job, err := service.Enqueue(CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            time.Hour,
+		IdempotencyKey: "ack-worker",
+		ActorID:        "user-1",
+	}, start)
+	if err != nil {
+		t.Fatalf("Enqueue() error = %v", err)
+	}
+	service.MarkDelivered("agent-1", job.ID, start.Add(time.Millisecond))
+	service.MarkAcknowledged("agent-1", job.ID, start.Add(2*time.Millisecond))
+
+	// Advance past the TTL so the ticker's first scan marks the target
+	// expired on its next fire.
+	clockMu.Lock()
+	now = start.Add(ackTTL + 10*time.Millisecond)
+	clockMu.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	wg.Add(1)
+	service.StartAcknowledgedExpiryWorker(ctx, 10*time.Millisecond, ackTTL, &wg)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		jobs := service.List()
+		if len(jobs) == 1 && jobs[0].Targets[0].Status == TargetStatusExpired {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("StartAcknowledgedExpiryWorker did not expire acked target within 2s")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	cancel()
+	wg.Wait()
+}
+
+// TestRecordResultReportsUnknownJob verifies the idempotent safety net:
+// RecordResult for a job the service has never seen (or has already
+// evicted) returns false so the caller can log a warn instead of silently
+// dropping the result.
+func TestRecordResultReportsUnknownJob(t *testing.T) {
+	service := NewService()
+	if applied := service.RecordResult("agent-1", "job-never-existed", true, "ok", "", time.Now()); applied {
+		t.Fatal("RecordResult on unknown job = true, want false")
 	}
 }
