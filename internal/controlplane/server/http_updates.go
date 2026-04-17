@@ -104,6 +104,13 @@ func (s *Server) handlePutUpdateSettings() http.HandlerFunc {
 			return
 		}
 
+		if req.GitHubRepo != nil {
+			if err := validateGitHubRepo(*req.GitHubRepo); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
+
 		s.settingsMu.Lock()
 		if req.CheckIntervalHours != nil {
 			s.updateSettings.CheckIntervalHours = *req.CheckIntervalHours
@@ -434,11 +441,22 @@ func (s *Server) handleAgentBinaryProxy() http.HandlerFunc {
 		settings := s.updateSettings
 		s.settingsMu.RUnlock()
 
-		assetName := fmt.Sprintf("panvex-agent-linux-%s", arch)
-		url := fmt.Sprintf("https://github.com/%s/releases/download/agent/v%s/%s",
-			settings.GitHubRepo, strings.TrimPrefix(version, "v"), assetName)
+		// Re-validate the stored repo before interpolating it into the URL,
+		// in case an earlier code path bypassed handlePutUpdateSettings' check.
+		if err := validateGitHubRepo(settings.GitHubRepo); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid github_repo configured")
+			return
+		}
 
-		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, url, nil) //nolint:gosec // URL from admin-configured GitHubRepo
+		assetName := fmt.Sprintf("panvex-agent-linux-%s", arch)
+		rawURL := fmt.Sprintf("https://github.com/%s/releases/download/agent/v%s/%s",
+			settings.GitHubRepo, strings.TrimPrefix(version, "v"), assetName)
+		if err := checkDownloadURL(rawURL); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid download URL")
+			return
+		}
+
+		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, rawURL, nil)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to create request")
 			return
@@ -448,7 +466,9 @@ func (s *Server) handleAgentBinaryProxy() http.HandlerFunc {
 		}
 		req.Header.Set("Accept", "application/octet-stream")
 
-		resp, err := http.DefaultClient.Do(req) //nolint:gosec // req URL from trusted admin config
+		// secureDownloadClient restricts redirects to the GitHub allow-list so
+		// a rogue release asset cannot steer us toward an attacker host.
+		resp, err := secureDownloadClient().Do(req)
 		if err != nil {
 			writeError(w, http.StatusBadGateway, "failed to download from GitHub")
 			return
