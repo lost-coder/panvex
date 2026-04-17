@@ -161,6 +161,12 @@ type DiscoveredClientStore interface {
 	ListDiscoveredClients(ctx context.Context) ([]DiscoveredClientRecord, error)
 	ListDiscoveredClientsByAgent(ctx context.Context, agentID string) ([]DiscoveredClientRecord, error)
 	GetDiscoveredClient(ctx context.Context, id string) (DiscoveredClientRecord, error)
+	// GetDiscoveredClientByAgentAndName looks up a discovered_clients row by
+	// its natural key (agent_id, client_name). Returns ErrNotFound when no
+	// row exists. Used by the reconcile path to dedupe repeated FULL_SNAPSHOT
+	// reports from an agent so the pending-review list does not grow unbounded
+	// (see P2-LOG-02, finding L-10 / M-C4).
+	GetDiscoveredClientByAgentAndName(ctx context.Context, agentID string, clientName string) (DiscoveredClientRecord, error)
 	UpdateDiscoveredClientStatus(ctx context.Context, id string, status string, updatedAt time.Time) error
 	DeleteDiscoveredClient(ctx context.Context, id string) error
 }
