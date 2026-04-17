@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
+	"github.com/lost-coder/panvex/internal/security"
 )
 
 type versionResponse struct {
@@ -225,6 +226,7 @@ func (s *Server) handlePanelUpdate() http.HandlerFunc {
 
 		downloadURL := state.PanelDownloadURL
 		checksumURL := state.PanelChecksumURL
+		signatureURL := state.PanelSignatureURL
 
 		// If the target version differs from the cached latest, fetch the
 		// specific release from GitHub to resolve asset URLs.
@@ -238,11 +240,17 @@ func (s *Server) handlePanelUpdate() http.HandlerFunc {
 				writeError(w, http.StatusBadGateway, "failed to resolve download URLs for target version")
 				return
 			}
-			downloadURL, checksumURL = ResolveAssetURLs(panel, "control-plane")
+			downloadURL, checksumURL, signatureURL = ResolveAssetURLs(panel, "control-plane")
 		}
 
 		if downloadURL == "" {
 			writeError(w, http.StatusBadRequest, "no download URL available for target version")
+			return
+		}
+		if signatureURL == "" {
+			// Refuse to install unsigned artifacts; the signature is the
+			// primary defence against supply-chain tampering (SEC-02).
+			writeError(w, http.StatusBadRequest, "release is missing a signature (.sig) asset; cannot install")
 			return
 		}
 
@@ -252,16 +260,23 @@ func (s *Server) handlePanelUpdate() http.HandlerFunc {
 			To:     targetVersion,
 		})
 
-		go s.performPanelUpdate(session.UserID, targetVersion, downloadURL, checksumURL, settings.GitHubToken) //nolint:gosec // intentionally detached from request lifecycle
+		go s.performPanelUpdate(session.UserID, targetVersion, downloadURL, checksumURL, signatureURL, settings.GitHubToken) //nolint:gosec // intentionally detached from request lifecycle
 	}
 }
 
-// performPanelUpdate downloads, verifies, and installs a new panel binary,
-// then requests a service restart.
-func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksumURL, token string) {
+// performPanelUpdate downloads, verifies (signature required, checksum as a
+// secondary check), and installs a new panel binary, then requests a service
+// restart.
+func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksumURL, signatureURL, token string) {
 	ctx := context.Background()
 
-	// Download checksum if available.
+	// Signature is mandatory — a missing or empty URL is a hard stop.
+	if signatureURL == "" {
+		s.logger.Error("panel update: refusing to install without signature URL")
+		return
+	}
+
+	// Download checksum first (optional defence-in-depth; signature below is authoritative).
 	var expectedChecksum string
 	if checksumURL != "" {
 		var err error
@@ -278,6 +293,24 @@ func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksu
 		return
 	}
 	defer func() { _ = os.Remove(archivePath) }()
+
+	// Download the detached signature, then verify the archive against the
+	// embedded public key. This is the primary integrity gate — any failure
+	// refuses the update without falling back to checksum-only trust.
+	sig, err := DownloadSignature(ctx, signatureURL, token)
+	if err != nil {
+		s.logger.Error("panel update: download signature failed", "error", err)
+		return
+	}
+	archiveBytes, err := os.ReadFile(archivePath) //nolint:gosec // path created by DownloadArchive
+	if err != nil {
+		s.logger.Error("panel update: read archive for signature check failed", "error", err)
+		return
+	}
+	if err := security.VerifyArtifactBytes(archiveBytes, sig); err != nil {
+		s.logger.Error("panel update: signature verification failed", "error", err)
+		return
+	}
 
 	if expectedChecksum != "" {
 		if err := VerifyChecksum(archivePath, expectedChecksum); err != nil {
@@ -354,8 +387,16 @@ func (s *Server) handleAgentUpdate() http.HandlerFunc {
 
 		downloadURL := state.AgentDownloadURL
 		checksumURL := state.AgentChecksumURL
+		signatureURL := state.AgentSignatureURL
 		if downloadURL == "" {
 			writeError(w, http.StatusBadRequest, "no download URL available")
+			return
+		}
+		if signatureURL == "" {
+			// Refuse to dispatch an unsigned agent update — the agent side
+			// also refuses, but reject early so the operator sees the error
+			// synchronously rather than via a failed job.
+			writeError(w, http.StatusBadRequest, "release is missing a signature (.sig) asset; cannot update agent")
 			return
 		}
 
@@ -375,6 +416,7 @@ func (s *Server) handleAgentUpdate() http.HandlerFunc {
 			"version":            targetVersion,
 			"download_url":       downloadURL,
 			"checksum_sha256":    checksum,
+			"signature_url":      signatureURL,
 			"download_via_panel": downloadViaPanel,
 		}
 		if downloadViaPanel {

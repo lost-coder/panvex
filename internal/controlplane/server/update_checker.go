@@ -129,25 +129,30 @@ func FetchLatestVersions(ctx context.Context, repo, token string) (panel, agent 
 	return panel, agent, nil
 }
 
-// ResolveAssetURLs finds the platform-specific binary and checksum download
-// URLs for the given component from a GitHub release's assets.
-func ResolveAssetURLs(release *GitHubRelease, component string) (binaryURL, checksumURL string) {
+// ResolveAssetURLs finds the platform-specific binary, checksum, and
+// signature download URLs for the given component from a GitHub release's
+// assets. A missing signature URL is a fatal condition downstream — the
+// update subsystem refuses to install unsigned artifacts.
+func ResolveAssetURLs(release *GitHubRelease, component string) (binaryURL, checksumURL, signatureURL string) {
 	if release == nil {
-		return "", ""
+		return "", "", ""
 	}
 	arch := runtime.GOARCH
 	archiveName := fmt.Sprintf("panvex-%s-linux-%s.tar.gz", component, arch)
 	checksumName := archiveName + ".sha256"
+	signatureName := archiveName + ".sig"
 
 	for _, asset := range release.Assets {
-		if asset.Name == archiveName {
+		switch asset.Name {
+		case archiveName:
 			binaryURL = asset.BrowserDownloadURL
-		}
-		if asset.Name == checksumName {
+		case checksumName:
 			checksumURL = asset.BrowserDownloadURL
+		case signatureName:
+			signatureURL = asset.BrowserDownloadURL
 		}
 	}
-	return binaryURL, checksumURL
+	return binaryURL, checksumURL, signatureURL
 }
 
 // startUpdateCheckerWorker launches a background goroutine that periodically
@@ -211,19 +216,21 @@ func (s *Server) checkForUpdates(ctx context.Context) {
 
 	if panel != nil {
 		_, version, _ := ParseReleaseTag(panel.TagName)
-		binaryURL, checksumURL := ResolveAssetURLs(panel, "control-plane")
+		binaryURL, checksumURL, signatureURL := ResolveAssetURLs(panel, "control-plane")
 		state.LatestPanelVersion = version
 		state.PanelDownloadURL = binaryURL
 		state.PanelChecksumURL = checksumURL
+		state.PanelSignatureURL = signatureURL
 		state.PanelChangelog = panel.Body
 	}
 
 	if agent != nil {
 		_, version, _ := ParseReleaseTag(agent.TagName)
-		binaryURL, checksumURL := ResolveAssetURLs(agent, "agent")
+		binaryURL, checksumURL, signatureURL := ResolveAssetURLs(agent, "agent")
 		state.LatestAgentVersion = version
 		state.AgentDownloadURL = binaryURL
 		state.AgentChecksumURL = checksumURL
+		state.AgentSignatureURL = signatureURL
 		state.AgentChangelog = agent.Body
 	}
 
