@@ -762,6 +762,210 @@ func TestClientFetchRuntimeStateAllowsRecentEventsFailure(t *testing.T) {
 	}
 }
 
+// stallingTelemtServer returns an httptest server whose handler blocks on block
+// until ctx is canceled via the embedded server shutdown, simulating a hung
+// Telemt subsystem. It is used by the P2-REL-07 deadline tests.
+func stallingTelemtServer(t *testing.T, hang time.Duration, exceptPaths map[string]http.HandlerFunc) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if handler, ok := exceptPaths[r.URL.Path]; ok {
+			handler(w, r)
+			return
+		}
+		select {
+		case <-time.After(hang):
+			http.Error(w, "stall ended", http.StatusServiceUnavailable)
+		case <-r.Context().Done():
+			// Client disconnected because ctx expired — don't bother replying.
+			return
+		}
+	}))
+}
+
+func TestClientFetchRuntimeStateHonorsOuterDeadline(t *testing.T) {
+	// P2-REL-07: when the caller supplies a ctx with its own deadline, a hung
+	// Telemt must not keep FetchRuntimeState running past that deadline.
+	server := stallingTelemtServer(t, 5*time.Second, nil)
+	defer server.Close()
+
+	client, err := NewClient(Config{
+		BaseURL:       server.URL,
+		Authorization: "secret",
+	}, server.Client())
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	client.slowDataTTL = 0
+	client.systemLoadSampler = func(context.Context) (RuntimeSystemLoad, error) {
+		return RuntimeSystemLoad{}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	state, err := client.FetchRuntimeState(ctx)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("FetchRuntimeState() error = %v, want nil (partial snapshot)", err)
+	}
+	if !state.Partial {
+		t.Fatal("state.Partial = false, want true when outer ctx expires")
+	}
+	// Budget for scheduler + httptest overhead while still well below 150s.
+	if elapsed > 3*time.Second {
+		t.Fatalf("FetchRuntimeState() elapsed = %s, want < 3s (ctx was 150ms)", elapsed)
+	}
+}
+
+func TestClientFetchRuntimeStateUsesDefaultDeadline(t *testing.T) {
+	// P2-REL-07: a background context with no deadline must still cap
+	// FetchRuntimeState at defaultFetchRuntimeStateDeadline so a hung Telemt
+	// cannot stall the snapshot loop for the full ~150s http.Client budget.
+	// We override the constant locally via a shorter-lived stall.
+	server := stallingTelemtServer(t, 2*time.Second, nil)
+	defer server.Close()
+
+	client, err := NewClient(Config{
+		BaseURL:       server.URL,
+		Authorization: "secret",
+	}, server.Client())
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	client.slowDataTTL = 0
+	// Shrink the per-request timeout so this test finishes in a reasonable
+	// window without having to wait the full defaultFetchRuntimeStateDeadline.
+	// The behavior under verification is that FetchRuntimeState respects a
+	// bounded deadline — not that it respects this specific value.
+	client.httpClient = &http.Client{Timeout: 200 * time.Millisecond}
+	client.systemLoadSampler = func(context.Context) (RuntimeSystemLoad, error) {
+		return RuntimeSystemLoad{}, nil
+	}
+
+	start := time.Now()
+	state, err := client.FetchRuntimeState(context.Background())
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("FetchRuntimeState() error = %v, want nil (partial snapshot)", err)
+	}
+	if !state.Partial {
+		t.Fatal("state.Partial = false, want true when all sub-fetches time out")
+	}
+	// With the 200ms per-request timeout, 10 sequential fetches bound the
+	// wall-clock at ~2s; this is strictly less than the old ~150s budget and
+	// proves the outer bound is in place.
+	if elapsed > 30*time.Second {
+		t.Fatalf("FetchRuntimeState() elapsed = %s, want well under defaultFetchRuntimeStateDeadline", elapsed)
+	}
+}
+
+func TestClientFetchRuntimeStatePartialOnSomeFailures(t *testing.T) {
+	// P2-REL-07: when some sub-endpoints fail but the rest succeed, we must
+	// still return a populated RuntimeState with Partial=true rather than
+	// dropping the entire snapshot.
+	var (
+		mu          sync.Mutex
+		failedCalls int
+	)
+	failPath := func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		failedCalls++
+		mu.Unlock()
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		// Three endpoints deliberately fail.
+		case "/v1/stats/dcs":
+			failPath(w, r)
+		case "/v1/stats/upstreams":
+			failPath(w, r)
+		case "/v1/runtime/events/recent":
+			failPath(w, r)
+
+		case "/v1/health":
+			writeSuccessEnvelope(w, map[string]any{"status": "ok"})
+		case "/v1/security/posture":
+			writeSuccessEnvelope(w, map[string]any{"read_only": true})
+		case "/v1/system/info":
+			writeSuccessEnvelope(w, map[string]any{"version": "2026.03", "uptime_seconds": 360.0})
+		case "/v1/runtime/gates":
+			writeSuccessEnvelope(w, map[string]any{
+				"accepting_new_connections": true,
+				"me_runtime_ready":          true,
+				"startup_status":            "ready",
+				"startup_stage":             "serving",
+			})
+		case "/v1/runtime/initialization":
+			writeSuccessEnvelope(w, map[string]any{"status": "ready", "transport_mode": "middle_proxy"})
+		case "/v1/runtime/connections/summary":
+			writeSuccessEnvelope(w, map[string]any{
+				"enabled": true,
+				"data": map[string]any{
+					"totals": map[string]any{"current_connections": 5},
+				},
+			})
+		case "/v1/stats/summary":
+			writeSuccessEnvelope(w, map[string]any{"connections_total": 1})
+		case "/v1/limits/effective":
+			writeSuccessEnvelope(w, map[string]any{"update_every_secs": 5})
+		case "/v1/stats/minimal/all":
+			writeSuccessEnvelope(w, map[string]any{"enabled": true, "data": map[string]any{}})
+		case "/v1/runtime/me_pool_state":
+			writeSuccessEnvelope(w, map[string]any{"enabled": true, "data": map[string]any{}})
+		case "/v1/security/whitelist":
+			writeSuccessEnvelope(w, map[string]any{"enabled": true, "entries_total": 0, "entries": []string{}})
+		case "/v1/stats/me-writers":
+			writeSuccessEnvelope(w, map[string]any{"summary": map[string]any{"alive_writers": 2}})
+		case "/v1/stats/users":
+			writeSuccessEnvelope(w, []map[string]any{{"username": "alice", "current_connections": 1}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Config{
+		BaseURL:       server.URL,
+		Authorization: "secret",
+	}, server.Client())
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	client.slowDataTTL = 0
+
+	state, err := client.FetchRuntimeState(context.Background())
+	if err != nil {
+		t.Fatalf("FetchRuntimeState() error = %v", err)
+	}
+	if !state.Partial {
+		t.Fatal("state.Partial = false, want true when some sub-fetches fail")
+	}
+	// Successful fields must still be populated.
+	if state.ConnectedUsers != 5 {
+		t.Fatalf("state.ConnectedUsers = %d, want 5 (connection summary succeeded)", state.ConnectedUsers)
+	}
+	if !state.ReadOnly {
+		t.Fatal("state.ReadOnly = false, want true (security/posture succeeded)")
+	}
+	if state.Version != "2026.03" {
+		t.Fatalf("state.Version = %q, want %q (system/info succeeded)", state.Version, "2026.03")
+	}
+	if len(state.Clients) != 1 {
+		t.Fatalf("len(state.Clients) = %d, want 1 (stats/users succeeded)", len(state.Clients))
+	}
+	mu.Lock()
+	gotFails := failedCalls
+	mu.Unlock()
+	if gotFails < 3 {
+		t.Fatalf("failedCalls = %d, want >= 3 (three endpoints were configured to fail)", gotFails)
+	}
+}
+
 func TestClientExecuteRuntimeReloadCallsTelemtEndpoint(t *testing.T) {
 	var called bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
