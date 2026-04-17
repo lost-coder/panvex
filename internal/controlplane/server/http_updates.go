@@ -408,12 +408,25 @@ func (s *Server) handleAgentUpdate() http.HandlerFunc {
 	}
 }
 
+// allowedAgentArches constrains the arch query parameter on the agent
+// binary proxy to known-safe values before it is interpolated into the
+// GitHub release URL. Arbitrary values would let a caller fetch unexpected
+// release assets or attempt path-like constructs in the URL.
+var allowedAgentArches = map[string]struct{}{
+	"amd64": {},
+	"arm64": {},
+}
+
 func (s *Server) handleAgentBinaryProxy() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		version := r.URL.Query().Get("version")
 		arch := r.URL.Query().Get("arch")
 		if version == "" || arch == "" {
 			writeError(w, http.StatusBadRequest, "version and arch query parameters required")
+			return
+		}
+		if _, ok := allowedAgentArches[arch]; !ok {
+			writeError(w, http.StatusBadRequest, "unsupported arch; allowed: amd64, arm64")
 			return
 		}
 

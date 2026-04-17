@@ -470,3 +470,62 @@ func captureStdout(t *testing.T, fn func()) string {
 
 	return string(output)
 }
+
+func TestResolveEncryptionKeyFromFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "key.txt")
+	if err := os.WriteFile(path, []byte("secret-passphrase\n"), 0600); err != nil {
+		t.Fatalf("WriteFile error = %v", err)
+	}
+	got, err := resolveEncryptionKey(path, false)
+	if err != nil {
+		t.Fatalf("resolveEncryptionKey error = %v", err)
+	}
+	if got != "secret-passphrase" {
+		t.Fatalf("got %q, want %q", got, "secret-passphrase")
+	}
+}
+
+func TestResolveEncryptionKeyFallsBackToEnv(t *testing.T) {
+	t.Setenv("PANVEX_ENCRYPTION_KEY", "env-passphrase")
+	got, err := resolveEncryptionKey("", false)
+	if err != nil {
+		t.Fatalf("resolveEncryptionKey error = %v", err)
+	}
+	if got != "env-passphrase" {
+		t.Fatalf("got %q, want %q", got, "env-passphrase")
+	}
+}
+
+func TestResolveEncryptionKeyEmptyWhenUnset(t *testing.T) {
+	t.Setenv("PANVEX_ENCRYPTION_KEY", "")
+	got, err := resolveEncryptionKey("", false)
+	if err != nil {
+		t.Fatalf("resolveEncryptionKey error = %v", err)
+	}
+	if got != "" {
+		t.Fatalf("got %q, want empty", got)
+	}
+}
+
+func TestResolveEncryptionKeyFilePrecedesEnv(t *testing.T) {
+	t.Setenv("PANVEX_ENCRYPTION_KEY", "env-passphrase")
+	dir := t.TempDir()
+	path := filepath.Join(dir, "key.txt")
+	if err := os.WriteFile(path, []byte("file-passphrase"), 0600); err != nil {
+		t.Fatalf("WriteFile error = %v", err)
+	}
+	got, err := resolveEncryptionKey(path, false)
+	if err != nil {
+		t.Fatalf("resolveEncryptionKey error = %v", err)
+	}
+	if got != "file-passphrase" {
+		t.Fatalf("got %q, want %q — file must override env", got, "file-passphrase")
+	}
+}
+
+func TestResolveEncryptionKeyFileMissing(t *testing.T) {
+	if _, err := resolveEncryptionKey("/nonexistent/path/to/key.txt", false); err == nil {
+		t.Fatal("resolveEncryptionKey error = nil, want failure for missing file")
+	}
+}

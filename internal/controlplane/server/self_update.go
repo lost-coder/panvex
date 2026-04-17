@@ -13,6 +13,10 @@ import (
 	"strings"
 )
 
+// maxArchiveSize caps the raw .tar.gz download to avoid disk exhaustion when the
+// remote responds with an unbounded or adversarial stream.
+const maxArchiveSize = 512 << 20 // 512 MB
+
 // DownloadArchive fetches a .tar.gz archive from url into a temporary file
 // and returns its path. The caller is responsible for removing the file.
 func DownloadArchive(ctx context.Context, url, token string) (string, error) {
@@ -35,15 +39,27 @@ func DownloadArchive(ctx context.Context, url, token string) (string, error) {
 		return "", fmt.Errorf("download archive: unexpected status %d", resp.StatusCode)
 	}
 
+	// Content-Length pre-check rejects oversized archives before any disk write.
+	if resp.ContentLength > maxArchiveSize {
+		return "", fmt.Errorf("download archive: size %d exceeds limit %d", resp.ContentLength, maxArchiveSize)
+	}
+
 	tmp, err := os.CreateTemp("", "panvex-update-*.tar.gz")
 	if err != nil {
 		return "", fmt.Errorf("create temp file: %w", err)
 	}
 
-	if _, err := io.Copy(tmp, resp.Body); err != nil {
+	// LimitReader(+1) lets us detect when the body would exceed the cap.
+	written, err := io.Copy(tmp, io.LimitReader(resp.Body, maxArchiveSize+1))
+	if err != nil {
 		tmp.Close()
 		_ = os.Remove(tmp.Name())
 		return "", fmt.Errorf("write archive: %w", err)
+	}
+	if written > maxArchiveSize {
+		tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return "", fmt.Errorf("download archive: body exceeds limit %d", maxArchiveSize)
 	}
 	if err := tmp.Close(); err != nil {
 		_ = os.Remove(tmp.Name())
