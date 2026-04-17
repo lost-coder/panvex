@@ -53,6 +53,19 @@ jobs:
         with:
           version: latest
 
+  go-vuln:
+    name: Go Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Run govulncheck
+        run: govulncheck ./...
+
   frontend-build:
     name: Frontend Build
     runs-on: ubuntu-latest
@@ -94,6 +107,18 @@ jobs:
       - name: Lint frontend
         working-directory: web
         run: npm ci && npm run lint
+
+  frontend-audit:
+    name: Frontend npm audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Audit web dependencies
+        working-directory: web
+        run: npm audit --audit-level=high
 
   buf-lint:
     name: Protobuf Lint
