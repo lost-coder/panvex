@@ -447,7 +447,18 @@ func (s *Server) replaceClientStateWithContext(ctx context.Context, client manag
 		}
 	}
 
+	s.replaceClientStateInMemory(client, assignments, deployments)
+	return nil
+}
+
+// replaceClientStateInMemory updates the in-memory mirror of client
+// state without touching the store. Factored out of
+// replaceClientStateWithContext so callers that drive persistence
+// through Store.Transact can apply the in-memory update only after the
+// transaction commits (see adoptDiscoveredClient, P2-ARCH-01).
+func (s *Server) replaceClientStateInMemory(client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment) {
 	s.clientsMu.Lock()
+	defer s.clientsMu.Unlock()
 	s.clients[client.ID] = client
 	s.clientAssignments[client.ID] = append([]managedClientAssignment(nil), assignments...)
 	nextDeployments := make(map[string]managedClientDeployment, len(deployments))
@@ -455,25 +466,30 @@ func (s *Server) replaceClientStateWithContext(ctx context.Context, client manag
 		nextDeployments[deployment.AgentID] = deployment
 	}
 	s.clientDeployments[client.ID] = nextDeployments
-	s.clientsMu.Unlock()
-
-	return nil
 }
 
 func (s *Server) persistClientState(ctx context.Context, client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment) error {
-	if err := s.store.PutClient(ctx, clientToRecord(client)); err != nil {
+	return persistClientStateVia(ctx, s.store, client, assignments, deployments)
+}
+
+// persistClientStateVia writes client + assignments + deployments via the
+// given storage.Store. Extracted so the same sequence can be driven
+// either against s.store directly OR against a tx-bound Store inside
+// Store.Transact. See P2-ARCH-01.
+func persistClientStateVia(ctx context.Context, store storage.Store, client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment) error {
+	if err := store.PutClient(ctx, clientToRecord(client)); err != nil {
 		return err
 	}
-	if err := s.store.DeleteClientAssignments(ctx, client.ID); err != nil {
+	if err := store.DeleteClientAssignments(ctx, client.ID); err != nil {
 		return err
 	}
 	for _, assignment := range assignments {
-		if err := s.store.PutClientAssignment(ctx, clientAssignmentToRecord(assignment)); err != nil {
+		if err := store.PutClientAssignment(ctx, clientAssignmentToRecord(assignment)); err != nil {
 			return err
 		}
 	}
 	for _, deployment := range deployments {
-		if err := s.store.PutClientDeployment(ctx, clientDeploymentToRecord(deployment)); err != nil {
+		if err := store.PutClientDeployment(ctx, clientDeploymentToRecord(deployment)); err != nil {
 			return err
 		}
 	}
