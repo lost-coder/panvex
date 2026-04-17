@@ -26,6 +26,16 @@ const (
 	apiBasePath               = "/api"
 	maxInMemoryMetricSnapshots = 512
 	maxInMemoryAuditEvents     = 1024
+	// jobsKeyEvictionInterval is how often the jobs service scans for
+	// terminal-state idempotency keys to evict. Hourly is a good balance
+	// between bounding memory growth under sustained job load and not
+	// thrashing the jobs mutex with frequent scans. See P2-PERF-03.
+	jobsKeyEvictionInterval = time.Hour
+	// jobsKeyEvictionTTL is the age at which a terminal-state idempotency
+	// key is evicted. 24h is long enough to dedupe retries from any
+	// realistic operator workflow (including overnight runs) while
+	// preventing unbounded growth over the lifetime of the process.
+	jobsKeyEvictionTTL = 24 * time.Hour
 	httpLoginRateLimitPerWindow = 30
 	httpAgentBootstrapRateLimitPerWindow = 30
 	grpcConnectRateLimitPerWindow = 30
@@ -133,7 +143,23 @@ type Server struct {
 	clientUsage map[string]map[string]clientUsageSnapshot
 	instances  map[string]Instance
 	metrics    []MetricSnapshot
-	auditTrail []AuditEvent
+	// auditTrail is a fixed-size ring buffer of the most recent audit events.
+	// Append is O(1) — we overwrite auditBuf[auditHead] and advance the head
+	// index, rather than performing an O(N) slice shift on every overflow.
+	//
+	// Layout: auditBuf is a pre-allocated array of length
+	// maxInMemoryAuditEvents. auditSize is the number of valid entries
+	// (<= maxInMemoryAuditEvents). When auditSize < len(auditBuf) the ring
+	// is still filling and valid entries live at indices [0, auditSize).
+	// Once full, auditHead points at the next slot to overwrite (which
+	// equals the oldest entry); valid entries in oldest-to-newest order
+	// are at indices auditHead, auditHead+1, ... (mod len).
+	//
+	// Callers must read/write this structure under metricsAuditMu and use
+	// snapshotAuditTrailLocked / appendAuditTrailLocked helpers.
+	auditBuf  [maxInMemoryAuditEvents]AuditEvent
+	auditHead int
+	auditSize int
 	panelSettings  PanelSettings
 	updateSettings UpdateSettings
 	updateState    UpdateState
@@ -194,7 +220,6 @@ func New(options Options) *Server {
 		agentSessions: make(map[string]*agentStreamSession),
 		instances:  make(map[string]Instance),
 		metrics:    make([]MetricSnapshot, 0, maxInMemoryMetricSnapshots),
-		auditTrail: make([]AuditEvent, 0, maxInMemoryAuditEvents),
 	}
 	if server.logger == nil {
 		server.logger = slog.Default()
@@ -272,6 +297,13 @@ func New(options Options) *Server {
 	server.stopRollup = rollupCancel
 	server.startTimeseriesRollupWorker(rollupCtx)
 	server.startUpdateCheckerWorker(rollupCtx)
+
+	// Evict idempotency keys for terminal jobs on an hourly tick to keep
+	// jobs.Service.keys bounded. See P2-PERF-03. TTL of 24h matches the
+	// operational expectation that clients will not retry the same
+	// idempotency key after a full day.
+	server.rollupWg.Add(1)
+	server.jobs.StartKeyEvictionWorker(rollupCtx, jobsKeyEvictionInterval, jobsKeyEvictionTTL, &server.rollupWg)
 
 	// The metrics poller samples derived gauges (agent connected count,
 	// event-hub subscribers, job queue depth, lockout count) on a 5-second
@@ -409,7 +441,7 @@ func (s *Server) restoreStoredState() error {
 		auditEvents = auditEvents[len(auditEvents)-maxInMemoryAuditEvents:]
 	}
 	for _, record := range auditEvents {
-		s.auditTrail = append(s.auditTrail, auditEventFromRecord(record))
+		s.appendAuditTrailLocked(auditEventFromRecord(record))
 	}
 
 	return s.restoreStoredTelemetry()
@@ -609,12 +641,7 @@ func (s *Server) appendAuditWithContext(ctx context.Context, actorID string, act
 		CreatedAt: s.now().UTC(),
 		Details:   details,
 	}
-	if len(s.auditTrail) < maxInMemoryAuditEvents {
-		s.auditTrail = append(s.auditTrail, event)
-	} else {
-		copy(s.auditTrail, s.auditTrail[1:])
-		s.auditTrail[len(s.auditTrail)-1] = event
-	}
+	s.appendAuditTrailLocked(event)
 	s.metricsAuditMu.Unlock()
 
 	// Audit events are immutable records that must survive crashes, so they
@@ -629,4 +656,46 @@ func (s *Server) appendAuditWithContext(ctx context.Context, actorID string, act
 		Type: "audit.created",
 		Data: event,
 	})
+}
+
+// appendAuditTrailLocked appends one event to the ring buffer in O(1) time.
+// Caller must hold s.metricsAuditMu for writing.
+func (s *Server) appendAuditTrailLocked(event AuditEvent) {
+	capacity := len(s.auditBuf)
+	if s.auditSize < capacity {
+		// Ring still filling — insert at the next free slot, which is the
+		// element immediately after the current tail.
+		s.auditBuf[s.auditSize] = event
+		s.auditSize++
+		return
+	}
+	// Ring is full — overwrite the oldest slot (auditHead), then advance
+	// auditHead to point at the new oldest slot.
+	s.auditBuf[s.auditHead] = event
+	s.auditHead++
+	if s.auditHead == capacity {
+		s.auditHead = 0
+	}
+}
+
+// snapshotAuditTrailLocked returns a newly allocated slice of the current
+// audit events in oldest-to-newest order. Caller must hold metricsAuditMu
+// for reading. The returned slice is safe to retain after the lock is
+// released; it does not alias s.auditBuf.
+func (s *Server) snapshotAuditTrailLocked() []AuditEvent {
+	out := make([]AuditEvent, s.auditSize)
+	if s.auditSize == 0 {
+		return out
+	}
+	capacity := len(s.auditBuf)
+	if s.auditSize < capacity {
+		// Head is still 0 while the ring is filling; entries are at [0,size).
+		copy(out, s.auditBuf[:s.auditSize])
+		return out
+	}
+	// Ring is full: oldest entry lives at auditHead. Copy the tail segment
+	// [head, end) first, then wrap around for [0, head).
+	n := copy(out, s.auditBuf[s.auditHead:])
+	copy(out[n:], s.auditBuf[:s.auditHead])
+	return out
 }

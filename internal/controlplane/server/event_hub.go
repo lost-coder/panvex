@@ -11,13 +11,16 @@ type eventEnvelope struct {
 }
 
 type eventHub struct {
-	mu          sync.Mutex
+	mu          sync.RWMutex
 	sequence    uint64
 	subscribers map[uint64]chan eventEnvelope
 	// onDrop, if non-nil, is invoked every time publish() drops an event for a
 	// slow subscriber. The metrics subsystem wires this to increment
 	// panvex_event_hub_drop_total. Kept as a func so the hub has no direct
 	// dependency on Prometheus.
+	//
+	// Stored as an atomic-ish value read under RLock so publish() can invoke
+	// it without holding the write lock. See publish() for the reasoning.
 	onDrop func()
 }
 
@@ -29,18 +32,17 @@ func newEventHub() *eventHub {
 
 // subscriberCount returns the current number of active subscribers.
 func (h *eventHub) subscriberCount() int {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	return len(h.subscribers)
 }
 
 // setDropHook installs the callback invoked on every dropped event. Calling
 // with nil disables the hook. Safe to call concurrently with publish.
 //
-// Contract: the hook MUST be non-blocking and MUST NOT call back into the
-// hub (publish/subscribe/setDropHook/subscriberCount) — it runs while
-// eventHub.mu is held, so any re-entry will deadlock. The current wiring
-// (prometheus.Counter.Inc, which is lock-free) satisfies this.
+// Contract: the hook MUST be non-blocking. It runs outside any hub lock so
+// re-entry into the hub is allowed, but keep it cheap — publish() calls it
+// for every slow subscriber.
 func (h *eventHub) setDropHook(fn func()) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -72,17 +74,34 @@ func (h *eventHub) subscribe() (<-chan eventEnvelope, func()) {
 	return ch, cancel
 }
 
+// publish delivers one event to every current subscriber without holding the
+// hub write lock across sends. The subscriber slice is snapshotted under
+// RLock, then released before the non-blocking select for each channel. This
+// ensures a slow subscriber cannot stall concurrent publish() callers or
+// block subscribe()/cancel.
+//
+// Drop-on-full semantics are unchanged: if a subscriber's buffered channel is
+// full the event is dropped for that subscriber and the onDrop hook fires.
 func (h *eventHub) publish(event eventEnvelope) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
+	h.mu.RLock()
+	// Snapshot subscriber channels onto a local slice so we do not hold the
+	// lock while sending. Map iteration under RLock is safe; allocating a
+	// small slice per publish is cheap compared to the cost of holding the
+	// lock across 100+ channel sends to sluggish HTTP SSE clients.
+	subscribers := make([]chan eventEnvelope, 0, len(h.subscribers))
 	for _, subscriber := range h.subscribers {
+		subscribers = append(subscribers, subscriber)
+	}
+	onDrop := h.onDrop
+	h.mu.RUnlock()
+
+	for _, subscriber := range subscribers {
 		select {
 		case subscriber <- event:
 		default:
 			slog.Debug("event dropped for slow subscriber", "event_type", event.Type)
-			if h.onDrop != nil {
-				h.onDrop()
+			if onDrop != nil {
+				onDrop()
 			}
 		}
 	}
