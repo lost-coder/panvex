@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"errors"
 	"flag"
@@ -29,7 +30,41 @@ import (
 	"github.com/lost-coder/panvex/internal/security"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
 	_ "modernc.org/sqlite" // registers the "sqlite" driver for migrate-schema
+)
+
+// Server tuning constants. Kept as package-level so tests can assert them
+// alongside the server constructors.
+const (
+	// httpReadHeaderTimeout caps the time spent reading request headers. Guards
+	// against Slowloris-style header starvation.
+	httpReadHeaderTimeout = 10 * time.Second
+	// httpReadTimeout caps the total time to read the request (headers + body).
+	// Protects against slow-client DoS that would otherwise stall a goroutine
+	// indefinitely on a long body read.
+	httpReadTimeout = 30 * time.Second
+	// httpWriteTimeout caps the time to write the response. WebSocket
+	// connections are hijacked via http.Hijacker before the deadline fires, so
+	// SSE/streaming on /api/events is unaffected.
+	httpWriteTimeout = 60 * time.Second
+	// httpIdleTimeout closes idle keep-alive connections after this period.
+	httpIdleTimeout = 120 * time.Second
+
+	// grpcKeepaliveTime tells the server to ping idle clients at this interval
+	// so NAT/middlebox connection tracking does not silently drop the TCP
+	// session.
+	grpcKeepaliveTime = 30 * time.Second
+	// grpcKeepaliveTimeout is how long the server waits for a keepalive ack
+	// before considering the connection dead.
+	grpcKeepaliveTimeout = 10 * time.Second
+	// grpcKeepaliveMinTime bounds how aggressively clients are allowed to ping
+	// before the server treats it as abusive traffic.
+	grpcKeepaliveMinTime = 10 * time.Second
+	// grpcMaxMessageSize lifts the default 4 MiB cap so that large discovery
+	// snapshots (client lists, runtime inventories) can be exchanged without
+	// truncation.
+	grpcMaxMessageSize = 16 * 1024 * 1024
 )
 
 // Build-time version information, injected via -ldflags.
@@ -147,19 +182,14 @@ func runServe(args []string) error {
 		return err
 	}
 
-	httpServer := &http.Server{
-		Addr:              panelRuntime.HTTPListenAddress,
-		Handler:           api.Handler(),
-		ReadHeaderTimeout: 10 * time.Second,
-		IdleTimeout:       120 * time.Second,
-	}
+	httpServer := newControlPlaneHTTPServer(panelRuntime.HTTPListenAddress, api.Handler())
 
 	grpcListener, err := net.Listen("tcp", panelRuntime.GRPCListenAddress)
 	if err != nil {
 		return err
 	}
 
-	grpcServer := grpc.NewServer(grpc.Creds(credentials.NewTLS(api.GRPCTLSConfig())))
+	grpcServer := newControlPlaneGRPCServer(api.GRPCTLSConfig())
 	gatewayrpc.RegisterAgentGatewayServer(grpcServer, api)
 
 	httpErrors := make(chan error, 4)
@@ -283,6 +313,42 @@ func parseServeConfig(args []string) (serveConfig, error) {
 		EncryptionKey:        encryptionKey,
 		LogLevel:             *logLevel,
 	}, nil
+}
+
+// newControlPlaneHTTPServer builds the control-plane HTTP server with hardened
+// timeouts. ReadTimeout caps slow-body DoS; WriteTimeout caps slow-consumer
+// stalls. The WebSocket endpoint at /api/events is unaffected because
+// coder/websocket hijacks the underlying net.Conn via http.Hijacker before
+// WriteTimeout fires on streaming connections.
+func newControlPlaneHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: httpReadHeaderTimeout,
+		ReadTimeout:       httpReadTimeout,
+		WriteTimeout:      httpWriteTimeout,
+		IdleTimeout:       httpIdleTimeout,
+	}
+}
+
+// newControlPlaneGRPCServer builds the gRPC server used by the agent gateway,
+// with TLS credentials, keepalive pings, an enforcement policy that accepts
+// keepalives even when no streams are active, and a 16 MiB message cap so that
+// large discovery snapshots do not get truncated.
+func newControlPlaneGRPCServer(tlsConfig *tls.Config) *grpc.Server {
+	return grpc.NewServer(
+		grpc.Creds(credentials.NewTLS(tlsConfig)),
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			Time:    grpcKeepaliveTime,
+			Timeout: grpcKeepaliveTimeout,
+		}),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             grpcKeepaliveMinTime,
+			PermitWithoutStream: true,
+		}),
+		grpc.MaxRecvMsgSize(grpcMaxMessageSize),
+		grpc.MaxSendMsgSize(grpcMaxMessageSize),
+	)
 }
 
 // parseLogLevel maps a human-readable level name to the corresponding slog.Level.

@@ -529,3 +529,40 @@ func TestResolveEncryptionKeyFileMissing(t *testing.T) {
 		t.Fatal("resolveEncryptionKey error = nil, want failure for missing file")
 	}
 }
+
+// TestNewControlPlaneHTTPServerHasHardenedTimeouts guards the P2-REL-02
+// regression: every HTTP timeout must be non-zero so a slow client cannot
+// stall a goroutine indefinitely. The WebSocket route at /api/events is
+// unaffected because coder/websocket hijacks the underlying connection before
+// WriteTimeout fires on streaming conns.
+func TestNewControlPlaneHTTPServerHasHardenedTimeouts(t *testing.T) {
+	httpServer := newControlPlaneHTTPServer(":0", nil)
+
+	if httpServer.ReadHeaderTimeout != httpReadHeaderTimeout {
+		t.Fatalf("ReadHeaderTimeout = %v, want %v", httpServer.ReadHeaderTimeout, httpReadHeaderTimeout)
+	}
+	if httpServer.ReadTimeout != httpReadTimeout {
+		t.Fatalf("ReadTimeout = %v, want %v", httpServer.ReadTimeout, httpReadTimeout)
+	}
+	if httpServer.WriteTimeout != httpWriteTimeout {
+		t.Fatalf("WriteTimeout = %v, want %v", httpServer.WriteTimeout, httpWriteTimeout)
+	}
+	if httpServer.IdleTimeout != httpIdleTimeout {
+		t.Fatalf("IdleTimeout = %v, want %v", httpServer.IdleTimeout, httpIdleTimeout)
+	}
+	if httpServer.ReadTimeout <= 0 || httpServer.WriteTimeout <= 0 {
+		t.Fatal("ReadTimeout and WriteTimeout must be positive to prevent slow-client DoS")
+	}
+}
+
+// TestNewControlPlaneGRPCServerConstructs verifies the P2-REL-01 constructor
+// returns a usable server; the keepalive and size options are opaque inside
+// grpc.Server, so we assert construction succeeds rather than introspecting
+// internal state.
+func TestNewControlPlaneGRPCServerConstructs(t *testing.T) {
+	grpcServer := newControlPlaneGRPCServer(nil)
+	if grpcServer == nil {
+		t.Fatal("newControlPlaneGRPCServer() = nil, want *grpc.Server")
+	}
+	grpcServer.Stop()
+}
