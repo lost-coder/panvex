@@ -48,6 +48,8 @@ type metricsCollectors struct {
 	// is kept in place so dashboards from P2-OBS-01 keep working.
 	batchPersistErrorsTotal  *prometheus.CounterVec
 	batchPersistRetriesTotal *prometheus.CounterVec
+	// P2-OBS-03: per-stream flush latency histogram (including retries).
+	batchFlushDuration *prometheus.HistogramVec
 
 	eventHubDropTotal   prometheus.Counter
 	eventHubSubscribers prometheus.Gauge
@@ -111,6 +113,14 @@ func newMetricsCollectors() *metricsCollectors {
 			Name: "panvex_batch_persist_retries_total",
 			Help: "Batch writer retry outcomes by stream and outcome (success|exhausted). Success means a retry eventually succeeded; exhausted means all retries were used up and the item was dropped.",
 		}, []string{"stream", "outcome"}),
+		batchFlushDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name: "panvex_batch_flush_duration_seconds",
+			Help: "Per-stream batch flush latency in seconds, measured end-to-end including all retries, regardless of outcome.",
+			// Buckets tuned for DB flush latency: sub-millisecond work on a
+			// hot local SQLite path up to multi-second tails when retries
+			// burn the full backoff schedule on a flaky upstream.
+			Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5},
+		}, []string{"stream"}),
 		eventHubDropTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "panvex_event_hub_drop_total",
 			Help: "Total number of events dropped because a subscriber channel was full.",
@@ -145,6 +155,7 @@ func newMetricsCollectors() *metricsCollectors {
 		mc.batchFlushErrorsTotal,
 		mc.batchPersistErrorsTotal,
 		mc.batchPersistRetriesTotal,
+		mc.batchFlushDuration,
 		mc.eventHubDropTotal,
 		mc.eventHubSubscribers,
 		mc.jobQueueDepth,
@@ -197,6 +208,20 @@ func (mc *metricsCollectors) ObservePersistRetry(stream, outcome string) {
 		return
 	}
 	mc.batchPersistRetriesTotal.WithLabelValues(stream, outcome).Inc()
+}
+
+// ObserveFlushDuration records the end-to-end latency (in seconds) of a single
+// per-stream flush, including any retry attempts. Recorded regardless of
+// outcome so operators see real tail latency even when flushes fail.
+//
+// The histogram is NOT pre-primed with zero-value observations for the known
+// streams: a zero-duration sample would skew p50/p95 percentiles that
+// dashboards rely on. Series appear lazily on the first real flush per stream.
+func (mc *metricsCollectors) ObserveFlushDuration(stream string, seconds float64) {
+	if mc == nil {
+		return
+	}
+	mc.batchFlushDuration.WithLabelValues(stream).Observe(seconds)
 }
 
 // statusBucket maps an HTTP status code to one of {2xx, 3xx, 4xx, 5xx}.

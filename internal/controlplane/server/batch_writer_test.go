@@ -125,6 +125,13 @@ type recordingSink struct {
 	flushErrors    map[string]int // key = buffer|errorType
 	persistRetries map[string]int // key = stream|outcome
 	depths         map[string]float64
+	// P2-OBS-03: per-flush duration observations, stream-labelled. Appended in
+	// the order the batch writer recorded them so tests can assert both count
+	// and ordering.
+	observeCalls []struct {
+		stream  string
+		seconds float64
+	}
 }
 
 func newRecordingSink() *recordingSink {
@@ -151,6 +158,27 @@ func (s *recordingSink) ObservePersistRetry(stream, outcome string) {
 	s.mu.Lock()
 	s.persistRetries[stream+"|"+outcome]++
 	s.mu.Unlock()
+}
+
+func (s *recordingSink) ObserveFlushDuration(stream string, seconds float64) {
+	s.mu.Lock()
+	s.observeCalls = append(s.observeCalls, struct {
+		stream  string
+		seconds float64
+	}{stream: stream, seconds: seconds})
+	s.mu.Unlock()
+}
+
+func (s *recordingSink) durationCount(stream string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, c := range s.observeCalls {
+		if c.stream == stream {
+			n++
+		}
+	}
+	return n
 }
 
 func (s *recordingSink) flushErrorCount(buffer, errorType string) int {
@@ -508,5 +536,50 @@ func TestStoreBatchWriterDrainsOnStop(t *testing.T) {
 	}
 	if len(agents) != 2 {
 		t.Fatalf("ListAgents() returned %d agents, want 2", len(agents))
+	}
+}
+
+// P2-OBS-03: flushing a single item records a flush-duration observation
+// labelled with the correct stream, regardless of success/failure. The
+// recorded value must be non-negative and small for an in-memory no-op flush.
+func TestBatchWriterRecordsFlushDuration(t *testing.T) {
+	store := newSequencedStore(t) // no failure functions configured -> succeeds
+
+	sink := newRecordingSink()
+	w := newTestBatchWriter(store, sink)
+
+	w.flushAgents(context.Background(), []storage.AgentRecord{{
+		ID: "agent-dur-1", NodeName: "n", LastSeenAt: time.Now().UTC(),
+	}})
+
+	if got := sink.durationCount("agents"); got != 1 {
+		t.Fatalf("duration observations for agents = %d, want 1", got)
+	}
+	if got := sink.durationCount("metrics"); got != 0 {
+		t.Fatalf("duration observations for unrelated stream metrics = %d, want 0", got)
+	}
+
+	sink.mu.Lock()
+	last := sink.observeCalls[len(sink.observeCalls)-1]
+	sink.mu.Unlock()
+
+	if last.stream != "agents" {
+		t.Fatalf("last observation stream = %q, want %q", last.stream, "agents")
+	}
+	if last.seconds < 0 {
+		t.Fatalf("observed duration = %v, want non-negative", last.seconds)
+	}
+
+	// A second flush — a persistent error path — must still emit a duration
+	// observation so percentiles include the failure tail.
+	store.putAgentFailFn = func(int) error {
+		return &pgconn.PgError{Code: "23505", Message: "unique_violation"}
+	}
+	w.flushAgents(context.Background(), []storage.AgentRecord{{
+		ID: "agent-dur-2", NodeName: "n", LastSeenAt: time.Now().UTC(),
+	}})
+
+	if got := sink.durationCount("agents"); got != 2 {
+		t.Fatalf("duration observations for agents after persistent error = %d, want 2", got)
 	}
 }
