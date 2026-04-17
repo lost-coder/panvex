@@ -452,7 +452,18 @@ func Migrate(db *sql.DB) error {
 			dc_coverage_avg   REAL,
 			sample_count      INTEGER NOT NULL DEFAULT 0,
 			PRIMARY KEY (agent_id, bucket_hour)
-		)
+		);
+
+		-- P1-SEC-06: persisted agent revocation list. Without this, a CP
+		-- restart silently forgets a revocation and a deleted agent with a
+		-- still-valid mTLS client cert (up to 30 days) could reconnect.
+		CREATE TABLE IF NOT EXISTS agent_revocations (
+			agent_id         TEXT PRIMARY KEY,
+			revoked_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			cert_expires_at  TIMESTAMPTZ NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS idx_agent_revocations_cert_expires_at
+			ON agent_revocations(cert_expires_at)
 	`)
 	return err
 }

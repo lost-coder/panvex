@@ -76,8 +76,16 @@ func parseSemverParts(v string) [3]int {
 // FetchLatestVersions queries the GitHub Releases API and returns the newest
 // control-plane and agent releases found in the first page of results.
 // Either return value may be nil when no matching release is found.
+// The repo argument must be a valid owner/repo slug; the resolved URL is
+// rechecked against the GitHub allow-list before any network call.
 func FetchLatestVersions(ctx context.Context, repo, token string) (panel, agent *GitHubRelease, err error) {
+	if vErr := validateGitHubRepo(repo); vErr != nil {
+		return nil, nil, fmt.Errorf("fetch latest versions: %w", vErr)
+	}
 	url := fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=20", repo)
+	if uErr := checkDownloadURL(url); uErr != nil {
+		return nil, nil, fmt.Errorf("fetch latest versions: %w", uErr)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("build request: %w", err)
@@ -87,7 +95,7 @@ func FetchLatestVersions(ctx context.Context, repo, token string) (panel, agent 
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := secureDownloadClient().Do(req)
 	if err != nil {
 		return nil, nil, fmt.Errorf("github request: %w", err)
 	}
@@ -121,25 +129,30 @@ func FetchLatestVersions(ctx context.Context, repo, token string) (panel, agent 
 	return panel, agent, nil
 }
 
-// ResolveAssetURLs finds the platform-specific binary and checksum download
-// URLs for the given component from a GitHub release's assets.
-func ResolveAssetURLs(release *GitHubRelease, component string) (binaryURL, checksumURL string) {
+// ResolveAssetURLs finds the platform-specific binary, checksum, and
+// signature download URLs for the given component from a GitHub release's
+// assets. A missing signature URL is a fatal condition downstream — the
+// update subsystem refuses to install unsigned artifacts.
+func ResolveAssetURLs(release *GitHubRelease, component string) (binaryURL, checksumURL, signatureURL string) {
 	if release == nil {
-		return "", ""
+		return "", "", ""
 	}
 	arch := runtime.GOARCH
 	archiveName := fmt.Sprintf("panvex-%s-linux-%s.tar.gz", component, arch)
 	checksumName := archiveName + ".sha256"
+	signatureName := archiveName + ".sig"
 
 	for _, asset := range release.Assets {
-		if asset.Name == archiveName {
+		switch asset.Name {
+		case archiveName:
 			binaryURL = asset.BrowserDownloadURL
-		}
-		if asset.Name == checksumName {
+		case checksumName:
 			checksumURL = asset.BrowserDownloadURL
+		case signatureName:
+			signatureURL = asset.BrowserDownloadURL
 		}
 	}
-	return binaryURL, checksumURL
+	return binaryURL, checksumURL, signatureURL
 }
 
 // startUpdateCheckerWorker launches a background goroutine that periodically
@@ -203,19 +216,21 @@ func (s *Server) checkForUpdates(ctx context.Context) {
 
 	if panel != nil {
 		_, version, _ := ParseReleaseTag(panel.TagName)
-		binaryURL, checksumURL := ResolveAssetURLs(panel, "control-plane")
+		binaryURL, checksumURL, signatureURL := ResolveAssetURLs(panel, "control-plane")
 		state.LatestPanelVersion = version
 		state.PanelDownloadURL = binaryURL
 		state.PanelChecksumURL = checksumURL
+		state.PanelSignatureURL = signatureURL
 		state.PanelChangelog = panel.Body
 	}
 
 	if agent != nil {
 		_, version, _ := ParseReleaseTag(agent.TagName)
-		binaryURL, checksumURL := ResolveAssetURLs(agent, "agent")
+		binaryURL, checksumURL, signatureURL := ResolveAssetURLs(agent, "agent")
 		state.LatestAgentVersion = version
 		state.AgentDownloadURL = binaryURL
 		state.AgentChecksumURL = checksumURL
+		state.AgentSignatureURL = signatureURL
 		state.AgentChangelog = agent.Body
 	}
 

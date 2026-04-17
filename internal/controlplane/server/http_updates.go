@@ -12,22 +12,36 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
+	"github.com/lost-coder/panvex/internal/security"
 )
 
+// versionResponse is the JSON shape returned by GET /api/version.
+// commit_sha and build_time are only populated for Operator+ sessions; for
+// viewers they are omitted via `omitempty` to avoid revealing build
+// fingerprints that make targeted vulnerability research easier.
 type versionResponse struct {
 	Version   string `json:"version"`
-	CommitSHA string `json:"commit_sha"`
-	BuildTime string `json:"build_time"`
+	CommitSHA string `json:"commit_sha,omitempty"`
+	BuildTime string `json:"build_time,omitempty"`
 }
 
 func (s *Server) handleVersion() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, versionResponse{
-			Version:   s.version,
-			CommitSHA: s.commitSHA,
-			BuildTime: s.buildTime,
-		})
+		resp := versionResponse{Version: s.version}
+
+		// Gate commit_sha / build_time on Operator+. The handler is registered
+		// in the `authenticated` group, so any caller reaching here has a
+		// session; we still tolerate requireSession errors by defaulting to
+		// the truncated response.
+		_, user, err := s.requireSession(r)
+		if err == nil && roleRank(user.Role) >= roleRank(auth.RoleOperator) {
+			resp.CommitSHA = s.commitSHA
+			resp.BuildTime = s.buildTime
+		}
+
+		writeJSON(w, http.StatusOK, resp)
 	}
 }
 
@@ -102,6 +116,13 @@ func (s *Server) handlePutUpdateSettings() http.HandlerFunc {
 		if err := decodeJSON(r, &req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid request payload")
 			return
+		}
+
+		if req.GitHubRepo != nil {
+			if err := validateGitHubRepo(*req.GitHubRepo); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
 		}
 
 		s.settingsMu.Lock()
@@ -218,6 +239,7 @@ func (s *Server) handlePanelUpdate() http.HandlerFunc {
 
 		downloadURL := state.PanelDownloadURL
 		checksumURL := state.PanelChecksumURL
+		signatureURL := state.PanelSignatureURL
 
 		// If the target version differs from the cached latest, fetch the
 		// specific release from GitHub to resolve asset URLs.
@@ -231,11 +253,17 @@ func (s *Server) handlePanelUpdate() http.HandlerFunc {
 				writeError(w, http.StatusBadGateway, "failed to resolve download URLs for target version")
 				return
 			}
-			downloadURL, checksumURL = ResolveAssetURLs(panel, "control-plane")
+			downloadURL, checksumURL, signatureURL = ResolveAssetURLs(panel, "control-plane")
 		}
 
 		if downloadURL == "" {
 			writeError(w, http.StatusBadRequest, "no download URL available for target version")
+			return
+		}
+		if signatureURL == "" {
+			// Refuse to install unsigned artifacts; the signature is the
+			// primary defence against supply-chain tampering (SEC-02).
+			writeError(w, http.StatusBadRequest, "release is missing a signature (.sig) asset; cannot install")
 			return
 		}
 
@@ -245,16 +273,23 @@ func (s *Server) handlePanelUpdate() http.HandlerFunc {
 			To:     targetVersion,
 		})
 
-		go s.performPanelUpdate(session.UserID, targetVersion, downloadURL, checksumURL, settings.GitHubToken) //nolint:gosec // intentionally detached from request lifecycle
+		go s.performPanelUpdate(session.UserID, targetVersion, downloadURL, checksumURL, signatureURL, settings.GitHubToken) //nolint:gosec // intentionally detached from request lifecycle
 	}
 }
 
-// performPanelUpdate downloads, verifies, and installs a new panel binary,
-// then requests a service restart.
-func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksumURL, token string) {
+// performPanelUpdate downloads, verifies (signature required, checksum as a
+// secondary check), and installs a new panel binary, then requests a service
+// restart.
+func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksumURL, signatureURL, token string) {
 	ctx := context.Background()
 
-	// Download checksum if available.
+	// Signature is mandatory — a missing or empty URL is a hard stop.
+	if signatureURL == "" {
+		s.logger.Error("panel update: refusing to install without signature URL")
+		return
+	}
+
+	// Download checksum first (optional defence-in-depth; signature below is authoritative).
 	var expectedChecksum string
 	if checksumURL != "" {
 		var err error
@@ -271,6 +306,24 @@ func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksu
 		return
 	}
 	defer func() { _ = os.Remove(archivePath) }()
+
+	// Download the detached signature, then verify the archive against the
+	// embedded public key. This is the primary integrity gate — any failure
+	// refuses the update without falling back to checksum-only trust.
+	sig, err := DownloadSignature(ctx, signatureURL, token)
+	if err != nil {
+		s.logger.Error("panel update: download signature failed", "error", err)
+		return
+	}
+	archiveBytes, err := os.ReadFile(archivePath) //nolint:gosec // path created by DownloadArchive
+	if err != nil {
+		s.logger.Error("panel update: read archive for signature check failed", "error", err)
+		return
+	}
+	if err := security.VerifyArtifactBytes(archiveBytes, sig); err != nil {
+		s.logger.Error("panel update: signature verification failed", "error", err)
+		return
+	}
 
 	if expectedChecksum != "" {
 		if err := VerifyChecksum(archivePath, expectedChecksum); err != nil {
@@ -347,8 +400,16 @@ func (s *Server) handleAgentUpdate() http.HandlerFunc {
 
 		downloadURL := state.AgentDownloadURL
 		checksumURL := state.AgentChecksumURL
+		signatureURL := state.AgentSignatureURL
 		if downloadURL == "" {
 			writeError(w, http.StatusBadRequest, "no download URL available")
+			return
+		}
+		if signatureURL == "" {
+			// Refuse to dispatch an unsigned agent update — the agent side
+			// also refuses, but reject early so the operator sees the error
+			// synchronously rather than via a failed job.
+			writeError(w, http.StatusBadRequest, "release is missing a signature (.sig) asset; cannot update agent")
 			return
 		}
 
@@ -368,6 +429,7 @@ func (s *Server) handleAgentUpdate() http.HandlerFunc {
 			"version":            targetVersion,
 			"download_url":       downloadURL,
 			"checksum_sha256":    checksum,
+			"signature_url":      signatureURL,
 			"download_via_panel": downloadViaPanel,
 		}
 		if downloadViaPanel {
@@ -381,7 +443,18 @@ func (s *Server) handleAgentUpdate() http.HandlerFunc {
 		}
 		payloadJSON, _ := json.Marshal(payload)
 
-		session, _, _ := s.requireSession(r)
+		// P1-SEC-11: never discard the requireSession error. Without this
+		// check a malformed/expired cookie here would fall through with an
+		// empty ActorID in both the job record and the audit event, making
+		// the action untraceable. The handler sits in the operator group so
+		// the middleware already gates access, but we verify again and fail
+		// closed rather than silently anonymising a privileged action.
+		session, _, err := s.requireSession(r)
+		if err != nil {
+			s.logger.Warn("agent update: session check failed in handler body", "error", err)
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
 
 		job, err := s.jobs.Enqueue(jobs.CreateJobInput{
 			Action:         jobs.ActionAgentSelfUpdate,
@@ -408,6 +481,15 @@ func (s *Server) handleAgentUpdate() http.HandlerFunc {
 	}
 }
 
+// allowedAgentArches constrains the arch query parameter on the agent
+// binary proxy to known-safe values before it is interpolated into the
+// GitHub release URL. Arbitrary values would let a caller fetch unexpected
+// release assets or attempt path-like constructs in the URL.
+var allowedAgentArches = map[string]struct{}{
+	"amd64": {},
+	"arm64": {},
+}
+
 func (s *Server) handleAgentBinaryProxy() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		version := r.URL.Query().Get("version")
@@ -416,16 +498,31 @@ func (s *Server) handleAgentBinaryProxy() http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "version and arch query parameters required")
 			return
 		}
+		if _, ok := allowedAgentArches[arch]; !ok {
+			writeError(w, http.StatusBadRequest, "unsupported arch; allowed: amd64, arm64")
+			return
+		}
 
 		s.settingsMu.RLock()
 		settings := s.updateSettings
 		s.settingsMu.RUnlock()
 
-		assetName := fmt.Sprintf("panvex-agent-linux-%s", arch)
-		url := fmt.Sprintf("https://github.com/%s/releases/download/agent/v%s/%s",
-			settings.GitHubRepo, strings.TrimPrefix(version, "v"), assetName)
+		// Re-validate the stored repo before interpolating it into the URL,
+		// in case an earlier code path bypassed handlePutUpdateSettings' check.
+		if err := validateGitHubRepo(settings.GitHubRepo); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid github_repo configured")
+			return
+		}
 
-		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, url, nil) //nolint:gosec // URL from admin-configured GitHubRepo
+		assetName := fmt.Sprintf("panvex-agent-linux-%s", arch)
+		rawURL := fmt.Sprintf("https://github.com/%s/releases/download/agent/v%s/%s",
+			settings.GitHubRepo, strings.TrimPrefix(version, "v"), assetName)
+		if err := checkDownloadURL(rawURL); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid download URL")
+			return
+		}
+
+		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, rawURL, nil)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to create request")
 			return
@@ -435,7 +532,9 @@ func (s *Server) handleAgentBinaryProxy() http.HandlerFunc {
 		}
 		req.Header.Set("Accept", "application/octet-stream")
 
-		resp, err := http.DefaultClient.Do(req) //nolint:gosec // req URL from trusted admin config
+		// secureDownloadClient restricts redirects to the GitHub allow-list so
+		// a rogue release asset cannot steer us toward an attacker host.
+		resp, err := secureDownloadClient().Do(req)
 		if err != nil {
 			writeError(w, http.StatusBadGateway, "failed to download from GitHub")
 			return

@@ -106,7 +106,7 @@ func (s *Server) handleDeregisterAgent() http.HandlerFunc {
 
 		// 2. Verify agent exists before doing any work.
 		s.mu.RLock()
-		_, exists := s.agents[agentID]
+		agent, exists := s.agents[agentID]
 		s.mu.RUnlock()
 		if !exists {
 			writeError(w, http.StatusNotFound, "agent not found")
@@ -128,6 +128,21 @@ func (s *Server) handleDeregisterAgent() http.HandlerFunc {
 				s.logger.Error("delete agent from store failed", "agent_id", agentID, "error", err)
 				writeError(w, http.StatusInternalServerError, "storage error")
 				return
+			}
+			// P1-SEC-06: persist the revocation so the ID stays rejected
+			// across restarts until the underlying cert expires.
+			certExpires := s.now().AddDate(0, 0, 30) // fallback to default lifetime if unknown
+			if agent.CertExpiresAt != nil {
+				certExpires = *agent.CertExpiresAt
+			}
+			if err := s.store.PutAgentRevocation(r.Context(), storage.AgentRevocationRecord{
+				AgentID:       agentID,
+				RevokedAt:     s.now().UTC(),
+				CertExpiresAt: certExpires.UTC(),
+			}); err != nil {
+				s.logger.Error("persist agent revocation failed", "agent_id", agentID, "error", err)
+				// Non-fatal: in-memory revocation below still blocks the
+				// current process. Restart recovery will see this as a gap.
 			}
 		}
 
