@@ -117,6 +117,14 @@ type Server struct {
 	clientsMu      sync.RWMutex
 	metricsAuditMu sync.RWMutex
 	settingsMu     sync.RWMutex
+	// adoptMu serializes adopt/merge-adopt of discovered clients. It closes
+	// the TOCTOU window between reading a discovered record's status,
+	// checking it, creating/updating the managed client, and marking the
+	// discovered record as adopted (P2-LOG-03 / P2-LOG-04; audit findings
+	// L-11, L-12). A single global mutex is acceptable because adopt is
+	// operator-initiated and contention is low. Full Store.Transact wiring
+	// is deferred to P2-ARCH-01.
+	adoptMu sync.Mutex
 	// agentSeq removed (P1-SEC-05): agent IDs are now UUIDv7 so a process
 	// restart cannot re-issue a previously-used ID. Other entity sequences
 	// (session/audit/metric/client) are still monotonic because they do not

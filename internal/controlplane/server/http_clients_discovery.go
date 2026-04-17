@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -72,9 +73,9 @@ func (s *Server) handleAdoptDiscoveredClient() http.HandlerFunc {
 		client, err := s.adoptDiscoveredClient(r.Context(), id, session.UserID, s.now())
 		if err != nil {
 			switch {
-			case err == storage.ErrNotFound:
+			case errors.Is(err, storage.ErrNotFound):
 				writeError(w, http.StatusNotFound, "discovered client not found")
-			case err.Error() == "client already adopted":
+			case errors.Is(err, ErrAlreadyAdopted):
 				writeError(w, http.StatusConflict, err.Error())
 			default:
 				if !handleClientMutationError(w, err) {
