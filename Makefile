@@ -2,7 +2,7 @@
 # Mirrors CI checks so pre-push and local runs match GitHub Actions.
 
 .PHONY: help test test-fast test-pkg lint vuln check build build-embed \
-        sqlc tidy fmt clean install-tools all
+        sqlc tidy fmt clean install-tools bench all
 
 # Default target: list available commands.
 help:
@@ -23,6 +23,8 @@ help:
 	@echo "  make fmt           gofmt -w ."
 	@echo "  make clean         Remove build artifacts"
 	@echo "  make install-tools Install govulncheck, golangci-lint, sqlc"
+	@echo "  make bench         Run P2-PERF-05 microbenchmarks"
+	@echo "                     (batch writer + event hub + jobs; 3s per bench)"
 
 test:
 	go test -race -count=1 ./...
@@ -66,3 +68,11 @@ install-tools:
 	go install golang.org/x/vuln/cmd/govulncheck@latest
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
+
+# P2-PERF-05: microbenchmarks used as the Phase 2 performance baseline.
+# Output is compared against the numbers in docs/benchmarks/phase2-baseline.md
+# to judge the impact of Phase 3 changes (notably PERF-06 bulk insert).
+bench:
+	go test -bench=. -benchtime=3s -run=^$$ -count=1 -timeout=10m \
+	    ./internal/controlplane/server \
+	    ./internal/controlplane/jobs
