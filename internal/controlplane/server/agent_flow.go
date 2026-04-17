@@ -329,7 +329,11 @@ func (s *Server) applyAgentSnapshotWithContext(_ context.Context, snapshot agent
 		}
 	}
 
-	s.presence.MarkConnected(snapshot.AgentID, snapshot.ObservedAt)
+	// P2-LOG-12 / L-05: only Heartbeat on every snapshot. MarkConnected is
+	// called exactly once per gRPC stream open (see Connect in
+	// grpc_gateway.go) so the recorded connectedAt reflects the real
+	// stream-open moment instead of being rewritten to "now" by every
+	// heartbeat snapshot, which masked short disconnects.
 	s.presence.Heartbeat(snapshot.AgentID, snapshot.ObservedAt)
 
 	s.events.publish(eventEnvelope{
