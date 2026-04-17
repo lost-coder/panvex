@@ -26,12 +26,20 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       so QueryClientProvider failures are also caught.
     */}
     <ErrorBoundary fallback={(error: Error) => <AppErrorFallback error={error} />}>
-      <QueryClientProvider client={queryClient}>
-        <ToastProvider>
+      {/*
+        ToastProvider sits OUTSIDE QueryClientProvider (P2-FE-03) so the
+        global 401 handler in AuthProvider and any React-Query lifecycle
+        (onError, QueryCache.onError) can surface toasts even when a query
+        is mid-flight and a higher provider is re-rendering. The provider
+        is pure React state — it has no dependency on QueryClient, so
+        hoisting it is safe and avoids a future context ordering bug.
+      */}
+      <ToastProvider>
+        <QueryClientProvider client={queryClient}>
           <EventsSynchronizer />
           <RouterProvider router={router} context={{ queryClient }} />
-        </ToastProvider>
-      </QueryClientProvider>
+        </QueryClientProvider>
+      </ToastProvider>
     </ErrorBoundary>
   </React.StrictMode>,
 );

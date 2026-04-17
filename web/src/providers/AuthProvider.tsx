@@ -2,6 +2,7 @@ import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { apiClient, SESSION_EXPIRED_EVENT, type MeResponse } from "@/lib/api";
+import { useToast } from "@/providers/ToastProvider";
 
 interface AuthContextValue {
   user: MeResponse | null;
@@ -24,6 +25,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const toast = useToast();
 
   // Global 401 listener (P2-FE-02 / M-C12 / DF-12): api.ts dispatches
   // SESSION_EXPIRED_EVENT when any authenticated request returns 401.
@@ -32,6 +34,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // navigate to /login. Guarded so we don't re-navigate if already on
   // /login (e.g. the login form itself produced a 401 — though api.ts
   // also skips dispatch for /auth/login and /auth/me to avoid loops).
+  //
+  // P2-FE-03: surface an info toast before the redirect so the operator
+  // understands why the page just changed — otherwise a silent redirect
+  // from a data page to /login looks like the app crashed.
   React.useEffect(() => {
     const handler = () => {
       queryClient.clear();
@@ -39,13 +45,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           window.location.pathname.endsWith("/login")) {
         return;
       }
+      toast.info("Сессия истекла, переход на /login…");
       navigate({ to: "/login" });
     };
     window.addEventListener(SESSION_EXPIRED_EVENT, handler);
     return () => {
       window.removeEventListener(SESSION_EXPIRED_EVENT, handler);
     };
-  }, [queryClient, navigate]);
+  }, [queryClient, navigate, toast]);
 
   const value: AuthContextValue = {
     user: data ?? null,
