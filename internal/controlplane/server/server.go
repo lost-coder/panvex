@@ -248,6 +248,11 @@ func New(options Options) *Server {
 				server.startupErr = err
 			}
 		}
+		if server.startupErr == nil {
+			if err := server.restoreRetentionSettings(); err != nil {
+				server.startupErr = err
+			}
+		}
 	} else if len(options.Users) > 0 {
 		server.auth.LoadUsers(options.Users)
 	}

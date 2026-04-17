@@ -192,6 +192,59 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 		}
 	})
 
+	t.Run("retention settings round trip", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+
+		// An unwritten store must report ErrNotFound so the caller
+		// (server.New) can fall back to defaults.
+		if _, err := store.GetRetentionSettings(ctx); err == nil {
+			t.Fatalf("GetRetentionSettings() on empty store = nil error, want ErrNotFound")
+		}
+
+		settings := storage.RetentionSettings{
+			TSRawSeconds:     7200,
+			TSHourlySeconds:  86400,
+			TSDCSeconds:      3600,
+			IPHistorySeconds: 1209600,
+			EventSeconds:     3600,
+		}
+
+		if err := store.PutRetentionSettings(ctx, settings); err != nil {
+			t.Fatalf("PutRetentionSettings() error = %v", err)
+		}
+
+		stored, err := store.GetRetentionSettings(ctx)
+		if err != nil {
+			t.Fatalf("GetRetentionSettings() error = %v", err)
+		}
+
+		if stored != settings {
+			t.Fatalf("GetRetentionSettings() = %+v, want %+v", stored, settings)
+		}
+
+		// Overwrite must replace the previous blob rather than merge.
+		replacement := storage.RetentionSettings{
+			TSRawSeconds:     120,
+			TSHourlySeconds:  240,
+			TSDCSeconds:      360,
+			IPHistorySeconds: 480,
+			EventSeconds:     600,
+		}
+		if err := store.PutRetentionSettings(ctx, replacement); err != nil {
+			t.Fatalf("PutRetentionSettings(replacement) error = %v", err)
+		}
+		got, err := store.GetRetentionSettings(ctx)
+		if err != nil {
+			t.Fatalf("GetRetentionSettings(after overwrite) error = %v", err)
+		}
+		if got != replacement {
+			t.Fatalf("GetRetentionSettings(after overwrite) = %+v, want %+v", got, replacement)
+		}
+	})
+
 	t.Run("certificate authority round trip", func(t *testing.T) {
 		store := open(t)
 		defer store.Close()

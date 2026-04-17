@@ -2,7 +2,10 @@ package server
 
 import (
 	"context"
+	"errors"
 	"time"
+
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 // RetentionSettings controls how long timeseries data is kept before pruning.
@@ -22,6 +25,48 @@ func defaultRetentionSettings() RetentionSettings {
 		IPHistorySeconds: 2592000, // 30d
 		EventSeconds:     86400,   // 24h
 	}
+}
+
+// retentionSettingsToRecord converts the server-side RetentionSettings to the
+// storage-layer record. Field layout is identical so this is a straight copy;
+// the helper exists so callers do not depend on the alias in storage/store.go.
+func retentionSettingsToRecord(settings RetentionSettings) storage.RetentionSettings {
+	return storage.RetentionSettings{
+		TSRawSeconds:     settings.TSRawSeconds,
+		TSHourlySeconds:  settings.TSHourlySeconds,
+		TSDCSeconds:      settings.TSDCSeconds,
+		IPHistorySeconds: settings.IPHistorySeconds,
+		EventSeconds:     settings.EventSeconds,
+	}
+}
+
+// retentionSettingsFromRecord is the inverse of retentionSettingsToRecord.
+func retentionSettingsFromRecord(record storage.RetentionSettings) RetentionSettings {
+	return RetentionSettings{
+		TSRawSeconds:     record.TSRawSeconds,
+		TSHourlySeconds:  record.TSHourlySeconds,
+		TSDCSeconds:      record.TSDCSeconds,
+		IPHistorySeconds: record.IPHistorySeconds,
+		EventSeconds:     record.EventSeconds,
+	}
+}
+
+// restoreRetentionSettings loads persisted retention settings from the store.
+// Missing / never-written rows are reported as ErrNotFound by the storage
+// layer and cause the caller to keep the pre-assigned defaults.
+func (s *Server) restoreRetentionSettings() error {
+	if s.store == nil {
+		return nil
+	}
+	record, err := s.store.GetRetentionSettings(context.Background())
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return nil
+		}
+		return err
+	}
+	s.retention = normalizeRetentionSettings(retentionSettingsFromRecord(record))
+	return nil
 }
 
 const rollupInterval = 5 * time.Minute

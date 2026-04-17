@@ -45,6 +45,7 @@ type memoryStore struct {
 	sessions           map[string]storage.SessionRecord
 	agentRevocations   map[string]storage.AgentRevocationRecord
 	panelSettings      *storage.PanelSettingsRecord
+	retentionSettings  *storage.RetentionSettings
 	updateSettings     json.RawMessage
 	updateState        json.RawMessage
 	certificateAuthority *storage.CertificateAuthorityRecord
@@ -518,6 +519,19 @@ func (s *memoryStore) GetPanelSettings(_ context.Context) (storage.PanelSettings
 	}
 
 	return *s.panelSettings, nil
+}
+
+func (s *memoryStore) PutRetentionSettings(_ context.Context, settings storage.RetentionSettings) error {
+	copySettings := settings
+	s.retentionSettings = &copySettings
+	return nil
+}
+
+func (s *memoryStore) GetRetentionSettings(_ context.Context) (storage.RetentionSettings, error) {
+	if s.retentionSettings == nil {
+		return storage.RetentionSettings{}, storage.ErrNotFound
+	}
+	return *s.retentionSettings, nil
 }
 
 func (s *memoryStore) PutUpdateSettings(_ context.Context, data json.RawMessage) error {
