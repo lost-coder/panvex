@@ -71,6 +71,15 @@ func (t *Tracker) Remove(agentID string) {
 	delete(t.agentTimestamps, agentID)
 }
 
+// TrackedCount returns the number of agents currently tracked (have an entry
+// in the presence map). Used by the metrics subsystem to expose
+// panvex_agent_connected without reaching into server-internal state.
+func (t *Tracker) TrackedCount() int {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return len(t.agentTimestamps)
+}
+
 // Evaluate returns the derived liveness state for the requested agent.
 func (t *Tracker) Evaluate(agentID string, now time.Time) State {
 	t.mu.RLock()
