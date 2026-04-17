@@ -84,11 +84,12 @@ func TestServerAppendAuditKeepsRecentEventsInMemory(t *testing.T) {
 		server.appendAudit("user-1", "action-"+strconv.Itoa(index), "target-1", nil)
 	}
 
-	server.mu.RLock()
-	auditLen := len(server.auditTrail)
-	first := server.auditTrail[0]
-	last := server.auditTrail[len(server.auditTrail)-1]
-	server.mu.RUnlock()
+	server.metricsAuditMu.RLock()
+	trail := server.snapshotAuditTrailLocked()
+	server.metricsAuditMu.RUnlock()
+	auditLen := len(trail)
+	first := trail[0]
+	last := trail[len(trail)-1]
 
 	if auditLen != testMaxInMemoryAuditEvents {
 		t.Fatalf("len(server.auditTrail) = %d, want %d", auditLen, testMaxInMemoryAuditEvents)
@@ -100,5 +101,77 @@ func TestServerAppendAuditKeepsRecentEventsInMemory(t *testing.T) {
 	expectedLastAction := "action-" + strconv.Itoa(totalEvents-1)
 	if last.Action != expectedLastAction {
 		t.Fatalf("last audit action = %q, want %q", last.Action, expectedLastAction)
+	}
+}
+
+// TestAuditTrailRingBuffer verifies P2-PERF-02: appending more than the
+// maximum capacity keeps only the most recent maxInMemoryAuditEvents events
+// and preserves their chronological order, without panic. The behaviour is
+// identical to the previous slice-shift implementation but now runs in O(1)
+// per append.
+func TestAuditTrailRingBuffer(t *testing.T) {
+	start := time.Date(2026, time.April, 1, 0, 0, 0, 0, time.UTC)
+	now := start
+	server := New(Options{
+		Now: func() time.Time { return now },
+	})
+
+	const totalEvents = 2000
+	for index := 0; index < totalEvents; index++ {
+		now = start.Add(time.Duration(index+1) * time.Second)
+		server.appendAudit("actor", "action-"+strconv.Itoa(index), "target", nil)
+	}
+
+	server.metricsAuditMu.RLock()
+	trail := server.snapshotAuditTrailLocked()
+	server.metricsAuditMu.RUnlock()
+
+	if len(trail) != testMaxInMemoryAuditEvents {
+		t.Fatalf("len(trail) = %d, want %d", len(trail), testMaxInMemoryAuditEvents)
+	}
+	expectedFirst := "action-" + strconv.Itoa(totalEvents-testMaxInMemoryAuditEvents)
+	if trail[0].Action != expectedFirst {
+		t.Fatalf("trail[0].Action = %q, want %q", trail[0].Action, expectedFirst)
+	}
+	expectedLast := "action-" + strconv.Itoa(totalEvents-1)
+	if trail[len(trail)-1].Action != expectedLast {
+		t.Fatalf("last action = %q, want %q", trail[len(trail)-1].Action, expectedLast)
+	}
+
+	// Verify strict chronological order across the full snapshot.
+	for i := 1; i < len(trail); i++ {
+		if !trail[i-1].CreatedAt.Before(trail[i].CreatedAt) && !trail[i-1].CreatedAt.Equal(trail[i].CreatedAt) {
+			t.Fatalf("trail[%d].CreatedAt (%v) not <= trail[%d].CreatedAt (%v)", i-1, trail[i-1].CreatedAt, i, trail[i].CreatedAt)
+		}
+	}
+}
+
+// BenchmarkAuditTrailAppend asserts that the ring buffer append primitive
+// itself has zero allocations once the ring is full. The old slice-shift
+// implementation required an O(N) copy(s.auditTrail, s.auditTrail[1:]) on
+// every overflow, which cannot inline or elide. The ring buffer append is
+// pure pointer math — it must not allocate at all. Run with -benchmem.
+//
+// This benchmark targets the hot primitive only (appendAuditTrailLocked),
+// not the full appendAudit path; the latter includes upstream allocations
+// from newSequenceID + eventEnvelope interface boxing + publish snapshot
+// that are out of scope for P2-PERF-02.
+func BenchmarkAuditTrailAppend(b *testing.B) {
+	server := &Server{}
+	event := AuditEvent{
+		ID:      "audit-1",
+		ActorID: "actor",
+		Action:  "action",
+	}
+	// Fill the ring so the benchmark measures the steady-state overwrite
+	// path, not the initial fill phase.
+	for i := 0; i < maxInMemoryAuditEvents; i++ {
+		server.appendAuditTrailLocked(event)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		server.appendAuditTrailLocked(event)
 	}
 }
