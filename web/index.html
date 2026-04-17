@@ -7,6 +7,14 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   </head>
   <body>
+    <!--
+      P2-FE-08 / M-F7: Skip-nav link — first focusable element so keyboard
+      users can jump past the persistent sidebar/header on every page. The
+      target `#main-content` lives on <main> inside AppShell. The link is
+      visually hidden off-screen and only slides into view on :focus, which
+      keeps the visual design untouched for pointer users.
+    -->
+    <a href="#main-content" class="skip-link">Skip to main content</a>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
