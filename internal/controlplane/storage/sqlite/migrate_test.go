@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -117,6 +118,48 @@ func TestMigrateCreatesCoreTables(t *testing.T) {
 		err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, name).Scan(&found)
 		if err != nil {
 			t.Fatalf("expected table %q after Migrate: %v", name, err)
+		}
+	}
+}
+
+// TestMigrateRenamesJSONColumns verifies that migration 0011 renames the
+// SQLite JSON-blob columns to match the PostgreSQL schema (P2-DB-05 / DF-25).
+// Before 0011, SQLite used audit_events.details_json and
+// metric_snapshots.values_json; after 0011, the names are `details` and
+// `values` respectively. Keeping them aligned across backends lets the Store
+// methods share SQL and removes a whole class of copy-paste drift bugs.
+func TestMigrateRenamesJSONColumns(t *testing.T) {
+	db := openEmptySQLite(t)
+
+	if err := Migrate(db); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+
+	cases := []struct {
+		table           string
+		wantContains    string
+		wantNotContains string
+	}{
+		{"audit_events", "details ", "details_json"},
+		// `values` is reserved in SQLite so the schema shows it quoted.
+		{"metric_snapshots", `"values"`, "values_json"},
+	}
+	for _, tc := range cases {
+		var createSQL string
+		err := db.QueryRow(
+			`SELECT sql FROM sqlite_master WHERE type='table' AND name=?`,
+			tc.table,
+		).Scan(&createSQL)
+		if err != nil {
+			t.Fatalf("read schema for %s: %v", tc.table, err)
+		}
+		if !strings.Contains(createSQL, tc.wantContains) {
+			t.Errorf("%s schema missing expected column (%q); got: %s",
+				tc.table, tc.wantContains, createSQL)
+		}
+		if strings.Contains(createSQL, tc.wantNotContains) {
+			t.Errorf("%s schema still carries legacy column (%q); got: %s",
+				tc.table, tc.wantNotContains, createSQL)
 		}
 	}
 }

@@ -614,7 +614,7 @@ func (s *Store) AppendAuditEvent(ctx context.Context, event storage.AuditEventRe
 	}
 
 	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO audit_events (id, actor_id, action, target_id, created_at_unix, details_json)
+		INSERT INTO audit_events (id, actor_id, action, target_id, created_at_unix, details)
 		VALUES (?, ?, ?, ?, ?, ?)
 	`, event.ID, event.ActorID, event.Action, event.TargetID, toUnix(event.CreatedAt), detailsJSON)
 	return err
@@ -625,7 +625,7 @@ func (s *Store) ListAuditEvents(ctx context.Context, limit int) ([]storage.Audit
 		limit = 1024
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, actor_id, action, target_id, created_at_unix, details_json
+		SELECT id, actor_id, action, target_id, created_at_unix, details
 		FROM (SELECT * FROM audit_events ORDER BY created_at_unix DESC, id DESC LIMIT ?)
 		ORDER BY created_at_unix, id
 	`, limit)
@@ -669,8 +669,11 @@ func (s *Store) AppendMetricSnapshot(ctx context.Context, snapshot storage.Metri
 		return err
 	}
 
+	// `values` is a reserved keyword in SQLite, so the identifier must be
+	// double-quoted. The column was renamed from `values_json` in migration
+	// 0011 (P2-DB-05 / DF-25) to match the Postgres schema.
 	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO metric_snapshots (id, agent_id, instance_id, captured_at_unix, values_json)
+		INSERT INTO metric_snapshots (id, agent_id, instance_id, captured_at_unix, "values")
 		VALUES (?, ?, ?, ?, ?)
 	`, snapshot.ID, snapshot.AgentID, snapshot.InstanceID, toUnix(snapshot.CapturedAt), valuesJSON)
 	return err
@@ -678,7 +681,7 @@ func (s *Store) AppendMetricSnapshot(ctx context.Context, snapshot storage.Metri
 
 func (s *Store) ListMetricSnapshots(ctx context.Context) ([]storage.MetricSnapshotRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, agent_id, instance_id, captured_at_unix, values_json
+		SELECT id, agent_id, instance_id, captured_at_unix, "values"
 		FROM (SELECT * FROM metric_snapshots ORDER BY captured_at_unix DESC, id DESC LIMIT 512)
 		ORDER BY captured_at_unix, id
 	`)
