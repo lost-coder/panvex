@@ -133,9 +133,10 @@ func (s *Server) handleAudit() http.HandlerFunc {
 		}
 
 		s.metricsAuditMu.RLock()
-		defer s.metricsAuditMu.RUnlock()
+		trail := s.snapshotAuditTrailLocked()
+		s.metricsAuditMu.RUnlock()
 
-		writeJSON(w, http.StatusOK, s.auditTrail)
+		writeJSON(w, http.StatusOK, trail)
 	}
 }
 

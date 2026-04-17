@@ -137,6 +137,13 @@ type Service struct {
 	jobs       map[string]Job
 	agentJobs  map[string]map[string]struct{}
 	keys       map[string]string
+	// keyTerminalAt records the time at which the job associated with the
+	// idempotency key entered a terminal state (Succeeded, Failed, Expired).
+	// Keys are removed from this map and from `keys` by PruneKeys once they
+	// are older than the eviction TTL. Entries for jobs that are still
+	// queued or running are NOT present; those keys stay live in `keys`
+	// until the job completes.
+	keyTerminalAt map[string]time.Time
 	jobVersion map[string]uint64
 	jobStore   storage.JobStore
 	startupErr error
@@ -152,26 +159,125 @@ type persistCandidate struct {
 // NewService constructs an in-memory job validation and storage service.
 func NewService() *Service {
 	return &Service{
-		jobs:       make(map[string]Job),
-		agentJobs:  make(map[string]map[string]struct{}),
-		keys:       make(map[string]string),
-		jobVersion: make(map[string]uint64),
-		now:        time.Now,
+		jobs:          make(map[string]Job),
+		agentJobs:     make(map[string]map[string]struct{}),
+		keys:          make(map[string]string),
+		keyTerminalAt: make(map[string]time.Time),
+		jobVersion:    make(map[string]uint64),
+		now:           time.Now,
 	}
 }
 
 // NewServiceWithStore constructs a job service that persists state through the shared store.
 func NewServiceWithStore(jobStore storage.JobStore) *Service {
 	service := &Service{
-		jobs:       make(map[string]Job),
-		agentJobs:  make(map[string]map[string]struct{}),
-		keys:       make(map[string]string),
-		jobVersion: make(map[string]uint64),
-		jobStore:   jobStore,
-		now:        time.Now,
+		jobs:          make(map[string]Job),
+		agentJobs:     make(map[string]map[string]struct{}),
+		keys:          make(map[string]string),
+		keyTerminalAt: make(map[string]time.Time),
+		jobVersion:    make(map[string]uint64),
+		jobStore:      jobStore,
+		now:           time.Now,
 	}
 	service.startupErr = service.restore()
 	return service
+}
+
+// isTerminalStatus reports whether the status represents a completed job
+// whose idempotency key may be evicted after the configured TTL.
+func isTerminalStatus(status Status) bool {
+	switch status {
+	case StatusSucceeded, StatusFailed, StatusExpired:
+		return true
+	default:
+		return false
+	}
+}
+
+// markKeyTerminalLocked records that the job owning `key` entered a terminal
+// state at `now`. Safe to call repeatedly; only the latest time is retained
+// so retries of a once-terminal job still get evicted on the original TTL
+// window. Caller must hold s.mu.
+func (s *Service) markKeyTerminalLocked(key string, now time.Time) {
+	if key == "" {
+		return
+	}
+	if _, ok := s.keys[key]; !ok {
+		return
+	}
+	s.keyTerminalAt[key] = now
+}
+
+// clearKeyTerminalLocked removes any terminal timestamp previously recorded
+// for `key`. Used when a job transitions from a terminal state back to a
+// live state (rare, but keeps the two maps consistent). Caller holds s.mu.
+func (s *Service) clearKeyTerminalLocked(key string) {
+	if key == "" {
+		return
+	}
+	delete(s.keyTerminalAt, key)
+}
+
+// PruneKeys removes idempotency keys for jobs that reached a terminal state
+// more than `olderThan` ago, along with the corresponding job and target
+// entries. Returns the number of keys evicted. Safe to call concurrently.
+//
+// A TTL > 0 is required — calling with a non-positive TTL is a no-op so
+// callers cannot accidentally delete live idempotency keys.
+func (s *Service) PruneKeys(olderThan time.Duration) int {
+	if olderThan <= 0 {
+		return 0
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cutoff := s.now().Add(-olderThan)
+	evicted := 0
+	for key, terminalAt := range s.keyTerminalAt {
+		if terminalAt.After(cutoff) {
+			continue
+		}
+		jobID := s.keys[key]
+		delete(s.keys, key)
+		delete(s.keyTerminalAt, key)
+		// Also drop the in-memory job record so both maps stay bounded.
+		// The job has already been persisted in its terminal form; the
+		// storage layer owns long-term retention for /api/audit-style
+		// historical queries.
+		if jobID != "" {
+			delete(s.jobs, jobID)
+			delete(s.jobVersion, jobID)
+		}
+		evicted++
+	}
+	return evicted
+}
+
+// StartKeyEvictionWorker runs PruneKeys on a ticker until ctx is cancelled.
+// `interval` controls how often the scan runs and `ttl` is the age beyond
+// which terminal-state keys are evicted. The worker decrements wg on exit.
+//
+// Contract: wg.Add(1) is the caller's responsibility, mirroring the other
+// background workers in the control-plane (rollup, update-checker). This
+// lets the server.Close() path join every worker uniformly.
+func (s *Service) StartKeyEvictionWorker(ctx context.Context, interval time.Duration, ttl time.Duration, wg *sync.WaitGroup) {
+	go func() {
+		if wg != nil {
+			defer wg.Done()
+		}
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.PruneKeys(ttl)
+			}
+		}
+	}()
 }
 
 // StartupError reports the first restore error encountered while loading persisted job state.
@@ -431,6 +537,7 @@ func (s *Service) updateTarget(agentID string, jobID string, observedAt time.Tim
 			s.jobs[job.ID] = job
 			s.syncJobTargetsIndexLocked(job)
 			s.keys[job.IdempotencyKey] = job.ID
+			s.markKeyTerminalLocked(job.IdempotencyKey, now)
 
 			if s.jobStore != nil {
 				s.updateSeq++
@@ -474,6 +581,11 @@ func (s *Service) updateTarget(agentID string, jobID string, observedAt time.Tim
 	s.jobs[job.ID] = job
 	s.syncJobTargetsIndexLocked(job)
 	s.keys[job.IdempotencyKey] = job.ID
+	if isTerminalStatus(job.Status) {
+		s.markKeyTerminalLocked(job.IdempotencyKey, now)
+	} else {
+		s.clearKeyTerminalLocked(job.IdempotencyKey)
+	}
 
 	if s.jobStore != nil {
 		s.updateSeq++
@@ -516,6 +628,7 @@ func (s *Service) expireJobsLocked(now time.Time) []persistCandidate {
 			s.jobs[job.ID] = job
 			s.syncJobTargetsIndexLocked(job)
 			s.keys[job.IdempotencyKey] = job.ID
+			s.markKeyTerminalLocked(job.IdempotencyKey, now)
 		}
 
 		return nil
@@ -545,6 +658,7 @@ func (s *Service) expireJobsLocked(now time.Time) []persistCandidate {
 		s.jobs[job.ID] = job
 		s.syncJobTargetsIndexLocked(job)
 		s.keys[job.IdempotencyKey] = job.ID
+		s.markKeyTerminalLocked(job.IdempotencyKey, now)
 		s.updateSeq++
 		s.jobVersion[job.ID] = s.updateSeq
 		candidates = append(candidates, persistCandidate{
@@ -592,6 +706,15 @@ func (s *Service) restore() error {
 		s.jobs[job.ID] = job
 		s.syncJobTargetsIndexLocked(job)
 		s.keys[job.IdempotencyKey] = job.ID
+		if isTerminalStatus(job.Status) {
+			// Record the terminal timestamp so the eviction worker can
+			// drop already-completed jobs that were restored from store.
+			// We cannot recover the exact completion time cheaply, so use
+			// the job's CreatedAt — older than cutoff means older TTL, and
+			// the worst case is eviction on next scan, which is the
+			// desired behaviour for jobs persisted long enough ago.
+			s.keyTerminalAt[job.IdempotencyKey] = job.CreatedAt
+		}
 		s.sequence = maxJobSequence(s.sequence, job.ID)
 		s.updateSeq++
 		s.jobVersion[job.ID] = s.updateSeq

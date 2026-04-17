@@ -12,6 +12,187 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 )
 
+// TestJobsKeysEviction verifies P2-PERF-03: completed jobs have their
+// idempotency keys evicted by PruneKeys once older than the TTL, preventing
+// unbounded growth of jobs.Service.keys. Keys for jobs still queued or
+// running must NOT be evicted.
+func TestJobsKeysEviction(t *testing.T) {
+	start := time.Date(2026, time.April, 1, 12, 0, 0, 0, time.UTC)
+	now := start
+	service := NewService()
+	service.SetNow(func() time.Time { return now })
+
+	// Job A: will be completed, then aged past TTL — should be evicted.
+	jobA, err := service.Enqueue(CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            time.Hour,
+		IdempotencyKey: "key-a",
+		ActorID:        "user-1",
+	}, now)
+	if err != nil {
+		t.Fatalf("Enqueue(A) error = %v", err)
+	}
+
+	// Job B: will stay live the whole test — must never be evicted.
+	_, err = service.Enqueue(CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-2"},
+		TTL:            time.Hour,
+		IdempotencyKey: "key-b",
+		ActorID:        "user-1",
+	}, now)
+	if err != nil {
+		t.Fatalf("Enqueue(B) error = %v", err)
+	}
+
+	// Complete job A with success. This must record the terminal timestamp.
+	service.RecordResult("agent-1", jobA.ID, true, "ok", "", now)
+
+	// Before advancing time, PruneKeys with a 24h TTL must retain both keys.
+	if evicted := service.PruneKeys(24 * time.Hour); evicted != 0 {
+		t.Fatalf("PruneKeys immediate = %d, want 0", evicted)
+	}
+	if _, err := service.Enqueue(CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            time.Hour,
+		IdempotencyKey: "key-a",
+		ActorID:        "user-1",
+	}, now); !errors.Is(err, ErrDuplicateIdempotencyKey) {
+		t.Fatalf("Enqueue(key-a) immediate error = %v, want duplicate", err)
+	}
+
+	// Advance past the TTL and prune again — key-a must now be evicted.
+	now = start.Add(25 * time.Hour)
+	evicted := service.PruneKeys(24 * time.Hour)
+	if evicted != 1 {
+		t.Fatalf("PruneKeys after TTL = %d, want 1", evicted)
+	}
+
+	// key-a should now be re-usable (key has been evicted from the map).
+	if _, err := service.Enqueue(CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            time.Hour,
+		IdempotencyKey: "key-a",
+		ActorID:        "user-1",
+	}, now); err != nil {
+		t.Fatalf("Enqueue(key-a) after eviction error = %v, want nil", err)
+	}
+
+	// key-b is still live — it must remain protected from eviction.
+	if _, err := service.Enqueue(CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-2"},
+		TTL:            time.Hour,
+		IdempotencyKey: "key-b",
+		ActorID:        "user-1",
+	}, now); !errors.Is(err, ErrDuplicateIdempotencyKey) {
+		t.Fatalf("Enqueue(key-b) after eviction error = %v, want duplicate", err)
+	}
+}
+
+// TestJobsKeysEvictionViaExpiredJobs verifies that keys for jobs that reach
+// the Expired terminal state (via TTL, not explicit completion) are also
+// subject to eviction, matching the behaviour for Succeeded/Failed jobs.
+func TestJobsKeysEvictionViaExpiredJobs(t *testing.T) {
+	start := time.Date(2026, time.April, 1, 12, 0, 0, 0, time.UTC)
+	now := start
+	service := NewService()
+	service.SetNow(func() time.Time { return now })
+
+	if _, err := service.Enqueue(CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            time.Minute,
+		IdempotencyKey: "key-expire",
+		ActorID:        "user-1",
+	}, now); err != nil {
+		t.Fatalf("Enqueue() error = %v", err)
+	}
+
+	// Advance past job TTL so ExpireStale() moves it to Expired.
+	now = start.Add(2 * time.Minute)
+	service.ExpireStale()
+
+	// Now advance past the key eviction TTL.
+	now = start.Add(25 * time.Hour)
+	if evicted := service.PruneKeys(24 * time.Hour); evicted != 1 {
+		t.Fatalf("PruneKeys for expired job = %d, want 1", evicted)
+	}
+
+	// Re-enqueue with the same key should succeed.
+	if _, err := service.Enqueue(CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            time.Minute,
+		IdempotencyKey: "key-expire",
+		ActorID:        "user-1",
+	}, now); err != nil {
+		t.Fatalf("Enqueue() after eviction error = %v", err)
+	}
+}
+
+// TestJobsKeysEvictionWorker exercises the StartKeyEvictionWorker ticker:
+// it must call PruneKeys periodically and stop cleanly when ctx is
+// cancelled. Uses a short interval (10ms) to keep the test fast.
+func TestJobsKeysEvictionWorker(t *testing.T) {
+	start := time.Date(2026, time.April, 1, 12, 0, 0, 0, time.UTC)
+	now := start
+	var nowMu sync.Mutex
+	nowFn := func() time.Time {
+		nowMu.Lock()
+		defer nowMu.Unlock()
+		return now
+	}
+	service := NewService()
+	service.SetNow(nowFn)
+
+	jobA, err := service.Enqueue(CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            time.Hour,
+		IdempotencyKey: "key-worker",
+		ActorID:        "user-1",
+	}, now)
+	if err != nil {
+		t.Fatalf("Enqueue() error = %v", err)
+	}
+	service.RecordResult("agent-1", jobA.ID, true, "ok", "", now)
+
+	// Age the terminal timestamp past TTL by moving the clock forward.
+	nowMu.Lock()
+	now = start.Add(48 * time.Hour)
+	nowMu.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	wg.Add(1)
+	service.StartKeyEvictionWorker(ctx, 10*time.Millisecond, 24*time.Hour, &wg)
+
+	// Poll up to 2s for the worker to run at least once and evict the key.
+	deadline := time.Now().Add(2 * time.Second)
+	evicted := false
+	for time.Now().Before(deadline) {
+		service.mu.Lock()
+		_, stillPresent := service.keys["key-worker"]
+		service.mu.Unlock()
+		if !stillPresent {
+			evicted = true
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	cancel()
+	wg.Wait()
+
+	if !evicted {
+		t.Fatal("StartKeyEvictionWorker did not evict terminal key within 2s")
+	}
+}
+
 func TestServiceEnqueueRejectsDuplicateIdempotencyKey(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	service := NewService()

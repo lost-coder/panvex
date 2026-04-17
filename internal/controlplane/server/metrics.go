@@ -439,7 +439,7 @@ func (s *Server) refreshPolledMetrics() {
 func (s *Server) auditBufferLen() int {
 	s.metricsAuditMu.RLock()
 	defer s.metricsAuditMu.RUnlock()
-	return len(s.auditTrail)
+	return s.auditSize
 }
 
 // metricsShutdown stops the metrics polling goroutine, if any. It is safe to
