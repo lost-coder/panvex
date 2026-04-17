@@ -85,6 +85,25 @@ func (t *accountLockoutTracker) CheckAndRecordFailure(username string, now time.
 	return false
 }
 
+// ActiveCount returns the number of usernames whose account is currently
+// locked out. Used by the metrics subsystem to expose panvex_lockout_active.
+func (t *accountLockoutTracker) ActiveCount(now time.Time) int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	count := 0
+	for _, entry := range t.accounts {
+		if entry.failures < accountLockoutMaxAttempts {
+			continue
+		}
+		if now.Sub(entry.lockedAt) >= accountLockoutDuration {
+			continue
+		}
+		count++
+	}
+	return count
+}
+
 // RecordSuccess clears the failure counter after a successful login.
 func (t *accountLockoutTracker) RecordSuccess(username string) {
 	t.mu.Lock()
