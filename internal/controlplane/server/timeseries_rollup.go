@@ -10,20 +10,24 @@ import (
 
 // RetentionSettings controls how long timeseries data is kept before pruning.
 type RetentionSettings struct {
-	TSRawSeconds     int `json:"ts_raw_seconds"`
-	TSHourlySeconds  int `json:"ts_hourly_seconds"`
-	TSDCSeconds      int `json:"ts_dc_seconds"`
-	IPHistorySeconds int `json:"ip_history_seconds"`
-	EventSeconds     int `json:"event_history_seconds"`
+	TSRawSeconds           int `json:"ts_raw_seconds"`
+	TSHourlySeconds        int `json:"ts_hourly_seconds"`
+	TSDCSeconds            int `json:"ts_dc_seconds"`
+	IPHistorySeconds       int `json:"ip_history_seconds"`
+	EventSeconds           int `json:"event_history_seconds"`
+	AuditEventSeconds      int `json:"audit_event_seconds"`
+	MetricSnapshotSeconds  int `json:"metric_snapshot_seconds"`
 }
 
 func defaultRetentionSettings() RetentionSettings {
 	return RetentionSettings{
-		TSRawSeconds:     86400,   // 24h
-		TSHourlySeconds:  604800,  // 7d
-		TSDCSeconds:      86400,   // 24h
-		IPHistorySeconds: 2592000, // 30d
-		EventSeconds:     86400,   // 24h
+		TSRawSeconds:          86400,   // 24h
+		TSHourlySeconds:       604800,  // 7d
+		TSDCSeconds:           86400,   // 24h
+		IPHistorySeconds:      2592000, // 30d
+		EventSeconds:          86400,   // 24h
+		AuditEventSeconds:     7776000, // 90d (P2-REL-04 / finding M-R2)
+		MetricSnapshotSeconds: 2592000, // 30d (P2-REL-05)
 	}
 }
 
@@ -32,22 +36,26 @@ func defaultRetentionSettings() RetentionSettings {
 // the helper exists so callers do not depend on the alias in storage/store.go.
 func retentionSettingsToRecord(settings RetentionSettings) storage.RetentionSettings {
 	return storage.RetentionSettings{
-		TSRawSeconds:     settings.TSRawSeconds,
-		TSHourlySeconds:  settings.TSHourlySeconds,
-		TSDCSeconds:      settings.TSDCSeconds,
-		IPHistorySeconds: settings.IPHistorySeconds,
-		EventSeconds:     settings.EventSeconds,
+		TSRawSeconds:          settings.TSRawSeconds,
+		TSHourlySeconds:       settings.TSHourlySeconds,
+		TSDCSeconds:           settings.TSDCSeconds,
+		IPHistorySeconds:      settings.IPHistorySeconds,
+		EventSeconds:          settings.EventSeconds,
+		AuditEventSeconds:     settings.AuditEventSeconds,
+		MetricSnapshotSeconds: settings.MetricSnapshotSeconds,
 	}
 }
 
 // retentionSettingsFromRecord is the inverse of retentionSettingsToRecord.
 func retentionSettingsFromRecord(record storage.RetentionSettings) RetentionSettings {
 	return RetentionSettings{
-		TSRawSeconds:     record.TSRawSeconds,
-		TSHourlySeconds:  record.TSHourlySeconds,
-		TSDCSeconds:      record.TSDCSeconds,
-		IPHistorySeconds: record.IPHistorySeconds,
-		EventSeconds:     record.EventSeconds,
+		TSRawSeconds:          record.TSRawSeconds,
+		TSHourlySeconds:       record.TSHourlySeconds,
+		TSDCSeconds:           record.TSDCSeconds,
+		IPHistorySeconds:      record.IPHistorySeconds,
+		EventSeconds:          record.EventSeconds,
+		AuditEventSeconds:     record.AuditEventSeconds,
+		MetricSnapshotSeconds: record.MetricSnapshotSeconds,
 	}
 }
 
@@ -154,6 +162,44 @@ func (s *Server) runTimeseriesRollup(ctx context.Context) {
 		} else if pruned > 0 {
 			s.logger.Info("pruned telemt runtime events", "count", pruned, "cutoff", cutoff.Format(time.RFC3339))
 		}
+	}
+
+	// 7. Prune audit events (P2-REL-04 / finding M-R2). Previously
+	// audit_events grew unbounded; now it honours AuditEventSeconds.
+	s.runRetentionPrune(ctx, "audit_events", now, retention.AuditEventSeconds, s.store.PruneAuditEvents)
+
+	// 8. Prune metric snapshots (P2-REL-05). metric_snapshots also grew
+	// unbounded prior to this worker being wired in.
+	s.runRetentionPrune(ctx, "metric_snapshots", now, retention.MetricSnapshotSeconds, s.store.PruneMetricSnapshots)
+}
+
+// runRetentionPrune is the shared helper used by audit_events and
+// metric_snapshots pruning. It applies the same skip-on-disabled /
+// log-on-success shape as the timeseries pruners above and, on success,
+// pushes the row count into panvex_retention_pruned_rows_total so Grafana
+// can alert when retention stops trimming (nothing to delete) or when it
+// trims catastrophically large batches.
+func (s *Server) runRetentionPrune(
+	ctx context.Context,
+	table string,
+	now time.Time,
+	ttlSeconds int,
+	pruneFn func(ctx context.Context, before time.Time) (int64, error),
+) {
+	if ttlSeconds <= 0 {
+		return
+	}
+	cutoff := now.Add(-time.Duration(ttlSeconds) * time.Second)
+	pruned, err := pruneFn(ctx, cutoff)
+	if err != nil {
+		s.logger.Error("retention prune failed", "table", table, "error", err)
+		return
+	}
+	if pruned > 0 {
+		s.logger.Info("pruned rows by retention", "table", table, "count", pruned, "cutoff", cutoff.Format(time.RFC3339))
+	}
+	if s.obs != nil {
+		s.obs.retentionPrunedRowsTotal.WithLabelValues(table).Add(float64(pruned))
 	}
 }
 

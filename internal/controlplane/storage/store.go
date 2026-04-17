@@ -51,12 +51,21 @@ type AuditStore interface {
 	// chronological order. limit caps the number of rows returned; values
 	// <= 0 fall back to a hard maximum of 1024.
 	ListAuditEvents(ctx context.Context, limit int) ([]AuditEventRecord, error)
+	// PruneAuditEvents deletes audit_events rows with created_at strictly
+	// before the cutoff and returns the number of deleted rows. Used by the
+	// retention worker (P2-REL-04 / finding M-R2) to keep audit_events from
+	// growing unbounded.
+	PruneAuditEvents(ctx context.Context, before time.Time) (int64, error)
 }
 
 // MetricStore persists aggregated control-plane metric snapshots.
 type MetricStore interface {
 	AppendMetricSnapshot(ctx context.Context, snapshot MetricSnapshotRecord) error
 	ListMetricSnapshots(ctx context.Context) ([]MetricSnapshotRecord, error)
+	// PruneMetricSnapshots deletes metric_snapshots rows with captured_at
+	// strictly before the cutoff and returns the number of deleted rows.
+	// Used by the retention worker (P2-REL-05).
+	PruneMetricSnapshots(ctx context.Context, before time.Time) (int64, error)
 }
 
 // TelemetryStore persists current Telemt telemetry projections and recent runtime events.

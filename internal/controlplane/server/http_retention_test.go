@@ -62,13 +62,19 @@ func TestRetentionSettingsSurviveRestart(t *testing.T) {
 		t.Fatalf("initial retention = %+v, want defaults %+v", initialPayload, defaultRetentionSettings())
 	}
 
-	// Operator overrides the retention windows.
+	// Operator overrides the retention windows. P2-REL-04 / P2-REL-05 added
+	// AuditEventSeconds and MetricSnapshotSeconds; supply explicit non-zero
+	// values here so the server's normalizeRetentionSettings() does not swap
+	// them for their defaults (zero = "use default") and cause a spurious
+	// mismatch on the response compare below.
 	desired := RetentionSettings{
-		TSRawSeconds:     3600,
-		TSHourlySeconds:  7200,
-		TSDCSeconds:      1800,
-		IPHistorySeconds: 604800,
-		EventSeconds:     900,
+		TSRawSeconds:          3600,
+		TSHourlySeconds:       7200,
+		TSDCSeconds:           1800,
+		IPHistorySeconds:      604800,
+		EventSeconds:          900,
+		AuditEventSeconds:     86400,
+		MetricSnapshotSeconds: 43200,
 	}
 	putResp := performJSONRequest(t, server.Handler(), http.MethodPut, "/api/settings/retention", desired, cookies)
 	if putResp.Code != http.StatusOK {

@@ -205,11 +205,13 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 		}
 
 		settings := storage.RetentionSettings{
-			TSRawSeconds:     7200,
-			TSHourlySeconds:  86400,
-			TSDCSeconds:      3600,
-			IPHistorySeconds: 1209600,
-			EventSeconds:     3600,
+			TSRawSeconds:          7200,
+			TSHourlySeconds:       86400,
+			TSDCSeconds:           3600,
+			IPHistorySeconds:      1209600,
+			EventSeconds:          3600,
+			AuditEventSeconds:     2592000,
+			MetricSnapshotSeconds: 604800,
 		}
 
 		if err := store.PutRetentionSettings(ctx, settings); err != nil {
@@ -227,11 +229,13 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 
 		// Overwrite must replace the previous blob rather than merge.
 		replacement := storage.RetentionSettings{
-			TSRawSeconds:     120,
-			TSHourlySeconds:  240,
-			TSDCSeconds:      360,
-			IPHistorySeconds: 480,
-			EventSeconds:     600,
+			TSRawSeconds:          120,
+			TSHourlySeconds:       240,
+			TSDCSeconds:           360,
+			IPHistorySeconds:      480,
+			EventSeconds:          600,
+			AuditEventSeconds:     720,
+			MetricSnapshotSeconds: 840,
 		}
 		if err := store.PutRetentionSettings(ctx, replacement); err != nil {
 			t.Fatalf("PutRetentionSettings(replacement) error = %v", err)
@@ -845,6 +849,111 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 
 		if len(snapshots) != 1 {
 			t.Fatalf("len(ListMetricSnapshots()) = %d, want 1", len(snapshots))
+		}
+	})
+
+	// P2-REL-04 / finding M-R2: audit_events must be prunable by cutoff so
+	// the retention worker can bound table growth.
+	t.Run("audit prune deletes rows older than cutoff", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		baseTime := time.Date(2026, time.April, 1, 12, 0, 0, 0, time.UTC)
+
+		seed := []storage.AuditEventRecord{
+			{ID: "audit-old-1", ActorID: "u", Action: "a", TargetID: "t", CreatedAt: baseTime.Add(-72 * time.Hour), Details: map[string]any{"k": "1"}},
+			{ID: "audit-old-2", ActorID: "u", Action: "a", TargetID: "t", CreatedAt: baseTime.Add(-48 * time.Hour), Details: map[string]any{"k": "2"}},
+			{ID: "audit-keep-1", ActorID: "u", Action: "a", TargetID: "t", CreatedAt: baseTime.Add(-12 * time.Hour), Details: map[string]any{"k": "3"}},
+			{ID: "audit-keep-2", ActorID: "u", Action: "a", TargetID: "t", CreatedAt: baseTime, Details: map[string]any{"k": "4"}},
+		}
+		for _, e := range seed {
+			if err := store.AppendAuditEvent(ctx, e); err != nil {
+				t.Fatalf("AppendAuditEvent(%s) error = %v", e.ID, err)
+			}
+		}
+
+		cutoff := baseTime.Add(-24 * time.Hour)
+		pruned, err := store.PruneAuditEvents(ctx, cutoff)
+		if err != nil {
+			t.Fatalf("PruneAuditEvents() error = %v", err)
+		}
+		if pruned != 2 {
+			t.Fatalf("PruneAuditEvents() pruned = %d, want 2", pruned)
+		}
+
+		events, err := store.ListAuditEvents(ctx, 0)
+		if err != nil {
+			t.Fatalf("ListAuditEvents() error = %v", err)
+		}
+		if len(events) != 2 {
+			t.Fatalf("len(ListAuditEvents()) after prune = %d, want 2", len(events))
+		}
+		for _, e := range events {
+			if e.CreatedAt.Before(cutoff) {
+				t.Fatalf("retained event %q has CreatedAt %v before cutoff %v", e.ID, e.CreatedAt, cutoff)
+			}
+		}
+
+		// A second call with the same cutoff is a no-op.
+		pruned2, err := store.PruneAuditEvents(ctx, cutoff)
+		if err != nil {
+			t.Fatalf("PruneAuditEvents(second) error = %v", err)
+		}
+		if pruned2 != 0 {
+			t.Fatalf("PruneAuditEvents(second) pruned = %d, want 0", pruned2)
+		}
+	})
+
+	// P2-REL-05: metric_snapshots must be prunable by captured_at cutoff.
+	t.Run("metric snapshot prune deletes rows older than cutoff", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		baseTime := time.Date(2026, time.April, 1, 12, 0, 0, 0, time.UTC)
+
+		seed := []storage.MetricSnapshotRecord{
+			{ID: "metric-old-1", AgentID: "a1", InstanceID: "i1", CapturedAt: baseTime.Add(-72 * time.Hour), Values: map[string]uint64{"x": 1}},
+			{ID: "metric-old-2", AgentID: "a1", InstanceID: "i1", CapturedAt: baseTime.Add(-48 * time.Hour), Values: map[string]uint64{"x": 2}},
+			{ID: "metric-keep-1", AgentID: "a1", InstanceID: "i1", CapturedAt: baseTime.Add(-12 * time.Hour), Values: map[string]uint64{"x": 3}},
+			{ID: "metric-keep-2", AgentID: "a1", InstanceID: "i1", CapturedAt: baseTime, Values: map[string]uint64{"x": 4}},
+		}
+		for _, m := range seed {
+			if err := store.AppendMetricSnapshot(ctx, m); err != nil {
+				t.Fatalf("AppendMetricSnapshot(%s) error = %v", m.ID, err)
+			}
+		}
+
+		cutoff := baseTime.Add(-24 * time.Hour)
+		pruned, err := store.PruneMetricSnapshots(ctx, cutoff)
+		if err != nil {
+			t.Fatalf("PruneMetricSnapshots() error = %v", err)
+		}
+		if pruned != 2 {
+			t.Fatalf("PruneMetricSnapshots() pruned = %d, want 2", pruned)
+		}
+
+		snapshots, err := store.ListMetricSnapshots(ctx)
+		if err != nil {
+			t.Fatalf("ListMetricSnapshots() error = %v", err)
+		}
+		if len(snapshots) != 2 {
+			t.Fatalf("len(ListMetricSnapshots()) after prune = %d, want 2", len(snapshots))
+		}
+		for _, m := range snapshots {
+			if m.CapturedAt.Before(cutoff) {
+				t.Fatalf("retained snapshot %q has CapturedAt %v before cutoff %v", m.ID, m.CapturedAt, cutoff)
+			}
+		}
+
+		// A second call with the same cutoff is a no-op.
+		pruned2, err := store.PruneMetricSnapshots(ctx, cutoff)
+		if err != nil {
+			t.Fatalf("PruneMetricSnapshots(second) error = %v", err)
+		}
+		if pruned2 != 0 {
+			t.Fatalf("PruneMetricSnapshots(second) pruned = %d, want 0", pruned2)
 		}
 	})
 
