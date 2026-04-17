@@ -480,6 +480,19 @@ func (s *Service) PendingForAgent(agentID string, retryAfter time.Duration) []Jo
 				if target.UpdatedAt.IsZero() || !now.Before(target.UpdatedAt.Add(retryAfter)) {
 					include = true
 				}
+			case TargetStatusAcknowledged:
+				// P2-LOG-05 (L-14): acknowledged targets are only present in
+				// agentJobs after restore() rebuilds the index from the store
+				// — at runtime, syncJobTargetsIndexLocked removes them when
+				// the agent acks. If they still live in the index, both CP
+				// and agent restarted between ack and result, so the agent
+				// will not replay its in-flight queue. Re-dispatch so the
+				// agent's idempotency cache can deduplicate if the original
+				// command did in fact run. Apply the same retryAfter gate as
+				// the sent case so we do not re-dispatch on every tick.
+				if target.UpdatedAt.IsZero() || !now.Before(target.UpdatedAt.Add(retryAfter)) {
+					include = true
+				}
 			}
 			if include {
 				result = append(result, cloneJob(job))
@@ -506,7 +519,14 @@ func (s *Service) PendingForAgent(agentID string, retryAfter time.Duration) []Jo
 // MarkDelivered records that one target command has been sent to an active agent stream.
 func (s *Service) MarkDelivered(agentID string, jobID string, observedAt time.Time) {
 	s.updateTarget(agentID, jobID, observedAt, func(target *JobTarget) {
-		if target.Status == TargetStatusSucceeded || target.Status == TargetStatusFailed || target.Status == TargetStatusExpired || target.Status == TargetStatusAcknowledged {
+		if target.Status == TargetStatusSucceeded || target.Status == TargetStatusFailed || target.Status == TargetStatusExpired {
+			return
+		}
+		if target.Status == TargetStatusAcknowledged {
+			// P2-LOG-05: re-dispatched post-restore ack targets stay in the
+			// acknowledged state (so the result handler sees the correct
+			// history), but the UpdatedAt bump via updateTarget gates the
+			// next retryAfter window in PendingForAgent.
 			return
 		}
 		target.Status = TargetStatusSent
@@ -526,9 +546,105 @@ func (s *Service) MarkAcknowledged(agentID string, jobID string, observedAt time
 	})
 }
 
+// PruneAcknowledgedTargets expires targets that have been in the
+// acknowledged state for longer than `olderThan` without a final result.
+// This is the P2-LOG-05 safety net: an agent that restarts between ack and
+// result will lose its in-flight command, and after the agent's own
+// idempotency cache window elapses (2h by default, see
+// defaultCompletedJobRetention) replaying is unsafe. At that point we must
+// mark the target expired so it stops being re-dispatched and the key
+// eviction worker can clean it up.
+//
+// Returns the number of targets transitioned to expired. olderThan <= 0 is
+// a no-op so callers cannot accidentally expire live acknowledgements.
+func (s *Service) PruneAcknowledgedTargets(olderThan time.Duration) int {
+	if olderThan <= 0 {
+		return 0
+	}
+
+	var candidates []persistCandidate
+
+	s.mu.Lock()
+	now := s.now().UTC()
+	cutoff := now.Add(-olderThan)
+	expired := 0
+
+	for jobID, job := range s.jobs {
+		changed := false
+		for index := range job.Targets {
+			target := &job.Targets[index]
+			if target.Status != TargetStatusAcknowledged {
+				continue
+			}
+			if target.UpdatedAt.IsZero() || target.UpdatedAt.After(cutoff) {
+				continue
+			}
+			target.Status = TargetStatusExpired
+			target.UpdatedAt = now
+			changed = true
+			expired++
+		}
+		if !changed {
+			continue
+		}
+
+		job.Status = deriveJobStatus(job.Targets)
+		s.jobs[jobID] = job
+		s.syncJobTargetsIndexLocked(job)
+		s.keys[job.IdempotencyKey] = jobID
+		if isTerminalStatus(job.Status) {
+			s.markKeyTerminalLocked(job.IdempotencyKey, now)
+		}
+
+		if s.jobStore != nil {
+			s.updateSeq++
+			s.jobVersion[jobID] = s.updateSeq
+			candidates = append(candidates, persistCandidate{
+				jobID:   jobID,
+				version: s.updateSeq,
+				job:     cloneJob(job),
+			})
+		}
+	}
+	s.mu.Unlock()
+
+	for _, candidate := range candidates {
+		s.persistLatestJobVersion(candidate.jobID, candidate.version, candidate.job)
+	}
+
+	return expired
+}
+
+// StartAcknowledgedExpiryWorker runs PruneAcknowledgedTargets on a ticker
+// until ctx is cancelled. Matches the StartKeyEvictionWorker contract —
+// the caller owns wg.Add(1), the worker Done()s on exit. See P2-LOG-05.
+func (s *Service) StartAcknowledgedExpiryWorker(ctx context.Context, interval time.Duration, ttl time.Duration, wg *sync.WaitGroup) {
+	go func() {
+		if wg != nil {
+			defer wg.Done()
+		}
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.PruneAcknowledgedTargets(ttl)
+			}
+		}
+	}()
+}
+
 // RecordResult records the final agent-side execution result for one target.
-func (s *Service) RecordResult(agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) {
-	s.updateTarget(agentID, jobID, observedAt, func(target *JobTarget) {
+// Returns true if the job was present in memory and the result was applied,
+// false if the job has already been evicted (idempotent safety net — the
+// caller should log a warning but treat this as non-fatal, since the ack
+// expiry worker or terminal-key eviction may have dropped the job before
+// the result arrived).
+func (s *Service) RecordResult(agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) bool {
+	return s.updateTarget(agentID, jobID, observedAt, func(target *JobTarget) {
 		if target.Status == TargetStatusExpired {
 			return
 		}
@@ -542,7 +658,7 @@ func (s *Service) RecordResult(agentID string, jobID string, success bool, messa
 	})
 }
 
-func (s *Service) updateTarget(agentID string, jobID string, observedAt time.Time, mutate func(target *JobTarget)) {
+func (s *Service) updateTarget(agentID string, jobID string, observedAt time.Time, mutate func(target *JobTarget)) bool {
 	var (
 		candidates []persistCandidate
 	)
@@ -552,11 +668,15 @@ func (s *Service) updateTarget(agentID string, jobID string, observedAt time.Tim
 
 	job, ok := s.jobs[jobID]
 	if !ok {
+		// P2-LOG-05: the job was evicted (terminal-key TTL or ack expiry
+		// worker) before this update arrived. Signal the caller so it can
+		// log a warn and move on — dropping silently here would hide real
+		// bugs where the agent sends results for unknown jobs.
 		s.mu.Unlock()
 		for _, candidate := range candidates {
 			s.persistLatestJobVersion(candidate.jobID, candidate.version, candidate.job)
 		}
-		return
+		return false
 	}
 
 	if jobShouldExpire(job, now) {
@@ -594,7 +714,7 @@ func (s *Service) updateTarget(agentID string, jobID string, observedAt time.Tim
 		for _, candidate := range candidates {
 			s.persistLatestJobVersion(candidate.jobID, candidate.version, candidate.job)
 		}
-		return
+		return true
 	}
 
 	updated := false
@@ -612,7 +732,7 @@ func (s *Service) updateTarget(agentID string, jobID string, observedAt time.Tim
 		for _, candidate := range candidates {
 			s.persistLatestJobVersion(candidate.jobID, candidate.version, candidate.job)
 		}
-		return
+		return true
 	}
 
 	job.Status = deriveJobStatus(job.Targets)
@@ -639,6 +759,7 @@ func (s *Service) updateTarget(agentID string, jobID string, observedAt time.Tim
 	for _, candidate := range candidates {
 		s.persistLatestJobVersion(candidate.jobID, candidate.version, candidate.job)
 	}
+	return true
 }
 
 func (s *Service) expireJobsLocked(now time.Time) []persistCandidate {
@@ -743,6 +864,22 @@ func (s *Service) restore() error {
 
 		s.jobs[job.ID] = job
 		s.syncJobTargetsIndexLocked(job)
+		// P2-LOG-05 (L-14): at runtime, MarkAcknowledged removes the target
+		// from agentJobs so PendingForAgent does not re-dispatch while the
+		// agent still owns the command. On restore, however, we must treat
+		// acknowledged-with-no-result as redeliverable: if both CP and agent
+		// restarted between ack and result, the agent's runtime queue is
+		// empty and the job would otherwise be stuck forever. Add these
+		// targets back to the index now.
+		for _, target := range job.Targets {
+			if target.AgentID == "" || target.Status != TargetStatusAcknowledged {
+				continue
+			}
+			if s.agentJobs[target.AgentID] == nil {
+				s.agentJobs[target.AgentID] = make(map[string]struct{})
+			}
+			s.agentJobs[target.AgentID][job.ID] = struct{}{}
+		}
 		s.keys[job.IdempotencyKey] = job.ID
 		if isTerminalStatus(job.Status) {
 			// Record the terminal timestamp so the eviction worker can
