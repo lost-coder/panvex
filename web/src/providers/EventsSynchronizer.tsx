@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { apiClient } from "@/lib/api";
 import { invalidateTelemetryQueries } from "@/lib/telemetry-query-invalidation";
@@ -22,8 +22,36 @@ function isRelevantEvent(eventType: string): boolean {
   }
 }
 
-export function EventsSynchronizer() {
+// P2-UX-10: expose connection state + "last update" timestamp so the UI can
+// surface a reconnection banner and a subtle flash when data arrives via WS.
+export type WsStatus = "connecting" | "open" | "reconnecting" | "closed";
+
+export interface WsContextValue {
+  status: WsStatus;
+  /** Timestamp (ms) of the most recent inbound relevant event. */
+  lastEventAt: number | null;
+  /** Attempt count for the current reconnect loop (0 while healthy). */
+  reconnectAttempts: number;
+}
+
+const WsContext = createContext<WsContextValue>({
+  status: "connecting",
+  lastEventAt: null,
+  reconnectAttempts: 0,
+});
+
+export function useWsStatus(): WsContextValue {
+  return useContext(WsContext);
+}
+
+export function EventsSynchronizer({ children }: { children?: React.ReactNode }) {
   const queryClient = useQueryClient();
+  const [status, setStatus] = useState<WsStatus>("connecting");
+  const [lastEventAt, setLastEventAt] = useState<number | null>(null);
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  // Refs so the long-lived effect doesn't depend on state and re-subscribe.
+  const attemptsRef = useRef(0);
+
   useEffect(() => {
     if (typeof window === "undefined") { return; }
     let socket: WebSocket | null = null;
@@ -41,6 +69,9 @@ export function EventsSynchronizer() {
     };
     const scheduleReconnect = () => {
       if (stopped || reconnectTimerID !== null) { return; }
+      setStatus("reconnecting");
+      attemptsRef.current += 1;
+      setReconnectAttempts(attemptsRef.current);
       reconnectTimerID = window.setTimeout(() => {
         reconnectTimerID = null;
         reconnectDelayMs = Math.min(reconnectDelayMs * 2, 30_000);
@@ -51,14 +82,21 @@ export function EventsSynchronizer() {
       if (stopped) { return; }
       // Don't open a WebSocket on the login page — there's no session yet.
       if (window.location.pathname.endsWith("/login")) { return; }
+      setStatus("connecting");
       const rootPath = resolveConfiguredRootPath();
       const url = buildEventsURL(window.location.protocol, window.location.host, rootPath);
       socket = new WebSocket(url);
-      socket.onopen = () => { reconnectDelayMs = 1_000; };
+      socket.onopen = () => {
+        reconnectDelayMs = 1_000;
+        attemptsRef.current = 0;
+        setReconnectAttempts(0);
+        setStatus("open");
+      };
       socket.onmessage = (message) => {
         let event: EventEnvelope;
         try { event = JSON.parse(message.data as string) as EventEnvelope; } catch { return; }
         if (!isRelevantEvent(event.type)) { return; }
+        setLastEventAt(Date.now());
         void invalidateLiveQueries();
       };
       socket.onerror = () => { socket?.close(); };
@@ -66,6 +104,7 @@ export function EventsSynchronizer() {
         // Already on the login page — nothing to reconnect or redirect to.
         if (window.location.pathname.endsWith("/login")) {
           stopped = true;
+          setStatus("closed");
           return;
         }
         // Check if session is still valid before reconnecting.
@@ -74,6 +113,7 @@ export function EventsSynchronizer() {
           scheduleReconnect();
         }).catch(() => {
           stopped = true;
+          setStatus("closed");
           const rootPath = resolveConfiguredRootPath();
           window.location.href = rootPath ? `${rootPath}/login` : "/login";
         });
@@ -88,5 +128,16 @@ export function EventsSynchronizer() {
       }
     };
   }, [queryClient]);
-  return null;
+
+  const value = useMemo<WsContextValue>(
+    () => ({ status, lastEventAt, reconnectAttempts }),
+    [status, lastEventAt, reconnectAttempts],
+  );
+
+  // Back-compat: when rendered without children, behave like the old
+  // null-returning version (some bootstrap code still uses that form).
+  if (children === undefined) {
+    return <WsContext.Provider value={value}>{null}</WsContext.Provider>;
+  }
+  return <WsContext.Provider value={value}>{children}</WsContext.Provider>;
 }

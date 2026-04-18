@@ -5,6 +5,7 @@ import ReactDOM from "react-dom/client";
 import { ErrorBoundary } from "@lost-coder/panvex-ui";
 
 import { AppErrorFallback } from "./providers/AppErrorFallback";
+import { ConfirmProvider } from "./providers/ConfirmProvider";
 import { EventsSynchronizer } from "./providers/EventsSynchronizer";
 import { ToastProvider } from "./providers/ToastProvider";
 import { router } from "./router";
@@ -36,8 +37,19 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       */}
       <ToastProvider>
         <QueryClientProvider client={queryClient}>
-          <EventsSynchronizer />
-          <RouterProvider router={router} context={{ queryClient }} />
+          {/*
+            P2-UX-10: EventsSynchronizer now exposes a WsContext. We wrap
+            the router so containers can call `useWsStatus()` to drive the
+            reconnection banner and update-flash effects.
+            P2-UX-04: ConfirmProvider exposes `useConfirm()` for destructive
+            actions. It mounts inside the WS context so confirm dialogs in
+            banner-adjacent UI still work when the socket is reconnecting.
+          */}
+          <EventsSynchronizer>
+            <ConfirmProvider>
+              <RouterProvider router={router} context={{ queryClient }} />
+            </ConfirmProvider>
+          </EventsSynchronizer>
         </QueryClientProvider>
       </ToastProvider>
     </ErrorBoundary>
