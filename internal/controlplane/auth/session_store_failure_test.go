@@ -92,6 +92,12 @@ func TestLoginFailsWhenSessionStoreBroken(t *testing.T) {
 func TestLogoutToleratesBrokenSessionStore(t *testing.T) {
 	now := time.Date(2026, time.April, 17, 10, 0, 0, 0, time.UTC)
 	service := NewService()
+	// Pin the service clock so the Logout path's internal expiry sweep uses
+	// the same frame as the session we are about to create. Without this,
+	// wall-clock time.Now() (which drifts past the fixed `now` in tests run
+	// even a day later) would expire the session before Logout inspects the
+	// in-memory map and cause it to return ErrSessionNotFound.
+	service.SetNow(func() time.Time { return now.Add(2 * time.Minute) })
 
 	_, _, err := service.BootstrapUser(BootstrapInput{
 		Username: "operator",
