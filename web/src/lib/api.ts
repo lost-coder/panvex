@@ -605,6 +605,26 @@ export class ApiSchemaError extends Error {
  */
 export const SESSION_EXPIRED_EVENT = "panvex:session-expired";
 
+/**
+ * Name of the CustomEvent dispatched when any authenticated request
+ * returns 403 Forbidden. Semantically different from 401 — the user
+ * is logged in but lacks permission for the attempted action. We fire
+ * this once here so any UI boundary (AuthProvider / ToastProvider) can
+ * show a single friendly message ("Недостаточно прав…") instead of a
+ * generic backend message leaking through mutation.onError.
+ *
+ * We still throw ApiError for the caller, so container-level onError
+ * can decide whether to add its own context; the global listener only
+ * ensures the user gets a human-readable cue even if the caller forgot.
+ */
+export const FORBIDDEN_EVENT = "panvex:forbidden";
+
+export interface ForbiddenEventDetail {
+  path: string;
+  message: string;
+  code?: string;
+}
+
 function isAuthBootstrapPath(path: string): boolean {
   // Strip any root-path prefix; we only care about the /api/... tail.
   // Match both `/api/auth/login` and `/api/auth/me` (with any query string).
@@ -678,6 +698,23 @@ export async function api<T>(
     } catch {
       // Ignore JSON parsing failures for error responses.
     }
+
+    // Global 403 handler: surface a human-friendly cue so operators
+    // aren't left staring at a terse "forbidden" toast. We emit after
+    // the body is parsed so the listener has both the path and the
+    // server's message/code for context. Auth bootstrap paths are
+    // skipped for symmetry with the 401 handler above.
+    if (
+      response.status === 403 &&
+      typeof window !== "undefined" &&
+      !isAuthBootstrapPath(path)
+    ) {
+      const detail: ForbiddenEventDetail = { path, message, code };
+      window.dispatchEvent(
+        new CustomEvent<ForbiddenEventDetail>(FORBIDDEN_EVENT, { detail }),
+      );
+    }
+
     throw new ApiError(message, code);
   }
 
