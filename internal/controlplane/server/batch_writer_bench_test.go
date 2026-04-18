@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 )
@@ -191,13 +192,13 @@ func BenchmarkBatchWriterAuditEnqueue(b *testing.B) {
 // regression guard: any change that makes publish() allocate on the
 // zero-subscriber path will show up here.
 func BenchmarkEventHubPublishNoSubscribers(b *testing.B) {
-	hub := newEventHub()
-	evt := eventEnvelope{Type: "jobs.created", Data: map[string]any{"id": "job-1"}}
+	hub := eventbus.NewHub()
+	evt := eventbus.Event{Type: "jobs.created", Data: map[string]any{"id": "job-1"}}
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		hub.publish(evt)
+		hub.Publish(evt)
 	}
 }
 
@@ -206,7 +207,7 @@ func BenchmarkEventHubPublishNoSubscribers(b *testing.B) {
 // attached. The subscribers drain eagerly so publish() never enters the
 // drop-on-full branch.
 func BenchmarkEventHubPublish100Subscribers(b *testing.B) {
-	hub := newEventHub()
+	hub := eventbus.NewHub()
 	const subs = 100
 
 	cancels := make([]func(), 0, subs)
@@ -214,9 +215,9 @@ func BenchmarkEventHubPublish100Subscribers(b *testing.B) {
 	defer close(done)
 
 	for i := 0; i < subs; i++ {
-		ch, cancel := hub.subscribe()
+		ch, cancel := hub.Subscribe()
 		cancels = append(cancels, cancel)
-		go func(ch <-chan eventEnvelope) {
+		go func(ch <-chan eventbus.Event) {
 			for {
 				select {
 				case <-done:
@@ -232,11 +233,11 @@ func BenchmarkEventHubPublish100Subscribers(b *testing.B) {
 		}
 	})
 
-	evt := eventEnvelope{Type: "jobs.created", Data: map[string]any{"id": "job-1"}}
+	evt := eventbus.Event{Type: "jobs.created", Data: map[string]any{"id": "job-1"}}
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		hub.publish(evt)
+		hub.Publish(evt)
 	}
 }

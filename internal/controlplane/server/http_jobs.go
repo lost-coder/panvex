@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 )
 
@@ -109,7 +110,7 @@ func (s *Server) handleCreateJob() http.HandlerFunc {
 			"requested_role":    user.Role,
 			"requested_ttl_sec": request.TTLSeconds,
 		})
-		s.events.publish(eventEnvelope{
+		s.events.Publish(eventbus.Event{
 			Type: "jobs.created",
 			Data: job,
 		})
