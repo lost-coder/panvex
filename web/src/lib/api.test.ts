@@ -29,7 +29,7 @@ describe("api() wrapper", () => {
     const data = await api<{ ok: boolean; count: number }>("/api/things");
     expect(data).toEqual({ ok: true, count: 3 });
 
-    const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]!;
     expect(call[0]).toBe("/api/things");
     expect(call[1]).toMatchObject({
       credentials: "include",

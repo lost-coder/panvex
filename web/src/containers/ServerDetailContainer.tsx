@@ -18,8 +18,8 @@ function toMetricsPoints(points: ServerLoadPoint[]): MetricsPoint[] {
   return points.map((p, i) => {
     let netUploadMbps = 0;
     let netDownloadMbps = 0;
-    if (i > 0) {
-      const prev = points[i - 1];
+    const prev = i > 0 ? points[i - 1] : undefined;
+    if (prev) {
       const dtSec = (new Date(p.CapturedAt).getTime() - new Date(prev.CapturedAt).getTime()) / 1000;
       if (dtSec > 0) {
         netUploadMbps = ((p.NetBytesSent - prev.NetBytesSent) * 8) / dtSec / 1_000_000;

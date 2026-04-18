@@ -88,9 +88,8 @@ describe("useClientMutations", () => {
     } as unknown as Parameters<typeof result.current.editMutation.mutateAsync>[0]);
 
     expect(apiClient.updateClient).toHaveBeenCalledTimes(1);
-    const [clientId, payload] = (
-      apiClient.updateClient as ReturnType<typeof vi.fn>
-    ).mock.calls[0];
+    const [clientId, payload] = (apiClient.updateClient as ReturnType<typeof vi.fn>).mock
+      .calls[0]!;
     expect(clientId).toBe("c1");
     expect((payload as ClientInput).name).toBe("alpha-v2");
     // Invalidates both the single-client key and the list key.
