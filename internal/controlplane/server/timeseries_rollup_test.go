@@ -64,6 +64,16 @@ func TestRollupWorkerPrunesAuditAndMetrics(t *testing.T) {
 		}
 	}
 
+	// P2-DB-03: metric_snapshots.agent_id is now a CASCADE FK to agents(id);
+	// seed the referenced agent before inserting snapshot rows.
+	if err := sqliteStore.PutAgent(ctx, storage.AgentRecord{
+		ID:         "a1",
+		NodeName:   "node-rollup",
+		LastSeenAt: now,
+	}); err != nil {
+		t.Fatalf("PutAgent() error = %v", err)
+	}
+
 	seedMetrics := []storage.MetricSnapshotRecord{
 		{ID: "m-old-1", AgentID: "a1", InstanceID: "i1", CapturedAt: now.Add(-72 * time.Hour), Values: map[string]uint64{"v": 1}},
 		{ID: "m-old-2", AgentID: "a1", InstanceID: "i1", CapturedAt: now.Add(-48 * time.Hour), Values: map[string]uint64{"v": 2}},
@@ -147,6 +157,15 @@ func TestRollupWorkerSkipsDisabledRetention(t *testing.T) {
 	server.settingsMu.Unlock()
 
 	ctx := context.Background()
+
+	// P2-DB-03: metric_snapshots.agent_id is now a CASCADE FK to agents(id).
+	if err := sqliteStore.PutAgent(ctx, storage.AgentRecord{
+		ID:         "a1",
+		NodeName:   "node-rollup-disabled",
+		LastSeenAt: now,
+	}); err != nil {
+		t.Fatalf("PutAgent() error = %v", err)
+	}
 
 	old := now.Add(-1000 * time.Hour)
 	if err := sqliteStore.AppendAuditEvent(ctx, storage.AuditEventRecord{
