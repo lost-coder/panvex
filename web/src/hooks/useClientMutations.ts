@@ -49,5 +49,41 @@ export function useClientMutations(clientId: string, rawClient: ApiClient | unde
     },
   });
 
-  return { editMutation, rotateMutation, deleteMutation };
+  /**
+   * scheduleDeleteWithUndo defers the actual DELETE by 7 seconds and
+   * surfaces an Undo button in the toast (2.6). Reverting is free —
+   * nothing has happened yet — so no backend restore endpoint is
+   * required. The real DELETE only fires when the undo window closes
+   * without the user clicking Undo. Returns a canceller so containers
+   * can also cancel programmatically (e.g. on unmount).
+   */
+  function scheduleDeleteWithUndo(displayName: string): () => void {
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      if (cancelled) return;
+      deleteMutation.mutate();
+    }, 7000);
+
+    const cancel = () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+
+    toast.withAction(
+      "info",
+      `Клиент «${displayName}» будет удалён через 7 секунд.`,
+      {
+        label: "Отменить",
+        onClick: () => {
+          cancel();
+          toast.info("Удаление отменено.");
+        },
+      },
+      { duration: 7000 },
+    );
+
+    return cancel;
+  }
+
+  return { editMutation, rotateMutation, deleteMutation, scheduleDeleteWithUndo };
 }

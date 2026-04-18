@@ -13,10 +13,30 @@ import { cn, type ToastVariant } from "@lost-coder/panvex-ui";
 // Public API for app code. Consumers call useToast() and receive ToastAPI.
 // Each push returns the toast id so callers can imperatively dismiss (e.g.
 // dismiss a "saving…" toast once the mutation resolves).
+/**
+ * A labelled button rendered inline inside a toast. 2.6 adds this so
+ * destructive flows (e.g. client-delete) can surface an Undo handle
+ * without opening a separate modal.
+ */
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 export interface ToastAPI {
   success(message: string, opts?: { duration?: number }): number;
   error(message: string, opts?: { duration?: number }): number;
   info(message: string, opts?: { duration?: number }): number;
+  /**
+   * Emit a toast with an inline action button. Returns the toast id so
+   * the caller can dismiss it imperatively after the action fires.
+   */
+  withAction(
+    variant: ToastVariant,
+    message: string,
+    action: ToastAction,
+    opts?: { duration?: number },
+  ): number;
   dismiss(id: number): void;
 }
 
@@ -25,6 +45,7 @@ interface ToastEntry {
   message: string;
   variant: ToastVariant;
   duration: number;
+  action?: ToastAction;
 }
 
 // Default auto-dismiss matches the remediation plan (P2-FE-03 spec: 5s).
@@ -102,6 +123,22 @@ function StackedToast({
         {variantIcon[entry.variant]}
       </span>
       <span className="text-sm text-fg">{entry.message}</span>
+      {entry.action ? (
+        <button
+          type="button"
+          onClick={() => {
+            entry.action?.onClick();
+            onClose();
+          }}
+          className={cn(
+            "pointer-events-auto ml-2 shrink-0 inline-flex items-center rounded-xs px-2 py-1 text-xs font-medium",
+            "text-accent hover:bg-accent/10 transition-colors",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+          )}
+        >
+          {entry.action.label}
+        </button>
+      ) : null}
       <button
         type="button"
         aria-label="Закрыть уведомление"
@@ -145,10 +182,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const push = useCallback(
-    (variant: ToastVariant, message: string, duration: number) => {
+    (
+      variant: ToastVariant,
+      message: string,
+      duration: number,
+      action?: ToastAction,
+    ) => {
       const id = nextIdRef.current++;
       setToasts((prev) => {
-        const next = [...prev, { id, message, variant, duration }];
+        const next = [...prev, { id, message, variant, duration, action }];
         if (next.length > MAX_VISIBLE) {
           return next.slice(next.length - MAX_VISIBLE);
         }
@@ -167,6 +209,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         push("error", message, opts?.duration ?? ERROR_DURATION),
       info: (message, opts) =>
         push("info", message, opts?.duration ?? DEFAULT_DURATION),
+      withAction: (variant, message, action, opts) =>
+        push(
+          variant,
+          message,
+          opts?.duration ?? (variant === "error" ? ERROR_DURATION : DEFAULT_DURATION),
+          action,
+        ),
       dismiss,
     }),
     [push, dismiss],

@@ -12,6 +12,13 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("@lost-coder/panvex-ui", () => ({
   Spinner: () => <div data-testid="spinner" />,
+  EmptyState: (props: { title: string; description?: string }) => (
+    <div data-testid="empty-state">
+      <span>{props.title}</span>
+      {props.description ? <span>{props.description}</span> : null}
+    </div>
+  ),
+  usePrefersReducedMotion: () => false,
 }));
 
 vi.mock("@/pages/ClientsPage", () => ({
@@ -60,12 +67,14 @@ describe("ClientsContainer", () => {
     navigateSpy.mockReset();
   });
 
-  it("renders spinner while loading", () => {
+  it("renders skeleton rows while loading (2.5)", () => {
     useClientsListMock.mockReturnValue({ clients: [], isLoading: true });
     useDiscoveredClientsMock.mockReturnValue({ discoveredClients: [] });
 
     render(<ClientsContainer />);
-    expect(screen.getByTestId("spinner")).toBeInTheDocument();
+    // The first skeleton row carries role=status + Russian-locale label
+    // so assistive tech announces a single "loading list" message.
+    expect(screen.getByRole("status", { name: /Загрузка/ })).toBeInTheDocument();
   });
 
   it("passes clients + pending count through to ClientsPage", () => {
