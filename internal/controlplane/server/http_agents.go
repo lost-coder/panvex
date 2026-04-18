@@ -93,16 +93,10 @@ func (s *Server) handleDeregisterAgent() http.HandlerFunc {
 
 		// 1. Signal the gRPC stream to shut down by closing the done channel.
 		//    This is safe against concurrent notifyAgentSession because the
-		//    notify path checks done before sending to wake.
-		s.sessionMu.Lock()
-		streamSession, hasStream := s.agentSessions[agentID]
-		if hasStream {
-			delete(s.agentSessions, agentID)
-			if streamSession.done != nil {
-				close(streamSession.done)
-			}
-		}
-		s.sessionMu.Unlock()
+		//    notify path checks done before sending to wake. The session
+		//    manager (controlplane/agents.SessionManager) encapsulates the
+		//    map + close(done) bookkeeping; see P3-ARCH-01a.
+		s.sessions.Terminate(agentID)
 
 		// 2. Verify agent exists before doing any work.
 		s.mu.RLock()

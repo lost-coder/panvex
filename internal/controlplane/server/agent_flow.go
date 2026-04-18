@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lost-coder/panvex/internal/controlplane/agents"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
@@ -349,21 +350,13 @@ func (s *Server) applyAgentSnapshotWithContext(_ context.Context, snapshot agent
 	return nil
 }
 
+// runtimeLifecycleState is a thin back-compat wrapper over
+// controlplane/agents.RuntimeLifecycleState. Kept so the server package's
+// existing call sites and tests continue to compile; new code in the
+// server package should call agents.RuntimeLifecycleState directly.
+// See P3-ARCH-01a.
 func runtimeLifecycleState(snapshot *gatewayrpc.RuntimeSnapshot) string {
-	switch {
-	case snapshot == nil:
-		return "unknown"
-	case snapshot.Degraded:
-		return "degraded"
-	case snapshot.InitializationStatus != "" && snapshot.InitializationStatus != "ready":
-		return snapshot.InitializationStatus
-	case snapshot.StartupStatus != "" && snapshot.StartupStatus != "ready":
-		return snapshot.StartupStatus
-	case !snapshot.AcceptingNewConnections || !snapshot.MeRuntimeReady:
-		return "starting"
-	default:
-		return "ready"
-	}
+	return agents.RuntimeLifecycleState(snapshot)
 }
 
 func agentRuntimeFromSnapshot(snapshot *gatewayrpc.RuntimeSnapshot, observedAt time.Time) AgentRuntime {
