@@ -2,8 +2,11 @@ package config
 
 import (
 	"errors"
-	"path/filepath"
+	"fmt"
+	"net/url"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -22,6 +25,11 @@ const (
 	RestartModeDisabled = "disabled"
 	// RestartModeSupervised enables controlled self-exit for supervised restart.
 	RestartModeSupervised = "supervised"
+	// EnvDBPassword names the env variable whose value overrides the
+	// password embedded in the PostgreSQL storage DSN. Set it to keep
+	// the secret out of config.toml (where it would also appear in
+	// `ps` output and host-level backups).
+	EnvDBPassword = "PANVEX_DB_PASSWORD"
 )
 
 var (
@@ -29,6 +37,11 @@ var (
 	ErrInvalidPanelTLSMode = errors.New("invalid panel tls mode")
 	// ErrInvalidRestartMode reports an unsupported restart mode in control-plane runtime config.
 	ErrInvalidRestartMode = errors.New("invalid restart mode")
+	// ErrInvalidRootPath reports a root-path that escapes the public mount
+	// point after path cleaning (S12). In practice `path.Clean` eliminates
+	// `..` segments from any absolute input, so this check is a tripwire
+	// against future refactors that remove the forced leading slash.
+	ErrInvalidRootPath = errors.New("invalid root path")
 )
 
 // ControlPlaneConfig describes startup-critical control-plane runtime configuration.
@@ -85,6 +98,9 @@ func ResolveLegacyControlPlaneConfig(httpAddr string, grpcAddr string, restartMo
 	if err != nil {
 		return ControlPlaneConfig{}, err
 	}
+	if err := ValidateStorageSecurity(storage); err != nil {
+		return ControlPlaneConfig{}, err
+	}
 
 	return normalizeControlPlaneConfig(ControlPlaneConfig{
 		Storage:           storage,
@@ -107,6 +123,9 @@ func LoadControlPlaneConfig(configPath string) (ControlPlaneConfig, error) {
 	if err != nil {
 		return ControlPlaneConfig{}, err
 	}
+	if err := ValidateStorageSecurity(storage); err != nil {
+		return ControlPlaneConfig{}, err
+	}
 
 	configuration, err := normalizeControlPlaneConfig(ControlPlaneConfig{
 		Storage:           storage,
@@ -126,15 +145,47 @@ func LoadControlPlaneConfig(configPath string) (ControlPlaneConfig, error) {
 
 	configDirectory := filepath.Dir(configPath)
 	configuration.Storage.DSN = rebaseConfigRelativeSQLiteDSN(configDirectory, configuration.Storage.Driver, configuration.Storage.DSN)
+	configuration.Storage.DSN = applyDSNPasswordFromEnv(configuration.Storage.Driver, configuration.Storage.DSN, os.Getenv(EnvDBPassword))
 	configuration.TLSCertFile = rebaseConfigRelativePath(configDirectory, configuration.TLSCertFile)
 	configuration.TLSKeyFile = rebaseConfigRelativePath(configDirectory, configuration.TLSKeyFile)
 	return configuration, nil
 }
 
+// applyDSNPasswordFromEnv injects password into a PostgreSQL URL-form DSN
+// when EnvDBPassword is set. Keyword/value DSNs are returned unchanged —
+// set the password directly in the env there (`PGPASSWORD`) or keep the
+// keyword-form DSN self-contained. Non-postgres drivers are no-ops.
+func applyDSNPasswordFromEnv(driver, dsn, password string) string {
+	if password == "" || driver != StorageDriverPostgres {
+		return dsn
+	}
+	if !strings.Contains(dsn, "://") {
+		return dsn
+	}
+	parsed, err := url.Parse(dsn)
+	if err != nil {
+		return dsn
+	}
+	username := ""
+	if parsed.User != nil {
+		username = parsed.User.Username()
+	}
+	parsed.User = url.UserPassword(username, password)
+	return parsed.String()
+}
+
 func normalizeControlPlaneConfig(configuration ControlPlaneConfig) (ControlPlaneConfig, error) {
 	configuration.HTTPListenAddress = strings.TrimSpace(configuration.HTTPListenAddress)
-	configuration.HTTPRootPath = normalizeControlPlaneRootPath(configuration.HTTPRootPath)
-	configuration.AgentHTTPRootPath = normalizeControlPlaneRootPath(configuration.AgentHTTPRootPath)
+	httpRoot, err := normalizeControlPlaneRootPath(configuration.HTTPRootPath)
+	if err != nil {
+		return ControlPlaneConfig{}, fmt.Errorf("http root_path: %w", err)
+	}
+	configuration.HTTPRootPath = httpRoot
+	agentRoot, err := normalizeControlPlaneRootPath(configuration.AgentHTTPRootPath)
+	if err != nil {
+		return ControlPlaneConfig{}, fmt.Errorf("http agent_root_path: %w", err)
+	}
+	configuration.AgentHTTPRootPath = agentRoot
 	configuration.GRPCListenAddress = strings.TrimSpace(configuration.GRPCListenAddress)
 	configuration.RestartMode = normalizeRestartMode(configuration.RestartMode)
 	configuration.TLSMode = normalizePanelTLSMode(configuration.TLSMode)
@@ -179,19 +230,34 @@ func normalizePanelTLSMode(value string) string {
 	return normalized
 }
 
-func normalizeControlPlaneRootPath(value string) string {
+func normalizeControlPlaneRootPath(value string) (string, error) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" || trimmed == "/" {
-		return ""
+		return "", nil
 	}
 	if !strings.HasPrefix(trimmed, "/") {
 		trimmed = "/" + trimmed
 	}
 	cleaned := path.Clean(trimmed)
 	if cleaned == "." || cleaned == "/" {
-		return ""
+		return "", nil
 	}
-	return cleaned
+	// S12: belt-and-braces check that path.Clean didn't leave a `..`
+	// segment. `path.Clean` on an absolute input removes them, so this
+	// is a tripwire for accidental regressions (e.g. someone dropping
+	// the forced leading-slash prefix above). Rejecting here means a
+	// misconfigured root path fails fast at startup instead of
+	// producing half-escaped URLs later.
+	if cleaned == ".." ||
+		strings.HasPrefix(cleaned, "../") ||
+		strings.HasSuffix(cleaned, "/..") ||
+		strings.Contains(cleaned, "/../") {
+		return "", fmt.Errorf("%w: %q would escape the mount point", ErrInvalidRootPath, value)
+	}
+	if !strings.HasPrefix(cleaned, "/") {
+		return "", fmt.Errorf("%w: %q must be absolute", ErrInvalidRootPath, value)
+	}
+	return cleaned, nil
 }
 
 func rebaseConfigRelativeSQLiteDSN(configDirectory string, driver string, dsn string) string {

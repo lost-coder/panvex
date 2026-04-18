@@ -34,6 +34,16 @@ USER panvex
 
 EXPOSE 8080 8443
 
+# Liveness probe: /healthz is always registered on the control-plane
+# router and returns 200 once the HTTP listener is up (see internal/
+# controlplane/server/server.go). BusyBox wget is available by default
+# in alpine, so no extra package is needed. start-period gives the
+# process time to bind, run migrations, and load state; retries smooths
+# over a single GC pause or transient DB blip without flapping the
+# container.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
+    CMD wget -q -O - http://127.0.0.1:8080/healthz >/dev/null 2>&1 || exit 1
+
 ENTRYPOINT ["./panvex-control-plane"]
 
 FROM nginx:1.29-alpine AS web
@@ -42,3 +52,9 @@ COPY deploy/nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY --from=web-builder /src/cmd/control-plane/.embedded-ui /usr/share/nginx/html
 
 EXPOSE 80
+
+# nginx is a pass-through static/proxy layer. We probe the local nginx
+# port so the container reports unhealthy when the worker has crashed
+# even though the backend may still be reachable from another path.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget -q -O - http://127.0.0.1:80/ >/dev/null 2>&1 || exit 1

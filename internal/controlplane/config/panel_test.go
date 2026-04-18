@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -39,6 +40,169 @@ func TestResolveLegacyControlPlaneConfigRejectsInvalidTLSMode(t *testing.T) {
 	}
 }
 
+func TestResolveLegacyControlPlaneConfigRejectsSSLModeDisable(t *testing.T) {
+	t.Setenv(EnvAllowInsecureDB, "")
+	_, err := ResolveLegacyControlPlaneConfig(
+		":8080", ":8443", RestartModeDisabled, PanelTLSModeProxy,
+		StorageDriverPostgres, "postgres://panvex:secret@db.internal:5432/panvex?sslmode=disable",
+	)
+	if !errors.Is(err, ErrInsecureDBDSN) {
+		t.Fatalf("error = %v, want ErrInsecureDBDSN", err)
+	}
+}
+
+func TestResolveLegacyControlPlaneConfigAllowsSSLModeDisableWithOptIn(t *testing.T) {
+	t.Setenv(EnvAllowInsecureDB, "1")
+	cfg, err := ResolveLegacyControlPlaneConfig(
+		":8080", ":8443", RestartModeDisabled, PanelTLSModeProxy,
+		StorageDriverPostgres, "postgres://panvex:secret@127.0.0.1:5432/panvex?sslmode=disable",
+	)
+	if err != nil {
+		t.Fatalf("unexpected error with opt-in: %v", err)
+	}
+	if cfg.Storage.Driver != StorageDriverPostgres {
+		t.Fatalf("storage driver = %q", cfg.Storage.Driver)
+	}
+}
+
+func TestValidateStorageSecurityKeywordForm(t *testing.T) {
+	t.Setenv(EnvAllowInsecureDB, "")
+	err := ValidateStorageSecurity(StorageConfig{
+		Driver: StorageDriverPostgres,
+		DSN:    "host=127.0.0.1 user=panvex password=secret dbname=panvex sslmode=disable",
+	})
+	if !errors.Is(err, ErrInsecureDBDSN) {
+		t.Fatalf("keyword-form DSN with sslmode=disable: error = %v, want ErrInsecureDBDSN", err)
+	}
+}
+
+func TestNormalizeControlPlaneRootPathCleansTraversal(t *testing.T) {
+	// path.Clean already eats `..` on absolute inputs; S12 adds an
+	// explicit tripwire so regressions fail fast. Each case documents
+	// an input operators might type by mistake and the cleaned result.
+	cases := []struct {
+		in, want string
+	}{
+		{"", ""},
+		{"/", ""},
+		{"/panel", "/panel"},
+		{"panel", "/panel"},
+		{"/panel/", "/panel"},
+		{"/panel/..", ""},
+		{"/panel/../admin", "/admin"},
+		{"/../../etc", "/etc"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			got, err := normalizeControlPlaneRootPath(tc.in)
+			if err != nil {
+				t.Fatalf("unexpected error for %q: %v", tc.in, err)
+			}
+			if got != tc.want {
+				t.Fatalf("normalizeControlPlaneRootPath(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestValidateStorageSecuritySQLiteIsUnaffected(t *testing.T) {
+	t.Setenv(EnvAllowInsecureDB, "")
+	if err := ValidateStorageSecurity(StorageConfig{
+		Driver: StorageDriverSQLite,
+		DSN:    "data/panvex.db",
+	}); err != nil {
+		t.Fatalf("sqlite DSN should never fail S10: %v", err)
+	}
+}
+
+func TestApplyDSNPasswordFromEnv(t *testing.T) {
+	cases := []struct {
+		name     string
+		driver   string
+		dsn      string
+		password string
+		want     string
+	}{
+		{
+			name:     "postgres url without password gets env password",
+			driver:   StorageDriverPostgres,
+			dsn:      "postgres://panvex@db.internal:5432/panvex?sslmode=require",
+			password: "env-secret",
+			want:     "postgres://panvex:env-secret@db.internal:5432/panvex?sslmode=require",
+		},
+		{
+			name:     "postgres url with placeholder password is overridden",
+			driver:   StorageDriverPostgres,
+			dsn:      "postgres://panvex:placeholder@db.internal:5432/panvex?sslmode=require",
+			password: "env-secret",
+			want:     "postgres://panvex:env-secret@db.internal:5432/panvex?sslmode=require",
+		},
+		{
+			name:     "empty env keeps dsn untouched",
+			driver:   StorageDriverPostgres,
+			dsn:      "postgres://panvex:literal@db.internal:5432/panvex?sslmode=require",
+			password: "",
+			want:     "postgres://panvex:literal@db.internal:5432/panvex?sslmode=require",
+		},
+		{
+			name:     "keyword form dsn is left as-is",
+			driver:   StorageDriverPostgres,
+			dsn:      "host=db.internal user=panvex password=literal dbname=panvex sslmode=require",
+			password: "env-secret",
+			want:     "host=db.internal user=panvex password=literal dbname=panvex sslmode=require",
+		},
+		{
+			name:     "sqlite driver is never rewritten",
+			driver:   StorageDriverSQLite,
+			dsn:      "file:/var/lib/panvex/panvex.db",
+			password: "env-secret",
+			want:     "file:/var/lib/panvex/panvex.db",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := applyDSNPasswordFromEnv(tc.driver, tc.dsn, tc.password)
+			if got != tc.want {
+				t.Fatalf("applyDSNPasswordFromEnv() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoadControlPlaneConfigAppliesEnvDBPassword(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	contents := `
+[storage]
+driver = "postgres"
+dsn    = "postgres://panvex@db.internal:5432/panvex?sslmode=require"
+
+[http]
+listen_address = ":8080"
+
+[grpc]
+listen_address = ":8443"
+
+[tls]
+mode = "proxy"
+
+[panel]
+restart_mode = "disabled"
+`
+	if err := os.WriteFile(configPath, []byte(contents), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	t.Setenv(EnvDBPassword, "env-secret")
+
+	configuration, err := LoadControlPlaneConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadControlPlaneConfig() error = %v", err)
+	}
+	want := "postgres://panvex:env-secret@db.internal:5432/panvex?sslmode=require"
+	if configuration.Storage.DSN != want {
+		t.Fatalf("configuration.Storage.DSN = %q, want %q", configuration.Storage.DSN, want)
+	}
+}
+
 func TestLoadControlPlaneConfigReadsTOMLFile(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.toml")
 	if err := os.WriteFile(configPath, []byte(`
@@ -63,6 +227,11 @@ restart_mode = "supervised"
 `), 0o600); err != nil {
 		t.Fatalf("os.WriteFile() error = %v", err)
 	}
+
+	// S10: plaintext-postgres DSN only loads with the explicit opt-in.
+	// The test fixture documents a local dev setup, so it sets the env
+	// to mirror what a developer must do in their shell.
+	t.Setenv(EnvAllowInsecureDB, "1")
 
 	configuration, err := LoadControlPlaneConfig(configPath)
 	if err != nil {

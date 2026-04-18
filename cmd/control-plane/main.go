@@ -489,7 +489,19 @@ func runBootstrapAdmin(args []string) error {
 		return err
 	}
 	if len(existingUsers) > 0 {
-		return errors.New("storage already contains users")
+		// S13: an operator running bootstrap-admin against a store that
+		// already has users is either a misconfiguration (wrong DSN, wrong
+		// flag) or an attempt to plant a privileged account on a live
+		// system. Surface it loudly so operators paging on
+		// alert=bootstrap_on_nonempty_db in their log pipeline notice it,
+		// and return an error so no account is created.
+		slog.Error(
+			"bootstrap-admin invoked on non-empty storage",
+			"alert", "bootstrap_on_nonempty_db",
+			"storage_driver", storageConfig.Driver,
+			"existing_user_count", len(existingUsers),
+		)
+		return errors.New("storage already contains users; refusing to bootstrap (see alert=bootstrap_on_nonempty_db)")
 	}
 
 	service := auth.NewServiceWithStore(store)

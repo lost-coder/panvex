@@ -72,6 +72,34 @@ and `/api/clients/def` both fold into a single `/api/clients/{id}` series.
 Unmatched paths (404, OPTIONS preflight, static UI) carry the sentinel label
 `path="unmatched"`.
 
+## Alert rules
+
+A starter set of Prometheus alert rules ships with the repo at
+[`deploy/prometheus/alerts.yml`](../../../deploy/prometheus/alerts.yml). Load
+it from your Prometheus config:
+
+```yaml
+rule_files:
+  - /etc/prometheus/panvex-alerts.yml
+```
+
+The rules cover:
+
+- **eventbus drops** — sustained rate and sudden spike thresholds on
+  `panvex_event_hub_drop_total`, catching stuck/slow subscribers that would
+  otherwise silently lose live-update events;
+- **batch-writer health** — pages on `panvex_batch_flush_errors_total{error_type="persistent"}`
+  and queue backlog on `panvex_batch_queue_depth`;
+- **auth lockouts** — surfaces potential brute-force when
+  `panvex_lockout_active` spikes;
+- **fleet collapse** — alerts when connected agent count drops below 50% of
+  the last hour's peak;
+- **unsigned update fallback** — surfaces any use of
+  `panvex_unsigned_update_fallback_total`.
+
+Tune thresholds per fleet size and SLO; the defaults err on the side of
+noisy rather than silent.
+
 ## Grafana dashboards
 
 TBD — downstream observability tasks will ship JSON dashboards alongside
