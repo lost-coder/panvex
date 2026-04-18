@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"path/filepath"
 	"testing"
@@ -10,6 +11,71 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 )
+
+// B1: on audit-persist failure we reject the login with 503 and do not
+// issue a session cookie. A session that was briefly created inside
+// auth.Authenticate (to capture session fixation guarantees) must be
+// revoked on the way out so no untraceable session lingers.
+func TestLoginAbortsWhenAuditPersistFails(t *testing.T) {
+	now := time.Date(2026, time.April, 19, 10, 0, 0, 0, time.UTC)
+	base, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer base.Close()
+
+	injectedErr := errors.New("synthetic audit persist failure")
+	store := &failingStore{Store: base, appendAuditEventErr: injectedErr}
+
+	srv := New(Options{
+		Now:   func() time.Time { return now },
+		Store: store,
+	})
+	defer srv.Close()
+
+	if _, _, err := srv.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "admin",
+		Password: "Admin1password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	resp := performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "admin",
+		"password": "Admin1password",
+	}, nil)
+
+	if resp.Code != http.StatusServiceUnavailable {
+		t.Fatalf("login status = %d, want %d", resp.Code, http.StatusServiceUnavailable)
+	}
+
+	for _, c := range resp.Result().Cookies() {
+		if c.Name == sessionCookieName && c.Value != "" && c.MaxAge >= 0 {
+			t.Fatalf("unexpected session cookie issued after audit persist failure: %+v", c)
+		}
+	}
+
+	var body map[string]string
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body["code"] != "audit_persist_unavailable" {
+		t.Fatalf("error code = %q, want %q", body["code"], "audit_persist_unavailable")
+	}
+
+	// After rejection a second login (with audit restored) must succeed —
+	// this proves the user's lockout counter wasn't incremented and the
+	// session table isn't polluted by the aborted attempt.
+	store.appendAuditEventErr = nil
+	okResp := performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "admin",
+		"password": "Admin1password",
+	}, nil)
+	if okResp.Code != http.StatusOK {
+		t.Fatalf("recovered login status = %d, want %d (body=%s)", okResp.Code, http.StatusOK, okResp.Body.String())
+	}
+}
 
 func TestLoginSuccess(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)

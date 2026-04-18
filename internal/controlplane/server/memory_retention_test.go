@@ -15,15 +15,13 @@ const (
 
 func TestServerApplyAgentSnapshotKeepsRecentMetricSnapshotsInMemory(t *testing.T) {
 	now := time.Date(2026, time.March, 21, 9, 0, 0, 0, time.UTC)
-	server := New(Options{
-		Now: func() time.Time { return now },
-	})
-	token, err := server.enrollment.IssueToken(security.EnrollmentScope{
+	server := testServerWithSQLite(t, now)
+	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
 		FleetGroupID: "ams-1",
 		TTL:          time.Minute,
 	}, now)
 	if err != nil {
-		t.Fatalf("IssueToken() error = %v", err)
+		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
 	identity, err := server.enrollAgent(agentEnrollmentRequest{
 		Token:    token.Value,

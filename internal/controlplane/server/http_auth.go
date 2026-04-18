@@ -1,13 +1,22 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
 )
+
+// loginAuditPersistTimeout bounds the synchronous audit-persist on login
+// (B1). Long enough to survive a normal fsync / PG round-trip but short
+// enough that a wedged database doesn't leave a browser hanging on the
+// login screen. A failure inside this window returns 503 and the user
+// retries; no session cookie is issued when the persist is not confirmed.
+const loginAuditPersistTimeout = 2 * time.Second
 
 type loginRequest struct {
 	Username string `json:"username"`
@@ -50,7 +59,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		}
 
 		if s.loginLockout.IsLocked(request.Username, s.now()) {
-			s.logger.Info("login attempt on locked account", "username", request.Username)
+			s.logger.Info("login attempt on locked account", "username_hash", logUsername(request.Username))
 			writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
 			return
 		}
@@ -75,7 +84,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 			// Record lockout-eligible failures: wrong password or wrong TOTP code.
 			if errors.Is(err, auth.ErrInvalidCredentials) || errors.Is(err, auth.ErrInvalidTotpCode) {
 				if s.loginLockout.CheckAndRecordFailure(request.Username, s.now()) {
-					s.logger.Info("account locked out", "username", request.Username)
+					s.logger.Info("account locked out", "username_hash", logUsername(request.Username))
 					writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
 					return
 				}
@@ -92,7 +101,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 				// created. Tell the client to retry rather than masking
 				// the failure behind an in-memory-only session that would
 				// silently disappear on the next control-plane restart.
-				s.logger.Error("session store unavailable during login", "username", request.Username, "error", err)
+				s.logger.Error("session store unavailable during login", "username_hash", logUsername(request.Username), "error", err)
 				writeErrorWithCode(w, http.StatusServiceUnavailable, "session store unavailable", "session_store_unavailable")
 			default:
 				s.logger.Error("auth login failed", "error", err)
@@ -102,7 +111,31 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		}
 
 		s.loginLockout.RecordSuccess(request.Username)
-		s.logger.Info("user logged in", "username", request.Username, "session_id", session.ID)
+		s.logger.Info("user logged in", "username_hash", logUsername(request.Username), "user_id", session.UserID, "session_id", session.ID)
+
+		// B1: persist the login audit event BEFORE issuing the session
+		// cookie. Handing out a session cookie without a durable audit
+		// record means a later incident response cannot attribute the
+		// session to this login. If the storage write fails we revoke
+		// the freshly created session and return 503 so the client
+		// retries — no untraceable session is left alive.
+		auditCtx, auditCancel := context.WithTimeout(r.Context(), loginAuditPersistTimeout)
+		auditErr := s.appendAuditSync(auditCtx, session.UserID, "auth.login", session.ID, map[string]any{
+			"username": request.Username,
+		})
+		auditCancel()
+		if auditErr != nil {
+			if logoutErr := s.auth.Logout(session.ID); logoutErr != nil {
+				s.logger.Error("failed to revoke session after audit persist failure",
+					"session_id", session.ID, "error", logoutErr)
+			}
+			writeErrorWithCode(w,
+				http.StatusServiceUnavailable,
+				"audit log unavailable, please retry",
+				"audit_persist_unavailable",
+			)
+			return
+		}
 
 		http.SetCookie(w, &http.Cookie{
 			Name:     sessionCookieName,
@@ -111,9 +144,6 @@ func (s *Server) handleLogin() http.HandlerFunc {
 			HttpOnly: true,
 			SameSite: http.SameSiteStrictMode,
 			Secure:   s.sessionCookieSecure(r),
-		})
-		s.appendAuditWithContext(r.Context(), session.UserID, "auth.login", session.ID, map[string]any{
-			"username": request.Username,
 		})
 
 		writeJSON(w, http.StatusOK, map[string]string{
@@ -278,6 +308,12 @@ func (s *Server) requireSession(r *http.Request) (auth.Session, auth.User, error
 	if err != nil {
 		return auth.Session{}, auth.User{}, err
 	}
+
+	// S5: slide the idle-timeout forward. Internally throttled so a burst
+	// of authenticated requests does not churn the session map. Cheap
+	// enough (one map read + conditional write under the auth mutex) to
+	// run on every authenticated handler.
+	s.auth.TouchSession(session.ID)
 
 	return session, user, nil
 }

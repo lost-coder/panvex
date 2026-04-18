@@ -474,3 +474,101 @@ func TestServiceBootstrapUserPersistsThroughStore(t *testing.T) {
 		t.Fatalf("session.UserID = %q, want %q", session.UserID, user.ID)
 	}
 }
+
+// S5: an idle session (no TouchSession) past sessionIdleTimeout is
+// evicted by GetSession even when the absolute sessionMaxLifetime cap
+// has not yet been reached.
+func TestServiceSessionIdleTimeout(t *testing.T) {
+	clock := time.Date(2026, time.April, 19, 9, 0, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return clock })
+
+	if _, _, err := service.BootstrapUser(BootstrapInput{
+		Username: "viewer",
+		Password: "Viewer1password",
+		Role:     RoleViewer,
+	}, clock); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	session, err := service.Authenticate(LoginInput{
+		Username: "viewer",
+		Password: "Viewer1password",
+	}, clock)
+	if err != nil {
+		t.Fatalf("Authenticate() error = %v", err)
+	}
+
+	// Fast-forward past idle window but still inside the absolute cap.
+	clock = clock.Add(sessionIdleTimeout + time.Minute)
+	if _, err := service.GetSession(session.ID); err == nil {
+		t.Fatal("idle session should expire via GetSession, got nil error")
+	}
+}
+
+// S5: TouchSession slides the idle-timeout forward so an active session
+// survives well past sessionIdleTimeout since its first issuance.
+func TestServiceTouchSessionSlidesIdleTimeout(t *testing.T) {
+	clock := time.Date(2026, time.April, 19, 9, 0, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return clock })
+
+	if _, _, err := service.BootstrapUser(BootstrapInput{
+		Username: "viewer",
+		Password: "Viewer1password",
+		Role:     RoleViewer,
+	}, clock); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	session, err := service.Authenticate(LoginInput{
+		Username: "viewer",
+		Password: "Viewer1password",
+	}, clock)
+	if err != nil {
+		t.Fatalf("Authenticate() error = %v", err)
+	}
+
+	// Simulate a user staying active for 2h — well past the idle window
+	// but comfortably inside sessionMaxLifetime. We bump the clock in
+	// steps larger than sessionTouchThrottle so every Touch is effective.
+	for i := 0; i < 12; i++ {
+		clock = clock.Add(10 * time.Minute)
+		service.TouchSession(session.ID)
+	}
+
+	if _, err := service.GetSession(session.ID); err != nil {
+		t.Fatalf("active session evicted prematurely: %v", err)
+	}
+}
+
+// S5: TouchSession must not revive a session that has already exceeded
+// the absolute sessionMaxLifetime cap.
+func TestServiceTouchSessionDoesNotRevivePastMaxLifetime(t *testing.T) {
+	clock := time.Date(2026, time.April, 19, 9, 0, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return clock })
+
+	if _, _, err := service.BootstrapUser(BootstrapInput{
+		Username: "viewer",
+		Password: "Viewer1password",
+		Role:     RoleViewer,
+	}, clock); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	session, err := service.Authenticate(LoginInput{
+		Username: "viewer",
+		Password: "Viewer1password",
+	}, clock)
+	if err != nil {
+		t.Fatalf("Authenticate() error = %v", err)
+	}
+
+	clock = clock.Add(sessionMaxLifetime + time.Minute)
+	service.TouchSession(session.ID)
+
+	if _, err := service.GetSession(session.ID); err == nil {
+		t.Fatal("session past sessionMaxLifetime should not survive Touch, got nil error")
+	}
+}

@@ -20,6 +20,20 @@ type SessionRecord struct {
 	CreatedAt time.Time
 }
 
+// LoginLockoutRecord stores the persistent login-failure state for
+// one account (S7). Failures accumulates until the lockout threshold
+// is reached; at that point LockedAt is set to the wall-clock time
+// the lockout began. A nil LockedAt means "not currently locked".
+// Username is the raw account name as submitted to /auth/login so
+// the auth service can still match it after a restart — the service
+// normalises to lower-case before lookup.
+type LoginLockoutRecord struct {
+	Username  string
+	Failures  int
+	LockedAt  *time.Time
+	UpdatedAt time.Time
+}
+
 // AgentRevocationRecord tracks one deregistered agent whose mTLS client
 // certificate may still be cryptographically valid. The record survives
 // control-plane restart so a revoked agent cannot silently reconnect.

@@ -224,6 +224,17 @@ type SessionStore interface {
 	DeleteExpiredSessions(ctx context.Context, before time.Time) error
 }
 
+// LoginLockoutStore persists per-account login-failure state so a
+// control-plane restart or fail-over cannot reset the lockout
+// counter (S7). See LoginLockoutRecord.
+type LoginLockoutStore interface {
+	UpsertLoginLockout(ctx context.Context, record LoginLockoutRecord) error
+	GetLoginLockout(ctx context.Context, username string) (LoginLockoutRecord, error)
+	DeleteLoginLockout(ctx context.Context, username string) error
+	ListLoginLockouts(ctx context.Context) ([]LoginLockoutRecord, error)
+	DeleteExpiredLoginLockouts(ctx context.Context, before time.Time) (int64, error)
+}
+
 // AgentRevocationStore persists deregistered-agent IDs so the revocation set
 // survives control-plane restart. See AgentRevocationRecord in models.go.
 type AgentRevocationStore interface {
@@ -247,6 +258,7 @@ type Store interface {
 	UserStore
 	UserAppearanceStore
 	SessionStore
+	LoginLockoutStore
 	AgentRevocationStore
 	FleetStore
 	JobStore
