@@ -490,6 +490,16 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 		defer store.Close()
 
 		ctx := context.Background()
+		// P2-DB-03: enrollment_tokens.fleet_group_id is a FK (ON DELETE
+		// SET NULL); the referenced fleet group must exist before we can
+		// persist a token that points at it.
+		if err := store.PutFleetGroup(ctx, storage.FleetGroupRecord{
+			ID:        "default",
+			Name:      "Default",
+			CreatedAt: time.Date(2026, time.March, 15, 8, 0, 0, 0, time.UTC),
+		}); err != nil {
+			t.Fatalf("PutFleetGroup() error = %v", err)
+		}
 		token := storage.EnrollmentTokenRecord{
 			Value:        "token-value",
 			FleetGroupID: "default",
@@ -525,6 +535,15 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 		defer store.Close()
 
 		ctx := context.Background()
+		// P2-DB-03: see note on preceding token test — the fleet group
+		// must exist for the FK constraint to accept the token.
+		if err := store.PutFleetGroup(ctx, storage.FleetGroupRecord{
+			ID:        "default",
+			Name:      "Default",
+			CreatedAt: time.Date(2026, time.March, 15, 8, 0, 0, 0, time.UTC),
+		}); err != nil {
+			t.Fatalf("PutFleetGroup() error = %v", err)
+		}
 		token := storage.EnrollmentTokenRecord{
 			Value:        "token-revoke",
 			FleetGroupID: "default",
@@ -829,6 +848,15 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 		defer store.Close()
 
 		ctx := context.Background()
+		// P2-DB-03: metric_snapshots.agent_id now has ON DELETE CASCADE
+		// FK to agents(id); the referenced agent must exist.
+		if err := store.PutAgent(ctx, storage.AgentRecord{
+			ID:         "agent-000001",
+			NodeName:   "node-metric",
+			LastSeenAt: time.Date(2026, time.March, 15, 8, 40, 0, 0, time.UTC),
+		}); err != nil {
+			t.Fatalf("PutAgent() error = %v", err)
+		}
 		snapshot := storage.MetricSnapshotRecord{
 			ID:         "metric-000001",
 			AgentID:    "agent-000001",
@@ -913,6 +941,16 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 
 		ctx := context.Background()
 		baseTime := time.Date(2026, time.April, 1, 12, 0, 0, 0, time.UTC)
+
+		// P2-DB-03: metric_snapshots.agent_id has a CASCADE FK — seed the
+		// agent so the inserts do not trip the constraint.
+		if err := store.PutAgent(ctx, storage.AgentRecord{
+			ID:         "a1",
+			NodeName:   "node-prune",
+			LastSeenAt: baseTime,
+		}); err != nil {
+			t.Fatalf("PutAgent() error = %v", err)
+		}
 
 		seed := []storage.MetricSnapshotRecord{
 			{ID: "metric-old-1", AgentID: "a1", InstanceID: "i1", CapturedAt: baseTime.Add(-72 * time.Hour), Values: map[string]uint64{"x": 1}},
@@ -1161,6 +1199,17 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 		defer store.Close()
 
 		ctx := context.Background()
+		// P2-DB-03: sessions.user_id is now a CASCADE FK to users(id).
+		// Seed the owning user before persisting the session.
+		if err := store.PutUser(ctx, storage.UserRecord{
+			ID:           "user-001",
+			Username:     "session-user",
+			PasswordHash: "argon2id$hash",
+			Role:         "admin",
+			CreatedAt:    time.Date(2026, time.April, 15, 9, 0, 0, 0, time.UTC),
+		}); err != nil {
+			t.Fatalf("PutUser() error = %v", err)
+		}
 		session := storage.SessionRecord{
 			ID:        "sess-001",
 			UserID:    "user-001",
@@ -1202,6 +1251,15 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 		defer store.Close()
 
 		ctx := context.Background()
+		// P2-DB-03: seed users referenced by the sessions below.
+		for _, u := range []storage.UserRecord{
+			{ID: "user-001", Username: "session-u1", PasswordHash: "h", Role: "admin", CreatedAt: time.Date(2026, time.April, 14, 7, 0, 0, 0, time.UTC)},
+			{ID: "user-002", Username: "session-u2", PasswordHash: "h", Role: "admin", CreatedAt: time.Date(2026, time.April, 15, 11, 0, 0, 0, time.UTC)},
+		} {
+			if err := store.PutUser(ctx, u); err != nil {
+				t.Fatalf("PutUser(%s) error = %v", u.ID, err)
+			}
+		}
 		old := storage.SessionRecord{
 			ID:        "sess-old",
 			UserID:    "user-001",
