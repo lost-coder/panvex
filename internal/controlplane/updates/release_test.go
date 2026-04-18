@@ -1,4 +1,4 @@
-package server
+package updates
 
 import "testing"
 
@@ -40,5 +40,12 @@ func TestCompareVersions(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("CompareVersions(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.want)
 		}
+	}
+}
+
+func TestResolveAssetURLsNilRelease(t *testing.T) {
+	b, c, s := ResolveAssetURLs(nil, "control-plane")
+	if b != "" || c != "" || s != "" {
+		t.Fatalf("ResolveAssetURLs(nil, ...) = (%q, %q, %q), want empty strings", b, c, s)
 	}
 }

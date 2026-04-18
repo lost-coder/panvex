@@ -4,95 +4,21 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/lost-coder/panvex/internal/controlplane/sessions"
 )
 
-const staleRateLimitWindowMultiplier = 2
+// Task P3-ARCH-01c: the pure fixed-window rate limiter now lives in
+// controlplane/sessions. The HTTP middleware + request-keying helpers
+// stay here because they reach into *Server state (trustedProxyCIDRs,
+// auth context, s.now(), writeError) — the task deliberately keeps
+// transport glue in server/.
 
-type fixedWindowRateLimiter struct {
-	mu      sync.Mutex
-	limit   int
-	window  time.Duration
-	buckets map[string]rateLimitBucket
-}
-
-type rateLimitBucket struct {
-	windowStart int64
-	count       int
-	lastSeen    int64
-}
+type fixedWindowRateLimiter = sessions.RateLimiter
 
 func newFixedWindowRateLimiter(limit int, window time.Duration) *fixedWindowRateLimiter {
-	if limit <= 0 {
-		return nil
-	}
-	if window <= 0 {
-		window = time.Minute
-	}
-
-	return &fixedWindowRateLimiter{
-		limit:   limit,
-		window:  window,
-		buckets: make(map[string]rateLimitBucket),
-	}
-}
-
-func (l *fixedWindowRateLimiter) Allow(key string, now time.Time) bool {
-	if l == nil {
-		return true
-	}
-
-	windowSize := l.window.Nanoseconds()
-	if windowSize <= 0 {
-		windowSize = time.Minute.Nanoseconds()
-	}
-
-	nowNanos := now.UTC().UnixNano()
-	windowStart := (nowNanos / windowSize) * windowSize
-	if strings.TrimSpace(key) == "" {
-		key = "unknown"
-	}
-
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	bucket, ok := l.buckets[key]
-	if !ok || bucket.windowStart != windowStart {
-		l.buckets[key] = rateLimitBucket{
-			windowStart: windowStart,
-			count:       1,
-			lastSeen:    nowNanos,
-		}
-		l.cleanupStaleBucketsLocked(nowNanos)
-		return true
-	}
-	if bucket.count >= l.limit {
-		bucket.lastSeen = nowNanos
-		l.buckets[key] = bucket
-		l.cleanupStaleBucketsLocked(nowNanos)
-		return false
-	}
-
-	bucket.count++
-	bucket.lastSeen = nowNanos
-	l.buckets[key] = bucket
-	l.cleanupStaleBucketsLocked(nowNanos)
-	return true
-}
-
-func (l *fixedWindowRateLimiter) cleanupStaleBucketsLocked(nowNanos int64) {
-	if len(l.buckets) < 128 {
-		return
-	}
-
-	maxAge := int64(staleRateLimitWindowMultiplier) * l.window.Nanoseconds()
-	cutoff := nowNanos - maxAge
-	for key, bucket := range l.buckets {
-		if bucket.lastSeen < cutoff {
-			delete(l.buckets, key)
-		}
-	}
+	return sessions.NewRateLimiter(limit, window)
 }
 
 func (s *Server) withRateLimit(limiter *fixedWindowRateLimiter, keyFn func(*http.Request) string) func(http.Handler) http.Handler {

@@ -1,0 +1,240 @@
+package updates
+
+import (
+	"archive/tar"
+	"compress/gzip"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"strings"
+)
+
+// MaxArchiveSize caps the raw .tar.gz download to avoid disk exhaustion when
+// the remote responds with an unbounded or adversarial stream.
+const MaxArchiveSize = 512 << 20 // 512 MB
+
+// DownloadArchive fetches a .tar.gz archive from url into a temporary file
+// and returns its path. The caller is responsible for removing the file.
+// Only URLs whose host is on the GitHub allow-list are accepted, and redirect
+// hops are re-validated against the same list via SecureDownloadClient.
+func DownloadArchive(ctx context.Context, url, token string) (string, error) {
+	if err := CheckDownloadURL(url); err != nil {
+		return "", fmt.Errorf("download archive: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	req.Header.Set("Accept", "application/octet-stream")
+
+	resp, err := SecureDownloadClient().Do(req)
+	if err != nil {
+		return "", fmt.Errorf("download archive: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("download archive: unexpected status %d", resp.StatusCode)
+	}
+
+	// Content-Length pre-check rejects oversized archives before any disk write.
+	if resp.ContentLength > MaxArchiveSize {
+		return "", fmt.Errorf("download archive: size %d exceeds limit %d", resp.ContentLength, MaxArchiveSize)
+	}
+
+	tmp, err := os.CreateTemp("", "panvex-update-*.tar.gz")
+	if err != nil {
+		return "", fmt.Errorf("create temp file: %w", err)
+	}
+
+	// LimitReader(+1) lets us detect when the body would exceed the cap.
+	written, err := io.Copy(tmp, io.LimitReader(resp.Body, MaxArchiveSize+1))
+	if err != nil {
+		tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return "", fmt.Errorf("write archive: %w", err)
+	}
+	if written > MaxArchiveSize {
+		tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return "", fmt.Errorf("download archive: body exceeds limit %d", MaxArchiveSize)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmp.Name())
+		return "", fmt.Errorf("close archive: %w", err)
+	}
+
+	return tmp.Name(), nil
+}
+
+// ExtractBinaryFromArchive extracts the first file from a .tar.gz archive
+// into a temporary executable and returns its path.
+func ExtractBinaryFromArchive(archivePath string) (string, error) {
+	f, err := os.Open(archivePath)
+	if err != nil {
+		return "", fmt.Errorf("open archive: %w", err)
+	}
+	defer f.Close()
+
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return "", fmt.Errorf("gzip reader: %w", err)
+	}
+	defer gz.Close()
+
+	tr := tar.NewReader(gz)
+	hdr, err := tr.Next()
+	if err != nil {
+		return "", fmt.Errorf("read tar entry: %w", err)
+	}
+
+	tmp, err := os.CreateTemp("", "panvex-binary-*")
+	if err != nil {
+		return "", fmt.Errorf("create temp binary: %w", err)
+	}
+
+	const maxBinarySize = 256 << 20 // 256 MB
+	if _, err := io.Copy(tmp, io.LimitReader(tr, maxBinarySize)); err != nil {
+		tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return "", fmt.Errorf("extract binary: %w", err)
+	}
+	_ = hdr // name not needed — archive contains a single binary
+	if err := tmp.Chmod(0755); err != nil { //nolint:gosec // executable binary requires 0755
+		tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return "", fmt.Errorf("chmod binary: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmp.Name())
+		return "", fmt.Errorf("close binary: %w", err)
+	}
+
+	return tmp.Name(), nil
+}
+
+// DownloadChecksum fetches a .sha256 checksum file and returns the hex digest.
+// The file is expected to contain the checksum as the first whitespace-delimited
+// field on the first line. Host allow-list + redirect restriction mirror
+// DownloadArchive.
+func DownloadChecksum(ctx context.Context, url, token string) (string, error) {
+	if err := CheckDownloadURL(url); err != nil {
+		return "", fmt.Errorf("download checksum: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := SecureDownloadClient().Do(req)
+	if err != nil {
+		return "", fmt.Errorf("download checksum: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("download checksum: unexpected status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if err != nil {
+		return "", fmt.Errorf("read checksum: %w", err)
+	}
+
+	line := strings.TrimSpace(string(body))
+	if line == "" {
+		return "", fmt.Errorf("checksum file is empty")
+	}
+
+	// The first field is the hex-encoded SHA256 hash.
+	fields := strings.Fields(line)
+	return fields[0], nil
+}
+
+// DownloadSignature fetches a detached signature file and returns its bytes.
+// Signatures are small (<256 bytes for ECDSA DER), so a 4 KB cap is ample and
+// protects against pathological responses. Host allow-list + redirect
+// restriction mirror DownloadArchive.
+func DownloadSignature(ctx context.Context, url, token string) ([]byte, error) {
+	if err := CheckDownloadURL(url); err != nil {
+		return nil, fmt.Errorf("download signature: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	req.Header.Set("Accept", "application/octet-stream")
+
+	resp, err := SecureDownloadClient().Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("download signature: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("download signature: unexpected status %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if err != nil {
+		return nil, fmt.Errorf("read signature: %w", err)
+	}
+	if len(body) == 0 {
+		return nil, fmt.Errorf("signature file is empty")
+	}
+	return body, nil
+}
+
+// VerifyChecksum computes the SHA256 of the file at path and compares it to
+// the expected hex digest. Returns nil on match, an error on mismatch.
+func VerifyChecksum(path, expected string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open file for checksum: %w", err)
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return fmt.Errorf("hash file: %w", err)
+	}
+
+	actual := hex.EncodeToString(h.Sum(nil))
+	if !strings.EqualFold(actual, expected) {
+		return fmt.Errorf("checksum mismatch: got %s, want %s", actual, expected)
+	}
+	return nil
+}
+
+// AtomicReplaceBinary replaces the binary at currentPath with the one at
+// newPath. The original binary is preserved as currentPath + ".bak".
+func AtomicReplaceBinary(currentPath, newPath string) error {
+	backupPath := currentPath + ".bak"
+
+	// Remove any stale backup from a previous update.
+	_ = os.Remove(backupPath)
+
+	if err := os.Rename(currentPath, backupPath); err != nil {
+		return fmt.Errorf("backup current binary: %w", err)
+	}
+
+	if err := os.Rename(newPath, currentPath); err != nil {
+		// Attempt to restore the backup on failure.
+		_ = os.Rename(backupPath, currentPath)
+		return fmt.Errorf("replace binary: %w", err)
+	}
+
+	return nil
+}

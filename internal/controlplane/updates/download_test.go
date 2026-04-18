@@ -1,4 +1,4 @@
-package server
+package updates
 
 import (
 	"crypto/sha256"
