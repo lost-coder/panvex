@@ -622,6 +622,10 @@ func (s *Server) routes() http.Handler {
 
 				authenticated.Group(func(admin chi.Router) {
 					admin.Use(s.requireMinimumRole(auth.RoleAdmin))
+					// P3-OBS-02: /debug/pprof/* is admin-only. The enclosing
+					// authentication + role middleware ensures operators and
+					// viewers receive 403 without ever reaching the profiler.
+					registerPprofRoutes(admin)
 					admin.Get("/users", s.handleUsers())
 					admin.With(sensitive).Post("/users", s.handleCreateUser())
 					admin.With(sensitive).Put("/users/{id}", s.handleUpdateUser())

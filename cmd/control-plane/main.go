@@ -177,6 +177,17 @@ func runServe(args []string) error {
 			return nil
 		},
 	})
+	// Shutdown order (enforced by defer stack, LIFO):
+	//   1. HTTP server Shutdown — stops accepting new panel/API requests so
+	//      no new audit or metric events are produced.
+	//   2. gRPC GracefulStop — drains active agent streams so upstream
+	//      producers stop before api.Close runs the final batch drain.
+	//   3. api.Close — final batch_writer drain + in-memory state flush.
+	//   4. store.Close — close the underlying SQL/pgx pool.
+	//
+	// P3-REL-01: api.Close and store.Close are deferred here (not only in the
+	// run loop) so that a panic, early return, or unexpected exit still
+	// flushes buffered audit events before the process exits.
 	defer api.Close()
 	if err := api.StartupError(); err != nil {
 		return err
@@ -191,6 +202,17 @@ func runServe(args []string) error {
 
 	grpcServer := newControlPlaneGRPCServer(api.GRPCTLSConfig())
 	gatewayrpc.RegisterAgentGatewayServer(grpcServer, api)
+
+	// shutdownServers enforces the documented ordering: HTTP first (stop
+	// accepting requests), then gRPC (drain streams). api.Close and
+	// store.Close run after this via the defer stack in this function.
+	shutdownServers := func() {
+		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = httpServer.Shutdown(shutdownContext)
+		grpcServer.GracefulStop()
+		_ = grpcListener.Close()
+	}
 
 	httpErrors := make(chan error, 4)
 	go func() {
@@ -210,17 +232,16 @@ func runServe(args []string) error {
 	for {
 		select {
 		case <-restartRequests:
-			shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-
-			_ = httpServer.Shutdown(shutdownContext)
-			grpcServer.GracefulStop()
-			_ = grpcListener.Close()
-			cancel()
+			shutdownServers()
 			return errPanelRestartRequested
 		case err := <-httpErrors:
 			if errors.Is(err, http.ErrServerClosed) {
 				continue
 			}
+			// Ensure the sibling server (HTTP or gRPC) is also shut down so
+			// upstream producers stop before the deferred api.Close runs the
+			// final audit batch drain.
+			shutdownServers()
 			return err
 		}
 	}
