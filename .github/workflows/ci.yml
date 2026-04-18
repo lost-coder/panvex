@@ -30,6 +30,39 @@ jobs:
           name: go-coverage
           path: coverage.out
 
+  schema-sync:
+    # C9: verify the PostgreSQL and SQLite migration bundles produce
+    # the same set of tables and columns. The test is a no-op locally
+    # without PANVEX_POSTGRES_TEST_DSN; this job pipes it in so PRs
+    # that silently drift the two schemas fail here instead of in
+    # production (where 0011_column_drift.sql had to patch things up).
+    name: Schema Sync (PG vs SQLite)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: panvex
+          POSTGRES_PASSWORD: panvex
+          POSTGRES_DB: panvex_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PANVEX_POSTGRES_TEST_DSN: postgres://panvex:panvex@127.0.0.1:5432/panvex_test?sslmode=disable
+      PANVEX_ALLOW_INSECURE_DB: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+      - name: Run schema-sync tests
+        run: go test -count=1 -run TestSchemaSync ./internal/controlplane/storage/migrate/...
+
   panel-build:
     name: Build Binaries
     runs-on: ubuntu-latest
