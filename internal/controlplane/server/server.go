@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/lost-coder/panvex/internal/controlplane/agents"
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/presence"
@@ -134,6 +135,15 @@ type Server struct {
 	// trio. All agent-stream wake/done/terminate bookkeeping now lives in
 	// the new package; the server only holds a pointer.
 	sessions *agents.SessionManager
+	// clientsSvc is the managed-client service introduced by P3-ARCH-01b.
+	// It currently exposes the pure helpers (ResolveTargetAgentIDs,
+	// ResolveIDByName, AggregateUsage, ValidateHexSecret) plus the
+	// persistence + deployment-builder helpers via package-level
+	// functions. Future work will migrate the in-memory maps + mutation
+	// flows (createClient, updateClient, rotateClientSecret,
+	// deleteClient, adoptDiscoveredClient, reconcileDiscoveredClients)
+	// from Server onto this struct.
+	clientsSvc *clients.Service
 	// adoptMu serializes adopt/merge-adopt of discovered clients. It closes
 	// the TOCTOU window between reading a discovered record's status,
 	// checking it, creating/updating the managed client, and marking the
@@ -248,6 +258,7 @@ func New(options Options) *Server {
 		clientUsage: make(map[string]map[string]clientUsageSnapshot),
 		lastUsageSeq: make(map[string]uint64),
 		sessions:   agents.NewSessionManager(),
+		clientsSvc: clients.NewServiceWithDeps(options.Store, now),
 		instances:  make(map[string]Instance),
 		metrics:    make([]MetricSnapshot, 0, maxInMemoryMetricSnapshots),
 	}
