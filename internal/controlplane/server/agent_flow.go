@@ -10,7 +10,14 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 )
+
+// tracer is the package-level OTel tracer used by control-plane hot
+// paths (P3-OBS-01). It pulls from the global TracerProvider so when
+// tracing is disabled at startup all Start/End calls are free.
+var tracer = otel.Tracer("github.com/lost-coder/panvex/internal/controlplane/server")
 
 type agentEnrollmentRequest struct {
 	Token    string
@@ -78,10 +85,23 @@ func (s *Server) enrollAgent(request agentEnrollmentRequest, now time.Time) (age
 }
 
 func (s *Server) enrollAgentWithContext(ctx context.Context, request agentEnrollmentRequest, now time.Time) (agentEnrollmentResponse, error) {
+	// P3-OBS-01: agent enrollment is a low-volume, high-value path
+	// (token consumption + cert issuance + first DB write). Wrap it in
+	// a custom span so operators can diagnose slow enrollments even
+	// when the HTTP-level span is lost across reverse proxies.
+	ctx, span := tracer.Start(ctx, "agents.enroll")
+	defer span.End()
+
 	token, err := s.consumeEnrollmentTokenWithContext(ctx, request.Token, now)
 	if err != nil {
+		span.RecordError(err)
 		return agentEnrollmentResponse{}, err
 	}
+	span.SetAttributes(
+		attribute.String("panvex.node_name", request.NodeName),
+		attribute.String("panvex.agent_version", request.Version),
+		attribute.String("panvex.fleet_group_id", token.FleetGroupID),
+	)
 
 	// Agent IDs are UUIDv7 instead of the old monotonic "agent_<N>" scheme
 	// because the old counter was process-local and reset on CP restart,
@@ -89,9 +109,11 @@ func (s *Server) enrollAgentWithContext(ctx context.Context, request agentEnroll
 	// client certificate (P1-SEC-05 / C5 CN collision).
 	id7, err := uuid.NewV7()
 	if err != nil {
+		span.RecordError(err)
 		return agentEnrollmentResponse{}, fmt.Errorf("generate agent id: %w", err)
 	}
 	agentID := id7.String()
+	span.SetAttributes(attribute.String("panvex.agent_id", agentID))
 
 	s.mu.Lock()
 	agent := Agent{
