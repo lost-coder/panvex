@@ -37,8 +37,10 @@ CREATE INDEX IF NOT EXISTS idx_sessions_created_at_unix ON sessions (created_at_
 -- exist (agent_flow.consumeEnrollmentToken creates the group on first
 -- enrollment). Adding a FK here would break the issue-then-create flow.
 
--- metric_snapshots: current columns per 0001_init.sql:
--- (id, agent_id, instance_id, captured_at_unix, values_json).
+-- metric_snapshots: current columns per 0001_init.sql + 0011_column_drift.sql:
+-- (id, agent_id, instance_id, captured_at_unix, "values"). The `values`
+-- column was renamed from `values_json` in 0011, and since `values` is a
+-- reserved keyword in SQLite it must be double-quoted.
 DELETE FROM metric_snapshots WHERE agent_id NOT IN (SELECT id FROM agents);
 
 CREATE TABLE metric_snapshots_new (
@@ -46,12 +48,12 @@ CREATE TABLE metric_snapshots_new (
     agent_id TEXT NOT NULL,
     instance_id TEXT NOT NULL DEFAULT '',
     captured_at_unix INTEGER NOT NULL,
-    values_json TEXT NOT NULL,
+    "values" TEXT NOT NULL,
     FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
 );
 
-INSERT INTO metric_snapshots_new (id, agent_id, instance_id, captured_at_unix, values_json)
-SELECT id, agent_id, instance_id, captured_at_unix, values_json FROM metric_snapshots;
+INSERT INTO metric_snapshots_new (id, agent_id, instance_id, captured_at_unix, "values")
+SELECT id, agent_id, instance_id, captured_at_unix, "values" FROM metric_snapshots;
 
 DROP TABLE metric_snapshots;
 ALTER TABLE metric_snapshots_new RENAME TO metric_snapshots;
