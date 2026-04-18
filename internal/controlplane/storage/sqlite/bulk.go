@@ -2,11 +2,19 @@
 //
 // SQLite has a hard cap on bound parameters per statement (default 32766
 // as of SQLite 3.32; older builds and modernc defaults sit at 999). We chunk
-// at 500 rows: the widest method here (ts_server_load, 27 columns) uses
-// 500 * 27 = 13500 parameters, which stays well under the modern default but
-// also keeps the generated SQL string manageable. Every bulk call runs inside
-// a single transaction so partial failure rolls the whole batch back — same
-// atomicity guarantee callers get from Store.Transact.
+// at 250 rows: the widest method here (ts_server_load, 27 columns) uses
+// 250 * 27 = 6750 parameters — comfortably under both the modernc default
+// (999 would already be exceeded at 37+ rows of server_load, so the real
+// ceiling comes from SQLITE_MAX_VARIABLE_NUMBER = 32766) and the 65535 bind
+// cap on the Postgres side. 250 was picked after the P3-PERF-01b chunk-size
+// sweep: per-row throughput peaks around 100-250 rows on SQLite and regresses
+// noticeably at 500+ because the generated SQL and argument slice both grow
+// super-linearly with chunk size. See docs/benchmarks/phase3-bulk-insert.md
+// for the raw ns/row numbers.
+//
+// Every bulk call runs inside a single transaction so partial failure rolls
+// the whole batch back — same atomicity guarantee callers get from
+// Store.Transact.
 package sqlite
 
 import (
@@ -18,8 +26,9 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
-// bulkChunkSize mirrors the Postgres helper — see package doc for rationale.
-const bulkChunkSize = 500
+// bulkChunkSize mirrors the Postgres helper — see package doc for rationale
+// (P3-PERF-01b tuning: 500 -> 250 after benchmark sweep).
+const bulkChunkSize = 250
 
 // rowPlaceholders returns "(?,?,...)," groups repeated `rows` times, each with
 // `cols` placeholders. Kept separate from Postgres's numbered $N version
