@@ -10,7 +10,7 @@ vi.mock("@lost-coder/panvex-ui", () => ({
   Spinner: () => <div data-testid="spinner" />,
 }));
 
-vi.mock("@lost-coder/panvex-ui/pages", () => ({
+vi.mock("@/pages/ServersPage", () => ({
   ServersPage: (props: {
     servers: { id: string; updateAvailable?: boolean }[];
     onServerClick: (id: string) => void;
