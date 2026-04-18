@@ -1,12 +1,12 @@
-package server
+package sessions
 
 import (
 	"testing"
 	"time"
 )
 
-func TestAccountLockoutNotLockedInitially(t *testing.T) {
-	tracker := newAccountLockoutTracker()
+func TestLockoutNotLockedInitially(t *testing.T) {
+	tracker := NewLockoutTracker()
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 
 	if tracker.IsLocked("alice", now) {
@@ -14,38 +14,38 @@ func TestAccountLockoutNotLockedInitially(t *testing.T) {
 	}
 }
 
-func TestAccountLockoutLocksAfterMaxAttempts(t *testing.T) {
-	tracker := newAccountLockoutTracker()
+func TestLockoutAfterMaxAttempts(t *testing.T) {
+	tracker := NewLockoutTracker()
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 
-	for i := 0; i < accountLockoutMaxAttempts; i++ {
+	for i := 0; i < LockoutMaxAttempts; i++ {
 		tracker.RecordFailure("alice", now)
 	}
 
 	if !tracker.IsLocked("alice", now) {
-		t.Fatal("IsLocked() = false after max attempts, want true")
+		t.Fatal("IsLocked() = false after MaxAttempts failures, want true")
 	}
 }
 
-func TestAccountLockoutUnlocksAfterDuration(t *testing.T) {
-	tracker := newAccountLockoutTracker()
+func TestLockoutExpiresAfterDuration(t *testing.T) {
+	tracker := NewLockoutTracker()
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 
-	for i := 0; i < accountLockoutMaxAttempts; i++ {
+	for i := 0; i < LockoutMaxAttempts; i++ {
 		tracker.RecordFailure("alice", now)
 	}
 
-	afterLockout := now.Add(accountLockoutDuration)
+	afterLockout := now.Add(LockoutDuration)
 	if tracker.IsLocked("alice", afterLockout) {
 		t.Fatal("IsLocked() = true after lockout duration expired, want false")
 	}
 }
 
-func TestAccountLockoutNotLockedBelowThreshold(t *testing.T) {
-	tracker := newAccountLockoutTracker()
+func TestLockoutNotLockedBelowThreshold(t *testing.T) {
+	tracker := NewLockoutTracker()
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 
-	for i := 0; i < accountLockoutMaxAttempts-1; i++ {
+	for i := 0; i < LockoutMaxAttempts-1; i++ {
 		tracker.RecordFailure("alice", now)
 	}
 
@@ -54,28 +54,12 @@ func TestAccountLockoutNotLockedBelowThreshold(t *testing.T) {
 	}
 }
 
-func TestAccountLockoutRecordSuccessClearsFailures(t *testing.T) {
-	tracker := newAccountLockoutTracker()
-	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
-
-	for i := 0; i < accountLockoutMaxAttempts-1; i++ {
-		tracker.RecordFailure("alice", now)
-	}
-
-	tracker.RecordSuccess("alice")
-	tracker.RecordFailure("alice", now)
-
-	if tracker.IsLocked("alice", now) {
-		t.Fatal("IsLocked() = true after success reset + 1 failure, want false")
-	}
-}
-
-func TestAccountLockoutCheckAndRecordFailureAtomic(t *testing.T) {
-	tracker := newAccountLockoutTracker()
+func TestLockoutCheckAndRecordFailure(t *testing.T) {
+	tracker := NewLockoutTracker()
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 
 	// Record failures up to threshold via CheckAndRecordFailure.
-	for i := 0; i < accountLockoutMaxAttempts-1; i++ {
+	for i := 0; i < LockoutMaxAttempts-1; i++ {
 		locked := tracker.CheckAndRecordFailure("alice", now)
 		if locked {
 			t.Fatalf("CheckAndRecordFailure() = true on attempt %d, want false", i+1)
@@ -96,26 +80,42 @@ func TestAccountLockoutCheckAndRecordFailureAtomic(t *testing.T) {
 	}
 }
 
-func TestAccountLockoutCheckAndRecordFailureResetsAfterExpiry(t *testing.T) {
-	tracker := newAccountLockoutTracker()
+func TestLockoutCheckAndRecordFailureResetsAfterExpiry(t *testing.T) {
+	tracker := NewLockoutTracker()
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 
-	for i := 0; i < accountLockoutMaxAttempts; i++ {
+	for i := 0; i < LockoutMaxAttempts; i++ {
 		tracker.CheckAndRecordFailure("alice", now)
 	}
 
-	afterExpiry := now.Add(accountLockoutDuration)
-	locked := tracker.CheckAndRecordFailure("alice", afterExpiry)
+	future := now.Add(LockoutDuration + time.Second)
+	locked := tracker.CheckAndRecordFailure("alice", future)
 	if locked {
-		t.Fatal("CheckAndRecordFailure() = true after expiry, want false (counter reset)")
+		t.Fatal("CheckAndRecordFailure() after expiry = true, want false")
 	}
 }
 
-func TestAccountLockoutIsolatesUsers(t *testing.T) {
-	tracker := newAccountLockoutTracker()
+func TestLockoutRecordSuccessClearsFailures(t *testing.T) {
+	tracker := NewLockoutTracker()
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 
-	for i := 0; i < accountLockoutMaxAttempts; i++ {
+	for i := 0; i < LockoutMaxAttempts-1; i++ {
+		tracker.RecordFailure("alice", now)
+	}
+	tracker.RecordSuccess("alice")
+	for i := 0; i < LockoutMaxAttempts-1; i++ {
+		if tracker.IsLocked("alice", now) {
+			t.Fatalf("IsLocked() after RecordSuccess + %d failures = true, want false", i+1)
+		}
+		tracker.RecordFailure("alice", now)
+	}
+}
+
+func TestLockoutIsPerUser(t *testing.T) {
+	tracker := NewLockoutTracker()
+	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
+
+	for i := 0; i < LockoutMaxAttempts; i++ {
 		tracker.RecordFailure("alice", now)
 	}
 
@@ -124,20 +124,40 @@ func TestAccountLockoutIsolatesUsers(t *testing.T) {
 	}
 }
 
-func TestAccountLockoutCleanupExpiredEntries(t *testing.T) {
-	tracker := newAccountLockoutTracker()
+func TestLockoutActiveCount(t *testing.T) {
+	tracker := NewLockoutTracker()
+	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
+
+	if got := tracker.ActiveCount(now); got != 0 {
+		t.Fatalf("ActiveCount() = %d, want 0", got)
+	}
+	for i := 0; i < LockoutMaxAttempts; i++ {
+		tracker.RecordFailure("alice", now)
+	}
+	if got := tracker.ActiveCount(now); got != 1 {
+		t.Fatalf("ActiveCount() = %d, want 1", got)
+	}
+	// After expiry, active count drops back to zero.
+	future := now.Add(LockoutDuration + time.Second)
+	if got := tracker.ActiveCount(future); got != 0 {
+		t.Fatalf("ActiveCount() after expiry = %d, want 0", got)
+	}
+}
+
+func TestLockoutCleanupExpiredEntries(t *testing.T) {
+	tracker := NewLockoutTracker()
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 
 	// Fill enough entries to trigger cleanup (threshold is 64).
 	for i := 0; i < 70; i++ {
 		username := "user" + string(rune('A'+i))
-		for j := 0; j < accountLockoutMaxAttempts; j++ {
+		for j := 0; j < LockoutMaxAttempts; j++ {
 			tracker.RecordFailure(username, now)
 		}
 	}
 
 	// Record a new failure well after lockout duration — triggers cleanup.
-	future := now.Add(accountLockoutDuration + time.Minute)
+	future := now.Add(LockoutDuration + time.Minute)
 	tracker.RecordFailure("trigger-cleanup", future)
 
 	tracker.mu.Lock()
