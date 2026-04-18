@@ -104,6 +104,40 @@ jobs:
             echo "Signed ${ARCHIVE} -> ${ARCHIVE}.sig"
           done
 
+      # Generate a CycloneDX JSON SBOM for each release archive so downstream
+      # consumers can audit the exact module tree shipped in the binary.
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          format: cyclonedx-json
+          artifact-name: panvex-${{ steps.meta.outputs.component }}-linux-${{ matrix.arch }}.sbom.json
+          output-file: panvex-${{ steps.meta.outputs.component }}-linux-${{ matrix.arch }}.sbom.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      # Sign the SBOM with the same ECDSA P-256 key used for the archive so
+      # verification uses one trust root. cosign sign-blob emits a detached
+      # signature (raw DER base64) compatible with `cosign verify-blob`.
+      - name: Sign SBOM
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.PANVEX_SIGNING_KEY }}
+          COSIGN_PASSWORD: ''
+          GOARCH: ${{ matrix.arch }}
+          COMPONENT: ${{ steps.meta.outputs.component }}
+        run: |
+          if [ -z "${COSIGN_PRIVATE_KEY:-}" ]; then
+            echo "::error::PANVEX_SIGNING_KEY secret is not configured" >&2
+            exit 1
+          fi
+          SBOM="panvex-${COMPONENT}-linux-${GOARCH}.sbom.json"
+          cosign sign-blob --yes \
+            --key env://COSIGN_PRIVATE_KEY \
+            --output-signature "${SBOM}.sig" \
+            "${SBOM}"
+
       - name: Upload release assets
         uses: softprops/action-gh-release@v3
         with:
@@ -112,4 +146,6 @@ jobs:
             panvex-*-linux-${{ matrix.arch }}.tar.gz
             panvex-*-linux-${{ matrix.arch }}.tar.gz.sha256
             panvex-*-linux-${{ matrix.arch }}.tar.gz.sig
+            panvex-*-linux-${{ matrix.arch }}.sbom.json
+            panvex-*-linux-${{ matrix.arch }}.sbom.json.sig
           generate_release_notes: true

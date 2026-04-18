@@ -99,6 +99,40 @@ openssl dgst -sha256 -verify core/internal/security/signing_key.pub \
 If `openssl` reports a mismatch, **do not install** the artifact. Treat a
 mismatch as a potential supply-chain incident and escalate.
 
+## Verifying the SBOM
+
+Every release also publishes a CycloneDX JSON SBOM per architecture plus a
+matching cosign signature. The SBOM is produced by `anchore/sbom-action` and
+signed with the same ECDSA P-256 key used for the archive.
+
+```bash
+ARCH=amd64
+VERSION=1.2.3
+COMPONENT=control-plane
+BASE="https://github.com/lost-coder/panvex/releases/download/${COMPONENT}/v${VERSION}"
+
+curl -LO "${BASE}/panvex-${COMPONENT}-linux-${ARCH}.sbom.json"
+curl -LO "${BASE}/panvex-${COMPONENT}-linux-${ARCH}.sbom.json.sig"
+
+# Verify the detached cosign signature.
+cosign verify-blob \
+  --key core/internal/security/signing_key.pub \
+  --signature panvex-${COMPONENT}-linux-${ARCH}.sbom.json.sig \
+  panvex-${COMPONENT}-linux-${ARCH}.sbom.json
+# Expected output: "Verified OK"
+```
+
+Optional static analysis of the SBOM contents (requires `cyclonedx-cli`):
+
+```bash
+cyclonedx-cli analyze --input-file panvex-${COMPONENT}-linux-${ARCH}.sbom.json
+# or validate the schema
+cyclonedx-cli validate --input-file panvex-${COMPONENT}-linux-${ARCH}.sbom.json
+```
+
+If signature verification fails, treat the release as untrusted and do not
+install it.
+
 ## Dev-stage signing keys
 
 During active development the repository ships with a stand-in key pair
