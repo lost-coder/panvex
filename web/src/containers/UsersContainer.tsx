@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { UsersManagementPage, Spinner, type UserFormData, type UserFormSheetProps } from "@lost-coder/panvex-ui";
 import { useUsers } from "@/hooks/useUsers";
+import { useConfirm } from "@/providers/ConfirmProvider";
 
 type SheetState =
   | { mode: "closed" }
@@ -11,9 +12,39 @@ const emptyForm: UserFormData = { username: "", password: "", role: "viewer" };
 
 export function UsersContainer() {
   const { users, isLoading, createUser, updateUser, deleteUser, resetTotp } = useUsers();
+  const confirm = useConfirm();
   const [sheet, setSheet] = useState<SheetState>({ mode: "closed" });
   const [formData, setFormData] = useState<UserFormData>(emptyForm);
   const [formError, setFormError] = useState("");
+
+  // P2-UX-04: deleting a user revokes access immediately. Confirm with
+  // the username so the operator can't mistake which row they clicked.
+  const handleDelete = async (userId: string) => {
+    const user = users.find((u) => u.id === userId);
+    const name = user?.username ?? "this user";
+    const ok = await confirm({
+      title: "Delete user?",
+      body: `"${name}" will be removed from the control-plane and their sessions will end immediately.`,
+      confirmLabel: "Delete user",
+      variant: "danger",
+    });
+    if (!ok) return;
+    deleteUser.mutate(userId);
+  };
+
+  // P2-UX-04: TOTP reset forces the user back to QR enrollment on next
+  // login. Mildly disruptive — confirm with the username.
+  const handleResetTotp = async (userId: string) => {
+    const user = users.find((u) => u.id === userId);
+    const name = user?.username ?? "this user";
+    const ok = await confirm({
+      title: "Reset TOTP?",
+      body: `"${name}" will need to re-enroll their authenticator on next login.`,
+      confirmLabel: "Reset TOTP",
+    });
+    if (!ok) return;
+    resetTotp.mutate(userId);
+  };
 
   const handleAdd = () => {
     setFormData(emptyForm);
@@ -76,8 +107,8 @@ export function UsersContainer() {
       users={users}
       onAdd={handleAdd}
       onEdit={handleEdit}
-      onDelete={(userId) => deleteUser.mutate(userId)}
-      onResetTotp={(userId) => resetTotp.mutate(userId)}
+      onDelete={handleDelete}
+      onResetTotp={handleResetTotp}
       sheet={sheetProps}
     />
   );
