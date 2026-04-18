@@ -7,6 +7,10 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("@lost-coder/panvex-ui", () => ({
+  Spinner: () => <div data-testid="spinner" />,
+}));
+
+vi.mock("@lost-coder/panvex-ui/pages", () => ({
   ServersPage: (props: {
     servers: { id: string; updateAvailable?: boolean }[];
     onServerClick: (id: string) => void;
@@ -19,7 +23,6 @@ vi.mock("@lost-coder/panvex-ui", () => ({
       <button onClick={() => props.onServerClick("s99")}>click</button>
     </div>
   ),
-  Spinner: () => <div data-testid="spinner" />,
 }));
 
 vi.mock("@/components/ErrorState", () => ({

@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
-import { ServerDetailPage, Spinner } from "@lost-coder/panvex-ui";
+import { Spinner } from "@lost-coder/panvex-ui";
+import { ServerDetailPage } from "@lost-coder/panvex-ui/pages";
 import { ErrorState } from "@/components/ErrorState";
 import type { MetricsPoint } from "@lost-coder/panvex-ui";
 import { useServerDetail } from "@/hooks/useServerDetail";
