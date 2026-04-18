@@ -1,4 +1,4 @@
-package server
+package updates
 
 import (
 	"net/http"
@@ -17,8 +17,8 @@ func TestValidateGitHubRepo_Valid(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c, func(t *testing.T) {
-			if err := validateGitHubRepo(c); err != nil {
-				t.Fatalf("validateGitHubRepo(%q) error = %v, want nil", c, err)
+			if err := ValidateGitHubRepo(c); err != nil {
+				t.Fatalf("ValidateGitHubRepo(%q) error = %v, want nil", c, err)
 			}
 		})
 	}
@@ -43,8 +43,8 @@ func TestValidateGitHubRepo_Invalid(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c, func(t *testing.T) {
-			if err := validateGitHubRepo(c); err == nil {
-				t.Fatalf("validateGitHubRepo(%q) error = nil, want failure", c)
+			if err := ValidateGitHubRepo(c); err == nil {
+				t.Fatalf("ValidateGitHubRepo(%q) error = nil, want failure", c)
 			}
 		})
 	}
@@ -58,26 +58,26 @@ func TestCheckDownloadURL_Allowed(t *testing.T) {
 		"https://codeload.github.com/lost-coder/panvex/archive/refs/tags/v1.0.tar.gz",
 	}
 	for _, u := range urls {
-		if err := checkDownloadURL(u); err != nil {
-			t.Fatalf("checkDownloadURL(%q) error = %v, want nil", u, err)
+		if err := CheckDownloadURL(u); err != nil {
+			t.Fatalf("CheckDownloadURL(%q) error = %v, want nil", u, err)
 		}
 	}
 }
 
 func TestCheckDownloadURL_Rejected(t *testing.T) {
 	cases := []string{
-		"http://github.com/foo/bar",          // plaintext http
-		"https://attacker.com/evil",          // unknown host
-		"https://github.com.attacker.com/x",  // host confusion
-		"https://example.github.com/x",       // subdomain not in list
-		"ftp://github.com/foo",               // wrong scheme
-		"https://",                           // no host
-		"https:// space.com",                 // malformed
-		"not a url",                          // unparseable
+		"http://github.com/foo/bar",         // plaintext http
+		"https://attacker.com/evil",         // unknown host
+		"https://github.com.attacker.com/x", // host confusion
+		"https://example.github.com/x",      // subdomain not in list
+		"ftp://github.com/foo",              // wrong scheme
+		"https://",                          // no host
+		"https:// space.com",                // malformed
+		"not a url",                         // unparseable
 	}
 	for _, u := range cases {
-		if err := checkDownloadURL(u); err == nil {
-			t.Fatalf("checkDownloadURL(%q) error = nil, want failure", u)
+		if err := CheckDownloadURL(u); err == nil {
+			t.Fatalf("CheckDownloadURL(%q) error = nil, want failure", u)
 		}
 	}
 }
@@ -91,10 +91,10 @@ func TestSecureDownloadClient_RejectsExternalRedirect(t *testing.T) {
 	}))
 	t.Cleanup(origin.Close)
 
-	// Exercise restrictedRedirectPolicy in isolation: the real secureDownloadClient
+	// Exercise RestrictedRedirectPolicy in isolation: the real SecureDownloadClient
 	// would reject the origin URL itself (httptest server is not on the allow-list),
-	// so we use a bare client with only the CheckRedirect wired up.
-	client := &http.Client{CheckRedirect: restrictedRedirectPolicy()}
+	// so we use a bare client with only the CheckRedirect wired in.
+	client := &http.Client{CheckRedirect: RestrictedRedirectPolicy()}
 	req, err := http.NewRequest(http.MethodGet, origin.URL, nil)
 	if err != nil {
 		t.Fatalf("NewRequest error = %v", err)
