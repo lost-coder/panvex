@@ -113,8 +113,8 @@ describe("transformClientDetail", () => {
     expect(r.name).toBe("alpha");
     expect(r.fleetGroupIds).toEqual(["g1"]);
     expect(r.deployments).toHaveLength(1);
-    expect(r.deployments[0].agentId).toBe("a1");
-    expect(r.deployments[0].links.tls).toHaveLength(1);
+    expect(r.deployments[0]!.agentId).toBe("a1");
+    expect(r.deployments[0]!.links.tls).toHaveLength(1);
   });
 });
 

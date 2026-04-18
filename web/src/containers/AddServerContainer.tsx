@@ -59,8 +59,9 @@ export function AddServerContainer() {
   >();
 
   useEffect(() => {
-    if (fleetGroups.length > 0 && !selectedFleetGroup) {
-      setSelectedFleetGroup(fleetGroups[0].id);
+    const first = fleetGroups[0];
+    if (first && !selectedFleetGroup) {
+      setSelectedFleetGroup(first.id);
     }
   }, [fleetGroups, selectedFleetGroup]);
 
