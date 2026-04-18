@@ -211,8 +211,6 @@ func newTestBatchWriter(store storage.Store, sink *recordingSink) *storeBatchWri
 type sequencedFailStore struct {
 	storage.Store
 
-	mu sync.Mutex
-
 	putAgentFailFn func(attempt int) error
 	putAgentCalls  atomic.Int32
 

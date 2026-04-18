@@ -173,7 +173,8 @@ func newStoreBatchWriter(store storage.Store, metrics batchMetricsSink) *storeBa
 	if metrics == nil {
 		metrics = noopMetricsSink{}
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	// cancel is stored on w.cancel and invoked by Stop/StopWithTimeout.
+	ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // cancel is retained via w.cancel and invoked in Stop/StopWithTimeout
 	w := &storeBatchWriter{
 		store:   store,
 		metrics: metrics,
@@ -418,20 +419,20 @@ const (
 
 // retryWithBackoff invokes op up to len(retryBackoffs)+1 times (max 3
 // attempts per spec), sleeping the scheduled backoff between attempts when
-// op returns a transient error. It returns the final error (nil on success)
-// and a retryOutcome describing how the sequence terminated.
+// op returns a transient error. It returns a retryOutcome describing how the
+// sequence terminated along with the final error (nil on success).
 //
 // Each failed attempt increments the per-stream transient counter via
 // observeTransient. The final outcome is reported separately by the caller
 // using ObservePersistRetry so operators can distinguish "eventually
 // succeeded" from "gave up and dropped".
-func (w *storeBatchWriter) retryWithBackoff(op func() error, observeTransient func()) (error, retryOutcome) {
+func (w *storeBatchWriter) retryWithBackoff(op func() error, observeTransient func()) (retryOutcome, error) {
 	err := op()
 	if err == nil {
-		return nil, retrySucceededFirstTry
+		return retrySucceededFirstTry, nil
 	}
 	if classifyFlushError(err) == "persistent" {
-		return err, retryPersistent
+		return retryPersistent, err
 	}
 
 	for _, delay := range retryBackoffs {
@@ -443,23 +444,23 @@ func (w *storeBatchWriter) retryWithBackoff(op func() error, observeTransient fu
 		// for hundreds of ms when the process is exiting.
 		select {
 		case <-w.ctx.Done():
-			return err, retryExhausted
+			return retryExhausted, err
 		default:
 		}
 		w.sleep(delay)
 		err = op()
 		if err == nil {
-			return nil, retrySucceededOnRetry
+			return retrySucceededOnRetry, nil
 		}
 		if classifyFlushError(err) == "persistent" {
-			return err, retryPersistent
+			return retryPersistent, err
 		}
 	}
 	// All attempts burned and the last error was still transient.
 	if observeTransient != nil {
 		observeTransient()
 	}
-	return err, retryExhausted
+	return retryExhausted, err
 }
 
 // flushItem is the shared helper every per-buffer flush function uses. It
@@ -492,7 +493,7 @@ func (w *storeBatchWriter) flushItem(buffer string, logAttrs []any, op func() er
 		w.metrics.ObserveFlushDuration(buffer, time.Since(start).Seconds())
 	}()
 
-	err, outcome := w.retryWithBackoff(op, func() {
+	outcome, err := w.retryWithBackoff(op, func() {
 		w.metrics.ObserveFlushError(buffer, "transient")
 	})
 	switch outcome {
