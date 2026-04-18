@@ -21,6 +21,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" driver for migrate-schema
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/config"
+	otelcp "github.com/lost-coder/panvex/internal/controlplane/otel"
 	"github.com/lost-coder/panvex/internal/controlplane/server"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	storagemigrate "github.com/lost-coder/panvex/internal/controlplane/storage/migrate"
@@ -28,6 +29,8 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"github.com/lost-coder/panvex/internal/security"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
@@ -138,6 +141,31 @@ func runServe(args []string) error {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: parseLogLevel(options.LogLevel)}))
 	slog.SetDefault(logger)
 
+	// P3-OBS-01: initialize OpenTelemetry tracing if an OTLP endpoint
+	// is configured. When OTEL_EXPORTER_OTLP_ENDPOINT is unset this is
+	// a cheap no-op so production deployments that do not run a
+	// collector pay zero cost.
+	otelShutdown, err := otelcp.Init(context.Background(), otelcp.Config{
+		Endpoint:       strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")),
+		Insecure:       strings.ToLower(strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_INSECURE"))) != "false",
+		ServiceName:    "panvex-control-plane",
+		ServiceVersion: Version,
+	})
+	if err != nil {
+		// Tracing init must never block startup — log and run unsampled.
+		slog.Warn("otel init failed; continuing without tracing", "error", err)
+	}
+	// Shutdown BEFORE store.Close/api.Close so exporter can flush while
+	// the process is still otherwise healthy. defer LIFO => this runs
+	// first among the defers registered below it.
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := otelShutdown(shutdownCtx); err != nil {
+			slog.Warn("otel shutdown error", "error", err)
+		}
+	}()
+
 	store, err := openStore(options.Storage)
 	if err != nil {
 		return err
@@ -193,7 +221,12 @@ func runServe(args []string) error {
 		return err
 	}
 
-	httpServer := newControlPlaneHTTPServer(panelRuntime.HTTPListenAddress, api.Handler())
+	// P3-OBS-01: wrap the chi-rooted handler with otelhttp so every
+	// inbound HTTP request becomes a root span. When tracing is
+	// disabled (no endpoint set) the global no-op TracerProvider makes
+	// this effectively free.
+	httpHandler := otelhttp.NewHandler(api.Handler(), "panvex-api")
+	httpServer := newControlPlaneHTTPServer(panelRuntime.HTTPListenAddress, httpHandler)
 
 	grpcListener, err := net.Listen("tcp", panelRuntime.GRPCListenAddress)
 	if err != nil {
@@ -369,6 +402,10 @@ func newControlPlaneGRPCServer(tlsConfig *tls.Config) *grpc.Server {
 		}),
 		grpc.MaxRecvMsgSize(grpcMaxMessageSize),
 		grpc.MaxSendMsgSize(grpcMaxMessageSize),
+		// P3-OBS-01: propagate W3C trace context from agent calls and
+		// create per-RPC server spans. Uses the global TracerProvider,
+		// which is the no-op provider unless otelcp.Init installed one.
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 	)
 }
 
