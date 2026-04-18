@@ -5,56 +5,56 @@ import (
 	"time"
 )
 
-func TestEnrollmentServiceConsumeRejectsExpiredToken(t *testing.T) {
-	service := NewEnrollmentService()
-	issuedAt := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
-	expiresAt := issuedAt.Add(2 * time.Minute)
-
-	token, err := service.IssueToken(EnrollmentScope{
+func TestMintEnrollmentTokenRequiresPositiveTTL(t *testing.T) {
+	_, err := MintEnrollmentToken(EnrollmentScope{
 		FleetGroupID: "ams-1",
-		TTL:          2 * time.Minute,
-	}, issuedAt)
-	if err != nil {
-		t.Fatalf("IssueToken() error = %v", err)
-	}
-
-	_, err = service.ConsumeToken(token.Value, expiresAt.Add(time.Second))
-	if err == nil {
-		t.Fatal("ConsumeToken() error = nil, want expiration failure")
-	}
-
-	if err != ErrEnrollmentTokenExpired {
-		t.Fatalf("ConsumeToken() error = %v, want %v", err, ErrEnrollmentTokenExpired)
+		TTL:          0,
+	}, time.Date(2026, time.April, 19, 8, 0, 0, 0, time.UTC))
+	if err != ErrEnrollmentTokenTTLRequired {
+		t.Fatalf("MintEnrollmentToken() error = %v, want %v", err, ErrEnrollmentTokenTTLRequired)
 	}
 }
 
-func TestEnrollmentServiceConsumePreservesScopeAndSingleUse(t *testing.T) {
-	service := NewEnrollmentService()
-	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
+func TestMintEnrollmentTokenPopulatesScope(t *testing.T) {
+	issuedAt := time.Date(2026, time.April, 19, 8, 0, 0, 0, time.UTC)
+	ttl := 5 * time.Minute
 
-	token, err := service.IssueToken(EnrollmentScope{
+	token, err := MintEnrollmentToken(EnrollmentScope{
 		FleetGroupID: "ams-1",
-		TTL:          5 * time.Minute,
-	}, now)
+		TTL:          ttl,
+	}, issuedAt)
 	if err != nil {
-		t.Fatalf("IssueToken() error = %v", err)
+		t.Fatalf("MintEnrollmentToken() error = %v", err)
 	}
 
-	consumed, err := service.ConsumeToken(token.Value, now.Add(time.Minute))
+	if token.FleetGroupID != "ams-1" {
+		t.Fatalf("FleetGroupID = %q, want %q", token.FleetGroupID, "ams-1")
+	}
+	if token.IssuedAt != issuedAt.UTC() {
+		t.Fatalf("IssuedAt = %v, want %v", token.IssuedAt, issuedAt.UTC())
+	}
+	if token.ExpiresAt.Sub(issuedAt.UTC()) != ttl {
+		t.Fatalf("ExpiresAt - IssuedAt = %v, want %v", token.ExpiresAt.Sub(issuedAt.UTC()), ttl)
+	}
+	if token.Value == "" {
+		t.Fatal("Value is empty")
+	}
+}
+
+// Two mint calls must produce distinct random values even for the same
+// scope and timestamp. Regression: a buggy refactor could seed the RNG
+// from the clock and silently collide.
+func TestMintEnrollmentTokenProducesUniqueValues(t *testing.T) {
+	issuedAt := time.Date(2026, time.April, 19, 8, 0, 0, 0, time.UTC)
+	a, err := MintEnrollmentToken(EnrollmentScope{FleetGroupID: "ams-1", TTL: time.Minute}, issuedAt)
 	if err != nil {
-		t.Fatalf("ConsumeToken() error = %v", err)
+		t.Fatalf("first mint: %v", err)
 	}
-
-	if consumed.FleetGroupID != "ams-1" {
-		t.Fatalf("FleetGroupID = %q, want %q", consumed.FleetGroupID, "ams-1")
+	b, err := MintEnrollmentToken(EnrollmentScope{FleetGroupID: "ams-1", TTL: time.Minute}, issuedAt)
+	if err != nil {
+		t.Fatalf("second mint: %v", err)
 	}
-
-	_, err = service.ConsumeToken(token.Value, now.Add(2*time.Minute))
-	if err == nil {
-		t.Fatal("ConsumeToken() second call error = nil, want single-use failure")
-	}
-
-	if err != ErrEnrollmentTokenConsumed {
-		t.Fatalf("ConsumeToken() second call error = %v, want %v", err, ErrEnrollmentTokenConsumed)
+	if a.Value == b.Value {
+		t.Fatal("two mints produced the same token value")
 	}
 }

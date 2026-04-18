@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
-	"sync"
 	"time"
 )
 
@@ -33,26 +32,14 @@ type EnrollmentToken struct {
 	ExpiresAt     time.Time
 }
 
-type storedEnrollmentToken struct {
-	token    EnrollmentToken
-	consumed bool
-}
-
-// EnrollmentService issues and consumes single-use enrollment tokens.
-type EnrollmentService struct {
-	mu     sync.Mutex
-	tokens map[string]storedEnrollmentToken
-}
-
-// NewEnrollmentService constructs an in-memory enrollment token service.
-func NewEnrollmentService() *EnrollmentService {
-	return &EnrollmentService{
-		tokens: make(map[string]storedEnrollmentToken),
-	}
-}
-
-// IssueToken mints a token for the provided scope and expiration window.
-func (s *EnrollmentService) IssueToken(scope EnrollmentScope, issuedAt time.Time) (EnrollmentToken, error) {
+// MintEnrollmentToken produces one fresh token record for the given
+// scope (S8). It is a pure function — all state lives in the storage
+// layer now (see storage.Store.PutEnrollmentToken /
+// ConsumeEnrollmentToken). The prior in-memory EnrollmentService has
+// been removed because its data disappeared on restart and did not
+// scale across multiple control-plane replicas, while every call-site
+// already double-wrote into the persistent store.
+func MintEnrollmentToken(scope EnrollmentScope, issuedAt time.Time) (EnrollmentToken, error) {
 	if scope.TTL <= 0 {
 		return EnrollmentToken{}, ErrEnrollmentTokenTTLRequired
 	}
@@ -62,58 +49,12 @@ func (s *EnrollmentService) IssueToken(scope EnrollmentScope, issuedAt time.Time
 		return EnrollmentToken{}, err
 	}
 
-	token := EnrollmentToken{
-		Value:         value,
-		FleetGroupID:  scope.FleetGroupID,
-		IssuedAt:      issuedAt.UTC(),
-		ExpiresAt:     issuedAt.UTC().Add(scope.TTL),
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.cleanupExpiredLocked(issuedAt)
-	s.tokens[token.Value] = storedEnrollmentToken{
-		token: token,
-	}
-
-	return token, nil
-}
-
-// ConsumeToken validates the token, marks it consumed, and returns the bound scope.
-func (s *EnrollmentService) ConsumeToken(value string, now time.Time) (EnrollmentToken, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	stored, ok := s.tokens[value]
-	if !ok {
-		s.cleanupExpiredLocked(now)
-		return EnrollmentToken{}, ErrEnrollmentTokenInvalid
-	}
-
-	if stored.consumed {
-		s.cleanupExpiredLocked(now)
-		return EnrollmentToken{}, ErrEnrollmentTokenConsumed
-	}
-
-	if now.UTC().After(stored.token.ExpiresAt) {
-		delete(s.tokens, value)
-		s.cleanupExpiredLocked(now)
-		return EnrollmentToken{}, ErrEnrollmentTokenExpired
-	}
-
-	stored.consumed = true
-	s.tokens[value] = stored
-	return stored.token, nil
-}
-
-func (s *EnrollmentService) cleanupExpiredLocked(now time.Time) {
-	for value, stored := range s.tokens {
-		if now.UTC().After(stored.token.ExpiresAt) {
-			delete(s.tokens, value)
-		}
-		_ = stored // consumed tokens are also cleaned once expired
-	}
+	return EnrollmentToken{
+		Value:        value,
+		FleetGroupID: scope.FleetGroupID,
+		IssuedAt:     issuedAt.UTC(),
+		ExpiresAt:    issuedAt.UTC().Add(scope.TTL),
+	}, nil
 }
 
 func randomToken(size int) (string, error) {

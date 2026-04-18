@@ -188,8 +188,20 @@ func connectionTopEntries(entries []telemt.RuntimeConnectionTopEntry) []*gateway
 	return result
 }
 
+// runtimeSnapshotTelemtDeadline caps how long one snapshot cycle may
+// spend in telemt calls (B6). telemt.Client.FetchRuntimeState has its
+// own 30s ceiling, but from the snapshot loop's perspective 30s is too
+// long — operator dashboards stop updating for a full half-minute when
+// a single endpoint is slow. 10s is still comfortably above a normal
+// health/posture/summary round-trip and leaves Partial=true semantics
+// intact for the slow-endpoint case.
+const runtimeSnapshotTelemtDeadline = 10 * time.Second
+
 func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) (*gatewayrpc.Snapshot, error) {
-	state, err := a.telemt.FetchRuntimeState(ctx)
+	fetchCtx, cancel := context.WithTimeout(ctx, runtimeSnapshotTelemtDeadline)
+	defer cancel()
+
+	state, err := a.telemt.FetchRuntimeState(fetchCtx)
 	if err != nil {
 		return nil, err
 	}

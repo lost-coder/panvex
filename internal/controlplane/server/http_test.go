@@ -112,7 +112,13 @@ func TestServerLoginIgnoresSpoofedForwardedProtoFromUntrustedPeer(t *testing.T) 
 	}
 }
 
-func TestServerLoginDoesNotPanicWhenAuditPersistenceFails(t *testing.T) {
+// B1 changed the semantics of login vs. audit-persist failures: the
+// previous contract ("login still succeeds if the async audit writer
+// errored") is no longer acceptable because it produced sessions that
+// could not be attributed. The login handler now persists the audit
+// record synchronously before issuing the cookie, so an audit-write
+// failure MUST produce 503 and the cookie MUST NOT be issued.
+func TestServerLoginRejectsWhenAuditPersistenceFails(t *testing.T) {
 	now := time.Date(2026, time.March, 19, 9, 0, 0, 0, time.UTC)
 	sqliteStore, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
 	if err != nil {
@@ -140,8 +146,14 @@ func TestServerLoginDoesNotPanicWhenAuditPersistenceFails(t *testing.T) {
 		"username": "viewer",
 		"password": "Viewer1password",
 	}, nil)
-	if loginResponse.Code != http.StatusOK {
-		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
+	if loginResponse.Code != http.StatusServiceUnavailable {
+		t.Fatalf("POST /api/auth/login status = %d, want %d (body=%s)",
+			loginResponse.Code, http.StatusServiceUnavailable, loginResponse.Body.String())
+	}
+	for _, c := range loginResponse.Result().Cookies() {
+		if c.Name == sessionCookieName && c.Value != "" && c.MaxAge >= 0 {
+			t.Fatalf("session cookie issued despite audit persist failure: %+v", c)
+		}
 	}
 }
 
@@ -1141,9 +1153,7 @@ func TestHTTPAgentBootstrapRejectsConsumedToken(t *testing.T) {
 
 func TestHTTPAgentBootstrapRateLimitRejectsBurstFromSameClient(t *testing.T) {
 	now := time.Date(2026, time.March, 16, 14, 15, 0, 0, time.UTC)
-	server := New(Options{
-		Now: func() time.Time { return now },
-	})
+	server := testServerWithSQLite(t, now)
 
 	for index := 0; index < httpAgentBootstrapRateLimitPerWindow; index++ {
 		bootstrapResponse := performJSONRequestWithHeaders(
