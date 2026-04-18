@@ -1,4 +1,5 @@
-import { SettingsPage, Spinner } from "@lost-coder/panvex-ui";
+import { Spinner } from "@lost-coder/panvex-ui";
+import { SettingsPage } from "@lost-coder/panvex-ui/pages";
 import { useNavigate } from "@tanstack/react-router";
 import { useSettings } from "@/hooks/useSettings";
 import { useProfile } from "@/hooks/useProfile";

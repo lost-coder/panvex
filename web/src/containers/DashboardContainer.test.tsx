@@ -7,6 +7,10 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("@lost-coder/panvex-ui", () => ({
+  Spinner: () => <div data-testid="spinner" />,
+}));
+
+vi.mock("@lost-coder/panvex-ui/pages", () => ({
   DashboardPage: (props: {
     overview: {
       attentionNodes: { id: string; updateAvailable?: boolean }[];
@@ -26,7 +30,6 @@ vi.mock("@lost-coder/panvex-ui", () => ({
       </span>
     </div>
   ),
-  Spinner: () => <div data-testid="spinner" />,
 }));
 
 const useDashboardDataMock = vi.fn();

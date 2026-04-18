@@ -11,6 +11,10 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("@lost-coder/panvex-ui", () => ({
+  Spinner: () => <div data-testid="spinner" />,
+}));
+
+vi.mock("@lost-coder/panvex-ui/pages", () => ({
   ClientsPage: (props: {
     clients: { id: string; name: string }[];
     pendingDiscoveredCount: number;
@@ -22,7 +26,6 @@ vi.mock("@lost-coder/panvex-ui", () => ({
       <button onClick={() => props.onClientClick("c42")}>click</button>
     </div>
   ),
-  Spinner: () => <div data-testid="spinner" />,
 }));
 
 const useClientsListMock = vi.fn();

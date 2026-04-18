@@ -1,4 +1,5 @@
-import { ServersPage, type ViewMode, Spinner } from "@lost-coder/panvex-ui";
+import { type ViewMode, Spinner } from "@lost-coder/panvex-ui";
+import { ServersPage } from "@lost-coder/panvex-ui/pages";
 import { useServersList } from "@/hooks/useServersList";
 import { useFleetGroups } from "@/hooks/useFleetGroups";
 import { useViewMode } from "@/hooks/useViewMode";
