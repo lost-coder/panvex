@@ -5,6 +5,12 @@ hot paths at the end of Phase 2. It is the reference point for comparing
 Phase 3 work — in particular **PERF-06 (bulk insert)**, which is expected to
 reshape the batch-writer flush cost curve.
 
+> **Update (P3-PERF-01b):** the Phase 3 delta measurements and chunk-size
+> tuning report now live in
+> [`phase3-bulk-insert.md`](./phase3-bulk-insert.md). The "Delta template"
+> section at the bottom of this document remains as a historical reference;
+> see the Phase 3 doc for the filled-in numbers and chunk-size decision.
+
 ## Scope and rationale
 
 **Scope.** Microbenchmarks for:

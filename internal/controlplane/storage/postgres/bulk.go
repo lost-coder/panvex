@@ -11,8 +11,12 @@
 // delivers an order-of-magnitude speedup over per-row Exec.
 //
 // Chunking: Postgres allows up to 65535 bind parameters per query. We chunk at
-// 500 rows — the widest row (server_load, 27 columns) still fits comfortably
-// (500 * 27 = 13500 params), and every bulk method runs inside a single
+// 250 rows — the widest row (server_load, 27 columns) uses 250 * 27 = 6750
+// params, well under the 65535 cap. 250 was picked after the P3-PERF-01b
+// chunk-size sweep: per-row throughput peaks around 100-250 rows and regresses
+// at 500+ because the generated SQL and argument slice both grow
+// super-linearly with chunk size. See docs/benchmarks/phase3-bulk-insert.md
+// for the raw ns/row numbers. Every bulk method runs inside a single
 // transaction so partial failure rolls the whole batch back.
 package postgres
 
@@ -26,8 +30,9 @@ import (
 )
 
 // bulkChunkSize caps how many rows go into a single multi-row INSERT. See the
-// package doc for why 500 is safe across every bulk method.
-const bulkChunkSize = 500
+// package doc for why 250 is safe across every bulk method (P3-PERF-01b
+// tuning: 500 -> 250 after benchmark sweep).
+const bulkChunkSize = 250
 
 // placeholders returns the VALUES ($n...) list for `rows` rows of `cols`
 // columns each, starting parameter numbering at 1. Kept as a helper so each
