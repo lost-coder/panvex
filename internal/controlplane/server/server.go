@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/lost-coder/panvex/internal/controlplane/agents"
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/presence"
@@ -123,10 +124,15 @@ type Server struct {
 	buildTime string
 
 	mu             sync.RWMutex
-	sessionMu      sync.RWMutex
 	clientsMu      sync.RWMutex
 	metricsAuditMu sync.RWMutex
 	settingsMu     sync.RWMutex
+	// sessions multiplexes live gRPC stream sessions keyed by agent ID.
+	// Extracted into controlplane/agents.SessionManager by P3-ARCH-01a —
+	// this field replaces the previous sessionMu + agentSessions + sessionSeq
+	// trio. All agent-stream wake/done/terminate bookkeeping now lives in
+	// the new package; the server only holds a pointer.
+	sessions *agents.SessionManager
 	// adoptMu serializes adopt/merge-adopt of discovered clients. It closes
 	// the TOCTOU window between reading a discovered record's status,
 	// checking it, creating/updating the managed client, and marking the
@@ -139,7 +145,6 @@ type Server struct {
 	// restart cannot re-issue a previously-used ID. Other entity sequences
 	// (session/audit/metric/client) are still monotonic because they do not
 	// participate in mTLS identity.
-	sessionSeq uint64
 	auditSeq   uint64
 	metricSeq  uint64
 	clientSeq  uint64
@@ -154,7 +159,6 @@ type Server struct {
 	agents     map[string]Agent
 	detailBoosts map[string]time.Time
 	initializationWatchCooldowns map[string]time.Time
-	agentSessions map[string]*agentStreamSession
 	clients    map[string]managedClient
 	clientAssignments map[string][]managedClientAssignment
 	clientDeployments map[string]map[string]managedClientDeployment
@@ -242,7 +246,7 @@ func New(options Options) *Server {
 		clientDeployments: make(map[string]map[string]managedClientDeployment),
 		clientUsage: make(map[string]map[string]clientUsageSnapshot),
 		lastUsageSeq: make(map[string]uint64),
-		agentSessions: make(map[string]*agentStreamSession),
+		sessions:   agents.NewSessionManager(),
 		instances:  make(map[string]Instance),
 		metrics:    make([]MetricSnapshot, 0, maxInMemoryMetricSnapshots),
 	}

@@ -1,57 +1,26 @@
 package server
 
-type agentStreamSession struct {
-	sequence uint64
-	wake     chan struct{}
-	// done is closed when the session is forcefully terminated (e.g. deregister).
-	// Senders must check done before writing to wake to avoid sending on a
-	// channel whose consumer has already exited.
-	done chan struct{}
-}
+import "github.com/lost-coder/panvex/internal/controlplane/agents"
 
+// agentStreamSession is kept as an alias so existing server-internal
+// code that holds a *agentStreamSession reference continues to work.
+// The concrete type lives in controlplane/agents (P3-ARCH-01a). The
+// canonical field names on the alias are Wake/Done/Sequence (exported),
+// which replaces the previously private wake/done/sequence fields.
+type agentStreamSession = agents.Session
+
+// registerAgentSession installs a new gRPC stream session for agentID.
+// Thin adapter over Server.sessions (*agents.SessionManager).
 func (s *Server) registerAgentSession(agentID string) (*agentStreamSession, func()) {
-	s.sessionMu.Lock()
-	s.sessionSeq++
-	session := &agentStreamSession{
-		sequence: s.sessionSeq,
-		wake:     make(chan struct{}, 1),
-		done:     make(chan struct{}),
-	}
-	s.agentSessions[agentID] = session
-	s.sessionMu.Unlock()
-
-	unregister := func() {
-		s.sessionMu.Lock()
-		existing, ok := s.agentSessions[agentID]
-		if ok && existing.sequence == session.sequence {
-			delete(s.agentSessions, agentID)
-		}
-		s.sessionMu.Unlock()
-	}
-
-	return session, unregister
+	return s.sessions.Register(agentID)
 }
 
+// notifyAgentSession wakes the session currently attached to agentID.
 func (s *Server) notifyAgentSession(agentID string) {
-	s.sessionMu.RLock()
-	session := s.agentSessions[agentID]
-	if session != nil {
-		select {
-		case <-session.done:
-		case session.wake <- struct{}{}:
-		default:
-		}
-	}
-	s.sessionMu.RUnlock()
+	s.sessions.Notify(agentID)
 }
 
+// notifyAgentSessions wakes a de-duplicated batch of agent sessions.
 func (s *Server) notifyAgentSessions(agentIDs []string) {
-	notified := make(map[string]struct{}, len(agentIDs))
-	for _, agentID := range agentIDs {
-		if _, seen := notified[agentID]; seen {
-			continue
-		}
-		notified[agentID] = struct{}{}
-		s.notifyAgentSession(agentID)
-	}
+	s.sessions.NotifyMany(agentIDs)
 }
