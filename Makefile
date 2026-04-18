@@ -66,7 +66,7 @@ clean:
 
 install-tools:
 	go install golang.org/x/vuln/cmd/govulncheck@latest
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 	go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
 
 # P2-PERF-05: microbenchmarks used as the Phase 2 performance baseline.
