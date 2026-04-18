@@ -27,10 +27,21 @@ type FleetStore interface {
 	PutFleetGroup(ctx context.Context, group FleetGroupRecord) error
 	ListFleetGroups(ctx context.Context) ([]FleetGroupRecord, error)
 	PutAgent(ctx context.Context, agent AgentRecord) error
+	// PutAgentsBulk upserts a batch of agents in a single transaction. Semantics
+	// match PutAgent per row (UPSERT on id); when the same ID appears twice the
+	// last occurrence wins. A nil/empty slice is a no-op that returns nil. Used
+	// by the control-plane batch writer (P3-PERF-01a) to avoid N individual
+	// INSERTs per flush. See also storage/postgres and storage/sqlite
+	// implementations which chunk large batches.
+	PutAgentsBulk(ctx context.Context, agents []AgentRecord) error
 	ListAgents(ctx context.Context) ([]AgentRecord, error)
 	DeleteAgent(ctx context.Context, agentID string) error
 	UpdateAgentNodeName(ctx context.Context, agentID string, nodeName string) error
 	PutInstance(ctx context.Context, instance InstanceRecord) error
+	// PutInstancesBulk upserts a batch of Telemt instances in a single
+	// transaction. Same semantics as PutInstance per row; empty slice is a
+	// no-op. See P3-PERF-01a.
+	PutInstancesBulk(ctx context.Context, instances []InstanceRecord) error
 	ListInstances(ctx context.Context) ([]InstanceRecord, error)
 	DeleteInstancesByAgent(ctx context.Context, agentID string) error
 }
@@ -61,6 +72,9 @@ type AuditStore interface {
 // MetricStore persists aggregated control-plane metric snapshots.
 type MetricStore interface {
 	AppendMetricSnapshot(ctx context.Context, snapshot MetricSnapshotRecord) error
+	// AppendMetricSnapshotsBulk inserts a batch of metric snapshots in a
+	// single transaction. Empty slice is a no-op. See P3-PERF-01a.
+	AppendMetricSnapshotsBulk(ctx context.Context, snapshots []MetricSnapshotRecord) error
 	ListMetricSnapshots(ctx context.Context) ([]MetricSnapshotRecord, error)
 	// PruneMetricSnapshots deletes metric_snapshots rows with captured_at
 	// strictly before the cutoff and returns the number of deleted rows.
@@ -174,12 +188,25 @@ type DiscoveredClientStore interface {
 // TimeseriesStore persists historical metric points for server load, DC health, and client IPs.
 type TimeseriesStore interface {
 	AppendServerLoadPoint(ctx context.Context, record ServerLoadPointRecord) error
+	// AppendServerLoadPointsBulk inserts a batch of server-load points in a
+	// single transaction. Same ON-CONFLICT DO NOTHING semantics as the
+	// single-row variant. Empty slice is a no-op. See P3-PERF-01a.
+	AppendServerLoadPointsBulk(ctx context.Context, records []ServerLoadPointRecord) error
 	ListServerLoadPoints(ctx context.Context, agentID string, from time.Time, to time.Time) ([]ServerLoadPointRecord, error)
 	PruneServerLoadPoints(ctx context.Context, olderThan time.Time) (int64, error)
 	AppendDCHealthPoint(ctx context.Context, record DCHealthPointRecord) error
+	// AppendDCHealthPointsBulk inserts a batch of DC-health points in a
+	// single transaction. Same ON-CONFLICT DO NOTHING semantics. Empty
+	// slice is a no-op. See P3-PERF-01a.
+	AppendDCHealthPointsBulk(ctx context.Context, records []DCHealthPointRecord) error
 	ListDCHealthPoints(ctx context.Context, agentID string, from time.Time, to time.Time) ([]DCHealthPointRecord, error)
 	PruneDCHealthPoints(ctx context.Context, olderThan time.Time) (int64, error)
 	UpsertClientIPHistory(ctx context.Context, record ClientIPHistoryRecord) error
+	// UpsertClientIPHistoryBulk upserts a batch of client-ip history rows in
+	// a single transaction. Same semantics as the single-row UPSERT
+	// (last_seen is updated on conflict). Empty slice is a no-op. See
+	// P3-PERF-01a.
+	UpsertClientIPHistoryBulk(ctx context.Context, records []ClientIPHistoryRecord) error
 	ListClientIPHistory(ctx context.Context, clientID string, from time.Time, to time.Time) ([]ClientIPHistoryRecord, error)
 	CountUniqueClientIPs(ctx context.Context, clientID string) (int, error)
 	PruneClientIPHistory(ctx context.Context, olderThan time.Time) (int64, error)
