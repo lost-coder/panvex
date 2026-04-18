@@ -17,6 +17,7 @@ const toastApi = {
   success: vi.fn(),
   error: vi.fn(),
   info: vi.fn(),
+  withAction: vi.fn(),
   dismiss: vi.fn(),
 };
 vi.mock("@/providers/ToastProvider", () => ({
@@ -164,5 +165,63 @@ describe("useClientMutations", () => {
     await expect(
       result.current.editMutation.mutateAsync({} as never),
     ).rejects.toThrow(/not loaded/);
+  });
+
+  describe("scheduleDeleteWithUndo (2.6)", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    it("surfaces an Undo toast and fires DELETE once the 7s window closes", async () => {
+      (apiClient.deleteClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
+      const { Wrapper } = wrapper();
+      const { result } = renderHook(
+        () => useClientMutations("c1", rawClient),
+        { wrapper: Wrapper },
+      );
+
+      result.current.scheduleDeleteWithUndo("alpha");
+      expect(toastApi.withAction).toHaveBeenCalledTimes(1);
+      expect(apiClient.deleteClient).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(7001);
+      expect(apiClient.deleteClient).toHaveBeenCalledWith("c1");
+    });
+
+    it("cancelling before the window closes prevents the DELETE", async () => {
+      const { Wrapper } = wrapper();
+      const { result } = renderHook(
+        () => useClientMutations("c1", rawClient),
+        { wrapper: Wrapper },
+      );
+
+      const cancel = result.current.scheduleDeleteWithUndo("alpha");
+      cancel();
+
+      await vi.advanceTimersByTimeAsync(7001);
+      expect(apiClient.deleteClient).not.toHaveBeenCalled();
+    });
+
+    it("the toast action cancels the schedule and shows an info toast", async () => {
+      const { Wrapper } = wrapper();
+      const { result } = renderHook(
+        () => useClientMutations("c1", rawClient),
+        { wrapper: Wrapper },
+      );
+
+      result.current.scheduleDeleteWithUndo("alpha");
+      // withAction was called with our action object — invoke its onClick
+      // to simulate the user clicking the Undo button inside the toast.
+      const [, , action] = toastApi.withAction.mock.calls[0] as [
+        unknown,
+        unknown,
+        { onClick: () => void },
+      ];
+      action.onClick();
+
+      await vi.advanceTimersByTimeAsync(7001);
+      expect(apiClient.deleteClient).not.toHaveBeenCalled();
+      expect(toastApi.info).toHaveBeenCalledWith("Удаление отменено.");
+    });
   });
 });

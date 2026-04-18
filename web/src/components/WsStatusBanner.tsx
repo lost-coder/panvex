@@ -5,10 +5,12 @@
 // real estate during the 99%+ happy-path. The banner is intentionally
 // unobtrusive — a single line at the top of the main content area.
 
+import { usePrefersReducedMotion } from "@lost-coder/panvex-ui";
 import { useWsStatus } from "@/providers/EventsSynchronizer";
 
 export function WsStatusBanner() {
   const { status, reconnectAttempts } = useWsStatus();
+  const reduceMotion = usePrefersReducedMotion();
 
   if (status === "open" || status === "connecting") {
     return null;
@@ -29,7 +31,11 @@ export function WsStatusBanner() {
     >
       <span
         aria-hidden="true"
-        className="inline-block w-2 h-2 rounded-full bg-status-warn animate-pulse"
+        // 2.7: honour prefers-reduced-motion — a throbbing dot is
+        // distracting to users who opted out of motion. Drop the pulse
+        // to a steady indicator for them; everyone else keeps the
+        // existing animation.
+        className={`inline-block w-2 h-2 rounded-full bg-status-warn${reduceMotion ? "" : " animate-pulse"}`}
       />
       <span>{label}</span>
     </div>

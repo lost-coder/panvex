@@ -1,5 +1,6 @@
-import { type ViewMode, Spinner } from "@lost-coder/panvex-ui";
+import { type ViewMode, EmptyState } from "@lost-coder/panvex-ui";
 import { ClientsPage } from "@/pages/ClientsPage";
+import { SkeletonRows } from "@/components/Skeleton";
 import { useClientsList } from "@/hooks/useClientsList";
 import { useDiscoveredClients } from "@/hooks/useDiscoveredClients";
 import { useClientCreate } from "@/hooks/useClientCreate";
@@ -24,11 +25,32 @@ export function ClientsContainer() {
   const pendingCount = discoveredClients.filter((dc) => dc.status === "pending_review").length;
 
   if (isLoading) {
-    return <div className="flex items-center justify-center h-64"><Spinner /></div>;
+    // 2.5: skeleton instead of a full-height spinner so the layout
+    // slot matches the eventual list and there is no content flash
+    // when the data arrives.
+    return (
+      <div className="p-4">
+        <SkeletonRows count={6} />
+      </div>
+    );
   }
 
   const urlView = viewParam === "cards" || viewParam === "list" ? (viewParam as ViewMode) : undefined;
   const effectiveMode = urlView ?? resolveMode(clients.length);
+
+  // 2.5: empty state invites the first-time operator to create a
+  // client instead of presenting a blank page that looks broken.
+  if (clients.length === 0) {
+    return (
+      <div className="p-6">
+        <EmptyState
+          icon="👥"
+          title="Клиентов пока нет"
+          description="Создайте первого клиента, чтобы начать назначать его на ноды Telemt."
+        />
+      </div>
+    );
+  }
 
   return (
     // P2-UX-10: subtle ring flash when the underlying query revalidates

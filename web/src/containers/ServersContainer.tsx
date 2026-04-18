@@ -1,5 +1,6 @@
-import { type ViewMode, Spinner } from "@lost-coder/panvex-ui";
+import { type ViewMode, Button, EmptyState } from "@lost-coder/panvex-ui";
 import { ServersPage } from "@/pages/ServersPage";
+import { SkeletonRows } from "@/components/Skeleton";
 import { useServersList } from "@/hooks/useServersList";
 import { useFleetGroups } from "@/hooks/useFleetGroups";
 import { useViewMode } from "@/hooks/useViewMode";
@@ -24,11 +25,36 @@ export function ServersContainer() {
   const [viewParam, setViewParam] = useUrlSearchState("view", "");
 
   if (isLoading) {
-    return <div className="flex items-center justify-center h-64"><Spinner /></div>;
+    // 2.5: skeleton placeholders match the shape of the eventual grid.
+    return (
+      <div className="p-4">
+        <SkeletonRows count={6} />
+      </div>
+    );
   }
 
   if (error) {
     return <ErrorState message={error.message} onRetry={() => window.location.reload()} />;
+  }
+
+  // 2.5: empty state for first-time operators. An action button is
+  // included because adding a node requires navigating to a dedicated
+  // wizard — making it discoverable here halves the clicks.
+  if (servers.length === 0) {
+    return (
+      <div className="p-6">
+        <EmptyState
+          icon="🖥️"
+          title="Серверов пока нет"
+          description="Добавьте первую ноду Telemt — она появится здесь, как только агент подключится."
+          action={
+            <Button onClick={() => navigate({ to: "/servers/add" })}>
+              Добавить сервер
+            </Button>
+          }
+        />
+      </div>
+    );
   }
 
   // Enrich servers with update availability when latest version is known

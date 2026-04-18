@@ -8,6 +8,16 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("@lost-coder/panvex-ui", () => ({
   Spinner: () => <div data-testid="spinner" />,
+  EmptyState: (props: { title: string; action?: React.ReactNode }) => (
+    <div data-testid="empty-state">
+      <span>{props.title}</span>
+      {props.action}
+    </div>
+  ),
+  Button: (props: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+    <button {...props} />
+  ),
+  usePrefersReducedMotion: () => false,
 }));
 
 vi.mock("@/pages/ServersPage", () => ({
@@ -60,7 +70,7 @@ describe("ServersContainer", () => {
     useUpdatesMock.mockReturnValue({ query: { data: undefined } });
   });
 
-  it("shows spinner while loading", () => {
+  it("shows skeleton placeholders while loading (2.5)", () => {
     useServersListMock.mockReturnValue({
       servers: [],
       agentVersions: {},
@@ -69,7 +79,7 @@ describe("ServersContainer", () => {
     });
 
     render(<ServersContainer />);
-    expect(screen.getByTestId("spinner")).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: /Загрузка/ })).toBeInTheDocument();
   });
 
   it("renders ErrorState when fetch fails", () => {
