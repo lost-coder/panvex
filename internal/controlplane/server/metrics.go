@@ -424,7 +424,7 @@ func (s *Server) refreshPolledMetrics() {
 		return
 	}
 	s.obs.agentConnected.Set(float64(s.presence.TrackedCount()))
-	s.obs.eventHubSubscribers.Set(float64(s.events.subscriberCount()))
+	s.obs.eventHubSubscribers.Set(float64(s.events.SubscriberCount()))
 	if s.jobs != nil {
 		s.obs.jobQueueDepth.Set(float64(s.jobs.QueueDepth()))
 	}

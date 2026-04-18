@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/lost-coder/panvex/internal/controlplane/agents"
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/presence"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
@@ -106,7 +107,7 @@ type Server struct {
 	uiFiles    fs.FS
 	jobs       *jobs.Service
 	presence   *presence.Tracker
-	events     *eventHub
+	events     *eventbus.Hub
 	authority  *certificateAuthority
 	now        func() time.Time
 	panelRuntime PanelRuntime
@@ -222,7 +223,7 @@ func New(options Options) *Server {
 		uiFiles:    options.UIFiles,
 		jobs:       jobs.NewService(),
 		presence:   presence.NewTracker(30*time.Second, 90*time.Second),
-		events:     newEventHub(),
+		events:     eventbus.NewHub(),
 		now:        now,
 		panelRuntime: defaultPanelRuntime(options.PanelRuntime),
 		requestRestart: options.RequestRestart,
@@ -316,7 +317,7 @@ func New(options Options) *Server {
 	// (e.g. tests, future admin-only endpoints) without exposing them.
 	server.obs = newMetricsCollectors()
 	server.metricsScrapeToken = options.MetricsScrapeToken
-	server.events.setDropHook(func() {
+	server.events.SetDropHook(func() {
 		server.obs.eventHubDropTotal.Inc()
 	})
 	server.handler = server.routes()
@@ -722,7 +723,7 @@ func (s *Server) appendAuditWithContext(ctx context.Context, actorID string, act
 		s.batchWriter.auditEvents.Enqueue(auditEventToRecord(event))
 	}
 
-	s.events.publish(eventEnvelope{
+	s.events.Publish(eventbus.Event{
 		Type: "audit.created",
 		Data: event,
 	})
