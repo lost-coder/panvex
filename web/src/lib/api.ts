@@ -621,6 +621,12 @@ export const FORBIDDEN_EVENT = "panvex:forbidden";
 
 export interface ForbiddenEventDetail {
   path: string;
+  /**
+   * HTTP method that triggered the 403. Present so listeners can
+   * debounce on `method:path` — otherwise a GET retry burst would
+   * collapse with a PUT attempt that shares the same path.
+   */
+  method: string;
   message: string;
   code?: string;
 }
@@ -709,7 +715,8 @@ export async function api<T>(
       typeof window !== "undefined" &&
       !isAuthBootstrapPath(path)
     ) {
-      const detail: ForbiddenEventDetail = { path, message, code };
+      const method = (init?.method ?? "GET").toUpperCase();
+      const detail: ForbiddenEventDetail = { path, method, message, code };
       window.dispatchEvent(
         new CustomEvent<ForbiddenEventDetail>(FORBIDDEN_EVENT, { detail }),
       );

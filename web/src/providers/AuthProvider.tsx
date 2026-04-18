@@ -66,20 +66,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // message; this listener exists so even unhandled 403s produce a single,
   // human-friendly cue instead of a silent failure.
   //
-  // The listener is debounced at a coarse granularity: we ignore repeat
-  // 403s from the same path within 1500 ms, which prevents a burst (e.g.
-  // React Query retrying a few times) from stacking three identical
-  // "Недостаточно прав…" toasts on top of each other.
+  // The listener is debounced on `method:path` so a React Query retry
+  // burst on GET /api/foo collapses to one toast, but a PUT that shares
+  // the same URL still gets its own notification instead of being
+  // swallowed by the earlier GET's debounce window.
   React.useEffect(() => {
-    let lastPath = "";
+    let lastKey = "";
     let lastAt = 0;
     const handler = (event: Event) => {
       const detail = (event as CustomEvent<ForbiddenEventDetail>).detail;
       const now = Date.now();
-      if (detail?.path === lastPath && now - lastAt < 1500) {
+      const key = `${detail?.method ?? "GET"}:${detail?.path ?? ""}`;
+      if (key === lastKey && now - lastAt < 1500) {
         return;
       }
-      lastPath = detail?.path ?? "";
+      lastKey = key;
       lastAt = now;
       toast.error("Недостаточно прав для этой операции. Обратитесь к администратору.");
     };

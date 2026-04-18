@@ -3,6 +3,25 @@ import { useRouter } from "@tanstack/react-router";
 import { LoginPage } from "@/pages/LoginPage";
 import { apiClient, ApiError } from "@/lib/api";
 
+// Backend-surfaced codes that mean "transient infrastructure hiccup,
+// not a credential problem". We render a retry-friendly message for
+// each so operators do not think their password is wrong and trip the
+// lockout counter by re-entering it.
+const TRANSIENT_LOGIN_CODES = new Set([
+  "audit_persist_unavailable", // B1 — audit log could not be written in time
+  "session_store_unavailable", // P2-SEC-07 — session table was briefly down
+]);
+
+function loginErrorMessage(err: unknown): string {
+  if (err instanceof ApiError && err.code && TRANSIENT_LOGIN_CODES.has(err.code)) {
+    return "Сервис временно недоступен. Повторите вход через минуту.";
+  }
+  if (err instanceof Error) {
+    return err.message || "Login failed.";
+  }
+  return String(err) || "Login failed.";
+}
+
 export function LoginContainer() {
   const router = useRouter();
   const [stage, setStage] = useState<"credentials" | "totp">("credentials");
@@ -22,8 +41,7 @@ export function LoginContainer() {
         setStage("totp");
         setError(undefined);
       } else {
-        const msg = err instanceof Error ? err.message : String(err);
-        setError(msg || "Login failed.");
+        setError(loginErrorMessage(err));
       }
     } finally {
       setLoading(false);
@@ -39,8 +57,12 @@ export function LoginContainer() {
       setSavedCredentials(undefined);
       router.navigate({ to: "/" });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(msg || "Invalid TOTP code.");
+      if (err instanceof ApiError && err.code && TRANSIENT_LOGIN_CODES.has(err.code)) {
+        setError(loginErrorMessage(err));
+      } else {
+        const msg = err instanceof Error ? err.message : String(err);
+        setError(msg || "Invalid TOTP code.");
+      }
     } finally {
       setLoading(false);
     }

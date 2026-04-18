@@ -4,23 +4,12 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { apiClient } from "@/lib/api";
 import { invalidateTelemetryQueries } from "@/lib/telemetry-query-invalidation";
 import { buildEventsURL, resolveConfiguredRootPath } from "@/lib/runtime-path";
-
-type EventEnvelope = {
-  type: string;
-  data: unknown;
-};
-
-function isRelevantEvent(eventType: string): boolean {
-  switch (eventType) {
-    case "agents.enrolled":
-    case "agents.updated":
-    case "jobs.created":
-    case "audit.created":
-      return true;
-    default:
-      return false;
-  }
-}
+import {
+  type EventEnvelope,
+  type EventInvalidation,
+  invalidationsForEvent,
+  isKnownEventType,
+} from "@/lib/event-invalidations";
 
 // P2-UX-10: expose connection state + "last update" timestamp so the UI can
 // surface a reconnection banner and a subtle flash when data arrives via WS.
@@ -58,14 +47,20 @@ export function EventsSynchronizer({ children }: { children?: React.ReactNode })
     let reconnectDelayMs = 1_000;
     let reconnectTimerID: number | null = null;
     let stopped = false;
-    const invalidateLiveQueries = async () => {
-      await queryClient.invalidateQueries({ queryKey: ["control-room"] });
-      await queryClient.invalidateQueries({ queryKey: ["agents"] });
-      await queryClient.invalidateQueries({ queryKey: ["clients"] });
-      await queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === "client" });
-      await queryClient.invalidateQueries({ queryKey: ["audit"] });
-      await queryClient.invalidateQueries({ queryKey: ["jobs"] });
-      await invalidateTelemetryQueries(queryClient);
+    const applyInvalidation = async (invalidation: EventInvalidation) => {
+      for (const key of invalidation.keys) {
+        await queryClient.invalidateQueries({ queryKey: key as unknown[] });
+        // "clients" sweep also refreshes per-client detail queries
+        // (["client", id]) so the detail view updates in-flight.
+        if (key[0] === "clients") {
+          await queryClient.invalidateQueries({
+            predicate: (query) => query.queryKey[0] === "client",
+          });
+        }
+      }
+      if (invalidation.telemetry) {
+        invalidateTelemetryQueries(queryClient, invalidation.telemetryAgentID);
+      }
     };
     const scheduleReconnect = () => {
       if (stopped || reconnectTimerID !== null) { return; }
@@ -95,9 +90,12 @@ export function EventsSynchronizer({ children }: { children?: React.ReactNode })
       socket.onmessage = (message) => {
         let event: EventEnvelope;
         try { event = JSON.parse(message.data as string) as EventEnvelope; } catch { return; }
-        if (!isRelevantEvent(event.type)) { return; }
+        if (typeof event?.type !== "string") { return; }
+        if (!isKnownEventType(event.type) && typeof console !== "undefined") {
+          console.debug("events: unknown event type, falling back to broad sweep", event.type);
+        }
         setLastEventAt(Date.now());
-        void invalidateLiveQueries();
+        void applyInvalidation(invalidationsForEvent(event));
       };
       socket.onerror = () => { socket?.close(); };
       socket.onclose = () => {
