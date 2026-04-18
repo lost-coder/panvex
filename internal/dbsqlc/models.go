@@ -20,6 +20,21 @@ type Agent struct {
 	CertExpiresAt pgtype.Timestamptz
 }
 
+type AgentCertificateRecoveryGrant struct {
+	AgentID   string
+	IssuedBy  string
+	IssuedAt  pgtype.Timestamptz
+	ExpiresAt pgtype.Timestamptz
+	UsedAt    pgtype.Timestamptz
+	RevokedAt pgtype.Timestamptz
+}
+
+type AgentRevocation struct {
+	AgentID       string
+	RevokedAt     pgtype.Timestamptz
+	CertExpiresAt pgtype.Timestamptz
+}
+
 type AuditEvent struct {
 	ID        string
 	ActorID   string
@@ -71,10 +86,19 @@ type ClientDeployment struct {
 	UpdatedAt        pgtype.Timestamptz
 }
 
+type ClientIpHistory struct {
+	AgentID   string
+	ClientID  string
+	IpAddress string
+	FirstSeen pgtype.Timestamptz
+	LastSeen  pgtype.Timestamptz
+}
+
 type DiscoveredClient struct {
 	ID                 string
 	AgentID            string
 	ClientName         string
+	Secret             string
 	Status             string
 	TotalOctets        int64
 	CurrentConnections int32
@@ -142,12 +166,32 @@ type PanelSetting struct {
 	TlsCertFile        string
 	TlsKeyFile         string
 	UpdatedAt          pgtype.Timestamptz
+	RetentionJson      string
 }
 
 type Session struct {
 	ID        string
 	UserID    string
 	CreatedAt pgtype.Timestamptz
+}
+
+type TelemtDetailBoost struct {
+	AgentID   string
+	ExpiresAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+type TelemtDiagnosticsCurrent struct {
+	AgentID             string
+	ObservedAt          pgtype.Timestamptz
+	State               string
+	StateReason         string
+	SystemInfoJson      string
+	EffectiveLimitsJson string
+	SecurityPostureJson string
+	MinimalAllJson      string
+	MePoolJson          string
+	DcsJson             string
 }
 
 type TelemtInstance struct {
@@ -159,6 +203,147 @@ type TelemtInstance struct {
 	ConnectedUsers    int64
 	ReadOnly          bool
 	UpdatedAt         pgtype.Timestamptz
+}
+
+type TelemtRuntimeCurrent struct {
+	AgentID                   string
+	ObservedAt                pgtype.Timestamptz
+	State                     string
+	StateReason               string
+	ReadOnly                  bool
+	AcceptingNewConnections   bool
+	MeRuntimeReady            bool
+	Me2dcFallbackEnabled      bool
+	UseMiddleProxy            bool
+	StartupStatus             string
+	StartupStage              string
+	StartupProgressPct        float64
+	InitializationStatus      string
+	Degraded                  bool
+	InitializationStage       string
+	InitializationProgressPct float64
+	TransportMode             string
+	CurrentConnections        int64
+	CurrentConnectionsMe      int64
+	CurrentConnectionsDirect  int64
+	ActiveUsers               int64
+	UptimeSeconds             float64
+	ConnectionsTotal          int64
+	ConnectionsBadTotal       int64
+	HandshakeTimeoutsTotal    int64
+	ConfiguredUsers           int64
+	DcCoveragePct             float64
+	HealthyUpstreams          int64
+	TotalUpstreams            int64
+}
+
+type TelemtRuntimeDcsCurrent struct {
+	AgentID            string
+	Dc                 int64
+	ObservedAt         pgtype.Timestamptz
+	AvailableEndpoints int64
+	AvailablePct       float64
+	RequiredWriters    int64
+	AliveWriters       int64
+	CoveragePct        float64
+	RttMs              float64
+	Load               float64
+}
+
+type TelemtRuntimeEvent struct {
+	AgentID     string
+	Sequence    int64
+	ObservedAt  pgtype.Timestamptz
+	TimestampAt pgtype.Timestamptz
+	EventType   string
+	Context     string
+	Severity    string
+}
+
+type TelemtRuntimeUpstreamsCurrent struct {
+	AgentID            string
+	UpstreamID         int64
+	ObservedAt         pgtype.Timestamptz
+	RouteKind          string
+	Address            string
+	Healthy            bool
+	Fails              int64
+	EffectiveLatencyMs float64
+}
+
+type TelemtSecurityInventoryCurrent struct {
+	AgentID      string
+	ObservedAt   pgtype.Timestamptz
+	State        string
+	StateReason  string
+	Enabled      bool
+	EntriesTotal int64
+	EntriesJson  string
+}
+
+type TsDcHealth struct {
+	AgentID         string
+	CapturedAt      pgtype.Timestamptz
+	Dc              int32
+	CoveragePctAvg  float32
+	CoveragePctMin  float32
+	RttMsAvg        float32
+	RttMsMax        float32
+	AliveWritersMin int32
+	RequiredWriters int32
+	LoadMax         int32
+	SampleCount     int32
+}
+
+type TsServerLoad struct {
+	AgentID                string
+	CapturedAt             pgtype.Timestamptz
+	CpuPctAvg              float32
+	CpuPctMax              float32
+	MemPctAvg              float32
+	MemPctMax              float32
+	DiskPctAvg             float32
+	DiskPctMax             float32
+	Load1m                 float32
+	Load5m                 float32
+	Load15m                float32
+	ConnectionsAvg         int32
+	ConnectionsMax         int32
+	ConnectionsMeAvg       int32
+	ConnectionsDirectAvg   int32
+	ActiveUsersAvg         int32
+	ActiveUsersMax         int32
+	ConnectionsTotal       int64
+	ConnectionsBadTotal    int64
+	HandshakeTimeoutsTotal int64
+	DcCoverageMinPct       float32
+	DcCoverageAvgPct       float32
+	HealthyUpstreams       int32
+	TotalUpstreams         int32
+	NetBytesSent           int64
+	NetBytesRecv           int64
+	SampleCount            int32
+}
+
+type TsServerLoadHourly struct {
+	AgentID        string
+	BucketHour     pgtype.Timestamptz
+	CpuPctAvg      pgtype.Float4
+	CpuPctMax      pgtype.Float4
+	MemPctAvg      pgtype.Float4
+	MemPctMax      pgtype.Float4
+	ConnectionsAvg pgtype.Float4
+	ConnectionsMax pgtype.Int4
+	ActiveUsersAvg pgtype.Float4
+	ActiveUsersMax pgtype.Int4
+	DcCoverageMin  pgtype.Float4
+	DcCoverageAvg  pgtype.Float4
+	SampleCount    int32
+}
+
+type UpdateConfig struct {
+	Key   string
+	Value string
 }
 
 type User struct {
@@ -175,5 +360,6 @@ type UserAppearance struct {
 	UserID    string
 	Theme     string
 	Density   string
+	HelpMode  string
 	UpdatedAt pgtype.Timestamptz
 }
