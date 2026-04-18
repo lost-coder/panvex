@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lost-coder/panvex/internal/controlplane/agents"
+	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
@@ -144,7 +145,7 @@ func (s *Server) enrollAgentWithContext(ctx context.Context, request agentEnroll
 		"node_name":      request.NodeName,
 		"fleet_group_id": token.FleetGroupID,
 	})
-	s.events.publish(eventEnvelope{
+	s.events.Publish(eventbus.Event{
 		Type: "agents.enrolled",
 		Data: storedAgent,
 	})
@@ -342,7 +343,7 @@ func (s *Server) applyAgentSnapshotWithContext(_ context.Context, snapshot agent
 	// heartbeat snapshot, which masked short disconnects.
 	s.presence.Heartbeat(snapshot.AgentID, snapshot.ObservedAt)
 
-	s.events.publish(eventEnvelope{
+	s.events.Publish(eventbus.Event{
 		Type: "agents.updated",
 		Data: agent,
 	})

@@ -23,7 +23,7 @@ func (s *Server) handleEvents() http.HandlerFunc {
 		}
 		defer conn.CloseNow()
 
-		events, cancel := s.events.subscribe()
+		events, cancel := s.events.Subscribe()
 		defer cancel()
 
 		ctx := r.Context()

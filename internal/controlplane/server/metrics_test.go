@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 )
 
 // newMetricsTestServer builds a server with a stable clock and optionally a
@@ -189,12 +191,12 @@ func TestEventHubDropHookIncrementsCounter(t *testing.T) {
 	// Subscribe once but never drain, then overflow the channel (buf 64) so
 	// the drop hook fires. Publish more than the buffer capacity; each
 	// overflow call invokes srv.obs.eventHubDropTotal.Inc().
-	_, cancel := srv.events.subscribe()
+	_, cancel := srv.events.Subscribe()
 	defer cancel()
 
 	const overflow = 80
 	for i := 0; i < overflow; i++ {
-		srv.events.publish(eventEnvelope{Type: "test.drop"})
+		srv.events.Publish(eventbus.Event{Type: "test.drop"})
 	}
 
 	_, body := scrapeMetricsText(t, srv, "t")
