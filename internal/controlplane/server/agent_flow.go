@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lost-coder/panvex/internal/controlplane/agents"
+	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
@@ -61,19 +62,11 @@ type agentSnapshot struct {
 	ObservedAt   time.Time
 }
 
-type clientUsageSnapshot struct {
-	ClientID         string
-	TrafficUsedBytes uint64
-	UniqueIPsUsed    int
-	ActiveTCPConns   int
-	ActiveUniqueIPs  int
-	ObservedAt       time.Time
-	// Seq is the monotonic per-agent snapshot sequence number (proto field 7).
-	// Zero means the field was absent on the wire (legacy agent or internal
-	// synthetic entry); the dedup path treats zero as "unknown" and accumulates
-	// unconditionally, preserving pre-P2-LOG-06 behavior.
-	Seq uint64
-}
+// clientUsageSnapshot now lives in controlplane/clients as
+// UsageSnapshot. Kept as a server-local alias so the usage-aggregator
+// hot path (applyClientUsageSnapshot, grpc_gateway.Connect,
+// chaos_test.go) keeps compiling until the rename lands.
+type clientUsageSnapshot = clients.UsageSnapshot
 
 type clientIPSnapshot struct {
 	ClientID  string

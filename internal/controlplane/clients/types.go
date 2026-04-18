@@ -93,6 +93,12 @@ type DiscoveredRecord struct {
 // clientUsageSnapshot struct on controlplane/server.Server but is
 // exposed here for consumers that want to reason about client usage
 // without depending on server internals.
+//
+// Seq is the monotonic per-agent snapshot sequence number (proto field
+// 7). Zero means the field was absent on the wire (legacy agent or
+// internal synthetic entry); the dedup path treats zero as "unknown"
+// and accumulates unconditionally, preserving pre-P2-LOG-06 behavior.
+// See Service.ApplyUsageSnapshot for the dedup semantics.
 type UsageSnapshot struct {
 	ClientID         string
 	TrafficUsedBytes uint64
@@ -100,6 +106,7 @@ type UsageSnapshot struct {
 	ActiveTCPConns   int
 	ActiveUniqueIPs  int
 	ObservedAt       time.Time
+	Seq              uint64
 }
 
 // AggregatedUsage is the sum-over-agents of UsageSnapshot for a single
