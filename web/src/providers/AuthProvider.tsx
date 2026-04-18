@@ -1,7 +1,13 @@
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { apiClient, SESSION_EXPIRED_EVENT, type MeResponse } from "@/lib/api";
+import {
+  apiClient,
+  FORBIDDEN_EVENT,
+  SESSION_EXPIRED_EVENT,
+  type ForbiddenEventDetail,
+  type MeResponse,
+} from "@/lib/api";
 import { useToast } from "@/providers/ToastProvider";
 
 interface AuthContextValue {
@@ -53,6 +59,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener(SESSION_EXPIRED_EVENT, handler);
     };
   }, [queryClient, navigate, toast]);
+
+  // Global 403 listener (W13): api.ts dispatches FORBIDDEN_EVENT whenever
+  // an authenticated request returns 403 outside the auth bootstrap. The
+  // mutation-level onError may also surface a toast with the server
+  // message; this listener exists so even unhandled 403s produce a single,
+  // human-friendly cue instead of a silent failure.
+  //
+  // The listener is debounced at a coarse granularity: we ignore repeat
+  // 403s from the same path within 1500 ms, which prevents a burst (e.g.
+  // React Query retrying a few times) from stacking three identical
+  // "Недостаточно прав…" toasts on top of each other.
+  React.useEffect(() => {
+    let lastPath = "";
+    let lastAt = 0;
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<ForbiddenEventDetail>).detail;
+      const now = Date.now();
+      if (detail?.path === lastPath && now - lastAt < 1500) {
+        return;
+      }
+      lastPath = detail?.path ?? "";
+      lastAt = now;
+      toast.error("Недостаточно прав для этой операции. Обратитесь к администратору.");
+    };
+    window.addEventListener(FORBIDDEN_EVENT, handler);
+    return () => {
+      window.removeEventListener(FORBIDDEN_EVENT, handler);
+    };
+  }, [toast]);
 
   const value: AuthContextValue = {
     user: data ?? null,
