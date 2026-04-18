@@ -203,11 +203,19 @@ func newTestBatchWriter(store storage.Store, sink *recordingSink) *storeBatchWri
 	return w
 }
 
-// sequencedFailStore is a storage.Store wrapper whose PutAgent /
-// AppendMetricSnapshot / AppendDCHealthPoint functions fail for the first N
-// calls with a caller-provided error, then succeed (delegating to the
+// sequencedFailStore is a storage.Store wrapper whose Put*Bulk /
+// AppendMetricSnapshotsBulk / AppendDCHealthPointsBulk functions fail for the
+// first N calls with a caller-provided error, then succeed (delegating to the
 // embedded store). The call count is tracked per-method so tests can set up
 // independent failure budgets for different streams.
+//
+// After P3-PERF-01a the batch writer flushes a whole buffer in one bulk call
+// per stream. The sequencedFailStore therefore intercepts the bulk methods;
+// the single-row PutAgent / AppendMetricSnapshot / AppendDCHealthPoint hooks
+// are also kept for the few tests that exercise that path directly. The
+// shared counters (putAgentCalls, appendMetricCalls, appendDCCalls) are
+// incremented once per *call*, which under the bulk writer equals once per
+// flush (not once per row inside the flush).
 type sequencedFailStore struct {
 	storage.Store
 
@@ -231,6 +239,16 @@ func (s *sequencedFailStore) PutAgent(ctx context.Context, agent storage.AgentRe
 	return s.Store.PutAgent(ctx, agent)
 }
 
+func (s *sequencedFailStore) PutAgentsBulk(ctx context.Context, agents []storage.AgentRecord) error {
+	n := int(s.putAgentCalls.Add(1))
+	if s.putAgentFailFn != nil {
+		if err := s.putAgentFailFn(n); err != nil {
+			return err
+		}
+	}
+	return s.Store.PutAgentsBulk(ctx, agents)
+}
+
 func (s *sequencedFailStore) AppendMetricSnapshot(ctx context.Context, snap storage.MetricSnapshotRecord) error {
 	n := int(s.appendMetricCalls.Add(1))
 	if s.appendMetricFailFn != nil {
@@ -241,6 +259,16 @@ func (s *sequencedFailStore) AppendMetricSnapshot(ctx context.Context, snap stor
 	return s.Store.AppendMetricSnapshot(ctx, snap)
 }
 
+func (s *sequencedFailStore) AppendMetricSnapshotsBulk(ctx context.Context, snaps []storage.MetricSnapshotRecord) error {
+	n := int(s.appendMetricCalls.Add(1))
+	if s.appendMetricFailFn != nil {
+		if err := s.appendMetricFailFn(n); err != nil {
+			return err
+		}
+	}
+	return s.Store.AppendMetricSnapshotsBulk(ctx, snaps)
+}
+
 func (s *sequencedFailStore) AppendDCHealthPoint(ctx context.Context, p storage.DCHealthPointRecord) error {
 	n := int(s.appendDCCalls.Add(1))
 	if s.appendDCFailFn != nil {
@@ -249,6 +277,16 @@ func (s *sequencedFailStore) AppendDCHealthPoint(ctx context.Context, p storage.
 		}
 	}
 	return s.Store.AppendDCHealthPoint(ctx, p)
+}
+
+func (s *sequencedFailStore) AppendDCHealthPointsBulk(ctx context.Context, points []storage.DCHealthPointRecord) error {
+	n := int(s.appendDCCalls.Add(1))
+	if s.appendDCFailFn != nil {
+		if err := s.appendDCFailFn(n); err != nil {
+			return err
+		}
+	}
+	return s.Store.AppendDCHealthPointsBulk(ctx, points)
 }
 
 func newSequencedStore(t *testing.T) *sequencedFailStore {
@@ -365,7 +403,11 @@ func TestBatchWriterTransientRetrySucceeds(t *testing.T) {
 
 // Mock store fails all 3 attempts with transient error → counter for
 // outcome="exhausted" + type="transient" incremented, persistent counter
-// incremented once, batch continues.
+// incremented once per batch, and the whole batch is dropped.
+//
+// Post-P3-PERF-01a: the batch writer calls PutAgentsBulk once per flush, so
+// all rows in one flush share a single retry sequence (3 attempts = 3
+// transient observations), regardless of how many agents were in the buffer.
 func TestBatchWriterTransientRetryExhausted(t *testing.T) {
 	store := newSequencedStore(t)
 	store.putAgentFailFn = func(attempt int) error {
@@ -375,29 +417,28 @@ func TestBatchWriterTransientRetryExhausted(t *testing.T) {
 	sink := newRecordingSink()
 	w := newTestBatchWriter(store, sink)
 
-	// Two items — the second must still run even though the first exhausts.
+	// Two items — both share one bulk call, so they share one retry sequence.
 	w.flushAgents(context.Background(), []storage.AgentRecord{
 		{ID: "a1", NodeName: "n", LastSeenAt: time.Now().UTC()},
 		{ID: "a2", NodeName: "n", LastSeenAt: time.Now().UTC()},
 	})
 
-	// Each item: 1 first-try failure + 2 retry failures = 3 transient per item.
-	// Two items => 6 transient increments total.
-	if got := sink.flushErrorCount("agents", "transient"); got != 6 {
-		t.Fatalf("transient flush errors = %d, want 6 (3 per item × 2 items)", got)
+	// One bulk call: 1 first-try failure + 2 retry failures = 3 transient total.
+	if got := sink.flushErrorCount("agents", "transient"); got != 3 {
+		t.Fatalf("transient flush errors = %d, want 3 (1 bulk call × 3 attempts)", got)
 	}
-	if got := sink.flushErrorCount("agents", "persistent"); got != 2 {
-		t.Fatalf("persistent flush errors = %d, want 2 (one per exhausted item)", got)
+	if got := sink.flushErrorCount("agents", "persistent"); got != 1 {
+		t.Fatalf("persistent flush errors = %d, want 1 (bulk call exhausted once)", got)
 	}
-	if got := sink.retryCount("agents", "exhausted"); got != 2 {
-		t.Fatalf("retry exhausted = %d, want 2", got)
+	if got := sink.retryCount("agents", "exhausted"); got != 1 {
+		t.Fatalf("retry exhausted = %d, want 1", got)
 	}
 	if got := sink.retryCount("agents", "success"); got != 0 {
 		t.Fatalf("retry success = %d, want 0", got)
 	}
-	// 3 attempts × 2 items = 6 PutAgent calls.
-	if got := int(store.putAgentCalls.Load()); got != 6 {
-		t.Fatalf("PutAgent call count = %d, want 6", got)
+	// 3 attempts × 1 bulk call = 3 PutAgentsBulk calls.
+	if got := int(store.putAgentCalls.Load()); got != 3 {
+		t.Fatalf("PutAgentsBulk call count = %d, want 3", got)
 	}
 }
 
