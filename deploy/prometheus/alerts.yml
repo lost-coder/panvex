@@ -1,0 +1,122 @@
+# Panvex Prometheus alert rules.
+#
+# Load this file from your Prometheus config:
+#
+#   rule_files:
+#     - /etc/prometheus/panvex-alerts.yml
+#
+# Every metric referenced here is documented in core/docs/ops/grafana/README.md.
+# Thresholds are conservative starting points; tune per fleet size and SLO.
+
+groups:
+  - name: panvex.eventbus
+    rules:
+      # Event-bus drops mean a subscriber's channel is full. A steady trickle
+      # is fine, but a sustained rate means the UI/dashboard is no longer
+      # seeing real-time updates. Alert only when the rate exceeds a floor
+      # for several minutes so transient bursts (e.g. a slow dashboard tab
+      # briefly backgrounded) do not page operators.
+      - alert: PanvexEventHubDropsSustained
+        expr: rate(panvex_event_hub_drop_total[5m]) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          component: control-plane
+        annotations:
+          summary: "Event-hub dropping events for slow subscribers"
+          description: |
+            The control-plane event hub has been dropping more than 0.5 events
+            per second for 10 minutes. A subscriber (most likely a web
+            dashboard with a stuck WebSocket) is not draining its buffer,
+            which means live updates are being lost for that client.
+
+            Investigate with:
+              sum by (instance) (rate(panvex_event_hub_drop_total[5m]))
+              panvex_event_hub_subscribers
+
+      - alert: PanvexEventHubDropsSpike
+        expr: rate(panvex_event_hub_drop_total[1m]) > 10
+        for: 2m
+        labels:
+          severity: critical
+          component: control-plane
+        annotations:
+          summary: "Event-hub drop rate spiking"
+          description: |
+            The event hub is dropping more than 10 events per second. This
+            usually indicates a disconnected or wedged subscriber consuming
+            a slot without reading. Real-time UX is severely degraded.
+
+  - name: panvex.batch_writer
+    rules:
+      # Persistent flush failures are never healthy: they mean audit events /
+      # telemetry cannot be persisted. Page on any sustained occurrence.
+      - alert: PanvexBatchFlushPersistent
+        expr: increase(panvex_batch_flush_errors_total{error_type="persistent"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: control-plane
+        annotations:
+          summary: "Persistent batch-writer flush failure"
+          description: |
+            Batch buffer {{ $labels.buffer }} has been failing flushes with
+            a persistent error class for 5+ minutes. Audit / telemetry data
+            is being held in memory and at risk on graceful shutdown.
+
+      # Queue depth climbing means writer can't keep up with ingestion.
+      - alert: PanvexBatchQueueBacklog
+        expr: panvex_batch_queue_depth > 5000
+        for: 10m
+        labels:
+          severity: warning
+          component: control-plane
+        annotations:
+          summary: "Batch buffer backlog"
+          description: |
+            Batch buffer {{ $labels.buffer }} has exceeded 5000 queued rows
+            for 10 minutes. DB is likely slow or misconfigured.
+
+  - name: panvex.auth
+    rules:
+      - alert: PanvexLockoutSurge
+        expr: panvex_lockout_active > 5
+        for: 5m
+        labels:
+          severity: warning
+          component: control-plane
+        annotations:
+          summary: "Multiple accounts locked out"
+          description: |
+            More than 5 accounts are currently in login lockout. Possible
+            brute-force attempt or broken automation hammering the login
+            endpoint.
+
+  - name: panvex.presence
+    rules:
+      - alert: PanvexAgentFleetCollapse
+        expr: panvex_agent_connected < (max_over_time(panvex_agent_connected[1h]) * 0.5)
+        for: 5m
+        labels:
+          severity: critical
+          component: control-plane
+        annotations:
+          summary: "More than half the agent fleet disconnected"
+          description: |
+            Connected agent count dropped below 50% of the peak observed
+            in the last hour for 5 minutes. Investigate network, DNS, or
+            control-plane restart.
+
+  - name: panvex.updates
+    rules:
+      - alert: PanvexUnsignedUpdateFallback
+        expr: increase(panvex_unsigned_update_fallback_total[1h]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          component: control-plane
+        annotations:
+          summary: "Unsigned update manifest used"
+          description: |
+            The panel update flow fell back to an unsigned manifest in the
+            last hour. Verify the signing key is provisioned and reachable.
