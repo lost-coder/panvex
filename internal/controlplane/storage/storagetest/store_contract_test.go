@@ -218,6 +218,15 @@ func (s *memoryStore) PutAgent(_ context.Context, agent storage.AgentRecord) err
 	return nil
 }
 
+func (s *memoryStore) PutAgentsBulk(ctx context.Context, agents []storage.AgentRecord) error {
+	for _, agent := range agents {
+		if err := s.PutAgent(ctx, agent); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *memoryStore) ListAgents(_ context.Context) ([]storage.AgentRecord, error) {
 	result := make([]storage.AgentRecord, 0, len(s.agents))
 	for _, agent := range s.agents {
@@ -256,6 +265,15 @@ func (s *memoryStore) DeleteInstancesByAgent(_ context.Context, agentID string) 
 
 func (s *memoryStore) PutInstance(_ context.Context, instance storage.InstanceRecord) error {
 	s.instances[instance.ID] = instance
+	return nil
+}
+
+func (s *memoryStore) PutInstancesBulk(ctx context.Context, instances []storage.InstanceRecord) error {
+	for _, instance := range instances {
+		if err := s.PutInstance(ctx, instance); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -523,6 +541,15 @@ func (s *memoryStore) AppendMetricSnapshot(_ context.Context, snapshot storage.M
 	return nil
 }
 
+func (s *memoryStore) AppendMetricSnapshotsBulk(ctx context.Context, snapshots []storage.MetricSnapshotRecord) error {
+	for _, snapshot := range snapshots {
+		if err := s.AppendMetricSnapshot(ctx, snapshot); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *memoryStore) ListMetricSnapshots(_ context.Context) ([]storage.MetricSnapshotRecord, error) {
 	return append([]storage.MetricSnapshotRecord(nil), s.metricSnapshots...), nil
 }
@@ -786,6 +813,10 @@ func (s *memoryStore) AppendServerLoadPoint(_ context.Context, _ storage.ServerL
 	return nil
 }
 
+func (s *memoryStore) AppendServerLoadPointsBulk(_ context.Context, _ []storage.ServerLoadPointRecord) error {
+	return nil
+}
+
 func (s *memoryStore) ListServerLoadPoints(_ context.Context, _ string, _ time.Time, _ time.Time) ([]storage.ServerLoadPointRecord, error) {
 	return nil, nil
 }
@@ -798,6 +829,10 @@ func (s *memoryStore) AppendDCHealthPoint(_ context.Context, _ storage.DCHealthP
 	return nil
 }
 
+func (s *memoryStore) AppendDCHealthPointsBulk(_ context.Context, _ []storage.DCHealthPointRecord) error {
+	return nil
+}
+
 func (s *memoryStore) ListDCHealthPoints(_ context.Context, _ string, _ time.Time, _ time.Time) ([]storage.DCHealthPointRecord, error) {
 	return nil, nil
 }
@@ -807,6 +842,10 @@ func (s *memoryStore) PruneDCHealthPoints(_ context.Context, _ time.Time) (int64
 }
 
 func (s *memoryStore) UpsertClientIPHistory(_ context.Context, _ storage.ClientIPHistoryRecord) error {
+	return nil
+}
+
+func (s *memoryStore) UpsertClientIPHistoryBulk(_ context.Context, _ []storage.ClientIPHistoryRecord) error {
 	return nil
 }
 

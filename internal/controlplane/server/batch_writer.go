@@ -545,68 +545,77 @@ func errorChain(err error) []string {
 	return out
 }
 
-// Flush functions — each iterates accumulated items and calls the
-// corresponding Store method through flushItem, which handles retry,
-// classification, logging, and metric observation.
+// Flush functions — each persists all accumulated items through the Store's
+// bulk insert API in a single transaction (P3-PERF-01a / H13). The retry +
+// classification + metrics machinery from flushItem wraps the bulk call so a
+// transient error retries the whole batch, while a persistent error drops it
+// and records `ObservePersistRetry(stream, "exhausted"|"persistent")` exactly
+// once (not once per row) — that matches operator expectations: one batch,
+// one outcome.
+//
+// Previously these flushers looped over each item and called the single-row
+// Store method, which on a 50-row batch produced 50 network round-trips and
+// dominated the PERF-05 baseline (~5.5ms/flush). Bulk INSERT collapses the
+// round-trips to O(chunks) where chunks = ceil(items / 500).
 
 func (w *storeBatchWriter) flushAgents(ctx context.Context, items []storage.AgentRecord) {
-	slog.Debug("batch flush", "domain", "agents", "count", len(items))
-	for _, item := range items {
-		item := item
-		w.flushItem("agents", []any{"agent_id", item.ID}, func() error {
-			return w.store.PutAgent(ctx, item)
-		})
+	if len(items) == 0 {
+		return
 	}
+	slog.Debug("batch flush", "domain", "agents", "count", len(items))
+	w.flushItem("agents", []any{"count", len(items)}, func() error {
+		return w.store.PutAgentsBulk(ctx, items)
+	})
 }
 
 func (w *storeBatchWriter) flushInstances(ctx context.Context, items []storage.InstanceRecord) {
-	slog.Debug("batch flush", "domain", "instances", "count", len(items))
-	for _, item := range items {
-		item := item
-		w.flushItem("instances", []any{"instance_id", item.ID}, func() error {
-			return w.store.PutInstance(ctx, item)
-		})
+	if len(items) == 0 {
+		return
 	}
+	slog.Debug("batch flush", "domain", "instances", "count", len(items))
+	w.flushItem("instances", []any{"count", len(items)}, func() error {
+		return w.store.PutInstancesBulk(ctx, items)
+	})
 }
 
 func (w *storeBatchWriter) flushMetrics(ctx context.Context, items []storage.MetricSnapshotRecord) {
-	slog.Debug("batch flush", "domain", "metrics", "count", len(items))
-	for _, item := range items {
-		item := item
-		w.flushItem("metrics", nil, func() error {
-			return w.store.AppendMetricSnapshot(ctx, item)
-		})
+	if len(items) == 0 {
+		return
 	}
+	slog.Debug("batch flush", "domain", "metrics", "count", len(items))
+	w.flushItem("metrics", []any{"count", len(items)}, func() error {
+		return w.store.AppendMetricSnapshotsBulk(ctx, items)
+	})
 }
 
 func (w *storeBatchWriter) flushServerLoad(ctx context.Context, items []storage.ServerLoadPointRecord) {
-	slog.Debug("batch flush", "domain", "server_load", "count", len(items))
-	for _, item := range items {
-		item := item
-		w.flushItem("server_load", []any{"agent_id", item.AgentID}, func() error {
-			return w.store.AppendServerLoadPoint(ctx, item)
-		})
+	if len(items) == 0 {
+		return
 	}
+	slog.Debug("batch flush", "domain", "server_load", "count", len(items))
+	w.flushItem("server_load", []any{"count", len(items)}, func() error {
+		return w.store.AppendServerLoadPointsBulk(ctx, items)
+	})
 }
 
 func (w *storeBatchWriter) flushDCHealth(ctx context.Context, items []storage.DCHealthPointRecord) {
-	slog.Debug("batch flush", "domain", "dc_health", "count", len(items))
-	for _, item := range items {
-		item := item
-		w.flushItem("dc_health", nil, func() error {
-			return w.store.AppendDCHealthPoint(ctx, item)
-		})
+	if len(items) == 0 {
+		return
 	}
+	slog.Debug("batch flush", "domain", "dc_health", "count", len(items))
+	w.flushItem("dc_health", []any{"count", len(items)}, func() error {
+		return w.store.AppendDCHealthPointsBulk(ctx, items)
+	})
 }
 
 func (w *storeBatchWriter) flushClientIPs(ctx context.Context, items []storage.ClientIPHistoryRecord) {
-	slog.Debug("batch flush", "domain", "client_ips", "count", len(items))
-	for _, item := range items {
-		item := item
-		w.flushItem("client_ips", nil, func() error {
-			return w.store.UpsertClientIPHistory(ctx, item)
-		})
+	if len(items) == 0 {
+		return
 	}
+	slog.Debug("batch flush", "domain", "client_ips", "count", len(items))
+	w.flushItem("client_ips", []any{"count", len(items)}, func() error {
+		return w.store.UpsertClientIPHistoryBulk(ctx, items)
+	})
 }
 
 // flushAuditEvents persists queued audit events one row at a time through the
