@@ -2,16 +2,14 @@ package server
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
@@ -70,11 +68,11 @@ type clientJobResultPayload struct {
 	ConnectionLink string `json:"connection_link"`
 }
 
-type aggregatedClientUsage struct {
-	TrafficUsedBytes uint64
-	UniqueIPsUsed    int
-	ActiveTCPConns   int
-}
+// aggregatedClientUsage now lives in controlplane/clients as
+// AggregatedUsage. Kept as a server-local alias so existing call sites
+// (HTTP response composition, test assertions) keep compiling until
+// they are renamed to use the clients package directly.
+type aggregatedClientUsage = clients.AggregatedUsage
 
 func (s *Server) restoreStoredClients() error {
 	if s.store == nil {
@@ -472,29 +470,12 @@ func (s *Server) persistClientState(ctx context.Context, client managedClient, a
 	return persistClientStateVia(ctx, s.store, client, assignments, deployments)
 }
 
-// persistClientStateVia writes client + assignments + deployments via the
-// given storage.Store. Extracted so the same sequence can be driven
-// either against s.store directly OR against a tx-bound Store inside
-// Store.Transact. See P2-ARCH-01.
+// persistClientStateVia delegates to clients.PersistState. Kept as a
+// server-package shim so call sites inside Store.Transact closures
+// continue to read idiomatically (P2-ARCH-01). Will be removed once
+// callers invoke clients.PersistState directly.
 func persistClientStateVia(ctx context.Context, store storage.Store, client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment) error {
-	if err := store.PutClient(ctx, clientToRecord(client)); err != nil {
-		return err
-	}
-	if err := store.DeleteClientAssignments(ctx, client.ID); err != nil {
-		return err
-	}
-	for _, assignment := range assignments {
-		if err := store.PutClientAssignment(ctx, clientAssignmentToRecord(assignment)); err != nil {
-			return err
-		}
-	}
-	for _, deployment := range deployments {
-		if err := store.PutClientDeployment(ctx, clientDeploymentToRecord(deployment)); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return clients.PersistState(ctx, store, client, assignments, deployments)
 }
 
 func (s *Server) buildClientAssignments(clientID string, input clientMutationInput, observedAt time.Time) []managedClientAssignment {
@@ -537,43 +518,33 @@ func (s *Server) buildClientAssignments(clientID string, input clientMutationInp
 // already tolerate that: the result is used to build deployment rows that
 // are re-reconciled on the next snapshot. The race is therefore benign
 // and, crucially, lock-order-safe.
+// resolveClientTargetAgentIDs snapshots the current agent topology
+// under s.mu and delegates the deterministic deduplication + sorting
+// to clients.Service.ResolveTargetAgentIDs.
+//
+// Lock discipline (P2-LOG-11 / M-C11 / L-08): callers typically obtain
+// `assignments` under s.clientsMu. We MUST NOT hold s.clientsMu while
+// taking s.mu (that would invert the documented ordering). To keep
+// the two locks disjoint AND avoid iterating s.agents while holding
+// s.mu for the full target computation, snapshot the registered-agent
+// IDs and fleet-group membership into local maps, release s.mu, and
+// let the pure helper iterate against those local snapshots.
 func (s *Server) resolveClientTargetAgentIDs(assignments []managedClientAssignment) []string {
-	// Snapshot agents under s.mu then release before iterating assignments.
-	// agentsByID exists only to answer "is this agentID still registered?"
-	// for direct-agent assignments; fleetMembers maps fleetGroupID to the
-	// set of agent IDs in that group for fleet-group assignments.
 	s.mu.RLock()
-	agentsByID := make(map[string]struct{}, len(s.agents))
+	registeredAgents := make(map[string]struct{}, len(s.agents))
 	fleetMembers := make(map[string][]string)
 	for _, agent := range s.agents {
-		agentsByID[agent.ID] = struct{}{}
+		registeredAgents[agent.ID] = struct{}{}
 		if agent.FleetGroupID != "" {
 			fleetMembers[agent.FleetGroupID] = append(fleetMembers[agent.FleetGroupID], agent.ID)
 		}
 	}
 	s.mu.RUnlock()
 
-	targetAgentIDs := make(map[string]struct{})
-	for _, assignment := range assignments {
-		switch assignment.TargetType {
-		case clientAssignmentTargetFleetGroup:
-			for _, agentID := range fleetMembers[assignment.FleetGroupID] {
-				targetAgentIDs[agentID] = struct{}{}
-			}
-		case clientAssignmentTargetAgent:
-			if _, ok := agentsByID[assignment.AgentID]; ok {
-				targetAgentIDs[assignment.AgentID] = struct{}{}
-			}
-		}
-	}
-
-	result := make([]string, 0, len(targetAgentIDs))
-	for agentID := range targetAgentIDs {
-		result = append(result, agentID)
-	}
-	sort.Strings(result)
-
-	return result
+	return s.clientsSvc.ResolveTargetAgentIDs(assignments, clients.AgentTopology{
+		RegisteredAgents: registeredAgents,
+		FleetMembers:     fleetMembers,
+	})
 }
 
 func (s *Server) recordClientJobResult(agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) {
@@ -652,19 +623,20 @@ func (s *Server) jobByID(jobID string) (jobs.Job, bool) {
 	return jobs.Job{}, false
 }
 
+// aggregatedClientUsage delegates the sum-over-agents computation to
+// clients.AggregateUsage. The server still owns the in-memory usage
+// map (migrating that off Server is tracked as future follow-up work)
+// so we snapshot + release before calling into the pure helper.
 func (s *Server) aggregatedClientUsage(clientID string) aggregatedClientUsage {
 	s.clientsMu.RLock()
-	defer s.clientsMu.RUnlock()
-
 	usageByAgent := s.clientUsage[clientID]
-	usage := aggregatedClientUsage{}
-	for _, snapshot := range usageByAgent {
-		usage.TrafficUsedBytes += snapshot.TrafficUsedBytes
-		usage.UniqueIPsUsed += snapshot.UniqueIPsUsed
-		usage.ActiveTCPConns += snapshot.ActiveTCPConns
+	snapshot := make(map[string]clients.UsageSnapshot, len(usageByAgent))
+	for agentID, value := range usageByAgent {
+		snapshot[agentID] = value
 	}
+	s.clientsMu.RUnlock()
 
-	return usage
+	return s.clientsSvc.AggregateUsage(snapshot)
 }
 
 // resolveClientIDByName finds the panel client ID for a given client name
@@ -675,9 +647,11 @@ func (s *Server) aggregatedClientUsage(clientID string) aggregatedClientUsage {
 // assigned to a fleet group the agent belongs to (P2-LOG-07 / M-C3). Without
 // the fleet-group fallback, usage stats for clients attached via fleet-group
 // assignments were silently dropped.
+// resolveClientIDByName snapshots the agent's current fleet group under
+// s.mu then delegates the name lookup to clients.Service.ResolveIDByName.
+// The two locks (s.mu and s.clientsMu) are never held together, which
+// preserves the documented lock ordering.
 func (s *Server) resolveClientIDByName(agentID string, clientName string) string {
-	// Read the agent's fleet group under s.mu (which guards s.agents) before
-	// taking s.clientsMu so the two locks are never held simultaneously.
 	s.mu.RLock()
 	agentFleetGroupID := ""
 	if agent, ok := s.agents[agentID]; ok {
@@ -688,24 +662,7 @@ func (s *Server) resolveClientIDByName(agentID string, clientName string) string
 	s.clientsMu.RLock()
 	defer s.clientsMu.RUnlock()
 
-	for clientID, client := range s.clients {
-		if client.Name != clientName {
-			continue
-		}
-		for _, assignment := range s.clientAssignments[clientID] {
-			switch assignment.TargetType {
-			case clientAssignmentTargetAgent:
-				if assignment.AgentID == agentID {
-					return clientID
-				}
-			case clientAssignmentTargetFleetGroup:
-				if agentFleetGroupID != "" && assignment.FleetGroupID == agentFleetGroupID {
-					return clientID
-				}
-			}
-		}
-	}
-	return ""
+	return s.clientsSvc.ResolveIDByName(s.clients, s.clientAssignments, agentID, agentFleetGroupID, clientName)
 }
 
 func (s *Server) nextClientID() string {
@@ -724,136 +681,54 @@ func (s *Server) nextClientAssignmentID() string {
 	return newSequenceID("client-assignment", s.assignmentSeq)
 }
 
+// buildClientDeployments delegates to clients.BuildDeployments.
+// Agents no longer in the target set are marked for deletion; see
+// deployments.go in the clients package.
 func buildClientDeployments(current []managedClientDeployment, clientID string, targetAgentIDs []string, desiredOperation string, observedAt time.Time) []managedClientDeployment {
-	currentByAgent := make(map[string]managedClientDeployment, len(current))
-	for _, deployment := range current {
-		currentByAgent[deployment.AgentID] = deployment
-	}
-
-	targetSet := make(map[string]struct{}, len(targetAgentIDs))
-	for _, agentID := range targetAgentIDs {
-		targetSet[agentID] = struct{}{}
-		deployment := currentByAgent[agentID]
-		deployment.ClientID = clientID
-		deployment.AgentID = agentID
-		deployment.DesiredOperation = desiredOperation
-		deployment.Status = clientDeploymentStatusQueued
-		deployment.LastError = ""
-		deployment.UpdatedAt = observedAt.UTC()
-		currentByAgent[agentID] = deployment
-	}
-
-	if desiredOperation != string(jobs.ActionClientDelete) {
-		for agentID, deployment := range currentByAgent {
-			if _, ok := targetSet[agentID]; ok {
-				continue
-			}
-			deployment.DesiredOperation = string(jobs.ActionClientDelete)
-			deployment.Status = clientDeploymentStatusQueued
-			deployment.LastError = ""
-			deployment.UpdatedAt = observedAt.UTC()
-			currentByAgent[agentID] = deployment
-		}
-	}
-
-	result := make([]managedClientDeployment, 0, len(currentByAgent))
-	for _, deployment := range currentByAgent {
-		result = append(result, deployment)
-	}
-	sort.Slice(result, func(left int, right int) bool {
-		return result[left].AgentID < result[right].AgentID
-	})
-
-	return result
+	return clients.BuildDeployments(current, clientID, targetAgentIDs, desiredOperation, string(jobs.ActionClientDelete), observedAt)
 }
 
+// removedClientTargetAgentIDs delegates to clients.RemovedTargetAgentIDs.
 func removedClientTargetAgentIDs(current []managedClientDeployment, next []string) []string {
-	nextSet := make(map[string]struct{}, len(next))
-	for _, agentID := range next {
-		nextSet[agentID] = struct{}{}
-	}
-
-	removed := make([]string, 0)
-	for _, deployment := range current {
-		if _, ok := nextSet[deployment.AgentID]; ok {
-			continue
-		}
-		removed = append(removed, deployment.AgentID)
-	}
-	sort.Strings(removed)
-
-	return removed
+	return clients.RemovedTargetAgentIDs(current, next)
 }
 
+// deploymentAgentIDs delegates to clients.DeploymentAgentIDs.
 func deploymentAgentIDs(deployments []managedClientDeployment) []string {
-	agentIDs := make([]string, 0, len(deployments))
-	for _, deployment := range deployments {
-		agentIDs = append(agentIDs, deployment.AgentID)
-	}
-	sort.Strings(agentIDs)
-	return agentIDs
+	return clients.DeploymentAgentIDs(deployments)
 }
 
+// normalizedIDs delegates to clients.NormalizedIDs.
 func normalizedIDs(values []string) []string {
-	unique := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		trimmed := strings.TrimSpace(value)
-		if trimmed == "" {
-			continue
-		}
-		unique[trimmed] = struct{}{}
-	}
-
-	result := make([]string, 0, len(unique))
-	for value := range unique {
-		result = append(result, value)
-	}
-	sort.Strings(result)
-
-	return result
+	return clients.NormalizedIDs(values)
 }
 
+// resolvedUserADTag delegates to clients.ResolveUserADTag, translating
+// the sentinel error into the server-package sentinel so existing
+// errors.Is call sites still match.
 func resolvedUserADTag(value string, fallback string) (string, error) {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		if fallback != "" {
-			return fallback, nil
-		}
-		return randomHexString(16)
-	}
-	if len(trimmed) != 32 {
+	tag, err := clients.ResolveUserADTag(value, fallback)
+	if errors.Is(err, clients.ErrUserADTag) {
 		return "", errClientUserADTag
 	}
-	if _, err := hex.DecodeString(trimmed); err != nil {
-		return "", errClientUserADTag
-	}
-
-	return strings.ToLower(trimmed), nil
+	return tag, err
 }
 
+// normalizedExpiration delegates to clients.NormalizeExpiration.
 func normalizedExpiration(value string) (string, error) {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return "", nil
-	}
-	parsed, err := time.Parse(time.RFC3339, trimmed)
-	if err != nil {
+	out, err := clients.NormalizeExpiration(value)
+	if errors.Is(err, clients.ErrExpiration) {
 		return "", errClientExpiration
 	}
-
-	return parsed.UTC().Format(time.RFC3339), nil
+	return out, err
 }
 
+// randomHexString delegates to clients.RandomHexString.
 func randomHexString(size int) (string, error) {
-	buffer := make([]byte, size)
-	if _, err := rand.Read(buffer); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(buffer), nil
+	return clients.RandomHexString(size)
 }
 
-var hexSecret32 = regexp.MustCompile(`^[0-9a-fA-F]{32}$`)
-
+// isValidHexSecret delegates to clients.IsValidHexSecret.
 func isValidHexSecret(s string) bool {
-	return hexSecret32.MatchString(s)
+	return clients.IsValidHexSecret(s)
 }

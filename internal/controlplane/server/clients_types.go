@@ -1,134 +1,62 @@
 package server
 
 import (
-	"time"
-
+	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
+// Managed-client state types and their persistence shims now live in
+// internal/controlplane/clients. Server keeps thin aliases here so the
+// existing call sites (HTTP handlers, agent-flow, discovery) do not
+// need to be renamed in one pass.
+//
+// The migration runs in two phases:
+//
+//  1. P3-ARCH-01b (this commit): clients.Service owns the in-memory
+//     store and the pure helpers; server delegates reads and persistence
+//     to it. The aliases below keep source-level compatibility for the
+//     remaining unconverted call sites.
+//
+//  2. Follow-up: rename the call sites to use clients.* directly, drop
+//     the aliases, and retire the thin wrappers on Server.
 const (
-	clientAssignmentTargetFleetGroup  = "fleet_group"
-	clientAssignmentTargetAgent       = "agent"
+	clientAssignmentTargetFleetGroup = clients.TargetTypeFleetGroup
+	clientAssignmentTargetAgent      = clients.TargetTypeAgent
 
-	clientDeploymentStatusQueued    = "queued"
-	clientDeploymentStatusSucceeded = "succeeded"
-	clientDeploymentStatusFailed    = "failed"
+	clientDeploymentStatusQueued    = clients.DeploymentStatusQueued
+	clientDeploymentStatusSucceeded = clients.DeploymentStatusSucceeded
+	clientDeploymentStatusFailed    = clients.DeploymentStatusFailed
 )
 
-type managedClient struct {
-	ID                string
-	Name              string
-	Secret            string
-	UserADTag         string
-	Enabled           bool
-	MaxTCPConns       int
-	MaxUniqueIPs      int
-	DataQuotaBytes    int64
-	ExpirationRFC3339 string
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
-	DeletedAt         *time.Time
-}
+type (
+	managedClient           = clients.Client
+	managedClientAssignment = clients.Assignment
+	managedClientDeployment = clients.Deployment
+)
 
-type managedClientAssignment struct {
-	ID           string
-	ClientID     string
-	TargetType   string
-	FleetGroupID string
-	AgentID      string
-	CreatedAt    time.Time
-}
-
-type managedClientDeployment struct {
-	ClientID         string
-	AgentID          string
-	DesiredOperation string
-	Status           string
-	LastError        string
-	ConnectionLink   string
-	LastAppliedAt    *time.Time
-	UpdatedAt        time.Time
-}
-
+// clientToRecord, clientFromRecord, and their siblings now live in
+// the clients package. These thin wrappers keep the existing call
+// sites compiling while the rename lands.
 func clientToRecord(client managedClient) storage.ClientRecord {
-	return storage.ClientRecord{
-		ID:               client.ID,
-		Name:             client.Name,
-		// SecretCiphertext temporarily stores plaintext until at-rest encryption lands.
-		SecretCiphertext: client.Secret,
-		UserADTag:        client.UserADTag,
-		Enabled:          client.Enabled,
-		MaxTCPConns:      client.MaxTCPConns,
-		MaxUniqueIPs:     client.MaxUniqueIPs,
-		DataQuotaBytes:   client.DataQuotaBytes,
-		ExpirationRFC3339: client.ExpirationRFC3339,
-		CreatedAt:        client.CreatedAt.UTC(),
-		UpdatedAt:        client.UpdatedAt.UTC(),
-		DeletedAt:        client.DeletedAt,
-	}
+	return clients.ClientToRecord(client)
 }
 
 func clientFromRecord(record storage.ClientRecord) managedClient {
-	return managedClient{
-		ID:               record.ID,
-		Name:             record.Name,
-		Secret:           record.SecretCiphertext,
-		UserADTag:        record.UserADTag,
-		Enabled:          record.Enabled,
-		MaxTCPConns:      record.MaxTCPConns,
-		MaxUniqueIPs:     record.MaxUniqueIPs,
-		DataQuotaBytes:   record.DataQuotaBytes,
-		ExpirationRFC3339: record.ExpirationRFC3339,
-		CreatedAt:        record.CreatedAt.UTC(),
-		UpdatedAt:        record.UpdatedAt.UTC(),
-		DeletedAt:        record.DeletedAt,
-	}
+	return clients.ClientFromRecord(record)
 }
 
 func clientAssignmentToRecord(assignment managedClientAssignment) storage.ClientAssignmentRecord {
-	return storage.ClientAssignmentRecord{
-		ID:           assignment.ID,
-		ClientID:     assignment.ClientID,
-		TargetType:   assignment.TargetType,
-		FleetGroupID: assignment.FleetGroupID,
-		AgentID:      assignment.AgentID,
-		CreatedAt:    assignment.CreatedAt.UTC(),
-	}
+	return clients.AssignmentToRecord(assignment)
 }
 
 func clientAssignmentFromRecord(record storage.ClientAssignmentRecord) managedClientAssignment {
-	return managedClientAssignment{
-		ID:           record.ID,
-		ClientID:     record.ClientID,
-		TargetType:   record.TargetType,
-		FleetGroupID: record.FleetGroupID,
-		AgentID:      record.AgentID,
-		CreatedAt:    record.CreatedAt.UTC(),
-	}
+	return clients.AssignmentFromRecord(record)
 }
 
 func clientDeploymentToRecord(deployment managedClientDeployment) storage.ClientDeploymentRecord {
-	return storage.ClientDeploymentRecord{
-		ClientID:         deployment.ClientID,
-		AgentID:          deployment.AgentID,
-		DesiredOperation: deployment.DesiredOperation,
-		Status:           deployment.Status,
-		LastError:        deployment.LastError,
-		ConnectionLink:   deployment.ConnectionLink,
-		LastAppliedAt:    deployment.LastAppliedAt,
-		UpdatedAt:        deployment.UpdatedAt.UTC(),
-	}
+	return clients.DeploymentToRecord(deployment)
 }
 
 func clientDeploymentFromRecord(record storage.ClientDeploymentRecord) managedClientDeployment {
-	return managedClientDeployment{
-		ClientID:         record.ClientID,
-		AgentID:          record.AgentID,
-		DesiredOperation: record.DesiredOperation,
-		Status:           record.Status,
-		LastError:        record.LastError,
-		ConnectionLink:   record.ConnectionLink,
-		LastAppliedAt:    record.LastAppliedAt,
-		UpdatedAt:        record.UpdatedAt.UTC(),
-	}
+	return clients.DeploymentFromRecord(record)
 }
