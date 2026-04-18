@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { UsersManagementPage, Spinner, type UserFormData, type UserFormSheetProps } from "@lost-coder/panvex-ui";
+import { Spinner, type UserFormData, type UserFormSheetProps } from "@lost-coder/panvex-ui";
+import { UsersManagementPage } from "@lost-coder/panvex-ui/pages";
 import { useUsers } from "@/hooks/useUsers";
 import { useConfirm } from "@/providers/ConfirmProvider";
 

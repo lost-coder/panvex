@@ -1,4 +1,5 @@
-import { EnrollmentTokensPage, Spinner } from "@lost-coder/panvex-ui";
+import { Spinner } from "@lost-coder/panvex-ui";
+import { EnrollmentTokensPage } from "@lost-coder/panvex-ui/pages";
 import { useEnrollmentTokens } from "@/hooks/useEnrollmentTokens";
 import { ErrorState } from "@/components/ErrorState";
 import { useConfirm } from "@/providers/ConfirmProvider";

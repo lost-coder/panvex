@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useRouter } from "@tanstack/react-router";
-import { LoginPage } from "@lost-coder/panvex-ui";
+import { LoginPage } from "@lost-coder/panvex-ui/pages";
 import { apiClient, ApiError } from "@/lib/api";
 
 export function LoginContainer() {

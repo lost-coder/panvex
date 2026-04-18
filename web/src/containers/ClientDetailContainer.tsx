@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { ClientDetailPage, Spinner } from "@lost-coder/panvex-ui";
+import { Spinner } from "@lost-coder/panvex-ui";
+import { ClientDetailPage } from "@lost-coder/panvex-ui/pages";
 import { useClientDetail } from "@/hooks/useClientDetail";
 import { useClientMutations } from "@/hooks/useClientMutations";
 import { useClientIPHistory } from "@/hooks/useClientIPHistory";

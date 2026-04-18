@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { ProfilePage, Spinner } from "@lost-coder/panvex-ui";
+import { Spinner } from "@lost-coder/panvex-ui";
+import { ProfilePage } from "@lost-coder/panvex-ui/pages";
 import { useProfile } from "@/hooks/useProfile";
 import { useSettings } from "@/hooks/useSettings";
 import { useProfileTotp } from "@/hooks/useProfileTotp";
