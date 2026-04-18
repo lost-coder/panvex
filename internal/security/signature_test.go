@@ -100,12 +100,12 @@ func TestVerifyArtifactFile(t *testing.T) {
 	sigPath := filepath.Join(dir, "artifact.bin.sig")
 
 	payload := []byte("panvex-agent-linux-amd64.tar.gz")
-	if err := os.WriteFile(artifactPath, payload, 0644); err != nil {
+	if err := os.WriteFile(artifactPath, payload, 0600); err != nil {
 		t.Fatalf("write artifact error = %v", err)
 	}
 	h := sha256.Sum256(payload)
 	sig, _ := ecdsa.SignASN1(rand.Reader, priv, h[:])
-	if err := os.WriteFile(sigPath, sig, 0644); err != nil {
+	if err := os.WriteFile(sigPath, sig, 0600); err != nil {
 		t.Fatalf("write signature error = %v", err)
 	}
 

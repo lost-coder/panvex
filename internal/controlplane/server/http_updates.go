@@ -522,7 +522,7 @@ func (s *Server) handleAgentBinaryProxy() http.HandlerFunc {
 			return
 		}
 
-		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, rawURL, nil)
+		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, rawURL, nil) //nolint:gosec // URL validated via validateUpdateHost + allow-list CheckRedirect
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to create request")
 			return
@@ -534,7 +534,7 @@ func (s *Server) handleAgentBinaryProxy() http.HandlerFunc {
 
 		// secureDownloadClient restricts redirects to the GitHub allow-list so
 		// a rogue release asset cannot steer us toward an attacker host.
-		resp, err := secureDownloadClient().Do(req)
+		resp, err := secureDownloadClient().Do(req) //nolint:gosec // URL validated via validateUpdateHost + allow-list CheckRedirect
 		if err != nil {
 			writeError(w, http.StatusBadGateway, "failed to download from GitHub")
 			return

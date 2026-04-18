@@ -127,7 +127,7 @@ func (s *Store) Transact(ctx context.Context, fn storage.TxFn) error {
 
 		// Jittered backoff: (attempt+1)*10ms + 0..10ms jitter.
 		// Respects ctx.Done() so cancellation aborts the wait promptly.
-		backoff := time.Duration(attempt+1)*10*time.Millisecond + time.Duration(rand.Intn(10))*time.Millisecond
+		backoff := time.Duration(attempt+1)*10*time.Millisecond + time.Duration(rand.Intn(10))*time.Millisecond //nolint:gosec // backoff jitter, not security-sensitive
 		timer := time.NewTimer(backoff)
 		select {
 		case <-timer.C:

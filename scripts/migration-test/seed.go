@@ -141,21 +141,29 @@ type counts struct {
 }
 
 func main() {
+	if err := runSeed(); err != nil {
+		log.Fatalf("%v", err)
+	}
+}
+
+// runSeed encapsulates all work so the deferred db.Close() always runs before
+// main's log.Fatalf exits the process (gocritic exitAfterDefer).
+func runSeed() error {
 	var (
-		dbPath    = flag.String("db", "", "SQLite database path (will be overwritten)")
-		agents    = flag.Int("agents", 100_000, "number of agents to seed")
-		metrics   = flag.Int("metrics", 1_000_000, "number of metric_snapshots to seed")
-		clientsN  = flag.Int("clients", 10_000, "number of clients to seed")
-		jobsN     = flag.Int("jobs", 50_000, "number of jobs to seed")
-		audits    = flag.Int("audits", 500_000, "number of audit_events to seed")
-		fleetN    = flag.Int("fleet-groups", 32, "number of fleet groups to seed")
-		discovN   = flag.Int("discovered", 0, "number of discovered_clients to seed")
+		dbPath       = flag.String("db", "", "SQLite database path (will be overwritten)")
+		agents       = flag.Int("agents", 100_000, "number of agents to seed")
+		metrics      = flag.Int("metrics", 1_000_000, "number of metric_snapshots to seed")
+		clientsN     = flag.Int("clients", 10_000, "number of clients to seed")
+		jobsN        = flag.Int("jobs", 50_000, "number of jobs to seed")
+		audits       = flag.Int("audits", 500_000, "number of audit_events to seed")
+		fleetN       = flag.Int("fleet-groups", 32, "number of fleet groups to seed")
+		discovN      = flag.Int("discovered", 0, "number of discovered_clients to seed")
 		statusReport = flag.Bool("status", true, "print timing after each stage")
 	)
 	flag.Parse()
 
 	if *dbPath == "" {
-		log.Fatal("-db is required")
+		return fmt.Errorf("-db is required")
 	}
 	// Start from a clean slate: the seed must represent a fresh pre-0002 DB,
 	// not the union of whatever an old test run left behind.
@@ -163,7 +171,7 @@ func main() {
 
 	db, err := sql.Open("sqlite", *dbPath)
 	if err != nil {
-		log.Fatalf("open sqlite: %v", err)
+		return fmt.Errorf("open sqlite: %w", err)
 	}
 	defer db.Close()
 	db.SetMaxOpenConns(1)
@@ -178,12 +186,12 @@ func main() {
 		"PRAGMA cache_size = -200000", // ~200MB page cache
 	} {
 		if _, err := db.Exec(p); err != nil {
-			log.Fatalf("pragma %q: %v", p, err)
+			return fmt.Errorf("pragma %q: %w", p, err)
 		}
 	}
 
 	if _, err := db.Exec(initialSchema0001); err != nil {
-		log.Fatalf("apply 0001 schema: %v", err)
+		return fmt.Errorf("apply 0001 schema: %w", err)
 	}
 
 	c := counts{
@@ -196,34 +204,48 @@ func main() {
 		discovered:  *discovN,
 	}
 
-	run := func(name string, fn func() error) {
+	run := func(name string, fn func() error) error {
 		t0 := time.Now()
 		if err := fn(); err != nil {
-			log.Fatalf("seed %s: %v", name, err)
+			return fmt.Errorf("seed %s: %w", name, err)
 		}
 		if *statusReport {
 			log.Printf("seeded %-20s in %s", name, time.Since(t0))
 		}
+		return nil
 	}
 
-	run("fleet_groups", func() error { return seedFleetGroups(db, c.fleetGroups) })
-	run("agents", func() error { return seedAgents(db, c.agents, c.fleetGroups) })
-	run("clients", func() error { return seedClients(db, c.clients) })
-	run("jobs+targets", func() error { return seedJobs(db, c.jobs, c.agents) })
-	run("audit_events", func() error { return seedAudits(db, c.audits) })
-	run("metric_snapshots", func() error { return seedMetrics(db, c.metrics, c.agents) })
+	stages := []struct {
+		name string
+		fn   func() error
+	}{
+		{"fleet_groups", func() error { return seedFleetGroups(db, c.fleetGroups) }},
+		{"agents", func() error { return seedAgents(db, c.agents, c.fleetGroups) }},
+		{"clients", func() error { return seedClients(db, c.clients) }},
+		{"jobs+targets", func() error { return seedJobs(db, c.jobs, c.agents) }},
+		{"audit_events", func() error { return seedAudits(db, c.audits) }},
+		{"metric_snapshots", func() error { return seedMetrics(db, c.metrics, c.agents) }},
+	}
+	for _, s := range stages {
+		if err := run(s.name, s.fn); err != nil {
+			return err
+		}
+	}
 	if c.discovered > 0 {
-		run("discovered_clients", func() error { return seedDiscovered(db, c.discovered, c.agents) })
+		if err := run("discovered_clients", func() error { return seedDiscovered(db, c.discovered, c.agents) }); err != nil {
+			return err
+		}
 	}
 
 	// Help operators eyeball the seed: print table counts.
 	for _, tbl := range []string{"fleet_groups", "agents", "clients", "jobs", "job_targets", "audit_events", "metric_snapshots", "discovered_clients"} {
 		var n int64
 		if err := db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", tbl)).Scan(&n); err != nil {
-			log.Fatalf("count %s: %v", tbl, err)
+			return fmt.Errorf("count %s: %w", tbl, err)
 		}
 		log.Printf("  %-20s rows=%d", tbl, n)
 	}
+	return nil
 }
 
 // txBulk runs insertFn inside a single transaction. Every seed function uses
