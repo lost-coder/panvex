@@ -110,3 +110,90 @@ Pending                  -- 0008_new_thing.sql
 servers. The older `migrate-storage` subcommand handles cross-driver DATA
 migration (copying rows from SQLite to Postgres); it is unrelated to
 schema versioning.
+
+## Migration stress testing (P2-TEST-03)
+
+The fast unit tests in `internal/controlplane/storage/sqlite/migrate_test.go`
+prove the chain runs on an *empty* database. That does not catch the class of
+bug where an `ALTER TABLE` / `INSERT INTO ... SELECT` migration silently
+drops data on a non-empty database, or where an index build blows up the
+wall-clock budget when it has to scan millions of real rows.
+
+Two tools cover that gap:
+
+### 1. Go-level stress test (gated, runnable in-tree)
+
+`migrate_stress_test.go` is compiled only when the `stress` build tag is set.
+It seeds a fresh SQLite DB at schema 0001 with 10 000 agents and 100 000
+metric_snapshots, runs the full `Migrate()` chain, then asserts:
+
+- No row count drift on `fleet_groups`, `agents`, `audit_events`,
+  `metric_snapshots` — every post-0001 migration is data-preserving.
+- Migration 0011 renamed `audit_events.details_json` → `details` and
+  `metric_snapshots.values_json` → `values` *and* carried the data across.
+- The four P2-DB-02 indexes (`idx_jobs_status`,
+  `idx_job_targets_agent_id`, `idx_metric_snapshots_captured_at`,
+  `idx_enrollment_tokens_fleet_group_id`) exist after 0008.
+- `goose_db_version` records all applied migrations (DF-20 regression guard).
+- A second `Migrate()` is a no-op and does not touch row counts.
+
+Run it:
+
+```bash
+go test -tags stress -count=1 -timeout 15m \
+    ./internal/controlplane/storage/sqlite -run TestMigrateStress -v
+```
+
+Typical wall-clock on an idle laptop is under 60 seconds. If it takes
+appreciably longer than previous runs on the same hardware, a migration
+likely regressed to an O(N²) pattern — bisect against `git log db/migrations`.
+
+### 2. Production-scale shell driver (off-tree)
+
+`scripts/migration-test/` contains a heavier driver for pre-release
+validation at true production scale (100k agents, 1M metric_snapshots by
+default). Unlike the Go test it uses the actual `panvex-control-plane
+migrate-schema up` subcommand, so it exercises the same code path operators
+invoke:
+
+```bash
+bash scripts/migration-test/run.sh
+```
+
+Tunable via env vars (defaults shown):
+
+```
+SEED_AGENTS=100000
+SEED_METRICS=1000000
+SEED_CLIENTS=10000
+SEED_JOBS=50000
+SEED_AUDITS=500000
+SEED_FLEET_GROUPS=32
+SEED_DISCOVERED=0       # set non-zero to exercise 0010's partial unique index
+```
+
+Pass a path as the first argument to keep the seeded DB; otherwise the script
+deletes it on exit:
+
+```bash
+KEEP_DB=1 bash scripts/migration-test/run.sh /tmp/panvex-migtest.db
+```
+
+When `sqlite3` CLI is on `$PATH` the script runs `PRAGMA integrity_check`,
+`PRAGMA foreign_key_check`, prints per-table row counts, and asserts the
+P2-DB-02 indexes plus the 0011 column rename. Without `sqlite3` the Go-level
+test above is the authoritative check.
+
+### When to run which
+
+| Scenario | Run |
+|---|---|
+| New migration authored | Go stress test (takes <1 min, no external deps) |
+| Release candidate, pre-deploy gate | Shell driver at full scale |
+| Investigating a migration that took >1 min in production | Shell driver with `KEEP_DB=1` + `sqlite3` analysis |
+| Routine CI | Neither — the default `migrate_test.go` is sufficient |
+
+Both tools target SQLite only. PostgreSQL migration stress is covered by the
+same-shaped tests in `internal/controlplane/storage/postgres/` gated on
+`PANVEX_POSTGRES_TEST_DSN`; the production-scale driver for Postgres lives
+in the deployment runbook, not this repo.
