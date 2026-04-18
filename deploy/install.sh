@@ -857,9 +857,9 @@ run_interactive() {
   admin_user=$(ask "Username" "admin")
 
   while true; do
-    admin_pass=$(ask_password "Password (min 12 chars, mixed case + digit)")
-    if [ ${#admin_pass} -lt 12 ]; then
-      warn "Password must be at least 12 characters"
+    admin_pass=$(ask_password "Password")
+    if [ -z "$admin_pass" ]; then
+      warn "Password cannot be empty"
       continue
     fi
     admin_pass2=$(ask_password "Confirm password")
