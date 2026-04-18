@@ -15,7 +15,10 @@ import (
 	"github.com/lost-coder/panvex/internal/security"
 )
 
-var errEnrollmentTokenRevoked = errors.New("enrollment token revoked")
+var (
+	errEnrollmentTokenRevoked    = errors.New("enrollment token revoked")
+	errEnrollmentStoreUnavailable = errors.New("enrollment storage is unavailable")
+)
 
 const (
 	agentCertificateRecoveryProofSkew  = 5 * time.Minute
@@ -262,15 +265,18 @@ func (s *Server) issueEnrollmentToken(scope security.EnrollmentScope, issuedAt t
 }
 
 func (s *Server) issueEnrollmentTokenWithContext(ctx context.Context, scope security.EnrollmentScope, issuedAt time.Time) (security.EnrollmentToken, error) {
-	token, err := s.enrollment.IssueToken(scope, issuedAt)
+	// S8: enrollment tokens live exclusively in storage now. Mint the
+	// token value here (pure function) and persist it before returning
+	// — if persistence fails we must not hand the value to the caller,
+	// because a token that only exists in memory would vanish across
+	// a control-plane restart or a multi-replica deploy.
+	token, err := security.MintEnrollmentToken(scope, issuedAt)
 	if err != nil {
 		return security.EnrollmentToken{}, err
 	}
-
 	if s.store == nil {
-		return token, nil
+		return security.EnrollmentToken{}, errEnrollmentStoreUnavailable
 	}
-
 	if err := s.store.PutEnrollmentToken(ctx, storage.EnrollmentTokenRecord{
 		Value:        token.Value,
 		FleetGroupID: token.FleetGroupID,
@@ -279,7 +285,6 @@ func (s *Server) issueEnrollmentTokenWithContext(ctx context.Context, scope secu
 	}); err != nil {
 		return security.EnrollmentToken{}, err
 	}
-
 	return token, nil
 }
 
@@ -288,8 +293,11 @@ func (s *Server) consumeEnrollmentToken(value string, now time.Time) (security.E
 }
 
 func (s *Server) consumeEnrollmentTokenWithContext(ctx context.Context, value string, now time.Time) (security.EnrollmentToken, error) {
+	// S8: consumption goes through the store only. The previous in-
+	// memory fallback was a source of latent bugs across restarts and
+	// replicas, and every production deploy wires a store anyway.
 	if s.store == nil {
-		return s.enrollment.ConsumeToken(value, now)
+		return security.EnrollmentToken{}, errEnrollmentStoreUnavailable
 	}
 
 	token, err := s.store.GetEnrollmentToken(ctx, value)

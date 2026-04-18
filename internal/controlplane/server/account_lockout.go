@@ -1,7 +1,11 @@
 package server
 
 import (
+	"context"
+	"time"
+
 	"github.com/lost-coder/panvex/internal/controlplane/sessions"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 // The lockout tracker itself lives in controlplane/sessions (task
@@ -18,4 +22,64 @@ type accountLockoutTracker = sessions.LockoutTracker
 
 func newAccountLockoutTracker() *accountLockoutTracker {
 	return sessions.NewLockoutTracker()
+}
+
+// lockoutStoreAdapter bridges sessions.LockoutStore (defined locally in
+// the sessions package to keep it free of storage imports) and
+// storage.LoginLockoutStore (the real persistence interface). The
+// adapter is the canonical translation between the two record types
+// and lives here so the wiring seam is explicit.
+type lockoutStoreAdapter struct {
+	store storage.LoginLockoutStore
+}
+
+func newLockoutStoreAdapter(store storage.LoginLockoutStore) *lockoutStoreAdapter {
+	return &lockoutStoreAdapter{store: store}
+}
+
+func (a *lockoutStoreAdapter) UpsertLoginLockout(ctx context.Context, record sessions.LockoutRecord) error {
+	return a.store.UpsertLoginLockout(ctx, storage.LoginLockoutRecord{
+		Username:  record.Username,
+		Failures:  record.Failures,
+		LockedAt:  record.LockedAt,
+		UpdatedAt: record.UpdatedAt,
+	})
+}
+
+func (a *lockoutStoreAdapter) GetLoginLockout(ctx context.Context, username string) (sessions.LockoutRecord, error) {
+	record, err := a.store.GetLoginLockout(ctx, username)
+	if err != nil {
+		return sessions.LockoutRecord{}, err
+	}
+	return sessions.LockoutRecord{
+		Username:  record.Username,
+		Failures:  record.Failures,
+		LockedAt:  record.LockedAt,
+		UpdatedAt: record.UpdatedAt,
+	}, nil
+}
+
+func (a *lockoutStoreAdapter) DeleteLoginLockout(ctx context.Context, username string) error {
+	return a.store.DeleteLoginLockout(ctx, username)
+}
+
+func (a *lockoutStoreAdapter) ListLoginLockouts(ctx context.Context) ([]sessions.LockoutRecord, error) {
+	records, err := a.store.ListLoginLockouts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]sessions.LockoutRecord, 0, len(records))
+	for _, r := range records {
+		out = append(out, sessions.LockoutRecord{
+			Username:  r.Username,
+			Failures:  r.Failures,
+			LockedAt:  r.LockedAt,
+			UpdatedAt: r.UpdatedAt,
+		})
+	}
+	return out, nil
+}
+
+func (a *lockoutStoreAdapter) DeleteExpiredLoginLockouts(ctx context.Context, before time.Time) (int64, error) {
+	return a.store.DeleteExpiredLoginLockouts(ctx, before)
 }

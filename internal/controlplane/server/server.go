@@ -21,7 +21,6 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/presence"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
-	"github.com/lost-coder/panvex/internal/security"
 )
 
 const (
@@ -102,9 +101,8 @@ type Options struct {
 // Server wires local-auth, inventory, jobs, and operator APIs into one HTTP surface.
 type Server struct {
 	gatewayrpc.UnimplementedAgentGatewayServer
-	auth       *auth.Service
-	enrollment *security.EnrollmentService
-	store      storage.Store
+	auth  *auth.Service
+	store storage.Store
 	uiFiles    fs.FS
 	jobs       *jobs.Service
 	presence   *presence.Tracker
@@ -227,12 +225,11 @@ func New(options Options) *Server {
 	}
 
 	server := &Server{
-		auth:       auth.NewService(),
-		enrollment: security.NewEnrollmentService(),
-		store:      options.Store,
-		uiFiles:    options.UIFiles,
-		jobs:       jobs.NewService(),
-		presence:   presence.NewTracker(30*time.Second, 90*time.Second),
+		auth:     auth.NewService(),
+		store:    options.Store,
+		uiFiles:  options.UIFiles,
+		jobs:     jobs.NewService(),
+		presence: presence.NewTracker(30*time.Second, 90*time.Second),
 		events:     eventbus.NewHub(),
 		now:        now,
 		panelRuntime: defaultPanelRuntime(options.PanelRuntime),
@@ -279,6 +276,15 @@ func New(options Options) *Server {
 		server.auth = auth.NewServiceWithStore(options.Store)
 		server.auth.SetSessionStore(options.Store)
 		if err := server.auth.RestoreSessions(); err != nil && server.startupErr == nil {
+			server.startupErr = err
+		}
+		// S7: wire the lockout tracker to the persistent backend and
+		// load any state that survived a restart. Restore errors go to
+		// startupErr so the operator sees them at boot, but we still
+		// attach the store so subsequent writes are persisted even if
+		// the initial restore was empty.
+		server.loginLockout.SetStore(newLockoutStoreAdapter(options.Store))
+		if err := server.loginLockout.Restore(context.Background(), server.now()); err != nil && server.startupErr == nil {
 			server.startupErr = err
 		}
 		if err := server.jobs.StartupError(); err != nil && server.startupErr == nil {
@@ -553,6 +559,11 @@ func (s *Server) routes() http.Handler {
 	router.Use(s.metricsMiddleware)
 	router.Use(securityHeaders)
 	router.Use(maxBodySize)
+	// B8: per-request deadline for non-streaming handlers. Sits below
+	// http.Server.WriteTimeout so the handler sees the cancellation
+	// first and can emit a clean error instead of being torn down by
+	// the transport.
+	router.Use(requestTimeoutMiddleware(defaultRequestTimeout))
 	router.Use(csrfOriginCheck(s.panelRuntime.HTTPRootPath, s.panelRuntime.AgentHTTPRootPath))
 	router.Get("/healthz", handleHealthz())
 	router.Get("/readyz", s.handleReadyz())
@@ -738,6 +749,59 @@ func (s *Server) appendAuditWithContext(ctx context.Context, actorID string, act
 		Type: "audit.created",
 		Data: event,
 	})
+}
+
+// appendAuditSync writes the audit event to storage synchronously before
+// returning. Use this for security-critical events (login, privilege
+// grants) where the persisted audit record must exist BEFORE the
+// user-visible side effect (e.g. session cookie) so a later incident
+// response can attribute the action even if the process crashes
+// immediately after. The caller is expected to abort the user-visible
+// action (reject the login, roll back the cookie) on a non-nil error
+// return so we never hand out a session whose issuance wasn't recorded.
+//
+// The in-memory ring buffer and event-bus publish happen regardless of
+// the storage outcome: /api/audit and the live event feed always see
+// the attempt. A persistent-failure log line with alert=audit_persist_failed
+// is emitted so the metrics alert in deploy/prometheus/alerts.yml fires.
+//
+// When the server has no storage wired (pure in-memory test doubles)
+// the sync path degrades to the async contract (no error returned).
+// Callers should pass a context with a bounded deadline so a wedged
+// database cannot hold an HTTP request forever.
+func (s *Server) appendAuditSync(ctx context.Context, actorID, action, targetID string, details map[string]any) error {
+	s.metricsAuditMu.Lock()
+	s.auditSeq++
+	event := AuditEvent{
+		ID:        newSequenceID("audit", s.auditSeq),
+		ActorID:   actorID,
+		Action:    action,
+		TargetID:  targetID,
+		CreatedAt: s.now().UTC(),
+		Details:   details,
+	}
+	s.appendAuditTrailLocked(event)
+	s.metricsAuditMu.Unlock()
+
+	var persistErr error
+	if s.store != nil {
+		persistErr = s.store.AppendAuditEvent(ctx, auditEventToRecord(event))
+		if persistErr != nil {
+			s.logger.Error("audit persist (sync) failed",
+				"action", action,
+				"actor_id", actorID,
+				"target_id", targetID,
+				"error", persistErr,
+				"alert", "audit_persist_failed",
+			)
+		}
+	}
+
+	s.events.Publish(eventbus.Event{
+		Type: "audit.created",
+		Data: event,
+	})
+	return persistErr
 }
 
 // appendAuditTrailLocked appends one event to the ring buffer in O(1) time.

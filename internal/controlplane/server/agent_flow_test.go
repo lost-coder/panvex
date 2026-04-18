@@ -14,15 +14,13 @@ import (
 
 func TestServerEnrollAgentConsumesTokenAndIssuesIdentity(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
-	server := New(Options{
-		Now: func() time.Time { return now },
-	})
-	token, err := server.enrollment.IssueToken(security.EnrollmentScope{
-		FleetGroupID:  "ams-1",
-		TTL:           time.Minute,
+	server := testServerWithSQLite(t, now)
+	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
+		FleetGroupID: "ams-1",
+		TTL:          time.Minute,
 	}, now)
 	if err != nil {
-		t.Fatalf("IssueToken() error = %v", err)
+		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
 
 	response, err := server.enrollAgent(agentEnrollmentRequest{
@@ -45,15 +43,13 @@ func TestServerEnrollAgentConsumesTokenAndIssuesIdentity(t *testing.T) {
 
 func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
-	server := New(Options{
-		Now: func() time.Time { return now },
-	})
-	token, err := server.enrollment.IssueToken(security.EnrollmentScope{
-		FleetGroupID:  "ams-1",
-		TTL:           time.Minute,
+	server := testServerWithSQLite(t, now)
+	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
+		FleetGroupID: "ams-1",
+		TTL:          time.Minute,
 	}, now)
 	if err != nil {
-		t.Fatalf("IssueToken() error = %v", err)
+		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
 
 	identity, err := server.enrollAgent(agentEnrollmentRequest{
@@ -267,7 +263,7 @@ func TestServerApplyAgentSnapshotUpdatesInMemoryStateEvenWhenPersistenceFails(t 
 
 func TestServerApplyAgentSnapshotTracksRuntimeLifecycleState(t *testing.T) {
 	now := time.Date(2026, time.March, 16, 11, 0, 0, 0, time.UTC)
-	server := New(Options{Now: func() time.Time { return now }})
+	server := testServerWithSQLite(t, now)
 	token, err := server.issueEnrollmentToken(security.EnrollmentScope{FleetGroupID: "ams-1", TTL: time.Minute}, now)
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
@@ -305,7 +301,7 @@ func TestServerApplyAgentSnapshotTracksRuntimeLifecycleState(t *testing.T) {
 
 func TestServerApplyAgentSnapshotStartsInitializationWatchCooldownAfterReadyTransition(t *testing.T) {
 	now := time.Date(2026, time.March, 29, 18, 0, 0, 0, time.UTC)
-	server := New(Options{Now: func() time.Time { return now }})
+	server := testServerWithSQLite(t, now)
 	token, err := server.issueEnrollmentToken(security.EnrollmentScope{FleetGroupID: "ams-1", TTL: time.Minute}, now)
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
@@ -472,12 +468,9 @@ func TestServerApplyAgentSnapshotKeepsEnrolledScopeWhenSnapshotDiffers(t *testin
 // exist on the agent (P2-LOG-09 / L-04).
 func TestApplyAgentSnapshotPrunesStaleInstances(t *testing.T) {
 	now := time.Date(2026, time.March, 18, 9, 0, 0, 0, time.UTC)
-	server := New(Options{
-		Now: func() time.Time { return now },
-	})
-	defer server.Close()
+	server := testServerWithSQLite(t, now)
 
-	token, err := server.enrollment.IssueToken(security.EnrollmentScope{
+	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
 		FleetGroupID: "ams-1",
 		TTL:          time.Minute,
 	}, now)
@@ -552,12 +545,9 @@ func TestApplyAgentSnapshotPrunesStaleInstances(t *testing.T) {
 // snapshot — instances belonging to other agents must never be touched.
 func TestApplyAgentSnapshotDoesNotPruneOtherAgentsInstances(t *testing.T) {
 	now := time.Date(2026, time.March, 18, 9, 0, 0, 0, time.UTC)
-	server := New(Options{
-		Now: func() time.Time { return now },
-	})
-	defer server.Close()
+	server := testServerWithSQLite(t, now)
 
-	tokenA, err := server.enrollment.IssueToken(security.EnrollmentScope{
+	tokenA, err := server.issueEnrollmentToken(security.EnrollmentScope{
 		FleetGroupID: "ams-1",
 		TTL:          time.Minute,
 	}, now)
@@ -573,7 +563,7 @@ func TestApplyAgentSnapshotDoesNotPruneOtherAgentsInstances(t *testing.T) {
 		t.Fatalf("enrollAgent(A) error = %v", err)
 	}
 
-	tokenB, err := server.enrollment.IssueToken(security.EnrollmentScope{
+	tokenB, err := server.issueEnrollmentToken(security.EnrollmentScope{
 		FleetGroupID: "ams-1",
 		TTL:          time.Minute,
 	}, now)
@@ -709,15 +699,13 @@ func TestServerRestoresPersistedCertificateAuthority(t *testing.T) {
 
 func TestServerEnrollmentIssuesOperationalCertificateLifetime(t *testing.T) {
 	now := time.Date(2026, time.March, 19, 8, 0, 0, 0, time.UTC)
-	server := New(Options{
-		Now: func() time.Time { return now },
-	})
-	token, err := server.enrollment.IssueToken(security.EnrollmentScope{
+	server := testServerWithSQLite(t, now)
+	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
 		FleetGroupID: "ams-1",
 		TTL:          time.Minute,
 	}, now)
 	if err != nil {
-		t.Fatalf("IssueToken() error = %v", err)
+		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
 
 	issuedAt := now.Add(10 * time.Second)
@@ -862,7 +850,7 @@ func TestEnrollmentSetsCertificateDates(t *testing.T) {
 // once — live gauges may still update.
 func TestTrafficDedupViaSnapshotSeq(t *testing.T) {
 	now := time.Date(2026, time.April, 18, 8, 0, 0, 0, time.UTC)
-	server := New(Options{Now: func() time.Time { return now }})
+	server := testServerWithSQLite(t, now)
 	defer server.Close()
 
 	const agentID = "agent-dedup"
@@ -903,7 +891,7 @@ func TestTrafficDedupViaSnapshotSeq(t *testing.T) {
 // accumulated traffic. Subsequent in-order snapshots resume accumulation.
 func TestUsageSeqResetOnAgentRestart(t *testing.T) {
 	now := time.Date(2026, time.April, 18, 10, 0, 0, 0, time.UTC)
-	server := New(Options{Now: func() time.Time { return now }})
+	server := testServerWithSQLite(t, now)
 	defer server.Close()
 
 	const agentID = "agent-restart"
@@ -953,7 +941,7 @@ func TestUsageSeqResetOnAgentRestart(t *testing.T) {
 // after reconnect). Stale seqs must not contribute traffic.
 func TestUsageDedupIgnoresOutOfOrderStaleSnapshots(t *testing.T) {
 	now := time.Date(2026, time.April, 18, 11, 0, 0, 0, time.UTC)
-	server := New(Options{Now: func() time.Time { return now }})
+	server := testServerWithSQLite(t, now)
 	defer server.Close()
 
 	const agentID = "agent-stale"
@@ -981,7 +969,7 @@ func TestUsageDedupIgnoresOutOfOrderStaleSnapshots(t *testing.T) {
 // drop traffic.
 func TestUsageLegacySeqZeroFallsBackToUnconditionalAccumulation(t *testing.T) {
 	now := time.Date(2026, time.April, 18, 12, 0, 0, 0, time.UTC)
-	server := New(Options{Now: func() time.Time { return now }})
+	server := testServerWithSQLite(t, now)
 	defer server.Close()
 
 	const agentID = "agent-legacy"

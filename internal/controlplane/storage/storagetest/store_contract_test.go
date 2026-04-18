@@ -49,6 +49,7 @@ type memoryStore struct {
 	agentCertificateRecoveryGrants map[string]storage.AgentCertificateRecoveryGrantRecord
 	discoveredClients  map[string]storage.DiscoveredClientRecord
 	sessions           map[string]storage.SessionRecord
+	loginLockouts      map[string]storage.LoginLockoutRecord
 	agentRevocations   map[string]storage.AgentRevocationRecord
 	panelSettings      *storage.PanelSettingsRecord
 	retentionSettings  *storage.RetentionSettings
@@ -84,8 +85,46 @@ func newMemoryStore() *memoryStore {
 		agentCertificateRecoveryGrants: make(map[string]storage.AgentCertificateRecoveryGrantRecord),
 		discoveredClients: make(map[string]storage.DiscoveredClientRecord),
 		sessions:          make(map[string]storage.SessionRecord),
+		loginLockouts:     make(map[string]storage.LoginLockoutRecord),
 		agentRevocations:  make(map[string]storage.AgentRevocationRecord),
 	}
+}
+
+func (s *memoryStore) UpsertLoginLockout(_ context.Context, record storage.LoginLockoutRecord) error {
+	s.loginLockouts[record.Username] = record
+	return nil
+}
+
+func (s *memoryStore) GetLoginLockout(_ context.Context, username string) (storage.LoginLockoutRecord, error) {
+	record, ok := s.loginLockouts[username]
+	if !ok {
+		return storage.LoginLockoutRecord{}, storage.ErrNotFound
+	}
+	return record, nil
+}
+
+func (s *memoryStore) DeleteLoginLockout(_ context.Context, username string) error {
+	delete(s.loginLockouts, username)
+	return nil
+}
+
+func (s *memoryStore) ListLoginLockouts(_ context.Context) ([]storage.LoginLockoutRecord, error) {
+	out := make([]storage.LoginLockoutRecord, 0, len(s.loginLockouts))
+	for _, record := range s.loginLockouts {
+		out = append(out, record)
+	}
+	return out, nil
+}
+
+func (s *memoryStore) DeleteExpiredLoginLockouts(_ context.Context, before time.Time) (int64, error) {
+	var deleted int64
+	for username, record := range s.loginLockouts {
+		if record.UpdatedAt.Before(before) {
+			delete(s.loginLockouts, username)
+			deleted++
+		}
+	}
+	return deleted, nil
 }
 
 func (s *memoryStore) Ping(_ context.Context) error {

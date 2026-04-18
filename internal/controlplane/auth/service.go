@@ -62,9 +62,31 @@ const (
 
 const (
 	pendingTotpSetupTTL = 10 * time.Minute
-	sessionTTL          = 24 * time.Hour
-	maxPasswordLength   = 1024
+	// sessionMaxLifetime is the absolute cap on how long a single session
+	// may live from CreatedAt regardless of activity. S5 tightened the
+	// previous 24h cap to 8h so a stolen cookie is useful for at most one
+	// workday, not a full calendar day.
+	sessionMaxLifetime = 8 * time.Hour
+	// sessionIdleTimeout expires a session that has not been observed in
+	// this window. Combined with sessionMaxLifetime this implements
+	// sliding-refresh semantics: active users roll forward within the
+	// absolute cap, idle ones lose their session quickly enough that an
+	// unattended browser on a shared machine is not a long-lived attack
+	// surface.
+	sessionIdleTimeout = 30 * time.Minute
+	// sessionTouchThrottle bounds how often an active session's LastSeenAt
+	// is bumped. Without this cap every authenticated request would roll
+	// the clock forward; with it we still capture steady activity at
+	// minute-level resolution, which is enough to drive idle-expiry.
+	sessionTouchThrottle = 1 * time.Minute
+	maxPasswordLength    = 1024
 )
+
+// sessionTTL is retained as the public compatibility alias for
+// sessionMaxLifetime. Existing call-sites (RestoreSessions cutoff,
+// cleanupExpiredSessionsLocked, tests) continue to read the same value;
+// the new idle-timeout is enforced in addition, not instead.
+const sessionTTL = sessionMaxLifetime
 
 // validatePassword only enforces a sanity cap so that pathological inputs
 // cannot stall the password hasher. No complexity rules — operators pick
@@ -118,10 +140,19 @@ type User struct {
 }
 
 // Session stores the authenticated session record returned after login.
+//
+// LastSeenAt is an in-memory sliding-refresh timestamp (S5). It is not
+// persisted to storage: on control-plane restart we reload the session
+// from SessionRecord and seed LastSeenAt = CreatedAt. This is a small
+// privacy/correctness trade-off: the idle-timeout resets once across a
+// restart rather than leaking a precise activity timestamp into the
+// audit-visible SessionRecord table, and still meets the S5 goal of
+// shrinking a stolen cookie's window.
 type Session struct {
-	ID        string
-	UserID    string
-	CreatedAt time.Time
+	ID         string
+	UserID     string
+	CreatedAt  time.Time
+	LastSeenAt time.Time
 }
 
 // totpUseKey identifies a consumed TOTP code for replay prevention.
@@ -201,10 +232,16 @@ func (s *Service) RestoreSessions() error {
 		if record.CreatedAt.Before(cutoff) {
 			continue
 		}
+		// S5: LastSeenAt is not persisted. After a restart we seed it to
+		// CreatedAt, which resets the idle-timeout window once. This is
+		// the only place in the flow where a clean restart effectively
+		// extends a session by one idle window — acceptable because the
+		// absolute sessionMaxLifetime cap still applies.
 		s.sessions[record.ID] = Session{
-			ID:        record.ID,
-			UserID:    record.UserID,
-			CreatedAt: record.CreatedAt,
+			ID:         record.ID,
+			UserID:     record.UserID,
+			CreatedAt:  record.CreatedAt,
+			LastSeenAt: record.CreatedAt,
 		}
 	}
 
@@ -382,9 +419,10 @@ func (s *Service) Authenticate(input LoginInput, now time.Time) (Session, error)
 		return Session{}, err
 	}
 	session := Session{
-		ID:        sessionID,
-		UserID:    user.ID,
-		CreatedAt: now.UTC(),
+		ID:         sessionID,
+		UserID:     user.ID,
+		CreatedAt:  now.UTC(),
+		LastSeenAt: now.UTC(),
 	}
 
 	// P2-SEC-07: persist the session before inserting it into the in-memory
@@ -791,9 +829,12 @@ func (s *Service) cleanupPendingTotpSetupLocked(now time.Time) {
 }
 
 func (s *Service) cleanupExpiredSessionsLocked(now time.Time) {
-	cutoff := now.UTC().Add(-sessionTTL)
+	maxCutoff := now.UTC().Add(-sessionMaxLifetime)
+	idleCutoff := now.UTC().Add(-sessionIdleTimeout)
 	for sessionID, session := range s.sessions {
-		if session.CreatedAt.Before(cutoff) {
+		// S5: evict on either the absolute cap or the idle-timeout.
+		// Whichever fires first wins.
+		if session.CreatedAt.Before(maxCutoff) || session.LastSeenAt.Before(idleCutoff) {
 			delete(s.sessions, sessionID)
 		}
 	}
@@ -865,6 +906,9 @@ func randomUserID() (string, error) {
 }
 
 // GetSession returns the current session record for the provided identifier.
+// Expired sessions (past the absolute lifetime cap or the idle-timeout) are
+// reported as ErrSessionNotFound and evicted from memory. Use TouchSession
+// to slide the idle-timeout forward during an authenticated request.
 func (s *Service) GetSession(sessionID string) (Session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -876,12 +920,47 @@ func (s *Service) GetSession(sessionID string) (Session, error) {
 	if !ok {
 		return Session{}, ErrSessionNotFound
 	}
-	if now.After(session.CreatedAt.Add(sessionTTL)) {
+	if now.After(session.CreatedAt.Add(sessionMaxLifetime)) ||
+		now.After(session.LastSeenAt.Add(sessionIdleTimeout)) {
 		delete(s.sessions, sessionID)
 		return Session{}, ErrSessionNotFound
 	}
 
 	return session, nil
+}
+
+// TouchSession slides the idle-timeout forward on an active session (S5).
+// It is a no-op if the session no longer exists, if the absolute-lifetime
+// cap has already passed, or if LastSeenAt was updated less than
+// sessionTouchThrottle ago. The throttle prevents a busy dashboard from
+// turning every authenticated request into a map write, while still
+// keeping the idle window rolling at minute-level resolution.
+//
+// TouchSession is in-memory only. It does NOT write to the session store:
+// that would couple every authenticated request to a DB round-trip for a
+// value we rebuild from CreatedAt on restart anyway. Callers should invoke
+// it after a successful session lookup on any authenticated HTTP handler.
+func (s *Service) TouchSession(sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	session, ok := s.sessions[sessionID]
+	if !ok {
+		return
+	}
+	now := s.now().UTC()
+	if now.After(session.CreatedAt.Add(sessionMaxLifetime)) {
+		// Absolute cap already reached — don't extend; cleanup will evict.
+		return
+	}
+	if now.Sub(session.LastSeenAt) < sessionTouchThrottle {
+		return
+	}
+	session.LastSeenAt = now
+	s.sessions[sessionID] = session
 }
 
 // Logout revokes a session so it can no longer authenticate requests.
