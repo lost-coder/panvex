@@ -17,7 +17,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"golang.org/x/crypto/argon2"
@@ -40,8 +39,8 @@ var (
 	ErrInvalidTotpCode = errors.New("invalid totp code")
 	// ErrTotpSetupNotFound reports a missing or expired pending TOTP setup.
 	ErrTotpSetupNotFound = errors.New("totp setup not found")
-	// ErrPasswordTooWeak reports a password that does not meet minimum requirements.
-	ErrPasswordTooWeak = errors.New("password must be at least 12 characters with uppercase, lowercase, and a digit")
+	// ErrPasswordTooWeak reports a password that is empty or exceeds the length cap.
+	ErrPasswordTooWeak = errors.New("password must be between 1 and 1024 characters")
 	// ErrSessionStoreUnavailable reports that the persistent session store
 	// rejected a write during login. P2-SEC-07: the in-memory session alone
 	// is not acceptable — it would silently disappear on the next control-
@@ -64,28 +63,15 @@ const (
 const (
 	pendingTotpSetupTTL = 10 * time.Minute
 	sessionTTL          = 24 * time.Hour
-	minPasswordLength = 12
-	maxPasswordLength = 1024
+	maxPasswordLength   = 1024
 )
 
-// validatePasswordComplexity requires at least 12 characters with a mix of
-// uppercase, lowercase, and digits.
-func validatePasswordComplexity(password string) error {
-	if len(password) < minPasswordLength || len(password) > maxPasswordLength {
-		return ErrPasswordTooWeak
-	}
-	var hasUpper, hasLower, hasDigit bool
-	for _, r := range password {
-		switch {
-		case unicode.IsUpper(r):
-			hasUpper = true
-		case unicode.IsLower(r):
-			hasLower = true
-		case unicode.IsDigit(r):
-			hasDigit = true
-		}
-	}
-	if !hasUpper || !hasLower || !hasDigit {
+// validatePassword only enforces a sanity cap so that pathological inputs
+// cannot stall the password hasher. No complexity rules — operators pick
+// whatever password they feel comfortable with. An empty password is still
+// refused because the row must carry a hash.
+func validatePassword(password string) error {
+	if password == "" || len(password) > maxPasswordLength {
 		return ErrPasswordTooWeak
 	}
 	return nil
@@ -252,7 +238,7 @@ type pendingTotpSetup struct {
 
 // BootstrapUser creates a local user with TOTP disabled by default.
 func (s *Service) BootstrapUser(input BootstrapInput, now time.Time) (User, string, error) {
-	if err := validatePasswordComplexity(input.Password); err != nil {
+	if err := validatePassword(input.Password); err != nil {
 		return User{}, "", err
 	}
 
