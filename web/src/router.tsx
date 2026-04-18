@@ -15,6 +15,7 @@ import { LayoutDashboard, Server, Users, Settings } from "lucide-react";
 import { AppShell, type NavItem } from "@lost-coder/panvex-ui";
 import { AppearanceProvider } from "@/providers/AppearanceProvider";
 import { AuthProvider } from "@/providers/AuthProvider";
+import { WsStatusBanner } from "@/components/WsStatusBanner";
 import { apiClient } from "@/lib/api";
 import { resolveConfiguredRootPath, getRouterBasepath } from "@/lib/runtime-path";
 
@@ -76,6 +77,8 @@ function ProtectedShell() {
         onNavigate={(id) => navigate({ to: id })}
         onLogout={handleLogout}
       >
+        {/* P2-UX-10: surface reconnection state above all page content. */}
+        <WsStatusBanner />
         <Outlet />
       </AppShell>
     </AppearanceProvider>

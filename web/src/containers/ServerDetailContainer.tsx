@@ -9,6 +9,7 @@ import { useUpdates } from "@/hooks/useUpdates";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { apiClient, type ServerLoadPoint } from "@/lib/api";
 import { transformAgentConnection } from "@/lib/transforms/servers";
+import { useConfirm } from "@/providers/ConfirmProvider";
 
 const RANGE_HOURS: Record<string, number> = { "1h": 1, "6h": 6, "24h": 24, "7d": 168 };
 
@@ -59,6 +60,7 @@ export function ServerDetailContainer() {
   const { query: updatesQuery } = useUpdates();
   const latestAgentVersion = updatesQuery.data?.state.latest_agent_version;
   const navigate = useNavigate();
+  const confirm = useConfirm();
   const [timeRange, setTimeRange] = useState("6h");
   const [updateFeedback, setUpdateFeedback] = useState<string | null>(null);
 
@@ -116,7 +118,16 @@ export function ServerDetailContainer() {
       onAllowReEnrollment={() => allowCertRecoveryMutation.mutate()}
       onRevokeGrant={() => revokeCertRecoveryMutation.mutate()}
       onRename={(name: string) => renameMutation.mutate(name)}
-      onDeregister={() => {
+      // P2-UX-04: deregistering revokes the agent's cert and drops it
+      // from the fleet — a second click shouldn't happen on a slip.
+      onDeregister={async () => {
+        const ok = await confirm({
+          title: "Deregister this server?",
+          body: `"${server.name}" will disconnect from the control-plane and stop receiving rollouts. Re-enrollment requires a new token.`,
+          confirmLabel: "Deregister",
+          variant: "danger",
+        });
+        if (!ok) return;
         deregisterMutation.mutate(undefined, {
           onSuccess: () => navigate({ to: "/servers" }),
         });
