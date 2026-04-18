@@ -14,7 +14,7 @@ vi.mock("@lost-coder/panvex-ui", () => ({
   Spinner: () => <div data-testid="spinner" />,
 }));
 
-vi.mock("@lost-coder/panvex-ui/pages", () => ({
+vi.mock("@/pages/ClientsPage", () => ({
   ClientsPage: (props: {
     clients: { id: string; name: string }[];
     pendingDiscoveredCount: number;
