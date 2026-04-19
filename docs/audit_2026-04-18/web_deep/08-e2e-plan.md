@@ -31,18 +31,40 @@ npm run test:e2e
 а `reuseExistingServer: !CI` означает, что локально вы можете держать
 `npm run dev` отдельно — Playwright подхватит.
 
+## Extensions, добавленные сверху baseline (в этом же PR)
+
+* **Wider browser matrix** — в `playwright.config.ts` теперь три
+  проекта: chromium, firefox, webkit. Smoke-suite прогоняется на всех
+  трёх параллельно. `test:e2e:install` тянет все три движка.
+* **axe-playwright** — `tests/e2e/a11y.spec.ts` прогоняет axe-core на
+  Dashboard/Servers/Clients/Settings с WCAG 2.1 A+AA тегами. Правило
+  `color-contrast` временно выключено (token-level аудит — 6.11).
+* **Visual regression через Playwright snapshots** —
+  `tests/e2e/visual.spec.ts` делает по одному скриншоту на primary
+  route. Baseline хранится в `tests/e2e/visual.spec.ts-snapshots/` и
+  коммитится в репо (первый CI-прогон пишет baselines, последующие
+  диффают). Обновление: `npm run test:e2e:update-snapshots`.
+* **Backend-integration E2E scaffold** —
+  `playwright.integration.config.ts`, `tests/e2e/integration/` с
+  `login.int.spec.ts` и `README.md`. Запуск: поднять control-plane
+  вручную или через (пока не закоммиченный) docker-compose, затем
+  `npm run test:e2e:integration`.
+
 ## Что НЕ покрыто этой фазой (defer)
 
-* **Visual regression** (Chromatic/Percy/loki). Отдельный PR после
-  стабилизации layout'а, иначе каждый UI-tweak генерирует шум.
-* **Полный matrix браузеров**: Firefox и WebKit включаем только после
-  того, как smoke-suite перестанет краснеть на Chromium.
-* **Backend-integration E2E**: для hot-path'ов (rollout job, enrollment)
-  нужен docker-compose с реальным Postgres и агентом. Прописывается
-  как `e2e-integration` job отдельно от smoke'а.
-* **A11y audit в Playwright**: `@axe-core/playwright` прикрутим в
-  отдельном PR вместе с Storybook-level проверками (`@storybook/addon-a11y`
-  уже в devDeps).
+* **Chromatic / Percy** — внешний сервис, требует API-ключей. Наш
+  локальный snapshot-подход покрывает 80% use-case бесплатно; на
+  Chromatic/Percy перейдём, если PR-комментарии с UI-diff'ом станут
+  критичны для ревью.
+* **Visual baselines в репо** — первый CI-прогон должен сгенерировать
+  и закоммитить их автоматически через GitHub Actions; локальная
+  генерация требует `npx playwright install chromium`.
+* **Integration docker-compose** — `tests/e2e/integration/docker-compose.yml`
+  оставлен ненаписанным (требует выбора образа, сборочной pipeline и
+  volume-mount layout'а под локальную Go-сборку). Пока run-локально
+  задокументирован в README.
+* **Agent-level интеграция** — агенту нужны gRPC + TLS + Telemt target.
+  Отдельный тир, живёт в `cmd/agent/*_test.go` на Go, не здесь.
 
 ## CI
 

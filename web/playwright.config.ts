@@ -30,6 +30,18 @@ export default defineConfig({
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
     },
+    // 8.ext: widen the matrix once the Chromium smoke stays green.
+    // Firefox covers Gecko quirks (form validation, focus-visible);
+    // WebKit covers Safari which a subset of operators actually use.
+    // Both stay on the same smoke suite — no Safari-only spec needed.
+    {
+      name: "firefox",
+      use: { ...devices["Desktop Firefox"] },
+    },
+    {
+      name: "webkit",
+      use: { ...devices["Desktop Safari"] },
+    },
   ],
   webServer: {
     command: "npm run dev",
