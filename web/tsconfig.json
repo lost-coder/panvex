@@ -35,5 +35,5 @@
     "types": ["vitest/globals", "@testing-library/jest-dom"]
   },
   "include": ["src", "vitest.setup.ts", "vitest.config.ts"],
-  "exclude": ["src/**/*.stories.tsx"]
+  "exclude": ["src/**/*.stories.tsx", "tests/e2e/**", "playwright.config.ts"]
 }

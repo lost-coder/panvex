@@ -5,3 +5,4 @@ export { useUrlSearchState } from "./useUrlSearchState";
 export { useViewMode } from "./useViewMode";
 export { useOnlineStatus } from "./useOnlineStatus";
 export { useFocusMainOnRouteChange } from "./useFocusMainOnRouteChange";
+export { useKeyboardShortcut } from "./useKeyboardShortcut";
