@@ -1,6 +1,7 @@
 // src/compositions/TokenList.tsx
 import { Badge } from "@/ui/primitives/Badge";
 import { Button } from "@/ui/base/button";
+import { CopyButton } from "@/ui/primitives/CopyButton";
 import { DataTable } from "@/ui/components/DataTable";
 import { tokenStatusVariant } from "@/ui/lib/status";
 import type { TokenListProps, EnrollmentTokenData } from "@/shared/api/types-pages/pages";
@@ -12,13 +13,20 @@ export function TokenList({ tokens, onRevoke }: TokenListProps) {
       key: "value",
       header: "Token",
       render: (t: EnrollmentTokenData) => (
-        <span className="font-mono text-xs">{t.value.slice(0, 16)}...</span>
+        // Phase-7 fix: the token has to be readable and copyable — operators
+        // paste it into the agent bootstrap command. Previously it was
+        // truncated after 16 chars AND rendered in a muted color inherited
+        // from the parent, so neither use was possible.
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="font-mono text-xs text-fg break-all">{t.value}</span>
+          <CopyButton text={t.value} />
+        </div>
       ),
     },
     {
       key: "fleetGroup",
       header: "Fleet Group",
-      render: (t: EnrollmentTokenData) => <span className="text-sm">{t.fleetGroupId}</span>,
+      render: (t: EnrollmentTokenData) => <span className="text-sm text-fg">{t.fleetGroupId}</span>,
     },
     {
       key: "status",
