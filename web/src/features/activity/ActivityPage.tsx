@@ -1,6 +1,7 @@
 import { PageHeader } from "@/ui/layout/PageHeader";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/ui/base/tabs";
 import { DataTable } from "@/ui/components/DataTable";
+import { EmptyState } from "@/ui/components/EmptyState";
 import { Badge } from "@/ui/primitives/Badge";
 import { Timeline } from "@/ui/compositions/Timeline";
 import type { ActivityPageProps, JobListItem, AuditListItem } from "@/shared/api/types-pages/pages";
@@ -73,7 +74,10 @@ export function ActivityPage({ jobs, auditEvents, activeTab, onTabChange }: Acti
 
           <TabsContent value="jobs" className="mt-4">
             {jobs.length === 0 ? (
-              <div className="text-center text-sm text-fg-muted py-8">No jobs recorded yet.</div>
+              <EmptyState
+                title="Jobs will appear here"
+                description="Mutations run by operators (client rollouts, runtime reloads, self-updates) are recorded here once the first one fires."
+              />
             ) : (
               <DataTable data={jobs} columns={jobColumns} keyExtractor={(j) => j.id} />
             )}
@@ -81,7 +85,10 @@ export function ActivityPage({ jobs, auditEvents, activeTab, onTabChange }: Acti
 
           <TabsContent value="audit" className="mt-4">
             {auditEvents.length === 0 ? (
-              <div className="text-center text-sm text-fg-muted py-8">No audit events yet.</div>
+              <EmptyState
+                title="Audit trail is empty"
+                description="Every login, mutation, and admin action appears here. Activity from the last 30 days is retained by default."
+              />
             ) : (
               <Timeline events={auditToTimeline(auditEvents)} />
             )}
