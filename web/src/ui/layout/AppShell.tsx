@@ -41,7 +41,20 @@ export function AppShell({
         Tab once, focus the skip link, activate it, and land on this
         landmark — bypassing the sidebar/nav on every page.
       */}
-      <main id="main-content" className="md:ml-[60px] pb-16 md:pb-0 min-h-screen">
+      {/*
+        W6: `tabIndex={-1}` lets the router's post-navigation hook
+        programmatically focus this landmark on every page change, so
+        screen readers announce the new page instead of keeping focus
+        trapped on the sidebar link the user just activated. The
+        landmark stays keyboard-neutral for mouse users (no visible
+        focus ring because the hook calls focus({preventScroll:true})
+        and focus-visible is not triggered by scriptable focus).
+      */}
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="md:ml-[60px] pb-16 md:pb-0 min-h-screen outline-none"
+      >
         {children}
       </main>
 

@@ -16,6 +16,9 @@ export const API_ERROR_CODES = [
   "audit_persist_unavailable",
   "forbidden",
   "rate_limited",
+  // Client-side sentinel: surfaced by api() when navigator.onLine is
+  // false on a mutation. Not emitted by the backend.
+  "offline",
 ] as const;
 
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];

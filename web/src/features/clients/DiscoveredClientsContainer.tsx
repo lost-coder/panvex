@@ -1,8 +1,8 @@
-import { Spinner } from "@/ui";
 import { DiscoveredClientsPage } from "./DiscoveredClientsPage";
 import { useDiscoveredClients } from "./hooks/useDiscoveredClients";
 import { useNavigate } from "@tanstack/react-router";
 import { ErrorState } from "@/components/ErrorState";
+import { SkeletonRows } from "@/components/Skeleton";
 import { useConfirm } from "@/app/providers/ConfirmProvider";
 import { useUrlSearchState } from "@/shared/hooks/useUrlSearchState";
 
@@ -21,8 +21,8 @@ export function DiscoveredClientsContainer() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Spinner />
+      <div className="px-4 md:px-8 py-8">
+        <SkeletonRows count={5} />
       </div>
     );
   }

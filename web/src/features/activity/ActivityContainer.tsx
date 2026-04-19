@@ -1,15 +1,19 @@
 import { useState } from "react";
-import { Spinner } from "@/ui";
 import { ActivityPage } from "./ActivityPage";
 import { useActivity } from "./hooks/useActivity";
 import { ErrorState } from "@/components/ErrorState";
+import { SkeletonRows } from "@/components/Skeleton";
 
 export function ActivityContainer() {
   const { jobs, auditEvents, isLoading, error } = useActivity();
   const [activeTab, setActiveTab] = useState("jobs");
 
   if (isLoading) {
-    return <div className="flex items-center justify-center h-64"><Spinner /></div>;
+    return (
+      <div className="px-4 md:px-8 py-8">
+        <SkeletonRows count={8} />
+      </div>
+    );
   }
 
   if (error) {

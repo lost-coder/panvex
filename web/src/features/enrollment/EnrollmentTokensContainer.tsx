@@ -1,7 +1,7 @@
-import { Spinner } from "@/ui";
 import { EnrollmentTokensPage } from "./EnrollmentTokensPage";
 import { useEnrollmentTokens } from "./hooks/useEnrollmentTokens";
 import { ErrorState } from "@/components/ErrorState";
+import { SkeletonRows } from "@/components/Skeleton";
 import { useConfirm } from "@/app/providers/ConfirmProvider";
 
 export function EnrollmentTokensContainer() {
@@ -26,7 +26,11 @@ export function EnrollmentTokensContainer() {
   };
 
   if (isLoading) {
-    return <div className="flex items-center justify-center h-64"><Spinner /></div>;
+    return (
+      <div className="px-4 md:px-8 py-8">
+        <SkeletonRows count={4} />
+      </div>
+    );
   }
 
   if (error) {
