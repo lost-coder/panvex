@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Spinner, type UserFormData, type UserFormSheetProps } from "@/ui";
+import { type UserFormData, type UserFormSheetProps } from "@/ui";
+import { SkeletonRows } from "@/components/Skeleton";
 import { UsersManagementPage } from "./UsersManagementPage";
 import { useUsers } from "./hooks/useUsers";
 import { useConfirm } from "@/app/providers/ConfirmProvider";
@@ -88,7 +89,14 @@ export function UsersContainer() {
   };
 
   if (isLoading) {
-    return <div className="flex items-center justify-center h-64"><Spinner /></div>;
+    // 6.1: skeleton rows mirror the list layout so the page doesn't
+    // jump when data arrives, and screen readers announce "Загрузка
+    // списка…" once (see SkeletonRows contract).
+    return (
+      <div className="px-4 md:px-8 py-8">
+        <SkeletonRows count={6} />
+      </div>
+    );
   }
 
   const sheetProps: UserFormSheetProps | undefined = sheet.mode !== "closed"

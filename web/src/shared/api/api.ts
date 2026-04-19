@@ -677,6 +677,16 @@ export async function api<T>(
   init?: RequestInit,
   schema?: ZodType<T>,
 ): Promise<T> {
+  // W15: fail mutations fast when the OS reports no network. Reads still
+  // go through fetch so the browser cache / service worker can answer
+  // them; mutations have nowhere to land, so surfacing "offline" here
+  // saves the caller a 30s TCP timeout and preserves optimistic UIs.
+  const method = (init?.method ?? "GET").toUpperCase();
+  const isMutation = method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE";
+  if (isMutation && typeof navigator !== "undefined" && navigator.onLine === false) {
+    throw new ApiError("Соединение потеряно — попробуйте снова, когда сеть восстановится.", "offline");
+  }
+
   const response = await fetch(path, {
     credentials: "include",
     headers: {

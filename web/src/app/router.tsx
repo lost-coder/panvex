@@ -15,8 +15,10 @@ import { LayoutDashboard, Server, Users, Settings } from "lucide-react";
 import { AppShell, type NavItem } from "@/ui";
 import { AppearanceProvider } from "@/app/providers/AppearanceProvider";
 import { AuthProvider } from "@/app/providers/AuthProvider";
+import { OfflineBanner } from "@/components/OfflineBanner";
 import { WsStatusBanner } from "@/components/WsStatusBanner";
 import { apiClient } from "@/shared/api/api";
+import { useFocusMainOnRouteChange } from "@/shared/hooks";
 import { resolveConfiguredRootPath, getRouterBasepath } from "@/shared/lib/runtime-path";
 
 interface RouterContext {
@@ -54,6 +56,11 @@ function ProtectedShell() {
   const queryClient = useQueryClient();
   const { location } = useRouterState();
 
+  // W6: move focus to the main landmark on every pathname change so
+  // screen-reader and keyboard users land inside the new page instead
+  // of staying on the sidebar link they just activated.
+  useFocusMainOnRouteChange(location.pathname);
+
   const activeId =
     NAV_ITEMS.find(
       (item) => item.id !== "/" && location.pathname.startsWith(item.id),
@@ -77,6 +84,9 @@ function ProtectedShell() {
         onNavigate={(id) => navigate({ to: id })}
         onLogout={handleLogout}
       >
+        {/* W15: OS-level network failure sits above WsStatusBanner so
+            "offline" and "backend unreachable" remain visually distinct. */}
+        <OfflineBanner />
         {/* P2-UX-10: surface reconnection state above all page content. */}
         <WsStatusBanner />
         <Outlet />
