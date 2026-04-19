@@ -1,0 +1,121 @@
+{
+  "loginRequest": {
+    "min": {
+      "username": "alice",
+      "password": "pw"
+    },
+    "full": {
+      "username": "alice",
+      "password": "pw",
+      "totp_code": "123456"
+    }
+  },
+  "updateTotpRequest": {
+    "full": {
+      "password": "pw",
+      "totp_code": "654321"
+    }
+  },
+  "createUserRequest": {
+    "full": {
+      "username": "new-user",
+      "role": "operator",
+      "password": "pw"
+    }
+  },
+  "updateUserRequest": {
+    "min": {
+      "username": "u",
+      "role": "viewer"
+    },
+    "full": {
+      "username": "u",
+      "role": "admin",
+      "new_password": "pw"
+    }
+  },
+  "clientMutationRequest": {
+    "min": {
+      "name": "client-minimal"
+    },
+    "full": {
+      "name": "client-full",
+      "enabled": true,
+      "user_ad_tag": "tag-xyz",
+      "max_tcp_conns": 1024,
+      "max_unique_ips": 256,
+      "data_quota_bytes": 10737418240,
+      "expiration_rfc3339": "2030-01-01T00:00:00Z",
+      "fleet_group_ids": ["grp-a", "grp-b"],
+      "agent_ids": ["agent-1", "agent-2"]
+    }
+  },
+  "renameAgentRequest": {
+    "full": {
+      "node_name": "node-new"
+    }
+  },
+  "createEnrollmentTokenRequest": {
+    "full": {
+      "fleet_group_id": "grp-default",
+      "ttl_seconds": 3600
+    }
+  },
+  "createJobRequest": {
+    "full": {
+      "action": "runtime.reload",
+      "target_agent_ids": ["agent-1", "agent-2"],
+      "idempotency_key": "idemp-abc",
+      "ttl_seconds": 300
+    }
+  },
+  "updateAppearanceSettingsRequest": {
+    "full": {
+      "theme": "dark",
+      "density": "compact",
+      "help_mode": "basic"
+    }
+  },
+  "updatePanelSettingsRequest": {
+    "full": {
+      "http_public_url": "https://panel.example.com",
+      "grpc_public_endpoint": "grpc.example.com:8443"
+    }
+  },
+  "panelUpdateRequest": {
+    "full": {
+      "target_version": "v1.2.3"
+    }
+  },
+  "updateSettingsRequest": {
+    "min": {},
+    "full": {
+      "check_interval_hours": 12,
+      "auto_update_panel": true,
+      "auto_update_agents": false,
+      "github_repo": "owner/repo",
+      "github_token": "ghp_xxx",
+      "agent_download_source": "panel"
+    }
+  },
+  "agentBootstrapRequest": {
+    "full": {
+      "node_name": "node-1",
+      "version": "v1.0.0"
+    }
+  },
+  "agentCertificateRecoveryRequest": {
+    "full": {
+      "agent_id": "agent-1",
+      "certificate_pem": "-----BEGIN CERTIFICATE-----\nMIIB...\n-----END CERTIFICATE-----",
+      "proof_timestamp_unix": 1712000000,
+      "proof_nonce": "nonce-xyz",
+      "proof_signature": "base64signature=="
+    }
+  },
+  "agentCertificateRecoveryGrantRequest": {
+    "full": {
+      "ttl_seconds": 7200
+    }
+  }
+}

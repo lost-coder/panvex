@@ -13,3 +13,4 @@ export * from "./discovered.ts";
 export * from "./dashboard.ts";
 export * from "./auth.ts";
 export * from "./version.ts";
+export * from "./requests/index.ts";

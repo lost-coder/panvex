@@ -1,11 +1,23 @@
 import type { ZodType } from "zod";
 
 import { resolveAPIBasePath, resolveConfiguredRootPath } from "@/shared/lib/runtime-path";
+import type { ApiErrorCode } from "./error-codes";
 import {
+  agentCertificateRecoveryGrantRequestSchema,
   agentListSchema,
   clientListSchema,
+  clientMutationRequestSchema,
+  createEnrollmentTokenRequestSchema,
+  createJobRequestSchema,
+  createUserRequestSchema,
   discoveredClientListSchema,
+  loginRequestSchema,
   meResponseSchema,
+  renameAgentRequestSchema,
+  updateAppearanceSettingsRequestSchema,
+  updatePanelSettingsRequestSchema,
+  updateTotpRequestSchema,
+  updateUserRequestSchema,
   versionSchema,
   type VersionParsed,
 } from "./schemas";
@@ -553,8 +565,8 @@ export const configuredRootPath = resolveConfiguredRootPath();
 export const apiBasePath = resolveAPIBasePath(configuredRootPath);
 
 export class ApiError extends Error {
-  code?: string;
-  constructor(message: string, code?: string) {
+  code?: ApiErrorCode | string;
+  constructor(message: string, code?: ApiErrorCode | string) {
     super(message);
     this.code = code;
   }
@@ -762,11 +774,32 @@ export async function api<T>(
   return parsed.data;
 }
 
+/**
+ * Validate an outgoing request body against its Zod schema before it
+ * leaves the client. Schema mismatches here indicate a frontend bug
+ * (caller passed a shape the backend will reject), so we throw the same
+ * ApiSchemaError used for unexpected responses. Tagging the path with
+ * `(request)` lets the global listener distinguish request vs response
+ * drift when triaging.
+ */
+function encodeRequest<T>(path: string, schema: ZodType<T>, payload: unknown): string {
+  const parsed = schema.safeParse(payload);
+  if (!parsed.success) {
+    // eslint-disable-next-line no-console
+    console.error("[api] request schema mismatch", {
+      path,
+      issues: parsed.error.issues,
+    });
+    throw new ApiSchemaError(`${path} (request)`, parsed.error);
+  }
+  return JSON.stringify(parsed.data);
+}
+
 export const apiClient = {
   login: (payload: { username: string; password: string; totp_code?: string }) =>
     api<{ status: string }>(`${apiBasePath}/auth/login`, {
       method: "POST",
-      body: JSON.stringify(payload)
+      body: encodeRequest(`${apiBasePath}/auth/login`, loginRequestSchema, payload),
     }),
   logout: () =>
     api<void>(`${apiBasePath}/auth/logout`, {
@@ -780,12 +813,20 @@ export const apiClient = {
   enableTotp: (payload: { password: string; totp_code: string }) =>
     api<TotpStatusResponse>(`${apiBasePath}/auth/totp/enable`, {
       method: "POST",
-      body: JSON.stringify(payload)
+      body: encodeRequest(
+        `${apiBasePath}/auth/totp/enable`,
+        updateTotpRequestSchema,
+        payload,
+      ),
     }),
   disableTotp: (payload: { password: string; totp_code: string }) =>
     api<TotpStatusResponse>(`${apiBasePath}/auth/totp/disable`, {
       method: "POST",
-      body: JSON.stringify(payload)
+      body: encodeRequest(
+        `${apiBasePath}/auth/totp/disable`,
+        updateTotpRequestSchema,
+        payload,
+      ),
     }),
   controlRoom: () => api<ControlRoomResponse>(`${apiBasePath}/control-room`),
   telemetryDashboard: () => api<TelemetryDashboardResponse>(`${apiBasePath}/telemetry/dashboard`),
@@ -808,12 +849,16 @@ export const apiClient = {
   createClient: (payload: ClientInput) =>
     api<Client>(`${apiBasePath}/clients`, {
       method: "POST",
-      body: JSON.stringify(payload)
+      body: encodeRequest(`${apiBasePath}/clients`, clientMutationRequestSchema, payload),
     }),
   updateClient: (clientID: string, payload: ClientInput) =>
     api<Client>(`${apiBasePath}/clients/${clientID}`, {
       method: "PUT",
-      body: JSON.stringify(payload)
+      body: encodeRequest(
+        `${apiBasePath}/clients/${clientID}`,
+        clientMutationRequestSchema,
+        payload,
+      ),
     }),
   rotateClientSecret: (clientID: string) =>
     api<Client>(`${apiBasePath}/clients/${clientID}/rotate-secret`, {
@@ -832,7 +877,11 @@ export const apiClient = {
   }) =>
     api<AppearanceSettingsResponse>(`${apiBasePath}/settings/appearance`, {
       method: "PUT",
-      body: JSON.stringify(payload)
+      body: encodeRequest(
+        `${apiBasePath}/settings/appearance`,
+        updateAppearanceSettingsRequestSchema,
+        payload,
+      ),
     }),
   updatePanelSettings: (payload: {
     http_public_url: string;
@@ -840,7 +889,11 @@ export const apiClient = {
   }) =>
     api<PanelSettingsResponse>(`${apiBasePath}/settings/panel`, {
       method: "PUT",
-      body: JSON.stringify(payload)
+      body: encodeRequest(
+        `${apiBasePath}/settings/panel`,
+        updatePanelSettingsRequestSchema,
+        payload,
+      ),
     }),
   restartPanel: () =>
     api<PanelSettingsResponse>(`${apiBasePath}/settings/panel/restart`, {
@@ -849,12 +902,16 @@ export const apiClient = {
   createUser: (payload: CreateUserInput) =>
     api<LocalUser>(`${apiBasePath}/users`, {
       method: "POST",
-      body: JSON.stringify(payload)
+      body: encodeRequest(`${apiBasePath}/users`, createUserRequestSchema, payload),
     }),
   updateUser: (userID: string, payload: UpdateUserInput) =>
     api<LocalUser>(`${apiBasePath}/users/${userID}`, {
       method: "PUT",
-      body: JSON.stringify(payload)
+      body: encodeRequest(
+        `${apiBasePath}/users/${userID}`,
+        updateUserRequestSchema,
+        payload,
+      ),
     }),
   deleteUser: (userID: string) =>
     api<void>(`${apiBasePath}/users/${userID}`, {
@@ -870,7 +927,7 @@ export const apiClient = {
   createJob: (payload: JobCreateInput) =>
     api<Job>(`${apiBasePath}/jobs`, {
       method: "POST",
-      body: JSON.stringify(payload)
+      body: encodeRequest(`${apiBasePath}/jobs`, createJobRequestSchema, payload),
     }),
   createEnrollmentToken: (payload: {
     fleet_group_id: string;
@@ -878,13 +935,26 @@ export const apiClient = {
   }) =>
     api<EnrollmentTokenResponse>(`${apiBasePath}/agents/enrollment-tokens`, {
       method: "POST",
-      body: JSON.stringify(payload)
+      body: encodeRequest(
+        `${apiBasePath}/agents/enrollment-tokens`,
+        createEnrollmentTokenRequestSchema,
+        payload,
+      ),
     }),
   allowAgentCertificateRecovery: (agentID: string, payload?: { ttl_seconds?: number }) =>
-    api<AgentCertificateRecovery>(`${apiBasePath}/agents/${agentID}/certificate-recovery-grants`, {
-      method: "POST",
-      body: JSON.stringify(payload ?? {})
-    }),
+    api<AgentCertificateRecovery>(
+      `${apiBasePath}/agents/${agentID}/certificate-recovery-grants`,
+      {
+        method: "POST",
+        body: payload?.ttl_seconds
+          ? encodeRequest(
+              `${apiBasePath}/agents/${agentID}/certificate-recovery-grants`,
+              agentCertificateRecoveryGrantRequestSchema,
+              { ttl_seconds: payload.ttl_seconds },
+            )
+          : JSON.stringify({}),
+      },
+    ),
   revokeAgentCertificateRecovery: (agentID: string) =>
     api<AgentCertificateRecovery>(`${apiBasePath}/agents/${agentID}/certificate-recovery-grants/revoke`, {
       method: "POST"
@@ -911,7 +981,11 @@ export const apiClient = {
   renameAgent: (agentID: string, nodeName: string) =>
     api<Agent>(`${apiBasePath}/agents/${agentID}`, {
       method: "PATCH",
-      body: JSON.stringify({ node_name: nodeName })
+      body: encodeRequest(
+        `${apiBasePath}/agents/${agentID}`,
+        renameAgentRequestSchema,
+        { node_name: nodeName },
+      )
     }),
   deregisterAgent: (agentID: string) =>
     api<void>(`${apiBasePath}/agents/${agentID}`, {
