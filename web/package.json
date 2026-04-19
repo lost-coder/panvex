@@ -13,7 +13,9 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
-    "test:e2e:install": "playwright install --with-deps chromium",
+    "test:e2e:install": "playwright install --with-deps chromium firefox webkit",
+    "test:e2e:integration": "playwright test --config=playwright.integration.config.ts",
+    "test:e2e:update-snapshots": "playwright test --update-snapshots",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build"
   },
@@ -44,6 +46,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.10.0",
     "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.50.0",
     "@storybook/addon-a11y": "^10.3.4",
