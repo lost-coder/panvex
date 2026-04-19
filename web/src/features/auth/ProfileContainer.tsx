@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Spinner } from "@/ui";
+import { SkeletonRows } from "@/components/Skeleton";
 import { ProfilePage } from "./ProfilePage";
 import { useProfile } from "./hooks/useProfile";
 import { useSettings } from "@/features/settings/hooks/useSettings";
@@ -12,7 +12,11 @@ export function ProfileContainer() {
   const [totpError, setTotpError] = useState<string | undefined>();
 
   if (profileLoading || settingsLoading || !profile || !settings) {
-    return <div className="flex items-center justify-center h-64"><Spinner /></div>;
+    return (
+      <div className="px-4 md:px-8 py-8">
+        <SkeletonRows count={4} label="Загрузка профиля…" />
+      </div>
+    );
   }
 
   return (

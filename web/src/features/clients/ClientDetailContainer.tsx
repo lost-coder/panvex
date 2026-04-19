@@ -59,6 +59,9 @@ export function ClientDetailContainer() {
           body: `This removes "${client.name}" from every node and revokes all its connection links.`,
           confirmLabel: "Delete client",
           variant: "danger",
+          // UX-05: irreversible and fleet-wide — force the operator to
+          // type the client name so a misclick can't wipe a tenant.
+          requireTypeMatch: client.name,
         });
         if (!ok) return;
         await deleteMutation.mutateAsync();

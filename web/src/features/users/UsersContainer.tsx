@@ -29,6 +29,10 @@ export function UsersContainer() {
       body: `"${name}" will be removed from the control-plane and their sessions will end immediately.`,
       confirmLabel: "Delete user",
       variant: "danger",
+      // UX-05: deletion revokes all sessions + audit continuity — gate on
+      // typing the exact username so a misclick on an admin row cannot
+      // lock everyone out.
+      requireTypeMatch: user?.username,
     });
     if (!ok) return;
     deleteUser.mutate(userId);
