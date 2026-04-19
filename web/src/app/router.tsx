@@ -16,9 +16,10 @@ import { AppShell, type NavItem } from "@/ui";
 import { AppearanceProvider } from "@/app/providers/AppearanceProvider";
 import { AuthProvider } from "@/app/providers/AuthProvider";
 import { OfflineBanner } from "@/components/OfflineBanner";
+import { ShortcutsOverlay } from "@/components/ShortcutsOverlay";
 import { WsStatusBanner } from "@/components/WsStatusBanner";
 import { apiClient } from "@/shared/api/api";
-import { useFocusMainOnRouteChange } from "@/shared/hooks";
+import { useFocusMainOnRouteChange, useKeyboardShortcut } from "@/shared/hooks";
 import { resolveConfiguredRootPath, getRouterBasepath } from "@/shared/lib/runtime-path";
 
 interface RouterContext {
@@ -61,6 +62,14 @@ function ProtectedShell() {
   // of staying on the sidebar link they just activated.
   useFocusMainOnRouteChange(location.pathname);
 
+  // UX-13: vim-style navigation. Leader `g` + route letter jumps to the
+  // matching page. Shortcuts are skipped while focus is inside an input,
+  // so typing "g" into the search box does not teleport the operator.
+  useKeyboardShortcut("g d", () => navigate({ to: "/" }));
+  useKeyboardShortcut("g s", () => navigate({ to: "/servers" }));
+  useKeyboardShortcut("g c", () => navigate({ to: "/clients" }));
+  useKeyboardShortcut("g t", () => navigate({ to: "/settings" }));
+
   const activeId =
     NAV_ITEMS.find(
       (item) => item.id !== "/" && location.pathname.startsWith(item.id),
@@ -90,6 +99,8 @@ function ProtectedShell() {
         {/* P2-UX-10: surface reconnection state above all page content. */}
         <WsStatusBanner />
         <Outlet />
+        {/* UX-13: keyboard-shortcut help dialog, toggled by `?`. */}
+        <ShortcutsOverlay />
       </AppShell>
     </AppearanceProvider>
   );

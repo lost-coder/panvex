@@ -20,6 +20,7 @@
 
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import { ConfirmDialog } from "@/ui";
+import { TypeToConfirmDialog } from "@/components/TypeToConfirmDialog";
 
 export interface ConfirmOptions {
   title: string;
@@ -27,6 +28,12 @@ export interface ConfirmOptions {
   confirmLabel?: string;
   cancelLabel?: string;
   variant?: "default" | "danger";
+  /**
+   * UX-05: when set, replaces the standard dialog with one that gates
+   * confirm on the operator typing this exact string. Use for truly
+   * irreversible actions (delete user, deregister agent).
+   */
+  requireTypeMatch?: string;
 }
 
 type ConfirmFn = (opts: ConfirmOptions) => Promise<boolean>;
@@ -70,19 +77,35 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo(() => confirm, [confirm]);
 
+  const dialog = state.options.requireTypeMatch ? (
+    <TypeToConfirmDialog
+      open={state.open}
+      title={state.options.title}
+      description={state.options.body}
+      requireTypeMatch={state.options.requireTypeMatch}
+      confirmLabel={state.options.confirmLabel}
+      cancelLabel={state.options.cancelLabel}
+      variant={state.options.variant}
+      onConfirm={() => settle(true)}
+      onCancel={() => settle(false)}
+    />
+  ) : (
+    <ConfirmDialog
+      open={state.open}
+      title={state.options.title}
+      description={state.options.body}
+      confirmLabel={state.options.confirmLabel}
+      cancelLabel={state.options.cancelLabel}
+      variant={state.options.variant}
+      onConfirm={() => settle(true)}
+      onCancel={() => settle(false)}
+    />
+  );
+
   return (
     <ConfirmContext.Provider value={value}>
       {children}
-      <ConfirmDialog
-        open={state.open}
-        title={state.options.title}
-        description={state.options.body}
-        confirmLabel={state.options.confirmLabel}
-        cancelLabel={state.options.cancelLabel}
-        variant={state.options.variant}
-        onConfirm={() => settle(true)}
-        onCancel={() => settle(false)}
-      />
+      {dialog}
     </ConfirmContext.Provider>
   );
 }

@@ -1,4 +1,3 @@
-import { Spinner } from "@/ui";
 import { SettingsPage } from "./SettingsPage";
 import { useNavigate } from "@tanstack/react-router";
 import { useSettings } from "./hooks/useSettings";
@@ -6,6 +5,7 @@ import { useProfile } from "@/features/auth/hooks/useProfile";
 import { useRetentionSettings } from "./hooks/useRetentionSettings";
 import { useAppearance } from "@/app/providers/AppearanceProvider";
 import { ErrorState } from "@/components/ErrorState";
+import { SkeletonRows } from "@/components/Skeleton";
 import { UpdatesSettingsSection } from "./UpdatesSettingsSection";
 
 export function SettingsContainer() {
@@ -17,7 +17,11 @@ export function SettingsContainer() {
   const isAdmin = profile?.role === "admin";
 
   if (isLoading || !settings) {
-    return <div className="flex items-center justify-center h-64"><Spinner /></div>;
+    return (
+      <div className="px-4 md:px-8 py-8">
+        <SkeletonRows count={5} label="Загрузка настроек…" />
+      </div>
+    );
   }
 
   if (error) {
