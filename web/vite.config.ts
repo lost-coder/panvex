@@ -14,35 +14,19 @@ export default defineConfig(({ mode }) => ({
     alias: { "@": path.resolve(__dirname, "./src") },
     dedupe: ["react", "react-dom"],
   },
-  optimizeDeps: {
-    include: ["@lost-coder/panvex-ui"],
-  },
   build: {
     // Embed build: never ship source maps (F4-4).
     // Other modes fall back to Vite's default (off for `vite build`, on
     // for the `vite dev` server). Explicit `false` for embed guards against
     // future default changes and against `vite build --sourcemap` at the CLI.
     sourcemap: mode === "embed" ? false : undefined,
-    // P3-FE-02: manual vendor chunks. Heavy deps live in @lost-coder/panvex-ui
-    // (recharts, radix, motion) and in web direct deps (react, tanstack).
-    // Splitting them lets the browser cache vendor code across deploys and
-    // keeps the initial route payload small — recharts/motion only load on
-    // routes that actually render them (e.g. ServerDetail metrics charts).
+    // P3-FE-02: manual vendor chunks. After Phase 4 the UI-kit lives inside
+    // src/ui/ instead of a separate package, so we split by direct-dep
+    // heavyweight modules (recharts/motion/radix/tanstack/react) to keep
+    // the initial route payload small and long-term cacheable.
     rollupOptions: {
       output: {
         manualChunks(id) {
-          // panvex-ui is linked via `file:` and resolves to its real path
-          // (outside node_modules). Its prebuilt dist bundle inlines
-          // recharts + radix + d3 etc. Route it into a dedicated vendor
-          // chunk so it becomes long-term cacheable and is not duplicated
-          // into every route chunk.
-          if (
-            id.includes("/panvex-ui/dist/") ||
-            id.includes("/ui/dist/index.js") ||
-            id.includes("/ui/dist/index.cjs")
-          ) {
-            return "vendor-ui";
-          }
           if (!id.includes("node_modules")) return undefined;
           // Recharts pulls in d3-* — bundle the whole subtree together so
           // it only loads with chart-bearing routes.
@@ -91,15 +75,6 @@ export default defineConfig(({ mode }) => ({
           }
           if (id.includes("/node_modules/zod/")) {
             return "vendor-zod";
-          }
-          // The UI kit ships as a single pre-bundled module (dist/index.js),
-          // so radix/recharts/motion are inlined there and can't be split
-          // from the web side. At minimum, isolate it so it's cacheable
-          // across deploys of the app shell. Deeper splitting (separate
-          // entry points for chart-heavy compositions) is a follow-up on
-          // the panvex-ui side.
-          if (id.includes("/node_modules/@lost-coder/panvex-ui/")) {
-            return "vendor-ui";
           }
           return "vendor";
         },

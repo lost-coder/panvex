@@ -1,8 +1,11 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"crypto/subtle"
+	"errors"
+	"net"
 	"net/http"
 	"strconv"
 	"time"
@@ -298,6 +301,30 @@ func (c *statusCapture) Write(b []byte) (int, error) {
 		c.wroteHeader = true
 	}
 	return c.ResponseWriter.Write(b)
+}
+
+// Hijack forwards to the underlying ResponseWriter so WebSocket / SSE
+// handlers that need to take over the raw connection still work when
+// their handler is wrapped by metricsMiddleware. Without this method
+// the promotion check `ResponseWriter.(http.Hijacker)` fails and
+// coder/websocket responds with 501 Not Implemented, breaking the
+// realtime feed. The TCP connection is no longer under the middleware's
+// control after a successful hijack; the captured status stays at the
+// pre-hijack default (200).
+func (c *statusCapture) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hj, ok := c.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("underlying ResponseWriter does not implement http.Hijacker")
+	}
+	return hj.Hijack()
+}
+
+// Flush forwards to the underlying ResponseWriter to keep streaming
+// responses (e.g. SSE) working through the metrics wrapper.
+func (c *statusCapture) Flush() {
+	if f, ok := c.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 // metricsMiddleware observes duration and increments the request counter for
