@@ -12,7 +12,7 @@ function buildInstallCommand(
   panelUrl: string,
   tokenValue: string,
   nodeName: string,
-  advancedOptions?: { telemtUrl: string; telemtAuth: string },
+  advancedOptions?: { telemtUrl: string; telemtMetricsUrl: string; telemtAuth: string },
 ) {
   let cmd =
     `curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/deploy/install-agent.sh | \\\n` +
@@ -23,6 +23,15 @@ function buildInstallCommand(
 
   if (advancedOptions?.telemtUrl && advancedOptions.telemtUrl !== "http://127.0.0.1:9091") {
     cmd += ` \\\n    --telemt-url ${advancedOptions.telemtUrl}`;
+  }
+  // Metrics URL is a first-class knob in the wizard because Telemt
+  // ships with metrics off. Only append the flag when the operator
+  // changed it from the agent's built-in default.
+  if (
+    advancedOptions?.telemtMetricsUrl &&
+    advancedOptions.telemtMetricsUrl !== "http://127.0.0.1:8081"
+  ) {
+    cmd += ` \\\n    --telemt-metrics-url ${advancedOptions.telemtMetricsUrl}`;
   }
   if (advancedOptions?.telemtAuth) {
     cmd += ` \\\n    --telemt-auth ${advancedOptions.telemtAuth}`;
@@ -42,6 +51,7 @@ export function AddServerContainer() {
   const [error, setError] = useState<string | undefined>();
   const [advancedOptions, setAdvancedOptions] = useState({
     telemtUrl: "http://127.0.0.1:9091",
+    telemtMetricsUrl: "http://127.0.0.1:8081",
     telemtAuth: "",
   });
 
@@ -93,9 +103,13 @@ export function AddServerContainer() {
   }, [selectedFleetGroup, tokenTtl]);
 
   const handleInstallConfirm = useCallback(() => {
+    // Bootstrap is the FIRST thing we wait on — the agent must
+    // exchange its one-shot token for a certificate before anything
+    // else happens. Gateway + first-data stages stay pending until
+    // that lands.
     setConnectionStatus({
-      bootstrap: "pending",
-      grpcConnect: "waiting",
+      bootstrap: "waiting",
+      grpcConnect: "pending",
       firstData: "pending",
     });
     setStep(3);
@@ -113,31 +127,44 @@ export function AddServerContainer() {
         if (cancelled) break;
         try {
           const agents: Agent[] = await apiClient.agents();
-          const match = agents.find(
-            (a) => a.node_name === nodeName && a.presence_state === "online",
-          );
+          // Three-stage progression:
+          //   1. Bootstrap  → token consumed in the backend
+          //   2. Gateway    → agent record appears (presence != offline)
+          //   3. First data → presence_state === "online" with runtime
+          //                   telemetry attached
+          const match = agents.find((a) => a.node_name === nodeName);
           if (match) {
+            const online = match.presence_state === "online";
+            const hasRuntime = Boolean(match.runtime);
+            if (online && hasRuntime) {
+              setConnectionStatus({
+                bootstrap: "done",
+                grpcConnect: "done",
+                firstData: "done",
+              });
+              setConnectedAgent({
+                id: match.id,
+                version: match.version,
+                fleetGroup: match.fleet_group_id || "default",
+                certExpiresAt: match.cert_expires_at ?? "—",
+              });
+              return;
+            }
             setConnectionStatus({
               bootstrap: "done",
-              grpcConnect: "done",
-              firstData: "done",
+              grpcConnect: online ? "done" : "waiting",
+              firstData: online ? "waiting" : "pending",
             });
-            setConnectedAgent({
-              id: match.id,
-              version: match.version,
-              fleetGroup: match.fleet_group_id || "default",
-              certExpiresAt: match.cert_expires_at ?? "—",
-            });
-            return;
-          }
-          const tokens = await apiClient.listEnrollmentTokens();
-          const ourToken = tokens.find((t) => t.value === tokenValue);
-          if (ourToken?.status === "consumed") {
-            setConnectionStatus((prev) => ({
-              ...prev,
-              bootstrap: "done",
-              grpcConnect: "waiting",
-            }));
+          } else {
+            const tokens = await apiClient.listEnrollmentTokens();
+            const ourToken = tokens.find((t) => t.value === tokenValue);
+            if (ourToken?.status === "consumed") {
+              setConnectionStatus({
+                bootstrap: "done",
+                grpcConnect: "waiting",
+                firstData: "pending",
+              });
+            }
           }
         } catch {
           // ignore polling errors

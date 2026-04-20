@@ -150,6 +150,42 @@ is a stop-gap — the correct fix is server-side dedup.
 
 **Scope:** backend.
 
+## 7. Enrollment install command is long; serve a per-token bootstrap script
+
+**Where:** `deploy/install-agent.sh` + a new panel endpoint under
+`internal/controlplane/server/http_enrollment.go`.
+
+**Symptom:** the copy/paste snippet rendered on /servers/add step 2
+is 6–9 lines long because every agent flag (`--panel-url`, `--token`,
+`--node-name`, `--telemt-url`, `--telemt-metrics-url`,
+`--telemt-auth`) is expanded inline with backslash continuations.
+Operators ssh-ing into a locked-down box often paste it wrong or
+strip a continuation by accident.
+
+**Expected:** a `GET /api/enroll/{token}/install.sh` endpoint serves a
+ready-to-run bash script with every parameter already baked in.
+The panel-side install command shrinks to a single line:
+
+```
+curl -fsSL https://<panel>/api/enroll/<token>/install.sh | sudo bash
+```
+
+Implementation sketch:
+- Endpoint is unauthenticated but scoped to a valid (not-yet-consumed)
+  enrollment token and audit-logged.
+- The returned script is a thin wrapper around the existing
+  `install-agent.sh`, with `PANEL_URL`, `TOKEN`, `NODE_NAME`,
+  `TELEMT_URL`, `TELEMT_METRICS_URL`, `TELEMT_AUTH` exported up top.
+- Content-Type: `text/x-shellscript`.
+
+Alternative if a new endpoint is too heavy: base64-encode the parameter
+bundle and have `install-agent.sh` accept `--from-b64 <blob>`. That
+trades one long flag for five medium ones and keeps a single source
+file.
+
+**Scope:** backend + deploy. Frontend drops the multi-line template
+and renders the one-liner.
+
 ## (future entries — keep the format consistent)
 
 - Date / where / symptom / expected / scope
