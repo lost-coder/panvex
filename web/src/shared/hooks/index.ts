@@ -1,3 +1,5 @@
-// Migration caretaker — populated in Phase 4 of the web-merge plan.
-// See docs/audit_2026-04-18/web_deep/07-migration-plan-v2.md
-export {};
+// Phase 4b: shared hooks used across multiple feature slices.
+export { useUpdates } from "./useUpdates";
+export { useWsUpdateFlash } from "./useWsUpdateFlash";
+export { useUrlSearchState } from "./useUrlSearchState";
+export { useViewMode } from "./useViewMode";

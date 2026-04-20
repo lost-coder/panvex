@@ -1,3 +1,23 @@
-// Migration caretaker — populated in Phase 4 of the web-merge plan.
-// See docs/audit_2026-04-18/web_deep/07-migration-plan-v2.md
-export {};
+export { StatusDot, type StatusDotProps } from "./StatusDot";
+export { StatusBeacon, type StatusBeaconProps } from "./StatusBeacon";
+export { LEDIndicator, type LEDIndicatorProps } from "./LEDIndicator";
+export { GaugeCell, type GaugeCellProps } from "./GaugeCell";
+export { Spinner, type SpinnerProps } from "./Spinner";
+export { Skeleton, type SkeletonProps } from "./Skeleton";
+export { Badge, type BadgeProps } from "./Badge";
+export { UserAvatar, type UserAvatarProps } from "./UserAvatar";
+export { TrafficCell, type TrafficCellProps } from "./TrafficCell";
+export { IPTag, type IPTagProps } from "./IPTag";
+export { ConnectionBadge, type ConnectionBadgeProps } from "./ConnectionBadge";
+export { ProgressBar, type ProgressBarProps } from "./ProgressBar";
+export { MeterRing, type MeterRingProps } from "./MeterRing";
+export { MiniChart, type MiniChartProps } from "./MiniChart";
+export { FieldLabel, type FieldLabelProps } from "./FieldLabel";
+export { MonoValue, type MonoValueProps } from "./MonoValue";
+export { StatCard, type StatCardProps } from "./StatCard";
+export { KvGrid, type KvGridProps, type KvGridRow } from "./KvGrid";
+export { CopyButton, type CopyButtonProps } from "./CopyButton";
+export { ChipToggle, type ChipToggleProps } from "./ChipToggle";
+export { StepIndicator, type StepIndicatorProps } from "./StepIndicator";
+export { InitCard } from "./InitCard";
+export { SecretReveal } from "./SecretReveal";

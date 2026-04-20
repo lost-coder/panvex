@@ -3,7 +3,7 @@
 // move to src/ui/ in Phase 4. Lines wrap the raw Tailwind so call-sites
 // do not need to remember the shimmer classes.
 
-import { usePrefersReducedMotion } from "@lost-coder/panvex-ui";
+import { usePrefersReducedMotion } from "@/ui";
 
 interface SkeletonProps {
   className?: string;

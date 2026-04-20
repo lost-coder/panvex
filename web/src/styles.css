@@ -1,4 +1,4 @@
-@import "@lost-coder/panvex-ui/styles.css";
+@import "./ui-kit.css";
 @import "tailwindcss";
 
 @theme {

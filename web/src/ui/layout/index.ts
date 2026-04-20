@@ -1,3 +1,6 @@
-// Migration caretaker — populated in Phase 4 of the web-merge plan.
-// See docs/audit_2026-04-18/web_deep/07-migration-plan-v2.md
-export {};
+export { Sidebar, type SidebarProps } from "./Sidebar";
+export { BottomNav, type BottomNavProps } from "./BottomNav";
+export { AppShell, type AppShellProps } from "./AppShell";
+export { PageHeader, type PageHeaderProps } from "./PageHeader";
+export { SectionHeader, type SectionHeaderProps } from "./SectionHeader";
+export type { NavItem } from "./types";

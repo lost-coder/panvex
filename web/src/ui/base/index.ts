@@ -1,3 +1,14 @@
-// Migration caretaker — populated in Phase 4 of the web-merge plan.
-// See docs/audit_2026-04-18/web_deep/07-migration-plan-v2.md
-export {};
+// Phase 4e.2: base/ — Radix-based primitives and form wrappers.
+export * from "./button";
+export * from "./confirm-dialog";
+export * from "./dropdown-menu";
+export * from "./form-field";
+export * from "./input";
+export * from "./popover";
+export * from "./select";
+export * from "./sheet";
+export * from "./tabs";
+export * from "./theme-toggle";
+export * from "./toast";
+export * from "./toggle";
+export * from "./tooltip";

@@ -5,8 +5,8 @@
 // real estate during the 99%+ happy-path. The banner is intentionally
 // unobtrusive — a single line at the top of the main content area.
 
-import { usePrefersReducedMotion } from "@lost-coder/panvex-ui";
-import { useWsStatus } from "@/providers/EventsSynchronizer";
+import { usePrefersReducedMotion } from "@/ui";
+import { useWsStatus } from "@/app/providers/EventsSynchronizer";
 
 export function WsStatusBanner() {
   const { status, reconnectAttempts } = useWsStatus();
