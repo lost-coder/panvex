@@ -1,11 +1,15 @@
-import { useState } from "react";
+// Phase-7 v2 — checklist restored, Metrics URL surfaced as a primary
+// field (Telemt ships with metrics disabled by default, so we can't
+// hide the knob inside Advanced), fleet group optional.
+import { useEffect, useState } from "react";
+
 import { cn } from "@/ui/lib/cn";
-import { StepIndicator } from "@/ui/primitives/StepIndicator";
-import { CopyButton } from "@/ui/primitives/CopyButton";
 import { Button } from "@/ui/base/button";
+import { CopyButton } from "@/ui/primitives/CopyButton";
+import { FormField } from "@/ui/base/form-field";
 import { Input } from "@/ui/base/input";
 import { Select } from "@/ui/base/select";
-import { FormField } from "@/ui/base/form-field";
+import { StepIndicator } from "@/ui/primitives/StepIndicator";
 import type { EnrollmentWizardProps } from "@/shared/api/types-pages/pages";
 
 const TTL_PRESETS = [
@@ -13,40 +17,36 @@ const TTL_PRESETS = [
   { value: 21600, label: "6 hours" },
   { value: 86400, label: "24 hours" },
 ];
-
 const STEPS = ["Configure", "Install", "Connect"];
 
-// ─── Step 1: Configure ───────────────────────────────────────────────────────
+// ─── Step 1: Configure ───────────────────────────────────────────────
 
-function ConfigureStep({
-  fleetGroups,
-  nodeName,
-  selectedFleetGroup,
-  tokenTtl,
-  onNodeNameChange,
-  onFleetGroupChange,
-  onTokenTtlChange,
-  onGenerateToken,
-  loading,
-  error,
-}: EnrollmentWizardProps) {
+function ConfigureStep(props: EnrollmentWizardProps) {
+  const {
+    fleetGroups,
+    nodeName,
+    selectedFleetGroup,
+    tokenTtl,
+    onNodeNameChange,
+    onFleetGroupChange,
+    onTokenTtlChange,
+    onGenerateToken,
+    advancedOptions,
+    onAdvancedOptionsChange,
+    loading,
+    error,
+  } = props;
+
   const [customTtl, setCustomTtl] = useState(false);
-  const [touched, setTouched] = useState<{ nodeName?: boolean; ttl?: boolean; fleet?: boolean }>(
-    {},
-  );
+  const [touched, setTouched] = useState<{ nodeName?: boolean; ttl?: boolean }>({});
 
-  // P2-UX-07: inline validation messages. These do not block keystroke-by-keystroke
-  // — they only surface once a field has been touched (blurred) or on submit attempt,
-  // so operators don't see "required" while they are actively typing.
   const nodeNameError = !nodeName.trim() ? "Node name is required." : undefined;
   const ttlError = tokenTtl <= 0 ? "Token lifetime must be greater than zero." : undefined;
-  const fleetError = !selectedFleetGroup ? "Fleet group is required." : undefined;
-  const hasError = Boolean(nodeNameError || ttlError || fleetError);
+  const hasError = Boolean(nodeNameError || ttlError);
 
   const handleGenerate = () => {
     if (hasError) {
-      // Force-reveal every validation message so the operator sees what's missing.
-      setTouched({ nodeName: true, ttl: true, fleet: true });
+      setTouched({ nodeName: true, ttl: true });
       return;
     }
     onGenerateToken();
@@ -54,7 +54,7 @@ function ConfigureStep({
 
   return (
     <div className="flex flex-col gap-4">
-      <FormField label="Node Name" variant="uppercase" required>
+      <FormField label="Node name" variant="uppercase" required>
         <Input
           type="text"
           placeholder="e.g. prod-eu-west-1"
@@ -72,24 +72,27 @@ function ConfigureStep({
         )}
       </FormField>
 
-      <FormField label="Fleet Group" variant="uppercase" required>
+      {/* Fleet group is optional — empty string means the backend
+          attaches the new agent to the default scope. Select still
+          renders when groups exist so operators can opt-in. */}
+      <FormField label="Fleet group" variant="uppercase">
         <Select
           value={selectedFleetGroup}
-          options={fleetGroups.map((g) => ({
-            value: g.id,
-            label: `${g.name ?? g.label ?? g.id} (${g.nodeCount ?? g.agentCount ?? 0} nodes)`,
-          }))}
-          onChange={(v) => {
-            onFleetGroupChange(v);
-            setTouched((t) => ({ ...t, fleet: true }));
-          }}
+          options={[
+            { value: "", label: "— none (default scope) —" },
+            ...fleetGroups.map((g) => ({
+              value: g.id,
+              label: `${g.name ?? g.label ?? g.id} (${g.nodeCount ?? g.agentCount ?? 0} nodes)`,
+            })),
+          ]}
+          onChange={onFleetGroupChange}
         />
-        {touched.fleet && fleetError && (
-          <div className="text-xs text-status-error mt-1">{fleetError}</div>
-        )}
+        <div className="text-[11px] font-mono text-fg-muted mt-1">
+          Leave empty to add the node without a group — it'll land in the default scope.
+        </div>
       </FormField>
 
-      <FormField label="Token Lifetime" variant="uppercase">
+      <FormField label="Token lifetime" variant="uppercase">
         <div className="flex flex-wrap gap-2" role="group" aria-label="Token lifetime presets">
           {TTL_PRESETS.map((p) => {
             const pressed = !customTtl && tokenTtl === p.value;
@@ -148,77 +151,13 @@ function ConfigureStep({
         )}
       </FormField>
 
-      <div className="rounded-xs bg-accent/8 border border-accent/20 p-3 text-xs text-accent">
-        <strong>Note:</strong> Telemt (mtproto-proxy) must already be running on the target server.
-      </div>
-
-      {error && <div className="text-xs text-status-error">{error}</div>}
-
-      <Button onClick={handleGenerate} disabled={loading}>
-        {loading ? "Generating..." : "Generate Token →"}
-      </Button>
-    </div>
-  );
-}
-
-// ─── Step 2: Install ─────────────────────────────────────────────────────────
-
-function InstallStep({
-  installCommand,
-  advancedOptions,
-  onAdvancedOptionsChange,
-  onInstallConfirm,
-  onBack,
-  tokenValue,
-  tokenExpiresInSecs,
-}: EnrollmentWizardProps) {
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [showTroubleshooting, setShowTroubleshooting] = useState(false);
-  const expiresMin = Math.round(tokenExpiresInSecs / 60);
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="rounded-xs bg-bg-card border border-border p-3">
-        <div className="text-[10px] font-medium text-fg-muted uppercase tracking-wider mb-2">
-          Requirements
-        </div>
-        <div className="flex flex-col gap-1 text-xs text-fg">
-          {[
-            "Linux (amd64 / arm64)",
-            "Root privileges (sudo)",
-            "systemd",
-            "curl or wget",
-            "Telemt running on the server",
-          ].map((r) => (
-            <div key={r}>
-              <span className="text-status-ok">✓</span> {r}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <div className="flex justify-between items-center mb-1.5">
-          <label className="text-[10px] font-medium text-fg-muted uppercase tracking-wider">
-            Install Command
-          </label>
-          <CopyButton text={installCommand} />
-        </div>
-        <pre className="rounded-xs bg-bg border border-border p-3 text-xs font-mono text-fg leading-relaxed whitespace-pre-wrap break-all overflow-x-auto">
-          {installCommand}
-        </pre>
-      </div>
-
-      <button
-        type="button"
-        onClick={() => setShowAdvanced(!showAdvanced)}
-        className="text-xs text-fg-muted hover:text-fg text-left"
-      >
-        {showAdvanced ? "▾" : "▸"} Advanced options
-      </button>
-      {showAdvanced && advancedOptions && onAdvancedOptionsChange && (
-        <div className="rounded-xs border border-border p-3 flex flex-col gap-3">
-          <FormField label="Telemt API URL" variant="compact">
+      {/* Telemt endpoints + auth are always visible — no collapsible
+          fold. Defaults work for a local Telemt on the same host. The
+          metrics-disabled-by-default warning lives on step 2's
+          checklist so we don't repeat it per-field here. */}
+      {advancedOptions && onAdvancedOptionsChange && (
+        <div className="flex flex-col gap-3">
+          <FormField label="Telemt API URL" variant="uppercase">
             <Input
               value={advancedOptions.telemtUrl}
               onChange={(e) =>
@@ -227,7 +166,20 @@ function InstallStep({
               className="font-mono text-xs"
             />
           </FormField>
-          <FormField label="Telemt Auth Header" variant="compact">
+          <FormField label="Telemt metrics URL" variant="uppercase">
+            <Input
+              value={advancedOptions.telemtMetricsUrl}
+              onChange={(e) =>
+                onAdvancedOptionsChange({
+                  ...advancedOptions,
+                  telemtMetricsUrl: e.target.value,
+                })
+              }
+              placeholder="http://127.0.0.1:8081"
+              className="font-mono text-xs"
+            />
+          </FormField>
+          <FormField label="Telemt auth header" variant="uppercase">
             <Input
               value={advancedOptions.telemtAuth}
               onChange={(e) =>
@@ -240,27 +192,130 @@ function InstallStep({
         </div>
       )}
 
+      <div className="rounded-xs bg-accent/8 border border-accent/20 p-3 text-xs text-accent">
+        <strong>Note:</strong> Telemt (mtproto-proxy) must already be running on the target server.
+      </div>
+
+      {error && <div className="text-xs text-status-error">{error}</div>}
+
+      <Button onClick={handleGenerate} disabled={loading}>
+        {loading ? "Generating…" : "Generate token →"}
+      </Button>
+    </div>
+  );
+}
+
+// ─── Step 2: Install ─────────────────────────────────────────────────
+
+function InstallStep({
+  installCommand,
+  advancedOptions,
+  onInstallConfirm,
+  onBack,
+  tokenValue,
+  tokenExpiresInSecs,
+}: EnrollmentWizardProps) {
+  const [showTroubleshooting, setShowTroubleshooting] = useState(false);
+  const expiresMin = Math.round(tokenExpiresInSecs / 60);
+
+  const requirements: Array<{
+    label: string;
+    detail?: string;
+    tone?: "default" | "warn";
+  }> = [
+    { label: "Linux host (amd64 / arm64)" },
+    { label: "Root privileges (sudo)" },
+    { label: "systemd service manager" },
+    { label: "curl or wget for bootstrap" },
+    { label: "Telemt (mtproto-proxy) running locally" },
+    {
+      // Highlighted in amber because Telemt ships with metrics OFF —
+      // operators routinely miss this and then wonder why per-client
+      // traffic / IP / quota counters stay empty.
+      tone: "warn",
+      label: "Enable Telemt metrics export (disabled by default)",
+      detail: advancedOptions?.telemtMetricsUrl
+        ? `agent will poll ${advancedOptions.telemtMetricsUrl}`
+        : undefined,
+    },
+  ];
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-xs bg-bg-card border border-divider p-3">
+        <div className="text-[10px] font-medium text-fg-muted uppercase tracking-wider mb-2">
+          Before you run the command
+        </div>
+        <div className="flex flex-col gap-1.5 text-xs text-fg">
+          {requirements.map((r) => (
+            <div key={r.label} className="flex items-start gap-2">
+              <span
+                className={cn(
+                  "mt-0.5",
+                  r.tone === "warn" ? "text-status-warn" : "text-status-ok",
+                )}
+              >
+                {r.tone === "warn" ? "!" : "✓"}
+              </span>
+              <div className="flex flex-col min-w-0">
+                <span className={cn(r.tone === "warn" && "text-status-warn font-medium")}>
+                  {r.label}
+                </span>
+                {r.detail && (
+                  <span className="text-[11px] font-mono text-fg-muted">{r.detail}</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <div className="flex justify-between items-center mb-1.5">
+          <label className="text-[10px] font-medium text-fg-muted uppercase tracking-wider">
+            Install command
+          </label>
+          <CopyButton text={installCommand} />
+        </div>
+        <pre className="rounded-xs bg-bg border border-border p-3 text-xs font-mono text-fg leading-relaxed whitespace-pre-wrap break-all overflow-x-auto">
+          {installCommand}
+        </pre>
+      </div>
+
       <button
         type="button"
-        onClick={() => setShowTroubleshooting(!showTroubleshooting)}
+        onClick={() => setShowTroubleshooting((v) => !v)}
         className="text-xs text-fg-muted hover:text-fg text-left"
       >
         {showTroubleshooting ? "▾" : "▸"} Troubleshooting
       </button>
       {showTroubleshooting && (
-        <div className="rounded-xs border border-border p-3 flex flex-col gap-3 text-xs">
+        <div className="rounded-xs border border-divider p-3 flex flex-col gap-3 text-xs">
           <div>
             <div className="font-medium text-fg">Connection refused</div>
             <div className="text-fg-muted">
               Check Telemt is running:{" "}
-              <code className="bg-black/30 px-1 rounded">curl http://127.0.0.1:9091/v1/health</code>
+              <code className="bg-black/30 px-1 rounded">
+                curl http://127.0.0.1:9091/v1/health
+              </code>
+            </div>
+          </div>
+          <div>
+            <div className="font-medium text-fg">Metrics empty after connect</div>
+            <div className="text-fg-muted">
+              Telemt ships with metrics off. Enable the metrics exporter in your Telemt
+              config and confirm{" "}
+              <code className="bg-black/30 px-1 rounded">
+                curl {advancedOptions?.telemtMetricsUrl || "http://127.0.0.1:8081"}
+              </code>{" "}
+              answers before bootstrapping.
             </div>
           </div>
           <div>
             <div className="font-medium text-fg">Permission denied</div>
             <div className="text-fg-muted">
-              Run with <code className="bg-black/30 px-1 rounded">sudo</code> — root is required for
-              systemd.
+              Run with <code className="bg-black/30 px-1 rounded">sudo</code> — root is required
+              for systemd.
             </div>
           </div>
           <div>
@@ -272,9 +327,9 @@ function InstallStep({
         </div>
       )}
 
-      <div className="flex items-center justify-between text-xs text-fg-muted">
+      <div className="flex items-center justify-between text-xs text-fg-muted rounded-xs bg-bg-card border border-divider px-3 py-2">
         <span>
-          Token: <span className="font-mono">{tokenValue.slice(0, 12)}...</span>
+          Token: <span className="font-mono">{tokenValue.slice(0, 12)}…</span>
         </span>
         <span>
           Expires in: <span className="text-status-warn">{expiresMin} min</span>
@@ -293,7 +348,7 @@ function InstallStep({
   );
 }
 
-// ─── Step 3: Connect ─────────────────────────────────────────────────────────
+// ─── Step 3: Connect ─────────────────────────────────────────────────
 
 function ConnectStep({
   connectionStatus,
@@ -307,116 +362,99 @@ function ConnectStep({
     connectionStatus.bootstrap === "done" &&
     connectionStatus.grpcConnect === "done" &&
     connectionStatus.firstData === "done";
-  const expiresMin = Math.round(tokenExpiresInSecs / 60);
 
-  const statusSteps = [
+  useEffect(() => {
+    if (allDone && connectedAgent && onViewDetails) {
+      const id = window.setTimeout(() => onViewDetails(), 300);
+      return () => window.clearTimeout(id);
+    }
+    return undefined;
+  }, [allDone, connectedAgent, onViewDetails]);
+
+  const expiresMin = Math.round(tokenExpiresInSecs / 60);
+  const stages: Array<{
+    key: string;
+    label: string;
+    detail: string;
+    state: "pending" | "waiting" | "done";
+  }> = [
     {
       key: "bootstrap",
-      label: "Bootstrap complete",
-      sub: "Agent received certificate",
-      status: connectionStatus.bootstrap,
+      label: "Bootstrap",
+      detail: "Agent received enrollment certificate",
+      state: connectionStatus.bootstrap,
     },
     {
       key: "grpcConnect",
-      label: "Connected to panel",
-      sub: "gRPC connection established",
-      status: connectionStatus.grpcConnect,
+      label: "Gateway connected",
+      detail: "gRPC stream to control-plane established",
+      state: connectionStatus.grpcConnect,
     },
     {
       key: "firstData",
-      label: "First data received",
-      sub: "Runtime snapshot uploaded",
-      status: connectionStatus.firstData,
+      label: "First snapshot",
+      detail: "Runtime telemetry received",
+      state: connectionStatus.firstData,
     },
   ];
 
-  if (allDone && connectedAgent) {
-    return (
-      <div className="flex flex-col items-center gap-4 py-4">
-        <div className="w-14 h-14 rounded-full bg-status-ok/12 flex items-center justify-center">
-          <span className="text-3xl text-status-ok">✓</span>
-        </div>
-        <div className="text-center">
-          <h3 className="text-title">Node Connected</h3>
-          <p className="text-sm text-fg-muted mt-1">Online and reporting data.</p>
-        </div>
-        <div className="w-full rounded-xs bg-bg-card border border-border p-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-          <div>
-            <span className="text-fg-muted">Agent ID:</span>{" "}
-            <span className="font-mono">{connectedAgent.id}</span>
-          </div>
-          <div>
-            <span className="text-fg-muted">Version:</span>{" "}
-            <span className="font-mono">{connectedAgent.version}</span>
-          </div>
-          <div>
-            <span className="text-fg-muted">Fleet:</span> {connectedAgent.fleetGroup}
-          </div>
-          <div>
-            <span className="text-fg-muted">Cert expires:</span> {connectedAgent.certExpiresAt}
-          </div>
-        </div>
-        <Button className="w-full" onClick={onViewDetails}>
-          Open Server Details →
-        </Button>
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        {statusSteps.map((s) => (
-          <div
-            key={s.key}
-            className={cn(
-              "flex items-center gap-3 p-3 rounded-xs border",
-              s.status === "done"
-                ? "bg-status-ok/5 border-status-ok/15"
-                : s.status === "waiting"
-                  ? "bg-status-warn/5 border-status-warn/15"
-                  : "bg-bg-card border-border",
-            )}
-          >
-            <div
-              className={cn(
-                "w-7 h-7 rounded-full flex items-center justify-center",
-                s.status === "done"
-                  ? "bg-status-ok/15"
-                  : s.status === "waiting"
-                    ? "bg-status-warn/15"
-                    : "bg-bg-card",
-              )}
-            >
-              {s.status === "done" ? (
-                <span className="text-status-ok text-sm">✓</span>
-              ) : s.status === "waiting" ? (
-                <div className="w-2.5 h-2.5 rounded-full border-2 border-status-warn border-t-transparent animate-spin" />
-              ) : (
-                <span className="text-fg-muted text-sm">○</span>
-              )}
-            </div>
-            <div>
-              <div
+      <div className="relative pl-5">
+        <span aria-hidden="true" className="absolute top-1 bottom-1 left-[6px] w-px bg-divider" />
+        {stages.map((s) => {
+          const dotColor =
+            s.state === "done"
+              ? "bg-status-ok"
+              : s.state === "waiting"
+                ? "bg-status-warn"
+                : "bg-fg-faint";
+          return (
+            <div key={s.key} className="relative py-3 first:pt-1 last:pb-1">
+              <span
+                aria-hidden="true"
                 className={cn(
-                  "text-sm font-medium",
-                  s.status === "pending" ? "text-fg-muted" : "text-fg",
+                  "absolute -left-[12px] top-[14px] h-2 w-2 rounded-full z-10",
+                  dotColor,
                 )}
-              >
-                {s.label}
+              />
+              {s.state === "waiting" && (
+                <span
+                  aria-hidden="true"
+                  className="absolute -left-[14px] top-[12px] h-3 w-3 rounded-full border-2 border-status-warn border-t-transparent animate-spin"
+                />
+              )}
+              <div className="flex items-baseline gap-3">
+                <span
+                  className={cn(
+                    "text-sm font-medium",
+                    s.state === "pending" ? "text-fg-muted" : "text-fg",
+                  )}
+                >
+                  {s.label}
+                </span>
+                <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">
+                  {s.state}
+                </span>
               </div>
-              <div className="text-caption">{s.sub}</div>
+              <div className="text-[11px] font-mono text-fg-muted">{s.detail}</div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      <div className="flex items-center justify-between text-xs text-fg-muted rounded-xs bg-bg-card border border-border px-3 py-2">
+      {allDone && connectedAgent && (
+        <div className="rounded-xs bg-status-ok/8 border border-status-ok/25 p-3 text-xs text-status-ok">
+          <strong>{connectedAgent.id}</strong> is online. Redirecting to the server page…
+        </div>
+      )}
+
+      <div className="flex items-center justify-between text-xs text-fg-muted rounded-xs bg-bg-card border border-divider px-3 py-2">
         <span>
-          Token: <span className="font-mono">{tokenValue.slice(0, 12)}...</span>
+          Token: <span className="font-mono">{tokenValue.slice(0, 12)}…</span>
         </span>
         <span>
-          Expires: <span className="text-status-warn">{expiresMin} min</span>
+          Expires in: <span className="text-status-warn">{expiresMin} min</span>
         </span>
       </div>
 
@@ -427,17 +465,17 @@ function ConnectStep({
   );
 }
 
-// ─── Main ────────────────────────────────────────────────────────────────────
+// ─── Main ────────────────────────────────────────────────────────────
 
 export function EnrollmentWizard(props: EnrollmentWizardProps) {
   return (
     <div className="flex flex-col gap-5">
-      <div>
-        <h3 className="text-title">Add Server Node</h3>
-        <p className="text-sm text-fg-muted mt-0.5">
-          {props.step === 1 && "Generate an enrollment token for a new Telemt server."}
-          {props.step === 2 && "Run this command on your Linux server as root."}
-          {props.step === 3 && "Waiting for your agent to connect."}
+      <div className="flex flex-col gap-1">
+        <h3 className="text-title">Add server node</h3>
+        <p className="text-sm text-fg-muted">
+          {props.step === 1 && "Pick a node name; we'll mint a one-shot token."}
+          {props.step === 2 && "Run this command on the target Linux server as root."}
+          {props.step === 3 && "Waiting for the agent to come online."}
         </p>
       </div>
 

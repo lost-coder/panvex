@@ -31,8 +31,8 @@ const baseProps: EnrollmentWizardProps = {
 describe("EnrollmentWizard", () => {
   it("renders step 1 — configure", () => {
     render(<EnrollmentWizard {...baseProps} step={1} />);
-    expect(screen.getByText("Add Server Node")).toBeInTheDocument();
-    expect(screen.getByText(/generate an enrollment token/i)).toBeInTheDocument();
+    expect(screen.getByText("Add server node")).toBeInTheDocument();
+    expect(screen.getByText(/one-shot token/i)).toBeInTheDocument();
     expect(screen.getByPlaceholderText("e.g. prod-eu-west-1")).toBeInTheDocument();
   });
 
@@ -43,8 +43,6 @@ describe("EnrollmentWizard", () => {
       <EnrollmentWizard {...baseProps} step={1} nodeName="" onGenerateToken={onGenerateToken} />,
     );
     const btn = screen.getByRole("button", { name: /generate token/i });
-    // P2-UX-07: button stays enabled so screen-readers announce the form;
-    // validation is surfaced inline once submission is attempted.
     expect(btn).toBeEnabled();
     await user.click(btn);
     expect(onGenerateToken).not.toHaveBeenCalled();
@@ -104,13 +102,14 @@ describe("EnrollmentWizard", () => {
 
   it("renders step 3 — connect with pending statuses", () => {
     render(<EnrollmentWizard {...baseProps} step={3} />);
-    expect(screen.getByText(/waiting for your agent/i)).toBeInTheDocument();
-    expect(screen.getByText("Bootstrap complete")).toBeInTheDocument();
-    expect(screen.getByText("Connected to panel")).toBeInTheDocument();
-    expect(screen.getByText("First data received")).toBeInTheDocument();
+    expect(screen.getByText(/waiting for the agent to come online/i)).toBeInTheDocument();
+    expect(screen.getByText("Bootstrap")).toBeInTheDocument();
+    expect(screen.getByText("Gateway connected")).toBeInTheDocument();
+    expect(screen.getByText("First snapshot")).toBeInTheDocument();
   });
 
-  it("renders step 3 — connected state", () => {
+  it("renders step 3 — connected state with auto-redirect hint", () => {
+    const onViewDetails = vi.fn();
     render(
       <EnrollmentWizard
         {...baseProps}
@@ -126,11 +125,14 @@ describe("EnrollmentWizard", () => {
           fleetGroup: "Default",
           certExpiresAt: "2026-05-15",
         }}
+        onViewDetails={onViewDetails}
       />,
     );
-    expect(screen.getByText("Node Connected")).toBeInTheDocument();
+    // Phase-7 wizard auto-redirects when every stage is done; the
+    // inline hint + agent id surface the transient state without a
+    // separate summary screen.
+    expect(screen.getByText(/redirecting to the server page/i)).toBeInTheDocument();
     expect(screen.getByText(/agent-001/)).toBeInTheDocument();
-    expect(screen.getByText(/v1.0.0/)).toBeInTheDocument();
   });
 
   it("shows error in step 1", () => {
@@ -140,6 +142,6 @@ describe("EnrollmentWizard", () => {
 
   it("shows loading state in step 1", () => {
     render(<EnrollmentWizard {...baseProps} step={1} nodeName="test" loading={true} />);
-    expect(screen.getByText("Generating...")).toBeInTheDocument();
+    expect(screen.getByText(/generating/i)).toBeInTheDocument();
   });
 });
