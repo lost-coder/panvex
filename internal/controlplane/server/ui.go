@@ -15,6 +15,13 @@ import (
 // 'unsafe-inline').
 var htmlOpenTagPattern = regexp.MustCompile(`(?i)<html\b([^>]*)>`)
 
+// headOpenTagPattern matches the opening <head> tag. Used to inject a
+// <base> element so runtime-emitted relative URLs (Vite's __vite__mapDeps
+// preload table, which writes `link.href = "assets/..."`) resolve against
+// the configured root path regardless of whether the browser URL ends with
+// a trailing slash.
+var headOpenTagPattern = regexp.MustCompile(`(?i)<head\b[^>]*>`)
+
 func newUIHandler(uiFiles fs.FS, rootPath string) http.HandlerFunc {
 	if uiFiles == nil {
 		return nil
@@ -58,9 +65,7 @@ func serveUIIndex(w http.ResponseWriter, r *http.Request, uiFiles fs.FS, rootPat
 	if rootPath != "" {
 		body = strings.ReplaceAll(body, `src="/assets/`, `src="`+rootPath+`/assets/`)
 		body = strings.ReplaceAll(body, `href="/assets/`, `href="`+rootPath+`/assets/`)
-	}
 
-	if rootPath != "" {
 		// Inject runtime configuration via a data-* attribute on <html>
 		// rather than an inline <script>. Our CSP forbids 'unsafe-inline',
 		// and a data attribute is read at runtime via
@@ -75,6 +80,22 @@ func serveUIIndex(w http.ResponseWriter, r *http.Request, uiFiles fs.FS, rootPat
 			// No <html> tag found — fall back to prepending a minimal one so
 			// the dataset lookup still works.
 			body = "<html" + attr + ">" + body + "</html>"
+		}
+
+		// Inject <base href="<rootPath>/"> right after <head>. Required so
+		// Vite's __vite__mapDeps preload table (which writes
+		// `link.href = "assets/..."` at runtime) resolves against the
+		// panel's root path instead of the browser's current URL —
+		// otherwise visiting `/pan` (no trailing slash) would make those
+		// preloads fall through to `/assets/...` and bypass the panel
+		// mount.
+		baseTag := `<base href="` + html.EscapeString(rootPath) + `/">`
+		if loc := headOpenTagPattern.FindStringIndex(body); loc != nil {
+			body = body[:loc[1]] + baseTag + body[loc[1]:]
+		} else {
+			// No <head> — best-effort prepend so runtime asset resolution
+			// still works.
+			body = baseTag + body
 		}
 	}
 
