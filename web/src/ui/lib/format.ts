@@ -46,6 +46,16 @@ export function secondsToDisplay(seconds: number): { value: number; unit: string
   return { value: seconds, unit: "seconds" };
 }
 
+/**
+ * Short-form identifier. Returns the first `length` characters followed by
+ * an ellipsis when the id is longer than `length + 2`; otherwise returns the
+ * id unchanged. Empty/nullish ids collapse to the "—" placeholder.
+ */
+export function shortId(id: string | undefined | null, length = 8): string {
+  if (!id) return "—";
+  return id.length > length + 2 ? `${id.slice(0, length)}…` : id;
+}
+
 /** Convert display value + unit back to seconds */
 export function displayToSeconds(value: number, unit: string): number {
   switch (unit) {

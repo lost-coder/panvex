@@ -10,7 +10,7 @@ import {
   useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
-import { LayoutDashboard, Server, Users, Settings } from "lucide-react";
+import { LayoutDashboard, Server, Users, Settings, Activity, User } from "lucide-react";
 
 import { AppShell, type NavItem } from "@/ui";
 import { AppearanceProvider } from "@/app/providers/AppearanceProvider";
@@ -46,7 +46,9 @@ const NAV_ITEMS: NavItem[] = [
   { id: "/", label: "Dashboard", icon: <LayoutDashboard size={20} /> },
   { id: "/servers", label: "Servers", icon: <Server size={20} /> },
   { id: "/clients", label: "Clients", icon: <Users size={20} /> },
+  { id: "/activity", label: "Activity", icon: <Activity size={20} /> },
   { id: "/settings", label: "Settings", icon: <Settings size={20} /> },
+  { id: "/profile", label: "Profile", icon: <User size={20} /> },
 ];
 
 function ProtectedShell() {

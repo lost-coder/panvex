@@ -1,9 +1,11 @@
 export { StatusDot, type StatusDotProps } from "./StatusDot";
+export { StatusLabel, type StatusLabelProps, type StatusTone } from "./StatusLabel";
+export { AgeCell, type AgeCellProps } from "./AgeCell";
 export { StatusBeacon, type StatusBeaconProps } from "./StatusBeacon";
 export { LEDIndicator, type LEDIndicatorProps } from "./LEDIndicator";
 export { GaugeCell, type GaugeCellProps } from "./GaugeCell";
 export { Spinner, type SpinnerProps } from "./Spinner";
-export { Skeleton, type SkeletonProps } from "./Skeleton";
+export { Skeleton, SkeletonRows, type SkeletonProps, type SkeletonRowsProps } from "./Skeleton";
 export { Badge, type BadgeProps } from "./Badge";
 export { UserAvatar, type UserAvatarProps } from "./UserAvatar";
 export { TrafficCell, type TrafficCellProps } from "./TrafficCell";

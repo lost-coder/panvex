@@ -45,6 +45,20 @@ vi.mock("@/ui", () => ({
       {props.description ? <span>{props.description}</span> : null}
     </div>
   ),
+  SkeletonRows: ({
+    count,
+    label = "Загрузка списка…",
+  }: {
+    count: number;
+    label?: string;
+  }) => (
+    <div data-testid="skeleton-rows">
+      <div role="status" aria-label={label} data-testid="skeleton-row" />
+      {Array.from({ length: Math.max(0, count - 1) }).map((_, i) => (
+        <div key={i} data-testid="skeleton-row" />
+      ))}
+    </div>
+  ),
   usePrefersReducedMotion: () => false,
 }));
 

@@ -2,7 +2,7 @@ import { DiscoveredClientsPage } from "./DiscoveredClientsPage";
 import { useDiscoveredClients } from "./hooks/useDiscoveredClients";
 import { useNavigate } from "@tanstack/react-router";
 import { ErrorState } from "@/components/ErrorState";
-import { SkeletonRows } from "@/components/Skeleton";
+import { SkeletonRows } from "@/ui";
 import { useConfirm } from "@/app/providers/ConfirmProvider";
 import { useUrlSearchState } from "@/shared/hooks/useUrlSearchState";
 

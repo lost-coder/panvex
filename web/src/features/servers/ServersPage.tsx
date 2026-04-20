@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { NodeCard } from "@/features/servers/ui/NodeCard";
 import { NodeSummaryCard } from "@/features/servers/ui/NodeSummaryCard";
 import {
+  BulkActionBar,
   Button,
   DataTable,
   PageHeader,
@@ -359,47 +360,28 @@ export function ServersPage({
         }
       />
       <div className="px-4 md:px-8 pb-8 flex flex-col gap-5">
-        {/* Bulk action bar — appears only when selection is non-empty.
-            Sticky to the top of the viewport so it stays visible while
-            the operator scrolls through long lists. Actions dispatch
-            through `onBulkAction`; bulkPending disables buttons while
-            the backend job is in flight. */}
-        {selected.size > 0 && (
-          <div className="sticky top-0 z-20 flex flex-wrap items-center gap-3 px-4 py-2 rounded-xs bg-bg-card border border-accent/40 shadow-sm">
-            <span className="text-sm font-mono text-fg">
-              {selected.size} selected
-            </span>
-            <span className="text-[11px] font-mono text-fg-muted hidden sm:inline">
-              · run a bulk action or clear the selection
-            </span>
-            <div className="flex items-center gap-2 ml-auto">
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={bulkPending || !onBulkAction}
-                onClick={() => runBulk("reload")}
-              >
-                Reload runtime
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={bulkPending || !onBulkAction}
-                onClick={() => runBulk("selfUpdate")}
-              >
-                Self-update
-              </Button>
-              <Button size="sm" variant="ghost" onClick={clearSelection}>
-                Clear
-              </Button>
-            </div>
-            {bulkError && (
-              <span className="basis-full text-xs font-mono text-status-error">
-                {bulkError}
-              </span>
-            )}
-          </div>
-        )}
+        <BulkActionBar
+          count={selected.size}
+          hint="run a bulk action or clear the selection"
+          actions={[
+            {
+              id: "reload",
+              label: "Reload runtime",
+              variant: "ghost",
+              disabled: !onBulkAction,
+            },
+            {
+              id: "selfUpdate",
+              label: "Self-update",
+              variant: "ghost",
+              disabled: !onBulkAction,
+            },
+          ]}
+          onAction={(id) => runBulk(id as BulkServerAction)}
+          onClear={clearSelection}
+          pending={bulkPending}
+          error={bulkError}
+        />
         <TableView
           search={{
             value: search,

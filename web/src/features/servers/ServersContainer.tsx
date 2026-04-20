@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { type BulkServerAction, type ViewMode, Button, EmptyState } from "@/ui";
 import { ServersPage } from "@/features/servers/ServersPage";
-import { SkeletonRows } from "@/components/Skeleton";
+import { SkeletonRows } from "@/ui";
 import { useServersList } from "./hooks/useServersList";
 import { useFleetGroups } from "./hooks/useFleetGroups";
 import { useViewMode } from "@/shared/hooks/useViewMode";

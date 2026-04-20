@@ -1,71 +1,112 @@
-// src/compositions/TokenList.tsx
-import { Badge } from "@/ui/primitives/Badge";
-import { Button } from "@/ui/base/button";
-import { CopyButton } from "@/ui/primitives/CopyButton";
-import { DataTable } from "@/ui/components/DataTable";
-import { tokenStatusVariant } from "@/ui/lib/status";
+import {
+  AgeCell,
+  Button,
+  CopyButton,
+  DataTable,
+  EmptyState,
+  StatusLabel,
+  cn,
+  formatTime,
+  type StatusTone,
+} from "@/ui";
 import type { TokenListProps, EnrollmentTokenData } from "@/shared/api/types-pages/pages";
-import { formatTime } from "@/ui";
 
-export function TokenList({ tokens, onRevoke }: TokenListProps) {
+const statusTone: Record<EnrollmentTokenData["status"], StatusTone> = {
+  active: "ok",
+  consumed: "default",
+  expired: "warn",
+  revoked: "error",
+};
+
+function TokenCell({ value }: { value: string }) {
+  return (
+    <div className="flex items-center gap-2 min-w-0">
+      <span className="font-mono text-xs text-fg break-all">{value}</span>
+      <CopyButton text={value} />
+    </div>
+  );
+}
+
+export function TokenList({ tokens, onRevoke, nowSec }: TokenListProps) {
   const columns = [
     {
       key: "value",
       header: "Token",
-      render: (t: EnrollmentTokenData) => (
-        // Phase-7 fix: the token has to be readable and copyable — operators
-        // paste it into the agent bootstrap command. Previously it was
-        // truncated after 16 chars AND rendered in a muted color inherited
-        // from the parent, so neither use was possible.
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="font-mono text-xs text-fg break-all">{t.value}</span>
-          <CopyButton text={t.value} />
-        </div>
-      ),
+      render: (t: EnrollmentTokenData) => <TokenCell value={t.value} />,
+      className: "min-w-[200px]",
     },
     {
       key: "fleetGroup",
       header: "Fleet Group",
-      render: (t: EnrollmentTokenData) => <span className="text-sm text-fg">{t.fleetGroupId}</span>,
+      render: (t: EnrollmentTokenData) => (
+        <span
+          className={cn(
+            "text-sm",
+            t.fleetGroupId ? "text-fg font-mono" : "text-fg-faint italic",
+          )}
+        >
+          {t.fleetGroupId || "default scope"}
+        </span>
+      ),
+      className: "hidden md:table-cell w-[160px]",
     },
     {
       key: "status",
       header: "Status",
       render: (t: EnrollmentTokenData) => (
-        <Badge variant={tokenStatusVariant[t.status] ?? "default"}>{t.status}</Badge>
+        <StatusLabel tone={statusTone[t.status]} label={t.status} />
       ),
+      className: "w-[120px]",
     },
     {
       key: "issued",
       header: "Issued",
       render: (t: EnrollmentTokenData) => (
-        <span className="text-xs text-fg-muted">{formatTime(t.issuedAtUnix)}</span>
+        <span className="text-[11px] font-mono text-fg-muted tabular-nums">
+          {formatTime(t.issuedAtUnix)}
+        </span>
       ),
+      className: "hidden sm:table-cell w-[100px]",
     },
     {
       key: "expires",
       header: "Expires",
-      render: (t: EnrollmentTokenData) => (
-        <span className="text-xs text-fg-muted">{formatTime(t.expiresAtUnix)}</span>
-      ),
+      // Countdown is meaningful only for active tokens; past that the column
+      // falls back to a plain absolute time.
+      render: (t: EnrollmentTokenData) =>
+        t.status === "active" ? (
+          <AgeCell unixSec={t.expiresAtUnix} mode="expires" nowSec={nowSec} />
+        ) : (
+          <span className="text-[11px] font-mono text-fg-muted tabular-nums">
+            {formatTime(t.expiresAtUnix)}
+          </span>
+        ),
+      className: "text-right w-[120px]",
     },
     {
       key: "actions",
       header: "",
       render: (t: EnrollmentTokenData) =>
         t.status === "active" ? (
-          <Button variant="ghost" size="sm" onClick={() => onRevoke(t.value)}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onRevoke(t.value)}
+            className="text-status-error hover:text-status-error"
+          >
             Revoke
           </Button>
         ) : null,
+      className: "text-right",
     },
   ];
 
   if (tokens.length === 0) {
     return (
-      <div className="text-center text-sm text-fg-muted py-8">
-        No enrollment tokens created yet.
-      </div>
+      <EmptyState
+        title="No enrollment tokens"
+        description="No active tokens match the current filter."
+      />
     );
   }
 

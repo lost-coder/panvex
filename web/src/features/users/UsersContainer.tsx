@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { type UserFormData, type UserFormSheetProps } from "@/ui";
-import { SkeletonRows } from "@/components/Skeleton";
+import { SkeletonRows } from "@/ui";
 import { UsersManagementPage } from "./UsersManagementPage";
 import { useUsers } from "./hooks/useUsers";
 import { useConfirm } from "@/app/providers/ConfirmProvider";
