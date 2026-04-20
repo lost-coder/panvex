@@ -207,13 +207,15 @@ function ConfigureStep(props: EnrollmentWizardProps) {
             />
             <span className="flex flex-col gap-0.5">
               <span className="text-xs font-medium text-status-warn">
-                Allow plaintext over private network
+                Allow plaintext on public-IP / hostname panel
               </span>
               <span className="text-[11px] text-fg-muted leading-snug">
                 Passes <code className="font-mono">--insecure-transport</code> so the
-                agent accepts an http:// panel URL on a non-loopback host.
-                Only safe on a VPN or other trusted link — bootstrap
-                exchanges the agent private key in cleartext.
+                agent accepts an http:// panel URL on a public IP or a
+                hostname. Private IPs (10/8, 172.16/12, 192.168/16,
+                CGNAT, IPv6 ULA) are auto-trusted without this flag.
+                Bootstrap exchanges the agent private key in cleartext —
+                only tick on a trusted link.
               </span>
             </span>
           </label>
