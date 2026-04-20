@@ -147,6 +147,13 @@ type JobTarget struct {
 	UpdatedAt  pgtype.Timestamptz
 }
 
+type LoginLockout struct {
+	Username  string
+	Failures  int32
+	LockedAt  pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
 type MetricSnapshot struct {
 	ID         string
 	AgentID    string
