@@ -36,8 +36,8 @@ vi.mock("@/features/servers/ServersPage", () => ({
 }));
 
 vi.mock("@/components/ErrorState", () => ({
-  ErrorState: ({ message }: { message: string }) => (
-    <div data-testid="error">{message}</div>
+  ErrorState: ({ title, description }: { title?: string; description?: string }) => (
+    <div data-testid="error">{description ?? title}</div>
   ),
 }));
 
@@ -60,6 +60,24 @@ vi.mock("@/shared/hooks/useViewMode", () => ({
 const useUpdatesMock = vi.fn();
 vi.mock("@/shared/hooks/useUpdates", () => ({
   useUpdates: () => useUpdatesMock(),
+}));
+
+// The bulk-action wiring inside ServersContainer uses @tanstack/react-query's
+// useMutation + apiClient.createJob. The tests in this file don't exercise
+// the bulk path, so the mocks stay minimal: a no-op mutation and a stub
+// apiClient. This avoids pulling a QueryClientProvider into every render.
+vi.mock("@tanstack/react-query", () => ({
+  useMutation: () => ({
+    mutateAsync: vi.fn().mockResolvedValue(undefined),
+    mutate: vi.fn(),
+    isPending: false,
+  }),
+}));
+
+vi.mock("@/shared/api/api", () => ({
+  apiClient: {
+    createJob: vi.fn(),
+  },
 }));
 
 import { ServersContainer } from "./ServersContainer";
