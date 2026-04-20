@@ -99,23 +99,17 @@ jobs:
       - name: Run govulncheck
         run: govulncheck ./...
 
+  # Phase 4 inlined @lost-coder/panvex-ui into web/src/ui/, so the
+  # frontend jobs no longer need to clone + build a side-repo UI-kit
+  # or symlink ../ui. They just npm ci + run the target script.
   frontend-build:
     name: Frontend Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          repository: lost-coder/panvex-ui
-          path: .panvex-ui
-      - name: Link UI kit
-        run: ln -s "$GITHUB_WORKSPACE/.panvex-ui" "$GITHUB_WORKSPACE/../ui"
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
-      - name: Build UI kit
-        working-directory: .panvex-ui
-        run: npm ci && npm run build
       - name: Install and build frontend
         working-directory: web
         run: npm ci && npm run build
@@ -125,18 +119,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          repository: lost-coder/panvex-ui
-          path: .panvex-ui
-      - name: Link UI kit
-        run: ln -s "$GITHUB_WORKSPACE/.panvex-ui" "$GITHUB_WORKSPACE/../ui"
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
-      - name: Build UI kit
-        working-directory: .panvex-ui
-        run: npm ci && npm run build
       # P2-TEST-01: vitest suite. npm run test = vitest run which exits
       # non-zero on any failure; coverage is gated by thresholds in
       # vitest.config.ts so a regression under 40% also fails CI.
@@ -152,18 +137,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          repository: lost-coder/panvex-ui
-          path: .panvex-ui
-      - name: Link UI kit
-        run: ln -s "$GITHUB_WORKSPACE/.panvex-ui" "$GITHUB_WORKSPACE/../ui"
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
-      - name: Build UI kit
-        working-directory: .panvex-ui
-        run: npm ci && npm run build
       - name: Lint frontend
         working-directory: web
         run: npm ci && npm run lint
