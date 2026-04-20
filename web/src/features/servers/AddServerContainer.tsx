@@ -12,7 +12,12 @@ function buildInstallCommand(
   panelUrl: string,
   tokenValue: string,
   nodeName: string,
-  advancedOptions?: { telemtUrl: string; telemtMetricsUrl: string; telemtAuth: string },
+  advancedOptions?: {
+    telemtUrl: string;
+    telemtMetricsUrl: string;
+    telemtAuth: string;
+    insecureTransport: boolean;
+  },
 ) {
   let cmd =
     `curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/deploy/install-agent.sh | \\\n` +
@@ -36,6 +41,13 @@ function buildInstallCommand(
   if (advancedOptions?.telemtAuth) {
     cmd += ` \\\n    --telemt-auth ${advancedOptions.telemtAuth}`;
   }
+  // Explicit opt-in: the agent otherwise rejects plain-HTTP panel URLs
+  // outside loopback. For VPN-only / private-network panels this flag
+  // relaxes the guard — the operator acknowledges the bootstrap private
+  // key transits in cleartext.
+  if (advancedOptions?.insecureTransport) {
+    cmd += ` \\\n    --insecure-transport`;
+  }
   return cmd;
 }
 
@@ -53,6 +65,7 @@ export function AddServerContainer() {
     telemtUrl: "http://127.0.0.1:9091",
     telemtMetricsUrl: "http://127.0.0.1:8081",
     telemtAuth: "",
+    insecureTransport: false,
   });
 
   const [tokenData, setTokenData] = useState<EnrollmentTokenResponse | null>(null);

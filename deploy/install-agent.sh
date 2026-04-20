@@ -291,15 +291,24 @@ EOF
     step "Enrolling with Panel"
 
     info "Bootstrapping agent..."
-    if "$bin_dir/$APP_NAME" bootstrap \
-      -panel-url "$panel_url" \
-      -enrollment-token "$enrollment_token" \
-      -state-file "$state_file" \
-      -node-name "$node_name" 2>&1; then
+    # Build the bootstrap args list so -insecure-transport is only appended
+    # when the operator explicitly opted in (CLI flag or env var). Any other
+    # path keeps the strict "https required unless loopback" guard on.
+    _BOOT_ARGS=(
+      -panel-url "$panel_url"
+      -enrollment-token "$enrollment_token"
+      -state-file "$state_file"
+      -node-name "$node_name"
+    )
+    if [ -n "${PANVEX_INSECURE_TRANSPORT:-}" ]; then
+      warn "Bootstrapping over insecure transport (private key in cleartext) — only safe on VPN / private-network links."
+      _BOOT_ARGS+=(-insecure-transport)
+    fi
+    if "$bin_dir/$APP_NAME" bootstrap "${_BOOT_ARGS[@]}" 2>&1; then
       success "Agent enrolled successfully"
     else
       error "Enrollment failed — check panel URL and token"
-      warn "Retry: $bin_dir/$APP_NAME bootstrap -panel-url $panel_url -enrollment-token <token> -state-file $state_file -node-name $node_name"
+      warn "Retry: $bin_dir/$APP_NAME bootstrap -panel-url $panel_url -enrollment-token <token> -state-file $state_file -node-name $node_name${PANVEX_INSECURE_TRANSPORT:+ -insecure-transport}"
     fi
 
     chown panvex-agent:panvex-agent "$state_file" 2>/dev/null || true
@@ -562,6 +571,10 @@ CLI arguments:
   --node-name NAME            Node name (default: hostname)
   --telemt-url URL            Telemt API URL (default: http://127.0.0.1:9091)
   --telemt-auth HEADER        Telemt authorization header (optional)
+  --insecure-transport        Allow an http:// panel URL on a non-loopback
+                              host. Use only on trusted private-network or
+                              VPN-only links — bootstrap exchanges the
+                              agent private key in cleartext.
 
 Environment variables (alternative to CLI args):
   PANVEX_AGENT_VERSION      Version tag (default: latest)
@@ -570,6 +583,8 @@ Environment variables (alternative to CLI args):
   PANVEX_TELEMT_URL         Telemt API URL (default: http://127.0.0.1:9091)
   PANVEX_TELEMT_AUTH        Telemt authorization header (optional)
   PANVEX_NODE_NAME          Node name (default: hostname)
+  PANVEX_INSECURE_TRANSPORT Set to "1" to pass -insecure-transport to the
+                            bootstrap command (see --insecure-transport).
   PANVEX_START_NOW          Start service after install: 0 or 1 (default: 1)
   PANVEX_BIN_DIR            Binary directory (default: /usr/local/bin)
   PANVEX_CONFIG_DIR         Config directory (default: /etc/panvex-agent)
@@ -599,6 +614,7 @@ _CLI_ENROLLMENT_TOKEN=""
 _CLI_NODE_NAME=""
 _CLI_TELEMT_URL=""
 _CLI_TELEMT_AUTH=""
+_CLI_INSECURE_TRANSPORT=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -607,6 +623,10 @@ while [ $# -gt 0 ]; do
     --node-name)       _CLI_NODE_NAME="$2"; shift 2 ;;
     --telemt-url)      _CLI_TELEMT_URL="$2"; shift 2 ;;
     --telemt-auth)     _CLI_TELEMT_AUTH="$2"; shift 2 ;;
+    # Opt-in relaxation of the "https required unless loopback" guard.
+    # Intended for VPN-only / private-network installs where the panel
+    # runs plain HTTP and TLS is terminated elsewhere (or not at all).
+    --insecure-transport) _CLI_INSECURE_TRANSPORT="1"; shift ;;
     *) shift ;;
   esac
 done
@@ -617,6 +637,7 @@ done
 [ -n "$_CLI_NODE_NAME" ]         && export PANVEX_NODE_NAME="$_CLI_NODE_NAME"
 [ -n "$_CLI_TELEMT_URL" ]        && export PANVEX_TELEMT_URL="$_CLI_TELEMT_URL"
 [ -n "$_CLI_TELEMT_AUTH" ]       && export PANVEX_TELEMT_AUTH="$_CLI_TELEMT_AUTH"
+[ -n "$_CLI_INSECURE_TRANSPORT" ] && export PANVEX_INSECURE_TRANSPORT="1"
 
 # Start installation log
 mkdir -p "$(dirname "$INSTALL_LOG")" 2>/dev/null || true

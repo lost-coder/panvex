@@ -716,11 +716,16 @@ export interface EnrollmentWizardProps {
     telemtUrl: string;
     telemtMetricsUrl: string;
     telemtAuth: string;
+    /** Pass `--insecure-transport` to the bootstrap command. Use only on
+     *  trusted private links (VPN-only / internal network) where the panel
+     *  runs plain HTTP and TLS is terminated elsewhere or not at all. */
+    insecureTransport: boolean;
   };
   onAdvancedOptionsChange?: (opts: {
     telemtUrl: string;
     telemtMetricsUrl: string;
     telemtAuth: string;
+    insecureTransport: boolean;
   }) => void;
   onInstallConfirm: () => void;
   onBack: () => void;
