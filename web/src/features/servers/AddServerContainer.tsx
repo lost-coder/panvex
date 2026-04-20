@@ -139,6 +139,35 @@ export function AddServerContainer() {
     // lapses (401 after session expires), network loss, and schema drift.
     const MAX_CONSECUTIVE_FAILURES = 3;
     let consecutiveFailures = 0;
+
+    // Apply the three-stage progression once we've picked an agent to
+    // follow. Returns true when all three stages landed (caller should
+    // stop polling).
+    const applyAgentStatus = (match: Agent): boolean => {
+      const online = match.presence_state === "online";
+      const hasRuntime = Boolean(match.runtime);
+      if (online && hasRuntime) {
+        setConnectionStatus({
+          bootstrap: "done",
+          grpcConnect: "done",
+          firstData: "done",
+        });
+        setConnectedAgent({
+          id: match.id,
+          version: match.version,
+          fleetGroup: match.fleet_group_id || "default",
+          certExpiresAt: match.cert_expires_at ?? "—",
+        });
+        return true;
+      }
+      setConnectionStatus({
+        bootstrap: "done",
+        grpcConnect: online ? "done" : "waiting",
+        firstData: online ? "waiting" : "pending",
+      });
+      return false;
+    };
+
     const poll = async () => {
       while (!cancelled) {
         await new Promise((r) => setTimeout(r, 3000));
@@ -153,27 +182,7 @@ export function AddServerContainer() {
           const match = agents.find((a) => a.node_name === nodeName);
           if (match) {
             consecutiveFailures = 0;
-            const online = match.presence_state === "online";
-            const hasRuntime = Boolean(match.runtime);
-            if (online && hasRuntime) {
-              setConnectionStatus({
-                bootstrap: "done",
-                grpcConnect: "done",
-                firstData: "done",
-              });
-              setConnectedAgent({
-                id: match.id,
-                version: match.version,
-                fleetGroup: match.fleet_group_id || "default",
-                certExpiresAt: match.cert_expires_at ?? "—",
-              });
-              return;
-            }
-            setConnectionStatus({
-              bootstrap: "done",
-              grpcConnect: online ? "done" : "waiting",
-              firstData: online ? "waiting" : "pending",
-            });
+            if (applyAgentStatus(match)) return;
           } else {
             const tokens = await apiClient.listEnrollmentTokens();
             const ourToken = tokens.find((t) => t.value === tokenValue);
@@ -188,12 +197,42 @@ export function AddServerContainer() {
               );
               return;
             }
-            if (ourToken?.status === "consumed") {
-              setConnectionStatus({
-                bootstrap: "done",
-                grpcConnect: "waiting",
-                firstData: "pending",
-              });
+            if (ourToken?.status === "consumed" && ourToken.consumed_at_unix) {
+              // Fallback: the agent didn't register under the node_name the
+              // operator typed (install script fell back to hostname, the
+              // flag was stripped from the paste, etc.). Token is consumed,
+              // so SOME agent was registered from this token — find the
+              // closest match by cert_issued_at within a 5-minute window
+              // around the token's consumed_at. Picks the most-recent
+              // cert-issue on tie so repeated bootstraps still resolve to
+              // the latest.
+              const consumedAt = ourToken.consumed_at_unix;
+              const WINDOW_SECS = 300;
+              const candidate = agents
+                .filter((a) => a.cert_issued_at)
+                .map((a) => {
+                  const t = Date.parse(a.cert_issued_at!);
+                  return Number.isFinite(t)
+                    ? { a, issuedAt: Math.floor(t / 1000) }
+                    : null;
+                })
+                .filter(
+                  (x): x is { a: Agent; issuedAt: number } =>
+                    x !== null && Math.abs(x.issuedAt - consumedAt) < WINDOW_SECS,
+                )
+                .sort((x, y) => y.issuedAt - x.issuedAt)[0];
+
+              if (candidate) {
+                if (applyAgentStatus(candidate.a)) return;
+              } else {
+                // Token consumed, no agent match yet → bootstrap done,
+                // gateway still waiting.
+                setConnectionStatus({
+                  bootstrap: "done",
+                  grpcConnect: "waiting",
+                  firstData: "pending",
+                });
+              }
             }
             consecutiveFailures = 0;
           }
