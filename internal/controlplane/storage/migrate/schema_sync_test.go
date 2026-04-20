@@ -106,8 +106,15 @@ func assertSchemasMatch(t *testing.T, pg, sq map[string]tableSchema) {
 		if !ok {
 			continue
 		}
-		pgCols := append([]string{}, pg[name].columns...)
-		sqCols := append([]string{}, sqTbl.columns...)
+		// Normalize timestamp-convention suffixes before comparing: SQLite
+		// stores timestamps as INTEGER unix seconds with a `*_unix` suffix,
+		// PostgreSQL stores them as TIMESTAMPTZ in columns named `*_at` /
+		// `*_seen`. Both conventions describe the same logical field, so
+		// stripping the suffix lets the test focus on structural drift
+		// (missing columns, renamed prefixes) instead of the by-design
+		// naming difference.
+		pgCols := normalizeColumnNames(pg[name].columns)
+		sqCols := normalizeColumnNames(sqTbl.columns)
 		sort.Strings(pgCols)
 		sort.Strings(sqCols)
 		if !equalStringSlices(pgCols, sqCols) {
@@ -121,6 +128,21 @@ func assertSchemasMatch(t *testing.T, pg, sq map[string]tableSchema) {
 			}
 		}
 	}
+}
+
+// normalizeColumnNames folds the PG/SQLite timestamp-column conventions to a
+// single form. Strip a trailing `_unix` (SQLite INTEGER unix seconds) or
+// `_at` (PostgreSQL TIMESTAMPTZ) so pairs like
+// `created_at` / `created_at_unix` collapse to `created`, and
+// `timestamp_at` / `timestamp_unix` collapse to `timestamp`.
+func normalizeColumnNames(cols []string) []string {
+	out := make([]string, 0, len(cols))
+	for _, c := range cols {
+		c = strings.TrimSuffix(c, "_unix")
+		c = strings.TrimSuffix(c, "_at")
+		out = append(out, c)
+	}
+	return out
 }
 
 func readPostgresSchema(db *sql.DB) (map[string]tableSchema, error) {
