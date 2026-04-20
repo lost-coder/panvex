@@ -118,27 +118,35 @@ describe("DataTable virtualization (P3-PERF-02)", () => {
     });
   }
 
-  it("renders only a viewport-sized slice for 5000 rows", () => {
-    stubViewport(600);
-    const bigData: Row[] = Array.from({ length: 5000 }, (_, i) => ({
-      id: String(i),
-      name: `row-${i}`,
-      count: i,
-    }));
-    render(
-      <DataTable
-        columns={columns}
-        data={bigData}
-        keyExtractor={(r) => r.id}
-        rowHeight={48}
-        maxHeight={600}
-      />,
-    );
-    // Desktop table body rows only (excluding header + spacer rows).
-    // With a 600px viewport and 48px rows that's ~13 visible rows +
-    // overscan (6 on each side) => at most ~26 real data rows.
-    const bodyRows = document.querySelectorAll<HTMLTableRowElement>("tbody tr[data-index]");
-    expect(bodyRows.length).toBeGreaterThan(0);
-    expect(bodyRows.length).toBeLessThan(40);
-  });
+  // Bump per-test timeout to 15s — coverage instrumentation (v8 inlines
+  // hit-counters into every render) makes mounting 5000 rows + the
+  // virtualizer slow enough that the default 5s trips on CI runners
+  // even though the uninstrumented `npm run test` finishes in ~50ms.
+  it(
+    "renders only a viewport-sized slice for 5000 rows",
+    () => {
+      stubViewport(600);
+      const bigData: Row[] = Array.from({ length: 5000 }, (_, i) => ({
+        id: String(i),
+        name: `row-${i}`,
+        count: i,
+      }));
+      render(
+        <DataTable
+          columns={columns}
+          data={bigData}
+          keyExtractor={(r) => r.id}
+          rowHeight={48}
+          maxHeight={600}
+        />,
+      );
+      // Desktop table body rows only (excluding header + spacer rows).
+      // With a 600px viewport and 48px rows that's ~13 visible rows +
+      // overscan (6 on each side) => at most ~26 real data rows.
+      const bodyRows = document.querySelectorAll<HTMLTableRowElement>("tbody tr[data-index]");
+      expect(bodyRows.length).toBeGreaterThan(0);
+      expect(bodyRows.length).toBeLessThan(40);
+    },
+    15_000,
+  );
 });
