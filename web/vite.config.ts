@@ -10,6 +10,14 @@ import { defineConfig } from "vite";
 // mode here so the dev server (`vite dev`) is unaffected.
 export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwindcss()],
+  // Embed build lives under a runtime-configurable root_path (/pan, /Fxzx…).
+  // A fixed absolute `base` would force every chunk-preload into
+  //   `link.href = "/assets/…"`  — the literal slash bypasses the panel
+  // mount. With a relative base Vite emits `"./assets/…"` and the browser
+  // resolves each link against the panel's `<base href>` injected by
+  // serveUIIndex, so the URL lands under the configured root. The dev
+  // server (`vite dev`) keeps the default "/" base.
+  base: mode === "embed" ? "./" : "/",
   resolve: {
     alias: { "@": path.resolve(__dirname, "./src") },
     dedupe: ["react", "react-dom"],
