@@ -47,7 +47,15 @@ export default tseslint.config(
           patterns: [
             { group: ["@/features/*"], message: "ui/ may not depend on features/; keep the design system domain-agnostic." },
             { group: ["@/app/*"], message: "ui/ may not depend on app/; pass state via props." },
-            { group: ["@/shared/api/*"], message: "ui/ may not depend on shared/api; data flows in via props." },
+            // Runtime data must flow via props, but prop *types* defined in
+            // `@/shared/api/types-pages/pages` are the public contract for
+            // pages and compositions. Allow type-only imports so the UI-kit
+            // can reuse those shapes without dragging in the runtime module.
+            {
+              group: ["@/shared/api/*"],
+              message: "ui/ may not depend on shared/api at runtime; use `import type` for prop shapes only.",
+              allowTypeImports: true,
+            },
           ],
         },
       ],
@@ -60,10 +68,25 @@ export default tseslint.config(
         "error",
         {
           patterns: [
-            { group: ["@/app/*"], message: "features/ may not depend on app/; use react-router hooks instead of importing the router instance." },
+            // Only the router singleton and the entry module are off-limits
+            // — `@/app/providers/*` contexts (Toast, Confirm, Appearance)
+            // are the sanctioned way for features to consume cross-cutting
+            // UI state via hooks and must stay importable.
+            { group: ["@/app/router*"], message: "features/ must not import the router instance; use react-router hooks." },
+            { group: ["@/app/main*"], message: "features/ must not import the entry point." },
           ],
         },
       ],
+    },
+  },
+  // Storybook render functions read like component bodies to the
+  // react-hooks/rules-of-hooks rule, but Storybook intentionally lets you
+  // call hooks inside a story's render for interactive examples. Disable
+  // the rule for `*.stories.tsx` so stories stop tripping it.
+  {
+    files: ["src/**/*.stories.{ts,tsx}"],
+    rules: {
+      "react-hooks/rules-of-hooks": "off",
     },
   },
   {

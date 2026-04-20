@@ -20,7 +20,12 @@ export function useKeyboardShortcut(
 ) {
   const { timeoutMs = 800, enabled = true } = options;
   const handlerRef = useRef(handler);
-  handlerRef.current = handler;
+  // Writing to a ref during render violates react-hooks/refs. An effect
+  // keeps the ref in sync with the latest handler without re-subscribing
+  // the document listener on every render.
+  useEffect(() => {
+    handlerRef.current = handler;
+  }, [handler]);
 
   useEffect(() => {
     if (!enabled || typeof document === "undefined") return;
