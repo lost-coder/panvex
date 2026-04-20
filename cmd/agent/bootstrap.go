@@ -204,8 +204,26 @@ func agentEndpointURL(panelURL string, path string, allowInsecure bool) (string,
 	if parsed.Scheme == "" || parsed.Host == "" {
 		return "", errors.New("bootstrap requires an absolute -panel-url")
 	}
-	if !panelURLUsesSecureTransport(parsed) && !allowInsecure {
-		return "", errors.New("bootstrap requires https panel_url unless it targets loopback; pass -insecure-transport if the link is a trusted private network")
+
+	// Gate order (most-to-least strict):
+	//  1. https, or http on loopback      → always fine.
+	//  2. http on a private IP literal    → accepted with a warn log, no
+	//     explicit flag needed. Covers the common "panel and agent share
+	//     a VPN / LAN" case (10/8, 172.16/12, 192.168/16, CGNAT 100.64/10,
+	//     IPv6 ULA fc00::/7, link-local fe80::/10, 169.254/16).
+	//  3. http on a public IP / hostname  → requires `-insecure-transport`
+	//     so the operator explicitly acknowledges the exposure.
+	switch {
+	case panelURLUsesSecureTransport(parsed):
+		// fine
+	case panelURLHostIsPrivate(parsed):
+		slog.Warn("bootstrap over http on private-network host",
+			slog.String("host", parsed.Hostname()),
+			slog.String("hint", "private key transits unencrypted; safe only if the link is trusted"))
+	case allowInsecure:
+		// fine — operator has taken responsibility via -insecure-transport.
+	default:
+		return "", errors.New("bootstrap requires https panel_url unless it targets loopback or a private network; pass -insecure-transport if the link is a trusted public-IP route")
 	}
 
 	parsed.Path = strings.TrimRight(parsed.Path, "/") + path
@@ -232,6 +250,44 @@ func panelURLUsesSecureTransport(parsed *url.URL) bool {
 
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// panelURLHostIsPrivate returns true when the panel URL host is a literal
+// IP address inside a range that is not routable on the public internet:
+// RFC1918 (10/8, 172.16/12, 192.168/16), CGNAT (100.64/10, commonly used
+// by Tailscale), IPv4 link-local (169.254/16), IPv6 ULA (fc00::/7), or
+// IPv6 link-local (fe80::/10). Loopback is intentionally excluded —
+// `panelURLUsesSecureTransport` already accepts it.
+//
+// Hostnames are NOT resolved here: DNS is network-dependent and
+// unreliable at bootstrap time. Operators using a hostname must pass
+// `-insecure-transport` explicitly.
+func panelURLHostIsPrivate(parsed *url.URL) bool {
+	if parsed == nil || !strings.EqualFold(parsed.Scheme, "http") {
+		return false
+	}
+	host := strings.TrimSpace(parsed.Hostname())
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() {
+		// Already accepted elsewhere.
+		return false
+	}
+	if ip.IsPrivate() { // RFC1918 v4 + IPv6 ULA
+		return true
+	}
+	if ip.IsLinkLocalUnicast() {
+		return true
+	}
+	// CGNAT 100.64.0.0/10 — Go's IsPrivate() does not include it, but
+	// Tailscale and most carriers assign out of this range for overlay
+	// links that are functionally private.
+	if v4 := ip.To4(); v4 != nil && v4[0] == 100 && (v4[1]&0xC0) == 64 {
+		return true
+	}
+	return false
 }
 
 func recoverRuntimeCredentialsIfNeeded(ctx context.Context, stateFile string, current agentstate.Credentials, client *http.Client, now time.Time) (agentstate.Credentials, error) {
