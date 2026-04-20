@@ -74,6 +74,14 @@ function TotpPanel({
   onBack: () => void;
   loading?: boolean;
 }) {
+  // Strip non-digit keystrokes at the source so users can't accidentally
+  // type a space and fail validation silently. `inputMode="numeric"`
+  // opens the numeric keypad on mobile; the pattern attr is a belt-and-
+  // braces fallback for browsers that ignore the hint.
+  const handleChange = (v: string) => {
+    const digits = v.replace(/\D/g, "").slice(0, 6);
+    onTotpChange(digits);
+  };
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
@@ -84,13 +92,18 @@ function TotpPanel({
           type="text"
           autoComplete="one-time-code"
           inputMode="numeric"
+          pattern="[0-9]*"
           maxLength={6}
           placeholder="000000"
           value={totpCode}
-          onChange={(e) => onTotpChange(e.target.value)}
+          onChange={(e) => handleChange(e.target.value)}
           disabled={loading}
           required
           autoFocus
+          // Mono + wide tracking turns the 6-digit field into a
+          // ticker-style focal point — it's the dominant element
+          // on the panel at this stage.
+          className="font-mono text-center text-2xl tracking-[0.5em] tabular-nums"
         />
         <p className="text-xs text-fg-muted">Enter the 6-digit code from your authenticator app.</p>
       </div>
@@ -158,20 +171,29 @@ export function LoginPage({
       : "animate-in slide-in-from-left-4 fade-in duration-200";
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-bg">
+    // items-start on mobile so the on-screen keyboard doesn't push the
+    // form off the fold; items-center on desktop keeps the classic
+    // centered card.
+    <div className="min-h-screen flex justify-center items-start pt-12 md:items-center md:pt-0 bg-bg p-4">
       <div className="w-full max-w-sm bg-bg-card border border-border rounded-xl shadow-xl p-8 flex flex-col gap-6">
-        {/* Logo / Title */}
+        {/* Brand — status beacon next to "Control plane" so operators
+            see "this is a live panel" before they even type a password. */}
         <div className="flex flex-col items-center gap-1">
           <span className="font-mono text-3xl font-bold text-fg tracking-tight">Panvex</span>
-          <span className="text-xs text-fg-muted uppercase tracking-widest font-mono">
-            Control Plane
+          <span className="text-[11px] text-fg-muted uppercase tracking-widest font-mono inline-flex items-center gap-1.5">
+            <span
+              aria-hidden="true"
+              className="h-1.5 w-1.5 rounded-full bg-status-ok shadow-[0_0_6px_var(--color-status-ok)]"
+            />
+            Control plane
+            {stage === "totp" && (
+              <span className="text-fg-faint mx-1">/</span>
+            )}
+            {stage === "totp" && (
+              <span className="text-status-warn">2FA</span>
+            )}
           </span>
         </div>
-
-        {/* Stage subtitle */}
-        {stage === "totp" && (
-          <div className="text-center text-sm text-fg-muted -mb-2">Two-factor authentication</div>
-        )}
 
         {/* Error banner */}
         {error && (
