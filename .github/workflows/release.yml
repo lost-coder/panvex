@@ -8,6 +8,13 @@ on:
 
 permissions:
   contents: write
+  # Needed for cosign keyless SBOM signing below: the job trades its
+  # GitHub-issued OIDC token for a short-lived Fulcio certificate, signs
+  # the SBOM with it, and records the event in Rekor. No long-lived
+  # signing key for the SBOM path — the archive's .sig is still signed
+  # with the pinned ECDSA key (PANVEX_SIGNING_KEY) because the embedded
+  # verifier in the agent pins to that pubkey.
+  id-token: write
 
 jobs:
   build:
@@ -108,24 +115,29 @@ jobs:
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
 
-      # Sign the SBOM with the same ECDSA P-256 key used for the archive so
-      # verification uses one trust root. cosign sign-blob emits a detached
-      # signature (raw DER base64) compatible with `cosign verify-blob`.
-      - name: Sign SBOM
+      # Sign the SBOM keyless via Sigstore: the job swaps its
+      # GitHub-Actions OIDC token for a short-lived Fulcio certificate,
+      # cosign signs the SBOM with it, and the event lands in Rekor.
+      # No long-lived private key on the SBOM path — the archive's
+      # `.tar.gz.sig` is still signed with the pinned ECDSA key because
+      # the agent's embedded verifier pins to that pubkey.
+      #
+      # Verification (off the runner):
+      #   cosign verify-blob \
+      #     --certificate panvex-…sbom.json.crt \
+      #     --signature    panvex-…sbom.json.sig \
+      #     --certificate-identity-regexp 'https://github\.com/lost-coder/panvex/\.github/workflows/release\.yml@refs/tags/(agent|control-plane)/v.*' \
+      #     --certificate-oidc-issuer     https://token.actions.githubusercontent.com \
+      #     panvex-…sbom.json
+      - name: Sign SBOM (keyless)
         env:
-          COSIGN_PRIVATE_KEY: ${{ secrets.PANVEX_SIGNING_KEY }}
-          COSIGN_PASSWORD: ''
           GOARCH: ${{ matrix.arch }}
           COMPONENT: ${{ steps.meta.outputs.component }}
         run: |
-          if [ -z "${COSIGN_PRIVATE_KEY:-}" ]; then
-            echo "::error::PANVEX_SIGNING_KEY secret is not configured" >&2
-            exit 1
-          fi
           SBOM="panvex-${COMPONENT}-linux-${GOARCH}.sbom.json"
           cosign sign-blob --yes \
-            --key env://COSIGN_PRIVATE_KEY \
-            --output-signature "${SBOM}.sig" \
+            --output-signature   "${SBOM}.sig" \
+            --output-certificate "${SBOM}.crt" \
             "${SBOM}"
 
       - name: Upload release assets
@@ -138,4 +150,5 @@ jobs:
             panvex-*-linux-${{ matrix.arch }}.tar.gz.sig
             panvex-*-linux-${{ matrix.arch }}.sbom.json
             panvex-*-linux-${{ matrix.arch }}.sbom.json.sig
+            panvex-*-linux-${{ matrix.arch }}.sbom.json.crt
           generate_release_notes: true
