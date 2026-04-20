@@ -18,13 +18,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/checkout@v4
-        with:
-          repository: lost-coder/panvex-ui
-          path: .panvex-ui
-
-      - name: Link UI kit
-        run: ln -s "$GITHUB_WORKSPACE/.panvex-ui" "$GITHUB_WORKSPACE/../ui"
+      # Phase 4 inlined @lost-coder/panvex-ui into web/src/ui/, so the
+      # release build no longer clones the side-repo or symlinks ../ui.
 
       - uses: actions/setup-go@v5
         with:
@@ -43,11 +38,6 @@ jobs:
           echo "component=$COMPONENT" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-
-      - name: Build UI kit (control-plane only)
-        if: steps.meta.outputs.component == 'control-plane'
-        run: |
-          cd .panvex-ui && npm ci && npm run build
 
       - name: Build frontend (control-plane only)
         if: steps.meta.outputs.component == 'control-plane'
