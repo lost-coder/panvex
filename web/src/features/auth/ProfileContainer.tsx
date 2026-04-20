@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { SkeletonRows } from "@/components/Skeleton";
+import { SkeletonRows } from "@/ui";
 import { ProfilePage } from "./ProfilePage";
 import { useProfile } from "./hooks/useProfile";
 import { useSettings } from "@/features/settings/hooks/useSettings";

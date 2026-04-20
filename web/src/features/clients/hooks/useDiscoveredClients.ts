@@ -8,6 +8,7 @@ import {
   countDiscoveredGroups,
   type DiscoveredGroupCounts,
 } from "@/features/clients/lib/groupDiscovered";
+import { useToast } from "@/app/providers/ToastProvider";
 
 /**
  * Adopt / ignore flow notes
@@ -35,6 +36,10 @@ import {
  */
 export function useDiscoveredClients() {
   const queryClient = useQueryClient();
+  // Each mutation here is fire-and-forget from the container, so failures
+  // need to land in the toast channel or the operator has no signal that
+  // the button they clicked actually hit an error.
+  const toast = useToast();
 
   const query = useQuery({
     queryKey: ["discovered-clients"],
@@ -62,6 +67,7 @@ export function useDiscoveredClients() {
       queryClient.invalidateQueries({ queryKey: ["discovered-clients"] });
       queryClient.invalidateQueries({ queryKey: ["clients"] });
     },
+    onError: (err: Error) => toast.error(`Adopt failed: ${err.message}`),
   });
 
   const ignoreMutation = useMutation({
@@ -69,6 +75,7 @@ export function useDiscoveredClients() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["discovered-clients"] });
     },
+    onError: (err: Error) => toast.error(`Ignore failed: ${err.message}`),
   });
 
   const adoptManyMutation = useMutation({
@@ -86,8 +93,18 @@ export function useDiscoveredClients() {
       // 1. Adopt the first record. Backend returns the managed client id.
       const first = await apiClient.adoptDiscoveredClient(ids[0]!);
 
-      // 2. Pull the fresh managed client so we have the full shape.
-      const managed = await apiClient.client(first.client_id);
+      // 2. Pull the fresh managed client so we have the full shape. Steps
+      //    2 and 3 are wrapped so a failure here surfaces as "adopted but
+      //    partial" rather than a generic mutation error — the operator
+      //    needs to know the client exists and is scoped narrowly.
+      let managed;
+      try {
+        managed = await apiClient.client(first.client_id);
+      } catch (err) {
+        throw new Error(
+          `Adopted 1 record but could not fetch managed client to merge other ${ids.length - 1} agent(s): ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
 
       // 3. Merge agent_ids and PUT the managed client back. Skip the PUT
       //    when the adopt already wrote everything we wanted.
@@ -97,31 +114,45 @@ export function useDiscoveredClients() {
       const hasAllAgents =
         mergedAgentIds.length === (managed.agent_ids ?? []).length;
       if (!hasAllAgents) {
-        await apiClient.updateClient(first.client_id, {
-          name: managed.name,
-          enabled: managed.enabled,
-          user_ad_tag: managed.user_ad_tag,
-          max_tcp_conns: managed.max_tcp_conns,
-          max_unique_ips: managed.max_unique_ips,
-          data_quota_bytes: managed.data_quota_bytes,
-          expiration_rfc3339: managed.expiration_rfc3339,
-          fleet_group_ids: managed.fleet_group_ids ?? [],
-          agent_ids: mergedAgentIds,
-        });
+        try {
+          await apiClient.updateClient(first.client_id, {
+            name: managed.name,
+            enabled: managed.enabled,
+            user_ad_tag: managed.user_ad_tag,
+            max_tcp_conns: managed.max_tcp_conns,
+            max_unique_ips: managed.max_unique_ips,
+            data_quota_bytes: managed.data_quota_bytes,
+            expiration_rfc3339: managed.expiration_rfc3339,
+            fleet_group_ids: managed.fleet_group_ids ?? [],
+            agent_ids: mergedAgentIds,
+          });
+        } catch (err) {
+          throw new Error(
+            `Adopted client but failed to extend agent_ids — client is scoped only to 1 node: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
       }
 
       // 4. Ignore the remaining discovered records so they clear out of
       //    pending review — they're duplicates of the just-adopted client.
       //    Use allSettled because a single stray failure here shouldn't
-      //    roll back the successful adoption above.
-      await Promise.allSettled(
+      //    roll back the successful adoption above; we still surface a
+      //    warning toast if any reject.
+      const ignored = await Promise.allSettled(
         ids.slice(1).map((id) => apiClient.ignoreDiscoveredClient(id)),
       );
+      const staleIgnores = ignored.filter((r) => r.status === "rejected").length;
+      if (staleIgnores > 0) {
+        toast.info(
+          `Adopted, but ${staleIgnores} duplicate record${staleIgnores === 1 ? "" : "s"} could not be cleared — refresh to retry.`,
+        );
+      }
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["discovered-clients"] });
       queryClient.invalidateQueries({ queryKey: ["clients"] });
     },
+    onError: (err: Error) => toast.error(err.message),
   });
 
   const ignoreManyMutation = useMutation({
@@ -137,6 +168,7 @@ export function useDiscoveredClients() {
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["discovered-clients"] });
     },
+    onError: (err: Error) => toast.error(err.message),
   });
 
   // Logical-client counts derived from the dedupe grouping. Consumers

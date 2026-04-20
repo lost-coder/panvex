@@ -1,7 +1,7 @@
 import { EnrollmentTokensPage } from "./EnrollmentTokensPage";
 import { useEnrollmentTokens } from "./hooks/useEnrollmentTokens";
 import { ErrorState } from "@/components/ErrorState";
-import { SkeletonRows } from "@/components/Skeleton";
+import { SkeletonRows } from "@/ui";
 import { useConfirm } from "@/app/providers/ConfirmProvider";
 
 export function EnrollmentTokensContainer() {

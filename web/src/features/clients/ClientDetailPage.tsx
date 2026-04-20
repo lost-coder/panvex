@@ -10,15 +10,15 @@ import {
   Button,
   CopyButton,
   DataTable,
+  HeroStrip,
   KvGrid,
   MonoValue,
   PageHeader,
+  PulseRow,
   Sheet,
   SheetBody,
   SheetContent,
-  StatusDot,
   SwipeTabView,
-  cn,
   deployVariant,
   formatBytes,
   formatExpiry,
@@ -26,6 +26,9 @@ import {
   type ClientDeploymentData,
   type ClientDetailPageProps,
   type ClientFormData,
+  type HeroMetaPill,
+  type PulseTick,
+  type StatusTone,
 } from "@/ui";
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -56,78 +59,6 @@ function expiresTone(rfc: string): "default" | "warn" | "error" {
   if (days < 0) return "error";
   if (days < 7) return "warn";
   return "default";
-}
-
-// ─── Pulse tile + cell wrapper ──────────────────────────────────────
-
-function PulseTile({
-  label,
-  value,
-  hint,
-  tone,
-  barPct,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  tone?: "default" | "ok" | "warn" | "error";
-  barPct?: number;
-}) {
-  const toneClass: Record<NonNullable<typeof tone>, string> = {
-    default: "text-fg",
-    ok: "text-status-ok",
-    warn: "text-status-warn",
-    error: "text-status-error",
-  };
-  const barColor =
-    tone === "error"
-      ? "bg-status-error"
-      : tone === "warn"
-        ? "bg-status-warn"
-        : tone === "ok"
-          ? "bg-status-ok"
-          : "bg-fg";
-  return (
-    <div className="flex flex-col gap-1 min-w-0">
-      <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted truncate">
-        {label}
-      </span>
-      <span
-        className={cn(
-          "text-2xl font-mono font-semibold leading-none tracking-tight tabular-nums",
-          toneClass[tone ?? "default"],
-        )}
-      >
-        {value}
-      </span>
-      {typeof barPct === "number" && (
-        <div className="h-1 w-full rounded-full bg-border overflow-hidden">
-          <div
-            className={cn("h-full rounded-full", barColor)}
-            style={{ width: `${Math.max(0, Math.min(100, barPct))}%` }}
-          />
-        </div>
-      )}
-      {hint && <span className="text-[10px] font-mono text-fg-muted truncate">{hint}</span>}
-    </div>
-  );
-}
-
-function PulseCell({ i, children }: { i: number; children: React.ReactNode }) {
-  const isSecondCol = i % 2 === 1;
-  const isSecondRow = i >= 2;
-  return (
-    <div
-      className={cn(
-        "min-w-0 p-4",
-        isSecondCol && "border-l border-divider",
-        isSecondRow && "border-t border-divider md:border-t-0",
-        i > 0 && "md:border-l md:border-divider",
-      )}
-    >
-      {children}
-    </div>
-  );
 }
 
 // ─── Secret section ──────────────────────────────────────────────────
@@ -498,12 +429,6 @@ export function ClientDetailPage({
   const status = clientStatus(client.enabled, client.expirationRfc3339);
   const statusLabel =
     status === "expired" ? "EXPIRED" : status === "disabled" ? "DISABLED" : "ACTIVE";
-  const statusTone =
-    status === "expired"
-      ? "text-status-error"
-      : status === "disabled"
-        ? "text-status-warn"
-        : "text-status-ok";
 
   const trafficPct = client.dataQuotaBytes
     ? Math.min(100, (client.trafficUsedBytes / client.dataQuotaBytes) * 100)
@@ -582,35 +507,33 @@ export function ClientDetailPage({
       </div>
 
       {/* Desktop hero — full-bleed band, matches the Server detail style. */}
-      <section className="hidden md:block border-y border-divider">
-        <div className="px-4 md:px-8 py-4 flex flex-wrap items-center gap-x-4 gap-y-2">
-          <StatusDot status={status === "expired" ? "error" : client.enabled ? "ok" : "warn"} />
-          <h2 className="font-mono text-lg font-semibold text-fg truncate">{client.name}</h2>
-          <span className="text-fg-faint">/</span>
-          <span className={cn("font-mono text-xs uppercase tracking-wider", statusTone)}>
-            {statusLabel}
-          </span>
-          <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
-            {client.fleetGroupIds.map((g) => (
-              <span
-                key={g}
-                className="font-mono text-[11px] text-fg-muted px-2 py-0.5 rounded-xs border border-divider bg-bg"
-              >
-                group: {g}
-              </span>
-            ))}
-            <span
-              className={cn(
-                "font-mono text-[11px] px-2 py-0.5 rounded-xs border border-divider bg-bg tabular-nums",
-                expiresTone(client.expirationRfc3339) === "error"
-                  ? "text-status-error"
-                  : expiresTone(client.expirationRfc3339) === "warn"
-                    ? "text-status-warn"
-                    : "text-fg-muted",
-              )}
-            >
-              expires {expiresSuffix(client.expirationRfc3339)}
-            </span>
+      <HeroStrip
+        className="hidden md:flex"
+        name={client.name}
+        status={{
+          tone:
+            status === "expired"
+              ? "error"
+              : client.enabled
+                ? "ok"
+                : "warn",
+          label: statusLabel,
+        }}
+        pills={[
+          ...client.fleetGroupIds.map<HeroMetaPill>((g) => ({
+            label: "group",
+            value: g,
+            mono: true,
+          })),
+          {
+            label: "expires",
+            value: expiresSuffix(client.expirationRfc3339),
+            mono: true,
+            tone: expiresTone(client.expirationRfc3339) as StatusTone,
+          },
+        ]}
+        actions={
+          <>
             {onEdit && (
               <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
                 Edit
@@ -631,67 +554,51 @@ export function ClientDetailPage({
                 Delete
               </Button>
             )}
-          </div>
-        </div>
-      </section>
+          </>
+        }
+      />
 
       <div className="px-4 md:px-8 flex flex-col gap-6 pb-8 pt-6">
-        {/* Pulse row */}
-        <section className="rounded-xs bg-bg-card border border-border grid grid-cols-2 md:grid-cols-4">
-          <PulseCell i={0}>
-            <PulseTile
-              label="Connections"
-              value={client.activeTcpConns.toLocaleString()}
-              hint={
+        <PulseRow
+          ticks={[
+            {
+              label: "Connections",
+              value: client.activeTcpConns.toLocaleString(),
+              hint:
                 client.maxTcpConns > 0
                   ? `of ${client.maxTcpConns.toLocaleString()} max`
-                  : "no limit"
-              }
-              tone={connsTone}
-              barPct={connsPct}
-            />
-          </PulseCell>
-          <PulseCell i={1}>
-            <PulseTile
-              label="Unique IPs"
-              value={client.uniqueIpsUsed.toLocaleString()}
-              hint={
+                  : "no limit",
+              tone: connsTone,
+              barPct: connsPct,
+            },
+            {
+              label: "Unique IPs",
+              value: client.uniqueIpsUsed.toLocaleString(),
+              hint:
                 client.maxUniqueIps > 0
                   ? `of ${client.maxUniqueIps.toLocaleString()} max`
-                  : "no limit"
-              }
-              tone={ipsTone}
-              barPct={ipsPct}
-            />
-          </PulseCell>
-          <PulseCell i={2}>
-            <PulseTile
-              label="Traffic"
-              value={formatBytes(client.trafficUsedBytes)}
-              hint={
+                  : "no limit",
+              tone: ipsTone,
+              barPct: ipsPct,
+            },
+            {
+              label: "Traffic",
+              value: formatBytes(client.trafficUsedBytes),
+              hint:
                 client.dataQuotaBytes > 0
                   ? `of ${formatQuota(client.dataQuotaBytes)}`
-                  : "no quota"
-              }
-              tone={trafficTone}
-              barPct={trafficPct}
-            />
-          </PulseCell>
-          <PulseCell i={3}>
-            <PulseTile
-              label="Expires"
-              value={formatExpiry(client.expirationRfc3339)}
-              hint={expiresSuffix(client.expirationRfc3339)}
-              tone={
-                expiresTone(client.expirationRfc3339) === "error"
-                  ? "error"
-                  : expiresTone(client.expirationRfc3339) === "warn"
-                    ? "warn"
-                    : "default"
-              }
-            />
-          </PulseCell>
-        </section>
+                  : "no quota",
+              tone: trafficTone,
+              barPct: trafficPct,
+            },
+            {
+              label: "Expires",
+              value: formatExpiry(client.expirationRfc3339),
+              hint: expiresSuffix(client.expirationRfc3339),
+              tone: expiresTone(client.expirationRfc3339),
+            },
+          ] satisfies PulseTick[]}
+        />
 
         {/* Mobile: swipe tabs keep the scroll bounded on narrow viewports. */}
         <div className="md:hidden">

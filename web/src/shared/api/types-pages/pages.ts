@@ -640,6 +640,9 @@ export interface SettingsPageProps {
     event_history_seconds: number;
   };
   onRetentionChange?: (settings: NonNullable<SettingsPageProps["retentionSettings"]>) => void;
+  /** True while the retention save mutation is in-flight. Disables the Save
+   *  button and swaps the label to "Saving…" so the operator sees feedback. */
+  retentionSaving?: boolean;
   /** Content injected into the "Updates" tab (e.g. UpdatesSettingsSection from core/web). */
   children?: React.ReactNode;
 }
@@ -756,6 +759,8 @@ export interface EnrollmentTokenData {
 export interface TokenListProps {
   tokens: EnrollmentTokenData[];
   onRevoke: (tokenValue: string) => void;
+  /** Snapshot of current unix seconds, used to render TTL countdowns. */
+  nowSec?: number;
 }
 
 // --- Agent Connection ---
@@ -914,15 +919,25 @@ export interface JobListItem {
   action: string;
   status: string;
   actorId: string;
+  /** Resolved human label for actorId (username). Falls back to shortId. */
+  actorLabel?: string;
   targetCount: number;
   createdAtUnix: number;
+  /** First failing target's result_text, if any. Shown under the action row. */
+  failureReason?: string;
 }
 
 export interface AuditListItem {
   id: string;
   actorId: string;
+  /** Resolved human label for actorId (username). */
+  actorLabel?: string;
   action: string;
   targetId: string;
+  /** Resolved human label for targetId (client name, node_name, or username). */
+  targetLabel?: string;
+  /** Entity kind derived from action namespace ("user", "client", "agent", …). */
+  targetKind?: string;
   createdAtUnix: number;
 }
 
@@ -931,4 +946,7 @@ export interface ActivityPageProps {
   auditEvents: AuditListItem[];
   activeTab: string;
   onTabChange: (tab: string) => void;
+  /** Non-fatal warning when actor/target label lookup failed — rows render
+   *  with raw UUIDs. Rendered as a banner above the list. */
+  lookupError?: string | null;
 }
