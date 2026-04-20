@@ -588,9 +588,31 @@ export interface ClientDetailPageProps {
   onDisable?: () => void;
   onDelete?: () => void;
   ipHistory?: {
-    ips: { agentId: string; ip: string; firstSeen: string; lastSeen: string }[];
+    /**
+     * GeoIP fields are optional — the backend does not enrich yet
+     * (see docs/audit_2026-04-18/backend-followups.md). The page renders
+     * "—" placeholders for the column until the enrichment lands.
+     */
+    ips: {
+      agentId: string;
+      ip: string;
+      firstSeen: string;
+      lastSeen: string;
+      countryCode?: string;
+      countryName?: string;
+      city?: string;
+      asn?: string;
+    }[];
     totalUnique: number;
   };
+  /**
+   * Mapping `agent_id → node_name` so the Deployments & Links card can
+   * render human-readable names instead of raw UUIDs. Until the backend
+   * starts including node_name on clientDeploymentResponse
+   * (backend-followup #5), the container joins client-side against
+   * /api/agents. Missing ids fall back to the UUID.
+   */
+  agentLabels?: Record<string, string>;
 }
 
 // --- Settings ---

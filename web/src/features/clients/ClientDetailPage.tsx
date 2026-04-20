@@ -1,25 +1,24 @@
-// P3-FE-01: recomposed locally from UI-kit primitives/components/compositions
-// instead of importing the pre-built page from @lost-coder/panvex-ui/pages.
-import { ClientFormSheet } from "@/features/clients/ClientFormSheet";
+// Phase-7 redesign: hero band + pulse row + separate Secret section
+// + combined Deployments & Links + GeoIP-ready IP history +
+// always-visible Limits card.
 import { useState } from "react";
+
+import { ClientFormSheet } from "@/features/clients/ClientFormSheet";
 import {
   Badge,
   Breadcrumbs,
   Button,
-  
-  ConfirmDialog,
   CopyButton,
   DataTable,
-  FieldLabel,
   KvGrid,
   MonoValue,
   PageHeader,
-  SectionHeader,
   Sheet,
   SheetBody,
   SheetContent,
-  StatCard,
+  StatusDot,
   SwipeTabView,
+  cn,
   deployVariant,
   formatBytes,
   formatExpiry,
@@ -29,251 +28,448 @@ import {
   type ClientFormData,
 } from "@/ui";
 
-// ─── Connection links ────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────
 
-function ConnectionLinksContent({
+function isExpired(rfc: string): boolean {
+  if (!rfc) return false;
+  const t = Date.parse(rfc);
+  return Number.isFinite(t) && t < Date.now();
+}
+function clientStatus(enabled: boolean, rfc: string): "active" | "disabled" | "expired" {
+  if (isExpired(rfc)) return "expired";
+  return enabled ? "active" : "disabled";
+}
+function expiresSuffix(rfc: string): string {
+  if (!rfc) return "never";
+  const t = Date.parse(rfc);
+  if (!Number.isFinite(t)) return "—";
+  const days = Math.floor((t - Date.now()) / (1000 * 60 * 60 * 24));
+  if (days < 0) return `${Math.abs(days)}d ago`;
+  if (days === 0) return "today";
+  return `in ${days}d`;
+}
+function expiresTone(rfc: string): "default" | "warn" | "error" {
+  if (!rfc) return "default";
+  const t = Date.parse(rfc);
+  if (!Number.isFinite(t)) return "default";
+  const days = Math.floor((t - Date.now()) / (1000 * 60 * 60 * 24));
+  if (days < 0) return "error";
+  if (days < 7) return "warn";
+  return "default";
+}
+
+// ─── Pulse tile + cell wrapper ──────────────────────────────────────
+
+function PulseTile({
+  label,
+  value,
+  hint,
+  tone,
+  barPct,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  tone?: "default" | "ok" | "warn" | "error";
+  barPct?: number;
+}) {
+  const toneClass: Record<NonNullable<typeof tone>, string> = {
+    default: "text-fg",
+    ok: "text-status-ok",
+    warn: "text-status-warn",
+    error: "text-status-error",
+  };
+  const barColor =
+    tone === "error"
+      ? "bg-status-error"
+      : tone === "warn"
+        ? "bg-status-warn"
+        : tone === "ok"
+          ? "bg-status-ok"
+          : "bg-fg";
+  return (
+    <div className="flex flex-col gap-1 min-w-0">
+      <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted truncate">
+        {label}
+      </span>
+      <span
+        className={cn(
+          "text-2xl font-mono font-semibold leading-none tracking-tight tabular-nums",
+          toneClass[tone ?? "default"],
+        )}
+      >
+        {value}
+      </span>
+      {typeof barPct === "number" && (
+        <div className="h-1 w-full rounded-full bg-border overflow-hidden">
+          <div
+            className={cn("h-full rounded-full", barColor)}
+            style={{ width: `${Math.max(0, Math.min(100, barPct))}%` }}
+          />
+        </div>
+      )}
+      {hint && <span className="text-[10px] font-mono text-fg-muted truncate">{hint}</span>}
+    </div>
+  );
+}
+
+function PulseCell({ i, children }: { i: number; children: React.ReactNode }) {
+  const isSecondCol = i % 2 === 1;
+  const isSecondRow = i >= 2;
+  return (
+    <div
+      className={cn(
+        "min-w-0 p-4",
+        isSecondCol && "border-l border-divider",
+        isSecondRow && "border-t border-divider md:border-t-0",
+        i > 0 && "md:border-l md:border-divider",
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ─── Secret section ──────────────────────────────────────────────────
+
+function SecretSection({
+  secret,
+  onRotate,
+  rotating,
+  pendingRedeploy,
+}: {
+  secret: string;
+  onRotate?: () => void;
+  rotating?: boolean;
+  pendingRedeploy?: boolean;
+}) {
+  // Client secrets need a long-lived reveal/copy flow, not the one-shot
+  // <SecretReveal> primitive used for TOTP bootstraps.
+  const [revealed, setRevealed] = useState(false);
+  // The Panvex API ships `secret` only on create + rotate responses
+  // (omitempty on the regular GET). When it's absent we tell the
+  // operator up front instead of showing a broken Reveal toggle —
+  // tracked as backend follow-up #4.
+  const hasSecret = !!secret;
+  const masked = hasSecret ? "•".repeat(Math.min(32, Math.max(8, secret.length))) : "";
+  return (
+    <section className="rounded-xs bg-bg-card border border-divider p-4 flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-baseline gap-2">
+          <span className="text-sm font-semibold text-fg">Secret</span>
+          <span className="text-[11px] font-mono text-fg-muted">
+            rotating invalidates every outstanding connection link
+          </span>
+        </div>
+        {onRotate && (
+          <Button size="sm" variant="outline" disabled={rotating} onClick={onRotate}>
+            {rotating ? "Rotating…" : "Rotate secret"}
+          </Button>
+        )}
+      </div>
+      {hasSecret ? (
+        <div className="flex items-center gap-2 rounded-xs bg-bg border border-divider px-3 py-2 min-w-0">
+          <code className="flex-1 min-w-0 text-sm font-mono text-fg break-all select-all">
+            {revealed ? secret : masked}
+          </code>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setRevealed((v) => !v)}
+            className="shrink-0"
+          >
+            {revealed ? "Hide" : "Reveal"}
+          </Button>
+          <CopyButton text={secret} />
+        </div>
+      ) : (
+        <div className="rounded-xs bg-bg border border-dashed border-divider px-3 py-2 text-[11px] font-mono text-fg-muted">
+          Current secret isn't returned by the detail API — extract it from a
+          fresh connection link below, or rotate to get a new one.
+        </div>
+      )}
+      {pendingRedeploy && (
+        <div className="text-[11px] font-mono text-status-warn">
+          Secret rotated — wait for agents to re-apply before distributing new links.
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ─── Deployments + Links (combined) ─────────────────────────────────
+
+function LinksStrip({
+  links,
+}: {
+  links: { classic: string[]; secure: string[]; tls: string[] };
+}) {
+  type LinkGroup = { key: "tls" | "secure" | "classic"; label: string; items: string[] };
+  const groups: LinkGroup[] = (
+    [
+      { key: "tls", label: "TLS", items: links.tls },
+      { key: "secure", label: "Secure", items: links.secure },
+      { key: "classic", label: "Classic", items: links.classic },
+    ] satisfies LinkGroup[]
+  ).filter((g) => g.items.length > 0);
+  if (groups.length === 0) {
+    return (
+      <div className="mt-2 text-[11px] font-mono text-fg-muted">No links generated yet.</div>
+    );
+  }
+  return (
+    <div className="mt-2 flex flex-col gap-1.5">
+      {groups.map((g) => (
+        <div key={g.key} className="flex items-center gap-2 min-w-0">
+          <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted shrink-0 w-[56px]">
+            {g.label}
+          </span>
+          <span className="font-mono text-xs text-fg truncate min-w-0 flex-1">
+            {g.items[0]}
+          </span>
+          <CopyButton text={g.items[0] ?? ""} />
+          {g.items.length > 1 && (
+            <span className="text-[10px] font-mono text-fg-muted shrink-0">
+              +{g.items.length - 1}
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DeployLinksCard({
   deployments,
   secretPendingRedeploy,
+  agentLabels,
 }: {
   deployments: ClientDeploymentData[];
   secretPendingRedeploy?: boolean;
+  agentLabels?: Record<string, string>;
 }) {
-  const activeLinks = deployments.filter(
-    (d) =>
-      d.status === "succeeded" &&
-      (d.links.tls.length > 0 || d.links.classic.length > 0 || d.links.secure.length > 0),
-  );
-
+  if (deployments.length === 0) {
+    return (
+      <div className="rounded-xs bg-bg-card border border-divider p-4 text-sm text-fg-muted text-center">
+        No deployments yet.
+      </div>
+    );
+  }
   return (
-    <div className="flex flex-col">
-      {secretPendingRedeploy && (
-        <div className="px-4 py-2 text-xs font-medium text-status-warn bg-status-warn/10 border-b border-border">
-          Secret changed — links will update after redeployment
+    <section className="rounded-xs bg-bg-card border border-divider overflow-hidden">
+      <header className="px-4 py-3 border-b border-divider flex items-center justify-between gap-2">
+        <div className="flex items-baseline gap-2">
+          <span className="text-sm font-semibold text-fg">Deployments & links</span>
+          <span className="text-[11px] font-mono text-fg-muted">
+            {deployments.length} node{deployments.length === 1 ? "" : "s"}
+          </span>
         </div>
-      )}
-      {activeLinks.length === 0 ? (
-        <div className="px-4 py-6 text-center text-fg-muted text-sm">
-          Links available after deployment
-        </div>
-      ) : (
-        <div className="flex flex-col divide-y divide-border">
-          {activeLinks.map((d) => {
-            const tlsFirst = d.links.tls[0];
-            const classicFirst = d.links.classic[0];
-            const secureFirst = d.links.secure[0];
-            return (
-              <div key={d.agentId} className="px-4 py-3 flex flex-col gap-1.5">
-                <span className="text-caption uppercase tracking-wider">{d.agentId}</span>
-                {tlsFirst && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-fg-muted uppercase w-8 shrink-0">TLS</span>
-                    <span className="text-xs font-mono text-fg truncate min-w-0">{tlsFirst}</span>
-                    <CopyButton text={tlsFirst} />
-                  </div>
+        {secretPendingRedeploy && <Badge variant="warn">Secret rotated — awaiting redeploy</Badge>}
+      </header>
+      <div className="flex flex-col">
+        {deployments.map((d) => {
+          const tone = deployVariant(d.status);
+          const label = agentLabels?.[d.agentId];
+          return (
+            <div key={d.agentId} className="px-4 py-3 border-b border-divider last:border-b-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-mono text-sm text-fg truncate">
+                  {label ?? d.agentId}
+                </span>
+                {label && (
+                  <span className="font-mono text-[10px] text-fg-muted truncate">
+                    {d.agentId.slice(0, 8)}…
+                  </span>
                 )}
-                {classicFirst && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-fg-muted uppercase w-8 shrink-0">t.me</span>
-                    <span className="text-xs font-mono text-fg truncate min-w-0">
-                      {classicFirst}
-                    </span>
-                    <CopyButton text={classicFirst} />
-                  </div>
+                <Badge variant={tone}>{d.status}</Badge>
+                {d.desiredOperation && d.desiredOperation !== "none" && (
+                  <Badge variant="accent">{d.desiredOperation}</Badge>
                 )}
-                {secureFirst && !classicFirst && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-fg-muted uppercase w-8 shrink-0">Proxy</span>
-                    <span className="text-xs font-mono text-fg truncate min-w-0">
-                      {secureFirst}
-                    </span>
-                    <CopyButton text={secureFirst} />
-                  </div>
-                )}
+                <span className="ml-auto text-[11px] font-mono text-fg-muted tabular-nums">
+                  {d.lastAppliedAtUnix > 0
+                    ? new Date(d.lastAppliedAtUnix * 1000).toLocaleString()
+                    : "never applied"}
+                </span>
               </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
+              {d.lastError && (
+                <div className="mt-1 text-[11px] font-mono text-status-error break-words">
+                  {d.lastError}
+                </div>
+              )}
+              <LinksStrip links={d.links} />
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
-// ─── Overview content ─────────────────────────────────────────────────────────
+// ─── IP history (GeoIP-ready) ────────────────────────────────────────
 
-function OverviewContent({
-  client,
-  onRotateSecret,
-  secretRotating,
-  secretPendingRedeploy,
-}: {
-  client: ClientDetailPageProps["client"];
-  onRotateSecret?: () => void;
-  secretRotating?: boolean;
-  secretPendingRedeploy?: boolean;
-}) {
-  const settingsRows = [
-    {
-      label: "Max TCP Connections",
-      value: <MonoValue>{client.maxTcpConns > 0 ? client.maxTcpConns : "Unlimited"}</MonoValue>,
-    },
-    {
-      label: "Max Unique IPs",
-      value: <MonoValue>{client.maxUniqueIps > 0 ? client.maxUniqueIps : "Unlimited"}</MonoValue>,
-    },
-    {
-      label: "Data Quota",
-      value: <MonoValue>{formatQuota(client.dataQuotaBytes)}</MonoValue>,
-    },
-    {
-      label: "Expiration",
-      value: <MonoValue>{formatExpiry(client.expirationRfc3339)}</MonoValue>,
-    },
-    {
-      label: "Fleet Groups",
-      value: (
-        <MonoValue>
-          {client.fleetGroupIds.length > 0 ? client.fleetGroupIds.join(", ") : "All"}
-        </MonoValue>
-      ),
-    },
-    {
-      label: "Secret",
-      value: (
-        <span className="flex items-center gap-1">
-          <MonoValue>{"••••••••"}</MonoValue>
-          <CopyButton text={client.secret} />
-          {onRotateSecret && (
-            <Button size="sm" variant="ghost" onClick={onRotateSecret} disabled={secretRotating}>
-              {secretRotating ? "Rotating..." : "Rotate"}
-            </Button>
-          )}
-        </span>
-      ),
-    },
-    {
-      label: "User Ad Tag",
-      value: <MonoValue className="text-fg-muted">{client.userAdTag || "—"}</MonoValue>,
-    },
-  ];
-
-  return (
-    <div className="flex flex-col gap-6">
-      {/* Settings card */}
-      <div className="rounded-xs bg-bg-card border border-border overflow-hidden">
-        <div className="px-4 py-3 border-b border-border">
-          <FieldLabel>Settings</FieldLabel>
-        </div>
-        <div className="p-4">
-          <KvGrid rows={settingsRows} />
-        </div>
-      </div>
-
-      {/* Connection links */}
-      <div className="rounded-xs bg-bg-card border border-border overflow-hidden">
-        <div className="px-4 py-3 border-b border-border">
-          <FieldLabel>Connection Links</FieldLabel>
-        </div>
-        <ConnectionLinksContent
-          deployments={client.deployments}
-          secretPendingRedeploy={secretPendingRedeploy}
-        />
-      </div>
-    </div>
-  );
+interface IPRow {
+  agentId: string;
+  ip: string;
+  firstSeen: string;
+  lastSeen: string;
+  countryCode?: string;
+  countryName?: string;
+  city?: string;
+  asn?: string;
 }
 
-// ─── Deployments content ──────────────────────────────────────────────────────
-
-function DeploymentsContent({ deployments }: { deployments: ClientDeploymentData[] }) {
-  const deployColumns = [
+function IPHistoryCard({ ips, totalUnique }: { ips: IPRow[]; totalUnique: number }) {
+  const columns = [
     {
-      key: "agentId",
-      header: "Server",
-      render: (row: ClientDeploymentData) => (
-        <MonoValue className="truncate max-w-[120px]">{row.agentId}</MonoValue>
-      ),
+      key: "ip",
+      header: "IP",
+      render: (row: IPRow) => <MonoValue>{row.ip}</MonoValue>,
+      className: "w-[160px]",
     },
     {
-      key: "operation",
-      header: "Operation",
-      render: (row: ClientDeploymentData) => (
-        <Badge variant="default">{row.desiredOperation}</Badge>
-      ),
-    },
-    {
-      key: "status",
-      header: "Status",
-      render: (row: ClientDeploymentData) => (
-        <Badge variant={deployVariant(row.status)}>{row.status}</Badge>
-      ),
-    },
-    {
-      key: "lastApplied",
-      header: "Last Applied",
-      render: (row: ClientDeploymentData) => (
-        <span className="font-mono text-xs text-fg-muted">
-          {row.lastAppliedAtUnix > 0
-            ? new Date(row.lastAppliedAtUnix * 1000).toLocaleString()
-            : "—"}
-        </span>
-      ),
-    },
-    {
-      key: "error",
-      header: "Error",
-      render: (row: ClientDeploymentData) =>
-        row.lastError ? (
-          <span
-            className="text-xs text-status-error truncate max-w-[160px] block"
-            title={row.lastError}
-          >
-            {row.lastError.slice(0, 60)}
-            {row.lastError.length > 60 ? "…" : ""}
+      key: "country",
+      header: "Country",
+      render: (row: IPRow) =>
+        row.countryName || row.countryCode ? (
+          <span className="text-xs text-fg">
+            {row.countryCode && (
+              <span className="font-mono text-[10px] text-fg-muted mr-1">{row.countryCode}</span>
+            )}
+            {row.countryName ?? ""}
           </span>
         ) : (
-          <span className="text-fg-muted text-xs">—</span>
+          <span className="text-xs text-fg-faint">—</span>
         ),
+      className: "hidden md:table-cell w-[160px]",
     },
     {
-      key: "link",
-      header: "Links",
-      render: (row: ClientDeploymentData) => {
-        const tlsFirst = row.links.tls[0];
-        const classicFirst = row.links.classic[0];
-        if (!tlsFirst && !classicFirst) return <span className="text-fg-muted text-xs">—</span>;
-        return (
-          <span className="flex items-center gap-1">
-            {tlsFirst && (
-              <>
-                <span className="text-[10px] text-fg-muted">TLS</span>
-                <CopyButton text={tlsFirst} />
-              </>
-            )}
-            {classicFirst && (
-              <>
-                <span className="text-[10px] text-fg-muted">t.me</span>
-                <CopyButton text={classicFirst} />
-              </>
-            )}
-          </span>
-        );
-      },
+      key: "city",
+      header: "City",
+      render: (row: IPRow) =>
+        row.city ? (
+          <span className="text-xs text-fg">{row.city}</span>
+        ) : (
+          <span className="text-xs text-fg-faint">—</span>
+        ),
+      className: "hidden lg:table-cell w-[140px]",
+    },
+    {
+      key: "asn",
+      header: "ASN",
+      render: (row: IPRow) =>
+        row.asn ? (
+          <MonoValue className="text-xs">{row.asn}</MonoValue>
+        ) : (
+          <span className="text-xs text-fg-faint">—</span>
+        ),
+      className: "hidden xl:table-cell w-[120px]",
+    },
+    {
+      key: "firstSeen",
+      header: "First seen",
+      render: (row: IPRow) => (
+        <span className="text-[11px] font-mono text-fg-muted tabular-nums">
+          {new Date(row.firstSeen).toLocaleString()}
+        </span>
+      ),
+      className: "hidden md:table-cell w-[170px]",
+    },
+    {
+      key: "lastSeen",
+      header: "Last seen",
+      render: (row: IPRow) => (
+        <span className="text-[11px] font-mono text-fg tabular-nums">
+          {new Date(row.lastSeen).toLocaleString()}
+        </span>
+      ),
+      className: "w-[170px]",
     },
   ];
-
   return (
-    <div className="flex flex-col gap-4">
-      <DataTable
-        columns={deployColumns}
-        data={deployments}
-        keyExtractor={(row) => row.agentId}
-        emptyMessage="No deployments"
-      />
-    </div>
+    <section className="rounded-xs bg-bg-card border border-divider overflow-hidden">
+      <header className="px-4 py-3 border-b border-divider flex items-center justify-between gap-2">
+        <div className="flex items-baseline gap-2">
+          <span className="text-sm font-semibold text-fg">IP history</span>
+          <span className="text-[11px] font-mono text-fg-muted">{totalUnique} unique</span>
+        </div>
+        <span className="text-[10px] font-mono text-fg-muted truncate">
+          GeoIP enrichment pending — see backend-followup #3
+        </span>
+      </header>
+      {ips.length === 0 ? (
+        <div className="px-4 py-8 text-sm text-fg-muted text-center">
+          No IP activity recorded.
+        </div>
+      ) : (
+        <DataTable
+          columns={columns}
+          data={ips}
+          keyExtractor={(row) => `${row.agentId}:${row.ip}`}
+          emptyMessage="No IPs"
+        />
+      )}
+    </section>
   );
 }
 
-// ─── Main page ────────────────────────────────────────────────────────────────
+// ─── Limits & metadata ───────────────────────────────────────────────
+
+function LimitsCard({ client }: { client: ClientDetailPageProps["client"] }) {
+  return (
+    <section className="rounded-xs bg-bg-card border border-divider p-4 flex flex-col gap-3">
+      <span className="text-sm font-semibold text-fg">Limits & metadata</span>
+      <KvGrid
+        rows={[
+          {
+            label: "Ad tag",
+            value: client.userAdTag ? (
+              <MonoValue>{client.userAdTag}</MonoValue>
+            ) : (
+              <span className="text-xs text-fg-faint">—</span>
+            ),
+          },
+          {
+            label: "Max TCP conns",
+            value: (
+              <MonoValue>
+                {client.maxTcpConns > 0 ? client.maxTcpConns : "Unlimited"}
+              </MonoValue>
+            ),
+          },
+          {
+            label: "Max unique IPs",
+            value: (
+              <MonoValue>
+                {client.maxUniqueIps > 0 ? client.maxUniqueIps : "Unlimited"}
+              </MonoValue>
+            ),
+          },
+          {
+            label: "Quota",
+            value: <MonoValue>{formatQuota(client.dataQuotaBytes)}</MonoValue>,
+          },
+          {
+            label: "Fleet groups",
+            value:
+              client.fleetGroupIds.length === 0 ? (
+                <span className="text-xs text-fg-faint">—</span>
+              ) : (
+                <div className="flex flex-wrap gap-1">
+                  {client.fleetGroupIds.map((g) => (
+                    <Badge key={g} variant="default">
+                      {g}
+                    </Badge>
+                  ))}
+                </div>
+              ),
+          },
+        ]}
+      />
+    </section>
+  );
+}
+
+// ─── Main page ───────────────────────────────────────────────────────
 
 export function ClientDetailPage({
   client,
@@ -284,7 +480,10 @@ export function ClientDetailPage({
   onRotateSecret,
   secretRotating,
   secretPendingRedeploy,
+  onDisable,
+  onDelete,
   ipHistory,
+  agentLabels,
 }: ClientDetailPageProps) {
   const [editOpen, setEditOpen] = useState(false);
   const [editData, setEditData] = useState<ClientFormData>({
@@ -295,242 +494,226 @@ export function ClientDetailPage({
     maxUniqueIps: client.maxUniqueIps,
     dataQuotaBytes: client.dataQuotaBytes,
   });
-  const [rotateConfirmOpen, setRotateConfirmOpen] = useState(false);
 
-  function handleEditClick() {
-    setEditData({
-      name: client.name,
-      userAdTag: client.userAdTag,
-      expirationRfc3339: client.expirationRfc3339,
-      maxTcpConns: client.maxTcpConns,
-      maxUniqueIps: client.maxUniqueIps,
-      dataQuotaBytes: client.dataQuotaBytes,
-    });
-    setEditOpen(true);
-  }
+  const status = clientStatus(client.enabled, client.expirationRfc3339);
+  const statusLabel =
+    status === "expired" ? "EXPIRED" : status === "disabled" ? "DISABLED" : "ACTIVE";
+  const statusTone =
+    status === "expired"
+      ? "text-status-error"
+      : status === "disabled"
+        ? "text-status-warn"
+        : "text-status-ok";
 
-  function handleRotateClick() {
-    setRotateConfirmOpen(true);
-  }
+  const trafficPct = client.dataQuotaBytes
+    ? Math.min(100, (client.trafficUsedBytes / client.dataQuotaBytes) * 100)
+    : undefined;
+  const trafficTone: "default" | "ok" | "warn" | "error" =
+    typeof trafficPct === "number"
+      ? trafficPct >= 100
+        ? "error"
+        : trafficPct >= 80
+          ? "warn"
+          : "ok"
+      : "default";
+  const connsPct =
+    client.maxTcpConns > 0 ? (client.activeTcpConns / client.maxTcpConns) * 100 : undefined;
+  const connsTone: "default" | "warn" | "error" =
+    typeof connsPct === "number"
+      ? connsPct >= 100
+        ? "error"
+        : connsPct >= 80
+          ? "warn"
+          : "default"
+      : "default";
+  const ipsPct =
+    client.maxUniqueIps > 0 ? (client.uniqueIpsUsed / client.maxUniqueIps) * 100 : undefined;
+  const ipsTone: "default" | "warn" | "error" =
+    typeof ipsPct === "number"
+      ? ipsPct >= 100
+        ? "error"
+        : ipsPct >= 80
+          ? "warn"
+          : "default"
+      : "default";
 
-  const overviewContent = (
-    <OverviewContent
-      client={client}
-      onRotateSecret={onRotateSecret ? handleRotateClick : undefined}
-      secretRotating={secretRotating}
-      secretPendingRedeploy={secretPendingRedeploy}
+  // Rotate confirmation is owned by the container (global ConfirmProvider
+  // already wraps this flow with a `requireTypeMatch`-style dialog).
+  // Page just forwards the click.
+  const secretSection = (
+    <SecretSection
+      secret={client.secret}
+      onRotate={onRotateSecret}
+      rotating={secretRotating}
+      pendingRedeploy={secretPendingRedeploy}
     />
   );
-  const deploymentsContent = <DeploymentsContent deployments={client.deployments} />;
-
-  const mobileTabs = [
-    { id: "overview", label: "Overview", content: overviewContent },
-    { id: "deployments", label: "Deployments", content: deploymentsContent },
-    ...(ipHistory && ipHistory.ips.length > 0
-      ? [
-          {
-            id: "ips",
-            label: "IP History",
-            content: (
-              <div>
-                <SectionHeader title="IP Address History" badge={ipHistory.totalUnique} />
-                <div className="bg-bg-card border border-border rounded-xl overflow-hidden">
-                  <DataTable
-                    columns={[
-                      {
-                        key: "ip",
-                        header: "IP Address",
-                        render: (row: { ip: string }) => <MonoValue>{row.ip}</MonoValue>,
-                      },
-                      {
-                        key: "lastSeen",
-                        header: "Last Seen",
-                        render: (row: { lastSeen: string }) => (
-                          <span className="text-sm text-fg-muted">
-                            {new Date(row.lastSeen).toLocaleString()}
-                          </span>
-                        ),
-                      },
-                    ]}
-                    data={ipHistory.ips}
-                    keyExtractor={(row) => `${row.agentId}-${row.ip}`}
-                  />
-                </div>
-              </div>
-            ),
-          },
-        ]
-      : []),
-  ];
+  const deployLinks = (
+    <DeployLinksCard
+      deployments={client.deployments}
+      secretPendingRedeploy={secretPendingRedeploy}
+      agentLabels={agentLabels}
+    />
+  );
+  const ipHistoryCard = (
+    <IPHistoryCard ips={ipHistory?.ips ?? []} totalUnique={ipHistory?.totalUnique ?? 0} />
+  );
+  const limitsCard = <LimitsCard client={client} />;
 
   return (
     <>
-      {/* Breadcrumbs */}
-      <div className="px-4 md:px-8 pt-3">
+      <div className="px-4 md:px-8 pt-3 pb-3">
         <Breadcrumbs items={[{ label: "Clients", onClick: onBack }, { label: client.name }]} />
       </div>
 
-      {/* Page header */}
-      <PageHeader
-        title={client.name}
-        trailing={
-          <div className="flex items-center gap-2">
-            <Badge variant={client.enabled ? "ok" : "error"}>
-              {client.enabled ? "Active" : "Disabled"}
-            </Badge>
+      {/* Mobile — PageHeader carries name + status subtitle. */}
+      <div className="md:hidden">
+        <PageHeader
+          title={client.name}
+          subtitle={`${statusLabel.toLowerCase()} · ${expiresSuffix(client.expirationRfc3339)}`}
+          trailing={
+            onEdit ? (
+              <Button size="sm" onClick={() => setEditOpen(true)}>
+                Edit
+              </Button>
+            ) : undefined
+          }
+        />
+      </div>
+
+      {/* Desktop hero — full-bleed band, matches the Server detail style. */}
+      <section className="hidden md:block border-y border-divider">
+        <div className="px-4 md:px-8 py-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+          <StatusDot status={status === "expired" ? "error" : client.enabled ? "ok" : "warn"} />
+          <h2 className="font-mono text-lg font-semibold text-fg truncate">{client.name}</h2>
+          <span className="text-fg-faint">/</span>
+          <span className={cn("font-mono text-xs uppercase tracking-wider", statusTone)}>
+            {statusLabel}
+          </span>
+          <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
+            {client.fleetGroupIds.map((g) => (
+              <span
+                key={g}
+                className="font-mono text-[11px] text-fg-muted px-2 py-0.5 rounded-xs border border-divider bg-bg"
+              >
+                group: {g}
+              </span>
+            ))}
+            <span
+              className={cn(
+                "font-mono text-[11px] px-2 py-0.5 rounded-xs border border-divider bg-bg tabular-nums",
+                expiresTone(client.expirationRfc3339) === "error"
+                  ? "text-status-error"
+                  : expiresTone(client.expirationRfc3339) === "warn"
+                    ? "text-status-warn"
+                    : "text-fg-muted",
+              )}
+            >
+              expires {expiresSuffix(client.expirationRfc3339)}
+            </span>
             {onEdit && (
-              <Button size="sm" variant="outline" onClick={handleEditClick}>
+              <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
                 Edit
               </Button>
             )}
+            {onDisable && (
+              <Button size="sm" variant="ghost" onClick={onDisable}>
+                {client.enabled ? "Disable" : "Enable"}
+              </Button>
+            )}
+            {onDelete && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={onDelete}
+                className="text-status-error hover:text-status-error"
+              >
+                Delete
+              </Button>
+            )}
           </div>
-        }
-      />
-
-      <div className="px-4 md:px-8 flex flex-col gap-6 pb-8">
-        {/* Stats strip */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          <StatCard label="Active Connections" value={String(client.activeTcpConns)} />
-          <StatCard label="Unique IPs" value={String(client.uniqueIpsUsed)} />
-          <StatCard label="Traffic Used" value={formatBytes(client.trafficUsedBytes)} />
-          <StatCard label="Quota" value={formatQuota(client.dataQuotaBytes)} />
         </div>
+      </section>
 
-        {/* Mobile: SwipeTabView */}
+      <div className="px-4 md:px-8 flex flex-col gap-6 pb-8 pt-6">
+        {/* Pulse row */}
+        <section className="rounded-xs bg-bg-card border border-border grid grid-cols-2 md:grid-cols-4">
+          <PulseCell i={0}>
+            <PulseTile
+              label="Connections"
+              value={client.activeTcpConns.toLocaleString()}
+              hint={
+                client.maxTcpConns > 0
+                  ? `of ${client.maxTcpConns.toLocaleString()} max`
+                  : "no limit"
+              }
+              tone={connsTone}
+              barPct={connsPct}
+            />
+          </PulseCell>
+          <PulseCell i={1}>
+            <PulseTile
+              label="Unique IPs"
+              value={client.uniqueIpsUsed.toLocaleString()}
+              hint={
+                client.maxUniqueIps > 0
+                  ? `of ${client.maxUniqueIps.toLocaleString()} max`
+                  : "no limit"
+              }
+              tone={ipsTone}
+              barPct={ipsPct}
+            />
+          </PulseCell>
+          <PulseCell i={2}>
+            <PulseTile
+              label="Traffic"
+              value={formatBytes(client.trafficUsedBytes)}
+              hint={
+                client.dataQuotaBytes > 0
+                  ? `of ${formatQuota(client.dataQuotaBytes)}`
+                  : "no quota"
+              }
+              tone={trafficTone}
+              barPct={trafficPct}
+            />
+          </PulseCell>
+          <PulseCell i={3}>
+            <PulseTile
+              label="Expires"
+              value={formatExpiry(client.expirationRfc3339)}
+              hint={expiresSuffix(client.expirationRfc3339)}
+              tone={
+                expiresTone(client.expirationRfc3339) === "error"
+                  ? "error"
+                  : expiresTone(client.expirationRfc3339) === "warn"
+                    ? "warn"
+                    : "default"
+              }
+            />
+          </PulseCell>
+        </section>
+
+        {/* Mobile: swipe tabs keep the scroll bounded on narrow viewports. */}
         <div className="md:hidden">
-          <SwipeTabView tabs={mobileTabs} />
+          <SwipeTabView
+            tabs={[
+              { id: "secret", label: "Secret", content: secretSection },
+              { id: "deploy", label: "Deployments", content: deployLinks },
+              { id: "ips", label: "IP history", content: ipHistoryCard },
+              { id: "limits", label: "Limits", content: limitsCard },
+            ]}
+          />
         </div>
 
-        {/* Desktop: stacked sections */}
-        <div className="hidden md:flex flex-col gap-6">
-          <div>
-            <SectionHeader title="Settings" />
-            <div className="rounded-xs bg-bg-card border border-border p-4">
-              <KvGrid
-                rows={[
-                  {
-                    label: "Max TCP Connections",
-                    value: (
-                      <MonoValue>
-                        {client.maxTcpConns > 0 ? client.maxTcpConns : "Unlimited"}
-                      </MonoValue>
-                    ),
-                  },
-                  {
-                    label: "Max Unique IPs",
-                    value: (
-                      <MonoValue>
-                        {client.maxUniqueIps > 0 ? client.maxUniqueIps : "Unlimited"}
-                      </MonoValue>
-                    ),
-                  },
-                  {
-                    label: "Data Quota",
-                    value: <MonoValue>{formatQuota(client.dataQuotaBytes)}</MonoValue>,
-                  },
-                  {
-                    label: "Expiration",
-                    value: <MonoValue>{formatExpiry(client.expirationRfc3339)}</MonoValue>,
-                  },
-                  {
-                    label: "Fleet Groups",
-                    value: (
-                      <MonoValue>
-                        {client.fleetGroupIds.length > 0 ? client.fleetGroupIds.join(", ") : "All"}
-                      </MonoValue>
-                    ),
-                  },
-                  {
-                    label: "Secret",
-                    value: (
-                      <span className="flex items-center gap-1">
-                        <MonoValue>{"••••••••"}</MonoValue>
-                        <CopyButton text={client.secret} />
-                        {onRotateSecret && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={handleRotateClick}
-                            disabled={secretRotating}
-                          >
-                            {secretRotating ? "Rotating..." : "Rotate"}
-                          </Button>
-                        )}
-                      </span>
-                    ),
-                  },
-                  {
-                    label: "User Ad Tag",
-                    value: (
-                      <MonoValue className="text-fg-muted">{client.userAdTag || "—"}</MonoValue>
-                    ),
-                  },
-                ]}
-              />
-            </div>
-          </div>
-
-          <div>
-            <SectionHeader title="Connection Links" />
-            <div className="rounded-xs bg-bg-card border border-border overflow-hidden">
-              <ConnectionLinksContent
-                deployments={client.deployments}
-                secretPendingRedeploy={secretPendingRedeploy}
-              />
-            </div>
-          </div>
-
-          <div>
-            <SectionHeader title="Deployments" badge={client.deployments.length} />
-            <DeploymentsContent deployments={client.deployments} />
-          </div>
-
-          {/* IP History */}
-          {ipHistory && ipHistory.ips.length > 0 && (
-            <div>
-              <SectionHeader title="IP Address History" badge={ipHistory.totalUnique} />
-              <div className="bg-bg-card border border-border rounded-xl overflow-hidden">
-                <DataTable
-                  columns={[
-                    {
-                      key: "ip",
-                      header: "IP Address",
-                      render: (row) => <MonoValue>{row.ip}</MonoValue>,
-                    },
-                    {
-                      key: "firstSeen",
-                      header: "First Seen",
-                      render: (row) => (
-                        <span className="text-sm text-fg-muted">
-                          {new Date(row.firstSeen).toLocaleString()}
-                        </span>
-                      ),
-                    },
-                    {
-                      key: "lastSeen",
-                      header: "Last Seen",
-                      render: (row) => (
-                        <span className="text-sm text-fg-muted">
-                          {new Date(row.lastSeen).toLocaleString()}
-                        </span>
-                      ),
-                    },
-                    {
-                      key: "agentId",
-                      header: "Server",
-                      render: (row) => <span className="text-sm text-fg-muted">{row.agentId}</span>,
-                    },
-                  ]}
-                  data={ipHistory.ips}
-                  keyExtractor={(row) => `${row.agentId}-${row.ip}`}
-                />
-              </div>
-            </div>
-          )}
+        {/* Desktop: stacked sections in reading order. */}
+        <div className="hidden md:flex flex-col gap-5">
+          {secretSection}
+          {deployLinks}
+          {ipHistoryCard}
+          {limitsCard}
         </div>
       </div>
 
-      {/* Edit Sheet */}
       {onEdit && (
         <Sheet
           open={editOpen}
@@ -538,7 +721,13 @@ export function ClientDetailPage({
             if (!open) setEditOpen(false);
           }}
         >
-          <SheetContent side="bottom">
+          <SheetContent
+            side="bottom"
+            title="Edit client"
+            onOpenChange={(open) => {
+              if (!open) setEditOpen(false);
+            }}
+          >
             <SheetBody>
               <ClientFormSheet
                 mode="edit"
@@ -557,19 +746,6 @@ export function ClientDetailPage({
         </Sheet>
       )}
 
-      {/* Rotate Secret Confirm */}
-      <ConfirmDialog
-        open={rotateConfirmOpen}
-        title="Rotate Secret"
-        description="This will generate a new secret. All connection links will be regenerated after redeployment. Current links will stop working."
-        confirmLabel="Rotate Secret"
-        variant="danger"
-        onConfirm={() => {
-          setRotateConfirmOpen(false);
-          onRotateSecret?.();
-        }}
-        onCancel={() => setRotateConfirmOpen(false)}
-      />
     </>
   );
 }
