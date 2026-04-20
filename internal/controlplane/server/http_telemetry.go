@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"sort"
@@ -12,6 +13,16 @@ import (
 )
 
 const telemetryDetailBoostTTL = 10 * time.Minute
+
+// telemetryDashboardLoadWindow bounds how far back the dashboard sparklines
+// look. 40 minutes at the 2-minute Telemt polling cadence gives ~20 samples,
+// which is enough for a legible mini-chart without making the payload heavy.
+const telemetryDashboardLoadWindow = 40 * time.Minute
+
+// telemetryDashboardEventLimit is the UI budget for the "Recent Events"
+// feed. Stays in lock-step with the value passed to
+// controlRoomRecentRuntimeEvents so both fields carry the same cadence.
+const telemetryDashboardEventLimit = 8
 
 func (s *Server) handleTelemetryDashboard() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -29,6 +40,11 @@ func (s *Server) handleTelemetryDashboard() http.HandlerFunc {
 		s.mu.RLock()
 		items := make([]telemetryServerSummary, 0, len(s.agents))
 		runtimeDistribution := make(map[string]int)
+		// Snapshot just enough agent state to populate the enriched feed
+		// outside the lock; touching the store under s.mu would risk a
+		// write-starvation on hot paths.
+		agentNames := make(map[string]string, len(s.agents))
+		agentIDs := make([]string, 0, len(s.agents))
 		for _, agent := range s.agents {
 			boostExpiresAt := s.detailBoosts[agent.ID]
 			summary := telemetrySummaryForAgent(agent, s.presence.Evaluate(agent.ID, now), now, boostExpiresAt)
@@ -38,10 +54,15 @@ func (s *Server) handleTelemetryDashboard() http.HandlerFunc {
 				mode = "unknown"
 			}
 			runtimeDistribution[mode]++
+			agentNames[agent.ID] = agent.NodeName
+			agentIDs = append(agentIDs, agent.ID)
 		}
-		recentEvents := controlRoomRecentRuntimeEvents(s.agents, 8)
+		recentEvents := controlRoomRecentRuntimeEvents(s.agents, telemetryDashboardEventLimit)
+		recentEventsEnriched := dashboardRecentEvents(s.agents, telemetryDashboardEventLimit)
 		fleet := controlRoomFleetFromState(s.agents, s.instances, metricSnapshots, s.presence, now)
 		s.mu.RUnlock()
+
+		loadSeries := s.dashboardAgentLoadSeries(r.Context(), agentIDs, now)
 
 		sortTelemetrySummaries(items)
 		attention := make([]telemetryAttentionItem, 0, 5)
@@ -71,8 +92,77 @@ func (s *Server) handleTelemetryDashboard() http.HandlerFunc {
 			ServerCards:         items,
 			RuntimeDistribution: runtimeDistribution,
 			RecentRuntimeEvents: recentEvents,
+			RecentEvents:        recentEventsEnriched,
+			AgentLoadSeries:     loadSeries,
 		})
 	}
+}
+
+// dashboardRecentEvents tags each runtime event with the agent that
+// emitted it so the web dashboard can render "node-name · message"
+// without a second round-trip. Sorted newest-first, capped at `limit`.
+func dashboardRecentEvents(agents map[string]Agent, limit int) []telemetryRecentEvent {
+	if limit <= 0 {
+		return []telemetryRecentEvent{}
+	}
+	result := make([]telemetryRecentEvent, 0)
+	for _, agent := range agents {
+		for _, ev := range agent.Runtime.RecentEvents {
+			result = append(result, telemetryRecentEvent{
+				Sequence:      ev.Sequence,
+				TimestampUnix: ev.TimestampUnix,
+				EventType:     ev.EventType,
+				Context:       ev.Context,
+				AgentID:       agent.ID,
+				NodeName:      agent.NodeName,
+			})
+		}
+	}
+	sort.Slice(result, func(left, right int) bool {
+		if result[left].TimestampUnix == result[right].TimestampUnix {
+			return result[left].Sequence > result[right].Sequence
+		}
+		return result[left].TimestampUnix > result[right].TimestampUnix
+	})
+	if len(result) > limit {
+		result = result[:limit]
+	}
+	return result
+}
+
+// dashboardAgentLoadSeries pulls the last telemetryDashboardLoadWindow
+// of raw CPU/MEM samples for each agent so the dashboard can render
+// sparklines without a separate round-trip per row. Unavailable store
+// -> empty slice; per-agent read errors are logged and the agent's
+// series falls back to empty so a single slow node does not fail the
+// whole dashboard payload.
+func (s *Server) dashboardAgentLoadSeries(
+	ctx context.Context,
+	agentIDs []string,
+	now time.Time,
+) []telemetryAgentLoadSeries {
+	out := make([]telemetryAgentLoadSeries, 0, len(agentIDs))
+	if s.store == nil {
+		return out
+	}
+	from := now.UTC().Add(-telemetryDashboardLoadWindow)
+	to := now.UTC()
+	for _, id := range agentIDs {
+		points, err := s.store.ListServerLoadPoints(ctx, id, from, to)
+		if err != nil {
+			s.logger.Warn("dashboard load series unavailable", "agent_id", id, "error", err)
+			out = append(out, telemetryAgentLoadSeries{AgentID: id, CPUPct: []float64{}, MemPct: []float64{}})
+			continue
+		}
+		cpu := make([]float64, 0, len(points))
+		mem := make([]float64, 0, len(points))
+		for _, p := range points {
+			cpu = append(cpu, p.CPUPctAvg)
+			mem = append(mem, p.MemPctAvg)
+		}
+		out = append(out, telemetryAgentLoadSeries{AgentID: id, CPUPct: cpu, MemPct: mem})
+	}
+	return out
 }
 
 func (s *Server) handleTelemetryServers() http.HandlerFunc {
