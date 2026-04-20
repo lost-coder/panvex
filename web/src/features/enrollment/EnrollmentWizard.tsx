@@ -189,6 +189,34 @@ function ConfigureStep(props: EnrollmentWizardProps) {
               className="font-mono text-xs"
             />
           </FormField>
+          {/* Opt-in relaxation of the agent's "https required unless
+              loopback" guard. Surface the warning tone so operators
+              who don't read the description can still see this is not
+              the default. */}
+          <label className="flex items-start gap-2 rounded-xs border border-status-warn/30 bg-status-warn/5 p-3 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 accent-[var(--color-status-warn)] cursor-pointer"
+              checked={advancedOptions.insecureTransport}
+              onChange={(e) =>
+                onAdvancedOptionsChange({
+                  ...advancedOptions,
+                  insecureTransport: e.target.checked,
+                })
+              }
+            />
+            <span className="flex flex-col gap-0.5">
+              <span className="text-xs font-medium text-status-warn">
+                Allow plaintext over private network
+              </span>
+              <span className="text-[11px] text-fg-muted leading-snug">
+                Passes <code className="font-mono">--insecure-transport</code> so the
+                agent accepts an http:// panel URL on a non-loopback host.
+                Only safe on a VPN or other trusted link — bootstrap
+                exchanges the agent private key in cleartext.
+              </span>
+            </span>
+          </label>
         </div>
       )}
 
