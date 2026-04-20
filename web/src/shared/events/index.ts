@@ -1,3 +1,4 @@
-// Migration caretaker — populated in Phase 4 of the web-merge plan.
-// See docs/audit_2026-04-18/web_deep/07-migration-plan-v2.md
-export {};
+// Phase 4d: shared realtime-event helpers.
+export { invalidationsForEvent, isKnownEventType } from "./event-invalidations";
+export type { EventEnvelope, EventInvalidation } from "./event-invalidations";
+export { invalidateTelemetryQueries } from "./telemetry-query-invalidation";

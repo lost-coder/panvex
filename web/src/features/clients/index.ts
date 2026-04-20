@@ -1,3 +1,10 @@
-// Migration caretaker — populated in Phase 4 of the web-merge plan.
-// See docs/audit_2026-04-18/web_deep/07-migration-plan-v2.md
-export {};
+// Phase 4b: clients feature public surface.
+export { ClientsContainer } from "./ClientsContainer";
+export { ClientDetailContainer } from "./ClientDetailContainer";
+export { DiscoveredClientsContainer } from "./DiscoveredClientsContainer";
+export { useClientsList } from "./hooks/useClientsList";
+export { useClientDetail } from "./hooks/useClientDetail";
+export { useClientCreate } from "./hooks/useClientCreate";
+export { useClientMutations } from "./hooks/useClientMutations";
+export { useDiscoveredClients } from "./hooks/useDiscoveredClients";
+export { useClientIPHistory } from "./hooks/useClientIPHistory";

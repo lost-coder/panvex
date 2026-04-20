@@ -1,0 +1,205 @@
+import { useState } from "react";
+import { cn } from "@/ui/lib/cn";
+import type { Status } from "@/ui/tokens/colors";
+
+export interface NodeDcInfo {
+  dc: number;
+  status: Status;
+  rttMs: number | null;
+  coveragePct?: number;
+  load?: number;
+}
+
+export interface NodeSummaryCardProps {
+  name: string;
+  status: Status;
+  connections: number;
+  trafficBytes: number;
+  cpuPct: number;
+  memPct?: number;
+  dcs: NodeDcInfo[];
+  defaultExpanded?: boolean;
+  autoExpandOnIssue?: boolean;
+  onClick?: () => void;
+  className?: string;
+}
+
+const beaconColor = {
+  ok: "bg-status-ok shadow-[0_0_6px_rgba(52,211,153,0.4)]",
+  warn: "bg-status-warn shadow-[0_0_6px_rgba(245,158,11,0.4)]",
+  error: "bg-status-error shadow-[0_0_6px_rgba(239,68,68,0.4)] animate-led-blink",
+} as const;
+
+const dcLed = {
+  ok: "bg-status-ok",
+  warn: "bg-status-warn",
+  error: "bg-status-error animate-led-blink",
+} as const;
+
+function formatTraffic(bytes: number): string {
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(0)} KB`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  if (bytes < 1024 ** 4) return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+  return `${(bytes / 1024 ** 4).toFixed(2)} TB`;
+}
+
+function hasIssues(dcs: NodeDcInfo[]): boolean {
+  return dcs.some((d) => d.status !== "ok");
+}
+
+function dcSummaryText(dcs: NodeDcInfo[]): { text: string; cls: string } | null {
+  const err = dcs.filter((d) => d.status === "error").length;
+  const warn = dcs.filter((d) => d.status === "warn").length;
+  if (err > 0) return { text: `${err} DC down`, cls: "text-status-error" };
+  if (warn > 0) return { text: `${warn} DC degraded`, cls: "text-status-warn" };
+  return null;
+}
+
+function pctColor(v: number): string {
+  if (v >= 90) return "text-status-error";
+  if (v >= 70) return "text-status-warn";
+  return "text-fg";
+}
+
+export function NodeSummaryCard({
+  name,
+  status,
+  connections,
+  trafficBytes,
+  cpuPct,
+  memPct,
+  dcs,
+  defaultExpanded,
+  autoExpandOnIssue = true,
+  onClick,
+  className,
+}: NodeSummaryCardProps) {
+  const shouldAutoExpand = autoExpandOnIssue && hasIssues(dcs);
+  const [expanded, setExpanded] = useState(defaultExpanded ?? shouldAutoExpand);
+  const issue = dcSummaryText(dcs);
+
+  return (
+    <div
+      className={cn(
+        "rounded-xs border bg-bg-card flex flex-col transition-colors",
+        status === "ok" ? "border-border" : "border-border-hi",
+        className,
+      )}
+    >
+      {/* Header — always visible */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => onClick?.()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") onClick?.();
+        }}
+        className="w-full text-left px-4 py-3 flex flex-col gap-2 hover:bg-bg-hover/40 transition-colors rounded-xs cursor-pointer"
+      >
+        {/* Row 1: name + status + issue badge + expand toggle */}
+        <div className="flex items-center gap-3 w-full">
+          <span className={cn("h-2.5 w-2.5 rounded-full shrink-0", beaconColor[status])} />
+          <span className="text-sm font-mono font-medium text-fg truncate">{name}</span>
+
+          {issue && (
+            <span className={cn("text-[10px] font-mono shrink-0 ml-auto", issue.cls)}>
+              {issue.text}
+            </span>
+          )}
+          {!issue && <span className="ml-auto" />}
+
+          {dcs.length > 0 && (
+            <button
+              type="button"
+              aria-label={expanded ? "Collapse" : "Expand"}
+              onClick={(e) => {
+                e.stopPropagation();
+                setExpanded((v) => !v);
+              }}
+              className={cn(
+                "shrink-0 ml-1 p-1 -mr-1 rounded-md hover:bg-bg-hover/80 transition-all text-fg-muted hover:text-fg",
+              )}
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 16 16"
+                fill="none"
+                className={cn("transition-transform duration-200", expanded && "rotate-180")}
+              >
+                <path
+                  d="M4 6l4 4 4-4"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        {/* Row 2: inline metrics — hidden on mobile, visible on md+ */}
+        <div className="hidden md:flex items-center gap-4 pl-[22px] text-xs font-mono">
+          <span className="text-fg-muted">
+            <span className="text-fg">{connections.toLocaleString()}</span> conn
+          </span>
+          <span className="text-fg-muted">
+            <span className="text-fg">{formatTraffic(trafficBytes)}</span>
+          </span>
+          <span className="text-fg-muted">
+            cpu <span className={pctColor(cpuPct)}>{cpuPct}%</span>
+          </span>
+          {memPct !== undefined && (
+            <span className="text-fg-muted">
+              mem <span className={pctColor(memPct)}>{memPct}%</span>
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Expanded panel */}
+      {expanded && (
+        <div className="border-t border-border">
+          {/* Metrics — shown on mobile (hidden on md+ because already in header) */}
+          <div className="flex items-center gap-4 px-4 py-2.5 text-xs font-mono md:hidden">
+            <span className="text-fg-muted">
+              <span className="text-fg">{connections.toLocaleString()}</span> conn
+            </span>
+            <span className="text-fg-muted">
+              <span className="text-fg">{formatTraffic(trafficBytes)}</span>
+            </span>
+            <span className="text-fg-muted">
+              cpu <span className={pctColor(cpuPct)}>{cpuPct}%</span>
+            </span>
+            {memPct !== undefined && (
+              <span className="text-fg-muted">
+                mem <span className={pctColor(memPct)}>{memPct}%</span>
+              </span>
+            )}
+          </div>
+
+          {/* DC grid */}
+          <div className="px-3 pb-3 md:pt-2.5">
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-1">
+              {dcs.map((dc) => (
+                <div
+                  key={dc.dc}
+                  className="flex items-center gap-1.5 rounded-[6px] px-2 py-[5px] bg-bg/60"
+                >
+                  <span className={cn("h-[7px] w-[7px] rounded-full shrink-0", dcLed[dc.status])} />
+                  <span className="text-[11px] font-mono font-medium text-fg leading-none">
+                    {dc.dc}
+                  </span>
+                  <span className="text-[10px] font-mono text-fg-muted ml-auto leading-none">
+                    {dc.rttMs !== null ? `${dc.rttMs}` : "—"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

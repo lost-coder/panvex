@@ -1,3 +1,19 @@
-// Migration caretaker — populated in Phase 4 of the web-merge plan.
-// See docs/audit_2026-04-18/web_deep/07-migration-plan-v2.md
-export {};
+export { GaugeStrip, type GaugeStripProps } from "./GaugeStrip";
+export { AlertStrip, type AlertStripProps } from "./AlertStrip";
+export { Timeline, type TimelineProps } from "./Timeline";
+export { ActionList, type ActionListProps } from "./ActionList";
+export { StatusHero, type StatusHeroProps } from "./StatusHero";
+export { Breadcrumbs, type BreadcrumbsProps, type BreadcrumbItem } from "./Breadcrumbs";
+export { SearchFilter, type SearchFilterProps } from "./SearchFilter";
+export { Pagination, type PaginationProps } from "./Pagination";
+export { SwipeTabView, type SwipeTabViewProps, type SwipeTab } from "./SwipeTabView";
+export {
+  TableView,
+  type TableViewProps,
+  type TableViewFilter,
+  type TableViewColumn,
+  type TableViewSearchConfig,
+  type TableViewPaginationConfig,
+  type TableViewViewModeConfig,
+  type TableViewColumnsConfig,
+} from "./TableView";
