@@ -19,6 +19,14 @@ export interface KpiItem {
   value: string;
   sub?: string;
   accent?: boolean;
+  /** Sparkline data — one point per sample; omit to render without a chart. */
+  series?: number[];
+  /** Human-readable delta ("+4.2% · 24h"); rendered under the value. */
+  deltaLabel?: string;
+  /** Controls the arrow glyph rendered next to `deltaLabel`. */
+  deltaDirection?: "up" | "down" | "flat";
+  /** Coloring the value + sparkline — use for health signals, not trend. */
+  tone?: "default" | "ok" | "warn" | "error";
 }
 
 export interface TrendItem {
@@ -32,6 +40,8 @@ export interface TimelineEventData {
   status: Status | "info";
   time: string;
   message: string;
+  /** Originating node name — shown on a first row above the message. */
+  source?: string;
 }
 
 export interface AlertData {
@@ -60,6 +70,10 @@ export interface DashboardNodeData {
   cpuPct: number;
   memPct: number;
   dcs: import("@/features/servers/ui/NodeSummaryCard").NodeDcInfo[];
+  /** Recent CPU samples (oldest-first) for the dashboard sparkline. */
+  cpuSeries?: number[];
+  /** Recent MEM samples (oldest-first) for the dashboard sparkline. */
+  memSeries?: number[];
 }
 
 export interface DashboardTimelineData {
@@ -76,6 +90,9 @@ export interface DashboardPageProps {
   createError?: string;
   pendingDiscoveredCount?: number;
   onDiscoveredClick?: () => void;
+  /** Navigates to the full Servers list — wired to the "View all →" link
+   *  in the Fleet card header. Optional so unit tests can skip it. */
+  onViewAllServers?: () => void;
 }
 
 // --- Servers ---

@@ -192,12 +192,27 @@ export type TelemetryAttentionItem = {
   detail_boost: TelemetryDetailBoost;
 };
 
+export type TelemetryRecentEvent = RuntimeEvent & {
+  agent_id: string;
+  node_name: string;
+};
+
+export type TelemetryAgentLoadSeries = {
+  agent_id: string;
+  cpu_pct: number[];
+  mem_pct: number[];
+};
+
 export type TelemetryDashboardResponse = {
   fleet: FleetResponse;
   attention: TelemetryAttentionItem[];
   server_cards: TelemetryServerSummary[];
   runtime_distribution: Record<string, number>;
   recent_runtime_events: RuntimeEvent[];
+  /** Dashboard-specific enriched feed: events tagged with originating agent. */
+  recent_events: TelemetryRecentEvent[];
+  /** Per-agent CPU/MEM sparkline data (oldest-first). */
+  agent_load_series: TelemetryAgentLoadSeries[];
 };
 
 export type TelemetryServersResponse = {

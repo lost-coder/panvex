@@ -6,6 +6,8 @@ import type {
 import type {
   TelemetryDashboardResponse,
   TelemetryAttentionItem,
+  TelemetryAgentLoadSeries,
+  TelemetryRecentEvent,
   RuntimeEvent,
 } from "../api";
 
@@ -43,8 +45,12 @@ function mapDcs(
   }));
 }
 
-function mapAttentionItemToNode(item: TelemetryAttentionItem): DashboardNodeData {
+function mapAttentionItemToNode(
+  item: TelemetryAttentionItem,
+  seriesByAgent: Map<string, TelemetryAgentLoadSeries>,
+): DashboardNodeData {
   const runtime = item.runtime;
+  const series = seriesByAgent.get(item.agent_id);
   return {
     id: item.agent_id,
     name: item.node_name,
@@ -54,7 +60,13 @@ function mapAttentionItemToNode(item: TelemetryAttentionItem): DashboardNodeData
     cpuPct: pct1(runtime?.system_load?.cpu_usage_pct),
     memPct: pct1(runtime?.system_load?.memory_usage_pct),
     dcs: mapDcs(runtime?.dcs ?? []),
+    cpuSeries: series?.cpu_pct,
+    memSeries: series?.mem_pct,
   };
+}
+
+function formatNumber(n: number): string {
+  return n.toLocaleString();
 }
 
 export function transformDashboardOverview(
@@ -62,39 +74,76 @@ export function transformDashboardOverview(
 ): DashboardOverviewData {
   const fleet = raw.fleet;
 
+  // Aggregate runtime stats from both attention items (problem nodes carry
+  // full runtime) and server_cards (healthy nodes also have runtime nested
+  // under agent.runtime). De-dupe by agent id in case the backend lists the
+  // same node in both arrays.
+  const runtimeByAgent = new Map<string, { cpu: number; mem: number; dcCoverage: number }>();
+  for (const item of raw.attention ?? []) {
+    const r = item.runtime;
+    if (!r) continue;
+    runtimeByAgent.set(item.agent_id, {
+      cpu: pct1(r.system_load?.cpu_usage_pct),
+      mem: pct1(r.system_load?.memory_usage_pct),
+      dcCoverage: pct1(r.dc_coverage_pct),
+    });
+  }
+  for (const card of raw.server_cards ?? []) {
+    const id = card.agent?.id;
+    if (!id || runtimeByAgent.has(id)) continue;
+    const r = card.agent?.runtime;
+    if (!r) continue;
+    runtimeByAgent.set(id, {
+      cpu: pct1(r.system_load?.cpu_usage_pct),
+      mem: pct1(r.system_load?.memory_usage_pct),
+      dcCoverage: pct1(r.dc_coverage_pct),
+    });
+  }
+  const runtimes = Array.from(runtimeByAgent.values());
+  const avg = (xs: number[]) =>
+    xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : 0;
+  const avgCpu = avg(runtimes.map((r) => r.cpu));
+  const avgMem = avg(runtimes.map((r) => r.mem));
+  const avgDcCoverage = avg(runtimes.map((r) => r.dcCoverage));
+
+  // Tone drives the value color. Fleet health goes warn/error only when nodes
+  // are actually offline or degraded — a healthy fleet stays neutral so the
+  // color signal is preserved for real issues.
+  const fleetTone: "ok" | "warn" | "error" | "default" =
+    fleet.offline_agents > 0 ? "error" : fleet.degraded_agents > 0 ? "warn" : "ok";
+  const cpuTone: "ok" | "warn" | "error" | "default" =
+    avgCpu >= 90 ? "error" : avgCpu >= 70 ? "warn" : "default";
+  const coverageTone: "ok" | "warn" | "error" | "default" =
+    avgDcCoverage < 95 ? "error" : avgDcCoverage < 100 ? "warn" : "ok";
+
   const kpis = [
     {
-      label: "Total Servers",
-      value: String(fleet.total_agents),
-      sub: `${fleet.online_agents} online`,
+      label: "Fleet health",
+      value: `${fleet.online_agents}/${fleet.total_agents}`,
+      sub:
+        fleet.offline_agents > 0
+          ? `${fleet.offline_agents} offline · ${fleet.degraded_agents} degraded`
+          : fleet.degraded_agents > 0
+            ? `${fleet.degraded_agents} degraded`
+            : "all online",
+      tone: fleetTone,
     },
     {
-      label: "Online",
-      value: String(fleet.online_agents),
-      sub: "Agents reachable",
-      accent: fleet.online_agents === fleet.total_agents,
+      label: "Connections",
+      value: formatNumber(fleet.live_connections),
+      sub: "active sessions",
     },
     {
-      label: "Degraded",
-      value: String(fleet.degraded_agents),
-      sub: "Agents with issues",
-      accent: fleet.degraded_agents > 0,
+      label: "Avg CPU · Mem",
+      value: `${avgCpu}% · ${avgMem}%`,
+      sub: avgCpu >= 70 || avgMem >= 70 ? "resource pressure" : "within limits",
+      tone: cpuTone,
     },
     {
-      label: "Offline",
-      value: String(fleet.offline_agents),
-      sub: "Agents unreachable",
-      accent: fleet.offline_agents > 0,
-    },
-    {
-      label: "Live Connections",
-      value: String(fleet.live_connections),
-      sub: "Active sessions",
-    },
-    {
-      label: "Instances",
-      value: String(fleet.total_instances),
-      sub: "Running instances",
+      label: "DC coverage",
+      value: `${avgDcCoverage}%`,
+      sub: `${fleet.dc_issue_agents} agent${fleet.dc_issue_agents === 1 ? "" : "s"} with DC issues`,
+      tone: coverageTone,
     },
   ];
 
@@ -119,14 +168,19 @@ export function transformDashboardOverview(
       ).toISOString(),
     }));
 
+  const seriesByAgent = new Map<string, TelemetryAgentLoadSeries>(
+    (raw.agent_load_series ?? []).map((s) => [s.agent_id, s]),
+  );
+
   const attentionNodes = (raw.attention ?? [])
     .filter((item) => item.severity !== "good")
-    .map(mapAttentionItemToNode);
+    .map((item) => mapAttentionItemToNode(item, seriesByAgent));
 
   const healthyNodes = (raw.server_cards ?? [])
     .filter((card) => card.severity === "good")
     .map((card) => {
       const runtime = card.agent?.runtime;
+      const series = seriesByAgent.get(card.agent?.id ?? "");
       return {
         id: card.agent?.id ?? "",
         name: card.agent?.node_name ?? "",
@@ -136,6 +190,8 @@ export function transformDashboardOverview(
         cpuPct: pct1(runtime?.system_load?.cpu_usage_pct),
         memPct: pct1(runtime?.system_load?.memory_usage_pct),
         dcs: mapDcs(runtime?.dcs ?? []),
+        cpuSeries: series?.cpu_pct,
+        memSeries: series?.mem_pct,
       };
     });
 
@@ -200,9 +256,76 @@ function formatEventTime(tsUnix: number): string {
   return `${Math.floor(hrs / 24)} d ago`;
 }
 
+/**
+ * Render the backend's raw event shape into a single human-readable line:
+ *   "admission.state" + "accepting_new_connections=true"
+ *     -> "Accepting new connections"
+ *   "me.runtime" + "ready=true"
+ *     -> "ME runtime ready"
+ *   "dc.coverage" + "dc=3,pct=62"
+ *     -> "DC3 coverage dropped to 62%"
+ *
+ * Unknown event types fall back to a Title-cased version of the event type
+ * with the context trimmed to a sensible length, so new backend events are
+ * still legible without a frontend change.
+ */
+function formatRuntimeEvent(eventType: string, context: string): string {
+  const ctx = context.trim();
+  const kv = Object.fromEntries(
+    ctx
+      .split(",")
+      .map((pair) => pair.trim().split("="))
+      .filter((parts) => parts.length === 2) as Array<[string, string]>,
+  );
+
+  if (eventType === "admission.state") {
+    const on = kv.accepting_new_connections === "true";
+    return on ? "Accepting new connections" : "Stopped accepting new connections";
+  }
+  if (eventType === "me.runtime") {
+    return kv.ready === "true" ? "ME runtime ready" : "ME runtime not ready";
+  }
+  if (eventType === "dc.coverage" && kv.dc && kv.pct) {
+    return `DC${kv.dc} coverage ${kv.pct}%`;
+  }
+  if (eventType === "reroute" && kv.active) {
+    return kv.active === "true" ? "Reroute activated" : "Reroute cleared";
+  }
+  if (eventType === "gateway.stream") {
+    return kv.state ? `Gateway stream ${kv.state}` : "Gateway stream event";
+  }
+
+  // Fallback: sentence-case event type + trimmed context as a suffix when it
+  // adds signal. Caps at 80 chars to protect the timeline column width.
+  const humanized = eventType
+    ? eventType.replace(/[._-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+    : "Unknown event";
+  const body = ctx && ctx !== eventType ? `${humanized} · ${ctx}` : humanized;
+  return body.length > 80 ? `${body.slice(0, 77)}…` : body;
+}
+
 export function transformDashboardTimeline(
   raw: TelemetryDashboardResponse
 ): DashboardTimelineData {
+  // Prefer the enriched feed (has agent info so the UI can show
+  // "node-name · message"). Falls back to the legacy untagged feed for
+  // backward-compatibility with older control-plane builds.
+  const enriched = raw.recent_events ?? [];
+  if (enriched.length > 0) {
+    const events = [...enriched]
+      .sort(
+        (a: TelemetryRecentEvent, b: TelemetryRecentEvent) =>
+          b.timestamp_unix - a.timestamp_unix || b.sequence - a.sequence,
+      )
+      .map((event) => ({
+        status: mapEventSeverity(event.event_type ?? ""),
+        time: formatEventTime(event.timestamp_unix),
+        message: formatRuntimeEvent(event.event_type ?? "", event.context ?? ""),
+        source: event.node_name || undefined,
+      }));
+    return { events };
+  }
+
   const events = [...(raw.recent_runtime_events ?? [])]
     .sort(
       (a: RuntimeEvent, b: RuntimeEvent) =>
@@ -211,7 +334,7 @@ export function transformDashboardTimeline(
     .map((event: RuntimeEvent) => ({
       status: mapEventSeverity(event.event_type ?? ""),
       time: formatEventTime(event.timestamp_unix),
-      message: event.context || event.event_type || "Unknown event",
+      message: formatRuntimeEvent(event.event_type ?? "", event.context ?? ""),
     }));
 
   return { events };

@@ -48,6 +48,7 @@ export function DashboardContainer() {
       createError={createMutation.error?.message}
       pendingDiscoveredCount={pendingCount}
       onDiscoveredClick={() => navigate({ to: "/clients/discovered" })}
+      onViewAllServers={() => navigate({ to: "/servers" })}
     />
   );
 }
