@@ -4,12 +4,15 @@ import { useMemo, useState } from "react";
 
 import { ClientFormSheet } from "@/features/clients/ClientFormSheet";
 import { DiscoveredClientsBanner } from "@/features/clients/DiscoveredClientsBanner";
+import { useNowSec } from "@/shared/hooks/useNowSec";
 import {
   Badge,
+  BulkActionBar,
   Button,
   DataTable,
   MonoValue,
   PageHeader,
+  PulseRow,
   Sheet,
   SheetBody,
   SheetContent,
@@ -23,53 +26,24 @@ import {
   type ClientFormData,
   type ClientListItem,
   type ClientsPageProps,
+  type PulseTick,
   type ViewMode,
 } from "@/ui";
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
-function isExpired(expirationRfc3339: string): boolean {
+function isExpired(expirationRfc3339: string, nowMs: number): boolean {
   if (!expirationRfc3339) return false;
   const t = Date.parse(expirationRfc3339);
-  return Number.isFinite(t) && t < Date.now();
+  return Number.isFinite(t) && t < nowMs;
 }
 
-function effectiveStatus(c: ClientListItem): "active" | "disabled" | "expired" {
-  if (isExpired(c.expirationRfc3339)) return "expired";
+function effectiveStatus(
+  c: ClientListItem,
+  nowMs: number,
+): "active" | "disabled" | "expired" {
+  if (isExpired(c.expirationRfc3339, nowMs)) return "expired";
   return c.enabled ? "active" : "disabled";
-}
-
-function ClientPulseTick({
-  label,
-  value,
-  hint,
-  tone,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  tone?: "default" | "ok" | "warn" | "error";
-}) {
-  const toneClass: Record<NonNullable<typeof tone>, string> = {
-    default: "text-fg",
-    ok: "text-status-ok",
-    warn: "text-status-warn",
-    error: "text-status-error",
-  };
-  return (
-    <div className="flex flex-col gap-1 min-w-0">
-      <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">{label}</span>
-      <span
-        className={cn(
-          "text-2xl font-mono font-semibold leading-none tracking-tight tabular-nums",
-          toneClass[tone ?? "default"],
-        )}
-      >
-        {value}
-      </span>
-      {hint && <span className="text-[10px] font-mono text-fg-muted truncate">{hint}</span>}
-    </div>
-  );
 }
 
 function StatusBadge({ status }: { status: "active" | "disabled" | "expired" }) {
@@ -104,11 +78,14 @@ function TrafficCell({ used, quota }: { used: number; quota: number }) {
   );
 }
 
-function ExpiryCell({ rfc }: { rfc: string }) {
+function ExpiryCell({ rfc, nowSec }: { rfc: string; nowSec: number }) {
   if (!rfc) return <span className="text-[11px] font-mono text-fg-muted">Never</span>;
   const t = Date.parse(rfc);
   if (!Number.isFinite(t)) return <span className="text-[11px] font-mono text-fg-muted">—</span>;
-  const days = Math.floor((t - Date.now()) / (1000 * 60 * 60 * 24));
+  // `nowSec` snapshot is threaded through props so this cell stays pure at
+  // render time (react-hooks/purity lint rule). Callers use `useNowSec()` to
+  // keep the snapshot fresh.
+  const days = Math.floor((t / 1000 - nowSec) / 86_400);
   const tone =
     days < 0 ? "text-status-error" : days < 7 ? "text-status-warn" : "text-fg-muted";
   const subtitle = days < 0 ? `${Math.abs(days)}d ago` : days === 0 ? "today" : `in ${days}d`;
@@ -130,7 +107,7 @@ interface ClientSelectionConfig {
   someSelected: boolean;
 }
 
-function buildColumns(selection?: ClientSelectionConfig) {
+function buildColumns(nowSec: number, selection?: ClientSelectionConfig) {
   return [
     ...(selection
       ? [
@@ -177,7 +154,9 @@ function buildColumns(selection?: ClientSelectionConfig) {
     {
       key: "status",
       header: "Status",
-      render: (c: ClientListItem) => <StatusBadge status={effectiveStatus(c)} />,
+      render: (c: ClientListItem) => (
+        <StatusBadge status={effectiveStatus(c, nowSec * 1000)} />
+      ),
       className: "w-[120px]",
     },
     {
@@ -202,7 +181,9 @@ function buildColumns(selection?: ClientSelectionConfig) {
     {
       key: "expires",
       header: "Expires",
-      render: (c: ClientListItem) => <ExpiryCell rfc={c.expirationRfc3339} />,
+      render: (c: ClientListItem) => (
+        <ExpiryCell rfc={c.expirationRfc3339} nowSec={nowSec} />
+      ),
       className: "hidden md:table-cell w-[120px]",
     },
     {
@@ -224,14 +205,16 @@ function ClientListRow({
   selectable,
   selected,
   onToggleSelect,
+  nowMs,
 }: {
   client: ClientListItem;
   onClick?: () => void;
   selectable?: boolean;
   selected?: boolean;
   onToggleSelect?: (id: string) => void;
+  nowMs: number;
 }) {
-  const status = effectiveStatus(client);
+  const status = effectiveStatus(client, nowMs);
   return (
     <div
       onClick={onClick}
@@ -292,6 +275,10 @@ export function ClientsPage({
   const [createData, setCreateData] = useState<ClientFormData>({ ...emptyFormData });
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const pageSize = 20;
+  // Auto-refreshing "now" — lifted out of the render path so `effectiveStatus`
+  // and `ExpiryCell` stay pure (react-hooks/purity).
+  const nowSec = useNowSec();
+  const nowMs = nowSec * 1000;
 
   const effectiveMode: ViewMode = viewMode ?? (clients.length <= autoThreshold ? "cards" : "list");
 
@@ -307,7 +294,7 @@ export function ClientsPage({
       online = 0,
       quotaExhausted = 0;
     for (const c of clients) {
-      const s = effectiveStatus(c);
+      const s = effectiveStatus(c, nowMs);
       if (s === "active") active++;
       else if (s === "disabled") disabled++;
       else expired++;
@@ -315,17 +302,18 @@ export function ClientsPage({
       if (c.dataQuotaBytes > 0 && c.trafficUsedBytes >= c.dataQuotaBytes) quotaExhausted++;
     }
     return { all: clients.length, active, disabled, expired, online, quotaExhausted };
-  }, [clients]);
+  }, [clients, nowMs]);
   const statusCounts = counts;
 
   const filtered = useMemo(
     () =>
       clients.filter((c) => {
         const matchSearch = !search || c.name.toLowerCase().includes(search.toLowerCase());
-        const matchStatus = statusFilter === "all" || effectiveStatus(c) === statusFilter;
+        const matchStatus =
+          statusFilter === "all" || effectiveStatus(c, nowMs) === statusFilter;
         return matchSearch && matchStatus;
       }),
-    [clients, search, statusFilter],
+    [clients, search, statusFilter, nowMs],
   );
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -360,7 +348,7 @@ export function ClientsPage({
     clearSelection();
   };
 
-  const columns = buildColumns({
+  const columns = buildColumns(nowSec, {
     selected,
     onToggle: toggleOne,
     onToggleAll: toggleAllOnPage,
@@ -392,106 +380,50 @@ export function ClientsPage({
           <DiscoveredClientsBanner count={pendingDiscoveredCount} onClick={onDiscoveredClick} />
         )}
 
-        {/* Pulse row — four key ratios an operator scans before diving
-            into the list. On fleets with thousands of clients this
-            replaces the "count them yourself" fatigue: total clients,
-            how many are holding TCP connections right now, how many
-            have aged out of their expiration date, and how many have
-            hit their traffic quota. Per-cell borders so 2×2 (mobile)
-            + 1×4 (desktop) both show dividers between every pair. */}
-        <section className="rounded-xs bg-bg-card border border-border grid grid-cols-2 md:grid-cols-4">
-          {[
+        {/* Pulse row — four key ratios an operator scans before diving into
+            the list. Total / active now / expired / quota-exhausted. */}
+        <PulseRow
+          ticks={[
             {
               label: "Total",
               value: counts.all.toLocaleString(),
               hint: `${counts.disabled.toLocaleString()} disabled`,
-              tone: "default" as const,
             },
             {
               label: "Active now",
               value: counts.online.toLocaleString(),
               hint: "holding connections",
-              tone: counts.online > 0 ? ("ok" as const) : ("default" as const),
+              tone: counts.online > 0 ? "ok" : "default",
             },
             {
               label: "Expired",
               value: counts.expired.toLocaleString(),
-              hint:
-                counts.expired > 0 ? "past expiration date" : "none past expiry",
-              tone: counts.expired > 0 ? ("error" as const) : ("default" as const),
+              hint: counts.expired > 0 ? "past expiration date" : "none past expiry",
+              tone: counts.expired > 0 ? "error" : "default",
             },
             {
               label: "Quota exhausted",
               value: counts.quotaExhausted.toLocaleString(),
               hint:
                 counts.quotaExhausted > 0 ? "traffic ≥ quota" : "all within limits",
-              tone: counts.quotaExhausted > 0 ? ("warn" as const) : ("default" as const),
+              tone: counts.quotaExhausted > 0 ? "warn" : "default",
             },
-          ].map((tick, i) => {
-            const isMobileSecondCol = i % 2 === 1;
-            const isMobileSecondRow = i >= 2;
-            return (
-              <div
-                key={tick.label}
-                className={cn(
-                  "min-w-0 p-4",
-                  // mobile (2×2): vertical seam on right column, horizontal on bottom row
-                  isMobileSecondCol && "border-l border-divider",
-                  isMobileSecondRow && "border-t border-divider md:border-t-0",
-                  // desktop (1×4): every cell except the first gets a left seam; the
-                  // horizontal border above is stripped by md:border-t-0 above.
-                  i > 0 && "md:border-l md:border-divider",
-                )}
-              >
-                <ClientPulseTick {...tick} />
-              </div>
-            );
-          })}
-        </section>
+          ] satisfies PulseTick[]}
+        />
 
-
-        {/* Bulk action bar — appears only when selection is non-empty. */}
-        {selected.size > 0 && (
-          <div className="sticky top-0 z-20 flex flex-wrap items-center gap-3 px-4 py-2 rounded-xs bg-bg-card border border-accent/40 shadow-sm">
-            <span className="text-sm font-mono text-fg">{selected.size} selected</span>
-            <span className="hidden sm:inline text-[11px] font-mono text-fg-muted">
-              · run a bulk action or clear the selection
-            </span>
-            <div className="flex items-center gap-2 ml-auto">
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={bulkPending || !onBulkAction}
-                onClick={() => runBulk("enable")}
-              >
-                Enable
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={bulkPending || !onBulkAction}
-                onClick={() => runBulk("disable")}
-              >
-                Disable
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={bulkPending || !onBulkAction}
-                onClick={() => runBulk("delete")}
-                className="text-status-error hover:text-status-error"
-              >
-                Delete
-              </Button>
-              <Button size="sm" variant="ghost" onClick={clearSelection}>
-                Clear
-              </Button>
-            </div>
-            {bulkError && (
-              <span className="basis-full text-xs font-mono text-status-error">{bulkError}</span>
-            )}
-          </div>
-        )}
+        <BulkActionBar
+          count={selected.size}
+          hint="run a bulk action or clear the selection"
+          actions={[
+            { id: "enable", label: "Enable", variant: "ghost", disabled: !onBulkAction },
+            { id: "disable", label: "Disable", variant: "ghost", disabled: !onBulkAction },
+            { id: "delete", label: "Delete", variant: "ghost", disabled: !onBulkAction },
+          ]}
+          onAction={(id) => runBulk(id as BulkClientAction)}
+          onClear={clearSelection}
+          pending={bulkPending}
+          error={bulkError}
+        />
 
         <TableView
           search={{
@@ -553,6 +485,7 @@ export function ClientsPage({
                   selectable
                   selected={selected.has(c.id)}
                   onToggleSelect={toggleOne}
+                  nowMs={nowMs}
                 />
               ))}
             </div>

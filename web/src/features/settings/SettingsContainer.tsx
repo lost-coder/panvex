@@ -5,7 +5,7 @@ import { useProfile } from "@/features/auth/hooks/useProfile";
 import { useRetentionSettings } from "./hooks/useRetentionSettings";
 import { useAppearance } from "@/app/providers/AppearanceProvider";
 import { ErrorState } from "@/components/ErrorState";
-import { SkeletonRows } from "@/components/Skeleton";
+import { SkeletonRows } from "@/ui";
 import { UpdatesSettingsSection } from "./UpdatesSettingsSection";
 
 export function SettingsContainer() {
@@ -47,6 +47,7 @@ export function SettingsContainer() {
       onManageUsers={isAdmin ? () => navigate({ to: "/settings/users" }) : undefined}
       retentionSettings={isAdmin && retention ? retention : undefined}
       onRetentionChange={isAdmin ? (s) => saveRetention.mutate(s) : undefined}
+      retentionSaving={saveRetention.isPending}
     >
       {isAdmin && <UpdatesSettingsSection />}
     </SettingsPage>

@@ -4,7 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 
 import { type BulkClientAction, type ViewMode, EmptyState } from "@/ui";
 import { ClientsPage } from "@/features/clients/ClientsPage";
-import { SkeletonRows } from "@/components/Skeleton";
+import { SkeletonRows } from "@/ui";
 import { useClientsList } from "./hooks/useClientsList";
 import { useDiscoveredClients } from "./hooks/useDiscoveredClients";
 import { useClientCreate } from "./hooks/useClientCreate";

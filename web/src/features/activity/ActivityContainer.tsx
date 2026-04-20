@@ -2,10 +2,10 @@ import { useState } from "react";
 import { ActivityPage } from "./ActivityPage";
 import { useActivity } from "./hooks/useActivity";
 import { ErrorState } from "@/components/ErrorState";
-import { SkeletonRows } from "@/components/Skeleton";
+import { SkeletonRows } from "@/ui";
 
 export function ActivityContainer() {
-  const { jobs, auditEvents, isLoading, error } = useActivity();
+  const { jobs, auditEvents, isLoading, error, lookupError } = useActivity();
   const [activeTab, setActiveTab] = useState("jobs");
 
   if (isLoading) {
@@ -26,6 +26,7 @@ export function ActivityContainer() {
       auditEvents={auditEvents}
       activeTab={activeTab}
       onTabChange={setActiveTab}
+      lookupError={lookupError}
     />
   );
 }

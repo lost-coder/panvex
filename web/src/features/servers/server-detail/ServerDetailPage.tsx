@@ -1,22 +1,29 @@
 import { useState } from "react";
 import { ChevronRight } from "lucide-react";
 
-import { cn } from "@/ui/lib/cn";
-import { formatUptime } from "@/ui/lib/format";
-import { coverageColor } from "@/ui/lib/status";
-import { FieldLabel, MonoValue } from "@/ui/primitives";
-import { InitCard } from "@/ui/primitives/InitCard";
-import { StatusBeacon } from "@/ui/primitives/StatusBeacon";
-import { PageHeader } from "@/ui/layout/PageHeader";
-import { SectionHeader } from "@/ui/layout/SectionHeader";
-import { Breadcrumbs } from "@/ui/compositions/Breadcrumbs";
+import {
+  AlertStrip,
+  Breadcrumbs,
+  FieldLabel,
+  InitCard,
+  MonoValue,
+  PageHeader,
+  SectionHeader,
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  StatusBeacon,
+  SwipeTabView,
+  cn,
+  coverageColor,
+  formatUptime,
+} from "@/ui";
 import { DCScrollStrip } from "@/features/servers/ui/DCScrollStrip";
-import { AlertStrip } from "@/ui/compositions/AlertStrip";
-import { SwipeTabView } from "@/ui/compositions/SwipeTabView";
 import { AgentConnectionSection } from "@/features/servers/ui/AgentConnectionSection";
 import { MetricsChartSection } from "@/features/dashboard/ui/MetricsChartSection";
 import type { MetricsPoint } from "@/features/dashboard/ui/internal/MetricsChartSectionInner";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetBody } from "@/ui/base/sheet";
 import type { ServerDetailPageProps, ServerDcData } from "@/shared/api/types-pages/pages";
 
 import { useRelativeTime } from "./useRelativeTime";

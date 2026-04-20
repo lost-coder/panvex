@@ -121,6 +121,11 @@ export function AddServerContainer() {
     if (step !== 3 || !tokenValue) return;
 
     let cancelled = false;
+    // After MAX_CONSECUTIVE_FAILURES probes in a row we surface the backend
+    // error instead of silently polling forever. This protects against auth
+    // lapses (401 after session expires), network loss, and schema drift.
+    const MAX_CONSECUTIVE_FAILURES = 3;
+    let consecutiveFailures = 0;
     const poll = async () => {
       while (!cancelled) {
         await new Promise((r) => setTimeout(r, 3000));
@@ -134,6 +139,7 @@ export function AddServerContainer() {
           //                   telemetry attached
           const match = agents.find((a) => a.node_name === nodeName);
           if (match) {
+            consecutiveFailures = 0;
             const online = match.presence_state === "online";
             const hasRuntime = Boolean(match.runtime);
             if (online && hasRuntime) {
@@ -158,6 +164,17 @@ export function AddServerContainer() {
           } else {
             const tokens = await apiClient.listEnrollmentTokens();
             const ourToken = tokens.find((t) => t.value === tokenValue);
+            // Terminal token state — no agent record will ever appear with
+            // an expired/revoked token. Surface the reason and stop
+            // polling instead of leaving the operator stuck in "waiting".
+            if (ourToken?.status === "expired" || ourToken?.status === "revoked") {
+              setError(
+                ourToken.status === "expired"
+                  ? "Enrollment token expired before the agent dialed in. Generate a new token and re-run the install command."
+                  : "Enrollment token was revoked. Generate a new token and re-run the install command.",
+              );
+              return;
+            }
             if (ourToken?.status === "consumed") {
               setConnectionStatus({
                 bootstrap: "done",
@@ -165,9 +182,22 @@ export function AddServerContainer() {
                 firstData: "pending",
               });
             }
+            consecutiveFailures = 0;
           }
-        } catch {
-          // ignore polling errors
+        } catch (err) {
+          // Count up. If we keep failing, surface the last error so the
+          // operator knows the backend is unreachable instead of waiting
+          // forever. Transient glitches reset the counter as soon as a
+          // probe succeeds.
+          consecutiveFailures++;
+          if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+            setError(
+              err instanceof Error
+                ? `Probe failed ${consecutiveFailures}× in a row: ${err.message}`
+                : `Probe failed ${consecutiveFailures}× in a row.`,
+            );
+            return;
+          }
         }
       }
     };

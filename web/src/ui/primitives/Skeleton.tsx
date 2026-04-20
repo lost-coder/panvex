@@ -1,9 +1,59 @@
 import { cn } from "@/ui/lib/cn";
+import { usePrefersReducedMotion } from "@/ui/lib/usePrefersReducedMotion";
 
 export interface SkeletonProps {
   className?: string;
+  /**
+   * When present, adds `role="status"` + `aria-label` so a screen reader
+   * announces the placeholder as "loading …". Default `role` is
+   * `presentation` — a bank of skeletons should announce once, not N times.
+   */
+  label?: string;
 }
 
-export function Skeleton({ className }: SkeletonProps) {
-  return <div className={cn("animate-pulse rounded-xs bg-fg-faint", className)} />;
+export function Skeleton({ className, label }: SkeletonProps) {
+  const reduceMotion = usePrefersReducedMotion();
+  const base = cn(
+    "rounded-xs bg-bg-card-hi/70",
+    !reduceMotion && "animate-pulse",
+    className,
+  );
+  return label ? (
+    <div role="status" aria-label={label} className={base} />
+  ) : (
+    <div role="presentation" className={base} />
+  );
+}
+
+export interface SkeletonRowsProps {
+  count: number;
+  /** Per-row height Tailwind class. Defaults to `h-12`. */
+  height?: string;
+  /** Aria label for the first row. Rest are silent to avoid noise. */
+  label?: string;
+  className?: string;
+}
+
+/**
+ * Vertical stack of `count` `Skeleton` rows with consistent spacing. Use
+ * while a list query is loading — mirror the row height of the real list
+ * so the page doesn't jump on data arrival.
+ */
+export function SkeletonRows({
+  count,
+  height = "h-12",
+  label = "Загрузка списка…",
+  className,
+}: SkeletonRowsProps) {
+  return (
+    <div className={cn("flex flex-col gap-2", className)}>
+      {Array.from({ length: count }).map((_, i) => (
+        <Skeleton
+          key={i}
+          className={cn(height, "w-full")}
+          label={i === 0 ? label : undefined}
+        />
+      ))}
+    </div>
+  );
 }
