@@ -53,7 +53,40 @@ type telemetryDashboardResponse struct {
 	Attention          []telemetryAttentionItem  `json:"attention"`
 	ServerCards        []telemetryServerSummary  `json:"server_cards"`
 	RuntimeDistribution map[string]int           `json:"runtime_distribution"`
+	// RecentRuntimeEvents carries the original aggregator payload for
+	// backward-compatible consumers (ControlRoom still uses it as-is).
 	RecentRuntimeEvents []RuntimeEvent           `json:"recent_runtime_events"`
+	// RecentEvents is the dashboard-specific enriched feed: same events
+	// as RecentRuntimeEvents but tagged with the originating agent so
+	// the UI can render "node-name · message" rows.
+	RecentEvents []telemetryRecentEvent `json:"recent_events"`
+	// AgentLoadSeries carries the last N raw CPU/MEM samples per agent
+	// for dashboard mini-charts. Points are ordered oldest-first; an
+	// empty/missing entry means the server has no history yet (newly
+	// enrolled agent).
+	AgentLoadSeries []telemetryAgentLoadSeries `json:"agent_load_series"`
+}
+
+// telemetryRecentEvent is the runtime-event envelope exposed to the web
+// dashboard. It is intentionally tagged with the originating agent so
+// the UI can render "node-name · message" without a second round-trip
+// to resolve the agent id.
+type telemetryRecentEvent struct {
+	Sequence      uint64 `json:"sequence"`
+	TimestampUnix int64  `json:"timestamp_unix"`
+	EventType     string `json:"event_type"`
+	Context       string `json:"context"`
+	AgentID       string `json:"agent_id"`
+	NodeName      string `json:"node_name"`
+}
+
+// telemetryAgentLoadSeries is a short CPU/MEM timeseries for one agent,
+// rendered as sparklines on the dashboard. Arrays are the same length
+// (paired samples) so the UI does not need to align timestamps.
+type telemetryAgentLoadSeries struct {
+	AgentID   string    `json:"agent_id"`
+	CPUPct    []float64 `json:"cpu_pct"`
+	MemPct    []float64 `json:"mem_pct"`
 }
 
 type telemetryServersResponse struct {

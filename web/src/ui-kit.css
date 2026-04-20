@@ -16,6 +16,10 @@
   --panvex-fg-faint: #2a3040;
   --panvex-border: rgba(255, 255, 255, 0.06);
   --panvex-border-hi: rgba(255, 255, 255, 0.1);
+  /* Visible row divider for lists/cards. Stronger than --panvex-border-hi
+     so a stack of fleet rows or timeline events doesn't blur into one
+     slab. Paired with a light-mode value in `.light`. */
+  --panvex-divider: rgba(255, 255, 255, 0.14);
 }
 
 .light {
@@ -29,6 +33,7 @@
   --panvex-fg-faint: #dfe1e6;
   --panvex-border: rgba(0, 0, 0, 0.08);
   --panvex-border-hi: rgba(0, 0, 0, 0.14);
+  --panvex-divider: rgba(0, 0, 0, 0.18);
 }
 
 /* ─── Tailwind theme (replaces tailwind.config.ts in v4) ───────────────────
@@ -46,6 +51,7 @@
 
   --color-border: var(--panvex-border);
   --color-border-hi: var(--panvex-border-hi);
+  --color-divider: var(--panvex-divider);
 }
 
 /* Static (non-themed) tokens live directly in @theme. */

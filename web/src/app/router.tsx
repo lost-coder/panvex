@@ -17,6 +17,7 @@ import { AppearanceProvider } from "@/app/providers/AppearanceProvider";
 import { AuthProvider } from "@/app/providers/AuthProvider";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { ShortcutsOverlay } from "@/components/ShortcutsOverlay";
+import { ThemeToggleButton } from "@/components/ThemeToggleButton";
 import { WsStatusBanner } from "@/components/WsStatusBanner";
 import { apiClient } from "@/shared/api/api";
 import { useFocusMainOnRouteChange, useKeyboardShortcut } from "@/shared/hooks";
@@ -90,6 +91,7 @@ function ProtectedShell() {
         navItems={NAV_ITEMS}
         activeId={activeId}
         brand="Panvex"
+        sidebarFooter={<ThemeToggleButton />}
         onNavigate={(id) => navigate({ to: id })}
         onLogout={handleLogout}
       >
