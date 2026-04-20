@@ -10,6 +10,33 @@ vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => navigateSpy,
 }));
 
+// Bulk-action wiring uses useMutation + useQueryClient + apiClient. The
+// tests in this file don't exercise the bulk path, so we stub them here
+// to avoid pulling a QueryClientProvider into every render.
+vi.mock("@tanstack/react-query", () => ({
+  useMutation: () => ({
+    mutateAsync: vi.fn().mockResolvedValue(undefined),
+    mutate: vi.fn(),
+    isPending: false,
+  }),
+  useQueryClient: () => ({
+    invalidateQueries: vi.fn(),
+    getQueryData: vi.fn(),
+  }),
+}));
+
+vi.mock("@/shared/api/api", () => ({
+  apiClient: {
+    client: vi.fn(),
+    updateClient: vi.fn(),
+    deleteClient: vi.fn(),
+  },
+}));
+
+vi.mock("@/shared/api/transforms/clients", () => ({
+  buildClientInput: vi.fn(),
+}));
+
 vi.mock("@/ui", () => ({
   Spinner: () => <div data-testid="spinner" />,
   EmptyState: (props: { title: string; description?: string }) => (

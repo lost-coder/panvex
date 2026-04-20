@@ -488,6 +488,15 @@ export interface ClientListItem {
   lastDeployStatus: string;
 }
 
+/**
+ * Bulk operations operators can fire against a multi-selection of
+ * clients on /clients. Mirrors `BulkServerAction` pattern from the
+ * Servers list. Container translates each value into one or more
+ * apiClient calls (updateClient with `enabled` flipped, deleteClient
+ * per id).
+ */
+export type BulkClientAction = "enable" | "disable" | "delete";
+
 export interface ClientsPageProps {
   clients: ClientListItem[];
   viewMode: ViewMode;
@@ -500,6 +509,10 @@ export interface ClientsPageProps {
   createError?: string;
   pendingDiscoveredCount?: number;
   onDiscoveredClick?: () => void;
+  /** Bulk action callback. Container wires it to apiClient calls per id. */
+  onBulkAction?: (action: BulkClientAction, clientIds: string[]) => void | Promise<void>;
+  bulkError?: string;
+  bulkPending?: boolean;
 }
 
 // --- Discovered Clients ---
