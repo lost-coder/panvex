@@ -711,14 +711,24 @@ export interface EnrollmentWizardProps {
   tokenExpiresInSecs: number;
   advancedOptions?: {
     telemtUrl: string;
+    telemtMetricsUrl: string;
     telemtAuth: string;
   };
-  onAdvancedOptionsChange?: (opts: { telemtUrl: string; telemtAuth: string }) => void;
+  onAdvancedOptionsChange?: (opts: {
+    telemtUrl: string;
+    telemtMetricsUrl: string;
+    telemtAuth: string;
+  }) => void;
   onInstallConfirm: () => void;
   onBack: () => void;
   // Step 3
   connectionStatus: {
-    bootstrap: "pending" | "done";
+    // All three stages share the same state machine now: pending →
+    // waiting (in progress) → done. Bootstrap used to be modelled as a
+    // binary flip the moment the operator hit "I've run the command",
+    // but the wizard actually waits for the backend to confirm token
+    // consumption, so it needs the full progression.
+    bootstrap: "pending" | "waiting" | "done";
     grpcConnect: "pending" | "waiting" | "done";
     firstData: "pending" | "waiting" | "done";
   };
