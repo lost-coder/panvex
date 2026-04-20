@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net"
 	"net/http"
 	"os"
@@ -64,18 +63,17 @@ func (s *Server) handleEvents() http.HandlerFunc {
 		// cancel, SetReadLimit overflow) just terminate this goroutine.
 		go func() {
 			defer cancelCtx()
-			for {
-				msgType, _, err := conn.Reader(ctx)
-				if err != nil {
-					if errors.Is(err, context.Canceled) {
-						return
-					}
-					return
-				}
-				_ = msgType
-				_ = conn.Close(websocket.StatusPolicyViolation, "client frames not accepted")
+			// One read is enough: this endpoint is strictly server→client, so
+			// any data frame counts as abuse. The loop is gone (staticcheck
+			// SA4004) — every path terminates after the first Read.
+			msgType, _, err := conn.Reader(ctx)
+			if err != nil {
+				// context.Canceled, EOF, client-close, SetReadLimit overflow —
+				// all just stop this goroutine.
 				return
 			}
+			_ = msgType
+			_ = conn.Close(websocket.StatusPolicyViolation, "client frames not accepted")
 		}()
 
 		for {
