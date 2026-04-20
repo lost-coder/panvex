@@ -13,6 +13,7 @@ import (
 	"errors"
 	"flag"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -35,6 +36,13 @@ type bootstrapConfig struct {
 	NodeName        string
 	Version         string
 	Force           bool
+	// InsecureTransport opts out of the "HTTPS required unless loopback"
+	// guard in `agentEndpointURL`. Only meaningful for private-network or
+	// VPN-only deployments where the operator has already decided the
+	// link between agent and panel is trusted. See the `-insecure-transport`
+	// CLI flag; the choice is persisted into the credentials state so
+	// certificate recovery can honor it on subsequent runs.
+	InsecureTransport bool
 }
 
 type bootstrapRequest struct {
@@ -68,6 +76,8 @@ func runBootstrapCommand(args []string, client *http.Client) error {
 	nodeName := flags.String("node-name", hostName(), "Node name reported to the control-plane")
 	version := flags.String("version", "dev", "Agent version")
 	force := flags.Bool("force", false, "Overwrite an existing state file")
+	insecureTransport := flags.Bool("insecure-transport", false,
+		"Allow http:// panel URLs on non-loopback hosts. Use only on trusted private networks (e.g. VPN-only links) — bootstrap exchanges the private key in cleartext when this is set.")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -84,13 +94,23 @@ func runBootstrapCommand(args []string, client *http.Client) error {
 		}
 	}
 
+	if *insecureTransport {
+		// Loud warning on every bootstrap. Operators who flipped the flag
+		// knowingly will ignore it; anyone who flipped it by accident will
+		// see the drift in their install logs and back it out.
+		slog.Warn("bootstrap over insecure transport",
+			slog.String("panel_url", *panelURL),
+			slog.String("hint", "private key and certificate will transit unencrypted; only use on VPN / private-network links"))
+	}
+
 	credentialsState, err := bootstrapAgent(context.Background(), client, bootstrapConfig{
-		PanelURL:        *panelURL,
-		EnrollmentToken: *enrollmentToken,
-		StateFile:       *stateFile,
-		NodeName:        *nodeName,
-		Version:         *version,
-		Force:           *force,
+		PanelURL:          *panelURL,
+		EnrollmentToken:   *enrollmentToken,
+		StateFile:         *stateFile,
+		NodeName:          *nodeName,
+		Version:           *version,
+		Force:             *force,
+		InsecureTransport: *insecureTransport,
 	})
 	if err != nil {
 		return err
@@ -100,7 +120,7 @@ func runBootstrapCommand(args []string, client *http.Client) error {
 }
 
 func bootstrapAgent(ctx context.Context, client *http.Client, config bootstrapConfig) (agentstate.Credentials, error) {
-	endpoint, err := bootstrapEndpointURL(config.PanelURL)
+	endpoint, err := bootstrapEndpointURL(config.PanelURL, config.InsecureTransport)
 	if err != nil {
 		return agentstate.Credentials{}, err
 	}
@@ -156,6 +176,10 @@ func bootstrapAgent(ctx context.Context, client *http.Client, config bootstrapCo
 		PanelURL:       strings.TrimRight(strings.TrimSpace(config.PanelURL), "/"),
 		GRPCEndpoint:   bootstrap.GRPCEndpoint,
 		GRPCServerName: bootstrap.GRPCServerName,
+		// Persist the transport choice so certificate recovery later on
+		// (see recoverRuntimeCredentialsIfNeeded) can honor it without
+		// needing a CLI re-flag.
+		InsecureTransport: config.InsecureTransport,
 	}
 	if bootstrap.ExpiresAtUnix != 0 {
 		credentialsState.ExpiresAt = time.Unix(bootstrap.ExpiresAtUnix, 0).UTC()
@@ -164,15 +188,15 @@ func bootstrapAgent(ctx context.Context, client *http.Client, config bootstrapCo
 	return credentialsState, nil
 }
 
-func bootstrapEndpointURL(panelURL string) (string, error) {
-	return agentEndpointURL(panelURL, agentBootstrapPath)
+func bootstrapEndpointURL(panelURL string, allowInsecure bool) (string, error) {
+	return agentEndpointURL(panelURL, agentBootstrapPath, allowInsecure)
 }
 
-func agentRecoveryEndpointURL(panelURL string) (string, error) {
-	return agentEndpointURL(panelURL, agentCertificateRecoveryPath)
+func agentRecoveryEndpointURL(panelURL string, allowInsecure bool) (string, error) {
+	return agentEndpointURL(panelURL, agentCertificateRecoveryPath, allowInsecure)
 }
 
-func agentEndpointURL(panelURL string, path string) (string, error) {
+func agentEndpointURL(panelURL string, path string, allowInsecure bool) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(panelURL))
 	if err != nil {
 		return "", err
@@ -180,8 +204,8 @@ func agentEndpointURL(panelURL string, path string) (string, error) {
 	if parsed.Scheme == "" || parsed.Host == "" {
 		return "", errors.New("bootstrap requires an absolute -panel-url")
 	}
-	if !panelURLUsesSecureTransport(parsed) {
-		return "", errors.New("bootstrap requires https panel_url unless it targets loopback")
+	if !panelURLUsesSecureTransport(parsed) && !allowInsecure {
+		return "", errors.New("bootstrap requires https panel_url unless it targets loopback; pass -insecure-transport if the link is a trusted private network")
 	}
 
 	parsed.Path = strings.TrimRight(parsed.Path, "/") + path
@@ -211,7 +235,7 @@ func panelURLUsesSecureTransport(parsed *url.URL) bool {
 }
 
 func recoverRuntimeCredentialsIfNeeded(ctx context.Context, stateFile string, current agentstate.Credentials, client *http.Client, now time.Time) (agentstate.Credentials, error) {
-	endpoint, err := agentRecoveryEndpointURL(current.PanelURL)
+	endpoint, err := agentRecoveryEndpointURL(current.PanelURL, current.InsecureTransport)
 	if err != nil {
 		return current, err
 	}

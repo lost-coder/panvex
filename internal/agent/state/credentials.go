@@ -22,6 +22,11 @@ type Credentials struct {
 	// replayed deltas and detect true agent restarts (seq resets to 1).
 	// See P2-LOG-06 / L-07.
 	UsageSeq uint64 `json:"usage_seq,omitempty"`
+	// InsecureTransport records that this agent bootstrapped against a
+	// plain-HTTP panel URL behind a trusted private link (e.g. VPN-only
+	// deployment). Persisted so certificate recovery on later runs honors
+	// the same transport relaxation without needing a CLI re-flag.
+	InsecureTransport bool `json:"insecure_transport,omitempty"`
 }
 
 // Load reads persisted agent credentials from disk.
