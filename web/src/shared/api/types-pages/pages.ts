@@ -116,6 +116,14 @@ export interface ServerListItem {
 
 export type ViewMode = "cards" | "list";
 
+/**
+ * Bulk actions operators can trigger against a multi-selection of
+ * servers on the Servers list. Each value maps to a backend job
+ * action; the UI stays compact (reload / upgrade today, more as
+ * backend support lands).
+ */
+export type BulkServerAction = "reload" | "selfUpdate";
+
 export interface ServersPageProps {
   servers: ServerListItem[];
   viewMode?: ViewMode;
@@ -126,6 +134,16 @@ export interface ServersPageProps {
   onServerLinkClick?: (serverId: string) => void;
   onAddServer?: () => void;
   onManageTokens?: () => void;
+  /**
+   * Bulk-action callback — ServersContainer wires it to apiClient.createJob
+   * with `target_agent_ids = selected ids`. Returning a promise lets the
+   * page keep the toolbar "busy" until the backend acknowledges.
+   */
+  onBulkAction?: (action: BulkServerAction, agentIds: string[]) => void | Promise<void>;
+  /** Surface backend errors from the last bulk action inside the toolbar. */
+  bulkError?: string;
+  /** True while apiClient.createJob is in flight. */
+  bulkPending?: boolean;
 }
 
 // --- Server Detail ---

@@ -1,4 +1,6 @@
-import { type ViewMode, Button, EmptyState } from "@/ui";
+import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { type BulkServerAction, type ViewMode, Button, EmptyState } from "@/ui";
 import { ServersPage } from "@/features/servers/ServersPage";
 import { SkeletonRows } from "@/components/Skeleton";
 import { useServersList } from "./hooks/useServersList";
@@ -9,6 +11,12 @@ import { useNavigate } from "@tanstack/react-router";
 import { ErrorState } from "@/components/ErrorState";
 import { useUrlSearchState } from "@/shared/hooks/useUrlSearchState";
 import { useWsUpdateFlash } from "@/shared/hooks/useWsUpdateFlash";
+import { apiClient } from "@/shared/api/api";
+
+const BULK_ACTION_MAP: Record<BulkServerAction, string> = {
+  reload: "runtime.reload",
+  selfUpdate: "agent.self-update",
+};
 
 export function ServersContainer() {
   const { servers, agentVersions, isLoading, error } = useServersList();
@@ -19,22 +27,48 @@ export function ServersContainer() {
   const navigate = useNavigate();
   const flashing = useWsUpdateFlash();
 
+  const [bulkError, setBulkError] = useState<string | undefined>();
+  const bulkMutation = useMutation({
+    mutationFn: async ({
+      action,
+      agentIds,
+    }: {
+      action: BulkServerAction;
+      agentIds: string[];
+    }) => {
+      await apiClient.createJob({
+        action: BULK_ACTION_MAP[action],
+        target_agent_ids: agentIds,
+        idempotency_key: crypto.randomUUID(),
+        ttl_seconds: 300,
+      });
+    },
+    onError: (err: unknown) =>
+      setBulkError(err instanceof Error ? err.message : "Bulk action failed"),
+    onSuccess: () => setBulkError(undefined),
+  });
+
   // P2-UX-05: persist viewMode in the URL so a shared link lands in the
   // same card/list mode. localStorage still holds the user's long-term
   // preference via useViewMode.
   const [viewParam, setViewParam] = useUrlSearchState("view", "");
 
   if (isLoading) {
-    // 2.5: skeleton placeholders match the shape of the eventual grid.
     return (
-      <div className="p-4">
+      <div className="px-4 md:px-8 py-8">
         <SkeletonRows count={6} />
       </div>
     );
   }
 
   if (error) {
-    return <ErrorState message={error.message} onRetry={() => window.location.reload()} />;
+    return (
+      <ErrorState
+        title="Failed to load fleet"
+        description={error.message || "Telemetry service unreachable. Retry once the panel recovers."}
+        onRetry={() => window.location.reload()}
+      />
+    );
   }
 
   // 2.5: empty state for first-time operators. An action button is
@@ -83,6 +117,11 @@ export function ServersContainer() {
         onServerClick={(id) => navigate({ to: "/servers/$serverId", params: { serverId: id } })}
         onAddServer={() => navigate({ to: "/servers/add" })}
         onManageTokens={() => navigate({ to: "/servers/enrollment" })}
+        onBulkAction={(action, agentIds) =>
+          bulkMutation.mutateAsync({ action, agentIds })
+        }
+        bulkError={bulkError}
+        bulkPending={bulkMutation.isPending}
       />
     </div>
   );

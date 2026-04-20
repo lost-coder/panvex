@@ -27,6 +27,26 @@ within a time window (e.g. 2 minutes).
 **Scope:** backend only. Frontend correctly renders whatever the
 payload contains.
 
+## 2. ServerListItem.ip is never populated
+
+**Where:** `web/src/shared/api/transforms/servers.ts` →
+`summaryToListItem`. The `ip` field exists on `ServerListItem` but is
+optional and never set because `TelemetryServerSummary` / `Agent` from
+`/api/telemetry/servers` does not carry a node IP.
+
+**Symptom:** the Servers table leaves the "IP under the node name"
+line empty on every row. The handoff design shows the IP there.
+
+**Expected:** either surface a public/mgmt IP on the agent record
+(probably the `node_name`-resolvable address used for enrollment) or
+expose the last-seen TLS peer IP. Telemt itself knows the gRPC client
+address — plumbing it through would be cheap.
+
+**Scope:** backend — add the field to `Agent` and populate it in the
+telemetry summary builder. The frontend already has the render slot
+ready (`ServerListItem.ip`), so picking up the new field is a one-line
+change in `summaryToListItem`.
+
 ## (future entries — keep the format consistent)
 
 - Date / where / symptom / expected / scope

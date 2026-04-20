@@ -11,8 +11,11 @@ export interface TableViewFilter {
   key: string;
   value: string;
   onChange: (val: string) => void;
-  options: Array<{ value: string; label: string }>;
+  options: Array<{ value: string; label: string; tone?: "ok" | "warn" | "error" }>;
   placeholder?: string;
+  /** "select" (default) renders a dropdown; "chips" renders an inline
+   *  toggle-group so common statuses are one click away. */
+  variant?: "select" | "chips";
 }
 
 export interface TableViewColumn {
@@ -88,8 +91,9 @@ export function TableView({
     <div className={cn("flex flex-col gap-4", className)}>
       {/* Toolbar */}
       <div className="flex flex-col sm:flex-row gap-2 bg-bg-card p-2 rounded-xl border border-border">
-        {/* Search */}
-        <div className="relative flex-1 min-w-0">
+        {/* Search — capped so it doesn't push the filters off to the edge
+            on wide monitors. */}
+        <div className="relative w-full sm:w-64 md:w-72">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-fg-muted pointer-events-none" />
           <Input
             type="search"
@@ -102,29 +106,75 @@ export function TableView({
 
         {/* Right controls */}
         {(hasFilters || hasColumnPicker || hasViewMode) && (
-          <div className="flex gap-2 items-center">
+          <div className="flex gap-2 items-center flex-wrap sm:ml-auto">
             {/* Filters */}
             {hasFilters &&
-              filters!.map((f) => (
-                <Select
-                  key={f.key}
-                  value={f.value}
-                  onChange={f.onChange}
-                  options={f.options}
-                  placeholder={f.placeholder ?? "All"}
-                />
-              ))}
+              filters!.map((f) =>
+                f.variant === "chips" ? (
+                  <div
+                    key={f.key}
+                    role="tablist"
+                    aria-label={f.placeholder ?? "Filter"}
+                    className="inline-flex items-center gap-0.5 p-0.5 rounded-xs border border-border-hi bg-bg overflow-x-auto"
+                  >
+                    {f.options.map((o) => {
+                      const active = o.value === f.value;
+                      const toneDot =
+                        o.tone === "ok"
+                          ? "bg-status-ok"
+                          : o.tone === "warn"
+                            ? "bg-status-warn"
+                            : o.tone === "error"
+                              ? "bg-status-error"
+                              : "";
+                      return (
+                        <button
+                          key={o.value}
+                          type="button"
+                          role="tab"
+                          aria-selected={active}
+                          onClick={() => f.onChange(o.value)}
+                          className={cn(
+                            "flex items-center gap-1.5 h-8 px-3 rounded-xs text-[11px] font-mono whitespace-nowrap transition-colors",
+                            active
+                              ? "bg-bg-card-hi text-fg"
+                              : "text-fg-muted hover:text-fg hover:bg-bg-hover",
+                          )}
+                        >
+                          {toneDot && (
+                            <span
+                              aria-hidden="true"
+                              className={cn("h-1.5 w-1.5 rounded-full", toneDot)}
+                            />
+                          )}
+                          {o.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <Select
+                    key={f.key}
+                    value={f.value}
+                    onChange={f.onChange}
+                    options={f.options}
+                    placeholder={f.placeholder ?? "All"}
+                  />
+                ),
+              )}
 
             {/* Divider before column picker / view mode */}
             {hasFilters && (hasColumnPicker || hasViewMode) && <Divider />}
 
-            {/* Column visibility picker */}
+            {/* Column visibility picker — desktop only; mobile lists
+                already collapse to a card view where per-column toggles
+                would be meaningless. */}
             {hasColumnPicker && columns && (
               <Popover>
                 <PopoverTrigger asChild>
                   <button
                     className={cn(
-                      "flex items-center justify-center h-10 w-10 rounded-xs border border-border-hi",
+                      "hidden sm:flex items-center justify-center h-10 w-10 rounded-xs border border-border-hi",
                       "bg-bg-card text-fg-muted hover:text-fg transition-colors",
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
                     )}
