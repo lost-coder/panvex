@@ -96,7 +96,10 @@ describe("ClientsContainer", () => {
 
   it("renders skeleton rows while loading (2.5)", () => {
     useClientsListMock.mockReturnValue({ clients: [], isLoading: true });
-    useDiscoveredClientsMock.mockReturnValue({ discoveredClients: [] });
+    useDiscoveredClientsMock.mockReturnValue({
+      discoveredClients: [],
+      groupCounts: { all: 0, pending: 0, adopted: 0, ignored: 0, conflicts: 0 },
+    });
 
     render(<ClientsContainer />);
     // The first skeleton row carries role=status + Russian-locale label
@@ -118,6 +121,9 @@ describe("ClientsContainer", () => {
         { status: "adopted" },
         { status: "pending_review" },
       ],
+      // Container now reads the deduped pending count from the hook,
+      // so the mock returns it directly.
+      groupCounts: { all: 3, pending: 2, adopted: 1, ignored: 0, conflicts: 0 },
     });
 
     render(<ClientsContainer />);
@@ -130,7 +136,10 @@ describe("ClientsContainer", () => {
       clients: [{ id: "c1" }],
       isLoading: false,
     });
-    useDiscoveredClientsMock.mockReturnValue({ discoveredClients: [] });
+    useDiscoveredClientsMock.mockReturnValue({
+      discoveredClients: [],
+      groupCounts: { all: 0, pending: 0, adopted: 0, ignored: 0, conflicts: 0 },
+    });
 
     render(<ClientsContainer />);
     screen.getByText("click").click();
