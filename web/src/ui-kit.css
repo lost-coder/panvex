@@ -1,0 +1,218 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
+@import "tailwindcss";
+
+/* ─── Design-token CSS variables (light + dark) ─────────────────────────────
+   Raw tokens live outside @theme so they can be swapped at runtime via
+   `.light`. They're referenced from `@theme inline` below. */
+:root {
+  color-scheme: dark;
+  --panvex-bg: #0b0d12;
+  --panvex-bg-card: #141820;
+  --panvex-bg-card-hi: #1a1f2a;
+  --panvex-bg-hover: #1e2430;
+  --panvex-fg: #e2e6ed;
+  --panvex-fg-muted: #6e7787;
+  --panvex-fg-faint: #2a3040;
+  --panvex-border: rgba(255, 255, 255, 0.06);
+  --panvex-border-hi: rgba(255, 255, 255, 0.1);
+}
+
+.light {
+  color-scheme: light;
+  --panvex-bg: #f5f6f8;
+  --panvex-bg-card: #ffffff;
+  --panvex-bg-card-hi: #f0f1f4;
+  --panvex-bg-hover: #e9eaef;
+  --panvex-fg: #1a1d23;
+  --panvex-fg-muted: #6b7280;
+  --panvex-fg-faint: #dfe1e6;
+  --panvex-border: rgba(0, 0, 0, 0.08);
+  --panvex-border-hi: rgba(0, 0, 0, 0.14);
+}
+
+/* ─── Tailwind theme (replaces tailwind.config.ts in v4) ───────────────────
+   `@theme inline` keeps the var() reference in generated utilities so theme
+   swaps (`.light` vs default) take effect at runtime, not at build time. */
+@theme inline {
+  --color-bg: var(--panvex-bg);
+  --color-bg-card: var(--panvex-bg-card);
+  --color-bg-card-hi: var(--panvex-bg-card-hi);
+  --color-bg-hover: var(--panvex-bg-hover);
+
+  --color-fg: var(--panvex-fg);
+  --color-fg-muted: var(--panvex-fg-muted);
+  --color-fg-faint: var(--panvex-fg-faint);
+
+  --color-border: var(--panvex-border);
+  --color-border-hi: var(--panvex-border-hi);
+}
+
+/* Static (non-themed) tokens live directly in @theme. */
+@theme {
+  --color-status-ok: #34d399;
+  --color-status-warn: #f59e0b;
+  --color-status-error: #ef4444;
+
+  --color-accent: #60a5fa;
+  --color-accent-muted: rgba(96, 165, 250, 0.15);
+
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace;
+
+  --radius: 12px;
+  --radius-sm: 10px;
+  --radius-xs: 8px;
+
+  --animate-breathe: breathe 3s ease-in-out infinite;
+  --animate-blink: blink 1.2s step-end infinite;
+  --animate-beacon-glow: beacon-glow 2.5s ease-in-out infinite;
+  --animate-led-blink: led-blink 1.5s ease-in-out infinite;
+  --animate-alert-pulse: alert-pulse 2s ease-in-out infinite;
+
+  @keyframes breathe {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.4;
+    }
+  }
+  @keyframes blink {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0;
+    }
+  }
+  @keyframes beacon-glow {
+    0%,
+    100% {
+      box-shadow: 0 0 6px 2px currentColor;
+    }
+    50% {
+      box-shadow: 0 0 16px 6px currentColor;
+    }
+  }
+  @keyframes led-blink {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.3;
+    }
+  }
+  @keyframes alert-pulse {
+    0%,
+    100% {
+      border-left-color: var(--alert-color);
+    }
+    50% {
+      border-left-color: transparent;
+    }
+  }
+}
+
+/* ─── Back-compat aliases for raw `var(--color-*)` consumers ──────────────
+   The pre-v4 CSS exposed --color-bg, --color-fg, etc. at :root so
+   hand-written CSS could reference them directly (e.g. the body rule here,
+   scrollbar thumbs, and any downstream code that imported styles.css).
+   @theme inline does not redeclare those at :root, so we mirror them here. */
+:root,
+.light {
+  --color-bg: var(--panvex-bg);
+  --color-bg-card: var(--panvex-bg-card);
+  --color-bg-card-hi: var(--panvex-bg-card-hi);
+  --color-bg-hover: var(--panvex-bg-hover);
+  --color-fg: var(--panvex-fg);
+  --color-fg-muted: var(--panvex-fg-muted);
+  --color-fg-faint: var(--panvex-fg-faint);
+  --color-border: var(--panvex-border);
+  --color-border-hi: var(--panvex-border-hi);
+  --radius: 12px;
+}
+
+/* ─── Typography helpers (migrated from @apply'd @layer components) ────────
+   v4 prefers @utility over @layer components + @apply. Values mirror the v3
+   originals: text-lg=18px/28, text-sm=14px/20, text-xs=12px/16. */
+@utility text-title {
+  font-size: 1.125rem;
+  line-height: 1.75rem;
+  font-weight: 600;
+  color: var(--color-fg);
+}
+@utility text-section {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 600;
+  color: var(--color-fg);
+}
+@utility text-label-upper {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 500;
+  color: var(--color-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+@utility text-label-compact {
+  font-size: 10px;
+  line-height: 1.3;
+  font-weight: 500;
+  color: var(--color-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+@utility text-caption {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-fg-muted);
+}
+@utility text-muted {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  color: var(--color-fg-muted);
+}
+
+/* ─── Base layer ────────────────────────────────────────────────────────── */
+@layer base {
+  /* Preserve v3 default-border-color behavior (v4 changed the default to
+     currentColor). Every element inherits the themed border color so
+     existing components using `border` without a color keep working. */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-border);
+  }
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-fg-faint);
+    border-radius: 2px;
+  }
+}

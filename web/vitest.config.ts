@@ -28,8 +28,12 @@ export default defineConfig({
       "node_modules/**",
       "dist/**",
       "tests/**",
+      // Legacy node:test-based suites — driven via `node --test`, not
+      // vitest. After the Phase 4c/4d moves the appearance-helper test
+      // lives under shared/lib/; the router node-test file is still at
+      // the top of src/ next to the new app/router.tsx location.
       "src/router.test.ts",
-      "src/lib/appearance.test.ts",
+      "src/shared/lib/appearance.test.ts",
     ],
     coverage: {
       provider: "v8",
@@ -40,22 +44,22 @@ export default defineConfig({
       // baseline's job is to lock in the critical auth/toast/api/hooks
       // paths with a meaningful threshold.
       include: [
-        "src/lib/api.ts",
-        "src/lib/runtime-path.ts",
-        "src/lib/transforms/clients.ts",
-        "src/providers/AuthProvider.tsx",
-        "src/providers/ToastProvider.tsx",
-        "src/hooks/useClientsList.ts",
-        "src/hooks/useClientMutations.ts",
-        "src/hooks/useViewMode.ts",
-        "src/containers/ClientsContainer.tsx",
-        "src/containers/ServersContainer.tsx",
-        "src/containers/DashboardContainer.tsx",
+        "src/shared/api/api.ts",
+        "src/shared/lib/runtime-path.ts",
+        "src/shared/api/transforms/clients.ts",
+        "src/app/providers/AuthProvider.tsx",
+        "src/app/providers/ToastProvider.tsx",
+        "src/features/clients/hooks/useClientsList.ts",
+        "src/features/clients/hooks/useClientMutations.ts",
+        "src/shared/hooks/useViewMode.ts",
+        "src/features/clients/ClientsContainer.tsx",
+        "src/features/servers/ServersContainer.tsx",
+        "src/features/dashboard/DashboardContainer.tsx",
       ],
       exclude: [
         "src/**/*.test.{ts,tsx}",
         "src/**/*.d.ts",
-        "src/main.tsx",
+        "src/app/main.tsx",
         "src/vite-env.d.ts",
       ],
       thresholds: {

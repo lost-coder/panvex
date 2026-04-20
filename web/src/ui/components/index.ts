@@ -1,3 +1,12 @@
-// Migration caretaker — populated in Phase 4 of the web-merge plan.
-// See docs/audit_2026-04-18/web_deep/07-migration-plan-v2.md
-export {};
+export { ErrorBoundary, type ErrorBoundaryProps } from "./ErrorBoundary";
+export { AlertItem, type AlertItemProps, type AlertSeverity } from "./AlertItem";
+export { TimelineEvent, type TimelineEventProps } from "./TimelineEvent";
+export { ActionItem, type ActionItemProps } from "./ActionItem";
+export { SLABanner, type SLABannerProps } from "./SLABanner";
+export { DataTable, type DataTableProps, type DataTableColumn } from "./DataTable";
+export { EmptyState, type EmptyStateProps } from "./EmptyState";
+export { SettingsGroup, type SettingsGroupProps } from "./SettingsGroup";
+export { SettingsRow, type SettingsRowProps } from "./SettingsRow";
+// Base-slot re-exports removed in 4e.5 — duplicates of @/ui/base/*
+// caused TS2308 ambiguity at the root @/ui barrel. Consumers still
+// reach them via the root barrel, which also exports ./base directly.

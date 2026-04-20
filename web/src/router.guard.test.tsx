@@ -1,6 +1,6 @@
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
-import { ApiError } from "@/lib/api";
+import { ApiError } from "@/shared/api/api";
 
 // Router guard test (P2-TEST-01). The `shellRoute.beforeLoad` logic is
 // the single place that translates a 401 from `/auth/me` into a

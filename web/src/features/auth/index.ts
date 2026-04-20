@@ -1,3 +1,7 @@
-// Migration caretaker — populated in Phase 4 of the web-merge plan.
-// See docs/audit_2026-04-18/web_deep/07-migration-plan-v2.md
-export {};
+// Phase 4b: auth feature public surface. The router and SettingsContainer
+// import containers/hooks from this barrel so future internal refactors
+// do not ripple outside the slice.
+export { LoginContainer } from "./LoginContainer";
+export { ProfileContainer } from "./ProfileContainer";
+export { useProfile } from "./hooks/useProfile";
+export { useProfileTotp } from "./hooks/useProfileTotp";

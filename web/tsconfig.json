@@ -34,5 +34,6 @@
     },
     "types": ["vitest/globals", "@testing-library/jest-dom"]
   },
-  "include": ["src", "vitest.setup.ts", "vitest.config.ts"]
+  "include": ["src", "vitest.setup.ts", "vitest.config.ts"],
+  "exclude": ["src/**/*.stories.tsx"]
 }
