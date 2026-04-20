@@ -69,7 +69,10 @@ describe("DashboardContainer", () => {
       agentVersions: {},
       isLoading: true,
     });
-    useDiscoveredClientsMock.mockReturnValue({ discoveredClients: [] });
+    useDiscoveredClientsMock.mockReturnValue({
+      discoveredClients: [],
+      groupCounts: { all: 0, pending: 0, adopted: 0, ignored: 0, conflicts: 0 },
+    });
     useUpdatesMock.mockReturnValue({ query: { data: undefined } });
 
     render(<DashboardContainer />);
@@ -91,6 +94,8 @@ describe("DashboardContainer", () => {
         { status: "pending_review" },
         { status: "adopted" },
       ],
+      // Container reads the deduped pending count from the hook.
+      groupCounts: { all: 2, pending: 1, adopted: 1, ignored: 0, conflicts: 0 },
     });
     useUpdatesMock.mockReturnValue({
       query: { data: { state: { latest_agent_version: "1.0.0" } } },

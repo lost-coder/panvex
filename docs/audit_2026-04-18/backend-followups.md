@@ -110,6 +110,46 @@ no schema breakage.
 **Scope:** backend. Frontend can drop the side `/api/agents` fetch
 once the field lands.
 
+## 6. Discovered clients duplicate per-node, adopt leaves partial state
+
+**Where:** `GET /api/discovered-clients` + the adopt / ignore handlers
+in `internal/controlplane/server/http_discovered_clients.go`.
+
+**Symptom:** when the same client (same name + same secret) is
+provisioned on N nodes, the discovered endpoint returns N rows — one
+per node — each with its own `id`. Operators see "137 clients × 4
+nodes = 548 pending entries". Selecting 2 clients on one node and
+hitting Adopt:
+
+  * flips the status of those 2 rows → 8 entries get marked adopted
+    internally (because the backend seems to dedupe by secret and cascade),
+  * but the resulting managed client is created with `agent_ids =
+    {the 1 node the operator clicked on}`, not `{all 4 nodes where it
+    was discovered}`.
+
+So the list cleans up, yet the client is only deployed to a subset of
+the nodes it was actually running on.
+
+**Expected:**
+
+1. `/api/discovered-clients` de-duplicates server-side. One row per
+   distinct `(client_name, secret_hash)`, with `discovered_on:
+   string[]` (list of node names or agent IDs).
+2. `adopt(id)` creates a managed client with `agent_ids =
+   discovered_on`, so the client is registered exactly where it was
+   found.
+3. `ignore(id)` marks the entire group ignored.
+4. Expose either `secret_hash` or the raw secret on the discovered
+   item so the frontend can cross-check and render conflict badges
+   from authoritative data instead of `clientName` heuristics.
+
+**Frontend workaround (in this PR):** group by `clientName` client-side,
+split the group if backend reports a `same_name_different_secrets`
+conflict, and fan-out adopt / ignore to every id in the group. This
+is a stop-gap — the correct fix is server-side dedup.
+
+**Scope:** backend.
+
 ## (future entries — keep the format consistent)
 
 - Date / where / symptom / expected / scope

@@ -9,13 +9,16 @@ import { useNavigate } from "@tanstack/react-router";
 
 export function DashboardContainer() {
   const { overview, timeline, agentVersions, isLoading } = useDashboardData();
-  const { discoveredClients } = useDiscoveredClients();
+  const { discoveredClients, groupCounts: discoveredGroupCounts } = useDiscoveredClients();
   const createMutation = useClientCreate();
   const { query: updatesQuery } = useUpdates();
   const latestAgentVersion = updatesQuery.data?.state.latest_agent_version;
   const navigate = useNavigate();
 
-  const pendingCount = discoveredClients.filter((c) => c.status === "pending_review").length;
+  // Logical-client count (dedup by clientName) instead of raw records.
+  // Dashboard banner should read "137 discovered", not "548".
+  void discoveredClients;
+  const pendingCount = discoveredGroupCounts.pending;
 
   // Enrich dashboard nodes with update availability
   const enrichedOverview = useMemo(() => {

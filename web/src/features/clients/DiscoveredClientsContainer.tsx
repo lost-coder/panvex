@@ -31,13 +31,25 @@ export function DiscoveredClientsContainer() {
     return <ErrorState message={error.message} onRetry={() => window.location.reload()} />;
   }
 
-  // P2-UX-04: bulk-ignore is destructive per candidate — confirm only
-  // the multi-select variant. Single-row ignore stays click-through
-  // because operators triage this list one row at a time.
+  // Ignore (single and bulk) is destructive — ignored candidates
+  // vanish from the pending-review surface until they're rediscovered.
+  // Adopt is non-destructive, but adopt-many often spans dozens of
+  // records after the front-end dedup fanout, so we confirm the
+  // fanout too.
+  const handleIgnoreOne = async (id: string) => {
+    const ok = await confirm({
+      title: "Ignore this discovered client?",
+      body: "It will not appear in pending review unless reset.",
+      confirmLabel: "Ignore",
+      variant: "danger",
+    });
+    if (!ok) return;
+    await ignore(id);
+  };
   const handleIgnoreMany = async (ids: string[]) => {
     if (ids.length === 0) return;
     const ok = await confirm({
-      title: `Ignore ${ids.length} discovered ${ids.length === 1 ? "client" : "clients"}?`,
+      title: `Ignore ${ids.length} discovered record${ids.length === 1 ? "" : "s"}?`,
       body: "Ignored candidates are filtered out of future scans until re-discovered.",
       confirmLabel: "Ignore",
       variant: "danger",
@@ -45,13 +57,29 @@ export function DiscoveredClientsContainer() {
     if (!ok) return;
     await ignoreMany(ids);
   };
+  const handleAdoptMany = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    // Front-end dedup fans one logical client into N records (one per
+    // node). Confirm the fanout so the operator sees the scale.
+    const ok = await confirm({
+      title: `Adopt ${ids.length} record${ids.length === 1 ? "" : "s"}?`,
+      body:
+        ids.length === 1
+          ? "Import the discovered client as a managed one."
+          : `Adopt-many will fan out ${ids.length} records (one per node they were discovered on) so the resulting managed clients are registered on every node.`,
+      confirmLabel: "Adopt",
+      variant: "default",
+    });
+    if (!ok) return;
+    await adoptMany(ids);
+  };
 
   return (
     <DiscoveredClientsPage
       clients={discoveredClients}
       onAdopt={(id) => adopt(id)}
-      onIgnore={(id) => ignore(id)}
-      onAdoptMany={(ids: string[]) => adoptMany(ids)}
+      onIgnore={handleIgnoreOne}
+      onAdoptMany={handleAdoptMany}
       onIgnoreMany={handleIgnoreMany}
       onBack={() => navigate({ to: "/clients" })}
       busy={isAdopting || isIgnoring}
