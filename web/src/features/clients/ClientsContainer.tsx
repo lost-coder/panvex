@@ -1,13 +1,18 @@
-import { type ViewMode, EmptyState } from "@/ui";
+import { useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
+
+import { type BulkClientAction, type ViewMode, EmptyState } from "@/ui";
 import { ClientsPage } from "@/features/clients/ClientsPage";
 import { SkeletonRows } from "@/components/Skeleton";
 import { useClientsList } from "./hooks/useClientsList";
 import { useDiscoveredClients } from "./hooks/useDiscoveredClients";
 import { useClientCreate } from "./hooks/useClientCreate";
 import { useViewMode } from "@/shared/hooks/useViewMode";
-import { useNavigate } from "@tanstack/react-router";
 import { useUrlSearchState } from "@/shared/hooks/useUrlSearchState";
 import { useWsUpdateFlash } from "@/shared/hooks/useWsUpdateFlash";
+import { apiClient } from "@/shared/api/api";
+import { buildClientInput } from "@/shared/api/transforms/clients";
 
 export function ClientsContainer() {
   const { clients, isLoading } = useClientsList();
@@ -16,6 +21,57 @@ export function ClientsContainer() {
   const { resolveMode, setMode } = useViewMode("clients");
   const navigate = useNavigate();
   const flashing = useWsUpdateFlash();
+  const queryClient = useQueryClient();
+  const [bulkError, setBulkError] = useState<string | undefined>();
+
+  // Bulk dispatcher. Backend has no batch endpoint, so we fan out one
+  // PUT/DELETE per client id and surface the first error verbatim. The
+  // list query gets a single invalidate at the end so we don't thrash
+  // /api/clients during a 100-row toggle.
+  const bulkMutation = useMutation({
+    mutationFn: async ({
+      action,
+      clientIds,
+    }: {
+      action: BulkClientAction;
+      clientIds: string[];
+    }) => {
+      if (action === "delete") {
+        await Promise.all(clientIds.map((id) => apiClient.deleteClient(id)));
+        return;
+      }
+      // enable / disable: list endpoint only returns ClientListItem,
+      // so we fetch each client individually to obtain the raw record
+      // required by buildClientInput, then ship a full ClientInput
+      // with `enabled` flipped (PUT /clients/:id is full-replacement,
+      // not patch).
+      const wantEnabled = action === "enable";
+      await Promise.all(
+        clientIds.map(async (id) => {
+          const raw = await apiClient.client(id);
+          if (raw.enabled === wantEnabled) return;
+          const payload = buildClientInput(
+            {
+              name: raw.name,
+              userAdTag: raw.user_ad_tag,
+              expirationRfc3339: raw.expiration_rfc3339,
+              maxTcpConns: raw.max_tcp_conns,
+              maxUniqueIps: raw.max_unique_ips,
+              dataQuotaBytes: raw.data_quota_bytes,
+            },
+            { ...raw, enabled: wantEnabled },
+          );
+          await apiClient.updateClient(id, payload);
+        }),
+      );
+    },
+    onError: (err: unknown) =>
+      setBulkError(err instanceof Error ? err.message : "Bulk action failed"),
+    onSuccess: () => {
+      setBulkError(undefined);
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+    },
+  });
 
   // P2-UX-05: persist viewMode in the URL. localStorage (useViewMode)
   // still owns the long-lived preference; the URL copy is the sharable
@@ -70,6 +126,11 @@ export function ClientsContainer() {
         createError={createMutation.error?.message}
         pendingDiscoveredCount={pendingCount}
         onDiscoveredClick={() => navigate({ to: "/clients/discovered" })}
+        onBulkAction={(action, clientIds) =>
+          bulkMutation.mutateAsync({ action, clientIds })
+        }
+        bulkError={bulkError}
+        bulkPending={bulkMutation.isPending}
       />
     </div>
   );
