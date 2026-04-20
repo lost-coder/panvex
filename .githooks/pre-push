@@ -1,6 +1,45 @@
 #!/bin/bash
-# Mirrors key CI checks locally. To skip, use `git push --no-verify`.
+# Mirrors key CI checks locally.
+#
+# Skip paths (fastest → slowest):
+#   1. Tag-only push      — auto. The hook reads the refs from stdin and
+#      short-circuits when every ref being pushed is under refs/tags/.
+#      Rationale: the common release flow is
+#        a) push commits, wait for CI,
+#        b) push the release tag.
+#      Step (b) doesn't change code — re-running the suite adds minutes
+#      of wait for no signal. Tags only trigger release.yml on GitHub,
+#      which does its own build/sign.
+#   2. PANVEX_SKIP_PREPUSH=1  — env override for one-off bypasses.
+#   3. `git push --no-verify` — git's built-in escape hatch.
 set -e
+
+# ── Tag-only push short-circuit ──────────────────────────────────────────────
+# git passes one line per ref on stdin:
+#   <local-ref> <local-sha> <remote-ref> <remote-sha>
+# Read them all, then decide. If *every* local-ref starts with refs/tags/,
+# skip the suite. If stdin is empty (rare, e.g. dry-run), fall through.
+any_ref=0
+any_non_tag=0
+while read -r local_ref _local_sha _remote_ref _remote_sha; do
+    [ -z "$local_ref" ] && continue
+    any_ref=1
+    case "$local_ref" in
+        refs/tags/*) ;;
+        *) any_non_tag=1 ;;
+    esac
+done
+
+if [ "$any_ref" = 1 ] && [ "$any_non_tag" = 0 ]; then
+    echo "=== Pre-push: tag-only push — skipping CI mirror checks ==="
+    exit 0
+fi
+
+# ── Env override ─────────────────────────────────────────────────────────────
+if [ "${PANVEX_SKIP_PREPUSH:-}" = "1" ]; then
+    echo "=== Pre-push: PANVEX_SKIP_PREPUSH=1 — skipping CI mirror checks ==="
+    exit 0
+fi
 
 echo "=== Pre-push: Go lint ==="
 ~/go/bin/golangci-lint run ./...
