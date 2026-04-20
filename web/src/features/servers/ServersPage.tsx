@@ -1,6 +1,6 @@
 // P3-FE-01: recomposed locally from UI-kit primitives/components/compositions
 // instead of importing the pre-built page from @lost-coder/panvex-ui/pages.
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { NodeCard } from "@/features/servers/ui/NodeCard";
 import { NodeSummaryCard } from "@/features/servers/ui/NodeSummaryCard";
 import {
@@ -10,6 +10,7 @@ import {
   StatusDot,
   TableView,
   cn,
+  type BulkServerAction,
   type ServerListItem,
   type ServersPageProps,
   type ViewMode,
@@ -25,18 +26,22 @@ function TrafficCell({ bytes }: { bytes: number }) {
 
 function DcMatrixCell({ dcs }: { dcs: ServerListItem["dcs"] }) {
   if (!dcs || dcs.length === 0) return <span className="text-xs text-fg-muted">N/A</span>;
+  // Handoff-style "12 thin bars in a row" instead of a 6×2 dot grid. Each
+  // bar is 4×14px so a full row fits in ~64px and the status distribution
+  // across DCs reads as a single glance — green wall with occasional red
+  // notches stands out more than a circular grid.
   return (
-    <div className="grid grid-cols-6 gap-1 w-fit">
+    <div className="flex items-center gap-[2px] w-fit">
       {dcs.slice(0, 12).map((dc, i) => (
         <div
           key={i}
           className={cn(
-            "w-2.5 h-2.5 rounded-full",
+            "w-[4px] h-[14px] rounded-sm",
             dc.status === "error"
               ? "bg-status-error"
               : dc.status === "warn"
                 ? "bg-status-warn"
-                : "bg-status-ok opacity-80",
+                : "bg-status-ok/80",
           )}
           title={`DC ${dc.dc}: ${dc.rttMs ? dc.rttMs + "ms" : "offline"}`}
         />
@@ -71,16 +76,57 @@ function ServerCardView({
   );
 }
 
+interface ServerSelectionConfig {
+  selected: Set<string>;
+  onToggle: (id: string) => void;
+  onToggleAll: () => void;
+  allSelected: boolean;
+  someSelected: boolean;
+}
+
 function ServerListView({
   servers,
   onServerClick,
   visibleColumns,
+  selection,
 }: {
   servers: ServerListItem[];
   onServerClick?: (id: string) => void;
   visibleColumns: Record<string, boolean>;
+  selection?: ServerSelectionConfig;
 }) {
   const allColumns = [
+    ...(selection
+      ? [
+          {
+            key: "select",
+            header: (
+              <input
+                type="checkbox"
+                aria-label="Select all servers on this page"
+                checked={selection.allSelected}
+                ref={(el) => {
+                  if (el) el.indeterminate = selection.someSelected && !selection.allSelected;
+                }}
+                onChange={selection.onToggleAll}
+                onClick={(e) => e.stopPropagation()}
+                className="accent-accent size-4 cursor-pointer"
+              />
+            ) as unknown as string,
+            render: (s: ServerListItem) => (
+              <input
+                type="checkbox"
+                aria-label={`Select ${s.name}`}
+                checked={selection.selected.has(s.id)}
+                onChange={() => selection.onToggle(s.id)}
+                onClick={(e) => e.stopPropagation()}
+                className="accent-accent size-4 cursor-pointer"
+              />
+            ),
+            className: "w-[36px] text-center",
+          },
+        ]
+      : []),
     {
       key: "server",
       header: "Server",
@@ -100,7 +146,8 @@ function ServerListView({
       key: "dcs",
       header: "DCs",
       render: (s: ServerListItem) => <DcMatrixCell dcs={s.dcs} />,
-      className: "hidden xl:table-cell w-[68px]",
+      // Wider to accommodate the 12-bar strip (4px bars + 2px gaps).
+      className: "hidden xl:table-cell w-[92px]",
     },
     {
       key: "users",
@@ -213,6 +260,9 @@ export function ServersPage({
   onServerClick,
   onAddServer,
   onManageTokens,
+  onBulkAction,
+  bulkError,
+  bulkPending,
 }: ServersPageProps) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -225,6 +275,9 @@ export function ServersPage({
     uptime: true,
     load: true,
   });
+  // Multi-select state for bulk actions. `Set` keeps toggling O(1) and
+  // survives re-renders via useState's ref stability.
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const pageSize = 20;
 
   const effectiveMode: ViewMode = viewMode ?? (servers.length <= autoThreshold ? "cards" : "list");
@@ -237,8 +290,51 @@ export function ServersPage({
     return matchSearch && matchStatus && matchGroup;
   });
 
+  // Counts are derived from the unfiltered fleet so the chips keep
+  // showing the full distribution regardless of the active filter.
+  // Displayed as " · N" suffix in each chip's label.
+  const statusCounts = {
+    all: servers.length,
+    ok: servers.filter((s) => s.status === "ok").length,
+    warn: servers.filter((s) => s.status === "warn").length,
+    error: servers.filter((s) => s.status === "error").length,
+  };
+
+
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  // Select-all toggles just the currently visible page — a fleet-wide
+  // select-all would be dangerous for bulk destructive actions.
+  const pageIds = useMemo(() => paginated.map((s) => s.id), [paginated]);
+  const selectedOnPage = pageIds.filter((id) => selected.has(id));
+  const allSelectedOnPage = pageIds.length > 0 && selectedOnPage.length === pageIds.length;
+  const someSelectedOnPage = selectedOnPage.length > 0 && !allSelectedOnPage;
+
+  const toggleOne = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const toggleAllOnPage = () => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allSelectedOnPage) pageIds.forEach((id) => next.delete(id));
+      else pageIds.forEach((id) => next.add(id));
+      return next;
+    });
+  };
+  const clearSelection = () => setSelected(new Set());
+
+  const runBulk = async (action: BulkServerAction) => {
+    if (!onBulkAction || selected.size === 0) return;
+    const ids = Array.from(selected);
+    await Promise.resolve(onBulkAction(action, ids));
+    clearSelection();
+  };
 
   return (
     <>
@@ -262,7 +358,48 @@ export function ServersPage({
           ) : undefined
         }
       />
-      <div className="px-4 md:px-8 pb-8">
+      <div className="px-4 md:px-8 pb-8 flex flex-col gap-5">
+        {/* Bulk action bar — appears only when selection is non-empty.
+            Sticky to the top of the viewport so it stays visible while
+            the operator scrolls through long lists. Actions dispatch
+            through `onBulkAction`; bulkPending disables buttons while
+            the backend job is in flight. */}
+        {selected.size > 0 && (
+          <div className="sticky top-0 z-20 flex flex-wrap items-center gap-3 px-4 py-2 rounded-xs bg-bg-card border border-accent/40 shadow-sm">
+            <span className="text-sm font-mono text-fg">
+              {selected.size} selected
+            </span>
+            <span className="text-[11px] font-mono text-fg-muted hidden sm:inline">
+              · run a bulk action or clear the selection
+            </span>
+            <div className="flex items-center gap-2 ml-auto">
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={bulkPending || !onBulkAction}
+                onClick={() => runBulk("reload")}
+              >
+                Reload runtime
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={bulkPending || !onBulkAction}
+                onClick={() => runBulk("selfUpdate")}
+              >
+                Self-update
+              </Button>
+              <Button size="sm" variant="ghost" onClick={clearSelection}>
+                Clear
+              </Button>
+            </div>
+            {bulkError && (
+              <span className="basis-full text-xs font-mono text-status-error">
+                {bulkError}
+              </span>
+            )}
+          </div>
+        )}
         <TableView
           search={{
             value: search,
@@ -280,11 +417,12 @@ export function ServersPage({
                 setStatusFilter(v);
                 setCurrentPage(1);
               },
+              variant: "chips" as const,
               options: [
-                { value: "all", label: "All Statuses" },
-                { value: "ok", label: "Online" },
-                { value: "warn", label: "Warning" },
-                { value: "error", label: "Error" },
+                { value: "all", label: `All · ${statusCounts.all}` },
+                { value: "ok", label: `Online · ${statusCounts.ok}`, tone: "ok" as const },
+                { value: "warn", label: `Warning · ${statusCounts.warn}`, tone: "warn" as const },
+                { value: "error", label: `Error · ${statusCounts.error}`, tone: "error" as const },
               ],
               placeholder: "Status",
             },
@@ -344,6 +482,13 @@ export function ServersPage({
                 servers={paginated}
                 onServerClick={onServerClick}
                 visibleColumns={columnVisibility}
+                selection={{
+                  selected,
+                  onToggle: toggleOne,
+                  onToggleAll: toggleAllOnPage,
+                  allSelected: allSelectedOnPage,
+                  someSelected: someSelectedOnPage,
+                }}
               />
             )}
           </div>
