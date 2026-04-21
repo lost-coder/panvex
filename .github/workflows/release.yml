@@ -28,7 +28,7 @@ jobs:
       # Phase 4 inlined @lost-coder/panvex-ui into web/src/ui/, so the
       # release build no longer clones the side-repo or symlinks ../ui.
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.26'
 
