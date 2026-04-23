@@ -175,18 +175,12 @@ func parseRecoveryPrivateKeyForTest(t *testing.T, privateKeyPEM string) *ecdsa.P
 func seedRecoveryTestAgent(t *testing.T, server *Server, store *sqlite.Store, now time.Time) {
 	t.Helper()
 
-	if err := store.PutFleetGroup(context.Background(), storage.FleetGroupRecord{
-		ID:        "ams",
-		Name:      "Amsterdam",
-		CreatedAt: now,
-	}); err != nil {
-		t.Fatalf("PutFleetGroup() error = %v", err)
-	}
+	fleetGroupID := seedTestFleetGroup(t, store, "ams", now)
 
 	record := storage.AgentRecord{
 		ID:           "agent-1",
 		NodeName:     "node-a",
-		FleetGroupID: "ams",
+		FleetGroupID: fleetGroupID,
 		Version:      "1.0.0",
 		LastSeenAt:   now,
 	}

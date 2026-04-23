@@ -172,31 +172,8 @@ func (s *Server) handleDeregisterAgent() http.HandlerFunc {
 	}
 }
 
-func (s *Server) handleFleetGroups() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if _, _, err := s.requireSession(r); err != nil {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
-			return
-		}
-
-		s.mu.RLock()
-		groupSet := make(map[string]int)
-		for _, agent := range s.agents {
-			if agent.FleetGroupID != "" {
-				groupSet[agent.FleetGroupID]++
-			}
-		}
-		s.mu.RUnlock()
-
-		type fleetGroupEntry struct {
-			ID         string `json:"id"`
-			AgentCount int    `json:"agent_count"`
-		}
-		groups := make([]fleetGroupEntry, 0, len(groupSet))
-		for id, count := range groupSet {
-			groups = append(groups, fleetGroupEntry{ID: id, AgentCount: count})
-		}
-
-		writeJSON(w, http.StatusOK, groups)
-	}
-}
+// Fleet-group HTTP handlers moved to http_fleet_groups.go as part of
+// the groups redesign (UUID ids, CRUD + integrations). The previous
+// handleFleetGroups derived the list from the live agent snapshot;
+// the replacement reads the fleet_groups table so empty groups also
+// appear in the list.

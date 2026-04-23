@@ -13,6 +13,13 @@ import (
 // OpenStore constructs a fresh storage backend for one contract test run.
 type OpenStore func(t *testing.T) storage.Store
 
+// testFleetGroupID is a deterministic UUIDv4 used as the fleet-group
+// primary key inside contract-test fixtures. Postgres stores ids in a
+// UUID column since migration 0014, so every PutFleetGroup call must
+// pass a real UUID. We pick a fixed value so assertions that mention
+// the id stay readable.
+const testFleetGroupID = "00000000-0000-4000-a000-000000000001"
+
 // RunStoreContract verifies that a storage backend satisfies the shared persistence contract.
 func RunStoreContract(t *testing.T, open OpenStore) {
 	t.Helper()
@@ -23,7 +30,7 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 
 		ctx := context.Background()
 		group := storage.FleetGroupRecord{
-			ID:        "default",
+			ID:        testFleetGroupID,
 			Name:      "Default",
 			CreatedAt: time.Date(2026, time.March, 17, 8, 51, 0, 0, time.UTC),
 		}
@@ -55,7 +62,7 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 			ID:           "assignment-000001",
 			ClientID:     client.ID,
 			TargetType:   "fleet_group",
-			FleetGroupID: "default",
+			FleetGroupID: testFleetGroupID,
 			CreatedAt:    time.Date(2026, time.March, 17, 9, 11, 0, 0, time.UTC),
 		}
 		nodeAssignment := storage.ClientAssignmentRecord{
@@ -494,7 +501,7 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 		// SET NULL); the referenced fleet group must exist before we can
 		// persist a token that points at it.
 		if err := store.PutFleetGroup(ctx, storage.FleetGroupRecord{
-			ID:        "default",
+			ID:        testFleetGroupID,
 			Name:      "Default",
 			CreatedAt: time.Date(2026, time.March, 15, 8, 0, 0, 0, time.UTC),
 		}); err != nil {
@@ -502,7 +509,7 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 		}
 		token := storage.EnrollmentTokenRecord{
 			Value:        "token-value",
-			FleetGroupID: "default",
+			FleetGroupID: testFleetGroupID,
 			IssuedAt:     time.Date(2026, time.March, 15, 8, 5, 0, 0, time.UTC),
 			ExpiresAt:    time.Date(2026, time.March, 15, 8, 15, 0, 0, time.UTC),
 		}
@@ -538,7 +545,7 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 		// P2-DB-03: see note on preceding token test — the fleet group
 		// must exist for the FK constraint to accept the token.
 		if err := store.PutFleetGroup(ctx, storage.FleetGroupRecord{
-			ID:        "default",
+			ID:        testFleetGroupID,
 			Name:      "Default",
 			CreatedAt: time.Date(2026, time.March, 15, 8, 0, 0, 0, time.UTC),
 		}); err != nil {
@@ -546,7 +553,7 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 		}
 		token := storage.EnrollmentTokenRecord{
 			Value:        "token-revoke",
-			FleetGroupID: "default",
+			FleetGroupID: testFleetGroupID,
 			IssuedAt:     time.Date(2026, time.March, 15, 8, 30, 0, 0, time.UTC),
 			ExpiresAt:    time.Date(2026, time.March, 15, 8, 45, 0, 0, time.UTC),
 		}
@@ -581,7 +588,7 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 
 		ctx := context.Background()
 		group := storage.FleetGroupRecord{
-			ID:        "default",
+			ID:        testFleetGroupID,
 			Name:      "Default",
 			CreatedAt: time.Date(2026, time.March, 15, 8, 50, 0, 0, time.UTC),
 		}
@@ -645,7 +652,7 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 
 		ctx := context.Background()
 		group := storage.FleetGroupRecord{
-			ID:        "default",
+			ID:        testFleetGroupID,
 			Name:      "Default",
 			CreatedAt: time.Date(2026, time.March, 15, 9, 20, 0, 0, time.UTC),
 		}
@@ -698,7 +705,7 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 
 		ctx := context.Background()
 		group := storage.FleetGroupRecord{
-			ID:        "default",
+			ID:        testFleetGroupID,
 			Name:      "Default",
 			CreatedAt: time.Date(2026, time.March, 15, 8, 20, 0, 0, time.UTC),
 		}
@@ -1002,7 +1009,7 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 
 		ctx := context.Background()
 		group := storage.FleetGroupRecord{
-			ID:        "default",
+			ID:        testFleetGroupID,
 			Name:      "Default",
 			CreatedAt: time.Date(2026, time.March, 28, 10, 0, 0, 0, time.UTC),
 		}
@@ -1301,7 +1308,7 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 
 		ctx := context.Background()
 		group := storage.FleetGroupRecord{
-			ID:        "default",
+			ID:        testFleetGroupID,
 			Name:      "Default",
 			CreatedAt: time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC),
 		}
@@ -1386,7 +1393,7 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 
 		ctx := context.Background()
 		group := storage.FleetGroupRecord{
-			ID:        "default",
+			ID:        testFleetGroupID,
 			Name:      "Default",
 			CreatedAt: time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC),
 		}
@@ -1518,7 +1525,7 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 
 		ctx := context.Background()
 		group := storage.FleetGroupRecord{
-			ID:        "default",
+			ID:        testFleetGroupID,
 			Name:      "Default",
 			CreatedAt: time.Date(2026, time.March, 28, 11, 0, 0, 0, time.UTC),
 		}

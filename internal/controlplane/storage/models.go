@@ -158,10 +158,56 @@ type TelemetryDetailBoostRecord struct {
 }
 
 // FleetGroupRecord stores one fleet group in the global control-plane namespace.
+//
+// ID is a UUID assigned at creation and never changes. Name is an
+// immutable human-readable slug (unique, used in URLs / CLI / logs).
+// Label is a free-form display name the operator can edit. Description
+// is free text — rendered on the detail page.
 type FleetGroupRecord struct {
+	ID          string
+	Name        string
+	Label       string
+	Description string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// IntegrationProviderRecord stores credentials for an external
+// integration backend (e.g. a Cloudflare account). A single provider
+// can back FleetGroupIntegrationRecord rows across many groups.
+// Config is opaque JSON — the shape is owned by the integration
+// implementation and validated at install time.
+type IntegrationProviderRecord struct {
 	ID        string
-	Name      string
+	Kind      string
+	Label     string
+	Config    []byte
 	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// FleetGroupIntegrationRecord attaches one integration install to a
+// fleet group. At most one row per (fleet_group_id, kind). ProviderID
+// is nullable: some integrations embed their entire config inline and
+// do not reference a shared provider.
+type FleetGroupIntegrationRecord struct {
+	ID           string
+	FleetGroupID string
+	Kind         string
+	ProviderID   *string
+	Config       []byte
+	Enabled      bool
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+// ReassignCounts summarises how many FK references to a fleet group
+// exist (or were moved, depending on the method). Used by the
+// deletion-preview endpoint and the reassignment audit entry.
+type ReassignCounts struct {
+	Agents            int64
+	EnrollmentTokens  int64
+	ClientAssignments int64
 }
 
 // AgentRecord stores one enrolled host agent snapshot.

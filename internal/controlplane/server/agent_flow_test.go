@@ -15,8 +15,9 @@ import (
 func TestServerEnrollAgentConsumesTokenAndIssuesIdentity(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	server := testServerWithSQLite(t, now)
+	fleetGroupID := seedTestFleetGroup(t, server.store, "ams-1", now)
 	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
-		FleetGroupID: "ams-1",
+		FleetGroupID: fleetGroupID,
 		TTL:          time.Minute,
 	}, now)
 	if err != nil {
@@ -44,8 +45,9 @@ func TestServerEnrollAgentConsumesTokenAndIssuesIdentity(t *testing.T) {
 func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	server := testServerWithSQLite(t, now)
+	fleetGroupID := seedTestFleetGroup(t, server.store, "ams-1", now)
 	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
-		FleetGroupID: "ams-1",
+		FleetGroupID: fleetGroupID,
 		TTL:          time.Minute,
 	}, now)
 	if err != nil {
@@ -64,7 +66,7 @@ func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T
 	if err := server.applyAgentSnapshot(agentSnapshot{
 		AgentID:       identity.AgentID,
 		NodeName:      "node-a",
-		FleetGroupID:  "ams-1",
+		FleetGroupID:  fleetGroupID,
 		Version:       "1.0.0",
 		ReadOnly:      true,
 		Instances: []instanceSnapshot{
@@ -124,8 +126,9 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 		Now: func() time.Time { return now },
 		Store: store,
 	})
+	fleetGroupID := seedTestFleetGroup(t, store, "ams-1", now)
 	token, err := first.issueEnrollmentToken(security.EnrollmentScope{
-		FleetGroupID:  "ams-1",
+		FleetGroupID:  fleetGroupID,
 		TTL:           time.Minute,
 	}, now)
 	if err != nil {
@@ -144,7 +147,7 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 	if err := first.applyAgentSnapshot(agentSnapshot{
 		AgentID:       identity.AgentID,
 		NodeName:      "node-a",
-		FleetGroupID:  "ams-1",
+		FleetGroupID:  fleetGroupID,
 		Version:       "1.0.0",
 		ReadOnly:      true,
 		Instances: []instanceSnapshot{
@@ -217,8 +220,9 @@ func TestServerApplyAgentSnapshotUpdatesInMemoryStateEvenWhenPersistenceFails(t 
 		Store: store,
 	})
 	defer server.Close()
+	fleetGroupID := seedTestFleetGroup(t, sqliteStore, "ams-1", now)
 	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
-		FleetGroupID: "ams-1",
+		FleetGroupID: fleetGroupID,
 		TTL:          time.Minute,
 	}, now)
 	if err != nil {
@@ -240,7 +244,7 @@ func TestServerApplyAgentSnapshotUpdatesInMemoryStateEvenWhenPersistenceFails(t 
 	if err := server.applyAgentSnapshot(agentSnapshot{
 		AgentID:      identity.AgentID,
 		NodeName:     "node-a",
-		FleetGroupID: "ams-1",
+		FleetGroupID: fleetGroupID,
 		Version:      "1.0.0",
 		Runtime:      gatewayRuntimeSnapshotForTest(),
 		HasRuntime:   true,
@@ -264,7 +268,8 @@ func TestServerApplyAgentSnapshotUpdatesInMemoryStateEvenWhenPersistenceFails(t 
 func TestServerApplyAgentSnapshotTracksRuntimeLifecycleState(t *testing.T) {
 	now := time.Date(2026, time.March, 16, 11, 0, 0, 0, time.UTC)
 	server := testServerWithSQLite(t, now)
-	token, err := server.issueEnrollmentToken(security.EnrollmentScope{FleetGroupID: "ams-1", TTL: time.Minute}, now)
+	fleetGroupID := seedTestFleetGroup(t, server.store, "ams-1", now)
+	token, err := server.issueEnrollmentToken(security.EnrollmentScope{FleetGroupID: fleetGroupID, TTL: time.Minute}, now)
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
@@ -285,7 +290,7 @@ func TestServerApplyAgentSnapshotTracksRuntimeLifecycleState(t *testing.T) {
 	if err := server.applyAgentSnapshot(agentSnapshot{
 		AgentID:      identity.AgentID,
 		NodeName:     "node-a",
-		FleetGroupID: "ams-1",
+		FleetGroupID: fleetGroupID,
 		Version:      "1.0.0",
 		Runtime:      runtime,
 		HasRuntime:   true,
@@ -302,7 +307,8 @@ func TestServerApplyAgentSnapshotTracksRuntimeLifecycleState(t *testing.T) {
 func TestServerApplyAgentSnapshotStartsInitializationWatchCooldownAfterReadyTransition(t *testing.T) {
 	now := time.Date(2026, time.March, 29, 18, 0, 0, 0, time.UTC)
 	server := testServerWithSQLite(t, now)
-	token, err := server.issueEnrollmentToken(security.EnrollmentScope{FleetGroupID: "ams-1", TTL: time.Minute}, now)
+	fleetGroupID := seedTestFleetGroup(t, server.store, "ams-1", now)
+	token, err := server.issueEnrollmentToken(security.EnrollmentScope{FleetGroupID: fleetGroupID, TTL: time.Minute}, now)
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
@@ -324,7 +330,7 @@ func TestServerApplyAgentSnapshotStartsInitializationWatchCooldownAfterReadyTran
 	if err := server.applyAgentSnapshot(agentSnapshot{
 		AgentID:      identity.AgentID,
 		NodeName:     "node-a",
-		FleetGroupID: "ams-1",
+		FleetGroupID: fleetGroupID,
 		Version:      "1.0.0",
 		Runtime:      initializingRuntime,
 		HasRuntime:   true,
@@ -341,7 +347,7 @@ func TestServerApplyAgentSnapshotStartsInitializationWatchCooldownAfterReadyTran
 	if err := server.applyAgentSnapshot(agentSnapshot{
 		AgentID:      identity.AgentID,
 		NodeName:     "node-a",
-		FleetGroupID: "ams-1",
+		FleetGroupID: fleetGroupID,
 		Version:      "1.0.0",
 		Runtime:      gatewayRuntimeSnapshotForTest(),
 		HasRuntime:   true,
@@ -422,9 +428,14 @@ func TestServerApplyAgentSnapshotKeepsEnrolledScopeWhenSnapshotDiffers(t *testin
 		Store: store,
 	})
 	defer server.Close()
+	// Enrollment pins the agent to the "default" group; the snapshot
+	// later reports a different group id ("ams-1") and the server
+	// must keep the enrolled scope regardless.
+	defaultGroupID := resolveTestFleetGroupID(t, store, "default")
+	amsGroupID := seedTestFleetGroup(t, store, "ams-1", now)
 	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
-		FleetGroupID:  "default",
-		TTL:           time.Minute,
+		FleetGroupID: defaultGroupID,
+		TTL:          time.Minute,
 	}, now)
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
@@ -442,7 +453,7 @@ func TestServerApplyAgentSnapshotKeepsEnrolledScopeWhenSnapshotDiffers(t *testin
 	if err := server.applyAgentSnapshot(agentSnapshot{
 		AgentID:      identity.AgentID,
 		NodeName:     "node-a",
-		FleetGroupID: "ams-1",
+		FleetGroupID: amsGroupID,
 		Version:      "1.0.0",
 		ObservedAt:   now.Add(20 * time.Second),
 	}); err != nil {
@@ -456,8 +467,8 @@ func TestServerApplyAgentSnapshotKeepsEnrolledScopeWhenSnapshotDiffers(t *testin
 	if len(record) != 1 {
 		t.Fatalf("len(ListAgents()) = %d, want %d", len(record), 1)
 	}
-	if record[0].FleetGroupID != "default" {
-		t.Fatalf("ListAgents()[0].FleetGroupID = %q, want %q", record[0].FleetGroupID, "default")
+	if record[0].FleetGroupID != defaultGroupID {
+		t.Fatalf("ListAgents()[0].FleetGroupID = %q, want %q", record[0].FleetGroupID, defaultGroupID)
 	}
 }
 
@@ -469,9 +480,10 @@ func TestServerApplyAgentSnapshotKeepsEnrolledScopeWhenSnapshotDiffers(t *testin
 func TestApplyAgentSnapshotPrunesStaleInstances(t *testing.T) {
 	now := time.Date(2026, time.March, 18, 9, 0, 0, 0, time.UTC)
 	server := testServerWithSQLite(t, now)
+	fleetGroupID := seedTestFleetGroup(t, server.store, "ams-1", now)
 
 	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
-		FleetGroupID: "ams-1",
+		FleetGroupID: fleetGroupID,
 		TTL:          time.Minute,
 	}, now)
 	if err != nil {
@@ -490,7 +502,7 @@ func TestApplyAgentSnapshotPrunesStaleInstances(t *testing.T) {
 	if err := server.applyAgentSnapshot(agentSnapshot{
 		AgentID:      identity.AgentID,
 		NodeName:     "node-a",
-		FleetGroupID: "ams-1",
+		FleetGroupID: fleetGroupID,
 		Version:      "1.0.0",
 		Instances: []instanceSnapshot{
 			{ID: "inst-1", Name: "telemt-1", Version: "2026.03"},
@@ -513,7 +525,7 @@ func TestApplyAgentSnapshotPrunesStaleInstances(t *testing.T) {
 	if err := server.applyAgentSnapshot(agentSnapshot{
 		AgentID:      identity.AgentID,
 		NodeName:     "node-a",
-		FleetGroupID: "ams-1",
+		FleetGroupID: fleetGroupID,
 		Version:      "1.0.0",
 		Instances: []instanceSnapshot{
 			{ID: "inst-1", Name: "telemt-1", Version: "2026.03"},
@@ -546,9 +558,10 @@ func TestApplyAgentSnapshotPrunesStaleInstances(t *testing.T) {
 func TestApplyAgentSnapshotDoesNotPruneOtherAgentsInstances(t *testing.T) {
 	now := time.Date(2026, time.March, 18, 9, 0, 0, 0, time.UTC)
 	server := testServerWithSQLite(t, now)
+	fleetGroupID := seedTestFleetGroup(t, server.store, "ams-1", now)
 
 	tokenA, err := server.issueEnrollmentToken(security.EnrollmentScope{
-		FleetGroupID: "ams-1",
+		FleetGroupID: fleetGroupID,
 		TTL:          time.Minute,
 	}, now)
 	if err != nil {
@@ -564,7 +577,7 @@ func TestApplyAgentSnapshotDoesNotPruneOtherAgentsInstances(t *testing.T) {
 	}
 
 	tokenB, err := server.issueEnrollmentToken(security.EnrollmentScope{
-		FleetGroupID: "ams-1",
+		FleetGroupID: fleetGroupID,
 		TTL:          time.Minute,
 	}, now)
 	if err != nil {
@@ -582,7 +595,7 @@ func TestApplyAgentSnapshotDoesNotPruneOtherAgentsInstances(t *testing.T) {
 	if err := server.applyAgentSnapshot(agentSnapshot{
 		AgentID:      agentA.AgentID,
 		NodeName:     "node-a",
-		FleetGroupID: "ams-1",
+		FleetGroupID: fleetGroupID,
 		Instances: []instanceSnapshot{
 			{ID: "inst-a1", Name: "telemt-a1"},
 			{ID: "inst-a2", Name: "telemt-a2"},
@@ -594,7 +607,7 @@ func TestApplyAgentSnapshotDoesNotPruneOtherAgentsInstances(t *testing.T) {
 	if err := server.applyAgentSnapshot(agentSnapshot{
 		AgentID:      agentB.AgentID,
 		NodeName:     "node-b",
-		FleetGroupID: "ams-1",
+		FleetGroupID: fleetGroupID,
 		Instances: []instanceSnapshot{
 			{ID: "inst-b1", Name: "telemt-b1"},
 		},
@@ -607,7 +620,7 @@ func TestApplyAgentSnapshotDoesNotPruneOtherAgentsInstances(t *testing.T) {
 	if err := server.applyAgentSnapshot(agentSnapshot{
 		AgentID:      agentA.AgentID,
 		NodeName:     "node-a",
-		FleetGroupID: "ams-1",
+		FleetGroupID: fleetGroupID,
 		Instances: []instanceSnapshot{
 			{ID: "inst-a1", Name: "telemt-a1"},
 		},
@@ -642,8 +655,9 @@ func TestServerEnrollmentTokenPersistsAcrossRestart(t *testing.T) {
 		Store: store,
 	})
 	defer first.Close()
+	fleetGroupID := seedTestFleetGroup(t, store, "ams-1", now)
 	token, err := first.issueEnrollmentToken(security.EnrollmentScope{
-		FleetGroupID:  "ams-1",
+		FleetGroupID:  fleetGroupID,
 		TTL:           time.Minute,
 	}, now)
 	if err != nil {
@@ -700,8 +714,9 @@ func TestServerRestoresPersistedCertificateAuthority(t *testing.T) {
 func TestServerEnrollmentIssuesOperationalCertificateLifetime(t *testing.T) {
 	now := time.Date(2026, time.March, 19, 8, 0, 0, 0, time.UTC)
 	server := testServerWithSQLite(t, now)
+	fleetGroupID := seedTestFleetGroup(t, server.store, "ams-1", now)
 	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
-		FleetGroupID: "ams-1",
+		FleetGroupID: fleetGroupID,
 		TTL:          time.Minute,
 	}, now)
 	if err != nil {
@@ -759,8 +774,9 @@ func TestServerConsumedEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) 
 		Store: store,
 	})
 	defer first.Close()
+	fleetGroupID := seedTestFleetGroup(t, store, "ams-1", now)
 	token, err := first.issueEnrollmentToken(security.EnrollmentScope{
-		FleetGroupID:  "ams-1",
+		FleetGroupID:  fleetGroupID,
 		TTL:           time.Minute,
 	}, now)
 	if err != nil {
@@ -802,9 +818,10 @@ func TestEnrollmentSetsCertificateDates(t *testing.T) {
 		Store: store,
 	})
 	defer server.Close()
+	fleetGroupID := seedTestFleetGroup(t, store, "ams-1", now)
 
 	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
-		FleetGroupID: "ams-1",
+		FleetGroupID: fleetGroupID,
 		TTL:          time.Minute,
 	}, now)
 	if err != nil {
@@ -1000,8 +1017,9 @@ func TestServerExpiredEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) {
 		Store: store,
 	})
 	defer first.Close()
+	fleetGroupID := seedTestFleetGroup(t, store, "ams-1", now)
 	token, err := first.issueEnrollmentToken(security.EnrollmentScope{
-		FleetGroupID:  "ams-1",
+		FleetGroupID:  fleetGroupID,
 		TTL:           time.Second,
 	}, now)
 	if err != nil {

@@ -649,8 +649,9 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 		Users: []auth.User{user},
 		Store: store,
 	})
+	fleetGroupID := seedTestFleetGroup(t, store, "ams-1", now)
 	token, err := first.issueEnrollmentToken(security.EnrollmentScope{
-		FleetGroupID:  "ams-1",
+		FleetGroupID:  fleetGroupID,
 		TTL:           time.Minute,
 	}, now)
 	if err != nil {
@@ -669,7 +670,7 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 	if err := first.applyAgentSnapshot(agentSnapshot{
 		AgentID:       identity.AgentID,
 		NodeName:      "node-a",
-		FleetGroupID:  "ams-1",
+		FleetGroupID:  fleetGroupID,
 		Version:       "1.0.0",
 		Instances: []instanceSnapshot{
 			{
@@ -854,8 +855,9 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 		t.Fatalf("EnableTotp() error = %v", err)
 	}
 
+	fleetGroupID := seedTestFleetGroup(t, store, "ams-1", now)
 	tokenOne, err := first.issueEnrollmentToken(security.EnrollmentScope{
-		FleetGroupID:  "ams-1",
+		FleetGroupID:  fleetGroupID,
 		TTL:           time.Minute,
 	}, now)
 	if err != nil {
@@ -871,7 +873,7 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 	}
 
 	tokenTwo, err := first.issueEnrollmentToken(security.EnrollmentScope{
-		FleetGroupID:  "ams-1",
+		FleetGroupID:  fleetGroupID,
 		TTL:           time.Minute,
 	}, now)
 	if err != nil {
@@ -1265,8 +1267,15 @@ func TestHTTPEnrollmentTokenListAndRevoke(t *testing.T) {
 	if listedTokens[0].Status != "active" {
 		t.Fatalf("tokens[0].status = %q, want %q", listedTokens[0].Status, "active")
 	}
-	if listedTokens[0].FleetGroupID != "default" {
-		t.Fatalf("tokens[0].fleet_group_id = %q, want %q", listedTokens[0].FleetGroupID, "default")
+	// The HTTP enrollment API now resolves slugs to the canonical
+	// fleet-group UUID. Look the default group up by name and compare
+	// against its id rather than the raw "default" string.
+	defaultGroup, err := server.store.GetFleetGroupByName(t.Context(), "default")
+	if err != nil {
+		t.Fatalf("GetFleetGroupByName(default) error = %v", err)
+	}
+	if listedTokens[0].FleetGroupID != defaultGroup.ID {
+		t.Fatalf("tokens[0].fleet_group_id = %q, want %q", listedTokens[0].FleetGroupID, defaultGroup.ID)
 	}
 	if listedTokens[0].ExpiresAtUnix <= now.Unix() {
 		t.Fatalf("tokens[0].expires_at_unix = %d, want future expiry", listedTokens[0].ExpiresAtUnix)
