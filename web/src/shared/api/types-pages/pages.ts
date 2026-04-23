@@ -713,6 +713,10 @@ export interface EnrollmentWizardProps {
   tokenTtl: number;
   onNodeNameChange: (name: string) => void;
   onFleetGroupChange: (id: string) => void;
+  /** Optional inline-create hook. When provided, the wizard renders
+   *  a "+ New group" button next to the select that opens a mini
+   *  dialog owned by the container. */
+  onCreateFleetGroup?: () => void;
   onTokenTtlChange: (seconds: number) => void;
   onGenerateToken: () => void;
   // Step 2
