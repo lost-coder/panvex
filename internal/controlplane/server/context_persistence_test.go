@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 	"github.com/lost-coder/panvex/internal/security"
 )
@@ -58,13 +57,7 @@ func TestApplyAgentSnapshotWithContextSucceedsRegardlessOfCallerContext(t *testi
 	}
 	defer store.Close()
 
-	if err := store.PutFleetGroup(context.Background(), storage.FleetGroupRecord{
-		ID:        "ams",
-		Name:      "Amsterdam",
-		CreatedAt: now,
-	}); err != nil {
-		t.Fatalf("PutFleetGroup() error = %v", err)
-	}
+	fleetGroupID := seedTestFleetGroup(t, store, "ams", now)
 
 	server := New(Options{
 		Now:   func() time.Time { return now },
@@ -74,7 +67,7 @@ func TestApplyAgentSnapshotWithContextSucceedsRegardlessOfCallerContext(t *testi
 	server.agents["agent-1"] = Agent{
 		ID:           "agent-1",
 		NodeName:     "node-a",
-		FleetGroupID: "ams",
+		FleetGroupID: fleetGroupID,
 		Version:      "1.0.0",
 		LastSeenAt:   now,
 	}

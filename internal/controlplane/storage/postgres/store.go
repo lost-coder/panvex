@@ -288,19 +288,92 @@ func (s *Store) ListUsers(ctx context.Context) ([]storage.UserRecord, error) {
 }
 
 func (s *Store) PutFleetGroup(ctx context.Context, group storage.FleetGroupRecord) error {
+	updatedAt := group.UpdatedAt
+	if updatedAt.IsZero() {
+		updatedAt = group.CreatedAt
+	}
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO fleet_groups (id, name, created_at)
-		VALUES ($1, $2, $3)
+		INSERT INTO fleet_groups (id, name, label, description, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (id) DO UPDATE
-		SET name = EXCLUDED.name,
-		    created_at = EXCLUDED.created_at
-	`, group.ID, group.Name, group.CreatedAt.UTC())
+		SET name        = EXCLUDED.name,
+		    label       = EXCLUDED.label,
+		    description = EXCLUDED.description,
+		    created_at  = EXCLUDED.created_at,
+		    updated_at  = EXCLUDED.updated_at
+	`, group.ID, group.Name, group.Label, group.Description,
+		group.CreatedAt.UTC(), updatedAt.UTC())
 	return err
+}
+
+func (s *Store) CreateFleetGroup(ctx context.Context, group storage.FleetGroupRecord) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO fleet_groups (id, name, label, description, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, group.ID, group.Name, group.Label, group.Description,
+		group.CreatedAt.UTC(), group.UpdatedAt.UTC())
+	return err
+}
+
+// UpdateFleetGroup mutates editable fields only; `name` is the
+// immutable slug and is not in the SET list.
+func (s *Store) UpdateFleetGroup(ctx context.Context, group storage.FleetGroupRecord) error {
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE fleet_groups
+		SET label       = $1,
+		    description = $2,
+		    updated_at  = $3
+		WHERE id = $4
+	`, group.Label, group.Description, group.UpdatedAt.UTC(), group.ID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return storage.ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) GetFleetGroup(ctx context.Context, id string) (storage.FleetGroupRecord, error) {
+	return s.scanFleetGroupRow(ctx, `
+		SELECT id, name, label, description, created_at, updated_at
+		FROM fleet_groups
+		WHERE id = $1
+	`, id)
+}
+
+func (s *Store) GetFleetGroupByName(ctx context.Context, name string) (storage.FleetGroupRecord, error) {
+	return s.scanFleetGroupRow(ctx, `
+		SELECT id, name, label, description, created_at, updated_at
+		FROM fleet_groups
+		WHERE name = $1
+	`, name)
+}
+
+func (s *Store) scanFleetGroupRow(ctx context.Context, query string, arg string) (storage.FleetGroupRecord, error) {
+	var group storage.FleetGroupRecord
+	err := s.db.QueryRowContext(ctx, query, arg).Scan(
+		&group.ID, &group.Name, &group.Label, &group.Description,
+		&group.CreatedAt, &group.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return storage.FleetGroupRecord{}, storage.ErrNotFound
+		}
+		return storage.FleetGroupRecord{}, err
+	}
+	group.CreatedAt = group.CreatedAt.UTC()
+	group.UpdatedAt = group.UpdatedAt.UTC()
+	return group, nil
 }
 
 func (s *Store) ListFleetGroups(ctx context.Context) ([]storage.FleetGroupRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, created_at
+		SELECT id, name, label, description, created_at, updated_at
 		FROM fleet_groups
 		ORDER BY created_at, id
 	`)
@@ -312,14 +385,292 @@ func (s *Store) ListFleetGroups(ctx context.Context) ([]storage.FleetGroupRecord
 	result := make([]storage.FleetGroupRecord, 0)
 	for rows.Next() {
 		var group storage.FleetGroupRecord
-		if err := rows.Scan(&group.ID, &group.Name, &group.CreatedAt); err != nil {
+		if err := rows.Scan(
+			&group.ID, &group.Name, &group.Label, &group.Description,
+			&group.CreatedAt, &group.UpdatedAt,
+		); err != nil {
 			return nil, err
 		}
 		group.CreatedAt = group.CreatedAt.UTC()
+		group.UpdatedAt = group.UpdatedAt.UTC()
 		result = append(result, group)
 	}
 
 	return result, rows.Err()
+}
+
+func (s *Store) DeleteFleetGroup(ctx context.Context, id string) error {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM fleet_groups WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return storage.ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) CountFleetGroupMembers(ctx context.Context, fleetGroupID string) (storage.ReassignCounts, error) {
+	var counts storage.ReassignCounts
+	err := s.db.QueryRowContext(ctx, `
+		SELECT
+			(SELECT COUNT(*) FROM agents              WHERE fleet_group_id = $1),
+			(SELECT COUNT(*) FROM enrollment_tokens   WHERE fleet_group_id = $1),
+			(SELECT COUNT(*) FROM client_assignments  WHERE fleet_group_id = $1)
+	`, fleetGroupID).Scan(
+		&counts.Agents, &counts.EnrollmentTokens, &counts.ClientAssignments,
+	)
+	if err != nil {
+		return storage.ReassignCounts{}, err
+	}
+	return counts, nil
+}
+
+// ReassignFleetGroupMembers is NOT atomic on its own — callers must
+// wrap the full delete flow in Store.Transact. See fleet.Service.Delete.
+func (s *Store) ReassignFleetGroupMembers(ctx context.Context, fromID, toID string) (storage.ReassignCounts, error) {
+	var counts storage.ReassignCounts
+	updates := []struct {
+		stmt  string
+		field *int64
+	}{
+		{`UPDATE agents             SET fleet_group_id = $1 WHERE fleet_group_id = $2`, &counts.Agents},
+		{`UPDATE enrollment_tokens  SET fleet_group_id = $1 WHERE fleet_group_id = $2`, &counts.EnrollmentTokens},
+		{`UPDATE client_assignments SET fleet_group_id = $1 WHERE fleet_group_id = $2`, &counts.ClientAssignments},
+	}
+	for _, u := range updates {
+		result, err := s.db.ExecContext(ctx, u.stmt, toID, fromID)
+		if err != nil {
+			return storage.ReassignCounts{}, err
+		}
+		n, err := result.RowsAffected()
+		if err != nil {
+			return storage.ReassignCounts{}, err
+		}
+		*u.field = n
+	}
+	return counts, nil
+}
+
+func (s *Store) CreateIntegrationProvider(ctx context.Context, p storage.IntegrationProviderRecord) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO integration_providers (id, kind, label, config, created_at, updated_at)
+		VALUES ($1, $2, $3, $4::jsonb, $5, $6)
+	`, p.ID, p.Kind, p.Label, string(p.Config), p.CreatedAt.UTC(), p.UpdatedAt.UTC())
+	return err
+}
+
+func (s *Store) UpdateIntegrationProvider(ctx context.Context, p storage.IntegrationProviderRecord) error {
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE integration_providers
+		SET label      = $1,
+		    config     = $2::jsonb,
+		    updated_at = $3
+		WHERE id = $4
+	`, p.Label, string(p.Config), p.UpdatedAt.UTC(), p.ID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return storage.ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) GetIntegrationProvider(ctx context.Context, id string) (storage.IntegrationProviderRecord, error) {
+	var p storage.IntegrationProviderRecord
+	var config []byte
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, kind, label, config, created_at, updated_at
+		FROM integration_providers
+		WHERE id = $1
+	`, id).Scan(&p.ID, &p.Kind, &p.Label, &config, &p.CreatedAt, &p.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return storage.IntegrationProviderRecord{}, storage.ErrNotFound
+		}
+		return storage.IntegrationProviderRecord{}, err
+	}
+	p.Config = config
+	p.CreatedAt = p.CreatedAt.UTC()
+	p.UpdatedAt = p.UpdatedAt.UTC()
+	return p, nil
+}
+
+func (s *Store) ListIntegrationProviders(ctx context.Context) ([]storage.IntegrationProviderRecord, error) {
+	return s.scanIntegrationProviders(ctx, `
+		SELECT id, kind, label, config, created_at, updated_at
+		FROM integration_providers
+		ORDER BY kind, created_at, id
+	`)
+}
+
+func (s *Store) ListIntegrationProvidersByKind(ctx context.Context, kind string) ([]storage.IntegrationProviderRecord, error) {
+	return s.scanIntegrationProviders(ctx, `
+		SELECT id, kind, label, config, created_at, updated_at
+		FROM integration_providers
+		WHERE kind = $1
+		ORDER BY created_at, id
+	`, kind)
+}
+
+func (s *Store) scanIntegrationProviders(ctx context.Context, query string, args ...any) ([]storage.IntegrationProviderRecord, error) {
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]storage.IntegrationProviderRecord, 0)
+	for rows.Next() {
+		var p storage.IntegrationProviderRecord
+		var config []byte
+		if err := rows.Scan(&p.ID, &p.Kind, &p.Label, &config, &p.CreatedAt, &p.UpdatedAt); err != nil {
+			return nil, err
+		}
+		p.Config = config
+		p.CreatedAt = p.CreatedAt.UTC()
+		p.UpdatedAt = p.UpdatedAt.UTC()
+		result = append(result, p)
+	}
+	return result, rows.Err()
+}
+
+func (s *Store) DeleteIntegrationProvider(ctx context.Context, id string) error {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM integration_providers WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return storage.ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) CreateFleetGroupIntegration(ctx context.Context, i storage.FleetGroupIntegrationRecord) error {
+	providerID := sql.NullString{}
+	if i.ProviderID != nil {
+		providerID.Valid = true
+		providerID.String = *i.ProviderID
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO fleet_group_integrations
+			(id, fleet_group_id, kind, provider_id, config, enabled, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
+	`, i.ID, i.FleetGroupID, i.Kind, providerID, string(i.Config),
+		i.Enabled, i.CreatedAt.UTC(), i.UpdatedAt.UTC())
+	return err
+}
+
+func (s *Store) UpdateFleetGroupIntegration(ctx context.Context, i storage.FleetGroupIntegrationRecord) error {
+	providerID := sql.NullString{}
+	if i.ProviderID != nil {
+		providerID.Valid = true
+		providerID.String = *i.ProviderID
+	}
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE fleet_group_integrations
+		SET provider_id = $1,
+		    config      = $2::jsonb,
+		    enabled     = $3,
+		    updated_at  = $4
+		WHERE id = $5
+	`, providerID, string(i.Config), i.Enabled, i.UpdatedAt.UTC(), i.ID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return storage.ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) GetFleetGroupIntegration(ctx context.Context, id string) (storage.FleetGroupIntegrationRecord, error) {
+	var i storage.FleetGroupIntegrationRecord
+	var providerID sql.NullString
+	var config []byte
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, fleet_group_id, kind, provider_id, config, enabled, created_at, updated_at
+		FROM fleet_group_integrations
+		WHERE id = $1
+	`, id).Scan(&i.ID, &i.FleetGroupID, &i.Kind, &providerID, &config, &i.Enabled, &i.CreatedAt, &i.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return storage.FleetGroupIntegrationRecord{}, storage.ErrNotFound
+		}
+		return storage.FleetGroupIntegrationRecord{}, err
+	}
+	if providerID.Valid {
+		pid := providerID.String
+		i.ProviderID = &pid
+	}
+	i.Config = config
+	i.CreatedAt = i.CreatedAt.UTC()
+	i.UpdatedAt = i.UpdatedAt.UTC()
+	return i, nil
+}
+
+func (s *Store) ListFleetGroupIntegrations(ctx context.Context, fleetGroupID string) ([]storage.FleetGroupIntegrationRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, fleet_group_id, kind, provider_id, config, enabled, created_at, updated_at
+		FROM fleet_group_integrations
+		WHERE fleet_group_id = $1
+		ORDER BY kind, created_at, id
+	`, fleetGroupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]storage.FleetGroupIntegrationRecord, 0)
+	for rows.Next() {
+		var i storage.FleetGroupIntegrationRecord
+		var providerID sql.NullString
+		var config []byte
+		if err := rows.Scan(&i.ID, &i.FleetGroupID, &i.Kind, &providerID, &config, &i.Enabled, &i.CreatedAt, &i.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if providerID.Valid {
+			pid := providerID.String
+			i.ProviderID = &pid
+		}
+		i.Config = config
+		i.CreatedAt = i.CreatedAt.UTC()
+		i.UpdatedAt = i.UpdatedAt.UTC()
+		result = append(result, i)
+	}
+	return result, rows.Err()
+}
+
+func (s *Store) DeleteFleetGroupIntegration(ctx context.Context, id string) error {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM fleet_group_integrations WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return storage.ErrNotFound
+	}
+	return nil
 }
 
 func (s *Store) PutAgent(ctx context.Context, agent storage.AgentRecord) error {

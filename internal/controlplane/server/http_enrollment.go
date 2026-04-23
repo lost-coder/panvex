@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/fleet"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/security"
 )
@@ -110,8 +111,38 @@ func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 			return
 		}
 
+		// Resolve the fleet-group reference. Empty → seed/use the
+		// default group. Otherwise try id first, then fall back to
+		// the unique name so operators/scripts can use the friendly
+		// slug without hunting for UUIDs.
+		fleetGroupID := request.FleetGroupID
+		if fleetGroupID == "" {
+			defaultGroup, err := s.fleetSvc.EnsureDefault(r.Context())
+			if err != nil {
+				s.logger.Error("ensure default fleet group failed", "error", err)
+				writeError(w, http.StatusInternalServerError, "internal error")
+				return
+			}
+			fleetGroupID = defaultGroup.ID
+		} else {
+			resolved, err := s.fleetSvc.Get(r.Context(), fleetGroupID)
+			if errors.Is(err, storage.ErrNotFound) {
+				resolved, err = s.fleetSvc.GetByName(r.Context(), fleetGroupID)
+			}
+			if err != nil {
+				if errors.Is(err, storage.ErrNotFound) {
+					writeError(w, http.StatusBadRequest, "fleet group not found")
+					return
+				}
+				s.logger.Error("lookup fleet group for enrollment failed", "fleet_group_id", fleetGroupID, "error", err)
+				writeError(w, http.StatusInternalServerError, "internal error")
+				return
+			}
+			fleetGroupID = resolved.ID
+		}
+
 		token, err := s.issueEnrollmentTokenWithContext(r.Context(), security.EnrollmentScope{
-			FleetGroupID: request.FleetGroupID,
+			FleetGroupID: fleetGroupID,
 			TTL:          time.Duration(request.TTLSeconds) * time.Second,
 		}, s.now())
 		if err != nil {
@@ -125,7 +156,7 @@ func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 		}
 
 		s.appendAuditWithContext(r.Context(), session.UserID, "agents.enrollment.create", maskToken(token.Value), map[string]any{
-			"fleet_group_id": request.FleetGroupID,
+			"fleet_group_id": fleetGroupID,
 			"ttl_seconds":    request.TTLSeconds,
 		})
 		settings := s.panelSettingsSnapshot()
@@ -270,6 +301,34 @@ func (s *Server) issueEnrollmentTokenWithContext(ctx context.Context, scope secu
 	// — if persistence fails we must not hand the value to the caller,
 	// because a token that only exists in memory would vanish across
 	// a control-plane restart or a multi-replica deploy.
+	//
+	// Resolve the fleet-group reference before minting so the token
+	// always carries the canonical UUID, regardless of whether the
+	// caller passed an id or the friendly slug. HTTP callers already
+	// resolve upstream; internal callers (tests, background jobs)
+	// benefit from the same convenience here.
+	if scope.FleetGroupID != "" && s.fleetSvc != nil {
+		resolved, err := s.fleetSvc.Get(ctx, scope.FleetGroupID)
+		if errors.Is(err, storage.ErrNotFound) {
+			resolved, err = s.fleetSvc.GetByName(ctx, scope.FleetGroupID)
+			if errors.Is(err, storage.ErrNotFound) {
+				// Not in storage yet — fleet.Service.EnsureDefault
+				// covers the most common case. For non-default slugs,
+				// auto-seed a row so the FK in enrollment_tokens
+				// (and later agents) resolves. Matches the permissive
+				// pre-redesign behaviour that internal test helpers
+				// rely on.
+				resolved, err = s.fleetSvc.Create(ctx, fleet.CreateInput{
+					Name:  scope.FleetGroupID,
+					Label: scope.FleetGroupID,
+				})
+			}
+		}
+		if err != nil {
+			return security.EnrollmentToken{}, err
+		}
+		scope.FleetGroupID = resolved.ID
+	}
 	token, err := security.MintEnrollmentToken(scope, issuedAt)
 	if err != nil {
 		return security.EnrollmentToken{}, err

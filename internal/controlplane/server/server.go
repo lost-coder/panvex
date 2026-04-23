@@ -17,6 +17,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
+	"github.com/lost-coder/panvex/internal/controlplane/fleet"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/presence"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
@@ -142,6 +143,12 @@ type Server struct {
 	// deleteClient, adoptDiscoveredClient, reconcileDiscoveredClients)
 	// from Server onto this struct.
 	clientsSvc *clients.Service
+	// fleetSvc owns the create/update/delete lifecycle for fleet
+	// groups and the per-group integrations table. HTTP handlers
+	// delegate every mutation through it so validation, uniqueness
+	// checks, and multi-table reassignment transactions stay in one
+	// place. See internal/controlplane/fleet.
+	fleetSvc *fleet.Service
 	// adoptMu serializes adopt/merge-adopt of discovered clients. It closes
 	// the TOCTOU window between reading a discovered record's status,
 	// checking it, creating/updating the managed client, and marking the
@@ -256,6 +263,7 @@ func New(options Options) *Server {
 		lastUsageSeq: make(map[string]uint64),
 		sessions:   agents.NewSessionManager(),
 		clientsSvc: clients.NewServiceWithDeps(options.Store, now),
+		fleetSvc:   fleet.NewService(options.Store, func() time.Time { return now().UTC() }),
 		instances:  make(map[string]Instance),
 		metrics:    make([]MetricSnapshot, 0, maxInMemoryMetricSnapshots),
 	}
@@ -322,6 +330,15 @@ func New(options Options) *Server {
 		}
 		if server.startupErr == nil {
 			if err := server.restoreRetentionSettings(); err != nil {
+				server.startupErr = err
+			}
+		}
+		// Fresh databases need at least one fleet group so enrollment
+		// tokens can reference it. Operators can rename the label
+		// afterwards via the HTTP API; the `default` slug is kept so
+		// docs and scripts can rely on a predictable name.
+		if server.startupErr == nil {
+			if _, err := server.fleetSvc.EnsureDefault(context.Background()); err != nil {
 				server.startupErr = err
 			}
 		}
@@ -638,7 +655,23 @@ func (s *Server) routes() http.Handler {
 					operator.Post("/discovered-clients/{id}/adopt", s.handleAdoptDiscoveredClient())
 					operator.Post("/discovered-clients/{id}/ignore", s.handleIgnoreDiscoveredClient())
 					operator.Post("/telemetry/servers/{id}/refresh-diagnostics", s.handleTelemetryServerRefreshDiagnostics())
-					operator.Get("/fleet-groups", s.handleFleetGroups())
+					operator.Get("/fleet-groups", s.handleListFleetGroups())
+					operator.Post("/fleet-groups", s.handleCreateFleetGroup())
+					operator.Get("/fleet-groups/{id}", s.handleGetFleetGroup())
+					operator.Patch("/fleet-groups/{id}", s.handleUpdateFleetGroup())
+					operator.Get("/fleet-groups/{id}/deletion-preview", s.handleFleetGroupDeletionPreview())
+					operator.Delete("/fleet-groups/{id}", s.handleDeleteFleetGroup())
+					operator.Post("/fleet-groups/{id}/integrations", s.handleInstallFleetGroupIntegration())
+					operator.Get("/fleet-groups/{id}/integrations/{integrationId}", s.handleGetFleetGroupIntegration())
+					operator.Patch("/fleet-groups/{id}/integrations/{integrationId}", s.handleUpdateFleetGroupIntegration())
+					operator.Delete("/fleet-groups/{id}/integrations/{integrationId}", s.handleDeleteFleetGroupIntegration())
+					operator.Get("/integration-kinds", s.handleListIntegrationKinds())
+					operator.Get("/integration-provider-kinds", s.handleListProviderKinds())
+					operator.Get("/integration-providers", s.handleListIntegrationProviders())
+					operator.Post("/integration-providers", s.handleCreateIntegrationProvider())
+					operator.Get("/integration-providers/{id}", s.handleGetIntegrationProvider())
+					operator.Patch("/integration-providers/{id}", s.handleUpdateIntegrationProvider())
+					operator.Delete("/integration-providers/{id}", s.handleDeleteIntegrationProvider())
 					operator.Patch("/agents/{id}", s.handleRenameAgent())
 					operator.Get("/agents/enrollment-tokens", s.handleListEnrollmentTokens())
 					operator.With(sensitive).Post("/agents/enrollment-tokens", s.handleCreateEnrollmentToken())

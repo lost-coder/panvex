@@ -28,18 +28,12 @@ func TestUpsertDiscoveredClientDedupes(t *testing.T) {
 	defer store.Close()
 
 	ctx := context.Background()
-	if err := store.PutFleetGroup(ctx, storage.FleetGroupRecord{
-		ID:        "default",
-		Name:      "Default",
-		CreatedAt: now.Add(-time.Minute),
-	}); err != nil {
-		t.Fatalf("PutFleetGroup() error = %v", err)
-	}
+	fleetGroupID := seedTestFleetGroup(t, store, "default", now.Add(-time.Minute))
 	agentID := "agent-discover-1"
 	if err := store.PutAgent(ctx, storage.AgentRecord{
 		ID:           agentID,
 		NodeName:     "node-A",
-		FleetGroupID: "default",
+		FleetGroupID: fleetGroupID,
 		Version:      "dev",
 		LastSeenAt:   now.Add(-time.Minute),
 	}); err != nil {
@@ -119,18 +113,12 @@ func TestUpsertDiscoveredClientPreservesIgnoredStatus(t *testing.T) {
 	defer store.Close()
 
 	ctx := context.Background()
-	if err := store.PutFleetGroup(ctx, storage.FleetGroupRecord{
-		ID:        "default",
-		Name:      "Default",
-		CreatedAt: now.Add(-time.Minute),
-	}); err != nil {
-		t.Fatalf("PutFleetGroup() error = %v", err)
-	}
+	fleetGroupID := seedTestFleetGroup(t, store, "default", now.Add(-time.Minute))
 	agentID := "agent-discover-2"
 	if err := store.PutAgent(ctx, storage.AgentRecord{
 		ID:           agentID,
 		NodeName:     "node-B",
-		FleetGroupID: "default",
+		FleetGroupID: fleetGroupID,
 		Version:      "dev",
 		LastSeenAt:   now.Add(-time.Minute),
 	}); err != nil {
@@ -193,18 +181,12 @@ func TestAdoptDiscoveredClientConcurrentIsAtomic(t *testing.T) {
 	defer store.Close()
 
 	ctx := context.Background()
-	if err := store.PutFleetGroup(ctx, storage.FleetGroupRecord{
-		ID:        "default",
-		Name:      "Default",
-		CreatedAt: now.Add(-time.Minute),
-	}); err != nil {
-		t.Fatalf("PutFleetGroup() error = %v", err)
-	}
+	fleetGroupID := seedTestFleetGroup(t, store, "default", now.Add(-time.Minute))
 	agentID := "agent-adopt-race-1"
 	if err := store.PutAgent(ctx, storage.AgentRecord{
 		ID:           agentID,
 		NodeName:     "node-A",
-		FleetGroupID: "default",
+		FleetGroupID: fleetGroupID,
 		Version:      "dev",
 		LastSeenAt:   now.Add(-time.Minute),
 	}); err != nil {
@@ -325,13 +307,7 @@ func TestMergeAdoptNoTOCTOU(t *testing.T) {
 	defer store.Close()
 
 	ctx := context.Background()
-	if err := store.PutFleetGroup(ctx, storage.FleetGroupRecord{
-		ID:        "default",
-		Name:      "Default",
-		CreatedAt: now.Add(-time.Minute),
-	}); err != nil {
-		t.Fatalf("PutFleetGroup() error = %v", err)
-	}
+	fleetGroupID := seedTestFleetGroup(t, store, "default", now.Add(-time.Minute))
 
 	agentA := "agent-merge-A"
 	agentB := "agent-merge-B"
@@ -339,7 +315,7 @@ func TestMergeAdoptNoTOCTOU(t *testing.T) {
 		if err := store.PutAgent(ctx, storage.AgentRecord{
 			ID:           id,
 			NodeName:     id,
-			FleetGroupID: "default",
+			FleetGroupID: fleetGroupID,
 			Version:      "dev",
 			LastSeenAt:   now.Add(-time.Minute),
 		}); err != nil {

@@ -53,17 +53,11 @@ func TestChaosDBDropDuringTransact(t *testing.T) {
 	defer baseStore.Close()
 
 	ctx := context.Background()
-	if err := baseStore.PutFleetGroup(ctx, storage.FleetGroupRecord{
-		ID:        "default",
-		Name:      "Default",
-		CreatedAt: now.Add(-time.Minute),
-	}); err != nil {
-		t.Fatalf("PutFleetGroup() error = %v", err)
-	}
+	fleetGroupID := seedTestFleetGroup(t, baseStore, "default", now.Add(-time.Minute))
 	if err := baseStore.PutAgent(ctx, storage.AgentRecord{
 		ID:           "agent-A",
 		NodeName:     "node-a",
-		FleetGroupID: "default",
+		FleetGroupID: fleetGroupID,
 		Version:      "dev",
 		LastSeenAt:   now.Add(-time.Minute),
 	}); err != nil {
@@ -91,7 +85,7 @@ func TestChaosDBDropDuringTransact(t *testing.T) {
 	server.agents["agent-A"] = Agent{
 		ID:           "agent-A",
 		NodeName:     "node-a",
-		FleetGroupID: "default",
+		FleetGroupID: fleetGroupID,
 		Version:      "dev",
 		LastSeenAt:   now.Add(-time.Minute),
 	}

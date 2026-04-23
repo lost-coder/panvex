@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 )
@@ -246,17 +248,20 @@ func populateSourceStore(t *testing.T, store storage.Store, now time.Time) {
 	}); err != nil {
 		t.Fatalf("PutUserAppearance() error = %v", err)
 	}
+	fleetGroupID := uuid.NewString()
 	if err := store.PutFleetGroup(ctx, storage.FleetGroupRecord{
-		ID:        "ams-1",
+		ID:        fleetGroupID,
 		Name:      "ams-1",
+		Label:     "ams-1",
 		CreatedAt: now,
+		UpdatedAt: now,
 	}); err != nil {
 		t.Fatalf("PutFleetGroup() error = %v", err)
 	}
 	if err := store.PutAgent(ctx, storage.AgentRecord{
 		ID:           "agent-000001",
 		NodeName:     "node-a",
-		FleetGroupID: "ams-1",
+		FleetGroupID: fleetGroupID,
 		Version:      "1.0.0",
 		LastSeenAt:   now,
 	}); err != nil {
@@ -319,7 +324,7 @@ func populateSourceStore(t *testing.T, store storage.Store, now time.Time) {
 	}
 	if err := store.PutEnrollmentToken(ctx, storage.EnrollmentTokenRecord{
 		Value:        "token-1",
-		FleetGroupID: "ams-1",
+		FleetGroupID: fleetGroupID,
 		IssuedAt:     now,
 		ExpiresAt:    now.Add(time.Minute),
 		ConsumedAt:   &consumedAt,

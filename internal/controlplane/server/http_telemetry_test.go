@@ -33,10 +33,12 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
+	euGroupID := seedTestFleetGroup(t, store, "eu", now)
+
 	server.agents["agent-a"] = Agent{
 		ID:           "agent-a",
 		NodeName:     "fra-a",
-		FleetGroupID: "eu",
+		FleetGroupID: euGroupID,
 		Version:      "1.0.0",
 		Runtime: AgentRuntime{
 			AcceptingNewConnections:   true,
@@ -58,7 +60,7 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 	server.agents["agent-b"] = Agent{
 		ID:           "agent-b",
 		NodeName:     "ams-b",
-		FleetGroupID: "eu",
+		FleetGroupID: euGroupID,
 		Version:      "1.0.0",
 		ReadOnly:     true,
 		Runtime: AgentRuntime{
@@ -81,13 +83,6 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 	}
 	server.presence.MarkConnected("agent-a", now.Add(-5*time.Second))
 	server.presence.MarkConnected("agent-b", now.Add(-40*time.Second))
-	if err := store.PutFleetGroup(context.Background(), storage.FleetGroupRecord{
-		ID:        "eu",
-		Name:      "eu",
-		CreatedAt: now,
-	}); err != nil {
-		t.Fatalf("PutFleetGroup() error = %v", err)
-	}
 	if err := store.PutAgent(context.Background(), agentToRecord(server.agents["agent-a"])); err != nil {
 		t.Fatalf("PutAgent(agent-a) error = %v", err)
 	}

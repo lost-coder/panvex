@@ -31,13 +31,17 @@ func TestServerApplyAgentSnapshotKeepsRecentMetricSnapshotsInMemory(t *testing.T
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
 	}
+	// issueEnrollmentToken auto-created the "ams-1" fleet group with a
+	// fresh UUID; subsequent snapshots must carry the canonical id so
+	// the FK on agents.fleet_group_id resolves.
+	fleetGroupID := resolveTestFleetGroupID(t, server.store, "ams-1")
 
 	totalSnapshots := testMaxInMemoryMetricSnapshots + 3
 	for index := 0; index < totalSnapshots; index++ {
 		if err := server.applyAgentSnapshot(agentSnapshot{
 			AgentID:      identity.AgentID,
 			NodeName:     "node-a",
-			FleetGroupID: "ams-1",
+			FleetGroupID: fleetGroupID,
 			Version:      "1.0.0",
 			Metrics: map[string]uint64{
 				"requests_total": uint64(index),

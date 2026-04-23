@@ -36,27 +36,17 @@ func TestHTTPClientsCreateTracksDeploymentsAndStructuredJobPayload(t *testing.T)
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	seedClientTargetAgent(t, store, server, storage.FleetGroupRecord{
-		ID:        "default",
-		Name:      "Default",
-		CreatedAt: now.Add(-2 * time.Minute),
-	}, storage.AgentRecord{
-		ID:           "agent-000001",
-		NodeName:     "node-a",
-		FleetGroupID: "default",
-		Version:      "dev",
-		LastSeenAt:   now.Add(-time.Minute),
+	defaultGroupID := seedClientTargetAgent(t, store, server, "default", now.Add(-2*time.Minute), storage.AgentRecord{
+		ID:         "agent-000001",
+		NodeName:   "node-a",
+		Version:    "dev",
+		LastSeenAt: now.Add(-time.Minute),
 	})
-	seedClientTargetAgent(t, store, server, storage.FleetGroupRecord{
-		ID:        "ams-2",
-		Name:      "AMS-2",
-		CreatedAt: now.Add(-2 * time.Minute),
-	}, storage.AgentRecord{
-		ID:           "agent-000002",
-		NodeName:     "node-b",
-		FleetGroupID: "ams-2",
-		Version:      "dev",
-		LastSeenAt:   now.Add(-time.Minute),
+	seedClientTargetAgent(t, store, server, "ams-2", now.Add(-2*time.Minute), storage.AgentRecord{
+		ID:         "agent-000002",
+		NodeName:   "node-b",
+		Version:    "dev",
+		LastSeenAt: now.Add(-time.Minute),
 	})
 
 	cookies := loginAdminForClients(t, server.Handler())
@@ -67,7 +57,7 @@ func TestHTTPClientsCreateTracksDeploymentsAndStructuredJobPayload(t *testing.T)
 		"max_unique_ips":     2,
 		"data_quota_bytes":   int64(1024),
 		"expiration_rfc3339": "2026-03-31T00:00:00Z",
-		"fleet_group_ids":    []string{"default"},
+		"fleet_group_ids":    []string{defaultGroupID},
 		"agent_ids":          []string{"agent-000002"},
 	}, cookies)
 	if createResponse.Code != http.StatusCreated {
@@ -169,23 +159,18 @@ func TestHTTPClientsUpdateRotateAndDeleteQueueLifecycleJobs(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	seedClientTargetAgent(t, store, server, storage.FleetGroupRecord{
-		ID:        "default",
-		Name:      "Default",
-		CreatedAt: now.Add(-2 * time.Minute),
-	}, storage.AgentRecord{
-		ID:           "agent-000001",
-		NodeName:     "node-a",
-		FleetGroupID: "default",
-		Version:      "dev",
-		LastSeenAt:   now.Add(-time.Minute),
+	defaultGroupID := seedClientTargetAgent(t, store, server, "default", now.Add(-2*time.Minute), storage.AgentRecord{
+		ID:         "agent-000001",
+		NodeName:   "node-a",
+		Version:    "dev",
+		LastSeenAt: now.Add(-time.Minute),
 	})
 
 	cookies := loginAdminForClients(t, server.Handler())
 	createResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/clients", map[string]any{
 		"name":            "alice",
 		"enabled":         true,
-		"fleet_group_ids": []string{"default"},
+		"fleet_group_ids": []string{defaultGroupID},
 	}, cookies)
 	if createResponse.Code != http.StatusCreated {
 		t.Fatalf("POST /api/clients status = %d, want %d", createResponse.Code, http.StatusCreated)
@@ -206,7 +191,7 @@ func TestHTTPClientsUpdateRotateAndDeleteQueueLifecycleJobs(t *testing.T) {
 		"max_unique_ips":     5,
 		"data_quota_bytes":   int64(2048),
 		"expiration_rfc3339": "2026-04-30T00:00:00Z",
-		"fleet_group_ids":    []string{"default"},
+		"fleet_group_ids":    []string{defaultGroupID},
 	}, cookies)
 	if updateResponse.Code != http.StatusOK {
 		t.Fatalf("PUT /api/clients/{id} status = %d, want %d", updateResponse.Code, http.StatusOK)
@@ -315,33 +300,23 @@ func TestHTTPClientsAggregateUsageAcrossAgentSnapshots(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	seedClientTargetAgent(t, store, server, storage.FleetGroupRecord{
-		ID:        "default",
-		Name:      "Default",
-		CreatedAt: now.Add(-2 * time.Minute),
-	}, storage.AgentRecord{
-		ID:           "agent-000001",
-		NodeName:     "node-a",
-		FleetGroupID: "default",
-		Version:      "dev",
-		LastSeenAt:   now.Add(-time.Minute),
+	defaultGroupID := seedClientTargetAgent(t, store, server, "default", now.Add(-2*time.Minute), storage.AgentRecord{
+		ID:         "agent-000001",
+		NodeName:   "node-a",
+		Version:    "dev",
+		LastSeenAt: now.Add(-time.Minute),
 	})
-	seedClientTargetAgent(t, store, server, storage.FleetGroupRecord{
-		ID:        "ams-2",
-		Name:      "AMS-2",
-		CreatedAt: now.Add(-2 * time.Minute),
-	}, storage.AgentRecord{
-		ID:           "agent-000002",
-		NodeName:     "node-b",
-		FleetGroupID: "ams-2",
-		Version:      "dev",
-		LastSeenAt:   now.Add(-time.Minute),
+	ams2GroupID := seedClientTargetAgent(t, store, server, "ams-2", now.Add(-2*time.Minute), storage.AgentRecord{
+		ID:         "agent-000002",
+		NodeName:   "node-b",
+		Version:    "dev",
+		LastSeenAt: now.Add(-time.Minute),
 	})
 
 	cookies := loginAdminForClients(t, server.Handler())
 	createResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/clients", map[string]any{
 		"name":            "alice",
-		"fleet_group_ids": []string{"default", "ams-2"},
+		"fleet_group_ids": []string{defaultGroupID, ams2GroupID},
 	}, cookies)
 	if createResponse.Code != http.StatusCreated {
 		t.Fatalf("POST /api/clients status = %d, want %d", createResponse.Code, http.StatusCreated)
@@ -437,23 +412,18 @@ func TestHTTPClientsCreateReturnsInternalErrorWhenPersistenceFails(t *testing.T)
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	seedClientTargetAgent(t, store, server, storage.FleetGroupRecord{
-		ID:        "default",
-		Name:      "Default",
-		CreatedAt: now.Add(-2 * time.Minute),
-	}, storage.AgentRecord{
-		ID:           "agent-000001",
-		NodeName:     "node-a",
-		FleetGroupID: "default",
-		Version:      "dev",
-		LastSeenAt:   now.Add(-time.Minute),
+	defaultGroupID := seedClientTargetAgent(t, store, server, "default", now.Add(-2*time.Minute), storage.AgentRecord{
+		ID:         "agent-000001",
+		NodeName:   "node-a",
+		Version:    "dev",
+		LastSeenAt: now.Add(-time.Minute),
 	})
 
 	store.putClientErr = errors.New("put client failed")
 
 	createResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/clients", map[string]any{
 		"name":            "alice",
-		"fleet_group_ids": []string{"default"},
+		"fleet_group_ids": []string{defaultGroupID},
 	}, loginAdminForClients(t, server.Handler()))
 	if createResponse.Code != http.StatusInternalServerError {
 		t.Fatalf("POST /api/clients status = %d, want %d", createResponse.Code, http.StatusInternalServerError)
@@ -482,21 +452,16 @@ func TestRecordClientJobResultDoesNotPanicWhenDeploymentPersistenceFails(t *test
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	seedClientTargetAgent(t, store, server, storage.FleetGroupRecord{
-		ID:        "default",
-		Name:      "Default",
-		CreatedAt: now.Add(-2 * time.Minute),
-	}, storage.AgentRecord{
-		ID:           "agent-000001",
-		NodeName:     "node-a",
-		FleetGroupID: "default",
-		Version:      "dev",
-		LastSeenAt:   now.Add(-time.Minute),
+	defaultGroupID := seedClientTargetAgent(t, store, server, "default", now.Add(-2*time.Minute), storage.AgentRecord{
+		ID:         "agent-000001",
+		NodeName:   "node-a",
+		Version:    "dev",
+		LastSeenAt: now.Add(-time.Minute),
 	})
 
 	client, _, _, err := server.createClient("user-000001", clientMutationInput{
 		Name:          "alice",
-		FleetGroupIDs: []string{"default"},
+		FleetGroupIDs: []string{defaultGroupID},
 	}, now)
 	if err != nil {
 		t.Fatalf("createClient() error = %v", err)
@@ -537,13 +502,19 @@ func loginAdminForClients(t *testing.T, handler http.Handler) []*http.Cookie {
 	return loginResponse.Result().Cookies()
 }
 
-func seedClientTargetAgent(t *testing.T, store storage.Store, server *Server, group storage.FleetGroupRecord, agent storage.AgentRecord) {
+// seedClientTargetAgent upserts a fleet-group row by name + an agent
+// row tied to it, then mirrors the agent into the server's in-memory
+// map. Returns the generated fleet-group UUID so callers can pass it
+// into client-mutation requests (fleet_group_ids) that reference the
+// same group. The caller's AgentRecord.FleetGroupID is overwritten
+// with this UUID before persistence so the FK resolves.
+func seedClientTargetAgent(t *testing.T, store storage.Store, server *Server, groupName string, groupCreatedAt time.Time, agent storage.AgentRecord) string {
 	t.Helper()
 
+	fleetGroupID := seedTestFleetGroup(t, store, groupName, groupCreatedAt)
+
 	ctx := context.Background()
-	if err := store.PutFleetGroup(ctx, group); err != nil {
-		t.Fatalf("PutFleetGroup() error = %v", err)
-	}
+	agent.FleetGroupID = fleetGroupID
 	if err := store.PutAgent(ctx, agent); err != nil {
 		t.Fatalf("PutAgent() error = %v", err)
 	}
@@ -551,4 +522,5 @@ func seedClientTargetAgent(t *testing.T, store storage.Store, server *Server, gr
 	server.mu.Lock()
 	server.agents[agent.ID] = agentFromRecord(agent)
 	server.mu.Unlock()
+	return fleetGroupID
 }
