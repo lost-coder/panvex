@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/ui/base/button";
 import { Input } from "@/ui/base/input";
 import { FormField } from "@/ui/base/form-field";
+import { cn } from "@/ui/lib/cn";
 import type { ClientFormSheetProps } from "@/shared/api/types-pages/pages";
 
 export function ClientFormSheet({
@@ -12,6 +13,8 @@ export function ClientFormSheet({
   onCancel,
   loading,
   error,
+  fleetGroups,
+  agents,
 }: ClientFormSheetProps) {
   const [showLimits, setShowLimits] = useState(
     data.maxTcpConns > 0 || data.maxUniqueIps > 0 || data.dataQuotaBytes > 0,
@@ -20,6 +23,41 @@ export function ClientFormSheet({
   function update<K extends keyof typeof data>(key: K, value: (typeof data)[K]) {
     onChange({ ...data, [key]: value });
   }
+
+  // Toggling a fleet group is a set-membership flip. The backend accepts
+  // fleet_group_ids and agent_ids as independent lists so we keep them
+  // decoupled here — an operator can assign by group AND pin a few extra
+  // agents if they want.
+  function toggleFleetGroup(id: string) {
+    const next = data.fleetGroupIds.includes(id)
+      ? data.fleetGroupIds.filter((x) => x !== id)
+      : [...data.fleetGroupIds, id];
+    update("fleetGroupIds", next);
+  }
+
+  function toggleAgent(id: string) {
+    const next = data.agentIds.includes(id)
+      ? data.agentIds.filter((x) => x !== id)
+      : [...data.agentIds, id];
+    update("agentIds", next);
+  }
+
+  // Group agents by fleet-group so the multi-select shows a logical
+  // hierarchy matching the backend model. Agents without a fleet group
+  // land in a "Default" bucket.
+  const agentsByGroup = useMemo(() => {
+    const map = new Map<string, typeof agents>();
+    for (const a of agents ?? []) {
+      const key = a.fleetGroupId || "default";
+      const bucket = map.get(key) ?? [];
+      bucket.push(a);
+      map.set(key, bucket);
+    }
+    return map;
+  }, [agents]);
+
+  const hasDeploymentTargets =
+    data.fleetGroupIds.length > 0 || data.agentIds.length > 0;
 
   return (
     <div className="flex flex-col gap-4">
@@ -83,6 +121,94 @@ export function ClientFormSheet({
         </div>
       </FormField>
 
+      {(fleetGroups?.length || agents?.length) && (
+        <div className="flex flex-col gap-3 border-t border-border pt-3 mt-1">
+          <div className="flex items-center justify-between">
+            <span className="text-xs uppercase tracking-wide text-fg-muted">
+              Deployment targets
+            </span>
+            {!hasDeploymentTargets && (
+              <span className="text-[11px] text-status-warn">Assign at least one</span>
+            )}
+          </div>
+
+          {fleetGroups && fleetGroups.length > 0 && (
+            <FormField label="Fleet groups" variant="uppercase">
+              <div className="flex flex-wrap gap-1.5">
+                {fleetGroups.map((g) => {
+                  const active = data.fleetGroupIds.includes(g.id);
+                  const label = g.label ?? g.name ?? g.id;
+                  const count = g.agentCount ?? g.nodeCount;
+                  return (
+                    <button
+                      key={g.id}
+                      type="button"
+                      disabled={loading}
+                      onClick={() => toggleFleetGroup(g.id)}
+                      aria-pressed={active}
+                      className={cn(
+                        "px-2.5 py-1 rounded-xs text-xs font-mono border transition-colors",
+                        active
+                          ? "bg-accent text-white border-accent"
+                          : "bg-bg-card text-fg-muted border-border-hi hover:text-fg hover:border-accent/60",
+                        loading && "opacity-50 cursor-not-allowed",
+                      )}
+                    >
+                      {label}
+                      {typeof count === "number" && (
+                        <span className="ml-1 opacity-60 tabular-nums">·{count}</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </FormField>
+          )}
+
+          {agents && agents.length > 0 && (
+            <FormField
+              label="Pinned agents"
+              variant="uppercase"
+              description="Override for nodes outside the selected groups"
+            >
+              <div className="max-h-40 overflow-y-auto rounded-xs border border-border-hi bg-bg-card divide-y divide-border/60">
+                {Array.from(agentsByGroup.entries()).map(([groupId, list]) => (
+                  <div key={groupId} className="flex flex-col">
+                    <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-fg-muted bg-bg-muted/40">
+                      {groupId}
+                    </div>
+                    {(list ?? []).map((a) => {
+                      const active = data.agentIds.includes(a.id);
+                      return (
+                        <label
+                          key={a.id}
+                          className={cn(
+                            "flex items-center gap-2 px-2 py-1.5 text-xs cursor-pointer hover:bg-bg-muted/40",
+                            loading && "opacity-50 cursor-not-allowed",
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            className="accent-accent size-3.5"
+                            checked={active}
+                            disabled={loading}
+                            onChange={() => toggleAgent(a.id)}
+                          />
+                          <span className="font-mono text-fg truncate">{a.nodeName || a.id}</span>
+                          {a.online === false && (
+                            <span className="ml-auto text-[10px] text-status-warn">offline</span>
+                          )}
+                        </label>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            </FormField>
+          )}
+        </div>
+      )}
+
       <button
         type="button"
         onClick={() => setShowLimits(!showLimits)}
@@ -133,7 +259,17 @@ export function ClientFormSheet({
         <Button variant="ghost" onClick={onCancel} disabled={loading}>
           Cancel
         </Button>
-        <Button onClick={onSubmit} disabled={loading || !data.name}>
+        <Button
+          onClick={onSubmit}
+          disabled={
+            loading ||
+            !data.name ||
+            // Selectors are only rendered when the container supplied options.
+            // When they are rendered, at least one target must be picked —
+            // the backend otherwise rejects with errClientTargetsRequired.
+            (!!(fleetGroups?.length || agents?.length) && !hasDeploymentTargets)
+          }
+        >
           {loading ? "Saving..." : mode === "create" ? "Create Client" : "Save Changes"}
         </Button>
       </div>

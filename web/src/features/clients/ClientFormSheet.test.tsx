@@ -11,6 +11,8 @@ const emptyForm: ClientFormData = {
   maxTcpConns: 0,
   maxUniqueIps: 0,
   dataQuotaBytes: 0,
+  fleetGroupIds: [],
+  agentIds: [],
 };
 
 const filledForm: ClientFormData = {
@@ -20,6 +22,8 @@ const filledForm: ClientFormData = {
   maxTcpConns: 4,
   maxUniqueIps: 2,
   dataQuotaBytes: 1073741824,
+  fleetGroupIds: [],
+  agentIds: [],
 };
 
 describe("ClientFormSheet", () => {
@@ -219,5 +223,77 @@ describe("ClientFormSheet", () => {
       />,
     );
     expect(screen.getByText("Name already taken")).toBeInTheDocument();
+  });
+
+  it("toggles a fleet group via the chip selector", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <ClientFormSheet
+        mode="create"
+        data={{ ...emptyForm, name: "a" }}
+        onChange={onChange}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        fleetGroups={[{ id: "edge", label: "edge", agentCount: 3 }]}
+      />,
+    );
+
+    const chip = screen.getByRole("button", { name: /edge/i });
+    expect(chip).toHaveAttribute("aria-pressed", "false");
+    await user.click(chip);
+
+    const lastCall = onChange.mock.calls[onChange.mock.calls.length - 1]![0];
+    expect(lastCall.fleetGroupIds).toEqual(["edge"]);
+  });
+
+  it("toggles an agent via the checkbox list", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <ClientFormSheet
+        mode="create"
+        data={{ ...emptyForm, name: "a" }}
+        onChange={onChange}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        agents={[{ id: "agent-1", nodeName: "node-a", fleetGroupId: "edge" }]}
+      />,
+    );
+
+    await user.click(screen.getByText("node-a"));
+
+    const lastCall = onChange.mock.calls[onChange.mock.calls.length - 1]![0];
+    expect(lastCall.agentIds).toEqual(["agent-1"]);
+  });
+
+  it("disables submit when selectors are shown but no target is picked", () => {
+    render(
+      <ClientFormSheet
+        mode="create"
+        data={filledForm}
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        fleetGroups={[{ id: "edge", label: "edge", agentCount: 2 }]}
+      />,
+    );
+    const submit = screen.getByRole("button", { name: /create client/i });
+    expect(submit).toBeDisabled();
+  });
+
+  it("enables submit when at least one deployment target is picked", () => {
+    render(
+      <ClientFormSheet
+        mode="create"
+        data={{ ...filledForm, fleetGroupIds: ["edge"] }}
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        fleetGroups={[{ id: "edge", label: "edge", agentCount: 2 }]}
+      />,
+    );
+    const submit = screen.getByRole("button", { name: /create client/i });
+    expect(submit).toBeEnabled();
   });
 });

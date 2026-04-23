@@ -19,10 +19,19 @@ vi.mock("@tanstack/react-query", () => ({
     mutate: vi.fn(),
     isPending: false,
   }),
+  useQuery: () => ({
+    data: [],
+    isLoading: false,
+    error: null,
+  }),
   useQueryClient: () => ({
     invalidateQueries: vi.fn(),
     getQueryData: vi.fn(),
   }),
+}));
+
+vi.mock("@/features/servers/hooks/useFleetGroups", () => ({
+  useFleetGroups: () => ({ fleetGroups: [], isLoading: false }),
 }));
 
 vi.mock("@/shared/api/api", () => ({
@@ -30,6 +39,8 @@ vi.mock("@/shared/api/api", () => ({
     client: vi.fn(),
     updateClient: vi.fn(),
     deleteClient: vi.fn(),
+    agents: vi.fn().mockResolvedValue([]),
+    fleetGroups: vi.fn().mockResolvedValue([]),
   },
 }));
 

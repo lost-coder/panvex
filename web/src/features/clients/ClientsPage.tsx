@@ -251,6 +251,8 @@ const emptyFormData: ClientFormData = {
   maxTcpConns: 0,
   maxUniqueIps: 0,
   dataQuotaBytes: 0,
+  fleetGroupIds: [],
+  agentIds: [],
 };
 
 export function ClientsPage({
@@ -262,6 +264,8 @@ export function ClientsPage({
   onCreate,
   createLoading,
   createError,
+  fleetGroups,
+  agents,
   pendingDiscoveredCount,
   onDiscoveredClick,
   onBulkAction,
@@ -528,6 +532,8 @@ export function ClientsPage({
                 onCancel={() => setCreateOpen(false)}
                 loading={createLoading}
                 error={createError}
+                fleetGroups={fleetGroups}
+                agents={agents}
               />
             </SheetBody>
           </SheetContent>
