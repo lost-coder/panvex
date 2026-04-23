@@ -29,6 +29,7 @@ function ConfigureStep(props: EnrollmentWizardProps) {
     tokenTtl,
     onNodeNameChange,
     onFleetGroupChange,
+    onCreateFleetGroup,
     onTokenTtlChange,
     onGenerateToken,
     advancedOptions,
@@ -76,17 +77,32 @@ function ConfigureStep(props: EnrollmentWizardProps) {
           attaches the new agent to the default scope. Select still
           renders when groups exist so operators can opt-in. */}
       <FormField label="Fleet group" variant="uppercase">
-        <Select
-          value={selectedFleetGroup}
-          options={[
-            { value: "", label: "— none (default scope) —" },
-            ...fleetGroups.map((g) => ({
-              value: g.id,
-              label: `${g.name ?? g.label ?? g.id} (${g.nodeCount ?? g.agentCount ?? 0} nodes)`,
-            })),
-          ]}
-          onChange={onFleetGroupChange}
-        />
+        <div className="flex gap-2">
+          <Select
+            className="flex-1"
+            value={selectedFleetGroup}
+            options={[
+              { value: "", label: "— none (default scope) —" },
+              ...fleetGroups.map((g) => ({
+                value: g.id,
+                label: `${g.name ?? g.label ?? g.id} (${g.nodeCount ?? g.agentCount ?? 0} nodes)`,
+              })),
+            ]}
+            onChange={onFleetGroupChange}
+          />
+          {onCreateFleetGroup && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={onCreateFleetGroup}
+              disabled={loading}
+              aria-label="Create new fleet group"
+            >
+              + New
+            </Button>
+          )}
+        </div>
         <div className="text-[11px] font-mono text-fg-muted mt-1">
           Leave empty to add the node without a group — it'll land in the default scope.
         </div>

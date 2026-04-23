@@ -2,6 +2,10 @@ import { useState, useEffect, useCallback } from "react";
 import { EnrollmentWizard } from "@/features/enrollment/EnrollmentWizard";
 import type { EnrollmentWizardProps } from "@/shared/api/types-pages/pages";
 import { useFleetGroups } from "./hooks/useFleetGroups";
+import { useFleetGroupMutations } from "@/features/fleet-groups/hooks/useFleetGroupsFull";
+import { FleetGroupFormSheet, type FleetGroupFormData } from "@/features/fleet-groups/FleetGroupFormSheet";
+import { Sheet, SheetBody, SheetContent } from "@/ui";
+import { useToast } from "@/app/providers/ToastProvider";
 import { useNavigate } from "@tanstack/react-router";
 import { apiClient } from "@/shared/api/api";
 import type { EnrollmentTokenResponse, Agent } from "@/shared/api/api";
@@ -53,7 +57,9 @@ function buildInstallCommand(
 
 export function AddServerContainer() {
   const navigate = useNavigate();
+  const toast = useToast();
   const { fleetGroups } = useFleetGroups();
+  const { createMutation: createFleetGroupMutation } = useFleetGroupMutations();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [nodeName, setNodeName] = useState("");
@@ -265,6 +271,34 @@ export function AddServerContainer() {
     nodeCount: g.agent_count,
   }));
 
+  // Inline fleet-group quick-create so the wizard doesn't need a
+  // round-trip to /fleet-groups. On success we auto-select the freshly
+  // minted UUID so the operator's next click is "Generate token".
+  const [quickCreateOpen, setQuickCreateOpen] = useState(false);
+  const [quickCreateData, setQuickCreateData] = useState<FleetGroupFormData>({
+    name: "",
+    label: "",
+    description: "",
+  });
+  const [quickCreateError, setQuickCreateError] = useState<string>("");
+
+  const handleQuickCreateSubmit = async () => {
+    setQuickCreateError("");
+    try {
+      const created = await createFleetGroupMutation.mutateAsync({
+        name: quickCreateData.name,
+        label: quickCreateData.label,
+        description: quickCreateData.description,
+      });
+      toast.success(`Fleet group «${created.label}» created.`);
+      setSelectedFleetGroup(created.id);
+      setQuickCreateOpen(false);
+      setQuickCreateData({ name: "", label: "", description: "" });
+    } catch (err) {
+      setQuickCreateError(err instanceof Error ? err.message : "Request failed");
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div
@@ -287,6 +321,11 @@ export function AddServerContainer() {
           tokenTtl={tokenTtl}
           onNodeNameChange={setNodeName}
           onFleetGroupChange={setSelectedFleetGroup}
+          onCreateFleetGroup={() => {
+            setQuickCreateData({ name: "", label: "", description: "" });
+            setQuickCreateError("");
+            setQuickCreateOpen(true);
+          }}
           onTokenTtlChange={setTokenTtl}
           onGenerateToken={handleGenerateToken}
           installCommand={installCommand}
@@ -311,6 +350,29 @@ export function AddServerContainer() {
           error={error}
         />
       </div>
+
+      <Sheet
+        open={quickCreateOpen}
+        onOpenChange={(open) => { if (!open) setQuickCreateOpen(false); }}
+      >
+        <SheetContent
+          side="bottom"
+          title="New fleet group"
+          onOpenChange={(open) => { if (!open) setQuickCreateOpen(false); }}
+        >
+          <SheetBody>
+            <FleetGroupFormSheet
+              mode="create"
+              data={quickCreateData}
+              onChange={setQuickCreateData}
+              onSubmit={handleQuickCreateSubmit}
+              onCancel={() => setQuickCreateOpen(false)}
+              loading={createFleetGroupMutation.isPending}
+              error={quickCreateError || undefined}
+            />
+          </SheetBody>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
