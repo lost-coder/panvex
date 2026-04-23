@@ -52,7 +52,7 @@ export function ClientDetailContainer() {
   );
   const { fleetGroups } = useFleetGroups();
   const fleetGroupOptions = useMemo(
-    () => fleetGroups.map((g) => ({ id: g.id, label: g.id, agentCount: g.agent_count })),
+    () => fleetGroups.map((g) => ({ id: g.id, label: g.label || g.name || g.id, agentCount: g.agent_count })),
     [fleetGroups],
   );
 

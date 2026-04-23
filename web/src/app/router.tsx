@@ -10,7 +10,7 @@ import {
   useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
-import { LayoutDashboard, Server, Users, Settings, Activity, User } from "lucide-react";
+import { LayoutDashboard, Server, Users, Settings, Activity, User, Layers } from "lucide-react";
 
 import { AppShell, type NavItem } from "@/ui";
 import { AppearanceProvider } from "@/app/providers/AppearanceProvider";
@@ -45,6 +45,7 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({ component: RootC
 const NAV_ITEMS: NavItem[] = [
   { id: "/", label: "Dashboard", icon: <LayoutDashboard size={20} /> },
   { id: "/servers", label: "Servers", icon: <Server size={20} /> },
+  { id: "/fleet-groups", label: "Fleet groups", icon: <Layers size={20} /> },
   { id: "/clients", label: "Clients", icon: <Users size={20} /> },
   { id: "/activity", label: "Activity", icon: <Activity size={20} /> },
   { id: "/settings", label: "Settings", icon: <Settings size={20} /> },
@@ -70,6 +71,7 @@ function ProtectedShell() {
   // so typing "g" into the search box does not teleport the operator.
   useKeyboardShortcut("g d", () => navigate({ to: "/" }));
   useKeyboardShortcut("g s", () => navigate({ to: "/servers" }));
+  useKeyboardShortcut("g f", () => navigate({ to: "/fleet-groups" }));
   useKeyboardShortcut("g c", () => navigate({ to: "/clients" }));
   useKeyboardShortcut("g t", () => navigate({ to: "/settings" }));
 
@@ -145,6 +147,16 @@ const ClientDetailContainer = lazyRouteComponent(
 
 const DiscoveredClientsContainer = lazyRouteComponent(
   () => import("@/features/clients/DiscoveredClientsContainer").then((m) => ({ default: m.DiscoveredClientsContainer })),
+  "default",
+);
+
+const FleetGroupsContainer = lazyRouteComponent(
+  () => import("@/features/fleet-groups/FleetGroupsContainer").then((m) => ({ default: m.FleetGroupsContainer })),
+  "default",
+);
+
+const FleetGroupDetailContainer = lazyRouteComponent(
+  () => import("@/features/fleet-groups/FleetGroupDetailContainer").then((m) => ({ default: m.FleetGroupDetailContainer })),
   "default",
 );
 
@@ -278,6 +290,18 @@ const activityRoute = createRoute({
   component: ActivityContainer,
 });
 
+const fleetGroupsRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/fleet-groups",
+  component: FleetGroupsContainer,
+});
+
+const fleetGroupDetailRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/fleet-groups/$fleetGroupId",
+  component: FleetGroupDetailContainer,
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   shellRoute.addChildren([
@@ -292,6 +316,8 @@ const routeTree = rootRoute.addChildren([
     enrollmentTokensRoute,
     addServerRoute,
     activityRoute,
+    fleetGroupsRoute,
+    fleetGroupDetailRoute,
     profileRoute,
   ]),
 ]);
