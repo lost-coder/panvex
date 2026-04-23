@@ -11,8 +11,8 @@ function formToInput(form: ClientFormData): ClientInput {
     max_unique_ips: form.maxUniqueIps,
     data_quota_bytes: form.dataQuotaBytes,
     expiration_rfc3339: form.expirationRfc3339,
-    fleet_group_ids: [],
-    agent_ids: [],
+    fleet_group_ids: form.fleetGroupIds,
+    agent_ids: form.agentIds,
   };
 }
 

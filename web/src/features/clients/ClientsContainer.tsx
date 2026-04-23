@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 
 import { type BulkClientAction, type ViewMode, EmptyState } from "@/ui";
@@ -8,6 +8,7 @@ import { SkeletonRows } from "@/ui";
 import { useClientsList } from "./hooks/useClientsList";
 import { useDiscoveredClients } from "./hooks/useDiscoveredClients";
 import { useClientCreate } from "./hooks/useClientCreate";
+import { useFleetGroups } from "@/features/servers/hooks/useFleetGroups";
 import { useViewMode } from "@/shared/hooks/useViewMode";
 import { useUrlSearchState } from "@/shared/hooks/useUrlSearchState";
 import { useWsUpdateFlash } from "@/shared/hooks/useWsUpdateFlash";
@@ -18,6 +19,29 @@ export function ClientsContainer() {
   const { clients, isLoading } = useClientsList();
   const { discoveredClients, groupCounts: discoveredGroupCounts } = useDiscoveredClients();
   const createMutation = useClientCreate();
+  const { fleetGroups } = useFleetGroups();
+  // Agents feed both the "pin individual node" selector and the fleet-group
+  // count in the create sheet. Shared cache key with the servers page so
+  // bouncing between /servers and /clients reuses the snapshot.
+  const agentsQuery = useQuery({
+    queryKey: ["agents"],
+    queryFn: () => apiClient.agents(),
+    staleTime: 30_000,
+  });
+  const agentOptions = useMemo(
+    () =>
+      (agentsQuery.data ?? []).map((a) => ({
+        id: a.id,
+        nodeName: a.node_name || a.id,
+        fleetGroupId: a.fleet_group_id,
+        online: a.presence_state === "online",
+      })),
+    [agentsQuery.data],
+  );
+  const fleetGroupOptions = useMemo(
+    () => fleetGroups.map((g) => ({ id: g.id, label: g.id, agentCount: g.agent_count })),
+    [fleetGroups],
+  );
   const { resolveMode, setMode } = useViewMode("clients");
   const navigate = useNavigate();
   const flashing = useWsUpdateFlash();
@@ -58,6 +82,8 @@ export function ClientsContainer() {
               maxTcpConns: raw.max_tcp_conns,
               maxUniqueIps: raw.max_unique_ips,
               dataQuotaBytes: raw.data_quota_bytes,
+              fleetGroupIds: raw.fleet_group_ids ?? [],
+              agentIds: raw.agent_ids ?? [],
             },
             { ...raw, enabled: wantEnabled },
           );
@@ -128,6 +154,8 @@ export function ClientsContainer() {
         onCreate={async (data) => { await createMutation.mutateAsync(data); }}
         createLoading={createMutation.isPending}
         createError={createMutation.error?.message}
+        fleetGroups={fleetGroupOptions}
+        agents={agentOptions}
         pendingDiscoveredCount={pendingCount}
         onDiscoveredClick={() => navigate({ to: "/clients/discovered" })}
         onBulkAction={(action, clientIds) =>

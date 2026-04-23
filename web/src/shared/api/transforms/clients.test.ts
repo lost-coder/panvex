@@ -119,7 +119,12 @@ describe("transformClientDetail", () => {
 });
 
 describe("buildClientInput", () => {
-  it("preserves enabled/fleet/agent fields from the existing client", () => {
+  it("takes enabled from the existing client and deployment targets from the form", () => {
+    // The deployment selectors in ClientFormSheet write directly into
+    // ClientFormData, so buildClientInput now pulls fleet_group_ids /
+    // agent_ids from the form payload rather than the stored client.
+    // `enabled` still comes from `existing` because the form never
+    // exposes it — toggling is handled out-of-band.
     const input = buildClientInput(
       {
         name: "alpha-v2",
@@ -128,7 +133,9 @@ describe("buildClientInput", () => {
         maxUniqueIps: 5,
         dataQuotaBytes: 4096,
         expirationRfc3339: "2031-01-01T00:00:00Z",
-      } as unknown as Parameters<typeof buildClientInput>[0],
+        fleetGroupIds: ["g1", "g2"],
+        agentIds: ["a1"],
+      },
       rawClient,
     );
 
@@ -140,7 +147,7 @@ describe("buildClientInput", () => {
       max_unique_ips: 5,
       data_quota_bytes: 4096,
       expiration_rfc3339: "2031-01-01T00:00:00Z",
-      fleet_group_ids: ["g1"],
+      fleet_group_ids: ["g1", "g2"],
       agent_ids: ["a1"],
     });
   });

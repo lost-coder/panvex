@@ -341,6 +341,8 @@ const emptyFormData: ClientFormData = {
   maxTcpConns: 0,
   maxUniqueIps: 0,
   dataQuotaBytes: 0,
+  fleetGroupIds: [],
+  agentIds: [],
 };
 
 export function DashboardPage({

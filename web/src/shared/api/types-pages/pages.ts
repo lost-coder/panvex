@@ -507,6 +507,9 @@ export interface ClientsPageProps {
   onCreate?: (data: ClientFormData) => void | Promise<void>;
   createLoading?: boolean;
   createError?: string;
+  /** Options threaded into the create sheet's deployment selectors. */
+  fleetGroups?: FleetGroupOption[];
+  agents?: ClientAgentOption[];
   pendingDiscoveredCount?: number;
   onDiscoveredClick?: () => void;
   /** Bulk action callback. Container wires it to apiClient calls per id. */
@@ -575,12 +578,16 @@ export interface ClientDetailPageProps {
     dataQuotaBytes: number;
     expirationRfc3339: string;
     fleetGroupIds: string[];
+    agentIds: string[];
     deployments: ClientDeploymentData[];
   };
   onBack?: () => void;
   onEdit?: (data: ClientFormData) => void | Promise<void>;
   editLoading?: boolean;
   editError?: string;
+  /** Options threaded into the edit sheet's deployment selectors. */
+  fleetGroups?: FleetGroupOption[];
+  agents?: ClientAgentOption[];
   onManageAccess?: () => void;
   onRotateSecret?: () => void;
   secretRotating?: boolean;
@@ -837,6 +844,15 @@ export interface ClientFormData {
   maxTcpConns: number;
   maxUniqueIps: number;
   dataQuotaBytes: number;
+  fleetGroupIds: string[];
+  agentIds: string[];
+}
+
+export interface ClientAgentOption {
+  id: string;
+  nodeName: string;
+  fleetGroupId: string;
+  online?: boolean;
 }
 
 export interface ClientFormSheetProps {
@@ -847,6 +863,10 @@ export interface ClientFormSheetProps {
   onCancel: () => void;
   loading?: boolean;
   error?: string;
+  /** Fleet groups available for assignment. Omitted → selector hidden. */
+  fleetGroups?: FleetGroupOption[];
+  /** Agents available for explicit assignment. Omitted → selector hidden. */
+  agents?: ClientAgentOption[];
 }
 
 export interface ClientAccessSheetProps {
