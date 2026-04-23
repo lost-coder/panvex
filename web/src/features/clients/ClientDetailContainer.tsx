@@ -5,6 +5,7 @@ import { ClientDetailPage } from "@/features/clients/ClientDetailPage";
 import { useClientDetail } from "./hooks/useClientDetail";
 import { useClientMutations } from "./hooks/useClientMutations";
 import { useClientIPHistory } from "./hooks/useClientIPHistory";
+import { useFleetGroups } from "@/features/servers/hooks/useFleetGroups";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useConfirm } from "@/app/providers/ConfirmProvider";
 import { apiClient } from "@/shared/api/api";
@@ -39,10 +40,27 @@ export function ClientDetailContainer() {
     }
     return map;
   }, [agentsQuery.data]);
+  const agentOptions = useMemo(
+    () =>
+      (agentsQuery.data ?? []).map((a) => ({
+        id: a.id,
+        nodeName: a.node_name || a.id,
+        fleetGroupId: a.fleet_group_id,
+        online: a.presence_state === "online",
+      })),
+    [agentsQuery.data],
+  );
+  const { fleetGroups } = useFleetGroups();
+  const fleetGroupOptions = useMemo(
+    () => fleetGroups.map((g) => ({ id: g.id, label: g.id, agentCount: g.agent_count })),
+    [fleetGroups],
+  );
 
   const toggleEnabledMutation = useMutation({
     mutationFn: async (nextEnabled: boolean) => {
       if (!raw) throw new Error("Client data not loaded");
+      // Toggle keeps every deployment target the client already had —
+      // flipping `enabled` must not inadvertently wipe assignments.
       const payload = buildClientInput(
         {
           name: raw.name,
@@ -51,6 +69,8 @@ export function ClientDetailContainer() {
           maxTcpConns: raw.max_tcp_conns,
           maxUniqueIps: raw.max_unique_ips,
           dataQuotaBytes: raw.data_quota_bytes,
+          fleetGroupIds: raw.fleet_group_ids ?? [],
+          agentIds: raw.agent_ids ?? [],
         },
         { ...raw, enabled: nextEnabled },
       );
@@ -82,6 +102,8 @@ export function ClientDetailContainer() {
       }}
       editLoading={editMutation.isPending}
       editError={editMutation.error?.message}
+      fleetGroups={fleetGroupOptions}
+      agents={agentOptions}
       // P2-UX-04: rotating a secret invalidates all client devices — gate
       // it behind a confirm dialog so an accidental click doesn't lock users out.
       onRotateSecret={async () => {

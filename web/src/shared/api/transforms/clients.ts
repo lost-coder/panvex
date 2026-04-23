@@ -54,6 +54,7 @@ export function transformClientDetail(
     dataQuotaBytes: raw.data_quota_bytes,
     expirationRfc3339: raw.expiration_rfc3339,
     fleetGroupIds: raw.fleet_group_ids ?? [],
+    agentIds: raw.agent_ids ?? [],
     deployments: (raw.deployments ?? []).map((d) => ({
       agentId: d.agent_id,
       desiredOperation: d.desired_operation,
@@ -65,7 +66,15 @@ export function transformClientDetail(
   };
 }
 
-/** Convert ClientFormData back to API ClientInput, preserving fields not in the form. */
+/**
+ * Convert ClientFormData back to API ClientInput.
+ *
+ * Deployment targets (fleet_group_ids / agent_ids) come from the form
+ * when the sheet supplied selectors — the form is the source of truth
+ * for the user's current intent. Callers that edit a client without
+ * surfacing the selectors (e.g. toggleEnabled on the detail page) pass
+ * the existing assignments through the form payload instead.
+ */
 export function buildClientInput(form: ClientFormData, existing: ApiClient): ClientInput {
   return {
     name: form.name,
@@ -75,7 +84,7 @@ export function buildClientInput(form: ClientFormData, existing: ApiClient): Cli
     max_unique_ips: form.maxUniqueIps,
     data_quota_bytes: form.dataQuotaBytes,
     expiration_rfc3339: form.expirationRfc3339,
-    fleet_group_ids: existing.fleet_group_ids ?? [],
-    agent_ids: existing.agent_ids ?? [],
+    fleet_group_ids: form.fleetGroupIds,
+    agent_ids: form.agentIds,
   };
 }

@@ -408,6 +408,8 @@ export function ClientDetailPage({
   onEdit,
   editLoading,
   editError,
+  fleetGroups,
+  agents,
   onRotateSecret,
   secretRotating,
   secretPendingRedeploy,
@@ -417,6 +419,22 @@ export function ClientDetailPage({
   agentLabels,
 }: ClientDetailPageProps) {
   const [editOpen, setEditOpen] = useState(false);
+  // Reseed the form each time the sheet opens — editing a client whose
+  // assignments were just changed elsewhere (e.g. fleet-group rename)
+  // should start from the latest server snapshot, not a stale draft.
+  const openEdit = () => {
+    setEditData({
+      name: client.name,
+      userAdTag: client.userAdTag,
+      expirationRfc3339: client.expirationRfc3339,
+      maxTcpConns: client.maxTcpConns,
+      maxUniqueIps: client.maxUniqueIps,
+      dataQuotaBytes: client.dataQuotaBytes,
+      fleetGroupIds: [...client.fleetGroupIds],
+      agentIds: [...client.agentIds],
+    });
+    setEditOpen(true);
+  };
   const [editData, setEditData] = useState<ClientFormData>({
     name: client.name,
     userAdTag: client.userAdTag,
@@ -424,6 +442,8 @@ export function ClientDetailPage({
     maxTcpConns: client.maxTcpConns,
     maxUniqueIps: client.maxUniqueIps,
     dataQuotaBytes: client.dataQuotaBytes,
+    fleetGroupIds: client.fleetGroupIds,
+    agentIds: client.agentIds,
   });
 
   const status = clientStatus(client.enabled, client.expirationRfc3339);
@@ -498,7 +518,7 @@ export function ClientDetailPage({
           subtitle={`${statusLabel.toLowerCase()} · ${expiresSuffix(client.expirationRfc3339)}`}
           trailing={
             onEdit ? (
-              <Button size="sm" onClick={() => setEditOpen(true)}>
+              <Button size="sm" onClick={openEdit}>
                 Edit
               </Button>
             ) : undefined
@@ -535,7 +555,7 @@ export function ClientDetailPage({
         actions={
           <>
             {onEdit && (
-              <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
+              <Button size="sm" variant="outline" onClick={openEdit}>
                 Edit
               </Button>
             )}
@@ -647,6 +667,8 @@ export function ClientDetailPage({
                 onCancel={() => setEditOpen(false)}
                 loading={editLoading}
                 error={editError}
+                fleetGroups={fleetGroups}
+                agents={agents}
               />
             </SheetBody>
           </SheetContent>

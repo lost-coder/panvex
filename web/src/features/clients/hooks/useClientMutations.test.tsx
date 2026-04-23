@@ -86,6 +86,8 @@ describe("useClientMutations", () => {
       maxUniqueIps: 0,
       dataQuotaBytes: 0,
       expirationRfc3339: "2030-01-01T00:00:00Z",
+      fleetGroupIds: [],
+      agentIds: [],
     } as unknown as Parameters<typeof result.current.editMutation.mutateAsync>[0]);
 
     expect(apiClient.updateClient).toHaveBeenCalledTimes(1);
