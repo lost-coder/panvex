@@ -261,7 +261,7 @@ export function AddServerContainer() {
 
   const fleetGroupOptions = fleetGroups.map((g) => ({
     id: g.id,
-    name: g.id,
+    name: g.label || g.name || g.id,
     nodeCount: g.agent_count,
   }));
 

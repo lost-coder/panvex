@@ -109,7 +109,7 @@ export function ServersContainer() {
         servers={enrichedServers}
         viewMode={effectiveMode}
         autoThreshold={10}
-        fleetGroups={fleetGroups.map((g) => ({ id: g.id, label: g.id, agentCount: g.agent_count }))}
+        fleetGroups={fleetGroups.map((g) => ({ id: g.id, label: g.label || g.name || g.id, agentCount: g.agent_count }))}
         onViewModeChange={(m) => {
           setMode(m);
           setViewParam(m);
