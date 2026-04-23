@@ -24,8 +24,30 @@ type UserAppearanceStore interface {
 
 // FleetStore persists fleet topology and discovered Telemt runtime state.
 type FleetStore interface {
+	// PutFleetGroup upserts a fleet group by id. Used by migration/copy
+	// helpers and tests. HTTP-layer CRUD calls the explicit
+	// Create/Update/Delete methods below, which enforce uniqueness and
+	// bump updated_at.
 	PutFleetGroup(ctx context.Context, group FleetGroupRecord) error
+	CreateFleetGroup(ctx context.Context, group FleetGroupRecord) error
+	UpdateFleetGroup(ctx context.Context, group FleetGroupRecord) error
+	GetFleetGroup(ctx context.Context, id string) (FleetGroupRecord, error)
+	GetFleetGroupByName(ctx context.Context, name string) (FleetGroupRecord, error)
 	ListFleetGroups(ctx context.Context) ([]FleetGroupRecord, error)
+	// DeleteFleetGroup removes the row. Callers are responsible for
+	// reassigning or detaching dependents first (agents, enrollment
+	// tokens, client_assignments); the DB enforces FK integrity so a
+	// non-reassigned delete fails with a constraint error.
+	DeleteFleetGroup(ctx context.Context, id string) error
+	// ReassignFleetGroupMembers moves every FK reference to `fromID`
+	// (agents.fleet_group_id, enrollment_tokens.fleet_group_id,
+	// client_assignments.fleet_group_id) to `toID` in one transaction.
+	// Returns the number of rows touched per table for audit logging.
+	ReassignFleetGroupMembers(ctx context.Context, fromID, toID string) (ReassignCounts, error)
+	// CountFleetGroupMembers returns how many rows in each dependent
+	// table reference `fleetGroupID`. Powers the deletion-preview HTTP
+	// endpoint so the operator sees the blast radius before confirming.
+	CountFleetGroupMembers(ctx context.Context, fleetGroupID string) (ReassignCounts, error)
 	PutAgent(ctx context.Context, agent AgentRecord) error
 	// PutAgentsBulk upserts a batch of agents in a single transaction. Semantics
 	// match PutAgent per row (UPSERT on id); when the same ID appears twice the
@@ -235,6 +257,26 @@ type LoginLockoutStore interface {
 	DeleteExpiredLoginLockouts(ctx context.Context, before time.Time) (int64, error)
 }
 
+// IntegrationStore persists the integration-scaffolding entities:
+// shared provider credentials and per-fleet-group integration
+// installs. The store itself is kind-agnostic — config is an opaque
+// JSON blob. Validation, reconciliation, and kind-specific semantics
+// live in the fleet/integrations registry.
+type IntegrationStore interface {
+	CreateIntegrationProvider(ctx context.Context, provider IntegrationProviderRecord) error
+	UpdateIntegrationProvider(ctx context.Context, provider IntegrationProviderRecord) error
+	GetIntegrationProvider(ctx context.Context, id string) (IntegrationProviderRecord, error)
+	ListIntegrationProviders(ctx context.Context) ([]IntegrationProviderRecord, error)
+	ListIntegrationProvidersByKind(ctx context.Context, kind string) ([]IntegrationProviderRecord, error)
+	DeleteIntegrationProvider(ctx context.Context, id string) error
+
+	CreateFleetGroupIntegration(ctx context.Context, integration FleetGroupIntegrationRecord) error
+	UpdateFleetGroupIntegration(ctx context.Context, integration FleetGroupIntegrationRecord) error
+	GetFleetGroupIntegration(ctx context.Context, id string) (FleetGroupIntegrationRecord, error)
+	ListFleetGroupIntegrations(ctx context.Context, fleetGroupID string) ([]FleetGroupIntegrationRecord, error)
+	DeleteFleetGroupIntegration(ctx context.Context, id string) error
+}
+
 // AgentRevocationStore persists deregistered-agent IDs so the revocation set
 // survives control-plane restart. See AgentRevocationRecord in models.go.
 type AgentRevocationStore interface {
@@ -274,6 +316,7 @@ type Store interface {
 	ClientStore
 	DiscoveredClientStore
 	TimeseriesStore
+	IntegrationStore
 
 	// Transact runs fn inside a single database transaction. The tx
 	// argument is a Store implementation bound to the transaction:

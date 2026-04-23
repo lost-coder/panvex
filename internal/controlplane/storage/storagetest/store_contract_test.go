@@ -56,6 +56,8 @@ type memoryStore struct {
 	updateSettings     json.RawMessage
 	updateState        json.RawMessage
 	certificateAuthority *storage.CertificateAuthorityRecord
+	integrationProviders      map[string]storage.IntegrationProviderRecord
+	fleetGroupIntegrations    map[string]storage.FleetGroupIntegrationRecord
 }
 
 func newMemoryStore() *memoryStore {
@@ -87,6 +89,8 @@ func newMemoryStore() *memoryStore {
 		sessions:          make(map[string]storage.SessionRecord),
 		loginLockouts:     make(map[string]storage.LoginLockoutRecord),
 		agentRevocations:  make(map[string]storage.AgentRevocationRecord),
+		integrationProviders:   make(map[string]storage.IntegrationProviderRecord),
+		fleetGroupIntegrations: make(map[string]storage.FleetGroupIntegrationRecord),
 	}
 }
 
@@ -250,6 +254,201 @@ func (s *memoryStore) ListFleetGroups(_ context.Context) ([]storage.FleetGroupRe
 	}
 
 	return result, nil
+}
+
+func (s *memoryStore) CreateFleetGroup(_ context.Context, group storage.FleetGroupRecord) error {
+	if _, ok := s.fleetGroups[group.ID]; ok {
+		return fmt.Errorf("fleet group %q already exists", group.ID)
+	}
+	s.fleetGroups[group.ID] = group
+	return nil
+}
+
+func (s *memoryStore) UpdateFleetGroup(_ context.Context, group storage.FleetGroupRecord) error {
+	existing, ok := s.fleetGroups[group.ID]
+	if !ok {
+		return storage.ErrNotFound
+	}
+	// Name is immutable — preserve it.
+	existing.Label = group.Label
+	existing.Description = group.Description
+	existing.UpdatedAt = group.UpdatedAt
+	s.fleetGroups[group.ID] = existing
+	return nil
+}
+
+func (s *memoryStore) GetFleetGroup(_ context.Context, id string) (storage.FleetGroupRecord, error) {
+	group, ok := s.fleetGroups[id]
+	if !ok {
+		return storage.FleetGroupRecord{}, storage.ErrNotFound
+	}
+	return group, nil
+}
+
+func (s *memoryStore) GetFleetGroupByName(_ context.Context, name string) (storage.FleetGroupRecord, error) {
+	for _, group := range s.fleetGroups {
+		if group.Name == name {
+			return group, nil
+		}
+	}
+	return storage.FleetGroupRecord{}, storage.ErrNotFound
+}
+
+func (s *memoryStore) DeleteFleetGroup(_ context.Context, id string) error {
+	if _, ok := s.fleetGroups[id]; !ok {
+		return storage.ErrNotFound
+	}
+	delete(s.fleetGroups, id)
+	return nil
+}
+
+func (s *memoryStore) CountFleetGroupMembers(_ context.Context, fleetGroupID string) (storage.ReassignCounts, error) {
+	var counts storage.ReassignCounts
+	for _, agent := range s.agents {
+		if agent.FleetGroupID == fleetGroupID {
+			counts.Agents++
+		}
+	}
+	for _, token := range s.enrollmentTokens {
+		if token.FleetGroupID == fleetGroupID {
+			counts.EnrollmentTokens++
+		}
+	}
+	for _, assignment := range s.clientAssignments {
+		if assignment.FleetGroupID == fleetGroupID {
+			counts.ClientAssignments++
+		}
+	}
+	return counts, nil
+}
+
+func (s *memoryStore) ReassignFleetGroupMembers(_ context.Context, fromID, toID string) (storage.ReassignCounts, error) {
+	var counts storage.ReassignCounts
+	for id, agent := range s.agents {
+		if agent.FleetGroupID == fromID {
+			agent.FleetGroupID = toID
+			s.agents[id] = agent
+			counts.Agents++
+		}
+	}
+	for id, token := range s.enrollmentTokens {
+		if token.FleetGroupID == fromID {
+			token.FleetGroupID = toID
+			s.enrollmentTokens[id] = token
+			counts.EnrollmentTokens++
+		}
+	}
+	for id, assignment := range s.clientAssignments {
+		if assignment.FleetGroupID == fromID {
+			assignment.FleetGroupID = toID
+			s.clientAssignments[id] = assignment
+			counts.ClientAssignments++
+		}
+	}
+	return counts, nil
+}
+
+func (s *memoryStore) CreateIntegrationProvider(_ context.Context, provider storage.IntegrationProviderRecord) error {
+	if _, ok := s.integrationProviders[provider.ID]; ok {
+		return fmt.Errorf("integration provider %q already exists", provider.ID)
+	}
+	s.integrationProviders[provider.ID] = provider
+	return nil
+}
+
+func (s *memoryStore) UpdateIntegrationProvider(_ context.Context, provider storage.IntegrationProviderRecord) error {
+	existing, ok := s.integrationProviders[provider.ID]
+	if !ok {
+		return storage.ErrNotFound
+	}
+	existing.Label = provider.Label
+	existing.Config = provider.Config
+	existing.UpdatedAt = provider.UpdatedAt
+	s.integrationProviders[provider.ID] = existing
+	return nil
+}
+
+func (s *memoryStore) GetIntegrationProvider(_ context.Context, id string) (storage.IntegrationProviderRecord, error) {
+	p, ok := s.integrationProviders[id]
+	if !ok {
+		return storage.IntegrationProviderRecord{}, storage.ErrNotFound
+	}
+	return p, nil
+}
+
+func (s *memoryStore) ListIntegrationProviders(_ context.Context) ([]storage.IntegrationProviderRecord, error) {
+	result := make([]storage.IntegrationProviderRecord, 0, len(s.integrationProviders))
+	for _, p := range s.integrationProviders {
+		result = append(result, p)
+	}
+	return result, nil
+}
+
+func (s *memoryStore) ListIntegrationProvidersByKind(_ context.Context, kind string) ([]storage.IntegrationProviderRecord, error) {
+	result := make([]storage.IntegrationProviderRecord, 0)
+	for _, p := range s.integrationProviders {
+		if p.Kind == kind {
+			result = append(result, p)
+		}
+	}
+	return result, nil
+}
+
+func (s *memoryStore) DeleteIntegrationProvider(_ context.Context, id string) error {
+	if _, ok := s.integrationProviders[id]; !ok {
+		return storage.ErrNotFound
+	}
+	delete(s.integrationProviders, id)
+	return nil
+}
+
+func (s *memoryStore) CreateFleetGroupIntegration(_ context.Context, integration storage.FleetGroupIntegrationRecord) error {
+	for _, existing := range s.fleetGroupIntegrations {
+		if existing.FleetGroupID == integration.FleetGroupID && existing.Kind == integration.Kind {
+			return fmt.Errorf("integration %q already installed on fleet group %q", integration.Kind, integration.FleetGroupID)
+		}
+	}
+	s.fleetGroupIntegrations[integration.ID] = integration
+	return nil
+}
+
+func (s *memoryStore) UpdateFleetGroupIntegration(_ context.Context, integration storage.FleetGroupIntegrationRecord) error {
+	existing, ok := s.fleetGroupIntegrations[integration.ID]
+	if !ok {
+		return storage.ErrNotFound
+	}
+	existing.ProviderID = integration.ProviderID
+	existing.Config = integration.Config
+	existing.Enabled = integration.Enabled
+	existing.UpdatedAt = integration.UpdatedAt
+	s.fleetGroupIntegrations[integration.ID] = existing
+	return nil
+}
+
+func (s *memoryStore) GetFleetGroupIntegration(_ context.Context, id string) (storage.FleetGroupIntegrationRecord, error) {
+	i, ok := s.fleetGroupIntegrations[id]
+	if !ok {
+		return storage.FleetGroupIntegrationRecord{}, storage.ErrNotFound
+	}
+	return i, nil
+}
+
+func (s *memoryStore) ListFleetGroupIntegrations(_ context.Context, fleetGroupID string) ([]storage.FleetGroupIntegrationRecord, error) {
+	result := make([]storage.FleetGroupIntegrationRecord, 0)
+	for _, i := range s.fleetGroupIntegrations {
+		if i.FleetGroupID == fleetGroupID {
+			result = append(result, i)
+		}
+	}
+	return result, nil
+}
+
+func (s *memoryStore) DeleteFleetGroupIntegration(_ context.Context, id string) error {
+	if _, ok := s.fleetGroupIntegrations[id]; !ok {
+		return storage.ErrNotFound
+	}
+	delete(s.fleetGroupIntegrations, id)
+	return nil
 }
 
 func (s *memoryStore) PutAgent(_ context.Context, agent storage.AgentRecord) error {

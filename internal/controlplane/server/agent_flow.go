@@ -119,15 +119,12 @@ func (s *Server) enrollAgentWithContext(ctx context.Context, request agentEnroll
 	s.mu.Unlock()
 
 	if s.store != nil {
-		if token.FleetGroupID != "" {
-			if err := s.store.PutFleetGroup(ctx, storage.FleetGroupRecord{
-				ID:        token.FleetGroupID,
-				Name:      token.FleetGroupID,
-				CreatedAt: now.UTC(),
-			}); err != nil {
-				return agentEnrollmentResponse{}, err
-			}
-		}
+		// Fleet-group existence is resolved/auto-created at token-issue
+		// time (see issueEnrollmentTokenWithContext), so by the time an
+		// agent bootstraps with a consumed token the group row is
+		// guaranteed to exist. If a group was deleted between issue and
+		// bootstrap, the FK on agents.fleet_group_id surfaces the
+		// failure here.
 		if err := s.store.PutAgent(ctx, agentToRecord(agent)); err != nil {
 			return agentEnrollmentResponse{}, err
 		}
