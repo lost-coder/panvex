@@ -264,3 +264,57 @@ func (s *Store) ListClientDeployments(ctx context.Context, clientID string) ([]s
 
 	return result, rows.Err()
 }
+
+func (s *Store) UpsertClientUsage(ctx context.Context, r storage.ClientUsageRecord) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO client_usage (
+			client_id, agent_id, traffic_used_bytes, unique_ips_used,
+			active_tcp_conns, active_unique_ips, last_seq, observed_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (client_id, agent_id) DO UPDATE SET
+			traffic_used_bytes = EXCLUDED.traffic_used_bytes,
+			unique_ips_used    = EXCLUDED.unique_ips_used,
+			active_tcp_conns   = EXCLUDED.active_tcp_conns,
+			active_unique_ips  = EXCLUDED.active_unique_ips,
+			last_seq           = EXCLUDED.last_seq,
+			observed_at        = EXCLUDED.observed_at
+	`,
+		r.ClientID, r.AgentID,
+		int64(r.TrafficUsedBytes), r.UniqueIPsUsed,
+		r.ActiveTCPConns, r.ActiveUniqueIPs,
+		int64(r.LastSeq), r.ObservedAt.UTC())
+	return err
+}
+
+func (s *Store) ListClientUsage(ctx context.Context) ([]storage.ClientUsageRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT client_id, agent_id, traffic_used_bytes, unique_ips_used,
+			active_tcp_conns, active_unique_ips, last_seq, observed_at
+		FROM client_usage
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]storage.ClientUsageRecord, 0)
+	for rows.Next() {
+		var r storage.ClientUsageRecord
+		var traffic, lastSeq int64
+		if err := rows.Scan(&r.ClientID, &r.AgentID, &traffic, &r.UniqueIPsUsed,
+			&r.ActiveTCPConns, &r.ActiveUniqueIPs, &lastSeq, &r.ObservedAt); err != nil {
+			return nil, err
+		}
+		r.TrafficUsedBytes = uint64(traffic)
+		r.LastSeq = uint64(lastSeq)
+		r.ObservedAt = r.ObservedAt.UTC()
+		result = append(result, r)
+	}
+	return result, rows.Err()
+}
+
+func (s *Store) DeleteClientUsageByClient(ctx context.Context, clientID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM client_usage WHERE client_id = $1`, clientID)
+	return err
+}

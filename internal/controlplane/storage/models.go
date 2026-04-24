@@ -41,9 +41,9 @@ type LoginLockoutRecord struct {
 // the row is eligible for pruning because the cert can no longer
 // authenticate regardless of the revocation list.
 type AgentRevocationRecord struct {
-	AgentID        string
-	RevokedAt      time.Time
-	CertExpiresAt  time.Time
+	AgentID       string
+	RevokedAt     time.Time
+	CertExpiresAt time.Time
 }
 
 // UserAppearanceRecord stores one user's persisted appearance preferences.
@@ -90,53 +90,53 @@ type TelemetryRuntimeCurrentRecord struct {
 
 // TelemetryRuntimeDCRecord stores one node's latest DC health row.
 type TelemetryRuntimeDCRecord struct {
-	AgentID             string
-	DC                  int
-	ObservedAt          time.Time
-	AvailableEndpoints  int
-	AvailablePct        float64
-	RequiredWriters     int
-	AliveWriters        int
-	CoveragePct         float64
-	RTTMs               float64
-	Load                float64
+	AgentID            string
+	DC                 int
+	ObservedAt         time.Time
+	AvailableEndpoints int
+	AvailablePct       float64
+	RequiredWriters    int
+	AliveWriters       int
+	CoveragePct        float64
+	RTTMs              float64
+	Load               float64
 }
 
 // TelemetryRuntimeUpstreamRecord stores one node's latest upstream health row.
 type TelemetryRuntimeUpstreamRecord struct {
-	AgentID             string
-	UpstreamID          int
-	ObservedAt          time.Time
-	RouteKind           string
-	Address             string
-	Healthy             bool
-	Fails               int
-	EffectiveLatencyMs  float64
+	AgentID            string
+	UpstreamID         int
+	ObservedAt         time.Time
+	RouteKind          string
+	Address            string
+	Healthy            bool
+	Fails              int
+	EffectiveLatencyMs float64
 }
 
 // TelemetryRuntimeEventRecord stores one recent runtime event observed for a node.
 type TelemetryRuntimeEventRecord struct {
-	AgentID      string
-	Sequence     int64
-	ObservedAt   time.Time
-	Timestamp    time.Time
-	EventType    string
-	Context      string
-	Severity     string
+	AgentID    string
+	Sequence   int64
+	ObservedAt time.Time
+	Timestamp  time.Time
+	EventType  string
+	Context    string
+	Severity   string
 }
 
 // TelemetryDiagnosticsCurrentRecord stores the latest slower diagnostics payloads for one node.
 type TelemetryDiagnosticsCurrentRecord struct {
-	AgentID              string
-	ObservedAt           time.Time
-	State                string
-	StateReason          string
-	SystemInfoJSON       string
-	EffectiveLimitsJSON  string
-	SecurityPostureJSON  string
-	MinimalAllJSON       string
-	MEPoolJSON           string
-	DcsJSON              string
+	AgentID             string
+	ObservedAt          time.Time
+	State               string
+	StateReason         string
+	SystemInfoJSON      string
+	EffectiveLimitsJSON string
+	SecurityPostureJSON string
+	MinimalAllJSON      string
+	MEPoolJSON          string
+	DcsJSON             string
 }
 
 // TelemetrySecurityInventoryCurrentRecord stores the latest security inventory payload for one node.
@@ -152,9 +152,9 @@ type TelemetrySecurityInventoryCurrentRecord struct {
 
 // TelemetryDetailBoostRecord stores one persisted detail boost window for a node.
 type TelemetryDetailBoostRecord struct {
-	AgentID    string
-	ExpiresAt  time.Time
-	UpdatedAt  time.Time
+	AgentID   string
+	ExpiresAt time.Time
+	UpdatedAt time.Time
 }
 
 // FleetGroupRecord stores one fleet group in the global control-plane namespace.
@@ -319,7 +319,7 @@ type RetentionSettingsRecord struct {
 type CertificateAuthorityRecord struct {
 	CAPEM         string
 	PrivateKeyPEM string
-	UpdatedAt      time.Time
+	UpdatedAt     time.Time
 }
 
 // ClientRecord stores one centrally managed Telemt client definition.
@@ -362,52 +362,52 @@ type ClientDeploymentRecord struct {
 
 // DiscoveredClientRecord stores one Telemt user found on an agent that is not managed by the panel.
 type DiscoveredClientRecord struct {
-	ID                string
-	AgentID           string
-	ClientName        string
-	Secret            string
-	Status            string
-	TotalOctets       uint64
+	ID                 string
+	AgentID            string
+	ClientName         string
+	Secret             string
+	Status             string
+	TotalOctets        uint64
 	CurrentConnections int
-	ActiveUniqueIPs   int
-	ConnectionLink    string
-	MaxTCPConns       int
-	MaxUniqueIPs      int
-	DataQuotaBytes    int64
-	Expiration        string
-	DiscoveredAt      time.Time
-	UpdatedAt         time.Time
+	ActiveUniqueIPs    int
+	ConnectionLink     string
+	MaxTCPConns        int
+	MaxUniqueIPs       int
+	DataQuotaBytes     int64
+	Expiration         string
+	DiscoveredAt       time.Time
+	UpdatedAt          time.Time
 }
 
 // ServerLoadPointRecord stores one aggregated runtime snapshot for timeseries.
 type ServerLoadPointRecord struct {
-	AgentID               string
-	CapturedAt            time.Time
-	CPUPctAvg             float64
-	CPUPctMax             float64
-	MemPctAvg             float64
-	MemPctMax             float64
-	DiskPctAvg            float64
-	DiskPctMax            float64
-	Load1M                float64
-	Load5M                float64
-	Load15M               float64
-	ConnectionsAvg        int
-	ConnectionsMax        int
-	ConnectionsMEAvg      int
-	ConnectionsDirectAvg  int
-	ActiveUsersAvg        int
-	ActiveUsersMax        int
-	ConnectionsTotal      uint64
-	ConnectionsBadTotal   uint64
+	AgentID                string
+	CapturedAt             time.Time
+	CPUPctAvg              float64
+	CPUPctMax              float64
+	MemPctAvg              float64
+	MemPctMax              float64
+	DiskPctAvg             float64
+	DiskPctMax             float64
+	Load1M                 float64
+	Load5M                 float64
+	Load15M                float64
+	ConnectionsAvg         int
+	ConnectionsMax         int
+	ConnectionsMEAvg       int
+	ConnectionsDirectAvg   int
+	ActiveUsersAvg         int
+	ActiveUsersMax         int
+	ConnectionsTotal       uint64
+	ConnectionsBadTotal    uint64
 	HandshakeTimeoutsTotal uint64
-	DCCoverageMinPct      float64
-	DCCoverageAvgPct      float64
-	HealthyUpstreams      int
-	TotalUpstreams        int
-	NetBytesSent          uint64
-	NetBytesRecv          uint64
-	SampleCount           int
+	DCCoverageMinPct       float64
+	DCCoverageAvgPct       float64
+	HealthyUpstreams       int
+	TotalUpstreams         int
+	NetBytesSent           uint64
+	NetBytesRecv           uint64
+	SampleCount            int
 }
 
 // DCHealthPointRecord stores one aggregated DC health snapshot.
@@ -434,19 +434,35 @@ type ClientIPHistoryRecord struct {
 	LastSeen  time.Time
 }
 
+// ClientUsageRecord stores the lifetime traffic + live-gauge counters
+// for one (client, agent) pair. Persisted so the in-memory
+// server.clientUsage map rehydrates across restarts without losing
+// accumulated totals. LastSeq is the per-agent delta cursor (rewinds
+// to 1 on agent restart; the higher value wins).
+type ClientUsageRecord struct {
+	ClientID         string
+	AgentID          string
+	TrafficUsedBytes uint64
+	UniqueIPsUsed    int
+	ActiveTCPConns   int
+	ActiveUniqueIPs  int
+	LastSeq          uint64
+	ObservedAt       time.Time
+}
+
 // ServerLoadHourlyRecord stores one hourly rollup of server load metrics.
 type ServerLoadHourlyRecord struct {
-	AgentID         string
-	BucketHour      time.Time
-	CPUPctAvg       float64
-	CPUPctMax       float64
-	MemPctAvg       float64
-	MemPctMax       float64
-	ConnectionsAvg  float64
-	ConnectionsMax  int
-	ActiveUsersAvg  float64
-	ActiveUsersMax  int
-	DCCoverageMin   float64
-	DCCoverageAvg   float64
-	SampleCount     int
+	AgentID        string
+	BucketHour     time.Time
+	CPUPctAvg      float64
+	CPUPctMax      float64
+	MemPctAvg      float64
+	MemPctMax      float64
+	ConnectionsAvg float64
+	ConnectionsMax int
+	ActiveUsersAvg float64
+	ActiveUsersMax int
+	DCCoverageMin  float64
+	DCCoverageAvg  float64
+	SampleCount    int
 }

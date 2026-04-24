@@ -44,22 +44,22 @@ type instanceSnapshot struct {
 }
 
 type agentSnapshot struct {
-	AgentID      string
-	NodeName     string
-	FleetGroupID string
-	Version      string
-	ReadOnly     bool
-	Instances    []instanceSnapshot
-	Clients      []clientUsageSnapshot
-	HasClients   bool
-	ClientIPs    []clientIPSnapshot
-	HasClientIPs bool
-	Runtime      *gatewayrpc.RuntimeSnapshot
-	HasRuntime   bool
-	RuntimeDiagnostics *gatewayrpc.RuntimeDiagnosticsSnapshot
+	AgentID                  string
+	NodeName                 string
+	FleetGroupID             string
+	Version                  string
+	ReadOnly                 bool
+	Instances                []instanceSnapshot
+	Clients                  []clientUsageSnapshot
+	HasClients               bool
+	ClientIPs                []clientIPSnapshot
+	HasClientIPs             bool
+	Runtime                  *gatewayrpc.RuntimeSnapshot
+	HasRuntime               bool
+	RuntimeDiagnostics       *gatewayrpc.RuntimeDiagnosticsSnapshot
 	RuntimeSecurityInventory *gatewayrpc.RuntimeSecurityInventorySnapshot
-	Metrics      map[string]uint64
-	ObservedAt   time.Time
+	Metrics                  map[string]uint64
+	ObservedAt               time.Time
 }
 
 // clientUsageSnapshot now lives in controlplane/clients as
@@ -662,6 +662,12 @@ func (s *Server) applyClientUsageSnapshot(agentID string, clients []clientUsageS
 	}
 
 	seen := make(map[string]struct{}, len(clients))
+	// Collect write-through targets to persist after we've finished
+	// mutating the in-memory map. Persisted backing lets clientUsage
+	// survive a panel restart — otherwise each adopted client would
+	// snap to zero bytes and wait for the next agent tick, which only
+	// carries a single polling interval worth of delta.
+	toPersist := make([]storage.ClientUsageRecord, 0, len(clients))
 	for _, usage := range clients {
 		seen[usage.ClientID] = struct{}{}
 		if s.clientUsage[usage.ClientID] == nil {
@@ -677,6 +683,24 @@ func (s *Server) applyClientUsageSnapshot(agentID string, clients []clientUsageS
 		current.ActiveUniqueIPs = usage.ActiveUniqueIPs
 		current.ObservedAt = usage.ObservedAt
 		s.clientUsage[usage.ClientID][agentID] = current
+		toPersist = append(toPersist, storage.ClientUsageRecord{
+			ClientID:         usage.ClientID,
+			AgentID:          agentID,
+			TrafficUsedBytes: current.TrafficUsedBytes,
+			UniqueIPsUsed:    current.UniqueIPsUsed,
+			ActiveTCPConns:   current.ActiveTCPConns,
+			ActiveUniqueIPs:  current.ActiveUniqueIPs,
+			LastSeq:          s.lastUsageSeq[agentID],
+			ObservedAt:       current.ObservedAt,
+		})
+	}
+	if s.store != nil {
+		for _, rec := range toPersist {
+			if err := s.store.UpsertClientUsage(context.Background(), rec); err != nil {
+				s.logger.Warn("persist client_usage",
+					"client_id", rec.ClientID, "agent_id", rec.AgentID, "error", err)
+			}
+		}
 	}
 
 	for clientID, usageByAgent := range s.clientUsage {

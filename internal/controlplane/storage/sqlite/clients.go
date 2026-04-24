@@ -270,3 +270,58 @@ func (s *Store) ListClientDeployments(ctx context.Context, clientID string) ([]s
 
 	return result, rows.Err()
 }
+
+func (s *Store) UpsertClientUsage(ctx context.Context, r storage.ClientUsageRecord) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO client_usage (
+			client_id, agent_id, traffic_used_bytes, unique_ips_used,
+			active_tcp_conns, active_unique_ips, last_seq, observed_at_unix
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(client_id, agent_id) DO UPDATE SET
+			traffic_used_bytes = excluded.traffic_used_bytes,
+			unique_ips_used    = excluded.unique_ips_used,
+			active_tcp_conns   = excluded.active_tcp_conns,
+			active_unique_ips  = excluded.active_unique_ips,
+			last_seq           = excluded.last_seq,
+			observed_at_unix   = excluded.observed_at_unix
+	`,
+		r.ClientID, r.AgentID,
+		int64(r.TrafficUsedBytes), r.UniqueIPsUsed,
+		r.ActiveTCPConns, r.ActiveUniqueIPs,
+		int64(r.LastSeq), toUnix(r.ObservedAt))
+	return err
+}
+
+func (s *Store) ListClientUsage(ctx context.Context) ([]storage.ClientUsageRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT client_id, agent_id, traffic_used_bytes, unique_ips_used,
+			active_tcp_conns, active_unique_ips, last_seq, observed_at_unix
+		FROM client_usage
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]storage.ClientUsageRecord, 0)
+	for rows.Next() {
+		var r storage.ClientUsageRecord
+		var traffic, lastSeq int64
+		var observedAt int64
+		if err := rows.Scan(&r.ClientID, &r.AgentID, &traffic, &r.UniqueIPsUsed,
+			&r.ActiveTCPConns, &r.ActiveUniqueIPs, &lastSeq, &observedAt); err != nil {
+			return nil, err
+		}
+		r.TrafficUsedBytes = uint64(traffic)
+		r.LastSeq = uint64(lastSeq)
+		r.ObservedAt = fromUnix(observedAt)
+		result = append(result, r)
+	}
+	return result, rows.Err()
+}
+
+func (s *Store) DeleteClientUsageByClient(ctx context.Context, clientID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM client_usage WHERE client_id = ?`, clientID)
+	return err
+}

@@ -189,6 +189,12 @@ type ClientStore interface {
 	ListClientAssignments(ctx context.Context, clientID string) ([]ClientAssignmentRecord, error)
 	PutClientDeployment(ctx context.Context, deployment ClientDeploymentRecord) error
 	ListClientDeployments(ctx context.Context, clientID string) ([]ClientDeploymentRecord, error)
+	// Per-(client, agent) usage counters. Persisted so the in-memory
+	// server.clientUsage map can rehydrate across restarts without losing
+	// accumulated traffic totals.
+	UpsertClientUsage(ctx context.Context, record ClientUsageRecord) error
+	ListClientUsage(ctx context.Context) ([]ClientUsageRecord, error)
+	DeleteClientUsageByClient(ctx context.Context, clientID string) error
 }
 
 // DiscoveredClientStore persists Telemt users found on agents that are not managed by the panel.

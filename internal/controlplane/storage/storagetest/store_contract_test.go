@@ -23,74 +23,74 @@ type memoryStore struct {
 	// "concurrent writers" test observes the contract's exclusivity
 	// guarantee (each Transact runs atomically w.r.t. other Transacts)
 	// without introducing per-field locking across the whole store.
-	txMu               sync.Mutex
-	users              map[string]storage.UserRecord
-	usernames          map[string]string
-	userAppearance     map[string]storage.UserAppearanceRecord
-	fleetGroups        map[string]storage.FleetGroupRecord
-	agents             map[string]storage.AgentRecord
-	instances          map[string]storage.InstanceRecord
-	telemetryRuntimeCurrent map[string]storage.TelemetryRuntimeCurrentRecord
-	telemetryRuntimeDCs map[string][]storage.TelemetryRuntimeDCRecord
-	telemetryRuntimeUpstreams map[string][]storage.TelemetryRuntimeUpstreamRecord
-	telemetryRuntimeEvents map[string][]storage.TelemetryRuntimeEventRecord
-	telemetryDiagnosticsCurrent map[string]storage.TelemetryDiagnosticsCurrentRecord
-	telemetrySecurityCurrent map[string]storage.TelemetrySecurityInventoryCurrentRecord
-	telemetryDetailBoosts map[string]storage.TelemetryDetailBoostRecord
-	clients            map[string]storage.ClientRecord
-	clientAssignments  map[string]storage.ClientAssignmentRecord
-	clientDeployments  map[string]storage.ClientDeploymentRecord
-	jobs               map[string]storage.JobRecord
-	jobsByKey          map[string]string
-	jobTargets         map[string]storage.JobTargetRecord
-	auditEvents        []storage.AuditEventRecord
-	metricSnapshots    []storage.MetricSnapshotRecord
-	enrollmentTokens   map[string]storage.EnrollmentTokenRecord
+	txMu                           sync.Mutex
+	users                          map[string]storage.UserRecord
+	usernames                      map[string]string
+	userAppearance                 map[string]storage.UserAppearanceRecord
+	fleetGroups                    map[string]storage.FleetGroupRecord
+	agents                         map[string]storage.AgentRecord
+	instances                      map[string]storage.InstanceRecord
+	telemetryRuntimeCurrent        map[string]storage.TelemetryRuntimeCurrentRecord
+	telemetryRuntimeDCs            map[string][]storage.TelemetryRuntimeDCRecord
+	telemetryRuntimeUpstreams      map[string][]storage.TelemetryRuntimeUpstreamRecord
+	telemetryRuntimeEvents         map[string][]storage.TelemetryRuntimeEventRecord
+	telemetryDiagnosticsCurrent    map[string]storage.TelemetryDiagnosticsCurrentRecord
+	telemetrySecurityCurrent       map[string]storage.TelemetrySecurityInventoryCurrentRecord
+	telemetryDetailBoosts          map[string]storage.TelemetryDetailBoostRecord
+	clients                        map[string]storage.ClientRecord
+	clientAssignments              map[string]storage.ClientAssignmentRecord
+	clientDeployments              map[string]storage.ClientDeploymentRecord
+	jobs                           map[string]storage.JobRecord
+	jobsByKey                      map[string]string
+	jobTargets                     map[string]storage.JobTargetRecord
+	auditEvents                    []storage.AuditEventRecord
+	metricSnapshots                []storage.MetricSnapshotRecord
+	enrollmentTokens               map[string]storage.EnrollmentTokenRecord
 	agentCertificateRecoveryGrants map[string]storage.AgentCertificateRecoveryGrantRecord
-	discoveredClients  map[string]storage.DiscoveredClientRecord
-	sessions           map[string]storage.SessionRecord
-	loginLockouts      map[string]storage.LoginLockoutRecord
-	agentRevocations   map[string]storage.AgentRevocationRecord
-	panelSettings      *storage.PanelSettingsRecord
-	retentionSettings  *storage.RetentionSettings
-	updateSettings     json.RawMessage
-	updateState        json.RawMessage
-	certificateAuthority *storage.CertificateAuthorityRecord
-	integrationProviders      map[string]storage.IntegrationProviderRecord
-	fleetGroupIntegrations    map[string]storage.FleetGroupIntegrationRecord
+	discoveredClients              map[string]storage.DiscoveredClientRecord
+	sessions                       map[string]storage.SessionRecord
+	loginLockouts                  map[string]storage.LoginLockoutRecord
+	agentRevocations               map[string]storage.AgentRevocationRecord
+	panelSettings                  *storage.PanelSettingsRecord
+	retentionSettings              *storage.RetentionSettings
+	updateSettings                 json.RawMessage
+	updateState                    json.RawMessage
+	certificateAuthority           *storage.CertificateAuthorityRecord
+	integrationProviders           map[string]storage.IntegrationProviderRecord
+	fleetGroupIntegrations         map[string]storage.FleetGroupIntegrationRecord
 }
 
 func newMemoryStore() *memoryStore {
 	return &memoryStore{
-		users:            make(map[string]storage.UserRecord),
-		usernames:        make(map[string]string),
-		userAppearance:   make(map[string]storage.UserAppearanceRecord),
-		fleetGroups:      make(map[string]storage.FleetGroupRecord),
-		agents:           make(map[string]storage.AgentRecord),
-		instances:        make(map[string]storage.InstanceRecord),
-		telemetryRuntimeCurrent: make(map[string]storage.TelemetryRuntimeCurrentRecord),
-		telemetryRuntimeDCs: make(map[string][]storage.TelemetryRuntimeDCRecord),
-		telemetryRuntimeUpstreams: make(map[string][]storage.TelemetryRuntimeUpstreamRecord),
-		telemetryRuntimeEvents: make(map[string][]storage.TelemetryRuntimeEventRecord),
-		telemetryDiagnosticsCurrent: make(map[string]storage.TelemetryDiagnosticsCurrentRecord),
-		telemetrySecurityCurrent: make(map[string]storage.TelemetrySecurityInventoryCurrentRecord),
-		telemetryDetailBoosts: make(map[string]storage.TelemetryDetailBoostRecord),
-		clients:          make(map[string]storage.ClientRecord),
-		clientAssignments: make(map[string]storage.ClientAssignmentRecord),
-		clientDeployments: make(map[string]storage.ClientDeploymentRecord),
-		jobs:             make(map[string]storage.JobRecord),
-		jobsByKey:        make(map[string]string),
-		jobTargets:       make(map[string]storage.JobTargetRecord),
-		auditEvents:      make([]storage.AuditEventRecord, 0),
-		metricSnapshots:  make([]storage.MetricSnapshotRecord, 0),
-		enrollmentTokens: make(map[string]storage.EnrollmentTokenRecord),
+		users:                          make(map[string]storage.UserRecord),
+		usernames:                      make(map[string]string),
+		userAppearance:                 make(map[string]storage.UserAppearanceRecord),
+		fleetGroups:                    make(map[string]storage.FleetGroupRecord),
+		agents:                         make(map[string]storage.AgentRecord),
+		instances:                      make(map[string]storage.InstanceRecord),
+		telemetryRuntimeCurrent:        make(map[string]storage.TelemetryRuntimeCurrentRecord),
+		telemetryRuntimeDCs:            make(map[string][]storage.TelemetryRuntimeDCRecord),
+		telemetryRuntimeUpstreams:      make(map[string][]storage.TelemetryRuntimeUpstreamRecord),
+		telemetryRuntimeEvents:         make(map[string][]storage.TelemetryRuntimeEventRecord),
+		telemetryDiagnosticsCurrent:    make(map[string]storage.TelemetryDiagnosticsCurrentRecord),
+		telemetrySecurityCurrent:       make(map[string]storage.TelemetrySecurityInventoryCurrentRecord),
+		telemetryDetailBoosts:          make(map[string]storage.TelemetryDetailBoostRecord),
+		clients:                        make(map[string]storage.ClientRecord),
+		clientAssignments:              make(map[string]storage.ClientAssignmentRecord),
+		clientDeployments:              make(map[string]storage.ClientDeploymentRecord),
+		jobs:                           make(map[string]storage.JobRecord),
+		jobsByKey:                      make(map[string]string),
+		jobTargets:                     make(map[string]storage.JobTargetRecord),
+		auditEvents:                    make([]storage.AuditEventRecord, 0),
+		metricSnapshots:                make([]storage.MetricSnapshotRecord, 0),
+		enrollmentTokens:               make(map[string]storage.EnrollmentTokenRecord),
 		agentCertificateRecoveryGrants: make(map[string]storage.AgentCertificateRecoveryGrantRecord),
-		discoveredClients: make(map[string]storage.DiscoveredClientRecord),
-		sessions:          make(map[string]storage.SessionRecord),
-		loginLockouts:     make(map[string]storage.LoginLockoutRecord),
-		agentRevocations:  make(map[string]storage.AgentRevocationRecord),
-		integrationProviders:   make(map[string]storage.IntegrationProviderRecord),
-		fleetGroupIntegrations: make(map[string]storage.FleetGroupIntegrationRecord),
+		discoveredClients:              make(map[string]storage.DiscoveredClientRecord),
+		sessions:                       make(map[string]storage.SessionRecord),
+		loginLockouts:                  make(map[string]storage.LoginLockoutRecord),
+		agentRevocations:               make(map[string]storage.AgentRevocationRecord),
+		integrationProviders:           make(map[string]storage.IntegrationProviderRecord),
+		fleetGroupIntegrations:         make(map[string]storage.FleetGroupIntegrationRecord),
 	}
 }
 
@@ -223,9 +223,9 @@ func (s *memoryStore) GetUserAppearance(_ context.Context, userID string) (stora
 	appearance, ok := s.userAppearance[userID]
 	if !ok {
 		return storage.UserAppearanceRecord{
-			UserID:  userID,
-			Theme:   "system",
-			Density: "comfortable",
+			UserID:   userID,
+			Theme:    "system",
+			Density:  "comfortable",
 			HelpMode: "basic",
 		}, nil
 	}
@@ -1089,6 +1089,18 @@ func (s *memoryStore) UpsertClientIPHistoryBulk(_ context.Context, _ []storage.C
 
 func (s *memoryStore) ListClientIPHistory(_ context.Context, _ string, _ time.Time, _ time.Time) ([]storage.ClientIPHistoryRecord, error) {
 	return nil, nil
+}
+
+func (s *memoryStore) UpsertClientUsage(_ context.Context, _ storage.ClientUsageRecord) error {
+	return nil
+}
+
+func (s *memoryStore) ListClientUsage(_ context.Context) ([]storage.ClientUsageRecord, error) {
+	return nil, nil
+}
+
+func (s *memoryStore) DeleteClientUsageByClient(_ context.Context, _ string) error {
+	return nil
 }
 
 func (s *memoryStore) CountUniqueClientIPs(_ context.Context, _ string) (int, error) {
