@@ -7,6 +7,7 @@ vi.mock("@/shared/api/api", () => ({
   apiClient: {
     updateClient: vi.fn(),
     rotateClientSecret: vi.fn(),
+    redeployClient: vi.fn(),
     deleteClient: vi.fn(),
   },
 }));
@@ -139,6 +140,45 @@ describe("useClientMutations", () => {
     await result.current.rotateMutation.mutateAsync();
     expect(apiClient.rotateClientSecret).toHaveBeenCalledWith("c1");
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["client", "c1"] });
+  });
+
+  it("redeployMutation calls redeployClient and invalidates both keys on success", async () => {
+    (apiClient.redeployClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      undefined,
+    );
+
+    const { Wrapper, qc } = wrapper();
+    const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
+
+    const { result } = renderHook(
+      () => useClientMutations("c1", rawClient),
+      { wrapper: Wrapper },
+    );
+
+    await result.current.redeployMutation.mutateAsync();
+    expect(apiClient.redeployClient).toHaveBeenCalledWith("c1");
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["client", "c1"] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["clients"] });
+  });
+
+  it("redeployMutation surfaces failures via toast.error", async () => {
+    (apiClient.redeployClient as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("no failed deployments"),
+    );
+
+    const { Wrapper } = wrapper();
+    const { result } = renderHook(
+      () => useClientMutations("c1", rawClient),
+      { wrapper: Wrapper },
+    );
+
+    await expect(result.current.redeployMutation.mutateAsync()).rejects.toThrow(
+      "no failed deployments",
+    );
+
+    await waitFor(() => {
+      expect(toastApi.error).toHaveBeenCalledWith("no failed deployments");
+    });
   });
 
   it("deleteMutation calls deleteClient and invalidates list", async () => {
