@@ -81,22 +81,29 @@ func serveUIIndex(w http.ResponseWriter, r *http.Request, uiFiles fs.FS, rootPat
 			// the dataset lookup still works.
 			body = "<html" + attr + ">" + body + "</html>"
 		}
+	}
 
-		// Inject <base href="<rootPath>/"> right after <head>. Required so
-		// Vite's __vite__mapDeps preload table (which writes
-		// `link.href = "assets/..."` at runtime) resolves against the
-		// panel's root path instead of the browser's current URL —
-		// otherwise visiting `/pan` (no trailing slash) would make those
-		// preloads fall through to `/assets/...` and bypass the panel
-		// mount.
-		baseTag := `<base href="` + html.EscapeString(rootPath) + `/">`
-		if loc := headOpenTagPattern.FindStringIndex(body); loc != nil {
-			body = body[:loc[1]] + baseTag + body[loc[1]:]
-		} else {
-			// No <head> — best-effort prepend so runtime asset resolution
-			// still works.
-			body = baseTag + body
-		}
+	// Inject <base href> unconditionally. Vite is configured with
+	// `base: "./"` for the embed build so the emitted index.html
+	// carries relative asset URLs (`./assets/…`). On a deep-link reload
+	// — e.g. /clients/<uuid> — the browser resolves `./assets/` against
+	// the document URL and requests `/clients/assets/…`, which the SPA
+	// fallback serves as HTML, breaking every module import with a
+	// MIME-type error. A <base href> pinned to the panel root anchors
+	// every relative URL at a stable prefix regardless of the current
+	// path. Non-rooted deployments pin to "/"; rooted deployments
+	// (CSP-restricted `/pan`-style mounts) pin to "<rootPath>/".
+	basePath := rootPath
+	if basePath == "" {
+		basePath = "/"
+	} else if !strings.HasSuffix(basePath, "/") {
+		basePath = basePath + "/"
+	}
+	baseTag := `<base href="` + html.EscapeString(basePath) + `">`
+	if loc := headOpenTagPattern.FindStringIndex(body); loc != nil {
+		body = body[:loc[1]] + baseTag + body[loc[1]:]
+	} else {
+		body = baseTag + body
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
