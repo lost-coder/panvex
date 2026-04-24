@@ -352,7 +352,7 @@ func TestHTTPAuthTotpSetupEnableDisableFlow(t *testing.T) {
 	}
 
 	var setupPayload struct {
-		Secret    string `json:"secret"`
+		Secret     string `json:"secret"`
 		OTPAuthURL string `json:"otpauth_url"`
 	}
 	if err := json.Unmarshal(setupResponse.Body.Bytes(), &setupPayload); err != nil {
@@ -645,14 +645,14 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 	}
 
 	first := New(Options{
-		Now: func() time.Time { return now },
+		Now:   func() time.Time { return now },
 		Users: []auth.User{user},
 		Store: store,
 	})
 	fleetGroupID := seedTestFleetGroup(t, store, "ams-1", now)
 	token, err := first.issueEnrollmentToken(security.EnrollmentScope{
-		FleetGroupID:  fleetGroupID,
-		TTL:           time.Minute,
+		FleetGroupID: fleetGroupID,
+		TTL:          time.Minute,
 	}, now)
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
@@ -668,10 +668,10 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 	}
 
 	if err := first.applyAgentSnapshot(agentSnapshot{
-		AgentID:       identity.AgentID,
-		NodeName:      "node-a",
-		FleetGroupID:  fleetGroupID,
-		Version:       "1.0.0",
+		AgentID:      identity.AgentID,
+		NodeName:     "node-a",
+		FleetGroupID: fleetGroupID,
+		Version:      "1.0.0",
 		Instances: []instanceSnapshot{
 			{
 				ID:                "instance-1",
@@ -692,7 +692,7 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 	first.Close()
 
 	restored := New(Options{
-		Now: func() time.Time { return now.Add(2 * time.Minute) },
+		Now:   func() time.Time { return now.Add(2 * time.Minute) },
 		Users: []auth.User{user},
 		Store: store,
 	})
@@ -838,7 +838,7 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 	}
 
 	first := New(Options{
-		Now: func() time.Time { return now },
+		Now:   func() time.Time { return now },
 		Users: []auth.User{user},
 		Store: store,
 	})
@@ -857,8 +857,8 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 
 	fleetGroupID := seedTestFleetGroup(t, store, "ams-1", now)
 	tokenOne, err := first.issueEnrollmentToken(security.EnrollmentScope{
-		FleetGroupID:  fleetGroupID,
-		TTL:           time.Minute,
+		FleetGroupID: fleetGroupID,
+		TTL:          time.Minute,
 	}, now)
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken(agent-1) error = %v", err)
@@ -873,8 +873,8 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 	}
 
 	tokenTwo, err := first.issueEnrollmentToken(security.EnrollmentScope{
-		FleetGroupID:  fleetGroupID,
-		TTL:           time.Minute,
+		FleetGroupID: fleetGroupID,
+		TTL:          time.Minute,
 	}, now)
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken(agent-2) error = %v", err)
@@ -924,7 +924,7 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 	first.Close()
 
 	restored := New(Options{
-		Now: func() time.Time { return now.Add(2 * time.Minute) },
+		Now:   func() time.Time { return now.Add(2 * time.Minute) },
 		Users: []auth.User{user},
 		Store: store,
 	})
@@ -997,13 +997,13 @@ func TestHTTPAgentBootstrapConsumesTokenAndReturnsIdentityBundle(t *testing.T) {
 	defer store.Close()
 
 	server := New(Options{
-		Now: func() time.Time { return now },
+		Now:   func() time.Time { return now },
 		Store: store,
 	})
 	defer server.Close()
 	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
-		FleetGroupID:  "default",
-		TTL:           time.Minute,
+		FleetGroupID: "default",
+		TTL:          time.Minute,
 	}, now)
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
@@ -1086,13 +1086,13 @@ func TestHTTPAgentBootstrapRejectsConsumedToken(t *testing.T) {
 	defer store.Close()
 
 	server := New(Options{
-		Now: func() time.Time { return now },
+		Now:   func() time.Time { return now },
 		Store: store,
 	})
 	defer server.Close()
 	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
-		FleetGroupID:  "default",
-		TTL:           time.Minute,
+		FleetGroupID: "default",
+		TTL:          time.Minute,
 	}, now)
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
@@ -1403,20 +1403,20 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 	}
 
 	server.agents["agent-1"] = Agent{
-		ID:            "agent-1",
-		NodeName:      "node-a",
-		FleetGroupID:  "ams-1",
-		Version:       "1.0.0",
+		ID:           "agent-1",
+		NodeName:     "node-a",
+		FleetGroupID: "ams-1",
+		Version:      "1.0.0",
 		Runtime: AgentRuntime{
-			AcceptingNewConnections: true,
-			UseMiddleProxy:          true,
-			TransportMode:           "middle_proxy",
-			CurrentConnections:      42,
-			CurrentConnectionsME:    39,
+			AcceptingNewConnections:  true,
+			UseMiddleProxy:           true,
+			TransportMode:            "middle_proxy",
+			CurrentConnections:       42,
+			CurrentConnectionsME:     39,
 			CurrentConnectionsDirect: 3,
-			DCCoveragePct:           100,
-			HealthyUpstreams:        1,
-			TotalUpstreams:          2,
+			DCCoveragePct:            100,
+			HealthyUpstreams:         1,
+			TotalUpstreams:           2,
 			RecentEvents: []RuntimeEvent{
 				{
 					Sequence:      5,
@@ -1426,23 +1426,23 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 				},
 			},
 		},
-		LastSeenAt:    currentTime,
+		LastSeenAt: currentTime,
 	}
 	server.agents["agent-2"] = Agent{
-		ID:            "agent-2",
-		NodeName:      "node-b",
-		FleetGroupID:  "ams-1",
-		Version:       "1.0.0",
+		ID:           "agent-2",
+		NodeName:     "node-b",
+		FleetGroupID: "ams-1",
+		Version:      "1.0.0",
 		Runtime: AgentRuntime{
-			AcceptingNewConnections: false,
-			UseMiddleProxy:          false,
-			TransportMode:           "direct",
-			CurrentConnections:      8,
-			CurrentConnectionsME:    0,
+			AcceptingNewConnections:  false,
+			UseMiddleProxy:           false,
+			TransportMode:            "direct",
+			CurrentConnections:       8,
+			CurrentConnectionsME:     0,
 			CurrentConnectionsDirect: 8,
-			DCCoveragePct:           72,
-			HealthyUpstreams:        1,
-			TotalUpstreams:          3,
+			DCCoveragePct:            72,
+			HealthyUpstreams:         1,
+			TotalUpstreams:           3,
 			RecentEvents: []RuntimeEvent{
 				{
 					Sequence:      7,
@@ -1452,25 +1452,25 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 				},
 			},
 		},
-		LastSeenAt:    currentTime.Add(-45 * time.Second),
+		LastSeenAt: currentTime.Add(-45 * time.Second),
 	}
 	server.agents["agent-3"] = Agent{
-		ID:            "agent-3",
-		NodeName:      "node-c",
-		FleetGroupID:  "edge",
-		Version:       "1.0.0",
+		ID:           "agent-3",
+		NodeName:     "node-c",
+		FleetGroupID: "edge",
+		Version:      "1.0.0",
 		Runtime: AgentRuntime{
-			AcceptingNewConnections: true,
-			UseMiddleProxy:          true,
-			TransportMode:           "middle_proxy",
-			CurrentConnections:      0,
-			CurrentConnectionsME:    0,
+			AcceptingNewConnections:  true,
+			UseMiddleProxy:           true,
+			TransportMode:            "middle_proxy",
+			CurrentConnections:       0,
+			CurrentConnectionsME:     0,
 			CurrentConnectionsDirect: 0,
-			DCCoveragePct:           0,
-			HealthyUpstreams:        0,
-			TotalUpstreams:          0,
+			DCCoveragePct:            0,
+			HealthyUpstreams:         0,
+			TotalUpstreams:           0,
 		},
-		LastSeenAt:    currentTime.Add(-2 * time.Minute),
+		LastSeenAt: currentTime.Add(-2 * time.Minute),
 	}
 	server.instances["instance-1"] = Instance{
 		ID:             "instance-1",
@@ -1558,9 +1558,9 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 			SetupComplete         bool   `json:"setup_complete"`
 			SuggestedFleetGroupID string `json:"suggested_fleet_group_id"`
 		} `json:"onboarding"`
-		Fleet fleetResponse `json:"fleet"`
+		Fleet               fleetResponse  `json:"fleet"`
 		RecentRuntimeEvents []RuntimeEvent `json:"recent_runtime_events"`
-		Jobs  struct {
+		Jobs                struct {
 			Total   int `json:"total"`
 			Queued  int `json:"queued"`
 			Running int `json:"running"`
@@ -1640,9 +1640,9 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 func TestHTTPEmbeddedUIFallsBackToIndexForSPARoute(t *testing.T) {
 	now := time.Date(2026, time.March, 15, 12, 0, 0, 0, time.UTC)
 	server := New(Options{
-		Now:     func() time.Time { return now },
+		Now: func() time.Time { return now },
 		UIFiles: fstest.MapFS{
-			"index.html": &fstest.MapFile{Data: []byte("<html><body>panvex</body></html>")},
+			"index.html":    &fstest.MapFile{Data: []byte("<html><body>panvex</body></html>")},
 			"assets/app.js": &fstest.MapFile{Data: []byte("console.log('panvex')")},
 		},
 	})
@@ -1707,7 +1707,7 @@ func TestHTTPEmbeddedUIServesStaticAsset(t *testing.T) {
 	server := New(Options{
 		Now: func() time.Time { return now },
 		UIFiles: fstest.MapFS{
-			"index.html": &fstest.MapFile{Data: []byte("<html><body>panvex</body></html>")},
+			"index.html":    &fstest.MapFile{Data: []byte("<html><body>panvex</body></html>")},
 			"assets/app.js": &fstest.MapFile{Data: []byte("console.log('panvex')")},
 		},
 	})

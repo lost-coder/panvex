@@ -50,7 +50,6 @@ const SheetContent = React.forwardRef<
       typeof import.meta !== "undefined" &&
       (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV
     ) {
-      // eslint-disable-next-line no-console
       console.warn(
         "[panvex-ui] <SheetContent> needs an accessible name — either render a <SheetTitle> inside children or pass the `title` prop. Radix Dialog will otherwise log a missing-title warning.",
       );

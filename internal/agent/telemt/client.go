@@ -42,17 +42,17 @@ type Config struct {
 
 // Client accesses the Telemt control API through a loopback-only endpoint.
 type Client struct {
-	baseURL       *url.URL
-	metricsURL    *url.URL
-	authorization string
-	httpClient    *http.Client
-	logger        *slog.Logger
+	baseURL           *url.URL
+	metricsURL        *url.URL
+	authorization     string
+	httpClient        *http.Client
+	logger            *slog.Logger
 	systemLoadSampler func(context.Context) (RuntimeSystemLoad, error)
-	mu            sync.RWMutex
-	slowDataTTL   time.Duration
-	slowFetchedAt time.Time
-	slowData      slowRuntimeState
-	hasSlowData   bool
+	mu                sync.RWMutex
+	slowDataTTL       time.Duration
+	slowFetchedAt     time.Time
+	slowData          slowRuntimeState
+	hasSlowData       bool
 }
 
 // InvalidateSlowDataCache forces the next runtime snapshot to refetch slow diagnostics.
@@ -78,22 +78,22 @@ type slowRuntimeState struct {
 
 // RuntimeState summarizes the Telemt information the agent reports to the control-plane.
 type RuntimeState struct {
-	Version          string
-	ReadOnly         bool
-	UptimeSeconds    float64
-	ConnectedUsers   int
-	Gates            RuntimeGates
-	Initialization   RuntimeInitialization
-	ConnectionTotals RuntimeConnectionTotals
-	Summary          RuntimeSummary
-	DCs              []RuntimeDC
-	Upstreams        RuntimeUpstreamSummary
-	RecentEvents     []RuntimeEvent
-	Diagnostics      RuntimeDiagnostics
+	Version           string
+	ReadOnly          bool
+	UptimeSeconds     float64
+	ConnectedUsers    int
+	Gates             RuntimeGates
+	Initialization    RuntimeInitialization
+	ConnectionTotals  RuntimeConnectionTotals
+	Summary           RuntimeSummary
+	DCs               []RuntimeDC
+	Upstreams         RuntimeUpstreamSummary
+	RecentEvents      []RuntimeEvent
+	Diagnostics       RuntimeDiagnostics
 	SecurityInventory RuntimeSecurityInventory
 	MeWritersSummary  RuntimeMeWritersSummary
-	SystemLoad       RuntimeSystemLoad
-	Clients          []ClientUsage
+	SystemLoad        RuntimeSystemLoad
+	Clients           []ClientUsage
 	// Partial indicates that at least one Telemt sub-fetch failed or the
 	// outer context expired during FetchRuntimeState. Downstream callers
 	// should log a warning and may still forward the snapshot to the
@@ -300,13 +300,13 @@ func NewClient(config Config, httpClient *http.Client) (*Client, error) {
 	}
 
 	return &Client{
-		baseURL:       parsed,
-		metricsURL:    metricsURL,
-		authorization: config.Authorization,
-		httpClient:    httpClient,
-		logger:        slog.Default(),
+		baseURL:           parsed,
+		metricsURL:        metricsURL,
+		authorization:     config.Authorization,
+		httpClient:        httpClient,
+		logger:            slog.Default(),
 		systemLoadSampler: collectLocalSystemLoad,
-		slowDataTTL:   defaultSlowDataTTL,
+		slowDataTTL:       defaultSlowDataTTL,
 	}, nil
 }
 
@@ -361,16 +361,16 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 	}
 
 	posture := struct {
-		ReadOnly               bool   `json:"read_only"`
-		APIReadOnly            bool   `json:"api_read_only"`
-		APIWhitelistEnabled    bool   `json:"api_whitelist_enabled"`
-		APIWhitelistEntries    int    `json:"api_whitelist_entries"`
-		APIAuthHeaderEnabled   bool   `json:"api_auth_header_enabled"`
-		ProxyProtocolEnabled   bool   `json:"proxy_protocol_enabled"`
-		LogLevel               string `json:"log_level"`
-		TelemetryCoreEnabled   bool   `json:"telemetry_core_enabled"`
-		TelemetryUserEnabled   bool   `json:"telemetry_user_enabled"`
-		TelemetryMELevel       string `json:"telemetry_me_level"`
+		ReadOnly             bool   `json:"read_only"`
+		APIReadOnly          bool   `json:"api_read_only"`
+		APIWhitelistEnabled  bool   `json:"api_whitelist_enabled"`
+		APIWhitelistEntries  int    `json:"api_whitelist_entries"`
+		APIAuthHeaderEnabled bool   `json:"api_auth_header_enabled"`
+		ProxyProtocolEnabled bool   `json:"proxy_protocol_enabled"`
+		LogLevel             string `json:"log_level"`
+		TelemetryCoreEnabled bool   `json:"telemetry_core_enabled"`
+		TelemetryUserEnabled bool   `json:"telemetry_user_enabled"`
+		TelemetryMELevel     string `json:"telemetry_me_level"`
 	}{}
 	if err := c.getJSON(ctx, "/v1/security/posture", &posture); err != nil {
 		markPartial("/v1/security/posture", err)
@@ -424,7 +424,7 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 					Connections int    `json:"connections"`
 				} `json:"by_connections"`
 				ByThroughput []struct {
-					Username       string `json:"username"`
+					Username        string `json:"username"`
 					ThroughputBytes uint64 `json:"throughput_bytes"`
 				} `json:"by_throughput"`
 			} `json:"top"`
@@ -579,15 +579,15 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 			HandshakeTimeoutsTotal: summary.HandshakeTimeoutsTotal,
 			ConfiguredUsers:        summary.ConfiguredUsers,
 		},
-		DCs:          dcs,
-		Upstreams:    slowData.Upstreams,
-		RecentEvents: slowData.RecentEvents,
-		Diagnostics:      slowData.Diagnostics,
+		DCs:               dcs,
+		Upstreams:         slowData.Upstreams,
+		RecentEvents:      slowData.RecentEvents,
+		Diagnostics:       slowData.Diagnostics,
 		SecurityInventory: slowData.SecurityInventory,
-		MeWritersSummary: slowData.MeWritersSummary,
-		SystemLoad:       systemLoad,
-		Clients:      users,
-		Partial:      partial,
+		MeWritersSummary:  slowData.MeWritersSummary,
+		SystemLoad:        systemLoad,
+		Clients:           users,
+		Partial:           partial,
 	}
 	return result, nil
 }
@@ -614,15 +614,15 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, b
 			SOCKS5Total     int `json:"socks5_total"`
 		} `json:"summary"`
 		Upstreams []struct {
-			UpstreamID         int      `json:"upstream_id"`
-			RouteKind          string   `json:"route_kind"`
-			Address            string   `json:"address"`
-			Healthy            bool     `json:"healthy"`
-			Fails              int      `json:"fails"`
-			EffectiveLatencyMs float64  `json:"effective_latency_ms"`
-			Weight             int `json:"weight"`
-			LastCheckAgeSecs   int `json:"last_check_age_secs"`
-			Scopes             any `json:"scopes"`
+			UpstreamID         int     `json:"upstream_id"`
+			RouteKind          string  `json:"route_kind"`
+			Address            string  `json:"address"`
+			Healthy            bool    `json:"healthy"`
+			Fails              int     `json:"fails"`
+			EffectiveLatencyMs float64 `json:"effective_latency_ms"`
+			Weight             int     `json:"weight"`
+			LastCheckAgeSecs   int     `json:"last_check_age_secs"`
+			Scopes             any     `json:"scopes"`
 		} `json:"upstreams"`
 	}{}
 	if err := c.getJSON(ctx, "/v1/stats/upstreams", &upstreamStatus); err != nil {
@@ -663,8 +663,8 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, b
 	}
 
 	diagnostics := RuntimeDiagnostics{
-		State:       "fresh",
-		StateReason: "",
+		State:          "fresh",
+		StateReason:    "",
 		SystemInfoJSON: marshalRawJSON(systemInfo),
 	}
 
@@ -748,9 +748,9 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, b
 		StateReason: "",
 	}
 	whitelist := struct {
-		Enabled     bool     `json:"enabled"`
-		EntriesTotal int     `json:"entries_total"`
-		Entries     []string `json:"entries"`
+		Enabled      bool     `json:"enabled"`
+		EntriesTotal int      `json:"entries_total"`
+		Entries      []string `json:"entries"`
 	}{}
 	if err := c.getJSON(ctx, "/v1/security/whitelist", &whitelist); err == nil {
 		securityInventory.Enabled = whitelist.Enabled
@@ -798,10 +798,10 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, b
 			SOCKS5Total:     upstreamStatus.Summary.SOCKS5Total,
 			Rows:            upstreams,
 		},
-		RecentEvents:     events,
-		Diagnostics:      diagnostics,
+		RecentEvents:      events,
+		Diagnostics:       diagnostics,
 		SecurityInventory: securityInventory,
-		MeWritersSummary: meWritersSummary,
+		MeWritersSummary:  meWritersSummary,
 	}, partial, nil
 }
 

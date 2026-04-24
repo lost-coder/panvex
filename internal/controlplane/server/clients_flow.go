@@ -30,19 +30,19 @@ import (
 // snapshot pattern.
 
 var (
-	errClientNameRequired   = errors.New("client name is required")
-	errClientUserADTag      = errors.New("user_ad_tag must contain exactly 32 hex characters")
-	errClientExpiration     = errors.New("expiration_rfc3339 must be a valid RFC3339 timestamp")
+	errClientNameRequired    = errors.New("client name is required")
+	errClientUserADTag       = errors.New("user_ad_tag must contain exactly 32 hex characters")
+	errClientExpiration      = errors.New("expiration_rfc3339 must be a valid RFC3339 timestamp")
 	errClientTargetsRequired = errors.New("client must target at least one agent")
 )
 
 const clientJobTTL = 10 * time.Minute
 
 type clientMutationInput struct {
-	Name              string
-	Secret            string
-	Enabled           *bool
-	UserADTag         string
+	Name      string
+	Secret    string
+	Enabled   *bool
+	UserADTag string
 	// UserADTagAuto is a tri-state flag:
 	//   * nil                 → legacy behaviour (empty tag auto-gens
 	//                            on create / keeps current on update)
@@ -59,16 +59,16 @@ type clientMutationInput struct {
 }
 
 type clientJobPayload struct {
-	ClientID           string `json:"client_id"`
-	PreviousName       string `json:"previous_name,omitempty"`
-	Name               string `json:"name"`
-	Secret             string `json:"secret"`
-	UserADTag          string `json:"user_ad_tag"`
-	Enabled            bool   `json:"enabled"`
-	MaxTCPConns        int    `json:"max_tcp_conns"`
-	MaxUniqueIPs       int    `json:"max_unique_ips"`
-	DataQuotaBytes     int64  `json:"data_quota_bytes"`
-	ExpirationRFC3339  string `json:"expiration_rfc3339"`
+	ClientID          string `json:"client_id"`
+	PreviousName      string `json:"previous_name,omitempty"`
+	Name              string `json:"name"`
+	Secret            string `json:"secret"`
+	UserADTag         string `json:"user_ad_tag"`
+	Enabled           bool   `json:"enabled"`
+	MaxTCPConns       int    `json:"max_tcp_conns"`
+	MaxUniqueIPs      int    `json:"max_unique_ips"`
+	DataQuotaBytes    int64  `json:"data_quota_bytes"`
+	ExpirationRFC3339 string `json:"expiration_rfc3339"`
 }
 
 type clientJobResultPayload struct {
@@ -758,9 +758,10 @@ func resolvedUserADTag(value string, fallback string) (string, error) {
 
 // resolveUserADTagForMutation honours the tri-state
 // clientMutationInput.UserADTagAuto flag:
-//   * nil or *true  → legacy auto-gen / fallback behaviour.
-//   * *false        → operator explicitly opted out of auto-gen;
-//                     empty stored as empty, non-empty must be valid hex.
+//   - nil or *true  → legacy auto-gen / fallback behaviour.
+//   - *false        → operator explicitly opted out of auto-gen;
+//     empty stored as empty, non-empty must be valid hex.
+//
 // All branches feed into the same server sentinel so downstream
 // errors.Is checks keep working.
 func resolveUserADTagForMutation(input clientMutationInput, fallback string) (string, error) {
