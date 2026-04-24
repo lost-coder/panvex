@@ -129,6 +129,7 @@ describe("buildClientInput", () => {
       {
         name: "alpha-v2",
         userAdTag: "tag2",
+        userAdTagAuto: false,
         maxTcpConns: 50,
         maxUniqueIps: 5,
         dataQuotaBytes: 4096,

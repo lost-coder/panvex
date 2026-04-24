@@ -10,6 +10,7 @@ import {
   BulkActionBar,
   Button,
   DataTable,
+  EmptyState,
   MonoValue,
   PageHeader,
   PulseRow,
@@ -247,6 +248,9 @@ function ClientListRow({
 const emptyFormData: ClientFormData = {
   name: "",
   userAdTag: "",
+  // Default to auto-generation for new clients — operators who want
+  // no tag untick the checkbox before saving.
+  userAdTagAuto: true,
   expirationRfc3339: "",
   maxTcpConns: 0,
   maxUniqueIps: 0,
@@ -384,6 +388,19 @@ export function ClientsPage({
           <DiscoveredClientsBanner count={pendingDiscoveredCount} onClick={onDiscoveredClick} />
         )}
 
+        {clients.length === 0 ? (
+          // First-run placeholder. The PageHeader's "Add Client"
+          // button already sits above this block, so the empty state
+          // only needs to explain what operators should do next.
+          <div className="py-10">
+            <EmptyState
+              icon="👥"
+              title="Клиентов пока нет"
+              description="Создайте первого клиента, чтобы начать назначать его на ноды Telemt."
+            />
+          </div>
+        ) : (
+          <>
         {/* Pulse row — four key ratios an operator scans before diving into
             the list. Total / active now / expired / quota-exhausted. */}
         <PulseRow
@@ -504,6 +521,8 @@ export function ClientsPage({
             </div>
           </div>
         </TableView>
+          </>
+        )}
       </div>
 
       {onCreate && (

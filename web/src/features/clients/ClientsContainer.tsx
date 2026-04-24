@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 
-import { type BulkClientAction, type ViewMode, EmptyState } from "@/ui";
+import { type BulkClientAction, type ViewMode } from "@/ui";
 import { ClientsPage } from "@/features/clients/ClientsPage";
 import { SkeletonRows } from "@/ui";
 import { useClientsList } from "./hooks/useClientsList";
@@ -78,6 +78,7 @@ export function ClientsContainer() {
             {
               name: raw.name,
               userAdTag: raw.user_ad_tag,
+              userAdTagAuto: false,
               expirationRfc3339: raw.expiration_rfc3339,
               maxTcpConns: raw.max_tcp_conns,
               maxUniqueIps: raw.max_unique_ips,
@@ -124,19 +125,10 @@ export function ClientsContainer() {
   const urlView = viewParam === "cards" || viewParam === "list" ? (viewParam as ViewMode) : undefined;
   const effectiveMode = urlView ?? resolveMode(clients.length);
 
-  // 2.5: empty state invites the first-time operator to create a
-  // client instead of presenting a blank page that looks broken.
-  if (clients.length === 0) {
-    return (
-      <div className="p-6">
-        <EmptyState
-          icon="👥"
-          title="Клиентов пока нет"
-          description="Создайте первого клиента, чтобы начать назначать его на ноды Telemt."
-        />
-      </div>
-    );
-  }
+  // Empty-state copy lives inside ClientsPage — rendering ClientsPage
+  // unconditionally keeps the PageHeader's "Add Client" button
+  // visible so the first-time operator actually has a CTA instead of
+  // a dead-end placeholder.
 
   return (
     // P2-UX-10: subtle ring flash when the underlying query revalidates

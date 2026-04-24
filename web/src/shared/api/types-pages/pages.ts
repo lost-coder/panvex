@@ -592,6 +592,11 @@ export interface ClientDetailPageProps {
   onRotateSecret?: () => void;
   secretRotating?: boolean;
   secretPendingRedeploy?: boolean;
+  /** Retry the rollout of the current stored state to every target
+   *  agent. Surfaced as a button when at least one deployment is in
+   *  the `failed` state. Container wires it to apiClient.redeployClient. */
+  onRedeploy?: () => void;
+  redeploying?: boolean;
   onDisable?: () => void;
   onDelete?: () => void;
   ipHistory?: {
@@ -844,6 +849,13 @@ export interface NodeSelectorProps {
 export interface ClientFormData {
   name: string;
   userAdTag: string;
+  /**
+   * Controls the user_ad_tag_auto flag sent to the backend. When
+   * true (default for create mode), the control-plane mints a tag
+   * automatically if `userAdTag` is empty. When false, the raw
+   * `userAdTag` is stored as-is (empty means the client has no tag).
+   */
+  userAdTagAuto: boolean;
   expirationRfc3339: string;
   maxTcpConns: number;
   maxUniqueIps: number;

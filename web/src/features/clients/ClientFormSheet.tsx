@@ -80,14 +80,45 @@ export function ClientFormSheet({
       <FormField
         label="Ad Tag"
         variant="uppercase"
-        description="Promotional channel displayed to users"
+        description={
+          data.userAdTagAuto
+            ? "Auto-generate a random 32-hex tag on save."
+            : "Leave blank to save a client without an ad tag, or paste a 32-hex value."
+        }
       >
-        <Input
-          value={data.userAdTag}
-          onChange={(e) => update("userAdTag", e.target.value)}
-          placeholder="Telegram ad channel tag"
-          disabled={loading}
-        />
+        <div className="flex flex-col gap-2">
+          <label className="flex items-center gap-2 text-xs text-fg-muted">
+            <input
+              type="checkbox"
+              className="accent-accent size-3.5"
+              checked={data.userAdTagAuto}
+              disabled={loading}
+              onChange={(e) => {
+                const next = e.target.checked;
+                onChange({
+                  ...data,
+                  userAdTagAuto: next,
+                  // When the operator ticks the box the typed value
+                  // would be overwritten by the server anyway, so wipe
+                  // the input to avoid confusion.
+                  userAdTag: next ? "" : data.userAdTag,
+                });
+              }}
+            />
+            Auto-generate
+          </label>
+          <Input
+            value={data.userAdTag}
+            onChange={(e) => update("userAdTag", e.target.value)}
+            placeholder={
+              data.userAdTagAuto
+                ? "Will be generated on save"
+                : "32-hex tag or blank for no tag"
+            }
+            disabled={loading || data.userAdTagAuto}
+            className="font-mono text-xs"
+          />
+        </div>
       </FormField>
 
       <FormField label="Expiration" variant="uppercase">
