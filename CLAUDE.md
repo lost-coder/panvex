@@ -36,10 +36,14 @@ db/
   migrations/        PostgreSQL schema
   queries/           SQL source for sqlc
 proto/               Protobuf definitions for gRPC gateway
-web/                 React dashboard
+web/                 React dashboard (src/ui/ is the inlined panvex-ui kit — Phase 4)
 deploy/              Docker Compose, nginx, install scripts
-.tmp/plans/          Local working plans (gitignored)
+.githooks/pre-push   Mirrors CI: golangci-lint + race tests + govulncheck +
+                     frontend build/lint/audit. Bypass: PANVEX_SKIP_PREPUSH=1.
 ```
+
+Workspace-level dirs live one level up: `../scripts/` (dev fleet), `../.tmp/`
+(dev DB, logs, plans). See the workspace CLAUDE.md for that context.
 
 ## Tech stack
 
