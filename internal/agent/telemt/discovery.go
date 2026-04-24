@@ -155,15 +155,19 @@ func extractSecretFromLinks(links UserLinks) string {
 		}
 	}
 
-	// TLS/fake-TLS links: secret param = "ee" + domain_hex + HEX32
-	// The raw secret is the last 32 hex chars.
+	// TLS/fake-TLS links: secret param = "ee" + HEX32 + domain_hex.
+	// The raw secret is the first 32 hex chars after the "ee" prefix;
+	// everything after that is the SNI domain encoded as hex. Earlier
+	// versions had this reversed which caused every discovered client
+	// on a given node to report the domain bytes as their secret —
+	// triggering spurious "same_secret_different_names" conflicts.
 	for _, link := range links.TLS {
 		s := extractSecretParam(link)
 		if (strings.HasPrefix(s, "ee") || strings.HasPrefix(s, "EE")) && len(s) > 34 {
-			raw := s[len(s)-32:]
+			raw := s[2:34]
 			if IsValidSecret(raw) {
 				// Verify the domain portion is also valid hex.
-				domainHex := s[2 : len(s)-32]
+				domainHex := s[34:]
 				if _, err := hex.DecodeString(domainHex); err == nil {
 					return raw
 				}
