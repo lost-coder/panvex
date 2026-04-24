@@ -9,8 +9,7 @@
 // cap on the Postgres side. 250 was picked after the P3-PERF-01b chunk-size
 // sweep: per-row throughput peaks around 100-250 rows on SQLite and regresses
 // noticeably at 500+ because the generated SQL and argument slice both grow
-// super-linearly with chunk size. See docs/benchmarks/phase3-bulk-insert.md
-// for the raw ns/row numbers.
+// super-linearly with chunk size.
 //
 // Every bulk call runs inside a single transaction so partial failure rolls
 // the whole batch back — same atomicity guarantee callers get from

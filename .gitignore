@@ -50,7 +50,7 @@ web/*.js
 web/*.d.ts
 cmd/control-plane/.embedded-ui/
 cmd/control-plane/ui-dist/
-docs/plans/
+docs/
 
 # Editor/IDE
 # .idea/
