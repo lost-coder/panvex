@@ -75,6 +75,10 @@ export function AddServerContainer() {
   });
 
   const [tokenData, setTokenData] = useState<EnrollmentTokenResponse | null>(null);
+  // Captured at token-generation time so the displayed countdown is a
+  // pure function of render. Calling Date.now() during render is flagged
+  // by react-hooks/purity (7.1.x) because the value drifts across renders.
+  const [tokenExpiresInSecs, setTokenExpiresInSecs] = useState(0);
 
   const [connectionStatus, setConnectionStatus] = useState<
     EnrollmentWizardProps["connectionStatus"]
@@ -96,9 +100,6 @@ export function AddServerContainer() {
 
   const panelUrl = tokenData?.panel_url ?? "";
   const tokenValue = tokenData?.value ?? "";
-  const tokenExpiresInSecs = tokenData
-    ? Math.max(0, tokenData.expires_at_unix - Math.floor(Date.now() / 1000))
-    : 0;
 
   const installCommand = tokenData
     ? buildInstallCommand(panelUrl, tokenValue, nodeName, advancedOptions)
@@ -113,6 +114,9 @@ export function AddServerContainer() {
         ttl_seconds: tokenTtl,
       });
       setTokenData(result);
+      setTokenExpiresInSecs(
+        Math.max(0, result.expires_at_unix - Math.floor(Date.now() / 1000)),
+      );
       setStep(2);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create token");
