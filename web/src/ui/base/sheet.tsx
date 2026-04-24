@@ -1,7 +1,6 @@
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
-import { Sheet as ModalSheet } from "react-modal-sheet";
 import { cn } from "@/ui/lib/cn";
 
 const Sheet = DialogPrimitive.Root;
@@ -23,9 +22,6 @@ interface SheetContentProps extends React.ComponentPropsWithoutRef<typeof Dialog
   onOpenChange?: (open: boolean) => void;
 }
 
-// react-modal-sheet handles bottom and fullScreen variants (native swipe physics)
-const isMobileVariant = (side: string, fullScreen: boolean) => fullScreen || side === "bottom";
-
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   SheetContentProps
@@ -34,7 +30,11 @@ const SheetContent = React.forwardRef<
     { side = "right", fullScreen = false, title, onOpenChange, className, children, ...props },
     ref,
   ) => {
-    const useModalSheet = isMobileVariant(side, fullScreen);
+    // Unused prop kept for backward compatibility with existing callers
+    // that pass onOpenChange on SheetContent itself. Close is routed via
+    // the parent <Sheet>'s onOpenChange — this handler is effectively a
+    // no-op, but we reference it to satisfy the lint check.
+    void onOpenChange;
     // P2-FE-07 / M-F6: removed the generic "Sheet" default. If the caller
     // renders a visible <SheetTitle> inside children, Radix picks that up
     // and no hidden title is needed. Only fall back to a hidden title when
@@ -56,51 +56,30 @@ const SheetContent = React.forwardRef<
       );
     }
 
-    const requestClose = () => onOpenChange?.(false);
+    // Radix handles open/close itself via the parent <Sheet>
+    // (DialogPrimitive.Root) onOpenChange, so SheetContent doesn't need
+    // a manual dismiss path anymore. Kept the onOpenChange prop in the
+    // signature to avoid churning every call site.
 
-    if (useModalSheet) {
-      return (
-        <DialogPrimitive.Portal>
-          <DialogPrimitive.Content ref={ref} asChild {...props}>
-            <div className="fixed inset-0 z-50 pointer-events-none">
-              <ModalSheet
-                isOpen={true}
-                onClose={requestClose}
-                detent={fullScreen ? "full" : "content"}
-                style={{ pointerEvents: "auto" }}
-              >
-                <ModalSheet.Backdrop onTap={requestClose} />
-                <ModalSheet.Container
-                  className={cn(
-                    "!bg-bg-card border border-border shadow-xl",
-                    fullScreen ? "!rounded-none" : "!rounded-t-xl",
-                  )}
-                >
-                  <ModalSheet.Header className="pt-2 pb-0 flex justify-center w-full">
-                    <ModalSheet.DragIndicator className="!mt-2 !mx-auto" />
-                  </ModalSheet.Header>
-                  {hasExplicitTitle && (
-                    <>
-                      <VisuallyHidden.Root asChild>
-                        <DialogPrimitive.Title>{title}</DialogPrimitive.Title>
-                      </VisuallyHidden.Root>
-                      <VisuallyHidden.Root asChild>
-                        <DialogPrimitive.Description>{title} content</DialogPrimitive.Description>
-                      </VisuallyHidden.Root>
-                    </>
-                  )}
-                  <ModalSheet.Content className={cn("flex flex-col", className)}>
-                    {children}
-                  </ModalSheet.Content>
-                </ModalSheet.Container>
-              </ModalSheet>
-            </div>
-          </DialogPrimitive.Content>
-        </DialogPrimitive.Portal>
-      );
-    }
+    // Previously `side="bottom"` was handled by react-modal-sheet,
+    // whose Framer Motion drag recognizer captured pointerdown on
+    // every child — text inputs inside the sheet could not receive
+    // focus or accept keystrokes even with `disableDrag`. We now
+    // render every side variant through Radix Dialog.Content and
+    // style the bottom variant as a sheet ourselves. Swipe-to-
+    // dismiss is gone; dismiss happens via backdrop tap, Cancel
+    // button, or Escape key.
+    const sideClass =
+      side === "bottom"
+        ? cn(
+            "inset-x-0 bottom-0 w-full border-t rounded-t-xl",
+            fullScreen ? "top-0 rounded-none" : "max-h-[85vh]",
+            "data-[state=open]:slide-in-from-bottom data-[state=closed]:slide-out-to-bottom",
+          )
+        : side === "right"
+          ? "inset-y-0 right-0 h-full w-[320px] border-l data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right"
+          : "inset-y-0 left-0 h-full w-[320px] border-r data-[state=open]:slide-in-from-left data-[state=closed]:slide-out-to-left";
 
-    // Standard Radix Dialog for side panels (left/right) with slide animation
     return (
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 duration-300" />
@@ -109,9 +88,7 @@ const SheetContent = React.forwardRef<
           className={cn(
             "fixed z-50 bg-bg-card border-border shadow-xl flex flex-col overflow-y-auto",
             "duration-300 data-[state=open]:animate-in data-[state=closed]:animate-out",
-            side === "right"
-              ? "inset-y-0 right-0 h-full w-[320px] border-l data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right"
-              : "inset-y-0 left-0 h-full w-[320px] border-r data-[state=open]:slide-in-from-left data-[state=closed]:slide-out-to-left",
+            sideClass,
             className,
           )}
           {...props}
