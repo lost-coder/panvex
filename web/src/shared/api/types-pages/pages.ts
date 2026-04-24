@@ -606,7 +606,6 @@ export interface ClientDetailPageProps {
      * "—" placeholders for the column until the enrichment lands.
      */
     ips: {
-      agentId: string;
       ip: string;
       firstSeen: string;
       lastSeen: string;
