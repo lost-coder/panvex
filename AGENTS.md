@@ -82,6 +82,44 @@ Override with: `"Make minimal changes"` (skip coordinated fixes) or
 - Concurrency: no new unbounded buffers replacing bounded coordination
 - Hot paths: no extra allocations, copies, or locks
 
+## Performance preservation
+
+**Backend / agent**
+- No extra allocations, logging, locks, retries, goroutines, or blocking
+  behavior in sensitive paths unless explicitly justified in `## Reasoning`.
+- Preserve concurrency, backpressure, cancellation, and shutdown invariants.
+
+**Frontend**
+- No unnecessary re-renders; no unstable inline objects/functions in sensitive
+  render paths unless already present and local to the patch.
+- No blind memoization, no expensive work in render.
+- Preserve accessibility and interaction stability.
+
+If you cannot justify performance neutrality, label it as risk in `## Reasoning`.
+
+## Truthfulness
+
+- Do not claim builds pass, type-check succeeds, tests pass, or behavior is
+  verified unless that was actually verified with available tooling.
+- If verification is not possible, say so exactly:
+  `Not executed; reasoning-based consistency check only.`
+- No hallucinated claims. No invented file paths, symbols, or APIs.
+
+## Anti-degeneration safeguards
+
+- **No drift** — no semantic drift, helpful refactors, architectural drift,
+  dependency drift, or behavior drift without explicit acknowledgment.
+- **No implicit contract changes** — HTTP routes, gRPC/protobuf messages,
+  payload shapes, exported symbols, component props, route expectations must
+  not change silently. If a contract changes, update all consumers in the
+  same patch and document the delta in `## Reasoning`.
+- **Negative-diff protection** — avoid mass rewrites, aesthetic renames,
+  broad component reshaping, speculative package splits. If the diff grows
+  beyond a minimal patch, STOP and ask before proceeding.
+- **Atomic patches** — every patch must be self-contained, build-safe,
+  type-safe, contract-consistent in its intended scope, and leave the repo
+  coherent (no transitional states).
+
 ## Pre-response checklist
 
 Before responding, verify:
@@ -90,3 +128,4 @@ Before responding, verify:
 - No transitional states or placeholder branches
 - Repo remains fully buildable after the patch
 - Any behavior change is explicitly stated in Reasoning
+- Verification claims match what was actually executed
