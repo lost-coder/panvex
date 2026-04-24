@@ -20,7 +20,7 @@ ORDER BY last_seen_at DESC
 type ListAgentsRow struct {
 	ID           string
 	NodeName     string
-	FleetGroupID pgtype.Text
+	FleetGroupID pgtype.UUID
 	Version      string
 	ReadOnly     bool
 	LastSeenAt   pgtype.Timestamptz
@@ -67,7 +67,7 @@ SET node_name = EXCLUDED.node_name,
 type UpsertAgentParams struct {
 	ID           string
 	NodeName     string
-	FleetGroupID pgtype.Text
+	FleetGroupID pgtype.UUID
 	Version      string
 	ReadOnly     bool
 	LastSeenAt   pgtype.Timestamptz

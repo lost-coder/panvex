@@ -24,6 +24,17 @@ DELETE FROM telemt_instances;
 DELETE FROM agents;
 DELETE FROM fleet_groups;
 
+-- Drop FK constraints first: Postgres refuses to retype the parent PK
+-- while child columns still reference it with a mismatched type, even
+-- if the dependent tables were just truncated above.
+ALTER TABLE agents
+    DROP CONSTRAINT IF EXISTS agents_fleet_group_id_fkey;
+ALTER TABLE enrollment_tokens
+    DROP CONSTRAINT IF EXISTS enrollment_tokens_fleet_group_id_fkey;
+ALTER TABLE client_assignments
+    DROP CONSTRAINT IF EXISTS client_assignments_fleet_group_id_fkey,
+    DROP CONSTRAINT IF EXISTS fk_client_assignments_fleet_group_id;
+
 ALTER TABLE fleet_groups
     ALTER COLUMN id DROP DEFAULT,
     ALTER COLUMN id TYPE UUID USING gen_random_uuid(),
@@ -34,15 +45,21 @@ ALTER TABLE fleet_groups
 ALTER TABLE fleet_groups
     ADD CONSTRAINT fleet_groups_name_unique UNIQUE (name);
 
--- Dependent FK columns → UUID.
+-- Dependent FK columns → UUID, then reattach FKs.
 ALTER TABLE agents
-    ALTER COLUMN fleet_group_id TYPE UUID USING NULL;
+    ALTER COLUMN fleet_group_id TYPE UUID USING NULL,
+    ADD CONSTRAINT agents_fleet_group_id_fkey
+        FOREIGN KEY (fleet_group_id) REFERENCES fleet_groups (id);
 
 ALTER TABLE enrollment_tokens
-    ALTER COLUMN fleet_group_id TYPE UUID USING NULL;
+    ALTER COLUMN fleet_group_id TYPE UUID USING NULL,
+    ADD CONSTRAINT enrollment_tokens_fleet_group_id_fkey
+        FOREIGN KEY (fleet_group_id) REFERENCES fleet_groups (id);
 
 ALTER TABLE client_assignments
-    ALTER COLUMN fleet_group_id TYPE UUID USING NULL;
+    ALTER COLUMN fleet_group_id TYPE UUID USING NULL,
+    ADD CONSTRAINT fk_client_assignments_fleet_group_id
+        FOREIGN KEY (fleet_group_id) REFERENCES fleet_groups (id) ON DELETE SET NULL;
 
 -- Shared credential store so a single provider config (e.g. one
 -- Cloudflare account) can back DNS integrations for many groups.
