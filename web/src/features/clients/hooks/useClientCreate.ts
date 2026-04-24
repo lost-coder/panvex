@@ -7,6 +7,7 @@ function formToInput(form: ClientFormData): ClientInput {
   return {
     name: form.name,
     user_ad_tag: form.userAdTag,
+    user_ad_tag_auto: form.userAdTagAuto,
     max_tcp_conns: form.maxTcpConns,
     max_unique_ips: form.maxUniqueIps,
     data_quota_bytes: form.dataQuotaBytes,

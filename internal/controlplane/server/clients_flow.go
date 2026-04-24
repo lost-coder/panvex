@@ -43,6 +43,13 @@ type clientMutationInput struct {
 	Secret            string
 	Enabled           *bool
 	UserADTag         string
+	// UserADTagAuto is a tri-state flag:
+	//   * nil                 → legacy behaviour (empty tag auto-gens
+	//                            on create / keeps current on update)
+	//   * ptr-to-true         → same as legacy; accepted for explicitness
+	//   * ptr-to-false        → use UserADTag literally; empty stores empty
+	// Callers parse the HTTP `user_ad_tag_auto` field into this pointer.
+	UserADTagAuto     *bool
 	MaxTCPConns       int
 	MaxUniqueIPs      int
 	DataQuotaBytes    int64
@@ -179,7 +186,7 @@ func (s *Server) createClientWithContext(ctx context.Context, actorID string, in
 		return managedClient{}, nil, nil, errClientNameRequired
 	}
 
-	userADTag, err := resolvedUserADTag(input.UserADTag, "")
+	userADTag, err := resolveUserADTagForMutation(input, "")
 	if err != nil {
 		return managedClient{}, nil, nil, err
 	}
@@ -259,7 +266,7 @@ func (s *Server) updateClientWithContext(ctx context.Context, clientID string, a
 		return managedClient{}, nil, nil, errClientNameRequired
 	}
 
-	userADTag, err := resolvedUserADTag(input.UserADTag, currentClient.UserADTag)
+	userADTag, err := resolveUserADTagForMutation(input, currentClient.UserADTag)
 	if err != nil {
 		return managedClient{}, nil, nil, err
 	}
@@ -312,6 +319,41 @@ func (s *Server) updateClientWithContext(ctx context.Context, clientID string, a
 
 func (s *Server) rotateClientSecret(clientID string, actorID string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
 	return s.rotateClientSecretWithContext(context.Background(), clientID, actorID, observedAt)
+}
+
+// redeployClientWithContext re-queues the create job for every target
+// agent on the client. Used to recover a client whose initial rollout
+// partially or fully failed — the panel still has the record, but one
+// or more Telemt nodes rejected the apply (bad ad tag, network blip,
+// etc.). Re-running the flow with the current stored state is the
+// operator-facing equivalent of "retry deployment".
+func (s *Server) redeployClientWithContext(ctx context.Context, clientID string, actorID string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
+	observedAt = observedAt.UTC()
+
+	currentClient, assignments, deployments, err := s.clientDetailSnapshot(clientID)
+	if err != nil {
+		return managedClient{}, nil, nil, err
+	}
+	if currentClient.DeletedAt != nil {
+		return managedClient{}, nil, nil, storage.ErrNotFound
+	}
+
+	targetAgentIDs := s.resolveClientTargetAgentIDs(assignments)
+	if len(targetAgentIDs) == 0 {
+		// No targets at all — nothing to redeploy. Return current state
+		// so the caller surfaces "no-op" gracefully rather than looking
+		// like a silent success.
+		return currentClient, assignments, deployments, nil
+	}
+
+	deployments = buildClientDeployments(deployments, clientID, targetAgentIDs, string(jobs.ActionClientCreate), observedAt)
+	if err := s.replaceClientStateWithContext(ctx, currentClient, assignments, deployments); err != nil {
+		return managedClient{}, nil, nil, err
+	}
+	if _, err := s.enqueueClientJob(actorID, jobs.ActionClientCreate, currentClient, "", targetAgentIDs, observedAt); err != nil {
+		return managedClient{}, nil, nil, err
+	}
+	return currentClient, assignments, deployments, nil
 }
 
 func (s *Server) rotateClientSecretWithContext(ctx context.Context, clientID string, actorID string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
@@ -712,6 +754,24 @@ func resolvedUserADTag(value string, fallback string) (string, error) {
 		return "", errClientUserADTag
 	}
 	return tag, err
+}
+
+// resolveUserADTagForMutation honours the tri-state
+// clientMutationInput.UserADTagAuto flag:
+//   * nil or *true  → legacy auto-gen / fallback behaviour.
+//   * *false        → operator explicitly opted out of auto-gen;
+//                     empty stored as empty, non-empty must be valid hex.
+// All branches feed into the same server sentinel so downstream
+// errors.Is checks keep working.
+func resolveUserADTagForMutation(input clientMutationInput, fallback string) (string, error) {
+	if input.UserADTagAuto != nil && !*input.UserADTagAuto {
+		tag, err := clients.ResolveUserADTagExplicit(input.UserADTag)
+		if errors.Is(err, clients.ErrUserADTag) {
+			return "", errClientUserADTag
+		}
+		return tag, err
+	}
+	return resolvedUserADTag(input.UserADTag, fallback)
 }
 
 // normalizedExpiration delegates to clients.NormalizeExpiration.

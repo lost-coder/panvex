@@ -14,7 +14,7 @@ import { buildClientInput } from "@/shared/api/transforms/clients";
 export function ClientDetailContainer() {
   const { clientId } = useParams({ strict: false });
   const { client, raw, isLoading } = useClientDetail(clientId ?? "");
-  const { editMutation, rotateMutation, deleteMutation } = useClientMutations(clientId ?? "", raw);
+  const { editMutation, rotateMutation, redeployMutation, deleteMutation } = useClientMutations(clientId ?? "", raw);
   const { ips, totalUnique } = useClientIPHistory(clientId ?? "");
   const navigate = useNavigate();
   const confirm = useConfirm();
@@ -65,6 +65,9 @@ export function ClientDetailContainer() {
         {
           name: raw.name,
           userAdTag: raw.user_ad_tag,
+          // Toggle is a pure enable/disable — keep the stored ad tag
+          // verbatim, don't trigger a regeneration cycle.
+          userAdTagAuto: false,
           expirationRfc3339: raw.expiration_rfc3339,
           maxTcpConns: raw.max_tcp_conns,
           maxUniqueIps: raw.max_unique_ips,
@@ -119,6 +122,10 @@ export function ClientDetailContainer() {
       }}
       secretRotating={rotateMutation.isPending}
       secretPendingRedeploy={secretPending}
+      onRedeploy={async () => {
+        await redeployMutation.mutateAsync();
+      }}
+      redeploying={redeployMutation.isPending}
       onDisable={async () => {
         const next = !(raw?.enabled ?? true);
         const ok = await confirm({

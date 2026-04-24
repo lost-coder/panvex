@@ -1654,8 +1654,51 @@ func TestHTTPEmbeddedUIFallsBackToIndexForSPARoute(t *testing.T) {
 	if contentType := response.Result().Header.Get("Content-Type"); contentType != "text/html; charset=utf-8" {
 		t.Fatalf("GET /fleet/agent-1 Content-Type = %q, want %q", contentType, "text/html; charset=utf-8")
 	}
-	if body := response.Body.String(); body != "<html><body>panvex</body></html>" {
-		t.Fatalf("GET /fleet/agent-1 body = %q, want embedded index", body)
+	// serveUIIndex now always prepends a <base href>. Without a <head>
+	// in the fixture it lands at the top of the document, which is
+	// fine for the SPA-fallback behaviour this test guards. The real
+	// index.html shipped by Vite has a <head>, so the tag lands inside
+	// it (see TestHTTPEmbeddedUIBaseHrefOnDeepLinkReload for that path).
+	if body := response.Body.String(); body != `<base href="/"><html><body>panvex</body></html>` {
+		t.Fatalf("GET /fleet/agent-1 body = %q, want embedded index with base href", body)
+	}
+}
+
+// TestHTTPEmbeddedUIBaseHrefOnDeepLinkReload guards the deep-link SPA
+// reload path. Vite is built with `base: "./"` so index.html carries
+// relative asset URLs (`./assets/foo.js`); when the browser reloads on
+// a nested route like /clients/<uuid>, those URLs resolve against the
+// document URL and the server then serves index.html for the missing
+// assets, breaking every module import with a MIME-type error. A
+// <base href> injected right after <head> anchors the relative URLs
+// at a stable prefix regardless of the current path.
+func TestHTTPEmbeddedUIBaseHrefOnDeepLinkReload(t *testing.T) {
+	now := time.Date(2026, time.April, 24, 12, 0, 0, 0, time.UTC)
+	server := New(Options{
+		Now: func() time.Time { return now },
+		UIFiles: fstest.MapFS{
+			"index.html": &fstest.MapFile{Data: []byte(
+				`<html><head><meta charset="utf-8"></head><body><div id="root"></div></body></html>`,
+			)},
+			"assets/app.js": &fstest.MapFile{Data: []byte("export {}")},
+		},
+	})
+
+	response := performRequest(t, server.Handler(), http.MethodGet, "/clients/abc-deep-link", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("GET /clients/abc-deep-link status = %d, want %d", response.Code, http.StatusOK)
+	}
+	body := response.Body.String()
+	if !strings.Contains(body, `<base href="/">`) {
+		t.Fatalf("body missing <base href=\"/\"> — got %q", body)
+	}
+	// The tag must sit inside <head> so relative URLs encountered later
+	// in the document (including any runtime-emitted ones) are resolved
+	// against it.
+	if idx := strings.Index(body, `<base href="/">`); idx < strings.Index(body, "</head>") {
+		// expected ordering — no-op
+	} else {
+		t.Fatalf("<base href> must precede </head>; body = %q", body)
 	}
 }
 

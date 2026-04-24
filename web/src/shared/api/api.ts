@@ -560,6 +560,13 @@ export type ClientInput = {
   name: string;
   enabled?: boolean;
   user_ad_tag?: string;
+  /**
+   * Tri-state flag. Omitted (or `true`) keeps the legacy auto-
+   * generation: if `user_ad_tag` is empty the control-plane mints a
+   * fresh 32-hex value. Set to `false` to store the value literally
+   * — empty means the client gets no ad tag at all.
+   */
+  user_ad_tag_auto?: boolean;
   max_tcp_conns: number;
   max_unique_ips: number;
   data_quota_bytes: number;
@@ -976,6 +983,14 @@ export const apiClient = {
     }),
   rotateClientSecret: (clientID: string) =>
     api<Client>(`${apiBasePath}/clients/${clientID}/rotate-secret`, {
+      method: "POST"
+    }),
+  // Re-runs the client.create rollout for every target agent — used
+  // to recover a client whose initial deployment failed on at least
+  // one node. Backend reuses the stored client state, so callers do
+  // not need to re-send form fields.
+  redeployClient: (clientID: string) =>
+    api<Client>(`${apiBasePath}/clients/${clientID}/redeploy`, {
       method: "POST"
     }),
   deleteClient: (clientID: string) =>

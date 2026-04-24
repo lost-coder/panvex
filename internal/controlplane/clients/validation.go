@@ -58,6 +58,29 @@ func ResolveUserADTag(value string, fallback string) (string, error) {
 	return strings.ToLower(trimmed), nil
 }
 
+// ResolveUserADTagExplicit validates the input but never auto-generates
+// or falls back to a previous value. An empty input returns an empty
+// string unchanged — this is how operators create a client intentionally
+// WITHOUT an ad tag. Non-empty input must still be a valid 32-hex
+// string; anything else surfaces ErrUserADTag.
+//
+// HTTP callers opt into this mode by sending `user_ad_tag_auto: false`
+// in the mutation request. The default behaviour (and omitted flag)
+// keeps the historical auto-generation for backward compatibility.
+func ResolveUserADTagExplicit(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", nil
+	}
+	if len(trimmed) != 32 {
+		return "", ErrUserADTag
+	}
+	if _, err := hex.DecodeString(trimmed); err != nil {
+		return "", ErrUserADTag
+	}
+	return strings.ToLower(trimmed), nil
+}
+
 // NormalizeExpiration validates and returns a UTC-normalized RFC3339
 // timestamp, or the empty string when the input is empty. Invalid input
 // yields ErrExpiration.
