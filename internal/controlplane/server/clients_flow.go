@@ -91,6 +91,23 @@ func (s *Server) restoreStoredClients() error {
 		return err
 	}
 
+	// Build a (agent_id, client_name) → discovered snapshot index once so
+	// we can seed the in-memory clientUsage below without N×M lookups.
+	// clientUsage itself is volatile (not persisted), so on a plain
+	// restart we'd otherwise report 0 B traffic for every managed
+	// client until the next agent tick lands — and because agents send
+	// deltas, that "next tick" only restores one polling interval of
+	// traffic, not the lifetime total. The adopt path already seeds from
+	// DiscoveredClientRecord.TotalOctets, so re-use the same source on
+	// startup for any (managed_client, agent) pair that has a matching
+	// discovered row.
+	discoveredIdx := make(map[string]storage.DiscoveredClientRecord)
+	if dc, err := s.store.ListDiscoveredClients(context.Background()); err == nil {
+		for _, r := range dc {
+			discoveredIdx[r.AgentID+"\x00"+r.ClientName] = r
+		}
+	}
+
 	for _, record := range records {
 		client := clientFromRecord(record)
 		s.clients[client.ID] = client
@@ -105,6 +122,16 @@ func (s *Server) restoreStoredClients() error {
 			assignment := clientAssignmentFromRecord(assignmentRecord)
 			s.clientAssignments[client.ID] = append(s.clientAssignments[client.ID], assignment)
 			s.assignmentSeq = maxPrefixedSequence(s.assignmentSeq, "client-assignment", assignment.ID)
+			// Rehydrate volatile traffic counter from the last discovery
+			// snapshot for this (agent, client). Only per-agent rows are
+			// seeded; the rollup in aggregatedClientUsage sums them.
+			if assignment.AgentID == "" {
+				continue
+			}
+			if dc, ok := discoveredIdx[assignment.AgentID+"\x00"+client.Name]; ok {
+				s.seedClientUsage(client.ID, assignment.AgentID, dc.TotalOctets,
+					dc.CurrentConnections, dc.ActiveUniqueIPs, dc.UpdatedAt)
+			}
 		}
 
 		deployments, err := s.store.ListClientDeployments(context.Background(), client.ID)
