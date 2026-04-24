@@ -443,3 +443,91 @@ func TestMergeAdoptNoTOCTOU(t *testing.T) {
 		}
 	}
 }
+
+// TestRestoreStoredClients_RehydratesUsageFromDiscovered locks in the
+// fix for the "adopted client shows 0 B traffic after panel restart"
+// bug. clientUsage is an in-memory map; on restart we lose the seed
+// planted during adopt. Without rehydration from the persisted
+// discovered_clients snapshot, the UI reports 0 until the next agent
+// tick — and because agents stream deltas, that tick only restores a
+// polling interval of traffic, not the lifetime total.
+func TestRestoreStoredClients_RehydratesUsageFromDiscovered(t *testing.T) {
+	now := time.Date(2026, time.April, 24, 12, 0, 0, 0, time.UTC)
+
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	fleetGroupID := seedTestFleetGroup(t, store, "default", now.Add(-time.Minute))
+	agentID := "agent-rehydrate-1"
+	if err := store.PutAgent(ctx, storage.AgentRecord{
+		ID:           agentID,
+		NodeName:     "node-A",
+		FleetGroupID: fleetGroupID,
+		Version:      "dev",
+		LastSeenAt:   now.Add(-time.Minute),
+	}); err != nil {
+		t.Fatalf("PutAgent() error = %v", err)
+	}
+
+	clientID := "client-rehydrate-1"
+	if err := store.PutClient(ctx, storage.ClientRecord{
+		ID:               clientID,
+		Name:             "external-delta",
+		SecretCiphertext: "4444444444444444dddddddddddddddd",
+		Enabled:          true,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}); err != nil {
+		t.Fatalf("PutClient() error = %v", err)
+	}
+	if err := store.PutClientAssignment(ctx, storage.ClientAssignmentRecord{
+		ID:         "assign-rehydrate-1",
+		ClientID:   clientID,
+		TargetType: clientAssignmentTargetAgent,
+		AgentID:    agentID,
+		CreatedAt:  now,
+	}); err != nil {
+		t.Fatalf("PutClientAssignment() error = %v", err)
+	}
+	if err := store.PutDiscoveredClient(ctx, storage.DiscoveredClientRecord{
+		ID:                 "discovered-rehydrate-1",
+		AgentID:            agentID,
+		ClientName:         "external-delta",
+		Secret:             "4444444444444444dddddddddddddddd",
+		Status:             discoveredClientStatusAdopted,
+		TotalOctets:        9001,
+		CurrentConnections: 2,
+		ActiveUniqueIPs:    3,
+		DiscoveredAt:       now.Add(-time.Hour),
+		UpdatedAt:          now.Add(-time.Minute),
+	}); err != nil {
+		t.Fatalf("PutDiscoveredClient() error = %v", err)
+	}
+
+	// Fresh Server simulates a panel restart: the in-memory clientUsage
+	// map is empty. restoreStoredClients must repopulate it from the
+	// persisted discovered_clients row.
+	server := New(Options{
+		Now:   func() time.Time { return now },
+		Store: store,
+	})
+	defer server.Close()
+	if err := server.restoreStoredClients(); err != nil {
+		t.Fatalf("restoreStoredClients() error = %v", err)
+	}
+
+	server.clientsMu.RLock()
+	got := server.clientUsage[clientID][agentID]
+	server.clientsMu.RUnlock()
+
+	if got.TrafficUsedBytes != 9001 {
+		t.Fatalf("TrafficUsedBytes after restore = %d, want 9001 (seeded from discovered_clients.total_octets)", got.TrafficUsedBytes)
+	}
+	if got.ActiveUniqueIPs != 3 {
+		t.Fatalf("ActiveUniqueIPs after restore = %d, want 3", got.ActiveUniqueIPs)
+	}
+}
