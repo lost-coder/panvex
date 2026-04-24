@@ -25,21 +25,21 @@ const (
 var ErrAlreadyAdopted = errors.New("client already adopted")
 
 type discoveredClient struct {
-	ID                string
-	AgentID           string
-	ClientName        string
-	Secret            string
-	Status            string
-	TotalOctets       uint64
+	ID                 string
+	AgentID            string
+	ClientName         string
+	Secret             string
+	Status             string
+	TotalOctets        uint64
 	CurrentConnections int
-	ActiveUniqueIPs   int
-	ConnectionLink    string
-	MaxTCPConns       int
-	MaxUniqueIPs      int
-	DataQuotaBytes    int64
-	Expiration        string
-	DiscoveredAt      time.Time
-	UpdatedAt         time.Time
+	ActiveUniqueIPs    int
+	ConnectionLink     string
+	MaxTCPConns        int
+	MaxUniqueIPs       int
+	DataQuotaBytes     int64
+	Expiration         string
+	DiscoveredAt       time.Time
+	UpdatedAt          time.Time
 }
 
 // reconcileDiscoveredClients compares client data returned by an agent against
@@ -121,9 +121,9 @@ func (s *Server) upsertDiscoveredClient(ctx context.Context, agentID string, rec
 	// sequence ID each time and keeps the audit log free of spurious
 	// "clients.discovered" events for the same user.
 	var (
-		existing      storage.DiscoveredClientRecord
-		haveExisting  bool
-		existingErr   error
+		existing     storage.DiscoveredClientRecord
+		haveExisting bool
+		existingErr  error
 	)
 	if s.store != nil {
 		existing, existingErr = s.store.GetDiscoveredClientByAgentAndName(ctx, agentID, clientName)
@@ -508,7 +508,7 @@ func (s *Server) seedClientUsage(clientID, agentID string, trafficBytes uint64, 
 	if s.clientUsage[clientID] == nil {
 		s.clientUsage[clientID] = make(map[string]clientUsageSnapshot)
 	}
-	s.clientUsage[clientID][agentID] = clientUsageSnapshot{
+	snap := clientUsageSnapshot{
 		ClientID:         clientID,
 		TrafficUsedBytes: trafficBytes,
 		UniqueIPsUsed:    uniqueIPs,
@@ -516,7 +516,25 @@ func (s *Server) seedClientUsage(clientID, agentID string, trafficBytes uint64, 
 		ActiveUniqueIPs:  uniqueIPs,
 		ObservedAt:       observedAt,
 	}
+	s.clientUsage[clientID][agentID] = snap
+	lastSeq := s.lastUsageSeq[agentID]
 	s.clientsMu.Unlock()
+
+	if s.store != nil {
+		if err := s.store.UpsertClientUsage(context.Background(), storage.ClientUsageRecord{
+			ClientID:         clientID,
+			AgentID:          agentID,
+			TrafficUsedBytes: trafficBytes,
+			UniqueIPsUsed:    uniqueIPs,
+			ActiveTCPConns:   connections,
+			ActiveUniqueIPs:  uniqueIPs,
+			LastSeq:          lastSeq,
+			ObservedAt:       observedAt,
+		}); err != nil {
+			s.logger.Warn("persist client_usage (seed)",
+				"client_id", clientID, "agent_id", agentID, "error", err)
+		}
+	}
 }
 
 func (s *Server) ignoreDiscoveredClient(ctx context.Context, id string, actorID string, observedAt time.Time) error {

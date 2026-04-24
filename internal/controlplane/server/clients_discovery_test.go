@@ -214,12 +214,12 @@ func TestAdoptDiscoveredClientConcurrentIsAtomic(t *testing.T) {
 
 	const workers = 5
 	var (
-		wg         sync.WaitGroup
-		mu         sync.Mutex
-		successes  int
+		wg             sync.WaitGroup
+		mu             sync.Mutex
+		successes      int
 		alreadyAdopted int
-		otherErrs  []error
-		createdIDs []string
+		otherErrs      []error
+		createdIDs     []string
 	)
 
 	start := make(chan struct{})
@@ -529,5 +529,105 @@ func TestRestoreStoredClients_RehydratesUsageFromDiscovered(t *testing.T) {
 	}
 	if got.ActiveUniqueIPs != 3 {
 		t.Fatalf("ActiveUniqueIPs after restore = %d, want 3", got.ActiveUniqueIPs)
+	}
+}
+
+// TestRestoreStoredClients_PrefersPersistedUsage verifies the primary
+// rehydration path: once client_usage has been written-through by an
+// agent tick, restart must read from that table, not fall back to
+// the discovered_clients snapshot. A drifted discovered row here
+// simulates an agent going offline before its latest totals reached
+// the discovered table — the persisted client_usage must still win.
+func TestRestoreStoredClients_PrefersPersistedUsage(t *testing.T) {
+	now := time.Date(2026, time.April, 24, 13, 0, 0, 0, time.UTC)
+
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	fleetGroupID := seedTestFleetGroup(t, store, "default", now.Add(-time.Minute))
+	agentID := "agent-persisted-1"
+	if err := store.PutAgent(ctx, storage.AgentRecord{
+		ID:           agentID,
+		NodeName:     "node-A",
+		FleetGroupID: fleetGroupID,
+		Version:      "dev",
+		LastSeenAt:   now.Add(-time.Minute),
+	}); err != nil {
+		t.Fatalf("PutAgent() error = %v", err)
+	}
+
+	clientID := "client-persisted-1"
+	if err := store.PutClient(ctx, storage.ClientRecord{
+		ID:               clientID,
+		Name:             "external-echo",
+		SecretCiphertext: "5555555555555555eeeeeeeeeeeeeeee",
+		Enabled:          true,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}); err != nil {
+		t.Fatalf("PutClient() error = %v", err)
+	}
+	if err := store.PutClientAssignment(ctx, storage.ClientAssignmentRecord{
+		ID:         "assign-persisted-1",
+		ClientID:   clientID,
+		TargetType: clientAssignmentTargetAgent,
+		AgentID:    agentID,
+		CreatedAt:  now,
+	}); err != nil {
+		t.Fatalf("PutClientAssignment() error = %v", err)
+	}
+
+	// Persisted total — this is what must win on restart.
+	if err := store.UpsertClientUsage(ctx, storage.ClientUsageRecord{
+		ClientID:         clientID,
+		AgentID:          agentID,
+		TrafficUsedBytes: 777_777,
+		UniqueIPsUsed:    12,
+		ActiveTCPConns:   5,
+		ActiveUniqueIPs:  7,
+		LastSeq:          42,
+		ObservedAt:       now,
+	}); err != nil {
+		t.Fatalf("UpsertClientUsage() error = %v", err)
+	}
+
+	// Stale discovered snapshot — would be picked up by the fallback,
+	// but persisted usage should take precedence.
+	if err := store.PutDiscoveredClient(ctx, storage.DiscoveredClientRecord{
+		ID:           "discovered-persisted-1",
+		AgentID:      agentID,
+		ClientName:   "external-echo",
+		Secret:       "5555555555555555eeeeeeeeeeeeeeee",
+		Status:       discoveredClientStatusAdopted,
+		TotalOctets:  111, // drifted — must be ignored
+		DiscoveredAt: now.Add(-time.Hour),
+		UpdatedAt:    now.Add(-time.Hour),
+	}); err != nil {
+		t.Fatalf("PutDiscoveredClient() error = %v", err)
+	}
+
+	server := New(Options{
+		Now:   func() time.Time { return now },
+		Store: store,
+	})
+	defer server.Close()
+	if err := server.restoreStoredClients(); err != nil {
+		t.Fatalf("restoreStoredClients() error = %v", err)
+	}
+
+	server.clientsMu.RLock()
+	got := server.clientUsage[clientID][agentID]
+	seq := server.lastUsageSeq[agentID]
+	server.clientsMu.RUnlock()
+
+	if got.TrafficUsedBytes != 777_777 {
+		t.Fatalf("TrafficUsedBytes after restore = %d, want 777777 (from client_usage, not discovered)", got.TrafficUsedBytes)
+	}
+	if seq != 42 {
+		t.Fatalf("lastUsageSeq[%q] = %d, want 42 (carried over from persisted row)", agentID, seq)
 	}
 }

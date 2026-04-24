@@ -91,16 +91,22 @@ func (s *Server) restoreStoredClients() error {
 		return err
 	}
 
-	// Build a (agent_id, client_name) → discovered snapshot index once so
-	// we can seed the in-memory clientUsage below without N×M lookups.
-	// clientUsage itself is volatile (not persisted), so on a plain
-	// restart we'd otherwise report 0 B traffic for every managed
-	// client until the next agent tick lands — and because agents send
-	// deltas, that "next tick" only restores one polling interval of
-	// traffic, not the lifetime total. The adopt path already seeds from
-	// DiscoveredClientRecord.TotalOctets, so re-use the same source on
-	// startup for any (managed_client, agent) pair that has a matching
-	// discovered row.
+	// Primary rehydration source: the persisted client_usage table
+	// (written-through on every applyClientUsageSnapshot tick). Keyed
+	// by (client_id, agent_id).
+	usageIdx := make(map[string]storage.ClientUsageRecord)
+	if usage, err := s.store.ListClientUsage(context.Background()); err == nil {
+		for _, u := range usage {
+			usageIdx[u.ClientID+"\x00"+u.AgentID] = u
+			if u.LastSeq > s.lastUsageSeq[u.AgentID] {
+				s.lastUsageSeq[u.AgentID] = u.LastSeq
+			}
+		}
+	}
+	// Fallback rehydration: for (client, agent) pairs that have no
+	// client_usage row yet — e.g. adopted pre-migration, or a brand new
+	// deployment that has yet to see an agent tick — seed from the
+	// discovered_clients snapshot. Keyed by (agent_id, client_name).
 	discoveredIdx := make(map[string]storage.DiscoveredClientRecord)
 	if dc, err := s.store.ListDiscoveredClients(context.Background()); err == nil {
 		for _, r := range dc {
@@ -122,13 +128,25 @@ func (s *Server) restoreStoredClients() error {
 			assignment := clientAssignmentFromRecord(assignmentRecord)
 			s.clientAssignments[client.ID] = append(s.clientAssignments[client.ID], assignment)
 			s.assignmentSeq = maxPrefixedSequence(s.assignmentSeq, "client-assignment", assignment.ID)
-			// Rehydrate volatile traffic counter from the last discovery
-			// snapshot for this (agent, client). Only per-agent rows are
-			// seeded; the rollup in aggregatedClientUsage sums them.
 			if assignment.AgentID == "" {
 				continue
 			}
-			if dc, ok := discoveredIdx[assignment.AgentID+"\x00"+client.Name]; ok {
+			// Rehydrate volatile traffic counter. Prefer the persisted
+			// client_usage row; fall back to the last discovered snapshot
+			// if nothing has been written yet for this (client, agent).
+			if u, ok := usageIdx[client.ID+"\x00"+assignment.AgentID]; ok {
+				if s.clientUsage[client.ID] == nil {
+					s.clientUsage[client.ID] = make(map[string]clientUsageSnapshot)
+				}
+				s.clientUsage[client.ID][assignment.AgentID] = clientUsageSnapshot{
+					ClientID:         u.ClientID,
+					TrafficUsedBytes: u.TrafficUsedBytes,
+					UniqueIPsUsed:    u.UniqueIPsUsed,
+					ActiveTCPConns:   u.ActiveTCPConns,
+					ActiveUniqueIPs:  u.ActiveUniqueIPs,
+					ObservedAt:       u.ObservedAt,
+				}
+			} else if dc, ok := discoveredIdx[assignment.AgentID+"\x00"+client.Name]; ok {
 				s.seedClientUsage(client.ID, assignment.AgentID, dc.TotalOctets,
 					dc.CurrentConnections, dc.ActiveUniqueIPs, dc.UpdatedAt)
 			}
