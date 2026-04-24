@@ -1050,6 +1050,129 @@ func TestClientCreateClientCallsTelemtUsersEndpoint(t *testing.T) {
 	}
 }
 
+// TestClientCreateClientOmitsEmptyUserADTag guards the "no tag" path.
+// Telemt accepts `user_ad_tag: None` (field absent) but rejects
+// `user_ad_tag: ""` with a 32-hex validation error. Operators who opt
+// out of auto-generation need the agent to omit the field entirely.
+func TestClientCreateClientOmitsEmptyUserADTag(t *testing.T) {
+	var requestBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &requestBody)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":   true,
+			"data": map[string]any{"user": map[string]any{"links": map[string]any{}}},
+		})
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Config{BaseURL: server.URL, Authorization: "secret"}, server.Client())
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	if _, err := client.CreateClient(context.Background(), ManagedClient{
+		Name:      "no-tag",
+		Secret:    "00000000000000000000000000000000",
+		UserADTag: "",
+		Enabled:   true,
+	}); err != nil {
+		t.Fatalf("CreateClient() error = %v", err)
+	}
+
+	if _, present := requestBody["user_ad_tag"]; present {
+		t.Fatalf("request body should omit user_ad_tag when empty; got %v", requestBody["user_ad_tag"])
+	}
+}
+
+// TestClientCreateClientOmitsZeroNumericLimits guards the
+// unlimited-client path. Telemt models the numeric limits as
+// Option<usize>: sending `0` means "hard limit of 0" (client can't
+// do anything), while omitting the field means "no limit". Operators
+// who leave the form blank expect the latter; this test pins the
+// agent payload to match.
+func TestClientCreateClientOmitsZeroNumericLimits(t *testing.T) {
+	var requestBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &requestBody)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":   true,
+			"data": map[string]any{"user": map[string]any{"links": map[string]any{}}},
+		})
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Config{BaseURL: server.URL, Authorization: "secret"}, server.Client())
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	if _, err := client.CreateClient(context.Background(), ManagedClient{
+		Name:           "unlimited",
+		Secret:         "00000000000000000000000000000000",
+		UserADTag:      "00000000000000000000000000000000",
+		Enabled:        true,
+		MaxTCPConns:    0,
+		MaxUniqueIPs:   0,
+		DataQuotaBytes: 0,
+	}); err != nil {
+		t.Fatalf("CreateClient() error = %v", err)
+	}
+
+	for _, key := range []string{"max_tcp_conns", "max_unique_ips", "data_quota_bytes"} {
+		if _, present := requestBody[key]; present {
+			t.Fatalf("request body should omit %q when zero; got %v", key, requestBody[key])
+		}
+	}
+}
+
+// TestClientCreateClientParsesNestedLinksFromCreateUserResponse guards
+// against the shape mismatch that previously left POST-created clients
+// without connection links. Real Telemt wraps POST /v1/users responses
+// in CreateUserResponse { user: UserInfo, secret: String } — so `links`
+// live under `data.user.links`, not `data.links`. The PATCH path still
+// emits flat `data.links`, so the parser has to accept both.
+func TestClientCreateClientParsesNestedLinksFromCreateUserResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/users" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok": true,
+			"data": map[string]any{
+				"user": map[string]any{
+					"username": "alice",
+					"links": map[string]any{
+						"tls": []string{"tg://proxy?server=node-a&secret=tls-nested"},
+					},
+				},
+				"secret": "secret-1",
+			},
+		})
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Config{BaseURL: server.URL, Authorization: "secret"}, server.Client())
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	result, err := client.CreateClient(context.Background(), ManagedClient{
+		Name:      "alice",
+		Secret:    "secret-1",
+		UserADTag: "0123456789abcdef0123456789abcdef",
+		Enabled:   true,
+	})
+	if err != nil {
+		t.Fatalf("CreateClient() error = %v", err)
+	}
+	if result.ConnectionLink != "tg://proxy?server=node-a&secret=tls-nested" {
+		t.Fatalf("result.ConnectionLink = %q, want nested-parsed link", result.ConnectionLink)
+	}
+}
+
 func TestClientUpdateClientUsesPreviousNameInPath(t *testing.T) {
 	var requestPath string
 	var requestBody map[string]any

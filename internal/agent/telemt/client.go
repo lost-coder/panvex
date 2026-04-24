@@ -962,13 +962,31 @@ func (c *Client) DeleteClient(ctx context.Context, clientName string) error {
 
 func (c *Client) applyClient(ctx context.Context, method string, path string, client ManagedClient) (ClientApplyResult, error) {
 	payload := map[string]any{
-		"username":         client.Name,
-		"secret":           client.Secret,
-		"user_ad_tag":      client.UserADTag,
-		"enabled":          client.Enabled,
-		"max_tcp_conns":    client.MaxTCPConns,
-		"max_unique_ips":   client.MaxUniqueIPs,
-		"data_quota_bytes": client.DataQuotaBytes,
+		"username": client.Name,
+		"secret":   client.Secret,
+		"enabled":  client.Enabled,
+	}
+	// Telemt models user_ad_tag as Option<String>: omitting the field
+	// means "no ad tag", while sending "" triggers a 32-hex validation
+	// error. Include the field only when the operator actually provided
+	// a value.
+	if strings.TrimSpace(client.UserADTag) != "" {
+		payload["user_ad_tag"] = client.UserADTag
+	}
+	// Telemt's CreateUserRequest models the numeric limits as
+	// `Option<usize>` — sending `0` materialises a real zero-limit
+	// (the client then can't open any connections, burn any quota,
+	// etc.), while *omitting* the field means "no limit". Map zero
+	// values to "no limit" so operators who leave the form blank get
+	// the expected unlimited client instead of a silently-broken one.
+	if client.MaxTCPConns > 0 {
+		payload["max_tcp_conns"] = client.MaxTCPConns
+	}
+	if client.MaxUniqueIPs > 0 {
+		payload["max_unique_ips"] = client.MaxUniqueIPs
+	}
+	if client.DataQuotaBytes > 0 {
+		payload["data_quota_bytes"] = client.DataQuotaBytes
 	}
 	if strings.TrimSpace(client.ExpirationRFC3339) != "" {
 		payload["expiration_rfc3339"] = client.ExpirationRFC3339
@@ -989,19 +1007,34 @@ func (c *Client) applyClient(ctx context.Context, method string, path string, cl
 		return ClientApplyResult{}, fmt.Errorf("apply client failed: %w", decodeAPIError(response.Body, fmt.Sprintf("apply client failed with status %d", response.StatusCode)))
 	}
 
+	// Telemt returns two shapes depending on the HTTP method:
+	//   POST /v1/users         → {"data":{"user":{"links":{…}}, "secret":…}}  (CreateUserResponse)
+	//   PATCH /v1/users/{name} → {"data":{"links":{…}, …}}                    (UserInfo)
+	// Decode both nesting levels and pick whichever branch is populated.
+	// Unknown fields are silently ignored by encoding/json, so a single
+	// struct captures whichever Telemt shipped.
+	type linksBlock struct {
+		TLS     []string `json:"tls"`
+		Secure  []string `json:"secure"`
+		Classic []string `json:"classic"`
+	}
 	var body struct {
-		Links struct {
-			TLS     []string `json:"tls"`
-			Secure  []string `json:"secure"`
-			Classic []string `json:"classic"`
-		} `json:"links"`
+		Links linksBlock `json:"links"`
+		User  struct {
+			Links linksBlock `json:"links"`
+		} `json:"user"`
 	}
 	if err := decodeSuccessData(response.Body, &body); err != nil {
 		return ClientApplyResult{}, err
 	}
 
+	links := body.Links
+	if len(links.TLS) == 0 && len(links.Secure) == 0 && len(links.Classic) == 0 {
+		links = body.User.Links
+	}
+
 	return ClientApplyResult{
-		ConnectionLink: preferredConnectionLink(body.Links.TLS, body.Links.Secure, body.Links.Classic),
+		ConnectionLink: preferredConnectionLink(links.TLS, links.Secure, links.Classic),
 	}, nil
 }
 
