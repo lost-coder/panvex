@@ -14,9 +14,13 @@ import (
 )
 
 type clientMutationRequest struct {
-	Name              string   `json:"name"`
-	Enabled           *bool    `json:"enabled"`
-	UserADTag         string   `json:"user_ad_tag"`
+	Name      string `json:"name"`
+	Enabled   *bool  `json:"enabled"`
+	UserADTag string `json:"user_ad_tag"`
+	// UserADTagAuto defaults to nil (legacy auto-generation when tag
+	// is empty). Pass `false` explicitly to store an empty ad tag —
+	// operators who want a client WITHOUT a tag rely on this flag.
+	UserADTagAuto     *bool    `json:"user_ad_tag_auto,omitempty"`
 	MaxTCPConns       int      `json:"max_tcp_conns"`
 	MaxUniqueIPs      int      `json:"max_unique_ips"`
 	DataQuotaBytes    int64    `json:"data_quota_bytes"`
@@ -127,6 +131,7 @@ func (s *Server) handleCreateClient() http.HandlerFunc {
 			Name:              request.Name,
 			Enabled:           request.Enabled,
 			UserADTag:         request.UserADTag,
+			UserADTagAuto:     request.UserADTagAuto,
 			MaxTCPConns:       request.MaxTCPConns,
 			MaxUniqueIPs:      request.MaxUniqueIPs,
 			DataQuotaBytes:    request.DataQuotaBytes,
@@ -200,6 +205,7 @@ func (s *Server) handleUpdateClient() http.HandlerFunc {
 			Name:              request.Name,
 			Enabled:           request.Enabled,
 			UserADTag:         request.UserADTag,
+			UserADTagAuto:     request.UserADTagAuto,
 			MaxTCPConns:       request.MaxTCPConns,
 			MaxUniqueIPs:      request.MaxUniqueIPs,
 			DataQuotaBytes:    request.DataQuotaBytes,
@@ -266,6 +272,37 @@ func (s *Server) handleRotateClientSecret() http.HandlerFunc {
 		s.logger.Info("client secret rotated", "client_id", client.ID, "user_id", session.UserID)
 		s.appendAuditWithContext(r.Context(), session.UserID, "clients.rotate_secret", client.ID, nil)
 		writeJSON(w, http.StatusOK, s.buildClientDetailResponse(r.Context(), client, assignments, deployments, true))
+	}
+}
+
+// handleRedeployClient re-queues the client.create rollout job for
+// every currently-assigned target agent. Operators hit this when an
+// earlier deployment failed (bad Telemt response, network glitch,
+// unreachable node) and left the panel with a stuck "failed"
+// deployment that couldn't be recovered without editing fields.
+func (s *Server) handleRedeployClient() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		session, _, ok := s.requireClientsAccess(w, r)
+		if !ok {
+			return
+		}
+
+		clientID := chi.URLParam(r, "id")
+		if clientID == "" {
+			writeError(w, http.StatusBadRequest, "client id is required")
+			return
+		}
+
+		client, assignments, deployments, err := s.redeployClientWithContext(r.Context(), clientID, session.UserID, s.now())
+		if !handleClientMutationError(w, err) {
+			return
+		}
+
+		s.logger.Info("client redeployed", "client_id", client.ID, "user_id", session.UserID)
+		s.appendAuditWithContext(r.Context(), session.UserID, "clients.redeploy", client.ID, map[string]any{
+			"target_agent_ids": deploymentAgentIDsFromResponses(deployments),
+		})
+		writeJSON(w, http.StatusOK, s.buildClientDetailResponse(r.Context(), client, assignments, deployments, false))
 	}
 }
 

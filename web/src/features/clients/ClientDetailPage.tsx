@@ -413,11 +413,20 @@ export function ClientDetailPage({
   onRotateSecret,
   secretRotating,
   secretPendingRedeploy,
+  onRedeploy,
+  redeploying,
   onDisable,
   onDelete,
   ipHistory,
   agentLabels,
 }: ClientDetailPageProps) {
+  // Expose "Redeploy" as a prominent action whenever at least one
+  // deployment landed in `failed` state. Without this button operators
+  // get stuck — they see an angry red status per node but have no
+  // direct way to retry the rollout short of editing fields.
+  const hasFailedDeployment =
+    onRedeploy !== undefined &&
+    client.deployments.some((d) => d.status === "failed");
   const [editOpen, setEditOpen] = useState(false);
   // Reseed the form each time the sheet opens — editing a client whose
   // assignments were just changed elsewhere (e.g. fleet-group rename)
@@ -426,6 +435,11 @@ export function ClientDetailPage({
     setEditData({
       name: client.name,
       userAdTag: client.userAdTag,
+      // Edit opens with auto-generation OFF so the existing ad tag
+      // (whatever it is, including empty) is preserved verbatim on
+      // save. The operator can tick "Auto-generate" to request a new
+      // tag when saving.
+      userAdTagAuto: false,
       expirationRfc3339: client.expirationRfc3339,
       maxTcpConns: client.maxTcpConns,
       maxUniqueIps: client.maxUniqueIps,
@@ -438,6 +452,7 @@ export function ClientDetailPage({
   const [editData, setEditData] = useState<ClientFormData>({
     name: client.name,
     userAdTag: client.userAdTag,
+    userAdTagAuto: false,
     expirationRfc3339: client.expirationRfc3339,
     maxTcpConns: client.maxTcpConns,
     maxUniqueIps: client.maxUniqueIps,
@@ -562,6 +577,18 @@ export function ClientDetailPage({
             {onDisable && (
               <Button size="sm" variant="ghost" onClick={onDisable}>
                 {client.enabled ? "Disable" : "Enable"}
+              </Button>
+            )}
+            {hasFailedDeployment && onRedeploy && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onRedeploy}
+                disabled={redeploying}
+                className="text-status-warn border-status-warn/60 hover:text-status-warn"
+                title="Re-run the client rollout to every target node"
+              >
+                {redeploying ? "Redeploying…" : "Redeploy"}
               </Button>
             )}
             {onDelete && (

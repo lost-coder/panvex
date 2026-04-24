@@ -39,6 +39,21 @@ export function useClientMutations(clientId: string, rawClient: ApiClient | unde
     },
   });
 
+  // Re-runs the client.create rollout job. Needed when the initial
+  // deployment on one or more agents failed (bad ad tag, unreachable
+  // node, etc.) and the operator wants to retry without touching any
+  // fields.
+  const redeployMutation = useMutation({
+    mutationFn: () => apiClient.redeployClient(clientId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["client", clientId] });
+      qc.invalidateQueries({ queryKey: ["clients"] });
+    },
+    onError: (err: Error) => {
+      toast.error(err.message);
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: () => apiClient.deleteClient(clientId),
     onSuccess: () => {
@@ -85,5 +100,5 @@ export function useClientMutations(clientId: string, rawClient: ApiClient | unde
     return cancel;
   }
 
-  return { editMutation, rotateMutation, deleteMutation, scheduleDeleteWithUndo };
+  return { editMutation, rotateMutation, redeployMutation, deleteMutation, scheduleDeleteWithUndo };
 }

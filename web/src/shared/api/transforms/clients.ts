@@ -80,6 +80,7 @@ export function buildClientInput(form: ClientFormData, existing: ApiClient): Cli
     name: form.name,
     enabled: existing.enabled,
     user_ad_tag: form.userAdTag,
+    user_ad_tag_auto: form.userAdTagAuto,
     max_tcp_conns: form.maxTcpConns,
     max_unique_ips: form.maxUniqueIps,
     data_quota_bytes: form.dataQuotaBytes,

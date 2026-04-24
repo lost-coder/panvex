@@ -7,6 +7,7 @@ import type { ClientFormData } from "@/shared/api/types-pages/pages";
 const emptyForm: ClientFormData = {
   name: "",
   userAdTag: "",
+  userAdTagAuto: true,
   expirationRfc3339: "",
   maxTcpConns: 0,
   maxUniqueIps: 0,
@@ -18,6 +19,7 @@ const emptyForm: ClientFormData = {
 const filledForm: ClientFormData = {
   name: "premium-users",
   userAdTag: "promo-channel",
+  userAdTagAuto: false,
   expirationRfc3339: "2026-12-31T00:00:00Z",
   maxTcpConns: 4,
   maxUniqueIps: 2,

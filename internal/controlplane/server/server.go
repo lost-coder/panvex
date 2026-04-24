@@ -651,6 +651,7 @@ func (s *Server) routes() http.Handler {
 					operator.Put("/clients/{id}", s.handleUpdateClient())
 					operator.Delete("/clients/{id}", s.handleDeleteClient())
 					operator.With(sensitive).Post("/clients/{id}/rotate-secret", s.handleRotateClientSecret())
+					operator.Post("/clients/{id}/redeploy", s.handleRedeployClient())
 					operator.Get("/discovered-clients", s.handleDiscoveredClients())
 					operator.Post("/discovered-clients/{id}/adopt", s.handleAdoptDiscoveredClient())
 					operator.Post("/discovered-clients/{id}/ignore", s.handleIgnoreDiscoveredClient())

@@ -337,6 +337,7 @@ function TimelinePanel({ data }: { data: DashboardTimelineData }) {
 const emptyFormData: ClientFormData = {
   name: "",
   userAdTag: "",
+  userAdTagAuto: true,
   expirationRfc3339: "",
   maxTcpConns: 0,
   maxUniqueIps: 0,
