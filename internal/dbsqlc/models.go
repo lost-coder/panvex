@@ -11,7 +11,7 @@ import (
 type Agent struct {
 	ID            string
 	NodeName      string
-	FleetGroupID  pgtype.Text
+	FleetGroupID  pgtype.UUID
 	Version       string
 	ReadOnly      bool
 	LastSeenAt    pgtype.Timestamptz
@@ -70,7 +70,7 @@ type ClientAssignment struct {
 	ID           string
 	ClientID     string
 	TargetType   string
-	FleetGroupID pgtype.Text
+	FleetGroupID pgtype.UUID
 	AgentID      pgtype.Text
 	CreatedAt    pgtype.Timestamptz
 }
@@ -114,7 +114,7 @@ type DiscoveredClient struct {
 
 type EnrollmentToken struct {
 	Value        string
-	FleetGroupID pgtype.Text
+	FleetGroupID pgtype.UUID
 	IssuedAt     pgtype.Timestamptz
 	ExpiresAt    pgtype.Timestamptz
 	ConsumedAt   pgtype.Timestamptz
@@ -122,9 +122,32 @@ type EnrollmentToken struct {
 }
 
 type FleetGroup struct {
-	ID        string
-	Name      string
+	ID          pgtype.UUID
+	Name        string
+	CreatedAt   pgtype.Timestamptz
+	Label       string
+	Description string
+	UpdatedAt   pgtype.Timestamptz
+}
+
+type FleetGroupIntegration struct {
+	ID           pgtype.UUID
+	FleetGroupID pgtype.UUID
+	Kind         string
+	ProviderID   pgtype.UUID
+	Config       []byte
+	Enabled      bool
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
+type IntegrationProvider struct {
+	ID        pgtype.UUID
+	Kind      string
+	Label     string
+	Config    []byte
 	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
 }
 
 type Job struct {
