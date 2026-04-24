@@ -97,7 +97,7 @@ func serveUIIndex(w http.ResponseWriter, r *http.Request, uiFiles fs.FS, rootPat
 	if basePath == "" {
 		basePath = "/"
 	} else if !strings.HasSuffix(basePath, "/") {
-		basePath = basePath + "/"
+		basePath += "/"
 	}
 	baseTag := `<base href="` + html.EscapeString(basePath) + `">`
 	if loc := headOpenTagPattern.FindStringIndex(body); loc != nil {

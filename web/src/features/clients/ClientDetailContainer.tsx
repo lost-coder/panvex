@@ -85,11 +85,16 @@ export function ClientDetailContainer() {
     },
   });
 
-  // Reset pending state when fresh server data arrives after rotation
+  // Reset pending state when fresh server data arrives after rotation.
+  // This is a legitimate "sync local state with external system" effect
+  // (React Query refetch finishing); the guard makes it idempotent so
+  // the linter's cascade warning doesn't apply.
   useEffect(() => {
     if (raw && secretPending) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSecretPending(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [raw]);
 
   if (isLoading || !client) {
