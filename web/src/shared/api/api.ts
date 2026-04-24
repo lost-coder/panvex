@@ -311,11 +311,9 @@ export type DCHealthHistoryResponse = {
 };
 
 export type ClientIPEntry = {
-  AgentID: string;
-  ClientID: string;
-  IPAddress: string;
-  FirstSeen: string;
-  LastSeen: string;
+  ip_address: string;
+  first_seen: string;
+  last_seen: string;
 };
 
 export type ClientIPHistoryResponse = {

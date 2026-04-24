@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -107,7 +108,39 @@ func (s *Server) handleClientIPHistory() http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"ips": records, "total_unique": len(records)})
+		// client_ip_history is keyed by (agent_id, client_id, ip_address),
+		// so one physical IP seen on N nodes shows up as N rows. Collapse
+		// here by IP — first_seen = earliest sighting across nodes,
+		// last_seen = most recent — so the card shows each IP once.
+		type ipRow struct {
+			IPAddress string    `json:"ip_address"`
+			FirstSeen time.Time `json:"first_seen"`
+			LastSeen  time.Time `json:"last_seen"`
+		}
+		byIP := make(map[string]*ipRow, len(records))
+		for _, r := range records {
+			row, ok := byIP[r.IPAddress]
+			if !ok {
+				byIP[r.IPAddress] = &ipRow{
+					IPAddress: r.IPAddress,
+					FirstSeen: r.FirstSeen,
+					LastSeen:  r.LastSeen,
+				}
+				continue
+			}
+			if r.FirstSeen.Before(row.FirstSeen) {
+				row.FirstSeen = r.FirstSeen
+			}
+			if r.LastSeen.After(row.LastSeen) {
+				row.LastSeen = r.LastSeen
+			}
+		}
+		ips := make([]ipRow, 0, len(byIP))
+		for _, row := range byIP {
+			ips = append(ips, *row)
+		}
+		sort.Slice(ips, func(i, j int) bool { return ips[i].LastSeen.After(ips[j].LastSeen) })
+		writeJSON(w, http.StatusOK, map[string]any{"ips": ips, "total_unique": len(ips)})
 	}
 }
 

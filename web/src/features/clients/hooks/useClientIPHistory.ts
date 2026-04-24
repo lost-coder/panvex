@@ -11,10 +11,9 @@ export function useClientIPHistory(clientID: string) {
 
   return {
     ips: (query.data?.ips ?? []).map((ip) => ({
-      agentId: ip.AgentID,
-      ip: ip.IPAddress,
-      firstSeen: ip.FirstSeen,
-      lastSeen: ip.LastSeen,
+      ip: ip.ip_address,
+      firstSeen: ip.first_seen,
+      lastSeen: ip.last_seen,
     })),
     totalUnique: query.data?.total_unique ?? 0,
     isLoading: query.isLoading,

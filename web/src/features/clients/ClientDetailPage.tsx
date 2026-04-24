@@ -239,7 +239,6 @@ function DeployLinksCard({
 // ─── IP history (GeoIP-ready) ────────────────────────────────────────
 
 interface IPRow {
-  agentId: string;
   ip: string;
   firstSeen: string;
   lastSeen: string;
@@ -335,7 +334,7 @@ function IPHistoryCard({ ips, totalUnique }: { ips: IPRow[]; totalUnique: number
         <DataTable
           columns={columns}
           data={ips}
-          keyExtractor={(row) => `${row.agentId}:${row.ip}`}
+          keyExtractor={(row) => row.ip}
           emptyMessage="No IPs"
         />
       )}
