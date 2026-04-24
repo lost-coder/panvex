@@ -5,7 +5,6 @@
 #   rule_files:
 #     - /etc/prometheus/panvex-alerts.yml
 #
-# Every metric referenced here is documented in core/docs/ops/grafana/README.md.
 # Thresholds are conservative starting points; tune per fleet size and SLO.
 
 groups:

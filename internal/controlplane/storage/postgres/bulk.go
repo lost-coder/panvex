@@ -15,8 +15,7 @@
 // params, well under the 65535 cap. 250 was picked after the P3-PERF-01b
 // chunk-size sweep: per-row throughput peaks around 100-250 rows and regresses
 // at 500+ because the generated SQL and argument slice both grow
-// super-linearly with chunk size. See docs/benchmarks/phase3-bulk-insert.md
-// for the raw ns/row numbers. Every bulk method runs inside a single
+// super-linearly with chunk size. Every bulk method runs inside a single
 // transaction so partial failure rolls the whole batch back.
 package postgres
 

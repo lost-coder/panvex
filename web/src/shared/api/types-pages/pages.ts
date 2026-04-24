@@ -601,9 +601,9 @@ export interface ClientDetailPageProps {
   onDelete?: () => void;
   ipHistory?: {
     /**
-     * GeoIP fields are optional — the backend does not enrich yet
-     * (see docs/audit_2026-04-18/backend-followups.md). The page renders
-     * "—" placeholders for the column until the enrichment lands.
+     * GeoIP fields are optional — the backend does not enrich yet. The
+     * page renders "—" placeholders for the column until the enrichment
+     * lands.
      */
     ips: {
       ip: string;

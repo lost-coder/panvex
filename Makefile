@@ -69,9 +69,7 @@ install-tools:
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 	go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
 
-# P2-PERF-05: microbenchmarks used as the Phase 2 performance baseline.
-# Output is compared against the numbers in docs/benchmarks/phase2-baseline.md
-# to judge the impact of Phase 3 changes (notably PERF-06 bulk insert).
+# Control-plane microbenchmarks (batch writer, event bus, bulk insert).
 bench:
 	go test -bench=. -benchtime=3s -run=^$$ -count=1 -timeout=10m \
 	    ./internal/controlplane/server \

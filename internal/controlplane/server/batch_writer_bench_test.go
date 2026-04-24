@@ -12,8 +12,6 @@ package server
 //
 //	go test -bench=. -benchtime=3s -run=^$ -count=1 \
 //	    ./internal/controlplane/server
-//
-// See docs/benchmarks/phase2-baseline.md for the captured numbers.
 
 import (
 	"context"
