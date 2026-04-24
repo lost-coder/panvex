@@ -1,8 +1,8 @@
 package server
 
 import (
-	"crypto/tls"
 	"context"
+	"crypto/tls"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -25,8 +25,8 @@ import (
 )
 
 const (
-	sessionCookieName         = "panvex_session"
-	apiBasePath               = "/api"
+	sessionCookieName          = "panvex_session"
+	apiBasePath                = "/api"
 	maxInMemoryMetricSnapshots = 512
 	maxInMemoryAuditEvents     = 1024
 	// jobsKeyEvictionInterval is how often the jobs service scans for
@@ -48,26 +48,26 @@ const (
 	// idempotency cache (defaultCompletedJobRetention) so replaying a lost
 	// acknowledged job after this window is never safe — the agent may have
 	// already forgotten it. See P2-LOG-05.
-	jobsAckExpiryTTL = 2 * time.Hour
-	httpLoginRateLimitPerWindow = 30
+	jobsAckExpiryTTL                     = 2 * time.Hour
+	httpLoginRateLimitPerWindow          = 30
 	httpAgentBootstrapRateLimitPerWindow = 30
-	grpcConnectRateLimitPerWindow = 30
+	grpcConnectRateLimitPerWindow        = 30
 	// httpSensitiveRateLimitPerWindow caps how often a single authenticated
 	// user (or client IP if no session) may hit privileged write endpoints
 	// (TOTP enable/disable/setup, user CRUD, enrollment-token create, client
 	// secret rotation). Prevents brute-forcing the 6-digit TOTP enable code
 	// and flooding the system with token/rotation churn.
 	httpSensitiveRateLimitPerWindow = 10
-	defaultRateLimitWindow = time.Minute
+	defaultRateLimitWindow          = time.Minute
 )
 
 // Options defines the runtime dependencies used by the control-plane server.
 type Options struct {
-	Now          func() time.Time
-	Users        []auth.User
-	Store        storage.Store
-	UIFiles      fs.FS
-	PanelRuntime PanelRuntime
+	Now            func() time.Time
+	Users          []auth.User
+	Store          storage.Store
+	UIFiles        fs.FS
+	PanelRuntime   PanelRuntime
 	RequestRestart func() error
 	// TrustedProxyCIDRs lists additional CIDR ranges whose X-Forwarded-For
 	// header is trusted for rate-limit key extraction. Loopback addresses
@@ -86,7 +86,7 @@ type Options struct {
 	// Logger is the structured logger for the server. If nil, slog.Default() is used.
 	Logger *slog.Logger
 	// Version is the panel version string (e.g. "v1.2.3" or "dev").
-	Version   string
+	Version string
 	// CommitSHA is the git commit hash baked in at build time.
 	CommitSHA string
 	// BuildTime is the RFC3339 build timestamp baked in at build time.
@@ -102,27 +102,27 @@ type Options struct {
 // Server wires local-auth, inventory, jobs, and operator APIs into one HTTP surface.
 type Server struct {
 	gatewayrpc.UnimplementedAgentGatewayServer
-	auth  *auth.Service
-	store storage.Store
-	uiFiles    fs.FS
-	jobs       *jobs.Service
-	presence   *presence.Tracker
-	events     *eventbus.Hub
-	authority  *certificateAuthority
-	now        func() time.Time
-	panelRuntime PanelRuntime
-	requestRestart func() error
-	loginRateLimiter *fixedWindowRateLimiter
+	auth                      *auth.Service
+	store                     storage.Store
+	uiFiles                   fs.FS
+	jobs                      *jobs.Service
+	presence                  *presence.Tracker
+	events                    *eventbus.Hub
+	authority                 *certificateAuthority
+	now                       func() time.Time
+	panelRuntime              PanelRuntime
+	requestRestart            func() error
+	loginRateLimiter          *fixedWindowRateLimiter
 	agentBootstrapRateLimiter *fixedWindowRateLimiter
-	grpcConnectRateLimiter *fixedWindowRateLimiter
-	sensitiveRateLimiter *fixedWindowRateLimiter
-	loginLockout *accountLockoutTracker
-	trustedProxyCIDRs []*net.IPNet
-	encryptionKey string
-	logger *slog.Logger
-	version   string
-	commitSHA string
-	buildTime string
+	grpcConnectRateLimiter    *fixedWindowRateLimiter
+	sensitiveRateLimiter      *fixedWindowRateLimiter
+	loginLockout              *accountLockoutTracker
+	trustedProxyCIDRs         []*net.IPNet
+	encryptionKey             string
+	logger                    *slog.Logger
+	version                   string
+	commitSHA                 string
+	buildTime                 string
 
 	mu             sync.RWMutex
 	clientsMu      sync.RWMutex
@@ -161,32 +161,32 @@ type Server struct {
 	// restart cannot re-issue a previously-used ID. Other entity sequences
 	// (session/audit/metric/client) are still monotonic because they do not
 	// participate in mTLS identity.
-	auditSeq   uint64
-	metricSeq  uint64
-	clientSeq  uint64
-	assignmentSeq uint64
+	auditSeq            uint64
+	metricSeq           uint64
+	clientSeq           uint64
+	assignmentSeq       uint64
 	discoveredClientSeq uint64
 	// revokedAgentIDs tracks deregistered agent IDs whose mTLS certificates
 	// may still be cryptographically valid. The set is checked during gRPC
 	// Connect to deny access. It is not persisted: on restart the set is
 	// empty, which is acceptable because the CA will not have issued new
 	// certificates for deleted agents and existing ones expire within 30 days.
-	revokedAgentIDs map[string]struct{}
-	agents     map[string]Agent
-	detailBoosts map[string]time.Time
+	revokedAgentIDs              map[string]struct{}
+	agents                       map[string]Agent
+	detailBoosts                 map[string]time.Time
 	initializationWatchCooldowns map[string]time.Time
-	clients    map[string]managedClient
-	clientAssignments map[string][]managedClientAssignment
-	clientDeployments map[string]map[string]managedClientDeployment
-	clientUsage map[string]map[string]clientUsageSnapshot
+	clients                      map[string]managedClient
+	clientAssignments            map[string][]managedClientAssignment
+	clientDeployments            map[string]map[string]managedClientDeployment
+	clientUsage                  map[string]map[string]clientUsageSnapshot
 	// lastUsageSeq tracks the highest client-usage snapshot sequence number
 	// applied per agent. Snapshots whose seq is <= the stored value are
 	// discarded (duplicate/replay). seq == 1 after a non-zero stored value
 	// signals an agent restart: the CP records the new baseline without
 	// double-counting the deltas. See P2-LOG-06 / L-07.
 	lastUsageSeq map[string]uint64
-	instances  map[string]Instance
-	metrics    []MetricSnapshot
+	instances    map[string]Instance
+	metrics      []MetricSnapshot
 	// auditTrail is a fixed-size ring buffer of the most recent audit events.
 	// Append is O(1) — we overwrite auditBuf[auditHead] and advance the head
 	// index, rather than performing an O(N) slice shift on every overflow.
@@ -201,18 +201,18 @@ type Server struct {
 	//
 	// Callers must read/write this structure under metricsAuditMu and use
 	// snapshotAuditTrailLocked / appendAuditTrailLocked helpers.
-	auditBuf  [maxInMemoryAuditEvents]AuditEvent
-	auditHead int
-	auditSize int
+	auditBuf       [maxInMemoryAuditEvents]AuditEvent
+	auditHead      int
+	auditSize      int
 	panelSettings  PanelSettings
 	updateSettings UpdateSettings
 	updateState    UpdateState
 	retention      RetentionSettings
-	handler      http.Handler
-	startupErr   error
-	stopRollup   context.CancelFunc
-	rollupWg     sync.WaitGroup
-	batchWriter  *storeBatchWriter
+	handler        http.Handler
+	startupErr     error
+	stopRollup     context.CancelFunc
+	rollupWg       sync.WaitGroup
+	batchWriter    *storeBatchWriter
 
 	// obs holds the Prometheus collectors exposed at /metrics. Nil when the
 	// server is constructed without a scrape token — the /metrics route is
@@ -232,40 +232,40 @@ func New(options Options) *Server {
 	}
 
 	server := &Server{
-		auth:     auth.NewService(),
-		store:    options.Store,
-		uiFiles:  options.UIFiles,
-		jobs:     jobs.NewService(),
-		presence: presence.NewTracker(30*time.Second, 90*time.Second),
-		events:     eventbus.NewHub(),
-		now:        now,
-		panelRuntime: defaultPanelRuntime(options.PanelRuntime),
-		requestRestart: options.RequestRestart,
-		loginRateLimiter: newFixedWindowRateLimiter(httpLoginRateLimitPerWindow, defaultRateLimitWindow),
-		agentBootstrapRateLimiter: newFixedWindowRateLimiter(httpAgentBootstrapRateLimitPerWindow, defaultRateLimitWindow),
-		grpcConnectRateLimiter: newFixedWindowRateLimiter(grpcConnectRateLimitPerWindow, defaultRateLimitWindow),
-		sensitiveRateLimiter: newFixedWindowRateLimiter(httpSensitiveRateLimitPerWindow, defaultRateLimitWindow),
-		loginLockout: newAccountLockoutTracker(),
-		trustedProxyCIDRs: options.TrustedProxyCIDRs,
-		encryptionKey: options.EncryptionKey,
-		logger: options.Logger,
-		version:   options.Version,
-		commitSHA: options.CommitSHA,
-		buildTime: options.BuildTime,
-		revokedAgentIDs: make(map[string]struct{}),
-		agents:     make(map[string]Agent),
-		detailBoosts: make(map[string]time.Time),
+		auth:                         auth.NewService(),
+		store:                        options.Store,
+		uiFiles:                      options.UIFiles,
+		jobs:                         jobs.NewService(),
+		presence:                     presence.NewTracker(30*time.Second, 90*time.Second),
+		events:                       eventbus.NewHub(),
+		now:                          now,
+		panelRuntime:                 defaultPanelRuntime(options.PanelRuntime),
+		requestRestart:               options.RequestRestart,
+		loginRateLimiter:             newFixedWindowRateLimiter(httpLoginRateLimitPerWindow, defaultRateLimitWindow),
+		agentBootstrapRateLimiter:    newFixedWindowRateLimiter(httpAgentBootstrapRateLimitPerWindow, defaultRateLimitWindow),
+		grpcConnectRateLimiter:       newFixedWindowRateLimiter(grpcConnectRateLimitPerWindow, defaultRateLimitWindow),
+		sensitiveRateLimiter:         newFixedWindowRateLimiter(httpSensitiveRateLimitPerWindow, defaultRateLimitWindow),
+		loginLockout:                 newAccountLockoutTracker(),
+		trustedProxyCIDRs:            options.TrustedProxyCIDRs,
+		encryptionKey:                options.EncryptionKey,
+		logger:                       options.Logger,
+		version:                      options.Version,
+		commitSHA:                    options.CommitSHA,
+		buildTime:                    options.BuildTime,
+		revokedAgentIDs:              make(map[string]struct{}),
+		agents:                       make(map[string]Agent),
+		detailBoosts:                 make(map[string]time.Time),
 		initializationWatchCooldowns: make(map[string]time.Time),
-		clients:    make(map[string]managedClient),
-		clientAssignments: make(map[string][]managedClientAssignment),
-		clientDeployments: make(map[string]map[string]managedClientDeployment),
-		clientUsage: make(map[string]map[string]clientUsageSnapshot),
-		lastUsageSeq: make(map[string]uint64),
-		sessions:   agents.NewSessionManager(),
-		clientsSvc: clients.NewServiceWithDeps(options.Store, now),
-		fleetSvc:   fleet.NewService(options.Store, func() time.Time { return now().UTC() }),
-		instances:  make(map[string]Instance),
-		metrics:    make([]MetricSnapshot, 0, maxInMemoryMetricSnapshots),
+		clients:                      make(map[string]managedClient),
+		clientAssignments:            make(map[string][]managedClientAssignment),
+		clientDeployments:            make(map[string]map[string]managedClientDeployment),
+		clientUsage:                  make(map[string]map[string]clientUsageSnapshot),
+		lastUsageSeq:                 make(map[string]uint64),
+		sessions:                     agents.NewSessionManager(),
+		clientsSvc:                   clients.NewServiceWithDeps(options.Store, now),
+		fleetSvc:                     fleet.NewService(options.Store, func() time.Time { return now().UTC() }),
+		instances:                    make(map[string]Instance),
+		metrics:                      make([]MetricSnapshot, 0, maxInMemoryMetricSnapshots),
 	}
 	if server.logger == nil {
 		server.logger = slog.Default()

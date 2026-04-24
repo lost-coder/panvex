@@ -64,16 +64,16 @@ func TestClientFetchRuntimeStateUsesLoopbackAPI(t *testing.T) {
 			})
 		case "/v1/security/posture":
 			writeSuccessEnvelope(w, map[string]any{
-				"read_only":                true,
-				"api_read_only":            true,
-				"api_whitelist_enabled":    true,
-				"api_whitelist_entries":    2,
-				"api_auth_header_enabled":  true,
-				"proxy_protocol_enabled":   false,
-				"log_level":                "normal",
-				"telemetry_core_enabled":   true,
-				"telemetry_user_enabled":   true,
-				"telemetry_me_level":       "debug",
+				"read_only":               true,
+				"api_read_only":           true,
+				"api_whitelist_enabled":   true,
+				"api_whitelist_entries":   2,
+				"api_auth_header_enabled": true,
+				"proxy_protocol_enabled":  false,
+				"log_level":               "normal",
+				"telemetry_core_enabled":  true,
+				"telemetry_user_enabled":  true,
+				"telemetry_me_level":      "debug",
 			})
 		case "/v1/system/info":
 			writeSuccessEnvelope(w, map[string]any{
@@ -93,8 +93,8 @@ func TestClientFetchRuntimeStateUsesLoopbackAPI(t *testing.T) {
 			})
 		case "/v1/limits/effective":
 			writeSuccessEnvelope(w, map[string]any{
-				"update_every_secs":       5,
-				"me_reinit_every_secs":    30,
+				"update_every_secs":        5,
+				"me_reinit_every_secs":     30,
 				"me_pool_force_close_secs": 120,
 				"timeouts": map[string]any{
 					"client_handshake_secs": 10,
@@ -105,9 +105,9 @@ func TestClientFetchRuntimeStateUsesLoopbackAPI(t *testing.T) {
 					"connect_budget_ms":      1500,
 				},
 				"middle_proxy": map[string]any{
-					"floor_mode":            "adaptive",
-					"me2dc_fallback":        true,
-					"writer_pick_mode":      "sorted_rr",
+					"floor_mode":       "adaptive",
+					"me2dc_fallback":   true,
+					"writer_pick_mode": "sorted_rr",
 				},
 				"user_ip_policy": map[string]any{
 					"mode":        "combined",
