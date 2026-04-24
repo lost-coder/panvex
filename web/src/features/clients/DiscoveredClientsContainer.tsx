@@ -5,6 +5,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { SkeletonRows } from "@/ui";
 import { useConfirm } from "@/app/providers/ConfirmProvider";
 import { useUrlSearchState } from "@/shared/hooks/useUrlSearchState";
+import { groupDiscovered } from "./lib/groupDiscovered";
 
 export function DiscoveredClientsContainer() {
   const { discoveredClients, isLoading, error, adopt, ignore, adoptMany, ignoreMany, isAdopting, isIgnoring } =
@@ -59,14 +60,21 @@ export function DiscoveredClientsContainer() {
   };
   const handleAdoptMany = async (ids: string[]) => {
     if (ids.length === 0) return;
-    // Front-end dedup fans one logical client into N records (one per
-    // node). Confirm the fanout so the operator sees the scale.
+    // `ids` is the flat list of raw discovered-records (one per node per
+    // logical client). Count logical clients by how many unique groups
+    // the selected ids belong to — that's what the operator sees as
+    // rows in the table.
+    const idSet = new Set(ids);
+    const touchedGroups = groupDiscovered(discoveredClients).filter((g) =>
+      g.ids.some((id) => idSet.has(id)),
+    );
+    const clients = touchedGroups.length || ids.length;
     const ok = await confirm({
-      title: `Adopt ${ids.length} record${ids.length === 1 ? "" : "s"}?`,
+      title: `Adopt ${clients} client${clients === 1 ? "" : "s"}?`,
       body:
-        ids.length === 1
-          ? "Import the discovered client as a managed one."
-          : `Adopt-many will fan out ${ids.length} records (one per node they were discovered on) so the resulting managed clients are registered on every node.`,
+        clients === 1
+          ? "The client will be registered as managed on every node where it was discovered."
+          : `Each of the ${clients} clients will be registered as managed on every node where it was discovered.`,
       confirmLabel: "Adopt",
       variant: "default",
     });
