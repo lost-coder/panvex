@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { cn } from "@/ui/lib/cn";
 
 export type PulseTone = "ok" | "warn" | "error" | "default";
@@ -79,7 +80,7 @@ function Tick({ label, value, hint, tone, barPct, delta }: PulseTick) {
  * Optional `barPct` shows a slim progress bar under the value (for
  * usage/quota), and `delta` renders a coloured Δ next to the value.
  */
-export function PulseRow({ ticks, className }: PulseRowProps) {
+function PulseRowImpl({ ticks, className }: PulseRowProps) {
   const cols = ticks.length;
   return (
     <section
@@ -109,3 +110,9 @@ export function PulseRow({ ticks, className }: PulseRowProps) {
     </section>
   );
 }
+
+// Hot path: re-rendered on every WebSocket telemetry tick. Wrap in
+// memo so unrelated parent re-renders (route loader, header clock)
+// do not pay the layout cost. Callers should pass a memoised `ticks`
+// array — Object.is on a freshly-built array is always !==.
+export const PulseRow = memo(PulseRowImpl);
