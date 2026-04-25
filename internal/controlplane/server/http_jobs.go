@@ -27,7 +27,7 @@ func (s *Server) handleJobs() http.HandlerFunc {
 			return
 		}
 
-		listed := s.jobs.List()
+		listed := s.jobs.ListWithContext(r.Context())
 
 		// Redact payload for viewers to prevent leaking client secrets
 		// embedded in job payloads for client mutation actions.
@@ -82,7 +82,7 @@ func (s *Server) handleCreateJob() http.HandlerFunc {
 			idempotencyKey = hex.EncodeToString(buf[:])
 		}
 
-		job, err := s.jobs.Enqueue(jobs.CreateJobInput{
+		job, err := s.jobs.Enqueue(r.Context(), jobs.CreateJobInput{
 			Action:         jobs.Action(request.Action),
 			TargetAgentIDs: request.TargetAgentIDs,
 			TTL:            time.Duration(request.TTLSeconds) * time.Second,

@@ -298,7 +298,7 @@ func (s *Server) handleTelemetryServerRefreshDiagnostics() http.HandlerFunc {
 			return
 		}
 
-		job, err := s.jobs.Enqueue(jobs.CreateJobInput{
+		job, err := s.jobs.Enqueue(r.Context(), jobs.CreateJobInput{
 			Action:         jobs.ActionTelemetryRefreshDiagnostics,
 			TargetAgentIDs: []string{agentID},
 			TTL:            time.Minute,
