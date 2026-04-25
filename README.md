@@ -212,7 +212,7 @@ docker compose -f deploy/docker-compose.sqlite.yml exec backend \
 </details>
 
 <details>
-<summary><strong>PostgreSQL</strong> (production)</summary>
+<summary><strong>PostgreSQL</strong> (dev — default password, plaintext DB traffic)</summary>
 
 ```sh
 docker compose -f deploy/docker-compose.postgres.yml up --build -d
@@ -224,6 +224,29 @@ docker compose -f deploy/docker-compose.postgres.yml exec backend \
   -username admin \
   -password '<strong-password>'
 ```
+
+</details>
+
+<details>
+<summary><strong>PostgreSQL</strong> (production — TLS, no default credentials)</summary>
+
+```sh
+POSTGRES_PASSWORD='<strong-db-password>' \
+PANVEX_ENCRYPTION_KEY='<strong-encryption-key>' \
+docker compose -f deploy/docker-compose.prod.yml up --build -d
+
+docker compose -f deploy/docker-compose.prod.yml exec backend \
+  ./panvex-control-plane bootstrap-admin \
+  -storage-driver postgres \
+  -storage-dsn "postgres://panvex:${POSTGRES_PASSWORD}@postgres:5432/panvex?sslmode=require" \
+  -username admin \
+  -password '<strong-password>'
+```
+
+The prod profile refuses to start without `POSTGRES_PASSWORD` and
+`PANVEX_ENCRYPTION_KEY`, forces `sslmode=require`, sets resource
+limits, and binds publishers to loopback (terminate TLS at a reverse
+proxy — see `deploy/nginx/default.conf`).
 
 </details>
 

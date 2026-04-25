@@ -1,0 +1,114 @@
+# Production compose profile.
+#
+# Differences from docker-compose.postgres.yml (dev):
+#   - No defaults on POSTGRES_PASSWORD or PANVEX_ENCRYPTION_KEY: an
+#     unset value fails the start instead of silently booting with a
+#     well-known credential. Use the `${VAR:?...}` form below.
+#   - DSN forces `sslmode=require` so Postgres traffic is never
+#     plaintext on the network. The `panvex` user inside the backend
+#     container trusts the system CA bundle by default; mount a private
+#     CA at /etc/ssl/certs/ca-certificates.crt if you sign your own.
+#   - Memory + CPU limits keep one runaway component from starving the
+#     host (and act as a baseline for K8s requests/limits later).
+#   - stop_grace_period >= controlPlaneShutdownGraceMin (45s) so the
+#     audit-event drain finishes before SIGKILL.
+#   - Backend port binds to loopback only — terminate TLS at a reverse
+#     proxy (deploy/nginx/default.conf) and never expose :8080 directly.
+#
+# TLS for the agent gRPC channel:
+#   The control-plane mints its own server certificate at startup from
+#   the embedded CA. Operators are responsible for distributing the CA
+#   bundle to agents (out of scope here — see deploy/install.sh).
+#
+# First-time bootstrap:
+#   POSTGRES_PASSWORD=... PANVEX_ENCRYPTION_KEY=... \
+#     docker compose -f docker-compose.prod.yml up -d
+#
+# Without those env vars the stack refuses to come up — by design.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-panvex}
+      POSTGRES_USER: ${POSTGRES_USER:-panvex}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required for the prod profile}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-panvex} -d ${POSTGRES_DB:-panvex}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - panvex_postgres_data:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"
+        reservations:
+          memory: 256m
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: control-plane
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Required: refuses to start without an explicit, non-default key.
+      PANVEX_ENCRYPTION_KEY: ${PANVEX_ENCRYPTION_KEY:?PANVEX_ENCRYPTION_KEY is required for the prod profile}
+      # Tunable pool sizing — see internal/controlplane/storage/postgres/pool_config.go.
+      PANVEX_DB_MAX_OPEN_CONNS: ${PANVEX_DB_MAX_OPEN_CONNS:-50}
+      PANVEX_DB_MAX_IDLE_CONNS: ${PANVEX_DB_MAX_IDLE_CONNS:-20}
+      PANVEX_DB_CONN_MAX_LIFETIME: ${PANVEX_DB_CONN_MAX_LIFETIME:-30m}
+      PANVEX_DB_CONN_MAX_IDLE_TIME: ${PANVEX_DB_CONN_MAX_IDLE_TIME:-10m}
+    command:
+      - ./panvex-control-plane
+      - -http-addr
+      - :8080
+      - -grpc-addr
+      - :8443
+      - -storage-driver
+      - postgres
+      - -storage-dsn
+      - postgres://${POSTGRES_USER:-panvex}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-panvex}?sslmode=require
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8443:8443"
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"
+        reservations:
+          memory: 256m
+    # Must exceed cmd/control-plane controlPlaneShutdownGraceMin so the
+    # audit-event drain finishes before docker sends SIGKILL.
+    stop_grace_period: 45s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: web
+    depends_on:
+      - backend
+    # Expose only on loopback; terminate TLS in a host reverse proxy
+    # (deploy/nginx/default.conf) before exposing publicly.
+    ports:
+      - "127.0.0.1:8080:80"
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.5"
+    restart: unless-stopped
+
+volumes:
+  panvex_postgres_data:
