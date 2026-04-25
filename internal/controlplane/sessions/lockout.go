@@ -111,7 +111,7 @@ func (t *LockoutTracker) Restore(ctx context.Context, now time.Time) error {
 // store (if any). Caller must hold t.mu. Errors are logged but not
 // returned; callers already hold the lock and any failure is an
 // availability issue, not a correctness issue for the local process.
-func (t *LockoutTracker) persistLocked(username string, entry lockoutEntry) {
+func (t *LockoutTracker) persistLocked(ctx context.Context, username string, entry lockoutEntry) {
 	if t.store == nil {
 		return
 	}
@@ -124,22 +124,31 @@ func (t *LockoutTracker) persistLocked(username string, entry lockoutEntry) {
 		lockedAt := entry.lockedAt.UTC()
 		record.LockedAt = &lockedAt
 	}
-	if err := t.store.UpsertLoginLockout(context.Background(), record); err != nil {
+	if err := t.store.UpsertLoginLockout(ctx, record); err != nil {
 		slog.Warn("sessions: failed to persist login lockout", "username", username, "error", err)
 	}
 }
 
-func (t *LockoutTracker) deletePersistedLocked(username string) {
+func (t *LockoutTracker) deletePersistedLocked(ctx context.Context, username string) {
 	if t.store == nil {
 		return
 	}
-	if err := t.store.DeleteLoginLockout(context.Background(), username); err != nil {
+	if err := t.store.DeleteLoginLockout(ctx, username); err != nil {
 		slog.Warn("sessions: failed to delete login lockout", "username", username, "error", err)
 	}
 }
 
 // IsLocked returns true if the account is currently locked out.
+//
+// Deprecated: prefer IsLockedWithContext from request handlers so the
+// underlying store delete (when an expired lockout is reaped) inherits
+// request cancellation.
 func (t *LockoutTracker) IsLocked(username string, now time.Time) bool {
+	return t.IsLockedWithContext(context.Background(), username, now)
+}
+
+// IsLockedWithContext is the ctx-aware variant of IsLocked.
+func (t *LockoutTracker) IsLockedWithContext(ctx context.Context, username string, now time.Time) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -152,14 +161,21 @@ func (t *LockoutTracker) IsLocked(username string, now time.Time) bool {
 	}
 	if now.Sub(entry.lockedAt) >= LockoutDuration {
 		delete(t.accounts, username)
-		t.deletePersistedLocked(username)
+		t.deletePersistedLocked(ctx, username)
 		return false
 	}
 	return true
 }
 
 // RecordFailure increments the failure counter for a username.
+//
+// Deprecated: prefer RecordFailureWithContext from request handlers.
 func (t *LockoutTracker) RecordFailure(username string, now time.Time) {
+	t.RecordFailureWithContext(context.Background(), username, now)
+}
+
+// RecordFailureWithContext is the ctx-aware variant of RecordFailure.
+func (t *LockoutTracker) RecordFailureWithContext(ctx context.Context, username string, now time.Time) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -169,14 +185,22 @@ func (t *LockoutTracker) RecordFailure(username string, now time.Time) {
 		entry.lockedAt = now
 	}
 	t.accounts[username] = entry
-	t.persistLocked(username, entry)
+	t.persistLocked(ctx, username, entry)
 
-	t.cleanupLocked(now)
+	t.cleanupLocked(ctx, now)
 }
 
 // CheckAndRecordFailure atomically checks lockout and records a failure.
 // Returns true if the account is locked (failure is NOT recorded when locked).
+//
+// Deprecated: prefer CheckAndRecordFailureWithContext from request handlers.
 func (t *LockoutTracker) CheckAndRecordFailure(username string, now time.Time) bool {
+	return t.CheckAndRecordFailureWithContext(context.Background(), username, now)
+}
+
+// CheckAndRecordFailureWithContext is the ctx-aware variant of
+// CheckAndRecordFailure.
+func (t *LockoutTracker) CheckAndRecordFailureWithContext(ctx context.Context, username string, now time.Time) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -193,8 +217,8 @@ func (t *LockoutTracker) CheckAndRecordFailure(username string, now time.Time) b
 		entry.lockedAt = now
 	}
 	t.accounts[username] = entry
-	t.persistLocked(username, entry)
-	t.cleanupLocked(now)
+	t.persistLocked(ctx, username, entry)
+	t.cleanupLocked(ctx, now)
 	return false
 }
 
@@ -218,22 +242,29 @@ func (t *LockoutTracker) ActiveCount(now time.Time) int {
 }
 
 // RecordSuccess clears the failure counter after a successful login.
+//
+// Deprecated: prefer RecordSuccessWithContext from request handlers.
 func (t *LockoutTracker) RecordSuccess(username string) {
+	t.RecordSuccessWithContext(context.Background(), username)
+}
+
+// RecordSuccessWithContext is the ctx-aware variant of RecordSuccess.
+func (t *LockoutTracker) RecordSuccessWithContext(ctx context.Context, username string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	delete(t.accounts, username)
-	t.deletePersistedLocked(username)
+	t.deletePersistedLocked(ctx, username)
 }
 
-func (t *LockoutTracker) cleanupLocked(now time.Time) {
+func (t *LockoutTracker) cleanupLocked(ctx context.Context, now time.Time) {
 	if len(t.accounts) < 64 {
 		return
 	}
 	for username, entry := range t.accounts {
 		if entry.failures >= LockoutMaxAttempts && now.Sub(entry.lockedAt) >= LockoutDuration {
 			delete(t.accounts, username)
-			t.deletePersistedLocked(username)
+			t.deletePersistedLocked(ctx, username)
 		}
 	}
 }

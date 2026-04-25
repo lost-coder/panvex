@@ -10,19 +10,26 @@ import (
 )
 
 // CreateUser creates one local user account with TOTP disabled by default.
+//
+// Deprecated: prefer CreateUserWithContext from request handlers.
 func (s *Service) CreateUser(input BootstrapInput, now time.Time) (User, error) {
+	return s.CreateUserWithContext(context.Background(), input, now)
+}
+
+// CreateUserWithContext is the ctx-aware variant of CreateUser.
+func (s *Service) CreateUserWithContext(ctx context.Context, input BootstrapInput, now time.Time) (User, error) {
 	username := strings.TrimSpace(input.Username)
 	if username == "" {
 		return User{}, ErrInvalidCredentials
 	}
 
-	if _, err := s.loadUserByUsername(username); err == nil {
+	if _, err := s.loadUserByUsernameCtx(ctx, username); err == nil {
 		return User{}, ErrUserAlreadyExists
 	} else if !errors.Is(err, ErrInvalidCredentials) {
 		return User{}, err
 	}
 
-	user, _, err := s.BootstrapUser(BootstrapInput{
+	user, _, err := s.BootstrapUserWithContext(ctx, BootstrapInput{
 		Username: username,
 		Password: input.Password,
 		Role:     input.Role,
@@ -38,8 +45,15 @@ func (s *Service) CreateUser(input BootstrapInput, now time.Time) (User, error) 
 }
 
 // UpdateUser mutates the mutable fields of one existing local user.
+//
+// Deprecated: prefer UpdateUserWithContext from request handlers.
 func (s *Service) UpdateUser(input UpdateUserInput, now time.Time) (User, error) {
-	user, err := s.loadManagedUserByID(input.UserID)
+	return s.UpdateUserWithContext(context.Background(), input, now)
+}
+
+// UpdateUserWithContext is the ctx-aware variant of UpdateUser.
+func (s *Service) UpdateUserWithContext(ctx context.Context, input UpdateUserInput, now time.Time) (User, error) {
+	user, err := s.loadManagedUserByIDCtx(ctx, input.UserID)
 	if err != nil {
 		return User{}, err
 	}
@@ -49,7 +63,7 @@ func (s *Service) UpdateUser(input UpdateUserInput, now time.Time) (User, error)
 		return User{}, ErrInvalidCredentials
 	}
 	if updatedUsername != user.Username {
-		existing, err := s.loadUserByUsername(updatedUsername)
+		existing, err := s.loadUserByUsernameCtx(ctx, updatedUsername)
 		if err == nil && existing.ID != user.ID {
 			return User{}, ErrUserAlreadyExists
 		}
@@ -59,7 +73,7 @@ func (s *Service) UpdateUser(input UpdateUserInput, now time.Time) (User, error)
 	}
 
 	if user.Role == RoleAdmin && input.Role != RoleAdmin {
-		adminCount, err := s.countAdmins()
+		adminCount, err := s.countAdminsCtx(ctx)
 		if err != nil {
 			return User{}, err
 		}
@@ -85,7 +99,7 @@ func (s *Service) UpdateUser(input UpdateUserInput, now time.Time) (User, error)
 	passwordChanged := strings.TrimSpace(input.NewPassword) != ""
 	roleChanged := previousRole != input.Role
 
-	if err := s.persistManagedUser(user); err != nil {
+	if err := s.persistManagedUserCtx(ctx, user); err != nil {
 		return User{}, err
 	}
 
@@ -97,7 +111,7 @@ func (s *Service) UpdateUser(input UpdateUserInput, now time.Time) (User, error)
 	// session store so a control-plane restart does not resurrect the old
 	// sessions.
 	if passwordChanged || roleChanged {
-		_ = s.RevokeSessionsForUser(user.ID)
+		_ = s.RevokeSessionsForUserWithContext(ctx, user.ID)
 	}
 
 	_ = now
@@ -105,14 +119,21 @@ func (s *Service) UpdateUser(input UpdateUserInput, now time.Time) (User, error)
 }
 
 // DeleteUser removes one local user account and its active sessions.
+//
+// Deprecated: prefer DeleteUserWithContext from request handlers.
 func (s *Service) DeleteUser(userID string) error {
-	user, err := s.loadManagedUserByID(userID)
+	return s.DeleteUserWithContext(context.Background(), userID)
+}
+
+// DeleteUserWithContext is the ctx-aware variant of DeleteUser.
+func (s *Service) DeleteUserWithContext(ctx context.Context, userID string) error {
+	user, err := s.loadManagedUserByIDCtx(ctx, userID)
 	if err != nil {
 		return err
 	}
 
 	if user.Role == RoleAdmin {
-		adminCount, err := s.countAdmins()
+		adminCount, err := s.countAdminsCtx(ctx)
 		if err != nil {
 			return err
 		}
@@ -122,7 +143,7 @@ func (s *Service) DeleteUser(userID string) error {
 	}
 
 	if s.userStore != nil {
-		if err := s.userStore.DeleteUser(context.Background(), userID); err != nil {
+		if err := s.userStore.DeleteUser(ctx, userID); err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
 				return ErrUserNotFound
 			}
@@ -138,14 +159,14 @@ func (s *Service) DeleteUser(userID string) error {
 	// Drop the deleted user's active sessions from both the in-memory map and
 	// the persistent session store. Done outside the lock because
 	// RevokeSessionsForUser takes s.mu itself.
-	_ = s.RevokeSessionsForUser(userID)
+	_ = s.RevokeSessionsForUserWithContext(ctx, userID)
 
 	return nil
 }
 
-func (s *Service) loadManagedUserByID(userID string) (User, error) {
+func (s *Service) loadManagedUserByIDCtx(ctx context.Context, userID string) (User, error) {
 	if s.userStore != nil {
-		record, err := s.userStore.GetUserByID(context.Background(), userID)
+		record, err := s.userStore.GetUserByID(ctx, userID)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
 				return User{}, ErrUserNotFound
@@ -167,7 +188,7 @@ func (s *Service) loadManagedUserByID(userID string) (User, error) {
 	return User{}, ErrUserNotFound
 }
 
-func (s *Service) persistManagedUser(user User) error {
+func (s *Service) persistManagedUserCtx(ctx context.Context, user User) error {
 	previousUsername := ""
 
 	s.mu.Lock()
@@ -180,7 +201,7 @@ func (s *Service) persistManagedUser(user User) error {
 	s.mu.Unlock()
 
 	if s.userStore != nil {
-		if err := s.userStore.PutUser(context.Background(), userToRecord(user)); err != nil {
+		if err := s.userStore.PutUser(ctx, userToRecord(user)); err != nil {
 			if errors.Is(err, storage.ErrConflict) {
 				return ErrUserAlreadyExists
 			}
@@ -198,9 +219,9 @@ func (s *Service) persistManagedUser(user User) error {
 	return nil
 }
 
-func (s *Service) countAdmins() (int, error) {
+func (s *Service) countAdminsCtx(ctx context.Context) (int, error) {
 	if s.userStore != nil {
-		records, err := s.userStore.ListUsers(context.Background())
+		records, err := s.userStore.ListUsers(ctx)
 		if err != nil {
 			return 0, err
 		}

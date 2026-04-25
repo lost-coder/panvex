@@ -274,7 +274,16 @@ type pendingTotpSetup struct {
 }
 
 // BootstrapUser creates a local user with TOTP disabled by default.
+//
+// Deprecated: callers that have a request context should use
+// BootstrapUserWithContext to propagate cancellation through the user store.
+// This wrapper stays for CLI bootstrap and tests where no request ctx exists.
 func (s *Service) BootstrapUser(input BootstrapInput, now time.Time) (User, string, error) {
+	return s.BootstrapUserWithContext(context.Background(), input, now)
+}
+
+// BootstrapUserWithContext is the ctx-aware variant of BootstrapUser.
+func (s *Service) BootstrapUserWithContext(ctx context.Context, input BootstrapInput, now time.Time) (User, string, error) {
 	if err := validatePassword(input.Password); err != nil {
 		return User{}, "", err
 	}
@@ -307,7 +316,7 @@ func (s *Service) BootstrapUser(input BootstrapInput, now time.Time) (User, stri
 		return user, "", nil
 	}
 
-	users, err := s.userStore.ListUsers(context.Background())
+	users, err := s.userStore.ListUsers(ctx)
 	if err != nil {
 		return User{}, "", err
 	}
@@ -330,7 +339,7 @@ func (s *Service) BootstrapUser(input BootstrapInput, now time.Time) (User, stri
 		CreatedAt:    now.UTC(),
 	}
 
-	if err := s.userStore.PutUser(context.Background(), userToRecord(user)); err != nil {
+	if err := s.userStore.PutUser(ctx, userToRecord(user)); err != nil {
 		s.sequence--
 		s.mu.Unlock()
 		return User{}, "", err
@@ -359,8 +368,16 @@ var dummyPasswordHash = sync.OnceValue(func() string {
 })
 
 // Authenticate validates credentials and enforces TOTP only for users who enabled it.
+//
+// Deprecated: prefer AuthenticateWithContext from request handlers so the
+// underlying user-store and session-store calls inherit request cancellation.
 func (s *Service) Authenticate(input LoginInput, now time.Time) (Session, error) {
-	user, err := s.loadUserByUsername(input.Username)
+	return s.AuthenticateWithContext(context.Background(), input, now)
+}
+
+// AuthenticateWithContext is the ctx-aware variant of Authenticate.
+func (s *Service) AuthenticateWithContext(ctx context.Context, input LoginInput, now time.Time) (Session, error) {
+	user, err := s.loadUserByUsernameCtx(ctx, input.Username)
 	if err != nil {
 		// P1-SEC-12: burn Argon2id time on a dummy hash so the response
 		// latency for a nonexistent user matches a real VerifyPassword call.
@@ -437,11 +454,11 @@ func (s *Service) Authenticate(input LoginInput, now time.Time) (Session, error)
 		// still holds the prior ID; skipping the store delete would let the
 		// attacker-planted session resurrect on the next RestoreSessions.
 		if priorSessionID != "" {
-			if err := s.sessionStore.DeleteSession(context.Background(), priorSessionID); err != nil {
+			if err := s.sessionStore.DeleteSession(ctx, priorSessionID); err != nil {
 				slog.Warn("auth: failed to delete prior session from store", "error", err)
 			}
 		}
-		if err := s.sessionStore.PutSession(context.Background(), storage.SessionRecord{
+		if err := s.sessionStore.PutSession(ctx, storage.SessionRecord{
 			ID:        session.ID,
 			UserID:    session.UserID,
 			CreatedAt: session.CreatedAt,
@@ -462,7 +479,15 @@ func (s *Service) Authenticate(input LoginInput, now time.Time) (Session, error)
 // subsequent GetSession rejects the old IDs. Callers should invoke this
 // whenever a user's privileges or credentials change in a way that ought to
 // force re-authentication (role change, forced password reset, etc.).
+//
+// Deprecated: prefer RevokeSessionsForUserWithContext to thread request ctx.
 func (s *Service) RevokeSessionsForUser(userID string) int {
+	return s.RevokeSessionsForUserWithContext(context.Background(), userID)
+}
+
+// RevokeSessionsForUserWithContext is the ctx-aware variant of
+// RevokeSessionsForUser.
+func (s *Service) RevokeSessionsForUserWithContext(ctx context.Context, userID string) int {
 	if strings.TrimSpace(userID) == "" {
 		return 0
 	}
@@ -482,7 +507,7 @@ func (s *Service) RevokeSessionsForUser(userID string) int {
 
 	if store != nil {
 		for _, sessionID := range toDelete {
-			if err := store.DeleteSession(context.Background(), sessionID); err != nil {
+			if err := store.DeleteSession(ctx, sessionID); err != nil {
 				// A persistence failure here is security-relevant: the
 				// in-memory map drop above only sticks until the process
 				// exits. If the row stays in the store, a panel restart
@@ -504,8 +529,15 @@ func (s *Service) RevokeSessionsForUser(userID string) int {
 }
 
 // StartTotpSetup creates a short-lived TOTP setup secret for the provided user.
+//
+// Deprecated: prefer StartTotpSetupWithContext from request handlers.
 func (s *Service) StartTotpSetup(userID string, now time.Time) (string, error) {
-	if _, err := s.GetUserByID(userID); err != nil {
+	return s.StartTotpSetupWithContext(context.Background(), userID, now)
+}
+
+// StartTotpSetupWithContext is the ctx-aware variant of StartTotpSetup.
+func (s *Service) StartTotpSetupWithContext(ctx context.Context, userID string, now time.Time) (string, error) {
+	if _, err := s.GetUserByIDWithContext(ctx, userID); err != nil {
 		return "", err
 	}
 
@@ -527,8 +559,15 @@ func (s *Service) StartTotpSetup(userID string, now time.Time) (string, error) {
 }
 
 // EnableTotp validates a pending setup and persists it as the active user TOTP secret.
+//
+// Deprecated: prefer EnableTotpWithContext from request handlers.
 func (s *Service) EnableTotp(userID string, password string, totpCode string, now time.Time) (User, error) {
-	user, err := s.GetUserByID(userID)
+	return s.EnableTotpWithContext(context.Background(), userID, password, totpCode, now)
+}
+
+// EnableTotpWithContext is the ctx-aware variant of EnableTotp.
+func (s *Service) EnableTotpWithContext(ctx context.Context, userID string, password string, totpCode string, now time.Time) (User, error) {
+	user, err := s.GetUserByIDWithContext(ctx, userID)
 	if err != nil {
 		return User{}, err
 	}
@@ -560,7 +599,7 @@ func (s *Service) EnableTotp(userID string, password string, totpCode string, no
 
 	user.TotpEnabled = true
 	user.TotpSecret = setup.Secret
-	if err := s.storeUser(user); err != nil {
+	if err := s.storeUserWithContext(ctx, user); err != nil {
 		return User{}, err
 	}
 
@@ -568,8 +607,15 @@ func (s *Service) EnableTotp(userID string, password string, totpCode string, no
 }
 
 // DisableTotp disables TOTP after validating the current password and active TOTP code.
+//
+// Deprecated: prefer DisableTotpWithContext from request handlers.
 func (s *Service) DisableTotp(userID string, password string, totpCode string, now time.Time) (User, error) {
-	user, err := s.GetUserByID(userID)
+	return s.DisableTotpWithContext(context.Background(), userID, password, totpCode, now)
+}
+
+// DisableTotpWithContext is the ctx-aware variant of DisableTotp.
+func (s *Service) DisableTotpWithContext(ctx context.Context, userID string, password string, totpCode string, now time.Time) (User, error) {
+	user, err := s.GetUserByIDWithContext(ctx, userID)
 	if err != nil {
 		return User{}, err
 	}
@@ -605,7 +651,7 @@ func (s *Service) DisableTotp(userID string, password string, totpCode string, n
 
 	user.TotpEnabled = false
 	user.TotpSecret = ""
-	if err := s.storeUser(user); err != nil {
+	if err := s.storeUserWithContext(ctx, user); err != nil {
 		return User{}, err
 	}
 
@@ -614,15 +660,22 @@ func (s *Service) DisableTotp(userID string, password string, totpCode string, n
 
 // ResetTotp clears the active TOTP configuration for the provided user.
 // Callers must verify that the authenticated principal is authorized to reset TOTP for the target user.
+//
+// Deprecated: prefer ResetTotpWithContext from request handlers.
 func (s *Service) ResetTotp(userID string) (User, error) {
-	user, err := s.GetUserByID(userID)
+	return s.ResetTotpWithContext(context.Background(), userID)
+}
+
+// ResetTotpWithContext is the ctx-aware variant of ResetTotp.
+func (s *Service) ResetTotpWithContext(ctx context.Context, userID string) (User, error) {
+	user, err := s.GetUserByIDWithContext(ctx, userID)
 	if err != nil {
 		return User{}, err
 	}
 
 	user.TotpEnabled = false
 	user.TotpSecret = ""
-	if err := s.storeUser(user); err != nil {
+	if err := s.storeUserWithContext(ctx, user); err != nil {
 		return User{}, err
 	}
 
@@ -744,9 +797,16 @@ func (s *Service) LoadUsers(users []User) {
 }
 
 // GetUserByID returns the user record that owns the provided identifier.
+//
+// Deprecated: prefer GetUserByIDWithContext from request handlers.
 func (s *Service) GetUserByID(userID string) (User, error) {
+	return s.GetUserByIDWithContext(context.Background(), userID)
+}
+
+// GetUserByIDWithContext is the ctx-aware variant of GetUserByID.
+func (s *Service) GetUserByIDWithContext(ctx context.Context, userID string) (User, error) {
 	if s.userStore != nil {
-		record, err := s.userStore.GetUserByID(context.Background(), userID)
+		record, err := s.userStore.GetUserByID(ctx, userID)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
 				return User{}, ErrInvalidCredentials
@@ -792,13 +852,13 @@ func userFromRecord(record storage.UserRecord) User {
 	}
 }
 
-func (s *Service) loadUserByUsername(username string) (User, error) {
+func (s *Service) loadUserByUsernameCtx(ctx context.Context, username string) (User, error) {
 	s.mu.RLock()
 	userStore := s.userStore
 	s.mu.RUnlock()
 
 	if userStore != nil {
-		record, err := userStore.GetUserByUsername(context.Background(), username)
+		record, err := userStore.GetUserByUsername(ctx, username)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
 				return User{}, ErrInvalidCredentials
@@ -819,9 +879,9 @@ func (s *Service) loadUserByUsername(username string) (User, error) {
 	return user, nil
 }
 
-func (s *Service) storeUser(user User) error {
+func (s *Service) storeUserWithContext(ctx context.Context, user User) error {
 	if s.userStore != nil {
-		if err := s.userStore.PutUser(context.Background(), userToRecord(user)); err != nil {
+		if err := s.userStore.PutUser(ctx, userToRecord(user)); err != nil {
 			return err
 		}
 	}
@@ -978,7 +1038,14 @@ func (s *Service) TouchSession(sessionID string) {
 }
 
 // Logout revokes a session so it can no longer authenticate requests.
+//
+// Deprecated: prefer LogoutWithContext from request handlers.
 func (s *Service) Logout(sessionID string) error {
+	return s.LogoutWithContext(context.Background(), sessionID)
+}
+
+// LogoutWithContext is the ctx-aware variant of Logout.
+func (s *Service) LogoutWithContext(ctx context.Context, sessionID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -994,7 +1061,7 @@ func (s *Service) Logout(sessionID string) error {
 		// a store failure here is not fatal because the periodic expiry
 		// sweeper (DeleteExpiredSessions) will eventually reclaim the row.
 		// We still surface it in logs so persistent failures are visible.
-		if err := s.sessionStore.DeleteSession(context.Background(), sessionID); err != nil {
+		if err := s.sessionStore.DeleteSession(ctx, sessionID); err != nil {
 			slog.Warn("auth: failed to delete session from store on logout", "session_id", sessionID, "error", err)
 		}
 	}
