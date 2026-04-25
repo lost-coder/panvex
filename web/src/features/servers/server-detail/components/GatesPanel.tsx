@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 import { cn } from "@/ui";
 import type { ServerDetailPageProps } from "@/shared/api/types-pages/pages";
 
@@ -46,7 +48,14 @@ function GateRow({
   );
 }
 
-export function GatesPanel({ gates }: { gates: ServerDetailPageProps["server"]["gates"] }) {
+/**
+ * Memoised — `gates` is a slice of the parent `server` object, which
+ * is referentially stable across re-renders that don't change the
+ * server payload, so the rows don't re-render needlessly.
+ */
+export const GatesPanel = memo(_GatesPanel);
+
+function _GatesPanel({ gates }: { gates: ServerDetailPageProps["server"]["gates"] }) {
   return (
     <div className="flex flex-col">
       <GateRow label="Accepting connections" on={gates.acceptingNewConnections} />

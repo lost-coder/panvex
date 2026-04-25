@@ -1,10 +1,18 @@
+import { memo } from "react";
+
 import type { MetricsPoint } from "@/features/dashboard/ui/internal/MetricsChartSectionInner";
 
 // ─── Timeline strip (two sparklines + event pins) ─────────────────────
 // Plots connections + bad-rate over the available metric window with
 // dashed vertical pins where recent events land. Falls back to the
 // MetricsChartSection when the backend hasn't supplied series yet.
-export function TimelineStrip({
+//
+// Memoised — `metricsPoints` and `events` come from memoised parent
+// values, so the SVG normalisation only re-runs when the upstream
+// telemetry actually changes.
+export const TimelineStrip = memo(_TimelineStrip);
+
+function _TimelineStrip({
   metricsPoints,
   events,
 }: {

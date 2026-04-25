@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 import { cn } from "@/ui";
 import type { ServerDcData } from "@/shared/api/types-pages/pages";
 
@@ -64,7 +66,14 @@ function DcTile({ dc, onClick }: { dc: ServerDcData; onClick: () => void }) {
   );
 }
 
-export function DcTiles({
+/**
+ * Memoised — parent passes a memoised `sortedDcs` array and a stable
+ * `useCallback` setter, so the tile grid only re-renders when the
+ * underlying DC list changes.
+ */
+export const DcTiles = memo(_DcTiles);
+
+function _DcTiles({
   dcs,
   onSelect,
 }: {
