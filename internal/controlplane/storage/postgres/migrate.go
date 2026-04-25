@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	pgmigrations "github.com/lost-coder/panvex/db/migrations/postgres"
+	"github.com/lost-coder/panvex/internal/controlplane/storage/migrateguard"
 	"github.com/pressly/goose/v3"
 )
 
@@ -36,6 +37,12 @@ func MigrateContext(ctx context.Context, db *sql.DB) error {
 
 	if err := configureGoose(); err != nil {
 		return err
+	}
+	// Guard runs BEFORE goose.UpContext so a destructive migration
+	// (e.g., 0014_fleet_groups_redesign) cannot delete production rows
+	// without an explicit operator opt-in. See migrateguard package.
+	if err := migrateguard.CheckAll(ctx, db, migrateguard.DialectPostgres, nil); err != nil {
+		return fmt.Errorf("postgres: %w", err)
 	}
 	if err := goose.UpContext(ctx, db, "."); err != nil {
 		return fmt.Errorf("postgres: goose up: %w", err)
