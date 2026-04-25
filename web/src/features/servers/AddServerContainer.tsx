@@ -9,6 +9,10 @@ import { useToast } from "@/app/providers/ToastProvider";
 import { useNavigate } from "@tanstack/react-router";
 import { apiClient } from "@/shared/api/api";
 import type { EnrollmentTokenResponse, Agent } from "@/shared/api/api";
+import {
+  DEFAULT_TELEMT_METRICS_URL,
+  DEFAULT_TELEMT_URL,
+} from "@/shared/lib/defaults";
 import { isValidNodeName } from "@/shared/lib/shell-quote";
 import { buildInstallCommand } from "./install-command";
 
@@ -25,8 +29,8 @@ export function AddServerContainer() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const [advancedOptions, setAdvancedOptions] = useState({
-    telemtUrl: "http://127.0.0.1:9091",
-    telemtMetricsUrl: "http://127.0.0.1:8081",
+    telemtUrl: DEFAULT_TELEMT_URL,
+    telemtMetricsUrl: DEFAULT_TELEMT_METRICS_URL,
     telemtAuth: "",
     insecureTransport: false,
   });

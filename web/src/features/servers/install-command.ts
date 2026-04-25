@@ -1,13 +1,9 @@
+import {
+  DEFAULT_TELEMT_METRICS_URL,
+  DEFAULT_TELEMT_URL,
+  GITHUB_REPO,
+} from "@/shared/lib/defaults";
 import { shellQuote } from "@/shared/lib/shell-quote";
-
-const GITHUB_REPO = "lost-coder/panvex";
-
-// Defaults the wizard pre-fills the advanced section with. We only
-// append the corresponding flag to the install command when the
-// operator has changed the value, so the pasted command stays close
-// to the agent's built-in defaults.
-const DEFAULT_TELEMT_URL = "http://127.0.0.1:9091";
-const DEFAULT_TELEMT_METRICS_URL = "http://127.0.0.1:8081";
 
 export interface InstallCommandAdvancedOptions {
   telemtUrl: string;
