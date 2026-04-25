@@ -196,7 +196,12 @@ func (s *Server) handleForceUpdateCheck() http.HandlerFunc {
 
 		s.appendAuditWithContext(r.Context(), session.UserID, "settings.updates.check", "panel", nil)
 
-		go s.checkForUpdates(context.Background()) //nolint:gosec // intentionally detached from request lifecycle
+		// Detached from r.Context() on purpose: the admin-triggered check must
+		// outlive the HTTP request, otherwise closing the browser tab would
+		// abort the poll. The package-level ctx is not reachable from the
+		// handler so we start fresh; the worker honours its own deadlines via
+		// the timeout in checkForUpdates -> FetchLatestVersions.
+		go s.checkForUpdates(context.Background()) //nolint:contextcheck,gosec // intentionally detached from request lifecycle
 
 		writeJSON(w, http.StatusAccepted, map[string]string{"status": "checking"})
 	}
@@ -273,7 +278,12 @@ func (s *Server) handlePanelUpdate() http.HandlerFunc {
 			To:     targetVersion,
 		})
 
-		go s.performPanelUpdate(session.UserID, targetVersion, downloadURL, checksumURL, signatureURL, settings.GitHubToken) //nolint:gosec // intentionally detached from request lifecycle
+		// Detached from r.Context() on purpose: the panel-update goroutine
+		// downloads, verifies, and replaces the running binary; killing it
+		// when the operator's HTTP request ends would leave the panel in a
+		// half-applied state. The 202 response above already tells the
+		// caller the work continues asynchronously.
+		go s.performPanelUpdate(session.UserID, targetVersion, downloadURL, checksumURL, signatureURL, settings.GitHubToken) //nolint:contextcheck,gosec // intentionally detached from request lifecycle
 	}
 }
 
@@ -350,7 +360,7 @@ func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksu
 		return
 	}
 
-	s.appendAudit(actorID, "panel.update.applied", "panel", map[string]any{
+	s.appendAuditWithContext(ctx, actorID, "panel.update.applied", "panel", map[string]any{
 		"from_version": s.version,
 		"to_version":   targetVersion,
 	})

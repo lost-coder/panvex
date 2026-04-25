@@ -38,7 +38,7 @@ func (s *Server) handleControlRoom() http.HandlerFunc {
 		}
 
 		now := s.now()
-		jobList := s.jobs.List()
+		jobList := s.jobs.ListWithContext(r.Context())
 
 		s.metricsAuditMu.RLock()
 		recentActivity := controlRoomRecentActivity(s.snapshotAuditTrailLocked(), 5)

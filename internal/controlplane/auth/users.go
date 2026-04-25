@@ -11,7 +11,7 @@ import (
 
 // CreateUser creates one local user account with TOTP disabled by default.
 //
-// Deprecated: prefer CreateUserWithContext from request handlers.
+// Note: preferCreateUserWithContext from request handlers.
 func (s *Service) CreateUser(input BootstrapInput, now time.Time) (User, error) {
 	return s.CreateUserWithContext(context.Background(), input, now)
 }
@@ -46,7 +46,7 @@ func (s *Service) CreateUserWithContext(ctx context.Context, input BootstrapInpu
 
 // UpdateUser mutates the mutable fields of one existing local user.
 //
-// Deprecated: prefer UpdateUserWithContext from request handlers.
+// Note: preferUpdateUserWithContext from request handlers.
 func (s *Service) UpdateUser(input UpdateUserInput, now time.Time) (User, error) {
 	return s.UpdateUserWithContext(context.Background(), input, now)
 }
@@ -120,7 +120,7 @@ func (s *Service) UpdateUserWithContext(ctx context.Context, input UpdateUserInp
 
 // DeleteUser removes one local user account and its active sessions.
 //
-// Deprecated: prefer DeleteUserWithContext from request handlers.
+// Note: preferDeleteUserWithContext from request handlers.
 func (s *Service) DeleteUser(userID string) error {
 	return s.DeleteUserWithContext(context.Background(), userID)
 }
