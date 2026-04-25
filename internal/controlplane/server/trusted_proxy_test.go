@@ -17,7 +17,7 @@ func mustCIDR(t *testing.T, s string) *net.IPNet {
 }
 
 func TestResolveTrustedClientIP_NoXFF_UntrustedPeer(t *testing.T) {
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "/", nil)
 	r.RemoteAddr = "203.0.113.10:54321"
 
 	ip := resolveTrustedClientIP(r, nil)
@@ -30,7 +30,7 @@ func TestResolveTrustedClientIP_SpoofedXFF_UntrustedPeerIgnored(t *testing.T) {
 	// Attacker connects directly (RemoteAddr is their own IP) and spoofs XFF
 	// claiming to be an allow-listed address. Because the peer is not a
 	// trusted proxy, XFF must be ignored entirely.
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "/", nil)
 	r.RemoteAddr = "203.0.113.10:54321"
 	r.Header.Set("X-Forwarded-For", "10.0.0.99, 10.0.0.1")
 
@@ -43,7 +43,7 @@ func TestResolveTrustedClientIP_SpoofedXFF_UntrustedPeerIgnored(t *testing.T) {
 func TestResolveTrustedClientIP_TrustedProxy_RightmostUntrusted(t *testing.T) {
 	// Topology: client 1.2.3.4 -> proxy 10.0.0.2 -> proxy 10.0.0.1 -> server.
 	// Both 10.x hops are trusted, so the real client is the leftmost entry.
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "/", nil)
 	r.RemoteAddr = "10.0.0.1:45678"
 	r.Header.Set("X-Forwarded-For", "1.2.3.4, 10.0.0.2")
 
@@ -55,7 +55,7 @@ func TestResolveTrustedClientIP_TrustedProxy_RightmostUntrusted(t *testing.T) {
 }
 
 func TestResolveTrustedClientIP_LoopbackPeer_AlwaysTrusted(t *testing.T) {
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "/", nil)
 	r.RemoteAddr = "127.0.0.1:45678"
 	r.Header.Set("X-Forwarded-For", "1.2.3.4")
 
@@ -66,7 +66,7 @@ func TestResolveTrustedClientIP_LoopbackPeer_AlwaysTrusted(t *testing.T) {
 }
 
 func TestResolveTrustedClientIP_IPv6_BracketedPortStripped(t *testing.T) {
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "/", nil)
 	r.RemoteAddr = "[::1]:45678"
 	// Rightmost hop is a trusted proxy 10.0.0.2:80 with port; before it, the
 	// client 2001:db8::1 was recorded bracketed with port too.
@@ -80,7 +80,7 @@ func TestResolveTrustedClientIP_IPv6_BracketedPortStripped(t *testing.T) {
 }
 
 func TestResolveTrustedClientIP_AllTrusted_ReturnsOriginator(t *testing.T) {
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "/", nil)
 	r.RemoteAddr = "10.0.0.1:80"
 	r.Header.Set("X-Forwarded-For", "10.0.0.3, 10.0.0.2")
 	trusted := []*net.IPNet{mustCIDR(t, "10.0.0.0/24")}
@@ -92,7 +92,7 @@ func TestResolveTrustedClientIP_AllTrusted_ReturnsOriginator(t *testing.T) {
 }
 
 func TestResolveTrustedClientIP_MalformedXFF(t *testing.T) {
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "/", nil)
 	r.RemoteAddr = "127.0.0.1:80"
 	r.Header.Set("X-Forwarded-For", "not-an-ip, 2001:db8::1")
 
@@ -103,7 +103,7 @@ func TestResolveTrustedClientIP_MalformedXFF(t *testing.T) {
 }
 
 func TestResolveTrustedClientIP_EmptyRemoteAddr(t *testing.T) {
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "/", nil)
 	r.RemoteAddr = ""
 
 	ip := resolveTrustedClientIP(r, nil)

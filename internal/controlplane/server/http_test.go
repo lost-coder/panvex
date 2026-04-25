@@ -1923,7 +1923,7 @@ func performJSONRequestWithHeaders(t *testing.T, handler http.Handler, method st
 		payload = encoded
 	}
 
-	request := httptest.NewRequest(method, path, bytes.NewReader(payload))
+	request := httptest.NewRequestWithContext(t.Context(),method, path, bytes.NewReader(payload))
 	request.Header.Set("Content-Type", "application/json")
 	for key, value := range headers {
 		request.Header.Set(key, value)
@@ -1971,7 +1971,7 @@ func TestPanelBlockedByWhitelistButAgentAllowed(t *testing.T) {
 	handler := srv.Handler()
 
 	// Panel login from non-whitelisted IP — should be blocked
-	loginReq := httptest.NewRequest(http.MethodPost, "/panel/api/auth/login", strings.NewReader(`{}`))
+	loginReq := httptest.NewRequestWithContext(t.Context(),http.MethodPost, "/panel/api/auth/login", strings.NewReader(`{}`))
 	loginReq.Header.Set("Content-Type", "application/json")
 	loginReq.RemoteAddr = "203.0.113.5:12345"
 	loginRec := httptest.NewRecorder()
@@ -1982,7 +1982,7 @@ func TestPanelBlockedByWhitelistButAgentAllowed(t *testing.T) {
 	}
 
 	// Agent bootstrap from same IP — should NOT be blocked
-	bootstrapReq := httptest.NewRequest(http.MethodPost, "/agent/api/agent/bootstrap", strings.NewReader(`{}`))
+	bootstrapReq := httptest.NewRequestWithContext(t.Context(),http.MethodPost, "/agent/api/agent/bootstrap", strings.NewReader(`{}`))
 	bootstrapReq.Header.Set("Content-Type", "application/json")
 	bootstrapReq.RemoteAddr = "203.0.113.5:12345"
 	bootstrapRec := httptest.NewRecorder()
@@ -1993,7 +1993,7 @@ func TestPanelBlockedByWhitelistButAgentAllowed(t *testing.T) {
 	}
 
 	// Health check under panel path — also protected by whitelist
-	healthReq := httptest.NewRequest(http.MethodGet, "/panel/healthz", nil)
+	healthReq := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "/panel/healthz", nil)
 	healthReq.RemoteAddr = "10.0.0.1:12345" // whitelisted IP
 	healthRec := httptest.NewRecorder()
 	handler.ServeHTTP(healthRec, healthReq)
@@ -2011,7 +2011,7 @@ func performRequest(t *testing.T, handler http.Handler, method string, path stri
 		reader = body
 	}
 
-	request := httptest.NewRequest(method, path, reader)
+	request := httptest.NewRequestWithContext(t.Context(),method, path, reader)
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 	return recorder

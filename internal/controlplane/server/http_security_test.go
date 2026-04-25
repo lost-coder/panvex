@@ -28,7 +28,7 @@ func TestCSRFOriginCheckBlocksStateChangingWithoutOrigin(t *testing.T) {
 
 	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch} {
 		t.Run(method+"_no_origin_no_cookie", func(t *testing.T) {
-			req := httptest.NewRequest(method, "http://panel.example.com/api/jobs", bytes.NewReader([]byte(`{}`)))
+			req := httptest.NewRequestWithContext(t.Context(),method, "http://panel.example.com/api/jobs", bytes.NewReader([]byte(`{}`)))
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 			if rec.Code != http.StatusForbidden {
@@ -37,7 +37,7 @@ func TestCSRFOriginCheckBlocksStateChangingWithoutOrigin(t *testing.T) {
 		})
 
 		t.Run(method+"_no_origin_with_cookie", func(t *testing.T) {
-			req := httptest.NewRequest(method, "http://panel.example.com/api/jobs", bytes.NewReader([]byte(`{}`)))
+			req := httptest.NewRequestWithContext(t.Context(),method, "http://panel.example.com/api/jobs", bytes.NewReader([]byte(`{}`)))
 			req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "abc"})
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
@@ -54,7 +54,7 @@ func TestCSRFOriginCheckAllowsSafeMethods(t *testing.T) {
 	handler := newCSRFTestHandler("", "")
 
 	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodOptions} {
-		req := httptest.NewRequest(method, "http://panel.example.com/api/fleet", nil)
+		req := httptest.NewRequestWithContext(t.Context(),method, "http://panel.example.com/api/fleet", nil)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
@@ -68,7 +68,7 @@ func TestCSRFOriginCheckAllowsSafeMethods(t *testing.T) {
 func TestCSRFOriginCheckAllowsMatchingOrigin(t *testing.T) {
 	handler := newCSRFTestHandler("", "")
 
-	req := httptest.NewRequest(http.MethodPost, "http://panel.example.com/api/jobs", bytes.NewReader([]byte(`{}`)))
+	req := httptest.NewRequestWithContext(t.Context(),http.MethodPost, "http://panel.example.com/api/jobs", bytes.NewReader([]byte(`{}`)))
 	req.Header.Set("Origin", "http://panel.example.com")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -82,7 +82,7 @@ func TestCSRFOriginCheckAllowsMatchingOrigin(t *testing.T) {
 func TestCSRFOriginCheckRejectsCrossOrigin(t *testing.T) {
 	handler := newCSRFTestHandler("", "")
 
-	req := httptest.NewRequest(http.MethodPost, "http://panel.example.com/api/jobs", bytes.NewReader([]byte(`{}`)))
+	req := httptest.NewRequestWithContext(t.Context(),http.MethodPost, "http://panel.example.com/api/jobs", bytes.NewReader([]byte(`{}`)))
 	req.Header.Set("Origin", "http://evil.example.net")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -109,7 +109,7 @@ func TestCSRFOriginCheckExemptsAgentEndpoints(t *testing.T) {
 		"/agent/api/agent/recover-certificate",
 	}
 	for _, p := range paths {
-		req := httptest.NewRequest(http.MethodPost, "http://panel.example.com"+p, bytes.NewReader([]byte(`{}`)))
+		req := httptest.NewRequestWithContext(t.Context(),http.MethodPost, "http://panel.example.com"+p, bytes.NewReader([]byte(`{}`)))
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
@@ -138,7 +138,7 @@ func TestCSRFOriginCheckDoesNotExemptLookalikePaths(t *testing.T) {
 	}
 	for _, p := range rejectedPaths {
 		t.Run(p, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "http://panel.example.com"+p, bytes.NewReader([]byte(`{}`)))
+			req := httptest.NewRequestWithContext(t.Context(),http.MethodPost, "http://panel.example.com"+p, bytes.NewReader([]byte(`{}`)))
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 			if rec.Code != http.StatusForbidden {
@@ -157,7 +157,7 @@ func TestSecurityHeadersDoNotAllowInlineScripts(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "http://panel.example.com/", nil)
+	req := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "http://panel.example.com/", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 

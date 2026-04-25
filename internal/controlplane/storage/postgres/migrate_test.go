@@ -19,6 +19,8 @@ func TestMigrateGoosePostgres(t *testing.T) {
 		t.Skip("PANVEX_POSTGRES_TEST_DSN is not set")
 	}
 
+	ctx := t.Context()
+
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		t.Fatalf("sql.Open: %v", err)
@@ -28,21 +30,21 @@ func TestMigrateGoosePostgres(t *testing.T) {
 	// Reset the schema so a previous test run doesn't prejudge our
 	// assertions. This is destructive: never point PANVEX_POSTGRES_TEST_DSN
 	// at a database you care about.
-	if _, err := db.Exec(`DROP SCHEMA public CASCADE; CREATE SCHEMA public;`); err != nil {
+	if _, err := db.ExecContext(ctx, `DROP SCHEMA public CASCADE; CREATE SCHEMA public;`); err != nil {
 		t.Fatalf("reset public schema: %v", err)
 	}
 
 	t.Run("creates_goose_version_table", func(t *testing.T) {
-		if err := Migrate(db); err != nil {
+		if err := MigrateContext(ctx, db); err != nil {
 			t.Fatalf("Migrate() error = %v", err)
 		}
 		var exists bool
-		err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='goose_db_version')`).Scan(&exists)
+		err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='goose_db_version')`).Scan(&exists)
 		if err != nil || !exists {
 			t.Fatalf("goose_db_version table missing: err=%v exists=%v", err, exists)
 		}
 		var count int
-		if err := db.QueryRow(`SELECT COUNT(*) FROM goose_db_version WHERE is_applied = TRUE AND version_id > 0`).Scan(&count); err != nil {
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM goose_db_version WHERE is_applied = TRUE AND version_id > 0`).Scan(&count); err != nil {
 			t.Fatalf("count applied versions: %v", err)
 		}
 		if count < 7 {
@@ -52,14 +54,14 @@ func TestMigrateGoosePostgres(t *testing.T) {
 
 	t.Run("idempotent", func(t *testing.T) {
 		var firstCount int
-		if err := db.QueryRow(`SELECT COUNT(*) FROM goose_db_version`).Scan(&firstCount); err != nil {
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM goose_db_version`).Scan(&firstCount); err != nil {
 			t.Fatalf("count after first Migrate: %v", err)
 		}
-		if err := Migrate(db); err != nil {
+		if err := MigrateContext(ctx, db); err != nil {
 			t.Fatalf("second Migrate() error = %v", err)
 		}
 		var secondCount int
-		if err := db.QueryRow(`SELECT COUNT(*) FROM goose_db_version`).Scan(&secondCount); err != nil {
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM goose_db_version`).Scan(&secondCount); err != nil {
 			t.Fatalf("count after second Migrate: %v", err)
 		}
 		if firstCount != secondCount {
@@ -74,7 +76,7 @@ func TestMigrateGoosePostgres(t *testing.T) {
 		}
 		for _, name := range required {
 			var exists bool
-			err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1)`, name).Scan(&exists)
+			err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1)`, name).Scan(&exists)
 			if err != nil || !exists {
 				t.Fatalf("expected table %q to exist: err=%v exists=%v", name, err, exists)
 			}

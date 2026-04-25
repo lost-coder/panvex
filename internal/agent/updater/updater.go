@@ -102,7 +102,10 @@ func executeWith(ctx context.Context, payload Payload, logger *slog.Logger, cfg 
 	logger.Info("agent self-update: binary replaced, restarting", "version", payload.Version)
 
 	// Attempt systemd restart. If it fails, exit to let systemd auto-restart.
-	if err := exec.Command("systemctl", "restart", "panvex-agent").Start(); err != nil {
+	// The os.Exit(0) below makes the child a systemd-adopted orphan, so the
+	// ctx attachment here is mostly cosmetic — Start() is non-blocking and
+	// the parent process is gone before any cancellation could fire.
+	if err := exec.CommandContext(ctx, "systemctl", "restart", "panvex-agent").Start(); err != nil {
 		logger.Warn("systemctl restart failed, exiting for auto-restart", "error", err)
 	}
 	os.Exit(0)

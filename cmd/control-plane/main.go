@@ -252,7 +252,13 @@ func runServe(args []string) error {
 	httpHandler := otelhttp.NewHandler(api.Handler(), "panvex-api")
 	httpServer := newControlPlaneHTTPServer(panelRuntime.HTTPListenAddress, httpHandler)
 
-	grpcListener, err := net.Listen("tcp", panelRuntime.GRPCListenAddress)
+	// Use ListenConfig with a Background ctx — the listener is meant to
+	// outlive any single request and is closed via grpcListener.Close()
+	// in the shutdown sequence above. ctx-aware Listen lets the kernel
+	// surface errors via the cancellation channel; Background is correct
+	// here because the listener has no notion of "request lifetime".
+	listenConfig := net.ListenConfig{}
+	grpcListener, err := listenConfig.Listen(context.Background(), "tcp", panelRuntime.GRPCListenAddress)
 	if err != nil {
 		return err
 	}
@@ -871,7 +877,7 @@ func runMigrateSchema(args []string) error {
 		}
 		defer db.Close()
 		db.SetMaxOpenConns(1)
-		if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		if _, err := db.ExecContext(context.Background(), "PRAGMA foreign_keys = ON"); err != nil {
 			return err
 		}
 		switch sub {

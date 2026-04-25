@@ -23,6 +23,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"flag"
 	"fmt"
@@ -185,12 +186,12 @@ func runSeed() error {
 		"PRAGMA temp_store = MEMORY",
 		"PRAGMA cache_size = -200000", // ~200MB page cache
 	} {
-		if _, err := db.Exec(p); err != nil {
+		if _, err := db.ExecContext(context.Background(), p); err != nil {
 			return fmt.Errorf("pragma %q: %w", p, err)
 		}
 	}
 
-	if _, err := db.Exec(initialSchema0001); err != nil {
+	if _, err := db.ExecContext(context.Background(), initialSchema0001); err != nil {
 		return fmt.Errorf("apply 0001 schema: %w", err)
 	}
 
@@ -240,7 +241,7 @@ func runSeed() error {
 	// Help operators eyeball the seed: print table counts.
 	for _, tbl := range []string{"fleet_groups", "agents", "clients", "jobs", "job_targets", "audit_events", "metric_snapshots", "discovered_clients"} {
 		var n int64
-		if err := db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", tbl)).Scan(&n); err != nil {
+		if err := db.QueryRowContext(context.Background(), fmt.Sprintf("SELECT COUNT(*) FROM %s", tbl)).Scan(&n); err != nil {
 			return fmt.Errorf("count %s: %w", tbl, err)
 		}
 		log.Printf("  %-20s rows=%d", tbl, n)
@@ -252,7 +253,7 @@ func runSeed() error {
 // this helper; chunked INSERTs inside a single tx is the fastest way to load
 // millions of rows into SQLite.
 func txBulk(db *sql.DB, insertFn func(*sql.Tx) error) error {
-	tx, err := db.Begin()
+	tx, err := db.BeginTx(context.Background(), nil)
 	if err != nil {
 		return err
 	}
@@ -298,7 +299,7 @@ func bulkInsert(tx *sql.Tx, table string, cols []string, total int, rowFn func(i
 			rowFn(start+i, rowBuf)
 			args = append(args, rowBuf...)
 		}
-		if _, err := tx.Exec(sb.String(), args...); err != nil {
+		if _, err := tx.ExecContext(context.Background(), sb.String(), args...); err != nil {
 			return fmt.Errorf("insert %s [%d:%d]: %w", table, start, end, err)
 		}
 	}

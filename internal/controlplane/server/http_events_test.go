@@ -9,7 +9,7 @@ import (
 func TestWSOriginPatternsProductionStrict(t *testing.T) {
 	t.Setenv(EnvWSDevLoopback, "")
 
-	r := httptest.NewRequest("GET", "/api/v1/events", nil)
+	r := httptest.NewRequestWithContext(t.Context(), "GET", "/api/v1/events", nil)
 	r.Host = "panvex.example:443"
 	r.RemoteAddr = "127.0.0.1:54321"
 
@@ -25,7 +25,7 @@ func TestWSOriginPatternsProductionStrict(t *testing.T) {
 func TestWSOriginPatternsDevLoopbackOptIn(t *testing.T) {
 	t.Setenv(EnvWSDevLoopback, "1")
 
-	r := httptest.NewRequest("GET", "/api/v1/events", nil)
+	r := httptest.NewRequestWithContext(t.Context(), "GET", "/api/v1/events", nil)
 	r.Host = "localhost:8080"
 	r.RemoteAddr = "127.0.0.1:54321"
 
@@ -43,7 +43,7 @@ func TestWSOriginPatternsDevLoopbackOptIn(t *testing.T) {
 func TestWSOriginPatternsDevLoopbackSkippedForNonLoopback(t *testing.T) {
 	t.Setenv(EnvWSDevLoopback, "1")
 
-	r := httptest.NewRequest("GET", "/api/v1/events", nil)
+	r := httptest.NewRequestWithContext(t.Context(), "GET", "/api/v1/events", nil)
 	r.Host = "localhost:8080"
 	r.RemoteAddr = "203.0.113.7:54321"
 

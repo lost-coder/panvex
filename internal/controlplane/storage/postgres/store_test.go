@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"errors"
 	"os"
 	"testing"
@@ -30,7 +31,7 @@ func TestStoreContract(t *testing.T) {
 			t.Fatalf("Open() error = %v", err)
 		}
 
-		if err := resetForTest(store); err != nil {
+		if err := resetForTest(t.Context(), store); err != nil {
 			t.Fatalf("resetForTest() error = %v", err)
 		}
 
@@ -38,8 +39,8 @@ func TestStoreContract(t *testing.T) {
 	})
 }
 
-func resetForTest(store *Store) error {
-	_, err := store.sqlDB.Exec(`
+func resetForTest(ctx context.Context, store *Store) error {
+	_, err := store.sqlDB.ExecContext(ctx, `
 		TRUNCATE TABLE
 			telemt_runtime_events,
 			telemt_runtime_upstreams_current,
