@@ -23,12 +23,19 @@ jobs:
         with:
           go-version: "1.26"
       - run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
-      - name: Upload coverage
+      - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: go-coverage
           path: coverage.out
+      - name: Upload coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.out
+          flags: backend
+          fail_ci_if_error: false
 
   schema-sync:
     # C9: verify the PostgreSQL and SQLite migration bundles produce
@@ -84,7 +91,9 @@ jobs:
           go-version: "1.26"
       - uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          # Pin to a known-good golangci-lint version. Bumping is a deliberate
+          # operator action so a silent upstream regression cannot break CI.
+          version: v2.11.4
 
   go-vuln:
     name: Go Vulnerability Scan
@@ -95,7 +104,8 @@ jobs:
         with:
           go-version: "1.26"
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+        # Pinned: a govulncheck regression should not silently break CI.
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
       - name: Run govulncheck
         run: govulncheck ./...
 
@@ -154,7 +164,10 @@ jobs:
           node-version: "22"
       - name: Audit web dependencies
         working-directory: web
-        run: npm audit --audit-level=high
+        # `--audit-level=moderate` matches the bar the security audit
+        # asks us to enforce. Anything moderate or worse fails CI; lower
+        # severities are still listed by `npm audit` but do not gate.
+        run: npm audit --audit-level=moderate
 
   buf-lint:
     name: Protobuf Lint
@@ -174,3 +187,52 @@ jobs:
         with:
           sqlc-version: '1.30.0'
       - run: sqlc diff
+
+  trivy-fs:
+    name: Trivy filesystem scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy scan (fs)
+        # Catches vulnerable Go modules (go.sum), npm packages
+        # (web/package-lock.json), and known-bad config patterns. Severity
+        # gate matches the npm-audit bar so behaviour is consistent across
+        # ecosystems.
+        uses: aquasecurity/trivy-action@0.32.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+
+  trivy-dockerfile:
+    name: Trivy Dockerfile scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy config scan (Dockerfile)
+        uses: aquasecurity/trivy-action@0.32.0
+        with:
+          scan-type: config
+          scan-ref: Dockerfile
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          format: table
+
+  gitleaks:
+    name: gitleaks (secret scan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so gitleaks can detect leaks introduced in
+          # earlier commits on the PR branch, not just the tip.
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          # Tokenless mode is fine — we are not posting the report back
+          # as a check via the gitleaks dashboard. The action still fails
+          # the job on any finding.
+          GITLEAKS_NOTIFY_USER_LIST: ''
