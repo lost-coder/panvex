@@ -162,7 +162,11 @@ func runServe(args []string) error {
 		return err
 	}
 
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: parseLogLevel(options.LogLevel)}))
+	// Wrap the text handler with the per-request slog handler so every
+	// log line emitted from inside an HTTP handler picks up request_id
+	// from the request context (see server.requestIDMiddleware).
+	baseHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: parseLogLevel(options.LogLevel)})
+	logger := slog.New(server.NewSlogContextHandler(baseHandler))
 	slog.SetDefault(logger)
 
 	// P3-OBS-01: initialize OpenTelemetry tracing if an OTLP endpoint
