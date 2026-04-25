@@ -1,11 +1,11 @@
-version: v1
+version: v2
 
 plugins:
-  - plugin: go
+  - local: protoc-gen-go
     out: .
     opt:
       - module=github.com/panvex/panvex
-  - plugin: go-grpc
+  - local: protoc-gen-go-grpc
     out: .
     opt:
       - module=github.com/panvex/panvex
