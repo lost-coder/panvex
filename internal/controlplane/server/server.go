@@ -573,6 +573,10 @@ func (s *Server) routes() http.Handler {
 	// metricsMiddleware must be the outermost user middleware so every
 	// response — including 401s from ipWhitelist, 429s from rate-limiters,
 	// and 404s from the UI fallback — is observed with its route pattern.
+	// requestIDMiddleware runs first so every downstream middleware (incl.
+	// metrics, logging, panics) can attribute its work to a stable
+	// correlation ID. The ID is also echoed on the response.
+	router.Use(requestIDMiddleware)
 	router.Use(s.metricsMiddleware)
 	router.Use(securityHeaders)
 	router.Use(maxBodySize)
