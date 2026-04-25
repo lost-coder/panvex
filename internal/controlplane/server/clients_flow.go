@@ -147,7 +147,10 @@ func (s *Server) restoreStoredClients() error {
 					ObservedAt:       u.ObservedAt,
 				}
 			} else if dc, ok := discoveredIdx[assignment.AgentID+"\x00"+client.Name]; ok {
-				s.seedClientUsage(client.ID, assignment.AgentID, dc.TotalOctets,
+				// Background: restore runs at startup before any request
+				// context exists. The seed write is best-effort housekeeping
+				// that must complete regardless.
+				s.seedClientUsage(context.Background(), client.ID, assignment.AgentID, dc.TotalOctets,
 					dc.CurrentConnections, dc.ActiveUniqueIPs, dc.UpdatedAt)
 			}
 		}
@@ -284,7 +287,7 @@ func (s *Server) createClientWithContext(ctx context.Context, actorID string, in
 	if err := s.replaceClientStateWithContext(ctx, client, assignments, deployments); err != nil {
 		return managedClient{}, nil, nil, err
 	}
-	if _, err := s.enqueueClientJob(actorID, jobs.ActionClientCreate, client, "", targetAgentIDs, observedAt); err != nil {
+	if _, err := s.enqueueClientJob(ctx, actorID, jobs.ActionClientCreate, client, "", targetAgentIDs, observedAt); err != nil {
 		return managedClient{}, nil, nil, err
 	}
 
@@ -347,14 +350,14 @@ func (s *Server) updateClientWithContext(ctx context.Context, clientID string, a
 	}
 
 	if len(targetAgentIDs) > 0 {
-		if _, err := s.enqueueClientJob(actorID, jobs.ActionClientUpdate, currentClient, previousName, targetAgentIDs, observedAt); err != nil {
+		if _, err := s.enqueueClientJob(ctx, actorID, jobs.ActionClientUpdate, currentClient, previousName, targetAgentIDs, observedAt); err != nil {
 			return managedClient{}, nil, nil, err
 		}
 	}
 
 	removedAgentIDs := removedClientTargetAgentIDs(currentDeployments, targetAgentIDs)
 	if len(removedAgentIDs) > 0 {
-		if _, err := s.enqueueClientJob(actorID, jobs.ActionClientDelete, currentClient, "", removedAgentIDs, observedAt); err != nil {
+		if _, err := s.enqueueClientJob(ctx, actorID, jobs.ActionClientDelete, currentClient, "", removedAgentIDs, observedAt); err != nil {
 			return managedClient{}, nil, nil, err
 		}
 	}
@@ -395,7 +398,7 @@ func (s *Server) redeployClientWithContext(ctx context.Context, clientID string,
 	if err := s.replaceClientStateWithContext(ctx, currentClient, assignments, deployments); err != nil {
 		return managedClient{}, nil, nil, err
 	}
-	if _, err := s.enqueueClientJob(actorID, jobs.ActionClientCreate, currentClient, "", targetAgentIDs, observedAt); err != nil {
+	if _, err := s.enqueueClientJob(ctx, actorID, jobs.ActionClientCreate, currentClient, "", targetAgentIDs, observedAt); err != nil {
 		return managedClient{}, nil, nil, err
 	}
 	return currentClient, assignments, deployments, nil
@@ -428,7 +431,7 @@ func (s *Server) rotateClientSecretWithContext(ctx context.Context, clientID str
 		return managedClient{}, nil, nil, err
 	}
 	if len(targetAgentIDs) > 0 {
-		if _, err := s.enqueueClientJob(actorID, jobs.ActionClientRotateSecret, currentClient, "", targetAgentIDs, observedAt); err != nil {
+		if _, err := s.enqueueClientJob(ctx, actorID, jobs.ActionClientRotateSecret, currentClient, "", targetAgentIDs, observedAt); err != nil {
 			return managedClient{}, nil, nil, err
 		}
 	}
@@ -469,7 +472,7 @@ func (s *Server) deleteClientWithContext(ctx context.Context, clientID string, a
 	}
 
 	if len(targetAgentIDs) > 0 {
-		if _, err := s.enqueueClientJob(actorID, jobs.ActionClientDelete, currentClient, "", targetAgentIDs, observedAt); err != nil {
+		if _, err := s.enqueueClientJob(ctx, actorID, jobs.ActionClientDelete, currentClient, "", targetAgentIDs, observedAt); err != nil {
 			return err
 		}
 	}
@@ -477,7 +480,7 @@ func (s *Server) deleteClientWithContext(ctx context.Context, clientID string, a
 	return nil
 }
 
-func (s *Server) enqueueClientJob(actorID string, action jobs.Action, client managedClient, previousName string, targetAgentIDs []string, observedAt time.Time) (jobs.Job, error) {
+func (s *Server) enqueueClientJob(ctx context.Context, actorID string, action jobs.Action, client managedClient, previousName string, targetAgentIDs []string, observedAt time.Time) (jobs.Job, error) {
 	payloadJSON, err := json.Marshal(clientJobPayload{
 		ClientID:          client.ID,
 		PreviousName:      previousName,
@@ -504,7 +507,7 @@ func (s *Server) enqueueClientJob(actorID string, action jobs.Action, client man
 	}
 	s.mu.RUnlock()
 
-	job, err := s.jobs.Enqueue(jobs.CreateJobInput{
+	job, err := s.jobs.Enqueue(ctx, jobs.CreateJobInput{
 		Action:         action,
 		TargetAgentIDs: targetAgentIDs,
 		TTL:            clientJobTTL,
@@ -639,7 +642,7 @@ func (s *Server) recordClientJobResult(agentID string, jobID string, success boo
 }
 
 func (s *Server) recordClientJobResultWithContext(ctx context.Context, agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) {
-	job, ok := s.jobByID(jobID)
+	job, ok := s.jobByID(ctx, jobID)
 	if !ok {
 		return
 	}
@@ -700,8 +703,8 @@ func (s *Server) recordClientJobResultWithContext(ctx context.Context, agentID s
 	}
 }
 
-func (s *Server) jobByID(jobID string) (jobs.Job, bool) {
-	for _, job := range s.jobs.List() {
+func (s *Server) jobByID(ctx context.Context, jobID string) (jobs.Job, bool) {
+	for _, job := range s.jobs.ListWithContext(ctx) {
 		if job.ID == jobID {
 			return job, true
 		}

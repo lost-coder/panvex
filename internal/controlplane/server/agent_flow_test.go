@@ -889,8 +889,8 @@ func TestTrafficDedupViaSnapshotSeq(t *testing.T) {
 	}}
 
 	server.mu.Lock()
-	server.applyClientUsageSnapshot(agentID, first)
-	server.applyClientUsageSnapshot(agentID, duplicate)
+	server.applyClientUsageSnapshot(context.Background(), agentID, first)
+	server.applyClientUsageSnapshot(context.Background(), agentID, duplicate)
 	got := server.clientUsage[clientID][agentID]
 	server.mu.Unlock()
 
@@ -934,10 +934,10 @@ func TestUsageSeqResetOnAgentRestart(t *testing.T) {
 	}}
 
 	server.mu.Lock()
-	server.applyClientUsageSnapshot(agentID, prior)
-	server.applyClientUsageSnapshot(agentID, restart)
+	server.applyClientUsageSnapshot(context.Background(), agentID, prior)
+	server.applyClientUsageSnapshot(context.Background(), agentID, restart)
 	afterReset := server.clientUsage[clientID][agentID].TrafficUsedBytes
-	server.applyClientUsageSnapshot(agentID, afterRestart)
+	server.applyClientUsageSnapshot(context.Background(), agentID, afterRestart)
 	final := server.clientUsage[clientID][agentID].TrafficUsedBytes
 	storedSeq := server.lastUsageSeq[agentID]
 	server.mu.Unlock()
@@ -965,10 +965,10 @@ func TestUsageDedupIgnoresOutOfOrderStaleSnapshots(t *testing.T) {
 	const clientID = "client-stale"
 
 	server.mu.Lock()
-	server.applyClientUsageSnapshot(agentID, []clientUsageSnapshot{{
+	server.applyClientUsageSnapshot(context.Background(), agentID, []clientUsageSnapshot{{
 		ClientID: clientID, TrafficUsedBytes: 100, Seq: 7, ObservedAt: now,
 	}})
-	server.applyClientUsageSnapshot(agentID, []clientUsageSnapshot{{
+	server.applyClientUsageSnapshot(context.Background(), agentID, []clientUsageSnapshot{{
 		ClientID: clientID, TrafficUsedBytes: 999, Seq: 3, ObservedAt: now, // stale
 	}})
 	got := server.clientUsage[clientID][agentID].TrafficUsedBytes
@@ -994,8 +994,8 @@ func TestUsageLegacySeqZeroFallsBackToUnconditionalAccumulation(t *testing.T) {
 	legacy := []clientUsageSnapshot{{ClientID: clientID, TrafficUsedBytes: 500, ObservedAt: now}} // Seq = 0
 
 	server.mu.Lock()
-	server.applyClientUsageSnapshot(agentID, legacy)
-	server.applyClientUsageSnapshot(agentID, legacy)
+	server.applyClientUsageSnapshot(context.Background(), agentID, legacy)
+	server.applyClientUsageSnapshot(context.Background(), agentID, legacy)
 	got := server.clientUsage[clientID][agentID].TrafficUsedBytes
 	server.mu.Unlock()
 
