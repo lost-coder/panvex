@@ -353,7 +353,7 @@ func (s *Server) adoptDiscoveredClient(ctx context.Context, id string, actorID s
 	s.replaceClientStateInMemory(client, assignments, deployments)
 
 	// Seed live usage with the stats Telemt already reported for this user.
-	s.seedClientUsage(client.ID, record.AgentID, record.TotalOctets, record.CurrentConnections, record.ActiveUniqueIPs, observedAt)
+	s.seedClientUsage(ctx, client.ID, record.AgentID, record.TotalOctets, record.CurrentConnections, record.ActiveUniqueIPs, observedAt)
 	_ = duplicateSecret // retained for future logging hooks
 
 	s.appendAuditWithContext(ctx, actorID, "clients.adopted", id, map[string]any{
@@ -482,7 +482,7 @@ func (s *Server) mergeAdoptIntoExistingClient(
 	}
 
 	// Seed usage from this agent's Telemt data.
-	s.seedClientUsage(existing.ID, record.AgentID, record.TotalOctets, record.CurrentConnections, record.ActiveUniqueIPs, observedAt)
+	s.seedClientUsage(ctx, existing.ID, record.AgentID, record.TotalOctets, record.CurrentConnections, record.ActiveUniqueIPs, observedAt)
 
 	// Mark discovered record as adopted.
 	if err := s.store.UpdateDiscoveredClientStatus(ctx, discoveredID, discoveredClientStatusAdopted, observedAt.UTC()); err != nil {
@@ -503,7 +503,7 @@ func (s *Server) mergeAdoptIntoExistingClient(
 
 // seedClientUsage initializes the in-memory usage for a client on a specific
 // agent with the values reported by Telemt at discovery time.
-func (s *Server) seedClientUsage(clientID, agentID string, trafficBytes uint64, connections, uniqueIPs int, observedAt time.Time) {
+func (s *Server) seedClientUsage(ctx context.Context, clientID, agentID string, trafficBytes uint64, connections, uniqueIPs int, observedAt time.Time) {
 	s.clientsMu.Lock()
 	if s.clientUsage[clientID] == nil {
 		s.clientUsage[clientID] = make(map[string]clientUsageSnapshot)
@@ -521,7 +521,7 @@ func (s *Server) seedClientUsage(clientID, agentID string, trafficBytes uint64, 
 	s.clientsMu.Unlock()
 
 	if s.store != nil {
-		if err := s.store.UpsertClientUsage(context.Background(), storage.ClientUsageRecord{
+		if err := s.store.UpsertClientUsage(ctx, storage.ClientUsageRecord{
 			ClientID:         clientID,
 			AgentID:          agentID,
 			TrafficUsedBytes: trafficBytes,

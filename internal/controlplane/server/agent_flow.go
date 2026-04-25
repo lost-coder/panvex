@@ -175,7 +175,7 @@ func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) error {
 	return s.applyAgentSnapshotWithContext(context.Background(), snapshot)
 }
 
-func (s *Server) applyAgentSnapshotWithContext(_ context.Context, snapshot agentSnapshot) error {
+func (s *Server) applyAgentSnapshotWithContext(ctx context.Context, snapshot agentSnapshot) error {
 	s.logger.Debug("agent heartbeat applied", "agent_id", snapshot.AgentID, "node", snapshot.NodeName)
 	// Lock section: build all state objects AND commit to in-memory maps
 	// atomically. No DB I/O happens under the locks.
@@ -247,7 +247,7 @@ func (s *Server) applyAgentSnapshotWithContext(_ context.Context, snapshot agent
 	if snapshot.HasClients || snapshot.HasClientIPs {
 		s.clientsMu.Lock()
 		if snapshot.HasClients {
-			s.applyClientUsageSnapshot(snapshot.AgentID, snapshot.Clients)
+			s.applyClientUsageSnapshot(ctx, snapshot.AgentID, snapshot.Clients)
 		}
 		if snapshot.HasClientIPs {
 			s.applyClientIPSnapshot(snapshot.AgentID, snapshot.ClientIPs)
@@ -618,7 +618,7 @@ func dcHealthPointsFromSnapshot(agent Agent, snapshot agentSnapshot) []storage.D
 	return points
 }
 
-func (s *Server) applyClientUsageSnapshot(agentID string, clients []clientUsageSnapshot) {
+func (s *Server) applyClientUsageSnapshot(ctx context.Context, agentID string, clients []clientUsageSnapshot) {
 	// Determine whether the traffic deltas in this batch should be applied.
 	// All ClientUsageSnapshot entries produced by a single agent tick share
 	// the same seq — inspect the first non-zero value.
@@ -696,7 +696,7 @@ func (s *Server) applyClientUsageSnapshot(agentID string, clients []clientUsageS
 	}
 	if s.store != nil {
 		for _, rec := range toPersist {
-			if err := s.store.UpsertClientUsage(context.Background(), rec); err != nil {
+			if err := s.store.UpsertClientUsage(ctx, rec); err != nil {
 				s.logger.Warn("persist client_usage",
 					"client_id", rec.ClientID, "agent_id", rec.AgentID, "error", err)
 			}
