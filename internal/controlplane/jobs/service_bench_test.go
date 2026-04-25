@@ -13,6 +13,7 @@ package jobs
 //	    ./internal/controlplane/jobs
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -28,7 +29,7 @@ func BenchmarkServiceEnqueueSingleTarget(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := svc.Enqueue(CreateJobInput{
+		if _, err := svc.Enqueue(context.Background(), CreateJobInput{
 			Action:         ActionClientUpdate,
 			TargetAgentIDs: []string{"agent-1"},
 			TTL:            30 * time.Second,
@@ -55,7 +56,7 @@ func BenchmarkServiceEnqueueFanOut10(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := svc.Enqueue(CreateJobInput{
+		if _, err := svc.Enqueue(context.Background(), CreateJobInput{
 			Action:         ActionRuntimeReload,
 			TargetAgentIDs: targets,
 			TTL:            30 * time.Second,
@@ -78,7 +79,7 @@ func BenchmarkServicePendingForAgent(b *testing.B) {
 	for i := 0; i < preload; i++ {
 		// Round-robin across 10 agents so each agent ends up with ~100 jobs.
 		agent := fmt.Sprintf("agent-%02d", i%10)
-		if _, err := svc.Enqueue(CreateJobInput{
+		if _, err := svc.Enqueue(context.Background(), CreateJobInput{
 			Action:         ActionRuntimeReload,
 			TargetAgentIDs: []string{agent},
 			TTL:            30 * time.Second,
@@ -92,6 +93,6 @@ func BenchmarkServicePendingForAgent(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = svc.PendingForAgent("agent-00", 0)
+		_ = svc.PendingForAgent(context.Background(), "agent-00", 0)
 	}
 }

@@ -23,7 +23,7 @@ func TestJobsKeysEviction(t *testing.T) {
 	service.SetNow(func() time.Time { return now })
 
 	// Job A: will be completed, then aged past TTL — should be evicted.
-	jobA, err := service.Enqueue(CreateJobInput{
+	jobA, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
@@ -35,7 +35,7 @@ func TestJobsKeysEviction(t *testing.T) {
 	}
 
 	// Job B: will stay live the whole test — must never be evicted.
-	_, err = service.Enqueue(CreateJobInput{
+	_, err = service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-2"},
 		TTL:            time.Hour,
@@ -47,13 +47,13 @@ func TestJobsKeysEviction(t *testing.T) {
 	}
 
 	// Complete job A with success. This must record the terminal timestamp.
-	service.RecordResult("agent-1", jobA.ID, true, "ok", "", now)
+	service.RecordResult(context.Background(), "agent-1", jobA.ID, true, "ok", "", now)
 
 	// Before advancing time, PruneKeys with a 24h TTL must retain both keys.
 	if evicted := service.PruneKeys(24 * time.Hour); evicted != 0 {
 		t.Fatalf("PruneKeys immediate = %d, want 0", evicted)
 	}
-	if _, err := service.Enqueue(CreateJobInput{
+	if _, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
@@ -71,7 +71,7 @@ func TestJobsKeysEviction(t *testing.T) {
 	}
 
 	// key-a should now be re-usable (key has been evicted from the map).
-	if _, err := service.Enqueue(CreateJobInput{
+	if _, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
@@ -82,7 +82,7 @@ func TestJobsKeysEviction(t *testing.T) {
 	}
 
 	// key-b is still live — it must remain protected from eviction.
-	if _, err := service.Enqueue(CreateJobInput{
+	if _, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-2"},
 		TTL:            time.Hour,
@@ -102,7 +102,7 @@ func TestJobsKeysEvictionViaExpiredJobs(t *testing.T) {
 	service := NewService()
 	service.SetNow(func() time.Time { return now })
 
-	if _, err := service.Enqueue(CreateJobInput{
+	if _, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
@@ -123,7 +123,7 @@ func TestJobsKeysEvictionViaExpiredJobs(t *testing.T) {
 	}
 
 	// Re-enqueue with the same key should succeed.
-	if _, err := service.Enqueue(CreateJobInput{
+	if _, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
@@ -149,7 +149,7 @@ func TestJobsKeysEvictionWorker(t *testing.T) {
 	service := NewService()
 	service.SetNow(nowFn)
 
-	jobA, err := service.Enqueue(CreateJobInput{
+	jobA, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
@@ -159,7 +159,7 @@ func TestJobsKeysEvictionWorker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Enqueue() error = %v", err)
 	}
-	service.RecordResult("agent-1", jobA.ID, true, "ok", "", now)
+	service.RecordResult(context.Background(), "agent-1", jobA.ID, true, "ok", "", now)
 
 	// Age the terminal timestamp past TTL by moving the clock forward.
 	nowMu.Lock()
@@ -197,7 +197,7 @@ func TestServiceEnqueueRejectsDuplicateIdempotencyKey(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	service := NewService()
 
-	first, err := service.Enqueue(CreateJobInput{
+	first, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
@@ -212,7 +212,7 @@ func TestServiceEnqueueRejectsDuplicateIdempotencyKey(t *testing.T) {
 		t.Fatalf("first.Status = %q, want %q", first.Status, StatusQueued)
 	}
 
-	_, err = service.Enqueue(CreateJobInput{
+	_, err = service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
@@ -232,7 +232,7 @@ func TestServiceEnqueueRejectsMutatingActionForReadOnlyTarget(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	service := NewService()
 
-	_, err := service.Enqueue(CreateJobInput{
+	_, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionUsersCreate,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
@@ -260,7 +260,7 @@ func TestServiceEnqueueRejectsDuplicateIdempotencyKeyAfterRestart(t *testing.T) 
 	defer store.Close()
 
 	first := NewServiceWithStore(store)
-	job, err := first.Enqueue(CreateJobInput{
+	job, err := first.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
@@ -272,7 +272,7 @@ func TestServiceEnqueueRejectsDuplicateIdempotencyKeyAfterRestart(t *testing.T) 
 	}
 
 	restored := NewServiceWithStore(store)
-	if _, err := restored.Enqueue(CreateJobInput{
+	if _, err := restored.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
@@ -303,7 +303,7 @@ func TestServiceRecordResultPersistsTargetsAcrossRestart(t *testing.T) {
 	first.SetNow(func() time.Time {
 		return now
 	})
-	job, err := first.Enqueue(CreateJobInput{
+	job, err := first.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1", "agent-2"},
 		TTL:            time.Minute,
@@ -314,10 +314,10 @@ func TestServiceRecordResultPersistsTargetsAcrossRestart(t *testing.T) {
 		t.Fatalf("Enqueue() error = %v", err)
 	}
 
-	first.MarkDelivered("agent-1", job.ID, now.Add(5*time.Second))
-	first.MarkDelivered("agent-2", job.ID, now.Add(5*time.Second))
-	first.RecordResult("agent-1", job.ID, true, "ok", "", now.Add(10*time.Second))
-	first.RecordResult("agent-2", job.ID, false, "reload failed", "", now.Add(11*time.Second))
+	first.MarkDelivered(context.Background(), "agent-1", job.ID, now.Add(5*time.Second))
+	first.MarkDelivered(context.Background(), "agent-2", job.ID, now.Add(5*time.Second))
+	first.RecordResult(context.Background(), "agent-1", job.ID, true, "ok", "", now.Add(10*time.Second))
+	first.RecordResult(context.Background(), "agent-2", job.ID, false, "reload failed", "", now.Add(11*time.Second))
 
 	restored := NewServiceWithStore(store)
 	restored.SetNow(func() time.Time {
@@ -353,7 +353,7 @@ func TestServicePersistsStructuredClientPayloadAndResultAcrossRestart(t *testing
 	first.SetNow(func() time.Time {
 		return now
 	})
-	job, err := first.Enqueue(CreateJobInput{
+	job, err := first.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionClientCreate,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
@@ -365,8 +365,8 @@ func TestServicePersistsStructuredClientPayloadAndResultAcrossRestart(t *testing
 		t.Fatalf("Enqueue() error = %v", err)
 	}
 
-	first.MarkDelivered("agent-1", job.ID, now.Add(5*time.Second))
-	first.RecordResult("agent-1", job.ID, true, "applied", `{"connection_link":"tg://proxy?server=node-a&secret=secret-1"}`, now.Add(10*time.Second))
+	first.MarkDelivered(context.Background(), "agent-1", job.ID, now.Add(5*time.Second))
+	first.RecordResult(context.Background(), "agent-1", job.ID, true, "applied", `{"connection_link":"tg://proxy?server=node-a&secret=secret-1"}`, now.Add(10*time.Second))
 
 	restored := NewServiceWithStore(store)
 	restored.SetNow(func() time.Time {
@@ -397,7 +397,7 @@ func TestServiceMarkDeliveredKeepsInMemoryStateWhenPersistenceFails(t *testing.T
 
 	store := &failingJobStore{JobStore: sqliteStore}
 	service := NewServiceWithStore(store)
-	job, err := service.Enqueue(CreateJobInput{
+	job, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
@@ -410,7 +410,7 @@ func TestServiceMarkDeliveredKeepsInMemoryStateWhenPersistenceFails(t *testing.T
 
 	store.putJobErr = errors.New("put job failed")
 
-	service.MarkDelivered("agent-1", job.ID, now.Add(5*time.Second))
+	service.MarkDelivered(context.Background(), "agent-1", job.ID, now.Add(5*time.Second))
 
 	jobs := service.List()
 	if len(jobs) != 1 {
@@ -431,7 +431,7 @@ func TestServiceMarkAcknowledgedTransitionsTargetState(t *testing.T) {
 		return now.Add(10 * time.Second)
 	})
 
-	job, err := service.Enqueue(CreateJobInput{
+	job, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
@@ -442,8 +442,8 @@ func TestServiceMarkAcknowledgedTransitionsTargetState(t *testing.T) {
 		t.Fatalf("Enqueue() error = %v", err)
 	}
 
-	service.MarkDelivered("agent-1", job.ID, now.Add(2*time.Second))
-	service.MarkAcknowledged("agent-1", job.ID, now.Add(3*time.Second))
+	service.MarkDelivered(context.Background(), "agent-1", job.ID, now.Add(2*time.Second))
+	service.MarkAcknowledged(context.Background(), "agent-1", job.ID, now.Add(3*time.Second))
 
 	jobs := service.List()
 	if len(jobs) != 1 {
@@ -464,7 +464,7 @@ func TestServiceMarkDeliveredDoesNotDowngradeAcknowledgedTarget(t *testing.T) {
 		return now.Add(10 * time.Second)
 	})
 
-	job, err := service.Enqueue(CreateJobInput{
+	job, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
@@ -475,9 +475,9 @@ func TestServiceMarkDeliveredDoesNotDowngradeAcknowledgedTarget(t *testing.T) {
 		t.Fatalf("Enqueue() error = %v", err)
 	}
 
-	service.MarkDelivered("agent-1", job.ID, now.Add(2*time.Second))
-	service.MarkAcknowledged("agent-1", job.ID, now.Add(3*time.Second))
-	service.MarkDelivered("agent-1", job.ID, now.Add(4*time.Second))
+	service.MarkDelivered(context.Background(), "agent-1", job.ID, now.Add(2*time.Second))
+	service.MarkAcknowledged(context.Background(), "agent-1", job.ID, now.Add(3*time.Second))
+	service.MarkDelivered(context.Background(), "agent-1", job.ID, now.Add(4*time.Second))
 
 	jobs := service.List()
 	if len(jobs) != 1 {
@@ -498,7 +498,7 @@ func TestServiceMarkAcknowledgedIgnoresQueuedTarget(t *testing.T) {
 		return now.Add(10 * time.Second)
 	})
 
-	job, err := service.Enqueue(CreateJobInput{
+	job, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
@@ -509,7 +509,7 @@ func TestServiceMarkAcknowledgedIgnoresQueuedTarget(t *testing.T) {
 		t.Fatalf("Enqueue() error = %v", err)
 	}
 
-	service.MarkAcknowledged("agent-1", job.ID, now.Add(5*time.Second))
+	service.MarkAcknowledged(context.Background(), "agent-1", job.ID, now.Add(5*time.Second))
 
 	jobs := service.List()
 	if len(jobs) != 1 {
@@ -531,7 +531,7 @@ func TestServicePendingForAgentReturnsQueuedAndStaleSentJobs(t *testing.T) {
 		return now
 	})
 
-	queued, err := service.Enqueue(CreateJobInput{
+	queued, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
@@ -541,7 +541,7 @@ func TestServicePendingForAgentReturnsQueuedAndStaleSentJobs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Enqueue(queued) error = %v", err)
 	}
-	staleSent, err := service.Enqueue(CreateJobInput{
+	staleSent, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
@@ -551,7 +551,7 @@ func TestServicePendingForAgentReturnsQueuedAndStaleSentJobs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Enqueue(staleSent) error = %v", err)
 	}
-	recentSent, err := service.Enqueue(CreateJobInput{
+	recentSent, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
@@ -561,7 +561,7 @@ func TestServicePendingForAgentReturnsQueuedAndStaleSentJobs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Enqueue(recentSent) error = %v", err)
 	}
-	otherAgent, err := service.Enqueue(CreateJobInput{
+	otherAgent, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-2"},
 		TTL:            time.Hour,
@@ -572,10 +572,10 @@ func TestServicePendingForAgentReturnsQueuedAndStaleSentJobs(t *testing.T) {
 		t.Fatalf("Enqueue(otherAgent) error = %v", err)
 	}
 
-	service.MarkDelivered("agent-1", staleSent.ID, now.Add(-(retryAfter + time.Second)))
-	service.MarkDelivered("agent-1", recentSent.ID, now.Add(-(retryAfter - time.Second)))
+	service.MarkDelivered(context.Background(), "agent-1", staleSent.ID, now.Add(-(retryAfter + time.Second)))
+	service.MarkDelivered(context.Background(), "agent-1", recentSent.ID, now.Add(-(retryAfter - time.Second)))
 
-	pending := service.PendingForAgent("agent-1", retryAfter)
+	pending := service.PendingForAgent(context.Background(), "agent-1", retryAfter)
 	if len(pending) != 2 {
 		t.Fatalf("len(PendingForAgent) = %d, want %d", len(pending), 2)
 	}
@@ -605,7 +605,7 @@ func TestServicePendingForAgentWorksAfterRestore(t *testing.T) {
 	defer store.Close()
 
 	first := NewServiceWithStore(store)
-	job, err := first.Enqueue(CreateJobInput{
+	job, err := first.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
@@ -620,7 +620,7 @@ func TestServicePendingForAgentWorksAfterRestore(t *testing.T) {
 	restored.SetNow(func() time.Time {
 		return now.Add(time.Minute)
 	})
-	pending := restored.PendingForAgent("agent-1", retryAfter)
+	pending := restored.PendingForAgent(context.Background(), "agent-1", retryAfter)
 	if len(pending) != 1 {
 		t.Fatalf("len(PendingForAgent) = %d, want %d", len(pending), 1)
 	}
@@ -637,7 +637,7 @@ func TestServicePendingForAgentDropsAcknowledgedJobFromIndex(t *testing.T) {
 		return now
 	})
 
-	job, err := service.Enqueue(CreateJobInput{
+	job, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
@@ -648,10 +648,10 @@ func TestServicePendingForAgentDropsAcknowledgedJobFromIndex(t *testing.T) {
 		t.Fatalf("Enqueue() error = %v", err)
 	}
 
-	service.MarkDelivered("agent-1", job.ID, now.Add(time.Second))
-	service.MarkAcknowledged("agent-1", job.ID, now.Add(2*time.Second))
+	service.MarkDelivered(context.Background(), "agent-1", job.ID, now.Add(time.Second))
+	service.MarkAcknowledged(context.Background(), "agent-1", job.ID, now.Add(2*time.Second))
 
-	pending := service.PendingForAgent("agent-1", retryAfter)
+	pending := service.PendingForAgent(context.Background(), "agent-1", retryAfter)
 	if len(pending) != 0 {
 		t.Fatalf("len(PendingForAgent) = %d, want %d", len(pending), 0)
 	}
@@ -666,7 +666,7 @@ func TestServiceListProjectsExpiredQueuedJobsAsFailed(t *testing.T) {
 	service := NewService()
 	now := time.Now().UTC().Add(-2 * time.Minute)
 
-	job, err := service.Enqueue(CreateJobInput{
+	job, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
@@ -707,7 +707,7 @@ func TestServiceRecordResultDoesNotOverrideExpiredTarget(t *testing.T) {
 		return now.Add(2 * time.Minute)
 	})
 
-	job, err := service.Enqueue(CreateJobInput{
+	job, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
@@ -718,7 +718,7 @@ func TestServiceRecordResultDoesNotOverrideExpiredTarget(t *testing.T) {
 		t.Fatalf("Enqueue() error = %v", err)
 	}
 
-	service.RecordResult("agent-1", job.ID, true, "late success", "", now.Add(3*time.Minute))
+	service.RecordResult(context.Background(), "agent-1", job.ID, true, "late success", "", now.Add(3*time.Minute))
 
 	jobs := service.List()
 	if len(jobs) != 1 {
@@ -743,7 +743,7 @@ func TestServiceUpdateTargetDoesNotExpireUnrelatedJobs(t *testing.T) {
 		return currentTime
 	})
 
-	expiredJob, err := service.Enqueue(CreateJobInput{
+	expiredJob, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-expired"},
 		TTL:            time.Minute,
@@ -754,7 +754,7 @@ func TestServiceUpdateTargetDoesNotExpireUnrelatedJobs(t *testing.T) {
 		t.Fatalf("Enqueue(expired) error = %v", err)
 	}
 
-	liveJob, err := service.Enqueue(CreateJobInput{
+	liveJob, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-live"},
 		TTL:            time.Hour,
@@ -766,7 +766,7 @@ func TestServiceUpdateTargetDoesNotExpireUnrelatedJobs(t *testing.T) {
 	}
 
 	currentTime = baseNow.Add(2 * time.Minute)
-	service.MarkDelivered("agent-live", liveJob.ID, currentTime)
+	service.MarkDelivered(context.Background(), "agent-live", liveJob.ID, currentTime)
 
 	storedExpired := service.jobs[expiredJob.ID]
 	if storedExpired.Status != StatusQueued {
@@ -801,7 +801,7 @@ func TestServiceListPersistsExpiredQueuedJobsAcrossRestart(t *testing.T) {
 	defer store.Close()
 
 	first := NewServiceWithStore(store)
-	job, err := first.Enqueue(CreateJobInput{
+	job, err := first.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
@@ -852,7 +852,7 @@ func TestServiceListAllowsConcurrentUpdateWhileExpirationPersistenceBlocks(t *te
 
 	store := &blockingJobStore{JobStore: sqliteStore}
 	service := NewServiceWithStore(store)
-	expiredJob, err := service.Enqueue(CreateJobInput{
+	expiredJob, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-expired"},
 		TTL:            time.Minute,
@@ -862,7 +862,7 @@ func TestServiceListAllowsConcurrentUpdateWhileExpirationPersistenceBlocks(t *te
 	if err != nil {
 		t.Fatalf("Enqueue(expired) error = %v", err)
 	}
-	liveJob, err := service.Enqueue(CreateJobInput{
+	liveJob, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-live"},
 		TTL:            time.Hour,
@@ -893,7 +893,7 @@ func TestServiceListAllowsConcurrentUpdateWhileExpirationPersistenceBlocks(t *te
 
 	markDone := make(chan struct{})
 	go func() {
-		service.MarkDelivered("agent-live", liveJob.ID, baseNow.Add(10*time.Second))
+		service.MarkDelivered(context.Background(), "agent-live", liveJob.ID, baseNow.Add(10*time.Second))
 		close(markDone)
 	}()
 
@@ -946,7 +946,7 @@ func TestServiceMarkDeliveredAllowsConcurrentListWhilePersistenceBlocks(t *testi
 	service.SetNow(func() time.Time {
 		return now.Add(10 * time.Second)
 	})
-	job, err := service.Enqueue(CreateJobInput{
+	job, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
@@ -963,7 +963,7 @@ func TestServiceMarkDeliveredAllowsConcurrentListWhilePersistenceBlocks(t *testi
 
 	markDone := make(chan struct{})
 	go func() {
-		service.MarkDelivered("agent-1", job.ID, now.Add(5*time.Second))
+		service.MarkDelivered(context.Background(), "agent-1", job.ID, now.Add(5*time.Second))
 		close(markDone)
 	}()
 
@@ -1015,7 +1015,7 @@ func TestServiceUpdateTargetPersistsLatestVersionAfterOutOfOrderWrites(t *testin
 	service.SetNow(func() time.Time {
 		return now.Add(10 * time.Second)
 	})
-	job, err := service.Enqueue(CreateJobInput{
+	job, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
@@ -1032,7 +1032,7 @@ func TestServiceUpdateTargetPersistsLatestVersionAfterOutOfOrderWrites(t *testin
 
 	markDone := make(chan struct{})
 	go func() {
-		service.MarkDelivered("agent-1", job.ID, now.Add(5*time.Second))
+		service.MarkDelivered(context.Background(), "agent-1", job.ID, now.Add(5*time.Second))
 		close(markDone)
 	}()
 
@@ -1042,7 +1042,7 @@ func TestServiceUpdateTargetPersistsLatestVersionAfterOutOfOrderWrites(t *testin
 		t.Fatal("PutJob() did not block, want out-of-order write setup")
 	}
 
-	service.RecordResult("agent-1", job.ID, false, "failed", "", now.Add(6*time.Second))
+	service.RecordResult(context.Background(), "agent-1", job.ID, false, "failed", "", now.Add(6*time.Second))
 
 	close(releasePutJob)
 
@@ -1170,7 +1170,7 @@ func TestEnqueueReleasesLockDuringPersist(t *testing.T) {
 
 	enqueueDone := make(chan error, 1)
 	go func() {
-		_, err := service.Enqueue(CreateJobInput{
+		_, err := service.Enqueue(context.Background(), CreateJobInput{
 			Action:         ActionRuntimeReload,
 			TargetAgentIDs: []string{"agent-1"},
 			TTL:            time.Minute,
@@ -1190,7 +1190,7 @@ func TestEnqueueReleasesLockDuringPersist(t *testing.T) {
 	// in-memory state must not block.
 	pendingDone := make(chan []Job, 1)
 	go func() {
-		pendingDone <- service.PendingForAgent("agent-1", time.Second)
+		pendingDone <- service.PendingForAgent(context.Background(), "agent-1", time.Second)
 	}()
 	select {
 	case pending := <-pendingDone:
@@ -1227,7 +1227,7 @@ func TestEnqueueReleasesLockDuringPersist(t *testing.T) {
 	}
 
 	// After the persist completes, the job is visible to PendingForAgent.
-	pending := service.PendingForAgent("agent-1", time.Second)
+	pending := service.PendingForAgent(context.Background(), "agent-1", time.Second)
 	if len(pending) != 1 {
 		t.Fatalf("PendingForAgent() after persist = %d, want 1", len(pending))
 	}
@@ -1254,7 +1254,7 @@ func TestEnqueueDuplicateKeyRejectedDuringOutOfLockWindow(t *testing.T) {
 
 	firstDone := make(chan error, 1)
 	go func() {
-		_, err := service.Enqueue(CreateJobInput{
+		_, err := service.Enqueue(context.Background(), CreateJobInput{
 			Action:         ActionRuntimeReload,
 			TargetAgentIDs: []string{"agent-1"},
 			TTL:            time.Minute,
@@ -1272,7 +1272,7 @@ func TestEnqueueDuplicateKeyRejectedDuringOutOfLockWindow(t *testing.T) {
 
 	// Second Enqueue with the same key — must be rejected immediately even
 	// though the first one has not completed persist yet.
-	_, err = service.Enqueue(CreateJobInput{
+	_, err = service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-2"},
 		TTL:            time.Minute,
@@ -1296,7 +1296,7 @@ func TestEnqueueDuplicateKeyRejectedDuringOutOfLockWindow(t *testing.T) {
 
 	// After the in-flight call completes the key is still reserved by the
 	// first job — a third Enqueue must also see the duplicate.
-	_, err = service.Enqueue(CreateJobInput{
+	_, err = service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-3"},
 		TTL:            time.Minute,
@@ -1336,7 +1336,7 @@ func TestEnqueueDuplicateKeyConcurrentExactlyOneWins(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			_, err := service.Enqueue(CreateJobInput{
+			_, err := service.Enqueue(context.Background(), CreateJobInput{
 				Action:         ActionRuntimeReload,
 				TargetAgentIDs: []string{"agent-1"},
 				TTL:            time.Minute,
@@ -1386,7 +1386,7 @@ func TestEnqueuePersistFailureRollsBack(t *testing.T) {
 	store := &failingJobStore{JobStore: sqliteStore, putJobErr: putErr}
 	service := NewServiceWithStore(store)
 
-	_, err = service.Enqueue(CreateJobInput{
+	_, err = service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
@@ -1404,14 +1404,14 @@ func TestEnqueuePersistFailureRollsBack(t *testing.T) {
 	if depth := service.QueueDepth(); depth != 0 {
 		t.Fatalf("QueueDepth() = %d, want 0 after rollback", depth)
 	}
-	if pending := service.PendingForAgent("agent-1", time.Second); len(pending) != 0 {
+	if pending := service.PendingForAgent(context.Background(), "agent-1", time.Second); len(pending) != 0 {
 		t.Fatalf("PendingForAgent() = %d, want 0 after rollback", len(pending))
 	}
 
 	// The idempotency-key reservation must be released — a retry with the
 	// same key should now succeed once the store is healthy again.
 	store.putJobErr = nil
-	job, err := service.Enqueue(CreateJobInput{
+	job, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
@@ -1442,7 +1442,7 @@ func TestAcknowledgedJobsAreRedispatchedAfterRestart(t *testing.T) {
 
 	first := NewServiceWithStore(store)
 	first.SetNow(func() time.Time { return now })
-	job, err := first.Enqueue(CreateJobInput{
+	job, err := first.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
@@ -1453,12 +1453,12 @@ func TestAcknowledgedJobsAreRedispatchedAfterRestart(t *testing.T) {
 		t.Fatalf("Enqueue() error = %v", err)
 	}
 
-	first.MarkDelivered("agent-1", job.ID, now.Add(time.Second))
-	first.MarkAcknowledged("agent-1", job.ID, now.Add(2*time.Second))
+	first.MarkDelivered(context.Background(), "agent-1", job.ID, now.Add(time.Second))
+	first.MarkAcknowledged(context.Background(), "agent-1", job.ID, now.Add(2*time.Second))
 
 	// Sanity: during normal operation, acked targets are pruned from the
 	// agent index so PendingForAgent does not re-dispatch the live job.
-	if pending := first.PendingForAgent("agent-1", retryAfter); len(pending) != 0 {
+	if pending := first.PendingForAgent(context.Background(), "agent-1", retryAfter); len(pending) != 0 {
 		t.Fatalf("len(first.PendingForAgent) = %d, want 0 for acked live job", len(pending))
 	}
 
@@ -1468,7 +1468,7 @@ func TestAcknowledgedJobsAreRedispatchedAfterRestart(t *testing.T) {
 	restored := NewServiceWithStore(store)
 	restored.SetNow(func() time.Time { return now.Add(5 * time.Minute) })
 
-	pending := restored.PendingForAgent("agent-1", retryAfter)
+	pending := restored.PendingForAgent(context.Background(), "agent-1", retryAfter)
 	if len(pending) != 1 {
 		t.Fatalf("len(restored.PendingForAgent) = %d, want 1 (ack should be redispatchable after restart)", len(pending))
 	}
@@ -1495,7 +1495,7 @@ func TestAcknowledgedJobsExpireAfterTTL(t *testing.T) {
 
 	// Large TTL so the job itself does not expire via jobShouldExpire
 	// before the ack-expiry worker gets a chance to fire.
-	job, err := service.Enqueue(CreateJobInput{
+	job, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            24 * time.Hour,
@@ -1506,18 +1506,18 @@ func TestAcknowledgedJobsExpireAfterTTL(t *testing.T) {
 		t.Fatalf("Enqueue() error = %v", err)
 	}
 
-	service.MarkDelivered("agent-1", job.ID, now.Add(time.Second))
-	service.MarkAcknowledged("agent-1", job.ID, now.Add(2*time.Second))
+	service.MarkDelivered(context.Background(), "agent-1", job.ID, now.Add(time.Second))
+	service.MarkAcknowledged(context.Background(), "agent-1", job.ID, now.Add(2*time.Second))
 
 	// Before TTL elapses: PruneAcknowledgedTargets is a no-op.
-	if expired := service.PruneAcknowledgedTargets(ackTTL); expired != 0 {
+	if expired := service.PruneAcknowledgedTargets(context.Background(), ackTTL); expired != 0 {
 		t.Fatalf("PruneAcknowledgedTargets pre-TTL = %d, want 0", expired)
 	}
 
 	// Advance past the 2h ack TTL.
 	now = start.Add(ackTTL + time.Minute)
 
-	expired := service.PruneAcknowledgedTargets(ackTTL)
+	expired := service.PruneAcknowledgedTargets(context.Background(), ackTTL)
 	if expired != 1 {
 		t.Fatalf("PruneAcknowledgedTargets post-TTL = %d, want 1", expired)
 	}
@@ -1535,7 +1535,7 @@ func TestAcknowledgedJobsExpireAfterTTL(t *testing.T) {
 
 	// Re-dispatch must no longer fire — the target is expired and the
 	// agent-side idempotency cache can no longer deduplicate.
-	if pending := service.PendingForAgent("agent-1", retryAfter); len(pending) != 0 {
+	if pending := service.PendingForAgent(context.Background(), "agent-1", retryAfter); len(pending) != 0 {
 		t.Fatalf("len(PendingForAgent) = %d after ack expiry, want 0", len(pending))
 	}
 
@@ -1547,7 +1547,7 @@ func TestAcknowledgedJobsExpireAfterTTL(t *testing.T) {
 	if evicted := service.PruneKeys(time.Minute); evicted != 1 {
 		t.Fatalf("PruneKeys post-expiry = %d, want 1", evicted)
 	}
-	if applied := service.RecordResult("agent-1", job.ID, true, "late ok", "", now.Add(time.Second)); applied {
+	if applied := service.RecordResult(context.Background(), "agent-1", job.ID, true, "late ok", "", now.Add(time.Second)); applied {
 		t.Fatal("RecordResult on evicted job = true, want false (idempotent safety net)")
 	}
 }
@@ -1568,7 +1568,7 @@ func TestStartAcknowledgedExpiryWorker(t *testing.T) {
 		return now
 	})
 
-	job, err := service.Enqueue(CreateJobInput{
+	job, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
@@ -1578,8 +1578,8 @@ func TestStartAcknowledgedExpiryWorker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Enqueue() error = %v", err)
 	}
-	service.MarkDelivered("agent-1", job.ID, start.Add(time.Millisecond))
-	service.MarkAcknowledged("agent-1", job.ID, start.Add(2*time.Millisecond))
+	service.MarkDelivered(context.Background(), "agent-1", job.ID, start.Add(time.Millisecond))
+	service.MarkAcknowledged(context.Background(), "agent-1", job.ID, start.Add(2*time.Millisecond))
 
 	// Advance past the TTL so the ticker's first scan marks the target
 	// expired on its next fire.
@@ -1614,7 +1614,7 @@ func TestStartAcknowledgedExpiryWorker(t *testing.T) {
 // dropping the result.
 func TestRecordResultReportsUnknownJob(t *testing.T) {
 	service := NewService()
-	if applied := service.RecordResult("agent-1", "job-never-existed", true, "ok", "", time.Now()); applied {
+	if applied := service.RecordResult(context.Background(), "agent-1", "job-never-existed", true, "ok", "", time.Now()); applied {
 		t.Fatal("RecordResult on unknown job = true, want false")
 	}
 }

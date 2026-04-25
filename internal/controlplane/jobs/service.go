@@ -333,7 +333,7 @@ func (s *Service) SetNow(now func() time.Time) {
 // PendingForAgent — it has not been added to s.jobs / s.agentJobs yet. Only
 // the idempotency-key reservation in s.keys lives across the out-of-lock
 // window, which is exactly what's needed to reject duplicate-key races.
-func (s *Service) Enqueue(input CreateJobInput, now time.Time) (Job, error) {
+func (s *Service) Enqueue(ctx context.Context, input CreateJobInput, now time.Time) (Job, error) {
 	s.mu.Lock()
 
 	if _, exists := s.keys[input.IdempotencyKey]; exists {
@@ -380,7 +380,7 @@ func (s *Service) Enqueue(input CreateJobInput, now time.Time) (Job, error) {
 	s.mu.Unlock()
 
 	if s.jobStore != nil {
-		if err := s.persistJob(context.Background(), job); err != nil {
+		if err := s.persistJob(ctx, job); err != nil {
 			s.mu.Lock()
 			// Only remove if no one else has claimed the slot. We hold the
 			// exclusive right to this key because no other Enqueue could
@@ -415,7 +415,20 @@ func isMutatingAction(action Action) bool {
 }
 
 // List returns a snapshot of the queued jobs known to the service.
+//
+// List intentionally does not take a context because some callers (notably
+// http_control_room) live outside this remediation cluster. The internal
+// persist path uses context.Background() — this is acceptable because
+// expiry-driven persists are housekeeping that must run regardless of any
+// individual request being cancelled. New callers that hold a request
+// context should prefer ListWithContext.
 func (s *Service) List() []Job {
+	return s.ListWithContext(context.Background())
+}
+
+// ListWithContext is the ctx-aware variant of List. The ctx is forwarded to
+// any expiry-driven persistence performed by this call.
+func (s *Service) ListWithContext(ctx context.Context) []Job {
 	var candidates []persistCandidate
 
 	s.mu.Lock()
@@ -436,7 +449,7 @@ func (s *Service) List() []Job {
 	})
 
 	for _, candidate := range candidates {
-		s.persistLatestJobVersion(candidate.jobID, candidate.version, candidate.job)
+		s.persistLatestJobVersion(ctx, candidate.jobID, candidate.version, candidate.job)
 	}
 
 	return result
@@ -449,12 +462,12 @@ func (s *Service) ExpireStale() {
 	s.mu.Unlock()
 
 	for _, candidate := range candidates {
-		s.persistLatestJobVersion(candidate.jobID, candidate.version, candidate.job)
+		s.persistLatestJobVersion(context.Background(), candidate.jobID, candidate.version, candidate.job)
 	}
 }
 
 // PendingForAgent returns queued and stale-sent jobs for one agent in creation order.
-func (s *Service) PendingForAgent(agentID string, retryAfter time.Duration) []Job {
+func (s *Service) PendingForAgent(ctx context.Context, agentID string, retryAfter time.Duration) []Job {
 	var candidates []persistCandidate
 
 	s.mu.Lock()
@@ -510,15 +523,15 @@ func (s *Service) PendingForAgent(agentID string, retryAfter time.Duration) []Jo
 	})
 
 	for _, candidate := range candidates {
-		s.persistLatestJobVersion(candidate.jobID, candidate.version, candidate.job)
+		s.persistLatestJobVersion(ctx, candidate.jobID, candidate.version, candidate.job)
 	}
 
 	return result
 }
 
 // MarkDelivered records that one target command has been sent to an active agent stream.
-func (s *Service) MarkDelivered(agentID string, jobID string, observedAt time.Time) {
-	s.updateTarget(agentID, jobID, observedAt, func(target *JobTarget) {
+func (s *Service) MarkDelivered(ctx context.Context, agentID string, jobID string, observedAt time.Time) {
+	s.updateTarget(ctx, agentID, jobID, observedAt, func(target *JobTarget) {
 		if target.Status == TargetStatusSucceeded || target.Status == TargetStatusFailed || target.Status == TargetStatusExpired {
 			return
 		}
@@ -534,8 +547,8 @@ func (s *Service) MarkDelivered(agentID string, jobID string, observedAt time.Ti
 }
 
 // MarkAcknowledged records that one target command has been accepted by the agent runtime queue.
-func (s *Service) MarkAcknowledged(agentID string, jobID string, observedAt time.Time) {
-	s.updateTarget(agentID, jobID, observedAt, func(target *JobTarget) {
+func (s *Service) MarkAcknowledged(ctx context.Context, agentID string, jobID string, observedAt time.Time) {
+	s.updateTarget(ctx, agentID, jobID, observedAt, func(target *JobTarget) {
 		if target.Status == TargetStatusSucceeded || target.Status == TargetStatusFailed || target.Status == TargetStatusExpired {
 			return
 		}
@@ -557,7 +570,7 @@ func (s *Service) MarkAcknowledged(agentID string, jobID string, observedAt time
 //
 // Returns the number of targets transitioned to expired. olderThan <= 0 is
 // a no-op so callers cannot accidentally expire live acknowledgements.
-func (s *Service) PruneAcknowledgedTargets(olderThan time.Duration) int {
+func (s *Service) PruneAcknowledgedTargets(ctx context.Context, olderThan time.Duration) int {
 	if olderThan <= 0 {
 		return 0
 	}
@@ -609,7 +622,7 @@ func (s *Service) PruneAcknowledgedTargets(olderThan time.Duration) int {
 	s.mu.Unlock()
 
 	for _, candidate := range candidates {
-		s.persistLatestJobVersion(candidate.jobID, candidate.version, candidate.job)
+		s.persistLatestJobVersion(ctx, candidate.jobID, candidate.version, candidate.job)
 	}
 
 	return expired
@@ -631,7 +644,12 @@ func (s *Service) StartAcknowledgedExpiryWorker(ctx context.Context, interval ti
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				s.PruneAcknowledgedTargets(ttl)
+				// Background context: this worker is intentionally
+				// detached from any request lifetime so periodic
+				// expiry must run regardless of which contexts have
+				// since been cancelled. The worker shuts down on
+				// ctx.Done() above.
+				s.PruneAcknowledgedTargets(ctx, ttl)
 			}
 		}
 	}()
@@ -643,8 +661,8 @@ func (s *Service) StartAcknowledgedExpiryWorker(ctx context.Context, interval ti
 // caller should log a warning but treat this as non-fatal, since the ack
 // expiry worker or terminal-key eviction may have dropped the job before
 // the result arrived).
-func (s *Service) RecordResult(agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) bool {
-	return s.updateTarget(agentID, jobID, observedAt, func(target *JobTarget) {
+func (s *Service) RecordResult(ctx context.Context, agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) bool {
+	return s.updateTarget(ctx, agentID, jobID, observedAt, func(target *JobTarget) {
 		if target.Status == TargetStatusExpired {
 			return
 		}
@@ -658,7 +676,7 @@ func (s *Service) RecordResult(agentID string, jobID string, success bool, messa
 	})
 }
 
-func (s *Service) updateTarget(agentID string, jobID string, observedAt time.Time, mutate func(target *JobTarget)) bool {
+func (s *Service) updateTarget(ctx context.Context, agentID string, jobID string, observedAt time.Time, mutate func(target *JobTarget)) bool {
 	var (
 		candidates []persistCandidate
 	)
@@ -674,7 +692,7 @@ func (s *Service) updateTarget(agentID string, jobID string, observedAt time.Tim
 		// bugs where the agent sends results for unknown jobs.
 		s.mu.Unlock()
 		for _, candidate := range candidates {
-			s.persistLatestJobVersion(candidate.jobID, candidate.version, candidate.job)
+			s.persistLatestJobVersion(ctx, candidate.jobID, candidate.version, candidate.job)
 		}
 		return false
 	}
@@ -712,7 +730,7 @@ func (s *Service) updateTarget(agentID string, jobID string, observedAt time.Tim
 		// is final and further target changes could corrupt the state machine.
 		s.mu.Unlock()
 		for _, candidate := range candidates {
-			s.persistLatestJobVersion(candidate.jobID, candidate.version, candidate.job)
+			s.persistLatestJobVersion(ctx, candidate.jobID, candidate.version, candidate.job)
 		}
 		return true
 	}
@@ -730,7 +748,7 @@ func (s *Service) updateTarget(agentID string, jobID string, observedAt time.Tim
 	if !updated {
 		s.mu.Unlock()
 		for _, candidate := range candidates {
-			s.persistLatestJobVersion(candidate.jobID, candidate.version, candidate.job)
+			s.persistLatestJobVersion(ctx, candidate.jobID, candidate.version, candidate.job)
 		}
 		return true
 	}
@@ -757,7 +775,7 @@ func (s *Service) updateTarget(agentID string, jobID string, observedAt time.Tim
 	s.mu.Unlock()
 
 	for _, candidate := range candidates {
-		s.persistLatestJobVersion(candidate.jobID, candidate.version, candidate.job)
+		s.persistLatestJobVersion(ctx, candidate.jobID, candidate.version, candidate.job)
 	}
 	return true
 }
@@ -911,9 +929,9 @@ func (s *Service) persistJob(ctx context.Context, job Job) error {
 	return nil
 }
 
-func (s *Service) persistLatestJobVersion(jobID string, persistedVersion uint64, persistedJob Job) {
+func (s *Service) persistLatestJobVersion(ctx context.Context, jobID string, persistedVersion uint64, persistedJob Job) {
 	for {
-		if err := s.persistJob(context.Background(), persistedJob); err != nil {
+		if err := s.persistJob(ctx, persistedJob); err != nil {
 			return
 		}
 
