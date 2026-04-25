@@ -456,7 +456,7 @@ func (s *Server) handleAgentUpdate() http.HandlerFunc {
 			return
 		}
 
-		job, err := s.jobs.Enqueue(jobs.CreateJobInput{
+		job, err := s.jobs.Enqueue(r.Context(), jobs.CreateJobInput{
 			Action:         jobs.ActionAgentSelfUpdate,
 			TargetAgentIDs: []string{agentID},
 			PayloadJSON:    string(payloadJSON),

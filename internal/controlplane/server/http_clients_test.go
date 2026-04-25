@@ -103,7 +103,7 @@ func TestHTTPClientsCreateTracksDeploymentsAndStructuredJobPayload(t *testing.T)
 		t.Fatalf("len(jobs[0].TargetAgentIDs) = %d, want %d", len(enqueuedJobs[0].TargetAgentIDs), 2)
 	}
 
-	server.recordJobResult("agent-000001", enqueuedJobs[0].ID, true, "applied", `{"connection_link":"tg://proxy?server=node-a&secret=alice"}`, now.Add(time.Minute))
+	server.recordJobResult(context.Background(), "agent-000001", enqueuedJobs[0].ID, true, "applied", `{"connection_link":"tg://proxy?server=node-a&secret=alice"}`, now.Add(time.Minute))
 
 	detailResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/clients/"+created.ID, nil, cookies)
 	if detailResponse.Code != http.StatusOK {

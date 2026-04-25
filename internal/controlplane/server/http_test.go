@@ -916,10 +916,10 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 		t.Fatalf("json.Unmarshal(job) error = %v", err)
 	}
 
-	first.markJobDelivered(agentOne.AgentID, createdJob.ID)
-	first.markJobDelivered(agentTwo.AgentID, createdJob.ID)
-	first.recordJobResult(agentOne.AgentID, createdJob.ID, true, "ok", "", now.Add(15*time.Second))
-	first.recordJobResult(agentTwo.AgentID, createdJob.ID, false, "reload failed", "", now.Add(16*time.Second))
+	first.markJobDelivered(context.Background(), agentOne.AgentID, createdJob.ID)
+	first.markJobDelivered(context.Background(), agentTwo.AgentID, createdJob.ID)
+	first.recordJobResult(context.Background(), agentOne.AgentID, createdJob.ID, true, "ok", "", now.Add(15*time.Second))
+	first.recordJobResult(context.Background(), agentTwo.AgentID, createdJob.ID, false, "reload failed", "", now.Add(16*time.Second))
 
 	first.Close()
 
@@ -1492,7 +1492,7 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 	server.presence.MarkConnected("agent-2", currentTime.Add(-45*time.Second))
 	server.presence.MarkConnected("agent-3", currentTime.Add(-2*time.Minute))
 
-	queuedJob, err := server.jobs.Enqueue(jobs.CreateJobInput{
+	queuedJob, err := server.jobs.Enqueue(context.Background(), jobs.CreateJobInput{
 		Action:         jobs.ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
@@ -1503,7 +1503,7 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Enqueue(queued) error = %v", err)
 	}
-	runningJob, err := server.jobs.Enqueue(jobs.CreateJobInput{
+	runningJob, err := server.jobs.Enqueue(context.Background(), jobs.CreateJobInput{
 		Action:         jobs.ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-2"},
 		TTL:            time.Minute,
@@ -1514,9 +1514,9 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Enqueue(running) error = %v", err)
 	}
-	server.jobs.MarkDelivered("agent-2", runningJob.ID, currentTime.Add(-80*time.Second))
+	server.jobs.MarkDelivered(context.Background(), "agent-2", runningJob.ID, currentTime.Add(-80*time.Second))
 
-	failedJob, err := server.jobs.Enqueue(jobs.CreateJobInput{
+	failedJob, err := server.jobs.Enqueue(context.Background(), jobs.CreateJobInput{
 		Action:         jobs.ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-3"},
 		TTL:            time.Minute,
@@ -1527,7 +1527,7 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Enqueue(failed) error = %v", err)
 	}
-	server.jobs.RecordResult("agent-3", failedJob.ID, false, "connection lost", "", currentTime.Add(-40*time.Second))
+	server.jobs.RecordResult(context.Background(), "agent-3", failedJob.ID, false, "connection lost", "", currentTime.Add(-40*time.Second))
 
 	currentTime = currentTime.Add(-30 * time.Second)
 	server.appendAudit("user-1", "agents.enrollment.create", "token-1", map[string]any{
