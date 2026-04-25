@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, ApiError, SESSION_EXPIRED_EVENT } from "./api";
+import { __seedCSRFTokenForTesting } from "./http";
 
 // P2-TEST-01 — direct exercise of the `api()` wrapper in api.ts. The
 // public apiClient.* helpers all route through this function, so
@@ -11,6 +12,10 @@ describe("api() wrapper", () => {
   beforeEach(() => {
     // A fresh stub per test so assertions on call args are isolated.
     globalThis.fetch = vi.fn();
+    // Seed the CSRF cache so the api() wrapper does not consume the
+    // queued mockResolvedValueOnce on a CSRF lookup before the test's
+    // intended request.
+    __seedCSRFTokenForTesting("test-csrf-token");
   });
 
   afterEach(() => {

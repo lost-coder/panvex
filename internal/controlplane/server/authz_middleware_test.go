@@ -52,7 +52,7 @@ func TestRequireAuthenticatedSessionAllowsValidSession(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResp := performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResp := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -62,7 +62,7 @@ func TestRequireAuthenticatedSessionAllowsValidSession(t *testing.T) {
 	cookies := loginResp.Result().Cookies()
 
 	// Hit /api/auth/me which uses requireAuthenticatedSession.
-	meResp := performJSONRequest(t, srv.Handler(), http.MethodGet, "/api/auth/me", nil, cookies)
+	meResp := performJSONRequest(t, srv, http.MethodGet, "/api/auth/me", nil, cookies)
 	if meResp.Code != http.StatusOK {
 		t.Fatalf("GET /api/auth/me status = %d, want %d", meResp.Code, http.StatusOK)
 	}
@@ -91,13 +91,13 @@ func TestRequireMinimumRoleAdminRejectsViewer(t *testing.T) {
 	}
 
 	// Create a viewer user.
-	loginAdmin := performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginAdmin := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
 	adminCookies := loginAdmin.Result().Cookies()
 
-	createResp := performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/users", map[string]string{
+	createResp := performJSONRequest(t, srv, http.MethodPost, "/api/users", map[string]string{
 		"username": "viewer",
 		"role":     "viewer",
 		"password": "Viewer1password",
@@ -107,14 +107,14 @@ func TestRequireMinimumRoleAdminRejectsViewer(t *testing.T) {
 	}
 
 	// Login as viewer.
-	loginViewer := performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginViewer := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
 		"password": "Viewer1password",
 	}, nil)
 	viewerCookies := loginViewer.Result().Cookies()
 
 	// Viewer should be rejected from admin-only endpoint (e.g. POST /api/users).
-	createAsViewer := performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/users", map[string]string{
+	createAsViewer := performJSONRequest(t, srv, http.MethodPost, "/api/users", map[string]string{
 		"username": "hacker",
 		"role":     "admin",
 		"password": "Hacker1password",
@@ -146,14 +146,14 @@ func TestRequireMinimumRoleAdminAllowsAdmin(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResp := performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResp := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
 	adminCookies := loginResp.Result().Cookies()
 
 	// Admin should be able to list users (admin-only endpoint).
-	listResp := performJSONRequest(t, srv.Handler(), http.MethodGet, "/api/users", nil, adminCookies)
+	listResp := performJSONRequest(t, srv, http.MethodGet, "/api/users", nil, adminCookies)
 	if listResp.Code != http.StatusOK {
 		t.Fatalf("GET /api/users as admin status = %d, want %d", listResp.Code, http.StatusOK)
 	}

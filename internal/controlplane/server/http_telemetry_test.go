@@ -112,7 +112,7 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 		t.Fatalf("PutTelemetrySecurityInventoryCurrent() error = %v", err)
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -121,7 +121,7 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 	}
 	cookies := loginResponse.Result().Cookies()
 
-	dashboardResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/telemetry/dashboard", nil, cookies)
+	dashboardResponse := performJSONRequest(t, server, http.MethodGet, "/api/telemetry/dashboard", nil, cookies)
 	if dashboardResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/telemetry/dashboard status = %d, want %d", dashboardResponse.Code, http.StatusOK)
 	}
@@ -142,7 +142,7 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 		t.Fatalf("fleet.live_connections = %d, want %d", dashboardPayload.Fleet.LiveConnections, 132)
 	}
 
-	serversResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/telemetry/servers", nil, cookies)
+	serversResponse := performJSONRequest(t, server, http.MethodGet, "/api/telemetry/servers", nil, cookies)
 	if serversResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/telemetry/servers status = %d, want %d", serversResponse.Code, http.StatusOK)
 	}
@@ -160,7 +160,7 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 		t.Fatalf("servers[0].runtime_freshness.state = %q, want %q", serversPayload.Servers[0].RuntimeFreshness.State, "stale")
 	}
 
-	boostResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/telemetry/servers/agent-a/detail-boost", nil, cookies)
+	boostResponse := performJSONRequest(t, server, http.MethodPost, "/api/telemetry/servers/agent-a/detail-boost", nil, cookies)
 	if boostResponse.Code != http.StatusOK {
 		t.Fatalf("POST /api/telemetry/servers/{id}/detail-boost status = %d, want %d", boostResponse.Code, http.StatusOK)
 	}
@@ -172,12 +172,12 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 		t.Fatal("boost.active = false, want true")
 	}
 
-	refreshResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/telemetry/servers/agent-a/refresh-diagnostics", nil, cookies)
+	refreshResponse := performJSONRequest(t, server, http.MethodPost, "/api/telemetry/servers/agent-a/refresh-diagnostics", nil, cookies)
 	if refreshResponse.Code != http.StatusAccepted {
 		t.Fatalf("POST /api/telemetry/servers/{id}/refresh-diagnostics status = %d, want %d", refreshResponse.Code, http.StatusAccepted)
 	}
 
-	detailResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/telemetry/servers/agent-a", nil, cookies)
+	detailResponse := performJSONRequest(t, server, http.MethodGet, "/api/telemetry/servers/agent-a", nil, cookies)
 	if detailResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/telemetry/servers/{id} status = %d, want %d", detailResponse.Code, http.StatusOK)
 	}
@@ -224,7 +224,7 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 	restored.agents["agent-a"] = server.agents["agent-a"]
 	restored.presence.MarkConnected("agent-a", now.Add(-5*time.Second))
 
-	restoredLogin := performJSONRequest(t, restored.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	restoredLogin := performJSONRequest(t, restored, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -232,7 +232,7 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 		t.Fatalf("restored POST /api/auth/login status = %d, want %d", restoredLogin.Code, http.StatusOK)
 	}
 
-	restoredDetail := performJSONRequest(t, restored.Handler(), http.MethodGet, "/api/telemetry/servers/agent-a", nil, restoredLogin.Result().Cookies())
+	restoredDetail := performJSONRequest(t, restored, http.MethodGet, "/api/telemetry/servers/agent-a", nil, restoredLogin.Result().Cookies())
 	if restoredDetail.Code != http.StatusOK {
 		t.Fatalf("restored GET /api/telemetry/servers/{id} status = %d, want %d", restoredDetail.Code, http.StatusOK)
 	}
@@ -276,7 +276,7 @@ func TestHTTPTelemetryDetailExposesInitializationWatchActiveAndCooldown(t *testi
 	}
 	server.presence.MarkConnected("agent-a", now.Add(-3*time.Second))
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -285,7 +285,7 @@ func TestHTTPTelemetryDetailExposesInitializationWatchActiveAndCooldown(t *testi
 	}
 	cookies := loginResponse.Result().Cookies()
 
-	activeDetailResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/telemetry/servers/agent-a", nil, cookies)
+	activeDetailResponse := performJSONRequest(t, server, http.MethodGet, "/api/telemetry/servers/agent-a", nil, cookies)
 	if activeDetailResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/telemetry/servers/{id} active status = %d, want %d", activeDetailResponse.Code, http.StatusOK)
 	}
@@ -318,7 +318,7 @@ func TestHTTPTelemetryDetailExposesInitializationWatchActiveAndCooldown(t *testi
 
 	now = now.Add(30 * time.Second)
 
-	cooldownDetailResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/telemetry/servers/agent-a", nil, cookies)
+	cooldownDetailResponse := performJSONRequest(t, server, http.MethodGet, "/api/telemetry/servers/agent-a", nil, cookies)
 	if cooldownDetailResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/telemetry/servers/{id} cooldown status = %d, want %d", cooldownDetailResponse.Code, http.StatusOK)
 	}
@@ -335,7 +335,7 @@ func TestHTTPTelemetryDetailExposesInitializationWatchActiveAndCooldown(t *testi
 
 	now = server.initializationWatchCooldowns["agent-a"].Add(time.Second)
 
-	hiddenDetailResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/telemetry/servers/agent-a", nil, cookies)
+	hiddenDetailResponse := performJSONRequest(t, server, http.MethodGet, "/api/telemetry/servers/agent-a", nil, cookies)
 	if hiddenDetailResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/telemetry/servers/{id} hidden status = %d, want %d", hiddenDetailResponse.Code, http.StatusOK)
 	}

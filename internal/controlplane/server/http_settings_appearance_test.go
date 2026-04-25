@@ -34,7 +34,7 @@ func TestHTTPAppearanceSettingsReadDefaultsAndPersistCurrentUserValues(t *testin
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
 		"password": "Viewer1password",
 	}, nil)
@@ -43,7 +43,7 @@ func TestHTTPAppearanceSettingsReadDefaultsAndPersistCurrentUserValues(t *testin
 	}
 	cookies := loginResponse.Result().Cookies()
 
-	defaultResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/settings/appearance", nil, cookies)
+	defaultResponse := performJSONRequest(t, server, http.MethodGet, "/api/settings/appearance", nil, cookies)
 	if defaultResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/settings/appearance status = %d, want %d", defaultResponse.Code, http.StatusOK)
 	}
@@ -70,7 +70,7 @@ func TestHTTPAppearanceSettingsReadDefaultsAndPersistCurrentUserValues(t *testin
 		t.Fatalf("default.updated_at_unix = %d, want 0", defaultPayload.UpdatedAtUnix)
 	}
 
-	updateResponse := performJSONRequest(t, server.Handler(), http.MethodPut, "/api/settings/appearance", map[string]string{
+	updateResponse := performJSONRequest(t, server, http.MethodPut, "/api/settings/appearance", map[string]string{
 		"theme":     "dark",
 		"density":   "compact",
 		"help_mode": "full",
@@ -140,12 +140,12 @@ func TestHTTPAppearanceSettingsRejectsUnauthorizedAndInvalidValues(t *testing.T)
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	unauthorizedGet := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/settings/appearance", nil, nil)
+	unauthorizedGet := performJSONRequest(t, server, http.MethodGet, "/api/settings/appearance", nil, nil)
 	if unauthorizedGet.Code != http.StatusUnauthorized {
 		t.Fatalf("GET /api/settings/appearance without session status = %d, want %d", unauthorizedGet.Code, http.StatusUnauthorized)
 	}
 
-	unauthorizedPut := performJSONRequest(t, server.Handler(), http.MethodPut, "/api/settings/appearance", map[string]string{
+	unauthorizedPut := performJSONRequest(t, server, http.MethodPut, "/api/settings/appearance", map[string]string{
 		"theme":     "dark",
 		"density":   "compact",
 		"help_mode": "full",
@@ -154,7 +154,7 @@ func TestHTTPAppearanceSettingsRejectsUnauthorizedAndInvalidValues(t *testing.T)
 		t.Fatalf("PUT /api/settings/appearance without session status = %d, want %d", unauthorizedPut.Code, http.StatusUnauthorized)
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
 		"password": "Viewer1password",
 	}, nil)
@@ -163,7 +163,7 @@ func TestHTTPAppearanceSettingsRejectsUnauthorizedAndInvalidValues(t *testing.T)
 	}
 	cookies := loginResponse.Result().Cookies()
 
-	invalidTheme := performJSONRequest(t, server.Handler(), http.MethodPut, "/api/settings/appearance", map[string]string{
+	invalidTheme := performJSONRequest(t, server, http.MethodPut, "/api/settings/appearance", map[string]string{
 		"theme":     "sepia",
 		"density":   "compact",
 		"help_mode": "basic",
@@ -172,7 +172,7 @@ func TestHTTPAppearanceSettingsRejectsUnauthorizedAndInvalidValues(t *testing.T)
 		t.Fatalf("PUT /api/settings/appearance invalid theme status = %d, want %d", invalidTheme.Code, http.StatusBadRequest)
 	}
 
-	invalidDensity := performJSONRequest(t, server.Handler(), http.MethodPut, "/api/settings/appearance", map[string]string{
+	invalidDensity := performJSONRequest(t, server, http.MethodPut, "/api/settings/appearance", map[string]string{
 		"theme":     "dark",
 		"density":   "tight",
 		"help_mode": "basic",
@@ -181,7 +181,7 @@ func TestHTTPAppearanceSettingsRejectsUnauthorizedAndInvalidValues(t *testing.T)
 		t.Fatalf("PUT /api/settings/appearance invalid density status = %d, want %d", invalidDensity.Code, http.StatusBadRequest)
 	}
 
-	invalidHelpMode := performJSONRequest(t, server.Handler(), http.MethodPut, "/api/settings/appearance", map[string]string{
+	invalidHelpMode := performJSONRequest(t, server, http.MethodPut, "/api/settings/appearance", map[string]string{
 		"theme":     "dark",
 		"density":   "compact",
 		"help_mode": "verbose",
@@ -204,7 +204,7 @@ func TestHTTPAppearanceSettingsRequirePersistentStore(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
 		"password": "Viewer1password",
 	}, nil)
@@ -213,12 +213,12 @@ func TestHTTPAppearanceSettingsRequirePersistentStore(t *testing.T) {
 	}
 	cookies := loginResponse.Result().Cookies()
 
-	getResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/settings/appearance", nil, cookies)
+	getResponse := performJSONRequest(t, server, http.MethodGet, "/api/settings/appearance", nil, cookies)
 	if getResponse.Code != http.StatusServiceUnavailable {
 		t.Fatalf("GET /api/settings/appearance without store status = %d, want %d", getResponse.Code, http.StatusServiceUnavailable)
 	}
 
-	putResponse := performJSONRequest(t, server.Handler(), http.MethodPut, "/api/settings/appearance", map[string]string{
+	putResponse := performJSONRequest(t, server, http.MethodPut, "/api/settings/appearance", map[string]string{
 		"theme":     "dark",
 		"density":   "compact",
 		"help_mode": "full",

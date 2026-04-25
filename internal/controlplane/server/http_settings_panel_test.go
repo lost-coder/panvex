@@ -48,7 +48,7 @@ func TestHTTPPanelSettingsRequiresAdminAndPersistsSharedEndpointChanges(t *testi
 		t.Fatalf("BootstrapUser(viewer) error = %v", err)
 	}
 
-	viewerLogin := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	viewerLogin := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
 		"password": "Viewer1password",
 	}, nil)
@@ -56,12 +56,12 @@ func TestHTTPPanelSettingsRequiresAdminAndPersistsSharedEndpointChanges(t *testi
 		t.Fatalf("POST /api/auth/login viewer status = %d, want %d", viewerLogin.Code, http.StatusOK)
 	}
 
-	viewerSettings := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/settings/panel", nil, viewerLogin.Result().Cookies())
+	viewerSettings := performJSONRequest(t, server, http.MethodGet, "/api/settings/panel", nil, viewerLogin.Result().Cookies())
 	if viewerSettings.Code != http.StatusForbidden {
 		t.Fatalf("GET /api/settings/panel as viewer status = %d, want %d", viewerSettings.Code, http.StatusForbidden)
 	}
 
-	adminLogin := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	adminLogin := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -70,7 +70,7 @@ func TestHTTPPanelSettingsRequiresAdminAndPersistsSharedEndpointChanges(t *testi
 	}
 	adminCookies := adminLogin.Result().Cookies()
 
-	initialResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/settings/panel", nil, adminCookies)
+	initialResponse := performJSONRequest(t, server, http.MethodGet, "/api/settings/panel", nil, adminCookies)
 	if initialResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/settings/panel status = %d, want %d", initialResponse.Code, http.StatusOK)
 	}
@@ -111,7 +111,7 @@ func TestHTTPPanelSettingsRequiresAdminAndPersistsSharedEndpointChanges(t *testi
 		t.Fatalf("initial.restart.state = %q, want %q", initialPayload.Restart.State, "ready")
 	}
 
-	updateResponse := performJSONRequest(t, server.Handler(), http.MethodPut, "/api/settings/panel", map[string]string{
+	updateResponse := performJSONRequest(t, server, http.MethodPut, "/api/settings/panel", map[string]string{
 		"http_public_url":      "https://panel.example.com",
 		"grpc_public_endpoint": "grpc.panel.example.com:443",
 	}, adminCookies)
@@ -182,7 +182,7 @@ func TestHTTPPanelSettingsMarksRestartUnavailableWhenRuntimeCannotSelfRestart(t 
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -190,7 +190,7 @@ func TestHTTPPanelSettingsMarksRestartUnavailableWhenRuntimeCannotSelfRestart(t 
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
 	}
 
-	settingsResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/settings/panel", nil, loginResponse.Result().Cookies())
+	settingsResponse := performJSONRequest(t, server, http.MethodGet, "/api/settings/panel", nil, loginResponse.Result().Cookies())
 	if settingsResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/settings/panel status = %d, want %d", settingsResponse.Code, http.StatusOK)
 	}
@@ -235,7 +235,7 @@ func TestHTTPPanelSettingsRejectsRuntimeMutationsInLegacyMode(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -243,7 +243,7 @@ func TestHTTPPanelSettingsRejectsRuntimeMutationsInLegacyMode(t *testing.T) {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
 	}
 
-	updateResponse := performJSONRequest(t, server.Handler(), http.MethodPut, "/api/settings/panel", map[string]string{
+	updateResponse := performJSONRequest(t, server, http.MethodPut, "/api/settings/panel", map[string]string{
 		"http_public_url":      "https://panel.example.com",
 		"http_root_path":       "/panvex",
 		"grpc_public_endpoint": "grpc.panel.example.com:443",
@@ -272,7 +272,7 @@ func TestHTTPPanelSettingsRejectsOversizedPayload(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -280,7 +280,7 @@ func TestHTTPPanelSettingsRejectsOversizedPayload(t *testing.T) {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
 	}
 
-	updateResponse := performJSONRequest(t, server.Handler(), http.MethodPut, "/api/settings/panel", map[string]string{
+	updateResponse := performJSONRequest(t, server, http.MethodPut, "/api/settings/panel", map[string]string{
 		"http_public_url":      "https://panel.example.com/" + strings.Repeat("a", maxPanelSettingsBodyBytes),
 		"grpc_public_endpoint": "grpc.panel.example.com:443",
 	}, loginResponse.Result().Cookies())
@@ -321,7 +321,7 @@ func TestHTTPPanelSettingsExposesConfigManagedRuntimeAsReadOnly(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/runtime/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/runtime/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -330,7 +330,7 @@ func TestHTTPPanelSettingsExposesConfigManagedRuntimeAsReadOnly(t *testing.T) {
 	}
 	cookies := loginResponse.Result().Cookies()
 
-	updateResponse := performJSONRequest(t, server.Handler(), http.MethodPut, "/runtime/api/settings/panel", map[string]string{
+	updateResponse := performJSONRequest(t, server, http.MethodPut, "/runtime/api/settings/panel", map[string]string{
 		"http_public_url":      "https://panel.example.com",
 		"grpc_public_endpoint": "grpc.panel.example.com:443",
 	}, cookies)
@@ -410,7 +410,7 @@ func TestHTTPPanelSettingsRejectsRuntimeMutationsWhenConfigManagesRuntime(t *tes
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/runtime/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/runtime/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -418,7 +418,7 @@ func TestHTTPPanelSettingsRejectsRuntimeMutationsWhenConfigManagesRuntime(t *tes
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
 	}
 
-	updateResponse := performJSONRequest(t, server.Handler(), http.MethodPut, "/runtime/api/settings/panel", map[string]string{
+	updateResponse := performJSONRequest(t, server, http.MethodPut, "/runtime/api/settings/panel", map[string]string{
 		"http_public_url":      "https://panel.example.com",
 		"http_root_path":       "/mutated",
 		"grpc_public_endpoint": "grpc.panel.example.com:443",
@@ -464,7 +464,7 @@ func TestHTTPPanelRestartRequiresAdminAndInvokesRuntimeHook(t *testing.T) {
 		t.Fatalf("BootstrapUser(viewer) error = %v", err)
 	}
 
-	viewerLogin := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	viewerLogin := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
 		"password": "Viewer1password",
 	}, nil)
@@ -472,12 +472,12 @@ func TestHTTPPanelRestartRequiresAdminAndInvokesRuntimeHook(t *testing.T) {
 		t.Fatalf("POST /api/auth/login viewer status = %d, want %d", viewerLogin.Code, http.StatusOK)
 	}
 
-	viewerRestart := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/settings/panel/restart", nil, viewerLogin.Result().Cookies())
+	viewerRestart := performJSONRequest(t, server, http.MethodPost, "/api/settings/panel/restart", nil, viewerLogin.Result().Cookies())
 	if viewerRestart.Code != http.StatusForbidden {
 		t.Fatalf("POST /api/settings/panel/restart as viewer status = %d, want %d", viewerRestart.Code, http.StatusForbidden)
 	}
 
-	adminLogin := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	adminLogin := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -485,7 +485,7 @@ func TestHTTPPanelRestartRequiresAdminAndInvokesRuntimeHook(t *testing.T) {
 		t.Fatalf("POST /api/auth/login admin status = %d, want %d", adminLogin.Code, http.StatusOK)
 	}
 
-	adminRestart := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/settings/panel/restart", nil, adminLogin.Result().Cookies())
+	adminRestart := performJSONRequest(t, server, http.MethodPost, "/api/settings/panel/restart", nil, adminLogin.Result().Cookies())
 	if adminRestart.Code != http.StatusAccepted {
 		t.Fatalf("POST /api/settings/panel/restart status = %d, want %d", adminRestart.Code, http.StatusAccepted)
 	}
@@ -516,7 +516,7 @@ func TestHTTPPanelRestartRejectsUnsupportedRuntime(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -524,7 +524,7 @@ func TestHTTPPanelRestartRejectsUnsupportedRuntime(t *testing.T) {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
 	}
 
-	restartResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/settings/panel/restart", nil, loginResponse.Result().Cookies())
+	restartResponse := performJSONRequest(t, server, http.MethodPost, "/api/settings/panel/restart", nil, loginResponse.Result().Cookies())
 	if restartResponse.Code != http.StatusConflict {
 		t.Fatalf("POST /api/settings/panel/restart status = %d, want %d", restartResponse.Code, http.StatusConflict)
 	}
@@ -552,7 +552,7 @@ func TestHTTPPanelRestartReturnsInternalErrorWhenRuntimeHookFails(t *testing.T) 
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -560,7 +560,7 @@ func TestHTTPPanelRestartReturnsInternalErrorWhenRuntimeHookFails(t *testing.T) 
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
 	}
 
-	restartResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/settings/panel/restart", nil, loginResponse.Result().Cookies())
+	restartResponse := performJSONRequest(t, server, http.MethodPost, "/api/settings/panel/restart", nil, loginResponse.Result().Cookies())
 	if restartResponse.Code != http.StatusInternalServerError {
 		t.Fatalf("POST /api/settings/panel/restart status = %d, want %d", restartResponse.Code, http.StatusInternalServerError)
 	}

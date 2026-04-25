@@ -32,7 +32,7 @@ func TestHTTPUsersCreateUpdateDeleteRoundTrip(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -41,7 +41,7 @@ func TestHTTPUsersCreateUpdateDeleteRoundTrip(t *testing.T) {
 	}
 	cookies := loginResponse.Result().Cookies()
 
-	createResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/users", map[string]string{
+	createResponse := performJSONRequest(t, server, http.MethodPost, "/api/users", map[string]string{
 		"username": "operator",
 		"role":     "operator",
 		"password": "Operator1password",
@@ -72,7 +72,7 @@ func TestHTTPUsersCreateUpdateDeleteRoundTrip(t *testing.T) {
 		t.Fatal("created totp_enabled = true, want false")
 	}
 
-	updateResponse := performJSONRequest(t, server.Handler(), http.MethodPut, "/api/users/"+createdUser.ID, map[string]string{
+	updateResponse := performJSONRequest(t, server, http.MethodPut, "/api/users/"+createdUser.ID, map[string]string{
 		"username":     "viewer-renamed",
 		"role":         "viewer",
 		"new_password": "Viewer1password",
@@ -96,7 +96,7 @@ func TestHTTPUsersCreateUpdateDeleteRoundTrip(t *testing.T) {
 		t.Fatalf("updated role = %q, want %q", updatedUser.Role, "viewer")
 	}
 
-	userLogin := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	userLogin := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer-renamed",
 		"password": "Viewer1password",
 	}, nil)
@@ -104,12 +104,12 @@ func TestHTTPUsersCreateUpdateDeleteRoundTrip(t *testing.T) {
 		t.Fatalf("POST /api/auth/login updated user status = %d, want %d", userLogin.Code, http.StatusOK)
 	}
 
-	deleteResponse := performJSONRequest(t, server.Handler(), http.MethodDelete, "/api/users/"+createdUser.ID, nil, cookies)
+	deleteResponse := performJSONRequest(t, server, http.MethodDelete, "/api/users/"+createdUser.ID, nil, cookies)
 	if deleteResponse.Code != http.StatusNoContent {
 		t.Fatalf("DELETE /api/users/{id} status = %d, want %d", deleteResponse.Code, http.StatusNoContent)
 	}
 
-	usersResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/users", nil, cookies)
+	usersResponse := performJSONRequest(t, server, http.MethodGet, "/api/users", nil, cookies)
 	if usersResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/users status = %d, want %d", usersResponse.Code, http.StatusOK)
 	}
@@ -147,7 +147,7 @@ func TestHTTPUsersRejectSelfDeleteAndLastAdminDemotion(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -156,12 +156,12 @@ func TestHTTPUsersRejectSelfDeleteAndLastAdminDemotion(t *testing.T) {
 	}
 	cookies := loginResponse.Result().Cookies()
 
-	deleteResponse := performJSONRequest(t, server.Handler(), http.MethodDelete, "/api/users/"+adminUser.ID, nil, cookies)
+	deleteResponse := performJSONRequest(t, server, http.MethodDelete, "/api/users/"+adminUser.ID, nil, cookies)
 	if deleteResponse.Code != http.StatusBadRequest {
 		t.Fatalf("DELETE /api/users/self status = %d, want %d", deleteResponse.Code, http.StatusBadRequest)
 	}
 
-	demoteResponse := performJSONRequest(t, server.Handler(), http.MethodPut, "/api/users/"+adminUser.ID, map[string]string{
+	demoteResponse := performJSONRequest(t, server, http.MethodPut, "/api/users/"+adminUser.ID, map[string]string{
 		"username": adminUser.Username,
 		"role":     "viewer",
 	}, cookies)
