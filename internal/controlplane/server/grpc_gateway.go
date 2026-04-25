@@ -106,6 +106,7 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 		return status.Error(codes.PermissionDenied, "agent certificate has been revoked")
 	}
 	if s.grpcConnectRateLimiter != nil && !s.grpcConnectRateLimiter.Allow(agentID, s.now()) {
+		s.obs.ObserveRateLimitReject("grpc_connect")
 		return status.Error(codes.ResourceExhausted, "connect rate limit exceeded")
 	}
 	session, unregisterSession := s.registerAgentSession(agentID)

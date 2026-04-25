@@ -140,6 +140,16 @@ func (s *Store) Close() error {
 	return s.sqlDB.Close()
 }
 
+// PoolStats returns the current sql.DBStats for this store, or the
+// zero value when the store is tx-bound (no pool of its own). Used by
+// the metrics publisher to expose panvex_db_pool_* gauges.
+func (s *Store) PoolStats() sql.DBStats {
+	if s.sqlDB == nil {
+		return sql.DBStats{}
+	}
+	return s.sqlDB.Stats()
+}
+
 // appendPragmasToDSN rewrites the DSN so that every connection opened by the
 // driver applies the given pragmas at startup. modernc.org/sqlite splits the
 // DSN on the first '?' and parses everything after it as url.Values, then
