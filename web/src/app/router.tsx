@@ -12,8 +12,9 @@ import {
 } from "@tanstack/react-router";
 import { LayoutDashboard, Server, Users, Settings, Activity, User, Layers } from "lucide-react";
 
-import { AppShell, type NavItem } from "@/ui";
+import { AppShell, Spinner, type NavItem } from "@/ui";
 import { AppearanceProvider } from "@/app/providers/AppearanceProvider";
+import { AppErrorFallback } from "@/app/providers/AppErrorFallback";
 import { AuthProvider } from "@/app/providers/AuthProvider";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { ShortcutsOverlay } from "@/components/ShortcutsOverlay";
@@ -338,11 +339,38 @@ function NotFound() {
   );
 }
 
+// Default error/pending components apply to every route in the tree
+// unless that route opts out by declaring its own. This way a lazy
+// chunk that fails to load shows AppErrorFallback (full-page boundary
+// with a Reload button + the error message) instead of a white screen,
+// and any in-flight loader renders Spinner instead of leaving the
+// previous page's content stale.
+//
+// defaultPendingMs delays the spinner so fast loads (cache hit, local
+// API ~30ms) skip the fallback entirely; only loads slower than 200ms
+// render the spinner. defaultPendingMinMs prevents a flash if the
+// load resolves a few ms after we crossed the threshold.
+function RoutePending() {
+  return (
+    <div className="flex items-center justify-center py-16">
+      <Spinner size="lg" />
+    </div>
+  );
+}
+
+function RouteErrorBoundary({ error }: { error: Error }) {
+  return <AppErrorFallback error={error} />;
+}
+
 export const router = createRouter({
   routeTree,
   context: { queryClient: undefined! },
   basepath: getRouterBasepath(resolveConfiguredRootPath()),
   defaultNotFoundComponent: NotFound,
+  defaultErrorComponent: RouteErrorBoundary,
+  defaultPendingComponent: RoutePending,
+  defaultPendingMs: 200,
+  defaultPendingMinMs: 400,
 });
 
 declare module "@tanstack/react-router" {
