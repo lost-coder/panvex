@@ -42,7 +42,17 @@ type Store struct {
 }
 
 // Open opens a PostgreSQL connection, applies the schema, and returns a storage backend.
+//
+// Open uses context.Background() for migrations and the initial Ping; callers
+// that need cancellation during startup should use OpenContext instead.
 func Open(dsn string) (*Store, error) {
+	return OpenContext(context.Background(), dsn)
+}
+
+// OpenContext is the context-aware variant of Open. It threads ctx through
+// schema migration and the initial connectivity check so startup work can be
+// cancelled by the caller.
+func OpenContext(ctx context.Context, dsn string) (*Store, error) {
 	if strings.TrimSpace(dsn) == "" {
 		return nil, ErrDSNRequired
 	}
@@ -62,12 +72,12 @@ func Open(dsn string) (*Store, error) {
 	db.SetConnMaxLifetime(poolCfg.ConnMaxLifetime)
 	db.SetConnMaxIdleTime(poolCfg.ConnMaxIdleTime)
 
-	if err := Migrate(db); err != nil {
+	if err := MigrateContext(ctx, db); err != nil {
 		db.Close()
 		return nil, err
 	}
 
-	if err := db.Ping(); err != nil {
+	if err := db.PingContext(ctx); err != nil {
 		db.Close()
 		return nil, err
 	}

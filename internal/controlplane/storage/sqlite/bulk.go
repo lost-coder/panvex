@@ -75,7 +75,10 @@ func (s *Store) execInTx(ctx context.Context, fn func(exec dbExecutor) error) er
 		return err
 	}
 	committed := false
-	defer func() {
+	// ROLLBACK runs in defer and must complete even when the caller's ctx
+	// has already been canceled — otherwise we'd leave the writer lock
+	// held. context.Background() is intentional here.
+	defer func() { //nolint:contextcheck // deferred cleanup must outlive caller ctx
 		if !committed {
 			_, _ = conn.ExecContext(context.Background(), "ROLLBACK")
 		}
