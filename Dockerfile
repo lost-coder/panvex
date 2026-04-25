@@ -11,7 +11,10 @@ RUN npm run build:embed
 FROM golang:1.26-alpine AS control-plane-builder
 WORKDIR /src
 
-RUN apk add --no-cache build-base
+# modernc.org/sqlite is pure-Go, so we build with CGO disabled — drops
+# the libc dependency, shrinks the binary by ~30%, and lets us skip
+# the `build-base` apk install that older revisions needed.
+ENV CGO_ENABLED=0
 
 COPY go.mod go.sum ./
 RUN go mod download
@@ -20,7 +23,11 @@ COPY cmd ./cmd
 COPY internal ./internal
 COPY proto ./proto
 COPY db ./db
-RUN go build -o /out/panvex-control-plane ./cmd/control-plane
+# -ldflags="-s -w"  strip symbol + DWARF tables — saves ~25% binary size.
+# -trimpath          remove $GOPATH absolute paths from the binary so
+#                    panic stacks/build IDs stay reproducible across
+#                    builders and don't leak host filesystem layout.
+RUN go build -ldflags="-s -w" -trimpath -o /out/panvex-control-plane ./cmd/control-plane
 
 FROM alpine:3.22 AS control-plane
 WORKDIR /app
