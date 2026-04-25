@@ -30,7 +30,7 @@ func TestServerPendingJobsForAgentIncludesQueuedTarget(t *testing.T) {
 	queued := enqueueJobForAgent(t, server, "agent-1", "queued-target", currentTime)
 	enqueueJobForAgent(t, server, "agent-2", "queued-other-agent", currentTime.Add(time.Second))
 
-	pending := server.pendingJobsForAgent("agent-1")
+	pending := server.pendingJobsForAgent(context.Background(), "agent-1")
 	if len(pending) != 1 {
 		t.Fatalf("len(pendingJobsForAgent) = %d, want %d", len(pending), 1)
 	}
@@ -47,10 +47,10 @@ func TestServerPendingJobsForAgentSkipsRecentlySentTarget(t *testing.T) {
 
 	job := enqueueJobForAgent(t, server, "agent-1", "sent-recent", currentTime)
 	deliveredAt := currentTime.Add(2 * time.Second)
-	server.jobs.MarkDelivered("agent-1", job.ID, deliveredAt)
+	server.jobs.MarkDelivered(context.Background(), "agent-1", job.ID, deliveredAt)
 
 	currentTime = deliveredAt.Add(jobDispatchRetryAfter - time.Second)
-	pending := server.pendingJobsForAgent("agent-1")
+	pending := server.pendingJobsForAgent(context.Background(), "agent-1")
 	if len(pending) != 0 {
 		t.Fatalf("len(pendingJobsForAgent) = %d, want %d", len(pending), 0)
 	}
@@ -64,10 +64,10 @@ func TestServerPendingJobsForAgentRedeliversStaleSentTarget(t *testing.T) {
 
 	job := enqueueJobForAgent(t, server, "agent-1", "sent-stale", currentTime)
 	deliveredAt := currentTime.Add(2 * time.Second)
-	server.jobs.MarkDelivered("agent-1", job.ID, deliveredAt)
+	server.jobs.MarkDelivered(context.Background(), "agent-1", job.ID, deliveredAt)
 
 	currentTime = deliveredAt.Add(jobDispatchRetryAfter + time.Second)
-	pending := server.pendingJobsForAgent("agent-1")
+	pending := server.pendingJobsForAgent(context.Background(), "agent-1")
 	if len(pending) != 1 {
 		t.Fatalf("len(pendingJobsForAgent) = %d, want %d", len(pending), 1)
 	}
@@ -85,11 +85,11 @@ func TestServerPendingJobsForAgentSkipsAcknowledgedTarget(t *testing.T) {
 	job := enqueueJobForAgent(t, server, "agent-1", "acknowledged-target", currentTime)
 	deliveredAt := currentTime.Add(2 * time.Second)
 	acknowledgedAt := deliveredAt.Add(time.Second)
-	server.jobs.MarkDelivered("agent-1", job.ID, deliveredAt)
-	server.jobs.MarkAcknowledged("agent-1", job.ID, acknowledgedAt)
+	server.jobs.MarkDelivered(context.Background(), "agent-1", job.ID, deliveredAt)
+	server.jobs.MarkAcknowledged(context.Background(), "agent-1", job.ID, acknowledgedAt)
 
 	currentTime = acknowledgedAt.Add(jobDispatchRetryAfter + time.Second)
-	pending := server.pendingJobsForAgent("agent-1")
+	pending := server.pendingJobsForAgent(context.Background(), "agent-1")
 	if len(pending) != 0 {
 		t.Fatalf("len(pendingJobsForAgent) = %d, want %d", len(pending), 0)
 	}
@@ -210,7 +210,7 @@ func TestProcessRegularAgentMessageRoutesAckToPriorityHandler(t *testing.T) {
 		Now: func() time.Time { return currentTime },
 	})
 	job := enqueueJobForAgent(t, server, "agent-1", "regular-routes-ack", currentTime)
-	server.jobs.MarkDelivered("agent-1", job.ID, currentTime.Add(time.Second))
+	server.jobs.MarkDelivered(context.Background(), "agent-1", job.ID, currentTime.Add(time.Second))
 
 	regularSnapshots := make(chan agentSnapshot, 1)
 	message := &gatewayrpc.ConnectClientMessage{
@@ -244,7 +244,7 @@ func TestProcessPriorityAgentMessageRecordsAcknowledgement(t *testing.T) {
 	})
 
 	job := enqueueJobForAgent(t, server, "agent-1", "priority-ack", currentTime)
-	server.jobs.MarkDelivered("agent-1", job.ID, currentTime.Add(time.Second))
+	server.jobs.MarkDelivered(context.Background(), "agent-1", job.ID, currentTime.Add(time.Second))
 
 	message := &gatewayrpc.ConnectClientMessage{
 		Body: &gatewayrpc.ConnectClientMessage_JobAcknowledgement{
@@ -254,7 +254,7 @@ func TestProcessPriorityAgentMessageRecordsAcknowledgement(t *testing.T) {
 			},
 		},
 	}
-	if err := server.processPriorityAgentMessage("agent-1", message); err != nil {
+	if err := server.processPriorityAgentMessage(context.Background(), "agent-1", message); err != nil {
 		t.Fatalf("processPriorityAgentMessage() error = %v", err)
 	}
 
@@ -274,7 +274,7 @@ func TestProcessPriorityAgentMessageRecordsResult(t *testing.T) {
 	})
 
 	job := enqueueJobForAgent(t, server, "agent-1", "priority-result", currentTime)
-	server.jobs.MarkDelivered("agent-1", job.ID, currentTime.Add(time.Second))
+	server.jobs.MarkDelivered(context.Background(), "agent-1", job.ID, currentTime.Add(time.Second))
 
 	message := &gatewayrpc.ConnectClientMessage{
 		Body: &gatewayrpc.ConnectClientMessage_JobResult{
@@ -286,7 +286,7 @@ func TestProcessPriorityAgentMessageRecordsResult(t *testing.T) {
 			},
 		},
 	}
-	if err := server.processPriorityAgentMessage("agent-1", message); err != nil {
+	if err := server.processPriorityAgentMessage(context.Background(), "agent-1", message); err != nil {
 		t.Fatalf("processPriorityAgentMessage() error = %v", err)
 	}
 
@@ -309,7 +309,7 @@ func TestProcessPriorityAgentMessageAsyncQueuesClientResultEffect(t *testing.T) 
 	})
 
 	job := enqueueJobForAgent(t, server, "agent-1", "priority-result-async", currentTime)
-	server.jobs.MarkDelivered("agent-1", job.ID, currentTime.Add(time.Second))
+	server.jobs.MarkDelivered(context.Background(), "agent-1", job.ID, currentTime.Add(time.Second))
 
 	effects := make(chan jobResultEffect, 1)
 	message := &gatewayrpc.ConnectClientMessage{
@@ -503,7 +503,7 @@ func TestDispatchReconnectRedeliveryAvoidsDuplicateRuntimeMutation(t *testing.T)
 
 	job := enqueueJobForAgent(t, server, "agent-1", "dispatch-reconnect", currentTime)
 	firstStream := newFakeGatewayConnectStream(context.Background())
-	if err := server.dispatchPendingJobs(firstStream, "agent-1"); err != nil {
+	if err := server.dispatchPendingJobs(context.Background(), firstStream, "agent-1"); err != nil {
 		t.Fatalf("dispatchPendingJobs(first) error = %v", err)
 	}
 	if len(firstStream.sent) != 1 {
@@ -536,7 +536,7 @@ func TestDispatchReconnectRedeliveryAvoidsDuplicateRuntimeMutation(t *testing.T)
 	// Simulate stream disconnect before result delivery, then trigger redelivery after lease timeout.
 	currentTime = currentTime.Add(jobDispatchRetryAfter + time.Second)
 	secondStream := newFakeGatewayConnectStream(context.Background())
-	if err := server.dispatchPendingJobs(secondStream, "agent-1"); err != nil {
+	if err := server.dispatchPendingJobs(context.Background(), secondStream, "agent-1"); err != nil {
 		t.Fatalf("dispatchPendingJobs(second) error = %v", err)
 	}
 	if len(secondStream.sent) != 1 {
@@ -558,7 +558,7 @@ func TestDispatchReconnectRedeliveryAvoidsDuplicateRuntimeMutation(t *testing.T)
 		t.Fatalf("reload call count after redelivery = %d, want %d", telemtClient.reloadCalls, 1)
 	}
 
-	if err := server.processPriorityAgentMessage("agent-1", &gatewayrpc.ConnectClientMessage{
+	if err := server.processPriorityAgentMessage(context.Background(), "agent-1", &gatewayrpc.ConnectClientMessage{
 		Body: &gatewayrpc.ConnectClientMessage_JobResult{
 			JobResult: secondResult,
 		},
@@ -591,7 +591,7 @@ func TestDispatchPendingJobsSendsBoundedBatchAndLeavesRemainderQueued(t *testing
 	}
 
 	stream := newFakeGatewayConnectStream(context.Background())
-	if err := server.dispatchPendingJobs(stream, "agent-1"); err != nil {
+	if err := server.dispatchPendingJobs(context.Background(), stream, "agent-1"); err != nil {
 		t.Fatalf("dispatchPendingJobs() error = %v", err)
 	}
 
@@ -599,7 +599,7 @@ func TestDispatchPendingJobsSendsBoundedBatchAndLeavesRemainderQueued(t *testing
 		t.Fatalf("len(stream.sent) = %d, want %d", len(stream.sent), jobDispatchBatchSize)
 	}
 
-	pending := server.pendingJobsForAgent("agent-1")
+	pending := server.pendingJobsForAgent(context.Background(), "agent-1")
 	expectedPending := jobCount - jobDispatchBatchSize
 	if len(pending) != expectedPending {
 		t.Fatalf("len(pendingJobsForAgent) = %d, want %d", len(pending), expectedPending)
@@ -653,7 +653,7 @@ func jobAcknowledgementMessageForTest(jobID string) *gatewayrpc.ConnectClientMes
 func enqueueJobForAgent(t *testing.T, server *Server, agentID string, idempotencyKey string, now time.Time) jobs.Job {
 	t.Helper()
 
-	job, err := server.jobs.Enqueue(jobs.CreateJobInput{
+	job, err := server.jobs.Enqueue(context.Background(), jobs.CreateJobInput{
 		Action:         jobs.ActionRuntimeReload,
 		TargetAgentIDs: []string{agentID},
 		TTL:            time.Minute,
