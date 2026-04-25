@@ -58,7 +58,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 			return
 		}
 
-		if s.loginLockout.IsLocked(request.Username, s.now()) {
+		if s.loginLockout.IsLockedWithContext(r.Context(), request.Username, s.now()) {
 			s.logger.Info("login attempt on locked account", "username_hash", logUsername(request.Username))
 			writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
 			return
@@ -74,7 +74,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 			priorSessionID = existing.Value
 		}
 
-		session, err := s.auth.Authenticate(auth.LoginInput{
+		session, err := s.auth.AuthenticateWithContext(r.Context(), auth.LoginInput{
 			Username:       request.Username,
 			Password:       request.Password,
 			TotpCode:       request.TotpCode,
@@ -83,7 +83,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		if err != nil {
 			// Record lockout-eligible failures: wrong password or wrong TOTP code.
 			if errors.Is(err, auth.ErrInvalidCredentials) || errors.Is(err, auth.ErrInvalidTotpCode) {
-				if s.loginLockout.CheckAndRecordFailure(request.Username, s.now()) {
+				if s.loginLockout.CheckAndRecordFailureWithContext(r.Context(), request.Username, s.now()) {
 					s.logger.Info("account locked out", "username_hash", logUsername(request.Username))
 					writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
 					return
@@ -110,7 +110,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 			return
 		}
 
-		s.loginLockout.RecordSuccess(request.Username)
+		s.loginLockout.RecordSuccessWithContext(r.Context(), request.Username)
 		s.logger.Info("user logged in", "username_hash", logUsername(request.Username), "user_id", session.UserID, "session_id", session.ID)
 
 		// B1: persist the login audit event BEFORE issuing the session
@@ -125,7 +125,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		})
 		auditCancel()
 		if auditErr != nil {
-			if logoutErr := s.auth.Logout(session.ID); logoutErr != nil {
+			if logoutErr := s.auth.LogoutWithContext(r.Context(), session.ID); logoutErr != nil {
 				s.logger.Error("failed to revoke session after audit persist failure",
 					"session_id", session.ID, "error", logoutErr)
 			}
@@ -160,7 +160,7 @@ func (s *Server) handleLogout() http.HandlerFunc {
 			return
 		}
 
-		if err := s.auth.Logout(session.ID); err != nil {
+		if err := s.auth.LogoutWithContext(r.Context(), session.ID); err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -206,7 +206,7 @@ func (s *Server) handleTotpSetup() http.HandlerFunc {
 			return
 		}
 
-		secret, err := s.auth.StartTotpSetup(user.ID, s.now())
+		secret, err := s.auth.StartTotpSetupWithContext(r.Context(), user.ID, s.now())
 		if err != nil {
 			s.logger.Error("start totp setup failed", "user_id", user.ID, "error", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
@@ -235,7 +235,7 @@ func (s *Server) handleTotpEnable() http.HandlerFunc {
 			return
 		}
 
-		updatedUser, err := s.auth.EnableTotp(user.ID, request.Password, request.TotpCode, s.now())
+		updatedUser, err := s.auth.EnableTotpWithContext(r.Context(), user.ID, request.Password, request.TotpCode, s.now())
 		if err != nil {
 			switch {
 			case errors.Is(err, auth.ErrInvalidCredentials), errors.Is(err, auth.ErrTotpRequired), errors.Is(err, auth.ErrInvalidTotpCode):
@@ -270,7 +270,7 @@ func (s *Server) handleTotpDisable() http.HandlerFunc {
 			return
 		}
 
-		updatedUser, err := s.auth.DisableTotp(user.ID, request.Password, request.TotpCode, s.now())
+		updatedUser, err := s.auth.DisableTotpWithContext(r.Context(), user.ID, request.Password, request.TotpCode, s.now())
 		if err != nil {
 			switch {
 			case errors.Is(err, auth.ErrInvalidCredentials), errors.Is(err, auth.ErrTotpRequired), errors.Is(err, auth.ErrInvalidTotpCode):
@@ -304,7 +304,7 @@ func (s *Server) requireSession(r *http.Request) (auth.Session, auth.User, error
 		return auth.Session{}, auth.User{}, err
 	}
 
-	user, err := s.auth.GetUserByID(session.UserID)
+	user, err := s.auth.GetUserByIDWithContext(r.Context(), session.UserID)
 	if err != nil {
 		return auth.Session{}, auth.User{}, err
 	}

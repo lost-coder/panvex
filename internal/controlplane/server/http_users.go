@@ -102,7 +102,7 @@ func (s *Server) handleCreateUser() http.HandlerFunc {
 			return
 		}
 
-		createdUser, err := s.auth.CreateUser(auth.BootstrapInput{
+		createdUser, err := s.auth.CreateUserWithContext(r.Context(), auth.BootstrapInput{
 			Username: request.Username,
 			Password: request.Password,
 			Role:     auth.Role(request.Role),
@@ -163,7 +163,7 @@ func (s *Server) handleUpdateUser() http.HandlerFunc {
 			return
 		}
 
-		updatedUser, err := s.auth.UpdateUser(auth.UpdateUserInput{
+		updatedUser, err := s.auth.UpdateUserWithContext(r.Context(), auth.UpdateUserInput{
 			UserID:      targetUserID,
 			Username:    request.Username,
 			Role:        auth.Role(request.Role),
@@ -223,7 +223,7 @@ func (s *Server) handleDeleteUser() http.HandlerFunc {
 			return
 		}
 
-		if err := s.auth.DeleteUser(targetUserID); err != nil {
+		if err := s.auth.DeleteUserWithContext(r.Context(), targetUserID); err != nil {
 			switch {
 			case errors.Is(err, auth.ErrUserNotFound):
 				writeError(w, http.StatusNotFound, err.Error())
@@ -265,7 +265,7 @@ func (s *Server) handleResetUserTotp() http.HandlerFunc {
 			return
 		}
 
-		if _, err := s.auth.ResetTotp(targetUserID); err != nil {
+		if _, err := s.auth.ResetTotpWithContext(r.Context(), targetUserID); err != nil {
 			if errors.Is(err, auth.ErrInvalidCredentials) {
 				writeError(w, http.StatusNotFound, "user not found")
 				return

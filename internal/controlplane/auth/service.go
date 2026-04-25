@@ -275,7 +275,7 @@ type pendingTotpSetup struct {
 
 // BootstrapUser creates a local user with TOTP disabled by default.
 //
-// Deprecated: callers that have a request context should use
+// Note: callers that have a request context should use
 // BootstrapUserWithContext to propagate cancellation through the user store.
 // This wrapper stays for CLI bootstrap and tests where no request ctx exists.
 func (s *Service) BootstrapUser(input BootstrapInput, now time.Time) (User, string, error) {
@@ -369,7 +369,7 @@ var dummyPasswordHash = sync.OnceValue(func() string {
 
 // Authenticate validates credentials and enforces TOTP only for users who enabled it.
 //
-// Deprecated: prefer AuthenticateWithContext from request handlers so the
+// Note: preferAuthenticateWithContext from request handlers so the
 // underlying user-store and session-store calls inherit request cancellation.
 func (s *Service) Authenticate(input LoginInput, now time.Time) (Session, error) {
 	return s.AuthenticateWithContext(context.Background(), input, now)
@@ -480,7 +480,7 @@ func (s *Service) AuthenticateWithContext(ctx context.Context, input LoginInput,
 // whenever a user's privileges or credentials change in a way that ought to
 // force re-authentication (role change, forced password reset, etc.).
 //
-// Deprecated: prefer RevokeSessionsForUserWithContext to thread request ctx.
+// Note: preferRevokeSessionsForUserWithContext to thread request ctx.
 func (s *Service) RevokeSessionsForUser(userID string) int {
 	return s.RevokeSessionsForUserWithContext(context.Background(), userID)
 }
@@ -530,7 +530,7 @@ func (s *Service) RevokeSessionsForUserWithContext(ctx context.Context, userID s
 
 // StartTotpSetup creates a short-lived TOTP setup secret for the provided user.
 //
-// Deprecated: prefer StartTotpSetupWithContext from request handlers.
+// Note: preferStartTotpSetupWithContext from request handlers.
 func (s *Service) StartTotpSetup(userID string, now time.Time) (string, error) {
 	return s.StartTotpSetupWithContext(context.Background(), userID, now)
 }
@@ -560,7 +560,7 @@ func (s *Service) StartTotpSetupWithContext(ctx context.Context, userID string, 
 
 // EnableTotp validates a pending setup and persists it as the active user TOTP secret.
 //
-// Deprecated: prefer EnableTotpWithContext from request handlers.
+// Note: preferEnableTotpWithContext from request handlers.
 func (s *Service) EnableTotp(userID string, password string, totpCode string, now time.Time) (User, error) {
 	return s.EnableTotpWithContext(context.Background(), userID, password, totpCode, now)
 }
@@ -608,7 +608,7 @@ func (s *Service) EnableTotpWithContext(ctx context.Context, userID string, pass
 
 // DisableTotp disables TOTP after validating the current password and active TOTP code.
 //
-// Deprecated: prefer DisableTotpWithContext from request handlers.
+// Note: preferDisableTotpWithContext from request handlers.
 func (s *Service) DisableTotp(userID string, password string, totpCode string, now time.Time) (User, error) {
 	return s.DisableTotpWithContext(context.Background(), userID, password, totpCode, now)
 }
@@ -661,7 +661,7 @@ func (s *Service) DisableTotpWithContext(ctx context.Context, userID string, pas
 // ResetTotp clears the active TOTP configuration for the provided user.
 // Callers must verify that the authenticated principal is authorized to reset TOTP for the target user.
 //
-// Deprecated: prefer ResetTotpWithContext from request handlers.
+// Note: preferResetTotpWithContext from request handlers.
 func (s *Service) ResetTotp(userID string) (User, error) {
 	return s.ResetTotpWithContext(context.Background(), userID)
 }
@@ -798,7 +798,7 @@ func (s *Service) LoadUsers(users []User) {
 
 // GetUserByID returns the user record that owns the provided identifier.
 //
-// Deprecated: prefer GetUserByIDWithContext from request handlers.
+// Note: preferGetUserByIDWithContext from request handlers.
 func (s *Service) GetUserByID(userID string) (User, error) {
 	return s.GetUserByIDWithContext(context.Background(), userID)
 }
@@ -1039,7 +1039,7 @@ func (s *Service) TouchSession(sessionID string) {
 
 // Logout revokes a session so it can no longer authenticate requests.
 //
-// Deprecated: prefer LogoutWithContext from request handlers.
+// Note: preferLogoutWithContext from request handlers.
 func (s *Service) Logout(sessionID string) error {
 	return s.LogoutWithContext(context.Background(), sessionID)
 }

@@ -126,7 +126,7 @@ func (s *Server) checkForUpdates(ctx context.Context) {
 	if s.store != nil {
 		data, err := json.Marshal(state)
 		if err == nil {
-			if putErr := s.store.PutUpdateState(context.Background(), data); putErr != nil {
+			if putErr := s.store.PutUpdateState(ctx, data); putErr != nil {
 				s.logger.Error("persist update state failed", "error", putErr)
 			}
 		}
