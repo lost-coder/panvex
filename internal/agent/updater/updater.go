@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -30,9 +29,22 @@ type Payload struct {
 // Execute performs the self-update: download, verify signature (required),
 // verify checksum (defence-in-depth), extract, replace, restart.
 func Execute(ctx context.Context, payload Payload, logger *slog.Logger) error {
+	return executeWith(ctx, payload, logger, defaultConfig())
+}
+
+// executeWith is the testable form: same logic but the download policy
+// (HTTP client, host allowlist, archive cap) comes from cfg instead of
+// hard-coded production defaults.
+func executeWith(ctx context.Context, payload Payload, logger *slog.Logger, cfg Config) error {
 	url := payload.DownloadURL
+	dlCfg := cfg
+	// Panel-proxy mode: the URL came from the panel this agent is enrolled
+	// with (mTLS-authenticated). Skip the public allowlist — the operator
+	// may legitimately host releases on the panel itself — but still
+	// require the same scheme/timeout/size policy.
 	if payload.DownloadViaPanel && payload.PanelProxyURL != "" {
 		url = payload.PanelProxyURL
+		dlCfg.AllowedHosts = nil
 	}
 	if url == "" {
 		return fmt.Errorf("no download URL provided")
@@ -43,12 +55,12 @@ func Execute(ctx context.Context, payload Payload, logger *slog.Logger) error {
 
 	logger.Info("agent self-update: downloading", "version", payload.Version, "url", url)
 
-	archivePath, err := downloadToTemp(ctx, url)
+	archivePath, err := downloadToTemp(ctx, url, dlCfg)
 	if err != nil {
 		return fmt.Errorf("download: %w", err)
 	}
 
-	sigBytes, err := downloadBytes(ctx, payload.SignatureURL, 4096)
+	sigBytes, err := downloadBytes(ctx, payload.SignatureURL, defaultMaxSignature, dlCfg)
 	if err != nil {
 		_ = os.Remove(archivePath)
 		return fmt.Errorf("download signature: %w", err)
@@ -97,66 +109,6 @@ func Execute(ctx context.Context, payload Payload, logger *slog.Logger) error {
 	return nil // unreachable
 }
 
-// downloadBytes fetches url and returns its body, bounded to maxBytes. Used
-// for small companion files (signature, checksum) where streaming to disk is
-// unnecessary.
-func downloadBytes(ctx context.Context, url string, maxBytes int64) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/octet-stream")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes))
-	if err != nil {
-		return nil, err
-	}
-	if len(body) == 0 {
-		return nil, fmt.Errorf("empty response body")
-	}
-	return body, nil
-}
-
-func downloadToTemp(ctx context.Context, url string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Accept", "application/octet-stream")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-
-	tmp, err := os.CreateTemp("", "panvex-agent-update-*")
-	if err != nil {
-		return "", err
-	}
-	defer tmp.Close()
-	if _, err := io.Copy(tmp, resp.Body); err != nil {
-		_ = os.Remove(tmp.Name())
-		return "", err
-	}
-	if err := os.Chmod(tmp.Name(), 0755); err != nil { //nolint:gosec // executable binary requires 0755
-		_ = os.Remove(tmp.Name())
-		return "", err
-	}
-	return tmp.Name(), nil
-}
-
 func verifyChecksum(path, expected string) error {
 	f, err := os.Open(path)
 	if err != nil {
@@ -203,7 +155,7 @@ func extractBinaryFromArchive(archivePath string) (string, error) {
 		_ = os.Remove(tmp.Name())
 		return "", fmt.Errorf("extract binary: %w", err)
 	}
-	if err := os.Chmod(tmp.Name(), 0755); err != nil { //nolint:gosec // executable binary requires 0755
+	if err := os.Chmod(tmp.Name(), 0o755); err != nil { //nolint:gosec // executable binary requires 0755
 		tmp.Close()
 		_ = os.Remove(tmp.Name())
 		return "", fmt.Errorf("chmod binary: %w", err)
