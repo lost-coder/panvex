@@ -5,6 +5,7 @@ run:
 
 linters:
   enable:
+    - contextcheck  # context.Background() in code that received a ctx
     - errcheck
     - errorlint     # %v→%w on errors, missing errors.Is/As, type-assert on err
     - govet
