@@ -12,7 +12,23 @@ import { router } from "./router";
 import "../styles.css";
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+      // staleTime: while a query is "fresh", a re-mount (route change,
+      // suspense rehydration, dialog reopen) reuses the cached value
+      // instead of refiring the request. WS invalidations bypass this
+      // by calling invalidateQueries directly, so live updates are
+      // unaffected; the win is fewer redundant fetches during normal
+      // navigation.
+      staleTime: 10_000,
+      // gcTime: drop unsubscribed queries from cache after 5 min so a
+      // long-running session does not balloon. Matches React Query's
+      // historical default but pinning it makes the lifetime explicit.
+      gcTime: 300_000,
+    },
+  },
 });
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
