@@ -187,7 +187,10 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 		for {
 			select {
 			case <-connectionCtx.Done():
-				drainPriorityAuditEffects(priorityAuditEffects, func(actorID string, action string, targetID string, details map[string]any) {
+				// Drain runs after connectionCtx is cancelled, so reusing it
+				// here would immediately abort the audit flush. Background()
+				// is the intentional detachment for the shutdown path.
+				drainPriorityAuditEffects(priorityAuditEffects, func(actorID string, action string, targetID string, details map[string]any) { //nolint:contextcheck
 					s.appendAuditWithContext(context.Background(), actorID, action, targetID, details)
 				})
 				return
@@ -205,7 +208,9 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 		for {
 			select {
 			case <-connectionCtx.Done():
-				drainPriorityResultEffects(priorityResultEffects, func(agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) {
+				// Same shutdown drain pattern as the audit-effects loop:
+				// connectionCtx is already done, so persist with Background.
+				drainPriorityResultEffects(priorityResultEffects, func(agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) { //nolint:contextcheck
 					s.recordClientJobResultWithContext(context.Background(), agentID, jobID, success, message, resultJSON, observedAt)
 				})
 				return
@@ -231,7 +236,9 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 		for {
 			select {
 			case <-connectionCtx.Done():
-				drainRegularSnapshots(regularSnapshots, func(snapshot agentSnapshot) error {
+				// Shutdown drain: connectionCtx is done by definition here.
+				// See the audit-effects loop above for the rationale.
+				drainRegularSnapshots(regularSnapshots, func(snapshot agentSnapshot) error { //nolint:contextcheck
 					return s.applyAgentSnapshotWithContext(context.Background(), snapshot)
 				})
 				return
@@ -270,7 +277,7 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 		retryTicker := time.NewTicker(jobDispatchRetryInterval)
 		defer retryTicker.Stop()
 
-		if err := s.dispatchPendingJobs(stream, agentID); err != nil {
+		if err := s.dispatchPendingJobs(connectionCtx, stream, agentID); err != nil {
 			select {
 			case dispatchErrors <- err:
 			default:
@@ -293,7 +300,7 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 			case <-retryTicker.C:
 			}
 
-			if err := s.dispatchPendingJobs(stream, agentID); err != nil {
+			if err := s.dispatchPendingJobs(connectionCtx, stream, agentID); err != nil {
 				select {
 				case dispatchErrors <- err:
 				default:
@@ -368,8 +375,8 @@ func enqueueInboundAgentMessage(
 	return true
 }
 
-func (s *Server) dispatchPendingJobs(stream gatewayrpc.AgentGateway_ConnectServer, agentID string) error {
-	pendingJobs := s.pendingJobsForAgent(agentID)
+func (s *Server) dispatchPendingJobs(ctx context.Context, stream gatewayrpc.AgentGateway_ConnectServer, agentID string) error {
+	pendingJobs := s.pendingJobsForAgent(ctx, agentID)
 	if len(pendingJobs) == 0 {
 		return nil
 	}
@@ -394,7 +401,7 @@ func (s *Server) dispatchPendingJobs(stream gatewayrpc.AgentGateway_ConnectServe
 		}); err != nil {
 			return err
 		}
-		s.markJobDelivered(agentID, job.ID)
+		s.markJobDelivered(ctx, agentID, job.ID)
 	}
 
 	if hasMore {
@@ -516,11 +523,11 @@ func (s *Server) processRegularAgentMessage(
 		return nil
 	}
 
-	return s.processPriorityAgentMessage(agentID, message)
+	return s.processPriorityAgentMessage(connectionCtx, agentID, message)
 }
 
-func (s *Server) processPriorityAgentMessage(agentID string, message *gatewayrpc.ConnectClientMessage) error {
-	return s.processPriorityAgentMessageAsync(context.Background(), nil, nil, agentID, message)
+func (s *Server) processPriorityAgentMessage(ctx context.Context, agentID string, message *gatewayrpc.ConnectClientMessage) error {
+	return s.processPriorityAgentMessageAsync(ctx, nil, nil, agentID, message)
 }
 
 func (s *Server) processPriorityAgentMessageAsync(
@@ -538,6 +545,7 @@ func (s *Server) processPriorityAgentMessageAsync(
 		s.logger.Debug("message received", "agent_id", agentID, "type", "job_result", "job_id", jr.JobId, "success", jr.Success)
 		observedAt := time.Unix(jr.ObservedAtUnix, 0).UTC()
 		s.recordJobResultState(
+			connectionCtx,
 			agentID,
 			jr.JobId,
 			jr.Success,
@@ -571,6 +579,7 @@ func (s *Server) processPriorityAgentMessageAsync(
 	if ack := message.GetJobAcknowledgement(); ack != nil {
 		observedAt := time.Unix(ack.ObservedAtUnix, 0).UTC()
 		s.recordJobAcknowledgedState(
+			connectionCtx,
 			agentID,
 			ack.JobId,
 			observedAt,
@@ -740,30 +749,37 @@ func authenticatedAgentID(ctx context.Context) (string, error) {
 	return tlsInfo.State.PeerCertificates[0].Subject.CommonName, nil
 }
 
-func (s *Server) pendingJobsForAgent(agentID string) []jobs.Job {
-	return s.jobs.PendingForAgent(agentID, jobDispatchRetryAfter)
+func (s *Server) pendingJobsForAgent(ctx context.Context, agentID string) []jobs.Job {
+	return s.jobs.PendingForAgent(ctx, agentID, jobDispatchRetryAfter)
 }
 
-func (s *Server) markJobDelivered(agentID string, jobID string) {
-	s.jobs.MarkDelivered(agentID, jobID, s.now())
+func (s *Server) markJobDelivered(ctx context.Context, agentID string, jobID string) {
+	s.jobs.MarkDelivered(ctx, agentID, jobID, s.now())
 }
 
-func (s *Server) recordJobAcknowledged(agentID string, jobID string, observedAt time.Time) {
-	s.recordJobAcknowledgedState(agentID, jobID, observedAt)
-	s.appendAudit(agentID, "jobs.acknowledged", jobID, map[string]any{})
+// Test-only convenience wrappers. Production code drives these flows
+// through processPriorityAgentMessageAsync which calls the
+// recordJobResultState / recordJobAcknowledgedState halves directly with
+// the connection ctx, plus the WithContext audit/result effects helpers.
+// The appendAudit / recordClientJobResult helpers used here are part of
+// the auth-adjacent legacy cluster that still uses context.Background()
+// internally; they will gain ctx in a later remediation pass.
+func (s *Server) recordJobAcknowledged(ctx context.Context, agentID string, jobID string, observedAt time.Time) {
+	s.recordJobAcknowledgedState(ctx, agentID, jobID, observedAt)
+	s.appendAudit(agentID, "jobs.acknowledged", jobID, map[string]any{}) //nolint:contextcheck
 }
 
-func (s *Server) recordJobResult(agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) {
-	s.recordJobResultState(agentID, jobID, success, message, resultJSON, observedAt)
-	s.recordClientJobResult(agentID, jobID, success, message, resultJSON, observedAt)
-	s.appendAudit(agentID, "jobs.result", jobID, map[string]any{
+func (s *Server) recordJobResult(ctx context.Context, agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) {
+	s.recordJobResultState(ctx, agentID, jobID, success, message, resultJSON, observedAt)
+	s.recordClientJobResult(agentID, jobID, success, message, resultJSON, observedAt) //nolint:contextcheck
+	s.appendAudit(agentID, "jobs.result", jobID, map[string]any{                      //nolint:contextcheck
 		"success": success,
 		"message": message,
 	})
 }
 
-func (s *Server) recordJobResultState(agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) {
-	if !s.jobs.RecordResult(agentID, jobID, success, message, resultJSON, observedAt) {
+func (s *Server) recordJobResultState(ctx context.Context, agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) {
+	if !s.jobs.RecordResult(ctx, agentID, jobID, success, message, resultJSON, observedAt) {
 		// P2-LOG-05: the job was evicted (terminal-key TTL, acknowledged
 		// expiry worker, or a late result arriving long after the agent's
 		// idempotency window) before this result reached the CP. Warn and
@@ -777,6 +793,6 @@ func (s *Server) recordJobResultState(agentID string, jobID string, success bool
 	}
 }
 
-func (s *Server) recordJobAcknowledgedState(agentID string, jobID string, observedAt time.Time) {
-	s.jobs.MarkAcknowledged(agentID, jobID, observedAt)
+func (s *Server) recordJobAcknowledgedState(ctx context.Context, agentID string, jobID string, observedAt time.Time) {
+	s.jobs.MarkAcknowledged(ctx, agentID, jobID, observedAt)
 }

@@ -282,7 +282,7 @@ func TestChaosAgentReconnectSeqReset(t *testing.T) {
 
 	server.mu.Lock()
 	for _, snapshot := range preBurst {
-		server.applyClientUsageSnapshot(agentID, snapshot)
+		server.applyClientUsageSnapshot(context.Background(), agentID, snapshot)
 	}
 	preRestartTotal := server.clientUsage[clientID][agentID].TrafficUsedBytes
 	preRestartSeq := server.lastUsageSeq[agentID]
@@ -308,10 +308,10 @@ func TestChaosAgentReconnectSeqReset(t *testing.T) {
 	}
 
 	server.mu.Lock()
-	server.applyClientUsageSnapshot(agentID, restartBaseline)
+	server.applyClientUsageSnapshot(context.Background(), agentID, restartBaseline)
 	afterBaseline := server.clientUsage[clientID][agentID].TrafficUsedBytes
 	afterBaselineSeq := server.lastUsageSeq[agentID]
-	server.applyClientUsageSnapshot(agentID, postRestartDelta)
+	server.applyClientUsageSnapshot(context.Background(), agentID, postRestartDelta)
 	final := server.clientUsage[clientID][agentID].TrafficUsedBytes
 	finalSeq := server.lastUsageSeq[agentID]
 	server.mu.Unlock()
@@ -351,7 +351,7 @@ func TestChaosJobDispatchInterrupted(t *testing.T) {
 
 	const agentID = "chaos-target-agent"
 
-	job, err := svc.Enqueue(jobs.CreateJobInput{
+	job, err := svc.Enqueue(context.Background(), jobs.CreateJobInput{
 		Action:         jobs.ActionRuntimeReload,
 		TargetAgentIDs: []string{agentID},
 		TTL:            time.Hour,
@@ -363,14 +363,14 @@ func TestChaosJobDispatchInterrupted(t *testing.T) {
 	}
 
 	// First dispatch: agent is live, CP flips the target to Sent.
-	svc.MarkDelivered(agentID, job.ID, now)
+	svc.MarkDelivered(context.Background(), agentID, job.ID, now)
 
 	// Simulate network partition: the agent drops off the stream AFTER the
 	// delivery ack reaches the CP but BEFORE any result comes back. Target
 	// remains in Sent state. Within the retry window, PendingForAgent must
 	// NOT re-dispatch (the command is still considered in-flight).
 	retryAfter := 30 * time.Second
-	stillInFlight := svc.PendingForAgent(agentID, retryAfter)
+	stillInFlight := svc.PendingForAgent(context.Background(), agentID, retryAfter)
 	if len(stillInFlight) != 0 {
 		t.Fatalf("PendingForAgent within retry window = %d, want 0 (no premature redispatch)", len(stillInFlight))
 	}
@@ -380,7 +380,7 @@ func TestChaosJobDispatchInterrupted(t *testing.T) {
 	// can re-dispatch and let the agent's idempotency cache dedupe if the
 	// original run actually completed.
 	svc.SetNow(func() time.Time { return now.Add(retryAfter + time.Second) })
-	redispatch := svc.PendingForAgent(agentID, retryAfter)
+	redispatch := svc.PendingForAgent(context.Background(), agentID, retryAfter)
 	if len(redispatch) != 1 {
 		t.Fatalf("PendingForAgent after retry window = %d, want 1 (redispatch path broken)", len(redispatch))
 	}
@@ -393,7 +393,7 @@ func TestChaosJobDispatchInterrupted(t *testing.T) {
 	// spinning on a permanently-dead agent. Advance the clock well past
 	// TTL; the next PendingForAgent call triggers expireJobsLocked.
 	svc.SetNow(func() time.Time { return now.Add(2 * time.Hour) })
-	afterExpiry := svc.PendingForAgent(agentID, retryAfter)
+	afterExpiry := svc.PendingForAgent(context.Background(), agentID, retryAfter)
 	// TTL expired during the call — target is now Expired and should NOT
 	// be re-dispatched.
 	for _, candidate := range afterExpiry {
