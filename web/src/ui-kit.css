@@ -1,4 +1,15 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+/* Self-hosted via @fontsource so the dashboard does not depend on
+   fonts.googleapis.com (CSP tightening + offline-/airgap-friendly).
+   One @import per weight keeps the bundle to exactly the weights the
+   design system uses. CSS spec requires all @imports before other
+   rules, hence these come before tailwindcss below. */
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/inter/700.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/600.css";
 
 @import "tailwindcss";
 
