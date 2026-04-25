@@ -9,51 +9,8 @@ import { useToast } from "@/app/providers/ToastProvider";
 import { useNavigate } from "@tanstack/react-router";
 import { apiClient } from "@/shared/api/api";
 import type { EnrollmentTokenResponse, Agent } from "@/shared/api/api";
-
-const GITHUB_REPO = "lost-coder/panvex";
-
-function buildInstallCommand(
-  panelUrl: string,
-  tokenValue: string,
-  nodeName: string,
-  advancedOptions?: {
-    telemtUrl: string;
-    telemtMetricsUrl: string;
-    telemtAuth: string;
-    insecureTransport: boolean;
-  },
-) {
-  let cmd =
-    `curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/deploy/install-agent.sh | \\\n` +
-    `  sudo bash -s -- \\\n` +
-    `    --panel-url ${panelUrl} \\\n` +
-    `    --token ${tokenValue} \\\n` +
-    `    --node-name ${nodeName}`;
-
-  if (advancedOptions?.telemtUrl && advancedOptions.telemtUrl !== "http://127.0.0.1:9091") {
-    cmd += ` \\\n    --telemt-url ${advancedOptions.telemtUrl}`;
-  }
-  // Metrics URL is a first-class knob in the wizard because Telemt
-  // ships with metrics off. Only append the flag when the operator
-  // changed it from the agent's built-in default.
-  if (
-    advancedOptions?.telemtMetricsUrl &&
-    advancedOptions.telemtMetricsUrl !== "http://127.0.0.1:8081"
-  ) {
-    cmd += ` \\\n    --telemt-metrics-url ${advancedOptions.telemtMetricsUrl}`;
-  }
-  if (advancedOptions?.telemtAuth) {
-    cmd += ` \\\n    --telemt-auth ${advancedOptions.telemtAuth}`;
-  }
-  // Explicit opt-in: the agent otherwise rejects plain-HTTP panel URLs
-  // outside loopback. For VPN-only / private-network panels this flag
-  // relaxes the guard — the operator acknowledges the bootstrap private
-  // key transits in cleartext.
-  if (advancedOptions?.insecureTransport) {
-    cmd += ` \\\n    --insecure-transport`;
-  }
-  return cmd;
-}
+import { isValidNodeName } from "@/shared/lib/shell-quote";
+import { buildInstallCommand } from "./install-command";
 
 export function AddServerContainer() {
   const navigate = useNavigate();
@@ -106,6 +63,15 @@ export function AddServerContainer() {
     : "";
 
   const handleGenerateToken = useCallback(async () => {
+    // Validate before the network round-trip so the operator gets an
+    // immediate, scoped error. The same predicate also keeps anything
+    // shell-unsafe out of the rendered install command.
+    if (!isValidNodeName(nodeName)) {
+      setError(
+        "Node name must be 1-64 chars: letters, digits, dot, dash, underscore.",
+      );
+      return;
+    }
     setLoading(true);
     setError(undefined);
     try {
@@ -123,7 +89,7 @@ export function AddServerContainer() {
     } finally {
       setLoading(false);
     }
-  }, [selectedFleetGroup, tokenTtl]);
+  }, [selectedFleetGroup, tokenTtl, nodeName]);
 
   const handleInstallConfirm = useCallback(() => {
     // Bootstrap is the FIRST thing we wait on — the agent must
