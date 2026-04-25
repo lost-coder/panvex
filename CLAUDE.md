@@ -83,7 +83,9 @@ sqlc generate
 
 # Docker
 docker compose -f deploy/docker-compose.sqlite.yml up --build -d
-docker compose -f deploy/docker-compose.postgres.yml up --build -d
+docker compose -f deploy/docker-compose.postgres.yml up --build -d  # dev — default creds
+POSTGRES_PASSWORD=... PANVEX_ENCRYPTION_KEY=... \
+  docker compose -f deploy/docker-compose.prod.yml up --build -d  # prod — TLS, no defaults
 
 # Bootstrap first admin (SQLite default)
 go run ./cmd/control-plane bootstrap-admin -username admin -password '<pw>'

@@ -1,3 +1,11 @@
+# DEV-ONLY compose profile.
+#
+# Default `panvex` password and `sslmode=disable` are convenient on a
+# laptop and FATAL in production. For real deployments use
+# docker-compose.prod.yml — that file fails to start without an
+# explicit POSTGRES_PASSWORD and PANVEX_ENCRYPTION_KEY, sets
+# sslmode=require, and binds publishers to loopback.
+
 services:
   postgres:
     image: postgres:16-alpine
