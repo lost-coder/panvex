@@ -97,6 +97,30 @@ type serveConfig struct {
 
 const restartExitCode = 78
 
+const (
+	// httpShutdownBudget bounds how long httpServer.Shutdown waits for
+	// in-flight requests to finish. The previous 5s value was tight
+	// enough that long-poll handlers (telemetry stream, agent presence
+	// SSE) could be killed mid-write — losing the audit row that the
+	// handler hadn't flushed yet. 20s comfortably covers our slowest
+	// handler while still leaving room in the K8s grace window for the
+	// gRPC drain and the batch_writer flush that follow.
+	httpShutdownBudget = 20 * time.Second
+
+	// grpcShutdownBudget caps how long we let GracefulStop drain agent
+	// streams. After the budget we call Stop() to force-close any
+	// strangler stream so the pod can exit before SIGKILL fires.
+	grpcShutdownBudget = 10 * time.Second
+
+	// controlPlaneShutdownGraceMin is the minimum
+	// `terminationGracePeriodSeconds` the deployment manifest must set:
+	// httpShutdownBudget + grpcShutdownBudget + 10s batch_writer drain
+	// + 5s slack for OS-level cleanup. Lower values risk SIGKILL during
+	// the audit-event flush, dropping events that already returned 2xx
+	// to the client.
+	controlPlaneShutdownGraceMin = 45 * time.Second
+)
+
 var errPanelRestartRequested = errors.New("panel restart requested")
 
 func main() {
@@ -239,11 +263,45 @@ func runServe(args []string) error {
 	// shutdownServers enforces the documented ordering: HTTP first (stop
 	// accepting requests), then gRPC (drain streams). api.Close and
 	// store.Close run after this via the defer stack in this function.
+	//
+	// Per-step budgets (must sum to less than the deployment's K8s
+	// terminationGracePeriodSeconds — see controlPlaneShutdownGraceMin):
+	//   HTTP Shutdown            httpShutdownBudget
+	//   gRPC GracefulStop        grpcShutdownBudget (force-stopped after)
+	//   batchWriter drain        10s in api.Close, see Server.Close
+	//
+	// Each step records its latency so a wedged dependency is visible in
+	// logs even when the bounded budget hides it from end users.
 	shutdownServers := func() {
-		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		httpStart := time.Now()
+		httpCtx, cancel := context.WithTimeout(context.Background(), httpShutdownBudget)
 		defer cancel()
-		_ = httpServer.Shutdown(shutdownContext)
-		grpcServer.GracefulStop()
+		if err := httpServer.Shutdown(httpCtx); err != nil {
+			slog.Warn("http shutdown error",
+				"error", err,
+				"latency", time.Since(httpStart),
+				"budget", httpShutdownBudget,
+			)
+		} else {
+			slog.Info("http shutdown complete", "latency", time.Since(httpStart))
+		}
+
+		grpcStart := time.Now()
+		grpcDone := make(chan struct{})
+		go func() {
+			grpcServer.GracefulStop()
+			close(grpcDone)
+		}()
+		select {
+		case <-grpcDone:
+			slog.Info("grpc shutdown complete", "latency", time.Since(grpcStart))
+		case <-time.After(grpcShutdownBudget):
+			grpcServer.Stop()
+			slog.Warn("grpc shutdown forced after budget",
+				"budget", grpcShutdownBudget,
+				"latency", time.Since(grpcStart),
+			)
+		}
 		_ = grpcListener.Close()
 	}
 
