@@ -74,7 +74,17 @@ type Store struct {
 // journal_mode to "memory" for in-memory databases, which defeats the
 // concurrency guarantees the rest of the control-plane relies on. Tests that
 // need a transient database should use `t.TempDir()` + a filename instead.
+//
+// Open uses context.Background() for migrations and the initial Ping; callers
+// that need cancellation during startup should use OpenContext instead.
 func Open(dsn string) (*Store, error) {
+	return OpenContext(context.Background(), dsn)
+}
+
+// OpenContext is the context-aware variant of Open. It threads ctx through
+// schema migration and the initial connectivity check so startup work can be
+// cancelled by the caller.
+func OpenContext(ctx context.Context, dsn string) (*Store, error) {
 	if strings.TrimSpace(dsn) == ":memory:" {
 		return nil, fmt.Errorf("sqlite: in-memory DSN not supported; WAL requires an on-disk file")
 	}
@@ -105,12 +115,12 @@ func Open(dsn string) (*Store, error) {
 	db.SetMaxOpenConns(4)
 	db.SetMaxIdleConns(4)
 
-	if err := Migrate(db); err != nil {
+	if err := MigrateContext(ctx, db); err != nil {
 		db.Close()
 		return nil, err
 	}
 
-	if err := db.Ping(); err != nil {
+	if err := db.PingContext(ctx); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -147,7 +157,10 @@ func (s *Store) Transact(ctx context.Context, fn storage.TxFn) (retErr error) {
 	}
 
 	committed := false
-	defer func() {
+	// ROLLBACK runs in defer and must complete even when the caller's ctx
+	// has already been canceled — otherwise we'd leave the writer lock
+	// held. context.Background() is intentional here.
+	defer func() { //nolint:contextcheck // deferred cleanup must outlive caller ctx
 		if p := recover(); p != nil {
 			_, _ = conn.ExecContext(context.Background(), "ROLLBACK")
 			panic(p)
