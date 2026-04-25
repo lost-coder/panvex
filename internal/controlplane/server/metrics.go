@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/subtle"
+	"database/sql"
 	"errors"
 	"net"
 	"net/http"
@@ -68,7 +69,30 @@ type metricsCollectors struct {
 	// worker. Labels are a bounded enum (see retentionPruneTables below) so
 	// cardinality stays safe.
 	retentionPrunedRowsTotal *prometheus.CounterVec
+
+	// Phase-2 §2.1: connection pool visibility. Driven by a periodic
+	// publisher goroutine that snapshots store.PoolStats() onto these
+	// gauges every 15s. PromQL alert thresholds live in
+	// deploy/prometheus/alerts.yaml.
+	dbPoolOpen          prometheus.Gauge // currently open connections (in_use + idle)
+	dbPoolInUse         prometheus.Gauge // connections actively serving a query
+	dbPoolIdle          prometheus.Gauge // idle connections retained in the pool
+	dbPoolMaxOpen       prometheus.Gauge // configured upper limit (snapshot)
+	dbPoolWaitTotal     prometheus.Counter
+	dbPoolWaitSeconds   prometheus.Counter
+	dbPoolMaxIdleClosed prometheus.Counter
+	dbPoolLifetimeClose prometheus.Counter
+
+	// Phase-2 §2.1: rate-limit rejections by scope. Lets oncall see at
+	// a glance whether a flood is hitting login, the agent bootstrap,
+	// or the per-user sensitive bucket.
+	rateLimitRejectedTotal *prometheus.CounterVec
 }
+
+// rateLimitScopes enumerates every scope label that can appear on
+// panvex_ratelimit_rejected_total. Pre-initialised to zero at startup
+// (keeps PromQL alerts deterministic).
+var rateLimitScopes = []string{"login", "agent_bootstrap", "sensitive", "grpc_connect"}
 
 // retentionPruneTables enumerates every table whose retention worker feeds
 // panvex_retention_pruned_rows_total. Adding a new retention worker requires
@@ -166,6 +190,42 @@ func newMetricsCollectors() *metricsCollectors {
 			Name: "panvex_retention_pruned_rows_total",
 			Help: "Total rows deleted by the retention worker, labelled by table. Bounded enum: audit_events, metric_snapshots.",
 		}, []string{"table"}),
+		dbPoolOpen: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "panvex_db_pool_open_connections",
+			Help: "Current number of open database connections (in_use + idle). Sample period: 15s.",
+		}),
+		dbPoolInUse: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "panvex_db_pool_in_use_connections",
+			Help: "Number of database connections currently serving a query.",
+		}),
+		dbPoolIdle: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "panvex_db_pool_idle_connections",
+			Help: "Number of idle database connections retained in the pool.",
+		}),
+		dbPoolMaxOpen: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "panvex_db_pool_max_open_connections",
+			Help: "Configured upper limit on simultaneous open connections (PANVEX_DB_MAX_OPEN_CONNS).",
+		}),
+		dbPoolWaitTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "panvex_db_pool_wait_total",
+			Help: "Total number of times a goroutine had to wait for an available connection.",
+		}),
+		dbPoolWaitSeconds: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "panvex_db_pool_wait_seconds_total",
+			Help: "Cumulative time goroutines spent waiting for a free connection, in seconds.",
+		}),
+		dbPoolMaxIdleClosed: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "panvex_db_pool_max_idle_closed_total",
+			Help: "Total connections closed because MaxIdleConns was exceeded.",
+		}),
+		dbPoolLifetimeClose: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "panvex_db_pool_lifetime_closed_total",
+			Help: "Total connections closed because ConnMaxLifetime was exceeded.",
+		}),
+		rateLimitRejectedTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "panvex_ratelimit_rejected_total",
+			Help: "Total rate-limit rejections, labelled by scope. Bounded enum.",
+		}, []string{"scope"}),
 	}
 
 	reg.MustRegister(
@@ -184,6 +244,15 @@ func newMetricsCollectors() *metricsCollectors {
 		mc.auditBufferDepth,
 		mc.unsignedUpdateFallbackTotal,
 		mc.retentionPrunedRowsTotal,
+		mc.dbPoolOpen,
+		mc.dbPoolInUse,
+		mc.dbPoolIdle,
+		mc.dbPoolMaxOpen,
+		mc.dbPoolWaitTotal,
+		mc.dbPoolWaitSeconds,
+		mc.dbPoolMaxIdleClosed,
+		mc.dbPoolLifetimeClose,
+		mc.rateLimitRejectedTotal,
 	)
 
 	// Pre-initialise the per-buffer series to zero so Prometheus rules that
@@ -206,7 +275,59 @@ func newMetricsCollectors() *metricsCollectors {
 		mc.retentionPrunedRowsTotal.WithLabelValues(table).Add(0)
 	}
 
+	// Pre-initialise rate-limit scopes so PromQL alerts on
+	// `rate(panvex_ratelimit_rejected_total[1m])` never see an absent
+	// series before the first rejection ever happens.
+	for _, scope := range rateLimitScopes {
+		mc.rateLimitRejectedTotal.WithLabelValues(scope).Add(0)
+	}
+
 	return mc
+}
+
+// ObserveRateLimitReject increments the per-scope rejection counter.
+// Called from withRateLimit when a request is denied.
+func (mc *metricsCollectors) ObserveRateLimitReject(scope string) {
+	if mc == nil {
+		return
+	}
+	mc.rateLimitRejectedTotal.WithLabelValues(scope).Inc()
+}
+
+// observePoolGauges snapshots the instantaneous pool counters onto
+// the dbPool* gauges. Cumulative counters (WaitCount, MaxIdleClosed,
+// ConnMaxLifetimeClosed) are handled separately by addPoolCounterDeltas
+// because the publisher is the only thing that knows the previous
+// snapshot needed to compute the delta.
+func (mc *metricsCollectors) observePoolGauges(stats sql.DBStats) {
+	if mc == nil {
+		return
+	}
+	mc.dbPoolOpen.Set(float64(stats.OpenConnections))
+	mc.dbPoolInUse.Set(float64(stats.InUse))
+	mc.dbPoolIdle.Set(float64(stats.Idle))
+	mc.dbPoolMaxOpen.Set(float64(stats.MaxOpenConnections))
+}
+
+// addPoolCounterDeltas turns absolute monotonic counters from sql.DBStats
+// into Prometheus Counter increments. Negative deltas (which shouldn't
+// happen unless a pool was rebuilt under us) are clamped to zero.
+func (mc *metricsCollectors) addPoolCounterDeltas(prev, curr sql.DBStats) {
+	if mc == nil {
+		return
+	}
+	if d := curr.WaitCount - prev.WaitCount; d > 0 {
+		mc.dbPoolWaitTotal.Add(float64(d))
+	}
+	if d := curr.WaitDuration - prev.WaitDuration; d > 0 {
+		mc.dbPoolWaitSeconds.Add(d.Seconds())
+	}
+	if d := curr.MaxIdleClosed - prev.MaxIdleClosed; d > 0 {
+		mc.dbPoolMaxIdleClosed.Add(float64(d))
+	}
+	if d := curr.MaxLifetimeClosed - prev.MaxLifetimeClosed; d > 0 {
+		mc.dbPoolLifetimeClose.Add(float64(d))
+	}
 }
 
 // ObserveFlushError satisfies batchMetricsSink. It increments both the legacy
@@ -443,6 +564,13 @@ func (s *Server) startMetricsPoller(ctx context.Context, interval time.Duration)
 	}()
 }
 
+// poolStatsProvider is implemented by storage backends that expose
+// their database/sql pool counters. Both postgres.Store and
+// sqlite.Store satisfy it; tx-bound stores return zero values.
+type poolStatsProvider interface {
+	PoolStats() sql.DBStats
+}
+
 // refreshPolledMetrics samples in-memory state and updates the corresponding
 // Prometheus gauges. Kept intentionally lock-light: reads use the same RLocks
 // as the HTTP handlers.
@@ -459,6 +587,26 @@ func (s *Server) refreshPolledMetrics() {
 		s.obs.lockoutActive.Set(float64(s.loginLockout.ActiveCount(s.now())))
 	}
 	s.obs.auditBufferDepth.Set(float64(s.auditBufferLen()))
+	s.refreshPoolMetrics()
+}
+
+// refreshPoolMetrics snapshots the storage backend's connection-pool
+// stats. Gauges (Open/InUse/Idle/MaxOpen) get Set; cumulative counters
+// (Wait/MaxIdleClosed/LifetimeClosed) get Add'd by the delta against
+// prevPoolStats so Prometheus sees a monotonically increasing series
+// from a fresh per-process zero.
+func (s *Server) refreshPoolMetrics() {
+	provider, ok := s.store.(poolStatsProvider)
+	if !ok {
+		return
+	}
+	curr := provider.PoolStats()
+	s.obs.observePoolGauges(curr)
+	s.poolStatsMu.Lock()
+	prev := s.prevPoolStats
+	s.prevPoolStats = curr
+	s.poolStatsMu.Unlock()
+	s.obs.addPoolCounterDeltas(prev, curr)
 }
 
 // auditBufferLen returns the current length of the in-memory audit ring. It

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/tls"
+	"database/sql"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -222,6 +223,13 @@ type Server struct {
 	metricsScrapeToken  string
 	metricsPollerCancel context.CancelFunc
 	metricsPollerWG     sync.WaitGroup
+
+	// Phase-2 §2.1: previous database/sql pool snapshot. Used by the
+	// metrics poller to compute Prometheus counter deltas — sql.DBStats
+	// counters are absolute since pool creation, but Prometheus wants
+	// per-process monotonic increments.
+	poolStatsMu   sync.Mutex
+	prevPoolStats sql.DBStats
 }
 
 // New constructs a control-plane server with in-memory state suitable for local development.
@@ -602,9 +610,9 @@ func (s *Server) routes() http.Handler {
 	// When agentPath differs from panelPath, also register under the
 	// separate agent prefix so they are reachable without stripRootPath.
 	router.Route(apiBasePath, func(api chi.Router) {
-		api.With(s.withRateLimit(s.agentBootstrapRateLimiter, s.requestClientRateLimitKey)).
+		api.With(s.withRateLimit(s.agentBootstrapRateLimiter, "agent_bootstrap", s.requestClientRateLimitKey)).
 			Post("/agent/bootstrap", s.handleAgentBootstrap())
-		api.With(s.withRateLimit(s.agentBootstrapRateLimiter, s.requestClientRateLimitKey)).
+		api.With(s.withRateLimit(s.agentBootstrapRateLimiter, "agent_bootstrap", s.requestClientRateLimitKey)).
 			Post("/agent/recover-certificate", s.handleAgentCertificateRecovery())
 
 		// Panel routes — with optional IP whitelist
@@ -612,7 +620,7 @@ func (s *Server) routes() http.Handler {
 			if len(s.panelRuntime.PanelAllowedCIDRs) > 0 {
 				panel.Use(ipWhitelistMiddleware(s.panelRuntime.PanelAllowedCIDRs, s.trustedProxyCIDRs))
 			}
-			panel.With(s.withRateLimit(s.loginRateLimiter, s.requestClientRateLimitKey)).
+			panel.With(s.withRateLimit(s.loginRateLimiter, "login", s.requestClientRateLimitKey)).
 				Post("/auth/login", s.handleLogin())
 
 			panel.Group(func(authenticated chi.Router) {
@@ -624,7 +632,7 @@ func (s *Server) routes() http.Handler {
 				// could be brute-forced (TOTP enable 6-digit code) or abused
 				// at scale (enrollment token floods, repeated secret
 				// rotations). Key is session.UserID, falling back to client IP.
-				sensitive := s.withRateLimit(s.sensitiveRateLimiter, s.requestSessionRateLimitKey)
+				sensitive := s.withRateLimit(s.sensitiveRateLimiter, "sensitive", s.requestSessionRateLimitKey)
 				authenticated.With(sensitive).Post("/auth/totp/setup", s.handleTotpSetup())
 				authenticated.With(sensitive).Post("/auth/totp/enable", s.handleTotpEnable())
 				authenticated.With(sensitive).Post("/auth/totp/disable", s.handleTotpDisable())
@@ -726,9 +734,9 @@ func (s *Server) routes() http.Handler {
 		outer.Use(maxBodySize)
 		outer.Use(csrfOriginCheck(s.panelRuntime.HTTPRootPath, s.panelRuntime.AgentHTTPRootPath))
 		outer.Route(agentPath+apiBasePath, func(agentAPI chi.Router) {
-			agentAPI.With(s.withRateLimit(s.agentBootstrapRateLimiter, s.requestClientRateLimitKey)).
+			agentAPI.With(s.withRateLimit(s.agentBootstrapRateLimiter, "agent_bootstrap", s.requestClientRateLimitKey)).
 				Post("/agent/bootstrap", s.handleAgentBootstrap())
-			agentAPI.With(s.withRateLimit(s.agentBootstrapRateLimiter, s.requestClientRateLimitKey)).
+			agentAPI.With(s.withRateLimit(s.agentBootstrapRateLimiter, "agent_bootstrap", s.requestClientRateLimitKey)).
 				Post("/agent/recover-certificate", s.handleAgentCertificateRecovery())
 		})
 		if panelPath != "" {

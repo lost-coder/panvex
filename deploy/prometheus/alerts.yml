@@ -119,3 +119,75 @@ groups:
           description: |
             The panel update flow fell back to an unsigned manifest in the
             last hour. Verify the signing key is provisioned and reachable.
+
+  - name: panvex.db_pool
+    rules:
+      # Sustained high pool utilisation means we're a heartbeat away from
+      # `connection pool exhausted`. Threshold from the audit (>80% for 5m).
+      - alert: PanvexDBPoolUtilizationHigh
+        expr: |
+          (panvex_db_pool_in_use_connections /
+           on (instance) panvex_db_pool_max_open_connections)
+          > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          component: control-plane
+        annotations:
+          summary: "DB connection pool >80% in-use"
+          description: |
+            Pool utilisation exceeded 80% for 5 minutes. Either traffic
+            spiked beyond what PANVEX_DB_MAX_OPEN_CONNS can absorb, or a
+            slow query is parking connections. Check
+            panvex_db_pool_wait_seconds_total and Postgres pg_stat_activity.
+
+      # Goroutines waiting on the pool means we have already exhausted it.
+      - alert: PanvexDBPoolWaiting
+        expr: rate(panvex_db_pool_wait_seconds_total[1m]) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+          component: control-plane
+        annotations:
+          summary: "Goroutines waiting on DB pool"
+          description: |
+            Cumulative pool-wait time grew >0.5s per real second
+            (averaged over 1m) for 2 minutes. Bump PANVEX_DB_MAX_OPEN_CONNS
+            or look for slow queries.
+
+  - name: panvex.ratelimit
+    rules:
+      # Rate-limit rejections per scope:
+      #   login           → likely credential brute-force
+      #   agent_bootstrap → enrollment-token storm or runaway agent
+      #   sensitive       → operator account theft / TOTP brute-force
+      #   grpc_connect    → flapping agent or DoS
+      - alert: PanvexRateLimitRejectSurge
+        expr: sum by (scope) (rate(panvex_ratelimit_rejected_total[1m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          component: control-plane
+        annotations:
+          summary: "Rate-limit rejections sustained ({{ $labels.scope }})"
+          description: |
+            More than 1 reject/sec on the {{ $labels.scope }} scope for 5
+            minutes. Cross-check the audit log + presence dashboards;
+            consider tightening the per-scope limiter if the rate is
+            legitimate sustained load.
+
+  - name: panvex.batch_writer.audit
+    rules:
+      # Audit events that 200'd to the client are now being lost. Pages.
+      - alert: PanvexBatchWriterAuditDropping
+        expr: rate(panvex_batch_persist_errors_total{stream="audit_events", type="persistent"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: control-plane
+        annotations:
+          summary: "Audit events being dropped after retry exhaustion"
+          description: |
+            The batch_writer audit stream reports persistent failures for
+            5 minutes. Check Postgres availability and the alert tag
+            `audit_persist_failed` in slog.

@@ -21,7 +21,11 @@ func newFixedWindowRateLimiter(limit int, window time.Duration) *fixedWindowRate
 	return sessions.NewRateLimiter(limit, window)
 }
 
-func (s *Server) withRateLimit(limiter *fixedWindowRateLimiter, keyFn func(*http.Request) string) func(http.Handler) http.Handler {
+// withRateLimit wraps a handler with a per-key rate-limit gate.
+// `scope` labels rejections in the panvex_ratelimit_rejected_total
+// metric — must be one of rateLimitScopes (login, agent_bootstrap,
+// sensitive, grpc_connect) so dashboards/alerts pre-init zero series.
+func (s *Server) withRateLimit(limiter *fixedWindowRateLimiter, scope string, keyFn func(*http.Request) string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if limiter == nil {
@@ -33,6 +37,7 @@ func (s *Server) withRateLimit(limiter *fixedWindowRateLimiter, keyFn func(*http
 				key = keyFn(r)
 			}
 			if !limiter.Allow(key, s.now()) {
+				s.obs.ObserveRateLimitReject(scope)
 				writeError(w, http.StatusTooManyRequests, "rate limit exceeded")
 				return
 			}
