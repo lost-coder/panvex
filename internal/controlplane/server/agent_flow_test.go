@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
+	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"github.com/lost-coder/panvex/internal/security"
 )
 
@@ -64,25 +64,25 @@ func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T
 	}
 
 	if err := server.applyAgentSnapshot(agentSnapshot{
-		AgentID:       identity.AgentID,
-		NodeName:      "node-a",
-		FleetGroupID:  fleetGroupID,
-		Version:       "1.0.0",
-		ReadOnly:      true,
+		AgentID:      identity.AgentID,
+		NodeName:     "node-a",
+		FleetGroupID: fleetGroupID,
+		Version:      "1.0.0",
+		ReadOnly:     true,
 		Instances: []instanceSnapshot{
 			{
-				ID:               "instance-1",
-				Name:             "telemt-a",
-				Version:          "2026.03",
-				ConfigFingerprint:"cfg-1",
-				ConnectedUsers:   42,
-				ReadOnly:         true,
+				ID:                "instance-1",
+				Name:              "telemt-a",
+				Version:           "2026.03",
+				ConfigFingerprint: "cfg-1",
+				ConnectedUsers:    42,
+				ReadOnly:          true,
 			},
 		},
 		Metrics: map[string]uint64{
 			"requests_total": 128,
 		},
-		Runtime: gatewayRuntimeSnapshotForTest(),
+		Runtime:    gatewayRuntimeSnapshotForTest(),
 		HasRuntime: true,
 		ObservedAt: now.Add(15 * time.Second),
 	}); err != nil {
@@ -123,13 +123,13 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 	defer store.Close()
 
 	first := New(Options{
-		Now: func() time.Time { return now },
+		Now:   func() time.Time { return now },
 		Store: store,
 	})
 	fleetGroupID := seedTestFleetGroup(t, store, "ams-1", now)
 	token, err := first.issueEnrollmentToken(security.EnrollmentScope{
-		FleetGroupID:  fleetGroupID,
-		TTL:           time.Minute,
+		FleetGroupID: fleetGroupID,
+		TTL:          time.Minute,
 	}, now)
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
@@ -145,11 +145,11 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 	}
 
 	if err := first.applyAgentSnapshot(agentSnapshot{
-		AgentID:       identity.AgentID,
-		NodeName:      "node-a",
-		FleetGroupID:  fleetGroupID,
-		Version:       "1.0.0",
-		ReadOnly:      true,
+		AgentID:      identity.AgentID,
+		NodeName:     "node-a",
+		FleetGroupID: fleetGroupID,
+		Version:      "1.0.0",
+		ReadOnly:     true,
 		Instances: []instanceSnapshot{
 			{
 				ID:                "instance-1",
@@ -163,7 +163,7 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 		Metrics: map[string]uint64{
 			"requests_total": 128,
 		},
-		Runtime: gatewayRuntimeSnapshotForTest(),
+		Runtime:    gatewayRuntimeSnapshotForTest(),
 		HasRuntime: true,
 		ObservedAt: now.Add(15 * time.Second),
 	}); err != nil {
@@ -173,7 +173,7 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 	first.Close()
 
 	restored := New(Options{
-		Now: func() time.Time { return now.Add(time.Minute) },
+		Now:   func() time.Time { return now.Add(time.Minute) },
 		Store: store,
 	})
 	defer restored.Close()
@@ -365,8 +365,8 @@ func TestServerApplyAgentSnapshotStartsInitializationWatchCooldownAfterReadyTran
 func gatewayRuntimeSnapshotForTest() *gatewayrpc.RuntimeSnapshot {
 	return &gatewayrpc.RuntimeSnapshot{
 		AcceptingNewConnections:   true,
-		MeRuntimeReady:           true,
-		Me2DcFallbackEnabled:     true,
+		MeRuntimeReady:            true,
+		Me2DcFallbackEnabled:      true,
 		UseMiddleProxy:            true,
 		StartupStatus:             "ready",
 		StartupStage:              "serving",
@@ -378,8 +378,8 @@ func gatewayRuntimeSnapshotForTest() *gatewayrpc.RuntimeSnapshot {
 		TransportMode:             "middle_proxy",
 		UptimeSeconds:             90_061,
 		CurrentConnections:        42,
-		CurrentConnectionsMe:     39,
-		CurrentConnectionsDirect: 3,
+		CurrentConnectionsMe:      39,
+		CurrentConnectionsDirect:  3,
 		ActiveUsers:               7,
 		ConnectionsTotal:          512,
 		ConnectionsBadTotal:       9,
@@ -424,7 +424,7 @@ func TestServerApplyAgentSnapshotKeepsEnrolledScopeWhenSnapshotDiffers(t *testin
 	defer store.Close()
 
 	server := New(Options{
-		Now: func() time.Time { return now },
+		Now:   func() time.Time { return now },
 		Store: store,
 	})
 	defer server.Close()
@@ -651,21 +651,21 @@ func TestServerEnrollmentTokenPersistsAcrossRestart(t *testing.T) {
 	defer store.Close()
 
 	first := New(Options{
-		Now: func() time.Time { return now },
+		Now:   func() time.Time { return now },
 		Store: store,
 	})
 	defer first.Close()
 	fleetGroupID := seedTestFleetGroup(t, store, "ams-1", now)
 	token, err := first.issueEnrollmentToken(security.EnrollmentScope{
-		FleetGroupID:  fleetGroupID,
-		TTL:           time.Minute,
+		FleetGroupID: fleetGroupID,
+		TTL:          time.Minute,
 	}, now)
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
 
 	restored := New(Options{
-		Now: func() time.Time { return now.Add(10 * time.Second) },
+		Now:   func() time.Time { return now.Add(10 * time.Second) },
 		Store: store,
 	})
 	defer restored.Close()
@@ -747,7 +747,7 @@ func TestServerRecordsStartupErrorInsteadOfPanickingOnRestoreFailure(t *testing.
 	defer sqliteStore.Close()
 
 	store := &failingStore{
-		Store:        sqliteStore,
+		Store:         sqliteStore,
 		listAgentsErr: errors.New("list agents failed"),
 	}
 	server := New(Options{
@@ -770,14 +770,14 @@ func TestServerConsumedEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) 
 	defer store.Close()
 
 	first := New(Options{
-		Now: func() time.Time { return now },
+		Now:   func() time.Time { return now },
 		Store: store,
 	})
 	defer first.Close()
 	fleetGroupID := seedTestFleetGroup(t, store, "ams-1", now)
 	token, err := first.issueEnrollmentToken(security.EnrollmentScope{
-		FleetGroupID:  fleetGroupID,
-		TTL:           time.Minute,
+		FleetGroupID: fleetGroupID,
+		TTL:          time.Minute,
 	}, now)
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
@@ -792,7 +792,7 @@ func TestServerConsumedEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) 
 	}
 
 	restored := New(Options{
-		Now: func() time.Time { return now.Add(20 * time.Second) },
+		Now:   func() time.Time { return now.Add(20 * time.Second) },
 		Store: store,
 	})
 	defer restored.Close()
@@ -800,7 +800,7 @@ func TestServerConsumedEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) 
 		Token:    token.Value,
 		NodeName: "node-b",
 		Version:  "1.0.1",
-	}, now.Add(20*time.Second)); err != security.ErrEnrollmentTokenConsumed {
+	}, now.Add(20*time.Second)); !errors.Is(err, security.ErrEnrollmentTokenConsumed) {
 		t.Fatalf("enrollAgent() error = %v, want %v", err, security.ErrEnrollmentTokenConsumed)
 	}
 }
@@ -1013,21 +1013,21 @@ func TestServerExpiredEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) {
 	defer store.Close()
 
 	first := New(Options{
-		Now: func() time.Time { return now },
+		Now:   func() time.Time { return now },
 		Store: store,
 	})
 	defer first.Close()
 	fleetGroupID := seedTestFleetGroup(t, store, "ams-1", now)
 	token, err := first.issueEnrollmentToken(security.EnrollmentScope{
-		FleetGroupID:  fleetGroupID,
-		TTL:           time.Second,
+		FleetGroupID: fleetGroupID,
+		TTL:          time.Second,
 	}, now)
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
 
 	restored := New(Options{
-		Now: func() time.Time { return now.Add(2 * time.Second) },
+		Now:   func() time.Time { return now.Add(2 * time.Second) },
 		Store: store,
 	})
 	defer restored.Close()
@@ -1035,7 +1035,7 @@ func TestServerExpiredEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) {
 		Token:    token.Value,
 		NodeName: "node-b",
 		Version:  "1.0.1",
-	}, now.Add(2*time.Second)); err != security.ErrEnrollmentTokenExpired {
+	}, now.Add(2*time.Second)); !errors.Is(err, security.ErrEnrollmentTokenExpired) {
 		t.Fatalf("enrollAgent() error = %v, want %v", err, security.ErrEnrollmentTokenExpired)
 	}
 }

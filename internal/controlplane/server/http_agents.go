@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -110,7 +111,7 @@ func (s *Server) handleDeregisterAgent() http.HandlerFunc {
 		// 3. Persist deletion to storage first so a failure does not leave
 		//    the agent absent from memory but present in the database.
 		if s.store != nil {
-			if _, err := s.store.RevokeAgentCertificateRecoveryGrant(r.Context(), agentID, s.now()); err != nil && err != storage.ErrNotFound {
+			if _, err := s.store.RevokeAgentCertificateRecoveryGrant(r.Context(), agentID, s.now()); err != nil && !errors.Is(err, storage.ErrNotFound) {
 				s.logger.Error("revoke cert recovery grant failed", "agent_id", agentID, "error", err)
 			}
 			if err := s.store.DeleteInstancesByAgent(r.Context(), agentID); err != nil {
@@ -118,7 +119,7 @@ func (s *Server) handleDeregisterAgent() http.HandlerFunc {
 				writeError(w, http.StatusInternalServerError, "storage error")
 				return
 			}
-			if err := s.store.DeleteAgent(r.Context(), agentID); err != nil && err != storage.ErrNotFound {
+			if err := s.store.DeleteAgent(r.Context(), agentID); err != nil && !errors.Is(err, storage.ErrNotFound) {
 				s.logger.Error("delete agent from store failed", "agent_id", agentID, "error", err)
 				writeError(w, http.StatusInternalServerError, "storage error")
 				return

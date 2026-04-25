@@ -1,6 +1,7 @@
 package security
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -10,7 +11,7 @@ func TestMintEnrollmentTokenRequiresPositiveTTL(t *testing.T) {
 		FleetGroupID: "ams-1",
 		TTL:          0,
 	}, time.Date(2026, time.April, 19, 8, 0, 0, 0, time.UTC))
-	if err != ErrEnrollmentTokenTTLRequired {
+	if !errors.Is(err, ErrEnrollmentTokenTTLRequired) {
 		t.Fatalf("MintEnrollmentToken() error = %v, want %v", err, ErrEnrollmentTokenTTLRequired)
 	}
 }

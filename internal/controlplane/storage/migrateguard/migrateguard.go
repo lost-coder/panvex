@@ -181,7 +181,7 @@ func anyTableHasRows(ctx context.Context, db *sql.DB, dialect Dialect, tables []
 		// external input. Identifier quoting is dialect-specific but
 		// fleet_groups / agents / clients are simple lower-case idents
 		// that need no escaping.
-		query := fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", t)
+		query := fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", t) //nolint:gosec // G201: identifier from hard-coded registry, never user input
 		err = db.QueryRowContext(ctx, query).Scan(&found)
 		switch {
 		case err == nil:
