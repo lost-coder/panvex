@@ -49,8 +49,8 @@ func TestHTTPClientsCreateTracksDeploymentsAndStructuredJobPayload(t *testing.T)
 		LastSeenAt: now.Add(-time.Minute),
 	})
 
-	cookies := loginAdminForClients(t, server.Handler())
-	createResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/clients", map[string]any{
+	cookies := loginAdminForClients(t, server)
+	createResponse := performJSONRequest(t, server, http.MethodPost, "/api/clients", map[string]any{
 		"name":               "alice",
 		"enabled":            true,
 		"max_tcp_conns":      4,
@@ -105,7 +105,7 @@ func TestHTTPClientsCreateTracksDeploymentsAndStructuredJobPayload(t *testing.T)
 
 	server.recordJobResult(context.Background(), "agent-000001", enqueuedJobs[0].ID, true, "applied", `{"connection_link":"tg://proxy?server=node-a&secret=alice"}`, now.Add(time.Minute))
 
-	detailResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/clients/"+created.ID, nil, cookies)
+	detailResponse := performJSONRequest(t, server, http.MethodGet, "/api/clients/"+created.ID, nil, cookies)
 	if detailResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/clients/{id} status = %d, want %d", detailResponse.Code, http.StatusOK)
 	}
@@ -166,8 +166,8 @@ func TestHTTPClientsUpdateRotateAndDeleteQueueLifecycleJobs(t *testing.T) {
 		LastSeenAt: now.Add(-time.Minute),
 	})
 
-	cookies := loginAdminForClients(t, server.Handler())
-	createResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/clients", map[string]any{
+	cookies := loginAdminForClients(t, server)
+	createResponse := performJSONRequest(t, server, http.MethodPost, "/api/clients", map[string]any{
 		"name":            "alice",
 		"enabled":         true,
 		"fleet_group_ids": []string{defaultGroupID},
@@ -184,7 +184,7 @@ func TestHTTPClientsUpdateRotateAndDeleteQueueLifecycleJobs(t *testing.T) {
 		t.Fatalf("json.Unmarshal(create) error = %v", err)
 	}
 
-	updateResponse := performJSONRequest(t, server.Handler(), http.MethodPut, "/api/clients/"+created.ID, map[string]any{
+	updateResponse := performJSONRequest(t, server, http.MethodPut, "/api/clients/"+created.ID, map[string]any{
 		"name":               "alice-renamed",
 		"enabled":            true,
 		"max_tcp_conns":      9,
@@ -205,7 +205,7 @@ func TestHTTPClientsUpdateRotateAndDeleteQueueLifecycleJobs(t *testing.T) {
 		t.Fatalf("jobs[1].Action = %q, want %q", queuedJobs[1].Action, jobs.ActionClientUpdate)
 	}
 
-	rotateResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/clients/"+created.ID+"/rotate-secret", nil, cookies)
+	rotateResponse := performJSONRequest(t, server, http.MethodPost, "/api/clients/"+created.ID+"/rotate-secret", nil, cookies)
 	if rotateResponse.Code != http.StatusOK {
 		t.Fatalf("POST /api/clients/{id}/rotate-secret status = %d, want %d", rotateResponse.Code, http.StatusOK)
 	}
@@ -234,7 +234,7 @@ func TestHTTPClientsUpdateRotateAndDeleteQueueLifecycleJobs(t *testing.T) {
 		t.Fatalf("jobs[2].Action = %q, want %q", queuedJobs[2].Action, jobs.ActionClientRotateSecret)
 	}
 
-	deleteResponse := performJSONRequest(t, server.Handler(), http.MethodDelete, "/api/clients/"+created.ID, nil, cookies)
+	deleteResponse := performJSONRequest(t, server, http.MethodDelete, "/api/clients/"+created.ID, nil, cookies)
 	if deleteResponse.Code != http.StatusNoContent {
 		t.Fatalf("DELETE /api/clients/{id} status = %d, want %d", deleteResponse.Code, http.StatusNoContent)
 	}
@@ -269,8 +269,8 @@ func TestHTTPClientsRejectInvalidUserADTag(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	cookies := loginAdminForClients(t, server.Handler())
-	createResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/clients", map[string]any{
+	cookies := loginAdminForClients(t, server)
+	createResponse := performJSONRequest(t, server, http.MethodPost, "/api/clients", map[string]any{
 		"name":        "alice",
 		"user_ad_tag": "not-hex",
 	}, cookies)
@@ -313,8 +313,8 @@ func TestHTTPClientsAggregateUsageAcrossAgentSnapshots(t *testing.T) {
 		LastSeenAt: now.Add(-time.Minute),
 	})
 
-	cookies := loginAdminForClients(t, server.Handler())
-	createResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/clients", map[string]any{
+	cookies := loginAdminForClients(t, server)
+	createResponse := performJSONRequest(t, server, http.MethodPost, "/api/clients", map[string]any{
 		"name":            "alice",
 		"fleet_group_ids": []string{defaultGroupID, ams2GroupID},
 	}, cookies)
@@ -366,7 +366,7 @@ func TestHTTPClientsAggregateUsageAcrossAgentSnapshots(t *testing.T) {
 		t.Fatalf("applyAgentSnapshot(agent-000002) error = %v", err)
 	}
 
-	detailResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/clients/"+created.ID, nil, cookies)
+	detailResponse := performJSONRequest(t, server, http.MethodGet, "/api/clients/"+created.ID, nil, cookies)
 	if detailResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/clients/{id} status = %d, want %d", detailResponse.Code, http.StatusOK)
 	}
@@ -421,10 +421,10 @@ func TestHTTPClientsCreateReturnsInternalErrorWhenPersistenceFails(t *testing.T)
 
 	store.putClientErr = errors.New("put client failed")
 
-	createResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/clients", map[string]any{
+	createResponse := performJSONRequest(t, server, http.MethodPost, "/api/clients", map[string]any{
 		"name":            "alice",
 		"fleet_group_ids": []string{defaultGroupID},
-	}, loginAdminForClients(t, server.Handler()))
+	}, loginAdminForClients(t, server))
 	if createResponse.Code != http.StatusInternalServerError {
 		t.Fatalf("POST /api/clients status = %d, want %d", createResponse.Code, http.StatusInternalServerError)
 	}
@@ -488,10 +488,10 @@ func TestRecordClientJobResultDoesNotPanicWhenDeploymentPersistenceFails(t *test
 	}
 }
 
-func loginAdminForClients(t *testing.T, handler http.Handler) []*http.Cookie {
+func loginAdminForClients(t *testing.T, srv *Server) []*http.Cookie {
 	t.Helper()
 
-	loginResponse := performJSONRequest(t, handler, http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)

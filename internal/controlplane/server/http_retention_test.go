@@ -40,7 +40,7 @@ func TestRetentionSettingsSurviveRestart(t *testing.T) {
 		t.Fatalf("BootstrapUser(admin) error = %v", err)
 	}
 
-	adminLogin := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	adminLogin := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -50,7 +50,7 @@ func TestRetentionSettingsSurviveRestart(t *testing.T) {
 	cookies := adminLogin.Result().Cookies()
 
 	// A fresh server uses defaults — confirm before mutating anything.
-	initial := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/settings/retention", nil, cookies)
+	initial := performJSONRequest(t, server, http.MethodGet, "/api/settings/retention", nil, cookies)
 	if initial.Code != http.StatusOK {
 		t.Fatalf("GET /api/settings/retention (initial) status = %d, want %d", initial.Code, http.StatusOK)
 	}
@@ -76,7 +76,7 @@ func TestRetentionSettingsSurviveRestart(t *testing.T) {
 		AuditEventSeconds:     86400,
 		MetricSnapshotSeconds: 43200,
 	}
-	putResp := performJSONRequest(t, server.Handler(), http.MethodPut, "/api/settings/retention", desired, cookies)
+	putResp := performJSONRequest(t, server, http.MethodPut, "/api/settings/retention", desired, cookies)
 	if putResp.Code != http.StatusOK {
 		t.Fatalf("PUT /api/settings/retention status = %d, want %d; body = %s", putResp.Code, http.StatusOK, putResp.Body.String())
 	}
@@ -127,14 +127,14 @@ func TestRetentionSettingsSurviveRestart(t *testing.T) {
 		// signal.
 		t.Logf("BootstrapUser(restart) returned %v (acceptable if admin already exists)", err)
 	}
-	restartLogin := performJSONRequest(t, restartedServer.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	restartLogin := performJSONRequest(t, restartedServer, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
 	if restartLogin.Code != http.StatusOK {
 		t.Fatalf("POST /api/auth/login after restart status = %d, want %d", restartLogin.Code, http.StatusOK)
 	}
-	getResp := performJSONRequest(t, restartedServer.Handler(), http.MethodGet, "/api/settings/retention", nil, restartLogin.Result().Cookies())
+	getResp := performJSONRequest(t, restartedServer, http.MethodGet, "/api/settings/retention", nil, restartLogin.Result().Cookies())
 	if getResp.Code != http.StatusOK {
 		t.Fatalf("GET /api/settings/retention after restart status = %d, want %d", getResp.Code, http.StatusOK)
 	}

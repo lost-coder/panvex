@@ -34,7 +34,7 @@ func TestServerLoginSetsSessionAndReturnsMe(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
 		"password": "Viewer1password",
 	}, nil)
@@ -47,7 +47,7 @@ func TestServerLoginSetsSessionAndReturnsMe(t *testing.T) {
 		t.Fatal("POST /api/auth/login returned no cookies")
 	}
 
-	meResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/auth/me", nil, cookies)
+	meResponse := performJSONRequest(t, server, http.MethodGet, "/api/auth/me", nil, cookies)
 	if meResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/auth/me status = %d, want %d", meResponse.Code, http.StatusOK)
 	}
@@ -93,7 +93,7 @@ func TestServerLoginIgnoresSpoofedForwardedProtoFromUntrustedPeer(t *testing.T) 
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResponse := performJSONRequestWithHeaders(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequestWithHeaders(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
 		"password": "Viewer1password",
 	}, nil, map[string]string{
@@ -142,7 +142,7 @@ func TestServerLoginRejectsWhenAuditPersistenceFails(t *testing.T) {
 
 	store.appendAuditEventErr = io.ErrUnexpectedEOF
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
 		"password": "Viewer1password",
 	}, nil)
@@ -170,7 +170,7 @@ func TestServerLoginLeavesSessionCookieInsecureForPlainHTTP(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
 		"password": "Viewer1password",
 	}, nil)
@@ -201,7 +201,7 @@ func TestServerLoginRateLimitRejectsBurstFromSameClient(t *testing.T) {
 	}
 
 	for index := 0; index < httpLoginRateLimitPerWindow; index++ {
-		loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 			"username": "viewer",
 			"password": "wrong-password",
 		}, nil)
@@ -210,7 +210,7 @@ func TestServerLoginRateLimitRejectsBurstFromSameClient(t *testing.T) {
 		}
 	}
 
-	limitedResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	limitedResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
 		"password": "wrong-password",
 	}, nil)
@@ -238,12 +238,12 @@ func TestServerCreateJobRejectsViewerRole(t *testing.T) {
 		ReadOnly:     false,
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
 		"password": "Viewer1password",
 	}, nil)
 
-	jobResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/jobs", map[string]any{
+	jobResponse := performJSONRequest(t, server, http.MethodPost, "/api/jobs", map[string]any{
 		"action":           "runtime.reload",
 		"target_agent_ids": []string{"agent-1"},
 		"idempotency_key":  "job-1",
@@ -288,7 +288,7 @@ func TestServerCreateJobAcceptsOperatorWithTotp(t *testing.T) {
 		t.Fatalf("EnableTotp() error = %v", err)
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username":  "operator",
 		"password":  "Operator1password",
 		"totp_code": code,
@@ -297,7 +297,7 @@ func TestServerCreateJobAcceptsOperatorWithTotp(t *testing.T) {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
 	}
 
-	jobResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/jobs", map[string]any{
+	jobResponse := performJSONRequest(t, server, http.MethodPost, "/api/jobs", map[string]any{
 		"action":           "runtime.reload",
 		"target_agent_ids": []string{"agent-1"},
 		"idempotency_key":  "job-1",
@@ -322,7 +322,7 @@ func TestHTTPAuthTotpSetupEnableDisableFlow(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "operator",
 		"password": "Operator1password",
 	}, nil)
@@ -331,7 +331,7 @@ func TestHTTPAuthTotpSetupEnableDisableFlow(t *testing.T) {
 	}
 	cookies := loginResponse.Result().Cookies()
 
-	meResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/auth/me", nil, cookies)
+	meResponse := performJSONRequest(t, server, http.MethodGet, "/api/auth/me", nil, cookies)
 	if meResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/auth/me status = %d, want %d", meResponse.Code, http.StatusOK)
 	}
@@ -346,7 +346,7 @@ func TestHTTPAuthTotpSetupEnableDisableFlow(t *testing.T) {
 		t.Fatal("me.totp_enabled = true, want false")
 	}
 
-	setupResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/totp/setup", nil, cookies)
+	setupResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/totp/setup", nil, cookies)
 	if setupResponse.Code != http.StatusOK {
 		t.Fatalf("POST /api/auth/totp/setup status = %d, want %d", setupResponse.Code, http.StatusOK)
 	}
@@ -370,7 +370,7 @@ func TestHTTPAuthTotpSetupEnableDisableFlow(t *testing.T) {
 		t.Fatalf("GenerateTotpCode(enable) error = %v", err)
 	}
 
-	enableResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/totp/enable", map[string]string{
+	enableResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/totp/enable", map[string]string{
 		"password":  "Operator1password",
 		"totp_code": enableCode,
 	}, cookies)
@@ -378,7 +378,7 @@ func TestHTTPAuthTotpSetupEnableDisableFlow(t *testing.T) {
 		t.Fatalf("POST /api/auth/totp/enable status = %d, want %d", enableResponse.Code, http.StatusOK)
 	}
 
-	meEnabledResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/auth/me", nil, cookies)
+	meEnabledResponse := performJSONRequest(t, server, http.MethodGet, "/api/auth/me", nil, cookies)
 	if meEnabledResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/auth/me after enable status = %d, want %d", meEnabledResponse.Code, http.StatusOK)
 	}
@@ -389,12 +389,12 @@ func TestHTTPAuthTotpSetupEnableDisableFlow(t *testing.T) {
 		t.Fatal("me.totp_enabled = false after enable, want true")
 	}
 
-	logoutResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/logout", nil, cookies)
+	logoutResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/logout", nil, cookies)
 	if logoutResponse.Code != http.StatusNoContent {
 		t.Fatalf("POST /api/auth/logout status = %d, want %d", logoutResponse.Code, http.StatusNoContent)
 	}
 
-	loginWithoutTotp := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginWithoutTotp := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "operator",
 		"password": "Operator1password",
 	}, nil)
@@ -402,7 +402,7 @@ func TestHTTPAuthTotpSetupEnableDisableFlow(t *testing.T) {
 		t.Fatalf("POST /api/auth/login without totp status = %d, want %d", loginWithoutTotp.Code, http.StatusUnauthorized)
 	}
 
-	loginWithTotp := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginWithTotp := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username":  "operator",
 		"password":  "Operator1password",
 		"totp_code": enableCode,
@@ -421,7 +421,7 @@ func TestHTTPAuthTotpSetupEnableDisableFlow(t *testing.T) {
 		t.Fatalf("GenerateTotpCode(disable) error = %v", err)
 	}
 
-	disableResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/totp/disable", map[string]string{
+	disableResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/totp/disable", map[string]string{
 		"password":  "Operator1password",
 		"totp_code": disableCode,
 	}, cookies)
@@ -429,7 +429,7 @@ func TestHTTPAuthTotpSetupEnableDisableFlow(t *testing.T) {
 		t.Fatalf("POST /api/auth/totp/disable status = %d, want %d", disableResponse.Code, http.StatusOK)
 	}
 
-	meDisabledResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/auth/me", nil, cookies)
+	meDisabledResponse := performJSONRequest(t, server, http.MethodGet, "/api/auth/me", nil, cookies)
 	if meDisabledResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/auth/me after disable status = %d, want %d", meDisabledResponse.Code, http.StatusOK)
 	}
@@ -492,7 +492,7 @@ func TestHTTPUsersTotpResetRequiresAdminAndClearsTarget(t *testing.T) {
 		t.Fatalf("BootstrapUser(viewer) error = %v", err)
 	}
 
-	viewerLogin := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	viewerLogin := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
 		"password": "Viewer1password",
 	}, nil)
@@ -500,12 +500,12 @@ func TestHTTPUsersTotpResetRequiresAdminAndClearsTarget(t *testing.T) {
 		t.Fatalf("POST /api/auth/login viewer status = %d, want %d", viewerLogin.Code, http.StatusOK)
 	}
 
-	viewerList := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/users", nil, viewerLogin.Result().Cookies())
+	viewerList := performJSONRequest(t, server, http.MethodGet, "/api/users", nil, viewerLogin.Result().Cookies())
 	if viewerList.Code != http.StatusForbidden {
 		t.Fatalf("GET /api/users as viewer status = %d, want %d", viewerList.Code, http.StatusForbidden)
 	}
 
-	adminLogin := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	adminLogin := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -514,7 +514,7 @@ func TestHTTPUsersTotpResetRequiresAdminAndClearsTarget(t *testing.T) {
 	}
 	adminCookies := adminLogin.Result().Cookies()
 
-	usersResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/users", nil, adminCookies)
+	usersResponse := performJSONRequest(t, server, http.MethodGet, "/api/users", nil, adminCookies)
 	if usersResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/users status = %d, want %d", usersResponse.Code, http.StatusOK)
 	}
@@ -531,7 +531,7 @@ func TestHTTPUsersTotpResetRequiresAdminAndClearsTarget(t *testing.T) {
 		t.Fatalf("len(users) = %d, want %d", len(usersPayload), 3)
 	}
 
-	resetResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/users/"+operatorUser.ID+"/totp/reset", nil, adminCookies)
+	resetResponse := performJSONRequest(t, server, http.MethodPost, "/api/users/"+operatorUser.ID+"/totp/reset", nil, adminCookies)
 	if resetResponse.Code != http.StatusNoContent {
 		t.Fatalf("POST /api/users/{id}/totp/reset status = %d, want %d", resetResponse.Code, http.StatusNoContent)
 	}
@@ -544,7 +544,7 @@ func TestHTTPUsersTotpResetRequiresAdminAndClearsTarget(t *testing.T) {
 		t.Fatal("GetUserByID(reset target) TotpEnabled = true, want false")
 	}
 
-	operatorLogin := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	operatorLogin := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "operator",
 		"password": "Operator1password",
 	}, nil)
@@ -552,7 +552,7 @@ func TestHTTPUsersTotpResetRequiresAdminAndClearsTarget(t *testing.T) {
 		t.Fatalf("POST /api/auth/login operator after reset status = %d, want %d", operatorLogin.Code, http.StatusOK)
 	}
 
-	auditResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/audit", nil, adminCookies)
+	auditResponse := performJSONRequest(t, server, http.MethodGet, "/api/audit", nil, adminCookies)
 	if auditResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/audit status = %d, want %d", auditResponse.Code, http.StatusOK)
 	}
@@ -697,7 +697,7 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 		Store: store,
 	})
 	defer restored.Close()
-	loginResponse := performJSONRequest(t, restored.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, restored, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
 		"password": "Viewer1password",
 	}, nil)
@@ -706,7 +706,7 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 	}
 	cookies := loginResponse.Result().Cookies()
 
-	fleetHTTPResponse := performJSONRequest(t, restored.Handler(), http.MethodGet, "/api/fleet", nil, cookies)
+	fleetHTTPResponse := performJSONRequest(t, restored, http.MethodGet, "/api/fleet", nil, cookies)
 	if fleetHTTPResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/fleet status = %d, want %d", fleetHTTPResponse.Code, http.StatusOK)
 	}
@@ -724,7 +724,7 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 		t.Fatalf("fleet.MetricSnapshots = %d, want %d", fleetPayload.MetricSnapshots, 1)
 	}
 
-	agentsResponse := performJSONRequest(t, restored.Handler(), http.MethodGet, "/api/agents", nil, cookies)
+	agentsResponse := performJSONRequest(t, restored, http.MethodGet, "/api/agents", nil, cookies)
 	if agentsResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/agents status = %d, want %d", agentsResponse.Code, http.StatusOK)
 	}
@@ -736,7 +736,7 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 		t.Fatalf("len(agents) = %d, want %d", len(agentsPayload), 1)
 	}
 
-	instancesResponse := performJSONRequest(t, restored.Handler(), http.MethodGet, "/api/instances", nil, cookies)
+	instancesResponse := performJSONRequest(t, restored, http.MethodGet, "/api/instances", nil, cookies)
 	if instancesResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/instances status = %d, want %d", instancesResponse.Code, http.StatusOK)
 	}
@@ -748,7 +748,7 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 		t.Fatalf("len(instances) = %d, want %d", len(instancesPayload), 1)
 	}
 
-	metricsResponse := performJSONRequest(t, restored.Handler(), http.MethodGet, "/api/metrics", nil, cookies)
+	metricsResponse := performJSONRequest(t, restored, http.MethodGet, "/api/metrics", nil, cookies)
 	if metricsResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/metrics status = %d, want %d", metricsResponse.Code, http.StatusOK)
 	}
@@ -782,7 +782,7 @@ func TestHTTPAgentsReturnsEmptyRuntimeSlicesForAgentsWithoutRuntimeSnapshot(t *t
 		LastSeenAt:   now,
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
 		"password": "Viewer1password",
 	}, nil)
@@ -790,7 +790,7 @@ func TestHTTPAgentsReturnsEmptyRuntimeSlicesForAgentsWithoutRuntimeSnapshot(t *t
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
 	}
 
-	agentsResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/agents", nil, loginResponse.Result().Cookies())
+	agentsResponse := performJSONRequest(t, server, http.MethodGet, "/api/agents", nil, loginResponse.Result().Cookies())
 	if agentsResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/agents status = %d, want %d", agentsResponse.Code, http.StatusOK)
 	}
@@ -892,7 +892,7 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateTotpCode(first) error = %v", err)
 	}
-	loginResponse := performJSONRequest(t, first.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, first, http.MethodPost, "/api/auth/login", map[string]string{
 		"username":  "operator",
 		"password":  "Operator1password",
 		"totp_code": loginCode,
@@ -901,7 +901,7 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
 	}
 
-	jobResponse := performJSONRequest(t, first.Handler(), http.MethodPost, "/api/jobs", map[string]any{
+	jobResponse := performJSONRequest(t, first, http.MethodPost, "/api/jobs", map[string]any{
 		"action":           "runtime.reload",
 		"target_agent_ids": []string{agentOne.AgentID, agentTwo.AgentID},
 		"idempotency_key":  "reload-both",
@@ -933,7 +933,7 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateTotpCode(restored) error = %v", err)
 	}
-	restoredLoginResponse := performJSONRequest(t, restored.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	restoredLoginResponse := performJSONRequest(t, restored, http.MethodPost, "/api/auth/login", map[string]string{
 		"username":  "operator",
 		"password":  "Operator1password",
 		"totp_code": restoredCode,
@@ -943,7 +943,7 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 	}
 	cookies := restoredLoginResponse.Result().Cookies()
 
-	jobsResponse := performJSONRequest(t, restored.Handler(), http.MethodGet, "/api/jobs", nil, cookies)
+	jobsResponse := performJSONRequest(t, restored, http.MethodGet, "/api/jobs", nil, cookies)
 	if jobsResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/jobs status = %d, want %d", jobsResponse.Code, http.StatusOK)
 	}
@@ -961,7 +961,7 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 		t.Fatalf("len(jobs[0].Targets) = %d, want %d", len(jobsPayload[0].Targets), 2)
 	}
 
-	auditResponse := performJSONRequest(t, restored.Handler(), http.MethodGet, "/api/audit", nil, cookies)
+	auditResponse := performJSONRequest(t, restored, http.MethodGet, "/api/audit", nil, cookies)
 	if auditResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/audit status = %d, want %d", auditResponse.Code, http.StatusOK)
 	}
@@ -1011,7 +1011,7 @@ func TestHTTPAgentBootstrapConsumesTokenAndReturnsIdentityBundle(t *testing.T) {
 
 	bootstrapResponse := performJSONRequestWithHeaders(
 		t,
-		server.Handler(),
+		server,
 		http.MethodPost,
 		"https://panel.example.com/api/agent/bootstrap",
 		map[string]string{
@@ -1100,7 +1100,7 @@ func TestHTTPAgentBootstrapRejectsConsumedToken(t *testing.T) {
 
 	firstResponse := performJSONRequestWithHeaders(
 		t,
-		server.Handler(),
+		server,
 		http.MethodPost,
 		"https://panel.example.com/api/agent/bootstrap",
 		map[string]string{
@@ -1118,7 +1118,7 @@ func TestHTTPAgentBootstrapRejectsConsumedToken(t *testing.T) {
 
 	secondResponse := performJSONRequestWithHeaders(
 		t,
-		server.Handler(),
+		server,
 		http.MethodPost,
 		"https://panel.example.com/api/agent/bootstrap",
 		map[string]string{
@@ -1160,7 +1160,7 @@ func TestHTTPAgentBootstrapRateLimitRejectsBurstFromSameClient(t *testing.T) {
 	for index := 0; index < httpAgentBootstrapRateLimitPerWindow; index++ {
 		bootstrapResponse := performJSONRequestWithHeaders(
 			t,
-			server.Handler(),
+			server,
 			http.MethodPost,
 			"https://panel.example.com/api/agent/bootstrap",
 			map[string]string{
@@ -1179,7 +1179,7 @@ func TestHTTPAgentBootstrapRateLimitRejectsBurstFromSameClient(t *testing.T) {
 
 	limitedResponse := performJSONRequestWithHeaders(
 		t,
-		server.Handler(),
+		server,
 		http.MethodPost,
 		"https://panel.example.com/api/agent/bootstrap",
 		map[string]string{
@@ -1217,7 +1217,7 @@ func TestHTTPEnrollmentTokenListAndRevoke(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "operator",
 		"password": "Operator1password",
 	}, nil)
@@ -1226,7 +1226,7 @@ func TestHTTPEnrollmentTokenListAndRevoke(t *testing.T) {
 	}
 	cookies := loginResponse.Result().Cookies()
 
-	createResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/agents/enrollment-tokens", map[string]any{
+	createResponse := performJSONRequest(t, server, http.MethodPost, "/api/agents/enrollment-tokens", map[string]any{
 		"fleet_group_id": "default",
 		"ttl_seconds":    600,
 	}, cookies)
@@ -1244,7 +1244,7 @@ func TestHTTPEnrollmentTokenListAndRevoke(t *testing.T) {
 		t.Fatal("created token value = empty, want active token")
 	}
 
-	listResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/agents/enrollment-tokens", nil, cookies)
+	listResponse := performJSONRequest(t, server, http.MethodGet, "/api/agents/enrollment-tokens", nil, cookies)
 	if listResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/agents/enrollment-tokens status = %d, want %d", listResponse.Code, http.StatusOK)
 	}
@@ -1281,12 +1281,12 @@ func TestHTTPEnrollmentTokenListAndRevoke(t *testing.T) {
 		t.Fatalf("tokens[0].expires_at_unix = %d, want future expiry", listedTokens[0].ExpiresAtUnix)
 	}
 
-	revokeResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/agents/enrollment-tokens/"+createdToken.Value+"/revoke", nil, cookies)
+	revokeResponse := performJSONRequest(t, server, http.MethodPost, "/api/agents/enrollment-tokens/"+createdToken.Value+"/revoke", nil, cookies)
 	if revokeResponse.Code != http.StatusNoContent {
 		t.Fatalf("POST /api/agents/enrollment-tokens/{value}/revoke status = %d, want %d", revokeResponse.Code, http.StatusNoContent)
 	}
 
-	listRevokedResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/agents/enrollment-tokens", nil, cookies)
+	listRevokedResponse := performJSONRequest(t, server, http.MethodGet, "/api/agents/enrollment-tokens", nil, cookies)
 	if listRevokedResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/agents/enrollment-tokens after revoke status = %d, want %d", listRevokedResponse.Code, http.StatusOK)
 	}
@@ -1299,7 +1299,7 @@ func TestHTTPEnrollmentTokenListAndRevoke(t *testing.T) {
 
 	bootstrapResponse := performJSONRequestWithHeaders(
 		t,
-		server.Handler(),
+		server,
 		http.MethodPost,
 		"https://panel.example.com/api/agent/bootstrap",
 		map[string]string{
@@ -1337,7 +1337,7 @@ func TestHTTPControlRoomShowsFirstServerOnboarding(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -1345,7 +1345,7 @@ func TestHTTPControlRoomShowsFirstServerOnboarding(t *testing.T) {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
 	}
 
-	controlRoomResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/control-room", nil, loginResponse.Result().Cookies())
+	controlRoomResponse := performJSONRequest(t, server, http.MethodGet, "/api/control-room", nil, loginResponse.Result().Cookies())
 	if controlRoomResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/control-room status = %d, want %d", controlRoomResponse.Code, http.StatusOK)
 	}
@@ -1539,7 +1539,7 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 	})
 	currentTime = currentTime.Add(20 * time.Second)
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -1547,7 +1547,7 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
 	}
 
-	controlRoomResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/control-room", nil, loginResponse.Result().Cookies())
+	controlRoomResponse := performJSONRequest(t, server, http.MethodGet, "/api/control-room", nil, loginResponse.Result().Cookies())
 	if controlRoomResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/control-room status = %d, want %d", controlRoomResponse.Code, http.StatusOK)
 	}
@@ -1740,12 +1740,12 @@ func TestHTTPEmbeddedUIDoesNotShadowAPIRoutes(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
 		"password": "Viewer1password",
 	}, nil)
 
-	meResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/auth/me", nil, loginResponse.Result().Cookies())
+	meResponse := performJSONRequest(t, server, http.MethodGet, "/api/auth/me", nil, loginResponse.Result().Cookies())
 	if meResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/auth/me status = %d, want %d", meResponse.Code, http.StatusOK)
 	}
@@ -1791,7 +1791,7 @@ func TestRenameAgentReturnsErrorWhenStorageFails(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -1820,7 +1820,7 @@ func TestRenameAgentReturnsErrorWhenStorageFails(t *testing.T) {
 	// Inject storage failure for UpdateAgentNodeName.
 	store.updateAgentNodeNameErr = errors.New("simulated storage failure")
 
-	renameResponse := performJSONRequest(t, server.Handler(), http.MethodPatch, "/api/agents/"+identity.AgentID, map[string]string{
+	renameResponse := performJSONRequest(t, server, http.MethodPatch, "/api/agents/"+identity.AgentID, map[string]string{
 		"node_name": "node-b",
 	}, cookies)
 	if renameResponse.Code != http.StatusInternalServerError {
@@ -1860,7 +1860,7 @@ func TestDeregisterAgentReturnsErrorWhenStorageFails(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -1891,7 +1891,7 @@ func TestDeregisterAgentReturnsErrorWhenStorageFails(t *testing.T) {
 	// the handler to return 500 and leave the agent in memory.
 	store.deleteInstancesByAgentErr = errors.New("simulated storage failure")
 
-	deregisterResponse := performJSONRequest(t, server.Handler(), http.MethodDelete, "/api/agents/"+identity.AgentID, nil, cookies)
+	deregisterResponse := performJSONRequest(t, server, http.MethodDelete, "/api/agents/"+identity.AgentID, nil, cookies)
 	if deregisterResponse.Code != http.StatusInternalServerError {
 		t.Fatalf("DELETE /api/agents/%s status = %d, want %d", identity.AgentID, deregisterResponse.Code, http.StatusInternalServerError)
 	}
@@ -1905,13 +1905,13 @@ func TestDeregisterAgentReturnsErrorWhenStorageFails(t *testing.T) {
 	}
 }
 
-func performJSONRequest(t *testing.T, handler http.Handler, method string, path string, body any, cookies []*http.Cookie) *httptest.ResponseRecorder {
+func performJSONRequest(t *testing.T, srv *Server, method string, path string, body any, cookies []*http.Cookie) *httptest.ResponseRecorder {
 	t.Helper()
 
-	return performJSONRequestWithHeaders(t, handler, method, path, body, cookies, nil)
+	return performJSONRequestWithHeaders(t, srv, method, path, body, cookies, nil)
 }
 
-func performJSONRequestWithHeaders(t *testing.T, handler http.Handler, method string, path string, body any, cookies []*http.Cookie, headers map[string]string) *httptest.ResponseRecorder {
+func performJSONRequestWithHeaders(t *testing.T, srv *Server, method string, path string, body any, cookies []*http.Cookie, headers map[string]string) *httptest.ResponseRecorder {
 	t.Helper()
 
 	var payload []byte
@@ -1923,7 +1923,7 @@ func performJSONRequestWithHeaders(t *testing.T, handler http.Handler, method st
 		payload = encoded
 	}
 
-	request := httptest.NewRequestWithContext(t.Context(),method, path, bytes.NewReader(payload))
+	request := httptest.NewRequestWithContext(t.Context(), method, path, bytes.NewReader(payload))
 	request.Header.Set("Content-Type", "application/json")
 	for key, value := range headers {
 		request.Header.Set(key, value)
@@ -1940,10 +1940,23 @@ func performJSONRequestWithHeaders(t *testing.T, handler http.Handler, method st
 		if request.Header.Get("Origin") == "" {
 			request.Header.Set("Origin", "http://"+request.Host)
 		}
+		// Phase-2 §2.5: auto-attach the double-submit CSRF token on
+		// state-changing requests that ship a session cookie. The token
+		// is HMAC(s.csrfSecret, sessionID) — derive in-test rather than
+		// fetching from /api/auth/csrf-token to avoid an extra round
+		// trip per call.
+		if request.Header.Get(csrfTokenHeader) == "" {
+			for _, c := range cookies {
+				if c.Name == sessionCookieName && c.Value != "" {
+					request.Header.Set(csrfTokenHeader, csrfTokenForSession(c.Value, srv.csrfSecret))
+					break
+				}
+			}
+		}
 	}
 
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, request)
+	srv.Handler().ServeHTTP(recorder, request)
 	return recorder
 }
 

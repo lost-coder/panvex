@@ -230,6 +230,11 @@ type Server struct {
 	// per-process monotonic increments.
 	poolStatsMu   sync.Mutex
 	prevPoolStats sql.DBStats
+
+	// Phase-2 §2.5: per-server CSRF HMAC secret. Random 32 bytes
+	// generated at startup; rotated implicitly on every restart (which
+	// just makes the FE re-fetch /api/auth/csrf-token).
+	csrfSecret []byte
 }
 
 // New constructs a control-plane server with in-memory state suitable for local development.
@@ -237,6 +242,16 @@ func New(options Options) *Server {
 	now := options.Now
 	if now == nil {
 		now = time.Now
+	}
+
+	csrfSecret, err := newCSRFSecret()
+	if err != nil {
+		// crypto/rand.Read returning an error means the OS entropy
+		// pool is unavailable — there is nothing meaningful the panel
+		// can do without it (sessions, certs all need it too). Fail
+		// loudly so an operator notices instead of falling back to
+		// CSRF-disabled mode.
+		panic("control-plane: cannot initialise CSRF secret from crypto/rand: " + err.Error())
 	}
 
 	server := &Server{
@@ -260,6 +275,7 @@ func New(options Options) *Server {
 		version:                      options.Version,
 		commitSHA:                    options.CommitSHA,
 		buildTime:                    options.BuildTime,
+		csrfSecret:                   csrfSecret,
 		revokedAgentIDs:              make(map[string]struct{}),
 		agents:                       make(map[string]Agent),
 		detailBoosts:                 make(map[string]time.Time),
@@ -625,8 +641,14 @@ func (s *Server) routes() http.Handler {
 
 			panel.Group(func(authenticated chi.Router) {
 				authenticated.Use(s.requireAuthenticatedSession())
+				// Phase-2 §2.5: double-submit CSRF check on state-changing
+				// requests. Layered AFTER auth so the middleware has the
+				// session.ID it needs to derive the expected token, and
+				// BEFORE every state-changing handler in the chain.
+				authenticated.Use(s.csrfTokenMiddleware)
 				authenticated.Get("/version", s.handleVersion())
 				authenticated.Get("/auth/me", s.handleMe())
+				authenticated.Get("/auth/csrf-token", s.handleCSRFToken())
 				authenticated.Post("/auth/logout", s.handleLogout())
 				// Sensitive per-user rate limiting applied to any endpoint that
 				// could be brute-forced (TOTP enable 6-digit code) or abused

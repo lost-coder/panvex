@@ -96,6 +96,76 @@ function isAuthBootstrapPath(path: string): boolean {
   );
 }
 
+// Phase-2 §2.5: CSRF double-submit. The panel fetches a per-session
+// token from /api/auth/csrf-token (sample once, cache, send on every
+// mutation). On 403 we drop the cached value so the next mutation
+// refetches — covers the panel-restart case where the server rotated
+// its HMAC secret.
+let csrfTokenPromise: Promise<string | null> | null = null;
+let csrfToken: string | null = null;
+
+function csrfTokenURL(): string {
+  return `${apiBasePath}/auth/csrf-token`;
+}
+
+async function fetchCSRFToken(): Promise<string | null> {
+  try {
+    const response = await fetch(csrfTokenURL(), {
+      method: "GET",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (!response.ok) {
+      // Most likely 401 (no session yet). Caller treats null as "no
+      // token available, omit the header" — the request will fail
+      // downstream with the same 401, which the SESSION_EXPIRED
+      // handler routes home.
+      return null;
+    }
+    const payload = (await response.json()) as { token?: string };
+    return typeof payload.token === "string" && payload.token !== ""
+      ? payload.token
+      : null;
+  } catch {
+    // Defensive: any network failure / mocked-fetch shape mismatch
+    // here should NOT abort the actual mutation. Returning null sends
+    // the mutation without the X-CSRF-Token header; the server will
+    // reject it explicitly (403) which the global 403 handler then
+    // surfaces. This keeps the wrapper resilient when called from
+    // unit tests that mock fetch with a single Response.
+    return null;
+  }
+}
+
+async function ensureCSRFToken(): Promise<string | null> {
+  if (csrfToken) return csrfToken;
+  if (!csrfTokenPromise) {
+    csrfTokenPromise = fetchCSRFToken().then((tok) => {
+      csrfToken = tok;
+      return tok;
+    });
+  }
+  try {
+    return await csrfTokenPromise;
+  } finally {
+    csrfTokenPromise = null;
+  }
+}
+
+function clearCSRFToken(): void {
+  csrfToken = null;
+  csrfTokenPromise = null;
+}
+
+// __seedCSRFTokenForTesting lets unit tests pre-populate the cache so
+// the api() wrapper skips the GET /api/auth/csrf-token round-trip when
+// fetch is mocked. Production code must NEVER call this — it is
+// double-underscore-prefixed by intent.
+export function __seedCSRFTokenForTesting(token: string | null): void {
+  csrfToken = token;
+  csrfTokenPromise = null;
+}
+
 /**
  * Core HTTP helper. Three modes:
  *
@@ -129,10 +199,23 @@ export async function api<T>(
     throw new ApiError("Соединение потеряно — попробуйте снова, когда сеть восстановится.", "offline");
   }
 
+  // Phase-2 §2.5: attach the double-submit CSRF token on every state-
+  // changing request that has a session. The login endpoint itself
+  // can't carry a token (no session yet) so we skip the bootstrap
+  // path. Token fetch is lazy + deduplicated.
+  const csrfHeaders: Record<string, string> = {};
+  if (isMutation && !isAuthBootstrapPath(path)) {
+    const token = await ensureCSRFToken();
+    if (token) {
+      csrfHeaders["X-CSRF-Token"] = token;
+    }
+  }
+
   const response = await fetch(path, {
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      ...csrfHeaders,
       ...(init?.headers ?? {})
     },
     ...init
@@ -154,6 +237,10 @@ export async function api<T>(
       typeof window !== "undefined" &&
       !isAuthBootstrapPath(path)
     ) {
+      // Session is gone — drop any cached CSRF token so the next
+      // post-login mutation refetches against the freshly-minted
+      // session.
+      clearCSRFToken();
       window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
     }
 
@@ -179,6 +266,14 @@ export async function api<T>(
       typeof window !== "undefined" &&
       !isAuthBootstrapPath(path)
     ) {
+      // 403 on a state-changing request can mean two things: legitimate
+      // role denial OR a stale CSRF token (panel restarted, server
+      // secret rotated). Drop the cached token so the next mutation
+      // refetches; the role-denial path is unaffected because the new
+      // token will still fail.
+      if (isMutation) {
+        clearCSRFToken();
+      }
       const method = (init?.method ?? "GET").toUpperCase();
       const detail: ForbiddenEventDetail = { path, method, message, code };
       window.dispatchEvent(

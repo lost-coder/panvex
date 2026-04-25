@@ -41,7 +41,7 @@ func TestHTTPEnrollmentTokensExposeConfiguredPanelURL(t *testing.T) {
 
 	loginResponse := performJSONRequest(
 		t,
-		server.Handler(),
+		server,
 		http.MethodPost,
 		"/panvex/api/auth/login",
 		map[string]string{
@@ -57,7 +57,7 @@ func TestHTTPEnrollmentTokensExposeConfiguredPanelURL(t *testing.T) {
 
 	settingsResponse := performJSONRequest(
 		t,
-		server.Handler(),
+		server,
 		http.MethodPut,
 		"/panvex/api/settings/panel",
 		map[string]string{
@@ -80,7 +80,7 @@ func TestHTTPEnrollmentTokensExposeConfiguredPanelURL(t *testing.T) {
 
 	adminLogin := performJSONRequest(
 		t,
-		server.Handler(),
+		server,
 		http.MethodPost,
 		"/panvex/api/auth/login",
 		map[string]string{
@@ -96,7 +96,7 @@ func TestHTTPEnrollmentTokensExposeConfiguredPanelURL(t *testing.T) {
 
 	updateResponse := performJSONRequest(
 		t,
-		server.Handler(),
+		server,
 		http.MethodPut,
 		"/panvex/api/settings/panel",
 		map[string]string{
@@ -111,7 +111,7 @@ func TestHTTPEnrollmentTokensExposeConfiguredPanelURL(t *testing.T) {
 
 	createResponse := performJSONRequestWithHeaders(
 		t,
-		server.Handler(),
+		server,
 		http.MethodPost,
 		"https://internal.example.net/panvex/api/agents/enrollment-tokens",
 		map[string]any{
@@ -138,7 +138,7 @@ func TestHTTPEnrollmentTokensExposeConfiguredPanelURL(t *testing.T) {
 
 	listResponse := performJSONRequestWithHeaders(
 		t,
-		server.Handler(),
+		server,
 		http.MethodGet,
 		"https://internal.example.net/panvex/api/agents/enrollment-tokens",
 		nil,
@@ -189,11 +189,11 @@ func TestEnrollmentTokenUsesAgentRootPathInPanelURL(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResp := performJSONRequest(t, srv.Handler(), http.MethodPost, "/secret-panel/api/auth/login",
+	loginResp := performJSONRequest(t, srv, http.MethodPost, "/secret-panel/api/auth/login",
 		map[string]string{"username": "admin", "password": "Admin1password"}, nil)
 	cookies := loginResp.Result().Cookies()
 
-	createResp := performJSONRequest(t, srv.Handler(), http.MethodPost, "/secret-panel/api/agents/enrollment-tokens",
+	createResp := performJSONRequest(t, srv, http.MethodPost, "/secret-panel/api/agents/enrollment-tokens",
 		map[string]any{"fleet_group_id": "", "ttl_seconds": 3600}, cookies)
 	if createResp.Code != http.StatusCreated {
 		t.Fatalf("create token status = %d, want %d, body: %s", createResp.Code, http.StatusCreated, createResp.Body.String())

@@ -44,7 +44,7 @@ func TestHTTPAgentBootstrapUsesConfiguredGRPCPublicEndpoint(t *testing.T) {
 
 	bootstrapResponse := performJSONRequestWithHeaders(
 		t,
-		server.Handler(),
+		server,
 		http.MethodPost,
 		"https://internal.example.net/api/agent/bootstrap",
 		map[string]string{

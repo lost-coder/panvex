@@ -37,7 +37,7 @@ func TestHTTPAgentCertificateRecoveryRejectsWithoutActiveGrant(t *testing.T) {
 	request := newAgentCertificateRecoveryRequestForTest(t, server, "agent-1", now)
 	response := performJSONRequestWithHeaders(
 		t,
-		server.Handler(),
+		server,
 		http.MethodPost,
 		"https://panel.example.com/api/agent/recover-certificate",
 		request,
@@ -71,7 +71,7 @@ func TestHTTPAgentCertificateRecoveryConsumesAdminGrant(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -82,7 +82,7 @@ func TestHTTPAgentCertificateRecoveryConsumesAdminGrant(t *testing.T) {
 
 	createResponse := performJSONRequest(
 		t,
-		server.Handler(),
+		server,
 		http.MethodPost,
 		"/api/agents/agent-1/certificate-recovery-grants",
 		map[string]any{
@@ -97,7 +97,7 @@ func TestHTTPAgentCertificateRecoveryConsumesAdminGrant(t *testing.T) {
 	request := newAgentCertificateRecoveryRequestForTest(t, server, "agent-1", now)
 	recoveryResponse := performJSONRequestWithHeaders(
 		t,
-		server.Handler(),
+		server,
 		http.MethodPost,
 		"https://panel.example.com/api/agent/recover-certificate",
 		request,
@@ -110,7 +110,7 @@ func TestHTTPAgentCertificateRecoveryConsumesAdminGrant(t *testing.T) {
 
 	reuseResponse := performJSONRequestWithHeaders(
 		t,
-		server.Handler(),
+		server,
 		http.MethodPost,
 		"https://panel.example.com/api/agent/recover-certificate",
 		request,
@@ -219,7 +219,7 @@ func TestHTTPAgentCertificateRecoveryGrantCreateResponseRoundTrip(t *testing.T) 
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -229,7 +229,7 @@ func TestHTTPAgentCertificateRecoveryGrantCreateResponseRoundTrip(t *testing.T) 
 
 	createResponse := performJSONRequest(
 		t,
-		server.Handler(),
+		server,
 		http.MethodPost,
 		"/api/agents/agent-1/certificate-recovery-grants",
 		map[string]any{
@@ -286,7 +286,7 @@ func TestHTTPAgentCertificateRecoveryGrantRejectsExcessiveTTL(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -296,7 +296,7 @@ func TestHTTPAgentCertificateRecoveryGrantRejectsExcessiveTTL(t *testing.T) {
 
 	createResponse := performJSONRequest(
 		t,
-		server.Handler(),
+		server,
 		http.MethodPost,
 		"/api/agents/agent-1/certificate-recovery-grants",
 		map[string]any{
@@ -331,7 +331,7 @@ func TestHTTPAgentsExposeCertificateRecoveryStatus(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResponse := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -341,7 +341,7 @@ func TestHTTPAgentsExposeCertificateRecoveryStatus(t *testing.T) {
 
 	createResponse := performJSONRequest(
 		t,
-		server.Handler(),
+		server,
 		http.MethodPost,
 		"/api/agents/agent-1/certificate-recovery-grants",
 		map[string]any{
@@ -353,7 +353,7 @@ func TestHTTPAgentsExposeCertificateRecoveryStatus(t *testing.T) {
 		t.Fatalf("POST /api/agents/{id}/certificate-recovery-grants status = %d, want %d", createResponse.Code, http.StatusCreated)
 	}
 
-	agentsResponse := performJSONRequest(t, server.Handler(), http.MethodGet, "/api/agents", nil, loginResponse.Result().Cookies())
+	agentsResponse := performJSONRequest(t, server, http.MethodGet, "/api/agents", nil, loginResponse.Result().Cookies())
 	if agentsResponse.Code != http.StatusOK {
 		t.Fatalf("GET /api/agents status = %d, want %d", agentsResponse.Code, http.StatusOK)
 	}

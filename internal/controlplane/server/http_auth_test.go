@@ -41,7 +41,7 @@ func TestLoginAbortsWhenAuditPersistFails(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	resp := performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	resp := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -68,7 +68,7 @@ func TestLoginAbortsWhenAuditPersistFails(t *testing.T) {
 	// this proves the user's lockout counter wasn't incremented and the
 	// session table isn't polluted by the aborted attempt.
 	store.appendAuditEventErr = nil
-	okResp := performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	okResp := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -99,7 +99,7 @@ func TestLoginSuccess(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	resp := performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	resp := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -141,7 +141,7 @@ func TestLoginInvalidCredentials(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	resp := performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	resp := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "WrongPassword1",
 	}, nil)
@@ -171,7 +171,7 @@ func TestLoginPasswordExceedsMaxLength(t *testing.T) {
 		longPassword[i] = 'a'
 	}
 
-	resp := performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	resp := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": string(longPassword),
 	}, nil)
@@ -205,14 +205,14 @@ func TestLoginLockoutIntegration(t *testing.T) {
 
 	// Exhaust login attempts.
 	for i := 0; i < accountLockoutMaxAttempts+1; i++ {
-		performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+		performJSONRequest(t, srv, http.MethodPost, "/api/auth/login", map[string]string{
 			"username": "admin",
 			"password": "WrongPassword1",
 		}, nil)
 	}
 
 	// Even correct password should be rejected while locked.
-	resp := performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	resp := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -243,13 +243,13 @@ func TestLogoutClearsCookie(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResp := performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResp := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
 	cookies := loginResp.Result().Cookies()
 
-	logoutResp := performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/auth/logout", nil, cookies)
+	logoutResp := performJSONRequest(t, srv, http.MethodPost, "/api/auth/logout", nil, cookies)
 	if logoutResp.Code != http.StatusNoContent {
 		t.Fatalf("logout status = %d, want %d", logoutResp.Code, http.StatusNoContent)
 	}
@@ -262,7 +262,7 @@ func TestLogoutClearsCookie(t *testing.T) {
 	}
 
 	// Session should be invalidated — /me should fail.
-	meResp := performJSONRequest(t, srv.Handler(), http.MethodGet, "/api/auth/me", nil, cookies)
+	meResp := performJSONRequest(t, srv, http.MethodGet, "/api/auth/me", nil, cookies)
 	if meResp.Code != http.StatusUnauthorized {
 		t.Fatalf("GET /api/auth/me after logout status = %d, want %d", meResp.Code, http.StatusUnauthorized)
 	}
@@ -274,7 +274,7 @@ func TestLogoutWithoutSessionReturnsUnauthorized(t *testing.T) {
 		Now: func() time.Time { return now },
 	})
 
-	resp := performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/auth/logout", nil, nil)
+	resp := performJSONRequest(t, srv, http.MethodPost, "/api/auth/logout", nil, nil)
 	if resp.Code != http.StatusUnauthorized {
 		t.Fatalf("logout without session status = %d, want %d", resp.Code, http.StatusUnauthorized)
 	}
@@ -302,13 +302,13 @@ func TestMeReturnsUserInfo(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	loginResp := performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	loginResp := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "operator",
 		"password": "Operator1pass",
 	}, nil)
 	cookies := loginResp.Result().Cookies()
 
-	meResp := performJSONRequest(t, srv.Handler(), http.MethodGet, "/api/auth/me", nil, cookies)
+	meResp := performJSONRequest(t, srv, http.MethodGet, "/api/auth/me", nil, cookies)
 	if meResp.Code != http.StatusOK {
 		t.Fatalf("GET /api/auth/me status = %d, want %d", meResp.Code, http.StatusOK)
 	}
@@ -338,7 +338,7 @@ func TestMeWithoutSessionReturnsUnauthorized(t *testing.T) {
 		Now: func() time.Time { return now },
 	})
 
-	resp := performJSONRequest(t, srv.Handler(), http.MethodGet, "/api/auth/me", nil, nil)
+	resp := performJSONRequest(t, srv, http.MethodGet, "/api/auth/me", nil, nil)
 	if resp.Code != http.StatusUnauthorized {
 		t.Fatalf("GET /api/auth/me without session status = %d, want %d", resp.Code, http.StatusUnauthorized)
 	}
@@ -397,7 +397,7 @@ func TestLoginRotatesSessionIDOnExistingCookie(t *testing.T) {
 
 	// First login establishes a session whose ID we will treat as the
 	// pre-authentication (potentially planted) cookie value.
-	firstLogin := performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	firstLogin := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "operator",
 		"password": "Operator1password",
 	}, nil)
@@ -417,13 +417,13 @@ func TestLoginRotatesSessionIDOnExistingCookie(t *testing.T) {
 	}
 
 	// Confirm the first session authenticates /me before we re-login.
-	meBefore := performJSONRequest(t, srv.Handler(), http.MethodGet, "/api/auth/me", nil, firstCookies)
+	meBefore := performJSONRequest(t, srv, http.MethodGet, "/api/auth/me", nil, firstCookies)
 	if meBefore.Code != http.StatusOK {
 		t.Fatalf("GET /api/auth/me before rotation status = %d, want %d", meBefore.Code, http.StatusOK)
 	}
 
 	// Re-login carrying the prior cookie, as a browser would naturally do.
-	secondLogin := performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	secondLogin := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "operator",
 		"password": "Operator1password",
 	}, firstCookies)
@@ -447,7 +447,7 @@ func TestLoginRotatesSessionIDOnExistingCookie(t *testing.T) {
 
 	// The prior cookie must no longer authenticate. Submit /me with only the
 	// old cookie value to isolate that effect.
-	meAfter := performJSONRequest(t, srv.Handler(), http.MethodGet, "/api/auth/me", nil, []*http.Cookie{
+	meAfter := performJSONRequest(t, srv, http.MethodGet, "/api/auth/me", nil, []*http.Cookie{
 		{Name: sessionCookieName, Value: firstSessionID},
 	})
 	if meAfter.Code != http.StatusUnauthorized {
@@ -455,7 +455,7 @@ func TestLoginRotatesSessionIDOnExistingCookie(t *testing.T) {
 	}
 
 	// The new cookie should still authenticate.
-	meFresh := performJSONRequest(t, srv.Handler(), http.MethodGet, "/api/auth/me", nil, []*http.Cookie{
+	meFresh := performJSONRequest(t, srv, http.MethodGet, "/api/auth/me", nil, []*http.Cookie{
 		{Name: sessionCookieName, Value: secondSessionID},
 	})
 	if meFresh.Code != http.StatusOK {
@@ -490,7 +490,7 @@ func TestRoleChangeInvalidatesTargetUserSessions(t *testing.T) {
 	}
 
 	// Viewer logs in and obtains a session.
-	viewerLogin := performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	viewerLogin := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
 		"password": "Viewer1password",
 	}, nil)
@@ -500,7 +500,7 @@ func TestRoleChangeInvalidatesTargetUserSessions(t *testing.T) {
 	viewerCookies := viewerLogin.Result().Cookies()
 
 	// Admin logs in and promotes the viewer to operator.
-	adminLogin := performJSONRequest(t, srv.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	adminLogin := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
 		"password": "Admin1password",
 	}, nil)
@@ -508,7 +508,7 @@ func TestRoleChangeInvalidatesTargetUserSessions(t *testing.T) {
 		t.Fatalf("admin login status = %d, want %d", adminLogin.Code, http.StatusOK)
 	}
 
-	updateResp := performJSONRequest(t, srv.Handler(), http.MethodPut, "/api/users/"+viewer.ID, map[string]string{
+	updateResp := performJSONRequest(t, srv, http.MethodPut, "/api/users/"+viewer.ID, map[string]string{
 		"username": "viewer",
 		"role":     string(auth.RoleOperator),
 	}, adminLogin.Result().Cookies())
@@ -517,13 +517,13 @@ func TestRoleChangeInvalidatesTargetUserSessions(t *testing.T) {
 	}
 
 	// Viewer's prior session must no longer authenticate.
-	meAfter := performJSONRequest(t, srv.Handler(), http.MethodGet, "/api/auth/me", nil, viewerCookies)
+	meAfter := performJSONRequest(t, srv, http.MethodGet, "/api/auth/me", nil, viewerCookies)
 	if meAfter.Code != http.StatusUnauthorized {
 		t.Fatalf("viewer /me after role change status = %d, want %d", meAfter.Code, http.StatusUnauthorized)
 	}
 
 	// Admin session is untouched.
-	adminMe := performJSONRequest(t, srv.Handler(), http.MethodGet, "/api/auth/me", nil, adminLogin.Result().Cookies())
+	adminMe := performJSONRequest(t, srv, http.MethodGet, "/api/auth/me", nil, adminLogin.Result().Cookies())
 	if adminMe.Code != http.StatusOK {
 		t.Fatalf("admin /me after unrelated role change status = %d, want %d", adminMe.Code, http.StatusOK)
 	}

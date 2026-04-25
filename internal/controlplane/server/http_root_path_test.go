@@ -31,7 +31,7 @@ func TestHTTPRootPathPrefixesAPIRoutesAndEmbeddedUI(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	prefixedLogin := performJSONRequest(t, server.Handler(), http.MethodPost, "/panvex/api/auth/login", map[string]string{
+	prefixedLogin := performJSONRequest(t, server, http.MethodPost, "/panvex/api/auth/login", map[string]string{
 		"username": "viewer",
 		"password": "Viewer1password",
 	}, nil)
@@ -39,7 +39,7 @@ func TestHTTPRootPathPrefixesAPIRoutesAndEmbeddedUI(t *testing.T) {
 		t.Fatalf("POST /panvex/api/auth/login status = %d, want %d", prefixedLogin.Code, http.StatusOK)
 	}
 
-	unprefixedLogin := performJSONRequest(t, server.Handler(), http.MethodPost, "/api/auth/login", map[string]string{
+	unprefixedLogin := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
 		"password": "Viewer1password",
 	}, nil)
