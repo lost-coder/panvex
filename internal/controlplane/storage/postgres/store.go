@@ -47,14 +47,20 @@ func Open(dsn string) (*Store, error) {
 		return nil, ErrDSNRequired
 	}
 
+	poolCfg, err := loadPoolConfigFromEnv()
+	if err != nil {
+		return nil, err
+	}
+
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		return nil, err
 	}
 
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(5 * time.Minute)
+	db.SetMaxOpenConns(poolCfg.MaxOpenConns)
+	db.SetMaxIdleConns(poolCfg.MaxIdleConns)
+	db.SetConnMaxLifetime(poolCfg.ConnMaxLifetime)
+	db.SetConnMaxIdleTime(poolCfg.ConnMaxIdleTime)
 
 	if err := Migrate(db); err != nil {
 		db.Close()
