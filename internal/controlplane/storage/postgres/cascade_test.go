@@ -28,7 +28,7 @@ func openForCascade(t *testing.T) *Store {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
-	if err := resetForTest(store); err != nil {
+	if err := resetForTest(t.Context(), store); err != nil {
 		t.Fatalf("resetForTest() error = %v", err)
 	}
 

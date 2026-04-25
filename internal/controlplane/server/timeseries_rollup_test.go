@@ -110,7 +110,7 @@ func TestRollupWorkerPrunesAuditAndMetrics(t *testing.T) {
 	}
 
 	// Assert the Prometheus counter reflects the deletions.
-	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "/metrics", nil)
 	req.Header.Set("Authorization", "Bearer devtoken")
 	rec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, req)

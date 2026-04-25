@@ -23,7 +23,7 @@ func TestMigrateCreatesGooseVersionTable(t *testing.T) {
 
 	// Verify the goose ledger table now exists.
 	var name string
-	err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name='goose_db_version'`).Scan(&name)
+	err := db.QueryRowContext(t.Context(),`SELECT name FROM sqlite_master WHERE type='table' AND name='goose_db_version'`).Scan(&name)
 	if err != nil {
 		t.Fatalf("goose_db_version table not found: %v", err)
 	}
@@ -32,7 +32,7 @@ func TestMigrateCreatesGooseVersionTable(t *testing.T) {
 	// (0001..0008). The ">=" floor is there so future migrations don't
 	// force a brittle equality assertion.
 	var count int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM goose_db_version WHERE is_applied = 1 AND version_id > 0`).Scan(&count); err != nil {
+	if err := db.QueryRowContext(t.Context(),`SELECT COUNT(*) FROM goose_db_version WHERE is_applied = 1 AND version_id > 0`).Scan(&count); err != nil {
 		t.Fatalf("count applied versions: %v", err)
 	}
 	if count < 8 {
@@ -59,7 +59,7 @@ func TestMigrateCreatesMissingFKIndexes(t *testing.T) {
 	}
 	for _, name := range required {
 		var found string
-		err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type='index' AND name=?`, name).Scan(&found)
+		err := db.QueryRowContext(t.Context(),`SELECT name FROM sqlite_master WHERE type='index' AND name=?`, name).Scan(&found)
 		if err != nil {
 			t.Fatalf("expected index %q after Migrate: %v", name, err)
 		}
@@ -76,7 +76,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 		t.Fatalf("first Migrate() error = %v", err)
 	}
 	var firstCount int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM goose_db_version`).Scan(&firstCount); err != nil {
+	if err := db.QueryRowContext(t.Context(),`SELECT COUNT(*) FROM goose_db_version`).Scan(&firstCount); err != nil {
 		t.Fatalf("count versions after first Migrate: %v", err)
 	}
 
@@ -84,7 +84,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 		t.Fatalf("second Migrate() error = %v", err)
 	}
 	var secondCount int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM goose_db_version`).Scan(&secondCount); err != nil {
+	if err := db.QueryRowContext(t.Context(),`SELECT COUNT(*) FROM goose_db_version`).Scan(&secondCount); err != nil {
 		t.Fatalf("count versions after second Migrate: %v", err)
 	}
 
@@ -115,7 +115,7 @@ func TestMigrateCreatesCoreTables(t *testing.T) {
 	}
 	for _, name := range required {
 		var found string
-		err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, name).Scan(&found)
+		err := db.QueryRowContext(t.Context(),`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, name).Scan(&found)
 		if err != nil {
 			t.Fatalf("expected table %q after Migrate: %v", name, err)
 		}
@@ -146,7 +146,7 @@ func TestMigrateRenamesJSONColumns(t *testing.T) {
 	}
 	for _, tc := range cases {
 		var createSQL string
-		err := db.QueryRow(
+		err := db.QueryRowContext(t.Context(),
 			`SELECT sql FROM sqlite_master WHERE type='table' AND name=?`,
 			tc.table,
 		).Scan(&createSQL)
@@ -184,7 +184,7 @@ func openEmptySQLite(t *testing.T) *sql.DB {
 		t.Fatalf("sql.Open: %v", err)
 	}
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+	if _, err := db.ExecContext(t.Context(), "PRAGMA foreign_keys = ON"); err != nil {
 		db.Close()
 		t.Fatalf("PRAGMA foreign_keys: %v", err)
 	}

@@ -34,7 +34,7 @@ func TestRemoteAddrIsTrustedProxy(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			r := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "/", nil)
 			r.RemoteAddr = tt.remoteAddr
 			if got := remoteAddrIsTrustedProxy(r, cidrs); got != tt.want {
 				t.Fatalf("remoteAddrIsTrustedProxy(%q) = %v, want %v", tt.remoteAddr, got, tt.want)
@@ -80,7 +80,7 @@ func TestSessionCookieSecureTLSAndTrustMatrix(t *testing.T) {
 	s := newServerForCookieTest(t, trusted, "proxy", "")
 
 	newReq := func(remoteAddr string, xfp string, withTLS bool) *http.Request {
-		r := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader("{}"))
+		r := httptest.NewRequestWithContext(t.Context(),http.MethodPost, "/api/auth/login", strings.NewReader("{}"))
 		r.RemoteAddr = remoteAddr
 		if xfp != "" {
 			r.Header.Set("X-Forwarded-Proto", xfp)
@@ -154,7 +154,7 @@ func TestSessionCookieSecureFallsBackToPanelTLSModeAndPublicURL(t *testing.T) {
 
 	t.Run("tls_mode_direct_is_secure_even_without_xfp", func(t *testing.T) {
 		s := newServerForCookieTest(t, []*net.IPNet{lanCIDR}, panelTLSModeDirect, "")
-		r := httptest.NewRequest(http.MethodPost, "/", nil)
+		r := httptest.NewRequestWithContext(t.Context(),http.MethodPost, "/", nil)
 		r.RemoteAddr = "203.0.113.7:55555"
 		if !s.sessionCookieSecure(r) {
 			t.Fatal("TLSMode=direct must yield Secure=true")
@@ -163,7 +163,7 @@ func TestSessionCookieSecureFallsBackToPanelTLSModeAndPublicURL(t *testing.T) {
 
 	t.Run("https_public_url_is_secure", func(t *testing.T) {
 		s := newServerForCookieTest(t, []*net.IPNet{lanCIDR}, "proxy", "https://panel.example.com")
-		r := httptest.NewRequest(http.MethodPost, "/", nil)
+		r := httptest.NewRequestWithContext(t.Context(),http.MethodPost, "/", nil)
 		r.RemoteAddr = "203.0.113.7:55555"
 		if !s.sessionCookieSecure(r) {
 			t.Fatal("HTTPPublicURL=https:// must yield Secure=true")
@@ -172,7 +172,7 @@ func TestSessionCookieSecureFallsBackToPanelTLSModeAndPublicURL(t *testing.T) {
 
 	t.Run("http_public_url_is_not_secure", func(t *testing.T) {
 		s := newServerForCookieTest(t, []*net.IPNet{lanCIDR}, "proxy", "http://panel.example.com")
-		r := httptest.NewRequest(http.MethodPost, "/", nil)
+		r := httptest.NewRequestWithContext(t.Context(),http.MethodPost, "/", nil)
 		r.RemoteAddr = "203.0.113.7:55555"
 		if s.sessionCookieSecure(r) {
 			t.Fatal("HTTPPublicURL=http:// must yield Secure=false")
@@ -199,7 +199,7 @@ func TestTrustedForwardedProtoGating(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			r := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "/", nil)
 			r.RemoteAddr = tt.remoteAddr
 			if tt.xfp != "" {
 				r.Header.Set("X-Forwarded-Proto", tt.xfp)

@@ -5,10 +5,14 @@ run:
 
 linters:
   enable:
+    - bodyclose     # http.Response.Body must be closed (leak guard)
     - contextcheck  # context.Background() in code that received a ctx
     - errcheck
     - errorlint     # %v→%w on errors, missing errors.Is/As, type-assert on err
     - govet
+    - noctx         # http.Request without context (forces ctx-aware Do)
+    - rowserrcheck  # sql.Rows.Err() must be checked after iteration
+    - sqlclosecheck # sql.Rows / sql.Stmt must be Closed
     - staticcheck
     - gocritic
     - gosec

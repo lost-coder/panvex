@@ -68,11 +68,11 @@ func TestSchemaSyncPostgresMatchesSQLite(t *testing.T) {
 
 	// sqlite.Open applies migrations internally.
 
-	sqliteSchema, err := readSQLiteSchema(dbPath)
+	sqliteSchema, err := readSQLiteSchema(t.Context(), dbPath)
 	if err != nil {
 		t.Fatalf("read sqlite schema: %v", err)
 	}
-	pgSchema, err := readPostgresSchema(rawPg)
+	pgSchema, err := readPostgresSchema(t.Context(), rawPg)
 	if err != nil {
 		t.Fatalf("read postgres schema: %v", err)
 	}
@@ -145,8 +145,8 @@ func normalizeColumnNames(cols []string) []string {
 	return out
 }
 
-func readPostgresSchema(db *sql.DB) (map[string]tableSchema, error) {
-	rows, err := db.Query(`
+func readPostgresSchema(ctx context.Context, db *sql.DB) (map[string]tableSchema, error) {
+	rows, err := db.QueryContext(ctx, `
 		SELECT table_name, column_name
 		FROM information_schema.columns
 		WHERE table_schema = 'public'
@@ -171,14 +171,14 @@ func readPostgresSchema(db *sql.DB) (map[string]tableSchema, error) {
 	return result, rows.Err()
 }
 
-func readSQLiteSchema(path string) (map[string]tableSchema, error) {
+func readSQLiteSchema(ctx context.Context, path string) (map[string]tableSchema, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
 
-	rows, err := db.Query(`
+	rows, err := db.QueryContext(ctx, `
 		SELECT name FROM sqlite_master
 		WHERE type = 'table'
 		  AND name <> 'goose_db_version'
@@ -203,22 +203,8 @@ func readSQLiteSchema(path string) (map[string]tableSchema, error) {
 
 	result := map[string]tableSchema{}
 	for _, name := range tables {
-		colRows, err := db.Query(
-			"SELECT name FROM pragma_table_info(?) ORDER BY cid", name)
+		cols, err := readSQLiteTableColumns(ctx, db, name)
 		if err != nil {
-			return nil, err
-		}
-		var cols []string
-		for colRows.Next() {
-			var c string
-			if err := colRows.Scan(&c); err != nil {
-				colRows.Close()
-				return nil, err
-			}
-			cols = append(cols, c)
-		}
-		colRows.Close()
-		if err := colRows.Err(); err != nil {
 			return nil, err
 		}
 		result[name] = tableSchema{columns: cols}
@@ -245,6 +231,30 @@ func equalStringSlices(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// readSQLiteTableColumns lists the columns of a single table. Extracted
+// so `defer colRows.Close()` covers every exit path (sqlclosecheck) —
+// the inline form in the parent loop required two manual Close() sites.
+func readSQLiteTableColumns(ctx context.Context, db *sql.DB, table string) ([]string, error) {
+	colRows, err := db.QueryContext(ctx,
+		"SELECT name FROM pragma_table_info(?) ORDER BY cid", table)
+	if err != nil {
+		return nil, err
+	}
+	defer colRows.Close()
+	var cols []string
+	for colRows.Next() {
+		var c string
+		if err := colRows.Scan(&c); err != nil {
+			return nil, err
+		}
+		cols = append(cols, c)
+	}
+	if err := colRows.Err(); err != nil {
+		return nil, err
+	}
+	return cols, nil
 }
 
 func diffSlices(a, b []string) []string {

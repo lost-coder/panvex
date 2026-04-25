@@ -21,7 +21,7 @@ func TestRequireAuthenticatedSessionRejectsUnauthenticated(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/test", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -200,7 +200,7 @@ func TestRequestAuthContextRoundTrip(t *testing.T) {
 	session := auth.Session{ID: "sess-1", UserID: "user-1"}
 	user := auth.User{ID: "user-1", Username: "alice", Role: auth.RoleAdmin}
 
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/test", nil)
 	req = withRequestAuthContext(req, session, user)
 
 	gotSession, gotUser, ok := requestAuthContext(req)
@@ -216,7 +216,7 @@ func TestRequestAuthContextRoundTrip(t *testing.T) {
 }
 
 func TestRequestAuthContextMissing(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/test", nil)
 
 	_, _, ok := requestAuthContext(req)
 	if ok {

@@ -39,7 +39,7 @@ func schema(t *testing.T, db *sql.DB) {
 		`CREATE TABLE clients (id TEXT PRIMARY KEY)`,
 	}
 	for _, s := range stmts {
-		if _, err := db.Exec(s); err != nil {
+		if _, err := db.ExecContext(t.Context(),s); err != nil {
 			t.Fatalf("schema %q: %v", s, err)
 		}
 	}
@@ -60,10 +60,10 @@ func TestCheckAll_VersionAlreadyApplied(t *testing.T) {
 	// Mark version 14 as applied AND populate the tables: the migration
 	// already ran, so the data here is post-erase state and must not
 	// trigger the guard.
-	if _, err := db.Exec(`INSERT INTO goose_db_version (version_id, is_applied) VALUES (14, 1)`); err != nil {
+	if _, err := db.ExecContext(t.Context(),`INSERT INTO goose_db_version (version_id, is_applied) VALUES (14, 1)`); err != nil {
 		t.Fatalf("seed goose_db_version: %v", err)
 	}
-	if _, err := db.Exec(`INSERT INTO fleet_groups (id, name) VALUES ('g1', 'x')`); err != nil {
+	if _, err := db.ExecContext(t.Context(),`INSERT INTO fleet_groups (id, name) VALUES ('g1', 'x')`); err != nil {
 		t.Fatalf("seed fleet_groups: %v", err)
 	}
 
@@ -86,7 +86,7 @@ func TestCheckAll_PendingAndPopulated_BlocksByDefault(t *testing.T) {
 	t.Setenv(EnvAllowDestructiveMigration, "")
 	db := openSQLite(t)
 	schema(t, db)
-	if _, err := db.Exec(`INSERT INTO fleet_groups (id, name) VALUES ('g1', 'production')`); err != nil {
+	if _, err := db.ExecContext(t.Context(),`INSERT INTO fleet_groups (id, name) VALUES ('g1', 'production')`); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
@@ -100,7 +100,7 @@ func TestCheckAll_PendingAndPopulated_AllowedByEnv(t *testing.T) {
 	t.Setenv(EnvAllowDestructiveMigration, "1")
 	db := openSQLite(t)
 	schema(t, db)
-	if _, err := db.Exec(`INSERT INTO agents (id) VALUES ('a1')`); err != nil {
+	if _, err := db.ExecContext(t.Context(),`INSERT INTO agents (id) VALUES ('a1')`); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
@@ -113,7 +113,7 @@ func TestCheckAll_TableMissing_DoesNotPanic(t *testing.T) {
 	t.Setenv(EnvAllowDestructiveMigration, "")
 	db := openSQLite(t)
 	// goose table exists but the data tables do not — earliest schema state.
-	if _, err := db.Exec(`CREATE TABLE goose_db_version (
+	if _, err := db.ExecContext(t.Context(),`CREATE TABLE goose_db_version (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		version_id BIGINT NOT NULL,
 		is_applied INTEGER NOT NULL,
@@ -131,7 +131,7 @@ func TestCheckAll_BlankEnvDoesNotCountAsOptIn(t *testing.T) {
 	t.Setenv(EnvAllowDestructiveMigration, "   ")
 	db := openSQLite(t)
 	schema(t, db)
-	if _, err := db.Exec(`INSERT INTO clients (id) VALUES ('c1')`); err != nil {
+	if _, err := db.ExecContext(t.Context(),`INSERT INTO clients (id) VALUES ('c1')`); err != nil {
 		t.Fatal(err)
 	}
 	if err := CheckAll(context.Background(), db, DialectSQLite, slog.Default()); !errors.Is(err, ErrBlocked) {
