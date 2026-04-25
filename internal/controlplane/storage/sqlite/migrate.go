@@ -31,6 +31,13 @@ func Migrate(db *sql.DB) error {
 }
 
 // MigrateContext is the context-aware variant of Migrate.
+//
+// SQLite intentionally skips the migrateguard.CheckAll step: the only
+// migration currently in the destructive registry (0014) ships in a
+// non-destructive ADD COLUMN + UPDATE form on this dialect (see
+// db/migrations/sqlite/0014_fleet_groups_redesign.sql). If a future
+// destructive migration applies to SQLite as well, wire CheckAll here
+// the same way postgres/migrate.go does.
 func MigrateContext(ctx context.Context, db *sql.DB) error {
 	gooseMu.Lock()
 	defer gooseMu.Unlock()
