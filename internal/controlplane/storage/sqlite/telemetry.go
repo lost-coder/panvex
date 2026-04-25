@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
@@ -273,31 +274,51 @@ func (s *Store) ListTelemetryRuntimeUpstreams(ctx context.Context, agentID strin
 	return result, rows.Err()
 }
 
+// AppendTelemetryRuntimeEvents persists runtime events for an agent.
+// Phase-2 §2.4: was a per-row loop inside one transaction; now a true
+// multi-row INSERT (chunked at bulkChunkSize) so a single agent posting
+// hundreds of events per second does not pay one round-trip per row.
+// ON CONFLICT semantics are preserved exactly: duplicate (agent_id,
+// sequence) rows update the four payload columns and the
+// observed_at_unix timestamp.
 func (s *Store) AppendTelemetryRuntimeEvents(ctx context.Context, agentID string, records []storage.TelemetryRuntimeEventRecord) error {
-	tx, err := s.beginInternalTx(ctx)
-	if err != nil {
-		return err
+	if len(records) == 0 {
+		return nil
 	}
-	defer tx.Rollback()
-
-	for _, record := range records {
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO telemt_runtime_events (
-				agent_id, sequence, observed_at_unix, timestamp_unix, event_type, context, severity
-			)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(agent_id, sequence) DO UPDATE SET
-				observed_at_unix = excluded.observed_at_unix,
-				timestamp_unix = excluded.timestamp_unix,
-				event_type = excluded.event_type,
-				context = excluded.context,
-				severity = excluded.severity
-		`, agentID, record.Sequence, toUnix(record.ObservedAt), toUnix(record.Timestamp), record.EventType, record.Context, record.Severity); err != nil {
-			return err
+	const cols = 7
+	return s.execInTx(ctx, func(exec dbExecutor) error {
+		for start := 0; start < len(records); start += bulkChunkSize {
+			end := start + bulkChunkSize
+			if end > len(records) {
+				end = len(records)
+			}
+			chunk := records[start:end]
+			args := make([]any, 0, len(chunk)*cols)
+			for _, record := range chunk {
+				args = append(args,
+					agentID, record.Sequence,
+					toUnix(record.ObservedAt), toUnix(record.Timestamp),
+					record.EventType, record.Context, record.Severity,
+				)
+			}
+			query := fmt.Sprintf(`
+				INSERT INTO telemt_runtime_events (
+					agent_id, sequence, observed_at_unix, timestamp_unix, event_type, context, severity
+				)
+				VALUES %s
+				ON CONFLICT(agent_id, sequence) DO UPDATE SET
+					observed_at_unix = excluded.observed_at_unix,
+					timestamp_unix = excluded.timestamp_unix,
+					event_type = excluded.event_type,
+					context = excluded.context,
+					severity = excluded.severity
+			`, rowPlaceholders(len(chunk), cols))
+			if _, err := exec.ExecContext(ctx, query, args...); err != nil {
+				return err
+			}
 		}
-	}
-
-	return tx.Commit()
+		return nil
+	})
 }
 
 func (s *Store) ListTelemetryRuntimeEvents(ctx context.Context, agentID string, limit int) ([]storage.TelemetryRuntimeEventRecord, error) {
