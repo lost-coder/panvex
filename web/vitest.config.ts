@@ -62,11 +62,17 @@ export default defineConfig({
         "src/app/main.tsx",
         "src/vite-env.d.ts",
       ],
+      // Phase-2 §2.2: bump thresholds from the original 40% baseline.
+      // Current numbers across the included set:
+      //   statements 80%  branches 69%  functions 69%  lines 80%
+      // Pin slightly below those values to flag a real regression
+      // while absorbing natural test churn — keeps the gate from
+      // firing on every PR that adds a small uncovered branch.
       thresholds: {
-        statements: 40,
-        branches: 40,
-        functions: 40,
-        lines: 40,
+        statements: 75,
+        branches: 65,
+        functions: 65,
+        lines: 75,
       },
     },
   },
