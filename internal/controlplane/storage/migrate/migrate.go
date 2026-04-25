@@ -61,13 +61,13 @@ func Run(ctx context.Context, options Options) (Summary, error) {
 		return Summary{}, errors.New("migration target dsn is required")
 	}
 
-	source, err := sqlite.Open(options.SourceDSN)
+	source, err := sqlite.OpenContext(ctx, options.SourceDSN)
 	if err != nil {
 		return Summary{}, err
 	}
 	defer source.Close()
 
-	target, err := postgres.Open(options.TargetDSN)
+	target, err := postgres.OpenContext(ctx, options.TargetDSN)
 	if err != nil {
 		return Summary{}, err
 	}
