@@ -1,9 +1,17 @@
+import { memo } from "react";
+
 import type { ServerDcData } from "@/shared/api/types-pages/pages";
 
 // ─── Health radar (12 DCs as a circular dial) ─────────────────────────
 // A 12-segment pie-ring coloured by DC status plus a hub that reports
 // fleet-average coverage. Clicking a segment opens the DC detail sheet.
-export function HealthRadar({
+//
+// Memoised — the parent passes a memoised `sortedDcs` array and a
+// stable `useCallback` setter, so the radar only re-renders when the
+// DC list actually changes.
+export const HealthRadar = memo(_HealthRadar);
+
+function _HealthRadar({
   dcs,
   onSelect,
 }: {

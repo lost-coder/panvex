@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 import { cn } from "@/ui";
 
 // ─── Pulse row tick ──────────────────────────────────────────────────
@@ -89,7 +91,14 @@ function PulseTick({
  * the card's rounded border — matches the "fine UI" feel of the
  * handoff reference. Mobile cells also centre their content.
  */
-export function PulseGrid({
+/**
+ * Wrapped in `React.memo` because the parent passes a memoised `items`
+ * array (via `useMemo`) and a stable `variant` literal — only data
+ * changes should re-render the ribbon.
+ */
+export const PulseGrid = memo(_PulseGrid);
+
+function _PulseGrid({
   variant,
   items,
 }: {

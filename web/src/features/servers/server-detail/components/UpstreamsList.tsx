@@ -1,8 +1,16 @@
+import { memo } from "react";
+
 import { cn } from "@/ui";
 import type { ServerDetailPageProps } from "@/shared/api/types-pages/pages";
 
 // ─── Upstreams list ───────────────────────────────────────────────────
-export function UpstreamsList({
+//
+// Memoised — `upstreams` is a slice of the parent `server` object and
+// is referentially stable across re-renders that don't change the
+// server payload, so the row list doesn't churn.
+export const UpstreamsList = memo(_UpstreamsList);
+
+function _UpstreamsList({
   upstreams,
 }: {
   upstreams: ServerDetailPageProps["server"]["upstreams"];
