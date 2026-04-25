@@ -223,7 +223,7 @@ func TestServiceEnqueueRejectsDuplicateIdempotencyKey(t *testing.T) {
 		t.Fatal("Enqueue() duplicate error = nil, want idempotency failure")
 	}
 
-	if err != ErrDuplicateIdempotencyKey {
+	if !errors.Is(err, ErrDuplicateIdempotencyKey) {
 		t.Fatalf("Enqueue() duplicate error = %v, want %v", err, ErrDuplicateIdempotencyKey)
 	}
 }
@@ -246,7 +246,7 @@ func TestServiceEnqueueRejectsMutatingActionForReadOnlyTarget(t *testing.T) {
 		t.Fatal("Enqueue() error = nil, want read-only failure")
 	}
 
-	if err != ErrReadOnlyTarget {
+	if !errors.Is(err, ErrReadOnlyTarget) {
 		t.Fatalf("Enqueue() error = %v, want %v", err, ErrReadOnlyTarget)
 	}
 }
@@ -278,7 +278,7 @@ func TestServiceEnqueueRejectsDuplicateIdempotencyKeyAfterRestart(t *testing.T) 
 		TTL:            time.Minute,
 		IdempotencyKey: "same-key",
 		ActorID:        "user-1",
-	}, now.Add(time.Minute)); err != ErrDuplicateIdempotencyKey {
+	}, now.Add(time.Minute)); !errors.Is(err, ErrDuplicateIdempotencyKey) {
 		t.Fatalf("Enqueue() duplicate after restart error = %v, want %v", err, ErrDuplicateIdempotencyKey)
 	}
 

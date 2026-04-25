@@ -447,7 +447,7 @@ func (s *Service) Authenticate(input LoginInput, now time.Time) (Session, error)
 			CreatedAt: session.CreatedAt,
 		}); err != nil {
 			slog.Error("auth: failed to persist session; rejecting login", "user_id", session.UserID, "error", err)
-			return Session{}, fmt.Errorf("%w: %v", ErrSessionStoreUnavailable, err)
+			return Session{}, fmt.Errorf("%w: %w", ErrSessionStoreUnavailable, err)
 		}
 	}
 
@@ -482,7 +482,21 @@ func (s *Service) RevokeSessionsForUser(userID string) int {
 
 	if store != nil {
 		for _, sessionID := range toDelete {
-			_ = store.DeleteSession(context.Background(), sessionID)
+			if err := store.DeleteSession(context.Background(), sessionID); err != nil {
+				// A persistence failure here is security-relevant: the
+				// in-memory map drop above only sticks until the process
+				// exits. If the row stays in the store, a panel restart
+				// rehydrates the session and the supposedly-revoked user
+				// can authenticate again until natural expiry. Log loudly
+				// so alerting picks it up; continue iterating so we still
+				// remove every session we can.
+				slog.Error("session revocation persistence failed",
+					"alert", "session_revoke_persist_failed",
+					"user_id", userID,
+					"session_id", sessionID,
+					"error", err,
+				)
+			}
 		}
 	}
 

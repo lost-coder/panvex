@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -80,7 +81,7 @@ func TestDisableTotpRaceIsBlocked(t *testing.T) {
 	// The failing caller must see ErrInvalidTotpCode, not some other error.
 	var sawInvalid bool
 	for _, e := range errs {
-		if e == ErrInvalidTotpCode {
+		if errors.Is(e, ErrInvalidTotpCode) {
 			sawInvalid = true
 			break
 		}

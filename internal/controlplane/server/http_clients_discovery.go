@@ -101,7 +101,7 @@ func (s *Server) handleIgnoreDiscoveredClient() http.HandlerFunc {
 
 		id := chi.URLParam(r, "id")
 		if err := s.ignoreDiscoveredClient(r.Context(), id, session.UserID, s.now()); err != nil {
-			if err == storage.ErrNotFound {
+			if errors.Is(err, storage.ErrNotFound) {
 				writeError(w, http.StatusNotFound, "discovered client not found")
 			} else {
 				writeError(w, http.StatusInternalServerError, "internal error")

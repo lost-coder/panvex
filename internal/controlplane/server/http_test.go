@@ -621,7 +621,7 @@ func TestServerNewDoesNotReseedExistingStoreUsers(t *testing.T) {
 	if _, err := server.auth.Authenticate(auth.LoginInput{
 		Username: "admin",
 		Password: "Stale1password",
-	}, now.Add(2*time.Minute)); err != auth.ErrInvalidCredentials {
+	}, now.Add(2*time.Minute)); !errors.Is(err, auth.ErrInvalidCredentials) {
 		t.Fatalf("Authenticate() with stale password error = %v, want %v", err, auth.ErrInvalidCredentials)
 	}
 }

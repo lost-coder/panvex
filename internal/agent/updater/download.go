@@ -95,10 +95,11 @@ func validateDownloadURL(raw string, cfg Config) error {
 		return fmt.Errorf("parse url: %w", err)
 	}
 	scheme := strings.ToLower(u.Scheme)
-	if scheme != "https" {
-		if !(cfg.AllowInsecure && scheme == "http") {
-			return fmt.Errorf("%w: scheme=%q", errInsecureScheme, scheme)
-		}
+	// HTTPS is always fine; plain HTTP is only allowed when the operator
+	// has explicitly opted in (loopback / airgap testing). Anything else
+	// is an immediate reject.
+	if scheme != "https" && (!cfg.AllowInsecure || scheme != "http") {
+		return fmt.Errorf("%w: scheme=%q", errInsecureScheme, scheme)
 	}
 	host := u.Hostname()
 	if host == "" {

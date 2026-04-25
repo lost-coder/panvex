@@ -366,7 +366,7 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 			t.Fatalf("DeleteUser() error = %v", err)
 		}
 
-		if _, err := store.GetUserByID(ctx, user.ID); err != storage.ErrNotFound {
+		if _, err := store.GetUserByID(ctx, user.ID); !errors.Is(err, storage.ErrNotFound) {
 			t.Fatalf("GetUserByID() after DeleteUser error = %v, want %v", err, storage.ErrNotFound)
 		}
 	})

@@ -195,8 +195,11 @@ func (s *Server) handleAgentBootstrap() http.HandlerFunc {
 			Version:  request.Version,
 		}, s.now())
 		if err != nil {
-			switch err {
-			case security.ErrEnrollmentTokenInvalid, security.ErrEnrollmentTokenConsumed, security.ErrEnrollmentTokenExpired, errEnrollmentTokenRevoked:
+			switch {
+			case errors.Is(err, security.ErrEnrollmentTokenInvalid),
+				errors.Is(err, security.ErrEnrollmentTokenConsumed),
+				errors.Is(err, security.ErrEnrollmentTokenExpired),
+				errors.Is(err, errEnrollmentTokenRevoked):
 				writeError(w, http.StatusForbidden, err.Error())
 			default:
 				s.logger.Error("agent bootstrap failed", "node_name", request.NodeName, "error", err)

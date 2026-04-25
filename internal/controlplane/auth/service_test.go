@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -82,7 +83,7 @@ func TestServiceEnableTotpRequiresPendingSetup(t *testing.T) {
 		t.Fatal("EnableTotp() error = nil, want pending setup failure")
 	}
 
-	if err != ErrTotpSetupNotFound {
+	if !errors.Is(err, ErrTotpSetupNotFound) {
 		t.Fatalf("EnableTotp() error = %v, want %v", err, ErrTotpSetupNotFound)
 	}
 }
@@ -115,7 +116,7 @@ func TestServiceEnableTotpRequiresValidPasswordAndCode(t *testing.T) {
 		t.Fatal("EnableTotp() error = nil, want password validation failure")
 	}
 
-	if err != ErrInvalidCredentials {
+	if !errors.Is(err, ErrInvalidCredentials) {
 		t.Fatalf("EnableTotp() error = %v, want %v", err, ErrInvalidCredentials)
 	}
 
@@ -124,7 +125,7 @@ func TestServiceEnableTotpRequiresValidPasswordAndCode(t *testing.T) {
 		t.Fatal("EnableTotp() error = nil, want TOTP validation failure")
 	}
 
-	if err != ErrInvalidTotpCode {
+	if !errors.Is(err, ErrInvalidTotpCode) {
 		t.Fatalf("EnableTotp() error = %v, want %v", err, ErrInvalidTotpCode)
 	}
 
@@ -192,7 +193,7 @@ func TestServiceDisableTotpRequiresValidPasswordAndCode(t *testing.T) {
 		t.Fatal("DisableTotp() error = nil, want password validation failure")
 	}
 
-	if err != ErrInvalidCredentials {
+	if !errors.Is(err, ErrInvalidCredentials) {
 		t.Fatalf("DisableTotp() error = %v, want %v", err, ErrInvalidCredentials)
 	}
 
@@ -201,7 +202,7 @@ func TestServiceDisableTotpRequiresValidPasswordAndCode(t *testing.T) {
 		t.Fatal("DisableTotp() error = nil, want TOTP validation failure")
 	}
 
-	if err != ErrInvalidTotpCode {
+	if !errors.Is(err, ErrInvalidTotpCode) {
 		t.Fatalf("DisableTotp() error = %v, want %v", err, ErrInvalidTotpCode)
 	}
 

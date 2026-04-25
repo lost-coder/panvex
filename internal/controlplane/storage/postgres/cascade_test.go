@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -64,7 +65,7 @@ func TestCascadeDeleteUserRemovesSessions(t *testing.T) {
 		t.Fatalf("DeleteUser() error = %v", err)
 	}
 
-	if _, err := store.GetSession(ctx, session.ID); err != storage.ErrNotFound {
+	if _, err := store.GetSession(ctx, session.ID); !errors.Is(err, storage.ErrNotFound) {
 		t.Fatalf("GetSession() after DeleteUser error = %v, want ErrNotFound (session should have cascaded)", err)
 	}
 }

@@ -6,6 +6,7 @@ run:
 linters:
   enable:
     - errcheck
+    - errorlint     # %v→%w on errors, missing errors.Is/As, type-assert on err
     - govet
     - staticcheck
     - gocritic

@@ -3,6 +3,7 @@ package telemt
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -20,7 +21,7 @@ func TestNewClientRejectsNonLoopbackEndpoint(t *testing.T) {
 		t.Fatal("NewClient() error = nil, want loopback validation failure")
 	}
 
-	if err != ErrNonLoopbackEndpoint {
+	if !errors.Is(err, ErrNonLoopbackEndpoint) {
 		t.Fatalf("NewClient() error = %v, want %v", err, ErrNonLoopbackEndpoint)
 	}
 }

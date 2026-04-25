@@ -104,7 +104,7 @@ func positiveDurationEnv(name string) (time.Duration, error) {
 	}
 	d, err := time.ParseDuration(raw)
 	if err != nil {
-		return 0, fmt.Errorf("%w: %s=%q is not a duration: %v", errInvalidPoolEnv, name, raw, err)
+		return 0, fmt.Errorf("%w: %s=%q is not a duration (%w)", errInvalidPoolEnv, name, raw, err)
 	}
 	if d <= 0 {
 		return 0, fmt.Errorf("%w: %s=%v must be > 0", errInvalidPoolEnv, name, d)
