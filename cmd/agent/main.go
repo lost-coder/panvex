@@ -10,6 +10,7 @@ import (
 	"log"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -86,6 +87,7 @@ func runRuntime(args []string) error {
 	ipPoll := flags.Duration("ip-poll-interval", 15*time.Second, "Client IP polling interval")
 	ipUpload := flags.Duration("ip-upload-interval", time.Minute, "Client IP upload interval")
 	logLevel := flags.String("log-level", "info", "Log level: debug, info, warn, error")
+	clientDataConcurrency := flags.Int("client-data-concurrency", clientDataConcurrencyDefault(), "Max concurrent in-flight ClientDataRequest goroutines (env: PANVEX_AGENT_CLIENT_DATA_CONCURRENCY)")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -153,7 +155,7 @@ func runRuntime(args []string) error {
 			continue
 		}
 
-		credentialsState, err = runConnection(*gatewayAddr, *gatewayServerName, *stateFile, credentialsState, agent, schedule)
+		credentialsState, err = runConnection(*gatewayAddr, *gatewayServerName, *stateFile, credentialsState, agent, schedule, *clientDataConcurrency)
 		if err == nil || errors.Is(err, errRuntimeCredentialsRefreshed) {
 			reconnectAttempt = 0
 			continue
@@ -162,6 +164,19 @@ func runRuntime(args []string) error {
 		slog.Error("connection ended", "error", err)
 		time.Sleep(reconnectDelay(reconnectAttempt))
 	}
+}
+
+// clientDataConcurrencyDefault returns the default for -client-data-concurrency.
+// Reading the env var here keeps the flag default visible in -help output
+// (golang's flag package prints the value at registration time) instead of
+// silently overriding it after parse.
+func clientDataConcurrencyDefault() int {
+	if raw := strings.TrimSpace(os.Getenv("PANVEX_AGENT_CLIENT_DATA_CONCURRENCY")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 8
 }
 
 func loadRuntimeCredentials(stateFile string) (agentstate.Credentials, error) {
@@ -622,7 +637,7 @@ func enqueueOutboundMessage(
 	}
 }
 
-func runConnection(gatewayAddr string, serverName string, stateFile string, credentialsState agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule) (agentstate.Credentials, error) {
+func runConnection(gatewayAddr string, serverName string, stateFile string, credentialsState agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule, clientDataConcurrency int) (agentstate.Credentials, error) {
 	certificate, err := tls.X509KeyPair([]byte(credentialsState.CertificatePEM), []byte(credentialsState.PrivateKeyPEM))
 	if err != nil {
 		return credentialsState, err
@@ -688,7 +703,13 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 
 	// Limit concurrent ClientDataRequest goroutines to prevent unbounded
 	// growth if the control-plane sends many requests in rapid succession.
-	clientDataSem := make(chan struct{}, 8)
+	// Configurable via -client-data-concurrency / PANVEX_AGENT_CLIENT_DATA_CONCURRENCY
+	// for fleets where the default 8 throttles legitimate burst traffic.
+	cdConc := clientDataConcurrency
+	if cdConc <= 0 {
+		cdConc = 8
+	}
+	clientDataSem := make(chan struct{}, cdConc)
 	go func() {
 		for {
 			message, err := stream.Recv()
