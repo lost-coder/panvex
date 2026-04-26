@@ -210,6 +210,12 @@ type DiscoveredClientStore interface {
 	// (see P2-LOG-02, finding L-10 / M-C4).
 	GetDiscoveredClientByAgentAndName(ctx context.Context, agentID string, clientName string) (DiscoveredClientRecord, error)
 	UpdateDiscoveredClientStatus(ctx context.Context, id string, status string, updatedAt time.Time) error
+	// UpdateDiscoveredClientStatusBulk flips the status for every ID in
+	// the slice in a single SQL statement (Q2.U-P-10). Empty slice is a
+	// no-op. The bulk variant exists so the duplicate-secret adoption
+	// flow does not issue N sequential UPDATEs as the discovered table
+	// grows.
+	UpdateDiscoveredClientStatusBulk(ctx context.Context, ids []string, status string, updatedAt time.Time) error
 	DeleteDiscoveredClient(ctx context.Context, id string) error
 }
 
@@ -237,6 +243,17 @@ type TimeseriesStore interface {
 	UpsertClientIPHistoryBulk(ctx context.Context, records []ClientIPHistoryRecord) error
 	ListClientIPHistory(ctx context.Context, clientID string, from time.Time, to time.Time) ([]ClientIPHistoryRecord, error)
 	CountUniqueClientIPs(ctx context.Context, clientID string) (int, error)
+	// CountUniqueClientIPsForClients returns the unique-IP count for
+	// each client ID in a single SQL round-trip (Q2.U-P-03). The
+	// returned map only carries entries for client IDs with at least
+	// one history row; missing entries should be treated as zero.
+	// Empty input is a no-op that returns an empty map.
+	CountUniqueClientIPsForClients(ctx context.Context, clientIDs []string) (map[string]int, error)
+	// ListServerLoadPointsForAgents fetches the raw load points for a
+	// batch of agents in a single SQL round-trip (Q2.U-P-01). The
+	// per-agent slices stay sorted by captured_at ascending to match
+	// the single-agent shape. Missing agents return no key.
+	ListServerLoadPointsForAgents(ctx context.Context, agentIDs []string, from time.Time, to time.Time) (map[string][]ServerLoadPointRecord, error)
 	PruneClientIPHistory(ctx context.Context, olderThan time.Time) (int64, error)
 	RollupServerLoadHourly(ctx context.Context, bucketHour time.Time) error
 	ListServerLoadHourly(ctx context.Context, agentID string, from time.Time, to time.Time) ([]ServerLoadHourlyRecord, error)

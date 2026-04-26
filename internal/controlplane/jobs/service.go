@@ -455,6 +455,27 @@ func (s *Service) ListWithContext(ctx context.Context) []Job {
 	return result
 }
 
+// DefaultListRecentLimit caps the HTTP /jobs response so a long-lived
+// control plane cannot ship unbounded payloads to the UI (Q2.U-P-13).
+const DefaultListRecentLimit = 200
+
+// ListRecentWithContext returns the most recently created jobs, sorted
+// newest-first, capped at limit. A non-positive limit falls back to
+// DefaultListRecentLimit. Internally reuses ListWithContext so expiry
+// bookkeeping still runs on every call.
+func (s *Service) ListRecentWithContext(ctx context.Context, limit int) []Job {
+	if limit <= 0 || limit > DefaultListRecentLimit*5 {
+		limit = DefaultListRecentLimit
+	}
+	all := s.ListWithContext(ctx)
+	// ListWithContext sorts ascending; reverse to newest-first then trim.
+	reversed := make([]Job, 0, limit)
+	for i := len(all) - 1; i >= 0 && len(reversed) < limit; i-- {
+		reversed = append(reversed, all[i])
+	}
+	return reversed
+}
+
 // ExpireStale proactively expires jobs that exceeded their TTL.
 func (s *Service) ExpireStale() {
 	s.mu.Lock()

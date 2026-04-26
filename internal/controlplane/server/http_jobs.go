@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
@@ -21,20 +23,32 @@ type createJobRequest struct {
 
 func (s *Server) handleJobs() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		_, user, err := s.requireSession(r)
+		_, _, err := s.requireSession(r)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
 
-		listed := s.jobs.ListWithContext(r.Context())
-
-		// Redact payload for viewers to prevent leaking client secrets
-		// embedded in job payloads for client mutation actions.
-		if user.Role == auth.RoleViewer {
-			for i := range listed {
-				listed[i].PayloadJSON = ""
+		// Q2.U-P-13: cap the response to the most recent N jobs so the
+		// payload stays bounded as the table grows. ?limit= can override
+		// up to 5x the default but never disables the cap.
+		limit := jobs.DefaultListRecentLimit
+		if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+			if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+				limit = parsed
 			}
+		}
+		listed := s.jobs.ListRecentWithContext(r.Context(), limit)
+
+		// Q2.U-S-07: redact PayloadJSON for ALL roles in the list
+		// endpoint. Mutating jobs (rollout_client_config, rotate_secret)
+		// embed client secrets in the payload; admins and operators do
+		// not need them for routine browsing. Internal dispatch keeps
+		// the payload via grpc_gateway.go and the per-action handlers
+		// in clients_flow.go which read job.PayloadJSON directly from
+		// the in-memory store, never from the HTTP response.
+		for i := range listed {
+			listed[i].PayloadJSON = ""
 		}
 
 		writeJSON(w, http.StatusOK, listed)

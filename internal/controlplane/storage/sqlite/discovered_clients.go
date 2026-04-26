@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
@@ -154,6 +155,29 @@ func (s *Store) UpdateDiscoveredClientStatus(ctx context.Context, id string, sta
 		return storage.ErrNotFound
 	}
 	return nil
+}
+
+// UpdateDiscoveredClientStatusBulk flips the status for every ID in
+// one statement so the duplicate-secret adoption flow stays O(1) round-
+// trips regardless of duplicate count (Q2.U-P-10).
+func (s *Store) UpdateDiscoveredClientStatusBulk(ctx context.Context, ids []string, status string, updatedAt time.Time) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	placeholders := make([]string, len(ids))
+	args := make([]any, 0, len(ids)+2)
+	args = append(args, status, toUnix(updatedAt))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+	query := `
+		UPDATE discovered_clients
+		SET status = ?, updated_at_unix = ?
+		WHERE id IN (` + strings.Join(placeholders, ",") + `)
+	`
+	_, err := s.db.ExecContext(ctx, query, args...)
+	return err
 }
 
 func (s *Store) DeleteDiscoveredClient(ctx context.Context, id string) error {

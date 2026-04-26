@@ -58,6 +58,14 @@ func (s *Server) handleLogin() http.HandlerFunc {
 			return
 		}
 
+		// Q2.U-S-15: serialise the entire IsLocked → verify → RecordFailure
+		// sequence under a per-username shard lock. Without it, two
+		// concurrent attempts on the same username can both pass the
+		// IsLocked check, both run verify, and only one record a failure
+		// — leaking an extra attempt past the lockout threshold.
+		releaseAttempt := s.loginLockout.AttemptLock(request.Username)
+		defer releaseAttempt()
+
 		if s.loginLockout.IsLockedWithContext(r.Context(), request.Username, s.now()) {
 			s.logger.Info("login attempt on locked account", "username_hash", s.logUsername(request.Username))
 			writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")

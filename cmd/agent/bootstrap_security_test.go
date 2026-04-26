@@ -10,21 +10,34 @@ func TestBootstrapEndpointURLRejectsNonLoopbackHTTPPanelURL(t *testing.T) {
 	}
 }
 
-func TestBootstrapEndpointURLAcceptsPrivateNetworkHTTPWithoutFlag(t *testing.T) {
-	// RFC1918 / CGNAT / ULA hosts are treated as private-network links
-	// (typical VPN / LAN deployments). No `-insecure-transport` required
-	// — the agent logs a warn instead of failing.
+func TestBootstrapEndpointURLRejectsPrivateNetworkHTTPWithoutFlag(t *testing.T) {
+	// Q2.U-S-05: private-IP http no longer auto-accepts. The operator
+	// must pass `-insecure-transport` to acknowledge the unencrypted
+	// transport. Loopback remains the only no-flag http path.
 	cases := []string{
-		"http://10.152.1.2:9443/ag",       // RFC1918 /8
-		"http://172.16.0.5:9443/ag",       // RFC1918 /12
-		"http://192.168.1.10:9443/ag",     // RFC1918 /16
-		"http://100.64.0.5:9443/ag",       // CGNAT (Tailscale)
-		"http://[fd00::1]:9443/ag",        // IPv6 ULA
-		"http://169.254.10.1:9443/ag",     // IPv4 link-local
+		"http://10.152.1.2:9443/ag",   // RFC1918 /8
+		"http://172.16.0.5:9443/ag",   // RFC1918 /12
+		"http://192.168.1.10:9443/ag", // RFC1918 /16
+		"http://100.64.0.5:9443/ag",   // CGNAT (Tailscale)
+		"http://[fd00::1]:9443/ag",    // IPv6 ULA
+		"http://169.254.10.1:9443/ag", // IPv4 link-local
 	}
 	for _, panel := range cases {
-		if _, err := bootstrapEndpointURL(panel, false); err != nil {
-			t.Errorf("bootstrapEndpointURL(%q) error = %v, want nil", panel, err)
+		if _, err := bootstrapEndpointURL(panel, false); err == nil {
+			t.Errorf("bootstrapEndpointURL(%q) error = nil, want rejection without -insecure-transport", panel)
+		}
+	}
+}
+
+func TestBootstrapEndpointURLAcceptsPrivateNetworkHTTPWithFlag(t *testing.T) {
+	cases := []string{
+		"http://10.152.1.2:9443/ag",
+		"http://192.168.1.10:9443/ag",
+		"http://100.64.0.5:9443/ag",
+	}
+	for _, panel := range cases {
+		if _, err := bootstrapEndpointURL(panel, true); err != nil {
+			t.Errorf("bootstrapEndpointURL(%q, allowInsecure=true) error = %v, want nil", panel, err)
 		}
 	}
 }

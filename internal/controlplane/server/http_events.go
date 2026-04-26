@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/coder/websocket"
 )
@@ -18,6 +19,14 @@ import (
 // on this channel is abuse — capping the frame size keeps an attacker
 // from parking a large slow-to-drain frame in the TCP buffer.
 const wsInboundFrameLimit = 1 << 10 // 1 KiB
+
+// wsWriteTimeout caps how long a single server→client frame may sit in
+// the TCP buffer before we treat the reader as wedged and drop the
+// connection (Q2.U-P-11). coder/websocket has no SetWriteDeadline; we
+// wrap every Write in a per-call context.WithTimeout instead. 10s is
+// generous: a healthy reader drains in microseconds, while a slow or
+// hung peer should not block the event-bus broadcaster goroutine.
+const wsWriteTimeout = 10 * time.Second
 
 // EnvWSDevLoopback opts into the development-only behaviour that allows
 // WebSocket upgrade requests from any port on 127.0.0.1/::1/localhost.
@@ -85,10 +94,13 @@ func (s *Server) handleEvents() http.HandlerFunc {
 					return
 				}
 
-				if err := conn.Write(ctx, websocket.MessageText, mustJSON(event)); err != nil {
-					if websocket.CloseStatus(err) == websocket.StatusNormalClosure {
-						return
-					}
+				writeCtx, cancelWrite := context.WithTimeout(ctx, wsWriteTimeout)
+				err := conn.Write(writeCtx, websocket.MessageText, mustJSON(event))
+				cancelWrite()
+				if err != nil {
+					// Either a normal close, a slow reader hitting our
+					// per-frame deadline, or the parent ctx going away.
+					// All paths terminate the writer goroutine.
 					return
 				}
 			}
