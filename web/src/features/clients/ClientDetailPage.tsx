@@ -4,15 +4,14 @@
 import { useState } from "react";
 
 import { ClientFormSheet } from "@/features/clients/ClientFormSheet";
+import { IPHistoryCard } from "./components/IPHistoryCard";
+import { LimitsCard } from "./components/LimitsCard";
 import {
   Badge,
   Breadcrumbs,
   Button,
   CopyButton,
-  DataTable,
   HeroStrip,
-  KvGrid,
-  MonoValue,
   PageHeader,
   PulseRow,
   Sheet,
@@ -236,168 +235,9 @@ function DeployLinksCard({
   );
 }
 
-// ─── IP history (GeoIP-ready) ────────────────────────────────────────
+// ─── IP history extracted to ./components/IPHistoryCard ────────
 
-interface IPRow {
-  ip: string;
-  firstSeen: string;
-  lastSeen: string;
-  countryCode?: string | undefined;
-  countryName?: string | undefined;
-  city?: string | undefined;
-  asn?: string | undefined;
-}
-
-function IPHistoryCard({ ips, totalUnique }: { ips: IPRow[]; totalUnique: number }) {
-  const columns = [
-    {
-      key: "ip",
-      header: "IP",
-      render: (row: IPRow) => <MonoValue>{row.ip}</MonoValue>,
-      className: "w-[160px]",
-    },
-    {
-      key: "country",
-      header: "Country",
-      render: (row: IPRow) =>
-        row.countryName || row.countryCode ? (
-          <span className="text-xs text-fg">
-            {row.countryCode && (
-              <span className="font-mono text-[10px] text-fg-muted mr-1">{row.countryCode}</span>
-            )}
-            {row.countryName ?? ""}
-          </span>
-        ) : (
-          <span className="text-xs text-fg-faint">—</span>
-        ),
-      className: "hidden md:table-cell w-[160px]",
-    },
-    {
-      key: "city",
-      header: "City",
-      render: (row: IPRow) =>
-        row.city ? (
-          <span className="text-xs text-fg">{row.city}</span>
-        ) : (
-          <span className="text-xs text-fg-faint">—</span>
-        ),
-      className: "hidden lg:table-cell w-[140px]",
-    },
-    {
-      key: "asn",
-      header: "ASN",
-      render: (row: IPRow) =>
-        row.asn ? (
-          <MonoValue className="text-xs">{row.asn}</MonoValue>
-        ) : (
-          <span className="text-xs text-fg-faint">—</span>
-        ),
-      className: "hidden xl:table-cell w-[120px]",
-    },
-    {
-      key: "firstSeen",
-      header: "First seen",
-      render: (row: IPRow) => (
-        <span className="text-[11px] font-mono text-fg-muted tabular-nums">
-          {new Date(row.firstSeen).toLocaleString()}
-        </span>
-      ),
-      className: "hidden md:table-cell w-[170px]",
-    },
-    {
-      key: "lastSeen",
-      header: "Last seen",
-      render: (row: IPRow) => (
-        <span className="text-[11px] font-mono text-fg tabular-nums">
-          {new Date(row.lastSeen).toLocaleString()}
-        </span>
-      ),
-      className: "w-[170px]",
-    },
-  ];
-  return (
-    <section className="rounded-xs bg-bg-card border border-divider overflow-hidden">
-      <header className="px-4 py-3 border-b border-divider flex items-center justify-between gap-2">
-        <div className="flex items-baseline gap-2">
-          <span className="text-sm font-semibold text-fg">IP history</span>
-          <span className="text-[11px] font-mono text-fg-muted">{totalUnique} unique</span>
-        </div>
-        <span className="text-[10px] font-mono text-fg-muted truncate">
-          GeoIP enrichment pending — see backend-followup #3
-        </span>
-      </header>
-      {ips.length === 0 ? (
-        <div className="px-4 py-8 text-sm text-fg-muted text-center">
-          No IP activity recorded.
-        </div>
-      ) : (
-        <DataTable
-          columns={columns}
-          data={ips}
-          keyExtractor={(row) => row.ip}
-          emptyMessage="No IPs"
-        />
-      )}
-    </section>
-  );
-}
-
-// ─── Limits & metadata ───────────────────────────────────────────────
-
-function LimitsCard({ client }: { client: ClientDetailPageProps["client"] }) {
-  return (
-    <section className="rounded-xs bg-bg-card border border-divider p-4 flex flex-col gap-3">
-      <span className="text-sm font-semibold text-fg">Limits & metadata</span>
-      <KvGrid
-        rows={[
-          {
-            label: "Ad tag",
-            value: client.userAdTag ? (
-              <MonoValue>{client.userAdTag}</MonoValue>
-            ) : (
-              <span className="text-xs text-fg-faint">—</span>
-            ),
-          },
-          {
-            label: "Max TCP conns",
-            value: (
-              <MonoValue>
-                {client.maxTcpConns > 0 ? client.maxTcpConns : "Unlimited"}
-              </MonoValue>
-            ),
-          },
-          {
-            label: "Max unique IPs",
-            value: (
-              <MonoValue>
-                {client.maxUniqueIps > 0 ? client.maxUniqueIps : "Unlimited"}
-              </MonoValue>
-            ),
-          },
-          {
-            label: "Quota",
-            value: <MonoValue>{formatQuota(client.dataQuotaBytes)}</MonoValue>,
-          },
-          {
-            label: "Fleet groups",
-            value:
-              client.fleetGroupIds.length === 0 ? (
-                <span className="text-xs text-fg-faint">—</span>
-              ) : (
-                <div className="flex flex-wrap gap-1">
-                  {client.fleetGroupIds.map((g) => (
-                    <Badge key={g} variant="default">
-                      {g}
-                    </Badge>
-                  ))}
-                </div>
-              ),
-          },
-        ]}
-      />
-    </section>
-  );
-}
+// ─── Limits & metadata extracted to ./components/LimitsCard ────
 
 // ─── Main page ───────────────────────────────────────────────────────
 
