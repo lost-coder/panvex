@@ -1,15 +1,16 @@
-# Base images are referenced by tag here so a fresh clone builds without a
-# registry round-trip. Phase-3 §3.3 expects production releases to pin each
-# FROM line to a specific digest, e.g.
+# Each FROM line is digest-pinned (Phase-3 §3.3): the `tag@sha256:...`
+# form locks the image to an immutable manifest, so a registry
+# republish of `node:22-alpine` cannot silently change what we build.
+# The Dependabot docker rule (.github/dependabot.yml) bumps both the
+# tag and the digest on a weekly cadence — operators rebase their
+# release branch onto the dependabot PR before tagging.
 #
-#   FROM node:22-alpine@sha256:<full-hex> AS web-builder
-#
-# A Dependabot rule (.github/dependabot.yml, ecosystem: docker) maintains
-# the digests once they are present so a CVE in the upstream image gets a
-# weekly PR. Operators producing release artifacts should rebase their
-# release branch onto the dependabot bump before tagging.
+# Refresh manually with:
+#   docker manifest inspect <image>:<tag> | jq -r '.manifests[0].digest // .config.digest'
+# (or `docker buildx imagetools inspect <image>:<tag>` once docker is
+# new enough on the operator's box).
 
-FROM node:22-alpine AS web-builder
+FROM node:22-alpine@sha256:8ea2348b068a9544dae7317b4f3aafcdc032df1647bb7d768a05a5cad1a7683f AS web-builder
 WORKDIR /src/web
 
 COPY web/package*.json ./
@@ -19,7 +20,7 @@ COPY web ./
 COPY cmd/control-plane /src/cmd/control-plane
 RUN npm run build:embed
 
-FROM golang:1.26-alpine AS control-plane-builder
+FROM golang:1.26-alpine@sha256:f85330846cde1e57ca9ec309382da3b8e6ae3ab943d2739500e08c86393a21b1 AS control-plane-builder
 WORKDIR /src
 
 # modernc.org/sqlite is pure-Go, so we build with CGO disabled — drops
@@ -40,7 +41,7 @@ COPY db ./db
 #                    builders and don't leak host filesystem layout.
 RUN go build -ldflags="-s -w" -trimpath -o /out/panvex-control-plane ./cmd/control-plane
 
-FROM alpine:3.22 AS control-plane
+FROM alpine:3.22@sha256:310c62b5e7ca5b08167e4384c68db0fd2905dd9c7493756d356e893909057601 AS control-plane
 WORKDIR /app
 
 RUN apk add --no-cache ca-certificates && \
@@ -64,7 +65,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
 
 ENTRYPOINT ["./panvex-control-plane"]
 
-FROM nginx:1.29-alpine AS web
+FROM nginx:1.29-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de AS web
 
 COPY deploy/nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY --from=web-builder /src/cmd/control-plane/.embedded-ui /usr/share/nginx/html
