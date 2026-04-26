@@ -188,7 +188,7 @@ func TestChaosShutdownMidAudit(t *testing.T) {
 	// shutdown budget forces partial completion on slow CI but still lets
 	// fast machines drain a handful of rows cleanly.
 	counting := &chaosCountingAuditStore{Store: base, stall: 5 * time.Millisecond}
-	w := newStoreBatchWriter(counting, nil)
+	w := newStoreBatchWriter(counting, nil, nil)
 	w.Start()
 
 	const n = 40

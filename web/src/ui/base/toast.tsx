@@ -27,7 +27,13 @@ export function Toast({ message, variant = "info", duration = 3000, open, onClos
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
+    // R-Q-24: setVisible synchronises the visibility flag with the
+    // `open` prop driving entry/exit animation. Using a state here
+    // (rather than deriving directly from `open`) is intentional so
+    // the close transition has time to play before unmount. The
+    // cascading-render the rule warns about is the desired behaviour.
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setVisible(true);
       const timer = setTimeout(() => {
         setVisible(false);

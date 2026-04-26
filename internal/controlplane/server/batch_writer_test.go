@@ -108,7 +108,7 @@ func TestStoreBatchWriterStartAndStop(t *testing.T) {
 	}
 	defer store.Close()
 
-	w := newStoreBatchWriter(store, nil)
+	w := newStoreBatchWriter(store, nil, nil)
 	w.Start()
 	_ = w.StopWithTimeout(2 * time.Second)
 }
@@ -198,7 +198,7 @@ func (s *recordingSink) retryCount(stream, outcome string) int {
 // schedule completes in microseconds, and the passed metrics sink captures
 // every observation.
 func newTestBatchWriter(store storage.Store, sink *recordingSink) *storeBatchWriter {
-	w := newStoreBatchWriter(store, sink)
+	w := newStoreBatchWriter(store, sink, nil)
 	w.sleep = func(time.Duration) {} // collapse the backoff to zero
 	return w
 }
@@ -551,7 +551,7 @@ func TestStoreBatchWriterDrainsOnStop(t *testing.T) {
 	}
 	defer store.Close()
 
-	w := newStoreBatchWriter(store, nil)
+	w := newStoreBatchWriter(store, nil, nil)
 	w.Start()
 
 	now := time.Now().UTC()

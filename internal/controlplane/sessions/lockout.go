@@ -2,7 +2,10 @@ package sessions
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 )
@@ -54,6 +57,13 @@ type LockoutTracker struct {
 	mu       sync.Mutex
 	accounts map[string]lockoutEntry
 	store    LockoutStore
+
+	// redactor maps a raw username to the privacy-preserving identifier
+	// used in slog warnings (R-S-09). Kept behind a mutex so SetRedactor
+	// is safe to call after construction; defaults to a tracker-internal
+	// SHA-256 prefix so unwired tests never accidentally leak raw
+	// usernames either.
+	redactor func(string) string
 
 	// shards holds 16 attempt-mutexes used by AttemptLock to serialize
 	// the read-verify-write sequence on a single username (Q2.U-S-15).
@@ -108,6 +118,38 @@ func (t *LockoutTracker) SetStore(store LockoutStore) {
 	t.store = store
 }
 
+// SetRedactor installs the redaction function used for log fields that
+// would otherwise carry raw usernames (R-S-09). Server wires this to
+// its HMAC-prefix logUsername so production log aggregators see the
+// same correlatable id used elsewhere.
+func (t *LockoutTracker) SetRedactor(fn func(string) string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.redactor = fn
+}
+
+// redact returns a privacy-preserving identifier for username. Falls
+// back to a sha256 prefix when no redactor is wired so unwired callers
+// (tests, embedded usage) never leak raw values either.
+func (t *LockoutTracker) redact(username string) string {
+	t.mu.Lock()
+	fn := t.redactor
+	t.mu.Unlock()
+	if fn != nil {
+		return fn(username)
+	}
+	return defaultRedact(username)
+}
+
+func defaultRedact(username string) string {
+	u := strings.TrimSpace(username)
+	if u == "" {
+		return "u-anon"
+	}
+	sum := sha256.Sum256([]byte(strings.ToLower(u)))
+	return "u-" + hex.EncodeToString(sum[:6])
+}
+
 // Restore loads the persisted lockout state into memory (S7). Should
 // be called after SetStore during server bootstrap. Records older than
 // LockoutDuration for a locked account are skipped so an expired
@@ -157,7 +199,7 @@ func (t *LockoutTracker) persistLocked(ctx context.Context, username string, ent
 		record.LockedAt = &lockedAt
 	}
 	if err := t.store.UpsertLoginLockout(ctx, record); err != nil {
-		slog.Warn("sessions: failed to persist login lockout", "username", username, "error", err)
+		slog.Warn("sessions: failed to persist login lockout", "username_hash", t.redact(username), "error", err)
 	}
 }
 
@@ -166,7 +208,7 @@ func (t *LockoutTracker) deletePersistedLocked(ctx context.Context, username str
 		return
 	}
 	if err := t.store.DeleteLoginLockout(ctx, username); err != nil {
-		slog.Warn("sessions: failed to delete login lockout", "username", username, "error", err)
+		slog.Warn("sessions: failed to delete login lockout", "username_hash", t.redact(username), "error", err)
 	}
 }
 

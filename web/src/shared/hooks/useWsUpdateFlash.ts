@@ -20,6 +20,10 @@ export function useWsUpdateFlash(): boolean {
 
   useEffect(() => {
     if (lastEventAt === null) return;
+    // R-Q-24: subscribing to lastEventAt is the canonical "react to an
+    // external event" pattern; the cascading render the rule warns about
+    // is the desired flash → reset cycle.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setFlashing(true);
     const id = window.setTimeout(() => setFlashing(false), FLASH_DURATION_MS);
     return () => window.clearTimeout(id);

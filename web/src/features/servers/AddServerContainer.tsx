@@ -55,6 +55,11 @@ export function AddServerContainer() {
   useEffect(() => {
     const first = fleetGroups[0];
     if (first && !selectedFleetGroup) {
+      // R-Q-24: seed the controlled select with the first fleet group on
+      // first arrival. The condition guarantees the setter fires only
+      // once per population, so the warning's "cascading render" concern
+      // does not apply.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedFleetGroup(first.id);
     }
   }, [fleetGroups, selectedFleetGroup]);

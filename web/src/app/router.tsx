@@ -1,3 +1,11 @@
+// R-Q-24: TanStack Router route definitions naturally collect multiple
+// inline component bodies (route components, ProtectedShell, etc.) per
+// file. Splitting them apart would scatter the routing tree across a
+// dozen files and break the single-source-of-truth pattern recommended
+// by TanStack Router. Disable react-refresh fast-refresh on this file
+// only — the cost is HMR latency on router edits, not production
+// behaviour.
+/* eslint-disable react-refresh/only-export-components */
 import { QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useQuery } from "@tanstack/react-query";
 import {

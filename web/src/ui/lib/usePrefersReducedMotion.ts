@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 /**
  * usePrefersReducedMotion returns `true` when the user has asked the
@@ -13,27 +13,36 @@ import { useEffect, useState } from "react";
  * SSR-safe: defaults to `false` until the first client render so the
  * initial paint matches the server HTML and animations kick in only
  * after hydration lets us query the real preference.
+ *
+ * R-Q-24: previously used useState + useEffect to mirror the media-query
+ * value into React state, which tripped react-hooks/set-state-in-effect.
+ * useSyncExternalStore is the canonical pattern for subscribing React to
+ * an external mutable store and avoids the cascading-render warning.
  */
 export function usePrefersReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(false);
+  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+}
 
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-      return;
-    }
-    const mql = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setReduced(mql.matches);
+function getSnapshot(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return false;
+  }
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
 
-    const handler = (event: MediaQueryListEvent) => {
-      setReduced(event.matches);
-    };
-    if (typeof mql.addEventListener === "function") {
-      mql.addEventListener("change", handler);
-      return () => mql.removeEventListener("change", handler);
-    }
-    mql.addListener(handler);
-    return () => mql.removeListener(handler);
-  }, []);
+function getServerSnapshot(): boolean {
+  return false;
+}
 
-  return reduced;
+function subscribe(callback: () => void): () => void {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return () => {};
+  }
+  const mql = window.matchMedia("(prefers-reduced-motion: reduce)");
+  if (typeof mql.addEventListener === "function") {
+    mql.addEventListener("change", callback);
+    return () => mql.removeEventListener("change", callback);
+  }
+  mql.addListener(callback);
+  return () => mql.removeListener(callback);
 }

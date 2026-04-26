@@ -1,3 +1,8 @@
+// R-Q-24: file co-locates an internal sub-component (DcTile) with the
+// memoised public component. Splitting them into separate files would
+// cost more than the HMR fast-refresh benefit. Disable react-refresh
+// on this file only.
+/* eslint-disable react-refresh/only-export-components */
 import { memo } from "react";
 
 import { cn } from "@/ui";

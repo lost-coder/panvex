@@ -125,6 +125,13 @@ export function ServerDetailPage({
         tone: avgCoverage < 95 ? "error" : avgCoverage < 100 ? "warn" : "ok",
       },
     ],
+    // R-Q-24: React Compiler infers `connections.current` as the source
+    // dependency and rejects fully-qualified dependency lists; the compiler
+    // also rejects this object-level form as `ref.current`-shaped. The
+    // displayed values only depend on these field reads at render time
+    // and `connections` is a stable prop reference per upstream memo, so
+    // the original field-level deps are correct in practice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       connections.current,
       connections.currentMe,
@@ -169,6 +176,9 @@ export function ServerDetailPage({
         tone: avgCoverage < 95 ? "error" : avgCoverage < 100 ? "warn" : "ok",
       },
     ],
+    // R-Q-24: see above — same compiler / `connections.current`
+    // interaction; preserve original field-level deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       connections.current,
       connections.currentMe,

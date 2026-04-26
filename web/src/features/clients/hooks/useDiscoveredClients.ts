@@ -47,9 +47,14 @@ export function useDiscoveredClients() {
     refetchInterval: 30_000,
   });
 
-  const clients: DiscoveredClientItem[] = query.data
-    ? transformDiscoveredClientList(query.data)
-    : [];
+  // R-Q-24: memoise the transformed list so the useMemo at line 179
+  // gets a stable reference whenever query.data does not change. Without
+  // this, every render rebuilds `clients` and forces every downstream
+  // memo to recompute.
+  const clients: DiscoveredClientItem[] = useMemo(
+    () => (query.data ? transformDiscoveredClientList(query.data) : []),
+    [query.data],
+  );
 
   const collectAgentIds = (ids: string[]): string[] => {
     const raw = queryClient.getQueryData<DiscoveredClient[]>(["discovered-clients"]) ?? [];

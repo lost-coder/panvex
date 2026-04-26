@@ -40,7 +40,7 @@ func BenchmarkBatchWriterEnqueue(b *testing.B) {
 	}
 	b.Cleanup(func() { _ = store.Close() })
 
-	w := newStoreBatchWriter(store, nil)
+	w := newStoreBatchWriter(store, nil, nil)
 
 	rec := storage.AgentRecord{
 		ID:         "agent-bench",
@@ -81,7 +81,7 @@ func BenchmarkBatchWriterFlush(b *testing.B) {
 	}
 	b.Cleanup(func() { _ = store.Close() })
 
-	w := newStoreBatchWriter(store, nil)
+	w := newStoreBatchWriter(store, nil, nil)
 	w.sleep = func(time.Duration) {} // collapse retry backoff if any row fails
 
 	// Build unique records per iteration so the UNIQUE(id) constraint does
@@ -119,7 +119,7 @@ func BenchmarkBatchWriterMetricsFlush(b *testing.B) {
 	}
 	b.Cleanup(func() { _ = store.Close() })
 
-	w := newStoreBatchWriter(store, nil)
+	w := newStoreBatchWriter(store, nil, nil)
 	w.sleep = func(time.Duration) {}
 
 	const batchSize = batchMaxSize
@@ -159,7 +159,7 @@ func BenchmarkBatchWriterAuditEnqueue(b *testing.B) {
 	}
 	b.Cleanup(func() { _ = store.Close() })
 
-	w := newStoreBatchWriter(store, nil)
+	w := newStoreBatchWriter(store, nil, nil)
 
 	rec := storage.AuditEventRecord{
 		ID:        "audit-bench",

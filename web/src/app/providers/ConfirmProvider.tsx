@@ -110,6 +110,8 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+// R-Q-24: provider co-locates the hook by convention; see AppearanceProvider.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useConfirm(): ConfirmFn {
   const ctx = useContext(ConfirmContext);
   if (!ctx) {
