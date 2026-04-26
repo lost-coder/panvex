@@ -6,76 +6,85 @@ import (
 	"errors"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/dbsqlc"
 )
 
+// PutEnrollmentToken upserts one enrollment_tokens row.
+//
+// R-Q-03: routed through dbsqlc.UpsertEnrollmentToken so the postgres
+// path gains compile-time type safety on every column. value_hash is
+// left at its '' default by the SQL — when a caller needs to write the
+// hash, the params struct can be widened in one place.
 func (s *Store) PutEnrollmentToken(ctx context.Context, token storage.EnrollmentTokenRecord) error {
-	var fleetGroupID sql.NullString
-	if token.FleetGroupID != "" {
-		fleetGroupID.Valid = true
-		fleetGroupID.String = token.FleetGroupID
+	if s.sqlDB == nil {
+		return errTxBoundStore
 	}
-	var consumedAt sql.NullTime
-	if token.ConsumedAt != nil {
-		consumedAt.Valid = true
-		consumedAt.Time = token.ConsumedAt.UTC()
-	}
-	var revokedAt sql.NullTime
-	if token.RevokedAt != nil {
-		revokedAt.Valid = true
-		revokedAt.Time = token.RevokedAt.UTC()
-	}
-
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO enrollment_tokens (value, fleet_group_id, issued_at, expires_at, consumed_at, revoked_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		ON CONFLICT (value) DO UPDATE
-		SET fleet_group_id = EXCLUDED.fleet_group_id,
-		    issued_at = EXCLUDED.issued_at,
-		    expires_at = EXCLUDED.expires_at,
-		    consumed_at = EXCLUDED.consumed_at,
-		    revoked_at = EXCLUDED.revoked_at
-	`, token.Value, fleetGroupID, token.IssuedAt.UTC(), token.ExpiresAt.UTC(), consumedAt, revokedAt)
-	return err
+	return dbsqlc.New(s.sqlDB).UpsertEnrollmentToken(ctx, enrollmentTokenToUpsertParams(token))
 }
 
+// enrollmentTokenToUpsertParams is the domain-DTO → dbsqlc params bridge.
+func enrollmentTokenToUpsertParams(token storage.EnrollmentTokenRecord) dbsqlc.UpsertEnrollmentTokenParams {
+	params := dbsqlc.UpsertEnrollmentTokenParams{
+		Value:     token.Value,
+		IssuedAt:  token.IssuedAt.UTC(),
+		ExpiresAt: token.ExpiresAt.UTC(),
+	}
+	if token.FleetGroupID != "" {
+		if id, err := uuid.Parse(token.FleetGroupID); err == nil {
+			params.FleetGroupID = uuid.NullUUID{UUID: id, Valid: true}
+		}
+	}
+	if token.ConsumedAt != nil {
+		params.ConsumedAt = sql.NullTime{Time: token.ConsumedAt.UTC(), Valid: true}
+	}
+	if token.RevokedAt != nil {
+		params.RevokedAt = sql.NullTime{Time: token.RevokedAt.UTC(), Valid: true}
+	}
+	return params
+}
+
+// ListEnrollmentTokens returns every token, ordered by issued_at + value
+// for stable pagination.
+//
+// R-Q-03: routed through dbsqlc.ListEnrollmentTokens. Conversion from
+// dbsqlc.EnrollmentToken to the storage shape lives in
+// enrollmentTokenFromRow.
 func (s *Store) ListEnrollmentTokens(ctx context.Context) ([]storage.EnrollmentTokenRecord, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT value, fleet_group_id, issued_at, expires_at, consumed_at, revoked_at
-		FROM enrollment_tokens
-		ORDER BY issued_at, value
-	`)
+	if s.sqlDB == nil {
+		return nil, errTxBoundStore
+	}
+	rows, err := dbsqlc.New(s.sqlDB).ListEnrollmentTokens(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	result := make([]storage.EnrollmentTokenRecord, 0)
-	for rows.Next() {
-		var token storage.EnrollmentTokenRecord
-		var fleetGroupID sql.NullString
-		var consumedAt sql.NullTime
-		var revokedAt sql.NullTime
-		if err := rows.Scan(&token.Value, &fleetGroupID, &token.IssuedAt, &token.ExpiresAt, &consumedAt, &revokedAt); err != nil {
-			return nil, err
-		}
-		if fleetGroupID.Valid {
-			token.FleetGroupID = fleetGroupID.String
-		}
-		token.IssuedAt = token.IssuedAt.UTC()
-		token.ExpiresAt = token.ExpiresAt.UTC()
-		if consumedAt.Valid {
-			timeValue := consumedAt.Time.UTC()
-			token.ConsumedAt = &timeValue
-		}
-		if revokedAt.Valid {
-			timeValue := revokedAt.Time.UTC()
-			token.RevokedAt = &timeValue
-		}
-		result = append(result, token)
+	result := make([]storage.EnrollmentTokenRecord, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, enrollmentTokenFromRow(row))
 	}
+	return result, nil
+}
 
-	return result, rows.Err()
+// enrollmentTokenFromRow is the SQL-row → domain-DTO bridge.
+func enrollmentTokenFromRow(row dbsqlc.ListEnrollmentTokensRow) storage.EnrollmentTokenRecord {
+	rec := storage.EnrollmentTokenRecord{
+		Value:     row.Value,
+		IssuedAt:  row.IssuedAt.UTC(),
+		ExpiresAt: row.ExpiresAt.UTC(),
+	}
+	if row.FleetGroupID.Valid {
+		rec.FleetGroupID = row.FleetGroupID.UUID.String()
+	}
+	if row.ConsumedAt.Valid {
+		t := row.ConsumedAt.Time.UTC()
+		rec.ConsumedAt = &t
+	}
+	if row.RevokedAt.Valid {
+		t := row.RevokedAt.Time.UTC()
+		rec.RevokedAt = &t
+	}
+	return rec
 }
 
 func (s *Store) GetEnrollmentToken(ctx context.Context, value string) (storage.EnrollmentTokenRecord, error) {

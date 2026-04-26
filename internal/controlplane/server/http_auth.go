@@ -19,6 +19,23 @@ import (
 // retries; no session cookie is issued when the persist is not confirmed.
 const loginAuditPersistTimeout = 2 * time.Second
 
+// loginTimingFloor is the wall-clock minimum every login response (success
+// or failure) is padded to (R-S-19). The Authenticate helper already burns
+// a dummy bcrypt hash to equalise wrong-password vs unknown-username timing
+// inside auth.Service, but the surrounding lockout-cache lookup, DB miss,
+// audit persist, and totp-required dispatch each have their own latency
+// signature. Padding every response to a fixed floor collapses the visible
+// timing spread to <1ms regardless of which branch fired.
+//
+// 150ms is well above realistic local + cache paths (~5–20ms) and well
+// below the user-perceived "slow" threshold so legitimate logins are not
+// degraded.
+//
+// Kept as a package-level var so the test entrypoint (TestMain) can zero
+// it out without every test file having to thread an explicit override
+// through Options. Production callers never mutate it after init.
+var loginTimingFloor = 150 * time.Millisecond
+
 type loginRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
@@ -59,6 +76,23 @@ func (s *Server) handleLogin() http.HandlerFunc {
 			return
 		}
 
+		// R-S-19: every response from this point on is padded to
+		// loginTimingFloor before being written, so attackers cannot
+		// distinguish lockout-cache hits from DB misses from real-auth
+		// branches by wall-clock timing.
+		start := s.now()
+		floored := false
+		ensureFloor := func() {
+			if floored {
+				return
+			}
+			floored = true
+			elapsed := s.now().Sub(start)
+			if remaining := loginTimingFloor - elapsed; remaining > 0 {
+				time.Sleep(remaining)
+			}
+		}
+
 		// Q2.U-S-15: serialise the entire IsLocked → verify → RecordFailure
 		// sequence under a per-username shard lock. Without it, two
 		// concurrent attempts on the same username can both pass the
@@ -69,6 +103,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 
 		if s.loginLockout.IsLockedWithContext(r.Context(), request.Username, s.now()) {
 			s.logger.Info("login attempt on locked account", "username_hash", s.logUsername(request.Username))
+			ensureFloor()
 			writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
 			return
 		}
@@ -94,10 +129,12 @@ func (s *Server) handleLogin() http.HandlerFunc {
 			if errors.Is(err, auth.ErrInvalidCredentials) || errors.Is(err, auth.ErrInvalidTotpCode) {
 				if s.loginLockout.CheckAndRecordFailureWithContext(r.Context(), request.Username, s.now()) {
 					s.logger.Info("account locked out", "username_hash", s.logUsername(request.Username))
+					ensureFloor()
 					writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
 					return
 				}
 			}
+			ensureFloor()
 			switch {
 			case errors.Is(err, auth.ErrInvalidCredentials):
 				writeErrorWithCode(w, http.StatusUnauthorized, err.Error(), "invalid_credentials")
@@ -138,6 +175,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 				s.logger.Error("failed to revoke session after audit persist failure",
 					"session_id", session.ID, "error", logoutErr)
 			}
+			ensureFloor()
 			writeErrorWithCode(w,
 				http.StatusServiceUnavailable,
 				"audit log unavailable, please retry",
@@ -146,6 +184,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 			return
 		}
 
+		ensureFloor()
 		http.SetCookie(w, &http.Cookie{
 			Name:     sessionCookieName,
 			Value:    session.ID,

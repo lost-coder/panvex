@@ -84,8 +84,6 @@ func (s *Server) restoreRetentionSettings() error {
 	return nil
 }
 
-const rollupInterval = 5 * time.Minute
-
 func (s *Server) startTimeseriesRollupWorker(ctx context.Context) {
 	if s.store == nil {
 		return
@@ -94,7 +92,7 @@ func (s *Server) startTimeseriesRollupWorker(ctx context.Context) {
 	s.rollupWg.Add(1)
 	go func() {
 		defer s.rollupWg.Done()
-		ticker := time.NewTicker(rollupInterval)
+		ticker := time.NewTicker(s.intervals.Rollup)
 		defer ticker.Stop()
 
 		for {

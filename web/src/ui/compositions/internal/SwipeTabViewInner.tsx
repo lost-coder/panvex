@@ -39,6 +39,10 @@ function SwipeTabViewInner({
   React.useEffect(() => {
     if (activeTab) {
       const idx = tabs.findIndex((t) => t.id === activeTab);
+      // R-Q-24: this effect mirrors the controlled `activeTab` prop into
+      // the internal swiper index — by-design synchronisation, not a
+      // cascading render that needs unwinding.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (idx >= 0) setActiveIndex(idx);
     }
   }, [activeTab, tabs]);

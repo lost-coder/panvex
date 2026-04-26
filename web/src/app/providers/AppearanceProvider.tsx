@@ -34,6 +34,11 @@ const AppearanceContext = React.createContext<AppearanceContextValue>({
   setSwipeNavigation: () => {},
 });
 
+// R-Q-24: provider files intentionally co-locate the context, the hook,
+// and the Provider component so consumers have a single import path.
+// React-refresh requires component-only exports; this rule is informational
+// for HMR and does not affect production behaviour.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAppearance() {
   return React.useContext(AppearanceContext);
 }

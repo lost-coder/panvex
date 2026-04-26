@@ -32,6 +32,8 @@ export function ServerDetailProvider({
   return <ctx.Provider value={value}>{children}</ctx.Provider>;
 }
 
+// R-Q-24: context + Provider + hook are intentionally co-located here.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useServerDetailContext(): ServerDetailCtx {
   const v = useContext(ctx);
   if (!v) {

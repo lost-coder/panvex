@@ -1,16 +1,25 @@
 // Phase-7 redesign: hero band + pulse row + separate Secret section
 // + combined Deployments & Links + GeoIP-ready IP history +
 // always-visible Limits card.
+//
+// R-Q-08: SecretSection, DeployLinksCard, IPHistoryCard, LimitsCard,
+// and the expiry/status helpers all live in `./components/` so this
+// file is left with composition and form-sheet plumbing only.
 import { useState } from "react";
 
 import { ClientFormSheet } from "@/features/clients/ClientFormSheet";
+import { DeployLinksCard } from "./components/DeployLinksCard";
 import { IPHistoryCard } from "./components/IPHistoryCard";
 import { LimitsCard } from "./components/LimitsCard";
+import { SecretSection } from "./components/SecretSection";
 import {
-  Badge,
+  clientStatus,
+  expiresSuffix,
+  expiresTone,
+} from "./components/clientDetailHelpers";
+import {
   Breadcrumbs,
   Button,
-  CopyButton,
   HeroStrip,
   PageHeader,
   PulseRow,
@@ -18,228 +27,15 @@ import {
   SheetBody,
   SheetContent,
   SwipeTabView,
-  deployVariant,
   formatBytes,
   formatExpiry,
   formatQuota,
-  type ClientDeploymentData,
   type ClientDetailPageProps,
   type ClientFormData,
   type HeroMetaPill,
   type PulseTick,
   type StatusTone,
 } from "@/ui";
-
-// ─── Helpers ─────────────────────────────────────────────────────────
-
-function isExpired(rfc: string): boolean {
-  if (!rfc) return false;
-  const t = Date.parse(rfc);
-  return Number.isFinite(t) && t < Date.now();
-}
-function clientStatus(enabled: boolean, rfc: string): "active" | "disabled" | "expired" {
-  if (isExpired(rfc)) return "expired";
-  return enabled ? "active" : "disabled";
-}
-function expiresSuffix(rfc: string): string {
-  if (!rfc) return "never";
-  const t = Date.parse(rfc);
-  if (!Number.isFinite(t)) return "—";
-  const days = Math.floor((t - Date.now()) / (1000 * 60 * 60 * 24));
-  if (days < 0) return `${Math.abs(days)}d ago`;
-  if (days === 0) return "today";
-  return `in ${days}d`;
-}
-function expiresTone(rfc: string): "default" | "warn" | "error" {
-  if (!rfc) return "default";
-  const t = Date.parse(rfc);
-  if (!Number.isFinite(t)) return "default";
-  const days = Math.floor((t - Date.now()) / (1000 * 60 * 60 * 24));
-  if (days < 0) return "error";
-  if (days < 7) return "warn";
-  return "default";
-}
-
-// ─── Secret section ──────────────────────────────────────────────────
-
-function SecretSection({
-  secret,
-  onRotate,
-  rotating,
-  pendingRedeploy,
-}: {
-  secret: string;
-  onRotate?: (() => void) | undefined;
-  rotating?: boolean | undefined;
-  pendingRedeploy?: boolean | undefined;
-}) {
-  // Client secrets need a long-lived reveal/copy flow, not the one-shot
-  // <SecretReveal> primitive used for TOTP bootstraps.
-  const [revealed, setRevealed] = useState(false);
-  // The Panvex API ships `secret` only on create + rotate responses
-  // (omitempty on the regular GET). When it's absent we tell the
-  // operator up front instead of showing a broken Reveal toggle —
-  // tracked as backend follow-up #4.
-  const hasSecret = !!secret;
-  const masked = hasSecret ? "•".repeat(Math.min(32, Math.max(8, secret.length))) : "";
-  return (
-    <section className="rounded-xs bg-bg-card border border-divider p-4 flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-baseline gap-2">
-          <span className="text-sm font-semibold text-fg">Secret</span>
-          <span className="text-[11px] font-mono text-fg-muted">
-            rotating invalidates every outstanding connection link
-          </span>
-        </div>
-        {onRotate && (
-          <Button size="sm" variant="outline" disabled={rotating} onClick={onRotate}>
-            {rotating ? "Rotating…" : "Rotate secret"}
-          </Button>
-        )}
-      </div>
-      {hasSecret ? (
-        <div className="flex items-center gap-2 rounded-xs bg-bg border border-divider px-3 py-2 min-w-0">
-          <code className="flex-1 min-w-0 text-sm font-mono text-fg break-all select-all">
-            {revealed ? secret : masked}
-          </code>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setRevealed((v) => !v)}
-            className="shrink-0"
-          >
-            {revealed ? "Hide" : "Reveal"}
-          </Button>
-          <CopyButton text={secret} />
-        </div>
-      ) : (
-        <div className="rounded-xs bg-bg border border-dashed border-divider px-3 py-2 text-[11px] font-mono text-fg-muted">
-          Current secret isn't returned by the detail API — extract it from a
-          fresh connection link below, or rotate to get a new one.
-        </div>
-      )}
-      {pendingRedeploy && (
-        <div className="text-[11px] font-mono text-status-warn">
-          Secret rotated — wait for agents to re-apply before distributing new links.
-        </div>
-      )}
-    </section>
-  );
-}
-
-// ─── Deployments + Links (combined) ─────────────────────────────────
-
-function LinksStrip({
-  links,
-}: {
-  links: { classic: string[]; secure: string[]; tls: string[] };
-}) {
-  type LinkGroup = { key: "tls" | "secure" | "classic"; label: string; items: string[] };
-  const groups: LinkGroup[] = (
-    [
-      { key: "tls", label: "TLS", items: links.tls },
-      { key: "secure", label: "Secure", items: links.secure },
-      { key: "classic", label: "Classic", items: links.classic },
-    ] satisfies LinkGroup[]
-  ).filter((g) => g.items.length > 0);
-  if (groups.length === 0) {
-    return (
-      <div className="mt-2 text-[11px] font-mono text-fg-muted">No links generated yet.</div>
-    );
-  }
-  return (
-    <div className="mt-2 flex flex-col gap-1.5">
-      {groups.map((g) => (
-        <div key={g.key} className="flex items-center gap-2 min-w-0">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted shrink-0 w-[56px]">
-            {g.label}
-          </span>
-          <span className="font-mono text-xs text-fg truncate min-w-0 flex-1">
-            {g.items[0]}
-          </span>
-          <CopyButton text={g.items[0] ?? ""} />
-          {g.items.length > 1 && (
-            <span className="text-[10px] font-mono text-fg-muted shrink-0">
-              +{g.items.length - 1}
-            </span>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function DeployLinksCard({
-  deployments,
-  secretPendingRedeploy,
-  agentLabels,
-}: {
-  deployments: ClientDeploymentData[];
-  secretPendingRedeploy?: boolean | undefined;
-  agentLabels?: Record<string, string> | undefined;
-}) {
-  if (deployments.length === 0) {
-    return (
-      <div className="rounded-xs bg-bg-card border border-divider p-4 text-sm text-fg-muted text-center">
-        No deployments yet.
-      </div>
-    );
-  }
-  return (
-    <section className="rounded-xs bg-bg-card border border-divider overflow-hidden">
-      <header className="px-4 py-3 border-b border-divider flex items-center justify-between gap-2">
-        <div className="flex items-baseline gap-2">
-          <span className="text-sm font-semibold text-fg">Deployments & links</span>
-          <span className="text-[11px] font-mono text-fg-muted">
-            {deployments.length} node{deployments.length === 1 ? "" : "s"}
-          </span>
-        </div>
-        {secretPendingRedeploy && <Badge variant="warn">Secret rotated — awaiting redeploy</Badge>}
-      </header>
-      <div className="flex flex-col">
-        {deployments.map((d) => {
-          const tone = deployVariant(d.status);
-          const label = agentLabels?.[d.agentId];
-          return (
-            <div key={d.agentId} className="px-4 py-3 border-b border-divider last:border-b-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-mono text-sm text-fg truncate">
-                  {label ?? d.agentId}
-                </span>
-                {label && (
-                  <span className="font-mono text-[10px] text-fg-muted truncate">
-                    {d.agentId.slice(0, 8)}…
-                  </span>
-                )}
-                <Badge variant={tone}>{d.status}</Badge>
-                {d.desiredOperation && d.desiredOperation !== "none" && (
-                  <Badge variant="accent">{d.desiredOperation}</Badge>
-                )}
-                <span className="ml-auto text-[11px] font-mono text-fg-muted tabular-nums">
-                  {d.lastAppliedAtUnix > 0
-                    ? new Date(d.lastAppliedAtUnix * 1000).toLocaleString()
-                    : "never applied"}
-                </span>
-              </div>
-              {d.lastError && (
-                <div className="mt-1 text-[11px] font-mono text-status-error break-words">
-                  {d.lastError}
-                </div>
-              )}
-              <LinksStrip links={d.links} />
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-// ─── IP history extracted to ./components/IPHistoryCard ────────
-
-// ─── Limits & metadata extracted to ./components/LimitsCard ────
-
-// ─── Main page ───────────────────────────────────────────────────────
 
 export function ClientDetailPage({
   client,
@@ -540,7 +336,6 @@ export function ClientDetailPage({
           </SheetContent>
         </Sheet>
       )}
-
     </>
   );
 }

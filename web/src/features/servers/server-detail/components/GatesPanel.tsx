@@ -1,3 +1,5 @@
+// R-Q-24: see DcTiles.tsx — same internal/exported memo pattern.
+/* eslint-disable react-refresh/only-export-components */
 import { memo } from "react";
 
 import { cn } from "@/ui";

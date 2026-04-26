@@ -57,6 +57,11 @@ export function DataTable<T>({
   // P3-PERF-02: virtualize the desktop table body. With 5000 agents we
   // previously emitted 5000 <tr> nodes; now only the rows intersecting the
   // viewport (plus overscan) are rendered, keeping scroll at 60 FPS.
+  //
+  // R-Q-24: TanStack Virtual's API returns memoization-incompatible
+  // functions (compiler skips memoization here). Accepted by-design —
+  // suppress the warning so it does not drown legitimate signals.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const rowVirtualizer = useVirtualizer({
     count: data.length,
     getScrollElement: () => parentRef.current,

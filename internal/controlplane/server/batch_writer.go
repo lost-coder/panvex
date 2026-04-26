@@ -131,6 +131,11 @@ type storeBatchWriter struct {
 	// blocking the test for seconds.
 	sleep func(d time.Duration)
 
+	// now is the injectable clock used by flushItem to measure flush latency.
+	// Stays a field (not a package-level var) so tests can supply a mock clock
+	// to assert deterministic ObserveFlushDuration values.
+	now func() time.Time
+
 	agents     *batchBuffer[storage.AgentRecord]
 	instances  *batchBuffer[storage.InstanceRecord]
 	metricsBuf *batchBuffer[storage.MetricSnapshotRecord]
@@ -169,9 +174,12 @@ func (noopMetricsSink) SetQueueDepth(string, float64)        {}
 func (noopMetricsSink) ObservePersistRetry(string, string)   {}
 func (noopMetricsSink) ObserveFlushDuration(string, float64) {}
 
-func newStoreBatchWriter(store storage.Store, metrics batchMetricsSink) *storeBatchWriter {
+func newStoreBatchWriter(store storage.Store, metrics batchMetricsSink, now func() time.Time) *storeBatchWriter {
 	if metrics == nil {
 		metrics = noopMetricsSink{}
+	}
+	if now == nil {
+		now = time.Now
 	}
 	// cancel is stored on w.cancel and invoked by Stop/StopWithTimeout.
 	ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // cancel is retained via w.cancel and invoked in Stop/StopWithTimeout
@@ -181,6 +189,7 @@ func newStoreBatchWriter(store storage.Store, metrics batchMetricsSink) *storeBa
 		ctx:     ctx,
 		cancel:  cancel,
 		sleep:   time.Sleep,
+		now:     now,
 	}
 
 	w.agents = newBatchBuffer(batchMaxSize, w.flushAgents)
@@ -482,9 +491,9 @@ func (w *storeBatchWriter) flushItem(buffer string, logAttrs []any, op func() er
 	// the observation regardless of how the retry sequence resolved. Done via
 	// a deferred closure so early returns (first-try success, retry success)
 	// still emit a sample.
-	start := time.Now()
+	start := w.now()
 	defer func() {
-		w.metrics.ObserveFlushDuration(buffer, time.Since(start).Seconds())
+		w.metrics.ObserveFlushDuration(buffer, w.now().Sub(start).Seconds())
 	}()
 
 	outcome, err := w.retryWithBackoff(op, func() {

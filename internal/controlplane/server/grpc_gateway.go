@@ -354,7 +354,7 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 		}
 
 		// Request a full client list from the agent for user discovery.
-		if err := sendClientDataRequest(stream, fmt.Sprintf("discovery-%s-%d", agentID, time.Now().Unix())); err != nil {
+		if err := sendClientDataRequest(stream, fmt.Sprintf("discovery-%s-%d", agentID, s.now().Unix())); err != nil {
 			s.logger.Error("client discovery request failed", "agent_id", agentID, "error", err)
 		}
 

@@ -29,6 +29,8 @@ const WsContext = createContext<WsContextValue>({
   reconnectAttempts: 0,
 });
 
+// R-Q-24: provider co-locates the hook by convention; see AppearanceProvider.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useWsStatus(): WsContextValue {
   return useContext(WsContext);
 }

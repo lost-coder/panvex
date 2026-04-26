@@ -263,6 +263,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
  * ToastProvider — the provider is mounted at the root of main.tsx so a
  * missing context indicates a wiring bug, not a user condition.
  */
+// R-Q-24: provider co-locates the hook by convention; see AppearanceProvider.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useToast(): ToastAPI {
   const api = useContext(ToastContext);
   if (!api) {

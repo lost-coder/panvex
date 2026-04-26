@@ -55,4 +55,8 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 );
 Button.displayName = "Button";
 
+// R-Q-24: buttonVariants is the cva() factory consumed by Storybook
+// stories and ad-hoc styling helpers — keeping it co-located with the
+// component is the canonical shadcn/ui pattern.
+// eslint-disable-next-line react-refresh/only-export-components
 export { Button, buttonVariants };
