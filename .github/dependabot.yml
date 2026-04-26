@@ -20,3 +20,16 @@ updates:
       interval: weekly
     labels:
       - enhancement
+
+  # Phase-3 §3.3: track Dockerfile base images so a CVE in
+  # node/golang/alpine/nginx surfaces as a Dependabot PR within a
+  # week instead of riding stale on the registry's `-alpine` tag.
+  # Once an operator pins a digest (FROM image:tag@sha256:...),
+  # Dependabot keeps that digest current alongside the tag.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    labels:
+      - enhancement
+      - security
