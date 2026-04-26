@@ -63,8 +63,14 @@ type fleetGroupDeletionResponse struct {
 
 func (s *Server) handleListFleetGroups() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, _, err := s.requireSession(r); err != nil {
+		_, user, err := s.requireSession(r)
+		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		// R-S-14: only return groups inside the operator's scope.
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
 			return
 		}
 		groups, err := s.fleetSvc.List(r.Context())
@@ -75,6 +81,9 @@ func (s *Server) handleListFleetGroups() http.HandlerFunc {
 		}
 		response := make([]fleetGroupResponse, 0, len(groups))
 		for _, g := range groups {
+			if !scope.IsAllowed(g.ID) {
+				continue
+			}
 			response = append(response, s.fleetGroupToResponse(r.Context(), g, false))
 		}
 		writeJSON(w, http.StatusOK, response)
@@ -97,10 +106,8 @@ func (s *Server) handleGetFleetGroup() http.HandlerFunc {
 		// non-admin operator outside of this group's scope receives 404
 		// (not 403) — leaking "this group exists, you just can't see it"
 		// is itself an information disclosure for an IDOR probe.
-		scope, err := s.resolveFleetScope(r.Context(), user)
-		if err != nil {
-			s.logger.Error("resolve fleet scope failed", "user_id", user.ID, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
 			return
 		}
 		if !scope.IsAllowed(id) {
@@ -152,7 +159,7 @@ func (s *Server) handleCreateFleetGroup() http.HandlerFunc {
 
 func (s *Server) handleUpdateFleetGroup() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session, _, err := s.requireSession(r)
+		session, user, err := s.requireSession(r)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
@@ -160,6 +167,15 @@ func (s *Server) handleUpdateFleetGroup() http.HandlerFunc {
 		id := chi.URLParam(r, "id")
 		if id == "" {
 			writeError(w, http.StatusBadRequest, "fleet group id is required")
+			return
+		}
+		// R-S-14: writes are gated on scope to mirror reads.
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
+			return
+		}
+		if !scope.IsAllowed(id) {
+			writeError(w, http.StatusNotFound, "fleet group not found")
 			return
 		}
 		var request updateFleetGroupRequest
@@ -189,13 +205,22 @@ func (s *Server) handleUpdateFleetGroup() http.HandlerFunc {
 
 func (s *Server) handleFleetGroupDeletionPreview() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, _, err := s.requireSession(r); err != nil {
+		_, user, err := s.requireSession(r)
+		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
 		id := chi.URLParam(r, "id")
 		if id == "" {
 			writeError(w, http.StatusBadRequest, "fleet group id is required")
+			return
+		}
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
+			return
+		}
+		if !scope.IsAllowed(id) {
+			writeError(w, http.StatusNotFound, "fleet group not found")
 			return
 		}
 		counts, err := s.fleetSvc.DeletionPreview(r.Context(), id)
@@ -220,7 +245,7 @@ func (s *Server) handleFleetGroupDeletionPreview() http.HandlerFunc {
 
 func (s *Server) handleDeleteFleetGroup() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session, _, err := s.requireSession(r)
+		session, user, err := s.requireSession(r)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
@@ -230,7 +255,22 @@ func (s *Server) handleDeleteFleetGroup() http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "fleet group id is required")
 			return
 		}
+		// R-S-14: must be in scope of both the group being deleted and
+		// the reassign target (otherwise an operator could move agents
+		// out of their visible fleet and lose track of them).
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
+			return
+		}
+		if !scope.IsAllowed(id) {
+			writeError(w, http.StatusNotFound, "fleet group not found")
+			return
+		}
 		reassignTo := r.URL.Query().Get("reassign_to")
+		if reassignTo != "" && !scope.IsAllowed(reassignTo) {
+			writeError(w, http.StatusBadRequest, "reassign target outside operator scope")
+			return
+		}
 		moved, err := s.fleetSvc.Delete(r.Context(), id, reassignTo)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {

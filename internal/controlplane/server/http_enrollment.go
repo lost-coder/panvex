@@ -196,6 +196,18 @@ func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 			fleetGroupID = resolved.ID
 		}
 
+		// R-S-14: only allow enrollment tokens for groups inside scope.
+		// Done after the resolve so name → id translation runs first
+		// and the operator gets the same UX even when scoped.
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
+			return
+		}
+		if !scope.IsAllowed(fleetGroupID) {
+			writeError(w, http.StatusForbidden, "fleet group outside operator scope")
+			return
+		}
+
 		token, err := s.issueEnrollmentTokenWithContext(r.Context(), security.EnrollmentScope{
 			FleetGroupID: fleetGroupID,
 			TTL:          time.Duration(request.TTLSeconds) * time.Second,
@@ -301,6 +313,21 @@ func (s *Server) handleListEnrollmentTokens() http.HandlerFunc {
 			return
 		}
 
+		// R-S-14: filter by fleet-group scope.
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
+			return
+		}
+		if !scope.Global {
+			filtered := tokens[:0]
+			for _, t := range tokens {
+				if scope.IsAllowed(t.FleetGroupID) {
+					filtered = append(filtered, t)
+				}
+			}
+			tokens = filtered
+		}
+
 		writeJSON(w, http.StatusOK, tokens)
 	}
 }
@@ -334,6 +361,28 @@ func (s *Server) handleRevokeEnrollmentToken() http.HandlerFunc {
 		// raw token, so the UI revoke flow uses the handle.
 		if resolved, ok, err := s.resolveEnrollmentTokenIdentifier(r.Context(), value); err == nil && ok {
 			value = resolved
+		}
+
+		// R-S-14: scope-check the token's fleet group before revoking.
+		// We resolve the existing record first so the scope decision
+		// uses the durable fleet_group_id, not the operator's input.
+		existing, lookupErr := s.store.GetEnrollmentToken(r.Context(), value)
+		if lookupErr != nil {
+			if errors.Is(lookupErr, storage.ErrNotFound) {
+				writeError(w, http.StatusNotFound, "enrollment token not found")
+				return
+			}
+			s.logger.Error("lookup enrollment token failed", "error", lookupErr)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
+			return
+		}
+		if !scope.IsAllowed(existing.FleetGroupID) {
+			writeError(w, http.StatusNotFound, "enrollment token not found")
+			return
 		}
 
 		revoked, changed, err := s.revokeEnrollmentTokenWithContext(r.Context(), value, s.now())

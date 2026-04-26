@@ -56,8 +56,14 @@ func (s *Server) handleFleet() http.HandlerFunc {
 
 func (s *Server) handleAgents() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, _, err := s.requireSession(r); err != nil {
+		_, user, err := s.requireSession(r)
+		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		// R-S-14: filter the agent list down to the operator's scope.
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
 			return
 		}
 		now := s.now()
@@ -79,6 +85,9 @@ func (s *Server) handleAgents() http.HandlerFunc {
 
 		response := make([]Agent, 0, len(s.agents))
 		for _, agent := range s.agents {
+			if !scope.IsAllowed(agent.FleetGroupID) {
+				continue
+			}
 			agent.PresenceState = string(s.presence.Evaluate(agent.ID, now))
 			if grant, ok := recoveryGrants[agent.ID]; ok {
 				recovery := agentCertificateRecoveryGrantResponseFromRecord(grant, now)
@@ -94,8 +103,14 @@ func (s *Server) handleAgents() http.HandlerFunc {
 
 func (s *Server) handleInstances() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, _, err := s.requireSession(r); err != nil {
+		_, user, err := s.requireSession(r)
+		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		// R-S-14: filter instances by parent agent's fleet group.
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
 			return
 		}
 
@@ -104,6 +119,12 @@ func (s *Server) handleInstances() http.HandlerFunc {
 
 		response := make([]Instance, 0, len(s.instances))
 		for _, instance := range s.instances {
+			if !scope.Global {
+				agent, agentOK := s.agents[instance.AgentID]
+				if !agentOK || !scope.IsAllowed(agent.FleetGroupID) {
+					continue
+				}
+			}
 			response = append(response, instance)
 		}
 

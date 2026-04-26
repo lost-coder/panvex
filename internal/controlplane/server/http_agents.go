@@ -15,7 +15,7 @@ type renameAgentRequest struct {
 
 func (s *Server) handleRenameAgent() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session, _, err := s.requireSession(r)
+		session, user, err := s.requireSession(r)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
@@ -42,9 +42,19 @@ func (s *Server) handleRenameAgent() http.HandlerFunc {
 		// Verify the agent exists in memory before touching the store so a
 		// 404 does not leave an orphaned store update.
 		s.mu.RLock()
-		_, exists := s.agents[agentID]
+		existing, exists := s.agents[agentID]
 		s.mu.RUnlock()
 		if !exists {
+			writeError(w, http.StatusNotFound, "agent not found")
+			return
+		}
+
+		// R-S-14: scope-check by the agent's fleet group.
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
+			return
+		}
+		if !scope.IsAllowed(existing.FleetGroupID) {
 			writeError(w, http.StatusNotFound, "agent not found")
 			return
 		}
@@ -80,7 +90,7 @@ func (s *Server) handleRenameAgent() http.HandlerFunc {
 
 func (s *Server) handleDeregisterAgent() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session, _, err := s.requireSession(r)
+		session, user, err := s.requireSession(r)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
@@ -89,6 +99,26 @@ func (s *Server) handleDeregisterAgent() http.HandlerFunc {
 		agentID := chi.URLParam(r, "id")
 		if agentID == "" {
 			writeError(w, http.StatusBadRequest, "missing agent id")
+			return
+		}
+
+		// R-S-14: confirm the agent is inside the operator's scope
+		// before any teardown work runs. Reading from s.agents is safe
+		// here because Terminate(agentID) below does not touch this
+		// map.
+		s.mu.RLock()
+		preCheck, preExists := s.agents[agentID]
+		s.mu.RUnlock()
+		if !preExists {
+			writeError(w, http.StatusNotFound, "agent not found")
+			return
+		}
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
+			return
+		}
+		if !scope.IsAllowed(preCheck.FleetGroupID) {
+			writeError(w, http.StatusNotFound, "agent not found")
 			return
 		}
 
