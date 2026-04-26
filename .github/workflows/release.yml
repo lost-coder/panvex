@@ -8,13 +8,16 @@ on:
 
 permissions:
   contents: write
-  # Needed for cosign keyless SBOM signing below: the job trades its
-  # GitHub-issued OIDC token for a short-lived Fulcio certificate, signs
-  # the SBOM with it, and records the event in Rekor. No long-lived
-  # signing key for the SBOM path — the archive's .sig is still signed
-  # with the pinned ECDSA key (PANVEX_SIGNING_KEY) because the embedded
-  # verifier in the agent pins to that pubkey.
+  # Needed for cosign keyless SBOM signing AND actions/attest-build-provenance:
+  # both trade the job's GitHub-issued OIDC token for a Fulcio cert (cosign)
+  # or a Sigstore bundle (attest action). No long-lived signing key on either
+  # path — the archive's .sig is still signed with the pinned ECDSA key
+  # (PANVEX_SIGNING_KEY) because the embedded verifier in the agent pins
+  # to that pubkey.
   id-token: write
+  # Phase-3 §3.4: actions/attest-build-provenance writes SLSA build
+  # provenance attestations to GitHub's attestations API + Sigstore.
+  attestations: write
 
 jobs:
   build:
@@ -111,6 +114,21 @@ jobs:
           output-file: panvex-${{ steps.meta.outputs.component }}-linux-${{ matrix.arch }}.sbom.json
           upload-artifact: false
           upload-release-assets: false
+
+      # Phase-3 §3.4: SLSA build provenance attestation. Records the
+      # exact workflow file, runner, and inputs that produced the
+      # archive into Sigstore + the GitHub attestations API. Verify
+      # off the runner with:
+      #   gh attestation verify panvex-…tar.gz \
+      #     --owner lost-coder --repo panvex
+      # Independent of the ECDSA archive .sig (which the agent pins
+      # to embedded keys for in-binary verification): provenance
+      # answers "where did this artifact come from", signature
+      # answers "is it intact and from a trusted signer".
+      - name: Attest build provenance for archive
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: panvex-*-linux-${{ matrix.arch }}.tar.gz
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
