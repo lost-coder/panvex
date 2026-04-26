@@ -195,6 +195,23 @@ jobs:
           sqlc-version: '1.30.0'
       - run: sqlc diff
 
+  load-bench:
+    name: Load harness (smoke)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+      # Phase-3 §3.6: smoke-run the perf benchmarks at -benchtime=1x
+      # so a regression that broke compilation, panicked under load,
+      # or blew up O(N²) shows up in CI without paying for a full
+      # statistical run. Operators wanting throughput numbers run
+      # `go test -bench . -benchtime=10s ./internal/loadtest/...`
+      # locally or in a nightly job.
+      - name: Run load harness benches (1x)
+        run: go test -run '^$' -bench . -benchtime=1x ./internal/loadtest/...
+
   trivy-fs:
     name: Trivy filesystem scan
     runs-on: ubuntu-latest
