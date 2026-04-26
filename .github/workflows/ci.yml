@@ -123,6 +123,13 @@ jobs:
       - name: Install and build frontend
         working-directory: web
         run: npm ci && npm run build
+      # Phase-3 §3.3: size-limit gates the bundle so a careless
+      # `npm install` of a heavy dep, or a forgotten manualChunks
+      # override, fails CI instead of silently bloating first-paint.
+      # Budgets live in web/package.json under "size-limit".
+      - name: Check bundle size budgets
+        working-directory: web
+        run: npm run size
 
   frontend-test:
     name: Frontend Tests
