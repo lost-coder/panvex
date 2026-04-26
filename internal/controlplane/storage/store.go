@@ -15,6 +15,22 @@ type UserStore interface {
 	ListUsers(ctx context.Context) ([]UserRecord, error)
 }
 
+// UserFleetGroupScopeStore persists the per-operator fleet-group scope
+// mapping introduced by R-S-14. An empty list for a user means "global"
+// (legacy single-tenant behaviour); admins are global regardless of
+// stored rows.
+type UserFleetGroupScopeStore interface {
+	// ListUserFleetGroupScopes returns every fleet-group id the given
+	// user is scoped to. An empty slice means "global" — the user sees
+	// every fleet group.
+	ListUserFleetGroupScopes(ctx context.Context, userID string) ([]string, error)
+	// SetUserFleetGroupScopes replaces the user's scope set with the
+	// supplied list. An empty input clears the scope (back to global).
+	// Caller is expected to pre-validate that every fleet group id
+	// exists; the store relies on FK integrity for the runtime guarantee.
+	SetUserFleetGroupScopes(ctx context.Context, userID string, fleetGroupIDs []string, grantedBy string, grantedAt time.Time) error
+}
+
 // UserAppearanceStore persists per-user appearance preferences.
 type UserAppearanceStore interface {
 	PutUserAppearance(ctx context.Context, appearance UserAppearanceRecord) error
@@ -357,6 +373,7 @@ type TxFn func(tx Store) error
 // Store aggregates the persistence capabilities required by the control-plane.
 type Store interface {
 	UserStore
+	UserFleetGroupScopeStore
 	UserAppearanceStore
 	SessionStore
 	CPSecretStore

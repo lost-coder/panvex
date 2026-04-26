@@ -83,13 +83,28 @@ func (s *Server) handleListFleetGroups() http.HandlerFunc {
 
 func (s *Server) handleGetFleetGroup() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, _, err := s.requireSession(r); err != nil {
+		_, user, err := s.requireSession(r)
+		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
 		id := chi.URLParam(r, "id")
 		if id == "" {
 			writeError(w, http.StatusBadRequest, "fleet group id is required")
+			return
+		}
+		// R-S-14: scope-check the fleet-group id before any read so a
+		// non-admin operator outside of this group's scope receives 404
+		// (not 403) — leaking "this group exists, you just can't see it"
+		// is itself an information disclosure for an IDOR probe.
+		scope, err := s.resolveFleetScope(r.Context(), user)
+		if err != nil {
+			s.logger.Error("resolve fleet scope failed", "user_id", user.ID, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		if !scope.IsAllowed(id) {
+			writeError(w, http.StatusNotFound, "fleet group not found")
 			return
 		}
 		group, err := s.fleetSvc.Get(r.Context(), id)

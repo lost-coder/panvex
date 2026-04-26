@@ -3,12 +3,11 @@
 // client shows up once in the list with `discoveredOn: node[]` instead
 // of one row per node.
 //
-// R-Q-08: column factory, mobile row, pulse cell, and the StatusPill
-// helper live in `./components/` so this file stays focused on filter
-// state, selection, and bulk-action dispatch.
+// R-Q-08: pulse strip, filter spec, pending/reviewed sections, the
+// column factory, and mobile row all live in `./components/`.
 import { useMemo, useState } from "react";
 
-import { Button, DataTable, EmptyState, PageHeader, TableView } from "@/ui";
+import { Button, EmptyState, PageHeader, TableView } from "@/ui";
 import type { DiscoveredClientsPageProps } from "@/shared/api/types-pages/pages";
 import {
   groupDiscovered,
@@ -17,9 +16,28 @@ import {
 
 import { buildDiscoveredColumns } from "./components/DiscoveredColumns";
 import {
-  DiscoveredMobileRow,
-  DiscoveredPulseCell,
-} from "./components/DiscoveredMobileRow";
+  DiscoveredPulseStrip,
+  buildDiscoveredFilters,
+  type DiscoveredCounts,
+} from "./components/DiscoveredPulseStrip";
+import {
+  DiscoveredPendingSection,
+  DiscoveredReviewedSection,
+} from "./components/DiscoveredSection";
+
+function buildCounts(groups: DiscoveredGroup[]): DiscoveredCounts {
+  let pending = 0;
+  let adopted = 0;
+  let ignored = 0;
+  let conflicts = 0;
+  for (const g of groups) {
+    if (g.status === "pending_review") pending++;
+    else if (g.status === "adopted") adopted++;
+    else if (g.status === "ignored") ignored++;
+    if (g.hasConflict) conflicts++;
+  }
+  return { all: groups.length, pending, adopted, ignored, conflicts };
+}
 
 export function DiscoveredClientsPage({
   clients,
@@ -31,19 +49,7 @@ export function DiscoveredClientsPage({
   busy,
 }: DiscoveredClientsPageProps) {
   const groups = useMemo(() => groupDiscovered(clients), [clients]);
-  const counts = useMemo(() => {
-    let pending = 0,
-      adopted = 0,
-      ignored = 0,
-      conflicts = 0;
-    for (const g of groups) {
-      if (g.status === "pending_review") pending++;
-      else if (g.status === "adopted") adopted++;
-      else if (g.status === "ignored") ignored++;
-      if (g.hasConflict) conflicts++;
-    }
-    return { all: groups.length, pending, adopted, ignored, conflicts };
-  }, [groups]);
+  const counts = useMemo(() => buildCounts(groups), [groups]);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -91,9 +97,7 @@ export function DiscoveredClientsPage({
     });
   const clearSelection = () => setSelected(new Set());
 
-  const selectedIds = pendingList
-    .filter((g) => selected.has(g.key))
-    .flatMap((g) => g.ids);
+  const selectedIds = pendingList.filter((g) => selected.has(g.key)).flatMap((g) => g.ids);
 
   const runAdopt = (ids: string[]) => {
     if (ids.length === 0) return;
@@ -145,17 +149,7 @@ export function DiscoveredClientsPage({
         }
       />
       <div className="px-4 md:px-8 pb-8 flex flex-col gap-5">
-        <section className="rounded-xs bg-bg-card border border-border grid grid-cols-2 md:grid-cols-4">
-          <DiscoveredPulseCell i={0} label="Pending" value={counts.pending} tone="warn" />
-          <DiscoveredPulseCell i={1} label="Adopted" value={counts.adopted} tone="ok" />
-          <DiscoveredPulseCell i={2} label="Ignored" value={counts.ignored} tone="default" />
-          <DiscoveredPulseCell
-            i={3}
-            label="Conflicts"
-            value={counts.conflicts}
-            tone={counts.conflicts > 0 ? "error" : "default"}
-          />
-        </section>
+        <DiscoveredPulseStrip counts={counts} />
 
         <TableView
           search={{
@@ -163,36 +157,11 @@ export function DiscoveredClientsPage({
             onChange: setSearch,
             placeholder: "Search client or node…",
           }}
-          filters={[
-            {
-              key: "status",
-              value: statusFilter,
-              onChange: setStatusFilter,
-              variant: "chips",
-              options: [
-                { value: "all", label: `All · ${counts.all}` },
-                { value: "pending", label: `Pending · ${counts.pending}`, tone: "warn" as const },
-                { value: "adopted", label: `Adopted · ${counts.adopted}`, tone: "ok" as const },
-                { value: "ignored", label: `Ignored · ${counts.ignored}` },
-              ],
-              placeholder: "Status",
-            },
-            {
-              key: "conflicts",
-              value: conflictFilter,
-              onChange: setConflictFilter,
-              variant: "chips",
-              options: [
-                { value: "all", label: "All" },
-                {
-                  value: "only",
-                  label: `Conflicts · ${counts.conflicts}`,
-                  tone: "error" as const,
-                },
-              ],
-              placeholder: "Conflicts",
-            },
-          ]}
+          filters={buildDiscoveredFilters({
+            status: { value: statusFilter, onChange: setStatusFilter },
+            conflicts: { value: conflictFilter, onChange: setConflictFilter },
+            counts,
+          })}
         >
           {filtered.length === 0 ? (
             <EmptyState
@@ -201,77 +170,24 @@ export function DiscoveredClientsPage({
             />
           ) : (
             <div className="flex flex-col gap-6">
-              {pendingList.length > 0 && (
-                <section className="flex flex-col gap-3">
-                  <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <h3 className="text-sm font-semibold text-fg">
-                      Pending ({pendingList.length})
-                    </h3>
-                    {selected.size > 0 && (
-                      <div className="flex items-center gap-2 rounded-xs bg-bg-card border border-accent/40 px-3 py-1.5">
-                        <span className="text-xs font-mono text-fg">
-                          {selected.size} selected · {selectedIds.length} records
-                        </span>
-                        <Button size="sm" disabled={busy} onClick={runBulkAdopt}>
-                          Adopt
-                        </Button>
-                        <Button size="sm" variant="outline" disabled={busy} onClick={runBulkIgnore}>
-                          Ignore
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={clearSelection}>
-                          Clear
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                  <div className="md:hidden rounded-xs bg-bg-card border border-border overflow-hidden">
-                    {pendingList.map((g) => (
-                      <DiscoveredMobileRow
-                        key={g.key}
-                        row={g}
-                        selected={selected.has(g.key)}
-                        onToggleSelect={toggleOne}
-                        onAdopt={runAdopt}
-                        onIgnore={runIgnore}
-                        busy={busy}
-                      />
-                    ))}
-                  </div>
-                  <div className="hidden md:block rounded-xs bg-bg-card border border-border overflow-hidden">
-                    <DataTable
-                      columns={pendingColumns}
-                      data={pendingList}
-                      keyExtractor={(row: DiscoveredGroup) => row.key}
-                    />
-                  </div>
-                </section>
-              )}
-
-              {reviewedList.length > 0 && (
-                <section className="flex flex-col gap-3">
-                  <h3 className="text-sm font-semibold text-fg-muted">
-                    Previously reviewed ({reviewedList.length})
-                  </h3>
-                  <div className="md:hidden rounded-xs bg-bg-card border border-border overflow-hidden">
-                    {reviewedList.map((g) => (
-                      <DiscoveredMobileRow
-                        key={g.key}
-                        row={g}
-                        selected={false}
-                        onToggleSelect={() => {}}
-                        busy={busy}
-                      />
-                    ))}
-                  </div>
-                  <div className="hidden md:block rounded-xs bg-bg-card border border-border overflow-hidden">
-                    <DataTable
-                      columns={reviewedColumns}
-                      data={reviewedList}
-                      keyExtractor={(row: DiscoveredGroup) => row.key}
-                    />
-                  </div>
-                </section>
-              )}
+              <DiscoveredPendingSection
+                rows={pendingList}
+                columns={pendingColumns}
+                selected={selected}
+                selectedRecordCount={selectedIds.length}
+                onToggleSelect={toggleOne}
+                onAdopt={runAdopt}
+                onIgnore={runIgnore}
+                onClearSelection={clearSelection}
+                onBulkAdopt={runBulkAdopt}
+                onBulkIgnore={runBulkIgnore}
+                busy={busy}
+              />
+              <DiscoveredReviewedSection
+                rows={reviewedList}
+                columns={reviewedColumns}
+                busy={busy}
+              />
             </div>
           )}
         </TableView>

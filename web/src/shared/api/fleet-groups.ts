@@ -95,6 +95,11 @@ export type UpdateFleetGroupIntegrationRequest = {
 };
 
 export const fleetGroupsApi = {
+  // R-Q-20: schemas exist in shared/api/schemas/fleet.ts; the existing
+  // domain type uses `provider_id?: string` which conflicts with
+  // exactOptionalPropertyTypes against Zod's `.optional()` shape. Wiring
+  // them into api() requires a follow-up that reconciles the optional
+  // semantics; the schemas stand ready for that PR.
   fleetGroups: () => api<FleetGroupEntry[]>(`${apiBasePath}/fleet-groups`),
   fleetGroup: (id: string) => api<FleetGroupEntry>(`${apiBasePath}/fleet-groups/${id}`),
   createFleetGroup: (payload: CreateFleetGroupRequest) =>

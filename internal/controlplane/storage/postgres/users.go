@@ -6,81 +6,84 @@ import (
 	"errors"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/dbsqlc"
 )
 
+// PutUser upserts one users row.
+//
+// R-Q-03: routed through dbsqlc.UpsertUser. The created_at column is no
+// longer touched by the upsert path so an UPDATE keeps the original
+// timestamp — this matches the prior behaviour where ON CONFLICT set
+// created_at to EXCLUDED.created_at and callers passed the same value
+// they originally inserted; the column is stable across upserts so
+// dropping it from the SET keeps the existing semantic for every
+// observed callsite.
 func (s *Store) PutUser(ctx context.Context, user storage.UserRecord) error {
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO users (id, username, password_hash, role, totp_enabled, totp_secret, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		ON CONFLICT (id) DO UPDATE
-		SET username = EXCLUDED.username,
-		    password_hash = EXCLUDED.password_hash,
-		    role = EXCLUDED.role,
-		    totp_enabled = EXCLUDED.totp_enabled,
-		    totp_secret = EXCLUDED.totp_secret,
-		    created_at = EXCLUDED.created_at
-	`, user.ID, user.Username, user.PasswordHash, user.Role, user.TotpEnabled, user.TotpSecret, user.CreatedAt.UTC())
-	return err
+	if s.sqlDB == nil {
+		return errTxBoundStore
+	}
+	return dbsqlc.New(s.sqlDB).UpsertUser(ctx, dbsqlc.UpsertUserParams{
+		ID:           user.ID,
+		Username:     user.Username,
+		PasswordHash: user.PasswordHash,
+		Role:         user.Role,
+		TotpEnabled:  user.TotpEnabled,
+		TotpSecret:   user.TotpSecret,
+		CreatedAt:    user.CreatedAt.UTC(),
+	})
+}
+
+func userRecordFromRow(row dbsqlc.User) storage.UserRecord {
+	return storage.UserRecord{
+		ID:           row.ID,
+		Username:     row.Username,
+		PasswordHash: row.PasswordHash,
+		Role:         row.Role,
+		TotpEnabled:  row.TotpEnabled,
+		TotpSecret:   row.TotpSecret,
+		CreatedAt:    row.CreatedAt.UTC(),
+	}
 }
 
 func (s *Store) GetUserByID(ctx context.Context, userID string) (storage.UserRecord, error) {
-	row := s.db.QueryRowContext(ctx, `
-		SELECT id, username, password_hash, role, totp_enabled, totp_secret, created_at
-		FROM users
-		WHERE id = $1
-	`, userID)
-
-	var user storage.UserRecord
-	if err := row.Scan(&user.ID, &user.Username, &user.PasswordHash, &user.Role, &user.TotpEnabled, &user.TotpSecret, &user.CreatedAt); err != nil {
+	if s.sqlDB == nil {
+		return storage.UserRecord{}, errTxBoundStore
+	}
+	row, err := dbsqlc.New(s.sqlDB).GetUser(ctx, userID)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.UserRecord{}, storage.ErrNotFound
 		}
 		return storage.UserRecord{}, err
 	}
-
-	user.CreatedAt = user.CreatedAt.UTC()
-	return user, nil
+	return userRecordFromRow(row), nil
 }
 
 func (s *Store) GetUserByUsername(ctx context.Context, username string) (storage.UserRecord, error) {
-	row := s.db.QueryRowContext(ctx, `
-		SELECT id, username, password_hash, role, totp_enabled, totp_secret, created_at
-		FROM users
-		WHERE username = $1
-	`, username)
-
-	var user storage.UserRecord
-	if err := row.Scan(&user.ID, &user.Username, &user.PasswordHash, &user.Role, &user.TotpEnabled, &user.TotpSecret, &user.CreatedAt); err != nil {
+	if s.sqlDB == nil {
+		return storage.UserRecord{}, errTxBoundStore
+	}
+	row, err := dbsqlc.New(s.sqlDB).GetUserByUsername(ctx, username)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.UserRecord{}, storage.ErrNotFound
 		}
 		return storage.UserRecord{}, err
 	}
-
-	user.CreatedAt = user.CreatedAt.UTC()
-	return user, nil
+	return userRecordFromRow(row), nil
 }
 
 func (s *Store) ListUsers(ctx context.Context) ([]storage.UserRecord, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, username, password_hash, role, totp_enabled, totp_secret, created_at
-		FROM users
-		ORDER BY created_at, id
-	`)
+	if s.sqlDB == nil {
+		return nil, errTxBoundStore
+	}
+	rows, err := dbsqlc.New(s.sqlDB).ListUsers(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	result := make([]storage.UserRecord, 0)
-	for rows.Next() {
-		var user storage.UserRecord
-		if err := rows.Scan(&user.ID, &user.Username, &user.PasswordHash, &user.Role, &user.TotpEnabled, &user.TotpSecret, &user.CreatedAt); err != nil {
-			return nil, err
-		}
-		user.CreatedAt = user.CreatedAt.UTC()
-		result = append(result, user)
+	result := make([]storage.UserRecord, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, userRecordFromRow(row))
 	}
-
-	return result, rows.Err()
+	return result, nil
 }
