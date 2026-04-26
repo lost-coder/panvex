@@ -38,12 +38,18 @@ CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs (status);
 CREATE INDEX IF NOT EXISTS idx_jobs_actor_id ON jobs (actor_id);
 
 -- ─── job_targets ─────────────────────────────────────────────────────
-DELETE FROM job_targets WHERE status NOT IN ('queued','dispatched','acknowledged','succeeded','failed','expired');
+-- The application enum (jobs.TargetStatus) is queued / sent /
+-- acknowledged / succeeded / failed / expired. The earlier postgres
+-- migration 0023 typo'd `sent` as `dispatched` — postgres writes to
+-- target.status="sent" trip the constraint. The follow-up migration
+-- 0027_fix_job_targets_check_enum corrects postgres; the SQLite
+-- constraint below is born correct.
+DELETE FROM job_targets WHERE status NOT IN ('queued','sent','acknowledged','succeeded','failed','expired');
 
 CREATE TABLE job_targets_new (
     job_id TEXT NOT NULL,
     agent_id TEXT NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('queued','dispatched','acknowledged','succeeded','failed','expired')),
+    status TEXT NOT NULL CHECK (status IN ('queued','sent','acknowledged','succeeded','failed','expired')),
     result_text TEXT NOT NULL DEFAULT '',
     result_json TEXT NOT NULL DEFAULT '',
     updated_at_unix INTEGER NOT NULL,
