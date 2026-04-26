@@ -12,9 +12,9 @@ export interface EventInvalidation {
   /** queryKey prefixes to invalidate immediately. */
   keys: readonly (readonly unknown[])[];
   /** When true, trigger the debounced telemetry invalidation. */
-  telemetry?: boolean;
+  telemetry?: boolean | undefined;
   /** Optional agent id so a targeted telemetry invalidate is possible. */
-  telemetryAgentID?: string;
+  telemetryAgentID?: string | undefined;
 }
 
 export function extractAgentID(data: unknown): string | undefined {

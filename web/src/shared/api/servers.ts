@@ -37,12 +37,12 @@ export type AgentRuntime = {
   dc_coverage_pct: number;
   healthy_upstreams: number;
   total_upstreams: number;
-  reroute_active?: boolean;
-  route_mode?: string;
-  me2dc_fast_enabled?: boolean;
-  stale_cache_used?: boolean;
-  top_by_connections?: Array<{ username: string; connections: number }>;
-  top_by_throughput?: Array<{ username: string; throughput_bytes: number }>;
+  reroute_active?: boolean | undefined;
+  route_mode?: string | undefined;
+  me2dc_fast_enabled?: boolean | undefined;
+  stale_cache_used?: boolean | undefined;
+  top_by_connections?: Array<{ username: string; connections: number }> | undefined;
+  top_by_throughput?: Array<{ username: string; throughput_bytes: number }> | undefined;
   dcs: Array<{
     dc: number;
     available_endpoints: number;
@@ -64,10 +64,10 @@ export type AgentRuntime = {
     effective_latency_ms: number;
     weight: number;
     last_check_age_secs: number;
-    scopes?: string[];
+    scopes?: string[] | undefined;
   }>;
-  lifecycle_state?: string;
-  updated_at?: string;
+  lifecycle_state?: string | undefined;
+  updated_at?: string | undefined;
   recent_events: RuntimeEvent[];
   system_load: {
     cpu_usage_pct: number;
@@ -91,15 +91,15 @@ export type AgentRuntime = {
     fresh_coverage_pct: number;
     required_writers: number;
     alive_writers: number;
-  };
+  } | undefined;
 };
 
 export type AgentCertificateRecovery = {
   status: "allowed" | "expired" | "used" | "revoked";
   issued_at_unix: number;
   expires_at_unix: number;
-  used_at_unix?: number;
-  revoked_at_unix?: number;
+  used_at_unix?: number | undefined;
+  revoked_at_unix?: number | undefined;
 };
 
 export type Agent = {
@@ -109,9 +109,9 @@ export type Agent = {
   version: string;
   read_only: boolean;
   presence_state: string;
-  certificate_recovery?: AgentCertificateRecovery;
-  cert_issued_at?: string;
-  cert_expires_at?: string;
+  certificate_recovery?: AgentCertificateRecovery | undefined;
+  cert_issued_at?: string | undefined;
+  cert_expires_at?: string | undefined;
   runtime: AgentRuntime;
   last_seen_at: string;
 };
