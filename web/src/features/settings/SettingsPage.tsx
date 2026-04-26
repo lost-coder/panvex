@@ -281,7 +281,7 @@ function RetentionSection({
 }: {
   settings: NonNullable<SettingsPageProps["retentionSettings"]>;
   onChange: (s: NonNullable<SettingsPageProps["retentionSettings"]>) => void;
-  saving?: boolean;
+  saving?: boolean | undefined;
 }) {
   const [draft, setDraft] = useState(settings);
   const isDirty = JSON.stringify(draft) !== JSON.stringify(settings);

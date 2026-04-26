@@ -27,7 +27,7 @@ import {
 
 interface OverviewPanelProps {
   data: DashboardOverviewData;
-  onNodeClick?: (nodeId: string) => void;
+  onNodeClick?: ((nodeId: string) => void) | undefined;
 }
 
 const TONE_VALUE_CLASS: Record<NonNullable<KpiItem["tone"]>, string> = {
@@ -226,8 +226,8 @@ function FleetList({
 }: {
   attention: DashboardNodeData[];
   healthy: DashboardNodeData[];
-  onNodeClick?: (id: string) => void;
-  maxHealthy?: number;
+  onNodeClick?: ((id: string) => void) | undefined;
+  maxHealthy?: number | undefined;
 }) {
   const trimmedHealthy = healthy.slice(0, maxHealthy);
   const hiddenCount = Math.max(0, healthy.length - trimmedHealthy.length);
@@ -281,7 +281,7 @@ function FleetPanel({
   data,
   onNodeClick,
   onViewAll,
-}: OverviewPanelProps & { onViewAll?: () => void }) {
+}: OverviewPanelProps & { onViewAll?: (() => void) | undefined }) {
   const totalFleet = data.attentionNodes.length + data.healthyNodes.length;
   const issues = data.attentionNodes.length;
   return (

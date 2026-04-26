@@ -16,8 +16,8 @@ interface TotpSetupSheetProps {
   otpauthUrl: string;
   onEnable: (password: string, totpCode: string) => Promise<void>;
   onCancel: () => void;
-  loading?: boolean;
-  error?: string;
+  loading?: boolean | undefined;
+  error?: string | undefined;
 }
 
 export function TotpSetupSheet({

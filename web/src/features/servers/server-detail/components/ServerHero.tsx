@@ -23,10 +23,10 @@ export function ServerHero({
   pulseWord: string;
   relativeTime: string | null;
   relativeTimeStale: boolean;
-  onReload?: () => void;
-  onBoostDetail?: () => void;
-  onRename?: () => void;
-  onDeregister?: () => void;
+  onReload?: (() => void) | undefined;
+  onBoostDetail?: (() => void) | undefined;
+  onRename?: (() => void) | undefined;
+  onDeregister?: (() => void) | undefined;
 }) {
   const { systemInfo } = server;
   return (

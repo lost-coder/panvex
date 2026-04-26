@@ -266,8 +266,8 @@ function InstallStep({
 
   const requirements: Array<{
     label: string;
-    detail?: string;
-    tone?: "default" | "warn";
+    detail?: string | undefined;
+    tone?: "default" | "warn" | undefined;
   }> = [
     { label: "Linux host (amd64 / arm64)" },
     { label: "Root privileges (sudo)" },

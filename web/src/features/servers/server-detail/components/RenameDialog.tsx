@@ -15,7 +15,7 @@ export function RenameDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentName: string;
-  onRename?: (name: string) => void;
+  onRename?: ((name: string) => void) | undefined;
 }) {
   const [value, setValue] = useState(currentName);
 

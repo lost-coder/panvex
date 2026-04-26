@@ -2,10 +2,10 @@ import React from "react";
 import { MoreVertical } from "lucide-react";
 
 export interface ServerActionsDropdownProps {
-  onReload?: () => void;
-  onBoostDetail?: () => void;
-  onRename?: () => void;
-  onDeregister?: () => void;
+  onReload?: (() => void) | undefined;
+  onBoostDetail?: (() => void) | undefined;
+  onRename?: (() => void) | undefined;
+  onDeregister?: (() => void) | undefined;
 }
 
 export function ServerActionsDropdown({

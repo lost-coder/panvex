@@ -35,10 +35,10 @@ function buildColumns(opts: {
     onToggleAll: () => void;
     allSelected: boolean;
     someSelected: boolean;
-  };
-  onAdopt?: (ids: string[]) => void;
-  onIgnore?: (ids: string[]) => void;
-  busy?: boolean;
+  } | undefined;
+  onAdopt?: ((ids: string[]) => void) | undefined;
+  onIgnore?: ((ids: string[]) => void) | undefined;
+  busy?: boolean | undefined;
   withActions: boolean;
 }) {
   const { selection, onAdopt, onIgnore, busy, withActions } = opts;
@@ -216,9 +216,9 @@ function MobileRow({
   row: DiscoveredGroup;
   selected: boolean;
   onToggleSelect: (key: string) => void;
-  onAdopt?: (ids: string[]) => void;
-  onIgnore?: (ids: string[]) => void;
-  busy?: boolean;
+  onAdopt?: ((ids: string[]) => void) | undefined;
+  onIgnore?: ((ids: string[]) => void) | undefined;
+  busy?: boolean | undefined;
 }) {
   const interactive = row.status === "pending_review";
   return (

@@ -25,15 +25,15 @@ import { TypeToConfirmDialog } from "@/components/TypeToConfirmDialog";
 export interface ConfirmOptions {
   title: string;
   body: string;
-  confirmLabel?: string;
-  cancelLabel?: string;
-  variant?: "default" | "danger";
+  confirmLabel?: string | undefined;
+  cancelLabel?: string | undefined;
+  variant?: "default" | "danger" | undefined;
   /**
    * UX-05: when set, replaces the standard dialog with one that gates
    * confirm on the operator typing this exact string. Use for truly
    * irreversible actions (delete user, deregister agent).
    */
-  requireTypeMatch?: string;
+  requireTypeMatch?: string | undefined;
 }
 
 type ConfirmFn = (opts: ConfirmOptions) => Promise<boolean>;
