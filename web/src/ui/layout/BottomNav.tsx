@@ -4,8 +4,8 @@ import type { NavItem } from "./types";
 export interface BottomNavProps {
   items: NavItem[];
   activeId: string;
-  onNavigate?: (id: string) => void;
-  className?: string;
+  onNavigate?: ((id: string) => void) | undefined;
+  className?: string | undefined;
 }
 
 export function BottomNav({ items, activeId, onNavigate, className }: BottomNavProps) {

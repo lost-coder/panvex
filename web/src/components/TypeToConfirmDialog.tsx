@@ -10,9 +10,9 @@ export interface TypeToConfirmDialogProps {
   description: string;
   /** The exact string the operator must type before confirm enables. */
   requireTypeMatch: string;
-  confirmLabel?: string;
-  cancelLabel?: string;
-  variant?: "default" | "danger";
+  confirmLabel?: string | undefined;
+  cancelLabel?: string | undefined;
+  variant?: "default" | "danger" | undefined;
   onConfirm: () => void;
   onCancel: () => void;
 }

@@ -6,9 +6,9 @@ export interface ConfirmDialogProps {
   open: boolean;
   title: string;
   description: string;
-  confirmLabel?: string;
-  cancelLabel?: string;
-  variant?: "default" | "danger";
+  confirmLabel?: string | undefined;
+  cancelLabel?: string | undefined;
+  variant?: "default" | "danger" | undefined;
   onConfirm: () => void;
   onCancel: () => void;
 }

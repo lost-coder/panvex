@@ -11,11 +11,11 @@ export interface TableViewFilter {
   key: string;
   value: string;
   onChange: (val: string) => void;
-  options: Array<{ value: string; label: string; tone?: "ok" | "warn" | "error" }>;
-  placeholder?: string;
+  options: Array<{ value: string; label: string; tone?: "ok" | "warn" | "error" | undefined }>;
+  placeholder?: string | undefined;
   /** "select" (default) renders a dropdown; "chips" renders an inline
    *  toggle-group so common statuses are one click away. */
-  variant?: "select" | "chips";
+  variant?: "select" | "chips" | undefined;
 }
 
 export interface TableViewColumn {
@@ -26,14 +26,14 @@ export interface TableViewColumn {
 export interface TableViewSearchConfig {
   value: string;
   onChange: (val: string) => void;
-  placeholder?: string;
+  placeholder?: string | undefined;
 }
 
 export interface TableViewPaginationConfig {
   page: number;
   totalPages: number;
-  totalItems?: number;
-  pageSize?: number;
+  totalItems?: number | undefined;
+  pageSize?: number | undefined;
   onChange: (page: number) => void;
 }
 
@@ -49,13 +49,13 @@ export interface TableViewColumnsConfig {
 }
 
 export interface TableViewProps {
-  search?: TableViewSearchConfig;
-  filters?: TableViewFilter[];
-  viewMode?: TableViewViewModeConfig;
-  columns?: TableViewColumnsConfig;
-  pagination?: TableViewPaginationConfig;
+  search?: TableViewSearchConfig | undefined;
+  filters?: TableViewFilter[] | undefined;
+  viewMode?: TableViewViewModeConfig | undefined;
+  columns?: TableViewColumnsConfig | undefined;
+  pagination?: TableViewPaginationConfig | undefined;
   children: React.ReactNode;
-  className?: string;
+  className?: string | undefined;
 }
 
 function Divider() {

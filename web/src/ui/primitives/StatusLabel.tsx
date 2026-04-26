@@ -8,8 +8,8 @@ export interface StatusLabelProps {
   /** Text to show next to the dot. */
   label: string;
   /** Add a breathing pulse to the dot — used for "running" / "waiting". */
-  animate?: boolean;
-  className?: string;
+  animate?: boolean | undefined;
+  className?: string | undefined;
 }
 
 const dotClass: Record<StatusTone, string> = {

@@ -6,18 +6,18 @@ export type PulseTone = "ok" | "warn" | "error" | "default";
 export interface PulseTick {
   label: string;
   value: string;
-  hint?: string;
-  tone?: PulseTone;
+  hint?: string | undefined;
+  tone?: PulseTone | undefined;
   /** Optional 0–100 progress bar under the value. Good for usage/quota ticks. */
-  barPct?: number;
+  barPct?: number | undefined;
   /** Optional secondary number rendered with an arrow (Δ +12 / -3). */
-  delta?: string;
+  delta?: string | undefined;
 }
 
 export interface PulseRowProps {
   ticks: PulseTick[];
   /** Optional className for the outer section. */
-  className?: string;
+  className?: string | undefined;
 }
 
 const toneClass: Record<PulseTone, string> = {

@@ -8,11 +8,11 @@ export interface SelectOption {
 
 export interface SelectProps {
   options: SelectOption[];
-  value?: string;
-  onChange?: (value: string) => void;
-  placeholder?: string;
-  disabled?: boolean;
-  className?: string;
+  value?: string | undefined;
+  onChange?: ((value: string) => void) | undefined;
+  placeholder?: string | undefined;
+  disabled?: boolean | undefined;
+  className?: string | undefined;
 }
 
 export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
