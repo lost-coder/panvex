@@ -1,3 +1,14 @@
+# Base images are referenced by tag here so a fresh clone builds without a
+# registry round-trip. Phase-3 §3.3 expects production releases to pin each
+# FROM line to a specific digest, e.g.
+#
+#   FROM node:22-alpine@sha256:<full-hex> AS web-builder
+#
+# A Dependabot rule (.github/dependabot.yml, ecosystem: docker) maintains
+# the digests once they are present so a CVE in the upstream image gets a
+# weekly PR. Operators producing release artifacts should rebase their
+# release branch onto the dependabot bump before tagging.
+
 FROM node:22-alpine AS web-builder
 WORKDIR /src/web
 
