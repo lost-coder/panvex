@@ -235,6 +235,12 @@ type Server struct {
 	// generated at startup; rotated implicitly on every restart (which
 	// just makes the FE re-fetch /api/auth/csrf-token).
 	csrfSecret []byte
+
+	// Phase-3 §3.4: HMAC key for log-line username pseudonymisation.
+	// Lazy-initialised by Server.usernameHashKey() on first call;
+	// derived from EncryptionKey when set, random per-process otherwise.
+	usernameHashMu       sync.Mutex
+	usernameHashKeyBytes []byte
 }
 
 // New constructs a control-plane server with in-memory state suitable for local development.
