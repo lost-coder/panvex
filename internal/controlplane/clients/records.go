@@ -1,6 +1,47 @@
 package clients
 
-import "github.com/lost-coder/panvex/internal/controlplane/storage"
+import (
+	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
+)
+
+// EncryptClientRecord seals the client secret at-rest using the
+// supplied vault. A nil or disabled vault is a no-op so callers can
+// stay simple. An empty Secret is also passed through unchanged.
+func EncryptClientRecord(record storage.ClientRecord, vault *secretvault.Vault) (storage.ClientRecord, error) {
+	if vault == nil || !vault.Enabled() {
+		return record, nil
+	}
+	if record.SecretCiphertext == "" {
+		return record, nil
+	}
+	if secretvault.IsEncrypted(record.SecretCiphertext) {
+		return record, nil
+	}
+	encrypted, err := vault.Encrypt(secretvault.DomainClientSecret, record.SecretCiphertext)
+	if err != nil {
+		return record, err
+	}
+	record.SecretCiphertext = encrypted
+	return record, nil
+}
+
+// DecryptClientRecord reverses EncryptClientRecord. Plaintext rows from
+// before the vault was enabled are returned unchanged.
+func DecryptClientRecord(record storage.ClientRecord, vault *secretvault.Vault) (storage.ClientRecord, error) {
+	if record.SecretCiphertext == "" {
+		return record, nil
+	}
+	if !secretvault.IsEncrypted(record.SecretCiphertext) {
+		return record, nil
+	}
+	decrypted, err := vault.Decrypt(secretvault.DomainClientSecret, record.SecretCiphertext)
+	if err != nil {
+		return record, err
+	}
+	record.SecretCiphertext = decrypted
+	return record, nil
+}
 
 // ClientToRecord converts the in-memory Client type to its persistent
 // storage.ClientRecord form. Timestamps are UTC-normalized; the

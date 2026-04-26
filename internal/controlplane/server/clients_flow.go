@@ -11,6 +11,7 @@ import (
 
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
+	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
@@ -115,7 +116,11 @@ func (s *Server) restoreStoredClients() error {
 	}
 
 	for _, record := range records {
-		client := clientFromRecord(record)
+		decoded, err := clients.DecryptClientRecord(record, s.vault())
+		if err != nil {
+			return fmt.Errorf("decrypt client %s: %w", record.ID, err)
+		}
+		client := clientFromRecord(decoded)
 		s.clients[client.ID] = client
 		s.clientSeq = maxPrefixedSequence(s.clientSeq, "client", client.ID)
 
@@ -557,15 +562,15 @@ func (s *Server) replaceClientStateInMemory(client managedClient, assignments []
 }
 
 func (s *Server) persistClientState(ctx context.Context, client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment) error {
-	return persistClientStateVia(ctx, s.store, client, assignments, deployments)
+	return persistClientStateVia(ctx, s.store, client, assignments, deployments, s.vault())
 }
 
 // persistClientStateVia delegates to clients.PersistState. Kept as a
 // server-package shim so call sites inside Store.Transact closures
 // continue to read idiomatically (P2-ARCH-01). Will be removed once
 // callers invoke clients.PersistState directly.
-func persistClientStateVia(ctx context.Context, store storage.Store, client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment) error {
-	return clients.PersistState(ctx, store, client, assignments, deployments)
+func persistClientStateVia(ctx context.Context, store storage.Store, client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment, vault *secretvault.Vault) error {
+	return clients.PersistState(ctx, store, client, assignments, deployments, vault)
 }
 
 func (s *Server) buildClientAssignments(clientID string, input clientMutationInput, observedAt time.Time) []managedClientAssignment {

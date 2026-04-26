@@ -3,6 +3,7 @@ package clients
 import (
 	"context"
 
+	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
@@ -17,17 +18,26 @@ import (
 // satisfied. DeleteClientAssignments erases any previous rows before
 // the new set is inserted — this preserves the all-or-nothing
 // semantics that the server relies on.
+//
+// The vault parameter, when non-nil and enabled, encrypts the client
+// secret at-rest. Passing nil keeps legacy plaintext behaviour for
+// dev/tests where no encryption key is configured.
 func PersistState(
 	ctx context.Context,
 	store storage.Store,
 	client Client,
 	assignments []Assignment,
 	deployments []Deployment,
+	vault *secretvault.Vault,
 ) error {
 	if store == nil {
 		return nil
 	}
-	if err := store.PutClient(ctx, ClientToRecord(client)); err != nil {
+	record, err := EncryptClientRecord(ClientToRecord(client), vault)
+	if err != nil {
+		return err
+	}
+	if err := store.PutClient(ctx, record); err != nil {
 		return err
 	}
 	if err := store.DeleteClientAssignments(ctx, client.ID); err != nil {
