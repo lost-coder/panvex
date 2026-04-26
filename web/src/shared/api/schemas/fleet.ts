@@ -3,13 +3,19 @@ import { z } from "zod";
 import { id, unixSeconds } from "./common.ts";
 
 /**
- * R-Q-20: Zod schemas for /fleet-groups and /enrollment-tokens.
+ * R-Q-20: Zod schemas for /fleet-groups + the deletion-preview shape.
+ * Enrollment-token schemas live in ./enrollment.ts so the per-domain
+ * schema files map 1:1 onto the per-domain api modules.
+ *
+ * The schemas mirror the runtime types declared in
+ * shared/api/fleet-groups.ts 1:1 (provider_id is `string | undefined`
+ * to satisfy exactOptionalPropertyTypes against the existing type).
  */
 
 export const fleetGroupIntegrationSchema = z.object({
   id,
   kind: z.string(),
-  provider_id: z.string().optional(),
+  provider_id: z.string().or(z.undefined()),
   enabled: z.boolean(),
   config: z.unknown(),
   created_at_unix: unixSeconds,
@@ -37,16 +43,5 @@ export const fleetGroupDeletionPreviewSchema = z.object({
   reassign_required: z.boolean(),
 });
 
-export const enrollmentTokenSchema = z.object({
-  value: z.string(),
-  fleet_group_id: z.string().optional(),
-  status: z.enum(["active", "consumed", "expired", "revoked"]),
-  issued_at_unix: unixSeconds,
-  expires_at_unix: unixSeconds,
-});
-
-export const enrollmentTokenListSchema = z.array(enrollmentTokenSchema);
-
 export type FleetGroupParsed = z.infer<typeof fleetGroupSchema>;
 export type FleetGroupIntegrationParsed = z.infer<typeof fleetGroupIntegrationSchema>;
-export type EnrollmentTokenParsed = z.infer<typeof enrollmentTokenSchema>;
