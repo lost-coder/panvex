@@ -5,34 +5,38 @@
 package dbsqlc
 
 import (
-	"github.com/jackc/pgx/v5/pgtype"
+	"database/sql"
+	"encoding/json"
+	"time"
+
+	"github.com/google/uuid"
 )
 
 type Agent struct {
 	ID            string
 	NodeName      string
-	FleetGroupID  pgtype.UUID
+	FleetGroupID  uuid.NullUUID
 	Version       string
 	ReadOnly      bool
-	LastSeenAt    pgtype.Timestamptz
-	CreatedAt     pgtype.Timestamptz
-	CertIssuedAt  pgtype.Timestamptz
-	CertExpiresAt pgtype.Timestamptz
+	LastSeenAt    time.Time
+	CreatedAt     time.Time
+	CertIssuedAt  sql.NullTime
+	CertExpiresAt sql.NullTime
 }
 
 type AgentCertificateRecoveryGrant struct {
 	AgentID   string
 	IssuedBy  string
-	IssuedAt  pgtype.Timestamptz
-	ExpiresAt pgtype.Timestamptz
-	UsedAt    pgtype.Timestamptz
-	RevokedAt pgtype.Timestamptz
+	IssuedAt  time.Time
+	ExpiresAt time.Time
+	UsedAt    sql.NullTime
+	RevokedAt sql.NullTime
 }
 
 type AgentRevocation struct {
 	AgentID       string
-	RevokedAt     pgtype.Timestamptz
-	CertExpiresAt pgtype.Timestamptz
+	RevokedAt     time.Time
+	CertExpiresAt time.Time
 }
 
 type AuditEvent struct {
@@ -40,15 +44,15 @@ type AuditEvent struct {
 	ActorID   string
 	Action    string
 	TargetID  string
-	Details   []byte
-	CreatedAt pgtype.Timestamptz
+	Details   json.RawMessage
+	CreatedAt time.Time
 }
 
 type CertificateAuthority struct {
 	Scope         string
 	CaPem         string
 	PrivateKeyPem string
-	UpdatedAt     pgtype.Timestamptz
+	UpdatedAt     time.Time
 }
 
 type Client struct {
@@ -61,18 +65,18 @@ type Client struct {
 	MaxUniqueIps      int64
 	DataQuotaBytes    int64
 	ExpirationRfc3339 string
-	CreatedAt         pgtype.Timestamptz
-	UpdatedAt         pgtype.Timestamptz
-	DeletedAt         pgtype.Timestamptz
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	DeletedAt         sql.NullTime
 }
 
 type ClientAssignment struct {
 	ID           string
 	ClientID     string
 	TargetType   string
-	FleetGroupID pgtype.UUID
-	AgentID      pgtype.Text
-	CreatedAt    pgtype.Timestamptz
+	FleetGroupID uuid.NullUUID
+	AgentID      sql.NullString
+	CreatedAt    time.Time
 }
 
 type ClientDeployment struct {
@@ -82,16 +86,27 @@ type ClientDeployment struct {
 	Status           string
 	LastError        string
 	ConnectionLink   string
-	LastAppliedAt    pgtype.Timestamptz
-	UpdatedAt        pgtype.Timestamptz
+	LastAppliedAt    sql.NullTime
+	UpdatedAt        time.Time
 }
 
 type ClientIpHistory struct {
 	AgentID   string
 	ClientID  string
 	IpAddress string
-	FirstSeen pgtype.Timestamptz
-	LastSeen  pgtype.Timestamptz
+	FirstSeen time.Time
+	LastSeen  time.Time
+}
+
+type ClientUsage struct {
+	ClientID         string
+	AgentID          string
+	TrafficUsedBytes int64
+	UniqueIpsUsed    int32
+	ActiveTcpConns   int32
+	ActiveUniqueIps  int32
+	LastSeq          int64
+	ObservedAt       time.Time
 }
 
 type DiscoveredClient struct {
@@ -108,46 +123,46 @@ type DiscoveredClient struct {
 	MaxUniqueIps       int32
 	DataQuotaBytes     int64
 	Expiration         string
-	DiscoveredAt       pgtype.Timestamptz
-	UpdatedAt          pgtype.Timestamptz
+	DiscoveredAt       time.Time
+	UpdatedAt          time.Time
 }
 
 type EnrollmentToken struct {
 	Value        string
-	FleetGroupID pgtype.UUID
-	IssuedAt     pgtype.Timestamptz
-	ExpiresAt    pgtype.Timestamptz
-	ConsumedAt   pgtype.Timestamptz
-	RevokedAt    pgtype.Timestamptz
+	FleetGroupID uuid.NullUUID
+	IssuedAt     time.Time
+	ExpiresAt    time.Time
+	ConsumedAt   sql.NullTime
+	RevokedAt    sql.NullTime
 }
 
 type FleetGroup struct {
-	ID          pgtype.UUID
+	ID          uuid.UUID
 	Name        string
-	CreatedAt   pgtype.Timestamptz
+	CreatedAt   time.Time
 	Label       string
 	Description string
-	UpdatedAt   pgtype.Timestamptz
+	UpdatedAt   time.Time
 }
 
 type FleetGroupIntegration struct {
-	ID           pgtype.UUID
-	FleetGroupID pgtype.UUID
+	ID           uuid.UUID
+	FleetGroupID uuid.UUID
 	Kind         string
-	ProviderID   pgtype.UUID
-	Config       []byte
+	ProviderID   uuid.NullUUID
+	Config       json.RawMessage
 	Enabled      bool
-	CreatedAt    pgtype.Timestamptz
-	UpdatedAt    pgtype.Timestamptz
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 type IntegrationProvider struct {
-	ID        pgtype.UUID
+	ID        uuid.UUID
 	Kind      string
 	Label     string
-	Config    []byte
-	CreatedAt pgtype.Timestamptz
-	UpdatedAt pgtype.Timestamptz
+	Config    json.RawMessage
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type Job struct {
@@ -156,7 +171,7 @@ type Job struct {
 	IdempotencyKey string
 	ActorID        string
 	Status         string
-	CreatedAt      pgtype.Timestamptz
+	CreatedAt      time.Time
 	TtlNanos       int64
 	PayloadJson    string
 }
@@ -167,22 +182,22 @@ type JobTarget struct {
 	Status     string
 	ResultText string
 	ResultJson string
-	UpdatedAt  pgtype.Timestamptz
+	UpdatedAt  time.Time
 }
 
 type LoginLockout struct {
 	Username  string
 	Failures  int32
-	LockedAt  pgtype.Timestamptz
-	UpdatedAt pgtype.Timestamptz
+	LockedAt  sql.NullTime
+	UpdatedAt time.Time
 }
 
 type MetricSnapshot struct {
 	ID         string
 	AgentID    string
 	InstanceID string
-	CapturedAt pgtype.Timestamptz
-	Values     []byte
+	CapturedAt time.Time
+	Values     json.RawMessage
 }
 
 type PanelSetting struct {
@@ -195,25 +210,25 @@ type PanelSetting struct {
 	TlsMode            string
 	TlsCertFile        string
 	TlsKeyFile         string
-	UpdatedAt          pgtype.Timestamptz
+	UpdatedAt          time.Time
 	RetentionJson      string
 }
 
 type Session struct {
 	ID        string
 	UserID    string
-	CreatedAt pgtype.Timestamptz
+	CreatedAt time.Time
 }
 
 type TelemtDetailBoost struct {
 	AgentID   string
-	ExpiresAt pgtype.Timestamptz
-	UpdatedAt pgtype.Timestamptz
+	ExpiresAt time.Time
+	UpdatedAt time.Time
 }
 
 type TelemtDiagnosticsCurrent struct {
 	AgentID             string
-	ObservedAt          pgtype.Timestamptz
+	ObservedAt          time.Time
 	State               string
 	StateReason         string
 	SystemInfoJson      string
@@ -232,12 +247,12 @@ type TelemtInstance struct {
 	ConfigFingerprint string
 	ConnectedUsers    int64
 	ReadOnly          bool
-	UpdatedAt         pgtype.Timestamptz
+	UpdatedAt         time.Time
 }
 
 type TelemtRuntimeCurrent struct {
 	AgentID                   string
-	ObservedAt                pgtype.Timestamptz
+	ObservedAt                time.Time
 	State                     string
 	StateReason               string
 	ReadOnly                  bool
@@ -270,7 +285,7 @@ type TelemtRuntimeCurrent struct {
 type TelemtRuntimeDcsCurrent struct {
 	AgentID            string
 	Dc                 int64
-	ObservedAt         pgtype.Timestamptz
+	ObservedAt         time.Time
 	AvailableEndpoints int64
 	AvailablePct       float64
 	RequiredWriters    int64
@@ -283,8 +298,8 @@ type TelemtRuntimeDcsCurrent struct {
 type TelemtRuntimeEvent struct {
 	AgentID     string
 	Sequence    int64
-	ObservedAt  pgtype.Timestamptz
-	TimestampAt pgtype.Timestamptz
+	ObservedAt  time.Time
+	TimestampAt time.Time
 	EventType   string
 	Context     string
 	Severity    string
@@ -293,7 +308,7 @@ type TelemtRuntimeEvent struct {
 type TelemtRuntimeUpstreamsCurrent struct {
 	AgentID            string
 	UpstreamID         int64
-	ObservedAt         pgtype.Timestamptz
+	ObservedAt         time.Time
 	RouteKind          string
 	Address            string
 	Healthy            bool
@@ -303,7 +318,7 @@ type TelemtRuntimeUpstreamsCurrent struct {
 
 type TelemtSecurityInventoryCurrent struct {
 	AgentID      string
-	ObservedAt   pgtype.Timestamptz
+	ObservedAt   time.Time
 	State        string
 	StateReason  string
 	Enabled      bool
@@ -313,7 +328,7 @@ type TelemtSecurityInventoryCurrent struct {
 
 type TsDcHealth struct {
 	AgentID         string
-	CapturedAt      pgtype.Timestamptz
+	CapturedAt      time.Time
 	Dc              int32
 	CoveragePctAvg  float32
 	CoveragePctMin  float32
@@ -327,7 +342,7 @@ type TsDcHealth struct {
 
 type TsServerLoad struct {
 	AgentID                string
-	CapturedAt             pgtype.Timestamptz
+	CapturedAt             time.Time
 	CpuPctAvg              float32
 	CpuPctMax              float32
 	MemPctAvg              float32
@@ -357,17 +372,17 @@ type TsServerLoad struct {
 
 type TsServerLoadHourly struct {
 	AgentID        string
-	BucketHour     pgtype.Timestamptz
-	CpuPctAvg      pgtype.Float4
-	CpuPctMax      pgtype.Float4
-	MemPctAvg      pgtype.Float4
-	MemPctMax      pgtype.Float4
-	ConnectionsAvg pgtype.Float4
-	ConnectionsMax pgtype.Int4
-	ActiveUsersAvg pgtype.Float4
-	ActiveUsersMax pgtype.Int4
-	DcCoverageMin  pgtype.Float4
-	DcCoverageAvg  pgtype.Float4
+	BucketHour     time.Time
+	CpuPctAvg      sql.NullFloat64
+	CpuPctMax      sql.NullFloat64
+	MemPctAvg      sql.NullFloat64
+	MemPctMax      sql.NullFloat64
+	ConnectionsAvg sql.NullFloat64
+	ConnectionsMax sql.NullInt32
+	ActiveUsersAvg sql.NullFloat64
+	ActiveUsersMax sql.NullInt32
+	DcCoverageMin  sql.NullFloat64
+	DcCoverageAvg  sql.NullFloat64
 	SampleCount    int32
 }
 
@@ -383,7 +398,7 @@ type User struct {
 	Role         string
 	TotpEnabled  bool
 	TotpSecret   string
-	CreatedAt    pgtype.Timestamptz
+	CreatedAt    time.Time
 }
 
 type UserAppearance struct {
@@ -391,5 +406,5 @@ type UserAppearance struct {
 	Theme     string
 	Density   string
 	HelpMode  string
-	UpdatedAt pgtype.Timestamptz
+	UpdatedAt time.Time
 }

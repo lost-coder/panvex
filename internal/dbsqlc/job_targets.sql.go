@@ -7,8 +7,7 @@ package dbsqlc
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
+	"time"
 )
 
 const listJobTargets = `-- name: ListJobTargets :many
@@ -19,7 +18,7 @@ ORDER BY agent_id
 `
 
 func (q *Queries) ListJobTargets(ctx context.Context, jobID string) ([]JobTarget, error) {
-	rows, err := q.db.Query(ctx, listJobTargets, jobID)
+	rows, err := q.db.QueryContext(ctx, listJobTargets, jobID)
 	if err != nil {
 		return nil, err
 	}
@@ -38,6 +37,9 @@ func (q *Queries) ListJobTargets(ctx context.Context, jobID string) ([]JobTarget
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -61,11 +63,11 @@ type UpsertJobTargetParams struct {
 	Status     string
 	ResultText string
 	ResultJson string
-	UpdatedAt  pgtype.Timestamptz
+	UpdatedAt  time.Time
 }
 
 func (q *Queries) UpsertJobTarget(ctx context.Context, arg UpsertJobTargetParams) error {
-	_, err := q.db.Exec(ctx, upsertJobTarget,
+	_, err := q.db.ExecContext(ctx, upsertJobTarget,
 		arg.JobID,
 		arg.AgentID,
 		arg.Status,

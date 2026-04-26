@@ -7,4 +7,11 @@ sql:
       go:
         package: "dbsqlc"
         out: "internal/dbsqlc"
-        sql_package: "pgx/v5"
+        # Phase-3 §3.1: switched from pgx/v5 to database/sql so the
+        # generated Queries surface plugs into the existing *sql.DB
+        # pool on postgres.Store without a parallel pgxpool. We keep
+        # pgx as the underlying driver (registered via pgx/v5/stdlib);
+        # this change only affects the *types* sqlc emits for rows
+        # and parameters.
+        sql_package: "database/sql"
+        emit_pointers_for_null_types: true

@@ -7,27 +7,32 @@ package dbsqlc
 
 import (
 	"context"
+	"database/sql"
+	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/google/uuid"
 )
 
 const listAgents = `-- name: ListAgents :many
-SELECT id, node_name, fleet_group_id, version, read_only, last_seen_at
+SELECT id, node_name, fleet_group_id, version, read_only,
+       last_seen_at, cert_issued_at, cert_expires_at
 FROM agents
-ORDER BY last_seen_at DESC
+ORDER BY last_seen_at, id
 `
 
 type ListAgentsRow struct {
-	ID           string
-	NodeName     string
-	FleetGroupID pgtype.UUID
-	Version      string
-	ReadOnly     bool
-	LastSeenAt   pgtype.Timestamptz
+	ID            string
+	NodeName      string
+	FleetGroupID  uuid.NullUUID
+	Version       string
+	ReadOnly      bool
+	LastSeenAt    time.Time
+	CertIssuedAt  sql.NullTime
+	CertExpiresAt sql.NullTime
 }
 
 func (q *Queries) ListAgents(ctx context.Context) ([]ListAgentsRow, error) {
-	rows, err := q.db.Query(ctx, listAgents)
+	rows, err := q.db.QueryContext(ctx, listAgents)
 	if err != nil {
 		return nil, err
 	}
@@ -42,10 +47,15 @@ func (q *Queries) ListAgents(ctx context.Context) ([]ListAgentsRow, error) {
 			&i.Version,
 			&i.ReadOnly,
 			&i.LastSeenAt,
+			&i.CertIssuedAt,
+			&i.CertExpiresAt,
 		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -54,33 +64,40 @@ func (q *Queries) ListAgents(ctx context.Context) ([]ListAgentsRow, error) {
 }
 
 const upsertAgent = `-- name: UpsertAgent :exec
-INSERT INTO agents (id, node_name, fleet_group_id, version, read_only, last_seen_at)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO agents (id, node_name, fleet_group_id, version, read_only,
+                    last_seen_at, cert_issued_at, cert_expires_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (id) DO UPDATE
-SET node_name = EXCLUDED.node_name,
-    fleet_group_id = EXCLUDED.fleet_group_id,
-    version = EXCLUDED.version,
-    read_only = EXCLUDED.read_only,
-    last_seen_at = EXCLUDED.last_seen_at
+SET node_name       = EXCLUDED.node_name,
+    fleet_group_id  = EXCLUDED.fleet_group_id,
+    version         = EXCLUDED.version,
+    read_only       = EXCLUDED.read_only,
+    last_seen_at    = EXCLUDED.last_seen_at,
+    cert_issued_at  = EXCLUDED.cert_issued_at,
+    cert_expires_at = EXCLUDED.cert_expires_at
 `
 
 type UpsertAgentParams struct {
-	ID           string
-	NodeName     string
-	FleetGroupID pgtype.UUID
-	Version      string
-	ReadOnly     bool
-	LastSeenAt   pgtype.Timestamptz
+	ID            string
+	NodeName      string
+	FleetGroupID  uuid.NullUUID
+	Version       string
+	ReadOnly      bool
+	LastSeenAt    time.Time
+	CertIssuedAt  sql.NullTime
+	CertExpiresAt sql.NullTime
 }
 
 func (q *Queries) UpsertAgent(ctx context.Context, arg UpsertAgentParams) error {
-	_, err := q.db.Exec(ctx, upsertAgent,
+	_, err := q.db.ExecContext(ctx, upsertAgent,
 		arg.ID,
 		arg.NodeName,
 		arg.FleetGroupID,
 		arg.Version,
 		arg.ReadOnly,
 		arg.LastSeenAt,
+		arg.CertIssuedAt,
+		arg.CertExpiresAt,
 	)
 	return err
 }
