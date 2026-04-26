@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
@@ -38,6 +39,7 @@ import (
 type Service struct {
 	store storage.Store
 	now   func() time.Time
+	vault *secretvault.Vault
 
 	mu            sync.RWMutex
 	clients       map[string]Client
@@ -60,18 +62,32 @@ func NewService() *Service {
 // clock. Either may be nil; nil store means "in-memory only", nil now
 // falls back to time.Now.
 func NewServiceWithDeps(store storage.Store, now func() time.Time) *Service {
+	return NewServiceWithVault(store, now, nil)
+}
+
+// NewServiceWithVault is the vault-aware constructor. A nil or disabled
+// vault keeps client secrets as plaintext at-rest (legacy behaviour);
+// any other vault encrypts them via the client_secret domain key.
+func NewServiceWithVault(store storage.Store, now func() time.Time, vault *secretvault.Vault) *Service {
 	if now == nil {
 		now = time.Now
 	}
 	return &Service{
 		store:        store,
 		now:          now,
+		vault:        vault,
 		clients:      make(map[string]Client),
 		assignments:  make(map[string][]Assignment),
 		deployments:  make(map[string]map[string]Deployment),
 		usage:        make(map[string]map[string]UsageSnapshot),
 		lastUsageSeq: make(map[string]uint64),
 	}
+}
+
+// Vault exposes the configured vault so other parts of the control
+// plane can encrypt/decrypt records at the same boundaries.
+func (s *Service) Vault() *secretvault.Vault {
+	return s.vault
 }
 
 // SetNow overrides the time source. Used by tests that inject a
@@ -242,7 +258,7 @@ func (s *Service) ReplaceInMemory(client Client, assignments []Assignment, deplo
 // mirror is updated.
 func (s *Service) ReplaceState(ctx context.Context, client Client, assignments []Assignment, deployments []Deployment) error {
 	if s.store != nil {
-		if err := PersistState(ctx, s.store, client, assignments, deployments); err != nil {
+		if err := PersistState(ctx, s.store, client, assignments, deployments, s.vault); err != nil {
 			return err
 		}
 	}

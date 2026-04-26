@@ -329,7 +329,7 @@ func (s *Server) adoptDiscoveredClient(ctx context.Context, id string, actorID s
 			return ErrAlreadyAdopted
 		}
 
-		if err := persistClientStateVia(ctx, tx, client, assignments, deployments); err != nil {
+		if err := persistClientStateVia(ctx, tx, client, assignments, deployments, s.vault()); err != nil {
 			return err
 		}
 		if err := tx.UpdateDiscoveredClientStatus(ctx, id, discoveredClientStatusAdopted, observedAt.UTC()); err != nil {

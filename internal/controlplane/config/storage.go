@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -31,6 +32,18 @@ var (
 	// ErrInsecureDBDSN reports that the PostgreSQL DSN requests
 	// sslmode=disable without PANVEX_ALLOW_INSECURE_DB set (S10).
 	ErrInsecureDBDSN = errors.New("postgres dsn has sslmode=disable; set PANVEX_ALLOW_INSECURE_DB=1 to allow")
+	// ErrEmptyPostgresPassword reports that the PostgreSQL DSN omits a
+	// password and PANVEX_DB_PASSWORD is also unset. Closes Q1.U-S-13:
+	// dev-fixtures with empty passwords must not silently leak into a
+	// prod start. PANVEX_ALLOW_EMPTY_DB_PASSWORD=1 escapes this for
+	// loopback-only fixtures and tests.
+	ErrEmptyPostgresPassword = errors.New("postgres dsn has empty password; set PANVEX_DB_PASSWORD or PANVEX_ALLOW_EMPTY_DB_PASSWORD=1 for dev")
+
+	// EnvAllowEmptyDBPassword opts into accepting a PostgreSQL DSN with
+	// no password embedded and no PANVEX_DB_PASSWORD env. Default is to
+	// reject because dev-compose fixtures with empty creds occasionally
+	// reach prod via copy-paste.
+	EnvAllowEmptyDBPassword = "PANVEX_ALLOW_EMPTY_DB_PASSWORD"
 )
 
 // StorageConfig describes the selected persistent storage backend.
@@ -81,13 +94,45 @@ func ValidateStorageSecurity(storage StorageConfig) error {
 	if storage.Driver != StorageDriverPostgres {
 		return nil
 	}
-	if !dsnHasSSLModeDisabled(storage.DSN) {
-		return nil
+	if dsnHasSSLModeDisabled(storage.DSN) {
+		if strings.TrimSpace(os.Getenv(EnvAllowInsecureDB)) == "" {
+			return ErrInsecureDBDSN
+		}
 	}
-	if strings.TrimSpace(os.Getenv(EnvAllowInsecureDB)) == "" {
-		return ErrInsecureDBDSN
+	if dsnHasEmptyPostgresPassword(storage.DSN) && strings.TrimSpace(os.Getenv(EnvDBPassword)) == "" {
+		if strings.TrimSpace(os.Getenv(EnvAllowEmptyDBPassword)) == "" {
+			return ErrEmptyPostgresPassword
+		}
 	}
 	return nil
+}
+
+// dsnHasEmptyPostgresPassword reports whether the DSN has a userinfo
+// section that explicitly carries no password, OR no userinfo at all
+// (which still lets pgx/pq fall back to peer/trust auth — fine for
+// loopback dev but unsafe for prod). The check is conservative: we
+// only flag URL-form DSNs because keyword-form keeps the credentials
+// elsewhere (PGPASSWORD, .pgpass) which we cannot reliably inspect.
+func dsnHasEmptyPostgresPassword(dsn string) bool {
+	trimmed := strings.TrimSpace(dsn)
+	if !strings.Contains(trimmed, "://") {
+		// Keyword form — PGPASSWORD or .pgpass may carry the secret;
+		// we cannot tell, so do not block.
+		return false
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return false
+	}
+	if parsed.User == nil {
+		// postgres://host/db — no userinfo at all. Treat as empty.
+		return true
+	}
+	password, hasPassword := parsed.User.Password()
+	if !hasPassword {
+		return true
+	}
+	return strings.TrimSpace(password) == ""
 }
 
 func dsnHasSSLModeDisabled(dsn string) bool {

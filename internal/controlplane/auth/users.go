@@ -173,7 +173,7 @@ func (s *Service) loadManagedUserByIDCtx(ctx context.Context, userID string) (Us
 			}
 			return User{}, err
 		}
-		return userFromRecord(record), nil
+		return s.userFromStoredRecord(record)
 	}
 
 	s.mu.Lock()
@@ -201,7 +201,13 @@ func (s *Service) persistManagedUserCtx(ctx context.Context, user User) error {
 	s.mu.Unlock()
 
 	if s.userStore != nil {
-		if err := s.userStore.PutUser(ctx, userToRecord(user)); err != nil {
+		record := userToRecord(user)
+		encrypted, err := s.encryptTotp(record.TotpSecret)
+		if err != nil {
+			return err
+		}
+		record.TotpSecret = encrypted
+		if err := s.userStore.PutUser(ctx, record); err != nil {
 			if errors.Is(err, storage.ErrConflict) {
 				return ErrUserAlreadyExists
 			}

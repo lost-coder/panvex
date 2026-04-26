@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"golang.org/x/crypto/argon2"
 )
@@ -171,11 +172,49 @@ type Service struct {
 	consumedTotp     map[totpUseKey]time.Time
 	userStore        storage.UserStore
 	sessionStore     storage.SessionStore
+	vault            *secretvault.Vault
 	now              func() time.Time
 	// startedAt records when the service was created. During the first 90
 	// seconds after startup the TOTP verifier skips the past (-30s) window
 	// to prevent replay of codes that may have been consumed before a restart.
 	startedAt time.Time
+}
+
+// SetVault wires the at-rest encryption vault. Called by Server during
+// construction so TOTP secrets are encrypted before being persisted.
+// A nil or disabled vault keeps legacy plaintext behaviour.
+func (s *Service) SetVault(vault *secretvault.Vault) {
+	s.mu.Lock()
+	s.vault = vault
+	s.mu.Unlock()
+}
+
+// encryptTotp returns the storage form of the TOTP secret, applying
+// vault encryption when configured. Empty values pass through.
+func (s *Service) encryptTotp(value string) (string, error) {
+	if value == "" {
+		return value, nil
+	}
+	if s.vault == nil || !s.vault.Enabled() {
+		return value, nil
+	}
+	if secretvault.IsEncrypted(value) {
+		return value, nil
+	}
+	return s.vault.Encrypt(secretvault.DomainTOTP, value)
+}
+
+// decryptTotp reverses encryptTotp. Plaintext rows from before the
+// vault was enabled are returned unchanged so existing users keep
+// working until they next rotate their TOTP secret.
+func (s *Service) decryptTotp(value string) (string, error) {
+	if value == "" || !secretvault.IsEncrypted(value) {
+		return value, nil
+	}
+	if s.vault == nil || !s.vault.Enabled() {
+		return "", errors.New("auth: encrypted TOTP secret present but vault is disabled")
+	}
+	return s.vault.Decrypt(secretvault.DomainTOTP, value)
 }
 
 // NewService constructs an in-memory local-auth service.
@@ -339,7 +378,15 @@ func (s *Service) BootstrapUserWithContext(ctx context.Context, input BootstrapI
 		CreatedAt:    now.UTC(),
 	}
 
-	if err := s.userStore.PutUser(ctx, userToRecord(user)); err != nil {
+	bootstrapRecord := userToRecord(user)
+	if encrypted, encErr := s.encryptTotp(bootstrapRecord.TotpSecret); encErr != nil {
+		s.sequence--
+		s.mu.Unlock()
+		return User{}, "", encErr
+	} else {
+		bootstrapRecord.TotpSecret = encrypted
+	}
+	if err := s.userStore.PutUser(ctx, bootstrapRecord); err != nil {
 		s.sequence--
 		s.mu.Unlock()
 		return User{}, "", err
@@ -813,7 +860,7 @@ func (s *Service) GetUserByIDWithContext(ctx context.Context, userID string) (Us
 			}
 			return User{}, err
 		}
-		return userFromRecord(record), nil
+		return s.userFromStoredRecord(record)
 	}
 
 	s.mu.RLock()
@@ -865,7 +912,7 @@ func (s *Service) loadUserByUsernameCtx(ctx context.Context, username string) (U
 			}
 			return User{}, err
 		}
-		return userFromRecord(record), nil
+		return s.userFromStoredRecord(record)
 	}
 
 	s.mu.RLock()
@@ -881,7 +928,13 @@ func (s *Service) loadUserByUsernameCtx(ctx context.Context, username string) (U
 
 func (s *Service) storeUserWithContext(ctx context.Context, user User) error {
 	if s.userStore != nil {
-		if err := s.userStore.PutUser(ctx, userToRecord(user)); err != nil {
+		record := userToRecord(user)
+		encrypted, err := s.encryptTotp(record.TotpSecret)
+		if err != nil {
+			return err
+		}
+		record.TotpSecret = encrypted
+		if err := s.userStore.PutUser(ctx, record); err != nil {
 			return err
 		}
 	}
@@ -891,6 +944,17 @@ func (s *Service) storeUserWithContext(ctx context.Context, user User) error {
 	s.mu.Unlock()
 
 	return nil
+}
+
+// userFromStoredRecord wraps userFromRecord with TOTP decryption. Used
+// by all paths that load a user from the userStore.
+func (s *Service) userFromStoredRecord(record storage.UserRecord) (User, error) {
+	plaintext, err := s.decryptTotp(record.TotpSecret)
+	if err != nil {
+		return User{}, err
+	}
+	record.TotpSecret = plaintext
+	return userFromRecord(record), nil
 }
 
 func (s *Service) cleanupPendingTotpSetupLocked(now time.Time) {

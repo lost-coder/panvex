@@ -21,6 +21,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/fleet"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/presence"
+	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
@@ -120,6 +121,7 @@ type Server struct {
 	loginLockout              *accountLockoutTracker
 	trustedProxyCIDRs         []*net.IPNet
 	encryptionKey             string
+	secretVault               *secretvault.Vault
 	logger                    *slog.Logger
 	version                   string
 	commitSHA                 string
@@ -243,6 +245,16 @@ type Server struct {
 	usernameHashKeyBytes []byte
 }
 
+// vault exposes the secret vault initialised from EncryptionKey. A nil
+// or disabled return value means encryption is off and callers should
+// continue to operate on plaintext (legacy mode).
+func (s *Server) vault() *secretvault.Vault {
+	if s == nil {
+		return nil
+	}
+	return s.secretVault
+}
+
 // New constructs a control-plane server with in-memory state suitable for local development.
 func New(options Options) *Server {
 	now := options.Now
@@ -258,6 +270,14 @@ func New(options Options) *Server {
 		// loudly so an operator notices instead of falling back to
 		// CSRF-disabled mode.
 		panic("control-plane: cannot initialise CSRF secret from crypto/rand: " + err.Error())
+	}
+
+	// Build the secret vault once from the operator passphrase. A nil
+	// or empty passphrase yields a disabled vault so existing dev
+	// fixtures keep using plaintext at-rest.
+	vault, vaultErr := secretvault.New(options.EncryptionKey, secretvault.AllDomains)
+	if vaultErr != nil {
+		panic("control-plane: cannot initialise secret vault: " + vaultErr.Error())
 	}
 
 	server := &Server{
@@ -277,6 +297,7 @@ func New(options Options) *Server {
 		loginLockout:                 newAccountLockoutTracker(),
 		trustedProxyCIDRs:            options.TrustedProxyCIDRs,
 		encryptionKey:                options.EncryptionKey,
+		secretVault:                  vault,
 		logger:                       options.Logger,
 		version:                      options.Version,
 		commitSHA:                    options.CommitSHA,
@@ -292,7 +313,7 @@ func New(options Options) *Server {
 		clientUsage:                  make(map[string]map[string]clientUsageSnapshot),
 		lastUsageSeq:                 make(map[string]uint64),
 		sessions:                     agents.NewSessionManager(),
-		clientsSvc:                   clients.NewServiceWithDeps(options.Store, now),
+		clientsSvc:                   clients.NewServiceWithVault(options.Store, now, vault),
 		fleetSvc:                     fleet.NewService(options.Store, func() time.Time { return now().UTC() }),
 		instances:                    make(map[string]Instance),
 		metrics:                      make([]MetricSnapshot, 0, maxInMemoryMetricSnapshots),
@@ -313,6 +334,7 @@ func New(options Options) *Server {
 		server.jobs = jobs.NewServiceWithStore(options.Store)
 		server.auth = auth.NewServiceWithStore(options.Store)
 		server.auth.SetSessionStore(options.Store)
+		server.auth.SetVault(vault)
 		if err := server.auth.RestoreSessions(); err != nil && server.startupErr == nil {
 			server.startupErr = err
 		}
