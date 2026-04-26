@@ -9,7 +9,13 @@ import { ConfirmProvider } from "./providers/ConfirmProvider";
 import { EventsSynchronizer } from "./providers/EventsSynchronizer";
 import { ToastProvider } from "./providers/ToastProvider";
 import { router } from "./router";
+import { initI18n } from "@/shared/lib/i18n";
 import "../styles.css";
+
+// Phase-3 §3.2: bootstrap i18next before React mounts so the very
+// first render of every component already has translations available.
+// Subsequent calls to initI18n() are no-ops.
+initI18n();
 
 const queryClient = new QueryClient({
   defaultOptions: {

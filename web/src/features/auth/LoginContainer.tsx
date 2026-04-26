@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useRouter } from "@tanstack/react-router";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { apiClient, ApiError } from "@/shared/api/api";
@@ -12,22 +13,23 @@ const TRANSIENT_LOGIN_CODES = new Set([
   "session_store_unavailable", // P2-SEC-07 — session table was briefly down
 ]);
 
-function loginErrorMessage(err: unknown): string {
-  if (err instanceof ApiError && err.code && TRANSIENT_LOGIN_CODES.has(err.code)) {
-    return "Сервис временно недоступен. Повторите вход через минуту.";
-  }
-  if (err instanceof Error) {
-    return err.message || "Login failed.";
-  }
-  return String(err) || "Login failed.";
-}
-
 export function LoginContainer() {
   const router = useRouter();
+  const { t } = useTranslation("auth");
   const [stage, setStage] = useState<"credentials" | "totp">("credentials");
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
   const [savedCredentials, setSavedCredentials] = useState<{ username: string; password: string }>();
+
+  function loginErrorMessage(err: unknown): string {
+    if (err instanceof ApiError && err.code && TRANSIENT_LOGIN_CODES.has(err.code)) {
+      return t("errors.transient");
+    }
+    if (err instanceof Error) {
+      return err.message || t("errors.loginFailed");
+    }
+    return String(err) || t("errors.loginFailed");
+  }
 
   async function handleCredentials(username: string, password: string) {
     setError(undefined);
@@ -61,7 +63,7 @@ export function LoginContainer() {
         setError(loginErrorMessage(err));
       } else {
         const msg = err instanceof Error ? err.message : String(err);
-        setError(msg || "Invalid TOTP code.");
+        setError(msg || t("errors.invalidTotp"));
       }
     } finally {
       setLoading(false);
