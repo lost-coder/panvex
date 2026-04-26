@@ -46,7 +46,10 @@ func runDiscoveredContract(t *testing.T, open OpenStore) {
 			AgentID:      agent.ID,
 			ClientName:   "external-user",
 			Secret:       "abc123",
-			Status:       "new",
+			// R-D-02-sqlite: status must satisfy the enum CHECK
+			// constraint introduced in migration 0026 (sqlite) /
+			// 0023 (postgres). Use the canonical default.
+			Status:       "pending_review",
 			DiscoveredAt: time.Date(2026, time.April, 15, 10, 5, 0, 0, time.UTC),
 			UpdatedAt:    time.Date(2026, time.April, 15, 10, 5, 0, 0, time.UTC),
 		}
