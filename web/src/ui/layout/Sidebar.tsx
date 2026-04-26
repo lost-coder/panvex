@@ -5,11 +5,11 @@ import type { NavItem } from "./types";
 export interface SidebarProps {
   items: NavItem[];
   activeId: string;
-  brand?: string;
-  footer?: React.ReactNode;
-  onNavigate?: (id: string) => void;
-  onLogout?: () => void;
-  className?: string;
+  brand?: string | undefined;
+  footer?: React.ReactNode | undefined;
+  onNavigate?: ((id: string) => void) | undefined;
+  onLogout?: (() => void) | undefined;
+  className?: string | undefined;
 }
 
 export function Sidebar({

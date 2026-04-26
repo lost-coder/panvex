@@ -2,13 +2,13 @@ import { cn } from "@/ui/lib/cn";
 import { usePrefersReducedMotion } from "@/ui/lib/usePrefersReducedMotion";
 
 export interface SkeletonProps {
-  className?: string;
+  className?: string | undefined;
   /**
    * When present, adds `role="status"` + `aria-label` so a screen reader
    * announces the placeholder as "loading …". Default `role` is
    * `presentation` — a bank of skeletons should announce once, not N times.
    */
-  label?: string;
+  label?: string | undefined;
 }
 
 export function Skeleton({ className, label }: SkeletonProps) {

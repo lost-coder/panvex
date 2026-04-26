@@ -2,13 +2,13 @@ import { cn } from "@/ui/lib/cn";
 
 export interface BreadcrumbItem {
   label: string;
-  href?: string;
-  onClick?: () => void;
+  href?: string | undefined;
+  onClick?: (() => void) | undefined;
 }
 
 export interface BreadcrumbsProps {
   items: BreadcrumbItem[];
-  className?: string;
+  className?: string | undefined;
 }
 
 export function Breadcrumbs({ items, className }: BreadcrumbsProps) {

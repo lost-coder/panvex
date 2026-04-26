@@ -5,29 +5,29 @@ export interface BulkAction<T extends string = string> {
   id: T;
   label: string;
   /** `danger` adds red styling. Defaults to `default`. */
-  variant?: "default" | "danger" | "ghost";
+  variant?: "default" | "danger" | "ghost" | undefined;
   /** Disabled explicitly. `pending` already disables all actions. */
-  disabled?: boolean;
+  disabled?: boolean | undefined;
 }
 
 export interface BulkActionBarProps<T extends string = string> {
   /** Number of selected items. The bar renders nothing when `count === 0`. */
   count: number;
   /** Singular label for one selection — defaults to "selected". */
-  noun?: string;
+  noun?: string | undefined;
   /** Secondary descriptor, shown as a muted hint next to the count. */
-  hint?: string;
+  hint?: string | undefined;
   /** Action buttons. Rendered right-aligned. */
   actions: BulkAction<T>[];
   /** Called when an action is clicked. Receives the action id. */
-  onAction: (id: T) => void;
+  onAction: (id: T) => void | Promise<void>;
   /** Called when the operator clears the selection (× button). */
   onClear: () => void;
   /** `true` while a bulk mutation is in-flight; disables all actions. */
-  pending?: boolean;
+  pending?: boolean | undefined;
   /** Inline error banner under the bar when a bulk action fails. */
-  error?: string;
-  className?: string;
+  error?: string | undefined;
+  className?: string | undefined;
 }
 
 /**

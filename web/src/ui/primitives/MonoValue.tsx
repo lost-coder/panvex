@@ -2,7 +2,7 @@ import { cn } from "@/ui/lib/cn";
 
 export interface MonoValueProps {
   children: React.ReactNode;
-  className?: string;
+  className?: string | undefined;
 }
 
 export function MonoValue({ children, className }: MonoValueProps) {

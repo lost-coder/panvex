@@ -5,15 +5,15 @@ export interface TimelineEventProps {
   status: Status;
   time: string;
   message: string;
-  detail?: string;
+  detail?: string | undefined;
   /**
    * Optional source label (e.g. node name). When provided, it renders
    * on a first line alongside the timestamp; the message drops to a
    * second line and is free to wrap without fighting the time column
    * for horizontal space.
    */
-  source?: string;
-  className?: string;
+  source?: string | undefined;
+  className?: string | undefined;
 }
 
 const dotColor = {

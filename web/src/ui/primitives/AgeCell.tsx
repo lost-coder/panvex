@@ -3,20 +3,20 @@ import { formatAge, formatTime } from "@/ui/lib/format";
 
 export interface AgeCellProps {
   /** Unix seconds. Takes precedence over `rfc3339`. */
-  unixSec?: number;
+  unixSec?: number | undefined;
   /** RFC3339 timestamp — converted to unix seconds internally. */
-  rfc3339?: string;
+  rfc3339?: string | undefined;
   /**
    * Rendering mode:
    * - `age` (default): "5m ago" on top, absolute time below.
    * - `expires`: absolute time on top, countdown below (coloured).
    */
-  mode?: "age" | "expires";
+  mode?: "age" | "expires" | undefined;
   /** Snapshot of current unix seconds. Required for `expires` mode. */
-  nowSec?: number;
+  nowSec?: number | undefined;
   /** Override alignment. Defaults to "right". */
-  align?: "right" | "left";
-  className?: string;
+  align?: "right" | "left" | undefined;
+  className?: string | undefined;
 }
 
 function toUnix(props: Pick<AgeCellProps, "unixSec" | "rfc3339">): number | undefined {
