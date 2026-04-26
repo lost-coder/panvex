@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 
-import { apiClient } from "@/shared/api/api";
+import { apiClient, SESSION_EXPIRED_EVENT } from "@/shared/api/api";
 import { invalidateTelemetryQueries } from "@/shared/events/telemetry-query-invalidation";
 import { buildEventsURL, resolveConfiguredRootPath } from "@/shared/lib/runtime-path";
 import {
@@ -105,15 +105,17 @@ export function EventsSynchronizer({ children }: { children?: React.ReactNode })
           setStatus("closed");
           return;
         }
-        // Check if session is still valid before reconnecting.
-        // If expired, redirect to login instead of looping with 401s.
+        // Q3.U-Q-22: check session validity before reconnecting. On
+        // expiration we dispatch SESSION_EXPIRED_EVENT so AuthProvider
+        // owns the router navigation + cache clear + toast — instead of
+        // a hard window.location.href that bypasses React Query and
+        // misses the toast announcement.
         apiClient.me().then(() => {
           scheduleReconnect();
         }).catch(() => {
           stopped = true;
           setStatus("closed");
-          const rootPath = resolveConfiguredRootPath();
-          window.location.href = rootPath ? `${rootPath}/login` : "/login";
+          window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
         });
       };
     };

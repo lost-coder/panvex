@@ -189,6 +189,19 @@ export async function api<T>(
   init?: RequestInit,
   schema?: ZodType<T>,
 ): Promise<T> {
+  // Q3.U-Q-23: invariant on path. Every API call must traverse the
+  // configured apiBasePath ("/api" or "<root>/api") so a future caller
+  // typo cannot send credentialed requests to an attacker-controlled
+  // host or to an unintended path on the same origin. Absolute URLs
+  // (https://...) and protocol-relative URLs (//) are rejected; only
+  // basePath-prefixed paths are allowed.
+  if (!path.startsWith(apiBasePath + "/") && path !== apiBasePath) {
+    throw new ApiError(
+      `api(): path must start with ${apiBasePath}, got ${path}`,
+      "invalid_path",
+    );
+  }
+
   // W15: fail mutations fast when the OS reports no network. Reads still
   // go through fetch so the browser cache / service worker can answer
   // them; mutations have nowhere to land, so surfacing "offline" here

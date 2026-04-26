@@ -15,7 +15,8 @@ func newCSRFTestHandler(panelRootPath, agentRootPath string) http.Handler {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	return csrfOriginCheck(panelRootPath, agentRootPath)(inner)
+	srv := &Server{}
+	return srv.csrfOriginCheck(panelRootPath, agentRootPath)(inner)
 }
 
 // TestCSRFOriginCheckBlocksStateChangingWithoutOrigin verifies that every

@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { DiscoveredClientsPage } from "./DiscoveredClientsPage";
 import { useDiscoveredClients } from "./hooks/useDiscoveredClients";
 import { useNavigate } from "@tanstack/react-router";
@@ -37,7 +38,11 @@ export function DiscoveredClientsContainer() {
   // Adopt is non-destructive, but adopt-many often spans dozens of
   // records after the front-end dedup fanout, so we confirm the
   // fanout too.
-  const handleIgnoreOne = async (id: string) => {
+  // Q3.U-P-18: wrap the async handlers in useCallback so DiscoveredClientsPage
+  // (and any memoised children) keep stable function identities across
+  // re-renders. Without this, every parent render produced new closures
+  // and defeated downstream React.memo bailouts.
+  const handleIgnoreOne = useCallback(async (id: string) => {
     const ok = await confirm({
       title: "Ignore this discovered client?",
       body: "It will not appear in pending review unless reset.",
@@ -46,8 +51,9 @@ export function DiscoveredClientsContainer() {
     });
     if (!ok) return;
     await ignore(id);
-  };
-  const handleIgnoreMany = async (ids: string[]) => {
+  }, [confirm, ignore]);
+
+  const handleIgnoreMany = useCallback(async (ids: string[]) => {
     if (ids.length === 0) return;
     const ok = await confirm({
       title: `Ignore ${ids.length} discovered record${ids.length === 1 ? "" : "s"}?`,
@@ -57,8 +63,9 @@ export function DiscoveredClientsContainer() {
     });
     if (!ok) return;
     await ignoreMany(ids);
-  };
-  const handleAdoptMany = async (ids: string[]) => {
+  }, [confirm, ignoreMany]);
+
+  const handleAdoptMany = useCallback(async (ids: string[]) => {
     if (ids.length === 0) return;
     // `ids` is the flat list of raw discovered-records (one per node per
     // logical client). Count logical clients by how many unique groups
@@ -80,7 +87,7 @@ export function DiscoveredClientsContainer() {
     });
     if (!ok) return;
     await adoptMany(ids);
-  };
+  }, [confirm, adoptMany, discoveredClients]);
 
   return (
     <DiscoveredClientsPage

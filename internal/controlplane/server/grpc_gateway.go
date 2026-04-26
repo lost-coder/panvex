@@ -141,6 +141,11 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 	recoverGoroutine := func(name string) {
 		if r := recover(); r != nil {
 			slog.Error("goroutine panic recovered", "agent_id", agentID, "goroutine", name, "panic", r)
+			// Q3.U-Q-15: surface the recovered panic to Prometheus so an
+			// alert fires instead of relying on log scraping.
+			if s.obs != nil && s.obs.panicRecoveredTotal != nil {
+				s.obs.panicRecoveredTotal.WithLabelValues(name).Inc()
+			}
 			cancelConnection()
 		}
 	}

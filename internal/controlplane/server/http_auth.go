@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -342,7 +343,21 @@ func (s *Server) trustedForwardedProto(r *http.Request) string {
 	return r.Header.Get("X-Forwarded-Proto")
 }
 
+// EnvForceSecureCookie unconditionally marks the session cookie Secure,
+// regardless of TLS heuristics (Q3.U-S-13). Operators set this in any
+// production deployment fronted by HTTPS so a misconfigured proxy or a
+// missing X-Forwarded-Proto cannot leak the cookie over plain HTTP.
+const EnvForceSecureCookie = "PANVEX_FORCE_SECURE_COOKIE"
+
 func (s *Server) sessionCookieSecure(r *http.Request) bool {
+	// Q3.U-S-13: hardline override for prod. Setting
+	// PANVEX_FORCE_SECURE_COOKIE=1 forces the Secure flag everywhere; if
+	// the operator's deployment is actually plain HTTP, the cookie just
+	// fails to ride along — better than silently leaking it.
+	if forceCookieSecureEnabled() {
+		return true
+	}
+
 	if r.TLS != nil {
 		return true
 	}
@@ -375,4 +390,12 @@ func (s *Server) sessionCookieSecure(r *http.Request) bool {
 	}
 
 	return strings.EqualFold(parsedURL.Scheme, "https")
+}
+
+func forceCookieSecureEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(EnvForceSecureCookie))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }

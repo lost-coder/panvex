@@ -90,11 +90,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [toast]);
 
-  const value: AuthContextValue = {
-    user: data ?? null,
-    isLoading,
-    isAuthenticated: !!data,
-  };
+  // Q3.U-Q-21: memoise the context value so consumers don't re-render on
+  // every parent render — the previous code rebuilt the object literal
+  // each pass, defeating React's referential-equality bailout in
+  // useContext subscribers.
+  const value = React.useMemo<AuthContextValue>(
+    () => ({
+      user: data ?? null,
+      isLoading,
+      isAuthenticated: !!data,
+    }),
+    [data, isLoading],
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

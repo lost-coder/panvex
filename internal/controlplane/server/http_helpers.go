@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 type errorResponse struct {
@@ -11,8 +12,24 @@ type errorResponse struct {
 	Code  string `json:"code,omitempty"`
 }
 
+// scrubErrorMessage returns a safe-to-expose form of err.Error()
+// (Q3.U-S-26). Messages that contain anything resembling a secret
+// (password, token, secret, ciphertext, private key) are collapsed to
+// a generic "internal error" so a misformatted underlying error
+// cannot leak secret material via the HTTP response. Callers should
+// log the full error separately for diagnostics.
+func scrubErrorMessage(message string) string {
+	lower := strings.ToLower(message)
+	for _, needle := range []string{"password", "secret", "token", "ciphertext", "private key", "passphrase"} {
+		if strings.Contains(lower, needle) {
+			return "internal error"
+		}
+	}
+	return message
+}
+
 func writeErrorWithCode(w http.ResponseWriter, status int, message string, code string) {
-	writeJSON(w, status, errorResponse{Error: message, Code: code})
+	writeJSON(w, status, errorResponse{Error: scrubErrorMessage(message), Code: code})
 }
 
 // maxRequestBodyBytes limits the size of incoming JSON request bodies.
@@ -27,9 +44,22 @@ func maxBodySize(next http.Handler) http.Handler {
 	})
 }
 
+// decodeJSON decodes the request body into dest with strict semantics
+// (Q3.U-Q-05): unknown fields are rejected so client typos surface as
+// 400 errors instead of being silently dropped, and trailing JSON
+// after the first value is also rejected so a request body cannot
+// smuggle a second payload past the handler.
 func decodeJSON(r *http.Request, dest any) error {
 	defer r.Body.Close()
-	return json.NewDecoder(r.Body).Decode(dest)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(dest); err != nil {
+		return err
+	}
+	if dec.More() {
+		return fmt.Errorf("trailing JSON after object")
+	}
+	return nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
@@ -39,7 +69,7 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, errorResponse{Error: message})
+	writeJSON(w, status, errorResponse{Error: scrubErrorMessage(message)})
 }
 
 func newSequenceID(prefix string, value uint64) string {

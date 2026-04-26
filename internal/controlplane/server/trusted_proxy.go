@@ -39,7 +39,16 @@ func resolveTrustedClientIP(r *http.Request, trustedCIDRs []*net.IPNet) net.IP {
 	if raw == "" {
 		return peerIP
 	}
+	// Q3.U-S-20: cap the chain length. A malicious upstream might
+	// stuff thousands of synthetic hops into XFF, both to burn CPU
+	// in this walk and to dilute the right-to-left "first untrusted
+	// hop" search. Real deployments stack at most a handful of L7
+	// proxies; 16 is a comfortable ceiling.
+	const maxXFFHops = 16
 	hops := strings.Split(raw, ",")
+	if len(hops) > maxXFFHops {
+		hops = hops[len(hops)-maxXFFHops:]
+	}
 	var firstHop net.IP
 	for i := len(hops) - 1; i >= 0; i-- {
 		hop := stripPort(strings.TrimSpace(hops[i]))

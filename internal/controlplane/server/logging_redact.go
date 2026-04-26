@@ -65,10 +65,14 @@ func (s *Server) usernameHashKey() []byte {
 	}
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
-		// crypto/rand failure is essentially impossible on a healthy
-		// system; fall back to a fixed dev-only key so logging keeps
-		// working — the alert is on the failure to read entropy.
-		buf = []byte("panvex-log-username-fallback-key")[:32]
+		// Q3.U-S-22: crypto/rand failures are essentially impossible
+		// on a healthy system. The previous fallback to a fixed dev-only
+		// key meant a degraded entropy path silently produced predictable
+		// HMACs. Fail-closed instead: panic so the operator cannot ship
+		// a log-redaction bypass undetected. The control plane has no
+		// safe way to keep running without secure entropy anyway —
+		// session IDs, CSRF tokens, and CA generation all depend on it.
+		panic("control-plane: cannot derive username log-hash key: " + err.Error())
 	}
 	s.usernameHashKeyBytes = buf
 	return s.usernameHashKeyBytes
