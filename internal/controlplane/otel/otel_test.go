@@ -13,9 +13,11 @@ import (
 // unconditionally at startup: when OTEL_EXPORTER_OTLP_ENDPOINT is
 // unset (Config.Endpoint==""), Init must be a cheap no-op — no
 // provider mutation, no background goroutines, no error.
+//
+// Not parallel: TestInit_WithEndpoint mutates the global
+// TracerProvider, so racing the two flakes the "did Init mutate the
+// global" assertion below.
 func TestInit_NoEndpoint(t *testing.T) {
-	t.Parallel()
-
 	before := otel.GetTracerProvider()
 
 	shutdown, err := Init(context.Background(), Config{})
@@ -42,7 +44,8 @@ func TestInit_NoEndpoint(t *testing.T) {
 // require successful export — that would need a running collector and
 // belongs in an integration test.
 func TestInit_WithEndpoint(t *testing.T) {
-	t.Parallel()
+	// Not parallel — see TestInit_NoEndpoint; both touch the global
+	// TracerProvider and racing them produces spurious failures.
 
 	// Use a port that's almost certainly closed. The exporter is lazy —
 	// it doesn't dial on New, only on export — so construction succeeds.
