@@ -4,6 +4,7 @@ import type {
   MetricsPoint,
   MetricsTab,
 } from "./internal/MetricsChartSectionInner";
+import { chartShortFallbackClass } from "./internal/chartContainer";
 
 export type { MetricsChartSectionProps, MetricsPoint, MetricsTab };
 
@@ -22,7 +23,7 @@ export function MetricsChartSection(props: MetricsChartSectionProps) {
     <Suspense
       fallback={
         <div
-          className="flex items-center justify-center h-[260px] text-fg-muted text-xs"
+          className={chartShortFallbackClass}
           role="status"
           aria-label="Loading charts"
         >
