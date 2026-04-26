@@ -126,7 +126,7 @@ jobs:
       # answers "where did this artifact come from", signature
       # answers "is it intact and from a trusted signer".
       - name: Attest build provenance for archive
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: panvex-*-linux-${{ matrix.arch }}.tar.gz
 
