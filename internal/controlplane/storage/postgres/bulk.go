@@ -94,6 +94,13 @@ func (t txExecutor) QueryContext(ctx context.Context, query string, args ...any)
 	return t.tx.QueryContext(ctx, query, args...)
 }
 
+// PrepareContext is part of dbExecutor (R-Q-03) so dbsqlc.Queries can
+// be bound to a tx-backed executor. Not actually invoked by the
+// generated code in `emit_prepared_queries: false` mode.
+func (t txExecutor) PrepareContext(ctx context.Context, query string) (*sql.Stmt, error) {
+	return t.tx.PrepareContext(ctx, query)
+}
+
 func (t txExecutor) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
 	return t.tx.QueryRowContext(ctx, query, args...)
 }

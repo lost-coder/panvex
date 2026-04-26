@@ -17,10 +17,16 @@ var (
 // dbExecutor abstracts the query surface shared by *sql.DB and *sql.Tx so
 // that Store methods compose inside Transact without duplication. See
 // P2-ARCH-01 for the design rationale.
+//
+// PrepareContext is part of the surface so that the dbsqlc.Queries
+// constructor (DBTX interface) accepts a dbExecutor inside a tx — the
+// generated code does not call Prepare in the default
+// `emit_prepared_queries: false` mode but the type still has to fit.
 type dbExecutor interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+	PrepareContext(ctx context.Context, query string) (*sql.Stmt, error)
 }
 
 // Store persists control-plane records in a PostgreSQL database.

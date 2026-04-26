@@ -4,24 +4,21 @@ import (
 	"context"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/dbsqlc"
 )
 
-func (s *Store) DeleteUser(ctx context.Context, userID string) error {
-	result, err := s.db.ExecContext(ctx, `
-		DELETE FROM users
-		WHERE id = $1
-	`, userID)
-	if err != nil {
-		return err
-	}
+// R-Q-03: routed through dbsqlc.
 
-	rowsAffected, err := result.RowsAffected()
+func (s *Store) DeleteUser(ctx context.Context, userID string) error {
+	if s.sqlDB == nil {
+		return errTxBoundStore
+	}
+	rowsAffected, err := dbsqlc.New(s.sqlDB).DeleteUser(ctx, userID)
 	if err != nil {
 		return err
 	}
 	if rowsAffected == 0 {
 		return storage.ErrNotFound
 	}
-
 	return nil
 }

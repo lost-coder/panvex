@@ -6,45 +6,39 @@ import (
 	"errors"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/dbsqlc"
 )
 
 const panelSettingsScope = "panel"
 
+// R-Q-03: routed through dbsqlc.
+
 func (s *Store) PutPanelSettings(ctx context.Context, settings storage.PanelSettingsRecord) error {
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO panel_settings (
-			scope,
-			http_public_url,
-			grpc_public_endpoint,
-			updated_at
-		)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (scope) DO UPDATE
-		SET http_public_url = EXCLUDED.http_public_url,
-		    grpc_public_endpoint = EXCLUDED.grpc_public_endpoint,
-		    updated_at = EXCLUDED.updated_at
-	`, panelSettingsScope, settings.HTTPPublicURL, settings.GRPCPublicEndpoint, settings.UpdatedAt.UTC())
-	return err
+	if s.sqlDB == nil {
+		return errTxBoundStore
+	}
+	return dbsqlc.New(s.sqlDB).UpsertPanelSettings(ctx, dbsqlc.UpsertPanelSettingsParams{
+		Scope:              panelSettingsScope,
+		HttpPublicUrl:      settings.HTTPPublicURL,
+		GrpcPublicEndpoint: settings.GRPCPublicEndpoint,
+		UpdatedAt:          settings.UpdatedAt.UTC(),
+	})
 }
 
 func (s *Store) GetPanelSettings(ctx context.Context) (storage.PanelSettingsRecord, error) {
-	row := s.db.QueryRowContext(ctx, `
-		SELECT
-			http_public_url,
-			grpc_public_endpoint,
-			updated_at
-		FROM panel_settings
-		WHERE scope = $1
-	`, panelSettingsScope)
-
-	var settings storage.PanelSettingsRecord
-	if err := row.Scan(&settings.HTTPPublicURL, &settings.GRPCPublicEndpoint, &settings.UpdatedAt); err != nil {
+	if s.sqlDB == nil {
+		return storage.PanelSettingsRecord{}, errTxBoundStore
+	}
+	row, err := dbsqlc.New(s.sqlDB).GetPanelSettings(ctx, panelSettingsScope)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.PanelSettingsRecord{}, storage.ErrNotFound
 		}
 		return storage.PanelSettingsRecord{}, err
 	}
-
-	settings.UpdatedAt = settings.UpdatedAt.UTC()
-	return settings, nil
+	return storage.PanelSettingsRecord{
+		HTTPPublicURL:      row.HttpPublicUrl,
+		GRPCPublicEndpoint: row.GrpcPublicEndpoint,
+		UpdatedAt:          row.UpdatedAt.UTC(),
+	}, nil
 }

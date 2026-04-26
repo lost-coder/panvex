@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/dbsqlc"
 )
 
 // Retention is persisted as an opaque JSON blob in the
@@ -19,14 +20,14 @@ import (
 //
 // An empty (or missing) retention_json column is treated as
 // ErrNotFound so the caller (server.New) falls back to defaults.
+//
+// R-Q-03: routed through dbsqlc.
 
 func (s *Store) GetRetentionSettings(ctx context.Context) (storage.RetentionSettings, error) {
-	var raw string
-	err := s.db.QueryRowContext(ctx, `
-		SELECT retention_json
-		FROM panel_settings
-		WHERE scope = $1
-	`, panelSettingsScope).Scan(&raw)
+	if s.sqlDB == nil {
+		return storage.RetentionSettings{}, errTxBoundStore
+	}
+	raw, err := dbsqlc.New(s.sqlDB).GetRetentionJSON(ctx, panelSettingsScope)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.RetentionSettings{}, storage.ErrNotFound
@@ -36,7 +37,6 @@ func (s *Store) GetRetentionSettings(ctx context.Context) (storage.RetentionSett
 	if strings.TrimSpace(raw) == "" {
 		return storage.RetentionSettings{}, storage.ErrNotFound
 	}
-
 	var settings storage.RetentionSettings
 	if err := json.Unmarshal([]byte(raw), &settings); err != nil {
 		return storage.RetentionSettings{}, err
@@ -45,27 +45,16 @@ func (s *Store) GetRetentionSettings(ctx context.Context) (storage.RetentionSett
 }
 
 func (s *Store) PutRetentionSettings(ctx context.Context, settings storage.RetentionSettings) error {
+	if s.sqlDB == nil {
+		return errTxBoundStore
+	}
 	payload, err := json.Marshal(settings)
 	if err != nil {
 		return err
 	}
-
-	// UPSERT: if the panel_settings row does not yet exist (operator has
-	// never opened the panel settings page), create it with empty panel
-	// fields and the retention blob. If it does exist, update only the
-	// retention_json column and bump updated_at.
-	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO panel_settings (
-			scope,
-			http_public_url,
-			grpc_public_endpoint,
-			retention_json,
-			updated_at
-		)
-		VALUES ($1, '', '', $2, $3)
-		ON CONFLICT (scope) DO UPDATE
-		SET retention_json = EXCLUDED.retention_json,
-		    updated_at = EXCLUDED.updated_at
-	`, panelSettingsScope, string(payload), time.Now().UTC())
-	return err
+	return dbsqlc.New(s.sqlDB).UpsertRetentionJSON(ctx, dbsqlc.UpsertRetentionJSONParams{
+		Scope:         panelSettingsScope,
+		RetentionJson: string(payload),
+		UpdatedAt:     time.Now().UTC(),
+	})
 }

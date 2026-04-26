@@ -7,12 +7,18 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/dbsqlc"
 )
 
+// R-Q-03: routed through dbsqlc so the column-level types are
+// compile-time-checked.
+
 func (s *Store) GetCPSecret(ctx context.Context, key string) ([]byte, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT value FROM cp_secrets WHERE key = $1`, key)
-	var value []byte
-	if err := row.Scan(&value); err != nil {
+	if s.sqlDB == nil {
+		return nil, errTxBoundStore
+	}
+	value, err := dbsqlc.New(s.sqlDB).GetCPSecret(ctx, key)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, storage.ErrNotFound
 		}
@@ -22,12 +28,12 @@ func (s *Store) GetCPSecret(ctx context.Context, key string) ([]byte, error) {
 }
 
 func (s *Store) PutCPSecret(ctx context.Context, key string, value []byte) error {
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO cp_secrets (key, value, updated_at)
-		VALUES ($1, $2, $3)
-		ON CONFLICT(key) DO UPDATE SET
-			value = EXCLUDED.value,
-			updated_at = EXCLUDED.updated_at
-	`, key, value, time.Now().UTC())
-	return err
+	if s.sqlDB == nil {
+		return errTxBoundStore
+	}
+	return dbsqlc.New(s.sqlDB).UpsertCPSecret(ctx, dbsqlc.UpsertCPSecretParams{
+		Key:       key,
+		Value:     value,
+		UpdatedAt: time.Now().UTC(),
+	})
 }
