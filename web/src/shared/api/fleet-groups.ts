@@ -1,9 +1,16 @@
 import { api, apiBasePath } from "./http";
+import {
+  fleetGroupDeletionPreviewSchema,
+  fleetGroupListSchema,
+  fleetGroupSchema,
+} from "./schemas";
 
 export type FleetGroupIntegration = {
   id: string;
   kind: string;
-  provider_id?: string;
+  // R-Q-20: `| undefined` widens the optional shape so Zod schemas
+  // line up with exactOptionalPropertyTypes.
+  provider_id?: string | undefined;
   enabled: boolean;
   config: unknown;
   created_at_unix: number;
@@ -95,25 +102,35 @@ export type UpdateFleetGroupIntegrationRequest = {
 };
 
 export const fleetGroupsApi = {
-  // R-Q-20: schemas exist in shared/api/schemas/fleet.ts; the existing
-  // domain type uses `provider_id?: string` which conflicts with
-  // exactOptionalPropertyTypes against Zod's `.optional()` shape. Wiring
-  // them into api() requires a follow-up that reconciles the optional
-  // semantics; the schemas stand ready for that PR.
-  fleetGroups: () => api<FleetGroupEntry[]>(`${apiBasePath}/fleet-groups`),
-  fleetGroup: (id: string) => api<FleetGroupEntry>(`${apiBasePath}/fleet-groups/${id}`),
+  // R-Q-20: response Zod-parse on the read paths.
+  fleetGroups: () =>
+    api<FleetGroupEntry[]>(`${apiBasePath}/fleet-groups`, undefined, fleetGroupListSchema),
+  fleetGroup: (id: string) =>
+    api<FleetGroupEntry>(`${apiBasePath}/fleet-groups/${id}`, undefined, fleetGroupSchema),
   createFleetGroup: (payload: CreateFleetGroupRequest) =>
-    api<FleetGroupEntry>(`${apiBasePath}/fleet-groups`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
+    api<FleetGroupEntry>(
+      `${apiBasePath}/fleet-groups`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+      fleetGroupSchema,
+    ),
   updateFleetGroup: (id: string, payload: UpdateFleetGroupRequest) =>
-    api<FleetGroupEntry>(`${apiBasePath}/fleet-groups/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(payload),
-    }),
+    api<FleetGroupEntry>(
+      `${apiBasePath}/fleet-groups/${id}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      },
+      fleetGroupSchema,
+    ),
   fleetGroupDeletionPreview: (id: string) =>
-    api<FleetGroupDeletionPreview>(`${apiBasePath}/fleet-groups/${id}/deletion-preview`),
+    api<FleetGroupDeletionPreview>(
+      `${apiBasePath}/fleet-groups/${id}/deletion-preview`,
+      undefined,
+      fleetGroupDeletionPreviewSchema,
+    ),
   // reassignTo is required when the preview reports reassign_required;
   // otherwise the backend returns 409. Callers should flow users
   // through a confirm dialog that picks a target group first.

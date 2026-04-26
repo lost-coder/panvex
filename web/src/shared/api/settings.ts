@@ -1,5 +1,8 @@
 import { api, apiBasePath, encodeRequest } from "./http";
 import {
+  appearanceSettingsResponseSchema,
+  panelSettingsResponseSchema,
+  retentionSettingsSchema,
   updateAppearanceSettingsRequestSchema,
   updatePanelSettingsRequestSchema,
   versionSchema,
@@ -41,43 +44,74 @@ export type RetentionSettings = {
 };
 
 export const settingsApi = {
-  panelSettings: () => api<PanelSettingsResponse>(`${apiBasePath}/settings/panel`),
-  appearanceSettings: () => api<AppearanceSettingsResponse>(`${apiBasePath}/settings/appearance`),
+  // R-Q-20: Zod parse on every read; the response schemas mirror the
+  // runtime types so the api<T>() overload accepts them.
+  panelSettings: () =>
+    api<PanelSettingsResponse>(
+      `${apiBasePath}/settings/panel`,
+      undefined,
+      panelSettingsResponseSchema,
+    ),
+  appearanceSettings: () =>
+    api<AppearanceSettingsResponse>(
+      `${apiBasePath}/settings/appearance`,
+      undefined,
+      appearanceSettingsResponseSchema,
+    ),
   updateAppearanceSettings: (payload: {
     theme: "system" | "light" | "dark";
     density: "comfortable" | "compact";
     help_mode: "off" | "basic" | "full";
   }) =>
-    api<AppearanceSettingsResponse>(`${apiBasePath}/settings/appearance`, {
-      method: "PUT",
-      body: encodeRequest(
-        `${apiBasePath}/settings/appearance`,
-        updateAppearanceSettingsRequestSchema,
-        payload,
-      ),
-    }),
+    api<AppearanceSettingsResponse>(
+      `${apiBasePath}/settings/appearance`,
+      {
+        method: "PUT",
+        body: encodeRequest(
+          `${apiBasePath}/settings/appearance`,
+          updateAppearanceSettingsRequestSchema,
+          payload,
+        ),
+      },
+      appearanceSettingsResponseSchema,
+    ),
   updatePanelSettings: (payload: {
     http_public_url: string;
     grpc_public_endpoint: string;
   }) =>
-    api<PanelSettingsResponse>(`${apiBasePath}/settings/panel`, {
-      method: "PUT",
-      body: encodeRequest(
-        `${apiBasePath}/settings/panel`,
-        updatePanelSettingsRequestSchema,
-        payload,
-      ),
-    }),
+    api<PanelSettingsResponse>(
+      `${apiBasePath}/settings/panel`,
+      {
+        method: "PUT",
+        body: encodeRequest(
+          `${apiBasePath}/settings/panel`,
+          updatePanelSettingsRequestSchema,
+          payload,
+        ),
+      },
+      panelSettingsResponseSchema,
+    ),
   restartPanel: () =>
-    api<PanelSettingsResponse>(`${apiBasePath}/settings/panel/restart`, {
-      method: "POST"
-    }),
-  getRetentionSettings: () => api<RetentionSettings>(`${apiBasePath}/settings/retention`),
+    api<PanelSettingsResponse>(
+      `${apiBasePath}/settings/panel/restart`,
+      { method: "POST" },
+      panelSettingsResponseSchema,
+    ),
+  getRetentionSettings: () =>
+    api<RetentionSettings>(
+      `${apiBasePath}/settings/retention`,
+      undefined,
+      retentionSettingsSchema,
+    ),
   putRetentionSettings: (settings: RetentionSettings) =>
-    api<RetentionSettings>(`${apiBasePath}/settings/retention`, {
-      method: "PUT",
-      body: JSON.stringify(settings),
-    }),
+    api<RetentionSettings>(
+      `${apiBasePath}/settings/retention`,
+      {
+        method: "PUT",
+        body: JSON.stringify(settings),
+      },
+      retentionSettingsSchema,
+    ),
   /**
    * GET /api/version — returns different shapes by role (P1-SEC-15). The
    * zod union handles both viewer and operator branches; consumers should

@@ -4,11 +4,36 @@ import { z } from "zod";
  * R-Q-20: Zod schemas for the operator settings endpoints
  * (/settings/panel, /settings/retention, /settings/updates,
  * /settings/appearance).
+ *
+ * Schemas mirror the runtime types declared in shared/api/settings.ts
+ * exactly so the api<T>() ZodType<T> overload accepts them under
+ * exactOptionalPropertyTypes.
  */
 
-export const panelSettingsSchema = z.object({
+export const panelSettingsResponseSchema = z.object({
   http_public_url: z.string(),
+  http_root_path: z.string(),
   grpc_public_endpoint: z.string(),
+  http_listen_address: z.string(),
+  grpc_listen_address: z.string(),
+  tls_mode: z.enum(["proxy", "direct"]),
+  tls_cert_file: z.string(),
+  tls_key_file: z.string(),
+  runtime_source: z.enum(["legacy", "config_file"]),
+  runtime_config_path: z.string(),
+  updated_at_unix: z.number().int(),
+  restart: z.object({
+    supported: z.boolean(),
+    pending: z.boolean(),
+    state: z.enum(["ready", "pending", "unavailable"]),
+  }),
+});
+
+export const appearanceSettingsResponseSchema = z.object({
+  theme: z.enum(["system", "light", "dark"]),
+  density: z.enum(["comfortable", "compact"]),
+  help_mode: z.enum(["off", "basic", "full"]),
+  updated_at_unix: z.number().int(),
 });
 
 export const retentionSettingsSchema = z.object({
@@ -19,20 +44,6 @@ export const retentionSettingsSchema = z.object({
   event_history_seconds: z.number().int(),
 });
 
-export const updateSettingsSchema = z.object({
-  channel: z.string(),
-  auto_check: z.boolean(),
-  // Backend may add fields here as the auto-update story evolves; the
-  // UI reads only channel + auto_check today.
-});
-
-export const appearanceSettingsSchema = z.object({
-  theme: z.enum(["system", "light", "dark"]),
-  density: z.enum(["comfortable", "compact"]),
-  help_mode: z.enum(["off", "basic", "full"]),
-});
-
-export type PanelSettingsParsed = z.infer<typeof panelSettingsSchema>;
+export type PanelSettingsResponseParsed = z.infer<typeof panelSettingsResponseSchema>;
+export type AppearanceSettingsResponseParsed = z.infer<typeof appearanceSettingsResponseSchema>;
 export type RetentionSettingsParsed = z.infer<typeof retentionSettingsSchema>;
-export type UpdateSettingsParsed = z.infer<typeof updateSettingsSchema>;
-export type AppearanceSettingsParsed = z.infer<typeof appearanceSettingsSchema>;
