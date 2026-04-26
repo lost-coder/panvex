@@ -6,8 +6,8 @@ import { FormField } from "@/ui/base/form-field";
 interface TotpDisableSheetProps {
   onDisable: (password: string, totpCode: string) => Promise<void>;
   onCancel: () => void;
-  loading?: boolean;
-  error?: string;
+  loading?: boolean | undefined;
+  error?: string | undefined;
 }
 
 export function TotpDisableSheet({ onDisable, onCancel, loading, error }: TotpDisableSheetProps) {

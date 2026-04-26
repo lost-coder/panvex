@@ -56,7 +56,7 @@ function ServerCardView({
   onServerClick,
 }: {
   servers: ServerListItem[];
-  onServerClick?: (id: string) => void;
+  onServerClick?: ((id: string) => void) | undefined;
 }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -92,9 +92,9 @@ function ServerListView({
   selection,
 }: {
   servers: ServerListItem[];
-  onServerClick?: (id: string) => void;
+  onServerClick?: ((id: string) => void) | undefined;
   visibleColumns: Record<string, boolean>;
-  selection?: ServerSelectionConfig;
+  selection?: ServerSelectionConfig | undefined;
 }) {
   const allColumns = [
     ...(selection

@@ -73,7 +73,7 @@ export function useFleetGroupMutations() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: ({ id, reassignTo }: { id: string; reassignTo?: string }) =>
+    mutationFn: ({ id, reassignTo }: { id: string; reassignTo?: string | undefined }) =>
       apiClient.deleteFleetGroup(id, reassignTo),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["fleet-groups"] });

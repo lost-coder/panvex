@@ -2,7 +2,7 @@ import { ChevronRight } from "lucide-react";
 
 export interface DiscoveredClientsBannerProps {
   count: number;
-  onClick?: () => void;
+  onClick?: (() => void) | undefined;
 }
 
 export function DiscoveredClientsBanner({ count, onClick }: DiscoveredClientsBannerProps) {

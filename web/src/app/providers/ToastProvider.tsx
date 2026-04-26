@@ -45,7 +45,7 @@ interface ToastEntry {
   message: string;
   variant: ToastVariant;
   duration: number;
-  action?: ToastAction;
+  action?: ToastAction | undefined;
 }
 
 // Default auto-dismiss matches the remediation plan (P2-FE-03 spec: 5s).

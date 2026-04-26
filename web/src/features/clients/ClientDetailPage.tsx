@@ -70,9 +70,9 @@ function SecretSection({
   pendingRedeploy,
 }: {
   secret: string;
-  onRotate?: () => void;
-  rotating?: boolean;
-  pendingRedeploy?: boolean;
+  onRotate?: (() => void) | undefined;
+  rotating?: boolean | undefined;
+  pendingRedeploy?: boolean | undefined;
 }) {
   // Client secrets need a long-lived reveal/copy flow, not the one-shot
   // <SecretReveal> primitive used for TOTP bootstraps.
@@ -176,8 +176,8 @@ function DeployLinksCard({
   agentLabels,
 }: {
   deployments: ClientDeploymentData[];
-  secretPendingRedeploy?: boolean;
-  agentLabels?: Record<string, string>;
+  secretPendingRedeploy?: boolean | undefined;
+  agentLabels?: Record<string, string> | undefined;
 }) {
   if (deployments.length === 0) {
     return (
@@ -242,10 +242,10 @@ interface IPRow {
   ip: string;
   firstSeen: string;
   lastSeen: string;
-  countryCode?: string;
-  countryName?: string;
-  city?: string;
-  asn?: string;
+  countryCode?: string | undefined;
+  countryName?: string | undefined;
+  city?: string | undefined;
+  asn?: string | undefined;
 }
 
 function IPHistoryCard({ ips, totalUnique }: { ips: IPRow[]; totalUnique: number }) {

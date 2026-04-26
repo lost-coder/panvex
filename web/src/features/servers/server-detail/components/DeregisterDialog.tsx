@@ -10,7 +10,7 @@ export function DeregisterDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  onConfirm?: () => void;
+  onConfirm?: (() => void) | undefined;
 }) {
   if (!open) return null;
   return (

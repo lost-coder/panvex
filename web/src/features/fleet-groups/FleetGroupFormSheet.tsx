@@ -14,8 +14,8 @@ export interface FleetGroupFormSheetProps {
   onChange: (data: FleetGroupFormData) => void;
   onSubmit: () => void;
   onCancel: () => void;
-  loading?: boolean;
-  error?: string;
+  loading?: boolean | undefined;
+  error?: string | undefined;
 }
 
 // Name is the immutable slug — editable only on create. We render it

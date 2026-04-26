@@ -18,8 +18,8 @@ function CredentialsPanel({
   password: string;
   onUsernameChange: (v: string) => void;
   onPasswordChange: (v: string) => void;
-  onSubmit: (e: React.FormEvent) => void;
-  loading?: boolean;
+  onSubmit: (e: React.FormEvent) => void | Promise<void>;
+  loading?: boolean | undefined;
 }) {
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-4">
@@ -70,9 +70,9 @@ function TotpPanel({
 }: {
   totpCode: string;
   onTotpChange: (v: string) => void;
-  onSubmit: (e: React.FormEvent) => void;
+  onSubmit: (e: React.FormEvent) => void | Promise<void>;
   onBack: () => void;
-  loading?: boolean;
+  loading?: boolean | undefined;
 }) {
   // Strip non-digit keystrokes at the source so users can't accidentally
   // type a space and fail validation silently. `inputMode="numeric"`

@@ -33,10 +33,10 @@ export type MetricsTab = "system" | "connections" | "network" | "traffic";
 
 export interface MetricsChartSectionProps {
   points: MetricsPoint[];
-  resolution?: "raw" | "hourly";
+  resolution?: "raw" | "hourly" | undefined;
   timeRange: string;
-  onTimeRangeChange?: (range: string) => void;
-  availableRanges?: string[];
+  onTimeRangeChange?: ((range: string) => void) | undefined;
+  availableRanges?: string[] | undefined;
 }
 
 const TIME_RANGES = ["1h", "6h", "24h", "7d"];
