@@ -22,6 +22,7 @@ type Agent struct {
 	CreatedAt     time.Time
 	CertIssuedAt  sql.NullTime
 	CertExpiresAt sql.NullTime
+	CertSerial    string
 }
 
 type AgentCertificateRecoveryGrant struct {
@@ -109,6 +110,18 @@ type ClientUsage struct {
 	ObservedAt       time.Time
 }
 
+type ConsumedTotp struct {
+	UserID string
+	Code   string
+	UsedAt time.Time
+}
+
+type CpSecret struct {
+	Key       string
+	Value     []byte
+	UpdatedAt time.Time
+}
+
 type DiscoveredClient struct {
 	ID                 string
 	AgentID            string
@@ -134,6 +147,7 @@ type EnrollmentToken struct {
 	ExpiresAt    time.Time
 	ConsumedAt   sql.NullTime
 	RevokedAt    sql.NullTime
+	ValueHash    string
 }
 
 type FleetGroup struct {
@@ -215,9 +229,10 @@ type PanelSetting struct {
 }
 
 type Session struct {
-	ID        string
-	UserID    string
-	CreatedAt time.Time
+	ID         string
+	UserID     string
+	CreatedAt  time.Time
+	LastSeenAt time.Time
 }
 
 type TelemtDetailBoost struct {
@@ -343,15 +358,15 @@ type TsDcHealth struct {
 type TsServerLoad struct {
 	AgentID                string
 	CapturedAt             time.Time
-	CpuPctAvg              float32
-	CpuPctMax              float32
-	MemPctAvg              float32
-	MemPctMax              float32
-	DiskPctAvg             float32
-	DiskPctMax             float32
-	Load1m                 float32
-	Load5m                 float32
-	Load15m                float32
+	CpuPctAvg              float64
+	CpuPctMax              float64
+	MemPctAvg              float64
+	MemPctMax              float64
+	DiskPctAvg             float64
+	DiskPctMax             float64
+	Load1m                 float64
+	Load5m                 float64
+	Load15m                float64
 	ConnectionsAvg         int32
 	ConnectionsMax         int32
 	ConnectionsMeAvg       int32
@@ -361,8 +376,8 @@ type TsServerLoad struct {
 	ConnectionsTotal       int64
 	ConnectionsBadTotal    int64
 	HandshakeTimeoutsTotal int64
-	DcCoverageMinPct       float32
-	DcCoverageAvgPct       float32
+	DcCoverageMinPct       float64
+	DcCoverageAvgPct       float64
 	HealthyUpstreams       int32
 	TotalUpstreams         int32
 	NetBytesSent           int64
