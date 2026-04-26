@@ -661,6 +661,15 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 	connectionCtx, cancelConnection := context.WithCancel(stream.Context())
 	defer cancelConnection()
 
+	// Q4.U-P-08: graceful drain. Every goroutine spawned for this
+	// connection adds 1 to streamWG and defers wg.Done(); runConnection
+	// blocks on wg.Wait() before returning so a quick reconnect cannot
+	// outpace the previous connection's drain. The defer ordering is
+	// reverse-source: cancelConnection runs FIRST (closing connectionCtx),
+	// then wg.Wait runs and joins the spawned goroutines.
+	var streamWG sync.WaitGroup
+	defer streamWG.Wait()
+
 	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 32)
 	telemetryOutbound := make(chan *gatewayrpc.ConnectClientMessage, 64)
 	jobInflight := newJobInflightTracker()
@@ -675,7 +684,9 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 		cancelConnection()
 	}
 
+	streamWG.Add(1)
 	go func() {
+		defer streamWG.Done()
 		for {
 			var message *gatewayrpc.ConnectClientMessage
 			select {
@@ -710,7 +721,9 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 		cdConc = 8
 	}
 	clientDataSem := make(chan struct{}, cdConc)
+	streamWG.Add(1)
 	go func() {
+		defer streamWG.Done()
 		for {
 			message, err := stream.Recv()
 			if err != nil {
@@ -728,7 +741,11 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 				case <-connectionCtx.Done():
 					return
 				}
+				// Q4.U-P-08: track spawned client-data handlers so the
+				// reconnect path waits for in-flight RPCs to finish.
+				streamWG.Add(1)
 				go func() {
+					defer streamWG.Done()
 					defer func() { <-clientDataSem }()
 					handleClientDataRequest(connectionCtx, agent, criticalOutbound, req)
 				}()

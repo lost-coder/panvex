@@ -235,6 +235,11 @@ type AgentRecord struct {
 	LastSeenAt    time.Time
 	CertIssuedAt  *time.Time
 	CertExpiresAt *time.Time
+	// CertSerial pins the latest issued certificate's serial number so a
+	// previously-issued cert (e.g. a not-yet-expired old one harvested
+	// from a backup or rotation log) cannot impersonate the agent
+	// (Q4.U-S-04). Hex-encoded big-endian serial.
+	CertSerial string
 }
 
 // InstanceRecord stores one Telemt runtime observed through an agent.

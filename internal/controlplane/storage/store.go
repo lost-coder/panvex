@@ -59,6 +59,13 @@ type FleetStore interface {
 	ListAgents(ctx context.Context) ([]AgentRecord, error)
 	DeleteAgent(ctx context.Context, agentID string) error
 	UpdateAgentNodeName(ctx context.Context, agentID string, nodeName string) error
+	// UpdateAgentCertSerial pins the latest-issued client cert serial
+	// for the agent so the gRPC connect path can reject any cert that
+	// does not match (Q4.U-S-04).
+	UpdateAgentCertSerial(ctx context.Context, agentID string, serial string) error
+	// GetAgentCertSerial returns the pinned serial; "" means unpinned
+	// (legacy agent whose cert pre-dates the schema migration).
+	GetAgentCertSerial(ctx context.Context, agentID string) (string, error)
 	PutInstance(ctx context.Context, instance InstanceRecord) error
 	// PutInstancesBulk upserts a batch of Telemt instances in a single
 	// transaction. Same semantics as PutInstance per row; empty slice is a

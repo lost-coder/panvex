@@ -3,6 +3,8 @@ import { initReactI18next } from "react-i18next";
 
 import authEN from "@/locales/en/auth.json";
 import authRU from "@/locales/ru/auth.json";
+import activityEN from "@/locales/en/activity.json";
+import activityRU from "@/locales/ru/activity.json";
 
 // Phase-3 §3.2: i18n bootstrap. Russian is the canonical source of
 // truth (the panel was built ru-first), English is the second
@@ -50,10 +52,10 @@ export function initI18n(): typeof i18next {
     fallbackLng: DEFAULT_LANGUAGE,
     supportedLngs: SUPPORTED_LANGUAGES as readonly string[],
     defaultNS: "common",
-    ns: ["auth"],
+    ns: ["auth", "activity"],
     resources: {
-      ru: { auth: authRU },
-      en: { auth: authEN },
+      ru: { auth: authRU, activity: activityRU },
+      en: { auth: authEN, activity: activityEN },
     },
     interpolation: {
       // React already escapes — letting i18next double-escape would

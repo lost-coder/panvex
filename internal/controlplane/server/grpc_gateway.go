@@ -78,12 +78,20 @@ func (s *Server) RenewCertificate(ctx context.Context, request *gatewayrpc.Renew
 	if agent, ok := s.agents[agentID]; ok {
 		agent.CertIssuedAt = &certIssuedAt
 		agent.CertExpiresAt = &certExpiresAt
+		agent.CertSerial = issued.Serial
 		s.agents[agentID] = agent
 		if s.batchWriter != nil {
 			s.batchWriter.agents.Enqueue(agentToRecord(agent))
 		}
 	}
 	s.mu.Unlock()
+	// Q4.U-S-04: pin the new serial so the in-flight stream (and any
+	// reconnect that follows) only accept the freshly-issued cert.
+	if s.store != nil {
+		if err := s.store.UpdateAgentCertSerial(ctx, agentID, issued.Serial); err != nil {
+			s.logger.Warn("persist renewed agent cert serial failed", "agent_id", agentID, "error", err)
+		}
+	}
 
 	return &gatewayrpc.RenewCertificateResponse{
 		CertificatePem: issued.CertificatePEM,
@@ -95,7 +103,7 @@ func (s *Server) RenewCertificate(ctx context.Context, request *gatewayrpc.Renew
 
 // Connect accepts live heartbeats, snapshots, and job results from one authenticated agent.
 func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
-	agentID, err := authenticatedAgentID(stream.Context())
+	agentID, presentedSerial, err := authenticatedAgentIdentity(stream.Context())
 	if err != nil {
 		return err
 	}
@@ -104,6 +112,22 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 	s.mu.RUnlock()
 	if revoked {
 		return status.Error(codes.PermissionDenied, "agent certificate has been revoked")
+	}
+	// Q4.U-S-04: cert pinning. The CN match (already covered by
+	// authenticatedAgentID) only guarantees the cert was issued by our
+	// CA for someone claiming this agent_id. The serial pin proves the
+	// cert is the one we last issued — replays of an older still-valid
+	// cert (e.g. harvested from a backup or a rotation log) are
+	// rejected here.
+	if s.store != nil {
+		expected, err := s.store.GetAgentCertSerial(stream.Context(), agentID)
+		if err == nil && expected != "" && expected != presentedSerial {
+			s.logger.Warn("agent cert serial mismatch — rejecting connect",
+				"agent_id", agentID,
+				"expected_serial", expected,
+				"presented_serial", presentedSerial)
+			return status.Error(codes.PermissionDenied, "agent certificate not pinned for this agent")
+		}
 	}
 	if s.grpcConnectRateLimiter != nil && !s.grpcConnectRateLimiter.Allow(agentID, s.now()) {
 		s.obs.ObserveRateLimitReject("grpc_connect")
@@ -149,6 +173,44 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 			cancelConnection()
 		}
 	}
+
+	// Q4.U-S-23: mid-stream revocation watcher. The Connect-time check
+	// only catches a cert that was already revoked when the stream
+	// opened. A long-lived stream still has to honour an operator who
+	// revokes the agent later — without this ticker, the agent could
+	// keep running for the cert's full validity window. 30s is fast
+	// enough that an operator-initiated revocation hits within a
+	// dashboard refresh, slow enough not to add noticeable RPS.
+	go func() {
+		defer recoverGoroutine("revocation-watcher")
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-connectionCtx.Done():
+				return
+			case <-ticker.C:
+				s.mu.RLock()
+				_, isRevoked := s.revokedAgentIDs[agentID]
+				s.mu.RUnlock()
+				if isRevoked {
+					s.logger.Info("mid-stream revocation triggered, terminating agent stream", "agent_id", agentID)
+					cancelConnection()
+					return
+				}
+				// Re-check serial pin too: an operator-driven cert
+				// rotation invalidates this stream's cert.
+				if s.store != nil {
+					expected, err := s.store.GetAgentCertSerial(connectionCtx, agentID)
+					if err == nil && expected != "" && expected != presentedSerial {
+						s.logger.Info("mid-stream cert pin mismatch, terminating", "agent_id", agentID)
+						cancelConnection()
+						return
+					}
+				}
+			}
+		}
+	}()
 
 	go func() {
 		defer recoverGoroutine("receive")
@@ -739,20 +801,30 @@ func drainRegularSnapshots(
 }
 
 func authenticatedAgentID(ctx context.Context) (string, error) {
+	id, _, err := authenticatedAgentIdentity(ctx)
+	return id, err
+}
+
+// authenticatedAgentIdentity returns the (agent_id, serial-hex) pair
+// for the peer's client certificate. The CN is the agent_id; the
+// serial is hex-encoded big-endian so callers can compare it against
+// the persisted pin (Q4.U-S-04).
+func authenticatedAgentIdentity(ctx context.Context) (string, string, error) {
 	peerInfo, ok := peer.FromContext(ctx)
 	if !ok || peerInfo.AuthInfo == nil {
-		return "", status.Error(codes.Unauthenticated, "missing peer identity")
+		return "", "", status.Error(codes.Unauthenticated, "missing peer identity")
 	}
 
 	tlsInfo, ok := peerInfo.AuthInfo.(credentials.TLSInfo)
 	if !ok {
-		return "", status.Error(codes.Unauthenticated, "unexpected peer auth type")
+		return "", "", status.Error(codes.Unauthenticated, "unexpected peer auth type")
 	}
 	if len(tlsInfo.State.PeerCertificates) == 0 {
-		return "", status.Error(codes.Unauthenticated, "missing client certificate")
+		return "", "", status.Error(codes.Unauthenticated, "missing client certificate")
 	}
 
-	return tlsInfo.State.PeerCertificates[0].Subject.CommonName, nil
+	cert := tlsInfo.State.PeerCertificates[0]
+	return cert.Subject.CommonName, cert.SerialNumber.Text(16), nil
 }
 
 func (s *Server) pendingJobsForAgent(ctx context.Context, agentID string) []jobs.Job {
