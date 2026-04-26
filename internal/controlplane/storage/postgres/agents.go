@@ -5,41 +5,46 @@ import (
 	"database/sql"
 	"errors"
 
+	"github.com/google/uuid"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/dbsqlc"
 )
 
+// PutAgent upserts one agent row.
+//
+// Phase-3 §3.1 (continued): now goes through dbsqlc.UpsertAgent.
+// agentRecordToUpsertParams below is the domain-DTO → SQL-row bridge —
+// future PutAgent callers gain compile-time type safety on every
+// column from the sqlc-generated UpsertAgentParams.
 func (s *Store) PutAgent(ctx context.Context, agent storage.AgentRecord) error {
-	var fleetGroupID sql.NullString
+	if s.sqlDB == nil {
+		return errTxBoundStore
+	}
+	return dbsqlc.New(s.sqlDB).UpsertAgent(ctx, agentRecordToUpsertParams(agent))
+}
+
+// agentRecordToUpsertParams is the domain-DTO → dbsqlc params bridge.
+// Kept private to the postgres package: callers see only storage.AgentRecord.
+func agentRecordToUpsertParams(agent storage.AgentRecord) dbsqlc.UpsertAgentParams {
+	params := dbsqlc.UpsertAgentParams{
+		ID:         agent.ID,
+		NodeName:   agent.NodeName,
+		Version:    agent.Version,
+		ReadOnly:   agent.ReadOnly,
+		LastSeenAt: agent.LastSeenAt.UTC(),
+	}
 	if agent.FleetGroupID != "" {
-		fleetGroupID.Valid = true
-		fleetGroupID.String = agent.FleetGroupID
+		if id, err := uuid.Parse(agent.FleetGroupID); err == nil {
+			params.FleetGroupID = uuid.NullUUID{UUID: id, Valid: true}
+		}
 	}
-
-	var certIssuedAt sql.NullTime
 	if agent.CertIssuedAt != nil {
-		certIssuedAt.Valid = true
-		certIssuedAt.Time = agent.CertIssuedAt.UTC()
+		params.CertIssuedAt = sql.NullTime{Time: agent.CertIssuedAt.UTC(), Valid: true}
 	}
-	var certExpiresAt sql.NullTime
 	if agent.CertExpiresAt != nil {
-		certExpiresAt.Valid = true
-		certExpiresAt.Time = agent.CertExpiresAt.UTC()
+		params.CertExpiresAt = sql.NullTime{Time: agent.CertExpiresAt.UTC(), Valid: true}
 	}
-
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO agents (id, node_name, fleet_group_id, version, read_only, last_seen_at, cert_issued_at, cert_expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		ON CONFLICT (id) DO UPDATE
-		SET node_name = EXCLUDED.node_name,
-		    fleet_group_id = EXCLUDED.fleet_group_id,
-		    version = EXCLUDED.version,
-		    read_only = EXCLUDED.read_only,
-		    last_seen_at = EXCLUDED.last_seen_at,
-		    cert_issued_at = EXCLUDED.cert_issued_at,
-		    cert_expires_at = EXCLUDED.cert_expires_at
-	`, agent.ID, agent.NodeName, fleetGroupID, agent.Version, agent.ReadOnly, agent.LastSeenAt.UTC(), certIssuedAt, certExpiresAt)
-	return err
+	return params
 }
 
 // ListAgents returns every agent the panel knows about, ordered by

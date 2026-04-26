@@ -43,7 +43,7 @@ func (q *Queries) CreateJob(ctx context.Context, arg CreateJobParams) error {
 const listJobs = `-- name: ListJobs :many
 SELECT id, action, idempotency_key, actor_id, status, created_at, ttl_nanos, payload_json
 FROM jobs
-ORDER BY created_at DESC
+ORDER BY created_at, id
 `
 
 func (q *Queries) ListJobs(ctx context.Context) ([]Job, error) {

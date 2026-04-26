@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/dbsqlc"
 )
 
 func (s *Store) PutJob(ctx context.Context, job storage.JobRecord) error {
@@ -46,30 +47,39 @@ func (s *Store) GetJobByIdempotencyKey(ctx context.Context, idempotencyKey strin
 	return job, nil
 }
 
+// ListJobs returns every job ordered by created_at + id for stable
+// pagination. Phase-3 §3.1 (continued): wired through dbsqlc.ListJobs;
+// the SQL definition in db/queries/jobs.sql is the single source of
+// truth for column set + ORDER BY.
 func (s *Store) ListJobs(ctx context.Context) ([]storage.JobRecord, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, action, idempotency_key, actor_id, status, created_at, ttl_nanos, payload_json
-		FROM jobs
-		ORDER BY created_at, id
-	`)
+	if s.sqlDB == nil {
+		return nil, errTxBoundStore
+	}
+	rows, err := dbsqlc.New(s.sqlDB).ListJobs(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	result := make([]storage.JobRecord, 0)
-	for rows.Next() {
-		var job storage.JobRecord
-		var ttlNanos int64
-		if err := rows.Scan(&job.ID, &job.Action, &job.IdempotencyKey, &job.ActorID, &job.Status, &job.CreatedAt, &ttlNanos, &job.PayloadJSON); err != nil {
-			return nil, err
-		}
-		job.CreatedAt = job.CreatedAt.UTC()
-		job.TTL = time.Duration(ttlNanos)
-		result = append(result, job)
+	result := make([]storage.JobRecord, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, jobRecordFromRow(row))
 	}
+	return result, nil
+}
 
-	return result, rows.Err()
+// jobRecordFromRow bridges the sqlc-emitted Job to the domain
+// storage.JobRecord. The only non-trivial field is TTL: the column is
+// stored as nanoseconds (int64) but the domain model wants time.Duration.
+func jobRecordFromRow(row dbsqlc.Job) storage.JobRecord {
+	return storage.JobRecord{
+		ID:             row.ID,
+		Action:         row.Action,
+		ActorID:        row.ActorID,
+		Status:         row.Status,
+		CreatedAt:      row.CreatedAt.UTC(),
+		TTL:            time.Duration(row.TtlNanos),
+		IdempotencyKey: row.IdempotencyKey,
+		PayloadJSON:    row.PayloadJson,
+	}
 }
 
 func (s *Store) PutJobTarget(ctx context.Context, target storage.JobTargetRecord) error {
@@ -85,27 +95,26 @@ func (s *Store) PutJobTarget(ctx context.Context, target storage.JobTargetRecord
 	return err
 }
 
+// ListJobTargets returns every delivery row for one job, ordered by
+// agent_id. Wired through dbsqlc.ListJobTargets.
 func (s *Store) ListJobTargets(ctx context.Context, jobID string) ([]storage.JobTargetRecord, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT job_id, agent_id, status, result_text, result_json, updated_at
-		FROM job_targets
-		WHERE job_id = $1
-		ORDER BY agent_id
-	`, jobID)
+	if s.sqlDB == nil {
+		return nil, errTxBoundStore
+	}
+	rows, err := dbsqlc.New(s.sqlDB).ListJobTargets(ctx, jobID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	result := make([]storage.JobTargetRecord, 0)
-	for rows.Next() {
-		var target storage.JobTargetRecord
-		if err := rows.Scan(&target.JobID, &target.AgentID, &target.Status, &target.ResultText, &target.ResultJSON, &target.UpdatedAt); err != nil {
-			return nil, err
-		}
-		target.UpdatedAt = target.UpdatedAt.UTC()
-		result = append(result, target)
+	result := make([]storage.JobTargetRecord, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, storage.JobTargetRecord{
+			JobID:      row.JobID,
+			AgentID:    row.AgentID,
+			Status:     row.Status,
+			ResultText: row.ResultText,
+			ResultJSON: row.ResultJson,
+			UpdatedAt:  row.UpdatedAt.UTC(),
+		})
 	}
-
-	return result, rows.Err()
+	return result, nil
 }
