@@ -16,9 +16,36 @@
     "test:e2e:install": "playwright install --with-deps chromium firefox webkit",
     "test:e2e:integration": "playwright test --config=playwright.integration.config.ts",
     "test:e2e:update-snapshots": "playwright test --update-snapshots",
+    "size": "size-limit",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build"
   },
+  "size-limit": [
+    {
+      "name": "App entry (gzip)",
+      "path": "dist/assets/index-*.js",
+      "limit": "25 KB",
+      "gzip": true
+    },
+    {
+      "name": "All vendor chunks combined (gzip)",
+      "path": "dist/assets/vendor-*.js",
+      "limit": "350 KB",
+      "gzip": true
+    },
+    {
+      "name": "Largest single page chunk (gzip)",
+      "path": "dist/assets/ServerDetailContainer-*.js",
+      "limit": "60 KB",
+      "gzip": true
+    },
+    {
+      "name": "App stylesheet (gzip)",
+      "path": "dist/assets/index-*.css",
+      "limit": "50 KB",
+      "gzip": true
+    }
+  ],
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
     "@fontsource/jetbrains-mono": "^5.2.8",
@@ -50,6 +77,7 @@
     "@axe-core/playwright": "^4.10.0",
     "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.50.0",
+    "@size-limit/file": "^12.1.0",
     "@storybook/addon-a11y": "^10.3.4",
     "@storybook/react-vite": "^10.3.0",
     "@tailwindcss/vite": "^4.1.16",
@@ -64,6 +92,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "jsdom": "^29.0.2",
+    "size-limit": "^12.1.0",
     "storybook": "^10.3.0",
     "tailwindcss": "^4.1.16",
     "typescript": "^5.9.3",
