@@ -7,7 +7,7 @@ export const configuredRootPath = resolveConfiguredRootPath();
 export const apiBasePath = resolveAPIBasePath(configuredRootPath);
 
 export class ApiError extends Error {
-  code?: ApiErrorCode | string;
+  code?: ApiErrorCode | string | undefined;
   constructor(message: string, code?: ApiErrorCode | string) {
     super(message);
     this.code = code;
@@ -82,7 +82,7 @@ export interface ForbiddenEventDetail {
    */
   method: string;
   message: string;
-  code?: string;
+  code?: string | undefined;
 }
 
 function isAuthBootstrapPath(path: string): boolean {

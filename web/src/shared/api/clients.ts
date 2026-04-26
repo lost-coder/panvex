@@ -89,7 +89,7 @@ export type DiscoveredClient = {
   expiration: string;
   discovered_at_unix: number;
   updated_at_unix: number;
-  conflicts?: DiscoveredClientConflict[];
+  conflicts?: DiscoveredClientConflict[] | undefined;
 };
 
 export type AdoptDiscoveredClientResponse = {

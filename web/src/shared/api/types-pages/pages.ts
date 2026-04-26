@@ -17,16 +17,16 @@ export type Severity = Status;
 export interface KpiItem {
   label: string;
   value: string;
-  sub?: string;
-  accent?: boolean;
+  sub?: string | undefined;
+  accent?: boolean | undefined;
   /** Sparkline data — one point per sample; omit to render without a chart. */
-  series?: number[];
+  series?: number[] | undefined;
   /** Human-readable delta ("+4.2% · 24h"); rendered under the value. */
-  deltaLabel?: string;
+  deltaLabel?: string | undefined;
   /** Controls the arrow glyph rendered next to `deltaLabel`. */
-  deltaDirection?: "up" | "down" | "flat";
+  deltaDirection?: "up" | "down" | "flat" | undefined;
   /** Coloring the value + sparkline — use for health signals, not trend. */
-  tone?: "default" | "ok" | "warn" | "error";
+  tone?: "default" | "ok" | "warn" | "error" | undefined;
 }
 
 export interface TrendItem {
@@ -41,7 +41,7 @@ export interface TimelineEventData {
   time: string;
   message: string;
   /** Originating node name — shown on a first row above the message. */
-  source?: string;
+  source?: string | undefined;
 }
 
 export interface AlertData {
@@ -71,9 +71,9 @@ export interface DashboardNodeData {
   memPct: number;
   dcs: import("@/features/servers/ui/NodeSummaryCard").NodeDcInfo[];
   /** Recent CPU samples (oldest-first) for the dashboard sparkline. */
-  cpuSeries?: number[];
+  cpuSeries?: number[] | undefined;
   /** Recent MEM samples (oldest-first) for the dashboard sparkline. */
-  memSeries?: number[];
+  memSeries?: number[] | undefined;
 }
 
 export interface DashboardTimelineData {
@@ -83,16 +83,16 @@ export interface DashboardTimelineData {
 export interface DashboardPageProps {
   overview: DashboardOverviewData;
   timeline: DashboardTimelineData;
-  onNodeClick?: (nodeId: string) => void;
-  onNodeLinkClick?: (nodeId: string) => void;
-  onCreate?: (data: ClientFormData) => void | Promise<void>;
-  createLoading?: boolean;
-  createError?: string;
-  pendingDiscoveredCount?: number;
-  onDiscoveredClick?: () => void;
+  onNodeClick?: ((nodeId: string) => void) | undefined;
+  onNodeLinkClick?: ((nodeId: string) => void) | undefined;
+  onCreate?: ((data: ClientFormData) => void | Promise<void>) | undefined;
+  createLoading?: boolean | undefined;
+  createError?: string | undefined;
+  pendingDiscoveredCount?: number | undefined;
+  onDiscoveredClick?: (() => void) | undefined;
   /** Navigates to the full Servers list — wired to the "View all →" link
    *  in the Fleet card header. Optional so unit tests can skip it. */
-  onViewAllServers?: () => void;
+  onViewAllServers?: (() => void) | undefined;
 }
 
 // --- Servers ---
@@ -101,17 +101,17 @@ export interface ServerListItem {
   id: string;
   name: string;
   status: Status;
-  ip?: string;
+  ip?: string | undefined;
   connections: number;
-  usersOnline?: number;
-  usersTotal?: number;
+  usersOnline?: number | undefined;
+  usersTotal?: number | undefined;
   trafficBytes: number;
   cpuPct: number;
   memPct: number;
   dcCoveragePct: number;
   uptimeSeconds: number;
   fleetGroupId: string;
-  dcs?: import("@/features/servers/ui/NodeSummaryCard").NodeDcInfo[];
+  dcs?: import("@/features/servers/ui/NodeSummaryCard").NodeDcInfo[] | undefined;
 }
 
 export type ViewMode = "cards" | "list";
@@ -126,24 +126,24 @@ export type BulkServerAction = "reload" | "selfUpdate";
 
 export interface ServersPageProps {
   servers: ServerListItem[];
-  viewMode?: ViewMode;
-  autoThreshold?: number;
-  fleetGroups?: FleetGroupOption[];
-  onViewModeChange?: (mode: ViewMode) => void;
-  onServerClick?: (serverId: string) => void;
-  onServerLinkClick?: (serverId: string) => void;
-  onAddServer?: () => void;
-  onManageTokens?: () => void;
+  viewMode?: ViewMode | undefined;
+  autoThreshold?: number | undefined;
+  fleetGroups?: FleetGroupOption[] | undefined;
+  onViewModeChange?: ((mode: ViewMode) => void) | undefined;
+  onServerClick?: ((serverId: string) => void) | undefined;
+  onServerLinkClick?: ((serverId: string) => void) | undefined;
+  onAddServer?: (() => void) | undefined;
+  onManageTokens?: (() => void) | undefined;
   /**
    * Bulk-action callback — ServersContainer wires it to apiClient.createJob
    * with `target_agent_ids = selected ids`. Returning a promise lets the
    * page keep the toolbar "busy" until the backend acknowledges.
    */
-  onBulkAction?: (action: BulkServerAction, agentIds: string[]) => void | Promise<void>;
+  onBulkAction?: ((action: BulkServerAction, agentIds: string[]) => void | Promise<void>) | undefined;
   /** Surface backend errors from the last bulk action inside the toolbar. */
-  bulkError?: string;
+  bulkError?: string | undefined;
   /** True while apiClient.createJob is in flight. */
-  bulkPending?: boolean;
+  bulkPending?: boolean | undefined;
 }
 
 // --- Server Detail ---
@@ -160,14 +160,14 @@ export interface ServerDcData {
   requiredWriters: number;
   aliveWriters: number;
   coveragePct: number;
-  freshAlivePct?: number; // fresh_coverage_pct
+  freshAlivePct?: number | undefined; // fresh_coverage_pct
   // floor policy
   floorMin: number;
   floorTarget: number;
   floorMax: number;
   floorCapped: boolean;
   // perf
-  rttMs?: number;
+  rttMs?: number | undefined;
   load: number;
 }
 
@@ -180,8 +180,8 @@ export interface ServerUpstreamData {
   healthy: boolean;
   fails: number;
   lastCheckAgeSecs: number;
-  effectiveLatencyMs?: number;
-  dc: Array<{ dc: number; latencyEmaMs?: number; ipPreference: string }>;
+  effectiveLatencyMs?: number | undefined;
+  dc: Array<{ dc: number; latencyEmaMs?: number | undefined; ipPreference: string }>;
 }
 
 // /v1/runtime/connections/summary
@@ -209,13 +209,13 @@ export interface ServerSystemInfoData {
   targetArch: string;
   targetOs: string;
   buildProfile: string;
-  gitCommit?: string;
-  buildTimeUtc?: string;
+  gitCommit?: string | undefined;
+  buildTimeUtc?: string | undefined;
   uptimeSeconds: number;
   configHash: string;
   configPath: string;
   configReloadCount: number;
-  lastConfigReloadEpochSecs?: number;
+  lastConfigReloadEpochSecs?: number | undefined;
 }
 
 // /v1/runtime/gates + /v1/health
@@ -225,7 +225,7 @@ export interface ServerGatesData {
   useMiddleProxy: boolean;
   me2dcFallbackEnabled: boolean;
   rerouteActive: boolean;
-  rerouteReason?: string;
+  rerouteReason?: string | undefined;
   startupStatus: string; // pending | initializing | ready | failed | skipped
   startupProgressPct: number;
   degraded: boolean; // from /v1/runtime/initialization
@@ -235,14 +235,14 @@ export interface ServerGatesData {
 // /v1/stats/me-writers → writers[]
 export interface ServerMeWriterData {
   writerId: number;
-  dc?: number;
+  dc?: number | undefined;
   endpoint: string;
   state: string; // warm | active | draining
   draining: boolean;
   degraded: boolean;
   boundClients: number;
-  idleForSecs?: number;
-  rttEmaMs?: number;
+  idleForSecs?: number | undefined;
+  rttEmaMs?: number | undefined;
 }
 
 // /v1/stats/me-writers aggregate
@@ -265,7 +265,7 @@ export interface ServerMePoolData {
     active: number;
     warm: number;
     pendingHardswap: number;
-    pendingHardswapAgeSecs?: number;
+    pendingHardswapAgeSecs?: number | undefined;
     drainingGenerations: number[];
   };
   hardswap: {
@@ -310,7 +310,7 @@ export interface ServerMeQualityData {
   };
   dcRtt: Array<{
     dc: number;
-    rttEmaMs?: number;
+    rttEmaMs?: number | undefined;
     aliveWriters: number;
     requiredWriters: number;
     coveragePct: number;
@@ -328,14 +328,14 @@ export interface ServerSelftestData {
   };
   timeskew: {
     state: string; // ok | error
-    maxSkewSecs15m?: number;
-    samples15m?: number;
-    lastSkewSecs?: number;
-    lastSource?: string;
+    maxSkewSecs15m?: number | undefined;
+    samples15m?: number | undefined;
+    lastSkewSecs?: number | undefined;
+    lastSource?: string | undefined;
   };
   ip: {
-    v4?: { addr: string; state: string }; // good | bogon | loopback
-    v6?: { addr: string; state: string };
+    v4?: { addr: string; state: string } | undefined; // good | bogon | loopback
+    v6?: { addr: string; state: string } | undefined;
   };
   pid: {
     pid: number;
@@ -344,8 +344,8 @@ export interface ServerSelftestData {
   bnd: {
     addrState: string; // ok | bogon | error
     portState: string; // ok | zero | error
-    lastAddr?: string;
-    lastSeenAgeSecs?: number;
+    lastAddr?: string | undefined;
+    lastSeenAgeSecs?: number | undefined;
   };
 }
 
@@ -357,9 +357,9 @@ export interface ServerNatStunData {
   liveStunTotal: number;
   configuredStunTotal: number;
   configuredServers: string[]; // list of stun server addresses
-  reflectionV4?: { addr: string; ageSecs: number };
-  reflectionV6?: { addr: string; ageSecs: number };
-  stunBackoffRemainingMs?: number;
+  reflectionV4?: { addr: string; ageSecs: number } | undefined;
+  reflectionV6?: { addr: string; ageSecs: number } | undefined;
+  stunBackoffRemainingMs?: number | undefined;
 }
 
 // /v1/runtime/events/recent → events[]
@@ -393,9 +393,9 @@ export interface ServerUpstreamZeroCounters {
 // /v1/stats/minimal/all → network_path[]
 export interface ServerNetworkPathData {
   dc: number;
-  ipPreference?: string;
-  selectedAddrV4?: string;
-  selectedAddrV6?: string;
+  ipPreference?: string | undefined;
+  selectedAddrV4?: string | undefined;
+  selectedAddrV6?: string | undefined;
 }
 
 // /v1/stats/upstreams → summary
@@ -413,7 +413,7 @@ export interface ServerDetailPageProps {
   server: {
     id: string;
     name: string;
-    ip?: string;
+    ip?: string | undefined;
     status: Status;
 
     // /v1/system/info
@@ -432,45 +432,45 @@ export interface ServerDetailPageProps {
     summary: ServerSummaryData;
 
     // /v1/stats/me-writers + /v1/runtime/me_pool_state
-    mePool?: ServerMePoolData;
+    mePool?: ServerMePoolData | undefined;
 
     // /v1/stats/upstreams
     upstreams: ServerUpstreamData[];
-    upstreamSummary?: ServerUpstreamSummaryData;
-    upstreamZeroCounters?: ServerUpstreamZeroCounters;
+    upstreamSummary?: ServerUpstreamSummaryData | undefined;
+    upstreamZeroCounters?: ServerUpstreamZeroCounters | undefined;
 
     // /v1/runtime/me_quality
-    meQuality?: ServerMeQualityData;
+    meQuality?: ServerMeQualityData | undefined;
 
     // /v1/runtime/me-selftest
-    selftest?: ServerSelftestData;
+    selftest?: ServerSelftestData | undefined;
 
     // /v1/runtime/nat_stun
-    natStun?: ServerNatStunData;
+    natStun?: ServerNatStunData | undefined;
 
     // /v1/runtime/events/recent
     events: ServerEventData[];
     eventsDroppedTotal: number;
 
     // /v1/stats/minimal/all → network_path
-    networkPath?: ServerNetworkPathData[];
+    networkPath?: ServerNetworkPathData[] | undefined;
   };
-  onBack?: () => void;
-  onReload?: () => void;
-  onBoostDetail?: () => void;
-  agentConnection?: AgentConnectionData;
-  initState?: InitCardProps;
-  lastUpdatedAt?: Date;
-  onAllowReEnrollment?: () => void;
-  onRevokeGrant?: () => void;
-  onRename?: (name: string) => void;
-  onDeregister?: () => void;
+  onBack?: (() => void) | undefined;
+  onReload?: (() => void) | undefined;
+  onBoostDetail?: (() => void) | undefined;
+  agentConnection?: AgentConnectionData | undefined;
+  initState?: InitCardProps | undefined;
+  lastUpdatedAt?: Date | undefined;
+  onAllowReEnrollment?: (() => void) | undefined;
+  onRevokeGrant?: (() => void) | undefined;
+  onRename?: ((name: string) => void) | undefined;
+  onDeregister?: (() => void) | undefined;
   metricsChart?: {
     points: import("@/features/dashboard/ui/MetricsChartSection").MetricsPoint[];
-    resolution?: "raw" | "hourly";
+    resolution?: "raw" | "hourly" | undefined;
     timeRange: string;
-    onTimeRangeChange?: (range: string) => void;
-  };
+    onTimeRangeChange?: ((range: string) => void) | undefined;
+  } | undefined;
 }
 
 // --- Clients ---
@@ -501,21 +501,21 @@ export interface ClientsPageProps {
   clients: ClientListItem[];
   viewMode: ViewMode;
   autoThreshold: number;
-  onViewModeChange?: (mode: ViewMode) => void;
-  onClientClick?: (clientId: string) => void;
-  onClientLinkClick?: (clientId: string) => void;
-  onCreate?: (data: ClientFormData) => void | Promise<void>;
-  createLoading?: boolean;
-  createError?: string;
+  onViewModeChange?: ((mode: ViewMode) => void) | undefined;
+  onClientClick?: ((clientId: string) => void) | undefined;
+  onClientLinkClick?: ((clientId: string) => void) | undefined;
+  onCreate?: ((data: ClientFormData) => void | Promise<void>) | undefined;
+  createLoading?: boolean | undefined;
+  createError?: string | undefined;
   /** Options threaded into the create sheet's deployment selectors. */
-  fleetGroups?: FleetGroupOption[];
-  agents?: ClientAgentOption[];
-  pendingDiscoveredCount?: number;
-  onDiscoveredClick?: () => void;
+  fleetGroups?: FleetGroupOption[] | undefined;
+  agents?: ClientAgentOption[] | undefined;
+  pendingDiscoveredCount?: number | undefined;
+  onDiscoveredClick?: (() => void) | undefined;
   /** Bulk action callback. Container wires it to apiClient calls per id. */
-  onBulkAction?: (action: BulkClientAction, clientIds: string[]) => void | Promise<void>;
-  bulkError?: string;
-  bulkPending?: boolean;
+  onBulkAction?: ((action: BulkClientAction, clientIds: string[]) => void | Promise<void>) | undefined;
+  bulkError?: string | undefined;
+  bulkPending?: boolean | undefined;
 }
 
 // --- Discovered Clients ---
@@ -541,17 +541,17 @@ export interface DiscoveredClientItem {
   expiration: string;
   discoveredAtUnix: number;
   updatedAtUnix: number;
-  conflicts?: DiscoveredClientConflict[];
+  conflicts?: DiscoveredClientConflict[] | undefined;
 }
 
 export interface DiscoveredClientsPageProps {
   clients: DiscoveredClientItem[];
-  onAdopt?: (id: string) => void;
-  onIgnore?: (id: string) => void;
-  onAdoptMany?: (ids: string[]) => void;
-  onIgnoreMany?: (ids: string[]) => void;
-  onBack?: () => void;
-  busy?: boolean;
+  onAdopt?: ((id: string) => void) | undefined;
+  onIgnore?: ((id: string) => void) | undefined;
+  onAdoptMany?: ((ids: string[]) => void) | undefined;
+  onIgnoreMany?: ((ids: string[]) => void) | undefined;
+  onBack?: (() => void) | undefined;
+  busy?: boolean | undefined;
 }
 
 export interface ClientDeploymentData {
@@ -581,24 +581,24 @@ export interface ClientDetailPageProps {
     agentIds: string[];
     deployments: ClientDeploymentData[];
   };
-  onBack?: () => void;
-  onEdit?: (data: ClientFormData) => void | Promise<void>;
-  editLoading?: boolean;
-  editError?: string;
+  onBack?: (() => void) | undefined;
+  onEdit?: ((data: ClientFormData) => void | Promise<void>) | undefined;
+  editLoading?: boolean | undefined;
+  editError?: string | undefined;
   /** Options threaded into the edit sheet's deployment selectors. */
-  fleetGroups?: FleetGroupOption[];
-  agents?: ClientAgentOption[];
-  onManageAccess?: () => void;
-  onRotateSecret?: () => void;
-  secretRotating?: boolean;
-  secretPendingRedeploy?: boolean;
+  fleetGroups?: FleetGroupOption[] | undefined;
+  agents?: ClientAgentOption[] | undefined;
+  onManageAccess?: (() => void) | undefined;
+  onRotateSecret?: (() => void) | undefined;
+  secretRotating?: boolean | undefined;
+  secretPendingRedeploy?: boolean | undefined;
   /** Retry the rollout of the current stored state to every target
    *  agent. Surfaced as a button when at least one deployment is in
    *  the `failed` state. Container wires it to apiClient.redeployClient. */
-  onRedeploy?: () => void;
-  redeploying?: boolean;
-  onDisable?: () => void;
-  onDelete?: () => void;
+  onRedeploy?: (() => void) | undefined;
+  redeploying?: boolean | undefined;
+  onDisable?: (() => void) | undefined;
+  onDelete?: (() => void) | undefined;
   ipHistory?: {
     /**
      * GeoIP fields are optional — the backend does not enrich yet. The
@@ -609,13 +609,13 @@ export interface ClientDetailPageProps {
       ip: string;
       firstSeen: string;
       lastSeen: string;
-      countryCode?: string;
-      countryName?: string;
-      city?: string;
-      asn?: string;
+      countryCode?: string | undefined;
+      countryName?: string | undefined;
+      city?: string | undefined;
+      asn?: string | undefined;
     }[];
     totalUnique: number;
-  };
+  } | undefined;
   /**
    * Mapping `agent_id → node_name` so the Deployments & Links card can
    * render human-readable names instead of raw UUIDs. Until the backend
@@ -623,7 +623,7 @@ export interface ClientDetailPageProps {
    * (backend-followup #5), the container joins client-side against
    * /api/agents. Missing ids fall back to the UUID.
    */
-  agentLabels?: Record<string, string>;
+  agentLabels?: Record<string, string> | undefined;
 }
 
 // --- Settings ---
@@ -639,23 +639,23 @@ export interface SettingsPageProps {
     helpMode: "off" | "basic" | "full";
     swipeNavigation: boolean;
   };
-  onPanelSettingsChange?: (settings: SettingsPageProps["panelSettings"]) => void;
-  onAppearanceChange?: (settings: SettingsPageProps["appearanceSettings"]) => void;
-  onRestart?: () => void;
-  onManageUsers?: () => void;
+  onPanelSettingsChange?: ((settings: SettingsPageProps["panelSettings"]) => void) | undefined;
+  onAppearanceChange?: ((settings: SettingsPageProps["appearanceSettings"]) => void) | undefined;
+  onRestart?: (() => void) | undefined;
+  onManageUsers?: (() => void) | undefined;
   retentionSettings?: {
     ts_raw_seconds: number;
     ts_hourly_seconds: number;
     ts_dc_seconds: number;
     ip_history_seconds: number;
     event_history_seconds: number;
-  };
-  onRetentionChange?: (settings: NonNullable<SettingsPageProps["retentionSettings"]>) => void;
+  } | undefined;
+  onRetentionChange?: ((settings: NonNullable<SettingsPageProps["retentionSettings"]>) => void) | undefined;
   /** True while the retention save mutation is in-flight. Disables the Save
    *  button and swaps the label to "Saving…" so the operator sees feedback. */
-  retentionSaving?: boolean;
+  retentionSaving?: boolean | undefined;
   /** Content injected into the "Updates" tab (e.g. UpdatesSettingsSection from core/web). */
-  children?: React.ReactNode;
+  children?: React.ReactNode | undefined;
 }
 
 // --- Profile ---
@@ -673,14 +673,14 @@ export interface ProfilePageProps {
     totpEnabled: boolean;
   };
   appearance: SettingsPageProps["appearanceSettings"];
-  onAppearanceChange?: (settings: SettingsPageProps["appearanceSettings"]) => void;
-  onStartTotpSetup?: () => Promise<TotpSetupData>;
-  onEnableTotp?: (password: string, totpCode: string) => Promise<void>;
-  onDisableTotp?: (password: string, totpCode: string) => Promise<void>;
-  totpSetupLoading?: boolean;
-  totpEnableLoading?: boolean;
-  totpDisableLoading?: boolean;
-  totpError?: string;
+  onAppearanceChange?: ((settings: SettingsPageProps["appearanceSettings"]) => void) | undefined;
+  onStartTotpSetup?: (() => Promise<TotpSetupData>) | undefined;
+  onEnableTotp?: ((password: string, totpCode: string) => Promise<void>) | undefined;
+  onDisableTotp?: ((password: string, totpCode: string) => Promise<void>) | undefined;
+  totpSetupLoading?: boolean | undefined;
+  totpEnableLoading?: boolean | undefined;
+  totpDisableLoading?: boolean | undefined;
+  totpError?: string | undefined;
 }
 
 // --- Login ---
@@ -693,19 +693,19 @@ export interface LoginPageProps {
   /** Called when user clicks "Back" on stage 2 */
   onBack: () => void;
   /** Controls which stage is shown — parent owns this state */
-  stage?: "credentials" | "totp";
-  error?: string;
-  loading?: boolean;
+  stage?: "credentials" | "totp" | undefined;
+  error?: string | undefined;
+  loading?: boolean | undefined;
 }
 
 // --- Enrollment ---
 
 export interface FleetGroupOption {
   id: string;
-  name?: string;
-  label?: string;
-  nodeCount?: number;
-  agentCount?: number;
+  name?: string | undefined;
+  label?: string | undefined;
+  nodeCount?: number | undefined;
+  agentCount?: number | undefined;
 }
 
 export interface EnrollmentWizardProps {
@@ -720,7 +720,7 @@ export interface EnrollmentWizardProps {
   /** Optional inline-create hook. When provided, the wizard renders
    *  a "+ New group" button next to the select that opens a mini
    *  dialog owned by the container. */
-  onCreateFleetGroup?: () => void;
+  onCreateFleetGroup?: (() => void) | undefined;
   onTokenTtlChange: (seconds: number) => void;
   onGenerateToken: () => void;
   // Step 2
@@ -735,13 +735,13 @@ export interface EnrollmentWizardProps {
      *  trusted private links (VPN-only / internal network) where the panel
      *  runs plain HTTP and TLS is terminated elsewhere or not at all. */
     insecureTransport: boolean;
-  };
-  onAdvancedOptionsChange?: (opts: {
+  } | undefined;
+  onAdvancedOptionsChange?: ((opts: {
     telemtUrl: string;
     telemtMetricsUrl: string;
     telemtAuth: string;
     insecureTransport: boolean;
-  }) => void;
+  }) => void) | undefined;
   onInstallConfirm: () => void;
   onBack: () => void;
   // Step 3
@@ -760,12 +760,12 @@ export interface EnrollmentWizardProps {
     version: string;
     fleetGroup: string;
     certExpiresAt: string;
-  };
+  } | undefined;
   onViewDetails: () => void;
   onCancel: () => void;
   // Shared
-  loading?: boolean;
-  error?: string;
+  loading?: boolean | undefined;
+  error?: string | undefined;
 }
 
 export interface EnrollmentTokenData {
@@ -780,7 +780,7 @@ export interface TokenListProps {
   tokens: EnrollmentTokenData[];
   onRevoke: (tokenValue: string) => void;
   /** Snapshot of current unix seconds, used to render TTL countdowns. */
-  nowSec?: number;
+  nowSec?: number | undefined;
 }
 
 // --- Agent Connection ---
@@ -799,11 +799,11 @@ export interface AgentConnectionData {
   recoveryGrant?: {
     status: "allowed" | "used" | "revoked";
     expiresAtUnix: number;
-  };
+  } | undefined;
   /** Latest available agent version. When set and differs from `version`, shows an update indicator. */
-  latestAgentVersion?: string;
+  latestAgentVersion?: string | undefined;
   /** Called when the user clicks the "Update" button. */
-  onUpdate?: () => void;
+  onUpdate?: (() => void) | undefined;
 }
 
 export interface AgentConnectionSectionProps {
@@ -820,8 +820,8 @@ export interface InitCardProps {
   attempt: number;
   retryLimit: number;
   elapsedSecs: number;
-  lastError?: string;
-  degraded?: boolean;
+  lastError?: string | undefined;
+  degraded?: boolean | undefined;
 }
 
 // --- Client Form ---
@@ -867,7 +867,7 @@ export interface ClientAgentOption {
   id: string;
   nodeName: string;
   fleetGroupId: string;
-  online?: boolean;
+  online?: boolean | undefined;
 }
 
 export interface ClientFormSheetProps {
@@ -876,12 +876,12 @@ export interface ClientFormSheetProps {
   onChange: (data: ClientFormData) => void;
   onSubmit: () => void;
   onCancel: () => void;
-  loading?: boolean;
-  error?: string;
+  loading?: boolean | undefined;
+  error?: string | undefined;
   /** Fleet groups available for assignment. Omitted → selector hidden. */
-  fleetGroups?: FleetGroupOption[];
+  fleetGroups?: FleetGroupOption[] | undefined;
   /** Agents available for explicit assignment. Omitted → selector hidden. */
-  agents?: ClientAgentOption[];
+  agents?: ClientAgentOption[] | undefined;
 }
 
 export interface ClientAccessSheetProps {
@@ -893,7 +893,7 @@ export interface ClientAccessSheetProps {
   onNodesChange: (ids: string[]) => void;
   onSubmit: () => void;
   onCancel: () => void;
-  loading?: boolean;
+  loading?: boolean | undefined;
 }
 
 export interface SecretRevealProps {
@@ -931,8 +931,8 @@ export interface UserFormSheetProps {
   onChange: (data: UserFormData) => void;
   onSubmit: () => void;
   onCancel: () => void;
-  loading?: boolean;
-  error?: string;
+  loading?: boolean | undefined;
+  error?: string | undefined;
 }
 
 export interface UsersManagementPageProps {
@@ -941,7 +941,7 @@ export interface UsersManagementPageProps {
   onEdit: (userId: string) => void;
   onDelete: (userId: string) => void;
   onResetTotp: (userId: string) => void;
-  sheet?: UserFormSheetProps;
+  sheet?: UserFormSheetProps | undefined;
 }
 
 // --- Enrollment Tokens ---
@@ -960,24 +960,24 @@ export interface JobListItem {
   status: string;
   actorId: string;
   /** Resolved human label for actorId (username). Falls back to shortId. */
-  actorLabel?: string;
+  actorLabel?: string | undefined;
   targetCount: number;
   createdAtUnix: number;
   /** First failing target's result_text, if any. Shown under the action row. */
-  failureReason?: string;
+  failureReason?: string | undefined;
 }
 
 export interface AuditListItem {
   id: string;
   actorId: string;
   /** Resolved human label for actorId (username). */
-  actorLabel?: string;
+  actorLabel?: string | undefined;
   action: string;
   targetId: string;
   /** Resolved human label for targetId (client name, node_name, or username). */
-  targetLabel?: string;
+  targetLabel?: string | undefined;
   /** Entity kind derived from action namespace ("user", "client", "agent", …). */
-  targetKind?: string;
+  targetKind?: string | undefined;
   createdAtUnix: number;
 }
 
