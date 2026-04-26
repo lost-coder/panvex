@@ -139,6 +139,19 @@ func (s *memoryStore) Close() error {
 	return nil
 }
 
+// R-S-14: stub fleet-scope methods so memoryStore continues to satisfy
+// the Store interface. The contract tests do not exercise the scope
+// surface directly — production behaviour is covered in the
+// fleet_scope_test.go unit tests + future multi-tenant integration
+// tests.
+func (s *memoryStore) ListUserFleetGroupScopes(_ context.Context, _ string) ([]string, error) {
+	return nil, nil
+}
+
+func (s *memoryStore) SetUserFleetGroupScopes(_ context.Context, _ string, _ []string, _ string, _ time.Time) error {
+	return nil
+}
+
 func (s *memoryStore) PutAgentRevocation(_ context.Context, rec storage.AgentRevocationRecord) error {
 	existing, ok := s.agentRevocations[rec.AgentID]
 	// Mirror the SQL upsert: cert_expires_at is max-merged so we don't shrink

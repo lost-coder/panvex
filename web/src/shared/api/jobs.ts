@@ -1,5 +1,10 @@
 import { api, apiBasePath, encodeRequest } from "./http";
-import { createJobRequestSchema } from "./schemas";
+import {
+  auditEventListSchema,
+  createJobRequestSchema,
+  jobListSchema,
+  jobSchema,
+} from "./schemas";
 
 export type JobTarget = {
   agent_id: string;
@@ -40,11 +45,17 @@ export type JobCreateInput = {
 };
 
 export const jobsApi = {
-  jobs: () => api<Job[]>(`${apiBasePath}/jobs`),
-  audit: () => api<AuditEvent[]>(`${apiBasePath}/audit`),
+  // R-Q-20: response Zod-parse so a backend drift surfaces as
+  // ApiSchemaError instead of `undefined` propagation in the UI.
+  jobs: () => api<Job[]>(`${apiBasePath}/jobs`, undefined, jobListSchema),
+  audit: () => api<AuditEvent[]>(`${apiBasePath}/audit`, undefined, auditEventListSchema),
   createJob: (payload: JobCreateInput) =>
-    api<Job>(`${apiBasePath}/jobs`, {
-      method: "POST",
-      body: encodeRequest(`${apiBasePath}/jobs`, createJobRequestSchema, payload),
-    }),
+    api<Job>(
+      `${apiBasePath}/jobs`,
+      {
+        method: "POST",
+        body: encodeRequest(`${apiBasePath}/jobs`, createJobRequestSchema, payload),
+      },
+      jobSchema,
+    ),
 };

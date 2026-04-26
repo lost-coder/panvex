@@ -2,6 +2,8 @@ import { api, apiBasePath, encodeRequest } from "./http";
 import {
   createUserRequestSchema,
   updateUserRequestSchema,
+  userListSchema,
+  userSchema,
 } from "./schemas";
 
 export type LocalUser = {
@@ -25,21 +27,32 @@ export type UpdateUserInput = {
 };
 
 export const usersApi = {
-  users: () => api<LocalUser[]>(`${apiBasePath}/users`),
+  // R-Q-20: response Zod-parse on every read; mutations parse the
+  // returned record with the same schema so the cache write is also
+  // guarded.
+  users: () => api<LocalUser[]>(`${apiBasePath}/users`, undefined, userListSchema),
   createUser: (payload: CreateUserInput) =>
-    api<LocalUser>(`${apiBasePath}/users`, {
-      method: "POST",
-      body: encodeRequest(`${apiBasePath}/users`, createUserRequestSchema, payload),
-    }),
+    api<LocalUser>(
+      `${apiBasePath}/users`,
+      {
+        method: "POST",
+        body: encodeRequest(`${apiBasePath}/users`, createUserRequestSchema, payload),
+      },
+      userSchema,
+    ),
   updateUser: (userID: string, payload: UpdateUserInput) =>
-    api<LocalUser>(`${apiBasePath}/users/${userID}`, {
-      method: "PUT",
-      body: encodeRequest(
-        `${apiBasePath}/users/${userID}`,
-        updateUserRequestSchema,
-        payload,
-      ),
-    }),
+    api<LocalUser>(
+      `${apiBasePath}/users/${userID}`,
+      {
+        method: "PUT",
+        body: encodeRequest(
+          `${apiBasePath}/users/${userID}`,
+          updateUserRequestSchema,
+          payload,
+        ),
+      },
+      userSchema,
+    ),
   deleteUser: (userID: string) =>
     api<void>(`${apiBasePath}/users/${userID}`, {
       method: "DELETE"
