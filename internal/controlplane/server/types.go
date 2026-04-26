@@ -17,6 +17,11 @@ type Agent struct {
 	CertificateRecovery *agentCertificateRecoveryGrantResponse `json:"certificate_recovery,omitempty"`
 	CertIssuedAt  *time.Time `json:"cert_issued_at,omitempty"`
 	CertExpiresAt *time.Time `json:"cert_expires_at,omitempty"`
+	// CertSerial is the serial of the most recently issued client cert.
+	// Used to pin agent identity at gRPC connect time (Q4.U-S-04). Not
+	// exposed in the public JSON shape — operators don't need it and
+	// it's noise in the dashboard.
+	CertSerial   string    `json:"-"`
 	Runtime      AgentRuntime `json:"runtime"`
 	LastSeenAt   time.Time `json:"last_seen_at"`
 }

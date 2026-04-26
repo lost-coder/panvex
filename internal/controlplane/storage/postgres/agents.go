@@ -101,6 +101,26 @@ func agentRecordFromRow(row dbsqlc.ListAgentsRow) storage.AgentRecord {
 // through Transact.
 var errTxBoundStore = errors.New("postgres: method requires pool handle, not tx-bound store")
 
+// UpdateAgentCertSerial pins the latest issued client cert serial
+// (Q4.U-S-04). Called after each successful issuance.
+func (s *Store) UpdateAgentCertSerial(ctx context.Context, agentID string, serial string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE agents SET cert_serial = $2 WHERE id = $1`, agentID, serial)
+	return err
+}
+
+// GetAgentCertSerial returns the pinned serial for the given agent.
+func (s *Store) GetAgentCertSerial(ctx context.Context, agentID string) (string, error) {
+	var serial sql.NullString
+	err := s.db.QueryRowContext(ctx, `SELECT cert_serial FROM agents WHERE id = $1`, agentID).Scan(&serial)
+	if err != nil {
+		return "", err
+	}
+	if !serial.Valid {
+		return "", nil
+	}
+	return serial.String, nil
+}
+
 func (s *Store) DeleteAgent(ctx context.Context, agentID string) error {
 	result, err := s.db.ExecContext(ctx, `
 		DELETE FROM agents

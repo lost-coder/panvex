@@ -203,14 +203,8 @@ func (w *storeBatchWriter) Start() {
 
 // Stop cancels the background goroutine, waits for it to exit, then performs
 // a final drain of all buffers so pending writes are persisted before the
-// store is closed.
-//
-// Deprecated: use StopWithTimeout so graceful shutdown has a bounded flush
-// window (P2-LOG-10 / M-R4). Retained for tests that do not care about the
-// bound.
-func (w *storeBatchWriter) Stop() {
-	_ = w.StopWithTimeout(10 * time.Second)
-}
+// store is closed. Q4.U-Q-17 removed the deprecated Stop() in favour of
+// StopWithTimeout — every shutdown path now states its budget explicitly.
 
 // StopWithTimeout performs a graceful shutdown of the batch writer. It
 // cancels the background flush loop, waits for it to exit, then performs a

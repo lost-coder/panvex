@@ -3,6 +3,8 @@ package server
 import (
 	"net/http"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -140,9 +142,38 @@ func (s *Server) handleClientIPHistory() http.HandlerFunc {
 			ips = append(ips, *row)
 		}
 		sort.Slice(ips, func(i, j int) bool { return ips[i].LastSeen.After(ips[j].LastSeen) })
-		writeJSON(w, http.StatusOK, map[string]any{"ips": ips, "total_unique": len(ips)})
+		// Q4.U-P-04: cap the response. A high-cardinality client (open
+		// proxy / botnet target) can otherwise produce a multi-megabyte
+		// payload. ?limit= overrides up to defaultClientIPHistoryMax.
+		totalUnique := len(ips)
+		limit := defaultClientIPHistoryLimit
+		if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+			if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+				if parsed > defaultClientIPHistoryMax {
+					parsed = defaultClientIPHistoryMax
+				}
+				limit = parsed
+			}
+		}
+		truncated := false
+		if len(ips) > limit {
+			ips = ips[:limit]
+			truncated = true
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ips":          ips,
+			"total_unique": totalUnique,
+			"truncated":    truncated,
+			"limit":        limit,
+		})
 	}
 }
+
+// Q4.U-P-04: top-N defaults for the per-client IP history endpoint.
+const (
+	defaultClientIPHistoryLimit = 200
+	defaultClientIPHistoryMax   = 2000
+)
 
 func parseTimeRange(r *http.Request, defaultHours int) (time.Time, time.Time) {
 	now := time.Now().UTC()

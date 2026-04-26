@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net"
 	"net/http"
@@ -82,7 +84,16 @@ type agentCertificateRecoveryGrantResponse struct {
 }
 
 type enrollmentTokenResponse struct {
-	Value          string `json:"value"`
+	// Value is the raw token. Returned ONLY at creation (handleCreate*);
+	// the listing endpoint masks it to MaskedValue + Handle so an
+	// operator browsing the table cannot accidentally exfiltrate a
+	// usable bootstrap secret (Q4.U-S-06).
+	Value          string `json:"value,omitempty"`
+	MaskedValue    string `json:"masked_value,omitempty"`
+	// Handle is a SHA-256 prefix of the raw value, hex-encoded. Stable
+	// across reads and safe to surface in URLs (revoke endpoint accepts
+	// it as an alias for the raw value).
+	Handle         string `json:"handle,omitempty"`
 	PanelURL       string `json:"panel_url"`
 	FleetGroupID   string `json:"fleet_group_id"`
 	Status         string `json:"status"`
@@ -90,6 +101,50 @@ type enrollmentTokenResponse struct {
 	ExpiresAtUnix  int64  `json:"expires_at_unix"`
 	ConsumedAtUnix *int64 `json:"consumed_at_unix,omitempty"`
 	RevokedAtUnix  *int64 `json:"revoked_at_unix,omitempty"`
+}
+
+// enrollmentTokenHandle returns the stable revoke-handle for a raw
+// token value. SHA-256 prefix (16 hex chars / 64 bits) is collision-
+// safe at the population sizes a control plane carries.
+func enrollmentTokenHandle(rawValue string) string {
+	if rawValue == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(rawValue))
+	return hex.EncodeToString(sum[:8])
+}
+
+// enrollmentTokenMaskedValue returns the listing-safe form of the raw
+// token. First 6 chars of the value followed by an ellipsis so an
+// operator can disambiguate but not bootstrap.
+func enrollmentTokenMaskedValue(rawValue string) string {
+	if len(rawValue) <= 6 {
+		return rawValue
+	}
+	return rawValue[:6] + "…"
+}
+
+// resolveEnrollmentTokenIdentifier maps a URL identifier (handle or
+// raw value) back to the raw token value so the existing revoke
+// pipeline keeps working unchanged. Walks ListEnrollmentTokens and
+// matches on enrollmentTokenHandle first, then falls back to raw
+// value match — that means a real value still resolves to itself.
+// The walk is O(N) but enrollment tables are small and the operation
+// is rare (one revoke per operator action).
+func (s *Server) resolveEnrollmentTokenIdentifier(ctx context.Context, identifier string) (string, bool, error) {
+	if s.store == nil {
+		return identifier, true, nil
+	}
+	tokens, err := s.store.ListEnrollmentTokens(ctx)
+	if err != nil {
+		return "", false, err
+	}
+	for _, token := range tokens {
+		if enrollmentTokenHandle(token.Value) == identifier || token.Value == identifier {
+			return token.Value, true, nil
+		}
+	}
+	return identifier, false, nil
 }
 
 func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
@@ -274,6 +329,13 @@ func (s *Server) handleRevokeEnrollmentToken() http.HandlerFunc {
 			return
 		}
 
+		// Q4.U-S-06: accept the SHA-256 prefix handle as an alias for
+		// the raw value. The listing endpoint no longer surfaces the
+		// raw token, so the UI revoke flow uses the handle.
+		if resolved, ok, err := s.resolveEnrollmentTokenIdentifier(r.Context(), value); err == nil && ok {
+			value = resolved
+		}
+
 		revoked, changed, err := s.revokeEnrollmentTokenWithContext(r.Context(), value, s.now())
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
@@ -424,8 +486,13 @@ func (s *Server) listEnrollmentTokensWithContext(ctx context.Context, now time.T
 	panelURL := buildAgentPublicURL(settings, s.panelRuntime, requestURL, forwardedProto, requestHost)
 	response := make([]enrollmentTokenResponse, 0, len(records))
 	for _, token := range records {
+		// Q4.U-S-06: do not surface the raw value in listings — it
+		// only ships at creation. List rows carry a mask + a stable
+		// handle so the operator can identify and revoke without
+		// being able to bootstrap.
 		item := enrollmentTokenResponse{
-			Value:         token.Value,
+			MaskedValue:   enrollmentTokenMaskedValue(token.Value),
+			Handle:        enrollmentTokenHandle(token.Value),
 			PanelURL:      panelURL,
 			FleetGroupID:  token.FleetGroupID,
 			Status:        enrollmentTokenStatus(token, now),

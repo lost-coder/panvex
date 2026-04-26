@@ -147,10 +147,20 @@ func (s *Server) enrollAgentWithContext(ctx context.Context, request agentEnroll
 	storedAgent := s.agents[agentID]
 	storedAgent.CertIssuedAt = &certIssuedAt
 	storedAgent.CertExpiresAt = &certExpiresAt
+	storedAgent.CertSerial = issued.Serial
 	s.agents[agentID] = storedAgent
 	s.mu.Unlock()
 	if s.batchWriter != nil {
 		s.batchWriter.agents.Enqueue(agentToRecord(storedAgent))
+	}
+	// Q4.U-S-04: persist the freshly-issued cert serial as the
+	// authoritative pin. Best-effort — a write failure is logged but
+	// does not block enrollment, since the in-memory pin in
+	// storedAgent already protects this process lifetime.
+	if s.store != nil {
+		if err := s.store.UpdateAgentCertSerial(ctx, agentID, issued.Serial); err != nil {
+			s.logger.Warn("persist agent cert serial failed", "agent_id", agentID, "error", err)
+		}
 	}
 
 	s.appendAuditWithContext(ctx, agentID, "agents.enrolled", agentID, map[string]any{

@@ -492,6 +492,24 @@ func (s *memoryStore) UpdateAgentNodeName(_ context.Context, agentID string, nod
 	return nil
 }
 
+func (s *memoryStore) UpdateAgentCertSerial(_ context.Context, agentID string, serial string) error {
+	agent, ok := s.agents[agentID]
+	if !ok {
+		return storage.ErrNotFound
+	}
+	agent.CertSerial = serial
+	s.agents[agentID] = agent
+	return nil
+}
+
+func (s *memoryStore) GetAgentCertSerial(_ context.Context, agentID string) (string, error) {
+	agent, ok := s.agents[agentID]
+	if !ok {
+		return "", storage.ErrNotFound
+	}
+	return agent.CertSerial, nil
+}
+
 func (s *memoryStore) DeleteInstancesByAgent(_ context.Context, agentID string) error {
 	for id, inst := range s.instances {
 		if inst.AgentID == agentID {

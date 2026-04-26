@@ -1,6 +1,7 @@
 // P3-FE-01: recomposed locally from UI-kit primitives.
 // Phase-7 redesign: pulse row + chip-tab + status filter + search + paging.
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   AgeCell,
   DataTable,
@@ -51,66 +52,72 @@ function JobStatusCell({ status }: { status: string }) {
   return <StatusLabel tone={tone} label={status} animate={status === "running"} />;
 }
 
-const jobColumns = [
-  {
-    key: "action",
-    header: "Action",
-    render: (j: JobListItem) => (
-      <div className="flex flex-col gap-0.5 min-w-0">
-        <span className="font-mono text-xs text-fg">{prettyAction(j.action)}</span>
-        {j.failureReason && (
-          // Failure reason as a dim second line under the action so operators
-          // see *why* a job failed without opening a detail modal.
-          <span
-            className="text-[11px] text-status-error/80 truncate"
-            title={j.failureReason}
-          >
-            {j.failureReason}
-          </span>
-        )}
-      </div>
-    ),
-    className: "min-w-[220px] max-w-[360px]",
-  },
-  {
-    key: "status",
-    header: "Status",
-    render: (j: JobListItem) => <JobStatusCell status={j.status} />,
-    className: "w-[140px]",
-  },
-  {
-    key: "targets",
-    header: "Targets",
-    render: (j: JobListItem) => (
-      <span className="font-mono text-xs text-fg-muted tabular-nums">
-        {j.targetCount === 0 ? "—" : `×${j.targetCount}`}
-      </span>
-    ),
-    className: "hidden sm:table-cell text-center w-[80px]",
-  },
-  {
-    key: "actor",
-    header: "Actor",
-    render: (j: JobListItem) => (
-      <span
-        className={cn(
-          "text-[11px] truncate",
-          j.actorLabel ? "text-fg" : "font-mono text-fg-muted",
-        )}
-        title={j.actorId}
-      >
-        {j.actorLabel ?? shortId(j.actorId)}
-      </span>
-    ),
-    className: "hidden md:table-cell w-[140px]",
-  },
-  {
-    key: "created",
-    header: "Created",
-    render: (j: JobListItem) => <AgeCell unixSec={j.createdAtUnix} mode="age" />,
-    className: "text-right w-[120px]",
-  },
-];
+// Q4.U-Q-09: column headers come from i18n so the operator sees the
+// labels in the language they picked in profile settings. Computed via
+// a factory so the static import-time const can carry untranslated
+// labels and the component call-site supplies the translated values.
+function getJobColumns(t: (key: string) => string) {
+  return [
+    {
+      key: "action",
+      header: t("columns.action"),
+      render: (j: JobListItem) => (
+        <div className="flex flex-col gap-0.5 min-w-0">
+          <span className="font-mono text-xs text-fg">{prettyAction(j.action)}</span>
+          {j.failureReason && (
+            // Failure reason as a dim second line under the action so operators
+            // see *why* a job failed without opening a detail modal.
+            <span
+              className="text-[11px] text-status-error/80 truncate"
+              title={j.failureReason}
+            >
+              {j.failureReason}
+            </span>
+          )}
+        </div>
+      ),
+      className: "min-w-[220px] max-w-[360px]",
+    },
+    {
+      key: "status",
+      header: t("columns.status"),
+      render: (j: JobListItem) => <JobStatusCell status={j.status} />,
+      className: "w-[140px]",
+    },
+    {
+      key: "targets",
+      header: t("columns.targets"),
+      render: (j: JobListItem) => (
+        <span className="font-mono text-xs text-fg-muted tabular-nums">
+          {j.targetCount === 0 ? "—" : `×${j.targetCount}`}
+        </span>
+      ),
+      className: "hidden sm:table-cell text-center w-[80px]",
+    },
+    {
+      key: "actor",
+      header: t("columns.actor"),
+      render: (j: JobListItem) => (
+        <span
+          className={cn(
+            "text-[11px] truncate",
+            j.actorLabel ? "text-fg" : "font-mono text-fg-muted",
+          )}
+          title={j.actorId}
+        >
+          {j.actorLabel ?? shortId(j.actorId)}
+        </span>
+      ),
+      className: "hidden md:table-cell w-[140px]",
+    },
+    {
+      key: "created",
+      header: t("columns.created"),
+      render: (j: JobListItem) => <AgeCell unixSec={j.createdAtUnix} mode="age" />,
+      className: "text-right w-[120px]",
+    },
+  ];
+}
 
 // ─── Audit view ───────────────────────────────────────────────────────────────
 
@@ -263,6 +270,10 @@ export function ActivityPage({
   onTabChange,
   lookupError,
 }: ActivityPageProps) {
+  // Q4.U-Q-09: localised column headers.
+  const { t } = useTranslation("activity");
+  const jobColumns = useMemo(() => getJobColumns(t), [t]);
+
   const [query, setQuery] = useState("");
   const [jobStatus, setJobStatus] = useState<JobStatusFilter>("all");
   const [auditWindow, setAuditWindow] = useState<AuditWindow>("24h");

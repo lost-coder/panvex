@@ -1250,7 +1250,12 @@ func TestHTTPEnrollmentTokenListAndRevoke(t *testing.T) {
 	}
 
 	var listedTokens []struct {
+		// Q4.U-S-06: listing no longer surfaces the raw value; the new
+		// shape carries a mask + handle so an operator can identify a
+		// row but cannot exfiltrate a usable bootstrap secret.
 		Value         string `json:"value"`
+		MaskedValue   string `json:"masked_value"`
+		Handle        string `json:"handle"`
 		FleetGroupID  string `json:"fleet_group_id"`
 		Status        string `json:"status"`
 		ExpiresAtUnix int64  `json:"expires_at_unix"`
@@ -1261,8 +1266,14 @@ func TestHTTPEnrollmentTokenListAndRevoke(t *testing.T) {
 	if len(listedTokens) != 1 {
 		t.Fatalf("len(tokens) = %d, want %d", len(listedTokens), 1)
 	}
-	if listedTokens[0].Value != createdToken.Value {
-		t.Fatalf("tokens[0].value = %q, want %q", listedTokens[0].Value, createdToken.Value)
+	if listedTokens[0].Value != "" {
+		t.Fatalf("tokens[0].value = %q, want empty (raw value must not leak in listing)", listedTokens[0].Value)
+	}
+	if listedTokens[0].MaskedValue == "" {
+		t.Fatalf("tokens[0].masked_value should be set")
+	}
+	if listedTokens[0].Handle == "" {
+		t.Fatalf("tokens[0].handle should be set")
 	}
 	if listedTokens[0].Status != "active" {
 		t.Fatalf("tokens[0].status = %q, want %q", listedTokens[0].Status, "active")

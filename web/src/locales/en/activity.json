@@ -1,0 +1,9 @@
+{
+  "columns": {
+    "action": "Action",
+    "status": "Status",
+    "targets": "Targets",
+    "actor": "Actor",
+    "created": "Created"
+  }
+}

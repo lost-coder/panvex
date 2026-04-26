@@ -30,6 +30,11 @@ type issuedCertificate struct {
 	PrivateKeyPEM  string
 	CAPEM          string
 	ExpiresAt      time.Time
+	// Serial is the hex-encoded big-endian certificate serial. Used by
+	// Server to pin the issued cert against the agent record so an
+	// older revoked cert (which still chains to the CA) cannot be
+	// replayed at gRPC connect time (Q4.U-S-04).
+	Serial string
 }
 
 type certificateAuthority struct {
@@ -303,6 +308,7 @@ func (a *certificateAuthority) issueClientCertificate(commonName string, now tim
 		PrivateKeyPEM:  encodePEM("EC PRIVATE KEY", privateDER),
 		CAPEM:          a.caPEM,
 		ExpiresAt:      expiresAt,
+		Serial:         serial.Text(16),
 	}, nil
 }
 
