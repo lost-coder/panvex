@@ -4,19 +4,32 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"math"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/dbsqlc"
 )
 
-// R-Q-03: routed through dbsqlc.
-
 func toNullableTime(t *time.Time) sql.NullTime {
 	if t == nil || t.IsZero() {
 		return sql.NullTime{}
 	}
 	return sql.NullTime{Time: t.UTC(), Valid: true}
+}
+
+// failuresToInt32 clamps a host-int failure counter into the int32 column
+// width. The legitimate range is small (lockout fires after a handful of
+// failures), so saturation is preferable to silent wrap if a caller ever
+// passes a corrupt value.
+func failuresToInt32(n int) int32 {
+	if n < 0 {
+		return 0
+	}
+	if n > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int32(n)
 }
 
 func fromNullableTime(v sql.NullTime) *time.Time {
@@ -42,7 +55,7 @@ func (s *Store) UpsertLoginLockout(ctx context.Context, record storage.LoginLock
 	}
 	return dbsqlc.New(s.sqlDB).UpsertLoginLockout(ctx, dbsqlc.UpsertLoginLockoutParams{
 		Username:  record.Username,
-		Failures:  int32(record.Failures),
+		Failures:  failuresToInt32(record.Failures),
 		LockedAt:  toNullableTime(record.LockedAt),
 		UpdatedAt: record.UpdatedAt.UTC(),
 	})

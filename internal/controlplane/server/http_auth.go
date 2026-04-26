@@ -361,7 +361,7 @@ func (s *Server) requireSession(r *http.Request) (auth.Session, auth.User, error
 	// of authenticated requests does not churn the session map. Cheap
 	// enough (one map read + conditional write under the auth mutex) to
 	// run on every authenticated handler.
-	s.auth.TouchSession(session.ID)
+	s.auth.TouchSessionWithContext(r.Context(), session.ID)
 
 	return session, user, nil
 }

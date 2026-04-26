@@ -43,7 +43,7 @@ var (
 	// no password embedded and no PANVEX_DB_PASSWORD env. Default is to
 	// reject because dev-compose fixtures with empty creds occasionally
 	// reach prod via copy-paste.
-	EnvAllowEmptyDBPassword = "PANVEX_ALLOW_EMPTY_DB_PASSWORD"
+	EnvAllowEmptyDBPassword = "PANVEX_ALLOW_EMPTY_DB_PASSWORD" //nolint:gosec // env var name, not a credential
 )
 
 // StorageConfig describes the selected persistent storage backend.

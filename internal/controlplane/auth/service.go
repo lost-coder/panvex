@@ -202,12 +202,12 @@ func (s *Service) SetConsumedTotpStore(store storage.ConsumedTotpStore) {
 // persistConsumedTotpAsync mirrors a freshly consumed (user_id, code)
 // pair to the configured store. Best-effort: a store error is logged
 // but does not fail the auth flow that triggered the consume.
-func (s *Service) persistConsumedTotp(userID, code string, usedAt time.Time) {
+func (s *Service) persistConsumedTotp(ctx context.Context, userID, code string, usedAt time.Time) {
 	store := s.consumedTotpStore
 	if store == nil {
 		return
 	}
-	if err := store.UpsertConsumedTotp(context.Background(), storage.ConsumedTotpRecord{
+	if err := store.UpsertConsumedTotp(ctx, storage.ConsumedTotpRecord{
 		UserID: userID,
 		Code:   code,
 		UsedAt: usedAt.UTC(),
@@ -510,10 +510,12 @@ func (s *Service) AuthenticateWithContext(ctx context.Context, input LoginInput,
 			return Session{}, ErrInvalidTotpCode
 		}
 		s.consumedTotp[key] = now.UTC()
-		// Q2.U-S-17: mirror to the persistent store outside the lock so a
-		// CP restart cannot let the same code be re-used inside the
-		// verifier acceptance window.
-		go s.persistConsumedTotp(key.UserID, key.Code, now.UTC())
+		// Mirror to the persistent store outside the lock so a CP restart
+		// cannot let the same code be re-used inside the verifier
+		// acceptance window. Detach the request context so an early
+		// client disconnect does not abort the persist write.
+		bgCtx := context.WithoutCancel(ctx)
+		go s.persistConsumedTotp(bgCtx, key.UserID, key.Code, now.UTC())
 	}
 
 	s.cleanupExpiredSessionsLocked(now)
@@ -1145,7 +1147,16 @@ func (s *Service) GetSession(sessionID string) (Session, error) {
 // that would couple every authenticated request to a DB round-trip for a
 // value we rebuild from CreatedAt on restart anyway. Callers should invoke
 // it after a successful session lookup on any authenticated HTTP handler.
+//
+// TouchSession is the legacy ctx-less entrypoint. New callers should use
+// TouchSessionWithContext so the persistence side-effect inherits the
+// request's cancellation budget.
 func (s *Service) TouchSession(sessionID string) {
+	s.TouchSessionWithContext(context.Background(), sessionID)
+}
+
+// TouchSessionWithContext is the ctx-aware variant of TouchSession.
+func (s *Service) TouchSessionWithContext(ctx context.Context, sessionID string) {
 	if sessionID == "" {
 		return
 	}
@@ -1170,12 +1181,11 @@ func (s *Service) TouchSession(sessionID string) {
 	store := s.sessionStore
 	s.mu.Unlock()
 
-	// Q2.U-S-12: persist the refreshed LastSeenAt so the sliding idle
-	// timeout survives a control-plane restart. Best-effort: store
-	// errors are logged but do not fail the request the touch was
-	// triggered from.
+	// Persist the refreshed LastSeenAt so the sliding idle timeout
+	// survives a control-plane restart. Best-effort: store errors are
+	// logged but do not fail the request the touch was triggered from.
 	if store != nil {
-		if err := store.TouchSession(context.Background(), sessionID, now); err != nil {
+		if err := store.TouchSession(ctx, sessionID, now); err != nil {
 			slog.Warn("auth: persist session last_seen_at failed", "session_id", sessionID, "error", err)
 		}
 	}
