@@ -59,7 +59,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		}
 
 		if s.loginLockout.IsLockedWithContext(r.Context(), request.Username, s.now()) {
-			s.logger.Info("login attempt on locked account", "username_hash", logUsername(request.Username))
+			s.logger.Info("login attempt on locked account", "username_hash", s.logUsername(request.Username))
 			writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
 			return
 		}
@@ -84,7 +84,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 			// Record lockout-eligible failures: wrong password or wrong TOTP code.
 			if errors.Is(err, auth.ErrInvalidCredentials) || errors.Is(err, auth.ErrInvalidTotpCode) {
 				if s.loginLockout.CheckAndRecordFailureWithContext(r.Context(), request.Username, s.now()) {
-					s.logger.Info("account locked out", "username_hash", logUsername(request.Username))
+					s.logger.Info("account locked out", "username_hash", s.logUsername(request.Username))
 					writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
 					return
 				}
@@ -101,7 +101,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 				// created. Tell the client to retry rather than masking
 				// the failure behind an in-memory-only session that would
 				// silently disappear on the next control-plane restart.
-				s.logger.Error("session store unavailable during login", "username_hash", logUsername(request.Username), "error", err)
+				s.logger.Error("session store unavailable during login", "username_hash", s.logUsername(request.Username), "error", err)
 				writeErrorWithCode(w, http.StatusServiceUnavailable, "session store unavailable", "session_store_unavailable")
 			default:
 				s.logger.Error("auth login failed", "error", err)
@@ -111,7 +111,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		}
 
 		s.loginLockout.RecordSuccessWithContext(r.Context(), request.Username)
-		s.logger.Info("user logged in", "username_hash", logUsername(request.Username), "user_id", session.UserID, "session_id", session.ID)
+		s.logger.Info("user logged in", "username_hash", s.logUsername(request.Username), "user_id", session.UserID, "session_id", session.ID)
 
 		// B1: persist the login audit event BEFORE issuing the session
 		// cookie. Handing out a session cookie without a durable audit

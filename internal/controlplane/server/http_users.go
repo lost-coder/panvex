@@ -114,7 +114,7 @@ func (s *Server) handleCreateUser() http.HandlerFunc {
 			case errors.Is(err, auth.ErrPasswordTooWeak):
 				writeError(w, http.StatusBadRequest, err.Error())
 			default:
-				s.logger.Error("create user failed", "username_hash", logUsername(request.Username), "error", err)
+				s.logger.Error("create user failed", "username_hash", s.logUsername(request.Username), "error", err)
 				writeError(w, http.StatusInternalServerError, "internal error")
 			}
 			return
