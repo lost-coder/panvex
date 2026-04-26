@@ -1,0 +1,18 @@
+# gitleaks configuration. Inherits the default ruleset from gitleaks
+# itself and adds a project-scoped allowlist for synthetic test
+# fixtures that gitleaks reasonably confuses with real credentials.
+#
+# Anything outside the listed paths is still scanned with the full
+# default ruleset, so a real leak in production code will still fail
+# CI.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allow synthetic credentials in test fixtures and storybook examples"
+paths = [
+  '''(^|/).*_test\.go$''',
+  '''(^|/).*\.test\.(ts|tsx|js|jsx)$''',
+  '''(^|/).*\.stories\.(ts|tsx|js|jsx)$''',
+]

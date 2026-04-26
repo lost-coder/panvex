@@ -222,7 +222,7 @@ jobs:
         # (web/package-lock.json), and known-bad config patterns. Severity
         # gate matches the npm-audit bar so behaviour is consistent across
         # ecosystems.
-        uses: aquasecurity/trivy-action@0.32.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -237,7 +237,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Trivy config scan (Dockerfile)
-        uses: aquasecurity/trivy-action@0.32.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: config
           scan-ref: Dockerfile
@@ -248,15 +248,24 @@ jobs:
   gitleaks:
     name: gitleaks (secret scan)
     runs-on: ubuntu-latest
+    env:
+      # Pin via env so the version is in one place and dependabot can
+      # bump it consistently across both the install and the verify step.
+      GITLEAKS_VERSION: 8.30.1
     steps:
       - uses: actions/checkout@v4
         with:
-          # Full history so gitleaks can detect leaks introduced in
-          # earlier commits on the PR branch, not just the tip.
+          # Full history so gitleaks scans every commit on the branch,
+          # not just the tip — leaks often slip in mid-branch and get
+          # "fixed" by a follow-up commit.
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
-        env:
-          # Tokenless mode is fine — we are not posting the report back
-          # as a check via the gitleaks dashboard. The action still fails
-          # the job on any finding.
-          GITLEAKS_NOTIFY_USER_LIST: ''
+      - name: Install gitleaks
+        # The official gitleaks-action wrapper now requires a paid
+        # licence for org-owned repos. Run the upstream binary directly
+        # instead — same scan, no licence, no rate limits.
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+      - name: Run gitleaks
+        run: gitleaks detect --source . --redact --no-banner --verbose --exit-code 1
