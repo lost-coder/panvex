@@ -75,7 +75,8 @@ type clientDetailResponse struct {
 
 func (s *Server) handleClients() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, _, ok := s.requireClientsAccess(w, r); !ok {
+		_, _, scope, ok := s.requireClientsAccessWithScope(w, r)
+		if !ok {
 			return
 		}
 
@@ -104,6 +105,11 @@ func (s *Server) handleClients() http.HandlerFunc {
 				writeError(w, http.StatusInternalServerError, "internal error")
 				return
 			}
+			// R-S-14: hide clients that have no assignment overlap with
+			// the operator's scope.
+			if !s.clientInScope(scope, assignments) {
+				continue
+			}
 			usage := s.aggregatedClientUsage(client.ID)
 			uniqueIPs := usage.UniqueIPsUsed
 			if count, ok := uniqueIPCounts[client.ID]; ok && count > 0 {
@@ -130,7 +136,7 @@ func (s *Server) handleClients() http.HandlerFunc {
 
 func (s *Server) handleCreateClient() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session, _, ok := s.requireClientsAccess(w, r)
+		session, _, scope, ok := s.requireClientsAccessWithScope(w, r)
 		if !ok {
 			return
 		}
@@ -139,6 +145,19 @@ func (s *Server) handleCreateClient() http.HandlerFunc {
 		if err := decodeJSON(r, &request); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid client payload")
 			return
+		}
+
+		// R-S-14: a non-global operator may only assign the client to
+		// fleet groups they own. Reject the whole request if any
+		// requested group is outside scope — silently dropping members
+		// would surprise the operator on the response.
+		if !scope.Global {
+			for _, gid := range request.FleetGroupIDs {
+				if !scope.IsAllowed(gid) {
+					writeError(w, http.StatusForbidden, "fleet group outside operator scope")
+					return
+				}
+			}
 		}
 
 		client, assignments, deployments, err := s.createClientWithContext(r.Context(), session.UserID, clientMutationInput{
@@ -171,7 +190,8 @@ func (s *Server) handleCreateClient() http.HandlerFunc {
 
 func (s *Server) handleClient() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, _, ok := s.requireClientsAccess(w, r); !ok {
+		_, _, scope, ok := s.requireClientsAccessWithScope(w, r)
+		if !ok {
 			return
 		}
 
@@ -192,13 +212,19 @@ func (s *Server) handleClient() http.HandlerFunc {
 			return
 		}
 
+		// R-S-14: 404 instead of 403 to avoid leaking existence.
+		if !s.clientInScope(scope, assignments) {
+			writeError(w, http.StatusNotFound, "client not found")
+			return
+		}
+
 		writeJSON(w, http.StatusOK, s.buildClientDetailResponse(r.Context(), client, assignments, deployments, false))
 	}
 }
 
 func (s *Server) handleUpdateClient() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session, _, ok := s.requireClientsAccess(w, r)
+		session, _, scope, ok := s.requireClientsAccessWithScope(w, r)
 		if !ok {
 			return
 		}
@@ -209,10 +235,38 @@ func (s *Server) handleUpdateClient() http.HandlerFunc {
 			return
 		}
 
+		// R-S-14: scope-check both the existing client and any new
+		// fleet groups the update wants to introduce.
+		if !scope.Global {
+			_, existingAssignments, _, lookupErr := s.clientDetailSnapshot(clientID)
+			if lookupErr != nil {
+				if errors.Is(lookupErr, storage.ErrNotFound) {
+					writeError(w, http.StatusNotFound, "client not found")
+					return
+				}
+				s.logger.Error("load client for scope check failed", "client_id", clientID, "error", lookupErr)
+				writeError(w, http.StatusInternalServerError, "internal error")
+				return
+			}
+			if !s.clientInScope(scope, existingAssignments) {
+				writeError(w, http.StatusNotFound, "client not found")
+				return
+			}
+		}
+
 		var request clientMutationRequest
 		if err := decodeJSON(r, &request); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid client payload")
 			return
+		}
+
+		if !scope.Global {
+			for _, gid := range request.FleetGroupIDs {
+				if !scope.IsAllowed(gid) {
+					writeError(w, http.StatusForbidden, "fleet group outside operator scope")
+					return
+				}
+			}
 		}
 
 		client, assignments, deployments, err := s.updateClientWithContext(r.Context(), clientID, session.UserID, clientMutationInput{
@@ -243,7 +297,7 @@ func (s *Server) handleUpdateClient() http.HandlerFunc {
 
 func (s *Server) handleDeleteClient() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session, _, ok := s.requireClientsAccess(w, r)
+		session, _, scope, ok := s.requireClientsAccessWithScope(w, r)
 		if !ok {
 			return
 		}
@@ -252,6 +306,24 @@ func (s *Server) handleDeleteClient() http.HandlerFunc {
 		if clientID == "" {
 			writeError(w, http.StatusBadRequest, "client id is required")
 			return
+		}
+
+		// R-S-14: scope-check before delete.
+		if !scope.Global {
+			_, existing, _, lookupErr := s.clientDetailSnapshot(clientID)
+			if lookupErr != nil {
+				if errors.Is(lookupErr, storage.ErrNotFound) {
+					writeError(w, http.StatusNotFound, "client not found")
+					return
+				}
+				s.logger.Error("load client for scope check failed", "client_id", clientID, "error", lookupErr)
+				writeError(w, http.StatusInternalServerError, "internal error")
+				return
+			}
+			if !s.clientInScope(scope, existing) {
+				writeError(w, http.StatusNotFound, "client not found")
+				return
+			}
 		}
 
 		if err := s.deleteClientWithContext(r.Context(), clientID, session.UserID, s.now()); err != nil {
@@ -267,7 +339,7 @@ func (s *Server) handleDeleteClient() http.HandlerFunc {
 
 func (s *Server) handleRotateClientSecret() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session, _, ok := s.requireClientsAccess(w, r)
+		session, _, scope, ok := s.requireClientsAccessWithScope(w, r)
 		if !ok {
 			return
 		}
@@ -276,6 +348,23 @@ func (s *Server) handleRotateClientSecret() http.HandlerFunc {
 		if clientID == "" {
 			writeError(w, http.StatusBadRequest, "client id is required")
 			return
+		}
+
+		if !scope.Global {
+			_, existing, _, lookupErr := s.clientDetailSnapshot(clientID)
+			if lookupErr != nil {
+				if errors.Is(lookupErr, storage.ErrNotFound) {
+					writeError(w, http.StatusNotFound, "client not found")
+					return
+				}
+				s.logger.Error("load client for scope check failed", "client_id", clientID, "error", lookupErr)
+				writeError(w, http.StatusInternalServerError, "internal error")
+				return
+			}
+			if !s.clientInScope(scope, existing) {
+				writeError(w, http.StatusNotFound, "client not found")
+				return
+			}
 		}
 
 		client, assignments, deployments, err := s.rotateClientSecretWithContext(r.Context(), clientID, session.UserID, s.now())
@@ -296,7 +385,7 @@ func (s *Server) handleRotateClientSecret() http.HandlerFunc {
 // deployment that couldn't be recovered without editing fields.
 func (s *Server) handleRedeployClient() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session, _, ok := s.requireClientsAccess(w, r)
+		session, _, scope, ok := s.requireClientsAccessWithScope(w, r)
 		if !ok {
 			return
 		}
@@ -305,6 +394,23 @@ func (s *Server) handleRedeployClient() http.HandlerFunc {
 		if clientID == "" {
 			writeError(w, http.StatusBadRequest, "client id is required")
 			return
+		}
+
+		if !scope.Global {
+			_, existing, _, lookupErr := s.clientDetailSnapshot(clientID)
+			if lookupErr != nil {
+				if errors.Is(lookupErr, storage.ErrNotFound) {
+					writeError(w, http.StatusNotFound, "client not found")
+					return
+				}
+				s.logger.Error("load client for scope check failed", "client_id", clientID, "error", lookupErr)
+				writeError(w, http.StatusInternalServerError, "internal error")
+				return
+			}
+			if !s.clientInScope(scope, existing) {
+				writeError(w, http.StatusNotFound, "client not found")
+				return
+			}
 		}
 
 		client, assignments, deployments, err := s.redeployClientWithContext(r.Context(), clientID, session.UserID, s.now())
@@ -318,6 +424,37 @@ func (s *Server) handleRedeployClient() http.HandlerFunc {
 		})
 		writeJSON(w, http.StatusOK, s.buildClientDetailResponse(r.Context(), client, assignments, deployments, false))
 	}
+}
+
+// requireClientsAccessWithScope is the scope-aware variant of
+// requireClientsAccess used by the R-S-14 rollout. It loads the
+// per-operator FleetScopeAccess so handlers can narrow list/get/mutate
+// flows to the visible fleet groups.
+func (s *Server) requireClientsAccessWithScope(w http.ResponseWriter, r *http.Request) (auth.Session, auth.User, FleetScopeAccess, bool) {
+	session, user, ok := s.requireClientsAccess(w, r)
+	if !ok {
+		return session, user, FleetScopeAccess{}, false
+	}
+	scope, ok := s.requireFleetScope(w, r, user)
+	if !ok {
+		return session, user, FleetScopeAccess{}, false
+	}
+	return session, user, scope, true
+}
+
+// clientInScope reports whether at least one of the client's fleet
+// group ids (via assignments) is inside the operator's scope.
+// Operators with global scope always pass.
+func (s *Server) clientInScope(scope FleetScopeAccess, assignments []managedClientAssignment) bool {
+	if scope.Global {
+		return true
+	}
+	for _, a := range assignments {
+		if a.FleetGroupID != "" && scope.IsAllowed(a.FleetGroupID) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) requireClientsAccess(w http.ResponseWriter, r *http.Request) (auth.Session, auth.User, bool) {

@@ -253,7 +253,7 @@ type updateFleetGroupIntegrationRequest struct {
 
 func (s *Server) handleInstallFleetGroupIntegration() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session, _, err := s.requireSession(r)
+		session, user, err := s.requireSession(r)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
@@ -261,6 +261,15 @@ func (s *Server) handleInstallFleetGroupIntegration() http.HandlerFunc {
 		groupID := chi.URLParam(r, "id")
 		if groupID == "" {
 			writeError(w, http.StatusBadRequest, "fleet group id is required")
+			return
+		}
+		// R-S-14: integration writes follow the parent group's scope.
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
+			return
+		}
+		if !scope.IsAllowed(groupID) {
+			writeError(w, http.StatusNotFound, "fleet group not found")
 			return
 		}
 		var request installFleetGroupIntegrationRequest
@@ -292,7 +301,8 @@ func (s *Server) handleInstallFleetGroupIntegration() http.HandlerFunc {
 
 func (s *Server) handleGetFleetGroupIntegration() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, _, err := s.requireSession(r); err != nil {
+		_, user, err := s.requireSession(r)
+		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -311,13 +321,22 @@ func (s *Server) handleGetFleetGroupIntegration() http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
+		// R-S-14: scope-check by parent group.
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
+			return
+		}
+		if !scope.IsAllowed(record.FleetGroupID) {
+			writeError(w, http.StatusNotFound, "integration not found")
+			return
+		}
 		writeJSON(w, http.StatusOK, fleetGroupIntegrationRecordToResponse(record))
 	}
 }
 
 func (s *Server) handleUpdateFleetGroupIntegration() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session, _, err := s.requireSession(r)
+		session, user, err := s.requireSession(r)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
@@ -325,6 +344,27 @@ func (s *Server) handleUpdateFleetGroupIntegration() http.HandlerFunc {
 		id := chi.URLParam(r, "integrationId")
 		if id == "" {
 			writeError(w, http.StatusBadRequest, "integration id is required")
+			return
+		}
+		// R-S-14: ensure the operator owns the parent group before any
+		// mutation. We resolve the existing record first so the scope
+		// check reflects the integration's current fleet_group_id.
+		existing, err := s.fleetSvc.GetIntegration(r.Context(), id)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				writeError(w, http.StatusNotFound, "integration not found")
+				return
+			}
+			s.logger.Error("get integration for update failed", "id", id, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
+			return
+		}
+		if !scope.IsAllowed(existing.FleetGroupID) {
+			writeError(w, http.StatusNotFound, "integration not found")
 			return
 		}
 		var request updateFleetGroupIntegrationRequest
@@ -356,7 +396,7 @@ func (s *Server) handleUpdateFleetGroupIntegration() http.HandlerFunc {
 
 func (s *Server) handleDeleteFleetGroupIntegration() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session, _, err := s.requireSession(r)
+		session, user, err := s.requireSession(r)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
@@ -364,6 +404,25 @@ func (s *Server) handleDeleteFleetGroupIntegration() http.HandlerFunc {
 		id := chi.URLParam(r, "integrationId")
 		if id == "" {
 			writeError(w, http.StatusBadRequest, "integration id is required")
+			return
+		}
+		// R-S-14: scope-check the parent group before uninstalling.
+		existing, err := s.fleetSvc.GetIntegration(r.Context(), id)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				writeError(w, http.StatusNotFound, "integration not found")
+				return
+			}
+			s.logger.Error("get integration for delete failed", "id", id, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
+			return
+		}
+		if !scope.IsAllowed(existing.FleetGroupID) {
+			writeError(w, http.StatusNotFound, "integration not found")
 			return
 		}
 		if err := s.fleetSvc.UninstallIntegration(r.Context(), id); err != nil {

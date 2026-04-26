@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
 )
@@ -37,6 +38,24 @@ func (a FleetScopeAccess) IsAllowed(fleetGroupID string) bool {
 	return ok
 }
 
+// IsAllowedAny reports whether at least one of the supplied fleet
+// group ids is in scope. Used by client-side checks where a managed
+// client may live in multiple groups — operator access is granted as
+// long as ONE of those groups is in scope. An empty input means
+// "no group affiliation"; we treat that as deny-by-default for
+// non-global scopes (the operator cannot see fleet-orphan clients).
+func (a FleetScopeAccess) IsAllowedAny(fleetGroupIDs []string) bool {
+	if a.Global {
+		return true
+	}
+	for _, id := range fleetGroupIDs {
+		if _, ok := a.Allowed[id]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 // Filter returns the subset of input ids the operator can access.
 // Useful for narrowing list responses and bulk-job target lists in one
 // pass without per-id allocation.
@@ -51,6 +70,20 @@ func (a FleetScopeAccess) Filter(fleetGroupIDs []string) []string {
 		}
 	}
 	return out
+}
+
+// requireFleetScope is a thin HTTP wrapper around resolveFleetScope.
+// Returns the scope and a boolean reporting whether the request can
+// continue. On scope-resolution failure (DB error) it writes a 500 and
+// returns ok=false so handlers can `return` without further work.
+func (s *Server) requireFleetScope(w http.ResponseWriter, r *http.Request, user auth.User) (FleetScopeAccess, bool) {
+	scope, err := s.resolveFleetScope(r.Context(), user)
+	if err != nil {
+		s.logger.Error("resolve fleet scope failed", "user_id", user.ID, "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return FleetScopeAccess{}, false
+	}
+	return scope, true
 }
 
 // resolveFleetScope loads the operator's per-fleet-group scope from the

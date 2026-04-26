@@ -23,9 +23,17 @@ type createJobRequest struct {
 
 func (s *Server) handleJobs() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		_, _, err := s.requireSession(r)
+		_, user, err := s.requireSession(r)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		// R-S-14: load the operator's scope so the response can be
+		// narrowed to jobs whose targets sit inside their visible
+		// fleet groups.
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
 			return
 		}
 
@@ -39,6 +47,29 @@ func (s *Server) handleJobs() http.HandlerFunc {
 			}
 		}
 		listed := s.jobs.ListRecentWithContext(r.Context(), limit)
+
+		// R-S-14: drop jobs whose target agents are entirely outside
+		// scope. A job is visible if at least one target is in scope —
+		// the per-target deployment view will already be redacted by
+		// the deployment endpoints.
+		if !scope.Global {
+			s.mu.RLock()
+			filtered := listed[:0]
+			for _, job := range listed {
+				keep := false
+				for _, agentID := range job.TargetAgentIDs {
+					if agent, agentOK := s.agents[agentID]; agentOK && scope.IsAllowed(agent.FleetGroupID) {
+						keep = true
+						break
+					}
+				}
+				if keep {
+					filtered = append(filtered, job)
+				}
+			}
+			s.mu.RUnlock()
+			listed = filtered
+		}
 
 		// Q2.U-S-07: redact PayloadJSON for ALL roles in the list
 		// endpoint. Mutating jobs (rollout_client_config, rotate_secret)
@@ -77,6 +108,31 @@ func (s *Server) handleCreateJob() http.HandlerFunc {
 		if !jobs.IsValidAction(jobs.Action(request.Action)) {
 			writeError(w, http.StatusBadRequest, "unknown job action")
 			return
+		}
+
+		// R-S-14: every target agent must sit inside the operator's
+		// scope. We deny the whole request if any one falls out so an
+		// operator cannot accidentally fire a job into a fleet they
+		// don't manage.
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
+			return
+		}
+		if !scope.Global {
+			s.mu.RLock()
+			outOfScope := false
+			for _, agentID := range request.TargetAgentIDs {
+				agent, agentOK := s.agents[agentID]
+				if !agentOK || !scope.IsAllowed(agent.FleetGroupID) {
+					outOfScope = true
+					break
+				}
+			}
+			s.mu.RUnlock()
+			if outOfScope {
+				writeError(w, http.StatusForbidden, "target agent outside operator scope")
+				return
+			}
 		}
 
 		readOnlyAgents := make(map[string]bool, len(request.TargetAgentIDs))

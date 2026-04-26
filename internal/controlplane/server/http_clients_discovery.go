@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -34,7 +35,8 @@ type discoveredClientResponse struct {
 
 func (s *Server) handleDiscoveredClients() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, _, ok := s.requireClientsAccess(w, r); !ok {
+		_, _, scope, ok := s.requireClientsAccessWithScope(w, r)
+		if !ok {
 			return
 		}
 
@@ -42,6 +44,27 @@ func (s *Server) handleDiscoveredClients() http.HandlerFunc {
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
+		}
+
+		// R-S-14: filter by the agent's fleet group. We map every
+		// discovered client through s.agents to find the parent agent's
+		// fleet_group_id; an unknown agent (race with deregister) is
+		// dropped because we cannot scope-check it safely.
+		if !scope.Global {
+			s.mu.RLock()
+			filtered := clients[:0]
+			for _, dc := range clients {
+				agent, agentOK := s.agents[dc.AgentID]
+				if !agentOK {
+					continue
+				}
+				if !scope.IsAllowed(agent.FleetGroupID) {
+					continue
+				}
+				filtered = append(filtered, dc)
+			}
+			s.mu.RUnlock()
+			clients = filtered
 		}
 
 		sortDiscoveredClientsByName(clients)
@@ -62,14 +85,52 @@ func (s *Server) handleDiscoveredClients() http.HandlerFunc {
 	}
 }
 
+// discoveredClientInScope reports whether the given discovered-client
+// id resolves to an agent inside the operator's scope. Used by
+// adopt/ignore. Returns (true, nil) when scope is global.
+func (s *Server) discoveredClientInScope(ctx context.Context, scope FleetScopeAccess, dcID string) (bool, error) {
+	if scope.Global {
+		return true, nil
+	}
+	if s.store == nil {
+		return false, nil
+	}
+	rec, err := s.store.GetDiscoveredClient(ctx, dcID)
+	if err != nil {
+		return false, err
+	}
+	s.mu.RLock()
+	agent, agentOK := s.agents[rec.AgentID]
+	s.mu.RUnlock()
+	if !agentOK {
+		return false, nil
+	}
+	return scope.IsAllowed(agent.FleetGroupID), nil
+}
+
 func (s *Server) handleAdoptDiscoveredClient() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session, _, ok := s.requireClientsAccess(w, r)
+		session, _, scope, ok := s.requireClientsAccessWithScope(w, r)
 		if !ok {
 			return
 		}
 
 		id := chi.URLParam(r, "id")
+		// R-S-14: deny adoption of agents outside scope.
+		inScope, scopeErr := s.discoveredClientInScope(r.Context(), scope, id)
+		if scopeErr != nil {
+			if errors.Is(scopeErr, storage.ErrNotFound) {
+				writeError(w, http.StatusNotFound, "discovered client not found")
+				return
+			}
+			s.logger.Error("scope-check discovered client failed", "id", id, "error", scopeErr)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		if !inScope {
+			writeError(w, http.StatusNotFound, "discovered client not found")
+			return
+		}
 		client, err := s.adoptDiscoveredClient(r.Context(), id, session.UserID, s.now())
 		if err != nil {
 			switch {
@@ -94,12 +155,26 @@ func (s *Server) handleAdoptDiscoveredClient() http.HandlerFunc {
 
 func (s *Server) handleIgnoreDiscoveredClient() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session, _, ok := s.requireClientsAccess(w, r)
+		session, _, scope, ok := s.requireClientsAccessWithScope(w, r)
 		if !ok {
 			return
 		}
 
 		id := chi.URLParam(r, "id")
+		inScope, scopeErr := s.discoveredClientInScope(r.Context(), scope, id)
+		if scopeErr != nil {
+			if errors.Is(scopeErr, storage.ErrNotFound) {
+				writeError(w, http.StatusNotFound, "discovered client not found")
+				return
+			}
+			s.logger.Error("scope-check discovered client failed", "id", id, "error", scopeErr)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		if !inScope {
+			writeError(w, http.StatusNotFound, "discovered client not found")
+			return
+		}
 		if err := s.ignoreDiscoveredClient(r.Context(), id, session.UserID, s.now()); err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
 				writeError(w, http.StatusNotFound, "discovered client not found")

@@ -65,6 +65,25 @@ func TestResolveFleetScopeAdminAlwaysGlobal(t *testing.T) {
 	}
 }
 
+func TestFleetScopeAccessIsAllowedAny(t *testing.T) {
+	scope := FleetScopeAccess{
+		Allowed: map[string]struct{}{"fg-1": {}, "fg-2": {}},
+	}
+	if !scope.IsAllowedAny([]string{"fg-3", "fg-1"}) {
+		t.Fatalf("expected at-least-one match to pass")
+	}
+	if scope.IsAllowedAny([]string{"fg-3", "fg-4"}) {
+		t.Fatalf("expected zero matches to fail")
+	}
+	if scope.IsAllowedAny(nil) {
+		t.Fatalf("empty input on narrow scope should fail")
+	}
+	global := FleetScopeAccess{Global: true}
+	if !global.IsAllowedAny(nil) {
+		t.Fatalf("global scope should pass on empty input")
+	}
+}
+
 func TestResolveFleetScopeOperatorEmptyMeansGlobal(t *testing.T) {
 	// Single-tenant default: an operator without explicit scope rows
 	// keeps the legacy global view. The store is nil here so the helper
