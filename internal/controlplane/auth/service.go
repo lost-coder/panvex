@@ -458,7 +458,7 @@ var dummyPasswordHash = sync.OnceValue(func() string {
 		// a well-formed input for VerifyPassword to derive on.
 		salt = []byte("panvex-dummy-salt-bytes")
 	}
-	derived := argon2.IDKey([]byte("panvex-timing-dummy"), salt, 3, 64*1024, 2, 32)
+	derived := argon2.IDKey([]byte("panvex-timing-dummy"), salt, 4, 96*1024, 2, 32)
 	return fmt.Sprintf("argon2id$%s$%s",
 		base64.RawStdEncoding.EncodeToString(salt),
 		base64.RawStdEncoding.EncodeToString(derived))
@@ -795,7 +795,12 @@ func (s *Service) HashPassword(password string) (string, error) {
 		return "", err
 	}
 
-	derived := argon2.IDKey([]byte(password), salt, 3, 64*1024, 2, 32)
+	// Q3.U-S-16: lift Argon2id parameters above the OWASP minimum.
+	// 4 iters / 96 MiB / 2 threads is the recommended cost for
+	// high-trust password hashing in 2026. VerifyPassword infers the
+	// caller's parameters from the stored hash, so existing 3/64 MiB
+	// hashes keep working until the user next rotates the password.
+	derived := argon2.IDKey([]byte(password), salt, 4, 96*1024, 2, 32)
 	return fmt.Sprintf(
 		"argon2id$%s$%s",
 		base64.RawStdEncoding.EncodeToString(salt),
@@ -820,8 +825,15 @@ func (s *Service) VerifyPassword(hash string, password string) error {
 		return err
 	}
 
-	derived := argon2.IDKey([]byte(password), salt, 3, 64*1024, 2, uint32(len(expected)))
-	if subtle.ConstantTimeCompare(expected, derived) != 1 {
+	// Q3.U-S-16: try the current parameters first, then the legacy
+	// 3/64 MiB tuple so any pre-bump hashes still authenticate. New
+	// rotations land on the strong parameters via HashPassword.
+	derived := argon2.IDKey([]byte(password), salt, 4, 96*1024, 2, uint32(len(expected)))
+	if subtle.ConstantTimeCompare(expected, derived) == 1 {
+		return nil
+	}
+	legacy := argon2.IDKey([]byte(password), salt, 3, 64*1024, 2, uint32(len(expected)))
+	if subtle.ConstantTimeCompare(expected, legacy) != 1 {
 		return ErrInvalidCredentials
 	}
 

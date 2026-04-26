@@ -18,8 +18,15 @@ const (
 	// encryptedPEMPrefixV2 uses Argon2id key derivation with a random salt.
 	encryptedPEMPrefixV2 = "ENC2:"
 
-	argon2Time    = 3
-	argon2Memory  = 64 * 1024
+	// Q3.U-S-16: lift the Argon2id parameters above OWASP minimum so a
+	// dictionary attack on a leaked CA blob is materially more expensive.
+	// 4 iterations / 96 MiB / 2 threads matches the current OWASP "high-
+	// trust secret" recommendation. decryptPEMv1 still uses the legacy
+	// SHA-256 derivation for ENC: blobs that pre-date this change; the
+	// startup path migrates them to ENC2: as soon as an encryption key
+	// is supplied (see authority.go).
+	argon2Time    = 4
+	argon2Memory  = 96 * 1024
 	argon2Threads = 2
 	argon2KeyLen  = 32
 	argon2SaltLen = 16

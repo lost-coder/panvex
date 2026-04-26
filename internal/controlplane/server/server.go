@@ -638,7 +638,7 @@ func (s *Server) routes() http.Handler {
 	// first and can emit a clean error instead of being torn down by
 	// the transport.
 	router.Use(requestTimeoutMiddleware(defaultRequestTimeout))
-	router.Use(csrfOriginCheck(s.panelRuntime.HTTPRootPath, s.panelRuntime.AgentHTTPRootPath))
+	router.Use(s.csrfOriginCheck(s.panelRuntime.HTTPRootPath, s.panelRuntime.AgentHTTPRootPath))
 	router.Get("/healthz", handleHealthz())
 	router.Get("/readyz", s.handleReadyz())
 	// /metrics is registered at the top level (outside the /api group) so
@@ -787,7 +787,7 @@ func (s *Server) routes() http.Handler {
 		outer := chi.NewRouter()
 		outer.Use(securityHeaders)
 		outer.Use(maxBodySize)
-		outer.Use(csrfOriginCheck(s.panelRuntime.HTTPRootPath, s.panelRuntime.AgentHTTPRootPath))
+		outer.Use(s.csrfOriginCheck(s.panelRuntime.HTTPRootPath, s.panelRuntime.AgentHTTPRootPath))
 		outer.Route(agentPath+apiBasePath, func(agentAPI chi.Router) {
 			agentAPI.With(s.withRateLimit(s.agentBootstrapRateLimiter, "agent_bootstrap", s.requestClientRateLimitKey)).
 				Post("/agent/bootstrap", s.handleAgentBootstrap())

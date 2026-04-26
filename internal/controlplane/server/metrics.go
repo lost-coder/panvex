@@ -70,6 +70,12 @@ type metricsCollectors struct {
 	// cardinality stays safe.
 	retentionPrunedRowsTotal *prometheus.CounterVec
 
+	// Q3.U-Q-15: per-goroutine panic-recovery counter so a silently
+	// recovered panic surfaces as a Prometheus alert instead of vanishing
+	// into a single log line. Labels: goroutine name (bounded enum from
+	// the call sites — receive, priority-inbound, audit-effects, etc).
+	panicRecoveredTotal *prometheus.CounterVec
+
 	// Phase-2 §2.1: connection pool visibility. Driven by a periodic
 	// publisher goroutine that snapshots store.PoolStats() onto these
 	// gauges every 15s. PromQL alert thresholds live in
@@ -190,6 +196,10 @@ func newMetricsCollectors() *metricsCollectors {
 			Name: "panvex_retention_pruned_rows_total",
 			Help: "Total rows deleted by the retention worker, labelled by table. Bounded enum: audit_events, metric_snapshots.",
 		}, []string{"table"}),
+		panicRecoveredTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "panvex_goroutine_panic_recovered_total",
+			Help: "Total panics caught by recoverGoroutine, labelled by goroutine name (Q3.U-Q-15).",
+		}, []string{"goroutine"}),
 		dbPoolOpen: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "panvex_db_pool_open_connections",
 			Help: "Current number of open database connections (in_use + idle). Sample period: 15s.",
@@ -244,6 +254,7 @@ func newMetricsCollectors() *metricsCollectors {
 		mc.auditBufferDepth,
 		mc.unsignedUpdateFallbackTotal,
 		mc.retentionPrunedRowsTotal,
+		mc.panicRecoveredTotal,
 		mc.dbPoolOpen,
 		mc.dbPoolInUse,
 		mc.dbPoolIdle,

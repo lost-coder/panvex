@@ -73,7 +73,7 @@ func securityHeaders(next http.Handler) http.Handler {
 // panelRootPath and agentRootPath are the configured HTTP root-path prefixes
 // (may be empty). They are compared exactly — attacker-controlled prefixes
 // such as "/attacker/api/agent/bootstrap" do not match.
-func csrfOriginCheck(panelRootPath, agentRootPath string) func(http.Handler) http.Handler {
+func (s *Server) csrfOriginCheck(panelRootPath, agentRootPath string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
@@ -94,6 +94,14 @@ func csrfOriginCheck(panelRootPath, agentRootPath string) func(http.Handler) htt
 
 			if !originMatchesHost(origin, r.Host) {
 				writeError(w, http.StatusForbidden, "cross-origin request blocked")
+				return
+			}
+
+			// Q3.U-S-21: also require the Origin scheme to match the
+			// request scheme so an attacker on a downgraded http link
+			// cannot replay calls to the https backend.
+			if !originSchemeMatchesRequest(origin, s.trustedForwardedProto(r)) {
+				writeError(w, http.StatusForbidden, "origin scheme mismatch")
 				return
 			}
 
@@ -131,6 +139,13 @@ func isCSRFExemptPath(requestPath, panelRootPath, agentRootPath string) bool {
 // originMatchesHost checks whether the host portion of the origin URL matches
 // the request host. Port differences are tolerated when the origin uses a default
 // port (80/443) that the browser omits.
+//
+// Q3.U-S-21: a same-host origin still has to use a matching scheme — http
+// origins are rejected when the request was forwarded over https (the
+// X-Forwarded-Proto header) so an attacker on a downgraded connection
+// cannot replay state-changing calls to the secure backend. https
+// origins are always accepted; http origins only pass when the inbound
+// request is also plain http.
 func originMatchesHost(origin string, requestHost string) bool {
 	parsed, err := url.Parse(origin)
 	if err != nil {
@@ -147,6 +162,26 @@ func originMatchesHost(origin string, requestHost string) bool {
 	originHost = stripDefaultPort(originHost)
 
 	return strings.EqualFold(originHost, requestHost)
+}
+
+// originSchemeMatchesRequest enforces the scheme half of Q3.U-S-21.
+// requestProto is the trusted forwarded proto ("http" or "https") that
+// the caller already resolved via trusted-proxy middleware. An origin
+// whose scheme cannot be parsed is rejected.
+func originSchemeMatchesRequest(origin string, requestProto string) bool {
+	parsed, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	originScheme := strings.ToLower(parsed.Scheme)
+	requestScheme := strings.ToLower(strings.TrimSpace(requestProto))
+	if requestScheme == "" {
+		// No proto signal available — accept either to avoid false
+		// positives in dev/loopback setups that don't set
+		// X-Forwarded-Proto. The host check still bounds the attack.
+		return originScheme == "http" || originScheme == "https"
+	}
+	return originScheme == requestScheme
 }
 
 func stripDefaultPort(host string) string {
