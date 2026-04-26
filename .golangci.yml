@@ -20,17 +20,12 @@ linters:
     - unconvert
   settings:
     gosec:
-      excludes:
-        - G104
-        - G112
-        - G115
-        - G505
-        - G101  # Hardcoded credentials (test fixtures)
-        - G117  # Marshaled secret field (API response)
-        - G301  # File permissions
-        - G304  # File inclusion via variable
-        - G602  # Slice index out of range
-        - G706  # Log injection
+      # No global excludes — historical blanket gosec excludes hid real
+      # findings. Per-rule false-positive suppressions live in
+      # `exclusions.rules` below, scoped by `path:` to the files that
+      # genuinely need them. New gosec hits should either be fixed in
+      # code or get an explicit path-scoped entry with a comment.
+      excludes: []
   exclusions:
     rules:
       - linters:
@@ -54,7 +49,154 @@ linters:
       - linters:
           - govet
         text: "lostcancel"
-      - linters:
-          - gosec
+      # Phase-3 audit verification (PARTIAL #3): every gosec false-
+      # positive is path-scoped here so a real new finding in a
+      # different file is no longer hidden by a global ignore.
+
+      # G101 — hardcoded credentials. All hits are PEM/secret literals
+      # baked into test fixtures, env-var name constants whose value
+      # *contains* the substring "PASSWORD"/"TOKEN", or static header
+      # names like X-CSRF-Token.
+      - linters: [gosec]
+        text: "G101"
+        path: "_test\\.go$"
+      - linters: [gosec]
+        text: "G101"
+        path: "internal/controlplane/config/panel.go"
+      - linters: [gosec]
+        text: "G101"
+        path: "internal/controlplane/server/csrf_token.go"
+      - linters: [gosec]
+        text: "G101"
+        path: "internal/controlplane/storage/storagetest/store_contract.go"
+
+      # G104 — unchecked error returns. The general errcheck linter
+      # already catches these with finer-grained policies; keep gosec
+      # quiet on the few legitimate cleanup / dual-driver fallback
+      # paths it still flags.
+      - linters: [gosec]
+        text: "G104"
+        path: "internal/controlplane/storage/postgres/store.go"
+      - linters: [gosec]
+        text: "G104"
+        path: "internal/controlplane/storage/postgres/migrate_test.go"
+      - linters: [gosec]
+        text: "G104"
+        path: "internal/agent/updater/updater.go"
+      - linters: [gosec]
+        text: "G104"
+        path: "internal/controlplane/server/http_updates.go"
+      - linters: [gosec]
+        text: "G104"
+        path: "internal/controlplane/updates/download.go"
+      - linters: [gosec]
+        text: "G104"
+        path: "internal/controlplane/storage/sqlite/store.go"
+      - linters: [gosec]
+        text: "G104"
+        path: "_test\\.go$"
+
+      # G115 — int conversion overflow. Pervasive in code that
+      # marshals counters or Telemt-supplied limits between Go's int
+      # families and DB BIGINT/INT4 columns; bound-checking each
+      # would not catch the real (impossible-in-practice) overflow.
+      - linters: [gosec]
         text: "G115"
         path: "internal/controlplane/server/http_auth.go"
+      - linters: [gosec]
+        text: "G115"
+        path: "internal/agent/runtime/agent.go"
+      - linters: [gosec]
+        text: "G115"
+        path: "internal/agent/runtime/ring_buffer.go"
+      - linters: [gosec]
+        text: "G115"
+        path: "internal/controlplane/auth/service.go"
+      - linters: [gosec]
+        text: "G115"
+        path: "internal/controlplane/server/clients_discovery.go"
+      - linters: [gosec]
+        text: "G115"
+        path: "internal/controlplane/server/telemetry_runtime.go"
+      - linters: [gosec]
+        text: "G115"
+        path: "internal/controlplane/server/chaos_test.go"
+      - linters: [gosec]
+        text: "G115"
+        path: "internal/controlplane/storage/postgres/clients.go"
+      - linters: [gosec]
+        text: "G115"
+        path: "internal/controlplane/storage/postgres/telemetry.go"
+      - linters: [gosec]
+        text: "G115"
+        path: "internal/controlplane/storage/sqlite/clients.go"
+      - linters: [gosec]
+        text: "G115"
+        path: "internal/controlplane/storage/sqlite/telemetry.go"
+
+      # G117 — JSON tag matches secret pattern. clients_flow returns
+      # the rotated client secret in the API response on purpose.
+      - linters: [gosec]
+        text: "G117"
+        path: "internal/controlplane/server/clients_flow.go"
+
+      # G301 — directory permissions. Operator-controlled config
+      # directories (state/data/sqlite parent) need 0755 so the
+      # operator can ls; the contained files are 0600.
+      - linters: [gosec]
+        text: "G301"
+        path: "internal/controlplane/state/users_file.go"
+      - linters: [gosec]
+        text: "G301"
+        path: "internal/controlplane/storage/sqlite/store.go"
+      - linters: [gosec]
+        text: "G301"
+        path: "internal/controlplane/config/panel_test.go"
+
+      # G304 — file inclusion via variable. The agent/updater opens
+      # paths it just created via os.CreateTemp; agent/state and
+      # state/users_file open operator-configured paths; tests mint
+      # paths inside t.TempDir.
+      - linters: [gosec]
+        text: "G304"
+        path: "internal/agent/state/credentials.go"
+      - linters: [gosec]
+        text: "G304"
+        path: "internal/agent/updater/updater.go"
+      - linters: [gosec]
+        text: "G304"
+        path: "internal/controlplane/state/users_file.go"
+      - linters: [gosec]
+        text: "G304"
+        path: "internal/agent/telemt/config_reader.go"
+      - linters: [gosec]
+        text: "G304"
+        path: "internal/controlplane/updates/download.go"
+      - linters: [gosec]
+        text: "G304"
+        path: "cmd/control-plane/main.go"
+      - linters: [gosec]
+        text: "G304"
+        path: "_test\\.go$"
+
+      # G505 — SHA-1 import. auth/service uses SHA-1 as part of an
+      # HMAC primitive (HMAC-SHA1 is a different beast from raw
+      # SHA-1 collision concerns); annotated in code.
+      - linters: [gosec]
+        text: "G505"
+        path: "internal/controlplane/auth/service.go"
+
+      # G602 — slice index OOB. Both sites guard the slice length
+      # immediately above gosec's static analyser; false positives.
+      - linters: [gosec]
+        text: "G602"
+        path: "internal/controlplane/jobs/service.go"
+      - linters: [gosec]
+        text: "G602"
+        path: "internal/controlplane/updates/release.go"
+
+      # G706 — log injection via taint. main.go logs an operator-
+      # supplied flag value; slog escapes control bytes already.
+      - linters: [gosec]
+        text: "G706"
+        path: "cmd/control-plane/main.go"
