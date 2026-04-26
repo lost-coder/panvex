@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"sync"
 
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/hkdf"
@@ -83,9 +82,6 @@ var ErrCorrupted = errors.New("secretvault: ciphertext corrupted or wrong key")
 type Vault struct {
 	enabled bool
 	keys    map[string][]byte
-
-	mu        sync.RWMutex
-	plaintext bool // controls whether Encrypt rejects when not enabled
 }
 
 // New constructs a vault from the operator passphrase. The list of
@@ -154,8 +150,11 @@ func (v *Vault) Encrypt(domain string, plaintext string) (string, error) {
 	if _, err := rand.Read(nonce); err != nil {
 		return "", err
 	}
-	sealed := gcm.Seal(nil, nonce, []byte(plaintext), []byte(domain))
-	blob := append(nonce, sealed...)
+	// Pre-size so append never reallocates and gocritic does not flag
+	// the "append result not assigned to the same slice" anti-pattern.
+	blob := make([]byte, 0, len(nonce)+gcm.Overhead()+len(plaintext))
+	blob = append(blob, nonce...)
+	blob = gcm.Seal(blob, nonce, []byte(plaintext), []byte(domain))
 	return Prefix + base64.RawStdEncoding.EncodeToString(blob), nil
 }
 
@@ -176,7 +175,7 @@ func (v *Vault) Decrypt(domain string, value string) (string, error) {
 	}
 	blob, err := base64.RawStdEncoding.DecodeString(strings.TrimPrefix(value, Prefix))
 	if err != nil {
-		return "", fmt.Errorf("%w: base64: %v", ErrCorrupted, err)
+		return "", fmt.Errorf("%w: base64: %w", ErrCorrupted, err)
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -192,7 +191,7 @@ func (v *Vault) Decrypt(domain string, value string) (string, error) {
 	nonce, ciphertext := blob[:gcm.NonceSize()], blob[gcm.NonceSize():]
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, []byte(domain))
 	if err != nil {
-		return "", fmt.Errorf("%w: open: %v", ErrCorrupted, err)
+		return "", fmt.Errorf("%w: open: %w", ErrCorrupted, err)
 	}
 	return string(plaintext), nil
 }

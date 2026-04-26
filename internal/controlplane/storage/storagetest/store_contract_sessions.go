@@ -19,9 +19,8 @@ func runSessionsContract(t *testing.T, open OpenStore) {
 		defer store.Close()
 
 		ctx := context.Background()
-		// P2-DB-03: sessions.user_id is now a CASCADE FK to users(id).
-		// Seed the owning user before persisting the session.
-		if err := store.PutUser(ctx, storage.UserRecord{
+		// sessions.user_id is a CASCADE FK to users(id); seed the owner first.
+		if err := store.PutUser(ctx, storage.UserRecord{ //nolint:gosec // synthetic test fixture, not a real credential
 			ID:           "user-001",
 			Username:     "session-user",
 			PasswordHash: "argon2id$hash",

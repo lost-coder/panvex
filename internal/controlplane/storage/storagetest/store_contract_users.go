@@ -20,7 +20,7 @@ func runUsersContract(t *testing.T, open OpenStore) {
 		defer store.Close()
 
 		ctx := context.Background()
-		user := storage.UserRecord{
+		user := storage.UserRecord{ //nolint:gosec // synthetic test fixture, not a real credential
 			ID:           "user-000001",
 			Username:     "admin",
 			PasswordHash: "argon2id$hash",
@@ -75,7 +75,7 @@ func runUsersContract(t *testing.T, open OpenStore) {
 		defer store.Close()
 
 		ctx := context.Background()
-		user := storage.UserRecord{
+		user := storage.UserRecord{ //nolint:gosec // synthetic test fixture, not a real credential
 			ID:           "user-000002",
 			Username:     "operator",
 			PasswordHash: "argon2id$hash",
