@@ -7,8 +7,7 @@ package dbsqlc
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
+	"time"
 )
 
 const createJob = `-- name: CreateJob :exec
@@ -22,13 +21,13 @@ type CreateJobParams struct {
 	IdempotencyKey string
 	ActorID        string
 	Status         string
-	CreatedAt      pgtype.Timestamptz
+	CreatedAt      time.Time
 	TtlNanos       int64
 	PayloadJson    string
 }
 
 func (q *Queries) CreateJob(ctx context.Context, arg CreateJobParams) error {
-	_, err := q.db.Exec(ctx, createJob,
+	_, err := q.db.ExecContext(ctx, createJob,
 		arg.ID,
 		arg.Action,
 		arg.IdempotencyKey,
@@ -48,7 +47,7 @@ ORDER BY created_at DESC
 `
 
 func (q *Queries) ListJobs(ctx context.Context) ([]Job, error) {
-	rows, err := q.db.Query(ctx, listJobs)
+	rows, err := q.db.QueryContext(ctx, listJobs)
 	if err != nil {
 		return nil, err
 	}
@@ -69,6 +68,9 @@ func (q *Queries) ListJobs(ctx context.Context) ([]Job, error) {
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

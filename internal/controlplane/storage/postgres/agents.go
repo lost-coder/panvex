@@ -3,8 +3,10 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"errors"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/dbsqlc"
 )
 
 func (s *Store) PutAgent(ctx context.Context, agent storage.AgentRecord) error {
@@ -40,43 +42,59 @@ func (s *Store) PutAgent(ctx context.Context, agent storage.AgentRecord) error {
 	return err
 }
 
+// ListAgents returns every agent the panel knows about, ordered by
+// last_seen_at + id for stable pagination.
+//
+// Phase-3 §3.1: this is the first method to consume the sqlc-generated
+// dbsqlc.Queries surface. Conversion from dbsqlc.ListAgentsRow to the
+// storage.AgentRecord shape lives in agentRecordFromRow below; if a
+// future query gets migrated, that helper stays the only place that
+// knows about the SQL → domain mapping.
 func (s *Store) ListAgents(ctx context.Context) ([]storage.AgentRecord, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, node_name, fleet_group_id, version, read_only, last_seen_at, cert_issued_at, cert_expires_at
-		FROM agents
-		ORDER BY last_seen_at, id
-	`)
+	if s.sqlDB == nil {
+		return nil, errTxBoundStore
+	}
+	rows, err := dbsqlc.New(s.sqlDB).ListAgents(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	result := make([]storage.AgentRecord, 0)
-	for rows.Next() {
-		var agent storage.AgentRecord
-		var fleetGroupID sql.NullString
-		var certIssuedAt sql.NullTime
-		var certExpiresAt sql.NullTime
-		if err := rows.Scan(&agent.ID, &agent.NodeName, &fleetGroupID, &agent.Version, &agent.ReadOnly, &agent.LastSeenAt, &certIssuedAt, &certExpiresAt); err != nil {
-			return nil, err
-		}
-		if fleetGroupID.Valid {
-			agent.FleetGroupID = fleetGroupID.String
-		}
-		agent.LastSeenAt = agent.LastSeenAt.UTC()
-		if certIssuedAt.Valid {
-			t := certIssuedAt.Time.UTC()
-			agent.CertIssuedAt = &t
-		}
-		if certExpiresAt.Valid {
-			t := certExpiresAt.Time.UTC()
-			agent.CertExpiresAt = &t
-		}
-		result = append(result, agent)
+	result := make([]storage.AgentRecord, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, agentRecordFromRow(row))
 	}
-
-	return result, rows.Err()
+	return result, nil
 }
+
+// agentRecordFromRow is the SQL-row → domain-DTO bridge for ListAgents.
+// Kept private to the postgres package: callers see only storage.AgentRecord.
+func agentRecordFromRow(row dbsqlc.ListAgentsRow) storage.AgentRecord {
+	rec := storage.AgentRecord{
+		ID:         row.ID,
+		NodeName:   row.NodeName,
+		Version:    row.Version,
+		ReadOnly:   row.ReadOnly,
+		LastSeenAt: row.LastSeenAt.UTC(),
+	}
+	if row.FleetGroupID.Valid {
+		rec.FleetGroupID = row.FleetGroupID.UUID.String()
+	}
+	if row.CertIssuedAt.Valid {
+		t := row.CertIssuedAt.Time.UTC()
+		rec.CertIssuedAt = &t
+	}
+	if row.CertExpiresAt.Valid {
+		t := row.CertExpiresAt.Time.UTC()
+		rec.CertExpiresAt = &t
+	}
+	return rec
+}
+
+// errTxBoundStore reports that a method was invoked on a tx-bound
+// Store (one returned mid-Transact) that does not own a pool handle.
+// Methods that go through dbsqlc need *sql.DB, so they explicitly
+// reject the tx-bound shape until the dbsqlc DBTX bridge is wired
+// through Transact.
+var errTxBoundStore = errors.New("postgres: method requires pool handle, not tx-bound store")
 
 func (s *Store) DeleteAgent(ctx context.Context, agentID string) error {
 	result, err := s.db.ExecContext(ctx, `
