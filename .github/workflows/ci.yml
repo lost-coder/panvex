@@ -18,7 +18,7 @@ jobs:
     name: Go Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
@@ -63,7 +63,7 @@ jobs:
       PANVEX_POSTGRES_TEST_DSN: postgres://panvex:panvex@127.0.0.1:5432/panvex_test?sslmode=disable
       PANVEX_ALLOW_INSECURE_DB: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
@@ -74,7 +74,7 @@ jobs:
     name: Build Binaries
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
@@ -85,7 +85,7 @@ jobs:
     name: Go Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
@@ -99,7 +99,7 @@ jobs:
     name: Go Vulnerability Scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
@@ -116,7 +116,7 @@ jobs:
     name: Frontend Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
@@ -135,7 +135,7 @@ jobs:
     name: Frontend Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
@@ -153,7 +153,7 @@ jobs:
     name: Frontend Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
@@ -165,7 +165,7 @@ jobs:
     name: Frontend npm audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
@@ -180,7 +180,7 @@ jobs:
     name: Protobuf Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: bufbuild/buf-action@v1
         with:
           lint: true
@@ -189,7 +189,7 @@ jobs:
     name: SQLc Verify
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: sqlc-dev/setup-sqlc@v5
         with:
           sqlc-version: '1.30.0'
@@ -199,7 +199,7 @@ jobs:
     name: Load harness (smoke)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
@@ -216,7 +216,7 @@ jobs:
     name: Trivy filesystem scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Trivy scan (fs)
         # Catches vulnerable Go modules (go.sum), npm packages
         # (web/package-lock.json), and known-bad config patterns. Severity
@@ -235,7 +235,7 @@ jobs:
     name: Trivy Dockerfile scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Trivy config scan (Dockerfile)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -249,7 +249,7 @@ jobs:
     name: gitleaks (secret scan)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           # Full history so gitleaks scans every commit on the branch,
           # not just the tip — leaks often slip in mid-branch and get
