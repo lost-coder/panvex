@@ -10,6 +10,7 @@ import {
   Legend,
 } from "recharts";
 import { SectionHeader } from "@/ui/layout/SectionHeader";
+import { chartContainerClass, chartFallbackClass } from "./chartContainer";
 
 export interface MetricsPoint {
   t: string;
@@ -53,7 +54,7 @@ function formatDate(value: string) {
 
 function ChartContainer({ children }: { children: React.ReactNode }) {
   return (
-    <div className="h-[280px] w-full">
+    <div className={chartContainerClass}>
       <ResponsiveContainer width="100%" height="100%">
         {children as React.ReactElement}
       </ResponsiveContainer>
@@ -313,7 +314,7 @@ export default function MetricsChartSectionInner({
 
       <div className="bg-bg-card border border-border rounded-lg p-4">
         {points.length === 0 ? (
-          <div className="h-[280px] flex items-center justify-center text-sm text-fg-muted">
+          <div className={chartFallbackClass}>
             No data available for this time range
           </div>
         ) : (

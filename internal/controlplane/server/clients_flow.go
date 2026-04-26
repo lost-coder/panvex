@@ -126,7 +126,7 @@ func (s *Server) restoreStoredClients() error {
 		if err != nil {
 			return fmt.Errorf("decrypt client %s: %w", record.ID, err)
 		}
-		client := clientFromRecord(decoded)
+		client := clients.ClientFromRecord(decoded)
 		s.clients[client.ID] = client
 		s.clientSeq = maxPrefixedSequence(s.clientSeq, "client", client.ID)
 
@@ -136,7 +136,7 @@ func (s *Server) restoreStoredClients() error {
 		}
 		s.clientAssignments[client.ID] = make([]managedClientAssignment, 0, len(assignments))
 		for _, assignmentRecord := range assignments {
-			assignment := clientAssignmentFromRecord(assignmentRecord)
+			assignment := clients.AssignmentFromRecord(assignmentRecord)
 			s.clientAssignments[client.ID] = append(s.clientAssignments[client.ID], assignment)
 			s.assignmentSeq = maxPrefixedSequence(s.assignmentSeq, "client-assignment", assignment.ID)
 			if assignment.AgentID == "" {
@@ -174,7 +174,7 @@ func (s *Server) restoreStoredClients() error {
 			s.clientDeployments[client.ID] = make(map[string]managedClientDeployment)
 		}
 		for _, deploymentRecord := range deployments {
-			deployment := clientDeploymentFromRecord(deploymentRecord)
+			deployment := clients.DeploymentFromRecord(deploymentRecord)
 			s.clientDeployments[client.ID][deployment.AgentID] = deployment
 		}
 	}
@@ -708,7 +708,7 @@ func (s *Server) recordClientJobResultWithContext(ctx context.Context, agentID s
 	s.clientsMu.Unlock()
 
 	if s.store != nil {
-		if err := s.store.PutClientDeployment(ctx, clientDeploymentToRecord(deployment)); err != nil {
+		if err := s.store.PutClientDeployment(ctx, clients.DeploymentToRecord(deployment)); err != nil {
 			s.logger.Error("client deployment persistence failed", "client_id", payload.ClientID, "agent_id", agentID, "error", err)
 		}
 	}

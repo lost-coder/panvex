@@ -309,7 +309,6 @@ export async function api<T>(
     // sees the exact path → issue mapping that zod produces. We use
     // console.error rather than a custom slog facade because this file
     // has no slog dependency yet and the task scopes it out.
-    // eslint-disable-next-line no-console
     console.error("[api] schema mismatch", {
       path,
       issues: parsed.error.issues,
@@ -345,7 +344,6 @@ export async function api<T>(
 export function encodeRequest<T>(path: string, schema: ZodType<T>, payload: unknown): string {
   const parsed = schema.safeParse(payload);
   if (!parsed.success) {
-    // eslint-disable-next-line no-console
     console.error("[api] request schema mismatch", {
       path,
       issues: parsed.error.issues,

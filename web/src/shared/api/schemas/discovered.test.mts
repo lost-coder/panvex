@@ -1,4 +1,3 @@
-// @ts-nocheck
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -32,7 +31,7 @@ test("discoveredClientSchema accepts optional conflicts array", () => {
     ...minimal,
     conflicts: [{ type: "same_secret_different_names", related_ids: ["x"] }],
   });
-  assert.equal(parsed.conflicts?.[0].type, "same_secret_different_names");
+  assert.equal(parsed.conflicts?.[0]?.type, "same_secret_different_names");
 });
 
 test("discoveredClientSchema rejects unknown status", () => {

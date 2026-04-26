@@ -28,7 +28,7 @@ func (s *Server) handleServerLoadHistory() http.HandlerFunc {
 			return
 		}
 
-		from, to := parseTimeRange(r, defaultHistoryRangeHours)
+		from, to := s.parseTimeRange(r, defaultHistoryRangeHours)
 		if s.store == nil {
 			writeJSON(w, http.StatusOK, map[string]any{"points": []any{}, "resolution": "raw"})
 			return
@@ -71,7 +71,7 @@ func (s *Server) handleDCHealthHistory() http.HandlerFunc {
 			return
 		}
 
-		from, to := parseTimeRange(r, defaultHistoryRangeHours)
+		from, to := s.parseTimeRange(r, defaultHistoryRangeHours)
 		if s.store == nil {
 			writeJSON(w, http.StatusOK, map[string]any{"points": []any{}})
 			return
@@ -99,7 +99,7 @@ func (s *Server) handleClientIPHistory() http.HandlerFunc {
 			return
 		}
 
-		from, to := parseTimeRange(r, 24*30) // default 30 days for IPs
+		from, to := s.parseTimeRange(r, 24*30) // default 30 days for IPs
 		if s.store == nil {
 			writeJSON(w, http.StatusOK, map[string]any{"ips": []any{}, "total_unique": 0})
 			return
@@ -175,8 +175,14 @@ const (
 	defaultClientIPHistoryMax   = 2000
 )
 
-func parseTimeRange(r *http.Request, defaultHours int) (time.Time, time.Time) {
-	now := time.Now().UTC()
+// parseTimeRange now takes an explicit now so it stays deterministic
+// under the injectable clock (Q5.U-Q-16). Call sites pass s.now().
+func (s *Server) parseTimeRange(r *http.Request, defaultHours int) (time.Time, time.Time) {
+	return parseTimeRangeAt(r, defaultHours, s.now())
+}
+
+func parseTimeRangeAt(r *http.Request, defaultHours int, nowAt time.Time) (time.Time, time.Time) {
+	now := nowAt.UTC()
 	to := now
 	from := now.Add(-time.Duration(defaultHours) * time.Hour)
 

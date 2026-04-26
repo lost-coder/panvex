@@ -21,27 +21,9 @@ export function DiscoveredClientsContainer() {
   const [filterParam] = useUrlSearchState("filter", "");
   void filterParam;
 
-  if (isLoading) {
-    return (
-      <div className="px-4 md:px-8 py-8">
-        <SkeletonRows count={5} />
-      </div>
-    );
-  }
-
-  if (error) {
-    return <ErrorState message={error.message} onRetry={() => window.location.reload()} />;
-  }
-
-  // Ignore (single and bulk) is destructive — ignored candidates
-  // vanish from the pending-review surface until they're rediscovered.
-  // Adopt is non-destructive, but adopt-many often spans dozens of
-  // records after the front-end dedup fanout, so we confirm the
-  // fanout too.
-  // Q3.U-P-18: wrap the async handlers in useCallback so DiscoveredClientsPage
-  // (and any memoised children) keep stable function identities across
-  // re-renders. Without this, every parent render produced new closures
-  // and defeated downstream React.memo bailouts.
+  // Q5.U-Q-24 fix: hooks MUST run on every render. The previous version
+  // declared useCallback after the early returns above, which violates
+  // the rules-of-hooks. Move them up.
   const handleIgnoreOne = useCallback(async (id: string) => {
     const ok = await confirm({
       title: "Ignore this discovered client?",
@@ -88,6 +70,18 @@ export function DiscoveredClientsContainer() {
     if (!ok) return;
     await adoptMany(ids);
   }, [confirm, adoptMany, discoveredClients]);
+
+  if (isLoading) {
+    return (
+      <div className="px-4 md:px-8 py-8">
+        <SkeletonRows count={5} />
+      </div>
+    );
+  }
+
+  if (error) {
+    return <ErrorState message={error.message} onRetry={() => window.location.reload()} />;
+  }
 
   return (
     <DiscoveredClientsPage
