@@ -10,13 +10,17 @@ import (
 
 // RetentionSettings controls how long timeseries data is kept before pruning.
 type RetentionSettings struct {
-	TSRawSeconds           int `json:"ts_raw_seconds"`
-	TSHourlySeconds        int `json:"ts_hourly_seconds"`
-	TSDCSeconds            int `json:"ts_dc_seconds"`
-	IPHistorySeconds       int `json:"ip_history_seconds"`
-	EventSeconds           int `json:"event_history_seconds"`
-	AuditEventSeconds      int `json:"audit_event_seconds"`
-	MetricSnapshotSeconds  int `json:"metric_snapshot_seconds"`
+	TSRawSeconds          int `json:"ts_raw_seconds"`
+	TSHourlySeconds       int `json:"ts_hourly_seconds"`
+	TSDCSeconds           int `json:"ts_dc_seconds"`
+	IPHistorySeconds      int `json:"ip_history_seconds"`
+	EventSeconds          int `json:"event_history_seconds"`
+	AuditEventSeconds     int `json:"audit_event_seconds"`
+	MetricSnapshotSeconds int `json:"metric_snapshot_seconds"`
+	// JobsSeconds bounds how long terminal jobs (succeeded/failed/
+	// expired) live in the jobs table before the rollup loop deletes
+	// them via PruneTerminalJobs (Q2.U-P-02).
+	JobsSeconds int `json:"jobs_seconds"`
 }
 
 func defaultRetentionSettings() RetentionSettings {
@@ -28,6 +32,7 @@ func defaultRetentionSettings() RetentionSettings {
 		EventSeconds:          86400,   // 24h
 		AuditEventSeconds:     7776000, // 90d (P2-REL-04 / finding M-R2)
 		MetricSnapshotSeconds: 2592000, // 30d (P2-REL-05)
+		JobsSeconds:           2592000, // 30d (Q2.U-P-02)
 	}
 }
 
@@ -43,6 +48,7 @@ func retentionSettingsToRecord(settings RetentionSettings) storage.RetentionSett
 		EventSeconds:          settings.EventSeconds,
 		AuditEventSeconds:     settings.AuditEventSeconds,
 		MetricSnapshotSeconds: settings.MetricSnapshotSeconds,
+		JobsSeconds:           settings.JobsSeconds,
 	}
 }
 
@@ -56,6 +62,7 @@ func retentionSettingsFromRecord(record storage.RetentionSettings) RetentionSett
 		EventSeconds:          record.EventSeconds,
 		AuditEventSeconds:     record.AuditEventSeconds,
 		MetricSnapshotSeconds: record.MetricSnapshotSeconds,
+		JobsSeconds:           record.JobsSeconds,
 	}
 }
 
@@ -171,6 +178,11 @@ func (s *Server) runTimeseriesRollup(ctx context.Context) {
 	// 8. Prune metric snapshots (P2-REL-05). metric_snapshots also grew
 	// unbounded prior to this worker being wired in.
 	s.runRetentionPrune(ctx, "metric_snapshots", now, retention.MetricSnapshotSeconds, s.store.PruneMetricSnapshots)
+
+	// 9. Prune terminal jobs (Q2.U-P-02). Active (queued/running)
+	// targets are preserved so an in-flight rollout cannot be deleted
+	// mid-flight.
+	s.runRetentionPrune(ctx, "jobs", now, retention.JobsSeconds, s.store.PruneTerminalJobs)
 }
 
 // runRetentionPrune is the shared helper used by audit_events and

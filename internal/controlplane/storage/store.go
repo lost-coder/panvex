@@ -75,6 +75,11 @@ type JobStore interface {
 	ListJobs(ctx context.Context) ([]JobRecord, error)
 	PutJobTarget(ctx context.Context, target JobTargetRecord) error
 	ListJobTargets(ctx context.Context, jobID string) ([]JobTargetRecord, error)
+	// PruneTerminalJobs deletes jobs in succeeded/failed/expired status
+	// whose created_at predates the cutoff (Q2.U-P-02). Returns the
+	// number of rows deleted; the bound also cascades to job_targets via
+	// ON DELETE CASCADE in the schema.
+	PruneTerminalJobs(ctx context.Context, before time.Time) (int64, error)
 }
 
 // AuditStore persists immutable operator and security events.
@@ -267,6 +272,30 @@ type SessionStore interface {
 	DeleteSession(ctx context.Context, sessionID string) error
 	ListSessions(ctx context.Context) ([]SessionRecord, error)
 	DeleteExpiredSessions(ctx context.Context, before time.Time) error
+	// TouchSession persists a refreshed LastSeenAt so the sliding idle
+	// timeout survives a control-plane restart (Q2.U-S-12). Implementations
+	// must update only the last_seen_at column to avoid contention on
+	// the rest of the row.
+	TouchSession(ctx context.Context, sessionID string, lastSeenAt time.Time) error
+}
+
+// CPSecretStore persists small opaque per-cluster secrets like the
+// CSRF HMAC seed (Q2.U-S-24). Values are bytes so callers can store
+// raw key material without an extra encoding hop.
+type CPSecretStore interface {
+	GetCPSecret(ctx context.Context, key string) ([]byte, error)
+	PutCPSecret(ctx context.Context, key string, value []byte) error
+}
+
+// ConsumedTotpStore persists already-consumed TOTP codes for replay
+// prevention across restarts (Q2.U-S-17). Implementations are expected
+// to GC rows older than the verifier acceptance window via
+// DeleteExpiredConsumedTotp; the auth service runs that GC alongside
+// session cleanup.
+type ConsumedTotpStore interface {
+	UpsertConsumedTotp(ctx context.Context, record ConsumedTotpRecord) error
+	ListConsumedTotp(ctx context.Context) ([]ConsumedTotpRecord, error)
+	DeleteExpiredConsumedTotp(ctx context.Context, before time.Time) error
 }
 
 // LoginLockoutStore persists per-account login-failure state so a
@@ -323,6 +352,8 @@ type Store interface {
 	UserStore
 	UserAppearanceStore
 	SessionStore
+	CPSecretStore
+	ConsumedTotpStore
 	LoginLockoutStore
 	AgentRevocationStore
 	FleetStore

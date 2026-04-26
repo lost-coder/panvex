@@ -887,6 +887,11 @@ func (s *Service) restore() error {
 	}
 
 	for _, record := range jobsFromStore {
+		// Q2.U-P-02: bounded restore is enforced by PruneTerminalJobs in
+		// the retention worker — by the time we reach this loop the DB
+		// only contains rows within JobsSeconds of "now", so loading
+		// them all is safe. Skipping terminal jobs here would hide
+		// recent failure history from the UI.
 		targetRecords, err := s.jobStore.ListJobTargets(context.Background(), record.ID)
 		if err != nil {
 			return err

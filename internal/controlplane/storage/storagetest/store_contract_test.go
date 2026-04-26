@@ -1180,6 +1180,40 @@ func (s *memoryStore) DeleteExpiredSessions(_ context.Context, before time.Time)
 	return nil
 }
 
+func (s *memoryStore) TouchSession(_ context.Context, sessionID string, lastSeenAt time.Time) error {
+	rec, ok := s.sessions[sessionID]
+	if !ok {
+		return storage.ErrNotFound
+	}
+	rec.LastSeenAt = lastSeenAt
+	s.sessions[sessionID] = rec
+	return nil
+}
+
+func (s *memoryStore) PruneTerminalJobs(_ context.Context, _ time.Time) (int64, error) {
+	return 0, nil
+}
+
+func (s *memoryStore) GetCPSecret(_ context.Context, _ string) ([]byte, error) {
+	return nil, storage.ErrNotFound
+}
+
+func (s *memoryStore) PutCPSecret(_ context.Context, _ string, _ []byte) error {
+	return nil
+}
+
+func (s *memoryStore) UpsertConsumedTotp(_ context.Context, _ storage.ConsumedTotpRecord) error {
+	return nil
+}
+
+func (s *memoryStore) ListConsumedTotp(_ context.Context) ([]storage.ConsumedTotpRecord, error) {
+	return nil, nil
+}
+
+func (s *memoryStore) DeleteExpiredConsumedTotp(_ context.Context, _ time.Time) error {
+	return nil
+}
+
 // Transact on the memoryStore implements the contract via snapshot +
 // restore under txMu. Serialization through txMu gives the "concurrent
 // writers" contract test the atomicity it expects; deep-copy snapshot +

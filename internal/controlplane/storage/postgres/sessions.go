@@ -10,25 +10,30 @@ import (
 )
 
 func (s *Store) PutSession(ctx context.Context, session storage.SessionRecord) error {
+	lastSeen := session.LastSeenAt
+	if lastSeen.IsZero() {
+		lastSeen = session.CreatedAt
+	}
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO sessions (id, user_id, created_at)
-		VALUES ($1, $2, $3)
+		INSERT INTO sessions (id, user_id, created_at, last_seen_at)
+		VALUES ($1, $2, $3, $4)
 		ON CONFLICT(id) DO UPDATE SET
 			user_id = EXCLUDED.user_id,
-			created_at = EXCLUDED.created_at
-	`, session.ID, session.UserID, session.CreatedAt.UTC())
+			created_at = EXCLUDED.created_at,
+			last_seen_at = EXCLUDED.last_seen_at
+	`, session.ID, session.UserID, session.CreatedAt.UTC(), lastSeen.UTC())
 	return err
 }
 
 func (s *Store) GetSession(ctx context.Context, sessionID string) (storage.SessionRecord, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, user_id, created_at
+		SELECT id, user_id, created_at, last_seen_at
 		FROM sessions
 		WHERE id = $1
 	`, sessionID)
 
 	var session storage.SessionRecord
-	if err := row.Scan(&session.ID, &session.UserID, &session.CreatedAt); err != nil {
+	if err := row.Scan(&session.ID, &session.UserID, &session.CreatedAt, &session.LastSeenAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.SessionRecord{}, storage.ErrNotFound
 		}
@@ -36,6 +41,7 @@ func (s *Store) GetSession(ctx context.Context, sessionID string) (storage.Sessi
 	}
 
 	session.CreatedAt = session.CreatedAt.UTC()
+	session.LastSeenAt = session.LastSeenAt.UTC()
 	return session, nil
 }
 
@@ -53,7 +59,7 @@ func (s *Store) DeleteSession(ctx context.Context, sessionID string) error {
 
 func (s *Store) ListSessions(ctx context.Context) ([]storage.SessionRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, user_id, created_at
+		SELECT id, user_id, created_at, last_seen_at
 		FROM sessions
 		ORDER BY created_at DESC
 	`)
@@ -65,10 +71,11 @@ func (s *Store) ListSessions(ctx context.Context) ([]storage.SessionRecord, erro
 	var sessions []storage.SessionRecord
 	for rows.Next() {
 		var session storage.SessionRecord
-		if err := rows.Scan(&session.ID, &session.UserID, &session.CreatedAt); err != nil {
+		if err := rows.Scan(&session.ID, &session.UserID, &session.CreatedAt, &session.LastSeenAt); err != nil {
 			return nil, err
 		}
 		session.CreatedAt = session.CreatedAt.UTC()
+		session.LastSeenAt = session.LastSeenAt.UTC()
 		sessions = append(sessions, session)
 	}
 	return sessions, rows.Err()
@@ -77,4 +84,20 @@ func (s *Store) ListSessions(ctx context.Context) ([]storage.SessionRecord, erro
 func (s *Store) DeleteExpiredSessions(ctx context.Context, before time.Time) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE created_at < $1`, before.UTC())
 	return err
+}
+
+// TouchSession updates only last_seen_at so the sliding idle timeout
+// survives restart (Q2.U-S-12).
+func (s *Store) TouchSession(ctx context.Context, sessionID string, lastSeenAt time.Time) error {
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE sessions SET last_seen_at = $1 WHERE id = $2
+	`, lastSeenAt.UTC(), sessionID)
+	if err != nil {
+		return err
+	}
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		return storage.ErrNotFound
+	}
+	return nil
 }

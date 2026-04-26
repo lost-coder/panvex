@@ -164,16 +164,17 @@ type totpUseKey struct {
 
 // Service provides local-account hashing, TOTP, and session issuance.
 type Service struct {
-	mu               sync.RWMutex
-	sequence         uint64
-	users            map[string]User
-	sessions         map[string]Session
-	pendingTotpSetup map[string]pendingTotpSetup
-	consumedTotp     map[totpUseKey]time.Time
-	userStore        storage.UserStore
-	sessionStore     storage.SessionStore
-	vault            *secretvault.Vault
-	now              func() time.Time
+	mu                 sync.RWMutex
+	sequence           uint64
+	users              map[string]User
+	sessions           map[string]Session
+	pendingTotpSetup   map[string]pendingTotpSetup
+	consumedTotp       map[totpUseKey]time.Time
+	userStore          storage.UserStore
+	sessionStore       storage.SessionStore
+	consumedTotpStore  storage.ConsumedTotpStore
+	vault              *secretvault.Vault
+	now                func() time.Time
 	// startedAt records when the service was created. During the first 90
 	// seconds after startup the TOTP verifier skips the past (-30s) window
 	// to prevent replay of codes that may have been consumed before a restart.
@@ -187,6 +188,32 @@ func (s *Service) SetVault(vault *secretvault.Vault) {
 	s.mu.Lock()
 	s.vault = vault
 	s.mu.Unlock()
+}
+
+// SetConsumedTotpStore wires the persistent replay-prevention store
+// (Q2.U-S-17). Once set, every consumed TOTP code is mirrored to the
+// store and the in-memory map is rebuilt from it on RestoreSessions.
+func (s *Service) SetConsumedTotpStore(store storage.ConsumedTotpStore) {
+	s.mu.Lock()
+	s.consumedTotpStore = store
+	s.mu.Unlock()
+}
+
+// persistConsumedTotpAsync mirrors a freshly consumed (user_id, code)
+// pair to the configured store. Best-effort: a store error is logged
+// but does not fail the auth flow that triggered the consume.
+func (s *Service) persistConsumedTotp(userID, code string, usedAt time.Time) {
+	store := s.consumedTotpStore
+	if store == nil {
+		return
+	}
+	if err := store.UpsertConsumedTotp(context.Background(), storage.ConsumedTotpRecord{
+		UserID: userID,
+		Code:   code,
+		UsedAt: usedAt.UTC(),
+	}); err != nil {
+		slog.Warn("auth: persist consumed TOTP failed", "user_id", userID, "error", err)
+	}
 }
 
 // encryptTotp returns the storage form of the TOTP secret, applying
@@ -271,22 +298,45 @@ func (s *Service) RestoreSessions() error {
 		if record.CreatedAt.Before(cutoff) {
 			continue
 		}
-		// S5: LastSeenAt is not persisted. After a restart we seed it to
-		// CreatedAt, which resets the idle-timeout window once. This is
-		// the only place in the flow where a clean restart effectively
-		// extends a session by one idle window — acceptable because the
-		// absolute sessionMaxLifetime cap still applies.
+		// Q2.U-S-12: LastSeenAt is now persisted via TouchSession; if a
+		// pre-Q2 row carries a zero LastSeenAt we still seed from
+		// CreatedAt so the idle-timeout has a sane reference point.
+		lastSeen := record.LastSeenAt
+		if lastSeen.IsZero() {
+			lastSeen = record.CreatedAt
+		}
 		s.sessions[record.ID] = Session{
 			ID:         record.ID,
 			UserID:     record.UserID,
 			CreatedAt:  record.CreatedAt,
-			LastSeenAt: record.CreatedAt,
+			LastSeenAt: lastSeen,
 		}
 	}
 
 	// Clean up expired sessions in the store.
 	if err := s.sessionStore.DeleteExpiredSessions(context.Background(), cutoff); err != nil {
 		return err
+	}
+
+	// Q2.U-S-17: rebuild the in-memory consumed-TOTP map from the
+	// persistent store and prune anything past the verifier acceptance
+	// window so an attacker cannot resurrect old codes via restart.
+	if s.consumedTotpStore != nil {
+		totpCutoff := time.Now().UTC().Add(-90 * time.Second)
+		if err := s.consumedTotpStore.DeleteExpiredConsumedTotp(context.Background(), totpCutoff); err != nil {
+			slog.Warn("auth: prune expired consumed TOTP failed", "error", err)
+		}
+		records, err := s.consumedTotpStore.ListConsumedTotp(context.Background())
+		if err != nil {
+			slog.Warn("auth: list consumed TOTP failed", "error", err)
+		} else {
+			for _, rec := range records {
+				if rec.UsedAt.Before(totpCutoff) {
+					continue
+				}
+				s.consumedTotp[totpUseKey{UserID: rec.UserID, Code: rec.Code}] = rec.UsedAt
+			}
+		}
 	}
 
 	return nil
@@ -460,6 +510,10 @@ func (s *Service) AuthenticateWithContext(ctx context.Context, input LoginInput,
 			return Session{}, ErrInvalidTotpCode
 		}
 		s.consumedTotp[key] = now.UTC()
+		// Q2.U-S-17: mirror to the persistent store outside the lock so a
+		// CP restart cannot let the same code be re-used inside the
+		// verifier acceptance window.
+		go s.persistConsumedTotp(key.UserID, key.Code, now.UTC())
 	}
 
 	s.cleanupExpiredSessionsLocked(now)
@@ -506,9 +560,10 @@ func (s *Service) AuthenticateWithContext(ctx context.Context, input LoginInput,
 			}
 		}
 		if err := s.sessionStore.PutSession(ctx, storage.SessionRecord{
-			ID:        session.ID,
-			UserID:    session.UserID,
-			CreatedAt: session.CreatedAt,
+			ID:         session.ID,
+			UserID:     session.UserID,
+			CreatedAt:  session.CreatedAt,
+			LastSeenAt: session.LastSeenAt,
 		}); err != nil {
 			slog.Error("auth: failed to persist session; rejecting login", "user_id", session.UserID, "error", err)
 			return Session{}, fmt.Errorf("%w: %w", ErrSessionStoreUnavailable, err)
@@ -1083,22 +1138,35 @@ func (s *Service) TouchSession(sessionID string) {
 		return
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	session, ok := s.sessions[sessionID]
 	if !ok {
+		s.mu.Unlock()
 		return
 	}
 	now := s.now().UTC()
 	if now.After(session.CreatedAt.Add(sessionMaxLifetime)) {
 		// Absolute cap already reached — don't extend; cleanup will evict.
+		s.mu.Unlock()
 		return
 	}
 	if now.Sub(session.LastSeenAt) < sessionTouchThrottle {
+		s.mu.Unlock()
 		return
 	}
 	session.LastSeenAt = now
 	s.sessions[sessionID] = session
+	store := s.sessionStore
+	s.mu.Unlock()
+
+	// Q2.U-S-12: persist the refreshed LastSeenAt so the sliding idle
+	// timeout survives a control-plane restart. Best-effort: store
+	// errors are logged but do not fail the request the touch was
+	// triggered from.
+	if store != nil {
+		if err := store.TouchSession(context.Background(), sessionID, now); err != nil {
+			slog.Warn("auth: persist session last_seen_at failed", "session_id", sessionID, "error", err)
+		}
+	}
 }
 
 // Logout revokes a session so it can no longer authenticate requests.

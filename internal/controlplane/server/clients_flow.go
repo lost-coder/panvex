@@ -87,7 +87,13 @@ func (s *Server) restoreStoredClients() error {
 		return nil
 	}
 
-	records, err := s.store.ListClients(context.Background())
+	// Q2.U-P-09: bound the entire restore sequence so a stuck DB cannot
+	// hang startup forever. 60s covers a multi-thousand-row clients
+	// table on commodity hardware with comfortable headroom.
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	records, err := s.store.ListClients(ctx)
 	if err != nil {
 		return err
 	}
@@ -96,7 +102,7 @@ func (s *Server) restoreStoredClients() error {
 	// (written-through on every applyClientUsageSnapshot tick). Keyed
 	// by (client_id, agent_id).
 	usageIdx := make(map[string]storage.ClientUsageRecord)
-	if usage, err := s.store.ListClientUsage(context.Background()); err == nil {
+	if usage, err := s.store.ListClientUsage(ctx); err == nil {
 		for _, u := range usage {
 			usageIdx[u.ClientID+"\x00"+u.AgentID] = u
 			if u.LastSeq > s.lastUsageSeq[u.AgentID] {
@@ -109,7 +115,7 @@ func (s *Server) restoreStoredClients() error {
 	// deployment that has yet to see an agent tick — seed from the
 	// discovered_clients snapshot. Keyed by (agent_id, client_name).
 	discoveredIdx := make(map[string]storage.DiscoveredClientRecord)
-	if dc, err := s.store.ListDiscoveredClients(context.Background()); err == nil {
+	if dc, err := s.store.ListDiscoveredClients(ctx); err == nil {
 		for _, r := range dc {
 			discoveredIdx[r.AgentID+"\x00"+r.ClientName] = r
 		}
@@ -124,7 +130,7 @@ func (s *Server) restoreStoredClients() error {
 		s.clients[client.ID] = client
 		s.clientSeq = maxPrefixedSequence(s.clientSeq, "client", client.ID)
 
-		assignments, err := s.store.ListClientAssignments(context.Background(), client.ID)
+		assignments, err := s.store.ListClientAssignments(ctx, client.ID)
 		if err != nil {
 			return err
 		}
@@ -160,7 +166,7 @@ func (s *Server) restoreStoredClients() error {
 			}
 		}
 
-		deployments, err := s.store.ListClientDeployments(context.Background(), client.ID)
+		deployments, err := s.store.ListClientDeployments(ctx, client.ID)
 		if err != nil {
 			return err
 		}

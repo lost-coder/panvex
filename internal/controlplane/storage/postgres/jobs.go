@@ -118,3 +118,18 @@ func (s *Store) ListJobTargets(ctx context.Context, jobID string) ([]storage.Job
 	}
 	return result, nil
 }
+
+// PruneTerminalJobs deletes jobs in a finished status whose created_at
+// predates the cutoff (Q2.U-P-02). job_targets is cleaned up via ON
+// DELETE CASCADE in the schema.
+func (s *Store) PruneTerminalJobs(ctx context.Context, before time.Time) (int64, error) {
+	result, err := s.db.ExecContext(ctx, `
+		DELETE FROM jobs
+		WHERE status IN ('succeeded','failed','expired')
+		  AND created_at < $1
+	`, before.UTC())
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}

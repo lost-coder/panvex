@@ -66,6 +66,18 @@ func (s *stubSessionStore) DeleteExpiredSessions(_ context.Context, before time.
 	return nil
 }
 
+func (s *stubSessionStore) TouchSession(_ context.Context, sessionID string, lastSeenAt time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rec, ok := s.sessions[sessionID]
+	if !ok {
+		return storage.ErrNotFound
+	}
+	rec.LastSeenAt = lastSeenAt
+	s.sessions[sessionID] = rec
+	return nil
+}
+
 func (s *stubSessionStore) has(sessionID string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
