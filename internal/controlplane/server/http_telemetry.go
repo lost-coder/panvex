@@ -132,10 +132,10 @@ func dashboardRecentEvents(agents map[string]Agent, limit int) []telemetryRecent
 
 // dashboardAgentLoadSeries pulls the last telemetryDashboardLoadWindow
 // of raw CPU/MEM samples for each agent so the dashboard can render
-// sparklines without a separate round-trip per row. Unavailable store
-// -> empty slice; per-agent read errors are logged and the agent's
-// series falls back to empty so a single slow node does not fail the
-// whole dashboard payload.
+// sparklines without a separate round-trip per row. Q2.U-P-01: a single
+// bulk SQL replaces the previous per-agent SELECT loop. Missing agents
+// (no rows in the window) yield empty slices so a sparse fleet still
+// produces a fully-populated payload.
 func (s *Server) dashboardAgentLoadSeries(
 	ctx context.Context,
 	agentIDs []string,
@@ -147,13 +147,17 @@ func (s *Server) dashboardAgentLoadSeries(
 	}
 	from := now.UTC().Add(-telemetryDashboardLoadWindow)
 	to := now.UTC()
-	for _, id := range agentIDs {
-		points, err := s.store.ListServerLoadPoints(ctx, id, from, to)
-		if err != nil {
-			s.logger.Warn("dashboard load series unavailable", "agent_id", id, "error", err)
+	bulk, err := s.store.ListServerLoadPointsForAgents(ctx, agentIDs, from, to)
+	if err != nil {
+		s.logger.Warn("dashboard load series bulk fetch failed", "error", err)
+		// Empty slices for every agent so the FE still renders.
+		for _, id := range agentIDs {
 			out = append(out, telemetryAgentLoadSeries{AgentID: id, CPUPct: []float64{}, MemPct: []float64{}})
-			continue
 		}
+		return out
+	}
+	for _, id := range agentIDs {
+		points := bulk[id]
 		cpu := make([]float64, 0, len(points))
 		mem := make([]float64, 0, len(points))
 		for _, p := range points {

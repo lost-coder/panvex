@@ -54,7 +54,16 @@ type LockoutTracker struct {
 	mu       sync.Mutex
 	accounts map[string]lockoutEntry
 	store    LockoutStore
+
+	// shards holds 16 attempt-mutexes used by AttemptLock to serialize
+	// the read-verify-write sequence on a single username (Q2.U-S-15).
+	// Sharding keeps the lock cheap — different users hash to different
+	// slots and never block each other except on collisions, which are
+	// short-lived (one auth attempt).
+	shards [lockoutShardCount]sync.Mutex
 }
+
+const lockoutShardCount = 16
 
 type lockoutEntry struct {
 	failures int
@@ -66,6 +75,29 @@ func NewLockoutTracker() *LockoutTracker {
 	return &LockoutTracker{
 		accounts: make(map[string]lockoutEntry),
 	}
+}
+
+// AttemptLock acquires a per-username serialisation lock that closes
+// the IsLocked → verify → RecordFailure race (Q2.U-S-15). Callers MUST
+// invoke the returned release function once the verify+record sequence
+// finishes. Sharded across 16 mutexes so unrelated usernames do not
+// queue on each other.
+func (t *LockoutTracker) AttemptLock(username string) func() {
+	shard := lockoutShardFor(username)
+	t.shards[shard].Lock()
+	return t.shards[shard].Unlock
+}
+
+// lockoutShardFor returns the shard index for a username via FNV-1a
+// 32-bit hash modulo the shard count. FNV is non-cryptographic but
+// stable and zero-allocation, which fits a hot path.
+func lockoutShardFor(username string) uint32 {
+	var hash uint32 = 2166136261
+	for i := 0; i < len(username); i++ {
+		hash ^= uint32(username[i])
+		hash *= 16777619
+	}
+	return hash % lockoutShardCount
 }
 
 // SetStore attaches a persistent backend. Safe to call once at startup

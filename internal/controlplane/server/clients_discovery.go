@@ -374,13 +374,14 @@ func (s *Server) markDuplicateDiscoveredClientsAdopted(ctx context.Context, excl
 	if err != nil {
 		return
 	}
-	for _, dc := range all {
-		if dc.ID == excludeID || dc.Secret != secret || dc.Status == discoveredClientStatusAdopted {
-			continue
-		}
-		if err := s.store.UpdateDiscoveredClientStatus(ctx, dc.ID, discoveredClientStatusAdopted, observedAt.UTC()); err != nil {
-			s.logger.Error("failed to mark duplicate discovered client as adopted", "discovered_client_id", dc.ID, "error", err)
-		}
+	// Q2.U-P-10: collect all duplicate IDs and flip them in a single
+	// SQL UPDATE instead of N round-trips.
+	ids := collectDuplicateDiscoveredIDs(all, excludeID, secret)
+	if len(ids) == 0 {
+		return
+	}
+	if err := s.store.UpdateDiscoveredClientStatusBulk(ctx, ids, discoveredClientStatusAdopted, observedAt.UTC()); err != nil {
+		s.logger.Error("bulk mark duplicate discovered clients adopted failed", "count", len(ids), "error", err)
 	}
 }
 
@@ -396,15 +397,28 @@ func markDuplicateDiscoveredClientsAdoptedTx(ctx context.Context, store storage.
 	if err != nil {
 		return err
 	}
+	ids := collectDuplicateDiscoveredIDs(all, excludeID, secret)
+	if len(ids) == 0 {
+		return nil
+	}
+	return store.UpdateDiscoveredClientStatusBulk(ctx, ids, discoveredClientStatusAdopted, observedAt.UTC())
+}
+
+// collectDuplicateDiscoveredIDs returns IDs of every non-adopted
+// duplicate of (secret) excluding the primary adopt target. Lifted into
+// a helper so the tx and non-tx paths share the same filter logic.
+func collectDuplicateDiscoveredIDs(all []storage.DiscoveredClientRecord, excludeID string, secret string) []string {
+	if secret == "" {
+		return nil
+	}
+	ids := make([]string, 0)
 	for _, dc := range all {
 		if dc.ID == excludeID || dc.Secret != secret || dc.Status == discoveredClientStatusAdopted {
 			continue
 		}
-		if err := store.UpdateDiscoveredClientStatus(ctx, dc.ID, discoveredClientStatusAdopted, observedAt.UTC()); err != nil {
-			return err
-		}
+		ids = append(ids, dc.ID)
 	}
-	return nil
+	return ids
 }
 
 // findManagedClientByNameAndSecret returns an existing managed client matching

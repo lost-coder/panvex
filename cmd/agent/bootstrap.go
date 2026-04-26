@@ -205,25 +205,27 @@ func agentEndpointURL(panelURL string, path string, allowInsecure bool) (string,
 		return "", errors.New("bootstrap requires an absolute -panel-url")
 	}
 
-	// Gate order (most-to-least strict):
-	//  1. https, or http on loopback      → always fine.
-	//  2. http on a private IP literal    → accepted with a warn log, no
-	//     explicit flag needed. Covers the common "panel and agent share
-	//     a VPN / LAN" case (10/8, 172.16/12, 192.168/16, CGNAT 100.64/10,
-	//     IPv6 ULA fc00::/7, link-local fe80::/10, 169.254/16).
-	//  3. http on a public IP / hostname  → requires `-insecure-transport`
-	//     so the operator explicitly acknowledges the exposure.
+	// Gate order (most-to-least strict; Q2.U-S-05):
+	//  1. https, or http on loopback           → always fine.
+	//  2. http on a private IP literal + flag  → accepted with a warn
+	//     log. Covers the "panel and agent share a VPN / LAN" case
+	//     (10/8, 172.16/12, 192.168/16, CGNAT 100.64/10, IPv6 ULA
+	//     fc00::/7, link-local fe80::/10, 169.254/16). The operator
+	//     must still pass `-insecure-transport` so an accidental http://
+	//     in config does not silently downgrade transport.
+	//  3. http on a public IP / hostname + flag → accepted with the same
+	//     flag. Audit U-S-05 keeps loopback as the only no-flag http path.
 	switch {
 	case panelURLUsesSecureTransport(parsed):
 		// fine
-	case panelURLHostIsPrivate(parsed):
+	case panelURLHostIsPrivate(parsed) && allowInsecure:
 		slog.Warn("bootstrap over http on private-network host",
 			slog.String("host", parsed.Hostname()),
 			slog.String("hint", "private key transits unencrypted; safe only if the link is trusted"))
 	case allowInsecure:
 		// fine — operator has taken responsibility via -insecure-transport.
 	default:
-		return "", errors.New("bootstrap requires https panel_url unless it targets loopback or a private network; pass -insecure-transport if the link is a trusted public-IP route")
+		return "", errors.New("bootstrap requires https panel_url unless it targets loopback; pass -insecure-transport for any other http route, including private IPs")
 	}
 
 	parsed.Path = strings.TrimRight(parsed.Path, "/") + path

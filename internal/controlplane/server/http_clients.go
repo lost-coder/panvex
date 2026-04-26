@@ -80,6 +80,22 @@ func (s *Server) handleClients() http.HandlerFunc {
 		}
 
 		clients := s.listClientsSnapshot()
+		// Q2.U-P-03: ask the store for every client's unique-IP count in
+		// one round-trip instead of N sequential SELECTs. Missing IDs in
+		// the result fall back to the in-memory usage snapshot, so the
+		// response stays correct even if the bulk query fails.
+		clientIDs := make([]string, 0, len(clients))
+		for _, c := range clients {
+			clientIDs = append(clientIDs, c.ID)
+		}
+		uniqueIPCounts := map[string]int{}
+		if s.store != nil && len(clientIDs) > 0 {
+			if counts, err := s.store.CountUniqueClientIPsForClients(r.Context(), clientIDs); err == nil {
+				uniqueIPCounts = counts
+			} else {
+				s.logger.Warn("bulk unique-ip count failed", "error", err)
+			}
+		}
 		response := make([]clientListResponse, 0, len(clients))
 		for _, client := range clients {
 			_, assignments, deployments, err := s.clientDetailSnapshot(client.ID)
@@ -90,10 +106,8 @@ func (s *Server) handleClients() http.HandlerFunc {
 			}
 			usage := s.aggregatedClientUsage(client.ID)
 			uniqueIPs := usage.UniqueIPsUsed
-			if s.store != nil {
-				if count, err := s.store.CountUniqueClientIPs(r.Context(), client.ID); err == nil && count > 0 {
-					uniqueIPs = count
-				}
+			if count, ok := uniqueIPCounts[client.ID]; ok && count > 0 {
+				uniqueIPs = count
 			}
 
 			response = append(response, clientListResponse{

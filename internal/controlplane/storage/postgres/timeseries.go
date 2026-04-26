@@ -2,6 +2,8 @@ package postgres
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
@@ -79,6 +81,62 @@ func (s *Store) PruneServerLoadPoints(ctx context.Context, olderThan time.Time) 
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+// ListServerLoadPointsForAgents returns load points for a batch of
+// agents in a single round-trip (Q2.U-P-01). Each agent's slice is
+// sorted by captured_at ascending; missing agents are absent from the
+// map.
+func (s *Store) ListServerLoadPointsForAgents(ctx context.Context, agentIDs []string, from time.Time, to time.Time) (map[string][]storage.ServerLoadPointRecord, error) {
+	out := make(map[string][]storage.ServerLoadPointRecord, len(agentIDs))
+	if len(agentIDs) == 0 {
+		return out, nil
+	}
+	placeholders := make([]string, len(agentIDs))
+	args := make([]any, 0, len(agentIDs)+2)
+	for i, id := range agentIDs {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args = append(args, id)
+	}
+	args = append(args, from.UTC(), to.UTC())
+	fromIdx := len(agentIDs) + 1
+	toIdx := len(agentIDs) + 2
+	query := fmt.Sprintf(`
+		SELECT agent_id, captured_at,
+			cpu_pct_avg, cpu_pct_max, mem_pct_avg, mem_pct_max,
+			disk_pct_avg, disk_pct_max, load_1m, load_5m, load_15m,
+			connections_avg, connections_max, connections_me_avg, connections_direct_avg,
+			active_users_avg, active_users_max,
+			connections_total, connections_bad_total, handshake_timeouts_total,
+			dc_coverage_min_pct, dc_coverage_avg_pct,
+			healthy_upstreams, total_upstreams, net_bytes_sent, net_bytes_recv, sample_count
+		FROM ts_server_load
+		WHERE agent_id IN (%s) AND captured_at >= $%d AND captured_at <= $%d
+		ORDER BY agent_id, captured_at
+	`, strings.Join(placeholders, ","), fromIdx, toIdx)
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var r storage.ServerLoadPointRecord
+		if err := rows.Scan(
+			&r.AgentID, &r.CapturedAt,
+			&r.CPUPctAvg, &r.CPUPctMax, &r.MemPctAvg, &r.MemPctMax,
+			&r.DiskPctAvg, &r.DiskPctMax, &r.Load1M, &r.Load5M, &r.Load15M,
+			&r.ConnectionsAvg, &r.ConnectionsMax, &r.ConnectionsMEAvg, &r.ConnectionsDirectAvg,
+			&r.ActiveUsersAvg, &r.ActiveUsersMax,
+			&r.ConnectionsTotal, &r.ConnectionsBadTotal, &r.HandshakeTimeoutsTotal,
+			&r.DCCoverageMinPct, &r.DCCoverageAvgPct,
+			&r.HealthyUpstreams, &r.TotalUpstreams, &r.NetBytesSent, &r.NetBytesRecv, &r.SampleCount,
+		); err != nil {
+			return nil, err
+		}
+		r.CapturedAt = r.CapturedAt.UTC()
+		out[r.AgentID] = append(out[r.AgentID], r)
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) AppendDCHealthPoint(ctx context.Context, record storage.DCHealthPointRecord) error {
@@ -174,6 +232,42 @@ func (s *Store) CountUniqueClientIPs(ctx context.Context, clientID string) (int,
 	var count int
 	err := s.db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT ip_address) FROM client_ip_history WHERE client_id = $1`, clientID).Scan(&count)
 	return count, err
+}
+
+// CountUniqueClientIPsForClients computes the unique-IP count for each
+// client ID in one query so the /api/clients listing avoids the N+1
+// pattern (Q2.U-P-03).
+func (s *Store) CountUniqueClientIPsForClients(ctx context.Context, clientIDs []string) (map[string]int, error) {
+	out := make(map[string]int, len(clientIDs))
+	if len(clientIDs) == 0 {
+		return out, nil
+	}
+	placeholders := make([]string, len(clientIDs))
+	args := make([]any, len(clientIDs))
+	for i, id := range clientIDs {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = id
+	}
+	query := `
+		SELECT client_id, COUNT(DISTINCT ip_address)
+		FROM client_ip_history
+		WHERE client_id IN (` + strings.Join(placeholders, ",") + `)
+		GROUP BY client_id
+	`
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var clientID string
+		var count int
+		if err := rows.Scan(&clientID, &count); err != nil {
+			return nil, err
+		}
+		out[clientID] = count
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) PruneClientIPHistory(ctx context.Context, olderThan time.Time) (int64, error) {

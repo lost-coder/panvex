@@ -1039,6 +1039,17 @@ func (s *memoryStore) UpdateDiscoveredClientStatus(_ context.Context, id string,
 	return nil
 }
 
+func (s *memoryStore) UpdateDiscoveredClientStatusBulk(_ context.Context, ids []string, status string, updatedAt time.Time) error {
+	for _, id := range ids {
+		if r, ok := s.discoveredClients[id]; ok {
+			r.Status = status
+			r.UpdatedAt = updatedAt
+			s.discoveredClients[id] = r
+		}
+	}
+	return nil
+}
+
 func (s *memoryStore) DeleteDiscoveredClient(_ context.Context, id string) error {
 	if _, ok := s.discoveredClients[id]; !ok {
 		return storage.ErrNotFound
@@ -1105,6 +1116,14 @@ func (s *memoryStore) DeleteClientUsageByClient(_ context.Context, _ string) err
 
 func (s *memoryStore) CountUniqueClientIPs(_ context.Context, _ string) (int, error) {
 	return 0, nil
+}
+
+func (s *memoryStore) CountUniqueClientIPsForClients(_ context.Context, _ []string) (map[string]int, error) {
+	return map[string]int{}, nil
+}
+
+func (s *memoryStore) ListServerLoadPointsForAgents(_ context.Context, _ []string, _, _ time.Time) (map[string][]storage.ServerLoadPointRecord, error) {
+	return map[string][]storage.ServerLoadPointRecord{}, nil
 }
 
 func (s *memoryStore) PruneClientIPHistory(_ context.Context, _ time.Time) (int64, error) {

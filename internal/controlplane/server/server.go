@@ -708,15 +708,19 @@ func (s *Server) routes() http.Handler {
 					operator.Use(s.requireMinimumRole(auth.RoleOperator))
 					operator.Post("/jobs", s.handleCreateJob())
 					operator.Get("/clients", s.handleClients())
-					operator.Post("/clients", s.handleCreateClient())
+					// Q2.U-S-11: rate-limit ALL mutating client endpoints (create,
+					// update, delete, redeploy, adopt, ignore) at the same per-user
+					// budget as the existing rotate-secret. Listing/read stays
+					// unthrottled — operators routinely refresh the table.
+					operator.With(sensitive).Post("/clients", s.handleCreateClient())
 					operator.Get("/clients/{id}", s.handleClient())
-					operator.Put("/clients/{id}", s.handleUpdateClient())
-					operator.Delete("/clients/{id}", s.handleDeleteClient())
+					operator.With(sensitive).Put("/clients/{id}", s.handleUpdateClient())
+					operator.With(sensitive).Delete("/clients/{id}", s.handleDeleteClient())
 					operator.With(sensitive).Post("/clients/{id}/rotate-secret", s.handleRotateClientSecret())
-					operator.Post("/clients/{id}/redeploy", s.handleRedeployClient())
+					operator.With(sensitive).Post("/clients/{id}/redeploy", s.handleRedeployClient())
 					operator.Get("/discovered-clients", s.handleDiscoveredClients())
-					operator.Post("/discovered-clients/{id}/adopt", s.handleAdoptDiscoveredClient())
-					operator.Post("/discovered-clients/{id}/ignore", s.handleIgnoreDiscoveredClient())
+					operator.With(sensitive).Post("/discovered-clients/{id}/adopt", s.handleAdoptDiscoveredClient())
+					operator.With(sensitive).Post("/discovered-clients/{id}/ignore", s.handleIgnoreDiscoveredClient())
 					operator.Post("/telemetry/servers/{id}/refresh-diagnostics", s.handleTelemetryServerRefreshDiagnostics())
 					operator.Get("/fleet-groups", s.handleListFleetGroups())
 					operator.Post("/fleet-groups", s.handleCreateFleetGroup())
