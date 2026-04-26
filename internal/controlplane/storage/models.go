@@ -15,9 +15,24 @@ type UserRecord struct {
 
 // SessionRecord stores one authenticated user session.
 type SessionRecord struct {
-	ID        string
-	UserID    string
-	CreatedAt time.Time
+	ID         string
+	UserID     string
+	CreatedAt  time.Time
+	// LastSeenAt is the persisted sliding-refresh timestamp (Q2.U-S-12).
+	// Updated by SessionStore.TouchSession at most every
+	// sessionTouchThrottle so the idle-timeout survives a restart
+	// without thrashing the store on every authenticated request.
+	LastSeenAt time.Time
+}
+
+// ConsumedTotpRecord stores one already-consumed TOTP code for replay
+// prevention (Q2.U-S-17). The persistence layer keeps the code only
+// long enough to bridge the verifier acceptance window (90s) so a CP
+// restart cannot let an in-flight code be re-used.
+type ConsumedTotpRecord struct {
+	UserID string
+	Code   string
+	UsedAt time.Time
 }
 
 // LoginLockoutRecord stores the persistent login-failure state for
@@ -313,6 +328,11 @@ type RetentionSettingsRecord struct {
 	EventSeconds          int `json:"event_history_seconds"`
 	AuditEventSeconds     int `json:"audit_event_seconds"`
 	MetricSnapshotSeconds int `json:"metric_snapshot_seconds"`
+	// JobsSeconds bounds how long terminal jobs (succeeded/failed/
+	// expired) live in the jobs table before the rollup loop deletes
+	// them via PruneTerminalJobs (Q2.U-P-02). Zero disables job
+	// pruning so existing dev fixtures keep their full history.
+	JobsSeconds int `json:"jobs_seconds"`
 }
 
 // CertificateAuthorityRecord stores the persisted control-plane root CA material.

@@ -39,6 +39,10 @@ func (s *brokenSessionStore) DeleteExpiredSessions(_ context.Context, _ time.Tim
 	return nil
 }
 
+func (s *brokenSessionStore) TouchSession(_ context.Context, _ string, _ time.Time) error {
+	return nil
+}
+
 // TestLoginFailsWhenSessionStoreBroken verifies P2-SEC-07: when the
 // persistent session store rejects PutSession, Authenticate must return
 // ErrSessionStoreUnavailable and must NOT create an in-memory session.

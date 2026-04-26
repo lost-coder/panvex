@@ -262,14 +262,14 @@ func New(options Options) *Server {
 		now = time.Now
 	}
 
-	csrfSecret, err := newCSRFSecret()
+	csrfSecret, err := loadOrCreateCSRFSecret(options.Store)
 	if err != nil {
 		// crypto/rand.Read returning an error means the OS entropy
 		// pool is unavailable — there is nothing meaningful the panel
 		// can do without it (sessions, certs all need it too). Fail
 		// loudly so an operator notices instead of falling back to
 		// CSRF-disabled mode.
-		panic("control-plane: cannot initialise CSRF secret from crypto/rand: " + err.Error())
+		panic("control-plane: cannot initialise CSRF secret: " + err.Error())
 	}
 
 	// Build the secret vault once from the operator passphrase. A nil
@@ -335,6 +335,7 @@ func New(options Options) *Server {
 		server.auth = auth.NewServiceWithStore(options.Store)
 		server.auth.SetSessionStore(options.Store)
 		server.auth.SetVault(vault)
+		server.auth.SetConsumedTotpStore(options.Store)
 		if err := server.auth.RestoreSessions(); err != nil && server.startupErr == nil {
 			server.startupErr = err
 		}

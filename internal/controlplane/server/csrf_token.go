@@ -1,12 +1,17 @@
 package server
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"errors"
+	"log/slog"
 	"net/http"
+
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 // csrfSecretBytes is the size of the per-server HMAC secret used to
@@ -29,6 +34,38 @@ func newCSRFSecret() ([]byte, error) {
 		return nil, err
 	}
 	return buf, nil
+}
+
+// csrfSecretStoreKey is the cp_secrets row used to persist the CSRF
+// HMAC seed across restarts (Q2.U-S-24). Stable on purpose: every
+// restart recovers the same value so in-flight panel forms remain
+// valid.
+const csrfSecretStoreKey = "csrf_secret_v1"
+
+// loadOrCreateCSRFSecret returns the persisted CSRF secret, generating
+// and persisting a fresh one if no row exists or no store is wired.
+// Best-effort persistence: a write failure logs but does not abort
+// startup — the panel keeps running with the in-memory secret.
+func loadOrCreateCSRFSecret(store storage.Store) ([]byte, error) {
+	if store != nil {
+		ctx := context.Background()
+		existing, err := store.GetCPSecret(ctx, csrfSecretStoreKey)
+		if err == nil && len(existing) == csrfSecretBytes {
+			return existing, nil
+		}
+		if err != nil && !errors.Is(err, storage.ErrNotFound) {
+			slog.Warn("control-plane: load CSRF secret failed; minting fresh", "error", err)
+		}
+		fresh, freshErr := newCSRFSecret()
+		if freshErr != nil {
+			return nil, freshErr
+		}
+		if putErr := store.PutCPSecret(ctx, csrfSecretStoreKey, fresh); putErr != nil {
+			slog.Warn("control-plane: persist CSRF secret failed", "error", putErr)
+		}
+		return fresh, nil
+	}
+	return newCSRFSecret()
 }
 
 // csrfTokenForSession derives a stable, opaque CSRF token from the
