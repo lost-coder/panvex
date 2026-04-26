@@ -5,31 +5,25 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lost-coder/panvex/internal/dbsqlc"
 )
 
+// R-Q-03 + R-S-14: routed through dbsqlc.
+
 // ListUserFleetGroupScopes returns every fleet_group_id the user is
-// scoped to. An empty slice means "global" — see R-S-14.
+// scoped to. An empty slice means "global".
 func (s *Store) ListUserFleetGroupScopes(ctx context.Context, userID string) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT fleet_group_id::text
-		FROM user_fleet_group_scopes
-		WHERE user_id = $1
-		ORDER BY fleet_group_id
-	`, userID)
+	if s.sqlDB == nil {
+		return nil, errTxBoundStore
+	}
+	rows, err := dbsqlc.New(s.sqlDB).ListUserFleetGroupScopes(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	result := make([]string, 0)
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		result = append(result, id)
+	if rows == nil {
+		return []string{}, nil
 	}
-	return result, rows.Err()
+	return rows, nil
 }
 
 // SetUserFleetGroupScopes replaces the user's scope set with the supplied
@@ -42,23 +36,23 @@ func (s *Store) SetUserFleetGroupScopes(ctx context.Context, userID string, flee
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM user_fleet_group_scopes WHERE user_id = $1`, userID); err != nil {
+	q := dbsqlc.New(tx)
+	if err := q.ClearUserFleetGroupScopes(ctx, userID); err != nil {
 		return err
 	}
 
-	if len(fleetGroupIDs) > 0 {
-		stmt := `
-			INSERT INTO user_fleet_group_scopes (user_id, fleet_group_id, granted_at, granted_by)
-			VALUES ($1, $2, $3, $4)
-		`
-		for _, id := range fleetGroupIDs {
-			parsed, parseErr := uuid.Parse(id)
-			if parseErr != nil {
-				return parseErr
-			}
-			if _, err := tx.ExecContext(ctx, stmt, userID, parsed, grantedAt.UTC(), grantedBy); err != nil {
-				return err
-			}
+	for _, id := range fleetGroupIDs {
+		parsed, parseErr := uuid.Parse(id)
+		if parseErr != nil {
+			return parseErr
+		}
+		if err := q.InsertUserFleetGroupScope(ctx, dbsqlc.InsertUserFleetGroupScopeParams{
+			UserID:       userID,
+			FleetGroupID: parsed,
+			GrantedAt:    grantedAt.UTC(),
+			GrantedBy:    grantedBy,
+		}); err != nil {
+			return err
 		}
 	}
 

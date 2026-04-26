@@ -7,7 +7,10 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/dbsqlc"
 )
+
+// R-Q-03: routed through dbsqlc.
 
 func toNullableTime(t *time.Time) sql.NullTime {
 	if t == nil || t.IsZero() {
@@ -24,80 +27,66 @@ func fromNullableTime(v sql.NullTime) *time.Time {
 	return &t
 }
 
+func loginLockoutFromRow(row dbsqlc.LoginLockout) storage.LoginLockoutRecord {
+	return storage.LoginLockoutRecord{
+		Username:  row.Username,
+		Failures:  int(row.Failures),
+		LockedAt:  fromNullableTime(row.LockedAt),
+		UpdatedAt: row.UpdatedAt.UTC(),
+	}
+}
+
 func (s *Store) UpsertLoginLockout(ctx context.Context, record storage.LoginLockoutRecord) error {
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO login_lockouts (username, failures, locked_at, updated_at)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (username) DO UPDATE SET
-			failures = EXCLUDED.failures,
-			locked_at = EXCLUDED.locked_at,
-			updated_at = EXCLUDED.updated_at
-	`,
-		record.Username,
-		record.Failures,
-		toNullableTime(record.LockedAt),
-		record.UpdatedAt.UTC(),
-	)
-	return err
+	if s.sqlDB == nil {
+		return errTxBoundStore
+	}
+	return dbsqlc.New(s.sqlDB).UpsertLoginLockout(ctx, dbsqlc.UpsertLoginLockoutParams{
+		Username:  record.Username,
+		Failures:  int32(record.Failures),
+		LockedAt:  toNullableTime(record.LockedAt),
+		UpdatedAt: record.UpdatedAt.UTC(),
+	})
 }
 
 func (s *Store) GetLoginLockout(ctx context.Context, username string) (storage.LoginLockoutRecord, error) {
-	row := s.db.QueryRowContext(ctx, `
-		SELECT username, failures, locked_at, updated_at
-		FROM login_lockouts
-		WHERE username = $1
-	`, username)
-
-	var record storage.LoginLockoutRecord
-	var lockedAt sql.NullTime
-	if err := row.Scan(&record.Username, &record.Failures, &lockedAt, &record.UpdatedAt); err != nil {
+	if s.sqlDB == nil {
+		return storage.LoginLockoutRecord{}, errTxBoundStore
+	}
+	row, err := dbsqlc.New(s.sqlDB).GetLoginLockout(ctx, username)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.LoginLockoutRecord{}, storage.ErrNotFound
 		}
 		return storage.LoginLockoutRecord{}, err
 	}
-	record.LockedAt = fromNullableTime(lockedAt)
-	record.UpdatedAt = record.UpdatedAt.UTC()
-	return record, nil
+	return loginLockoutFromRow(row), nil
 }
 
 func (s *Store) DeleteLoginLockout(ctx context.Context, username string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM login_lockouts WHERE username = $1`, username)
-	return err
+	if s.sqlDB == nil {
+		return errTxBoundStore
+	}
+	return dbsqlc.New(s.sqlDB).DeleteLoginLockout(ctx, username)
 }
 
 func (s *Store) ListLoginLockouts(ctx context.Context) ([]storage.LoginLockoutRecord, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT username, failures, locked_at, updated_at
-		FROM login_lockouts
-	`)
+	if s.sqlDB == nil {
+		return nil, errTxBoundStore
+	}
+	rows, err := dbsqlc.New(s.sqlDB).ListLoginLockouts(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	records := make([]storage.LoginLockoutRecord, 0)
-	for rows.Next() {
-		var record storage.LoginLockoutRecord
-		var lockedAt sql.NullTime
-		if err := rows.Scan(&record.Username, &record.Failures, &lockedAt, &record.UpdatedAt); err != nil {
-			return nil, err
-		}
-		record.LockedAt = fromNullableTime(lockedAt)
-		record.UpdatedAt = record.UpdatedAt.UTC()
-		records = append(records, record)
+	out := make([]storage.LoginLockoutRecord, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, loginLockoutFromRow(row))
 	}
-	return records, rows.Err()
+	return out, nil
 }
 
 func (s *Store) DeleteExpiredLoginLockouts(ctx context.Context, before time.Time) (int64, error) {
-	result, err := s.db.ExecContext(ctx,
-		`DELETE FROM login_lockouts WHERE updated_at < $1`,
-		before.UTC(),
-	)
-	if err != nil {
-		return 0, err
+	if s.sqlDB == nil {
+		return 0, errTxBoundStore
 	}
-	n, _ := result.RowsAffected()
-	return n, nil
+	return dbsqlc.New(s.sqlDB).DeleteExpiredLoginLockouts(ctx, before.UTC())
 }

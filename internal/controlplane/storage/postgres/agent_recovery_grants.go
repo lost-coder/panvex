@@ -7,61 +7,81 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/dbsqlc"
 )
 
+// R-Q-03: routed through dbsqlc. Use/Revoke keep their internal-tx
+// shape so the read-modify-write race is closed; the dbsqlc.Queries
+// surface is bound to the tx via dbsqlc.New(tx).
+
+func grantToParams(grant storage.AgentCertificateRecoveryGrantRecord) dbsqlc.UpsertAgentCertificateRecoveryGrantParams {
+	params := dbsqlc.UpsertAgentCertificateRecoveryGrantParams{
+		AgentID:   grant.AgentID,
+		IssuedBy:  grant.IssuedBy,
+		IssuedAt:  grant.IssuedAt.UTC(),
+		ExpiresAt: grant.ExpiresAt.UTC(),
+	}
+	if grant.UsedAt != nil {
+		params.UsedAt = sql.NullTime{Time: grant.UsedAt.UTC(), Valid: true}
+	}
+	if grant.RevokedAt != nil {
+		params.RevokedAt = sql.NullTime{Time: grant.RevokedAt.UTC(), Valid: true}
+	}
+	return params
+}
+
+func grantFromRow(row dbsqlc.AgentCertificateRecoveryGrant) storage.AgentCertificateRecoveryGrantRecord {
+	rec := storage.AgentCertificateRecoveryGrantRecord{
+		AgentID:   row.AgentID,
+		IssuedBy:  row.IssuedBy,
+		IssuedAt:  row.IssuedAt.UTC(),
+		ExpiresAt: row.ExpiresAt.UTC(),
+	}
+	if row.UsedAt.Valid {
+		t := row.UsedAt.Time.UTC()
+		rec.UsedAt = &t
+	}
+	if row.RevokedAt.Valid {
+		t := row.RevokedAt.Time.UTC()
+		rec.RevokedAt = &t
+	}
+	return rec
+}
+
 func (s *Store) PutAgentCertificateRecoveryGrant(ctx context.Context, grant storage.AgentCertificateRecoveryGrantRecord) error {
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO agent_certificate_recovery_grants (agent_id, issued_by, issued_at, expires_at, used_at, revoked_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		ON CONFLICT (agent_id) DO UPDATE
-		SET issued_by = EXCLUDED.issued_by,
-		    issued_at = EXCLUDED.issued_at,
-		    expires_at = EXCLUDED.expires_at,
-		    used_at = EXCLUDED.used_at,
-		    revoked_at = EXCLUDED.revoked_at
-	`, grant.AgentID, grant.IssuedBy, grant.IssuedAt.UTC(), grant.ExpiresAt.UTC(), grant.UsedAt, grant.RevokedAt)
-	return err
+	if s.sqlDB == nil {
+		return errTxBoundStore
+	}
+	return dbsqlc.New(s.sqlDB).UpsertAgentCertificateRecoveryGrant(ctx, grantToParams(grant))
 }
 
 func (s *Store) ListAgentCertificateRecoveryGrants(ctx context.Context) ([]storage.AgentCertificateRecoveryGrantRecord, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT agent_id, issued_by, issued_at, expires_at, used_at, revoked_at
-		FROM agent_certificate_recovery_grants
-		ORDER BY issued_at, agent_id
-	`)
+	if s.sqlDB == nil {
+		return nil, errTxBoundStore
+	}
+	rows, err := dbsqlc.New(s.sqlDB).ListAgentCertificateRecoveryGrants(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	result := make([]storage.AgentCertificateRecoveryGrantRecord, 0)
-	for rows.Next() {
-		grant, err := scanAgentCertificateRecoveryGrantRecord(rows)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, grant)
+	out := make([]storage.AgentCertificateRecoveryGrantRecord, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, grantFromRow(row))
 	}
-
-	return result, rows.Err()
+	return out, nil
 }
 
 func (s *Store) GetAgentCertificateRecoveryGrant(ctx context.Context, agentID string) (storage.AgentCertificateRecoveryGrantRecord, error) {
-	row := s.db.QueryRowContext(ctx, `
-		SELECT agent_id, issued_by, issued_at, expires_at, used_at, revoked_at
-		FROM agent_certificate_recovery_grants
-		WHERE agent_id = $1
-	`, agentID)
-
-	grant, err := scanAgentCertificateRecoveryGrantRecord(row)
+	if s.sqlDB == nil {
+		return storage.AgentCertificateRecoveryGrantRecord{}, errTxBoundStore
+	}
+	row, err := dbsqlc.New(s.sqlDB).GetAgentCertificateRecoveryGrant(ctx, agentID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.AgentCertificateRecoveryGrantRecord{}, storage.ErrNotFound
 		}
 		return storage.AgentCertificateRecoveryGrantRecord{}, err
 	}
-
-	return grant, nil
+	return grantFromRow(row), nil
 }
 
 func (s *Store) UseAgentCertificateRecoveryGrant(ctx context.Context, agentID string, usedAt time.Time) (storage.AgentCertificateRecoveryGrantRecord, error) {
@@ -71,32 +91,23 @@ func (s *Store) UseAgentCertificateRecoveryGrant(ctx context.Context, agentID st
 	}
 	defer tx.Rollback()
 
-	row := tx.QueryRowContext(ctx, `
-		SELECT agent_id, issued_by, issued_at, expires_at, used_at, revoked_at
-		FROM agent_certificate_recovery_grants
-		WHERE agent_id = $1
-	`, agentID)
-
-	grant, err := scanAgentCertificateRecoveryGrantRecord(row)
+	q := dbsqlc.New(tx)
+	row, err := q.GetAgentCertificateRecoveryGrant(ctx, agentID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.AgentCertificateRecoveryGrantRecord{}, storage.ErrNotFound
 		}
 		return storage.AgentCertificateRecoveryGrantRecord{}, err
 	}
+	grant := grantFromRow(row)
 	if grant.UsedAt != nil || grant.RevokedAt != nil {
 		return storage.AgentCertificateRecoveryGrantRecord{}, storage.ErrConflict
 	}
 
-	result, err := tx.ExecContext(ctx, `
-		UPDATE agent_certificate_recovery_grants
-		SET used_at = $1
-		WHERE agent_id = $2 AND used_at IS NULL AND revoked_at IS NULL
-	`, usedAt.UTC(), agentID)
-	if err != nil {
-		return storage.AgentCertificateRecoveryGrantRecord{}, err
-	}
-	rowsAffected, err := result.RowsAffected()
+	rowsAffected, err := q.MarkAgentCertificateRecoveryGrantUsed(ctx, dbsqlc.MarkAgentCertificateRecoveryGrantUsedParams{
+		UsedAt:  sql.NullTime{Time: usedAt.UTC(), Valid: true},
+		AgentID: agentID,
+	})
 	if err != nil {
 		return storage.AgentCertificateRecoveryGrantRecord{}, err
 	}
@@ -119,32 +130,23 @@ func (s *Store) RevokeAgentCertificateRecoveryGrant(ctx context.Context, agentID
 	}
 	defer tx.Rollback()
 
-	row := tx.QueryRowContext(ctx, `
-		SELECT agent_id, issued_by, issued_at, expires_at, used_at, revoked_at
-		FROM agent_certificate_recovery_grants
-		WHERE agent_id = $1
-	`, agentID)
-
-	grant, err := scanAgentCertificateRecoveryGrantRecord(row)
+	q := dbsqlc.New(tx)
+	row, err := q.GetAgentCertificateRecoveryGrant(ctx, agentID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.AgentCertificateRecoveryGrantRecord{}, storage.ErrNotFound
 		}
 		return storage.AgentCertificateRecoveryGrantRecord{}, err
 	}
+	grant := grantFromRow(row)
 	if grant.RevokedAt != nil || grant.UsedAt != nil {
 		return grant, nil
 	}
 
-	result, err := tx.ExecContext(ctx, `
-		UPDATE agent_certificate_recovery_grants
-		SET revoked_at = $1
-		WHERE agent_id = $2 AND used_at IS NULL AND revoked_at IS NULL
-	`, revokedAt.UTC(), agentID)
-	if err != nil {
-		return storage.AgentCertificateRecoveryGrantRecord{}, err
-	}
-	rowsAffected, err := result.RowsAffected()
+	rowsAffected, err := q.RevokeAgentCertificateRecoveryGrant(ctx, dbsqlc.RevokeAgentCertificateRecoveryGrantParams{
+		RevokedAt: sql.NullTime{Time: revokedAt.UTC(), Valid: true},
+		AgentID:   agentID,
+	})
 	if err != nil {
 		return storage.AgentCertificateRecoveryGrantRecord{}, err
 	}
@@ -157,31 +159,5 @@ func (s *Store) RevokeAgentCertificateRecoveryGrant(ctx context.Context, agentID
 
 	revokedValue := revokedAt.UTC()
 	grant.RevokedAt = &revokedValue
-	return grant, nil
-}
-
-type agentCertificateRecoveryGrantRecordScanner interface {
-	Scan(dest ...any) error
-}
-
-func scanAgentCertificateRecoveryGrantRecord(scanner agentCertificateRecoveryGrantRecordScanner) (storage.AgentCertificateRecoveryGrantRecord, error) {
-	var grant storage.AgentCertificateRecoveryGrantRecord
-	var usedAt sql.NullTime
-	var revokedAt sql.NullTime
-	if err := scanner.Scan(&grant.AgentID, &grant.IssuedBy, &grant.IssuedAt, &grant.ExpiresAt, &usedAt, &revokedAt); err != nil {
-		return storage.AgentCertificateRecoveryGrantRecord{}, err
-	}
-
-	grant.IssuedAt = grant.IssuedAt.UTC()
-	grant.ExpiresAt = grant.ExpiresAt.UTC()
-	if usedAt.Valid {
-		timeValue := usedAt.Time.UTC()
-		grant.UsedAt = &timeValue
-	}
-	if revokedAt.Valid {
-		timeValue := revokedAt.Time.UTC()
-		grant.RevokedAt = &timeValue
-	}
-
 	return grant, nil
 }

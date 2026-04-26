@@ -5,38 +5,44 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/dbsqlc"
 )
 
+// R-Q-03: routed through dbsqlc.
+
 func (s *Store) UpsertConsumedTotp(ctx context.Context, record storage.ConsumedTotpRecord) error {
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO consumed_totp (user_id, code, used_at)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (user_id, code) DO UPDATE SET used_at = EXCLUDED.used_at
-	`, record.UserID, record.Code, record.UsedAt.UTC())
-	return err
+	if s.sqlDB == nil {
+		return errTxBoundStore
+	}
+	return dbsqlc.New(s.sqlDB).UpsertConsumedTotp(ctx, dbsqlc.UpsertConsumedTotpParams{
+		UserID: record.UserID,
+		Code:   record.Code,
+		UsedAt: record.UsedAt.UTC(),
+	})
 }
 
 func (s *Store) ListConsumedTotp(ctx context.Context) ([]storage.ConsumedTotpRecord, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT user_id, code, used_at FROM consumed_totp
-	`)
+	if s.sqlDB == nil {
+		return nil, errTxBoundStore
+	}
+	rows, err := dbsqlc.New(s.sqlDB).ListConsumedTotp(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []storage.ConsumedTotpRecord
-	for rows.Next() {
-		var rec storage.ConsumedTotpRecord
-		if err := rows.Scan(&rec.UserID, &rec.Code, &rec.UsedAt); err != nil {
-			return nil, err
-		}
-		rec.UsedAt = rec.UsedAt.UTC()
-		out = append(out, rec)
+	out := make([]storage.ConsumedTotpRecord, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, storage.ConsumedTotpRecord{
+			UserID: row.UserID,
+			Code:   row.Code,
+			UsedAt: row.UsedAt.UTC(),
+		})
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func (s *Store) DeleteExpiredConsumedTotp(ctx context.Context, before time.Time) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM consumed_totp WHERE used_at < $1`, before.UTC())
-	return err
+	if s.sqlDB == nil {
+		return errTxBoundStore
+	}
+	return dbsqlc.New(s.sqlDB).DeleteExpiredConsumedTotp(ctx, before.UTC())
 }

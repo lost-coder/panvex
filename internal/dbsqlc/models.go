@@ -423,3 +423,10 @@ type UserAppearance struct {
 	HelpMode  string
 	UpdatedAt time.Time
 }
+
+type UserFleetGroupScope struct {
+	UserID       string
+	FleetGroupID uuid.UUID
+	GrantedAt    time.Time
+	GrantedBy    string
+}
