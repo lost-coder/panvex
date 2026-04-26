@@ -222,7 +222,7 @@ jobs:
         # (web/package-lock.json), and known-bad config patterns. Severity
         # gate matches the npm-audit bar so behaviour is consistent across
         # ecosystems.
-        uses: aquasecurity/trivy-action@0.32.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -237,7 +237,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Trivy config scan (Dockerfile)
-        uses: aquasecurity/trivy-action@0.32.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: config
           scan-ref: Dockerfile
