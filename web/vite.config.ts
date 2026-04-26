@@ -28,6 +28,13 @@ export default defineConfig(({ mode }) => ({
     // for the `vite dev` server). Explicit `false` for embed guards against
     // future default changes and against `vite build --sourcemap` at the CLI.
     sourcemap: mode === "embed" ? false : undefined,
+    // Never inline font files as data: URIs. The panel ships a strict
+    // `font-src 'self'` CSP (see internal/controlplane/server/http_security.go);
+    // small @fontsource subset files (cyrillic-ext, vietnamese, …) sit under
+    // Vite's default 4 KiB inline threshold and would otherwise be embedded
+    // into the bundled CSS as `data:font/woff2;base64,…`, tripping CSP.
+    assetsInlineLimit: (filePath) =>
+      /\.(woff2?|ttf|otf|eot)$/.test(filePath) ? false : undefined,
     // P3-FE-02: manual vendor chunks. After Phase 4 the UI-kit lives inside
     // src/ui/ instead of a separate package, so we split by direct-dep
     // heavyweight modules (recharts/motion/radix/tanstack/react) to keep
