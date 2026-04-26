@@ -5,32 +5,34 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/x509"
 	"encoding/base64"
-	"encoding/pem"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 )
 
-// TestEmbeddedKeyParses ensures that the signing_key.pub we ship is well-formed
-// ECDSA-P256. A malformed commit here would silently break every release path
-// at runtime.
+// TestEmbeddedKeyParses ensures every signing_key*.pub we ship is well-formed
+// ECDSA-P256. A malformed commit here would silently break every release
+// path at runtime.
 func TestEmbeddedKeyParses(t *testing.T) {
-	pub, err := loadPublicKey()
+	keys, err := loadPublicKeys()
 	if err != nil {
-		t.Fatalf("loadPublicKey() error = %v", err)
+		t.Fatalf("loadPublicKeys() error = %v", err)
 	}
-	if pub.Curve != elliptic.P256() {
-		t.Fatalf("embedded key curve = %v, want P-256", pub.Curve)
+	if len(keys) == 0 {
+		t.Fatal("loadPublicKeys() returned no keys")
+	}
+	for i, pub := range keys {
+		if pub.Curve != elliptic.P256() {
+			t.Fatalf("embedded key #%d curve = %v, want P-256", i, pub.Curve)
+		}
 	}
 }
 
-// TestVerifyArtifactBytes_ValidSignature cross-checks our Verify implementation
-// against a fresh signature produced in-test with the same embedded public key.
-// Because we cannot embed the private key, the test signs with an ephemeral
-// key and replaces the embedded PEM for the duration of the test.
+// TestVerifyArtifactBytes_ValidSignature cross-checks the Verify implementation
+// against a fresh signature produced in-test. The matching public key is
+// installed via setKeysForTesting because we cannot embed a private key.
 func TestVerifyArtifactBytes_ValidSignature(t *testing.T) {
 	artifact := []byte("hello panvex")
 
@@ -38,15 +40,7 @@ func TestVerifyArtifactBytes_ValidSignature(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateKey error = %v", err)
 	}
-	pubDER, err := x509.MarshalPKIXPublicKey(&priv.PublicKey)
-	if err != nil {
-		t.Fatalf("MarshalPKIXPublicKey error = %v", err)
-	}
-	pubPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER})
-
-	restore := signingKeyPEM
-	signingKeyPEM = pubPEM
-	t.Cleanup(func() { signingKeyPEM = restore })
+	t.Cleanup(setKeysForTesting(&priv.PublicKey))
 
 	h := sha256.Sum256(artifact)
 	sig, err := ecdsa.SignASN1(rand.Reader, priv, h[:])
@@ -65,13 +59,43 @@ func TestVerifyArtifactBytes_ValidSignature(t *testing.T) {
 	}
 }
 
+// TestVerifyArtifactBytes_MultiKeyTrust covers the rotation case: the
+// trust set carries TWO valid keys. A signature from either must verify.
+func TestVerifyArtifactBytes_MultiKeyTrust(t *testing.T) {
+	priv1, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	priv2, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	t.Cleanup(setKeysForTesting(&priv1.PublicKey, &priv2.PublicKey))
+
+	artifact := []byte("multi-key payload")
+	h := sha256.Sum256(artifact)
+
+	for i, priv := range []*ecdsa.PrivateKey{priv1, priv2} {
+		sig, _ := ecdsa.SignASN1(rand.Reader, priv, h[:])
+		if err := VerifyArtifactBytes(artifact, sig); err != nil {
+			t.Fatalf("key #%d signature must verify, got %v", i, err)
+		}
+	}
+}
+
+// TestVerifyArtifactBytes_RejectsUntrustedKey ensures the multi-key loop
+// does NOT accept a signature from a key outside the trust set.
+func TestVerifyArtifactBytes_RejectsUntrustedKey(t *testing.T) {
+	trusted, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	untrusted, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	t.Cleanup(setKeysForTesting(&trusted.PublicKey))
+
+	artifact := []byte("payload")
+	h := sha256.Sum256(artifact)
+	sig, _ := ecdsa.SignASN1(rand.Reader, untrusted, h[:])
+
+	if err := VerifyArtifactBytes(artifact, sig); !errors.Is(err, ErrSignatureMismatch) {
+		t.Fatalf("err = %v, want ErrSignatureMismatch", err)
+	}
+}
+
 func TestVerifyArtifactBytes_Mismatch(t *testing.T) {
 	priv, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	pubDER, _ := x509.MarshalPKIXPublicKey(&priv.PublicKey)
-	pubPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER})
-	restore := signingKeyPEM
-	signingKeyPEM = pubPEM
-	t.Cleanup(func() { signingKeyPEM = restore })
+	t.Cleanup(setKeysForTesting(&priv.PublicKey))
 
 	h := sha256.Sum256([]byte("original"))
 	sig, _ := ecdsa.SignASN1(rand.Reader, priv, h[:])
@@ -89,11 +113,7 @@ func TestVerifyArtifactBytes_MissingSignature(t *testing.T) {
 
 func TestVerifyArtifactFile(t *testing.T) {
 	priv, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	pubDER, _ := x509.MarshalPKIXPublicKey(&priv.PublicKey)
-	pubPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER})
-	restore := signingKeyPEM
-	signingKeyPEM = pubPEM
-	t.Cleanup(func() { signingKeyPEM = restore })
+	t.Cleanup(setKeysForTesting(&priv.PublicKey))
 
 	dir := t.TempDir()
 	artifactPath := filepath.Join(dir, "artifact.bin")
