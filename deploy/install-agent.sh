@@ -165,7 +165,8 @@ summary_box() {
   echo ""
   echo "  $border"
   while [[ $# -gt 0 ]]; do
-    printf "  ${CYAN}│${RESET} %-28s %s\n" "$1" "$2"
+    local label=$1 value=$2
+    printf "  ${CYAN}│${RESET} %-28s %s\n" "$label" "$value"
     shift 2
   done
   echo "  $border"

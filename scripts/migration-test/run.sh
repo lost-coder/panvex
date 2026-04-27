@@ -2,6 +2,9 @@
 #
 # Migration stress test (P2-TEST-03).
 #
+# shellcheck disable=SC2034
+readonly SEPARATOR="=============================================================="
+#
 # Seeds a fresh SQLite database with production-scale data at schema version
 # 0001, then runs the full goose migration chain to HEAD and measures timing
 # per version. Validates basic data-integrity invariants at the end.
@@ -50,7 +53,7 @@ SEED_AUDITS="${SEED_AUDITS:-500000}"
 SEED_FLEET_GROUPS="${SEED_FLEET_GROUPS:-32}"
 SEED_DISCOVERED="${SEED_DISCOVERED:-0}"
 
-echo "=============================================================="
+echo "$SEPARATOR"
 echo " Panvex migration stress test"
 echo "   db:       $DB_PATH"
 echo "   agents:   $SEED_AGENTS"
@@ -58,7 +61,7 @@ echo "   metrics:  $SEED_METRICS"
 echo "   clients:  $SEED_CLIENTS"
 echo "   jobs:     $SEED_JOBS"
 echo "   audits:   $SEED_AUDITS"
-echo "=============================================================="
+echo "$SEPARATOR"
 
 # Always clean up unless caller asked to keep the artefact.
 if [[ "${KEEP_DB:-0}" != "1" ]]; then
@@ -153,8 +156,8 @@ else
 fi
 
 echo ""
-echo "=============================================================="
+echo "$SEPARATOR"
 echo " OK — migration stress test passed"
 echo "   total migration time: ${total_ms} ms"
 echo "   seeded DB size:       $SEEDED_SIZE"
-echo "=============================================================="
+echo "$SEPARATOR"

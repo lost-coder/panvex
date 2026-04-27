@@ -9,6 +9,11 @@ APP_NAME="panvex-control-plane"
 SERVICE_NAME="panvex-control-plane"
 REPO="${PANVEX_REPO:-lost-coder/panvex}"
 
+# Reused literals (Sonar S1192).
+readonly STORAGE_SQLITE="sqlite"
+readonly TLS_MODE_DIRECT="direct"
+readonly AWK_FIRST_FIELD='{print $1}'
+
 # ── Colors ──────────────────────────────────────────────────────────────────
 
 BOLD=$'\033[1m'
@@ -359,7 +364,8 @@ summary_box() {
   echo ""
   echo "  ${CYAN}${border}${RESET}"
   while [[ $# -gt 0 ]]; do
-    printf "  ${CYAN}│${RESET} %-28s %s\n" "$1" "$2"
+    local label=$1 value=$2
+    printf "  ${CYAN}│${RESET} %-28s %s\n" "$label" "$value"
     shift 2
   done
   echo "  ${CYAN}${border}${RESET}"
@@ -392,7 +398,7 @@ run_noninteractive() {
 
   [[ -n "$admin_pass" ]] || die "PANVEX_ADMIN_PASS is required for non-interactive install"
 
-  if [[ "$storage_driver" = "sqlite" ]] && [[ -z "$storage_dsn" ]]; then
+  if [[ "$storage_driver" = "$STORAGE_SQLITE" ]] && [[ -z "$storage_dsn" ]]; then
     storage_dsn="$data_dir/panvex.db"
   fi
 
@@ -455,9 +461,9 @@ install_panvex() {
   info "Verifying checksum..."
   download_file "${archive_url}.sha256" "$TMP_DIR/checksum"
   local expected_hash
-  expected_hash=$(awk '{print $1}' "$TMP_DIR/checksum")
+  expected_hash=$(awk "$AWK_FIRST_FIELD" "$TMP_DIR/checksum")
   local actual_hash
-  actual_hash=$(sha256sum "$TMP_DIR/$asset_name" | awk '{print $1}')
+  actual_hash=$(sha256sum "$TMP_DIR/$asset_name" | awk "$AWK_FIRST_FIELD")
   if [[ "$expected_hash" != "$actual_hash" ]]; then
     die "Checksum verification failed (expected: $expected_hash, got: $actual_hash)"
   fi
@@ -589,7 +595,7 @@ EOF
   if [[ -n "$tls_cert_file" ]] && [[ -f "$HOME/.acme.sh/acme.sh" ]]; then
     # Extract domain from cert path: /var/lib/panvex/tls/fullchain.pem → look up from acme.sh
     local acme_domain=""
-    acme_domain=$("$HOME/.acme.sh/acme.sh" --list 2>/dev/null | tail -1 | awk '{print $1}')
+    acme_domain=$("$HOME/.acme.sh/acme.sh" --list 2>/dev/null | tail -1 | awk "$AWK_FIRST_FIELD")
     if [[ -n "$acme_domain" ]]; then
       local tls_dir
       tls_dir=$(dirname "$tls_cert_file")
@@ -659,7 +665,7 @@ UNINSTALL
   if [[ "$start_now" = "1" ]] || [[ "$start_now" = "y" ]]; then
     systemctl start "${SERVICE_NAME}.service"
     local health_scheme="http"
-    [[ "$tls_mode" = "direct" ]] && health_scheme="https"
+    [[ "$tls_mode" = "$TLS_MODE_DIRECT" ]] && health_scheme="https"
     wait_healthy "$http_port" 15 "$health_scheme" "$panel_path"
   fi
 
@@ -667,10 +673,10 @@ UNINSTALL
   step "Installation Complete"
 
   local host_ip
-  host_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1")
+  host_ip=$(hostname -I 2>/dev/null | awk "$AWK_FIRST_FIELD" || echo "127.0.0.1")
 
   local ui_scheme="http"
-  [[ "$tls_mode" = "direct" ]] && ui_scheme="https"
+  [[ "$tls_mode" = "$TLS_MODE_DIRECT" ]] && ui_scheme="https"
 
   summary_box \
     "Version:" "${installed_ver}" \
@@ -740,7 +746,7 @@ run_interactive() {
   local bin_dir="/usr/local/bin"
   local config_dir="/etc/panvex"
   local data_dir="/var/lib/panvex"
-  local storage_driver="sqlite"
+  local storage_driver="$STORAGE_SQLITE"
   local storage_dsn=""
   local encryption_key=""
 
@@ -749,19 +755,18 @@ run_interactive() {
     bin_dir=$(ask "Binary directory" "$bin_dir")
     config_dir=$(ask "Config directory" "$config_dir")
     data_dir=$(ask "Data directory" "$data_dir")
-    storage_driver=$(ask_choice "Storage driver" "sqlite" "sqlite" "postgres")
+    storage_driver=$(ask_choice "Storage driver" "$STORAGE_SQLITE" "$STORAGE_SQLITE" "postgres")
   fi
 
   case "$storage_driver" in
     sqlite) storage_dsn="$data_dir/panvex.db" ;;
     postgres) storage_dsn=$(ask "PostgreSQL DSN" "postgres://panvex:password@127.0.0.1:5432/panvex?sslmode=disable") ;;
+    *) die "Unknown storage driver: $storage_driver" ;;
   esac
 
-  if [[ "$mode" = "Advanced" ]]; then
-    if ask_yesno "Encrypt CA private key at rest?" "n"; then
-      encryption_key=$(ask_password "Encryption passphrase")
-      [[ -n "$encryption_key" ]] || die "Encryption passphrase cannot be empty"
-    fi
+  if [[ "$mode" = "Advanced" ]] && ask_yesno "Encrypt CA private key at rest?" "n"; then
+    encryption_key=$(ask_password "Encryption passphrase")
+    [[ -n "$encryption_key" ]] || die "Encryption passphrase cannot be empty"
   fi
 
   # ── 1. TLS ─────────────────────────────────────────────────────────────
@@ -771,14 +776,14 @@ run_interactive() {
   local tls_cert_file="" tls_key_file=""
   local http_port="" grpc_port=""
   local server_ip
-  server_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "")
+  server_ip=$(hostname -I 2>/dev/null | awk "$AWK_FIRST_FIELD" || echo "")
 
   tls_mode=$(ask_choice "How to handle HTTPS" "Automatic (Let's Encrypt)" \
     "Automatic (Let's Encrypt)" "Manual (own certificate)" "None / behind reverse proxy")
 
   case "$tls_mode" in
     "Automatic (Let's Encrypt)")
-      tls_mode="direct"
+      tls_mode="$TLS_MODE_DIRECT"
 
       local acme_domain acme_email
       acme_domain=$(ask "Panel domain or IP (Enter = ${server_ip})" "")
@@ -819,7 +824,7 @@ run_interactive() {
       grpc_port="8443"
       ;;
     "Manual (own certificate)")
-      tls_mode="direct"
+      tls_mode="$TLS_MODE_DIRECT"
       info "After installation, set cert_file and key_file in config.toml"
       http_port="443"
       grpc_port="8443"
@@ -830,6 +835,7 @@ run_interactive() {
       http_port="8080"
       grpc_port="8443"
       ;;
+    *) die "Unknown TLS option: $tls_mode" ;;
   esac
 
   # ── 2. Ports ───────────────────────────────────────────────────────────
@@ -839,10 +845,8 @@ run_interactive() {
   grpc_port=$(ask_port "Agent gateway port (gRPC)" "$grpc_port")
 
   local open_fw="0"
-  if has_ufw || has_firewalld; then
-    if ask_yesno "Open ports ${http_port} and ${grpc_port} in firewall?" "y"; then
-      open_fw="1"
-    fi
+  if (has_ufw || has_firewalld) && ask_yesno "Open ports ${http_port} and ${grpc_port} in firewall?" "y"; then
+    open_fw="1"
   fi
 
   # ── 3. Access control ──────────────────────────────────────────────────
@@ -891,7 +895,7 @@ run_interactive() {
   step "Review"
 
   local panel_url_display
-  if [[ "$tls_mode" = "direct" ]]; then
+  if [[ "$tls_mode" = "$TLS_MODE_DIRECT" ]]; then
     panel_url_display="https://${server_ip}:${http_port}${panel_path}/"
   else
     panel_url_display="http://${server_ip}:${http_port}${panel_path}/"
