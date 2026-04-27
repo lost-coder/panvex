@@ -17,6 +17,14 @@ function num(v: unknown): number {
   return typeof v === "number" ? v : 0;
 }
 
+// str narrows an unknown diagnostic blob field to a string. The
+// previous String(v ?? "") pattern coerced objects to "[object Object]"
+// (Sonar S6551); this helper returns "" for anything that is not
+// already a string.
+function str(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+
 function pct1(v: number | undefined | null): number {
   return v ? Math.round((v ?? 0) * 10) / 10 : 0;
 }
@@ -186,7 +194,7 @@ function transformMePool(
       inflightDcs: num(refill.inflight_dc_total),
       byDc: byDcRaw.map((e: Record<string, unknown>) => ({
         dc: num(e.dc),
-        family: String(e.family ?? ""),
+        family: str(e.family),
         inflight: num(e.inflight),
       })),
     },
@@ -230,7 +238,7 @@ export function transformServerDetail(
       : [];
     const endpointWriters = Array.isArray(detail?.endpoint_writers)
       ? (detail!.endpoint_writers as Array<Record<string, unknown>>).map((ew) => ({
-          endpoint: String(ew.endpoint ?? ""),
+          endpoint: str(ew.endpoint),
           activeWriters: num(ew.active_writers),
         }))
       : [];
@@ -308,19 +316,15 @@ export function transformServerDetail(
   // Build systemInfo from diagnostics if available
   const sysInfoRaw = detail.diagnostics?.system_info ?? {};
   const systemInfo: ServerDetailPageProps["server"]["systemInfo"] = {
-    version: String(sysInfoRaw.version ?? agent?.version ?? ""),
-    targetArch: String(sysInfoRaw.target_arch ?? ""),
-    targetOs: String(sysInfoRaw.target_os ?? ""),
-    buildProfile: String(sysInfoRaw.build_profile ?? ""),
-    gitCommit: sysInfoRaw.git_commit
-      ? String(sysInfoRaw.git_commit)
-      : undefined,
-    buildTimeUtc: sysInfoRaw.build_time_utc
-      ? String(sysInfoRaw.build_time_utc)
-      : undefined,
+    version: str(sysInfoRaw.version) || str(agent?.version),
+    targetArch: str(sysInfoRaw.target_arch),
+    targetOs: str(sysInfoRaw.target_os),
+    buildProfile: str(sysInfoRaw.build_profile),
+    gitCommit: str(sysInfoRaw.git_commit) || undefined,
+    buildTimeUtc: str(sysInfoRaw.build_time_utc) || undefined,
     uptimeSeconds: runtime?.uptime_seconds ?? 0,
-    configHash: String(sysInfoRaw.config_hash ?? ""),
-    configPath: String(sysInfoRaw.config_path ?? ""),
+    configHash: str(sysInfoRaw.config_hash),
+    configPath: str(sysInfoRaw.config_path),
     configReloadCount:
       typeof sysInfoRaw.config_reload_count === "number"
         ? sysInfoRaw.config_reload_count
