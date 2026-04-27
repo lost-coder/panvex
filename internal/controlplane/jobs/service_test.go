@@ -1547,7 +1547,7 @@ func TestAcknowledgedJobsExpireAfterTTL(t *testing.T) {
 	if evicted := service.PruneKeys(time.Minute); evicted != 1 {
 		t.Fatalf("PruneKeys post-expiry = %d, want 1", evicted)
 	}
-	if applied := service.RecordResult(context.Background(), "agent-1", job.ID, true, "late ok", "", now.Add(time.Second)); applied {
+	if service.RecordResult(context.Background(), "agent-1", job.ID, true, "late ok", "", now.Add(time.Second)) {
 		t.Fatal("RecordResult on evicted job = true, want false (idempotent safety net)")
 	}
 }
@@ -1614,7 +1614,7 @@ func TestStartAcknowledgedExpiryWorker(t *testing.T) {
 // dropping the result.
 func TestRecordResultReportsUnknownJob(t *testing.T) {
 	service := NewService()
-	if applied := service.RecordResult(context.Background(), "agent-1", "job-never-existed", true, "ok", "", time.Now()); applied {
+	if service.RecordResult(context.Background(), "agent-1", "job-never-existed", true, "ok", "", time.Now()) {
 		t.Fatal("RecordResult on unknown job = true, want false")
 	}
 }

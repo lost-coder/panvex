@@ -105,7 +105,7 @@ func runTransactContract(t *testing.T, open OpenStore) {
 
 		func() {
 			defer func() {
-				if r := recover(); r == nil {
+				if recover() == nil {
 					t.Fatalf("expected panic to propagate out of Transact")
 				}
 			}()

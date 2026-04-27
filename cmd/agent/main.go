@@ -1012,7 +1012,7 @@ func jobAcknowledgementMessage(agentID string, jobID string, observedAt time.Tim
 
 func dialGateway(ctx context.Context, gatewayAddr string, serverName string, caPEM string, certificate *tls.Certificate) (*grpc.ClientConn, error) {
 	pool := x509.NewCertPool()
-	if ok := pool.AppendCertsFromPEM([]byte(caPEM)); !ok {
+	if !pool.AppendCertsFromPEM([]byte(caPEM)) {
 		return nil, errors.New("failed to append control-plane CA")
 	}
 

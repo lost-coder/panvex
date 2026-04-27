@@ -1706,9 +1706,7 @@ func TestHTTPEmbeddedUIBaseHrefOnDeepLinkReload(t *testing.T) {
 	// The tag must sit inside <head> so relative URLs encountered later
 	// in the document (including any runtime-emitted ones) are resolved
 	// against it.
-	if idx := strings.Index(body, `<base href="/">`); idx < strings.Index(body, "</head>") {
-		// expected ordering — no-op
-	} else {
+	if strings.Index(body, `<base href="/">`) >= strings.Index(body, "</head>") {
 		t.Fatalf("<base href> must precede </head>; body = %q", body)
 	}
 }

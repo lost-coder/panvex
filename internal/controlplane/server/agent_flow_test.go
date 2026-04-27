@@ -89,7 +89,7 @@ func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T
 		t.Fatalf("applyAgentSnapshot() error = %v", err)
 	}
 
-	if state := server.presence.Evaluate(identity.AgentID, now.Add(20*time.Second)); state == "" {
+	if server.presence.Evaluate(identity.AgentID, now.Add(20*time.Second)) == "" {
 		t.Fatal("presence state = empty, want tracked presence")
 	}
 
