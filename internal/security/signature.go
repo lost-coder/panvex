@@ -59,47 +59,66 @@ var (
 // verify) instead of silently accepting unsigned artifacts.
 func loadPublicKeys() ([]*ecdsa.PublicKey, error) {
 	publicKeysOnce.Do(func() {
-		entries, err := fs.ReadDir(signingKeysFS, ".")
+		names, err := listSigningKeyNames()
 		if err != nil {
-			publicKeysErr = fmt.Errorf("read embedded signing keys: %w", err)
+			publicKeysErr = err
 			return
 		}
-		// Deterministic order makes failure messages reproducible across
-		// builds and guarantees the dominant key (alphabetically first
-		// filename) is tried first when multiple are present.
-		names := make([]string, 0, len(entries))
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-			if !strings.HasPrefix(e.Name(), "signing_key") || !strings.HasSuffix(e.Name(), ".pub") {
-				continue
-			}
-			names = append(names, e.Name())
-		}
-		sort.Strings(names)
-		if len(names) == 0 {
-			publicKeysErr = errors.New("no embedded signing keys (signing_key*.pub) found")
+		keys, err := readSigningKeys(names)
+		if err != nil {
+			publicKeysErr = err
 			return
-		}
-
-		keys := make([]*ecdsa.PublicKey, 0, len(names))
-		for _, name := range names {
-			raw, err := fs.ReadFile(signingKeysFS, name)
-			if err != nil {
-				publicKeysErr = fmt.Errorf("read %s: %w", name, err)
-				return
-			}
-			pub, err := parsePublicKey(name, raw)
-			if err != nil {
-				publicKeysErr = err
-				return
-			}
-			keys = append(keys, pub)
 		}
 		publicKeys = keys
 	})
 	return publicKeys, publicKeysErr
+}
+
+// listSigningKeyNames returns the alphabetised set of `signing_key*.pub`
+// entries embedded in signingKeysFS. Deterministic order makes failure
+// messages reproducible across builds and guarantees the dominant key
+// (alphabetically first filename) is tried first when multiple are
+// present.
+func listSigningKeyNames() ([]string, error) {
+	entries, err := fs.ReadDir(signingKeysFS, ".")
+	if err != nil {
+		return nil, fmt.Errorf("read embedded signing keys: %w", err)
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasPrefix(name, "signing_key") || !strings.HasSuffix(name, ".pub") {
+			continue
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	if len(names) == 0 {
+		return nil, errors.New("no embedded signing keys (signing_key*.pub) found")
+	}
+	return names, nil
+}
+
+// readSigningKeys decodes each PEM file into an *ecdsa.PublicKey. The
+// first malformed file aborts the load — the update subsystem must not
+// silently fall back to a smaller key set on a broken deployment.
+func readSigningKeys(names []string) ([]*ecdsa.PublicKey, error) {
+	keys := make([]*ecdsa.PublicKey, 0, len(names))
+	for _, name := range names {
+		raw, err := fs.ReadFile(signingKeysFS, name)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", name, err)
+		}
+		pub, err := parsePublicKey(name, raw)
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, pub)
+	}
+	return keys, nil
 }
 
 func parsePublicKey(name string, raw []byte) (*ecdsa.PublicKey, error) {
@@ -189,7 +208,9 @@ func VerifyArtifactFile(artifactPath, sigPath string) error {
 //
 // Unexported on purpose — production callers must never reach this.
 func setKeysForTesting(keys ...*ecdsa.PublicKey) func() {
-	publicKeysOnce.Do(func() {}) // pin once.Do so we don't re-load production keys mid-test
+	// Pin once.Do with an empty body so the production loader does not
+	// run mid-test and overwrite the test keys we are about to install.
+	publicKeysOnce.Do(func() { /* intentionally empty: see comment above */ })
 	prev := publicKeys
 	prevErr := publicKeysErr
 	publicKeys = append([]*ecdsa.PublicKey(nil), keys...)

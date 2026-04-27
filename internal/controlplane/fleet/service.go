@@ -223,24 +223,37 @@ func (s *Service) Delete(ctx context.Context, id string, reassignTo string) (sto
 		if err != nil {
 			return err
 		}
-		if counts.Agents+counts.EnrollmentTokens+counts.ClientAssignments > 0 {
-			if reassignTo == "" {
-				return ErrReassignTargetMissing
-			}
-			if _, err := tx.GetFleetGroup(ctx, reassignTo); err != nil {
-				if errors.Is(err, storage.ErrNotFound) {
-					return fmt.Errorf("reassign target %q not found", reassignTo)
-				}
-				return err
-			}
-			moved, err = tx.ReassignFleetGroupMembers(ctx, id, reassignTo)
+		if hasFleetGroupMembers(counts) {
+			reassigned, err := reassignFleetGroupMembers(ctx, tx, id, reassignTo)
 			if err != nil {
 				return err
 			}
+			moved = reassigned
 		}
 		return tx.DeleteFleetGroup(ctx, id)
 	})
 	return moved, err
+}
+
+func hasFleetGroupMembers(counts storage.ReassignCounts) bool {
+	return counts.Agents+counts.EnrollmentTokens+counts.ClientAssignments > 0
+}
+
+// reassignFleetGroupMembers validates the reassignment target and moves
+// every FK row pointing at `id` over to `reassignTo`. Pulled out of
+// Delete so the transactional callback stays under the cognitive-
+// complexity budget while preserving the same all-or-nothing semantics.
+func reassignFleetGroupMembers(ctx context.Context, tx storage.Store, id, reassignTo string) (storage.ReassignCounts, error) {
+	if reassignTo == "" {
+		return storage.ReassignCounts{}, ErrReassignTargetMissing
+	}
+	if _, err := tx.GetFleetGroup(ctx, reassignTo); err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return storage.ReassignCounts{}, fmt.Errorf("reassign target %q not found", reassignTo)
+		}
+		return storage.ReassignCounts{}, err
+	}
+	return tx.ReassignFleetGroupMembers(ctx, id, reassignTo)
 }
 
 // EnsureDefault guarantees a "default" fleet group exists. Called at
