@@ -72,7 +72,7 @@ export function Sidebar({
       </nav>
 
       {onLogout && (
-        <div className="py-3 border-t border-border flex flex-col items-center w-full">
+        <div className="py-3 border-t border-border w-full flex justify-center">
           <div className="relative group">
             <button
               type="button"
