@@ -46,26 +46,15 @@ export function Toast({ message, variant = "info", duration = 3000, open, onClos
 
   if (!open && !visible) return null;
 
-  return (
-    <div
-      // U3: expose the toast to assistive tech. Errors are announced
-      // with `assertive` so they interrupt other readings; success and
-      // info use `polite` so they do not clobber whatever the user was
-      // reading. Hosts that stack several toasts inside one live
-      // region may set aria-live on the wrapper and keep these
-      // attributes for single-toast fallback usage — ARIA treats the
-      // innermost live attribute as authoritative.
-      role={variant === "error" ? "alert" : "status"}
-      aria-live={variant === "error" ? "assertive" : "polite"}
-      aria-atomic="true"
-      className={cn(
-        "fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-50",
-        "flex items-center gap-2 rounded-xs bg-bg-card border border-border-hi border-l-[3px] px-4 py-3 shadow-xl",
-        "transition-all duration-200",
-        variantStyles[variant],
-        visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2",
-      )}
-    >
+  const wrapperClass = cn(
+    "fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-50",
+    "flex items-center gap-2 rounded-xs bg-bg-card border border-border-hi border-l-[3px] px-4 py-3 shadow-xl",
+    "transition-all duration-200",
+    variantStyles[variant],
+    visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2",
+  );
+  const body = (
+    <>
       <span
         className={cn(
           "text-sm shrink-0",
@@ -77,6 +66,20 @@ export function Toast({ message, variant = "info", duration = 3000, open, onClos
         {variantIcons[variant]}
       </span>
       <span className="text-sm text-fg">{message}</span>
+    </>
+  );
+
+  // U3: expose the toast to assistive tech. Errors get role="alert" so
+  // they interrupt the current reading; success and info ride a
+  // semantic <output> live region (default role=status, polite). Both
+  // wrappers carry aria-atomic so partial updates do not get re-read.
+  return variant === "error" ? (
+    <div role="alert" aria-live="assertive" aria-atomic="true" className={wrapperClass}>
+      {body}
     </div>
+  ) : (
+    <output aria-live="polite" aria-atomic="true" className={wrapperClass}>
+      {body}
+    </output>
   );
 }
