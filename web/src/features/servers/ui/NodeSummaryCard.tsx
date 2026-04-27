@@ -192,7 +192,7 @@ export function NodeSummaryCard({
                     {dc.dc}
                   </span>
                   <span className="text-[10px] font-mono text-fg-muted ml-auto leading-none">
-                    {dc.rttMs !== null ? `${dc.rttMs}` : "—"}
+                    {dc.rttMs === null ? "—" : `${dc.rttMs}`}
                   </span>
                 </div>
               ))}

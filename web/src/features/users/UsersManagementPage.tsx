@@ -158,7 +158,7 @@ export function UsersManagementPage({
     <div className="flex flex-col">
       <PageHeader
         title="User Management"
-        subtitle={`${users.length} user${users.length !== 1 ? "s" : ""} · panel access`}
+        subtitle={`${users.length} user${users.length === 1 ? "" : "s"} · panel access`}
         trailing={
           <Button size="sm" onClick={onAdd}>
             Add User

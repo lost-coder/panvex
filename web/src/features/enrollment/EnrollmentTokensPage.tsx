@@ -83,7 +83,7 @@ export function EnrollmentTokensPage({
     <div className="flex flex-col">
       <PageHeader
         title="Enrollment Tokens"
-        subtitle={`${tokens.length} token${tokens.length !== 1 ? "s" : ""} · agent bootstrap`}
+        subtitle={`${tokens.length} token${tokens.length === 1 ? "" : "s"} · agent bootstrap`}
         trailing={
           <Button size="sm" onClick={onCreateToken}>
             + New Token

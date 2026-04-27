@@ -66,7 +66,7 @@ export function AgeCell({
 
   if (mode === "expires") {
     // Countdown tone: red if past, amber if <5 min, green otherwise.
-    const remaining = nowSec !== undefined ? epoch - nowSec : undefined;
+    const remaining = nowSec === undefined ? undefined : epoch - nowSec;
     let toneClass = "text-fg-muted";
     if (remaining !== undefined) {
       if (remaining <= 0) toneClass = "text-status-error";
