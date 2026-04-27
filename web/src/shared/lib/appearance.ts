@@ -63,8 +63,12 @@ export function resolveEffectiveAppearance(
   prefersDark: boolean
 ): EffectiveAppearance {
   const normalized = normalizeAppearanceSettings(settings);
+  const resolveTheme = (): "light" | "dark" => {
+    if (normalized.theme !== "system") return normalized.theme;
+    return prefersDark ? "dark" : "light";
+  };
   return {
-    theme: normalized.theme === "system" ? (prefersDark ? "dark" : "light") : normalized.theme,
+    theme: resolveTheme(),
     density: normalized.density
   };
 }

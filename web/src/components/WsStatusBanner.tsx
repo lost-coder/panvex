@@ -17,11 +17,11 @@ export function WsStatusBanner() {
   }
 
   const isReconnecting = status === "reconnecting";
-  const label = isReconnecting
-    ? reconnectAttempts > 1
-      ? `Reconnecting to live feed (attempt ${reconnectAttempts})...`
-      : "Reconnecting to live feed..."
-    : "Live feed disconnected. Data may be stale.";
+  const label = (() => {
+    if (!isReconnecting) return "Live feed disconnected. Data may be stale.";
+    if (reconnectAttempts > 1) return `Reconnecting to live feed (attempt ${reconnectAttempts})...`;
+    return "Reconnecting to live feed...";
+  })();
 
   return (
     <div

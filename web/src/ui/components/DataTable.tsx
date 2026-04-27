@@ -94,13 +94,11 @@ export function DataTable<T>({
                 // inactive sortable columns reporting "none" so a screen
                 // reader can surface "sortable but not currently sorted".
                 const isActiveSort = col.sortable && sortKey === col.key;
-                const ariaSort: "ascending" | "descending" | "none" | undefined = col.sortable
-                  ? isActiveSort
-                    ? sortDir === "asc"
-                      ? "ascending"
-                      : "descending"
-                    : "none"
-                  : undefined;
+                const ariaSort: "ascending" | "descending" | "none" | undefined = (() => {
+                  if (!col.sortable) return undefined;
+                  if (!isActiveSort) return "none";
+                  return sortDir === "asc" ? "ascending" : "descending";
+                })();
                 return (
                   <th
                     key={col.key}

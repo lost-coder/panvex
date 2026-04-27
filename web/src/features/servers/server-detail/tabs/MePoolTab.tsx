@@ -333,6 +333,11 @@ function HealthHeroMetric({
   caption: string;
   barPct: number;
 }>) {
+  const barTone = (() => {
+    if (barPct >= 100) return "bg-status-ok";
+    if (barPct >= 70) return "bg-status-warn";
+    return "bg-status-error";
+  })();
   return (
     <div className="rounded-xs bg-bg-card border border-divider p-4 flex flex-col gap-2">
       <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">
@@ -346,14 +351,7 @@ function HealthHeroMetric({
       </div>
       <div className="h-1.5 w-full rounded-full bg-border overflow-hidden">
         <div
-          className={cn(
-            "h-full rounded-full",
-            barPct >= 100
-              ? "bg-status-ok"
-              : barPct >= 70
-                ? "bg-status-warn"
-                : "bg-status-error",
-          )}
+          className={cn("h-full rounded-full", barTone)}
           style={{ width: `${Math.max(0, Math.min(100, barPct))}%` }}
         />
       </div>

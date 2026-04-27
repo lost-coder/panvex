@@ -300,6 +300,26 @@ function formatEventTime(tsUnix: number): string {
  * with the context trimmed to a sensible length, so new backend events are
  * still legible without a frontend change.
  */
+function knownRuntimeEventLabel(eventType: string, kv: Record<string, string>): string | undefined {
+  switch (eventType) {
+    case "admission.state":
+      return kv.accepting_new_connections === "true"
+        ? "Accepting new connections"
+        : "Stopped accepting new connections";
+    case "me.runtime":
+      return kv.ready === "true" ? "ME runtime ready" : "ME runtime not ready";
+    case "dc.coverage":
+      return kv.dc && kv.pct ? `DC${kv.dc} coverage ${kv.pct}%` : undefined;
+    case "reroute":
+      if (!kv.active) return undefined;
+      return kv.active === "true" ? "Reroute activated" : "Reroute cleared";
+    case "gateway.stream":
+      return kv.state ? `Gateway stream ${kv.state}` : "Gateway stream event";
+    default:
+      return undefined;
+  }
+}
+
 function formatRuntimeEvent(eventType: string, context: string): string {
   const ctx = context.trim();
   const kv = Object.fromEntries(
@@ -309,21 +329,9 @@ function formatRuntimeEvent(eventType: string, context: string): string {
       .filter((parts) => parts.length === 2) as Array<[string, string]>,
   );
 
-  if (eventType === "admission.state") {
-    const on = kv.accepting_new_connections === "true";
-    return on ? "Accepting new connections" : "Stopped accepting new connections";
-  }
-  if (eventType === "me.runtime") {
-    return kv.ready === "true" ? "ME runtime ready" : "ME runtime not ready";
-  }
-  if (eventType === "dc.coverage" && kv.dc && kv.pct) {
-    return `DC${kv.dc} coverage ${kv.pct}%`;
-  }
-  if (eventType === "reroute" && kv.active) {
-    return kv.active === "true" ? "Reroute activated" : "Reroute cleared";
-  }
-  if (eventType === "gateway.stream") {
-    return kv.state ? `Gateway stream ${kv.state}` : "Gateway stream event";
+  const known = knownRuntimeEventLabel(eventType, kv);
+  if (known !== undefined) {
+    return known;
   }
 
   // Fallback: sentence-case event type + trimmed context as a suffix when it

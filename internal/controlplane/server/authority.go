@@ -162,7 +162,7 @@ func handleCertificateAuthorityExpiry(store storage.CertificateAuthorityStore, a
 	remaining := authority.certificate.NotAfter.Sub(now)
 	if remaining <= 0 {
 		slog.Warn("control-plane CA certificate expired, regenerating", "expired_ago", (-remaining).String())
-		regen, err := regenerateCertificateAuthority(store, now, encryptionKey)
+		regen, err := persistNewCertificateAuthority(store, now, encryptionKey)
 		return true, regen, err
 	}
 	if remaining < 30*24*time.Hour {
@@ -197,26 +197,12 @@ func reEncryptCertificateAuthority(store storage.CertificateAuthorityStore, auth
 	return nil
 }
 
-// persistNewCertificateAuthority generates a fresh CA and stores it.
-// Used for the initial bootstrap path (no record yet).
+// persistNewCertificateAuthority generates a fresh CA and stores it. Used by
+// both the bootstrap path (no record yet) and the regeneration path (existing
+// record expired or unrecoverable) — the body is identical, so there is one
+// implementation. The two call sites read better with the shared name than
+// with two trivial wrappers.
 func persistNewCertificateAuthority(store storage.CertificateAuthorityStore, now time.Time, encryptionKey string) (*certificateAuthority, error) {
-	authority, err := newCertificateAuthority(now)
-	if err != nil {
-		return nil, err
-	}
-
-	record, err := authority.record(now, encryptionKey)
-	if err != nil {
-		return nil, err
-	}
-	if err := store.PutCertificateAuthority(context.Background(), record); err != nil {
-		return nil, err
-	}
-
-	return authority, nil
-}
-
-func regenerateCertificateAuthority(store storage.CertificateAuthorityStore, now time.Time, encryptionKey string) (*certificateAuthority, error) {
 	authority, err := newCertificateAuthority(now)
 	if err != nil {
 		return nil, err

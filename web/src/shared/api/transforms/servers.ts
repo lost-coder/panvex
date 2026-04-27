@@ -150,7 +150,7 @@ function transformMePool(
   blob: Record<string, unknown>,
   runtime: Agent["runtime"] | undefined,
 ): ServerDetailPageProps["server"]["mePool"] {
-  if (!blob || blob.enabled !== true) return undefined;
+  if (blob?.enabled !== true) return undefined;
 
   const data = rec(blob.data);
   const generations = rec(data.generations);
@@ -236,7 +236,8 @@ export function transformServerDetail(
 
   // Build a lookup from dcs_detail diagnostics blob for endpoints/floor data
   const dcsDetailBlob = detail.diagnostics?.dcs_detail as Record<string, unknown> | undefined;
-  const dcsDetailArray = Array.isArray(dcsDetailBlob?.dcs) ? dcsDetailBlob!.dcs as Record<string, unknown>[] : [];
+  const rawDcsDetail = dcsDetailBlob?.dcs;
+  const dcsDetailArray: Record<string, unknown>[] = Array.isArray(rawDcsDetail) ? rawDcsDetail : [];
   const dcsDetailMap = new Map<number, Record<string, unknown>>();
   for (const d of dcsDetailArray) {
     if (typeof d.dc === "number") dcsDetailMap.set(d.dc, d);
@@ -246,11 +247,11 @@ export function transformServerDetail(
     runtime?.dcs ?? []
   ).map((dc) => {
     const detail = dcsDetailMap.get(dc.dc);
-    const endpoints = Array.isArray(detail?.endpoints)
-      ? (detail!.endpoints as string[])
-      : [];
-    const endpointWriters = Array.isArray(detail?.endpoint_writers)
-      ? (detail!.endpoint_writers as Array<Record<string, unknown>>).map((ew) => ({
+    const rawEndpoints = detail?.endpoints;
+    const endpoints: string[] = Array.isArray(rawEndpoints) ? rawEndpoints : [];
+    const rawEndpointWriters = detail?.endpoint_writers;
+    const endpointWriters = Array.isArray(rawEndpointWriters)
+      ? (rawEndpointWriters as Array<Record<string, unknown>>).map((ew) => ({
           endpoint: str(ew.endpoint),
           activeWriters: num(ew.active_writers),
         }))

@@ -75,9 +75,9 @@ describe("ToastProvider", () => {
     await user.click(screen.getByText("push info"));
     expect(screen.getByText("heads up")).toBeInTheDocument();
 
-    const closeButtons = screen.getAllByLabelText("Закрыть уведомление");
-    expect(closeButtons.length).toBeGreaterThan(0);
-    await user.click(closeButtons[0]!);
+    const [firstClose] = screen.getAllByLabelText("Закрыть уведомление");
+    if (!firstClose) throw new Error("close button missing");
+    await user.click(firstClose);
 
     await waitFor(() => {
       expect(screen.queryByText("heads up")).not.toBeInTheDocument();

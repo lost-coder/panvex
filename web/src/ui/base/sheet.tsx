@@ -67,16 +67,19 @@ const SheetContent = React.forwardRef<
     // style the bottom variant as a sheet ourselves. Swipe-to-
     // dismiss is gone; dismiss happens via backdrop tap, Cancel
     // button, or Escape key.
-    const sideClass =
-      side === "bottom"
-        ? cn(
-            "inset-x-0 bottom-0 w-full border-t rounded-t-xl",
-            fullScreen ? "top-0 rounded-none" : "max-h-[85vh]",
-            "data-[state=open]:slide-in-from-bottom data-[state=closed]:slide-out-to-bottom",
-          )
-        : side === "right"
-          ? "inset-y-0 right-0 h-full w-[320px] border-l data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right"
-          : "inset-y-0 left-0 h-full w-[320px] border-r data-[state=open]:slide-in-from-left data-[state=closed]:slide-out-to-left";
+    const sideClass = (() => {
+      if (side === "bottom") {
+        return cn(
+          "inset-x-0 bottom-0 w-full border-t rounded-t-xl",
+          fullScreen ? "top-0 rounded-none" : "max-h-[85vh]",
+          "data-[state=open]:slide-in-from-bottom data-[state=closed]:slide-out-to-bottom",
+        );
+      }
+      if (side === "right") {
+        return "inset-y-0 right-0 h-full w-[320px] border-l data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right";
+      }
+      return "inset-y-0 left-0 h-full w-[320px] border-r data-[state=open]:slide-in-from-left data-[state=closed]:slide-out-to-left";
+    })();
 
     return (
       <DialogPrimitive.Portal>

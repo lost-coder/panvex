@@ -36,9 +36,9 @@ export interface AppShellProps {
 }
 
 function readStoredExpanded(): boolean {
-  if (typeof window === "undefined") return false;
+  if (typeof globalThis.window === "undefined") return false;
   try {
-    return window.localStorage.getItem(SIDEBAR_PREF_KEY) === "true";
+    return globalThis.localStorage.getItem(SIDEBAR_PREF_KEY) === "true";
   } catch {
     return false;
   }
@@ -63,9 +63,9 @@ export function AppShell({
   const [expanded, setExpanded] = useState<boolean>(readStoredExpanded);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof globalThis.window === "undefined") return;
     try {
-      window.localStorage.setItem(SIDEBAR_PREF_KEY, String(expanded));
+      globalThis.localStorage.setItem(SIDEBAR_PREF_KEY, String(expanded));
     } catch {
       // Ignore quota / disabled-storage failures — the toggle still
       // works in-session, only the cross-reload persistence is lost.

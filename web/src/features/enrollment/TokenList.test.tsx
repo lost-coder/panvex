@@ -47,9 +47,9 @@ describe("TokenList", () => {
     const onRevoke = vi.fn();
     render(<TokenList tokens={[activeToken]} onRevoke={onRevoke} />);
 
-    const revokeButtons = screen.getAllByRole("button", { name: /revoke/i });
-    expect(revokeButtons.length).toBeGreaterThan(0);
-    await user.click(revokeButtons[0]!);
+    const [firstRevoke] = screen.getAllByRole("button", { name: /revoke/i });
+    if (!firstRevoke) throw new Error("revoke button missing");
+    await user.click(firstRevoke);
     expect(onRevoke).toHaveBeenCalledWith(activeToken.value);
   });
 });

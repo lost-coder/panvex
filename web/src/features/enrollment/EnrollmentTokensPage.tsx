@@ -153,7 +153,7 @@ export function EnrollmentTokensPage({
           }}
         />
 
-        {tokens.length === 0 ? (
+        {tokens.length === 0 && (
           <EmptyState
             title="No enrollment tokens"
             description="Generate a token to onboard a new Panvex agent. Each token is single-use and expires after its TTL."
@@ -163,12 +163,14 @@ export function EnrollmentTokensPage({
               </Button>
             }
           />
-        ) : filtered.length === 0 ? (
+        )}
+        {tokens.length > 0 && filtered.length === 0 && (
           <EmptyState
             title={`No ${statusFilter === "all" ? "" : statusFilter + " "}tokens match`}
             description="Widen the filter or clear the search."
           />
-        ) : (
+        )}
+        {tokens.length > 0 && filtered.length > 0 && (
           <TokenList tokens={filtered} onRevoke={onRevoke} nowSec={nowSec} />
         )}
       </div>

@@ -21,7 +21,7 @@ export function BottomNav({
 }: Readonly<BottomNavProps>) {
   const [moreOpen, setMoreOpen] = useState(false);
   const hasMore = !!moreItems && moreItems.length > 0;
-  const moreActive = hasMore && moreItems!.some((m) => m.id === activeId);
+  const moreActive = moreItems?.some((m) => m.id === activeId) ?? false;
 
   const handleNavigate = (id: string) => {
     setMoreOpen(false);
@@ -93,7 +93,7 @@ export function BottomNav({
             </SheetHeader>
             <SheetBody>
               <ul className="flex flex-col gap-0.5">
-                {moreItems!.map((item) => {
+                {moreItems?.map((item) => {
                   const isActive = item.id === activeId;
                   return (
                     <li key={item.id}>

@@ -447,20 +447,20 @@ export function ActivityPage({
           </div>
         )}
 
-        {activeTab === "jobs" ? (
-          filteredJobs.length === 0 ? (
-            <EmptyState
-              title={jobs.length === 0 ? "Jobs will appear here" : "No jobs match the filter"}
-              description={
-                jobs.length === 0
-                  ? "Mutations run by operators (client rollouts, runtime reloads, self-updates) are recorded here once the first one fires."
-                  : "Widen the filter or clear the search."
-              }
-            />
-          ) : (
-            <DataTable data={filteredJobs} columns={jobColumns} keyExtractor={(j) => j.id} />
-          )
-        ) : (
+        {activeTab === "jobs" && filteredJobs.length === 0 && (
+          <EmptyState
+            title={jobs.length === 0 ? "Jobs will appear here" : "No jobs match the filter"}
+            description={
+              jobs.length === 0
+                ? "Mutations run by operators (client rollouts, runtime reloads, self-updates) are recorded here once the first one fires."
+                : "Widen the filter or clear the search."
+            }
+          />
+        )}
+        {activeTab === "jobs" && filteredJobs.length > 0 && (
+          <DataTable data={filteredJobs} columns={jobColumns} keyExtractor={(j) => j.id} />
+        )}
+        {activeTab !== "jobs" && (
           <>
             <AuditList events={pagedAudit} />
             {pager.pageCount > 1 && (
