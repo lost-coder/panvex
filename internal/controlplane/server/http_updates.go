@@ -353,7 +353,10 @@ func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksu
 	if !ok {
 		return
 	}
-	defer func() { _ = os.Remove(archivePath) }()
+	// G703 false positive: archivePath is the temp file we just created
+	// inside DownloadArchive (via os.MkdirTemp + filepath.Join), not a
+	// caller-supplied path.
+	defer func() { _ = os.Remove(archivePath) }() //nolint:gosec
 
 	if !s.installPanelBinaryFromArchive(archivePath) {
 		return
@@ -397,7 +400,9 @@ func (s *Server) downloadAndVerifyPanelArchive(ctx context.Context, downloadURL,
 		return "", false
 	}
 	if !s.verifyPanelArchive(ctx, archivePath, signatureURL, expectedChecksum, token) {
-		_ = os.Remove(archivePath)
+		// G703 false positive: archivePath comes from DownloadArchive's
+		// internal os.MkdirTemp + filepath.Join, not from a request param.
+		_ = os.Remove(archivePath) //nolint:gosec
 		return "", false
 	}
 	return archivePath, true

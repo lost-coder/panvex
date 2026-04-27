@@ -892,7 +892,10 @@ func downloadAndVerifySelfUpdateArchive(ctx context.Context, panel *server.GitHu
 	fmt.Println("Archive downloaded.")
 
 	if err := verifySelfUpdateArchive(ctx, archivePath, signatureURL, expectedChecksum, token); err != nil {
-		_ = os.Remove(archivePath)
+		// G703 false positive: archivePath is the temp file we just created
+		// inside DownloadArchive (via os.MkdirTemp + filepath.Join), not a
+		// caller-supplied path.
+		_ = os.Remove(archivePath) //nolint:gosec
 		return "", err
 	}
 	return archivePath, nil
