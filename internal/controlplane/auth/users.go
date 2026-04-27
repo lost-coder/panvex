@@ -114,7 +114,7 @@ func (s *Service) validateUsernameChange(ctx context.Context, user User, updated
 // validateRoleChange refuses to demote the only remaining admin so the
 // instance never ends up locked out of its own user-management surface.
 func (s *Service) validateRoleChange(ctx context.Context, user User, newRole Role) error {
-	if !(user.Role == RoleAdmin && newRole != RoleAdmin) {
+	if user.Role != RoleAdmin || newRole == RoleAdmin {
 		return nil
 	}
 	adminCount, err := s.countAdminsCtx(ctx)
