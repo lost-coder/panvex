@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 import { cn } from "@/ui/lib/cn";
 import { usePrefersReducedMotion } from "@/ui/lib/usePrefersReducedMotion";
 
@@ -45,11 +47,16 @@ export function SkeletonRows({
   label = "Загрузка списка…",
   className,
 }: Readonly<SkeletonRowsProps>) {
+  // Stable per-instance prefix (useId) + per-row index combined makes
+  // a unique non-positional key for the placeholder rows. Index alone
+  // tripped Sonar S6479; a fresh UUID per render would defeat React's
+  // reconciliation.
+  const id = useId();
   return (
     <div className={cn("flex flex-col gap-2", className)}>
-      {Array.from({ length: count }).map((_, i) => (
+      {Array.from({ length: count }, (_, i) => (
         <Skeleton
-          key={i}
+          key={`${id}-${i}`}
           className={cn(height, "w-full")}
           label={i === 0 ? label : undefined}
         />
