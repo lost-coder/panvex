@@ -19,6 +19,20 @@ import type {
 
 type StatusFilter = "all" | EnrollmentTokenData["status"];
 
+type TickTone = "default" | "ok" | "warn" | "error";
+
+function activeHint(active: number, expiringSoon: number): string {
+  if (expiringSoon > 0) return `${expiringSoon} expiring <5m`;
+  if (active === 0) return "none ready to consume";
+  return "ready to enroll";
+}
+
+function activeTone(active: number, expiringSoon: number): TickTone {
+  if (expiringSoon > 0) return "warn";
+  if (active > 0) return "ok";
+  return "default";
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export function EnrollmentTokensPage({
@@ -97,18 +111,8 @@ export function EnrollmentTokensPage({
             {
               label: "Active",
               value: counts.active.toLocaleString(),
-              hint:
-                counts.expiringSoon > 0
-                  ? `${counts.expiringSoon} expiring <5m`
-                  : counts.active === 0
-                    ? "none ready to consume"
-                    : "ready to enroll",
-              tone:
-                counts.expiringSoon > 0
-                  ? "warn"
-                  : counts.active > 0
-                    ? "ok"
-                    : "default",
+              hint: activeHint(counts.active, counts.expiringSoon),
+              tone: activeTone(counts.active, counts.expiringSoon),
             },
             {
               label: "Consumed",

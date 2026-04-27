@@ -56,6 +56,15 @@ function formatRelative(iso: string | undefined) {
   return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
+type TickTone = "default" | "ok" | "warn" | "error";
+
+function totpTone(total: number, pct: number): TickTone {
+  if (total === 0) return "default";
+  if (pct === 100) return "ok";
+  if (pct >= 50) return "warn";
+  return "error";
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export function UsersManagementPage({
@@ -189,14 +198,7 @@ export function UsersManagementPage({
               label: "2FA coverage",
               value: `${totpPct}%`,
               hint: `${counts.totp}/${counts.total} enrolled`,
-              tone:
-                counts.total === 0
-                  ? "default"
-                  : totpPct === 100
-                    ? "ok"
-                    : totpPct >= 50
-                      ? "warn"
-                      : "error",
+              tone: totpTone(counts.total, totpPct),
             },
           ]}
         />

@@ -18,8 +18,7 @@ export function DiscoveredClientsContainer() {
   // can share a link mid-triage. The DiscoveredClientsPage owns the
   // actual filter UI internally; tying it into the URL is left to a
   // follow-up ticket (see deferred notes in commit body).
-  const [filterParam] = useUrlSearchState("filter", "");
-  void filterParam;
+  useUrlSearchState("filter", "");
 
   // Q5.U-Q-24 fix: hooks MUST run on every render. The previous version
   // declared useCallback after the early returns above, which violates

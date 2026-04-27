@@ -100,25 +100,25 @@ export function EventsSynchronizer({ children }: { children?: React.ReactNode })
         void applyInvalidation(invalidationsForEvent(event));
       };
       socket.onerror = () => { socket?.close(); };
-      socket.onclose = () => {
-        // Already on the login page — nothing to reconnect or redirect to.
+      // Q3.U-Q-22: check session validity before reconnecting. On expiration
+      // we dispatch SESSION_EXPIRED_EVENT so AuthProvider owns the router
+      // navigation + cache clear + toast — instead of a hard
+      // globalThis.location.href that bypasses React Query and misses the
+      // toast announcement.
+      socket.onclose = async () => {
         if (globalThis.location.pathname.endsWith("/login")) {
           stopped = true;
           setStatus("closed");
           return;
         }
-        // Q3.U-Q-22: check session validity before reconnecting. On
-        // expiration we dispatch SESSION_EXPIRED_EVENT so AuthProvider
-        // owns the router navigation + cache clear + toast — instead of
-        // a hard globalThis.location.href that bypasses React Query and
-        // misses the toast announcement.
-        apiClient.me().then(() => {
+        try {
+          await apiClient.me();
           scheduleReconnect();
-        }).catch(() => {
+        } catch {
           stopped = true;
           setStatus("closed");
           globalThis.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
-        });
+        }
       };
     };
     connect();

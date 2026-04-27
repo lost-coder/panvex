@@ -171,6 +171,97 @@ export function __seedCSRFTokenForTesting(token: string | null): void {
   csrfTokenPromise = null;
 }
 
+function isMutationMethod(method: string): boolean {
+  return method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE";
+}
+
+async function readErrorPayload(
+  response: Response,
+): Promise<{ message: string; code: string | undefined }> {
+  let message = `Request failed with status ${response.status}`;
+  let code: string | undefined;
+  try {
+    const payload = (await response.json()) as { error?: string; code?: string };
+    if (payload.error) {
+      message = payload.error;
+    }
+    code = payload.code;
+  } catch {
+    // Ignore JSON parsing failures for error responses.
+  }
+  return { message, code };
+}
+
+async function handleErrorResponse(
+  response: Response,
+  path: string,
+  method: string,
+  isMutation: boolean,
+): Promise<never> {
+  const isBootstrap = isAuthBootstrapPath(path);
+  const hasWindow = globalThis.window !== undefined;
+
+  // Global 401 interceptor (P2-FE-02 / M-C12): before this, idle users
+  // whose server session had expired would see stale cached data plus a
+  // cascade of red 401 errors instead of being routed to /login. Fire a
+  // decoupled CustomEvent so AuthProvider (which owns router +
+  // QueryClient access) can clear the cache and navigate. Skip the auth
+  // bootstrap endpoints to avoid loops.
+  if (response.status === 401 && hasWindow && !isBootstrap) {
+    // Session is gone — drop any cached CSRF token so the next
+    // post-login mutation refetches against the freshly-minted session.
+    clearCSRFToken();
+    globalThis.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+  }
+
+  const { message, code } = await readErrorPayload(response);
+
+  // Global 403 handler: surface a human-friendly cue so operators aren't
+  // left staring at a terse "forbidden" toast. 403 on a state-changing
+  // request can mean two things: legitimate role denial OR a stale CSRF
+  // token (panel restarted, server secret rotated). Drop the cached
+  // token so the next mutation refetches; the role-denial path is
+  // unaffected because the new token will still fail.
+  if (response.status === 403 && hasWindow && !isBootstrap) {
+    if (isMutation) {
+      clearCSRFToken();
+    }
+    const detail: ForbiddenEventDetail = { path, method, message, code };
+    globalThis.dispatchEvent(
+      new CustomEvent<ForbiddenEventDetail>(FORBIDDEN_EVENT, { detail }),
+    );
+  }
+
+  throw new ApiError(message, code);
+}
+
+function parseWithSchema<T>(path: string, schema: ZodType<T>, json: unknown): T {
+  const parsed = schema.safeParse(json);
+  if (parsed.success) return parsed.data;
+
+  // Log structurally so that in the browser devtools the operator sees
+  // the exact path → issue mapping that zod produces.
+  console.error("[api] schema mismatch", {
+    path,
+    issues: parsed.error.issues,
+  });
+
+  if (globalThis.window !== undefined) {
+    const detail: ApiSchemaMismatchDetail = {
+      path,
+      error: parsed.error,
+      message: `Unexpected response shape from ${path}`,
+    };
+    globalThis.dispatchEvent(
+      new CustomEvent<ApiSchemaMismatchDetail>(API_SCHEMA_MISMATCH_EVENT, {
+        detail,
+      }),
+    );
+  }
+
+  throw new ApiSchemaError(path, parsed.error);
+}
+
 /**
  * Core HTTP helper. Three modes:
  *
@@ -197,9 +288,7 @@ export async function api<T>(
   // Q3.U-Q-23: invariant on path. Every API call must traverse the
   // configured apiBasePath ("/api" or "<root>/api") so a future caller
   // typo cannot send credentialed requests to an attacker-controlled
-  // host or to an unintended path on the same origin. Absolute URLs
-  // (https://...) and protocol-relative URLs (//) are rejected; only
-  // basePath-prefixed paths are allowed.
+  // host or to an unintended path on the same origin.
   if (!path.startsWith(apiBasePath + "/") && path !== apiBasePath) {
     throw new ApiError(
       `api(): path must start with ${apiBasePath}, got ${path}`,
@@ -212,15 +301,14 @@ export async function api<T>(
   // them; mutations have nowhere to land, so surfacing "offline" here
   // saves the caller a 30s TCP timeout and preserves optimistic UIs.
   const method = (init?.method ?? "GET").toUpperCase();
-  const isMutation = method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE";
+  const isMutation = isMutationMethod(method);
   if (isMutation && navigator?.onLine === false) {
     throw new ApiError("Соединение потеряно — попробуйте снова, когда сеть восстановится.", "offline");
   }
 
   // Phase-2 §2.5: attach the double-submit CSRF token on every state-
   // changing request that has a session. The login endpoint itself
-  // can't carry a token (no session yet) so we skip the bootstrap
-  // path. Token fetch is lazy + deduplicated.
+  // can't carry a token (no session yet) so we skip the bootstrap path.
   const csrfHeaders: Record<string, string> = {};
   if (isMutation && !isAuthBootstrapPath(path)) {
     const token = await ensureCSRFToken();
@@ -244,98 +332,12 @@ export async function api<T>(
   }
 
   if (!response.ok) {
-    // Global 401 interceptor (P2-FE-02 / M-C12): before this, idle
-    // users whose server session had expired would see stale cached
-    // data plus a cascade of red 401 errors instead of being routed
-    // to /login. Fire a decoupled CustomEvent so AuthProvider (which
-    // owns router + QueryClient access) can clear the cache and
-    // navigate. Skip the auth bootstrap endpoints to avoid loops.
-    if (
-      response.status === 401 &&
-      globalThis.window !== undefined &&
-      !isAuthBootstrapPath(path)
-    ) {
-      // Session is gone — drop any cached CSRF token so the next
-      // post-login mutation refetches against the freshly-minted
-      // session.
-      clearCSRFToken();
-      globalThis.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
-    }
-
-    let message = `Request failed with status ${response.status}`;
-    let code: string | undefined;
-    try {
-      const payload = (await response.json()) as { error?: string; code?: string };
-      if (payload.error) {
-        message = payload.error;
-      }
-      code = payload.code;
-    } catch {
-      // Ignore JSON parsing failures for error responses.
-    }
-
-    // Global 403 handler: surface a human-friendly cue so operators
-    // aren't left staring at a terse "forbidden" toast. We emit after
-    // the body is parsed so the listener has both the path and the
-    // server's message/code for context. Auth bootstrap paths are
-    // skipped for symmetry with the 401 handler above.
-    if (
-      response.status === 403 &&
-      globalThis.window !== undefined &&
-      !isAuthBootstrapPath(path)
-    ) {
-      // 403 on a state-changing request can mean two things: legitimate
-      // role denial OR a stale CSRF token (panel restarted, server
-      // secret rotated). Drop the cached token so the next mutation
-      // refetches; the role-denial path is unaffected because the new
-      // token will still fail.
-      if (isMutation) {
-        clearCSRFToken();
-      }
-      const method = (init?.method ?? "GET").toUpperCase();
-      const detail: ForbiddenEventDetail = { path, method, message, code };
-      globalThis.dispatchEvent(
-        new CustomEvent<ForbiddenEventDetail>(FORBIDDEN_EVENT, { detail }),
-      );
-    }
-
-    throw new ApiError(message, code);
+    await handleErrorResponse(response, path, method, isMutation);
   }
 
   const json = (await response.json()) as unknown;
-
-  if (!schema) {
-    return json as T;
-  }
-
-  const parsed = schema.safeParse(json);
-  if (!parsed.success) {
-    // Log structurally so that in the browser devtools the operator
-    // sees the exact path → issue mapping that zod produces. We use
-    // console.error rather than a custom slog facade because this file
-    // has no slog dependency yet and the task scopes it out.
-    console.error("[api] schema mismatch", {
-      path,
-      issues: parsed.error.issues,
-    });
-
-    if (globalThis.window !== undefined) {
-      const detail: ApiSchemaMismatchDetail = {
-        path,
-        error: parsed.error,
-        message: `Unexpected response shape from ${path}`,
-      };
-      globalThis.dispatchEvent(
-        new CustomEvent<ApiSchemaMismatchDetail>(API_SCHEMA_MISMATCH_EVENT, {
-          detail,
-        }),
-      );
-    }
-
-    throw new ApiSchemaError(path, parsed.error);
-  }
-
-  return parsed.data;
+  if (!schema) return json as T;
+  return parseWithSchema(path, schema, json);
 }
 
 /**

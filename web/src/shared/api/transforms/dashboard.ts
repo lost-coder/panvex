@@ -69,20 +69,24 @@ function formatNumber(n: number): string {
   return n.toLocaleString();
 }
 
-export function transformDashboardOverview(
-  raw: TelemetryDashboardResponse
-): DashboardOverviewData {
-  const fleet = raw.fleet;
+interface AgentRuntimeSnapshot {
+  cpu: number;
+  mem: number;
+  dcCoverage: number;
+}
 
-  // Aggregate runtime stats from both attention items (problem nodes carry
-  // full runtime) and server_cards (healthy nodes also have runtime nested
-  // under agent.runtime). De-dupe by agent id in case the backend lists the
-  // same node in both arrays.
-  const runtimeByAgent = new Map<string, { cpu: number; mem: number; dcCoverage: number }>();
+// Aggregate runtime stats from both attention items (problem nodes carry full
+// runtime) and server_cards (healthy nodes also have runtime nested under
+// agent.runtime). De-dupe by agent id in case the backend lists the same
+// node in both arrays.
+function buildRuntimeIndex(
+  raw: TelemetryDashboardResponse,
+): Map<string, AgentRuntimeSnapshot> {
+  const out = new Map<string, AgentRuntimeSnapshot>();
   for (const item of raw.attention ?? []) {
     const r = item.runtime;
     if (!r) continue;
-    runtimeByAgent.set(item.agent_id, {
+    out.set(item.agent_id, {
       cpu: pct1(r.system_load?.cpu_usage_pct),
       mem: pct1(r.system_load?.memory_usage_pct),
       dcCoverage: pct1(r.dc_coverage_pct),
@@ -90,16 +94,32 @@ export function transformDashboardOverview(
   }
   for (const card of raw.server_cards ?? []) {
     const id = card.agent?.id;
-    if (!id || runtimeByAgent.has(id)) continue;
+    if (!id || out.has(id)) continue;
     const r = card.agent?.runtime;
     if (!r) continue;
-    runtimeByAgent.set(id, {
+    out.set(id, {
       cpu: pct1(r.system_load?.cpu_usage_pct),
       mem: pct1(r.system_load?.memory_usage_pct),
       dcCoverage: pct1(r.dc_coverage_pct),
     });
   }
-  const runtimes = Array.from(runtimeByAgent.values());
+  return out;
+}
+
+function fleetHealthSub(
+  offline: number,
+  degraded: number,
+): string {
+  if (offline > 0) return `${offline} offline · ${degraded} degraded`;
+  if (degraded > 0) return `${degraded} degraded`;
+  return "all online";
+}
+
+export function transformDashboardOverview(
+  raw: TelemetryDashboardResponse
+): DashboardOverviewData {
+  const fleet = raw.fleet;
+  const runtimes = Array.from(buildRuntimeIndex(raw).values());
   const avg = (xs: number[]) =>
     xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : 0;
   const avgCpu = avg(runtimes.map((r) => r.cpu));
@@ -129,12 +149,7 @@ export function transformDashboardOverview(
     {
       label: "Fleet health",
       value: `${fleet.online_agents}/${fleet.total_agents}`,
-      sub:
-        fleet.offline_agents > 0
-          ? `${fleet.offline_agents} offline · ${fleet.degraded_agents} degraded`
-          : fleet.degraded_agents > 0
-            ? `${fleet.degraded_agents} degraded`
-            : "all online",
+      sub: fleetHealthSub(fleet.offline_agents, fleet.degraded_agents),
       tone: fleetTone,
     },
     {

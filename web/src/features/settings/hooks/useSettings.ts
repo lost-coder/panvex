@@ -30,8 +30,8 @@ export function useSettings(swipeNavigation: boolean = false) {
       density: "comfortable" | "compact";
       help_mode: "off" | "basic" | "full";
     }) => apiClient.updateAppearanceSettings(payload),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["settings", "appearance"] });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["settings", "appearance"] });
     },
   });
 
@@ -40,8 +40,8 @@ export function useSettings(swipeNavigation: boolean = false) {
       http_public_url: string;
       grpc_public_endpoint: string;
     }) => apiClient.updatePanelSettings(payload),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["settings", "panel"] });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["settings", "panel"] });
     },
   });
 
