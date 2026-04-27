@@ -109,16 +109,14 @@ function StackedToast({
     };
   }, [entry.duration, onClose]);
 
-  return (
-    <div
-      className={cn(
-        "pointer-events-auto flex items-center gap-2 rounded-xs bg-bg-card border border-border-hi border-l-[3px] pl-4 pr-2 py-3 shadow-xl",
-        "transition-all duration-200",
-        variantBorder[entry.variant],
-        visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2",
-      )}
-      role={entry.variant === "error" ? "alert" : "status"}
-    >
+  const wrapperClass = cn(
+    "pointer-events-auto flex items-center gap-2 rounded-xs bg-bg-card border border-border-hi border-l-[3px] pl-4 pr-2 py-3 shadow-xl",
+    "transition-all duration-200",
+    variantBorder[entry.variant],
+    visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2",
+  );
+  const body = (
+    <>
       <span className={cn("text-sm shrink-0", variantIconColor[entry.variant])}>
         {variantIcon[entry.variant]}
       </span>
@@ -151,7 +149,21 @@ function StackedToast({
       >
         <span aria-hidden="true" className="text-base leading-none">×</span>
       </button>
+    </>
+  );
+
+  // Errors interrupt with role=alert; success/info ride a semantic
+  // <output> live region so Sonar S6819 stops complaining about the
+  // role="status" shim. Sibling elements share wrapperClass so the
+  // visual treatment is identical between branches.
+  return entry.variant === "error" ? (
+    <div role="alert" aria-live="assertive" aria-atomic="true" className={wrapperClass}>
+      {body}
     </div>
+  ) : (
+    <output aria-live="polite" aria-atomic="true" className={wrapperClass}>
+      {body}
+    </output>
   );
 }
 
