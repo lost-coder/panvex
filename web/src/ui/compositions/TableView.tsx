@@ -109,7 +109,7 @@ export function TableView({
           <div className="flex gap-2 items-center flex-wrap sm:ml-auto">
             {/* Filters */}
             {hasFilters &&
-              filters!.map((f) =>
+              filters?.map((f) =>
                 f.variant === "chips" ? (
                   <div
                     key={f.key}
@@ -232,7 +232,7 @@ export function TableView({
             rangeEnd !== undefined &&
             pagination?.totalItems !== undefined
               ? `Showing ${rangeStart}–${rangeEnd} of ${pagination.totalItems}`
-              : `Page ${currentPage} of ${pagination!.totalPages}`}
+              : `Page ${currentPage} of ${(pagination?.totalPages ?? 0)}`}
           </span>
 
           <div className="flex gap-1">
@@ -251,7 +251,7 @@ export function TableView({
             </button>
 
             {/* Page numbers */}
-            {Array.from({ length: pagination!.totalPages }, (_, i) => i + 1).map((page) => (
+            {Array.from({ length: (pagination?.totalPages ?? 0) }, (_, i) => i + 1).map((page) => (
               <button
                 key={page}
                 onClick={() => pagination?.onChange(page)}
@@ -271,7 +271,7 @@ export function TableView({
 
             <button
               onClick={() => pagination?.onChange(currentPage + 1)}
-              disabled={currentPage >= pagination!.totalPages}
+              disabled={currentPage >= (pagination?.totalPages ?? 0)}
               className={cn(
                 "flex items-center justify-center h-8 w-8 rounded-xs border border-border-hi",
                 "bg-bg-card text-fg-muted hover:text-fg transition-colors",
