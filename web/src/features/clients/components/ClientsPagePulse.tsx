@@ -37,7 +37,7 @@ export function buildClientCounts(clients: ClientListItem[], nowMs: number): Cli
   return { all: clients.length, active, disabled, expired, online, quotaExhausted };
 }
 
-export function ClientsPagePulse({ counts }: { counts: ClientCounts }) {
+export function ClientsPagePulse({ counts }: Readonly<{ counts: ClientCounts }>) {
   return (
     <PulseRow
       ticks={

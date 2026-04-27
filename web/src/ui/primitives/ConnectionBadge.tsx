@@ -6,7 +6,7 @@ export interface ConnectionBadgeProps {
   className?: string;
 }
 
-export function ConnectionBadge({ online, count, className }: ConnectionBadgeProps) {
+export function ConnectionBadge({ online, count, className }: Readonly<ConnectionBadgeProps>) {
   return (
     <span
       className={cn(

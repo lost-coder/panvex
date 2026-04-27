@@ -39,7 +39,7 @@ export interface TableViewPaginationConfig {
 
 export interface TableViewViewModeConfig {
   current: ViewMode;
-  onChange: (mode: ViewMode) => void;
+  onChange: (mode: Readonly<ViewMode>) => void;
 }
 
 export interface TableViewColumnsConfig {
@@ -70,7 +70,7 @@ export function TableView({
   pagination,
   children,
   className,
-}: TableViewProps) {
+}: Readonly<TableViewProps>) {
   const hasFilters = filters && filters.length > 0;
   const hasViewMode = viewMode !== undefined;
   const hasColumnPicker = columns !== undefined && columns.available.length > 0;

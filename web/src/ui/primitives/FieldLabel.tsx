@@ -6,7 +6,7 @@ export interface FieldLabelProps {
   size?: "sm" | "xs"; // sm = text-[11px], xs = text-[10px]
 }
 
-export function FieldLabel({ children, className, size = "sm" }: FieldLabelProps) {
+export function FieldLabel({ children, className, size = "sm" }: Readonly<FieldLabelProps>) {
   return (
     <span
       className={cn(

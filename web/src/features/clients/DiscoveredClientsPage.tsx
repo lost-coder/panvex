@@ -47,7 +47,7 @@ export function DiscoveredClientsPage({
   onIgnoreMany,
   onBack,
   busy,
-}: DiscoveredClientsPageProps) {
+}: Readonly<DiscoveredClientsPageProps>) {
   const groups = useMemo(() => groupDiscovered(clients), [clients]);
   const counts = useMemo(() => buildCounts(groups), [groups]);
 
@@ -56,7 +56,7 @@ export function DiscoveredClientsPage({
   const [conflictFilter, setConflictFilter] = useState("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const matches = (g: DiscoveredGroup) => {
+  const matches = (g: Readonly<DiscoveredGroup>) => {
     if (search) {
       const q = search.toLowerCase();
       if (

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ErrorBoundary } from "./ErrorBoundary";
 
-function ThrowingChild({ shouldThrow }: { shouldThrow: boolean }) {
+function ThrowingChild({ shouldThrow }: Readonly<{ shouldThrow: boolean }>) {
   if (shouldThrow) {
     throw new Error("test explosion");
   }

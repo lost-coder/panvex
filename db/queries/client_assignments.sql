@@ -5,12 +5,14 @@
 SELECT id, client_id, target_type, fleet_group_id, agent_id, created_at
 FROM client_assignments
 WHERE client_id = $1
-ORDER BY created_at, id;
+ORDER BY created_at ASC, id ASC;
+
 
 -- name: ListAllClientAssignments :many
 SELECT id, client_id, target_type, fleet_group_id, agent_id, created_at
 FROM client_assignments
-ORDER BY client_id, created_at, id;
+ORDER BY client_id ASC, created_at ASC, id ASC;
+
 
 -- name: InsertClientAssignment :exec
 INSERT INTO client_assignments (id, client_id, target_type, fleet_group_id, agent_id, created_at)

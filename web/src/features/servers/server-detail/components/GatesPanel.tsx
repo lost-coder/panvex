@@ -11,12 +11,12 @@ function GateRow({
   on,
   alertWhenOn,
   neutralWhenOn,
-}: {
+}: Readonly<{
   label: string;
   on: boolean;
   alertWhenOn?: boolean;
   neutralWhenOn?: boolean;
-}) {
+}>) {
   const tone: "ok" | "warn" | "error" | "default" = alertWhenOn
     ? on
       ? "warn"
@@ -57,7 +57,7 @@ function GateRow({
  */
 export const GatesPanel = memo(_GatesPanel);
 
-function _GatesPanel({ gates }: { gates: ServerDetailPageProps["server"]["gates"] }) {
+function _GatesPanel({ gates }: Readonly<{ gates: ServerDetailPageProps["server"]["gates"] }>) {
   return (
     <div className="flex flex-col">
       <GateRow label="Accepting connections" on={gates.acceptingNewConnections} />

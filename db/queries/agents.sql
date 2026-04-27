@@ -2,7 +2,8 @@
 SELECT id, node_name, fleet_group_id, version, read_only,
        last_seen_at, cert_issued_at, cert_expires_at
 FROM agents
-ORDER BY last_seen_at, id;
+ORDER BY last_seen_at ASC, id ASC;
+
 
 -- name: UpsertAgent :exec
 INSERT INTO agents (id, node_name, fleet_group_id, version, read_only,

@@ -23,7 +23,7 @@ export function AppShell({
   onLogout,
   children,
   className,
-}: AppShellProps) {
+}: Readonly<AppShellProps>) {
   return (
     <div className={cn("min-h-screen bg-bg", className)}>
       <Sidebar

@@ -3,7 +3,7 @@ import { CopyButton } from "./CopyButton";
 import { Button } from "@/ui/base/button";
 import type { SecretRevealProps } from "@/shared/api/types-pages/pages";
 
-export function SecretReveal({ secret, onDismiss }: SecretRevealProps) {
+export function SecretReveal({ secret, onDismiss }: Readonly<SecretRevealProps>) {
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-xs bg-status-warn/5 border border-status-warn/30 p-3 text-xs text-status-warn">

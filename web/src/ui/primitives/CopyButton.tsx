@@ -18,7 +18,7 @@ function fallbackCopy(value: string) {
   document.body.removeChild(ta);
 }
 
-export function CopyButton({ text, className }: CopyButtonProps) {
+export function CopyButton({ text, className }: Readonly<CopyButtonProps>) {
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
     const done = () => {

@@ -68,7 +68,7 @@ const listUsers = `-- name: ListUsers :many
 
 SELECT id, username, password_hash, role, totp_enabled, totp_secret, created_at
 FROM users
-ORDER BY created_at, id
+ORDER BY created_at ASC, id ASC
 `
 
 // R-Q-03: extend sqlc coverage to the users table. Powers user CRUD

@@ -14,7 +14,7 @@ function formatTraffic(bytes: number): { value: string; unit: string } {
   return { value: (bytes / 1024 ** 4).toFixed(2), unit: "TB" };
 }
 
-export function TrafficCell({ bytes, label, className }: TrafficCellProps) {
+export function TrafficCell({ bytes, label, className }: Readonly<TrafficCellProps>) {
   const { value, unit } = formatTraffic(bytes);
   return (
     <span className={cn("inline-flex items-baseline gap-0.5 font-mono", className)}>

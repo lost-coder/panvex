@@ -8,7 +8,7 @@
 // either side and the operator gets a cleaner audit trail of what was
 // substituted into the install command.
 export function shellQuote(value: string): string {
-  return "'" + value.replace(/'/g, "'\\''") + "'";
+  return "'" + value.replaceAll("'", "'\\''") + "'";
 }
 
 // Accepts what an operator might reasonably type for a node hostname:

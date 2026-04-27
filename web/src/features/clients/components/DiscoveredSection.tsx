@@ -26,7 +26,7 @@ export interface DiscoveredPendingSectionProps {
   busy?: boolean | undefined;
 }
 
-export function DiscoveredPendingSection(props: DiscoveredPendingSectionProps) {
+export function DiscoveredPendingSection(props: Readonly<DiscoveredPendingSectionProps>) {
   const {
     rows,
     columns,
@@ -79,7 +79,7 @@ export function DiscoveredPendingSection(props: DiscoveredPendingSectionProps) {
         <DataTable
           columns={columns}
           data={rows}
-          keyExtractor={(row: DiscoveredGroup) => row.key}
+          keyExtractor={(row: Readonly<DiscoveredGroup>) => row.key}
         />
       </div>
     </section>
@@ -96,7 +96,7 @@ export function DiscoveredReviewedSection({
   rows,
   columns,
   busy,
-}: DiscoveredReviewedSectionProps) {
+}: Readonly<DiscoveredReviewedSectionProps>) {
   if (rows.length === 0) return null;
   return (
     <section className="flex flex-col gap-3">
@@ -118,7 +118,7 @@ export function DiscoveredReviewedSection({
         <DataTable
           columns={columns}
           data={rows}
-          keyExtractor={(row: DiscoveredGroup) => row.key}
+          keyExtractor={(row: Readonly<DiscoveredGroup>) => row.key}
         />
       </div>
     </section>

@@ -6,7 +6,7 @@ export interface ClientsRowProps {
   className?: string;
 }
 
-export function ClientsRow({ total, active, className }: ClientsRowProps) {
+export function ClientsRow({ total, active, className }: Readonly<ClientsRowProps>) {
   return (
     <div className={cn("flex gap-4", className)}>
       <div className="flex items-baseline gap-2">

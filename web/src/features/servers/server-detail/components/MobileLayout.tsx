@@ -25,7 +25,7 @@ export function MobileLayout({
   dcItems,
   mobileTabs,
   onSelectDc,
-}: {
+}: Readonly<{
   initState: ServerDetailPageProps["initState"];
   pulseItems: PulseTickData[];
   alertItems: AlertItem[];
@@ -33,8 +33,8 @@ export function MobileLayout({
   sortedDcs: ServerDcData[];
   dcItems: DCStripItem[];
   mobileTabs: { id: string; label: string; content: React.ReactNode }[];
-  onSelectDc: (dc: ServerDcData) => void;
-}) {
+  onSelectDc: (dc: Readonly<ServerDcData>) => void;
+}>) {
   return (
     <div className="md:hidden flex flex-col gap-4">
       {/* Gates moved into the "Gates & Upstreams" swipe tab; the

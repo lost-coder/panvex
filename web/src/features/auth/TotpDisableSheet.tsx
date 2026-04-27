@@ -10,7 +10,7 @@ interface TotpDisableSheetProps {
   error?: string | undefined;
 }
 
-export function TotpDisableSheet({ onDisable, onCancel, loading, error }: TotpDisableSheetProps) {
+export function TotpDisableSheet({ onDisable, onCancel, loading, error }: Readonly<TotpDisableSheetProps>) {
   const [password, setPassword] = useState("");
   const [totpCode, setTotpCode] = useState("");
 
@@ -36,7 +36,7 @@ export function TotpDisableSheet({ onDisable, onCancel, loading, error }: TotpDi
       <FormField label="Authenticator Code" variant="uppercase" required>
         <Input
           value={totpCode}
-          onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
+          onChange={(e) => setTotpCode(e.target.value.replaceAll(/\D/g, ""))}
           inputMode="numeric"
           pattern="[0-9]*"
           placeholder="6-digit code"

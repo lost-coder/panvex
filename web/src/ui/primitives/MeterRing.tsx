@@ -14,7 +14,7 @@ function getStroke(pct: number): string {
   return "#34d399";
 }
 
-export function MeterRing({ value, max = 100, label, size = 72, className }: MeterRingProps) {
+export function MeterRing({ value, max = 100, label, size = 72, className }: Readonly<MeterRingProps>) {
   const pct = Math.min(100, Math.max(0, (value / max) * 100));
   const r = (size - 8) / 2;
   const circ = 2 * Math.PI * r;

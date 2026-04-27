@@ -21,7 +21,7 @@ interface FleetGroupsPageProps {
     | { mode: "edit"; id: string };
   formData: FleetGroupFormData;
   formError: string;
-  onFormDataChange: (data: FleetGroupFormData) => void;
+  onFormDataChange: (data: Readonly<FleetGroupFormData>) => void;
   onCreate: () => void;
   onEdit: (id: string) => void;
   onOpenDetail: (id: string) => void;
@@ -34,7 +34,7 @@ const COLUMNS = [
   {
     key: "label",
     header: "Label",
-    render: (g: FleetGroupEntry) => (
+    render: (g: Readonly<FleetGroupEntry>) => (
       <div className="flex flex-col min-w-0">
         <span className="font-medium text-fg truncate">{g.label || g.name}</span>
         <span className="text-[11px] font-mono text-fg-muted truncate">{g.name}</span>
@@ -45,7 +45,7 @@ const COLUMNS = [
   {
     key: "agents",
     header: "Agents",
-    render: (g: FleetGroupEntry) => (
+    render: (g: Readonly<FleetGroupEntry>) => (
       <MonoValue className="text-fg">{g.agent_count}</MonoValue>
     ),
     className: "w-[90px] text-center",
@@ -53,7 +53,7 @@ const COLUMNS = [
   {
     key: "integrations",
     header: "Integrations",
-    render: (g: FleetGroupEntry) => {
+    render: (g: Readonly<FleetGroupEntry>) => {
       const count = g.integrations?.length ?? 0;
       return count > 0 ? (
         <Badge variant="default">{count}</Badge>
@@ -66,7 +66,7 @@ const COLUMNS = [
   {
     key: "description",
     header: "Description",
-    render: (g: FleetGroupEntry) => (
+    render: (g: Readonly<FleetGroupEntry>) => (
       <span className="text-sm text-fg-muted line-clamp-1">
         {g.description || "—"}
       </span>
@@ -87,7 +87,7 @@ export function FleetGroupsPage({
   onSubmit,
   onCancel,
   saving,
-}: FleetGroupsPageProps) {
+}: Readonly<FleetGroupsPageProps>) {
   return (
     <>
       <PageHeader
@@ -115,7 +115,7 @@ export function FleetGroupsPage({
                 {
                   key: "actions",
                   header: "",
-                  render: (g: FleetGroupEntry) => (
+                  render: (g: Readonly<FleetGroupEntry>) => (
                     <div className="flex gap-1 justify-end">
                       <Button
                         size="sm"

@@ -9,7 +9,7 @@ import { cn } from "@/ui";
 import type { ServerDcData } from "@/shared/api/types-pages/pages";
 
 // ─── 12-DC grid of tiles (problem-first ordering) ─────────────────────
-function DcTile({ dc, onClick }: { dc: ServerDcData; onClick: () => void }) {
+function DcTile({ dc, onClick }: Readonly<{ dc: ServerDcData; onClick: () => void }>) {
   const status: "ok" | "warn" | "error" =
     dc.coveragePct < 70 ? "error" : dc.coveragePct < 100 ? "warn" : "ok";
   const toneBorder =
@@ -81,10 +81,10 @@ export const DcTiles = memo(_DcTiles);
 function _DcTiles({
   dcs,
   onSelect,
-}: {
+}: Readonly<{
   dcs: ServerDcData[];
-  onSelect: (dc: ServerDcData) => void;
-}) {
+  onSelect: (dc: Readonly<ServerDcData>) => void;
+}>) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
       {dcs.map((dc) => (

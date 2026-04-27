@@ -5,26 +5,26 @@ import { DataTable } from "@/ui/components/DataTable";
 import { roleVariant } from "@/ui/lib/status";
 import type { UsersSectionProps, UserListItem } from "@/shared/api/types-pages/pages";
 
-export function UsersSection({ users, onAdd, onEdit, onResetTotp, onDelete }: UsersSectionProps) {
+export function UsersSection({ users, onAdd, onEdit, onResetTotp, onDelete }: Readonly<UsersSectionProps>) {
   const columns = [
     {
       key: "username",
       header: "Username",
-      render: (u: UserListItem) => (
+      render: (u: Readonly<UserListItem>) => (
         <span className="text-sm font-medium text-fg">{u.username}</span>
       ),
     },
     {
       key: "role",
       header: "Role",
-      render: (u: UserListItem) => (
+      render: (u: Readonly<UserListItem>) => (
         <Badge variant={roleVariant[u.role] ?? "default"}>{u.role}</Badge>
       ),
     },
     {
       key: "totp",
       header: "2FA",
-      render: (u: UserListItem) => (
+      render: (u: Readonly<UserListItem>) => (
         <span className={`text-xs ${u.totpEnabled ? "text-status-ok" : "text-fg-muted"}`}>
           {u.totpEnabled ? "Enabled" : "Off"}
         </span>
@@ -33,7 +33,7 @@ export function UsersSection({ users, onAdd, onEdit, onResetTotp, onDelete }: Us
     {
       key: "actions",
       header: "",
-      render: (u: UserListItem) => (
+      render: (u: Readonly<UserListItem>) => (
         <div className="flex gap-1 justify-end">
           <Button variant="ghost" size="sm" onClick={() => onEdit(u.id)}>
             Edit

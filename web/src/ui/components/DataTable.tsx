@@ -5,7 +5,7 @@ import { cn } from "@/ui/lib/cn";
 export interface DataTableColumn<T> {
   key: string;
   header: string;
-  render: (row: T) => React.ReactNode;
+  render: (row: Readonly<T>) => React.ReactNode;
   sortable?: boolean;
   className?: string;
 }
@@ -13,8 +13,8 @@ export interface DataTableColumn<T> {
 export interface DataTableProps<T> {
   columns: DataTableColumn<T>[];
   data: T[];
-  keyExtractor: (row: T) => string;
-  onRowClick?: (row: T) => void;
+  keyExtractor: (row: Readonly<T>) => string;
+  onRowClick?: (row: Readonly<T>) => void;
   emptyMessage?: string;
   className?: string;
   /**
@@ -41,7 +41,7 @@ export function DataTable<T>({
   className,
   rowHeight = 48,
   maxHeight = 600,
-}: DataTableProps<T>) {
+}: Readonly<DataTableProps<T>>) {
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const parentRef = useRef<HTMLDivElement | null>(null);

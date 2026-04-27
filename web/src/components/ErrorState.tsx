@@ -9,7 +9,7 @@ interface ErrorStateProps {
   onRetry?: () => void;
 }
 
-export function ErrorState({ title, description, message, onRetry }: ErrorStateProps) {
+export function ErrorState({ title, description, message, onRetry }: Readonly<ErrorStateProps>) {
   const headline = title ?? "Something went wrong";
   const detail = description ?? message;
   return (

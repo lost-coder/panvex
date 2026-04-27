@@ -13,7 +13,7 @@ export function UserFormSheet({
   onCancel,
   loading,
   error,
-}: UserFormSheetProps) {
+}: Readonly<UserFormSheetProps>) {
   function update<K extends keyof typeof data>(key: K, value: (typeof data)[K]) {
     onChange({ ...data, [key]: value });
   }

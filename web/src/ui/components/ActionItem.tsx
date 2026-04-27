@@ -22,7 +22,7 @@ export function ActionItem({
   variant = "default",
   onClick,
   className,
-}: ActionItemProps) {
+}: Readonly<ActionItemProps>) {
   return (
     <button
       type="button"

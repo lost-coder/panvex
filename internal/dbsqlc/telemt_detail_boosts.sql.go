@@ -42,7 +42,7 @@ func (q *Queries) GetTelemetryDetailBoost(ctx context.Context, agentID string) (
 const listTelemetryDetailBoosts = `-- name: ListTelemetryDetailBoosts :many
 SELECT agent_id, expires_at, updated_at
 FROM telemt_detail_boosts
-ORDER BY agent_id
+ORDER BY agent_id ASC
 `
 
 func (q *Queries) ListTelemetryDetailBoosts(ctx context.Context) ([]TelemtDetailBoost, error) {

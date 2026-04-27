@@ -41,7 +41,7 @@ export function PageSection({
   tone = "default",
   className,
   children,
-}: PageSectionProps) {
+}: Readonly<PageSectionProps>) {
   return (
     <section className={cn("flex flex-col gap-3", className)}>
       <header className="flex items-center gap-2">

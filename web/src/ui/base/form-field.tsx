@@ -33,7 +33,7 @@ export function FormField({
   className,
   required,
   variant = "default",
-}: FormFieldProps) {
+}: Readonly<FormFieldProps>) {
   const autoId = React.useId();
   const fieldId = htmlFor ?? autoId;
 

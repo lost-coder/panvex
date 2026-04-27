@@ -15,7 +15,8 @@ SELECT id, name, secret_ciphertext, user_ad_tag, enabled, max_tcp_conns,
        created_at, updated_at, deleted_at
 FROM clients
 WHERE deleted_at IS NULL
-ORDER BY created_at, id;
+ORDER BY created_at ASC, id ASC;
+
 
 -- name: UpsertClient :exec
 INSERT INTO clients (id, name, secret_ciphertext, user_ad_tag, enabled,

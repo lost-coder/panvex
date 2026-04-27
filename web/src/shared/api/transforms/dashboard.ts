@@ -298,7 +298,7 @@ function formatRuntimeEvent(eventType: string, context: string): string {
   // Fallback: sentence-case event type + trimmed context as a suffix when it
   // adds signal. Caps at 80 chars to protect the timeline column width.
   const humanized = eventType
-    ? eventType.replace(/[._-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+    ? eventType.replaceAll(/[._-]+/g, " ").replaceAll(/\b\w/g, (c) => c.toUpperCase())
     : "Unknown event";
   const body = ctx && ctx !== eventType ? `${humanized} · ${ctx}` : humanized;
   return body.length > 80 ? `${body.slice(0, 77)}…` : body;

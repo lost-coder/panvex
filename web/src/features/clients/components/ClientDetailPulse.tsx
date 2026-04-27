@@ -20,7 +20,7 @@ function ratioTone(
   return okBelow80 ? "ok" : "default";
 }
 
-export function ClientDetailPulse({ client }: { client: Client }) {
+export function ClientDetailPulse({ client }: Readonly<{ client: Client }>) {
   const trafficPct = client.dataQuotaBytes
     ? Math.min(100, (client.trafficUsedBytes / client.dataQuotaBytes) * 100)
     : undefined;

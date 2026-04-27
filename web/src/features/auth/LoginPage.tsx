@@ -13,14 +13,14 @@ function CredentialsPanel({
   onPasswordChange,
   onSubmit,
   loading,
-}: {
+}: Readonly<{
   username: string;
   password: string;
   onUsernameChange: (v: string) => void;
   onPasswordChange: (v: string) => void;
   onSubmit: (e: React.FormEvent) => void | Promise<void>;
   loading?: boolean | undefined;
-}) {
+}>) {
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-4">
       <label className="flex flex-col gap-1.5">
@@ -67,19 +67,19 @@ function TotpPanel({
   onSubmit,
   onBack,
   loading,
-}: {
+}: Readonly<{
   totpCode: string;
   onTotpChange: (v: string) => void;
   onSubmit: (e: React.FormEvent) => void | Promise<void>;
   onBack: () => void;
   loading?: boolean | undefined;
-}) {
+}>) {
   // Strip non-digit keystrokes at the source so users can't accidentally
   // type a space and fail validation silently. `inputMode="numeric"`
   // opens the numeric keypad on mobile; the pattern attr is a belt-and-
   // braces fallback for browsers that ignore the hint.
   const handleChange = (v: string) => {
-    const digits = v.replace(/\D/g, "").slice(0, 6);
+    const digits = v.replaceAll(/\D/g, "").slice(0, 6);
     onTotpChange(digits);
   };
   return (
@@ -133,7 +133,7 @@ export function LoginPage({
   stage = "credentials",
   error,
   loading,
-}: LoginPageProps) {
+}: Readonly<LoginPageProps>) {
   const [username, setUsername] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [totpCode, setTotpCode] = React.useState("");

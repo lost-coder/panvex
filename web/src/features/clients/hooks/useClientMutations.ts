@@ -74,14 +74,14 @@ export function useClientMutations(clientId: string, rawClient: ApiClient | unde
    */
   function scheduleDeleteWithUndo(displayName: string): () => void {
     let cancelled = false;
-    const timer = window.setTimeout(() => {
+    const timer = globalThis.setTimeout(() => {
       if (cancelled) return;
       deleteMutation.mutate();
     }, 7000);
 
     const cancel = () => {
       cancelled = true;
-      window.clearTimeout(timer);
+      globalThis.clearTimeout(timer);
     };
 
     toast.withAction(

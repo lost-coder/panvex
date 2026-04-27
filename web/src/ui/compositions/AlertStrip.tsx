@@ -6,7 +6,7 @@ export interface AlertStripProps {
   className?: string;
 }
 
-export function AlertStrip({ alerts, className }: AlertStripProps) {
+export function AlertStrip({ alerts, className }: Readonly<AlertStripProps>) {
   return (
     <div className={cn("flex flex-col gap-2", className)}>
       {alerts.map((alert) => (

@@ -26,7 +26,7 @@ export function ProgressBar({
   size = "md",
   variant = "threshold",
   className,
-}: ProgressBarProps) {
+}: Readonly<ProgressBarProps>) {
   const pct = Math.min(100, Math.max(0, (value / max) * 100));
 
   return (

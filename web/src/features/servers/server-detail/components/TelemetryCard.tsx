@@ -19,15 +19,15 @@ export function TelemetryCard({
   metricsChart,
   timelineEvents,
   onSelectDc,
-}: {
+}: Readonly<{
   sortedDcs: ServerDcData[];
   dcOk: number;
   dcWarn: number;
   dcErr: number;
   metricsChart: ServerDetailPageProps["metricsChart"];
   timelineEvents: TimelineEvent[];
-  onSelectDc: (dc: ServerDcData) => void;
-}) {
+  onSelectDc: (dc: Readonly<ServerDcData>) => void;
+}>) {
   const timelinePoints = metricsChart?.points ?? [];
   return (
     <section className="rounded-xs bg-bg-card border border-border p-4">

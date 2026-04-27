@@ -26,7 +26,7 @@ const xlColsClass: Record<number, string> = {
   6: "xl:grid-cols-6",
 };
 
-export function DCScrollStrip({ items, onSelect, cols = [4, 6], className }: DCScrollStripProps) {
+export function DCScrollStrip({ items, onSelect, cols = [4, 6], className }: Readonly<DCScrollStripProps>) {
   return (
     <div
       className={cn(

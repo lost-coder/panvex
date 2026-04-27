@@ -7,7 +7,7 @@ export interface PaginationProps {
   className?: string;
 }
 
-export function Pagination({ page, totalPages, onPageChange, className }: PaginationProps) {
+export function Pagination({ page, totalPages, onPageChange, className }: Readonly<PaginationProps>) {
   const pages = buildRange(page, totalPages);
 
   return (
@@ -41,12 +41,12 @@ function PageBtn({
   disabled,
   onClick,
   children,
-}: {
+}: Readonly<{
   active?: boolean;
   disabled?: boolean;
   onClick: () => void;
   children: React.ReactNode;
-}) {
+}>) {
   return (
     <button
       type="button"

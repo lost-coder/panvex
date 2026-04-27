@@ -9,7 +9,8 @@ WHERE agent_id = $1;
 -- name: ListAgentCertificateRecoveryGrants :many
 SELECT agent_id, issued_by, issued_at, expires_at, used_at, revoked_at
 FROM agent_certificate_recovery_grants
-ORDER BY issued_at, agent_id;
+ORDER BY issued_at ASC, agent_id ASC;
+
 
 -- name: UpsertAgentCertificateRecoveryGrant :exec
 INSERT INTO agent_certificate_recovery_grants (agent_id, issued_by, issued_at, expires_at, used_at, revoked_at)

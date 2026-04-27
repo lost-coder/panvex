@@ -10,7 +10,7 @@ interface ErrorBoundaryState {
 }
 
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  constructor(props: ErrorBoundaryProps) {
+  constructor(props: Readonly<ErrorBoundaryProps>) {
     super(props);
     this.state = { error: null };
   }
@@ -45,7 +45,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 }
 
-function DefaultFallback({ error, onReset }: { error: Error; onReset: () => void }) {
+function DefaultFallback({ error, onReset }: Readonly<{ error: Error; onReset: () => void }>) {
   return (
     <div className="flex min-h-[200px] flex-col items-center justify-center gap-4 rounded-lg border border-red-500/20 bg-red-500/5 p-6 text-center">
       <div className="text-sm font-medium text-red-400">Something went wrong</div>

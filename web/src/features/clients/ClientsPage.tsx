@@ -62,7 +62,7 @@ export function ClientsPage({
   onBulkAction,
   bulkError,
   bulkPending,
-}: ClientsPageProps) {
+}: Readonly<ClientsPageProps>) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
@@ -101,7 +101,7 @@ export function ClientsPage({
   const pageIds = useMemo(() => paginated.map((c) => c.id), [paginated]);
   const sel = useClientSelection(pageIds);
 
-  const runBulk = async (action: BulkClientAction) => {
+  const runBulk = async (action: Readonly<BulkClientAction>) => {
     if (!onBulkAction || sel.selected.size === 0) return;
     const ids = Array.from(sel.selected);
     await Promise.resolve(onBulkAction(action, ids));

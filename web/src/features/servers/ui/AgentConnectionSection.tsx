@@ -18,7 +18,7 @@ export function AgentConnectionSection({
   data,
   onAllowReEnrollment,
   onRevokeGrant,
-}: AgentConnectionSectionProps) {
+}: Readonly<AgentConnectionSectionProps>) {
   const certTone =
     data.certificate.remainingDays > 7
       ? "text-status-ok"

@@ -100,7 +100,7 @@ SELECT id, agent_id, client_name, secret, status, total_octets,
        max_tcp_conns, max_unique_ips, data_quota_bytes, expiration,
        discovered_at, updated_at
 FROM discovered_clients
-ORDER BY discovered_at DESC, id
+ORDER BY discovered_at DESC, id ASC
 `
 
 func (q *Queries) ListDiscoveredClients(ctx context.Context) ([]DiscoveredClient, error) {

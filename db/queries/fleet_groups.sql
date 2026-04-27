@@ -15,7 +15,8 @@ WHERE name = $1;
 -- name: ListFleetGroups :many
 SELECT id, name, label, description, created_at, updated_at
 FROM fleet_groups
-ORDER BY created_at, id;
+ORDER BY created_at ASC, id ASC;
+
 
 -- name: UpsertFleetGroup :exec
 INSERT INTO fleet_groups (id, name, label, description, created_at, updated_at)

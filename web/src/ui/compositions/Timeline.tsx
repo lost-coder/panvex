@@ -6,7 +6,7 @@ export interface TimelineProps {
   className?: string;
 }
 
-export function Timeline({ events, className }: TimelineProps) {
+export function Timeline({ events, className }: Readonly<TimelineProps>) {
   return (
     // Continuous rail + dots-in-column:
     // * Timeline is position:relative and draws ONE vertical line as an

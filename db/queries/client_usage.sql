@@ -11,7 +11,8 @@ WHERE client_id = $1;
 SELECT client_id, agent_id, traffic_used_bytes, unique_ips_used,
        active_tcp_conns, active_unique_ips, last_seq, observed_at
 FROM client_usage
-ORDER BY client_id, agent_id;
+ORDER BY client_id ASC, agent_id ASC;
+
 
 -- name: UpsertClientUsage :exec
 INSERT INTO client_usage (client_id, agent_id, traffic_used_bytes,

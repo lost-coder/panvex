@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 /**
- * Tracks the browser's online/offline state via window.navigator.onLine
+ * Tracks the browser's online/offline state via globalThis.navigator.onLine
  * plus the `online`/`offline` DOM events. These events fire when the
  * OS-level network layer flips, so they miss captive-portal-style
  * "connected but can't reach the server" failures — those already
@@ -17,11 +17,11 @@ export function useOnlineStatus(): boolean {
   useEffect(() => {
     const handleOnline = () => setOnline(true);
     const handleOffline = () => setOnline(false);
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
+    globalThis.addEventListener("online", handleOnline);
+    globalThis.addEventListener("offline", handleOffline);
     return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
+      globalThis.removeEventListener("online", handleOnline);
+      globalThis.removeEventListener("offline", handleOffline);
     };
   }, []);
 

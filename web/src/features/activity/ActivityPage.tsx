@@ -42,12 +42,12 @@ const jobStatusVariant: Record<string, JobTone> = {
 // "agent_restart"). Pretty-case inline so the table reads like prose without
 // a translation map.
 function prettyAction(action: string) {
-  return action.replace(/_/g, " ");
+  return action.replaceAll("_", " ");
 }
 
 // ─── Jobs view ────────────────────────────────────────────────────────────────
 
-function JobStatusCell({ status }: { status: string }) {
+function JobStatusCell({ status }: Readonly<{ status: string }>) {
   const tone: StatusTone = jobStatusVariant[status] ?? "default";
   return <StatusLabel tone={tone} label={status} animate={status === "running"} />;
 }
@@ -61,7 +61,7 @@ function getJobColumns(t: (key: string) => string) {
     {
       key: "action",
       header: t("columns.action"),
-      render: (j: JobListItem) => (
+      render: (j: Readonly<JobListItem>) => (
         <div className="flex flex-col gap-0.5 min-w-0">
           <span className="font-mono text-xs text-fg">{prettyAction(j.action)}</span>
           {j.failureReason && (
@@ -81,13 +81,13 @@ function getJobColumns(t: (key: string) => string) {
     {
       key: "status",
       header: t("columns.status"),
-      render: (j: JobListItem) => <JobStatusCell status={j.status} />,
+      render: (j: Readonly<JobListItem>) => <JobStatusCell status={j.status} />,
       className: "w-[140px]",
     },
     {
       key: "targets",
       header: t("columns.targets"),
-      render: (j: JobListItem) => (
+      render: (j: Readonly<JobListItem>) => (
         <span className="font-mono text-xs text-fg-muted tabular-nums">
           {j.targetCount === 0 ? "—" : `×${j.targetCount}`}
         </span>
@@ -97,7 +97,7 @@ function getJobColumns(t: (key: string) => string) {
     {
       key: "actor",
       header: t("columns.actor"),
-      render: (j: JobListItem) => (
+      render: (j: Readonly<JobListItem>) => (
         <span
           className={cn(
             "text-[11px] truncate",
@@ -113,7 +113,7 @@ function getJobColumns(t: (key: string) => string) {
     {
       key: "created",
       header: t("columns.created"),
-      render: (j: JobListItem) => <AgeCell unixSec={j.createdAtUnix} mode="age" />,
+      render: (j: Readonly<JobListItem>) => <AgeCell unixSec={j.createdAtUnix} mode="age" />,
       className: "text-right w-[120px]",
     },
   ];
@@ -123,7 +123,7 @@ function getJobColumns(t: (key: string) => string) {
 
 // Audit action slugs like "user.login" / "client.update" have a namespace
 // prefix — color it faintly to anchor the eye on the real verb.
-function ActionCell({ action }: { action: string }) {
+function ActionCell({ action }: Readonly<{ action: string }>) {
   const dot = action.indexOf(".");
   if (dot < 0) {
     return <span className="font-mono text-xs text-fg">{action}</span>;
@@ -152,7 +152,7 @@ function groupByDay(events: AuditListItem[]) {
   return Array.from(groups.entries());
 }
 
-function AuditRowActor({ e }: { e: AuditListItem }) {
+function AuditRowActor({ e }: Readonly<{ e: AuditListItem }>) {
   const label = e.actorLabel ?? shortId(e.actorId);
   return (
     <span
@@ -167,7 +167,7 @@ function AuditRowActor({ e }: { e: AuditListItem }) {
   );
 }
 
-function AuditRowTarget({ e }: { e: AuditListItem }) {
+function AuditRowTarget({ e }: Readonly<{ e: AuditListItem }>) {
   if (!e.targetId) return null;
   const label = e.targetLabel ?? shortId(e.targetId);
   const kindTone: Record<string, string> = {
@@ -201,7 +201,7 @@ function AuditRowTarget({ e }: { e: AuditListItem }) {
   );
 }
 
-function AuditList({ events }: { events: AuditListItem[] }) {
+function AuditList({ events }: Readonly<{ events: AuditListItem[] }>) {
   const groups = useMemo(() => groupByDay(events), [events]);
   if (events.length === 0) {
     return (
@@ -269,7 +269,7 @@ export function ActivityPage({
   activeTab,
   onTabChange,
   lookupError,
-}: ActivityPageProps) {
+}: Readonly<ActivityPageProps>) {
   // Q4.U-Q-09: localised column headers.
   const { t } = useTranslation("activity");
   const jobColumns = useMemo(() => getJobColumns(t), [t]);

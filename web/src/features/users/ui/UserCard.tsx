@@ -23,7 +23,7 @@ export function UserCard({
   ips,
   onClick,
   className,
-}: UserCardProps) {
+}: Readonly<UserCardProps>) {
   return (
     <button
       type="button"

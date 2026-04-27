@@ -51,7 +51,7 @@ func (q *Queries) GetIntegrationProvider(ctx context.Context, id uuid.UUID) (Int
 const listIntegrationProviders = `-- name: ListIntegrationProviders :many
 SELECT id, kind, label, config, created_at, updated_at
 FROM integration_providers
-ORDER BY label, id
+ORDER BY label ASC, id ASC
 `
 
 func (q *Queries) ListIntegrationProviders(ctx context.Context) ([]IntegrationProvider, error) {

@@ -12,7 +12,7 @@ export default meta;
 
 type Story = StoryObj<typeof Toast>;
 
-function ToastDemo({ variant }: { variant: "success" | "error" | "info" }) {
+function ToastDemo({ variant }: Readonly<{ variant: "success" | "error" | "info" }>) {
   const [open, setOpen] = useState(false);
   const msgs = {
     success: "Node restarted successfully",

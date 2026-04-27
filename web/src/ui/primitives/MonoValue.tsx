@@ -5,6 +5,6 @@ export interface MonoValueProps {
   className?: string | undefined;
 }
 
-export function MonoValue({ children, className }: MonoValueProps) {
+export function MonoValue({ children, className }: Readonly<MonoValueProps>) {
   return <span className={cn("font-mono text-xs text-fg", className)}>{children}</span>;
 }

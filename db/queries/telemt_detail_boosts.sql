@@ -10,7 +10,8 @@ WHERE agent_id = $1;
 -- name: ListTelemetryDetailBoosts :many
 SELECT agent_id, expires_at, updated_at
 FROM telemt_detail_boosts
-ORDER BY agent_id;
+ORDER BY agent_id ASC;
+
 
 -- name: UpsertTelemetryDetailBoost :exec
 INSERT INTO telemt_detail_boosts (agent_id, expires_at, updated_at)

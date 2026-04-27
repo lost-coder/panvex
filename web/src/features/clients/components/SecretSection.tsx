@@ -18,7 +18,7 @@ export function SecretSection({
   onRotate,
   rotating,
   pendingRedeploy,
-}: SecretSectionProps) {
+}: Readonly<SecretSectionProps>) {
   // Client secrets need a long-lived reveal/copy flow, not the one-shot
   // <SecretReveal> primitive used for TOTP bootstraps.
   const [revealed, setRevealed] = useState(false);

@@ -14,7 +14,7 @@ import {
 export interface ClientsCreateSheetProps {
   open: boolean;
   data: ClientFormData;
-  onChange: (data: ClientFormData) => void;
+  onChange: (data: Readonly<ClientFormData>) => void;
   onSubmit: () => void | Promise<void>;
   onClose: () => void;
   loading?: boolean | undefined;
@@ -33,7 +33,7 @@ export function ClientsCreateSheet({
   error,
   fleetGroups,
   agents,
-}: ClientsCreateSheetProps) {
+}: Readonly<ClientsCreateSheetProps>) {
   return (
     <Sheet
       open={open}

@@ -34,7 +34,7 @@ const barClass: Record<PulseTone, string> = {
   error: "bg-status-error",
 };
 
-function Tick({ label, value, hint, tone, barPct, delta }: PulseTick) {
+function Tick({ label, value, hint, tone, barPct, delta }: Readonly<PulseTick>) {
   const t = tone ?? "default";
   return (
     <div className="flex flex-col gap-1 min-w-0">
@@ -80,7 +80,7 @@ function Tick({ label, value, hint, tone, barPct, delta }: PulseTick) {
  * Optional `barPct` shows a slim progress bar under the value (for
  * usage/quota), and `delta` renders a coloured Δ next to the value.
  */
-function PulseRowImpl({ ticks, className }: PulseRowProps) {
+function PulseRowImpl({ ticks, className }: Readonly<PulseRowProps>) {
   const cols = ticks.length;
   return (
     <section

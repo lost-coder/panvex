@@ -41,7 +41,7 @@ export function ClientDetailHero({
   onRedeploy,
   redeploying,
   onDelete,
-}: ClientDetailHeroProps) {
+}: Readonly<ClientDetailHeroProps>) {
   const actions = (
     <>
       {onEdit && (

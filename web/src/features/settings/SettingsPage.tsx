@@ -43,7 +43,7 @@ export function SettingsPage({
   onRetentionChange,
   retentionSaving,
   children,
-}: SettingsPageProps) {
+}: Readonly<SettingsPageProps>) {
   const hasAdmin = !!(onManageUsers || (retentionSettings && onRetentionChange) || onRestart);
 
   return (
@@ -278,11 +278,11 @@ function RetentionSection({
   settings,
   onChange,
   saving,
-}: {
+}: Readonly<{
   settings: NonNullable<SettingsPageProps["retentionSettings"]>;
-  onChange: (s: NonNullable<SettingsPageProps["retentionSettings"]>) => void;
+  onChange: (s: Readonly<NonNullable<SettingsPageProps["retentionSettings"]>>) => void;
   saving?: boolean | undefined;
-}) {
+}>) {
   const [draft, setDraft] = useState(settings);
   const isDirty = JSON.stringify(draft) !== JSON.stringify(settings);
 

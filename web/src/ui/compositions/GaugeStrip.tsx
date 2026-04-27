@@ -25,7 +25,7 @@ const mdColsClass: Record<number, string> = {
   6: "md:grid-cols-6",
 };
 
-export function GaugeStrip({ items, cols = [2, 4], className }: GaugeStripProps) {
+export function GaugeStrip({ items, cols = [2, 4], className }: Readonly<GaugeStripProps>) {
   return (
     <div className={cn("grid gap-2", colsClass[cols[0]], mdColsClass[cols[1]], className)}>
       {items.map((item) => (

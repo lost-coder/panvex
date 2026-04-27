@@ -23,7 +23,7 @@ const variantIcons: Record<ToastVariant, string> = {
   info: "ℹ",
 };
 
-export function Toast({ message, variant = "info", duration = 3000, open, onClose }: ToastProps) {
+export function Toast({ message, variant = "info", duration = 3000, open, onClose }: Readonly<ToastProps>) {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {

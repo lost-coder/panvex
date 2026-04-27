@@ -14,7 +14,7 @@ const listInstances = `-- name: ListInstances :many
 
 SELECT id, agent_id, name, version, config_fingerprint, connected_users, read_only, updated_at
 FROM telemt_instances
-ORDER BY updated_at, id
+ORDER BY updated_at ASC, id ASC
 `
 
 // R-Q-03: telemt_instances — per-agent runtime metadata that the

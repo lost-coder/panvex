@@ -11,7 +11,7 @@ function eventTone(eventType: string): "ok" | "warn" | "error" | "info" {
   return "info";
 }
 
-function EventRow({ event }: { event: ServerEventData }) {
+function EventRow({ event }: Readonly<{ event: ServerEventData }>) {
   const tone = eventTone(event.eventType);
   // Left rail coloured per tone — the handoff "event log" look: time as a
   // mono timestamp, message leans on a subtle accent strip that says "this
@@ -40,7 +40,7 @@ function EventRow({ event }: { event: ServerEventData }) {
   );
 }
 
-export function EventsTab({ server }: { server: ServerDetailPageProps["server"] }) {
+export function EventsTab({ server }: Readonly<{ server: ServerDetailPageProps["server"] }>) {
   const { events, eventsDroppedTotal } = server;
 
   if (events.length === 0) {

@@ -66,7 +66,7 @@ export function ServersContainer() {
       <ErrorState
         title="Failed to load fleet"
         description={error.message || "Telemetry service unreachable. Retry once the panel recovers."}
-        onRetry={() => window.location.reload()}
+        onRetry={() => globalThis.location.reload()}
       />
     );
   }

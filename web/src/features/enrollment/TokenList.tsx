@@ -18,7 +18,7 @@ const statusTone: Record<EnrollmentTokenData["status"], StatusTone> = {
   revoked: "error",
 };
 
-function TokenCell({ value }: { value: string }) {
+function TokenCell({ value }: Readonly<{ value: string }>) {
   return (
     <div className="flex items-center gap-2 min-w-0">
       <span className="font-mono text-xs text-fg break-all">{value}</span>
@@ -27,18 +27,18 @@ function TokenCell({ value }: { value: string }) {
   );
 }
 
-export function TokenList({ tokens, onRevoke, nowSec }: TokenListProps) {
+export function TokenList({ tokens, onRevoke, nowSec }: Readonly<TokenListProps>) {
   const columns = [
     {
       key: "value",
       header: "Token",
-      render: (t: EnrollmentTokenData) => <TokenCell value={t.value} />,
+      render: (t: Readonly<EnrollmentTokenData>) => <TokenCell value={t.value} />,
       className: "min-w-[200px]",
     },
     {
       key: "fleetGroup",
       header: "Fleet Group",
-      render: (t: EnrollmentTokenData) => (
+      render: (t: Readonly<EnrollmentTokenData>) => (
         <span
           className={cn(
             "text-sm",
@@ -53,7 +53,7 @@ export function TokenList({ tokens, onRevoke, nowSec }: TokenListProps) {
     {
       key: "status",
       header: "Status",
-      render: (t: EnrollmentTokenData) => (
+      render: (t: Readonly<EnrollmentTokenData>) => (
         <StatusLabel tone={statusTone[t.status]} label={t.status} />
       ),
       className: "w-[120px]",
@@ -61,7 +61,7 @@ export function TokenList({ tokens, onRevoke, nowSec }: TokenListProps) {
     {
       key: "issued",
       header: "Issued",
-      render: (t: EnrollmentTokenData) => (
+      render: (t: Readonly<EnrollmentTokenData>) => (
         <span className="text-[11px] font-mono text-fg-muted tabular-nums">
           {formatTime(t.issuedAtUnix)}
         </span>
@@ -73,7 +73,7 @@ export function TokenList({ tokens, onRevoke, nowSec }: TokenListProps) {
       header: "Expires",
       // Countdown is meaningful only for active tokens; past that the column
       // falls back to a plain absolute time.
-      render: (t: EnrollmentTokenData) =>
+      render: (t: Readonly<EnrollmentTokenData>) =>
         t.status === "active" ? (
           <AgeCell unixSec={t.expiresAtUnix} mode="expires" nowSec={nowSec} />
         ) : (
@@ -86,7 +86,7 @@ export function TokenList({ tokens, onRevoke, nowSec }: TokenListProps) {
     {
       key: "actions",
       header: "",
-      render: (t: EnrollmentTokenData) =>
+      render: (t: Readonly<EnrollmentTokenData>) =>
         t.status === "active" ? (
           <Button
             variant="ghost"

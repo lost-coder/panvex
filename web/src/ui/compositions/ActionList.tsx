@@ -6,7 +6,7 @@ export interface ActionListProps {
   className?: string;
 }
 
-export function ActionList({ actions, className }: ActionListProps) {
+export function ActionList({ actions, className }: Readonly<ActionListProps>) {
   return (
     <div className={cn("flex flex-col divide-y divide-border", className)}>
       {actions.map((action) => (

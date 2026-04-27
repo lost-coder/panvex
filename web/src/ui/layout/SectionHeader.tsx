@@ -7,7 +7,7 @@ export interface SectionHeaderProps {
   className?: string;
 }
 
-export function SectionHeader({ title, badge, trailing, className }: SectionHeaderProps) {
+export function SectionHeader({ title, badge, trailing, className }: Readonly<SectionHeaderProps>) {
   return (
     <div className={cn("flex items-center justify-between gap-3 mb-2", className)}>
       <div className="flex items-center gap-2">

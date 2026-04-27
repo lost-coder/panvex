@@ -26,7 +26,7 @@ export function StatusBeacon({
   size = "md",
   animated = true,
   className,
-}: StatusBeaconProps) {
+}: Readonly<StatusBeaconProps>) {
   return (
     <span
       className={cn(

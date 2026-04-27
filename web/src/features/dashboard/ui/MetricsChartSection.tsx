@@ -18,7 +18,7 @@ const MetricsChartSectionInner = lazy(() =>
   import("./internal/MetricsChartSectionInner"),
 );
 
-export function MetricsChartSection(props: MetricsChartSectionProps) {
+export function MetricsChartSection(props: Readonly<MetricsChartSectionProps>) {
   return (
     <Suspense
       fallback={

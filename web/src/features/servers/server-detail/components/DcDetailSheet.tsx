@@ -20,10 +20,10 @@ import type { ServerDcData } from "@/shared/api/types-pages/pages";
 export function DcDetailSheet({
   selectedDc,
   onClose,
-}: {
+}: Readonly<{
   selectedDc: ServerDcData | null;
   onClose: () => void;
-}) {
+}>) {
   return (
     <Sheet
       open={selectedDc !== null}

@@ -4,7 +4,8 @@
 -- name: ListUsers :many
 SELECT id, username, password_hash, role, totp_enabled, totp_secret, created_at
 FROM users
-ORDER BY created_at, id;
+ORDER BY created_at ASC, id ASC;
+
 
 -- name: GetUser :one
 SELECT id, username, password_hash, role, totp_enabled, totp_secret, created_at

@@ -29,7 +29,7 @@ export function DesktopLayout({
   connectionsContent,
   eventsContent,
   onSelectDc,
-}: {
+}: Readonly<{
   server: ServerDetailPageProps["server"];
   initState: ServerDetailPageProps["initState"];
   pulseItems: PulseTickData[];
@@ -43,8 +43,8 @@ export function DesktopLayout({
   mePoolContent: React.ReactNode;
   connectionsContent: React.ReactNode;
   eventsContent: React.ReactNode;
-  onSelectDc: (dc: ServerDcData) => void;
-}) {
+  onSelectDc: (dc: Readonly<ServerDcData>) => void;
+}>) {
   return (
     <div className="hidden md:flex flex-col gap-6">
       {initState && <InitCard {...initState} />}

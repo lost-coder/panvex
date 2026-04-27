@@ -37,7 +37,7 @@ function colorFromName(name: string): string {
   return palette[Math.abs(hash) % palette.length] ?? palette[0]!;
 }
 
-export function UserAvatar({ name, size = "md", online, className }: UserAvatarProps) {
+export function UserAvatar({ name, size = "md", online, className }: Readonly<UserAvatarProps>) {
   return (
     <div className={cn("relative inline-flex shrink-0", className)}>
       <span

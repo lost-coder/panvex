@@ -22,7 +22,7 @@ export function RegionCard({
   load,
   onClick,
   className,
-}: RegionCardProps) {
+}: Readonly<RegionCardProps>) {
   return (
     <button
       type="button"
@@ -48,7 +48,7 @@ export function RegionCard({
   );
 }
 
-function Stat({ value, label }: { value: number | string; label: string }) {
+function Stat({ value, label }: Readonly<{ value: number | string; label: string }>) {
   return (
     <div className="flex items-baseline gap-1">
       <span className="text-xs font-mono font-medium text-fg">{value}</span>

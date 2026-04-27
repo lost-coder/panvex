@@ -11,12 +11,12 @@ export function RenameDialog({
   onOpenChange,
   currentName,
   onRename,
-}: {
+}: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentName: string;
   onRename?: ((name: string) => void) | undefined;
-}) {
+}>) {
   const [value, setValue] = useState(currentName);
 
   // Reset the field whenever the sheet opens so it picks up any

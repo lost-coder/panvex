@@ -20,7 +20,7 @@ export function Sidebar({
   onNavigate,
   onLogout,
   className,
-}: SidebarProps) {
+}: Readonly<SidebarProps>) {
   return (
     <aside
       className={cn(

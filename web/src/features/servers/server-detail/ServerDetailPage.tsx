@@ -50,7 +50,7 @@ export function ServerDetailPage({
   onRename,
   onDeregister,
   metricsChart,
-}: ServerDetailPageProps) {
+}: Readonly<ServerDetailPageProps>) {
   const { label: relativeTime, stale: relativeTimeStale } = useRelativeTime(lastUpdatedAt);
   const { systemInfo, gates, connections, summary, dcs } = server;
 
@@ -239,7 +239,7 @@ export function ServerDetailPage({
   // Stable handlers so the dropdowns/sheets don't churn on every parent
   // re-render. The page's render cost is dominated by the data widgets
   // below, not by these callbacks.
-  const handleSelectDc = useCallback((dc: ServerDcData) => setSelectedDc(dc), []);
+  const handleSelectDc = useCallback((dc: Readonly<ServerDcData>) => setSelectedDc(dc), []);
   const handleCloseDc = useCallback(() => setSelectedDc(null), []);
   const handleOpenRename = useCallback(
     () => (onRename ? setRenameOpen(true) : undefined),

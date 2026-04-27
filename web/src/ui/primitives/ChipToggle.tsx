@@ -9,7 +9,7 @@ export interface ChipToggleProps {
   className?: string;
 }
 
-export function ChipToggle({ label, sublabel, selected, onClick, className }: ChipToggleProps) {
+export function ChipToggle({ label, sublabel, selected, onClick, className }: Readonly<ChipToggleProps>) {
   return (
     <button
       type="button"

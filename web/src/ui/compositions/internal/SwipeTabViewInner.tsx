@@ -29,7 +29,7 @@ function SwipeTabViewInner({
   onTabChange,
   swipeEnabled = true,
   className,
-}: SwipeTabViewProps) {
+}: Readonly<SwipeTabViewProps>) {
   const [activeIndex, setActiveIndex] = React.useState(() => {
     const idx = tabs.findIndex((t) => t.id === activeTab);
     return idx >= 0 ? idx : 0;

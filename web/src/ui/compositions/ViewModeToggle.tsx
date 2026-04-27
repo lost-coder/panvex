@@ -3,11 +3,11 @@ import type { ViewMode } from "@/shared/api/types-pages/pages";
 
 export interface ViewModeToggleProps {
   mode: ViewMode;
-  onChange: (mode: ViewMode) => void;
+  onChange: (mode: Readonly<ViewMode>) => void;
   className?: string;
 }
 
-export function ViewModeToggle({ mode, onChange, className }: ViewModeToggleProps) {
+export function ViewModeToggle({ mode, onChange, className }: Readonly<ViewModeToggleProps>) {
   return (
     <div className={cn("flex rounded-xs border border-border overflow-hidden", className)}>
       <button

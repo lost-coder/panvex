@@ -21,7 +21,7 @@ export function ClientsTableBody({
   selection,
   onClientClick,
   nowMs,
-}: ClientsTableBodyProps) {
+}: Readonly<ClientsTableBodyProps>) {
   return (
     <div className="bg-bg-card border border-border rounded-xl shadow-sm overflow-hidden">
       {/* Mobile: compact rows with optional checkboxes. */}

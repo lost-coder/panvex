@@ -15,7 +15,7 @@ export function ClientFormSheet({
   error,
   fleetGroups,
   agents,
-}: ClientFormSheetProps) {
+}: Readonly<ClientFormSheetProps>) {
   const [showLimits, setShowLimits] = useState(
     data.maxTcpConns > 0 || data.maxUniqueIps > 0 || data.dataQuotaBytes > 0,
   );

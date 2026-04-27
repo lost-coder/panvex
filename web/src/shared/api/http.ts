@@ -247,14 +247,14 @@ export async function api<T>(
     // navigate. Skip the auth bootstrap endpoints to avoid loops.
     if (
       response.status === 401 &&
-      typeof window !== "undefined" &&
+      typeof globalThis.window !== "undefined" &&
       !isAuthBootstrapPath(path)
     ) {
       // Session is gone — drop any cached CSRF token so the next
       // post-login mutation refetches against the freshly-minted
       // session.
       clearCSRFToken();
-      window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+      globalThis.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
     }
 
     let message = `Request failed with status ${response.status}`;
@@ -276,7 +276,7 @@ export async function api<T>(
     // skipped for symmetry with the 401 handler above.
     if (
       response.status === 403 &&
-      typeof window !== "undefined" &&
+      typeof globalThis.window !== "undefined" &&
       !isAuthBootstrapPath(path)
     ) {
       // 403 on a state-changing request can mean two things: legitimate
@@ -289,7 +289,7 @@ export async function api<T>(
       }
       const method = (init?.method ?? "GET").toUpperCase();
       const detail: ForbiddenEventDetail = { path, method, message, code };
-      window.dispatchEvent(
+      globalThis.dispatchEvent(
         new CustomEvent<ForbiddenEventDetail>(FORBIDDEN_EVENT, { detail }),
       );
     }
@@ -314,13 +314,13 @@ export async function api<T>(
       issues: parsed.error.issues,
     });
 
-    if (typeof window !== "undefined") {
+    if (typeof globalThis.window !== "undefined") {
       const detail: ApiSchemaMismatchDetail = {
         path,
         error: parsed.error,
         message: `Unexpected response shape from ${path}`,
       };
-      window.dispatchEvent(
+      globalThis.dispatchEvent(
         new CustomEvent<ApiSchemaMismatchDetail>(API_SCHEMA_MISMATCH_EVENT, {
           detail,
         }),

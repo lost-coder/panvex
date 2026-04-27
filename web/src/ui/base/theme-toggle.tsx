@@ -6,7 +6,7 @@ export interface ThemeToggleProps {
   className?: string;
 }
 
-export function ThemeToggle({ value = "dark", onChange, className }: ThemeToggleProps) {
+export function ThemeToggle({ value = "dark", onChange, className }: Readonly<ThemeToggleProps>) {
   const isLight = value === "light";
 
   return (

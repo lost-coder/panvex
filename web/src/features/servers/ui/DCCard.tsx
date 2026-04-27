@@ -12,7 +12,7 @@ export interface DCCardProps {
   className?: string;
 }
 
-export function DCCard({ code, city, latency, load, status, onClick, className }: DCCardProps) {
+export function DCCard({ code, city, latency, load, status, onClick, className }: Readonly<DCCardProps>) {
   return (
     <button
       type="button"

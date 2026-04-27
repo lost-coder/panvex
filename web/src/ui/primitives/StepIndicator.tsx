@@ -7,7 +7,7 @@ export interface StepIndicatorProps {
   className?: string;
 }
 
-export function StepIndicator({ steps, current, className }: StepIndicatorProps) {
+export function StepIndicator({ steps, current, className }: Readonly<StepIndicatorProps>) {
   return (
     <div className={cn("flex items-center gap-2", className)}>
       {steps.map((label, i) => (

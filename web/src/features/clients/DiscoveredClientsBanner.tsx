@@ -5,7 +5,7 @@ export interface DiscoveredClientsBannerProps {
   onClick?: (() => void) | undefined;
 }
 
-export function DiscoveredClientsBanner({ count, onClick }: DiscoveredClientsBannerProps) {
+export function DiscoveredClientsBanner({ count, onClick }: Readonly<DiscoveredClientsBannerProps>) {
   if (count <= 0) return null;
 
   return (

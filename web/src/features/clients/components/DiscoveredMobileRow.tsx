@@ -22,7 +22,7 @@ export function DiscoveredMobileRow({
   onAdopt,
   onIgnore,
   busy,
-}: DiscoveredMobileRowProps) {
+}: Readonly<DiscoveredMobileRowProps>) {
   const interactive = row.status === "pending_review";
   return (
     <div className="flex flex-col gap-2 px-4 py-3 border-b border-divider">
@@ -78,7 +78,7 @@ export interface DiscoveredPulseCellProps {
   tone?: "default" | "ok" | "warn" | "error";
 }
 
-export function DiscoveredPulseCell({ i, label, value, tone }: DiscoveredPulseCellProps) {
+export function DiscoveredPulseCell({ i, label, value, tone }: Readonly<DiscoveredPulseCellProps>) {
   const isSecondCol = i % 2 === 1;
   const isSecondRow = i >= 2;
   const toneClass: Record<NonNullable<typeof tone>, string> = {

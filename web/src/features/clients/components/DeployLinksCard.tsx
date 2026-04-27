@@ -13,7 +13,7 @@ interface LinksStripProps {
   links: { classic: string[]; secure: string[]; tls: string[] };
 }
 
-function LinksStrip({ links }: LinksStripProps) {
+function LinksStrip({ links }: Readonly<LinksStripProps>) {
   type LinkGroup = { key: "tls" | "secure" | "classic"; label: string; items: string[] };
   const groups: LinkGroup[] = (
     [
@@ -59,7 +59,7 @@ export function DeployLinksCard({
   deployments,
   secretPendingRedeploy,
   agentLabels,
-}: DeployLinksCardProps) {
+}: Readonly<DeployLinksCardProps>) {
   if (deployments.length === 0) {
     return (
       <div className="rounded-xs bg-bg-card border border-divider p-4 text-sm text-fg-muted text-center">
