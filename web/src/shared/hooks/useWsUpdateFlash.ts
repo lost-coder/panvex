@@ -25,8 +25,8 @@ export function useWsUpdateFlash(): boolean {
     // is the desired flash → reset cycle.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setFlashing(true);
-    const id = window.setTimeout(() => setFlashing(false), FLASH_DURATION_MS);
-    return () => window.clearTimeout(id);
+    const id = globalThis.setTimeout(() => setFlashing(false), FLASH_DURATION_MS);
+    return () => globalThis.clearTimeout(id);
   }, [lastEventAt]);
 
   return flashing;

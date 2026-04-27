@@ -4,14 +4,14 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useUrlSearchState } from "./useUrlSearchState";
 
 describe("useUrlSearchState", () => {
-  const initialLocation = window.location.pathname;
+  const initialLocation = globalThis.location.pathname;
 
   beforeEach(() => {
-    window.history.replaceState(null, "", initialLocation);
+    globalThis.history.replaceState(null, "", initialLocation);
   });
 
   afterEach(() => {
-    window.history.replaceState(null, "", initialLocation);
+    globalThis.history.replaceState(null, "", initialLocation);
   });
 
   it("returns the fallback when the param is missing", () => {
@@ -20,7 +20,7 @@ describe("useUrlSearchState", () => {
   });
 
   it("reads an existing URL parameter on mount", () => {
-    window.history.replaceState(null, "", `${initialLocation}?q=hello`);
+    globalThis.history.replaceState(null, "", `${initialLocation}?q=hello`);
     const { result } = renderHook(() => useUrlSearchState("q", ""));
     expect(result.current[0]).toBe("hello");
   });
@@ -28,22 +28,22 @@ describe("useUrlSearchState", () => {
   it("writes the value to the URL when set to a non-default", () => {
     const { result } = renderHook(() => useUrlSearchState("status", "all"));
     act(() => result.current[1]("active"));
-    expect(new URLSearchParams(window.location.search).get("status")).toBe("active");
+    expect(new URLSearchParams(globalThis.location.search).get("status")).toBe("active");
     expect(result.current[0]).toBe("active");
   });
 
   it("removes the param when reverting to the fallback", () => {
-    window.history.replaceState(null, "", `${initialLocation}?q=x`);
+    globalThis.history.replaceState(null, "", `${initialLocation}?q=x`);
     const { result } = renderHook(() => useUrlSearchState("q", ""));
     act(() => result.current[1](""));
-    expect(window.location.search).toBe("");
+    expect(globalThis.location.search).toBe("");
   });
 
   it("syncs with popstate events", () => {
     const { result } = renderHook(() => useUrlSearchState("q", ""));
     act(() => {
-      window.history.replaceState(null, "", `${initialLocation}?q=new`);
-      window.dispatchEvent(new PopStateEvent("popstate"));
+      globalThis.history.replaceState(null, "", `${initialLocation}?q=new`);
+      globalThis.dispatchEvent(new PopStateEvent("popstate"));
     });
     expect(result.current[0]).toBe("new");
   });

@@ -62,7 +62,7 @@ describe("AuthProvider", () => {
     navigateSpy.mockReset();
     // jsdom defaults pathname to '/' which is what we want for the
     // "not already on /login" branch.
-    window.history.replaceState({}, "", "/");
+    globalThis.history.replaceState({}, "", "/");
   });
 
   afterEach(() => {
@@ -78,7 +78,7 @@ describe("AuthProvider", () => {
     render(ui);
 
     await act(async () => {
-      window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+      globalThis.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
     });
 
     expect(qc.getQueryData(["stale"])) .toBeUndefined();
@@ -86,12 +86,12 @@ describe("AuthProvider", () => {
   });
 
   it("does NOT navigate when already on /login", async () => {
-    window.history.replaceState({}, "", "/login");
+    globalThis.history.replaceState({}, "", "/login");
     const { ui } = wrap(<AuthSpy />);
     render(ui);
 
     await act(async () => {
-      window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+      globalThis.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
     });
 
     expect(navigateSpy).not.toHaveBeenCalled();

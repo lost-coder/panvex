@@ -53,10 +53,10 @@ export function AppearanceProvider(props: { children: ReactNode; userID: string 
   });
 
   useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    if (globalThis.window === undefined || typeof globalThis.window.matchMedia !== "function") {
       return;
     }
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const mediaQuery = globalThis.matchMedia("(prefers-color-scheme: dark)");
     const syncPreference = () => setPrefersDark(mediaQuery.matches);
     syncPreference();
     const handleChange = (event: MediaQueryListEvent) => setPrefersDark(event.matches);
