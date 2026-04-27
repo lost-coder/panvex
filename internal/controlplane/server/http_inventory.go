@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/lost-coder/panvex/internal/controlplane/presence"
@@ -66,39 +67,55 @@ func (s *Server) handleAgents() http.HandlerFunc {
 		if !ok {
 			return
 		}
-		now := s.now()
-		recoveryGrants := make(map[string]storage.AgentCertificateRecoveryGrantRecord)
-		if s.store != nil {
-			loadedGrants, err := s.store.ListAgentCertificateRecoveryGrants(r.Context())
-			if err != nil {
-				s.logger.Error("list agent certificate recovery grants failed", "error", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
-				return
-			}
-			for _, grant := range loadedGrants {
-				recoveryGrants[grant.AgentID] = grant
-			}
+		recoveryGrants, err := s.loadAgentRecoveryGrants(r.Context())
+		if err != nil {
+			s.logger.Error("list agent certificate recovery grants failed", "error", err)
+			writeError(w, http.StatusInternalServerError, msgInternalError)
+			return
 		}
-
-		s.mu.RLock()
-		defer s.mu.RUnlock()
-
-		response := make([]Agent, 0, len(s.agents))
-		for _, agent := range s.agents {
-			if !scope.IsAllowed(agent.FleetGroupID) {
-				continue
-			}
-			agent.PresenceState = string(s.presence.Evaluate(agent.ID, now))
-			if grant, ok := recoveryGrants[agent.ID]; ok {
-				recovery := agentCertificateRecoveryGrantResponseFromRecord(grant, now)
-				agent.CertificateRecovery = &recovery
-			}
-			agent.Runtime = normalizeAgentRuntime(agent.Runtime)
-			response = append(response, agent)
-		}
-
-		writeJSON(w, http.StatusOK, response)
+		writeJSON(w, http.StatusOK, s.buildAgentsResponse(scope, recoveryGrants))
 	}
+}
+
+// loadAgentRecoveryGrants returns the persisted recovery grants keyed
+// by agent id. A nil store yields an empty map so the caller can stay
+// branch-free.
+func (s *Server) loadAgentRecoveryGrants(ctx context.Context) (map[string]storage.AgentCertificateRecoveryGrantRecord, error) {
+	if s.store == nil {
+		return map[string]storage.AgentCertificateRecoveryGrantRecord{}, nil
+	}
+	loaded, err := s.store.ListAgentCertificateRecoveryGrants(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]storage.AgentCertificateRecoveryGrantRecord, len(loaded))
+	for _, grant := range loaded {
+		out[grant.AgentID] = grant
+	}
+	return out, nil
+}
+
+// buildAgentsResponse produces the scoped, presence-augmented agent
+// list under s.mu RLock. The lock window is intentionally narrow —
+// no I/O happens inside it.
+func (s *Server) buildAgentsResponse(scope FleetScopeAccess, recoveryGrants map[string]storage.AgentCertificateRecoveryGrantRecord) []Agent {
+	now := s.now()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	response := make([]Agent, 0, len(s.agents))
+	for _, agent := range s.agents {
+		if !scope.IsAllowed(agent.FleetGroupID) {
+			continue
+		}
+		agent.PresenceState = string(s.presence.Evaluate(agent.ID, now))
+		if grant, ok := recoveryGrants[agent.ID]; ok {
+			recovery := agentCertificateRecoveryGrantResponseFromRecord(grant, now)
+			agent.CertificateRecovery = &recovery
+		}
+		agent.Runtime = normalizeAgentRuntime(agent.Runtime)
+		response = append(response, agent)
+	}
+	return response
 }
 
 func (s *Server) handleInstances() http.HandlerFunc {
