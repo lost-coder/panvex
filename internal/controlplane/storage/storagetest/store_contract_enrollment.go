@@ -27,7 +27,7 @@ func runEnrollmentContract(t *testing.T, open OpenStore) {
 			Name:      "Default",
 			CreatedAt: time.Date(2026, time.March, 15, 8, 0, 0, 0, time.UTC),
 		}); err != nil {
-			t.Fatalf("PutFleetGroup() error = %v", err)
+			t.Fatalf(errPutFleetGroupLong, err)
 		}
 		token := storage.EnrollmentTokenRecord{
 			Value:        "token-value",
@@ -71,7 +71,7 @@ func runEnrollmentContract(t *testing.T, open OpenStore) {
 			Name:      "Default",
 			CreatedAt: time.Date(2026, time.March, 15, 8, 0, 0, 0, time.UTC),
 		}); err != nil {
-			t.Fatalf("PutFleetGroup() error = %v", err)
+			t.Fatalf(errPutFleetGroupLong, err)
 		}
 		token := storage.EnrollmentTokenRecord{
 			Value:        "token-revoke",
@@ -131,7 +131,7 @@ func runEnrollmentContract(t *testing.T, open OpenStore) {
 		}
 
 		if err := store.PutFleetGroup(ctx, group); err != nil {
-			t.Fatalf("PutFleetGroup() error = %v", err)
+			t.Fatalf(errPutFleetGroupLong, err)
 		}
 		if err := store.PutAgent(ctx, agent); err != nil {
 			t.Fatalf("PutAgent() error = %v", err)
@@ -195,7 +195,7 @@ func runEnrollmentContract(t *testing.T, open OpenStore) {
 		}
 
 		if err := store.PutFleetGroup(ctx, group); err != nil {
-			t.Fatalf("PutFleetGroup() error = %v", err)
+			t.Fatalf(errPutFleetGroupLong, err)
 		}
 		if err := store.PutAgent(ctx, agent); err != nil {
 			t.Fatalf("PutAgent() error = %v", err)
