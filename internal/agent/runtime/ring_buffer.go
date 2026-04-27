@@ -74,7 +74,18 @@ func (b *RuntimeRingBuffer) DrainAndAggregate() *gatewayrpc.Snapshot {
 		return result
 	}
 
-	// Aggregate system load: avg + max
+	result.Runtime.AggregatedSystemLoad = aggregateSystemLoad(samples, last, n)
+	result.Runtime.AggregatedConnections = aggregateConnections(samples, n)
+	result.Runtime.AggregatedDcs = aggregateDCs(samples)
+	result.Runtime.AggregationSamples = int32(n)
+
+	return result
+}
+
+// aggregateSystemLoad computes avg/max system-load metrics across samples,
+// keeping the last sample's load averages and net byte counters as-is
+// (cumulative counters — delta computed by control-plane).
+func aggregateSystemLoad(samples []RuntimeSample, last RuntimeSample, n int) *gatewayrpc.AggregatedSystemLoad {
 	var cpuSum, cpuMax, memSum, memMax, diskSum, diskMax float64
 	var load1Last, load5Last, load15Last float64
 	for _, s := range samples {
@@ -107,7 +118,7 @@ func (b *RuntimeRingBuffer) DrainAndAggregate() *gatewayrpc.Snapshot {
 		netRecv = lastSL.NetBytesRecv
 	}
 
-	result.Runtime.AggregatedSystemLoad = &gatewayrpc.AggregatedSystemLoad{
+	return &gatewayrpc.AggregatedSystemLoad{
 		CpuPctAvg:    cpuSum / float64(n),
 		CpuPctMax:    cpuMax,
 		MemPctAvg:    memSum / float64(n),
@@ -120,8 +131,10 @@ func (b *RuntimeRingBuffer) DrainAndAggregate() *gatewayrpc.Snapshot {
 		NetBytesSent: netSent,
 		NetBytesRecv: netRecv,
 	}
+}
 
-	// Aggregate connections: avg + max
+// aggregateConnections computes avg/max connection counts across samples.
+func aggregateConnections(samples []RuntimeSample, n int) *gatewayrpc.AggregatedConnections {
 	var connSum, connMax int32
 	var connMESum, connDirectSum, usersSum, usersMax int32
 	for _, s := range samples {
@@ -140,46 +153,24 @@ func (b *RuntimeRingBuffer) DrainAndAggregate() *gatewayrpc.Snapshot {
 			usersMax = rt.ActiveUsers
 		}
 	}
-	result.Runtime.AggregatedConnections = &gatewayrpc.AggregatedConnections{
-		ConnectionsAvg:      connSum / int32(n),
-		ConnectionsMax:      connMax,
-		ConnectionsMeAvg:    connMESum / int32(n),
+	return &gatewayrpc.AggregatedConnections{
+		ConnectionsAvg:       connSum / int32(n),
+		ConnectionsMax:       connMax,
+		ConnectionsMeAvg:     connMESum / int32(n),
 		ConnectionsDirectAvg: connDirectSum / int32(n),
-		ActiveUsersAvg:      usersSum / int32(n),
-		ActiveUsersMax:      usersMax,
+		ActiveUsersAvg:       usersSum / int32(n),
+		ActiveUsersMax:       usersMax,
 	}
+}
 
-	// Aggregate DC health: avg + min coverage, avg + max rtt, min writers
+// aggregateDCs computes per-DC avg/min coverage, avg/max rtt and min
+// writers across samples.
+func aggregateDCs(samples []RuntimeSample) []*gatewayrpc.AggregatedDCHealth {
 	dcMap := make(map[int32]*gatewayrpc.AggregatedDCHealth)
 	dcCounts := make(map[int32]int)
 	for _, s := range samples {
 		for _, dc := range s.Snapshot.GetRuntime().GetDcs() {
-			agg, ok := dcMap[dc.Dc]
-			if !ok {
-				agg = &gatewayrpc.AggregatedDCHealth{
-					Dc:              dc.Dc,
-					CoveragePctMin:  dc.CoveragePct,
-					AliveWritersMin: dc.AliveWriters,
-					RequiredWriters: dc.RequiredWriters,
-				}
-				dcMap[dc.Dc] = agg
-			}
-			dcCounts[dc.Dc]++
-			agg.CoveragePctAvg += dc.CoveragePct
-			if dc.CoveragePct < agg.CoveragePctMin {
-				agg.CoveragePctMin = dc.CoveragePct
-			}
-			agg.RttMsAvg += dc.RttMs
-			if dc.RttMs > agg.RttMsMax {
-				agg.RttMsMax = dc.RttMs
-			}
-			if dc.AliveWriters < agg.AliveWritersMin {
-				agg.AliveWritersMin = dc.AliveWriters
-			}
-			if dc.Load > agg.LoadMax {
-				agg.LoadMax = dc.Load
-			}
-			agg.RequiredWriters = dc.RequiredWriters
+			accumulateDCSample(dcMap, dcCounts, dc)
 		}
 	}
 	aggregatedDCs := make([]*gatewayrpc.AggregatedDCHealth, 0, len(dcMap))
@@ -189,8 +180,35 @@ func (b *RuntimeRingBuffer) DrainAndAggregate() *gatewayrpc.Snapshot {
 		agg.RttMsAvg /= float64(cnt)
 		aggregatedDCs = append(aggregatedDCs, agg)
 	}
-	result.Runtime.AggregatedDcs = aggregatedDCs
-	result.Runtime.AggregationSamples = int32(n)
+	return aggregatedDCs
+}
 
-	return result
+// accumulateDCSample folds one DC sample into the running aggregate map.
+func accumulateDCSample(dcMap map[int32]*gatewayrpc.AggregatedDCHealth, dcCounts map[int32]int, dc *gatewayrpc.RuntimeDCSnapshot) {
+	agg, ok := dcMap[dc.Dc]
+	if !ok {
+		agg = &gatewayrpc.AggregatedDCHealth{
+			Dc:              dc.Dc,
+			CoveragePctMin:  dc.CoveragePct,
+			AliveWritersMin: dc.AliveWriters,
+			RequiredWriters: dc.RequiredWriters,
+		}
+		dcMap[dc.Dc] = agg
+	}
+	dcCounts[dc.Dc]++
+	agg.CoveragePctAvg += dc.CoveragePct
+	if dc.CoveragePct < agg.CoveragePctMin {
+		agg.CoveragePctMin = dc.CoveragePct
+	}
+	agg.RttMsAvg += dc.RttMs
+	if dc.RttMs > agg.RttMsMax {
+		agg.RttMsMax = dc.RttMs
+	}
+	if dc.AliveWriters < agg.AliveWritersMin {
+		agg.AliveWritersMin = dc.AliveWriters
+	}
+	if dc.Load > agg.LoadMax {
+		agg.LoadMax = dc.Load
+	}
+	agg.RequiredWriters = dc.RequiredWriters
 }

@@ -22,71 +22,112 @@ func (s *Server) handleRenameAgent() http.HandlerFunc {
 			return
 		}
 
-		agentID := chi.URLParam(r, "id")
-		if agentID == "" {
-			writeError(w, http.StatusBadRequest, "missing agent id")
-			return
-		}
-
-		var req renameAgentRequest
-		if err := decodeJSON(r, &req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid request body")
-			return
-		}
-
-		req.NodeName = strings.TrimSpace(req.NodeName)
-		if req.NodeName == "" {
-			writeError(w, http.StatusBadRequest, "node_name is required")
-			return
-		}
-
-		// Verify the agent exists in memory before touching the store so a
-		// 404 does not leave an orphaned store update.
-		s.mu.RLock()
-		existing, exists := s.agents[agentID]
-		s.mu.RUnlock()
-		if !exists {
-			writeError(w, http.StatusNotFound, msgAgentNotFound)
-			return
-		}
-
-		// R-S-14: scope-check by the agent's fleet group.
-		scope, ok := s.requireFleetScope(w, r, user)
+		agentID, nodeName, ok := decodeRenameAgentRequest(w, r)
 		if !ok {
 			return
 		}
-		if !scope.IsAllowed(existing.FleetGroupID) {
-			writeError(w, http.StatusNotFound, msgAgentNotFound)
+
+		if !s.checkRenameAgentScope(w, r, user, agentID) {
 			return
 		}
 
-		if s.store != nil {
-			if err := s.store.UpdateAgentNodeName(r.Context(), agentID, req.NodeName); err != nil {
-				s.logger.Error("update agent node_name in store failed", "error", err)
-				writeError(w, http.StatusInternalServerError, msgStorageError)
-				return
-			}
-		}
-
-		s.mu.Lock()
-		agent, exists := s.agents[agentID]
-		if !exists {
-			s.mu.Unlock()
-			writeError(w, http.StatusNotFound, msgAgentNotFound)
+		if !s.persistAgentNodeName(w, r, agentID, nodeName) {
 			return
 		}
-		oldName := agent.NodeName
-		agent.NodeName = req.NodeName
-		s.agents[agentID] = agent
-		s.mu.Unlock()
+
+		agent, oldName, ok := s.applyAgentRename(w, agentID, nodeName)
+		if !ok {
+			return
+		}
 
 		s.appendAuditWithContext(r.Context(), session.UserID, "agents.rename", agentID, map[string]any{
 			"old_name": oldName,
-			"new_name": req.NodeName,
+			"new_name": nodeName,
 		})
 
 		writeJSON(w, http.StatusOK, agent)
 	}
+}
+
+// decodeRenameAgentRequest extracts and validates the agent id + new
+// node name. Writes a 400 / response on failure and returns ok=false.
+func decodeRenameAgentRequest(w http.ResponseWriter, r *http.Request) (string, string, bool) {
+	agentID := chi.URLParam(r, "id")
+	if agentID == "" {
+		writeError(w, http.StatusBadRequest, "missing agent id")
+		return "", "", false
+	}
+
+	var req renameAgentRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return "", "", false
+	}
+
+	nodeName := strings.TrimSpace(req.NodeName)
+	if nodeName == "" {
+		writeError(w, http.StatusBadRequest, "node_name is required")
+		return "", "", false
+	}
+	return agentID, nodeName, true
+}
+
+// checkRenameAgentScope confirms the target agent exists in memory and
+// the caller's fleet scope covers it. R-S-14: scope-check before any
+// write so an out-of-scope rename leaks no information.
+func (s *Server) checkRenameAgentScope(w http.ResponseWriter, r *http.Request, user auth.User, agentID string) bool {
+	// Verify the agent exists in memory before touching the store so a
+	// 404 does not leave an orphaned store update.
+	s.mu.RLock()
+	existing, exists := s.agents[agentID]
+	s.mu.RUnlock()
+	if !exists {
+		writeError(w, http.StatusNotFound, msgAgentNotFound)
+		return false
+	}
+
+	scope, ok := s.requireFleetScope(w, r, user)
+	if !ok {
+		return false
+	}
+	if !scope.IsAllowed(existing.FleetGroupID) {
+		writeError(w, http.StatusNotFound, msgAgentNotFound)
+		return false
+	}
+	return true
+}
+
+// persistAgentNodeName writes the new node name to storage when one is
+// configured, returning false (after writing the HTTP error) on any
+// storage failure.
+func (s *Server) persistAgentNodeName(w http.ResponseWriter, r *http.Request, agentID, nodeName string) bool {
+	if s.store == nil {
+		return true
+	}
+	if err := s.store.UpdateAgentNodeName(r.Context(), agentID, nodeName); err != nil {
+		s.logger.Error("update agent node_name in store failed", "error", err)
+		writeError(w, http.StatusInternalServerError, msgStorageError)
+		return false
+	}
+	return true
+}
+
+// applyAgentRename mutates the in-memory agent record under the write
+// lock. Returns the updated record + previous name, or ok=false (after
+// writing the 404) when the agent disappeared between checks.
+func (s *Server) applyAgentRename(w http.ResponseWriter, agentID, nodeName string) (Agent, string, bool) {
+	s.mu.Lock()
+	agent, exists := s.agents[agentID]
+	if !exists {
+		s.mu.Unlock()
+		writeError(w, http.StatusNotFound, msgAgentNotFound)
+		return Agent{}, "", false
+	}
+	oldName := agent.NodeName
+	agent.NodeName = nodeName
+	s.agents[agentID] = agent
+	s.mu.Unlock()
+	return agent, oldName, true
 }
 
 // agentDeregisterScope checks the URL/auth/scope preconditions for

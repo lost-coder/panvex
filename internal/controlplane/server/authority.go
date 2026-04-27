@@ -107,68 +107,105 @@ func loadOrCreateCertificateAuthority(store storage.CertificateAuthorityStore, n
 
 	record, err := store.GetCertificateAuthority(context.Background())
 	if err == nil {
-		// P2-SEC-05: refuse to silently retain a legacy ENC:v1 blob without
-		// an encryption key. The legacy derivation is SHA-256 with no salt,
-		// so keeping it in place forever leaves the CA key weakly protected.
-		// Either the operator supplies --encryption-key-file (and we migrate
-		// in-place to ENC2:) or startup fails so the weakness is surfaced.
-		legacyV1 := storedPEMIsLegacyV1(record.PrivateKeyPEM)
-		if legacyV1 && encryptionKey == "" {
-			return nil, ErrLegacyEnc1RequiresKey
-		}
-
-		if encryptionKey != "" {
-			decrypted, decErr := decryptPEM(record.PrivateKeyPEM, encryptionKey)
-			if decErr != nil {
-				return nil, decErr
-			}
-			record.PrivateKeyPEM = decrypted
-		}
-		authority, err := certificateAuthorityFromRecord(record, now)
-		if err != nil {
-			return nil, err
-		}
-		remaining := authority.certificate.NotAfter.Sub(now)
-		if remaining <= 0 {
-			slog.Warn("control-plane CA certificate expired, regenerating", "expired_ago", (-remaining).String())
-			return regenerateCertificateAuthority(store, now, encryptionKey)
-		}
-		if remaining < 30*24*time.Hour {
-			slog.Warn("control-plane CA certificate expiring soon", "remaining", remaining.Round(time.Hour).String())
-		}
-		// P2-SEC-05: explicitly re-encrypt when the stored key is plaintext
-		// or uses the legacy ENC:v1 derivation. For legacy blobs the
-		// migration is mandatory (any error is fatal) so we never leave the
-		// key in the weaker format; for plaintext or other cases we still
-		// log but do not block startup.
-		if encryptionKey != "" && needsReEncryption(record.PrivateKeyPEM) {
-			rec, recErr := authority.record(now, encryptionKey)
-			if recErr != nil {
-				if legacyV1 {
-					return nil, fmt.Errorf("auto-migrate legacy ENC:v1 CA private key: %w", recErr)
-				}
-				slog.Warn("control-plane CA private key re-encryption failed", "error", recErr)
-			} else if putErr := store.PutCertificateAuthority(context.Background(), rec); putErr != nil {
-				if legacyV1 {
-					return nil, fmt.Errorf("auto-migrate legacy ENC:v1 CA private key: %w", putErr)
-				}
-				slog.Warn("control-plane CA private key migration persist failed", "error", putErr)
-			} else if legacyV1 {
-				slog.Info("control-plane CA private key migrated from ENC:v1 to ENC2:")
-			}
-		}
-		return authority, nil
+		return loadExistingCertificateAuthority(store, record, now, encryptionKey)
 	}
 	if !errors.Is(err, storage.ErrNotFound) {
 		return nil, err
 	}
+	return persistNewCertificateAuthority(store, now, encryptionKey)
+}
 
+// loadExistingCertificateAuthority validates and (when needed) migrates
+// a stored CA record. Lifecycle: legacy-ENC:v1 guard, decrypt, parse,
+// expiry check, opportunistic re-encryption.
+func loadExistingCertificateAuthority(store storage.CertificateAuthorityStore, record storage.CertificateAuthorityRecord, now time.Time, encryptionKey string) (*certificateAuthority, error) {
+	// P2-SEC-05: refuse to silently retain a legacy ENC:v1 blob without
+	// an encryption key. The legacy derivation is SHA-256 with no salt,
+	// so keeping it in place forever leaves the CA key weakly protected.
+	// Either the operator supplies --encryption-key-file (and we migrate
+	// in-place to ENC2:) or startup fails so the weakness is surfaced.
+	legacyV1 := storedPEMIsLegacyV1(record.PrivateKeyPEM)
+	if legacyV1 && encryptionKey == "" {
+		return nil, ErrLegacyEnc1RequiresKey
+	}
+
+	if encryptionKey != "" {
+		decrypted, decErr := decryptPEM(record.PrivateKeyPEM, encryptionKey)
+		if decErr != nil {
+			return nil, decErr
+		}
+		record.PrivateKeyPEM = decrypted
+	}
+
+	authority, err := certificateAuthorityFromRecord(record, now)
+	if err != nil {
+		return nil, err
+	}
+
+	if expired, regenAuth, regenErr := handleCertificateAuthorityExpiry(store, authority, now, encryptionKey); expired {
+		return regenAuth, regenErr
+	}
+
+	if encryptionKey != "" && needsReEncryption(record.PrivateKeyPEM) {
+		if err := reEncryptCertificateAuthority(store, authority, now, encryptionKey, legacyV1); err != nil {
+			return nil, err
+		}
+	}
+	return authority, nil
+}
+
+// handleCertificateAuthorityExpiry returns (true, regenerated, err) when
+// the stored CA has expired so the caller short-circuits to a freshly
+// regenerated authority. Otherwise it logs the expiring-soon warning
+// (when remaining <30d) and returns (false, nil, nil).
+func handleCertificateAuthorityExpiry(store storage.CertificateAuthorityStore, authority *certificateAuthority, now time.Time, encryptionKey string) (bool, *certificateAuthority, error) {
+	remaining := authority.certificate.NotAfter.Sub(now)
+	if remaining <= 0 {
+		slog.Warn("control-plane CA certificate expired, regenerating", "expired_ago", (-remaining).String())
+		regen, err := regenerateCertificateAuthority(store, now, encryptionKey)
+		return true, regen, err
+	}
+	if remaining < 30*24*time.Hour {
+		slog.Warn("control-plane CA certificate expiring soon", "remaining", remaining.Round(time.Hour).String())
+	}
+	return false, nil, nil
+}
+
+// reEncryptCertificateAuthority migrates a plaintext or ENC:v1 stored
+// key to ENC2:. P2-SEC-05: legacy ENC:v1 migration is mandatory — any
+// error is fatal; for plaintext or other cases we log but do not block
+// startup.
+func reEncryptCertificateAuthority(store storage.CertificateAuthorityStore, authority *certificateAuthority, now time.Time, encryptionKey string, legacyV1 bool) error {
+	rec, recErr := authority.record(now, encryptionKey)
+	if recErr != nil {
+		if legacyV1 {
+			return fmt.Errorf("auto-migrate legacy ENC:v1 CA private key: %w", recErr)
+		}
+		slog.Warn("control-plane CA private key re-encryption failed", "error", recErr)
+		return nil
+	}
+	if putErr := store.PutCertificateAuthority(context.Background(), rec); putErr != nil {
+		if legacyV1 {
+			return fmt.Errorf("auto-migrate legacy ENC:v1 CA private key: %w", putErr)
+		}
+		slog.Warn("control-plane CA private key migration persist failed", "error", putErr)
+		return nil
+	}
+	if legacyV1 {
+		slog.Info("control-plane CA private key migrated from ENC:v1 to ENC2:")
+	}
+	return nil
+}
+
+// persistNewCertificateAuthority generates a fresh CA and stores it.
+// Used for the initial bootstrap path (no record yet).
+func persistNewCertificateAuthority(store storage.CertificateAuthorityStore, now time.Time, encryptionKey string) (*certificateAuthority, error) {
 	authority, err := newCertificateAuthority(now)
 	if err != nil {
 		return nil, err
 	}
 
-	record, err = authority.record(now, encryptionKey)
+	record, err := authority.record(now, encryptionKey)
 	if err != nil {
 		return nil, err
 	}

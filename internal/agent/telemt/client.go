@@ -396,6 +396,58 @@ func isLoopbackHost(host string) bool {
 // a nil error. Missing sub-fields fall back to zero values. This lets the
 // agent keep heartbeating degraded state to the control-plane instead of
 // dropping whole cycles whenever one endpoint is slow.
+// fetchRuntimeStateRaw bundles the per-endpoint payloads collected during
+// FetchRuntimeState so the assembly step can remain a straight-line
+// projection without re-declaring the inner struct types.
+type fetchRuntimeStateRaw struct {
+	posture struct {
+		ReadOnly             bool   `json:"read_only"`
+		APIReadOnly          bool   `json:"api_read_only"`
+		APIWhitelistEnabled  bool   `json:"api_whitelist_enabled"`
+		APIWhitelistEntries  int    `json:"api_whitelist_entries"`
+		APIAuthHeaderEnabled bool   `json:"api_auth_header_enabled"`
+		ProxyProtocolEnabled bool   `json:"proxy_protocol_enabled"`
+		LogLevel             string `json:"log_level"`
+		TelemetryCoreEnabled bool   `json:"telemetry_core_enabled"`
+		TelemetryUserEnabled bool   `json:"telemetry_user_enabled"`
+		TelemetryMELevel     string `json:"telemetry_me_level"`
+	}
+	gates struct {
+		AcceptingNewConnections bool    `json:"accepting_new_connections"`
+		MERuntimeReady          bool    `json:"me_runtime_ready"`
+		ME2DCFallbackEnabled    bool    `json:"me2dc_fallback_enabled"`
+		ME2DCFastEnabled        bool    `json:"me2dc_fast_enabled"`
+		UseMiddleProxy          bool    `json:"use_middle_proxy"`
+		RouteMode               string  `json:"route_mode"`
+		RerouteActive           bool    `json:"reroute_active"`
+		StartupStatus           string  `json:"startup_status"`
+		StartupStage            string  `json:"startup_stage"`
+		StartupProgressPct      float64 `json:"startup_progress_pct"`
+	}
+	initialization struct {
+		Status        string  `json:"status"`
+		Degraded      bool    `json:"degraded"`
+		CurrentStage  string  `json:"current_stage"`
+		ProgressPct   float64 `json:"progress_pct"`
+		TransportMode string  `json:"transport_mode"`
+	}
+	connectionSummary struct {
+		Enabled bool                  `json:"enabled"`
+		Reason  string                `json:"reason"`
+		Data    connectionSummaryData `json:"data"`
+	}
+	summary struct {
+		ConnectionsTotal       uint64 `json:"connections_total"`
+		ConnectionsBadTotal    uint64 `json:"connections_bad_total"`
+		HandshakeTimeoutsTotal uint64 `json:"handshake_timeouts_total"`
+		ConfiguredUsers        int    `json:"configured_users"`
+	}
+	dcs        []RuntimeDC
+	slowData   slowRuntimeState
+	users      []ClientUsage
+	systemLoad RuntimeSystemLoad
+}
+
 func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
@@ -412,82 +464,110 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 			"ctx_err", ctx.Err(),
 		)
 	}
+	setPartial := func() { result.Partial = true }
 
+	raw := c.collectRuntimeStateRaw(ctx, markPartial, setPartial)
+
+	partial := result.Partial
+	return c.assembleRuntimeState(raw, partial), nil
+}
+
+// collectRuntimeStateRaw runs every Telemt sub-fetch FetchRuntimeState
+// needs, marking partial-failures via markPartial (logs + flags) or
+// setPartial (flag only). It is a thin orchestration wrapper so
+// FetchRuntimeState's flow stays linear.
+func (c *Client) collectRuntimeStateRaw(ctx context.Context, markPartial func(string, error), setPartial func()) fetchRuntimeStateRaw {
+	raw := fetchRuntimeStateRaw{}
+
+	c.fetchHealth(ctx, markPartial)
+	c.fetchSecurityPosture(ctx, &raw, markPartial)
+	c.fetchRuntimeGates(ctx, &raw, markPartial)
+	c.fetchInitialization(ctx, &raw, markPartial)
+	c.fetchConnectionSummary(ctx, &raw, markPartial)
+	c.fetchSummary(ctx, &raw, markPartial)
+	raw.dcs = c.fetchDCs(ctx, markPartial)
+
+	c.collectSlowRuntimeState(ctx, &raw, markPartial, setPartial)
+
+	users, err := c.fetchClientUsage(ctx)
+	if err != nil {
+		markPartial("/v1/stats/users", err)
+		users = nil
+	}
+	raw.users = users
+
+	if c.systemLoadSampler != nil {
+		if load, err := c.systemLoadSampler(ctx); err == nil {
+			raw.systemLoad = load
+		} else {
+			markPartial("system_load_sampler", err)
+		}
+	}
+	return raw
+}
+
+// collectSlowRuntimeState fetches the cached slow snapshot, mirroring
+// the original two-branch behaviour: a hard error produces a logged
+// partial via markPartial; a slow-partial flag bumps Partial silently
+// (the slow fetch already logged its own warnings).
+func (c *Client) collectSlowRuntimeState(ctx context.Context, raw *fetchRuntimeStateRaw, markPartial func(string, error), setPartial func()) {
+	slowData, slowPartial, slowErr := c.loadSlowRuntimeStateForFetch(ctx)
+	if slowErr != nil {
+		markPartial("slow_runtime_state", slowErr)
+		return
+	}
+	raw.slowData = slowData
+	if slowPartial {
+		setPartial()
+	}
+}
+
+func (c *Client) fetchHealth(ctx context.Context, markPartial func(string, error)) {
 	health := struct {
 		Status string `json:"status"`
 	}{}
 	if err := c.getJSON(ctx, pathHealth, &health); err != nil {
 		markPartial(pathHealth, err)
-	} else {
-		c.logger.Debug(logTelemtAPICall, "path", pathHealth, "status", health.Status)
+		return
 	}
+	c.logger.Debug(logTelemtAPICall, "path", pathHealth, "status", health.Status)
+}
 
-	posture := struct {
-		ReadOnly             bool   `json:"read_only"`
-		APIReadOnly          bool   `json:"api_read_only"`
-		APIWhitelistEnabled  bool   `json:"api_whitelist_enabled"`
-		APIWhitelistEntries  int    `json:"api_whitelist_entries"`
-		APIAuthHeaderEnabled bool   `json:"api_auth_header_enabled"`
-		ProxyProtocolEnabled bool   `json:"proxy_protocol_enabled"`
-		LogLevel             string `json:"log_level"`
-		TelemetryCoreEnabled bool   `json:"telemetry_core_enabled"`
-		TelemetryUserEnabled bool   `json:"telemetry_user_enabled"`
-		TelemetryMELevel     string `json:"telemetry_me_level"`
-	}{}
-	if err := c.getJSON(ctx, pathSecurityPosture, &posture); err != nil {
+func (c *Client) fetchSecurityPosture(ctx context.Context, raw *fetchRuntimeStateRaw, markPartial func(string, error)) {
+	if err := c.getJSON(ctx, pathSecurityPosture, &raw.posture); err != nil {
 		markPartial(pathSecurityPosture, err)
 	}
+}
 
-	gates := struct {
-		AcceptingNewConnections bool    `json:"accepting_new_connections"`
-		MERuntimeReady          bool    `json:"me_runtime_ready"`
-		ME2DCFallbackEnabled    bool    `json:"me2dc_fallback_enabled"`
-		ME2DCFastEnabled        bool    `json:"me2dc_fast_enabled"`
-		UseMiddleProxy          bool    `json:"use_middle_proxy"`
-		RouteMode               string  `json:"route_mode"`
-		RerouteActive           bool    `json:"reroute_active"`
-		StartupStatus           string  `json:"startup_status"`
-		StartupStage            string  `json:"startup_stage"`
-		StartupProgressPct      float64 `json:"startup_progress_pct"`
-	}{}
-	if err := c.getJSON(ctx, pathRuntimeGates, &gates); err != nil {
+func (c *Client) fetchRuntimeGates(ctx context.Context, raw *fetchRuntimeStateRaw, markPartial func(string, error)) {
+	if err := c.getJSON(ctx, pathRuntimeGates, &raw.gates); err != nil {
 		markPartial(pathRuntimeGates, err)
-	} else {
-		c.logger.Debug(logTelemtAPICall, "path", pathRuntimeGates, "accepting", gates.AcceptingNewConnections)
+		return
 	}
+	c.logger.Debug(logTelemtAPICall, "path", pathRuntimeGates, "accepting", raw.gates.AcceptingNewConnections)
+}
 
-	initialization := struct {
-		Status        string  `json:"status"`
-		Degraded      bool    `json:"degraded"`
-		CurrentStage  string  `json:"current_stage"`
-		ProgressPct   float64 `json:"progress_pct"`
-		TransportMode string  `json:"transport_mode"`
-	}{}
-	if err := c.getJSON(ctx, "/v1/runtime/initialization", &initialization); err != nil {
+func (c *Client) fetchInitialization(ctx context.Context, raw *fetchRuntimeStateRaw, markPartial func(string, error)) {
+	if err := c.getJSON(ctx, "/v1/runtime/initialization", &raw.initialization); err != nil {
 		markPartial("/v1/runtime/initialization", err)
 	}
+}
 
-	connectionSummary := struct {
-		Enabled bool                  `json:"enabled"`
-		Reason  string                `json:"reason"`
-		Data    connectionSummaryData `json:"data"`
-	}{}
-	if err := c.getJSON(ctx, pathRuntimeConnectionsSummary, &connectionSummary); err != nil {
+func (c *Client) fetchConnectionSummary(ctx context.Context, raw *fetchRuntimeStateRaw, markPartial func(string, error)) {
+	if err := c.getJSON(ctx, pathRuntimeConnectionsSummary, &raw.connectionSummary); err != nil {
 		markPartial(pathRuntimeConnectionsSummary, err)
-	} else {
-		c.logger.Debug(logTelemtAPICall, "path", pathRuntimeConnectionsSummary, "connections", connectionSummary.Data.Totals.CurrentConnections)
+		return
 	}
+	c.logger.Debug(logTelemtAPICall, "path", pathRuntimeConnectionsSummary, "connections", raw.connectionSummary.Data.Totals.CurrentConnections)
+}
 
-	summary := struct {
-		ConnectionsTotal       uint64 `json:"connections_total"`
-		ConnectionsBadTotal    uint64 `json:"connections_bad_total"`
-		HandshakeTimeoutsTotal uint64 `json:"handshake_timeouts_total"`
-		ConfiguredUsers        int    `json:"configured_users"`
-	}{}
-	if err := c.getJSON(ctx, "/v1/stats/summary", &summary); err != nil {
+func (c *Client) fetchSummary(ctx context.Context, raw *fetchRuntimeStateRaw, markPartial func(string, error)) {
+	if err := c.getJSON(ctx, "/v1/stats/summary", &raw.summary); err != nil {
 		markPartial("/v1/stats/summary", err)
 	}
+}
 
+func (c *Client) fetchDCs(ctx context.Context, markPartial func(string, error)) []RuntimeDC {
 	dcStatus := struct {
 		DCS []struct {
 			DC                 int     `json:"dc"`
@@ -507,7 +587,6 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 	} else {
 		c.logger.Debug(logTelemtAPICall, "path", pathStatsDcs, "dc_count", len(dcStatus.DCS))
 	}
-
 	dcs := make([]RuntimeDC, 0, len(dcStatus.DCS))
 	for _, dc := range dcStatus.DCS {
 		dcs = append(dcs, RuntimeDC{
@@ -523,89 +602,75 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 			Load:               dc.Load,
 		})
 	}
+	return dcs
+}
 
-	slowData, slowPartial, slowErr := c.loadSlowRuntimeStateForFetch(ctx)
-	if slowErr != nil {
-		markPartial("slow_runtime_state", slowErr)
-	} else if slowPartial {
-		result.Partial = true
-	}
-
-	users, err := c.fetchClientUsage(ctx)
-	if err != nil {
-		markPartial("/v1/stats/users", err)
-		users = nil
-	}
-	systemLoad := RuntimeSystemLoad{}
-	if c.systemLoadSampler != nil {
-		if load, err := c.systemLoadSampler(ctx); err == nil {
-			systemLoad = load
-		} else {
-			markPartial("system_load_sampler", err)
-		}
-	}
-
-	partial := result.Partial
-	result = RuntimeState{
-		Version:        slowData.Version,
-		ReadOnly:       posture.ReadOnly || posture.APIReadOnly,
-		UptimeSeconds:  slowData.UptimeSeconds,
-		ConnectedUsers: connectionSummary.Data.Totals.CurrentConnections,
+// assembleRuntimeState projects collected raw payloads into a
+// RuntimeState. Pure transformation, no I/O.
+func (c *Client) assembleRuntimeState(raw fetchRuntimeStateRaw, partial bool) RuntimeState {
+	return RuntimeState{
+		Version:        raw.slowData.Version,
+		ReadOnly:       raw.posture.ReadOnly || raw.posture.APIReadOnly,
+		UptimeSeconds:  raw.slowData.UptimeSeconds,
+		ConnectedUsers: raw.connectionSummary.Data.Totals.CurrentConnections,
 		Gates: RuntimeGates{
-			AcceptingNewConnections: gates.AcceptingNewConnections,
-			MERuntimeReady:          gates.MERuntimeReady,
-			ME2DCFallbackEnabled:    gates.ME2DCFallbackEnabled,
-			ME2DCFastEnabled:        gates.ME2DCFastEnabled,
-			UseMiddleProxy:          gates.UseMiddleProxy,
-			RouteMode:               gates.RouteMode,
-			RerouteActive:           gates.RerouteActive,
-			StartupStatus:           gates.StartupStatus,
-			StartupStage:            gates.StartupStage,
-			StartupProgressPct:      gates.StartupProgressPct,
+			AcceptingNewConnections: raw.gates.AcceptingNewConnections,
+			MERuntimeReady:          raw.gates.MERuntimeReady,
+			ME2DCFallbackEnabled:    raw.gates.ME2DCFallbackEnabled,
+			ME2DCFastEnabled:        raw.gates.ME2DCFastEnabled,
+			UseMiddleProxy:          raw.gates.UseMiddleProxy,
+			RouteMode:               raw.gates.RouteMode,
+			RerouteActive:           raw.gates.RerouteActive,
+			StartupStatus:           raw.gates.StartupStatus,
+			StartupStage:            raw.gates.StartupStage,
+			StartupProgressPct:      raw.gates.StartupProgressPct,
 		},
 		Initialization: RuntimeInitialization{
-			Status:        initialization.Status,
-			Degraded:      initialization.Degraded,
-			CurrentStage:  initialization.CurrentStage,
-			ProgressPct:   initialization.ProgressPct,
-			TransportMode: initialization.TransportMode,
+			Status:        raw.initialization.Status,
+			Degraded:      raw.initialization.Degraded,
+			CurrentStage:  raw.initialization.CurrentStage,
+			ProgressPct:   raw.initialization.ProgressPct,
+			TransportMode: raw.initialization.TransportMode,
 		},
-		ConnectionTotals: func() RuntimeConnectionTotals {
-			topConn := make([]RuntimeConnectionTopEntry, 0, len(connectionSummary.Data.Top.ByConnections))
-			for _, e := range connectionSummary.Data.Top.ByConnections {
-				topConn = append(topConn, RuntimeConnectionTopEntry{Username: e.Username, Connections: e.Connections})
-			}
-			topTput := make([]RuntimeConnectionTopEntry, 0, len(connectionSummary.Data.Top.ByThroughput))
-			for _, e := range connectionSummary.Data.Top.ByThroughput {
-				topTput = append(topTput, RuntimeConnectionTopEntry{Username: e.Username, ThroughputBytes: e.ThroughputBytes})
-			}
-			return RuntimeConnectionTotals{
-				CurrentConnections:       connectionSummary.Data.Totals.CurrentConnections,
-				CurrentConnectionsME:     connectionSummary.Data.Totals.CurrentConnectionsME,
-				CurrentConnectionsDirect: connectionSummary.Data.Totals.CurrentConnectionsDirect,
-				ActiveUsers:              connectionSummary.Data.Totals.ActiveUsers,
-				StaleCacheUsed:           connectionSummary.Data.Cache.StaleCacheUsed,
-				TopByConnections:         topConn,
-				TopByThroughput:          topTput,
-			}
-		}(),
+		ConnectionTotals: buildConnectionTotalsFromSummary(raw.connectionSummary.Data),
 		Summary: RuntimeSummary{
-			ConnectionsTotal:       summary.ConnectionsTotal,
-			ConnectionsBadTotal:    summary.ConnectionsBadTotal,
-			HandshakeTimeoutsTotal: summary.HandshakeTimeoutsTotal,
-			ConfiguredUsers:        summary.ConfiguredUsers,
+			ConnectionsTotal:       raw.summary.ConnectionsTotal,
+			ConnectionsBadTotal:    raw.summary.ConnectionsBadTotal,
+			HandshakeTimeoutsTotal: raw.summary.HandshakeTimeoutsTotal,
+			ConfiguredUsers:        raw.summary.ConfiguredUsers,
 		},
-		DCs:               dcs,
-		Upstreams:         slowData.Upstreams,
-		RecentEvents:      slowData.RecentEvents,
-		Diagnostics:       slowData.Diagnostics,
-		SecurityInventory: slowData.SecurityInventory,
-		MeWritersSummary:  slowData.MeWritersSummary,
-		SystemLoad:        systemLoad,
-		Clients:           users,
+		DCs:               raw.dcs,
+		Upstreams:         raw.slowData.Upstreams,
+		RecentEvents:      raw.slowData.RecentEvents,
+		Diagnostics:       raw.slowData.Diagnostics,
+		SecurityInventory: raw.slowData.SecurityInventory,
+		MeWritersSummary:  raw.slowData.MeWritersSummary,
+		SystemLoad:        raw.systemLoad,
+		Clients:           raw.users,
 		Partial:           partial,
 	}
-	return result, nil
+}
+
+// buildConnectionTotalsFromSummary converts the raw connection-summary
+// payload into a RuntimeConnectionTotals.
+func buildConnectionTotalsFromSummary(data connectionSummaryData) RuntimeConnectionTotals {
+	topConn := make([]RuntimeConnectionTopEntry, 0, len(data.Top.ByConnections))
+	for _, e := range data.Top.ByConnections {
+		topConn = append(topConn, RuntimeConnectionTopEntry{Username: e.Username, Connections: e.Connections})
+	}
+	topTput := make([]RuntimeConnectionTopEntry, 0, len(data.Top.ByThroughput))
+	for _, e := range data.Top.ByThroughput {
+		topTput = append(topTput, RuntimeConnectionTopEntry{Username: e.Username, ThroughputBytes: e.ThroughputBytes})
+	}
+	return RuntimeConnectionTotals{
+		CurrentConnections:       data.Totals.CurrentConnections,
+		CurrentConnectionsME:     data.Totals.CurrentConnectionsME,
+		CurrentConnectionsDirect: data.Totals.CurrentConnectionsDirect,
+		ActiveUsers:              data.Totals.ActiveUsers,
+		StaleCacheUsed:           data.Cache.StaleCacheUsed,
+		TopByConnections:         topConn,
+		TopByThroughput:          topTput,
+	}
 }
 
 // fetchSlowRuntimeState reads the heavier Telemt endpoints that do not need live refresh on every snapshot.

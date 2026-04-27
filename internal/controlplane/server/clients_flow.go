@@ -347,19 +347,45 @@ func (s *Server) updateClientWithContext(ctx context.Context, clientID, actorID 
 		return managedClient{}, nil, nil, storage.ErrNotFound
 	}
 
+	previousName, err := applyClientMutationFields(&currentClient, input, observedAt)
+	if err != nil {
+		return managedClient{}, nil, nil, err
+	}
+
+	assignments := s.buildClientAssignments(clientID, input, observedAt)
+	targetAgentIDs := s.resolveClientTargetAgentIDs(assignments)
+	deployments := buildClientDeployments(currentDeployments, clientID, targetAgentIDs, string(jobs.ActionClientUpdate), observedAt)
+
+	// Persist client state before enqueuing jobs so a failure in
+	// persistence does not leave dispatched jobs referencing stale state.
+	if err := s.replaceClientStateWithContext(ctx, currentClient, assignments, deployments); err != nil {
+		return managedClient{}, nil, nil, err
+	}
+
+	if err := s.dispatchClientUpdateJobs(ctx, actorID, currentClient, previousName, currentDeployments, targetAgentIDs, observedAt); err != nil {
+		return managedClient{}, nil, nil, err
+	}
+
+	return currentClient, assignments, deployments, nil
+}
+
+// applyClientMutationFields validates the mutation input and merges it
+// into currentClient in-place. Returns the pre-mutation Name (used for
+// rename detection in the apply flow) or any validation error.
+func applyClientMutationFields(currentClient *managedClient, input clientMutationInput, observedAt time.Time) (string, error) {
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
-		return managedClient{}, nil, nil, errClientNameRequired
+		return "", errClientNameRequired
 	}
 
 	userADTag, err := resolveUserADTagForMutation(input, currentClient.UserADTag)
 	if err != nil {
-		return managedClient{}, nil, nil, err
+		return "", err
 	}
 
 	expirationRFC3339, err := normalizedExpiration(input.ExpirationRFC3339)
 	if err != nil {
-		return managedClient{}, nil, nil, err
+		return "", err
 	}
 
 	enabled := currentClient.Enabled
@@ -376,31 +402,25 @@ func (s *Server) updateClientWithContext(ctx context.Context, clientID, actorID 
 	currentClient.DataQuotaBytes = input.DataQuotaBytes
 	currentClient.ExpirationRFC3339 = expirationRFC3339
 	currentClient.UpdatedAt = observedAt
+	return previousName, nil
+}
 
-	assignments := s.buildClientAssignments(clientID, input, observedAt)
-	targetAgentIDs := s.resolveClientTargetAgentIDs(assignments)
-	deployments := buildClientDeployments(currentDeployments, clientID, targetAgentIDs, string(jobs.ActionClientUpdate), observedAt)
-
-	// Persist client state before enqueuing jobs so a failure in
-	// persistence does not leave dispatched jobs referencing stale state.
-	if err := s.replaceClientStateWithContext(ctx, currentClient, assignments, deployments); err != nil {
-		return managedClient{}, nil, nil, err
-	}
-
+// dispatchClientUpdateJobs queues an update job for the current target
+// agents and a delete job for any agents the client no longer targets.
+func (s *Server) dispatchClientUpdateJobs(ctx context.Context, actorID string, currentClient managedClient, previousName string, currentDeployments []managedClientDeployment, targetAgentIDs []string, observedAt time.Time) error {
 	if len(targetAgentIDs) > 0 {
 		if _, err := s.enqueueClientJob(ctx, actorID, jobs.ActionClientUpdate, currentClient, previousName, targetAgentIDs, observedAt); err != nil {
-			return managedClient{}, nil, nil, err
+			return err
 		}
 	}
 
 	removedAgentIDs := removedClientTargetAgentIDs(currentDeployments, targetAgentIDs)
 	if len(removedAgentIDs) > 0 {
 		if _, err := s.enqueueClientJob(ctx, actorID, jobs.ActionClientDelete, currentClient, "", removedAgentIDs, observedAt); err != nil {
-			return managedClient{}, nil, nil, err
+			return err
 		}
 	}
-
-	return currentClient, assignments, deployments, nil
+	return nil
 }
 
 func (s *Server) rotateClientSecret(clientID, actorID string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {

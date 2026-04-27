@@ -118,33 +118,12 @@ func (s *Server) handleAdoptDiscoveredClient() http.HandlerFunc {
 		}
 
 		id := chi.URLParam(r, "id")
-		// R-S-14: deny adoption of agents outside scope.
-		inScope, scopeErr := s.discoveredClientInScope(r.Context(), scope, id)
-		if scopeErr != nil {
-			if errors.Is(scopeErr, storage.ErrNotFound) {
-				writeError(w, http.StatusNotFound, msgDiscoveredClientNotFound)
-				return
-			}
-			s.logger.Error("scope-check discovered client failed", "id", id, "error", scopeErr)
-			writeError(w, http.StatusInternalServerError, msgInternalError)
-			return
-		}
-		if !inScope {
-			writeError(w, http.StatusNotFound, msgDiscoveredClientNotFound)
+		if !s.checkDiscoveredClientScope(w, r, scope, id) {
 			return
 		}
 		client, err := s.adoptDiscoveredClient(r.Context(), id, session.UserID, s.now())
 		if err != nil {
-			switch {
-			case errors.Is(err, storage.ErrNotFound):
-				writeError(w, http.StatusNotFound, msgDiscoveredClientNotFound)
-			case errors.Is(err, ErrAlreadyAdopted):
-				writeError(w, http.StatusConflict, err.Error())
-			default:
-				if !handleClientMutationError(w, err) {
-					return
-				}
-			}
+			writeAdoptDiscoveredClientError(w, err)
 			return
 		}
 
@@ -152,6 +131,40 @@ func (s *Server) handleAdoptDiscoveredClient() http.HandlerFunc {
 			"client_id": client.ID,
 			"name":      client.Name,
 		})
+	}
+}
+
+// checkDiscoveredClientScope writes the appropriate HTTP response when
+// the discovered client is missing or out of scope, returning false in
+// that case. R-S-14.
+func (s *Server) checkDiscoveredClientScope(w http.ResponseWriter, r *http.Request, scope FleetScopeAccess, id string) bool {
+	inScope, scopeErr := s.discoveredClientInScope(r.Context(), scope, id)
+	if scopeErr != nil {
+		if errors.Is(scopeErr, storage.ErrNotFound) {
+			writeError(w, http.StatusNotFound, msgDiscoveredClientNotFound)
+			return false
+		}
+		s.logger.Error("scope-check discovered client failed", "id", id, "error", scopeErr)
+		writeError(w, http.StatusInternalServerError, msgInternalError)
+		return false
+	}
+	if !inScope {
+		writeError(w, http.StatusNotFound, msgDiscoveredClientNotFound)
+		return false
+	}
+	return true
+}
+
+// writeAdoptDiscoveredClientError maps an adopt failure to the matching
+// HTTP response. Mirrors the original three-branch switch.
+func writeAdoptDiscoveredClientError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, storage.ErrNotFound):
+		writeError(w, http.StatusNotFound, msgDiscoveredClientNotFound)
+	case errors.Is(err, ErrAlreadyAdopted):
+		writeError(w, http.StatusConflict, err.Error())
+	default:
+		handleClientMutationError(w, err)
 	}
 }
 
