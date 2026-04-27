@@ -169,10 +169,13 @@ type telemetryWriteUnit struct {
 // writer usable without the metrics subsystem wired in.
 type noopMetricsSink struct{}
 
-func (noopMetricsSink) ObserveFlushError(string, string)     {}
-func (noopMetricsSink) SetQueueDepth(string, float64)        {}
-func (noopMetricsSink) ObservePersistRetry(string, string)   {}
-func (noopMetricsSink) ObserveFlushDuration(string, float64) {}
+// noopMetricsSink implements batchMetricsSink as a null-object so the
+// writer can run without a metrics subsystem wired in. Each method is
+// intentionally a no-op — see the type comment above for context.
+func (noopMetricsSink) ObserveFlushError(string, string)     { /* null-object */ }
+func (noopMetricsSink) SetQueueDepth(string, float64)        { /* null-object */ }
+func (noopMetricsSink) ObservePersistRetry(string, string)   { /* null-object */ }
+func (noopMetricsSink) ObserveFlushDuration(string, float64) { /* null-object */ }
 
 func newStoreBatchWriter(store storage.Store, metrics batchMetricsSink, now func() time.Time) *storeBatchWriter {
 	if metrics == nil {
