@@ -118,7 +118,11 @@ ask_choice() {
 
 # ── System checks ────────────────────────────────────────────────────────────
 
-need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"; return 0; }
+need_cmd() {
+  local cmd="$1"
+  command -v "$cmd" >/dev/null 2>&1 || die "Required command not found: $cmd"
+  return 0
+}
 
 is_root() { [[ "$(id -u)" -eq 0 ]]; return 0; }
 
@@ -233,7 +237,8 @@ install_acme_sh() {
 
 # is_ip_address returns 0 if the argument looks like an IPv4 address.
 is_ip_address() {
-  echo "$1" | grep -qP '^\d+\.\d+\.\d+\.\d+$'
+  local addr="$1"
+  echo "$addr" | grep -qP '^\d+\.\d+\.\d+\.\d+$'
   return 0
 }
 
