@@ -23,6 +23,11 @@ const (
 	certificateAuthorityLifetime = 5 * 365 * 24 * time.Hour
 	serverCertificateLifetime    = 365 * 24 * time.Hour
 	agentCertificateLifetime     = 30 * 24 * time.Hour
+
+	// pemTypeECPrivateKey is the PEM block type for ECDSA private keys
+	// (RFC 5915). Centralised so the cert-issuing helpers all encode
+	// the same header (Sonar S1192).
+	pemTypeECPrivateKey = "EC PRIVATE KEY"
 )
 
 type issuedCertificate struct {
@@ -252,7 +257,7 @@ func (a *certificateAuthority) record(now time.Time, encryptionKey string) (stor
 		return storage.CertificateAuthorityRecord{}, err
 	}
 
-	keyPEM := encodePEM("EC PRIVATE KEY", privateDER)
+	keyPEM := encodePEM(pemTypeECPrivateKey, privateDER)
 	if encryptionKey != "" {
 		encrypted, encErr := encryptPEM(keyPEM, encryptionKey)
 		if encErr != nil {
@@ -305,7 +310,7 @@ func (a *certificateAuthority) issueClientCertificate(commonName string, now tim
 
 	return issuedCertificate{
 		CertificatePEM: encodePEM("CERTIFICATE", der),
-		PrivateKeyPEM:  encodePEM("EC PRIVATE KEY", privateDER),
+		PrivateKeyPEM:  encodePEM(pemTypeECPrivateKey, privateDER),
 		CAPEM:          a.caPEM,
 		ExpiresAt:      expiresAt,
 		Serial:         serial.Text(16),
@@ -372,6 +377,6 @@ func issueServerCertificate(caCertificate *x509.Certificate, caKey *ecdsa.Privat
 
 	return tls.X509KeyPair(
 		[]byte(encodePEM("CERTIFICATE", der)),
-		[]byte(encodePEM("EC PRIVATE KEY", privateDER)),
+		[]byte(encodePEM(pemTypeECPrivateKey, privateDER)),
 	)
 }

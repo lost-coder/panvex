@@ -206,7 +206,7 @@ func (s *Server) handleTelemetryServerDetail() http.HandlerFunc {
 		initializationCooldownExpiresAt := s.initializationWatchCooldowns[agentID]
 		s.mu.RUnlock()
 		if !ok {
-			writeError(w, http.StatusNotFound, "server not found")
+			writeError(w, http.StatusNotFound, msgServerNotFound)
 			return
 		}
 
@@ -258,7 +258,7 @@ func (s *Server) handleTelemetryServerDetailBoost() http.HandlerFunc {
 		s.mu.Lock()
 		if _, ok := s.agents[agentID]; !ok {
 			s.mu.Unlock()
-			writeError(w, http.StatusNotFound, "server not found")
+			writeError(w, http.StatusNotFound, msgServerNotFound)
 			return
 		}
 		expiresAt := now.UTC().Add(telemetryDetailBoostTTL)
@@ -298,7 +298,7 @@ func (s *Server) handleTelemetryServerRefreshDiagnostics() http.HandlerFunc {
 		agent, ok := s.agents[agentID]
 		s.mu.RUnlock()
 		if !ok {
-			writeError(w, http.StatusNotFound, "server not found")
+			writeError(w, http.StatusNotFound, msgServerNotFound)
 			return
 		}
 

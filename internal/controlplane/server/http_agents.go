@@ -45,7 +45,7 @@ func (s *Server) handleRenameAgent() http.HandlerFunc {
 		existing, exists := s.agents[agentID]
 		s.mu.RUnlock()
 		if !exists {
-			writeError(w, http.StatusNotFound, "agent not found")
+			writeError(w, http.StatusNotFound, msgAgentNotFound)
 			return
 		}
 
@@ -55,14 +55,14 @@ func (s *Server) handleRenameAgent() http.HandlerFunc {
 			return
 		}
 		if !scope.IsAllowed(existing.FleetGroupID) {
-			writeError(w, http.StatusNotFound, "agent not found")
+			writeError(w, http.StatusNotFound, msgAgentNotFound)
 			return
 		}
 
 		if s.store != nil {
 			if err := s.store.UpdateAgentNodeName(r.Context(), agentID, req.NodeName); err != nil {
 				s.logger.Error("update agent node_name in store failed", "error", err)
-				writeError(w, http.StatusInternalServerError, "storage error")
+				writeError(w, http.StatusInternalServerError, msgStorageError)
 				return
 			}
 		}
@@ -71,7 +71,7 @@ func (s *Server) handleRenameAgent() http.HandlerFunc {
 		agent, exists := s.agents[agentID]
 		if !exists {
 			s.mu.Unlock()
-			writeError(w, http.StatusNotFound, "agent not found")
+			writeError(w, http.StatusNotFound, msgAgentNotFound)
 			return
 		}
 		oldName := agent.NodeName
@@ -110,7 +110,7 @@ func (s *Server) handleDeregisterAgent() http.HandlerFunc {
 		preCheck, preExists := s.agents[agentID]
 		s.mu.RUnlock()
 		if !preExists {
-			writeError(w, http.StatusNotFound, "agent not found")
+			writeError(w, http.StatusNotFound, msgAgentNotFound)
 			return
 		}
 		scope, ok := s.requireFleetScope(w, r, user)
@@ -118,7 +118,7 @@ func (s *Server) handleDeregisterAgent() http.HandlerFunc {
 			return
 		}
 		if !scope.IsAllowed(preCheck.FleetGroupID) {
-			writeError(w, http.StatusNotFound, "agent not found")
+			writeError(w, http.StatusNotFound, msgAgentNotFound)
 			return
 		}
 
@@ -134,7 +134,7 @@ func (s *Server) handleDeregisterAgent() http.HandlerFunc {
 		agent, exists := s.agents[agentID]
 		s.mu.RUnlock()
 		if !exists {
-			writeError(w, http.StatusNotFound, "agent not found")
+			writeError(w, http.StatusNotFound, msgAgentNotFound)
 			return
 		}
 
@@ -146,12 +146,12 @@ func (s *Server) handleDeregisterAgent() http.HandlerFunc {
 			}
 			if err := s.store.DeleteInstancesByAgent(r.Context(), agentID); err != nil {
 				s.logger.Error("delete instances by agent failed", "agent_id", agentID, "error", err)
-				writeError(w, http.StatusInternalServerError, "storage error")
+				writeError(w, http.StatusInternalServerError, msgStorageError)
 				return
 			}
 			if err := s.store.DeleteAgent(r.Context(), agentID); err != nil && !errors.Is(err, storage.ErrNotFound) {
 				s.logger.Error("delete agent from store failed", "agent_id", agentID, "error", err)
-				writeError(w, http.StatusInternalServerError, "storage error")
+				writeError(w, http.StatusInternalServerError, msgStorageError)
 				return
 			}
 			// P1-SEC-06: persist the revocation so the ID stays rejected

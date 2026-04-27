@@ -568,7 +568,7 @@ func (w *storeBatchWriter) flushAgents(ctx context.Context, items []storage.Agen
 	if len(items) == 0 {
 		return
 	}
-	slog.Debug("batch flush", "domain", "agents", "count", len(items))
+	slog.Debug(logBatchFlush, "domain", "agents", "count", len(items))
 	w.flushItem("agents", []any{"count", len(items)}, func() error {
 		return w.store.PutAgentsBulk(ctx, items)
 	})
@@ -578,7 +578,7 @@ func (w *storeBatchWriter) flushInstances(ctx context.Context, items []storage.I
 	if len(items) == 0 {
 		return
 	}
-	slog.Debug("batch flush", "domain", "instances", "count", len(items))
+	slog.Debug(logBatchFlush, "domain", "instances", "count", len(items))
 	w.flushItem("instances", []any{"count", len(items)}, func() error {
 		return w.store.PutInstancesBulk(ctx, items)
 	})
@@ -588,7 +588,7 @@ func (w *storeBatchWriter) flushMetrics(ctx context.Context, items []storage.Met
 	if len(items) == 0 {
 		return
 	}
-	slog.Debug("batch flush", "domain", "metrics", "count", len(items))
+	slog.Debug(logBatchFlush, "domain", "metrics", "count", len(items))
 	w.flushItem("metrics", []any{"count", len(items)}, func() error {
 		return w.store.AppendMetricSnapshotsBulk(ctx, items)
 	})
@@ -598,7 +598,7 @@ func (w *storeBatchWriter) flushServerLoad(ctx context.Context, items []storage.
 	if len(items) == 0 {
 		return
 	}
-	slog.Debug("batch flush", "domain", "server_load", "count", len(items))
+	slog.Debug(logBatchFlush, "domain", "server_load", "count", len(items))
 	w.flushItem("server_load", []any{"count", len(items)}, func() error {
 		return w.store.AppendServerLoadPointsBulk(ctx, items)
 	})
@@ -608,7 +608,7 @@ func (w *storeBatchWriter) flushDCHealth(ctx context.Context, items []storage.DC
 	if len(items) == 0 {
 		return
 	}
-	slog.Debug("batch flush", "domain", "dc_health", "count", len(items))
+	slog.Debug(logBatchFlush, "domain", "dc_health", "count", len(items))
 	w.flushItem("dc_health", []any{"count", len(items)}, func() error {
 		return w.store.AppendDCHealthPointsBulk(ctx, items)
 	})
@@ -618,7 +618,7 @@ func (w *storeBatchWriter) flushClientIPs(ctx context.Context, items []storage.C
 	if len(items) == 0 {
 		return
 	}
-	slog.Debug("batch flush", "domain", "client_ips", "count", len(items))
+	slog.Debug(logBatchFlush, "domain", "client_ips", "count", len(items))
 	w.flushItem("client_ips", []any{"count", len(items)}, func() error {
 		return w.store.UpsertClientIPHistoryBulk(ctx, items)
 	})
@@ -636,7 +636,7 @@ func (w *storeBatchWriter) flushClientIPs(ctx context.Context, items []storage.C
 // audit-specific alert key ("alert=audit_persist_failed") surfaces via
 // streamAlerts[audit] when a row cannot be persisted.
 func (w *storeBatchWriter) flushAuditEvents(ctx context.Context, items []storage.AuditEventRecord) {
-	slog.Debug("batch flush", "domain", "audit", "count", len(items))
+	slog.Debug(logBatchFlush, "domain", "audit", "count", len(items))
 	for _, item := range items {
 		item := item
 		w.flushItem("audit", []any{
@@ -650,7 +650,7 @@ func (w *storeBatchWriter) flushAuditEvents(ctx context.Context, items []storage
 }
 
 func (w *storeBatchWriter) flushTelemetry(ctx context.Context, items []telemetryWriteUnit) {
-	slog.Debug("batch flush", "domain", "telemetry", "count", len(items))
+	slog.Debug(logBatchFlush, "domain", "telemetry", "count", len(items))
 	for _, unit := range items {
 		unit := unit
 		if unit.runtime != nil {

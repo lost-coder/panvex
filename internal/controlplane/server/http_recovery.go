@@ -20,7 +20,7 @@ import (
 func (s *Server) handleAgentCertificateRecovery() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.store == nil {
-			writeError(w, http.StatusServiceUnavailable, "persistent store required")
+			writeError(w, http.StatusServiceUnavailable, msgPersistentStoreRequired)
 			return
 		}
 
@@ -59,15 +59,15 @@ func (s *Server) handleAgentCertificateRecovery() http.HandlerFunc {
 		grant, err := s.store.GetAgentCertificateRecoveryGrant(r.Context(), request.AgentID)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
-				writeError(w, http.StatusForbidden, "agent certificate recovery is not allowed")
+				writeError(w, http.StatusForbidden, msgRecoveryNotAllowed)
 				return
 			}
 			s.logger.Error("agent certificate recovery grant lookup failed", "agent_id", request.AgentID, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 		if agentCertificateRecoveryGrantStatus(grant, now) != "allowed" {
-			writeError(w, http.StatusForbidden, "agent certificate recovery is not allowed")
+			writeError(w, http.StatusForbidden, msgRecoveryNotAllowed)
 			return
 		}
 
@@ -85,11 +85,11 @@ func (s *Server) handleAgentCertificateRecovery() http.HandlerFunc {
 		// failure window than the former TOCTOU.
 		if _, err := s.store.UseAgentCertificateRecoveryGrant(r.Context(), request.AgentID, now); err != nil {
 			if errors.Is(err, storage.ErrNotFound) || errors.Is(err, storage.ErrConflict) {
-				writeError(w, http.StatusForbidden, "agent certificate recovery is not allowed")
+				writeError(w, http.StatusForbidden, msgRecoveryNotAllowed)
 				return
 			}
 			s.logger.Error("agent certificate recovery grant consume failed", "agent_id", request.AgentID, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 		issued, err := s.authority.issueClientCertificate(request.AgentID, now)
@@ -127,7 +127,7 @@ func (s *Server) handleCreateAgentCertificateRecoveryGrant() http.HandlerFunc {
 			return
 		}
 		if s.store == nil {
-			writeError(w, http.StatusServiceUnavailable, "persistent store required")
+			writeError(w, http.StatusServiceUnavailable, msgPersistentStoreRequired)
 			return
 		}
 
@@ -160,7 +160,7 @@ func (s *Server) handleCreateAgentCertificateRecoveryGrant() http.HandlerFunc {
 		}
 		if err := s.store.PutAgentCertificateRecoveryGrant(r.Context(), grant); err != nil {
 			s.logger.Error("create certificate recovery grant failed", "agent_id", agentID, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 
@@ -185,7 +185,7 @@ func (s *Server) handleRevokeAgentCertificateRecoveryGrant() http.HandlerFunc {
 			return
 		}
 		if s.store == nil {
-			writeError(w, http.StatusServiceUnavailable, "persistent store required")
+			writeError(w, http.StatusServiceUnavailable, msgPersistentStoreRequired)
 			return
 		}
 
@@ -198,7 +198,7 @@ func (s *Server) handleRevokeAgentCertificateRecoveryGrant() http.HandlerFunc {
 				return
 			}
 			s.logger.Error("revoke certificate recovery grant failed", "agent_id", agentID, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 

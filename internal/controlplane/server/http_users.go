@@ -56,7 +56,7 @@ func (s *Server) handleUsers() http.HandlerFunc {
 		users, err := s.listUsersWithContext(r.Context())
 		if err != nil {
 			s.logger.Error("list users failed", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 
@@ -115,7 +115,7 @@ func (s *Server) handleCreateUser() http.HandlerFunc {
 				writeError(w, http.StatusBadRequest, err.Error())
 			default:
 				s.logger.Error("create user failed", "username_hash", s.logUsername(request.Username), "error", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, msgInternalError)
 			}
 			return
 		}
@@ -181,7 +181,7 @@ func (s *Server) handleUpdateUser() http.HandlerFunc {
 				writeError(w, http.StatusBadRequest, err.Error())
 			default:
 				s.logger.Error("update user failed", "user_id", targetUserID, "error", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, msgInternalError)
 			}
 			return
 		}
@@ -231,7 +231,7 @@ func (s *Server) handleDeleteUser() http.HandlerFunc {
 				writeError(w, http.StatusBadRequest, err.Error())
 			default:
 				s.logger.Error("delete user failed", "user_id", targetUserID, "error", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, msgInternalError)
 			}
 			return
 		}
@@ -271,7 +271,7 @@ func (s *Server) handleResetUserTotp() http.HandlerFunc {
 				return
 			}
 			s.logger.Error("reset user totp failed", "user_id", targetUserID, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 

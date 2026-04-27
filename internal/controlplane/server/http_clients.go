@@ -102,7 +102,7 @@ func (s *Server) handleClients() http.HandlerFunc {
 			_, assignments, deployments, err := s.clientDetailSnapshot(client.ID)
 			if err != nil {
 				s.logger.Error("load client detail failed", "client_id", client.ID, "error", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, msgInternalError)
 				return
 			}
 			// R-S-14: hide clients that have no assignment overlap with
@@ -208,7 +208,7 @@ func (s *Server) handleClient() http.HandlerFunc {
 				return
 			}
 			s.logger.Error("load client failed", "client_id", clientID, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 
@@ -245,7 +245,7 @@ func (s *Server) handleUpdateClient() http.HandlerFunc {
 					return
 				}
 				s.logger.Error(msgClientScopeCheckFailed, "client_id", clientID, "error", lookupErr)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, msgInternalError)
 				return
 			}
 			if !s.clientInScope(scope, existingAssignments) {
@@ -317,7 +317,7 @@ func (s *Server) handleDeleteClient() http.HandlerFunc {
 					return
 				}
 				s.logger.Error(msgClientScopeCheckFailed, "client_id", clientID, "error", lookupErr)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, msgInternalError)
 				return
 			}
 			if !s.clientInScope(scope, existing) {
@@ -358,7 +358,7 @@ func (s *Server) handleRotateClientSecret() http.HandlerFunc {
 					return
 				}
 				s.logger.Error(msgClientScopeCheckFailed, "client_id", clientID, "error", lookupErr)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, msgInternalError)
 				return
 			}
 			if !s.clientInScope(scope, existing) {
@@ -404,7 +404,7 @@ func (s *Server) handleRedeployClient() http.HandlerFunc {
 					return
 				}
 				s.logger.Error(msgClientScopeCheckFailed, "client_id", clientID, "error", lookupErr)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, msgInternalError)
 				return
 			}
 			if !s.clientInScope(scope, existing) {
@@ -485,7 +485,7 @@ func handleClientMutationError(w http.ResponseWriter, err error) bool {
 		writeError(w, http.StatusConflict, err.Error())
 	default:
 		slog.Error("client mutation failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
+		writeError(w, http.StatusInternalServerError, msgInternalError)
 	}
 
 	return false

@@ -175,7 +175,7 @@ func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 			defaultGroup, err := s.fleetSvc.EnsureDefault(r.Context())
 			if err != nil {
 				s.logger.Error("ensure default fleet group failed", "error", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, msgInternalError)
 				return
 			}
 			fleetGroupID = defaultGroup.ID
@@ -190,7 +190,7 @@ func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 					return
 				}
 				s.logger.Error("lookup fleet group for enrollment failed", "fleet_group_id", fleetGroupID, "error", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, msgInternalError)
 				return
 			}
 			fleetGroupID = resolved.ID
@@ -218,7 +218,7 @@ func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 				return
 			}
 			s.logger.Error("create enrollment token failed", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 
@@ -270,7 +270,7 @@ func (s *Server) handleAgentBootstrap() http.HandlerFunc {
 				writeError(w, http.StatusForbidden, err.Error())
 			default:
 				s.logger.Error("agent bootstrap failed", "node_name", request.NodeName, "error", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, msgInternalError)
 			}
 			return
 		}
@@ -309,7 +309,7 @@ func (s *Server) handleListEnrollmentTokens() http.HandlerFunc {
 		tokens, err := s.listEnrollmentTokensWithContext(r.Context(), s.now(), r.URL, s.trustedForwardedProto(r), r.Host)
 		if err != nil {
 			s.logger.Error("list enrollment tokens failed", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 
@@ -373,7 +373,7 @@ func (s *Server) handleRevokeEnrollmentToken() http.HandlerFunc {
 				return
 			}
 			s.logger.Error("lookup enrollment token failed", "error", lookupErr)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 		scope, ok := s.requireFleetScope(w, r, user)
@@ -392,7 +392,7 @@ func (s *Server) handleRevokeEnrollmentToken() http.HandlerFunc {
 				return
 			}
 			s.logger.Error("revoke enrollment token failed", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 		if changed {

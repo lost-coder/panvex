@@ -14,6 +14,11 @@ import (
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
+// jobActionRotateSecret is the canonical job-action token used to flag
+// a rotate-secret rollout; centralised so the dispatch and audit paths
+// stay in sync (Sonar S1192).
+const jobActionRotateSecret = "client.rotate_secret"
+
 type telemtClient interface {
 	FetchRuntimeState(context.Context) (telemt.RuntimeState, error)
 	FetchClientUsageFromMetrics(context.Context) (telemt.ClientUsageMetricsSnapshot, error)
@@ -559,7 +564,7 @@ func (a *Agent) HandleJob(ctx context.Context, job *gatewayrpc.JobCommand, obser
 		result.Success = true
 		result.Message = "diagnostics refresh requested"
 		return result
-	case "client.create", "client.update", "client.rotate_secret", "client.delete":
+	case "client.create", "client.update", jobActionRotateSecret, "client.delete":
 		var payload struct {
 			ClientID          string `json:"client_id"`
 			PreviousName      string `json:"previous_name"`
@@ -601,14 +606,14 @@ func (a *Agent) HandleJob(ctx context.Context, job *gatewayrpc.JobCommand, obser
 			result.ResultJson = marshalClientJobResult(applyResult)
 			a.setClientName(payload.ClientID, managedClient.Name)
 			return result
-		case "client.update", "client.rotate_secret":
+		case "client.update", jobActionRotateSecret:
 			applyResult, err := a.telemt.UpdateClient(ctx, managedClient)
 			if err != nil {
 				result.Message = err.Error()
 				return result
 			}
 			result.Success = true
-			if job.GetAction() == "client.rotate_secret" {
+			if job.GetAction() == jobActionRotateSecret {
 				result.Message = "client secret rotated"
 			} else {
 				result.Message = "client updated"
