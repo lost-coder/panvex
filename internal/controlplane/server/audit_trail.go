@@ -26,7 +26,7 @@ func (s *Server) appendAuditWithContext(ctx context.Context, actorID string, act
 		Action:    action,
 		TargetID:  targetID,
 		CreatedAt: s.now().UTC(),
-		Details:   details,
+		Details:   normalizeAuditDetails(details),
 	}
 	s.appendAuditTrailLocked(event)
 	s.metricsAuditMu.Unlock()
@@ -83,7 +83,7 @@ func (s *Server) appendAuditSync(ctx context.Context, actorID, action, targetID 
 		Action:    action,
 		TargetID:  targetID,
 		CreatedAt: s.now().UTC(),
-		Details:   details,
+		Details:   normalizeAuditDetails(details),
 	}
 	s.appendAuditTrailLocked(event)
 	s.metricsAuditMu.Unlock()
@@ -107,6 +107,19 @@ func (s *Server) appendAuditSync(ctx context.Context, actorID, action, targetID 
 		Data: event,
 	})
 	return persistErr
+}
+
+// normalizeAuditDetails guarantees the JSON-marshalled details field is an
+// object, not null. The web client's Zod schema declares details as a
+// non-nullable record (web/src/shared/api/schemas/jobs.ts auditEventSchema)
+// and rejects the whole /api/audit response if any entry serializes
+// "details": null. A nil Go map encodes to null, so we substitute an empty
+// map at construction time.
+func normalizeAuditDetails(details map[string]any) map[string]any {
+	if details == nil {
+		return map[string]any{}
+	}
+	return details
 }
 
 // appendAuditTrailLocked appends one event to the ring buffer in O(1) time.
