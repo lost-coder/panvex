@@ -22,13 +22,12 @@ export function MetricsChartSection(props: Readonly<MetricsChartSectionProps>) {
   return (
     <Suspense
       fallback={
-        <div
+        <output
           className={chartShortFallbackClass}
-          role="status"
           aria-label="Loading charts"
         >
           …
-        </div>
+        </output>
       }
     >
       <MetricsChartSectionInner {...props} />
