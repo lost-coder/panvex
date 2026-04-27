@@ -37,10 +37,11 @@ export function ServerActionsDropdown({
             while keeping the click handler active. Keyboard users close the
             menu with Escape (handled by the menu itself / Radix in future).
           */}
-          <div
-            className="fixed inset-0 z-40"
-            role="presentation"
+          <button
+            type="button"
+            tabIndex={-1}
             aria-hidden="true"
+            className="fixed inset-0 z-40 cursor-default"
             onClick={() => setOpen(false)}
           />
           <div className="absolute right-0 top-full mt-1 z-50 min-w-[180px] rounded-xs bg-bg-card border border-border shadow-lg py-1 flex flex-col">

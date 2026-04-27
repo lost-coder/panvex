@@ -29,10 +29,9 @@ const mdColsClass: Record<number, string> = {
 
 export function LEDGrid({ items, activeCode, onSelect, cols = [4, 6], className }: Readonly<LEDGridProps>) {
   return (
-    <div
-      role="group"
+    <fieldset
       aria-label="Data center status indicators"
-      className={cn("grid gap-1", colsClass[cols[0]], mdColsClass[cols[1]], className)}
+      className={cn("grid gap-1 border-0 p-0 m-0", colsClass[cols[0]], mdColsClass[cols[1]], className)}
     >
       {items.map((item) => (
         <LEDIndicator
@@ -42,6 +41,6 @@ export function LEDGrid({ items, activeCode, onSelect, cols = [4, 6], className 
           onClick={() => onSelect?.(item.label)}
         />
       ))}
-    </div>
+    </fieldset>
   );
 }
