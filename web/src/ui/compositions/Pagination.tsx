@@ -20,7 +20,13 @@ export function Pagination({ page, totalPages, onPageChange, className }: Readon
       </PageBtn>
       {pages.map((p, i) =>
         p === null ? (
-          <span key={`e${i}`} className="px-1 text-fg-muted/40 text-xs">
+          // Ellipsis sits between two real pages; derive a stable key
+          // from the neighbouring real page so the gap node survives
+          // reorders without colliding with sibling ellipses.
+          <span
+            key={`ellipsis-${pages[i - 1] ?? "head"}-${pages[i + 1] ?? "tail"}`}
+            className="px-1 text-fg-muted/40 text-xs"
+          >
             …
           </span>
         ) : (

@@ -82,7 +82,7 @@ function _TimelineStrip({
           />
         ))}
         {/* Event pins: dashed vertical line + top-dot. */}
-        {events.map((e, idx) => {
+        {events.map((e) => {
           const pct = (e.tsEpochSecs - tMin) / range;
           if (pct < 0 || pct > 1) return null;
           const x = pad + pct * innerW;
@@ -91,8 +91,10 @@ function _TimelineStrip({
             if (e.kind === "warn") return "var(--color-status-warn)";
             return "var(--color-fg-muted)";
           })();
+          // Composite key: timestamp + kind disambiguates pins that
+          // share a millisecond but represent different signals.
           return (
-            <g key={idx}>
+            <g key={`${e.tsEpochSecs}-${e.kind}`}>
               <line
                 x1={x}
                 x2={x}
