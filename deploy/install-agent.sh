@@ -54,6 +54,7 @@ cleanup() {
   local code=$?
   [[ -n "$TMP_DIR" ]] && rm -rf "$TMP_DIR"
   exit $code
+  return 0
 }
 trap cleanup EXIT HUP INT TERM
 
@@ -134,6 +135,7 @@ detect_arch() {
     aarch64|arm64) echo "arm64" ;;
     *) die "Unsupported architecture: $(uname -m)" ;;
   esac
+  return 0
 }
 
 # ── Download with progress ───────────────────────────────────────────────────
