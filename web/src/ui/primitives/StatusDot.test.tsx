@@ -1,16 +1,19 @@
-import { render, screen } from "@testing-library/react";
+import { render } from "@testing-library/react";
 import { StatusDot } from "./StatusDot";
 
 describe("StatusDot", () => {
-  it("renders with accessible role and label", () => {
-    render(<StatusDot status="ok" />);
-    const dot = screen.getByRole("img", { name: /status: ok/i });
-    expect(dot).toBeInTheDocument();
+  // The dot is purely decorative: callers always render it next to
+  // a textual status label, so the dot itself is hidden from
+  // assistive tech (aria-hidden=true). Sonar S6819 forbade the
+  // <span role="img"> shim that this used to expose.
+  it("renders as a decorative element hidden from assistive tech", () => {
+    const { container } = render(<StatusDot status="ok" />);
+    expect(container.firstChild).toHaveAttribute("aria-hidden", "true");
   });
 
-  it("reflects status in aria-label", () => {
-    render(<StatusDot status="error" />);
-    expect(screen.getByLabelText("Status: error")).toBeInTheDocument();
+  it("paints the status color class", () => {
+    const { container } = render(<StatusDot status="error" />);
+    expect(container.firstChild).toHaveClass("bg-status-error");
   });
 
   it("applies size classes", () => {
