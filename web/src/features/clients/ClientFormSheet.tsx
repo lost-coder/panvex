@@ -143,7 +143,7 @@ export function ClientFormSheet({
             disabled={loading}
           />
           <Button
-            variant={!data.expirationRfc3339 ? "default" : "ghost"}
+            variant={data.expirationRfc3339 ? "ghost" : "default"}
             size="sm"
             onClick={() => update("expirationRfc3339", "")}
           >

@@ -38,7 +38,7 @@ function _UpstreamsList({
           />
           <span className="text-xs font-mono text-fg truncate">{u.address}</span>
           <span className="ml-auto text-[10px] font-mono text-fg-muted tabular-nums shrink-0">
-            {u.effectiveLatencyMs != null ? `${u.effectiveLatencyMs.toFixed(0)}ms` : "—"}
+            {u.effectiveLatencyMs == null ? "—" : `${u.effectiveLatencyMs.toFixed(0)}ms`}
           </span>
           <span className="text-[10px] font-mono text-fg-muted tabular-nums shrink-0">
             {u.routeKind}

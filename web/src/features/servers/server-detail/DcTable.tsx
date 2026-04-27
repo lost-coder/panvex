@@ -73,7 +73,7 @@ export function DcTable({ dcs }: Readonly<{ dcs: ServerDcData[] }>) {
                 </td>
                 <td className="px-3 py-2">
                   <MonoValue className="text-fg-muted">
-                    {row.freshAlivePct != null ? `${row.freshAlivePct}%` : "—"}
+                    {row.freshAlivePct == null ? "—" : `${row.freshAlivePct}%`}
                   </MonoValue>
                 </td>
                 <td className="px-3 py-2">
@@ -86,7 +86,7 @@ export function DcTable({ dcs }: Readonly<{ dcs: ServerDcData[] }>) {
                           : undefined
                     }
                   >
-                    {row.rttMs != null ? `${row.rttMs}ms` : "—"}
+                    {row.rttMs == null ? "—" : `${row.rttMs}ms`}
                   </MonoValue>
                 </td>
                 <td className="px-3 py-2">

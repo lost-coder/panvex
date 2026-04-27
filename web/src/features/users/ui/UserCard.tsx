@@ -45,7 +45,7 @@ export function UserCard({
           <TrafficCell bytes={trafficUp} label="↑" />
           {ips !== undefined && (
             <span className="text-[11px] font-mono text-fg-muted">
-              {ips} IP{ips !== 1 ? "s" : ""}
+              {ips} IP{ips === 1 ? "" : "s"}
             </span>
           )}
         </div>

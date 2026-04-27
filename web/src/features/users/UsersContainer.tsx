@@ -103,8 +103,9 @@ export function UsersContainer() {
     );
   }
 
-  const sheetProps: UserFormSheetProps | undefined = sheet.mode !== "closed"
-    ? {
+  const sheetProps: UserFormSheetProps | undefined = sheet.mode === "closed"
+    ? undefined
+    : {
         mode: sheet.mode,
         data: formData,
         onChange: setFormData,
@@ -112,8 +113,7 @@ export function UsersContainer() {
         onCancel: () => setSheet({ mode: "closed" }),
         loading: createUser.isPending || updateUser.isPending,
         error: formError,
-      }
-    : undefined;
+      };
 
   return (
     <UsersManagementPage

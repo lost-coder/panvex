@@ -41,7 +41,7 @@ function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
   const [customTtl, setCustomTtl] = useState(false);
   const [touched, setTouched] = useState<{ nodeName?: boolean; ttl?: boolean }>({});
 
-  const nodeNameError = !nodeName.trim() ? "Node name is required." : undefined;
+  const nodeNameError = nodeName.trim() ? undefined : "Node name is required.";
   const ttlError = tokenTtl <= 0 ? "Token lifetime must be greater than zero." : undefined;
   const hasError = Boolean(nodeNameError || ttlError);
 

@@ -60,7 +60,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
       key: "dc",
       header: "DC",
       render: (row: Readonly<ServerMeWriterData>) => (
-        <MonoValue>{row.dc != null ? `DC${row.dc}` : "—"}</MonoValue>
+        <MonoValue>{row.dc == null ? "—" : `DC${row.dc}`}</MonoValue>
       ),
       className: "w-14",
     },
@@ -86,7 +86,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
       key: "rtt",
       header: "RTT",
       render: (row: Readonly<ServerMeWriterData>) => (
-        <MonoValue>{row.rttEmaMs != null ? `${row.rttEmaMs.toFixed(1)}ms` : "—"}</MonoValue>
+        <MonoValue>{row.rttEmaMs == null ? "—" : `${row.rttEmaMs.toFixed(1)}ms`}</MonoValue>
       ),
       className: "w-20",
     },
@@ -100,7 +100,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
       key: "idle",
       header: "Idle",
       render: (row: Readonly<ServerMeWriterData>) => (
-        <MonoValue>{row.idleForSecs != null ? `${row.idleForSecs}s` : "—"}</MonoValue>
+        <MonoValue>{row.idleForSecs == null ? "—" : `${row.idleForSecs}s`}</MonoValue>
       ),
       className: "w-16",
     },

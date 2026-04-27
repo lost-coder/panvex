@@ -65,7 +65,7 @@ export function DcDetailSheet({
                   <span
                     className={`font-mono ${(selectedDc.rttMs ?? 0) > 300 ? "text-status-error" : (selectedDc.rttMs ?? 0) > 100 ? "text-status-warn" : "text-fg"}`}
                   >
-                    {selectedDc.rttMs != null ? `${selectedDc.rttMs}ms` : "—"}
+                    {selectedDc.rttMs == null ? "—" : `${selectedDc.rttMs}ms`}
                   </span>
                   <span className="text-fg-muted">Load</span>
                   <span className="font-mono text-fg">{selectedDc.load}</span>
@@ -86,7 +86,7 @@ export function DcDetailSheet({
                         <MonoValue>{ew.endpoint}</MonoValue>
                         <span className="text-fg-muted">→</span>
                         <MonoValue>
-                          {ew.activeWriters} active writer{ew.activeWriters !== 1 ? "s" : ""}
+                          {ew.activeWriters} active writer{ew.activeWriters === 1 ? "" : "s"}
                         </MonoValue>
                       </div>
                     ))}
