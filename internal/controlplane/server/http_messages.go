@@ -18,6 +18,8 @@ const (
 	msgServerNotFound             = "server not found"
 	msgPersistentStoreRequired    = "persistent store required"
 	msgRecoveryNotAllowed         = "agent certificate recovery is not allowed"
+	msgAdminRoleRequired          = "admin role required"
+	msgClientIDRequired           = "client id is required"
 
 	logBatchFlush         = "batch flush"
 	logAgentStreamClosed  = "agent stream closed"

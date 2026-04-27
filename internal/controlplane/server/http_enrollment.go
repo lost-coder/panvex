@@ -23,6 +23,11 @@ var (
 	errEnrollmentStoreUnavailable = errors.New("enrollment storage is unavailable")
 )
 
+// defaultGatewayHost is the TLS server name carried by control-plane gateway
+// certificates. Hoisted out of the bootstrap-address helpers so the literal
+// is not duplicated three times (Sonar S1192).
+const defaultGatewayHost = "control-plane.panvex.internal"
+
 const (
 	agentCertificateRecoveryProofSkew  = 5 * time.Minute
 	// agentCertificateRecoveryGraceWindow defines how long after certificate
@@ -616,7 +621,7 @@ func bearerTokenFromHeader(value string) (string, bool) {
 func (s *Server) bootstrapGatewayAddress(host string) (string, string) {
 	settings := s.panelSettingsSnapshot()
 	if settings.GRPCPublicEndpoint != "" {
-		return settings.GRPCPublicEndpoint, "control-plane.panvex.internal"
+		return settings.GRPCPublicEndpoint, defaultGatewayHost
 	}
 
 	return defaultBootstrapGatewayAddress(host)
@@ -625,10 +630,10 @@ func (s *Server) bootstrapGatewayAddress(host string) (string, string) {
 func defaultBootstrapGatewayAddress(host string) (string, string) {
 	host = strings.TrimSpace(host)
 	if host == "" {
-		return "127.0.0.1:8443", "control-plane.panvex.internal"
+		return "127.0.0.1:8443", defaultGatewayHost
 	}
 
-	serverName := "control-plane.panvex.internal"
+	serverName := defaultGatewayHost
 	endpointHost := host
 	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
 		endpointHost = parsedHost

@@ -1143,6 +1143,13 @@ func decodeSuccessData(body io.Reader, dest any) error {
 	return json.Unmarshal(payload, dest)
 }
 
+// formatHTTPErr renders a "<prefix>: <detail>" error string. Centralised so the
+// "%s: %s" format literal does not appear at every call site in decodeAPIError
+// (Sonar S1192).
+func formatHTTPErr(prefix, detail string) error {
+	return fmt.Errorf("%s: %s", prefix, detail)
+}
+
 func decodeAPIError(body io.Reader, fallback string) error {
 	payload, err := io.ReadAll(io.LimitReader(body, maxResponseBodySize))
 	if err != nil {
@@ -1162,17 +1169,17 @@ func decodeAPIError(body io.Reader, fallback string) error {
 
 		switch {
 		case code != "" && message != "":
-			return fmt.Errorf("%s: %s", code, message)
+			return formatHTTPErr(code, message)
 		case code != "":
 			return errors.New(code)
 		case message != "":
-			return fmt.Errorf("%s: %s", fallback, message)
+			return formatHTTPErr(fallback, message)
 		}
 	}
 
 	trimmed := strings.Join(strings.Fields(string(payload)), " ")
 	if trimmed != "" {
-		return fmt.Errorf("%s: %s", fallback, trimmed)
+		return formatHTTPErr(fallback, trimmed)
 	}
 
 	return errors.New(fallback)

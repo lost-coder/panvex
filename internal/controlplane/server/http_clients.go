@@ -197,7 +197,7 @@ func (s *Server) handleClient() http.HandlerFunc {
 
 		clientID := chi.URLParam(r, "id")
 		if clientID == "" {
-			writeError(w, http.StatusBadRequest, "client id is required")
+			writeError(w, http.StatusBadRequest, msgClientIDRequired)
 			return
 		}
 
@@ -231,7 +231,7 @@ func (s *Server) handleUpdateClient() http.HandlerFunc {
 
 		clientID := chi.URLParam(r, "id")
 		if clientID == "" {
-			writeError(w, http.StatusBadRequest, "client id is required")
+			writeError(w, http.StatusBadRequest, msgClientIDRequired)
 			return
 		}
 
@@ -304,7 +304,7 @@ func (s *Server) handleDeleteClient() http.HandlerFunc {
 
 		clientID := chi.URLParam(r, "id")
 		if clientID == "" {
-			writeError(w, http.StatusBadRequest, "client id is required")
+			writeError(w, http.StatusBadRequest, msgClientIDRequired)
 			return
 		}
 
@@ -346,7 +346,7 @@ func (s *Server) handleRotateClientSecret() http.HandlerFunc {
 
 		clientID := chi.URLParam(r, "id")
 		if clientID == "" {
-			writeError(w, http.StatusBadRequest, "client id is required")
+			writeError(w, http.StatusBadRequest, msgClientIDRequired)
 			return
 		}
 
@@ -392,7 +392,7 @@ func (s *Server) handleRedeployClient() http.HandlerFunc {
 
 		clientID := chi.URLParam(r, "id")
 		if clientID == "" {
-			writeError(w, http.StatusBadRequest, "client id is required")
+			writeError(w, http.StatusBadRequest, msgClientIDRequired)
 			return
 		}
 

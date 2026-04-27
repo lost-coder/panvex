@@ -121,6 +121,17 @@ const (
 	controlPlaneShutdownGraceMin = 45 * time.Second
 )
 
+// Storage flag names and help strings shared across the serve, bootstrap-admin,
+// reset-user-totp, and migrate-schema subcommands. Hoisted to package scope so
+// the same literal does not appear five times across flags.String calls
+// (Sonar S1192).
+const (
+	flagStorageDriver = "storage-driver"
+	flagStorageDSN    = "storage-dsn"
+	helpStorageDriver = "Persistent storage backend driver"
+	helpStorageDSN    = "Persistent storage backend DSN"
+)
+
 var errPanelRestartRequested = errors.New("panel restart requested")
 
 func main() {
@@ -354,8 +365,8 @@ func parseServeConfig(args []string) (serveConfig, error) {
 	httpAddr := flags.String("http-addr", ":8080", "HTTP listen address")
 	grpcAddr := flags.String("grpc-addr", ":8443", "gRPC listen address")
 	restartMode := flags.String("restart-mode", config.RestartModeDisabled, "Panel restart mode (disabled or supervised)")
-	storageDriver := flags.String("storage-driver", "", "Persistent storage backend driver")
-	storageDSN := flags.String("storage-dsn", "", "Persistent storage backend DSN")
+	storageDriver := flags.String(flagStorageDriver, "", helpStorageDriver)
+	storageDSN := flags.String(flagStorageDSN, "", helpStorageDSN)
 	trustedProxyCIDRs := flags.String("trusted-proxy-cidrs", "", "Comma-separated trusted proxy CIDRs for X-Forwarded-For (e.g. 172.16.0.0/12,10.0.0.0/8)")
 	// CA encryption passphrase is never accepted on the command line because
 	// argv is visible in /proc/<pid>/cmdline and ps output. Sources, in priority
@@ -383,7 +394,7 @@ func parseServeConfig(args []string) (serveConfig, error) {
 	})
 
 	if strings.TrimSpace(*configPath) != "" {
-		for _, flagName := range []string{"http-addr", "grpc-addr", "restart-mode", "storage-driver", "storage-dsn"} {
+		for _, flagName := range []string{"http-addr", "grpc-addr", "restart-mode", flagStorageDriver, flagStorageDSN} {
 			if explicitLegacyFlags[flagName] {
 				return serveConfig{}, fmt.Errorf("flag -%s cannot be used together with -config", flagName)
 			}
@@ -531,8 +542,8 @@ func runBootstrapAdmin(args []string) error {
 	flags := flag.NewFlagSet("bootstrap-admin", flag.ContinueOnError)
 	username := flags.String("username", "admin", "Admin username")
 	password := flags.String("password", os.Getenv("PANVEX_BOOTSTRAP_PASSWORD"), "Admin password")
-	storageDriver := flags.String("storage-driver", "", "Persistent storage backend driver")
-	storageDSN := flags.String("storage-dsn", "", "Persistent storage backend DSN")
+	storageDriver := flags.String(flagStorageDriver, "", helpStorageDriver)
+	storageDSN := flags.String(flagStorageDSN, "", helpStorageDSN)
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -595,8 +606,8 @@ func runBootstrapAdmin(args []string) error {
 func runResetUserTotp(args []string) error {
 	flags := flag.NewFlagSet("reset-user-totp", flag.ContinueOnError)
 	username := flags.String("username", "", "Username to reset TOTP for")
-	storageDriver := flags.String("storage-driver", "", "Persistent storage backend driver")
-	storageDSN := flags.String("storage-dsn", "", "Persistent storage backend DSN")
+	storageDriver := flags.String(flagStorageDriver, "", helpStorageDriver)
+	storageDSN := flags.String(flagStorageDSN, "", helpStorageDSN)
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -860,8 +871,8 @@ func runMigrateSchema(args []string) error {
 	}
 
 	flags := flag.NewFlagSet("migrate-schema", flag.ContinueOnError)
-	storageDriver := flags.String("storage-driver", "", "Persistent storage backend driver")
-	storageDSN := flags.String("storage-dsn", "", "Persistent storage backend DSN")
+	storageDriver := flags.String(flagStorageDriver, "", helpStorageDriver)
+	storageDSN := flags.String(flagStorageDSN, "", helpStorageDSN)
 	if err := flags.Parse(rest); err != nil {
 		return err
 	}

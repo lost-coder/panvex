@@ -31,6 +31,8 @@ type updateUserRequest struct {
 	NewPassword string `json:"new_password"`
 }
 
+const errUserIDRequired = "user id is required"
+
 func isValidRole(role string) bool {
 	switch auth.Role(role) {
 	case auth.RoleViewer, auth.RoleOperator, auth.RoleAdmin:
@@ -49,7 +51,7 @@ func (s *Server) handleUsers() http.HandlerFunc {
 		}
 
 		if user.Role != auth.RoleAdmin {
-			writeError(w, http.StatusForbidden, "admin role required")
+			writeError(w, http.StatusForbidden, msgAdminRoleRequired)
 			return
 		}
 
@@ -87,7 +89,7 @@ func (s *Server) handleCreateUser() http.HandlerFunc {
 		}
 
 		if user.Role != auth.RoleAdmin {
-			writeError(w, http.StatusForbidden, "admin role required")
+			writeError(w, http.StatusForbidden, msgAdminRoleRequired)
 			return
 		}
 
@@ -142,13 +144,13 @@ func (s *Server) handleUpdateUser() http.HandlerFunc {
 		}
 
 		if user.Role != auth.RoleAdmin {
-			writeError(w, http.StatusForbidden, "admin role required")
+			writeError(w, http.StatusForbidden, msgAdminRoleRequired)
 			return
 		}
 
 		targetUserID := chi.URLParam(r, "id")
 		if targetUserID == "" {
-			writeError(w, http.StatusBadRequest, "user id is required")
+			writeError(w, http.StatusBadRequest, errUserIDRequired)
 			return
 		}
 
@@ -208,13 +210,13 @@ func (s *Server) handleDeleteUser() http.HandlerFunc {
 		}
 
 		if user.Role != auth.RoleAdmin {
-			writeError(w, http.StatusForbidden, "admin role required")
+			writeError(w, http.StatusForbidden, msgAdminRoleRequired)
 			return
 		}
 
 		targetUserID := chi.URLParam(r, "id")
 		if targetUserID == "" {
-			writeError(w, http.StatusBadRequest, "user id is required")
+			writeError(w, http.StatusBadRequest, errUserIDRequired)
 			return
 		}
 
@@ -250,13 +252,13 @@ func (s *Server) handleResetUserTotp() http.HandlerFunc {
 		}
 
 		if user.Role != auth.RoleAdmin {
-			writeError(w, http.StatusForbidden, "admin role required")
+			writeError(w, http.StatusForbidden, msgAdminRoleRequired)
 			return
 		}
 
 		targetUserID := chi.URLParam(r, "id")
 		if targetUserID == "" {
-			writeError(w, http.StatusBadRequest, "user id is required")
+			writeError(w, http.StatusBadRequest, errUserIDRequired)
 			return
 		}
 

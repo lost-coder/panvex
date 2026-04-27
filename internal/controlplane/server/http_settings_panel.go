@@ -29,7 +29,10 @@ type updatePanelSettingsRequest struct {
 	GRPCPublicEndpoint string `json:"grpc_public_endpoint"`
 }
 
-const maxPanelSettingsBodyBytes = 16 * 1024
+const (
+	maxPanelSettingsBodyBytes = 16 * 1024
+	errInvalidPanelSettings   = "invalid panel settings payload"
+)
 
 func (s *Server) handleGetPanelSettings() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -39,7 +42,7 @@ func (s *Server) handleGetPanelSettings() http.HandlerFunc {
 			return
 		}
 		if user.Role != auth.RoleAdmin {
-			writeError(w, http.StatusForbidden, "admin role required")
+			writeError(w, http.StatusForbidden, msgAdminRoleRequired)
 			return
 		}
 
@@ -56,7 +59,7 @@ func (s *Server) handlePutPanelSettings() http.HandlerFunc {
 			return
 		}
 		if user.Role != auth.RoleAdmin {
-			writeError(w, http.StatusForbidden, "admin role required")
+			writeError(w, http.StatusForbidden, msgAdminRoleRequired)
 			return
 		}
 
@@ -68,20 +71,20 @@ func (s *Server) handlePutPanelSettings() http.HandlerFunc {
 				writeError(w, http.StatusRequestEntityTooLarge, "panel settings payload too large")
 				return
 			}
-			writeError(w, http.StatusBadRequest, "invalid panel settings payload")
+			writeError(w, http.StatusBadRequest, errInvalidPanelSettings)
 			return
 		}
 		_ = r.Body.Close()
 
 		var request updatePanelSettingsRequest
 		if err := json.Unmarshal(body, &request); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid panel settings payload")
+			writeError(w, http.StatusBadRequest, errInvalidPanelSettings)
 			return
 		}
 
 		var requestFields map[string]json.RawMessage
 		if err := json.Unmarshal(body, &requestFields); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid panel settings payload")
+			writeError(w, http.StatusBadRequest, errInvalidPanelSettings)
 			return
 		}
 		if err := rejectRuntimeMutation(requestFields, s.panelRuntime); err != nil {
@@ -125,7 +128,7 @@ func (s *Server) handleRestartPanel() http.HandlerFunc {
 			return
 		}
 		if user.Role != auth.RoleAdmin {
-			writeError(w, http.StatusForbidden, "admin role required")
+			writeError(w, http.StatusForbidden, msgAdminRoleRequired)
 			return
 		}
 
