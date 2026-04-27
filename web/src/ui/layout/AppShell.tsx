@@ -53,7 +53,7 @@ export function AppShell({
       <main
         id="main-content"
         tabIndex={-1}
-        className="md:ml-[60px] pb-16 md:pb-0 min-h-screen outline-none"
+        className="md:ml-16 pb-16 md:pb-0 min-h-screen outline-none"
       >
         {children}
       </main>
