@@ -35,7 +35,7 @@ export function useWsStatus(): WsContextValue {
   return useContext(WsContext);
 }
 
-export function EventsSynchronizer({ children }: { children?: React.ReactNode }) {
+export function EventsSynchronizer({ children }: Readonly<{ children?: React.ReactNode }>) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<WsStatus>("connecting");
   const [lastEventAt, setLastEventAt] = useState<number | null>(null);

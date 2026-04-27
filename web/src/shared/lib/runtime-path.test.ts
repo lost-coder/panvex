@@ -54,7 +54,7 @@ describe("buildEventsURL", () => {
 
 describe("resolveConfiguredRootPath", () => {
   const originalDataset = document.documentElement.dataset.rootPath;
-  const w = window as Window & { __PANVEX_ROOT_PATH?: string };
+  const w = globalThis as typeof globalThis & { __PANVEX_ROOT_PATH?: string };
   const originalGlobal = w.__PANVEX_ROOT_PATH;
 
   beforeEach(() => {

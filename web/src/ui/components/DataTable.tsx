@@ -132,7 +132,7 @@ export function DataTable<T>({
             ) : (
               <>
                 {paddingTop > 0 && (
-                  <tr role="presentation" style={{ height: paddingTop }}>
+                  <tr aria-hidden="true" style={{ height: paddingTop }}>
                     <td colSpan={columns.length} />
                   </tr>
                 )}

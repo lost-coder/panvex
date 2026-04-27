@@ -10,7 +10,8 @@ export function parseConnectionLink(link: string): { classic: string[]; secure: 
   if (!link) return { classic: [], secure: [], tls: [] };
   if (link.startsWith("https://t.me/")) return { classic: [link], secure: [], tls: [] };
   if (link.startsWith("tg://proxy")) {
-    const match = link.match(/secret=([0-9a-fA-F]+)/);
+    const secretRe = /secret=([0-9a-fA-F]+)/;
+    const match = secretRe.exec(link);
     const secret = match?.[1];
     if (secret?.toLowerCase().startsWith("ee")) {
       return { classic: [], secure: [], tls: [link] };

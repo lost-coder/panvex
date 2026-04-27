@@ -22,7 +22,7 @@ const AuthContext = React.createContext<AuthContextValue>({
   isAuthenticated: false,
 });
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+export function AuthProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   const { data, isLoading } = useQuery({
     queryKey: ["me"],
     queryFn: () => apiClient.me(),

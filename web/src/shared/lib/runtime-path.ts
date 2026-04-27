@@ -25,7 +25,7 @@ export function resolveConfiguredRootPath(): string {
   }
 
   return normalizeRootPath(
-    (window as Window & { __PANVEX_ROOT_PATH?: string }).__PANVEX_ROOT_PATH,
+    (globalThis as typeof globalThis & { __PANVEX_ROOT_PATH?: string }).__PANVEX_ROOT_PATH,
   );
 }
 

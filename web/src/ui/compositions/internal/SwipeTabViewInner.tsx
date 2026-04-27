@@ -32,7 +32,7 @@ function SwipeTabViewInner({
 }: Readonly<SwipeTabViewProps>) {
   const [activeIndex, setActiveIndex] = React.useState(() => {
     const idx = tabs.findIndex((t) => t.id === activeTab);
-    return idx >= 0 ? idx : 0;
+    return Math.max(idx, 0);
   });
   const reduceMotion = usePrefersReducedMotion();
 

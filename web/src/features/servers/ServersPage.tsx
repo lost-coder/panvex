@@ -33,9 +33,9 @@ function DcMatrixCell({ dcs }: Readonly<{ dcs: ServerListItem["dcs"] }>) {
   // notches stands out more than a circular grid.
   return (
     <div className="flex items-center gap-[2px] w-fit">
-      {dcs.slice(0, 12).map((dc, i) => (
+      {dcs.slice(0, 12).map((dc) => (
         <div
-          key={i}
+          key={dc.dc}
           className={cn(
             "w-[4px] h-[14px] rounded-sm",
             dc.status === "error"

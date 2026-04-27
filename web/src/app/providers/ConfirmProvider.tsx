@@ -50,7 +50,7 @@ const EMPTY_STATE: InternalState = {
   options: { title: "", body: "" },
 };
 
-export function ConfirmProvider({ children }: { children: React.ReactNode }) {
+export function ConfirmProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   const [state, setState] = useState<InternalState>(EMPTY_STATE);
   const resolverRef = useRef<((result: boolean) => void) | null>(null);
 

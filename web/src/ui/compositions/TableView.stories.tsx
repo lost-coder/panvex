@@ -100,16 +100,17 @@ function TableViewDemo({
             .join(", ")}
         </p>
         <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
-          {Array.from({ length: Math.min(pageSize, totalItems - (page - 1) * pageSize) }).map(
-            (_, i) => (
-              <div
-                key={i}
-                className="h-16 rounded-lg border border-border bg-bg flex items-center justify-center text-xs text-fg-muted font-mono"
-              >
-                item {(page - 1) * pageSize + i + 1}
-              </div>
-            ),
-          )}
+          {Array.from(
+            { length: Math.min(pageSize, totalItems - (page - 1) * pageSize) },
+            (_, i) => (page - 1) * pageSize + i + 1,
+          ).map((itemNumber) => (
+            <div
+              key={itemNumber}
+              className="h-16 rounded-lg border border-border bg-bg flex items-center justify-center text-xs text-fg-muted font-mono"
+            >
+              item {itemNumber}
+            </div>
+          ))}
         </div>
       </div>
     </TableView>

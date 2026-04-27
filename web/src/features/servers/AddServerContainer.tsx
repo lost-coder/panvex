@@ -269,9 +269,7 @@ export function AddServerContainer() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div
-        role="dialog"
-        aria-modal="true"
+      <section
         aria-label="Add server wizard"
         className="relative bg-bg-card rounded-lg border border-border shadow-xl w-full max-w-[480px] max-h-[85vh] overflow-y-auto mx-4 p-6"
       >
@@ -319,7 +317,7 @@ export function AddServerContainer() {
           loading={loading}
           error={error}
         />
-      </div>
+      </section>
 
       <Sheet
         open={quickCreateOpen}

@@ -35,7 +35,7 @@ function _TimelineStrip({
 
   const tsOf = (p: MetricsPoint) => Math.floor(new Date(p.t).getTime() / 1000);
   const tMin = tsOf(metricsPoints[0]!);
-  const tMax = tsOf(metricsPoints[metricsPoints.length - 1]!);
+  const tMax = tsOf(metricsPoints.at(-1)!);
   const range = Math.max(1, tMax - tMin);
 
   // Single responsive SVG — one viewBox, preserveAspectRatio="none",

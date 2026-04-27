@@ -91,10 +91,10 @@ const variantIcon: Record<ToastVariant, string> = {
 function StackedToast({
   entry,
   onClose,
-}: {
+}: Readonly<{
   entry: ToastEntry;
   onClose: () => void;
-}) {
+}>) {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -183,7 +183,7 @@ function StackedToast({
  *   the most recent message is closest to the user's eye.
  * - Auto-dismiss: 5s default, 7s for errors. Overridable via opts.duration.
  */
-export function ToastProvider({ children }: { children: ReactNode }) {
+export function ToastProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [toasts, setToasts] = useState<ToastEntry[]>([]);
   // Monotonic id generator — Date.now() collides inside the same tick when
   // multiple toasts are queued back-to-back (e.g. Promise.all of failures).

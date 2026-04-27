@@ -102,22 +102,22 @@ describe("DataTable a11y (P2-FE-07 / M-F6)", () => {
 // virtualizer's viewport to zero rows. We stub the scroll parent's
 // bounding metrics to produce a plausible 600px viewport so the
 // virtualizer renders a realistic slice.
-describe("DataTable virtualization (P3-PERF-02)", () => {
-  function stubViewport(height: number) {
-    Object.defineProperty(HTMLElement.prototype, "clientHeight", {
-      configurable: true,
-      get() {
-        return height;
-      },
-    });
-    Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
-      configurable: true,
-      get() {
-        return height;
-      },
-    });
-  }
+function stubViewport(height: number) {
+  Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+    configurable: true,
+    get() {
+      return height;
+    },
+  });
+  Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+    configurable: true,
+    get() {
+      return height;
+    },
+  });
+}
 
+describe("DataTable virtualization (P3-PERF-02)", () => {
   // Bump per-test timeout to 15s — coverage instrumentation (v8 inlines
   // hit-counters into every render) makes mounting 5000 rows + the
   // virtualizer slow enough that the default 5s trips on CI runners

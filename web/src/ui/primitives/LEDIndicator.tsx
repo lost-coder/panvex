@@ -28,7 +28,7 @@ export function LEDIndicator({
     <button
       type="button"
       onClick={onClick}
-      aria-label={`${label}${sublabel ? ` — ${sublabel}` : ""}: ${status}`}
+      aria-label={sublabel ? `${label} — ${sublabel}: ${status}` : `${label}: ${status}`}
       aria-pressed={active}
       className={cn(
         "flex flex-col items-center gap-1.5 rounded-xs p-2 transition-colors",

@@ -11,7 +11,7 @@ export default meta;
 
 type Story = StoryObj<typeof Toggle>;
 
-function ToggleDemo(props: { size?: "sm" | "md"; disabled?: boolean }) {
+function ToggleDemo(props: Readonly<{ size?: "sm" | "md"; disabled?: boolean }>) {
   const [checked, setChecked] = useState(false);
   return <Toggle checked={checked} onChange={setChecked} {...props} />;
 }

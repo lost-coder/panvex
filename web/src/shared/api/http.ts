@@ -144,12 +144,10 @@ async function fetchCSRFToken(): Promise<string | null> {
 
 async function ensureCSRFToken(): Promise<string | null> {
   if (csrfToken) return csrfToken;
-  if (!csrfTokenPromise) {
-    csrfTokenPromise = fetchCSRFToken().then((tok) => {
-      csrfToken = tok;
-      return tok;
-    });
-  }
+  csrfTokenPromise ??= fetchCSRFToken().then((tok) => {
+    csrfToken = tok;
+    return tok;
+  });
   try {
     return await csrfTokenPromise;
   } finally {

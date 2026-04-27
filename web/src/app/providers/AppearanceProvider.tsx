@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import * as React from "react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { apiClient } from "@/shared/api/api";
 import {
@@ -43,7 +43,7 @@ export function useAppearance() {
   return React.useContext(AppearanceContext);
 }
 
-export function AppearanceProvider(props: { children: ReactNode; userID: string }) {
+export function AppearanceProvider(props: Readonly<{ children: ReactNode; userID: string }>) {
   const [swipeNavigation, setSwipeNavigationState] = useState(readSwipeNav);
   const [prefersDark, setPrefersDark] = useState(false);
   const appearanceQuery = useQuery({
@@ -57,15 +57,10 @@ export function AppearanceProvider(props: { children: ReactNode; userID: string 
       return;
     }
     const mediaQuery = globalThis.matchMedia("(prefers-color-scheme: dark)");
-    const syncPreference = () => setPrefersDark(mediaQuery.matches);
-    syncPreference();
+    setPrefersDark(mediaQuery.matches);
     const handleChange = (event: MediaQueryListEvent) => setPrefersDark(event.matches);
-    if (typeof mediaQuery.addEventListener === "function") {
-      mediaQuery.addEventListener("change", handleChange);
-      return () => mediaQuery.removeEventListener("change", handleChange);
-    }
-    mediaQuery.addListener(handleChange);
-    return () => mediaQuery.removeListener(handleChange);
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
   }, []);
 
   useEffect(() => {
@@ -89,10 +84,10 @@ export function AppearanceProvider(props: { children: ReactNode; userID: string 
     }
   }, []);
 
-  const value: AppearanceContextValue = {
-    swipeNavigation,
-    setSwipeNavigation,
-  };
+  const value = useMemo<AppearanceContextValue>(
+    () => ({ swipeNavigation, setSwipeNavigation }),
+    [swipeNavigation, setSwipeNavigation],
+  );
 
   return (
     <AppearanceContext.Provider value={value}>

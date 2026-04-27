@@ -1,7 +1,7 @@
 // Fallback rendered by the root ErrorBoundary when a render error escapes
 // a container. It is intentionally minimal: no hooks, no API calls —
 // everything must work even if the store/query-client state is corrupted.
-export function AppErrorFallback({ error }: { error: Error }) {
+export function AppErrorFallback({ error }: Readonly<{ error: Error }>) {
   const reload = () => globalThis.location.reload();
   return (
     <div

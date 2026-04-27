@@ -29,7 +29,8 @@ function writeParam(key: string, value: string, fallback: string) {
     params.set(key, value);
   }
   const qs = params.toString();
-  const next = `${globalThis.location.pathname}${qs ? `?${qs}` : ""}${globalThis.location.hash}`;
+  const search = qs ? `?${qs}` : "";
+  const next = `${globalThis.location.pathname}${search}${globalThis.location.hash}`;
   // replaceState — typing into a search box should not spam history
   // entries. Users only expect one entry per route navigation.
   globalThis.history.replaceState(globalThis.history.state, "", next);

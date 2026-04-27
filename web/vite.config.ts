@@ -1,6 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react-swc";
-import path from "path";
+import path from "node:path";
 import { defineConfig } from "vite";
 
 // P2-FE-06 / F4-4: suppress source maps for the embedded build. The embed

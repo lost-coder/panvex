@@ -75,7 +75,7 @@ export function ServerDetailContainer() {
     return () => clearInterval(id);
   }, []);
   const from = useMemo(() => {
-    return new Date(nowMinute - hours * 3600_000).toISOString();
+    return new Date(nowMinute - hours * 3_600_000).toISOString();
   }, [hours, nowMinute]);
   const { points: rawPoints, resolution } = useServerLoadHistory(serverId ?? "", from);
   const metricsPoints = useMemo(() => toMetricsPoints(rawPoints), [rawPoints]);

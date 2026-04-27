@@ -2,6 +2,8 @@ import type { FleetGroupOption } from "./common";
 
 // --- Enrollment ---
 
+export type EnrollmentStage = "pending" | "waiting" | "done";
+
 export interface EnrollmentWizardProps {
   step: 1 | 2 | 3;
   // Step 1
@@ -45,9 +47,9 @@ export interface EnrollmentWizardProps {
     // binary flip the moment the operator hit "I've run the command",
     // but the wizard actually waits for the backend to confirm token
     // consumption, so it needs the full progression.
-    bootstrap: "pending" | "waiting" | "done";
-    grpcConnect: "pending" | "waiting" | "done";
-    firstData: "pending" | "waiting" | "done";
+    bootstrap: EnrollmentStage;
+    grpcConnect: EnrollmentStage;
+    firstData: EnrollmentStage;
   };
   connectedAgent?: {
     id: string;

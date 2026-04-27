@@ -105,7 +105,11 @@ export function DesktopLayout({
       )}
       <Fold
         title="Events"
-        rightHint={`${server.events.length} entries${server.eventsDroppedTotal ? ` · ${server.eventsDroppedTotal} dropped` : ""}`}
+        rightHint={
+          server.eventsDroppedTotal
+            ? `${server.events.length} entries · ${server.eventsDroppedTotal} dropped`
+            : `${server.events.length} entries`
+        }
         defaultOpen={false}
       >
         {eventsContent}

@@ -65,8 +65,8 @@ vi.mock("@/ui", () => ({
   }) => (
     <div data-testid="skeleton-rows">
       <output aria-label={label} data-testid="skeleton-row" />
-      {Array.from({ length: Math.max(0, count - 1) }).map((_, i) => (
-        <div key={i} data-testid="skeleton-row" />
+      {Array.from({ length: Math.max(0, count - 1) }, (_, i) => `row-${i}`).map((id) => (
+        <div key={id} data-testid="skeleton-row" />
       ))}
     </div>
   ),

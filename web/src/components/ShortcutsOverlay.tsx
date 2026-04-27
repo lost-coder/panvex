@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useKeyboardShortcut } from "@/shared/hooks";
 
@@ -24,33 +24,31 @@ const SHORTCUTS: ShortcutItem[] = [
  */
 export function ShortcutsOverlay() {
   const [open, setOpen] = useState(false);
+  const dialogRef = useRef<HTMLDialogElement>(null);
 
   useKeyboardShortcut("?", () => setOpen((prev) => !prev));
   useKeyboardShortcut("Escape", () => setOpen(false), { enabled: open });
 
   useEffect(() => {
-    if (!open) return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previous;
-    };
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (open && !dialog.open) dialog.showModal();
+    if (!open && dialog.open) dialog.close();
   }, [open]);
 
-  if (!open) return null;
-
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
+    <dialog
+      ref={dialogRef}
       aria-label="Сочетания клавиш"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
-      onClick={() => setOpen(false)}
+      onClose={() => setOpen(false)}
+      // Backdrop click — only the dialog itself receives the event when the
+      // user clicks outside the inner panel.
+      onClick={(event) => {
+        if (event.target === event.currentTarget) setOpen(false);
+      }}
+      className="fixed inset-0 m-auto max-h-fit max-w-fit p-0 bg-transparent backdrop:bg-black/60"
     >
-      <div
-        className="w-full max-w-sm rounded-xl border border-border bg-bg-card p-5 shadow-xl"
-        onClick={(event) => event.stopPropagation()}
-      >
+      <div className="w-full max-w-sm rounded-xl border border-border bg-bg-card p-5 shadow-xl">
         <h2 className="text-sm font-semibold text-fg mb-3">Сочетания клавиш</h2>
         <ul className="flex flex-col gap-2 text-xs">
           {SHORTCUTS.map((item) => (
@@ -66,6 +64,6 @@ export function ShortcutsOverlay() {
           Сочетания не срабатывают внутри полей ввода.
         </p>
       </div>
-    </div>
+    </dialog>
   );
 }

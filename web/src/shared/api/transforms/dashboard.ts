@@ -106,6 +106,8 @@ function buildRuntimeIndex(
   return out;
 }
 
+type KpiTone = "ok" | "warn" | "error" | "default";
+
 function fleetHealthSub(
   offline: number,
   degraded: number,
@@ -129,17 +131,17 @@ export function transformDashboardOverview(
   // Tone drives the value color. Fleet health goes warn/error only when nodes
   // are actually offline or degraded — a healthy fleet stays neutral so the
   // color signal is preserved for real issues.
-  const fleetTone: "ok" | "warn" | "error" | "default" = (() => {
+  const fleetTone: KpiTone = (() => {
     if (fleet.offline_agents > 0) return "error";
     if (fleet.degraded_agents > 0) return "warn";
     return "ok";
   })();
-  const cpuTone: "ok" | "warn" | "error" | "default" = (() => {
+  const cpuTone: KpiTone = (() => {
     if (avgCpu >= 90) return "error";
     if (avgCpu >= 70) return "warn";
     return "default";
   })();
-  const coverageTone: "ok" | "warn" | "error" | "default" = (() => {
+  const coverageTone: KpiTone = (() => {
     if (avgDcCoverage < 95) return "error";
     if (avgDcCoverage < 100) return "warn";
     return "ok";
