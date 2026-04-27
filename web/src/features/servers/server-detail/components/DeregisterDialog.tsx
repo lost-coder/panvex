@@ -15,7 +15,12 @@ export function DeregisterDialog({
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <button
+        type="button"
+        aria-label="Dismiss dialog"
+        onClick={onClose}
+        className="absolute inset-0 bg-black/60 cursor-default"
+      />
       <div className="relative z-10 bg-bg-card border border-border rounded-lg shadow-xl p-6 max-w-sm w-full mx-4">
         <h3 className="text-base font-semibold text-fg mb-2">Deregister Server</h3>
         <p className="text-sm text-fg-muted mb-4">

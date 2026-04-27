@@ -76,38 +76,42 @@ func securityHeaders(next http.Handler) http.Handler {
 func (s *Server) csrfOriginCheck(panelRootPath, agentRootPath string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
-				next.ServeHTTP(w, r)
+			if msg, ok := s.csrfOriginReject(r, panelRootPath, agentRootPath); !ok {
+				writeError(w, http.StatusForbidden, msg)
 				return
 			}
-
-			if isCSRFExemptPath(r.URL.Path, panelRootPath, agentRootPath) {
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			origin := r.Header.Get("Origin")
-			if origin == "" {
-				writeError(w, http.StatusForbidden, "missing origin header for state-changing request")
-				return
-			}
-
-			if !originMatchesHost(origin, r.Host) {
-				writeError(w, http.StatusForbidden, "cross-origin request blocked")
-				return
-			}
-
-			// Q3.U-S-21: also require the Origin scheme to match the
-			// request scheme so an attacker on a downgraded http link
-			// cannot replay calls to the https backend.
-			if !originSchemeMatchesRequest(origin, s.trustedForwardedProto(r)) {
-				writeError(w, http.StatusForbidden, "origin scheme mismatch")
-				return
-			}
-
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// csrfOriginReject returns ("", true) when the request is allowed and
+// (msg, false) with the human-readable rejection reason otherwise. Split
+// out of csrfOriginCheck so the middleware closure stays under the 15-CC
+// limit (Sonar S3776).
+func (s *Server) csrfOriginReject(r *http.Request, panelRootPath, agentRootPath string) (string, bool) {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return "", true
+	}
+	if isCSRFExemptPath(r.URL.Path, panelRootPath, agentRootPath) {
+		return "", true
+	}
+
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return "missing origin header for state-changing request", false
+	}
+	if !originMatchesHost(origin, r.Host) {
+		return "cross-origin request blocked", false
+	}
+	// Q3.U-S-21: also require the Origin scheme to match the request
+	// scheme so an attacker on a downgraded http link cannot replay
+	// calls to the https backend.
+	if !originSchemeMatchesRequest(origin, s.trustedForwardedProto(r)) {
+		return "origin scheme mismatch", false
+	}
+	return "", true
 }
 
 // isCSRFExemptPath reports whether the given request path is an agent

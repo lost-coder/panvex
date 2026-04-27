@@ -27,6 +27,14 @@ export function ClientListRow({
   return (
     <div
       onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick?.();
+        }
+      }}
+      role="button"
+      tabIndex={0}
       className="flex items-center gap-3 px-4 py-3 border-b border-divider hover:bg-bg-hover transition-colors cursor-pointer"
     >
       {selectable && (
