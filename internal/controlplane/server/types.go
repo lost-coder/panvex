@@ -244,6 +244,6 @@ func auditEventFromRecord(record storage.AuditEventRecord) AuditEvent {
 		Action:    record.Action,
 		TargetID:  record.TargetID,
 		CreatedAt: record.CreatedAt.UTC(),
-		Details:   record.Details,
+		Details:   normalizeAuditDetails(record.Details),
 	}
 }
