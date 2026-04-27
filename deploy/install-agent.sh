@@ -37,14 +37,15 @@ banner() {
   echo ""
   echo "${DIM}  Agent Installer${RESET}"
   echo ""
+  return 0
 }
 
-info()    { echo "  ${BLUE}●${RESET} $*"; }
-success() { echo "  ${GREEN}✓${RESET} $*"; }
-warn()    { echo "  ${YELLOW}!${RESET} $*"; }
-error()   { echo "  ${RED}✗${RESET} $*" >&2; }
-step()    { echo ""; echo "${BOLD}── $* ──${RESET}"; echo ""; }
-die()     { error "$*"; exit 1; }
+info()    { echo "  ${BLUE}●${RESET} $*"; return 0; }
+success() { echo "  ${GREEN}✓${RESET} $*"; return 0; }
+warn()    { echo "  ${YELLOW}!${RESET} $*"; return 0; }
+error()   { echo "  ${RED}✗${RESET} $*" >&2; return 0; }
+step()    { echo ""; echo "${BOLD}── $* ──${RESET}"; echo ""; return 0; }
+die()     { error "$*"; exit 1; return 0; }
 
 # ── Trap with exit code preservation ─────────────────────────────────────────
 
@@ -58,7 +59,7 @@ trap cleanup EXIT HUP INT TERM
 
 # ── Prompts ──────────────────────────────────────────────────────────────────
 
-can_prompt() { [[ -t 0 ]] || [[ -r /dev/tty ]]; }
+can_prompt() { [[ -t 0 ]] || [[ -r /dev/tty ]]; return 0; }
 
 ask() {
   local label=$1 default=${2:-} value
@@ -69,6 +70,7 @@ ask() {
   fi
   IFS= read -r value </dev/tty || true
   echo "${value:-$default}"
+  return 0
 }
 
 ask_yesno() {
@@ -116,11 +118,11 @@ ask_choice() {
 
 # ── System checks ────────────────────────────────────────────────────────────
 
-need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"; }
+need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"; return 0; }
 
-is_root() { [[ "$(id -u)" -eq 0 ]]; }
+is_root() { [[ "$(id -u)" -eq 0 ]]; return 0; }
 
-has_systemd() { command -v systemctl >/dev/null 2>&1; }
+has_systemd() { command -v systemctl >/dev/null 2>&1; return 0; }
 
 detect_arch() {
   case "$(uname -m)" in
@@ -162,6 +164,7 @@ summary_box() {
   done
   echo "  $border"
   echo ""
+  return 0
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -409,6 +412,7 @@ UNINSTALL
   echo "    ${DIM}systemctl restart ${SERVICE_NAME}${RESET}       — restart"
   echo "    ${DIM}${uninstall_script}${RESET}  — uninstall"
   echo ""
+  return 0
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -515,6 +519,7 @@ run_interactive() {
   install_agent "$arch" "$version" "$bin_dir" "$config_dir" "$data_dir" \
     "$panel_url" "$enrollment_token" "$telemt_url" "$telemt_auth" \
     "$node_name" "$start_now"
+    return 0
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -544,6 +549,7 @@ run_noninteractive() {
   install_agent "$arch" "$version" "$bin_dir" "$config_dir" "$data_dir" \
     "$panel_url" "$enrollment_token" "$telemt_url" "$telemt_auth" \
     "$node_name" "$start_now"
+    return 0
 }
 
 # ═════════════════════════════════════════════════════════════════════════════

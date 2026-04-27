@@ -32,14 +32,15 @@ banner() {
   echo ""
   echo "${DIM}  Control Plane Installer${RESET}"
   echo ""
+  return 0
 }
 
-info()    { echo "  ${BLUE}●${RESET} $*"; }
-success() { echo "  ${GREEN}✓${RESET} $*"; }
-warn()    { echo "  ${YELLOW}!${RESET} $*"; }
-error()   { echo "  ${RED}✗${RESET} $*" >&2; }
-step()    { echo ""; echo "${BOLD}── $* ──${RESET}"; echo ""; }
-die()     { error "$*"; exit 1; }
+info()    { echo "  ${BLUE}●${RESET} $*"; return 0; }
+success() { echo "  ${GREEN}✓${RESET} $*"; return 0; }
+warn()    { echo "  ${YELLOW}!${RESET} $*"; return 0; }
+error()   { echo "  ${RED}✗${RESET} $*" >&2; return 0; }
+step()    { echo ""; echo "${BOLD}── $* ──${RESET}"; echo ""; return 0; }
+die()     { error "$*"; exit 1; return 0; }
 
 # ── Trap with exit code preservation ─────────────────────────────────────────
 
@@ -53,7 +54,7 @@ trap cleanup EXIT HUP INT TERM
 
 # ── Prompts ──────────────────────────────────────────────────────────────────
 
-can_prompt() { [[ -t 0 ]]; }
+can_prompt() { [[ -t 0 ]]; return 0; }
 
 ask() {
   local label=$1 default=${2:-} value
@@ -63,6 +64,7 @@ ask() {
     read -rp "  ${CYAN}?${RESET} $label: " value </dev/tty
   fi
   echo "${value:-$default}"
+  return 0
 }
 
 ask_password() {
@@ -70,6 +72,7 @@ ask_password() {
   read -rsp "  ${CYAN}?${RESET} $label: " value </dev/tty
   echo "" >&2
   echo "$value"
+  return 0
 }
 
 ask_yesno() {
@@ -115,15 +118,15 @@ ask_choice() {
 
 # ── System checks ────────────────────────────────────────────────────────────
 
-need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"; }
+need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"; return 0; }
 
-is_root() { [[ "$(id -u)" -eq 0 ]]; }
+is_root() { [[ "$(id -u)" -eq 0 ]]; return 0; }
 
-has_systemd() { command -v systemctl >/dev/null 2>&1; }
+has_systemd() { command -v systemctl >/dev/null 2>&1; return 0; }
 
-has_ufw() { command -v ufw >/dev/null 2>&1; }
+has_ufw() { command -v ufw >/dev/null 2>&1; return 0; }
 
-has_firewalld() { command -v firewall-cmd >/dev/null 2>&1; }
+has_firewalld() { command -v firewall-cmd >/dev/null 2>&1; return 0; }
 
 detect_arch() {
   case "$(uname -m)" in
@@ -215,6 +218,7 @@ generate_random_path() {
   local path
   path=$(head -c 6 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=' | head -c 8)
   echo "/$path"
+  return 0
 }
 
 install_acme_sh() {
@@ -224,11 +228,13 @@ install_acme_sh() {
     die "acme.sh installation failed"
   fi
   success "acme.sh installed"
+  return 0
 }
 
 # is_ip_address returns 0 if the argument looks like an IPv4 address.
 is_ip_address() {
   echo "$1" | grep -qP '^\d+\.\d+\.\d+\.\d+$'
+  return 0
 }
 
 issue_acme_certificate() {
@@ -311,6 +317,7 @@ issue_acme_certificate() {
     --key-file "$tls_dir/key.pem" >/dev/null 2>&1
 
   success "Certificate ready: $tls_dir/"
+  return 0
 }
 
 # ── Health check ─────────────────────────────────────────────────────────────
@@ -350,6 +357,7 @@ summary_box() {
   done
   echo "  ${CYAN}${border}${RESET}"
   echo ""
+  return 0
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -386,6 +394,7 @@ run_noninteractive() {
   install_panvex "$arch" "$version" "$bin_dir" "$config_dir" "$data_dir" \
     "$http_port" "$grpc_port" "$tls_mode" "$storage_driver" "$storage_dsn" \
     "$encryption_key" "$admin_user" "$admin_pass" "$open_fw" "$start_now"
+    return 0
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -677,6 +686,7 @@ UNINSTALL
   echo "    ${DIM}systemctl restart ${SERVICE_NAME}${RESET}        — restart"
   echo "    ${DIM}${uninstall_script}${RESET}  — uninstall"
   echo ""
+  return 0
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -905,6 +915,7 @@ run_interactive() {
     "$encryption_key" "$admin_user" "$admin_pass" "$open_fw" "$start_now" \
     "$panel_path" "$agent_path" "$panel_allowed_cidrs" \
     "$tls_cert_file" "$tls_key_file"
+    return 0
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
