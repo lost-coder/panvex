@@ -28,7 +28,6 @@ func (s *Server) handleJobs() http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
-
 		// R-S-14: load the operator's scope so the response can be
 		// narrowed to jobs whose targets sit inside their visible
 		// fleet groups.
@@ -36,41 +35,8 @@ func (s *Server) handleJobs() http.HandlerFunc {
 		if !ok {
 			return
 		}
-
-		// Q2.U-P-13: cap the response to the most recent N jobs so the
-		// payload stays bounded as the table grows. ?limit= can override
-		// up to 5x the default but never disables the cap.
-		limit := jobs.DefaultListRecentLimit
-		if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
-			if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
-				limit = parsed
-			}
-		}
-		listed := s.jobs.ListRecentWithContext(r.Context(), limit)
-
-		// R-S-14: drop jobs whose target agents are entirely outside
-		// scope. A job is visible if at least one target is in scope —
-		// the per-target deployment view will already be redacted by
-		// the deployment endpoints.
-		if !scope.Global {
-			s.mu.RLock()
-			filtered := listed[:0]
-			for _, job := range listed {
-				keep := false
-				for _, agentID := range job.TargetAgentIDs {
-					if agent, agentOK := s.agents[agentID]; agentOK && scope.IsAllowed(agent.FleetGroupID) {
-						keep = true
-						break
-					}
-				}
-				if keep {
-					filtered = append(filtered, job)
-				}
-			}
-			s.mu.RUnlock()
-			listed = filtered
-		}
-
+		listed := s.jobs.ListRecentWithContext(r.Context(), parseListLimit(r))
+		listed = s.filterJobsByScope(listed, scope)
 		// Q2.U-S-07: redact PayloadJSON for ALL roles in the list
 		// endpoint. Mutating jobs (rollout_client_config, rotate_secret)
 		// embed client secrets in the payload; admins and operators do
@@ -81,9 +47,84 @@ func (s *Server) handleJobs() http.HandlerFunc {
 		for i := range listed {
 			listed[i].PayloadJSON = ""
 		}
-
 		writeJSON(w, http.StatusOK, listed)
 	}
+}
+
+// parseListLimit returns the operator-supplied ?limit= when present and
+// positive, falling back to jobs.DefaultListRecentLimit. The store
+// applies its own absolute cap, so this only relaxes between the
+// default and the cap (Q2.U-P-13).
+func parseListLimit(r *http.Request) int {
+	raw := strings.TrimSpace(r.URL.Query().Get("limit"))
+	if raw == "" {
+		return jobs.DefaultListRecentLimit
+	}
+	parsed, err := strconv.Atoi(raw)
+	if err != nil || parsed <= 0 {
+		return jobs.DefaultListRecentLimit
+	}
+	return parsed
+}
+
+// filterJobsByScope drops jobs whose target agents are entirely outside
+// the operator's scope. Global scope is a no-op shortcut so the lock
+// is only taken on the constrained path.
+func (s *Server) filterJobsByScope(listed []jobs.Job, scope FleetScopeAccess) []jobs.Job {
+	if scope.Global {
+		return listed
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	filtered := listed[:0]
+	for _, job := range listed {
+		if s.jobHasInScopeTargetLocked(job, scope) {
+			filtered = append(filtered, job)
+		}
+	}
+	return filtered
+}
+
+func (s *Server) jobHasInScopeTargetLocked(job jobs.Job, scope FleetScopeAccess) bool {
+	for _, agentID := range job.TargetAgentIDs {
+		agent, ok := s.agents[agentID]
+		if ok && scope.IsAllowed(agent.FleetGroupID) {
+			return true
+		}
+	}
+	return false
+}
+
+// targetsInScope reports whether every target agent is reachable for
+// the operator. Global scope short-circuits the lookup.
+func (s *Server) targetsInScope(targetIDs []string, scope FleetScopeAccess) bool {
+	if scope.Global {
+		return true
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, agentID := range targetIDs {
+		agent, ok := s.agents[agentID]
+		if !ok || !scope.IsAllowed(agent.FleetGroupID) {
+			return false
+		}
+	}
+	return true
+}
+
+// readOnlyAgents snapshots the ReadOnly flag for each requested target
+// so the jobs service can refuse mutating actions against read-only
+// agents without re-reading agent state.
+func (s *Server) readOnlyAgents(targetIDs []string) map[string]bool {
+	out := make(map[string]bool, len(targetIDs))
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, agentID := range targetIDs {
+		if agent, ok := s.agents[agentID]; ok {
+			out[agentID] = agent.ReadOnly
+		}
+	}
+	return out
 }
 
 func (s *Server) handleCreateJob() http.HandlerFunc {
@@ -118,32 +159,12 @@ func (s *Server) handleCreateJob() http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if !scope.Global {
-			s.mu.RLock()
-			outOfScope := false
-			for _, agentID := range request.TargetAgentIDs {
-				agent, agentOK := s.agents[agentID]
-				if !agentOK || !scope.IsAllowed(agent.FleetGroupID) {
-					outOfScope = true
-					break
-				}
-			}
-			s.mu.RUnlock()
-			if outOfScope {
-				writeError(w, http.StatusForbidden, "target agent outside operator scope")
-				return
-			}
+		if !s.targetsInScope(request.TargetAgentIDs, scope) {
+			writeError(w, http.StatusForbidden, "target agent outside operator scope")
+			return
 		}
 
-		readOnlyAgents := make(map[string]bool, len(request.TargetAgentIDs))
-		s.mu.RLock()
-		for _, agentID := range request.TargetAgentIDs {
-			agent, ok := s.agents[agentID]
-			if ok {
-				readOnlyAgents[agentID] = agent.ReadOnly
-			}
-		}
-		s.mu.RUnlock()
+		readOnlyAgents := s.readOnlyAgents(request.TargetAgentIDs)
 
 		idempotencyKey := request.IdempotencyKey
 		if idempotencyKey == "" {
