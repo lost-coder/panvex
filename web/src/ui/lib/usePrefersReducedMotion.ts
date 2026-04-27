@@ -39,10 +39,9 @@ function subscribe(callback: () => void): () => void {
     return () => {};
   }
   const mql = globalThis.matchMedia("(prefers-reduced-motion: reduce)");
-  if (typeof mql.addEventListener === "function") {
-    mql.addEventListener("change", callback);
-    return () => mql.removeEventListener("change", callback);
-  }
-  mql.addListener(callback);
-  return () => mql.removeListener(callback);
+  // MediaQueryList.addEventListener has been the cross-browser baseline
+  // since 2018, so we drop the legacy mql.addListener fallback that
+  // every modern engine has now deprecated.
+  mql.addEventListener("change", callback);
+  return () => mql.removeEventListener("change", callback);
 }

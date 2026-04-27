@@ -3,15 +3,12 @@ interface ErrorStateProps {
   title?: string;
   /** One-line human context — backend code, network hint, etc. */
   description?: string;
-  /** @deprecated Use `description`. Kept for call-sites that still
-   *  pass the raw error.message. */
-  message?: string;
   onRetry?: () => void;
 }
 
-export function ErrorState({ title, description, message, onRetry }: Readonly<ErrorStateProps>) {
+export function ErrorState({ title, description, onRetry }: Readonly<ErrorStateProps>) {
   const headline = title ?? "Something went wrong";
-  const detail = description ?? message;
+  const detail = description;
   return (
     <div className="flex flex-col items-center justify-center gap-3 py-16 px-6 text-center">
       <span

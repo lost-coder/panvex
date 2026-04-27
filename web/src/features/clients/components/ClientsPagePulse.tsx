@@ -6,10 +6,9 @@
 // R-Q-24: pulse component + buildClientCounts helper co-located by design.
 /* eslint-disable react-refresh/only-export-components */
 
-import { PulseRow, type PulseTick } from "@/ui";
+import { PulseRow, type ClientListItem, type PulseTick } from "@/ui";
 
 import { effectiveClientStatus } from "./ClientsPageCells";
-import type { ClientListItem } from "@/ui";
 
 export interface ClientCounts {
   all: number;
