@@ -45,13 +45,12 @@ export function TotpSetupSheet({
       <div className="flex flex-col items-center gap-3 p-4 rounded-xs bg-white">
         <Suspense
           fallback={
-            <div
+            <output
               className="flex items-center justify-center h-[180px] w-[180px] text-fg-muted text-xs"
-              role="status"
               aria-label="Loading QR code"
             >
               …
-            </div>
+            </output>
           }
         >
           <LazyQRCode value={otpauthUrl} size={180} level="M" />

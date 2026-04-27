@@ -19,9 +19,9 @@ export function Skeleton({ className, label }: Readonly<SkeletonProps>) {
     className,
   );
   return label ? (
-    <div role="status" aria-label={label} className={base} />
+    <output aria-label={label} className={base} />
   ) : (
-    <div role="presentation" className={base} />
+    <div aria-hidden="true" className={base} />
   );
 }
 
