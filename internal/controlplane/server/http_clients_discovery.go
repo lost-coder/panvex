@@ -45,27 +45,7 @@ func (s *Server) handleDiscoveredClients() http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
-
-		// R-S-14: filter by the agent's fleet group. We map every
-		// discovered client through s.agents to find the parent agent's
-		// fleet_group_id; an unknown agent (race with deregister) is
-		// dropped because we cannot scope-check it safely.
-		if !scope.Global {
-			s.mu.RLock()
-			filtered := clients[:0]
-			for _, dc := range clients {
-				agent, agentOK := s.agents[dc.AgentID]
-				if !agentOK {
-					continue
-				}
-				if !scope.IsAllowed(agent.FleetGroupID) {
-					continue
-				}
-				filtered = append(filtered, dc)
-			}
-			s.mu.RUnlock()
-			clients = filtered
-		}
+		clients = s.filterDiscoveredClientsByScope(clients, scope)
 
 		sortDiscoveredClientsByName(clients)
 		conflicts := detectDiscoveredClientConflicts(clients)
@@ -83,6 +63,28 @@ func (s *Server) handleDiscoveredClients() http.HandlerFunc {
 
 		writeJSON(w, http.StatusOK, response)
 	}
+}
+
+// filterDiscoveredClientsByScope drops discovered clients whose parent
+// agent sits outside the operator's scope. R-S-14: the parent agent's
+// fleet_group_id is the scope key; an unknown parent (race with
+// deregister) is dropped because we cannot scope-check it safely.
+// Global scope short-circuits the lock acquisition.
+func (s *Server) filterDiscoveredClientsByScope(clients []discoveredClient, scope FleetScopeAccess) []discoveredClient {
+	if scope.Global {
+		return clients
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	filtered := clients[:0]
+	for _, dc := range clients {
+		agent, agentOK := s.agents[dc.AgentID]
+		if !agentOK || !scope.IsAllowed(agent.FleetGroupID) {
+			continue
+		}
+		filtered = append(filtered, dc)
+	}
+	return filtered
 }
 
 // discoveredClientInScope reports whether the given discovered-client
