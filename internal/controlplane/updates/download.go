@@ -17,6 +17,11 @@ import (
 // the remote responds with an unbounded or adversarial stream.
 const MaxArchiveSize = 512 << 20 // 512 MB
 
+const (
+	errCreateRequest = "create request: %w"
+	bearerPrefix     = "Bearer "
+)
+
 // DownloadArchive fetches a .tar.gz archive from url into a temporary file
 // and returns its path. The caller is responsible for removing the file.
 // Only URLs whose host is on the GitHub allow-list are accepted, and redirect
@@ -27,10 +32,10 @@ func DownloadArchive(ctx context.Context, url, token string) (string, error) {
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return "", fmt.Errorf("create request: %w", err)
+		return "", fmt.Errorf(errCreateRequest, err)
 	}
 	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Authorization", bearerPrefix+token)
 	}
 	req.Header.Set("Accept", "application/octet-stream")
 
@@ -130,10 +135,10 @@ func DownloadChecksum(ctx context.Context, url, token string) (string, error) {
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return "", fmt.Errorf("create request: %w", err)
+		return "", fmt.Errorf(errCreateRequest, err)
 	}
 	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Authorization", bearerPrefix+token)
 	}
 
 	resp, err := SecureDownloadClient().Do(req)
@@ -171,10 +176,10 @@ func DownloadSignature(ctx context.Context, url, token string) ([]byte, error) {
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
+		return nil, fmt.Errorf(errCreateRequest, err)
 	}
 	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Authorization", bearerPrefix+token)
 	}
 	req.Header.Set("Accept", "application/octet-stream")
 

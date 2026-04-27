@@ -10,6 +10,8 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
+const seqClientAssignment = "client-assignment"
+
 // Service is the orchestration entry point for managed clients. It owns
 // the in-memory store for clients, assignments, deployments, and live
 // usage snapshots, and provides the pure-query surface that the
@@ -149,7 +151,7 @@ func (s *Service) NextAssignmentID() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.assignmentSeq++
-	return newSequenceID("client-assignment", s.assignmentSeq)
+	return newSequenceID(seqClientAssignment, s.assignmentSeq)
 }
 
 // NextDiscoveredID returns a fresh discovered-client ID ("discovered-<N>").
@@ -175,7 +177,7 @@ func (s *Service) RecoverSequencesFromRecords(
 		s.clientSeq = maxPrefixedSequence(s.clientSeq, "client", id)
 	}
 	for _, id := range assignmentIDs {
-		s.assignmentSeq = maxPrefixedSequence(s.assignmentSeq, "client-assignment", id)
+		s.assignmentSeq = maxPrefixedSequence(s.assignmentSeq, seqClientAssignment, id)
 	}
 	for _, id := range discoveredIDs {
 		s.discoveredSeq = maxPrefixedSequence(s.discoveredSeq, "discovered", id)
@@ -452,7 +454,7 @@ func (s *Service) RestoreFromRecords(
 	for _, record := range assignmentRecords {
 		assignment := AssignmentFromRecord(record)
 		s.assignments[assignment.ClientID] = append(s.assignments[assignment.ClientID], assignment)
-		s.assignmentSeq = maxPrefixedSequence(s.assignmentSeq, "client-assignment", assignment.ID)
+		s.assignmentSeq = maxPrefixedSequence(s.assignmentSeq, seqClientAssignment, assignment.ID)
 	}
 	for _, record := range deploymentRecords {
 		deployment := DeploymentFromRecord(record)

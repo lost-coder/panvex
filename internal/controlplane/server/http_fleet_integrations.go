@@ -109,7 +109,7 @@ func (s *Server) handleListIntegrationProviders() http.HandlerFunc {
 		records, err := s.fleetSvc.ListProviders(r.Context())
 		if err != nil {
 			s.logger.Error("list integration providers failed", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 		response := make([]integrationProviderResponse, 0, len(records))
@@ -128,17 +128,17 @@ func (s *Server) handleGetIntegrationProvider() http.HandlerFunc {
 		}
 		id := chi.URLParam(r, "id")
 		if id == "" {
-			writeError(w, http.StatusBadRequest, "provider id is required")
+			writeError(w, http.StatusBadRequest, msgProviderIDRequired)
 			return
 		}
 		provider, err := s.fleetSvc.GetProvider(r.Context(), id)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
-				writeError(w, http.StatusNotFound, "provider not found")
+				writeError(w, http.StatusNotFound, msgProviderNotFound)
 				return
 			}
 			s.logger.Error("get integration provider failed", "id", id, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 		writeJSON(w, http.StatusOK, providerToResponse(provider))
@@ -183,7 +183,7 @@ func (s *Server) handleUpdateIntegrationProvider() http.HandlerFunc {
 		}
 		id := chi.URLParam(r, "id")
 		if id == "" {
-			writeError(w, http.StatusBadRequest, "provider id is required")
+			writeError(w, http.StatusBadRequest, msgProviderIDRequired)
 			return
 		}
 		var request updateIntegrationProviderRequest
@@ -197,7 +197,7 @@ func (s *Server) handleUpdateIntegrationProvider() http.HandlerFunc {
 		})
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
-				writeError(w, http.StatusNotFound, "provider not found")
+				writeError(w, http.StatusNotFound, msgProviderNotFound)
 				return
 			}
 			s.writeIntegrationError(w, err)
@@ -219,16 +219,16 @@ func (s *Server) handleDeleteIntegrationProvider() http.HandlerFunc {
 		}
 		id := chi.URLParam(r, "id")
 		if id == "" {
-			writeError(w, http.StatusBadRequest, "provider id is required")
+			writeError(w, http.StatusBadRequest, msgProviderIDRequired)
 			return
 		}
 		if err := s.fleetSvc.DeleteProvider(r.Context(), id); err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
-				writeError(w, http.StatusNotFound, "provider not found")
+				writeError(w, http.StatusNotFound, msgProviderNotFound)
 				return
 			}
 			s.logger.Error("delete integration provider failed", "id", id, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 		s.appendAuditWithContext(r.Context(), session.UserID, "integration_providers.delete", id, nil)
@@ -308,17 +308,17 @@ func (s *Server) handleGetFleetGroupIntegration() http.HandlerFunc {
 		}
 		id := chi.URLParam(r, "integrationId")
 		if id == "" {
-			writeError(w, http.StatusBadRequest, "integration id is required")
+			writeError(w, http.StatusBadRequest, msgIntegrationIDRequired)
 			return
 		}
 		record, err := s.fleetSvc.GetIntegration(r.Context(), id)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
-				writeError(w, http.StatusNotFound, "integration not found")
+				writeError(w, http.StatusNotFound, msgIntegrationNotFound)
 				return
 			}
 			s.logger.Error("get integration failed", "id", id, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 		// R-S-14: scope-check by parent group.
@@ -327,7 +327,7 @@ func (s *Server) handleGetFleetGroupIntegration() http.HandlerFunc {
 			return
 		}
 		if !scope.IsAllowed(record.FleetGroupID) {
-			writeError(w, http.StatusNotFound, "integration not found")
+			writeError(w, http.StatusNotFound, msgIntegrationNotFound)
 			return
 		}
 		writeJSON(w, http.StatusOK, fleetGroupIntegrationRecordToResponse(record))
@@ -343,7 +343,7 @@ func (s *Server) handleUpdateFleetGroupIntegration() http.HandlerFunc {
 		}
 		id := chi.URLParam(r, "integrationId")
 		if id == "" {
-			writeError(w, http.StatusBadRequest, "integration id is required")
+			writeError(w, http.StatusBadRequest, msgIntegrationIDRequired)
 			return
 		}
 		// R-S-14: ensure the operator owns the parent group before any
@@ -352,11 +352,11 @@ func (s *Server) handleUpdateFleetGroupIntegration() http.HandlerFunc {
 		existing, err := s.fleetSvc.GetIntegration(r.Context(), id)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
-				writeError(w, http.StatusNotFound, "integration not found")
+				writeError(w, http.StatusNotFound, msgIntegrationNotFound)
 				return
 			}
 			s.logger.Error("get integration for update failed", "id", id, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 		scope, ok := s.requireFleetScope(w, r, user)
@@ -364,7 +364,7 @@ func (s *Server) handleUpdateFleetGroupIntegration() http.HandlerFunc {
 			return
 		}
 		if !scope.IsAllowed(existing.FleetGroupID) {
-			writeError(w, http.StatusNotFound, "integration not found")
+			writeError(w, http.StatusNotFound, msgIntegrationNotFound)
 			return
 		}
 		var request updateFleetGroupIntegrationRequest
@@ -403,18 +403,18 @@ func (s *Server) handleDeleteFleetGroupIntegration() http.HandlerFunc {
 		}
 		id := chi.URLParam(r, "integrationId")
 		if id == "" {
-			writeError(w, http.StatusBadRequest, "integration id is required")
+			writeError(w, http.StatusBadRequest, msgIntegrationIDRequired)
 			return
 		}
 		// R-S-14: scope-check the parent group before uninstalling.
 		existing, err := s.fleetSvc.GetIntegration(r.Context(), id)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
-				writeError(w, http.StatusNotFound, "integration not found")
+				writeError(w, http.StatusNotFound, msgIntegrationNotFound)
 				return
 			}
 			s.logger.Error("get integration for delete failed", "id", id, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 		scope, ok := s.requireFleetScope(w, r, user)
@@ -422,16 +422,16 @@ func (s *Server) handleDeleteFleetGroupIntegration() http.HandlerFunc {
 			return
 		}
 		if !scope.IsAllowed(existing.FleetGroupID) {
-			writeError(w, http.StatusNotFound, "integration not found")
+			writeError(w, http.StatusNotFound, msgIntegrationNotFound)
 			return
 		}
 		if err := s.fleetSvc.UninstallIntegration(r.Context(), id); err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
-				writeError(w, http.StatusNotFound, "integration not found")
+				writeError(w, http.StatusNotFound, msgIntegrationNotFound)
 				return
 			}
 			s.logger.Error("delete integration failed", "id", id, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 		s.appendAuditWithContext(r.Context(), session.UserID, "fleet_group_integrations.delete", id, nil)
@@ -478,7 +478,7 @@ func (s *Server) writeIntegrationError(w http.ResponseWriter, err error) {
 			return
 		}
 		s.logger.Error("integration mutation failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
+		writeError(w, http.StatusInternalServerError, msgInternalError)
 	}
 }
 

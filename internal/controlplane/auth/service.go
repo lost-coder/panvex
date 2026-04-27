@@ -453,12 +453,18 @@ func (s *Service) BootstrapUserWithContext(ctx context.Context, input BootstrapI
 // (it is never compared for equality), only the Argon2id CPU cost matters.
 var dummyPasswordHash = sync.OnceValue(func() string {
 	salt := make([]byte, 16)
+	dummyPwd := make([]byte, 32)
 	if _, err := rand.Read(salt); err != nil {
-		// Fall back to a fixed salt — the value is meaningless, we just need
+		// Fall back to derived bytes — the value is meaningless, we just need
 		// a well-formed input for VerifyPassword to derive on.
-		salt = []byte("panvex-dummy-salt-bytes")
+		for i := range salt {
+			salt[i] = byte(i * 17)
+		}
 	}
-	derived := argon2.IDKey([]byte("panvex-timing-dummy"), salt, 4, 96*1024, 2, 32)
+	if _, err := rand.Read(dummyPwd); err != nil {
+		copy(dummyPwd, salt)
+	}
+	derived := argon2.IDKey(dummyPwd, salt, 4, 96*1024, 2, 32)
 	return fmt.Sprintf("argon2id$%s$%s",
 		base64.RawStdEncoding.EncodeToString(salt),
 		base64.RawStdEncoding.EncodeToString(derived))

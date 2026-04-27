@@ -214,7 +214,7 @@ func (s *Server) handleClient() http.HandlerFunc {
 
 		// R-S-14: 404 instead of 403 to avoid leaking existence.
 		if !s.clientInScope(scope, assignments) {
-			writeError(w, http.StatusNotFound, "client not found")
+			writeError(w, http.StatusNotFound, msgClientNotFound)
 			return
 		}
 
@@ -241,15 +241,15 @@ func (s *Server) handleUpdateClient() http.HandlerFunc {
 			_, existingAssignments, _, lookupErr := s.clientDetailSnapshot(clientID)
 			if lookupErr != nil {
 				if errors.Is(lookupErr, storage.ErrNotFound) {
-					writeError(w, http.StatusNotFound, "client not found")
+					writeError(w, http.StatusNotFound, msgClientNotFound)
 					return
 				}
-				s.logger.Error("load client for scope check failed", "client_id", clientID, "error", lookupErr)
+				s.logger.Error(msgClientScopeCheckFailed, "client_id", clientID, "error", lookupErr)
 				writeError(w, http.StatusInternalServerError, "internal error")
 				return
 			}
 			if !s.clientInScope(scope, existingAssignments) {
-				writeError(w, http.StatusNotFound, "client not found")
+				writeError(w, http.StatusNotFound, msgClientNotFound)
 				return
 			}
 		}
@@ -313,15 +313,15 @@ func (s *Server) handleDeleteClient() http.HandlerFunc {
 			_, existing, _, lookupErr := s.clientDetailSnapshot(clientID)
 			if lookupErr != nil {
 				if errors.Is(lookupErr, storage.ErrNotFound) {
-					writeError(w, http.StatusNotFound, "client not found")
+					writeError(w, http.StatusNotFound, msgClientNotFound)
 					return
 				}
-				s.logger.Error("load client for scope check failed", "client_id", clientID, "error", lookupErr)
+				s.logger.Error(msgClientScopeCheckFailed, "client_id", clientID, "error", lookupErr)
 				writeError(w, http.StatusInternalServerError, "internal error")
 				return
 			}
 			if !s.clientInScope(scope, existing) {
-				writeError(w, http.StatusNotFound, "client not found")
+				writeError(w, http.StatusNotFound, msgClientNotFound)
 				return
 			}
 		}
@@ -354,15 +354,15 @@ func (s *Server) handleRotateClientSecret() http.HandlerFunc {
 			_, existing, _, lookupErr := s.clientDetailSnapshot(clientID)
 			if lookupErr != nil {
 				if errors.Is(lookupErr, storage.ErrNotFound) {
-					writeError(w, http.StatusNotFound, "client not found")
+					writeError(w, http.StatusNotFound, msgClientNotFound)
 					return
 				}
-				s.logger.Error("load client for scope check failed", "client_id", clientID, "error", lookupErr)
+				s.logger.Error(msgClientScopeCheckFailed, "client_id", clientID, "error", lookupErr)
 				writeError(w, http.StatusInternalServerError, "internal error")
 				return
 			}
 			if !s.clientInScope(scope, existing) {
-				writeError(w, http.StatusNotFound, "client not found")
+				writeError(w, http.StatusNotFound, msgClientNotFound)
 				return
 			}
 		}
@@ -400,15 +400,15 @@ func (s *Server) handleRedeployClient() http.HandlerFunc {
 			_, existing, _, lookupErr := s.clientDetailSnapshot(clientID)
 			if lookupErr != nil {
 				if errors.Is(lookupErr, storage.ErrNotFound) {
-					writeError(w, http.StatusNotFound, "client not found")
+					writeError(w, http.StatusNotFound, msgClientNotFound)
 					return
 				}
-				s.logger.Error("load client for scope check failed", "client_id", clientID, "error", lookupErr)
+				s.logger.Error(msgClientScopeCheckFailed, "client_id", clientID, "error", lookupErr)
 				writeError(w, http.StatusInternalServerError, "internal error")
 				return
 			}
 			if !s.clientInScope(scope, existing) {
-				writeError(w, http.StatusNotFound, "client not found")
+				writeError(w, http.StatusNotFound, msgClientNotFound)
 				return
 			}
 		}

@@ -1,10 +1,12 @@
 # DEV-ONLY compose profile.
 #
-# Default `panvex` password and `sslmode=disable` are convenient on a
-# laptop and FATAL in production. For real deployments use
-# docker-compose.prod.yml — that file fails to start without an
-# explicit POSTGRES_PASSWORD and PANVEX_ENCRYPTION_KEY, sets
-# sslmode=require, and binds publishers to loopback.
+# Requires POSTGRES_PASSWORD (and optionally POSTGRES_USER/POSTGRES_DB)
+# to be supplied via .env or shell — copy deploy/.env.example to
+# deploy/.env and adjust before running. `sslmode=disable` is
+# convenient on a laptop and FATAL in production. For real deployments
+# use docker-compose.prod.yml — that file additionally requires
+# PANVEX_ENCRYPTION_KEY, sets sslmode=require, and binds publishers
+# to loopback.
 
 services:
   postgres:
@@ -12,7 +14,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-panvex}
       POSTGRES_USER: ${POSTGRES_USER:-panvex}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-panvex}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env (see .env.example)}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-panvex} -d ${POSTGRES_DB:-panvex}"]
       interval: 5s
@@ -39,7 +41,7 @@ services:
       - postgres
       - -storage-dsn
       # NOTE: sslmode=disable is acceptable for local dev; use sslmode=require or stricter in production.
-      - postgres://${POSTGRES_USER:-panvex}:${POSTGRES_PASSWORD:-panvex}@postgres:5432/${POSTGRES_DB:-panvex}?sslmode=disable
+      - postgres://${POSTGRES_USER:-panvex}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}@postgres:5432/${POSTGRES_DB:-panvex}?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy

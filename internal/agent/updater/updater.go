@@ -158,7 +158,7 @@ func extractBinaryFromArchive(archivePath string) (string, error) {
 		_ = os.Remove(tmp.Name())
 		return "", fmt.Errorf("extract binary: %w", err)
 	}
-	if err := os.Chmod(tmp.Name(), 0o755); err != nil { //nolint:gosec // executable binary requires 0755
+	if err := os.Chmod(tmp.Name(), 0o700); err != nil {
 		tmp.Close()
 		_ = os.Remove(tmp.Name())
 		return "", fmt.Errorf("chmod binary: %w", err)

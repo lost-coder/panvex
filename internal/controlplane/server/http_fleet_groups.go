@@ -13,6 +13,11 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
+const (
+	msgFleetGroupIDReq    = "fleet group id is required"
+	msgFleetGroupNotFound = "fleet group not found"
+)
+
 // fleetGroupResponse is the JSON shape returned by list and detail
 // endpoints. agent_count is computed from the live in-memory agent
 // snapshot (not persisted), matching the legacy /fleet-groups
@@ -76,7 +81,7 @@ func (s *Server) handleListFleetGroups() http.HandlerFunc {
 		groups, err := s.fleetSvc.List(r.Context())
 		if err != nil {
 			s.logger.Error("list fleet groups failed", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 		response := make([]fleetGroupResponse, 0, len(groups))
@@ -99,7 +104,7 @@ func (s *Server) handleGetFleetGroup() http.HandlerFunc {
 		}
 		id := chi.URLParam(r, "id")
 		if id == "" {
-			writeError(w, http.StatusBadRequest, "fleet group id is required")
+			writeError(w, http.StatusBadRequest, msgFleetGroupIDReq)
 			return
 		}
 		// R-S-14: scope-check the fleet-group id before any read so a
@@ -111,17 +116,17 @@ func (s *Server) handleGetFleetGroup() http.HandlerFunc {
 			return
 		}
 		if !scope.IsAllowed(id) {
-			writeError(w, http.StatusNotFound, "fleet group not found")
+			writeError(w, http.StatusNotFound, msgFleetGroupNotFound)
 			return
 		}
 		group, err := s.fleetSvc.Get(r.Context(), id)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
-				writeError(w, http.StatusNotFound, "fleet group not found")
+				writeError(w, http.StatusNotFound, msgFleetGroupNotFound)
 				return
 			}
 			s.logger.Error("get fleet group failed", "id", id, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 		writeJSON(w, http.StatusOK, s.fleetGroupToResponse(r.Context(), group, true))
@@ -166,7 +171,7 @@ func (s *Server) handleUpdateFleetGroup() http.HandlerFunc {
 		}
 		id := chi.URLParam(r, "id")
 		if id == "" {
-			writeError(w, http.StatusBadRequest, "fleet group id is required")
+			writeError(w, http.StatusBadRequest, msgFleetGroupIDReq)
 			return
 		}
 		// R-S-14: writes are gated on scope to mirror reads.
@@ -175,7 +180,7 @@ func (s *Server) handleUpdateFleetGroup() http.HandlerFunc {
 			return
 		}
 		if !scope.IsAllowed(id) {
-			writeError(w, http.StatusNotFound, "fleet group not found")
+			writeError(w, http.StatusNotFound, msgFleetGroupNotFound)
 			return
 		}
 		var request updateFleetGroupRequest
@@ -189,7 +194,7 @@ func (s *Server) handleUpdateFleetGroup() http.HandlerFunc {
 		})
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
-				writeError(w, http.StatusNotFound, "fleet group not found")
+				writeError(w, http.StatusNotFound, msgFleetGroupNotFound)
 				return
 			}
 			s.writeFleetGroupError(w, err)
@@ -212,7 +217,7 @@ func (s *Server) handleFleetGroupDeletionPreview() http.HandlerFunc {
 		}
 		id := chi.URLParam(r, "id")
 		if id == "" {
-			writeError(w, http.StatusBadRequest, "fleet group id is required")
+			writeError(w, http.StatusBadRequest, msgFleetGroupIDReq)
 			return
 		}
 		scope, ok := s.requireFleetScope(w, r, user)
@@ -220,17 +225,17 @@ func (s *Server) handleFleetGroupDeletionPreview() http.HandlerFunc {
 			return
 		}
 		if !scope.IsAllowed(id) {
-			writeError(w, http.StatusNotFound, "fleet group not found")
+			writeError(w, http.StatusNotFound, msgFleetGroupNotFound)
 			return
 		}
 		counts, err := s.fleetSvc.DeletionPreview(r.Context(), id)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
-				writeError(w, http.StatusNotFound, "fleet group not found")
+				writeError(w, http.StatusNotFound, msgFleetGroupNotFound)
 				return
 			}
 			s.logger.Error("fleet group deletion preview failed", "id", id, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 		writeJSON(w, http.StatusOK, fleetGroupDeletionPreviewResponse{
@@ -252,7 +257,7 @@ func (s *Server) handleDeleteFleetGroup() http.HandlerFunc {
 		}
 		id := chi.URLParam(r, "id")
 		if id == "" {
-			writeError(w, http.StatusBadRequest, "fleet group id is required")
+			writeError(w, http.StatusBadRequest, msgFleetGroupIDReq)
 			return
 		}
 		// R-S-14: must be in scope of both the group being deleted and
@@ -263,7 +268,7 @@ func (s *Server) handleDeleteFleetGroup() http.HandlerFunc {
 			return
 		}
 		if !scope.IsAllowed(id) {
-			writeError(w, http.StatusNotFound, "fleet group not found")
+			writeError(w, http.StatusNotFound, msgFleetGroupNotFound)
 			return
 		}
 		reassignTo := r.URL.Query().Get("reassign_to")
@@ -274,7 +279,7 @@ func (s *Server) handleDeleteFleetGroup() http.HandlerFunc {
 		moved, err := s.fleetSvc.Delete(r.Context(), id, reassignTo)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
-				writeError(w, http.StatusNotFound, "fleet group not found")
+				writeError(w, http.StatusNotFound, msgFleetGroupNotFound)
 				return
 			}
 			if errors.Is(err, fleet.ErrReassignTargetMissing) {
@@ -286,7 +291,7 @@ func (s *Server) handleDeleteFleetGroup() http.HandlerFunc {
 				return
 			}
 			s.logger.Error("delete fleet group failed", "id", id, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 		s.appendAuditWithContext(r.Context(), session.UserID, "fleet_groups.delete", id, map[string]any{
@@ -403,6 +408,6 @@ func (s *Server) writeFleetGroupError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, err.Error())
 	default:
 		s.logger.Error("fleet group mutation failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
+		writeError(w, http.StatusInternalServerError, msgInternalError)
 	}
 }

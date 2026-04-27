@@ -42,7 +42,7 @@ func (s *Server) handleDiscoveredClients() http.HandlerFunc {
 
 		clients, err := s.listDiscoveredClients(r.Context())
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 
@@ -120,22 +120,22 @@ func (s *Server) handleAdoptDiscoveredClient() http.HandlerFunc {
 		inScope, scopeErr := s.discoveredClientInScope(r.Context(), scope, id)
 		if scopeErr != nil {
 			if errors.Is(scopeErr, storage.ErrNotFound) {
-				writeError(w, http.StatusNotFound, "discovered client not found")
+				writeError(w, http.StatusNotFound, msgDiscoveredClientNotFound)
 				return
 			}
 			s.logger.Error("scope-check discovered client failed", "id", id, "error", scopeErr)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 		if !inScope {
-			writeError(w, http.StatusNotFound, "discovered client not found")
+			writeError(w, http.StatusNotFound, msgDiscoveredClientNotFound)
 			return
 		}
 		client, err := s.adoptDiscoveredClient(r.Context(), id, session.UserID, s.now())
 		if err != nil {
 			switch {
 			case errors.Is(err, storage.ErrNotFound):
-				writeError(w, http.StatusNotFound, "discovered client not found")
+				writeError(w, http.StatusNotFound, msgDiscoveredClientNotFound)
 			case errors.Is(err, ErrAlreadyAdopted):
 				writeError(w, http.StatusConflict, err.Error())
 			default:
@@ -164,22 +164,22 @@ func (s *Server) handleIgnoreDiscoveredClient() http.HandlerFunc {
 		inScope, scopeErr := s.discoveredClientInScope(r.Context(), scope, id)
 		if scopeErr != nil {
 			if errors.Is(scopeErr, storage.ErrNotFound) {
-				writeError(w, http.StatusNotFound, "discovered client not found")
+				writeError(w, http.StatusNotFound, msgDiscoveredClientNotFound)
 				return
 			}
 			s.logger.Error("scope-check discovered client failed", "id", id, "error", scopeErr)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 		if !inScope {
-			writeError(w, http.StatusNotFound, "discovered client not found")
+			writeError(w, http.StatusNotFound, msgDiscoveredClientNotFound)
 			return
 		}
 		if err := s.ignoreDiscoveredClient(r.Context(), id, session.UserID, s.now()); err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
-				writeError(w, http.StatusNotFound, "discovered client not found")
+				writeError(w, http.StatusNotFound, msgDiscoveredClientNotFound)
 			} else {
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, msgInternalError)
 			}
 			return
 		}
