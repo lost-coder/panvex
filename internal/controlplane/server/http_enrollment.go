@@ -369,7 +369,7 @@ func (s *Server) handleRevokeEnrollmentToken() http.HandlerFunc {
 		existing, lookupErr := s.store.GetEnrollmentToken(r.Context(), value)
 		if lookupErr != nil {
 			if errors.Is(lookupErr, storage.ErrNotFound) {
-				writeError(w, http.StatusNotFound, "enrollment token not found")
+				writeError(w, http.StatusNotFound, msgEnrollmentTokenNotFound)
 				return
 			}
 			s.logger.Error("lookup enrollment token failed", "error", lookupErr)
@@ -381,14 +381,14 @@ func (s *Server) handleRevokeEnrollmentToken() http.HandlerFunc {
 			return
 		}
 		if !scope.IsAllowed(existing.FleetGroupID) {
-			writeError(w, http.StatusNotFound, "enrollment token not found")
+			writeError(w, http.StatusNotFound, msgEnrollmentTokenNotFound)
 			return
 		}
 
 		revoked, changed, err := s.revokeEnrollmentTokenWithContext(r.Context(), value, s.now())
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
-				writeError(w, http.StatusNotFound, "enrollment token not found")
+				writeError(w, http.StatusNotFound, msgEnrollmentTokenNotFound)
 				return
 			}
 			s.logger.Error("revoke enrollment token failed", "error", err)

@@ -190,7 +190,7 @@ func downloadToTemp(ctx context.Context, rawURL string, cfg Config) (string, err
 		return "", fmt.Errorf("%w: streamed %d bytes, cap=%d", errArchiveTooLarge, written, maxArchive)
 	}
 
-	if err := os.Chmod(tmpName, 0o755); err != nil { //nolint:gosec // executable binary requires 0755
+	if err := os.Chmod(tmpName, 0o700); err != nil {
 		cleanup()
 		return "", err
 	}

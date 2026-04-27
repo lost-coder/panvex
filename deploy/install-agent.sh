@@ -12,7 +12,7 @@ INSTALL_LOG="/var/log/panvex-agent-install-$(date +%Y%m%d-%H%M%S).log"
 
 # ── Colors & formatting ─────────────────────────────────────────────────────
 
-if [ -t 1 ] && command -v tput >/dev/null 2>&1; then
+if [[ -t 1 ]] && command -v tput >/dev/null 2>&1; then
   BOLD=$(tput bold)
   DIM=$(tput dim)
   RESET=$(tput sgr0)
@@ -51,18 +51,18 @@ die()     { error "$*"; exit 1; }
 TMP_DIR=""
 cleanup() {
   local code=$?
-  [ -n "$TMP_DIR" ] && rm -rf "$TMP_DIR"
+  [[ -n "$TMP_DIR" ]] && rm -rf "$TMP_DIR"
   exit $code
 }
 trap cleanup EXIT HUP INT TERM
 
 # ── Prompts ──────────────────────────────────────────────────────────────────
 
-can_prompt() { [ -t 0 ] || [ -r /dev/tty ]; }
+can_prompt() { [[ -t 0 ]] || [[ -r /dev/tty ]]; }
 
 ask() {
   local label=$1 default=${2:-} value
-  if [ -n "$default" ]; then
+  if [[ -n "$default" ]]; then
     printf "  ${CYAN}?${RESET} %s ${DIM}[%s]${RESET}: " "$label" "$default" >/dev/tty
   else
     printf "  ${CYAN}?${RESET} %s: " "$label" >/dev/tty
@@ -74,7 +74,7 @@ ask() {
 ask_yesno() {
   local label=$1 default=${2:-y} value
   local hint="Y/n"
-  [ "$default" = "n" ] && hint="y/N"
+  [[ "$default" = "n" ]] && hint="y/N"
   printf "  ${CYAN}?${RESET} %s ${DIM}[%s]${RESET}: " "$label" "$hint" >/dev/tty
   IFS= read -r value </dev/tty || true
   value=${value:-$default}
@@ -90,7 +90,7 @@ ask_choice() {
   local i=1 choice
   echo "  ${CYAN}?${RESET} $label" >/dev/tty
   for opt in "$@"; do
-    if [ "$opt" = "$default" ]; then
+    if [[ "$opt" = "$default" ]]; then
       echo "    ${GREEN}$i)${RESET} $opt ${DIM}(default)${RESET}" >/dev/tty
     else
       echo "    ${DIM}$i)${RESET} $opt" >/dev/tty
@@ -99,13 +99,13 @@ ask_choice() {
   done
   printf "    Choice: " >/dev/tty
   IFS= read -r choice </dev/tty || true
-  if [ -z "$choice" ] || ! echo "$choice" | grep -qE '^[0-9]+$'; then
+  if [[ -z "$choice" ]] || ! echo "$choice" | grep -qE '^[0-9]+$'; then
     echo "$default"
     return
   fi
   i=1
   for opt in "$@"; do
-    if [ "$i" = "$choice" ]; then
+    if [[ "$i" = "$choice" ]]; then
       echo "$opt"
       return
     fi
@@ -118,7 +118,7 @@ ask_choice() {
 
 need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"; }
 
-is_root() { [ "$(id -u)" -eq 0 ]; }
+is_root() { [[ "$(id -u)" -eq 0 ]]; }
 
 has_systemd() { command -v systemctl >/dev/null 2>&1; }
 
@@ -135,7 +135,7 @@ detect_arch() {
 download_file() {
   local url=$1 dest=$2
   if command -v curl >/dev/null 2>&1; then
-    if [ -t 1 ]; then
+    if [[ -t 1 ]]; then
       curl -fSL --progress-bar "$url" -o "$dest"
     else
       curl -fsSL "$url" -o "$dest"
@@ -156,7 +156,7 @@ summary_box() {
   local border="${CYAN}$(printf '─%.0s' $(seq 1 $width))${RESET}"
   echo ""
   echo "  $border"
-  while [ $# -gt 0 ]; do
+  while [[ $# -gt 0 ]]; do
     printf "  ${CYAN}│${RESET} %-28s %s\n" "$1" "$2"
     shift 2
   done
@@ -180,12 +180,12 @@ install_agent() {
   local current_ver=""
 
   # ── Detect existing installation ─────────────────────────────────────
-  if [ -f "$bin_dir/$APP_NAME" ]; then
+  if [[ -f "$bin_dir/$APP_NAME" ]]; then
     is_upgrade=true
     current_ver=$("$bin_dir/$APP_NAME" -version 2>/dev/null | head -1 || echo "unknown")
     warn "Existing installation detected: $current_ver"
 
-    if [ -f "$env_file" ]; then
+    if [[ -f "$env_file" ]]; then
       local backup="${env_file}.bak.$(date +%s)"
       cp "$env_file" "$backup"
       success "Config backed up: $backup"
@@ -201,7 +201,7 @@ install_agent() {
   local asset_name="${APP_NAME}-linux-${arch}.tar.gz"
 
   # Resolve "latest" to the most recent agent/* tag via GitHub API
-  if [ "$version" = "latest" ]; then
+  if [[ "$version" = "latest" ]]; then
     info "Resolving latest agent version..."
     local releases_json
     releases_json=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=20" 2>/dev/null) \
@@ -226,7 +226,7 @@ install_agent() {
   expected_hash=$(awk '{print $1}' "$TMP_DIR/checksum")
   local actual_hash
   actual_hash=$(sha256sum "$TMP_DIR/$asset_name" | awk '{print $1}')
-  if [ "$expected_hash" != "$actual_hash" ]; then
+  if [[ "$expected_hash" != "$actual_hash" ]]; then
     die "Checksum verification failed (expected: $expected_hash, got: $actual_hash)"
   fi
   success "Checksum verified"
@@ -234,7 +234,7 @@ install_agent() {
   info "Extracting..."
   tar -xzf "$TMP_DIR/$asset_name" -C "$TMP_DIR"
   local binary_name="${APP_NAME}-linux-${arch}"
-  [ -f "$TMP_DIR/$binary_name" ] || die "Archive does not contain $binary_name"
+  [[ -f "$TMP_DIR/$binary_name" ]] || die "Archive does not contain $binary_name"
   success "Download complete"
 
   # ── Install binary ─────────────────────────────────────────────────────
@@ -260,7 +260,7 @@ install_agent() {
 
   # ── Configuration ──────────────────────────────────────────────────────
 
-  if [ "$is_upgrade" = true ] && [ -f "$env_file" ]; then
+  if [[ "$is_upgrade" = true ]] && [[ -f "$env_file" ]]; then
     info "Keeping existing config: $env_file"
   else
     cat >"$env_file" <<EOF
@@ -287,7 +287,7 @@ EOF
 
   # ── Bootstrap (enroll with panel) — skip on upgrade ────────────────────
 
-  if [ "$is_upgrade" = false ]; then
+  if [[ "$is_upgrade" = false ]]; then
     step "Enrolling with Panel"
 
     info "Bootstrapping agent..."
@@ -300,7 +300,7 @@ EOF
       -state-file "$state_file"
       -node-name "$node_name"
     )
-    if [ -n "${PANVEX_INSECURE_TRANSPORT:-}" ]; then
+    if [[ -n "${PANVEX_INSECURE_TRANSPORT:-}" ]]; then
       warn "Bootstrapping over insecure transport (private key in cleartext) — only safe on VPN / private-network links."
       _BOOT_ARGS+=(-insecure-transport)
     fi
@@ -373,7 +373,7 @@ UNINSTALL
 
   # ── Start service ──────────────────────────────────────────────────────
 
-  if [ "$start_now" = "1" ] || [ "$start_now" = "y" ]; then
+  if [[ "$start_now" = "1" ]] || [[ "$start_now" = "y" ]]; then
     systemctl start "${SERVICE_NAME}.service"
     sleep 3
     if systemctl is-active --quiet "${SERVICE_NAME}.service"; then
@@ -397,7 +397,7 @@ UNINSTALL
     "Uninstall:" "${uninstall_script}" \
     "Log:" "${INSTALL_LOG}"
 
-  if [ "$is_upgrade" = true ]; then
+  if [[ "$is_upgrade" = true ]]; then
     echo "  ${GREEN}${BOLD}Agent upgraded successfully!${RESET}"
   else
     echo "  ${GREEN}${BOLD}Agent is ready!${RESET}"
@@ -452,7 +452,7 @@ run_interactive() {
 
   # ── Version ────────────────────────────────────────────────────────────
   local version="latest"
-  if [ "$mode" = "Advanced" ]; then
+  if [[ "$mode" = "Advanced" ]]; then
     version=$(ask "Version (tag or 'latest')" "latest")
   fi
 
@@ -461,7 +461,7 @@ run_interactive() {
   local config_dir="/etc/panvex-agent"
   local data_dir="/var/lib/panvex-agent"
 
-  if [ "$mode" = "Advanced" ]; then
+  if [[ "$mode" = "Advanced" ]]; then
     step "Installation Paths"
     bin_dir=$(ask "Binary directory" "$bin_dir")
     config_dir=$(ask "Config directory" "$config_dir")
@@ -473,10 +473,10 @@ run_interactive() {
 
   local panel_url enrollment_token
   panel_url=$(ask "Panel URL (e.g. https://panel.example.com)" "")
-  [ -n "$panel_url" ] || die "Panel URL is required"
+  [[ -n "$panel_url" ]] || die "Panel URL is required"
 
   enrollment_token=$(ask "Enrollment token" "")
-  [ -n "$enrollment_token" ] || die "Enrollment token is required"
+  [[ -n "$enrollment_token" ]] || die "Enrollment token is required"
 
   # ── Telemt connection ──────────────────────────────────────────────────
   step "Telemt Proxy"
@@ -536,8 +536,8 @@ run_noninteractive() {
   local node_name="${PANVEX_NODE_NAME:-$(hostname)}"
   local start_now="${PANVEX_START_NOW:-1}"
 
-  [ -n "$panel_url" ] || die "PANVEX_PANEL_URL is required for non-interactive install"
-  [ -n "$enrollment_token" ] || die "PANVEX_ENROLLMENT_TOKEN is required for non-interactive install"
+  [[ -n "$panel_url" ]] || die "PANVEX_PANEL_URL is required for non-interactive install"
+  [[ -n "$enrollment_token" ]] || die "PANVEX_ENROLLMENT_TOKEN is required for non-interactive install"
 
   info "Non-interactive install: $version ($arch)"
 
@@ -550,7 +550,7 @@ run_noninteractive() {
 # Entry point
 # ═════════════════════════════════════════════════════════════════════════════
 
-if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+if [[ "${1:-}" = "--help" ]] || [[ "${1:-}" = "-h" ]]; then
   cat <<'EOF'
 Panvex Agent — Installer
 
@@ -594,7 +594,7 @@ EOF
   exit 0
 fi
 
-if [ "${1:-}" = "--dry-run" ]; then
+if [[ "${1:-}" = "--dry-run" ]]; then
   echo "Dry-run mode: would install Panvex Agent"
   echo "  Arch: $(detect_arch)"
   echo "  Version: ${PANVEX_AGENT_VERSION:-latest}"
@@ -616,7 +616,7 @@ _CLI_TELEMT_URL=""
 _CLI_TELEMT_AUTH=""
 _CLI_INSECURE_TRANSPORT=""
 
-while [ $# -gt 0 ]; do
+while [[ $# -gt 0 ]]; do
   case "$1" in
     --panel-url)       _CLI_PANEL_URL="$2"; shift 2 ;;
     --token|--enrollment-token) _CLI_ENROLLMENT_TOKEN="$2"; shift 2 ;;
@@ -632,19 +632,19 @@ while [ $# -gt 0 ]; do
 done
 
 # Export as env vars so both modes can use them
-[ -n "$_CLI_PANEL_URL" ]         && export PANVEX_PANEL_URL="$_CLI_PANEL_URL"
-[ -n "$_CLI_ENROLLMENT_TOKEN" ]  && export PANVEX_ENROLLMENT_TOKEN="$_CLI_ENROLLMENT_TOKEN"
-[ -n "$_CLI_NODE_NAME" ]         && export PANVEX_NODE_NAME="$_CLI_NODE_NAME"
-[ -n "$_CLI_TELEMT_URL" ]        && export PANVEX_TELEMT_URL="$_CLI_TELEMT_URL"
-[ -n "$_CLI_TELEMT_AUTH" ]       && export PANVEX_TELEMT_AUTH="$_CLI_TELEMT_AUTH"
-[ -n "$_CLI_INSECURE_TRANSPORT" ] && export PANVEX_INSECURE_TRANSPORT="1"
+[[ -n "$_CLI_PANEL_URL" ]]         && export PANVEX_PANEL_URL="$_CLI_PANEL_URL"
+[[ -n "$_CLI_ENROLLMENT_TOKEN" ]]  && export PANVEX_ENROLLMENT_TOKEN="$_CLI_ENROLLMENT_TOKEN"
+[[ -n "$_CLI_NODE_NAME" ]]         && export PANVEX_NODE_NAME="$_CLI_NODE_NAME"
+[[ -n "$_CLI_TELEMT_URL" ]]        && export PANVEX_TELEMT_URL="$_CLI_TELEMT_URL"
+[[ -n "$_CLI_TELEMT_AUTH" ]]       && export PANVEX_TELEMT_AUTH="$_CLI_TELEMT_AUTH"
+[[ -n "$_CLI_INSECURE_TRANSPORT" ]] && export PANVEX_INSECURE_TRANSPORT="1"
 
 # Start installation log
 mkdir -p "$(dirname "$INSTALL_LOG")" 2>/dev/null || true
 exec > >(tee -a "$INSTALL_LOG") 2>&1
 
 # Route: if required args passed via CLI/env → automatic, otherwise interactive
-if [ -n "${PANVEX_PANEL_URL:-}" ] && [ -n "${PANVEX_ENROLLMENT_TOKEN:-}" ]; then
+if [[ -n "${PANVEX_PANEL_URL:-}" ]] && [[ -n "${PANVEX_ENROLLMENT_TOKEN:-}" ]]; then
   run_noninteractive
 elif can_prompt; then
   run_interactive

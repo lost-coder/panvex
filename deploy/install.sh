@@ -46,18 +46,18 @@ die()     { error "$*"; exit 1; }
 TMP_DIR=""
 cleanup() {
   local code=$?
-  [ -n "$TMP_DIR" ] && rm -rf "$TMP_DIR"
+  [[ -n "$TMP_DIR" ]] && rm -rf "$TMP_DIR"
   exit $code
 }
 trap cleanup EXIT HUP INT TERM
 
 # ── Prompts ──────────────────────────────────────────────────────────────────
 
-can_prompt() { [ -t 0 ]; }
+can_prompt() { [[ -t 0 ]]; }
 
 ask() {
   local label=$1 default=${2:-} value
-  if [ -n "$default" ]; then
+  if [[ -n "$default" ]]; then
     read -rp "  ${CYAN}?${RESET} $label ${DIM}[$default]${RESET}: " value </dev/tty
   else
     read -rp "  ${CYAN}?${RESET} $label: " value </dev/tty
@@ -75,7 +75,7 @@ ask_password() {
 ask_yesno() {
   local label=$1 default=${2:-y} value
   local hint="Y/n"
-  [ "$default" = "n" ] && hint="y/N"
+  [[ "$default" = "n" ]] && hint="y/N"
   read -rp "  ${CYAN}?${RESET} $label ${DIM}[$hint]${RESET}: " value </dev/tty
   value=${value:-$default}
   case "$value" in
@@ -90,7 +90,7 @@ ask_choice() {
   local i=1 choice
   echo "  ${CYAN}?${RESET} $label" >&2
   for opt in "$@"; do
-    if [ "$opt" = "$default" ]; then
+    if [[ "$opt" = "$default" ]]; then
       echo "    ${GREEN}$i)${RESET} $opt ${DIM}(default)${RESET}" >&2
     else
       echo "    ${DIM}$i)${RESET} $opt" >&2
@@ -98,13 +98,13 @@ ask_choice() {
     i=$((i + 1))
   done
   read -rp "    Choice: " choice </dev/tty
-  if [ -z "$choice" ] || ! echo "$choice" | grep -qE '^[0-9]+$'; then
+  if [[ -z "$choice" ]] || ! echo "$choice" | grep -qE '^[0-9]+$'; then
     echo "$default"
     return
   fi
   i=1
   for opt in "$@"; do
-    if [ "$i" = "$choice" ]; then
+    if [[ "$i" = "$choice" ]]; then
       echo "$opt"
       return
     fi
@@ -117,7 +117,7 @@ ask_choice() {
 
 need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"; }
 
-is_root() { [ "$(id -u)" -eq 0 ]; }
+is_root() { [[ "$(id -u)" -eq 0 ]]; }
 
 has_systemd() { command -v systemctl >/dev/null 2>&1; }
 
@@ -147,14 +147,14 @@ ask_port() {
   local label=$1 default=$2 port
   while true; do
     port=$(ask "$label" "$default")
-    if ! echo "$port" | grep -qE '^[0-9]+$' || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+    if ! echo "$port" | grep -qE '^[0-9]+$' || [[ "$port" -lt 1 ]] || [[ "$port" -gt 65535 ]]; then
       echo "  ${YELLOW}!${RESET} Invalid port number. Enter a value between 1 and 65535." >/dev/tty
       continue
     fi
     if ! check_port "$port"; then
       local pid_info
       pid_info=$(ss -tlnp 2>/dev/null | grep ":${port} " | sed 's/.*users:(("\([^"]*\)".*/\1/' | head -1)
-      if [ -n "$pid_info" ]; then
+      if [[ -n "$pid_info" ]]; then
         echo "  ${YELLOW}!${RESET} Port $port is already in use by: ${BOLD}$pid_info${RESET}" >/dev/tty
       else
         echo "  ${YELLOW}!${RESET} Port $port is already in use by another process" >/dev/tty
@@ -220,7 +220,7 @@ generate_random_path() {
 install_acme_sh() {
   info "Installing acme.sh..."
   curl -fsSL https://get.acme.sh | sh -s -- >/dev/null 2>&1
-  if [ ! -f "$HOME/.acme.sh/acme.sh" ]; then
+  if [[ ! -f "$HOME/.acme.sh/acme.sh" ]]; then
     die "acme.sh installation failed"
   fi
   success "acme.sh installed"
@@ -237,7 +237,7 @@ issue_acme_certificate() {
   mkdir -p "$tls_dir"
 
   local email_flag=""
-  if [ -n "$email" ]; then
+  if [[ -n "$email" ]]; then
     email_flag="--accountemail $email"
   fi
 
@@ -260,7 +260,7 @@ issue_acme_certificate() {
       port80_was_open=true
     fi
     pre_hook="--pre-hook 'ufw allow 80/tcp >/dev/null 2>&1'"
-    if [ "$port80_was_open" = false ]; then
+    if [[ "$port80_was_open" = false ]]; then
       post_hook="--post-hook 'ufw delete allow 80/tcp >/dev/null 2>&1'"
       info "Firewall (ufw): port 80 will be opened temporarily for verification"
     else
@@ -271,7 +271,7 @@ issue_acme_certificate() {
       port80_was_open=true
     fi
     pre_hook="--pre-hook 'firewall-cmd --add-port=80/tcp >/dev/null 2>&1'"
-    if [ "$port80_was_open" = false ]; then
+    if [[ "$port80_was_open" = false ]]; then
       post_hook="--post-hook 'firewall-cmd --remove-port=80/tcp >/dev/null 2>&1'"
       info "Firewall (firewalld): port 80 will be opened temporarily for verification"
     else
@@ -282,7 +282,7 @@ issue_acme_certificate() {
       port80_was_open=true
     fi
     pre_hook="--pre-hook 'iptables -I INPUT -p tcp --dport 80 -j ACCEPT 2>/dev/null'"
-    if [ "$port80_was_open" = false ]; then
+    if [[ "$port80_was_open" = false ]]; then
       post_hook="--post-hook 'iptables -D INPUT -p tcp --dport 80 -j ACCEPT 2>/dev/null'"
       info "Firewall (iptables): port 80 will be opened temporarily for verification"
     else
@@ -297,11 +297,11 @@ issue_acme_certificate() {
   eval "$acme_cmd" 2>&1 || acme_exit=$?
 
   # Exit code 0 = issued, 2 = skipped (already valid, not due for renewal) — both OK.
-  if [ "$acme_exit" -ne 0 ] && [ "$acme_exit" -ne 2 ]; then
+  if [[ "$acme_exit" -ne 0 ]] && [[ "$acme_exit" -ne 2 ]]; then
     die "Certificate issuance failed (exit code $acme_exit). Check that port 80 is reachable and ${domain} resolves to this server."
   fi
 
-  if [ "$acme_exit" -eq 2 ]; then
+  if [[ "$acme_exit" -eq 2 ]]; then
     info "Certificate already exists and is still valid — reusing."
   fi
 
@@ -319,7 +319,7 @@ wait_healthy() {
   local port=$1 timeout=${2:-60} scheme=${3:-http} path_prefix=${4:-} waited=0
   local url="${scheme}://127.0.0.1:${port}${path_prefix}/healthz"
   info "Waiting for service (${url})..."
-  while [ $waited -lt $timeout ]; do
+  while [[ $waited -lt $timeout ]]; do
     if curl -sfk --max-time 3 "$url" >/dev/null 2>&1; then
       echo ""
       success "Health check passed"
@@ -344,7 +344,7 @@ summary_box() {
   border=$(printf '─%.0s' $(seq 1 $width))
   echo ""
   echo "  ${CYAN}${border}${RESET}"
-  while [ $# -gt 0 ]; do
+  while [[ $# -gt 0 ]]; do
     printf "  ${CYAN}│${RESET} %-28s %s\n" "$1" "$2"
     shift 2
   done
@@ -375,9 +375,9 @@ run_noninteractive() {
   local open_fw="${PANVEX_OPEN_FIREWALL:-0}"
   local start_now="${PANVEX_START_NOW:-1}"
 
-  [ -n "$admin_pass" ] || die "PANVEX_ADMIN_PASS is required for non-interactive install"
+  [[ -n "$admin_pass" ]] || die "PANVEX_ADMIN_PASS is required for non-interactive install"
 
-  if [ "$storage_driver" = "sqlite" ] && [ -z "$storage_dsn" ]; then
+  if [[ "$storage_driver" = "sqlite" ]] && [[ -z "$storage_dsn" ]]; then
     storage_dsn="$data_dir/panvex.db"
   fi
 
@@ -405,12 +405,12 @@ install_panvex() {
   local current_ver=""
 
   # ── Detect existing installation ─────────────────────────────────────
-  if [ -f "$bin_dir/$APP_NAME" ]; then
+  if [[ -f "$bin_dir/$APP_NAME" ]]; then
     is_upgrade=true
     current_ver=$("$bin_dir/$APP_NAME" -version 2>/dev/null | head -1 || echo "unknown")
     warn "Existing installation detected: $current_ver"
 
-    if [ -f "$config_file" ]; then
+    if [[ -f "$config_file" ]]; then
       local backup="${config_file}.bak.$(date +%s)"
       cp "$config_file" "$backup"
       success "Config backed up: $backup"
@@ -425,7 +425,7 @@ install_panvex() {
 
   local asset_name="${APP_NAME}-linux-${arch}.tar.gz"
   local release_path="latest/download"
-  if [ "$version" != "latest" ]; then
+  if [[ "$version" != "latest" ]]; then
     release_path="download/control-plane/${version}"
   fi
 
@@ -442,7 +442,7 @@ install_panvex() {
   expected_hash=$(awk '{print $1}' "$TMP_DIR/checksum")
   local actual_hash
   actual_hash=$(sha256sum "$TMP_DIR/$asset_name" | awk '{print $1}')
-  if [ "$expected_hash" != "$actual_hash" ]; then
+  if [[ "$expected_hash" != "$actual_hash" ]]; then
     die "Checksum verification failed (expected: $expected_hash, got: $actual_hash)"
   fi
   success "Checksum verified"
@@ -450,7 +450,7 @@ install_panvex() {
   info "Extracting..."
   tar -xzf "$TMP_DIR/$asset_name" -C "$TMP_DIR"
   local binary_name="${APP_NAME}-linux-${arch}"
-  [ -f "$TMP_DIR/$binary_name" ] || die "Archive does not contain $binary_name"
+  [[ -f "$TMP_DIR/$binary_name" ]] || die "Archive does not contain $binary_name"
   success "Download complete"
 
   # ── Install binary ─────────────────────────────────────────────────────
@@ -475,14 +475,14 @@ install_panvex() {
   chown -R panvex:panvex "$config_dir"
 
   # Tighten TLS key permissions if cert was provisioned
-  if [ -f "$data_dir/tls/key.pem" ]; then
+  if [[ -f "$data_dir/tls/key.pem" ]]; then
     chmod 0600 "$data_dir/tls/key.pem"
     chmod 0644 "$data_dir/tls/fullchain.pem"
   fi
 
   # ── Configuration (skip on upgrade if config exists) ───────────────────
 
-  if [ "$is_upgrade" = true ] && [ -f "$config_file" ]; then
+  if [[ "$is_upgrade" = true ]] && [[ -f "$config_file" ]]; then
     info "Keeping existing config: $config_file"
   else
     cat >"$config_file" <<EOF
@@ -513,7 +513,7 @@ EOF
   fi
 
   # Encryption key in separate secrets file
-  if [ -n "$encryption_key" ]; then
+  if [[ -n "$encryption_key" ]]; then
     local secrets_file="$config_dir/secrets.env"
     echo "PANVEX_ENCRYPTION_KEY=${encryption_key}" >"$secrets_file"
     chmod 0600 "$secrets_file"
@@ -525,12 +525,12 @@ EOF
 
   local service_file="/etc/systemd/system/${SERVICE_NAME}.service"
   local env_file_directive=""
-  if [ -n "$encryption_key" ]; then
+  if [[ -n "$encryption_key" ]]; then
     env_file_directive="EnvironmentFile=${config_dir}/secrets.env"
   fi
 
   local cap_directive=""
-  if [ "$http_port" -lt 1024 ] || [ "$grpc_port" -lt 1024 ]; then
+  if [[ "$http_port" -lt 1024 ]] || [[ "$grpc_port" -lt 1024 ]]; then
     cap_directive="AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE"
   fi
@@ -570,11 +570,11 @@ EOF
   success "Systemd service installed"
 
   # ── Configure acme.sh reload hook (now that service exists) ──────────
-  if [ -n "$tls_cert_file" ] && [ -f "$HOME/.acme.sh/acme.sh" ]; then
+  if [[ -n "$tls_cert_file" ]] && [[ -f "$HOME/.acme.sh/acme.sh" ]]; then
     # Extract domain from cert path: /var/lib/panvex/tls/fullchain.pem → look up from acme.sh
     local acme_domain=""
     acme_domain=$("$HOME/.acme.sh/acme.sh" --list 2>/dev/null | tail -1 | awk '{print $1}')
-    if [ -n "$acme_domain" ]; then
+    if [[ -n "$acme_domain" ]]; then
       local tls_dir
       tls_dir=$(dirname "$tls_cert_file")
       "$HOME/.acme.sh/acme.sh" --install-cert -d "$acme_domain" \
@@ -614,7 +614,7 @@ UNINSTALL
   # Ensure service is stopped before bootstrap (avoids SQLite lock)
   systemctl stop "${SERVICE_NAME}" 2>/dev/null || true
 
-  if [ "$is_upgrade" = false ]; then
+  if [[ "$is_upgrade" = false ]]; then
     info "Creating administrator account..."
     if "$bin_dir/$APP_NAME" bootstrap-admin \
       -storage-driver "$storage_driver" \
@@ -633,17 +633,17 @@ UNINSTALL
 
   # ── Firewall ───────────────────────────────────────────────────────────
 
-  if [ "$open_fw" = "1" ] || [ "$open_fw" = "y" ]; then
+  if [[ "$open_fw" = "1" ]] || [[ "$open_fw" = "y" ]]; then
     open_port "$http_port"
     open_port "$grpc_port"
   fi
 
   # ── Start service ──────────────────────────────────────────────────────
 
-  if [ "$start_now" = "1" ] || [ "$start_now" = "y" ]; then
+  if [[ "$start_now" = "1" ]] || [[ "$start_now" = "y" ]]; then
     systemctl start "${SERVICE_NAME}.service"
     local health_scheme="http"
-    [ "$tls_mode" = "direct" ] && health_scheme="https"
+    [[ "$tls_mode" = "direct" ]] && health_scheme="https"
     wait_healthy "$http_port" 15 "$health_scheme" "$panel_path"
   fi
 
@@ -654,7 +654,7 @@ UNINSTALL
   host_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1")
 
   local ui_scheme="http"
-  [ "$tls_mode" = "direct" ] && ui_scheme="https"
+  [[ "$tls_mode" = "direct" ]] && ui_scheme="https"
 
   summary_box \
     "Version:" "${installed_ver}" \
@@ -665,7 +665,7 @@ UNINSTALL
     "Service:" "systemctl status ${SERVICE_NAME}" \
     "Uninstall:" "${uninstall_script}" \
 
-  if [ "$is_upgrade" = true ]; then
+  if [[ "$is_upgrade" = true ]]; then
     echo "  ${GREEN}${BOLD}Panvex upgraded successfully!${RESET}"
   else
     echo "  ${GREEN}${BOLD}Panvex is ready!${RESET}"
@@ -727,7 +727,7 @@ run_interactive() {
   local storage_dsn=""
   local encryption_key=""
 
-  if [ "$mode" = "Advanced" ]; then
+  if [[ "$mode" = "Advanced" ]]; then
     version=$(ask "Version (tag or 'latest')" "latest")
     bin_dir=$(ask "Binary directory" "$bin_dir")
     config_dir=$(ask "Config directory" "$config_dir")
@@ -740,10 +740,10 @@ run_interactive() {
     postgres) storage_dsn=$(ask "PostgreSQL DSN" "postgres://panvex:password@127.0.0.1:5432/panvex?sslmode=disable") ;;
   esac
 
-  if [ "$mode" = "Advanced" ]; then
+  if [[ "$mode" = "Advanced" ]]; then
     if ask_yesno "Encrypt CA private key at rest?" "n"; then
       encryption_key=$(ask_password "Encryption passphrase")
-      [ -n "$encryption_key" ] || die "Encryption passphrase cannot be empty"
+      [[ -n "$encryption_key" ]] || die "Encryption passphrase cannot be empty"
     fi
   fi
 
@@ -765,11 +765,11 @@ run_interactive() {
 
       local acme_domain acme_email
       acme_domain=$(ask "Panel domain or IP (Enter = ${server_ip})" "")
-      if [ -z "$acme_domain" ]; then
+      if [[ -z "$acme_domain" ]]; then
         acme_domain="$server_ip"
       fi
 
-      if [ -z "$acme_domain" ]; then
+      if [[ -z "$acme_domain" ]]; then
         die "Could not detect server IP. Please provide a domain or IP."
       fi
 
@@ -837,12 +837,12 @@ run_interactive() {
   info "Anyone who doesn't know the path gets a 404."
 
   panel_path=$(ask "Panel path (Enter = auto-generate)" "")
-  if [ -z "$panel_path" ]; then
+  if [[ -z "$panel_path" ]]; then
     panel_path=$(generate_random_path)
   fi
 
   agent_path=$(ask "Agent API path (Enter = auto-generate)" "")
-  if [ -z "$agent_path" ]; then
+  if [[ -z "$agent_path" ]]; then
     agent_path=$(generate_random_path)
   fi
 
@@ -858,12 +858,12 @@ run_interactive() {
 
   while true; do
     admin_pass=$(ask_password "Password")
-    if [ -z "$admin_pass" ]; then
+    if [[ -z "$admin_pass" ]]; then
       warn "Password cannot be empty"
       continue
     fi
     admin_pass2=$(ask_password "Confirm password")
-    if [ "$admin_pass" != "$admin_pass2" ]; then
+    if [[ "$admin_pass" != "$admin_pass2" ]]; then
       warn "Passwords do not match"
       continue
     fi
@@ -874,7 +874,7 @@ run_interactive() {
   step "Review"
 
   local panel_url_display
-  if [ "$tls_mode" = "direct" ]; then
+  if [[ "$tls_mode" = "direct" ]]; then
     panel_url_display="https://${server_ip}:${http_port}${panel_path}/"
   else
     panel_url_display="http://${server_ip}:${http_port}${panel_path}/"
@@ -911,7 +911,7 @@ run_interactive() {
 # Entry point
 # ═════════════════════════════════════════════════════════════════════════════
 
-if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+if [[ "${1:-}" = "--help" ]] || [[ "${1:-}" = "-h" ]]; then
   cat <<'EOF'
 Panvex Control Plane — Interactive Installer
 
@@ -940,7 +940,7 @@ EOF
   exit 0
 fi
 
-if [ "${1:-}" = "--dry-run" ]; then
+if [[ "${1:-}" = "--dry-run" ]]; then
   echo "Dry-run mode: would install Panvex Control Plane"
   echo "  Arch: $(detect_arch)"
   echo "  Version: ${PANVEX_VERSION:-latest}"
