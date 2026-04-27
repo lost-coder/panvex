@@ -32,6 +32,7 @@ import (
 	"strings"
 	"time"
 
+	// register the pure-Go SQLite driver under "sqlite" for database/sql
 	_ "modernc.org/sqlite"
 )
 
