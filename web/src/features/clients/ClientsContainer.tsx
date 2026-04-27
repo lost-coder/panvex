@@ -17,7 +17,7 @@ import { buildClientInput } from "@/shared/api/transforms/clients";
 
 export function ClientsContainer() {
   const { clients, isLoading } = useClientsList();
-  const { discoveredClients, groupCounts: discoveredGroupCounts } = useDiscoveredClients();
+  const { groupCounts: discoveredGroupCounts } = useDiscoveredClients();
   const createMutation = useClientCreate();
   const { fleetGroups } = useFleetGroups();
   // Agents feed both the "pin individual node" selector and the fleet-group
@@ -105,7 +105,6 @@ export function ClientsContainer() {
   // layer so a deep-link lands peers in the same card/list state.
   const [viewParam, setViewParam] = useUrlSearchState("view", "");
 
-  void discoveredClients; // keep the reference so the hook keeps revalidating
   // Pending count is the logical-client number (groupCounts.pending),
   // not the raw record count. A 137-client × 4-node fleet reports 137
   // here, not 548. See src/features/clients/lib/groupDiscovered.ts.

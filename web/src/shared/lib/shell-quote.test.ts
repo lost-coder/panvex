@@ -11,7 +11,7 @@ describe("shellQuote", () => {
   });
 
   it("escapes a single quote with the close-escape-reopen idiom", () => {
-    expect(shellQuote("it's")).toBe("'it'\\''s'");
+    expect(shellQuote("it's")).toBe(String.raw`'it'\''s'`);
   });
 
   it("preserves shell metacharacters as literals", () => {
@@ -30,11 +30,11 @@ describe("shellQuote", () => {
 
   it("handles a string of only single quotes", () => {
     // Shell-evaluates to two literal single quotes.
-    expect(shellQuote("''")).toBe("''\\'''\\'''");
+    expect(shellQuote("''")).toBe(String.raw`''\'''\'''`);
   });
 
   it("handles a backslash literally (no escaping inside single quotes)", () => {
-    expect(shellQuote("path\\to\\thing")).toBe("'path\\to\\thing'");
+    expect(shellQuote(String.raw`path\to\thing`)).toBe(String.raw`'path\to\thing'`);
   });
 });
 

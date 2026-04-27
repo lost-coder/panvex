@@ -33,8 +33,7 @@ const SheetContent = React.forwardRef<
     // Unused prop kept for backward compatibility with existing callers
     // that pass onOpenChange on SheetContent itself. Close is routed via
     // the parent <Sheet>'s onOpenChange — this handler is effectively a
-    // no-op, but we reference it to satisfy the lint check.
-    void onOpenChange;
+    // no-op.
     // P2-FE-07 / M-F6: removed the generic "Sheet" default. If the caller
     // renders a visible <SheetTitle> inside children, Radix picks that up
     // and no hidden title is needed. Only fall back to a hidden title when
