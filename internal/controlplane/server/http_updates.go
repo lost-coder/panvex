@@ -67,6 +67,33 @@ type updateSettingsRequest struct {
 	AgentDownloadSource *string `json:"agent_download_source,omitempty"`
 }
 
+// mergeUpdateSettings applies non-nil fields from req onto current. Caller
+// holds settingsMu for write. Splitting this out keeps
+// handlePutUpdateSettings below S3776's cognitive-complexity ceiling.
+func mergeUpdateSettings(current *UpdateSettings, req updateSettingsRequest) {
+	if req.CheckIntervalHours != nil {
+		current.CheckIntervalHours = *req.CheckIntervalHours
+	}
+	if req.AutoUpdatePanel != nil {
+		current.AutoUpdatePanel = *req.AutoUpdatePanel
+	}
+	if req.AutoUpdateAgents != nil {
+		current.AutoUpdateAgents = *req.AutoUpdateAgents
+	}
+	if req.GitHubRepo != nil {
+		current.GitHubRepo = *req.GitHubRepo
+	}
+	if req.GitHubToken != nil {
+		// Preserve existing token if the client sends the masked placeholder.
+		if *req.GitHubToken != "***" && !strings.HasSuffix(*req.GitHubToken, "...") {
+			current.GitHubToken = *req.GitHubToken
+		}
+	}
+	if req.AgentDownloadSource != nil {
+		current.AgentDownloadSource = *req.AgentDownloadSource
+	}
+}
+
 // panelUpdateRequest is the JSON payload accepted by POST /panel/update.
 type panelUpdateRequest struct {
 	TargetVersion string `json:"target_version"`
@@ -126,27 +153,7 @@ func (s *Server) handlePutUpdateSettings() http.HandlerFunc {
 		}
 
 		s.settingsMu.Lock()
-		if req.CheckIntervalHours != nil {
-			s.updateSettings.CheckIntervalHours = *req.CheckIntervalHours
-		}
-		if req.AutoUpdatePanel != nil {
-			s.updateSettings.AutoUpdatePanel = *req.AutoUpdatePanel
-		}
-		if req.AutoUpdateAgents != nil {
-			s.updateSettings.AutoUpdateAgents = *req.AutoUpdateAgents
-		}
-		if req.GitHubRepo != nil {
-			s.updateSettings.GitHubRepo = *req.GitHubRepo
-		}
-		if req.GitHubToken != nil {
-			// Preserve existing token if the client sends the masked placeholder.
-			if *req.GitHubToken != "***" && !strings.HasSuffix(*req.GitHubToken, "...") {
-				s.updateSettings.GitHubToken = *req.GitHubToken
-			}
-		}
-		if req.AgentDownloadSource != nil {
-			s.updateSettings.AgentDownloadSource = *req.AgentDownloadSource
-		}
+		mergeUpdateSettings(&s.updateSettings, req)
 		updated := s.updateSettings
 		s.settingsMu.Unlock()
 
@@ -299,64 +306,18 @@ func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksu
 		return
 	}
 
-	// Download checksum first (optional defence-in-depth; signature below is authoritative).
-	var expectedChecksum string
-	if checksumURL != "" {
-		var err error
-		expectedChecksum, err = DownloadChecksum(ctx, checksumURL, token)
-		if err != nil {
-			s.logger.Error("panel update: download checksum failed", "error", err)
-			return
-		}
+	expectedChecksum, ok := s.fetchExpectedChecksum(ctx, checksumURL, token)
+	if !ok {
+		return
 	}
 
-	archivePath, err := DownloadArchive(ctx, downloadURL, token)
-	if err != nil {
-		s.logger.Error("panel update: download archive failed", "error", err)
+	archivePath, ok := s.downloadAndVerifyPanelArchive(ctx, downloadURL, signatureURL, expectedChecksum, token)
+	if !ok {
 		return
 	}
 	defer func() { _ = os.Remove(archivePath) }()
 
-	// Download the detached signature, then verify the archive against the
-	// embedded public key. This is the primary integrity gate — any failure
-	// refuses the update without falling back to checksum-only trust.
-	sig, err := DownloadSignature(ctx, signatureURL, token)
-	if err != nil {
-		s.logger.Error("panel update: download signature failed", "error", err)
-		return
-	}
-	archiveBytes, err := os.ReadFile(archivePath) //nolint:gosec // path created by DownloadArchive
-	if err != nil {
-		s.logger.Error("panel update: read archive for signature check failed", "error", err)
-		return
-	}
-	if err := security.VerifyArtifactBytes(archiveBytes, sig); err != nil {
-		s.logger.Error("panel update: signature verification failed", "error", err)
-		return
-	}
-
-	if expectedChecksum != "" {
-		if err := VerifyChecksum(archivePath, expectedChecksum); err != nil {
-			s.logger.Error("panel update: checksum verification failed", "error", err)
-			return
-		}
-	}
-
-	binaryPath, err := ExtractBinaryFromArchive(archivePath)
-	if err != nil {
-		s.logger.Error("panel update: extract binary failed", "error", err)
-		return
-	}
-	defer func() { _ = os.Remove(binaryPath) }()
-
-	currentBinary, err := os.Executable()
-	if err != nil {
-		s.logger.Error("panel update: resolve current binary path failed", "error", err)
-		return
-	}
-
-	if err := AtomicReplaceBinary(currentBinary, binaryPath); err != nil {
-		s.logger.Error("panel update: atomic replace failed", "error", err)
+	if !s.installPanelBinaryFromArchive(archivePath) {
 		return
 	}
 
@@ -372,6 +333,85 @@ func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksu
 			s.logger.Error("panel update: restart request failed", "error", err)
 		}
 	}
+}
+
+// fetchExpectedChecksum optionally fetches the published checksum.
+// Returns ("", true) when no checksum URL was supplied.
+func (s *Server) fetchExpectedChecksum(ctx context.Context, checksumURL, token string) (string, bool) {
+	if checksumURL == "" {
+		return "", true
+	}
+	checksum, err := DownloadChecksum(ctx, checksumURL, token)
+	if err != nil {
+		s.logger.Error("panel update: download checksum failed", "error", err)
+		return "", false
+	}
+	return checksum, true
+}
+
+// downloadAndVerifyPanelArchive downloads the panel archive and verifies it
+// against signature (mandatory) and checksum (optional). Returns the path on
+// disk and true on success; the caller is responsible for removing the file.
+func (s *Server) downloadAndVerifyPanelArchive(ctx context.Context, downloadURL, signatureURL, expectedChecksum, token string) (string, bool) {
+	archivePath, err := DownloadArchive(ctx, downloadURL, token)
+	if err != nil {
+		s.logger.Error("panel update: download archive failed", "error", err)
+		return "", false
+	}
+	if !s.verifyPanelArchive(ctx, archivePath, signatureURL, expectedChecksum, token) {
+		_ = os.Remove(archivePath)
+		return "", false
+	}
+	return archivePath, true
+}
+
+// verifyPanelArchive runs signature verification and (if configured) checksum
+// verification against an already-downloaded archive.
+func (s *Server) verifyPanelArchive(ctx context.Context, archivePath, signatureURL, expectedChecksum, token string) bool {
+	sig, err := DownloadSignature(ctx, signatureURL, token)
+	if err != nil {
+		s.logger.Error("panel update: download signature failed", "error", err)
+		return false
+	}
+	archiveBytes, err := os.ReadFile(archivePath) //nolint:gosec // path created by DownloadArchive
+	if err != nil {
+		s.logger.Error("panel update: read archive for signature check failed", "error", err)
+		return false
+	}
+	if err := security.VerifyArtifactBytes(archiveBytes, sig); err != nil {
+		s.logger.Error("panel update: signature verification failed", "error", err)
+		return false
+	}
+	if expectedChecksum != "" {
+		if err := VerifyChecksum(archivePath, expectedChecksum); err != nil {
+			s.logger.Error("panel update: checksum verification failed", "error", err)
+			return false
+		}
+	}
+	return true
+}
+
+// installPanelBinaryFromArchive extracts the binary from the verified archive
+// and atomically replaces the running executable.
+func (s *Server) installPanelBinaryFromArchive(archivePath string) bool {
+	binaryPath, err := ExtractBinaryFromArchive(archivePath)
+	if err != nil {
+		s.logger.Error("panel update: extract binary failed", "error", err)
+		return false
+	}
+	defer func() { _ = os.Remove(binaryPath) }()
+
+	currentBinary, err := os.Executable()
+	if err != nil {
+		s.logger.Error("panel update: resolve current binary path failed", "error", err)
+		return false
+	}
+
+	if err := AtomicReplaceBinary(currentBinary, binaryPath); err != nil {
+		s.logger.Error("panel update: atomic replace failed", "error", err)
+		return false
+	}
+	return true
 }
 
 // agentUpdateAssets captures the URLs and target version resolved

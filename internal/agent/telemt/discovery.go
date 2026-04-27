@@ -91,91 +91,130 @@ func (c *Client) FetchDiscoveredUsers(ctx context.Context, configPath string) ([
 
 	result := make([]DiscoveredUser, 0, len(users))
 	for _, u := range users {
-		du := DiscoveredUser{
-			Username:           u.Username,
-			Enabled:            u.InRuntime,
-			TotalOctets:        u.TotalOctets,
-			CurrentConnections: u.CurrentConnections,
-			ActiveUniqueIPs:    u.ActiveUniqueIPs,
-			ConnectionLink:     preferredConnectionLink(u.Links.TLS, u.Links.Secure, u.Links.Classic),
-		}
-
-		// Apply API-returned limits.
-		if u.UserADTag != nil {
-			du.UserADTag = *u.UserADTag
-		}
-		if u.MaxTCPConns != nil {
-			du.MaxTCPConns = *u.MaxTCPConns
-		}
-		if u.MaxUniqueIPs != nil {
-			du.MaxUniqueIPs = *u.MaxUniqueIPs
-		}
-		if u.DataQuotaBytes != nil {
-			du.DataQuotaBytes = *u.DataQuotaBytes
-		}
-		if u.ExpirationRFC3339 != nil {
-			du.ExpirationRFC3339 = *u.ExpirationRFC3339
-		}
-
-		// Resolve secret: prefer config file, fall back to link parsing.
-		if entry, ok := configSecrets[u.Username]; ok && IsValidSecret(entry.Secret) {
-			du.Secret = entry.Secret
-			// Config may have more accurate limits than API (e.g. global fallbacks resolved).
-			if entry.UserADTag != "" {
-				du.UserADTag = entry.UserADTag
-			}
-		} else {
-			du.Secret = extractSecretFromLinks(u.Links)
-		}
-
-		result = append(result, du)
+		result = append(result, buildDiscoveredUser(u, configSecrets))
 	}
 
 	return result, nil
 }
 
+// buildDiscoveredUser merges live UserInfo, API-returned limits, and any
+// config-file secrets into a single DiscoveredUser record.
+func buildDiscoveredUser(u UserInfo, configSecrets map[string]UserEntry) DiscoveredUser {
+	du := DiscoveredUser{
+		Username:           u.Username,
+		Enabled:            u.InRuntime,
+		TotalOctets:        u.TotalOctets,
+		CurrentConnections: u.CurrentConnections,
+		ActiveUniqueIPs:    u.ActiveUniqueIPs,
+		ConnectionLink:     preferredConnectionLink(u.Links.TLS, u.Links.Secure, u.Links.Classic),
+	}
+	applyAPIUserLimits(&du, u)
+	resolveDiscoveredUserSecret(&du, u, configSecrets)
+	return du
+}
+
+// applyAPIUserLimits copies optional API-returned limits onto the discovered user.
+func applyAPIUserLimits(du *DiscoveredUser, u UserInfo) {
+	if u.UserADTag != nil {
+		du.UserADTag = *u.UserADTag
+	}
+	if u.MaxTCPConns != nil {
+		du.MaxTCPConns = *u.MaxTCPConns
+	}
+	if u.MaxUniqueIPs != nil {
+		du.MaxUniqueIPs = *u.MaxUniqueIPs
+	}
+	if u.DataQuotaBytes != nil {
+		du.DataQuotaBytes = *u.DataQuotaBytes
+	}
+	if u.ExpirationRFC3339 != nil {
+		du.ExpirationRFC3339 = *u.ExpirationRFC3339
+	}
+}
+
+// resolveDiscoveredUserSecret prefers the config-file secret when present and
+// valid, otherwise falls back to extracting it from the connection link.
+func resolveDiscoveredUserSecret(du *DiscoveredUser, u UserInfo, configSecrets map[string]UserEntry) {
+	if entry, ok := configSecrets[u.Username]; ok && IsValidSecret(entry.Secret) {
+		du.Secret = entry.Secret
+		// Config may have more accurate limits than API (e.g. global fallbacks resolved).
+		if entry.UserADTag != "" {
+			du.UserADTag = entry.UserADTag
+		}
+		return
+	}
+	du.Secret = extractSecretFromLinks(u.Links)
+}
+
 // extractSecretFromLinks attempts to extract the raw 32-char hex secret from connection links.
 // Priority: classic (raw secret) → secure (dd + secret) → tls (ee + domain + secret).
 func extractSecretFromLinks(links UserLinks) string {
-	// Classic links contain the raw secret: tg://proxy?...&secret=HEX32
-	for _, link := range links.Classic {
+	if s := secretFromClassicLinks(links.Classic); s != "" {
+		return s
+	}
+	if s := secretFromSecureLinks(links.Secure); s != "" {
+		return s
+	}
+	return secretFromTLSLinks(links.TLS)
+}
+
+// secretFromClassicLinks looks for tg://proxy?...&secret=HEX32 links.
+func secretFromClassicLinks(classic []string) string {
+	for _, link := range classic {
 		if s := extractSecretParam(link); IsValidSecret(s) {
 			return s
 		}
 	}
-
-	// Secure links: secret param = "dd" + HEX32
-	for _, link := range links.Secure {
-		s := extractSecretParam(link)
-		if strings.HasPrefix(s, "dd") || strings.HasPrefix(s, "DD") {
-			raw := s[2:]
-			if IsValidSecret(raw) {
-				return raw
-			}
-		}
-	}
-
-	// TLS/fake-TLS links: secret param = "ee" + HEX32 + domain_hex.
-	// The raw secret is the first 32 hex chars after the "ee" prefix;
-	// everything after that is the SNI domain encoded as hex. Earlier
-	// versions had this reversed which caused every discovered client
-	// on a given node to report the domain bytes as their secret —
-	// triggering spurious "same_secret_different_names" conflicts.
-	for _, link := range links.TLS {
-		s := extractSecretParam(link)
-		if (strings.HasPrefix(s, "ee") || strings.HasPrefix(s, "EE")) && len(s) > 34 {
-			raw := s[2:34]
-			if IsValidSecret(raw) {
-				// Verify the domain portion is also valid hex.
-				domainHex := s[34:]
-				if _, err := hex.DecodeString(domainHex); err == nil {
-					return raw
-				}
-			}
-		}
-	}
-
 	return ""
+}
+
+// secretFromSecureLinks parses "dd" + HEX32 secrets out of secure-mode links.
+func secretFromSecureLinks(secure []string) string {
+	for _, link := range secure {
+		s := extractSecretParam(link)
+		if !strings.HasPrefix(s, "dd") && !strings.HasPrefix(s, "DD") {
+			continue
+		}
+		raw := s[2:]
+		if IsValidSecret(raw) {
+			return raw
+		}
+	}
+	return ""
+}
+
+// secretFromTLSLinks parses "ee" + HEX32 + domain_hex secrets from fake-TLS links.
+// The raw secret is the first 32 hex chars after the "ee" prefix; everything
+// after that is the SNI domain encoded as hex. Earlier versions had this
+// reversed which caused every discovered client on a given node to report the
+// domain bytes as their secret — triggering spurious
+// "same_secret_different_names" conflicts.
+func secretFromTLSLinks(tls []string) string {
+	for _, link := range tls {
+		s := extractSecretParam(link)
+		if raw, ok := parseFakeTLSSecret(s); ok {
+			return raw
+		}
+	}
+	return ""
+}
+
+// parseFakeTLSSecret extracts the raw secret from an "ee"-prefixed secret param.
+func parseFakeTLSSecret(s string) (string, bool) {
+	if !strings.HasPrefix(s, "ee") && !strings.HasPrefix(s, "EE") {
+		return "", false
+	}
+	if len(s) <= 34 {
+		return "", false
+	}
+	raw := s[2:34]
+	if !IsValidSecret(raw) {
+		return "", false
+	}
+	if _, err := hex.DecodeString(s[34:]); err != nil {
+		return "", false
+	}
+	return raw, true
 }
 
 // extractSecretParam parses a tg:// proxy link and returns the "secret" query parameter.

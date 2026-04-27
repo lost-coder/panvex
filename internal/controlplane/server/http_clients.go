@@ -29,6 +29,40 @@ type clientMutationRequest struct {
 	AgentIDs          []string `json:"agent_ids"`
 }
 
+// toMutationInput converts a client mutation request into the input record
+// expected by createClientWithContext / updateClientWithContext.
+func (r clientMutationRequest) toMutationInput() clientMutationInput {
+	return clientMutationInput{
+		Name:              r.Name,
+		Enabled:           r.Enabled,
+		UserADTag:         r.UserADTag,
+		UserADTagAuto:     r.UserADTagAuto,
+		MaxTCPConns:       r.MaxTCPConns,
+		MaxUniqueIPs:      r.MaxUniqueIPs,
+		DataQuotaBytes:    r.DataQuotaBytes,
+		ExpirationRFC3339: r.ExpirationRFC3339,
+		FleetGroupIDs:     r.FleetGroupIDs,
+		AgentIDs:          r.AgentIDs,
+	}
+}
+
+// validateRequestedFleetGroupScope (R-S-14): a non-global operator may only
+// assign the client to fleet groups they own. Reject the whole request if any
+// requested group is outside scope — silently dropping members would surprise
+// the operator on the response.
+func validateRequestedFleetGroupScope(w http.ResponseWriter, scope FleetScopeAccess, fleetGroupIDs []string) bool {
+	if scope.Global {
+		return true
+	}
+	for _, gid := range fleetGroupIDs {
+		if !scope.IsAllowed(gid) {
+			writeError(w, http.StatusForbidden, "fleet group outside operator scope")
+			return false
+		}
+	}
+	return true
+}
+
 type clientListResponse struct {
 	ID                 string `json:"id"`
 	Name               string `json:"name"`
@@ -165,31 +199,11 @@ func (s *Server) handleCreateClient() http.HandlerFunc {
 			return
 		}
 
-		// R-S-14: a non-global operator may only assign the client to
-		// fleet groups they own. Reject the whole request if any
-		// requested group is outside scope — silently dropping members
-		// would surprise the operator on the response.
-		if !scope.Global {
-			for _, gid := range request.FleetGroupIDs {
-				if !scope.IsAllowed(gid) {
-					writeError(w, http.StatusForbidden, "fleet group outside operator scope")
-					return
-				}
-			}
+		if !validateRequestedFleetGroupScope(w, scope, request.FleetGroupIDs) {
+			return
 		}
 
-		client, assignments, deployments, err := s.createClientWithContext(r.Context(), session.UserID, clientMutationInput{
-			Name:              request.Name,
-			Enabled:           request.Enabled,
-			UserADTag:         request.UserADTag,
-			UserADTagAuto:     request.UserADTagAuto,
-			MaxTCPConns:       request.MaxTCPConns,
-			MaxUniqueIPs:      request.MaxUniqueIPs,
-			DataQuotaBytes:    request.DataQuotaBytes,
-			ExpirationRFC3339: request.ExpirationRFC3339,
-			FleetGroupIDs:     request.FleetGroupIDs,
-			AgentIDs:          request.AgentIDs,
-		}, s.now())
+		client, assignments, deployments, err := s.createClientWithContext(r.Context(), session.UserID, request.toMutationInput(), s.now())
 		if !handleClientMutationError(w, err) {
 			return
 		}
@@ -265,27 +279,11 @@ func (s *Server) handleUpdateClient() http.HandlerFunc {
 			return
 		}
 
-		if !scope.Global {
-			for _, gid := range request.FleetGroupIDs {
-				if !scope.IsAllowed(gid) {
-					writeError(w, http.StatusForbidden, "fleet group outside operator scope")
-					return
-				}
-			}
+		if !validateRequestedFleetGroupScope(w, scope, request.FleetGroupIDs) {
+			return
 		}
 
-		client, assignments, deployments, err := s.updateClientWithContext(r.Context(), clientID, session.UserID, clientMutationInput{
-			Name:              request.Name,
-			Enabled:           request.Enabled,
-			UserADTag:         request.UserADTag,
-			UserADTagAuto:     request.UserADTagAuto,
-			MaxTCPConns:       request.MaxTCPConns,
-			MaxUniqueIPs:      request.MaxUniqueIPs,
-			DataQuotaBytes:    request.DataQuotaBytes,
-			ExpirationRFC3339: request.ExpirationRFC3339,
-			FleetGroupIDs:     request.FleetGroupIDs,
-			AgentIDs:          request.AgentIDs,
-		}, s.now())
+		client, assignments, deployments, err := s.updateClientWithContext(r.Context(), clientID, session.UserID, request.toMutationInput(), s.now())
 		if !handleClientMutationError(w, err) {
 			return
 		}

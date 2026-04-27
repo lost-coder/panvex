@@ -115,6 +115,42 @@ func nullStringFrom(s string) sql.NullString {
 	return sql.NullString{String: s, Valid: true}
 }
 
+// chunkBounds returns [start,end) for the next chunk that fits within total.
+func chunkBounds(start, total int) (int, int) {
+	end := start + bulkChunkSize
+	if end > total {
+		end = total
+	}
+	return start, end
+}
+
+// runBulkChunks runs fn over fixed-size slices of length-`total`, executing one
+// SQL statement per chunk via `exec`. queryFn rebuilds the SQL because the
+// trailing chunk has fewer placeholders. argsFn flattens one chunk's records.
+//
+// This factors the chunk loop out of every PutXxxBulk / AppendXxxBulk method
+// so the per-method body keeps below the S3776 cognitive-complexity ceiling.
+func runBulkChunks(
+	ctx context.Context,
+	exec dbExecutor,
+	total, cols int,
+	queryFn func(placeholders string) string,
+	argsFn func(start, end int) ([]any, error),
+) error {
+	for start := 0; start < total; start += bulkChunkSize {
+		s, e := chunkBounds(start, total)
+		args, err := argsFn(s, e)
+		if err != nil {
+			return err
+		}
+		query := queryFn(placeholders(e-s, cols))
+		if _, err := exec.ExecContext(ctx, query, args...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // nullTimeFromPtr returns a sql.NullTime that is Valid only when the
 // raw pointer is non-nil; the resulting time is normalised to UTC.
 func nullTimeFromPtr(t *time.Time) sql.NullTime {
@@ -247,6 +283,22 @@ func (s *Store) AppendMetricSnapshotsBulk(ctx context.Context, snapshots []stora
 	})
 }
 
+// serverLoadBulkArgs flattens one ServerLoadPointRecord into the bulk arg
+// slice for AppendServerLoadPointsBulk. Splitting it keeps the chunk loop
+// shallow (Sonar S3776).
+func serverLoadBulkArgs(r storage.ServerLoadPointRecord) []any {
+	return []any{
+		r.AgentID, r.CapturedAt.UTC(),
+		r.CPUPctAvg, r.CPUPctMax, r.MemPctAvg, r.MemPctMax,
+		r.DiskPctAvg, r.DiskPctMax, r.Load1M, r.Load5M, r.Load15M,
+		r.ConnectionsAvg, r.ConnectionsMax, r.ConnectionsMEAvg, r.ConnectionsDirectAvg,
+		r.ActiveUsersAvg, r.ActiveUsersMax,
+		r.ConnectionsTotal, r.ConnectionsBadTotal, r.HandshakeTimeoutsTotal,
+		r.DCCoverageMinPct, r.DCCoverageAvgPct,
+		r.HealthyUpstreams, r.TotalUpstreams, r.NetBytesSent, r.NetBytesRecv, r.SampleCount,
+	}
+}
+
 // AppendServerLoadPointsBulk inserts a batch of server-load points. Matches
 // the single-row INSERT ... ON CONFLICT (agent_id, captured_at) DO NOTHING
 // semantics so duplicate (agent,capture) pairs do not error.
@@ -256,41 +308,28 @@ func (s *Store) AppendServerLoadPointsBulk(ctx context.Context, records []storag
 	}
 	const cols = 27
 	return s.execInTx(ctx, func(exec dbExecutor) error {
-		for start := 0; start < len(records); start += bulkChunkSize {
-			end := start + bulkChunkSize
-			if end > len(records) {
-				end = len(records)
-			}
-			chunk := records[start:end]
-			args := make([]any, 0, len(chunk)*cols)
-			for _, r := range chunk {
-				args = append(args,
-					r.AgentID, r.CapturedAt.UTC(),
-					r.CPUPctAvg, r.CPUPctMax, r.MemPctAvg, r.MemPctMax,
-					r.DiskPctAvg, r.DiskPctMax, r.Load1M, r.Load5M, r.Load15M,
-					r.ConnectionsAvg, r.ConnectionsMax, r.ConnectionsMEAvg, r.ConnectionsDirectAvg,
-					r.ActiveUsersAvg, r.ActiveUsersMax,
-					r.ConnectionsTotal, r.ConnectionsBadTotal, r.HandshakeTimeoutsTotal,
-					r.DCCoverageMinPct, r.DCCoverageAvgPct,
-					r.HealthyUpstreams, r.TotalUpstreams, r.NetBytesSent, r.NetBytesRecv, r.SampleCount,
-				)
-			}
-			query := `INSERT INTO ts_server_load (
-					agent_id, captured_at,
-					cpu_pct_avg, cpu_pct_max, mem_pct_avg, mem_pct_max,
-					disk_pct_avg, disk_pct_max, load_1m, load_5m, load_15m,
-					connections_avg, connections_max, connections_me_avg, connections_direct_avg,
-					active_users_avg, active_users_max,
-					connections_total, connections_bad_total, handshake_timeouts_total,
-					dc_coverage_min_pct, dc_coverage_avg_pct,
-					healthy_upstreams, total_upstreams, net_bytes_sent, net_bytes_recv, sample_count
-				) VALUES ` + placeholders(len(chunk), cols) +
-				` ON CONFLICT (agent_id, captured_at) DO NOTHING`
-			if _, err := exec.ExecContext(ctx, query, args...); err != nil {
-				return err
-			}
-		}
-		return nil
+		return runBulkChunks(ctx, exec, len(records), cols,
+			func(ph string) string {
+				return `INSERT INTO ts_server_load (
+						agent_id, captured_at,
+						cpu_pct_avg, cpu_pct_max, mem_pct_avg, mem_pct_max,
+						disk_pct_avg, disk_pct_max, load_1m, load_5m, load_15m,
+						connections_avg, connections_max, connections_me_avg, connections_direct_avg,
+						active_users_avg, active_users_max,
+						connections_total, connections_bad_total, handshake_timeouts_total,
+						dc_coverage_min_pct, dc_coverage_avg_pct,
+						healthy_upstreams, total_upstreams, net_bytes_sent, net_bytes_recv, sample_count
+					) VALUES ` + ph +
+					` ON CONFLICT (agent_id, captured_at) DO NOTHING`
+			},
+			func(start, end int) ([]any, error) {
+				args := make([]any, 0, (end-start)*cols)
+				for _, r := range records[start:end] {
+					args = append(args, serverLoadBulkArgs(r)...)
+				}
+				return args, nil
+			},
+		)
 	})
 }
 

@@ -112,62 +112,14 @@ func (s *Server) runTimeseriesRollup(ctx context.Context) {
 
 	// 1. Hourly rollup: process all completed hours in the raw data window.
 	// Roll up the previous 2 hours to catch any late-arriving data.
-	for hoursAgo := 2; hoursAgo >= 1; hoursAgo-- {
-		bucketHour := now.Add(-time.Duration(hoursAgo) * time.Hour).Truncate(time.Hour)
-		if err := s.store.RollupServerLoadHourly(ctx, bucketHour); err != nil {
-			s.logger.Error("timeseries rollup failed", "bucket_hour", bucketHour.Format(time.RFC3339), "error", err)
-		}
-	}
+	s.rollupRecentHours(ctx, now)
 
-	// 2. Prune raw server load.
-	if retention.TSRawSeconds > 0 {
-		cutoff := now.Add(-time.Duration(retention.TSRawSeconds) * time.Second)
-		if pruned, err := s.store.PruneServerLoadPoints(ctx, cutoff); err != nil {
-			s.logger.Error("prune ts_server_load failed", "error", err)
-		} else if pruned > 0 {
-			s.logger.Info("pruned raw server load points", "count", pruned, "cutoff", cutoff.Format(time.RFC3339))
-		}
-	}
-
-	// 3. Prune DC health.
-	if retention.TSDCSeconds > 0 {
-		cutoff := now.Add(-time.Duration(retention.TSDCSeconds) * time.Second)
-		if pruned, err := s.store.PruneDCHealthPoints(ctx, cutoff); err != nil {
-			s.logger.Error("prune ts_dc_health failed", "error", err)
-		} else if pruned > 0 {
-			s.logger.Info("pruned DC health points", "count", pruned, "cutoff", cutoff.Format(time.RFC3339))
-		}
-	}
-
-	// 4. Prune hourly rollups.
-	if retention.TSHourlySeconds > 0 {
-		cutoff := now.Add(-time.Duration(retention.TSHourlySeconds) * time.Second)
-		if pruned, err := s.store.PruneServerLoadHourly(ctx, cutoff); err != nil {
-			s.logger.Error("prune ts_server_load_hourly failed", "error", err)
-		} else if pruned > 0 {
-			s.logger.Info("pruned hourly rollup points", "count", pruned, "cutoff", cutoff.Format(time.RFC3339))
-		}
-	}
-
-	// 5. Prune client IP history.
-	if retention.IPHistorySeconds > 0 {
-		cutoff := now.Add(-time.Duration(retention.IPHistorySeconds) * time.Second)
-		if pruned, err := s.store.PruneClientIPHistory(ctx, cutoff); err != nil {
-			s.logger.Error("prune client_ip_history failed", "error", err)
-		} else if pruned > 0 {
-			s.logger.Info("pruned client IP history entries", "count", pruned, "cutoff", cutoff.Format(time.RFC3339))
-		}
-	}
-
-	// 6. Prune telemt runtime events.
-	if retention.EventSeconds > 0 {
-		cutoff := now.Add(-time.Duration(retention.EventSeconds) * time.Second)
-		if pruned, err := s.store.PruneTelemetryRuntimeEvents(ctx, cutoff); err != nil {
-			s.logger.Error("prune telemt_runtime_events failed", "error", err)
-		} else if pruned > 0 {
-			s.logger.Info("pruned telemt runtime events", "count", pruned, "cutoff", cutoff.Format(time.RFC3339))
-		}
-	}
+	// 2-6. Prune raw timeseries / IP history / runtime events.
+	s.runInlineRetentionPrune(ctx, "ts_server_load", "raw server load points", now, retention.TSRawSeconds, s.store.PruneServerLoadPoints)
+	s.runInlineRetentionPrune(ctx, "ts_dc_health", "DC health points", now, retention.TSDCSeconds, s.store.PruneDCHealthPoints)
+	s.runInlineRetentionPrune(ctx, "ts_server_load_hourly", "hourly rollup points", now, retention.TSHourlySeconds, s.store.PruneServerLoadHourly)
+	s.runInlineRetentionPrune(ctx, "client_ip_history", "client IP history entries", now, retention.IPHistorySeconds, s.store.PruneClientIPHistory)
+	s.runInlineRetentionPrune(ctx, "telemt_runtime_events", "telemt runtime events", now, retention.EventSeconds, s.store.PruneTelemetryRuntimeEvents)
 
 	// 7. Prune audit events (P2-REL-04 / finding M-R2). Previously
 	// audit_events grew unbounded; now it honours AuditEventSeconds.
@@ -181,6 +133,41 @@ func (s *Server) runTimeseriesRollup(ctx context.Context) {
 	// targets are preserved so an in-flight rollout cannot be deleted
 	// mid-flight.
 	s.runRetentionPrune(ctx, "jobs", now, retention.JobsSeconds, s.store.PruneTerminalJobs)
+}
+
+// rollupRecentHours rebuilds hourly aggregates for the previous 2 hours so
+// late-arriving raw points are still folded in.
+func (s *Server) rollupRecentHours(ctx context.Context, now time.Time) {
+	for hoursAgo := 2; hoursAgo >= 1; hoursAgo-- {
+		bucketHour := now.Add(-time.Duration(hoursAgo) * time.Hour).Truncate(time.Hour)
+		if err := s.store.RollupServerLoadHourly(ctx, bucketHour); err != nil {
+			s.logger.Error("timeseries rollup failed", "bucket_hour", bucketHour.Format(time.RFC3339), "error", err)
+		}
+	}
+}
+
+// runInlineRetentionPrune mirrors runRetentionPrune for tables that have
+// table-specific log messages. It runs the prune only when ttlSeconds > 0,
+// logs a per-table error on failure, and a row count on success.
+func (s *Server) runInlineRetentionPrune(
+	ctx context.Context,
+	table, label string,
+	now time.Time,
+	ttlSeconds int,
+	pruneFn func(context.Context, time.Time) (int64, error),
+) {
+	if ttlSeconds <= 0 {
+		return
+	}
+	cutoff := now.Add(-time.Duration(ttlSeconds) * time.Second)
+	pruned, err := pruneFn(ctx, cutoff)
+	if err != nil {
+		s.logger.Error("prune "+table+" failed", "error", err)
+		return
+	}
+	if pruned > 0 {
+		s.logger.Info("pruned "+label, "count", pruned, "cutoff", cutoff.Format(time.RFC3339))
+	}
 }
 
 // runRetentionPrune is the shared helper used by audit_events and

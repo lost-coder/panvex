@@ -222,68 +222,11 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 		)
 	}
 
-	dcs := make([]*gatewayrpc.RuntimeDCSnapshot, 0, len(state.DCs))
-	for _, dc := range state.DCs {
-		dcs = append(dcs, &gatewayrpc.RuntimeDCSnapshot{
-			Dc:                 int32(dc.DC),
-			AvailableEndpoints: int32(dc.AvailableEndpoints),
-			AvailablePct:       dc.AvailablePct,
-			RequiredWriters:    int32(dc.RequiredWriters),
-			AliveWriters:       int32(dc.AliveWriters),
-			CoveragePct:        dc.CoveragePct,
-			RttMs:              dc.RTTMs,
-			Load:               int32(dc.Load),
-			FreshAliveWriters:  int32(dc.FreshAliveWriters),
-			FreshCoveragePct:   dc.FreshCoveragePct,
-		})
-	}
+	dcs := convertRuntimeDCs(state.DCs)
+	upstreamRows := convertUpstreamRows(state.Upstreams.Rows)
+	recentEvents := convertRecentEvents(state.RecentEvents)
 
-	upstreamRows := make([]*gatewayrpc.RuntimeUpstreamRowSnapshot, 0, len(state.Upstreams.Rows))
-	for _, upstream := range state.Upstreams.Rows {
-		upstreamRows = append(upstreamRows, &gatewayrpc.RuntimeUpstreamRowSnapshot{
-			UpstreamId:         int32(upstream.UpstreamID),
-			RouteKind:          upstream.RouteKind,
-			Address:            upstream.Address,
-			Healthy:            upstream.Healthy,
-			Fails:              int32(upstream.Fails),
-			EffectiveLatencyMs: upstream.EffectiveLatencyMs,
-			Weight:             int32(upstream.Weight),
-			LastCheckAgeSecs:   int32(upstream.LastCheckAgeSecs),
-			Scopes:             upstream.Scopes,
-		})
-	}
-
-	recentEvents := make([]*gatewayrpc.RuntimeEventSnapshot, 0, len(state.RecentEvents))
-	for _, event := range state.RecentEvents {
-		recentEvents = append(recentEvents, &gatewayrpc.RuntimeEventSnapshot{
-			Sequence:      event.Sequence,
-			TimestampUnix: event.TimestampUnix,
-			EventType:     event.EventType,
-			Context:       event.Context,
-		})
-	}
-
-	lifecycle := lifecycleStateForRuntime(state)
-	wasRestarting := false
-
-	a.mu.Lock()
-	if startupLifecycleRegressed(a.lastLifecycle, lifecycle) {
-		wasRestarting = true
-	}
-	previousInitializationActive := a.runtimeInitializationActive
-	currentInitializationActive := runtimeNeedsInitializationWatch(state)
-	if currentInitializationActive {
-		a.runtimeInitializationActive = true
-		a.runtimeInitializationCooldownUntil = time.Time{}
-	} else {
-		a.runtimeInitializationActive = false
-		if previousInitializationActive {
-			a.runtimeInitializationCooldownUntil = observedAt.UTC().Add(runtimeInitializationCooldown)
-		}
-	}
-	a.lastLifecycle = lifecycle
-	a.lastRuntimeUptime = state.UptimeSeconds
-	a.mu.Unlock()
+	wasRestarting := a.updateLifecycleState(state, observedAt)
 
 	snapshot := a.baseSnapshot(observedAt)
 	snapshot.ReadOnly = state.ReadOnly
@@ -300,7 +243,120 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 	snapshot.Metrics = map[string]uint64{
 		"connected_users": uint64(state.ConnectedUsers),
 	}
-	snapshot.Runtime = &gatewayrpc.RuntimeSnapshot{
+	snapshot.Runtime = buildRuntimeSnapshotProto(state, dcs, upstreamRows, recentEvents, wasRestarting)
+	snapshot.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{
+		State:               state.Diagnostics.State,
+		StateReason:         state.Diagnostics.StateReason,
+		SystemInfoJson:      state.Diagnostics.SystemInfoJSON,
+		EffectiveLimitsJson: state.Diagnostics.EffectiveLimitsJSON,
+		SecurityPostureJson: state.Diagnostics.SecurityPostureJSON,
+		MinimalAllJson:      state.Diagnostics.MinimalAllJSON,
+		MePoolJson:          state.Diagnostics.MEPoolJSON,
+		DcsJson:             state.Diagnostics.DcsJSON,
+	}
+	snapshot.RuntimeSecurityInventory = &gatewayrpc.RuntimeSecurityInventorySnapshot{
+		State:        state.SecurityInventory.State,
+		StateReason:  state.SecurityInventory.StateReason,
+		Enabled:      state.SecurityInventory.Enabled,
+		EntriesTotal: int32(state.SecurityInventory.EntriesTotal),
+		EntriesJson:  state.SecurityInventory.EntriesJSON,
+	}
+	snapshot.TotalActiveConnections = int32(state.ConnectionTotals.CurrentConnections)
+	snapshot.TotalActiveUsers = int32(state.ConnectionTotals.ActiveUsers)
+
+	return snapshot, nil
+}
+
+// convertRuntimeDCs converts internal DC entries to gateway protobuf snapshots.
+func convertRuntimeDCs(dcsIn []telemt.RuntimeDC) []*gatewayrpc.RuntimeDCSnapshot {
+	dcs := make([]*gatewayrpc.RuntimeDCSnapshot, 0, len(dcsIn))
+	for _, dc := range dcsIn {
+		dcs = append(dcs, &gatewayrpc.RuntimeDCSnapshot{
+			Dc:                 int32(dc.DC),
+			AvailableEndpoints: int32(dc.AvailableEndpoints),
+			AvailablePct:       dc.AvailablePct,
+			RequiredWriters:    int32(dc.RequiredWriters),
+			AliveWriters:       int32(dc.AliveWriters),
+			CoveragePct:        dc.CoveragePct,
+			RttMs:              dc.RTTMs,
+			Load:               int32(dc.Load),
+			FreshAliveWriters:  int32(dc.FreshAliveWriters),
+			FreshCoveragePct:   dc.FreshCoveragePct,
+		})
+	}
+	return dcs
+}
+
+// convertUpstreamRows converts upstream rows into gateway protobuf snapshots.
+func convertUpstreamRows(rows []telemt.RuntimeUpstream) []*gatewayrpc.RuntimeUpstreamRowSnapshot {
+	upstreamRows := make([]*gatewayrpc.RuntimeUpstreamRowSnapshot, 0, len(rows))
+	for _, upstream := range rows {
+		upstreamRows = append(upstreamRows, &gatewayrpc.RuntimeUpstreamRowSnapshot{
+			UpstreamId:         int32(upstream.UpstreamID),
+			RouteKind:          upstream.RouteKind,
+			Address:            upstream.Address,
+			Healthy:            upstream.Healthy,
+			Fails:              int32(upstream.Fails),
+			EffectiveLatencyMs: upstream.EffectiveLatencyMs,
+			Weight:             int32(upstream.Weight),
+			LastCheckAgeSecs:   int32(upstream.LastCheckAgeSecs),
+			Scopes:             upstream.Scopes,
+		})
+	}
+	return upstreamRows
+}
+
+// convertRecentEvents converts runtime events to gateway protobuf snapshots.
+func convertRecentEvents(events []telemt.RuntimeEvent) []*gatewayrpc.RuntimeEventSnapshot {
+	recentEvents := make([]*gatewayrpc.RuntimeEventSnapshot, 0, len(events))
+	for _, event := range events {
+		recentEvents = append(recentEvents, &gatewayrpc.RuntimeEventSnapshot{
+			Sequence:      event.Sequence,
+			TimestampUnix: event.TimestampUnix,
+			EventType:     event.EventType,
+			Context:       event.Context,
+		})
+	}
+	return recentEvents
+}
+
+// updateLifecycleState stores lifecycle/initialization changes under the
+// agent lock and returns whether the runtime appears to have restarted.
+func (a *Agent) updateLifecycleState(state telemt.RuntimeState, observedAt time.Time) bool {
+	lifecycle := lifecycleStateForRuntime(state)
+	wasRestarting := false
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if startupLifecycleRegressed(a.lastLifecycle, lifecycle) {
+		wasRestarting = true
+	}
+	previousInitializationActive := a.runtimeInitializationActive
+	currentInitializationActive := runtimeNeedsInitializationWatch(state)
+	if currentInitializationActive {
+		a.runtimeInitializationActive = true
+		a.runtimeInitializationCooldownUntil = time.Time{}
+	} else {
+		a.runtimeInitializationActive = false
+		if previousInitializationActive {
+			a.runtimeInitializationCooldownUntil = observedAt.UTC().Add(runtimeInitializationCooldown)
+		}
+	}
+	a.lastLifecycle = lifecycle
+	a.lastRuntimeUptime = state.UptimeSeconds
+	return wasRestarting
+}
+
+// buildRuntimeSnapshotProto assembles the runtime portion of a gateway snapshot.
+func buildRuntimeSnapshotProto(
+	state telemt.RuntimeState,
+	dcs []*gatewayrpc.RuntimeDCSnapshot,
+	upstreamRows []*gatewayrpc.RuntimeUpstreamRowSnapshot,
+	recentEvents []*gatewayrpc.RuntimeEventSnapshot,
+	wasRestarting bool,
+) *gatewayrpc.RuntimeSnapshot {
+	return &gatewayrpc.RuntimeSnapshot{
 		AcceptingNewConnections:   state.Gates.AcceptingNewConnections,
 		MeRuntimeReady:            state.Gates.MERuntimeReady,
 		Me2DcFallbackEnabled:      state.Gates.ME2DCFallbackEnabled,
@@ -362,27 +418,6 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 			AliveWriters:        int32(state.MeWritersSummary.AliveWriters),
 		},
 	}
-	snapshot.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{
-		State:               state.Diagnostics.State,
-		StateReason:         state.Diagnostics.StateReason,
-		SystemInfoJson:      state.Diagnostics.SystemInfoJSON,
-		EffectiveLimitsJson: state.Diagnostics.EffectiveLimitsJSON,
-		SecurityPostureJson: state.Diagnostics.SecurityPostureJSON,
-		MinimalAllJson:      state.Diagnostics.MinimalAllJSON,
-		MePoolJson:          state.Diagnostics.MEPoolJSON,
-		DcsJson:             state.Diagnostics.DcsJSON,
-	}
-	snapshot.RuntimeSecurityInventory = &gatewayrpc.RuntimeSecurityInventorySnapshot{
-		State:       state.SecurityInventory.State,
-		StateReason: state.SecurityInventory.StateReason,
-		Enabled:     state.SecurityInventory.Enabled,
-		EntriesTotal: int32(state.SecurityInventory.EntriesTotal),
-		EntriesJson: state.SecurityInventory.EntriesJSON,
-	}
-	snapshot.TotalActiveConnections = int32(state.ConnectionTotals.CurrentConnections)
-	snapshot.TotalActiveUsers = int32(state.ConnectionTotals.ActiveUsers)
-
-	return snapshot, nil
 }
 
 // RuntimeSnapshotInterval reports the desired runtime polling cadence for the current lifecycle state.
@@ -551,103 +586,135 @@ func (a *Agent) HandleJob(ctx context.Context, job *gatewayrpc.JobCommand, obser
 
 	switch job.GetAction() {
 	case "runtime.reload":
-		if err := a.telemt.ExecuteRuntimeReload(ctx); err != nil {
-			result.Message = err.Error()
-			return result
-		}
-
-		result.Success = true
-		result.Message = "runtime reloaded"
-		return result
+		return a.handleRuntimeReloadJob(ctx, result)
 	case "telemetry.refresh_diagnostics":
 		a.telemt.InvalidateSlowDataCache()
 		result.Success = true
 		result.Message = "diagnostics refresh requested"
 		return result
 	case "client.create", "client.update", jobActionRotateSecret, "client.delete":
-		var payload struct {
-			ClientID          string `json:"client_id"`
-			PreviousName      string `json:"previous_name"`
-			Name              string `json:"name"`
-			Secret            string `json:"secret"`
-			UserADTag         string `json:"user_ad_tag"`
-			Enabled           bool   `json:"enabled"`
-			MaxTCPConns       int    `json:"max_tcp_conns"`
-			MaxUniqueIPs      int    `json:"max_unique_ips"`
-			DataQuotaBytes    int64  `json:"data_quota_bytes"`
-			ExpirationRFC3339 string `json:"expiration_rfc3339"`
-		}
-		if err := json.Unmarshal([]byte(job.GetPayloadJson()), &payload); err != nil {
-			result.Message = fmt.Sprintf("invalid client payload: %v", err)
-			return result
-		}
-
-		managedClient := telemt.ManagedClient{
-			PreviousName:      payload.PreviousName,
-			Name:              payload.Name,
-			Secret:            payload.Secret,
-			UserADTag:         payload.UserADTag,
-			Enabled:           payload.Enabled,
-			MaxTCPConns:       payload.MaxTCPConns,
-			MaxUniqueIPs:      payload.MaxUniqueIPs,
-			DataQuotaBytes:    payload.DataQuotaBytes,
-			ExpirationRFC3339: payload.ExpirationRFC3339,
-		}
-
-		switch job.GetAction() {
-		case "client.create":
-			applyResult, err := a.telemt.CreateClient(ctx, managedClient)
-			if err != nil {
-				result.Message = err.Error()
-				return result
-			}
-			result.Success = true
-			result.Message = "client created"
-			result.ResultJson = marshalClientJobResult(applyResult)
-			a.setClientName(payload.ClientID, managedClient.Name)
-			return result
-		case "client.update", jobActionRotateSecret:
-			applyResult, err := a.telemt.UpdateClient(ctx, managedClient)
-			if err != nil {
-				result.Message = err.Error()
-				return result
-			}
-			result.Success = true
-			if job.GetAction() == jobActionRotateSecret {
-				result.Message = "client secret rotated"
-			} else {
-				result.Message = "client updated"
-			}
-			result.ResultJson = marshalClientJobResult(applyResult)
-			a.setClientName(payload.ClientID, managedClient.Name)
-			return result
-		default:
-			if err := a.telemt.DeleteClient(ctx, managedClient.Name); err != nil {
-				result.Message = err.Error()
-				return result
-			}
-			result.Success = true
-			result.Message = "client deleted"
-			a.deleteClientName(payload.ClientID)
-			return result
-		}
+		return a.handleClientJob(ctx, job, result)
 	case "agent.self-update":
-		var payload updater.Payload
-		if err := json.Unmarshal([]byte(job.GetPayloadJson()), &payload); err != nil {
-			result.Message = fmt.Sprintf("invalid update payload: %v", err)
-			return result
-		}
-		if err := updater.Execute(ctx, payload, slog.Default()); err != nil {
-			result.Message = err.Error()
-			return result
-		}
-		result.Success = true
-		result.Message = "self-update initiated"
-		return result
+		return a.handleSelfUpdateJob(ctx, job, result)
 	default:
 		result.Message = fmt.Sprintf("unsupported action %s", job.GetAction())
 		return result
 	}
+}
+
+// handleRuntimeReloadJob runs a runtime.reload job and returns the populated result.
+func (a *Agent) handleRuntimeReloadJob(ctx context.Context, result *gatewayrpc.JobResult) *gatewayrpc.JobResult {
+	if err := a.telemt.ExecuteRuntimeReload(ctx); err != nil {
+		result.Message = err.Error()
+		return result
+	}
+	result.Success = true
+	result.Message = "runtime reloaded"
+	return result
+}
+
+// clientJobPayload mirrors the JSON envelope shared by all client.* jobs.
+type clientJobPayload struct {
+	ClientID          string `json:"client_id"`
+	PreviousName      string `json:"previous_name"`
+	Name              string `json:"name"`
+	Secret            string `json:"secret"`
+	UserADTag         string `json:"user_ad_tag"`
+	Enabled           bool   `json:"enabled"`
+	MaxTCPConns       int    `json:"max_tcp_conns"`
+	MaxUniqueIPs      int    `json:"max_unique_ips"`
+	DataQuotaBytes    int64  `json:"data_quota_bytes"`
+	ExpirationRFC3339 string `json:"expiration_rfc3339"`
+}
+
+func (p clientJobPayload) toManagedClient() telemt.ManagedClient {
+	return telemt.ManagedClient{
+		PreviousName:      p.PreviousName,
+		Name:              p.Name,
+		Secret:            p.Secret,
+		UserADTag:         p.UserADTag,
+		Enabled:           p.Enabled,
+		MaxTCPConns:       p.MaxTCPConns,
+		MaxUniqueIPs:      p.MaxUniqueIPs,
+		DataQuotaBytes:    p.DataQuotaBytes,
+		ExpirationRFC3339: p.ExpirationRFC3339,
+	}
+}
+
+// handleClientJob dispatches client.create/update/rotate_secret/delete actions.
+func (a *Agent) handleClientJob(ctx context.Context, job *gatewayrpc.JobCommand, result *gatewayrpc.JobResult) *gatewayrpc.JobResult {
+	var payload clientJobPayload
+	if err := json.Unmarshal([]byte(job.GetPayloadJson()), &payload); err != nil {
+		result.Message = fmt.Sprintf("invalid client payload: %v", err)
+		return result
+	}
+	managedClient := payload.toManagedClient()
+
+	switch job.GetAction() {
+	case "client.create":
+		return a.handleClientCreateJob(ctx, payload, managedClient, result)
+	case "client.update", jobActionRotateSecret:
+		return a.handleClientUpdateJob(ctx, job, payload, managedClient, result)
+	default:
+		return a.handleClientDeleteJob(ctx, payload, managedClient, result)
+	}
+}
+
+func (a *Agent) handleClientCreateJob(ctx context.Context, payload clientJobPayload, managedClient telemt.ManagedClient, result *gatewayrpc.JobResult) *gatewayrpc.JobResult {
+	applyResult, err := a.telemt.CreateClient(ctx, managedClient)
+	if err != nil {
+		result.Message = err.Error()
+		return result
+	}
+	result.Success = true
+	result.Message = "client created"
+	result.ResultJson = marshalClientJobResult(applyResult)
+	a.setClientName(payload.ClientID, managedClient.Name)
+	return result
+}
+
+func (a *Agent) handleClientUpdateJob(ctx context.Context, job *gatewayrpc.JobCommand, payload clientJobPayload, managedClient telemt.ManagedClient, result *gatewayrpc.JobResult) *gatewayrpc.JobResult {
+	applyResult, err := a.telemt.UpdateClient(ctx, managedClient)
+	if err != nil {
+		result.Message = err.Error()
+		return result
+	}
+	result.Success = true
+	if job.GetAction() == jobActionRotateSecret {
+		result.Message = "client secret rotated"
+	} else {
+		result.Message = "client updated"
+	}
+	result.ResultJson = marshalClientJobResult(applyResult)
+	a.setClientName(payload.ClientID, managedClient.Name)
+	return result
+}
+
+func (a *Agent) handleClientDeleteJob(ctx context.Context, payload clientJobPayload, managedClient telemt.ManagedClient, result *gatewayrpc.JobResult) *gatewayrpc.JobResult {
+	if err := a.telemt.DeleteClient(ctx, managedClient.Name); err != nil {
+		result.Message = err.Error()
+		return result
+	}
+	result.Success = true
+	result.Message = "client deleted"
+	a.deleteClientName(payload.ClientID)
+	return result
+}
+
+// handleSelfUpdateJob runs the agent.self-update action.
+func (a *Agent) handleSelfUpdateJob(ctx context.Context, job *gatewayrpc.JobCommand, result *gatewayrpc.JobResult) *gatewayrpc.JobResult {
+	var payload updater.Payload
+	if err := json.Unmarshal([]byte(job.GetPayloadJson()), &payload); err != nil {
+		result.Message = fmt.Sprintf("invalid update payload: %v", err)
+		return result
+	}
+	if err := updater.Execute(ctx, payload, slog.Default()); err != nil {
+		result.Message = err.Error()
+		return result
+	}
+	result.Success = true
+	result.Message = "self-update initiated"
+	return result
 }
 
 func (a *Agent) findCompletedJobResult(jobID string, observedAt time.Time) (*gatewayrpc.JobResult, bool) {

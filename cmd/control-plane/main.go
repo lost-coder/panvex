@@ -180,30 +180,11 @@ func runServe(args []string) error {
 	logger := slog.New(server.NewSlogContextHandler(baseHandler))
 	slog.SetDefault(logger)
 
-	// P3-OBS-01: initialize OpenTelemetry tracing if an OTLP endpoint
-	// is configured. When OTEL_EXPORTER_OTLP_ENDPOINT is unset this is
-	// a cheap no-op so production deployments that do not run a
-	// collector pay zero cost.
-	otelShutdown, err := otelcp.Init(context.Background(), otelcp.Config{
-		Endpoint:       strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")),
-		Insecure:       strings.ToLower(strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_INSECURE"))) != "false",
-		ServiceName:    "panvex-control-plane",
-		ServiceVersion: Version,
-	})
-	if err != nil {
-		// Tracing init must never block startup — log and run unsampled.
-		slog.Warn("otel init failed; continuing without tracing", "error", err)
-	}
+	otelShutdown := initOtelTracing()
 	// Shutdown BEFORE store.Close/api.Close so exporter can flush while
 	// the process is still otherwise healthy. defer LIFO => this runs
 	// first among the defers registered below it.
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := otelShutdown(shutdownCtx); err != nil {
-			slog.Warn("otel shutdown error", "error", err)
-		}
-	}()
+	defer shutdownOtel(otelShutdown)
 
 	store, err := openStore(options.Storage)
 	if err != nil {
@@ -217,33 +198,7 @@ func runServe(args []string) error {
 	}
 	restartRequests := make(chan struct{}, 1)
 
-	// The Prometheus /metrics scrape endpoint is a silent opt-in: when the
-	// operator sets PANVEX_METRICS_SCRAPE_TOKEN the route is registered and
-	// requires that bearer token; when unset, nothing is exposed. Accepted
-	// only from the environment — never a CLI flag — so the secret does not
-	// leak into process listings or shell history.
-	metricsScrapeToken := strings.TrimSpace(os.Getenv("PANVEX_METRICS_SCRAPE_TOKEN"))
-
-	api := server.New(server.Options{
-		Now:          time.Now,
-		Store:        store,
-		Logger:       logger,
-		UIFiles:      embeddedUIFiles(),
-		PanelRuntime: panelRuntime,
-		TrustedProxyCIDRs: options.TrustedProxyCIDRs,
-		EncryptionKey: options.EncryptionKey,
-		Version:   Version,
-		CommitSHA: CommitSHA,
-		BuildTime: BuildTime,
-		MetricsScrapeToken: metricsScrapeToken,
-		RequestRestart: func() error {
-			select {
-			case restartRequests <- struct{}{}:
-			default:
-			}
-			return nil
-		},
-	})
+	api := newAPIServer(options, store, logger, panelRuntime, restartRequests)
 	// Shutdown order (enforced by defer stack, LIFO):
 	//   1. HTTP server Shutdown — stops accepting new panel/API requests so
 	//      no new audit or metric events are produced.
@@ -281,52 +236,136 @@ func runServe(args []string) error {
 	grpcServer := newControlPlaneGRPCServer(api.GRPCTLSConfig())
 	gatewayrpc.RegisterAgentGatewayServer(grpcServer, api)
 
-	// shutdownServers enforces the documented ordering: HTTP first (stop
-	// accepting requests), then gRPC (drain streams). api.Close and
-	// store.Close run after this via the defer stack in this function.
-	//
-	// Per-step budgets (must sum to less than the deployment's K8s
-	// terminationGracePeriodSeconds — see controlPlaneShutdownGraceMin):
-	//   HTTP Shutdown            httpShutdownBudget
-	//   gRPC GracefulStop        grpcShutdownBudget (force-stopped after)
-	//   batchWriter drain        10s in api.Close, see Server.Close
-	//
-	// Each step records its latency so a wedged dependency is visible in
-	// logs even when the bounded budget hides it from end users.
 	shutdownServers := func() {
-		httpStart := time.Now()
-		httpCtx, cancel := context.WithTimeout(context.Background(), httpShutdownBudget)
-		defer cancel()
-		if err := httpServer.Shutdown(httpCtx); err != nil {
-			slog.Warn("http shutdown error",
-				"error", err,
-				"latency", time.Since(httpStart),
-				"budget", httpShutdownBudget,
-			)
-		} else {
-			slog.Info("http shutdown complete", "latency", time.Since(httpStart))
-		}
-
-		grpcStart := time.Now()
-		grpcDone := make(chan struct{})
-		go func() {
-			grpcServer.GracefulStop()
-			close(grpcDone)
-		}()
-		select {
-		case <-grpcDone:
-			slog.Info("grpc shutdown complete", "latency", time.Since(grpcStart))
-		case <-time.After(grpcShutdownBudget):
-			grpcServer.Stop()
-			slog.Warn("grpc shutdown forced after budget",
-				"budget", grpcShutdownBudget,
-				"latency", time.Since(grpcStart),
-			)
-		}
-		_ = grpcListener.Close()
+		shutdownHTTPAndGRPC(httpServer, grpcServer, grpcListener)
 	}
 
 	httpErrors := make(chan error, 4)
+	startHTTPServer(httpServer, panelRuntime, httpErrors)
+	startGRPCServer(grpcServer, grpcListener, panelRuntime.GRPCListenAddress, httpErrors)
+
+	return waitForServeShutdown(restartRequests, httpErrors, shutdownServers)
+}
+
+// initOtelTracing initialises OpenTelemetry exporters from environment vars.
+// P3-OBS-01: when OTEL_EXPORTER_OTLP_ENDPOINT is unset this is a cheap no-op
+// so production deployments that do not run a collector pay zero cost.
+func initOtelTracing() func(context.Context) error {
+	otelShutdown, err := otelcp.Init(context.Background(), otelcp.Config{
+		Endpoint:       strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")),
+		Insecure:       strings.ToLower(strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_INSECURE"))) != "false",
+		ServiceName:    "panvex-control-plane",
+		ServiceVersion: Version,
+	})
+	if err != nil {
+		// Tracing init must never block startup — log and run unsampled.
+		slog.Warn("otel init failed; continuing without tracing", "error", err)
+	}
+	return otelShutdown
+}
+
+// shutdownOtel flushes the OTel exporter under a bounded timeout.
+func shutdownOtel(otelShutdown func(context.Context) error) {
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := otelShutdown(shutdownCtx); err != nil {
+		slog.Warn("otel shutdown error", "error", err)
+	}
+}
+
+// newAPIServer wires the high-level server.Server with options, runtime
+// dependencies, and the restart-request signalling channel.
+func newAPIServer(
+	options serveConfig,
+	store storage.Store,
+	logger *slog.Logger,
+	panelRuntime server.PanelRuntime,
+	restartRequests chan<- struct{},
+) *server.Server {
+	// The Prometheus /metrics scrape endpoint is a silent opt-in: when the
+	// operator sets PANVEX_METRICS_SCRAPE_TOKEN the route is registered and
+	// requires that bearer token; when unset, nothing is exposed. Accepted
+	// only from the environment — never a CLI flag — so the secret does not
+	// leak into process listings or shell history.
+	metricsScrapeToken := strings.TrimSpace(os.Getenv("PANVEX_METRICS_SCRAPE_TOKEN"))
+
+	return server.New(server.Options{
+		Now:                time.Now,
+		Store:              store,
+		Logger:             logger,
+		UIFiles:            embeddedUIFiles(),
+		PanelRuntime:       panelRuntime,
+		TrustedProxyCIDRs:  options.TrustedProxyCIDRs,
+		EncryptionKey:      options.EncryptionKey,
+		Version:            Version,
+		CommitSHA:          CommitSHA,
+		BuildTime:          BuildTime,
+		MetricsScrapeToken: metricsScrapeToken,
+		RequestRestart: func() error {
+			select {
+			case restartRequests <- struct{}{}:
+			default:
+			}
+			return nil
+		},
+	})
+}
+
+// shutdownHTTPAndGRPC enforces the documented shutdown ordering: HTTP first
+// (stop accepting requests), then gRPC (drain streams). api.Close and
+// store.Close run after this via the defer stack in runServe.
+//
+// Per-step budgets (must sum to less than the deployment's K8s
+// terminationGracePeriodSeconds — see controlPlaneShutdownGraceMin):
+//
+//	HTTP Shutdown            httpShutdownBudget
+//	gRPC GracefulStop        grpcShutdownBudget (force-stopped after)
+//	batchWriter drain        10s in api.Close, see Server.Close
+//
+// Each step records its latency so a wedged dependency is visible in logs
+// even when the bounded budget hides it from end users.
+func shutdownHTTPAndGRPC(httpServer *http.Server, grpcServer *grpc.Server, grpcListener net.Listener) {
+	shutdownHTTPServer(httpServer)
+	shutdownGRPCServer(grpcServer)
+	_ = grpcListener.Close()
+}
+
+func shutdownHTTPServer(httpServer *http.Server) {
+	httpStart := time.Now()
+	httpCtx, cancel := context.WithTimeout(context.Background(), httpShutdownBudget)
+	defer cancel()
+	if err := httpServer.Shutdown(httpCtx); err != nil {
+		slog.Warn("http shutdown error",
+			"error", err,
+			"latency", time.Since(httpStart),
+			"budget", httpShutdownBudget,
+		)
+		return
+	}
+	slog.Info("http shutdown complete", "latency", time.Since(httpStart))
+}
+
+func shutdownGRPCServer(grpcServer *grpc.Server) {
+	grpcStart := time.Now()
+	grpcDone := make(chan struct{})
+	go func() {
+		grpcServer.GracefulStop()
+		close(grpcDone)
+	}()
+	select {
+	case <-grpcDone:
+		slog.Info("grpc shutdown complete", "latency", time.Since(grpcStart))
+	case <-time.After(grpcShutdownBudget):
+		grpcServer.Stop()
+		slog.Warn("grpc shutdown forced after budget",
+			"budget", grpcShutdownBudget,
+			"latency", time.Since(grpcStart),
+		)
+	}
+}
+
+// startHTTPServer launches the HTTP server in its own goroutine.
+func startHTTPServer(httpServer *http.Server, panelRuntime server.PanelRuntime, httpErrors chan<- error) {
 	go func() {
 		slog.Info("http server listening", "address", panelRuntime.HTTPListenAddress)
 		if panelRuntime.TLSMode == "direct" {
@@ -335,12 +374,23 @@ func runServe(args []string) error {
 		}
 		httpErrors <- httpServer.ListenAndServe()
 	}()
+}
 
-	slog.Info("grpc server listening", "address", panelRuntime.GRPCListenAddress)
+// startGRPCServer launches the gRPC server in its own goroutine.
+func startGRPCServer(grpcServer *grpc.Server, grpcListener net.Listener, addr string, httpErrors chan<- error) {
+	slog.Info("grpc server listening", "address", addr)
 	go func() {
 		httpErrors <- grpcServer.Serve(grpcListener)
 	}()
+}
 
+// waitForServeShutdown blocks until either a restart is requested or one of
+// the running servers errors, then triggers shutdown and returns the cause.
+func waitForServeShutdown(
+	restartRequests <-chan struct{},
+	httpErrors <-chan error,
+	shutdownServers func(),
+) error {
 	for {
 		select {
 		case <-restartRequests:

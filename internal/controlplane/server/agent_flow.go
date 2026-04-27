@@ -629,54 +629,68 @@ func dcHealthPointsFromSnapshot(agent Agent, snapshot agentSnapshot) []storage.D
 }
 
 func (s *Server) applyClientUsageSnapshot(ctx context.Context, agentID string, clients []clientUsageSnapshot) {
-	// Determine whether the traffic deltas in this batch should be applied.
-	// All ClientUsageSnapshot entries produced by a single agent tick share
-	// the same seq — inspect the first non-zero value.
-	//
-	// Dedup rules (P2-LOG-06 / L-07):
-	//   * seq == 0 on the wire: legacy agent, fall back to unconditional
-	//     accumulation (old behavior).
-	//   * seq <= lastSeen: duplicate / replay after stream reconnect —
-	//     skip deltas, but still refresh live gauges.
-	//   * lastSeen > 0 && seq == 1: agent restarted with zero-ed counters —
-	//     treat as baseline, skip deltas, just record new seq.
-	//   * otherwise: accept and accumulate.
-	batchSeq := uint64(0)
+	applyTrafficDelta := s.shouldApplyClientUsageDelta(agentID, clients)
+
+	seen, toPersist := s.mergeClientUsageBatch(agentID, clients, applyTrafficDelta)
+	s.persistClientUsageRecords(ctx, toPersist)
+	s.zeroLiveGaugesForUntouchedClients(agentID, seen)
+}
+
+// shouldApplyClientUsageDelta evaluates the seq-dedup rules (P2-LOG-06 / L-07)
+// and returns whether traffic deltas in the batch should be accumulated.
+// As a side effect it advances or rewinds s.lastUsageSeq for this agent.
+//
+// Dedup rules:
+//   - seq == 0 on the wire: legacy agent, fall back to unconditional
+//     accumulation (old behavior).
+//   - seq <= lastSeen: duplicate / replay after stream reconnect — skip
+//     deltas, but still refresh live gauges.
+//   - lastSeen > 0 && seq == 1: agent restarted with zero-ed counters — treat
+//     as baseline, skip deltas, just record new seq.
+//   - otherwise: accept and accumulate.
+func (s *Server) shouldApplyClientUsageDelta(agentID string, clients []clientUsageSnapshot) bool {
+	batchSeq := firstNonZeroSeq(clients)
+	if batchSeq == 0 {
+		return true
+	}
+	lastSeen := s.lastUsageSeq[agentID]
+	switch {
+	case lastSeen > 0 && batchSeq == 1:
+		// Agent restart: counters reset to zero on the agent side, so the
+		// incoming "delta" is actually an absolute baseline. Skip addition to
+		// avoid double-counting and rewind the CP-side cursor so subsequent
+		// in-order deltas (seq 2, 3, ...) are accepted.
+		s.lastUsageSeq[agentID] = 1
+		return false
+	case batchSeq <= lastSeen:
+		// Duplicate or stale (in-flight retry, out-of-order reconnect). Live
+		// gauges may still be refreshed below, but do not re-accumulate.
+		return false
+	default:
+		s.lastUsageSeq[agentID] = batchSeq
+		return true
+	}
+}
+
+// firstNonZeroSeq returns the first usage.Seq encountered across the batch,
+// or zero if every entry omits the field (legacy wire format).
+func firstNonZeroSeq(clients []clientUsageSnapshot) uint64 {
 	for _, usage := range clients {
 		if usage.Seq != 0 {
-			batchSeq = usage.Seq
-			break
+			return usage.Seq
 		}
 	}
+	return 0
+}
 
-	applyTrafficDelta := true
-	if batchSeq > 0 {
-		lastSeen := s.lastUsageSeq[agentID]
-		switch {
-		case lastSeen > 0 && batchSeq == 1:
-			// Agent restart: counters reset to zero on the agent side, so
-			// the incoming "delta" is actually an absolute baseline.
-			// Skip addition to avoid double-counting and rewind the
-			// CP-side cursor so subsequent in-order deltas (seq 2, 3, ...)
-			// are accepted.
-			applyTrafficDelta = false
-			s.lastUsageSeq[agentID] = 1
-		case batchSeq <= lastSeen:
-			// Duplicate or stale (in-flight retry, out-of-order reconnect).
-			// Live gauges may still be refreshed below, but do not
-			// re-accumulate the delta.
-			applyTrafficDelta = false
-		default:
-			s.lastUsageSeq[agentID] = batchSeq
-		}
-	}
-
+// mergeClientUsageBatch updates s.clientUsage for every entry in the batch
+// and returns the seen-set plus the list of records to persist write-through.
+//
+// Persisted backing lets clientUsage survive a panel restart — otherwise each
+// adopted client would snap to zero bytes and wait for the next agent tick,
+// which only carries a single polling interval worth of delta.
+func (s *Server) mergeClientUsageBatch(agentID string, clients []clientUsageSnapshot, applyTrafficDelta bool) (map[string]struct{}, []storage.ClientUsageRecord) {
 	seen := make(map[string]struct{}, len(clients))
-	// Collect write-through targets to persist after we've finished
-	// mutating the in-memory map. Persisted backing lets clientUsage
-	// survive a panel restart — otherwise each adopted client would
-	// snap to zero bytes and wait for the next agent tick, which only
-	// carries a single polling interval worth of delta.
 	toPersist := make([]storage.ClientUsageRecord, 0, len(clients))
 	for _, usage := range clients {
 		seen[usage.ClientID] = struct{}{}
@@ -704,15 +718,28 @@ func (s *Server) applyClientUsageSnapshot(ctx context.Context, agentID string, c
 			ObservedAt:       current.ObservedAt,
 		})
 	}
-	if s.store != nil {
-		for _, rec := range toPersist {
-			if err := s.store.UpsertClientUsage(ctx, rec); err != nil {
-				s.logger.Warn("persist client_usage",
-					"client_id", rec.ClientID, "agent_id", rec.AgentID, "error", err)
-			}
+	return seen, toPersist
+}
+
+// persistClientUsageRecords write-throughs the merged usage state to storage
+// (when configured). Per-row failures are logged but never abort the loop.
+func (s *Server) persistClientUsageRecords(ctx context.Context, toPersist []storage.ClientUsageRecord) {
+	if s.store == nil {
+		return
+	}
+	for _, rec := range toPersist {
+		if err := s.store.UpsertClientUsage(ctx, rec); err != nil {
+			s.logger.Warn("persist client_usage",
+				"client_id", rec.ClientID, "agent_id", rec.AgentID, "error", err)
 		}
 	}
+}
 
+// zeroLiveGaugesForUntouchedClients zeros the live connection/IP gauges of
+// any client that this agent did not include in the snapshot. Accumulated
+// traffic is preserved — deleting the entry would lose the seeded/historical
+// total.
+func (s *Server) zeroLiveGaugesForUntouchedClients(agentID string, seen map[string]struct{}) {
 	for clientID, usageByAgent := range s.clientUsage {
 		current, ok := usageByAgent[agentID]
 		if !ok {
@@ -721,9 +748,6 @@ func (s *Server) applyClientUsageSnapshot(ctx context.Context, agentID string, c
 		if _, ok := seen[clientID]; ok {
 			continue
 		}
-		// Client was not in this snapshot (no changes). Zero out live
-		// gauges (connections, IPs) but preserve accumulated traffic —
-		// deleting the entry would lose the seeded/historical total.
 		current.ActiveTCPConns = 0
 		current.ActiveUniqueIPs = 0
 		usageByAgent[agentID] = current
