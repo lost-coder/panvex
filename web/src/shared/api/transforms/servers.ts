@@ -306,8 +306,7 @@ export function transformServerDetail(
     }));
 
   // Build systemInfo from diagnostics if available
-  const sysInfoRaw =
-    (detail.diagnostics?.system_info as Record<string, unknown>) ?? {};
+  const sysInfoRaw = detail.diagnostics?.system_info ?? {};
   const systemInfo: ServerDetailPageProps["server"]["systemInfo"] = {
     version: String(sysInfoRaw.version ?? agent?.version ?? ""),
     targetArch: String(sysInfoRaw.target_arch ?? ""),
@@ -328,10 +327,7 @@ export function transformServerDetail(
         : 0,
   };
 
-  const mePool = transformMePool(
-    detail.diagnostics?.me_pool as Record<string, unknown>,
-    runtime,
-  );
+  const mePool = transformMePool(detail.diagnostics?.me_pool, runtime);
 
   return {
     id: agent?.id ?? "",
@@ -374,11 +370,12 @@ export function transformAgentConnection(
   const recovery = agent.certificate_recovery;
 
   return {
-    presenceState: (agent.presence_state === "online"
-      ? "online"
-      : agent.presence_state === "degraded"
-        ? "degraded"
-        : "offline") as AgentConnectionData["presenceState"],
+    presenceState:
+      agent.presence_state === "online"
+        ? "online"
+        : agent.presence_state === "degraded"
+          ? "degraded"
+          : "offline",
     lastSeenAt: formatLastSeen(lastSeen),
     agentId: agent.id,
     version: agent.version || "unknown",
