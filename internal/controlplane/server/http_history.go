@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 const (
@@ -86,6 +88,15 @@ func (s *Server) handleDCHealthHistory() http.HandlerFunc {
 	}
 }
 
+// clientIPRow is the public shape returned by handleClientIPHistory.
+// First/last seen are aggregated across nodes so the same physical IP
+// only shows up once per client even when several agents report it.
+type clientIPRow struct {
+	IPAddress string    `json:"ip_address"`
+	FirstSeen time.Time `json:"first_seen"`
+	LastSeen  time.Time `json:"last_seen"`
+}
+
 func (s *Server) handleClientIPHistory() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if _, _, err := s.requireSession(r); err != nil {
@@ -107,54 +118,13 @@ func (s *Server) handleClientIPHistory() http.HandlerFunc {
 
 		records, err := s.store.ListClientIPHistory(r.Context(), clientID, from, to)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
-		// client_ip_history is keyed by (agent_id, client_id, ip_address),
-		// so one physical IP seen on N nodes shows up as N rows. Collapse
-		// here by IP — first_seen = earliest sighting across nodes,
-		// last_seen = most recent — so the card shows each IP once.
-		type ipRow struct {
-			IPAddress string    `json:"ip_address"`
-			FirstSeen time.Time `json:"first_seen"`
-			LastSeen  time.Time `json:"last_seen"`
-		}
-		byIP := make(map[string]*ipRow, len(records))
-		for _, r := range records {
-			row, ok := byIP[r.IPAddress]
-			if !ok {
-				byIP[r.IPAddress] = &ipRow{
-					IPAddress: r.IPAddress,
-					FirstSeen: r.FirstSeen,
-					LastSeen:  r.LastSeen,
-				}
-				continue
-			}
-			if r.FirstSeen.Before(row.FirstSeen) {
-				row.FirstSeen = r.FirstSeen
-			}
-			if r.LastSeen.After(row.LastSeen) {
-				row.LastSeen = r.LastSeen
-			}
-		}
-		ips := make([]ipRow, 0, len(byIP))
-		for _, row := range byIP {
-			ips = append(ips, *row)
-		}
-		sort.Slice(ips, func(i, j int) bool { return ips[i].LastSeen.After(ips[j].LastSeen) })
-		// Q4.U-P-04: cap the response. A high-cardinality client (open
-		// proxy / botnet target) can otherwise produce a multi-megabyte
-		// payload. ?limit= overrides up to defaultClientIPHistoryMax.
+
+		ips := collapseIPHistoryByIP(records)
 		totalUnique := len(ips)
-		limit := defaultClientIPHistoryLimit
-		if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
-			if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
-				if parsed > defaultClientIPHistoryMax {
-					parsed = defaultClientIPHistoryMax
-				}
-				limit = parsed
-			}
-		}
+		limit := parseClientIPHistoryLimit(r)
 		truncated := false
 		if len(ips) > limit {
 			ips = ips[:limit]
@@ -167,6 +137,54 @@ func (s *Server) handleClientIPHistory() http.HandlerFunc {
 			"limit":        limit,
 		})
 	}
+}
+
+// collapseIPHistoryByIP folds the per-(agent, client, ip) rows into one
+// row per IP — first_seen is the earliest sighting across nodes,
+// last_seen the most recent — and sorts by most-recently-seen first.
+func collapseIPHistoryByIP(records []storage.ClientIPHistoryRecord) []clientIPRow {
+	byIP := make(map[string]*clientIPRow, len(records))
+	for _, rec := range records {
+		row, ok := byIP[rec.IPAddress]
+		if !ok {
+			byIP[rec.IPAddress] = &clientIPRow{
+				IPAddress: rec.IPAddress,
+				FirstSeen: rec.FirstSeen,
+				LastSeen:  rec.LastSeen,
+			}
+			continue
+		}
+		if rec.FirstSeen.Before(row.FirstSeen) {
+			row.FirstSeen = rec.FirstSeen
+		}
+		if rec.LastSeen.After(row.LastSeen) {
+			row.LastSeen = rec.LastSeen
+		}
+	}
+	ips := make([]clientIPRow, 0, len(byIP))
+	for _, row := range byIP {
+		ips = append(ips, *row)
+	}
+	sort.Slice(ips, func(i, j int) bool { return ips[i].LastSeen.After(ips[j].LastSeen) })
+	return ips
+}
+
+// parseClientIPHistoryLimit honours the operator's ?limit= override
+// while clamping to defaultClientIPHistoryMax (Q4.U-P-04: a high-
+// cardinality client can otherwise produce a multi-megabyte payload).
+func parseClientIPHistoryLimit(r *http.Request) int {
+	raw := strings.TrimSpace(r.URL.Query().Get("limit"))
+	if raw == "" {
+		return defaultClientIPHistoryLimit
+	}
+	parsed, err := strconv.Atoi(raw)
+	if err != nil || parsed <= 0 {
+		return defaultClientIPHistoryLimit
+	}
+	if parsed > defaultClientIPHistoryMax {
+		return defaultClientIPHistoryMax
+	}
+	return parsed
 }
 
 // Q4.U-P-04: top-N defaults for the per-client IP history endpoint.
