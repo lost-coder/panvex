@@ -38,8 +38,7 @@ export function StatusBeacon({
         className,
       )}
       style={{ backgroundColor: "currentColor" }}
-      role="img"
-      aria-label={`Beacon: ${status}`}
+      aria-hidden="true"
     />
   );
 }

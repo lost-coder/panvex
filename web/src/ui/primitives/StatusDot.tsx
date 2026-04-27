@@ -26,8 +26,7 @@ export function StatusDot({ status, size = "sm", animated = false, className }: 
         animated && "animate-breathe",
         className,
       )}
-      role="img"
-      aria-label={`Status: ${status}`}
+      aria-hidden="true"
     />
   );
 }
