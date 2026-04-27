@@ -36,7 +36,7 @@ export interface AppShellProps {
 }
 
 function readStoredExpanded(): boolean {
-  if (typeof globalThis.window === "undefined") return false;
+  if (globalThis.window === undefined) return false;
   try {
     return globalThis.localStorage.getItem(SIDEBAR_PREF_KEY) === "true";
   } catch {
@@ -63,7 +63,7 @@ export function AppShell({
   const [expanded, setExpanded] = useState<boolean>(readStoredExpanded);
 
   useEffect(() => {
-    if (typeof globalThis.window === "undefined") return;
+    if (globalThis.window === undefined) return;
     try {
       globalThis.localStorage.setItem(SIDEBAR_PREF_KEY, String(expanded));
     } catch {

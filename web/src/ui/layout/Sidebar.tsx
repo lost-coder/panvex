@@ -95,6 +95,14 @@ export function Sidebar({
       >
         {items.map((item) => {
           const isActive = item.id === activeId;
+          const activeAccent = isActive
+            ? cn(
+                "bg-accent/10 text-accent",
+                expanded
+                  ? "before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[2px] before:bg-accent before:rounded-r"
+                  : "before:absolute before:-left-[10px] before:top-2 before:bottom-2 before:w-[2px] before:bg-accent before:rounded-r",
+              )
+            : "text-fg-muted hover:text-fg hover:bg-bg-hover";
           return (
             <div key={item.id} className="relative group">
               <button
@@ -108,14 +116,7 @@ export function Sidebar({
                   expanded
                     ? "w-full gap-3 h-11 px-3 text-sm"
                     : "justify-center h-11 w-11 text-lg",
-                  isActive
-                    ? cn(
-                        "bg-accent/10 text-accent",
-                        expanded
-                          ? "before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[2px] before:bg-accent before:rounded-r"
-                          : "before:absolute before:-left-[10px] before:top-2 before:bottom-2 before:w-[2px] before:bg-accent before:rounded-r",
-                      )
-                    : "text-fg-muted hover:text-fg hover:bg-bg-hover",
+                  activeAccent,
                 )}
               >
                 <span className="shrink-0 flex items-center justify-center" aria-hidden="true">
