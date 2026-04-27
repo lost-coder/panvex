@@ -247,32 +247,32 @@ func (s *Store) AppendMetricSnapshotsBulk(ctx context.Context, snapshots []stora
 	}
 	const cols = 5
 	return s.execInTx(ctx, func(exec dbExecutor) error {
-		for start := 0; start < len(snapshots); start += bulkChunkSize {
-			end := start + bulkChunkSize
-			if end > len(snapshots) {
-				end = len(snapshots)
-			}
-			chunk := snapshots[start:end]
-			args := make([]any, 0, len(chunk)*cols)
-			for _, snapshot := range chunk {
-				valuesJSON, err := encodeJSON(snapshot.Values)
-				if err != nil {
-					return err
-				}
-				args = append(args,
-					snapshot.ID, snapshot.AgentID, snapshot.InstanceID,
-					toUnix(snapshot.CapturedAt), valuesJSON,
-				)
-			}
-			query := fmt.Sprintf(
-				`INSERT INTO metric_snapshots (id, agent_id, instance_id, captured_at_unix, "values") VALUES %s`,
-				rowPlaceholders(len(chunk), cols))
-			if _, err := exec.ExecContext(ctx, query, args...); err != nil {
-				return err
-			}
-		}
-		return nil
+		return runBulkChunks(ctx, exec, len(snapshots), cols,
+			func(placeholders string) string {
+				return fmt.Sprintf(
+					`INSERT INTO metric_snapshots (id, agent_id, instance_id, captured_at_unix, "values") VALUES %s`,
+					placeholders)
+			},
+			func(start, end int) ([]any, error) {
+				return metricSnapshotChunkArgs(snapshots[start:end], cols)
+			},
+		)
 	})
+}
+
+func metricSnapshotChunkArgs(chunk []storage.MetricSnapshotRecord, cols int) ([]any, error) {
+	args := make([]any, 0, len(chunk)*cols)
+	for _, snapshot := range chunk {
+		valuesJSON, err := encodeJSON(snapshot.Values)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args,
+			snapshot.ID, snapshot.AgentID, snapshot.InstanceID,
+			toUnix(snapshot.CapturedAt), valuesJSON,
+		)
+	}
+	return args, nil
 }
 
 // serverLoadBulkArgs flattens one ServerLoadPointRecord into the bulk arg

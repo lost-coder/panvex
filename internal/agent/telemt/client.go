@@ -713,6 +713,36 @@ func (c *Client) loadSlowRuntimeStateForFetch(ctx context.Context) (slowRuntimeS
 
 // and a non-nil error only when the required /v1/system/info payload itself is
 // unreachable. See P2-REL-07.
+// upstreamStatusResponse mirrors the /v1/stats/upstreams payload that
+// fetchSlowRuntimeState consumes. Hoisted to package scope so helper
+// functions can return it without redeclaring the anonymous struct.
+type upstreamStatusResponse struct {
+	Summary struct {
+		ConfiguredTotal int `json:"configured_total"`
+		HealthyTotal    int `json:"healthy_total"`
+		UnhealthyTotal  int `json:"unhealthy_total"`
+		DirectTotal     int `json:"direct_total"`
+		SOCKS5Total     int `json:"socks5_total"`
+	} `json:"summary"`
+	Upstreams []struct {
+		UpstreamID         int     `json:"upstream_id"`
+		RouteKind          string  `json:"route_kind"`
+		Address            string  `json:"address"`
+		Healthy            bool    `json:"healthy"`
+		Fails              int     `json:"fails"`
+		EffectiveLatencyMs float64 `json:"effective_latency_ms"`
+		Weight             int     `json:"weight"`
+		LastCheckAgeSecs   int     `json:"last_check_age_secs"`
+		Scopes             any     `json:"scopes"`
+	} `json:"upstreams"`
+}
+
+type recentEventsResponse struct {
+	Enabled bool             `json:"enabled"`
+	Reason  string           `json:"reason"`
+	Data    recentEventsData `json:"data"`
+}
+
 func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, bool, error) {
 	systemInfo, err := c.getJSONPayload(ctx, "/v1/system/info")
 	if err != nil {
@@ -720,49 +750,62 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, b
 	}
 	partial := false
 
-	upstreamStatus := struct {
-		Summary struct {
-			ConfiguredTotal int `json:"configured_total"`
-			HealthyTotal    int `json:"healthy_total"`
-			UnhealthyTotal  int `json:"unhealthy_total"`
-			DirectTotal     int `json:"direct_total"`
-			SOCKS5Total     int `json:"socks5_total"`
-		} `json:"summary"`
-		Upstreams []struct {
-			UpstreamID         int     `json:"upstream_id"`
-			RouteKind          string  `json:"route_kind"`
-			Address            string  `json:"address"`
-			Healthy            bool    `json:"healthy"`
-			Fails              int     `json:"fails"`
-			EffectiveLatencyMs float64 `json:"effective_latency_ms"`
-			Weight             int     `json:"weight"`
-			LastCheckAgeSecs   int     `json:"last_check_age_secs"`
-			Scopes             any     `json:"scopes"`
-		} `json:"upstreams"`
-	}{}
-	if err := c.getJSON(ctx, pathStatsUpstreams, &upstreamStatus); err != nil {
-		partial = true
-		c.logger.Warn("telemt runtime sub-fetch failed", "path", pathStatsUpstreams, "err", err, "ctx_err", ctx.Err())
-	} else {
-		c.logger.Debug(logTelemtAPICall, "path", pathStatsUpstreams, "configured", upstreamStatus.Summary.ConfiguredTotal)
-	}
+	upstreamStatus := c.fetchUpstreamStatus(ctx, &partial)
+	recentEvents := c.fetchRecentEvents(ctx, &partial)
+	diagnostics := c.buildSlowDiagnostics(ctx, systemInfo, &partial)
+	meWritersSummary := c.fetchMeWritersSummary(ctx, &partial)
+	securityInventory := c.fetchSecurityInventory(ctx, &partial)
 
-	recentEvents := struct {
-		Enabled bool             `json:"enabled"`
-		Reason  string           `json:"reason"`
-		Data    recentEventsData `json:"data"`
-	}{}
+	return slowRuntimeState{
+		Version:       jsonString(systemInfo["version"]),
+		UptimeSeconds: jsonFloat(systemInfo["uptime_seconds"]),
+		Upstreams: RuntimeUpstreamSummary{
+			ConfiguredTotal: upstreamStatus.Summary.ConfiguredTotal,
+			HealthyTotal:    upstreamStatus.Summary.HealthyTotal,
+			UnhealthyTotal:  upstreamStatus.Summary.UnhealthyTotal,
+			DirectTotal:     upstreamStatus.Summary.DirectTotal,
+			SOCKS5Total:     upstreamStatus.Summary.SOCKS5Total,
+			Rows:            convertUpstreams(upstreamStatus.Upstreams),
+		},
+		RecentEvents:      convertRecentEvents(recentEvents.Data.Events),
+		Diagnostics:       diagnostics,
+		SecurityInventory: securityInventory,
+		MeWritersSummary:  meWritersSummary,
+	}, partial, nil
+}
+
+func (c *Client) fetchUpstreamStatus(ctx context.Context, partial *bool) upstreamStatusResponse {
+	var resp upstreamStatusResponse
+	if err := c.getJSON(ctx, pathStatsUpstreams, &resp); err != nil {
+		*partial = true
+		c.logger.Warn("telemt runtime sub-fetch failed", "path", pathStatsUpstreams, "err", err, "ctx_err", ctx.Err())
+		return resp
+	}
+	c.logger.Debug(logTelemtAPICall, "path", pathStatsUpstreams, "configured", resp.Summary.ConfiguredTotal)
+	return resp
+}
+
+func (c *Client) fetchRecentEvents(ctx context.Context, partial *bool) recentEventsResponse {
+	var resp recentEventsResponse
 	// Recent events are advisory diagnostics. A temporary read failure must not suppress
 	// the core operator snapshot built from health, gates, connections, summary, and DC state.
-	if err := c.getJSON(ctx, "/v1/runtime/events/recent", &recentEvents); err != nil {
-		partial = true
-		recentEvents = struct {
-			Enabled bool             `json:"enabled"`
-			Reason  string           `json:"reason"`
-			Data    recentEventsData `json:"data"`
-		}{}
+	if err := c.getJSON(ctx, "/v1/runtime/events/recent", &resp); err != nil {
+		*partial = true
+		return recentEventsResponse{}
 	}
+	return resp
+}
 
+// markDiagnosticUnavailable flips State/StateReason to the given reason
+// only on the first failure (preserves "fresh" -> first failure ordering).
+func markDiagnosticUnavailable(diagnostics *RuntimeDiagnostics, reason string) {
+	if diagnostics.State == "fresh" {
+		diagnostics.State = "unavailable"
+		diagnostics.StateReason = reason
+	}
+}
+
+func (c *Client) buildSlowDiagnostics(ctx context.Context, systemInfo map[string]any, partial *bool) RuntimeDiagnostics {
 	diagnostics := RuntimeDiagnostics{
 		State:          "fresh",
 		StateReason:    "",
@@ -772,7 +815,7 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, b
 	if payload, err := c.getJSONPayload(ctx, "/v1/limits/effective"); err == nil {
 		diagnostics.EffectiveLimitsJSON = marshalRawJSON(payload)
 	} else {
-		partial = true
+		*partial = true
 		diagnostics.State = "unavailable"
 		diagnostics.StateReason = "limits_unavailable"
 	}
@@ -780,22 +823,16 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, b
 	if payload, err := c.getJSONPayload(ctx, pathSecurityPosture); err == nil {
 		diagnostics.SecurityPostureJSON = marshalRawJSON(payload)
 	} else {
-		partial = true
-		if diagnostics.State == "fresh" {
-			diagnostics.State = "unavailable"
-			diagnostics.StateReason = "posture_unavailable"
-		}
+		*partial = true
+		markDiagnosticUnavailable(&diagnostics, "posture_unavailable")
 	}
 
 	minimalAll := map[string]any{}
 	if err := c.getJSON(ctx, "/v1/stats/minimal/all", &minimalAll); err == nil {
 		diagnostics.MinimalAllJSON = marshalJSON(minimalAll)
 	} else {
-		partial = true
-		if diagnostics.State == "fresh" {
-			diagnostics.State = "unavailable"
-			diagnostics.StateReason = "minimal_runtime_unavailable"
-		}
+		*partial = true
+		markDiagnosticUnavailable(&diagnostics, "minimal_runtime_unavailable")
 	}
 
 	mePool := map[string]any{}
@@ -803,21 +840,21 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, b
 		c.logger.Debug(logTelemtAPICall, "path", "/v1/runtime/me_pool_state")
 		diagnostics.MEPoolJSON = marshalJSON(mePool)
 	} else {
-		partial = true
-		if diagnostics.State == "fresh" {
-			diagnostics.State = "unavailable"
-			diagnostics.StateReason = "me_pool_unavailable"
-		}
+		*partial = true
+		markDiagnosticUnavailable(&diagnostics, "me_pool_unavailable")
 	}
 
 	dcsDetail := map[string]any{}
 	if err := c.getJSON(ctx, pathStatsDcs, &dcsDetail); err == nil {
 		diagnostics.DcsJSON = marshalJSON(dcsDetail)
 	} else {
-		partial = true
+		*partial = true
 	}
 
-	meWritersSummary := RuntimeMeWritersSummary{}
+	return diagnostics
+}
+
+func (c *Client) fetchMeWritersSummary(ctx context.Context, partial *bool) RuntimeMeWritersSummary {
 	meWritersResp := struct {
 		Summary struct {
 			ConfiguredEndpoints int     `json:"configured_endpoints"`
@@ -830,20 +867,22 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, b
 		} `json:"summary"`
 	}{}
 	if err := c.getJSON(ctx, "/v1/stats/me-writers", &meWritersResp); err != nil {
-		partial = true
-	} else {
-		c.logger.Debug(logTelemtAPICall, "path", "/v1/stats/me-writers", "alive_writers", meWritersResp.Summary.AliveWriters)
-		meWritersSummary = RuntimeMeWritersSummary{
-			ConfiguredEndpoints: meWritersResp.Summary.ConfiguredEndpoints,
-			AvailableEndpoints:  meWritersResp.Summary.AvailableEndpoints,
-			CoveragePct:         meWritersResp.Summary.CoveragePct,
-			FreshAliveWriters:   meWritersResp.Summary.FreshAliveWriters,
-			FreshCoveragePct:    meWritersResp.Summary.FreshCoveragePct,
-			RequiredWriters:     meWritersResp.Summary.RequiredWriters,
-			AliveWriters:        meWritersResp.Summary.AliveWriters,
-		}
+		*partial = true
+		return RuntimeMeWritersSummary{}
 	}
+	c.logger.Debug(logTelemtAPICall, "path", "/v1/stats/me-writers", "alive_writers", meWritersResp.Summary.AliveWriters)
+	return RuntimeMeWritersSummary{
+		ConfiguredEndpoints: meWritersResp.Summary.ConfiguredEndpoints,
+		AvailableEndpoints:  meWritersResp.Summary.AvailableEndpoints,
+		CoveragePct:         meWritersResp.Summary.CoveragePct,
+		FreshAliveWriters:   meWritersResp.Summary.FreshAliveWriters,
+		FreshCoveragePct:    meWritersResp.Summary.FreshCoveragePct,
+		RequiredWriters:     meWritersResp.Summary.RequiredWriters,
+		AliveWriters:        meWritersResp.Summary.AliveWriters,
+	}
+}
 
+func (c *Client) fetchSecurityInventory(ctx context.Context, partial *bool) RuntimeSecurityInventory {
 	securityInventory := RuntimeSecurityInventory{
 		State:       "fresh",
 		StateReason: "",
@@ -857,14 +896,40 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, b
 		securityInventory.Enabled = whitelist.Enabled
 		securityInventory.EntriesTotal = whitelist.EntriesTotal
 		securityInventory.EntriesJSON = marshalJSON(whitelist.Entries)
-	} else {
-		partial = true
-		securityInventory.State = "unavailable"
-		securityInventory.StateReason = "whitelist_unavailable"
+		return securityInventory
 	}
+	*partial = true
+	securityInventory.State = "unavailable"
+	securityInventory.StateReason = "whitelist_unavailable"
+	return securityInventory
+}
 
-	upstreams := make([]RuntimeUpstream, 0, len(upstreamStatus.Upstreams))
-	for _, upstream := range upstreamStatus.Upstreams {
+func convertRecentEvents(rows []recentEventEntry) []RuntimeEvent {
+	events := make([]RuntimeEvent, 0, len(rows))
+	for _, event := range rows {
+		events = append(events, RuntimeEvent{
+			Sequence:      event.Sequence,
+			TimestampUnix: event.TimestampUnix,
+			EventType:     event.EventType,
+			Context:       event.Context,
+		})
+	}
+	return events
+}
+
+func convertUpstreams(rows []struct {
+	UpstreamID         int     `json:"upstream_id"`
+	RouteKind          string  `json:"route_kind"`
+	Address            string  `json:"address"`
+	Healthy            bool    `json:"healthy"`
+	Fails              int     `json:"fails"`
+	EffectiveLatencyMs float64 `json:"effective_latency_ms"`
+	Weight             int     `json:"weight"`
+	LastCheckAgeSecs   int     `json:"last_check_age_secs"`
+	Scopes             any     `json:"scopes"`
+}) []RuntimeUpstream {
+	upstreams := make([]RuntimeUpstream, 0, len(rows))
+	for _, upstream := range rows {
 		upstreams = append(upstreams, RuntimeUpstream{
 			UpstreamID:         upstream.UpstreamID,
 			RouteKind:          upstream.RouteKind,
@@ -877,33 +942,7 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, b
 			Scopes:             parseScopes(upstream.Scopes),
 		})
 	}
-
-	events := make([]RuntimeEvent, 0, len(recentEvents.Data.Events))
-	for _, event := range recentEvents.Data.Events {
-		events = append(events, RuntimeEvent{
-			Sequence:      event.Sequence,
-			TimestampUnix: event.TimestampUnix,
-			EventType:     event.EventType,
-			Context:       event.Context,
-		})
-	}
-
-	return slowRuntimeState{
-		Version:       jsonString(systemInfo["version"]),
-		UptimeSeconds: jsonFloat(systemInfo["uptime_seconds"]),
-		Upstreams: RuntimeUpstreamSummary{
-			ConfiguredTotal: upstreamStatus.Summary.ConfiguredTotal,
-			HealthyTotal:    upstreamStatus.Summary.HealthyTotal,
-			UnhealthyTotal:  upstreamStatus.Summary.UnhealthyTotal,
-			DirectTotal:     upstreamStatus.Summary.DirectTotal,
-			SOCKS5Total:     upstreamStatus.Summary.SOCKS5Total,
-			Rows:            upstreams,
-		},
-		RecentEvents:      events,
-		Diagnostics:       diagnostics,
-		SecurityInventory: securityInventory,
-		MeWritersSummary:  meWritersSummary,
-	}, partial, nil
+	return upstreams
 }
 
 func (c *Client) getJSONPayload(ctx context.Context, path string) (map[string]any, error) {

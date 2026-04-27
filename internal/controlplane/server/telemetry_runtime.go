@@ -337,6 +337,20 @@ func (s *Server) restoreStoredTelemetry() error {
 		return nil
 	}
 
+	if err := s.restoreDetailBoosts(); err != nil {
+		return err
+	}
+
+	for agentID, agent := range s.agents {
+		if err := s.restoreAgentRuntime(agentID, agent); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *Server) restoreDetailBoosts() error {
 	boosts, err := s.store.ListTelemetryDetailBoosts(context.Background())
 	if err != nil {
 		return err
@@ -349,30 +363,30 @@ func (s *Server) restoreStoredTelemetry() error {
 		}
 		s.detailBoosts[boost.AgentID] = boost.ExpiresAt.UTC()
 	}
+	return nil
+}
 
-	for agentID, agent := range s.agents {
-		runtime, err := s.store.GetTelemetryRuntimeCurrent(context.Background(), agentID)
-		if err != nil {
-			if errors.Is(err, storage.ErrNotFound) {
-				continue
-			}
-			return err
+func (s *Server) restoreAgentRuntime(agentID string, agent Agent) error {
+	runtime, err := s.store.GetTelemetryRuntimeCurrent(context.Background(), agentID)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return nil
 		}
-		dcs, err := s.store.ListTelemetryRuntimeDCs(context.Background(), agentID)
-		if err != nil {
-			return err
-		}
-		upstreams, err := s.store.ListTelemetryRuntimeUpstreams(context.Background(), agentID)
-		if err != nil {
-			return err
-		}
-		events, err := s.store.ListTelemetryRuntimeEvents(context.Background(), agentID, 10)
-		if err != nil {
-			return err
-		}
-		s.agents[agentID] = restoreAgentRuntimeFromStorage(agent, runtime, dcs, upstreams, events)
+		return err
 	}
-
+	dcs, err := s.store.ListTelemetryRuntimeDCs(context.Background(), agentID)
+	if err != nil {
+		return err
+	}
+	upstreams, err := s.store.ListTelemetryRuntimeUpstreams(context.Background(), agentID)
+	if err != nil {
+		return err
+	}
+	events, err := s.store.ListTelemetryRuntimeEvents(context.Background(), agentID, 10)
+	if err != nil {
+		return err
+	}
+	s.agents[agentID] = restoreAgentRuntimeFromStorage(agent, runtime, dcs, upstreams, events)
 	return nil
 }
 

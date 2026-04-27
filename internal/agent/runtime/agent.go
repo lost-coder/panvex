@@ -457,52 +457,12 @@ func (a *Agent) BuildUsageSnapshot(ctx context.Context, observedAt time.Time) (*
 	clients := make([]*gatewayrpc.ClientUsageSnapshot, 0, len(usageRows))
 	seen := make(map[string]struct{}, len(usageRows))
 	for _, client := range usageRows {
-		clientID := client.ClientID
-		if clientID == "" && client.ClientName != "" {
-			clientID = a.clientIDForNameLocked(client.ClientName)
+		if snap, ok := a.processUsageRowLocked(client, restarted, seen); ok {
+			clients = append(clients, snap)
 		}
-
-		// Use clientID as tracking key when available, fall back to name.
-		trackingKey := clientID
-		if trackingKey == "" {
-			if client.ClientName == "" {
-				continue
-			}
-			trackingKey = "name:" + client.ClientName
-		}
-
-		currentTotal := client.TrafficUsedBytes
-		previousTotal := a.lastOctets[trackingKey]
-		delta := currentTotal
-		if !restarted && currentTotal >= previousTotal {
-			delta = currentTotal - previousTotal
-		}
-		connectionsChanged := a.lastConnections[trackingKey] != client.ActiveTCPConns
-
-		a.lastOctets[trackingKey] = currentTotal
-		a.lastConnections[trackingKey] = client.ActiveTCPConns
-		seen[trackingKey] = struct{}{}
-
-		if delta == 0 && !connectionsChanged && client.CurrentIPsUsed == 0 {
-			continue
-		}
-		clients = append(clients, &gatewayrpc.ClientUsageSnapshot{
-			ClientId:          clientID,
-			ClientName:        client.ClientName,
-			TrafficDeltaBytes: delta,
-			UniqueIpsUsed:     int32(client.UniqueIPsUsed),
-			ActiveTcpConns:    int32(client.ActiveTCPConns),
-			ActiveUniqueIps:   int32(client.CurrentIPsUsed),
-		})
 	}
 
-	for clientID := range a.lastConnections {
-		if _, ok := seen[clientID]; ok {
-			continue
-		}
-		delete(a.lastConnections, clientID)
-		delete(a.lastOctets, clientID)
-	}
+	a.cleanupStaleUsageStateLocked(seen)
 	if metricsSnapshot.UptimeSeconds > 0 {
 		a.lastMetricsUptime = metricsSnapshot.UptimeSeconds
 	}
@@ -528,6 +488,61 @@ func (a *Agent) BuildUsageSnapshot(ctx context.Context, observedAt time.Time) (*
 		}
 	}
 	return snapshot, nil
+}
+
+// processUsageRowLocked computes the per-client delta, updates last-known
+// trackers, and returns the gateway snapshot when the row contributes a
+// non-empty change. Caller must hold a.mu.
+func (a *Agent) processUsageRowLocked(client telemt.ClientUsage, restarted bool, seen map[string]struct{}) (*gatewayrpc.ClientUsageSnapshot, bool) {
+	clientID := client.ClientID
+	if clientID == "" && client.ClientName != "" {
+		clientID = a.clientIDForNameLocked(client.ClientName)
+	}
+
+	// Use clientID as tracking key when available, fall back to name.
+	trackingKey := clientID
+	if trackingKey == "" {
+		if client.ClientName == "" {
+			return nil, false
+		}
+		trackingKey = "name:" + client.ClientName
+	}
+
+	currentTotal := client.TrafficUsedBytes
+	previousTotal := a.lastOctets[trackingKey]
+	delta := currentTotal
+	if !restarted && currentTotal >= previousTotal {
+		delta = currentTotal - previousTotal
+	}
+	connectionsChanged := a.lastConnections[trackingKey] != client.ActiveTCPConns
+
+	a.lastOctets[trackingKey] = currentTotal
+	a.lastConnections[trackingKey] = client.ActiveTCPConns
+	seen[trackingKey] = struct{}{}
+
+	if delta == 0 && !connectionsChanged && client.CurrentIPsUsed == 0 {
+		return nil, false
+	}
+	return &gatewayrpc.ClientUsageSnapshot{
+		ClientId:          clientID,
+		ClientName:        client.ClientName,
+		TrafficDeltaBytes: delta,
+		UniqueIpsUsed:     int32(client.UniqueIPsUsed),
+		ActiveTcpConns:    int32(client.ActiveTCPConns),
+		ActiveUniqueIps:   int32(client.CurrentIPsUsed),
+	}, true
+}
+
+// cleanupStaleUsageStateLocked drops tracker entries for clients absent
+// from the latest sample. Caller must hold a.mu.
+func (a *Agent) cleanupStaleUsageStateLocked(seen map[string]struct{}) {
+	for clientID := range a.lastConnections {
+		if _, ok := seen[clientID]; ok {
+			continue
+		}
+		delete(a.lastConnections, clientID)
+		delete(a.lastOctets, clientID)
+	}
 }
 
 // PollActiveIPs updates the local accumulated IP set from the lightweight Telemt endpoint.

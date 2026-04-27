@@ -701,10 +701,7 @@ func (s *Server) recordClientJobResultWithContext(ctx context.Context, agentID, 
 	if !ok {
 		return
 	}
-
-	switch job.Action {
-	case jobs.ActionClientCreate, jobs.ActionClientUpdate, jobs.ActionClientDelete, jobs.ActionClientRotateSecret:
-	default:
+	if !isClientJobAction(job.Action) {
 		return
 	}
 
@@ -713,48 +710,75 @@ func (s *Server) recordClientJobResultWithContext(ctx context.Context, agentID, 
 		return
 	}
 
-	s.clientsMu.Lock()
-	client, ok := s.clients[payload.ClientID]
+	deployment, ok := s.applyClientJobDeployment(payload.ClientID, agentID, job, success, message, resultJSON, observedAt)
 	if !ok {
-		s.clientsMu.Unlock()
 		return
 	}
-	deployment := s.clientDeployments[payload.ClientID][agentID]
-
-	deployment.ClientID = payload.ClientID
-	deployment.AgentID = agentID
-	deployment.DesiredOperation = string(job.Action)
-	deployment.UpdatedAt = observedAt.UTC()
-	if success {
-		deployment.Status = clientDeploymentStatusSucceeded
-		deployment.LastError = ""
-		lastAppliedAt := observedAt.UTC()
-		deployment.LastAppliedAt = &lastAppliedAt
-
-		if job.Action == jobs.ActionClientDelete {
-			deployment.ConnectionLink = ""
-		} else if strings.TrimSpace(resultJSON) != "" {
-			var resultPayload clientJobResultPayload
-			if err := json.Unmarshal([]byte(resultJSON), &resultPayload); err == nil && resultPayload.ConnectionLink != "" {
-				deployment.ConnectionLink = resultPayload.ConnectionLink
-			}
-		}
-	} else {
-		deployment.Status = clientDeploymentStatusFailed
-		deployment.LastError = message
-	}
-
-	if s.clientDeployments[payload.ClientID] == nil {
-		s.clientDeployments[payload.ClientID] = make(map[string]managedClientDeployment)
-	}
-	s.clientDeployments[payload.ClientID][agentID] = deployment
-	s.clients[payload.ClientID] = client
-	s.clientsMu.Unlock()
 
 	if s.store != nil {
 		if err := s.store.PutClientDeployment(ctx, clients.DeploymentToRecord(deployment)); err != nil {
 			s.logger.Error("client deployment persistence failed", "client_id", payload.ClientID, "agent_id", agentID, "error", err)
 		}
+	}
+}
+
+func isClientJobAction(action jobs.Action) bool {
+	switch action {
+	case jobs.ActionClientCreate, jobs.ActionClientUpdate, jobs.ActionClientDelete, jobs.ActionClientRotateSecret:
+		return true
+	default:
+		return false
+	}
+}
+
+// applyClientJobDeployment updates the in-memory deployment state for a
+// client job result and returns the updated deployment. Returns ok=false
+// when the client is no longer tracked.
+func (s *Server) applyClientJobDeployment(clientID, agentID string, job jobs.Job, success bool, message, resultJSON string, observedAt time.Time) (managedClientDeployment, bool) {
+	s.clientsMu.Lock()
+	defer s.clientsMu.Unlock()
+
+	client, ok := s.clients[clientID]
+	if !ok {
+		return managedClientDeployment{}, false
+	}
+	deployment := s.clientDeployments[clientID][agentID]
+
+	deployment.ClientID = clientID
+	deployment.AgentID = agentID
+	deployment.DesiredOperation = string(job.Action)
+	deployment.UpdatedAt = observedAt.UTC()
+	applyClientJobOutcome(&deployment, job.Action, success, message, resultJSON, observedAt)
+
+	if s.clientDeployments[clientID] == nil {
+		s.clientDeployments[clientID] = make(map[string]managedClientDeployment)
+	}
+	s.clientDeployments[clientID][agentID] = deployment
+	s.clients[clientID] = client
+	return deployment, true
+}
+
+func applyClientJobOutcome(deployment *managedClientDeployment, action jobs.Action, success bool, message, resultJSON string, observedAt time.Time) {
+	if !success {
+		deployment.Status = clientDeploymentStatusFailed
+		deployment.LastError = message
+		return
+	}
+	deployment.Status = clientDeploymentStatusSucceeded
+	deployment.LastError = ""
+	lastAppliedAt := observedAt.UTC()
+	deployment.LastAppliedAt = &lastAppliedAt
+
+	if action == jobs.ActionClientDelete {
+		deployment.ConnectionLink = ""
+		return
+	}
+	if strings.TrimSpace(resultJSON) == "" {
+		return
+	}
+	var resultPayload clientJobResultPayload
+	if err := json.Unmarshal([]byte(resultJSON), &resultPayload); err == nil && resultPayload.ConnectionLink != "" {
+		deployment.ConnectionLink = resultPayload.ConnectionLink
 	}
 }
 

@@ -122,33 +122,56 @@ func copyClientsAndChildren(ctx context.Context, source, target storage.Store, s
 		return err
 	}
 	for _, client := range clients {
-		if err := target.PutClient(ctx, client); err != nil {
+		if err := copyClientWithChildren(ctx, source, target, client.ID, client, summary); err != nil {
 			return err
 		}
-		assignments, err := source.ListClientAssignments(ctx, client.ID)
-		if err != nil {
-			return err
-		}
-		for _, assignment := range assignments {
-			if err := target.PutClientAssignment(ctx, assignment); err != nil {
-				return err
-			}
-		}
-		summary.ClientAssignments += len(assignments)
-
-		deployments, err := source.ListClientDeployments(ctx, client.ID)
-		if err != nil {
-			return err
-		}
-		for _, deployment := range deployments {
-			if err := target.PutClientDeployment(ctx, deployment); err != nil {
-				return err
-			}
-		}
-		summary.ClientDeployments += len(deployments)
 	}
 	summary.Clients = len(clients)
 	return nil
+}
+
+func copyClientWithChildren(ctx context.Context, source, target storage.Store, clientID string, client storage.ClientRecord, summary *Summary) error {
+	if err := target.PutClient(ctx, client); err != nil {
+		return err
+	}
+	assignmentCount, err := copyClientAssignments(ctx, source, target, clientID)
+	if err != nil {
+		return err
+	}
+	summary.ClientAssignments += assignmentCount
+
+	deploymentCount, err := copyClientDeployments(ctx, source, target, clientID)
+	if err != nil {
+		return err
+	}
+	summary.ClientDeployments += deploymentCount
+	return nil
+}
+
+func copyClientAssignments(ctx context.Context, source, target storage.Store, clientID string) (int, error) {
+	assignments, err := source.ListClientAssignments(ctx, clientID)
+	if err != nil {
+		return 0, err
+	}
+	for _, assignment := range assignments {
+		if err := target.PutClientAssignment(ctx, assignment); err != nil {
+			return 0, err
+		}
+	}
+	return len(assignments), nil
+}
+
+func copyClientDeployments(ctx context.Context, source, target storage.Store, clientID string) (int, error) {
+	deployments, err := source.ListClientDeployments(ctx, clientID)
+	if err != nil {
+		return 0, err
+	}
+	for _, deployment := range deployments {
+		if err := target.PutClientDeployment(ctx, deployment); err != nil {
+			return 0, err
+		}
+	}
+	return len(deployments), nil
 }
 
 // copySingletonAuthority returns the source authority record (if any) so the
@@ -201,38 +224,13 @@ func copyStore(ctx context.Context, source storage.Store, target storage.Store) 
 
 	summary := Summary{}
 
-	if err := copyEntities(ctx, source.ListUsers, target.PutUser, func(n int) { summary.Users = n }); err != nil {
-		return Summary{}, err
-	}
-	if err := copyEntities(ctx, source.ListUserAppearances, target.PutUserAppearance, func(n int) { summary.UserAppearance = n }); err != nil {
-		return Summary{}, err
-	}
-	if err := copyEntities(ctx, source.ListFleetGroups, target.PutFleetGroup, func(n int) { summary.FleetGroups = n }); err != nil {
-		return Summary{}, err
-	}
-	if err := copyEntities(ctx, source.ListAgents, target.PutAgent, func(n int) { summary.Agents = n }); err != nil {
-		return Summary{}, err
-	}
-	if err := copyEntities(ctx, source.ListInstances, target.PutInstance, func(n int) { summary.Instances = n }); err != nil {
+	if err := copyPrimaryEntities(ctx, source, target, &summary); err != nil {
 		return Summary{}, err
 	}
 	if err := copyJobsAndTargets(ctx, source, target, &summary); err != nil {
 		return Summary{}, err
 	}
-	if err := copyEntities(ctx,
-		func(c context.Context) ([]storage.AuditEventRecord, error) { return source.ListAuditEvents(c, 0) },
-		target.AppendAuditEvent,
-		func(n int) { summary.AuditEvents = n },
-	); err != nil {
-		return Summary{}, err
-	}
-	if err := copyEntities(ctx, source.ListMetricSnapshots, target.AppendMetricSnapshot, func(n int) { summary.MetricSnapshots = n }); err != nil {
-		return Summary{}, err
-	}
-	if err := copyEntities(ctx, source.ListEnrollmentTokens, target.PutEnrollmentToken, func(n int) { summary.EnrollmentTokens = n }); err != nil {
-		return Summary{}, err
-	}
-	if err := copyEntities(ctx, source.ListAgentCertificateRecoveryGrants, target.PutAgentCertificateRecoveryGrant, func(n int) { summary.AgentCertificateRecoveryGrants = n }); err != nil {
+	if err := copyAuxiliaryEntities(ctx, source, target, &summary); err != nil {
 		return Summary{}, err
 	}
 	if err := copyClientsAndChildren(ctx, source, target, &summary); err != nil {
@@ -257,6 +255,39 @@ func copyStore(ctx context.Context, source storage.Store, target storage.Store) 
 	}
 
 	return summary, nil
+}
+
+func copyPrimaryEntities(ctx context.Context, source, target storage.Store, summary *Summary) error {
+	if err := copyEntities(ctx, source.ListUsers, target.PutUser, func(n int) { summary.Users = n }); err != nil {
+		return err
+	}
+	if err := copyEntities(ctx, source.ListUserAppearances, target.PutUserAppearance, func(n int) { summary.UserAppearance = n }); err != nil {
+		return err
+	}
+	if err := copyEntities(ctx, source.ListFleetGroups, target.PutFleetGroup, func(n int) { summary.FleetGroups = n }); err != nil {
+		return err
+	}
+	if err := copyEntities(ctx, source.ListAgents, target.PutAgent, func(n int) { summary.Agents = n }); err != nil {
+		return err
+	}
+	return copyEntities(ctx, source.ListInstances, target.PutInstance, func(n int) { summary.Instances = n })
+}
+
+func copyAuxiliaryEntities(ctx context.Context, source, target storage.Store, summary *Summary) error {
+	if err := copyEntities(ctx,
+		func(c context.Context) ([]storage.AuditEventRecord, error) { return source.ListAuditEvents(c, 0) },
+		target.AppendAuditEvent,
+		func(n int) { summary.AuditEvents = n },
+	); err != nil {
+		return err
+	}
+	if err := copyEntities(ctx, source.ListMetricSnapshots, target.AppendMetricSnapshot, func(n int) { summary.MetricSnapshots = n }); err != nil {
+		return err
+	}
+	if err := copyEntities(ctx, source.ListEnrollmentTokens, target.PutEnrollmentToken, func(n int) { summary.EnrollmentTokens = n }); err != nil {
+		return err
+	}
+	return copyEntities(ctx, source.ListAgentCertificateRecoveryGrants, target.PutAgentCertificateRecoveryGrant, func(n int) { summary.AgentCertificateRecoveryGrants = n })
 }
 
 func ensureTargetEmpty(ctx context.Context, target storage.Store) error {
@@ -296,97 +327,128 @@ func verifyCounts(ctx context.Context, target storage.Store, expected Summary) e
 func listCounts(ctx context.Context, store storage.Store) (Summary, error) {
 	var summary Summary
 
+	if err := countPrimaryEntities(ctx, store, &summary); err != nil {
+		return Summary{}, err
+	}
+	if err := countJobsAndTargets(ctx, store, &summary); err != nil {
+		return Summary{}, err
+	}
+	if err := countAuxiliaryEntities(ctx, store, &summary); err != nil {
+		return Summary{}, err
+	}
+	if err := countClientsAndChildren(ctx, store, &summary); err != nil {
+		return Summary{}, err
+	}
+	if err := countPanelSettings(ctx, store, &summary); err != nil {
+		return Summary{}, err
+	}
+
+	return summary, nil
+}
+
+func countPrimaryEntities(ctx context.Context, store storage.Store, summary *Summary) error {
 	users, err := store.ListUsers(ctx)
 	if err != nil {
-		return Summary{}, err
+		return err
 	}
 	summary.Users = len(users)
 
 	appearances, err := store.ListUserAppearances(ctx)
 	if err != nil {
-		return Summary{}, err
+		return err
 	}
 	summary.UserAppearance = len(appearances)
 
 	fleetGroups, err := store.ListFleetGroups(ctx)
 	if err != nil {
-		return Summary{}, err
+		return err
 	}
 	summary.FleetGroups = len(fleetGroups)
 
 	agents, err := store.ListAgents(ctx)
 	if err != nil {
-		return Summary{}, err
+		return err
 	}
 	summary.Agents = len(agents)
 
 	instances, err := store.ListInstances(ctx)
 	if err != nil {
-		return Summary{}, err
+		return err
 	}
 	summary.Instances = len(instances)
+	return nil
+}
 
+func countJobsAndTargets(ctx context.Context, store storage.Store, summary *Summary) error {
 	jobs, err := store.ListJobs(ctx)
 	if err != nil {
-		return Summary{}, err
+		return err
 	}
 	summary.Jobs = len(jobs)
 	for _, job := range jobs {
 		targets, err := store.ListJobTargets(ctx, job.ID)
 		if err != nil {
-			return Summary{}, err
+			return err
 		}
 		summary.JobTargets += len(targets)
 	}
+	return nil
+}
 
+func countAuxiliaryEntities(ctx context.Context, store storage.Store, summary *Summary) error {
 	auditEvents, err := store.ListAuditEvents(ctx, 0)
 	if err != nil {
-		return Summary{}, err
+		return err
 	}
 	summary.AuditEvents = len(auditEvents)
 
 	metricSnapshots, err := store.ListMetricSnapshots(ctx)
 	if err != nil {
-		return Summary{}, err
+		return err
 	}
 	summary.MetricSnapshots = len(metricSnapshots)
 
 	enrollmentTokens, err := store.ListEnrollmentTokens(ctx)
 	if err != nil {
-		return Summary{}, err
+		return err
 	}
 	summary.EnrollmentTokens = len(enrollmentTokens)
 
 	recoveryGrants, err := store.ListAgentCertificateRecoveryGrants(ctx)
 	if err != nil {
-		return Summary{}, err
+		return err
 	}
 	summary.AgentCertificateRecoveryGrants = len(recoveryGrants)
+	return nil
+}
 
+func countClientsAndChildren(ctx context.Context, store storage.Store, summary *Summary) error {
 	clients, err := store.ListClients(ctx)
 	if err != nil {
-		return Summary{}, err
+		return err
 	}
 	summary.Clients = len(clients)
 	for _, client := range clients {
 		assignments, err := store.ListClientAssignments(ctx, client.ID)
 		if err != nil {
-			return Summary{}, err
+			return err
 		}
 		summary.ClientAssignments += len(assignments)
 
 		deployments, err := store.ListClientDeployments(ctx, client.ID)
 		if err != nil {
-			return Summary{}, err
+			return err
 		}
 		summary.ClientDeployments += len(deployments)
 	}
+	return nil
+}
 
+func countPanelSettings(ctx context.Context, store storage.Store, summary *Summary) error {
 	if _, err := store.GetPanelSettings(ctx); err == nil {
 		summary.PanelSettings = 1
 	} else if !errors.Is(err, storage.ErrNotFound) {
-		return Summary{}, err
+		return err
 	}
-
-	return summary, nil
+	return nil
 }

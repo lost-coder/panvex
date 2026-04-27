@@ -803,78 +803,105 @@ func parseCIDRList(raw string) ([]*net.IPNet, error) {
 	return result, nil
 }
 
-func runSelfUpdate(args []string) error {
+type selfUpdateOptions struct {
+	version string
+	repo    string
+	token   string
+	force   bool
+}
+
+func parseSelfUpdateFlags(args []string) (selfUpdateOptions, error) {
 	flags := flag.NewFlagSet("self-update", flag.ContinueOnError)
 	version := flags.String("version", "", "Target version to update to (e.g. 1.2.3)")
 	repo := flags.String("repo", "lost-coder/panvex", "GitHub repository for release assets")
 	token := flags.String("token", os.Getenv("GITHUB_TOKEN"), "GitHub token for private repos (env: GITHUB_TOKEN)")
 	force := flags.Bool("force", false, "Force update even if versions match")
 	if err := flags.Parse(args); err != nil {
-		return err
+		return selfUpdateOptions{}, err
 	}
+	return selfUpdateOptions{
+		version: *version,
+		repo:    *repo,
+		token:   *token,
+		force:   *force,
+	}, nil
+}
 
-	ctx := context.Background()
-
-	panel, _, err := server.FetchLatestVersions(ctx, *repo, *token)
+// resolveSelfUpdateTarget fetches the latest release, picks the target version
+// (CLI flag wins over latest), and returns nil/false when there is nothing to do
+// (already at version / older without --force).
+func resolveSelfUpdateTarget(ctx context.Context, opts selfUpdateOptions) (panel *server.GitHubRelease, targetVersion, currentVersion string, proceed bool, err error) {
+	panel, _, err = server.FetchLatestVersions(ctx, opts.repo, opts.token)
 	if err != nil {
-		return fmt.Errorf("fetch latest versions: %w", err)
+		return nil, "", "", false, fmt.Errorf("fetch latest versions: %w", err)
 	}
-
 	if panel == nil {
-		return errors.New("no control-plane release found")
+		return nil, "", "", false, errors.New("no control-plane release found")
 	}
 
 	_, latestVersion, ok := server.ParseReleaseTag(panel.TagName)
 	if !ok {
-		return fmt.Errorf("failed to parse release tag %q", panel.TagName)
+		return nil, "", "", false, fmt.Errorf("failed to parse release tag %q", panel.TagName)
 	}
 
-	targetVersion := latestVersion
-	if *version != "" {
-		targetVersion = strings.TrimPrefix(*version, "v")
+	targetVersion = latestVersion
+	if opts.version != "" {
+		targetVersion = strings.TrimPrefix(opts.version, "v")
 	}
 
-	currentVersion := strings.TrimPrefix(Version, "v")
+	currentVersion = strings.TrimPrefix(Version, "v")
 	cmp := server.CompareVersions(targetVersion, currentVersion)
-	if cmp == 0 && !*force {
+	if cmp == 0 && !opts.force {
 		fmt.Printf("Already at version %s. Use --force to re-install.\n", currentVersion)
-		return nil
+		return nil, "", "", false, nil
 	}
-	if cmp < 0 && !*force {
+	if cmp < 0 && !opts.force {
 		fmt.Printf("Target version %s is older than current version %s. Use --force to downgrade.\n", targetVersion, currentVersion)
-		return nil
+		return nil, "", "", false, nil
 	}
+	return panel, targetVersion, currentVersion, true, nil
+}
 
+// downloadAndVerifySelfUpdateArchive downloads the archive + signature
+// (and checksum, if available) for the chosen release and verifies both
+// before returning the local archive path. Caller is responsible for
+// removing the path.
+func downloadAndVerifySelfUpdateArchive(ctx context.Context, panel *server.GitHubRelease, token string) (string, error) {
 	binaryURL, checksumURL, signatureURL := server.ResolveAssetURLs(panel, "control-plane")
 	if binaryURL == "" {
-		return errors.New("no binary download URL found for the current platform")
+		return "", errors.New("no binary download URL found for the current platform")
 	}
 	if signatureURL == "" {
-		return errors.New("release is missing a .sig asset; refusing to install unsigned binary")
+		return "", errors.New("release is missing a .sig asset; refusing to install unsigned binary")
 	}
 
-	fmt.Printf("Updating from %s to %s ...\n", currentVersion, targetVersion)
-
-	// Download and verify checksum.
 	var expectedChecksum string
 	if checksumURL != "" {
-		expectedChecksum, err = server.DownloadChecksum(ctx, checksumURL, *token)
+		var err error
+		expectedChecksum, err = server.DownloadChecksum(ctx, checksumURL, token)
 		if err != nil {
-			return fmt.Errorf("download checksum: %w", err)
+			return "", fmt.Errorf("download checksum: %w", err)
 		}
 		fmt.Println("Checksum downloaded.")
 	}
 
-	archivePath, err := server.DownloadArchive(ctx, binaryURL, *token)
+	archivePath, err := server.DownloadArchive(ctx, binaryURL, token)
 	if err != nil {
-		return fmt.Errorf("download archive: %w", err)
+		return "", fmt.Errorf("download archive: %w", err)
 	}
-	defer func() { _ = os.Remove(archivePath) }() //nolint:gosec // archivePath from os.CreateTemp, not user input
 	fmt.Println("Archive downloaded.")
 
+	if err := verifySelfUpdateArchive(ctx, archivePath, signatureURL, expectedChecksum, token); err != nil {
+		_ = os.Remove(archivePath)
+		return "", err
+	}
+	return archivePath, nil
+}
+
+func verifySelfUpdateArchive(ctx context.Context, archivePath, signatureURL, expectedChecksum, token string) error {
 	// Mandatory signature verification: fetch the detached signature, verify
 	// against the embedded public key before any checksum or extraction.
-	sigBytes, err := server.DownloadSignature(ctx, signatureURL, *token)
+	sigBytes, err := server.DownloadSignature(ctx, signatureURL, token)
 	if err != nil {
 		return fmt.Errorf("download signature: %w", err)
 	}
@@ -893,6 +920,29 @@ func runSelfUpdate(args []string) error {
 		}
 		fmt.Println("Checksum verified.")
 	}
+	return nil
+}
+
+func runSelfUpdate(args []string) error {
+	opts, err := parseSelfUpdateFlags(args)
+	if err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+
+	panel, targetVersion, currentVersion, proceed, err := resolveSelfUpdateTarget(ctx, opts)
+	if err != nil || !proceed {
+		return err
+	}
+
+	fmt.Printf("Updating from %s to %s ...\n", currentVersion, targetVersion)
+
+	archivePath, err := downloadAndVerifySelfUpdateArchive(ctx, panel, opts.token)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(archivePath) }() //nolint:gosec // archivePath from os.CreateTemp, not user input
 
 	binaryPath, err := server.ExtractBinaryFromArchive(archivePath)
 	if err != nil {

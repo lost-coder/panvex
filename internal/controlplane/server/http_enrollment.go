@@ -310,19 +310,8 @@ func (s *Server) handleAgentBootstrap() http.HandlerFunc {
 
 func (s *Server) handleListEnrollmentTokens() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		_, user, err := s.requireSession(r)
-		if err != nil {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
-			return
-		}
-
-		if user.Role == auth.RoleViewer {
-			writeError(w, http.StatusForbidden, "viewer role cannot manage enrollment tokens")
-			return
-		}
-
-		if s.store == nil {
-			writeError(w, http.StatusServiceUnavailable, "persistent store required")
+		_, user, ok := s.requireEnrollmentManager(w, r)
+		if !ok {
 			return
 		}
 
@@ -338,18 +327,23 @@ func (s *Server) handleListEnrollmentTokens() http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if !scope.Global {
-			filtered := tokens[:0]
-			for _, t := range tokens {
-				if scope.IsAllowed(t.FleetGroupID) {
-					filtered = append(filtered, t)
-				}
-			}
-			tokens = filtered
-		}
+		tokens = filterEnrollmentTokensByScope(tokens, scope)
 
 		writeJSON(w, http.StatusOK, tokens)
 	}
+}
+
+func filterEnrollmentTokensByScope(tokens []enrollmentTokenResponse, scope FleetScopeAccess) []enrollmentTokenResponse {
+	if scope.Global {
+		return tokens
+	}
+	filtered := tokens[:0]
+	for _, t := range tokens {
+		if scope.IsAllowed(t.FleetGroupID) {
+			filtered = append(filtered, t)
+		}
+	}
+	return filtered
 }
 
 func (s *Server) handleRevokeEnrollmentToken() http.HandlerFunc {
@@ -376,24 +370,28 @@ func (s *Server) handleRevokeEnrollmentToken() http.HandlerFunc {
 			return
 		}
 
-		revoked, changed, err := s.revokeEnrollmentTokenWithContext(r.Context(), value, s.now())
-		if err != nil {
-			if errors.Is(err, storage.ErrNotFound) {
-				writeError(w, http.StatusNotFound, msgEnrollmentTokenNotFound)
-				return
-			}
-			s.logger.Error("revoke enrollment token failed", "error", err)
-			writeError(w, http.StatusInternalServerError, msgInternalError)
+		s.executeEnrollmentTokenRevoke(w, r, session, value)
+	}
+}
+
+func (s *Server) executeEnrollmentTokenRevoke(w http.ResponseWriter, r *http.Request, session auth.Session, value string) {
+	revoked, changed, err := s.revokeEnrollmentTokenWithContext(r.Context(), value, s.now())
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			writeError(w, http.StatusNotFound, msgEnrollmentTokenNotFound)
 			return
 		}
-		if changed {
-			s.appendAuditWithContext(r.Context(), session.UserID, "agents.enrollment.revoke", maskToken(revoked.Value), map[string]any{
-				"fleet_group_id": revoked.FleetGroupID,
-			})
-		}
-
-		w.WriteHeader(http.StatusNoContent)
+		s.logger.Error("revoke enrollment token failed", "error", err)
+		writeError(w, http.StatusInternalServerError, msgInternalError)
+		return
 	}
+	if changed {
+		s.appendAuditWithContext(r.Context(), session.UserID, "agents.enrollment.revoke", maskToken(revoked.Value), map[string]any{
+			"fleet_group_id": revoked.FleetGroupID,
+		})
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // requireEnrollmentManager handles the session + role + persistent-store

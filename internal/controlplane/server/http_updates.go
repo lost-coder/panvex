@@ -139,31 +139,14 @@ func (s *Server) handlePutUpdateSettings() http.HandlerFunc {
 			return
 		}
 
-		var req updateSettingsRequest
-		if err := decodeJSON(r, &req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid request payload")
+		req, ok := decodeUpdateSettingsRequest(w, r)
+		if !ok {
 			return
 		}
 
-		if req.GitHubRepo != nil {
-			if err := validateGitHubRepo(*req.GitHubRepo); err != nil {
-				writeError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-		}
-
-		s.settingsMu.Lock()
-		mergeUpdateSettings(&s.updateSettings, req)
-		updated := s.updateSettings
-		s.settingsMu.Unlock()
-
-		if s.store != nil {
-			data, _ := json.Marshal(updated)
-			if err := s.store.PutUpdateSettings(r.Context(), data); err != nil {
-				s.logger.Error("persist update settings failed", "error", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
-				return
-			}
+		updated := s.applyUpdateSettings(req)
+		if !s.persistUpdateSettings(w, r, updated) {
+			return
 		}
 
 		s.appendAuditWithContext(r.Context(), session.UserID, "settings.updates.update", "panel", map[string]any{
@@ -171,25 +154,64 @@ func (s *Server) handlePutUpdateSettings() http.HandlerFunc {
 			"auto_update_panel": updated.AutoUpdatePanel,
 		})
 
-		s.settingsMu.RLock()
-		state := s.updateState
-		s.settingsMu.RUnlock()
+		writeJSON(w, http.StatusOK, s.buildUpdateSettingsResponse(updated))
+	}
+}
 
-		token := ""
-		if updated.GitHubToken != "" {
-			token = maskToken(updated.GitHubToken)
+func decodeUpdateSettingsRequest(w http.ResponseWriter, r *http.Request) (updateSettingsRequest, bool) {
+	var req updateSettingsRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request payload")
+		return updateSettingsRequest{}, false
+	}
+	if req.GitHubRepo != nil {
+		if err := validateGitHubRepo(*req.GitHubRepo); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return updateSettingsRequest{}, false
 		}
+	}
+	return req, true
+}
 
-		writeJSON(w, http.StatusOK, updateSettingsResponse{
-			CheckIntervalHours:  updated.CheckIntervalHours,
-			AutoUpdatePanel:     updated.AutoUpdatePanel,
-			AutoUpdateAgents:    updated.AutoUpdateAgents,
-			GitHubRepo:          updated.GitHubRepo,
-			GitHubToken:         token,
-			AgentDownloadSource: updated.AgentDownloadSource,
-			CurrentVersion:      s.version,
-			State:               state,
-		})
+func (s *Server) applyUpdateSettings(req updateSettingsRequest) UpdateSettings {
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
+	mergeUpdateSettings(&s.updateSettings, req)
+	return s.updateSettings
+}
+
+func (s *Server) persistUpdateSettings(w http.ResponseWriter, r *http.Request, updated UpdateSettings) bool {
+	if s.store == nil {
+		return true
+	}
+	data, _ := json.Marshal(updated)
+	if err := s.store.PutUpdateSettings(r.Context(), data); err != nil {
+		s.logger.Error("persist update settings failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return false
+	}
+	return true
+}
+
+func (s *Server) buildUpdateSettingsResponse(updated UpdateSettings) updateSettingsResponse {
+	s.settingsMu.RLock()
+	state := s.updateState
+	s.settingsMu.RUnlock()
+
+	token := ""
+	if updated.GitHubToken != "" {
+		token = maskToken(updated.GitHubToken)
+	}
+
+	return updateSettingsResponse{
+		CheckIntervalHours:  updated.CheckIntervalHours,
+		AutoUpdatePanel:     updated.AutoUpdatePanel,
+		AutoUpdateAgents:    updated.AutoUpdateAgents,
+		GitHubRepo:          updated.GitHubRepo,
+		GitHubToken:         token,
+		AgentDownloadSource: updated.AgentDownloadSource,
+		CurrentVersion:      s.version,
+		State:               state,
 	}
 }
 
@@ -233,49 +255,13 @@ func (s *Server) handlePanelUpdate() http.HandlerFunc {
 		state := s.updateState
 		s.settingsMu.RUnlock()
 
-		targetVersion := strings.TrimSpace(req.TargetVersion)
-		if targetVersion == "" {
-			targetVersion = state.LatestPanelVersion
-		}
-		if targetVersion == "" {
-			writeError(w, http.StatusBadRequest, "no target version specified and no latest version cached")
+		targetVersion, ok := s.resolvePanelTargetVersion(w, req.TargetVersion, state)
+		if !ok {
 			return
 		}
 
-		// Strip "v" prefix for comparison since UpdateState stores bare semver.
-		currentVersion := strings.TrimPrefix(s.version, "v")
-		if CompareVersions(targetVersion, currentVersion) <= 0 {
-			writeError(w, http.StatusConflict, "target version is not newer than current version")
-			return
-		}
-
-		downloadURL := state.PanelDownloadURL
-		checksumURL := state.PanelChecksumURL
-		signatureURL := state.PanelSignatureURL
-
-		// If the target version differs from the cached latest, fetch the
-		// specific release from GitHub to resolve asset URLs.
-		if targetVersion != state.LatestPanelVersion {
-			tag := "control-plane/v" + targetVersion
-			ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-			defer cancel()
-
-			panel, _, err := FetchLatestVersions(ctx, settings.GitHubRepo, settings.GitHubToken)
-			if err != nil || panel == nil || panel.TagName != tag {
-				writeError(w, http.StatusBadGateway, "failed to resolve download URLs for target version")
-				return
-			}
-			downloadURL, checksumURL, signatureURL = ResolveAssetURLs(panel, "control-plane")
-		}
-
-		if downloadURL == "" {
-			writeError(w, http.StatusBadRequest, "no download URL available for target version")
-			return
-		}
-		if signatureURL == "" {
-			// Refuse to install unsigned artifacts; the signature is the
-			// primary defence against supply-chain tampering (SEC-02).
-			writeError(w, http.StatusBadRequest, "release is missing a signature (.sig) asset; cannot install")
+		downloadURL, checksumURL, signatureURL, ok := s.resolvePanelDownloadAssets(w, r, targetVersion, state, settings)
+		if !ok {
 			return
 		}
 
@@ -292,6 +278,58 @@ func (s *Server) handlePanelUpdate() http.HandlerFunc {
 		// caller the work continues asynchronously.
 		go s.performPanelUpdate(session.UserID, targetVersion, downloadURL, checksumURL, signatureURL, settings.GitHubToken) //nolint:contextcheck,gosec // intentionally detached from request lifecycle
 	}
+}
+
+func (s *Server) resolvePanelTargetVersion(w http.ResponseWriter, requested string, state UpdateState) (string, bool) {
+	targetVersion := strings.TrimSpace(requested)
+	if targetVersion == "" {
+		targetVersion = state.LatestPanelVersion
+	}
+	if targetVersion == "" {
+		writeError(w, http.StatusBadRequest, "no target version specified and no latest version cached")
+		return "", false
+	}
+
+	// Strip "v" prefix for comparison since UpdateState stores bare semver.
+	currentVersion := strings.TrimPrefix(s.version, "v")
+	if CompareVersions(targetVersion, currentVersion) <= 0 {
+		writeError(w, http.StatusConflict, "target version is not newer than current version")
+		return "", false
+	}
+	return targetVersion, true
+}
+
+func (s *Server) resolvePanelDownloadAssets(w http.ResponseWriter, r *http.Request, targetVersion string, state UpdateState, settings UpdateSettings) (string, string, string, bool) {
+	downloadURL := state.PanelDownloadURL
+	checksumURL := state.PanelChecksumURL
+	signatureURL := state.PanelSignatureURL
+
+	// If the target version differs from the cached latest, fetch the
+	// specific release from GitHub to resolve asset URLs.
+	if targetVersion != state.LatestPanelVersion {
+		tag := "control-plane/v" + targetVersion
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+
+		panel, _, err := FetchLatestVersions(ctx, settings.GitHubRepo, settings.GitHubToken)
+		if err != nil || panel == nil || panel.TagName != tag {
+			writeError(w, http.StatusBadGateway, "failed to resolve download URLs for target version")
+			return "", "", "", false
+		}
+		downloadURL, checksumURL, signatureURL = ResolveAssetURLs(panel, "control-plane")
+	}
+
+	if downloadURL == "" {
+		writeError(w, http.StatusBadRequest, "no download URL available for target version")
+		return "", "", "", false
+	}
+	if signatureURL == "" {
+		// Refuse to install unsigned artifacts; the signature is the
+		// primary defence against supply-chain tampering (SEC-02).
+		writeError(w, http.StatusBadRequest, "release is missing a signature (.sig) asset; cannot install")
+		return "", "", "", false
+	}
+	return downloadURL, checksumURL, signatureURL, true
 }
 
 // performPanelUpdate downloads, verifies (signature required, checksum as a
@@ -590,14 +628,8 @@ var allowedAgentArches = map[string]struct{}{
 
 func (s *Server) handleAgentBinaryProxy() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		version := r.URL.Query().Get("version")
-		arch := r.URL.Query().Get("arch")
-		if version == "" || arch == "" {
-			writeError(w, http.StatusBadRequest, "version and arch query parameters required")
-			return
-		}
-		if _, ok := allowedAgentArches[arch]; !ok {
-			writeError(w, http.StatusBadRequest, "unsupported arch; allowed: amd64, arm64")
+		version, arch, ok := parseAgentBinaryQuery(w, r)
+		if !ok {
 			return
 		}
 
@@ -605,30 +637,15 @@ func (s *Server) handleAgentBinaryProxy() http.HandlerFunc {
 		settings := s.updateSettings
 		s.settingsMu.RUnlock()
 
-		// Re-validate the stored repo before interpolating it into the URL,
-		// in case an earlier code path bypassed handlePutUpdateSettings' check.
-		if err := validateGitHubRepo(settings.GitHubRepo); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid github_repo configured")
+		rawURL, ok := buildAgentBinaryDownloadURL(w, settings, version, arch)
+		if !ok {
 			return
 		}
 
-		assetName := fmt.Sprintf("panvex-agent-linux-%s", arch)
-		rawURL := fmt.Sprintf("https://github.com/%s/releases/download/agent/v%s/%s",
-			settings.GitHubRepo, strings.TrimPrefix(version, "v"), assetName)
-		if err := checkDownloadURL(rawURL); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid download URL")
+		req, ok := buildAgentBinaryRequest(w, r, rawURL, settings.GitHubToken)
+		if !ok {
 			return
 		}
-
-		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, rawURL, nil) //nolint:gosec // URL validated via validateUpdateHost + allow-list CheckRedirect
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to create request")
-			return
-		}
-		if settings.GitHubToken != "" {
-			req.Header.Set("Authorization", "Bearer "+settings.GitHubToken)
-		}
-		req.Header.Set("Accept", "application/octet-stream")
 
 		// secureDownloadClient restricts redirects to the GitHub allow-list so
 		// a rogue release asset cannot steer us toward an attacker host.
@@ -651,4 +668,49 @@ func (s *Server) handleAgentBinaryProxy() http.HandlerFunc {
 		w.WriteHeader(http.StatusOK)
 		io.Copy(w, resp.Body) //nolint:errcheck
 	}
+}
+
+func parseAgentBinaryQuery(w http.ResponseWriter, r *http.Request) (string, string, bool) {
+	version := r.URL.Query().Get("version")
+	arch := r.URL.Query().Get("arch")
+	if version == "" || arch == "" {
+		writeError(w, http.StatusBadRequest, "version and arch query parameters required")
+		return "", "", false
+	}
+	if _, ok := allowedAgentArches[arch]; !ok {
+		writeError(w, http.StatusBadRequest, "unsupported arch; allowed: amd64, arm64")
+		return "", "", false
+	}
+	return version, arch, true
+}
+
+func buildAgentBinaryDownloadURL(w http.ResponseWriter, settings UpdateSettings, version, arch string) (string, bool) {
+	// Re-validate the stored repo before interpolating it into the URL,
+	// in case an earlier code path bypassed handlePutUpdateSettings' check.
+	if err := validateGitHubRepo(settings.GitHubRepo); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid github_repo configured")
+		return "", false
+	}
+
+	assetName := fmt.Sprintf("panvex-agent-linux-%s", arch)
+	rawURL := fmt.Sprintf("https://github.com/%s/releases/download/agent/v%s/%s",
+		settings.GitHubRepo, strings.TrimPrefix(version, "v"), assetName)
+	if err := checkDownloadURL(rawURL); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid download URL")
+		return "", false
+	}
+	return rawURL, true
+}
+
+func buildAgentBinaryRequest(w http.ResponseWriter, r *http.Request, rawURL, token string) (*http.Request, bool) {
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, rawURL, nil) //nolint:gosec // URL validated via validateUpdateHost + allow-list CheckRedirect
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create request")
+		return nil, false
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	req.Header.Set("Accept", "application/octet-stream")
+	return req, true
 }

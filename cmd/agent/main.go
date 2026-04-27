@@ -486,7 +486,23 @@ func startPollingWorkers(
 	agent *runtime.Agent,
 	telemetryOutbound chan<- *gatewayrpc.ConnectClientMessage,
 ) {
-	startPeriodicPollingWorker(connectionCtx, schedule.config(pollHeartbeat), func(observedAt time.Time) {
+	startPeriodicPollingWorker(connectionCtx, schedule.config(pollHeartbeat),
+		makeHeartbeatTick(connectionCtx, agent, telemetryOutbound))
+
+	runtimeBuffer := runtime.NewRuntimeRingBuffer(8)
+	startRuntimePollWorker(connectionCtx, schedule.config(pollRuntime), agent, runtimeBuffer)
+	startRuntimeUploadWorker(connectionCtx, schedule.config(pollRuntimeUpload), runtimeBuffer, telemetryOutbound)
+
+	startPeriodicPollingWorker(connectionCtx, schedule.config(pollUsage),
+		makeUsageSnapshotTick(connectionCtx, agent, telemetryOutbound))
+	startPeriodicPollingWorker(connectionCtx, schedule.config(pollIPPoll),
+		makeIPPollTick(connectionCtx, agent))
+	startPeriodicPollingWorker(connectionCtx, schedule.config(pollIPUpload),
+		makeIPUploadTick(connectionCtx, agent, telemetryOutbound))
+}
+
+func makeHeartbeatTick(connectionCtx context.Context, agent *runtime.Agent, telemetryOutbound chan<- *gatewayrpc.ConnectClientMessage) func(time.Time) {
+	return func(observedAt time.Time) {
 		if enqueueOutboundMessage(connectionCtx, telemetryOutbound, heartbeatMessage(agent, observedAt)) {
 			slog.Debug("heartbeat sent", "agent_id", agent.AgentID())
 			return
@@ -494,13 +510,11 @@ func startPollingWorkers(
 		if connectionCtx.Err() == nil {
 			slog.Warn("heartbeat dropped due to outbound backpressure")
 		}
-	})
+	}
+}
 
-	runtimeBuffer := runtime.NewRuntimeRingBuffer(8)
-	startRuntimePollWorker(connectionCtx, schedule.config(pollRuntime), agent, runtimeBuffer)
-	startRuntimeUploadWorker(connectionCtx, schedule.config(pollRuntimeUpload), runtimeBuffer, telemetryOutbound)
-
-	startPeriodicPollingWorker(connectionCtx, schedule.config(pollUsage), func(observedAt time.Time) {
+func makeUsageSnapshotTick(connectionCtx context.Context, agent *runtime.Agent, telemetryOutbound chan<- *gatewayrpc.ConnectClientMessage) func(time.Time) {
+	return func(observedAt time.Time) {
 		usageCtx, cancelUsage := context.WithTimeout(connectionCtx, runtimeOperationTimeout)
 		snapshot, err := agent.BuildUsageSnapshot(usageCtx, observedAt)
 		cancelUsage()
@@ -517,18 +531,22 @@ func startPollingWorkers(
 		if connectionCtx.Err() == nil {
 			slog.Warn("usage snapshot dropped due to outbound backpressure")
 		}
-	})
+	}
+}
 
-	startPeriodicPollingWorker(connectionCtx, schedule.config(pollIPPoll), func(observedAt time.Time) {
+func makeIPPollTick(connectionCtx context.Context, agent *runtime.Agent) func(time.Time) {
+	return func(observedAt time.Time) {
 		ipPollCtx, cancelIPPoll := context.WithTimeout(connectionCtx, runtimeOperationTimeout)
 		err := agent.PollActiveIPs(ipPollCtx)
 		cancelIPPoll()
 		if err != nil {
 			slog.Error("ip poll failed", "error", err)
 		}
-	})
+	}
+}
 
-	startPeriodicPollingWorker(connectionCtx, schedule.config(pollIPUpload), func(observedAt time.Time) {
+func makeIPUploadTick(connectionCtx context.Context, agent *runtime.Agent, telemetryOutbound chan<- *gatewayrpc.ConnectClientMessage) func(time.Time) {
+	return func(observedAt time.Time) {
 		snapshot := agent.BuildIPSnapshot(observedAt)
 		if len(snapshot.ClientIps) == 0 {
 			return
@@ -542,7 +560,7 @@ func startPollingWorkers(
 		if connectionCtx.Err() == nil {
 			slog.Warn("ip snapshot dropped due to outbound backpressure")
 		}
-	})
+	}
 }
 
 func startPeriodicPollingWorker(
@@ -580,46 +598,81 @@ func startRuntimePollWorker(
 		return
 	}
 
-	go func() {
-		consecutiveFailures := 0
-		for {
-			delay := agent.RuntimeSnapshotInterval(config.Interval, runtimeInitializationFastInterval, time.Now())
-			if consecutiveFailures > 0 {
-				backoff := time.Duration(consecutiveFailures) * config.Interval
-				if backoff > 5*time.Minute {
-					backoff = 5 * time.Minute
-				}
-				delay = backoff
-			}
-			timer := time.NewTimer(delay)
+	go runRuntimePollLoop(connectionCtx, config, agent, buffer)
+}
+
+func runRuntimePollLoop(
+	connectionCtx context.Context,
+	config pollingGroupConfig,
+	agent *runtime.Agent,
+	buffer *runtime.RuntimeRingBuffer,
+) {
+	consecutiveFailures := 0
+	for {
+		delay := nextRuntimePollDelay(agent, config, consecutiveFailures)
+		observedAt, ok := waitRuntimePollTick(connectionCtx, delay)
+		if !ok {
+			return
+		}
+		if performRuntimePoll(connectionCtx, agent, buffer, observedAt, &consecutiveFailures) {
+			continue
+		}
+	}
+}
+
+func nextRuntimePollDelay(agent *runtime.Agent, config pollingGroupConfig, consecutiveFailures int) time.Duration {
+	delay := agent.RuntimeSnapshotInterval(config.Interval, runtimeInitializationFastInterval, time.Now())
+	if consecutiveFailures > 0 {
+		backoff := time.Duration(consecutiveFailures) * config.Interval
+		if backoff > 5*time.Minute {
+			backoff = 5 * time.Minute
+		}
+		delay = backoff
+	}
+	return delay
+}
+
+func waitRuntimePollTick(connectionCtx context.Context, delay time.Duration) (time.Time, bool) {
+	timer := time.NewTimer(delay)
+	select {
+	case <-connectionCtx.Done():
+		if !timer.Stop() {
 			select {
-			case <-connectionCtx.Done():
-				if !timer.Stop() {
-					select {
-					case <-timer.C:
-					default:
-					}
-				}
-				return
-			case observedAt := <-timer.C:
-				runtimeCtx, cancelRuntime := context.WithTimeout(connectionCtx, runtimeOperationTimeout)
-				snapshot, err := agent.BuildRuntimeSnapshot(runtimeCtx, observedAt.UTC())
-				cancelRuntime()
-				if err != nil {
-					consecutiveFailures++
-					if consecutiveFailures <= 3 || consecutiveFailures%10 == 0 {
-						slog.Error("runtime poll failed", "attempt", consecutiveFailures, "error", err)
-					}
-					continue
-				}
-				consecutiveFailures = 0
-				buffer.Push(runtime.RuntimeSample{
-					ObservedAt: observedAt.UTC(),
-					Snapshot:   snapshot,
-				})
+			case <-timer.C:
+			default:
 			}
 		}
-	}()
+		return time.Time{}, false
+	case observedAt := <-timer.C:
+		return observedAt, true
+	}
+}
+
+// performRuntimePoll executes one snapshot fetch, updates failure counters,
+// and pushes a sample on success. Always returns true so the loop continues.
+func performRuntimePoll(
+	connectionCtx context.Context,
+	agent *runtime.Agent,
+	buffer *runtime.RuntimeRingBuffer,
+	observedAt time.Time,
+	consecutiveFailures *int,
+) bool {
+	runtimeCtx, cancelRuntime := context.WithTimeout(connectionCtx, runtimeOperationTimeout)
+	snapshot, err := agent.BuildRuntimeSnapshot(runtimeCtx, observedAt.UTC())
+	cancelRuntime()
+	if err != nil {
+		*consecutiveFailures++
+		if *consecutiveFailures <= 3 || *consecutiveFailures%10 == 0 {
+			slog.Error("runtime poll failed", "attempt", *consecutiveFailures, "error", err)
+		}
+		return true
+	}
+	*consecutiveFailures = 0
+	buffer.Push(runtime.RuntimeSample{
+		ObservedAt: observedAt.UTC(),
+		Snapshot:   snapshot,
+	})
+	return true
 }
 
 // startRuntimeUploadWorker drains the ring buffer, aggregates samples, and sends one snapshot.
