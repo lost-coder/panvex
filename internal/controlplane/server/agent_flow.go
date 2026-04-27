@@ -185,17 +185,20 @@ func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) error {
 	return s.applyAgentSnapshotWithContext(context.Background(), snapshot)
 }
 
-func (s *Server) applyAgentSnapshotWithContext(ctx context.Context, snapshot agentSnapshot) error {
-	s.logger.Debug("agent heartbeat applied", "agent_id", snapshot.AgentID, "node", snapshot.NodeName)
-	// Lock section: build all state objects AND commit to in-memory maps
-	// atomically. No DB I/O happens under the locks.
-	// Lock ordering: mu -> clientsMu -> metricsAuditMu.
-	s.mu.Lock()
+// updateAgentRecordFromSnapshot folds the snapshot's identity / runtime
+// fields into the existing agent record under s.mu, refreshing the
+// initialization-watch cooldown table along the way. Returns the new agent
+// value (still owned by the caller, who is responsible for committing it
+// back into s.agents).
+//
+// Caller must hold s.mu.
+func (s *Server) updateAgentRecordFromSnapshot(snapshot agentSnapshot) Agent {
 	agent := s.agents[snapshot.AgentID]
 	agent.ID = snapshot.AgentID
 	agent.NodeName = snapshot.NodeName
-	// Enrollment fixes the agent group. Runtime snapshots may be stale or misconfigured,
-	// so they must not move an enrolled agent into a different fleet group.
+	// Enrollment fixes the agent group. Runtime snapshots may be stale or
+	// misconfigured, so they must not move an enrolled agent into a
+	// different fleet group.
 	if agent.FleetGroupID == "" {
 		agent.FleetGroupID = snapshot.FleetGroupID
 	}
@@ -205,17 +208,33 @@ func (s *Server) applyAgentSnapshotWithContext(ctx context.Context, snapshot age
 	if snapshot.HasRuntime && snapshot.Runtime != nil {
 		previousRuntime := agent.Runtime
 		agent.Runtime = agentRuntimeFromSnapshot(snapshot.Runtime, snapshot.ObservedAt)
-		currentNeedsWatch := runtimeNeedsInitializationWatch(agent.Runtime)
-		previousNeedsWatch := runtimeNeedsInitializationWatch(previousRuntime)
-		if currentNeedsWatch {
-			delete(s.initializationWatchCooldowns, snapshot.AgentID)
-		} else if previousNeedsWatch && !currentNeedsWatch {
-			s.initializationWatchCooldowns[snapshot.AgentID] = snapshot.ObservedAt.UTC().Add(telemetryInitializationWatchCooldown)
-		} else if expiresAt := s.initializationWatchCooldowns[snapshot.AgentID]; !expiresAt.IsZero() && !expiresAt.After(snapshot.ObservedAt.UTC()) {
+		s.refreshInitializationWatchCooldown(snapshot, agent.Runtime, previousRuntime)
+	}
+	return agent
+}
+
+// refreshInitializationWatchCooldown maintains the per-agent cooldown so the
+// "initialization watch" UI signal does not flap on every heartbeat once the
+// agent has finished initializing. Caller must hold s.mu.
+func (s *Server) refreshInitializationWatchCooldown(snapshot agentSnapshot, current, previous AgentRuntime) {
+	currentNeedsWatch := runtimeNeedsInitializationWatch(current)
+	previousNeedsWatch := runtimeNeedsInitializationWatch(previous)
+	switch {
+	case currentNeedsWatch:
+		delete(s.initializationWatchCooldowns, snapshot.AgentID)
+	case previousNeedsWatch:
+		s.initializationWatchCooldowns[snapshot.AgentID] = snapshot.ObservedAt.UTC().Add(telemetryInitializationWatchCooldown)
+	default:
+		expiresAt := s.initializationWatchCooldowns[snapshot.AgentID]
+		if !expiresAt.IsZero() && !expiresAt.After(snapshot.ObservedAt.UTC()) {
 			delete(s.initializationWatchCooldowns, snapshot.AgentID)
 		}
 	}
+}
 
+// instancesFromSnapshot projects the snapshot's instances into the in-memory
+// Instance shape. Pure function — does no map mutation.
+func instancesFromSnapshot(snapshot agentSnapshot) []Instance {
 	instances := make([]Instance, 0, len(snapshot.Instances))
 	for _, instance := range snapshot.Instances {
 		instances = append(instances, Instance{
@@ -229,19 +248,20 @@ func (s *Server) applyAgentSnapshotWithContext(ctx context.Context, snapshot age
 			UpdatedAt:         snapshot.ObservedAt.UTC(),
 		})
 	}
+	return instances
+}
 
-	// Commit agent and instance maps within mu.
-	s.agents[snapshot.AgentID] = agent
-	// Each snapshot is the complete instance set for this agent. Prune any
-	// previously-known instances for this agent that are absent from the
-	// incoming set so s.instances does not leak stale entries
-	// (P2-LOG-09 / L-04).
+// commitInstancesLocked replaces the per-agent slice of instances with the
+// freshly-snapshotted set, pruning any previously-known instances that are
+// absent from `instances` so s.instances does not leak stale entries
+// (P2-LOG-09 / L-04). Caller must hold s.mu.
+func (s *Server) commitInstancesLocked(agentID string, instances []Instance) {
 	liveIDs := make(map[string]struct{}, len(instances))
 	for _, instance := range instances {
 		liveIDs[instance.ID] = struct{}{}
 	}
 	for id, entry := range s.instances {
-		if entry.AgentID != snapshot.AgentID {
+		if entry.AgentID != agentID {
 			continue
 		}
 		if _, ok := liveIDs[id]; ok {
@@ -252,111 +272,164 @@ func (s *Server) applyAgentSnapshotWithContext(ctx context.Context, snapshot age
 	for _, instance := range instances {
 		s.instances[instance.ID] = instance
 	}
+}
 
-	// Commit client usage under clientsMu while holding mu.
-	if snapshot.HasClients || snapshot.HasClientIPs {
-		s.clientsMu.Lock()
-		if snapshot.HasClients {
-			s.applyClientUsageSnapshot(ctx, snapshot.AgentID, snapshot.Clients)
-		}
-		if snapshot.HasClientIPs {
-			s.applyClientIPSnapshot(snapshot.AgentID, snapshot.ClientIPs)
-		}
-		s.clientsMu.Unlock()
+// commitClientSnapshotsLocked applies any client usage / IP snapshot data
+// under s.clientsMu. Caller must hold s.mu.
+func (s *Server) commitClientSnapshotsLocked(ctx context.Context, snapshot agentSnapshot) {
+	if !snapshot.HasClients && !snapshot.HasClientIPs {
+		return
 	}
+	s.clientsMu.Lock()
+	defer s.clientsMu.Unlock()
+	if snapshot.HasClients {
+		s.applyClientUsageSnapshot(ctx, snapshot.AgentID, snapshot.Clients)
+	}
+	if snapshot.HasClientIPs {
+		s.applyClientIPSnapshot(snapshot.AgentID, snapshot.ClientIPs)
+	}
+}
 
-	// Build and commit metrics under metricsAuditMu while holding mu.
-	var metricSnapshot *MetricSnapshot
-	if len(snapshot.Metrics) > 0 {
-		s.metricsAuditMu.Lock()
-		s.metricSeq++
-		metric := MetricSnapshot{
-			ID:         newSequenceID("metric", s.metricSeq),
-			AgentID:    snapshot.AgentID,
-			CapturedAt: snapshot.ObservedAt.UTC(),
-			Values:     snapshot.Metrics,
-		}
-		metricSnapshot = &metric
-		if len(s.metrics) < maxInMemoryMetricSnapshots {
-			s.metrics = append(s.metrics, *metricSnapshot)
-		} else {
-			copy(s.metrics, s.metrics[1:])
-			s.metrics[len(s.metrics)-1] = *metricSnapshot
-		}
-		s.metricsAuditMu.Unlock()
+// commitMetricSnapshotLocked appends a new metric sample to the in-memory
+// ring buffer (capped at maxInMemoryMetricSnapshots) and returns it for
+// downstream batch-writer enqueueing. Returns nil when the snapshot carries
+// no metrics. Caller must hold s.mu.
+func (s *Server) commitMetricSnapshotLocked(snapshot agentSnapshot) *MetricSnapshot {
+	if len(snapshot.Metrics) == 0 {
+		return nil
 	}
+	s.metricsAuditMu.Lock()
+	defer s.metricsAuditMu.Unlock()
+	s.metricSeq++
+	metric := MetricSnapshot{
+		ID:         newSequenceID("metric", s.metricSeq),
+		AgentID:    snapshot.AgentID,
+		CapturedAt: snapshot.ObservedAt.UTC(),
+		Values:     snapshot.Metrics,
+	}
+	if len(s.metrics) < maxInMemoryMetricSnapshots {
+		s.metrics = append(s.metrics, metric)
+	} else {
+		copy(s.metrics, s.metrics[1:])
+		s.metrics[len(s.metrics)-1] = metric
+	}
+	return &metric
+}
+
+// telemetryWriteUnitForRuntime assembles the telemetry payload for one agent
+// snapshot when runtime data is present. Returns the unit ready to enqueue.
+func telemetryWriteUnitForRuntime(agent Agent, snapshot agentSnapshot) telemetryWriteUnit {
+	rec := runtimeCurrentRecordFromAgent(agent)
+	unit := telemetryWriteUnit{
+		agentID:   agent.ID,
+		runtime:   &rec,
+		dcs:       runtimeDCRecordsFromAgent(agent),
+		upstreams: runtimeUpstreamRecordsFromAgent(agent),
+		events:    runtimeEventRecordsFromAgent(agent),
+	}
+	if snapshot.RuntimeDiagnostics != nil {
+		diag := storage.TelemetryDiagnosticsCurrentRecord{
+			AgentID:             agent.ID,
+			ObservedAt:          snapshot.ObservedAt.UTC(),
+			State:               snapshot.RuntimeDiagnostics.State,
+			StateReason:         snapshot.RuntimeDiagnostics.StateReason,
+			SystemInfoJSON:      snapshot.RuntimeDiagnostics.SystemInfoJson,
+			EffectiveLimitsJSON: snapshot.RuntimeDiagnostics.EffectiveLimitsJson,
+			SecurityPostureJSON: snapshot.RuntimeDiagnostics.SecurityPostureJson,
+			MinimalAllJSON:      snapshot.RuntimeDiagnostics.MinimalAllJson,
+			MEPoolJSON:          snapshot.RuntimeDiagnostics.MePoolJson,
+			DcsJSON:             snapshot.RuntimeDiagnostics.DcsJson,
+		}
+		unit.diagnostics = &diag
+	}
+	if snapshot.RuntimeSecurityInventory != nil {
+		sec := storage.TelemetrySecurityInventoryCurrentRecord{
+			AgentID:      agent.ID,
+			ObservedAt:   snapshot.ObservedAt.UTC(),
+			State:        snapshot.RuntimeSecurityInventory.State,
+			StateReason:  snapshot.RuntimeSecurityInventory.StateReason,
+			Enabled:      snapshot.RuntimeSecurityInventory.Enabled,
+			EntriesTotal: int(snapshot.RuntimeSecurityInventory.EntriesTotal),
+			EntriesJSON:  snapshot.RuntimeSecurityInventory.EntriesJson,
+		}
+		unit.security = &sec
+	}
+	return unit
+}
+
+// enqueueRuntimeBatchWrites pushes runtime telemetry, server-load and DC
+// health points for one snapshot. No-op when the snapshot has no runtime.
+func (s *Server) enqueueRuntimeBatchWrites(agent Agent, snapshot agentSnapshot) {
+	if !snapshot.HasRuntime || snapshot.Runtime == nil {
+		return
+	}
+	s.batchWriter.telemetry.Enqueue(telemetryWriteUnitForRuntime(agent, snapshot))
+	s.batchWriter.serverLoad.Enqueue(serverLoadPointFromSnapshot(agent, snapshot))
+	for _, dcPoint := range dcHealthPointsFromSnapshot(agent, snapshot) {
+		s.batchWriter.dcHealth.Enqueue(dcPoint)
+	}
+}
+
+// enqueueClientIPHistory pushes one ClientIPHistoryRecord per active IP in
+// the snapshot.
+func (s *Server) enqueueClientIPHistory(snapshot agentSnapshot) {
+	if !snapshot.HasClientIPs {
+		return
+	}
+	now := snapshot.ObservedAt.UTC()
+	var ipRecords int
+	for _, clientIP := range snapshot.ClientIPs {
+		for _, ip := range clientIP.ActiveIPs {
+			s.batchWriter.clientIPs.Enqueue(storage.ClientIPHistoryRecord{
+				AgentID:   snapshot.AgentID,
+				ClientID:  clientIP.ClientID,
+				IPAddress: ip,
+				FirstSeen: now,
+				LastSeen:  now,
+			})
+			ipRecords++
+		}
+	}
+	if ipRecords > 0 {
+		s.logger.Info("client ip records enqueued", "agent_id", snapshot.AgentID, "clients", len(snapshot.ClientIPs), "ip_records", ipRecords)
+	}
+}
+
+// enqueueAgentSnapshotBatchWrites runs the asynchronous DB-write side of one
+// agent snapshot. No-op when the batch writer is disabled.
+func (s *Server) enqueueAgentSnapshotBatchWrites(agent Agent, instances []Instance, metric *MetricSnapshot, snapshot agentSnapshot) {
+	if s.batchWriter == nil {
+		return
+	}
+	s.batchWriter.agents.Enqueue(agentToRecord(agent))
+	for _, instance := range instances {
+		s.batchWriter.instances.Enqueue(instanceToRecord(instance))
+	}
+	if metric != nil {
+		s.batchWriter.metricsBuf.Enqueue(metricSnapshotToRecord(*metric))
+	}
+	s.enqueueRuntimeBatchWrites(agent, snapshot)
+	s.enqueueClientIPHistory(snapshot)
+}
+
+func (s *Server) applyAgentSnapshotWithContext(ctx context.Context, snapshot agentSnapshot) error {
+	s.logger.Debug("agent heartbeat applied", "agent_id", snapshot.AgentID, "node", snapshot.NodeName)
+
+	// Lock section: build all state objects AND commit to in-memory maps
+	// atomically. No DB I/O happens under the locks.
+	// Lock ordering: mu -> clientsMu -> metricsAuditMu.
+	s.mu.Lock()
+	agent := s.updateAgentRecordFromSnapshot(snapshot)
+	instances := instancesFromSnapshot(snapshot)
+	s.agents[snapshot.AgentID] = agent
+	s.commitInstancesLocked(snapshot.AgentID, instances)
+	s.commitClientSnapshotsLocked(ctx, snapshot)
+	metricSnapshot := s.commitMetricSnapshotLocked(snapshot)
 	s.mu.Unlock()
 
 	// Enqueue all DB writes asynchronously via the batch writer. No DB I/O
 	// blocks the caller — the background flush goroutine handles persistence.
-	if s.batchWriter != nil {
-		s.batchWriter.agents.Enqueue(agentToRecord(agent))
-		for _, instance := range instances {
-			s.batchWriter.instances.Enqueue(instanceToRecord(instance))
-		}
-		if metricSnapshot != nil {
-			s.batchWriter.metricsBuf.Enqueue(metricSnapshotToRecord(*metricSnapshot))
-		}
-		if snapshot.HasRuntime && snapshot.Runtime != nil {
-			unit := telemetryWriteUnit{agentID: agent.ID}
-			rec := runtimeCurrentRecordFromAgent(agent)
-			unit.runtime = &rec
-			unit.dcs = runtimeDCRecordsFromAgent(agent)
-			unit.upstreams = runtimeUpstreamRecordsFromAgent(agent)
-			unit.events = runtimeEventRecordsFromAgent(agent)
-			if snapshot.RuntimeDiagnostics != nil {
-				diag := storage.TelemetryDiagnosticsCurrentRecord{
-					AgentID:             agent.ID,
-					ObservedAt:          snapshot.ObservedAt.UTC(),
-					State:               snapshot.RuntimeDiagnostics.State,
-					StateReason:         snapshot.RuntimeDiagnostics.StateReason,
-					SystemInfoJSON:      snapshot.RuntimeDiagnostics.SystemInfoJson,
-					EffectiveLimitsJSON: snapshot.RuntimeDiagnostics.EffectiveLimitsJson,
-					SecurityPostureJSON: snapshot.RuntimeDiagnostics.SecurityPostureJson,
-					MinimalAllJSON:      snapshot.RuntimeDiagnostics.MinimalAllJson,
-					MEPoolJSON:          snapshot.RuntimeDiagnostics.MePoolJson,
-					DcsJSON:             snapshot.RuntimeDiagnostics.DcsJson,
-				}
-				unit.diagnostics = &diag
-			}
-			if snapshot.RuntimeSecurityInventory != nil {
-				sec := storage.TelemetrySecurityInventoryCurrentRecord{
-					AgentID:      agent.ID,
-					ObservedAt:   snapshot.ObservedAt.UTC(),
-					State:        snapshot.RuntimeSecurityInventory.State,
-					StateReason:  snapshot.RuntimeSecurityInventory.StateReason,
-					Enabled:      snapshot.RuntimeSecurityInventory.Enabled,
-					EntriesTotal: int(snapshot.RuntimeSecurityInventory.EntriesTotal),
-					EntriesJSON:  snapshot.RuntimeSecurityInventory.EntriesJson,
-				}
-				unit.security = &sec
-			}
-			s.batchWriter.telemetry.Enqueue(unit)
-			s.batchWriter.serverLoad.Enqueue(serverLoadPointFromSnapshot(agent, snapshot))
-			for _, dcPoint := range dcHealthPointsFromSnapshot(agent, snapshot) {
-				s.batchWriter.dcHealth.Enqueue(dcPoint)
-			}
-		}
-		if snapshot.HasClientIPs {
-			now := snapshot.ObservedAt.UTC()
-			var ipRecords int
-			for _, clientIP := range snapshot.ClientIPs {
-				for _, ip := range clientIP.ActiveIPs {
-					s.batchWriter.clientIPs.Enqueue(storage.ClientIPHistoryRecord{
-						AgentID:   snapshot.AgentID,
-						ClientID:  clientIP.ClientID,
-						IPAddress: ip,
-						FirstSeen: now,
-						LastSeen:  now,
-					})
-					ipRecords++
-				}
-			}
-			if ipRecords > 0 {
-				s.logger.Info("client ip records enqueued", "agent_id", snapshot.AgentID, "clients", len(snapshot.ClientIPs), "ip_records", ipRecords)
-			}
-		}
-	}
+	s.enqueueAgentSnapshotBatchWrites(agent, instances, metricSnapshot, snapshot)
 
 	// P2-LOG-12 / L-05: only Heartbeat on every snapshot. MarkConnected is
 	// called exactly once per gRPC stream open (see Connect in
