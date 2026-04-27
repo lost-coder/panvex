@@ -27,6 +27,22 @@ import (
 // Errors short-circuit so the caller can fail boot loudly instead of
 // running on a half-restored snapshot.
 func (s *Server) restoreStoredState() error {
+	for _, step := range []func() error{
+		s.restoreAgents,
+		s.restoreAgentRevocations,
+		s.restoreInstances,
+		s.restoreMetrics,
+		s.restoreAuditEvents,
+		s.restoreStoredTelemetry,
+	} {
+		if err := step(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Server) restoreAgents() error {
 	agents, err := s.store.ListAgents(context.Background())
 	if err != nil {
 		return err
@@ -35,10 +51,13 @@ func (s *Server) restoreStoredState() error {
 		agent := agentFromRecord(record)
 		s.agents[agent.ID] = agent
 	}
+	return nil
+}
 
-	// Restore persisted agent revocations (P1-SEC-06). Without this, a CP
-	// restart silently forgets the revocation and a deleted agent whose
-	// 30-day client cert is still valid could reconnect over mTLS.
+// restoreAgentRevocations replays persisted agent revocations (P1-SEC-06)
+// so a control-plane restart cannot silently forget a revocation while a
+// deleted agent's 30-day client cert is still otherwise valid.
+func (s *Server) restoreAgentRevocations() error {
 	revocations, err := s.store.ListAgentRevocations(context.Background())
 	if err != nil {
 		return err
@@ -52,7 +71,10 @@ func (s *Server) restoreStoredState() error {
 		}
 		s.revokedAgentIDs[rec.AgentID] = struct{}{}
 	}
+	return nil
+}
 
+func (s *Server) restoreInstances() error {
 	instances, err := s.store.ListInstances(context.Background())
 	if err != nil {
 		return err
@@ -61,7 +83,10 @@ func (s *Server) restoreStoredState() error {
 		instance := instanceFromRecord(record)
 		s.instances[instance.ID] = instance
 	}
+	return nil
+}
 
+func (s *Server) restoreMetrics() error {
 	metrics, err := s.store.ListMetricSnapshots(context.Background())
 	if err != nil {
 		return err
@@ -76,7 +101,10 @@ func (s *Server) restoreStoredState() error {
 	for _, record := range metrics {
 		s.metrics = append(s.metrics, metricSnapshotFromRecord(record))
 	}
+	return nil
+}
 
+func (s *Server) restoreAuditEvents() error {
 	auditEvents, err := s.store.ListAuditEvents(context.Background(), maxInMemoryAuditEvents)
 	if err != nil {
 		return err
@@ -91,8 +119,7 @@ func (s *Server) restoreStoredState() error {
 	for _, record := range auditEvents {
 		s.appendAuditTrailLocked(auditEventFromRecord(record))
 	}
-
-	return s.restoreStoredTelemetry()
+	return nil
 }
 
 // maxPrefixedSequence returns the larger of `current` and the trailing

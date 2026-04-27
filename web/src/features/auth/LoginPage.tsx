@@ -23,10 +23,10 @@ function CredentialsPanel({
 }) {
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
-        <label className="text-xs font-medium text-fg-muted uppercase tracking-wider">
+      <label className="flex flex-col gap-1.5">
+        <span className="text-xs font-medium text-fg-muted uppercase tracking-wider">
           Username
-        </label>
+        </span>
         <Input
           type="text"
           autoComplete="username"
@@ -37,12 +37,12 @@ function CredentialsPanel({
           required
           autoFocus
         />
-      </div>
+      </label>
 
-      <div className="flex flex-col gap-1.5">
-        <label className="text-xs font-medium text-fg-muted uppercase tracking-wider">
+      <label className="flex flex-col gap-1.5">
+        <span className="text-xs font-medium text-fg-muted uppercase tracking-wider">
           Password
-        </label>
+        </span>
         <Input
           type="password"
           autoComplete="current-password"
@@ -52,7 +52,7 @@ function CredentialsPanel({
           disabled={loading}
           required
         />
-      </div>
+      </label>
 
       <Button type="submit" className="w-full mt-2" disabled={loading || !username || !password}>
         {loading ? "Signing in…" : "Sign in"}
@@ -84,10 +84,10 @@ function TotpPanel({
   };
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
-        <label className="text-xs font-medium text-fg-muted uppercase tracking-wider">
+      <label className="flex flex-col gap-1.5">
+        <span className="text-xs font-medium text-fg-muted uppercase tracking-wider">
           2FA Code
-        </label>
+        </span>
         <Input
           type="text"
           autoComplete="one-time-code"
@@ -106,7 +106,7 @@ function TotpPanel({
           className="font-mono text-center text-2xl tracking-[0.5em] tabular-nums"
         />
         <p className="text-xs text-fg-muted">Enter the 6-digit code from your authenticator app.</p>
-      </div>
+      </label>
 
       <Button type="submit" className="w-full mt-2" disabled={loading || totpCode.length < 6}>
         {loading ? "Verifying…" : "Verify"}
