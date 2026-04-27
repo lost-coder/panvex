@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Moon, Sun } from "lucide-react";
 
 import { apiClient } from "@/shared/api/api";
 import {
@@ -73,9 +74,13 @@ export function ThemeToggleButton() {
       disabled={mutation.isPending || !userID}
       aria-label={`Switch to ${next} theme`}
       title={`Switch to ${next} theme`}
-      className="h-11 w-11 flex items-center justify-center rounded-xs text-base text-fg-muted hover:text-fg hover:bg-bg-hover transition-colors disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
+      className="h-11 w-11 flex items-center justify-center rounded-xs text-lg text-fg-muted hover:text-fg hover:bg-bg-hover transition-colors disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
     >
-      {effective === "light" ? "☾" : "☀"}
+      {effective === "light" ? (
+        <Moon className="w-5 h-5" aria-hidden="true" />
+      ) : (
+        <Sun className="w-5 h-5" aria-hidden="true" />
+      )}
     </button>
   );
 }
