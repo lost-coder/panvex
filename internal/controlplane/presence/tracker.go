@@ -31,7 +31,7 @@ type Tracker struct {
 }
 
 // NewTracker constructs a presence tracker using degraded and offline thresholds.
-func NewTracker(degradedAfter time.Duration, offlineAfter time.Duration) *Tracker {
+func NewTracker(degradedAfter, offlineAfter time.Duration) *Tracker {
 	return &Tracker{
 		degradedAfter:   degradedAfter,
 		offlineAfter:    offlineAfter,

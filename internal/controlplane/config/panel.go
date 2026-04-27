@@ -93,7 +93,7 @@ type controlPlanePanelSection struct {
 }
 
 // ResolveLegacyControlPlaneConfig normalizes the legacy flag-based runtime input.
-func ResolveLegacyControlPlaneConfig(httpAddr string, grpcAddr string, restartMode string, tlsMode string, storageDriver string, storageDSN string) (ControlPlaneConfig, error) {
+func ResolveLegacyControlPlaneConfig(httpAddr, grpcAddr, restartMode, tlsMode, storageDriver, storageDSN string) (ControlPlaneConfig, error) {
 	storage, err := ResolveStorage(storageDriver, storageDSN)
 	if err != nil {
 		return ControlPlaneConfig{}, err
@@ -260,7 +260,7 @@ func normalizeControlPlaneRootPath(value string) (string, error) {
 	return cleaned, nil
 }
 
-func rebaseConfigRelativeSQLiteDSN(configDirectory string, driver string, dsn string) string {
+func rebaseConfigRelativeSQLiteDSN(configDirectory, driver, dsn string) string {
 	if driver != StorageDriverSQLite {
 		return dsn
 	}
@@ -270,7 +270,7 @@ func rebaseConfigRelativeSQLiteDSN(configDirectory string, driver string, dsn st
 	return filepath.Join(configDirectory, dsn)
 }
 
-func rebaseConfigRelativePath(configDirectory string, value string) string {
+func rebaseConfigRelativePath(configDirectory, value string) string {
 	if strings.TrimSpace(value) == "" || isConfigAbsolutePath(value) {
 		return value
 	}

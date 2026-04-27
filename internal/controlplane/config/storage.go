@@ -53,7 +53,7 @@ type StorageConfig struct {
 }
 
 // ResolveStorage normalizes storage backend input and applies safe defaults.
-func ResolveStorage(driver string, dsn string) (StorageConfig, error) {
+func ResolveStorage(driver, dsn string) (StorageConfig, error) {
 	normalizedDriver := strings.ToLower(strings.TrimSpace(driver))
 	normalizedDSN := strings.TrimSpace(dsn)
 
