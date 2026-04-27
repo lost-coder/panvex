@@ -128,7 +128,7 @@ function ProtectedShell() {
         bottomNavMoreItems={NAV_SECONDARY}
         activeId={activeId}
         brand="Panvex"
-        sidebarFooter={<ThemeToggleButton />}
+        sidebarFooter={(expanded) => <ThemeToggleButton expanded={expanded} />}
         onNavigate={(id) => navigate({ to: id })}
         onLogout={handleLogout}
       >

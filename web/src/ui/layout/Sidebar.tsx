@@ -128,7 +128,7 @@ export function Sidebar({
               {!expanded && (
                 <span
                   role="tooltip"
-                  className="absolute left-full ml-2 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-xs bg-bg-card-hi text-xs text-fg whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity delay-100 shadow-lg border border-border-hi z-50"
+                  className="absolute left-full ml-2 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-xs bg-fg text-xs text-bg whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity delay-100 shadow-xl z-50"
                 >
                   {item.label}
                 </span>
@@ -165,7 +165,7 @@ export function Sidebar({
             {!expanded && (
               <span
                 role="tooltip"
-                className="absolute left-full ml-2 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-xs bg-bg-card-hi text-xs text-fg whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity delay-100 shadow-lg border border-border-hi z-50"
+                className="absolute left-full ml-2 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-xs bg-fg text-xs text-bg whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity delay-100 shadow-xl z-50"
               >
                 Log out
               </span>

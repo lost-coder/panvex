@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Moon, Sun } from "lucide-react";
 
+import { cn } from "@/ui/lib/cn";
 import { apiClient } from "@/shared/api/api";
 import {
   defaultAppearanceSettings,
@@ -8,6 +9,14 @@ import {
   normalizeAppearanceSettings,
 } from "@/shared/lib/appearance";
 import type { MeResponse } from "@/shared/api/api";
+
+export interface ThemeToggleButtonProps {
+  /**
+   * Renders the button in full-width with a label, matching the Log out
+   * row in expanded sidebars. Defaults to compact icon-only.
+   */
+  expanded?: boolean;
+}
 
 /**
  * Sidebar-footer toggle that flips between dark and light themes in one
@@ -22,7 +31,7 @@ import type { MeResponse } from "@/shared/api/api";
  * Clicking always writes an explicit dark|light value so the toggle
  * behaves predictably regardless of the previous "system" state.
  */
-export function ThemeToggleButton() {
+export function ThemeToggleButton({ expanded = false }: Readonly<ThemeToggleButtonProps> = {}) {
   const queryClient = useQueryClient();
   const meQuery = useQuery<MeResponse>({
     queryKey: ["me"],
@@ -67,20 +76,30 @@ export function ThemeToggleButton() {
   })();
   const next: "light" | "dark" = effective === "light" ? "dark" : "light";
 
+  const label = `Switch to ${next} theme`;
   return (
     <button
       type="button"
       onClick={() => mutation.mutate(next)}
       disabled={mutation.isPending || !userID}
-      aria-label={`Switch to ${next} theme`}
-      title={`Switch to ${next} theme`}
-      className="h-11 w-11 flex items-center justify-center rounded-xs text-lg text-fg-muted hover:text-fg hover:bg-bg-hover transition-colors disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
+      aria-label={label}
+      title={label}
+      className={cn(
+        "flex items-center rounded-xs transition-colors",
+        "text-fg-muted hover:text-fg hover:bg-bg-hover",
+        "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1",
+        "disabled:opacity-40",
+        expanded
+          ? "w-full gap-3 h-11 px-3 text-sm"
+          : "justify-center h-11 w-11 text-lg",
+      )}
     >
       {effective === "light" ? (
-        <Moon className="w-5 h-5" aria-hidden="true" />
+        <Moon className="w-5 h-5 shrink-0" aria-hidden="true" />
       ) : (
-        <Sun className="w-5 h-5" aria-hidden="true" />
+        <Sun className="w-5 h-5 shrink-0" aria-hidden="true" />
       )}
+      {expanded && <span>{next === "dark" ? "Dark theme" : "Light theme"}</span>}
     </button>
   );
 }
