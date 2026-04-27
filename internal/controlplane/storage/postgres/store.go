@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 
+	// register the pgx driver under "pgx" for database/sql
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	// register the pure-Go SQLite driver under "sqlite" for database/sql
 	_ "modernc.org/sqlite"
 )
 
