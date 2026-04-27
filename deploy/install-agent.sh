@@ -118,7 +118,11 @@ ask_choice() {
 
 # ── System checks ────────────────────────────────────────────────────────────
 
-need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"; return 0; }
+need_cmd() {
+  local cmd="$1"
+  command -v "$cmd" >/dev/null 2>&1 || die "Required command not found: $cmd"
+  return 0
+}
 
 is_root() { [[ "$(id -u)" -eq 0 ]]; return 0; }
 
