@@ -604,41 +604,12 @@ func (s *Service) PruneAcknowledgedTargets(ctx context.Context, olderThan time.D
 	expired := 0
 
 	for jobID, job := range s.jobs {
-		changed := false
-		for index := range job.Targets {
-			target := &job.Targets[index]
-			if target.Status != TargetStatusAcknowledged {
-				continue
-			}
-			if target.UpdatedAt.IsZero() || target.UpdatedAt.After(cutoff) {
-				continue
-			}
-			target.Status = TargetStatusExpired
-			target.UpdatedAt = now
-			changed = true
-			expired++
-		}
-		if !changed {
+		jobExpired := expireAcknowledgedTargets(&job, cutoff, now)
+		if jobExpired == 0 {
 			continue
 		}
-
-		job.Status = deriveJobStatus(job.Targets)
-		s.jobs[jobID] = job
-		s.syncJobTargetsIndexLocked(job)
-		s.keys[job.IdempotencyKey] = jobID
-		if isTerminalStatus(job.Status) {
-			s.markKeyTerminalLocked(job.IdempotencyKey, now)
-		}
-
-		if s.jobStore != nil {
-			s.updateSeq++
-			s.jobVersion[jobID] = s.updateSeq
-			candidates = append(candidates, persistCandidate{
-				jobID:   jobID,
-				version: s.updateSeq,
-				job:     cloneJob(job),
-			})
-		}
+		expired += jobExpired
+		candidates = s.commitPrunedJobLocked(jobID, job, now, candidates)
 	}
 	s.mu.Unlock()
 
@@ -647,6 +618,51 @@ func (s *Service) PruneAcknowledgedTargets(ctx context.Context, olderThan time.D
 	}
 
 	return expired
+}
+
+// expireAcknowledgedTargets walks job.Targets in-place and flips each
+// acknowledged target whose last update predates `cutoff` to expired.
+// Returns how many targets were transitioned so the caller can decide
+// whether the job needs to be re-derived and persisted.
+func expireAcknowledgedTargets(job *Job, cutoff, now time.Time) int {
+	expired := 0
+	for index := range job.Targets {
+		target := &job.Targets[index]
+		if target.Status != TargetStatusAcknowledged {
+			continue
+		}
+		if target.UpdatedAt.IsZero() || target.UpdatedAt.After(cutoff) {
+			continue
+		}
+		target.Status = TargetStatusExpired
+		target.UpdatedAt = now
+		expired++
+	}
+	return expired
+}
+
+// commitPrunedJobLocked refreshes the in-memory indexes for a job whose
+// acknowledged targets were just expired and, if a job store is wired,
+// queues a persist candidate for the post-unlock fan-out. Caller must
+// hold s.mu.
+func (s *Service) commitPrunedJobLocked(jobID string, job Job, now time.Time, candidates []persistCandidate) []persistCandidate {
+	job.Status = deriveJobStatus(job.Targets)
+	s.jobs[jobID] = job
+	s.syncJobTargetsIndexLocked(job)
+	s.keys[job.IdempotencyKey] = jobID
+	if isTerminalStatus(job.Status) {
+		s.markKeyTerminalLocked(job.IdempotencyKey, now)
+	}
+	if s.jobStore == nil {
+		return candidates
+	}
+	s.updateSeq++
+	s.jobVersion[jobID] = s.updateSeq
+	return append(candidates, persistCandidate{
+		jobID:   jobID,
+		version: s.updateSeq,
+		job:     cloneJob(job),
+	})
 }
 
 // StartAcknowledgedExpiryWorker runs PruneAcknowledgedTargets on a ticker

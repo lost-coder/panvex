@@ -78,55 +78,71 @@ func parseSemverParts(v string) [3]int {
 // Either return value may be nil when no matching release is found.
 // The repo argument must be a valid owner/repo slug; the resolved URL is
 // rechecked against the GitHub allow-list before any network call.
-func FetchLatestVersions(ctx context.Context, repo, token string) (panel, agent *GitHubRelease, err error) {
+func FetchLatestVersions(ctx context.Context, repo, token string) (*GitHubRelease, *GitHubRelease, error) {
+	releases, err := fetchReleasesPage(ctx, repo, token)
+	if err != nil {
+		return nil, nil, err
+	}
+	panel, agent := pickLatestPanelAndAgent(releases)
+	return panel, agent, nil
+}
+
+// fetchReleasesPage validates `repo`, builds an authenticated request,
+// and decodes the first page of releases. Split out of
+// FetchLatestVersions so the orchestration stays under the cognitive-
+// complexity budget while preserving the same error wrapping.
+func fetchReleasesPage(ctx context.Context, repo, token string) ([]GitHubRelease, error) {
 	if vErr := ValidateGitHubRepo(repo); vErr != nil {
-		return nil, nil, fmt.Errorf("fetch latest versions: %w", vErr)
+		return nil, fmt.Errorf("fetch latest versions: %w", vErr)
 	}
 	url := fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=20", repo)
 	if uErr := CheckDownloadURL(url); uErr != nil {
-		return nil, nil, fmt.Errorf("fetch latest versions: %w", uErr)
+		return nil, fmt.Errorf("fetch latest versions: %w", uErr)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, nil, fmt.Errorf("build request: %w", err)
+		return nil, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-
 	resp, err := SecureDownloadClient().Do(req)
 	if err != nil {
-		return nil, nil, fmt.Errorf("github request: %w", err)
+		return nil, fmt.Errorf("github request: %w", err)
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode != http.StatusOK {
-		return nil, nil, fmt.Errorf("github api returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("github api returned status %d", resp.StatusCode)
 	}
-
 	var releases []GitHubRelease
 	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
-		return nil, nil, fmt.Errorf("decode releases: %w", err)
+		return nil, fmt.Errorf("decode releases: %w", err)
 	}
+	return releases, nil
+}
 
+// pickLatestPanelAndAgent returns the first matching control-plane and
+// agent release in the provided list. Releases are scanned in order so
+// the GitHub API's newest-first ordering is preserved.
+func pickLatestPanelAndAgent(releases []GitHubRelease) (*GitHubRelease, *GitHubRelease) {
+	var panel, agent *GitHubRelease
 	for i := range releases {
 		component, _, ok := ParseReleaseTag(releases[i].TagName)
 		if !ok {
 			continue
 		}
-		if component == "control-plane" && panel == nil {
+		switch {
+		case component == "control-plane" && panel == nil:
 			panel = &releases[i]
-		}
-		if component == "agent" && agent == nil {
+		case component == "agent" && agent == nil:
 			agent = &releases[i]
 		}
 		if panel != nil && agent != nil {
 			break
 		}
 	}
-
-	return panel, agent, nil
+	return panel, agent
 }
 
 // ResolveAssetURLs finds the platform-specific binary, checksum, and
