@@ -34,7 +34,7 @@ func FreshnessForObservedAt(observedAt time.Time, now time.Time, staleAfter time
 }
 
 // DetailBoostState normalizes one detail boost window.
-func DetailBoostState(expiresAt time.Time, now time.Time) DetailBoost {
+func DetailBoostState(expiresAt, now time.Time) DetailBoost {
 	if expiresAt.IsZero() || !expiresAt.After(now) {
 		return DetailBoost{}
 	}

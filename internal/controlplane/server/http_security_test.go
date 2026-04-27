@@ -206,7 +206,7 @@ func TestSecurityHeadersDoNotAllowInlineScripts(t *testing.T) {
 
 // extractDirective returns the token list for a single CSP directive,
 // without the directive name.
-func extractDirective(csp string, name string) string {
+func extractDirective(csp, name string) string {
 	for _, part := range strings.Split(csp, ";") {
 		part = strings.TrimSpace(part)
 		if strings.HasPrefix(part, name+" ") || part == name {

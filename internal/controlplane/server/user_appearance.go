@@ -81,7 +81,7 @@ func normalizeUserAppearanceHelpMode(value string) string {
 	}
 }
 
-func validateUserAppearance(theme string, density string, helpMode string) (UserAppearance, bool) {
+func validateUserAppearance(theme, density, helpMode string) (UserAppearance, bool) {
 	normalizedTheme := strings.ToLower(strings.TrimSpace(theme))
 	normalizedDensity := strings.ToLower(strings.TrimSpace(density))
 	normalizedHelpMode := strings.ToLower(strings.TrimSpace(helpMode))

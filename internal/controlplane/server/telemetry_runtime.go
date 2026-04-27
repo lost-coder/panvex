@@ -369,7 +369,7 @@ func telemetryFreshnessForRuntime(runtime AgentRuntime, now time.Time) telemetry
 	}
 }
 
-func telemetryBoostStateForAgent(expiresAt time.Time, now time.Time) telemetryDetailBoostResponse {
+func telemetryBoostStateForAgent(expiresAt, now time.Time) telemetryDetailBoostResponse {
 	boost := controltelemetry.DetailBoostState(expiresAt, now)
 	return telemetryDetailBoostResponse{
 		Active:           boost.Active,

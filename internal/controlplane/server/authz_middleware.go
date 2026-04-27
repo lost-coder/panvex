@@ -78,7 +78,7 @@ func requestAuthContext(r *http.Request) (auth.Session, auth.User, bool) {
 	return session, user, true
 }
 
-func roleSatisfies(current auth.Role, required auth.Role) bool {
+func roleSatisfies(current, required auth.Role) bool {
 	return roleRank(current) >= roleRank(required)
 }
 
