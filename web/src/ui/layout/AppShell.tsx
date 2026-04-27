@@ -23,7 +23,12 @@ export interface AppShellProps {
   bottomNavMoreItems?: NavItem[];
   activeId: string;
   brand?: string;
-  sidebarFooter?: React.ReactNode;
+  /**
+   * Slot rendered at the bottom of the sidebar. Pass a render function to
+   * receive the current `expanded` flag — this lets the footer (e.g. the
+   * theme toggle) match the rest of the sidebar's compact/full layout.
+   */
+  sidebarFooter?: React.ReactNode | ((expanded: boolean) => React.ReactNode);
   onNavigate?: (id: string) => void;
   onLogout?: () => void;
   children: React.ReactNode;
@@ -75,7 +80,7 @@ export function AppShell({
         brand={brand}
         expanded={expanded}
         onToggleExpand={() => setExpanded((v) => !v)}
-        footer={sidebarFooter}
+        footer={typeof sidebarFooter === "function" ? sidebarFooter(expanded) : sidebarFooter}
         onNavigate={onNavigate}
         onLogout={onLogout}
       />
