@@ -134,6 +134,21 @@
   }
 }
 
+/* WCAG 2.3.3 / Apple HIG reduced-motion: collapse every animation and
+   transition to a single tick. Each --animate-* keyframe above (breathe,
+   blink, beacon-glow, led-blink, alert-pulse) ends at its visible
+   state, so iteration-count:1 lands users on a sane static frame. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* ─── Back-compat aliases for raw `var(--color-*)` consumers ──────────────
    The pre-v4 CSS exposed --color-bg, --color-fg, etc. at :root so
    hand-written CSS could reference them directly (e.g. the body rule here,
