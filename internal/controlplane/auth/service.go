@@ -490,6 +490,54 @@ func (s *Service) Authenticate(input LoginInput, now time.Time) (Session, error)
 }
 
 // AuthenticateWithContext is the ctx-aware variant of Authenticate.
+// verifyTotpAndConsumeLocked validates a TOTP code under s.mu and records
+// it in the replay-prevention map. Mirrors the consumed entry to the
+// persistent store via a detached goroutine so a control-plane restart
+// cannot let the same code be reused inside the verifier acceptance
+// window. Caller must hold s.mu.
+func (s *Service) verifyTotpAndConsumeLocked(ctx context.Context, user User, code string, now time.Time) error {
+	key := totpUseKey{UserID: user.ID, Code: strings.TrimSpace(code)}
+	if _, used := s.consumedTotp[key]; used {
+		return ErrInvalidTotpCode
+	}
+	if !s.verifyTotpCode(user.TotpSecret, code, now) {
+		return ErrInvalidTotpCode
+	}
+	s.consumedTotp[key] = now.UTC()
+	bgCtx := context.WithoutCancel(ctx)
+	go s.persistConsumedTotp(bgCtx, key.UserID, key.Code, now.UTC())
+	return nil
+}
+
+// persistAuthenticatedSession writes the new session to the persistent
+// store (when configured) and atomically deletes any prior session ID so
+// a planted pre-auth cookie cannot resurrect on RestoreSessions.
+func (s *Service) persistAuthenticatedSession(ctx context.Context, session Session, priorSessionID string) error {
+	if s.sessionStore == nil {
+		return nil
+	}
+	// Always purge the prior session ID from the persistent store when
+	// supplied, independent of whether it was present in the in-memory
+	// map. After a CP restart, s.sessions can be empty while the store
+	// still holds the prior ID; skipping the store delete would let the
+	// attacker-planted session resurrect on the next RestoreSessions.
+	if priorSessionID != "" {
+		if err := s.sessionStore.DeleteSession(ctx, priorSessionID); err != nil {
+			slog.Warn("auth: failed to delete prior session from store", "error", err)
+		}
+	}
+	if err := s.sessionStore.PutSession(ctx, storage.SessionRecord{
+		ID:         session.ID,
+		UserID:     session.UserID,
+		CreatedAt:  session.CreatedAt,
+		LastSeenAt: session.LastSeenAt,
+	}); err != nil {
+		slog.Error("auth: failed to persist session; rejecting login", "user_id", session.UserID, "error", err)
+		return fmt.Errorf("%w: %w", ErrSessionStoreUnavailable, err)
+	}
+	return nil
+}
+
 func (s *Service) AuthenticateWithContext(ctx context.Context, input LoginInput, now time.Time) (Session, error) {
 	user, err := s.loadUserByUsernameCtx(ctx, input.Username)
 	if err != nil {
@@ -506,10 +554,8 @@ func (s *Service) AuthenticateWithContext(ctx context.Context, input LoginInput,
 		return Session{}, ErrInvalidCredentials
 	}
 
-	if user.TotpEnabled {
-		if strings.TrimSpace(input.TotpCode) == "" {
-			return Session{}, ErrTotpRequired
-		}
+	if user.TotpEnabled && strings.TrimSpace(input.TotpCode) == "" {
+		return Session{}, ErrTotpRequired
 	}
 
 	s.mu.Lock()
@@ -519,20 +565,9 @@ func (s *Service) AuthenticateWithContext(ctx context.Context, input LoginInput,
 	// prevent a TOCTOU race where two concurrent requests with the same code
 	// both pass verification before either records consumption.
 	if user.TotpEnabled {
-		key := totpUseKey{UserID: user.ID, Code: strings.TrimSpace(input.TotpCode)}
-		if _, used := s.consumedTotp[key]; used {
-			return Session{}, ErrInvalidTotpCode
+		if err := s.verifyTotpAndConsumeLocked(ctx, user, input.TotpCode, now); err != nil {
+			return Session{}, err
 		}
-		if !s.verifyTotpCode(user.TotpSecret, input.TotpCode, now) {
-			return Session{}, ErrInvalidTotpCode
-		}
-		s.consumedTotp[key] = now.UTC()
-		// Mirror to the persistent store outside the lock so a CP restart
-		// cannot let the same code be re-used inside the verifier
-		// acceptance window. Detach the request context so an early
-		// client disconnect does not abort the persist write.
-		bgCtx := context.WithoutCancel(ctx)
-		go s.persistConsumedTotp(bgCtx, key.UserID, key.Code, now.UTC())
 	}
 
 	s.cleanupExpiredSessionsLocked(now)
@@ -567,26 +602,8 @@ func (s *Service) AuthenticateWithContext(ctx context.Context, input LoginInput,
 	// all — an in-memory-only session would silently disappear on the next
 	// control-plane restart, leaving the operator logged in but unable to
 	// recover cleanly. Surface the failure so the caller retries / fails over.
-	if s.sessionStore != nil {
-		// Always purge the prior session ID from the persistent store when
-		// supplied, independent of whether it was present in the in-memory
-		// map. After a CP restart, s.sessions can be empty while the store
-		// still holds the prior ID; skipping the store delete would let the
-		// attacker-planted session resurrect on the next RestoreSessions.
-		if priorSessionID != "" {
-			if err := s.sessionStore.DeleteSession(ctx, priorSessionID); err != nil {
-				slog.Warn("auth: failed to delete prior session from store", "error", err)
-			}
-		}
-		if err := s.sessionStore.PutSession(ctx, storage.SessionRecord{
-			ID:         session.ID,
-			UserID:     session.UserID,
-			CreatedAt:  session.CreatedAt,
-			LastSeenAt: session.LastSeenAt,
-		}); err != nil {
-			slog.Error("auth: failed to persist session; rejecting login", "user_id", session.UserID, "error", err)
-			return Session{}, fmt.Errorf("%w: %w", ErrSessionStoreUnavailable, err)
-		}
+	if err := s.persistAuthenticatedSession(ctx, session, priorSessionID); err != nil {
+		return Session{}, err
 	}
 
 	s.sessions[session.ID] = session

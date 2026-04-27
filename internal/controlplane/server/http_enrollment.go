@@ -479,6 +479,36 @@ func (s *Server) consumeEnrollmentToken(value string, now time.Time) (security.E
 	return s.consumeEnrollmentTokenWithContext(context.Background(), value, now)
 }
 
+// resolveConsumeConflict figures out the precise security error to surface
+// when ConsumeEnrollmentToken returned ErrConflict — the row could have
+// been consumed concurrently or revoked in the same window.
+func (s *Server) resolveConsumeConflict(ctx context.Context, value string) error {
+	latest, latestErr := s.store.GetEnrollmentToken(ctx, value)
+	if latestErr != nil {
+		if errors.Is(latestErr, storage.ErrNotFound) {
+			return security.ErrEnrollmentTokenInvalid
+		}
+		return latestErr
+	}
+	if latest.RevokedAt != nil {
+		return errEnrollmentTokenRevoked
+	}
+	return security.ErrEnrollmentTokenConsumed
+}
+
+func tokenConsumePreCheck(token storage.EnrollmentTokenRecord, now time.Time) error {
+	if token.ConsumedAt != nil {
+		return security.ErrEnrollmentTokenConsumed
+	}
+	if token.RevokedAt != nil {
+		return errEnrollmentTokenRevoked
+	}
+	if now.UTC().After(token.ExpiresAt.UTC()) {
+		return security.ErrEnrollmentTokenExpired
+	}
+	return nil
+}
+
 func (s *Server) consumeEnrollmentTokenWithContext(ctx context.Context, value string, now time.Time) (security.EnrollmentToken, error) {
 	// S8: consumption goes through the store only. The previous in-
 	// memory fallback was a source of latent bugs across restarts and
@@ -494,32 +524,14 @@ func (s *Server) consumeEnrollmentTokenWithContext(ctx context.Context, value st
 		}
 		return security.EnrollmentToken{}, err
 	}
-
-	if token.ConsumedAt != nil {
-		return security.EnrollmentToken{}, security.ErrEnrollmentTokenConsumed
-	}
-	if token.RevokedAt != nil {
-		return security.EnrollmentToken{}, errEnrollmentTokenRevoked
-	}
-
-	if now.UTC().After(token.ExpiresAt.UTC()) {
-		return security.EnrollmentToken{}, security.ErrEnrollmentTokenExpired
+	if err := tokenConsumePreCheck(token, now); err != nil {
+		return security.EnrollmentToken{}, err
 	}
 
 	consumed, err := s.store.ConsumeEnrollmentToken(ctx, value, now.UTC())
 	if err != nil {
 		if errors.Is(err, storage.ErrConflict) {
-			latest, latestErr := s.store.GetEnrollmentToken(ctx, value)
-			if latestErr != nil {
-				if errors.Is(latestErr, storage.ErrNotFound) {
-					return security.EnrollmentToken{}, security.ErrEnrollmentTokenInvalid
-				}
-				return security.EnrollmentToken{}, latestErr
-			}
-			if latest.RevokedAt != nil {
-				return security.EnrollmentToken{}, errEnrollmentTokenRevoked
-			}
-			return security.EnrollmentToken{}, security.ErrEnrollmentTokenConsumed
+			return security.EnrollmentToken{}, s.resolveConsumeConflict(ctx, value)
 		}
 		if errors.Is(err, storage.ErrNotFound) {
 			return security.EnrollmentToken{}, security.ErrEnrollmentTokenInvalid

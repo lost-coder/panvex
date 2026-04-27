@@ -51,6 +51,37 @@ func (s *Server) handleGetPanelSettings() http.HandlerFunc {
 	}
 }
 
+// readPanelSettingsBody reads, length-limits, and JSON-decodes the panel
+// settings payload twice (once into a typed struct, once into a raw-fields
+// map for rejectRuntimeMutation). Writes the HTTP error and returns false
+// on any failure.
+func readPanelSettingsBody(w http.ResponseWriter, r *http.Request) (updatePanelSettingsRequest, map[string]json.RawMessage, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxPanelSettingsBodyBytes)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			writeError(w, http.StatusRequestEntityTooLarge, "panel settings payload too large")
+			return updatePanelSettingsRequest{}, nil, false
+		}
+		writeError(w, http.StatusBadRequest, errInvalidPanelSettings)
+		return updatePanelSettingsRequest{}, nil, false
+	}
+	_ = r.Body.Close()
+
+	var request updatePanelSettingsRequest
+	if err := json.Unmarshal(body, &request); err != nil {
+		writeError(w, http.StatusBadRequest, errInvalidPanelSettings)
+		return updatePanelSettingsRequest{}, nil, false
+	}
+	var requestFields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &requestFields); err != nil {
+		writeError(w, http.StatusBadRequest, errInvalidPanelSettings)
+		return updatePanelSettingsRequest{}, nil, false
+	}
+	return request, requestFields, true
+}
+
 func (s *Server) handlePutPanelSettings() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		session, user, err := s.requireSession(r)
@@ -63,28 +94,8 @@ func (s *Server) handlePutPanelSettings() http.HandlerFunc {
 			return
 		}
 
-		r.Body = http.MaxBytesReader(w, r.Body, maxPanelSettingsBodyBytes)
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			var maxBytesError *http.MaxBytesError
-			if errors.As(err, &maxBytesError) {
-				writeError(w, http.StatusRequestEntityTooLarge, "panel settings payload too large")
-				return
-			}
-			writeError(w, http.StatusBadRequest, errInvalidPanelSettings)
-			return
-		}
-		_ = r.Body.Close()
-
-		var request updatePanelSettingsRequest
-		if err := json.Unmarshal(body, &request); err != nil {
-			writeError(w, http.StatusBadRequest, errInvalidPanelSettings)
-			return
-		}
-
-		var requestFields map[string]json.RawMessage
-		if err := json.Unmarshal(body, &requestFields); err != nil {
-			writeError(w, http.StatusBadRequest, errInvalidPanelSettings)
+		request, requestFields, ok := readPanelSettingsBody(w, r)
+		if !ok {
 			return
 		}
 		if err := rejectRuntimeMutation(requestFields, s.panelRuntime); err != nil {

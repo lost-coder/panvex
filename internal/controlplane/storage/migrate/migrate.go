@@ -76,6 +76,124 @@ func Run(ctx context.Context, options Options) (Summary, error) {
 	return copyStore(ctx, source, target)
 }
 
+// copyEntities streams every record returned by listFn through putFn and
+// records the count via tally. Halts on the first error.
+func copyEntities[T any](ctx context.Context, listFn func(context.Context) ([]T, error), putFn func(context.Context, T) error, tally func(int)) error {
+	records, err := listFn(ctx)
+	if err != nil {
+		return err
+	}
+	for _, record := range records {
+		if err := putFn(ctx, record); err != nil {
+			return err
+		}
+	}
+	tally(len(records))
+	return nil
+}
+
+func copyJobsAndTargets(ctx context.Context, source, target storage.Store, summary *Summary) error {
+	jobs, err := source.ListJobs(ctx)
+	if err != nil {
+		return err
+	}
+	for _, job := range jobs {
+		if err := target.PutJob(ctx, job); err != nil {
+			return err
+		}
+		targets, err := source.ListJobTargets(ctx, job.ID)
+		if err != nil {
+			return err
+		}
+		for _, targetRecord := range targets {
+			if err := target.PutJobTarget(ctx, targetRecord); err != nil {
+				return err
+			}
+		}
+		summary.JobTargets += len(targets)
+	}
+	summary.Jobs = len(jobs)
+	return nil
+}
+
+func copyClientsAndChildren(ctx context.Context, source, target storage.Store, summary *Summary) error {
+	clients, err := source.ListClients(ctx)
+	if err != nil {
+		return err
+	}
+	for _, client := range clients {
+		if err := target.PutClient(ctx, client); err != nil {
+			return err
+		}
+		assignments, err := source.ListClientAssignments(ctx, client.ID)
+		if err != nil {
+			return err
+		}
+		for _, assignment := range assignments {
+			if err := target.PutClientAssignment(ctx, assignment); err != nil {
+				return err
+			}
+		}
+		summary.ClientAssignments += len(assignments)
+
+		deployments, err := source.ListClientDeployments(ctx, client.ID)
+		if err != nil {
+			return err
+		}
+		for _, deployment := range deployments {
+			if err := target.PutClientDeployment(ctx, deployment); err != nil {
+				return err
+			}
+		}
+		summary.ClientDeployments += len(deployments)
+	}
+	summary.Clients = len(clients)
+	return nil
+}
+
+// copySingletonAuthority returns the source authority record (if any) so the
+// caller can verify it round-tripped to the target. errors.Is(_, ErrNotFound)
+// is treated as "nothing to copy" rather than a hard failure.
+func copySingletonAuthority(ctx context.Context, source, target storage.Store) (storage.CertificateAuthorityRecord, bool, error) {
+	authority, err := source.GetCertificateAuthority(ctx)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return storage.CertificateAuthorityRecord{}, false, nil
+		}
+		return storage.CertificateAuthorityRecord{}, false, err
+	}
+	if err := target.PutCertificateAuthority(ctx, authority); err != nil {
+		return storage.CertificateAuthorityRecord{}, false, err
+	}
+	return authority, true, nil
+}
+
+func copySingletonPanelSettings(ctx context.Context, source, target storage.Store, summary *Summary) error {
+	settings, err := source.GetPanelSettings(ctx)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return nil
+		}
+		return err
+	}
+	if err := target.PutPanelSettings(ctx, settings); err != nil {
+		return err
+	}
+	summary.PanelSettings = 1
+	return nil
+}
+
+func verifyAuthorityRoundTrip(ctx context.Context, target storage.Store, expected storage.CertificateAuthorityRecord) error {
+	stored, err := target.GetCertificateAuthority(ctx)
+	if err != nil {
+		return err
+	}
+	if stored.CAPEM != expected.CAPEM || stored.PrivateKeyPEM != expected.PrivateKeyPEM || !stored.UpdatedAt.Equal(expected.UpdatedAt) {
+		return fmt.Errorf("migration verification failed: expected persisted certificate authority to round-trip")
+	}
+	return nil
+}
+
 func copyStore(ctx context.Context, source storage.Store, target storage.Store) (Summary, error) {
 	if err := ensureTargetEmpty(ctx, target); err != nil {
 		return Summary{}, err
@@ -83,190 +201,58 @@ func copyStore(ctx context.Context, source storage.Store, target storage.Store) 
 
 	summary := Summary{}
 
-	users, err := source.ListUsers(ctx)
-	if err != nil {
+	if err := copyEntities(ctx, source.ListUsers, target.PutUser, func(n int) { summary.Users = n }); err != nil {
 		return Summary{}, err
 	}
-	for _, user := range users {
-		if err := target.PutUser(ctx, user); err != nil {
-			return Summary{}, err
-		}
-	}
-	summary.Users = len(users)
-
-	appearances, err := source.ListUserAppearances(ctx)
-	if err != nil {
+	if err := copyEntities(ctx, source.ListUserAppearances, target.PutUserAppearance, func(n int) { summary.UserAppearance = n }); err != nil {
 		return Summary{}, err
 	}
-	for _, appearance := range appearances {
-		if err := target.PutUserAppearance(ctx, appearance); err != nil {
-			return Summary{}, err
-		}
-		summary.UserAppearance++
-	}
-
-	fleetGroups, err := source.ListFleetGroups(ctx)
-	if err != nil {
+	if err := copyEntities(ctx, source.ListFleetGroups, target.PutFleetGroup, func(n int) { summary.FleetGroups = n }); err != nil {
 		return Summary{}, err
 	}
-	for _, group := range fleetGroups {
-		if err := target.PutFleetGroup(ctx, group); err != nil {
-			return Summary{}, err
-		}
-	}
-	summary.FleetGroups = len(fleetGroups)
-
-	agents, err := source.ListAgents(ctx)
-	if err != nil {
+	if err := copyEntities(ctx, source.ListAgents, target.PutAgent, func(n int) { summary.Agents = n }); err != nil {
 		return Summary{}, err
 	}
-	for _, agent := range agents {
-		if err := target.PutAgent(ctx, agent); err != nil {
-			return Summary{}, err
-		}
-	}
-	summary.Agents = len(agents)
-
-	instances, err := source.ListInstances(ctx)
-	if err != nil {
+	if err := copyEntities(ctx, source.ListInstances, target.PutInstance, func(n int) { summary.Instances = n }); err != nil {
 		return Summary{}, err
 	}
-	for _, instance := range instances {
-		if err := target.PutInstance(ctx, instance); err != nil {
-			return Summary{}, err
-		}
-	}
-	summary.Instances = len(instances)
-
-	jobs, err := source.ListJobs(ctx)
-	if err != nil {
+	if err := copyJobsAndTargets(ctx, source, target, &summary); err != nil {
 		return Summary{}, err
 	}
-	for _, job := range jobs {
-		if err := target.PutJob(ctx, job); err != nil {
-			return Summary{}, err
-		}
-		targets, err := source.ListJobTargets(ctx, job.ID)
-		if err != nil {
-			return Summary{}, err
-		}
-		for _, targetRecord := range targets {
-			if err := target.PutJobTarget(ctx, targetRecord); err != nil {
-				return Summary{}, err
-			}
-		}
-		summary.JobTargets += len(targets)
-	}
-	summary.Jobs = len(jobs)
-
-	auditEvents, err := source.ListAuditEvents(ctx, 0)
-	if err != nil {
+	if err := copyEntities(ctx,
+		func(c context.Context) ([]storage.AuditEventRecord, error) { return source.ListAuditEvents(c, 0) },
+		target.AppendAuditEvent,
+		func(n int) { summary.AuditEvents = n },
+	); err != nil {
 		return Summary{}, err
 	}
-	for _, event := range auditEvents {
-		if err := target.AppendAuditEvent(ctx, event); err != nil {
-			return Summary{}, err
-		}
-	}
-	summary.AuditEvents = len(auditEvents)
-
-	metricSnapshots, err := source.ListMetricSnapshots(ctx)
-	if err != nil {
+	if err := copyEntities(ctx, source.ListMetricSnapshots, target.AppendMetricSnapshot, func(n int) { summary.MetricSnapshots = n }); err != nil {
 		return Summary{}, err
 	}
-	for _, snapshot := range metricSnapshots {
-		if err := target.AppendMetricSnapshot(ctx, snapshot); err != nil {
-			return Summary{}, err
-		}
-	}
-	summary.MetricSnapshots = len(metricSnapshots)
-
-	enrollmentTokens, err := source.ListEnrollmentTokens(ctx)
-	if err != nil {
+	if err := copyEntities(ctx, source.ListEnrollmentTokens, target.PutEnrollmentToken, func(n int) { summary.EnrollmentTokens = n }); err != nil {
 		return Summary{}, err
 	}
-	for _, token := range enrollmentTokens {
-		if err := target.PutEnrollmentToken(ctx, token); err != nil {
-			return Summary{}, err
-		}
-	}
-	summary.EnrollmentTokens = len(enrollmentTokens)
-
-	recoveryGrants, err := source.ListAgentCertificateRecoveryGrants(ctx)
-	if err != nil {
+	if err := copyEntities(ctx, source.ListAgentCertificateRecoveryGrants, target.PutAgentCertificateRecoveryGrant, func(n int) { summary.AgentCertificateRecoveryGrants = n }); err != nil {
 		return Summary{}, err
 	}
-	for _, grant := range recoveryGrants {
-		if err := target.PutAgentCertificateRecoveryGrant(ctx, grant); err != nil {
-			return Summary{}, err
-		}
-	}
-	summary.AgentCertificateRecoveryGrants = len(recoveryGrants)
-
-	clients, err := source.ListClients(ctx)
-	if err != nil {
+	if err := copyClientsAndChildren(ctx, source, target, &summary); err != nil {
 		return Summary{}, err
 	}
-	for _, client := range clients {
-		if err := target.PutClient(ctx, client); err != nil {
-			return Summary{}, err
-		}
-
-		assignments, err := source.ListClientAssignments(ctx, client.ID)
-		if err != nil {
-			return Summary{}, err
-		}
-		for _, assignment := range assignments {
-			if err := target.PutClientAssignment(ctx, assignment); err != nil {
-				return Summary{}, err
-			}
-		}
-		summary.ClientAssignments += len(assignments)
-
-		deployments, err := source.ListClientDeployments(ctx, client.ID)
-		if err != nil {
-			return Summary{}, err
-		}
-		for _, deployment := range deployments {
-			if err := target.PutClientDeployment(ctx, deployment); err != nil {
-				return Summary{}, err
-			}
-		}
-		summary.ClientDeployments += len(deployments)
-	}
-	summary.Clients = len(clients)
-
-	settings, settingsErr := source.GetPanelSettings(ctx)
-	if settingsErr != nil && !errors.Is(settingsErr, storage.ErrNotFound) {
-		return Summary{}, settingsErr
-	}
-	if settingsErr == nil {
-		if err := target.PutPanelSettings(ctx, settings); err != nil {
-			return Summary{}, err
-		}
-		summary.PanelSettings = 1
+	if err := copySingletonPanelSettings(ctx, source, target, &summary); err != nil {
+		return Summary{}, err
 	}
 
-	authority, authorityErr := source.GetCertificateAuthority(ctx)
-	if authorityErr != nil && !errors.Is(authorityErr, storage.ErrNotFound) {
-		return Summary{}, authorityErr
-	}
-	if authorityErr == nil {
-		if err := target.PutCertificateAuthority(ctx, authority); err != nil {
-			return Summary{}, err
-		}
+	authority, hasAuthority, err := copySingletonAuthority(ctx, source, target)
+	if err != nil {
+		return Summary{}, err
 	}
 
 	if err := verifyCounts(ctx, target, summary); err != nil {
 		return Summary{}, err
 	}
-	if authorityErr == nil {
-		storedAuthority, getErr := target.GetCertificateAuthority(ctx)
-		if getErr != nil {
-			return Summary{}, getErr
-		}
-		if storedAuthority.CAPEM != authority.CAPEM || storedAuthority.PrivateKeyPEM != authority.PrivateKeyPEM || !storedAuthority.UpdatedAt.Equal(authority.UpdatedAt) {
-			return Summary{}, fmt.Errorf("migration verification failed: expected persisted certificate authority to round-trip")
+	if hasAuthority {
+		if err := verifyAuthorityRoundTrip(ctx, target, authority); err != nil {
+			return Summary{}, err
 		}
 	}
 
