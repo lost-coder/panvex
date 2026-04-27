@@ -1113,7 +1113,7 @@ func maxUserSequence(users []storage.UserRecord) uint64 {
 	return maxValue
 }
 
-func maxSequence(left uint64, right uint64) uint64 {
+func maxSequence(left, right uint64) uint64 {
 	if right > left {
 		return right
 	}

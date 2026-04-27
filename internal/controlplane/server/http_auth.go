@@ -366,7 +366,7 @@ func (s *Server) requireSession(r *http.Request) (auth.Session, auth.User, error
 	return session, user, nil
 }
 
-func buildTotpAuthURL(username string, secret string) string {
+func buildTotpAuthURL(username, secret string) string {
 	return "otpauth://totp/Panvex:" + url.PathEscape(username) + "?secret=" + url.QueryEscape(secret) + "&issuer=Panvex"
 }
 

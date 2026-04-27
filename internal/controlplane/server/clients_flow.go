@@ -807,7 +807,7 @@ func normalizedIDs(values []string) []string {
 // resolvedUserADTag delegates to clients.ResolveUserADTag, translating
 // the sentinel error into the server-package sentinel so existing
 // errors.Is call sites still match.
-func resolvedUserADTag(value string, fallback string) (string, error) {
+func resolvedUserADTag(value, fallback string) (string, error) {
 	tag, err := clients.ResolveUserADTag(value, fallback)
 	if errors.Is(err, clients.ErrUserADTag) {
 		return "", errClientUserADTag

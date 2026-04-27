@@ -1100,7 +1100,7 @@ func (c *Client) newRequest(ctx context.Context, method string, path string, bod
 	return request, nil
 }
 
-func preferredConnectionLink(tlsLinks []string, secureLinks []string, classicLinks []string) string {
+func preferredConnectionLink(tlsLinks, secureLinks, classicLinks []string) string {
 	for _, candidate := range [][]string{tlsLinks, secureLinks, classicLinks} {
 		if len(candidate) > 0 && strings.TrimSpace(candidate[0]) != "" {
 			return candidate[0]
