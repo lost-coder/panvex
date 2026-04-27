@@ -502,36 +502,8 @@ func (s *Service) PendingForAgent(ctx context.Context, agentID string, retryAfte
 		if !ok {
 			continue
 		}
-		for _, target := range job.Targets {
-			if target.AgentID != agentID {
-				continue
-			}
-			include := false
-			switch target.Status {
-			case TargetStatusQueued:
-				include = true
-			case TargetStatusSent:
-				if target.UpdatedAt.IsZero() || !now.Before(target.UpdatedAt.Add(retryAfter)) {
-					include = true
-				}
-			case TargetStatusAcknowledged:
-				// P2-LOG-05 (L-14): acknowledged targets are only present in
-				// agentJobs after restore() rebuilds the index from the store
-				// — at runtime, syncJobTargetsIndexLocked removes them when
-				// the agent acks. If they still live in the index, both CP
-				// and agent restarted between ack and result, so the agent
-				// will not replay its in-flight queue. Re-dispatch so the
-				// agent's idempotency cache can deduplicate if the original
-				// command did in fact run. Apply the same retryAfter gate as
-				// the sent case so we do not re-dispatch on every tick.
-				if target.UpdatedAt.IsZero() || !now.Before(target.UpdatedAt.Add(retryAfter)) {
-					include = true
-				}
-			}
-			if include {
-				result = append(result, cloneJob(job))
-			}
-			break
+		if jobIsPendingForAgent(job, agentID, now, retryAfter) {
+			result = append(result, cloneJob(job))
 		}
 	}
 	s.mu.Unlock()
@@ -548,6 +520,34 @@ func (s *Service) PendingForAgent(ctx context.Context, agentID string, retryAfte
 	}
 
 	return result
+}
+
+// jobIsPendingForAgent reports whether the agent's first matching
+// target should be re-dispatched at `now`. Pulled out of the locked
+// critical section so each branch reads as a single intent.
+func jobIsPendingForAgent(job Job, agentID string, now time.Time, retryAfter time.Duration) bool {
+	for _, target := range job.Targets {
+		if target.AgentID != agentID {
+			continue
+		}
+		return targetIsPending(target, now, retryAfter)
+	}
+	return false
+}
+
+// targetIsPending decides whether a target needs (re-)dispatch at
+// `now`. Queued is always included; sent and acknowledged are included
+// only after the retryAfter window has elapsed (P2-LOG-05/L-14: ack
+// state can survive a CP+agent restart without a result, so we let the
+// agent's idempotency cache deduplicate on re-dispatch).
+func targetIsPending(target JobTarget, now time.Time, retryAfter time.Duration) bool {
+	switch target.Status {
+	case TargetStatusQueued:
+		return true
+	case TargetStatusSent, TargetStatusAcknowledged:
+		return target.UpdatedAt.IsZero() || !now.Before(target.UpdatedAt.Add(retryAfter))
+	}
+	return false
 }
 
 // MarkDelivered records that one target command has been sent to an active agent stream.
