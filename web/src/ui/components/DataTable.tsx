@@ -132,7 +132,7 @@ export function DataTable<T>({
             ) : (
               <>
                 {paddingTop > 0 && (
-                  <tr aria-hidden="true" style={{ height: paddingTop }}>
+                  <tr style={{ height: paddingTop }}>
                     <td colSpan={columns.length} />
                   </tr>
                 )}
@@ -163,7 +163,7 @@ export function DataTable<T>({
                   );
                 })}
                 {paddingBottom > 0 && (
-                  <tr role="presentation" style={{ height: paddingBottom }}>
+                  <tr style={{ height: paddingBottom }}>
                     <td colSpan={columns.length} />
                   </tr>
                 )}

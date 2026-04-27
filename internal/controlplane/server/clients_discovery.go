@@ -300,7 +300,7 @@ func normalizedAdoptSecret(raw string) (string, error) {
 
 // buildAdoptedClientState assembles the managedClient + initial assignment +
 // initial deployment for a freshly-adopted discovered record.
-func (s *Server) buildAdoptedClientState(record storage.DiscoveredClientRecord, secret, expirationRFC3339 string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment) {
+func (s *Server) buildAdoptedClientState(record storage.DiscoveredClientRecord, secret string, expirationRFC3339 string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment) { // gitleaks:allow — `secret` is a function parameter name, not a value
 	client := managedClient{
 		ID:                s.nextClientID(),
 		Name:              record.ClientName,

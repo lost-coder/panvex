@@ -110,14 +110,7 @@ func (s *Server) restoreClientUsageIndexes(ctx context.Context) (map[string]stor
 // counter for a single (client, agent) pair. Prefers the persisted
 // client_usage row; falls back to the latest discovered_clients
 // snapshot when no usage row exists yet.
-//
-// The ctx parameter is propagated from restore so the contextcheck
-// linter is satisfied; the discovered-client seed write below
-// intentionally falls back to context.Background() because restore
-// runs at startup before any request context exists, and the seed
-// is best-effort housekeeping that must complete regardless.
 func (s *Server) rehydrateClientAssignmentUsage(ctx context.Context, client managedClient, assignment managedClientAssignment, usageIdx map[string]storage.ClientUsageRecord, discoveredIdx map[string]storage.DiscoveredClientRecord) {
-	_ = ctx
 	if assignment.AgentID == "" {
 		return
 	}
@@ -136,11 +129,7 @@ func (s *Server) rehydrateClientAssignmentUsage(ctx context.Context, client mana
 		return
 	}
 	if dc, ok := discoveredIdx[assignment.AgentID+"\x00"+client.Name]; ok {
-		// Background by design: the seed write is best-effort housekeeping
-		// run from startup restore; cancelling it on caller-ctx death would
-		// leave usage rows missing for the rest of the process lifetime.
-		//nolint:contextcheck // intentional detached ctx — see comment above
-		s.seedClientUsage(context.Background(), client.ID, assignment.AgentID, dc.TotalOctets,
+		s.seedClientUsage(ctx, client.ID, assignment.AgentID, dc.TotalOctets,
 			dc.CurrentConnections, dc.ActiveUniqueIPs, dc.UpdatedAt)
 	}
 }

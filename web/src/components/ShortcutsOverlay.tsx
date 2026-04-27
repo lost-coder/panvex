@@ -41,14 +41,17 @@ export function ShortcutsOverlay() {
       ref={dialogRef}
       aria-label="Сочетания клавиш"
       onClose={() => setOpen(false)}
-      // Backdrop click — only the dialog itself receives the event when the
-      // user clicks outside the inner panel.
-      onClick={(event) => {
-        if (event.target === event.currentTarget) setOpen(false);
-      }}
       className="fixed inset-0 m-auto max-h-fit max-w-fit p-0 bg-transparent backdrop:bg-black/60"
     >
-      <div className="w-full max-w-sm rounded-xl border border-border bg-bg-card p-5 shadow-xl">
+      <div className="relative w-full max-w-sm rounded-xl border border-border bg-bg-card p-5 shadow-xl">
+        <button
+          type="button"
+          aria-label="Закрыть"
+          onClick={() => setOpen(false)}
+          className="absolute top-2 right-2 rounded-xs p-1 text-fg-muted hover:text-fg hover:bg-bg-hover transition-colors text-base leading-none"
+        >
+          ×
+        </button>
         <h2 className="text-sm font-semibold text-fg mb-3">Сочетания клавиш</h2>
         <ul className="flex flex-col gap-2 text-xs">
           {SHORTCUTS.map((item) => (
@@ -61,7 +64,7 @@ export function ShortcutsOverlay() {
           ))}
         </ul>
         <p className="mt-4 text-[11px] text-fg-muted">
-          Сочетания не срабатывают внутри полей ввода.
+          Сочетания не срабатывают внутри полей ввода. Нажмите Esc, чтобы закрыть.
         </p>
       </div>
     </dialog>
