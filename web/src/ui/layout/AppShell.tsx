@@ -5,6 +5,19 @@ import type { NavItem } from "./types";
 
 export interface AppShellProps {
   navItems: NavItem[];
+  /**
+   * Subset of nav items rendered in the mobile BottomNav. Defaults to
+   * `navItems` when omitted. Material's bottom-nav-limit guideline caps
+   * primary tabs at 5, so callers should pass at most 4 here when
+   * `bottomNavMoreItems` is also provided (the 5th slot becomes "More").
+   */
+  bottomNavItems?: NavItem[];
+  /**
+   * Overflow nav items rendered in a "More" bottom sheet on mobile.
+   * Sidebar continues to render the full `navItems` list since it has
+   * the vertical room.
+   */
+  bottomNavMoreItems?: NavItem[];
   activeId: string;
   brand?: string;
   sidebarFooter?: React.ReactNode;
@@ -16,6 +29,8 @@ export interface AppShellProps {
 
 export function AppShell({
   navItems,
+  bottomNavItems,
+  bottomNavMoreItems,
   activeId,
   brand,
   sidebarFooter,
@@ -58,7 +73,12 @@ export function AppShell({
         {children}
       </main>
 
-      <BottomNav items={navItems} activeId={activeId} onNavigate={onNavigate} />
+      <BottomNav
+        items={bottomNavItems ?? navItems}
+        moreItems={bottomNavMoreItems}
+        activeId={activeId}
+        onNavigate={onNavigate}
+      />
     </div>
   );
 }

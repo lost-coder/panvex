@@ -39,7 +39,7 @@ export function Sidebar({
 
       <nav
         aria-label="Primary"
-        className="flex-1 flex flex-col items-center gap-1 py-3 w-full overflow-y-auto"
+        className="flex-1 flex flex-col items-center gap-1 py-3 w-full overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {items.map((item) => {
           const isActive = item.id === activeId;
@@ -97,7 +97,7 @@ export function Sidebar({
       )}
 
       {footer && (
-        <div className="py-3 border-t border-border text-[10px] text-fg-muted text-center w-full">
+        <div className="py-3 border-t border-border text-[10px] text-fg-muted w-full flex justify-center">
           {footer}
         </div>
       )}
