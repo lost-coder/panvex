@@ -1,12 +1,12 @@
 import { lazy, Suspense } from "react";
-import type {
+import type { MetricsChartSectionProps } from "./internal/MetricsChartSectionInner";
+import { chartShortFallbackClass } from "./internal/chartContainer";
+
+export type {
   MetricsChartSectionProps,
   MetricsPoint,
   MetricsTab,
 } from "./internal/MetricsChartSectionInner";
-import { chartShortFallbackClass } from "./internal/chartContainer";
-
-export type { MetricsChartSectionProps, MetricsPoint, MetricsTab };
 
 // U8: recharts pulls roughly 90 kB (gzipped) of chart + d3 internals.
 // Routes that never show metrics charts (Login, Clients, Users, Settings)

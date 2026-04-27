@@ -1,11 +1,8 @@
 import { lazy, Suspense } from "react";
 import { cn } from "@/ui/lib/cn";
-import type {
-  SwipeTab,
-  SwipeTabViewProps,
-} from "./internal/SwipeTabViewInner";
+import type { SwipeTabViewProps } from "./internal/SwipeTabViewInner";
 
-export type { SwipeTab, SwipeTabViewProps };
+export type { SwipeTab, SwipeTabViewProps } from "./internal/SwipeTabViewInner";
 
 // framer-motion + AnimatePresence pull ~40 kB (gzipped) of animation
 // runtime. Most pages that compose SwipeTabView are interactive but the
