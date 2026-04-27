@@ -105,7 +105,7 @@ export function ClientFormSheet({
                 });
               }}
             />
-            Auto-generate
+            <span>Auto-generate</span>
           </label>
           <Input
             value={data.userAdTag}
