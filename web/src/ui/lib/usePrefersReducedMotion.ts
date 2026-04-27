@@ -24,7 +24,7 @@ export function usePrefersReducedMotion(): boolean {
 }
 
 function getSnapshot(): boolean {
-  if (typeof globalThis.window === "undefined" || typeof globalThis.window.matchMedia !== "function") {
+  if (globalThis.window === undefined || typeof globalThis.window.matchMedia !== "function") {
     return false;
   }
   return globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -35,7 +35,7 @@ function getServerSnapshot(): boolean {
 }
 
 function subscribe(callback: () => void): () => void {
-  if (typeof globalThis.window === "undefined" || typeof globalThis.window.matchMedia !== "function") {
+  if (globalThis.window === undefined || typeof globalThis.window.matchMedia !== "function") {
     return () => {};
   }
   const mql = globalThis.matchMedia("(prefers-reduced-motion: reduce)");

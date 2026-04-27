@@ -46,7 +46,7 @@ const SheetContent = React.forwardRef<
     // bundles, so the warn is free of runtime cost in consumers.
     if (
       !hasExplicitTitle &&
-      typeof import.meta !== "undefined" &&
+      import.meta !== undefined &&
       (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV
     ) {
       console.warn(

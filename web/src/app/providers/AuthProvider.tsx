@@ -47,7 +47,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     const handler = () => {
       queryClient.clear();
-      if (typeof globalThis.window !== "undefined" &&
+      if (globalThis.window !== undefined &&
           globalThis.location.pathname.endsWith("/login")) {
         return;
       }
