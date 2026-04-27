@@ -442,7 +442,10 @@ func (s *Server) installPanelBinaryFromArchive(archivePath string) bool {
 		s.logger.Error("panel update: extract binary failed", "error", err)
 		return false
 	}
-	defer func() { _ = os.Remove(binaryPath) }()
+	// G703 false positive: binaryPath is produced inside
+	// ExtractBinaryFromArchive as os.MkdirTemp + filepath.Join, never a
+	// caller-supplied path.
+	defer func() { _ = os.Remove(binaryPath) }() //nolint:gosec
 
 	currentBinary, err := os.Executable()
 	if err != nil {
