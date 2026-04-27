@@ -827,6 +827,10 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 	if err != nil {
 		return credentialsState, err
 	}
+	// gosec G706: slog uses structured key/value attributes — neither agent
+	// id nor gateway address is interpreted as a format string, so the
+	// taint-analysis warning is a false positive.
+	//nolint:gosec // G706: structured logging, no format-string injection vector
 	slog.Info("connected to control-plane", "agent_id", agent.AgentID(), "gateway", gatewayAddr)
 
 	connectionCtx, cancelConnection := context.WithCancel(stream.Context())

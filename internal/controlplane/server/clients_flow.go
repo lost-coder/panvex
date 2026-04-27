@@ -110,7 +110,14 @@ func (s *Server) restoreClientUsageIndexes(ctx context.Context) (map[string]stor
 // counter for a single (client, agent) pair. Prefers the persisted
 // client_usage row; falls back to the latest discovered_clients
 // snapshot when no usage row exists yet.
-func (s *Server) rehydrateClientAssignmentUsage(client managedClient, assignment managedClientAssignment, usageIdx map[string]storage.ClientUsageRecord, discoveredIdx map[string]storage.DiscoveredClientRecord) {
+//
+// The ctx parameter is propagated from restore so the contextcheck
+// linter is satisfied; the discovered-client seed write below
+// intentionally falls back to context.Background() because restore
+// runs at startup before any request context exists, and the seed
+// is best-effort housekeeping that must complete regardless.
+func (s *Server) rehydrateClientAssignmentUsage(ctx context.Context, client managedClient, assignment managedClientAssignment, usageIdx map[string]storage.ClientUsageRecord, discoveredIdx map[string]storage.DiscoveredClientRecord) {
+	_ = ctx
 	if assignment.AgentID == "" {
 		return
 	}
@@ -129,9 +136,10 @@ func (s *Server) rehydrateClientAssignmentUsage(client managedClient, assignment
 		return
 	}
 	if dc, ok := discoveredIdx[assignment.AgentID+"\x00"+client.Name]; ok {
-		// Background: restore runs at startup before any request
-		// context exists. The seed write is best-effort housekeeping
-		// that must complete regardless.
+		// Background by design: the seed write is best-effort housekeeping
+		// run from startup restore; cancelling it on caller-ctx death would
+		// leave usage rows missing for the rest of the process lifetime.
+		//nolint:contextcheck // intentional detached ctx — see comment above
 		s.seedClientUsage(context.Background(), client.ID, assignment.AgentID, dc.TotalOctets,
 			dc.CurrentConnections, dc.ActiveUniqueIPs, dc.UpdatedAt)
 	}
@@ -149,7 +157,7 @@ func (s *Server) restoreClientAssignments(ctx context.Context, client managedCli
 		assignment := clients.AssignmentFromRecord(assignmentRecord)
 		s.clientAssignments[client.ID] = append(s.clientAssignments[client.ID], assignment)
 		s.assignmentSeq = maxPrefixedSequence(s.assignmentSeq, "client-assignment", assignment.ID)
-		s.rehydrateClientAssignmentUsage(client, assignment, usageIdx, discoveredIdx)
+		s.rehydrateClientAssignmentUsage(ctx, client, assignment, usageIdx, discoveredIdx)
 	}
 	return nil
 }
