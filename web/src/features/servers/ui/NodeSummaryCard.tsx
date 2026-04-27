@@ -92,7 +92,10 @@ export function NodeSummaryCard({
         tabIndex={0}
         onClick={() => onClick?.()}
         onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") onClick?.();
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onClick?.();
+          }
         }}
         className="w-full text-left px-4 py-3 flex flex-col gap-2 hover:bg-bg-hover/40 transition-colors rounded-xs cursor-pointer"
       >

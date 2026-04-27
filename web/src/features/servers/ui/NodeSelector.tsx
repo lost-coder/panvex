@@ -35,10 +35,9 @@ export function NodeSelector({
         value={search}
         onChange={(e) => setSearch(e.target.value)}
       />
-      <div
-        role="group"
+      <fieldset
         aria-label={`Node selection — ${selectedNodeIds.length} of ${nodes.length} selected`}
-        className="max-h-[240px] overflow-y-auto rounded-xs border border-border divide-y divide-border"
+        className="max-h-[240px] overflow-y-auto rounded-xs border border-border divide-y divide-border p-0 m-0"
       >
         {filtered.length === 0 && (
           <div className="px-3 py-4 text-sm text-fg-muted text-center">No nodes found</div>
@@ -60,7 +59,7 @@ export function NodeSelector({
             <span className="text-[10px] text-fg-muted">{node.fleetGroup}</span>
           </label>
         ))}
-      </div>
+      </fieldset>
       <div className="text-xs text-fg-muted">
         {selectedNodeIds.length} of {nodes.length} nodes selected
       </div>

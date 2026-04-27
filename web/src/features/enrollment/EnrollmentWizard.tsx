@@ -109,7 +109,8 @@ function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
       </FormField>
 
       <FormField label="Token lifetime" variant="uppercase">
-        <div className="flex flex-wrap gap-2" role="group" aria-label="Token lifetime presets">
+        <fieldset className="flex flex-wrap gap-2 border-0 p-0 m-0">
+          <legend className="sr-only">Token lifetime presets</legend>
           {TTL_PRESETS.map((p) => {
             const pressed = !customTtl && tokenTtl === p.value;
             return (
@@ -149,7 +150,7 @@ function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
           >
             Custom
           </button>
-        </div>
+        </fieldset>
         {customTtl && (
           <Input
             type="number"
