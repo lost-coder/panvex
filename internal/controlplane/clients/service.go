@@ -305,27 +305,14 @@ func (s *Service) ManagedIdentifiersForAgent(agentID, agentFleetGroupID string) 
 		if client.DeletedAt != nil {
 			continue
 		}
-		for _, assignment := range s.assignments[clientID] {
-			matches := false
-			switch assignment.TargetType {
-			case TargetTypeAgent:
-				if assignment.AgentID == agentID {
-					matches = true
-				}
-			case TargetTypeFleetGroup:
-				if agentFleetGroupID != "" && assignment.FleetGroupID == agentFleetGroupID {
-					matches = true
-				}
-			}
-			if matches {
-				if client.Name != "" {
-					names[client.Name] = struct{}{}
-				}
-				if client.Secret != "" {
-					secrets[client.Secret] = struct{}{}
-				}
-				break
-			}
+		if !assignmentMatchesAgent(s.assignments[clientID], agentID, agentFleetGroupID) {
+			continue
+		}
+		if client.Name != "" {
+			names[client.Name] = struct{}{}
+		}
+		if client.Secret != "" {
+			secrets[client.Secret] = struct{}{}
 		}
 	}
 	return names, secrets
@@ -386,39 +373,61 @@ func (s *Service) ApplyUsageSnapshot(agentID string, snapshots []UsageSnapshot, 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	var maxSeqSeen uint64
-	for _, snapshot := range snapshots {
-		if snapshot.Seq > maxSeqSeen {
-			maxSeqSeen = snapshot.Seq
-		}
-	}
-	prior := s.lastUsageSeq[agentID]
-	// Legacy agent (seq == 0): accumulate unconditionally. Else: require
-	// strictly increasing seq unless seq == 1 (agent restart baseline).
-	if maxSeqSeen != 0 && prior != 0 {
-		if maxSeqSeen <= prior && maxSeqSeen != 1 {
-			return
-		}
+	maxSeqSeen := highestSeq(snapshots)
+	if !s.acceptUsageSeqLocked(agentID, maxSeqSeen) {
+		return
 	}
 	for _, snapshot := range snapshots {
-		if snapshot.ClientID == "" {
+		if !shouldRecordSnapshot(snapshot, onlyKnownClients) {
 			continue
 		}
-		if onlyKnownClients != nil {
-			if _, ok := onlyKnownClients[snapshot.ClientID]; !ok {
-				continue
-			}
-		}
-		byAgent, ok := s.usage[snapshot.ClientID]
-		if !ok {
-			byAgent = make(map[string]UsageSnapshot)
-			s.usage[snapshot.ClientID] = byAgent
-		}
-		byAgent[agentID] = snapshot
+		s.storeUsageSnapshotLocked(agentID, snapshot)
 	}
 	if maxSeqSeen != 0 {
 		s.lastUsageSeq[agentID] = maxSeqSeen
 	}
+}
+
+func highestSeq(snapshots []UsageSnapshot) uint64 {
+	var max uint64
+	for _, s := range snapshots {
+		if s.Seq > max {
+			max = s.Seq
+		}
+	}
+	return max
+}
+
+// acceptUsageSeqLocked enforces the seq monotonicity contract: legacy
+// agents (seq == 0) accumulate unconditionally; modern agents require
+// strictly-increasing seq, except seq == 1 which signals an agent
+// restart baseline (P2-LOG-06 / L-07).
+func (s *Service) acceptUsageSeqLocked(agentID string, maxSeqSeen uint64) bool {
+	prior := s.lastUsageSeq[agentID]
+	if maxSeqSeen == 0 || prior == 0 {
+		return true
+	}
+	return maxSeqSeen > prior || maxSeqSeen == 1
+}
+
+func shouldRecordSnapshot(snapshot UsageSnapshot, onlyKnownClients map[string]struct{}) bool {
+	if snapshot.ClientID == "" {
+		return false
+	}
+	if onlyKnownClients == nil {
+		return true
+	}
+	_, ok := onlyKnownClients[snapshot.ClientID]
+	return ok
+}
+
+func (s *Service) storeUsageSnapshotLocked(agentID string, snapshot UsageSnapshot) {
+	byAgent, ok := s.usage[snapshot.ClientID]
+	if !ok {
+		byAgent = make(map[string]UsageSnapshot)
+		s.usage[snapshot.ClientID] = byAgent
+	}
+	byAgent[agentID] = snapshot
 }
 
 // DropAgentUsage removes all usage rows keyed on the given agent across
