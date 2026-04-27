@@ -27,7 +27,7 @@ const SheetContent = React.forwardRef<
   SheetContentProps
 >(
   (
-    { side = "right", fullScreen = false, title, onOpenChange, className, children, ...props },
+    { side = "right", fullScreen = false, title, onOpenChange: _onOpenChange, className, children, ...props },
     ref,
   ) => {
     // Unused prop kept for backward compatibility with existing callers
