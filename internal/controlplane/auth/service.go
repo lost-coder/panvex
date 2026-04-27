@@ -292,15 +292,27 @@ func (s *Service) RestoreSessions() error {
 	now := s.now().UTC()
 	cutoff := now.Add(-sessionTTL)
 
+	s.installRestoredSessions(records, cutoff)
+
+	if err := s.sessionStore.DeleteExpiredSessions(context.Background(), cutoff); err != nil {
+		return err
+	}
+
+	s.restoreConsumedTotp()
+	return nil
+}
+
+// installRestoredSessions repopulates s.sessions from the persistent
+// store, dropping records whose CreatedAt is older than the TTL cutoff
+// and seeding LastSeenAt from CreatedAt for pre-Q2 rows that have not
+// been touched yet (Q2.U-S-12).
+func (s *Service) installRestoredSessions(records []storage.SessionRecord, cutoff time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, record := range records {
 		if record.CreatedAt.Before(cutoff) {
 			continue
 		}
-		// Q2.U-S-12: LastSeenAt is now persisted via TouchSession; if a
-		// pre-Q2 row carries a zero LastSeenAt we still seed from
-		// CreatedAt so the idle-timeout has a sane reference point.
 		lastSeen := record.LastSeenAt
 		if lastSeen.IsZero() {
 			lastSeen = record.CreatedAt
@@ -312,34 +324,33 @@ func (s *Service) RestoreSessions() error {
 			LastSeenAt: lastSeen,
 		}
 	}
+}
 
-	// Clean up expired sessions in the store.
-	if err := s.sessionStore.DeleteExpiredSessions(context.Background(), cutoff); err != nil {
-		return err
+// restoreConsumedTotp rebuilds the in-memory consumed-TOTP map from
+// the persistent store and prunes anything past the verifier
+// acceptance window so an attacker cannot resurrect old codes via
+// restart (Q2.U-S-17). A nil store is a documented no-op.
+func (s *Service) restoreConsumedTotp() {
+	if s.consumedTotpStore == nil {
+		return
 	}
-
-	// Q2.U-S-17: rebuild the in-memory consumed-TOTP map from the
-	// persistent store and prune anything past the verifier acceptance
-	// window so an attacker cannot resurrect old codes via restart.
-	if s.consumedTotpStore != nil {
-		totpCutoff := time.Now().UTC().Add(-90 * time.Second)
-		if err := s.consumedTotpStore.DeleteExpiredConsumedTotp(context.Background(), totpCutoff); err != nil {
-			slog.Warn("auth: prune expired consumed TOTP failed", "error", err)
-		}
-		records, err := s.consumedTotpStore.ListConsumedTotp(context.Background())
-		if err != nil {
-			slog.Warn("auth: list consumed TOTP failed", "error", err)
-		} else {
-			for _, rec := range records {
-				if rec.UsedAt.Before(totpCutoff) {
-					continue
-				}
-				s.consumedTotp[totpUseKey{UserID: rec.UserID, Code: rec.Code}] = rec.UsedAt
-			}
-		}
+	totpCutoff := time.Now().UTC().Add(-90 * time.Second)
+	if err := s.consumedTotpStore.DeleteExpiredConsumedTotp(context.Background(), totpCutoff); err != nil {
+		slog.Warn("auth: prune expired consumed TOTP failed", "error", err)
 	}
-
-	return nil
+	records, err := s.consumedTotpStore.ListConsumedTotp(context.Background())
+	if err != nil {
+		slog.Warn("auth: list consumed TOTP failed", "error", err)
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, rec := range records {
+		if rec.UsedAt.Before(totpCutoff) {
+			continue
+		}
+		s.consumedTotp[totpUseKey{UserID: rec.UserID, Code: rec.Code}] = rec.UsedAt
+	}
 }
 
 // SetNow overrides the clock used for time-sensitive auth checks.
