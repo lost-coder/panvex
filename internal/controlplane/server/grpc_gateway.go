@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/agents"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"google.golang.org/grpc/codes"
@@ -102,23 +103,64 @@ func (s *Server) RenewCertificate(ctx context.Context, request *gatewayrpc.Renew
 }
 
 // Connect accepts live heartbeats, snapshots, and job results from one authenticated agent.
-func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
+// agentStreamChannels owns the in-process queues shared by the goroutines
+// running for one Connect() invocation. Held entirely on the stack — no
+// references escape past Connect()'s return.
+type agentStreamChannels struct {
+	priorityInbound       chan *gatewayrpc.ConnectClientMessage
+	priorityAuditEffects  chan auditEffect
+	priorityResultEffects chan jobResultEffect
+	regularInbound        chan *gatewayrpc.ConnectClientMessage
+	regularSnapshots      chan agentSnapshot
+	receiveErrors         chan error
+	dispatchErrors        chan error
+	processErrors         chan error
+}
+
+func newAgentStreamChannels() *agentStreamChannels {
+	return &agentStreamChannels{
+		priorityInbound:       make(chan *gatewayrpc.ConnectClientMessage, 32),
+		priorityAuditEffects:  make(chan auditEffect, priorityAuditQueueCapacity),
+		priorityResultEffects: make(chan jobResultEffect, priorityResultEffectQueueCapacity),
+		regularInbound:        make(chan *gatewayrpc.ConnectClientMessage, 64),
+		regularSnapshots:      make(chan agentSnapshot, regularSnapshotQueueCapacity),
+		receiveErrors:         make(chan error, 1),
+		dispatchErrors:        make(chan error, 1),
+		processErrors:         make(chan error, 1),
+	}
+}
+
+// nonBlockingSend posts err to ch if there is buffer space; otherwise drops
+// it on the floor. Used for first-error channels that are guaranteed to be
+// drained at most once.
+func nonBlockingSend(ch chan<- error, err error) {
+	select {
+	case ch <- err:
+	default:
+	}
+}
+
+// authorizeAgentConnect runs the synchronous handshake required before the
+// stream can stay open: identity check, in-memory revocation lookup,
+// per-store cert serial pin, and per-agent rate limit. Returns the agent id
+// and the cert serial it presented (so the mid-stream watcher can re-check
+// the pin) on success.
+func (s *Server) authorizeAgentConnect(stream gatewayrpc.AgentGateway_ConnectServer) (string, string, error) {
 	agentID, presentedSerial, err := authenticatedAgentIdentity(stream.Context())
 	if err != nil {
-		return err
+		return "", "", err
 	}
 	s.mu.RLock()
 	_, revoked := s.revokedAgentIDs[agentID]
 	s.mu.RUnlock()
 	if revoked {
-		return status.Error(codes.PermissionDenied, "agent certificate has been revoked")
+		return "", "", status.Error(codes.PermissionDenied, "agent certificate has been revoked")
 	}
 	// Q4.U-S-04: cert pinning. The CN match (already covered by
-	// authenticatedAgentID) only guarantees the cert was issued by our
-	// CA for someone claiming this agent_id. The serial pin proves the
-	// cert is the one we last issued — replays of an older still-valid
-	// cert (e.g. harvested from a backup or a rotation log) are
-	// rejected here.
+	// authenticatedAgentID) only guarantees the cert was issued by our CA
+	// for someone claiming this agent_id. The serial pin proves the cert
+	// is the one we last issued — replays of an older still-valid cert
+	// (e.g. harvested from a backup or a rotation log) are rejected here.
 	if s.store != nil {
 		expected, err := s.store.GetAgentCertSerial(stream.Context(), agentID)
 		if err == nil && expected != "" && expected != presentedSerial {
@@ -126,13 +168,290 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 				"agent_id", agentID,
 				"expected_serial", expected,
 				"presented_serial", presentedSerial)
-			return status.Error(codes.PermissionDenied, "agent certificate not pinned for this agent")
+			return "", "", status.Error(codes.PermissionDenied, "agent certificate not pinned for this agent")
 		}
 	}
 	if s.grpcConnectRateLimiter != nil && !s.grpcConnectRateLimiter.Allow(agentID, s.now()) {
 		s.obs.ObserveRateLimitReject("grpc_connect")
-		return status.Error(codes.ResourceExhausted, "connect rate limit exceeded")
+		return "", "", status.Error(codes.ResourceExhausted, "connect rate limit exceeded")
 	}
+	return agentID, presentedSerial, nil
+}
+
+// recoverAgentStreamGoroutine is the deferred panic-recovery handler used by
+// every goroutine spawned for a Connect() session. Logs the panic with the
+// goroutine's name, bumps the panicRecoveredTotal counter (Q3.U-Q-15) and
+// cancels the connection so the rest of the pipeline tears down cleanly.
+func (s *Server) recoverAgentStreamGoroutine(agentID, name string, cancel context.CancelFunc) {
+	if r := recover(); r != nil {
+		slog.Error("goroutine panic recovered", "agent_id", agentID, "goroutine", name, "panic", r)
+		if s.obs != nil && s.obs.panicRecoveredTotal != nil {
+			s.obs.panicRecoveredTotal.WithLabelValues(name).Inc()
+		}
+		cancel()
+	}
+}
+
+// Q4.U-S-23: mid-stream revocation watcher. The Connect-time check only
+// catches a cert that was already revoked when the stream opened. A
+// long-lived stream still has to honour an operator who revokes the agent
+// later — without this ticker, the agent could keep running for the cert's
+// full validity window. 30s is fast enough that an operator-initiated
+// revocation hits within a dashboard refresh, slow enough not to add
+// noticeable RPS.
+func (s *Server) startRevocationWatcher(ctx context.Context, cancel context.CancelFunc, agentID, presentedSerial string) {
+	go func() {
+		defer s.recoverAgentStreamGoroutine(agentID, "revocation-watcher", cancel)
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if s.shouldTerminateForRevocation(ctx, agentID, presentedSerial) {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+}
+
+// shouldTerminateForRevocation returns true when either the in-memory
+// revoked set has the agent or the persisted cert pin no longer matches the
+// presented serial.
+func (s *Server) shouldTerminateForRevocation(ctx context.Context, agentID, presentedSerial string) bool {
+	s.mu.RLock()
+	_, isRevoked := s.revokedAgentIDs[agentID]
+	s.mu.RUnlock()
+	if isRevoked {
+		s.logger.Info("mid-stream revocation triggered, terminating agent stream", "agent_id", agentID)
+		return true
+	}
+	if s.store == nil {
+		return false
+	}
+	expected, err := s.store.GetAgentCertSerial(ctx, agentID)
+	if err == nil && expected != "" && expected != presentedSerial {
+		s.logger.Info("mid-stream cert pin mismatch, terminating", "agent_id", agentID)
+		return true
+	}
+	return false
+}
+
+// startReceiveLoop reads messages off the gRPC stream and routes them into
+// the priority/regular inbound queues until the stream errors out.
+func (s *Server) startReceiveLoop(ctx context.Context, cancel context.CancelFunc, agentID string, stream gatewayrpc.AgentGateway_ConnectServer, ch *agentStreamChannels) {
+	go func() {
+		defer s.recoverAgentStreamGoroutine(agentID, "receive", cancel)
+		for {
+			message, err := stream.Recv()
+			if err != nil {
+				nonBlockingSend(ch.receiveErrors, err)
+				return
+			}
+			if !enqueueInboundAgentMessage(ctx, ch.priorityInbound, ch.regularInbound, message) {
+				return
+			}
+		}
+	}()
+}
+
+// startPriorityInboundWorkers spawns priorityInboundWorkerCount goroutines
+// that drain the priority queue and route the messages through
+// processPriorityAgentMessageAsync.
+func (s *Server) startPriorityInboundWorkers(ctx context.Context, cancel context.CancelFunc, agentID string, ch *agentStreamChannels, processErr func(error)) {
+	for workerIndex := 0; workerIndex < priorityInboundWorkerCount; workerIndex++ {
+		go func() {
+			defer s.recoverAgentStreamGoroutine(agentID, "priority-inbound", cancel)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case message := <-ch.priorityInbound:
+					if message == nil {
+						continue
+					}
+					if err := s.processPriorityAgentMessageAsync(ctx, ch.priorityResultEffects, ch.priorityAuditEffects, agentID, message); err != nil {
+						processErr(err)
+						return
+					}
+				}
+			}
+		}()
+	}
+}
+
+// startAuditEffectsLoop drains audit effects published from the priority
+// path. On shutdown it flushes any pending effects with a Background ctx so
+// the audit trail survives stream cancellation.
+func (s *Server) startAuditEffectsLoop(ctx context.Context, cancel context.CancelFunc, agentID string, ch *agentStreamChannels) {
+	go func() {
+		defer s.recoverAgentStreamGoroutine(agentID, "audit-effects", cancel)
+		for {
+			select {
+			case <-ctx.Done():
+				// Drain runs after ctx is cancelled, so reusing it here
+				// would immediately abort the audit flush. Background()
+				// is the intentional detachment for the shutdown path.
+				drainPriorityAuditEffects(ch.priorityAuditEffects, func(actorID string, action string, targetID string, details map[string]any) { //nolint:contextcheck
+					s.appendAuditWithContext(context.Background(), actorID, action, targetID, details)
+				})
+				return
+			case effect := <-ch.priorityAuditEffects:
+				if effect.action == "" {
+					continue
+				}
+				s.appendAuditWithContext(ctx, effect.actorID, effect.action, effect.targetID, effect.details)
+			}
+		}
+	}()
+}
+
+// startResultEffectsLoop drains job-result effects published from the
+// priority path. Mirrors startAuditEffectsLoop's shutdown drain semantics.
+func (s *Server) startResultEffectsLoop(ctx context.Context, cancel context.CancelFunc, agentID string, ch *agentStreamChannels) {
+	go func() {
+		defer s.recoverAgentStreamGoroutine(agentID, "result-effects", cancel)
+		for {
+			select {
+			case <-ctx.Done():
+				drainPriorityResultEffects(ch.priorityResultEffects, func(agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) { //nolint:contextcheck
+					s.recordClientJobResultWithContext(context.Background(), agentID, jobID, success, message, resultJSON, observedAt)
+				})
+				return
+			case effect := <-ch.priorityResultEffects:
+				if effect.jobID == "" {
+					continue
+				}
+				s.recordClientJobResultWithContext(
+					ctx,
+					effect.agentID,
+					effect.jobID,
+					effect.success,
+					effect.message,
+					effect.resultJSON,
+					effect.observedAt,
+				)
+			}
+		}
+	}()
+}
+
+// startSnapshotApplyLoop drains agent runtime snapshots and applies them
+// against in-memory + batch-write state. Drains pending items on shutdown.
+func (s *Server) startSnapshotApplyLoop(ctx context.Context, cancel context.CancelFunc, agentID string, ch *agentStreamChannels, processErr func(error)) {
+	go func() {
+		defer s.recoverAgentStreamGoroutine(agentID, "snapshot-apply", cancel)
+		for {
+			select {
+			case <-ctx.Done():
+				drainRegularSnapshots(ch.regularSnapshots, func(snapshot agentSnapshot) error { //nolint:contextcheck
+					return s.applyAgentSnapshotWithContext(context.Background(), snapshot)
+				})
+				return
+			case snapshot := <-ch.regularSnapshots:
+				if snapshot.AgentID == "" {
+					continue
+				}
+				if err := s.applyAgentSnapshotWithContext(ctx, snapshot); err != nil {
+					processErr(err)
+					return
+				}
+			}
+		}
+	}()
+}
+
+// startRegularInboundLoop drains regular-priority inbound messages and
+// dispatches them through processRegularAgentMessage.
+func (s *Server) startRegularInboundLoop(ctx context.Context, cancel context.CancelFunc, agentID string, ch *agentStreamChannels, processErr func(error)) {
+	go func() {
+		defer s.recoverAgentStreamGoroutine(agentID, "regular-inbound", cancel)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case message := <-ch.regularInbound:
+				if message == nil {
+					continue
+				}
+				if err := s.processRegularAgentMessage(ctx, agentID, ch.regularSnapshots, message); err != nil {
+					processErr(err)
+					return
+				}
+			}
+		}
+	}()
+}
+
+// startJobDispatchLoop is the only goroutine that writes back to the agent.
+// It runs an initial dispatch + discovery request and then ticks until the
+// session is woken (new job ready) or the retry interval fires.
+func (s *Server) startJobDispatchLoop(ctx context.Context, cancel context.CancelFunc, agentID string, stream gatewayrpc.AgentGateway_ConnectServer, session *agents.Session, ch *agentStreamChannels) {
+	go func() {
+		defer s.recoverAgentStreamGoroutine(agentID, "job-dispatch", cancel)
+		retryTicker := time.NewTicker(jobDispatchRetryInterval)
+		defer retryTicker.Stop()
+
+		if err := s.dispatchPendingJobs(ctx, stream, agentID); err != nil {
+			nonBlockingSend(ch.dispatchErrors, err)
+			return
+		}
+
+		// Request a full client list from the agent for user discovery.
+		if err := sendClientDataRequest(stream, fmt.Sprintf("discovery-%s-%d", agentID, s.now().Unix())); err != nil {
+			s.logger.Error("client discovery request failed", "agent_id", agentID, "error", err)
+		}
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-session.Done:
+				return
+			case <-session.Wake:
+			case <-retryTicker.C:
+			}
+			if err := s.dispatchPendingJobs(ctx, stream, agentID); err != nil {
+				nonBlockingSend(ch.dispatchErrors, err)
+				return
+			}
+		}
+	}()
+}
+
+// awaitAgentStreamShutdown blocks until one of the dispatch / process /
+// receive error channels delivers, then cancels the connection ctx and
+// returns the operator-visible error code.
+func (s *Server) awaitAgentStreamShutdown(cancel context.CancelFunc, agentID string, ch *agentStreamChannels) error {
+	select {
+	case err := <-ch.dispatchErrors:
+		cancel()
+		s.logger.Info(logAgentStreamClosed, "agent_id", agentID, "reason", "dispatch_error", "error", err)
+		return err
+	case err := <-ch.processErrors:
+		cancel()
+		s.logger.Info(logAgentStreamClosed, "agent_id", agentID, "reason", "process_error", "error", err)
+		return status.Error(codes.Internal, err.Error())
+	case err := <-ch.receiveErrors:
+		cancel()
+		if errors.Is(err, io.EOF) {
+			s.logger.Info(logAgentStreamClosed, "agent_id", agentID, "reason", "eof")
+			return nil
+		}
+		s.logger.Info(logAgentStreamClosed, "agent_id", agentID, "reason", "receive_error", "error", err)
+		return err
+	}
+}
+
+func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
+	agentID, presentedSerial, err := s.authorizeAgentConnect(stream)
+	if err != nil {
+		return err
+	}
+
 	session, unregisterSession := s.registerAgentSession(agentID)
 	defer unregisterSession()
 	// P2-LOG-12 / L-05: MarkConnected exactly once per stream open, here.
@@ -146,258 +465,22 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 	connectionCtx, cancelConnection := context.WithCancel(stream.Context())
 	defer cancelConnection()
 
-	priorityInbound := make(chan *gatewayrpc.ConnectClientMessage, 32)
-	priorityAuditEffects := make(chan auditEffect, priorityAuditQueueCapacity)
-	priorityResultEffects := make(chan jobResultEffect, priorityResultEffectQueueCapacity)
-	regularInbound := make(chan *gatewayrpc.ConnectClientMessage, 64)
-	regularSnapshots := make(chan agentSnapshot, regularSnapshotQueueCapacity)
-	receiveErrors := make(chan error, 1)
-	dispatchErrors := make(chan error, 1)
-	processErrors := make(chan error, 1)
+	channels := newAgentStreamChannels()
 	processErrorAndCancel := func(err error) {
-		select {
-		case processErrors <- err:
-		default:
-		}
+		nonBlockingSend(channels.processErrors, err)
 		cancelConnection()
 	}
 
-	recoverGoroutine := func(name string) {
-		if r := recover(); r != nil {
-			slog.Error("goroutine panic recovered", "agent_id", agentID, "goroutine", name, "panic", r)
-			// Q3.U-Q-15: surface the recovered panic to Prometheus so an
-			// alert fires instead of relying on log scraping.
-			if s.obs != nil && s.obs.panicRecoveredTotal != nil {
-				s.obs.panicRecoveredTotal.WithLabelValues(name).Inc()
-			}
-			cancelConnection()
-		}
-	}
+	s.startRevocationWatcher(connectionCtx, cancelConnection, agentID, presentedSerial)
+	s.startReceiveLoop(connectionCtx, cancelConnection, agentID, stream, channels)
+	s.startPriorityInboundWorkers(connectionCtx, cancelConnection, agentID, channels, processErrorAndCancel)
+	s.startAuditEffectsLoop(connectionCtx, cancelConnection, agentID, channels)
+	s.startResultEffectsLoop(connectionCtx, cancelConnection, agentID, channels)
+	s.startSnapshotApplyLoop(connectionCtx, cancelConnection, agentID, channels, processErrorAndCancel)
+	s.startRegularInboundLoop(connectionCtx, cancelConnection, agentID, channels, processErrorAndCancel)
+	s.startJobDispatchLoop(connectionCtx, cancelConnection, agentID, stream, session, channels)
 
-	// Q4.U-S-23: mid-stream revocation watcher. The Connect-time check
-	// only catches a cert that was already revoked when the stream
-	// opened. A long-lived stream still has to honour an operator who
-	// revokes the agent later — without this ticker, the agent could
-	// keep running for the cert's full validity window. 30s is fast
-	// enough that an operator-initiated revocation hits within a
-	// dashboard refresh, slow enough not to add noticeable RPS.
-	go func() {
-		defer recoverGoroutine("revocation-watcher")
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-connectionCtx.Done():
-				return
-			case <-ticker.C:
-				s.mu.RLock()
-				_, isRevoked := s.revokedAgentIDs[agentID]
-				s.mu.RUnlock()
-				if isRevoked {
-					s.logger.Info("mid-stream revocation triggered, terminating agent stream", "agent_id", agentID)
-					cancelConnection()
-					return
-				}
-				// Re-check serial pin too: an operator-driven cert
-				// rotation invalidates this stream's cert.
-				if s.store != nil {
-					expected, err := s.store.GetAgentCertSerial(connectionCtx, agentID)
-					if err == nil && expected != "" && expected != presentedSerial {
-						s.logger.Info("mid-stream cert pin mismatch, terminating", "agent_id", agentID)
-						cancelConnection()
-						return
-					}
-				}
-			}
-		}
-	}()
-
-	go func() {
-		defer recoverGoroutine("receive")
-		for {
-			message, err := stream.Recv()
-			if err != nil {
-				select {
-				case receiveErrors <- err:
-				default:
-				}
-				return
-			}
-
-			if !enqueueInboundAgentMessage(connectionCtx, priorityInbound, regularInbound, message) {
-				return
-			}
-		}
-	}()
-
-	for workerIndex := 0; workerIndex < priorityInboundWorkerCount; workerIndex++ {
-		go func() {
-			defer recoverGoroutine("priority-inbound")
-			for {
-				select {
-				case <-connectionCtx.Done():
-					return
-				case message := <-priorityInbound:
-					if message == nil {
-						continue
-					}
-					if err := s.processPriorityAgentMessageAsync(connectionCtx, priorityResultEffects, priorityAuditEffects, agentID, message); err != nil {
-						processErrorAndCancel(err)
-						return
-					}
-				}
-			}
-		}()
-	}
-
-	go func() {
-		defer recoverGoroutine("audit-effects")
-		for {
-			select {
-			case <-connectionCtx.Done():
-				// Drain runs after connectionCtx is cancelled, so reusing it
-				// here would immediately abort the audit flush. Background()
-				// is the intentional detachment for the shutdown path.
-				drainPriorityAuditEffects(priorityAuditEffects, func(actorID string, action string, targetID string, details map[string]any) { //nolint:contextcheck
-					s.appendAuditWithContext(context.Background(), actorID, action, targetID, details)
-				})
-				return
-			case effect := <-priorityAuditEffects:
-				if effect.action == "" {
-					continue
-				}
-				s.appendAuditWithContext(connectionCtx, effect.actorID, effect.action, effect.targetID, effect.details)
-			}
-		}
-	}()
-
-	go func() {
-		defer recoverGoroutine("result-effects")
-		for {
-			select {
-			case <-connectionCtx.Done():
-				// Same shutdown drain pattern as the audit-effects loop:
-				// connectionCtx is already done, so persist with Background.
-				drainPriorityResultEffects(priorityResultEffects, func(agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) { //nolint:contextcheck
-					s.recordClientJobResultWithContext(context.Background(), agentID, jobID, success, message, resultJSON, observedAt)
-				})
-				return
-			case effect := <-priorityResultEffects:
-				if effect.jobID == "" {
-					continue
-				}
-				s.recordClientJobResultWithContext(
-					connectionCtx,
-					effect.agentID,
-					effect.jobID,
-					effect.success,
-					effect.message,
-					effect.resultJSON,
-					effect.observedAt,
-				)
-			}
-		}
-	}()
-
-	go func() {
-		defer recoverGoroutine("snapshot-apply")
-		for {
-			select {
-			case <-connectionCtx.Done():
-				// Shutdown drain: connectionCtx is done by definition here.
-				// See the audit-effects loop above for the rationale.
-				drainRegularSnapshots(regularSnapshots, func(snapshot agentSnapshot) error { //nolint:contextcheck
-					return s.applyAgentSnapshotWithContext(context.Background(), snapshot)
-				})
-				return
-			case snapshot := <-regularSnapshots:
-				if snapshot.AgentID == "" {
-					continue
-				}
-				if err := s.applyAgentSnapshotWithContext(connectionCtx, snapshot); err != nil {
-					processErrorAndCancel(err)
-					return
-				}
-			}
-		}
-	}()
-
-	go func() {
-		defer recoverGoroutine("regular-inbound")
-		for {
-			select {
-			case <-connectionCtx.Done():
-				return
-			case message := <-regularInbound:
-				if message == nil {
-					continue
-				}
-				if err := s.processRegularAgentMessage(connectionCtx, agentID, regularSnapshots, message); err != nil {
-					processErrorAndCancel(err)
-					return
-				}
-			}
-		}
-	}()
-
-	go func() {
-		defer recoverGoroutine("job-dispatch")
-		retryTicker := time.NewTicker(jobDispatchRetryInterval)
-		defer retryTicker.Stop()
-
-		if err := s.dispatchPendingJobs(connectionCtx, stream, agentID); err != nil {
-			select {
-			case dispatchErrors <- err:
-			default:
-			}
-			return
-		}
-
-		// Request a full client list from the agent for user discovery.
-		if err := sendClientDataRequest(stream, fmt.Sprintf("discovery-%s-%d", agentID, s.now().Unix())); err != nil {
-			s.logger.Error("client discovery request failed", "agent_id", agentID, "error", err)
-		}
-
-		for {
-			select {
-			case <-connectionCtx.Done():
-				return
-			case <-session.Done:
-				return
-			case <-session.Wake:
-			case <-retryTicker.C:
-			}
-
-			if err := s.dispatchPendingJobs(connectionCtx, stream, agentID); err != nil {
-				select {
-				case dispatchErrors <- err:
-				default:
-				}
-				return
-			}
-		}
-	}()
-
-	for {
-		select {
-		case err := <-dispatchErrors:
-			cancelConnection()
-			s.logger.Info(logAgentStreamClosed, "agent_id", agentID, "reason", "dispatch_error", "error", err)
-			return err
-		case err := <-processErrors:
-			cancelConnection()
-			s.logger.Info(logAgentStreamClosed, "agent_id", agentID, "reason", "process_error", "error", err)
-			return status.Error(codes.Internal, err.Error())
-		case err := <-receiveErrors:
-			cancelConnection()
-			if errors.Is(err, io.EOF) {
-				s.logger.Info(logAgentStreamClosed, "agent_id", agentID, "reason", "eof")
-				return nil
-			}
-			s.logger.Info(logAgentStreamClosed, "agent_id", agentID, "reason", "receive_error", "error", err)
-			return err
-		}
-	}
+	return s.awaitAgentStreamShutdown(cancelConnection, agentID, channels)
 }
 
 func enqueueInboundAgentMessage(
