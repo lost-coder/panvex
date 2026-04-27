@@ -24,6 +24,7 @@ import { AppShell, Spinner, type NavItem } from "@/ui";
 import { AppearanceProvider } from "@/app/providers/AppearanceProvider";
 import { AppErrorFallback } from "@/app/providers/AppErrorFallback";
 import { AuthProvider } from "@/app/providers/AuthProvider";
+import { useConfirm } from "@/app/providers/ConfirmProvider";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { ShortcutsOverlay } from "@/components/ShortcutsOverlay";
 import { ThemeToggleButton } from "@/components/ThemeToggleButton";
@@ -51,15 +52,23 @@ function RootComponent() {
 
 const rootRoute = createRootRouteWithContext<RouterContext>()({ component: RootComponent });
 
-const NAV_ITEMS: NavItem[] = [
+// UX-bottom-nav-limit (Material): the mobile BottomNav must stay ≤5 tabs.
+// Sidebar (desktop) renders the full NAV_ITEMS list; BottomNav renders
+// NAV_PRIMARY plus a "More" button that opens NAV_SECONDARY in a sheet.
+const NAV_PRIMARY: NavItem[] = [
   { id: "/", label: "Dashboard", icon: <LayoutDashboard size={20} /> },
   { id: "/servers", label: "Servers", icon: <Server size={20} /> },
   { id: "/fleet-groups", label: "Fleet groups", icon: <Layers size={20} /> },
   { id: "/clients", label: "Clients", icon: <Users size={20} /> },
+];
+
+const NAV_SECONDARY: NavItem[] = [
   { id: "/activity", label: "Activity", icon: <Activity size={20} /> },
   { id: "/settings", label: "Settings", icon: <Settings size={20} /> },
   { id: "/profile", label: "Profile", icon: <User size={20} /> },
 ];
+
+const NAV_ITEMS: NavItem[] = [...NAV_PRIMARY, ...NAV_SECONDARY];
 
 function ProtectedShell() {
   const { data: me } = useQuery({
@@ -69,6 +78,7 @@ function ProtectedShell() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { location } = useRouterState();
+  const confirm = useConfirm();
 
   // W6: move focus to the main landmark on every pathname change so
   // screen-reader and keyboard users land inside the new page instead
@@ -90,6 +100,18 @@ function ProtectedShell() {
     )?.id ?? "/";
 
   const handleLogout = async () => {
+    // UX-confirmation-dialogs: logout clears the React Query cache and
+    // boots the operator to /login. The sidebar trigger is a 44px target
+    // adjacent to the theme toggle, so a mis-tap is plausible — gate it
+    // behind a confirm dialog (no type-to-confirm; the action is reversible
+    // by signing back in).
+    const ok = await confirm({
+      title: "Log out of Panvex?",
+      body: "You'll be returned to the sign-in screen.",
+      confirmLabel: "Log out",
+      variant: "danger",
+    });
+    if (!ok) return;
     try {
       await apiClient.logout();
     } finally {
@@ -102,9 +124,11 @@ function ProtectedShell() {
     <AppearanceProvider userID={me?.id ?? ""}>
       <AppShell
         navItems={NAV_ITEMS}
+        bottomNavItems={NAV_PRIMARY}
+        bottomNavMoreItems={NAV_SECONDARY}
         activeId={activeId}
         brand="Panvex"
-        sidebarFooter={<ThemeToggleButton />}
+        sidebarFooter={(expanded) => <ThemeToggleButton expanded={expanded} />}
         onNavigate={(id) => navigate({ to: id })}
         onLogout={handleLogout}
       >
