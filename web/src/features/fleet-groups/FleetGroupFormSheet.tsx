@@ -84,7 +84,11 @@ export function FleetGroupFormSheet({
           onClick={onSubmit}
           disabled={loading || !data.label || (isCreate && !data.name)}
         >
-          {loading ? "Saving…" : isCreate ? "Create group" : "Save changes"}
+          {(() => {
+            if (loading) return "Saving…";
+            if (isCreate) return "Create group";
+            return "Save changes";
+          })()}
         </Button>
       </div>
     </div>

@@ -10,6 +10,12 @@ import {
 } from "@/ui";
 import type { ServerDcData } from "@/shared/api/types-pages/pages";
 
+function rttClass(rttMs: number): string {
+  if (rttMs > 300) return "text-status-error";
+  if (rttMs > 100) return "text-status-warn";
+  return "text-fg";
+}
+
 /**
  * Bottom sheet that opens from the mobile DC scroll-strip, the desktop
  * radar, and the desktop tile grid. The Sheet root and SheetContent both
@@ -63,7 +69,7 @@ export function DcDetailSheet({
                   </span>
                   <span className="text-fg-muted">RTT</span>
                   <span
-                    className={`font-mono ${(selectedDc.rttMs ?? 0) > 300 ? "text-status-error" : (selectedDc.rttMs ?? 0) > 100 ? "text-status-warn" : "text-fg"}`}
+                    className={`font-mono ${rttClass(selectedDc.rttMs ?? 0)}`}
                   >
                     {selectedDc.rttMs == null ? "—" : `${selectedDc.rttMs}ms`}
                   </span>

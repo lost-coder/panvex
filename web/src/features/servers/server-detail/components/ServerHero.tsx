@@ -38,11 +38,11 @@ export function ServerHero({
         <span
           className={cn(
             "font-mono text-xs uppercase tracking-wider",
-            server.status === "error"
-              ? "text-status-error"
-              : server.status === "warn"
-                ? "text-status-warn"
-                : "text-status-ok",
+            (() => {
+              if (server.status === "error") return "text-status-error";
+              if (server.status === "warn") return "text-status-warn";
+              return "text-status-ok";
+            })(),
           )}
         >
           {pulseWord}

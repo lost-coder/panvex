@@ -17,6 +17,12 @@ import {
   type ViewMode,
 } from "@/ui";
 
+function dcBarColor(status: NonNullable<ServerListItem["dcs"]>[number]["status"]): string {
+  if (status === "error") return "bg-status-error";
+  if (status === "warn") return "bg-status-warn";
+  return "bg-status-ok/80";
+}
+
 function TrafficCell({ bytes }: Readonly<{ bytes: number }>) {
   return (
     <span className="text-sm font-mono text-fg-muted">
@@ -38,11 +44,7 @@ function DcMatrixCell({ dcs }: Readonly<{ dcs: ServerListItem["dcs"] }>) {
           key={dc.dc}
           className={cn(
             "w-[4px] h-[14px] rounded-sm",
-            dc.status === "error"
-              ? "bg-status-error"
-              : dc.status === "warn"
-                ? "bg-status-warn"
-                : "bg-status-ok/80",
+            dcBarColor(dc.status),
           )}
           title={`DC ${dc.dc}: ${dc.rttMs ? dc.rttMs + "ms" : "offline"}`}
         />

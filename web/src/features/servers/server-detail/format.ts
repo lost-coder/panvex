@@ -47,11 +47,15 @@ export function statusSentence(
   dcWarn: number,
   dcErr: number,
 ): string {
-  return status === "error"
-    ? `DEGRADED · ${dcErr} DC${dcErr > 1 ? "s" : ""} offline`
-    : status === "warn"
-      ? `STRAINED · ${dcWarn} DC${dcWarn > 1 ? "s" : ""} under coverage`
-      : `HEALTHY · all ${dcCount || 12} routes nominal`;
+  if (status === "error") return `DEGRADED · ${dcErr} DC${dcErr > 1 ? "s" : ""} offline`;
+  if (status === "warn") return `STRAINED · ${dcWarn} DC${dcWarn > 1 ? "s" : ""} under coverage`;
+  return `HEALTHY · all ${dcCount || 12} routes nominal`;
+}
+
+function dcStripStatus(coveragePct: number): DCStripItem["status"] {
+  if (coveragePct < 70) return "error";
+  if (coveragePct < 100) return "warn";
+  return "ok";
 }
 
 /** DCScrollStrip projection from a sorted DC list. */
@@ -61,12 +65,7 @@ export function toDcStripItems(sortedDcs: ServerDcData[]): DCStripItem[] {
     city: `DC ${dc.dc}`,
     latency: dc.rttMs ?? 0,
     load: dc.load,
-    status:
-      dc.coveragePct < 70
-        ? ("error" as const)
-        : dc.coveragePct < 100
-          ? ("warn" as const)
-          : ("ok" as const),
+    status: dcStripStatus(dc.coveragePct),
   }));
 }
 
@@ -98,17 +97,17 @@ export function computeAlertItems(
   return alerts;
 }
 
+function timelineEventKind(eventType: string): TimelineEvent["kind"] {
+  if (/error|fail|down|offline/i.test(eventType)) return "error";
+  if (/warn|degrad|slow/i.test(eventType)) return "warn";
+  if (/ready|online|recover|connect/i.test(eventType)) return "ok";
+  return "info";
+}
+
 /** Classify a server event into the timeline-pin tone. */
 export function toTimelineEvents(events: ServerEvent[] | undefined): TimelineEvent[] {
   return (events ?? []).slice(0, 10).map((e) => ({
     tsEpochSecs: e.tsEpochSecs,
-    kind:
-      /error|fail|down|offline/i.test(e.eventType)
-        ? ("error" as const)
-        : /warn|degrad|slow/i.test(e.eventType)
-          ? ("warn" as const)
-          : /ready|online|recover|connect/i.test(e.eventType)
-            ? ("ok" as const)
-            : ("info" as const),
+    kind: timelineEventKind(e.eventType),
   }));
 }

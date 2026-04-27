@@ -36,6 +36,18 @@ import { ServerDetailProvider } from "./ServerDetailContext";
 
 const noop = () => {};
 
+function badRateTone(rate: number): "error" | "warn" | "default" {
+  if (rate > 5) return "error";
+  if (rate > 1) return "warn";
+  return "default";
+}
+
+function coverageTone(pct: number): "error" | "warn" | "ok" {
+  if (pct < 95) return "error";
+  if (pct < 100) return "warn";
+  return "ok";
+}
+
 // ─── Main page ────────────────────────────────────────────────────────
 export function ServerDetailPage({
   server,
@@ -115,14 +127,14 @@ export function ServerDetailPage({
         label: "Bad rate",
         value: `${badRate.toFixed(2)}%`,
         hint: `${summary.connectionsBadTotal.toLocaleString()} bad / ${summary.connectionsTotal.toLocaleString()} total`,
-        tone: badRate > 5 ? "error" : badRate > 1 ? "warn" : "default",
+        tone: badRateTone(badRate),
       },
       {
         label: "DC coverage",
         value: avgCoverage,
         unit: "%",
         hint: `min ${minCoverage}% · ${dcOk} ok · ${dcWarn} warn · ${dcErr} err`,
-        tone: avgCoverage < 95 ? "error" : avgCoverage < 100 ? "warn" : "ok",
+        tone: coverageTone(avgCoverage),
       },
     ],
     // R-Q-24: React Compiler infers `connections.current` as the source
@@ -166,14 +178,14 @@ export function ServerDetailPage({
         label: "Bad rate",
         value: `${badRate.toFixed(2)}%`,
         hint: `${summary.connectionsBadTotal.toLocaleString()} bad`,
-        tone: badRate > 5 ? "error" : badRate > 1 ? "warn" : "default",
+        tone: badRateTone(badRate),
       },
       {
         label: "DC coverage",
         value: avgCoverage,
         unit: "%",
         hint: `min ${minCoverage}% · ${dcOk}/${dcWarn}/${dcErr}`,
-        tone: avgCoverage < 95 ? "error" : avgCoverage < 100 ? "warn" : "ok",
+        tone: coverageTone(avgCoverage),
       },
     ],
     // R-Q-24: see above — same compiler / `connections.current`

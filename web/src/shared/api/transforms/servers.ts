@@ -56,13 +56,30 @@ function resolveAgentSeverity(agent: Agent): Severity {
   return "ok";
 }
 
+function initElapsedSecs(completedAtUnix: number, remainingSeconds: number): number {
+  if (completedAtUnix > 0) return 0;
+  if (remainingSeconds > 0) return remainingSeconds;
+  return 0;
+}
+
+function presenceStateToUI(state: Agent["presence_state"]): "online" | "degraded" | "offline" {
+  if (state === "online") return "online";
+  if (state === "degraded") return "degraded";
+  return "offline";
+}
+
+function dcCoverageStatus(coveragePct: number): Severity {
+  if (coveragePct >= 99.5) return "ok";
+  if (coveragePct > 0) return "warn";
+  return "error";
+}
+
 function mapDcs(
   dcs: Agent["runtime"]["dcs"]
 ): Array<{ dc: number; status: Severity; rttMs: number | null; coveragePct?: number; load?: number }> {
   return (dcs ?? []).map((dc) => ({
     dc: dc.dc,
-    status:
-      dc.coverage_pct >= 99.5 ? "ok" : dc.coverage_pct > 0 ? "warn" : "error",
+    status: dcCoverageStatus(dc.coverage_pct),
     rttMs: ms1(dc.rtt_ms) ?? null,
     coveragePct: pct1(dc.coverage_pct),
     load: load2(dc.load),
@@ -124,11 +141,7 @@ export function transformInitState(
     progressPct: iw.initialization_progress_pct ?? iw.startup_progress_pct ?? 0,
     attempt: 1,
     retryLimit: 1,
-    elapsedSecs: iw.completed_at_unix > 0
-      ? 0
-      : iw.remaining_seconds > 0
-        ? iw.remaining_seconds
-        : 0,
+    elapsedSecs: initElapsedSecs(iw.completed_at_unix, iw.remaining_seconds),
     degraded: runtime?.degraded ?? false,
   };
 }
@@ -374,12 +387,7 @@ export function transformAgentConnection(
   const recovery = agent.certificate_recovery;
 
   return {
-    presenceState:
-      agent.presence_state === "online"
-        ? "online"
-        : agent.presence_state === "degraded"
-          ? "degraded"
-          : "offline",
+    presenceState: presenceStateToUI(agent.presence_state),
     lastSeenAt: formatLastSeen(lastSeen),
     agentId: agent.id,
     version: agent.version || "unknown",

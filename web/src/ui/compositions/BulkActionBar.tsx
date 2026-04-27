@@ -1,6 +1,14 @@
 import { Button } from "@/ui/base/button";
 import { cn } from "@/ui/lib/cn";
 
+function buttonVariant(
+  v: "default" | "danger" | "ghost" | undefined,
+): "danger" | "ghost" | "default" {
+  if (v === "danger") return "danger";
+  if (v === "ghost") return "ghost";
+  return "default";
+}
+
 export interface BulkAction<T extends string = string> {
   id: T;
   label: string;
@@ -64,7 +72,7 @@ export function BulkActionBar<T extends string = string>({
             <Button
               key={a.id}
               size="sm"
-              variant={a.variant === "danger" ? "danger" : a.variant === "ghost" ? "ghost" : "default"}
+              variant={buttonVariant(a.variant)}
               disabled={pending || a.disabled}
               onClick={() => onAction(a.id)}
             >

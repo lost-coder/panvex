@@ -5,6 +5,14 @@ import { memo } from "react";
 import { cn } from "@/ui";
 import type { ServerDetailPageProps } from "@/shared/api/types-pages/pages";
 
+type GateTone = "ok" | "warn" | "error" | "default";
+
+function gateTone(on: boolean, alertWhenOn?: boolean, neutralWhenOn?: boolean): GateTone {
+  if (alertWhenOn) return on ? "warn" : "ok";
+  if (neutralWhenOn) return "default";
+  return on ? "ok" : "error";
+}
+
 // ─── Gates panel ──────────────────────────────────────────────────────
 function GateRow({
   label,
@@ -17,15 +25,7 @@ function GateRow({
   alertWhenOn?: boolean;
   neutralWhenOn?: boolean;
 }>) {
-  const tone: "ok" | "warn" | "error" | "default" = alertWhenOn
-    ? on
-      ? "warn"
-      : "ok"
-    : neutralWhenOn
-      ? "default"
-      : on
-        ? "ok"
-        : "error";
+  const tone = gateTone(on, alertWhenOn, neutralWhenOn);
   const dot = (() => {
     if (tone === "ok") return "bg-status-ok";
     if (tone === "warn") return "bg-status-warn";

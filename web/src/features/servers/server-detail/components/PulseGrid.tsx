@@ -5,6 +5,18 @@ import { memo } from "react";
 
 import { cn } from "@/ui";
 
+function deltaClass(dir: "up" | "down" | "flat" | undefined): string {
+  if (dir === "up") return "text-status-ok";
+  if (dir === "down") return "text-status-error";
+  return "text-fg-muted";
+}
+
+function deltaArrow(dir: "up" | "down" | "flat" | undefined): string {
+  if (dir === "up") return "▲";
+  if (dir === "down") return "▼";
+  return "·";
+}
+
 // ─── Pulse row tick ──────────────────────────────────────────────────
 // "Ticker-style" metric without a card: compact label, large mono value,
 // optional delta/hint line beneath. Reads as a ribbon of signals when
@@ -63,20 +75,8 @@ function PulseTick({
           )}
         >
           {deltaLabel && (
-            <span
-              className={cn(
-                deltaDirection === "up"
-                  ? "text-status-ok"
-                  : deltaDirection === "down"
-                    ? "text-status-error"
-                    : "text-fg-muted",
-              )}
-            >
-              {deltaDirection === "up"
-                ? "▲"
-                : deltaDirection === "down"
-                  ? "▼"
-                  : "·"}{" "}
+            <span className={cn(deltaClass(deltaDirection))}>
+              {deltaArrow(deltaDirection)}{" "}
               {deltaLabel}
             </span>
           )}

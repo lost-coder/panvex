@@ -1,6 +1,12 @@
 // src/primitives/StepIndicator.tsx
 import { cn } from "@/ui/lib/cn";
 
+function stepClass(i: number, current: number): string {
+  if (i < current) return "bg-status-ok text-white";
+  if (i === current) return "bg-accent text-white";
+  return "bg-bg-card border border-border text-fg-muted";
+}
+
 export interface StepIndicatorProps {
   steps: string[];
   current: number;
@@ -16,11 +22,7 @@ export function StepIndicator({ steps, current, className }: Readonly<StepIndica
             <div
               className={cn(
                 "w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium",
-                i < current
-                  ? "bg-status-ok text-white"
-                  : i === current
-                    ? "bg-accent text-white"
-                    : "bg-bg-card border border-border text-fg-muted",
+                stepClass(i, current),
               )}
             >
               {i < current ? "✓" : i + 1}

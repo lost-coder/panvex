@@ -301,7 +301,11 @@ export function ClientFormSheet({
             (!!(fleetGroups?.length || agents?.length) && !hasDeploymentTargets)
           }
         >
-          {loading ? "Saving..." : mode === "create" ? "Create Client" : "Save Changes"}
+          {(() => {
+            if (loading) return "Saving...";
+            if (mode === "create") return "Create Client";
+            return "Save Changes";
+          })()}
         </Button>
       </div>
     </div>

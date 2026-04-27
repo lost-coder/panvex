@@ -39,8 +39,17 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
   }
 
   const { summary, generations, hardswap, contour, writersHealth, refill, writersList } = mePool;
-  const coverageTone = (pct: number): string =>
-    pct >= 100 ? "text-status-ok" : pct >= 70 ? "text-status-warn" : "text-status-error";
+  const coverageTone = (pct: number): string => {
+    if (pct >= 100) return "text-status-ok";
+    if (pct >= 70) return "text-status-warn";
+    return "text-status-error";
+  };
+
+  const writerStateVariant = (row: Readonly<ServerMeWriterData>): "warn" | "ok" | "default" => {
+    if (row.degraded) return "warn";
+    if (row.state === "active") return "ok";
+    return "default";
+  };
 
   const filteredWriters = writersList.filter((w) => {
     if (stateFilter === "all") return true;
@@ -75,7 +84,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
       key: "state",
       header: "State",
       render: (row: Readonly<ServerMeWriterData>) => (
-        <Badge variant={row.degraded ? "warn" : row.state === "active" ? "ok" : "default"}>
+        <Badge variant={writerStateVariant(row)}>
           {row.state}
           {row.degraded ? " ⚠" : ""}
         </Badge>

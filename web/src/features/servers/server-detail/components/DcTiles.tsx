@@ -8,6 +8,12 @@ import { memo } from "react";
 import { cn } from "@/ui";
 import type { ServerDcData } from "@/shared/api/types-pages/pages";
 
+function rttClass(rttMs: number): string {
+  if (rttMs > 300) return "text-status-error";
+  if (rttMs > 200) return "text-status-warn";
+  return "text-fg";
+}
+
 // ─── 12-DC grid of tiles (problem-first ordering) ─────────────────────
 function DcTile({ dc, onClick }: Readonly<{ dc: ServerDcData; onClick: () => void }>) {
   const status: "ok" | "warn" | "error" = (() => {
@@ -61,7 +67,7 @@ function DcTile({ dc, onClick }: Readonly<{ dc: ServerDcData; onClick: () => voi
         </span>
         <span>
           rtt{" "}
-          <span className={cn((dc.rttMs ?? 0) > 300 ? "text-status-error" : (dc.rttMs ?? 0) > 200 ? "text-status-warn" : "text-fg")}>
+          <span className={cn(rttClass(dc.rttMs ?? 0))}>
             {dc.rttMs ?? "—"}
           </span>
         </span>

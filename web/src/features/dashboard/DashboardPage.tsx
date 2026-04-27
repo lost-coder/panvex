@@ -30,6 +30,18 @@ interface OverviewPanelProps {
   onNodeClick?: ((nodeId: string) => void) | undefined;
 }
 
+function deltaClass(dir: "up" | "down" | "flat" | undefined): string {
+  if (dir === "up") return "text-status-ok";
+  if (dir === "down") return "text-status-error";
+  return "text-fg-muted";
+}
+
+function deltaArrow(dir: "up" | "down" | "flat" | undefined): string {
+  if (dir === "up") return "▲";
+  if (dir === "down") return "▼";
+  return "·";
+}
+
 const TONE_VALUE_CLASS: Record<NonNullable<KpiItem["tone"]>, string> = {
   default: "text-fg",
   ok: "text-status-ok",
@@ -90,20 +102,8 @@ function KpiStrip({ kpis }: Readonly<{ kpis: DashboardOverviewData["kpis"] }>) {
               </div>
               <div className="flex items-center gap-2 text-[10px] font-mono text-fg-muted mt-auto">
                 {k.deltaLabel && (
-                  <span
-                    className={
-                      k.deltaDirection === "up"
-                        ? "text-status-ok"
-                        : k.deltaDirection === "down"
-                          ? "text-status-error"
-                          : "text-fg-muted"
-                    }
-                  >
-                    {k.deltaDirection === "up"
-                      ? "▲"
-                      : k.deltaDirection === "down"
-                        ? "▼"
-                        : "·"}{" "}
+                  <span className={deltaClass(k.deltaDirection)}>
+                    {deltaArrow(k.deltaDirection)}{" "}
                     {k.deltaLabel}
                   </span>
                 )}

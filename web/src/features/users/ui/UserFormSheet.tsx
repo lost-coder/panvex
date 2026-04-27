@@ -80,7 +80,11 @@ export function UserFormSheet({
                 onClick={onSubmit}
                 disabled={loading || !data.username || (mode === "create" && !data.password)}
               >
-                {loading ? "Saving..." : mode === "create" ? "Add User" : "Save Changes"}
+                {(() => {
+                  if (loading) return "Saving...";
+                  if (mode === "create") return "Add User";
+                  return "Save Changes";
+                })()}
               </Button>
             </div>
           </div>

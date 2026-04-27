@@ -53,15 +53,16 @@ function _HealthRadar({
     return [cx + r * Math.cos(a), cy + r * Math.sin(a)] as const;
   };
 
-  const statusOf = (d: ServerDcData): "ok" | "warn" | "error" =>
-    d.coveragePct < 70 ? "error" : d.coveragePct < 100 ? "warn" : "ok";
+  const statusOf = (d: ServerDcData): "ok" | "warn" | "error" => {
+    if (d.coveragePct < 70) return "error";
+    if (d.coveragePct < 100) return "warn";
+    return "ok";
+  };
   const fillOf = (d: ServerDcData): string => {
     const s = statusOf(d);
-    return s === "error"
-      ? "var(--color-status-error)"
-      : s === "warn"
-        ? "var(--color-status-warn)"
-        : "var(--color-status-ok)";
+    if (s === "error") return "var(--color-status-error)";
+    if (s === "warn") return "var(--color-status-warn)";
+    return "var(--color-status-ok)";
   };
 
   const total = ordered.length || 1;

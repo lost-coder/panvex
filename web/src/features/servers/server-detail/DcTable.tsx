@@ -3,6 +3,12 @@ import { FieldLabel, MonoValue } from "@/ui/primitives";
 import { coverageColor } from "@/ui/lib/status";
 import type { ServerDcData } from "@/shared/api/types-pages/pages";
 
+function rttClass(rttMs: number): string | undefined {
+  if (rttMs > 300) return "text-status-error";
+  if (rttMs > 100) return "text-status-warn";
+  return undefined;
+}
+
 export function DcTable({ dcs }: Readonly<{ dcs: ServerDcData[] }>) {
   const [expandedDc, setExpandedDc] = useState<number | null>(null);
 
@@ -77,15 +83,7 @@ export function DcTable({ dcs }: Readonly<{ dcs: ServerDcData[] }>) {
                   </MonoValue>
                 </td>
                 <td className="px-3 py-2">
-                  <MonoValue
-                    className={
-                      (row.rttMs ?? 0) > 300
-                        ? "text-status-error"
-                        : (row.rttMs ?? 0) > 100
-                          ? "text-status-warn"
-                          : undefined
-                    }
-                  >
+                  <MonoValue className={rttClass(row.rttMs ?? 0)}>
                     {row.rttMs == null ? "—" : `${row.rttMs}ms`}
                   </MonoValue>
                 </td>

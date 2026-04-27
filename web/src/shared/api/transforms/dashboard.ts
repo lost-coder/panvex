@@ -26,6 +26,12 @@ function mapSeverity(s: "good" | "warn" | "bad"): "ok" | "warn" | "error" {
   return "warn";
 }
 
+function dcStatus(coveragePct: number): "ok" | "warn" | "error" {
+  if (coveragePct >= 99.5) return "ok";
+  if (coveragePct > 0) return "warn";
+  return "error";
+}
+
 // Map API dc entries to UI NodeDcInfo shape
 function mapDcs(
   dcs: Array<{
@@ -37,8 +43,7 @@ function mapDcs(
 ): DashboardNodeData["dcs"] {
   return dcs.map((dc) => ({
     dc: dc.dc,
-    status:
-      dc.coverage_pct >= 99.5 ? "ok" : dc.coverage_pct > 0 ? "warn" : "error",
+    status: dcStatus(dc.coverage_pct),
     rttMs: dc.rtt_ms > 0 ? Math.round(dc.rtt_ms * 10) / 10 : null,
     coveragePct: pct1(dc.coverage_pct),
     load: load2(dc.load),

@@ -21,6 +21,13 @@ export function DiscoveredStatusPill({ status }: Readonly<{ status: DiscoveredGr
   return <Badge variant="warn">Pending</Badge>;
 }
 
+function rowDotStatus(row: DiscoveredGroup): "ok" | "warn" | "error" {
+  if (row.status === "adopted") return "ok";
+  if (row.status === "ignored") return "warn";
+  if (row.hasConflict) return "error";
+  return "warn";
+}
+
 export interface DiscoveredColumnsOptions {
   selection?:
     | {
@@ -85,23 +92,13 @@ export function buildDiscoveredColumns(opts: Readonly<DiscoveredColumnsOptions>)
       header: "Client",
       render: (row) => (
         <div className="flex items-center gap-2 min-w-0">
-          <StatusDot
-            status={
-              row.status === "adopted"
-                ? "ok"
-                : row.status === "ignored"
-                  ? "warn"
-                  : row.hasConflict
-                    ? "error"
-                    : "warn"
-            }
-          />
+          <StatusDot status={rowDotStatus(row)} />
           <span className="font-medium text-fg truncate">{row.clientName}</span>
-          {row.hasNameConflict ? (
-            <Badge variant="error">name conflict</Badge>
-          ) : row.hasConflict ? (
-            <Badge variant="warn">conflict</Badge>
-          ) : null}
+          {(() => {
+            if (row.hasNameConflict) return <Badge variant="error">name conflict</Badge>;
+            if (row.hasConflict) return <Badge variant="warn">conflict</Badge>;
+            return null;
+          })()}
         </div>
       ),
       className: "w-[26%]",

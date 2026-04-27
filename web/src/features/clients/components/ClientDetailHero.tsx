@@ -13,6 +13,15 @@ import {
 
 import { expiresSuffix, expiresTone } from "./clientDetailHelpers";
 
+function statusTone(
+  status: "active" | "disabled" | "expired",
+  enabled: boolean,
+): StatusTone {
+  if (status === "expired") return "error";
+  if (enabled) return "ok";
+  return "warn";
+}
+
 export interface ClientDetailHeroProps {
   name: string;
   enabled: boolean;
@@ -100,7 +109,7 @@ export function ClientDetailHero({
         className="hidden md:flex"
         name={name}
         status={{
-          tone: status === "expired" ? "error" : enabled ? "ok" : "warn",
+          tone: statusTone(status, enabled),
           label: statusLabel,
         }}
         pills={[
