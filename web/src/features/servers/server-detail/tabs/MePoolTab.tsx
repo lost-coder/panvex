@@ -30,7 +30,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
     "all" | "active" | "warmup" | "draining" | "degraded"
   >("all");
 
-  if (!mePool || !mePool.enabled) {
+  if (!mePool?.enabled) {
     return (
       <div className="py-8 text-center text-fg-muted text-sm">
         ME Pool is not available on this server.
