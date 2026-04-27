@@ -784,7 +784,7 @@ func (a *Agent) clientIDForNameLocked(name string) string {
 	return ""
 }
 
-func (a *Agent) setClientName(clientID string, name string) {
+func (a *Agent) setClientName(clientID, name string) {
 	if clientID == "" || name == "" {
 		return
 	}

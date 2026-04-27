@@ -127,7 +127,7 @@ func (v *Vault) Enabled() bool {
 // plaintext is returned as-is (no point storing ciphertext for an
 // empty secret). When the vault is disabled the plaintext is returned
 // unchanged so callers can stay simple.
-func (v *Vault) Encrypt(domain string, plaintext string) (string, error) {
+func (v *Vault) Encrypt(domain, plaintext string) (string, error) {
 	if plaintext == "" {
 		return "", nil
 	}
@@ -162,7 +162,7 @@ func (v *Vault) Encrypt(domain string, plaintext string) (string, error) {
 // returned unchanged so legacy rows keep working until they're next
 // written. A prefixed value with an unconfigured vault is an error —
 // the caller would otherwise see the raw ciphertext bytes.
-func (v *Vault) Decrypt(domain string, value string) (string, error) {
+func (v *Vault) Decrypt(domain, value string) (string, error) {
 	if !strings.HasPrefix(value, Prefix) {
 		return value, nil
 	}

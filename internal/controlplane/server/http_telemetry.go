@@ -324,7 +324,7 @@ func (s *Server) handleTelemetryServerRefreshDiagnostics() http.HandlerFunc {
 }
 
 func sortTelemetryAttention(items []telemetryAttentionItem) {
-	sort.Slice(items, func(left int, right int) bool {
+	sort.Slice(items, func(left, right int) bool {
 		leftRank := telemetrySeverityRank(items[left].Severity)
 		rightRank := telemetrySeverityRank(items[right].Severity)
 		if leftRank != rightRank {

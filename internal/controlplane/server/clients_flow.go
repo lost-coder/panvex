@@ -194,7 +194,7 @@ func (s *Server) listClientsSnapshot() []managedClient {
 		result = append(result, client)
 	}
 
-	sort.Slice(result, func(left int, right int) bool {
+	sort.Slice(result, func(left, right int) bool {
 		if result[left].CreatedAt.Equal(result[right].CreatedAt) {
 			return result[left].ID < result[right].ID
 		}
@@ -214,7 +214,7 @@ func (s *Server) clientDetailSnapshot(clientID string) (managedClient, []managed
 	}
 
 	assignments := append([]managedClientAssignment(nil), s.clientAssignments[clientID]...)
-	sort.Slice(assignments, func(left int, right int) bool {
+	sort.Slice(assignments, func(left, right int) bool {
 		if assignments[left].CreatedAt.Equal(assignments[right].CreatedAt) {
 			return assignments[left].ID < assignments[right].ID
 		}
@@ -226,7 +226,7 @@ func (s *Server) clientDetailSnapshot(clientID string) (managedClient, []managed
 	for _, deployment := range deploymentsMap {
 		deployments = append(deployments, deployment)
 	}
-	sort.Slice(deployments, func(left int, right int) bool {
+	sort.Slice(deployments, func(left, right int) bool {
 		return deployments[left].AgentID < deployments[right].AgentID
 	})
 
@@ -305,11 +305,11 @@ func (s *Server) createClientWithContext(ctx context.Context, actorID string, in
 	return client, assignments, deployments, nil
 }
 
-func (s *Server) updateClient(clientID string, actorID string, input clientMutationInput, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
+func (s *Server) updateClient(clientID, actorID string, input clientMutationInput, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
 	return s.updateClientWithContext(context.Background(), clientID, actorID, input, observedAt)
 }
 
-func (s *Server) updateClientWithContext(ctx context.Context, clientID string, actorID string, input clientMutationInput, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
+func (s *Server) updateClientWithContext(ctx context.Context, clientID, actorID string, input clientMutationInput, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
 	observedAt = observedAt.UTC()
 
 	currentClient, _, currentDeployments, err := s.clientDetailSnapshot(clientID)
@@ -376,7 +376,7 @@ func (s *Server) updateClientWithContext(ctx context.Context, clientID string, a
 	return currentClient, assignments, deployments, nil
 }
 
-func (s *Server) rotateClientSecret(clientID string, actorID string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
+func (s *Server) rotateClientSecret(clientID, actorID string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
 	return s.rotateClientSecretWithContext(context.Background(), clientID, actorID, observedAt)
 }
 
@@ -386,7 +386,7 @@ func (s *Server) rotateClientSecret(clientID string, actorID string, observedAt 
 // or more Telemt nodes rejected the apply (bad ad tag, network blip,
 // etc.). Re-running the flow with the current stored state is the
 // operator-facing equivalent of "retry deployment".
-func (s *Server) redeployClientWithContext(ctx context.Context, clientID string, actorID string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
+func (s *Server) redeployClientWithContext(ctx context.Context, clientID, actorID string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
 	observedAt = observedAt.UTC()
 
 	currentClient, assignments, deployments, err := s.clientDetailSnapshot(clientID)
@@ -415,7 +415,7 @@ func (s *Server) redeployClientWithContext(ctx context.Context, clientID string,
 	return currentClient, assignments, deployments, nil
 }
 
-func (s *Server) rotateClientSecretWithContext(ctx context.Context, clientID string, actorID string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
+func (s *Server) rotateClientSecretWithContext(ctx context.Context, clientID, actorID string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
 	observedAt = observedAt.UTC()
 
 	currentClient, assignments, deployments, err := s.clientDetailSnapshot(clientID)
@@ -450,11 +450,11 @@ func (s *Server) rotateClientSecretWithContext(ctx context.Context, clientID str
 	return currentClient, assignments, deployments, nil
 }
 
-func (s *Server) deleteClient(clientID string, actorID string, observedAt time.Time) error {
+func (s *Server) deleteClient(clientID, actorID string, observedAt time.Time) error {
 	return s.deleteClientWithContext(context.Background(), clientID, actorID, observedAt)
 }
 
-func (s *Server) deleteClientWithContext(ctx context.Context, clientID string, actorID string, observedAt time.Time) error {
+func (s *Server) deleteClientWithContext(ctx context.Context, clientID, actorID string, observedAt time.Time) error {
 	observedAt = observedAt.UTC()
 
 	currentClient, assignments, deployments, err := s.clientDetailSnapshot(clientID)
@@ -648,11 +648,11 @@ func (s *Server) resolveClientTargetAgentIDs(assignments []managedClientAssignme
 	})
 }
 
-func (s *Server) recordClientJobResult(agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) {
+func (s *Server) recordClientJobResult(agentID, jobID string, success bool, message, resultJSON string, observedAt time.Time) {
 	s.recordClientJobResultWithContext(context.Background(), agentID, jobID, success, message, resultJSON, observedAt)
 }
 
-func (s *Server) recordClientJobResultWithContext(ctx context.Context, agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) {
+func (s *Server) recordClientJobResultWithContext(ctx context.Context, agentID, jobID string, success bool, message, resultJSON string, observedAt time.Time) {
 	job, ok := s.jobByID(ctx, jobID)
 	if !ok {
 		return
@@ -752,7 +752,7 @@ func (s *Server) aggregatedClientUsage(clientID string) aggregatedClientUsage {
 // s.mu then delegates the name lookup to clients.Service.ResolveIDByName.
 // The two locks (s.mu and s.clientsMu) are never held together, which
 // preserves the documented lock ordering.
-func (s *Server) resolveClientIDByName(agentID string, clientName string) string {
+func (s *Server) resolveClientIDByName(agentID, clientName string) string {
 	s.mu.RLock()
 	agentFleetGroupID := ""
 	if agent, ok := s.agents[agentID]; ok {

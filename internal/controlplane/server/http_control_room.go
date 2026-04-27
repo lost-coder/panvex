@@ -134,7 +134,7 @@ func controlRoomRecentRuntimeEvents(agents map[string]Agent, limit int) []Runtim
 		return []RuntimeEvent{}
 	}
 
-	sort.Slice(result, func(left int, right int) bool {
+	sort.Slice(result, func(left, right int) bool {
 		if result[left].TimestampUnix == result[right].TimestampUnix {
 			return result[left].Sequence > result[right].Sequence
 		}

@@ -287,7 +287,7 @@ func (s *Server) listUsers() ([]auth.User, error) {
 func (s *Server) listUsersWithContext(ctx context.Context) ([]auth.User, error) {
 	if s.store == nil {
 		users := s.auth.SnapshotUsers()
-		sort.Slice(users, func(left int, right int) bool {
+		sort.Slice(users, func(left, right int) bool {
 			if users[left].CreatedAt.Equal(users[right].CreatedAt) {
 				return users[left].ID < users[right].ID
 			}

@@ -391,7 +391,7 @@ func runtimeNeedsInitializationWatch(runtime AgentRuntime) bool {
 	}
 }
 
-func telemetryInitializationWatchForAgent(agent Agent, now time.Time, cooldownExpiresAt time.Time) telemetryInitializationWatchResponse {
+func telemetryInitializationWatchForAgent(agent Agent, now, cooldownExpiresAt time.Time) telemetryInitializationWatchResponse {
 	runtime := normalizeAgentRuntime(agent.Runtime)
 	if runtimeNeedsInitializationWatch(runtime) {
 		return telemetryInitializationWatchResponse{
@@ -451,7 +451,7 @@ func telemetrySeverityAndReason(agent Agent, presenceState presence.State, fresh
 	})
 }
 
-func telemetrySummaryForAgent(agent Agent, presenceState presence.State, now time.Time, boostExpiresAt time.Time) telemetryServerSummary {
+func telemetrySummaryForAgent(agent Agent, presenceState presence.State, now, boostExpiresAt time.Time) telemetryServerSummary {
 	agent.PresenceState = string(presenceState)
 	agent.Runtime = normalizeAgentRuntime(agent.Runtime)
 	freshness := telemetryFreshnessForRuntime(agent.Runtime, now)
@@ -466,7 +466,7 @@ func telemetrySummaryForAgent(agent Agent, presenceState presence.State, now tim
 }
 
 func sortTelemetrySummaries(items []telemetryServerSummary) {
-	sort.Slice(items, func(left int, right int) bool {
+	sort.Slice(items, func(left, right int) bool {
 		leftRank := telemetrySeverityRank(items[left].Severity)
 		rightRank := telemetrySeverityRank(items[right].Severity)
 		if leftRank != rightRank {

@@ -122,9 +122,13 @@ func (b *batchBuffer[T]) Drain(ctx context.Context) {
 type storeBatchWriter struct {
 	store   storage.Store
 	metrics batchMetricsSink
-	ctx     context.Context
-	cancel  context.CancelFunc
-	wg      sync.WaitGroup
+	// done is closed by StopWithTimeout to signal the background flush
+	// loop and any in-flight retry sleeps that the writer is shutting
+	// down. Closing-only semantics replace what used to be an embedded
+	// context.Context field (S8242).
+	done     chan struct{}
+	stopOnce sync.Once
+	wg       sync.WaitGroup
 
 	// sleep is the backoff sleeper used by retryWithBackoff. Exported through
 	// a field so tests can override it to zero-duration sleeps without
@@ -184,13 +188,10 @@ func newStoreBatchWriter(store storage.Store, metrics batchMetricsSink, now func
 	if now == nil {
 		now = time.Now
 	}
-	// cancel is stored on w.cancel and invoked by Stop/StopWithTimeout.
-	ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // cancel is retained via w.cancel and invoked in Stop/StopWithTimeout
 	w := &storeBatchWriter{
 		store:   store,
 		metrics: metrics,
-		ctx:     ctx,
-		cancel:  cancel,
+		done:    make(chan struct{}),
 		sleep:   time.Sleep,
 		now:     now,
 	}
@@ -232,7 +233,7 @@ func (w *storeBatchWriter) Start() {
 // should stop upstream producers (HTTP handlers, gRPC streams) before
 // invoking StopWithTimeout.
 func (w *storeBatchWriter) StopWithTimeout(timeout time.Duration) error {
-	w.cancel()
+	w.stopOnce.Do(func() { close(w.done) })
 	w.wg.Wait()
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -264,7 +265,7 @@ func (w *storeBatchWriter) flushLoop() {
 
 	for {
 		select {
-		case <-w.ctx.Done():
+		case <-w.done:
 			return
 		case <-ticker.C:
 		case <-w.agents.signal:
@@ -449,7 +450,7 @@ func (w *storeBatchWriter) retryWithBackoff(op func() error, observeTransient fu
 		// Abort retry loop if the writer is shutting down — no point sleeping
 		// for hundreds of ms when the process is exiting.
 		select {
-		case <-w.ctx.Done():
+		case <-w.done:
 			return retryExhausted, err
 		default:
 		}

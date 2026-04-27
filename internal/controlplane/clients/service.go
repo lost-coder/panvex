@@ -167,9 +167,7 @@ func (s *Service) NextDiscoveredID() string {
 // NextDiscoveredID call returns a value strictly greater than any
 // previously-issued ID. Safe to call multiple times.
 func (s *Service) RecoverSequencesFromRecords(
-	clientIDs []string,
-	assignmentIDs []string,
-	discoveredIDs []string,
+	clientIDs, assignmentIDs, discoveredIDs []string,
 ) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -199,7 +197,7 @@ func (s *Service) ListSnapshot() []Client {
 		}
 		result = append(result, client)
 	}
-	sort.Slice(result, func(left int, right int) bool {
+	sort.Slice(result, func(left, right int) bool {
 		if result[left].CreatedAt.Equal(result[right].CreatedAt) {
 			return result[left].ID < result[right].ID
 		}
@@ -221,7 +219,7 @@ func (s *Service) DetailSnapshot(clientID string) (Client, []Assignment, []Deplo
 		return Client{}, nil, nil, storage.ErrNotFound
 	}
 	assignments := append([]Assignment(nil), s.assignments[clientID]...)
-	sort.Slice(assignments, func(left int, right int) bool {
+	sort.Slice(assignments, func(left, right int) bool {
 		if assignments[left].CreatedAt.Equal(assignments[right].CreatedAt) {
 			return assignments[left].ID < assignments[right].ID
 		}
@@ -232,7 +230,7 @@ func (s *Service) DetailSnapshot(clientID string) (Client, []Assignment, []Deplo
 	for _, deployment := range deploymentsMap {
 		deployments = append(deployments, deployment)
 	}
-	sort.Slice(deployments, func(left int, right int) bool {
+	sort.Slice(deployments, func(left, right int) bool {
 		return deployments[left].AgentID < deployments[right].AgentID
 	})
 	return client, assignments, deployments, nil

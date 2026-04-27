@@ -79,6 +79,54 @@ func (c *Client) InvalidateSlowDataCache() {
 	c.slowData = slowRuntimeState{}
 }
 
+// connectionSummaryTop carries the top-N connection / throughput rows
+// from /v1/runtime/connections/summary. Pulled out of the surrounding
+// anonymous struct so the deeply-nested decode tree stays readable
+// (S8205).
+type connectionSummaryTop struct {
+	ByConnections []struct {
+		Username    string `json:"username"`
+		Connections int    `json:"connections"`
+	} `json:"by_connections"`
+	ByThroughput []struct {
+		Username        string `json:"username"`
+		ThroughputBytes uint64 `json:"throughput_bytes"`
+	} `json:"by_throughput"`
+}
+
+// connectionSummaryData is the inner "data" payload of
+// /v1/runtime/connections/summary. Extracted from the response decode
+// struct to avoid an anonymous-struct nest (S8205).
+type connectionSummaryData struct {
+	Cache struct {
+		StaleCacheUsed bool `json:"stale_cache_used"`
+	} `json:"cache"`
+	Totals struct {
+		CurrentConnections       int `json:"current_connections"`
+		CurrentConnectionsME     int `json:"current_connections_me"`
+		CurrentConnectionsDirect int `json:"current_connections_direct"`
+		ActiveUsers              int `json:"active_users"`
+	} `json:"totals"`
+	Top connectionSummaryTop `json:"top"`
+}
+
+// recentEventEntry is one row inside /v1/runtime/events/recent. Hoisted
+// out of the response decode struct for readability (S8205).
+type recentEventEntry struct {
+	Sequence      uint64 `json:"seq"`
+	TimestampUnix int64  `json:"ts_epoch_secs"`
+	EventType     string `json:"event_type"`
+	Context       string `json:"context"`
+}
+
+// recentEventsData is the inner "data" payload of
+// /v1/runtime/events/recent. Extracted from the response decode struct
+// for readability and so the on-failure reset can reuse the same type
+// (S8205).
+type recentEventsData struct {
+	Events []recentEventEntry `json:"events"`
+}
+
 // slowRuntimeState stores data from heavier Telemt endpoints that tolerate short-lived staleness.
 type slowRuntimeState struct {
 	Version           string
@@ -420,29 +468,9 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 	}
 
 	connectionSummary := struct {
-		Enabled bool   `json:"enabled"`
-		Reason  string `json:"reason"`
-		Data    struct {
-			Cache struct {
-				StaleCacheUsed bool `json:"stale_cache_used"`
-			} `json:"cache"`
-			Totals struct {
-				CurrentConnections       int `json:"current_connections"`
-				CurrentConnectionsME     int `json:"current_connections_me"`
-				CurrentConnectionsDirect int `json:"current_connections_direct"`
-				ActiveUsers              int `json:"active_users"`
-			} `json:"totals"`
-			Top struct {
-				ByConnections []struct {
-					Username    string `json:"username"`
-					Connections int    `json:"connections"`
-				} `json:"by_connections"`
-				ByThroughput []struct {
-					Username        string `json:"username"`
-					ThroughputBytes uint64 `json:"throughput_bytes"`
-				} `json:"by_throughput"`
-			} `json:"top"`
-		} `json:"data"`
+		Enabled bool                  `json:"enabled"`
+		Reason  string                `json:"reason"`
+		Data    connectionSummaryData `json:"data"`
 	}{}
 	if err := c.getJSON(ctx, pathRuntimeConnectionsSummary, &connectionSummary); err != nil {
 		markPartial(pathRuntimeConnectionsSummary, err)
@@ -647,32 +675,18 @@ func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, b
 	}
 
 	recentEvents := struct {
-		Enabled bool   `json:"enabled"`
-		Reason  string `json:"reason"`
-		Data    struct {
-			Events []struct {
-				Sequence      uint64 `json:"seq"`
-				TimestampUnix int64  `json:"ts_epoch_secs"`
-				EventType     string `json:"event_type"`
-				Context       string `json:"context"`
-			} `json:"events"`
-		} `json:"data"`
+		Enabled bool             `json:"enabled"`
+		Reason  string           `json:"reason"`
+		Data    recentEventsData `json:"data"`
 	}{}
 	// Recent events are advisory diagnostics. A temporary read failure must not suppress
 	// the core operator snapshot built from health, gates, connections, summary, and DC state.
 	if err := c.getJSON(ctx, "/v1/runtime/events/recent", &recentEvents); err != nil {
 		partial = true
 		recentEvents = struct {
-			Enabled bool   `json:"enabled"`
-			Reason  string `json:"reason"`
-			Data    struct {
-				Events []struct {
-					Sequence      uint64 `json:"seq"`
-					TimestampUnix int64  `json:"ts_epoch_secs"`
-					EventType     string `json:"event_type"`
-					Context       string `json:"context"`
-				} `json:"events"`
-			} `json:"data"`
+			Enabled bool             `json:"enabled"`
+			Reason  string           `json:"reason"`
+			Data    recentEventsData `json:"data"`
 		}{}
 	}
 

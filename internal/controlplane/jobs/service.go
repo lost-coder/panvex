@@ -441,7 +441,7 @@ func (s *Service) ListWithContext(ctx context.Context) []Job {
 	}
 	s.mu.Unlock()
 
-	sort.Slice(result, func(left int, right int) bool {
+	sort.Slice(result, func(left, right int) bool {
 		if result[left].CreatedAt.Equal(result[right].CreatedAt) {
 			return result[left].ID < result[right].ID
 		}
@@ -508,7 +508,7 @@ func (s *Service) PendingForAgent(ctx context.Context, agentID string, retryAfte
 	}
 	s.mu.Unlock()
 
-	sort.Slice(result, func(left int, right int) bool {
+	sort.Slice(result, func(left, right int) bool {
 		if result[left].CreatedAt.Equal(result[right].CreatedAt) {
 			return result[left].ID < result[right].ID
 		}
@@ -551,7 +551,7 @@ func targetIsPending(target JobTarget, now time.Time, retryAfter time.Duration) 
 }
 
 // MarkDelivered records that one target command has been sent to an active agent stream.
-func (s *Service) MarkDelivered(ctx context.Context, agentID string, jobID string, observedAt time.Time) {
+func (s *Service) MarkDelivered(ctx context.Context, agentID, jobID string, observedAt time.Time) {
 	s.updateTarget(ctx, agentID, jobID, observedAt, func(target *JobTarget) {
 		if target.Status == TargetStatusSucceeded || target.Status == TargetStatusFailed || target.Status == TargetStatusExpired {
 			return
@@ -568,7 +568,7 @@ func (s *Service) MarkDelivered(ctx context.Context, agentID string, jobID strin
 }
 
 // MarkAcknowledged records that one target command has been accepted by the agent runtime queue.
-func (s *Service) MarkAcknowledged(ctx context.Context, agentID string, jobID string, observedAt time.Time) {
+func (s *Service) MarkAcknowledged(ctx context.Context, agentID, jobID string, observedAt time.Time) {
 	s.updateTarget(ctx, agentID, jobID, observedAt, func(target *JobTarget) {
 		if target.Status == TargetStatusSucceeded || target.Status == TargetStatusFailed || target.Status == TargetStatusExpired {
 			return
@@ -698,7 +698,7 @@ func (s *Service) StartAcknowledgedExpiryWorker(ctx context.Context, interval ti
 // caller should log a warning but treat this as non-fatal, since the ack
 // expiry worker or terminal-key eviction may have dropped the job before
 // the result arrived).
-func (s *Service) RecordResult(ctx context.Context, agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) bool {
+func (s *Service) RecordResult(ctx context.Context, agentID, jobID string, success bool, message, resultJSON string, observedAt time.Time) bool {
 	return s.updateTarget(ctx, agentID, jobID, observedAt, func(target *JobTarget) {
 		if target.Status == TargetStatusExpired {
 			return
@@ -713,7 +713,7 @@ func (s *Service) RecordResult(ctx context.Context, agentID string, jobID string
 	})
 }
 
-func (s *Service) updateTarget(ctx context.Context, agentID string, jobID string, observedAt time.Time, mutate func(target *JobTarget)) bool {
+func (s *Service) updateTarget(ctx context.Context, agentID, jobID string, observedAt time.Time, mutate func(target *JobTarget)) bool {
 	var (
 		candidates []persistCandidate
 	)

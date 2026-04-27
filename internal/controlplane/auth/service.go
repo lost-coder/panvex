@@ -682,12 +682,12 @@ func (s *Service) StartTotpSetupWithContext(ctx context.Context, userID string, 
 // EnableTotp validates a pending setup and persists it as the active user TOTP secret.
 //
 // Note: preferEnableTotpWithContext from request handlers.
-func (s *Service) EnableTotp(userID string, password string, totpCode string, now time.Time) (User, error) {
+func (s *Service) EnableTotp(userID, password, totpCode string, now time.Time) (User, error) {
 	return s.EnableTotpWithContext(context.Background(), userID, password, totpCode, now)
 }
 
 // EnableTotpWithContext is the ctx-aware variant of EnableTotp.
-func (s *Service) EnableTotpWithContext(ctx context.Context, userID string, password string, totpCode string, now time.Time) (User, error) {
+func (s *Service) EnableTotpWithContext(ctx context.Context, userID, password, totpCode string, now time.Time) (User, error) {
 	user, err := s.GetUserByIDWithContext(ctx, userID)
 	if err != nil {
 		return User{}, err
@@ -730,12 +730,12 @@ func (s *Service) EnableTotpWithContext(ctx context.Context, userID string, pass
 // DisableTotp disables TOTP after validating the current password and active TOTP code.
 //
 // Note: preferDisableTotpWithContext from request handlers.
-func (s *Service) DisableTotp(userID string, password string, totpCode string, now time.Time) (User, error) {
+func (s *Service) DisableTotp(userID, password, totpCode string, now time.Time) (User, error) {
 	return s.DisableTotpWithContext(context.Background(), userID, password, totpCode, now)
 }
 
 // DisableTotpWithContext is the ctx-aware variant of DisableTotp.
-func (s *Service) DisableTotpWithContext(ctx context.Context, userID string, password string, totpCode string, now time.Time) (User, error) {
+func (s *Service) DisableTotpWithContext(ctx context.Context, userID, password, totpCode string, now time.Time) (User, error) {
 	user, err := s.GetUserByIDWithContext(ctx, userID)
 	if err != nil {
 		return User{}, err
@@ -828,7 +828,7 @@ func (s *Service) HashPassword(password string) (string, error) {
 }
 
 // VerifyPassword validates a plaintext password against an Argon2id hash.
-func (s *Service) VerifyPassword(hash string, password string) error {
+func (s *Service) VerifyPassword(hash, password string) error {
 	parts := strings.Split(hash, "$")
 	if len(parts) != 3 || parts[0] != "argon2id" {
 		return ErrInvalidCredentials
@@ -1072,7 +1072,7 @@ func (s *Service) cleanupExpiredSessionsLocked(now time.Time) {
 	}
 }
 
-func (s *Service) verifyTotpCode(secret string, code string, now time.Time) bool {
+func (s *Service) verifyTotpCode(secret, code string, now time.Time) bool {
 	trimmedCode := strings.TrimSpace(code)
 	// During the first 90 seconds after startup, skip the past (-30s) window
 	// to prevent replay of TOTP codes consumed before a restart. The consumed

@@ -214,7 +214,7 @@ func (s *Server) listDiscoveredClients(ctx context.Context) ([]discoveredClient,
 	return result, nil
 }
 
-func (s *Server) adoptDiscoveredClient(ctx context.Context, id string, actorID string, observedAt time.Time) (managedClient, error) {
+func (s *Server) adoptDiscoveredClient(ctx context.Context, id, actorID string, observedAt time.Time) (managedClient, error) {
 	if s.store == nil {
 		return managedClient{}, storage.ErrNotFound
 	}
@@ -366,7 +366,7 @@ func (s *Server) adoptDiscoveredClient(ctx context.Context, id string, actorID s
 
 // markDuplicateDiscoveredClientsAdopted marks all other discovered clients with the same
 // secret as adopted, since they represent the same user on different servers.
-func (s *Server) markDuplicateDiscoveredClientsAdopted(ctx context.Context, excludeID string, secret string, observedAt time.Time) {
+func (s *Server) markDuplicateDiscoveredClientsAdopted(ctx context.Context, excludeID, secret string, observedAt time.Time) {
 	if s.store == nil {
 		return
 	}
@@ -392,7 +392,7 @@ func (s *Server) markDuplicateDiscoveredClientsAdopted(ctx context.Context, excl
 // adopt writes. Unlike the untransacted variant it surfaces errors to
 // the caller — inside a Transact, failing one write must abort the
 // whole sequence.
-func markDuplicateDiscoveredClientsAdoptedTx(ctx context.Context, store storage.Store, excludeID string, secret string, observedAt time.Time) error {
+func markDuplicateDiscoveredClientsAdoptedTx(ctx context.Context, store storage.Store, excludeID, secret string, observedAt time.Time) error {
 	all, err := store.ListDiscoveredClients(ctx)
 	if err != nil {
 		return err
@@ -407,7 +407,7 @@ func markDuplicateDiscoveredClientsAdoptedTx(ctx context.Context, store storage.
 // collectDuplicateDiscoveredIDs returns IDs of every non-adopted
 // duplicate of (secret) excluding the primary adopt target. Lifted into
 // a helper so the tx and non-tx paths share the same filter logic.
-func collectDuplicateDiscoveredIDs(all []storage.DiscoveredClientRecord, excludeID string, secret string) []string {
+func collectDuplicateDiscoveredIDs(all []storage.DiscoveredClientRecord, excludeID, secret string) []string {
 	if secret == "" {
 		return nil
 	}
@@ -424,7 +424,7 @@ func collectDuplicateDiscoveredIDs(all []storage.DiscoveredClientRecord, exclude
 // findManagedClientByNameAndSecret returns an existing managed client matching
 // both name and secret. Used to detect when a discovered client on a new node
 // corresponds to an already-adopted client from another node.
-func (s *Server) findManagedClientByNameAndSecret(name string, secret string) (managedClient, bool) {
+func (s *Server) findManagedClientByNameAndSecret(name, secret string) (managedClient, bool) {
 	s.clientsMu.RLock()
 	defer s.clientsMu.RUnlock()
 
@@ -551,7 +551,7 @@ func (s *Server) seedClientUsage(ctx context.Context, clientID, agentID string, 
 	}
 }
 
-func (s *Server) ignoreDiscoveredClient(ctx context.Context, id string, actorID string, observedAt time.Time) error {
+func (s *Server) ignoreDiscoveredClient(ctx context.Context, id, actorID string, observedAt time.Time) error {
 	if s.store == nil {
 		return storage.ErrNotFound
 	}
