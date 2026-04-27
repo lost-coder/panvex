@@ -13,4 +13,15 @@ const (
 	msgProviderIDRequired         = "provider id is required"
 	msgProviderNotFound           = "provider not found"
 	msgIntegrationIDRequired      = "integration id is required"
+	msgAgentNotFound              = "agent not found"
+	msgStorageError               = "storage error"
+	msgServerNotFound             = "server not found"
+	msgPersistentStoreRequired    = "persistent store required"
+	msgRecoveryNotAllowed         = "agent certificate recovery is not allowed"
+
+	logBatchFlush         = "batch flush"
+	logAgentStreamClosed  = "agent stream closed"
+	logMessageReceived    = "message received"
+	auditJobsResult       = "jobs.result"
+	auditJobsAcknowledged = "jobs.acknowledged"
 )

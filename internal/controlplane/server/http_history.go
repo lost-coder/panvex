@@ -43,7 +43,7 @@ func (s *Server) handleServerLoadHistory() http.HandlerFunc {
 		if from.After(rawCutoff) || from.Equal(rawCutoff) {
 			points, err := s.store.ListServerLoadPoints(r.Context(), agentID, from, to)
 			if err != nil {
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, msgInternalError)
 				return
 			}
 			writeJSON(w, http.StatusOK, map[string]any{"points": points, "resolution": "raw"})
@@ -53,7 +53,7 @@ func (s *Server) handleServerLoadHistory() http.HandlerFunc {
 		// Otherwise fall back to hourly rollups.
 		points, err := s.store.ListServerLoadHourly(r.Context(), agentID, from, to)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"points": points, "resolution": "hourly"})
@@ -81,7 +81,7 @@ func (s *Server) handleDCHealthHistory() http.HandlerFunc {
 
 		points, err := s.store.ListDCHealthPoints(r.Context(), agentID, from, to)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"points": points})

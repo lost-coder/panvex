@@ -151,7 +151,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 				writeErrorWithCode(w, http.StatusServiceUnavailable, "session store unavailable", "session_store_unavailable")
 			default:
 				s.logger.Error("auth login failed", "error", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, msgInternalError)
 			}
 			return
 		}
@@ -257,7 +257,7 @@ func (s *Server) handleTotpSetup() http.HandlerFunc {
 		secret, err := s.auth.StartTotpSetupWithContext(r.Context(), user.ID, s.now())
 		if err != nil {
 			s.logger.Error("start totp setup failed", "user_id", user.ID, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 
@@ -292,7 +292,7 @@ func (s *Server) handleTotpEnable() http.HandlerFunc {
 				writeError(w, http.StatusBadRequest, err.Error())
 			default:
 				s.logger.Error("enable totp failed", "user_id", user.ID, "error", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, msgInternalError)
 			}
 			return
 		}
@@ -325,7 +325,7 @@ func (s *Server) handleTotpDisable() http.HandlerFunc {
 				writeError(w, http.StatusUnauthorized, err.Error())
 			default:
 				s.logger.Error("disable totp failed", "user_id", user.ID, "error", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, msgInternalError)
 			}
 			return
 		}

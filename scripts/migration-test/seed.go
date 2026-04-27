@@ -35,6 +35,10 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// agentIDFormat is the printf template for synthetic agent IDs across
+// every seeder (Sonar S1192).
+const agentIDFormat = "agent-%08d"
+
 // initialSchema0001 is a trimmed copy of the tables touched by later Phase 2
 // migrations. We only seed tables whose contents matter for stress-testing
 // ALTER/index migrations; fleet_groups is included because agents.fleet_group_id
@@ -327,7 +331,7 @@ func seedAgents(db *sql.DB, n, fleetN int) error {
 			[]string{"id", "node_name", "fleet_group_id", "version", "read_only", "last_seen_at_unix", "created_at_unix"},
 			n,
 			func(i int, a []any) {
-				a[0] = fmt.Sprintf("agent-%08d", i)
+				a[0] = fmt.Sprintf(agentIDFormat, i)
 				a[1] = fmt.Sprintf("node-%d", i)
 				// Distribute agents across fleet groups. A subset has no group
 				// to exercise the nullable FK path that migration 0008 indexes.
@@ -409,7 +413,7 @@ func seedJobs(db *sql.DB, n, agentN int) error {
 			n,
 			func(i int, a []any) {
 				a[0] = fmt.Sprintf("job-%08d", i)
-				a[1] = fmt.Sprintf("agent-%08d", i%agentN)
+				a[1] = fmt.Sprintf(agentIDFormat, i%agentN)
 				a[2] = "pending"
 				a[3] = ""
 				a[4] = ""
@@ -447,7 +451,7 @@ func seedMetrics(db *sql.DB, n, agentN int) error {
 			n,
 			func(i int, a []any) {
 				a[0] = fmt.Sprintf("metric-%010d", i)
-				a[1] = fmt.Sprintf("agent-%08d", i%agentN)
+				a[1] = fmt.Sprintf(agentIDFormat, i%agentN)
 				a[2] = ""
 				// Spread across a 7-day window so retention index 0008 sees
 				// realistic selectivity.
@@ -472,7 +476,7 @@ func seedDiscovered(db *sql.DB, n, agentN int) error {
 				// status='pending_review' — we need distinct (agent,name)
 				// pairs within the pending bucket. The (i, i) mapping
 				// guarantees uniqueness.
-				a[1] = fmt.Sprintf("agent-%08d", i%agentN)
+				a[1] = fmt.Sprintf(agentIDFormat, i%agentN)
 				a[2] = fmt.Sprintf("discovered-%d", i)
 				a[3] = "secret"
 				a[4] = "pending_review"

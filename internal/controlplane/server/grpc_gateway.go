@@ -382,19 +382,19 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 		select {
 		case err := <-dispatchErrors:
 			cancelConnection()
-			s.logger.Info("agent stream closed", "agent_id", agentID, "reason", "dispatch_error", "error", err)
+			s.logger.Info(logAgentStreamClosed, "agent_id", agentID, "reason", "dispatch_error", "error", err)
 			return err
 		case err := <-processErrors:
 			cancelConnection()
-			s.logger.Info("agent stream closed", "agent_id", agentID, "reason", "process_error", "error", err)
+			s.logger.Info(logAgentStreamClosed, "agent_id", agentID, "reason", "process_error", "error", err)
 			return status.Error(codes.Internal, err.Error())
 		case err := <-receiveErrors:
 			cancelConnection()
 			if errors.Is(err, io.EOF) {
-				s.logger.Info("agent stream closed", "agent_id", agentID, "reason", "eof")
+				s.logger.Info(logAgentStreamClosed, "agent_id", agentID, "reason", "eof")
 				return nil
 			}
-			s.logger.Info("agent stream closed", "agent_id", agentID, "reason", "receive_error", "error", err)
+			s.logger.Info(logAgentStreamClosed, "agent_id", agentID, "reason", "receive_error", "error", err)
 			return err
 		}
 	}
@@ -490,7 +490,7 @@ func (s *Server) processRegularAgentMessage(
 	message *gatewayrpc.ConnectClientMessage,
 ) error {
 	if hb := message.GetHeartbeat(); hb != nil {
-		s.logger.Debug("message received", "agent_id", agentID, "type", "heartbeat")
+		s.logger.Debug(logMessageReceived, "agent_id", agentID, "type", "heartbeat")
 		enqueueRegularSnapshot(connectionCtx, regularSnapshots, agentSnapshot{
 			AgentID:      agentID,
 			NodeName:     hb.NodeName,
@@ -503,7 +503,7 @@ func (s *Server) processRegularAgentMessage(
 	}
 
 	if snap := message.GetSnapshot(); snap != nil {
-		s.logger.Debug("message received", "agent_id", agentID, "type", "snapshot")
+		s.logger.Debug(logMessageReceived, "agent_id", agentID, "type", "snapshot")
 		instances := make([]instanceSnapshot, 0, len(snap.Instances))
 		for _, instance := range snap.Instances {
 			instances = append(instances, instanceSnapshot{
@@ -584,7 +584,7 @@ func (s *Server) processRegularAgentMessage(
 	}
 
 	if resp := message.GetClientDataResponse(); resp != nil {
-		s.logger.Debug("message received", "agent_id", agentID, "type", "client_data_response")
+		s.logger.Debug(logMessageReceived, "agent_id", agentID, "type", "client_data_response")
 		// Run synchronously within the regular message processor goroutine
 		// to prevent unbounded goroutine accumulation from repeated responses.
 		s.reconcileDiscoveredClients(connectionCtx, agentID, resp.GetClients(), s.now())
@@ -610,7 +610,7 @@ func (s *Server) processPriorityAgentMessageAsync(
 	}
 
 	if jr := message.GetJobResult(); jr != nil {
-		s.logger.Debug("message received", "agent_id", agentID, "type", "job_result", "job_id", jr.JobId, "success", jr.Success)
+		s.logger.Debug(logMessageReceived, "agent_id", agentID, "type", "job_result", "job_id", jr.JobId, "success", jr.Success)
 		observedAt := time.Unix(jr.ObservedAtUnix, 0).UTC()
 		s.recordJobResultState(
 			connectionCtx,
@@ -637,11 +637,11 @@ func (s *Server) processPriorityAgentMessageAsync(
 		}
 		if !enqueuePriorityAuditEffect(connectionCtx, priorityAuditEffects, auditEffect{
 			actorID:  agentID,
-			action:   "jobs.result",
+			action:   auditJobsResult,
 			targetID: jr.JobId,
 			details:  details,
 		}) {
-			s.appendAuditWithContext(connectionCtx, agentID, "jobs.result", jr.JobId, details)
+			s.appendAuditWithContext(connectionCtx, agentID, auditJobsResult, jr.JobId, details)
 		}
 	}
 	if ack := message.GetJobAcknowledgement(); ack != nil {
@@ -654,11 +654,11 @@ func (s *Server) processPriorityAgentMessageAsync(
 		)
 		if !enqueuePriorityAuditEffect(connectionCtx, priorityAuditEffects, auditEffect{
 			actorID:  agentID,
-			action:   "jobs.acknowledged",
+			action:   auditJobsAcknowledged,
 			targetID: ack.JobId,
 			details:  map[string]any{},
 		}) {
-			s.appendAuditWithContext(connectionCtx, agentID, "jobs.acknowledged", ack.JobId, map[string]any{})
+			s.appendAuditWithContext(connectionCtx, agentID, auditJobsAcknowledged, ack.JobId, map[string]any{})
 		}
 	}
 
@@ -844,13 +844,13 @@ func (s *Server) markJobDelivered(ctx context.Context, agentID string, jobID str
 // internally; they will gain ctx in a later remediation pass.
 func (s *Server) recordJobAcknowledged(ctx context.Context, agentID string, jobID string, observedAt time.Time) {
 	s.recordJobAcknowledgedState(ctx, agentID, jobID, observedAt)
-	s.appendAudit(agentID, "jobs.acknowledged", jobID, map[string]any{}) //nolint:contextcheck
+	s.appendAudit(agentID, auditJobsAcknowledged, jobID, map[string]any{}) //nolint:contextcheck
 }
 
 func (s *Server) recordJobResult(ctx context.Context, agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) {
 	s.recordJobResultState(ctx, agentID, jobID, success, message, resultJSON, observedAt)
 	s.recordClientJobResult(agentID, jobID, success, message, resultJSON, observedAt) //nolint:contextcheck
-	s.appendAudit(agentID, "jobs.result", jobID, map[string]any{                      //nolint:contextcheck
+	s.appendAudit(agentID, auditJobsResult, jobID, map[string]any{                      //nolint:contextcheck
 		"success": success,
 		"message": message,
 	})
