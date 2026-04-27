@@ -20,7 +20,11 @@ import (
 // from server.go so the Server type definition stays focused on
 // shape; this file is the composition root.
 
-func New(options Options) *Server {
+// initSecrets resolves the time source, CSRF secret and secret vault. Any
+// fatal failure (no entropy or unparseable encryption key) panics here so
+// the operator notices at boot rather than later when sessions or certs
+// silently break.
+func initSecrets(options Options) (func() time.Time, []byte, *secretvault.Vault) {
 	now := options.Now
 	if now == nil {
 		now = time.Now
@@ -28,23 +32,28 @@ func New(options Options) *Server {
 
 	csrfSecret, err := loadOrCreateCSRFSecret(options.Store)
 	if err != nil {
-		// crypto/rand.Read returning an error means the OS entropy
-		// pool is unavailable — there is nothing meaningful the panel
-		// can do without it (sessions, certs all need it too). Fail
-		// loudly so an operator notices instead of falling back to
-		// CSRF-disabled mode.
+		// crypto/rand.Read returning an error means the OS entropy pool
+		// is unavailable — there is nothing meaningful the panel can do
+		// without it (sessions, certs all need it too). Fail loudly so
+		// an operator notices instead of falling back to CSRF-disabled
+		// mode.
 		panic("control-plane: cannot initialise CSRF secret: " + err.Error())
 	}
 
-	// Build the secret vault once from the operator passphrase. A nil
-	// or empty passphrase yields a disabled vault so existing dev
-	// fixtures keep using plaintext at-rest.
+	// Build the secret vault once from the operator passphrase. A nil or
+	// empty passphrase yields a disabled vault so existing dev fixtures
+	// keep using plaintext at-rest.
 	vault, vaultErr := secretvault.New(options.EncryptionKey, secretvault.AllDomains)
 	if vaultErr != nil {
 		panic("control-plane: cannot initialise secret vault: " + vaultErr.Error())
 	}
+	return now, csrfSecret, vault
+}
 
-	server := &Server{
+// newServerFromOptions populates the Server struct literal. Pure data plumbing
+// — no I/O, no error paths.
+func newServerFromOptions(options Options, now func() time.Time, csrfSecret []byte, vault *secretvault.Vault) *Server {
+	return &Server{
 		auth:                         auth.NewService(),
 		store:                        options.Store,
 		uiFiles:                      options.UIFiles,
@@ -83,6 +92,104 @@ func New(options Options) *Server {
 		metrics:                      make([]MetricSnapshot, 0, maxInMemoryMetricSnapshots),
 		intervals:                    options.Intervals.withDefaults(),
 	}
+}
+
+// trySetStartupErr runs fn only if no earlier startup step has already failed,
+// recording its error into s.startupErr. Lets the constructor express its
+// long startup pipeline as a flat sequence of `s.trySetStartupErr(...)` calls
+// instead of nested `if startupErr == nil { if err := ...; err != nil { ... } }`.
+func (s *Server) trySetStartupErr(fn func() error) {
+	if s.startupErr != nil {
+		return
+	}
+	if err := fn(); err != nil {
+		s.startupErr = err
+	}
+}
+
+// initStoreBackedSubsystems wires the auth/jobs/lockout services to their
+// store backends, restores their persistent state, and seeds whatever the
+// fresh database needs (default fleet group, seeded users). Errors are
+// short-circuited via trySetStartupErr.
+func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.Vault) {
+	store := options.Store
+	s.jobs = jobs.NewServiceWithStore(store)
+	s.auth = auth.NewServiceWithStore(store)
+	s.auth.SetSessionStore(store)
+	s.auth.SetVault(vault)
+	s.auth.SetConsumedTotpStore(store)
+	s.trySetStartupErr(s.auth.RestoreSessions)
+
+	// S7: wire the lockout tracker to the persistent backend and load any
+	// state that survived a restart. We attach the store before the restore
+	// so subsequent writes are persisted even if the initial restore was
+	// empty.
+	s.loginLockout.SetStore(newLockoutStoreAdapter(store))
+	s.trySetStartupErr(func() error {
+		return s.loginLockout.Restore(context.Background(), s.now())
+	})
+	s.trySetStartupErr(s.jobs.StartupError)
+	s.trySetStartupErr(func() error { return s.seedUsers(options.Users) })
+	s.trySetStartupErr(s.restoreStoredState)
+	s.trySetStartupErr(s.restoreStoredClients)
+	s.trySetStartupErr(s.restoreStoredDiscoveredClients)
+	s.trySetStartupErr(s.restoreStoredPanelSettings)
+	s.trySetStartupErr(s.restoreUpdateSettings)
+	s.trySetStartupErr(s.restoreRetentionSettings)
+
+	// Fresh databases need at least one fleet group so enrollment tokens can
+	// reference it. Operators can rename the label afterwards via the HTTP
+	// API; the `default` slug is kept so docs and scripts can rely on a
+	// predictable name.
+	s.trySetStartupErr(func() error {
+		_, err := s.fleetSvc.EnsureDefault(context.Background())
+		return err
+	})
+}
+
+// startBackgroundWorkers launches the rollup, key-eviction, ack-expiry and
+// metrics-poller goroutines. Returns the rollup ctx so the caller stays in
+// charge of cleanup wiring.
+func (s *Server) startBackgroundWorkers() {
+	rollupCtx, rollupCancel := context.WithCancel(context.Background())
+	s.stopRollup = rollupCancel
+	s.startTimeseriesRollupWorker(rollupCtx)
+	s.startUpdateCheckerWorker(rollupCtx)
+
+	// Evict idempotency keys for terminal jobs on an hourly tick to keep
+	// jobs.Service.keys bounded. See P2-PERF-03. TTL of 24h matches the
+	// operational expectation that clients will not retry the same
+	// idempotency key after a full day.
+	s.rollupWg.Add(1)
+	s.jobs.StartKeyEvictionWorker(rollupCtx, s.intervals.JobsKeyEviction, s.intervals.JobsKeyEvictionTTL, &s.rollupWg)
+
+	// P2-LOG-05 (L-14): expire acknowledged-but-never-resulted targets after
+	// 2h so jobs do not stay "acknowledged" forever when the agent restarts
+	// between ack and result. The 2h window matches the agent idempotency
+	// cache so the CP gives up in sync with the agent's ability to safely
+	// deduplicate.
+	s.rollupWg.Add(1)
+	s.jobs.StartAcknowledgedExpiryWorker(rollupCtx, s.intervals.JobsAckExpiry, s.intervals.JobsAckExpiryTTL, &s.rollupWg)
+
+	// The metrics poller samples derived gauges (agent connected count,
+	// event-hub subscribers, job queue depth, lockout count) on a 5-second
+	// interval. Runs in its own context so Close() can stop it independently
+	// of the rollup workers.
+	//
+	// Gate on MetricsScrapeToken: if no token is configured, the /metrics
+	// endpoint is not registered, so nobody can observe these gauges.
+	// Skipping the poller when metrics are disabled keeps the race-free
+	// clock-mock pattern working for tests.
+	if s.metricsScrapeToken != "" {
+		metricsCtx, metricsCancel := context.WithCancel(context.Background())
+		s.metricsPollerCancel = metricsCancel
+		s.startMetricsPoller(metricsCtx, s.intervals.MetricsPoller)
+	}
+}
+
+func New(options Options) *Server {
+	now, csrfSecret, vault := initSecrets(options)
+	server := newServerFromOptions(options, now, csrfSecret, vault)
 	if server.logger == nil {
 		server.logger = slog.Default()
 	}
@@ -93,80 +200,21 @@ func New(options Options) *Server {
 	server.panelSettings = defaultPanelSettings()
 	server.updateSettings = defaultUpdateSettings()
 	server.retention = defaultRetentionSettings()
+
 	authority, err := loadOrCreateCertificateAuthority(options.Store, now(), options.EncryptionKey)
 	if err != nil {
 		server.startupErr = err
 	} else {
 		server.authority = authority
 	}
-	if options.Store != nil {
-		server.jobs = jobs.NewServiceWithStore(options.Store)
-		server.auth = auth.NewServiceWithStore(options.Store)
-		server.auth.SetSessionStore(options.Store)
-		server.auth.SetVault(vault)
-		server.auth.SetConsumedTotpStore(options.Store)
-		if err := server.auth.RestoreSessions(); err != nil && server.startupErr == nil {
-			server.startupErr = err
-		}
-		// S7: wire the lockout tracker to the persistent backend and
-		// load any state that survived a restart. Restore errors go to
-		// startupErr so the operator sees them at boot, but we still
-		// attach the store so subsequent writes are persisted even if
-		// the initial restore was empty.
-		server.loginLockout.SetStore(newLockoutStoreAdapter(options.Store))
-		if err := server.loginLockout.Restore(context.Background(), server.now()); err != nil && server.startupErr == nil {
-			server.startupErr = err
-		}
-		if err := server.jobs.StartupError(); err != nil && server.startupErr == nil {
-			server.startupErr = err
-		}
-		if server.startupErr == nil {
-			if err := server.seedUsers(options.Users); err != nil {
-				server.startupErr = err
-			}
-		}
-		if server.startupErr == nil {
-			if err := server.restoreStoredState(); err != nil {
-				server.startupErr = err
-			}
-		}
-		if server.startupErr == nil {
-			if err := server.restoreStoredClients(); err != nil {
-				server.startupErr = err
-			}
-		}
-		if server.startupErr == nil {
-			if err := server.restoreStoredDiscoveredClients(); err != nil {
-				server.startupErr = err
-			}
-		}
-		if server.startupErr == nil {
-			if err := server.restoreStoredPanelSettings(); err != nil {
-				server.startupErr = err
-			}
-		}
-		if server.startupErr == nil {
-			if err := server.restoreUpdateSettings(); err != nil {
-				server.startupErr = err
-			}
-		}
-		if server.startupErr == nil {
-			if err := server.restoreRetentionSettings(); err != nil {
-				server.startupErr = err
-			}
-		}
-		// Fresh databases need at least one fleet group so enrollment
-		// tokens can reference it. Operators can rename the label
-		// afterwards via the HTTP API; the `default` slug is kept so
-		// docs and scripts can rely on a predictable name.
-		if server.startupErr == nil {
-			if _, err := server.fleetSvc.EnsureDefault(context.Background()); err != nil {
-				server.startupErr = err
-			}
-		}
-	} else if len(options.Users) > 0 {
+
+	switch {
+	case options.Store != nil:
+		server.initStoreBackedSubsystems(options, vault)
+	case len(options.Users) > 0:
 		server.auth.LoadUsers(options.Users)
 	}
+
 	// Metrics collectors are always constructed (observation is cheap) but
 	// the /metrics HTTP route is only registered when a scrape token is set.
 	// This keeps the in-process counters available for internal consumption
@@ -179,42 +227,8 @@ func New(options Options) *Server {
 	server.handler = server.routes()
 	server.auth.SetNow(now)
 	server.jobs.SetNow(now)
-	rollupCtx, rollupCancel := context.WithCancel(context.Background())
-	server.stopRollup = rollupCancel
-	server.startTimeseriesRollupWorker(rollupCtx)
-	server.startUpdateCheckerWorker(rollupCtx)
 
-	// Evict idempotency keys for terminal jobs on an hourly tick to keep
-	// jobs.Service.keys bounded. See P2-PERF-03. TTL of 24h matches the
-	// operational expectation that clients will not retry the same
-	// idempotency key after a full day.
-	server.rollupWg.Add(1)
-	server.jobs.StartKeyEvictionWorker(rollupCtx, server.intervals.JobsKeyEviction, server.intervals.JobsKeyEvictionTTL, &server.rollupWg)
-
-	// P2-LOG-05 (L-14): expire acknowledged-but-never-resulted targets
-	// after 2h so jobs do not stay "acknowledged" forever when the agent
-	// restarts between ack and result. The 2h window matches the agent
-	// idempotency cache so the CP gives up in sync with the agent's ability
-	// to safely deduplicate.
-	server.rollupWg.Add(1)
-	server.jobs.StartAcknowledgedExpiryWorker(rollupCtx, server.intervals.JobsAckExpiry, server.intervals.JobsAckExpiryTTL, &server.rollupWg)
-
-	// The metrics poller samples derived gauges (agent connected count,
-	// event-hub subscribers, job queue depth, lockout count) on a 5-second
-	// interval. Runs in its own context so Close() can stop it independently
-	// of the rollup workers.
-	//
-	// Gate on MetricsScrapeToken: if no token is configured, the /metrics
-	// endpoint is not registered, so nobody can observe these gauges. Starting
-	// the poller anyway costs little but forces every test using a closure-
-	// captured time source to synchronise the closure with a background
-	// goroutine that samples s.now(). Skipping the poller when metrics are
-	// disabled keeps the race-free clock-mock pattern working for tests.
-	if server.metricsScrapeToken != "" {
-		metricsCtx, metricsCancel := context.WithCancel(context.Background())
-		server.metricsPollerCancel = metricsCancel
-		server.startMetricsPoller(metricsCtx, server.intervals.MetricsPoller)
-	}
+	server.startBackgroundWorkers()
 
 	if server.store != nil {
 		// Pass the Prometheus bundle as the metrics sink so batch writer
