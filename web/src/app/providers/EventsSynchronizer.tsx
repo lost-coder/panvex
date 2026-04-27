@@ -44,7 +44,7 @@ export function EventsSynchronizer({ children }: { children?: React.ReactNode })
   const attemptsRef = useRef(0);
 
   useEffect(() => {
-    if (typeof globalThis.window === "undefined") { return; }
+    if (globalThis.window === undefined) { return; }
     let socket: WebSocket | null = null;
     let reconnectDelayMs = 1_000;
     let reconnectTimerID: ReturnType<typeof setTimeout> | null = null;
@@ -93,7 +93,7 @@ export function EventsSynchronizer({ children }: { children?: React.ReactNode })
         let event: EventEnvelope;
         try { event = JSON.parse(message.data as string) as EventEnvelope; } catch { return; }
         if (typeof event?.type !== "string") { return; }
-        if (!isKnownEventType(event.type) && typeof console !== "undefined") {
+        if (!isKnownEventType(event.type) && console !== undefined) {
           console.debug("events: unknown event type, falling back to broad sweep", event.type);
         }
         setLastEventAt(Date.now());

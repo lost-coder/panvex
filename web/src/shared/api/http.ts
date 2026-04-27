@@ -208,7 +208,7 @@ export async function api<T>(
   // saves the caller a 30s TCP timeout and preserves optimistic UIs.
   const method = (init?.method ?? "GET").toUpperCase();
   const isMutation = method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE";
-  if (isMutation && typeof navigator !== "undefined" && navigator.onLine === false) {
+  if (isMutation && navigator !== undefined && navigator.onLine === false) {
     throw new ApiError("Соединение потеряно — попробуйте снова, когда сеть восстановится.", "offline");
   }
 
@@ -247,7 +247,7 @@ export async function api<T>(
     // navigate. Skip the auth bootstrap endpoints to avoid loops.
     if (
       response.status === 401 &&
-      typeof globalThis.window !== "undefined" &&
+      globalThis.window !== undefined &&
       !isAuthBootstrapPath(path)
     ) {
       // Session is gone — drop any cached CSRF token so the next
@@ -276,7 +276,7 @@ export async function api<T>(
     // skipped for symmetry with the 401 handler above.
     if (
       response.status === 403 &&
-      typeof globalThis.window !== "undefined" &&
+      globalThis.window !== undefined &&
       !isAuthBootstrapPath(path)
     ) {
       // 403 on a state-changing request can mean two things: legitimate
@@ -314,7 +314,7 @@ export async function api<T>(
       issues: parsed.error.issues,
     });
 
-    if (typeof globalThis.window !== "undefined") {
+    if (globalThis.window !== undefined) {
       const detail: ApiSchemaMismatchDetail = {
         path,
         error: parsed.error,
