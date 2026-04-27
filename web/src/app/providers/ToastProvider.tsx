@@ -99,13 +99,13 @@ function StackedToast({
 
   useEffect(() => {
     // Mount -> animate in on next frame.
-    const mount = window.setTimeout(() => setVisible(true), 10);
-    const hide = window.setTimeout(() => setVisible(false), entry.duration);
-    const close = window.setTimeout(onClose, entry.duration + 200);
+    const mount = globalThis.setTimeout(() => setVisible(true), 10);
+    const hide = globalThis.setTimeout(() => setVisible(false), entry.duration);
+    const close = globalThis.setTimeout(onClose, entry.duration + 200);
     return () => {
-      window.clearTimeout(mount);
-      window.clearTimeout(hide);
-      window.clearTimeout(close);
+      globalThis.clearTimeout(mount);
+      globalThis.clearTimeout(hide);
+      globalThis.clearTimeout(close);
     };
   }, [entry.duration, onClose]);
 

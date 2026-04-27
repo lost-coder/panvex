@@ -9,14 +9,14 @@ export function normalizeRootPath(value: string | undefined | null): string {
 }
 
 export function resolveConfiguredRootPath(): string {
-  if (typeof window === "undefined") {
+  if (globalThis.window === undefined) {
     return "";
   }
 
   // Runtime root-path is injected by the Go UI handler as a data attribute on
   // <html> (e.g. <html data-root-path="/panvex">). We avoid inline <script>
   // bootstrapping because our CSP disallows 'unsafe-inline'. Fall back to the
-  // legacy window.__PANVEX_ROOT_PATH for development tooling that may still
+  // legacy globalThis.__PANVEX_ROOT_PATH for development tooling that may still
   // set it externally.
   const root = document.documentElement;
   const fromDataset = root ? root.dataset.rootPath : undefined;

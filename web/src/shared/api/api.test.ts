@@ -53,7 +53,7 @@ describe("api() wrapper", () => {
 
   it("dispatches SESSION_EXPIRED_EVENT on 401 for non-auth paths", async () => {
     const listener = vi.fn();
-    window.addEventListener(SESSION_EXPIRED_EVENT, listener);
+    globalThis.addEventListener(SESSION_EXPIRED_EVENT, listener);
 
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       new Response(JSON.stringify({ error: "unauthorized", code: "EAUTH" }), {
@@ -64,12 +64,12 @@ describe("api() wrapper", () => {
     await expect(api("/api/clients")).rejects.toBeInstanceOf(ApiError);
     expect(listener).toHaveBeenCalledTimes(1);
 
-    window.removeEventListener(SESSION_EXPIRED_EVENT, listener);
+    globalThis.removeEventListener(SESSION_EXPIRED_EVENT, listener);
   });
 
   it("does NOT dispatch session-expired for /api/auth/login", async () => {
     const listener = vi.fn();
-    window.addEventListener(SESSION_EXPIRED_EVENT, listener);
+    globalThis.addEventListener(SESSION_EXPIRED_EVENT, listener);
 
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       new Response(JSON.stringify({ error: "bad creds" }), { status: 401 }),
@@ -80,12 +80,12 @@ describe("api() wrapper", () => {
     );
     expect(listener).not.toHaveBeenCalled();
 
-    window.removeEventListener(SESSION_EXPIRED_EVENT, listener);
+    globalThis.removeEventListener(SESSION_EXPIRED_EVENT, listener);
   });
 
   it("does NOT dispatch session-expired for /api/auth/me bootstrap", async () => {
     const listener = vi.fn();
-    window.addEventListener(SESSION_EXPIRED_EVENT, listener);
+    globalThis.addEventListener(SESSION_EXPIRED_EVENT, listener);
 
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       new Response(JSON.stringify({ error: "unauthenticated" }), { status: 401 }),
@@ -94,7 +94,7 @@ describe("api() wrapper", () => {
     await expect(api("/api/auth/me")).rejects.toBeInstanceOf(ApiError);
     expect(listener).not.toHaveBeenCalled();
 
-    window.removeEventListener(SESSION_EXPIRED_EVENT, listener);
+    globalThis.removeEventListener(SESSION_EXPIRED_EVENT, listener);
   });
 
   it("surfaces server error message + code in ApiError", async () => {

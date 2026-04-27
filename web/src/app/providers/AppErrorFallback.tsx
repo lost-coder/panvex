@@ -2,7 +2,7 @@
 // a container. It is intentionally minimal: no hooks, no API calls —
 // everything must work even if the store/query-client state is corrupted.
 export function AppErrorFallback({ error }: { error: Error }) {
-  const reload = () => window.location.reload();
+  const reload = () => globalThis.location.reload();
   return (
     <div
       role="alert"

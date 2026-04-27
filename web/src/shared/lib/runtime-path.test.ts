@@ -81,7 +81,7 @@ describe("resolveConfiguredRootPath", () => {
     expect(resolveConfiguredRootPath()).toBe("/panvex");
   });
 
-  it("falls back to window.__PANVEX_ROOT_PATH", () => {
+  it("falls back to globalThis.__PANVEX_ROOT_PATH", () => {
     w.__PANVEX_ROOT_PATH = "/legacy";
     expect(resolveConfiguredRootPath()).toBe("/legacy");
   });
