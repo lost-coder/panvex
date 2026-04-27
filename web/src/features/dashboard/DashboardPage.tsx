@@ -144,7 +144,7 @@ function LoadCell({
   return (
     <div className="flex items-center gap-1.5 text-[10px] font-mono leading-none">
       <span className="w-7 text-fg-muted shrink-0 uppercase tracking-wider">{label}</span>
-      {hasSeries && <MiniChart data={series!} width={56} height={18} color={tone.chart} />}
+      {hasSeries && series && <MiniChart data={series} width={56} height={18} color={tone.chart} />}
       <span className={`w-9 text-right tabular-nums shrink-0 ${tone.text}`}>{value}%</span>
     </div>
   );
