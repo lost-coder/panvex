@@ -21,7 +21,7 @@ func runSessionsContract(t *testing.T, open OpenStore) {
 		ctx := context.Background()
 		// sessions.user_id is a CASCADE FK to users(id); seed the owner first.
 		if err := store.PutUser(ctx, storage.UserRecord{ //nolint:gosec // synthetic test fixture, not a real credential
-			ID:           "user-001",
+			ID:           fixtureUserID,
 			Username:     "session-user",
 			PasswordHash: "argon2id$hash",
 			Role:         "admin",
@@ -31,7 +31,7 @@ func runSessionsContract(t *testing.T, open OpenStore) {
 		}
 		session := storage.SessionRecord{
 			ID:        "sess-001",
-			UserID:    "user-001",
+			UserID:    fixtureUserID,
 			CreatedAt: time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC),
 		}
 
@@ -72,7 +72,7 @@ func runSessionsContract(t *testing.T, open OpenStore) {
 		ctx := context.Background()
 		// P2-DB-03: seed users referenced by the sessions below.
 		for _, u := range []storage.UserRecord{
-			{ID: "user-001", Username: "session-u1", PasswordHash: "h", Role: "admin", CreatedAt: time.Date(2026, time.April, 14, 7, 0, 0, 0, time.UTC)},
+			{ID: fixtureUserID, Username: "session-u1", PasswordHash: "h", Role: "admin", CreatedAt: time.Date(2026, time.April, 14, 7, 0, 0, 0, time.UTC)},
 			{ID: "user-002", Username: "session-u2", PasswordHash: "h", Role: "admin", CreatedAt: time.Date(2026, time.April, 15, 11, 0, 0, 0, time.UTC)},
 		} {
 			if err := store.PutUser(ctx, u); err != nil {
@@ -81,7 +81,7 @@ func runSessionsContract(t *testing.T, open OpenStore) {
 		}
 		old := storage.SessionRecord{
 			ID:        "sess-old",
-			UserID:    "user-001",
+			UserID:    fixtureUserID,
 			CreatedAt: time.Date(2026, time.April, 14, 8, 0, 0, 0, time.UTC),
 		}
 		fresh := storage.SessionRecord{

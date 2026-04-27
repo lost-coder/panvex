@@ -38,7 +38,7 @@ func runBulkWriteContract(t *testing.T, open OpenStore) {
 			CreatedAt: time.Date(2026, time.April, 1, 10, 0, 0, 0, time.UTC),
 		}
 		if err := store.PutFleetGroup(ctx, group); err != nil {
-			t.Fatalf("PutFleetGroup: %v", err)
+			t.Fatalf(errPutFleetGroupShort, err)
 		}
 
 		ts := time.Date(2026, time.April, 1, 10, 5, 0, 0, time.UTC)
@@ -94,11 +94,11 @@ func runBulkWriteContract(t *testing.T, open OpenStore) {
 		ctx := context.Background()
 		group := storage.FleetGroupRecord{ID: "inst-grp", Name: "Inst", CreatedAt: time.Now().UTC()}
 		if err := store.PutFleetGroup(ctx, group); err != nil {
-			t.Fatalf("PutFleetGroup: %v", err)
+			t.Fatalf(errPutFleetGroupShort, err)
 		}
 		agent := storage.AgentRecord{ID: "inst-agent", NodeName: "n", FleetGroupID: group.ID, LastSeenAt: time.Now().UTC()}
 		if err := store.PutAgent(ctx, agent); err != nil {
-			t.Fatalf("PutAgent: %v", err)
+			t.Fatalf(errPutAgentShort, err)
 		}
 		ts := time.Date(2026, time.April, 1, 12, 0, 0, 0, time.UTC)
 		batch := []storage.InstanceRecord{
@@ -127,11 +127,11 @@ func runBulkWriteContract(t *testing.T, open OpenStore) {
 		ctx := context.Background()
 		group := storage.FleetGroupRecord{ID: "m-grp", Name: "M", CreatedAt: time.Now().UTC()}
 		if err := store.PutFleetGroup(ctx, group); err != nil {
-			t.Fatalf("PutFleetGroup: %v", err)
+			t.Fatalf(errPutFleetGroupShort, err)
 		}
 		agent := storage.AgentRecord{ID: "m-agent", NodeName: "n", FleetGroupID: group.ID, LastSeenAt: time.Now().UTC()}
 		if err := store.PutAgent(ctx, agent); err != nil {
-			t.Fatalf("PutAgent: %v", err)
+			t.Fatalf(errPutAgentShort, err)
 		}
 		ts := time.Date(2026, time.April, 2, 10, 0, 0, 0, time.UTC)
 		batch := []storage.MetricSnapshotRecord{
@@ -160,11 +160,11 @@ func runBulkWriteContract(t *testing.T, open OpenStore) {
 		ctx := context.Background()
 		group := storage.FleetGroupRecord{ID: "sl-grp", Name: "SL", CreatedAt: time.Now().UTC()}
 		if err := store.PutFleetGroup(ctx, group); err != nil {
-			t.Fatalf("PutFleetGroup: %v", err)
+			t.Fatalf(errPutFleetGroupShort, err)
 		}
 		agent := storage.AgentRecord{ID: "sl-agent", NodeName: "n", FleetGroupID: group.ID, LastSeenAt: time.Now().UTC()}
 		if err := store.PutAgent(ctx, agent); err != nil {
-			t.Fatalf("PutAgent: %v", err)
+			t.Fatalf(errPutAgentShort, err)
 		}
 
 		// Probe: if the backend does not actually persist timeseries data
@@ -214,11 +214,11 @@ func runBulkWriteContract(t *testing.T, open OpenStore) {
 		ctx := context.Background()
 		group := storage.FleetGroupRecord{ID: "dc-grp", Name: "DC", CreatedAt: time.Now().UTC()}
 		if err := store.PutFleetGroup(ctx, group); err != nil {
-			t.Fatalf("PutFleetGroup: %v", err)
+			t.Fatalf(errPutFleetGroupShort, err)
 		}
 		agent := storage.AgentRecord{ID: "dc-agent", NodeName: "n", FleetGroupID: group.ID, LastSeenAt: time.Now().UTC()}
 		if err := store.PutAgent(ctx, agent); err != nil {
-			t.Fatalf("PutAgent: %v", err)
+			t.Fatalf(errPutAgentShort, err)
 		}
 
 		// Persistence probe — see the server_load bulk test for the rationale.
@@ -262,11 +262,11 @@ func runBulkWriteContract(t *testing.T, open OpenStore) {
 		ctx := context.Background()
 		group := storage.FleetGroupRecord{ID: "ip-grp", Name: "IP", CreatedAt: time.Now().UTC()}
 		if err := store.PutFleetGroup(ctx, group); err != nil {
-			t.Fatalf("PutFleetGroup: %v", err)
+			t.Fatalf(errPutFleetGroupShort, err)
 		}
 		agent := storage.AgentRecord{ID: "ip-agent", NodeName: "n", FleetGroupID: group.ID, LastSeenAt: time.Now().UTC()}
 		if err := store.PutAgent(ctx, agent); err != nil {
-			t.Fatalf("PutAgent: %v", err)
+			t.Fatalf(errPutAgentShort, err)
 		}
 		client := storage.ClientRecord{
 			ID: "ip-client", Name: "alice", SecretCiphertext: "s", UserADTag: "0123456789abcdef0123456789abcdef",
@@ -293,11 +293,11 @@ func runBulkWriteContract(t *testing.T, open OpenStore) {
 		}
 		persistent := len(seen) > 0
 		batch := []storage.ClientIPHistoryRecord{
-			{AgentID: agent.ID, ClientID: client.ID, IPAddress: "10.0.0.1", FirstSeen: first, LastSeen: first},
+			{AgentID: agent.ID, ClientID: client.ID, IPAddress: fixtureClientIPv4, FirstSeen: first, LastSeen: first},
 			{AgentID: agent.ID, ClientID: client.ID, IPAddress: "10.0.0.2", FirstSeen: first, LastSeen: first},
 			// Duplicate key (same agent+client+ip as first row). last_seen
 			// must advance via the ON CONFLICT DO UPDATE clause.
-			{AgentID: agent.ID, ClientID: client.ID, IPAddress: "10.0.0.1", FirstSeen: first, LastSeen: later},
+			{AgentID: agent.ID, ClientID: client.ID, IPAddress: fixtureClientIPv4, FirstSeen: first, LastSeen: later},
 		}
 		if err := store.UpsertClientIPHistoryBulk(ctx, batch); err != nil {
 			t.Fatalf("UpsertClientIPHistoryBulk: %v", err)
@@ -318,7 +318,7 @@ func runBulkWriteContract(t *testing.T, open OpenStore) {
 		}
 		var first10 storage.ClientIPHistoryRecord
 		for _, r := range got {
-			if r.IPAddress == "10.0.0.1" {
+			if r.IPAddress == fixtureClientIPv4 {
 				first10 = r
 			}
 		}

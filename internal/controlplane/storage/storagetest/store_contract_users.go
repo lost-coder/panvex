@@ -105,12 +105,12 @@ func runUsersContract(t *testing.T, open OpenStore) {
 
 		ctx := context.Background()
 
-		defaultAppearance, err := store.GetUserAppearance(ctx, "user-appearance-default")
+		defaultAppearance, err := store.GetUserAppearance(ctx, fixtureUserAppearanceKey)
 		if err != nil {
 			t.Fatalf("GetUserAppearance(default) error = %v", err)
 		}
-		if defaultAppearance.UserID != "user-appearance-default" {
-			t.Fatalf("GetUserAppearance(default) UserID = %q, want %q", defaultAppearance.UserID, "user-appearance-default")
+		if defaultAppearance.UserID != fixtureUserAppearanceKey {
+			t.Fatalf("GetUserAppearance(default) UserID = %q, want %q", defaultAppearance.UserID, fixtureUserAppearanceKey)
 		}
 		if defaultAppearance.Theme != "system" {
 			t.Fatalf("GetUserAppearance(default) Theme = %q, want %q", defaultAppearance.Theme, "system")
