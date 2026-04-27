@@ -61,8 +61,10 @@ func TestHubNonBlockingWithSlowSubscriber(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			// Drain until channel closes (cancel()).
+			// Drain until channel closes (cancel()). The body is intentionally
+			// empty — discarding events is exactly what a fast consumer does.
 			for range ch {
+				_ = struct{}{}
 			}
 		}()
 	}

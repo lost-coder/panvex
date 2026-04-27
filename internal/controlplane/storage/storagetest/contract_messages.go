@@ -10,5 +10,7 @@ const (
 
 	fixtureUserID            = "user-001"
 	fixtureUserAppearanceKey = "user-appearance-default"
-	fixtureClientIPv4        = "10.0.0.1"
+	// RFC 5737 TEST-NET-1: documentation/test IPv4. Cannot route to real
+	// hosts so it is safe to keep hard-coded inside contract fixtures.
+	fixtureClientIPv4 = "192.0.2.1"
 )

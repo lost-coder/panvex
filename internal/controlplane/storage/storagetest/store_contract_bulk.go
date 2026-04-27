@@ -292,9 +292,10 @@ func runBulkWriteContract(t *testing.T, open OpenStore) {
 			t.Fatalf("ListClientIPHistory(probe): %v", err)
 		}
 		persistent := len(seen) > 0
+		const otherClientIPv4 = "192.0.2.2"
 		batch := []storage.ClientIPHistoryRecord{
 			{AgentID: agent.ID, ClientID: client.ID, IPAddress: fixtureClientIPv4, FirstSeen: first, LastSeen: first},
-			{AgentID: agent.ID, ClientID: client.ID, IPAddress: "10.0.0.2", FirstSeen: first, LastSeen: first},
+			{AgentID: agent.ID, ClientID: client.ID, IPAddress: otherClientIPv4, FirstSeen: first, LastSeen: first},
 			// Duplicate key (same agent+client+ip as first row). last_seen
 			// must advance via the ON CONFLICT DO UPDATE clause.
 			{AgentID: agent.ID, ClientID: client.ID, IPAddress: fixtureClientIPv4, FirstSeen: first, LastSeen: later},
@@ -312,7 +313,7 @@ func runBulkWriteContract(t *testing.T, open OpenStore) {
 		if err != nil {
 			t.Fatalf("ListClientIPHistory: %v", err)
 		}
-		// 3 distinct (agent,client,ip) combos: probe 127.0.0.254, 10.0.0.1, 10.0.0.2.
+		// 3 distinct (agent,client,ip) combos: probe 127.0.0.254, fixtureClientIPv4, otherClientIPv4.
 		if len(got) != 3 {
 			t.Fatalf("len(ip_history) = %d, want 3 (probe + 2 from batch, conflict collapses)", len(got))
 		}
@@ -323,7 +324,7 @@ func runBulkWriteContract(t *testing.T, open OpenStore) {
 			}
 		}
 		if !first10.LastSeen.Equal(later) {
-			t.Fatalf("10.0.0.1 last_seen = %v, want %v (updated on conflict)", first10.LastSeen, later)
+			t.Fatalf("%s last_seen = %v, want %v (updated on conflict)", fixtureClientIPv4, first10.LastSeen, later)
 		}
 	})
 }
