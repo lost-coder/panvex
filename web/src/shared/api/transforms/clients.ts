@@ -12,7 +12,7 @@ export function parseConnectionLink(link: string): { classic: string[]; secure: 
   if (link.startsWith("tg://proxy")) {
     const match = link.match(/secret=([0-9a-fA-F]+)/);
     const secret = match?.[1];
-    if (secret && secret.toLowerCase().startsWith("ee")) {
+    if (secret?.toLowerCase().startsWith("ee")) {
       return { classic: [], secure: [], tls: [link] };
     }
     return { classic: [], secure: [link], tls: [] };

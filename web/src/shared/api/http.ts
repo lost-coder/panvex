@@ -6,9 +6,14 @@ import type { ApiErrorCode } from "./error-codes";
 export const configuredRootPath = resolveConfiguredRootPath();
 export const apiBasePath = resolveAPIBasePath(configuredRootPath);
 
+// `(string & {})` keeps autocomplete for the known ApiErrorCode literals
+// while still accepting an arbitrary string from the server (Sonar S6571
+// otherwise flags `ApiErrorCode | string` as redundant).
+type ApiErrorCodeOrString = ApiErrorCode | (string & {});
+
 export class ApiError extends Error {
-  code?: ApiErrorCode | string | undefined;
-  constructor(message: string, code?: ApiErrorCode | string) {
+  code?: ApiErrorCodeOrString | undefined;
+  constructor(message: string, code?: ApiErrorCodeOrString) {
     super(message);
     this.code = code;
   }
@@ -208,7 +213,7 @@ export async function api<T>(
   // saves the caller a 30s TCP timeout and preserves optimistic UIs.
   const method = (init?.method ?? "GET").toUpperCase();
   const isMutation = method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE";
-  if (isMutation && navigator !== undefined && navigator.onLine === false) {
+  if (isMutation && navigator?.onLine === false) {
     throw new ApiError("Соединение потеряно — попробуйте снова, когда сеть восстановится.", "offline");
   }
 

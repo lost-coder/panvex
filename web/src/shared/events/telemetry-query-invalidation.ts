@@ -6,7 +6,7 @@ let pendingAll = false;
 
 export function invalidateTelemetryQueries(
   queryClient: {
-    invalidateQueries: (input: Record<string, unknown>) => Promise<unknown> | unknown;
+    invalidateQueries: (input: Record<string, unknown>) => unknown;
   },
   agentID?: string
 ) {
