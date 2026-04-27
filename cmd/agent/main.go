@@ -637,6 +637,132 @@ func enqueueOutboundMessage(
 	}
 }
 
+// startOutboundPump spawns the goroutine that pulls messages off the
+// critical and telemetry channels and forwards them on the gateway
+// stream. Critical messages are drained before the telemetry channel
+// is even consulted so a backed-up snapshot pipeline cannot starve a
+// heartbeat.
+func startOutboundPump(
+	connectionCtx context.Context,
+	streamWG *sync.WaitGroup,
+	stream gatewayrpc.AgentGateway_ConnectClient,
+	criticalOutbound, telemetryOutbound <-chan *gatewayrpc.ConnectClientMessage,
+	sendErrorAndCancel func(error),
+) {
+	streamWG.Add(1)
+	go func() {
+		defer streamWG.Done()
+		for {
+			var message *gatewayrpc.ConnectClientMessage
+			select {
+			case <-connectionCtx.Done():
+				return
+			case message = <-criticalOutbound:
+			default:
+				select {
+				case <-connectionCtx.Done():
+					return
+				case message = <-criticalOutbound:
+				case message = <-telemetryOutbound:
+				}
+			}
+
+			if message == nil {
+				continue
+			}
+			if err := stream.Send(message); err != nil {
+				sendErrorAndCancel(err)
+				return
+			}
+		}
+	}()
+}
+
+// startInboundPump spawns the goroutine that consumes the gateway
+// stream and routes job commands to the worker queues plus client-
+// data requests to bounded handler goroutines.
+func startInboundPump(
+	connectionCtx context.Context,
+	streamWG *sync.WaitGroup,
+	stream gatewayrpc.AgentGateway_ConnectClient,
+	agent *runtime.Agent,
+	jobInflight *jobInflightTracker,
+	jobQueues map[jobPipeline]chan *gatewayrpc.JobCommand,
+	criticalOutbound chan *gatewayrpc.ConnectClientMessage,
+	clientDataSem chan struct{},
+	sendErrorAndCancel func(error),
+) {
+	streamWG.Add(1)
+	go func() {
+		defer streamWG.Done()
+		for {
+			message, err := stream.Recv()
+			if err != nil {
+				sendErrorAndCancel(err)
+				return
+			}
+			if job := message.GetJob(); job != nil {
+				slog.Debug("job received", "job_id", job.GetId(), "action", job.GetAction())
+				enqueueReceivedJob(connectionCtx, agent.AgentID(), jobInflight, jobQueues, criticalOutbound, job)
+				continue
+			}
+			if req := message.GetClientDataRequest(); req != nil {
+				select {
+				case clientDataSem <- struct{}{}:
+				case <-connectionCtx.Done():
+					return
+				}
+				// Q4.U-P-08: track spawned client-data handlers so the
+				// reconnect path waits for in-flight RPCs to finish.
+				streamWG.Add(1)
+				go func() {
+					defer streamWG.Done()
+					defer func() { <-clientDataSem }()
+					handleClientDataRequest(connectionCtx, agent, criticalOutbound, req)
+				}()
+				continue
+			}
+		}
+	}()
+}
+
+// runConnectionMainLoop blocks until either the outbound pump signals
+// a fatal send error or a credential refresh either fails or yields
+// new credentials (which trigger a reconnect via
+// errRuntimeCredentialsRefreshed). Splitting it out keeps
+// runConnection's CC below the 15 threshold.
+func runConnectionMainLoop(
+	connectionCtx context.Context,
+	cancelConnection context.CancelFunc,
+	credentialsState agentstate.Credentials,
+	stateFile string,
+	client gatewayrpc.AgentGatewayClient,
+	credentialRefreshTimer *time.Timer,
+	sendErrors <-chan error,
+) (agentstate.Credentials, error) {
+	for {
+		select {
+		case err := <-sendErrors:
+			cancelConnection()
+			return credentialsState, err
+		case <-timerChan(credentialRefreshTimer):
+			refreshCtx, cancelRefresh := context.WithTimeout(connectionCtx, certificateRefreshTimeout)
+			updatedCredentials, err := refreshRuntimeCredentialsIfNeeded(refreshCtx, stateFile, credentialsState, client, time.Now())
+			cancelRefresh()
+			if err != nil {
+				slog.Error("certificate renewal failed", "error", err)
+				resetRuntimeCredentialRefreshTimer(credentialRefreshTimer, runtimeCertificateRenewRetry)
+				continue
+			}
+			if updatedCredentials != credentialsState {
+				cancelConnection()
+				return updatedCredentials, errRuntimeCredentialsRefreshed
+			}
+			resetRuntimeCredentialRefreshTimer(credentialRefreshTimer, runtimeCredentialRefreshDelay(credentialsState, time.Now()))
+		}
+	}
+}
+
 func runConnection(gatewayAddr string, serverName string, stateFile string, credentialsState agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule, clientDataConcurrency int) (agentstate.Credentials, error) {
 	certificate, err := tls.X509KeyPair([]byte(credentialsState.CertificatePEM), []byte(credentialsState.PrivateKeyPEM))
 	if err != nil {
@@ -674,9 +800,9 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 	telemetryOutbound := make(chan *gatewayrpc.ConnectClientMessage, 64)
 	jobInflight := newJobInflightTracker()
 	jobQueues := map[jobPipeline]chan *gatewayrpc.JobCommand{
-		jobPipelineRuntimeReload: make(chan *gatewayrpc.JobCommand, jobQueueCapacity),
+		jobPipelineRuntimeReload:  make(chan *gatewayrpc.JobCommand, jobQueueCapacity),
 		jobPipelineClientMutation: make(chan *gatewayrpc.JobCommand, jobQueueCapacity),
-		jobPipelineDefault:       make(chan *gatewayrpc.JobCommand, jobQueueCapacity),
+		jobPipelineDefault:        make(chan *gatewayrpc.JobCommand, jobQueueCapacity),
 	}
 	sendErrors := make(chan error, 1)
 	sendErrorAndCancel := func(err error) {
@@ -684,33 +810,7 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 		cancelConnection()
 	}
 
-	streamWG.Add(1)
-	go func() {
-		defer streamWG.Done()
-		for {
-			var message *gatewayrpc.ConnectClientMessage
-			select {
-			case <-connectionCtx.Done():
-				return
-			case message = <-criticalOutbound:
-			default:
-				select {
-				case <-connectionCtx.Done():
-					return
-				case message = <-criticalOutbound:
-				case message = <-telemetryOutbound:
-				}
-			}
-
-			if message == nil {
-				continue
-			}
-			if err := stream.Send(message); err != nil {
-				sendErrorAndCancel(err)
-				return
-			}
-		}
-	}()
+	startOutboundPump(connectionCtx, &streamWG, stream, criticalOutbound, telemetryOutbound, sendErrorAndCancel)
 
 	// Limit concurrent ClientDataRequest goroutines to prevent unbounded
 	// growth if the control-plane sends many requests in rapid succession.
@@ -721,38 +821,7 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 		cdConc = 8
 	}
 	clientDataSem := make(chan struct{}, cdConc)
-	streamWG.Add(1)
-	go func() {
-		defer streamWG.Done()
-		for {
-			message, err := stream.Recv()
-			if err != nil {
-				sendErrorAndCancel(err)
-				return
-			}
-			if job := message.GetJob(); job != nil {
-				slog.Debug("job received", "job_id", job.GetId(), "action", job.GetAction())
-				enqueueReceivedJob(connectionCtx, agent.AgentID(), jobInflight, jobQueues, criticalOutbound, job)
-				continue
-			}
-			if req := message.GetClientDataRequest(); req != nil {
-				select {
-				case clientDataSem <- struct{}{}:
-				case <-connectionCtx.Done():
-					return
-				}
-				// Q4.U-P-08: track spawned client-data handlers so the
-				// reconnect path waits for in-flight RPCs to finish.
-				streamWG.Add(1)
-				go func() {
-					defer streamWG.Done()
-					defer func() { <-clientDataSem }()
-					handleClientDataRequest(connectionCtx, agent, criticalOutbound, req)
-				}()
-				continue
-			}
-		}
-	}()
+	startInboundPump(connectionCtx, &streamWG, stream, agent, jobInflight, jobQueues, criticalOutbound, clientDataSem, sendErrorAndCancel)
 	startJobWorkers(connectionCtx, agent, jobInflight, jobQueues, criticalOutbound)
 
 	if err := sendInitialMessages(criticalOutbound, agent); err != nil {
@@ -767,27 +836,7 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 	}
 	startPollingWorkers(connectionCtx, schedule, agent, telemetryOutbound)
 
-	for {
-		select {
-		case err := <-sendErrors:
-			cancelConnection()
-			return credentialsState, err
-		case <-timerChan(credentialRefreshTimer):
-			refreshCtx, cancelRefresh := context.WithTimeout(connectionCtx, certificateRefreshTimeout)
-			updatedCredentials, err := refreshRuntimeCredentialsIfNeeded(refreshCtx, stateFile, credentialsState, client, time.Now())
-			cancelRefresh()
-			if err != nil {
-				slog.Error("certificate renewal failed", "error", err)
-				resetRuntimeCredentialRefreshTimer(credentialRefreshTimer, runtimeCertificateRenewRetry)
-				continue
-			}
-			if updatedCredentials != credentialsState {
-				cancelConnection()
-				return updatedCredentials, errRuntimeCredentialsRefreshed
-			}
-			resetRuntimeCredentialRefreshTimer(credentialRefreshTimer, runtimeCredentialRefreshDelay(credentialsState, time.Now()))
-		}
-	}
+	return runConnectionMainLoop(connectionCtx, cancelConnection, credentialsState, stateFile, client, credentialRefreshTimer, sendErrors)
 }
 
 type certificateRenewer interface {

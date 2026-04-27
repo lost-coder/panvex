@@ -713,65 +713,47 @@ func (s *Service) RecordResult(ctx context.Context, agentID, jobID string, succe
 	})
 }
 
-func (s *Service) updateTarget(ctx context.Context, agentID, jobID string, observedAt time.Time, mutate func(target *JobTarget)) bool {
-	var (
-		candidates []persistCandidate
-	)
-
-	s.mu.Lock()
-	now := s.now().UTC()
-
-	job, ok := s.jobs[jobID]
-	if !ok {
-		// P2-LOG-05: the job was evicted (terminal-key TTL or ack expiry
-		// worker) before this update arrived. Signal the caller so it can
-		// log a warn and move on — dropping silently here would hide real
-		// bugs where the agent sends results for unknown jobs.
-		s.mu.Unlock()
-		for _, candidate := range candidates {
-			s.persistLatestJobVersion(ctx, candidate.jobID, candidate.version, candidate.job)
+// expireJobAndCollectCandidatesLocked transitions every still-active
+// target on `job` to "expired" and marks the job itself as expired,
+// returning a persist candidate when the store is configured. Caller
+// must hold s.mu.
+func (s *Service) expireJobAndCollectCandidatesLocked(job Job, now time.Time) []persistCandidate {
+	updated := false
+	for index := range job.Targets {
+		target := &job.Targets[index]
+		if target.Status == TargetStatusSucceeded || target.Status == TargetStatusFailed || target.Status == TargetStatusExpired {
+			continue
 		}
-		return false
+		target.Status = TargetStatusExpired
+		target.UpdatedAt = now
+		updated = true
 	}
-
-	if jobShouldExpire(job, now) {
-		updated := false
-		for index := range job.Targets {
-			target := &job.Targets[index]
-			if target.Status == TargetStatusSucceeded || target.Status == TargetStatusFailed || target.Status == TargetStatusExpired {
-				continue
-			}
-			target.Status = TargetStatusExpired
-			target.UpdatedAt = now
-			updated = true
-		}
-		if updated || job.Status != StatusExpired {
-			job.Status = StatusExpired
-			s.jobs[job.ID] = job
-			s.syncJobTargetsIndexLocked(job)
-			s.keys[job.IdempotencyKey] = job.ID
-			s.markKeyTerminalLocked(job.IdempotencyKey, now)
-
-			if s.jobStore != nil {
-				s.updateSeq++
-				s.jobVersion[job.ID] = s.updateSeq
-				candidates = append(candidates, persistCandidate{
-					jobID:   job.ID,
-					version: s.updateSeq,
-					job:     cloneJob(job),
-				})
-			}
-		}
-
-		// Do not apply the caller's mutation after expiry — the job status
-		// is final and further target changes could corrupt the state machine.
-		s.mu.Unlock()
-		for _, candidate := range candidates {
-			s.persistLatestJobVersion(ctx, candidate.jobID, candidate.version, candidate.job)
-		}
-		return true
+	if !updated && job.Status == StatusExpired {
+		return nil
 	}
+	job.Status = StatusExpired
+	s.jobs[job.ID] = job
+	s.syncJobTargetsIndexLocked(job)
+	s.keys[job.IdempotencyKey] = job.ID
+	s.markKeyTerminalLocked(job.IdempotencyKey, now)
 
+	if s.jobStore == nil {
+		return nil
+	}
+	s.updateSeq++
+	s.jobVersion[job.ID] = s.updateSeq
+	return []persistCandidate{{
+		jobID:   job.ID,
+		version: s.updateSeq,
+		job:     cloneJob(job),
+	}}
+}
+
+// applyTargetMutationLocked applies `mutate` to the job target whose
+// AgentID matches `agentID` and rolls up the job-level status. Caller
+// must hold s.mu. Returns the persist candidates produced; an empty
+// slice means no agent-target match.
+func (s *Service) applyTargetMutationLocked(job Job, agentID string, observedAt, now time.Time, mutate func(target *JobTarget)) []persistCandidate {
 	updated := false
 	for index := range job.Targets {
 		if job.Targets[index].AgentID != agentID {
@@ -783,11 +765,7 @@ func (s *Service) updateTarget(ctx context.Context, agentID, jobID string, obser
 		break
 	}
 	if !updated {
-		s.mu.Unlock()
-		for _, candidate := range candidates {
-			s.persistLatestJobVersion(ctx, candidate.jobID, candidate.version, candidate.job)
-		}
-		return true
+		return nil
 	}
 
 	job.Status = deriveJobStatus(job.Targets)
@@ -800,14 +778,37 @@ func (s *Service) updateTarget(ctx context.Context, agentID, jobID string, obser
 		s.clearKeyTerminalLocked(job.IdempotencyKey)
 	}
 
-	if s.jobStore != nil {
-		s.updateSeq++
-		s.jobVersion[job.ID] = s.updateSeq
-		candidates = append(candidates, persistCandidate{
-			jobID:   job.ID,
-			version: s.updateSeq,
-			job:     cloneJob(job),
-		})
+	if s.jobStore == nil {
+		return nil
+	}
+	s.updateSeq++
+	s.jobVersion[job.ID] = s.updateSeq
+	return []persistCandidate{{
+		jobID:   job.ID,
+		version: s.updateSeq,
+		job:     cloneJob(job),
+	}}
+}
+
+func (s *Service) updateTarget(ctx context.Context, agentID, jobID string, observedAt time.Time, mutate func(target *JobTarget)) bool {
+	s.mu.Lock()
+	now := s.now().UTC()
+
+	job, ok := s.jobs[jobID]
+	if !ok {
+		// P2-LOG-05: the job was evicted (terminal-key TTL or ack expiry
+		// worker) before this update arrived. Signal the caller so it can
+		// log a warn and move on — dropping silently here would hide real
+		// bugs where the agent sends results for unknown jobs.
+		s.mu.Unlock()
+		return false
+	}
+
+	var candidates []persistCandidate
+	if jobShouldExpire(job, now) {
+		candidates = s.expireJobAndCollectCandidatesLocked(job, now)
+	} else {
+		candidates = s.applyTargetMutationLocked(job, agentID, observedAt, now, mutate)
 	}
 	s.mu.Unlock()
 

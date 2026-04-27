@@ -127,16 +127,48 @@ func (s *Server) readOnlyAgents(targetIDs []string) map[string]bool {
 	return out
 }
 
+// validateCreateJobRequest gates the operator's createJob payload
+// against role, scope, and action validity. Returns (scope, true)
+// only when all checks pass; on failure it writes the appropriate
+// HTTP error.
+func (s *Server) validateCreateJobRequest(w http.ResponseWriter, r *http.Request, user auth.User, request createJobRequest) (FleetScopeAccess, bool) {
+	if user.Role == auth.RoleViewer {
+		writeError(w, http.StatusForbidden, "viewer role cannot create jobs")
+		return FleetScopeAccess{}, false
+	}
+	if !jobs.IsValidAction(jobs.Action(request.Action)) {
+		writeError(w, http.StatusBadRequest, "unknown job action")
+		return FleetScopeAccess{}, false
+	}
+	// R-S-14: every target agent must sit inside the operator's scope.
+	scope, ok := s.requireFleetScope(w, r, user)
+	if !ok {
+		return FleetScopeAccess{}, false
+	}
+	if !s.targetsInScope(request.TargetAgentIDs, scope) {
+		writeError(w, http.StatusForbidden, "target agent outside operator scope")
+		return FleetScopeAccess{}, false
+	}
+	return scope, true
+}
+
+// writeCreateJobError maps Enqueue errors to HTTP status codes.
+func writeCreateJobError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, jobs.ErrDuplicateIdempotencyKey):
+		writeError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, jobs.ErrReadOnlyTarget):
+		writeError(w, http.StatusConflict, err.Error())
+	default:
+		writeError(w, http.StatusBadRequest, err.Error())
+	}
+}
+
 func (s *Server) handleCreateJob() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		session, user, err := s.requireSession(r)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
-			return
-		}
-
-		if user.Role == auth.RoleViewer {
-			writeError(w, http.StatusForbidden, "viewer role cannot create jobs")
 			return
 		}
 
@@ -146,21 +178,7 @@ func (s *Server) handleCreateJob() http.HandlerFunc {
 			return
 		}
 
-		if !jobs.IsValidAction(jobs.Action(request.Action)) {
-			writeError(w, http.StatusBadRequest, "unknown job action")
-			return
-		}
-
-		// R-S-14: every target agent must sit inside the operator's
-		// scope. We deny the whole request if any one falls out so an
-		// operator cannot accidentally fire a job into a fleet they
-		// don't manage.
-		scope, ok := s.requireFleetScope(w, r, user)
-		if !ok {
-			return
-		}
-		if !s.targetsInScope(request.TargetAgentIDs, scope) {
-			writeError(w, http.StatusForbidden, "target agent outside operator scope")
+		if _, ok := s.validateCreateJobRequest(w, r, user, request); !ok {
 			return
 		}
 
@@ -182,14 +200,7 @@ func (s *Server) handleCreateJob() http.HandlerFunc {
 			ReadOnlyAgents: readOnlyAgents,
 		}, s.now())
 		if err != nil {
-			switch {
-			case errors.Is(err, jobs.ErrDuplicateIdempotencyKey):
-				writeError(w, http.StatusConflict, err.Error())
-			case errors.Is(err, jobs.ErrReadOnlyTarget):
-				writeError(w, http.StatusConflict, err.Error())
-			default:
-				writeError(w, http.StatusBadRequest, err.Error())
-			}
+			writeCreateJobError(w, err)
 			return
 		}
 		s.notifyAgentSessions(job.TargetAgentIDs)

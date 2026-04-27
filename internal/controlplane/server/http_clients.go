@@ -81,57 +81,75 @@ func (s *Server) handleClients() http.HandlerFunc {
 		}
 
 		clients := s.listClientsSnapshot()
-		// Q2.U-P-03: ask the store for every client's unique-IP count in
-		// one round-trip instead of N sequential SELECTs. Missing IDs in
-		// the result fall back to the in-memory usage snapshot, so the
-		// response stays correct even if the bulk query fails.
-		clientIDs := make([]string, 0, len(clients))
-		for _, c := range clients {
-			clientIDs = append(clientIDs, c.ID)
-		}
-		uniqueIPCounts := map[string]int{}
-		if s.store != nil && len(clientIDs) > 0 {
-			if counts, err := s.store.CountUniqueClientIPsForClients(r.Context(), clientIDs); err == nil {
-				uniqueIPCounts = counts
-			} else {
-				s.logger.Warn("bulk unique-ip count failed", "error", err)
-			}
-		}
+		uniqueIPCounts := s.bulkUniqueIPCountsForClients(r.Context(), clients)
+
 		response := make([]clientListResponse, 0, len(clients))
 		for _, client := range clients {
-			_, assignments, deployments, err := s.clientDetailSnapshot(client.ID)
+			row, included, err := s.buildClientListRow(client, scope, uniqueIPCounts)
 			if err != nil {
 				s.logger.Error("load client detail failed", "client_id", client.ID, "error", err)
 				writeError(w, http.StatusInternalServerError, msgInternalError)
 				return
 			}
-			// R-S-14: hide clients that have no assignment overlap with
-			// the operator's scope.
-			if !s.clientInScope(scope, assignments) {
+			if !included {
 				continue
 			}
-			usage := s.aggregatedClientUsage(client.ID)
-			uniqueIPs := usage.UniqueIPsUsed
-			if count, ok := uniqueIPCounts[client.ID]; ok && count > 0 {
-				uniqueIPs = count
-			}
-
-			response = append(response, clientListResponse{
-				ID:                 client.ID,
-				Name:               client.Name,
-				Enabled:            client.Enabled,
-				AssignedNodesCount: len(s.resolveClientTargetAgentIDs(assignments)),
-				ExpirationRFC3339:  client.ExpirationRFC3339,
-				TrafficUsedBytes:   usage.TrafficUsedBytes,
-				UniqueIPsUsed:      uniqueIPs,
-				ActiveTCPConns:     usage.ActiveTCPConns,
-				DataQuotaBytes:     client.DataQuotaBytes,
-				LastDeployStatus:   deriveClientDeployStatus(deployments),
-			})
+			response = append(response, row)
 		}
 
 		writeJSON(w, http.StatusOK, response)
 	}
+}
+
+// bulkUniqueIPCountsForClients fetches per-client unique-IP counts in a
+// single round-trip (Q2.U-P-03). Returns an empty map if the store is
+// unavailable or the bulk query fails — callers fall back to the
+// in-memory usage snapshot.
+func (s *Server) bulkUniqueIPCountsForClients(ctx context.Context, clients []managedClient) map[string]int {
+	clientIDs := make([]string, 0, len(clients))
+	for _, c := range clients {
+		clientIDs = append(clientIDs, c.ID)
+	}
+	uniqueIPCounts := map[string]int{}
+	if s.store == nil || len(clientIDs) == 0 {
+		return uniqueIPCounts
+	}
+	counts, err := s.store.CountUniqueClientIPsForClients(ctx, clientIDs)
+	if err != nil {
+		s.logger.Warn("bulk unique-ip count failed", "error", err)
+		return uniqueIPCounts
+	}
+	return counts
+}
+
+// buildClientListRow assembles the listing row for a single client.
+// Returns included=false when the client falls outside the operator
+// scope (R-S-14).
+func (s *Server) buildClientListRow(client managedClient, scope FleetScopeAccess, uniqueIPCounts map[string]int) (clientListResponse, bool, error) {
+	_, assignments, deployments, err := s.clientDetailSnapshot(client.ID)
+	if err != nil {
+		return clientListResponse{}, false, err
+	}
+	if !s.clientInScope(scope, assignments) {
+		return clientListResponse{}, false, nil
+	}
+	usage := s.aggregatedClientUsage(client.ID)
+	uniqueIPs := usage.UniqueIPsUsed
+	if count, ok := uniqueIPCounts[client.ID]; ok && count > 0 {
+		uniqueIPs = count
+	}
+	return clientListResponse{
+		ID:                 client.ID,
+		Name:               client.Name,
+		Enabled:            client.Enabled,
+		AssignedNodesCount: len(s.resolveClientTargetAgentIDs(assignments)),
+		ExpirationRFC3339:  client.ExpirationRFC3339,
+		TrafficUsedBytes:   usage.TrafficUsedBytes,
+		UniqueIPsUsed:      uniqueIPs,
+		ActiveTCPConns:     usage.ActiveTCPConns,
+		DataQuotaBytes:     client.DataQuotaBytes,
+		LastDeployStatus:   deriveClientDeployStatus(deployments),
+	}, true, nil
 }
 
 func (s *Server) handleCreateClient() http.HandlerFunc {
@@ -237,21 +255,8 @@ func (s *Server) handleUpdateClient() http.HandlerFunc {
 
 		// R-S-14: scope-check both the existing client and any new
 		// fleet groups the update wants to introduce.
-		if !scope.Global {
-			_, existingAssignments, _, lookupErr := s.clientDetailSnapshot(clientID)
-			if lookupErr != nil {
-				if errors.Is(lookupErr, storage.ErrNotFound) {
-					writeError(w, http.StatusNotFound, msgClientNotFound)
-					return
-				}
-				s.logger.Error(msgClientScopeCheckFailed, "client_id", clientID, "error", lookupErr)
-				writeError(w, http.StatusInternalServerError, msgInternalError)
-				return
-			}
-			if !s.clientInScope(scope, existingAssignments) {
-				writeError(w, http.StatusNotFound, msgClientNotFound)
-				return
-			}
+		if !s.ensureClientMutationScope(w, clientID, scope) {
+			return
 		}
 
 		var request clientMutationRequest
@@ -309,21 +314,8 @@ func (s *Server) handleDeleteClient() http.HandlerFunc {
 		}
 
 		// R-S-14: scope-check before delete.
-		if !scope.Global {
-			_, existing, _, lookupErr := s.clientDetailSnapshot(clientID)
-			if lookupErr != nil {
-				if errors.Is(lookupErr, storage.ErrNotFound) {
-					writeError(w, http.StatusNotFound, msgClientNotFound)
-					return
-				}
-				s.logger.Error(msgClientScopeCheckFailed, "client_id", clientID, "error", lookupErr)
-				writeError(w, http.StatusInternalServerError, msgInternalError)
-				return
-			}
-			if !s.clientInScope(scope, existing) {
-				writeError(w, http.StatusNotFound, msgClientNotFound)
-				return
-			}
+		if !s.ensureClientMutationScope(w, clientID, scope) {
+			return
 		}
 
 		if err := s.deleteClientWithContext(r.Context(), clientID, session.UserID, s.now()); err != nil {
@@ -350,21 +342,8 @@ func (s *Server) handleRotateClientSecret() http.HandlerFunc {
 			return
 		}
 
-		if !scope.Global {
-			_, existing, _, lookupErr := s.clientDetailSnapshot(clientID)
-			if lookupErr != nil {
-				if errors.Is(lookupErr, storage.ErrNotFound) {
-					writeError(w, http.StatusNotFound, msgClientNotFound)
-					return
-				}
-				s.logger.Error(msgClientScopeCheckFailed, "client_id", clientID, "error", lookupErr)
-				writeError(w, http.StatusInternalServerError, msgInternalError)
-				return
-			}
-			if !s.clientInScope(scope, existing) {
-				writeError(w, http.StatusNotFound, msgClientNotFound)
-				return
-			}
+		if !s.ensureClientMutationScope(w, clientID, scope) {
+			return
 		}
 
 		client, assignments, deployments, err := s.rotateClientSecretWithContext(r.Context(), clientID, session.UserID, s.now())
@@ -396,21 +375,8 @@ func (s *Server) handleRedeployClient() http.HandlerFunc {
 			return
 		}
 
-		if !scope.Global {
-			_, existing, _, lookupErr := s.clientDetailSnapshot(clientID)
-			if lookupErr != nil {
-				if errors.Is(lookupErr, storage.ErrNotFound) {
-					writeError(w, http.StatusNotFound, msgClientNotFound)
-					return
-				}
-				s.logger.Error(msgClientScopeCheckFailed, "client_id", clientID, "error", lookupErr)
-				writeError(w, http.StatusInternalServerError, msgInternalError)
-				return
-			}
-			if !s.clientInScope(scope, existing) {
-				writeError(w, http.StatusNotFound, msgClientNotFound)
-				return
-			}
+		if !s.ensureClientMutationScope(w, clientID, scope) {
+			return
 		}
 
 		client, assignments, deployments, err := s.redeployClientWithContext(r.Context(), clientID, session.UserID, s.now())
@@ -424,6 +390,31 @@ func (s *Server) handleRedeployClient() http.HandlerFunc {
 		})
 		writeJSON(w, http.StatusOK, s.buildClientDetailResponse(r.Context(), client, assignments, deployments, false))
 	}
+}
+
+// ensureClientMutationScope verifies the scoped operator may mutate
+// the given client. Returns false (and writes the HTTP error) when the
+// client is missing, the lookup fails, or the client sits outside the
+// operator's scope. Global scope short-circuits the lookup.
+func (s *Server) ensureClientMutationScope(w http.ResponseWriter, clientID string, scope FleetScopeAccess) bool {
+	if scope.Global {
+		return true
+	}
+	_, existing, _, lookupErr := s.clientDetailSnapshot(clientID)
+	if lookupErr != nil {
+		if errors.Is(lookupErr, storage.ErrNotFound) {
+			writeError(w, http.StatusNotFound, msgClientNotFound)
+			return false
+		}
+		s.logger.Error(msgClientScopeCheckFailed, "client_id", clientID, "error", lookupErr)
+		writeError(w, http.StatusInternalServerError, msgInternalError)
+		return false
+	}
+	if !s.clientInScope(scope, existing) {
+		writeError(w, http.StatusNotFound, msgClientNotFound)
+		return false
+	}
+	return true
 }
 
 // requireClientsAccessWithScope is the scope-aware variant of

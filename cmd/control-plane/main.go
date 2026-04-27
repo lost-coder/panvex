@@ -359,6 +359,66 @@ func runServe(args []string) error {
 	}
 }
 
+// loadConfigFileServeConfig builds the serveConfig from a config.toml
+// path while rejecting any conflicting legacy CLI flags.
+func loadConfigFileServeConfig(configPath string, explicitLegacyFlags map[string]bool, parsedCIDRs []*net.IPNet, encryptionKey, logLevel string) (serveConfig, error) {
+	for _, flagName := range []string{"http-addr", "grpc-addr", "restart-mode", flagStorageDriver, flagStorageDSN} {
+		if explicitLegacyFlags[flagName] {
+			return serveConfig{}, fmt.Errorf("flag -%s cannot be used together with -config", flagName)
+		}
+	}
+
+	configuration, err := config.LoadControlPlaneConfig(configPath)
+	if err != nil {
+		return serveConfig{}, err
+	}
+
+	return serveConfig{
+		ConfigPath:           configPath,
+		ConfigManagedRuntime: true,
+		HTTPAddr:             configuration.HTTPListenAddress,
+		HTTPRootPath:         configuration.HTTPRootPath,
+		AgentHTTPRootPath:    configuration.AgentHTTPRootPath,
+		PanelAllowedCIDRs:    configuration.PanelAllowedCIDRs,
+		GRPCAddr:             configuration.GRPCListenAddress,
+		RestartMode:          configuration.RestartMode,
+		TLSMode:              configuration.TLSMode,
+		TLSCertFile:          configuration.TLSCertFile,
+		TLSKeyFile:           configuration.TLSKeyFile,
+		Storage:              configuration.Storage,
+		TrustedProxyCIDRs:    parsedCIDRs,
+		EncryptionKey:        encryptionKey,
+		LogLevel:             logLevel,
+	}, nil
+}
+
+// loadLegacyServeConfig builds the serveConfig from the legacy CLI
+// flag set, used when -config is absent.
+func loadLegacyServeConfig(httpAddr, grpcAddr, restartMode, storageDriver, storageDSN string, parsedCIDRs []*net.IPNet, encryptionKey, logLevel string) (serveConfig, error) {
+	configuration, err := config.ResolveLegacyControlPlaneConfig(httpAddr, grpcAddr, restartMode, "", storageDriver, storageDSN)
+	if err != nil {
+		return serveConfig{}, err
+	}
+
+	return serveConfig{
+		ConfigPath:           "",
+		ConfigManagedRuntime: false,
+		HTTPAddr:             configuration.HTTPListenAddress,
+		HTTPRootPath:         configuration.HTTPRootPath,
+		AgentHTTPRootPath:    configuration.AgentHTTPRootPath,
+		PanelAllowedCIDRs:    configuration.PanelAllowedCIDRs,
+		GRPCAddr:             configuration.GRPCListenAddress,
+		RestartMode:          configuration.RestartMode,
+		TLSMode:              configuration.TLSMode,
+		TLSCertFile:          configuration.TLSCertFile,
+		TLSKeyFile:           configuration.TLSKeyFile,
+		Storage:              configuration.Storage,
+		TrustedProxyCIDRs:    parsedCIDRs,
+		EncryptionKey:        encryptionKey,
+		LogLevel:             logLevel,
+	}, nil
+}
+
 func parseServeConfig(args []string) (serveConfig, error) {
 	flags := flag.NewFlagSet("control-plane", flag.ContinueOnError)
 	configPath := flags.String("config", strings.TrimSpace(os.Getenv("PANVEX_CONFIG")), "Path to runtime config.toml")
@@ -393,59 +453,11 @@ func parseServeConfig(args []string) (serveConfig, error) {
 		explicitLegacyFlags[currentFlag.Name] = true
 	})
 
-	if strings.TrimSpace(*configPath) != "" {
-		for _, flagName := range []string{"http-addr", "grpc-addr", "restart-mode", flagStorageDriver, flagStorageDSN} {
-			if explicitLegacyFlags[flagName] {
-				return serveConfig{}, fmt.Errorf("flag -%s cannot be used together with -config", flagName)
-			}
-		}
-
-		configuration, err := config.LoadControlPlaneConfig(*configPath)
-		if err != nil {
-			return serveConfig{}, err
-		}
-
-		return serveConfig{
-			ConfigPath:           strings.TrimSpace(*configPath),
-			ConfigManagedRuntime: true,
-			HTTPAddr:             configuration.HTTPListenAddress,
-			HTTPRootPath:         configuration.HTTPRootPath,
-			AgentHTTPRootPath:    configuration.AgentHTTPRootPath,
-			PanelAllowedCIDRs:    configuration.PanelAllowedCIDRs,
-			GRPCAddr:             configuration.GRPCListenAddress,
-			RestartMode:          configuration.RestartMode,
-			TLSMode:              configuration.TLSMode,
-			TLSCertFile:          configuration.TLSCertFile,
-			TLSKeyFile:           configuration.TLSKeyFile,
-			Storage:              configuration.Storage,
-			TrustedProxyCIDRs:    parsedCIDRs,
-			EncryptionKey:        encryptionKey,
-			LogLevel:             *logLevel,
-		}, nil
+	if path := strings.TrimSpace(*configPath); path != "" {
+		return loadConfigFileServeConfig(path, explicitLegacyFlags, parsedCIDRs, encryptionKey, *logLevel)
 	}
 
-	configuration, err := config.ResolveLegacyControlPlaneConfig(*httpAddr, *grpcAddr, *restartMode, "", *storageDriver, *storageDSN)
-	if err != nil {
-		return serveConfig{}, err
-	}
-
-	return serveConfig{
-		ConfigPath:           "",
-		ConfigManagedRuntime: false,
-		HTTPAddr:             configuration.HTTPListenAddress,
-		HTTPRootPath:         configuration.HTTPRootPath,
-		AgentHTTPRootPath:    configuration.AgentHTTPRootPath,
-		PanelAllowedCIDRs:    configuration.PanelAllowedCIDRs,
-		GRPCAddr:             configuration.GRPCListenAddress,
-		RestartMode:          configuration.RestartMode,
-		TLSMode:              configuration.TLSMode,
-		TLSCertFile:          configuration.TLSCertFile,
-		TLSKeyFile:           configuration.TLSKeyFile,
-		Storage:              configuration.Storage,
-		TrustedProxyCIDRs:    parsedCIDRs,
-		EncryptionKey:        encryptionKey,
-		LogLevel:             *logLevel,
-	}, nil
+	return loadLegacyServeConfig(*httpAddr, *grpcAddr, *restartMode, *storageDriver, *storageDSN, parsedCIDRs, encryptionKey, *logLevel)
 }
 
 // newControlPlaneHTTPServer builds the control-plane HTTP server with hardened

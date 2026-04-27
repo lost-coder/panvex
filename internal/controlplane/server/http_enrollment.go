@@ -152,6 +152,36 @@ func (s *Server) resolveEnrollmentTokenIdentifier(ctx context.Context, identifie
 	return identifier, false, nil
 }
 
+// resolveEnrollmentFleetGroupID maps an operator-supplied fleet group
+// reference (empty / id / friendly name) to the canonical UUID.
+// Returns (id, true) on success; on failure it writes the appropriate
+// HTTP error and returns ("", false).
+func (s *Server) resolveEnrollmentFleetGroupID(w http.ResponseWriter, r *http.Request, fleetGroupID string) (string, bool) {
+	if fleetGroupID == "" {
+		defaultGroup, err := s.fleetSvc.EnsureDefault(r.Context())
+		if err != nil {
+			s.logger.Error("ensure default fleet group failed", "error", err)
+			writeError(w, http.StatusInternalServerError, msgInternalError)
+			return "", false
+		}
+		return defaultGroup.ID, true
+	}
+	resolved, err := s.fleetSvc.Get(r.Context(), fleetGroupID)
+	if errors.Is(err, storage.ErrNotFound) {
+		resolved, err = s.fleetSvc.GetByName(r.Context(), fleetGroupID)
+	}
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			writeError(w, http.StatusBadRequest, "fleet group not found")
+			return "", false
+		}
+		s.logger.Error("lookup fleet group for enrollment failed", "fleet_group_id", fleetGroupID, "error", err)
+		writeError(w, http.StatusInternalServerError, msgInternalError)
+		return "", false
+	}
+	return resolved.ID, true
+}
+
 func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		session, user, err := s.requireSession(r)
@@ -175,30 +205,9 @@ func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 		// default group. Otherwise try id first, then fall back to
 		// the unique name so operators/scripts can use the friendly
 		// slug without hunting for UUIDs.
-		fleetGroupID := request.FleetGroupID
-		if fleetGroupID == "" {
-			defaultGroup, err := s.fleetSvc.EnsureDefault(r.Context())
-			if err != nil {
-				s.logger.Error("ensure default fleet group failed", "error", err)
-				writeError(w, http.StatusInternalServerError, msgInternalError)
-				return
-			}
-			fleetGroupID = defaultGroup.ID
-		} else {
-			resolved, err := s.fleetSvc.Get(r.Context(), fleetGroupID)
-			if errors.Is(err, storage.ErrNotFound) {
-				resolved, err = s.fleetSvc.GetByName(r.Context(), fleetGroupID)
-			}
-			if err != nil {
-				if errors.Is(err, storage.ErrNotFound) {
-					writeError(w, http.StatusBadRequest, "fleet group not found")
-					return
-				}
-				s.logger.Error("lookup fleet group for enrollment failed", "fleet_group_id", fleetGroupID, "error", err)
-				writeError(w, http.StatusInternalServerError, msgInternalError)
-				return
-			}
-			fleetGroupID = resolved.ID
+		fleetGroupID, ok := s.resolveEnrollmentFleetGroupID(w, r, request.FleetGroupID)
+		if !ok {
+			return
 		}
 
 		// R-S-14: only allow enrollment tokens for groups inside scope.

@@ -24,6 +24,74 @@ const telemetryDashboardLoadWindow = 40 * time.Minute
 // controlRoomRecentRuntimeEvents so both fields carry the same cadence.
 const telemetryDashboardEventLimit = 8
 
+// telemetryDashboardSnapshot captures the read-side data the
+// dashboard needs in a single pass under s.mu. Splitting it out keeps
+// handleTelemetryDashboard's complexity below the 15-CC threshold.
+type telemetryDashboardSnapshot struct {
+	items                []telemetryServerSummary
+	runtimeDistribution  map[string]int
+	agentIDs             []string
+	recentEvents         []RuntimeEvent
+	recentEventsEnriched []telemetryRecentEvent
+	fleet                fleetResponse
+}
+
+// collectTelemetryDashboardSnapshot walks the agents map under s.mu
+// and returns the per-agent summaries plus the derived aggregate
+// fields used by the dashboard payload.
+func (s *Server) collectTelemetryDashboardSnapshot(now time.Time, metricSnapshots int) telemetryDashboardSnapshot {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	snapshot := telemetryDashboardSnapshot{
+		items:               make([]telemetryServerSummary, 0, len(s.agents)),
+		runtimeDistribution: make(map[string]int),
+		agentIDs:            make([]string, 0, len(s.agents)),
+	}
+	for _, agent := range s.agents {
+		boostExpiresAt := s.detailBoosts[agent.ID]
+		summary := telemetrySummaryForAgent(agent, s.presence.Evaluate(agent.ID, now), now, boostExpiresAt)
+		snapshot.items = append(snapshot.items, summary)
+		mode := summary.Agent.Runtime.TransportMode
+		if mode == "" {
+			mode = "unknown"
+		}
+		snapshot.runtimeDistribution[mode]++
+		snapshot.agentIDs = append(snapshot.agentIDs, agent.ID)
+	}
+	snapshot.recentEvents = controlRoomRecentRuntimeEvents(s.agents, telemetryDashboardEventLimit)
+	snapshot.recentEventsEnriched = dashboardRecentEvents(s.agents, telemetryDashboardEventLimit)
+	snapshot.fleet = controlRoomFleetFromState(s.agents, s.instances, metricSnapshots, s.presence, now)
+	return snapshot
+}
+
+// buildTelemetryAttention picks up to 5 non-healthy summaries to surface
+// in the dashboard's "needs attention" feed. Items are taken in the
+// order produced by sortTelemetrySummaries, which orders worst-first.
+func buildTelemetryAttention(items []telemetryServerSummary) []telemetryAttentionItem {
+	attention := make([]telemetryAttentionItem, 0, 5)
+	for _, item := range items {
+		if item.Severity == "good" && item.RuntimeFreshness.State == "fresh" {
+			continue
+		}
+		attention = append(attention, telemetryAttentionItem{
+			AgentID:          item.Agent.ID,
+			NodeName:         item.Agent.NodeName,
+			FleetGroupID:     item.Agent.FleetGroupID,
+			Severity:         item.Severity,
+			Reason:           item.Reason,
+			PresenceState:    item.Agent.PresenceState,
+			Runtime:          item.Agent.Runtime,
+			RuntimeFreshness: item.RuntimeFreshness,
+			DetailBoost:      item.DetailBoost,
+		})
+		if len(attention) == 5 {
+			break
+		}
+	}
+	return attention
+}
+
 func (s *Server) handleTelemetryDashboard() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if _, _, err := s.requireSession(r); err != nil {
@@ -37,62 +105,20 @@ func (s *Server) handleTelemetryDashboard() http.HandlerFunc {
 		metricSnapshots := len(s.metrics)
 		s.metricsAuditMu.RUnlock()
 
-		s.mu.RLock()
-		items := make([]telemetryServerSummary, 0, len(s.agents))
-		runtimeDistribution := make(map[string]int)
-		// Snapshot just enough agent state to populate the enriched feed
-		// outside the lock; touching the store under s.mu would risk a
-		// write-starvation on hot paths.
-		agentNames := make(map[string]string, len(s.agents))
-		agentIDs := make([]string, 0, len(s.agents))
-		for _, agent := range s.agents {
-			boostExpiresAt := s.detailBoosts[agent.ID]
-			summary := telemetrySummaryForAgent(agent, s.presence.Evaluate(agent.ID, now), now, boostExpiresAt)
-			items = append(items, summary)
-			mode := summary.Agent.Runtime.TransportMode
-			if mode == "" {
-				mode = "unknown"
-			}
-			runtimeDistribution[mode]++
-			agentNames[agent.ID] = agent.NodeName
-			agentIDs = append(agentIDs, agent.ID)
-		}
-		recentEvents := controlRoomRecentRuntimeEvents(s.agents, telemetryDashboardEventLimit)
-		recentEventsEnriched := dashboardRecentEvents(s.agents, telemetryDashboardEventLimit)
-		fleet := controlRoomFleetFromState(s.agents, s.instances, metricSnapshots, s.presence, now)
-		s.mu.RUnlock()
+		snapshot := s.collectTelemetryDashboardSnapshot(now, metricSnapshots)
 
-		loadSeries := s.dashboardAgentLoadSeries(r.Context(), agentIDs, now)
+		loadSeries := s.dashboardAgentLoadSeries(r.Context(), snapshot.agentIDs, now)
 
-		sortTelemetrySummaries(items)
-		attention := make([]telemetryAttentionItem, 0, 5)
-		for _, item := range items {
-			if item.Severity == "good" && item.RuntimeFreshness.State == "fresh" {
-				continue
-			}
-			attention = append(attention, telemetryAttentionItem{
-				AgentID:          item.Agent.ID,
-				NodeName:         item.Agent.NodeName,
-				FleetGroupID:     item.Agent.FleetGroupID,
-				Severity:         item.Severity,
-				Reason:           item.Reason,
-				PresenceState:    item.Agent.PresenceState,
-				Runtime:          item.Agent.Runtime,
-				RuntimeFreshness: item.RuntimeFreshness,
-				DetailBoost:      item.DetailBoost,
-			})
-			if len(attention) == 5 {
-				break
-			}
-		}
+		sortTelemetrySummaries(snapshot.items)
+		attention := buildTelemetryAttention(snapshot.items)
 
 		writeJSON(w, http.StatusOK, telemetryDashboardResponse{
-			Fleet:               fleet,
+			Fleet:               snapshot.fleet,
 			Attention:           attention,
-			ServerCards:         items,
-			RuntimeDistribution: runtimeDistribution,
-			RecentRuntimeEvents: recentEvents,
-			RecentEvents:        recentEventsEnriched,
+			ServerCards:         snapshot.items,
+			RuntimeDistribution: snapshot.runtimeDistribution,
+			RecentRuntimeEvents: snapshot.recentEvents,
+			RecentEvents:        snapshot.recentEventsEnriched,
 			AgentLoadSeries:     loadSeries,
 		})
 	}

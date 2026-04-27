@@ -21,6 +21,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
@@ -96,6 +97,35 @@ func (s *Store) execInTx(ctx context.Context, fn func(exec dbExecutor) error) er
 
 // PutAgentsBulk upserts a batch of agents. Same per-row semantics as PutAgent
 // (UPSERT on id); duplicate IDs in the same batch collapse to last-wins.
+// nullStringFrom returns a sql.NullString that is Valid only when the
+// raw string is non-empty.
+func nullStringFrom(s string) sql.NullString {
+	if s == "" {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: s, Valid: true}
+}
+
+// nullUnixFromPtr returns a sql.NullInt64 carrying the UTC Unix
+// seconds for `t`, or an invalid value when `t` is nil.
+func nullUnixFromPtr(t *time.Time) sql.NullInt64 {
+	if t == nil {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: t.UTC().Unix(), Valid: true}
+}
+
+// agentBulkArgs flattens an AgentRecord into the parameter slice used
+// by PutAgentsBulk. Splitting it out keeps the per-chunk loop body
+// simple.
+func agentBulkArgs(agent storage.AgentRecord) []any {
+	return []any{
+		agent.ID, agent.NodeName, nullStringFrom(agent.FleetGroupID), agent.Version,
+		boolToInt(agent.ReadOnly), toUnix(agent.LastSeenAt),
+		nullUnixFromPtr(agent.CertIssuedAt), nullUnixFromPtr(agent.CertExpiresAt),
+	}
+}
+
 func (s *Store) PutAgentsBulk(ctx context.Context, agents []storage.AgentRecord) error {
 	if len(agents) == 0 {
 		return nil
@@ -110,26 +140,7 @@ func (s *Store) PutAgentsBulk(ctx context.Context, agents []storage.AgentRecord)
 			chunk := agents[start:end]
 			args := make([]any, 0, len(chunk)*cols)
 			for _, agent := range chunk {
-				var fleetGroupID sql.NullString
-				if agent.FleetGroupID != "" {
-					fleetGroupID.Valid = true
-					fleetGroupID.String = agent.FleetGroupID
-				}
-				var certIssuedAtUnix sql.NullInt64
-				if agent.CertIssuedAt != nil {
-					certIssuedAtUnix.Valid = true
-					certIssuedAtUnix.Int64 = agent.CertIssuedAt.UTC().Unix()
-				}
-				var certExpiresAtUnix sql.NullInt64
-				if agent.CertExpiresAt != nil {
-					certExpiresAtUnix.Valid = true
-					certExpiresAtUnix.Int64 = agent.CertExpiresAt.UTC().Unix()
-				}
-				args = append(args,
-					agent.ID, agent.NodeName, fleetGroupID, agent.Version,
-					boolToInt(agent.ReadOnly), toUnix(agent.LastSeenAt),
-					certIssuedAtUnix, certExpiresAtUnix,
-				)
+				args = append(args, agentBulkArgs(agent)...)
 			}
 			query := fmt.Sprintf(
 				`INSERT INTO agents (id, node_name, fleet_group_id, version, read_only, last_seen_at_unix, cert_issued_at_unix, cert_expires_at_unix) VALUES %s

@@ -82,6 +82,95 @@ type clientJobResultPayload struct {
 // they are renamed to use the clients package directly.
 type aggregatedClientUsage = clients.AggregatedUsage
 
+// restoreClientUsageIndexes builds two lookup tables used during
+// restoreStoredClients to rehydrate volatile traffic counters: the
+// primary `client_usage` rows keyed by (client_id, agent_id), and a
+// fallback index of the latest discovered_clients snapshot keyed by
+// (agent_id, client_name).
+func (s *Server) restoreClientUsageIndexes(ctx context.Context) (map[string]storage.ClientUsageRecord, map[string]storage.DiscoveredClientRecord) {
+	usageIdx := make(map[string]storage.ClientUsageRecord)
+	if usage, err := s.store.ListClientUsage(ctx); err == nil {
+		for _, u := range usage {
+			usageIdx[u.ClientID+"\x00"+u.AgentID] = u
+			if u.LastSeq > s.lastUsageSeq[u.AgentID] {
+				s.lastUsageSeq[u.AgentID] = u.LastSeq
+			}
+		}
+	}
+	discoveredIdx := make(map[string]storage.DiscoveredClientRecord)
+	if dc, err := s.store.ListDiscoveredClients(ctx); err == nil {
+		for _, r := range dc {
+			discoveredIdx[r.AgentID+"\x00"+r.ClientName] = r
+		}
+	}
+	return usageIdx, discoveredIdx
+}
+
+// rehydrateClientAssignmentUsage restores the volatile traffic
+// counter for a single (client, agent) pair. Prefers the persisted
+// client_usage row; falls back to the latest discovered_clients
+// snapshot when no usage row exists yet.
+func (s *Server) rehydrateClientAssignmentUsage(client managedClient, assignment managedClientAssignment, usageIdx map[string]storage.ClientUsageRecord, discoveredIdx map[string]storage.DiscoveredClientRecord) {
+	if assignment.AgentID == "" {
+		return
+	}
+	if u, ok := usageIdx[client.ID+"\x00"+assignment.AgentID]; ok {
+		if s.clientUsage[client.ID] == nil {
+			s.clientUsage[client.ID] = make(map[string]clientUsageSnapshot)
+		}
+		s.clientUsage[client.ID][assignment.AgentID] = clientUsageSnapshot{
+			ClientID:         u.ClientID,
+			TrafficUsedBytes: u.TrafficUsedBytes,
+			UniqueIPsUsed:    u.UniqueIPsUsed,
+			ActiveTCPConns:   u.ActiveTCPConns,
+			ActiveUniqueIPs:  u.ActiveUniqueIPs,
+			ObservedAt:       u.ObservedAt,
+		}
+		return
+	}
+	if dc, ok := discoveredIdx[assignment.AgentID+"\x00"+client.Name]; ok {
+		// Background: restore runs at startup before any request
+		// context exists. The seed write is best-effort housekeeping
+		// that must complete regardless.
+		s.seedClientUsage(context.Background(), client.ID, assignment.AgentID, dc.TotalOctets,
+			dc.CurrentConnections, dc.ActiveUniqueIPs, dc.UpdatedAt)
+	}
+}
+
+// restoreClientAssignments loads + memoises the assignments for one
+// client and rehydrates the volatile usage counter for each one.
+func (s *Server) restoreClientAssignments(ctx context.Context, client managedClient, usageIdx map[string]storage.ClientUsageRecord, discoveredIdx map[string]storage.DiscoveredClientRecord) error {
+	assignments, err := s.store.ListClientAssignments(ctx, client.ID)
+	if err != nil {
+		return err
+	}
+	s.clientAssignments[client.ID] = make([]managedClientAssignment, 0, len(assignments))
+	for _, assignmentRecord := range assignments {
+		assignment := clients.AssignmentFromRecord(assignmentRecord)
+		s.clientAssignments[client.ID] = append(s.clientAssignments[client.ID], assignment)
+		s.assignmentSeq = maxPrefixedSequence(s.assignmentSeq, "client-assignment", assignment.ID)
+		s.rehydrateClientAssignmentUsage(client, assignment, usageIdx, discoveredIdx)
+	}
+	return nil
+}
+
+// restoreClientDeployments loads + memoises the per-agent deployment
+// records for one client.
+func (s *Server) restoreClientDeployments(ctx context.Context, clientID string) error {
+	deployments, err := s.store.ListClientDeployments(ctx, clientID)
+	if err != nil {
+		return err
+	}
+	if s.clientDeployments[clientID] == nil {
+		s.clientDeployments[clientID] = make(map[string]managedClientDeployment)
+	}
+	for _, deploymentRecord := range deployments {
+		deployment := clients.DeploymentFromRecord(deploymentRecord)
+		s.clientDeployments[clientID][deployment.AgentID] = deployment
+	}
+	return nil
+}
+
 func (s *Server) restoreStoredClients() error {
 	if s.store == nil {
 		return nil
@@ -98,28 +187,7 @@ func (s *Server) restoreStoredClients() error {
 		return err
 	}
 
-	// Primary rehydration source: the persisted client_usage table
-	// (written-through on every applyClientUsageSnapshot tick). Keyed
-	// by (client_id, agent_id).
-	usageIdx := make(map[string]storage.ClientUsageRecord)
-	if usage, err := s.store.ListClientUsage(ctx); err == nil {
-		for _, u := range usage {
-			usageIdx[u.ClientID+"\x00"+u.AgentID] = u
-			if u.LastSeq > s.lastUsageSeq[u.AgentID] {
-				s.lastUsageSeq[u.AgentID] = u.LastSeq
-			}
-		}
-	}
-	// Fallback rehydration: for (client, agent) pairs that have no
-	// client_usage row yet — e.g. adopted pre-migration, or a brand new
-	// deployment that has yet to see an agent tick — seed from the
-	// discovered_clients snapshot. Keyed by (agent_id, client_name).
-	discoveredIdx := make(map[string]storage.DiscoveredClientRecord)
-	if dc, err := s.store.ListDiscoveredClients(ctx); err == nil {
-		for _, r := range dc {
-			discoveredIdx[r.AgentID+"\x00"+r.ClientName] = r
-		}
-	}
+	usageIdx, discoveredIdx := s.restoreClientUsageIndexes(ctx)
 
 	for _, record := range records {
 		decoded, err := clients.DecryptClientRecord(record, s.vault())
@@ -130,52 +198,11 @@ func (s *Server) restoreStoredClients() error {
 		s.clients[client.ID] = client
 		s.clientSeq = maxPrefixedSequence(s.clientSeq, "client", client.ID)
 
-		assignments, err := s.store.ListClientAssignments(ctx, client.ID)
-		if err != nil {
+		if err := s.restoreClientAssignments(ctx, client, usageIdx, discoveredIdx); err != nil {
 			return err
 		}
-		s.clientAssignments[client.ID] = make([]managedClientAssignment, 0, len(assignments))
-		for _, assignmentRecord := range assignments {
-			assignment := clients.AssignmentFromRecord(assignmentRecord)
-			s.clientAssignments[client.ID] = append(s.clientAssignments[client.ID], assignment)
-			s.assignmentSeq = maxPrefixedSequence(s.assignmentSeq, "client-assignment", assignment.ID)
-			if assignment.AgentID == "" {
-				continue
-			}
-			// Rehydrate volatile traffic counter. Prefer the persisted
-			// client_usage row; fall back to the last discovered snapshot
-			// if nothing has been written yet for this (client, agent).
-			if u, ok := usageIdx[client.ID+"\x00"+assignment.AgentID]; ok {
-				if s.clientUsage[client.ID] == nil {
-					s.clientUsage[client.ID] = make(map[string]clientUsageSnapshot)
-				}
-				s.clientUsage[client.ID][assignment.AgentID] = clientUsageSnapshot{
-					ClientID:         u.ClientID,
-					TrafficUsedBytes: u.TrafficUsedBytes,
-					UniqueIPsUsed:    u.UniqueIPsUsed,
-					ActiveTCPConns:   u.ActiveTCPConns,
-					ActiveUniqueIPs:  u.ActiveUniqueIPs,
-					ObservedAt:       u.ObservedAt,
-				}
-			} else if dc, ok := discoveredIdx[assignment.AgentID+"\x00"+client.Name]; ok {
-				// Background: restore runs at startup before any request
-				// context exists. The seed write is best-effort housekeeping
-				// that must complete regardless.
-				s.seedClientUsage(context.Background(), client.ID, assignment.AgentID, dc.TotalOctets,
-					dc.CurrentConnections, dc.ActiveUniqueIPs, dc.UpdatedAt)
-			}
-		}
-
-		deployments, err := s.store.ListClientDeployments(ctx, client.ID)
-		if err != nil {
+		if err := s.restoreClientDeployments(ctx, client.ID); err != nil {
 			return err
-		}
-		if s.clientDeployments[client.ID] == nil {
-			s.clientDeployments[client.ID] = make(map[string]managedClientDeployment)
-		}
-		for _, deploymentRecord := range deployments {
-			deployment := clients.DeploymentFromRecord(deploymentRecord)
-			s.clientDeployments[client.ID][deployment.AgentID] = deployment
 		}
 	}
 

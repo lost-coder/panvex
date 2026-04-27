@@ -233,8 +233,8 @@ func runtimeEventSeverity(event RuntimeEvent) string {
 	}
 }
 
-func restoreAgentRuntimeFromStorage(agent Agent, runtime storage.TelemetryRuntimeCurrentRecord, dcs []storage.TelemetryRuntimeDCRecord, upstreams []storage.TelemetryRuntimeUpstreamRecord, events []storage.TelemetryRuntimeEventRecord) Agent {
-	agent.Runtime = AgentRuntime{
+func runtimeFromCurrentRecord(runtime storage.TelemetryRuntimeCurrentRecord) AgentRuntime {
+	return AgentRuntime{
 		AcceptingNewConnections:   runtime.AcceptingNewConnections,
 		MERuntimeReady:            runtime.MERuntimeReady,
 		ME2DCFallbackEnabled:      runtime.ME2DCFallbackEnabled,
@@ -262,10 +262,12 @@ func restoreAgentRuntimeFromStorage(agent Agent, runtime storage.TelemetryRuntim
 		TotalUpstreams:            runtime.TotalUpstreams,
 		UpdatedAt:                 runtime.ObservedAt.UTC(),
 	}
+}
 
-	agent.Runtime.DCs = make([]RuntimeDC, 0, len(dcs))
+func runtimeDCsFromRecords(dcs []storage.TelemetryRuntimeDCRecord) []RuntimeDC {
+	out := make([]RuntimeDC, 0, len(dcs))
 	for _, dc := range dcs {
-		agent.Runtime.DCs = append(agent.Runtime.DCs, RuntimeDC{
+		out = append(out, RuntimeDC{
 			DC:                 dc.DC,
 			AvailableEndpoints: dc.AvailableEndpoints,
 			AvailablePct:       dc.AvailablePct,
@@ -276,10 +278,13 @@ func restoreAgentRuntimeFromStorage(agent Agent, runtime storage.TelemetryRuntim
 			Load:               int(dc.Load),
 		})
 	}
+	return out
+}
 
-	agent.Runtime.Upstreams = make([]RuntimeUpstream, 0, len(upstreams))
+func runtimeUpstreamsFromRecords(upstreams []storage.TelemetryRuntimeUpstreamRecord) []RuntimeUpstream {
+	out := make([]RuntimeUpstream, 0, len(upstreams))
 	for _, upstream := range upstreams {
-		agent.Runtime.Upstreams = append(agent.Runtime.Upstreams, RuntimeUpstream{
+		out = append(out, RuntimeUpstream{
 			UpstreamID:         upstream.UpstreamID,
 			RouteKind:          upstream.RouteKind,
 			Address:            upstream.Address,
@@ -288,17 +293,27 @@ func restoreAgentRuntimeFromStorage(agent Agent, runtime storage.TelemetryRuntim
 			EffectiveLatencyMs: upstream.EffectiveLatencyMs,
 		})
 	}
+	return out
+}
 
-	agent.Runtime.RecentEvents = make([]RuntimeEvent, 0, len(events))
+func runtimeEventsFromRecords(events []storage.TelemetryRuntimeEventRecord) []RuntimeEvent {
+	out := make([]RuntimeEvent, 0, len(events))
 	for _, event := range events {
-		agent.Runtime.RecentEvents = append(agent.Runtime.RecentEvents, RuntimeEvent{
+		out = append(out, RuntimeEvent{
 			Sequence:      uint64(event.Sequence),
 			TimestampUnix: event.Timestamp.UTC().Unix(),
 			EventType:     event.EventType,
 			Context:       event.Context,
 		})
 	}
+	return out
+}
 
+func restoreAgentRuntimeFromStorage(agent Agent, runtime storage.TelemetryRuntimeCurrentRecord, dcs []storage.TelemetryRuntimeDCRecord, upstreams []storage.TelemetryRuntimeUpstreamRecord, events []storage.TelemetryRuntimeEventRecord) Agent {
+	agent.Runtime = runtimeFromCurrentRecord(runtime)
+	agent.Runtime.DCs = runtimeDCsFromRecords(dcs)
+	agent.Runtime.Upstreams = runtimeUpstreamsFromRecords(upstreams)
+	agent.Runtime.RecentEvents = runtimeEventsFromRecords(events)
 	return agent
 }
 

@@ -226,85 +226,73 @@ func (s *Server) resolveAgentNodeNames(clients []discoveredClient) map[string]st
 	return result
 }
 
+// discoveredConflictGroup groups discovered-client IDs that share a
+// pivot key (secret or name) and tracks the distinct opposite-axis
+// values so the caller can decide whether the group is a real conflict.
+type discoveredConflictGroup struct {
+	ids        []string
+	otherAxis  map[string]struct{}
+}
+
+// otherIDs returns every id in the group except `id`.
+func (g *discoveredConflictGroup) otherIDs(id string) []string {
+	others := make([]string, 0, len(g.ids)-1)
+	for _, oid := range g.ids {
+		if oid != id {
+			others = append(others, oid)
+		}
+	}
+	return others
+}
+
+// recordDiscoveredConflicts walks groups and emits conflict entries
+// of the given kind for every id in any group with more than one
+// distinct value on the opposite axis.
+func recordDiscoveredConflicts(groups map[string]*discoveredConflictGroup, kind string, result map[string][]discoveredClientConflict) {
+	for _, g := range groups {
+		if len(g.otherAxis) <= 1 {
+			continue
+		}
+		for _, id := range g.ids {
+			result[id] = append(result[id], discoveredClientConflict{
+				Type:       kind,
+				RelatedIDs: g.otherIDs(id),
+			})
+		}
+	}
+}
+
 // detectDiscoveredClientConflicts identifies conflicts among discovered clients:
 // - same_secret_different_names: multiple names share one secret
 // - same_name_different_secrets: one name has multiple different secrets
 func detectDiscoveredClientConflicts(clients []discoveredClient) map[string][]discoveredClientConflict {
-	// Group by secret → list of IDs and names.
-	type secretGroup struct {
-		ids   []string
-		names map[string]struct{}
-	}
-	bySecret := make(map[string]*secretGroup)
-
-	// Group by name → list of IDs and secrets.
-	type nameGroup struct {
-		ids     []string
-		secrets map[string]struct{}
-	}
-	byName := make(map[string]*nameGroup)
+	bySecret := make(map[string]*discoveredConflictGroup)
+	byName := make(map[string]*discoveredConflictGroup)
 
 	for _, dc := range clients {
 		if dc.Secret != "" {
 			g, ok := bySecret[dc.Secret]
 			if !ok {
-				g = &secretGroup{names: make(map[string]struct{})}
+				g = &discoveredConflictGroup{otherAxis: make(map[string]struct{})}
 				bySecret[dc.Secret] = g
 			}
 			g.ids = append(g.ids, dc.ID)
-			g.names[dc.ClientName] = struct{}{}
+			g.otherAxis[dc.ClientName] = struct{}{}
 		}
 
 		g, ok := byName[dc.ClientName]
 		if !ok {
-			g = &nameGroup{secrets: make(map[string]struct{})}
+			g = &discoveredConflictGroup{otherAxis: make(map[string]struct{})}
 			byName[dc.ClientName] = g
 		}
 		g.ids = append(g.ids, dc.ID)
 		if dc.Secret != "" {
-			g.secrets[dc.Secret] = struct{}{}
+			g.otherAxis[dc.Secret] = struct{}{}
 		}
 	}
 
 	result := make(map[string][]discoveredClientConflict)
-
-	// Same secret, different names.
-	for _, g := range bySecret {
-		if len(g.names) <= 1 {
-			continue
-		}
-		for _, id := range g.ids {
-			others := make([]string, 0, len(g.ids)-1)
-			for _, oid := range g.ids {
-				if oid != id {
-					others = append(others, oid)
-				}
-			}
-			result[id] = append(result[id], discoveredClientConflict{
-				Type:       "same_secret_different_names",
-				RelatedIDs: others,
-			})
-		}
-	}
-
-	// Same name, different secrets.
-	for _, g := range byName {
-		if len(g.secrets) <= 1 {
-			continue
-		}
-		for _, id := range g.ids {
-			others := make([]string, 0, len(g.ids)-1)
-			for _, oid := range g.ids {
-				if oid != id {
-					others = append(others, oid)
-				}
-			}
-			result[id] = append(result[id], discoveredClientConflict{
-				Type:       "same_name_different_secrets",
-				RelatedIDs: others,
-			})
-		}
-	}
-
+	recordDiscoveredConflicts(bySecret, "same_secret_different_names", result)
+	recordDiscoveredConflicts(byName, "same_name_different_secrets", result)
 	return result
 }

@@ -24,6 +24,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
@@ -105,6 +106,35 @@ func (t txExecutor) QueryRowContext(ctx context.Context, query string, args ...a
 	return t.tx.QueryRowContext(ctx, query, args...)
 }
 
+// nullStringFrom returns a sql.NullString that is Valid only when the
+// raw string is non-empty.
+func nullStringFrom(s string) sql.NullString {
+	if s == "" {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: s, Valid: true}
+}
+
+// nullTimeFromPtr returns a sql.NullTime that is Valid only when the
+// raw pointer is non-nil; the resulting time is normalised to UTC.
+func nullTimeFromPtr(t *time.Time) sql.NullTime {
+	if t == nil {
+		return sql.NullTime{}
+	}
+	return sql.NullTime{Time: t.UTC(), Valid: true}
+}
+
+// agentBulkArgs flattens an AgentRecord into the parameter slice used
+// by PutAgentsBulk. Splitting it out keeps the per-chunk loop body
+// simple.
+func agentBulkArgs(agent storage.AgentRecord) []any {
+	return []any{
+		agent.ID, agent.NodeName, nullStringFrom(agent.FleetGroupID), agent.Version,
+		agent.ReadOnly, agent.LastSeenAt.UTC(),
+		nullTimeFromPtr(agent.CertIssuedAt), nullTimeFromPtr(agent.CertExpiresAt),
+	}
+}
+
 // PutAgentsBulk upserts a batch of agents in a single transaction using
 // chunked multi-row INSERT. See Store.PutAgentsBulk in storage/store.go for
 // the full contract.
@@ -122,25 +152,7 @@ func (s *Store) PutAgentsBulk(ctx context.Context, agents []storage.AgentRecord)
 			chunk := agents[start:end]
 			args := make([]any, 0, len(chunk)*cols)
 			for _, agent := range chunk {
-				var fleetGroupID sql.NullString
-				if agent.FleetGroupID != "" {
-					fleetGroupID.Valid = true
-					fleetGroupID.String = agent.FleetGroupID
-				}
-				var certIssuedAt sql.NullTime
-				if agent.CertIssuedAt != nil {
-					certIssuedAt.Valid = true
-					certIssuedAt.Time = agent.CertIssuedAt.UTC()
-				}
-				var certExpiresAt sql.NullTime
-				if agent.CertExpiresAt != nil {
-					certExpiresAt.Valid = true
-					certExpiresAt.Time = agent.CertExpiresAt.UTC()
-				}
-				args = append(args,
-					agent.ID, agent.NodeName, fleetGroupID, agent.Version,
-					agent.ReadOnly, agent.LastSeenAt.UTC(), certIssuedAt, certExpiresAt,
-				)
+				args = append(args, agentBulkArgs(agent)...)
 			}
 			query := `INSERT INTO agents (id, node_name, fleet_group_id, version, read_only, last_seen_at, cert_issued_at, cert_expires_at) VALUES ` +
 				placeholders(len(chunk), cols) +

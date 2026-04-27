@@ -104,36 +104,53 @@ func normalizePanelRootPath(value string) string {
 	return cleaned
 }
 
-func buildPanelPublicURL(settings PanelSettings, runtime PanelRuntime, requestURL *url.URL, forwardedProto string, requestHost string) string {
+// resolvePanelBaseURL returns the configured public URL or, when
+// unset, derives a base from the incoming request (scheme + host).
+// Returns "" only when neither configuration nor the request supply a
+// usable host.
+func resolvePanelBaseURL(settings PanelSettings, runtime PanelRuntime, requestURL *url.URL, forwardedProto string, requestHost string) string {
 	base := strings.TrimSpace(settings.HTTPPublicURL)
-	if base == "" {
-		scheme := strings.TrimSpace(forwardedProto)
-		if scheme == "" && requestURL != nil {
-			scheme = strings.TrimSpace(requestURL.Scheme)
-		}
-		if scheme == "" {
-			if runtime.TLSMode == panelTLSModeDirect {
-				scheme = "https"
-			} else {
-				scheme = "http"
-			}
-		}
-
-		host := strings.TrimSpace(requestHost)
-		if host == "" && requestURL != nil {
-			host = strings.TrimSpace(requestURL.Host)
-		}
-		if host == "" {
-			return ""
-		}
-
-		base = fmt.Sprintf("%s://%s", scheme, host)
+	if base != "" {
+		return base
 	}
+	scheme := resolvePanelScheme(forwardedProto, requestURL, runtime)
+	host := resolvePanelHost(requestHost, requestURL)
+	if host == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s://%s", scheme, host)
+}
 
+func resolvePanelScheme(forwardedProto string, requestURL *url.URL, runtime PanelRuntime) string {
+	scheme := strings.TrimSpace(forwardedProto)
+	if scheme == "" && requestURL != nil {
+		scheme = strings.TrimSpace(requestURL.Scheme)
+	}
+	if scheme != "" {
+		return scheme
+	}
+	if runtime.TLSMode == panelTLSModeDirect {
+		return "https"
+	}
+	return "http"
+}
+
+func resolvePanelHost(requestHost string, requestURL *url.URL) string {
+	host := strings.TrimSpace(requestHost)
+	if host == "" && requestURL != nil {
+		host = strings.TrimSpace(requestURL.Host)
+	}
+	return host
+}
+
+func buildPanelPublicURL(settings PanelSettings, runtime PanelRuntime, requestURL *url.URL, forwardedProto string, requestHost string) string {
+	base := resolvePanelBaseURL(settings, runtime, requestURL, forwardedProto, requestHost)
+	if base == "" {
+		return ""
+	}
 	if runtime.HTTPRootPath == "" {
 		return strings.TrimRight(base, "/")
 	}
-
 	return strings.TrimRight(base, "/") + runtime.HTTPRootPath
 }
 
@@ -142,31 +159,10 @@ func buildAgentPublicURL(settings PanelSettings, runtime PanelRuntime, requestUR
 		return buildPanelPublicURL(settings, runtime, requestURL, forwardedProto, requestHost)
 	}
 
-	base := strings.TrimSpace(settings.HTTPPublicURL)
+	base := resolvePanelBaseURL(settings, runtime, requestURL, forwardedProto, requestHost)
 	if base == "" {
-		scheme := strings.TrimSpace(forwardedProto)
-		if scheme == "" && requestURL != nil {
-			scheme = strings.TrimSpace(requestURL.Scheme)
-		}
-		if scheme == "" {
-			if runtime.TLSMode == panelTLSModeDirect {
-				scheme = "https"
-			} else {
-				scheme = "http"
-			}
-		}
-
-		host := strings.TrimSpace(requestHost)
-		if host == "" && requestURL != nil {
-			host = strings.TrimSpace(requestURL.Host)
-		}
-		if host == "" {
-			return ""
-		}
-
-		base = fmt.Sprintf("%s://%s", scheme, host)
+		return ""
 	}
-
 	return strings.TrimRight(base, "/") + runtime.AgentHTTPRootPath
 }
 

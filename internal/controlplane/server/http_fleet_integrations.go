@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/fleet"
 	"github.com/lost-coder/panvex/internal/controlplane/fleet/integrations"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
@@ -334,6 +335,32 @@ func (s *Server) handleGetFleetGroupIntegration() http.HandlerFunc {
 	}
 }
 
+// loadIntegrationForScopedMutation looks up the integration record
+// and verifies the operator's scope owns its fleet group. Returns
+// (record, true) on success; on failure it writes the right HTTP
+// error and returns (zero, false).
+func (s *Server) loadIntegrationForScopedMutation(w http.ResponseWriter, r *http.Request, user auth.User, id, getErrLog string) (storage.FleetGroupIntegrationRecord, bool) {
+	existing, err := s.fleetSvc.GetIntegration(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			writeError(w, http.StatusNotFound, msgIntegrationNotFound)
+			return storage.FleetGroupIntegrationRecord{}, false
+		}
+		s.logger.Error(getErrLog, "id", id, "error", err)
+		writeError(w, http.StatusInternalServerError, msgInternalError)
+		return storage.FleetGroupIntegrationRecord{}, false
+	}
+	scope, ok := s.requireFleetScope(w, r, user)
+	if !ok {
+		return storage.FleetGroupIntegrationRecord{}, false
+	}
+	if !scope.IsAllowed(existing.FleetGroupID) {
+		writeError(w, http.StatusNotFound, msgIntegrationNotFound)
+		return storage.FleetGroupIntegrationRecord{}, false
+	}
+	return existing, true
+}
+
 func (s *Server) handleUpdateFleetGroupIntegration() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		session, user, err := s.requireSession(r)
@@ -349,22 +376,7 @@ func (s *Server) handleUpdateFleetGroupIntegration() http.HandlerFunc {
 		// R-S-14: ensure the operator owns the parent group before any
 		// mutation. We resolve the existing record first so the scope
 		// check reflects the integration's current fleet_group_id.
-		existing, err := s.fleetSvc.GetIntegration(r.Context(), id)
-		if err != nil {
-			if errors.Is(err, storage.ErrNotFound) {
-				writeError(w, http.StatusNotFound, msgIntegrationNotFound)
-				return
-			}
-			s.logger.Error("get integration for update failed", "id", id, "error", err)
-			writeError(w, http.StatusInternalServerError, msgInternalError)
-			return
-		}
-		scope, ok := s.requireFleetScope(w, r, user)
-		if !ok {
-			return
-		}
-		if !scope.IsAllowed(existing.FleetGroupID) {
-			writeError(w, http.StatusNotFound, msgIntegrationNotFound)
+		if _, ok := s.loadIntegrationForScopedMutation(w, r, user, id, "get integration for update failed"); !ok {
 			return
 		}
 		var request updateFleetGroupIntegrationRequest
@@ -407,22 +419,7 @@ func (s *Server) handleDeleteFleetGroupIntegration() http.HandlerFunc {
 			return
 		}
 		// R-S-14: scope-check the parent group before uninstalling.
-		existing, err := s.fleetSvc.GetIntegration(r.Context(), id)
-		if err != nil {
-			if errors.Is(err, storage.ErrNotFound) {
-				writeError(w, http.StatusNotFound, msgIntegrationNotFound)
-				return
-			}
-			s.logger.Error("get integration for delete failed", "id", id, "error", err)
-			writeError(w, http.StatusInternalServerError, msgInternalError)
-			return
-		}
-		scope, ok := s.requireFleetScope(w, r, user)
-		if !ok {
-			return
-		}
-		if !scope.IsAllowed(existing.FleetGroupID) {
-			writeError(w, http.StatusNotFound, msgIntegrationNotFound)
+		if _, ok := s.loadIntegrationForScopedMutation(w, r, user, id, "get integration for delete failed"); !ok {
 			return
 		}
 		if err := s.fleetSvc.UninstallIntegration(r.Context(), id); err != nil {
