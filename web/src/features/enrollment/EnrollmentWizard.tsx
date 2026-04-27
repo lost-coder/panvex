@@ -449,12 +449,11 @@ function ConnectStep({
       <div className="relative pl-5">
         <span aria-hidden="true" className="absolute top-1 bottom-1 left-[6px] w-px bg-divider" />
         {stages.map((s) => {
-          const dotColor =
-            s.state === "done"
-              ? "bg-status-ok"
-              : s.state === "waiting"
-                ? "bg-status-warn"
-                : "bg-fg-faint";
+          const dotColor = (() => {
+            if (s.state === "done") return "bg-status-ok";
+            if (s.state === "waiting") return "bg-status-warn";
+            return "bg-fg-faint";
+          })();
           return (
             <div key={s.key} className="relative py-3 first:pt-1 last:pb-1">
               <span

@@ -74,8 +74,11 @@ export function ClientDetailPage({
   };
 
   const status = clientStatus(client.enabled, client.expirationRfc3339);
-  const statusLabel =
-    status === "expired" ? "EXPIRED" : status === "disabled" ? "DISABLED" : "ACTIVE";
+  const statusLabel = (() => {
+    if (status === "expired") return "EXPIRED";
+    if (status === "disabled") return "DISABLED";
+    return "ACTIVE";
+  })();
 
   // Rotate confirmation is owned by the container (global ConfirmProvider
   // already wraps this flow with a `requireTypeMatch`-style dialog).

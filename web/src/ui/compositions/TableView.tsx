@@ -119,14 +119,12 @@ export function TableView({
                   >
                     {f.options.map((o) => {
                       const active = o.value === f.value;
-                      const toneDot =
-                        o.tone === "ok"
-                          ? "bg-status-ok"
-                          : o.tone === "warn"
-                            ? "bg-status-warn"
-                            : o.tone === "error"
-                              ? "bg-status-error"
-                              : "";
+                      const toneDot = (() => {
+                        if (o.tone === "ok") return "bg-status-ok";
+                        if (o.tone === "warn") return "bg-status-warn";
+                        if (o.tone === "error") return "bg-status-error";
+                        return "";
+                      })();
                       return (
                         <button
                           key={o.value}

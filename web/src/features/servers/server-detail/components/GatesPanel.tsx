@@ -26,14 +26,12 @@ function GateRow({
       : on
         ? "ok"
         : "error";
-  const dot =
-    tone === "ok"
-      ? "bg-status-ok"
-      : tone === "warn"
-        ? "bg-status-warn"
-        : tone === "error"
-          ? "bg-status-error"
-          : "bg-fg-muted/60";
+  const dot = (() => {
+    if (tone === "ok") return "bg-status-ok";
+    if (tone === "warn") return "bg-status-warn";
+    if (tone === "error") return "bg-status-error";
+    return "bg-fg-muted/60";
+  })();
   // Handoff-style "dashed divider row" inside the Gates column — lighter
   // than the solid dividers used in the Upstreams column so the two
   // columns read as different content types at a glance.

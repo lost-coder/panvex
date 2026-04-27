@@ -16,14 +16,12 @@ function EventRow({ event }: Readonly<{ event: ServerEventData }>) {
   // Left rail coloured per tone — the handoff "event log" look: time as a
   // mono timestamp, message leans on a subtle accent strip that says "this
   // is a warn/error/info/ok" without a separate badge.
-  const rail =
-    tone === "error"
-      ? "bg-status-error"
-      : tone === "warn"
-        ? "bg-status-warn"
-        : tone === "ok"
-          ? "bg-status-ok"
-          : "bg-fg-faint";
+  const rail = (() => {
+    if (tone === "error") return "bg-status-error";
+    if (tone === "warn") return "bg-status-warn";
+    if (tone === "ok") return "bg-status-ok";
+    return "bg-fg-faint";
+  })();
   return (
     <div className="flex gap-3 items-start py-2 border-b border-divider last:border-b-0">
       <span className={cn("w-[3px] self-stretch rounded-sm shrink-0", rail)} />

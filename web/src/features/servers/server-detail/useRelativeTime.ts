@@ -11,6 +11,10 @@ export function useRelativeTime(date: Date | undefined): { label: string; stale:
 
   if (!date) return { label: "", stale: false };
   const secs = Math.round((now - date.getTime()) / 1000);
-  const label = secs < 2 ? "now" : secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m`;
+  const label = (() => {
+    if (secs < 2) return "now";
+    if (secs < 60) return `${secs}s`;
+    return `${Math.floor(secs / 60)}m`;
+  })();
   return { label, stale: secs > 10 };
 }
