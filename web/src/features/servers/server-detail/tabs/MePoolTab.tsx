@@ -24,7 +24,7 @@ import type {
  * side-by-side cards, and keeps the writers list as a distinct
  * sub-section with state filtering.
  */
-export function MePoolTab({ server }: { server: ServerDetailPageProps["server"] }) {
+export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["server"] }>) {
   const { mePool } = server;
   const [stateFilter, setStateFilter] = useState<
     "all" | "active" | "warmup" | "draining" | "degraded"
@@ -53,13 +53,13 @@ export function MePoolTab({ server }: { server: ServerDetailPageProps["server"] 
     {
       key: "writerId",
       header: "#",
-      render: (row: ServerMeWriterData) => <MonoValue>{row.writerId}</MonoValue>,
+      render: (row: Readonly<ServerMeWriterData>) => <MonoValue>{row.writerId}</MonoValue>,
       className: "w-12",
     },
     {
       key: "dc",
       header: "DC",
-      render: (row: ServerMeWriterData) => (
+      render: (row: Readonly<ServerMeWriterData>) => (
         <MonoValue>{row.dc != null ? `DC${row.dc}` : "—"}</MonoValue>
       ),
       className: "w-14",
@@ -67,14 +67,14 @@ export function MePoolTab({ server }: { server: ServerDetailPageProps["server"] 
     {
       key: "endpoint",
       header: "Endpoint",
-      render: (row: ServerMeWriterData) => (
+      render: (row: Readonly<ServerMeWriterData>) => (
         <MonoValue className="truncate">{row.endpoint}</MonoValue>
       ),
     },
     {
       key: "state",
       header: "State",
-      render: (row: ServerMeWriterData) => (
+      render: (row: Readonly<ServerMeWriterData>) => (
         <Badge variant={row.degraded ? "warn" : row.state === "active" ? "ok" : "default"}>
           {row.state}
           {row.degraded ? " ⚠" : ""}
@@ -85,7 +85,7 @@ export function MePoolTab({ server }: { server: ServerDetailPageProps["server"] 
     {
       key: "rtt",
       header: "RTT",
-      render: (row: ServerMeWriterData) => (
+      render: (row: Readonly<ServerMeWriterData>) => (
         <MonoValue>{row.rttEmaMs != null ? `${row.rttEmaMs.toFixed(1)}ms` : "—"}</MonoValue>
       ),
       className: "w-20",
@@ -93,13 +93,13 @@ export function MePoolTab({ server }: { server: ServerDetailPageProps["server"] 
     {
       key: "clients",
       header: "Clients",
-      render: (row: ServerMeWriterData) => <MonoValue>{row.boundClients}</MonoValue>,
+      render: (row: Readonly<ServerMeWriterData>) => <MonoValue>{row.boundClients}</MonoValue>,
       className: "w-16",
     },
     {
       key: "idle",
       header: "Idle",
-      render: (row: ServerMeWriterData) => (
+      render: (row: Readonly<ServerMeWriterData>) => (
         <MonoValue>{row.idleForSecs != null ? `${row.idleForSecs}s` : "—"}</MonoValue>
       ),
       className: "w-16",
@@ -316,14 +316,14 @@ function HealthHeroMetric({
   tone,
   caption,
   barPct,
-}: {
+}: Readonly<{
   label: string;
   value: number;
   unit: string;
   tone: string;
   caption: string;
   barPct: number;
-}) {
+}>) {
   return (
     <div className="rounded-xs bg-bg-card border border-divider p-4 flex flex-col gap-2">
       <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">
@@ -357,11 +357,11 @@ function MiniCard({
   title,
   hint,
   children,
-}: {
+}: Readonly<{
   title: string;
   hint?: string;
   children: React.ReactNode;
-}) {
+}>) {
   return (
     <div className="rounded-xs bg-bg-card border border-divider p-4 flex flex-col gap-2">
       <div className="flex items-baseline justify-between">
@@ -373,7 +373,7 @@ function MiniCard({
   );
 }
 
-function KV({ k, v }: { k: string; v: React.ReactNode }) {
+function KV({ k, v }: Readonly<{ k: string; v: React.ReactNode }>) {
   return (
     <div className="flex items-center justify-between gap-3 text-xs">
       <span className="text-fg-muted">{k}</span>

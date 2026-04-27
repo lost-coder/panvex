@@ -14,7 +14,7 @@ export function MiniChart({
   height = 24,
   color = "#60a5fa",
   className,
-}: MiniChartProps) {
+}: Readonly<MiniChartProps>) {
   if (data.length < 2) return null;
 
   const min = Math.min(...data);

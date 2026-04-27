@@ -16,21 +16,21 @@ export interface IPRow {
 export function IPHistoryCard({
   ips,
   totalUnique,
-}: {
+}: Readonly<{
   ips: IPRow[];
   totalUnique: number;
-}) {
+}>) {
   const columns = [
     {
       key: "ip",
       header: "IP",
-      render: (row: IPRow) => <MonoValue>{row.ip}</MonoValue>,
+      render: (row: Readonly<IPRow>) => <MonoValue>{row.ip}</MonoValue>,
       className: "w-[160px]",
     },
     {
       key: "country",
       header: "Country",
-      render: (row: IPRow) =>
+      render: (row: Readonly<IPRow>) =>
         row.countryName || row.countryCode ? (
           <span className="text-xs text-fg">
             {row.countryCode && (
@@ -46,7 +46,7 @@ export function IPHistoryCard({
     {
       key: "city",
       header: "City",
-      render: (row: IPRow) =>
+      render: (row: Readonly<IPRow>) =>
         row.city ? (
           <span className="text-xs text-fg">{row.city}</span>
         ) : (
@@ -57,7 +57,7 @@ export function IPHistoryCard({
     {
       key: "asn",
       header: "ASN",
-      render: (row: IPRow) =>
+      render: (row: Readonly<IPRow>) =>
         row.asn ? (
           <MonoValue className="text-xs">{row.asn}</MonoValue>
         ) : (
@@ -68,7 +68,7 @@ export function IPHistoryCard({
     {
       key: "firstSeen",
       header: "First seen",
-      render: (row: IPRow) => (
+      render: (row: Readonly<IPRow>) => (
         <span className="text-[11px] font-mono text-fg-muted tabular-nums">
           {new Date(row.firstSeen).toLocaleString()}
         </span>
@@ -78,7 +78,7 @@ export function IPHistoryCard({
     {
       key: "lastSeen",
       header: "Last seen",
-      render: (row: IPRow) => (
+      render: (row: Readonly<IPRow>) => (
         <span className="text-[11px] font-mono text-fg tabular-nums">
           {new Date(row.lastSeen).toLocaleString()}
         </span>

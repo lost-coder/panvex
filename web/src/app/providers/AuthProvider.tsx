@@ -47,16 +47,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     const handler = () => {
       queryClient.clear();
-      if (typeof window !== "undefined" &&
-          window.location.pathname.endsWith("/login")) {
+      if (typeof globalThis.window !== "undefined" &&
+          globalThis.location.pathname.endsWith("/login")) {
         return;
       }
       toast.info("Сессия истекла, переход на /login…");
       navigate({ to: "/login" });
     };
-    window.addEventListener(SESSION_EXPIRED_EVENT, handler);
+    globalThis.addEventListener(SESSION_EXPIRED_EVENT, handler);
     return () => {
-      window.removeEventListener(SESSION_EXPIRED_EVENT, handler);
+      globalThis.removeEventListener(SESSION_EXPIRED_EVENT, handler);
     };
   }, [queryClient, navigate, toast]);
 
@@ -69,7 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // The listener is debounced on `method:path` so a React Query retry
   // burst on GET /api/foo collapses to one toast, but a PUT that shares
   // the same URL still gets its own notification instead of being
-  // swallowed by the earlier GET's debounce window.
+  // swallowed by the earlier GET's debounce globalThis.
   React.useEffect(() => {
     let lastKey = "";
     let lastAt = 0;
@@ -84,9 +84,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       lastAt = now;
       toast.error("Недостаточно прав для этой операции. Обратитесь к администратору.");
     };
-    window.addEventListener(FORBIDDEN_EVENT, handler);
+    globalThis.addEventListener(FORBIDDEN_EVENT, handler);
     return () => {
-      window.removeEventListener(FORBIDDEN_EVENT, handler);
+      globalThis.removeEventListener(FORBIDDEN_EVENT, handler);
     };
   }, [toast]);
 

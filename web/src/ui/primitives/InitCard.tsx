@@ -11,7 +11,7 @@ export function InitCard({
   elapsedSecs,
   lastError,
   degraded: _degraded,
-}: InitCardProps) {
+}: Readonly<InitCardProps>) {
   const borderColor = lastError ? "border-status-error/30" : "border-status-warn/30";
   const bgColor = lastError ? "bg-status-error/5" : "bg-status-warn/5";
 

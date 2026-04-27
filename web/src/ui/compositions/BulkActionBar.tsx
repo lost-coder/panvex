@@ -20,7 +20,7 @@ export interface BulkActionBarProps<T extends string = string> {
   /** Action buttons. Rendered right-aligned. */
   actions: BulkAction<T>[];
   /** Called when an action is clicked. Receives the action id. */
-  onAction: (id: T) => void | Promise<void>;
+  onAction: (id: Readonly<T>) => void | Promise<void>;
   /** Called when the operator clears the selection (× button). */
   onClear: () => void;
   /** `true` while a bulk mutation is in-flight; disables all actions. */
@@ -45,7 +45,7 @@ export function BulkActionBar<T extends string = string>({
   pending,
   error,
   className,
-}: BulkActionBarProps<T>) {
+}: Readonly<BulkActionBarProps<T>>) {
   if (count === 0) return null;
 
   return (

@@ -6,7 +6,7 @@ export interface IPTagProps {
   className?: string;
 }
 
-export function IPTag({ address, className }: IPTagProps) {
+export function IPTag({ address, className }: Readonly<IPTagProps>) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {

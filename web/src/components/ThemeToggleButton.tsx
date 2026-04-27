@@ -55,8 +55,8 @@ export function ThemeToggleButton() {
     appearanceQuery.data ?? defaultAppearanceSettings,
   ).theme;
   const systemPrefersDark =
-    typeof window !== "undefined" && typeof window.matchMedia === "function"
-      ? window.matchMedia("(prefers-color-scheme: dark)").matches
+    typeof globalThis.window !== "undefined" && typeof globalThis.window.matchMedia === "function"
+      ? globalThis.matchMedia("(prefers-color-scheme: dark)").matches
       : true;
   const effective: "light" | "dark" =
     stored === "light" ? "light" : stored === "dark" ? "dark" : systemPrefersDark ? "dark" : "light";

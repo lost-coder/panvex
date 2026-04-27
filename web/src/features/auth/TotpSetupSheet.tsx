@@ -27,7 +27,7 @@ export function TotpSetupSheet({
   onCancel,
   loading,
   error,
-}: TotpSetupSheetProps) {
+}: Readonly<TotpSetupSheetProps>) {
   const [password, setPassword] = useState("");
   const [totpCode, setTotpCode] = useState("");
 
@@ -81,7 +81,7 @@ export function TotpSetupSheet({
       <FormField label="Authenticator Code" variant="uppercase" required>
         <Input
           value={totpCode}
-          onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
+          onChange={(e) => setTotpCode(e.target.value.replaceAll(/\D/g, ""))}
           inputMode="numeric"
           pattern="[0-9]*"
           placeholder="6-digit code"

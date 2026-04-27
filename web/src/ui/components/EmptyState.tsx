@@ -8,7 +8,7 @@ export interface EmptyStateProps {
   className?: string;
 }
 
-export function EmptyState({ icon = "∅", title, description, action, className }: EmptyStateProps) {
+export function EmptyState({ icon = "∅", title, description, action, className }: Readonly<EmptyStateProps>) {
   return (
     <div className={cn("flex flex-col items-center justify-center gap-3 py-12 px-4", className)}>
       <span className="text-3xl text-fg-faint">{icon}</span>

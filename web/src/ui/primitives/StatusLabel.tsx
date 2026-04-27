@@ -34,7 +34,7 @@ const textClass: Record<StatusTone, string> = {
  * Prefer this over hand-rolling an inline span — the tone mapping is
  * authoritative.
  */
-export function StatusLabel({ tone, label, animate, className }: StatusLabelProps) {
+export function StatusLabel({ tone, label, animate, className }: Readonly<StatusLabelProps>) {
   return (
     <span className={cn("inline-flex items-center gap-1.5", className)}>
       <span

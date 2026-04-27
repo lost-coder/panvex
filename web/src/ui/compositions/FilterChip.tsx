@@ -15,7 +15,7 @@ export interface FilterChipProps {
  * active. Used for tab pills, status filters, and window selectors across
  * list pages.
  */
-export function FilterChip({ active, onClick, children, count, title }: FilterChipProps) {
+export function FilterChip({ active, onClick, children, count, title }: Readonly<FilterChipProps>) {
   return (
     <button
       type="button"

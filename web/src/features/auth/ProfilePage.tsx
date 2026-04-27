@@ -28,7 +28,7 @@ export function ProfilePage({
   totpEnableLoading,
   totpDisableLoading,
   totpError,
-}: ProfilePageProps) {
+}: Readonly<ProfilePageProps>) {
   const initials = user.username.charAt(0).toUpperCase();
   const [setupOpen, setSetupOpen] = useState(false);
   const [disableOpen, setDisableOpen] = useState(false);

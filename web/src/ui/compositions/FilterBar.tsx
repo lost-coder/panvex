@@ -22,7 +22,7 @@ export interface FilterBarProps {
  * Collapses to a wrapping layout on narrow widths — the search input falls
  * below the chips rather than scrolling horizontally.
  */
-export function FilterBar({ chips, search, trailing, className }: FilterBarProps) {
+export function FilterBar({ chips, search, trailing, className }: Readonly<FilterBarProps>) {
   return (
     <div className={cn("flex flex-wrap items-center gap-3", className)}>
       <div className="flex flex-wrap gap-1.5">{chips}</div>

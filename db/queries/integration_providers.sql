@@ -9,7 +9,8 @@ WHERE id = $1;
 -- name: ListIntegrationProviders :many
 SELECT id, kind, label, config, created_at, updated_at
 FROM integration_providers
-ORDER BY label, id;
+ORDER BY label ASC, id ASC;
+
 
 -- name: UpsertIntegrationProvider :exec
 INSERT INTO integration_providers (id, kind, label, config, created_at, updated_at)

@@ -14,7 +14,7 @@ import {
 } from "@/ui";
 import type { DiscoveredGroup } from "@/features/clients/lib/groupDiscovered";
 
-export function DiscoveredStatusPill({ status }: { status: DiscoveredGroup["status"] }) {
+export function DiscoveredStatusPill({ status }: Readonly<{ status: DiscoveredGroup["status"] }>) {
   if (status === "adopted") return <Badge variant="ok">Adopted</Badge>;
   if (status === "ignored") return <Badge variant="default">Ignored</Badge>;
   if (status === "mixed") return <Badge variant="warn">Mixed</Badge>;
@@ -37,12 +37,12 @@ export interface DiscoveredColumnsOptions {
   withActions: boolean;
 }
 
-export function buildDiscoveredColumns(opts: DiscoveredColumnsOptions) {
+export function buildDiscoveredColumns(opts: Readonly<DiscoveredColumnsOptions>) {
   const { selection, onAdopt, onIgnore, busy, withActions } = opts;
   const cols: Array<{
     key: string;
     header: string;
-    render: (row: DiscoveredGroup) => React.ReactNode;
+    render: (row: Readonly<DiscoveredGroup>) => React.ReactNode;
     className?: string;
   }> = [];
 

@@ -21,7 +21,7 @@ const STEPS = ["Configure", "Install", "Connect"];
 
 // ─── Step 1: Configure ───────────────────────────────────────────────
 
-function ConfigureStep(props: EnrollmentWizardProps) {
+function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
   const {
     fleetGroups,
     nodeName,
@@ -260,7 +260,7 @@ function InstallStep({
   onBack,
   tokenValue,
   tokenExpiresInSecs,
-}: EnrollmentWizardProps) {
+}: Readonly<EnrollmentWizardProps>) {
   const [showTroubleshooting, setShowTroubleshooting] = useState(false);
   const expiresMin = Math.round(tokenExpiresInSecs / 60);
 
@@ -403,7 +403,7 @@ function ConnectStep({
   tokenExpiresInSecs,
   onViewDetails,
   onCancel,
-}: EnrollmentWizardProps) {
+}: Readonly<EnrollmentWizardProps>) {
   const allDone =
     connectionStatus.bootstrap === "done" &&
     connectionStatus.grpcConnect === "done" &&
@@ -411,8 +411,8 @@ function ConnectStep({
 
   useEffect(() => {
     if (allDone && connectedAgent && onViewDetails) {
-      const id = window.setTimeout(() => onViewDetails(), 300);
-      return () => window.clearTimeout(id);
+      const id = globalThis.setTimeout(() => onViewDetails(), 300);
+      return () => globalThis.clearTimeout(id);
     }
     return undefined;
   }, [allDone, connectedAgent, onViewDetails]);
@@ -513,7 +513,7 @@ function ConnectStep({
 
 // ─── Main ────────────────────────────────────────────────────────────
 
-export function EnrollmentWizard(props: EnrollmentWizardProps) {
+export function EnrollmentWizard(props: Readonly<EnrollmentWizardProps>) {
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-1">

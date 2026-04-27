@@ -7,7 +7,7 @@ export interface StatusHeroProps {
   className?: string;
 }
 
-export function StatusHero({ online, degraded, offline, className }: StatusHeroProps) {
+export function StatusHero({ online, degraded, offline, className }: Readonly<StatusHeroProps>) {
   return (
     <div className={cn("grid grid-cols-3 gap-3", className)}>
       <HeroNumber value={online} label="Online" color="text-status-ok" />
@@ -17,7 +17,7 @@ export function StatusHero({ online, degraded, offline, className }: StatusHeroP
   );
 }
 
-function HeroNumber({ value, label, color }: { value: number; label: string; color: string }) {
+function HeroNumber({ value, label, color }: Readonly<{ value: number; label: string; color: string }>) {
   return (
     <div className="flex flex-col items-center gap-1 rounded-xs bg-bg-card p-4">
       <span className={cn("text-3xl font-mono font-bold leading-none", color)}>{value}</span>

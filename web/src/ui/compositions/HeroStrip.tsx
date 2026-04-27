@@ -48,7 +48,7 @@ export function HeroStrip({
   prefix,
   bleed = true,
   className,
-}: HeroStripProps) {
+}: Readonly<HeroStripProps>) {
   return (
     <section
       className={cn(

@@ -70,7 +70,7 @@ func (q *Queries) GetEnrollmentToken(ctx context.Context, value string) (GetEnro
 const listEnrollmentTokens = `-- name: ListEnrollmentTokens :many
 SELECT value, fleet_group_id, issued_at, expires_at, consumed_at, revoked_at
 FROM enrollment_tokens
-ORDER BY issued_at, value
+ORDER BY issued_at ASC, value ASC
 `
 
 type ListEnrollmentTokensRow struct {

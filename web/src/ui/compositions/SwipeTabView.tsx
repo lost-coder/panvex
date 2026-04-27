@@ -17,7 +17,7 @@ const SwipeTabViewInner = lazy(() => import("./internal/SwipeTabViewInner"));
 // Fallback mirrors the static layout the tabs settle into so the page
 // does not flash while motion streams: a plain header strip plus a
 // content well that takes the same min-height.
-function SwipeTabViewFallback({ tabs, activeTab, className }: SwipeTabViewProps) {
+function SwipeTabViewFallback({ tabs, activeTab, className }: Readonly<SwipeTabViewProps>) {
   const active = tabs.find((t) => t.id === activeTab) ?? tabs[0];
   return (
     <div className={cn("flex flex-col", className)}>
@@ -43,7 +43,7 @@ function SwipeTabViewFallback({ tabs, activeTab, className }: SwipeTabViewProps)
   );
 }
 
-export function SwipeTabView(props: SwipeTabViewProps) {
+export function SwipeTabView(props: Readonly<SwipeTabViewProps>) {
   return (
     <Suspense fallback={<SwipeTabViewFallback {...props} />}>
       <SwipeTabViewInner {...props} />

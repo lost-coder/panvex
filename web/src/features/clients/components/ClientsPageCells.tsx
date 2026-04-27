@@ -34,7 +34,7 @@ export function effectiveClientStatus(
   return c.enabled ? "active" : "disabled";
 }
 
-export function ClientStatusBadge({ status }: { status: EffectiveClientStatus }) {
+export function ClientStatusBadge({ status }: Readonly<{ status: EffectiveClientStatus }>) {
   const map = {
     active: { label: "Active", variant: "ok" as const },
     disabled: { label: "Disabled", variant: "default" as const },
@@ -44,7 +44,7 @@ export function ClientStatusBadge({ status }: { status: EffectiveClientStatus })
   return <Badge variant={variant}>{label}</Badge>;
 }
 
-export function ClientTrafficCell({ used, quota }: { used: number; quota: number }) {
+export function ClientTrafficCell({ used, quota }: Readonly<{ used: number; quota: number }>) {
   // No quota → just show used bytes; with a quota render a slim
   // progress bar + "used / quota" so operators see headroom at a glance.
   if (!quota) {
@@ -66,7 +66,7 @@ export function ClientTrafficCell({ used, quota }: { used: number; quota: number
   );
 }
 
-export function ClientExpiryCell({ rfc, nowSec }: { rfc: string; nowSec: number }) {
+export function ClientExpiryCell({ rfc, nowSec }: Readonly<{ rfc: string; nowSec: number }>) {
   if (!rfc) return <span className="text-[11px] font-mono text-fg-muted">Never</span>;
   const t = Date.parse(rfc);
   if (!Number.isFinite(t)) return <span className="text-[11px] font-mono text-fg-muted">—</span>;

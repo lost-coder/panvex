@@ -16,7 +16,7 @@ import {
 export interface ClientEditSheetProps {
   open: boolean;
   data: ClientFormData;
-  onChange: (data: ClientFormData) => void;
+  onChange: (data: Readonly<ClientFormData>) => void;
   onSubmit: () => void | Promise<void>;
   onClose: () => void;
   loading?: boolean | undefined;
@@ -35,7 +35,7 @@ export function ClientEditSheet({
   error,
   fleetGroups,
   agents,
-}: ClientEditSheetProps) {
+}: Readonly<ClientEditSheetProps>) {
   return (
     <Sheet
       open={open}

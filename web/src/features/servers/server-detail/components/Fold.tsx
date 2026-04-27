@@ -9,12 +9,12 @@ export function Fold({
   rightHint,
   defaultOpen = true,
   children,
-}: {
+}: Readonly<{
   title: string;
   rightHint?: string;
   defaultOpen?: boolean;
   children: React.ReactNode;
-}) {
+}>) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <section className="rounded-xs bg-bg-card border border-border overflow-hidden">

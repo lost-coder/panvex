@@ -23,7 +23,7 @@ export function LEDIndicator({
   onClick,
   active = false,
   className,
-}: LEDIndicatorProps) {
+}: Readonly<LEDIndicatorProps>) {
   return (
     <button
       type="button"

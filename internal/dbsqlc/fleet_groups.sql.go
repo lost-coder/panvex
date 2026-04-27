@@ -115,7 +115,7 @@ func (q *Queries) GetFleetGroupByName(ctx context.Context, name string) (GetFlee
 const listFleetGroups = `-- name: ListFleetGroups :many
 SELECT id, name, label, description, created_at, updated_at
 FROM fleet_groups
-ORDER BY created_at, id
+ORDER BY created_at ASC, id ASC
 `
 
 type ListFleetGroupsRow struct {

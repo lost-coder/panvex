@@ -15,7 +15,7 @@ export interface DiscoveredCounts {
   conflicts: number;
 }
 
-export function DiscoveredPulseStrip({ counts }: { counts: DiscoveredCounts }) {
+export function DiscoveredPulseStrip({ counts }: Readonly<{ counts: DiscoveredCounts }>) {
   return (
     <section className="rounded-xs bg-bg-card border border-border grid grid-cols-2 md:grid-cols-4">
       <DiscoveredPulseCell i={0} label="Pending" value={counts.pending} tone="warn" />
@@ -37,7 +37,7 @@ export interface DiscoveredFilterOptions {
   counts: DiscoveredCounts;
 }
 
-export function buildDiscoveredFilters(opts: DiscoveredFilterOptions) {
+export function buildDiscoveredFilters(opts: Readonly<DiscoveredFilterOptions>) {
   return [
     {
       key: "status",

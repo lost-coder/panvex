@@ -18,11 +18,11 @@ function TableViewDemo({
   totalPages = 3,
   totalItems = 28,
   pageSize = 10,
-}: {
+}: Readonly<{
   totalPages?: number;
   totalItems?: number;
   pageSize?: number;
-}) {
+}>) {
   const [search, setSearch] = React.useState("");
   const [status, setStatus] = React.useState("");
   const [group, setGroup] = React.useState("");

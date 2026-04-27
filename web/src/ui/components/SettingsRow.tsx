@@ -7,7 +7,7 @@ export interface SettingsRowProps {
   className?: string;
 }
 
-export function SettingsRow({ label, description, children, className }: SettingsRowProps) {
+export function SettingsRow({ label, description, children, className }: Readonly<SettingsRowProps>) {
   return (
     <div className={cn("flex items-center justify-between gap-4 px-4 py-3", className)}>
       <div className="flex flex-col gap-0.5 min-w-0 flex-1">

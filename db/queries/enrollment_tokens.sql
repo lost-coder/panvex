@@ -12,7 +12,8 @@ WHERE value = $1;
 -- name: ListEnrollmentTokens :many
 SELECT value, fleet_group_id, issued_at, expires_at, consumed_at, revoked_at
 FROM enrollment_tokens
-ORDER BY issued_at, value;
+ORDER BY issued_at ASC, value ASC;
+
 
 -- name: UpsertEnrollmentToken :exec
 INSERT INTO enrollment_tokens (value, fleet_group_id, issued_at, expires_at, consumed_at, revoked_at)

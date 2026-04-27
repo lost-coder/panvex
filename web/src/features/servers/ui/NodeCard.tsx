@@ -30,7 +30,7 @@ export function NodeCard({
   updateAvailable,
   onClick,
   className,
-}: NodeCardProps) {
+}: Readonly<NodeCardProps>) {
   return (
     <button
       type="button"
@@ -68,7 +68,7 @@ export function NodeCard({
   );
 }
 
-function Metric({ value, label }: { value: string; label: string }) {
+function Metric({ value, label }: Readonly<{ value: string; label: string }>) {
   return (
     <div className="flex flex-col">
       <span className="text-xs font-mono font-medium text-fg leading-none">{value}</span>

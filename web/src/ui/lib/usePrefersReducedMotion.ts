@@ -24,10 +24,10 @@ export function usePrefersReducedMotion(): boolean {
 }
 
 function getSnapshot(): boolean {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+  if (typeof globalThis.window === "undefined" || typeof globalThis.window.matchMedia !== "function") {
     return false;
   }
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  return globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
 function getServerSnapshot(): boolean {
@@ -35,10 +35,10 @@ function getServerSnapshot(): boolean {
 }
 
 function subscribe(callback: () => void): () => void {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+  if (typeof globalThis.window === "undefined" || typeof globalThis.window.matchMedia !== "function") {
     return () => {};
   }
-  const mql = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const mql = globalThis.matchMedia("(prefers-reduced-motion: reduce)");
   if (typeof mql.addEventListener === "function") {
     mql.addEventListener("change", callback);
     return () => mql.removeEventListener("change", callback);

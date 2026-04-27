@@ -4,7 +4,7 @@
 import { Badge, KvGrid, MonoValue, formatQuota } from "@/ui";
 import type { ClientDetailPageProps } from "@/shared/api/types-pages/pages";
 
-export function LimitsCard({ client }: { client: ClientDetailPageProps["client"] }) {
+export function LimitsCard({ client }: Readonly<{ client: ClientDetailPageProps["client"] }>) {
   return (
     <section className="rounded-xs bg-bg-card border border-divider p-4 flex flex-col gap-3">
       <span className="text-sm font-semibold text-fg">Limits & metadata</span>

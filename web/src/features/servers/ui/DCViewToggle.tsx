@@ -7,7 +7,7 @@ export interface DCViewToggleProps {
   className?: string;
 }
 
-export function DCViewToggle({ cardsView, gridView, className }: DCViewToggleProps) {
+export function DCViewToggle({ cardsView, gridView, className }: Readonly<DCViewToggleProps>) {
   const [mode, setMode] = useState<"cards" | "grid">("cards");
 
   return (
@@ -29,11 +29,11 @@ function ToggleBtn({
   active,
   onClick,
   children,
-}: {
+}: Readonly<{
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
-}) {
+}>) {
   return (
     <button
       type="button"

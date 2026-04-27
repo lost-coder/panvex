@@ -25,7 +25,7 @@ export function EnrollmentTokensPage({
   tokens,
   onCreateToken,
   onRevoke,
-}: EnrollmentTokensPageProps) {
+}: Readonly<EnrollmentTokensPageProps>) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
   const [query, setQuery] = useState("");
 

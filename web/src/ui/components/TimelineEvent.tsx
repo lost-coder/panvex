@@ -29,7 +29,7 @@ export function TimelineEvent({
   detail,
   source,
   className,
-}: TimelineEventProps) {
+}: Readonly<TimelineEventProps>) {
   return (
     <div className={cn("flex items-start gap-3 py-2", className)}>
       {/* Rail column: narrow lane containing just the status dot, sized

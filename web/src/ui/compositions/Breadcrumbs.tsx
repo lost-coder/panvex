@@ -11,7 +11,7 @@ export interface BreadcrumbsProps {
   className?: string | undefined;
 }
 
-export function Breadcrumbs({ items, className }: BreadcrumbsProps) {
+export function Breadcrumbs({ items, className }: Readonly<BreadcrumbsProps>) {
   const shouldCollapse = items.length > 2;
 
   return (

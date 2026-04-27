@@ -56,7 +56,7 @@ export function AgeCell({
   nowSec,
   align = "right",
   className,
-}: AgeCellProps) {
+}: Readonly<AgeCellProps>) {
   const epoch = toUnix({ unixSec, rfc3339 });
   if (epoch === undefined) {
     return (

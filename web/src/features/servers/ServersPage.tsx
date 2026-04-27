@@ -17,7 +17,7 @@ import {
   type ViewMode,
 } from "@/ui";
 
-function TrafficCell({ bytes }: { bytes: number }) {
+function TrafficCell({ bytes }: Readonly<{ bytes: number }>) {
   return (
     <span className="text-sm font-mono text-fg-muted">
       {Math.round(bytes / 1024 / 1024 / 1024)} GB
@@ -25,7 +25,7 @@ function TrafficCell({ bytes }: { bytes: number }) {
   );
 }
 
-function DcMatrixCell({ dcs }: { dcs: ServerListItem["dcs"] }) {
+function DcMatrixCell({ dcs }: Readonly<{ dcs: ServerListItem["dcs"] }>) {
   if (!dcs || dcs.length === 0) return <span className="text-xs text-fg-muted">N/A</span>;
   // Handoff-style "12 thin bars in a row" instead of a 6×2 dot grid. Each
   // bar is 4×14px so a full row fits in ~64px and the status distribution
@@ -54,10 +54,10 @@ function DcMatrixCell({ dcs }: { dcs: ServerListItem["dcs"] }) {
 function ServerCardView({
   servers,
   onServerClick,
-}: {
+}: Readonly<{
   servers: ServerListItem[];
   onServerClick?: ((id: string) => void) | undefined;
-}) {
+}>) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
       {servers.map((s) => (
@@ -90,12 +90,12 @@ function ServerListView({
   onServerClick,
   visibleColumns,
   selection,
-}: {
+}: Readonly<{
   servers: ServerListItem[];
   onServerClick?: ((id: string) => void) | undefined;
   visibleColumns: Record<string, boolean>;
   selection?: ServerSelectionConfig | undefined;
-}) {
+}>) {
   const allColumns = [
     ...(selection
       ? [
@@ -114,7 +114,7 @@ function ServerListView({
                 className="accent-accent size-4 cursor-pointer"
               />
             ) as unknown as string,
-            render: (s: ServerListItem) => (
+            render: (s: Readonly<ServerListItem>) => (
               <input
                 type="checkbox"
                 aria-label={`Select ${s.name}`}
@@ -131,7 +131,7 @@ function ServerListView({
     {
       key: "server",
       header: "Server",
-      render: (s: ServerListItem) => (
+      render: (s: Readonly<ServerListItem>) => (
         <div className="flex flex-col gap-0.5 min-w-0">
           <div className="flex items-center gap-2">
             <StatusDot status={s.status} />
@@ -146,14 +146,14 @@ function ServerListView({
     {
       key: "dcs",
       header: "DCs",
-      render: (s: ServerListItem) => <DcMatrixCell dcs={s.dcs} />,
+      render: (s: Readonly<ServerListItem>) => <DcMatrixCell dcs={s.dcs} />,
       // Wider to accommodate the 12-bar strip (4px bars + 2px gaps).
       className: "hidden xl:table-cell w-[92px]",
     },
     {
       key: "users",
       header: "Users",
-      render: (s: ServerListItem) => (
+      render: (s: Readonly<ServerListItem>) => (
         <div className="flex items-baseline gap-1 font-mono whitespace-nowrap justify-center">
           <span className="text-sm text-fg">
             {(s.usersOnline ?? s.connections).toLocaleString()}
@@ -169,7 +169,7 @@ function ServerListView({
     {
       key: "traffic",
       header: "Traffic",
-      render: (s: ServerListItem) => (
+      render: (s: Readonly<ServerListItem>) => (
         <div className="flex justify-center">
           <TrafficCell bytes={s.trafficBytes} />
         </div>
@@ -180,7 +180,7 @@ function ServerListView({
     {
       key: "uptime",
       header: "Uptime",
-      render: (s: ServerListItem) => {
+      render: (s: Readonly<ServerListItem>) => {
         const days = Math.floor(s.uptimeSeconds / 86400);
         const hours = Math.floor((s.uptimeSeconds % 86400) / 3600);
         return (
@@ -197,7 +197,7 @@ function ServerListView({
     {
       key: "load",
       header: "Load",
-      render: (s: ServerListItem) => (
+      render: (s: Readonly<ServerListItem>) => (
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-1.5 text-[10px] font-mono leading-none">
             <span className="w-7 text-fg-muted shrink-0">CPU</span>
@@ -264,7 +264,7 @@ export function ServersPage({
   onBulkAction,
   bulkError,
   bulkPending,
-}: ServersPageProps) {
+}: Readonly<ServersPageProps>) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [groupFilter, setGroupFilter] = useState("all");
@@ -330,7 +330,7 @@ export function ServersPage({
   };
   const clearSelection = () => setSelected(new Set());
 
-  const runBulk = async (action: BulkServerAction) => {
+  const runBulk = async (action: Readonly<BulkServerAction>) => {
     if (!onBulkAction || selected.size === 0) return;
     const ids = Array.from(selected);
     await Promise.resolve(onBulkAction(action, ids));

@@ -7,7 +7,7 @@ export interface PageHeaderProps {
   className?: string;
 }
 
-export function PageHeader({ title, subtitle, trailing, className }: PageHeaderProps) {
+export function PageHeader({ title, subtitle, trailing, className }: Readonly<PageHeaderProps>) {
   return (
     <div
       className={cn(

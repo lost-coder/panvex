@@ -20,7 +20,7 @@ interface FleetGroupDetailPageProps {
   editOpen: boolean;
   formData: FleetGroupFormData;
   formError: string;
-  onFormDataChange: (data: FleetGroupFormData) => void;
+  onFormDataChange: (data: Readonly<FleetGroupFormData>) => void;
   onSubmitEdit: () => void;
   onCancelEdit: () => void;
   saving: boolean;
@@ -38,7 +38,7 @@ export function FleetGroupDetailPage({
   onSubmitEdit,
   onCancelEdit,
   saving,
-}: FleetGroupDetailPageProps) {
+}: Readonly<FleetGroupDetailPageProps>) {
   const hasIntegrations = (group.integrations ?? []).length > 0;
 
   return (

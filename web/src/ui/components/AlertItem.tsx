@@ -22,7 +22,7 @@ const severityBadge = {
   info: "bg-accent/15 text-accent",
 } as const;
 
-export function AlertItem({ severity, message, source, timestamp, className }: AlertItemProps) {
+export function AlertItem({ severity, message, source, timestamp, className }: Readonly<AlertItemProps>) {
   return (
     <div
       className={cn(

@@ -23,11 +23,11 @@ export function ServerDetailProvider({
   server,
   serverId,
   children,
-}: {
+}: Readonly<{
   server: ServerDetailPageProps["server"];
   serverId: string;
   children: ReactNode;
-}) {
+}>) {
   const value = useMemo(() => ({ server, serverId }), [server, serverId]);
   return <ctx.Provider value={value}>{children}</ctx.Provider>;
 }

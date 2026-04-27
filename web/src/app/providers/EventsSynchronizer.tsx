@@ -44,10 +44,10 @@ export function EventsSynchronizer({ children }: { children?: React.ReactNode })
   const attemptsRef = useRef(0);
 
   useEffect(() => {
-    if (typeof window === "undefined") { return; }
+    if (typeof globalThis.window === "undefined") { return; }
     let socket: WebSocket | null = null;
     let reconnectDelayMs = 1_000;
-    let reconnectTimerID: number | null = null;
+    let reconnectTimerID: ReturnType<typeof setTimeout> | null = null;
     let stopped = false;
     const applyInvalidation = async (invalidation: EventInvalidation) => {
       for (const key of invalidation.keys) {
@@ -69,7 +69,7 @@ export function EventsSynchronizer({ children }: { children?: React.ReactNode })
       setStatus("reconnecting");
       attemptsRef.current += 1;
       setReconnectAttempts(attemptsRef.current);
-      reconnectTimerID = window.setTimeout(() => {
+      reconnectTimerID = globalThis.setTimeout(() => {
         reconnectTimerID = null;
         reconnectDelayMs = Math.min(reconnectDelayMs * 2, 30_000);
         connect();
@@ -78,10 +78,10 @@ export function EventsSynchronizer({ children }: { children?: React.ReactNode })
     const connect = () => {
       if (stopped) { return; }
       // Don't open a WebSocket on the login page — there's no session yet.
-      if (window.location.pathname.endsWith("/login")) { return; }
+      if (globalThis.location.pathname.endsWith("/login")) { return; }
       setStatus("connecting");
       const rootPath = resolveConfiguredRootPath();
-      const url = buildEventsURL(window.location.protocol, window.location.host, rootPath);
+      const url = buildEventsURL(globalThis.location.protocol, globalThis.location.host, rootPath);
       socket = new WebSocket(url);
       socket.onopen = () => {
         reconnectDelayMs = 1_000;
@@ -102,7 +102,7 @@ export function EventsSynchronizer({ children }: { children?: React.ReactNode })
       socket.onerror = () => { socket?.close(); };
       socket.onclose = () => {
         // Already on the login page — nothing to reconnect or redirect to.
-        if (window.location.pathname.endsWith("/login")) {
+        if (globalThis.location.pathname.endsWith("/login")) {
           stopped = true;
           setStatus("closed");
           return;
@@ -110,21 +110,21 @@ export function EventsSynchronizer({ children }: { children?: React.ReactNode })
         // Q3.U-Q-22: check session validity before reconnecting. On
         // expiration we dispatch SESSION_EXPIRED_EVENT so AuthProvider
         // owns the router navigation + cache clear + toast — instead of
-        // a hard window.location.href that bypasses React Query and
+        // a hard globalThis.location.href that bypasses React Query and
         // misses the toast announcement.
         apiClient.me().then(() => {
           scheduleReconnect();
         }).catch(() => {
           stopped = true;
           setStatus("closed");
-          window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+          globalThis.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
         });
       };
     };
     connect();
     return () => {
       stopped = true;
-      if (reconnectTimerID !== null) { window.clearTimeout(reconnectTimerID); }
+      if (reconnectTimerID !== null) { globalThis.clearTimeout(reconnectTimerID); }
       if (socket !== null && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
         socket.close();
       }

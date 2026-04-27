@@ -52,7 +52,7 @@ function formatDate(value: string) {
   return d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-function ChartContainer({ children }: { children: React.ReactNode }) {
+function ChartContainer({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <div className={chartContainerClass}>
       <ResponsiveContainer width="100%" height="100%">
@@ -62,7 +62,7 @@ function ChartContainer({ children }: { children: React.ReactNode }) {
   );
 }
 
-function SystemChart({ points }: { points: MetricsPoint[] }) {
+function SystemChart({ points }: Readonly<{ points: MetricsPoint[] }>) {
   return (
     <ChartContainer>
       <AreaChart data={points} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
@@ -124,7 +124,7 @@ function SystemChart({ points }: { points: MetricsPoint[] }) {
   );
 }
 
-function ConnectionsChart({ points }: { points: MetricsPoint[] }) {
+function ConnectionsChart({ points }: Readonly<{ points: MetricsPoint[] }>) {
   return (
     <ChartContainer>
       <AreaChart data={points} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
@@ -170,7 +170,7 @@ function ConnectionsChart({ points }: { points: MetricsPoint[] }) {
   );
 }
 
-function NetworkChart({ points }: { points: MetricsPoint[] }) {
+function NetworkChart({ points }: Readonly<{ points: MetricsPoint[] }>) {
   return (
     <ChartContainer>
       <AreaChart data={points} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
@@ -212,7 +212,7 @@ function NetworkChart({ points }: { points: MetricsPoint[] }) {
   );
 }
 
-function TrafficChart({ points }: { points: MetricsPoint[] }) {
+function TrafficChart({ points }: Readonly<{ points: MetricsPoint[] }>) {
   return (
     <ChartContainer>
       <AreaChart data={points} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
@@ -269,7 +269,7 @@ export default function MetricsChartSectionInner({
   timeRange,
   onTimeRangeChange,
   availableRanges = TIME_RANGES,
-}: MetricsChartSectionProps) {
+}: Readonly<MetricsChartSectionProps>) {
   const [tab, setTab] = useState<MetricsTab>("system");
 
   return (

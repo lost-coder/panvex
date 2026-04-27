@@ -11,7 +11,7 @@ export interface SkeletonProps {
   label?: string | undefined;
 }
 
-export function Skeleton({ className, label }: SkeletonProps) {
+export function Skeleton({ className, label }: Readonly<SkeletonProps>) {
   const reduceMotion = usePrefersReducedMotion();
   const base = cn(
     "rounded-xs bg-bg-card-hi/70",
@@ -44,7 +44,7 @@ export function SkeletonRows({
   height = "h-12",
   label = "Загрузка списка…",
   className,
-}: SkeletonRowsProps) {
+}: Readonly<SkeletonRowsProps>) {
   return (
     <div className={cn("flex flex-col gap-2", className)}>
       {Array.from({ length: count }).map((_, i) => (

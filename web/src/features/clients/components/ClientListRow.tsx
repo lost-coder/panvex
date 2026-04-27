@@ -22,7 +22,7 @@ export function ClientListRow({
   selected,
   onToggleSelect,
   nowMs,
-}: ClientListRowProps) {
+}: Readonly<ClientListRowProps>) {
   const status = effectiveClientStatus(client, nowMs);
   return (
     <div

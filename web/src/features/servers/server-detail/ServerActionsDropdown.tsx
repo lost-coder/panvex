@@ -13,7 +13,7 @@ export function ServerActionsDropdown({
   onBoostDetail,
   onRename,
   onDeregister,
-}: ServerActionsDropdownProps) {
+}: Readonly<ServerActionsDropdownProps>) {
   const [open, setOpen] = React.useState(false);
   return (
     <div className="relative">

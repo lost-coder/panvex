@@ -56,7 +56,7 @@ export function ClientDetailPage({
   onDelete,
   ipHistory,
   agentLabels,
-}: ClientDetailPageProps) {
+}: Readonly<ClientDetailPageProps>) {
   // Expose "Redeploy" as a prominent action whenever at least one
   // deployment landed in `failed` state. Without this button operators
   // get stuck — they see an angry red status per node but have no

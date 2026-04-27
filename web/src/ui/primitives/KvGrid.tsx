@@ -11,7 +11,7 @@ export interface KvGridProps {
   className?: string;
 }
 
-export function KvGrid({ rows, className }: KvGridProps) {
+export function KvGrid({ rows, className }: Readonly<KvGridProps>) {
   return (
     <div className={cn("grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm", className)}>
       {rows.map(({ label, value }) => (

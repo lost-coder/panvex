@@ -24,7 +24,7 @@ type RoleFilter = "all" | "admin" | "operator" | "viewer";
 
 // Avatar — first letter of the username in a mono circle. Tone splits on
 // role so a scroll-glance shows where admins cluster.
-function AvatarInitial({ user }: { user: UserListItem }) {
+function AvatarInitial({ user }: Readonly<{ user: UserListItem }>) {
   const roleBg: Record<UserListItem["role"], string> = {
     admin: "bg-accent/15 text-accent",
     operator: "bg-status-warn/15 text-status-warn",
@@ -65,7 +65,7 @@ export function UsersManagementPage({
   onDelete,
   onResetTotp,
   sheet,
-}: UsersManagementPageProps) {
+}: Readonly<UsersManagementPageProps>) {
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
 
@@ -92,7 +92,7 @@ export function UsersManagementPage({
     {
       key: "user",
       header: "User",
-      render: (u: UserListItem) => (
+      render: (u: Readonly<UserListItem>) => (
         <div className="flex items-center gap-3 min-w-0">
           <AvatarInitial user={u} />
           <div className="flex flex-col min-w-0">
@@ -108,7 +108,7 @@ export function UsersManagementPage({
     {
       key: "role",
       header: "Role",
-      render: (u: UserListItem) => (
+      render: (u: Readonly<UserListItem>) => (
         <Badge variant={roleVariant[u.role] ?? "default"}>{u.role}</Badge>
       ),
       className: "w-[120px]",
@@ -116,7 +116,7 @@ export function UsersManagementPage({
     {
       key: "totp",
       header: "2FA",
-      render: (u: UserListItem) => (
+      render: (u: Readonly<UserListItem>) => (
         <StatusLabel
           tone={u.totpEnabled ? "ok" : "warn"}
           label={u.totpEnabled ? "Enabled" : "Off"}
@@ -127,7 +127,7 @@ export function UsersManagementPage({
     {
       key: "actions",
       header: "",
-      render: (u: UserListItem) => (
+      render: (u: Readonly<UserListItem>) => (
         <div className="flex gap-1 justify-end">
           <Button variant="ghost" size="sm" onClick={() => onEdit(u.id)}>
             Edit

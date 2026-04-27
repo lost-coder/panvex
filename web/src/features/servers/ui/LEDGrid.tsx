@@ -27,7 +27,7 @@ const mdColsClass: Record<number, string> = {
   6: "md:grid-cols-6",
 };
 
-export function LEDGrid({ items, activeCode, onSelect, cols = [4, 6], className }: LEDGridProps) {
+export function LEDGrid({ items, activeCode, onSelect, cols = [4, 6], className }: Readonly<LEDGridProps>) {
   return (
     <div
       role="group"

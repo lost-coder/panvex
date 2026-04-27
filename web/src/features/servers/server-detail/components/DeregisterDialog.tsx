@@ -7,11 +7,11 @@ export function DeregisterDialog({
   open,
   onClose,
   onConfirm,
-}: {
+}: Readonly<{
   open: boolean;
   onClose: () => void;
   onConfirm?: (() => void) | undefined;
-}) {
+}>) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">

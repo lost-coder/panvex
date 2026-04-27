@@ -22,7 +22,7 @@ export function SearchFilter({
   searchPlaceholder = "Search…",
   filters,
   className,
-}: SearchFilterProps) {
+}: Readonly<SearchFilterProps>) {
   return (
     <div className={cn("flex flex-col gap-2 sm:flex-row sm:items-center", className)}>
       <Input

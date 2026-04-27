@@ -6,7 +6,7 @@ export interface NodeListProps {
   className?: string;
 }
 
-export function NodeList({ nodes, className }: NodeListProps) {
+export function NodeList({ nodes, className }: Readonly<NodeListProps>) {
   return (
     <div className={cn("grid grid-cols-1 gap-2", "md:grid-cols-2", "xl:grid-cols-3", className)}>
       {nodes.map((node) => (

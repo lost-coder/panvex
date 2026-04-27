@@ -12,10 +12,10 @@ import { UpstreamsList } from "./UpstreamsList";
 export function GatesUpstreamsCard({
   gates,
   upstreams,
-}: {
+}: Readonly<{
   gates: ServerDetailPageProps["server"]["gates"];
   upstreams: ServerDetailPageProps["server"]["upstreams"];
-}) {
+}>) {
   return (
     <section className="rounded-xs bg-bg-card border border-border p-4 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-6">
       <div className="flex flex-col gap-3">

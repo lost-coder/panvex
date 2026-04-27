@@ -73,7 +73,7 @@ export function NodeSummaryCard({
   autoExpandOnIssue = true,
   onClick,
   className,
-}: NodeSummaryCardProps) {
+}: Readonly<NodeSummaryCardProps>) {
   const shouldAutoExpand = autoExpandOnIssue && hasIssues(dcs);
   const [expanded, setExpanded] = useState(defaultExpanded ?? shouldAutoExpand);
   const issue = dcSummaryText(dcs);

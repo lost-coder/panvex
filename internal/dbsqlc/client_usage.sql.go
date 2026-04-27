@@ -14,7 +14,7 @@ const listAllClientUsage = `-- name: ListAllClientUsage :many
 SELECT client_id, agent_id, traffic_used_bytes, unique_ips_used,
        active_tcp_conns, active_unique_ips, last_seq, observed_at
 FROM client_usage
-ORDER BY client_id, agent_id
+ORDER BY client_id ASC, agent_id ASC
 `
 
 func (q *Queries) ListAllClientUsage(ctx context.Context) ([]ClientUsage, error) {

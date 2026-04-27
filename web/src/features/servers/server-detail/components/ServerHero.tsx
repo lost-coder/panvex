@@ -18,7 +18,7 @@ export function ServerHero({
   onBoostDetail,
   onRename,
   onDeregister,
-}: {
+}: Readonly<{
   server: ServerDetailPageProps["server"];
   pulseWord: string;
   relativeTime: string | null;
@@ -27,7 +27,7 @@ export function ServerHero({
   onBoostDetail?: (() => void) | undefined;
   onRename?: (() => void) | undefined;
   onDeregister?: (() => void) | undefined;
-}) {
+}>) {
   const { systemInfo } = server;
   return (
     <section className="hidden md:block border-y border-divider">

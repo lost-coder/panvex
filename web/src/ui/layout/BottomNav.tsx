@@ -8,7 +8,7 @@ export interface BottomNavProps {
   className?: string | undefined;
 }
 
-export function BottomNav({ items, activeId, onNavigate, className }: BottomNavProps) {
+export function BottomNav({ items, activeId, onNavigate, className }: Readonly<BottomNavProps>) {
   return (
     <nav
       className={cn(

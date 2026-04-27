@@ -15,7 +15,7 @@ export function ClientAccessSheet({
   onSubmit,
   onCancel,
   loading,
-}: ClientAccessSheetProps) {
+}: Readonly<ClientAccessSheetProps>) {
   const [showFineTune, setShowFineTune] = useState(false);
 
   const groupNodeIds = nodes

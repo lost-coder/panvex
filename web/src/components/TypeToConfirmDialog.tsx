@@ -33,7 +33,7 @@ export function TypeToConfirmDialog({
   variant = "default",
   onConfirm,
   onCancel,
-}: TypeToConfirmDialogProps) {
+}: Readonly<TypeToConfirmDialogProps>) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const descId = useId();

@@ -3,7 +3,7 @@ import { FieldLabel, MonoValue } from "@/ui/primitives";
 import { coverageColor } from "@/ui/lib/status";
 import type { ServerDcData } from "@/shared/api/types-pages/pages";
 
-export function DcTable({ dcs }: { dcs: ServerDcData[] }) {
+export function DcTable({ dcs }: Readonly<{ dcs: ServerDcData[] }>) {
   const [expandedDc, setExpandedDc] = useState<number | null>(null);
 
   return (

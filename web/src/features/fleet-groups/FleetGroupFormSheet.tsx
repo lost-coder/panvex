@@ -11,7 +11,7 @@ export interface FleetGroupFormData {
 export interface FleetGroupFormSheetProps {
   mode: "create" | "edit";
   data: FleetGroupFormData;
-  onChange: (data: FleetGroupFormData) => void;
+  onChange: (data: Readonly<FleetGroupFormData>) => void;
   onSubmit: () => void;
   onCancel: () => void;
   loading?: boolean | undefined;
@@ -28,7 +28,7 @@ export function FleetGroupFormSheet({
   onCancel,
   loading,
   error,
-}: FleetGroupFormSheetProps) {
+}: Readonly<FleetGroupFormSheetProps>) {
   function update<K extends keyof FleetGroupFormData>(key: K, value: FleetGroupFormData[K]) {
     onChange({ ...data, [key]: value });
   }

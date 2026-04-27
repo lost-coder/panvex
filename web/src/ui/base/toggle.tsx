@@ -18,7 +18,7 @@ export function Toggle({
   disabled = false,
   size = "md",
   className,
-}: ToggleProps) {
+}: Readonly<ToggleProps>) {
   return (
     <button
       type="button"

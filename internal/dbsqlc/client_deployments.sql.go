@@ -24,7 +24,7 @@ const listAllClientDeployments = `-- name: ListAllClientDeployments :many
 SELECT client_id, agent_id, desired_operation, status, last_error,
        connection_link, last_applied_at, updated_at
 FROM client_deployments
-ORDER BY client_id, agent_id
+ORDER BY client_id ASC, agent_id ASC
 `
 
 func (q *Queries) ListAllClientDeployments(ctx context.Context) ([]ClientDeployment, error) {
@@ -65,7 +65,7 @@ SELECT client_id, agent_id, desired_operation, status, last_error,
        connection_link, last_applied_at, updated_at
 FROM client_deployments
 WHERE client_id = $1
-ORDER BY agent_id
+ORDER BY agent_id ASC
 `
 
 // R-Q-03: client_deployments — per-(client, agent) deployment state

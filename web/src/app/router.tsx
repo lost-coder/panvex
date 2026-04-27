@@ -366,7 +366,7 @@ function RoutePending() {
   );
 }
 
-function RouteErrorBoundary({ error }: { error: Error }) {
+function RouteErrorBoundary({ error }: Readonly<{ error: Error }>) {
   return <AppErrorFallback error={error} />;
 }
 

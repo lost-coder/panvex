@@ -11,7 +11,7 @@ export default meta;
 
 type Story = StoryObj<typeof ConfirmDialog>;
 
-function Demo({ variant }: { variant?: "default" | "danger" }) {
+function Demo({ variant }: Readonly<{ variant?: "default" | "danger" }>) {
   const [open, setOpen] = useState(false);
   return (
     <>

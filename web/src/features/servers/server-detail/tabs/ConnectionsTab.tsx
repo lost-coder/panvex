@@ -11,7 +11,7 @@ import type { ServerDetailPageProps } from "@/shared/api/types-pages/pages";
  * remains unique here are the per-user tables, so the panel is scoped
  * to that plus a `staleCacheUsed` warning.
  */
-export function ConnectionsTab({ server }: { server: ServerDetailPageProps["server"] }) {
+export function ConnectionsTab({ server }: Readonly<{ server: ServerDetailPageProps["server"] }>) {
   const { connections } = server;
 
   const byConnColumns = [

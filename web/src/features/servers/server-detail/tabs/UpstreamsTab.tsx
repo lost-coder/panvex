@@ -4,7 +4,7 @@ import { Badge } from "@/ui/primitives/Badge";
 import { DataTable } from "@/ui/components/DataTable";
 import type { ServerDetailPageProps, ServerUpstreamData } from "@/shared/api/types-pages/pages";
 
-export function UpstreamsTab({ server }: { server: ServerDetailPageProps["server"] }) {
+export function UpstreamsTab({ server }: Readonly<{ server: ServerDetailPageProps["server"] }>) {
   const { upstreams, upstreamSummary, upstreamZeroCounters } = server;
   const [showZeroCounters, setShowZeroCounters] = useState(false);
 
@@ -12,7 +12,7 @@ export function UpstreamsTab({ server }: { server: ServerDetailPageProps["server
     {
       key: "id",
       header: "#",
-      render: (row: ServerUpstreamData) => (
+      render: (row: Readonly<ServerUpstreamData>) => (
         <span className="font-mono text-xs text-fg-muted">{row.upstreamId}</span>
       ),
       className: "w-10",
@@ -20,24 +20,24 @@ export function UpstreamsTab({ server }: { server: ServerDetailPageProps["server
     {
       key: "routeKind",
       header: "Type",
-      render: (row: ServerUpstreamData) => <Badge variant="default">{row.routeKind}</Badge>,
+      render: (row: Readonly<ServerUpstreamData>) => <Badge variant="default">{row.routeKind}</Badge>,
     },
     {
       key: "address",
       header: "Address",
-      render: (row: ServerUpstreamData) => <MonoValue>{row.address}</MonoValue>,
+      render: (row: Readonly<ServerUpstreamData>) => <MonoValue>{row.address}</MonoValue>,
     },
     {
       key: "healthy",
       header: "Health",
-      render: (row: ServerUpstreamData) => (
+      render: (row: Readonly<ServerUpstreamData>) => (
         <Badge variant={row.healthy ? "ok" : "error"}>{row.healthy ? "✓ OK" : "✗ FAIL"}</Badge>
       ),
     },
     {
       key: "fails",
       header: "Fails",
-      render: (row: ServerUpstreamData) => (
+      render: (row: Readonly<ServerUpstreamData>) => (
         <span className={`font-mono text-xs ${row.fails > 0 ? "text-status-warn" : ""}`}>
           {row.fails}
         </span>
@@ -46,7 +46,7 @@ export function UpstreamsTab({ server }: { server: ServerDetailPageProps["server
     {
       key: "latency",
       header: "Latency",
-      render: (row: ServerUpstreamData) => (
+      render: (row: Readonly<ServerUpstreamData>) => (
         <MonoValue>
           {row.effectiveLatencyMs != null && row.effectiveLatencyMs > 0
             ? `${row.effectiveLatencyMs}ms`
@@ -57,7 +57,7 @@ export function UpstreamsTab({ server }: { server: ServerDetailPageProps["server
     {
       key: "lastCheck",
       header: "Last Check",
-      render: (row: ServerUpstreamData) => (
+      render: (row: Readonly<ServerUpstreamData>) => (
         <span className="font-mono text-xs text-fg-muted">{row.lastCheckAgeSecs}s ago</span>
       ),
     },

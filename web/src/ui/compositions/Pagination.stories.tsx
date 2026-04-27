@@ -10,7 +10,7 @@ export default meta;
 
 type Story = StoryObj<typeof Pagination>;
 
-function Demo({ total }: { total: number }) {
+function Demo({ total }: Readonly<{ total: number }>) {
   const [page, setPage] = useState(1);
   return <Pagination page={page} totalPages={total} onPageChange={setPage} />;
 }

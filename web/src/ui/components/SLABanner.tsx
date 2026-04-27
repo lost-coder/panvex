@@ -7,7 +7,7 @@ export interface SLABannerProps {
   className?: string;
 }
 
-export function SLABanner({ value, label, details, className }: SLABannerProps) {
+export function SLABanner({ value, label, details, className }: Readonly<SLABannerProps>) {
   return (
     <div className={cn("rounded-xs bg-bg-card p-4 flex items-baseline gap-3", className)}>
       <span className="text-3xl font-mono font-bold text-status-ok leading-none">{value}</span>

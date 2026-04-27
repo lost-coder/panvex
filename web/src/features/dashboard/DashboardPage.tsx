@@ -44,7 +44,7 @@ const SPARKLINE_COLOR_BY_TONE: Record<NonNullable<KpiItem["tone"]>, string> = {
   error: "var(--color-status-error)",
 };
 
-function KpiStrip({ kpis }: { kpis: DashboardOverviewData["kpis"] }) {
+function KpiStrip({ kpis }: Readonly<{ kpis: DashboardOverviewData["kpis"] }>) {
   return (
     <>
       {/* Mobile: compact text — keeps the 4 KPIs in one line of signal */}
@@ -134,11 +134,11 @@ function LoadCell({
   label,
   value,
   series,
-}: {
+}: Readonly<{
   label: string;
   value: number;
   series: number[] | undefined;
-}) {
+}>) {
   const tone = loadTone(value);
   const hasSeries = Array.isArray(series) && series.length > 1;
   return (
@@ -160,7 +160,7 @@ function LoadCell({
  * Mobile layout stacks into two lines: identity + badge above, metrics
  * below. Desktop keeps everything on a single row.
  */
-function FleetRow({ node, onClick }: { node: DashboardNodeData; onClick?: () => void }) {
+function FleetRow({ node, onClick }: Readonly<{ node: DashboardNodeData; onClick?: () => void }>) {
   const isProblem = node.status !== "ok";
   const badgeVariant = node.status === "error" ? "error" : "warn";
   const badgeLabel = node.status === "error" ? "DOWN" : "DEGRADED";
@@ -223,12 +223,12 @@ function FleetList({
   healthy,
   onNodeClick,
   maxHealthy = 12,
-}: {
+}: Readonly<{
   attention: DashboardNodeData[];
   healthy: DashboardNodeData[];
   onNodeClick?: ((id: string) => void) | undefined;
   maxHealthy?: number | undefined;
-}) {
+}>) {
   const trimmedHealthy = healthy.slice(0, maxHealthy);
   const hiddenCount = Math.max(0, healthy.length - trimmedHealthy.length);
   const totalShown = attention.length + trimmedHealthy.length;
@@ -317,7 +317,7 @@ function FleetPanel({
   );
 }
 
-function TimelinePanel({ data }: { data: DashboardTimelineData }) {
+function TimelinePanel({ data }: Readonly<{ data: DashboardTimelineData }>) {
   if (!data?.events) return null;
   return (
     <div className="flex flex-col gap-2 bg-bg-card border border-border rounded-xs p-4">
@@ -356,7 +356,7 @@ export function DashboardPage({
   pendingDiscoveredCount,
   onDiscoveredClick,
   onViewAllServers,
-}: DashboardPageProps) {
+}: Readonly<DashboardPageProps>) {
   const [createOpen, setCreateOpen] = useState(false);
   const [createData, setCreateData] = useState<ClientFormData>({ ...emptyFormData });
 

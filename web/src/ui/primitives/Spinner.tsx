@@ -7,7 +7,7 @@ export interface SpinnerProps {
 
 const sizeMap = { sm: "h-4 w-4", md: "h-5 w-5", lg: "h-8 w-8" } as const;
 
-export function Spinner({ size = "md", className }: SpinnerProps) {
+export function Spinner({ size = "md", className }: Readonly<SpinnerProps>) {
   return (
     <svg
       className={cn("animate-spin text-accent", sizeMap[size], className)}
