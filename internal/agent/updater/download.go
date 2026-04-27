@@ -190,7 +190,7 @@ func downloadToTemp(ctx context.Context, rawURL string, cfg Config) (string, err
 		return "", fmt.Errorf("%w: streamed %d bytes, cap=%d", errArchiveTooLarge, written, maxArchive)
 	}
 
-	if err := os.Chmod(tmpName, 0o700); err != nil {
+	if err := os.Chmod(tmpName, 0o700); err != nil { //nolint:gosec // G302: 0o700 keeps the binary owner-only but still needs +x to run
 		cleanup()
 		return "", err
 	}
