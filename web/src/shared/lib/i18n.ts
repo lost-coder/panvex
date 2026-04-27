@@ -47,7 +47,7 @@ export function initI18n(): typeof i18next {
   if (initialised) return i18next;
   initialised = true;
 
-  void i18next.use(initReactI18next).init({
+  i18next.use(initReactI18next).init({
     lng: detectInitialLanguage(),
     fallbackLng: DEFAULT_LANGUAGE,
     supportedLngs: SUPPORTED_LANGUAGES as readonly string[],

@@ -2,6 +2,4 @@
 // without an adapter. Sits in internal/ so it's not part of the public
 // package surface — this file exists only to isolate qrcode.react
 // into its own chunk.
-import { QRCodeSVG } from "qrcode.react";
-
-export default QRCodeSVG;
+export { QRCodeSVG as default } from "qrcode.react";

@@ -24,7 +24,7 @@ describe("buildInstallCommand", () => {
       "x;curl bad|sh",
     );
     // Single-quoted: nothing inside expands or breaks the argv slot.
-    expect(cmd).toContain("--token 'tok'\\''; rm -rf / #'");
+    expect(cmd).toContain(String.raw`--token 'tok'\''; rm -rf / #'`);
     expect(cmd).toContain("--node-name 'x;curl bad|sh'");
     // No bare semicolon escapes the quoting.
     expect(cmd).not.toMatch(/--token tok'; rm/);
@@ -53,7 +53,7 @@ describe("buildInstallCommand", () => {
     expect(cmd).toContain("--telemt-url 'http://10.0.0.5:9091'");
     expect(cmd).toContain("--telemt-metrics-url 'http://10.0.0.5:8081'");
     // Single quote in the auth string survives the round-trip.
-    expect(cmd).toContain("--telemt-auth 'user:p@ss'\\''word'");
+    expect(cmd).toContain(String.raw`--telemt-auth 'user:p@ss'\''word'`);
     expect(cmd).toContain("--insecure-transport");
   });
 });
