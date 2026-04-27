@@ -524,37 +524,11 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 		})
 	}
 
-	slowData := slowRuntimeState{}
-	useCachedSlowData := false
-	if c.slowDataTTL > 0 {
-		c.mu.RLock()
-		now := time.Now().UTC()
-		if c.hasSlowData && now.Sub(c.slowFetchedAt) < c.slowDataTTL {
-			slowData = c.slowData
-			useCachedSlowData = true
-		}
-		c.mu.RUnlock()
-	}
-	if !useCachedSlowData {
-		fetchedSlowData, slowPartial, err := c.fetchSlowRuntimeState(ctx)
-		if err != nil {
-			markPartial("slow_runtime_state", err)
-		} else {
-			slowData = fetchedSlowData
-			if slowPartial {
-				result.Partial = true
-			}
-			// Only cache when we actually obtained a usable slow snapshot; if the
-			// slow bundle itself reported internal degradation we still cache the
-			// payload because its sub-sections carry their own "state" markers.
-			if c.slowDataTTL > 0 {
-				c.mu.Lock()
-				c.slowData = fetchedSlowData
-				c.slowFetchedAt = time.Now().UTC()
-				c.hasSlowData = true
-				c.mu.Unlock()
-			}
-		}
+	slowData, slowPartial, slowErr := c.loadSlowRuntimeStateForFetch(ctx)
+	if slowErr != nil {
+		markPartial("slow_runtime_state", slowErr)
+	} else if slowPartial {
+		result.Partial = true
 	}
 
 	users, err := c.fetchClientUsage(ctx)
@@ -638,6 +612,40 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 //
 // Returns the collected slow state, a partial flag (true when at least one
 // advisory sub-endpoint failed but the core system/info payload still arrived),
+// loadSlowRuntimeStateForFetch returns a slow-runtime snapshot: the cached
+// copy if still fresh, otherwise a freshly-fetched payload that is also
+// stored in the cache. The bool reports whether the slow snapshot itself
+// was partial; the error is non-nil only when no usable snapshot could be
+// obtained at all (cache miss + fetchSlowRuntimeState failure).
+func (c *Client) loadSlowRuntimeStateForFetch(ctx context.Context) (slowRuntimeState, bool, error) {
+	if c.slowDataTTL > 0 {
+		c.mu.RLock()
+		now := time.Now().UTC()
+		cached := c.slowData
+		fresh := c.hasSlowData && now.Sub(c.slowFetchedAt) < c.slowDataTTL
+		c.mu.RUnlock()
+		if fresh {
+			return cached, false, nil
+		}
+	}
+
+	fetched, slowPartial, err := c.fetchSlowRuntimeState(ctx)
+	if err != nil {
+		return slowRuntimeState{}, false, err
+	}
+	// Only cache when we actually obtained a usable slow snapshot; if the
+	// slow bundle itself reported internal degradation we still cache the
+	// payload because its sub-sections carry their own "state" markers.
+	if c.slowDataTTL > 0 {
+		c.mu.Lock()
+		c.slowData = fetched
+		c.slowFetchedAt = time.Now().UTC()
+		c.hasSlowData = true
+		c.mu.Unlock()
+	}
+	return fetched, slowPartial, nil
+}
+
 // and a non-nil error only when the required /v1/system/info payload itself is
 // unreachable. See P2-REL-07.
 func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, bool, error) {

@@ -482,24 +482,12 @@ func handleClientMutationError(w http.ResponseWriter, err error) bool {
 
 func (s *Server) buildClientDetailResponse(ctx context.Context, client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment, showSecret bool) clientDetailResponse {
 	usage := s.aggregatedClientUsage(client.ID)
-	uniqueIPs := usage.UniqueIPsUsed
-	if s.store != nil {
-		if count, err := s.store.CountUniqueClientIPs(ctx, client.ID); err == nil && count > 0 {
-			uniqueIPs = count
-		}
-	}
-	fleetGroupIDs := assignmentFleetGroupIDs(assignments)
-	agentIDs := assignmentAgentIDs(assignments)
-
-	var secret string
-	if showSecret {
-		secret = client.Secret
-	}
+	uniqueIPs := s.resolveUniqueClientIPs(ctx, client.ID, usage.UniqueIPsUsed)
 
 	response := clientDetailResponse{
 		ID:                client.ID,
 		Name:              client.Name,
-		Secret:            secret,
+		Secret:            secretIfRevealed(client.Secret, showSecret),
 		UserADTag:         client.UserADTag,
 		Enabled:           client.Enabled,
 		TrafficUsedBytes:  usage.TrafficUsedBytes,
@@ -509,22 +497,51 @@ func (s *Server) buildClientDetailResponse(ctx context.Context, client managedCl
 		MaxUniqueIPs:      client.MaxUniqueIPs,
 		DataQuotaBytes:    client.DataQuotaBytes,
 		ExpirationRFC3339: client.ExpirationRFC3339,
-		FleetGroupIDs:     fleetGroupIDs,
-		AgentIDs:          agentIDs,
-		Deployments:       make([]clientDeploymentResponse, 0, len(deployments)),
+		FleetGroupIDs:     assignmentFleetGroupIDs(assignments),
+		AgentIDs:          assignmentAgentIDs(assignments),
+		Deployments:       buildClientDeploymentResponses(deployments),
 		CreatedAt:         client.CreatedAt.UTC().Unix(),
 		UpdatedAt:         client.UpdatedAt.UTC().Unix(),
 	}
 	if client.DeletedAt != nil {
 		response.DeletedAt = client.DeletedAt.UTC().Unix()
 	}
+	return response
+}
 
+// resolveUniqueClientIPs prefers the durable per-client unique-IP count
+// from storage and falls back to the in-memory snapshot when the store is
+// unavailable or returns zero (no rows).
+func (s *Server) resolveUniqueClientIPs(ctx context.Context, clientID string, fallback int) int {
+	if s.store == nil {
+		return fallback
+	}
+	count, err := s.store.CountUniqueClientIPs(ctx, clientID)
+	if err != nil || count <= 0 {
+		return fallback
+	}
+	return count
+}
+
+// secretIfRevealed returns the raw secret when the caller has opted in to
+// disclosure, else "".
+func secretIfRevealed(secret string, reveal bool) string {
+	if reveal {
+		return secret
+	}
+	return ""
+}
+
+// buildClientDeploymentResponses converts the deployment slice into the
+// JSON response shape, normalising the optional LastAppliedAt timestamp.
+func buildClientDeploymentResponses(deployments []managedClientDeployment) []clientDeploymentResponse {
+	out := make([]clientDeploymentResponse, 0, len(deployments))
 	for _, deployment := range deployments {
 		lastAppliedAt := int64(0)
 		if deployment.LastAppliedAt != nil {
 			lastAppliedAt = deployment.LastAppliedAt.UTC().Unix()
 		}
-		response.Deployments = append(response.Deployments, clientDeploymentResponse{
+		out = append(out, clientDeploymentResponse{
 			AgentID:          deployment.AgentID,
 			DesiredOperation: deployment.DesiredOperation,
 			Status:           deployment.Status,
@@ -534,8 +551,7 @@ func (s *Server) buildClientDetailResponse(ctx context.Context, client managedCl
 			UpdatedAt:        deployment.UpdatedAt.UTC().Unix(),
 		})
 	}
-
-	return response
+	return out
 }
 
 func assignmentFleetGroupIDs(assignments []managedClientAssignment) []string {

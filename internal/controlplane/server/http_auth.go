@@ -80,18 +80,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		// loginTimingFloor before being written, so attackers cannot
 		// distinguish lockout-cache hits from DB misses from real-auth
 		// branches by wall-clock timing.
-		start := s.now()
-		floored := false
-		ensureFloor := func() {
-			if floored {
-				return
-			}
-			floored = true
-			elapsed := s.now().Sub(start)
-			if remaining := loginTimingFloor - elapsed; remaining > 0 {
-				time.Sleep(remaining)
-			}
-		}
+		ensureFloor := s.newLoginTimingFloor()
 
 		// Q2.U-S-15: serialise the entire IsLocked → verify → RecordFailure
 		// sequence under a per-username shard lock. Without it, two
@@ -125,62 +114,14 @@ func (s *Server) handleLogin() http.HandlerFunc {
 			PriorSessionID: priorSessionID,
 		}, s.now())
 		if err != nil {
-			// Record lockout-eligible failures: wrong password or wrong TOTP code.
-			if errors.Is(err, auth.ErrInvalidCredentials) || errors.Is(err, auth.ErrInvalidTotpCode) {
-				if s.loginLockout.CheckAndRecordFailureWithContext(r.Context(), request.Username, s.now()) {
-					s.logger.Info("account locked out", "username_hash", s.logUsername(request.Username))
-					ensureFloor()
-					writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
-					return
-				}
-			}
-			ensureFloor()
-			switch {
-			case errors.Is(err, auth.ErrInvalidCredentials):
-				writeErrorWithCode(w, http.StatusUnauthorized, err.Error(), "invalid_credentials")
-			case errors.Is(err, auth.ErrTotpRequired):
-				writeErrorWithCode(w, http.StatusUnauthorized, err.Error(), "totp_required")
-			case errors.Is(err, auth.ErrInvalidTotpCode):
-				writeErrorWithCode(w, http.StatusUnauthorized, err.Error(), "totp_invalid")
-			case errors.Is(err, auth.ErrSessionStoreUnavailable):
-				// P2-SEC-07: session persistence failed; no session was
-				// created. Tell the client to retry rather than masking
-				// the failure behind an in-memory-only session that would
-				// silently disappear on the next control-plane restart.
-				s.logger.Error("session store unavailable during login", "username_hash", s.logUsername(request.Username), "error", err)
-				writeErrorWithCode(w, http.StatusServiceUnavailable, "session store unavailable", "session_store_unavailable")
-			default:
-				s.logger.Error("auth login failed", "error", err)
-				writeError(w, http.StatusInternalServerError, msgInternalError)
-			}
+			s.handleLoginAuthError(w, r, request.Username, err, ensureFloor)
 			return
 		}
 
 		s.loginLockout.RecordSuccessWithContext(r.Context(), request.Username)
 		s.logger.Info("user logged in", "username_hash", s.logUsername(request.Username), "user_id", session.UserID, "session_id", session.ID)
 
-		// B1: persist the login audit event BEFORE issuing the session
-		// cookie. Handing out a session cookie without a durable audit
-		// record means a later incident response cannot attribute the
-		// session to this login. If the storage write fails we revoke
-		// the freshly created session and return 503 so the client
-		// retries — no untraceable session is left alive.
-		auditCtx, auditCancel := context.WithTimeout(r.Context(), loginAuditPersistTimeout)
-		auditErr := s.appendAuditSync(auditCtx, session.UserID, "auth.login", session.ID, map[string]any{
-			"username": request.Username,
-		})
-		auditCancel()
-		if auditErr != nil {
-			if logoutErr := s.auth.LogoutWithContext(r.Context(), session.ID); logoutErr != nil {
-				s.logger.Error("failed to revoke session after audit persist failure",
-					"session_id", session.ID, "error", logoutErr)
-			}
-			ensureFloor()
-			writeErrorWithCode(w,
-				http.StatusServiceUnavailable,
-				"audit log unavailable, please retry",
-				"audit_persist_unavailable",
-			)
+		if !s.persistLoginAudit(w, r, session, request.Username, ensureFloor) {
 			return
 		}
 
@@ -198,6 +139,83 @@ func (s *Server) handleLogin() http.HandlerFunc {
 			"status": "ok",
 		})
 	}
+}
+
+// newLoginTimingFloor returns a closure that ensures any login response is
+// delayed at least loginTimingFloor since the call site started. The closure
+// is idempotent — multiple calls within one request only sleep once.
+func (s *Server) newLoginTimingFloor() func() {
+	start := s.now()
+	floored := false
+	return func() {
+		if floored {
+			return
+		}
+		floored = true
+		elapsed := s.now().Sub(start)
+		if remaining := loginTimingFloor - elapsed; remaining > 0 {
+			time.Sleep(remaining)
+		}
+	}
+}
+
+// handleLoginAuthError records lockout-eligible failures and writes the
+// appropriate HTTP response for a failed AuthenticateWithContext call.
+func (s *Server) handleLoginAuthError(w http.ResponseWriter, r *http.Request, username string, err error, ensureFloor func()) {
+	// Record lockout-eligible failures: wrong password or wrong TOTP code.
+	if errors.Is(err, auth.ErrInvalidCredentials) || errors.Is(err, auth.ErrInvalidTotpCode) {
+		if s.loginLockout.CheckAndRecordFailureWithContext(r.Context(), username, s.now()) {
+			s.logger.Info("account locked out", "username_hash", s.logUsername(username))
+			ensureFloor()
+			writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
+			return
+		}
+	}
+	ensureFloor()
+	switch {
+	case errors.Is(err, auth.ErrInvalidCredentials):
+		writeErrorWithCode(w, http.StatusUnauthorized, err.Error(), "invalid_credentials")
+	case errors.Is(err, auth.ErrTotpRequired):
+		writeErrorWithCode(w, http.StatusUnauthorized, err.Error(), "totp_required")
+	case errors.Is(err, auth.ErrInvalidTotpCode):
+		writeErrorWithCode(w, http.StatusUnauthorized, err.Error(), "totp_invalid")
+	case errors.Is(err, auth.ErrSessionStoreUnavailable):
+		// P2-SEC-07: session persistence failed; no session was
+		// created. Tell the client to retry rather than masking
+		// the failure behind an in-memory-only session that would
+		// silently disappear on the next control-plane restart.
+		s.logger.Error("session store unavailable during login", "username_hash", s.logUsername(username), "error", err)
+		writeErrorWithCode(w, http.StatusServiceUnavailable, "session store unavailable", "session_store_unavailable")
+	default:
+		s.logger.Error("auth login failed", "error", err)
+		writeError(w, http.StatusInternalServerError, msgInternalError)
+	}
+}
+
+// persistLoginAudit writes the auth.login audit event synchronously and, on
+// failure, revokes the freshly issued session and emits the 503 response.
+// Returns true if persistence succeeded and the caller may proceed to issue
+// the cookie. Implements B1.
+func (s *Server) persistLoginAudit(w http.ResponseWriter, r *http.Request, session auth.Session, username string, ensureFloor func()) bool {
+	auditCtx, auditCancel := context.WithTimeout(r.Context(), loginAuditPersistTimeout)
+	auditErr := s.appendAuditSync(auditCtx, session.UserID, "auth.login", session.ID, map[string]any{
+		"username": username,
+	})
+	auditCancel()
+	if auditErr == nil {
+		return true
+	}
+	if logoutErr := s.auth.LogoutWithContext(r.Context(), session.ID); logoutErr != nil {
+		s.logger.Error("failed to revoke session after audit persist failure",
+			"session_id", session.ID, "error", logoutErr)
+	}
+	ensureFloor()
+	writeErrorWithCode(w,
+		http.StatusServiceUnavailable,
+		"audit log unavailable, please retry",
+		"audit_persist_unavailable",
+	)
+	return false
 }
 
 func (s *Server) handleLogout() http.HandlerFunc {

@@ -241,17 +241,9 @@ func (s *Server) adoptDiscoveredClient(ctx context.Context, id, actorID string, 
 
 	observedAt = observedAt.UTC()
 
-	// Validate secret.
-	secret := strings.TrimSpace(record.Secret)
-	if secret != "" {
-		if !isValidHexSecret(secret) {
-			return managedClient{}, fmt.Errorf("invalid secret format: must be 32 hex characters")
-		}
-	} else {
-		secret, err = randomHexString(16)
-		if err != nil {
-			return managedClient{}, err
-		}
+	secret, err := normalizedAdoptSecret(record.Secret)
+	if err != nil {
+		return managedClient{}, err
 	}
 
 	expirationRFC3339, err := normalizedExpiration(record.Expiration)
@@ -269,7 +261,46 @@ func (s *Server) adoptDiscoveredClient(ctx context.Context, id, actorID string, 
 	}
 	s.logger.Info("adopting discovered client as new managed client", "discovered_id", id, "client_name", record.ClientName, "agent_id", record.AgentID, "traffic_bytes", record.TotalOctets, "active_ips", record.ActiveUniqueIPs)
 
-	// Build managed client — no deployment job, user already exists on server.
+	client, assignments, deployments := s.buildAdoptedClientState(record, secret, expirationRFC3339, observedAt)
+
+	if err := s.persistAdoptedClient(ctx, id, client, assignments, deployments, observedAt); err != nil {
+		return managedClient{}, err
+	}
+
+	// Update the in-memory mirror now that the commit succeeded. If this
+	// fails (it can't today; replaceClientStateInMemory never errors when
+	// the store portion is skipped), the reconciler will catch up on the
+	// next snapshot.
+	s.replaceClientStateInMemory(client, assignments, deployments)
+
+	// Seed live usage with the stats Telemt already reported for this user.
+	s.seedClientUsage(ctx, client.ID, record.AgentID, record.TotalOctets, record.CurrentConnections, record.ActiveUniqueIPs, observedAt)
+
+	s.appendAuditWithContext(ctx, actorID, "clients.adopted", id, map[string]any{
+		"client_name": record.ClientName,
+		"client_id":   client.ID,
+	})
+
+	return client, nil
+}
+
+// normalizedAdoptSecret validates the secret carried on the discovered record
+// and falls back to a freshly generated one if absent. Splitting this out
+// flattens adoptDiscoveredClient's leading guard chain.
+func normalizedAdoptSecret(raw string) (string, error) {
+	secret := strings.TrimSpace(raw)
+	if secret == "" {
+		return randomHexString(16)
+	}
+	if !isValidHexSecret(secret) {
+		return "", fmt.Errorf("invalid secret format: must be 32 hex characters")
+	}
+	return secret, nil
+}
+
+// buildAdoptedClientState assembles the managedClient + initial assignment +
+// initial deployment for a freshly-adopted discovered record.
+func (s *Server) buildAdoptedClientState(record storage.DiscoveredClientRecord, secret, expirationRFC3339 string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment) {
 	client := managedClient{
 		ID:                s.nextClientID(),
 		Name:              record.ClientName,
@@ -307,21 +338,20 @@ func (s *Server) adoptDiscoveredClient(ctx context.Context, id, actorID string, 
 			UpdatedAt:        observedAt,
 		},
 	}
+	return client, assignments, deployments
+}
 
-	// P2-ARCH-01: the client row, assignments, deployments, discovered-
-	// status flip, and any duplicate-status updates must land atomically.
-	// Before Transact, a panic/error mid-sequence could leave a managed
-	// client without its discovered row flipped, or with only some
-	// assignments persisted. Driving them all through a single Transact
-	// fixes that. The in-memory mirror + usage seed happen only after
-	// the commit succeeds.
-	var duplicateSecret string
-	if err := s.store.Transact(ctx, func(tx storage.Store) error {
+// persistAdoptedClient performs the atomic write of the new managed client,
+// flips the discovered row, and bulk-marks duplicates of the same secret.
+// P2-ARCH-01: all writes share one Transact so a partial failure cannot
+// leave the system half-converted.
+func (s *Server) persistAdoptedClient(ctx context.Context, discoveredID string, client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment, observedAt time.Time) error {
+	return s.store.Transact(ctx, func(tx storage.Store) error {
 		// Re-read the discovered record inside the tx so another
 		// concurrent adopt on a different control-plane instance cannot
 		// slip past the pre-check. adoptMu covers the current instance;
 		// the tx + re-read covers cross-instance racing.
-		freshRecord, err := tx.GetDiscoveredClient(ctx, id)
+		freshRecord, err := tx.GetDiscoveredClient(ctx, discoveredID)
 		if err != nil {
 			return err
 		}
@@ -332,36 +362,16 @@ func (s *Server) adoptDiscoveredClient(ctx context.Context, id, actorID string, 
 		if err := persistClientStateVia(ctx, tx, client, assignments, deployments, s.vault()); err != nil {
 			return err
 		}
-		if err := tx.UpdateDiscoveredClientStatus(ctx, id, discoveredClientStatusAdopted, observedAt.UTC()); err != nil {
+		if err := tx.UpdateDiscoveredClientStatus(ctx, discoveredID, discoveredClientStatusAdopted, observedAt.UTC()); err != nil {
 			return err
 		}
 		if freshRecord.Secret != "" {
-			if err := markDuplicateDiscoveredClientsAdoptedTx(ctx, tx, id, freshRecord.Secret, observedAt); err != nil {
+			if err := markDuplicateDiscoveredClientsAdoptedTx(ctx, tx, discoveredID, freshRecord.Secret, observedAt); err != nil {
 				return err
 			}
-			duplicateSecret = freshRecord.Secret
 		}
 		return nil
-	}); err != nil {
-		return managedClient{}, err
-	}
-
-	// Update the in-memory mirror now that the commit succeeded. If this
-	// fails (it can't today; replaceClientStateInMemory never errors when
-	// the store portion is skipped), the reconciler will catch up on the
-	// next snapshot.
-	s.replaceClientStateInMemory(client, assignments, deployments)
-
-	// Seed live usage with the stats Telemt already reported for this user.
-	s.seedClientUsage(ctx, client.ID, record.AgentID, record.TotalOctets, record.CurrentConnections, record.ActiveUniqueIPs, observedAt)
-	_ = duplicateSecret // retained for future logging hooks
-
-	s.appendAuditWithContext(ctx, actorID, "clients.adopted", id, map[string]any{
-		"client_name": record.ClientName,
-		"client_id":   client.ID,
 	})
-
-	return client, nil
 }
 
 // markDuplicateDiscoveredClientsAdopted marks all other discovered clients with the same

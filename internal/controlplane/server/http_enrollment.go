@@ -201,24 +201,8 @@ func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 			return
 		}
 
-		// Resolve the fleet-group reference. Empty → seed/use the
-		// default group. Otherwise try id first, then fall back to
-		// the unique name so operators/scripts can use the friendly
-		// slug without hunting for UUIDs.
-		fleetGroupID, ok := s.resolveEnrollmentFleetGroupID(w, r, request.FleetGroupID)
+		fleetGroupID, ok := s.resolveAndAuthorizeEnrollmentScope(w, r, user, request.FleetGroupID)
 		if !ok {
-			return
-		}
-
-		// R-S-14: only allow enrollment tokens for groups inside scope.
-		// Done after the resolve so name → id translation runs first
-		// and the operator gets the same UX even when scoped.
-		scope, ok := s.requireFleetScope(w, r, user)
-		if !ok {
-			return
-		}
-		if !scope.IsAllowed(fleetGroupID) {
-			writeError(w, http.StatusForbidden, "fleet group outside operator scope")
 			return
 		}
 
@@ -250,6 +234,28 @@ func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 			CAPEM:         s.authority.caPEM,
 		})
 	}
+}
+
+// resolveAndAuthorizeEnrollmentScope resolves the fleet-group reference and
+// then verifies the operator's R-S-14 scope. Empty input → seed/use the
+// default group. Otherwise tries id first, then falls back to the unique
+// name so operators/scripts can use the friendly slug without hunting for
+// UUIDs. Done before the scope check so name → id translation runs first
+// and the operator gets the same UX even when scoped.
+func (s *Server) resolveAndAuthorizeEnrollmentScope(w http.ResponseWriter, r *http.Request, user auth.User, requested string) (string, bool) {
+	fleetGroupID, ok := s.resolveEnrollmentFleetGroupID(w, r, requested)
+	if !ok {
+		return "", false
+	}
+	scope, ok := s.requireFleetScope(w, r, user)
+	if !ok {
+		return "", false
+	}
+	if !scope.IsAllowed(fleetGroupID) {
+		writeError(w, http.StatusForbidden, "fleet group outside operator scope")
+		return "", false
+	}
+	return fleetGroupID, true
 }
 
 func (s *Server) handleAgentBootstrap() http.HandlerFunc {
@@ -348,19 +354,8 @@ func (s *Server) handleListEnrollmentTokens() http.HandlerFunc {
 
 func (s *Server) handleRevokeEnrollmentToken() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session, user, err := s.requireSession(r)
-		if err != nil {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
-			return
-		}
-
-		if user.Role == auth.RoleViewer {
-			writeError(w, http.StatusForbidden, "viewer role cannot manage enrollment tokens")
-			return
-		}
-
-		if s.store == nil {
-			writeError(w, http.StatusServiceUnavailable, "persistent store required")
+		session, user, ok := s.requireEnrollmentManager(w, r)
+		if !ok {
 			return
 		}
 
@@ -377,25 +372,7 @@ func (s *Server) handleRevokeEnrollmentToken() http.HandlerFunc {
 			value = resolved
 		}
 
-		// R-S-14: scope-check the token's fleet group before revoking.
-		// We resolve the existing record first so the scope decision
-		// uses the durable fleet_group_id, not the operator's input.
-		existing, lookupErr := s.store.GetEnrollmentToken(r.Context(), value)
-		if lookupErr != nil {
-			if errors.Is(lookupErr, storage.ErrNotFound) {
-				writeError(w, http.StatusNotFound, msgEnrollmentTokenNotFound)
-				return
-			}
-			s.logger.Error("lookup enrollment token failed", "error", lookupErr)
-			writeError(w, http.StatusInternalServerError, msgInternalError)
-			return
-		}
-		scope, ok := s.requireFleetScope(w, r, user)
-		if !ok {
-			return
-		}
-		if !scope.IsAllowed(existing.FleetGroupID) {
-			writeError(w, http.StatusNotFound, msgEnrollmentTokenNotFound)
+		if !s.authorizeEnrollmentTokenRevoke(w, r, user, value) {
 			return
 		}
 
@@ -417,6 +394,50 @@ func (s *Server) handleRevokeEnrollmentToken() http.HandlerFunc {
 
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+// requireEnrollmentManager handles the session + role + persistent-store
+// preconditions shared by every enrollment-token mutation handler.
+func (s *Server) requireEnrollmentManager(w http.ResponseWriter, r *http.Request) (auth.Session, auth.User, bool) {
+	session, user, err := s.requireSession(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return auth.Session{}, auth.User{}, false
+	}
+	if user.Role == auth.RoleViewer {
+		writeError(w, http.StatusForbidden, "viewer role cannot manage enrollment tokens")
+		return auth.Session{}, auth.User{}, false
+	}
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "persistent store required")
+		return auth.Session{}, auth.User{}, false
+	}
+	return session, user, true
+}
+
+// authorizeEnrollmentTokenRevoke loads the durable record and verifies it
+// sits within the operator's fleet scope (R-S-14). 404 is returned for
+// out-of-scope or missing tokens to avoid leaking existence.
+func (s *Server) authorizeEnrollmentTokenRevoke(w http.ResponseWriter, r *http.Request, user auth.User, value string) bool {
+	existing, lookupErr := s.store.GetEnrollmentToken(r.Context(), value)
+	if lookupErr != nil {
+		if errors.Is(lookupErr, storage.ErrNotFound) {
+			writeError(w, http.StatusNotFound, msgEnrollmentTokenNotFound)
+			return false
+		}
+		s.logger.Error("lookup enrollment token failed", "error", lookupErr)
+		writeError(w, http.StatusInternalServerError, msgInternalError)
+		return false
+	}
+	scope, ok := s.requireFleetScope(w, r, user)
+	if !ok {
+		return false
+	}
+	if !scope.IsAllowed(existing.FleetGroupID) {
+		writeError(w, http.StatusNotFound, msgEnrollmentTokenNotFound)
+		return false
+	}
+	return true
 }
 
 func (s *Server) issueEnrollmentToken(scope security.EnrollmentScope, issuedAt time.Time) (security.EnrollmentToken, error) {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/fleet"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
@@ -260,38 +261,13 @@ func (s *Server) handleDeleteFleetGroup() http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, msgFleetGroupIDReq)
 			return
 		}
-		// R-S-14: must be in scope of both the group being deleted and
-		// the reassign target (otherwise an operator could move agents
-		// out of their visible fleet and lose track of them).
-		scope, ok := s.requireFleetScope(w, r, user)
+		reassignTo, ok := s.authorizeFleetGroupDelete(w, r, user, id)
 		if !ok {
-			return
-		}
-		if !scope.IsAllowed(id) {
-			writeError(w, http.StatusNotFound, msgFleetGroupNotFound)
-			return
-		}
-		reassignTo := r.URL.Query().Get("reassign_to")
-		if reassignTo != "" && !scope.IsAllowed(reassignTo) {
-			writeError(w, http.StatusBadRequest, "reassign target outside operator scope")
 			return
 		}
 		moved, err := s.fleetSvc.Delete(r.Context(), id, reassignTo)
 		if err != nil {
-			if errors.Is(err, storage.ErrNotFound) {
-				writeError(w, http.StatusNotFound, msgFleetGroupNotFound)
-				return
-			}
-			if errors.Is(err, fleet.ErrReassignTargetMissing) {
-				writeError(w, http.StatusConflict, err.Error())
-				return
-			}
-			if errors.Is(err, fleet.ErrReassignTargetSame) {
-				writeError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			s.logger.Error("delete fleet group failed", "id", id, "error", err)
-			writeError(w, http.StatusInternalServerError, msgInternalError)
+			s.writeFleetGroupDeleteError(w, id, err)
 			return
 		}
 		s.appendAuditWithContext(r.Context(), session.UserID, "fleet_groups.delete", id, map[string]any{
@@ -305,14 +281,7 @@ func (s *Server) handleDeleteFleetGroup() http.HandlerFunc {
 		// cached copies so subsequent /fleet-groups queries report the
 		// correct membership without waiting for a heartbeat rewrite.
 		if moved.Agents > 0 {
-			s.mu.Lock()
-			for agentID, agent := range s.agents {
-				if agent.FleetGroupID == id {
-					agent.FleetGroupID = reassignTo
-					s.agents[agentID] = agent
-				}
-			}
-			s.mu.Unlock()
+			s.patchAgentFleetGroupMembership(id, reassignTo)
 		}
 		writeJSON(w, http.StatusOK, fleetGroupDeletionResponse{
 			Moved: fleetGroupDeletionPreviewResponse{
@@ -323,6 +292,56 @@ func (s *Server) handleDeleteFleetGroup() http.HandlerFunc {
 				ReassignRequired:      false,
 			},
 		})
+	}
+}
+
+// authorizeFleetGroupDelete validates the operator scope (R-S-14) for both
+// the group being deleted and the reassign target. Returns the validated
+// reassign-target id and ok=true on success; writes the appropriate HTTP
+// error and returns ok=false otherwise.
+func (s *Server) authorizeFleetGroupDelete(w http.ResponseWriter, r *http.Request, user auth.User, id string) (string, bool) {
+	scope, ok := s.requireFleetScope(w, r, user)
+	if !ok {
+		return "", false
+	}
+	if !scope.IsAllowed(id) {
+		writeError(w, http.StatusNotFound, msgFleetGroupNotFound)
+		return "", false
+	}
+	reassignTo := r.URL.Query().Get("reassign_to")
+	if reassignTo != "" && !scope.IsAllowed(reassignTo) {
+		writeError(w, http.StatusBadRequest, "reassign target outside operator scope")
+		return "", false
+	}
+	return reassignTo, true
+}
+
+// writeFleetGroupDeleteError maps service-level errors from fleetSvc.Delete
+// to HTTP responses. Pulled out so the handler stays linear.
+func (s *Server) writeFleetGroupDeleteError(w http.ResponseWriter, id string, err error) {
+	switch {
+	case errors.Is(err, storage.ErrNotFound):
+		writeError(w, http.StatusNotFound, msgFleetGroupNotFound)
+	case errors.Is(err, fleet.ErrReassignTargetMissing):
+		writeError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, fleet.ErrReassignTargetSame):
+		writeError(w, http.StatusBadRequest, err.Error())
+	default:
+		s.logger.Error("delete fleet group failed", "id", id, "error", err)
+		writeError(w, http.StatusInternalServerError, msgInternalError)
+	}
+}
+
+// patchAgentFleetGroupMembership rewrites the in-memory agent snapshot so
+// agents previously pointing at deletedID now reference reassignTo.
+func (s *Server) patchAgentFleetGroupMembership(deletedID, reassignTo string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for agentID, agent := range s.agents {
+		if agent.FleetGroupID == deletedID {
+			agent.FleetGroupID = reassignTo
+			s.agents[agentID] = agent
+		}
 	}
 }
 

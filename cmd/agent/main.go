@@ -67,60 +67,100 @@ func run(args []string) error {
 	return runRuntime(args)
 }
 
-func runRuntime(args []string) error {
+// runtimeFlags holds the parsed CLI options for the agent runtime. Pulling
+// them off runRuntime keeps the entrypoint short enough to fall under the
+// cognitive-complexity threshold.
+type runtimeFlags struct {
+	gatewayAddr           string
+	gatewayServerName     string
+	stateFile             string
+	nodeName              string
+	fleetGroupID          string
+	version               string
+	telemtURL             string
+	telemtMetricsURL      string
+	telemtAuth            string
+	telemtConfigPath      string
+	heartbeat             time.Duration
+	runtimePoll           time.Duration
+	runtimeUpload         time.Duration
+	runtimeSnapshot       time.Duration
+	usageSnapshot         time.Duration
+	ipPoll                time.Duration
+	ipUpload              time.Duration
+	logLevel              string
+	clientDataConcurrency int
+}
+
+// parseRuntimeFlags binds the agent CLI flags and parses the supplied args.
+func parseRuntimeFlags(args []string) (runtimeFlags, error) {
 	flags := flag.NewFlagSet("agent", flag.ContinueOnError)
-	gatewayAddr := flags.String("gateway-addr", "127.0.0.1:8443", "Control-plane gRPC address")
-	gatewayServerName := flags.String("gateway-server-name", "control-plane.panvex.internal", "Expected control-plane TLS server name")
-	stateFile := flags.String("state-file", "data/agent-state.json", "Agent credential state file")
-	nodeName := flags.String("node-name", hostName(), "Node name reported to the control-plane")
-	fleetGroupID := flags.String("fleet-group-id", "", "Fleet group identifier reported by the agent")
-	version := flags.String("version", AgentVersion, "Agent version reported to control-plane")
-	telemtURL := flags.String("telemt-url", "http://127.0.0.1:8080", "Local Telemt API URL")
-	telemtMetricsURL := flags.String("telemt-metrics-url", "http://127.0.0.1:8081", "Local Telemt metrics URL")
-	telemtAuth := flags.String("telemt-auth", "", "Local Telemt authorization value")
-	telemtConfigPath := flags.String("telemt-config-path", "", "Path to Telemt config file (optional, auto-detected via API if empty)")
-	heartbeat := flags.Duration("heartbeat-interval", 15*time.Second, "Heartbeat interval")
-	runtimePoll := flags.Duration("runtime-poll-interval", 15*time.Second, "How often the agent polls Telemt for runtime data")
-	runtimeUpload := flags.Duration("runtime-upload-interval", time.Minute, "How often aggregated runtime snapshots are sent to the control-plane")
-	runtimeSnapshot := flags.Duration("snapshot-interval", 0, "Deprecated: use -runtime-poll-interval and -runtime-upload-interval")
-	usageSnapshot := flags.Duration("usage-interval", 2*time.Minute, "Client usage snapshot interval")
-	ipPoll := flags.Duration("ip-poll-interval", 15*time.Second, "Client IP polling interval")
-	ipUpload := flags.Duration("ip-upload-interval", time.Minute, "Client IP upload interval")
-	logLevel := flags.String("log-level", "info", "Log level: debug, info, warn, error")
-	clientDataConcurrency := flags.Int("client-data-concurrency", clientDataConcurrencyDefault(), "Max concurrent in-flight ClientDataRequest goroutines (env: PANVEX_AGENT_CLIENT_DATA_CONCURRENCY)")
+	cfg := runtimeFlags{}
+	flags.StringVar(&cfg.gatewayAddr, "gateway-addr", "127.0.0.1:8443", "Control-plane gRPC address")
+	flags.StringVar(&cfg.gatewayServerName, "gateway-server-name", "control-plane.panvex.internal", "Expected control-plane TLS server name")
+	flags.StringVar(&cfg.stateFile, "state-file", "data/agent-state.json", "Agent credential state file")
+	flags.StringVar(&cfg.nodeName, "node-name", hostName(), "Node name reported to the control-plane")
+	flags.StringVar(&cfg.fleetGroupID, "fleet-group-id", "", "Fleet group identifier reported by the agent")
+	flags.StringVar(&cfg.version, "version", AgentVersion, "Agent version reported to control-plane")
+	flags.StringVar(&cfg.telemtURL, "telemt-url", "http://127.0.0.1:8080", "Local Telemt API URL")
+	flags.StringVar(&cfg.telemtMetricsURL, "telemt-metrics-url", "http://127.0.0.1:8081", "Local Telemt metrics URL")
+	flags.StringVar(&cfg.telemtAuth, "telemt-auth", "", "Local Telemt authorization value")
+	flags.StringVar(&cfg.telemtConfigPath, "telemt-config-path", "", "Path to Telemt config file (optional, auto-detected via API if empty)")
+	flags.DurationVar(&cfg.heartbeat, "heartbeat-interval", 15*time.Second, "Heartbeat interval")
+	flags.DurationVar(&cfg.runtimePoll, "runtime-poll-interval", 15*time.Second, "How often the agent polls Telemt for runtime data")
+	flags.DurationVar(&cfg.runtimeUpload, "runtime-upload-interval", time.Minute, "How often aggregated runtime snapshots are sent to the control-plane")
+	flags.DurationVar(&cfg.runtimeSnapshot, "snapshot-interval", 0, "Deprecated: use -runtime-poll-interval and -runtime-upload-interval")
+	flags.DurationVar(&cfg.usageSnapshot, "usage-interval", 2*time.Minute, "Client usage snapshot interval")
+	flags.DurationVar(&cfg.ipPoll, "ip-poll-interval", 15*time.Second, "Client IP polling interval")
+	flags.DurationVar(&cfg.ipUpload, "ip-upload-interval", time.Minute, "Client IP upload interval")
+	flags.StringVar(&cfg.logLevel, "log-level", "info", "Log level: debug, info, warn, error")
+	flags.IntVar(&cfg.clientDataConcurrency, "client-data-concurrency", clientDataConcurrencyDefault(), "Max concurrent in-flight ClientDataRequest goroutines (env: PANVEX_AGENT_CLIENT_DATA_CONCURRENCY)")
 	if err := flags.Parse(args); err != nil {
+		return runtimeFlags{}, err
+	}
+	// Backward compatibility: if deprecated --snapshot-interval is set, use it for both poll and upload.
+	if cfg.runtimeSnapshot > 0 {
+		cfg.runtimePoll = cfg.runtimeSnapshot
+		cfg.runtimeUpload = cfg.runtimeSnapshot
+	}
+	return cfg, nil
+}
+
+func runRuntime(args []string) error {
+	cfg, err := parseRuntimeFlags(args)
+	if err != nil {
 		return err
 	}
 
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: parseLogLevel(*logLevel)})))
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: parseLogLevel(cfg.logLevel)})))
 
-	credentialsState, err := loadRuntimeCredentials(*stateFile)
+	credentialsState, err := loadRuntimeCredentials(cfg.stateFile)
 	if err != nil {
 		return err
 	}
 	if credentialsState.GRPCEndpoint != "" {
-		*gatewayAddr = credentialsState.GRPCEndpoint
+		cfg.gatewayAddr = credentialsState.GRPCEndpoint
 	}
 	if credentialsState.GRPCServerName != "" {
-		*gatewayServerName = credentialsState.GRPCServerName
+		cfg.gatewayServerName = credentialsState.GRPCServerName
 	}
 
 	telemtClient, err := telemt.NewClient(telemt.Config{
-		BaseURL:       *telemtURL,
-		MetricsURL:    *telemtMetricsURL,
-		Authorization: *telemtAuth,
+		BaseURL:       cfg.telemtURL,
+		MetricsURL:    cfg.telemtMetricsURL,
+		Authorization: cfg.telemtAuth,
 	}, nil)
 	if err != nil {
 		return err
 	}
 
-	statePath := *stateFile
+	statePath := cfg.stateFile
 	agent := runtime.New(runtime.Config{
 		AgentID:          credentialsState.AgentID,
-		NodeName:         *nodeName,
-		FleetGroupID:     *fleetGroupID,
-		Version:          *version,
-		TelemtConfigPath: *telemtConfigPath,
+		NodeName:         cfg.nodeName,
+		FleetGroupID:     cfg.fleetGroupID,
+		Version:          cfg.version,
+		TelemtConfigPath: cfg.telemtConfigPath,
 		// Resume snapshot sequence across restarts so the control-plane can
 		// dedup duplicate deltas. See P2-LOG-06 / L-07.
 		InitialUsageSeq: credentialsState.UsageSeq,
@@ -129,24 +169,27 @@ func runRuntime(args []string) error {
 		},
 	}, telemtClient)
 
-	// Backward compatibility: if deprecated --snapshot-interval is set, use it for both poll and upload.
-	if *runtimeSnapshot > 0 {
-		*runtimePoll = *runtimeSnapshot
-		*runtimeUpload = *runtimeSnapshot
-	}
-	schedule := newConnectionSchedule(*heartbeat, *runtimePoll, *runtimeUpload, *usageSnapshot, *ipPoll, *ipUpload)
+	schedule := newConnectionSchedule(cfg.heartbeat, cfg.runtimePoll, cfg.runtimeUpload, cfg.usageSnapshot, cfg.ipPoll, cfg.ipUpload)
 	slog.Info("agent starting",
 		"agent_id", credentialsState.AgentID,
-		"node", *nodeName,
-		"gateway", *gatewayAddr,
-		"telemt_api", *telemtURL,
-		"telemt_metrics", *telemtMetricsURL,
+		"node", cfg.nodeName,
+		"gateway", cfg.gatewayAddr,
+		"telemt_api", cfg.telemtURL,
+		"telemt_metrics", cfg.telemtMetricsURL,
 	)
 
+	runRuntimeReconnectLoop(&cfg, &credentialsState, agent, schedule)
+	return nil
+}
+
+// runRuntimeReconnectLoop is the agent's outer main-loop: refresh certs,
+// run the gRPC stream, and reconnect with backoff on failure. Extracted so
+// runRuntime stays under the CC threshold.
+func runRuntimeReconnectLoop(cfg *runtimeFlags, credentialsState *agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule) {
 	reconnectAttempt := 0
 	for {
 		refreshCtx, cancelRefresh := context.WithTimeout(context.Background(), certificateRefreshTimeout)
-		credentialsState, err = renewRuntimeCredentialsIfNeeded(refreshCtx, *stateFile, *gatewayAddr, *gatewayServerName, credentialsState, time.Now())
+		refreshed, err := renewRuntimeCredentialsIfNeeded(refreshCtx, cfg.stateFile, cfg.gatewayAddr, cfg.gatewayServerName, *credentialsState, time.Now())
 		cancelRefresh()
 		if err != nil {
 			reconnectAttempt++
@@ -154,14 +197,16 @@ func runRuntime(args []string) error {
 			time.Sleep(reconnectDelay(reconnectAttempt))
 			continue
 		}
+		*credentialsState = refreshed
 
-		credentialsState, err = runConnection(*gatewayAddr, *gatewayServerName, *stateFile, credentialsState, agent, schedule, *clientDataConcurrency)
-		if err == nil || errors.Is(err, errRuntimeCredentialsRefreshed) {
+		afterConn, connErr := runConnection(cfg.gatewayAddr, cfg.gatewayServerName, cfg.stateFile, *credentialsState, agent, schedule, cfg.clientDataConcurrency)
+		*credentialsState = afterConn
+		if connErr == nil || errors.Is(connErr, errRuntimeCredentialsRefreshed) {
 			reconnectAttempt = 0
 			continue
 		}
 		reconnectAttempt++
-		slog.Error("connection ended", "error", err)
+		slog.Error("connection ended", "error", connErr)
 		time.Sleep(reconnectDelay(reconnectAttempt))
 	}
 }

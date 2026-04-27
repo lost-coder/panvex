@@ -819,71 +819,62 @@ func (s *Service) updateTarget(ctx context.Context, agentID, jobID string, obser
 }
 
 func (s *Service) expireJobsLocked(now time.Time) []persistCandidate {
-	if s.jobStore == nil {
-		for _, job := range s.jobs {
-			if !jobShouldExpire(job, now) {
-				continue
-			}
-
-			updated := false
-			for index := range job.Targets {
-				target := &job.Targets[index]
-				if target.Status == TargetStatusSucceeded || target.Status == TargetStatusFailed || target.Status == TargetStatusExpired {
-					continue
-				}
-				target.Status = TargetStatusExpired
-				target.UpdatedAt = now.UTC()
-				updated = true
-			}
-			if !updated && job.Status == StatusExpired {
-				continue
-			}
-
-			job.Status = StatusExpired
-			s.jobs[job.ID] = job
-			s.syncJobTargetsIndexLocked(job)
-			s.keys[job.IdempotencyKey] = job.ID
-			s.markKeyTerminalLocked(job.IdempotencyKey, now)
-		}
-
-		return nil
+	persisting := s.jobStore != nil
+	var candidates []persistCandidate
+	if persisting {
+		candidates = make([]persistCandidate, 0)
 	}
-
-	candidates := make([]persistCandidate, 0)
 	for _, job := range s.jobs {
 		if !jobShouldExpire(job, now) {
 			continue
 		}
-
-		updated := false
-		for index := range job.Targets {
-			target := &job.Targets[index]
-			if target.Status == TargetStatusSucceeded || target.Status == TargetStatusFailed || target.Status == TargetStatusExpired {
-				continue
-			}
-			target.Status = TargetStatusExpired
-			target.UpdatedAt = now.UTC()
-			updated = true
-		}
-		if !updated && job.Status == StatusExpired {
+		updated, expiredJob, ok := expireJobTargets(job, now)
+		if !ok {
 			continue
 		}
-
-		job.Status = StatusExpired
-		s.jobs[job.ID] = job
-		s.syncJobTargetsIndexLocked(job)
-		s.keys[job.IdempotencyKey] = job.ID
-		s.markKeyTerminalLocked(job.IdempotencyKey, now)
-		s.updateSeq++
-		s.jobVersion[job.ID] = s.updateSeq
-		candidates = append(candidates, persistCandidate{
-			jobID:   job.ID,
-			version: s.updateSeq,
-			job:     cloneJob(job),
-		})
+		s.applyExpiredJobLocked(expiredJob, now)
+		if persisting && updated {
+			s.updateSeq++
+			s.jobVersion[expiredJob.ID] = s.updateSeq
+			candidates = append(candidates, persistCandidate{
+				jobID:   expiredJob.ID,
+				version: s.updateSeq,
+				job:     cloneJob(expiredJob),
+			})
+		}
 	}
-
 	return candidates
+}
+
+// expireJobTargets flips any non-terminal targets on the job to expired and
+// returns the updated job. Reports updated=true when at least one target was
+// transitioned. Returns ok=false when the job is already in StatusExpired with
+// nothing to update — the caller should skip it.
+func expireJobTargets(job Job, now time.Time) (bool, Job, bool) {
+	updated := false
+	for index := range job.Targets {
+		target := &job.Targets[index]
+		if target.Status == TargetStatusSucceeded || target.Status == TargetStatusFailed || target.Status == TargetStatusExpired {
+			continue
+		}
+		target.Status = TargetStatusExpired
+		target.UpdatedAt = now.UTC()
+		updated = true
+	}
+	if !updated && job.Status == StatusExpired {
+		return false, job, false
+	}
+	job.Status = StatusExpired
+	return updated, job, true
+}
+
+// applyExpiredJobLocked commits the expired job back into the in-memory
+// state and refreshes the per-key terminal-time index.
+func (s *Service) applyExpiredJobLocked(job Job, now time.Time) {
+	s.jobs[job.ID] = job
+	s.syncJobTargetsIndexLocked(job)
+	s.keys[job.IdempotencyKey] = job.ID
+	s.markKeyTerminalLocked(job.IdempotencyKey, now)
 }
 
 func jobShouldExpire(job Job, now time.Time) bool {
@@ -909,54 +900,74 @@ func (s *Service) restore() error {
 		// only contains rows within JobsSeconds of "now", so loading
 		// them all is safe. Skipping terminal jobs here would hide
 		// recent failure history from the UI.
-		targetRecords, err := s.jobStore.ListJobTargets(context.Background(), record.ID)
+		job, err := s.loadJobWithTargets(record)
 		if err != nil {
 			return err
 		}
-
-		job := jobFromRecord(record)
-		job.Targets = make([]JobTarget, 0, len(targetRecords))
-		job.TargetAgentIDs = make([]string, 0, len(targetRecords))
-		for _, targetRecord := range targetRecords {
-			target := jobTargetFromRecord(targetRecord)
-			job.Targets = append(job.Targets, target)
-			job.TargetAgentIDs = append(job.TargetAgentIDs, target.AgentID)
-		}
-
-		s.jobs[job.ID] = job
-		s.syncJobTargetsIndexLocked(job)
-		// P2-LOG-05 (L-14): at runtime, MarkAcknowledged removes the target
-		// from agentJobs so PendingForAgent does not re-dispatch while the
-		// agent still owns the command. On restore, however, we must treat
-		// acknowledged-with-no-result as redeliverable: if both CP and agent
-		// restarted between ack and result, the agent's runtime queue is
-		// empty and the job would otherwise be stuck forever. Add these
-		// targets back to the index now.
-		for _, target := range job.Targets {
-			if target.AgentID == "" || target.Status != TargetStatusAcknowledged {
-				continue
-			}
-			if s.agentJobs[target.AgentID] == nil {
-				s.agentJobs[target.AgentID] = make(map[string]struct{})
-			}
-			s.agentJobs[target.AgentID][job.ID] = struct{}{}
-		}
-		s.keys[job.IdempotencyKey] = job.ID
-		if isTerminalStatus(job.Status) {
-			// Record the terminal timestamp so the eviction worker can
-			// drop already-completed jobs that were restored from store.
-			// We cannot recover the exact completion time cheaply, so use
-			// the job's CreatedAt — older than cutoff means older TTL, and
-			// the worst case is eviction on next scan, which is the
-			// desired behaviour for jobs persisted long enough ago.
-			s.keyTerminalAt[job.IdempotencyKey] = job.CreatedAt
-		}
-		s.sequence = maxJobSequence(s.sequence, job.ID)
-		s.updateSeq++
-		s.jobVersion[job.ID] = s.updateSeq
+		s.installRestoredJob(job)
 	}
 
 	return nil
+}
+
+// loadJobWithTargets builds a Job from a stored JobRecord by fetching its
+// JobTarget rows. Pulled out of restore() so the caller stays a single
+// linear loop with no nested error returns.
+func (s *Service) loadJobWithTargets(record storage.JobRecord) (Job, error) {
+	targetRecords, err := s.jobStore.ListJobTargets(context.Background(), record.ID)
+	if err != nil {
+		return Job{}, err
+	}
+	job := jobFromRecord(record)
+	job.Targets = make([]JobTarget, 0, len(targetRecords))
+	job.TargetAgentIDs = make([]string, 0, len(targetRecords))
+	for _, targetRecord := range targetRecords {
+		target := jobTargetFromRecord(targetRecord)
+		job.Targets = append(job.Targets, target)
+		job.TargetAgentIDs = append(job.TargetAgentIDs, target.AgentID)
+	}
+	return job, nil
+}
+
+// installRestoredJob commits a single restored Job into the in-memory
+// service state, including the agentJobs redelivery index, key bookkeeping,
+// and update-sequence accounting.
+func (s *Service) installRestoredJob(job Job) {
+	s.jobs[job.ID] = job
+	s.syncJobTargetsIndexLocked(job)
+	s.reindexAcknowledgedTargets(job)
+	s.keys[job.IdempotencyKey] = job.ID
+	if isTerminalStatus(job.Status) {
+		// Record the terminal timestamp so the eviction worker can
+		// drop already-completed jobs that were restored from store.
+		// We cannot recover the exact completion time cheaply, so use
+		// the job's CreatedAt — older than cutoff means older TTL, and
+		// the worst case is eviction on next scan, which is the
+		// desired behaviour for jobs persisted long enough ago.
+		s.keyTerminalAt[job.IdempotencyKey] = job.CreatedAt
+	}
+	s.sequence = maxJobSequence(s.sequence, job.ID)
+	s.updateSeq++
+	s.jobVersion[job.ID] = s.updateSeq
+}
+
+// reindexAcknowledgedTargets rebuilds the agentJobs entries for any target
+// in TargetStatusAcknowledged. P2-LOG-05 (L-14): at runtime, MarkAcknowledged
+// removes the target from agentJobs so PendingForAgent does not re-dispatch
+// while the agent still owns the command. On restore, however, we must treat
+// acknowledged-with-no-result as redeliverable: if both CP and agent
+// restarted between ack and result, the agent's runtime queue is empty and
+// the job would otherwise be stuck forever.
+func (s *Service) reindexAcknowledgedTargets(job Job) {
+	for _, target := range job.Targets {
+		if target.AgentID == "" || target.Status != TargetStatusAcknowledged {
+			continue
+		}
+		if s.agentJobs[target.AgentID] == nil {
+			s.agentJobs[target.AgentID] = make(map[string]struct{})
+		}
+		s.agentJobs[target.AgentID][job.ID] = struct{}{}
+	}
 }
 
 func (s *Service) persistJob(ctx context.Context, job Job) error {

@@ -485,11 +485,8 @@ func (s *Server) handleAgentUpdate() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		agentID := chi.URLParam(r, "id")
 
-		s.mu.RLock()
-		agent, exists := s.agents[agentID]
-		s.mu.RUnlock()
-		if !exists {
-			writeError(w, http.StatusNotFound, "agent not found")
+		agent, ok := s.lookupAgentForUpdate(w, agentID)
+		if !ok {
 			return
 		}
 
@@ -511,17 +508,10 @@ func (s *Server) handleAgentUpdate() http.HandlerFunc {
 			return
 		}
 
-		// Fetch checksum from GitHub.
-		checkCtx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-		defer cancel()
-		checksum, err := DownloadChecksum(checkCtx, assets.checksumURL, settings.GitHubToken)
-		if err != nil {
-			s.logger.Error("agent update: fetch checksum failed", "error", err)
-			writeError(w, http.StatusInternalServerError, "failed to fetch checksum")
+		payloadJSON, ok := s.prepareAgentUpdatePayload(w, r, assets, settings)
+		if !ok {
 			return
 		}
-
-		payloadJSON := s.buildAgentUpdatePayload(assets, checksum, settings, r.Host)
 
 		// P1-SEC-11: never discard the requireSession error. Without this
 		// check a malformed/expired cookie here would fall through with an
@@ -559,6 +549,34 @@ func (s *Server) handleAgentUpdate() http.HandlerFunc {
 			"version": assets.targetVersion,
 		})
 	}
+}
+
+// lookupAgentForUpdate returns the in-memory snapshot of the agent that the
+// update is targeting, writing a 404 when no such agent is enrolled.
+func (s *Server) lookupAgentForUpdate(w http.ResponseWriter, agentID string) (Agent, bool) {
+	s.mu.RLock()
+	agent, exists := s.agents[agentID]
+	s.mu.RUnlock()
+	if !exists {
+		writeError(w, http.StatusNotFound, "agent not found")
+		return Agent{}, false
+	}
+	return agent, true
+}
+
+// prepareAgentUpdatePayload downloads the GitHub-served checksum (with a
+// per-call timeout) and builds the JSON payload the agent will receive in
+// the update job. Returns ok=false after writing the appropriate HTTP error.
+func (s *Server) prepareAgentUpdatePayload(w http.ResponseWriter, r *http.Request, assets agentUpdateAssets, settings UpdateSettings) ([]byte, bool) {
+	checkCtx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	checksum, err := DownloadChecksum(checkCtx, assets.checksumURL, settings.GitHubToken)
+	if err != nil {
+		s.logger.Error("agent update: fetch checksum failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to fetch checksum")
+		return nil, false
+	}
+	return s.buildAgentUpdatePayload(assets, checksum, settings, r.Host), true
 }
 
 // allowedAgentArches constrains the arch query parameter on the agent

@@ -29,67 +29,20 @@ func (s *Server) handleAgentCertificateRecovery() http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "invalid recovery payload")
 			return
 		}
-		if strings.TrimSpace(request.AgentID) == "" || strings.TrimSpace(request.CertificatePEM) == "" || strings.TrimSpace(request.ProofNonce) == "" || strings.TrimSpace(request.ProofSignature) == "" || request.ProofTimestampUnix == 0 {
-			writeError(w, http.StatusBadRequest, "recovery payload is incomplete")
+		if !validateRecoveryRequestFields(w, request) {
 			return
 		}
 
 		now := s.now().UTC()
-		certificate, err := parseRecoveryCertificate(request.CertificatePEM)
-		if err != nil {
-			writeError(w, http.StatusForbidden, "invalid recovery certificate")
-			return
-		}
-		if err := verifyRecoveryCertificate(certificate, request.AgentID, s.authority.certificate, now); err != nil {
-			writeError(w, http.StatusForbidden, err.Error())
-			return
-		}
-		if err := verifyRecoveryProof(certificate, request.AgentID, request.ProofTimestampUnix, request.ProofNonce, request.ProofSignature, now); err != nil {
-			writeError(w, http.StatusForbidden, err.Error())
+		if !s.verifyRecoveryRequestCryptography(w, request, now) {
 			return
 		}
 
-		s.mu.RLock()
-		agent, exists := s.agents[request.AgentID]
-		s.mu.RUnlock()
-		if !exists {
-			writeError(w, http.StatusForbidden, "agent is not enrolled")
+		agent, ok := s.lookupEnrolledAgent(w, request.AgentID)
+		if !ok {
 			return
 		}
-		grant, err := s.store.GetAgentCertificateRecoveryGrant(r.Context(), request.AgentID)
-		if err != nil {
-			if errors.Is(err, storage.ErrNotFound) {
-				writeError(w, http.StatusForbidden, msgRecoveryNotAllowed)
-				return
-			}
-			s.logger.Error("agent certificate recovery grant lookup failed", "agent_id", request.AgentID, "error", err)
-			writeError(w, http.StatusInternalServerError, msgInternalError)
-			return
-		}
-		if agentCertificateRecoveryGrantStatus(grant, now) != "allowed" {
-			writeError(w, http.StatusForbidden, msgRecoveryNotAllowed)
-			return
-		}
-
-		// P1-SEC-07: consume the grant BEFORE issuing the certificate so a
-		// crash between cert issue and grant consume cannot leave the grant
-		// reusable while a fresh cert is already minted. The grant consume
-		// is an atomic SQL UPDATE — concurrent recovery requests race here
-		// and only the winner proceeds; losers see ErrConflict and fail
-		// closed.
-		//
-		// Trade-off: if cert issuance itself fails after consume, the grant
-		// is lost and the admin must create a new one. This is acceptable
-		// because issuance is in-process and only fails on impossible
-		// conditions (CA unloaded, entropy exhausted) — a much narrower
-		// failure window than the former TOCTOU.
-		if _, err := s.store.UseAgentCertificateRecoveryGrant(r.Context(), request.AgentID, now); err != nil {
-			if errors.Is(err, storage.ErrNotFound) || errors.Is(err, storage.ErrConflict) {
-				writeError(w, http.StatusForbidden, msgRecoveryNotAllowed)
-				return
-			}
-			s.logger.Error("agent certificate recovery grant consume failed", "agent_id", request.AgentID, "error", err)
-			writeError(w, http.StatusInternalServerError, msgInternalError)
+		if !s.checkAndConsumeRecoveryGrant(w, r, request.AgentID, now) {
 			return
 		}
 		issued, err := s.authority.issueClientCertificate(request.AgentID, now)
@@ -113,6 +66,98 @@ func (s *Server) handleAgentCertificateRecovery() http.HandlerFunc {
 			ExpiresAtUnix:  issued.ExpiresAt.Unix(),
 		})
 	}
+}
+
+// validateRecoveryRequestFields rejects payloads missing any of the required
+// fields. Pulled out so the handler stays linear and the long disjunction
+// no longer dominates the function's cognitive complexity score.
+func validateRecoveryRequestFields(w http.ResponseWriter, request agentCertificateRecoveryRequest) bool {
+	if strings.TrimSpace(request.AgentID) == "" ||
+		strings.TrimSpace(request.CertificatePEM) == "" ||
+		strings.TrimSpace(request.ProofNonce) == "" ||
+		strings.TrimSpace(request.ProofSignature) == "" ||
+		request.ProofTimestampUnix == 0 {
+		writeError(w, http.StatusBadRequest, "recovery payload is incomplete")
+		return false
+	}
+	return true
+}
+
+// verifyRecoveryRequestCryptography parses the recovery certificate and
+// verifies it (signed by our authority) and the proof signature. Writes
+// 403 on any failure.
+func (s *Server) verifyRecoveryRequestCryptography(w http.ResponseWriter, request agentCertificateRecoveryRequest, now time.Time) bool {
+	certificate, err := parseRecoveryCertificate(request.CertificatePEM)
+	if err != nil {
+		writeError(w, http.StatusForbidden, "invalid recovery certificate")
+		return false
+	}
+	if err := verifyRecoveryCertificate(certificate, request.AgentID, s.authority.certificate, now); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return false
+	}
+	if err := verifyRecoveryProof(certificate, request.AgentID, request.ProofTimestampUnix, request.ProofNonce, request.ProofSignature, now); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return false
+	}
+	return true
+}
+
+// lookupEnrolledAgent returns the in-memory snapshot of the named agent
+// or writes 403 when no enrollment exists.
+func (s *Server) lookupEnrolledAgent(w http.ResponseWriter, agentID string) (Agent, bool) {
+	s.mu.RLock()
+	agent, exists := s.agents[agentID]
+	s.mu.RUnlock()
+	if !exists {
+		writeError(w, http.StatusForbidden, "agent is not enrolled")
+		return Agent{}, false
+	}
+	return agent, true
+}
+
+// checkAndConsumeRecoveryGrant verifies an "allowed" grant exists for this
+// agent and consumes it atomically (P1-SEC-07). Writes the appropriate HTTP
+// error on any failure path. Returns true only if the consume succeeded so
+// the caller may proceed to issue the new certificate.
+func (s *Server) checkAndConsumeRecoveryGrant(w http.ResponseWriter, r *http.Request, agentID string, now time.Time) bool {
+	grant, err := s.store.GetAgentCertificateRecoveryGrant(r.Context(), agentID)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			writeError(w, http.StatusForbidden, msgRecoveryNotAllowed)
+			return false
+		}
+		s.logger.Error("agent certificate recovery grant lookup failed", "agent_id", agentID, "error", err)
+		writeError(w, http.StatusInternalServerError, msgInternalError)
+		return false
+	}
+	if agentCertificateRecoveryGrantStatus(grant, now) != "allowed" {
+		writeError(w, http.StatusForbidden, msgRecoveryNotAllowed)
+		return false
+	}
+
+	// P1-SEC-07: consume the grant BEFORE issuing the certificate so a
+	// crash between cert issue and grant consume cannot leave the grant
+	// reusable while a fresh cert is already minted. The grant consume
+	// is an atomic SQL UPDATE — concurrent recovery requests race here
+	// and only the winner proceeds; losers see ErrConflict and fail
+	// closed.
+	//
+	// Trade-off: if cert issuance itself fails after consume, the grant
+	// is lost and the admin must create a new one. This is acceptable
+	// because issuance is in-process and only fails on impossible
+	// conditions (CA unloaded, entropy exhausted) — a much narrower
+	// failure window than the former TOCTOU.
+	if _, err := s.store.UseAgentCertificateRecoveryGrant(r.Context(), agentID, now); err != nil {
+		if errors.Is(err, storage.ErrNotFound) || errors.Is(err, storage.ErrConflict) {
+			writeError(w, http.StatusForbidden, msgRecoveryNotAllowed)
+			return false
+		}
+		s.logger.Error("agent certificate recovery grant consume failed", "agent_id", agentID, "error", err)
+		writeError(w, http.StatusInternalServerError, msgInternalError)
+		return false
+	}
+	return true
 }
 
 func (s *Server) handleCreateAgentCertificateRecoveryGrant() http.HandlerFunc {
