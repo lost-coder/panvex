@@ -41,7 +41,7 @@ func RandomHexString(size int) (string, error) {
 // input falls back to `fallback` when non-empty, otherwise a fresh
 // random tag is minted. Non-empty input must be exactly 32 hex chars;
 // it is returned lowercase. Any other input yields ErrUserADTag.
-func ResolveUserADTag(value string, fallback string) (string, error) {
+func ResolveUserADTag(value, fallback string) (string, error) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
 		if fallback != "" {

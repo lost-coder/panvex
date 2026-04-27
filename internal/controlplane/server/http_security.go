@@ -150,7 +150,7 @@ func isCSRFExemptPath(requestPath, panelRootPath, agentRootPath string) bool {
 // cannot replay state-changing calls to the secure backend. https
 // origins are always accepted; http origins only pass when the inbound
 // request is also plain http.
-func originMatchesHost(origin string, requestHost string) bool {
+func originMatchesHost(origin, requestHost string) bool {
 	parsed, err := url.Parse(origin)
 	if err != nil {
 		return false
@@ -172,7 +172,7 @@ func originMatchesHost(origin string, requestHost string) bool {
 // requestProto is the trusted forwarded proto ("http" or "https") that
 // the caller already resolved via trusted-proxy middleware. An origin
 // whose scheme cannot be parsed is rejected.
-func originSchemeMatchesRequest(origin string, requestProto string) bool {
+func originSchemeMatchesRequest(origin, requestProto string) bool {
 	parsed, err := url.Parse(origin)
 	if err != nil {
 		return false

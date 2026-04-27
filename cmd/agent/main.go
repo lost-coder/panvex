@@ -218,7 +218,7 @@ type connectionSchedule struct {
 	groups map[pollingGroup]pollingGroupConfig
 }
 
-func newConnectionSchedule(heartbeat time.Duration, runtimePoll time.Duration, runtimeUpload time.Duration, usageSnapshot time.Duration, ipPoll time.Duration, ipUpload time.Duration) connectionSchedule {
+func newConnectionSchedule(heartbeat, runtimePoll, runtimeUpload, usageSnapshot, ipPoll, ipUpload time.Duration) connectionSchedule {
 	return connectionSchedule{
 		groups: map[pollingGroup]pollingGroupConfig{
 			pollHeartbeat:     {Enabled: heartbeat > 0, Interval: heartbeat},

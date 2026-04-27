@@ -143,7 +143,7 @@ func lifecycleStateForRuntime(state telemt.RuntimeState) runtimeLifecycleState {
 	}
 }
 
-func startupLifecycleRegressed(previous runtimeLifecycleState, current runtimeLifecycleState) bool {
+func startupLifecycleRegressed(previous, current runtimeLifecycleState) bool {
 	if previous.startupProgressPct > 0 && current.startupProgressPct < previous.startupProgressPct {
 		return true
 	}

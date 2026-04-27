@@ -36,7 +36,7 @@ const (
 // the provided passphrase via Argon2id. A random 16-byte salt is generated and
 // prepended to the nonce+ciphertext blob. The result is base64-encoded with an
 // "ENC2:" prefix.
-func encryptPEM(plainPEM string, passphrase string) (string, error) {
+func encryptPEM(plainPEM, passphrase string) (string, error) {
 	salt := make([]byte, argon2SaltLen)
 	if _, err := rand.Read(salt); err != nil {
 		return "", err
@@ -73,7 +73,7 @@ func encryptPEM(plainPEM string, passphrase string) (string, error) {
 //
 // If an encryption key is configured but the stored value carries neither
 // prefix, an error is returned to prevent silent use of an unprotected key.
-func decryptPEM(stored string, passphrase string) (string, error) {
+func decryptPEM(stored, passphrase string) (string, error) {
 	if strings.HasPrefix(stored, encryptedPEMPrefixV2) {
 		return decryptPEMv2(stored, passphrase)
 	}
@@ -89,7 +89,7 @@ func decryptPEM(stored string, passphrase string) (string, error) {
 }
 
 // decryptPEMv2 handles the "ENC2:" format with Argon2id key derivation.
-func decryptPEMv2(stored string, passphrase string) (string, error) {
+func decryptPEMv2(stored, passphrase string) (string, error) {
 	data, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(stored, encryptedPEMPrefixV2))
 	if err != nil {
 		return "", errors.New("CA private key: invalid base64 encoding")
@@ -126,7 +126,7 @@ func decryptPEMv2(stored string, passphrase string) (string, error) {
 }
 
 // decryptPEMv1 handles the legacy "ENC:" format with SHA-256 key derivation.
-func decryptPEMv1(stored string, passphrase string) (string, error) {
+func decryptPEMv1(stored, passphrase string) (string, error) {
 	data, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(stored, encryptedPEMPrefix))
 	if err != nil {
 		return "", errors.New("CA private key: invalid base64 encoding")
