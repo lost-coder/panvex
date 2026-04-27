@@ -7,17 +7,6 @@ export interface CopyButtonProps {
   className?: string;
 }
 
-function fallbackCopy(value: string) {
-  const ta = document.createElement("textarea");
-  ta.value = value;
-  ta.style.position = "fixed";
-  ta.style.opacity = "0";
-  document.body.appendChild(ta);
-  ta.select();
-  document.execCommand("copy");
-  document.body.removeChild(ta);
-}
-
 export function CopyButton({ text, className }: Readonly<CopyButtonProps>) {
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
@@ -25,10 +14,14 @@ export function CopyButton({ text, className }: Readonly<CopyButtonProps>) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     };
+    // The async Clipboard API is the only modern path; the
+    // document.execCommand("copy") fallback was deprecated and removed
+    // from every browser we ship to. Quietly no-op in environments
+    // where navigator.clipboard is unavailable (older WebViews) so the
+    // UI stays usable even if the copy never lands.
     if (navigator.clipboard?.writeText) {
-      void navigator.clipboard.writeText(text).then(done);
+      navigator.clipboard.writeText(text).then(done).catch(() => {});
     } else {
-      fallbackCopy(text);
       done();
     }
   };

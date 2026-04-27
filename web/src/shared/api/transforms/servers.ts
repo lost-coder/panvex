@@ -1,5 +1,9 @@
-import type { ServerListItem } from "@/shared/api/types-pages/pages";
-import type { ServerDetailPageProps, InitCardProps, AgentConnectionData } from "@/shared/api/types-pages/pages";
+import type {
+  AgentConnectionData,
+  InitCardProps,
+  ServerDetailPageProps,
+  ServerListItem,
+} from "@/shared/api/types-pages/pages";
 import type {
   TelemetryServersResponse,
   TelemetryServerDetailResponse,

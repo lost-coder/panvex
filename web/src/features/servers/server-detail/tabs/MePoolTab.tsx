@@ -143,9 +143,9 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
           as structured data rather than a free-form blob. */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <MiniCard title="Generations" hint={`${summary.configuredDcGroups} DC groups`}>
-          <KV k="Active" v={<span className="font-mono text-fg">{generations.active}</span>} />
-          <KV k="Warm" v={<span className="font-mono text-fg">{generations.warm}</span>} />
-          <KV
+          <Kv k="Active" v={<span className="font-mono text-fg">{generations.active}</span>} />
+          <Kv k="Warm" v={<span className="font-mono text-fg">{generations.warm}</span>} />
+          <Kv
             k="Pending hardswap"
             v={
               generations.pendingHardswap > 0 ? (
@@ -155,7 +155,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
               )
             }
           />
-          <KV
+          <Kv
             k="Hardswap"
             v={
               <Badge variant={hardswap.enabled ? "ok" : "default"}>
@@ -165,7 +165,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
             }
           />
           {generations.drainingGenerations.length > 0 && (
-            <KV
+            <Kv
               k="Draining"
               v={
                 <span className="font-mono text-[11px] text-fg-muted">
@@ -174,7 +174,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
               }
             />
           )}
-          <KV
+          <Kv
             k="Contour"
             v={
               <span className="font-mono text-[11px] text-fg-muted">
@@ -185,7 +185,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
         </MiniCard>
 
         <MiniCard title="Writer state">
-          <KV
+          <Kv
             k="Healthy"
             v={
               <span className="font-mono font-semibold text-status-ok tabular-nums">
@@ -193,7 +193,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
               </span>
             }
           />
-          <KV
+          <Kv
             k="Degraded"
             v={
               <span
@@ -206,7 +206,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
               </span>
             }
           />
-          <KV
+          <Kv
             k="Draining"
             v={
               <span className="font-mono font-semibold text-fg tabular-nums">
@@ -214,7 +214,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
               </span>
             }
           />
-          <KV
+          <Kv
             k="Required"
             v={
               <span className="font-mono text-fg-muted tabular-nums">
@@ -225,7 +225,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
         </MiniCard>
 
         <MiniCard title="Refill" hint="inflight work">
-          <KV
+          <Kv
             k="Inflight endpoints"
             v={
               <span
@@ -238,7 +238,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
               </span>
             }
           />
-          <KV
+          <Kv
             k="Inflight DC"
             v={
               <span
@@ -373,7 +373,7 @@ function MiniCard({
   );
 }
 
-function KV({ k, v }: Readonly<{ k: string; v: React.ReactNode }>) {
+function Kv({ k, v }: Readonly<{ k: string; v: React.ReactNode }>) {
   return (
     <div className="flex items-center justify-between gap-3 text-xs">
       <span className="text-fg-muted">{k}</span>

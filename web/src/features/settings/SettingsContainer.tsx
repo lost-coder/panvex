@@ -25,7 +25,7 @@ export function SettingsContainer() {
   }
 
   if (error) {
-    return <ErrorState message={error.message} onRetry={() => window.location.reload()} />;
+    return <ErrorState description={error.message} onRetry={() => globalThis.location.reload()} />;
   }
 
   return (
