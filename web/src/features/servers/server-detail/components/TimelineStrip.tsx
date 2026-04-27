@@ -86,12 +86,11 @@ function _TimelineStrip({
           const pct = (e.tsEpochSecs - tMin) / range;
           if (pct < 0 || pct > 1) return null;
           const x = pad + pct * innerW;
-          const color =
-            e.kind === "error"
-              ? "var(--color-status-error)"
-              : e.kind === "warn"
-                ? "var(--color-status-warn)"
-                : "var(--color-fg-muted)";
+          const color = (() => {
+            if (e.kind === "error") return "var(--color-status-error)";
+            if (e.kind === "warn") return "var(--color-status-warn)";
+            return "var(--color-fg-muted)";
+          })();
           return (
             <g key={idx}>
               <line

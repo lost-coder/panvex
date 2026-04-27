@@ -51,8 +51,11 @@ export function ClientTrafficCell({ used, quota }: Readonly<{ used: number; quot
     return <MonoValue className="text-fg">{formatBytes(used)}</MonoValue>;
   }
   const pct = Math.min(100, (used / quota) * 100);
-  const tone =
-    pct >= 100 ? "bg-status-error" : pct >= 80 ? "bg-status-warn" : "bg-status-ok";
+  const tone = (() => {
+    if (pct >= 100) return "bg-status-error";
+    if (pct >= 80) return "bg-status-warn";
+    return "bg-status-ok";
+  })();
   return (
     <div className="flex flex-col gap-1 min-w-[120px]">
       <span className="text-[11px] font-mono text-fg tabular-nums">
@@ -71,9 +74,16 @@ export function ClientExpiryCell({ rfc, nowSec }: Readonly<{ rfc: string; nowSec
   const t = Date.parse(rfc);
   if (!Number.isFinite(t)) return <span className="text-[11px] font-mono text-fg-muted">—</span>;
   const days = Math.floor((t / 1000 - nowSec) / 86_400);
-  const tone =
-    days < 0 ? "text-status-error" : days < 7 ? "text-status-warn" : "text-fg-muted";
-  const subtitle = days < 0 ? `${Math.abs(days)}d ago` : days === 0 ? "today" : `in ${days}d`;
+  const tone = (() => {
+    if (days < 0) return "text-status-error";
+    if (days < 7) return "text-status-warn";
+    return "text-fg-muted";
+  })();
+  const subtitle = (() => {
+    if (days < 0) return `${Math.abs(days)}d ago`;
+    if (days === 0) return "today";
+    return `in ${days}d`;
+  })();
   return (
     <div className="flex flex-col">
       <span className="text-[11px] font-mono text-fg tabular-nums">{formatExpiry(rfc)}</span>

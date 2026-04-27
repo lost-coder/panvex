@@ -58,8 +58,12 @@ export function ThemeToggleButton() {
     typeof globalThis.window !== "undefined" && typeof globalThis.window.matchMedia === "function"
       ? globalThis.matchMedia("(prefers-color-scheme: dark)").matches
       : true;
-  const effective: "light" | "dark" =
-    stored === "light" ? "light" : stored === "dark" ? "dark" : systemPrefersDark ? "dark" : "light";
+  const effective: "light" | "dark" = (() => {
+    if (stored === "light") return "light";
+    if (stored === "dark") return "dark";
+    if (systemPrefersDark) return "dark";
+    return "light";
+  })();
   const next: "light" | "dark" = effective === "light" ? "dark" : "light";
 
   return (

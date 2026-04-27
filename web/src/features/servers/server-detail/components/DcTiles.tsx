@@ -10,26 +10,26 @@ import type { ServerDcData } from "@/shared/api/types-pages/pages";
 
 // ─── 12-DC grid of tiles (problem-first ordering) ─────────────────────
 function DcTile({ dc, onClick }: Readonly<{ dc: ServerDcData; onClick: () => void }>) {
-  const status: "ok" | "warn" | "error" =
-    dc.coveragePct < 70 ? "error" : dc.coveragePct < 100 ? "warn" : "ok";
-  const toneBorder =
-    status === "error"
-      ? "border-status-error/50"
-      : status === "warn"
-        ? "border-status-warn/40"
-        : "border-divider";
-  const toneBar =
-    status === "error"
-      ? "bg-status-error"
-      : status === "warn"
-        ? "bg-status-warn"
-        : "bg-status-ok/80";
-  const toneText =
-    status === "error"
-      ? "text-status-error"
-      : status === "warn"
-        ? "text-status-warn"
-        : "text-fg";
+  const status: "ok" | "warn" | "error" = (() => {
+    if (dc.coveragePct < 70) return "error";
+    if (dc.coveragePct < 100) return "warn";
+    return "ok";
+  })();
+  const toneBorder = (() => {
+    if (status === "error") return "border-status-error/50";
+    if (status === "warn") return "border-status-warn/40";
+    return "border-divider";
+  })();
+  const toneBar = (() => {
+    if (status === "error") return "bg-status-error";
+    if (status === "warn") return "bg-status-warn";
+    return "bg-status-ok/80";
+  })();
+  const toneText = (() => {
+    if (status === "error") return "text-status-error";
+    if (status === "warn") return "text-status-warn";
+    return "text-fg";
+  })();
   return (
     <button
       type="button"

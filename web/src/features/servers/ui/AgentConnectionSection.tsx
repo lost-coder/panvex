@@ -19,18 +19,16 @@ export function AgentConnectionSection({
   onAllowReEnrollment,
   onRevokeGrant,
 }: Readonly<AgentConnectionSectionProps>) {
-  const certTone =
-    data.certificate.remainingDays > 7
-      ? "text-status-ok"
-      : data.certificate.remainingDays > 1
-        ? "text-status-warn"
-        : "text-status-error";
-  const certBar =
-    data.certificate.remainingDays > 7
-      ? "bg-status-ok"
-      : data.certificate.remainingDays > 1
-        ? "bg-status-warn"
-        : "bg-status-error";
+  const certTone = (() => {
+    if (data.certificate.remainingDays > 7) return "text-status-ok";
+    if (data.certificate.remainingDays > 1) return "text-status-warn";
+    return "text-status-error";
+  })();
+  const certBar = (() => {
+    if (data.certificate.remainingDays > 7) return "bg-status-ok";
+    if (data.certificate.remainingDays > 1) return "bg-status-warn";
+    return "bg-status-error";
+  })();
   const presenceStatus = presenceSeverity[data.presenceState] ?? "error";
   const updateAvailable =
     !!data.latestAgentVersion && data.latestAgentVersion !== data.version;
