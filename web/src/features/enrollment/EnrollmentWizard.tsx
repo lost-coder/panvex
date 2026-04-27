@@ -209,7 +209,10 @@ function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
               loopback" guard. Surface the warning tone so operators
               who don't read the description can still see this is not
               the default. */}
-          <label className="flex items-start gap-2 rounded-xs border border-status-warn/30 bg-status-warn/5 p-3 cursor-pointer">
+          <label
+            className="flex items-start gap-2 rounded-xs border border-status-warn/30 bg-status-warn/5 p-3 cursor-pointer"
+            aria-label="Allow plaintext on public-IP / hostname panel"
+          >
             <input
               type="checkbox"
               className="mt-0.5 h-4 w-4 accent-[var(--color-status-warn)] cursor-pointer"
@@ -318,9 +321,9 @@ function InstallStep({
 
       <div>
         <div className="flex justify-between items-center mb-1.5">
-          <label className="text-[10px] font-medium text-fg-muted uppercase tracking-wider">
+          <span className="text-[10px] font-medium text-fg-muted uppercase tracking-wider">
             Install command
-          </label>
+          </span>
           <CopyButton text={installCommand} />
         </div>
         <pre className="rounded-xs bg-bg border border-border p-3 text-xs font-mono text-fg leading-relaxed whitespace-pre-wrap break-all overflow-x-auto">

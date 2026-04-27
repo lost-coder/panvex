@@ -57,7 +57,7 @@ export function MobileLayout({
         <DCScrollStrip
           items={dcItems}
           onSelect={(code) => {
-            const dcNum = parseInt(code.replace("DC", ""), 10);
+            const dcNum = Number.parseInt(code.replace("DC", ""), 10);
             const match = sortedDcs.find((d) => d.dc === dcNum);
             if (match) onSelectDc(match);
           }}

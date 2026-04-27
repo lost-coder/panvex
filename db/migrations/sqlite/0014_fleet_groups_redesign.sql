@@ -7,8 +7,11 @@ ALTER TABLE fleet_groups ADD COLUMN description     TEXT NOT NULL DEFAULT '';
 ALTER TABLE fleet_groups ADD COLUMN updated_at_unix INTEGER NOT NULL DEFAULT 0;
 
 -- Backfill label from the existing name and seed updated_at from
--- created_at so pre-migration rows have plausible values.
-UPDATE fleet_groups SET label = name WHERE label = '';
+-- created_at so pre-migration rows have plausible values. The columns
+-- are NOT NULL DEFAULT '' / 0 (added above), so every row landed with
+-- the sentinel values we filter on; a follow-up migration that runs
+-- after operators have set custom labels must skip these branches.
+UPDATE fleet_groups SET label = name WHERE length(label) = 0;
 UPDATE fleet_groups SET updated_at_unix = created_at_unix WHERE updated_at_unix = 0;
 
 -- SQLite pre-3.35 cannot ADD CONSTRAINT, but a UNIQUE index does the

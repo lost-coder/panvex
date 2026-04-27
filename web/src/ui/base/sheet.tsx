@@ -118,8 +118,16 @@ function SheetHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElemen
   );
 }
 
-function SheetTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
-  return <h2 className={cn("text-base font-semibold text-fg", className)} {...props} />;
+function SheetTitle({
+  className,
+  children,
+  ...props
+}: React.HTMLAttributes<HTMLHeadingElement>) {
+  return (
+    <h2 className={cn("text-base font-semibold text-fg", className)} {...props}>
+      {children}
+    </h2>
+  );
 }
 
 function SheetBody({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
