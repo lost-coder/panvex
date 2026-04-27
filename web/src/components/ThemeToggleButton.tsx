@@ -73,7 +73,7 @@ export function ThemeToggleButton() {
       disabled={mutation.isPending || !userID}
       aria-label={`Switch to ${next} theme`}
       title={`Switch to ${next} theme`}
-      className="h-10 w-10 flex items-center justify-center rounded-xs text-base text-fg-muted hover:text-fg hover:bg-bg-hover transition-colors disabled:opacity-40"
+      className="h-11 w-11 flex items-center justify-center rounded-xs text-base text-fg-muted hover:text-fg hover:bg-bg-hover transition-colors disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
     >
       {effective === "light" ? "☾" : "☀"}
     </button>
