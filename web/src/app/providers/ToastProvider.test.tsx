@@ -58,8 +58,10 @@ describe("ToastProvider", () => {
 
     const error = screen.getByText("boom").closest("[role]");
     expect(error?.getAttribute("role")).toBe("alert");
-    const success = screen.getByText("saved").closest("[role]");
-    expect(success?.getAttribute("role")).toBe("status");
+    // Success uses a semantic <output> wrapper (Sonar S6819) — its ARIA
+    // role is implicit, so check the tag name rather than an attribute.
+    const success = screen.getByText("saved").closest("output");
+    expect(success).not.toBeNull();
   });
 
   it("dismiss button (×) removes the toast immediately", async () => {

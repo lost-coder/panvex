@@ -14,11 +14,16 @@ describe("Spinner", () => {
 
   it("renders an svg", () => {
     render(<Spinner />);
-    expect(screen.getByRole("status").tagName).toBe("svg");
+    // The status role is on the <output> wrapper (Sonar S6819 fix). The svg
+    // it wraps is aria-hidden, so query through the live DOM directly.
+    const svg = screen.getByRole("status").querySelector("svg");
+    expect(svg).not.toBeNull();
   });
 
   it("forwards className", () => {
     render(<Spinner className="extra" />);
-    expect(screen.getByRole("status")).toHaveClass("extra");
+    // className is forwarded to the svg, not the <output> shell.
+    const svg = screen.getByRole("status").querySelector("svg");
+    expect(svg).toHaveClass("extra");
   });
 });
