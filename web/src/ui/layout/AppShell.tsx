@@ -1,7 +1,10 @@
+import { useEffect, useState } from "react";
 import { cn } from "@/ui/lib/cn";
 import { Sidebar } from "./Sidebar";
 import { BottomNav } from "./BottomNav";
 import type { NavItem } from "./types";
+
+const SIDEBAR_PREF_KEY = "panvex.sidebarExpanded";
 
 export interface AppShellProps {
   navItems: NavItem[];
@@ -27,6 +30,15 @@ export interface AppShellProps {
   className?: string;
 }
 
+function readStoredExpanded(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(SIDEBAR_PREF_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
 export function AppShell({
   navItems,
   bottomNavItems,
@@ -39,12 +51,30 @@ export function AppShell({
   children,
   className,
 }: Readonly<AppShellProps>) {
+  // Sidebar mode persists across reloads. Default is compact (icon-only
+  // rail) so first-time visitors see the most content area; the toggle
+  // is one click away in the brand header. Mobile (<md) hides the
+  // sidebar entirely, so the preference only affects md+ layouts.
+  const [expanded, setExpanded] = useState<boolean>(readStoredExpanded);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(SIDEBAR_PREF_KEY, String(expanded));
+    } catch {
+      // Ignore quota / disabled-storage failures — the toggle still
+      // works in-session, only the cross-reload persistence is lost.
+    }
+  }, [expanded]);
+
   return (
-    <div className={cn("min-h-screen bg-bg", className)}>
+    <div className={cn("min-h-screen bg-bg overflow-x-hidden", className)}>
       <Sidebar
         items={navItems}
         activeId={activeId}
         brand={brand}
+        expanded={expanded}
+        onToggleExpand={() => setExpanded((v) => !v)}
         footer={sidebarFooter}
         onNavigate={onNavigate}
         onLogout={onLogout}
@@ -60,15 +90,15 @@ export function AppShell({
         W6: `tabIndex={-1}` lets the router's post-navigation hook
         programmatically focus this landmark on every page change, so
         screen readers announce the new page instead of keeping focus
-        trapped on the sidebar link the user just activated. The
-        landmark stays keyboard-neutral for mouse users (no visible
-        focus ring because the hook calls focus({preventScroll:true})
-        and focus-visible is not triggered by scriptable focus).
+        trapped on the sidebar link the user just activated.
       */}
       <main
         id="main-content"
         tabIndex={-1}
-        className="md:ml-16 pb-16 md:pb-0 min-h-screen outline-none"
+        className={cn(
+          "pb-16 md:pb-0 min-h-screen outline-none transition-[margin] duration-200",
+          expanded ? "md:ml-56" : "md:ml-16",
+        )}
       >
         {children}
       </main>
