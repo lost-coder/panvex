@@ -59,45 +59,19 @@ func (s *Service) UpdateUserWithContext(ctx context.Context, input UpdateUserInp
 	}
 
 	updatedUsername := strings.TrimSpace(input.Username)
-	if updatedUsername == "" {
-		return User{}, ErrInvalidCredentials
+	if err := s.validateUsernameChange(ctx, user, updatedUsername); err != nil {
+		return User{}, err
 	}
-	if updatedUsername != user.Username {
-		existing, err := s.loadUserByUsernameCtx(ctx, updatedUsername)
-		if err == nil && existing.ID != user.ID {
-			return User{}, ErrUserAlreadyExists
-		}
-		if err != nil && !errors.Is(err, ErrInvalidCredentials) {
-			return User{}, err
-		}
-	}
-
-	if user.Role == RoleAdmin && input.Role != RoleAdmin {
-		adminCount, err := s.countAdminsCtx(ctx)
-		if err != nil {
-			return User{}, err
-		}
-		if adminCount == 1 {
-			return User{}, ErrLastAdminRequired
-		}
+	if err := s.validateRoleChange(ctx, user, input.Role); err != nil {
+		return User{}, err
 	}
 
 	previousRole := user.Role
 	user.Username = updatedUsername
 	user.Role = input.Role
-	if strings.TrimSpace(input.NewPassword) != "" {
-		if err := validatePassword(input.NewPassword); err != nil {
-			return User{}, err
-		}
-		hash, err := s.HashPassword(input.NewPassword)
-		if err != nil {
-			return User{}, err
-		}
-		user.PasswordHash = hash
+	if err := s.applyOptionalPasswordChange(&user, input.NewPassword); err != nil {
+		return User{}, err
 	}
-
-	passwordChanged := strings.TrimSpace(input.NewPassword) != ""
-	roleChanged := previousRole != input.Role
 
 	if err := s.persistManagedUserCtx(ctx, user); err != nil {
 		return User{}, err
@@ -110,12 +84,62 @@ func (s *Service) UpdateUserWithContext(ctx context.Context, input UpdateUserInp
 	// under the new one. RevokeSessionsForUser also clears the persistent
 	// session store so a control-plane restart does not resurrect the old
 	// sessions.
+	passwordChanged := strings.TrimSpace(input.NewPassword) != ""
+	roleChanged := previousRole != input.Role
 	if passwordChanged || roleChanged {
 		_ = s.RevokeSessionsForUserWithContext(ctx, user.ID)
 	}
 
 	_ = now
 	return user, nil
+}
+
+func (s *Service) validateUsernameChange(ctx context.Context, user User, updatedUsername string) error {
+	if updatedUsername == "" {
+		return ErrInvalidCredentials
+	}
+	if updatedUsername == user.Username {
+		return nil
+	}
+	existing, err := s.loadUserByUsernameCtx(ctx, updatedUsername)
+	if err == nil && existing.ID != user.ID {
+		return ErrUserAlreadyExists
+	}
+	if err != nil && !errors.Is(err, ErrInvalidCredentials) {
+		return err
+	}
+	return nil
+}
+
+// validateRoleChange refuses to demote the only remaining admin so the
+// instance never ends up locked out of its own user-management surface.
+func (s *Service) validateRoleChange(ctx context.Context, user User, newRole Role) error {
+	if !(user.Role == RoleAdmin && newRole != RoleAdmin) {
+		return nil
+	}
+	adminCount, err := s.countAdminsCtx(ctx)
+	if err != nil {
+		return err
+	}
+	if adminCount == 1 {
+		return ErrLastAdminRequired
+	}
+	return nil
+}
+
+func (s *Service) applyOptionalPasswordChange(user *User, newPassword string) error {
+	if strings.TrimSpace(newPassword) == "" {
+		return nil
+	}
+	if err := validatePassword(newPassword); err != nil {
+		return err
+	}
+	hash, err := s.HashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+	user.PasswordHash = hash
+	return nil
 }
 
 // DeleteUser removes one local user account and its active sessions.

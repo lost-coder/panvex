@@ -78,20 +78,32 @@ func ResolveIDByName(
 		if client.Name != clientName {
 			continue
 		}
-		for _, assignment := range assignmentsByClient[clientID] {
-			switch assignment.TargetType {
-			case TargetTypeAgent:
-				if assignment.AgentID == agentID {
-					return clientID
-				}
-			case TargetTypeFleetGroup:
-				if agentFleetGroupID != "" && assignment.FleetGroupID == agentFleetGroupID {
-					return clientID
-				}
-			}
+		if assignmentMatchesAgent(assignmentsByClient[clientID], agentID, agentFleetGroupID) {
+			return clientID
 		}
 	}
 	return ""
+}
+
+// assignmentMatchesAgent reports whether any of `assignments` resolves
+// to the given agent — either directly (TargetTypeAgent) or via the
+// agent's fleet group (TargetTypeFleetGroup with a non-empty agent
+// fleet group). Pulled out of ResolveIDByName so the outer loop stays
+// under Sonar's cognitive-complexity budget.
+func assignmentMatchesAgent(assignments []Assignment, agentID, agentFleetGroupID string) bool {
+	for _, a := range assignments {
+		switch a.TargetType {
+		case TargetTypeAgent:
+			if a.AgentID == agentID {
+				return true
+			}
+		case TargetTypeFleetGroup:
+			if agentFleetGroupID != "" && a.FleetGroupID == agentFleetGroupID {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // AggregateUsage sums a per-agent UsageSnapshot map into a single
