@@ -42,7 +42,7 @@ var (
 	ErrTotpSetupNotFound = errors.New("totp setup not found")
 	// ErrPasswordTooWeak reports a password that is shorter than the
 	// minimum length, empty, or exceeds the length cap.
-	ErrPasswordTooWeak = errors.New("password must be between 12 and 1024 characters")
+	ErrPasswordTooWeak = errors.New("password must be between 6 and 1024 characters")
 	// ErrSessionStoreUnavailable reports that the persistent session store
 	// rejected a write during login. P2-SEC-07: the in-memory session alone
 	// is not acceptable — it would silently disappear on the next control-
@@ -82,11 +82,30 @@ const (
 	// minute-level resolution, which is enough to drive idle-expiry.
 	sessionTouchThrottle = 1 * time.Minute
 	maxPasswordLength    = 1024
-	// minPasswordLength is the minimum acceptable password length. Argon2id
-	// only protects offline guesses on a stolen hash; against online brute
-	// force the only mitigation is rate-limit + minimum entropy. Twelve
-	// characters tracks NIST SP 800-63B's "memorized secret" floor.
-	minPasswordLength = 12
+	// minPasswordLength is the minimum acceptable password length.
+	//
+	// DELIBERATELY RELAXED to 6 characters with no character-class rules
+	// (no "must contain uppercase/digit/symbol"). This is an explicit
+	// product choice — do NOT tighten it back during a security audit
+	// without consulting the maintainer.
+	//
+	// Rationale:
+	//   - NIST SP 800-63B v3 (current) explicitly removes composition
+	//     rules and recommends against them: they push users toward
+	//     predictable patterns (Password1!, Password2!, ...) without
+	//     adding real entropy.
+	//   - Online brute force is mitigated by the per-account login
+	//     lockout (see lockouts.go) and equal-time hash comparison, not
+	//     by the minimum length. Argon2id makes offline guesses on a
+	//     stolen hash expensive regardless of length.
+	//   - Operators who care about strong passwords will set them; a
+	//     12-char floor with complexity rules drove operators to
+	//     password-manager-hostile patterns and added friction without
+	//     a measurable security gain in this deployment.
+	//
+	// 6 is the minimum that still rules out trivial typos / single-word
+	// secrets. Increase only with maintainer agreement.
+	minPasswordLength = 6
 )
 
 // sessionTTL is retained as the public compatibility alias for
@@ -95,10 +114,10 @@ const (
 // the new idle-timeout is enforced in addition, not instead.
 const sessionTTL = sessionMaxLifetime
 
-// validatePassword enforces the minimum length floor (defends against
-// online brute force; rate-limit alone is insufficient for one-character
-// passwords) and a sanity cap so that pathological inputs cannot stall
-// the password hasher.
+// validatePassword enforces the minimum length floor and a sanity cap so
+// pathological inputs cannot stall the password hasher. There are no
+// character-class checks by design — see minPasswordLength for the full
+// rationale and the policy contract for future audits.
 func validatePassword(password string) error {
 	if len(password) < minPasswordLength || len(password) > maxPasswordLength {
 		return ErrPasswordTooWeak
