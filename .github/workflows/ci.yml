@@ -14,8 +14,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # PR / push gate: fast Go test pass without -race or coverage.
+  # Drops the wall-clock from ~6min to ~45-60s so dependabot PRs (and
+  # every PR from a human) get quick feedback. -race + coverage still
+  # run on every push to main via go-test-race below; pre-push hooks
+  # mirror the race run locally for committers.
   go-test:
     name: Go Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+      - run: go test -count=1 ./...
+
+  # Slow gate: race detector + coverage. Runs only on push to main so
+  # the merge commit is always race-clean, and Codecov tracks coverage
+  # at the same cadence as the deployable history. Skipped on PRs and
+  # pushes to feature branches.
+  go-test-race:
+    name: Go Tests (race + coverage)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
