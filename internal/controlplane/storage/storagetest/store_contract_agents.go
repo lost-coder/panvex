@@ -78,5 +78,67 @@ func runAgentsContract(t *testing.T, open OpenStore) {
 		}
 	})
 
+	t.Run("deregister flow deletes instances and agent", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
 
+		ctx := context.Background()
+		group := storage.FleetGroupRecord{
+			ID:        testFleetGroupID,
+			Name:      "Default",
+			CreatedAt: time.Date(2026, time.March, 15, 8, 20, 0, 0, time.UTC),
+		}
+		agent := storage.AgentRecord{
+			ID:           "agent-deregister",
+			NodeName:     "node-z",
+			FleetGroupID: group.ID,
+			Version:      "dev",
+			LastSeenAt:   time.Date(2026, time.March, 15, 8, 25, 0, 0, time.UTC),
+		}
+		instance := storage.InstanceRecord{
+			ID:                "instance-deregister",
+			AgentID:           agent.ID,
+			Name:              "telemt-main",
+			Version:           "1.0.0",
+			ConfigFingerprint: "cfg-1",
+			UpdatedAt:         agent.LastSeenAt,
+		}
+
+		if err := store.PutFleetGroup(ctx, group); err != nil {
+			t.Fatalf("PutFleetGroup() error = %v", err)
+		}
+		if err := store.PutAgent(ctx, agent); err != nil {
+			t.Fatalf("PutAgent() error = %v", err)
+		}
+		if err := store.PutInstance(ctx, instance); err != nil {
+			t.Fatalf("PutInstance() error = %v", err)
+		}
+
+		if err := store.DeleteInstancesByAgent(ctx, agent.ID); err != nil {
+			t.Fatalf("DeleteInstancesByAgent() error = %v", err)
+		}
+		if err := store.DeleteAgent(ctx, agent.ID); err != nil {
+			t.Fatalf("DeleteAgent() error = %v", err)
+		}
+
+		instances, err := store.ListInstances(ctx)
+		if err != nil {
+			t.Fatalf("ListInstances() error = %v", err)
+		}
+		for _, inst := range instances {
+			if inst.AgentID == agent.ID {
+				t.Fatalf("ListInstances() still contains instance for deregistered agent: %+v", inst)
+			}
+		}
+
+		agents, err := store.ListAgents(ctx)
+		if err != nil {
+			t.Fatalf("ListAgents() error = %v", err)
+		}
+		for _, a := range agents {
+			if a.ID == agent.ID {
+				t.Fatalf("ListAgents() still contains deregistered agent: %+v", a)
+			}
+		}
+	})
 }

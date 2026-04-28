@@ -164,7 +164,7 @@ func (s *Store) UpdateAgentNodeName(ctx context.Context, agentID string, nodeNam
 
 func (s *Store) DeleteInstancesByAgent(ctx context.Context, agentID string) error {
 	_, err := s.db.ExecContext(ctx, `
-		DELETE FROM instances
+		DELETE FROM telemt_instances
 		WHERE agent_id = $1
 	`, agentID)
 	return err
