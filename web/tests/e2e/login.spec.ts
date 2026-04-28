@@ -11,6 +11,12 @@ import { mockApi, mockLoginFailure, mockLoginSuccess } from "./helpers/mock-api"
  */
 test.describe("Login flow", () => {
   test("logs in with valid credentials and lands on the dashboard", async ({ page }) => {
+    // Register the baseline mocks first; the dynamic /auth/me handler
+    // below has to run AFTER mockApi so Playwright resolves it before
+    // the always-authenticated default. Last-registered handler wins.
+    await mockApi(page);
+    await mockLoginSuccess(page);
+
     let authed = false;
     await page.route("**/api/auth/me", (route) => {
       if (!authed) {
@@ -22,8 +28,6 @@ test.describe("Login flow", () => {
         body: JSON.stringify({ id: "u1", username: "operator", role: "admin", totp_enabled: false }),
       });
     });
-    await mockApi(page);
-    await mockLoginSuccess(page);
 
     await page.goto("/login");
     await expect(page.getByLabel(/username/i)).toBeVisible();
@@ -38,11 +42,11 @@ test.describe("Login flow", () => {
   });
 
   test("surfaces an error on invalid credentials without navigating", async ({ page }) => {
+    await mockApi(page);
+    await mockLoginFailure(page);
     await page.route("**/api/auth/me", (route) =>
       route.fulfill({ status: 401, body: "{}" }),
     );
-    await mockApi(page);
-    await mockLoginFailure(page);
 
     await page.goto("/login");
     await page.getByLabel(/username/i).fill("operator");
