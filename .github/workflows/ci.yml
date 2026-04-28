@@ -14,13 +14,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # PR / push gate: fast Go test pass without -race or coverage.
-  # Drops the wall-clock from ~6min to ~45-60s so dependabot PRs (and
-  # every PR from a human) get quick feedback. -race + coverage still
-  # run on every push to main via go-test-race below; pre-push hooks
-  # mirror the race run locally for committers.
+  # detect-changes emits per-area output flags so downstream jobs can
+  # decide whether they actually need to run. Only Go-touching PRs
+  # need the slow race+coverage gate; npm/docs PRs (incl. dependabot
+  # patch bumps) skip it entirely.
+  detect-changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            go:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - '.github/workflows/ci.yml'
+
+  # PR fast gate: no -race, no coverage. Runs on every pull request so
+  # docs/CI/web-only PRs still get a Go-build sanity check (~45-60s).
+  # Skipped on push events because main pushes are post-merge — the
+  # PR-side run already proved the same tree, and go-test-race below
+  # re-validates with race+coverage.
   go-test:
     name: Go Tests
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -29,13 +51,18 @@ jobs:
           go-version: "1.26"
       - run: go test -count=1 ./...
 
-  # Slow gate: race detector + coverage. Runs only on push to main so
-  # the merge commit is always race-clean, and Codecov tracks coverage
-  # at the same cadence as the deployable history. Skipped on PRs and
-  # pushes to feature branches.
+  # Slow gate: race detector + coverage. Runs on:
+  #   - PRs that touch Go files / go.mod / go.sum (real merge gate
+  #     under branch protection — required check evaluates here)
+  #   - pushes to main (covers the merge commit and uploads coverage)
+  # Skipped on PRs that do not touch Go (dependabot npm bumps, doc
+  # tweaks) so the long pole moves off the dependabot critical path.
   go-test-race:
     name: Go Tests (race + coverage)
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: detect-changes
+    if: |
+      (github.event_name == 'pull_request' && needs.detect-changes.outputs.go == 'true') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
