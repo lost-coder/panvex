@@ -19,6 +19,7 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.43.0
 	go.opentelemetry.io/otel/sdk v1.43.0
 	golang.org/x/crypto v0.50.0
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260420184626-e10c466a9529
 	google.golang.org/grpc v1.80.0
 	google.golang.org/protobuf v1.36.11
 	modernc.org/sqlite v1.50.0
@@ -65,7 +66,6 @@ require (
 	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/text v0.36.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260401024825-9d38bb4040a9 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260420184626-e10c466a9529 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	modernc.org/libc v1.72.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect

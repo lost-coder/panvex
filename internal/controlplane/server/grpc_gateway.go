@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/agentrevocation"
 	"github.com/lost-coder/panvex/internal/controlplane/agents"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
@@ -60,7 +61,7 @@ func (s *Server) RenewCertificate(ctx context.Context, request *gatewayrpc.Renew
 	_, revoked := s.revokedAgentIDs[agentID]
 	s.mu.RUnlock()
 	if revoked {
-		return nil, status.Error(codes.PermissionDenied, "agent certificate has been revoked")
+		return nil, agentrevocation.RevokedStatus("agent certificate has been revoked").Err()
 	}
 	if agentID != request.AgentId {
 		return nil, status.Error(codes.PermissionDenied, "certificate agent mismatch")
@@ -154,7 +155,7 @@ func (s *Server) authorizeAgentConnect(stream gatewayrpc.AgentGateway_ConnectSer
 	_, revoked := s.revokedAgentIDs[agentID]
 	s.mu.RUnlock()
 	if revoked {
-		return "", "", status.Error(codes.PermissionDenied, "agent certificate has been revoked")
+		return "", "", agentrevocation.RevokedStatus("agent certificate has been revoked").Err()
 	}
 	// Q4.U-S-04: cert pinning. The CN match (already covered by
 	// authenticatedAgentID) only guarantees the cert was issued by our CA

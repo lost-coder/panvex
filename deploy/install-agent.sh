@@ -344,6 +344,11 @@ Group=panvex-agent
 WorkingDirectory=${data_dir}
 ExecStart=${start_script}
 Restart=on-failure
+# Exit code 78 (sysexits.h EX_CONFIG) is emitted by the agent when the
+# panel reports AGENT_REVOKED — the operator deregistered this node.
+# Reconnecting would just hammer the panel with PermissionDenied; stop
+# the unit instead and wait for a re-enrollment.
+RestartPreventExitStatus=78
 RestartSec=5
 LimitNOFILE=65536
 

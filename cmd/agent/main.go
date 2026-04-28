@@ -18,6 +18,7 @@ import (
 	"github.com/lost-coder/panvex/internal/agent/runtime"
 	agentstate "github.com/lost-coder/panvex/internal/agent/state"
 	"github.com/lost-coder/panvex/internal/agent/telemt"
+	"github.com/lost-coder/panvex/internal/controlplane/agentrevocation"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -53,10 +54,23 @@ const (
 
 var errRuntimeCredentialsRefreshed = errors.New("runtime credentials refreshed")
 
+// agentDeregisteredExitCode signals to systemd that the panel has
+// removed our agent record. The install-script's unit file pairs this
+// with RestartPreventExitStatus=78 so the service stays stopped instead
+// of looping in an "agent has been deregistered" → reconnect → reject
+// cycle. 78 is the conventional sysexits.h EX_CONFIG.
+const agentDeregisteredExitCode = 78
+
 func main() {
-	if err := run(os.Args[1:]); err != nil {
-		log.Fatal(err)
+	err := run(os.Args[1:])
+	if err == nil {
+		return
 	}
+	if errors.Is(err, agentrevocation.ErrAgentRevoked) {
+		slog.Error("agent has been deregistered on the panel; uninstall the service or re-enroll with a new token", "error", err)
+		os.Exit(agentDeregisteredExitCode)
+	}
+	log.Fatal(err)
 }
 
 func run(args []string) error {
@@ -178,20 +192,30 @@ func runRuntime(args []string) error {
 		"telemt_metrics", cfg.telemtMetricsURL,
 	)
 
-	runRuntimeReconnectLoop(&cfg, &credentialsState, agent, schedule)
-	return nil
+	return runRuntimeReconnectLoop(&cfg, &credentialsState, agent, schedule)
 }
 
 // runRuntimeReconnectLoop is the agent's outer main-loop: refresh certs,
 // run the gRPC stream, and reconnect with backoff on failure. Extracted so
 // runRuntime stays under the CC threshold.
-func runRuntimeReconnectLoop(cfg *runtimeFlags, credentialsState *agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule) {
+//
+// Returns agentrevocation.ErrAgentRevoked when the panel signals (via the
+// AGENT_REVOKED ErrorInfo on a PermissionDenied status) that this agent
+// has been deregistered. In that case there is no point reconnecting —
+// the propagated sentinel maps to exit code 78 in main, paired with
+// systemd's RestartPreventExitStatus=78 in the unit file written by
+// install-agent.sh. Any other error keeps the historic forever-retry
+// behaviour.
+func runRuntimeReconnectLoop(cfg *runtimeFlags, credentialsState *agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule) error {
 	reconnectAttempt := 0
 	for {
 		refreshCtx, cancelRefresh := context.WithTimeout(context.Background(), certificateRefreshTimeout)
 		refreshed, err := renewRuntimeCredentialsIfNeeded(refreshCtx, cfg.stateFile, cfg.gatewayAddr, cfg.gatewayServerName, *credentialsState, time.Now())
 		cancelRefresh()
 		if err != nil {
+			if agentrevocation.IsAgentRevoked(err) {
+				return agentrevocation.ErrAgentRevoked
+			}
 			reconnectAttempt++
 			slog.Error("certificate refresh failed", "error", err)
 			time.Sleep(reconnectDelay(reconnectAttempt))
@@ -204,6 +228,9 @@ func runRuntimeReconnectLoop(cfg *runtimeFlags, credentialsState *agentstate.Cre
 		if connErr == nil || errors.Is(connErr, errRuntimeCredentialsRefreshed) {
 			reconnectAttempt = 0
 			continue
+		}
+		if agentrevocation.IsAgentRevoked(connErr) {
+			return agentrevocation.ErrAgentRevoked
 		}
 		reconnectAttempt++
 		slog.Error("connection ended", "error", connErr)
