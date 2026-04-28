@@ -15,6 +15,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
+	"syscall"
 	"strings"
 	"time"
 
@@ -636,6 +638,11 @@ func runBootstrapAdmin(args []string) error {
 		return errors.New("password is required through -password or PANVEX_BOOTSTRAP_PASSWORD")
 	}
 
+	// Bind ctx to SIGINT/SIGTERM so a wedged DB lookup can be cancelled
+	// with Ctrl-C instead of hanging the operator's terminal.
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
 	storageConfig, err := config.ResolveStorage(*storageDriver, *storageDSN)
 	if err != nil {
 		return err
@@ -647,7 +654,7 @@ func runBootstrapAdmin(args []string) error {
 	}
 	defer store.Close()
 
-	existingUsers, err := store.ListUsers(context.Background())
+	existingUsers, err := store.ListUsers(ctx)
 	if err != nil {
 		return err
 	}
@@ -668,7 +675,7 @@ func runBootstrapAdmin(args []string) error {
 	}
 
 	service := auth.NewServiceWithStore(store)
-	_, _, err = service.BootstrapUser(auth.BootstrapInput{
+	_, _, err = service.BootstrapUserWithContext(ctx, auth.BootstrapInput{
 		Username: *username,
 		Password: *password,
 		Role:     auth.RoleAdmin,
@@ -700,6 +707,9 @@ func runResetUserTotp(args []string) error {
 		return errors.New("username is required")
 	}
 
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
 	storageConfig, err := config.ResolveStorage(*storageDriver, *storageDSN)
 	if err != nil {
 		return err
@@ -711,7 +721,7 @@ func runResetUserTotp(args []string) error {
 	}
 	defer store.Close()
 
-	record, err := store.GetUserByUsername(context.Background(), *username)
+	record, err := store.GetUserByUsername(ctx, *username)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			return fmt.Errorf("user %q not found", *username)
@@ -720,12 +730,12 @@ func runResetUserTotp(args []string) error {
 	}
 
 	service := auth.NewServiceWithStore(store)
-	user, err := service.ResetTotp(record.ID)
+	user, err := service.ResetTotpWithContext(ctx, record.ID)
 	if err != nil {
 		return err
 	}
 
-	if err := store.AppendAuditEvent(context.Background(), storage.AuditEventRecord{
+	if err := store.AppendAuditEvent(ctx, storage.AuditEventRecord{
 		ID:        fmt.Sprintf("audit-cli-%d", time.Now().UTC().UnixNano()),
 		ActorID:   "system",
 		Action:    "auth.totp.reset_by_cli",
