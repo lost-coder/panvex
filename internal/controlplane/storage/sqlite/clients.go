@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
@@ -15,7 +16,12 @@ func (s *Store) PutClient(ctx context.Context, client storage.ClientRecord) erro
 		deletedAt.Int64 = toUnix(*client.DeletedAt)
 	}
 
-	_, err := s.db.ExecContext(ctx, `
+	// L-23: RETURNING id mirrors the postgres path so a silent
+	// no-op upsert (constraint trigger downgrading to DO NOTHING,
+	// schema drift, etc.) becomes an explicit error instead of a
+	// stale read on the next GetClientByID.
+	var returnedID string
+	err := s.db.QueryRowContext(ctx, `
 		INSERT INTO clients (
 			id,
 			name,
@@ -43,8 +49,15 @@ func (s *Store) PutClient(ctx context.Context, client storage.ClientRecord) erro
 			created_at_unix = excluded.created_at_unix,
 			updated_at_unix = excluded.updated_at_unix,
 			deleted_at_unix = excluded.deleted_at_unix
-	`, client.ID, client.Name, client.SecretCiphertext, client.UserADTag, boolToInt(client.Enabled), client.MaxTCPConns, client.MaxUniqueIPs, client.DataQuotaBytes, client.ExpirationRFC3339, toUnix(client.CreatedAt), toUnix(client.UpdatedAt), deletedAt)
-	return err
+		RETURNING id
+	`, client.ID, client.Name, client.SecretCiphertext, client.UserADTag, boolToInt(client.Enabled), client.MaxTCPConns, client.MaxUniqueIPs, client.DataQuotaBytes, client.ExpirationRFC3339, toUnix(client.CreatedAt), toUnix(client.UpdatedAt), deletedAt).Scan(&returnedID)
+	if err != nil {
+		return err
+	}
+	if returnedID != client.ID {
+		return fmt.Errorf("sqlite: PutClient upsert returned id %q, want %q", returnedID, client.ID)
+	}
+	return nil
 }
 
 func (s *Store) GetClientByID(ctx context.Context, clientID string) (storage.ClientRecord, error) {

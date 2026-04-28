@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
@@ -15,7 +16,13 @@ func (s *Store) PutClient(ctx context.Context, client storage.ClientRecord) erro
 		deletedAt.Time = client.DeletedAt.UTC()
 	}
 
-	_, err := s.db.ExecContext(ctx, `
+	// L-23: RETURNING id lets us verify the upsert actually landed.
+	// Without it a subtle ON CONFLICT no-op (e.g. a constraint
+	// triggering DO NOTHING somewhere upstream of this code) would
+	// silently leave the row stale; the explicit Scan + ID check
+	// turns that into a loud error instead.
+	var returnedID string
+	err := s.db.QueryRowContext(ctx, `
 		INSERT INTO clients (
 			id,
 			name,
@@ -43,8 +50,15 @@ func (s *Store) PutClient(ctx context.Context, client storage.ClientRecord) erro
 		    created_at = EXCLUDED.created_at,
 		    updated_at = EXCLUDED.updated_at,
 		    deleted_at = EXCLUDED.deleted_at
-	`, client.ID, client.Name, client.SecretCiphertext, client.UserADTag, client.Enabled, client.MaxTCPConns, client.MaxUniqueIPs, client.DataQuotaBytes, client.ExpirationRFC3339, client.CreatedAt.UTC(), client.UpdatedAt.UTC(), deletedAt)
-	return err
+		RETURNING id
+	`, client.ID, client.Name, client.SecretCiphertext, client.UserADTag, client.Enabled, client.MaxTCPConns, client.MaxUniqueIPs, client.DataQuotaBytes, client.ExpirationRFC3339, client.CreatedAt.UTC(), client.UpdatedAt.UTC(), deletedAt).Scan(&returnedID)
+	if err != nil {
+		return err
+	}
+	if returnedID != client.ID {
+		return fmt.Errorf("postgres: PutClient upsert returned id %q, want %q", returnedID, client.ID)
+	}
+	return nil
 }
 
 func (s *Store) GetClientByID(ctx context.Context, clientID string) (storage.ClientRecord, error) {
