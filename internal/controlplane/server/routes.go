@@ -129,6 +129,7 @@ func (s *Server) routes() http.Handler {
 					operator.With(sensitive).Delete("/clients/{id}", s.handleDeleteClient())
 					operator.With(sensitive).Post("/clients/{id}/rotate-secret", s.handleRotateClientSecret())
 					operator.With(sensitive).Post("/clients/{id}/redeploy", s.handleRedeployClient())
+					operator.With(sensitive).Post("/clients/bulk-action", s.handleBulkClientAction())
 					operator.Get("/discovered-clients", s.handleDiscoveredClients())
 					operator.With(sensitive).Post("/discovered-clients/{id}/adopt", s.handleAdoptDiscoveredClient())
 					operator.With(sensitive).Post("/discovered-clients/{id}/ignore", s.handleIgnoreDiscoveredClient())

@@ -166,6 +166,13 @@ type Server struct {
 	metricsPollerCancel context.CancelFunc
 	metricsPollerWG     sync.WaitGroup
 
+	// N-1: detached operator-driven background goroutines (panel
+	// self-update, manual update-check) register themselves with this
+	// WaitGroup so Shutdown can wait for them to finish before exiting
+	// the process. Without it, a graceful restart could race a partial
+	// binary write or an in-flight GitHub download.
+	bgWG sync.WaitGroup
+
 	// Phase-2 §2.1: previous database/sql pool snapshot. Used by the
 	// metrics poller to compute Prometheus counter deltas — sql.DBStats
 	// counters are absolute since pool creation, but Prometheus wants

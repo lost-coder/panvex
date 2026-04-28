@@ -46,6 +46,14 @@ func newUIHandler(uiFiles fs.FS, rootPath string) http.HandlerFunc {
 		}
 
 		if entry, err := fs.Stat(uiFiles, requestPath); err == nil && !entry.IsDir() {
+			// Hashed assets under /assets/ are content-addressed by Vite,
+			// so they are safe to mark immutable. Anything else (favicons,
+			// public/ files) gets a short revalidate-friendly window.
+			if strings.HasPrefix(requestPath, "assets/") {
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			} else {
+				w.Header().Set("Cache-Control", "public, max-age=300")
+			}
 			fileServer.ServeHTTP(w, r)
 			return
 		}
@@ -106,6 +114,11 @@ func serveUIIndex(w http.ResponseWriter, r *http.Request, uiFiles fs.FS, rootPat
 		body = baseTag + body
 	}
 
+	// index.html must never be cached: it carries the script-tag
+	// references to the latest hashed bundle, so a stale copy means
+	// the browser keeps importing yesterday's chunks. The hashed
+	// /assets/ files keep the immutable-year cache.
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(body))

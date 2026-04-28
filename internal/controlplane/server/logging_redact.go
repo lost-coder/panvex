@@ -40,6 +40,25 @@ func (s *Server) logUsername(username string) string {
 	return "u-" + hex.EncodeToString(mac.Sum(nil)[:6])
 }
 
+// logSessionID returns a stable, privacy-preserving identifier for a
+// session ID, suitable for audit-event target IDs and structured log
+// fields. The full session.ID doubles as the cookie value, so leaking
+// it via audit-trail (visible to Operator/Admin) or SIEM-mirrored
+// structured logs is a session-hijack vector. We hash with the same
+// per-process HMAC key used for usernames so sessions stay correlatable
+// across log lines without exposing the live token.
+//
+// Empty input yields "" so callers can pass through an unknown ID
+// without writing the literal string "s-anon".
+func (s *Server) logSessionID(sessionID string) string {
+	if sessionID == "" {
+		return ""
+	}
+	mac := hmac.New(sha256.New, s.usernameHashKey())
+	mac.Write([]byte(sessionID))
+	return "s-" + hex.EncodeToString(mac.Sum(nil)[:8])
+}
+
 // usernameHashKey returns the cached HMAC key for username log
 // hashing. Derivation:
 //

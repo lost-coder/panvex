@@ -13,7 +13,6 @@ import { useViewMode } from "@/shared/hooks/useViewMode";
 import { useUrlSearchState } from "@/shared/hooks/useUrlSearchState";
 import { useWsUpdateFlash } from "@/shared/hooks/useWsUpdateFlash";
 import { apiClient } from "@/shared/api/api";
-import { buildClientInput } from "@/shared/api/transforms/clients";
 
 export function ClientsContainer() {
   const { clients, isLoading } = useClientsList();
@@ -48,10 +47,12 @@ export function ClientsContainer() {
   const queryClient = useQueryClient();
   const [bulkError, setBulkError] = useState<string | undefined>();
 
-  // Bulk dispatcher. Backend has no batch endpoint, so we fan out one
-  // PUT/DELETE per client id and surface the first error verbatim. The
-  // list query gets a single invalidate at the end so we don't thrash
-  // /api/clients during a 100-row toggle.
+  // Bulk dispatcher: single call to /clients/bulk-action replaces the
+  // previous one-PUT-per-client fan-out (~200 round-trips on a 100-row
+  // toggle). The list query gets a single invalidate when the call
+  // returns. Per-id failures come back in the response body as
+  // {failed: [{id, error}]} so the operator sees which rows did not
+  // apply rather than swallowing the first error.
   const bulkMutation = useMutation({
     mutationFn: async ({
       action,
@@ -59,43 +60,18 @@ export function ClientsContainer() {
     }: {
       action: BulkClientAction;
       clientIds: string[];
-    }) => {
-      if (action === "delete") {
-        await Promise.all(clientIds.map((id) => apiClient.deleteClient(id)));
-        return;
-      }
-      // enable / disable: list endpoint only returns ClientListItem,
-      // so we fetch each client individually to obtain the raw record
-      // required by buildClientInput, then ship a full ClientInput
-      // with `enabled` flipped (PUT /clients/:id is full-replacement,
-      // not patch).
-      const wantEnabled = action === "enable";
-      await Promise.all(
-        clientIds.map(async (id) => {
-          const raw = await apiClient.client(id);
-          if (raw.enabled === wantEnabled) return;
-          const payload = buildClientInput(
-            {
-              name: raw.name,
-              userAdTag: raw.user_ad_tag,
-              userAdTagAuto: false,
-              expirationRfc3339: raw.expiration_rfc3339,
-              maxTcpConns: raw.max_tcp_conns,
-              maxUniqueIps: raw.max_unique_ips,
-              dataQuotaBytes: raw.data_quota_bytes,
-              fleetGroupIds: raw.fleet_group_ids ?? [],
-              agentIds: raw.agent_ids ?? [],
-            },
-            { ...raw, enabled: wantEnabled },
-          );
-          await apiClient.updateClient(id, payload);
-        }),
-      );
-    },
+    }) => apiClient.bulkClientAction(action, clientIds),
     onError: (err: unknown) =>
       setBulkError(err instanceof Error ? err.message : "Bulk action failed"),
-    onSuccess: () => {
-      setBulkError(undefined);
+    onSuccess: (response) => {
+      setBulkError(
+        response.failed.length > 0
+          ? `${response.failed.length.toString()} client(s) failed: ${response.failed
+              .slice(0, 3)
+              .map((f) => f.error)
+              .join("; ")}`
+          : undefined,
+      );
       queryClient.invalidateQueries({ queryKey: ["clients"] });
     },
   });
@@ -149,9 +125,9 @@ export function ClientsContainer() {
         agents={agentOptions}
         pendingDiscoveredCount={pendingCount}
         onDiscoveredClick={() => navigate({ to: "/clients/discovered" })}
-        onBulkAction={(action, clientIds) =>
-          bulkMutation.mutateAsync({ action, clientIds })
-        }
+        onBulkAction={async (action, clientIds) => {
+          await bulkMutation.mutateAsync({ action, clientIds });
+        }}
         bulkError={bulkError}
         bulkPending={bulkMutation.isPending}
       />

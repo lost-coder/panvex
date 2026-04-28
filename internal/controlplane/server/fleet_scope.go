@@ -3,9 +3,21 @@ package server
 import (
 	"context"
 	"net/http"
+	"os"
+	"strings"
 
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
 )
+
+// multiTenantEnabled reports whether the operator opted in to the
+// strict (deny-by-default) variant of the empty-scope fallback. The
+// env-var gate keeps existing single-tenant deploys on the historical
+// "empty rows = global" behaviour while letting tenancy-conscious
+// installs flip the default without code changes.
+func multiTenantEnabled() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("PANVEX_MULTI_TENANT")), "1") ||
+		strings.EqualFold(strings.TrimSpace(os.Getenv("PANVEX_MULTI_TENANT")), "true")
+}
 
 // FleetScopeAccess captures the operator's effective fleet-group scope
 // for one request. R-S-14 introduced this as the foundation for
@@ -107,7 +119,14 @@ func (s *Server) resolveFleetScope(ctx context.Context, user auth.User) (FleetSc
 	if len(ids) == 0 {
 		// Single-tenant default: empty scope rows == global view. The
 		// flip to "deny by default" lands when the multi-tenant rollout
-		// PR seeds non-admin users with explicit scopes.
+		// PR seeds non-admin users with explicit scopes — switch on
+		// PANVEX_MULTI_TENANT=1 to engage the strict semantics now,
+		// before the seed is wired, so a non-admin operator without
+		// explicit scope rows is treated as having access to nothing
+		// rather than everything.
+		if multiTenantEnabled() {
+			return FleetScopeAccess{Global: false, Allowed: map[string]struct{}{}}, nil
+		}
 		return FleetScopeAccess{Global: true}, nil
 	}
 	allowed := make(map[string]struct{}, len(ids))

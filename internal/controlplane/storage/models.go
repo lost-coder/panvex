@@ -459,6 +459,17 @@ type ClientIPHistoryRecord struct {
 	LastSeen  time.Time
 }
 
+// ClientIPAggregateRecord captures the per-IP aggregate across nodes:
+// the earliest first-seen and the latest last-seen for a single IP
+// address, regardless of which agent reported each end of the window.
+// Used by the dashboard's IP-history endpoint so the heavy aggregation
+// runs in SQL instead of in CP memory.
+type ClientIPAggregateRecord struct {
+	IPAddress string
+	FirstSeen time.Time
+	LastSeen  time.Time
+}
+
 // ClientUsageRecord stores the lifetime traffic + live-gauge counters
 // for one (client, agent) pair. Persisted so the in-memory
 // server.clientUsage map rehydrates across restarts without losing

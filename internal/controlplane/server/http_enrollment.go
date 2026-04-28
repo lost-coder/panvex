@@ -32,8 +32,11 @@ const (
 	agentCertificateRecoveryProofSkew  = 5 * time.Minute
 	// agentCertificateRecoveryGraceWindow defines how long after certificate
 	// expiry an agent can still use the recovery flow. Shorter values reduce
-	// the attack surface of a compromised agent credential.
-	agentCertificateRecoveryGraceWindow = 24 * time.Hour
+	// the attack surface of a compromised agent credential. L-9: tightened
+	// from 24h to 2h — long enough that a transient outage during cert
+	// rotation does not need a manual panel-side grant, short enough that a
+	// stolen post-expiry credential cannot lurk for a workday.
+	agentCertificateRecoveryGraceWindow = 2 * time.Hour
 	defaultAgentCertificateRecoveryGrantTTL = 15 * time.Minute
 	maxAgentCertificateRecoveryGrantTTL = time.Hour
 )

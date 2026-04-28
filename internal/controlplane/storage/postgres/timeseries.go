@@ -75,32 +75,86 @@ func (s *Store) ListServerLoadPoints(ctx context.Context, agentID string, from t
 	return result, rows.Err()
 }
 
+// pruneChunkSize bounds a single PruneServerLoadPoints DELETE so we
+// never hold a giant lock while the timeseries thinning job catches up
+// after a long downtime. Sized to fit comfortably in one PG WAL segment
+// even with the widest row layout (~28 columns).
+const pruneChunkSize = 10_000
+
+// pruneMaxIterations caps the number of chunks one Prune call will
+// burn through. With chunk=10k that drops up to 50M rows per invocation
+// before yielding to the next scheduler tick — anything larger is the
+// retention scheduler's job, not a single prune call's.
+const pruneMaxIterations = 5_000
+
 func (s *Store) PruneServerLoadPoints(ctx context.Context, olderThan time.Time) (int64, error) {
-	result, err := s.db.ExecContext(ctx, `DELETE FROM ts_server_load WHERE captured_at < $1`, olderThan.UTC())
-	if err != nil {
-		return 0, err
+	// Chunk so retention catch-up after a long pause does not lock
+	// ts_server_load for an unbounded interval. Each iteration is a
+	// short DELETE of at most pruneChunkSize rows, terminating when
+	// either no candidate rows remain or the iteration cap fires.
+	cutoff := olderThan.UTC()
+	var total int64
+	for i := 0; i < pruneMaxIterations; i++ {
+		result, err := s.db.ExecContext(ctx, `
+			DELETE FROM ts_server_load
+			WHERE ctid IN (
+				SELECT ctid FROM ts_server_load
+				WHERE captured_at < $1
+				LIMIT $2
+			)
+		`, cutoff, pruneChunkSize)
+		if err != nil {
+			return total, err
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return total, err
+		}
+		total += affected
+		if affected < pruneChunkSize {
+			return total, nil
+		}
 	}
-	return result.RowsAffected()
+	return total, nil
 }
 
+// listServerLoadPointsForAgentsChunkSize bounds the IN-list per
+// SQL round-trip. Postgres caps the bind-parameter count at 65535
+// (16-bit message field); 250 leaves plenty of headroom relative to
+// the two `from`/`to` parameters tacked onto every query.
+const listServerLoadPointsForAgentsChunkSize = 250
+
 // ListServerLoadPointsForAgents returns load points for a batch of
-// agents in a single round-trip (Q2.U-P-01). Each agent's slice is
-// sorted by captured_at ascending; missing agents are absent from the
-// map.
+// agents (Q2.U-P-01). Each agent's slice is sorted by captured_at
+// ascending; missing agents are absent from the map. Chunked so the
+// IN-list never approaches the Postgres 65535-parameter ceiling.
 func (s *Store) ListServerLoadPointsForAgents(ctx context.Context, agentIDs []string, from time.Time, to time.Time) (map[string][]storage.ServerLoadPointRecord, error) {
 	out := make(map[string][]storage.ServerLoadPointRecord, len(agentIDs))
 	if len(agentIDs) == 0 {
 		return out, nil
 	}
-	placeholders := make([]string, len(agentIDs))
-	args := make([]any, 0, len(agentIDs)+2)
-	for i, id := range agentIDs {
+	for start := 0; start < len(agentIDs); start += listServerLoadPointsForAgentsChunkSize {
+		end := start + listServerLoadPointsForAgentsChunkSize
+		if end > len(agentIDs) {
+			end = len(agentIDs)
+		}
+		if err := s.appendServerLoadPointsChunk(ctx, agentIDs[start:end], from, to, out); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+func (s *Store) appendServerLoadPointsChunk(ctx context.Context, chunk []string, from, to time.Time, out map[string][]storage.ServerLoadPointRecord) error {
+	placeholders := make([]string, len(chunk))
+	args := make([]any, 0, len(chunk)+2)
+	for i, id := range chunk {
 		placeholders[i] = fmt.Sprintf("$%d", i+1)
 		args = append(args, id)
 	}
 	args = append(args, from.UTC(), to.UTC())
-	fromIdx := len(agentIDs) + 1
-	toIdx := len(agentIDs) + 2
+	fromIdx := len(chunk) + 1
+	toIdx := len(chunk) + 2
 	query := fmt.Sprintf(`
 		SELECT agent_id, captured_at,
 			cpu_pct_avg, cpu_pct_max, mem_pct_avg, mem_pct_max,
@@ -116,7 +170,7 @@ func (s *Store) ListServerLoadPointsForAgents(ctx context.Context, agentIDs []st
 	`, strings.Join(placeholders, ","), fromIdx, toIdx)
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer rows.Close()
 	for rows.Next() {
@@ -131,12 +185,12 @@ func (s *Store) ListServerLoadPointsForAgents(ctx context.Context, agentIDs []st
 			&r.DCCoverageMinPct, &r.DCCoverageAvgPct,
 			&r.HealthyUpstreams, &r.TotalUpstreams, &r.NetBytesSent, &r.NetBytesRecv, &r.SampleCount,
 		); err != nil {
-			return nil, err
+			return err
 		}
 		r.CapturedAt = r.CapturedAt.UTC()
 		out[r.AgentID] = append(out[r.AgentID], r)
 	}
-	return out, rows.Err()
+	return rows.Err()
 }
 
 func (s *Store) AppendDCHealthPoint(ctx context.Context, record storage.DCHealthPointRecord) error {
@@ -219,6 +273,43 @@ func (s *Store) ListClientIPHistory(ctx context.Context, clientID string, from t
 	for rows.Next() {
 		var r storage.ClientIPHistoryRecord
 		if err := rows.Scan(&r.AgentID, &r.ClientID, &r.IPAddress, &r.FirstSeen, &r.LastSeen); err != nil {
+			return nil, err
+		}
+		r.FirstSeen = r.FirstSeen.UTC()
+		r.LastSeen = r.LastSeen.UTC()
+		result = append(result, r)
+	}
+	return result, rows.Err()
+}
+
+// AggregateClientIPHistory pushes the per-IP fold into the database:
+// one row per IP, with MIN(first_seen) / MAX(last_seen) across all
+// agents that reported it. Limit is applied in SQL so a high-cardinality
+// client never streams millions of raw rows back to the control plane.
+// A zero or negative limit disables the cap.
+func (s *Store) AggregateClientIPHistory(ctx context.Context, clientID string, from time.Time, to time.Time, limit int) ([]storage.ClientIPAggregateRecord, error) {
+	query := `
+		SELECT ip_address, MIN(first_seen) AS first_seen, MAX(last_seen) AS last_seen
+		FROM client_ip_history
+		WHERE client_id = $1 AND last_seen >= $2 AND first_seen <= $3
+		GROUP BY ip_address
+		ORDER BY last_seen DESC
+	`
+	args := []any{clientID, from.UTC(), to.UTC()}
+	if limit > 0 {
+		query += " LIMIT $4"
+		args = append(args, limit)
+	}
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []storage.ClientIPAggregateRecord
+	for rows.Next() {
+		var r storage.ClientIPAggregateRecord
+		if err := rows.Scan(&r.IPAddress, &r.FirstSeen, &r.LastSeen); err != nil {
 			return nil, err
 		}
 		r.FirstSeen = r.FirstSeen.UTC()

@@ -119,7 +119,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		}
 
 		s.loginLockout.RecordSuccessWithContext(r.Context(), request.Username)
-		s.logger.Info("user logged in", "username_hash", s.logUsername(request.Username), "user_id", session.UserID, "session_id", session.ID)
+		s.logger.Info("user logged in", "username_hash", s.logUsername(request.Username), "user_id", session.UserID, "session_hash", s.logSessionID(session.ID))
 
 		if !s.persistLoginAudit(w, r, session, request.Username, ensureFloor) {
 			return
@@ -198,8 +198,12 @@ func (s *Server) handleLoginAuthError(w http.ResponseWriter, r *http.Request, us
 // the cookie. Implements B1.
 func (s *Server) persistLoginAudit(w http.ResponseWriter, r *http.Request, session auth.Session, username string, ensureFloor func()) bool {
 	auditCtx, auditCancel := context.WithTimeout(r.Context(), loginAuditPersistTimeout)
-	auditErr := s.appendAuditSync(auditCtx, session.UserID, "auth.login", session.ID, map[string]any{
-		"username": username,
+	auditErr := s.appendAuditSync(auditCtx, session.UserID, "auth.login", s.logSessionID(session.ID), map[string]any{
+		// L-4: redact username via the same per-process HMAC the rest
+		// of the audit/log pipeline uses; raw usernames may be PII
+		// (operator email addresses) and the audit log is read by
+		// every operator, not just admins.
+		"username_hash": s.logUsername(username),
 	})
 	auditCancel()
 	if auditErr == nil {
@@ -207,7 +211,7 @@ func (s *Server) persistLoginAudit(w http.ResponseWriter, r *http.Request, sessi
 	}
 	if logoutErr := s.auth.LogoutWithContext(r.Context(), session.ID); logoutErr != nil {
 		s.logger.Error("failed to revoke session after audit persist failure",
-			"session_id", session.ID, "error", logoutErr)
+			"session_hash", s.logSessionID(session.ID), "error", logoutErr)
 	}
 	ensureFloor()
 	writeErrorWithCode(w,
@@ -231,7 +235,7 @@ func (s *Server) handleLogout() http.HandlerFunc {
 			return
 		}
 
-		s.logger.Info("user logged out", "user_id", session.UserID, "session_id", session.ID)
+		s.logger.Info("user logged out", "user_id", session.UserID, "session_hash", s.logSessionID(session.ID))
 		http.SetCookie(w, &http.Cookie{
 			Name:     sessionCookieName,
 			Value:    "",
@@ -241,7 +245,7 @@ func (s *Server) handleLogout() http.HandlerFunc {
 			SameSite: http.SameSiteStrictMode,
 			Secure:   s.sessionCookieSecure(r),
 		})
-		s.appendAuditWithContext(r.Context(), session.UserID, "auth.logout", session.ID, nil)
+		s.appendAuditWithContext(r.Context(), session.UserID, "auth.logout", s.logSessionID(session.ID), nil)
 
 		w.WriteHeader(http.StatusNoContent)
 	}

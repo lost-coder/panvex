@@ -64,7 +64,9 @@ npm run build
 echo "=== Pre-push: Frontend lint ==="
 npm run lint
 
-echo "=== Pre-push: Frontend audit (high severity) ==="
-npm audit --audit-level=high
+echo "=== Pre-push: Frontend audit (moderate severity) ==="
+# L-22: stay in lock-step with the CI workflow's --audit-level=moderate
+# so a hook-passing push cannot still fail the equivalent CI step.
+npm audit --audit-level=moderate
 
 echo "=== Pre-push: all checks passed ==="

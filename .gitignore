@@ -61,6 +61,10 @@ docs/
 /control-plane
 .panvex-ui
 
+# Editor index files (ctags, etc.)
+/tags
+TAGS
+
 # Private signing key material must never be committed. The public key at
 # internal/security/signing_key.pub is the only key that ships in the repo.
 *signing*.key

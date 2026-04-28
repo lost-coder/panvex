@@ -237,12 +237,16 @@ function parseWithSchema<T>(path: string, schema: ZodType<T>, json: unknown): T 
   const parsed = schema.safeParse(json);
   if (parsed.success) return parsed.data;
 
-  // Log structurally so that in the browser devtools the operator sees
-  // the exact path → issue mapping that zod produces.
-  console.error("[api] schema mismatch", {
-    path,
-    issues: parsed.error.issues,
-  });
+  // L-13: log structurally only in dev — production builds drop the
+  // console.error so the schema-mismatch issues never surface in
+  // operator devtools as a "noisy red error" while the dispatched
+  // CustomEvent still reaches the UI's error boundary.
+  if (process.env.NODE_ENV !== "production") {
+    console.error("[api] schema mismatch", {
+      path,
+      issues: parsed.error.issues,
+    });
+  }
 
   if (globalThis.window !== undefined) {
     const detail: ApiSchemaMismatchDetail = {

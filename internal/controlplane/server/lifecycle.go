@@ -42,8 +42,14 @@ func initSecrets(options Options) (func() time.Time, []byte, *secretvault.Vault)
 
 	// Build the secret vault once from the operator passphrase. A nil or
 	// empty passphrase yields a disabled vault so existing dev fixtures
-	// keep using plaintext at-rest.
-	vault, vaultErr := secretvault.New(options.EncryptionKey, secretvault.AllDomains)
+	// keep using plaintext at-rest. The HKDF salt is per-install: load
+	// from cp_secrets or mint+persist on first start so two deployments
+	// sharing a master passphrase do not derive identical domain keys.
+	saltBytes, saltErr := loadOrCreateVaultSalt(options.Store)
+	if saltErr != nil {
+		panic("control-plane: cannot resolve vault HKDF salt: " + saltErr.Error())
+	}
+	vault, vaultErr := secretvault.NewWithSalt(options.EncryptionKey, secretvault.AllDomains, saltBytes)
 	if vaultErr != nil {
 		panic("control-plane: cannot initialise secret vault: " + vaultErr.Error())
 	}
@@ -272,6 +278,10 @@ func (s *Server) Close() {
 	// Wait for the rollup goroutine to finish before closing the store,
 	// so it does not query a closed storage backend.
 	s.rollupWg.Wait()
+	// N-1: wait for any operator-driven background goroutines (panel
+	// self-update, manual update-check) so a graceful restart cannot
+	// race a half-applied binary swap.
+	s.bgWG.Wait()
 }
 
 func (s *Server) seedUsers(users []auth.User) error {

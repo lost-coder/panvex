@@ -101,9 +101,12 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "0.0.0.0",
     port: 5173,
+    // L-16: proxy target overridable via PANVEX_DEV_PROXY_TARGET so
+    // contributors running the panel on a non-default port (or in a
+    // remote dev container) do not have to patch vite.config.
     proxy: {
       "/api/events": {
-        target: "http://127.0.0.1:8080",
+        target: process.env.PANVEX_DEV_PROXY_TARGET ?? "http://127.0.0.1:8080",
         ws: true,
         on: {
           error: () => {},
@@ -113,7 +116,7 @@ export default defineConfig(({ mode }) => ({
         },
       },
       "/api": {
-        target: "http://127.0.0.1:8080",
+        target: process.env.PANVEX_DEV_PROXY_TARGET ?? "http://127.0.0.1:8080",
       },
     },
   },

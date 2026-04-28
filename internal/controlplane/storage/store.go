@@ -98,6 +98,10 @@ type JobStore interface {
 	ListJobs(ctx context.Context) ([]JobRecord, error)
 	PutJobTarget(ctx context.Context, target JobTargetRecord) error
 	ListJobTargets(ctx context.Context, jobID string) ([]JobTargetRecord, error)
+	// ListAllJobTargets returns every job_targets row in one round-trip.
+	// Used by Service.restore() to avoid the per-job N+1 SELECT pattern.
+	// Empty result is fine — callers must not assume the slice is non-nil.
+	ListAllJobTargets(ctx context.Context) ([]JobTargetRecord, error)
 	// PruneTerminalJobs deletes jobs in succeeded/failed/expired status
 	// whose created_at predates the cutoff (Q2.U-P-02). Returns the
 	// number of rows deleted; the bound also cascades to job_targets via
@@ -270,6 +274,12 @@ type TimeseriesStore interface {
 	// P3-PERF-01a.
 	UpsertClientIPHistoryBulk(ctx context.Context, records []ClientIPHistoryRecord) error
 	ListClientIPHistory(ctx context.Context, clientID string, from time.Time, to time.Time) ([]ClientIPHistoryRecord, error)
+	// AggregateClientIPHistory folds the per-(agent, ip) rows into one
+	// per IP using SQL GROUP BY: MIN(first_seen) and MAX(last_seen).
+	// Sorted last_seen DESC. Pushes the work into the database so the
+	// CP no longer holds the full raw set in memory just to collapse
+	// duplicates.
+	AggregateClientIPHistory(ctx context.Context, clientID string, from time.Time, to time.Time, limit int) ([]ClientIPAggregateRecord, error)
 	CountUniqueClientIPs(ctx context.Context, clientID string) (int, error)
 	// CountUniqueClientIPsForClients returns the unique-IP count for
 	// each client ID in a single SQL round-trip (Q2.U-P-03). The

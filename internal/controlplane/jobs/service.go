@@ -889,9 +889,24 @@ func jobShouldExpire(job Job, now time.Time) bool {
 }
 
 func (s *Service) restore() error {
-	jobsFromStore, err := s.jobStore.ListJobs(context.Background())
+	ctx := context.Background()
+	jobsFromStore, err := s.jobStore.ListJobs(ctx)
 	if err != nil {
 		return err
+	}
+
+	// M-6: a single bulk fetch + map fan-out replaces the previous N+1
+	// pattern (one ListJobTargets per job). On a large fleet with
+	// thousands of restored jobs the per-call DB latency dominated
+	// startup; one ORDER BY job_id, agent_id query keeps the same
+	// per-job ordering downstream.
+	allTargets, err := s.jobStore.ListAllJobTargets(ctx)
+	if err != nil {
+		return err
+	}
+	targetsByJob := make(map[string][]storage.JobTargetRecord, len(jobsFromStore))
+	for _, target := range allTargets {
+		targetsByJob[target.JobID] = append(targetsByJob[target.JobID], target)
 	}
 
 	for _, record := range jobsFromStore {
@@ -900,24 +915,16 @@ func (s *Service) restore() error {
 		// only contains rows within JobsSeconds of "now", so loading
 		// them all is safe. Skipping terminal jobs here would hide
 		// recent failure history from the UI.
-		job, err := s.loadJobWithTargets(record)
-		if err != nil {
-			return err
-		}
-		s.installRestoredJob(job)
+		s.installRestoredJob(buildJobWithTargets(record, targetsByJob[record.ID]))
 	}
 
 	return nil
 }
 
-// loadJobWithTargets builds a Job from a stored JobRecord by fetching its
-// JobTarget rows. Pulled out of restore() so the caller stays a single
-// linear loop with no nested error returns.
-func (s *Service) loadJobWithTargets(record storage.JobRecord) (Job, error) {
-	targetRecords, err := s.jobStore.ListJobTargets(context.Background(), record.ID)
-	if err != nil {
-		return Job{}, err
-	}
+// buildJobWithTargets composes a Job from a stored JobRecord and its
+// already-fetched target rows. Same shape as the previous
+// loadJobWithTargets helper, minus the per-job DB round-trip.
+func buildJobWithTargets(record storage.JobRecord, targetRecords []storage.JobTargetRecord) Job {
 	job := jobFromRecord(record)
 	job.Targets = make([]JobTarget, 0, len(targetRecords))
 	job.TargetAgentIDs = make([]string, 0, len(targetRecords))
@@ -926,7 +933,7 @@ func (s *Service) loadJobWithTargets(record storage.JobRecord) (Job, error) {
 		job.Targets = append(job.Targets, target)
 		job.TargetAgentIDs = append(job.TargetAgentIDs, target.AgentID)
 	}
-	return job, nil
+	return job
 }
 
 // installRestoredJob commits a single restored Job into the in-memory

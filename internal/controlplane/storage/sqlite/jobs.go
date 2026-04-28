@@ -113,6 +113,34 @@ func (s *Store) ListJobTargets(ctx context.Context, jobID string) ([]storage.Job
 	return result, rows.Err()
 }
 
+// ListAllJobTargets returns every job_targets row in one query so the
+// service-level restore loop can fold targets into a map[jobID][]targets
+// without N+1 SELECTs.
+func (s *Store) ListAllJobTargets(ctx context.Context) ([]storage.JobTargetRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT job_id, agent_id, status, result_text, result_json, updated_at_unix
+		FROM job_targets
+		ORDER BY job_id, agent_id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]storage.JobTargetRecord, 0)
+	for rows.Next() {
+		var target storage.JobTargetRecord
+		var updatedAt int64
+		if err := rows.Scan(&target.JobID, &target.AgentID, &target.Status, &target.ResultText, &target.ResultJSON, &updatedAt); err != nil {
+			return nil, err
+		}
+		target.UpdatedAt = fromUnix(updatedAt)
+		result = append(result, target)
+	}
+
+	return result, rows.Err()
+}
+
 // PruneTerminalJobs deletes jobs in a finished status whose
 // created_at predates the cutoff (Q2.U-P-02). job_targets is cleaned
 // up via ON DELETE CASCADE in the schema.

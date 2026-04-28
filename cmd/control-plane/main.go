@@ -71,10 +71,15 @@ const (
 )
 
 // Build-time version information, injected via -ldflags.
+// SelfUpdateRepo identifies the GitHub repo the self-update path
+// fetches release assets from. L-15: stays overridable via
+// `-ldflags '-X main.SelfUpdateRepo=fork/panvex'` so a fork can ship
+// its own binaries without patching this file.
 var (
-	Version   = "dev"
-	CommitSHA = "unknown"
-	BuildTime = "unknown"
+	Version        = "dev"
+	CommitSHA      = "unknown"
+	BuildTime      = "unknown"
+	SelfUpdateRepo = "lost-coder/panvex"
 )
 
 type serveConfig struct {
@@ -250,10 +255,21 @@ func runServe(args []string) error {
 // initOtelTracing initialises OpenTelemetry exporters from environment vars.
 // P3-OBS-01: when OTEL_EXPORTER_OTLP_ENDPOINT is unset this is a cheap no-op
 // so production deployments that do not run a collector pay zero cost.
+//
+// Insecure transport (no TLS) is opt-in: traces carry request IDs, agent
+// IDs, fleet group IDs, paths, and IPs — leaking them in plain HTTP is a
+// privacy regression. Set OTEL_EXPORTER_OTLP_INSECURE=true only for
+// loopback / sidecar collectors that already terminate TLS upstream.
 func initOtelTracing() func(context.Context) error {
+	endpoint := strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"))
+	insecure := strings.ToLower(strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_INSECURE"))) == "true"
+	if endpoint != "" && insecure {
+		slog.Warn("OTLP exporter running without TLS; only safe for loopback/sidecar collectors",
+			"endpoint", endpoint)
+	}
 	otelShutdown, err := otelcp.Init(context.Background(), otelcp.Config{
-		Endpoint:       strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")),
-		Insecure:       strings.ToLower(strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_INSECURE"))) != "false",
+		Endpoint:       endpoint,
+		Insecure:       insecure,
 		ServiceName:    "panvex-control-plane",
 		ServiceVersion: Version,
 	})
@@ -352,10 +368,16 @@ func shutdownGRPCServer(grpcServer *grpc.Server) {
 		grpcServer.GracefulStop()
 		close(grpcDone)
 	}()
+	// L-18: time.After leaks the underlying timer until it fires; in a
+	// shutdown path the early "grpcDone" branch routinely beats the
+	// budget by several seconds, so the leak adds up over restarts.
+	// Switch to NewTimer + Stop so the timer is reclaimed immediately.
+	timer := time.NewTimer(grpcShutdownBudget)
+	defer timer.Stop()
 	select {
 	case <-grpcDone:
 		slog.Info("grpc shutdown complete", "latency", time.Since(grpcStart))
-	case <-time.After(grpcShutdownBudget):
+	case <-timer.C:
 		grpcServer.Stop()
 		slog.Warn("grpc shutdown forced after budget",
 			"budget", grpcShutdownBudget,
@@ -813,7 +835,7 @@ type selfUpdateOptions struct {
 func parseSelfUpdateFlags(args []string) (selfUpdateOptions, error) {
 	flags := flag.NewFlagSet("self-update", flag.ContinueOnError)
 	version := flags.String("version", "", "Target version to update to (e.g. 1.2.3)")
-	repo := flags.String("repo", "lost-coder/panvex", "GitHub repository for release assets")
+	repo := flags.String("repo", SelfUpdateRepo, "GitHub repository for release assets")
 	token := flags.String("token", os.Getenv("GITHUB_TOKEN"), "GitHub token for private repos (env: GITHUB_TOKEN)")
 	force := flags.Bool("force", false, "Force update even if versions match")
 	if err := flags.Parse(args); err != nil {

@@ -228,6 +228,72 @@ func (s *Server) listClientsSnapshot() []managedClient {
 	return result
 }
 
+// listClientsListingSnapshot returns every field handleClients needs in
+// one pass under a single clientsMu RLock. It exists to fold the prior
+// N×{clientDetailSnapshot, aggregatedClientUsage} pattern into a single
+// lock acquire — under heavy lock contention the cumulative wall-clock
+// difference is an order of magnitude on big fleets.
+func (s *Server) listClientsListingSnapshot() clientListingSnapshot {
+	s.clientsMu.RLock()
+	defer s.clientsMu.RUnlock()
+
+	clientsList := make([]managedClient, 0, len(s.clients))
+	assignments := make(map[string][]managedClientAssignment, len(s.clients))
+	deployments := make(map[string][]managedClientDeployment, len(s.clients))
+	usage := make(map[string]aggregatedClientUsage, len(s.clients))
+
+	for id, client := range s.clients {
+		if client.DeletedAt != nil {
+			continue
+		}
+		clientsList = append(clientsList, client)
+
+		if rows := s.clientAssignments[id]; len(rows) > 0 {
+			copyRows := append([]managedClientAssignment(nil), rows...)
+			sort.Slice(copyRows, func(left, right int) bool {
+				if copyRows[left].CreatedAt.Equal(copyRows[right].CreatedAt) {
+					return copyRows[left].ID < copyRows[right].ID
+				}
+				return copyRows[left].CreatedAt.Before(copyRows[right].CreatedAt)
+			})
+			assignments[id] = copyRows
+		}
+
+		if depMap := s.clientDeployments[id]; len(depMap) > 0 {
+			deps := make([]managedClientDeployment, 0, len(depMap))
+			for _, deployment := range depMap {
+				deps = append(deps, deployment)
+			}
+			sort.Slice(deps, func(left, right int) bool {
+				return deps[left].AgentID < deps[right].AgentID
+			})
+			deployments[id] = deps
+		}
+
+		if usageByAgent := s.clientUsage[id]; len(usageByAgent) > 0 {
+			snapshot := make(map[string]clients.UsageSnapshot, len(usageByAgent))
+			for agentID, value := range usageByAgent {
+				snapshot[agentID] = value
+			}
+			usage[id] = s.clientsSvc.AggregateUsage(snapshot)
+		}
+	}
+
+	sort.Slice(clientsList, func(left, right int) bool {
+		if clientsList[left].CreatedAt.Equal(clientsList[right].CreatedAt) {
+			return clientsList[left].ID < clientsList[right].ID
+		}
+		return clientsList[left].CreatedAt.Before(clientsList[right].CreatedAt)
+	})
+
+	return clientListingSnapshot{
+		clients:     clientsList,
+		assignments: assignments,
+		deployments: deployments,
+		usage:       usage,
+	}
+}
+
 func (s *Server) clientDetailSnapshot(clientID string) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
 	s.clientsMu.RLock()
 	defer s.clientsMu.RUnlock()

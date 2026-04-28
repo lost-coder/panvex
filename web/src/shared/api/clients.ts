@@ -108,6 +108,20 @@ export type ClientIPHistoryResponse = {
   total_unique: number;
 };
 
+export type BulkClientServerAction = "enable" | "disable" | "delete";
+
+export type BulkClientFailure = {
+  id: string;
+  error: string;
+};
+
+export type BulkClientResponse = {
+  action: BulkClientServerAction;
+  succeeded: string[];
+  skipped: string[];
+  failed: BulkClientFailure[];
+};
+
 export const clientsApi = {
   clients: () => api<ClientListItem[]>(`${apiBasePath}/clients`, undefined, clientListSchema),
   client: (clientID: string) => api<Client>(`${apiBasePath}/clients/${clientID}`),
@@ -154,6 +168,14 @@ export const clientsApi = {
   ignoreDiscoveredClient: (id: string) =>
     api<void>(`${apiBasePath}/discovered-clients/${id}/ignore`, {
       method: "POST"
+    }),
+  // Single-call bulk variant: replaces the previous N-PUT/N-DELETE
+  // fan-out from the dashboard with one authoritative POST. Capped at
+  // 500 ids by the server; the UI typically operates on far fewer.
+  bulkClientAction: (action: BulkClientServerAction, ids: string[]) =>
+    api<BulkClientResponse>(`${apiBasePath}/clients/bulk-action`, {
+      method: "POST",
+      body: JSON.stringify({ action, ids }),
     }),
   clientIPHistory: (clientID: string, from?: string, to?: string) => {
     const params = new URLSearchParams();

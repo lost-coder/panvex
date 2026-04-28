@@ -1,6 +1,7 @@
 package server
 
 import (
+	"container/heap"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -38,17 +39,29 @@ type telemetryDashboardSnapshot struct {
 
 // collectTelemetryDashboardSnapshot walks the agents map under s.mu
 // and returns the per-agent summaries plus the derived aggregate
-// fields used by the dashboard payload.
-func (s *Server) collectTelemetryDashboardSnapshot(now time.Time, metricSnapshots int) telemetryDashboardSnapshot {
+// fields used by the dashboard payload. Agents outside the operator's
+// scope are filtered out (R-S-14): summaries, recent events, and the
+// fleet aggregate all see the scoped view, so a multi-tenant operator
+// cannot infer the existence of "neighbour" fleets via metrics or the
+// recent-events feed.
+func (s *Server) collectTelemetryDashboardSnapshot(scope FleetScopeAccess, now time.Time, metricSnapshots int) telemetryDashboardSnapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	snapshot := telemetryDashboardSnapshot{
-		items:               make([]telemetryServerSummary, 0, len(s.agents)),
-		runtimeDistribution: make(map[string]int),
-		agentIDs:            make([]string, 0, len(s.agents)),
+	scopedAgents := make(map[string]Agent, len(s.agents))
+	for id, agent := range s.agents {
+		if !scope.IsAllowed(agent.FleetGroupID) {
+			continue
+		}
+		scopedAgents[id] = agent
 	}
-	for _, agent := range s.agents {
+
+	snapshot := telemetryDashboardSnapshot{
+		items:               make([]telemetryServerSummary, 0, len(scopedAgents)),
+		runtimeDistribution: make(map[string]int),
+		agentIDs:            make([]string, 0, len(scopedAgents)),
+	}
+	for _, agent := range scopedAgents {
 		boostExpiresAt := s.detailBoosts[agent.ID]
 		summary := telemetrySummaryForAgent(agent, s.presence.Evaluate(agent.ID, now), now, boostExpiresAt)
 		snapshot.items = append(snapshot.items, summary)
@@ -59,9 +72,9 @@ func (s *Server) collectTelemetryDashboardSnapshot(now time.Time, metricSnapshot
 		snapshot.runtimeDistribution[mode]++
 		snapshot.agentIDs = append(snapshot.agentIDs, agent.ID)
 	}
-	snapshot.recentEvents = controlRoomRecentRuntimeEvents(s.agents, telemetryDashboardEventLimit)
-	snapshot.recentEventsEnriched = dashboardRecentEvents(s.agents, telemetryDashboardEventLimit)
-	snapshot.fleet = controlRoomFleetFromState(s.agents, s.instances, metricSnapshots, s.presence, now)
+	snapshot.recentEvents = controlRoomRecentRuntimeEvents(scopedAgents, telemetryDashboardEventLimit)
+	snapshot.recentEventsEnriched = dashboardRecentEvents(scopedAgents, telemetryDashboardEventLimit)
+	snapshot.fleet = controlRoomFleetFromState(scopedAgents, s.instances, metricSnapshots, s.presence, now)
 	return snapshot
 }
 
@@ -94,8 +107,13 @@ func buildTelemetryAttention(items []telemetryServerSummary) []telemetryAttentio
 
 func (s *Server) handleTelemetryDashboard() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, _, err := s.requireSession(r); err != nil {
+		_, user, err := s.requireSession(r)
+		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
 			return
 		}
 
@@ -105,7 +123,7 @@ func (s *Server) handleTelemetryDashboard() http.HandlerFunc {
 		metricSnapshots := len(s.metrics)
 		s.metricsAuditMu.RUnlock()
 
-		snapshot := s.collectTelemetryDashboardSnapshot(now, metricSnapshots)
+		snapshot := s.collectTelemetryDashboardSnapshot(scope, now, metricSnapshots)
 
 		loadSeries := s.dashboardAgentLoadSeries(r.Context(), snapshot.agentIDs, now)
 
@@ -124,34 +142,70 @@ func (s *Server) handleTelemetryDashboard() http.HandlerFunc {
 	}
 }
 
+// dashboardRecentEventHeap is a min-heap on (TimestampUnix, Sequence)
+// so heap[0] is the OLDEST event we are currently keeping. We push
+// every candidate; once size exceeds limit we pop the smallest. This
+// keeps overall work at O(N log K) instead of the previous
+// O(N·M log N·M) full sort.
+type dashboardRecentEventHeap []telemetryRecentEvent
+
+func (h dashboardRecentEventHeap) Len() int { return len(h) }
+func (h dashboardRecentEventHeap) Less(left, right int) bool {
+	if h[left].TimestampUnix == h[right].TimestampUnix {
+		return h[left].Sequence < h[right].Sequence
+	}
+	return h[left].TimestampUnix < h[right].TimestampUnix
+}
+func (h dashboardRecentEventHeap) Swap(left, right int) { h[left], h[right] = h[right], h[left] }
+func (h *dashboardRecentEventHeap) Push(x any)          { *h = append(*h, x.(telemetryRecentEvent)) }
+func (h *dashboardRecentEventHeap) Pop() any {
+	old := *h
+	n := len(old)
+	last := old[n-1]
+	*h = old[:n-1]
+	return last
+}
+
 // dashboardRecentEvents tags each runtime event with the agent that
 // emitted it so the web dashboard can render "node-name · message"
 // without a second round-trip. Sorted newest-first, capped at `limit`.
+// Uses a bounded min-heap so the cost stays O(N log K) regardless of
+// how many runtime events the fleet emitted in the window.
 func dashboardRecentEvents(agents map[string]Agent, limit int) []telemetryRecentEvent {
 	if limit <= 0 {
 		return []telemetryRecentEvent{}
 	}
-	result := make([]telemetryRecentEvent, 0)
+	h := make(dashboardRecentEventHeap, 0, limit+1)
 	for _, agent := range agents {
 		for _, ev := range agent.Runtime.RecentEvents {
-			result = append(result, telemetryRecentEvent{
+			candidate := telemetryRecentEvent{
 				Sequence:      ev.Sequence,
 				TimestampUnix: ev.TimestampUnix,
 				EventType:     ev.EventType,
 				Context:       ev.Context,
 				AgentID:       agent.ID,
 				NodeName:      agent.NodeName,
-			})
+			}
+			if h.Len() < limit {
+				heap.Push(&h, candidate)
+				continue
+			}
+			// Heap is full: skip events strictly older than the
+			// current minimum, otherwise replace the min.
+			oldest := h[0]
+			if candidate.TimestampUnix < oldest.TimestampUnix ||
+				(candidate.TimestampUnix == oldest.TimestampUnix && candidate.Sequence <= oldest.Sequence) {
+				continue
+			}
+			h[0] = candidate
+			heap.Fix(&h, 0)
 		}
 	}
-	sort.Slice(result, func(left, right int) bool {
-		if result[left].TimestampUnix == result[right].TimestampUnix {
-			return result[left].Sequence > result[right].Sequence
-		}
-		return result[left].TimestampUnix > result[right].TimestampUnix
-	})
-	if len(result) > limit {
-		result = result[:limit]
+	result := make([]telemetryRecentEvent, h.Len())
+	// Drain: the heap pops oldest-first, so place each one at the
+	// tail of the output and the final slice is newest-first.
+	for i := len(result) - 1; i >= 0; i-- {
+		result[i] = heap.Pop(&h).(telemetryRecentEvent)
 	}
 	return result
 }
@@ -197,8 +251,13 @@ func (s *Server) dashboardAgentLoadSeries(
 
 func (s *Server) handleTelemetryServers() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, _, err := s.requireSession(r); err != nil {
+		_, user, err := s.requireSession(r)
+		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
 			return
 		}
 
@@ -207,6 +266,9 @@ func (s *Server) handleTelemetryServers() http.HandlerFunc {
 		s.mu.RLock()
 		items := make([]telemetryServerSummary, 0, len(s.agents))
 		for _, agent := range s.agents {
+			if !scope.IsAllowed(agent.FleetGroupID) {
+				continue
+			}
 			items = append(items, telemetrySummaryForAgent(agent, s.presence.Evaluate(agent.ID, now), now, s.detailBoosts[agent.ID]))
 		}
 		s.mu.RUnlock()
@@ -218,8 +280,13 @@ func (s *Server) handleTelemetryServers() http.HandlerFunc {
 
 func (s *Server) handleTelemetryServerDetail() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, _, err := s.requireSession(r); err != nil {
+		_, user, err := s.requireSession(r)
+		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		scope, scopeOK := s.requireFleetScope(w, r, user)
+		if !scopeOK {
 			return
 		}
 
@@ -232,6 +299,12 @@ func (s *Server) handleTelemetryServerDetail() http.HandlerFunc {
 		initializationCooldownExpiresAt := s.initializationWatchCooldowns[agentID]
 		s.mu.RUnlock()
 		if !ok {
+			writeError(w, http.StatusNotFound, msgServerNotFound)
+			return
+		}
+		if !scope.IsAllowed(agent.FleetGroupID) {
+			// Mirror the not-found path so cross-scope probes cannot
+			// distinguish "exists but not yours" from "doesn't exist".
 			writeError(w, http.StatusNotFound, msgServerNotFound)
 			return
 		}
@@ -273,8 +346,13 @@ func (s *Server) handleTelemetryServerDetail() http.HandlerFunc {
 
 func (s *Server) handleTelemetryServerDetailBoost() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, _, err := s.requireSession(r); err != nil {
+		_, user, err := s.requireSession(r)
+		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		scope, scopeOK := s.requireFleetScope(w, r, user)
+		if !scopeOK {
 			return
 		}
 
@@ -282,7 +360,13 @@ func (s *Server) handleTelemetryServerDetailBoost() http.HandlerFunc {
 		now := s.now()
 
 		s.mu.Lock()
-		if _, ok := s.agents[agentID]; !ok {
+		agent, ok := s.agents[agentID]
+		if !ok {
+			s.mu.Unlock()
+			writeError(w, http.StatusNotFound, msgServerNotFound)
+			return
+		}
+		if !scope.IsAllowed(agent.FleetGroupID) {
 			s.mu.Unlock()
 			writeError(w, http.StatusNotFound, msgServerNotFound)
 			return
@@ -316,6 +400,10 @@ func (s *Server) handleTelemetryServerRefreshDiagnostics() http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
+		scope, scopeOK := s.requireFleetScope(w, r, user)
+		if !scopeOK {
+			return
+		}
 
 		agentID := chi.URLParam(r, "id")
 		now := s.now()
@@ -324,6 +412,10 @@ func (s *Server) handleTelemetryServerRefreshDiagnostics() http.HandlerFunc {
 		agent, ok := s.agents[agentID]
 		s.mu.RUnlock()
 		if !ok {
+			writeError(w, http.StatusNotFound, msgServerNotFound)
+			return
+		}
+		if !scope.IsAllowed(agent.FleetGroupID) {
 			writeError(w, http.StatusNotFound, msgServerNotFound)
 			return
 		}

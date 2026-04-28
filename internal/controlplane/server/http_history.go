@@ -1,8 +1,8 @@
 package server
 
 import (
+	"errors"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -12,6 +12,24 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
+// agentVisibleInScope reports whether the operator's scope grants
+// access to the given agent's fleet group. A non-existent agent is
+// treated as visible so callers preserve their existing 404 path —
+// hiding "exists but out-of-scope" behind the same response keeps
+// cross-scope probes from learning agent ids.
+func (s *Server) agentVisibleInScope(scope FleetScopeAccess, agentID string) bool {
+	if scope.Global {
+		return true
+	}
+	s.mu.RLock()
+	agent, ok := s.agents[agentID]
+	s.mu.RUnlock()
+	if !ok {
+		return true
+	}
+	return scope.IsAllowed(agent.FleetGroupID)
+}
+
 const (
 	defaultHistoryRangeHours = 24
 	maxHistoryRangeHours     = 24 * 90
@@ -19,14 +37,23 @@ const (
 
 func (s *Server) handleServerLoadHistory() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, _, err := s.requireSession(r); err != nil {
+		_, user, err := s.requireSession(r)
+		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
 			return
 		}
 
 		agentID := chi.URLParam(r, "id")
 		if agentID == "" {
 			writeError(w, http.StatusBadRequest, "missing server id")
+			return
+		}
+		if !s.agentVisibleInScope(scope, agentID) {
+			writeError(w, http.StatusNotFound, msgServerNotFound)
 			return
 		}
 
@@ -62,14 +89,23 @@ func (s *Server) handleServerLoadHistory() http.HandlerFunc {
 
 func (s *Server) handleDCHealthHistory() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, _, err := s.requireSession(r); err != nil {
+		_, user, err := s.requireSession(r)
+		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
 			return
 		}
 
 		agentID := chi.URLParam(r, "id")
 		if agentID == "" {
 			writeError(w, http.StatusBadRequest, "missing server id")
+			return
+		}
+		if !s.agentVisibleInScope(scope, agentID) {
+			writeError(w, http.StatusNotFound, msgServerNotFound)
 			return
 		}
 
@@ -99,8 +135,13 @@ type clientIPRow struct {
 
 func (s *Server) handleClientIPHistory() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, _, err := s.requireSession(r); err != nil {
+		_, user, err := s.requireSession(r)
+		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
 			return
 		}
 
@@ -109,6 +150,22 @@ func (s *Server) handleClientIPHistory() http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "missing client id")
 			return
 		}
+		if !scope.Global {
+			_, assignments, _, lookupErr := s.clientDetailSnapshot(clientID)
+			if lookupErr != nil {
+				if errors.Is(lookupErr, storage.ErrNotFound) {
+					writeError(w, http.StatusNotFound, msgClientNotFound)
+					return
+				}
+				s.logger.Error("client ip history scope lookup failed", "client_id", clientID, "error", lookupErr)
+				writeError(w, http.StatusInternalServerError, msgInternalError)
+				return
+			}
+			if !s.clientInScope(scope, assignments) {
+				writeError(w, http.StatusNotFound, msgClientNotFound)
+				return
+			}
+		}
 
 		from, to := s.parseTimeRange(r, 24*30) // default 30 days for IPs
 		if s.store == nil {
@@ -116,19 +173,34 @@ func (s *Server) handleClientIPHistory() http.HandlerFunc {
 			return
 		}
 
-		records, err := s.store.ListClientIPHistory(r.Context(), clientID, from, to)
+		// Q4.U-P-04 follow-up: push the per-IP fold into SQL via
+		// AggregateClientIPHistory + LIMIT. Pull (limit + 1) so we can
+		// detect truncation without a separate COUNT round-trip;
+		// total_unique reflects the raw distinct count and uses the
+		// dedicated CountUniqueClientIPs query.
+		limit := parseClientIPHistoryLimit(r)
+		aggregates, err := s.store.AggregateClientIPHistory(r.Context(), clientID, from, to, limit+1)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
-
-		ips := collapseIPHistoryByIP(records)
-		totalUnique := len(ips)
-		limit := parseClientIPHistoryLimit(r)
 		truncated := false
-		if len(ips) > limit {
-			ips = ips[:limit]
+		if len(aggregates) > limit {
+			aggregates = aggregates[:limit]
 			truncated = true
+		}
+		ips := make([]clientIPRow, len(aggregates))
+		for i, agg := range aggregates {
+			ips[i] = clientIPRow{
+				IPAddress: agg.IPAddress,
+				FirstSeen: agg.FirstSeen,
+				LastSeen:  agg.LastSeen,
+			}
+		}
+		totalUnique, err := s.store.CountUniqueClientIPs(r.Context(), clientID)
+		if err != nil {
+			s.logger.Warn("count unique client ips failed", "client_id", clientID, "error", err)
+			totalUnique = len(ips)
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ips":          ips,
@@ -139,35 +211,6 @@ func (s *Server) handleClientIPHistory() http.HandlerFunc {
 	}
 }
 
-// collapseIPHistoryByIP folds the per-(agent, client, ip) rows into one
-// row per IP — first_seen is the earliest sighting across nodes,
-// last_seen the most recent — and sorts by most-recently-seen first.
-func collapseIPHistoryByIP(records []storage.ClientIPHistoryRecord) []clientIPRow {
-	byIP := make(map[string]*clientIPRow, len(records))
-	for _, rec := range records {
-		row, ok := byIP[rec.IPAddress]
-		if !ok {
-			byIP[rec.IPAddress] = &clientIPRow{
-				IPAddress: rec.IPAddress,
-				FirstSeen: rec.FirstSeen,
-				LastSeen:  rec.LastSeen,
-			}
-			continue
-		}
-		if rec.FirstSeen.Before(row.FirstSeen) {
-			row.FirstSeen = rec.FirstSeen
-		}
-		if rec.LastSeen.After(row.LastSeen) {
-			row.LastSeen = rec.LastSeen
-		}
-	}
-	ips := make([]clientIPRow, 0, len(byIP))
-	for _, row := range byIP {
-		ips = append(ips, *row)
-	}
-	sort.Slice(ips, func(i, j int) bool { return ips[i].LastSeen.After(ips[j].LastSeen) })
-	return ips
-}
 
 // parseClientIPHistoryLimit honours the operator's ?limit= override
 // while clamping to defaultClientIPHistoryMax (Q4.U-P-04: a high-

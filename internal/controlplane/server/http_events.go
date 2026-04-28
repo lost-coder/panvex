@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/coder/websocket"
@@ -130,6 +131,13 @@ func (s *Server) wsOriginPatterns(r *http.Request) []string {
 }
 
 func wsDevLoopbackEnabled() bool {
+	// L-11: refuse to honour the dev-loopback opt-in when PANVEX_ENV
+	// signals production. Operators sometimes copy a dev .env into a
+	// prod box and the loose origin policy is exactly the kind of
+	// regression that should not survive that mistake.
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("PANVEX_ENV")), "production") {
+		return false
+	}
 	switch os.Getenv(EnvWSDevLoopback) {
 	case "1", "true", "TRUE", "yes", "on":
 		return true

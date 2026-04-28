@@ -3,7 +3,7 @@
 // divider, and the header carries a live-refresh indicator.
 import { ClientFormSheet } from "@/features/clients/ClientFormSheet";
 import { DiscoveredClientsBanner } from "@/features/clients/DiscoveredClientsBanner";
-import { useState } from "react";
+import { memo, useState } from "react";
 import {
   Badge,
   Button,
@@ -160,7 +160,11 @@ function LoadCell({
  * Mobile layout stacks into two lines: identity + badge above, metrics
  * below. Desktop keeps everything on a single row.
  */
-function FleetRow({ node, onClick }: Readonly<{ node: DashboardNodeData; onClick?: () => void }>) {
+// L-19: memo'd so unrelated dashboard ticks (incoming runtime events,
+// other rows mutating) do not force every fleet row to rerender. Each
+// row only depends on its immutable `node` snapshot and a stable
+// onClick callback from the parent.
+const FleetRow = memo(function FleetRow({ node, onClick }: Readonly<{ node: DashboardNodeData; onClick?: () => void }>) {
   const isProblem = node.status !== "ok";
   const badgeVariant = node.status === "error" ? "error" : "warn";
   const badgeLabel = node.status === "error" ? "DOWN" : "DEGRADED";
@@ -216,7 +220,7 @@ function FleetRow({ node, onClick }: Readonly<{ node: DashboardNodeData; onClick
       </div>
     </button>
   );
-}
+});
 
 function FleetList({
   attention,

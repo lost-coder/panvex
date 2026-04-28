@@ -228,6 +228,43 @@ func (s *Store) ListClientIPHistory(ctx context.Context, clientID string, from t
 	return result, rows.Err()
 }
 
+// AggregateClientIPHistory mirrors the Postgres implementation: per-IP
+// aggregate computed by SQL with last_seen DESC ordering and an
+// optional LIMIT, so a high-cardinality client cannot stream millions
+// of raw rows just to be deduplicated client-side.
+func (s *Store) AggregateClientIPHistory(ctx context.Context, clientID string, from time.Time, to time.Time, limit int) ([]storage.ClientIPAggregateRecord, error) {
+	query := `
+		SELECT ip_address, MIN(first_seen_unix) AS first_seen_unix, MAX(last_seen_unix) AS last_seen_unix
+		FROM client_ip_history
+		WHERE client_id = ? AND last_seen_unix >= ? AND first_seen_unix <= ?
+		GROUP BY ip_address
+		ORDER BY last_seen_unix DESC
+	`
+	args := []any{clientID, toUnix(from), toUnix(to)}
+	if limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, limit)
+	}
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []storage.ClientIPAggregateRecord
+	for rows.Next() {
+		var r storage.ClientIPAggregateRecord
+		var firstSeenUnix, lastSeenUnix int64
+		if err := rows.Scan(&r.IPAddress, &firstSeenUnix, &lastSeenUnix); err != nil {
+			return nil, err
+		}
+		r.FirstSeen = fromUnix(firstSeenUnix)
+		r.LastSeen = fromUnix(lastSeenUnix)
+		result = append(result, r)
+	}
+	return result, rows.Err()
+}
+
 func (s *Store) CountUniqueClientIPs(ctx context.Context, clientID string) (int, error) {
 	var count int
 	err := s.db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT ip_address) FROM client_ip_history WHERE client_id = ?`, clientID).Scan(&count)

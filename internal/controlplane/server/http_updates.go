@@ -229,8 +229,13 @@ func (s *Server) handleForceUpdateCheck() http.HandlerFunc {
 		// outlive the HTTP request, otherwise closing the browser tab would
 		// abort the poll. The package-level ctx is not reachable from the
 		// handler so we start fresh; the worker honours its own deadlines via
-		// the timeout in checkForUpdates -> FetchLatestVersions.
-		go s.checkForUpdates(context.Background()) //nolint:contextcheck,gosec // intentionally detached from request lifecycle
+		// the timeout in checkForUpdates -> FetchLatestVersions. N-1: tracked
+		// in bgWG so a graceful Shutdown waits for it to finish.
+		s.bgWG.Add(1)
+		go func() {
+			defer s.bgWG.Done()
+			s.checkForUpdates(context.Background()) //nolint:contextcheck,gosec // intentionally detached from request lifecycle
+		}()
 
 		writeJSON(w, http.StatusAccepted, map[string]string{"status": "checking"})
 	}
@@ -275,8 +280,13 @@ func (s *Server) handlePanelUpdate() http.HandlerFunc {
 		// downloads, verifies, and replaces the running binary; killing it
 		// when the operator's HTTP request ends would leave the panel in a
 		// half-applied state. The 202 response above already tells the
-		// caller the work continues asynchronously.
-		go s.performPanelUpdate(session.UserID, targetVersion, downloadURL, checksumURL, signatureURL, settings.GitHubToken) //nolint:contextcheck,gosec // intentionally detached from request lifecycle
+		// caller the work continues asynchronously. N-1: tracked in bgWG so
+		// shutdown waits for the binary swap to complete.
+		s.bgWG.Add(1)
+		go func() {
+			defer s.bgWG.Done()
+			s.performPanelUpdate(session.UserID, targetVersion, downloadURL, checksumURL, signatureURL, settings.GitHubToken) //nolint:contextcheck,gosec // intentionally detached from request lifecycle
+		}()
 	}
 }
 

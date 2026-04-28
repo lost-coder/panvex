@@ -21,7 +21,9 @@ export default tseslint.config(
         "error",
         { argsIgnorePattern: "^_" },
       ],
-      "@typescript-eslint/no-explicit-any": "warn",
+      // M-19: any erodes the rest of the type guarantees — flip to error
+      // so a stray `as any` blocks the next CI run instead of accruing.
+      "@typescript-eslint/no-explicit-any": "error",
       "@typescript-eslint/ban-ts-comment": "warn",
       "react-hooks/set-state-in-effect": "warn",
     },

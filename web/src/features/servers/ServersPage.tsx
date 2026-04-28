@@ -98,7 +98,10 @@ function ServerListView({
   visibleColumns: Record<string, boolean>;
   selection?: ServerSelectionConfig | undefined;
 }>) {
-  const allColumns = [
+  // L-20: column array embeds inline render lambdas — without useMemo
+  // every parent rerender produces a fresh array reference, defeating
+  // any memoisation downstream of `columns`.
+  const allColumns = useMemo(() => [
     ...(selection
       ? [
           {
@@ -219,7 +222,7 @@ function ServerListView({
       ),
       className: "hidden lg:table-cell w-[140px]",
     },
-  ];
+  ], [selection]);
 
   const columns = allColumns.filter((c) => c.key === "server" || visibleColumns[c.key] !== false);
 

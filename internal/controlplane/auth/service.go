@@ -40,8 +40,9 @@ var (
 	ErrInvalidTotpCode = errors.New("invalid totp code")
 	// ErrTotpSetupNotFound reports a missing or expired pending TOTP setup.
 	ErrTotpSetupNotFound = errors.New("totp setup not found")
-	// ErrPasswordTooWeak reports a password that is empty or exceeds the length cap.
-	ErrPasswordTooWeak = errors.New("password must be between 1 and 1024 characters")
+	// ErrPasswordTooWeak reports a password that is shorter than the
+	// minimum length, empty, or exceeds the length cap.
+	ErrPasswordTooWeak = errors.New("password must be between 12 and 1024 characters")
 	// ErrSessionStoreUnavailable reports that the persistent session store
 	// rejected a write during login. P2-SEC-07: the in-memory session alone
 	// is not acceptable — it would silently disappear on the next control-
@@ -81,6 +82,11 @@ const (
 	// minute-level resolution, which is enough to drive idle-expiry.
 	sessionTouchThrottle = 1 * time.Minute
 	maxPasswordLength    = 1024
+	// minPasswordLength is the minimum acceptable password length. Argon2id
+	// only protects offline guesses on a stolen hash; against online brute
+	// force the only mitigation is rate-limit + minimum entropy. Twelve
+	// characters tracks NIST SP 800-63B's "memorized secret" floor.
+	minPasswordLength = 12
 )
 
 // sessionTTL is retained as the public compatibility alias for
@@ -89,12 +95,12 @@ const (
 // the new idle-timeout is enforced in addition, not instead.
 const sessionTTL = sessionMaxLifetime
 
-// validatePassword only enforces a sanity cap so that pathological inputs
-// cannot stall the password hasher. No complexity rules — operators pick
-// whatever password they feel comfortable with. An empty password is still
-// refused because the row must carry a hash.
+// validatePassword enforces the minimum length floor (defends against
+// online brute force; rate-limit alone is insufficient for one-character
+// passwords) and a sanity cap so that pathological inputs cannot stall
+// the password hasher.
 func validatePassword(password string) error {
-	if password == "" || len(password) > maxPasswordLength {
+	if len(password) < minPasswordLength || len(password) > maxPasswordLength {
 		return ErrPasswordTooWeak
 	}
 	return nil
@@ -164,10 +170,16 @@ type totpUseKey struct {
 
 // Service provides local-account hashing, TOTP, and session issuance.
 type Service struct {
-	mu                 sync.RWMutex
-	sequence           uint64
-	users              map[string]User
-	sessions           map[string]Session
+	mu       sync.RWMutex
+	sequence uint64
+	// users is keyed by username for the login lookup path. usersByID is
+	// the matching reverse index keyed by user.ID so GetUserByID stays
+	// O(1) in the no-store fallback (M-16). Mutators use the
+	// putUserLocked / deleteUserLocked helpers to keep both maps in
+	// sync — never write to either map directly.
+	users      map[string]User
+	usersByID  map[string]User
+	sessions   map[string]Session
 	pendingTotpSetup   map[string]pendingTotpSetup
 	consumedTotp       map[totpUseKey]time.Time
 	userStore          storage.UserStore
@@ -244,10 +256,34 @@ func (s *Service) decryptTotp(value string) (string, error) {
 	return s.vault.Decrypt(secretvault.DomainTOTP, value)
 }
 
+// putUserLocked installs (or updates) a user record in both indices.
+// Caller must hold s.mu for write. previousUsername (when non-empty)
+// removes the stale name->record entry left over from a username
+// rename so the username index does not double-up.
+func (s *Service) putUserLocked(user User, previousUsername string) {
+	if previousUsername != "" && previousUsername != user.Username {
+		delete(s.users, previousUsername)
+	}
+	s.users[user.Username] = user
+	if user.ID != "" {
+		s.usersByID[user.ID] = user
+	}
+}
+
+// deleteUserLocked removes a user from both indices. Caller must hold
+// s.mu for write.
+func (s *Service) deleteUserLocked(user User) {
+	delete(s.users, user.Username)
+	if user.ID != "" {
+		delete(s.usersByID, user.ID)
+	}
+}
+
 // NewService constructs an in-memory local-auth service.
 func NewService() *Service {
 	return &Service{
 		users:            make(map[string]User),
+		usersByID:        make(map[string]User),
 		sessions:         make(map[string]Session),
 		pendingTotpSetup: make(map[string]pendingTotpSetup),
 		consumedTotp:     make(map[totpUseKey]time.Time),
@@ -260,6 +296,7 @@ func NewService() *Service {
 func NewServiceWithStore(userStore storage.UserStore) *Service {
 	return &Service{
 		users:            make(map[string]User),
+		usersByID:        make(map[string]User),
 		sessions:         make(map[string]Session),
 		pendingTotpSetup: make(map[string]pendingTotpSetup),
 		consumedTotp:     make(map[totpUseKey]time.Time),
@@ -411,7 +448,7 @@ func (s *Service) BootstrapUserWithContext(ctx context.Context, input BootstrapI
 			TotpSecret:   "",
 			CreatedAt:    now.UTC(),
 		}
-		s.users[input.Username] = user
+		s.putUserLocked(user, "")
 
 		return user, "", nil
 	}
@@ -421,14 +458,23 @@ func (s *Service) BootstrapUserWithContext(ctx context.Context, input BootstrapI
 		return User{}, "", err
 	}
 
+	// M-17: do not hold s.mu across the userStore.PutUser round-trip.
+	// The previous form blocked every other auth-flow caller for a full
+	// DB RTT. Now we (a) reserve the next sequence/ID under the lock,
+	// (b) drop the lock, (c) hit the store, (d) re-take the lock only
+	// to install the row. Failure paths re-take the lock briefly to
+	// roll the sequence back so concurrent bootstraps never re-use an
+	// allocated ID.
+	id, err := randomUserID()
+	if err != nil {
+		return User{}, "", err
+	}
+
 	s.mu.Lock()
 	s.sequence = maxSequence(s.sequence, maxUserSequence(users))
 	s.sequence++
-	id, err := randomUserID()
-	if err != nil {
-		s.mu.Unlock()
-		return User{}, "", err
-	}
+	s.mu.Unlock()
+
 	user := User{
 		ID:           id,
 		Username:     input.Username,
@@ -440,19 +486,24 @@ func (s *Service) BootstrapUserWithContext(ctx context.Context, input BootstrapI
 	}
 
 	bootstrapRecord := userToRecord(user)
-	if encrypted, encErr := s.encryptTotp(bootstrapRecord.TotpSecret); encErr != nil {
+	encrypted, encErr := s.encryptTotp(bootstrapRecord.TotpSecret)
+	if encErr != nil {
+		s.mu.Lock()
 		s.sequence--
 		s.mu.Unlock()
 		return User{}, "", encErr
-	} else {
-		bootstrapRecord.TotpSecret = encrypted
 	}
+	bootstrapRecord.TotpSecret = encrypted
+
 	if err := s.userStore.PutUser(ctx, bootstrapRecord); err != nil {
+		s.mu.Lock()
 		s.sequence--
 		s.mu.Unlock()
 		return User{}, "", err
 	}
-	s.users[input.Username] = user
+
+	s.mu.Lock()
+	s.putUserLocked(user, "")
 	s.mu.Unlock()
 
 	return user, "", nil
@@ -941,8 +992,9 @@ func (s *Service) LoadUsers(users []User) {
 	defer s.mu.Unlock()
 
 	s.users = make(map[string]User, len(users))
+	s.usersByID = make(map[string]User, len(users))
 	for _, user := range users {
-		s.users[user.Username] = user
+		s.putUserLocked(user, "")
 	}
 }
 
@@ -969,10 +1021,8 @@ func (s *Service) GetUserByIDWithContext(ctx context.Context, userID string) (Us
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	for _, user := range s.users {
-		if user.ID == userID {
-			return user, nil
-		}
+	if user, ok := s.usersByID[userID]; ok {
+		return user, nil
 	}
 
 	return User{}, ErrInvalidCredentials
@@ -1043,7 +1093,7 @@ func (s *Service) storeUserWithContext(ctx context.Context, user User) error {
 	}
 
 	s.mu.Lock()
-	s.users[user.Username] = user
+	s.putUserLocked(user, "")
 	s.mu.Unlock()
 
 	return nil

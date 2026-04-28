@@ -26,8 +26,12 @@ services:
       target: web
     depends_on:
       - backend
+    # Bind UI to loopback only — the SQLite compose targets local /
+    # laptop development. Exposing :80 on 0.0.0.0 leaves the panel open
+    # to the public internet on a VPS until firewall/nginx is wired,
+    # which is exactly the misconfiguration this default avoids.
     ports:
-      - "8080:80"
+      - "127.0.0.1:8080:80"
 
 volumes:
   panvex_sqlite_data:

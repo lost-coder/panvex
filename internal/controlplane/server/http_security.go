@@ -48,7 +48,13 @@ func securityHeaders(next http.Handler) http.Handler {
 		// so style-src and font-src no longer need fonts.googleapis.com /
 		// fonts.gstatic.com — both are tightened to 'self'. Tightening shrinks
 		// the trusted-source surface for stylesheet/font injection.
-		h.Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' wss:; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'")
+		// form-action 'self' (M-15): the panel renders a couple of
+		// classic <form> elements (login, recovery). Without this
+		// directive a maliciously injected form could submit to an
+		// off-origin URL and exfiltrate fields. 'self' restricts every
+		// form post to the panel's own origin, lining up with
+		// connect-src for fetch/XHR.
+		h.Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' wss:; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
 		h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		next.ServeHTTP(w, r)
 	})

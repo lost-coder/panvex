@@ -176,7 +176,7 @@ func (s *Service) DeleteUserWithContext(ctx context.Context, userID string) erro
 	}
 
 	s.mu.Lock()
-	delete(s.users, user.Username)
+	s.deleteUserLocked(user)
 	delete(s.pendingTotpSetup, userID)
 	s.mu.Unlock()
 
@@ -203,10 +203,8 @@ func (s *Service) loadManagedUserByIDCtx(ctx context.Context, userID string) (Us
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for _, user := range s.users {
-		if user.ID == userID {
-			return user, nil
-		}
+	if user, ok := s.usersByID[userID]; ok {
+		return user, nil
 	}
 
 	return User{}, ErrUserNotFound
@@ -216,11 +214,8 @@ func (s *Service) persistManagedUserCtx(ctx context.Context, user User) error {
 	previousUsername := ""
 
 	s.mu.Lock()
-	for username, existingUser := range s.users {
-		if existingUser.ID == user.ID {
-			previousUsername = username
-			break
-		}
+	if existing, ok := s.usersByID[user.ID]; ok {
+		previousUsername = existing.Username
 	}
 	s.mu.Unlock()
 
@@ -240,10 +235,7 @@ func (s *Service) persistManagedUserCtx(ctx context.Context, user User) error {
 	}
 
 	s.mu.Lock()
-	if previousUsername != "" && previousUsername != user.Username {
-		delete(s.users, previousUsername)
-	}
-	s.users[user.Username] = user
+	s.putUserLocked(user, previousUsername)
 	s.mu.Unlock()
 
 	return nil

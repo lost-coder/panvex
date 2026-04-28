@@ -161,9 +161,21 @@ func (s *Server) authorizeAgentConnect(stream gatewayrpc.AgentGateway_ConnectSer
 	// for someone claiming this agent_id. The serial pin proves the cert
 	// is the one we last issued — replays of an older still-valid cert
 	// (e.g. harvested from a backup or a rotation log) are rejected here.
+	//
+	// Fail closed on lookup error: pin verification is the only line
+	// against harvested-cert replay (CN/CA validation does not dedupe
+	// rotated serials). A transient DB error must not silently disable
+	// it — we'd rather break the new connect attempt than let a leaked
+	// cert resurrect a stream during a pool blip.
 	if s.store != nil {
 		expected, err := s.store.GetAgentCertSerial(stream.Context(), agentID)
-		if err == nil && expected != "" && expected != presentedSerial {
+		if err != nil {
+			s.logger.Error("agent cert serial lookup failed — rejecting connect",
+				"agent_id", agentID,
+				"error", err)
+			return "", "", status.Error(codes.Unavailable, "agent cert pin check unavailable")
+		}
+		if expected != "" && expected != presentedSerial {
 			s.logger.Warn("agent cert serial mismatch — rejecting connect",
 				"agent_id", agentID,
 				"expected_serial", expected,
@@ -233,7 +245,21 @@ func (s *Server) shouldTerminateForRevocation(ctx context.Context, agentID, pres
 		return false
 	}
 	expected, err := s.store.GetAgentCertSerial(ctx, agentID)
-	if err == nil && expected != "" && expected != presentedSerial {
+	if err != nil {
+		// Fail closed: a transient lookup failure must not silently
+		// strip the only defense against harvested-cert replay. Tearing
+		// the stream down forces the agent to reconnect, which retries
+		// pin verification from scratch under authorizeAgentConnect.
+		// On context cancel (graceful shutdown) the caller is already
+		// going away, so the extra termination is a no-op.
+		if ctx.Err() != nil {
+			return false
+		}
+		s.logger.Warn("mid-stream cert pin lookup failed, terminating",
+			"agent_id", agentID, "error", err)
+		return true
+	}
+	if expected != "" && expected != presentedSerial {
 		s.logger.Info("mid-stream cert pin mismatch, terminating", "agent_id", agentID)
 		return true
 	}

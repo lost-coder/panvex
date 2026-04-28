@@ -254,32 +254,38 @@ issue_acme_certificate() {
 
   mkdir -p "$tls_dir"
 
-  local email_flag=""
+  # M-14: build acme.sh argv as a bash array. The previous form
+  # concatenated quoted strings into one shell line and ran them
+  # through eval — `$domain` and friends came from operator prompts,
+  # so a stray quote would have broken parsing (and a hostile prompt
+  # value could have injected commands). Array form passes each token
+  # verbatim to acme.sh; no eval involved.
+  local acme_args=( --issue --standalone -d "$domain" --httpport 80 --server letsencrypt )
   if [[ -n "$email" ]]; then
-    email_flag="--accountemail $email"
+    acme_args+=( --accountemail "$email" )
   fi
 
   # IP addresses require the shortlived certificate profile (6-day certs).
-  local profile_flag="" days_flag=""
   if is_ip_address "$domain"; then
-    profile_flag="--certificate-profile shortlived"
-    days_flag="--days 3"
+    acme_args+=( --certificate-profile shortlived --days 3 )
     info "Using short-lived certificate profile for IP address (valid ~6 days, auto-renews)"
   fi
 
   # Build firewall hooks to temporarily open/close port 80 for the ACME challenge.
   # Only add close hook if port 80 was NOT already open before we started.
-  local pre_hook="" post_hook=""
   local port80_was_open=false
 
-  # Check if port 80 is already allowed in firewall
+  # Check if port 80 is already allowed in firewall.
+  # acme.sh hooks are passed as one shell-string each (acme.sh runs them
+  # via /bin/sh -c), so quoting matters — but the values are static
+  # string literals here, never operator input.
   if has_ufw; then
     if ufw status 2>/dev/null | grep -q "80/tcp.*ALLOW"; then
       port80_was_open=true
     fi
-    pre_hook="--pre-hook 'ufw allow 80/tcp >/dev/null 2>&1'"
+    acme_args+=( --pre-hook 'ufw allow 80/tcp >/dev/null 2>&1' )
     if [[ "$port80_was_open" = false ]]; then
-      post_hook="--post-hook 'ufw delete allow 80/tcp >/dev/null 2>&1'"
+      acme_args+=( --post-hook 'ufw delete allow 80/tcp >/dev/null 2>&1' )
       info "Firewall (ufw): port 80 will be opened temporarily for verification"
     else
       info "Firewall (ufw): port 80 is already open"
@@ -288,9 +294,9 @@ issue_acme_certificate() {
     if firewall-cmd --query-port=80/tcp >/dev/null 2>&1; then
       port80_was_open=true
     fi
-    pre_hook="--pre-hook 'firewall-cmd --add-port=80/tcp >/dev/null 2>&1'"
+    acme_args+=( --pre-hook 'firewall-cmd --add-port=80/tcp >/dev/null 2>&1' )
     if [[ "$port80_was_open" = false ]]; then
-      post_hook="--post-hook 'firewall-cmd --remove-port=80/tcp >/dev/null 2>&1'"
+      acme_args+=( --post-hook 'firewall-cmd --remove-port=80/tcp >/dev/null 2>&1' )
       info "Firewall (firewalld): port 80 will be opened temporarily for verification"
     else
       info "Firewall (firewalld): port 80 is already open"
@@ -299,9 +305,9 @@ issue_acme_certificate() {
     if iptables -C INPUT -p tcp --dport 80 -j ACCEPT >/dev/null 2>&1; then
       port80_was_open=true
     fi
-    pre_hook="--pre-hook 'iptables -I INPUT -p tcp --dport 80 -j ACCEPT 2>/dev/null'"
+    acme_args+=( --pre-hook 'iptables -I INPUT -p tcp --dport 80 -j ACCEPT 2>/dev/null' )
     if [[ "$port80_was_open" = false ]]; then
-      post_hook="--post-hook 'iptables -D INPUT -p tcp --dport 80 -j ACCEPT 2>/dev/null'"
+      acme_args+=( --post-hook 'iptables -D INPUT -p tcp --dport 80 -j ACCEPT 2>/dev/null' )
       info "Firewall (iptables): port 80 will be opened temporarily for verification"
     else
       info "Firewall (iptables): port 80 is already open"
@@ -311,8 +317,7 @@ issue_acme_certificate() {
   info "Requesting certificate for ${domain}..."
 
   local acme_exit=0
-  local acme_cmd="\"$HOME/.acme.sh/acme.sh\" --issue --standalone -d \"$domain\" --httpport 80 --server letsencrypt $email_flag $profile_flag $days_flag $pre_hook $post_hook"
-  eval "$acme_cmd" 2>&1 || acme_exit=$?
+  "$HOME/.acme.sh/acme.sh" "${acme_args[@]}" 2>&1 || acme_exit=$?
 
   # Exit code 0 = issued, 2 = skipped (already valid, not due for renewal) — both OK.
   if [[ "$acme_exit" -ne 0 ]] && [[ "$acme_exit" -ne 2 ]]; then

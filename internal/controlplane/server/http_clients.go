@@ -114,17 +114,23 @@ func (s *Server) handleClients() http.HandlerFunc {
 			return
 		}
 
-		clients := s.listClientsSnapshot()
-		uniqueIPCounts := s.bulkUniqueIPCountsForClients(r.Context(), clients)
+		// Q2.U-P-XX (M-1): one bulk snapshot under a single clientsMu
+		// RLock instead of N×clientDetailSnapshot + N×aggregatedClientUsage.
+		// On a 500-client fleet that collapses ~1500 lock-acquire pairs
+		// into one.
+		listing := s.listClientsListingSnapshot()
+		uniqueIPCounts := s.bulkUniqueIPCountsForClients(r.Context(), listing.clients)
 
-		response := make([]clientListResponse, 0, len(clients))
-		for _, client := range clients {
-			row, included, err := s.buildClientListRow(client, scope, uniqueIPCounts)
-			if err != nil {
-				s.logger.Error("load client detail failed", "client_id", client.ID, "error", err)
-				writeError(w, http.StatusInternalServerError, msgInternalError)
-				return
-			}
+		response := make([]clientListResponse, 0, len(listing.clients))
+		for _, client := range listing.clients {
+			row, included := s.buildClientListRow(
+				client,
+				scope,
+				listing.assignments[client.ID],
+				listing.deployments[client.ID],
+				listing.usage[client.ID],
+				uniqueIPCounts,
+			)
 			if !included {
 				continue
 			}
@@ -133,6 +139,17 @@ func (s *Server) handleClients() http.HandlerFunc {
 
 		writeJSON(w, http.StatusOK, response)
 	}
+}
+
+// clientListingSnapshot bundles every field handleClients needs into a
+// single read so the per-row loop runs lock-free. Each map is keyed by
+// client id; missing keys mean "no assignments/deployments/usage on
+// record" — callers must not assume the slices are present.
+type clientListingSnapshot struct {
+	clients     []managedClient
+	assignments map[string][]managedClientAssignment
+	deployments map[string][]managedClientDeployment
+	usage       map[string]aggregatedClientUsage
 }
 
 // bulkUniqueIPCountsForClients fetches per-client unique-IP counts in a
@@ -158,16 +175,19 @@ func (s *Server) bulkUniqueIPCountsForClients(ctx context.Context, clients []man
 
 // buildClientListRow assembles the listing row for a single client.
 // Returns included=false when the client falls outside the operator
-// scope (R-S-14).
-func (s *Server) buildClientListRow(client managedClient, scope FleetScopeAccess, uniqueIPCounts map[string]int) (clientListResponse, bool, error) {
-	_, assignments, deployments, err := s.clientDetailSnapshot(client.ID)
-	if err != nil {
-		return clientListResponse{}, false, err
-	}
+// scope (R-S-14). Callers supply the pre-snapshotted assignments,
+// deployments, and usage so the loop body holds no lock.
+func (s *Server) buildClientListRow(
+	client managedClient,
+	scope FleetScopeAccess,
+	assignments []managedClientAssignment,
+	deployments []managedClientDeployment,
+	usage aggregatedClientUsage,
+	uniqueIPCounts map[string]int,
+) (clientListResponse, bool) {
 	if !s.clientInScope(scope, assignments) {
-		return clientListResponse{}, false, nil
+		return clientListResponse{}, false
 	}
-	usage := s.aggregatedClientUsage(client.ID)
 	uniqueIPs := usage.UniqueIPsUsed
 	if count, ok := uniqueIPCounts[client.ID]; ok && count > 0 {
 		uniqueIPs = count
@@ -183,7 +203,7 @@ func (s *Server) buildClientListRow(client managedClient, scope FleetScopeAccess
 		ActiveTCPConns:     usage.ActiveTCPConns,
 		DataQuotaBytes:     client.DataQuotaBytes,
 		LastDeployStatus:   deriveClientDeployStatus(deployments),
-	}, true, nil
+	}, true
 }
 
 func (s *Server) handleCreateClient() http.HandlerFunc {
@@ -324,6 +344,163 @@ func (s *Server) handleDeleteClient() http.HandlerFunc {
 		s.logger.Info("client deleted", "client_id", clientID, "user_id", session.UserID)
 		s.appendAuditWithContext(r.Context(), session.UserID, "clients.delete", clientID, nil)
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// bulkClientAction is the action portion of a bulk client request. The
+// frontend uses these verbs verbatim — keep them stable across releases.
+type bulkClientAction string
+
+const (
+	bulkClientEnable  bulkClientAction = "enable"
+	bulkClientDisable bulkClientAction = "disable"
+	bulkClientDelete  bulkClientAction = "delete"
+)
+
+// bulkClientRequest carries a list of client IDs and the action to apply
+// to each. Limited to bulkClientMaxIDs entries per request so a wedged
+// agent or runaway script does not pin the clients lock for an
+// unbounded interval.
+type bulkClientRequest struct {
+	Action bulkClientAction `json:"action"`
+	IDs    []string         `json:"ids"`
+}
+
+type bulkClientFailure struct {
+	ID    string `json:"id"`
+	Error string `json:"error"`
+}
+
+type bulkClientResponse struct {
+	Action    bulkClientAction    `json:"action"`
+	Succeeded []string            `json:"succeeded"`
+	Skipped   []string            `json:"skipped"`
+	Failed    []bulkClientFailure `json:"failed"`
+}
+
+// bulkClientMaxIDs caps a single bulk request so a misbehaving caller
+// cannot pin the clients lock with an arbitrarily long list. 500 is
+// well above any realistic operator-driven bulk action and well below
+// the "thousands" range where contention starts to dominate.
+const bulkClientMaxIDs = 500
+
+// handleBulkClientAction collapses the previous N-HTTP-requests fan-out
+// from the dashboard (one PUT/DELETE per client) into a single
+// authoritative call. Each id is processed sequentially so the
+// per-client mutex pattern is preserved; the win is purely round-trip
+// elimination.
+func (s *Server) handleBulkClientAction() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		session, _, scope, ok := s.requireClientsAccessWithScope(w, r)
+		if !ok {
+			return
+		}
+
+		var request bulkClientRequest
+		if err := decodeJSON(r, &request); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid bulk payload")
+			return
+		}
+		if len(request.IDs) == 0 {
+			writeError(w, http.StatusBadRequest, "ids required")
+			return
+		}
+		if len(request.IDs) > bulkClientMaxIDs {
+			writeError(w, http.StatusBadRequest, "too many ids in single bulk request")
+			return
+		}
+
+		response := bulkClientResponse{
+			Action:    request.Action,
+			Succeeded: make([]string, 0, len(request.IDs)),
+			Skipped:   make([]string, 0),
+			Failed:    make([]bulkClientFailure, 0),
+		}
+
+		switch request.Action {
+		case bulkClientEnable, bulkClientDisable:
+			s.applyBulkClientEnable(r.Context(), session.UserID, scope, request, &response)
+		case bulkClientDelete:
+			s.applyBulkClientDelete(r.Context(), session.UserID, scope, request, &response)
+		default:
+			writeError(w, http.StatusBadRequest, "unsupported bulk action")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, response)
+	}
+}
+
+// applyBulkClientEnable runs the enable/disable variant. It loads each
+// client, flips Enabled if it differs from the requested value, and
+// dispatches the existing updateClientWithContext flow. Clients whose
+// state already matches are recorded as "skipped" so the UI can show
+// accurate counts.
+func (s *Server) applyBulkClientEnable(ctx context.Context, actorID string, scope FleetScopeAccess, request bulkClientRequest, response *bulkClientResponse) {
+	want := request.Action == bulkClientEnable
+	for _, id := range request.IDs {
+		if id == "" {
+			response.Failed = append(response.Failed, bulkClientFailure{ID: id, Error: "missing id"})
+			continue
+		}
+		current, assignments, _, lookupErr := s.clientDetailSnapshot(id)
+		if lookupErr != nil {
+			response.Failed = append(response.Failed, bulkClientFailure{ID: id, Error: lookupErr.Error()})
+			continue
+		}
+		if !s.clientInScope(scope, assignments) {
+			// Mirror the regular handler's not-found semantics so
+			// out-of-scope ids cannot be probed by trial.
+			response.Failed = append(response.Failed, bulkClientFailure{ID: id, Error: msgClientNotFound})
+			continue
+		}
+		if current.Enabled == want {
+			response.Skipped = append(response.Skipped, id)
+			continue
+		}
+		input := clientMutationInput{
+			Name:              current.Name,
+			Enabled:           &want,
+			UserADTag:         current.UserADTag,
+			MaxTCPConns:       current.MaxTCPConns,
+			MaxUniqueIPs:      current.MaxUniqueIPs,
+			DataQuotaBytes:    current.DataQuotaBytes,
+			ExpirationRFC3339: current.ExpirationRFC3339,
+			FleetGroupIDs:     assignmentFleetGroupIDs(assignments),
+			AgentIDs:          assignmentAgentIDs(assignments),
+		}
+		if _, _, _, err := s.updateClientWithContext(ctx, id, actorID, input, s.now()); err != nil {
+			response.Failed = append(response.Failed, bulkClientFailure{ID: id, Error: err.Error()})
+			continue
+		}
+		response.Succeeded = append(response.Succeeded, id)
+	}
+}
+
+// applyBulkClientDelete runs the delete variant. ScopeCheck reuses
+// ensureClientMutationScope semantics so an out-of-scope or unknown id
+// returns the same not-found shape callers see from the single-id
+// endpoint.
+func (s *Server) applyBulkClientDelete(ctx context.Context, actorID string, scope FleetScopeAccess, request bulkClientRequest, response *bulkClientResponse) {
+	for _, id := range request.IDs {
+		if id == "" {
+			response.Failed = append(response.Failed, bulkClientFailure{ID: id, Error: "missing id"})
+			continue
+		}
+		_, assignments, _, lookupErr := s.clientDetailSnapshot(id)
+		if lookupErr != nil {
+			response.Failed = append(response.Failed, bulkClientFailure{ID: id, Error: lookupErr.Error()})
+			continue
+		}
+		if !s.clientInScope(scope, assignments) {
+			response.Failed = append(response.Failed, bulkClientFailure{ID: id, Error: msgClientNotFound})
+			continue
+		}
+		if err := s.deleteClientWithContext(ctx, id, actorID, s.now()); err != nil {
+			response.Failed = append(response.Failed, bulkClientFailure{ID: id, Error: err.Error()})
+			continue
+		}
+		response.Succeeded = append(response.Succeeded, id)
 	}
 }
 

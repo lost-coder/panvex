@@ -778,6 +778,14 @@ func (s *memoryStore) ListJobTargets(_ context.Context, jobID string) ([]storage
 	return result, nil
 }
 
+func (s *memoryStore) ListAllJobTargets(_ context.Context) ([]storage.JobTargetRecord, error) {
+	result := make([]storage.JobTargetRecord, 0, len(s.jobTargets))
+	for _, target := range s.jobTargets {
+		result = append(result, target)
+	}
+	return result, nil
+}
+
 func (s *memoryStore) AppendAuditEvent(_ context.Context, event storage.AuditEventRecord) error {
 	s.auditEvents = append(s.auditEvents, event)
 	return nil
@@ -1130,6 +1138,10 @@ func (s *memoryStore) UpsertClientIPHistoryBulk(_ context.Context, _ []storage.C
 }
 
 func (s *memoryStore) ListClientIPHistory(_ context.Context, _ string, _ time.Time, _ time.Time) ([]storage.ClientIPHistoryRecord, error) {
+	return nil, nil
+}
+
+func (s *memoryStore) AggregateClientIPHistory(_ context.Context, _ string, _ time.Time, _ time.Time, _ int) ([]storage.ClientIPAggregateRecord, error) {
 	return nil, nil
 }
 
