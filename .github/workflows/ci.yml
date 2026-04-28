@@ -25,7 +25,11 @@ jobs:
       go: ${{ steps.filter.outputs.go }}
     steps:
       - uses: actions/checkout@v6
-      - uses: dorny/paths-filter@v3
+      # Pinned to a commit SHA per the SonarCloud hotspot guidance —
+      # third-party actions can have their tags rewritten to point at
+      # a malicious commit, so consume the action by immutable hash.
+      # Tag at the time of pinning: v3 (commit d1c1ffe).
+      - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590  # v3
         id: filter
         with:
           filters: |
