@@ -232,9 +232,10 @@ func (s *Server) handleForceUpdateCheck() http.HandlerFunc {
 		// the timeout in checkForUpdates -> FetchLatestVersions. N-1: tracked
 		// in bgWG so a graceful Shutdown waits for it to finish.
 		s.bgWG.Add(1)
+		//nolint:contextcheck,gosec // intentionally detached from request lifecycle
 		go func() {
 			defer s.bgWG.Done()
-			s.checkForUpdates(context.Background()) //nolint:contextcheck,gosec // intentionally detached from request lifecycle
+			s.checkForUpdates(context.Background())
 		}()
 
 		writeJSON(w, http.StatusAccepted, map[string]string{"status": "checking"})
@@ -283,9 +284,10 @@ func (s *Server) handlePanelUpdate() http.HandlerFunc {
 		// caller the work continues asynchronously. N-1: tracked in bgWG so
 		// shutdown waits for the binary swap to complete.
 		s.bgWG.Add(1)
+		//nolint:contextcheck,gosec // intentionally detached from request lifecycle
 		go func() {
 			defer s.bgWG.Done()
-			s.performPanelUpdate(session.UserID, targetVersion, downloadURL, checksumURL, signatureURL, settings.GitHubToken) //nolint:contextcheck,gosec // intentionally detached from request lifecycle
+			s.performPanelUpdate(session.UserID, targetVersion, downloadURL, checksumURL, signatureURL, settings.GitHubToken)
 		}()
 	}
 }

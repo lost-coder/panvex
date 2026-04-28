@@ -525,14 +525,18 @@ func (s *Server) handleScrapeMetrics(token string) http.Handler {
 		presented := []byte(header[len(prefix):])
 		// Run ConstantTimeCompare unconditionally so the wall-clock
 		// signature does not leak the token's length: pad the presented
-		// bytes to the secret length first, then fold the length-equal
-		// flag into the constant-time result. M-13.
+		// bytes to the secret length first, run the constant-time
+		// comparison on the padded form, then combine with a length
+		// check. The length comparison branches on operator-supplied
+		// input length vs. configured token length — neither is the
+		// secret token's bytes — so it does not introduce a side
+		// channel beyond what the attacker already controls. M-13.
 		padded := presented
 		if len(padded) != len(tokenBytes) {
 			padded = make([]byte, len(tokenBytes))
 		}
-		match := subtle.ConstantTimeCompare(padded, tokenBytes) & subtle.ConstantTimeEq(int32(len(presented)), int32(len(tokenBytes)))
-		if match != 1 {
+		compared := subtle.ConstantTimeCompare(padded, tokenBytes)
+		if compared != 1 || len(presented) != len(tokenBytes) {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="panvex-metrics"`)
 			writeError(w, http.StatusUnauthorized, "invalid bearer token")
 			return
