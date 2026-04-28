@@ -221,10 +221,16 @@ func TestChaosShutdownMidAudit(t *testing.T) {
 	}
 
 	// Invariant 1: persisted count matches the store's own success counter
-	// (no torn rows — if AppendAuditEvent returned nil, the row is readable;
-	// if it returned error, the row is absent).
-	if int32(len(persisted)) != counting.appended.Load() {
-		t.Fatalf("persisted rows = %d, counter = %d (torn write!)", len(persisted), counting.appended.Load())
+	// modulo a one-row tolerance. SQLite's ExecContext can commit the
+	// row and *then* surface ctx.Err() if the cancellation lands between
+	// the underlying commit and the Go-side return — that race leaves
+	// at most one extra row in the DB without an incremented counter.
+	// Anything beyond a single in-flight cancellation is a real torn
+	// write.
+	persistedCount := int32(len(persisted)) //nolint:gosec // bounded by chaos-test event count (n=40), well within int32
+	successes := counting.appended.Load()
+	if persistedCount < successes || persistedCount > successes+1 {
+		t.Fatalf("persisted rows = %d, counter = %d (torn write!)", len(persisted), successes)
 	}
 
 	// Invariant 2: no duplicate IDs — the drain must not re-submit rows.
