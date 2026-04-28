@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strconv"
 	"strings"
@@ -993,6 +994,15 @@ func (s *Service) persistJob(ctx context.Context, job Job) error {
 func (s *Service) persistLatestJobVersion(ctx context.Context, jobID string, persistedVersion uint64, persistedJob Job) {
 	for {
 		if err := s.persistJob(ctx, persistedJob); err != nil {
+			// Surface the persistence failure so a wedged DB does not
+			// silently leave the in-memory job version ahead of the
+			// store. The retry loop exits — the next mutation on this
+			// job will trigger a fresh persist attempt; meanwhile the
+			// operator notices via slog and (eventually) audit alerts.
+			slog.Error("jobs: persist latest job version failed",
+				"job_id", jobID,
+				"persisted_version", persistedVersion,
+				"error", err)
 			return
 		}
 
