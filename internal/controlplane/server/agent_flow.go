@@ -425,6 +425,17 @@ func (s *Server) applyAgentSnapshotWithContext(ctx context.Context, snapshot age
 	// atomically. No DB I/O happens under the locks.
 	// Lock ordering: mu -> clientsMu -> metricsAuditMu.
 	s.mu.Lock()
+	// Drop snapshots from agents that have been deregistered. Without this
+	// guard, an in-flight heartbeat that arrives between the operator's
+	// DELETE and the gRPC stream tear-down would re-create the in-memory
+	// agent record (snapshot.AgentID is unconditionally written into
+	// s.agents below), and the agent would resurrect itself in the panel
+	// — typically with a "DEGRADED" badge as its telemetry caught up.
+	if _, revoked := s.revokedAgentIDs[snapshot.AgentID]; revoked {
+		s.mu.Unlock()
+		s.logger.Info("dropping snapshot from revoked agent", "agent_id", snapshot.AgentID)
+		return nil
+	}
 	agent := s.updateAgentRecordFromSnapshot(snapshot)
 	instances := instancesFromSnapshot(snapshot)
 	s.agents[snapshot.AgentID] = agent

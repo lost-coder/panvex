@@ -114,6 +114,60 @@ func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T
 	}
 }
 
+// TestApplyAgentSnapshotIgnoresRevokedAgent asserts that a heartbeat
+// arriving for a deregistered agent does not resurrect the in-memory
+// record. Regression guard: prior to the fix, an in-flight snapshot from
+// the gRPC stream's tear-down window would fall through to
+//
+//	s.agents[snapshot.AgentID] = updateAgentRecordFromSnapshot(...)
+//
+// re-adding the agent to the panel (typically as DEGRADED while the
+// telemetry caught up).
+func TestApplyAgentSnapshotIgnoresRevokedAgent(t *testing.T) {
+	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
+	server := testServerWithSQLite(t, now)
+	fleetGroupID := seedTestFleetGroup(t, server.store, "ams-1", now)
+	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
+		FleetGroupID: fleetGroupID,
+		TTL:          time.Minute,
+	}, now)
+	if err != nil {
+		t.Fatalf("issueEnrollmentToken() error = %v", err)
+	}
+	identity, err := server.enrollAgent(agentEnrollmentRequest{
+		Token:    token.Value,
+		NodeName: "node-a",
+		Version:  "1.0.0",
+	}, now)
+	if err != nil {
+		t.Fatalf("enrollAgent() error = %v", err)
+	}
+
+	// Mark the agent as revoked the same way handleDeregisterAgent →
+	// purgeAgentInMemory does.
+	server.mu.Lock()
+	delete(server.agents, identity.AgentID)
+	server.revokedAgentIDs[identity.AgentID] = struct{}{}
+	server.mu.Unlock()
+
+	if err := server.applyAgentSnapshot(agentSnapshot{
+		AgentID:      identity.AgentID,
+		NodeName:     "node-a",
+		FleetGroupID: fleetGroupID,
+		Version:      "1.0.0",
+		ObservedAt:   now.Add(20 * time.Second),
+	}); err != nil {
+		t.Fatalf("applyAgentSnapshot() error = %v", err)
+	}
+
+	server.mu.RLock()
+	_, present := server.agents[identity.AgentID]
+	server.mu.RUnlock()
+	if present {
+		t.Fatal("revoked agent reappeared in s.agents after a heartbeat snapshot")
+	}
+}
+
 func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *testing.T) {
 	now := time.Date(2026, time.March, 15, 10, 0, 0, 0, time.UTC)
 	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
