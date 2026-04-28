@@ -181,7 +181,7 @@ summary_box() {
 install_agent() {
   local arch=$1 version=$2 bin_dir=$3 config_dir=$4 data_dir=$5
   local panel_url=$6 enrollment_token=$7 telemt_url=$8 telemt_auth=$9
-  local node_name=${10} start_now=${11}
+  local telemt_metrics_url=${10} node_name=${11} start_now=${12}
 
   local state_file="$data_dir/agent-state.json"
   local env_file="$config_dir/agent.env"
@@ -275,7 +275,9 @@ install_agent() {
   else
     cat >"$env_file" <<EOF
 PANVEX_STATE_FILE=${state_file}
+PANVEX_NODE_NAME=${node_name}
 PANVEX_TELEMT_URL=${telemt_url}
+PANVEX_TELEMT_METRICS_URL=${telemt_metrics_url}
 PANVEX_TELEMT_AUTH=${telemt_auth}
 EOF
     chmod 0640 "$env_file"
@@ -289,8 +291,10 @@ set -eu
 . "${env_file}"
 exec "${bin_dir}/${APP_NAME}" \\
   -state-file "\$PANVEX_STATE_FILE" \\
-  -telemt-url "\$PANVEX_TELEMT_URL" \\
-  -telemt-auth "\$PANVEX_TELEMT_AUTH" \\
+  -node-name "\${PANVEX_NODE_NAME:-\$(hostname)}" \\
+  -telemt-url "\${PANVEX_TELEMT_URL:-http://127.0.0.1:9091}" \\
+  -telemt-metrics-url "\${PANVEX_TELEMT_METRICS_URL:-http://127.0.0.1:9090}" \\
+  -telemt-auth "\${PANVEX_TELEMT_AUTH:-}" \\
   -version "${installed_ver}"
 EOF
   chmod 0755 "$start_script"
@@ -400,7 +404,8 @@ UNINSTALL
     "Version:" "${installed_ver}" \
     "Node name:" "${node_name}" \
     "Panel:" "${panel_url}" \
-    "Telemt:" "${telemt_url}" \
+    "Telemt API:" "${telemt_url}" \
+    "Telemt metrics:" "${telemt_metrics_url}" \
     "Config:" "${env_file}" \
     "State:" "${state_file}" \
     "Service:" "systemctl status ${SERVICE_NAME}" \
@@ -492,8 +497,9 @@ run_interactive() {
   # ── Telemt connection ──────────────────────────────────────────────────
   step "Telemt Proxy"
 
-  local telemt_url telemt_auth
+  local telemt_url telemt_metrics_url telemt_auth
   telemt_url=$(ask "Telemt API URL" "http://127.0.0.1:9091")
+  telemt_metrics_url=$(ask "Telemt metrics URL" "http://127.0.0.1:9090")
   telemt_auth=$(ask "Telemt authorization header (leave empty if not required)" "")
 
   # ── Node name ──────────────────────────────────────────────────────────
@@ -508,6 +514,7 @@ run_interactive() {
     "Panel URL:" "${panel_url}" \
     "Node name:" "${node_name}" \
     "Telemt URL:" "${telemt_url}" \
+    "Telemt metrics:" "${telemt_metrics_url}" \
     "Binary:" "${bin_dir}/${APP_NAME}" \
     "Config:" "${config_dir}" \
     "Data:" "${data_dir}"
@@ -525,7 +532,7 @@ run_interactive() {
   # ── Run installation ───────────────────────────────────────────────────
   install_agent "$arch" "$version" "$bin_dir" "$config_dir" "$data_dir" \
     "$panel_url" "$enrollment_token" "$telemt_url" "$telemt_auth" \
-    "$node_name" "$start_now"
+    "$telemt_metrics_url" "$node_name" "$start_now"
     return 0
 }
 
@@ -544,6 +551,7 @@ run_noninteractive() {
   local panel_url="${PANVEX_PANEL_URL:-}"
   local enrollment_token="${PANVEX_ENROLLMENT_TOKEN:-}"
   local telemt_url="${PANVEX_TELEMT_URL:-http://127.0.0.1:9091}"
+  local telemt_metrics_url="${PANVEX_TELEMT_METRICS_URL:-http://127.0.0.1:9090}"
   local telemt_auth="${PANVEX_TELEMT_AUTH:-}"
   local node_name="${PANVEX_NODE_NAME:-$(hostname)}"
   local start_now="${PANVEX_START_NOW:-1}"
@@ -555,7 +563,7 @@ run_noninteractive() {
 
   install_agent "$arch" "$version" "$bin_dir" "$config_dir" "$data_dir" \
     "$panel_url" "$enrollment_token" "$telemt_url" "$telemt_auth" \
-    "$node_name" "$start_now"
+    "$telemt_metrics_url" "$node_name" "$start_now"
     return 0
 }
 
@@ -583,6 +591,7 @@ CLI arguments:
   --token TOKEN               Enrollment token (required for automatic mode)
   --node-name NAME            Node name (default: hostname)
   --telemt-url URL            Telemt API URL (default: http://127.0.0.1:9091)
+  --telemt-metrics-url URL    Telemt metrics URL (default: http://127.0.0.1:9090)
   --telemt-auth HEADER        Telemt authorization header (optional)
   --insecure-transport        Allow an http:// panel URL on a non-loopback
                               host. Use only on trusted private-network or
@@ -590,19 +599,20 @@ CLI arguments:
                               agent private key in cleartext.
 
 Environment variables (alternative to CLI args):
-  PANVEX_AGENT_VERSION      Version tag (default: latest)
-  PANVEX_PANEL_URL          Panel URL (required)
-  PANVEX_ENROLLMENT_TOKEN   Enrollment token (required)
-  PANVEX_TELEMT_URL         Telemt API URL (default: http://127.0.0.1:9091)
-  PANVEX_TELEMT_AUTH        Telemt authorization header (optional)
-  PANVEX_NODE_NAME          Node name (default: hostname)
-  PANVEX_INSECURE_TRANSPORT Set to "1" to pass -insecure-transport to the
-                            bootstrap command (see --insecure-transport).
-  PANVEX_START_NOW          Start service after install: 0 or 1 (default: 1)
-  PANVEX_BIN_DIR            Binary directory (default: /usr/local/bin)
-  PANVEX_CONFIG_DIR         Config directory (default: /etc/panvex-agent)
-  PANVEX_DATA_DIR           Data directory (default: /var/lib/panvex-agent)
-  PANVEX_REPO               GitHub repo (default: lost-coder/panvex)
+  PANVEX_AGENT_VERSION       Version tag (default: latest)
+  PANVEX_PANEL_URL           Panel URL (required)
+  PANVEX_ENROLLMENT_TOKEN    Enrollment token (required)
+  PANVEX_TELEMT_URL          Telemt API URL (default: http://127.0.0.1:9091)
+  PANVEX_TELEMT_METRICS_URL  Telemt metrics URL (default: http://127.0.0.1:9090)
+  PANVEX_TELEMT_AUTH         Telemt authorization header (optional)
+  PANVEX_NODE_NAME           Node name (default: hostname)
+  PANVEX_INSECURE_TRANSPORT  Set to "1" to pass -insecure-transport to the
+                             bootstrap command (see --insecure-transport).
+  PANVEX_START_NOW           Start service after install: 0 or 1 (default: 1)
+  PANVEX_BIN_DIR             Binary directory (default: /usr/local/bin)
+  PANVEX_CONFIG_DIR          Config directory (default: /etc/panvex-agent)
+  PANVEX_DATA_DIR            Data directory (default: /var/lib/panvex-agent)
+  PANVEX_REPO                GitHub repo (default: lost-coder/panvex)
 EOF
   exit 0
 fi
@@ -613,7 +623,8 @@ if [[ "${1:-}" = "--dry-run" ]]; then
   echo "  Version: ${PANVEX_AGENT_VERSION:-latest}"
   echo "  Panel: ${PANVEX_PANEL_URL:-<not set>}"
   echo "  Node: ${PANVEX_NODE_NAME:-$(hostname)}"
-  echo "  Telemt: ${PANVEX_TELEMT_URL:-http://127.0.0.1:9091}"
+  echo "  Telemt API: ${PANVEX_TELEMT_URL:-http://127.0.0.1:9091}"
+  echo "  Telemt metrics: ${PANVEX_TELEMT_METRICS_URL:-http://127.0.0.1:9090}"
   echo "  Bin: ${PANVEX_BIN_DIR:-/usr/local/bin}"
   echo "  Config: ${PANVEX_CONFIG_DIR:-/etc/panvex-agent}"
   echo "  Data: ${PANVEX_DATA_DIR:-/var/lib/panvex-agent}"
@@ -626,6 +637,7 @@ _CLI_PANEL_URL=""
 _CLI_ENROLLMENT_TOKEN=""
 _CLI_NODE_NAME=""
 _CLI_TELEMT_URL=""
+_CLI_TELEMT_METRICS_URL=""
 _CLI_TELEMT_AUTH=""
 _CLI_INSECURE_TRANSPORT=""
 
@@ -633,9 +645,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --panel-url)       _CLI_PANEL_URL="$2"; shift 2 ;;
     --token|--enrollment-token) _CLI_ENROLLMENT_TOKEN="$2"; shift 2 ;;
-    --node-name)       _CLI_NODE_NAME="$2"; shift 2 ;;
-    --telemt-url)      _CLI_TELEMT_URL="$2"; shift 2 ;;
-    --telemt-auth)     _CLI_TELEMT_AUTH="$2"; shift 2 ;;
+    --node-name)         _CLI_NODE_NAME="$2"; shift 2 ;;
+    --telemt-url)        _CLI_TELEMT_URL="$2"; shift 2 ;;
+    --telemt-metrics-url) _CLI_TELEMT_METRICS_URL="$2"; shift 2 ;;
+    --telemt-auth)       _CLI_TELEMT_AUTH="$2"; shift 2 ;;
     # Opt-in relaxation of the "https required unless loopback" guard.
     # Intended for VPN-only / private-network installs where the panel
     # runs plain HTTP and TLS is terminated elsewhere (or not at all).
@@ -645,11 +658,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Export as env vars so both modes can use them
-[[ -n "$_CLI_PANEL_URL" ]]         && export PANVEX_PANEL_URL="$_CLI_PANEL_URL"
-[[ -n "$_CLI_ENROLLMENT_TOKEN" ]]  && export PANVEX_ENROLLMENT_TOKEN="$_CLI_ENROLLMENT_TOKEN"
-[[ -n "$_CLI_NODE_NAME" ]]         && export PANVEX_NODE_NAME="$_CLI_NODE_NAME"
-[[ -n "$_CLI_TELEMT_URL" ]]        && export PANVEX_TELEMT_URL="$_CLI_TELEMT_URL"
-[[ -n "$_CLI_TELEMT_AUTH" ]]       && export PANVEX_TELEMT_AUTH="$_CLI_TELEMT_AUTH"
+[[ -n "$_CLI_PANEL_URL" ]]          && export PANVEX_PANEL_URL="$_CLI_PANEL_URL"
+[[ -n "$_CLI_ENROLLMENT_TOKEN" ]]   && export PANVEX_ENROLLMENT_TOKEN="$_CLI_ENROLLMENT_TOKEN"
+[[ -n "$_CLI_NODE_NAME" ]]          && export PANVEX_NODE_NAME="$_CLI_NODE_NAME"
+[[ -n "$_CLI_TELEMT_URL" ]]         && export PANVEX_TELEMT_URL="$_CLI_TELEMT_URL"
+[[ -n "$_CLI_TELEMT_METRICS_URL" ]] && export PANVEX_TELEMT_METRICS_URL="$_CLI_TELEMT_METRICS_URL"
+[[ -n "$_CLI_TELEMT_AUTH" ]]        && export PANVEX_TELEMT_AUTH="$_CLI_TELEMT_AUTH"
 [[ -n "$_CLI_INSECURE_TRANSPORT" ]] && export PANVEX_INSECURE_TRANSPORT="1"
 
 # Start installation log

@@ -195,7 +195,13 @@ func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) error {
 func (s *Server) updateAgentRecordFromSnapshot(snapshot agentSnapshot) Agent {
 	agent := s.agents[snapshot.AgentID]
 	agent.ID = snapshot.AgentID
-	agent.NodeName = snapshot.NodeName
+	// Enrollment fixes the node name. Subsequent heartbeats must not
+	// overwrite it: operators rename nodes via the panel API, and the
+	// agent's reported name (often defaulted to the system hostname) would
+	// otherwise revert the rename on the next snapshot.
+	if agent.NodeName == "" {
+		agent.NodeName = snapshot.NodeName
+	}
 	// Enrollment fixes the agent group. Runtime snapshots may be stale or
 	// misconfigured, so they must not move an enrolled agent into a
 	// different fleet group.
