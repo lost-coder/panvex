@@ -13,31 +13,37 @@ type RuntimeSample struct {
 	Snapshot   *gatewayrpc.Snapshot
 }
 
-// RuntimeRingBuffer accumulates poll samples between upload ticks.
+// RuntimeRingBuffer accumulates poll samples between upload ticks. Push
+// is O(1) — head/count indices wrap on overflow instead of shifting
+// every prior sample one slot left, which used to dominate the agent's
+// runtime poll cost when AggregationSamples > a few hundred.
 type RuntimeRingBuffer struct {
 	mu      sync.Mutex
-	samples []RuntimeSample
+	samples []RuntimeSample // fixed-size storage, len(samples) == cap
+	head    int             // index of the next write
+	count   int             // number of valid entries (0..cap)
 	cap     int
 	dropped uint64
 }
 
 func NewRuntimeRingBuffer(capacity int) *RuntimeRingBuffer {
 	return &RuntimeRingBuffer{
-		samples: make([]RuntimeSample, 0, capacity),
+		samples: make([]RuntimeSample, capacity),
 		cap:     capacity,
 	}
 }
 
-// Push adds a sample. If at capacity, the oldest sample is dropped.
+// Push adds a sample. If at capacity, the oldest sample is overwritten
+// in place and the dropped counter is bumped — O(1) regardless of cap.
 func (b *RuntimeRingBuffer) Push(sample RuntimeSample) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if len(b.samples) >= b.cap {
-		copy(b.samples, b.samples[1:])
-		b.samples[len(b.samples)-1] = sample
-		b.dropped++
+	b.samples[b.head] = sample
+	b.head = (b.head + 1) % b.cap
+	if b.count < b.cap {
+		b.count++
 	} else {
-		b.samples = append(b.samples, sample)
+		b.dropped++
 	}
 }
 
@@ -48,14 +54,33 @@ func (b *RuntimeRingBuffer) DroppedCount() uint64 {
 	return b.dropped
 }
 
+// snapshotOrdered returns the buffered samples in oldest-first order
+// without holding the lock past the copy. The caller takes ownership.
+func (b *RuntimeRingBuffer) snapshotOrdered() []RuntimeSample {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.count == 0 {
+		return nil
+	}
+	out := make([]RuntimeSample, b.count)
+	start := (b.head - b.count + b.cap) % b.cap
+	for i := 0; i < b.count; i++ {
+		out[i] = b.samples[(start+i)%b.cap]
+	}
+	// Reset for the next interval. The fixed-size storage is reused;
+	// only zero out the slots we wrote so prior pointers can be GC'd.
+	for i := range b.samples {
+		b.samples[i] = RuntimeSample{}
+	}
+	b.head = 0
+	b.count = 0
+	return out
+}
+
 // DrainAndAggregate returns a single aggregated snapshot from all buffered samples,
 // then clears the buffer. Returns nil if no samples exist.
 func (b *RuntimeRingBuffer) DrainAndAggregate() *gatewayrpc.Snapshot {
-	b.mu.Lock()
-	samples := b.samples
-	b.samples = make([]RuntimeSample, 0, b.cap)
-	b.mu.Unlock()
-
+	samples := b.snapshotOrdered()
 	if len(samples) == 0 {
 		return nil
 	}
