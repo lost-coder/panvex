@@ -1,0 +1,80 @@
+# docker build copies the entire context into the builder. Keep it lean
+# so layers stay small, builds are reproducible, and local state /
+# secrets never leak into image filesystems.
+
+# VCS
+.git
+.gitattributes
+.githooks
+.github
+
+# Editor / tooling
+.idea
+.vscode
+.claude
+.claude.local.md
+.superpowers
+
+# Local Go build artefacts
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.*
+*.coverprofile
+profile.cov
+
+# Local runtime state — workspace .tmp/ holds dev DB, PIDs, agent logs
+.tmp/
+data/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.log
+
+# Frontend — web/ source is COPY'd, but built artefacts are produced
+# inside the web-builder stage; never seed them from the host.
+web/node_modules/
+web/dist/
+web/*.tsbuildinfo
+
+# Embedded UI is rebuilt by the web-builder stage; the host copy is stale.
+cmd/control-plane/.embedded-ui/
+
+# Go workspace / module cache
+go.work
+go.work.sum
+vendor/
+
+# Secrets / env
+.env
+.env.*
+!deploy/.env.example
+*.pem
+*.key
+proxy-secret
+config.toml
+
+# Docs / CI / repo metadata not needed by the binary
+README.md
+LICENSE
+AGENTS.md
+CLAUDE.md
+**/CLAUDE.md
+docs/
+deploy/install.sh
+deploy/install-agent.sh
+deploy/prometheus/
+Makefile
+
+# Worktrees
+.worktrees/
+
+# OS junk
+.DS_Store
+Thumbs.db

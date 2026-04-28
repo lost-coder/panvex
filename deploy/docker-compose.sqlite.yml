@@ -18,6 +18,9 @@ services:
       - "127.0.0.1:8443:8443"
     volumes:
       - panvex_sqlite_data:/var/lib/panvex
+    # Must exceed cmd/control-plane controlPlaneShutdownGraceMin (45s) so
+    # the audit-event drain finishes before docker sends SIGKILL.
+    stop_grace_period: 45s
 
   web:
     build:
@@ -32,6 +35,40 @@ services:
     # which is exactly the misconfiguration this default avoids.
     ports:
       - "127.0.0.1:8080:80"
+
+  # One-shot first-run admin creation. Activate explicitly:
+  #
+  #   PANVEX_BOOTSTRAP_PASSWORD='<pw>' \
+  #     docker compose -f deploy/docker-compose.sqlite.yml \
+  #     --profile bootstrap run --rm bootstrap
+  #
+  # Override the username with PANVEX_BOOTSTRAP_USERNAME (default: admin).
+  # Safe to re-run: the binary refuses to plant an admin on a non-empty
+  # store (see runBootstrapAdmin in cmd/control-plane/main.go).
+  #
+  # SQLite note: stop the backend before bootstrapping a fresh DB to
+  # avoid contending on the file. Once an admin exists this matters
+  # less, but the first run should be sequential.
+  bootstrap:
+    profiles: [bootstrap]
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: control-plane
+    command:
+      - ./panvex-control-plane
+      - bootstrap-admin
+      - -storage-driver
+      - sqlite
+      - -storage-dsn
+      - /var/lib/panvex/panvex.db
+      - -username
+      - ${PANVEX_BOOTSTRAP_USERNAME:-admin}
+    environment:
+      PANVEX_BOOTSTRAP_PASSWORD: ${PANVEX_BOOTSTRAP_PASSWORD:?set PANVEX_BOOTSTRAP_PASSWORD before running --profile bootstrap}
+    volumes:
+      - panvex_sqlite_data:/var/lib/panvex
+    restart: "no"
 
 volumes:
   panvex_sqlite_data:

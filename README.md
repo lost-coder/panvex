@@ -122,8 +122,8 @@ Run `bash install.sh --help` for all environment variables.
 | Layer | Technology |
 |-------|------------|
 | Backend | Go 1.26, chi/v5, pgx/v5, modernc.org/sqlite, gRPC |
-| Frontend | React 19, Vite 7, TailwindCSS 4, TanStack Router + Query |
-| UI Kit | [@lost-coder/panvex-ui](https://github.com/lost-coder/panvex-ui) — Radix UI + CVA |
+| Frontend | React 19, Vite 8, TailwindCSS 4, TanStack Router + Query |
+| UI Kit | Inlined under `web/src/ui/` — Radix UI primitives + CVA |
 | Database | PostgreSQL (primary) · SQLite (lightweight) |
 | Deploy | Multi-stage Docker · systemd · nginx |
 
@@ -195,18 +195,22 @@ cd .. && go build -tags embeddedui -o panvex-control-plane ./cmd/control-plane
 
 ## 🐳 Docker
 
+Each compose file ships a `bootstrap` service under `--profile bootstrap`
+that creates the first admin one-shot. It refuses to plant an account
+on a non-empty store, so it's safe to re-run.
+
 <details>
 <summary><strong>SQLite</strong> (lightweight)</summary>
 
 ```sh
-docker compose -f deploy/docker-compose.sqlite.yml up --build -d
+# 1. First-run admin (run before bringing up the backend so the SQLite
+#    file isn't contended).
+PANVEX_BOOTSTRAP_PASSWORD='<strong-password>' \
+  docker compose -f deploy/docker-compose.sqlite.yml \
+    --profile bootstrap run --rm bootstrap
 
-docker compose -f deploy/docker-compose.sqlite.yml exec backend \
-  ./panvex-control-plane bootstrap-admin \
-  -storage-driver sqlite \
-  -storage-dsn /var/lib/panvex/panvex.db \
-  -username admin \
-  -password '<strong-password>'
+# 2. Start the stack.
+docker compose -f deploy/docker-compose.sqlite.yml up --build -d
 ```
 
 </details>
@@ -215,14 +219,14 @@ docker compose -f deploy/docker-compose.sqlite.yml exec backend \
 <summary><strong>PostgreSQL</strong> (dev — default password, plaintext DB traffic)</summary>
 
 ```sh
+# 1. Start Postgres + backend (creates schema on first boot).
 docker compose -f deploy/docker-compose.postgres.yml up --build -d
 
-docker compose -f deploy/docker-compose.postgres.yml exec backend \
-  ./panvex-control-plane bootstrap-admin \
-  -storage-driver postgres \
-  -storage-dsn 'postgres://panvex:panvex@postgres:5432/panvex?sslmode=disable' \
-  -username admin \
-  -password '<strong-password>'
+# 2. First-run admin.
+PANVEX_BOOTSTRAP_PASSWORD='<strong-password>' \
+POSTGRES_PASSWORD='<db-password>' \
+  docker compose -f deploy/docker-compose.postgres.yml \
+    --profile bootstrap run --rm bootstrap
 ```
 
 </details>
@@ -231,25 +235,30 @@ docker compose -f deploy/docker-compose.postgres.yml exec backend \
 <summary><strong>PostgreSQL</strong> (production — TLS, no default credentials)</summary>
 
 ```sh
+# 1. Bring up the stack. Required env vars are enforced via ${VAR:?...}.
 POSTGRES_PASSWORD='<strong-db-password>' \
 PANVEX_ENCRYPTION_KEY='<strong-encryption-key>' \
-docker compose -f deploy/docker-compose.prod.yml up --build -d
+  docker compose -f deploy/docker-compose.prod.yml up --build -d
 
-docker compose -f deploy/docker-compose.prod.yml exec backend \
-  ./panvex-control-plane bootstrap-admin \
-  -storage-driver postgres \
-  -storage-dsn "postgres://panvex:${POSTGRES_PASSWORD}@postgres:5432/panvex?sslmode=require" \
-  -username admin \
-  -password '<strong-password>'
+# 2. First-run admin. Reuse the same PANVEX_ENCRYPTION_KEY so freshly
+#    minted secrets are readable to the running backend.
+POSTGRES_PASSWORD='<strong-db-password>' \
+PANVEX_ENCRYPTION_KEY='<strong-encryption-key>' \
+PANVEX_BOOTSTRAP_PASSWORD='<strong-admin-password>' \
+  docker compose -f deploy/docker-compose.prod.yml \
+    --profile bootstrap run --rm bootstrap
 ```
 
 The prod profile refuses to start without `POSTGRES_PASSWORD` and
 `PANVEX_ENCRYPTION_KEY`, forces `sslmode=require`, sets resource
-limits, and binds publishers to loopback (terminate TLS at a reverse
-proxy — see `deploy/nginx/default.conf`).
+limits, JSON-log rotation (15 MiB × 10), `PANVEX_ENV=production`, and
+binds publishers to loopback (terminate TLS at a reverse proxy — see
+`deploy/nginx/default.conf`).
 
 </details>
 
+> Override the admin username via `PANVEX_BOOTSTRAP_USERNAME` (default: `admin`).
+>
 > Dashboard: `http://localhost:8080` &nbsp;·&nbsp; gRPC: `localhost:8443`
 
 ---

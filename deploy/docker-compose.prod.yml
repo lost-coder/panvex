@@ -26,8 +26,20 @@
 #
 # Without those env vars the stack refuses to come up — by design.
 
+# Shared log driver: the default json-file driver grows unbounded and
+# fills the host disk on long-running deployments. Cap at ~150 MiB per
+# service (10 × 15m).
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "15m"
+    max-file: "10"
+
 services:
   postgres:
+    # TODO: pin to a digest (postgres:16-alpine@sha256:...) once Dependabot
+    # has produced the first PR. The Dockerfile base images are already
+    # pinned; this image is the only floating tag in the prod stack.
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-panvex}
@@ -47,6 +59,7 @@ services:
           cpus: "1.0"
         reservations:
           memory: 256m
+    logging: *default-logging
     restart: unless-stopped
 
   backend:
@@ -58,6 +71,9 @@ services:
       - path: .env
         required: false
     environment:
+      # Switches server-side checks into prod posture (e.g. refuses
+      # dev-loopback opt-ins — see internal/controlplane/server/http_events.go).
+      PANVEX_ENV: production
       # Required: refuses to start without an explicit, non-default key.
       PANVEX_ENCRYPTION_KEY: ${PANVEX_ENCRYPTION_KEY:?PANVEX_ENCRYPTION_KEY is required for the prod profile}
       # Tunable pool sizing — see internal/controlplane/storage/postgres/pool_config.go.
@@ -90,6 +106,7 @@ services:
     # Must exceed cmd/control-plane controlPlaneShutdownGraceMin so the
     # audit-event drain finishes before docker sends SIGKILL.
     stop_grace_period: 45s
+    logging: *default-logging
     restart: unless-stopped
 
   web:
@@ -108,7 +125,47 @@ services:
         limits:
           memory: 256m
           cpus: "0.5"
+    logging: *default-logging
     restart: unless-stopped
+
+  # One-shot first-run admin creation. Activate explicitly:
+  #
+  #   POSTGRES_PASSWORD='<db-pw>' \
+  #   PANVEX_ENCRYPTION_KEY='<key>' \
+  #   PANVEX_BOOTSTRAP_PASSWORD='<admin-pw>' \
+  #     docker compose -f deploy/docker-compose.prod.yml \
+  #     --profile bootstrap run --rm bootstrap
+  #
+  # Reuses the same encryption key as backend (otherwise newly minted
+  # secrets will be unreadable to the running service). Safe to re-run:
+  # the binary refuses to plant an admin on a non-empty store.
+  bootstrap:
+    profiles: [bootstrap]
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: control-plane
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PANVEX_ENV: production
+      PANVEX_ENCRYPTION_KEY: ${PANVEX_ENCRYPTION_KEY:?PANVEX_ENCRYPTION_KEY is required for the prod profile}
+      PANVEX_BOOTSTRAP_PASSWORD: ${PANVEX_BOOTSTRAP_PASSWORD:?set PANVEX_BOOTSTRAP_PASSWORD before running --profile bootstrap}
+    command:
+      - ./panvex-control-plane
+      - bootstrap-admin
+      - -storage-driver
+      - postgres
+      - -storage-dsn
+      - postgres://${POSTGRES_USER:-panvex}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-panvex}?sslmode=require
+      - -username
+      - ${PANVEX_BOOTSTRAP_USERNAME:-admin}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging: *default-logging
+    restart: "no"
 
 volumes:
   panvex_postgres_data:
