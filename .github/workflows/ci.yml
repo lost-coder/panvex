@@ -161,6 +161,35 @@ jobs:
         working-directory: web
         run: npm ci && npm run lint
 
+  frontend-e2e:
+    name: Frontend E2E (Playwright)
+    runs-on: ubuntu-latest
+    # The smoke suite stubs the API per-test via page.route(), so it
+    # boots Vite and a hermetic browser without touching a backend.
+    # Running on every PR keeps regressions in the navigation /
+    # auth-shell flows from sneaking past type checks.
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Install npm deps
+        working-directory: web
+        run: npm ci
+      - name: Install Playwright browsers
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: Run Playwright smoke suite
+        working-directory: web
+        run: npx playwright test --project=chromium
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: web/playwright-report/
+          retention-days: 7
+
   frontend-audit:
     name: Frontend npm audit
     runs-on: ubuntu-latest
