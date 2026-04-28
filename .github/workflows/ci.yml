@@ -228,11 +228,18 @@ jobs:
   buf-lint:
     name: Protobuf Lint
     runs-on: ubuntu-latest
+    # bufbuild/buf-action posts a status comment on the PR by default.
+    # Without pull-requests: write the post fails with 'Resource not
+    # accessible by integration' even when the lint itself passed —
+    # which used to surface as a red CI on every PR. Disable the
+    # comment instead of broadening token scope; GitHub annotations
+    # already surface buf errors inline on the diff.
     steps:
       - uses: actions/checkout@v6
       - uses: bufbuild/buf-action@v1
         with:
           lint: true
+          pr_comment: false
 
   sqlc-check:
     name: SQLc Verify
