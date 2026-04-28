@@ -137,12 +137,12 @@ export function ServerDetailPage({
         tone: coverageTone(avgCoverage),
       },
     ],
-    // R-Q-24: React Compiler infers `connections.current` as the source
-    // dependency and rejects fully-qualified dependency lists; the compiler
-    // also rejects this object-level form as `ref.current`-shaped. The
-    // displayed values only depend on these field reads at render time
-    // and `connections` is a stable prop reference per upstream memo, so
-    // the original field-level deps are correct in practice.
+    // The intent is to rebuild the pulse cells only when one of the
+    // numeric fields actually changes — listing `connections` or
+    // `summary` whole would also retrigger when the server query
+    // returns a fresh object with identical numbers. exhaustive-deps
+    // cannot statically prove the field reads are exhaustive, so the
+    // disable stays.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       connections.current,
@@ -188,8 +188,9 @@ export function ServerDetailPage({
         tone: coverageTone(avgCoverage),
       },
     ],
-    // R-Q-24: see above — same compiler / `connections.current`
-    // interaction; preserve original field-level deps.
+    // Same rationale as desktopPulseItems above — value-level deps so
+    // the memo only recomputes when a primitive actually changes, not
+    // on every fresh server-query object.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       connections.current,
