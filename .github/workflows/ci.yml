@@ -14,8 +14,59 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # detect-changes emits per-area output flags so downstream jobs can
+  # decide whether they actually need to run. Only Go-touching PRs
+  # need the slow race+coverage gate; npm/docs PRs (incl. dependabot
+  # patch bumps) skip it entirely.
+  detect-changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+    steps:
+      - uses: actions/checkout@v6
+      # Pinned to a commit SHA per the SonarCloud hotspot guidance —
+      # third-party actions can have their tags rewritten to point at
+      # a malicious commit, so consume the action by immutable hash.
+      # Tag at the time of pinning: v3 (commit d1c1ffe).
+      - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590  # v3
+        id: filter
+        with:
+          filters: |
+            go:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - '.github/workflows/ci.yml'
+
+  # PR fast gate: no -race, no coverage. Runs on every pull request so
+  # docs/CI/web-only PRs still get a Go-build sanity check (~45-60s).
+  # Skipped on push events because main pushes are post-merge — the
+  # PR-side run already proved the same tree, and go-test-race below
+  # re-validates with race+coverage.
   go-test:
     name: Go Tests
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+      - run: go test -count=1 ./...
+
+  # Slow gate: race detector + coverage. Runs on:
+  #   - PRs that touch Go files / go.mod / go.sum (real merge gate
+  #     under branch protection — required check evaluates here)
+  #   - pushes to main (covers the merge commit and uploads coverage)
+  # Skipped on PRs that do not touch Go (dependabot npm bumps, doc
+  # tweaks) so the long pole moves off the dependabot critical path.
+  go-test-race:
+    name: Go Tests (race + coverage)
+    needs: detect-changes
+    if: |
+      (github.event_name == 'pull_request' && needs.detect-changes.outputs.go == 'true') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -208,11 +259,18 @@ jobs:
   buf-lint:
     name: Protobuf Lint
     runs-on: ubuntu-latest
+    # bufbuild/buf-action posts a status comment on the PR by default.
+    # Without pull-requests: write the post fails with 'Resource not
+    # accessible by integration' even when the lint itself passed —
+    # which used to surface as a red CI on every PR. Disable the
+    # comment instead of broadening token scope; GitHub annotations
+    # already surface buf errors inline on the diff.
     steps:
       - uses: actions/checkout@v6
       - uses: bufbuild/buf-action@v1
         with:
           lint: true
+          pr_comment: false
 
   sqlc-check:
     name: SQLc Verify
