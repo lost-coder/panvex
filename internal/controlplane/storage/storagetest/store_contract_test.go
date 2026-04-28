@@ -492,6 +492,15 @@ func (s *memoryStore) DeleteAgent(_ context.Context, agentID string) error {
 		return storage.ErrNotFound
 	}
 	delete(s.agents, agentID)
+	// Mirror the FK ON DELETE CASCADE that the real backends apply
+	// (sqlite migration 0028, postgres migrations 0022 + 0028) so the
+	// memory backend stays contract-compatible.
+	delete(s.agentCertificateRecoveryGrants, agentID)
+	for id, dc := range s.discoveredClients {
+		if dc.AgentID == agentID {
+			delete(s.discoveredClients, id)
+		}
+	}
 	return nil
 }
 

@@ -114,6 +114,31 @@ func runAgentsContract(t *testing.T, open OpenStore) {
 			t.Fatalf("PutInstance() error = %v", err)
 		}
 
+		// Seed satellite rows that reference agents (id) to lock in the
+		// FK cascade contract: a recovery grant and a discovered client.
+		// Without ON DELETE CASCADE on those FKs, DeleteAgent below
+		// would fail with a foreign-key constraint error — exactly the
+		// failure mode that affected real deployments before migration
+		// 0028.
+		if err := store.PutAgentCertificateRecoveryGrant(ctx, storage.AgentCertificateRecoveryGrantRecord{
+			AgentID:   agent.ID,
+			IssuedBy:  "tester",
+			IssuedAt:  agent.LastSeenAt,
+			ExpiresAt: agent.LastSeenAt.Add(24 * time.Hour),
+		}); err != nil {
+			t.Fatalf("PutAgentCertificateRecoveryGrant() error = %v", err)
+		}
+		if err := store.PutDiscoveredClient(ctx, storage.DiscoveredClientRecord{
+			ID:           "discovered-deregister",
+			AgentID:      agent.ID,
+			ClientName:   "stranger",
+			Status:       "pending_review",
+			DiscoveredAt: agent.LastSeenAt,
+			UpdatedAt:    agent.LastSeenAt,
+		}); err != nil {
+			t.Fatalf("PutDiscoveredClient() error = %v", err)
+		}
+
 		if err := store.DeleteInstancesByAgent(ctx, agent.ID); err != nil {
 			t.Fatalf("DeleteInstancesByAgent() error = %v", err)
 		}
@@ -139,6 +164,18 @@ func runAgentsContract(t *testing.T, open OpenStore) {
 			if a.ID == agent.ID {
 				t.Fatalf("ListAgents() still contains deregistered agent: %+v", a)
 			}
+		}
+
+		// Cascade should have purged the satellite rows along with the
+		// agent. Memory-store backends that don't enforce FKs may keep
+		// them; only check on backends where the row count is exposed
+		// via list helpers.
+		discovered, err := store.ListDiscoveredClientsByAgent(ctx, agent.ID)
+		if err != nil {
+			t.Fatalf("ListDiscoveredClientsByAgent() error = %v", err)
+		}
+		if len(discovered) != 0 {
+			t.Fatalf("ListDiscoveredClientsByAgent() = %d rows, want 0 (cascade did not purge)", len(discovered))
 		}
 	})
 }
