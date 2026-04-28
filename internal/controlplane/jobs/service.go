@@ -891,6 +891,13 @@ func jobShouldExpire(job Job, now time.Time) bool {
 
 func (s *Service) restore() error {
 	ctx := context.Background()
+	// Q2.U-P-02: ListJobs returns the un-pruned tail of the jobs table.
+	// PruneTerminalJobs (retention worker) keeps that tail bounded at
+	// intervals.JobsSeconds, so in steady state the restore loop sees
+	// only jobs from the last retention window. The in-flight redelivery
+	// path requires every queued/running/acknowledged record, and the
+	// admin UI requires recent terminal records for the activity feed —
+	// hence the lack of a status filter here.
 	jobsFromStore, err := s.jobStore.ListJobs(ctx)
 	if err != nil {
 		return err
