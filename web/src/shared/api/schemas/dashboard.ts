@@ -90,10 +90,30 @@ const telemetryAttentionItemSchema = z.object({
   detail_boost: telemetryDetailBoostSchema,
 });
 
+// dashboardRecentEventSchema mirrors the per-event shape returned by
+// /api/telemetry/dashboard (the same RuntimeEvent fields plus the
+// originating agent identity).
+const dashboardRecentEventSchema = z.object({
+  sequence: z.number(),
+  timestamp_unix: z.number(),
+  event_type: z.string(),
+  context: z.string(),
+  agent_id: z.string(),
+  node_name: z.string(),
+});
+
+const telemetryAgentLoadSeriesSchema = z.object({
+  agent_id: z.string(),
+  cpu_pct: z.array(z.number()),
+  mem_pct: z.array(z.number()),
+});
+
 /**
  * Aggregated telemetry payload for the dashboard: fleet totals + per-agent
- * attention rows + server cards. This is the closest shape we have to a
- * "dashboard" resource; the task's `dashboardSchema` maps to it.
+ * attention rows + server cards + sparkline series + enriched recent
+ * events. Matches the Go telemetryDashboardResponse exactly so an
+ * unexpected field shape surfaces via API_SCHEMA_MISMATCH_EVENT instead
+ * of silently rendering as `undefined` in the dashboard.
  */
 export const dashboardSchema = z.object({
   fleet: fleetSchema,
@@ -101,6 +121,8 @@ export const dashboardSchema = z.object({
   server_cards: z.array(telemetryServerSummarySchema),
   runtime_distribution: z.record(z.string(), z.number()),
   recent_runtime_events: z.array(runtimeEventSchema),
+  recent_events: z.array(dashboardRecentEventSchema),
+  agent_load_series: z.array(telemetryAgentLoadSeriesSchema),
 });
 
 export type DashboardParsed = z.infer<typeof dashboardSchema>;

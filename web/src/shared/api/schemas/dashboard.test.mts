@@ -50,6 +50,20 @@ test("dashboardSchema accepts an empty telemetry payload", () => {
     server_cards: [],
     runtime_distribution: {},
     recent_runtime_events: [],
+    recent_events: [],
+    agent_load_series: [],
   });
   assert.equal(parsed.attention.length, 0);
+});
+
+test("dashboardSchema rejects missing agent_load_series", () => {
+  const result = dashboardSchema.safeParse({
+    fleet: minimalFleet,
+    attention: [],
+    server_cards: [],
+    runtime_distribution: {},
+    recent_runtime_events: [],
+    recent_events: [],
+  });
+  assert.equal(result.success, false);
 });

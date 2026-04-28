@@ -136,20 +136,16 @@ export const apiClient = {
  *   - /clients                  clientListSchema
  *   - /discovered-clients       discoveredClientListSchema
  *   - /version                  versionSchema (discriminated viewer/operator)
+ *   - /control-room             controlRoomSchema
+ *   - /telemetry/dashboard      dashboardSchema
  *
- * TODO(P2-FE-01 follow-up): migrate the remaining endpoints below to
- * opt-in schemas. They are left as typed-cast today because the risk of
- * silent field drift is lower for admin-only flows (users, settings) and
- * the raw telemetry payloads are wide (tens of fields) so schema authoring
- * is deferred until a new surface is added. Order of priority:
+ * Pending schema wiring (next priority order):
  *
- *   1. /control-room            controlRoomSchema (already drafted)
- *   2. /telemetry/dashboard     dashboardSchema   (already drafted)
- *   3. /telemetry/servers       derive from dashboardSchema
- *   4. /telemetry/servers/{id}  new schema (large diagnostics payload)
- *   5. /clients/{id}            clientSchema (already drafted, not wired
+ *   1. /telemetry/servers       derive from dashboardSchema
+ *   2. /telemetry/servers/{id}  new schema (large diagnostics payload)
+ *   3. /clients/{id}            clientSchema (already drafted, not wired
  *                               because write endpoints share the type)
- *   6. /users, /jobs, /audit    medium priority
- *   7. /settings/*              low priority (admin-only)
- *   8. /fleet, /fleet-groups    low priority (small shapes)
+ *   4. /users, /jobs, /audit    medium priority
+ *   5. /settings/*              low priority (admin-only)
+ *   6. /fleet, /fleet-groups    low priority (small shapes)
  */

@@ -1,6 +1,7 @@
 import type { Agent, AgentRuntime, RuntimeEvent } from "./servers";
 import { api, apiBasePath } from "./http";
 import type { AuditEvent } from "./jobs";
+import { controlRoomSchema, dashboardSchema } from "./schemas";
 
 export type FleetResponse = {
   total_agents: number;
@@ -181,8 +182,10 @@ export type MetricSnapshot = {
 };
 
 export const telemetryApi = {
-  controlRoom: () => api<ControlRoomResponse>(`${apiBasePath}/control-room`),
-  telemetryDashboard: () => api<TelemetryDashboardResponse>(`${apiBasePath}/telemetry/dashboard`),
+  controlRoom: () =>
+    api<ControlRoomResponse>(`${apiBasePath}/control-room`, undefined, controlRoomSchema),
+  telemetryDashboard: () =>
+    api<TelemetryDashboardResponse>(`${apiBasePath}/telemetry/dashboard`, undefined, dashboardSchema),
   telemetryServers: () => api<TelemetryServersResponse>(`${apiBasePath}/telemetry/servers`),
   telemetryServer: (agentID: string) => api<TelemetryServerDetailResponse>(`${apiBasePath}/telemetry/servers/${agentID}`),
   activateTelemetryDetailBoost: (agentID: string) =>
