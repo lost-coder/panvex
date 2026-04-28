@@ -24,6 +24,7 @@ func TestHTTPClientsCreateTracksDeploymentsAndStructuredJobPayload(t *testing.T)
 	defer store.Close()
 
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
@@ -147,6 +148,7 @@ func TestHTTPClientsUpdateRotateAndDeleteQueueLifecycleJobs(t *testing.T) {
 	defer store.Close()
 
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
@@ -259,6 +261,7 @@ func TestHTTPClientsUpdateRotateAndDeleteQueueLifecycleJobs(t *testing.T) {
 func TestHTTPClientsRejectInvalidUserADTag(t *testing.T) {
 	now := time.Date(2026, time.March, 17, 16, 40, 0, 0, time.UTC)
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
 	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
@@ -288,6 +291,7 @@ func TestHTTPClientsAggregateUsageAcrossAgentSnapshots(t *testing.T) {
 	defer store.Close()
 
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
@@ -400,6 +404,7 @@ func TestHTTPClientsCreateReturnsInternalErrorWhenPersistenceFails(t *testing.T)
 
 	store := &failingStore{Store: sqliteStore}
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
@@ -440,6 +445,7 @@ func TestRecordClientJobResultDoesNotPanicWhenDeploymentPersistenceFails(t *test
 
 	store := &failingStore{Store: sqliteStore}
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})

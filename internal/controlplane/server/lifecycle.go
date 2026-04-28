@@ -82,6 +82,7 @@ func newServerFromOptions(options Options, now func() time.Time, csrfSecret []by
 		commitSHA:                    options.CommitSHA,
 		buildTime:                    options.BuildTime,
 		csrfSecret:                   csrfSecret,
+		loginTimingFloor:             resolveLoginTimingFloor(options.LoginTimingFloor),
 		revokedAgentIDs:              make(map[string]struct{}),
 		agents:                       make(map[string]Agent),
 		detailBoosts:                 make(map[string]time.Time),

@@ -23,6 +23,7 @@ func TestHTTPPanelSettingsRequiresAdminAndPersistsSharedEndpointChanges(t *testi
 	defer store.Close()
 
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 		PanelRuntime: PanelRuntime{
@@ -166,6 +167,7 @@ func TestHTTPPanelSettingsRequiresAdminAndPersistsSharedEndpointChanges(t *testi
 func TestHTTPPanelSettingsMarksRestartUnavailableWhenRuntimeCannotSelfRestart(t *testing.T) {
 	now := time.Date(2026, time.March, 16, 19, 30, 0, 0, time.UTC)
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 		PanelRuntime: PanelRuntime{
 			HTTPListenAddress: ":8080",
@@ -219,6 +221,7 @@ func TestHTTPPanelSettingsMarksRestartUnavailableWhenRuntimeCannotSelfRestart(t 
 func TestHTTPPanelSettingsRejectsRuntimeMutationsInLegacyMode(t *testing.T) {
 	now := time.Date(2026, time.March, 17, 10, 40, 0, 0, time.UTC)
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 		PanelRuntime: PanelRuntime{
 			HTTPListenAddress: ":8080",
@@ -256,6 +259,7 @@ func TestHTTPPanelSettingsRejectsRuntimeMutationsInLegacyMode(t *testing.T) {
 func TestHTTPPanelSettingsRejectsOversizedPayload(t *testing.T) {
 	now := time.Date(2026, time.March, 17, 11, 0, 0, 0, time.UTC)
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 		PanelRuntime: PanelRuntime{
 			HTTPListenAddress: ":8080",
@@ -298,6 +302,7 @@ func TestHTTPPanelSettingsExposesConfigManagedRuntimeAsReadOnly(t *testing.T) {
 	defer store.Close()
 
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 		PanelRuntime: PanelRuntime{
@@ -391,6 +396,7 @@ func TestHTTPPanelSettingsExposesConfigManagedRuntimeAsReadOnly(t *testing.T) {
 func TestHTTPPanelSettingsRejectsRuntimeMutationsWhenConfigManagesRuntime(t *testing.T) {
 	now := time.Date(2026, time.March, 20, 20, 30, 0, 0, time.UTC)
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 		PanelRuntime: PanelRuntime{
 			HTTPListenAddress: ":18080",
@@ -437,6 +443,7 @@ func TestHTTPPanelRestartRequiresAdminAndInvokesRuntimeHook(t *testing.T) {
 	now := time.Date(2026, time.March, 17, 1, 20, 0, 0, time.UTC)
 	restartRequests := make(chan struct{}, 1)
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 		PanelRuntime: PanelRuntime{
 			HTTPListenAddress: ":8080",
@@ -500,6 +507,7 @@ func TestHTTPPanelRestartRequiresAdminAndInvokesRuntimeHook(t *testing.T) {
 func TestHTTPPanelRestartRejectsUnsupportedRuntime(t *testing.T) {
 	now := time.Date(2026, time.March, 17, 1, 30, 0, 0, time.UTC)
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 		PanelRuntime: PanelRuntime{
 			HTTPListenAddress: ":8080",
@@ -533,6 +541,7 @@ func TestHTTPPanelRestartRejectsUnsupportedRuntime(t *testing.T) {
 func TestHTTPPanelRestartReturnsInternalErrorWhenRuntimeHookFails(t *testing.T) {
 	now := time.Date(2026, time.March, 18, 13, 0, 0, 0, time.UTC)
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 		PanelRuntime: PanelRuntime{
 			HTTPListenAddress: ":8080",

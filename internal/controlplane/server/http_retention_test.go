@@ -29,6 +29,7 @@ func TestRetentionSettingsSurviveRestart(t *testing.T) {
 	// simulate a process restart.
 
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
@@ -104,6 +105,7 @@ func TestRetentionSettingsSurviveRestart(t *testing.T) {
 	defer restartedStore.Close()
 
 	restartedServer := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: restartedStore,
 	})

@@ -1,16 +1,6 @@
 package server
 
-import (
-	"os"
-	"testing"
-)
-
-// TestMain disables the production /api/auth/login timing floor (R-S-19)
-// for the entire server-package test binary. Without this, every login
-// HTTP test pays a real 150ms wall-clock sleep and the suite balloons by
-// minutes. Production cmd/control-plane never imports test code, so the
-// override is scoped to test runs only.
-func TestMain(m *testing.M) {
-	loginTimingFloor = 0
-	os.Exit(m.Run())
-}
+// L-14 follow-up: the login timing floor is a per-Server field now;
+// tests that construct a Server pass Options{LoginTimingFloor: -1} to
+// skip the production 150ms pad. No package-level override is needed,
+// so this file no longer carries a TestMain.

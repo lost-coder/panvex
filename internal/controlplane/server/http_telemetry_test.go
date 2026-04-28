@@ -21,6 +21,7 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 	}
 	defer store.Close()
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
@@ -217,6 +218,7 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 	}
 
 	restored := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now.Add(time.Minute) },
 		Store: store,
 	})

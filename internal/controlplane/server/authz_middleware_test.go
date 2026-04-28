@@ -14,6 +14,7 @@ import (
 func TestRequireAuthenticatedSessionRejectsUnauthenticated(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
 
@@ -39,6 +40,7 @@ func TestRequireAuthenticatedSessionAllowsValidSession(t *testing.T) {
 	defer store.Close()
 
 	srv := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
@@ -77,6 +79,7 @@ func TestRequireMinimumRoleAdminRejectsViewer(t *testing.T) {
 	defer store.Close()
 
 	srv := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
@@ -133,6 +136,7 @@ func TestRequireMinimumRoleAdminAllowsAdmin(t *testing.T) {
 	defer store.Close()
 
 	srv := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})

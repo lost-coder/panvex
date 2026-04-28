@@ -54,4 +54,10 @@ type Options struct {
 	// fields fall back to DefaultIntervals(). Tests use this to compress
 	// retention sweeps and rollup scans into milliseconds.
 	Intervals Intervals
+	// LoginTimingFloor sets the wall-clock minimum every login response
+	// (success or failure) is padded to (R-S-19). Zero (unset) falls
+	// back to the production default of 150ms. Pass any negative value
+	// to disable the pad entirely — tests use this to avoid burning
+	// real wall-clock seconds in the suite.
+	LoginTimingFloor time.Duration
 }

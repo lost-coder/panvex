@@ -77,6 +77,7 @@ func TestServerAppendAuditKeepsRecentEventsInMemory(t *testing.T) {
 	start := time.Date(2026, time.March, 21, 10, 0, 0, 0, time.UTC)
 	now := start
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
 
@@ -115,6 +116,7 @@ func TestAuditTrailRingBuffer(t *testing.T) {
 	start := time.Date(2026, time.April, 1, 0, 0, 0, 0, time.UTC)
 	now := start
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
 

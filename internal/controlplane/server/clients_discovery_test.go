@@ -41,6 +41,7 @@ func TestUpsertDiscoveredClientDedupes(t *testing.T) {
 	}
 
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
@@ -126,6 +127,7 @@ func TestUpsertDiscoveredClientPreservesIgnoredStatus(t *testing.T) {
 	}
 
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
@@ -194,6 +196,7 @@ func TestAdoptDiscoveredClientConcurrentIsAtomic(t *testing.T) {
 	}
 
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
@@ -324,6 +327,7 @@ func TestMergeAdoptNoTOCTOU(t *testing.T) {
 	}
 
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
@@ -512,6 +516,7 @@ func TestRestoreStoredClients_RehydratesUsageFromDiscovered(t *testing.T) {
 	// map is empty. restoreStoredClients must repopulate it from the
 	// persisted discovered_clients row.
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
@@ -611,6 +616,7 @@ func TestRestoreStoredClients_PrefersPersistedUsage(t *testing.T) {
 	}
 
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})

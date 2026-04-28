@@ -21,6 +21,7 @@ func testServerWithSQLite(t *testing.T, now time.Time) *Server {
 		t.Fatalf("sqlite.Open() error = %v", err)
 	}
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})

@@ -19,22 +19,37 @@ import (
 // retries; no session cookie is issued when the persist is not confirmed.
 const loginAuditPersistTimeout = 2 * time.Second
 
-// loginTimingFloor is the wall-clock minimum every login response (success
-// or failure) is padded to (R-S-19). The Authenticate helper already burns
-// a dummy bcrypt hash to equalise wrong-password vs unknown-username timing
-// inside auth.Service, but the surrounding lockout-cache lookup, DB miss,
-// audit persist, and totp-required dispatch each have their own latency
-// signature. Padding every response to a fixed floor collapses the visible
+// resolveLoginTimingFloor picks the runtime floor used by the login
+// handler. The zero value (Options.LoginTimingFloor unset) falls back
+// to the production default; any negative value is interpreted as
+// "no floor" (the explicit test-mode opt-out); any positive value
+// overrides the production default.
+func resolveLoginTimingFloor(override time.Duration) time.Duration {
+	if override == 0 {
+		return defaultLoginTimingFloor
+	}
+	if override < 0 {
+		return 0
+	}
+	return override
+}
+
+// defaultLoginTimingFloor is the production wall-clock minimum every
+// login response (success or failure) is padded to (R-S-19). The
+// Authenticate helper already burns a dummy bcrypt hash to equalise
+// wrong-password vs unknown-username timing inside auth.Service, but
+// the surrounding lockout-cache lookup, DB miss, audit persist, and
+// totp-required dispatch each have their own latency signature.
+// Padding every response to a fixed floor collapses the visible
 // timing spread to <1ms regardless of which branch fired.
 //
 // 150ms is well above realistic local + cache paths (~5–20ms) and well
-// below the user-perceived "slow" threshold so legitimate logins are not
-// degraded.
+// below the user-perceived "slow" threshold so legitimate logins are
+// not degraded.
 //
-// Kept as a package-level var so the test entrypoint (TestMain) can zero
-// it out without every test file having to thread an explicit override
-// through Options. Production callers never mutate it after init.
-var loginTimingFloor = 150 * time.Millisecond
+// The actual floor used at runtime is server.Server.loginTimingFloor;
+// tests pass Options{LoginTimingFloor: 0} to skip the pad.
+const defaultLoginTimingFloor = 150 * time.Millisecond
 
 type loginRequest struct {
 	Username string `json:"username"`
@@ -142,8 +157,9 @@ func (s *Server) handleLogin() http.HandlerFunc {
 }
 
 // newLoginTimingFloor returns a closure that ensures any login response is
-// delayed at least loginTimingFloor since the call site started. The closure
-// is idempotent — multiple calls within one request only sleep once.
+// delayed at least s.loginTimingFloor since the call site started. The
+// closure is idempotent — multiple calls within one request only sleep
+// once.
 func (s *Server) newLoginTimingFloor() func() {
 	start := s.now()
 	floored := false
@@ -153,7 +169,7 @@ func (s *Server) newLoginTimingFloor() func() {
 		}
 		floored = true
 		elapsed := s.now().Sub(start)
-		if remaining := loginTimingFloor - elapsed; remaining > 0 {
+		if remaining := s.loginTimingFloor - elapsed; remaining > 0 {
 			time.Sleep(remaining)
 		}
 	}

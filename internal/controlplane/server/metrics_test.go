@@ -18,6 +18,7 @@ func newMetricsTestServer(t *testing.T, scrapeToken string) *Server {
 	t.Helper()
 	fixed := time.Date(2026, time.April, 17, 12, 0, 0, 0, time.UTC)
 	srv := New(Options{
+		LoginTimingFloor: -1,
 		Now:                func() time.Time { return fixed },
 		MetricsScrapeToken: scrapeToken,
 	})

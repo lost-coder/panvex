@@ -25,6 +25,7 @@ import (
 func TestResolveClientTargetAgentIDsRunsCleanUnderRace(t *testing.T) {
 	now := time.Date(2026, time.April, 17, 12, 0, 0, 0, time.UTC)
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
 	defer server.Close()
@@ -169,6 +170,7 @@ func TestResolveClientTargetAgentIDsRunsCleanUnderRace(t *testing.T) {
 func TestPresenceConnectedAtPersistsAcrossSnapshots(t *testing.T) {
 	now := time.Date(2026, time.April, 17, 9, 0, 0, 0, time.UTC)
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
 	defer server.Close()

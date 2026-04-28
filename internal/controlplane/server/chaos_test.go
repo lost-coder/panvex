@@ -75,6 +75,7 @@ func TestChaosDBDropDuringTransact(t *testing.T) {
 	}
 
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: failing,
 	})
@@ -445,6 +446,7 @@ func TestChaosClockDrift(t *testing.T) {
 	}
 
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now:   nowFn,
 		Store: baseStore,
 	})

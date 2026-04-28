@@ -30,6 +30,7 @@ func TestRollupWorkerPrunesAuditAndMetrics(t *testing.T) {
 	t.Cleanup(func() { _ = sqliteStore.Close() })
 
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now:                func() time.Time { return now },
 		Store:              sqliteStore,
 		MetricsScrapeToken: "devtoken",
@@ -142,6 +143,7 @@ func TestRollupWorkerSkipsDisabledRetention(t *testing.T) {
 	t.Cleanup(func() { _ = sqliteStore.Close() })
 
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: sqliteStore,
 	})

@@ -123,6 +123,7 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 	defer store.Close()
 
 	first := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
@@ -173,6 +174,7 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 	first.Close()
 
 	restored := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now.Add(time.Minute) },
 		Store: store,
 	})
@@ -216,6 +218,7 @@ func TestServerApplyAgentSnapshotUpdatesInMemoryStateEvenWhenPersistenceFails(t 
 
 	store := &failingStore{Store: sqliteStore}
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
@@ -424,6 +427,7 @@ func TestServerApplyAgentSnapshotKeepsEnrolledScopeWhenSnapshotDiffers(t *testin
 	defer store.Close()
 
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
@@ -651,6 +655,7 @@ func TestServerEnrollmentTokenPersistsAcrossRestart(t *testing.T) {
 	defer store.Close()
 
 	first := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
@@ -665,6 +670,7 @@ func TestServerEnrollmentTokenPersistsAcrossRestart(t *testing.T) {
 	}
 
 	restored := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now.Add(10 * time.Second) },
 		Store: store,
 	})
@@ -692,6 +698,7 @@ func TestServerRestoresPersistedCertificateAuthority(t *testing.T) {
 	defer store.Close()
 
 	first := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
@@ -702,6 +709,7 @@ func TestServerRestoresPersistedCertificateAuthority(t *testing.T) {
 	}
 
 	restored := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now.Add(30 * time.Second) },
 		Store: store,
 	})
@@ -751,6 +759,7 @@ func TestServerRecordsStartupErrorInsteadOfPanickingOnRestoreFailure(t *testing.
 		listAgentsErr: errors.New("list agents failed"),
 	}
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
@@ -770,6 +779,7 @@ func TestServerConsumedEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) 
 	defer store.Close()
 
 	first := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
@@ -792,6 +802,7 @@ func TestServerConsumedEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) 
 	}
 
 	restored := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now.Add(20 * time.Second) },
 		Store: store,
 	})
@@ -814,6 +825,7 @@ func TestEnrollmentSetsCertificateDates(t *testing.T) {
 	defer store.Close()
 
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
@@ -1013,6 +1025,7 @@ func TestServerExpiredEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) {
 	defer store.Close()
 
 	first := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
@@ -1027,6 +1040,7 @@ func TestServerExpiredEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) {
 	}
 
 	restored := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now.Add(2 * time.Second) },
 		Store: store,
 	})

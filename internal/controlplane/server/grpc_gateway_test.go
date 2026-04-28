@@ -24,6 +24,7 @@ import (
 func TestServerPendingJobsForAgentIncludesQueuedTarget(t *testing.T) {
 	currentTime := time.Date(2026, time.March, 20, 8, 0, 0, 0, time.UTC)
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now: func() time.Time { return currentTime },
 	})
 
@@ -42,6 +43,7 @@ func TestServerPendingJobsForAgentIncludesQueuedTarget(t *testing.T) {
 func TestServerPendingJobsForAgentSkipsRecentlySentTarget(t *testing.T) {
 	currentTime := time.Date(2026, time.March, 20, 8, 30, 0, 0, time.UTC)
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now: func() time.Time { return currentTime },
 	})
 
@@ -59,6 +61,7 @@ func TestServerPendingJobsForAgentSkipsRecentlySentTarget(t *testing.T) {
 func TestServerPendingJobsForAgentRedeliversStaleSentTarget(t *testing.T) {
 	currentTime := time.Date(2026, time.March, 20, 9, 0, 0, 0, time.UTC)
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now: func() time.Time { return currentTime },
 	})
 
@@ -79,6 +82,7 @@ func TestServerPendingJobsForAgentRedeliversStaleSentTarget(t *testing.T) {
 func TestServerPendingJobsForAgentSkipsAcknowledgedTarget(t *testing.T) {
 	currentTime := time.Date(2026, time.March, 20, 9, 30, 0, 0, time.UTC)
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now: func() time.Time { return currentTime },
 	})
 
@@ -207,6 +211,7 @@ func TestEnqueueRegularSnapshotDropsStaleUpdateWhenQueueIsFull(t *testing.T) {
 func TestProcessRegularAgentMessageRoutesAckToPriorityHandler(t *testing.T) {
 	currentTime := time.Date(2026, time.March, 21, 7, 0, 0, 0, time.UTC)
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now: func() time.Time { return currentTime },
 	})
 	job := enqueueJobForAgent(t, server, "agent-1", "regular-routes-ack", currentTime)
@@ -240,6 +245,7 @@ func TestProcessRegularAgentMessageRoutesAckToPriorityHandler(t *testing.T) {
 func TestProcessPriorityAgentMessageRecordsAcknowledgement(t *testing.T) {
 	currentTime := time.Date(2026, time.March, 21, 8, 0, 0, 0, time.UTC)
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now: func() time.Time { return currentTime },
 	})
 
@@ -270,6 +276,7 @@ func TestProcessPriorityAgentMessageRecordsAcknowledgement(t *testing.T) {
 func TestProcessPriorityAgentMessageRecordsResult(t *testing.T) {
 	currentTime := time.Date(2026, time.March, 21, 8, 30, 0, 0, time.UTC)
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now: func() time.Time { return currentTime },
 	})
 
@@ -305,6 +312,7 @@ func TestProcessPriorityAgentMessageRecordsResult(t *testing.T) {
 func TestProcessPriorityAgentMessageAsyncQueuesClientResultEffect(t *testing.T) {
 	currentTime := time.Date(2026, time.March, 21, 8, 45, 0, 0, time.UTC)
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now: func() time.Time { return currentTime },
 	})
 
@@ -498,6 +506,7 @@ func TestIsPriorityAgentMessageClassifiesJobSignals(t *testing.T) {
 func TestDispatchReconnectRedeliveryAvoidsDuplicateRuntimeMutation(t *testing.T) {
 	currentTime := time.Date(2026, time.March, 22, 9, 0, 0, 0, time.UTC)
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now: func() time.Time { return currentTime },
 	})
 
@@ -581,6 +590,7 @@ func TestDispatchReconnectRedeliveryAvoidsDuplicateRuntimeMutation(t *testing.T)
 func TestDispatchPendingJobsSendsBoundedBatchAndLeavesRemainderQueued(t *testing.T) {
 	currentTime := time.Date(2026, time.March, 22, 10, 0, 0, 0, time.UTC)
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now: func() time.Time { return currentTime },
 	})
 
@@ -609,6 +619,7 @@ func TestDispatchPendingJobsSendsBoundedBatchAndLeavesRemainderQueued(t *testing
 func TestServerConnectRateLimitRejectsBurstReconnects(t *testing.T) {
 	currentTime := time.Date(2026, time.March, 23, 8, 0, 0, 0, time.UTC)
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now: func() time.Time { return currentTime },
 	})
 	server.grpcConnectRateLimiter = newFixedWindowRateLimiter(1, time.Minute)

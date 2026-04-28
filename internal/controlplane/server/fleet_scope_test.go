@@ -49,6 +49,7 @@ func TestResolveFleetScopeAdminAlwaysGlobal(t *testing.T) {
 	// Admins skip the store lookup entirely — even with non-empty scope
 	// rows in the table, the admin role wins.
 	srv := New(Options{
+		LoginTimingFloor: -1,
 		Now: func() time.Time { return time.Unix(0, 0) },
 	})
 	defer srv.Close()
@@ -90,6 +91,7 @@ func TestResolveFleetScopeOperatorEmptyMeansGlobal(t *testing.T) {
 	// short-circuits with global; the same property is asserted in the
 	// integration tests once the multi-tenant rollout lands.
 	srv := New(Options{
+		LoginTimingFloor: -1,
 		Now: func() time.Time { return time.Unix(0, 0) },
 	})
 	defer srv.Close()

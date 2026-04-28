@@ -185,6 +185,12 @@ type Server struct {
 	// just makes the FE re-fetch /api/auth/csrf-token).
 	csrfSecret []byte
 
+	// loginTimingFloor is the wall-clock minimum the login handler pads
+	// every response to (R-S-19). Per-Server field instead of a package
+	// global so tests can pass 0 via Options without touching shared
+	// state. Production callers leave it at defaultLoginTimingFloor.
+	loginTimingFloor time.Duration
+
 	// Phase-3 §3.4: HMAC key for log-line username pseudonymisation.
 	// Lazy-initialised by Server.usernameHashKey() on first call;
 	// derived from EncryptionKey when set, random per-process otherwise.

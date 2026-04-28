@@ -21,6 +21,7 @@ func TestHTTPEnrollmentTokensExposeConfiguredPanelURL(t *testing.T) {
 	defer store.Close()
 
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 		PanelRuntime: PanelRuntime{
@@ -173,6 +174,7 @@ func TestEnrollmentTokenUsesAgentRootPathInPanelURL(t *testing.T) {
 	defer store.Close()
 
 	srv := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 		PanelRuntime: PanelRuntime{

@@ -30,6 +30,7 @@ func TestHTTPAgentBootstrapUsesConfiguredGRPCPublicEndpoint(t *testing.T) {
 	}
 
 	server := New(Options{
+		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
