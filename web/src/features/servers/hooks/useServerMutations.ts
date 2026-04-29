@@ -33,6 +33,16 @@ export function useServerMutations(serverId: string) {
     onError: (err) => console.error("Failed to rename agent:", err),
   });
 
+  const updateFleetGroupMutation = useMutation({
+    mutationFn: (fleetGroupId: string) => apiClient.updateAgentFleetGroup(serverId, fleetGroupId),
+    onSuccess: () => {
+      invalidateServer();
+      // Fleet-group member counts on the groups list change too.
+      qc.invalidateQueries({ queryKey: ["fleet-groups"] });
+    },
+    onError: (err) => console.error("Failed to reassign agent fleet group:", err),
+  });
+
   const deregisterMutation = useMutation({
     mutationFn: () => apiClient.deregisterAgent(serverId),
     onSuccess: () => {
@@ -48,6 +58,7 @@ export function useServerMutations(serverId: string) {
     revokeCertRecoveryMutation,
     boostDetailMutation,
     renameMutation,
+    updateFleetGroupMutation,
     deregisterMutation,
   };
 }

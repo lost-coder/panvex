@@ -75,6 +75,11 @@ type FleetStore interface {
 	ListAgents(ctx context.Context) ([]AgentRecord, error)
 	DeleteAgent(ctx context.Context, agentID string) error
 	UpdateAgentNodeName(ctx context.Context, agentID string, nodeName string) error
+	// UpdateAgentFleetGroup reassigns the agent to a different fleet
+	// group. Empty fleetGroupID detaches the agent (NULL on the column).
+	// Returns ErrNotFound when the agent doesn't exist; FK-constraint
+	// errors surface verbatim so the HTTP layer can map them to 4xx.
+	UpdateAgentFleetGroup(ctx context.Context, agentID, fleetGroupID string) error
 	// UpdateAgentCertSerial pins the latest-issued client cert serial
 	// for the agent so the gRPC connect path can reject any cert that
 	// does not match (Q4.U-S-04).

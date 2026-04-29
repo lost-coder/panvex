@@ -17,6 +17,7 @@ export function ServerHero({
   onReload,
   onBoostDetail,
   onRename,
+  onChangeFleetGroup,
   onDeregister,
 }: Readonly<{
   server: ServerDetailPageProps["server"];
@@ -26,6 +27,7 @@ export function ServerHero({
   onReload?: (() => void) | undefined;
   onBoostDetail?: (() => void) | undefined;
   onRename?: (() => void) | undefined;
+  onChangeFleetGroup?: (() => void) | undefined;
   onDeregister?: (() => void) | undefined;
 }>) {
   const { systemInfo } = server;
@@ -69,6 +71,7 @@ export function ServerHero({
             onReload={onReload}
             onBoostDetail={onBoostDetail}
             onRename={onRename}
+            onChangeFleetGroup={onChangeFleetGroup}
             onDeregister={onDeregister}
           />
         </div>

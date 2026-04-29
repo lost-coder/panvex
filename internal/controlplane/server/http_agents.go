@@ -14,6 +14,10 @@ type renameAgentRequest struct {
 	NodeName string `json:"node_name"`
 }
 
+type updateAgentFleetGroupRequest struct {
+	FleetGroupID string `json:"fleet_group_id"`
+}
+
 func (s *Server) handleRenameAgent() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		session, user, err := s.requireSession(r)
@@ -261,6 +265,118 @@ func (s *Server) handleDeregisterAgent() http.HandlerFunc {
 		s.appendAuditWithContext(r.Context(), session.UserID, "agents.deregister", agentID, map[string]any{})
 
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// handleUpdateAgentFleetGroup reassigns an agent to a different fleet
+// group. Mirrors handleRenameAgent: scope-checks BOTH the current group
+// (caller must already manage it) AND the target group (caller must be
+// allowed to add the agent to it). Persists via the storage layer,
+// patches the in-memory snapshot, and audit-logs the move with old/new
+// group ids so reassignments are reversible from the audit trail.
+func (s *Server) handleUpdateAgentFleetGroup() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		session, user, err := s.requireSession(r)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		agentID := chi.URLParam(r, "id")
+		if agentID == "" {
+			writeError(w, http.StatusBadRequest, "missing agent id")
+			return
+		}
+
+		var req updateAgentFleetGroupRequest
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		newGroupID := strings.TrimSpace(req.FleetGroupID)
+		if newGroupID == "" {
+			writeError(w, http.StatusBadRequest, "fleet_group_id is required")
+			return
+		}
+
+		// Verify the agent exists and the caller is scoped over its
+		// CURRENT group before any work — otherwise an out-of-scope
+		// caller would learn the agent's existence via the 4xx code.
+		s.mu.RLock()
+		existing, exists := s.agents[agentID]
+		s.mu.RUnlock()
+		if !exists {
+			writeError(w, http.StatusNotFound, msgAgentNotFound)
+			return
+		}
+
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
+			return
+		}
+		if !scope.IsAllowed(existing.FleetGroupID) {
+			writeError(w, http.StatusNotFound, msgAgentNotFound)
+			return
+		}
+		// Operator must also be allowed to add agents to the TARGET
+		// group; otherwise a partial-scope user could exfiltrate an
+		// agent into a group they otherwise cannot manage.
+		if !scope.IsAllowed(newGroupID) {
+			writeError(w, http.StatusForbidden, "fleet group out of scope")
+			return
+		}
+
+		if existing.FleetGroupID == newGroupID {
+			// No-op: return the current shape so the client can
+			// refresh without a special-cased "no change" branch.
+			writeJSON(w, http.StatusOK, existing)
+			return
+		}
+
+		// Reject targeting a non-existent group up front rather than
+		// surfacing the storage-layer FK error to the operator.
+		if s.store != nil {
+			if _, err := s.store.GetFleetGroup(r.Context(), newGroupID); err != nil {
+				if errors.Is(err, storage.ErrNotFound) {
+					writeError(w, http.StatusNotFound, "fleet group not found")
+					return
+				}
+				s.logger.Error("get fleet group for reassign failed", "error", err)
+				writeError(w, http.StatusInternalServerError, msgStorageError)
+				return
+			}
+			if err := s.store.UpdateAgentFleetGroup(r.Context(), agentID, newGroupID); err != nil {
+				if errors.Is(err, storage.ErrNotFound) {
+					writeError(w, http.StatusNotFound, msgAgentNotFound)
+					return
+				}
+				s.logger.Error("update agent fleet group in store failed", "error", err)
+				writeError(w, http.StatusInternalServerError, msgStorageError)
+				return
+			}
+		}
+
+		// Patch the in-memory snapshot so subsequent /agents and
+		// /fleet-groups reads reflect the move without waiting for the
+		// next heartbeat. Captures oldGroupID for the audit event.
+		s.mu.Lock()
+		current, stillExists := s.agents[agentID]
+		if !stillExists {
+			s.mu.Unlock()
+			writeError(w, http.StatusNotFound, msgAgentNotFound)
+			return
+		}
+		oldGroupID := current.FleetGroupID
+		current.FleetGroupID = newGroupID
+		s.agents[agentID] = current
+		s.mu.Unlock()
+
+		s.appendAuditWithContext(r.Context(), session.UserID, "agents.reassign_fleet_group", agentID, map[string]any{
+			"old_fleet_group_id": oldGroupID,
+			"new_fleet_group_id": newGroupID,
+		})
+
+		writeJSON(w, http.StatusOK, current)
 	}
 }
 

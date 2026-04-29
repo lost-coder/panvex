@@ -122,17 +122,34 @@ export function ClientsPage({
         title="Clients"
         subtitle={`${clients.length} client${clients.length === 1 ? "" : "s"}`}
         trailing={
-          onCreate ? (
-            <Button
-              size="sm"
-              onClick={() => {
-                setCreateData({ ...emptyFormData });
-                setCreateOpen(true);
-              }}
-            >
-              Add Client
-            </Button>
-          ) : undefined
+          <div className="flex items-center gap-2">
+            {onDiscoveredClick && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onDiscoveredClick}
+                title="Review clients running on agents that the panel hasn't adopted yet"
+              >
+                Discovered
+                {pendingDiscoveredCount ? (
+                  <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-accent text-bg text-[10px] font-mono">
+                    {pendingDiscoveredCount}
+                  </span>
+                ) : null}
+              </Button>
+            )}
+            {onCreate && (
+              <Button
+                size="sm"
+                onClick={() => {
+                  setCreateData({ ...emptyFormData });
+                  setCreateOpen(true);
+                }}
+              >
+                Add Client
+              </Button>
+            )}
+          </div>
         }
       />
       <div className="px-4 md:px-8 pb-8 flex flex-col gap-5">

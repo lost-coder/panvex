@@ -5,6 +5,7 @@ export interface ServerActionsDropdownProps {
   onReload?: (() => void) | undefined;
   onBoostDetail?: (() => void) | undefined;
   onRename?: (() => void) | undefined;
+  onChangeFleetGroup?: (() => void) | undefined;
   onDeregister?: (() => void) | undefined;
 }
 
@@ -12,6 +13,7 @@ export function ServerActionsDropdown({
   onReload,
   onBoostDetail,
   onRename,
+  onChangeFleetGroup,
   onDeregister,
 }: Readonly<ServerActionsDropdownProps>) {
   const [open, setOpen] = React.useState(false);
@@ -74,6 +76,17 @@ export function ServerActionsDropdown({
                 className="px-3 py-2 text-left text-sm text-fg hover:bg-bg-card-hover transition-colors"
               >
                 Rename Server
+              </button>
+            )}
+            {onChangeFleetGroup && (
+              <button
+                onClick={() => {
+                  onChangeFleetGroup();
+                  setOpen(false);
+                }}
+                className="px-3 py-2 text-left text-sm text-fg hover:bg-bg-card-hover transition-colors"
+              >
+                Change Fleet Group
               </button>
             )}
             {onDeregister && (

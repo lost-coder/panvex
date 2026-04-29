@@ -514,6 +514,16 @@ func (s *memoryStore) UpdateAgentNodeName(_ context.Context, agentID string, nod
 	return nil
 }
 
+func (s *memoryStore) UpdateAgentFleetGroup(_ context.Context, agentID, fleetGroupID string) error {
+	agent, ok := s.agents[agentID]
+	if !ok {
+		return storage.ErrNotFound
+	}
+	agent.FleetGroupID = fleetGroupID
+	s.agents[agentID] = agent
+	return nil
+}
+
 func (s *memoryStore) UpdateAgentCertSerial(_ context.Context, agentID string, serial string) error {
 	agent, ok := s.agents[agentID]
 	if !ok {

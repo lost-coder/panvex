@@ -77,6 +77,16 @@ export interface ServerDetailPageProps {
   onAllowReEnrollment?: (() => void) | undefined;
   onRevokeGrant?: (() => void) | undefined;
   onRename?: ((name: string) => void) | undefined;
+  /**
+   * Reassign this server to a different fleet group. The dialog
+   * presents `fleetGroups` as choices and only fires the callback
+   * when the selection actually differs from the current group.
+   */
+  onChangeFleetGroup?: ((fleetGroupId: string) => void) | undefined;
+  /** All groups the operator can move the server to. */
+  fleetGroups?: import("@/shared/api/api").FleetGroupEntry[] | undefined;
+  /** Current fleet-group id of this server (from the live agent record). */
+  currentFleetGroupId?: string | undefined;
   onDeregister?: (() => void) | undefined;
   metricsChart?: {
     points: import("@/features/dashboard/ui/MetricsChartSection").MetricsPoint[];

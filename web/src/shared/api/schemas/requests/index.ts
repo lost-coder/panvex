@@ -4,6 +4,7 @@ export * from "./createUserRequest";
 export * from "./updateUserRequest";
 export * from "./clientMutationRequest";
 export * from "./renameAgentRequest";
+export * from "./updateAgentFleetGroupRequest";
 export * from "./createEnrollmentTokenRequest";
 export * from "./createJobRequest";
 export * from "./updateAppearanceSettingsRequest";

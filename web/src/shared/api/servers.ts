@@ -3,6 +3,7 @@ import {
   agentCertificateRecoveryGrantRequestSchema,
   agentListSchema,
   renameAgentRequestSchema,
+  updateAgentFleetGroupRequestSchema,
 } from "./schemas";
 
 export type RuntimeEvent = {
@@ -138,6 +139,15 @@ export const serversApi = {
         renameAgentRequestSchema,
         { node_name: nodeName },
       )
+    }),
+  updateAgentFleetGroup: (agentID: string, fleetGroupID: string) =>
+    api<Agent>(`${apiBasePath}/agents/${agentID}/fleet-group`, {
+      method: "PUT",
+      body: encodeRequest(
+        `${apiBasePath}/agents/${agentID}/fleet-group`,
+        updateAgentFleetGroupRequestSchema,
+        { fleet_group_id: fleetGroupID },
+      ),
     }),
   deregisterAgent: (agentID: string) =>
     api<void>(`${apiBasePath}/agents/${agentID}`, {

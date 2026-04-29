@@ -157,6 +157,7 @@ func (s *Server) routes() http.Handler {
 					operator.Patch("/integration-providers/{id}", s.handleUpdateIntegrationProvider())
 					operator.Delete("/integration-providers/{id}", s.handleDeleteIntegrationProvider())
 					operator.Patch("/agents/{id}", s.handleRenameAgent())
+					operator.With(sensitive).Put("/agents/{id}/fleet-group", s.handleUpdateAgentFleetGroup())
 					operator.Get("/agents/enrollment-tokens", s.handleListEnrollmentTokens())
 					operator.With(sensitive).Post("/agents/enrollment-tokens", s.handleCreateEnrollmentToken())
 					operator.With(sensitive).Post("/agents/enrollment-tokens/{value}/revoke", s.handleRevokeEnrollmentToken())

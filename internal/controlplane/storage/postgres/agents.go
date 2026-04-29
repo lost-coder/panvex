@@ -162,6 +162,30 @@ func (s *Store) UpdateAgentNodeName(ctx context.Context, agentID string, nodeNam
 	return nil
 }
 
+func (s *Store) UpdateAgentFleetGroup(ctx context.Context, agentID, fleetGroupID string) error {
+	var fleetGroup sql.NullString
+	if fleetGroupID != "" {
+		fleetGroup.Valid = true
+		fleetGroup.String = fleetGroupID
+	}
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE agents
+		SET fleet_group_id = $2
+		WHERE id = $1
+	`, agentID, fleetGroup)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return storage.ErrNotFound
+	}
+	return nil
+}
+
 func (s *Store) DeleteInstancesByAgent(ctx context.Context, agentID string) error {
 	_, err := s.db.ExecContext(ctx, `
 		DELETE FROM telemt_instances

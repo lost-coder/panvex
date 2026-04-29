@@ -6,6 +6,7 @@ import type { MetricsPoint } from "@/features/dashboard/ui/MetricsChartSection";
 import { useServerDetail } from "./hooks/useServerDetail";
 import { useServerMutations } from "./hooks/useServerMutations";
 import { useServerLoadHistory } from "./hooks/useServerHistory";
+import { useFleetGroups } from "./hooks/useFleetGroups";
 import { useUpdates } from "@/shared/hooks/useUpdates";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { apiClient, type ServerLoadPoint } from "@/shared/api/api";
@@ -56,8 +57,10 @@ export function ServerDetailContainer() {
     revokeCertRecoveryMutation,
     boostDetailMutation,
     renameMutation,
+    updateFleetGroupMutation,
     deregisterMutation,
   } = useServerMutations(serverId ?? "");
+  const { fleetGroups } = useFleetGroups();
   const { query: updatesQuery } = useUpdates();
   const latestAgentVersion = updatesQuery.data?.state.latest_agent_version;
   const navigate = useNavigate();
@@ -119,6 +122,9 @@ export function ServerDetailContainer() {
       onAllowReEnrollment={() => allowCertRecoveryMutation.mutate()}
       onRevokeGrant={() => revokeCertRecoveryMutation.mutate()}
       onRename={(name: string) => renameMutation.mutate(name)}
+      onChangeFleetGroup={(fleetGroupId: string) => updateFleetGroupMutation.mutate(fleetGroupId)}
+      fleetGroups={fleetGroups}
+      currentFleetGroupId={raw?.server?.agent?.fleet_group_id ?? ""}
       // P2-UX-04: deregistering revokes the agent's cert and drops it
       // from the fleet — a second click shouldn't happen on a slip.
       onDeregister={async () => {

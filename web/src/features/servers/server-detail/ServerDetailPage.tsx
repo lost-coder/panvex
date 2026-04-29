@@ -19,6 +19,7 @@ import { GatesPanel } from "./components/GatesPanel";
 import { UpstreamsList } from "./components/UpstreamsList";
 import { DcDetailSheet } from "./components/DcDetailSheet";
 import { RenameDialog } from "./components/RenameDialog";
+import { ChangeFleetGroupDialog } from "./components/ChangeFleetGroupDialog";
 import { DeregisterDialog } from "./components/DeregisterDialog";
 import type { PulseTickData } from "./components/PulseGrid";
 import {
@@ -60,6 +61,9 @@ export function ServerDetailPage({
   onAllowReEnrollment,
   onRevokeGrant,
   onRename,
+  onChangeFleetGroup,
+  fleetGroups,
+  currentFleetGroupId,
   onDeregister,
   metricsChart,
 }: Readonly<ServerDetailPageProps>) {
@@ -68,6 +72,7 @@ export function ServerDetailPage({
 
   const [selectedDc, setSelectedDc] = useState<ServerDcData | null>(null);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [fleetGroupOpen, setFleetGroupOpen] = useState(false);
   const [deregisterOpen, setDeregisterOpen] = useState(false);
 
   // ─── Derived data — memoised so child components that take props
@@ -258,6 +263,10 @@ export function ServerDetailPage({
     () => (onRename ? setRenameOpen(true) : undefined),
     [onRename],
   );
+  const handleOpenChangeFleetGroup = useCallback(
+    () => (onChangeFleetGroup ? setFleetGroupOpen(true) : undefined),
+    [onChangeFleetGroup],
+  );
   const handleOpenDeregister = useCallback(
     () => (onDeregister ? setDeregisterOpen(true) : undefined),
     [onDeregister],
@@ -288,6 +297,7 @@ export function ServerDetailPage({
                 onReload={onReload}
                 onBoostDetail={onBoostDetail}
                 onRename={onRename ? handleOpenRename : undefined}
+                onChangeFleetGroup={onChangeFleetGroup ? handleOpenChangeFleetGroup : undefined}
                 onDeregister={onDeregister ? handleOpenDeregister : undefined}
               />
             </div>
@@ -303,6 +313,7 @@ export function ServerDetailPage({
         onReload={onReload}
         onBoostDetail={onBoostDetail}
         onRename={onRename ? handleOpenRename : undefined}
+        onChangeFleetGroup={onChangeFleetGroup ? handleOpenChangeFleetGroup : undefined}
         onDeregister={onDeregister ? handleOpenDeregister : undefined}
       />
 
@@ -352,6 +363,14 @@ export function ServerDetailPage({
         onOpenChange={setRenameOpen}
         currentName={server.name}
         onRename={onRename}
+      />
+
+      <ChangeFleetGroupDialog
+        open={fleetGroupOpen}
+        onOpenChange={setFleetGroupOpen}
+        currentFleetGroupId={currentFleetGroupId ?? ""}
+        fleetGroups={fleetGroups ?? []}
+        onChange={onChangeFleetGroup}
       />
 
       <DeregisterDialog
