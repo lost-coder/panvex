@@ -133,6 +133,11 @@ func (s *Server) routes() http.Handler {
 					operator.Get("/discovered-clients", s.handleDiscoveredClients())
 					operator.With(sensitive).Post("/discovered-clients/{id}/adopt", s.handleAdoptDiscoveredClient())
 					operator.With(sensitive).Post("/discovered-clients/{id}/ignore", s.handleIgnoreDiscoveredClient())
+					// Bulk adopt: one rate-limit token for the whole batch
+					// (the per-id sensitive limit is too tight for legitimate
+					// fleet-wide imports — 25 clients × N nodes blows the
+					// 10/min budget within seconds).
+					operator.With(sensitive).Post("/discovered-clients/bulk-adopt", s.handleBulkAdoptDiscoveredClients())
 					operator.Post("/telemetry/servers/{id}/refresh-diagnostics", s.handleTelemetryServerRefreshDiagnostics())
 					operator.Get("/fleet-groups", s.handleListFleetGroups())
 					operator.Post("/fleet-groups", s.handleCreateFleetGroup())

@@ -97,6 +97,24 @@ export type AdoptDiscoveredClientResponse = {
   name: string;
 };
 
+export type BulkAdoptResultStatus = "adopted" | "already_adopted" | "error";
+
+export type BulkAdoptResult = {
+  id: string;
+  status: BulkAdoptResultStatus;
+  client_id?: string;
+  name?: string;
+  message?: string;
+};
+
+export type BulkAdoptDiscoveredResponse = {
+  results: BulkAdoptResult[];
+  adopted_count: number;
+  already_adopted_count: number;
+  error_count: number;
+  skipped_out_of_scope?: number;
+};
+
 export type ClientIPEntry = {
   ip_address: string;
   first_seen: string;
@@ -164,6 +182,17 @@ export const clientsApi = {
   adoptDiscoveredClient: (id: string) =>
     api<AdoptDiscoveredClientResponse>(`${apiBasePath}/discovered-clients/${id}/adopt`, {
       method: "POST"
+    }),
+  // Bulk adopt: server processes the whole list under one rate-limit
+  // token and folds duplicate-by-(name, secret) discovered records into
+  // the same managed client automatically. The frontend no longer
+  // needs to PUT agent_ids back or fire per-id ignore calls — that
+  // dance was the source of both the rate-limit cascade and the
+  // accidental ad_tag auto-generation triggered by the follow-up PUT.
+  bulkAdoptDiscoveredClients: (ids: string[]) =>
+    api<BulkAdoptDiscoveredResponse>(`${apiBasePath}/discovered-clients/bulk-adopt`, {
+      method: "POST",
+      body: JSON.stringify({ ids }),
     }),
   ignoreDiscoveredClient: (id: string) =>
     api<void>(`${apiBasePath}/discovered-clients/${id}/ignore`, {

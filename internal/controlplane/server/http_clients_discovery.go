@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -165,6 +166,96 @@ func writeAdoptDiscoveredClientError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, err.Error())
 	default:
 		handleClientMutationError(w, err)
+	}
+}
+
+type bulkAdoptRequest struct {
+	IDs []string `json:"ids"`
+}
+
+type bulkAdoptResponse struct {
+	Results             []BulkAdoptResult `json:"results"`
+	AdoptedCount        int               `json:"adopted_count"`
+	AlreadyAdoptedCount int               `json:"already_adopted_count"`
+	ErrorCount          int               `json:"error_count"`
+	SkippedOutOfScope   int               `json:"skipped_out_of_scope,omitempty"`
+}
+
+const maxBulkAdoptIDs = 500
+
+// handleBulkAdoptDiscoveredClients adopts every discovered id in one
+// HTTP request. Each id is scope-checked individually; out-of-scope ids
+// are dropped (not surfaced as errors so an operator with partial scope
+// cannot probe ids belonging to other groups). The whole batch shares
+// one rate-limit token so legitimate fleet-wide adopts don't tarball
+// against the per-user sensitive limiter.
+func (s *Server) handleBulkAdoptDiscoveredClients() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		session, _, scope, ok := s.requireClientsAccessWithScope(w, r)
+		if !ok {
+			return
+		}
+
+		var req bulkAdoptRequest
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		if len(req.IDs) == 0 {
+			writeJSON(w, http.StatusOK, bulkAdoptResponse{Results: []BulkAdoptResult{}})
+			return
+		}
+		if len(req.IDs) > maxBulkAdoptIDs {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("too many ids (max %d)", maxBulkAdoptIDs))
+			return
+		}
+
+		// Filter out-of-scope ids before grabbing the adopt lock so we
+		// don't spend write-lock time iterating ids the operator can't
+		// touch. dedupe ids while we're at it — repeated entries would
+		// just resolve to "already_adopted" but waste work.
+		seen := make(map[string]struct{}, len(req.IDs))
+		filtered := make([]string, 0, len(req.IDs))
+		skipped := 0
+		for _, id := range req.IDs {
+			if id == "" {
+				continue
+			}
+			if _, dup := seen[id]; dup {
+				continue
+			}
+			seen[id] = struct{}{}
+			inScope, scopeErr := s.discoveredClientInScope(r.Context(), scope, id)
+			if scopeErr != nil {
+				if errors.Is(scopeErr, storage.ErrNotFound) {
+					skipped++
+					continue
+				}
+				s.logger.Error("scope-check discovered client failed (bulk)", "id", id, "error", scopeErr)
+				writeError(w, http.StatusInternalServerError, msgInternalError)
+				return
+			}
+			if !inScope {
+				skipped++
+				continue
+			}
+			filtered = append(filtered, id)
+		}
+
+		results := s.bulkAdoptDiscoveredClients(r.Context(), filtered, session.UserID, s.now())
+
+		resp := bulkAdoptResponse{Results: results, SkippedOutOfScope: skipped}
+		for _, r := range results {
+			switch r.Status {
+			case "adopted":
+				resp.AdoptedCount++
+			case "already_adopted":
+				resp.AlreadyAdoptedCount++
+			default:
+				resp.ErrorCount++
+			}
+		}
+		writeJSON(w, http.StatusOK, resp)
 	}
 }
 

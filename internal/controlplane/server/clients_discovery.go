@@ -215,10 +215,6 @@ func (s *Server) listDiscoveredClients(ctx context.Context) ([]discoveredClient,
 }
 
 func (s *Server) adoptDiscoveredClient(ctx context.Context, id, actorID string, observedAt time.Time) (managedClient, error) {
-	if s.store == nil {
-		return managedClient{}, storage.ErrNotFound
-	}
-
 	// P2-LOG-03 / L-11: serialize the whole read-check-create-mark sequence
 	// under adoptMu so that two concurrent adopts of the same discovered
 	// record cannot both pass the status check and each create a managed
@@ -226,6 +222,17 @@ func (s *Server) adoptDiscoveredClient(ctx context.Context, id, actorID string, 
 	// below) which closes P2-LOG-04 / L-12.
 	s.adoptMu.Lock()
 	defer s.adoptMu.Unlock()
+	return s.adoptDiscoveredClientLocked(ctx, id, actorID, observedAt)
+}
+
+// adoptDiscoveredClientLocked runs the adopt logic without acquiring
+// adoptMu. Callers (adoptDiscoveredClient, bulkAdoptDiscoveredClients)
+// MUST hold adoptMu. Splitting this out lets bulk-adopt take the lock
+// once for the whole batch instead of churning it per id.
+func (s *Server) adoptDiscoveredClientLocked(ctx context.Context, id, actorID string, observedAt time.Time) (managedClient, error) {
+	if s.store == nil {
+		return managedClient{}, storage.ErrNotFound
+	}
 
 	// Fresh read under the lock — do NOT trust a record fetched before the
 	// mutex was acquired; another goroutine may have already flipped the
@@ -251,17 +258,25 @@ func (s *Server) adoptDiscoveredClient(ctx context.Context, id, actorID string, 
 		return managedClient{}, err
 	}
 
+	// Same logical client (name+secret) may have been discovered on
+	// multiple nodes — fetch every still-pending sibling so the resulting
+	// managed client is scoped to ALL of them on first adopt. Without
+	// this, the panel ends up with a client scoped only to the agent
+	// whose record was passed in, and the auto-flip below would mark the
+	// other discovered rows "adopted" before they were ever processed.
+	siblings := s.collectAdoptSiblings(ctx, record)
+
 	// Check if a managed client with the same name+secret already exists
 	// (e.g. adopted from a different node). If so, merge by adding an
 	// assignment and deployment to the existing client instead of creating
 	// a duplicate.
 	if existing, ok := s.findManagedClientByNameAndSecret(record.ClientName, secret); ok {
-		s.logger.Info("adopting discovered client into existing managed client", "discovered_id", id, "client_id", existing.ID, "client_name", record.ClientName, "agent_id", record.AgentID)
-		return s.mergeAdoptIntoExistingClient(ctx, existing, record, actorID, id, observedAt)
+		s.logger.Info("adopting discovered client into existing managed client", "discovered_id", id, "client_id", existing.ID, "client_name", record.ClientName, "agent_id", record.AgentID, "siblings", len(siblings))
+		return s.mergeAdoptIntoExistingClient(ctx, existing, record, siblings, actorID, id, observedAt)
 	}
-	s.logger.Info("adopting discovered client as new managed client", "discovered_id", id, "client_name", record.ClientName, "agent_id", record.AgentID, "traffic_bytes", record.TotalOctets, "active_ips", record.ActiveUniqueIPs)
+	s.logger.Info("adopting discovered client as new managed client", "discovered_id", id, "client_name", record.ClientName, "agent_id", record.AgentID, "traffic_bytes", record.TotalOctets, "active_ips", record.ActiveUniqueIPs, "siblings", len(siblings))
 
-	client, assignments, deployments := s.buildAdoptedClientState(record, secret, expirationRFC3339, observedAt)
+	client, assignments, deployments := s.buildAdoptedClientState(record, siblings, secret, expirationRFC3339, observedAt)
 
 	if err := s.persistAdoptedClient(ctx, id, client, assignments, deployments, observedAt); err != nil {
 		return managedClient{}, err
@@ -273,15 +288,109 @@ func (s *Server) adoptDiscoveredClient(ctx context.Context, id, actorID string, 
 	// next snapshot.
 	s.replaceClientStateInMemory(client, assignments, deployments)
 
-	// Seed live usage with the stats Telemt already reported for this user.
+	// Seed live usage with the stats Telemt already reported for this user
+	// — primary record plus every sibling we just folded in.
 	s.seedClientUsage(ctx, client.ID, record.AgentID, record.TotalOctets, record.CurrentConnections, record.ActiveUniqueIPs, observedAt)
+	for _, sib := range siblings {
+		s.seedClientUsage(ctx, client.ID, sib.AgentID, sib.TotalOctets, sib.CurrentConnections, sib.ActiveUniqueIPs, observedAt)
+	}
 
 	s.appendAuditWithContext(ctx, actorID, "clients.adopted", id, map[string]any{
-		"client_name": record.ClientName,
-		"client_id":   client.ID,
+		"client_name":     record.ClientName,
+		"client_id":       client.ID,
+		"sibling_records": len(siblings),
 	})
 
 	return client, nil
+}
+
+// collectAdoptSiblings returns every still-pending discovered record
+// that shares (ClientName, Secret) with the primary record. Rows
+// already adopted/ignored are skipped, as is the primary itself. An
+// empty secret never matches siblings (we cannot trust name alone to
+// represent the same Telemt user).
+func (s *Server) collectAdoptSiblings(ctx context.Context, primary storage.DiscoveredClientRecord) []storage.DiscoveredClientRecord {
+	if s.store == nil || strings.TrimSpace(primary.Secret) == "" {
+		return nil
+	}
+	all, err := s.store.ListDiscoveredClients(ctx)
+	if err != nil {
+		s.logger.Warn("collectAdoptSiblings: list discovered failed", "error", err)
+		return nil
+	}
+	siblings := make([]storage.DiscoveredClientRecord, 0)
+	seenAgents := map[string]struct{}{primary.AgentID: {}}
+	for _, dc := range all {
+		if dc.ID == primary.ID || dc.Status == discoveredClientStatusAdopted {
+			continue
+		}
+		if dc.Secret != primary.Secret || dc.ClientName != primary.ClientName {
+			continue
+		}
+		if _, dup := seenAgents[dc.AgentID]; dup {
+			continue
+		}
+		seenAgents[dc.AgentID] = struct{}{}
+		siblings = append(siblings, dc)
+	}
+	return siblings
+}
+
+// bulkAdoptDiscoveredClients adopts every id in a single locked
+// session. Holding adoptMu across the whole batch (rather than
+// re-acquiring per id) keeps siblings stable while the loop walks
+// the list and lets the per-call duplicate-flip naturally short-
+// circuit subsequent ids belonging to the same logical client.
+//
+// Returns one BulkAdoptResult per input id in the same order. The
+// outer caller decides whether to keep the bulk request as a single
+// rate-limited HTTP unit; this method makes no rate-limit decisions
+// itself.
+func (s *Server) bulkAdoptDiscoveredClients(ctx context.Context, ids []string, actorID string, observedAt time.Time) []BulkAdoptResult {
+	if len(ids) == 0 {
+		return nil
+	}
+	s.adoptMu.Lock()
+	defer s.adoptMu.Unlock()
+
+	results := make([]BulkAdoptResult, 0, len(ids))
+	for _, id := range ids {
+		client, err := s.adoptDiscoveredClientLocked(ctx, id, actorID, observedAt)
+		switch {
+		case err == nil:
+			results = append(results, BulkAdoptResult{
+				ID:       id,
+				Status:   "adopted",
+				ClientID: client.ID,
+				Name:     client.Name,
+			})
+		case errors.Is(err, ErrAlreadyAdopted):
+			// Either a previous iteration in this same bulk pulled this
+			// record in as a sibling (correct, expected outcome) or a
+			// concurrent adopt got there first. Either way the discovered
+			// row is now resolved — surface a non-error status so the UI
+			// can count it as "handled" rather than failed.
+			results = append(results, BulkAdoptResult{ID: id, Status: "already_adopted"})
+		case errors.Is(err, storage.ErrNotFound):
+			results = append(results, BulkAdoptResult{ID: id, Status: "error", Message: "not found"})
+		default:
+			s.logger.Error("bulk adopt: per-id failure", "discovered_id", id, "error", err)
+			results = append(results, BulkAdoptResult{ID: id, Status: "error", Message: err.Error()})
+		}
+	}
+	return results
+}
+
+// BulkAdoptResult is the per-id outcome from bulkAdoptDiscoveredClients.
+// Status is one of: "adopted" (new client or merged into existing),
+// "already_adopted" (resolved via a sibling earlier in the batch or by
+// a concurrent caller), "error" (Message holds details).
+type BulkAdoptResult struct {
+	ID       string `json:"id"`
+	Status   string `json:"status"`
+	ClientID string `json:"client_id,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Message  string `json:"message,omitempty"`
 }
 
 // normalizedAdoptSecret validates the secret carried on the discovered record
@@ -298,9 +407,12 @@ func normalizedAdoptSecret(raw string) (string, error) {
 	return secret, nil
 }
 
-// buildAdoptedClientState assembles the managedClient + initial assignment +
-// initial deployment for a freshly-adopted discovered record.
-func (s *Server) buildAdoptedClientState(record storage.DiscoveredClientRecord, secret string, expirationRFC3339 string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment) { // gitleaks:allow — `secret` is a function parameter name, not a value
+// buildAdoptedClientState assembles the managedClient + initial
+// assignments + initial deployments for a freshly-adopted discovered
+// record. When siblings is non-empty, every sibling's agent_id is
+// included so the resulting managed client is scoped to every node
+// where Telemt was already running this user.
+func (s *Server) buildAdoptedClientState(record storage.DiscoveredClientRecord, siblings []storage.DiscoveredClientRecord, secret string, expirationRFC3339 string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment) { // gitleaks:allow — `secret` is a function parameter name, not a value
 	client := managedClient{
 		ID:                s.nextClientID(),
 		Name:              record.ClientName,
@@ -314,29 +426,35 @@ func (s *Server) buildAdoptedClientState(record storage.DiscoveredClientRecord, 
 		UpdatedAt:         observedAt,
 	}
 
-	// Assign to the specific agent the client was discovered on.
-	assignments := []managedClientAssignment{
-		{
+	appliedAt := observedAt
+	assignments := make([]managedClientAssignment, 0, 1+len(siblings))
+	deployments := make([]managedClientDeployment, 0, 1+len(siblings))
+
+	addAgent := func(agentID, connectionLink string) {
+		assignments = append(assignments, managedClientAssignment{
 			ID:         s.nextClientAssignmentID(),
 			ClientID:   client.ID,
 			TargetType: clientAssignmentTargetAgent,
-			AgentID:    record.AgentID,
+			AgentID:    agentID,
 			CreatedAt:  observedAt,
-		},
-	}
-
-	// Deployment is already applied — user exists on server.
-	appliedAt := observedAt
-	deployments := []managedClientDeployment{
-		{
+		})
+		deployments = append(deployments, managedClientDeployment{
 			ClientID:         client.ID,
-			AgentID:          record.AgentID,
+			AgentID:          agentID,
 			DesiredOperation: "adopt",
 			Status:           clientDeploymentStatusSucceeded,
-			ConnectionLink:   record.ConnectionLink,
+			ConnectionLink:   connectionLink,
 			LastAppliedAt:    &appliedAt,
 			UpdatedAt:        observedAt,
-		},
+		})
+	}
+
+	addAgent(record.AgentID, record.ConnectionLink)
+	for _, sib := range siblings {
+		if sib.AgentID == "" || sib.AgentID == record.AgentID {
+			continue
+		}
+		addAgent(sib.AgentID, sib.ConnectionLink)
 	}
 	return client, assignments, deployments
 }
@@ -463,50 +581,74 @@ func (s *Server) mergeAdoptIntoExistingClient(
 	ctx context.Context,
 	existing managedClient,
 	record storage.DiscoveredClientRecord,
+	siblings []storage.DiscoveredClientRecord,
 	actorID string,
 	discoveredID string,
 	observedAt time.Time,
 ) (managedClient, error) {
-	// Build new assignment for this agent.
-	newAssignment := managedClientAssignment{
-		ID:         s.nextClientAssignmentID(),
-		ClientID:   existing.ID,
-		TargetType: clientAssignmentTargetAgent,
-		AgentID:    record.AgentID,
-		CreatedAt:  observedAt,
-	}
-
-	// Build deployment record.
-	appliedAt := observedAt
-	newDeployment := managedClientDeployment{
-		ClientID:         existing.ID,
-		AgentID:          record.AgentID,
-		DesiredOperation: "adopt",
-		Status:           clientDeploymentStatusSucceeded,
-		ConnectionLink:   record.ConnectionLink,
-		LastAppliedAt:    &appliedAt,
-		UpdatedAt:        observedAt,
-	}
-
-	// Merge with existing assignments and deployments.
+	// Snapshot current assignments/deployments and build a set of agents
+	// already covered so we don't append duplicates when adding the
+	// primary record + siblings.
 	s.clientsMu.RLock()
 	existingAssignments := append([]managedClientAssignment(nil), s.clientAssignments[existing.ID]...)
-	existingDeployments := make([]managedClientDeployment, 0, len(s.clientDeployments[existing.ID])+1)
+	existingDeployments := make([]managedClientDeployment, 0, len(s.clientDeployments[existing.ID])+1+len(siblings))
 	for _, d := range s.clientDeployments[existing.ID] {
 		existingDeployments = append(existingDeployments, d)
 	}
 	s.clientsMu.RUnlock()
 
-	existingAssignments = append(existingAssignments, newAssignment)
-	existingDeployments = append(existingDeployments, newDeployment)
+	covered := make(map[string]struct{}, len(existingAssignments))
+	for _, a := range existingAssignments {
+		if a.TargetType == clientAssignmentTargetAgent && a.AgentID != "" {
+			covered[a.AgentID] = struct{}{}
+		}
+	}
+
+	appliedAt := observedAt
+	addAgent := func(agentID, connectionLink string) {
+		if agentID == "" {
+			return
+		}
+		if _, ok := covered[agentID]; ok {
+			return
+		}
+		covered[agentID] = struct{}{}
+		existingAssignments = append(existingAssignments, managedClientAssignment{
+			ID:         s.nextClientAssignmentID(),
+			ClientID:   existing.ID,
+			TargetType: clientAssignmentTargetAgent,
+			AgentID:    agentID,
+			CreatedAt:  observedAt,
+		})
+		existingDeployments = append(existingDeployments, managedClientDeployment{
+			ClientID:         existing.ID,
+			AgentID:          agentID,
+			DesiredOperation: "adopt",
+			Status:           clientDeploymentStatusSucceeded,
+			ConnectionLink:   connectionLink,
+			LastAppliedAt:    &appliedAt,
+			UpdatedAt:        observedAt,
+		})
+	}
+
+	addAgent(record.AgentID, record.ConnectionLink)
+	for _, sib := range siblings {
+		addAgent(sib.AgentID, sib.ConnectionLink)
+	}
 
 	existing.UpdatedAt = observedAt
 	if err := s.replaceClientStateWithContext(ctx, existing, existingAssignments, existingDeployments); err != nil {
 		return managedClient{}, err
 	}
 
-	// Seed usage from this agent's Telemt data.
+	// Seed usage from primary + siblings.
 	s.seedClientUsage(ctx, existing.ID, record.AgentID, record.TotalOctets, record.CurrentConnections, record.ActiveUniqueIPs, observedAt)
+	for _, sib := range siblings {
+		if sib.AgentID == record.AgentID {
+			continue
+		}
+		s.seedClientUsage(ctx, existing.ID, sib.AgentID, sib.TotalOctets, sib.CurrentConnections, sib.ActiveUniqueIPs, observedAt)
+	}
 
 	// Mark discovered record as adopted.
 	if err := s.store.UpdateDiscoveredClientStatus(ctx, discoveredID, discoveredClientStatusAdopted, observedAt.UTC()); err != nil {
@@ -517,9 +659,10 @@ func (s *Server) mergeAdoptIntoExistingClient(
 	}
 
 	s.appendAuditWithContext(ctx, actorID, "clients.adopted_merge", discoveredID, map[string]any{
-		"client_name": record.ClientName,
-		"client_id":   existing.ID,
-		"agent_id":    record.AgentID,
+		"client_name":     record.ClientName,
+		"client_id":       existing.ID,
+		"agent_id":        record.AgentID,
+		"sibling_records": len(siblings),
 	})
 
 	return existing, nil

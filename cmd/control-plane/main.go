@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"strings"
 	"time"
@@ -100,6 +101,11 @@ type serveConfig struct {
 	TrustedProxyCIDRs    []*net.IPNet
 	EncryptionKey        string
 	LogLevel             string
+	// LogFile, when non-empty, mirrors every log line into the named
+	// path in addition to stderr. The file is opened in append mode.
+	// Rotation is delegated to the host (logrotate, systemd-journal, …)
+	// — the panel does not rotate it itself.
+	LogFile string
 }
 
 const restartExitCode = 78
@@ -183,9 +189,19 @@ func runServe(args []string) error {
 	// Wrap the text handler with the per-request slog handler so every
 	// log line emitted from inside an HTTP handler picks up request_id
 	// from the request context (see server.requestIDMiddleware).
-	baseHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: parseLogLevel(options.LogLevel)})
+	logSink, logCloser, err := openLogSink(options.LogFile)
+	if err != nil {
+		return fmt.Errorf("open log file: %w", err)
+	}
+	if logCloser != nil {
+		defer func() { _ = logCloser() }()
+	}
+	baseHandler := slog.NewTextHandler(logSink, &slog.HandlerOptions{Level: parseLogLevel(options.LogLevel)})
 	logger := slog.New(server.NewSlogContextHandler(baseHandler))
 	slog.SetDefault(logger)
+	if options.LogFile != "" {
+		logger.Info("logging to file", "path", options.LogFile)
+	}
 
 	otelShutdown := initOtelTracing()
 	// Shutdown BEFORE store.Close/api.Close so exporter can flush while
@@ -508,6 +524,7 @@ func parseServeConfig(args []string) (serveConfig, error) {
 	encryptionKeyFile := flags.String("encryption-key-file", "", "Path to file containing the passphrase for CA private key encryption")
 	encryptionKeyStdin := flags.Bool("encryption-key-stdin", false, "Read the CA private key encryption passphrase from stdin (single line)")
 	logLevel := flags.String("log-level", "info", "Log level: debug, info, warn, error")
+	logFile := flags.String("log-file", strings.TrimSpace(os.Getenv("PANVEX_LOG_FILE")), "Path to log file (mirrors stderr; appended). Empty = stderr only.")
 	if err := flags.Parse(args); err != nil {
 		return serveConfig{}, err
 	}
@@ -528,10 +545,24 @@ func parseServeConfig(args []string) (serveConfig, error) {
 	})
 
 	if path := strings.TrimSpace(*configPath); path != "" {
-		return loadConfigFileServeConfig(path, explicitLegacyFlags, parsedCIDRs, encryptionKey, *logLevel)
+		cfg, err := loadConfigFileServeConfig(path, explicitLegacyFlags, parsedCIDRs, encryptionKey, *logLevel)
+		if err != nil {
+			return cfg, err
+		}
+		// CLI/env --log-file overrides any config-file value: ops can
+		// flip a runaway log destination without re-rendering the TOML.
+		if v := strings.TrimSpace(*logFile); v != "" {
+			cfg.LogFile = v
+		}
+		return cfg, nil
 	}
 
-	return loadLegacyServeConfig(*httpAddr, *grpcAddr, *restartMode, *storageDriver, *storageDSN, parsedCIDRs, encryptionKey, *logLevel)
+	cfg, err := loadLegacyServeConfig(*httpAddr, *grpcAddr, *restartMode, *storageDriver, *storageDSN, parsedCIDRs, encryptionKey, *logLevel)
+	if err != nil {
+		return cfg, err
+	}
+	cfg.LogFile = strings.TrimSpace(*logFile)
+	return cfg, nil
 }
 
 // newControlPlaneHTTPServer builds the control-plane HTTP server with hardened
@@ -572,6 +603,27 @@ func newControlPlaneGRPCServer(tlsConfig *tls.Config) *grpc.Server {
 		// which is the no-op provider unless otelcp.Init installed one.
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 	)
+}
+
+// openLogSink returns the io.Writer used by the slog text handler
+// together with an optional close function. When path is empty the
+// sink is os.Stderr alone. When set, the file is opened append-only
+// and tee'd with stderr so operators keep getting live console output
+// while a persistent file builds up for post-mortem analysis.
+func openLogSink(path string) (io.Writer, func() error, error) {
+	if strings.TrimSpace(path) == "" {
+		return os.Stderr, nil, nil
+	}
+	if dir := filepath.Dir(path); dir != "" && dir != "." {
+		// Best-effort mkdir — surfaces as an OpenFile error if the path
+		// is still unreachable after the call.
+		_ = os.MkdirAll(dir, 0o755)
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return nil, nil, err
+	}
+	return io.MultiWriter(os.Stderr, f), f.Close, nil
 }
 
 // parseLogLevel maps a human-readable level name to the corresponding slog.Level.

@@ -17,7 +17,7 @@ import {
   useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
-import { LayoutDashboard, Server, Users, Settings, Activity, User, Layers } from "lucide-react";
+import { LayoutDashboard, Server, Users, Settings, Activity, User, Layers, Inbox } from "lucide-react";
 
 import { AppShell, Spinner, type NavItem } from "@/ui";
 import { AppearanceProvider } from "@/app/providers/AppearanceProvider";
@@ -62,6 +62,11 @@ const NAV_PRIMARY: NavItem[] = [
 ];
 
 const NAV_SECONDARY: NavItem[] = [
+  // Direct entry to the discovered-clients triage queue. Without this the
+  // page is only reachable via the Dashboard banner / Clients-list banner,
+  // and once an operator dismisses or navigates away from those entry
+  // points there is no other route into the queue.
+  { id: "/clients/discovered", label: "Discovered", icon: <Inbox size={20} /> },
   { id: "/activity", label: "Activity", icon: <Activity size={20} /> },
   { id: "/settings", label: "Settings", icon: <Settings size={20} /> },
   { id: "/profile", label: "Profile", icon: <User size={20} /> },

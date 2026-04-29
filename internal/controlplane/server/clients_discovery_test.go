@@ -293,13 +293,14 @@ func TestAdoptDiscoveredClientConcurrentIsAtomic(t *testing.T) {
 //
 // Two discovered records with the SAME (name, secret) represent the same
 // Telemt user reported on two different nodes, so the product semantics
-// are: the first adopt creates/adds the assignment, the second must see
-// the sibling record already flipped to "adopted" by
-// markDuplicateDiscoveredClientsAdopted and return ErrAlreadyAdopted
-// cleanly. Under adoptMu that second observation is deterministic — there
-// must be no in-between window where a partially-applied merge is visible.
-// The end state must contain exactly one new assignment on the existing
-// client (from the winner), with both discovered records marked adopted.
+// are: the winning merge folds in BOTH agents at once via the sibling
+// scan, the loser sees its discovered row already flipped to "adopted"
+// by markDuplicateDiscoveredClientsAdopted and returns ErrAlreadyAdopted
+// cleanly. Under adoptMu the loser's observation is deterministic —
+// there must be no in-between window where a partially-applied merge is
+// visible. The end state must contain assignments+deployments for both
+// agents (added in one shot by the winner), with both discovered
+// records marked adopted.
 func TestMergeAdoptNoTOCTOU(t *testing.T) {
 	now := time.Date(2026, time.April, 17, 12, 0, 0, 0, time.UTC)
 
@@ -410,29 +411,36 @@ func TestMergeAdoptNoTOCTOU(t *testing.T) {
 		t.Fatalf("merge outcomes: ok=%d already=%d, want ok=1 already=1 (one winner, one sibling flipped by markDuplicate)", okCount, alreadyCount)
 	}
 
-	// The winner must have added exactly one new assignment to the
-	// existing client. Before the fix, if both merges had gotten far
-	// enough to snapshot assignments under RLock, one would clobber the
-	// other; here only one merge wins but we still validate that the
-	// final assignment list is exactly what the winner wrote (no
-	// truncation from a half-applied concurrent merge).
+	// The winner pulled in both the primary record AND its sibling in a
+	// single call, so the existing client should end up with assignments
+	// for both agents — without any "half-applied" intermediate state
+	// from the loser. Before the merge-adopt sibling fix, the panel
+	// would have ended at a 1-agent client and the operator had to
+	// follow up with a PUT to extend agent_ids (the bug that drove
+	// frontend rate-limit and ad_tag-generation issues during bulk
+	// imports).
 	server.clientsMu.RLock()
 	assignments := append([]managedClientAssignment(nil), server.clientAssignments[existing.ID]...)
 	deployments := server.clientDeployments[existing.ID]
 	server.clientsMu.RUnlock()
 
-	if len(assignments) != 1 {
-		t.Fatalf("assignments on existing client: got %d, want 1 (exactly the winner's assignment) %+v", len(assignments), assignments)
+	if len(assignments) != 2 {
+		t.Fatalf("assignments on existing client: got %d, want 2 (winner adds primary+sibling in one shot) %+v", len(assignments), assignments)
 	}
-	winnerAgent := assignments[0].AgentID
-	if winnerAgent != agentA && winnerAgent != agentB {
-		t.Fatalf("winner agent = %q, want %q or %q", winnerAgent, agentA, agentB)
+	gotAgents := map[string]struct{}{}
+	for _, a := range assignments {
+		gotAgents[a.AgentID] = struct{}{}
 	}
-	if _, ok := deployments[winnerAgent]; !ok {
-		t.Fatalf("deployments missing winner agent %q: %+v", winnerAgent, deployments)
+	for _, want := range []string{agentA, agentB} {
+		if _, ok := gotAgents[want]; !ok {
+			t.Fatalf("assignments missing agent %q: %+v", want, assignments)
+		}
+		if _, ok := deployments[want]; !ok {
+			t.Fatalf("deployments missing agent %q: %+v", want, deployments)
+		}
 	}
-	if len(deployments) != 1 {
-		t.Fatalf("deployments on existing client: got %d, want 1 (exactly the winner's deployment) %+v", len(deployments), deployments)
+	if len(deployments) != 2 {
+		t.Fatalf("deployments on existing client: got %d, want 2 %+v", len(deployments), deployments)
 	}
 
 	// Both discovered records flipped to adopted (winner by direct
