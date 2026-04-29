@@ -8,25 +8,25 @@ import type {
 const SECRET_PARAM_RE = /secret=([0-9a-fA-F]+)/;
 
 /**
- * Parse the agent-provided connection_link blob into categorized
- * arrays. The agent joins every Telemt-returned link with `\n` so the
- * panel surface preserves all tls_domains alternates instead of
- * collapsing to a single "preferred" link.
+ * Categorize a list of Telemt connection links into TLS / Secure /
+ * Classic buckets by inspecting the URL shape and secret prefix:
+ *   * https://t.me/...                  → classic (Telegram-served)
+ *   * tg://proxy?...&secret=ee...       → TLS (FakeTLS, ee + domain hex)
+ *   * tg://proxy?...&secret=dd...       → secure (dd-prefixed)
+ *   * tg://proxy?...&secret=<raw hex>   → classic
  *
- * Single-link payloads (legacy and discovered_clients) flow through the
- * same parser unchanged: split on \n yields one entry, classified into
- * the right bucket by the secret prefix (ee = TLS, dd = Secure, raw =
- * Classic).
+ * The agent forwards every link Telemt returns (one per tls_domain ×
+ * host); preserving them all here lets the panel render the full set
+ * with copy buttons instead of a single "preferred" link.
  */
-export function parseConnectionLink(link: string): { classic: string[]; secure: string[]; tls: string[] } {
+export function categorizeConnectionLinks(links: readonly string[]): { classic: string[]; secure: string[]; tls: string[] } {
   const out: { classic: string[]; secure: string[]; tls: string[] } = {
     classic: [],
     secure: [],
     tls: [],
   };
-  if (!link) return out;
-  for (const raw of link.split("\n")) {
-    const item = raw.trim();
+  for (const raw of links) {
+    const item = raw?.trim();
     if (!item) continue;
     classifyLink(item, out);
   }
@@ -98,7 +98,7 @@ export function transformClientDetail(
       desiredOperation: d.desired_operation,
       status: d.status,
       lastError: d.last_error,
-      links: parseConnectionLink(d.connection_link),
+      links: categorizeConnectionLinks(d.connection_links),
       lastAppliedAtUnix: d.last_applied_at_unix,
     })),
   };

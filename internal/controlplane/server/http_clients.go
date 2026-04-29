@@ -77,13 +77,13 @@ type clientListResponse struct {
 }
 
 type clientDeploymentResponse struct {
-	AgentID          string `json:"agent_id"`
-	DesiredOperation string `json:"desired_operation"`
-	Status           string `json:"status"`
-	LastError        string `json:"last_error"`
-	ConnectionLink   string `json:"connection_link"`
-	LastAppliedAt    int64  `json:"last_applied_at_unix"`
-	UpdatedAt        int64  `json:"updated_at_unix"`
+	AgentID          string   `json:"agent_id"`
+	DesiredOperation string   `json:"desired_operation"`
+	Status           string   `json:"status"`
+	LastError        string   `json:"last_error"`
+	ConnectionLinks  []string `json:"connection_links"`
+	LastAppliedAt    int64    `json:"last_applied_at_unix"`
+	UpdatedAt        int64    `json:"updated_at_unix"`
 }
 
 type clientDetailResponse struct {
@@ -718,12 +718,16 @@ func buildClientDeploymentResponses(deployments []managedClientDeployment) []cli
 		if deployment.LastAppliedAt != nil {
 			lastAppliedAt = deployment.LastAppliedAt.UTC().Unix()
 		}
+		links := deployment.ConnectionLinks
+		if links == nil {
+			links = []string{}
+		}
 		out = append(out, clientDeploymentResponse{
 			AgentID:          deployment.AgentID,
 			DesiredOperation: deployment.DesiredOperation,
 			Status:           deployment.Status,
 			LastError:        deployment.LastError,
-			ConnectionLink:   deployment.ConnectionLink,
+			ConnectionLinks:  links,
 			LastAppliedAt:    lastAppliedAt,
 			UpdatedAt:        deployment.UpdatedAt.UTC().Unix(),
 		})

@@ -2483,7 +2483,7 @@ type ClientDetailRecord struct {
 	CurrentConnections int32                  `protobuf:"varint,4,opt,name=current_connections,json=currentConnections,proto3" json:"current_connections,omitempty"`
 	ActiveUniqueIps    int32                  `protobuf:"varint,5,opt,name=active_unique_ips,json=activeUniqueIps,proto3" json:"active_unique_ips,omitempty"`
 	ActiveIpList       []string               `protobuf:"bytes,6,rep,name=active_ip_list,json=activeIpList,proto3" json:"active_ip_list,omitempty"`
-	ConnectionLink     string                 `protobuf:"bytes,7,opt,name=connection_link,json=connectionLink,proto3" json:"connection_link,omitempty"`
+	ConnectionLinks    []string               `protobuf:"bytes,7,rep,name=connection_links,json=connectionLinks,proto3" json:"connection_links,omitempty"`
 	MaxTcpConns        int32                  `protobuf:"varint,8,opt,name=max_tcp_conns,json=maxTcpConns,proto3" json:"max_tcp_conns,omitempty"`
 	Expiration         string                 `protobuf:"bytes,9,opt,name=expiration,proto3" json:"expiration,omitempty"`
 	DataQuotaBytes     uint64                 `protobuf:"varint,10,opt,name=data_quota_bytes,json=dataQuotaBytes,proto3" json:"data_quota_bytes,omitempty"`
@@ -2567,11 +2567,11 @@ func (x *ClientDetailRecord) GetActiveIpList() []string {
 	return nil
 }
 
-func (x *ClientDetailRecord) GetConnectionLink() string {
+func (x *ClientDetailRecord) GetConnectionLinks() []string {
 	if x != nil {
-		return x.ConnectionLink
+		return x.ConnectionLinks
 	}
-	return ""
+	return nil
 }
 
 func (x *ClientDetailRecord) GetMaxTcpConns() int32 {
@@ -3082,7 +3082,7 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\x12ClientDataResponse\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12?\n" +
-	"\aclients\x18\x02 \x03(\v2%.panvex.gateway.v1.ClientDetailRecordR\aclients\"\x87\x04\n" +
+	"\aclients\x18\x02 \x03(\v2%.panvex.gateway.v1.ClientDetailRecordR\aclients\"\x89\x04\n" +
 	"\x12ClientDetailRecord\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12\x1f\n" +
 	"\vclient_name\x18\x02 \x01(\tR\n" +
@@ -3090,8 +3090,8 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\ftotal_octets\x18\x03 \x01(\x04R\vtotalOctets\x12/\n" +
 	"\x13current_connections\x18\x04 \x01(\x05R\x12currentConnections\x12*\n" +
 	"\x11active_unique_ips\x18\x05 \x01(\x05R\x0factiveUniqueIps\x12$\n" +
-	"\x0eactive_ip_list\x18\x06 \x03(\tR\factiveIpList\x12'\n" +
-	"\x0fconnection_link\x18\a \x01(\tR\x0econnectionLink\x12\"\n" +
+	"\x0eactive_ip_list\x18\x06 \x03(\tR\factiveIpList\x12)\n" +
+	"\x10connection_links\x18\a \x03(\tR\x0fconnectionLinks\x12\"\n" +
 	"\rmax_tcp_conns\x18\b \x01(\x05R\vmaxTcpConns\x12\x1e\n" +
 	"\n" +
 	"expiration\x18\t \x01(\tR\n" +

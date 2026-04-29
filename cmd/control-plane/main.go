@@ -616,10 +616,13 @@ func openLogSink(path string) (io.Writer, func() error, error) {
 	}
 	if dir := filepath.Dir(path); dir != "" && dir != "." {
 		// Best-effort mkdir — surfaces as an OpenFile error if the path
-		// is still unreachable after the call.
-		_ = os.MkdirAll(dir, 0o755)
+		// is still unreachable after the call. 0o750 keeps log dirs out
+		// of world-readable territory (gosec G301).
+		_ = os.MkdirAll(dir, 0o750)
 	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	// 0o600: owner-only rw. Logs may contain operator usernames or
+	// agent IDs we don't want world-readable (gosec G302).
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, nil, err
 	}

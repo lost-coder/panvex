@@ -2,6 +2,7 @@ package storagetest
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -68,7 +69,7 @@ func runClientsContract(t *testing.T, open OpenStore) {
 			DesiredOperation: "client.create",
 			Status:           "succeeded",
 			LastError:        "",
-			ConnectionLink:   "tg://proxy?server=node-a&secret=alice",
+			ConnectionLinks:  []string{"tg://proxy?server=node-a&secret=alice"},
 			LastAppliedAt:    &lastAppliedAt,
 			UpdatedAt:        time.Date(2026, time.March, 17, 9, 21, 0, 0, time.UTC),
 		}
@@ -151,8 +152,8 @@ func runClientsContract(t *testing.T, open OpenStore) {
 		if len(deployments) != 1 {
 			t.Fatalf("len(ListClientDeployments()) = %d, want 1", len(deployments))
 		}
-		if deployments[0].ConnectionLink != deployment.ConnectionLink {
-			t.Fatalf("ListClientDeployments()[0].ConnectionLink = %q, want %q", deployments[0].ConnectionLink, deployment.ConnectionLink)
+		if !slices.Equal(deployments[0].ConnectionLinks, deployment.ConnectionLinks) {
+			t.Fatalf("ListClientDeployments()[0].ConnectionLinks = %v, want %v", deployments[0].ConnectionLinks, deployment.ConnectionLinks)
 		}
 		if deployments[0].LastAppliedAt == nil || !deployments[0].LastAppliedAt.Equal(lastAppliedAt) {
 			t.Fatalf("ListClientDeployments()[0].LastAppliedAt = %v, want %v", deployments[0].LastAppliedAt, lastAppliedAt)

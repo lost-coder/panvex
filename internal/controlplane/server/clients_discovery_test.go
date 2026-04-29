@@ -53,7 +53,7 @@ func TestUpsertDiscoveredClientDedupes(t *testing.T) {
 		TotalOctets:        1024,
 		CurrentConnections: 1,
 		ActiveUniqueIps:    1,
-		ConnectionLink:     "tg://proxy?...",
+		ConnectionLinks:    []string{"tg://proxy?..."},
 		MaxTcpConns:        0,
 		MaxUniqueIps:       0,
 		DataQuotaBytes:     0,
@@ -70,7 +70,7 @@ func TestUpsertDiscoveredClientDedupes(t *testing.T) {
 		TotalOctets:        2048, // increased
 		CurrentConnections: 3,
 		ActiveUniqueIps:    2,
-		ConnectionLink:     record.ConnectionLink,
+		ConnectionLinks:    record.ConnectionLinks,
 	}
 	later := now.Add(5 * time.Minute)
 	server.upsertDiscoveredClient(ctx, agentID, record2, later)

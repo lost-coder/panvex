@@ -54,15 +54,16 @@ type Assignment struct {
 }
 
 // Deployment is the per-(client, agent) desired-state row. Status reflects
-// the outcome of the last reconcile attempt for this pair; ConnectionLink
-// is the agent-reported MTProto link (populated on a successful apply).
+// the outcome of the last reconcile attempt for this pair; ConnectionLinks
+// holds every link Telemt reported for this user (one per tls_domain ×
+// host combination), populated on a successful apply.
 type Deployment struct {
 	ClientID         string
 	AgentID          string
 	DesiredOperation string
 	Status           string
 	LastError        string
-	ConnectionLink   string
+	ConnectionLinks  []string
 	LastAppliedAt    *time.Time
 	UpdatedAt        time.Time
 }
@@ -79,7 +80,7 @@ type DiscoveredRecord struct {
 	TotalOctets        uint64
 	CurrentConnections int
 	ActiveUniqueIPs    int
-	ConnectionLink     string
+	ConnectionLinks    []string
 	MaxTCPConns        int
 	MaxUniqueIPs       int
 	DataQuotaBytes     int64

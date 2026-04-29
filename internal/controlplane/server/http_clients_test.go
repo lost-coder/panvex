@@ -104,7 +104,7 @@ func TestHTTPClientsCreateTracksDeploymentsAndStructuredJobPayload(t *testing.T)
 		t.Fatalf("len(jobs[0].TargetAgentIDs) = %d, want %d", len(enqueuedJobs[0].TargetAgentIDs), 2)
 	}
 
-	server.recordJobResult(context.Background(), "agent-000001", enqueuedJobs[0].ID, true, "applied", `{"connection_link":"tg://proxy?server=node-a&secret=alice"}`, now.Add(time.Minute))
+	server.recordJobResult(context.Background(), "agent-000001", enqueuedJobs[0].ID, true, "applied", `{"connection_links":["tg://proxy?server=node-a&secret=alice"]}`, now.Add(time.Minute))
 
 	detailResponse := performJSONRequest(t, server, http.MethodGet, "/api/clients/"+created.ID, nil, cookies)
 	if detailResponse.Code != http.StatusOK {
@@ -114,9 +114,9 @@ func TestHTTPClientsCreateTracksDeploymentsAndStructuredJobPayload(t *testing.T)
 	var detail struct {
 		ID          string `json:"id"`
 		Deployments []struct {
-			AgentID        string `json:"agent_id"`
-			Status         string `json:"status"`
-			ConnectionLink string `json:"connection_link"`
+			AgentID         string   `json:"agent_id"`
+			Status          string   `json:"status"`
+			ConnectionLinks []string `json:"connection_links"`
 		} `json:"deployments"`
 	}
 	if err := json.Unmarshal(detailResponse.Body.Bytes(), &detail); err != nil {
@@ -134,8 +134,8 @@ func TestHTTPClientsCreateTracksDeploymentsAndStructuredJobPayload(t *testing.T)
 	if detail.Deployments[0].Status != "succeeded" {
 		t.Fatalf("detail.deployments[0].status = %q, want %q", detail.Deployments[0].Status, "succeeded")
 	}
-	if detail.Deployments[0].ConnectionLink != "tg://proxy?server=node-a&secret=alice" {
-		t.Fatalf("detail.deployments[0].connection_link = %q, want %q", detail.Deployments[0].ConnectionLink, "tg://proxy?server=node-a&secret=alice")
+	if got := detail.Deployments[0].ConnectionLinks; len(got) != 1 || got[0] != "tg://proxy?server=node-a&secret=alice" {
+		t.Fatalf("detail.deployments[0].connection_links = %v, want [tg://proxy?server=node-a&secret=alice]", got)
 	}
 }
 
@@ -480,7 +480,7 @@ func TestRecordClientJobResultDoesNotPanicWhenDeploymentPersistenceFails(t *test
 
 	store.putClientDeploymentErr = errors.New("put client deployment failed")
 
-	server.recordClientJobResult("agent-000001", jobList[0].ID, true, "ok", `{"connection_link":"tg://proxy?secret=abc"}`, now.Add(time.Minute))
+	server.recordClientJobResult("agent-000001", jobList[0].ID, true, "ok", `{"connection_links":["tg://proxy?secret=abc"]}`, now.Add(time.Minute))
 
 	detailClient, _, deployments, err := server.clientDetailSnapshot(client.ID)
 	if err != nil {

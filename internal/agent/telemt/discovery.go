@@ -38,19 +38,22 @@ type UserLinks struct {
 }
 
 // DiscoveredUser merges config data (secret, limits) with live stats.
+// ConnectionLinks holds every Telemt-returned link (one per
+// tls_domain × host); Telemt may emit multiple if the operator
+// configured tls_domains.
 type DiscoveredUser struct {
-	Username          string
-	Secret            string
-	UserADTag         string
-	Enabled           bool
-	MaxTCPConns       int
-	MaxUniqueIPs      int
-	DataQuotaBytes    uint64
-	ExpirationRFC3339 string
-	ConnectionLink    string
-	TotalOctets       uint64
+	Username           string
+	Secret             string
+	UserADTag          string
+	Enabled            bool
+	MaxTCPConns        int
+	MaxUniqueIPs       int
+	DataQuotaBytes     uint64
+	ExpirationRFC3339  string
+	ConnectionLinks    []string
+	TotalOctets        uint64
 	CurrentConnections int
-	ActiveUniqueIPs   int
+	ActiveUniqueIPs    int
 }
 
 // FetchSystemInfo calls GET /v1/system/info and returns parsed metadata.
@@ -106,7 +109,7 @@ func buildDiscoveredUser(u UserInfo, configSecrets map[string]UserEntry) Discove
 		TotalOctets:        u.TotalOctets,
 		CurrentConnections: u.CurrentConnections,
 		ActiveUniqueIPs:    u.ActiveUniqueIPs,
-		ConnectionLink:     joinConnectionLinks(u.Links.TLS, u.Links.Secure, u.Links.Classic),
+		ConnectionLinks:    collectConnectionLinks(u.Links.TLS, u.Links.Secure, u.Links.Classic),
 	}
 	applyAPIUserLimits(&du, u)
 	resolveDiscoveredUserSecret(&du, u, configSecrets)

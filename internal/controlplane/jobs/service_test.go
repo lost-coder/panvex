@@ -366,7 +366,7 @@ func TestServicePersistsStructuredClientPayloadAndResultAcrossRestart(t *testing
 	}
 
 	first.MarkDelivered(context.Background(), "agent-1", job.ID, now.Add(5*time.Second))
-	first.RecordResult(context.Background(), "agent-1", job.ID, true, "applied", `{"connection_link":"tg://proxy?server=node-a&secret=secret-1"}`, now.Add(10*time.Second))
+	first.RecordResult(context.Background(), "agent-1", job.ID, true, "applied", `{"connection_links":["tg://proxy?server=node-a&secret=secret-1"]}`, now.Add(10*time.Second))
 
 	restored := NewServiceWithStore(store)
 	restored.SetNow(func() time.Time {
@@ -382,8 +382,8 @@ func TestServicePersistsStructuredClientPayloadAndResultAcrossRestart(t *testing
 	if len(jobs[0].Targets) != 1 {
 		t.Fatalf("len(jobs[0].Targets) = %d, want %d", len(jobs[0].Targets), 1)
 	}
-	if jobs[0].Targets[0].ResultJSON != `{"connection_link":"tg://proxy?server=node-a&secret=secret-1"}` {
-		t.Fatalf("jobs[0].Targets[0].ResultJSON = %q, want %q", jobs[0].Targets[0].ResultJSON, `{"connection_link":"tg://proxy?server=node-a&secret=secret-1"}`)
+	if jobs[0].Targets[0].ResultJSON != `{"connection_links":["tg://proxy?server=node-a&secret=secret-1"]}` {
+		t.Fatalf("jobs[0].Targets[0].ResultJSON = %q, want %q", jobs[0].Targets[0].ResultJSON, `{"connection_links":["tg://proxy?server=node-a&secret=secret-1"]}`)
 	}
 }
 

@@ -1,6 +1,6 @@
 import type { DiscoveredClientItem } from "@/shared/api/types-pages/pages";
 import type { DiscoveredClient as ApiDiscoveredClient } from "../api";
-import { parseConnectionLink } from "./clients";
+import { categorizeConnectionLinks } from "./clients";
 
 export function transformDiscoveredClientList(
   raw: ApiDiscoveredClient[]
@@ -14,7 +14,7 @@ export function transformDiscoveredClientList(
     totalOctets: dc.total_octets,
     currentConnections: dc.current_connections,
     activeUniqueIps: dc.active_unique_ips,
-    links: parseConnectionLink(dc.connection_link),
+    links: categorizeConnectionLinks(dc.connection_links),
     maxTcpConns: dc.max_tcp_conns,
     maxUniqueIps: dc.max_unique_ips,
     dataQuotaBytes: dc.data_quota_bytes,

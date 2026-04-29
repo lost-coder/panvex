@@ -12,7 +12,7 @@ const minimal = {
   total_octets: 0,
   current_connections: 0,
   active_unique_ips: 0,
-  connection_link: "tg://proxy?server=...&port=443&secret=...",
+  connection_links: ["tg://proxy?server=...&port=443&secret=..."],
   max_tcp_conns: 10,
   max_unique_ips: 5,
   data_quota_bytes: 0,

@@ -812,7 +812,7 @@ func (a *Agent) HandleClientDataRequest(ctx context.Context, requestID string) *
 			TotalOctets:        u.TotalOctets,
 			CurrentConnections: int32(u.CurrentConnections),
 			ActiveUniqueIps:    int32(u.ActiveUniqueIPs),
-			ConnectionLink:     u.ConnectionLink,
+			ConnectionLinks:    u.ConnectionLinks,
 			MaxTcpConns:        int32(u.MaxTCPConns),
 			MaxUniqueIps:       int32(u.MaxUniqueIPs),
 			DataQuotaBytes:     u.DataQuotaBytes,
@@ -841,8 +841,8 @@ func (a *Agent) resolveTelemtConfigPath(ctx context.Context) string {
 }
 
 func marshalClientJobResult(result telemt.ClientApplyResult) string {
-	payload, err := json.Marshal(map[string]string{
-		"connection_link": result.ConnectionLink,
+	payload, err := json.Marshal(map[string]any{
+		"connection_links": result.ConnectionLinks,
 	})
 	if err != nil {
 		return ""

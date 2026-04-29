@@ -7,7 +7,7 @@ const clientDeploymentSchema = z.object({
   desired_operation: z.string(),
   status: z.string(),
   last_error: z.string(),
-  connection_link: z.string(),
+  connection_links: z.array(z.string()),
   last_applied_at_unix: z.number(),
   updated_at_unix: z.number(),
 });

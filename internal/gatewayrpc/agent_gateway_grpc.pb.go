@@ -63,15 +63,14 @@ func (c *agentGatewayClient) Connect(ctx context.Context, opts ...grpc.CallOptio
 type AgentGateway_ConnectClient = grpc.BidiStreamingClient[ConnectClientMessage, ConnectServerMessage]
 
 // AgentGatewayServer is the server API for AgentGateway service.
-// All implementations must embed UnimplementedAgentGatewayServer
+// All implementations should embed UnimplementedAgentGatewayServer
 // for forward compatibility.
 type AgentGatewayServer interface {
 	RenewCertificate(context.Context, *RenewCertificateRequest) (*RenewCertificateResponse, error)
 	Connect(grpc.BidiStreamingServer[ConnectClientMessage, ConnectServerMessage]) error
-	mustEmbedUnimplementedAgentGatewayServer()
 }
 
-// UnimplementedAgentGatewayServer must be embedded to have
+// UnimplementedAgentGatewayServer should be embedded to have
 // forward compatible implementations.
 //
 // NOTE: this should be embedded by value instead of pointer to avoid a nil
@@ -84,8 +83,7 @@ func (UnimplementedAgentGatewayServer) RenewCertificate(context.Context, *RenewC
 func (UnimplementedAgentGatewayServer) Connect(grpc.BidiStreamingServer[ConnectClientMessage, ConnectServerMessage]) error {
 	return status.Error(codes.Unimplemented, "method Connect not implemented")
 }
-func (UnimplementedAgentGatewayServer) mustEmbedUnimplementedAgentGatewayServer() {}
-func (UnimplementedAgentGatewayServer) testEmbeddedByValue()                      {}
+func (UnimplementedAgentGatewayServer) testEmbeddedByValue() {}
 
 // UnsafeAgentGatewayServer may be embedded to opt out of forward compatibility for this service.
 // Use of this interface is not recommended, as added methods to AgentGatewayServer will

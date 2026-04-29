@@ -3,11 +3,41 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
+
+// encodeStringArray serializes a []string for storage in a JSON-typed
+// column. Nil/empty arrays become `[]` so the column never holds NULL
+// or a malformed value.
+func encodeStringArray(values []string) string {
+	if len(values) == 0 {
+		return "[]"
+	}
+	b, err := json.Marshal(values)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
+// decodeStringArray inverts encodeStringArray. Empty/invalid JSON
+// returns nil so callers can distinguish "no links" from a parse
+// failure only via the error path; here we treat both as "no links"
+// because the column is non-null-defaulted to `[]`.
+func decodeStringArray(raw string) []string {
+	if raw == "" || raw == "[]" {
+		return nil
+	}
+	var out []string
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return nil
+	}
+	return out
+}
 
 func (s *Store) PutClient(ctx context.Context, client storage.ClientRecord) error {
 	var deletedAt sql.NullInt64
@@ -237,7 +267,7 @@ func (s *Store) PutClientDeployment(ctx context.Context, deployment storage.Clie
 			desired_operation,
 			status,
 			last_error,
-			connection_link,
+			connection_links,
 			last_applied_at_unix,
 			updated_at_unix
 		)
@@ -246,16 +276,16 @@ func (s *Store) PutClientDeployment(ctx context.Context, deployment storage.Clie
 			desired_operation = excluded.desired_operation,
 			status = excluded.status,
 			last_error = excluded.last_error,
-			connection_link = excluded.connection_link,
+			connection_links = excluded.connection_links,
 			last_applied_at_unix = excluded.last_applied_at_unix,
 			updated_at_unix = excluded.updated_at_unix
-	`, deployment.ClientID, deployment.AgentID, deployment.DesiredOperation, deployment.Status, deployment.LastError, deployment.ConnectionLink, lastAppliedAt, toUnix(deployment.UpdatedAt))
+	`, deployment.ClientID, deployment.AgentID, deployment.DesiredOperation, deployment.Status, deployment.LastError, encodeStringArray(deployment.ConnectionLinks), lastAppliedAt, toUnix(deployment.UpdatedAt))
 	return err
 }
 
 func (s *Store) ListClientDeployments(ctx context.Context, clientID string) ([]storage.ClientDeploymentRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT client_id, agent_id, desired_operation, status, last_error, connection_link, last_applied_at_unix, updated_at_unix
+		SELECT client_id, agent_id, desired_operation, status, last_error, connection_links, last_applied_at_unix, updated_at_unix
 		FROM client_deployments
 		WHERE client_id = ?
 		ORDER BY agent_id
@@ -270,9 +300,11 @@ func (s *Store) ListClientDeployments(ctx context.Context, clientID string) ([]s
 		var deployment storage.ClientDeploymentRecord
 		var lastAppliedAt sql.NullInt64
 		var updatedAt int64
-		if err := rows.Scan(&deployment.ClientID, &deployment.AgentID, &deployment.DesiredOperation, &deployment.Status, &deployment.LastError, &deployment.ConnectionLink, &lastAppliedAt, &updatedAt); err != nil {
+		var linksJSON string
+		if err := rows.Scan(&deployment.ClientID, &deployment.AgentID, &deployment.DesiredOperation, &deployment.Status, &deployment.LastError, &linksJSON, &lastAppliedAt, &updatedAt); err != nil {
 			return nil, err
 		}
+		deployment.ConnectionLinks = decodeStringArray(linksJSON)
 		if lastAppliedAt.Valid {
 			timeValue := fromUnix(lastAppliedAt.Int64)
 			deployment.LastAppliedAt = &timeValue

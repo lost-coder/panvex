@@ -116,7 +116,7 @@ func DeploymentToRecord(deployment Deployment) storage.ClientDeploymentRecord {
 		DesiredOperation: deployment.DesiredOperation,
 		Status:           deployment.Status,
 		LastError:        deployment.LastError,
-		ConnectionLink:   deployment.ConnectionLink,
+		ConnectionLinks:  deployment.ConnectionLinks,
 		LastAppliedAt:    deployment.LastAppliedAt,
 		UpdatedAt:        deployment.UpdatedAt.UTC(),
 	}
@@ -131,7 +131,7 @@ func DeploymentFromRecord(record storage.ClientDeploymentRecord) Deployment {
 		DesiredOperation: record.DesiredOperation,
 		Status:           record.Status,
 		LastError:        record.LastError,
-		ConnectionLink:   record.ConnectionLink,
+		ConnectionLinks:  record.ConnectionLinks,
 		LastAppliedAt:    record.LastAppliedAt,
 		UpdatedAt:        record.UpdatedAt.UTC(),
 	}

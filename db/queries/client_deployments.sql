@@ -3,7 +3,7 @@
 
 -- name: ListClientDeployments :many
 SELECT client_id, agent_id, desired_operation, status, last_error,
-       connection_link, last_applied_at, updated_at
+       connection_links, last_applied_at, updated_at
 FROM client_deployments
 WHERE client_id = $1
 ORDER BY agent_id ASC;
@@ -11,21 +11,21 @@ ORDER BY agent_id ASC;
 
 -- name: ListAllClientDeployments :many
 SELECT client_id, agent_id, desired_operation, status, last_error,
-       connection_link, last_applied_at, updated_at
+       connection_links, last_applied_at, updated_at
 FROM client_deployments
 ORDER BY client_id ASC, agent_id ASC;
 
 
 -- name: UpsertClientDeployment :exec
 INSERT INTO client_deployments (client_id, agent_id, desired_operation,
-                                status, last_error, connection_link,
+                                status, last_error, connection_links,
                                 last_applied_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (client_id, agent_id) DO UPDATE
 SET desired_operation = EXCLUDED.desired_operation,
     status            = EXCLUDED.status,
     last_error        = EXCLUDED.last_error,
-    connection_link   = EXCLUDED.connection_link,
+    connection_links   = EXCLUDED.connection_links,
     last_applied_at   = EXCLUDED.last_applied_at,
     updated_at        = EXCLUDED.updated_at;
 

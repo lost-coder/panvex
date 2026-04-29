@@ -328,9 +328,12 @@ type ClientUsage struct {
 	ActiveTCPConns   int
 }
 
-// ClientApplyResult stores the link material returned after Telemt applies a client.
+// ClientApplyResult stores the link material returned after Telemt
+// applies a client. Telemt's tls_domains config emits one TLS link per
+// domain (×host), plus optional Secure/Classic alternates; we forward
+// every non-empty entry so the panel can show all of them.
 type ClientApplyResult struct {
-	ConnectionLink string
+	ConnectionLinks []string
 }
 
 // NewClient validates the target endpoint and constructs a local-only Telemt client.
@@ -1174,7 +1177,7 @@ func (c *Client) applyClient(ctx context.Context, method string, path string, cl
 	}
 
 	return ClientApplyResult{
-		ConnectionLink: joinConnectionLinks(links.TLS, links.Secure, links.Classic),
+		ConnectionLinks: collectConnectionLinks(links.TLS, links.Secure, links.Classic),
 	}, nil
 }
 
@@ -1226,13 +1229,12 @@ func (c *Client) newRequest(ctx context.Context, method string, path string, bod
 	return request, nil
 }
 
-// joinConnectionLinks packs every non-empty link Telemt returned into a
-// single newline-separated string. Telemt's tls_domains config emits one
-// TLS link per domain (×host); preferring just one would silently drop
-// the alternates the operator configured. The control-plane stores the
-// blob in connection_link as-is and the panel splits on \n at render
-// time. Order: TLS → Secure → Classic so the strongest mode is first.
-func joinConnectionLinks(tlsLinks, secureLinks, classicLinks []string) string {
+// collectConnectionLinks flattens every non-empty link Telemt returned
+// into a single ordered slice. Telemt's tls_domains config emits one
+// TLS link per domain (×host); we keep each entry distinct so the
+// panel can render them all. Order: TLS → Secure → Classic so the
+// strongest mode is first.
+func collectConnectionLinks(tlsLinks, secureLinks, classicLinks []string) []string {
 	out := make([]string, 0, len(tlsLinks)+len(secureLinks)+len(classicLinks))
 	for _, group := range [][]string{tlsLinks, secureLinks, classicLinks} {
 		for _, link := range group {
@@ -1242,7 +1244,7 @@ func joinConnectionLinks(tlsLinks, secureLinks, classicLinks []string) string {
 			}
 		}
 	}
-	return strings.Join(out, "\n")
+	return out
 }
 
 const maxResponseBodySize = 10 << 20 // 10 MiB

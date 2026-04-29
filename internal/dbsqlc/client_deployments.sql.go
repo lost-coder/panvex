@@ -8,6 +8,7 @@ package dbsqlc
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"time"
 )
 
@@ -22,27 +23,38 @@ func (q *Queries) DeleteClientDeploymentsForClient(ctx context.Context, clientID
 
 const listAllClientDeployments = `-- name: ListAllClientDeployments :many
 SELECT client_id, agent_id, desired_operation, status, last_error,
-       connection_link, last_applied_at, updated_at
+       connection_links, last_applied_at, updated_at
 FROM client_deployments
 ORDER BY client_id ASC, agent_id ASC
 `
 
-func (q *Queries) ListAllClientDeployments(ctx context.Context) ([]ClientDeployment, error) {
+type ListAllClientDeploymentsRow struct {
+	ClientID         string
+	AgentID          string
+	DesiredOperation string
+	Status           string
+	LastError        string
+	ConnectionLinks  json.RawMessage
+	LastAppliedAt    sql.NullTime
+	UpdatedAt        time.Time
+}
+
+func (q *Queries) ListAllClientDeployments(ctx context.Context) ([]ListAllClientDeploymentsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listAllClientDeployments)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ClientDeployment
+	var items []ListAllClientDeploymentsRow
 	for rows.Next() {
-		var i ClientDeployment
+		var i ListAllClientDeploymentsRow
 		if err := rows.Scan(
 			&i.ClientID,
 			&i.AgentID,
 			&i.DesiredOperation,
 			&i.Status,
 			&i.LastError,
-			&i.ConnectionLink,
+			&i.ConnectionLinks,
 			&i.LastAppliedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -62,30 +74,41 @@ func (q *Queries) ListAllClientDeployments(ctx context.Context) ([]ClientDeploym
 const listClientDeployments = `-- name: ListClientDeployments :many
 
 SELECT client_id, agent_id, desired_operation, status, last_error,
-       connection_link, last_applied_at, updated_at
+       connection_links, last_applied_at, updated_at
 FROM client_deployments
 WHERE client_id = $1
 ORDER BY agent_id ASC
 `
 
+type ListClientDeploymentsRow struct {
+	ClientID         string
+	AgentID          string
+	DesiredOperation string
+	Status           string
+	LastError        string
+	ConnectionLinks  json.RawMessage
+	LastAppliedAt    sql.NullTime
+	UpdatedAt        time.Time
+}
+
 // R-Q-03: client_deployments — per-(client, agent) deployment state
 // + connection link returned by the agent.
-func (q *Queries) ListClientDeployments(ctx context.Context, clientID string) ([]ClientDeployment, error) {
+func (q *Queries) ListClientDeployments(ctx context.Context, clientID string) ([]ListClientDeploymentsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listClientDeployments, clientID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ClientDeployment
+	var items []ListClientDeploymentsRow
 	for rows.Next() {
-		var i ClientDeployment
+		var i ListClientDeploymentsRow
 		if err := rows.Scan(
 			&i.ClientID,
 			&i.AgentID,
 			&i.DesiredOperation,
 			&i.Status,
 			&i.LastError,
-			&i.ConnectionLink,
+			&i.ConnectionLinks,
 			&i.LastAppliedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -104,14 +127,14 @@ func (q *Queries) ListClientDeployments(ctx context.Context, clientID string) ([
 
 const upsertClientDeployment = `-- name: UpsertClientDeployment :exec
 INSERT INTO client_deployments (client_id, agent_id, desired_operation,
-                                status, last_error, connection_link,
+                                status, last_error, connection_links,
                                 last_applied_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (client_id, agent_id) DO UPDATE
 SET desired_operation = EXCLUDED.desired_operation,
     status            = EXCLUDED.status,
     last_error        = EXCLUDED.last_error,
-    connection_link   = EXCLUDED.connection_link,
+    connection_links   = EXCLUDED.connection_links,
     last_applied_at   = EXCLUDED.last_applied_at,
     updated_at        = EXCLUDED.updated_at
 `
@@ -122,7 +145,7 @@ type UpsertClientDeploymentParams struct {
 	DesiredOperation string
 	Status           string
 	LastError        string
-	ConnectionLink   string
+	ConnectionLinks  json.RawMessage
 	LastAppliedAt    sql.NullTime
 	UpdatedAt        time.Time
 }
@@ -134,7 +157,7 @@ func (q *Queries) UpsertClientDeployment(ctx context.Context, arg UpsertClientDe
 		arg.DesiredOperation,
 		arg.Status,
 		arg.LastError,
-		arg.ConnectionLink,
+		arg.ConnectionLinks,
 		arg.LastAppliedAt,
 		arg.UpdatedAt,
 	)

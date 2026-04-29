@@ -21,7 +21,7 @@ export const discoveredClientSchema = z.object({
   total_octets: z.number(),
   current_connections: z.number(),
   active_unique_ips: z.number(),
-  connection_link: z.string(),
+  connection_links: z.array(z.string()),
   max_tcp_conns: z.number(),
   max_unique_ips: z.number(),
   data_quota_bytes: z.number(),

@@ -86,9 +86,9 @@ type ClientDeployment struct {
 	DesiredOperation string
 	Status           string
 	LastError        string
-	ConnectionLink   string
 	LastAppliedAt    sql.NullTime
 	UpdatedAt        time.Time
+	ConnectionLinks  json.RawMessage
 }
 
 type ClientIpHistory struct {
@@ -131,13 +131,13 @@ type DiscoveredClient struct {
 	TotalOctets        int64
 	CurrentConnections int32
 	ActiveUniqueIps    int32
-	ConnectionLink     string
 	MaxTcpConns        int32
 	MaxUniqueIps       int32
 	DataQuotaBytes     int64
 	Expiration         string
 	DiscoveredAt       time.Time
 	UpdatedAt          time.Time
+	ConnectionLinks    json.RawMessage
 }
 
 type EnrollmentToken struct {

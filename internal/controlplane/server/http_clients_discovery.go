@@ -24,7 +24,7 @@ type discoveredClientResponse struct {
 	TotalOctets        uint64                     `json:"total_octets"`
 	CurrentConnections int                        `json:"current_connections"`
 	ActiveUniqueIPs    int                        `json:"active_unique_ips"`
-	ConnectionLink     string                     `json:"connection_link"`
+	ConnectionLinks    []string                   `json:"connection_links"`
 	MaxTCPConns        int                        `json:"max_tcp_conns"`
 	MaxUniqueIPs       int                        `json:"max_unique_ips"`
 	DataQuotaBytes     int64                      `json:"data_quota_bytes"`
@@ -300,6 +300,10 @@ func (s *Server) handleIgnoreDiscoveredClient() http.HandlerFunc {
 }
 
 func discoveredClientToResponse(dc discoveredClient) discoveredClientResponse {
+	links := dc.ConnectionLinks
+	if links == nil {
+		links = []string{}
+	}
 	return discoveredClientResponse{
 		ID:                 dc.ID,
 		AgentID:            dc.AgentID,
@@ -308,7 +312,7 @@ func discoveredClientToResponse(dc discoveredClient) discoveredClientResponse {
 		TotalOctets:        dc.TotalOctets,
 		CurrentConnections: dc.CurrentConnections,
 		ActiveUniqueIPs:    dc.ActiveUniqueIPs,
-		ConnectionLink:     dc.ConnectionLink,
+		ConnectionLinks:    links,
 		MaxTCPConns:        dc.MaxTCPConns,
 		MaxUniqueIPs:       dc.MaxUniqueIPs,
 		DataQuotaBytes:     dc.DataQuotaBytes,

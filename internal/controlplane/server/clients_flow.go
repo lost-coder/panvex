@@ -73,7 +73,7 @@ type clientJobPayload struct {
 }
 
 type clientJobResultPayload struct {
-	ConnectionLink string `json:"connection_link"`
+	ConnectionLinks []string `json:"connection_links"`
 }
 
 // aggregatedClientUsage now lives in controlplane/clients as
@@ -836,15 +836,15 @@ func applyClientJobOutcome(deployment *managedClientDeployment, action jobs.Acti
 	deployment.LastAppliedAt = &lastAppliedAt
 
 	if action == jobs.ActionClientDelete {
-		deployment.ConnectionLink = ""
+		deployment.ConnectionLinks = nil
 		return
 	}
 	if strings.TrimSpace(resultJSON) == "" {
 		return
 	}
 	var resultPayload clientJobResultPayload
-	if err := json.Unmarshal([]byte(resultJSON), &resultPayload); err == nil && resultPayload.ConnectionLink != "" {
-		deployment.ConnectionLink = resultPayload.ConnectionLink
+	if err := json.Unmarshal([]byte(resultJSON), &resultPayload); err == nil && len(resultPayload.ConnectionLinks) > 0 {
+		deployment.ConnectionLinks = resultPayload.ConnectionLinks
 	}
 }
 

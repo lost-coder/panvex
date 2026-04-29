@@ -16,7 +16,7 @@ func (s *Store) PutDiscoveredClient(ctx context.Context, record storage.Discover
 		INSERT INTO discovered_clients (
 			id, agent_id, client_name, secret, status,
 			total_octets, current_connections, active_unique_ips,
-			connection_link, max_tcp_conns, max_unique_ips,
+			connection_links, max_tcp_conns, max_unique_ips,
 			data_quota_bytes, expiration,
 			discovered_at, updated_at
 		)
@@ -30,7 +30,7 @@ func (s *Store) PutDiscoveredClient(ctx context.Context, record storage.Discover
 		    total_octets = EXCLUDED.total_octets,
 		    current_connections = EXCLUDED.current_connections,
 		    active_unique_ips = EXCLUDED.active_unique_ips,
-		    connection_link = EXCLUDED.connection_link,
+		    connection_links = EXCLUDED.connection_links,
 		    max_tcp_conns = EXCLUDED.max_tcp_conns,
 		    max_unique_ips = EXCLUDED.max_unique_ips,
 		    data_quota_bytes = EXCLUDED.data_quota_bytes,
@@ -38,7 +38,7 @@ func (s *Store) PutDiscoveredClient(ctx context.Context, record storage.Discover
 		    updated_at = EXCLUDED.updated_at
 	`, record.ID, record.AgentID, record.ClientName, record.Secret, record.Status,
 		record.TotalOctets, record.CurrentConnections, record.ActiveUniqueIPs,
-		record.ConnectionLink, record.MaxTCPConns, record.MaxUniqueIPs,
+		encodeStringArray(record.ConnectionLinks), record.MaxTCPConns, record.MaxUniqueIPs,
 		record.DataQuotaBytes, record.Expiration,
 		record.DiscoveredAt.UTC(), record.UpdatedAt.UTC())
 	return err
@@ -48,7 +48,7 @@ func (s *Store) ListDiscoveredClients(ctx context.Context) ([]storage.Discovered
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, agent_id, client_name, secret, status,
 			total_octets, current_connections, active_unique_ips,
-			connection_link, max_tcp_conns, max_unique_ips,
+			connection_links, max_tcp_conns, max_unique_ips,
 			data_quota_bytes, expiration,
 			discovered_at, updated_at
 		FROM discovered_clients
@@ -66,7 +66,7 @@ func (s *Store) ListDiscoveredClientsByAgent(ctx context.Context, agentID string
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, agent_id, client_name, secret, status,
 			total_octets, current_connections, active_unique_ips,
-			connection_link, max_tcp_conns, max_unique_ips,
+			connection_links, max_tcp_conns, max_unique_ips,
 			data_quota_bytes, expiration,
 			discovered_at, updated_at
 		FROM discovered_clients
@@ -85,7 +85,7 @@ func (s *Store) GetDiscoveredClient(ctx context.Context, id string) (storage.Dis
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, agent_id, client_name, secret, status,
 			total_octets, current_connections, active_unique_ips,
-			connection_link, max_tcp_conns, max_unique_ips,
+			connection_links, max_tcp_conns, max_unique_ips,
 			data_quota_bytes, expiration,
 			discovered_at, updated_at
 		FROM discovered_clients
@@ -93,10 +93,11 @@ func (s *Store) GetDiscoveredClient(ctx context.Context, id string) (storage.Dis
 	`, id)
 
 	var record storage.DiscoveredClientRecord
+	var linksJSON []byte
 	if err := row.Scan(
 		&record.ID, &record.AgentID, &record.ClientName, &record.Secret, &record.Status,
 		&record.TotalOctets, &record.CurrentConnections, &record.ActiveUniqueIPs,
-		&record.ConnectionLink, &record.MaxTCPConns, &record.MaxUniqueIPs,
+		&linksJSON, &record.MaxTCPConns, &record.MaxUniqueIPs,
 		&record.DataQuotaBytes, &record.Expiration,
 		&record.DiscoveredAt, &record.UpdatedAt,
 	); err != nil {
@@ -105,6 +106,7 @@ func (s *Store) GetDiscoveredClient(ctx context.Context, id string) (storage.Dis
 		}
 		return storage.DiscoveredClientRecord{}, err
 	}
+	record.ConnectionLinks = decodeStringArray(linksJSON)
 	record.DiscoveredAt = record.DiscoveredAt.UTC()
 	record.UpdatedAt = record.UpdatedAt.UTC()
 	return record, nil
@@ -114,7 +116,7 @@ func (s *Store) GetDiscoveredClientByAgentAndName(ctx context.Context, agentID s
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, agent_id, client_name, secret, status,
 			total_octets, current_connections, active_unique_ips,
-			connection_link, max_tcp_conns, max_unique_ips,
+			connection_links, max_tcp_conns, max_unique_ips,
 			data_quota_bytes, expiration,
 			discovered_at, updated_at
 		FROM discovered_clients
@@ -122,10 +124,11 @@ func (s *Store) GetDiscoveredClientByAgentAndName(ctx context.Context, agentID s
 	`, agentID, clientName)
 
 	var record storage.DiscoveredClientRecord
+	var linksJSON []byte
 	if err := row.Scan(
 		&record.ID, &record.AgentID, &record.ClientName, &record.Secret, &record.Status,
 		&record.TotalOctets, &record.CurrentConnections, &record.ActiveUniqueIPs,
-		&record.ConnectionLink, &record.MaxTCPConns, &record.MaxUniqueIPs,
+		&linksJSON, &record.MaxTCPConns, &record.MaxUniqueIPs,
 		&record.DataQuotaBytes, &record.Expiration,
 		&record.DiscoveredAt, &record.UpdatedAt,
 	); err != nil {
@@ -134,6 +137,7 @@ func (s *Store) GetDiscoveredClientByAgentAndName(ctx context.Context, agentID s
 		}
 		return storage.DiscoveredClientRecord{}, err
 	}
+	record.ConnectionLinks = decodeStringArray(linksJSON)
 	record.DiscoveredAt = record.DiscoveredAt.UTC()
 	record.UpdatedAt = record.UpdatedAt.UTC()
 	return record, nil
@@ -198,15 +202,17 @@ func scanDiscoveredClientRows(rows *sql.Rows) ([]storage.DiscoveredClientRecord,
 	result := make([]storage.DiscoveredClientRecord, 0)
 	for rows.Next() {
 		var record storage.DiscoveredClientRecord
+		var linksJSON []byte
 		if err := rows.Scan(
 			&record.ID, &record.AgentID, &record.ClientName, &record.Secret, &record.Status,
 			&record.TotalOctets, &record.CurrentConnections, &record.ActiveUniqueIPs,
-			&record.ConnectionLink, &record.MaxTCPConns, &record.MaxUniqueIPs,
+			&linksJSON, &record.MaxTCPConns, &record.MaxUniqueIPs,
 			&record.DataQuotaBytes, &record.Expiration,
 			&record.DiscoveredAt, &record.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
+		record.ConnectionLinks = decodeStringArray(linksJSON)
 		record.DiscoveredAt = record.DiscoveredAt.UTC()
 		record.UpdatedAt = record.UpdatedAt.UTC()
 		result = append(result, record)

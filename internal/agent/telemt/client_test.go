@@ -1046,8 +1046,8 @@ func TestClientCreateClientCallsTelemtUsersEndpoint(t *testing.T) {
 	if requestBody["username"] != "alice" {
 		t.Fatalf("request username = %v, want %q", requestBody["username"], "alice")
 	}
-	if result.ConnectionLink != "tg://proxy?server=node-a&secret=tls" {
-		t.Fatalf("result.ConnectionLink = %q, want %q", result.ConnectionLink, "tg://proxy?server=node-a&secret=tls")
+	if got := result.ConnectionLinks; len(got) != 1 || got[0] != "tg://proxy?server=node-a&secret=tls" {
+		t.Fatalf("result.ConnectionLinks = %v, want [tg://proxy?server=node-a&secret=tls]", got)
 	}
 }
 
@@ -1169,8 +1169,8 @@ func TestClientCreateClientParsesNestedLinksFromCreateUserResponse(t *testing.T)
 	if err != nil {
 		t.Fatalf("CreateClient() error = %v", err)
 	}
-	if result.ConnectionLink != "tg://proxy?server=node-a&secret=tls-nested" {
-		t.Fatalf("result.ConnectionLink = %q, want nested-parsed link", result.ConnectionLink)
+	if got := result.ConnectionLinks; len(got) != 1 || got[0] != "tg://proxy?server=node-a&secret=tls-nested" {
+		t.Fatalf("result.ConnectionLinks = %v, want nested-parsed link", got)
 	}
 }
 
@@ -1223,8 +1223,8 @@ func TestClientUpdateClientUsesPreviousNameInPath(t *testing.T) {
 	if requestBody["username"] != "alice-new" {
 		t.Fatalf("request username = %v, want %q", requestBody["username"], "alice-new")
 	}
-	if result.ConnectionLink != "tg://proxy?server=node-a&secret=secure" {
-		t.Fatalf("result.ConnectionLink = %q, want %q", result.ConnectionLink, "tg://proxy?server=node-a&secret=secure")
+	if got := result.ConnectionLinks; len(got) != 1 || got[0] != "tg://proxy?server=node-a&secret=secure" {
+		t.Fatalf("result.ConnectionLinks = %v, want [tg://proxy?server=node-a&secret=secure]", got)
 	}
 }
 

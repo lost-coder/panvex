@@ -288,7 +288,7 @@ message ClientDetailRecord {
   int32 current_connections = 4;
   int32 active_unique_ips = 5;
   repeated string active_ip_list = 6;
-  string connection_link = 7;
+  repeated string connection_links = 7;
   int32 max_tcp_conns = 8;
   string expiration = 9;
   uint64 data_quota_bytes = 10;

@@ -23,7 +23,7 @@ export type ClientDeployment = {
   desired_operation: string;
   status: string;
   last_error: string;
-  connection_link: string;
+  connection_links: string[];
   last_applied_at_unix: number;
   updated_at_unix: number;
 };
@@ -82,7 +82,7 @@ export type DiscoveredClient = {
   total_octets: number;
   current_connections: number;
   active_unique_ips: number;
-  connection_link: string;
+  connection_links: string[];
   max_tcp_conns: number;
   max_unique_ips: number;
   data_quota_bytes: number;

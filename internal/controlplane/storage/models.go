@@ -374,13 +374,15 @@ type ClientAssignmentRecord struct {
 }
 
 // ClientDeploymentRecord stores the current rollout state for one client on one agent.
+// ConnectionLinks holds every Telemt-reported link for this user (one per
+// tls_domain × host combination). Stored as a JSON array on disk.
 type ClientDeploymentRecord struct {
 	ClientID         string
 	AgentID          string
 	DesiredOperation string
 	Status           string
 	LastError        string
-	ConnectionLink   string
+	ConnectionLinks  []string
 	LastAppliedAt    *time.Time
 	UpdatedAt        time.Time
 }
@@ -395,7 +397,7 @@ type DiscoveredClientRecord struct {
 	TotalOctets        uint64
 	CurrentConnections int
 	ActiveUniqueIPs    int
-	ConnectionLink     string
+	ConnectionLinks    []string
 	MaxTCPConns        int
 	MaxUniqueIPs       int
 	DataQuotaBytes     int64

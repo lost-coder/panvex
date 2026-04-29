@@ -7,6 +7,7 @@ package dbsqlc
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
@@ -25,18 +26,36 @@ func (q *Queries) DeleteDiscoveredClient(ctx context.Context, id string) (int64,
 const getDiscoveredClient = `-- name: GetDiscoveredClient :one
 
 SELECT id, agent_id, client_name, secret, status, total_octets,
-       current_connections, active_unique_ips, connection_link,
+       current_connections, active_unique_ips, connection_links,
        max_tcp_conns, max_unique_ips, data_quota_bytes, expiration,
        discovered_at, updated_at
 FROM discovered_clients
 WHERE id = $1
 `
 
+type GetDiscoveredClientRow struct {
+	ID                 string
+	AgentID            string
+	ClientName         string
+	Secret             string
+	Status             string
+	TotalOctets        int64
+	CurrentConnections int32
+	ActiveUniqueIps    int32
+	ConnectionLinks    json.RawMessage
+	MaxTcpConns        int32
+	MaxUniqueIps       int32
+	DataQuotaBytes     int64
+	Expiration         string
+	DiscoveredAt       time.Time
+	UpdatedAt          time.Time
+}
+
 // R-Q-03: discovered_clients — agent-reported user records pending
 // adoption.
-func (q *Queries) GetDiscoveredClient(ctx context.Context, id string) (DiscoveredClient, error) {
+func (q *Queries) GetDiscoveredClient(ctx context.Context, id string) (GetDiscoveredClientRow, error) {
 	row := q.db.QueryRowContext(ctx, getDiscoveredClient, id)
-	var i DiscoveredClient
+	var i GetDiscoveredClientRow
 	err := row.Scan(
 		&i.ID,
 		&i.AgentID,
@@ -46,7 +65,7 @@ func (q *Queries) GetDiscoveredClient(ctx context.Context, id string) (Discovere
 		&i.TotalOctets,
 		&i.CurrentConnections,
 		&i.ActiveUniqueIps,
-		&i.ConnectionLink,
+		&i.ConnectionLinks,
 		&i.MaxTcpConns,
 		&i.MaxUniqueIps,
 		&i.DataQuotaBytes,
@@ -59,7 +78,7 @@ func (q *Queries) GetDiscoveredClient(ctx context.Context, id string) (Discovere
 
 const getDiscoveredClientByAgentAndName = `-- name: GetDiscoveredClientByAgentAndName :one
 SELECT id, agent_id, client_name, secret, status, total_octets,
-       current_connections, active_unique_ips, connection_link,
+       current_connections, active_unique_ips, connection_links,
        max_tcp_conns, max_unique_ips, data_quota_bytes, expiration,
        discovered_at, updated_at
 FROM discovered_clients
@@ -71,9 +90,27 @@ type GetDiscoveredClientByAgentAndNameParams struct {
 	ClientName string
 }
 
-func (q *Queries) GetDiscoveredClientByAgentAndName(ctx context.Context, arg GetDiscoveredClientByAgentAndNameParams) (DiscoveredClient, error) {
+type GetDiscoveredClientByAgentAndNameRow struct {
+	ID                 string
+	AgentID            string
+	ClientName         string
+	Secret             string
+	Status             string
+	TotalOctets        int64
+	CurrentConnections int32
+	ActiveUniqueIps    int32
+	ConnectionLinks    json.RawMessage
+	MaxTcpConns        int32
+	MaxUniqueIps       int32
+	DataQuotaBytes     int64
+	Expiration         string
+	DiscoveredAt       time.Time
+	UpdatedAt          time.Time
+}
+
+func (q *Queries) GetDiscoveredClientByAgentAndName(ctx context.Context, arg GetDiscoveredClientByAgentAndNameParams) (GetDiscoveredClientByAgentAndNameRow, error) {
 	row := q.db.QueryRowContext(ctx, getDiscoveredClientByAgentAndName, arg.AgentID, arg.ClientName)
-	var i DiscoveredClient
+	var i GetDiscoveredClientByAgentAndNameRow
 	err := row.Scan(
 		&i.ID,
 		&i.AgentID,
@@ -83,7 +120,7 @@ func (q *Queries) GetDiscoveredClientByAgentAndName(ctx context.Context, arg Get
 		&i.TotalOctets,
 		&i.CurrentConnections,
 		&i.ActiveUniqueIps,
-		&i.ConnectionLink,
+		&i.ConnectionLinks,
 		&i.MaxTcpConns,
 		&i.MaxUniqueIps,
 		&i.DataQuotaBytes,
@@ -96,22 +133,40 @@ func (q *Queries) GetDiscoveredClientByAgentAndName(ctx context.Context, arg Get
 
 const listDiscoveredClients = `-- name: ListDiscoveredClients :many
 SELECT id, agent_id, client_name, secret, status, total_octets,
-       current_connections, active_unique_ips, connection_link,
+       current_connections, active_unique_ips, connection_links,
        max_tcp_conns, max_unique_ips, data_quota_bytes, expiration,
        discovered_at, updated_at
 FROM discovered_clients
 ORDER BY discovered_at DESC, id ASC
 `
 
-func (q *Queries) ListDiscoveredClients(ctx context.Context) ([]DiscoveredClient, error) {
+type ListDiscoveredClientsRow struct {
+	ID                 string
+	AgentID            string
+	ClientName         string
+	Secret             string
+	Status             string
+	TotalOctets        int64
+	CurrentConnections int32
+	ActiveUniqueIps    int32
+	ConnectionLinks    json.RawMessage
+	MaxTcpConns        int32
+	MaxUniqueIps       int32
+	DataQuotaBytes     int64
+	Expiration         string
+	DiscoveredAt       time.Time
+	UpdatedAt          time.Time
+}
+
+func (q *Queries) ListDiscoveredClients(ctx context.Context) ([]ListDiscoveredClientsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listDiscoveredClients)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []DiscoveredClient
+	var items []ListDiscoveredClientsRow
 	for rows.Next() {
-		var i DiscoveredClient
+		var i ListDiscoveredClientsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.AgentID,
@@ -121,7 +176,7 @@ func (q *Queries) ListDiscoveredClients(ctx context.Context) ([]DiscoveredClient
 			&i.TotalOctets,
 			&i.CurrentConnections,
 			&i.ActiveUniqueIps,
-			&i.ConnectionLink,
+			&i.ConnectionLinks,
 			&i.MaxTcpConns,
 			&i.MaxUniqueIps,
 			&i.DataQuotaBytes,
@@ -163,7 +218,7 @@ func (q *Queries) UpdateDiscoveredClientStatus(ctx context.Context, arg UpdateDi
 const upsertDiscoveredClient = `-- name: UpsertDiscoveredClient :exec
 INSERT INTO discovered_clients (id, agent_id, client_name, secret, status,
                                 total_octets, current_connections,
-                                active_unique_ips, connection_link,
+                                active_unique_ips, connection_links,
                                 max_tcp_conns, max_unique_ips,
                                 data_quota_bytes, expiration,
                                 discovered_at, updated_at)
@@ -174,7 +229,7 @@ SET secret              = EXCLUDED.secret,
     total_octets        = EXCLUDED.total_octets,
     current_connections = EXCLUDED.current_connections,
     active_unique_ips   = EXCLUDED.active_unique_ips,
-    connection_link     = EXCLUDED.connection_link,
+    connection_links     = EXCLUDED.connection_links,
     max_tcp_conns       = EXCLUDED.max_tcp_conns,
     max_unique_ips      = EXCLUDED.max_unique_ips,
     data_quota_bytes    = EXCLUDED.data_quota_bytes,
@@ -192,7 +247,7 @@ type UpsertDiscoveredClientParams struct {
 	TotalOctets        int64
 	CurrentConnections int32
 	ActiveUniqueIps    int32
-	ConnectionLink     string
+	ConnectionLinks    json.RawMessage
 	MaxTcpConns        int32
 	MaxUniqueIps       int32
 	DataQuotaBytes     int64
@@ -211,7 +266,7 @@ func (q *Queries) UpsertDiscoveredClient(ctx context.Context, arg UpsertDiscover
 		arg.TotalOctets,
 		arg.CurrentConnections,
 		arg.ActiveUniqueIps,
-		arg.ConnectionLink,
+		arg.ConnectionLinks,
 		arg.MaxTcpConns,
 		arg.MaxUniqueIps,
 		arg.DataQuotaBytes,

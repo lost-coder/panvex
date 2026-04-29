@@ -33,7 +33,7 @@ type discoveredClient struct {
 	TotalOctets        uint64
 	CurrentConnections int
 	ActiveUniqueIPs    int
-	ConnectionLink     string
+	ConnectionLinks    []string
 	MaxTCPConns        int
 	MaxUniqueIPs       int
 	DataQuotaBytes     int64
@@ -172,7 +172,7 @@ func (s *Server) upsertDiscoveredClient(ctx context.Context, agentID string, rec
 		TotalOctets:        record.GetTotalOctets(),
 		CurrentConnections: int(record.GetCurrentConnections()),
 		ActiveUniqueIPs:    int(record.GetActiveUniqueIps()),
-		ConnectionLink:     record.GetConnectionLink(),
+		ConnectionLinks:    record.GetConnectionLinks(),
 		MaxTCPConns:        int(record.GetMaxTcpConns()),
 		MaxUniqueIPs:       int(record.GetMaxUniqueIps()),
 		DataQuotaBytes:     int64(record.GetDataQuotaBytes()),
@@ -430,7 +430,7 @@ func (s *Server) buildAdoptedClientState(record storage.DiscoveredClientRecord, 
 	assignments := make([]managedClientAssignment, 0, 1+len(siblings))
 	deployments := make([]managedClientDeployment, 0, 1+len(siblings))
 
-	addAgent := func(agentID, connectionLink string) {
+	addAgent := func(agentID string, connectionLinks []string) {
 		assignments = append(assignments, managedClientAssignment{
 			ID:         s.nextClientAssignmentID(),
 			ClientID:   client.ID,
@@ -443,18 +443,18 @@ func (s *Server) buildAdoptedClientState(record storage.DiscoveredClientRecord, 
 			AgentID:          agentID,
 			DesiredOperation: "adopt",
 			Status:           clientDeploymentStatusSucceeded,
-			ConnectionLink:   connectionLink,
+			ConnectionLinks:  connectionLinks,
 			LastAppliedAt:    &appliedAt,
 			UpdatedAt:        observedAt,
 		})
 	}
 
-	addAgent(record.AgentID, record.ConnectionLink)
+	addAgent(record.AgentID, record.ConnectionLinks)
 	for _, sib := range siblings {
 		if sib.AgentID == "" || sib.AgentID == record.AgentID {
 			continue
 		}
-		addAgent(sib.AgentID, sib.ConnectionLink)
+		addAgent(sib.AgentID, sib.ConnectionLinks)
 	}
 	return client, assignments, deployments
 }
@@ -605,7 +605,7 @@ func (s *Server) mergeAdoptIntoExistingClient(
 	}
 
 	appliedAt := observedAt
-	addAgent := func(agentID, connectionLink string) {
+	addAgent := func(agentID string, connectionLinks []string) {
 		if agentID == "" {
 			return
 		}
@@ -625,15 +625,15 @@ func (s *Server) mergeAdoptIntoExistingClient(
 			AgentID:          agentID,
 			DesiredOperation: "adopt",
 			Status:           clientDeploymentStatusSucceeded,
-			ConnectionLink:   connectionLink,
+			ConnectionLinks:  connectionLinks,
 			LastAppliedAt:    &appliedAt,
 			UpdatedAt:        observedAt,
 		})
 	}
 
-	addAgent(record.AgentID, record.ConnectionLink)
+	addAgent(record.AgentID, record.ConnectionLinks)
 	for _, sib := range siblings {
-		addAgent(sib.AgentID, sib.ConnectionLink)
+		addAgent(sib.AgentID, sib.ConnectionLinks)
 	}
 
 	existing.UpdatedAt = observedAt
@@ -755,7 +755,7 @@ func discoveredClientFromRecord(r storage.DiscoveredClientRecord) discoveredClie
 		TotalOctets:        r.TotalOctets,
 		CurrentConnections: r.CurrentConnections,
 		ActiveUniqueIPs:    r.ActiveUniqueIPs,
-		ConnectionLink:     r.ConnectionLink,
+		ConnectionLinks:    r.ConnectionLinks,
 		MaxTCPConns:        r.MaxTCPConns,
 		MaxUniqueIPs:       r.MaxUniqueIPs,
 		DataQuotaBytes:     r.DataQuotaBytes,

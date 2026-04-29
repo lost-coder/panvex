@@ -473,7 +473,7 @@ func TestAgentHandleJobReexecutesAfterDedupRetentionWindow(t *testing.T) {
 func TestAgentHandleJobCreatesManagedClientAndReturnsConnectionLink(t *testing.T) {
 	client := &fakeTelemtClient{
 		createResult: telemt.ClientApplyResult{
-			ConnectionLink: "tg://proxy?server=node-a&secret=create",
+			ConnectionLinks: []string{"tg://proxy?server=node-a&secret=create"},
 		},
 	}
 	agent := New(Config{
@@ -493,13 +493,13 @@ func TestAgentHandleJobCreatesManagedClientAndReturnsConnectionLink(t *testing.T
 		t.Fatalf("HandleJob() Success = false, want true, message = %q", result.Message)
 	}
 	var payload struct {
-		ConnectionLink string `json:"connection_link"`
+		ConnectionLinks []string `json:"connection_links"`
 	}
 	if err := json.Unmarshal([]byte(result.ResultJson), &payload); err != nil {
 		t.Fatalf("json.Unmarshal(ResultJSON) error = %v", err)
 	}
-	if payload.ConnectionLink != "tg://proxy?server=node-a&secret=create" {
-		t.Fatalf("connection_link = %q, want %q", payload.ConnectionLink, "tg://proxy?server=node-a&secret=create")
+	if got := payload.ConnectionLinks; len(got) != 1 || got[0] != "tg://proxy?server=node-a&secret=create" {
+		t.Fatalf("connection_links = %v, want [tg://proxy?server=node-a&secret=create]", got)
 	}
 	if client.createdClient.Name != "alice" {
 		t.Fatalf("created client name = %q, want %q", client.createdClient.Name, "alice")
@@ -509,7 +509,7 @@ func TestAgentHandleJobCreatesManagedClientAndReturnsConnectionLink(t *testing.T
 func TestAgentHandleJobUpdatesManagedClientUsingPreviousName(t *testing.T) {
 	client := &fakeTelemtClient{
 		updateResult: telemt.ClientApplyResult{
-			ConnectionLink: "tg://proxy?server=node-a&secret=update",
+			ConnectionLinks: []string{"tg://proxy?server=node-a&secret=update"},
 		},
 	}
 	agent := New(Config{
@@ -584,7 +584,7 @@ func TestAgentHandleJobRefreshDiagnosticsInvalidatesSlowData(t *testing.T) {
 func TestAgentBuildSnapshotMapsTelemtClientNamesBackToManagedClientIDs(t *testing.T) {
 	client := &fakeTelemtClient{
 		createResult: telemt.ClientApplyResult{
-			ConnectionLink: "tg://proxy?server=node-a&secret=create",
+			ConnectionLinks: []string{"tg://proxy?server=node-a&secret=create"},
 		},
 		state: telemt.RuntimeState{
 			Version:        "2026.03",

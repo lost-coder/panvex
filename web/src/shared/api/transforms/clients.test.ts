@@ -1,55 +1,54 @@
 import { describe, expect, it } from "vitest";
 import {
-  parseConnectionLink,
+  categorizeConnectionLinks,
   transformClientList,
   transformClientDetail,
   buildClientInput,
 } from "./clients";
 import type { Client as ApiClient } from "@/shared/api/api";
 
-describe("parseConnectionLink", () => {
+describe("categorizeConnectionLinks", () => {
   it("returns empty buckets for empty input", () => {
-    expect(parseConnectionLink("")).toEqual({ classic: [], secure: [], tls: [] });
+    expect(categorizeConnectionLinks([])).toEqual({ classic: [], secure: [], tls: [] });
   });
 
   it("classifies https://t.me/ links as classic", () => {
-    const r = parseConnectionLink("https://t.me/proxy?server=x");
+    const r = categorizeConnectionLinks(["https://t.me/proxy?server=x"]);
     expect(r.classic).toHaveLength(1);
     expect(r.secure).toHaveLength(0);
     expect(r.tls).toHaveLength(0);
   });
 
   it("classifies tg://proxy with ee-prefixed secret as TLS", () => {
-    const r = parseConnectionLink("tg://proxy?server=x&port=443&secret=eeABCDEF");
+    const r = categorizeConnectionLinks(["tg://proxy?server=x&port=443&secret=eeABCDEF"]);
     expect(r.tls).toHaveLength(1);
     expect(r.secure).toHaveLength(0);
   });
 
   it("classifies tg://proxy with non-ee secret as secure", () => {
-    const r = parseConnectionLink("tg://proxy?server=x&port=443&secret=dd1122");
+    const r = categorizeConnectionLinks(["tg://proxy?server=x&port=443&secret=dd1122"]);
     expect(r.secure).toHaveLength(1);
     expect(r.tls).toHaveLength(0);
   });
 
   it("treats unknown scheme as secure fallback", () => {
-    const r = parseConnectionLink("something-else");
+    const r = categorizeConnectionLinks(["something-else"]);
     expect(r.secure).toEqual(["something-else"]);
   });
 
-  it("splits newline-joined links into separate buckets", () => {
-    const blob = [
+  it("buckets a multi-domain TLS list across all domains", () => {
+    const r = categorizeConnectionLinks([
       "tg://proxy?server=x&port=443&secret=eeAAAA1111",
       "tg://proxy?server=y&port=443&secret=eeBBBB2222",
       "tg://proxy?server=x&port=443&secret=dd9999",
-    ].join("\n");
-    const r = parseConnectionLink(blob);
+    ]);
     expect(r.tls).toHaveLength(2);
     expect(r.secure).toHaveLength(1);
     expect(r.classic).toHaveLength(0);
   });
 
-  it("ignores blank lines from a sloppy join", () => {
-    const r = parseConnectionLink("\n\ntg://proxy?server=x&port=443&secret=ee01\n");
+  it("skips empty/whitespace entries", () => {
+    const r = categorizeConnectionLinks(["", "  ", "tg://proxy?server=x&port=443&secret=ee01"]);
     expect(r.tls).toEqual(["tg://proxy?server=x&port=443&secret=ee01"]);
   });
 });
@@ -114,7 +113,10 @@ const rawClient: ApiClient = {
       desired_operation: "apply",
       status: "ok",
       last_error: "",
-      connection_link: "tg://proxy?server=x&port=443&secret=ee1234",
+      connection_links: [
+        "tg://proxy?server=x&port=443&secret=ee1234",
+        "tg://proxy?server=y&port=443&secret=ee5678",
+      ],
       last_applied_at_unix: 1_700_000_000,
       updated_at_unix: 1_700_000_100,
     },
@@ -125,13 +127,15 @@ const rawClient: ApiClient = {
 };
 
 describe("transformClientDetail", () => {
-  it("maps deployments + parses connection_link", () => {
+  it("maps deployments + categorizes every connection link", () => {
     const r = transformClientDetail(rawClient);
     expect(r.name).toBe("alpha");
     expect(r.fleetGroupIds).toEqual(["g1"]);
     expect(r.deployments).toHaveLength(1);
     expect(r.deployments[0]!.agentId).toBe("a1");
-    expect(r.deployments[0]!.links.tls).toHaveLength(1);
+    // Two TLS links from a multi-domain Telemt config land in the
+    // tls bucket together.
+    expect(r.deployments[0]!.links.tls).toHaveLength(2);
   });
 });
 

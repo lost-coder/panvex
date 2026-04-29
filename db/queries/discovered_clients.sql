@@ -3,7 +3,7 @@
 
 -- name: GetDiscoveredClient :one
 SELECT id, agent_id, client_name, secret, status, total_octets,
-       current_connections, active_unique_ips, connection_link,
+       current_connections, active_unique_ips, connection_links,
        max_tcp_conns, max_unique_ips, data_quota_bytes, expiration,
        discovered_at, updated_at
 FROM discovered_clients
@@ -11,7 +11,7 @@ WHERE id = $1;
 
 -- name: GetDiscoveredClientByAgentAndName :one
 SELECT id, agent_id, client_name, secret, status, total_octets,
-       current_connections, active_unique_ips, connection_link,
+       current_connections, active_unique_ips, connection_links,
        max_tcp_conns, max_unique_ips, data_quota_bytes, expiration,
        discovered_at, updated_at
 FROM discovered_clients
@@ -19,7 +19,7 @@ WHERE agent_id = $1 AND client_name = $2;
 
 -- name: ListDiscoveredClients :many
 SELECT id, agent_id, client_name, secret, status, total_octets,
-       current_connections, active_unique_ips, connection_link,
+       current_connections, active_unique_ips, connection_links,
        max_tcp_conns, max_unique_ips, data_quota_bytes, expiration,
        discovered_at, updated_at
 FROM discovered_clients
@@ -29,7 +29,7 @@ ORDER BY discovered_at DESC, id ASC;
 -- name: UpsertDiscoveredClient :exec
 INSERT INTO discovered_clients (id, agent_id, client_name, secret, status,
                                 total_octets, current_connections,
-                                active_unique_ips, connection_link,
+                                active_unique_ips, connection_links,
                                 max_tcp_conns, max_unique_ips,
                                 data_quota_bytes, expiration,
                                 discovered_at, updated_at)
@@ -40,7 +40,7 @@ SET secret              = EXCLUDED.secret,
     total_octets        = EXCLUDED.total_octets,
     current_connections = EXCLUDED.current_connections,
     active_unique_ips   = EXCLUDED.active_unique_ips,
-    connection_link     = EXCLUDED.connection_link,
+    connection_links     = EXCLUDED.connection_links,
     max_tcp_conns       = EXCLUDED.max_tcp_conns,
     max_unique_ips      = EXCLUDED.max_unique_ips,
     data_quota_bytes    = EXCLUDED.data_quota_bytes,
