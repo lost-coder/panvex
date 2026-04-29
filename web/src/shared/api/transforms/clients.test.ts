@@ -35,6 +35,23 @@ describe("parseConnectionLink", () => {
     const r = parseConnectionLink("something-else");
     expect(r.secure).toEqual(["something-else"]);
   });
+
+  it("splits newline-joined links into separate buckets", () => {
+    const blob = [
+      "tg://proxy?server=x&port=443&secret=eeAAAA1111",
+      "tg://proxy?server=y&port=443&secret=eeBBBB2222",
+      "tg://proxy?server=x&port=443&secret=dd9999",
+    ].join("\n");
+    const r = parseConnectionLink(blob);
+    expect(r.tls).toHaveLength(2);
+    expect(r.secure).toHaveLength(1);
+    expect(r.classic).toHaveLength(0);
+  });
+
+  it("ignores blank lines from a sloppy join", () => {
+    const r = parseConnectionLink("\n\ntg://proxy?server=x&port=443&secret=ee01\n");
+    expect(r.tls).toEqual(["tg://proxy?server=x&port=443&secret=ee01"]);
+  });
 });
 
 describe("transformClientList", () => {

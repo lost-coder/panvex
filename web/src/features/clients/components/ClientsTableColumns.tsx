@@ -86,7 +86,7 @@ export function buildClientColumns(nowSec: number, selection?: ClientSelectionCo
       key: "traffic",
       header: "Traffic",
       render: (c: ClientListItem) => (
-        <ClientTrafficCell used={c.trafficUsedBytes} quota={c.dataQuotaBytes} />
+        <ClientTrafficCell used={c.trafficUsedBytes} quota={c.dataQuotaBytes} nodes={c.assignedNodesCount} />
       ),
       className: "hidden lg:table-cell w-[180px]",
     },

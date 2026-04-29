@@ -29,22 +29,19 @@ function LinksStrip({ links }: Readonly<LinksStripProps>) {
   }
   return (
     <div className="mt-2 flex flex-col gap-1.5">
-      {groups.map((g) => (
-        <div key={g.key} className="flex items-center gap-2 min-w-0">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted shrink-0 w-[56px]">
-            {g.label}
-          </span>
-          <span className="font-mono text-xs text-fg truncate min-w-0 flex-1">
-            {g.items[0]}
-          </span>
-          <CopyButton text={g.items[0] ?? ""} />
-          {g.items.length > 1 && (
-            <span className="text-[10px] font-mono text-fg-muted shrink-0">
-              +{g.items.length - 1}
+      {groups.flatMap((g) =>
+        g.items.map((item, idx) => (
+          <div key={`${g.key}-${idx}`} className="flex items-center gap-2 min-w-0">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted shrink-0 w-[56px]">
+              {idx === 0 ? g.label : ""}
             </span>
-          )}
-        </div>
-      ))}
+            <span className="font-mono text-xs text-fg truncate min-w-0 flex-1">
+              {item}
+            </span>
+            <CopyButton text={item} />
+          </div>
+        )),
+      )}
     </div>
   );
 }

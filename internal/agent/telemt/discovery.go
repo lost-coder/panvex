@@ -106,7 +106,7 @@ func buildDiscoveredUser(u UserInfo, configSecrets map[string]UserEntry) Discove
 		TotalOctets:        u.TotalOctets,
 		CurrentConnections: u.CurrentConnections,
 		ActiveUniqueIPs:    u.ActiveUniqueIPs,
-		ConnectionLink:     preferredConnectionLink(u.Links.TLS, u.Links.Secure, u.Links.Classic),
+		ConnectionLink:     joinConnectionLinks(u.Links.TLS, u.Links.Secure, u.Links.Classic),
 	}
 	applyAPIUserLimits(&du, u)
 	resolveDiscoveredUserSecret(&du, u, configSecrets)

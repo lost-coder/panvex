@@ -21,13 +21,22 @@ function ratioTone(
 }
 
 export function ClientDetailPulse({ client }: Readonly<{ client: Client }>) {
-  const trafficPct = client.dataQuotaBytes
-    ? Math.min(100, (client.trafficUsedBytes / client.dataQuotaBytes) * 100)
+  // Limits are per-Telemt-node; usage is summed across deployments.
+  // Multiply the per-node limit by deployment count so the ratio
+  // compares like with like (otherwise a 4-node client with 50/conn
+  // looks 100% saturated at 50 conns while every node still has room).
+  const nodes = Math.max(1, client.deployments.length);
+  const effectiveQuota = client.dataQuotaBytes * nodes;
+  const effectiveConns = client.maxTcpConns * nodes;
+  const effectiveIps = client.maxUniqueIps * nodes;
+
+  const trafficPct = effectiveQuota
+    ? Math.min(100, (client.trafficUsedBytes / effectiveQuota) * 100)
     : undefined;
   const connsPct =
-    client.maxTcpConns > 0 ? (client.activeTcpConns / client.maxTcpConns) * 100 : undefined;
+    effectiveConns > 0 ? (client.activeTcpConns / effectiveConns) * 100 : undefined;
   const ipsPct =
-    client.maxUniqueIps > 0 ? (client.uniqueIpsUsed / client.maxUniqueIps) * 100 : undefined;
+    effectiveIps > 0 ? (client.uniqueIpsUsed / effectiveIps) * 100 : undefined;
   return (
     <PulseRow
       ticks={
@@ -36,8 +45,8 @@ export function ClientDetailPulse({ client }: Readonly<{ client: Client }>) {
             label: "Connections",
             value: client.activeTcpConns.toLocaleString(),
             hint:
-              client.maxTcpConns > 0
-                ? `of ${client.maxTcpConns.toLocaleString()} max`
+              effectiveConns > 0
+                ? `of ${effectiveConns.toLocaleString()} max`
                 : "no limit",
             tone: ratioTone(connsPct, false),
             barPct: connsPct,
@@ -46,8 +55,8 @@ export function ClientDetailPulse({ client }: Readonly<{ client: Client }>) {
             label: "Unique IPs",
             value: client.uniqueIpsUsed.toLocaleString(),
             hint:
-              client.maxUniqueIps > 0
-                ? `of ${client.maxUniqueIps.toLocaleString()} max`
+              effectiveIps > 0
+                ? `of ${effectiveIps.toLocaleString()} max`
                 : "no limit",
             tone: ratioTone(ipsPct, false),
             barPct: ipsPct,
@@ -56,8 +65,8 @@ export function ClientDetailPulse({ client }: Readonly<{ client: Client }>) {
             label: "Traffic",
             value: formatBytes(client.trafficUsedBytes),
             hint:
-              client.dataQuotaBytes > 0
-                ? `of ${formatQuota(client.dataQuotaBytes)}`
+              effectiveQuota > 0
+                ? `of ${formatQuota(effectiveQuota)}`
                 : "no quota",
             tone: ratioTone(trafficPct, true),
             barPct: trafficPct,

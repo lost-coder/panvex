@@ -181,7 +181,12 @@ type bulkAdoptResponse struct {
 	SkippedOutOfScope   int               `json:"skipped_out_of_scope,omitempty"`
 }
 
-const maxBulkAdoptIDs = 500
+// maxBulkAdoptIDs caps a single bulk-adopt request. The 1 MiB request
+// body limit is the real ceiling — at ~25 bytes per ID that is roughly
+// 40k ids — but adoptMu is held for the whole batch and SQLite is a
+// single writer, so we still want a sane upper bound. 10k is enough
+// for any realistic fleet without forcing the operator to chunk.
+const maxBulkAdoptIDs = 10_000
 
 // handleBulkAdoptDiscoveredClients adopts every discovered id in one
 // HTTP request. Each id is scope-checked individually; out-of-scope ids

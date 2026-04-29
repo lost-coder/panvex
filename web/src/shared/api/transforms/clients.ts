@@ -5,20 +5,57 @@ import type {
   ClientInput,
 } from "../api";
 
-/** Parse a single connection_link string into categorized link arrays. */
+const SECRET_PARAM_RE = /secret=([0-9a-fA-F]+)/;
+
+/**
+ * Parse the agent-provided connection_link blob into categorized
+ * arrays. The agent joins every Telemt-returned link with `\n` so the
+ * panel surface preserves all tls_domains alternates instead of
+ * collapsing to a single "preferred" link.
+ *
+ * Single-link payloads (legacy and discovered_clients) flow through the
+ * same parser unchanged: split on \n yields one entry, classified into
+ * the right bucket by the secret prefix (ee = TLS, dd = Secure, raw =
+ * Classic).
+ */
 export function parseConnectionLink(link: string): { classic: string[]; secure: string[]; tls: string[] } {
-  if (!link) return { classic: [], secure: [], tls: [] };
-  if (link.startsWith("https://t.me/")) return { classic: [link], secure: [], tls: [] };
-  if (link.startsWith("tg://proxy")) {
-    const secretRe = /secret=([0-9a-fA-F]+)/;
-    const match = secretRe.exec(link);
-    const secret = match?.[1];
-    if (secret?.toLowerCase().startsWith("ee")) {
-      return { classic: [], secure: [], tls: [link] };
-    }
-    return { classic: [], secure: [link], tls: [] };
+  const out: { classic: string[]; secure: string[]; tls: string[] } = {
+    classic: [],
+    secure: [],
+    tls: [],
+  };
+  if (!link) return out;
+  for (const raw of link.split("\n")) {
+    const item = raw.trim();
+    if (!item) continue;
+    classifyLink(item, out);
   }
-  return { classic: [], secure: [link], tls: [] };
+  return out;
+}
+
+function classifyLink(
+  link: string,
+  out: { classic: string[]; secure: string[]; tls: string[] },
+): void {
+  if (link.startsWith("https://t.me/")) {
+    out.classic.push(link);
+    return;
+  }
+  if (link.startsWith("tg://proxy")) {
+    const match = SECRET_PARAM_RE.exec(link);
+    const secret = match?.[1]?.toLowerCase() ?? "";
+    if (secret.startsWith("ee")) {
+      out.tls.push(link);
+      return;
+    }
+    if (secret.startsWith("dd")) {
+      out.secure.push(link);
+      return;
+    }
+    out.classic.push(link);
+    return;
+  }
+  out.secure.push(link);
 }
 
 export function transformClientList(

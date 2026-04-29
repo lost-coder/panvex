@@ -44,13 +44,17 @@ export function ClientStatusBadge({ status }: Readonly<{ status: EffectiveClient
   return <Badge variant={variant}>{label}</Badge>;
 }
 
-export function ClientTrafficCell({ used, quota }: Readonly<{ used: number; quota: number }>) {
-  // No quota → just show used bytes; with a quota render a slim
-  // progress bar + "used / quota" so operators see headroom at a glance.
+// `quota` is the per-Telemt-node value the operator entered. Each
+// agent enforces it independently, so the *fleet-wide* quota is
+// `quota × nodes`. We compare summed traffic against that effective
+// number — otherwise the bar saturates at 100% the moment the first
+// node spends its slice while the rest still have headroom.
+export function ClientTrafficCell({ used, quota, nodes }: Readonly<{ used: number; quota: number; nodes: number }>) {
   if (!quota) {
     return <MonoValue className="text-fg">{formatBytes(used)}</MonoValue>;
   }
-  const pct = Math.min(100, (used / quota) * 100);
+  const denom = quota * Math.max(1, nodes);
+  const pct = Math.min(100, (used / denom) * 100);
   const tone = (() => {
     if (pct >= 100) return "bg-status-error";
     if (pct >= 80) return "bg-status-warn";
@@ -60,7 +64,7 @@ export function ClientTrafficCell({ used, quota }: Readonly<{ used: number; quot
     <div className="flex flex-col gap-1 min-w-[120px]">
       <span className="text-[11px] font-mono text-fg tabular-nums">
         {formatBytes(used)}
-        <span className="text-fg-muted"> / {formatQuota(quota)}</span>
+        <span className="text-fg-muted"> / {formatQuota(denom)}</span>
       </span>
       <div className="h-1 w-full rounded-full bg-border overflow-hidden">
         <div className={cn("h-full rounded-full", tone)} style={{ width: `${pct}%` }} />

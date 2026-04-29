@@ -1174,7 +1174,7 @@ func (c *Client) applyClient(ctx context.Context, method string, path string, cl
 	}
 
 	return ClientApplyResult{
-		ConnectionLink: preferredConnectionLink(links.TLS, links.Secure, links.Classic),
+		ConnectionLink: joinConnectionLinks(links.TLS, links.Secure, links.Classic),
 	}, nil
 }
 
@@ -1226,14 +1226,23 @@ func (c *Client) newRequest(ctx context.Context, method string, path string, bod
 	return request, nil
 }
 
-func preferredConnectionLink(tlsLinks, secureLinks, classicLinks []string) string {
-	for _, candidate := range [][]string{tlsLinks, secureLinks, classicLinks} {
-		if len(candidate) > 0 && strings.TrimSpace(candidate[0]) != "" {
-			return candidate[0]
+// joinConnectionLinks packs every non-empty link Telemt returned into a
+// single newline-separated string. Telemt's tls_domains config emits one
+// TLS link per domain (×host); preferring just one would silently drop
+// the alternates the operator configured. The control-plane stores the
+// blob in connection_link as-is and the panel splits on \n at render
+// time. Order: TLS → Secure → Classic so the strongest mode is first.
+func joinConnectionLinks(tlsLinks, secureLinks, classicLinks []string) string {
+	out := make([]string, 0, len(tlsLinks)+len(secureLinks)+len(classicLinks))
+	for _, group := range [][]string{tlsLinks, secureLinks, classicLinks} {
+		for _, link := range group {
+			trimmed := strings.TrimSpace(link)
+			if trimmed != "" {
+				out = append(out, trimmed)
+			}
 		}
 	}
-
-	return ""
+	return strings.Join(out, "\n")
 }
 
 const maxResponseBodySize = 10 << 20 // 10 MiB

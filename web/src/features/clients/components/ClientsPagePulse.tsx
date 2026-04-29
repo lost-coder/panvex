@@ -31,7 +31,13 @@ export function buildClientCounts(clients: ClientListItem[], nowMs: number): Cli
     else if (s === "disabled") disabled++;
     else expired++;
     if (c.activeTcpConns > 0) online++;
-    if (c.dataQuotaBytes > 0 && c.trafficUsedBytes >= c.dataQuotaBytes) quotaExhausted++;
+    // Quota is per-Telemt-node × deployment count (see LimitsCard).
+    if (
+      c.dataQuotaBytes > 0 &&
+      c.trafficUsedBytes >= c.dataQuotaBytes * Math.max(1, c.assignedNodesCount)
+    ) {
+      quotaExhausted++;
+    }
   }
   return { all: clients.length, active, disabled, expired, online, quotaExhausted };
 }
