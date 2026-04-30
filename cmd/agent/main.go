@@ -202,7 +202,15 @@ func runRuntime(args []string) error {
 			transportReload.pending = true
 			cancel := transportReload.cancel
 			transportReload.mu.Unlock()
-			cancel() // drop the current connection so the loop re-iterates promptly
+			// Defer the cancel so the worker that is invoking us has time to
+			// flush the JobResult onto the outbound stream before the
+			// connection goes away. Cancelling synchronously here races with
+			// the worker's `select` for sending the result and routinely
+			// drops it (~50% over the closed Done channel), which then
+			// causes the panel to re-dispatch the same job after the
+			// retry-after timeout. 50ms is comfortably more than the local
+			// channel send + gRPC client-side buffer write.
+			time.AfterFunc(50*time.Millisecond, cancel)
 			return nil
 		},
 	}, telemtClient)
