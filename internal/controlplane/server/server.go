@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/lost-coder/panvex/internal/controlplane/agents"
 	"github.com/lost-coder/panvex/internal/controlplane/agenttransport"
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
@@ -250,9 +251,13 @@ func (s *Server) SetInstallCommandHandler(h *bootstrap.InstallCommandHandler) {
 
 // SetAgentTransportManager wires the agenttransport.Manager so the
 // transport-mode change handler can notify it when an agent's mode is
-// updated. Safe to call concurrently with HTTP requests.
+// updated. Safe to call concurrently with HTTP requests. Also wires the
+// Prometheus supervisor-gauge callback if metrics are enabled.
 func (s *Server) SetAgentTransportManager(m *agenttransport.Manager) {
 	s.agentTransportManager.Store(m)
+	if m != nil && s.obs != nil {
+		m.SetSupervisorGaugeDelta(s.obs.AddOutboundSupervisor)
+	}
 }
 
 // notifyTransportManager calls Manager.OnNodeChanged if a manager has
@@ -266,15 +271,44 @@ func (s *Server) notifyTransportManager(agentID string) {
 
 // handleAgentInstallCommand returns an http.HandlerFunc that delegates to the
 // install-command handler. Returns 503 if the handler has not been configured.
+// Emits a bootstrap.token_issued audit event on success (HTTP 200).
 func (s *Server) handleAgentInstallCommand() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		session, _, err := s.requireSession(r)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
 		h := s.installCommandHandler.Load()
 		if h == nil {
 			http.Error(w, "install-command endpoint not configured", http.StatusServiceUnavailable)
 			return
 		}
-		h.ServeHTTP(w, r)
+		// Wrap the response writer so we can detect a successful response and
+		// emit an audit event without touching the bootstrap package.
+		rw := &statusCapture{ResponseWriter: w}
+		h.ServeHTTP(rw, r)
+		if rw.status == 0 || rw.status == http.StatusOK {
+			agentID := chi.URLParam(r, "id")
+			s.appendAuditWithContext(r.Context(), session.UserID, "bootstrap.token_issued", agentID, nil)
+		}
 	}
 }
 
-
+// WireEnrollDriver attaches the server's Prometheus counter and audit-event
+// hooks to an EnrollDriver so its Run outcomes are recorded. Call this
+// immediately after constructing the driver and before starting the outbound
+// supervisor. Safe to call with a nil driver (no-op).
+//
+// TODO: call this in the outbound supervisor bootstrap path once
+// bootstrap_state=pending handling lands in agenttransport/outbound.go.
+func (s *Server) WireEnrollDriver(d *bootstrap.EnrollDriver) {
+	if d == nil {
+		return
+	}
+	d.SetAttemptRecorder(s.obs.ObserveBootstrapAttempt)
+	d.SetEventNotifier(func(action, agentID string) {
+		s.appendAudit("", action, agentID, nil)
+	})
+}

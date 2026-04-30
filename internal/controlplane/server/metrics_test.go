@@ -186,6 +186,63 @@ func TestStatusBucket(t *testing.T) {
 	}
 }
 
+// TestReverseModeMetricsRegistered verifies that the two reverse-mode
+// Prometheus series are registered at startup and appear in the exposition
+// (even before any supervisor or enrollment event has occurred).
+func TestReverseModeMetricsRegistered(t *testing.T) {
+	srv := newMetricsTestServer(t, "t")
+
+	_, body := scrapeMetricsText(t, srv, "t")
+
+	for _, want := range []string{
+		`panvex_outbound_supervisors_total{mode="outbound"} 0`,
+		`panvex_bootstrap_attempts_total{result="success"} 0`,
+		`panvex_bootstrap_attempts_total{result="expired"} 0`,
+		`panvex_bootstrap_attempts_total{result="error"} 0`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing expected metric line %q in exposition", want)
+		}
+	}
+}
+
+// TestBootstrapAttemptCounterIncrement verifies that ObserveBootstrapAttempt
+// increments the counter for the given result label.
+func TestBootstrapAttemptCounterIncrement(t *testing.T) {
+	srv := newMetricsTestServer(t, "t")
+
+	srv.obs.ObserveBootstrapAttempt("success")
+	srv.obs.ObserveBootstrapAttempt("expired")
+	srv.obs.ObserveBootstrapAttempt("expired")
+
+	_, body := scrapeMetricsText(t, srv, "t")
+
+	for _, want := range []string{
+		`panvex_bootstrap_attempts_total{result="success"} 1`,
+		`panvex_bootstrap_attempts_total{result="expired"} 2`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing expected metric line %q in exposition:\n%s", want, body)
+		}
+	}
+}
+
+// TestOutboundSupervisorGaugeViaAddOutboundSupervisor verifies that
+// AddOutboundSupervisor adjusts panvex_outbound_supervisors_total correctly.
+func TestOutboundSupervisorGaugeViaAddOutboundSupervisor(t *testing.T) {
+	srv := newMetricsTestServer(t, "t")
+
+	srv.obs.AddOutboundSupervisor(+1)
+	srv.obs.AddOutboundSupervisor(+1)
+	srv.obs.AddOutboundSupervisor(-1)
+
+	_, body := scrapeMetricsText(t, srv, "t")
+
+	if !strings.Contains(body, `panvex_outbound_supervisors_total{mode="outbound"} 1`) {
+		t.Errorf("expected outbound supervisor gauge = 1 after +1+1-1, got:\n%s", body)
+	}
+}
+
 func TestEventHubDropHookIncrementsCounter(t *testing.T) {
 	srv := newMetricsTestServer(t, "t")
 

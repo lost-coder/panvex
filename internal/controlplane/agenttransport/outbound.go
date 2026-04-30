@@ -114,6 +114,12 @@ type outboundSupervisorEntry struct {
 	cancel context.CancelFunc
 }
 
+// SupervisorGaugeDelta is called by outboundTransport whenever a supervisor
+// is added (+1) or removed (-1). The concrete wiring is
+// (*metricsCollectors).AddOutboundSupervisor in package server; tests can
+// supply a simple closure. A nil value is treated as a no-op.
+type SupervisorGaugeDelta func(delta float64)
+
 // outboundTransport is the supervisor pool for outbound (reverse-mode) agents.
 // supervisors maps nodeID to a live supervisor entry; wg tracks the spawned
 // goroutines so stopAll can drain them synchronously.
@@ -121,6 +127,9 @@ type outboundTransport struct {
 	tlsCfg  *tls.Config
 	handler SessionHandler
 	logger  *slog.Logger
+	// onSupervisorDelta is called with +1 / -1 whenever a supervisor entry
+	// is added or removed. Nil when metrics are not wired.
+	onSupervisorDelta SupervisorGaugeDelta
 
 	mu          sync.RWMutex
 	supervisors map[string]*outboundSupervisorEntry
@@ -145,8 +154,12 @@ func (t *outboundTransport) ensureSupervisor(meta NodeMeta) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.supervisors[meta.NodeID] = &outboundSupervisorEntry{cancel: cancel}
 	t.wg.Add(1)
+	fn := t.onSupervisorDelta
 	t.mu.Unlock()
 
+	if fn != nil {
+		fn(+1)
+	}
 	sup := newOutboundSupervisor(meta, t.tlsCfg, t.handler, t.logger)
 	go func() {
 		defer t.wg.Done()
@@ -160,9 +173,13 @@ func (t *outboundTransport) removeSupervisor(nodeID string) {
 	if ok {
 		delete(t.supervisors, nodeID)
 	}
+	fn := t.onSupervisorDelta
 	t.mu.Unlock()
 	if ok {
 		entry.cancel()
+		if fn != nil {
+			fn(-1)
+		}
 	}
 }
 
@@ -182,10 +199,15 @@ func (t *outboundTransport) stopAll() {
 	for _, entry := range t.supervisors {
 		cancels = append(cancels, entry.cancel)
 	}
+	stopped := len(t.supervisors)
 	t.supervisors = map[string]*outboundSupervisorEntry{}
+	fn := t.onSupervisorDelta
 	t.mu.Unlock()
 	for _, c := range cancels {
 		c()
+	}
+	if fn != nil && stopped > 0 {
+		fn(float64(-stopped))
 	}
 	t.wg.Wait()
 }

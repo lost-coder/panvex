@@ -53,6 +53,37 @@ func TestOutboundSupervisorReconnectsAfterDisconnect(t *testing.T) {
 	}
 }
 
+// TestOutboundTransportSupervisorGaugeDelta verifies that the
+// onSupervisorDelta callback fires with the right deltas as supervisors are
+// added and removed, without needing a real gRPC server.
+func TestOutboundTransportSupervisorGaugeDelta(t *testing.T) {
+	var total int64
+	delta := func(d float64) { total += int64(d) }
+
+	ot := newOutboundTransport(nil, nil, slog.Default())
+	ot.onSupervisorDelta = delta
+
+	// Add two supervisors. Their goroutines will loop on connectAndServe
+	// and fail immediately (tlsCfg==nil → errOutboundTLSMissing), but that
+	// only affects the goroutines — the delta callback fires before they run.
+	ot.ensureSupervisor(NodeMeta{NodeID: "n1", AgentID: "a1", DialAddress: "127.0.0.1:1"})
+	ot.ensureSupervisor(NodeMeta{NodeID: "n2", AgentID: "a2", DialAddress: "127.0.0.1:2"})
+
+	if total != 2 {
+		t.Fatalf("after 2 ensureSupervisor: total=%d, want 2", total)
+	}
+
+	ot.removeSupervisor("n1")
+	if total != 1 {
+		t.Fatalf("after removeSupervisor(n1): total=%d, want 1", total)
+	}
+
+	ot.stopAll()
+	if total != 0 {
+		t.Fatalf("after stopAll: total=%d, want 0", total)
+	}
+}
+
 // ----------------- helpers -----------------
 
 type agentStubServer struct {

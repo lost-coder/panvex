@@ -192,3 +192,13 @@ func (m *Manager) OnNodeChanged(nodeID string) {
 func (m *Manager) HasOutboundSupervisor(nodeID string) bool {
 	return m.outbound.has(nodeID)
 }
+
+// SetSupervisorGaugeDelta wires a callback that is invoked with +1/-1 whenever
+// an outbound supervisor is added or removed. This is the seam used by the
+// server's Prometheus collector (metricsCollectors.AddOutboundSupervisor) to
+// maintain panvex_outbound_supervisors_total. Safe to call before Start.
+func (m *Manager) SetSupervisorGaugeDelta(fn SupervisorGaugeDelta) {
+	m.outbound.mu.Lock()
+	m.outbound.onSupervisorDelta = fn
+	m.outbound.mu.Unlock()
+}

@@ -45,6 +45,22 @@ deploy/              Docker Compose, nginx, install scripts
 Workspace-level dirs live one level up: `../scripts/` (dev fleet), `../.tmp/`
 (dev DB, logs, plans). See the workspace CLAUDE.md for that context.
 
+## Reverse connection mode
+
+Each agent has a `transport_mode` field in the `agents` table (`inbound` or
+`outbound`). In `inbound` mode the agent dials the panel (default). In
+`outbound` (reverse) mode the panel dials an agent that is already listening.
+To enroll an outbound agent: call `POST /api/v1/agents/{id}/install-command`
+to get a `curl ... | bash` one-liner with a short-lived bootstrap token; the
+agent starts with `--mode=reverse`, sends a CSR via the `EnrollOutbound` gRPC
+call, and the panel signs and returns the cert. Switching an existing agent is
+done via `PUT /api/v1/agents/{id}/transport-mode`, which persists the new mode,
+enqueues a `switch_transport_mode` job, and notifies `agenttransport.Manager`
+to spawn or tear down outbound supervisors. Key packages:
+`internal/controlplane/agenttransport` (panel transport manager + supervisors),
+`internal/controlplane/bootstrap` (token issuance, enroll driver, install
+handler), `internal/agent/transport` (agent dial/listen).
+
 ## Tech stack
 
 - **Go 1.26**: chi/v5 router, pgx/v5, modernc.org/sqlite, gRPC, WebSocket

@@ -362,3 +362,79 @@ func TestEnrollDriverFailsPreconditionWhenNotPending(t *testing.T) {
 	// Should be a gRPC FailedPrecondition status.
 	require.Contains(t, err.Error(), "bootstrap_state=active")
 }
+
+// TestEnrollDriverCallbacksOnHappyPath verifies that AttemptRecorder and
+// EventNotifier are both called with the correct values on a successful Run.
+func TestEnrollDriverCallbacksOnHappyPath(t *testing.T) {
+	tok := mustIssueToken(t, time.Hour)
+	agentID := "agent-callbacks"
+
+	row := &dbsqlc.GetAgentTransportRow{
+		ID:                 agentID,
+		BootstrapState:     "pending",
+		BootstrapTokenHash: tok.Hash[:],
+		BootstrapExpiresAt: sql.NullTime{Time: tok.ExpiresAt, Valid: true},
+	}
+	fq := newEnrollFakeQueries(row)
+	ca := &fakeCA{}
+	stub := &agentEnrollStubServer{
+		bootstrapToken: tok.Raw,
+		agentID:        agentID,
+		csrPEM:         "fake-csr",
+	}
+	clientTLS := startAgentEnrollStub(t, stub)
+
+	var recordedResult string
+	var notifiedActions []string
+
+	driver := NewEnrollDriver(fq, ca, nil, time.Now)
+	driver.SetAttemptRecorder(func(result string) { recordedResult = result })
+	driver.SetEventNotifier(func(action, id string) {
+		notifiedActions = append(notifiedActions, action)
+	})
+
+	err := driver.Run(context.Background(), stub.address, clientTLS, agentID)
+	require.NoError(t, err)
+
+	require.Equal(t, "success", recordedResult, "AttemptRecorder must be called with 'success'")
+	require.Contains(t, notifiedActions, "bootstrap.enrollment_attempted")
+	require.Contains(t, notifiedActions, "bootstrap.enrollment_completed")
+}
+
+// TestEnrollDriverCallbacksOnExpiredToken verifies that AttemptRecorder is
+// called with "expired" and the enrollment_expired event is emitted.
+func TestEnrollDriverCallbacksOnExpiredToken(t *testing.T) {
+	tok := mustIssueToken(t, time.Hour)
+	agentID := "agent-cb-expired"
+
+	row := &dbsqlc.GetAgentTransportRow{
+		ID:                 agentID,
+		BootstrapState:     "pending",
+		BootstrapTokenHash: tok.Hash[:],
+		BootstrapExpiresAt: sql.NullTime{Time: time.Now().Add(-time.Minute), Valid: true},
+	}
+	fq := newEnrollFakeQueries(row)
+	ca := &fakeCA{}
+	stub := &agentEnrollStubServer{
+		bootstrapToken: tok.Raw,
+		agentID:        agentID,
+		csrPEM:         "fake-csr",
+	}
+	clientTLS := startAgentEnrollStub(t, stub)
+
+	var recordedResult string
+	var notifiedActions []string
+
+	driver := NewEnrollDriver(fq, ca, nil, time.Now)
+	driver.SetAttemptRecorder(func(result string) { recordedResult = result })
+	driver.SetEventNotifier(func(action, _ string) {
+		notifiedActions = append(notifiedActions, action)
+	})
+
+	err := driver.Run(context.Background(), stub.address, clientTLS, agentID)
+	require.ErrorIs(t, err, ErrBootstrapTokenExpired)
+
+	require.Equal(t, "expired", recordedResult, "AttemptRecorder must be called with 'expired'")
+	require.Contains(t, notifiedActions, "bootstrap.enrollment_attempted")
+	require.Contains(t, notifiedActions, "bootstrap.enrollment_expired")
+}

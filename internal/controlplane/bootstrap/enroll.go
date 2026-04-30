@@ -55,14 +55,23 @@ type EnrollQueries interface {
 	ClearAgentBootstrapToken(ctx context.Context, id string) error
 }
 
+// AttemptRecorder is called by EnrollDriver.Run at each terminal outcome to
+// record the result label. The concrete wiring is
+// (*metricsCollectors).ObserveBootstrapAttempt in package server. Bounded
+// label values: "success", "expired", "mismatch", "agent_id_mismatch",
+// "misbehavior", "error". A nil value is treated as a no-op.
+type AttemptRecorder func(result string)
+
 // EnrollDriver executes the panel-side bootstrap enrollment exchange over a
 // reverse (panel-dials-agent) gRPC connection. Wiring it into the outbound
 // supervisor when bootstrap_state=pending is the next step.
 type EnrollDriver struct {
-	queries EnrollQueries
-	ca      CertificateAuthority
-	logger  *slog.Logger
-	now     func() time.Time
+	queries  EnrollQueries
+	ca       CertificateAuthority
+	logger   *slog.Logger
+	now      func() time.Time
+	recorder AttemptRecorder // optional; nil → no-op
+	notifier EventNotifier   // optional; nil → no-op
 }
 
 // NewEnrollDriver constructs an EnrollDriver. If now is nil, time.Now is used;
@@ -75,6 +84,38 @@ func NewEnrollDriver(q EnrollQueries, ca CertificateAuthority, logger *slog.Logg
 		logger = slog.Default()
 	}
 	return &EnrollDriver{queries: q, ca: ca, logger: logger, now: now}
+}
+
+// EventNotifier is called by EnrollDriver.Run to publish audit/eventbus
+// events. The action string follows the "subsystem.event_name" convention
+// used elsewhere in the codebase (e.g. "bootstrap.enrollment_attempted").
+// A nil value is treated as a no-op.
+type EventNotifier func(action, agentID string)
+
+// SetAttemptRecorder wires a callback that is invoked at each terminal outcome
+// of Run with the result label. Safe to call before the first Run.
+func (d *EnrollDriver) SetAttemptRecorder(r AttemptRecorder) {
+	d.recorder = r
+}
+
+// SetEventNotifier wires a callback that is invoked to publish audit/eventbus
+// events at key points in Run. Safe to call before the first Run.
+func (d *EnrollDriver) SetEventNotifier(n EventNotifier) {
+	d.notifier = n
+}
+
+// record invokes d.recorder if set. Inlined at every return path in Run.
+func (d *EnrollDriver) record(result string) {
+	if d.recorder != nil {
+		d.recorder(result)
+	}
+}
+
+// notify invokes d.notifier if set.
+func (d *EnrollDriver) notify(action, agentID string) {
+	if d.notifier != nil {
+		d.notifier(action, agentID)
+	}
 }
 
 // Run executes the panel-side enrollment exchange against an agent listening
@@ -104,15 +145,20 @@ func NewEnrollDriver(q EnrollQueries, ca CertificateAuthority, logger *slog.Logg
 // TODO: invoke EnrollDriver before connectAndServe in outboundSupervisor.run
 // when bootstrap_state=pending (agenttransport/outbound.go).
 func (d *EnrollDriver) Run(ctx context.Context, agentAddr string, tlsCfg *tls.Config, agentID string) error {
+	d.notify("bootstrap.enrollment_attempted", agentID)
+
 	row, err := d.queries.GetAgentTransport(ctx, agentID)
 	if err != nil {
+		d.record("error")
 		return fmt.Errorf("enroll: lookup: %w", err)
 	}
 	if row.BootstrapState != "pending" {
+		d.record("error")
 		return status.Errorf(codes.FailedPrecondition,
 			"agent %s bootstrap_state=%s", agentID, row.BootstrapState)
 	}
 	if !row.BootstrapExpiresAt.Valid {
+		d.record("error")
 		return status.Errorf(codes.FailedPrecondition,
 			"agent %s bootstrap_expires_at not set", agentID)
 	}
@@ -122,24 +168,29 @@ func (d *EnrollDriver) Run(ctx context.Context, agentAddr string, tlsCfg *tls.Co
 
 	conn, err := grpc.NewClient(agentAddr, grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)))
 	if err != nil {
+		d.record("error")
 		return fmt.Errorf("enroll: dial: %w", err)
 	}
 	defer conn.Close()
 	client := gatewayrpc.NewAgentGatewayClient(conn)
 	stream, err := client.EnrollOutbound(ctx)
 	if err != nil {
+		d.record("error")
 		return fmt.Errorf("enroll: open stream: %w", err)
 	}
 
 	msg, err := stream.Recv()
 	if err != nil {
+		d.record("error")
 		return fmt.Errorf("enroll: recv opening: %w", err)
 	}
 	opening := msg.GetOpening()
 	if opening == nil {
+		d.record("misbehavior")
 		return ErrAgentMisbehavior
 	}
 	if opening.AgentId != row.ID {
+		d.record("agent_id_mismatch")
 		return ErrAgentIDMismatch
 	}
 
@@ -154,13 +205,17 @@ func (d *EnrollDriver) Run(ctx context.Context, agentAddr string, tlsCfg *tls.Co
 				d.logger.Warn("bootstrap: failed to mark token expired in DB",
 					"agent_id", agentID, "error", expErr)
 			}
+			d.record("expired")
+			d.notify("bootstrap.enrollment_expired", agentID)
 			return ErrBootstrapTokenExpired
 		}
+		d.record("mismatch")
 		return ErrBootstrapTokenMismatch
 	}
 
 	certPEM, caPEM, expiresAt, err := d.ca.SignCSR(opening.CsrPem, opening.AgentId, agentCertTTL)
 	if err != nil {
+		d.record("error")
 		return fmt.Errorf("enroll: sign csr: %w", err)
 	}
 
@@ -178,12 +233,14 @@ func (d *EnrollDriver) Run(ctx context.Context, agentAddr string, tlsCfg *tls.Co
 			},
 		},
 	}); err != nil {
+		d.record("error")
 		return fmt.Errorf("enroll: send cert: %w", err)
 	}
 	certIssued = true
 	if err := stream.CloseSend(); err != nil {
 		d.logger.Warn("bootstrap: cert was issued but close-send failed; manual cleanup may be needed",
 			"agent_id", agentID, "error", err)
+		d.record("error")
 		return fmt.Errorf("enroll: close send: %w", err)
 	}
 
@@ -193,13 +250,17 @@ func (d *EnrollDriver) Run(ctx context.Context, agentAddr string, tlsCfg *tls.Co
 			d.logger.Warn("bootstrap: cert was issued but final recv failed; manual cleanup may be needed",
 				"agent_id", agentID, "error", err)
 		}
+		d.record("error")
 		return fmt.Errorf("enroll: wait close: %w", err)
 	}
 
 	if err := d.queries.ClearAgentBootstrapToken(ctx, agentID); err != nil {
 		d.logger.Warn("bootstrap: cert was issued but DB clear failed; manual cleanup may be needed",
 			"agent_id", agentID, "error", err)
+		d.record("error")
 		return fmt.Errorf("enroll: clear token: %w", err)
 	}
+	d.record("success")
+	d.notify("bootstrap.enrollment_completed", agentID)
 	return nil
 }

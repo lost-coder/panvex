@@ -75,6 +75,13 @@ func (t *dialTransport) RunOnce(ctx context.Context, run SessionRunner) error {
 
 // dialGateway establishes a gRPC client connection to the panel's AgentGateway
 // endpoint using mutual TLS. Moved from cmd/agent/main.go.
+//
+// TODO(Task-17): panvex_agent_tls_handshake_failures_total — a counter for
+// TLS handshake failures (CA-pin mismatch, panel-CN mismatch, etc.) cannot be
+// added here yet because the agent binary does not export a Prometheus /metrics
+// endpoint. A Prometheus registry would need to be threaded through the entire
+// agent startup path (cmd/agent/main.go → Transport) before this counter can
+// be incremented. Deferred to a follow-up observability task.
 func dialGateway(ctx context.Context, gatewayAddr, serverName, caPEM string, certificate *tls.Certificate) (*grpc.ClientConn, error) {
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM([]byte(caPEM)) {
