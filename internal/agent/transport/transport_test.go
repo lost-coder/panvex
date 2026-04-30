@@ -116,7 +116,95 @@ func newStubServer(t *testing.T) *stubServer {
 	return stub
 }
 
+// ---- listen transport test ----
+
+func TestListenTransportAcceptsIncomingStream(t *testing.T) {
+	caCert, caKey := mustGenerateCA(t)
+	agentCert, agentKey := mustGenerateLeaf(t, caCert, caKey, "127.0.0.1")
+	panelCert, panelKey := mustGenerateLeaf(t, caCert, caKey, "panel.test")
+
+	cfg := ListenConfig{
+		Addr: "127.0.0.1:0",
+		Cert: tls.Certificate{
+			Certificate: [][]byte{agentCert.Raw},
+			PrivateKey:  agentKey,
+		},
+		CAPEM: encodeCertPEM(caCert),
+	}
+	tr := NewListenTransport(cfg).(*listenTransport)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- tr.RunOnce(ctx, func(_ context.Context, stream BidiStream, _ gatewayrpc.AgentGatewayClient) error {
+			// Receive the panel's first message.
+			_, err := stream.Recv()
+			return err
+		})
+	}()
+
+	// Wait for the listener to bind (Address becomes non-empty).
+	deadline := time.Now().Add(time.Second)
+	for tr.Address() == "" && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if tr.Address() == "" {
+		t.Fatal("listener never bound")
+	}
+
+	// Dial in as the panel: gRPC client uses the panel's leaf cert as its
+	// client cert; trusts the agent's cert via the same CA.
+	clientTLS := &tls.Config{
+		ServerName:   "127.0.0.1",
+		RootCAs:      certPoolFromCert(caCert),
+		Certificates: []tls.Certificate{{
+			Certificate: [][]byte{panelCert.Raw},
+			PrivateKey:  panelKey,
+		}},
+	}
+	conn, err := grpc.NewClient(tr.Address(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+	client := gatewayrpc.NewAgentGatewayClient(conn)
+	stream, err := client.Connect(ctx)
+	if err != nil {
+		t.Fatalf("client.Connect: %v", err)
+	}
+	// Send a ConnectServerMessage on the wire using untyped SendMsg —
+	// the gRPC client stream is natively typed for ConnectClientMessage but in
+	// reverse mode the panel sends ConnectServerMessage.
+	if err := stream.SendMsg(&gatewayrpc.ConnectServerMessage{}); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if err := stream.CloseSend(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("listen runner returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("listen runner didn't return within 2s")
+	}
+}
+
 // ---- TLS helpers (mirrors internal/controlplane/agenttransport/outbound_test.go) ----
+
+func encodeCertPEM(cert *x509.Certificate) string {
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}))
+}
+
+func certPoolFromCert(cert *x509.Certificate) *x509.CertPool {
+	pool := x509.NewCertPool()
+	pool.AddCert(cert)
+	return pool
+}
 
 func mustGenerateCA(t *testing.T) (*x509.Certificate, *ecdsa.PrivateKey) {
 	t.Helper()
