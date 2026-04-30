@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/agenttransport"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
@@ -734,8 +735,8 @@ func (s *Server) restoreStoredDiscoveredClients() error {
 }
 
 // sendClientDataRequest sends a FULL_SNAPSHOT request to the agent stream.
-func sendClientDataRequest(stream gatewayrpc.AgentGateway_ConnectServer, requestID string) error {
-	return stream.Send(&gatewayrpc.ConnectServerMessage{
+func sendClientDataRequest(sess agenttransport.AgentSession, requestID string) error {
+	return sess.Send(&gatewayrpc.ConnectServerMessage{
 		Body: &gatewayrpc.ConnectServerMessage_ClientDataRequest{
 			ClientDataRequest: &gatewayrpc.ClientDataRequest{
 				Type:      gatewayrpc.ClientDataRequest_FULL_SNAPSHOT,

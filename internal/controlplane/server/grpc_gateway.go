@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/agentrevocation"
+	"github.com/lost-coder/panvex/internal/controlplane/agenttransport"
 	"github.com/lost-coder/panvex/internal/controlplane/agents"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
@@ -146,8 +147,8 @@ func nonBlockingSend(ch chan<- error, err error) {
 // per-store cert serial pin, and per-agent rate limit. Returns the agent id
 // and the cert serial it presented (so the mid-stream watcher can re-check
 // the pin) on success.
-func (s *Server) authorizeAgentConnect(stream gatewayrpc.AgentGateway_ConnectServer) (string, string, error) {
-	agentID, presentedSerial, err := authenticatedAgentIdentity(stream.Context())
+func (s *Server) authorizeAgentConnect(sess agenttransport.AgentSession) (string, string, error) {
+	agentID, presentedSerial, err := authenticatedAgentIdentity(sess.Context())
 	if err != nil {
 		return "", "", err
 	}
@@ -169,7 +170,7 @@ func (s *Server) authorizeAgentConnect(stream gatewayrpc.AgentGateway_ConnectSer
 	// it — we'd rather break the new connect attempt than let a leaked
 	// cert resurrect a stream during a pool blip.
 	if s.store != nil {
-		expected, err := s.store.GetAgentCertSerial(stream.Context(), agentID)
+		expected, err := s.store.GetAgentCertSerial(sess.Context(), agentID)
 		if err != nil {
 			s.logger.Error("agent cert serial lookup failed — rejecting connect",
 				"agent_id", agentID,
@@ -269,11 +270,11 @@ func (s *Server) shouldTerminateForRevocation(ctx context.Context, agentID, pres
 
 // startReceiveLoop reads messages off the gRPC stream and routes them into
 // the priority/regular inbound queues until the stream errors out.
-func (s *Server) startReceiveLoop(ctx context.Context, cancel context.CancelFunc, agentID string, stream gatewayrpc.AgentGateway_ConnectServer, ch *agentStreamChannels) {
+func (s *Server) startReceiveLoop(ctx context.Context, cancel context.CancelFunc, agentID string, sess agenttransport.AgentSession, ch *agentStreamChannels) {
 	go func() {
 		defer s.recoverAgentStreamGoroutine(agentID, "receive", cancel)
 		for {
-			message, err := stream.Recv()
+			message, err := sess.Recv()
 			if err != nil {
 				nonBlockingSend(ch.receiveErrors, err)
 				return
@@ -416,19 +417,19 @@ func (s *Server) startRegularInboundLoop(ctx context.Context, cancel context.Can
 // startJobDispatchLoop is the only goroutine that writes back to the agent.
 // It runs an initial dispatch + discovery request and then ticks until the
 // session is woken (new job ready) or the retry interval fires.
-func (s *Server) startJobDispatchLoop(ctx context.Context, cancel context.CancelFunc, agentID string, stream gatewayrpc.AgentGateway_ConnectServer, session *agents.Session, ch *agentStreamChannels) {
+func (s *Server) startJobDispatchLoop(ctx context.Context, cancel context.CancelFunc, agentID string, transportSess agenttransport.AgentSession, session *agents.Session, ch *agentStreamChannels) {
 	go func() {
 		defer s.recoverAgentStreamGoroutine(agentID, "job-dispatch", cancel)
 		retryTicker := time.NewTicker(jobDispatchRetryInterval)
 		defer retryTicker.Stop()
 
-		if err := s.dispatchPendingJobs(ctx, stream, agentID); err != nil {
+		if err := s.dispatchPendingJobs(ctx, transportSess, agentID); err != nil {
 			nonBlockingSend(ch.dispatchErrors, err)
 			return
 		}
 
 		// Request a full client list from the agent for user discovery.
-		if err := sendClientDataRequest(stream, fmt.Sprintf("discovery-%s-%d", agentID, s.now().Unix())); err != nil {
+		if err := sendClientDataRequest(transportSess, fmt.Sprintf("discovery-%s-%d", agentID, s.now().Unix())); err != nil {
 			s.logger.Error("client discovery request failed", "agent_id", agentID, "error", err)
 		}
 
@@ -441,7 +442,7 @@ func (s *Server) startJobDispatchLoop(ctx context.Context, cancel context.Cancel
 			case <-session.Wake:
 			case <-retryTicker.C:
 			}
-			if err := s.dispatchPendingJobs(ctx, stream, agentID); err != nil {
+			if err := s.dispatchPendingJobs(ctx, transportSess, agentID); err != nil {
 				nonBlockingSend(ch.dispatchErrors, err)
 				return
 			}
@@ -473,8 +474,11 @@ func (s *Server) awaitAgentStreamShutdown(cancel context.CancelFunc, agentID str
 	}
 }
 
-func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
-	agentID, presentedSerial, err := s.authorizeAgentConnect(stream)
+// runAgentSession runs the bidirectional agent protocol over the given
+// transport session. Direction-agnostic — works for both inbound (agent
+// dialed the panel) and outbound (panel dialed the agent) sessions.
+func (s *Server) runAgentSession(ctx context.Context, sess agenttransport.AgentSession) error {
+	agentID, presentedSerial, err := s.authorizeAgentConnect(sess)
 	if err != nil {
 		return err
 	}
@@ -489,7 +493,7 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 	s.presence.MarkConnected(agentID, s.now())
 	s.logger.Info("accepted agent stream", "agent_id", agentID)
 
-	connectionCtx, cancelConnection := context.WithCancel(stream.Context())
+	connectionCtx, cancelConnection := context.WithCancel(ctx)
 	defer cancelConnection()
 
 	channels := newAgentStreamChannels()
@@ -499,15 +503,19 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 	}
 
 	s.startRevocationWatcher(connectionCtx, cancelConnection, agentID, presentedSerial)
-	s.startReceiveLoop(connectionCtx, cancelConnection, agentID, stream, channels)
+	s.startReceiveLoop(connectionCtx, cancelConnection, agentID, sess, channels)
 	s.startPriorityInboundWorkers(connectionCtx, cancelConnection, agentID, channels, processErrorAndCancel)
 	s.startAuditEffectsLoop(connectionCtx, cancelConnection, agentID, channels)
 	s.startResultEffectsLoop(connectionCtx, cancelConnection, agentID, channels)
 	s.startSnapshotApplyLoop(connectionCtx, cancelConnection, agentID, channels, processErrorAndCancel)
 	s.startRegularInboundLoop(connectionCtx, cancelConnection, agentID, channels, processErrorAndCancel)
-	s.startJobDispatchLoop(connectionCtx, cancelConnection, agentID, stream, session, channels)
+	s.startJobDispatchLoop(connectionCtx, cancelConnection, agentID, sess, session, channels)
 
 	return s.awaitAgentStreamShutdown(cancelConnection, agentID, channels)
+}
+
+func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
+	return s.runAgentSession(stream.Context(), &agenttransport.ServerStreamSession{Stream: stream})
 }
 
 func enqueueInboundAgentMessage(
@@ -553,7 +561,7 @@ func enqueueInboundAgentMessage(
 	return true
 }
 
-func (s *Server) dispatchPendingJobs(ctx context.Context, stream gatewayrpc.AgentGateway_ConnectServer, agentID string) error {
+func (s *Server) dispatchPendingJobs(ctx context.Context, sess agenttransport.AgentSession, agentID string) error {
 	pendingJobs := s.pendingJobsForAgent(ctx, agentID)
 	if len(pendingJobs) == 0 {
 		return nil
@@ -566,7 +574,7 @@ func (s *Server) dispatchPendingJobs(ctx context.Context, stream gatewayrpc.Agen
 
 	for _, job := range pendingJobs {
 		s.logger.Debug("job dispatched to agent", "agent_id", agentID, "job_id", job.ID, "action", string(job.Action))
-		if err := stream.Send(&gatewayrpc.ConnectServerMessage{
+		if err := sess.Send(&gatewayrpc.ConnectServerMessage{
 			Body: &gatewayrpc.ConnectServerMessage_Job{
 				Job: &gatewayrpc.JobCommand{
 					Id:             job.ID,
