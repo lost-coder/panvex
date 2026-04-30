@@ -2,6 +2,7 @@ package agenttransport
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"log/slog"
 	"sync"
@@ -69,8 +70,11 @@ type Manager struct {
 var ErrManagerStopped = errors.New("agenttransport: manager already stopped")
 
 // NewManager creates a new Manager. db may be nil — OnNodeChanged returns early
-// when db is nil (used in tests and during pre-wiring startup).
-func NewManager(db *dbsqlc.Queries, handler SessionHandler, logger *slog.Logger) *Manager {
+// when db is nil (used in tests and during pre-wiring startup). tlsCfg is the
+// TLS configuration used by outbound supervisors when dialing agents; nil is
+// acceptable while no outbound supervisors are active (TODO: wire real client
+// TLS once the panel's CA/cert infrastructure is available for outbound use).
+func NewManager(db *dbsqlc.Queries, handler SessionHandler, tlsCfg *tls.Config, logger *slog.Logger) *Manager {
 	var queries transportQueries
 	if db != nil {
 		queries = db
@@ -78,7 +82,7 @@ func NewManager(db *dbsqlc.Queries, handler SessionHandler, logger *slog.Logger)
 	return &Manager{
 		db:       queries,
 		handler:  handler,
-		outbound: newOutboundTransport(),
+		outbound: newOutboundTransport(tlsCfg, handler, logger),
 		logger:   logger,
 	}
 }
@@ -104,8 +108,9 @@ func (m *Manager) Start(ctx context.Context) error {
 // call before Start; safe to call multiple times.
 func (m *Manager) Stop() {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.stopped = true
+	m.mu.Unlock()
+	m.outbound.stopAll()
 }
 
 // OnNodeChanged is invoked by the HTTP PATCH handler that updates

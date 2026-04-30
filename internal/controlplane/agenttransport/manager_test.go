@@ -11,7 +11,7 @@ import (
 )
 
 func TestManagerStartIsIdempotent(t *testing.T) {
-	m := NewManager(nil, nil, slog.Default())
+	m := NewManager(nil, nil, nil, slog.Default())
 	if err := m.Start(context.Background()); err != nil {
 		t.Fatalf("first Start: %v", err)
 	}
@@ -21,7 +21,7 @@ func TestManagerStartIsIdempotent(t *testing.T) {
 }
 
 func TestManagerStartAfterStopReturnsError(t *testing.T) {
-	m := NewManager(nil, nil, slog.Default())
+	m := NewManager(nil, nil, nil, slog.Default())
 	if err := m.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestManagerHandlesTransportModeChange(t *testing.T) {
 	fake := &fakeTransportQueries{rows: map[string]dbsqlc.GetAgentTransportRow{
 		"node-1": {ID: "node-1", TransportMode: "inbound"},
 	}}
-	m := NewManager(nil, nil, slog.Default())
+	m := NewManager(nil, nil, nil, slog.Default())
 	// Wire the fake directly — NewManager accepts *dbsqlc.Queries (nil-safe);
 	// here we set the interface field directly for testing.
 	m.db = fake

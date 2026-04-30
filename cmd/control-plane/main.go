@@ -266,7 +266,10 @@ func runServe(args []string) error {
 	// adding outbound and bootstrap flows is non-invasive. The first arg
 	// is *dbsqlc.Queries — nil while no outbound is active; once outbound
 	// supervisor restoration lands, replace nil with a real Queries handle.
-	manager := agenttransport.NewManager(nil, api.RunAgentSession, logger)
+	// The third arg is the outbound TLS config — nil is acceptable here
+	// because no outbound supervisors are restored at startup yet (TODO:
+	// wire the panel's client-side TLS config once CA/cert bootstrap lands).
+	manager := agenttransport.NewManager(nil, api.RunAgentSession, nil, logger)
 	if err := manager.Start(context.Background()); err != nil {
 		return fmt.Errorf("start agent transport manager: %w", err)
 	}
