@@ -13,6 +13,7 @@ import (
 
 	"github.com/lost-coder/panvex/internal/controlplane/agents"
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/bootstrap"
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/fleet"
@@ -196,6 +197,11 @@ type Server struct {
 	// derived from EncryptionKey when set, random per-process otherwise.
 	usernameHashMu       sync.Mutex
 	usernameHashKeyBytes []byte
+
+	// installCommandHandler issues one-shot curl | bash install commands for
+	// outbound (reverse-mode) agents. Nil until wired in via
+	// SetInstallCommandHandler; the route returns 503 when nil.
+	installCommandHandler *bootstrap.InstallCommandHandler
 }
 
 // vault exposes the secret vault initialised from EncryptionKey. A nil
@@ -223,6 +229,25 @@ func (s *Server) StartupError() error {
 // GRPCTLSConfig returns the TLS configuration used by the agent gateway listener.
 func (s *Server) GRPCTLSConfig() *tls.Config {
 	return s.authority.serverTLSConfig()
+}
+
+// SetInstallCommandHandler wires the bootstrap install-command handler. Call
+// before Serve; not safe for concurrent use. Nil h is accepted — the route
+// returns 503 until a non-nil handler is provided.
+func (s *Server) SetInstallCommandHandler(h *bootstrap.InstallCommandHandler) {
+	s.installCommandHandler = h
+}
+
+// handleAgentInstallCommand returns an http.HandlerFunc that delegates to the
+// install-command handler. Returns 503 if the handler has not been configured.
+func (s *Server) handleAgentInstallCommand() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.installCommandHandler == nil {
+			http.Error(w, "install-command endpoint not configured", http.StatusServiceUnavailable)
+			return
+		}
+		s.installCommandHandler.ServeHTTP(w, r)
+	}
 }
 
 
