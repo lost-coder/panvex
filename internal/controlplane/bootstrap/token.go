@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"time"
@@ -66,7 +67,10 @@ func VerifyToken(raw string, expectedHash [32]byte, expiresAt time.Time, now tim
 	if err != nil {
 		return ErrTokenInvalidShape
 	}
-	if hashToken(decoded) != expectedHash {
+	// Constant-time compare to avoid timing leaks that would let an attacker
+	// brute-force the hash byte-by-byte from observed reject latency.
+	got := hashToken(decoded)
+	if subtle.ConstantTimeCompare(got[:], expectedHash[:]) != 1 {
 		return ErrTokenMismatch
 	}
 	return nil
