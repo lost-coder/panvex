@@ -255,7 +255,12 @@ func encodePrivateKey(key *ecdsa.PrivateKey) (string, error) {
 
 // makeBootstrapVerifier returns a VerifyPeerCertificate callback that:
 //   - Parses the raw DER cert chain (leaf first).
-//   - Finds the root (last element) and compares its SPKI SHA-256 against caPinB64.
+//   - Finds a cert in the chain whose SPKI SHA-256 matches caPinB64.
+//   - Verifies that the leaf chains to that pinned cert as the only trusted
+//     root — without this, an attacker holding the panel's public CA could
+//     present a self-signed leaf with the right CN plus the legit CA appended,
+//     and the pin loop would match the appended CA without ever validating
+//     that the leaf was actually signed by it.
 //   - Checks that the leaf's CN or one of its DNSNames matches panelCN.
 func makeBootstrapVerifier(caPinB64, panelCN string) (func([][]byte, [][]*x509.Certificate) error, error) {
 	pinBytes, err := base64.RawURLEncoding.DecodeString(caPinB64)
@@ -271,7 +276,6 @@ func makeBootstrapVerifier(caPinB64, panelCN string) (func([][]byte, [][]*x509.C
 			return errors.New("peer presented no certificates")
 		}
 
-		// Parse all certs.
 		certs := make([]*x509.Certificate, 0, len(rawCerts))
 		for i, raw := range rawCerts {
 			cert, err := x509.ParseCertificate(raw)
@@ -281,22 +285,43 @@ func makeBootstrapVerifier(caPinB64, panelCN string) (func([][]byte, [][]*x509.C
 			certs = append(certs, cert)
 		}
 
-		// Find any cert in the chain whose SPKI hash matches the pin.
-		// This covers: leaf-only (self-signed CA), or full chain (CA is last).
-		pinMatched := false
+		// Find a cert in the presented chain whose SPKI matches the pin.
+		var pinned *x509.Certificate
 		for _, c := range certs {
 			spkiHash := sha256.Sum256(c.RawSubjectPublicKeyInfo)
 			if string(spkiHash[:]) == string(pinBytes) {
-				pinMatched = true
+				pinned = c
 				break
 			}
 		}
-		if !pinMatched {
+		if pinned == nil {
 			return errors.New("peer CA pin mismatch")
 		}
 
-		// Check leaf CN or SAN.
 		leaf := certs[0]
+
+		// Verify the leaf chains to the pinned cert. If the leaf itself is
+		// the pinned cert (self-signed CA case), skip — Verify would still
+		// work but allocating a roots pool for that is unnecessary.
+		if leaf != pinned {
+			roots := x509.NewCertPool()
+			roots.AddCert(pinned)
+			intermediates := x509.NewCertPool()
+			for _, c := range certs[1:] {
+				if c != pinned {
+					intermediates.AddCert(c)
+				}
+			}
+			if _, err := leaf.Verify(x509.VerifyOptions{
+				Roots:         roots,
+				Intermediates: intermediates,
+				KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+			}); err != nil {
+				return fmt.Errorf("leaf does not chain to pinned CA: %w", err)
+			}
+		}
+
+		// Check leaf CN or SAN.
 		if leaf.Subject.CommonName == panelCN {
 			return nil
 		}

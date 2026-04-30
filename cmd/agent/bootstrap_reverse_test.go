@@ -354,3 +354,55 @@ func waitForListener(t *testing.T, addr string, deadline time.Duration) {
 	}
 	t.Fatalf("listener at %s did not become reachable within %s", addr, deadline)
 }
+
+// TestBootstrapVerifierRejectsAttackerLeafWithLegitCAInChain reproduces the
+// attack scenario from the security review: an attacker holding the panel's
+// public CA generates their own keypair, builds a self-signed leaf with
+// CN=panelCN, and presents the chain as [attacker_leaf, legit_CA]. The legit
+// CA's SPKI matches the pin (it IS the legit CA), but the leaf isn't signed
+// by it. The verifier MUST reject — otherwise enrollment hands the
+// attacker's CA back to the agent as a permanent trust root.
+func TestBootstrapVerifierRejectsAttackerLeafWithLegitCAInChain(t *testing.T) {
+	legitCA := newTestCA(t)
+
+	// Attacker's self-signed leaf with the right CN, signed by attacker's
+	// own key (NOT by legitCA).
+	attackerKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	require.NoError(t, err)
+	attackerTmpl := &x509.Certificate{
+		SerialNumber: serial,
+		Subject:      pkix.Name{CommonName: "panel.local"},
+		DNSNames:     []string{"panel.local"},
+		NotBefore:    time.Now().Add(-time.Minute),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+	attackerLeafDER, err := x509.CreateCertificate(rand.Reader, attackerTmpl, attackerTmpl, &attackerKey.PublicKey, attackerKey)
+	require.NoError(t, err)
+
+	verify, err := makeBootstrapVerifier(legitCA.SPKIPin, "panel.local")
+	require.NoError(t, err)
+
+	// Chain on the wire: [attacker_leaf, legit_CA].
+	rawChain := [][]byte{attackerLeafDER, legitCA.cert.Raw}
+	err = verify(rawChain, nil)
+	require.Error(t, err, "verifier must reject leaf not chained to pinned CA")
+	require.Contains(t, err.Error(), "leaf does not chain")
+}
+
+// TestBootstrapVerifierAcceptsLegitChain confirms the happy path still works
+// after the chain-verification tightening: an actual leaf signed by the
+// pinned CA passes.
+func TestBootstrapVerifierAcceptsLegitChain(t *testing.T) {
+	ca := newTestCA(t)
+	leaf := ca.issueClientCert(t, "panel.local")
+	require.GreaterOrEqual(t, len(leaf.Certificate), 1)
+
+	verify, err := makeBootstrapVerifier(ca.SPKIPin, "panel.local")
+	require.NoError(t, err)
+
+	require.NoError(t, verify(leaf.Certificate, nil))
+}
