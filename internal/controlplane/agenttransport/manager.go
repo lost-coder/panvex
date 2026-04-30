@@ -117,6 +117,12 @@ func (m *Manager) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("agenttransport: list outbound agents: %w", err)
 	}
+	// Fail-fast if outbound agents need restoration but no TLS config is
+	// wired. Otherwise every supervisor would loop with errOutboundTLSMissing
+	// and spam logs with no chance of recovery.
+	if len(rows) > 0 && m.outbound.tlsCfg == nil {
+		return fmt.Errorf("agenttransport: %d outbound agent(s) require a TLS config but none is wired", len(rows))
+	}
 	for _, row := range rows {
 		if !row.DialAddress.Valid {
 			m.logger.Warn("agenttransport: outbound agent missing dial_address; skipping",

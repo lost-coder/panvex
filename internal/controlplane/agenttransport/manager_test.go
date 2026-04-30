@@ -2,6 +2,7 @@ package agenttransport
 
 import (
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"errors"
 	"io"
@@ -99,9 +100,10 @@ func TestManagerStartRestoresOutboundSupervisors(t *testing.T) {
 		},
 	}
 	// Discard logger keeps test output clean — supervisor goroutines will
-	// loop with errOutboundTLSMissing because tlsCfg is nil.
+	// loop with reconnection errors because the dial address is unreachable.
+	// Stub tlsCfg satisfies the fail-fast guard in Start.
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	m := NewManager(nil, nil, nil, logger)
+	m := NewManager(nil, nil, &tls.Config{}, logger)
 	m.db = fake
 	t.Cleanup(m.Stop) // drain goroutines via outbound.stopAll()
 
@@ -129,7 +131,7 @@ func TestManagerStartSkipsOutboundWithoutDialAddress(t *testing.T) {
 		},
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	m := NewManager(nil, nil, nil, logger)
+	m := NewManager(nil, nil, &tls.Config{}, logger)
 	m.db = fake
 	t.Cleanup(m.Stop)
 
@@ -138,5 +140,23 @@ func TestManagerStartSkipsOutboundWithoutDialAddress(t *testing.T) {
 	}
 	if m.HasOutboundSupervisor("n-no-addr") {
 		t.Fatal("expected skip when dial_address is null")
+	}
+}
+
+func TestManagerStartFailsWhenOutboundRequiresTLS(t *testing.T) {
+	fake := &fakeTransportQueries{
+		listRows: map[string][]dbsqlc.ListAgentsByTransportModeRow{
+			TransportModeOutbound: {
+				{ID: "n1", TransportMode: TransportModeOutbound, DialAddress: sql.NullString{String: "vps:8443", Valid: true}},
+			},
+		},
+	}
+	m := NewManager(nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	m.db = fake
+	t.Cleanup(m.Stop)
+
+	err := m.Start(context.Background())
+	if err == nil {
+		t.Fatal("expected error when tlsCfg is nil but outbound rows exist")
 	}
 }
