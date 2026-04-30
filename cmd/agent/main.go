@@ -158,6 +158,15 @@ func runRuntime(args []string) error {
 	}
 
 	statePath := cfg.stateFile
+
+	// transportReload coordinates a transport mode switch requested via a
+	// switch_transport_mode job. The job handler writes the new state to disk
+	// and sets the flag; runRuntimeReconnectLoop reloads state from disk at
+	// the top of the next iteration before establishing a new connection.
+	transportReload := &transportReloadState{
+		cancel: func() {}, // safe no-op until first connection
+	}
+
 	agent := runtime.New(runtime.Config{
 		AgentID:          credentialsState.AgentID,
 		NodeName:         cfg.nodeName,
@@ -170,6 +179,32 @@ func runRuntime(args []string) error {
 		PersistUsageSeq: func(seq uint64) error {
 			return agentstate.SaveUsageSeq(statePath, seq)
 		},
+		UpdateTransport: func(mode, listenAddr, panelURL string) error {
+			// Load current state, patch transport fields, and save back to disk.
+			// The reconnect loop re-reads disk at the top of its next iteration
+			// (guarded by transportReload.pending) so the new mode takes effect
+			// on the subsequent connection without requiring a process restart.
+			current, err := agentstate.Load(statePath)
+			if err != nil {
+				return fmt.Errorf("switch_transport_mode: load state: %w", err)
+			}
+			current.TransportMode = mode
+			current.ListenAddr = listenAddr
+			if panelURL != "" {
+				current.PanelURL = panelURL
+			}
+			if err := agentstate.Save(statePath, current); err != nil {
+				return fmt.Errorf("switch_transport_mode: save state: %w", err)
+			}
+			slog.Info("transport mode updated; reconnecting to apply",
+				"mode", mode, "listen_addr", listenAddr)
+			transportReload.mu.Lock()
+			transportReload.pending = true
+			cancel := transportReload.cancel
+			transportReload.mu.Unlock()
+			cancel() // drop the current connection so the loop re-iterates promptly
+			return nil
+		},
 	}, telemtClient)
 
 	schedule := newConnectionSchedule(cfg.heartbeat, cfg.runtimePoll, cfg.runtimeUpload, cfg.usageSnapshot, cfg.ipPoll, cfg.ipUpload)
@@ -181,7 +216,7 @@ func runRuntime(args []string) error {
 		"telemt_metrics", cfg.telemtMetricsURL,
 	)
 
-	return runRuntimeReconnectLoop(&cfg, &credentialsState, agent, schedule)
+	return runRuntimeReconnectLoop(&cfg, &credentialsState, agent, schedule, transportReload)
 }
 
 // runRuntimeReconnectLoop is the agent's outer main-loop: refresh certs,
@@ -195,9 +230,40 @@ func runRuntime(args []string) error {
 // systemd's RestartPreventExitStatus=78 in the unit file written by
 // install-agent.sh. Any other error keeps the historic forever-retry
 // behaviour.
-func runRuntimeReconnectLoop(cfg *runtimeFlags, credentialsState *agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule) error {
+// transportReloadState coordinates transport mode switches requested via a
+// switch_transport_mode job. The job handler writes new state to disk, sets
+// pending=true, and calls cancel() to drop the current connection; the loop
+// then reloads credentials from disk before establishing the next connection.
+type transportReloadState struct {
+	mu      sync.Mutex
+	pending bool
+	cancel  func()
+}
+
+func runRuntimeReconnectLoop(cfg *runtimeFlags, credentialsState *agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule, tr *transportReloadState) error {
 	reconnectAttempt := 0
 	for {
+		// If a switch_transport_mode job fired during the last connection, reload
+		// state from disk so the new mode and listen address take effect.
+		tr.mu.Lock()
+		if tr.pending {
+			tr.pending = false
+			tr.mu.Unlock()
+			if reloaded, loadErr := agentstate.Load(cfg.stateFile); loadErr == nil {
+				*credentialsState = reloaded
+				if reloaded.GRPCEndpoint != "" {
+					cfg.gatewayAddr = reloaded.GRPCEndpoint
+				}
+				if reloaded.GRPCServerName != "" {
+					cfg.gatewayServerName = reloaded.GRPCServerName
+				}
+			} else {
+				slog.Error("transport reload: failed to reload state from disk", "error", loadErr)
+			}
+		} else {
+			tr.mu.Unlock()
+		}
+
 		refreshCtx, cancelRefresh := context.WithTimeout(context.Background(), certificateRefreshTimeout)
 		refreshed, err := renewRuntimeCredentialsIfNeeded(refreshCtx, cfg.stateFile, cfg.gatewayAddr, cfg.gatewayServerName, *credentialsState, time.Now())
 		cancelRefresh()
@@ -212,7 +278,7 @@ func runRuntimeReconnectLoop(cfg *runtimeFlags, credentialsState *agentstate.Cre
 		}
 		*credentialsState = refreshed
 
-		afterConn, connErr := runConnection(cfg.gatewayAddr, cfg.gatewayServerName, cfg.stateFile, *credentialsState, agent, schedule, cfg.clientDataConcurrency)
+		afterConn, connErr := runConnection(cfg.gatewayAddr, cfg.gatewayServerName, cfg.stateFile, *credentialsState, agent, schedule, cfg.clientDataConcurrency, tr)
 		*credentialsState = afterConn
 		if connErr == nil || errors.Is(connErr, errRuntimeCredentialsRefreshed) {
 			reconnectAttempt = 0
@@ -877,7 +943,7 @@ func runConnectionMainLoop(
 	}
 }
 
-func runConnection(gatewayAddr string, serverName string, stateFile string, credentialsState agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule, clientDataConcurrency int) (agentstate.Credentials, error) {
+func runConnection(gatewayAddr string, serverName string, stateFile string, credentialsState agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule, clientDataConcurrency int, tr *transportReloadState) (agentstate.Credentials, error) {
 	certificate, err := tls.X509KeyPair([]byte(credentialsState.CertificatePEM), []byte(credentialsState.PrivateKeyPEM))
 	if err != nil {
 		return credentialsState, err
@@ -908,6 +974,13 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 		}
 		connectionCtx, cancelConnection := context.WithCancel(streamCtx)
 		defer cancelConnection()
+
+		// Register the cancel func so a switch_transport_mode job can drop this
+		// connection promptly, causing the reconnect loop to re-iterate and pick
+		// up the new transport state written to disk by UpdateTransport.
+		tr.mu.Lock()
+		tr.cancel = cancelConnection
+		tr.mu.Unlock()
 
 		// Q4.U-P-08: graceful drain. Every goroutine spawned for this
 		// connection adds 1 to streamWG and defers wg.Done(); RunOnce

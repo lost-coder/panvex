@@ -46,6 +46,12 @@ type Config struct {
 	// so the next run can resume from the last emitted sequence. Errors are
 	// logged but do not fail snapshot emission.
 	PersistUsageSeq func(seq uint64) error
+	// UpdateTransport, if non-nil, is called when a switch_transport_mode job
+	// is processed. It is responsible for persisting the new transport state and
+	// signalling the outer reconnect loop to pick up the change on next iteration.
+	// Making it optional ensures existing tests constructing Config{} continue to
+	// compile without change.
+	UpdateTransport func(mode, listenAddr, panelURL string) error
 }
 
 type runtimeLifecycleState struct {
@@ -611,6 +617,8 @@ func (a *Agent) HandleJob(ctx context.Context, job *gatewayrpc.JobCommand, obser
 		return a.handleClientJob(ctx, job, result)
 	case "agent.self-update":
 		return a.handleSelfUpdateJob(ctx, job, result)
+	case "switch_transport_mode":
+		return a.handleSwitchTransportModeJob(result, job)
 	default:
 		result.Message = fmt.Sprintf("unsupported action %s", job.GetAction())
 		return result
@@ -625,6 +633,44 @@ func (a *Agent) handleRuntimeReloadJob(ctx context.Context, result *gatewayrpc.J
 	}
 	result.Success = true
 	result.Message = "runtime reloaded"
+	return result
+}
+
+// handleSwitchTransportModeJob processes a switch_transport_mode job.
+// It validates the requested mode, then delegates to Config.UpdateTransport
+// (if wired) to persist the change and signal the reconnect loop. If
+// UpdateTransport is nil (tests, shutdown in progress) the job succeeds
+// immediately so the panel does not re-queue it.
+func (a *Agent) handleSwitchTransportModeJob(result *gatewayrpc.JobResult, job *gatewayrpc.JobCommand) *gatewayrpc.JobResult {
+	var payload struct {
+		Mode       string `json:"mode"`
+		ListenAddr string `json:"listen_addr,omitempty"`
+		PanelURL   string `json:"panel_url,omitempty"`
+	}
+	if err := json.Unmarshal([]byte(job.GetPayloadJson()), &payload); err != nil {
+		result.Success = false
+		result.Message = fmt.Sprintf("switch_transport_mode: payload: %v", err)
+		return result
+	}
+	if payload.Mode != "dial" && payload.Mode != "listen" {
+		result.Success = false
+		result.Message = fmt.Sprintf("switch_transport_mode: invalid mode %q", payload.Mode)
+		return result
+	}
+	if a.config.UpdateTransport == nil {
+		// No callback wired (tests, or agent shutdown in progress) — ack so the
+		// panel doesn't re-queue the job; state is already pending on disk if the
+		// caller wrote it before constructing this agent.
+		result.Success = true
+		result.Message = "switch_transport_mode: no transport-update callback wired"
+		return result
+	}
+	if err := a.config.UpdateTransport(payload.Mode, payload.ListenAddr, payload.PanelURL); err != nil {
+		result.Success = false
+		result.Message = fmt.Sprintf("switch_transport_mode: %v", err)
+		return result
+	}
+	result.Success = true
 	return result
 }
 
