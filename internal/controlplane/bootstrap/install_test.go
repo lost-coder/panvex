@@ -53,6 +53,7 @@ func TestInstallCommandHappyPath(t *testing.T) {
 		ScriptURL:  "https://example.com/install.sh",
 		PanelCAPin: "sha256:fakepin",
 		PanelCN:    "panel.example.com",
+		PanelURL:   "panel.example.com:8443",
 		Now:        func() time.Time { return time.Unix(1_000_000, 0) },
 	})
 
@@ -75,6 +76,7 @@ func TestInstallCommandHappyPath(t *testing.T) {
 		"--listen-addr=:8443",
 		"--ca-pin=sha256:fakepin",
 		"--panel-cn=panel.example.com",
+		"--panel-url-grpc=panel.example.com:8443",
 	}
 	for _, p := range wantParts {
 		if !strings.Contains(resp.Command, p) {
@@ -102,7 +104,7 @@ func TestInstallCommandRejectsInboundAgent(t *testing.T) {
 	fake := &fakeInstallQueries{rows: map[string]dbsqlc.GetAgentTransportRow{
 		"agent-2": {ID: "agent-2", TransportMode: "inbound"},
 	}}
-	h := NewInstallCommandHandler(fake, InstallCommandConfig{ScriptURL: "x"})
+	h := NewInstallCommandHandler(fake, InstallCommandConfig{ScriptURL: "x", PanelURL: "panel.example.com:8443"})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/agent-2/install-command", nil)
 	rec := httptest.NewRecorder()
 	newInstallTestRouter(h).ServeHTTP(rec, req)
@@ -116,7 +118,7 @@ func TestInstallCommandRejectsInboundAgent(t *testing.T) {
 
 func TestInstallCommandReturns404ForMissingAgent(t *testing.T) {
 	fake := &fakeInstallQueries{rows: map[string]dbsqlc.GetAgentTransportRow{}}
-	h := NewInstallCommandHandler(fake, InstallCommandConfig{ScriptURL: "x"})
+	h := NewInstallCommandHandler(fake, InstallCommandConfig{ScriptURL: "x", PanelURL: "panel.example.com:8443"})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/ghost/install-command", nil)
 	rec := httptest.NewRecorder()
 	newInstallTestRouter(h).ServeHTTP(rec, req)

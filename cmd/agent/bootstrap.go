@@ -84,6 +84,7 @@ func runBootstrapCommand(args []string, client *http.Client) error {
 	listenAddr := flags.String("listen-addr", ":8443", "TCP listen address (reverse mode)")
 	caPin := flags.String("ca-pin", "", "SHA-256 SPKI hash of panel CA, base64url (reverse mode)")
 	panelCN := flags.String("panel-cn", "", "expected CN/SAN of panel client cert (reverse mode)")
+	reversePanelURL := flags.String("panel-url-grpc", "", "gRPC endpoint of the panel, host:port (reverse mode, e.g. panel.example.com:8443)")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -96,6 +97,9 @@ func runBootstrapCommand(args []string, client *http.Client) error {
 		if *bootstrapToken == "" || *agentID == "" || *caPin == "" || *panelCN == "" {
 			return errors.New("reverse bootstrap requires --bootstrap-token, --agent-id, --ca-pin, --panel-cn")
 		}
+		if *reversePanelURL == "" {
+			return errors.New("reverse bootstrap requires --panel-url-grpc (gRPC endpoint, e.g. panel.example.com:8443)")
+		}
 		return reverseBootstrap(reverseBootstrapConfig{
 			StateFile:      *stateFile,
 			BootstrapToken: *bootstrapToken,
@@ -103,6 +107,7 @@ func runBootstrapCommand(args []string, client *http.Client) error {
 			ListenAddr:     *listenAddr,
 			CAPin:          *caPin,
 			PanelCN:        *panelCN,
+			PanelURL:       *reversePanelURL,
 		})
 	}
 

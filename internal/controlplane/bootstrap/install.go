@@ -47,6 +47,7 @@ type InstallCommandHandler struct {
 	scriptURL  string
 	panelCAPin string
 	panelCN    string
+	panelURL   string
 	listenAddr string
 	now        func() time.Time
 }
@@ -57,6 +58,7 @@ type InstallCommandConfig struct {
 	ScriptURL  string // public URL of the install-agent.sh script
 	PanelCAPin string // SHA-256 fingerprint of the panel's CA cert
 	PanelCN    string // CN agents use to verify the panel's TLS cert
+	PanelURL   string // gRPC endpoint (host:port) agents dial when switching back to inbound mode
 	ListenAddr string // agent-side listen addr; "" → defaultListenAddr
 	Now        func() time.Time // injectable clock; nil → time.Now
 }
@@ -65,6 +67,11 @@ type InstallCommandConfig struct {
 // config. q may be nil — in that case every request returns 503 until a
 // non-nil Queries is provided. cfg.ListenAddr defaults to defaultListenAddr;
 // cfg.Now defaults to time.Now.
+//
+// cfg.PanelURL must be non-empty; it is embedded into the generated install
+// command as --panel-url-grpc so reverse-bootstrapped agents can switch back
+// to dial mode without re-enrolling. If PanelURL is empty the handler returns
+// 503 on every request.
 func NewInstallCommandHandler(q Queries, cfg InstallCommandConfig) *InstallCommandHandler {
 	listen := cfg.ListenAddr
 	if listen == "" {
@@ -79,6 +86,7 @@ func NewInstallCommandHandler(q Queries, cfg InstallCommandConfig) *InstallComma
 		scriptURL:  cfg.ScriptURL,
 		panelCAPin: cfg.PanelCAPin,
 		panelCN:    cfg.PanelCN,
+		panelURL:   cfg.PanelURL,
 		listenAddr: listen,
 		now:        now,
 	}
@@ -87,6 +95,10 @@ func NewInstallCommandHandler(q Queries, cfg InstallCommandConfig) *InstallComma
 func (h *InstallCommandHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.queries == nil {
 		http.Error(w, "install-command endpoint not configured", http.StatusServiceUnavailable)
+		return
+	}
+	if h.panelURL == "" {
+		http.Error(w, "install-command endpoint not configured: panel_url not set", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -125,8 +137,8 @@ func (h *InstallCommandHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 	}
 
 	cmd := fmt.Sprintf(
-		"curl -fsSL %s | sudo bash -s -- --mode=reverse --bootstrap-token=%s --agent-id=%s --listen-addr=%s --ca-pin=%s --panel-cn=%s",
-		h.scriptURL, issued.Raw, agentID, h.listenAddr, h.panelCAPin, h.panelCN,
+		"curl -fsSL %s | sudo bash -s -- --mode=reverse --bootstrap-token=%s --agent-id=%s --listen-addr=%s --ca-pin=%s --panel-cn=%s --panel-url-grpc=%s",
+		h.scriptURL, issued.Raw, agentID, h.listenAddr, h.panelCAPin, h.panelCN, h.panelURL,
 	)
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(InstallCommandResponse{

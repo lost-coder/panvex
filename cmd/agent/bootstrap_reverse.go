@@ -33,6 +33,10 @@ type reverseBootstrapConfig struct {
 	ListenAddr     string
 	CAPin          string
 	PanelCN        string
+	// PanelURL is the gRPC endpoint (host:port) the agent should dial when
+	// switching back to dial (inbound) transport mode. Persisted as
+	// GRPCEndpoint so the agent can reconnect without re-bootstrapping.
+	PanelURL string
 }
 
 type enrollResult struct {
@@ -189,6 +193,14 @@ func reverseBootstrap(cfg reverseBootstrapConfig) error {
 	}
 
 	// 8. Save credentials.
+	// GRPCEndpoint is set from cfg.PanelURL so the agent can switch back to
+	// dial (inbound) mode without re-bootstrapping: the switch_transport_mode
+	// job handler only overwrites GRPCEndpoint when the job payload carries a
+	// non-empty panel_url, so we must persist it here during reverse bootstrap.
+	// GRPCServerName defaults to cfg.PanelCN — that is the CN the panel's cert
+	// carries and therefore the name the TLS stack must verify against.
+	grpcEndpoint := cfg.PanelURL
+	grpcServerName := cfg.PanelCN
 	creds := agentstate.Credentials{
 		AgentID:        cfg.AgentID,
 		CertificatePEM: result.certPEM,
@@ -196,6 +208,8 @@ func reverseBootstrap(cfg reverseBootstrapConfig) error {
 		CAPEM:          result.caPEM,
 		TransportMode:  "listen",
 		ListenAddr:     cfg.ListenAddr,
+		GRPCEndpoint:   grpcEndpoint,
+		GRPCServerName: grpcServerName,
 		ExpiresAt:      result.expires,
 	}
 

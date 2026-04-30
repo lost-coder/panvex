@@ -233,6 +233,7 @@ func TestReverseBootstrapEndToEnd(t *testing.T) {
 			ListenAddr:     listenAddr,
 			CAPin:          ca.SPKIPin,
 			PanelCN:        "panel.local",
+			PanelURL:       "panel.local:8443",
 		})
 	}()
 
@@ -253,6 +254,7 @@ func TestReverseBootstrapEndToEnd(t *testing.T) {
 	require.Contains(t, string(raw), `"certificate_pem"`)
 	require.Contains(t, string(raw), `"private_key_pem"`)
 	require.Contains(t, string(raw), `"ca_pem"`)
+	require.Contains(t, string(raw), `"grpc_endpoint": "panel.local:8443"`)
 }
 
 // TestReverseBootstrapRejectsWrongCAPin verifies that a panel presenting a cert
