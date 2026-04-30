@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"flag"
 	"fmt"
@@ -18,20 +17,10 @@ import (
 	"github.com/lost-coder/panvex/internal/agent/runtime"
 	agentstate "github.com/lost-coder/panvex/internal/agent/state"
 	"github.com/lost-coder/panvex/internal/agent/telemt"
+	agentTransport "github.com/lost-coder/panvex/internal/agent/transport"
 	"github.com/lost-coder/panvex/internal/controlplane/agentrevocation"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/keepalive"
-)
-
-// Gateway client tuning constants. These mirror the control-plane server side
-// so NAT/middleboxes cannot silently drop an idle TCP connection and so that
-// large discovery snapshots are not truncated by the default 4 MiB cap.
-const (
-	gatewayKeepaliveTime    = 30 * time.Second
-	gatewayKeepaliveTimeout = 10 * time.Second
-	gatewayMaxMessageSize   = 16 * 1024 * 1024
 )
 
 // Build-time version information, injected via -ldflags.
@@ -770,7 +759,7 @@ func enqueueOutboundMessage(
 func startOutboundPump(
 	connectionCtx context.Context,
 	streamWG *sync.WaitGroup,
-	stream gatewayrpc.AgentGateway_ConnectClient,
+	stream agentTransport.BidiStream,
 	criticalOutbound, telemetryOutbound <-chan *gatewayrpc.ConnectClientMessage,
 	sendErrorAndCancel func(error),
 ) {
@@ -809,7 +798,7 @@ func startOutboundPump(
 func startInboundPump(
 	connectionCtx context.Context,
 	streamWG *sync.WaitGroup,
-	stream gatewayrpc.AgentGateway_ConnectClient,
+	stream agentTransport.BidiStream,
 	agent *runtime.Agent,
 	jobInflight *jobInflightTracker,
 	jobQueues map[jobPipeline]chan *gatewayrpc.JobCommand,
@@ -894,78 +883,89 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 		return credentialsState, err
 	}
 
-	conn, err := dialGateway(context.Background(), gatewayAddr, serverName, credentialsState.CAPEM, &certificate)
-	if err != nil {
-		return credentialsState, err
+	cfg := agentTransport.DialConfig{
+		GatewayAddr:    gatewayAddr,
+		ServerName:     serverName,
+		CAPEM:          credentialsState.CAPEM,
+		Cert:           certificate,
+		ConnectTimeout: gatewayStreamConnectTimeout,
 	}
-	defer conn.Close()
 
-	client := gatewayrpc.NewAgentGatewayClient(conn)
-	stream, err := connectStreamWithSetupTimeout(gatewayStreamConnectTimeout, func(ctx context.Context) (gatewayrpc.AgentGateway_ConnectClient, error) {
-		return client.Connect(ctx)
+	var updatedCredentials agentstate.Credentials
+	runErr := agentTransport.NewDialTransport(cfg).RunOnce(context.Background(), func(_ context.Context, stream agentTransport.BidiStream, client gatewayrpc.AgentGatewayClient) error {
+		// gosec G706: slog uses structured key/value attributes — neither agent
+		// id nor gateway address is interpreted as a format string, so the
+		// taint-analysis warning is a false positive.
+		//nolint:gosec // G706: structured logging, no format-string injection vector
+		slog.Info("connected to control-plane", "agent_id", agent.AgentID(), "gateway", gatewayAddr)
+
+		// Derive the connection context from the stream. The concrete stream
+		// returned by client.Connect implements grpc.ClientStream which exposes
+		// Context(); we type-assert to obtain it and fall back to Background().
+		streamCtx := context.Background()
+		if cs, ok := stream.(interface{ Context() context.Context }); ok {
+			streamCtx = cs.Context()
+		}
+		connectionCtx, cancelConnection := context.WithCancel(streamCtx)
+		defer cancelConnection()
+
+		// Q4.U-P-08: graceful drain. Every goroutine spawned for this
+		// connection adds 1 to streamWG and defers wg.Done(); RunOnce
+		// blocks on wg.Wait() before returning so a quick reconnect cannot
+		// outpace the previous connection's drain. The defer ordering is
+		// reverse-source: cancelConnection runs FIRST (closing connectionCtx),
+		// then wg.Wait runs and joins the spawned goroutines.
+		var streamWG sync.WaitGroup
+		defer streamWG.Wait()
+
+		criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 32)
+		telemetryOutbound := make(chan *gatewayrpc.ConnectClientMessage, 64)
+		jobInflight := newJobInflightTracker()
+		jobQueues := map[jobPipeline]chan *gatewayrpc.JobCommand{
+			jobPipelineRuntimeReload:  make(chan *gatewayrpc.JobCommand, jobQueueCapacity),
+			jobPipelineClientMutation: make(chan *gatewayrpc.JobCommand, jobQueueCapacity),
+			jobPipelineDefault:        make(chan *gatewayrpc.JobCommand, jobQueueCapacity),
+		}
+		sendErrors := make(chan error, 1)
+		sendErrorAndCancel := func(sendErr error) {
+			sendError(sendErrors, sendErr)
+			cancelConnection()
+		}
+
+		startOutboundPump(connectionCtx, &streamWG, stream, criticalOutbound, telemetryOutbound, sendErrorAndCancel)
+
+		// Limit concurrent ClientDataRequest goroutines to prevent unbounded
+		// growth if the control-plane sends many requests in rapid succession.
+		// Configurable via -client-data-concurrency / PANVEX_AGENT_CLIENT_DATA_CONCURRENCY
+		// for fleets where the default 8 throttles legitimate burst traffic.
+		cdConc := clientDataConcurrency
+		if cdConc <= 0 {
+			cdConc = 8
+		}
+		clientDataSem := make(chan struct{}, cdConc)
+		startInboundPump(connectionCtx, &streamWG, stream, agent, jobInflight, jobQueues, criticalOutbound, clientDataSem, sendErrorAndCancel)
+		startJobWorkers(connectionCtx, agent, jobInflight, jobQueues, criticalOutbound)
+
+		if initErr := sendInitialMessages(criticalOutbound, agent); initErr != nil {
+			cancelConnection()
+			return initErr
+		}
+		slog.Info("initial sync completed", "agent_id", agent.AgentID(), "node", agent.NodeName())
+
+		credentialRefreshTimer := newRuntimeCredentialRefreshTimer(credentialsState, time.Now())
+		if credentialRefreshTimer != nil {
+			defer credentialRefreshTimer.Stop()
+		}
+		startPollingWorkers(connectionCtx, schedule, agent, telemetryOutbound)
+
+		var loopErr error
+		updatedCredentials, loopErr = runConnectionMainLoop(connectionCtx, cancelConnection, credentialsState, stateFile, client, credentialRefreshTimer, sendErrors)
+		return loopErr
 	})
-	if err != nil {
-		return credentialsState, err
+	if runErr != nil {
+		return credentialsState, runErr
 	}
-	// gosec G706: slog uses structured key/value attributes — neither agent
-	// id nor gateway address is interpreted as a format string, so the
-	// taint-analysis warning is a false positive.
-	//nolint:gosec // G706: structured logging, no format-string injection vector
-	slog.Info("connected to control-plane", "agent_id", agent.AgentID(), "gateway", gatewayAddr)
-
-	connectionCtx, cancelConnection := context.WithCancel(stream.Context())
-	defer cancelConnection()
-
-	// Q4.U-P-08: graceful drain. Every goroutine spawned for this
-	// connection adds 1 to streamWG and defers wg.Done(); runConnection
-	// blocks on wg.Wait() before returning so a quick reconnect cannot
-	// outpace the previous connection's drain. The defer ordering is
-	// reverse-source: cancelConnection runs FIRST (closing connectionCtx),
-	// then wg.Wait runs and joins the spawned goroutines.
-	var streamWG sync.WaitGroup
-	defer streamWG.Wait()
-
-	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 32)
-	telemetryOutbound := make(chan *gatewayrpc.ConnectClientMessage, 64)
-	jobInflight := newJobInflightTracker()
-	jobQueues := map[jobPipeline]chan *gatewayrpc.JobCommand{
-		jobPipelineRuntimeReload:  make(chan *gatewayrpc.JobCommand, jobQueueCapacity),
-		jobPipelineClientMutation: make(chan *gatewayrpc.JobCommand, jobQueueCapacity),
-		jobPipelineDefault:        make(chan *gatewayrpc.JobCommand, jobQueueCapacity),
-	}
-	sendErrors := make(chan error, 1)
-	sendErrorAndCancel := func(err error) {
-		sendError(sendErrors, err)
-		cancelConnection()
-	}
-
-	startOutboundPump(connectionCtx, &streamWG, stream, criticalOutbound, telemetryOutbound, sendErrorAndCancel)
-
-	// Limit concurrent ClientDataRequest goroutines to prevent unbounded
-	// growth if the control-plane sends many requests in rapid succession.
-	// Configurable via -client-data-concurrency / PANVEX_AGENT_CLIENT_DATA_CONCURRENCY
-	// for fleets where the default 8 throttles legitimate burst traffic.
-	cdConc := clientDataConcurrency
-	if cdConc <= 0 {
-		cdConc = 8
-	}
-	clientDataSem := make(chan struct{}, cdConc)
-	startInboundPump(connectionCtx, &streamWG, stream, agent, jobInflight, jobQueues, criticalOutbound, clientDataSem, sendErrorAndCancel)
-	startJobWorkers(connectionCtx, agent, jobInflight, jobQueues, criticalOutbound)
-
-	if err := sendInitialMessages(criticalOutbound, agent); err != nil {
-		cancelConnection()
-		return credentialsState, err
-	}
-	slog.Info("initial sync completed", "agent_id", agent.AgentID(), "node", agent.NodeName())
-
-	credentialRefreshTimer := newRuntimeCredentialRefreshTimer(credentialsState, time.Now())
-	if credentialRefreshTimer != nil {
-		defer credentialRefreshTimer.Stop()
-	}
-	startPollingWorkers(connectionCtx, schedule, agent, telemetryOutbound)
-
-	return runConnectionMainLoop(connectionCtx, cancelConnection, credentialsState, stateFile, client, credentialRefreshTimer, sendErrors)
+	return updatedCredentials, nil
 }
 
 type certificateRenewer interface {
@@ -985,13 +985,23 @@ func renewRuntimeCredentialsIfNeeded(ctx context.Context, stateFile string, gate
 		return current, err
 	}
 
-	conn, err := dialGateway(ctx, gatewayAddr, serverName, current.CAPEM, &certificate)
-	if err != nil {
-		return current, err
+	cfg := agentTransport.DialConfig{
+		GatewayAddr: gatewayAddr,
+		ServerName:  serverName,
+		CAPEM:       current.CAPEM,
+		Cert:        certificate,
 	}
-	defer conn.Close()
 
-	return refreshRuntimeCredentialsIfNeeded(ctx, stateFile, current, gatewayrpc.NewAgentGatewayClient(conn), now)
+	var updated agentstate.Credentials
+	runErr := agentTransport.NewDialTransport(cfg).RunOnce(ctx, func(_ context.Context, _ agentTransport.BidiStream, client gatewayrpc.AgentGatewayClient) error {
+		var refreshErr error
+		updated, refreshErr = refreshRuntimeCredentialsIfNeeded(ctx, stateFile, current, client, now)
+		return refreshErr
+	})
+	if runErr != nil {
+		return current, runErr
+	}
+	return updated, nil
 }
 
 func refreshRuntimeCredentialsIfNeeded(ctx context.Context, stateFile string, current agentstate.Credentials, renewer certificateRenewer, now time.Time) (agentstate.Credentials, error) {
@@ -1093,6 +1103,9 @@ func timerChan(timer *time.Timer) <-chan time.Time {
 	return timer.C
 }
 
+// connectStreamWithSetupTimeout opens a gRPC bidi stream via connect, cancelling
+// the connect context if it does not return within timeout. On success the stream
+// owns its context; cancelling the returned cancel is a no-op after the call.
 func connectStreamWithSetupTimeout(
 	timeout time.Duration,
 	connect func(context.Context) (gatewayrpc.AgentGateway_ConnectClient, error),
@@ -1188,34 +1201,6 @@ func jobAcknowledgementMessage(agentID string, jobID string, observedAt time.Tim
 	}
 }
 
-func dialGateway(ctx context.Context, gatewayAddr string, serverName string, caPEM string, certificate *tls.Certificate) (*grpc.ClientConn, error) {
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM([]byte(caPEM)) {
-		return nil, errors.New("failed to append control-plane CA")
-	}
-
-	tlsConfig := &tls.Config{
-		RootCAs:    pool,
-		ServerName: serverName,
-		MinVersion: tls.VersionTLS13,
-	}
-	if certificate != nil {
-		tlsConfig.Certificates = []tls.Certificate{*certificate}
-	}
-
-	return grpc.NewClient(gatewayAddr,
-		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
-		grpc.WithKeepaliveParams(keepalive.ClientParameters{
-			Time:                gatewayKeepaliveTime,
-			Timeout:             gatewayKeepaliveTimeout,
-			PermitWithoutStream: true,
-		}),
-		grpc.WithDefaultCallOptions(
-			grpc.MaxCallRecvMsgSize(gatewayMaxMessageSize),
-			grpc.MaxCallSendMsgSize(gatewayMaxMessageSize),
-		),
-	)
-}
 
 func handleClientDataRequest(
 	connectionCtx context.Context,
