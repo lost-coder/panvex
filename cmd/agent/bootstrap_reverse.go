@@ -314,25 +314,24 @@ func makeBootstrapVerifier(caPinB64, panelCN string) (func([][]byte, [][]*x509.C
 
 		leaf := certs[0]
 
-		// Verify the leaf chains to the pinned cert. If the leaf itself is
-		// the pinned cert (self-signed CA case), skip — Verify would still
-		// work but allocating a roots pool for that is unnecessary.
-		if leaf != pinned {
-			roots := x509.NewCertPool()
-			roots.AddCert(pinned)
-			intermediates := x509.NewCertPool()
-			for _, c := range certs[1:] {
-				if c != pinned {
-					intermediates.AddCert(c)
-				}
+		// Verify the leaf chains to the pinned cert AND has the ClientAuth
+		// EKU. We always run Verify (no leaf == pinned fast-path) so the
+		// EKU check is uniformly enforced even when the panel presents a
+		// self-signed cert as the leaf.
+		roots := x509.NewCertPool()
+		roots.AddCert(pinned)
+		intermediates := x509.NewCertPool()
+		for _, c := range certs[1:] {
+			if c != pinned {
+				intermediates.AddCert(c)
 			}
-			if _, err := leaf.Verify(x509.VerifyOptions{
-				Roots:         roots,
-				Intermediates: intermediates,
-				KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
-			}); err != nil {
-				return fmt.Errorf("leaf does not chain to pinned CA: %w", err)
-			}
+		}
+		if _, err := leaf.Verify(x509.VerifyOptions{
+			Roots:         roots,
+			Intermediates: intermediates,
+			KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		}); err != nil {
+			return fmt.Errorf("leaf does not chain to pinned CA: %w", err)
 		}
 
 		// Check leaf CN or SAN.

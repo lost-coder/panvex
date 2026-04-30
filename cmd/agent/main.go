@@ -209,7 +209,12 @@ func runRuntime(args []string) error {
 			// drops it (~50% over the closed Done channel), which then
 			// causes the panel to re-dispatch the same job after the
 			// retry-after timeout. 50ms is comfortably more than the local
-			// channel send + gRPC client-side buffer write.
+			// channel send + gRPC client-side buffer write under normal
+			// conditions. Caveat: if criticalOutbound is full (32 buffered
+			// messages) AND the gRPC stream.Send is blocked on remote
+			// flow-control, the worker's send may not land within 50ms.
+			// A more robust fix would persist JobResult to disk and replay
+			// after reconnect — out of scope for this fix.
 			time.AfterFunc(50*time.Millisecond, cancel)
 			return nil
 		},
