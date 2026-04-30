@@ -2835,6 +2835,263 @@ func (*ConnectServerMessage_Job) isConnectServerMessage_Body() {}
 
 func (*ConnectServerMessage_ClientDataRequest) isConnectServerMessage_Body() {}
 
+// EnrollClientMessage is sent by the gRPC client (panel) to the gRPC server
+// (agent). The panel responds with the signed certificate after receiving the
+// agent's opening.
+type EnrollClientMessage struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Body:
+	//
+	//	*EnrollClientMessage_Certificate
+	Body          isEnrollClientMessage_Body `protobuf_oneof:"body"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EnrollClientMessage) Reset() {
+	*x = EnrollClientMessage{}
+	mi := &file_agent_gateway_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EnrollClientMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EnrollClientMessage) ProtoMessage() {}
+
+func (x *EnrollClientMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_gateway_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EnrollClientMessage.ProtoReflect.Descriptor instead.
+func (*EnrollClientMessage) Descriptor() ([]byte, []int) {
+	return file_agent_gateway_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *EnrollClientMessage) GetBody() isEnrollClientMessage_Body {
+	if x != nil {
+		return x.Body
+	}
+	return nil
+}
+
+func (x *EnrollClientMessage) GetCertificate() *EnrollCertificate {
+	if x != nil {
+		if x, ok := x.Body.(*EnrollClientMessage_Certificate); ok {
+			return x.Certificate
+		}
+	}
+	return nil
+}
+
+type isEnrollClientMessage_Body interface {
+	isEnrollClientMessage_Body()
+}
+
+type EnrollClientMessage_Certificate struct {
+	Certificate *EnrollCertificate `protobuf:"bytes,1,opt,name=certificate,proto3,oneof"`
+}
+
+func (*EnrollClientMessage_Certificate) isEnrollClientMessage_Body() {}
+
+type EnrollCertificate struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	CertificatePem string                 `protobuf:"bytes,1,opt,name=certificate_pem,json=certificatePem,proto3" json:"certificate_pem,omitempty"`
+	CaPem          string                 `protobuf:"bytes,2,opt,name=ca_pem,json=caPem,proto3" json:"ca_pem,omitempty"`
+	ExpiresAtUnix  int64                  `protobuf:"varint,3,opt,name=expires_at_unix,json=expiresAtUnix,proto3" json:"expires_at_unix,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *EnrollCertificate) Reset() {
+	*x = EnrollCertificate{}
+	mi := &file_agent_gateway_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EnrollCertificate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EnrollCertificate) ProtoMessage() {}
+
+func (x *EnrollCertificate) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_gateway_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EnrollCertificate.ProtoReflect.Descriptor instead.
+func (*EnrollCertificate) Descriptor() ([]byte, []int) {
+	return file_agent_gateway_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *EnrollCertificate) GetCertificatePem() string {
+	if x != nil {
+		return x.CertificatePem
+	}
+	return ""
+}
+
+func (x *EnrollCertificate) GetCaPem() string {
+	if x != nil {
+		return x.CaPem
+	}
+	return ""
+}
+
+func (x *EnrollCertificate) GetExpiresAtUnix() int64 {
+	if x != nil {
+		return x.ExpiresAtUnix
+	}
+	return 0
+}
+
+// EnrollServerMessage is sent by the gRPC server (agent) to the gRPC client
+// (panel). The agent sends its bootstrap opening first.
+type EnrollServerMessage struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Body:
+	//
+	//	*EnrollServerMessage_Opening
+	Body          isEnrollServerMessage_Body `protobuf_oneof:"body"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EnrollServerMessage) Reset() {
+	*x = EnrollServerMessage{}
+	mi := &file_agent_gateway_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EnrollServerMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EnrollServerMessage) ProtoMessage() {}
+
+func (x *EnrollServerMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_gateway_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EnrollServerMessage.ProtoReflect.Descriptor instead.
+func (*EnrollServerMessage) Descriptor() ([]byte, []int) {
+	return file_agent_gateway_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *EnrollServerMessage) GetBody() isEnrollServerMessage_Body {
+	if x != nil {
+		return x.Body
+	}
+	return nil
+}
+
+func (x *EnrollServerMessage) GetOpening() *EnrollOpening {
+	if x != nil {
+		if x, ok := x.Body.(*EnrollServerMessage_Opening); ok {
+			return x.Opening
+		}
+	}
+	return nil
+}
+
+type isEnrollServerMessage_Body interface {
+	isEnrollServerMessage_Body()
+}
+
+type EnrollServerMessage_Opening struct {
+	Opening *EnrollOpening `protobuf:"bytes,1,opt,name=opening,proto3,oneof"`
+}
+
+func (*EnrollServerMessage_Opening) isEnrollServerMessage_Body() {}
+
+type EnrollOpening struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	BootstrapToken string                 `protobuf:"bytes,1,opt,name=bootstrap_token,json=bootstrapToken,proto3" json:"bootstrap_token,omitempty"`
+	AgentId        string                 `protobuf:"bytes,2,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	CsrPem         string                 `protobuf:"bytes,3,opt,name=csr_pem,json=csrPem,proto3" json:"csr_pem,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *EnrollOpening) Reset() {
+	*x = EnrollOpening{}
+	mi := &file_agent_gateway_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EnrollOpening) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EnrollOpening) ProtoMessage() {}
+
+func (x *EnrollOpening) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_gateway_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EnrollOpening.ProtoReflect.Descriptor instead.
+func (*EnrollOpening) Descriptor() ([]byte, []int) {
+	return file_agent_gateway_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *EnrollOpening) GetBootstrapToken() string {
+	if x != nil {
+		return x.BootstrapToken
+	}
+	return ""
+}
+
+func (x *EnrollOpening) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *EnrollOpening) GetCsrPem() string {
+	if x != nil {
+		return x.CsrPem
+	}
+	return ""
+}
+
 var File_agent_gateway_proto protoreflect.FileDescriptor
 
 const file_agent_gateway_proto_rawDesc = "" +
@@ -3113,10 +3370,25 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\x14ConnectServerMessage\x121\n" +
 	"\x03job\x18\x01 \x01(\v2\x1d.panvex.gateway.v1.JobCommandH\x00R\x03job\x12V\n" +
 	"\x13client_data_request\x18\x02 \x01(\v2$.panvex.gateway.v1.ClientDataRequestH\x00R\x11clientDataRequestB\x06\n" +
-	"\x04body2\xdc\x01\n" +
+	"\x04body\"g\n" +
+	"\x13EnrollClientMessage\x12H\n" +
+	"\vcertificate\x18\x01 \x01(\v2$.panvex.gateway.v1.EnrollCertificateH\x00R\vcertificateB\x06\n" +
+	"\x04body\"{\n" +
+	"\x11EnrollCertificate\x12'\n" +
+	"\x0fcertificate_pem\x18\x01 \x01(\tR\x0ecertificatePem\x12\x15\n" +
+	"\x06ca_pem\x18\x02 \x01(\tR\x05caPem\x12&\n" +
+	"\x0fexpires_at_unix\x18\x03 \x01(\x03R\rexpiresAtUnix\"[\n" +
+	"\x13EnrollServerMessage\x12<\n" +
+	"\aopening\x18\x01 \x01(\v2 .panvex.gateway.v1.EnrollOpeningH\x00R\aopeningB\x06\n" +
+	"\x04body\"l\n" +
+	"\rEnrollOpening\x12'\n" +
+	"\x0fbootstrap_token\x18\x01 \x01(\tR\x0ebootstrapToken\x12\x19\n" +
+	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x17\n" +
+	"\acsr_pem\x18\x03 \x01(\tR\x06csrPem2\xc2\x02\n" +
 	"\fAgentGateway\x12k\n" +
 	"\x10RenewCertificate\x12*.panvex.gateway.v1.RenewCertificateRequest\x1a+.panvex.gateway.v1.RenewCertificateResponse\x12_\n" +
-	"\aConnect\x12'.panvex.gateway.v1.ConnectClientMessage\x1a'.panvex.gateway.v1.ConnectServerMessage(\x010\x01B2Z0github.com/lost-coder/panvex/internal/gatewayrpcb\x06proto3"
+	"\aConnect\x12'.panvex.gateway.v1.ConnectClientMessage\x1a'.panvex.gateway.v1.ConnectServerMessage(\x010\x01\x12d\n" +
+	"\x0eEnrollOutbound\x12&.panvex.gateway.v1.EnrollClientMessage\x1a&.panvex.gateway.v1.EnrollServerMessage(\x010\x01B2Z0github.com/lost-coder/panvex/internal/gatewayrpcb\x06proto3"
 
 var (
 	file_agent_gateway_proto_rawDescOnce sync.Once
@@ -3131,7 +3403,7 @@ func file_agent_gateway_proto_rawDescGZIP() []byte {
 }
 
 var file_agent_gateway_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_agent_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
+var file_agent_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 33)
 var file_agent_gateway_proto_goTypes = []any{
 	(ClientDataRequest_RequestType)(0),       // 0: panvex.gateway.v1.ClientDataRequest.RequestType
 	(*RenewCertificateRequest)(nil),          // 1: panvex.gateway.v1.RenewCertificateRequest
@@ -3162,7 +3434,11 @@ var file_agent_gateway_proto_goTypes = []any{
 	(*ClientDetailRecord)(nil),               // 26: panvex.gateway.v1.ClientDetailRecord
 	(*ConnectClientMessage)(nil),             // 27: panvex.gateway.v1.ConnectClientMessage
 	(*ConnectServerMessage)(nil),             // 28: panvex.gateway.v1.ConnectServerMessage
-	nil,                                      // 29: panvex.gateway.v1.Snapshot.MetricsEntry
+	(*EnrollClientMessage)(nil),              // 29: panvex.gateway.v1.EnrollClientMessage
+	(*EnrollCertificate)(nil),                // 30: panvex.gateway.v1.EnrollCertificate
+	(*EnrollServerMessage)(nil),              // 31: panvex.gateway.v1.EnrollServerMessage
+	(*EnrollOpening)(nil),                    // 32: panvex.gateway.v1.EnrollOpening
+	nil,                                      // 33: panvex.gateway.v1.Snapshot.MetricsEntry
 }
 var file_agent_gateway_proto_depIdxs = []int32{
 	9,  // 0: panvex.gateway.v1.RuntimeUpstreamSnapshot.rows:type_name -> panvex.gateway.v1.RuntimeUpstreamRowSnapshot
@@ -3177,7 +3453,7 @@ var file_agent_gateway_proto_depIdxs = []int32{
 	17, // 9: panvex.gateway.v1.RuntimeSnapshot.top_by_connections:type_name -> panvex.gateway.v1.ConnectionTopEntry
 	17, // 10: panvex.gateway.v1.RuntimeSnapshot.top_by_throughput:type_name -> panvex.gateway.v1.ConnectionTopEntry
 	4,  // 11: panvex.gateway.v1.Snapshot.instances:type_name -> panvex.gateway.v1.InstanceSnapshot
-	29, // 12: panvex.gateway.v1.Snapshot.metrics:type_name -> panvex.gateway.v1.Snapshot.MetricsEntry
+	33, // 12: panvex.gateway.v1.Snapshot.metrics:type_name -> panvex.gateway.v1.Snapshot.MetricsEntry
 	5,  // 13: panvex.gateway.v1.Snapshot.clients:type_name -> panvex.gateway.v1.ClientUsageSnapshot
 	16, // 14: panvex.gateway.v1.Snapshot.runtime:type_name -> panvex.gateway.v1.RuntimeSnapshot
 	6,  // 15: panvex.gateway.v1.Snapshot.client_ips:type_name -> panvex.gateway.v1.ClientIPSnapshot
@@ -3192,15 +3468,19 @@ var file_agent_gateway_proto_depIdxs = []int32{
 	25, // 24: panvex.gateway.v1.ConnectClientMessage.client_data_response:type_name -> panvex.gateway.v1.ClientDataResponse
 	23, // 25: panvex.gateway.v1.ConnectServerMessage.job:type_name -> panvex.gateway.v1.JobCommand
 	24, // 26: panvex.gateway.v1.ConnectServerMessage.client_data_request:type_name -> panvex.gateway.v1.ClientDataRequest
-	1,  // 27: panvex.gateway.v1.AgentGateway.RenewCertificate:input_type -> panvex.gateway.v1.RenewCertificateRequest
-	27, // 28: panvex.gateway.v1.AgentGateway.Connect:input_type -> panvex.gateway.v1.ConnectClientMessage
-	2,  // 29: panvex.gateway.v1.AgentGateway.RenewCertificate:output_type -> panvex.gateway.v1.RenewCertificateResponse
-	28, // 30: panvex.gateway.v1.AgentGateway.Connect:output_type -> panvex.gateway.v1.ConnectServerMessage
-	29, // [29:31] is the sub-list for method output_type
-	27, // [27:29] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	30, // 27: panvex.gateway.v1.EnrollClientMessage.certificate:type_name -> panvex.gateway.v1.EnrollCertificate
+	32, // 28: panvex.gateway.v1.EnrollServerMessage.opening:type_name -> panvex.gateway.v1.EnrollOpening
+	1,  // 29: panvex.gateway.v1.AgentGateway.RenewCertificate:input_type -> panvex.gateway.v1.RenewCertificateRequest
+	27, // 30: panvex.gateway.v1.AgentGateway.Connect:input_type -> panvex.gateway.v1.ConnectClientMessage
+	29, // 31: panvex.gateway.v1.AgentGateway.EnrollOutbound:input_type -> panvex.gateway.v1.EnrollClientMessage
+	2,  // 32: panvex.gateway.v1.AgentGateway.RenewCertificate:output_type -> panvex.gateway.v1.RenewCertificateResponse
+	28, // 33: panvex.gateway.v1.AgentGateway.Connect:output_type -> panvex.gateway.v1.ConnectServerMessage
+	31, // 34: panvex.gateway.v1.AgentGateway.EnrollOutbound:output_type -> panvex.gateway.v1.EnrollServerMessage
+	32, // [32:35] is the sub-list for method output_type
+	29, // [29:32] is the sub-list for method input_type
+	29, // [29:29] is the sub-list for extension type_name
+	29, // [29:29] is the sub-list for extension extendee
+	0,  // [0:29] is the sub-list for field type_name
 }
 
 func init() { file_agent_gateway_proto_init() }
@@ -3219,13 +3499,19 @@ func file_agent_gateway_proto_init() {
 		(*ConnectServerMessage_Job)(nil),
 		(*ConnectServerMessage_ClientDataRequest)(nil),
 	}
+	file_agent_gateway_proto_msgTypes[28].OneofWrappers = []any{
+		(*EnrollClientMessage_Certificate)(nil),
+	}
+	file_agent_gateway_proto_msgTypes[30].OneofWrappers = []any{
+		(*EnrollServerMessage_Opening)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_gateway_proto_rawDesc), len(file_agent_gateway_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   29,
+			NumMessages:   33,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -82,6 +82,9 @@ func (s *outboundSupervisor) run(ctx context.Context) {
 	}
 }
 
+// TODO: before calling connectAndServe, check if bootstrap_state=pending and
+// invoke bootstrap.EnrollDriver.Run to complete the certificate enrollment
+// exchange. This requires plumbing EnrollQueries + CertificateAuthority here.
 func (s *outboundSupervisor) connectAndServe(ctx context.Context) error {
 	if s.tlsCfg == nil {
 		return fmt.Errorf("%w (node_id=%s)", errOutboundTLSMissing, s.meta.NodeID)

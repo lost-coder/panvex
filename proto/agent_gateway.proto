@@ -7,6 +7,7 @@ option go_package = "github.com/lost-coder/panvex/internal/gatewayrpc";
 service AgentGateway {
   rpc RenewCertificate(RenewCertificateRequest) returns (RenewCertificateResponse);
   rpc Connect(stream ConnectClientMessage) returns (stream ConnectServerMessage);
+  rpc EnrollOutbound(stream EnrollClientMessage) returns (stream EnrollServerMessage);
 }
 
 message RenewCertificateRequest {
@@ -313,4 +314,37 @@ message ConnectServerMessage {
     JobCommand job = 1;
     ClientDataRequest client_data_request = 2;
   }
+}
+
+// EnrollOutbound messages — panel-speaks-first bootstrap exchange.
+// The agent opens the stream; the panel waits for an EnrollOpening, then
+// responds with an EnrollCertificate and closes its send-half.
+
+// EnrollClientMessage is sent by the gRPC client (panel) to the gRPC server
+// (agent). The panel responds with the signed certificate after receiving the
+// agent's opening.
+message EnrollClientMessage {
+  oneof body {
+    EnrollCertificate certificate = 1;
+  }
+}
+
+message EnrollCertificate {
+  string certificate_pem = 1;
+  string ca_pem = 2;
+  int64 expires_at_unix = 3;
+}
+
+// EnrollServerMessage is sent by the gRPC server (agent) to the gRPC client
+// (panel). The agent sends its bootstrap opening first.
+message EnrollServerMessage {
+  oneof body {
+    EnrollOpening opening = 1;
+  }
+}
+
+message EnrollOpening {
+  string bootstrap_token = 1;
+  string agent_id = 2;
+  string csr_pem = 3;
 }
