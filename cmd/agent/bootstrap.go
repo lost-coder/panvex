@@ -78,11 +78,40 @@ func runBootstrapCommand(args []string, client *http.Client) error {
 	force := flags.Bool("force", false, "Overwrite an existing state file")
 	insecureTransport := flags.Bool("insecure-transport", false,
 		"Allow http:// panel URLs on non-loopback hosts. Use only on trusted private networks (e.g. VPN-only links) — bootstrap exchanges the private key in cleartext when this is set.")
+	mode := flags.String("mode", "dial", "bootstrap mode: dial | reverse")
+	bootstrapToken := flags.String("bootstrap-token", "", "raw bootstrap token (reverse mode)")
+	agentID := flags.String("agent-id", "", "agent identifier (reverse mode)")
+	listenAddr := flags.String("listen-addr", ":8443", "TCP listen address (reverse mode)")
+	caPin := flags.String("ca-pin", "", "SHA-256 SPKI hash of panel CA, base64url (reverse mode)")
+	panelCN := flags.String("panel-cn", "", "expected CN/SAN of panel client cert (reverse mode)")
+	reversePanelURL := flags.String("panel-url-grpc", "", "gRPC endpoint of the panel, host:port (reverse mode, e.g. panel.example.com:8443)")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 
-	if *panelURL == "" || *enrollmentToken == "" || *stateFile == "" {
+	if *stateFile == "" {
+		return errors.New("bootstrap requires -state-file")
+	}
+
+	if *mode == "reverse" {
+		if *bootstrapToken == "" || *agentID == "" || *caPin == "" || *panelCN == "" {
+			return errors.New("reverse bootstrap requires --bootstrap-token, --agent-id, --ca-pin, --panel-cn")
+		}
+		if *reversePanelURL == "" {
+			return errors.New("reverse bootstrap requires --panel-url-grpc (gRPC endpoint, e.g. panel.example.com:8443)")
+		}
+		return reverseBootstrap(reverseBootstrapConfig{
+			StateFile:      *stateFile,
+			BootstrapToken: *bootstrapToken,
+			AgentID:        *agentID,
+			ListenAddr:     *listenAddr,
+			CAPin:          *caPin,
+			PanelCN:        *panelCN,
+			PanelURL:       *reversePanelURL,
+		})
+	}
+
+	if *panelURL == "" || *enrollmentToken == "" {
 		return errors.New("bootstrap requires -panel-url, -enrollment-token, and -state-file")
 	}
 

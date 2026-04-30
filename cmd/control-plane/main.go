@@ -22,7 +22,9 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" driver for migrate-schema
+	"github.com/lost-coder/panvex/internal/controlplane/agenttransport"
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/bootstrap"
 	"github.com/lost-coder/panvex/internal/controlplane/config"
 	otelcp "github.com/lost-coder/panvex/internal/controlplane/otel"
 	"github.com/lost-coder/panvex/internal/controlplane/server"
@@ -30,6 +32,7 @@ import (
 	storagemigrate "github.com/lost-coder/panvex/internal/controlplane/storage/migrate"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/postgres"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
+	"github.com/lost-coder/panvex/internal/dbsqlc"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"github.com/lost-coder/panvex/internal/security"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -258,6 +261,90 @@ func runServe(args []string) error {
 
 	grpcServer := newControlPlaneGRPCServer(api.GRPCTLSConfig())
 	gatewayrpc.RegisterAgentGatewayServer(grpcServer, api)
+
+	// Шов 1 & 2: obtain *dbsqlc.Queries from the concrete store so the
+	// agenttransport.Manager, bootstrap.InstallCommandHandler, and
+	// bootstrap.EnrollDriver can execute transport/bootstrap SQL directly.
+	// Both sqlite.Store and postgres.Store expose a Queries() method that
+	// wraps the same connection pool. If the runtime store doesn't implement
+	// the interface (e.g. a test double) we fall back to nil and the
+	// downstream nil-guards keep the server functional without these features.
+	type queriesProvider interface {
+		Queries() *dbsqlc.Queries
+	}
+	var queries *dbsqlc.Queries
+	if qp, ok := store.(queriesProvider); ok {
+		queries = qp.Queries()
+	} else {
+		logger.Warn("storage backend does not expose Queries(); install-command and enrollment pre-flight disabled")
+	}
+
+	// agenttransport.Manager owns outbound supervisors and (in a later task)
+	// the inbound dispatch path. Now wired with real DB queries so outbound
+	// supervisors are restored at startup and the enrollment pre-flight runs.
+	// The outbound TLS config is the panel's server-side mTLS config (agents
+	// must present a cert signed by the panel CA). The CA is available via
+	// api.GRPCTLSConfig() once the server is constructed above.
+	outboundTLS := api.GRPCTLSConfig()
+	manager := agenttransport.NewManager(queries, api.RunAgentSession, outboundTLS, logger)
+	api.SetAgentTransportManager(manager)
+
+	// Шов 1: wire the install-command handler so POST /agents/{id}/install-command
+	// returns a curl | bash one-liner instead of 503. PanelURL is the gRPC
+	// endpoint agents dial. ScriptURL, PanelCAPin, and PanelCN are derived
+	// from the panel's CA certificate (same CA that signs agent certs).
+	//
+	// TODO(install-command): ScriptURL should point to a publicly accessible
+	// install script (e.g. https://get.panvex.io/install-agent.sh). Until a
+	// CDN/release URL is established, the command is syntactically valid but
+	// the script download will fail. Operators can override by editing the
+	// generated command before running it.
+	if queries != nil {
+		installHandler := bootstrap.NewInstallCommandHandler(queries, bootstrap.InstallCommandConfig{
+			ScriptURL:  installScriptURL(panelRuntime),
+			PanelCAPin: api.CAPINHex(),
+			PanelCN:    api.CACN(),
+			PanelURL:   panelRuntime.GRPCListenAddress,
+			Now:        time.Now,
+		})
+		api.SetInstallCommandHandler(installHandler)
+	}
+
+	// Шов 2: wire the enrollment pre-flight into the outbound supervisor pool.
+	// EnrollDriver.Run is called before the mTLS dial when bootstrap_state=pending.
+	// The bootstrap TLS config uses InsecureSkipVerify because the agent has no
+	// trusted cert yet; the enrollment token authenticates the exchange in-band.
+	if queries != nil {
+		enrollDriver := bootstrap.NewEnrollDriver(queries, api.CertificateAuthority(), logger, time.Now)
+		api.WireEnrollDriver(enrollDriver)
+
+		bootstrapTLS := &tls.Config{
+			// The agent presents a self-signed cert during enrollment; the panel
+			// cannot verify it before the cert is issued, so we skip server cert
+			// verification here. The exchange is authenticated by the bootstrap
+			// token embedded in the EnrollOpening message.
+			InsecureSkipVerify: true, //nolint:gosec // intentional: pre-enrollment, no trust anchor yet
+		}
+		enrollFn := func(ctx context.Context, agentAddr, agentID string) error {
+			return enrollDriver.Run(ctx, agentAddr, bootstrapTLS, agentID)
+		}
+		bootstrapStateFn := func(ctx context.Context, agentID string) (string, error) {
+			row, err := queries.GetAgentTransport(ctx, agentID)
+			if err != nil {
+				return "", err
+			}
+			return row.BootstrapState, nil
+		}
+		manager.SetEnrollCallbacks(enrollFn, bootstrapStateFn)
+	}
+
+	if err := manager.Start(context.Background()); err != nil {
+		return fmt.Errorf("start agent transport manager: %w", err)
+	}
+	// Shutdown order: shutdownServers (HTTP + gRPC drain) runs before any
+	// defer; manager.Stop tears down outbound supervisors AFTER gRPC has
+	// drained but BEFORE api.Close flushes batch writers.
+	defer manager.Stop()
 
 	shutdownServers := func() {
 		shutdownHTTPAndGRPC(httpServer, grpcServer, grpcListener)
@@ -1122,6 +1209,25 @@ func runMigrateSchema(args []string) error {
 	default:
 		return fmt.Errorf("unsupported storage driver %q", storageConfig.Driver)
 	}
+}
+
+// installScriptURL derives a best-effort public URL for the agent install
+// script from the panel's HTTP listen address. It is intentionally simple:
+// if the operator has a custom domain, they should set PANVEX_INSTALL_SCRIPT_URL.
+// TODO(install-command): replace with a stable CDN URL once one is published.
+func installScriptURL(rt server.PanelRuntime) string {
+	if v := strings.TrimSpace(os.Getenv("PANVEX_INSTALL_SCRIPT_URL")); v != "" {
+		return v
+	}
+	// Fall back to a relative path on the panel itself. Operators who serve
+	// the panel behind a reverse proxy can set PANVEX_INSTALL_SCRIPT_URL to
+	// the fully-qualified URL instead.
+	host := rt.HTTPListenAddress
+	scheme := "http"
+	if rt.TLSMode == "direct" {
+		scheme = "https"
+	}
+	return scheme + "://" + host + "/install-agent.sh"
 }
 
 func openStore(configuration config.StorageConfig) (storage.Store, error) {

@@ -17,6 +17,13 @@ type Credentials struct {
 	GRPCEndpoint   string    `json:"grpc_endpoint"`
 	GRPCServerName string    `json:"grpc_server_name"`
 	ExpiresAt      time.Time `json:"expires_at"`
+	// TransportMode controls direction of the gRPC stream:
+	//   "" / "dial" — agent dials the panel (default; legacy state files have no value)
+	//   "listen"    — agent serves gRPC; the panel dials in
+	TransportMode string `json:"transport_mode,omitempty"`
+	// ListenAddr is the agent-side bind address used when TransportMode == "listen".
+	// Ignored in dial mode.
+	ListenAddr string `json:"listen_addr,omitempty"`
 	// UsageSeq is the last client-usage snapshot sequence number emitted by
 	// the agent. Persisted across restarts so the control-plane can dedup
 	// replayed deltas and detect true agent restarts (seq resets to 1).

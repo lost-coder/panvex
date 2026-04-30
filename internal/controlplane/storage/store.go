@@ -87,6 +87,10 @@ type FleetStore interface {
 	// GetAgentCertSerial returns the pinned serial; "" means unpinned
 	// (legacy agent whose cert pre-dates the schema migration).
 	GetAgentCertSerial(ctx context.Context, agentID string) (string, error)
+	// UpdateAgentTransportMode changes the agent's transport_mode and
+	// dial_address. dialAddress is empty when switching to inbound mode.
+	// Returns ErrNotFound when the agent doesn't exist.
+	UpdateAgentTransportMode(ctx context.Context, agentID, transportMode, dialAddress string) error
 	PutInstance(ctx context.Context, instance InstanceRecord) error
 	// PutInstancesBulk upserts a batch of Telemt instances in a single
 	// transaction. Same semantics as PutInstance per row; empty slice is a

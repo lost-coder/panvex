@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	AgentGateway_RenewCertificate_FullMethodName = "/panvex.gateway.v1.AgentGateway/RenewCertificate"
 	AgentGateway_Connect_FullMethodName          = "/panvex.gateway.v1.AgentGateway/Connect"
+	AgentGateway_EnrollOutbound_FullMethodName   = "/panvex.gateway.v1.AgentGateway/EnrollOutbound"
 )
 
 // AgentGatewayClient is the client API for AgentGateway service.
@@ -29,6 +30,7 @@ const (
 type AgentGatewayClient interface {
 	RenewCertificate(ctx context.Context, in *RenewCertificateRequest, opts ...grpc.CallOption) (*RenewCertificateResponse, error)
 	Connect(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ConnectClientMessage, ConnectServerMessage], error)
+	EnrollOutbound(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[EnrollClientMessage, EnrollServerMessage], error)
 }
 
 type agentGatewayClient struct {
@@ -62,12 +64,26 @@ func (c *agentGatewayClient) Connect(ctx context.Context, opts ...grpc.CallOptio
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AgentGateway_ConnectClient = grpc.BidiStreamingClient[ConnectClientMessage, ConnectServerMessage]
 
+func (c *agentGatewayClient) EnrollOutbound(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[EnrollClientMessage, EnrollServerMessage], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &AgentGateway_ServiceDesc.Streams[1], AgentGateway_EnrollOutbound_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[EnrollClientMessage, EnrollServerMessage]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentGateway_EnrollOutboundClient = grpc.BidiStreamingClient[EnrollClientMessage, EnrollServerMessage]
+
 // AgentGatewayServer is the server API for AgentGateway service.
 // All implementations should embed UnimplementedAgentGatewayServer
 // for forward compatibility.
 type AgentGatewayServer interface {
 	RenewCertificate(context.Context, *RenewCertificateRequest) (*RenewCertificateResponse, error)
 	Connect(grpc.BidiStreamingServer[ConnectClientMessage, ConnectServerMessage]) error
+	EnrollOutbound(grpc.BidiStreamingServer[EnrollClientMessage, EnrollServerMessage]) error
 }
 
 // UnimplementedAgentGatewayServer should be embedded to have
@@ -82,6 +98,9 @@ func (UnimplementedAgentGatewayServer) RenewCertificate(context.Context, *RenewC
 }
 func (UnimplementedAgentGatewayServer) Connect(grpc.BidiStreamingServer[ConnectClientMessage, ConnectServerMessage]) error {
 	return status.Error(codes.Unimplemented, "method Connect not implemented")
+}
+func (UnimplementedAgentGatewayServer) EnrollOutbound(grpc.BidiStreamingServer[EnrollClientMessage, EnrollServerMessage]) error {
+	return status.Error(codes.Unimplemented, "method EnrollOutbound not implemented")
 }
 func (UnimplementedAgentGatewayServer) testEmbeddedByValue() {}
 
@@ -128,6 +147,13 @@ func _AgentGateway_Connect_Handler(srv interface{}, stream grpc.ServerStream) er
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AgentGateway_ConnectServer = grpc.BidiStreamingServer[ConnectClientMessage, ConnectServerMessage]
 
+func _AgentGateway_EnrollOutbound_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(AgentGatewayServer).EnrollOutbound(&grpc.GenericServerStream[EnrollClientMessage, EnrollServerMessage]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentGateway_EnrollOutboundServer = grpc.BidiStreamingServer[EnrollClientMessage, EnrollServerMessage]
+
 // AgentGateway_ServiceDesc is the grpc.ServiceDesc for AgentGateway service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -144,6 +170,12 @@ var AgentGateway_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "Connect",
 			Handler:       _AgentGateway_Connect_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "EnrollOutbound",
+			Handler:       _AgentGateway_EnrollOutbound_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
 		},

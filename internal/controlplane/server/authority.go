@@ -2,12 +2,14 @@ package server
 
 import (
 	"context"
-	"crypto/tls"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -340,6 +342,54 @@ func (a *certificateAuthority) issueClientCertificate(commonName string, now tim
 	}, nil
 }
 
+// SignCSR implements bootstrap.CertificateAuthority. It parses csrPEM,
+// validates that the request's CN matches agentID, signs a new certificate
+// using the panel CA, and returns the issued cert PEM, CA cert PEM, and
+// NotAfter. The issued cert is client-auth only so the agent can present it
+// on the post-enrollment mTLS dial.
+func (a *certificateAuthority) SignCSR(csrPEM, agentID string, validFor time.Duration) (certPEM, caPEM string, expiresAt time.Time, err error) {
+	csrBlock, _ := pem.Decode([]byte(csrPEM))
+	if csrBlock == nil {
+		return "", "", time.Time{}, fmt.Errorf("sign csr: invalid PEM block for agent %s", agentID)
+	}
+	csr, err := x509.ParseCertificateRequest(csrBlock.Bytes)
+	if err != nil {
+		return "", "", time.Time{}, fmt.Errorf("sign csr: parse: %w", err)
+	}
+	if err := csr.CheckSignature(); err != nil {
+		return "", "", time.Time{}, fmt.Errorf("sign csr: signature check: %w", err)
+	}
+	if csr.Subject.CommonName != agentID {
+		return "", "", time.Time{}, fmt.Errorf("sign csr: CN mismatch: got %q, want %q", csr.Subject.CommonName, agentID)
+	}
+
+	serial, err := randomSerial()
+	if err != nil {
+		return "", "", time.Time{}, fmt.Errorf("sign csr: serial: %w", err)
+	}
+
+	now := time.Now()
+	expiresAt = now.Add(validFor)
+	tmpl := &x509.Certificate{
+		SerialNumber: serial,
+		Subject: pkix.Name{
+			CommonName:   agentID,
+			Organization: []string{"Panvex Agents"},
+		},
+		NotBefore:    now.Add(-time.Minute),
+		NotAfter:     expiresAt,
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		SubjectKeyId: serial.Bytes(),
+	}
+
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, a.certificate, csr.PublicKey, a.privateKey)
+	if err != nil {
+		return "", "", time.Time{}, fmt.Errorf("sign csr: create: %w", err)
+	}
+	return encodePEM("CERTIFICATE", der), a.caPEM, expiresAt, nil
+}
+
 func encodePEM(blockType string, bytes []byte) string {
 	return string(pem.EncodeToMemory(&pem.Block{
 		Type:  blockType,
@@ -402,4 +452,11 @@ func issueServerCertificate(caCertificate *x509.Certificate, caKey *ecdsa.Privat
 		[]byte(encodePEM("CERTIFICATE", der)),
 		[]byte(encodePEM(pemTypeECPrivateKey, privateDER)),
 	)
+}
+
+// caFingerprint returns the lower-hex SHA-256 fingerprint of cert.Raw. Used
+// by Server.CAPINHex so agents can pin the panel CA on first connect.
+func caFingerprint(cert *x509.Certificate) string {
+	sum := sha256.Sum256(cert.Raw)
+	return hex.EncodeToString(sum[:])
 }

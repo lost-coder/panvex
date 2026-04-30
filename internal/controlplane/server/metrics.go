@@ -93,6 +93,17 @@ type metricsCollectors struct {
 	// a glance whether a flood is hitting login, the agent bootstrap,
 	// or the per-user sensitive bucket.
 	rateLimitRejectedTotal *prometheus.CounterVec
+
+	// Reverse-mode transport metrics (Task 17).
+	// outboundSupervisorsTotal tracks how many outbound (reverse-mode)
+	// supervisors are currently running, labelled by transport mode.
+	// Label values: "outbound". Pre-initialised to zero so dashboards see
+	// the series even before the first reverse agent is enrolled.
+	outboundSupervisorsTotal *prometheus.GaugeVec
+	// bootstrapAttemptsTotal counts EnrollDriver.Run outcomes, labelled by
+	// result. Bounded label enum: success|expired|mismatch|agent_id_mismatch|
+	// misbehavior|error. Pre-initialised to zero for alert stability.
+	bootstrapAttemptsTotal *prometheus.CounterVec
 }
 
 // rateLimitScopes enumerates every scope label that can appear on
@@ -236,6 +247,14 @@ func newMetricsCollectors() *metricsCollectors {
 			Name: "panvex_ratelimit_rejected_total",
 			Help: "Total rate-limit rejections, labelled by scope. Bounded enum.",
 		}, []string{"scope"}),
+		outboundSupervisorsTotal: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "panvex_outbound_supervisors_total",
+			Help: "Number of outbound (reverse-mode) supervisors currently active, labelled by mode. Incremented by ensureSupervisor, decremented by removeSupervisor/stopAll.",
+		}, []string{"mode"}),
+		bootstrapAttemptsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "panvex_bootstrap_attempts_total",
+			Help: "Reverse-mode bootstrap enrollment attempts by result. Bounded label enum: success|expired|mismatch|agent_id_mismatch|misbehavior|error.",
+		}, []string{"result"}),
 	}
 
 	reg.MustRegister(
@@ -264,6 +283,8 @@ func newMetricsCollectors() *metricsCollectors {
 		mc.dbPoolMaxIdleClosed,
 		mc.dbPoolLifetimeClose,
 		mc.rateLimitRejectedTotal,
+		mc.outboundSupervisorsTotal,
+		mc.bootstrapAttemptsTotal,
 	)
 
 	// Pre-initialise the per-buffer series to zero so Prometheus rules that
@@ -293,7 +314,45 @@ func newMetricsCollectors() *metricsCollectors {
 		mc.rateLimitRejectedTotal.WithLabelValues(scope).Add(0)
 	}
 
+	// Pre-initialise reverse-mode series so alerts don't see absent metrics
+	// on a fresh panel that has not yet run any outbound enrollment.
+	mc.outboundSupervisorsTotal.WithLabelValues("outbound").Set(0)
+	for _, result := range bootstrapResultLabels {
+		mc.bootstrapAttemptsTotal.WithLabelValues(result).Add(0)
+	}
+
 	return mc
+}
+
+// bootstrapResultLabels is the bounded enum of result label values for
+// panvex_bootstrap_attempts_total. All values must be pre-initialised so
+// PromQL rate() alerts never see an absent series on a fresh panel.
+var bootstrapResultLabels = []string{
+	"success",
+	"expired",
+	"mismatch",
+	"agent_id_mismatch",
+	"misbehavior",
+	"error",
+}
+
+// ObserveBootstrapAttempt increments the bootstrap attempt counter for the
+// given result label. Safe to call on a nil receiver (metrics disabled).
+func (mc *metricsCollectors) ObserveBootstrapAttempt(result string) {
+	if mc == nil {
+		return
+	}
+	mc.bootstrapAttemptsTotal.WithLabelValues(result).Inc()
+}
+
+// AddOutboundSupervisor increments the outbound supervisor gauge by delta.
+// Use +1 when a supervisor is created, -1 when it is removed.
+// Safe to call on a nil receiver (metrics disabled).
+func (mc *metricsCollectors) AddOutboundSupervisor(delta float64) {
+	if mc == nil {
+		return
+	}
+	mc.outboundSupervisorsTotal.WithLabelValues("outbound").Add(delta)
 }
 
 // ObserveRateLimitReject increments the per-scope rejection counter.

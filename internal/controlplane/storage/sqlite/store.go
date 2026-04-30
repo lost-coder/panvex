@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/lost-coder/panvex/internal/dbsqlc"
 	// register the pure-Go SQLite driver under "sqlite" for database/sql
 	_ "modernc.org/sqlite"
 )
@@ -149,6 +150,17 @@ func (s *Store) PoolStats() sql.DBStats {
 		return sql.DBStats{}
 	}
 	return s.sqlDB.Stats()
+}
+
+// Queries returns a *dbsqlc.Queries bound to this store's connection pool.
+// Callers that need transport/bootstrap DB access (agenttransport.Manager,
+// bootstrap.EnrollDriver, bootstrap.InstallCommandHandler) use this instead of
+// opening a second sql.DB. Returns nil when the store is tx-bound (no pool).
+func (s *Store) Queries() *dbsqlc.Queries {
+	if s.sqlDB == nil {
+		return nil
+	}
+	return dbsqlc.New(s.sqlDB)
 }
 
 // appendPragmasToDSN rewrites the DSN so that every connection opened by the

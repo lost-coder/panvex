@@ -41,6 +41,10 @@ const (
 	ActionTelemetryRefreshDiagnostics Action = "telemetry.refresh_diagnostics"
 	// ActionAgentSelfUpdate instructs the agent to download and replace its own binary.
 	ActionAgentSelfUpdate Action = "agent.self-update"
+	// ActionSwitchTransportMode instructs the agent to change its transport
+	// mode between inbound (agent dials panel) and outbound (panel dials
+	// agent). The job payload carries {"mode":"dial"|"listen","listen_addr":"..."}.
+	ActionSwitchTransportMode Action = "switch_transport_mode"
 )
 
 // IsValidAction reports whether the action is a recognized job type.
@@ -53,7 +57,8 @@ func IsValidAction(a Action) bool {
 		ActionClientDelete,
 		ActionClientRotateSecret,
 		ActionTelemetryRefreshDiagnostics,
-		ActionAgentSelfUpdate:
+		ActionAgentSelfUpdate,
+		ActionSwitchTransportMode:
 		return true
 	default:
 		return false

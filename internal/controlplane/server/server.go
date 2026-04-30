@@ -9,10 +9,14 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/lost-coder/panvex/internal/controlplane/agents"
+	"github.com/lost-coder/panvex/internal/controlplane/agenttransport"
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/bootstrap"
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/fleet"
@@ -196,6 +200,19 @@ type Server struct {
 	// derived from EncryptionKey when set, random per-process otherwise.
 	usernameHashMu       sync.Mutex
 	usernameHashKeyBytes []byte
+
+	// installCommandHandler issues one-shot curl | bash install commands for
+	// outbound (reverse-mode) agents. Nil until wired in via
+	// SetInstallCommandHandler; the route returns 503 when nil. atomic.Pointer
+	// keeps load/store race-free even though the setter is currently only
+	// called once at startup.
+	installCommandHandler atomic.Pointer[bootstrap.InstallCommandHandler]
+
+	// agentTransportManager owns the lifecycle of outbound (reverse-mode)
+	// supervisors. Nil until wired via SetAgentTransportManager; the
+	// transport-mode change handler notifies it when an agent's mode
+	// changes so outbound supervisors can be spawned or torn down.
+	agentTransportManager atomic.Pointer[agenttransport.Manager]
 }
 
 // vault exposes the secret vault initialised from EncryptionKey. A nil
@@ -225,4 +242,98 @@ func (s *Server) GRPCTLSConfig() *tls.Config {
 	return s.authority.serverTLSConfig()
 }
 
+// SetInstallCommandHandler wires the bootstrap install-command handler. Safe
+// to call concurrently with HTTP requests. Nil h is accepted — the route
+// returns 503 until a non-nil handler is provided.
+func (s *Server) SetInstallCommandHandler(h *bootstrap.InstallCommandHandler) {
+	s.installCommandHandler.Store(h)
+}
 
+// SetAgentTransportManager wires the agenttransport.Manager so the
+// transport-mode change handler can notify it when an agent's mode is
+// updated. Safe to call concurrently with HTTP requests. Also wires the
+// Prometheus supervisor-gauge callback if metrics are enabled.
+func (s *Server) SetAgentTransportManager(m *agenttransport.Manager) {
+	s.agentTransportManager.Store(m)
+	if m != nil && s.obs != nil {
+		m.SetSupervisorGaugeDelta(s.obs.AddOutboundSupervisor)
+	}
+}
+
+// notifyTransportManager calls Manager.OnNodeChanged if a manager has
+// been wired. No-op when the manager is nil (e.g. in unit tests that
+// do not wire the full transport stack).
+func (s *Server) notifyTransportManager(agentID string) {
+	if m := s.agentTransportManager.Load(); m != nil {
+		m.OnNodeChanged(agentID)
+	}
+}
+
+// handleAgentInstallCommand returns an http.HandlerFunc that delegates to the
+// install-command handler. Returns 503 if the handler has not been configured.
+// Emits a bootstrap.token_issued audit event on success (HTTP 200).
+func (s *Server) handleAgentInstallCommand() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		session, _, err := s.requireSession(r)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		h := s.installCommandHandler.Load()
+		if h == nil {
+			http.Error(w, "install-command endpoint not configured", http.StatusServiceUnavailable)
+			return
+		}
+		// Wrap the response writer so we can detect a successful response and
+		// emit an audit event without touching the bootstrap package.
+		rw := &statusCapture{ResponseWriter: w}
+		h.ServeHTTP(rw, r)
+		if rw.status == 0 || rw.status == http.StatusOK {
+			agentID := chi.URLParam(r, "id")
+			s.appendAuditWithContext(r.Context(), session.UserID, "bootstrap.token_issued", agentID, nil)
+		}
+	}
+}
+
+// CertificateAuthority returns the panel's CA, which implements
+// bootstrap.CertificateAuthority (SignCSR). Used by main.go to wire the
+// EnrollDriver for outbound-supervisor bootstrap exchanges.
+func (s *Server) CertificateAuthority() bootstrap.CertificateAuthority {
+	return s.authority
+}
+
+// CACN returns the panel CA's Common Name. Agents verify the panel's TLS
+// certificate against this name during enrollment.
+func (s *Server) CACN() string {
+	if s.authority == nil {
+		return ""
+	}
+	return s.authority.certificate.Subject.CommonName
+}
+
+// CAPINHex returns the lower-hex SHA-256 fingerprint of the panel's CA DER
+// bytes. Agents that receive this value via the install command pin the panel
+// CA against it on first connect.
+func (s *Server) CAPINHex() string {
+	if s.authority == nil {
+		return ""
+	}
+	return caFingerprint(s.authority.certificate)
+}
+
+// WireEnrollDriver attaches the server's Prometheus counter and audit-event
+// hooks to an EnrollDriver so its Run outcomes are recorded. Call this
+// immediately after constructing the driver and before starting the outbound
+// supervisor. Safe to call with a nil driver (no-op).
+func (s *Server) WireEnrollDriver(d *bootstrap.EnrollDriver) {
+	if d == nil {
+		return
+	}
+	if s.obs != nil {
+		d.SetAttemptRecorder(s.obs.ObserveBootstrapAttempt)
+	}
+	d.SetEventNotifier(func(action, agentID string) {
+		s.appendAudit("", action, agentID, nil)
+	})
+}

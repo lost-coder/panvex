@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/lost-coder/panvex/internal/dbsqlc"
 	// register the pgx driver under "pgx" for database/sql
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
@@ -111,4 +112,15 @@ func (s *Store) PoolStats() sql.DBStats {
 		return sql.DBStats{}
 	}
 	return s.sqlDB.Stats()
+}
+
+// Queries returns a *dbsqlc.Queries bound to this store's connection pool.
+// Callers that need transport/bootstrap DB access (agenttransport.Manager,
+// bootstrap.EnrollDriver, bootstrap.InstallCommandHandler) use this instead of
+// opening a second sql.DB. Returns nil when the store is tx-bound (no pool).
+func (s *Store) Queries() *dbsqlc.Queries {
+	if s.sqlDB == nil {
+		return nil
+	}
+	return dbsqlc.New(s.sqlDB)
 }
