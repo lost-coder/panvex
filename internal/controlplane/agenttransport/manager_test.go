@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"io"
 	"log/slog"
 	"testing"
 
@@ -35,7 +36,8 @@ func TestManagerStartAfterStopReturnsError(t *testing.T) {
 
 // fakeTransportQueries is a map-backed fake that satisfies transportQueries.
 type fakeTransportQueries struct {
-	rows map[string]dbsqlc.GetAgentTransportRow
+	rows     map[string]dbsqlc.GetAgentTransportRow
+	listRows map[string][]dbsqlc.ListAgentsByTransportModeRow
 }
 
 func (f *fakeTransportQueries) GetAgentTransport(_ context.Context, id string) (dbsqlc.GetAgentTransportRow, error) {
@@ -46,7 +48,7 @@ func (f *fakeTransportQueries) GetAgentTransport(_ context.Context, id string) (
 }
 
 func (f *fakeTransportQueries) ListAgentsByTransportMode(_ context.Context, mode string) ([]dbsqlc.ListAgentsByTransportModeRow, error) {
-	return nil, nil
+	return f.listRows[mode], nil
 }
 
 func TestManagerHandlesTransportModeChange(t *testing.T) {
@@ -84,5 +86,57 @@ func TestManagerHandlesTransportModeChange(t *testing.T) {
 	m.OnNodeChanged("node-1")
 	if m.HasOutboundSupervisor("node-1") {
 		t.Fatal("supervisor should be removed when mode flips back to inbound")
+	}
+}
+
+func TestManagerStartRestoresOutboundSupervisors(t *testing.T) {
+	fake := &fakeTransportQueries{
+		listRows: map[string][]dbsqlc.ListAgentsByTransportModeRow{
+			TransportModeOutbound: {
+				{ID: "n1", TransportMode: TransportModeOutbound, DialAddress: sql.NullString{String: "vps1:8443", Valid: true}},
+				{ID: "n3", TransportMode: TransportModeOutbound, DialAddress: sql.NullString{String: "vps3:8443", Valid: true}},
+			},
+		},
+	}
+	// Discard logger keeps test output clean — supervisor goroutines will
+	// loop with errOutboundTLSMissing because tlsCfg is nil.
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	m := NewManager(nil, nil, nil, logger)
+	m.db = fake
+	t.Cleanup(m.Stop) // drain goroutines via outbound.stopAll()
+
+	if err := m.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	if !m.HasOutboundSupervisor("n1") {
+		t.Fatal("expected supervisor for n1")
+	}
+	if !m.HasOutboundSupervisor("n3") {
+		t.Fatal("expected supervisor for n3")
+	}
+	if m.HasOutboundSupervisor("n2") {
+		t.Fatal("did not expect supervisor for n2 (inbound)")
+	}
+}
+
+func TestManagerStartSkipsOutboundWithoutDialAddress(t *testing.T) {
+	fake := &fakeTransportQueries{
+		listRows: map[string][]dbsqlc.ListAgentsByTransportModeRow{
+			TransportModeOutbound: {
+				{ID: "n-no-addr", TransportMode: TransportModeOutbound, DialAddress: sql.NullString{Valid: false}},
+			},
+		},
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	m := NewManager(nil, nil, nil, logger)
+	m.db = fake
+	t.Cleanup(m.Stop)
+
+	if err := m.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if m.HasOutboundSupervisor("n-no-addr") {
+		t.Fatal("expected skip when dial_address is null")
 	}
 }

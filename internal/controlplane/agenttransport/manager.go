@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 
@@ -91,15 +92,43 @@ func NewManager(db *dbsqlc.Queries, handler SessionHandler, tlsCfg *tls.Config, 
 // a successful first one is a no-op. Returns ErrManagerStopped if Stop has
 // already run — Manager is a one-way lifecycle.
 func (m *Manager) Start(ctx context.Context) error {
+	// Snapshot the guards under m.mu, then release before any blocking IO.
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	if m.stopped {
+		m.mu.Unlock()
 		return ErrManagerStopped
 	}
 	if m.started {
+		m.mu.Unlock()
 		return nil
 	}
 	m.started = true
+	db := m.db
+	m.mu.Unlock()
+
+	// No DB wired yet — Start is a no-op (e.g., main.go currently passes nil
+	// during pre-bootstrap startup; outbound supervisors will be reconciled
+	// once a real Queries handle is plumbed).
+	if db == nil {
+		return nil
+	}
+
+	rows, err := db.ListAgentsByTransportMode(ctx, TransportModeOutbound)
+	if err != nil {
+		return fmt.Errorf("agenttransport: list outbound agents: %w", err)
+	}
+	for _, row := range rows {
+		if !row.DialAddress.Valid {
+			m.logger.Warn("agenttransport: outbound agent missing dial_address; skipping",
+				"node_id", row.ID)
+			continue
+		}
+		m.outbound.ensureSupervisor(NodeMeta{
+			AgentID:     row.ID,
+			NodeID:      row.ID,
+			DialAddress: row.DialAddress.String,
+		})
+	}
 	return nil
 }
 
