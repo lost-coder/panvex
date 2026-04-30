@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/agents"
@@ -200,8 +201,10 @@ type Server struct {
 
 	// installCommandHandler issues one-shot curl | bash install commands for
 	// outbound (reverse-mode) agents. Nil until wired in via
-	// SetInstallCommandHandler; the route returns 503 when nil.
-	installCommandHandler *bootstrap.InstallCommandHandler
+	// SetInstallCommandHandler; the route returns 503 when nil. atomic.Pointer
+	// keeps load/store race-free even though the setter is currently only
+	// called once at startup.
+	installCommandHandler atomic.Pointer[bootstrap.InstallCommandHandler]
 }
 
 // vault exposes the secret vault initialised from EncryptionKey. A nil
@@ -231,22 +234,23 @@ func (s *Server) GRPCTLSConfig() *tls.Config {
 	return s.authority.serverTLSConfig()
 }
 
-// SetInstallCommandHandler wires the bootstrap install-command handler. Call
-// before Serve; not safe for concurrent use. Nil h is accepted — the route
+// SetInstallCommandHandler wires the bootstrap install-command handler. Safe
+// to call concurrently with HTTP requests. Nil h is accepted — the route
 // returns 503 until a non-nil handler is provided.
 func (s *Server) SetInstallCommandHandler(h *bootstrap.InstallCommandHandler) {
-	s.installCommandHandler = h
+	s.installCommandHandler.Store(h)
 }
 
 // handleAgentInstallCommand returns an http.HandlerFunc that delegates to the
 // install-command handler. Returns 503 if the handler has not been configured.
 func (s *Server) handleAgentInstallCommand() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.installCommandHandler == nil {
+		h := s.installCommandHandler.Load()
+		if h == nil {
 			http.Error(w, "install-command endpoint not configured", http.StatusServiceUnavailable)
 			return
 		}
-		s.installCommandHandler.ServeHTTP(w, r)
+		h.ServeHTTP(w, r)
 	}
 }
 
