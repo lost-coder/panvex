@@ -22,6 +22,7 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" driver for migrate-schema
+	"github.com/lost-coder/panvex/internal/controlplane/agenttransport"
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/config"
 	otelcp "github.com/lost-coder/panvex/internal/controlplane/otel"
@@ -258,6 +259,16 @@ func runServe(args []string) error {
 
 	grpcServer := newControlPlaneGRPCServer(api.GRPCTLSConfig())
 	gatewayrpc.RegisterAgentGatewayServer(grpcServer, api)
+
+	// agenttransport.Manager owns outbound supervisors and (in a later task)
+	// the inbound dispatch path. In this revision the inbound path still
+	// runs through the gRPC server above; Manager is wired up so that
+	// adding outbound and bootstrap flows is non-invasive.
+	manager := agenttransport.NewManager(nil, api.RunAgentSession, logger)
+	if err := manager.Start(context.Background()); err != nil {
+		return fmt.Errorf("start agent transport manager: %w", err)
+	}
+	defer manager.Stop()
 
 	shutdownServers := func() {
 		shutdownHTTPAndGRPC(httpServer, grpcServer, grpcListener)

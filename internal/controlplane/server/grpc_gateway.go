@@ -518,6 +518,16 @@ func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 	return s.runAgentSession(stream.Context(), &agenttransport.ServerStreamSession{Stream: stream})
 }
 
+// RunAgentSession is the public SessionHandler entry point used by
+// agenttransport.Manager. It currently ignores meta — the agent identity
+// is rediscovered inside runAgentSession via the gRPC peer context — but
+// keeps the SessionHandler signature so future tasks can pass pre-resolved
+// metadata without touching this layer.
+func (s *Server) RunAgentSession(ctx context.Context, sess agenttransport.AgentSession, meta agenttransport.NodeMeta) error {
+	_ = meta
+	return s.runAgentSession(ctx, sess)
+}
+
 func enqueueInboundAgentMessage(
 	connectionCtx context.Context,
 	priorityInbound chan<- *gatewayrpc.ConnectClientMessage,
