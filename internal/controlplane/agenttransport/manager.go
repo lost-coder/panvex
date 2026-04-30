@@ -2,6 +2,7 @@ package agenttransport
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 
@@ -25,14 +26,13 @@ type NodeMeta struct {
 
 // Manager owns the lifecycle of agent transports — both inbound (gRPC stream
 // initiated by the agent) and outbound (panel dials a listening agent).
-//
-// In this task only inbound exists, and its actual gRPC registration still
-// happens in cmd/control-plane/main.go via the regular Server. The Manager's
-// inbound field is a scaffold for a future migration where the gRPC handler
-// dispatches through Manager.
+// The inbound field is a scaffold; the actual gRPC registration is done by
+// cmd/control-plane via the regular Server until a future migration moves
+// dispatch through Manager.
 type Manager struct {
-	// db is consulted in Task 7+ for outbound supervisor restoration; nil
-	// is acceptable while only inbound is active.
+	// db is consulted by outbound supervisor restoration; nil is tolerated
+	// while no outbound transport is active. A non-nil value is required
+	// before any outbound flow runs.
 	db       *dbsqlc.Queries
 	handler  SessionHandler
 	inbound  *inboundTransport
@@ -41,7 +41,12 @@ type Manager struct {
 
 	mu      sync.Mutex
 	started bool
+	stopped bool
 }
+
+// ErrManagerStopped is returned by Start after Stop has been called. The
+// Manager is a process-lifetime resource and is not designed to be restarted.
+var ErrManagerStopped = errors.New("agenttransport: manager already stopped")
 
 func NewManager(db *dbsqlc.Queries, handler SessionHandler, logger *slog.Logger) *Manager {
 	return &Manager{
@@ -51,12 +56,15 @@ func NewManager(db *dbsqlc.Queries, handler SessionHandler, logger *slog.Logger)
 	}
 }
 
-// Start launches the configured transports. In Task 5 this is a no-op
-// scaffold — outbound supervisors are restored from DB in Task 7+, and the
-// inbound listener still lives in cmd/control-plane/main.go.
+// Start launches the configured transports. Idempotent: a second Start after
+// a successful first one is a no-op. Returns ErrManagerStopped if Stop has
+// already run — Manager is a one-way lifecycle.
 func (m *Manager) Start(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.stopped {
+		return ErrManagerStopped
+	}
 	if m.started {
 		return nil
 	}
@@ -64,10 +72,11 @@ func (m *Manager) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop releases all transport resources. In Task 5 this is a no-op; later
-// tasks cancel outbound supervisor contexts here.
+// Stop releases all transport resources. Terminal — once Stop returns, the
+// Manager cannot be restarted (Start will return ErrManagerStopped). Safe to
+// call before Start; safe to call multiple times.
 func (m *Manager) Stop() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.started = false
+	m.stopped = true
 }

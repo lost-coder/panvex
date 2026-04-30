@@ -2,6 +2,7 @@ package agenttransport
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"testing"
 )
@@ -16,14 +17,15 @@ func TestManagerStartIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestManagerStopAfterStart(t *testing.T) {
+func TestManagerStartAfterStopReturnsError(t *testing.T) {
 	m := NewManager(nil, nil, slog.Default())
 	if err := m.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	m.Stop() // should not panic
-	// After Stop, Start again should still work.
-	if err := m.Start(context.Background()); err != nil {
-		t.Fatalf("Start after Stop: %v", err)
+	m.Stop()
+	// Manager is one-way: Start after Stop must fail so callers don't
+	// silently resurrect a torn-down transport.
+	if err := m.Start(context.Background()); !errors.Is(err, ErrManagerStopped) {
+		t.Fatalf("Start after Stop: got %v, want ErrManagerStopped", err)
 	}
 }

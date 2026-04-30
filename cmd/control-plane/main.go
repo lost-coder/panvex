@@ -263,11 +263,16 @@ func runServe(args []string) error {
 	// agenttransport.Manager owns outbound supervisors and (in a later task)
 	// the inbound dispatch path. In this revision the inbound path still
 	// runs through the gRPC server above; Manager is wired up so that
-	// adding outbound and bootstrap flows is non-invasive.
+	// adding outbound and bootstrap flows is non-invasive. The first arg
+	// is *dbsqlc.Queries — nil while no outbound is active; once outbound
+	// supervisor restoration lands, replace nil with a real Queries handle.
 	manager := agenttransport.NewManager(nil, api.RunAgentSession, logger)
 	if err := manager.Start(context.Background()); err != nil {
 		return fmt.Errorf("start agent transport manager: %w", err)
 	}
+	// Shutdown order: shutdownServers (HTTP + gRPC drain) runs before any
+	// defer; manager.Stop tears down outbound supervisors AFTER gRPC has
+	// drained but BEFORE api.Close flushes batch writers.
 	defer manager.Stop()
 
 	shutdownServers := func() {
