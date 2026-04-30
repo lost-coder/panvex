@@ -24,19 +24,31 @@ type SessionHandler func(ctx context.Context, sess AgentSession, meta NodeMeta) 
 // NodeMeta is the transport-layer view of an agent identity. Domain language
 // uses "node" (per spec); the DB table is `agents`. NodeID == AgentID for the
 // current single-agent-per-node schema; both fields are kept so the contract
-// can grow without breaking call sites.
+// can grow without breaking call sites. DialAddress is set for outbound nodes
+// and is the host:port the panel will dial.
 type NodeMeta struct {
 	AgentID      string
 	NodeID       string
 	NodeName     string
 	FleetGroupID string
+	DialAddress  string
 }
+
+// Transport modes — must match the CHECK constraint on agents.transport_mode
+// in db/migrations/{postgres,sqlite}/0030_node_transport_mode.sql.
+const (
+	TransportModeInbound  = "inbound"
+	TransportModeOutbound = "outbound"
+)
 
 // Manager owns the lifecycle of agent transports — both inbound (gRPC stream
 // initiated by the agent) and outbound (panel dials a listening agent).
 // The inbound field is a scaffold; the actual gRPC registration is done by
 // cmd/control-plane via the regular Server until a future migration moves
 // dispatch through Manager.
+//
+// Lock order: m.mu → outbound.mu. Never acquire m.mu while holding
+// outbound.mu, and never hold m.mu across a DB call or other blocking IO.
 type Manager struct {
 	// db is consulted by outbound supervisor restoration; nil is tolerated
 	// while no outbound transport is active. A non-nil value is required
@@ -101,25 +113,33 @@ func (m *Manager) Stop() {
 // operator tooling. It looks up the current transport_mode for the agent and
 // ensures the outbound supervisor map reflects the new state.
 func (m *Manager) OnNodeChanged(nodeID string) {
+	// Snapshot the guards under m.mu, then release before any blocking IO.
+	// outbound has its own mutex; the m.outbound pointer itself is set once
+	// in NewManager and never reassigned, so it is safe to use without
+	// holding m.mu.
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	if !m.started || m.stopped {
+	if !m.started || m.stopped || m.db == nil {
+		m.mu.Unlock()
 		return
 	}
-	if m.db == nil {
-		return // not wired yet (e.g., main.go currently passes nil)
-	}
-	row, err := m.db.GetAgentTransport(context.Background(), nodeID)
+	db := m.db
+	m.mu.Unlock()
+
+	row, err := db.GetAgentTransport(context.Background(), nodeID)
 	if err != nil {
 		m.logger.Warn("agenttransport: OnNodeChanged lookup failed",
 			"node_id", nodeID, "error", err)
 		return
 	}
-	meta := NodeMeta{AgentID: row.ID, NodeID: row.ID}
+	meta := NodeMeta{
+		AgentID:     row.ID,
+		NodeID:      row.ID,
+		DialAddress: row.DialAddress.String,
+	}
 	switch row.TransportMode {
-	case "outbound":
+	case TransportModeOutbound:
 		m.outbound.ensureSupervisor(meta)
-	case "inbound":
+	case TransportModeInbound:
 		m.outbound.removeSupervisor(nodeID)
 	default:
 		m.logger.Warn("agenttransport: unknown transport_mode",

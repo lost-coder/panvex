@@ -3,12 +3,11 @@ package agenttransport
 import "sync"
 
 // outboundTransport is the supervisor pool for outbound (reverse-mode) agents.
-// supervisors maps nodeID to a presence sentinel. Task 7 will replace the
-// struct{} value with a real supervisor handle carrying a cancel context and
-// goroutine lifecycle.
+// supervisors maps nodeID to a supervisor handle; the value type is a stub
+// until the outbound dial loop is implemented.
 type outboundTransport struct {
-	mu          sync.Mutex
-	supervisors map[string]struct{} // nodeID → presence (real type comes in Task 7)
+	mu          sync.RWMutex
+	supervisors map[string]struct{}
 }
 
 func newOutboundTransport() *outboundTransport {
@@ -28,8 +27,8 @@ func (t *outboundTransport) removeSupervisor(nodeID string) {
 }
 
 func (t *outboundTransport) has(nodeID string) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	_, ok := t.supervisors[nodeID]
 	return ok
 }
