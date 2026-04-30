@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/dbsqlc"
@@ -16,7 +17,14 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const agentCertTTL = 90 * 24 * time.Hour
+const (
+	agentCertTTL = 90 * 24 * time.Hour
+	// enrollDeadline bounds the entire enrollment exchange. Without it a
+	// stalled agent (opens stream, never sends Opening) would block Run()
+	// until the caller's ctx is cancelled — and the caller may pass a
+	// background context unaware of this requirement.
+	enrollDeadline = 30 * time.Second
+)
 
 // Errors returned by EnrollDriver.Run, distinct from the underlying token
 // validation errors so callers (alerting, metrics, supervisor wrap-around)
@@ -53,15 +61,20 @@ type EnrollQueries interface {
 type EnrollDriver struct {
 	queries EnrollQueries
 	ca      CertificateAuthority
+	logger  *slog.Logger
 	now     func() time.Time
 }
 
-// NewEnrollDriver constructs an EnrollDriver. If now is nil, time.Now is used.
-func NewEnrollDriver(q EnrollQueries, ca CertificateAuthority, now func() time.Time) *EnrollDriver {
+// NewEnrollDriver constructs an EnrollDriver. If now is nil, time.Now is used;
+// if logger is nil, slog.Default() is used.
+func NewEnrollDriver(q EnrollQueries, ca CertificateAuthority, logger *slog.Logger, now func() time.Time) *EnrollDriver {
 	if now == nil {
 		now = time.Now
 	}
-	return &EnrollDriver{queries: q, ca: ca, now: now}
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &EnrollDriver{queries: q, ca: ca, logger: logger, now: now}
 }
 
 // Run executes the panel-side enrollment exchange against an agent listening
@@ -79,6 +92,15 @@ func NewEnrollDriver(q EnrollQueries, ca CertificateAuthority, now func() time.T
 //	any other error           → bootstrap_state=pending (retry possible)
 //	nil                       → bootstrap_state cleared (active)
 //
+// TLS requirement: tlsCfg MUST NOT require a client certificate. Enrollment
+// is one-way TLS — the agent has no cert to present yet (that's what this
+// exchange produces). Use a separate tlsCfg from the post-enrollment mTLS
+// one used by the outbound supervisor.
+//
+// Run applies an internal enrollDeadline so a stalled agent does not block
+// indefinitely. The caller's ctx is still respected; whichever fires first
+// terminates the exchange.
+//
 // TODO: invoke EnrollDriver before connectAndServe in outboundSupervisor.run
 // when bootstrap_state=pending (agenttransport/outbound.go).
 func (d *EnrollDriver) Run(ctx context.Context, agentAddr string, tlsCfg *tls.Config, agentID string) error {
@@ -94,6 +116,9 @@ func (d *EnrollDriver) Run(ctx context.Context, agentAddr string, tlsCfg *tls.Co
 		return status.Errorf(codes.FailedPrecondition,
 			"agent %s bootstrap_expires_at not set", agentID)
 	}
+
+	ctx, cancel := context.WithTimeout(ctx, enrollDeadline)
+	defer cancel()
 
 	conn, err := grpc.NewClient(agentAddr, grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)))
 	if err != nil {
@@ -122,7 +147,13 @@ func (d *EnrollDriver) Run(ctx context.Context, agentAddr string, tlsCfg *tls.Co
 	copy(hash[:], row.BootstrapTokenHash)
 	if vErr := VerifyToken(opening.BootstrapToken, hash, row.BootstrapExpiresAt.Time, d.now()); vErr != nil {
 		if errors.Is(vErr, ErrTokenExpired) {
-			_ = d.queries.ExpireAgentBootstrapToken(ctx, agentID)
+			if expErr := d.queries.ExpireAgentBootstrapToken(ctx, agentID); expErr != nil {
+				// Don't mask the operator-actionable expired-token error,
+				// but make sure the failed state transition is visible so
+				// we don't silently re-flip indefinitely on retry.
+				d.logger.Warn("bootstrap: failed to mark token expired in DB",
+					"agent_id", agentID, "error", expErr)
+			}
 			return ErrBootstrapTokenExpired
 		}
 		return ErrBootstrapTokenMismatch
@@ -132,6 +163,12 @@ func (d *EnrollDriver) Run(ctx context.Context, agentAddr string, tlsCfg *tls.Co
 	if err != nil {
 		return fmt.Errorf("enroll: sign csr: %w", err)
 	}
+
+	// certIssued tracks that the agent has received the cert; from this
+	// point on a transport failure leaves the panel and agent in
+	// inconsistent states (agent has a cert, panel still thinks pending).
+	// We log loudly so an operator can recover (re-issue / revoke).
+	var certIssued bool
 	if err := stream.Send(&gatewayrpc.EnrollClientMessage{
 		Body: &gatewayrpc.EnrollClientMessage_Certificate{
 			Certificate: &gatewayrpc.EnrollCertificate{
@@ -143,16 +180,25 @@ func (d *EnrollDriver) Run(ctx context.Context, agentAddr string, tlsCfg *tls.Co
 	}); err != nil {
 		return fmt.Errorf("enroll: send cert: %w", err)
 	}
+	certIssued = true
 	if err := stream.CloseSend(); err != nil {
+		d.logger.Warn("bootstrap: cert was issued but close-send failed; manual cleanup may be needed",
+			"agent_id", agentID, "error", err)
 		return fmt.Errorf("enroll: close send: %w", err)
 	}
 
 	// Wait for the agent to close its half (signal of success). EOF = OK.
 	if _, err := stream.Recv(); err != nil && !errors.Is(err, io.EOF) {
+		if certIssued {
+			d.logger.Warn("bootstrap: cert was issued but final recv failed; manual cleanup may be needed",
+				"agent_id", agentID, "error", err)
+		}
 		return fmt.Errorf("enroll: wait close: %w", err)
 	}
 
 	if err := d.queries.ClearAgentBootstrapToken(ctx, agentID); err != nil {
+		d.logger.Warn("bootstrap: cert was issued but DB clear failed; manual cleanup may be needed",
+			"agent_id", agentID, "error", err)
 		return fmt.Errorf("enroll: clear token: %w", err)
 	}
 	return nil

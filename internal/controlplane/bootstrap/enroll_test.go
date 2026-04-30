@@ -240,7 +240,7 @@ func TestEnrollDriverHappyPath(t *testing.T) {
 	}
 	clientTLS := startAgentEnrollStub(t, stub)
 
-	driver := NewEnrollDriver(fq, ca, time.Now)
+	driver := NewEnrollDriver(fq, ca, nil, time.Now)
 	err := driver.Run(context.Background(), stub.address, clientTLS, agentID)
 	require.NoError(t, err)
 
@@ -278,7 +278,7 @@ func TestEnrollDriverRejectsExpiredToken(t *testing.T) {
 	}
 	clientTLS := startAgentEnrollStub(t, stub)
 
-	driver := NewEnrollDriver(fq, ca, time.Now)
+	driver := NewEnrollDriver(fq, ca, nil, time.Now)
 	err := driver.Run(context.Background(), stub.address, clientTLS, agentID)
 	require.ErrorIs(t, err, ErrBootstrapTokenExpired)
 
@@ -308,7 +308,7 @@ func TestEnrollDriverRejectsTokenMismatch(t *testing.T) {
 	}
 	clientTLS := startAgentEnrollStub(t, stub)
 
-	driver := NewEnrollDriver(fq, ca, time.Now)
+	driver := NewEnrollDriver(fq, ca, nil, time.Now)
 	err := driver.Run(context.Background(), stub.address, clientTLS, agentID)
 	require.ErrorIs(t, err, ErrBootstrapTokenMismatch)
 
@@ -337,7 +337,7 @@ func TestEnrollDriverRejectsAgentIDMismatch(t *testing.T) {
 	}
 	clientTLS := startAgentEnrollStub(t, stub)
 
-	driver := NewEnrollDriver(fq, ca, time.Now)
+	driver := NewEnrollDriver(fq, ca, nil, time.Now)
 	err := driver.Run(context.Background(), stub.address, clientTLS, agentID)
 	require.ErrorIs(t, err, ErrAgentIDMismatch)
 
@@ -355,7 +355,7 @@ func TestEnrollDriverFailsPreconditionWhenNotPending(t *testing.T) {
 	fq := newEnrollFakeQueries(row)
 	ca := &fakeCA{}
 
-	driver := NewEnrollDriver(fq, ca, time.Now)
+	driver := NewEnrollDriver(fq, ca, nil, time.Now)
 	// No real gRPC server needed; the driver should fail before dialing.
 	err := driver.Run(context.Background(), "127.0.0.1:1", nil, agentID)
 	require.Error(t, err)
