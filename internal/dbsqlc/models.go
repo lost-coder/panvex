@@ -13,16 +13,21 @@ import (
 )
 
 type Agent struct {
-	ID            string
-	NodeName      string
-	FleetGroupID  uuid.NullUUID
-	Version       string
-	ReadOnly      bool
-	LastSeenAt    time.Time
-	CreatedAt     time.Time
-	CertIssuedAt  sql.NullTime
-	CertExpiresAt sql.NullTime
-	CertSerial    string
+	ID                 string
+	NodeName           string
+	FleetGroupID       uuid.NullUUID
+	Version            string
+	ReadOnly           bool
+	LastSeenAt         time.Time
+	CreatedAt          time.Time
+	CertIssuedAt       sql.NullTime
+	CertExpiresAt      sql.NullTime
+	CertSerial         string
+	TransportMode      string
+	DialAddress        sql.NullString
+	BootstrapState     string
+	BootstrapTokenHash []byte
+	BootstrapExpiresAt sql.NullTime
 }
 
 type AgentCertificateRecoveryGrant struct {
