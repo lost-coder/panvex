@@ -270,6 +270,7 @@ func runServe(args []string) error {
 	// because no outbound supervisors are restored at startup yet (TODO:
 	// wire the panel's client-side TLS config once CA/cert bootstrap lands).
 	manager := agenttransport.NewManager(nil, api.RunAgentSession, nil, logger)
+	api.SetAgentTransportManager(manager)
 	if err := manager.Start(context.Background()); err != nil {
 		return fmt.Errorf("start agent transport manager: %w", err)
 	}

@@ -179,6 +179,7 @@ func (s *Server) routes() http.Handler {
 					admin.With(sensitive).Post("/agents/{id}/certificate-recovery-grants", s.handleCreateAgentCertificateRecoveryGrant())
 					admin.With(sensitive).Post("/agents/{id}/certificate-recovery-grants/revoke", s.handleRevokeAgentCertificateRecoveryGrant())
 					admin.With(sensitive).Delete("/agents/{id}", s.handleDeregisterAgent())
+					admin.With(sensitive).Put("/agents/{id}/transport-mode", s.handleUpdateAgentTransportMode())
 					// TODO: wire ScriptURL/PanelCAPin/PanelCN from serveConfig once those fields are added.
 					admin.With(sensitive).Post("/agents/{id}/install-command", s.handleAgentInstallCommand())
 					admin.Get("/settings/panel", s.handleGetPanelSettings())

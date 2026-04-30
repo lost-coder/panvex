@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/agents"
+	"github.com/lost-coder/panvex/internal/controlplane/agenttransport"
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/bootstrap"
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
@@ -205,6 +206,12 @@ type Server struct {
 	// keeps load/store race-free even though the setter is currently only
 	// called once at startup.
 	installCommandHandler atomic.Pointer[bootstrap.InstallCommandHandler]
+
+	// agentTransportManager owns the lifecycle of outbound (reverse-mode)
+	// supervisors. Nil until wired via SetAgentTransportManager; the
+	// transport-mode change handler notifies it when an agent's mode
+	// changes so outbound supervisors can be spawned or torn down.
+	agentTransportManager atomic.Pointer[agenttransport.Manager]
 }
 
 // vault exposes the secret vault initialised from EncryptionKey. A nil
@@ -239,6 +246,22 @@ func (s *Server) GRPCTLSConfig() *tls.Config {
 // returns 503 until a non-nil handler is provided.
 func (s *Server) SetInstallCommandHandler(h *bootstrap.InstallCommandHandler) {
 	s.installCommandHandler.Store(h)
+}
+
+// SetAgentTransportManager wires the agenttransport.Manager so the
+// transport-mode change handler can notify it when an agent's mode is
+// updated. Safe to call concurrently with HTTP requests.
+func (s *Server) SetAgentTransportManager(m *agenttransport.Manager) {
+	s.agentTransportManager.Store(m)
+}
+
+// notifyTransportManager calls Manager.OnNodeChanged if a manager has
+// been wired. No-op when the manager is nil (e.g. in unit tests that
+// do not wire the full transport stack).
+func (s *Server) notifyTransportManager(agentID string) {
+	if m := s.agentTransportManager.Load(); m != nil {
+		m.OnNodeChanged(agentID)
+	}
 }
 
 // handleAgentInstallCommand returns an http.HandlerFunc that delegates to the

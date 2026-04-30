@@ -542,6 +542,13 @@ func (s *memoryStore) GetAgentCertSerial(_ context.Context, agentID string) (str
 	return agent.CertSerial, nil
 }
 
+func (s *memoryStore) UpdateAgentTransportMode(_ context.Context, agentID, _, _ string) error {
+	if _, ok := s.agents[agentID]; !ok {
+		return storage.ErrNotFound
+	}
+	return nil
+}
+
 func (s *memoryStore) DeleteInstancesByAgent(_ context.Context, agentID string) error {
 	for id, inst := range s.instances {
 		if inst.AgentID == agentID {
