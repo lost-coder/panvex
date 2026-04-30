@@ -296,18 +296,43 @@ func (s *Server) handleAgentInstallCommand() http.HandlerFunc {
 	}
 }
 
+// CertificateAuthority returns the panel's CA, which implements
+// bootstrap.CertificateAuthority (SignCSR). Used by main.go to wire the
+// EnrollDriver for outbound-supervisor bootstrap exchanges.
+func (s *Server) CertificateAuthority() bootstrap.CertificateAuthority {
+	return s.authority
+}
+
+// CACN returns the panel CA's Common Name. Agents verify the panel's TLS
+// certificate against this name during enrollment.
+func (s *Server) CACN() string {
+	if s.authority == nil {
+		return ""
+	}
+	return s.authority.certificate.Subject.CommonName
+}
+
+// CAPINHex returns the lower-hex SHA-256 fingerprint of the panel's CA DER
+// bytes. Agents that receive this value via the install command pin the panel
+// CA against it on first connect.
+func (s *Server) CAPINHex() string {
+	if s.authority == nil {
+		return ""
+	}
+	return caFingerprint(s.authority.certificate)
+}
+
 // WireEnrollDriver attaches the server's Prometheus counter and audit-event
 // hooks to an EnrollDriver so its Run outcomes are recorded. Call this
 // immediately after constructing the driver and before starting the outbound
 // supervisor. Safe to call with a nil driver (no-op).
-//
-// TODO: call this in the outbound supervisor bootstrap path once
-// bootstrap_state=pending handling lands in agenttransport/outbound.go.
 func (s *Server) WireEnrollDriver(d *bootstrap.EnrollDriver) {
 	if d == nil {
 		return
 	}
-	d.SetAttemptRecorder(s.obs.ObserveBootstrapAttempt)
+	if s.obs != nil {
+		d.SetAttemptRecorder(s.obs.ObserveBootstrapAttempt)
+	}
 	d.SetEventNotifier(func(action, agentID string) {
 		s.appendAudit("", action, agentID, nil)
 	})
