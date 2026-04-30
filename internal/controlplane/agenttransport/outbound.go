@@ -20,6 +20,23 @@ import (
 // any cert signed by a system CA — a security regression we surface loudly.
 var errOutboundTLSMissing = errors.New("agenttransport: outbound TLS config is required but not set")
 
+// EnrollFunc is called by outboundSupervisor.connectAndServe when the agent's
+// bootstrap_state is "pending". It must complete the enrollment exchange before
+// the normal mTLS dial proceeds. On success the DB transitions to "active" so
+// the next iteration skips enrollment and goes straight to connectAndServe.
+// On error the supervisor backs off and retries the whole cycle.
+//
+// The function receives the agent address and agent ID. It is responsible for
+// choosing the appropriate (non-mTLS) TLS config for the enrollment dial.
+// A nil EnrollFunc disables enrollment pre-flight entirely.
+type EnrollFunc func(ctx context.Context, agentAddr, agentID string) error
+
+// BootstrapStateFunc queries the current bootstrap_state for the given agent.
+// Returns "pending", "active", "expired", or an error. A nil value causes
+// the supervisor to skip the enrollment pre-flight and proceed directly to
+// the mTLS dial (safe default for already-enrolled agents).
+type BootstrapStateFunc func(ctx context.Context, agentID string) (string, error)
+
 const (
 	outboundBackoffInitial = 1 * time.Second
 	outboundBackoffMax     = 60 * time.Second
@@ -34,6 +51,13 @@ type outboundSupervisor struct {
 	logger         *slog.Logger
 	backoffInitial time.Duration
 	backoffMax     time.Duration
+
+	// enrollFn, when non-nil, is called before the normal mTLS dial whenever
+	// bootstrapStateFn reports "pending". See EnrollFunc for the contract.
+	enrollFn EnrollFunc
+	// bootstrapStateFn, when non-nil, is consulted at the top of each
+	// connectAndServe iteration to decide whether enrollment is needed.
+	bootstrapStateFn BootstrapStateFunc
 }
 
 func newOutboundSupervisor(meta NodeMeta, tlsCfg *tls.Config, h SessionHandler, l *slog.Logger) *outboundSupervisor {
@@ -82,10 +106,30 @@ func (s *outboundSupervisor) run(ctx context.Context) {
 	}
 }
 
-// TODO: before calling connectAndServe, check if bootstrap_state=pending and
-// invoke bootstrap.EnrollDriver.Run to complete the certificate enrollment
-// exchange. This requires plumbing EnrollQueries + CertificateAuthority here.
+// connectAndServe runs one enrollment+connect cycle for the agent:
+//  1. If bootstrapStateFn is set and reports "pending", enrollFn is invoked to
+//     complete the certificate enrollment exchange. On error the function
+//     returns so the supervisor's backoff loop retries.
+//  2. After successful enrollment (or when state is already "active"), the
+//     normal mTLS gRPC dial proceeds.
 func (s *outboundSupervisor) connectAndServe(ctx context.Context) error {
+	// Enrollment pre-flight: run if bootstrap_state is "pending".
+	if s.bootstrapStateFn != nil && s.enrollFn != nil {
+		state, err := s.bootstrapStateFn(ctx, s.meta.AgentID)
+		if err != nil {
+			return fmt.Errorf("agenttransport: bootstrap state lookup (node_id=%s): %w", s.meta.NodeID, err)
+		}
+		if state == "pending" {
+			s.logger.Info("agenttransport: bootstrap_state=pending; running enrollment",
+				"node_id", s.meta.NodeID, "addr", s.meta.DialAddress)
+			if err := s.enrollFn(ctx, s.meta.DialAddress, s.meta.AgentID); err != nil {
+				return fmt.Errorf("agenttransport: enrollment (node_id=%s): %w", s.meta.NodeID, err)
+			}
+			s.logger.Info("agenttransport: enrollment completed; proceeding to mTLS dial",
+				"node_id", s.meta.NodeID)
+		}
+	}
+
 	if s.tlsCfg == nil {
 		return fmt.Errorf("%w (node_id=%s)", errOutboundTLSMissing, s.meta.NodeID)
 	}
@@ -131,6 +175,11 @@ type outboundTransport struct {
 	// is added or removed. Nil when metrics are not wired.
 	onSupervisorDelta SupervisorGaugeDelta
 
+	// enrollFn and bootstrapStateFn are wired by Manager.SetEnrollDriver and
+	// forwarded to every outboundSupervisor created by ensureSupervisor.
+	enrollFn         EnrollFunc
+	bootstrapStateFn BootstrapStateFunc
+
 	mu          sync.RWMutex
 	supervisors map[string]*outboundSupervisorEntry
 	wg          sync.WaitGroup
@@ -155,12 +204,16 @@ func (t *outboundTransport) ensureSupervisor(meta NodeMeta) {
 	t.supervisors[meta.NodeID] = &outboundSupervisorEntry{cancel: cancel}
 	t.wg.Add(1)
 	fn := t.onSupervisorDelta
+	enrollFn := t.enrollFn
+	bootstrapStateFn := t.bootstrapStateFn
 	t.mu.Unlock()
 
 	if fn != nil {
 		fn(+1)
 	}
 	sup := newOutboundSupervisor(meta, t.tlsCfg, t.handler, t.logger)
+	sup.enrollFn = enrollFn
+	sup.bootstrapStateFn = bootstrapStateFn
 	go func() {
 		defer t.wg.Done()
 		sup.run(ctx)

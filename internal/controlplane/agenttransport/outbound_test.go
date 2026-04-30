@@ -53,6 +53,114 @@ func TestOutboundSupervisorReconnectsAfterDisconnect(t *testing.T) {
 	}
 }
 
+// TestOutboundSupervisorEnrollsWhenPending verifies that when
+// bootstrapStateFn returns "pending" the enrollFn is called before the normal
+// mTLS dial, and that after enrollment succeeds (bootstrapStateFn switches to
+// "active") subsequent iterations skip the enrollment step.
+func TestOutboundSupervisorEnrollsWhenPending(t *testing.T) {
+	stub := newAgentStubServer(t)
+	defer stub.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var enrollCalls atomic.Int32
+	var connectCalls atomic.Int32
+
+	// Simulate state: first call returns "pending", then "active".
+	callCount := atomic.Int32{}
+	bootstrapStateFn := func(_ context.Context, _ string) (string, error) {
+		if callCount.Add(1) == 1 {
+			return "pending", nil
+		}
+		return "active", nil
+	}
+	enrollFn := func(_ context.Context, _, _ string) error {
+		enrollCalls.Add(1)
+		return nil
+	}
+	handler := func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+		connectCalls.Add(1)
+		// End session immediately; supervisor reconnects.
+		return nil
+	}
+
+	sup := newOutboundSupervisor(
+		NodeMeta{NodeID: "n1", AgentID: "agent-1", DialAddress: stub.address},
+		stub.clientTLS,
+		handler,
+		slog.Default(),
+	)
+	sup.backoffInitial = 10 * time.Millisecond
+	sup.backoffMax = 50 * time.Millisecond
+	sup.enrollFn = enrollFn
+	sup.bootstrapStateFn = bootstrapStateFn
+
+	go sup.run(ctx)
+
+	deadline := time.Now().Add(3 * time.Second)
+	// Wait until we have seen at least one enroll and at least two connects.
+	for (enrollCalls.Load() < 1 || connectCalls.Load() < 2) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+
+	if got := enrollCalls.Load(); got != 1 {
+		t.Errorf("enrollFn calls: got %d, want 1", got)
+	}
+	if got := connectCalls.Load(); got < 2 {
+		t.Errorf("connect calls: got %d, want >= 2", got)
+	}
+}
+
+// TestOutboundSupervisorSkipsEnrollWhenActive verifies that enrollFn is never
+// called when bootstrapStateFn consistently returns "active".
+func TestOutboundSupervisorSkipsEnrollWhenActive(t *testing.T) {
+	stub := newAgentStubServer(t)
+	defer stub.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var enrollCalls atomic.Int32
+	var connectCalls atomic.Int32
+
+	bootstrapStateFn := func(_ context.Context, _ string) (string, error) {
+		return "active", nil
+	}
+	enrollFn := func(_ context.Context, _, _ string) error {
+		enrollCalls.Add(1)
+		return nil
+	}
+	handler := func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+		connectCalls.Add(1)
+		return nil
+	}
+
+	sup := newOutboundSupervisor(
+		NodeMeta{NodeID: "n1", AgentID: "agent-1", DialAddress: stub.address},
+		stub.clientTLS,
+		handler,
+		slog.Default(),
+	)
+	sup.backoffInitial = 10 * time.Millisecond
+	sup.backoffMax = 50 * time.Millisecond
+	sup.enrollFn = enrollFn
+	sup.bootstrapStateFn = bootstrapStateFn
+
+	go sup.run(ctx)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for connectCalls.Load() < 2 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+
+	if got := enrollCalls.Load(); got != 0 {
+		t.Errorf("enrollFn should not be called when state=active, got %d calls", got)
+	}
+}
+
 // TestOutboundTransportSupervisorGaugeDelta verifies that the
 // onSupervisorDelta callback fires with the right deltas as supervisors are
 // added and removed, without needing a real gRPC server.

@@ -202,3 +202,19 @@ func (m *Manager) SetSupervisorGaugeDelta(fn SupervisorGaugeDelta) {
 	m.outbound.onSupervisorDelta = fn
 	m.outbound.mu.Unlock()
 }
+
+// SetEnrollCallbacks wires the enrollment pre-flight into every outbound
+// supervisor that is started after this call. enrollFn is invoked when
+// bootstrapStateFn reports "pending" for a given agent; on success the DB
+// transitions to "active" and the supervisor proceeds with the normal mTLS
+// dial. Both arguments must be non-nil; passing nil for either is a no-op.
+// Safe to call before Start.
+func (m *Manager) SetEnrollCallbacks(enrollFn EnrollFunc, bootstrapStateFn BootstrapStateFunc) {
+	if enrollFn == nil || bootstrapStateFn == nil {
+		return
+	}
+	m.outbound.mu.Lock()
+	m.outbound.enrollFn = enrollFn
+	m.outbound.bootstrapStateFn = bootstrapStateFn
+	m.outbound.mu.Unlock()
+}
