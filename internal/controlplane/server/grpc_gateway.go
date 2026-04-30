@@ -417,19 +417,19 @@ func (s *Server) startRegularInboundLoop(ctx context.Context, cancel context.Can
 // startJobDispatchLoop is the only goroutine that writes back to the agent.
 // It runs an initial dispatch + discovery request and then ticks until the
 // session is woken (new job ready) or the retry interval fires.
-func (s *Server) startJobDispatchLoop(ctx context.Context, cancel context.CancelFunc, agentID string, transportSess agenttransport.AgentSession, session *agents.Session, ch *agentStreamChannels) {
+func (s *Server) startJobDispatchLoop(ctx context.Context, cancel context.CancelFunc, agentID string, sess agenttransport.AgentSession, agentSess *agents.Session, ch *agentStreamChannels) {
 	go func() {
 		defer s.recoverAgentStreamGoroutine(agentID, "job-dispatch", cancel)
 		retryTicker := time.NewTicker(jobDispatchRetryInterval)
 		defer retryTicker.Stop()
 
-		if err := s.dispatchPendingJobs(ctx, transportSess, agentID); err != nil {
+		if err := s.dispatchPendingJobs(ctx, sess, agentID); err != nil {
 			nonBlockingSend(ch.dispatchErrors, err)
 			return
 		}
 
 		// Request a full client list from the agent for user discovery.
-		if err := sendClientDataRequest(transportSess, fmt.Sprintf("discovery-%s-%d", agentID, s.now().Unix())); err != nil {
+		if err := sendClientDataRequest(sess, fmt.Sprintf("discovery-%s-%d", agentID, s.now().Unix())); err != nil {
 			s.logger.Error("client discovery request failed", "agent_id", agentID, "error", err)
 		}
 
@@ -437,12 +437,12 @@ func (s *Server) startJobDispatchLoop(ctx context.Context, cancel context.Cancel
 			select {
 			case <-ctx.Done():
 				return
-			case <-session.Done:
+			case <-agentSess.Done:
 				return
-			case <-session.Wake:
+			case <-agentSess.Wake:
 			case <-retryTicker.C:
 			}
-			if err := s.dispatchPendingJobs(ctx, transportSess, agentID); err != nil {
+			if err := s.dispatchPendingJobs(ctx, sess, agentID); err != nil {
 				nonBlockingSend(ch.dispatchErrors, err)
 				return
 			}
