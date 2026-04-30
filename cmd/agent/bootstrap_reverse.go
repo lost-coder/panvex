@@ -335,14 +335,3 @@ func makeBootstrapVerifier(caPinB64, panelCN string) (func([][]byte, [][]*x509.C
 	}, nil
 }
 
-// freeTCPAddr returns a free TCP address on 127.0.0.1 by briefly binding and
-// releasing a listener. There is a small race window; only use in tests.
-func freeTCPAddr() (string, error) {
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return "", err
-	}
-	addr := l.Addr().String()
-	_ = l.Close()
-	return addr, nil
-}
