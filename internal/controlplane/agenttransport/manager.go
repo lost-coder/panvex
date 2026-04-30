@@ -9,6 +9,14 @@ import (
 	"github.com/lost-coder/panvex/internal/dbsqlc"
 )
 
+// transportQueries is the subset of dbsqlc.Queries that Manager calls. Lives
+// in agenttransport so tests can supply a fake without depending on dbsqlc
+// internals.
+type transportQueries interface {
+	GetAgentTransport(ctx context.Context, id string) (dbsqlc.GetAgentTransportRow, error)
+	ListAgentsByTransportMode(ctx context.Context, transportMode string) ([]dbsqlc.ListAgentsByTransportModeRow, error)
+}
+
 // SessionHandler is the application-layer per-session handler. It runs the
 // agent protocol over the given session and returns when the session ends.
 type SessionHandler func(ctx context.Context, sess AgentSession, meta NodeMeta) error
@@ -33,7 +41,7 @@ type Manager struct {
 	// db is consulted by outbound supervisor restoration; nil is tolerated
 	// while no outbound transport is active. A non-nil value is required
 	// before any outbound flow runs.
-	db       *dbsqlc.Queries
+	db       transportQueries
 	handler  SessionHandler
 	inbound  *inboundTransport
 	outbound *outboundTransport
@@ -48,11 +56,18 @@ type Manager struct {
 // Manager is a process-lifetime resource and is not designed to be restarted.
 var ErrManagerStopped = errors.New("agenttransport: manager already stopped")
 
+// NewManager creates a new Manager. db may be nil — OnNodeChanged returns early
+// when db is nil (used in tests and during pre-wiring startup).
 func NewManager(db *dbsqlc.Queries, handler SessionHandler, logger *slog.Logger) *Manager {
+	var queries transportQueries
+	if db != nil {
+		queries = db
+	}
 	return &Manager{
-		db:      db,
-		handler: handler,
-		logger:  logger,
+		db:       queries,
+		handler:  handler,
+		outbound: newOutboundTransport(),
+		logger:   logger,
 	}
 }
 
@@ -79,4 +94,41 @@ func (m *Manager) Stop() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.stopped = true
+}
+
+// OnNodeChanged is invoked by the HTTP PATCH handler that updates
+// agents.transport_mode (added in a later phase) and on direct DB updates from
+// operator tooling. It looks up the current transport_mode for the agent and
+// ensures the outbound supervisor map reflects the new state.
+func (m *Manager) OnNodeChanged(nodeID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !m.started || m.stopped {
+		return
+	}
+	if m.db == nil {
+		return // not wired yet (e.g., main.go currently passes nil)
+	}
+	row, err := m.db.GetAgentTransport(context.Background(), nodeID)
+	if err != nil {
+		m.logger.Warn("agenttransport: OnNodeChanged lookup failed",
+			"node_id", nodeID, "error", err)
+		return
+	}
+	meta := NodeMeta{AgentID: row.ID, NodeID: row.ID}
+	switch row.TransportMode {
+	case "outbound":
+		m.outbound.ensureSupervisor(meta)
+	case "inbound":
+		m.outbound.removeSupervisor(nodeID)
+	default:
+		m.logger.Warn("agenttransport: unknown transport_mode",
+			"node_id", nodeID, "mode", row.TransportMode)
+	}
+}
+
+// HasOutboundSupervisor reports whether an outbound supervisor entry exists for
+// the given node. Used in tests and health-check handlers.
+func (m *Manager) HasOutboundSupervisor(nodeID string) bool {
+	return m.outbound.has(nodeID)
 }

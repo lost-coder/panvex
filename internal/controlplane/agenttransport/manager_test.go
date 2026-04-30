@@ -2,9 +2,12 @@ package agenttransport
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"log/slog"
 	"testing"
+
+	"github.com/lost-coder/panvex/internal/dbsqlc"
 )
 
 func TestManagerStartIsIdempotent(t *testing.T) {
@@ -27,5 +30,59 @@ func TestManagerStartAfterStopReturnsError(t *testing.T) {
 	// silently resurrect a torn-down transport.
 	if err := m.Start(context.Background()); !errors.Is(err, ErrManagerStopped) {
 		t.Fatalf("Start after Stop: got %v, want ErrManagerStopped", err)
+	}
+}
+
+// fakeTransportQueries is a map-backed fake that satisfies transportQueries.
+type fakeTransportQueries struct {
+	rows map[string]dbsqlc.GetAgentTransportRow
+}
+
+func (f *fakeTransportQueries) GetAgentTransport(_ context.Context, id string) (dbsqlc.GetAgentTransportRow, error) {
+	if r, ok := f.rows[id]; ok {
+		return r, nil
+	}
+	return dbsqlc.GetAgentTransportRow{}, sql.ErrNoRows
+}
+
+func (f *fakeTransportQueries) ListAgentsByTransportMode(_ context.Context, mode string) ([]dbsqlc.ListAgentsByTransportModeRow, error) {
+	return nil, nil
+}
+
+func TestManagerHandlesTransportModeChange(t *testing.T) {
+	fake := &fakeTransportQueries{rows: map[string]dbsqlc.GetAgentTransportRow{
+		"node-1": {ID: "node-1", TransportMode: "inbound"},
+	}}
+	m := NewManager(nil, nil, slog.Default())
+	// Wire the fake directly — NewManager accepts *dbsqlc.Queries (nil-safe);
+	// here we set the interface field directly for testing.
+	m.db = fake
+
+	if err := m.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	// Initial state: node-1 is inbound — no supervisor expected.
+	m.OnNodeChanged("node-1")
+	if m.HasOutboundSupervisor("node-1") {
+		t.Fatal("inbound node-1 should not have a supervisor")
+	}
+
+	// Flip to outbound.
+	fake.rows["node-1"] = dbsqlc.GetAgentTransportRow{
+		ID:            "node-1",
+		TransportMode: "outbound",
+		DialAddress:   sql.NullString{String: "vps:8443", Valid: true},
+	}
+	m.OnNodeChanged("node-1")
+	if !m.HasOutboundSupervisor("node-1") {
+		t.Fatal("expected outbound supervisor for node-1 after mode change")
+	}
+
+	// Flip back to inbound.
+	fake.rows["node-1"] = dbsqlc.GetAgentTransportRow{ID: "node-1", TransportMode: "inbound"}
+	m.OnNodeChanged("node-1")
+	if m.HasOutboundSupervisor("node-1") {
+		t.Fatal("supervisor should be removed when mode flips back to inbound")
 	}
 }
