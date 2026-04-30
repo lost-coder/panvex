@@ -38,6 +38,34 @@ func TestSaveAndLoadCredentialsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSaveAndLoadCredentialsRoundTripWithTransport(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent-state.json")
+	credentials := Credentials{
+		AgentID:        "agent-1",
+		CertificatePEM: "cert",
+		PrivateKeyPEM:  "key",
+		CAPEM:          "ca",
+		GRPCEndpoint:   "panel.example.com:8443",
+		GRPCServerName: "panel.example.com",
+		ExpiresAt:      time.Date(2026, time.March, 15, 8, 0, 0, 0, time.UTC),
+		TransportMode:  "listen",
+		ListenAddr:     ":8443",
+	}
+	if err := Save(path, credentials); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if loaded.TransportMode != "listen" {
+		t.Fatalf("loaded.TransportMode = %q, want %q", loaded.TransportMode, "listen")
+	}
+	if loaded.ListenAddr != ":8443" {
+		t.Fatalf("loaded.ListenAddr = %q, want %q", loaded.ListenAddr, ":8443")
+	}
+}
+
 // TestSaveUsageSeqPreservesOtherFields guards P2-LOG-06 / L-07: updating the
 // usage sequence from the hot snapshot path must not clobber the mTLS bundle
 // or any other persisted credential fields.
