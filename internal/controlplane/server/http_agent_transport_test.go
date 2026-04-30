@@ -112,8 +112,45 @@ func TestUpdateAgentTransportModeHappyPath(t *testing.T) {
 	if payload["mode"] != "listen" {
 		t.Fatalf("job payload mode = %q, want listen", payload["mode"])
 	}
-	if payload["listen_addr"] != "vps.example.com:8443" {
-		t.Fatalf("job payload listen_addr = %q, want vps.example.com:8443", payload["listen_addr"])
+	if payload["listen_addr"] != ":8443" {
+		t.Fatalf("job payload listen_addr = %q, want :8443 (default-derived from dial_address port)", payload["listen_addr"])
+	}
+}
+
+// TestUpdateAgentTransportModeRespectsExplicitListenAddress verifies the
+// operator can override the auto-derived bind spec, and that the override is
+// what flows into the job payload (not the public dial_address).
+func TestUpdateAgentTransportModeRespectsExplicitListenAddress(t *testing.T) {
+	srv, cookies := setupTransportModeServer(t)
+
+	resp := performJSONRequest(t, srv, http.MethodPut, "/api/agents/agent-tm-1/transport-mode",
+		map[string]string{
+			"transport_mode": "outbound",
+			"dial_address":   "vps.example.com:8443",
+			"listen_address": "0.0.0.0:9443",
+		}, cookies)
+
+	if resp.Code != http.StatusNoContent {
+		t.Fatalf("PUT status = %d, body=%s", resp.Code, resp.Body.String())
+	}
+
+	listed := srv.jobs.ListRecentWithContext(t.Context(), 50)
+	var found *jobs.Job
+	for i := range listed {
+		if listed[i].Action == jobs.ActionSwitchTransportMode {
+			found = &listed[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("switch_transport_mode job not found")
+	}
+	var payload map[string]string
+	if err := json.Unmarshal([]byte(found.PayloadJSON), &payload); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if payload["listen_addr"] != "0.0.0.0:9443" {
+		t.Fatalf("job payload listen_addr = %q, want 0.0.0.0:9443", payload["listen_addr"])
 	}
 }
 
