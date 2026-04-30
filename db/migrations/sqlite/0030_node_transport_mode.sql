@@ -12,7 +12,7 @@ ALTER TABLE agents ADD COLUMN bootstrap_state TEXT NOT NULL DEFAULT 'active'
 ALTER TABLE agents ADD COLUMN bootstrap_token_hash BLOB;
 ALTER TABLE agents ADD COLUMN bootstrap_expires_at INTEGER;
 
-CREATE INDEX idx_agents_transport_mode ON agents(transport_mode);
+CREATE INDEX IF NOT EXISTS idx_agents_transport_mode ON agents(transport_mode);
 
 -- Existing agents default to bootstrap_state=active (already enrolled).
 -- New outbound agents are created with bootstrap_state=pending
@@ -20,3 +20,8 @@ CREATE INDEX idx_agents_transport_mode ON agents(transport_mode);
 
 -- +goose Down
 DROP INDEX IF EXISTS idx_agents_transport_mode;
+ALTER TABLE agents DROP COLUMN bootstrap_expires_at;
+ALTER TABLE agents DROP COLUMN bootstrap_token_hash;
+ALTER TABLE agents DROP COLUMN bootstrap_state;
+ALTER TABLE agents DROP COLUMN dial_address;
+ALTER TABLE agents DROP COLUMN transport_mode;
