@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"log"
 	"net/http"
@@ -15,9 +18,10 @@ import (
 	"github.com/lost-coder/panvex/internal/agent/runtime"
 	"github.com/lost-coder/panvex/internal/agent/telemt"
 	agentstate "github.com/lost-coder/panvex/internal/agent/state"
+	agentTransport "github.com/lost-coder/panvex/internal/agent/transport"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 func TestJobPipelineForActionRoutesRuntimeReload(t *testing.T) {
@@ -868,4 +872,86 @@ func (r *fakeCertificateRenewer) RenewCertificate(_ context.Context, request *ga
 	}
 
 	return r.response, nil
+}
+
+// ---- selectTransport tests -------------------------------------------------------
+
+// addresser is the interface exposed by listenTransport to report its bound
+// address. We use it here to distinguish listen vs dial transport without
+// depending on the unexported concrete type.
+type addresser interface {
+	Address() string
+}
+
+func TestSelectTransportPicksDialByDefault(t *testing.T) {
+	ca := newTestCA(t)
+	agentCert := ca.issueClientCert(t, "agent")
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: agentCert.Certificate[0]})
+	keyDER, err := x509.MarshalECPrivateKey(agentCert.PrivateKey.(*ecdsa.PrivateKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	creds := agentstate.Credentials{
+		TransportMode:  "", // default — should pick dial
+		CertificatePEM: string(certPEM),
+		PrivateKeyPEM:  string(keyPEM),
+		CAPEM:          string(ca.certPEM),
+	}
+	dialCfg := agentTransport.DialConfig{
+		GatewayAddr: "127.0.0.1:9999",
+		ServerName:  "panel",
+		CAPEM:       string(ca.certPEM),
+	}
+
+	tr, err := selectTransport(creds, dialCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := tr.(addresser); ok {
+		t.Fatal("expected dial transport, got listen transport")
+	}
+}
+
+func TestSelectTransportPicksListenWhenStateSaysListen(t *testing.T) {
+	ca := newTestCA(t)
+	agentCert := ca.issueClientCert(t, "agent")
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: agentCert.Certificate[0]})
+	keyDER, err := x509.MarshalECPrivateKey(agentCert.PrivateKey.(*ecdsa.PrivateKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	creds := agentstate.Credentials{
+		TransportMode:  "listen",
+		ListenAddr:     "127.0.0.1:0",
+		CertificatePEM: string(certPEM),
+		PrivateKeyPEM:  string(keyPEM),
+		CAPEM:          string(ca.certPEM),
+	}
+
+	tr, err := selectTransport(creds, agentTransport.DialConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := tr.(addresser); !ok {
+		t.Fatal("expected listen transport (addresser), got dial transport")
+	}
+}
+
+func TestSelectTransportRejectsInvalidKeypairInListenMode(t *testing.T) {
+	creds := agentstate.Credentials{
+		TransportMode:  "listen",
+		ListenAddr:     "127.0.0.1:0",
+		CertificatePEM: "not-a-cert",
+		PrivateKeyPEM:  "not-a-key",
+		CAPEM:          "not-a-ca",
+	}
+
+	_, err := selectTransport(creds, agentTransport.DialConfig{})
+	if err == nil {
+		t.Fatal("expected error for invalid keypair, got nil")
+	}
 }

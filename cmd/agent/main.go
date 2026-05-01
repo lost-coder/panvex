@@ -939,6 +939,17 @@ func runConnectionMainLoop(
 			cancelConnection()
 			return credentialsState, err
 		case <-timerChan(credentialRefreshTimer):
+			// In listen mode client is nil — cert renewal is panel-driven and
+			// cannot be initiated by the agent. Skip the refresh and reset the
+			// timer so we don't busy-loop; a TODO for a future PR to handle
+			// listen-mode cert expiry via a separate out-of-band flow.
+			// TODO(listen-cert-renewal): agent in listen mode will see its cert
+			// expire after ~90 days; the panel must re-issue and push the new
+			// cert via a job or out-of-band mechanism.
+			if client == nil {
+				resetRuntimeCredentialRefreshTimer(credentialRefreshTimer, runtimeCredentialRefreshDelay(credentialsState, time.Now()))
+				continue
+			}
 			refreshCtx, cancelRefresh := context.WithTimeout(connectionCtx, certificateRefreshTimeout)
 			updatedCredentials, err := refreshRuntimeCredentialsIfNeeded(refreshCtx, stateFile, credentialsState, client, time.Now())
 			cancelRefresh()
@@ -956,6 +967,24 @@ func runConnectionMainLoop(
 	}
 }
 
+// selectTransport returns either a listen-mode or dial-mode Transport based on
+// the TransportMode field of the credentials state. It is extracted as a
+// helper so it can be unit-tested independently of the full runConnection path.
+func selectTransport(creds agentstate.Credentials, dialCfg agentTransport.DialConfig) (agentTransport.Transport, error) {
+	if creds.TransportMode == "listen" {
+		cert, err := tls.X509KeyPair([]byte(creds.CertificatePEM), []byte(creds.PrivateKeyPEM))
+		if err != nil {
+			return nil, fmt.Errorf("agent: load TLS keypair for listen mode: %w", err)
+		}
+		return agentTransport.NewListenTransport(agentTransport.ListenConfig{
+			Addr:  creds.ListenAddr,
+			Cert:  cert,
+			CAPEM: creds.CAPEM,
+		}), nil
+	}
+	return agentTransport.NewDialTransport(dialCfg), nil
+}
+
 func runConnection(gatewayAddr string, serverName string, stateFile string, credentialsState agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule, clientDataConcurrency int, tr *transportReloadState) (agentstate.Credentials, error) {
 	certificate, err := tls.X509KeyPair([]byte(credentialsState.CertificatePEM), []byte(credentialsState.PrivateKeyPEM))
 	if err != nil {
@@ -970,8 +999,13 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 		ConnectTimeout: gatewayStreamConnectTimeout,
 	}
 
+	t, err := selectTransport(credentialsState, cfg)
+	if err != nil {
+		return credentialsState, err
+	}
+
 	var updatedCredentials agentstate.Credentials
-	runErr := agentTransport.NewDialTransport(cfg).RunOnce(context.Background(), func(_ context.Context, stream agentTransport.BidiStream, client gatewayrpc.AgentGatewayClient) error {
+	runErr := t.RunOnce(context.Background(), func(_ context.Context, stream agentTransport.BidiStream, client gatewayrpc.AgentGatewayClient) error {
 		// gosec G706: slog uses structured key/value attributes — neither agent
 		// id nor gateway address is interpreted as a format string, so the
 		// taint-analysis warning is a false positive.
