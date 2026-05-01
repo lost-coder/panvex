@@ -61,6 +61,14 @@ to spawn or tear down outbound supervisors. Key packages:
 `internal/controlplane/bootstrap` (token issuance, enroll driver, install
 handler), `internal/agent/transport` (agent dial/listen).
 
+Certificate renewal works in both dial and listen modes via the Connect
+bidi-stream: the agent sends `RenewalRequest{agent_id, csr_pem}` when its cert
+enters the renewal window, and the panel replies with `RenewalResponse` carrying
+the signed cert. The agent generates a fresh ECDSA P-256 keypair locally, sends
+only the CSR, and validates the returned cert pairs with the new key before
+persisting. The dial-mode outer pre-connection `RenewCertificate` unary RPC is
+retained as a fallback but is skipped in listen mode.
+
 ## Tech stack
 
 - **Go 1.26**: chi/v5 router, pgx/v5, modernc.org/sqlite, gRPC, WebSocket

@@ -26,4 +26,5 @@ const (
 	logMessageReceived    = "message received"
 	auditJobsResult       = "jobs.result"
 	auditJobsAcknowledged = "jobs.acknowledged"
+	auditAgentsCertRenewed = "agents.cert_renewed"
 )

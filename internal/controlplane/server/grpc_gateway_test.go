@@ -2,9 +2,13 @@ package server
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"testing"
@@ -226,7 +230,7 @@ func TestProcessRegularAgentMessageRoutesAckToPriorityHandler(t *testing.T) {
 			},
 		},
 	}
-	if err := server.processRegularAgentMessage(context.Background(), "agent-1", regularSnapshots, message); err != nil {
+	if err := server.processRegularAgentMessage(context.Background(), "agent-1", nil, regularSnapshots, message); err != nil {
 		t.Fatalf("processRegularAgentMessage() error = %v", err)
 	}
 
@@ -780,4 +784,147 @@ func (c *fakeRuntimeReloadClient) FetchSystemInfo(context.Context) (telemt.Syste
 
 func (c *fakeRuntimeReloadClient) FetchDiscoveredUsers(_ context.Context, _ string) ([]telemt.DiscoveredUser, error) {
 	return nil, nil
+}
+
+// ---- In-stream cert renewal tests -----------------------------------------------
+
+// fakeSendSession captures outbound ConnectServerMessages sent by the handler.
+type fakeSendSession struct {
+	sent []*gatewayrpc.ConnectServerMessage
+}
+
+func (s *fakeSendSession) Send(msg *gatewayrpc.ConnectServerMessage) error {
+	s.sent = append(s.sent, msg)
+	return nil
+}
+
+func (s *fakeSendSession) Recv() (*gatewayrpc.ConnectClientMessage, error) {
+	return nil, io.EOF
+}
+
+func (s *fakeSendSession) Context() context.Context {
+	return context.Background()
+}
+
+func TestHandleInStreamRenewalRequestSucceeds(t *testing.T) {
+	now := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	srv := New(Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+	})
+	if srv.authority == nil {
+		t.Fatal("server authority is nil")
+	}
+
+	// Build a CSR for agent-1 using a fresh keypair.
+	agentKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	csrDER, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject: pkix.Name{CommonName: "agent-1"},
+	}, agentKey)
+	if err != nil {
+		t.Fatalf("CreateCertificateRequest: %v", err)
+	}
+	csrPEM := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER}))
+
+	sess := &fakeSendSession{}
+	srv.handleInStreamRenewalRequest(
+		context.Background(), "agent-1", sess,
+		&gatewayrpc.RenewalRequest{AgentId: "agent-1", CsrPem: csrPEM},
+	)
+
+	if len(sess.sent) != 1 {
+		t.Fatalf("len(sent) = %d, want 1", len(sess.sent))
+	}
+	resp := sess.sent[0].GetRenewalResponse()
+	if resp == nil {
+		t.Fatal("response body is nil, want RenewalResponse")
+	}
+	if resp.GetError() != "" {
+		t.Fatalf("RenewalResponse.error = %q, want empty", resp.GetError())
+	}
+	if resp.GetCertificatePem() == "" {
+		t.Fatal("RenewalResponse.certificate_pem is empty")
+	}
+	if resp.GetCaPem() == "" {
+		t.Fatal("RenewalResponse.ca_pem is empty")
+	}
+	if resp.GetExpiresAtUnix() == 0 {
+		t.Fatal("RenewalResponse.expires_at_unix is zero")
+	}
+
+	// Validate the returned cert chains to the panel CA.
+	caBlock, _ := pem.Decode([]byte(resp.GetCaPem()))
+	if caBlock == nil {
+		t.Fatal("ca_pem decode failed")
+	}
+	caCert, err := x509.ParseCertificate(caBlock.Bytes)
+	if err != nil {
+		t.Fatalf("ParseCertificate(ca): %v", err)
+	}
+	certBlock, _ := pem.Decode([]byte(resp.GetCertificatePem()))
+	if certBlock == nil {
+		t.Fatal("certificate_pem decode failed")
+	}
+	leafCert, err := x509.ParseCertificate(certBlock.Bytes)
+	if err != nil {
+		t.Fatalf("ParseCertificate(leaf): %v", err)
+	}
+	pool := x509.NewCertPool()
+	pool.AddCert(caCert)
+	if _, err := leafCert.Verify(x509.VerifyOptions{Roots: pool, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}); err != nil {
+		t.Fatalf("cert verification failed: %v", err)
+	}
+}
+
+func TestHandleInStreamRenewalRequestRejectsAgentIDMismatch(t *testing.T) {
+	now := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	srv := New(Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+	})
+
+	sess := &fakeSendSession{}
+	srv.handleInStreamRenewalRequest(
+		context.Background(), "agent-1", sess,
+		&gatewayrpc.RenewalRequest{AgentId: "agent-2", CsrPem: "irrelevant"},
+	)
+
+	if len(sess.sent) != 1 {
+		t.Fatalf("len(sent) = %d, want 1", len(sess.sent))
+	}
+	resp := sess.sent[0].GetRenewalResponse()
+	if resp == nil {
+		t.Fatal("expected RenewalResponse, got nil")
+	}
+	if resp.GetError() == "" {
+		t.Fatal("expected error in RenewalResponse for agent_id mismatch, got empty")
+	}
+}
+
+func TestHandleInStreamRenewalRequestRejectsInvalidCSR(t *testing.T) {
+	now := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	srv := New(Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+	})
+
+	sess := &fakeSendSession{}
+	srv.handleInStreamRenewalRequest(
+		context.Background(), "agent-1", sess,
+		&gatewayrpc.RenewalRequest{AgentId: "agent-1", CsrPem: "not-a-csr"},
+	)
+
+	if len(sess.sent) != 1 {
+		t.Fatalf("len(sent) = %d, want 1", len(sess.sent))
+	}
+	resp := sess.sent[0].GetRenewalResponse()
+	if resp == nil {
+		t.Fatal("expected RenewalResponse, got nil")
+	}
+	if resp.GetError() == "" {
+		t.Fatal("expected error in RenewalResponse for invalid CSR, got empty")
+	}
 }

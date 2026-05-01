@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -394,7 +396,7 @@ func (s *Server) startSnapshotApplyLoop(ctx context.Context, cancel context.Canc
 
 // startRegularInboundLoop drains regular-priority inbound messages and
 // dispatches them through processRegularAgentMessage.
-func (s *Server) startRegularInboundLoop(ctx context.Context, cancel context.CancelFunc, agentID string, ch *agentStreamChannels, processErr func(error)) {
+func (s *Server) startRegularInboundLoop(ctx context.Context, cancel context.CancelFunc, agentID string, sess agenttransport.AgentSession, ch *agentStreamChannels, processErr func(error)) {
 	go func() {
 		defer s.recoverAgentStreamGoroutine(agentID, "regular-inbound", cancel)
 		for {
@@ -405,7 +407,7 @@ func (s *Server) startRegularInboundLoop(ctx context.Context, cancel context.Can
 				if message == nil {
 					continue
 				}
-				if err := s.processRegularAgentMessage(ctx, agentID, ch.regularSnapshots, message); err != nil {
+				if err := s.processRegularAgentMessage(ctx, agentID, sess, ch.regularSnapshots, message); err != nil {
 					processErr(err)
 					return
 				}
@@ -508,7 +510,7 @@ func (s *Server) runAgentSession(ctx context.Context, sess agenttransport.AgentS
 	s.startAuditEffectsLoop(connectionCtx, cancelConnection, agentID, channels)
 	s.startResultEffectsLoop(connectionCtx, cancelConnection, agentID, channels)
 	s.startSnapshotApplyLoop(connectionCtx, cancelConnection, agentID, channels, processErrorAndCancel)
-	s.startRegularInboundLoop(connectionCtx, cancelConnection, agentID, channels, processErrorAndCancel)
+	s.startRegularInboundLoop(connectionCtx, cancelConnection, agentID, sess, channels, processErrorAndCancel)
 	s.startJobDispatchLoop(connectionCtx, cancelConnection, agentID, sess, session, channels)
 
 	return s.awaitAgentStreamShutdown(cancelConnection, agentID, channels)
@@ -614,6 +616,7 @@ func isPriorityAgentMessage(message *gatewayrpc.ConnectClientMessage) bool {
 func (s *Server) processRegularAgentMessage(
 	connectionCtx context.Context,
 	agentID string,
+	sess agenttransport.AgentSession,
 	regularSnapshots chan agentSnapshot,
 	message *gatewayrpc.ConnectClientMessage,
 ) error {
@@ -643,7 +646,95 @@ func (s *Server) processRegularAgentMessage(
 		return nil
 	}
 
+	if req := message.GetRenewalRequest(); req != nil {
+		s.logger.Debug(logMessageReceived, "agent_id", agentID, "type", "renewal_request")
+		s.handleInStreamRenewalRequest(connectionCtx, agentID, sess, req)
+		return nil
+	}
+
 	return s.processPriorityAgentMessage(connectionCtx, agentID, message)
+}
+
+// handleInStreamRenewalRequest processes a cert renewal request from an agent
+// over the existing Connect bidi-stream. The response is sent back inline;
+// errors are reported via RenewalResponse.error so the stream stays open.
+func (s *Server) handleInStreamRenewalRequest(ctx context.Context, agentID string, sess agenttransport.AgentSession, req *gatewayrpc.RenewalRequest) {
+	if req.GetAgentId() != agentID {
+		s.logger.Warn("renewal request agent_id mismatch", "stream_agent_id", agentID, "request_agent_id", req.GetAgentId())
+		_ = sess.Send(&gatewayrpc.ConnectServerMessage{
+			Body: &gatewayrpc.ConnectServerMessage_RenewalResponse{
+				RenewalResponse: &gatewayrpc.RenewalResponse{
+					Error: "agent_id mismatch",
+				},
+			},
+		})
+		return
+	}
+
+	csrPEM := req.GetCsrPem()
+	certPEM, caPEM, expiresAt, err := s.authority.SignCSR(csrPEM, agentID, agentCertificateLifetime)
+	if err != nil {
+		s.logger.Warn("in-stream cert renewal: sign CSR failed", "agent_id", agentID, "error", err)
+		_ = sess.Send(&gatewayrpc.ConnectServerMessage{
+			Body: &gatewayrpc.ConnectServerMessage_RenewalResponse{
+				RenewalResponse: &gatewayrpc.RenewalResponse{
+					Error: err.Error(),
+				},
+			},
+		})
+		return
+	}
+
+	// Parse the new serial so we can update the pin.
+	newSerial := ""
+	if block, _ := pem.Decode([]byte(certPEM)); block != nil {
+		if parsed, parseErr := x509.ParseCertificate(block.Bytes); parseErr == nil {
+			newSerial = parsed.SerialNumber.Text(16)
+		}
+	}
+
+	// Update in-memory cert dates.
+	certIssuedAt := s.now().UTC()
+	certExpiresAtUTC := expiresAt.UTC()
+	s.mu.Lock()
+	if agent, ok := s.agents[agentID]; ok {
+		agent.CertIssuedAt = &certIssuedAt
+		agent.CertExpiresAt = &certExpiresAtUTC
+		if newSerial != "" {
+			agent.CertSerial = newSerial
+		}
+		s.agents[agentID] = agent
+		if s.batchWriter != nil {
+			s.batchWriter.agents.Enqueue(agentToRecord(agent))
+		}
+	}
+	s.mu.Unlock()
+
+	// Persist the new serial so future connects and revocation checks use it.
+	if s.store != nil && newSerial != "" {
+		if err := s.store.UpdateAgentCertSerial(ctx, agentID, newSerial); err != nil {
+			s.logger.Warn("in-stream cert renewal: persist cert serial failed", "agent_id", agentID, "error", err)
+		}
+	}
+
+	sendErr := sess.Send(&gatewayrpc.ConnectServerMessage{
+		Body: &gatewayrpc.ConnectServerMessage_RenewalResponse{
+			RenewalResponse: &gatewayrpc.RenewalResponse{
+				CertificatePem: certPEM,
+				CaPem:          caPEM,
+				ExpiresAtUnix:  expiresAt.Unix(),
+			},
+		},
+	})
+	if sendErr != nil {
+		s.logger.Warn("in-stream cert renewal: send response failed", "agent_id", agentID, "error", sendErr)
+		return
+	}
+
+	s.logger.Info("in-stream cert renewal completed", "agent_id", agentID, "expires_at", expiresAt.UTC())
+	s.appendAuditWithContext(ctx, agentID, auditAgentsCertRenewed, agentID, map[string]any{
+		"expires_at": expiresAt.UTC().Format(time.RFC3339),
+	})
 }
 
 // handleSnapshotMessage translates the wire-format snapshot into the internal

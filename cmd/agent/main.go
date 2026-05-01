@@ -2,7 +2,13 @@ package main
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
 	"flag"
 	"fmt"
@@ -277,28 +283,27 @@ func runRuntimeReconnectLoop(cfg *runtimeFlags, credentialsState *agentstate.Cre
 			tr.mu.Unlock()
 		}
 
-		// TODO(listen-cert-renewal): renewRuntimeCredentialsIfNeeded dials the
-		// panel via NewDialTransport to renew the cert. In listen mode the
-		// agent has no outbound route — this call will fail every reconnect
-		// once the cert enters its refresh window, burning the attempt
-		// counter and logging "certificate refresh failed" before each
-		// listen-mode reconnect. The companion TODO in the inner
-		// runConnectionMainLoop timer branch covers the in-stream path; this
-		// outer pre-connection call needs the same fix (skip in listen mode
-		// or move renewal to a separate panel-driven flow).
-		refreshCtx, cancelRefresh := context.WithTimeout(context.Background(), certificateRefreshTimeout)
-		refreshed, err := renewRuntimeCredentialsIfNeeded(refreshCtx, cfg.stateFile, cfg.gatewayAddr, cfg.gatewayServerName, *credentialsState, time.Now())
-		cancelRefresh()
-		if err != nil {
-			if agentrevocation.IsAgentRevoked(err) {
-				return agentrevocation.ErrAgentRevoked
+		// In listen mode the agent has no outbound dial route, so the
+		// pre-connection unary RenewCertificate RPC cannot be used. In-stream
+		// renewal (via RenewalRequest/RenewalResponse over the Connect bidi-
+		// stream) handles cert refresh for listen-mode agents. Skip the dial-
+		// only pre-connection renewal when in listen mode; the in-stream path
+		// in runConnectionMainLoop covers that case.
+		if credentialsState.TransportMode != "listen" {
+			refreshCtx, cancelRefresh := context.WithTimeout(context.Background(), certificateRefreshTimeout)
+			refreshed, err := renewRuntimeCredentialsIfNeeded(refreshCtx, cfg.stateFile, cfg.gatewayAddr, cfg.gatewayServerName, *credentialsState, time.Now())
+			cancelRefresh()
+			if err != nil {
+				if agentrevocation.IsAgentRevoked(err) {
+					return agentrevocation.ErrAgentRevoked
+				}
+				reconnectAttempt++
+				slog.Error("certificate refresh failed", "error", err)
+				time.Sleep(reconnectDelay(reconnectAttempt))
+				continue
 			}
-			reconnectAttempt++
-			slog.Error("certificate refresh failed", "error", err)
-			time.Sleep(reconnectDelay(reconnectAttempt))
-			continue
+			*credentialsState = refreshed
 		}
-		*credentialsState = refreshed
 
 		afterConn, connErr := runConnection(cfg.gatewayAddr, cfg.gatewayServerName, cfg.stateFile, *credentialsState, agent, schedule, cfg.clientDataConcurrency, tr)
 		*credentialsState = afterConn
@@ -881,8 +886,9 @@ func startOutboundPump(
 }
 
 // startInboundPump spawns the goroutine that consumes the gateway
-// stream and routes job commands to the worker queues plus client-
-// data requests to bounded handler goroutines.
+// stream and routes job commands to the worker queues, client-data
+// requests to bounded handler goroutines, and renewal responses to
+// the renewalResponses channel for runConnectionMainLoop.
 func startInboundPump(
 	connectionCtx context.Context,
 	streamWG *sync.WaitGroup,
@@ -892,6 +898,7 @@ func startInboundPump(
 	jobQueues map[jobPipeline]chan *gatewayrpc.JobCommand,
 	criticalOutbound chan *gatewayrpc.ConnectClientMessage,
 	clientDataSem chan struct{},
+	renewalResponses chan<- *gatewayrpc.RenewalResponse,
 	sendErrorAndCancel func(error),
 ) {
 	streamWG.Add(1)
@@ -924,6 +931,15 @@ func startInboundPump(
 				}()
 				continue
 			}
+			if resp := message.GetRenewalResponse(); resp != nil {
+				// Non-blocking send: if runConnectionMainLoop is not
+				// waiting (e.g. no pending request), drop it silently.
+				select {
+				case renewalResponses <- resp:
+				default:
+				}
+				continue
+			}
 		}
 	}()
 }
@@ -939,6 +955,8 @@ func runConnectionMainLoop(
 	credentialsState agentstate.Credentials,
 	stateFile string,
 	client gatewayrpc.AgentGatewayClient,
+	criticalOutbound chan<- *gatewayrpc.ConnectClientMessage,
+	renewalResponses <-chan *gatewayrpc.RenewalResponse,
 	credentialRefreshTimer *time.Timer,
 	sendErrors <-chan error,
 ) (agentstate.Credentials, error) {
@@ -948,13 +966,26 @@ func runConnectionMainLoop(
 			cancelConnection()
 			return credentialsState, err
 		case <-timerChan(credentialRefreshTimer):
-			// In listen mode client is nil — cert renewal is panel-driven and
-			// cannot be initiated by the agent. Skip the refresh and reset the
-			// timer so we don't busy-loop; a TODO for a future PR to handle
-			// listen-mode cert expiry via a separate out-of-band flow.
-			// TODO(listen-cert-renewal): agent in listen mode will see its cert
-			// expire after ~90 days; the panel must re-issue and push the new
-			// cert via a job or out-of-band mechanism.
+			if !runtimeCredentialsNeedRefresh(credentialsState, time.Now()) {
+				resetRuntimeCredentialRefreshTimer(credentialRefreshTimer, runtimeCredentialRefreshDelay(credentialsState, time.Now()))
+				continue
+			}
+			// In-stream renewal: works for both dial and listen modes because
+			// the bidi Connect stream is symmetric. The old unary
+			// RenewCertificate RPC (dial-only) is now only used in the outer
+			// pre-connection path for dial-mode agents.
+			if criticalOutbound != nil {
+				updatedCredentials, err := renewCertificateInStream(connectionCtx, credentialsState, stateFile, criticalOutbound, renewalResponses)
+				if err != nil {
+					slog.Error("in-stream certificate renewal failed", "error", err)
+					resetRuntimeCredentialRefreshTimer(credentialRefreshTimer, runtimeCertificateRenewRetry)
+					continue
+				}
+				cancelConnection()
+				return updatedCredentials, errRuntimeCredentialsRefreshed
+			}
+			// Fallback: dial-mode without a stream available (should not
+			// normally happen when criticalOutbound is wired).
 			if client == nil {
 				resetRuntimeCredentialRefreshTimer(credentialRefreshTimer, runtimeCredentialRefreshDelay(credentialsState, time.Now()))
 				continue
@@ -974,6 +1005,108 @@ func runConnectionMainLoop(
 			resetRuntimeCredentialRefreshTimer(credentialRefreshTimer, runtimeCredentialRefreshDelay(credentialsState, time.Now()))
 		}
 	}
+}
+
+// renewCertificateInStream performs in-stream cert renewal over the existing
+// Connect bidi-stream. It generates a fresh ECDSA P-256 keypair, builds a
+// CSR signed with the new key, sends a RenewalRequest via criticalOutbound,
+// and waits up to certificateRefreshTimeout for the panel's RenewalResponse.
+// On success it validates the returned cert pairs with the new key, atomically
+// updates the in-memory credentials, and persists them to disk.
+func renewCertificateInStream(
+	ctx context.Context,
+	current agentstate.Credentials,
+	stateFile string,
+	criticalOutbound chan<- *gatewayrpc.ConnectClientMessage,
+	renewalResponses <-chan *gatewayrpc.RenewalResponse,
+) (agentstate.Credentials, error) {
+	// Generate fresh keypair — private key never leaves the agent.
+	newKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return current, fmt.Errorf("in-stream renewal: generate key: %w", err)
+	}
+
+	csrPEM, err := buildCSRPEM(current.AgentID, newKey)
+	if err != nil {
+		return current, fmt.Errorf("in-stream renewal: build CSR: %w", err)
+	}
+
+	// Enqueue the renewal request — the outbound pump will send it.
+	msg := &gatewayrpc.ConnectClientMessage{
+		Body: &gatewayrpc.ConnectClientMessage_RenewalRequest{
+			RenewalRequest: &gatewayrpc.RenewalRequest{
+				AgentId: current.AgentID,
+				CsrPem:  csrPEM,
+			},
+		},
+	}
+	select {
+	case criticalOutbound <- msg:
+	case <-ctx.Done():
+		return current, ctx.Err()
+	}
+
+	// Wait for the panel's response.
+	renewCtx, cancel := context.WithTimeout(ctx, certificateRefreshTimeout)
+	defer cancel()
+	var resp *gatewayrpc.RenewalResponse
+	select {
+	case resp = <-renewalResponses:
+	case <-renewCtx.Done():
+		return current, fmt.Errorf("in-stream renewal: timeout waiting for response")
+	}
+
+	if resp.GetError() != "" {
+		return current, fmt.Errorf("in-stream renewal: panel rejected: %s", resp.GetError())
+	}
+
+	// Validate: the cert must pair with the new key we generated.
+	newKeyDER, err := x509.MarshalECPrivateKey(newKey)
+	if err != nil {
+		return current, fmt.Errorf("in-stream renewal: marshal new key: %w", err)
+	}
+	newKeyPEM := encodeCertPEM("EC PRIVATE KEY", newKeyDER)
+	if _, err := tls.X509KeyPair([]byte(resp.GetCertificatePem()), []byte(newKeyPEM)); err != nil {
+		return current, fmt.Errorf("in-stream renewal: cert/key mismatch: %w", err)
+	}
+
+	updated := current
+	updated.CertificatePEM = resp.GetCertificatePem()
+	updated.PrivateKeyPEM = newKeyPEM
+	if resp.GetCaPem() != "" {
+		updated.CAPEM = resp.GetCaPem()
+	}
+	if resp.GetExpiresAtUnix() > 0 {
+		updated.ExpiresAt = time.Unix(resp.GetExpiresAtUnix(), 0).UTC()
+	}
+
+	if err := agentstate.Save(stateFile, updated); err != nil {
+		return current, fmt.Errorf("in-stream renewal: persist credentials: %w", err)
+	}
+
+	slog.Info("in-stream certificate renewal completed", "agent_id", current.AgentID, "expires_at", updated.ExpiresAt)
+	return updated, nil
+}
+
+// buildCSRPEM builds a CERTIFICATE REQUEST PEM block signed by key with
+// the agent's CN.
+func buildCSRPEM(agentID string, key *ecdsa.PrivateKey) (string, error) {
+	tmpl := &x509.CertificateRequest{
+		Subject: pkix.Name{
+			CommonName:   agentID,
+			Organization: []string{"Panvex Agents"},
+		},
+	}
+	csrDER, err := x509.CreateCertificateRequest(rand.Reader, tmpl, key)
+	if err != nil {
+		return "", err
+	}
+	return encodeCertPEM("CERTIFICATE REQUEST", csrDER), nil
+}
+
+// encodeCertPEM encodes der bytes as a PEM block with the given type.
+func encodeCertPEM(blockType string, der []byte) string {
+	return string(pem.EncodeToMemory(&pem.Block{Type: blockType, Bytes: der}))
 }
 
 // selectTransport returns either a listen-mode or dial-mode Transport based on
@@ -1072,7 +1205,11 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 			cdConc = 8
 		}
 		clientDataSem := make(chan struct{}, cdConc)
-		startInboundPump(connectionCtx, &streamWG, stream, agent, jobInflight, jobQueues, criticalOutbound, clientDataSem, sendErrorAndCancel)
+		// Buffered 1: the inbound pump does a non-blocking send; the main loop
+		// reads with a timeout. A buffer of 1 prevents a missed response if the
+		// main loop is momentarily not yet waiting.
+		renewalResponses := make(chan *gatewayrpc.RenewalResponse, 1)
+		startInboundPump(connectionCtx, &streamWG, stream, agent, jobInflight, jobQueues, criticalOutbound, clientDataSem, renewalResponses, sendErrorAndCancel)
 		startJobWorkers(connectionCtx, agent, jobInflight, jobQueues, criticalOutbound)
 
 		if initErr := sendInitialMessages(criticalOutbound, agent); initErr != nil {
@@ -1088,7 +1225,7 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 		startPollingWorkers(connectionCtx, schedule, agent, telemetryOutbound)
 
 		var loopErr error
-		updatedCredentials, loopErr = runConnectionMainLoop(connectionCtx, cancelConnection, credentialsState, stateFile, client, credentialRefreshTimer, sendErrors)
+		updatedCredentials, loopErr = runConnectionMainLoop(connectionCtx, cancelConnection, credentialsState, stateFile, client, criticalOutbound, renewalResponses, credentialRefreshTimer, sendErrors)
 		return loopErr
 	})
 	if runErr != nil {

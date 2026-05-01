@@ -3,15 +3,19 @@ package main
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"log"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -954,4 +958,279 @@ func TestSelectTransportRejectsInvalidKeypairInListenMode(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid keypair, got nil")
 	}
+}
+
+// ---- In-stream cert renewal tests -----------------------------------------------
+
+func TestBuildCSRPEMProducesValidCSR(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	csrPEM, err := buildCSRPEM("agent-abc", key)
+	if err != nil {
+		t.Fatalf("buildCSRPEM: %v", err)
+	}
+
+	block, _ := pem.Decode([]byte(csrPEM))
+	if block == nil || block.Type != "CERTIFICATE REQUEST" {
+		t.Fatalf("expected CERTIFICATE REQUEST PEM block, got %v", block)
+	}
+	csr, err := x509.ParseCertificateRequest(block.Bytes)
+	if err != nil {
+		t.Fatalf("ParseCertificateRequest: %v", err)
+	}
+	if err := csr.CheckSignature(); err != nil {
+		t.Fatalf("CSR signature invalid: %v", err)
+	}
+	if csr.Subject.CommonName != "agent-abc" {
+		t.Fatalf("CSR CN = %q, want %q", csr.Subject.CommonName, "agent-abc")
+	}
+}
+
+func TestRenewCertificateInStreamSuccessPath(t *testing.T) {
+	ca := newTestCA(t)
+
+	// Sign a CSR with the test CA — simulates what the panel would do.
+	newKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	csrPEM, err := buildCSRPEM("agent-123", newKey)
+	if err != nil {
+		t.Fatalf("buildCSRPEM: %v", err)
+	}
+	signedCertPEM := ca.signCSRForTest(t, csrPEM)
+	newKeyDER, err := x509.MarshalECPrivateKey(newKey)
+	if err != nil {
+		t.Fatalf("MarshalECPrivateKey: %v", err)
+	}
+	newKeyPEM := string(pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: newKeyDER}))
+
+	statePath := t.TempDir() + "/state.json"
+	current := agentstate.Credentials{
+		AgentID:        "agent-123",
+		CertificatePEM: "old-cert",
+		PrivateKeyPEM:  newKeyPEM, // initially same key so we can build the response
+		CAPEM:          string(ca.certPEM),
+		ExpiresAt:      time.Now().Add(time.Hour),
+	}
+	if err := agentstate.Save(statePath, current); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// Simulate the renewal flow: criticalOutbound receives the request;
+	// renewalResponses simulates the panel's response.
+	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
+	renewalResponses := make(chan *gatewayrpc.RenewalResponse, 1)
+	renewalResponses <- &gatewayrpc.RenewalResponse{
+		CertificatePem: signedCertPEM,
+		CaPem:          string(ca.certPEM),
+		ExpiresAtUnix:  time.Now().Add(30 * 24 * time.Hour).Unix(),
+	}
+
+	// We test renewCertificateInStream directly, providing the new key
+	// via a custom implementation. Since renewCertificateInStream generates
+	// its own key, we can't inject the key — instead we test the full
+	// observable behaviour: that it reads from criticalOutbound + renewalResponses
+	// and persists updated credentials.
+	//
+	// Use a real CA sign to produce a response that pairs with whatever
+	// key renewCertificateInStream generates internally.
+	ctx := context.Background()
+
+	// We need the channel-based roundtrip to work: let a goroutine act as
+	// the "panel", reading the renewal request and sending back a signed cert.
+	go func() {
+		msg := <-criticalOutbound
+		req := msg.GetRenewalRequest()
+		if req == nil {
+			return
+		}
+		signed := ca.signCSRForTest(t, req.GetCsrPem())
+		renewalResponses <- &gatewayrpc.RenewalResponse{
+			CertificatePem: signed,
+			CaPem:          string(ca.certPEM),
+			ExpiresAtUnix:  time.Now().Add(30 * 24 * time.Hour).Unix(),
+		}
+	}()
+	// Drain the pre-loaded response so only the goroutine's response counts.
+	<-renewalResponses
+
+	updated, err := renewCertificateInStream(ctx, current, statePath, criticalOutbound, renewalResponses)
+	if err != nil {
+		t.Fatalf("renewCertificateInStream() error = %v", err)
+	}
+	if updated.CertificatePEM == current.CertificatePEM {
+		t.Fatal("updated cert is unchanged, expected new cert PEM")
+	}
+	if updated.PrivateKeyPEM == current.PrivateKeyPEM {
+		t.Fatal("updated private key is unchanged, expected new key PEM")
+	}
+	if updated.ExpiresAt.IsZero() {
+		t.Fatal("updated ExpiresAt is zero")
+	}
+
+	// Verify persisted to disk.
+	persisted, err := agentstate.Load(statePath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if persisted.CertificatePEM != updated.CertificatePEM {
+		t.Fatal("persisted cert differs from returned cert")
+	}
+}
+
+func TestRenewCertificateInStreamPanelErrorPath(t *testing.T) {
+	statePath := t.TempDir() + "/state.json"
+	current := agentstate.Credentials{
+		AgentID:   "agent-xyz",
+		ExpiresAt: time.Now().Add(time.Hour),
+	}
+	if err := agentstate.Save(statePath, current); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
+	renewalResponses := make(chan *gatewayrpc.RenewalResponse, 1)
+
+	go func() {
+		<-criticalOutbound
+		renewalResponses <- &gatewayrpc.RenewalResponse{
+			Error: "CSR signature invalid",
+		}
+	}()
+
+	_, err := renewCertificateInStream(context.Background(), current, statePath, criticalOutbound, renewalResponses)
+	if err == nil {
+		t.Fatal("expected error from panel rejection, got nil")
+	}
+	if !strings.Contains(err.Error(), "panel rejected") {
+		t.Fatalf("error = %q, want 'panel rejected' in message", err.Error())
+	}
+}
+
+func TestRenewCertificateInStreamTimeout(t *testing.T) {
+	statePath := t.TempDir() + "/state.json"
+	current := agentstate.Credentials{
+		AgentID:   "agent-xyz",
+		ExpiresAt: time.Now().Add(time.Hour),
+	}
+	if err := agentstate.Save(statePath, current); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
+	renewalResponses := make(chan *gatewayrpc.RenewalResponse) // no sender
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	// Drain the outbound so it doesn't block the send.
+	go func() { <-criticalOutbound }()
+
+	_, err := renewCertificateInStream(ctx, current, statePath, criticalOutbound, renewalResponses)
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+}
+
+func TestStartInboundPumpRoutesRenewalResponseToChannel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	renewalResp := &gatewayrpc.RenewalResponse{
+		CertificatePem: "new-cert",
+		CaPem:          "ca-pem",
+		ExpiresAtUnix:  1234567890,
+	}
+	serverMsg := &gatewayrpc.ConnectServerMessage{
+		Body: &gatewayrpc.ConnectServerMessage_RenewalResponse{
+			RenewalResponse: renewalResp,
+		},
+	}
+	stream := &renewalTestBidiStream{
+		messages: []*gatewayrpc.ConnectServerMessage{serverMsg},
+		cancelAfterAll: cancel,
+	}
+
+	agent := runtime.New(runtime.Config{
+		AgentID:  "agent-1",
+		NodeName: "node-a",
+	}, nil)
+	tracker := newJobInflightTracker()
+	jobQueues := map[jobPipeline]chan *gatewayrpc.JobCommand{
+		jobPipelineRuntimeReload:  make(chan *gatewayrpc.JobCommand, 1),
+		jobPipelineClientMutation: make(chan *gatewayrpc.JobCommand, 1),
+		jobPipelineDefault:        make(chan *gatewayrpc.JobCommand, 1),
+	}
+	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
+	renewalResponses := make(chan *gatewayrpc.RenewalResponse, 1)
+	clientDataSem := make(chan struct{}, 1)
+
+	var wg sync.WaitGroup
+	startInboundPump(ctx, &wg, stream, agent, tracker, jobQueues, criticalOutbound, clientDataSem, renewalResponses, func(error) {})
+
+	select {
+	case got := <-renewalResponses:
+		if got.GetCertificatePem() != "new-cert" {
+			t.Fatalf("renewalResponses cert = %q, want %q", got.GetCertificatePem(), "new-cert")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for renewal response to be routed")
+	}
+}
+
+// renewalTestBidiStream is a minimal BidiStream that returns a fixed list of
+// server messages then blocks (or returns context error).
+type renewalTestBidiStream struct {
+	messages       []*gatewayrpc.ConnectServerMessage
+	pos            int
+	cancelAfterAll context.CancelFunc
+}
+
+func (s *renewalTestBidiStream) Send(*gatewayrpc.ConnectClientMessage) error { return nil }
+func (s *renewalTestBidiStream) Recv() (*gatewayrpc.ConnectServerMessage, error) {
+	if s.pos < len(s.messages) {
+		msg := s.messages[s.pos]
+		s.pos++
+		return msg, nil
+	}
+	if s.cancelAfterAll != nil {
+		s.cancelAfterAll()
+	}
+	return nil, context.Canceled
+}
+
+// signCSRForTest signs csrPEM with the testCA and returns a cert PEM.
+func (ca *testCA) signCSRForTest(t *testing.T, csrPEM string) string {
+	t.Helper()
+	block, _ := pem.Decode([]byte(csrPEM))
+	if block == nil {
+		t.Fatal("signCSRForTest: invalid PEM")
+	}
+	csr, err := x509.ParseCertificateRequest(block.Bytes)
+	if err != nil {
+		t.Fatalf("signCSRForTest: ParseCertificateRequest: %v", err)
+	}
+	if err := csr.CheckSignature(); err != nil {
+		t.Fatalf("signCSRForTest: CheckSignature: %v", err)
+	}
+
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		t.Fatalf("signCSRForTest: random serial: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: serial,
+		Subject:      csr.Subject,
+		NotBefore:    time.Now().Add(-time.Minute),
+		NotAfter:     time.Now().Add(30 * 24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, ca.cert, csr.PublicKey, ca.key)
+	if err != nil {
+		t.Fatalf("signCSRForTest: CreateCertificate: %v", err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
 }

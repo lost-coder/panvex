@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.1
 // - protoc             v3.21.12
-// source: agent_gateway.proto
+// source: proto/agent_gateway.proto
 
 package gatewayrpc
 
@@ -78,15 +78,16 @@ func (c *agentGatewayClient) EnrollOutbound(ctx context.Context, opts ...grpc.Ca
 type AgentGateway_EnrollOutboundClient = grpc.BidiStreamingClient[EnrollClientMessage, EnrollServerMessage]
 
 // AgentGatewayServer is the server API for AgentGateway service.
-// All implementations should embed UnimplementedAgentGatewayServer
+// All implementations must embed UnimplementedAgentGatewayServer
 // for forward compatibility.
 type AgentGatewayServer interface {
 	RenewCertificate(context.Context, *RenewCertificateRequest) (*RenewCertificateResponse, error)
 	Connect(grpc.BidiStreamingServer[ConnectClientMessage, ConnectServerMessage]) error
 	EnrollOutbound(grpc.BidiStreamingServer[EnrollClientMessage, EnrollServerMessage]) error
+	mustEmbedUnimplementedAgentGatewayServer()
 }
 
-// UnimplementedAgentGatewayServer should be embedded to have
+// UnimplementedAgentGatewayServer must be embedded to have
 // forward compatible implementations.
 //
 // NOTE: this should be embedded by value instead of pointer to avoid a nil
@@ -102,7 +103,8 @@ func (UnimplementedAgentGatewayServer) Connect(grpc.BidiStreamingServer[ConnectC
 func (UnimplementedAgentGatewayServer) EnrollOutbound(grpc.BidiStreamingServer[EnrollClientMessage, EnrollServerMessage]) error {
 	return status.Error(codes.Unimplemented, "method EnrollOutbound not implemented")
 }
-func (UnimplementedAgentGatewayServer) testEmbeddedByValue() {}
+func (UnimplementedAgentGatewayServer) mustEmbedUnimplementedAgentGatewayServer() {}
+func (UnimplementedAgentGatewayServer) testEmbeddedByValue()                      {}
 
 // UnsafeAgentGatewayServer may be embedded to opt out of forward compatibility for this service.
 // Use of this interface is not recommended, as added methods to AgentGatewayServer will
@@ -180,5 +182,5 @@ var AgentGateway_ServiceDesc = grpc.ServiceDesc{
 			ClientStreams: true,
 		},
 	},
-	Metadata: "agent_gateway.proto",
+	Metadata: "proto/agent_gateway.proto",
 }

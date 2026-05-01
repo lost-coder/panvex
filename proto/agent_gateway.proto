@@ -310,6 +310,26 @@ message ClientDetailRecord {
   bool enabled = 14;
 }
 
+// RenewalRequest is sent by the agent over the established Connect stream
+// when its current cert is within the renewal window. The agent generated
+// a fresh keypair locally; this CSR carries the new public key bound to
+// the agent's existing CN.
+message RenewalRequest {
+  string agent_id = 1;
+  string csr_pem = 2;
+}
+
+// RenewalResponse is the panel's reply. The agent must validate the cert
+// pairs with the keypair it just generated before persisting.
+message RenewalResponse {
+  string certificate_pem = 1;
+  string ca_pem = 2;
+  int64 expires_at_unix = 3;
+  // error, if non-empty, describes why the renewal was rejected. The
+  // agent should log + back off and retry later.
+  string error = 4;
+}
+
 message ConnectClientMessage {
   oneof body {
     Heartbeat heartbeat = 1;
@@ -317,6 +337,7 @@ message ConnectClientMessage {
     JobResult job_result = 3;
     JobAcknowledgement job_acknowledgement = 4;
     ClientDataResponse client_data_response = 5;
+    RenewalRequest renewal_request = 6;
   }
 }
 
@@ -324,6 +345,7 @@ message ConnectServerMessage {
   oneof body {
     JobCommand job = 1;
     ClientDataRequest client_data_request = 2;
+    RenewalResponse renewal_response = 3;
   }
 }
 
