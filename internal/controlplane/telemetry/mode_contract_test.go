@@ -30,10 +30,10 @@ func TestModeKindStringsMatchFrontend(t *testing.T) {
 }
 
 // TestSeverityVocabularyMatchesFrontend pins the severity strings the Go
-// projector returns (SeverityAndReason) against the TS Severity union. The
-// Go-side vocabulary is "ok"|"warn"|"critical"|"bad"; the TS union widens
-// only to accept legacy "good" historically — current contract is the same
-// four values.
+// projector returns (SeverityAndReason) against the TS Severity union in
+// common.ts: "ok" | "warn" | "critical" | "bad". Note: the dashboard zod
+// schemas additionally accept legacy "good" for backward-compatible parsing
+// of older API responses; that widening is intentional and lives elsewhere.
 func TestSeverityVocabularyMatchesFrontend(t *testing.T) {
 	expected := []string{"ok", "warn", "critical", "bad"}
 	tsValues := readTSUnion(t, "Severity")

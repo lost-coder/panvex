@@ -5,26 +5,6 @@ import (
 	"time"
 )
 
-// snapshotFallbackOps returns a copy of the fallback-state batch buffer's
-// pending mutations. Test-only — exposes the internal slice so the
-// applyFallbackStateTransitionLocked tests can assert what was enqueued
-// without having to flush the buffer to the store and read it back. The
-// caller receives a fresh slice so subsequent enqueues do not race with
-// assertion.
-func (b *batchBuffer[T]) snapshot() []T {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	out := make([]T, len(b.items))
-	copy(out, b.items)
-	return out
-}
-
-// pendingFallbackOps is a thin convenience wrapper around the typed buffer
-// snapshot used by applyFallbackStateTransitionLocked tests.
-func (w *storeBatchWriter) pendingFallbackOps() []fallbackStateOp {
-	return w.fallbackState.snapshot()
-}
-
 // runtimeFor builds a minimal AgentRuntime with the three flags the
 // classifier reads (UseMiddleProxy, MERuntimeReady, ME2DCFallbackEnabled).
 // All other fields stay zero — the classifier only branches on these three.
