@@ -103,6 +103,16 @@ function summaryToListItem(card: TelemetryServerSummary): ServerListItem {
     uptimeSeconds: runtime?.uptime_seconds ?? 0,
     fleetGroupId: agent?.fleet_group_id ?? "",
     dcs: mapDcs(runtime?.dcs ?? []),
+    // Direct-mode panel signals (Phase 7). Pass through the raw severity
+    // from /telemetry/servers so the Transport badge can render the full
+    // ok/warn/critical/bad vocabulary, while `status` retains the legacy
+    // ok/warn/error mapping the rest of the row uses.
+    useMiddleProxy: runtime?.use_middle_proxy ?? false,
+    meRuntimeReady: runtime?.me_runtime_ready ?? false,
+    me2dcFallbackEnabled: runtime?.me2dc_fallback_enabled ?? false,
+    healthyUpstreams: runtime?.healthy_upstreams ?? 0,
+    totalUpstreams: runtime?.total_upstreams ?? 0,
+    severity: card.severity === "good" ? "ok" : card.severity,
   };
 }
 

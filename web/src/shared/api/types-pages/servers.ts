@@ -1,5 +1,5 @@
 import type { Status } from "@/ui/tokens/colors";
-import type { FleetGroupOption, ViewMode } from "./common";
+import type { FleetGroupOption, Severity, ViewMode } from "./common";
 
 // --- Servers ---
 
@@ -18,6 +18,17 @@ export interface ServerListItem {
   uptimeSeconds: number;
   fleetGroupId: string;
   dcs?: import("@/features/servers/ui/NodeSummaryCard").NodeDcInfo[] | undefined;
+  // --- Direct-mode panel signals ---
+  //
+  // Mirror the agent-reported mode booleans + the unified telemetry
+  // severity + upstream health counts so the Servers list can render the
+  // mode-aware Transport badge without a second roundtrip.
+  useMiddleProxy: boolean;
+  meRuntimeReady: boolean;
+  me2dcFallbackEnabled: boolean;
+  healthyUpstreams: number;
+  totalUpstreams: number;
+  severity: Severity;
 }
 
 /**
