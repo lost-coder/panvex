@@ -262,4 +262,13 @@ export interface ServerUpstreamSummaryData {
   socks4Total: number;
   socks5Total: number;
   shadowsocksTotal: number;
+  // Direct-mode panel: 5-minute fail-rate signal for upstream connect
+  // attempts and lifetime connect counters. `failRateKnown` distinguishes
+  // "0% because no traffic yet" from "0% because all attempts succeeded".
+  failRatePct5m: number; // 0 when unknown
+  failRateKnown: boolean;
+  connectAttemptTotal: number;
+  connectSuccessTotal: number;
+  connectFailTotal: number;
+  connectFailfastTotal: number;
 }

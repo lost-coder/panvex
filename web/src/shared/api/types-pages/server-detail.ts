@@ -1,5 +1,5 @@
 import type { Status } from "@/ui/tokens/colors";
-import type { AgentConnectionData, InitCardProps } from "./common";
+import type { AgentConnectionData, InitCardProps, TransportMode } from "./common";
 import type {
   ServerConnectionsData,
   ServerDcData,
@@ -67,6 +67,18 @@ export interface ServerDetailPageProps {
 
     // /v1/stats/minimal/all → network_path
     networkPath?: ServerNetworkPathData[] | undefined;
+
+    // --- Direct-mode panel signals ---
+    //
+    // Mirror the agent-reported mode booleans alongside the persisted
+    // transport_mode and fallback_entered_at_unix from the agents row so
+    // direct-mode surfaces (mode banner, fallback duration) can render
+    // without digging into `gates` for a subset of the fields.
+    useMiddleProxy: boolean;
+    meRuntimeReady: boolean;
+    me2dcFallbackEnabled: boolean;
+    transportMode: TransportMode;
+    fallbackEnteredAtUnix: number | null;
   };
   onBack?: (() => void) | undefined;
   onReload?: (() => void) | undefined;

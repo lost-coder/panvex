@@ -9,8 +9,17 @@ export interface UserLinks {
   tls: string[];
 }
 
-/** @deprecated Use `Status` from `@/tokens/colors` instead */
-export type Severity = Status;
+// --- Direct-mode panel shared primitives ---
+//
+// These describe the runtime mode the agent is operating in (middle-proxy
+// vs direct), the classified mode kind shown in the UI, and a unified
+// severity vocabulary used by direct-mode surfaces. The severity union
+// mirrors the backend's expanded vocabulary (Phase 3) so the panel can
+// render both legacy ("warn", "bad") and new ("ok", "critical") values.
+
+export type TransportMode = "middle_proxy" | "direct";
+export type ModeKind = "me" | "direct" | "fallback" | "me_down";
+export type Severity = "ok" | "warn" | "critical" | "bad";
 
 export interface KpiItem {
   label: string;

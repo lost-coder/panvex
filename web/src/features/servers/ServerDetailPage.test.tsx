@@ -55,6 +55,11 @@ function makeProps(): ServerDetailPageProps {
       upstreams: [],
       events: [],
       eventsDroppedTotal: 0,
+      useMiddleProxy: true,
+      meRuntimeReady: true,
+      me2dcFallbackEnabled: false,
+      transportMode: "middle_proxy",
+      fallbackEnteredAtUnix: null,
     },
   };
 }

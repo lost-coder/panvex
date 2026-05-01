@@ -347,6 +347,16 @@ export function transformServerDetail(
 
   const mePool = transformMePool(detail.diagnostics?.me_pool, runtime);
 
+  const useMiddleProxy = runtime?.use_middle_proxy ?? false;
+  const meRuntimeReady = runtime?.me_runtime_ready ?? false;
+  const me2dcFallbackEnabled = runtime?.me2dc_fallback_enabled ?? false;
+  // Phase 5: API does not yet surface the persisted transport_mode /
+  // fallback_entered_at_unix fields. Derive transportMode from
+  // use_middle_proxy (the agent flag the panel already has) and default
+  // fallbackEnteredAtUnix to null until the API exposes it.
+  const transportMode: ServerDetailPageProps["server"]["transportMode"] =
+    useMiddleProxy ? "middle_proxy" : "direct";
+
   return {
     id: agent?.id ?? "",
     name: agent?.node_name ?? "",
@@ -360,6 +370,11 @@ export function transformServerDetail(
     upstreams,
     events,
     eventsDroppedTotal: 0,
+    useMiddleProxy,
+    meRuntimeReady,
+    me2dcFallbackEnabled,
+    transportMode,
+    fallbackEnteredAtUnix: null,
   };
 }
 
