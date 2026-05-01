@@ -39,6 +39,7 @@ export function useSettings(swipeNavigation: boolean = false) {
     mutationFn: (payload: {
       http_public_url: string;
       grpc_public_endpoint: string;
+      password_min_length: number;
     }) => apiClient.updatePanelSettings(payload),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["settings", "panel"] });

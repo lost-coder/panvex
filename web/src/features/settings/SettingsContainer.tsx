@@ -35,6 +35,7 @@ export function SettingsContainer() {
       onPanelSettingsChange={(s) => savePanelSettings.mutate({
         http_public_url: s.httpPublicUrl,
         grpc_public_endpoint: s.grpcPublicEndpoint,
+        password_min_length: s.passwordMinLength,
       })}
       onAppearanceChange={(s) => {
         setSwipeNavigation(s.swipeNavigation);

@@ -104,6 +104,26 @@ export function SettingsPage({
                   }
                 />
               </SettingsRow>
+              <SettingsRow
+                label="Minimum password length"
+                description="Operators creating or rotating passwords must meet this floor (8–128). Existing accounts are not invalidated."
+              >
+                <Input
+                  type="number"
+                  className="w-24"
+                  min={8}
+                  max={128}
+                  step={1}
+                  value={panelSettings.passwordMinLength}
+                  onChange={(e) =>
+                    onPanelSettingsChange?.({
+                      ...panelSettings,
+                      passwordMinLength: Number(e.target.value) || 8,
+                    })
+                  }
+                  aria-label="Minimum password length"
+                />
+              </SettingsRow>
             </PageSection>
 
             <PageSection

@@ -11,6 +11,7 @@ function makeProps(overrides: Partial<SettingsPageProps> = {}): SettingsPageProp
     panelSettings: {
       httpPublicUrl: "http://localhost:8080",
       grpcPublicEndpoint: "localhost:8443",
+      passwordMinLength: 12,
     },
     appearanceSettings: {
       theme: "system",

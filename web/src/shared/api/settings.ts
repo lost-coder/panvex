@@ -20,6 +20,7 @@ export type PanelSettingsResponse = {
   tls_key_file: string;
   runtime_source: "legacy" | "config_file";
   runtime_config_path: string;
+  password_min_length: number;
   updated_at_unix: number;
   restart: {
     supported: boolean;
@@ -78,6 +79,7 @@ export const settingsApi = {
   updatePanelSettings: (payload: {
     http_public_url: string;
     grpc_public_endpoint: string;
+    password_min_length: number;
   }) =>
     api<PanelSettingsResponse>(
       `${apiBasePath}/settings/panel`,

@@ -21,6 +21,7 @@ export const panelSettingsResponseSchema = z.object({
   tls_key_file: z.string(),
   runtime_source: z.enum(["legacy", "config_file"]),
   runtime_config_path: z.string(),
+  password_min_length: z.number().int().min(8).max(128),
   updated_at_unix: z.number().int(),
   restart: z.object({
     supported: z.boolean(),

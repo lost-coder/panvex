@@ -4,6 +4,7 @@ export interface SettingsPageProps {
   panelSettings: {
     httpPublicUrl: string;
     grpcPublicEndpoint: string;
+    passwordMinLength: number;
   };
   appearanceSettings: {
     theme: "system" | "light" | "dark";

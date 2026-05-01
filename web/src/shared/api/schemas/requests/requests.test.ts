@@ -232,13 +232,44 @@ describe("updateAppearanceSettingsRequestSchema", () => {
 });
 
 describe("updatePanelSettingsRequestSchema", () => {
-  it("accepts empty strings (cleared values)", () => {
+  it("accepts empty strings (cleared values) with valid password_min_length", () => {
     expect(
       updatePanelSettingsRequestSchema.parse({
         http_public_url: "",
         grpc_public_endpoint: "",
+        password_min_length: 12,
       }),
-    ).toEqual({ http_public_url: "", grpc_public_endpoint: "" });
+    ).toEqual({ http_public_url: "", grpc_public_endpoint: "", password_min_length: 12 });
+  });
+
+  it("rejects password_min_length below 8", () => {
+    expect(() =>
+      updatePanelSettingsRequestSchema.parse({
+        http_public_url: "",
+        grpc_public_endpoint: "",
+        password_min_length: 4,
+      }),
+    ).toThrow();
+  });
+
+  it("rejects password_min_length above 128", () => {
+    expect(() =>
+      updatePanelSettingsRequestSchema.parse({
+        http_public_url: "",
+        grpc_public_endpoint: "",
+        password_min_length: 256,
+      }),
+    ).toThrow();
+  });
+
+  it("rejects non-integer password_min_length", () => {
+    expect(() =>
+      updatePanelSettingsRequestSchema.parse({
+        http_public_url: "",
+        grpc_public_endpoint: "",
+        password_min_length: 12.5,
+      }),
+    ).toThrow();
   });
 });
 

@@ -79,7 +79,8 @@
   "updatePanelSettingsRequest": {
     "full": {
       "http_public_url": "https://panel.example.com",
-      "grpc_public_endpoint": "grpc.example.com:8443"
+      "grpc_public_endpoint": "grpc.example.com:8443",
+      "password_min_length": 12
     }
   },
   "panelUpdateRequest": {

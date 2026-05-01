@@ -13,6 +13,7 @@ export function transformSettings(
     panelSettings: {
       httpPublicUrl: panel.http_public_url,
       grpcPublicEndpoint: panel.grpc_public_endpoint,
+      passwordMinLength: panel.password_min_length,
     },
     appearanceSettings: {
       theme: appearance.theme,
