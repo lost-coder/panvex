@@ -39,6 +39,11 @@ type AgentCertificateRecoveryGrant struct {
 	RevokedAt sql.NullTime
 }
 
+type AgentFallbackState struct {
+	AgentID       string
+	EnteredAtUnix int64
+}
+
 type AgentRevocation struct {
 	AgentID       string
 	RevokedAt     time.Time
