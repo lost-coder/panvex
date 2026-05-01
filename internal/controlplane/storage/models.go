@@ -61,6 +61,15 @@ type AgentRevocationRecord struct {
 	CertExpiresAt time.Time
 }
 
+// AgentFallbackStateRecord persists when an agent first entered ME→Direct
+// fallback. Cleared when MERuntimeReady returns to true. EnteredAt is the
+// stable origin used to compute fallback duration for severity bucketing
+// even across control-plane restarts.
+type AgentFallbackStateRecord struct {
+	AgentID   string
+	EnteredAt time.Time
+}
+
 // UserAppearanceRecord stores one user's persisted appearance preferences.
 type UserAppearanceRecord struct {
 	UserID    string

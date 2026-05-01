@@ -379,6 +379,19 @@ type AgentRevocationStore interface {
 	DeleteExpiredAgentRevocations(ctx context.Context, before time.Time) (int64, error)
 }
 
+// AgentFallbackStateStore persists per-agent ME→Direct fallback windows.
+// A row exists exactly while the agent is currently in fallback: it is
+// inserted when MERuntimeReady first flips to false and deleted when it
+// returns to true. The persisted EnteredAt is the source of truth for
+// fallback-duration severity classification across panel restarts.
+// See AgentFallbackStateRecord in models.go.
+type AgentFallbackStateStore interface {
+	PutAgentFallbackState(ctx context.Context, rec AgentFallbackStateRecord) error
+	DeleteAgentFallbackState(ctx context.Context, agentID string) error
+	GetAgentFallbackState(ctx context.Context, agentID string) (AgentFallbackStateRecord, error)
+	ListAgentFallbackState(ctx context.Context) ([]AgentFallbackStateRecord, error)
+}
+
 // TxFn is the callback invoked by Store.Transact. The tx argument
 // implements the full Store interface so that existing methods compose
 // without duplication — see P2-ARCH-01.
@@ -399,6 +412,7 @@ type Store interface {
 	ConsumedTotpStore
 	LoginLockoutStore
 	AgentRevocationStore
+	AgentFallbackStateStore
 	FleetStore
 	JobStore
 	AuditStore
