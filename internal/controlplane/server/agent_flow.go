@@ -282,11 +282,16 @@ func (s *Server) commitInstancesLocked(agentID string, instances []Instance) {
 }
 
 // applyFallbackStateTransitionLocked classifies the agent's operating mode
-// from runtime flags and updates the in-memory fallbackEnteredAt map. On a
-// fresh transition into ModeFallback it stamps the entered-at timestamp and
-// queues a put to agent_fallback_state via the batch writer; on transition
-// out of fallback it clears the entry and queues a delete. Idempotent across
-// repeated heartbeats — only the first fallback heartbeat enqueues a write.
+// from runtime flags and updates the in-memory fallbackEnteredAt map. The
+// 30-min escalation timer tracks ME-pool downtime (the underlying outage),
+// not the agent's me2dc_fallback_enabled flag, which can flap independently
+// while the ME pool is still down. The mode→action table is therefore:
+//
+//	ModeFallback: stamp+enqueue Put on first entry; idempotent on repeat.
+//	ModeMeDown:   keep any existing timestamp (ME is still down — flag flap
+//	              alone must not reset the escalation timer). No enqueue.
+//	ModeME:       ME pool is healthy again — clear timestamp + enqueue Delete.
+//	ModeDirect:   fallback is no longer relevant — clear timestamp + Delete.
 //
 // Caller must hold s.mu.
 func (s *Server) applyFallbackStateTransitionLocked(agent Agent) {
@@ -305,7 +310,11 @@ func (s *Server) applyFallbackStateTransitionLocked(agent Agent) {
 				s.batchWriter.EnqueueFallbackPut(agent.ID, now)
 			}
 		}
-	default:
+	case controltelemetry.ModeMeDown:
+		// ME is still down. Operator may have flipped the fallback flag off,
+		// but the underlying outage continues — keep the original entered-at
+		// so severity escalation crosses the 30-min boundary on time.
+	case controltelemetry.ModeME, controltelemetry.ModeDirect:
 		if hadPrev {
 			delete(s.fallbackEnteredAt, agent.ID)
 			if s.batchWriter != nil {

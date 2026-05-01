@@ -168,6 +168,15 @@ func severityDirect(in SeverityInput) (severity, reason string) {
 // failure with a fallback suffix so the attention-list keeps fallback
 // context visible. ≥30 min duration escalates baseline to critical with a
 // two-part reason.
+//
+// Rank-collapse note: the 30-min boundary primarily upgrades a "warn"
+// baseline (e.g. ok/warn direct) to "critical". When directSev is already
+// "critical" (e.g. all upstreams down) the rank stays "critical" on both
+// sides of the boundary — only the reason changes from
+// "<directReason> (on ME→Direct fallback)" to
+// "ME pool down, fallback active — <directReason> (on ME→Direct fallback)".
+// This is intentional: a critical-direct condition is already at max
+// severity; the boundary just adds the ME-pool context to the reason.
 func severityFallback(in SeverityInput) (severity, reason string) {
 	directSev, directReason := severityDirect(in)
 	baselineSev := maxSeverity(directSev, "warn")
