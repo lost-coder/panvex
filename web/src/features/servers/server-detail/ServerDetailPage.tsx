@@ -12,6 +12,7 @@ import type { ServerDetailPageProps, ServerDcData } from "@/shared/api/types-pag
 import { useRelativeTime } from "./useRelativeTime";
 import { ServerActionsDropdown } from "./ServerActionsDropdown";
 import { classifyMode } from "./classifyMode";
+import { useFallbackEscalation } from "./useFallbackEscalation";
 import { RelativeTimeBadge } from "./components/RelativeTimeBadge";
 import { ServerHero } from "./components/ServerHero";
 import { MobileLayout } from "./components/MobileLayout";
@@ -116,20 +117,10 @@ export function ServerDetailPage({
     me2dcFallbackEnabled: server.me2dcFallbackEnabled,
   });
 
-  const fallback = useMemo(() => {
-    if (mode !== "fallback") {
-      return { active: false, durationSeconds: 0, escalated: false, enteredAtUnix: null };
-    }
-    const enteredAtUnix = server.fallbackEnteredAtUnix ?? null;
-    const baseSeconds = enteredAtUnix ?? Math.floor(Date.now() / 1000);
-    const durationSeconds = Math.max(0, Math.floor(Date.now() / 1000) - baseSeconds);
-    return {
-      active: true,
-      durationSeconds,
-      escalated: durationSeconds >= 30 * 60,
-      enteredAtUnix,
-    };
-  }, [mode, server.fallbackEnteredAtUnix]);
+  // useFallbackEscalation handles the 30-min escalation boundary via a
+  // setTimeout so the badge flips from "warn" to "critical" even when the
+  // page sits idle without a server re-fetch. See the hook's doc comment.
+  const fallback = useFallbackEscalation(mode, server.fallbackEnteredAtUnix);
 
   // Mobile subtitle — same status sentence the desktop hero uses, plus
   // compact meta (version + uptime + optional config reload count).
