@@ -497,10 +497,24 @@ func agentRuntimeFromSnapshot(snapshot *gatewayrpc.RuntimeSnapshot, observedAt t
 
 	var upstreamRows []*gatewayrpc.RuntimeUpstreamRowSnapshot
 	var healthyTotal, configuredTotal int32
+	var (
+		failRatePct5m        float64
+		failRateKnown        bool
+		connectAttemptTotal  uint64
+		connectSuccessTotal  uint64
+		connectFailTotal     uint64
+		connectFailfastTotal uint64
+	)
 	if snapshot.Upstreams != nil {
 		upstreamRows = snapshot.Upstreams.Rows
 		healthyTotal = snapshot.Upstreams.HealthyTotal
 		configuredTotal = snapshot.Upstreams.ConfiguredTotal
+		failRatePct5m = snapshot.Upstreams.FailRatePct_5M
+		failRateKnown = snapshot.Upstreams.FailRateKnown
+		connectAttemptTotal = snapshot.Upstreams.ConnectAttemptTotal
+		connectSuccessTotal = snapshot.Upstreams.ConnectSuccessTotal
+		connectFailTotal = snapshot.Upstreams.ConnectFailTotal
+		connectFailfastTotal = snapshot.Upstreams.ConnectFailfastTotal
 	}
 	upstreams := make([]RuntimeUpstream, 0, len(upstreamRows))
 	for _, upstream := range upstreamRows {
@@ -553,6 +567,12 @@ func agentRuntimeFromSnapshot(snapshot *gatewayrpc.RuntimeSnapshot, observedAt t
 		DCCoveragePct:             coveragePct,
 		HealthyUpstreams:          int(healthyTotal),
 		TotalUpstreams:            int(configuredTotal),
+		FailRatePct5m:             failRatePct5m,
+		FailRateKnown:             failRateKnown,
+		ConnectAttemptTotal:       connectAttemptTotal,
+		ConnectSuccessTotal:       connectSuccessTotal,
+		ConnectFailTotal:          connectFailTotal,
+		ConnectFailfastTotal:      connectFailfastTotal,
 		DCs:                       dcs,
 		Upstreams:                 upstreams,
 		RecentEvents:              recentEvents,
