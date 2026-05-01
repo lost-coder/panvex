@@ -57,6 +57,15 @@ func ParseMetricsSnapshot(text string) MetricsSnapshot {
 
 // tryParseUpstreamCounter sets the matching field on result.UpstreamCounters
 // when line is one of the four upstream connect counters and returns true.
+//
+// A malformed value (ParseUint fails) is deliberately tolerated: the field
+// stays at its previous zero/value and the next scrape that produces a
+// well-formed line will recover. This mirrors the user-metric and uptime
+// branches above and keeps the parser tolerant of partial Telemt output.
+// See TestParseMetricsSnapshotIgnoresMalformedUpstreamCounter for the
+// behavioural contract. There is no logger plumbed into this function;
+// adding one just to flag a transient malformed line would be more noise
+// than signal.
 func tryParseUpstreamCounter(line string, result *MetricsSnapshot) bool {
 	type binding struct {
 		prefix string
