@@ -218,11 +218,19 @@ function ServerListView({
             key={s.id}
             name={s.name}
             status={s.status}
-            health={100}
+            mode={classifyMode({
+              useMiddleProxy: s.useMiddleProxy,
+              meRuntimeReady: s.meRuntimeReady,
+              me2dcFallbackEnabled: s.me2dcFallbackEnabled,
+            })}
+            healthyUpstreams={s.healthyUpstreams}
+            totalUpstreams={s.totalUpstreams}
+            severity={s.severity}
             cpu={s.cpuPct}
             mem={s.memPct}
             clients={s.connections}
             region="Global"
+            idle={s.connections === 0}
             onClick={() => onServerClick?.(s.id)}
           />
         ))}

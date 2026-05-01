@@ -60,6 +60,10 @@ describe("ServersPage", () => {
       severity: "ok",
     });
     render(<ServersPage {...makeProps({ servers: [directServer] })} />);
-    expect(screen.getByText(/Direct 3\/3/i)).toBeInTheDocument();
+    // Mobile (NodeCard) and desktop (DataTable) layouts both render the
+    // badge — jsdom evaluates both branches regardless of CSS media
+    // queries, so we assert at least one match instead of expecting
+    // exactly one element.
+    expect(screen.getAllByText(/Direct 3\/3/i).length).toBeGreaterThan(0);
   });
 });
