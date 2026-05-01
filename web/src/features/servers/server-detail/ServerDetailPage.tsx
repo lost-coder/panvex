@@ -117,10 +117,18 @@ export function ServerDetailPage({
   });
 
   const fallback = useMemo(() => {
-    if (mode !== "fallback") return { active: false, durationSeconds: 0, escalated: false };
-    const enteredAt = server.fallbackEnteredAtUnix ?? Math.floor(Date.now() / 1000);
-    const durationSeconds = Math.max(0, Math.floor(Date.now() / 1000) - enteredAt);
-    return { active: true, durationSeconds, escalated: durationSeconds >= 30 * 60 };
+    if (mode !== "fallback") {
+      return { active: false, durationSeconds: 0, escalated: false, enteredAtUnix: null };
+    }
+    const enteredAtUnix = server.fallbackEnteredAtUnix ?? null;
+    const baseSeconds = enteredAtUnix ?? Math.floor(Date.now() / 1000);
+    const durationSeconds = Math.max(0, Math.floor(Date.now() / 1000) - baseSeconds);
+    return {
+      active: true,
+      durationSeconds,
+      escalated: durationSeconds >= 30 * 60,
+      enteredAtUnix,
+    };
   }, [mode, server.fallbackEnteredAtUnix]);
 
   // Mobile subtitle — same status sentence the desktop hero uses, plus

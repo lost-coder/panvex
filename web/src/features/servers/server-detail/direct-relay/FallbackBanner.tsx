@@ -1,14 +1,34 @@
+import { useEffect, useState } from "react";
+
 import { cn } from "@/ui/lib/cn";
 
 export interface FallbackBannerProps {
   durationSeconds: number;
   escalated: boolean;
+  enteredAtUnix?: number | null;
 }
+
+const TICK_MS = 30_000;
 
 export function FallbackBanner({
   durationSeconds,
   escalated,
+  enteredAtUnix = null,
 }: Readonly<FallbackBannerProps>) {
+  const [liveDurationSeconds, setLiveDurationSeconds] =
+    useState(durationSeconds);
+
+  useEffect(() => {
+    setLiveDurationSeconds(durationSeconds);
+    if (enteredAtUnix == null) return;
+    const id = window.setInterval(() => {
+      setLiveDurationSeconds(
+        Math.max(0, Math.floor(Date.now() / 1000) - enteredAtUnix),
+      );
+    }, TICK_MS);
+    return () => window.clearInterval(id);
+  }, [durationSeconds, enteredAtUnix]);
+
   const severity = escalated ? "critical" : "warn";
   const headline = escalated
     ? "ME pool down — fallback active"
@@ -29,7 +49,7 @@ export function FallbackBanner({
     >
       <strong>{headline}</strong>
       <p className="mt-1 text-fg">
-        {body} Active for {Math.round(durationSeconds / 60)} min.
+        {body} Active for {Math.round(liveDurationSeconds / 60)} min.
       </p>
     </div>
   );

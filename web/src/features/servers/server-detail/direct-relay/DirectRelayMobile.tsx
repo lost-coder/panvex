@@ -12,7 +12,12 @@ export interface DirectRelayMobileProps {
   server: ServerDetailPageProps["server"];
   initState: ServerDetailPageProps["initState"];
   metricsChart: ServerDetailPageProps["metricsChart"];
-  fallback: { active: boolean; durationSeconds: number; escalated: boolean };
+  fallback: {
+    active: boolean;
+    durationSeconds: number;
+    escalated: boolean;
+    enteredAtUnix: number | null;
+  };
 }
 
 // Direct-mode mobile layout. Same widgets as the desktop but stacked
@@ -35,6 +40,7 @@ export function DirectRelayMobile(props: Readonly<DirectRelayMobileProps>) {
         <FallbackBanner
           durationSeconds={fallback.durationSeconds}
           escalated={fallback.escalated}
+          enteredAtUnix={fallback.enteredAtUnix}
         />
       )}
       <UpstreamHealthCard

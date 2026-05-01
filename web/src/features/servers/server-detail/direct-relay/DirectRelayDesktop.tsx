@@ -15,7 +15,12 @@ export interface DirectRelayDesktopProps {
   initState: ServerDetailPageProps["initState"];
   alertItems: AlertItem[];
   metricsChart: ServerDetailPageProps["metricsChart"];
-  fallback: { active: boolean; durationSeconds: number; escalated: boolean };
+  fallback: {
+    active: boolean;
+    durationSeconds: number;
+    escalated: boolean;
+    enteredAtUnix: number | null;
+  };
 }
 
 // Direct-mode desktop layout.
@@ -48,6 +53,7 @@ export function DirectRelayDesktop({
         <FallbackBanner
           durationSeconds={fallback.durationSeconds}
           escalated={fallback.escalated}
+          enteredAtUnix={fallback.enteredAtUnix}
         />
       )}
 

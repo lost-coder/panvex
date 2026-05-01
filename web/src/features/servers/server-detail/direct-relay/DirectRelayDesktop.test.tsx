@@ -13,7 +13,7 @@ describe("DirectRelayDesktop", () => {
         initState={undefined}
         alertItems={[]}
         metricsChart={undefined}
-        fallback={{ active: false, durationSeconds: 0, escalated: false }}
+        fallback={{ active: false, durationSeconds: 0, escalated: false, enteredAtUnix: null }}
       />,
     );
     expect(screen.getByText(/Upstream health/i)).toBeInTheDocument();
@@ -26,7 +26,7 @@ describe("DirectRelayDesktop", () => {
         initState={undefined}
         alertItems={[]}
         metricsChart={undefined}
-        fallback={{ active: true, durationSeconds: 300, escalated: false }}
+        fallback={{ active: true, durationSeconds: 300, escalated: false, enteredAtUnix: 1_700_000_000 }}
       />,
     );
     expect(screen.getByText(/running on direct fallback/i)).toBeInTheDocument();
