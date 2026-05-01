@@ -229,7 +229,7 @@ func runtimeEventSeverity(event RuntimeEvent) string {
 	case strings.Contains(text, "warn"), strings.Contains(text, "degrad"), strings.Contains(text, "timeout"):
 		return "warn"
 	default:
-		return "good"
+		return "ok"
 	}
 }
 
