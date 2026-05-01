@@ -88,6 +88,12 @@ type AgentRuntime struct {
 	DCCoveragePct             float64           `json:"dc_coverage_pct"`
 	HealthyUpstreams          int               `json:"healthy_upstreams"`
 	TotalUpstreams            int               `json:"total_upstreams"`
+	FailRatePct5m             float64           `json:"fail_rate_pct_5m"`
+	FailRateKnown             bool              `json:"fail_rate_known"`
+	ConnectAttemptTotal       uint64            `json:"connect_attempt_total"`
+	ConnectSuccessTotal       uint64            `json:"connect_success_total"`
+	ConnectFailTotal          uint64            `json:"connect_fail_total"`
+	ConnectFailfastTotal      uint64            `json:"connect_failfast_total"`
 	DCs                       []RuntimeDC       `json:"dcs"`
 	Upstreams                 []RuntimeUpstream `json:"upstreams"`
 	RecentEvents              []RuntimeEvent    `json:"recent_events"`
