@@ -277,6 +277,15 @@ func runRuntimeReconnectLoop(cfg *runtimeFlags, credentialsState *agentstate.Cre
 			tr.mu.Unlock()
 		}
 
+		// TODO(listen-cert-renewal): renewRuntimeCredentialsIfNeeded dials the
+		// panel via NewDialTransport to renew the cert. In listen mode the
+		// agent has no outbound route — this call will fail every reconnect
+		// once the cert enters its refresh window, burning the attempt
+		// counter and logging "certificate refresh failed" before each
+		// listen-mode reconnect. The companion TODO in the inner
+		// runConnectionMainLoop timer branch covers the in-stream path; this
+		// outer pre-connection call needs the same fix (skip in listen mode
+		// or move renewal to a separate panel-driven flow).
 		refreshCtx, cancelRefresh := context.WithTimeout(context.Background(), certificateRefreshTimeout)
 		refreshed, err := renewRuntimeCredentialsIfNeeded(refreshCtx, cfg.stateFile, cfg.gatewayAddr, cfg.gatewayServerName, *credentialsState, time.Now())
 		cancelRefresh()
