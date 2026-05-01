@@ -463,7 +463,13 @@ func telemetryInitializationWatchForAgent(agent Agent, now, cooldownExpiresAt ti
 	}
 }
 
-func (s *Server) telemetrySeverityAndReason(agent Agent, presenceState presence.State, freshness telemetryFreshnessResponse) (string, string) {
+// telemetrySeverityAndReason classifies an agent for the dashboard. The
+// fallback entered-at timestamp must be provided by the caller (zero =
+// not in fallback) so this function takes no locks of its own — every
+// caller already holds s.mu.RLock for the duration of the snapshot pass
+// and sync.RWMutex is not reentrant (a queued writer would deadlock the
+// second RLock).
+func (s *Server) telemetrySeverityAndReason(agent Agent, presenceState presence.State, freshness telemetryFreshnessResponse, fallbackEnteredAt time.Time, now time.Time) (string, string) {
 	in := controltelemetry.SeverityInput{
 		PresenceState:           presenceState,
 		ReadOnly:                agent.ReadOnly,
@@ -482,8 +488,8 @@ func (s *Server) telemetrySeverityAndReason(agent Agent, presenceState presence.
 		UpstreamFailRatePct5m: agent.Runtime.FailRatePct5m,
 		UpstreamFailRateKnown: agent.Runtime.FailRateKnown,
 	}
-	if entered, ok := s.lookupFallbackEntered(agent.ID); ok {
-		in.FallbackActiveDuration = time.Since(entered)
+	if !fallbackEnteredAt.IsZero() {
+		in.FallbackActiveDuration = now.Sub(fallbackEnteredAt)
 	}
 	return controltelemetry.SeverityAndReason(in, controltelemetry.Freshness{
 		State:          freshness.State,
@@ -491,20 +497,34 @@ func (s *Server) telemetrySeverityAndReason(agent Agent, presenceState presence.
 	})
 }
 
-// lookupFallbackEntered returns the cached entered_at for an agent and ok=true
-// when fallback is currently active. Read-only; takes the read lock.
-func (s *Server) lookupFallbackEntered(agentID string) (time.Time, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+// lookupFallbackEnteredLocked returns the cached entered_at for an agent
+// and ok=true when fallback is currently active. Read-only; the caller
+// MUST already hold s.mu.RLock (or s.mu.Lock). sync.RWMutex is not
+// reentrant — taking the read lock here while a caller higher up the
+// stack already holds it risks deadlock when a writer is queued.
+func (s *Server) lookupFallbackEnteredLocked(agentID string) (time.Time, bool) {
 	t, ok := s.fallbackEnteredAt[agentID]
 	return t, ok
 }
 
+// telemetrySummaryForAgent builds the per-agent dashboard summary. The
+// caller MUST already hold s.mu.RLock — both the fallbackEnteredAt
+// lookup and the severity classification rely on lock-free reads of
+// state owned by s.mu.
 func (s *Server) telemetrySummaryForAgent(agent Agent, presenceState presence.State, now, boostExpiresAt time.Time) telemetryServerSummary {
 	agent.PresenceState = string(presenceState)
 	agent.Runtime = normalizeAgentRuntime(agent.Runtime)
+	fallbackEnteredAt, fallbackActive := s.lookupFallbackEnteredLocked(agent.ID)
+	if fallbackActive {
+		entered := fallbackEnteredAt.Unix()
+		agent.Runtime.FallbackEnteredAtUnix = &entered
+	}
 	freshness := telemetryFreshnessForRuntime(agent.Runtime, now)
-	severity, reason := s.telemetrySeverityAndReason(agent, presenceState, freshness)
+	var fallbackForSeverity time.Time
+	if fallbackActive {
+		fallbackForSeverity = fallbackEnteredAt
+	}
+	severity, reason := s.telemetrySeverityAndReason(agent, presenceState, freshness, fallbackForSeverity, now)
 	return telemetryServerSummary{
 		Agent:            agent,
 		Severity:         severity,

@@ -293,10 +293,23 @@ func (s *Server) handleTelemetryServerDetail() http.HandlerFunc {
 		agentID := chi.URLParam(r, "id")
 		now := s.now()
 
+		// Build the summary under s.mu.RLock so telemetrySummaryForAgent's
+		// fallbackEnteredAt lookup stays lock-free (sync.RWMutex is not
+		// reentrant — re-acquiring RLock here would deadlock if a writer
+		// were queued).
 		s.mu.RLock()
 		agent, ok := s.agents[agentID]
-		boostExpiresAt := s.detailBoosts[agentID]
-		initializationCooldownExpiresAt := s.initializationWatchCooldowns[agentID]
+		var (
+			summary                         telemetryServerSummary
+			initializationCooldownExpiresAt time.Time
+			summaryAgent                    Agent
+		)
+		if ok {
+			boostExpiresAt := s.detailBoosts[agentID]
+			initializationCooldownExpiresAt = s.initializationWatchCooldowns[agentID]
+			summary = s.telemetrySummaryForAgent(agent, s.presence.Evaluate(agentID, now), now, boostExpiresAt)
+			summaryAgent = summary.Agent
+		}
 		s.mu.RUnlock()
 		if !ok {
 			writeError(w, http.StatusNotFound, msgServerNotFound)
@@ -336,8 +349,8 @@ func (s *Server) handleTelemetryServerDetail() http.HandlerFunc {
 		}
 
 		writeJSON(w, http.StatusOK, telemetryServerDetailResponse{
-			Server:              s.telemetrySummaryForAgent(agent, s.presence.Evaluate(agentID, now), now, boostExpiresAt),
-			InitializationWatch: telemetryInitializationWatchForAgent(agent, now, initializationCooldownExpiresAt),
+			Server:              summary,
+			InitializationWatch: telemetryInitializationWatchForAgent(summaryAgent, now, initializationCooldownExpiresAt),
 			Diagnostics:         diagnostics,
 			SecurityInventory:   securityInventory,
 		})

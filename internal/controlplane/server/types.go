@@ -94,6 +94,12 @@ type AgentRuntime struct {
 	ConnectSuccessTotal       uint64            `json:"connect_success_total"`
 	ConnectFailTotal          uint64            `json:"connect_fail_total"`
 	ConnectFailfastTotal      uint64            `json:"connect_failfast_total"`
+	// FallbackEnteredAtUnix is the unix timestamp the panel saw this agent
+	// transition into ME->DC fallback. Absent (omitempty) when the agent is
+	// not currently in fallback. Sourced from the in-memory
+	// fallbackEnteredAt map; surfaced so the dashboard can render a live
+	// "fallback for Xm" timer without a second round-trip.
+	FallbackEnteredAtUnix     *int64            `json:"fallback_entered_at_unix,omitempty"`
 	DCs                       []RuntimeDC       `json:"dcs"`
 	Upstreams                 []RuntimeUpstream `json:"upstreams"`
 	RecentEvents              []RuntimeEvent    `json:"recent_events"`
