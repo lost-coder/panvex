@@ -236,6 +236,7 @@ type PanelSetting struct {
 	TlsKeyFile         string
 	UpdatedAt          time.Time
 	RetentionJson      string
+	PasswordMinLength  int32
 }
 
 type Session struct {

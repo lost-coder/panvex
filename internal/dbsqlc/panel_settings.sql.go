@@ -12,7 +12,7 @@ import (
 
 const getPanelSettings = `-- name: GetPanelSettings :one
 
-SELECT http_public_url, grpc_public_endpoint, updated_at
+SELECT http_public_url, grpc_public_endpoint, password_min_length, updated_at
 FROM panel_settings
 WHERE scope = $1
 `
@@ -20,23 +20,30 @@ WHERE scope = $1
 type GetPanelSettingsRow struct {
 	HttpPublicUrl      string
 	GrpcPublicEndpoint string
+	PasswordMinLength  int32
 	UpdatedAt          time.Time
 }
 
-// R-Q-03: panel_settings — operator-tunable HTTP/gRPC public URLs.
+// R-Q-03: panel_settings — operator-tunable HTTP/gRPC public URLs and security policy.
 func (q *Queries) GetPanelSettings(ctx context.Context, scope string) (GetPanelSettingsRow, error) {
 	row := q.db.QueryRowContext(ctx, getPanelSettings, scope)
 	var i GetPanelSettingsRow
-	err := row.Scan(&i.HttpPublicUrl, &i.GrpcPublicEndpoint, &i.UpdatedAt)
+	err := row.Scan(
+		&i.HttpPublicUrl,
+		&i.GrpcPublicEndpoint,
+		&i.PasswordMinLength,
+		&i.UpdatedAt,
+	)
 	return i, err
 }
 
 const upsertPanelSettings = `-- name: UpsertPanelSettings :exec
-INSERT INTO panel_settings (scope, http_public_url, grpc_public_endpoint, updated_at)
-VALUES ($1, $2, $3, $4)
+INSERT INTO panel_settings (scope, http_public_url, grpc_public_endpoint, password_min_length, updated_at)
+VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (scope) DO UPDATE
 SET http_public_url = EXCLUDED.http_public_url,
     grpc_public_endpoint = EXCLUDED.grpc_public_endpoint,
+    password_min_length = EXCLUDED.password_min_length,
     updated_at = EXCLUDED.updated_at
 `
 
@@ -44,6 +51,7 @@ type UpsertPanelSettingsParams struct {
 	Scope              string
 	HttpPublicUrl      string
 	GrpcPublicEndpoint string
+	PasswordMinLength  int32
 	UpdatedAt          time.Time
 }
 
@@ -52,6 +60,7 @@ func (q *Queries) UpsertPanelSettings(ctx context.Context, arg UpsertPanelSettin
 		arg.Scope,
 		arg.HttpPublicUrl,
 		arg.GrpcPublicEndpoint,
+		arg.PasswordMinLength,
 		arg.UpdatedAt,
 	)
 	return err
