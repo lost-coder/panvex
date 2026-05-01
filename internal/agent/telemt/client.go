@@ -67,6 +67,14 @@ type Client struct {
 	slowFetchedAt     time.Time
 	slowData          slowRuntimeState
 	hasSlowData       bool
+
+	// upstreamRate tracks 5-minute upstream connect fail-rate from the
+	// Prometheus counters scraped during FetchClientUsageFromMetrics.
+	// upstreamCountersMu guards latestUpstreamCounters / hasUpstreamCounters.
+	upstreamRate           *UpstreamRateTracker
+	upstreamCountersMu     sync.RWMutex
+	latestUpstreamCounters UpstreamCounters
+	hasUpstreamCounters    bool
 }
 
 // InvalidateSlowDataCache forces the next runtime snapshot to refetch slow diagnostics.
@@ -282,6 +290,14 @@ type RuntimeUpstreamSummary struct {
 	DirectTotal     int
 	SOCKS5Total     int
 	Rows            []RuntimeUpstream
+
+	// Direct-mode signals — populated from UpstreamRateTracker on each fetch.
+	FailRatePct5m        float64
+	FailRateKnown        bool
+	ConnectAttemptTotal  uint64
+	ConnectSuccessTotal  uint64
+	ConnectFailTotal     uint64
+	ConnectFailfastTotal uint64
 }
 
 // RuntimeUpstream carries one operator-facing upstream row.
@@ -372,6 +388,7 @@ func NewClient(config Config, httpClient *http.Client) (*Client, error) {
 		logger:            slog.Default(),
 		systemLoadSampler: collectLocalSystemLoad,
 		slowDataTTL:       defaultSlowDataTTL,
+		upstreamRate:      NewUpstreamRateTracker(32, 30*time.Second, 6*time.Minute),
 	}, nil
 }
 
@@ -611,6 +628,21 @@ func (c *Client) fetchDCs(ctx context.Context, markPartial func(string, error)) 
 // assembleRuntimeState projects collected raw payloads into a
 // RuntimeState. Pure transformation, no I/O.
 func (c *Client) assembleRuntimeState(raw fetchRuntimeStateRaw, partial bool) RuntimeState {
+	upstreams := raw.slowData.Upstreams
+	if c.upstreamRate != nil {
+		pct, known := c.upstreamRate.Rate()
+		upstreams.FailRatePct5m = pct
+		upstreams.FailRateKnown = known
+	}
+	c.upstreamCountersMu.RLock()
+	if c.hasUpstreamCounters {
+		upstreams.ConnectAttemptTotal = c.latestUpstreamCounters.Attempt
+		upstreams.ConnectSuccessTotal = c.latestUpstreamCounters.Success
+		upstreams.ConnectFailTotal = c.latestUpstreamCounters.Fail
+		upstreams.ConnectFailfastTotal = c.latestUpstreamCounters.Failfast
+	}
+	c.upstreamCountersMu.RUnlock()
+
 	return RuntimeState{
 		Version:        raw.slowData.Version,
 		ReadOnly:       raw.posture.ReadOnly || raw.posture.APIReadOnly,
@@ -643,7 +675,7 @@ func (c *Client) assembleRuntimeState(raw fetchRuntimeStateRaw, partial bool) Ru
 			ConfiguredUsers:        raw.summary.ConfiguredUsers,
 		},
 		DCs:               raw.dcs,
-		Upstreams:         raw.slowData.Upstreams,
+		Upstreams:         upstreams,
 		RecentEvents:      raw.slowData.RecentEvents,
 		Diagnostics:       raw.slowData.Diagnostics,
 		SecurityInventory: raw.slowData.SecurityInventory,
@@ -1020,6 +1052,13 @@ func (c *Client) FetchClientUsageFromMetrics(ctx context.Context) (ClientUsageMe
 	}
 
 	parsed := ParseMetricsSnapshot(string(body))
+	if c.upstreamRate != nil {
+		c.upstreamRate.Push(time.Now(), parsed.UpstreamCounters)
+	}
+	c.upstreamCountersMu.Lock()
+	c.latestUpstreamCounters = parsed.UpstreamCounters
+	c.hasUpstreamCounters = true
+	c.upstreamCountersMu.Unlock()
 	c.logger.Debug(logTelemtAPICall, "path", "/metrics", "user_count", len(parsed.Users))
 	result := make([]ClientUsage, 0, len(parsed.Users))
 	for username, m := range parsed.Users {
