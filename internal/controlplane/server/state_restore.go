@@ -34,6 +34,7 @@ func (s *Server) restoreStoredState() error {
 		s.restoreMetrics,
 		s.restoreAuditEvents,
 		s.restoreStoredTelemetry,
+		s.restoreFallbackState,
 	} {
 		if err := step(); err != nil {
 			return err
@@ -101,6 +102,24 @@ func (s *Server) restoreMetrics() error {
 	for _, record := range metrics {
 		s.metrics = append(s.metrics, metricSnapshotFromRecord(record))
 	}
+	return nil
+}
+
+// restoreFallbackState rehydrates the in-memory fallback-entered-at map from
+// agent_fallback_state. Failures are logged but non-fatal: the worst case is
+// that the next snapshot re-enters fallback with a fresh timestamp, which
+// only affects the duration-bucket boundary used by severity escalation.
+func (s *Server) restoreFallbackState() error {
+	records, err := s.store.ListAgentFallbackState(context.Background())
+	if err != nil {
+		s.logger.Warn("hydrate fallback state failed", "err", err)
+		return nil
+	}
+	s.mu.Lock()
+	for _, r := range records {
+		s.fallbackEnteredAt[r.AgentID] = r.EnteredAt.UTC()
+	}
+	s.mu.Unlock()
 	return nil
 }
 

@@ -10,6 +10,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	controltelemetry "github.com/lost-coder/panvex/internal/controlplane/telemetry"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -280,6 +281,40 @@ func (s *Server) commitInstancesLocked(agentID string, instances []Instance) {
 	}
 }
 
+// applyFallbackStateTransitionLocked classifies the agent's operating mode
+// from runtime flags and updates the in-memory fallbackEnteredAt map. On a
+// fresh transition into ModeFallback it stamps the entered-at timestamp and
+// queues a put to agent_fallback_state via the batch writer; on transition
+// out of fallback it clears the entry and queues a delete. Idempotent across
+// repeated heartbeats — only the first fallback heartbeat enqueues a write.
+//
+// Caller must hold s.mu.
+func (s *Server) applyFallbackStateTransitionLocked(agent Agent) {
+	mode := controltelemetry.ClassifyMode(controltelemetry.SeverityInput{
+		UseMiddleProxy:       agent.Runtime.UseMiddleProxy,
+		MERuntimeReady:       agent.Runtime.MERuntimeReady,
+		ME2DCFallbackEnabled: agent.Runtime.ME2DCFallbackEnabled,
+	})
+	_, hadPrev := s.fallbackEnteredAt[agent.ID]
+	switch mode {
+	case controltelemetry.ModeFallback:
+		if !hadPrev {
+			now := time.Now().UTC()
+			s.fallbackEnteredAt[agent.ID] = now
+			if s.batchWriter != nil {
+				s.batchWriter.EnqueueFallbackPut(agent.ID, now)
+			}
+		}
+	default:
+		if hadPrev {
+			delete(s.fallbackEnteredAt, agent.ID)
+			if s.batchWriter != nil {
+				s.batchWriter.EnqueueFallbackDelete(agent.ID)
+			}
+		}
+	}
+}
+
 // commitClientSnapshotsLocked applies any client usage / IP snapshot data
 // under s.clientsMu. Caller must hold s.mu.
 func (s *Server) commitClientSnapshotsLocked(ctx context.Context, snapshot agentSnapshot) {
@@ -442,6 +477,7 @@ func (s *Server) applyAgentSnapshotWithContext(ctx context.Context, snapshot age
 	s.commitInstancesLocked(snapshot.AgentID, instances)
 	s.commitClientSnapshotsLocked(ctx, snapshot)
 	metricSnapshot := s.commitMetricSnapshotLocked(snapshot)
+	s.applyFallbackStateTransitionLocked(agent)
 	s.mu.Unlock()
 
 	// Enqueue all DB writes asynchronously via the batch writer. No DB I/O
