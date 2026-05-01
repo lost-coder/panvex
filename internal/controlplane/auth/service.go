@@ -42,7 +42,7 @@ var (
 	ErrTotpSetupNotFound = errors.New("totp setup not found")
 	// ErrPasswordTooWeak reports a password that is shorter than the
 	// minimum length, empty, or exceeds the length cap.
-	ErrPasswordTooWeak = errors.New("password must be between 6 and 1024 characters")
+	ErrPasswordTooWeak = errors.New("password does not meet the minimum length policy")
 	// ErrSessionStoreUnavailable reports that the persistent session store
 	// rejected a write during login. P2-SEC-07: the in-memory session alone
 	// is not acceptable — it would silently disappear on the next control-
@@ -81,31 +81,6 @@ const (
 	// the clock forward; with it we still capture steady activity at
 	// minute-level resolution, which is enough to drive idle-expiry.
 	sessionTouchThrottle = 1 * time.Minute
-	maxPasswordLength    = 1024
-	// minPasswordLength is the minimum acceptable password length.
-	//
-	// DELIBERATELY RELAXED to 6 characters with no character-class rules
-	// (no "must contain uppercase/digit/symbol"). This is an explicit
-	// product choice — do NOT tighten it back during a security audit
-	// without consulting the maintainer.
-	//
-	// Rationale:
-	//   - NIST SP 800-63B v3 (current) explicitly removes composition
-	//     rules and recommends against them: they push users toward
-	//     predictable patterns (Password1!, Password2!, ...) without
-	//     adding real entropy.
-	//   - Online brute force is mitigated by the per-account login
-	//     lockout (see lockouts.go) and equal-time hash comparison, not
-	//     by the minimum length. Argon2id makes offline guesses on a
-	//     stolen hash expensive regardless of length.
-	//   - Operators who care about strong passwords will set them; a
-	//     12-char floor with complexity rules drove operators to
-	//     password-manager-hostile patterns and added friction without
-	//     a measurable security gain in this deployment.
-	//
-	// 6 is the minimum that still rules out trivial typos / single-word
-	// secrets. Increase only with maintainer agreement.
-	minPasswordLength = 6
 )
 
 // sessionTTL is retained as the public compatibility alias for
@@ -113,17 +88,6 @@ const (
 // cleanupExpiredSessionsLocked, tests) continue to read the same value;
 // the new idle-timeout is enforced in addition, not instead.
 const sessionTTL = sessionMaxLifetime
-
-// validatePassword enforces the minimum length floor and a sanity cap so
-// pathological inputs cannot stall the password hasher. There are no
-// character-class checks by design — see minPasswordLength for the full
-// rationale and the policy contract for future audits.
-func validatePassword(password string) error {
-	if len(password) < minPasswordLength || len(password) > maxPasswordLength {
-		return ErrPasswordTooWeak
-	}
-	return nil
-}
 
 // BootstrapInput describes the initial user record to create.
 type BootstrapInput struct {
@@ -205,7 +169,11 @@ type Service struct {
 	sessionStore       storage.SessionStore
 	consumedTotpStore  storage.ConsumedTotpStore
 	vault              *secretvault.Vault
-	now                func() time.Time
+	// passwordPolicy is the operator-configured minimum length, mirrored
+	// from panel_settings. Zero means "use the compiled-in default".
+	// Guarded by s.mu like other mutable Service state.
+	passwordPolicy int32
+	now            func() time.Time
 	// startedAt records when the service was created. During the first 90
 	// seconds after startup the TOTP verifier skips the past (-30s) window
 	// to prevent replay of codes that may have been consumed before a restart.
@@ -228,6 +196,24 @@ func (s *Service) SetConsumedTotpStore(store storage.ConsumedTotpStore) {
 	s.mu.Lock()
 	s.consumedTotpStore = store
 	s.mu.Unlock()
+}
+
+// SetPasswordPolicy mirrors the operator policy from panel_settings into
+// the service. Called at startup (after PanelSettings load) and on every
+// admin-driven update of the policy. (S-01)
+func (s *Service) SetPasswordPolicy(minLength int32) {
+	s.mu.Lock()
+	s.passwordPolicy = minLength
+	s.mu.Unlock()
+}
+
+// passwordMinLength returns the operator-configured minimum length, or
+// zero if no policy has been loaded yet. Callers feed this into
+// effectivePolicy, which maps zero to the compiled-in default.
+func (s *Service) passwordMinLength() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return int(s.passwordPolicy)
 }
 
 // persistConsumedTotpAsync mirrors a freshly consumed (user_id, code)
@@ -440,7 +426,7 @@ func (s *Service) BootstrapUser(input BootstrapInput, now time.Time) (User, stri
 
 // BootstrapUserWithContext is the ctx-aware variant of BootstrapUser.
 func (s *Service) BootstrapUserWithContext(ctx context.Context, input BootstrapInput, now time.Time) (User, string, error) {
-	if err := validatePassword(input.Password); err != nil {
+	if err := validatePassword(input.Password, s.passwordMinLength()); err != nil {
 		return User{}, "", err
 	}
 
@@ -894,56 +880,15 @@ func (s *Service) ResetTotpWithContext(ctx context.Context, userID string) (User
 	return user, nil
 }
 
-// HashPassword derives an Argon2id hash suitable for local credential storage.
+// HashPassword delegates to the package-level pure function. Retained as
+// a method for API compatibility with existing call-sites.
 func (s *Service) HashPassword(password string) (string, error) {
-	salt := make([]byte, 16)
-	if _, err := rand.Read(salt); err != nil {
-		return "", err
-	}
-
-	// Q3.U-S-16: lift Argon2id parameters above the OWASP minimum.
-	// 4 iters / 96 MiB / 2 threads is the recommended cost for
-	// high-trust password hashing in 2026. VerifyPassword infers the
-	// caller's parameters from the stored hash, so existing 3/64 MiB
-	// hashes keep working until the user next rotates the password.
-	derived := argon2.IDKey([]byte(password), salt, 4, 96*1024, 2, 32)
-	return fmt.Sprintf(
-		"argon2id$%s$%s",
-		base64.RawStdEncoding.EncodeToString(salt),
-		base64.RawStdEncoding.EncodeToString(derived),
-	), nil
+	return hashPassword(password)
 }
 
-// VerifyPassword validates a plaintext password against an Argon2id hash.
+// VerifyPassword delegates to the package-level pure function.
 func (s *Service) VerifyPassword(hash, password string) error {
-	parts := strings.Split(hash, "$")
-	if len(parts) != 3 || parts[0] != "argon2id" {
-		return ErrInvalidCredentials
-	}
-
-	salt, err := base64.RawStdEncoding.DecodeString(parts[1])
-	if err != nil {
-		return err
-	}
-
-	expected, err := base64.RawStdEncoding.DecodeString(parts[2])
-	if err != nil {
-		return err
-	}
-
-	// Q3.U-S-16: try the current parameters first, then the legacy
-	// 3/64 MiB tuple so any pre-bump hashes still authenticate. New
-	// rotations land on the strong parameters via HashPassword.
-	derived := argon2.IDKey([]byte(password), salt, 4, 96*1024, 2, uint32(len(expected)))
-	if subtle.ConstantTimeCompare(expected, derived) == 1 {
-		return nil
-	}
-	legacy := argon2.IDKey([]byte(password), salt, 3, 64*1024, 2, uint32(len(expected)))
-	if subtle.ConstantTimeCompare(expected, legacy) != 1 {
-		return ErrInvalidCredentials
-	}
-
-	return nil
+	return verifyPassword(hash, password)
 }
 
 // GenerateTotpCode derives a standard 30-second TOTP code from the stored secret.

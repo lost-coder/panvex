@@ -131,7 +131,7 @@ func (s *Service) applyOptionalPasswordChange(user *User, newPassword string) er
 	if strings.TrimSpace(newPassword) == "" {
 		return nil
 	}
-	if err := validatePassword(newPassword); err != nil {
+	if err := validatePassword(newPassword, s.passwordMinLength()); err != nil {
 		return err
 	}
 	hash, err := s.HashPassword(newPassword)
