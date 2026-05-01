@@ -463,8 +463,8 @@ func telemetryInitializationWatchForAgent(agent Agent, now, cooldownExpiresAt ti
 	}
 }
 
-func telemetrySeverityAndReason(agent Agent, presenceState presence.State, freshness telemetryFreshnessResponse) (string, string) {
-	return controltelemetry.SeverityAndReason(controltelemetry.SeverityInput{
+func (s *Server) telemetrySeverityAndReason(agent Agent, presenceState presence.State, freshness telemetryFreshnessResponse) (string, string) {
+	in := controltelemetry.SeverityInput{
 		PresenceState:           presenceState,
 		ReadOnly:                agent.ReadOnly,
 		AcceptingNewConnections: agent.Runtime.AcceptingNewConnections,
@@ -474,17 +474,37 @@ func telemetrySeverityAndReason(agent Agent, presenceState presence.State, fresh
 		HealthyUpstreams:        agent.Runtime.HealthyUpstreams,
 		TotalUpstreams:          agent.Runtime.TotalUpstreams,
 		AgentReported:           !agent.Runtime.UpdatedAt.IsZero(),
-	}, controltelemetry.Freshness{
+
+		UseMiddleProxy:        agent.Runtime.UseMiddleProxy,
+		MERuntimeReady:        agent.Runtime.MERuntimeReady,
+		ME2DCFallbackEnabled:  agent.Runtime.ME2DCFallbackEnabled,
+		UptimeSeconds:         agent.Runtime.UptimeSeconds,
+		UpstreamFailRatePct5m: agent.Runtime.FailRatePct5m,
+		UpstreamFailRateKnown: agent.Runtime.FailRateKnown,
+	}
+	if entered, ok := s.lookupFallbackEntered(agent.ID); ok {
+		in.FallbackActiveDuration = time.Since(entered)
+	}
+	return controltelemetry.SeverityAndReason(in, controltelemetry.Freshness{
 		State:          freshness.State,
 		ObservedAtUnix: freshness.ObservedAtUnix,
 	})
 }
 
-func telemetrySummaryForAgent(agent Agent, presenceState presence.State, now, boostExpiresAt time.Time) telemetryServerSummary {
+// lookupFallbackEntered returns the cached entered_at for an agent and ok=true
+// when fallback is currently active. Read-only; takes the read lock.
+func (s *Server) lookupFallbackEntered(agentID string) (time.Time, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	t, ok := s.fallbackEnteredAt[agentID]
+	return t, ok
+}
+
+func (s *Server) telemetrySummaryForAgent(agent Agent, presenceState presence.State, now, boostExpiresAt time.Time) telemetryServerSummary {
 	agent.PresenceState = string(presenceState)
 	agent.Runtime = normalizeAgentRuntime(agent.Runtime)
 	freshness := telemetryFreshnessForRuntime(agent.Runtime, now)
-	severity, reason := telemetrySeverityAndReason(agent, presenceState, freshness)
+	severity, reason := s.telemetrySeverityAndReason(agent, presenceState, freshness)
 	return telemetryServerSummary{
 		Agent:            agent,
 		Severity:         severity,

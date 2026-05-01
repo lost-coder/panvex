@@ -63,7 +63,7 @@ func (s *Server) collectTelemetryDashboardSnapshot(scope FleetScopeAccess, now t
 	}
 	for _, agent := range scopedAgents {
 		boostExpiresAt := s.detailBoosts[agent.ID]
-		summary := telemetrySummaryForAgent(agent, s.presence.Evaluate(agent.ID, now), now, boostExpiresAt)
+		summary := s.telemetrySummaryForAgent(agent, s.presence.Evaluate(agent.ID, now), now, boostExpiresAt)
 		snapshot.items = append(snapshot.items, summary)
 		mode := summary.Agent.Runtime.TransportMode
 		if mode == "" {
@@ -269,7 +269,7 @@ func (s *Server) handleTelemetryServers() http.HandlerFunc {
 			if !scope.IsAllowed(agent.FleetGroupID) {
 				continue
 			}
-			items = append(items, telemetrySummaryForAgent(agent, s.presence.Evaluate(agent.ID, now), now, s.detailBoosts[agent.ID]))
+			items = append(items, s.telemetrySummaryForAgent(agent, s.presence.Evaluate(agent.ID, now), now, s.detailBoosts[agent.ID]))
 		}
 		s.mu.RUnlock()
 
@@ -336,7 +336,7 @@ func (s *Server) handleTelemetryServerDetail() http.HandlerFunc {
 		}
 
 		writeJSON(w, http.StatusOK, telemetryServerDetailResponse{
-			Server:              telemetrySummaryForAgent(agent, s.presence.Evaluate(agentID, now), now, boostExpiresAt),
+			Server:              s.telemetrySummaryForAgent(agent, s.presence.Evaluate(agentID, now), now, boostExpiresAt),
 			InitializationWatch: telemetryInitializationWatchForAgent(agent, now, initializationCooldownExpiresAt),
 			Diagnostics:         diagnostics,
 			SecurityInventory:   securityInventory,
