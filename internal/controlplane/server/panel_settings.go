@@ -42,6 +42,7 @@ type PanelRuntime struct {
 type PanelSettings struct {
 	HTTPPublicURL      string `json:"http_public_url"`
 	GRPCPublicEndpoint string `json:"grpc_public_endpoint"`
+	PasswordMinLength  int32  `json:"password_min_length"`
 	UpdatedAt          int64  `json:"updated_at_unix"`
 }
 
@@ -170,6 +171,7 @@ func panelSettingsToRecord(settings PanelSettings) storage.PanelSettingsRecord {
 	return storage.PanelSettingsRecord{
 		HTTPPublicURL:      settings.HTTPPublicURL,
 		GRPCPublicEndpoint: settings.GRPCPublicEndpoint,
+		PasswordMinLength:  settings.PasswordMinLength,
 		UpdatedAt:          time.Unix(settings.UpdatedAt, 0).UTC(),
 	}
 }
@@ -178,6 +180,7 @@ func panelSettingsFromRecord(record storage.PanelSettingsRecord) PanelSettings {
 	return PanelSettings{
 		HTTPPublicURL:      record.HTTPPublicURL,
 		GRPCPublicEndpoint: record.GRPCPublicEndpoint,
+		PasswordMinLength:  record.PasswordMinLength,
 		UpdatedAt:          record.UpdatedAt.UTC().Unix(),
 	}
 }

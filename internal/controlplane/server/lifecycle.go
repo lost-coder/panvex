@@ -142,6 +142,10 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 	s.trySetStartupErr(s.restoreStoredClients)
 	s.trySetStartupErr(s.restoreStoredDiscoveredClients)
 	s.trySetStartupErr(s.restoreStoredPanelSettings)
+	// SetPasswordPolicy is called unconditionally: even if restoreStoredPanelSettings
+	// failed and s.panelSettings is zero-valued, auth.effectivePolicy maps zero to
+	// auth.DefaultPasswordMinLength (S-01). Do not move this call above the restore.
+	s.auth.SetPasswordPolicy(s.panelSettings.PasswordMinLength)
 	s.trySetStartupErr(s.restoreUpdateSettings)
 	s.trySetStartupErr(s.restoreRetentionSettings)
 

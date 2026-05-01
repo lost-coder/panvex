@@ -20,6 +20,7 @@ type panelSettingsResponse struct {
 	TLSKeyFile         string             `json:"tls_key_file"`
 	RuntimeSource      string             `json:"runtime_source"`
 	RuntimeConfigPath  string             `json:"runtime_config_path"`
+	PasswordMinLength  int32              `json:"password_min_length"`
 	UpdatedAtUnix      int64              `json:"updated_at_unix"`
 	Restart            panelRestartStatus `json:"restart"`
 }
@@ -27,6 +28,7 @@ type panelSettingsResponse struct {
 type updatePanelSettingsRequest struct {
 	HTTPPublicURL      string `json:"http_public_url"`
 	GRPCPublicEndpoint string `json:"grpc_public_endpoint"`
+	PasswordMinLength  int32  `json:"password_min_length"`
 }
 
 const (
@@ -103,9 +105,22 @@ func (s *Server) handlePutPanelSettings() http.HandlerFunc {
 			return
 		}
 
+		if request.PasswordMinLength != 0 && (request.PasswordMinLength < 8 || request.PasswordMinLength > 128) {
+			writeError(w, http.StatusBadRequest, "password_min_length must be between 8 and 128")
+			return
+		}
+
+		// Preserve the existing password_min_length when the caller omits it (zero value).
+		effectivePasswordMinLength := request.PasswordMinLength
+		if effectivePasswordMinLength == 0 {
+			existing := s.panelSettingsSnapshot()
+			effectivePasswordMinLength = existing.PasswordMinLength
+		}
+
 		settings := normalizePanelSettings(PanelSettings{
 			HTTPPublicURL:      request.HTTPPublicURL,
 			GRPCPublicEndpoint: request.GRPCPublicEndpoint,
+			PasswordMinLength:  effectivePasswordMinLength,
 			UpdatedAt:          s.now().UTC().Unix(),
 		})
 
@@ -121,9 +136,12 @@ func (s *Server) handlePutPanelSettings() http.HandlerFunc {
 		s.panelSettings = settings
 		s.settingsMu.Unlock()
 
+		s.auth.SetPasswordPolicy(settings.PasswordMinLength)
+
 		s.appendAuditWithContext(r.Context(), session.UserID, "settings.panel.update", "panel", map[string]any{
 			"http_public_url":      settings.HTTPPublicURL,
 			"grpc_public_endpoint": settings.GRPCPublicEndpoint,
+			"password_min_length":  settings.PasswordMinLength,
 		})
 
 		restart := s.panelRestartStatus()
@@ -165,6 +183,10 @@ func (s *Server) handleRestartPanel() http.HandlerFunc {
 }
 
 func panelSettingsResponseFromSettings(settings PanelSettings, runtime PanelRuntime, restart panelRestartStatus) panelSettingsResponse {
+	passwordMinLength := settings.PasswordMinLength
+	if passwordMinLength == 0 {
+		passwordMinLength = auth.DefaultPasswordMinLength
+	}
 	return panelSettingsResponse{
 		HTTPPublicURL:      settings.HTTPPublicURL,
 		HTTPRootPath:       runtime.HTTPRootPath,
@@ -176,6 +198,7 @@ func panelSettingsResponseFromSettings(settings PanelSettings, runtime PanelRunt
 		TLSKeyFile:         runtime.TLSKeyFile,
 		RuntimeSource:      runtime.ConfigSource,
 		RuntimeConfigPath:  runtime.ConfigPath,
+		PasswordMinLength:  passwordMinLength,
 		UpdatedAtUnix:      settings.UpdatedAt,
 		Restart:            restart,
 	}

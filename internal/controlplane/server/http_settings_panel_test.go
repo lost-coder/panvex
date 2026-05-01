@@ -574,3 +574,145 @@ func TestHTTPPanelRestartReturnsInternalErrorWhenRuntimeHookFails(t *testing.T) 
 		t.Fatalf("POST /api/settings/panel/restart status = %d, want %d", restartResponse.Code, http.StatusInternalServerError)
 	}
 }
+
+func TestPutPanelSettings_PersistsPasswordPolicy(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, time.May, 1, 12, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := New(Options{
+		LoginTimingFloor: -1,
+		Now:   func() time.Time { return now },
+		Store: store,
+		PanelRuntime: PanelRuntime{
+			HTTPListenAddress: ":8080",
+			GRPCListenAddress: ":8443",
+			TLSMode:           "proxy",
+			RestartSupported:  true,
+		},
+	})
+	defer server.Close()
+	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "admin",
+		Password: "Admin1password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser(admin) error = %v", err)
+	}
+
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "admin",
+		"password": "Admin1password",
+	}, nil)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login: code=%d", loginResponse.Code)
+	}
+	cookies := loginResponse.Result().Cookies()
+
+	rr := performJSONRequest(t, server, http.MethodPut, "/api/settings/panel", map[string]any{
+		"http_public_url":      "https://panel.example",
+		"grpc_public_endpoint": "agents.example:8443",
+		"password_min_length":  14,
+	}, cookies)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PUT /api/settings/panel: code=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	rr = performJSONRequest(t, server, http.MethodGet, "/api/settings/panel", nil, cookies)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("GET /api/settings/panel: code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var got struct {
+		PasswordMinLength int `json:"password_min_length"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.PasswordMinLength != 14 {
+		t.Fatalf("password_min_length = %d, want 14", got.PasswordMinLength)
+	}
+}
+
+func TestPutPanelSettings_RejectsBelowFloor(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, time.May, 1, 12, 1, 0, 0, time.UTC)
+	server := New(Options{
+		LoginTimingFloor: -1,
+		Now: func() time.Time { return now },
+		PanelRuntime: PanelRuntime{
+			HTTPListenAddress: ":8080",
+			GRPCListenAddress: ":8443",
+			TLSMode:           "proxy",
+			RestartSupported:  true,
+		},
+	})
+	defer server.Close()
+	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "admin",
+		Password: "Admin1password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser(admin) error = %v", err)
+	}
+
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "admin",
+		"password": "Admin1password",
+	}, nil)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login: code=%d", loginResponse.Code)
+	}
+
+	rr := performJSONRequest(t, server, http.MethodPut, "/api/settings/panel", map[string]any{
+		"http_public_url":      "https://panel.example",
+		"grpc_public_endpoint": "agents.example:8443",
+		"password_min_length":  4,
+	}, loginResponse.Result().Cookies())
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestPutPanelSettings_RejectsAboveCeiling(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, time.May, 1, 12, 2, 0, 0, time.UTC)
+	server := New(Options{
+		LoginTimingFloor: -1,
+		Now: func() time.Time { return now },
+		PanelRuntime: PanelRuntime{
+			HTTPListenAddress: ":8080",
+			GRPCListenAddress: ":8443",
+			TLSMode:           "proxy",
+			RestartSupported:  true,
+		},
+	})
+	defer server.Close()
+	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "admin",
+		Password: "Admin1password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser(admin) error = %v", err)
+	}
+
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "admin",
+		"password": "Admin1password",
+	}, nil)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login: code=%d", loginResponse.Code)
+	}
+
+	rr := performJSONRequest(t, server, http.MethodPut, "/api/settings/panel", map[string]any{
+		"http_public_url":      "https://panel.example",
+		"grpc_public_endpoint": "agents.example:8443",
+		"password_min_length":  256,
+	}, loginResponse.Result().Cookies())
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for above-ceiling, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
