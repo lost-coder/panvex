@@ -51,15 +51,6 @@ const upstreamEntrySchema = z.object({
   weight: z.number(),
   last_check_age_secs: z.number(),
   scopes: z.array(z.string()).optional(),
-  // Direct-mode panel fields (Phase 5). `.default(...)` keeps the panel
-  // backward-compatible with pre-Phase-3 agents that don't yet emit these
-  // counters: zod fills zeros instead of failing the parse.
-  fail_rate_pct_5m: z.number().default(0),
-  fail_rate_known: z.boolean().default(false),
-  connect_attempt_total: z.number().default(0),
-  connect_success_total: z.number().default(0),
-  connect_fail_total: z.number().default(0),
-  connect_failfast_total: z.number().default(0),
 });
 
 const systemLoadSchema = z.object({
@@ -112,6 +103,20 @@ export const agentRuntimeSchema = z.object({
   dc_coverage_pct: z.number(),
   healthy_upstreams: z.number(),
   total_upstreams: z.number(),
+  // Direct-mode panel fields (Phase 5). `.default(...)` keeps the panel
+  // backward-compatible with pre-Phase-3 agents that don't yet emit these
+  // counters at the runtime root: zod fills zeros instead of failing the
+  // parse so a stale agent doesn't blow up server detail fetches.
+  fail_rate_pct_5m: z.number().default(0),
+  fail_rate_known: z.boolean().default(false),
+  connect_attempt_total: z.number().default(0),
+  connect_success_total: z.number().default(0),
+  connect_fail_total: z.number().default(0),
+  connect_failfast_total: z.number().default(0),
+  // Unix timestamp when the panel observed this agent enter ME->DC
+  // fallback. Absent when not in fallback. Surfaced so the dashboard can
+  // render a live "fallback for Xm" timer.
+  fallback_entered_at_unix: z.number().nullable().optional(),
   reroute_active: z.boolean().optional(),
   route_mode: z.string().optional(),
   me2dc_fast_enabled: z.boolean().optional(),

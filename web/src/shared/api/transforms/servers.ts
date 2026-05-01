@@ -325,6 +325,32 @@ export function transformServerDetail(
     dc: [],
   }));
 
+  // Direct-mode panel summary. Backend emits the 5m fail-rate + lifetime
+  // connect counters at the runtime root (Phase 5). We project them into
+  // a ServerUpstreamSummaryData so the DirectRelay layouts can render
+  // without falling back to "unknown" for every value.
+  const healthyTotal = runtime?.healthy_upstreams ?? upstreams.filter((u) => u.healthy).length;
+  const configuredTotal = runtime?.total_upstreams ?? upstreams.length;
+  const directTotal = upstreams.filter((u) => u.routeKind === "direct").length;
+  const socks4Total = upstreams.filter((u) => u.routeKind === "socks4").length;
+  const socks5Total = upstreams.filter((u) => u.routeKind === "socks5").length;
+  const shadowsocksTotal = upstreams.filter((u) => u.routeKind === "shadowsocks").length;
+  const upstreamSummary: ServerDetailPageProps["server"]["upstreamSummary"] = {
+    configuredTotal,
+    healthyTotal,
+    unhealthyTotal: Math.max(0, configuredTotal - healthyTotal),
+    directTotal,
+    socks4Total,
+    socks5Total,
+    shadowsocksTotal,
+    failRatePct5m: runtime?.fail_rate_pct_5m ?? 0,
+    failRateKnown: runtime?.fail_rate_known ?? false,
+    connectAttemptTotal: runtime?.connect_attempt_total ?? 0,
+    connectSuccessTotal: runtime?.connect_success_total ?? 0,
+    connectFailTotal: runtime?.connect_fail_total ?? 0,
+    connectFailfastTotal: runtime?.connect_failfast_total ?? 0,
+  };
+
   const events: ServerDetailPageProps["server"]["events"] = [
     ...(runtime?.recent_events ?? []),
   ]
@@ -362,12 +388,13 @@ export function transformServerDetail(
   const useMiddleProxy = runtime?.use_middle_proxy ?? false;
   const meRuntimeReady = runtime?.me_runtime_ready ?? false;
   const me2dcFallbackEnabled = runtime?.me2dc_fallback_enabled ?? false;
-  // Phase 5: API does not yet surface the persisted transport_mode /
-  // fallback_entered_at_unix fields. Derive transportMode from
-  // use_middle_proxy (the agent flag the panel already has) and default
-  // fallbackEnteredAtUnix to null until the API exposes it.
+  // Phase 5: API surfaces fallback_entered_at_unix when the panel sees
+  // an agent in ME->DC fallback. transportMode stays derived from
+  // use_middle_proxy until the persisted agent.transport_mode field is
+  // wired into the AgentRuntime payload (cleanup follow-up).
   const transportMode: ServerDetailPageProps["server"]["transportMode"] =
     useMiddleProxy ? "middle_proxy" : "direct";
+  const fallbackEnteredAtUnix = runtime?.fallback_entered_at_unix ?? null;
 
   return {
     id: agent?.id ?? "",
@@ -380,13 +407,14 @@ export function transformServerDetail(
     summary,
     mePool,
     upstreams,
+    upstreamSummary,
     events,
     eventsDroppedTotal: 0,
     useMiddleProxy,
     meRuntimeReady,
     me2dcFallbackEnabled,
     transportMode,
-    fallbackEnteredAtUnix: null,
+    fallbackEnteredAtUnix,
   };
 }
 
