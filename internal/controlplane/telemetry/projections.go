@@ -6,6 +6,30 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/presence"
 )
 
+// ModeKind classifies the operating mode of a Telemt node from runtime flags.
+type ModeKind int
+
+const (
+	ModeME ModeKind = iota
+	ModeDirect
+	ModeFallback
+	ModeMeDown
+)
+
+func (m ModeKind) String() string {
+	switch m {
+	case ModeME:
+		return "me"
+	case ModeDirect:
+		return "direct"
+	case ModeFallback:
+		return "fallback"
+	case ModeMeDown:
+		return "me_down"
+	}
+	return "unknown"
+}
+
 // SeverityInput describes the operator-facing runtime state used for severity decisions.
 type SeverityInput struct {
 	PresenceState           presence.State
@@ -20,6 +44,31 @@ type SeverityInput struct {
 	// snapshot. Distinguishes "zero coverage because all DCs are dead" (critical)
 	// from "zero coverage because we have no data yet" (neutral default).
 	AgentReported bool
+
+	UseMiddleProxy       bool
+	MERuntimeReady       bool
+	ME2DCFallbackEnabled bool
+	UptimeSeconds        float64
+
+	UpstreamFailRatePct5m float64
+	UpstreamFailRateKnown bool
+
+	FallbackActiveDuration time.Duration
+}
+
+// ClassifyMode derives the operating mode from runtime flags. Used by the
+// severity projector and by the dashboard to pick the right detail layout.
+func ClassifyMode(in SeverityInput) ModeKind {
+	if !in.UseMiddleProxy {
+		return ModeDirect
+	}
+	if in.MERuntimeReady {
+		return ModeME
+	}
+	if in.ME2DCFallbackEnabled {
+		return ModeFallback
+	}
+	return ModeMeDown
 }
 
 // FreshnessForObservedAt normalizes runtime freshness from an observed timestamp.

@@ -89,3 +89,33 @@ func TestSeverityAndReasonDCCoverageMatrix(t *testing.T) {
 		})
 	}
 }
+
+func TestClassifyMode(t *testing.T) {
+	cases := []struct {
+		name       string
+		useME      bool
+		meReady    bool
+		fallbackOn bool
+		want       ModeKind
+	}{
+		{"direct_by_config", false, false, false, ModeDirect},
+		{"direct_by_config_meflag_ignored_when_disabled", false, true, true, ModeDirect},
+		{"me_normal", true, true, false, ModeME},
+		{"me_normal_with_fallback_flag", true, true, true, ModeME},
+		{"fallback_active", true, false, true, ModeFallback},
+		{"me_down_no_fallback", true, false, false, ModeMeDown},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			in := SeverityInput{
+				UseMiddleProxy:       tc.useME,
+				MERuntimeReady:       tc.meReady,
+				ME2DCFallbackEnabled: tc.fallbackOn,
+			}
+			got := ClassifyMode(in)
+			if got != tc.want {
+				t.Fatalf("ClassifyMode = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
