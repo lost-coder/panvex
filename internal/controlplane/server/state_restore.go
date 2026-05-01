@@ -34,6 +34,7 @@ func (s *Server) restoreStoredState() error {
 		s.restoreMetrics,
 		s.restoreAuditEvents,
 		s.restoreStoredTelemetry,
+		s.restoreFallbackState,
 	} {
 		if err := step(); err != nil {
 			return err
@@ -101,6 +102,37 @@ func (s *Server) restoreMetrics() error {
 	for _, record := range metrics {
 		s.metrics = append(s.metrics, metricSnapshotFromRecord(record))
 	}
+	return nil
+}
+
+// restoreFallbackState rehydrates the in-memory fallback-entered-at map from
+// agent_fallback_state. Failures are logged but non-fatal: the worst case is
+// that the next snapshot re-enters fallback with a fresh timestamp, which
+// only affects the duration-bucket boundary used by severity escalation.
+//
+// Hydrate failures share the same alert key as runtime flush failures
+// (streamAlerts["fallback_state"] in batch_writer.go) so cold-start drift and
+// runtime flush drift land in one operator-paging rule.
+//
+// TODO: route this alert through the same emission pipeline as the batch
+// writer's streamAlerts (flushItem -> slog.Error with alert=...). Today the
+// server-startup logger has no metric/alert hook beyond slog, so we emit the
+// stable key inline; once a unified telemetry sink lands, swap the manual
+// "alert" attr for the shared helper.
+func (s *Server) restoreFallbackState() error {
+	records, err := s.store.ListAgentFallbackState(context.Background())
+	if err != nil {
+		s.logger.Error("hydrate fallback state failed",
+			"err", err,
+			"alert", streamAlerts["fallback_state"],
+		)
+		return nil
+	}
+	s.mu.Lock()
+	for _, r := range records {
+		s.fallbackEnteredAt[r.AgentID] = r.EnteredAt.UTC()
+	}
+	s.mu.Unlock()
 	return nil
 }
 

@@ -51,6 +51,7 @@ type memoryStore struct {
 	sessions                       map[string]storage.SessionRecord
 	loginLockouts                  map[string]storage.LoginLockoutRecord
 	agentRevocations               map[string]storage.AgentRevocationRecord
+	agentFallbackState             map[string]storage.AgentFallbackStateRecord
 	panelSettings                  *storage.PanelSettingsRecord
 	retentionSettings              *storage.RetentionSettings
 	updateSettings                 json.RawMessage
@@ -89,6 +90,7 @@ func newMemoryStore() *memoryStore {
 		sessions:                       make(map[string]storage.SessionRecord),
 		loginLockouts:                  make(map[string]storage.LoginLockoutRecord),
 		agentRevocations:               make(map[string]storage.AgentRevocationRecord),
+		agentFallbackState:             make(map[string]storage.AgentFallbackStateRecord),
 		integrationProviders:           make(map[string]storage.IntegrationProviderRecord),
 		fleetGroupIntegrations:         make(map[string]storage.FleetGroupIntegrationRecord),
 	}
@@ -493,9 +495,11 @@ func (s *memoryStore) DeleteAgent(_ context.Context, agentID string) error {
 	}
 	delete(s.agents, agentID)
 	// Mirror the FK ON DELETE CASCADE that the real backends apply
-	// (sqlite migration 0028, postgres migrations 0022 + 0028) so the
-	// memory backend stays contract-compatible.
+	// (sqlite migration 0028, postgres migrations 0022 + 0028, sqlite
+	// migration 0031 for agent_fallback_state) so the memory backend
+	// stays contract-compatible.
 	delete(s.agentCertificateRecoveryGrants, agentID)
+	delete(s.agentFallbackState, agentID)
 	for id, dc := range s.discoveredClients {
 		if dc.AgentID == agentID {
 			delete(s.discoveredClients, id)
@@ -1042,6 +1046,36 @@ func (s *memoryStore) RevokeAgentCertificateRecoveryGrant(_ context.Context, age
 	return grant, nil
 }
 
+func (s *memoryStore) PutAgentFallbackState(_ context.Context, rec storage.AgentFallbackStateRecord) error {
+	// Mirror INSERT ... ON CONFLICT DO NOTHING: first writer wins.
+	if _, ok := s.agentFallbackState[rec.AgentID]; ok {
+		return nil
+	}
+	s.agentFallbackState[rec.AgentID] = rec
+	return nil
+}
+
+func (s *memoryStore) DeleteAgentFallbackState(_ context.Context, agentID string) error {
+	delete(s.agentFallbackState, agentID)
+	return nil
+}
+
+func (s *memoryStore) GetAgentFallbackState(_ context.Context, agentID string) (storage.AgentFallbackStateRecord, error) {
+	rec, ok := s.agentFallbackState[agentID]
+	if !ok {
+		return storage.AgentFallbackStateRecord{}, storage.ErrNotFound
+	}
+	return rec, nil
+}
+
+func (s *memoryStore) ListAgentFallbackState(_ context.Context) ([]storage.AgentFallbackStateRecord, error) {
+	out := make([]storage.AgentFallbackStateRecord, 0, len(s.agentFallbackState))
+	for _, rec := range s.agentFallbackState {
+		out = append(out, rec)
+	}
+	return out, nil
+}
+
 func (s *memoryStore) PutDiscoveredClient(_ context.Context, record storage.DiscoveredClientRecord) error {
 	// Match UPSERT behavior: key by (agent_id, client_name).
 	for id, existing := range s.discoveredClients {
@@ -1356,6 +1390,7 @@ type memoryStoreSnapshot struct {
 	discoveredClients              map[string]storage.DiscoveredClientRecord
 	sessions                       map[string]storage.SessionRecord
 	agentRevocations               map[string]storage.AgentRevocationRecord
+	agentFallbackState             map[string]storage.AgentFallbackStateRecord
 	panelSettings                  *storage.PanelSettingsRecord
 	retentionSettings              *storage.RetentionSettings
 	updateSettings                 json.RawMessage
@@ -1413,6 +1448,7 @@ func (s *memoryStore) snapshot() memoryStoreSnapshot {
 		discoveredClients:              copyMap(s.discoveredClients),
 		sessions:                       copyMap(s.sessions),
 		agentRevocations:               copyMap(s.agentRevocations),
+		agentFallbackState:             copyMap(s.agentFallbackState),
 		updateSettings:                 append(json.RawMessage(nil), s.updateSettings...),
 		updateState:                    append(json.RawMessage(nil), s.updateState...),
 	}
@@ -1458,6 +1494,7 @@ func (s *memoryStore) restore(snap memoryStoreSnapshot) {
 	s.discoveredClients = snap.discoveredClients
 	s.sessions = snap.sessions
 	s.agentRevocations = snap.agentRevocations
+	s.agentFallbackState = snap.agentFallbackState
 	s.panelSettings = snap.panelSettings
 	s.retentionSettings = snap.retentionSettings
 	s.updateSettings = snap.updateSettings

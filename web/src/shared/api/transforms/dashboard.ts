@@ -19,10 +19,14 @@ function load2(v: number | undefined | null): number {
   return v ? Math.round((v ?? 0) * 100) / 100 : 0;
 }
 
-// Map API severity to UI Severity type
-function mapSeverity(s: "good" | "warn" | "bad"): "ok" | "warn" | "error" {
-  if (s === "good") return "ok";
-  if (s === "bad") return "error";
+// Map API severity to UI Severity type. Accepts both the legacy
+// vocabulary ("good"/"warn"/"bad") and the Phase-3 expanded vocabulary
+// ("ok"/"critical") so the panel can render either flavour.
+function mapSeverity(
+  s: "good" | "ok" | "warn" | "critical" | "bad",
+): "ok" | "warn" | "error" {
+  if (s === "good" || s === "ok") return "ok";
+  if (s === "bad" || s === "critical") return "error";
   return "warn";
 }
 

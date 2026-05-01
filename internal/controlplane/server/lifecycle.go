@@ -87,6 +87,7 @@ func newServerFromOptions(options Options, now func() time.Time, csrfSecret []by
 		agents:                       make(map[string]Agent),
 		detailBoosts:                 make(map[string]time.Time),
 		initializationWatchCooldowns: make(map[string]time.Time),
+		fallbackEnteredAt:            make(map[string]time.Time),
 		clients:                      make(map[string]managedClient),
 		clientAssignments:            make(map[string][]managedClientAssignment),
 		clientDeployments:            make(map[string]map[string]managedClientDeployment),

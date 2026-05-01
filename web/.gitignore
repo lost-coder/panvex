@@ -2,3 +2,8 @@
 # regenerated locally and uploaded from CI — never commit the report
 # directory.
 coverage/
+
+# Storybook static build output and Playwright run artefacts —
+# regenerated locally / in CI, never committed.
+storybook-static/
+test-results/

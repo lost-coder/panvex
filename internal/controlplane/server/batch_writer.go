@@ -154,6 +154,21 @@ type storeBatchWriter struct {
 	// retry/classify logic. Critical-stream alerts are emitted via
 	// streamAlerts[audit] so operators can page on persistent audit failures.
 	auditEvents *batchBuffer[storage.AuditEventRecord]
+	// fallbackState carries put/delete ops for agent_fallback_state. The
+	// authoritative in-memory copy lives on Server.fallbackEnteredAt; this
+	// buffer only persists transitions for restart durability.
+	fallbackState *batchBuffer[fallbackStateOp]
+}
+
+// fallbackStateOp is one queued mutation against agent_fallback_state. Either
+// a put (record entered_at when an agent transitions into ME→Direct fallback)
+// or a delete (clear when fallback ends). Persisted asynchronously by the
+// batch writer; the in-memory map on Server is the authoritative read source
+// during the flush window.
+type fallbackStateOp struct {
+	agentID   string
+	enteredAt time.Time
+	op        string // "put" or "delete"
 }
 
 // telemetryWriteUnit groups all per-agent telemetry writes for a single
@@ -204,6 +219,7 @@ func newStoreBatchWriter(store storage.Store, metrics batchMetricsSink, now func
 	w.clientIPs = newBatchBuffer(batchMaxSize, w.flushClientIPs)
 	w.telemetry = newBatchBuffer(batchMaxSize, w.flushTelemetry)
 	w.auditEvents = newBatchBuffer(batchMaxSize, w.flushAuditEvents)
+	w.fallbackState = newBatchBuffer(batchMaxSize, w.flushFallbackState)
 
 	return w
 }
@@ -276,6 +292,7 @@ func (w *storeBatchWriter) flushLoop() {
 		case <-w.clientIPs.signal:
 		case <-w.telemetry.signal:
 		case <-w.auditEvents.signal:
+		case <-w.fallbackState.signal:
 		}
 		// Any signal (including ticker) triggers a full drain of all buffers.
 		// This prevents signal coalescing from letting individual buffers grow
@@ -297,6 +314,7 @@ func (w *storeBatchWriter) observeQueueDepths() {
 	w.metrics.SetQueueDepth("client_ips", float64(w.clientIPs.Len()))
 	w.metrics.SetQueueDepth("telemetry", float64(w.telemetry.Len()))
 	w.metrics.SetQueueDepth("audit", float64(w.auditEvents.Len()))
+	w.metrics.SetQueueDepth("fallback_state", float64(w.fallbackState.Len()))
 }
 
 func (w *storeBatchWriter) drainAll(ctx context.Context) {
@@ -314,6 +332,7 @@ func (w *storeBatchWriter) drainAll(ctx context.Context) {
 	// not enforce cross-table FKs for audit — but it keeps logs readable
 	// when operators correlate rows by timestamp.
 	w.auditEvents.Drain(ctx)
+	w.fallbackState.Drain(ctx)
 }
 
 // classifyFlushError returns "transient" or "persistent" for an error produced
@@ -488,6 +507,14 @@ var streamAlerts = map[string]string{
 	// transient) emit slog.Error with alert=audit_persist_failed so
 	// operator paging rules can match a single stable key.
 	"audit": "audit_persist_failed",
+	// fallback_state is a CRITICAL stream too: a missed put/delete here
+	// silently drifts the in-memory fallbackEnteredAt map from the
+	// persisted row, which in turn drifts the 30-min severity boundary
+	// after a control-plane restart. Surface flush failures via the same
+	// alert-key channel so operators can page on a single stable key
+	// (cold-start hydrate failures in restoreFallbackState use the same
+	// key — see the TODO there).
+	"fallback_state": "fallback_state_persist_failed",
 }
 
 func (w *storeBatchWriter) flushItem(buffer string, logAttrs []any, op func() error) {
@@ -648,6 +675,54 @@ func (w *storeBatchWriter) flushAuditEvents(ctx context.Context, items []storage
 			return w.store.AppendAuditEvent(ctx, item)
 		})
 	}
+}
+
+// flushFallbackState persists queued put/delete ops against
+// agent_fallback_state. The Store exposes single-row Put/Delete only, so we
+// loop and route each op through flushItem to inherit the shared retry +
+// classification + metrics observations. The in-memory fallbackEnteredAt map
+// on Server is the read source — this buffer exists only for durability
+// across control-plane restarts.
+func (w *storeBatchWriter) flushFallbackState(ctx context.Context, items []fallbackStateOp) {
+	if len(items) == 0 {
+		return
+	}
+	slog.Debug(logBatchFlush, "domain", "fallback_state", "count", len(items))
+	for _, item := range items {
+		item := item
+		switch item.op {
+		case "put":
+			w.flushItem("fallback_state", []any{
+				"agent_id", item.agentID,
+				"op", "put",
+			}, func() error {
+				return w.store.PutAgentFallbackState(ctx, storage.AgentFallbackStateRecord{
+					AgentID:   item.agentID,
+					EnteredAt: item.enteredAt,
+				})
+			})
+		case "delete":
+			w.flushItem("fallback_state", []any{
+				"agent_id", item.agentID,
+				"op", "delete",
+			}, func() error {
+				return w.store.DeleteAgentFallbackState(ctx, item.agentID)
+			})
+		}
+	}
+}
+
+// EnqueueFallbackPut queues a put against agent_fallback_state for the given
+// agent and entered-at timestamp. Lock-free; safe to call under the server
+// state mutex.
+func (w *storeBatchWriter) EnqueueFallbackPut(agentID string, enteredAt time.Time) {
+	w.fallbackState.Enqueue(fallbackStateOp{agentID: agentID, enteredAt: enteredAt, op: "put"})
+}
+
+// EnqueueFallbackDelete queues a delete against agent_fallback_state for the
+// given agent. Lock-free; safe to call under the server state mutex.
+func (w *storeBatchWriter) EnqueueFallbackDelete(agentID string) {
+	w.fallbackState.Enqueue(fallbackStateOp{agentID: agentID, op: "delete"})
 }
 
 func (w *storeBatchWriter) flushTelemetry(ctx context.Context, items []telemetryWriteUnit) {

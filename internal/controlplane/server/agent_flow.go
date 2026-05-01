@@ -10,6 +10,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	controltelemetry "github.com/lost-coder/panvex/internal/controlplane/telemetry"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -280,6 +281,49 @@ func (s *Server) commitInstancesLocked(agentID string, instances []Instance) {
 	}
 }
 
+// applyFallbackStateTransitionLocked classifies the agent's operating mode
+// from runtime flags and updates the in-memory fallbackEnteredAt map. The
+// 30-min escalation timer tracks ME-pool downtime (the underlying outage),
+// not the agent's me2dc_fallback_enabled flag, which can flap independently
+// while the ME pool is still down. The mode→action table is therefore:
+//
+//	ModeFallback: stamp+enqueue Put on first entry; idempotent on repeat.
+//	ModeMeDown:   keep any existing timestamp (ME is still down — flag flap
+//	              alone must not reset the escalation timer). No enqueue.
+//	ModeME:       ME pool is healthy again — clear timestamp + enqueue Delete.
+//	ModeDirect:   fallback is no longer relevant — clear timestamp + Delete.
+//
+// Caller must hold s.mu.
+func (s *Server) applyFallbackStateTransitionLocked(agent Agent) {
+	mode := controltelemetry.ClassifyMode(controltelemetry.SeverityInput{
+		UseMiddleProxy:       agent.Runtime.UseMiddleProxy,
+		MERuntimeReady:       agent.Runtime.MERuntimeReady,
+		ME2DCFallbackEnabled: agent.Runtime.ME2DCFallbackEnabled,
+	})
+	_, hadPrev := s.fallbackEnteredAt[agent.ID]
+	switch mode {
+	case controltelemetry.ModeFallback:
+		if !hadPrev {
+			now := time.Now().UTC()
+			s.fallbackEnteredAt[agent.ID] = now
+			if s.batchWriter != nil {
+				s.batchWriter.EnqueueFallbackPut(agent.ID, now)
+			}
+		}
+	case controltelemetry.ModeMeDown:
+		// ME is still down. Operator may have flipped the fallback flag off,
+		// but the underlying outage continues — keep the original entered-at
+		// so severity escalation crosses the 30-min boundary on time.
+	case controltelemetry.ModeME, controltelemetry.ModeDirect:
+		if hadPrev {
+			delete(s.fallbackEnteredAt, agent.ID)
+			if s.batchWriter != nil {
+				s.batchWriter.EnqueueFallbackDelete(agent.ID)
+			}
+		}
+	}
+}
+
 // commitClientSnapshotsLocked applies any client usage / IP snapshot data
 // under s.clientsMu. Caller must hold s.mu.
 func (s *Server) commitClientSnapshotsLocked(ctx context.Context, snapshot agentSnapshot) {
@@ -442,6 +486,7 @@ func (s *Server) applyAgentSnapshotWithContext(ctx context.Context, snapshot age
 	s.commitInstancesLocked(snapshot.AgentID, instances)
 	s.commitClientSnapshotsLocked(ctx, snapshot)
 	metricSnapshot := s.commitMetricSnapshotLocked(snapshot)
+	s.applyFallbackStateTransitionLocked(agent)
 	s.mu.Unlock()
 
 	// Enqueue all DB writes asynchronously via the batch writer. No DB I/O
@@ -497,10 +542,24 @@ func agentRuntimeFromSnapshot(snapshot *gatewayrpc.RuntimeSnapshot, observedAt t
 
 	var upstreamRows []*gatewayrpc.RuntimeUpstreamRowSnapshot
 	var healthyTotal, configuredTotal int32
+	var (
+		failRatePct5m        float64
+		failRateKnown        bool
+		connectAttemptTotal  uint64
+		connectSuccessTotal  uint64
+		connectFailTotal     uint64
+		connectFailfastTotal uint64
+	)
 	if snapshot.Upstreams != nil {
 		upstreamRows = snapshot.Upstreams.Rows
 		healthyTotal = snapshot.Upstreams.HealthyTotal
 		configuredTotal = snapshot.Upstreams.ConfiguredTotal
+		failRatePct5m = snapshot.Upstreams.FailRatePct_5M
+		failRateKnown = snapshot.Upstreams.FailRateKnown
+		connectAttemptTotal = snapshot.Upstreams.ConnectAttemptTotal
+		connectSuccessTotal = snapshot.Upstreams.ConnectSuccessTotal
+		connectFailTotal = snapshot.Upstreams.ConnectFailTotal
+		connectFailfastTotal = snapshot.Upstreams.ConnectFailfastTotal
 	}
 	upstreams := make([]RuntimeUpstream, 0, len(upstreamRows))
 	for _, upstream := range upstreamRows {
@@ -553,6 +612,12 @@ func agentRuntimeFromSnapshot(snapshot *gatewayrpc.RuntimeSnapshot, observedAt t
 		DCCoveragePct:             coveragePct,
 		HealthyUpstreams:          int(healthyTotal),
 		TotalUpstreams:            int(configuredTotal),
+		FailRatePct5m:             failRatePct5m,
+		FailRateKnown:             failRateKnown,
+		ConnectAttemptTotal:       connectAttemptTotal,
+		ConnectSuccessTotal:       connectSuccessTotal,
+		ConnectFailTotal:          connectFailTotal,
+		ConnectFailfastTotal:      connectFailfastTotal,
 		DCs:                       dcs,
 		Upstreams:                 upstreams,
 		RecentEvents:              recentEvents,

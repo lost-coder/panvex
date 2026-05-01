@@ -38,6 +38,13 @@ export type AgentRuntime = {
   dc_coverage_pct: number;
   healthy_upstreams: number;
   total_upstreams: number;
+  fail_rate_pct_5m?: number | undefined;
+  fail_rate_known?: boolean | undefined;
+  connect_attempt_total?: number | undefined;
+  connect_success_total?: number | undefined;
+  connect_fail_total?: number | undefined;
+  connect_failfast_total?: number | undefined;
+  fallback_entered_at_unix?: number | null | undefined;
   reroute_active?: boolean | undefined;
   route_mode?: string | undefined;
   me2dc_fast_enabled?: boolean | undefined;

@@ -6,6 +6,30 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/presence"
 )
 
+// ModeKind classifies the operating mode of a Telemt node from runtime flags.
+type ModeKind int
+
+const (
+	ModeME ModeKind = iota
+	ModeDirect
+	ModeFallback
+	ModeMeDown
+)
+
+func (m ModeKind) String() string {
+	switch m {
+	case ModeME:
+		return "me"
+	case ModeDirect:
+		return "direct"
+	case ModeFallback:
+		return "fallback"
+	case ModeMeDown:
+		return "me_down"
+	}
+	return "unknown"
+}
+
 // SeverityInput describes the operator-facing runtime state used for severity decisions.
 type SeverityInput struct {
 	PresenceState           presence.State
@@ -20,6 +44,31 @@ type SeverityInput struct {
 	// snapshot. Distinguishes "zero coverage because all DCs are dead" (critical)
 	// from "zero coverage because we have no data yet" (neutral default).
 	AgentReported bool
+
+	UseMiddleProxy       bool
+	MERuntimeReady       bool
+	ME2DCFallbackEnabled bool
+	UptimeSeconds        float64
+
+	UpstreamFailRatePct5m float64
+	UpstreamFailRateKnown bool
+
+	FallbackActiveDuration time.Duration
+}
+
+// ClassifyMode derives the operating mode from runtime flags. Used by the
+// severity projector and by the dashboard to pick the right detail layout.
+func ClassifyMode(in SeverityInput) ModeKind {
+	if !in.UseMiddleProxy {
+		return ModeDirect
+	}
+	if in.MERuntimeReady {
+		return ModeME
+	}
+	if in.ME2DCFallbackEnabled {
+		return ModeFallback
+	}
+	return ModeMeDown
 }
 
 // FreshnessForObservedAt normalizes runtime freshness from an observed timestamp.
@@ -60,15 +109,111 @@ func SeverityAndReason(input SeverityInput, freshness Freshness) (string, string
 		return "warn", "Runtime is degraded"
 	case input.StartupStatus != "" && input.StartupStatus != "ready":
 		return "warn", "Startup is still in progress"
-	case input.TotalUpstreams > 0 && input.HealthyUpstreams < input.TotalUpstreams:
-		return "warn", "Some upstreams are unhealthy"
-	case input.AgentReported && input.DCCoveragePct == 0:
-		return "critical", "no reachable DCs"
-	case input.DCCoveragePct > 0 && input.DCCoveragePct < 100:
-		return "warn", "DC coverage is degraded"
-	default:
-		return "good", "Node is ready"
 	}
+
+	switch ClassifyMode(input) {
+	case ModeME:
+		return severityME(input)
+	case ModeDirect:
+		return severityDirect(input)
+	case ModeFallback:
+		return severityFallback(input)
+	case ModeMeDown:
+		return "critical", "ME pool unavailable, traffic stopped"
+	}
+	return "ok", ""
+}
+
+// severityME applies ME-mode severity rules. Caller has already excluded
+// offline / not-accepting / read-only / startup branches.
+func severityME(in SeverityInput) (severity, reason string) {
+	switch {
+	case in.AgentReported && in.DCCoveragePct == 0:
+		return "critical", "no reachable DCs"
+	case in.DCCoveragePct > 0 && in.DCCoveragePct < 100:
+		return "warn", "DC coverage is degraded"
+	}
+	return "ok", ""
+}
+
+// severityDirect implements the rules for nodes running with use_middle_proxy=false.
+// Caller has already excluded the offline / not-accepting cases.
+func severityDirect(in SeverityInput) (severity, reason string) {
+	if in.UpstreamFailRateKnown {
+		switch {
+		case in.UpstreamFailRatePct5m >= 50:
+			return "critical", "upstream DC connect failing"
+		case in.UpstreamFailRatePct5m >= 10:
+			return "warn", "degraded DC connectivity"
+		}
+	}
+
+	if in.UptimeSeconds < 60 {
+		return "ok", ""
+	}
+
+	switch {
+	case in.TotalUpstreams == 0:
+		return "warn", "no upstreams configured"
+	case in.HealthyUpstreams == 0:
+		return "critical", "all upstreams down"
+	case in.HealthyUpstreams < in.TotalUpstreams:
+		return "warn", "some upstreams unhealthy"
+	}
+	return "ok", ""
+}
+
+// severityFallback applies fallback-mode severity rules. The baseline is the
+// max(direct severity, "warn"); the reason carries the underlying direct
+// failure with a fallback suffix so the attention-list keeps fallback
+// context visible. ≥30 min duration escalates baseline to critical with a
+// two-part reason.
+//
+// Rank-collapse note: the 30-min boundary primarily upgrades a "warn"
+// baseline (e.g. ok/warn direct) to "critical". When directSev is already
+// "critical" (e.g. all upstreams down) the rank stays "critical" on both
+// sides of the boundary — only the reason changes from
+// "<directReason> (on ME→Direct fallback)" to
+// "ME pool down, fallback active — <directReason> (on ME→Direct fallback)".
+// This is intentional: a critical-direct condition is already at max
+// severity; the boundary just adds the ME-pool context to the reason.
+func severityFallback(in SeverityInput) (severity, reason string) {
+	directSev, directReason := severityDirect(in)
+	baselineSev := maxSeverity(directSev, "warn")
+	var baselineReason string
+	switch {
+	case directSev == "ok":
+		baselineReason = "running on ME→Direct fallback"
+	case directSev == "warn":
+		baselineReason = directReason + " (on ME→Direct fallback)"
+	default: // critical or other
+		baselineReason = directReason + " (on ME→Direct fallback)"
+	}
+
+	if in.FallbackActiveDuration >= 30*time.Minute {
+		return "critical", "ME pool down, fallback active — " + baselineReason
+	}
+	return baselineSev, baselineReason
+}
+
+func maxSeverity(a, b string) string {
+	rank := func(s string) int {
+		switch s {
+		case "ok":
+			return 0
+		case "warn":
+			return 1
+		case "critical":
+			return 2
+		case "bad":
+			return 3
+		}
+		return 0
+	}
+	if rank(a) >= rank(b) {
+		return a
+	}
+	return b
 }
 
 // SeverityRank orders server summaries by severity.

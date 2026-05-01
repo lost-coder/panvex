@@ -112,6 +112,24 @@ func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T
 	if server.agents[identity.AgentID].Runtime.UptimeSeconds != 90_061 {
 		t.Fatalf("agent runtime uptime_seconds = %v, want %v", server.agents[identity.AgentID].Runtime.UptimeSeconds, 90_061)
 	}
+	if got := server.agents[identity.AgentID].Runtime.FailRatePct5m; got != 12.5 {
+		t.Fatalf("agent runtime fail_rate_pct_5m = %v, want %v", got, 12.5)
+	}
+	if !server.agents[identity.AgentID].Runtime.FailRateKnown {
+		t.Fatal("agent runtime fail_rate_known = false, want true")
+	}
+	if got := server.agents[identity.AgentID].Runtime.ConnectAttemptTotal; got != 1000 {
+		t.Fatalf("agent runtime connect_attempt_total = %d, want %d", got, 1000)
+	}
+	if got := server.agents[identity.AgentID].Runtime.ConnectSuccessTotal; got != 875 {
+		t.Fatalf("agent runtime connect_success_total = %d, want %d", got, 875)
+	}
+	if got := server.agents[identity.AgentID].Runtime.ConnectFailTotal; got != 125 {
+		t.Fatalf("agent runtime connect_fail_total = %d, want %d", got, 125)
+	}
+	if got := server.agents[identity.AgentID].Runtime.ConnectFailfastTotal; got != 25 {
+		t.Fatalf("agent runtime connect_failfast_total = %d, want %d", got, 25)
+	}
 }
 
 // TestApplyAgentSnapshotIgnoresRevokedAgent asserts that a heartbeat
@@ -455,11 +473,17 @@ func gatewayRuntimeSnapshotForTest() *gatewayrpc.RuntimeSnapshot {
 			},
 		},
 		Upstreams: &gatewayrpc.RuntimeUpstreamSnapshot{
-			ConfiguredTotal: 2,
-			HealthyTotal:    1,
-			UnhealthyTotal:  1,
-			DirectTotal:     1,
-			Socks5Total:     1,
+			ConfiguredTotal:      2,
+			HealthyTotal:         1,
+			UnhealthyTotal:       1,
+			DirectTotal:          1,
+			Socks5Total:          1,
+			FailRatePct_5M:       12.5,
+			FailRateKnown:        true,
+			ConnectAttemptTotal:  1000,
+			ConnectSuccessTotal:  875,
+			ConnectFailTotal:     125,
+			ConnectFailfastTotal: 25,
 		},
 		RecentEvents: []*gatewayrpc.RuntimeEventSnapshot{
 			{

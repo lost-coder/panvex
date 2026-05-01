@@ -827,8 +827,18 @@ type RuntimeUpstreamSnapshot struct {
 	DirectTotal     int32                         `protobuf:"varint,4,opt,name=direct_total,json=directTotal,proto3" json:"direct_total,omitempty"`
 	Socks5Total     int32                         `protobuf:"varint,5,opt,name=socks5_total,json=socks5Total,proto3" json:"socks5_total,omitempty"`
 	Rows            []*RuntimeUpstreamRowSnapshot `protobuf:"bytes,6,rep,name=rows,proto3" json:"rows,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Direct-mode signals — populated by agent metrics_parser + upstream_rate.
+	// fail_rate_known=false when the agent does not yet have enough samples
+	// (cold start, post-reset, or stale-window) and the control-plane should
+	// skip rate-based severity rules.
+	FailRatePct_5M       float64 `protobuf:"fixed64,7,opt,name=fail_rate_pct_5m,json=failRatePct5m,proto3" json:"fail_rate_pct_5m,omitempty"`
+	FailRateKnown        bool    `protobuf:"varint,8,opt,name=fail_rate_known,json=failRateKnown,proto3" json:"fail_rate_known,omitempty"`
+	ConnectAttemptTotal  uint64  `protobuf:"varint,9,opt,name=connect_attempt_total,json=connectAttemptTotal,proto3" json:"connect_attempt_total,omitempty"`
+	ConnectSuccessTotal  uint64  `protobuf:"varint,10,opt,name=connect_success_total,json=connectSuccessTotal,proto3" json:"connect_success_total,omitempty"`
+	ConnectFailTotal     uint64  `protobuf:"varint,11,opt,name=connect_fail_total,json=connectFailTotal,proto3" json:"connect_fail_total,omitempty"`
+	ConnectFailfastTotal uint64  `protobuf:"varint,12,opt,name=connect_failfast_total,json=connectFailfastTotal,proto3" json:"connect_failfast_total,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *RuntimeUpstreamSnapshot) Reset() {
@@ -901,6 +911,48 @@ func (x *RuntimeUpstreamSnapshot) GetRows() []*RuntimeUpstreamRowSnapshot {
 		return x.Rows
 	}
 	return nil
+}
+
+func (x *RuntimeUpstreamSnapshot) GetFailRatePct_5M() float64 {
+	if x != nil {
+		return x.FailRatePct_5M
+	}
+	return 0
+}
+
+func (x *RuntimeUpstreamSnapshot) GetFailRateKnown() bool {
+	if x != nil {
+		return x.FailRateKnown
+	}
+	return false
+}
+
+func (x *RuntimeUpstreamSnapshot) GetConnectAttemptTotal() uint64 {
+	if x != nil {
+		return x.ConnectAttemptTotal
+	}
+	return 0
+}
+
+func (x *RuntimeUpstreamSnapshot) GetConnectSuccessTotal() uint64 {
+	if x != nil {
+		return x.ConnectSuccessTotal
+	}
+	return 0
+}
+
+func (x *RuntimeUpstreamSnapshot) GetConnectFailTotal() uint64 {
+	if x != nil {
+		return x.ConnectFailTotal
+	}
+	return 0
+}
+
+func (x *RuntimeUpstreamSnapshot) GetConnectFailfastTotal() uint64 {
+	if x != nil {
+		return x.ConnectFailfastTotal
+	}
+	return 0
 }
 
 type RuntimeEventSnapshot struct {
@@ -3164,14 +3216,21 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\x14effective_latency_ms\x18\x06 \x01(\x01R\x12effectiveLatencyMs\x12\x16\n" +
 	"\x06weight\x18\a \x01(\x05R\x06weight\x12-\n" +
 	"\x13last_check_age_secs\x18\b \x01(\x05R\x10lastCheckAgeSecs\x12\x16\n" +
-	"\x06scopes\x18\t \x03(\tR\x06scopes\"\x9b\x02\n" +
+	"\x06scopes\x18\t \x03(\tR\x06scopes\"\xb8\x04\n" +
 	"\x17RuntimeUpstreamSnapshot\x12)\n" +
 	"\x10configured_total\x18\x01 \x01(\x05R\x0fconfiguredTotal\x12#\n" +
 	"\rhealthy_total\x18\x02 \x01(\x05R\fhealthyTotal\x12'\n" +
 	"\x0funhealthy_total\x18\x03 \x01(\x05R\x0eunhealthyTotal\x12!\n" +
 	"\fdirect_total\x18\x04 \x01(\x05R\vdirectTotal\x12!\n" +
 	"\fsocks5_total\x18\x05 \x01(\x05R\vsocks5Total\x12A\n" +
-	"\x04rows\x18\x06 \x03(\v2-.panvex.gateway.v1.RuntimeUpstreamRowSnapshotR\x04rows\"\x92\x01\n" +
+	"\x04rows\x18\x06 \x03(\v2-.panvex.gateway.v1.RuntimeUpstreamRowSnapshotR\x04rows\x12'\n" +
+	"\x10fail_rate_pct_5m\x18\a \x01(\x01R\rfailRatePct5m\x12&\n" +
+	"\x0ffail_rate_known\x18\b \x01(\bR\rfailRateKnown\x122\n" +
+	"\x15connect_attempt_total\x18\t \x01(\x04R\x13connectAttemptTotal\x122\n" +
+	"\x15connect_success_total\x18\n" +
+	" \x01(\x04R\x13connectSuccessTotal\x12,\n" +
+	"\x12connect_fail_total\x18\v \x01(\x04R\x10connectFailTotal\x124\n" +
+	"\x16connect_failfast_total\x18\f \x01(\x04R\x14connectFailfastTotal\"\x92\x01\n" +
 	"\x14RuntimeEventSnapshot\x12\x1a\n" +
 	"\bsequence\x18\x01 \x01(\x04R\bsequence\x12%\n" +
 	"\x0etimestamp_unix\x18\x02 \x01(\x03R\rtimestampUnix\x12\x1d\n" +

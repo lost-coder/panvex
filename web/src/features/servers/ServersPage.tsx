@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { NodeCard } from "@/features/servers/ui/NodeCard";
 import { NodeSummaryCard } from "@/features/servers/ui/NodeSummaryCard";
+import { TransportBadge } from "@/features/servers/ui/TransportBadge";
+import { classifyMode } from "@/features/servers/server-detail/classifyMode";
 import {
   BulkActionBar,
   Button,
@@ -10,46 +12,17 @@ import {
   PageHeader,
   StatusDot,
   TableView,
-  cn,
   type BulkServerAction,
   type ServerListItem,
   type ServersPageProps,
   type ViewMode,
 } from "@/ui";
 
-function dcBarColor(status: NonNullable<ServerListItem["dcs"]>[number]["status"]): string {
-  if (status === "error") return "bg-status-error";
-  if (status === "warn") return "bg-status-warn";
-  return "bg-status-ok/80";
-}
-
 function TrafficCell({ bytes }: Readonly<{ bytes: number }>) {
   return (
     <span className="text-sm font-mono text-fg-muted">
       {Math.round(bytes / 1024 / 1024 / 1024)} GB
     </span>
-  );
-}
-
-function DcMatrixCell({ dcs }: Readonly<{ dcs: ServerListItem["dcs"] }>) {
-  if (!dcs || dcs.length === 0) return <span className="text-xs text-fg-muted">N/A</span>;
-  // Handoff-style "12 thin bars in a row" instead of a 6×2 dot grid. Each
-  // bar is 4×14px so a full row fits in ~64px and the status distribution
-  // across DCs reads as a single glance — green wall with occasional red
-  // notches stands out more than a circular grid.
-  return (
-    <div className="flex items-center gap-[2px] w-fit">
-      {dcs.slice(0, 12).map((dc) => (
-        <div
-          key={dc.dc}
-          className={cn(
-            "w-[4px] h-[14px] rounded-sm",
-            dcBarColor(dc.status),
-          )}
-          title={`DC ${dc.dc}: ${dc.rttMs ? dc.rttMs + "ms" : "offline"}`}
-        />
-      ))}
-    </div>
   );
 }
 
@@ -149,11 +122,21 @@ function ServerListView({
       className: "w-[30%]",
     },
     {
-      key: "dcs",
-      header: "DCs",
-      render: (s: Readonly<ServerListItem>) => <DcMatrixCell dcs={s.dcs} />,
-      // Wider to accommodate the 12-bar strip (4px bars + 2px gaps).
-      className: "hidden xl:table-cell w-[92px]",
+      key: "transport",
+      header: "Transport",
+      render: (s: Readonly<ServerListItem>) => (
+        <TransportBadge
+          mode={classifyMode({
+            useMiddleProxy: s.useMiddleProxy,
+            meRuntimeReady: s.meRuntimeReady,
+            me2dcFallbackEnabled: s.me2dcFallbackEnabled,
+          })}
+          healthy={s.healthyUpstreams}
+          total={s.totalUpstreams}
+          severity={s.severity}
+        />
+      ),
+      className: "hidden xl:table-cell w-[140px]",
     },
     {
       key: "users",
@@ -235,11 +218,19 @@ function ServerListView({
             key={s.id}
             name={s.name}
             status={s.status}
-            health={100}
+            mode={classifyMode({
+              useMiddleProxy: s.useMiddleProxy,
+              meRuntimeReady: s.meRuntimeReady,
+              me2dcFallbackEnabled: s.me2dcFallbackEnabled,
+            })}
+            healthyUpstreams={s.healthyUpstreams}
+            totalUpstreams={s.totalUpstreams}
+            severity={s.severity}
             cpu={s.cpuPct}
             mem={s.memPct}
             clients={s.connections}
             region="Global"
+            idle={s.connections === 0}
             onClick={() => onServerClick?.(s.id)}
           />
         ))}
@@ -275,7 +266,7 @@ export function ServersPage({
   const [groupFilter, setGroupFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>({
-    dcs: true,
+    transport: true,
     users: true,
     traffic: true,
     uptime: true,
@@ -435,7 +426,7 @@ export function ServersPage({
           }
           columns={{
             available: [
-              { key: "dcs", label: "DC Matrix" },
+              { key: "transport", label: "Transport" },
               { key: "users", label: "Users" },
               { key: "traffic", label: "Traffic" },
               { key: "uptime", label: "Uptime" },

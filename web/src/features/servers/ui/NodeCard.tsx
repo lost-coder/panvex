@@ -2,18 +2,28 @@ import { cn } from "@/ui/lib/cn";
 import type { Status } from "@/ui/tokens/colors";
 import { StatusDot } from "@/ui/primitives/StatusDot";
 import { ArrowUpCircle } from "lucide-react";
+import { TransportBadge } from "@/features/servers/ui/TransportBadge";
+import type { ModeKind, Severity } from "@/shared/api/types-pages/pages";
 
 export interface NodeCardProps {
   name: string;
   status: Status;
-  health: number;
+  mode: ModeKind;
+  healthyUpstreams: number;
+  totalUpstreams: number;
+  severity: Severity;
   cpu: number;
   mem: number;
   clients: number;
   region: string;
-  alert?: string;
+  alert?: boolean;
   /** When true, shows an update-available icon in the top-right corner. */
   updateAvailable?: boolean;
+  /**
+   * When true, render an "idle" chip — used by the direct-mode panel to
+   * call out nodes that are currently carrying no client traffic.
+   */
+  idle?: boolean;
   onClick?: () => void;
   className?: string;
 }
@@ -21,13 +31,17 @@ export interface NodeCardProps {
 export function NodeCard({
   name,
   status,
-  health,
+  mode,
+  healthyUpstreams,
+  totalUpstreams,
+  severity,
   cpu,
   mem,
   clients,
   region,
   alert,
   updateAvailable,
+  idle,
   onClick,
   className,
 }: Readonly<NodeCardProps>) {
@@ -54,16 +68,30 @@ export function NodeCard({
         <span className="text-caption">{region}</span>
       </div>
 
-      <div className="grid grid-cols-4 gap-2">
-        <Metric value={`${health}%`} label="Health" />
+      <div className="flex flex-wrap items-center gap-1.5">
+        <TransportBadge
+          mode={mode}
+          healthy={healthyUpstreams}
+          total={totalUpstreams}
+          severity={severity}
+        />
+        {idle && (
+          <span
+            className={cn(
+              "inline-flex items-center px-2 py-0.5 rounded-xs border font-mono text-xs",
+              "bg-bg-card-hi text-fg-muted border-border",
+            )}
+          >
+            idle
+          </span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
         <Metric value={`${cpu}%`} label="CPU" />
         <Metric value={`${mem}%`} label="MEM" />
         <Metric value={String(clients)} label="Clients" />
       </div>
-
-      {alert && (
-        <p className="text-[11px] text-status-error font-mono leading-snug truncate">{alert}</p>
-      )}
     </button>
   );
 }

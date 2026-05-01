@@ -80,3 +80,34 @@ test("agentSchema rejects wrong type for node_name", () => {
   const result = agentSchema.safeParse({ ...minimalAgent, node_name: 42 });
   assert.equal(result.success, false);
 });
+
+test("agentRuntimeSchema accepts the direct-mode fail-rate fields at the runtime root", () => {
+  const runtime = {
+    ...minimalRuntime,
+    fail_rate_pct_5m: 12.5,
+    fail_rate_known: true,
+    connect_attempt_total: 100,
+    connect_success_total: 90,
+    connect_fail_total: 10,
+    connect_failfast_total: 2,
+    fallback_entered_at_unix: 1_700_000_000,
+  };
+  const parsed = agentSchema.parse({ ...minimalAgent, runtime });
+  assert.equal(parsed.runtime.fail_rate_pct_5m, 12.5);
+  assert.equal(parsed.runtime.fail_rate_known, true);
+  assert.equal(parsed.runtime.connect_attempt_total, 100);
+  assert.equal(parsed.runtime.connect_success_total, 90);
+  assert.equal(parsed.runtime.connect_fail_total, 10);
+  assert.equal(parsed.runtime.connect_failfast_total, 2);
+  assert.equal(parsed.runtime.fallback_entered_at_unix, 1_700_000_000);
+});
+
+test("agentRuntimeSchema defaults the direct-mode fail-rate fields when absent (old agents)", () => {
+  // Pre-Phase-3 agents don't emit these counters at the runtime root.
+  // The schema must fill zeros + false rather than failing the parse.
+  const parsed = agentSchema.parse(minimalAgent);
+  assert.equal(parsed.runtime.fail_rate_pct_5m, 0);
+  assert.equal(parsed.runtime.fail_rate_known, false);
+  assert.equal(parsed.runtime.connect_attempt_total, 0);
+  assert.equal(parsed.runtime.fallback_entered_at_unix, undefined);
+});

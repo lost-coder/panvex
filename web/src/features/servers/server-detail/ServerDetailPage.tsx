@@ -11,16 +11,21 @@ import type { ServerDetailPageProps, ServerDcData } from "@/shared/api/types-pag
 
 import { useRelativeTime } from "./useRelativeTime";
 import { ServerActionsDropdown } from "./ServerActionsDropdown";
+import { classifyMode } from "./classifyMode";
+import { useFallbackEscalation } from "./useFallbackEscalation";
 import { RelativeTimeBadge } from "./components/RelativeTimeBadge";
 import { ServerHero } from "./components/ServerHero";
 import { MobileLayout } from "./components/MobileLayout";
 import { DesktopLayout } from "./components/DesktopLayout";
+import { MeDownHero } from "./components/MeDownHero";
 import { GatesPanel } from "./components/GatesPanel";
 import { UpstreamsList } from "./components/UpstreamsList";
 import { DcDetailSheet } from "./components/DcDetailSheet";
 import { RenameDialog } from "./components/RenameDialog";
 import { ChangeFleetGroupDialog } from "./components/ChangeFleetGroupDialog";
 import { DeregisterDialog } from "./components/DeregisterDialog";
+import { DirectRelayDesktop } from "./direct-relay/DirectRelayDesktop";
+import { DirectRelayMobile } from "./direct-relay/DirectRelayMobile";
 import type { PulseTickData } from "./components/PulseGrid";
 import {
   computeAlertItems,
@@ -99,6 +104,23 @@ export function ServerDetailPage({
     [sortedDcs, gates, initState],
   );
   const timelineEvents = useMemo(() => toTimelineEvents(server.events), [server.events]);
+
+  // ─── Direct-mode dispatcher ────────────────────────────────────────
+  //
+  // Mode is derived from the same booleans the backend uses
+  // (see internal/controlplane/telemetry/severity.go ClassifyMode).
+  // Fallback duration is wall-clock based: the page can refresh and
+  // the badge updates monotonically without needing extra polling.
+  const mode = classifyMode({
+    useMiddleProxy: server.useMiddleProxy,
+    meRuntimeReady: server.meRuntimeReady,
+    me2dcFallbackEnabled: server.me2dcFallbackEnabled,
+  });
+
+  // useFallbackEscalation handles the 30-min escalation boundary via a
+  // setTimeout so the badge flips from "warn" to "critical" even when the
+  // page sits idle without a server re-fetch. See the hook's doc comment.
+  const fallback = useFallbackEscalation(mode, server.fallbackEnteredAtUnix);
 
   // Mobile subtitle — same status sentence the desktop hero uses, plus
   // compact meta (version + uptime + optional config reload count).
@@ -318,33 +340,61 @@ export function ServerDetailPage({
       />
 
       <div className="px-4 md:px-8 flex flex-col gap-6 pb-8 pt-6">
-        <MobileLayout
-          initState={initState}
-          pulseItems={mobilePulseItems}
-          alertItems={alertItems}
-          metricsChart={metricsChart}
-          sortedDcs={sortedDcs}
-          dcItems={dcItems}
-          mobileTabs={mobileTabs}
-          onSelectDc={handleSelectDc}
-        />
+        {mode === "me" && (
+          <>
+            <MobileLayout
+              initState={initState}
+              pulseItems={mobilePulseItems}
+              alertItems={alertItems}
+              metricsChart={metricsChart}
+              sortedDcs={sortedDcs}
+              dcItems={dcItems}
+              mobileTabs={mobileTabs}
+              onSelectDc={handleSelectDc}
+            />
 
-        <DesktopLayout
-          server={server}
-          initState={initState}
-          pulseItems={desktopPulseItems}
-          sortedDcs={sortedDcs}
-          dcOk={dcOk}
-          dcWarn={dcWarn}
-          dcErr={dcErr}
-          metricsChart={metricsChart}
-          timelineEvents={timelineEvents}
-          alertItems={alertItems}
-          mePoolContent={mePoolContent}
-          connectionsContent={connectionsContent}
-          eventsContent={eventsContent}
-          onSelectDc={handleSelectDc}
-        />
+            <DesktopLayout
+              server={server}
+              initState={initState}
+              pulseItems={desktopPulseItems}
+              sortedDcs={sortedDcs}
+              dcOk={dcOk}
+              dcWarn={dcWarn}
+              dcErr={dcErr}
+              metricsChart={metricsChart}
+              timelineEvents={timelineEvents}
+              alertItems={alertItems}
+              mePoolContent={mePoolContent}
+              connectionsContent={connectionsContent}
+              eventsContent={eventsContent}
+              onSelectDc={handleSelectDc}
+            />
+          </>
+        )}
+
+        {(mode === "direct" || mode === "fallback") && (
+          <>
+            <div className="md:hidden">
+              <DirectRelayMobile
+                server={server}
+                initState={initState}
+                metricsChart={metricsChart}
+                fallback={fallback}
+              />
+            </div>
+            <div className="hidden md:block">
+              <DirectRelayDesktop
+                server={server}
+                initState={initState}
+                alertItems={alertItems}
+                metricsChart={metricsChart}
+                fallback={fallback}
+              />
+            </div>
+          </>
+        )}
+
+        {mode === "me_down" && <MeDownHero recentEvents={server.events} />}
 
         {agentConnection && (
           <AgentConnectionSection

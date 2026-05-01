@@ -122,6 +122,10 @@ type Server struct {
 	agents                       map[string]Agent
 	detailBoosts                 map[string]time.Time
 	initializationWatchCooldowns map[string]time.Time
+	// fallbackEnteredAt mirrors agent_fallback_state in memory. Hydrated on
+	// Run(); updated synchronously under mu and persisted asynchronously via
+	// the batch writer. Crash-window caveat: see spec.
+	fallbackEnteredAt map[string]time.Time
 	clients                      map[string]managedClient
 	clientAssignments            map[string][]managedClientAssignment
 	clientDeployments            map[string]map[string]managedClientDeployment

@@ -36,6 +36,7 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 	runTelemetryContract(t, open)
 	runSessionsContract(t, open)
 	runDiscoveredContract(t, open)
+	runFallbackContract(t, open)
 
 	// Transact contract (P2-ARCH-01) lives in store_contract_transact.go.
 	// Bulk-write helpers (P3-PERF-01a) live in store_contract_bulk.go.

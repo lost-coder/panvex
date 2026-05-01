@@ -88,12 +88,55 @@ type AgentRuntime struct {
 	DCCoveragePct             float64           `json:"dc_coverage_pct"`
 	HealthyUpstreams          int               `json:"healthy_upstreams"`
 	TotalUpstreams            int               `json:"total_upstreams"`
+	// FailRatePct5m and FailRateKnown encode the same "nil-is-unknown"
+	// pattern as RuntimeUpstreamSummary on the agent side. The wire format
+	// (JSON tags fail_rate_pct_5m + fail_rate_known) is split for
+	// backward-compatible consumers; internal Go callers should prefer
+	// FailRatePct5mPtr() / SetFailRatePct5m() so the pair stays in lockstep.
+	FailRatePct5m             float64           `json:"fail_rate_pct_5m"`
+	FailRateKnown             bool              `json:"fail_rate_known"`
+	ConnectAttemptTotal       uint64            `json:"connect_attempt_total"`
+	ConnectSuccessTotal       uint64            `json:"connect_success_total"`
+	ConnectFailTotal          uint64            `json:"connect_fail_total"`
+	ConnectFailfastTotal      uint64            `json:"connect_failfast_total"`
+	// FallbackEnteredAtUnix is the unix timestamp the panel saw this agent
+	// transition into ME->DC fallback. Absent (omitempty) when the agent is
+	// not currently in fallback. Sourced from the in-memory
+	// fallbackEnteredAt map; surfaced so the dashboard can render a live
+	// "fallback for Xm" timer without a second round-trip.
+	FallbackEnteredAtUnix     *int64            `json:"fallback_entered_at_unix,omitempty"`
 	DCs                       []RuntimeDC       `json:"dcs"`
 	Upstreams                 []RuntimeUpstream `json:"upstreams"`
 	RecentEvents              []RuntimeEvent    `json:"recent_events"`
 	SystemLoad                RuntimeSystemLoad          `json:"system_load"`
 	MeWritersSummary          *RuntimeMeWritersSummary   `json:"me_writers_summary,omitempty"`
 	UpdatedAt                 time.Time                  `json:"updated_at"`
+}
+
+// FailRatePct5mPtr returns the 5-minute upstream connect fail-rate as a
+// pointer, with nil indicating "unknown" (FailRateKnown == false). Mirrors
+// the agent-side helper so internal call sites can avoid touching the
+// parallel FailRatePct5m / FailRateKnown fields directly.
+func (r AgentRuntime) FailRatePct5mPtr() *float64 {
+	if !r.FailRateKnown {
+		return nil
+	}
+	v := r.FailRatePct5m
+	return &v
+}
+
+// SetFailRatePct5m updates FailRatePct5m and FailRateKnown together: a nil
+// pointer marks the rate unknown, a non-nil pointer stores the value and
+// flips FailRateKnown to true. Always prefer this over touching the
+// parallel fields directly.
+func (r *AgentRuntime) SetFailRatePct5m(rate *float64) {
+	if rate == nil {
+		r.FailRatePct5m = 0
+		r.FailRateKnown = false
+		return
+	}
+	r.FailRatePct5m = *rate
+	r.FailRateKnown = true
 }
 
 // RuntimeSystemLoad carries server resource utilization metrics.

@@ -229,7 +229,7 @@ func runtimeEventSeverity(event RuntimeEvent) string {
 	case strings.Contains(text, "warn"), strings.Contains(text, "degrad"), strings.Contains(text, "timeout"):
 		return "warn"
 	default:
-		return "good"
+		return "ok"
 	}
 }
 
@@ -463,8 +463,14 @@ func telemetryInitializationWatchForAgent(agent Agent, now, cooldownExpiresAt ti
 	}
 }
 
-func telemetrySeverityAndReason(agent Agent, presenceState presence.State, freshness telemetryFreshnessResponse) (string, string) {
-	return controltelemetry.SeverityAndReason(controltelemetry.SeverityInput{
+// telemetrySeverityAndReason classifies an agent for the dashboard. The
+// fallback entered-at timestamp must be provided by the caller (zero =
+// not in fallback) so this function takes no locks of its own — every
+// caller already holds s.mu.RLock for the duration of the snapshot pass
+// and sync.RWMutex is not reentrant (a queued writer would deadlock the
+// second RLock).
+func (s *Server) telemetrySeverityAndReason(agent Agent, presenceState presence.State, freshness telemetryFreshnessResponse, fallbackEnteredAt time.Time, now time.Time) (string, string) {
+	in := controltelemetry.SeverityInput{
 		PresenceState:           presenceState,
 		ReadOnly:                agent.ReadOnly,
 		AcceptingNewConnections: agent.Runtime.AcceptingNewConnections,
@@ -474,17 +480,62 @@ func telemetrySeverityAndReason(agent Agent, presenceState presence.State, fresh
 		HealthyUpstreams:        agent.Runtime.HealthyUpstreams,
 		TotalUpstreams:          agent.Runtime.TotalUpstreams,
 		AgentReported:           !agent.Runtime.UpdatedAt.IsZero(),
-	}, controltelemetry.Freshness{
+
+		UseMiddleProxy:       agent.Runtime.UseMiddleProxy,
+		MERuntimeReady:       agent.Runtime.MERuntimeReady,
+		ME2DCFallbackEnabled: agent.Runtime.ME2DCFallbackEnabled,
+		UptimeSeconds:        agent.Runtime.UptimeSeconds,
+	}
+	// Pull the (rate, known) pair through the helper so a future caller
+	// who forgets to set one of the parallel fields gets nil-is-unknown
+	// semantics for free instead of a half-initialised classification.
+	if rate := agent.Runtime.FailRatePct5mPtr(); rate != nil {
+		in.UpstreamFailRatePct5m = *rate
+		in.UpstreamFailRateKnown = true
+	}
+	if !fallbackEnteredAt.IsZero() {
+		in.FallbackActiveDuration = now.Sub(fallbackEnteredAt)
+	}
+	return controltelemetry.SeverityAndReason(in, controltelemetry.Freshness{
 		State:          freshness.State,
 		ObservedAtUnix: freshness.ObservedAtUnix,
 	})
 }
 
-func telemetrySummaryForAgent(agent Agent, presenceState presence.State, now, boostExpiresAt time.Time) telemetryServerSummary {
+// lookupFallbackEnteredLocked returns the cached entered_at for an agent
+// and ok=true when fallback is currently active. Read-only; the caller
+// MUST already hold s.mu.RLock (or s.mu.Lock). sync.RWMutex is not
+// reentrant — taking the read lock here while a caller higher up the
+// stack already holds it risks deadlock when a writer is queued.
+func (s *Server) lookupFallbackEnteredLocked(agentID string) (time.Time, bool) {
+	t, ok := s.fallbackEnteredAt[agentID]
+	return t, ok
+}
+
+// telemetrySummaryForAgent builds the per-agent dashboard summary. The
+// caller MUST already hold s.mu.RLock — both the fallbackEnteredAt
+// lookup and the severity classification rely on lock-free reads of
+// state owned by s.mu.
+func (s *Server) telemetrySummaryForAgent(agent Agent, presenceState presence.State, now, boostExpiresAt time.Time) telemetryServerSummary {
 	agent.PresenceState = string(presenceState)
 	agent.Runtime = normalizeAgentRuntime(agent.Runtime)
+	fallbackEnteredAt, fallbackActive := s.lookupFallbackEnteredLocked(agent.ID)
+	if fallbackActive {
+		// `agent` is passed by value: this assignment mutates the local
+		// copy that gets embedded in the returned telemetryServerSummary,
+		// not s.agents[agent.ID]. The *int64 pointer is local to this
+		// scope (no aliasing back into shared state), so the write is
+		// safe and intentional — don't "fix" it by taking &agent or
+		// reaching into s.agents. See follow-up #6.
+		entered := fallbackEnteredAt.Unix()
+		agent.Runtime.FallbackEnteredAtUnix = &entered
+	}
 	freshness := telemetryFreshnessForRuntime(agent.Runtime, now)
-	severity, reason := telemetrySeverityAndReason(agent, presenceState, freshness)
+	var fallbackForSeverity time.Time
+	if fallbackActive {
+		fallbackForSeverity = fallbackEnteredAt
+	}
+	severity, reason := s.telemetrySeverityAndReason(agent, presenceState, freshness, fallbackForSeverity, now)
 	return telemetryServerSummary{
 		Agent:            agent,
 		Severity:         severity,

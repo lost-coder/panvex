@@ -63,7 +63,7 @@ func (s *Server) collectTelemetryDashboardSnapshot(scope FleetScopeAccess, now t
 	}
 	for _, agent := range scopedAgents {
 		boostExpiresAt := s.detailBoosts[agent.ID]
-		summary := telemetrySummaryForAgent(agent, s.presence.Evaluate(agent.ID, now), now, boostExpiresAt)
+		summary := s.telemetrySummaryForAgent(agent, s.presence.Evaluate(agent.ID, now), now, boostExpiresAt)
 		snapshot.items = append(snapshot.items, summary)
 		mode := summary.Agent.Runtime.TransportMode
 		if mode == "" {
@@ -84,7 +84,7 @@ func (s *Server) collectTelemetryDashboardSnapshot(scope FleetScopeAccess, now t
 func buildTelemetryAttention(items []telemetryServerSummary) []telemetryAttentionItem {
 	attention := make([]telemetryAttentionItem, 0, 5)
 	for _, item := range items {
-		if item.Severity == "good" && item.RuntimeFreshness.State == "fresh" {
+		if (item.Severity == "good" || item.Severity == "ok") && item.RuntimeFreshness.State == "fresh" {
 			continue
 		}
 		attention = append(attention, telemetryAttentionItem{
@@ -269,7 +269,7 @@ func (s *Server) handleTelemetryServers() http.HandlerFunc {
 			if !scope.IsAllowed(agent.FleetGroupID) {
 				continue
 			}
-			items = append(items, telemetrySummaryForAgent(agent, s.presence.Evaluate(agent.ID, now), now, s.detailBoosts[agent.ID]))
+			items = append(items, s.telemetrySummaryForAgent(agent, s.presence.Evaluate(agent.ID, now), now, s.detailBoosts[agent.ID]))
 		}
 		s.mu.RUnlock()
 
@@ -293,10 +293,23 @@ func (s *Server) handleTelemetryServerDetail() http.HandlerFunc {
 		agentID := chi.URLParam(r, "id")
 		now := s.now()
 
+		// Build the summary under s.mu.RLock so telemetrySummaryForAgent's
+		// fallbackEnteredAt lookup stays lock-free (sync.RWMutex is not
+		// reentrant — re-acquiring RLock here would deadlock if a writer
+		// were queued).
 		s.mu.RLock()
 		agent, ok := s.agents[agentID]
-		boostExpiresAt := s.detailBoosts[agentID]
-		initializationCooldownExpiresAt := s.initializationWatchCooldowns[agentID]
+		var (
+			summary                         telemetryServerSummary
+			initializationCooldownExpiresAt time.Time
+			summaryAgent                    Agent
+		)
+		if ok {
+			boostExpiresAt := s.detailBoosts[agentID]
+			initializationCooldownExpiresAt = s.initializationWatchCooldowns[agentID]
+			summary = s.telemetrySummaryForAgent(agent, s.presence.Evaluate(agentID, now), now, boostExpiresAt)
+			summaryAgent = summary.Agent
+		}
 		s.mu.RUnlock()
 		if !ok {
 			writeError(w, http.StatusNotFound, msgServerNotFound)
@@ -336,8 +349,8 @@ func (s *Server) handleTelemetryServerDetail() http.HandlerFunc {
 		}
 
 		writeJSON(w, http.StatusOK, telemetryServerDetailResponse{
-			Server:              telemetrySummaryForAgent(agent, s.presence.Evaluate(agentID, now), now, boostExpiresAt),
-			InitializationWatch: telemetryInitializationWatchForAgent(agent, now, initializationCooldownExpiresAt),
+			Server:              summary,
+			InitializationWatch: telemetryInitializationWatchForAgent(summaryAgent, now, initializationCooldownExpiresAt),
 			Diagnostics:         diagnostics,
 			SecurityInventory:   securityInventory,
 		})

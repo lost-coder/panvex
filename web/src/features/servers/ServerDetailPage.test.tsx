@@ -1,7 +1,9 @@
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import type { ServerDetailPageProps } from "@/shared/api/types-pages/server-detail";
+import { mockDirectServer } from "@/test/fixtures";
+
 import { ServerDetailPage } from "./ServerDetailPage";
 
 // R-Q-13: ServerDetailPage smoke-test. The fixture is large because the
@@ -55,6 +57,31 @@ function makeProps(): ServerDetailPageProps {
       upstreams: [],
       events: [],
       eventsDroppedTotal: 0,
+      useMiddleProxy: true,
+      meRuntimeReady: true,
+      me2dcFallbackEnabled: false,
+      transportMode: "middle_proxy",
+      fallbackEnteredAtUnix: null,
+    },
+  };
+}
+
+function directModeProps(): ServerDetailPageProps {
+  return { server: mockDirectServer() };
+}
+
+function meDownProps(): ServerDetailPageProps {
+  const server = mockDirectServer();
+  return {
+    server: {
+      ...server,
+      // Force the me_down classification: middle proxy required, ME not
+      // ready, ME→DC fallback disabled.
+      useMiddleProxy: true,
+      meRuntimeReady: false,
+      me2dcFallbackEnabled: false,
+      gates: { ...server.gates, useMiddleProxy: true, meRuntimeReady: false },
+      transportMode: "middle_proxy",
     },
   };
 }
@@ -67,5 +94,16 @@ describe("ServerDetailPage", () => {
 
   it("renders without throwing on a minimal but complete fixture", () => {
     expect(() => render(<ServerDetailPage {...makeProps()} />)).not.toThrow();
+  });
+
+  it("renders DirectRelayDesktop in direct mode", () => {
+    render(<ServerDetailPage {...directModeProps()} />);
+    expect(screen.getAllByText(/Upstream health/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Data Centers/i)).not.toBeInTheDocument();
+  });
+
+  it("renders MeDownHero in me_down state", () => {
+    render(<ServerDetailPage {...meDownProps()} />);
+    expect(screen.getByText(/ME pool unavailable/i)).toBeInTheDocument();
   });
 });

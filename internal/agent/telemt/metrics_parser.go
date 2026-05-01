@@ -13,9 +13,19 @@ type UserMetrics struct {
 	UniqueIPsCurrent   int
 }
 
+// UpstreamCounters holds global upstream connect counters scraped from Telemt.
+// All fields are cumulative since process start and reset on Telemt restart.
+type UpstreamCounters struct {
+	Attempt  uint64
+	Success  uint64
+	Fail     uint64
+	Failfast uint64
+}
+
 type MetricsSnapshot struct {
-	Users         map[string]*UserMetrics
-	UptimeSeconds float64
+	Users            map[string]*UserMetrics
+	UptimeSeconds    float64
+	UpstreamCounters UpstreamCounters
 }
 
 // ParseMetricsSnapshot parses a Prometheus text-format payload and returns per-user metrics plus process uptime.
@@ -35,10 +45,49 @@ func ParseMetricsSnapshot(text string) MetricsSnapshot {
 			continue
 		}
 
+		if tryParseUpstreamCounter(line, &result) {
+			continue
+		}
+
 		parseUserMetricLine(line, result.Users)
 	}
 
 	return result
+}
+
+// tryParseUpstreamCounter sets the matching field on result.UpstreamCounters
+// when line is one of the four upstream connect counters and returns true.
+//
+// A malformed value (ParseUint fails) is deliberately tolerated: the field
+// stays at its previous zero/value and the next scrape that produces a
+// well-formed line will recover. This mirrors the user-metric and uptime
+// branches above and keeps the parser tolerant of partial Telemt output.
+// See TestParseMetricsSnapshotIgnoresMalformedUpstreamCounter for the
+// behavioural contract. There is no logger plumbed into this function;
+// adding one just to flag a transient malformed line would be more noise
+// than signal.
+func tryParseUpstreamCounter(line string, result *MetricsSnapshot) bool {
+	type binding struct {
+		prefix string
+		apply  func(uint64)
+	}
+	bindings := []binding{
+		{"telemt_upstream_connect_attempt_total ", func(v uint64) { result.UpstreamCounters.Attempt = v }},
+		{"telemt_upstream_connect_success_total ", func(v uint64) { result.UpstreamCounters.Success = v }},
+		{"telemt_upstream_connect_fail_total ", func(v uint64) { result.UpstreamCounters.Fail = v }},
+		{"telemt_upstream_connect_failfast_hard_error_total ", func(v uint64) { result.UpstreamCounters.Failfast = v }},
+	}
+	for _, b := range bindings {
+		if !strings.HasPrefix(line, b.prefix) {
+			continue
+		}
+		valuePart := strings.TrimSpace(strings.TrimPrefix(line, b.prefix))
+		if v, err := strconv.ParseUint(valuePart, 10, 64); err == nil {
+			b.apply(v)
+		}
+		return true
+	}
+	return false
 }
 
 // tryParseUptimeLine sets result.UptimeSeconds when line is the uptime
