@@ -109,10 +109,23 @@ func (s *Server) restoreMetrics() error {
 // agent_fallback_state. Failures are logged but non-fatal: the worst case is
 // that the next snapshot re-enters fallback with a fresh timestamp, which
 // only affects the duration-bucket boundary used by severity escalation.
+//
+// Hydrate failures share the same alert key as runtime flush failures
+// (streamAlerts["fallback_state"] in batch_writer.go) so cold-start drift and
+// runtime flush drift land in one operator-paging rule.
+//
+// TODO: route this alert through the same emission pipeline as the batch
+// writer's streamAlerts (flushItem -> slog.Error with alert=...). Today the
+// server-startup logger has no metric/alert hook beyond slog, so we emit the
+// stable key inline; once a unified telemetry sink lands, swap the manual
+// "alert" attr for the shared helper.
 func (s *Server) restoreFallbackState() error {
 	records, err := s.store.ListAgentFallbackState(context.Background())
 	if err != nil {
-		s.logger.Warn("hydrate fallback state failed", "err", err)
+		s.logger.Error("hydrate fallback state failed",
+			"err", err,
+			"alert", streamAlerts["fallback_state"],
+		)
 		return nil
 	}
 	s.mu.Lock()

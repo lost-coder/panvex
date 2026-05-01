@@ -507,6 +507,14 @@ var streamAlerts = map[string]string{
 	// transient) emit slog.Error with alert=audit_persist_failed so
 	// operator paging rules can match a single stable key.
 	"audit": "audit_persist_failed",
+	// fallback_state is a CRITICAL stream too: a missed put/delete here
+	// silently drifts the in-memory fallbackEnteredAt map from the
+	// persisted row, which in turn drifts the 30-min severity boundary
+	// after a control-plane restart. Surface flush failures via the same
+	// alert-key channel so operators can page on a single stable key
+	// (cold-start hydrate failures in restoreFallbackState use the same
+	// key — see the TODO there).
+	"fallback_state": "fallback_state_persist_failed",
 }
 
 func (w *storeBatchWriter) flushItem(buffer string, logAttrs []any, op func() error) {
