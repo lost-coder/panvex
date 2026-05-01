@@ -292,12 +292,44 @@ type RuntimeUpstreamSummary struct {
 	Rows            []RuntimeUpstream
 
 	// Direct-mode signals — populated from UpstreamRateTracker on each fetch.
+	//
+	// The (FailRatePct5m, FailRateKnown) pair is the "nil-is-unknown" pattern
+	// expressed via two parallel fields because the wire format (proto fields
+	// 7+8 on RuntimeUpstreamSnapshot, JSON tags fail_rate_pct_5m + fail_rate_known)
+	// keeps them split. Inside Go, prefer FailRatePct5mPtr() / SetFailRatePct5m()
+	// so reads/writes stay in lockstep — never set one field without the other.
 	FailRatePct5m        float64
 	FailRateKnown        bool
 	ConnectAttemptTotal  uint64
 	ConnectSuccessTotal  uint64
 	ConnectFailTotal     uint64
 	ConnectFailfastTotal uint64
+}
+
+// FailRatePct5mPtr returns the 5-minute upstream connect fail-rate as a
+// pointer, with nil indicating "unknown" (FailRateKnown == false). Use this
+// instead of reading FailRatePct5m and FailRateKnown directly to avoid
+// desync bugs where one field is set without the other.
+func (s RuntimeUpstreamSummary) FailRatePct5mPtr() *float64 {
+	if !s.FailRateKnown {
+		return nil
+	}
+	v := s.FailRatePct5m
+	return &v
+}
+
+// SetFailRatePct5m updates FailRatePct5m and FailRateKnown together: a nil
+// pointer marks the rate unknown (and zeroes FailRatePct5m), a non-nil
+// pointer stores the value and flips FailRateKnown to true. Always prefer
+// this over touching the parallel fields directly.
+func (s *RuntimeUpstreamSummary) SetFailRatePct5m(rate *float64) {
+	if rate == nil {
+		s.FailRatePct5m = 0
+		s.FailRateKnown = false
+		return
+	}
+	s.FailRatePct5m = *rate
+	s.FailRateKnown = true
 }
 
 // RuntimeUpstream carries one operator-facing upstream row.
@@ -631,8 +663,13 @@ func (c *Client) assembleRuntimeState(raw fetchRuntimeStateRaw, partial bool) Ru
 	upstreams := raw.slowData.Upstreams
 	if c.upstreamRate != nil {
 		pct, known := c.upstreamRate.Rate()
-		upstreams.FailRatePct5m = pct
-		upstreams.FailRateKnown = known
+		// Use SetFailRatePct5m so the (rate, known) pair always moves
+		// together — see RuntimeUpstreamSummary doc comment.
+		if known {
+			upstreams.SetFailRatePct5m(&pct)
+		} else {
+			upstreams.SetFailRatePct5m(nil)
+		}
 	}
 	c.upstreamCountersMu.RLock()
 	if c.hasUpstreamCounters {

@@ -481,12 +481,17 @@ func (s *Server) telemetrySeverityAndReason(agent Agent, presenceState presence.
 		TotalUpstreams:          agent.Runtime.TotalUpstreams,
 		AgentReported:           !agent.Runtime.UpdatedAt.IsZero(),
 
-		UseMiddleProxy:        agent.Runtime.UseMiddleProxy,
-		MERuntimeReady:        agent.Runtime.MERuntimeReady,
-		ME2DCFallbackEnabled:  agent.Runtime.ME2DCFallbackEnabled,
-		UptimeSeconds:         agent.Runtime.UptimeSeconds,
-		UpstreamFailRatePct5m: agent.Runtime.FailRatePct5m,
-		UpstreamFailRateKnown: agent.Runtime.FailRateKnown,
+		UseMiddleProxy:       agent.Runtime.UseMiddleProxy,
+		MERuntimeReady:       agent.Runtime.MERuntimeReady,
+		ME2DCFallbackEnabled: agent.Runtime.ME2DCFallbackEnabled,
+		UptimeSeconds:        agent.Runtime.UptimeSeconds,
+	}
+	// Pull the (rate, known) pair through the helper so a future caller
+	// who forgets to set one of the parallel fields gets nil-is-unknown
+	// semantics for free instead of a half-initialised classification.
+	if rate := agent.Runtime.FailRatePct5mPtr(); rate != nil {
+		in.UpstreamFailRatePct5m = *rate
+		in.UpstreamFailRateKnown = true
 	}
 	if !fallbackEnteredAt.IsZero() {
 		in.FallbackActiveDuration = now.Sub(fallbackEnteredAt)
@@ -516,6 +521,12 @@ func (s *Server) telemetrySummaryForAgent(agent Agent, presenceState presence.St
 	agent.Runtime = normalizeAgentRuntime(agent.Runtime)
 	fallbackEnteredAt, fallbackActive := s.lookupFallbackEnteredLocked(agent.ID)
 	if fallbackActive {
+		// `agent` is passed by value: this assignment mutates the local
+		// copy that gets embedded in the returned telemetryServerSummary,
+		// not s.agents[agent.ID]. The *int64 pointer is local to this
+		// scope (no aliasing back into shared state), so the write is
+		// safe and intentional — don't "fix" it by taking &agent or
+		// reaching into s.agents. See follow-up #6.
 		entered := fallbackEnteredAt.Unix()
 		agent.Runtime.FallbackEnteredAtUnix = &entered
 	}
