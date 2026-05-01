@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -204,4 +205,72 @@ func TestClassifyMode(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSeverityAndReasonFallbackMatrix(t *testing.T) {
+	fresh := Freshness{State: "fresh"}
+	base := SeverityInput{
+		PresenceState:           presence.StateOnline,
+		AgentReported:           true,
+		AcceptingNewConnections: true,
+		UseMiddleProxy:          true,
+		MERuntimeReady:          false,
+		ME2DCFallbackEnabled:    true,
+		UptimeSeconds:           120,
+		HealthyUpstreams:        3,
+		TotalUpstreams:          3,
+	}
+
+	t.Run("baseline_warn", func(t *testing.T) {
+		in := base
+		in.FallbackActiveDuration = 5 * time.Minute
+		sev, reason := SeverityAndReason(in, fresh)
+		if sev != "warn" {
+			t.Fatalf("severity = %q, want warn", sev)
+		}
+		if reason != "running on ME→Direct fallback" {
+			t.Fatalf("reason = %q", reason)
+		}
+	})
+
+	t.Run("escalates_after_30min", func(t *testing.T) {
+		in := base
+		in.FallbackActiveDuration = 31 * time.Minute
+		sev, reason := SeverityAndReason(in, fresh)
+		if sev != "critical" {
+			t.Fatalf("severity = %q, want critical", sev)
+		}
+		if !strings.Contains(reason, "ME pool down, fallback active") {
+			t.Fatalf("reason = %q, want prefix 'ME pool down, fallback active'", reason)
+		}
+	})
+
+	t.Run("direct_critical_keeps_fallback_suffix", func(t *testing.T) {
+		in := base
+		in.FallbackActiveDuration = 5 * time.Minute
+		in.HealthyUpstreams = 0 // direct rule says critical
+		sev, reason := SeverityAndReason(in, fresh)
+		if sev != "critical" {
+			t.Fatalf("severity = %q, want critical", sev)
+		}
+		if !strings.HasPrefix(reason, "all upstreams down") {
+			t.Fatalf("reason = %q, want prefix 'all upstreams down'", reason)
+		}
+		if !strings.Contains(reason, "(on ME→Direct fallback)") {
+			t.Fatalf("reason = %q, want suffix '(on ME→Direct fallback)'", reason)
+		}
+	})
+
+	t.Run("escalation_combines_with_baseline_reason", func(t *testing.T) {
+		in := base
+		in.FallbackActiveDuration = 31 * time.Minute
+		in.HealthyUpstreams = 2 // direct rule says warn "some upstreams unhealthy"
+		sev, reason := SeverityAndReason(in, fresh)
+		if sev != "critical" {
+			t.Fatalf("severity = %q, want critical", sev)
+		}
+		if !strings.Contains(reason, "some upstreams unhealthy") {
+			t.Fatalf("reason = %q, want to contain baseline reason", reason)
+		}
+	})
 }

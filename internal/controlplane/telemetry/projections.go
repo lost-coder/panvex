@@ -163,9 +163,48 @@ func severityDirect(in SeverityInput) (severity, reason string) {
 	return "ok", ""
 }
 
-// severityFallback is a temporary placeholder; Task 3.5 implements the real rules.
+// severityFallback applies fallback-mode severity rules. The baseline is the
+// max(direct severity, "warn"); the reason carries the underlying direct
+// failure with a fallback suffix so the attention-list keeps fallback
+// context visible. ≥30 min duration escalates baseline to critical with a
+// two-part reason.
 func severityFallback(in SeverityInput) (severity, reason string) {
-	return "warn", "running on ME→Direct fallback"
+	directSev, directReason := severityDirect(in)
+	baselineSev := maxSeverity(directSev, "warn")
+	var baselineReason string
+	switch {
+	case directSev == "ok":
+		baselineReason = "running on ME→Direct fallback"
+	case directSev == "warn":
+		baselineReason = directReason + " (on ME→Direct fallback)"
+	default: // critical or other
+		baselineReason = directReason + " (on ME→Direct fallback)"
+	}
+
+	if in.FallbackActiveDuration >= 30*time.Minute {
+		return "critical", "ME pool down, fallback active — " + baselineReason
+	}
+	return baselineSev, baselineReason
+}
+
+func maxSeverity(a, b string) string {
+	rank := func(s string) int {
+		switch s {
+		case "ok":
+			return 0
+		case "warn":
+			return 1
+		case "critical":
+			return 2
+		case "bad":
+			return 3
+		}
+		return 0
+	}
+	if rank(a) >= rank(b) {
+		return a
+	}
+	return b
 }
 
 // SeverityRank orders server summaries by severity.
