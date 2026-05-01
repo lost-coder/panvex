@@ -109,15 +109,63 @@ func SeverityAndReason(input SeverityInput, freshness Freshness) (string, string
 		return "warn", "Runtime is degraded"
 	case input.StartupStatus != "" && input.StartupStatus != "ready":
 		return "warn", "Startup is still in progress"
-	case input.TotalUpstreams > 0 && input.HealthyUpstreams < input.TotalUpstreams:
-		return "warn", "Some upstreams are unhealthy"
-	case input.AgentReported && input.DCCoveragePct == 0:
-		return "critical", "no reachable DCs"
-	case input.DCCoveragePct > 0 && input.DCCoveragePct < 100:
-		return "warn", "DC coverage is degraded"
-	default:
-		return "good", "Node is ready"
 	}
+
+	switch ClassifyMode(input) {
+	case ModeME:
+		return severityME(input)
+	case ModeDirect:
+		return severityDirect(input)
+	case ModeFallback:
+		return severityFallback(input)
+	case ModeMeDown:
+		return "critical", "ME pool unavailable, traffic stopped"
+	}
+	return "ok", ""
+}
+
+// severityME applies ME-mode severity rules. Caller has already excluded
+// offline / not-accepting / read-only / startup branches.
+func severityME(in SeverityInput) (severity, reason string) {
+	switch {
+	case in.AgentReported && in.DCCoveragePct == 0:
+		return "critical", "no reachable DCs"
+	case in.DCCoveragePct > 0 && in.DCCoveragePct < 100:
+		return "warn", "DC coverage is degraded"
+	}
+	return "ok", ""
+}
+
+// severityDirect implements the rules for nodes running with use_middle_proxy=false.
+// Caller has already excluded the offline / not-accepting cases.
+func severityDirect(in SeverityInput) (severity, reason string) {
+	if in.UpstreamFailRateKnown {
+		switch {
+		case in.UpstreamFailRatePct5m >= 50:
+			return "critical", "upstream DC connect failing"
+		case in.UpstreamFailRatePct5m >= 10:
+			return "warn", "degraded DC connectivity"
+		}
+	}
+
+	if in.UptimeSeconds < 60 {
+		return "ok", ""
+	}
+
+	switch {
+	case in.TotalUpstreams == 0:
+		return "warn", "no upstreams configured"
+	case in.HealthyUpstreams == 0:
+		return "critical", "all upstreams down"
+	case in.HealthyUpstreams < in.TotalUpstreams:
+		return "warn", "some upstreams unhealthy"
+	}
+	return "ok", ""
+}
+
+// severityFallback is a temporary placeholder; Task 3.5 implements the real rules.
+func severityFallback(in SeverityInput) (severity, reason string) {
+	return "warn", "running on ME→Direct fallback"
 }
 
 // SeverityRank orders server summaries by severity.

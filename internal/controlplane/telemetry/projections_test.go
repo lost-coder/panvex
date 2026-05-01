@@ -56,6 +56,8 @@ func TestSeverityAndReasonDCCoverageMatrix(t *testing.T) {
 		AcceptingNewConnections: true,
 		Degraded:                false,
 		StartupStatus:           "ready",
+		UseMiddleProxy:          true,
+		MERuntimeReady:          true,
 	}
 	freshness := Freshness{State: "fresh"}
 
@@ -67,11 +69,11 @@ func TestSeverityAndReasonDCCoverageMatrix(t *testing.T) {
 		wantReason    string
 	}{
 		{"coverage_0_reported", 0, true, "critical", "no reachable DCs"},
-		{"coverage_0_not_reported", 0, false, "good", "Node is ready"},
+		{"coverage_0_not_reported", 0, false, "ok", ""},
 		{"coverage_50_reported", 50, true, "warn", "DC coverage is degraded"},
 		{"coverage_50_not_reported", 50, false, "warn", "DC coverage is degraded"},
-		{"coverage_100_reported", 100, true, "good", "Node is ready"},
-		{"coverage_100_not_reported", 100, false, "good", "Node is ready"},
+		{"coverage_100_reported", 100, true, "ok", ""},
+		{"coverage_100_not_reported", 100, false, "ok", ""},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -87,6 +89,90 @@ func TestSeverityAndReasonDCCoverageMatrix(t *testing.T) {
 				t.Fatalf("SeverityAndReason() reason = %q, want %q", reason, tc.wantReason)
 			}
 		})
+	}
+}
+
+func TestSeverityAndReasonDirectMatrix(t *testing.T) {
+	fresh := Freshness{State: "fresh"}
+	base := SeverityInput{
+		PresenceState:           presence.StateOnline,
+		AgentReported:           true,
+		AcceptingNewConnections: true,
+		UseMiddleProxy:          false,
+		UptimeSeconds:           120, // past 60s grace
+	}
+
+	cases := []struct {
+		name             string
+		healthy          int
+		total            int
+		rate             float64
+		rateKnown        bool
+		wantSeverity     string
+		wantReasonExact  string
+	}{
+		{"all_healthy_no_rate",        3, 3, 0,    false, "ok", ""},
+		{"some_unhealthy",             2, 3, 0,    false, "warn", "some upstreams unhealthy"},
+		{"all_down",                   0, 3, 0,    false, "critical", "all upstreams down"},
+		{"none_configured",            0, 0, 0,    false, "warn", "no upstreams configured"},
+		{"rate_below_warn",            3, 3, 5,    true,  "ok", ""},
+		{"rate_warn_band",             3, 3, 25,   true,  "warn", "degraded DC connectivity"},
+		{"rate_critical_band",         3, 3, 60,   true,  "critical", "upstream DC connect failing"},
+		{"rate_unknown_falls_to_health", 0, 3, 0,  false, "critical", "all upstreams down"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			in := base
+			in.HealthyUpstreams = tc.healthy
+			in.TotalUpstreams = tc.total
+			in.UpstreamFailRatePct5m = tc.rate
+			in.UpstreamFailRateKnown = tc.rateKnown
+
+			sev, reason := SeverityAndReason(in, fresh)
+			if sev != tc.wantSeverity {
+				t.Fatalf("severity = %q, want %q", sev, tc.wantSeverity)
+			}
+			if reason != tc.wantReasonExact {
+				t.Fatalf("reason = %q, want %q", reason, tc.wantReasonExact)
+			}
+		})
+	}
+}
+
+func TestSeverityAndReasonDirectGracePeriod(t *testing.T) {
+	fresh := Freshness{State: "fresh"}
+	in := SeverityInput{
+		PresenceState:           presence.StateOnline,
+		AgentReported:           true,
+		AcceptingNewConnections: true,
+		UseMiddleProxy:          false,
+		UptimeSeconds:           30, // before 60s grace
+		HealthyUpstreams:        0,
+		TotalUpstreams:          3,
+	}
+	sev, _ := SeverityAndReason(in, fresh)
+	if sev != "ok" {
+		t.Fatalf("severity = %q during 60s grace, want ok", sev)
+	}
+}
+
+func TestSeverityAndReasonMeDown(t *testing.T) {
+	fresh := Freshness{State: "fresh"}
+	in := SeverityInput{
+		PresenceState:           presence.StateOnline,
+		AgentReported:           true,
+		AcceptingNewConnections: true,
+		UseMiddleProxy:          true,
+		MERuntimeReady:          false,
+		ME2DCFallbackEnabled:    false,
+		UptimeSeconds:           120,
+	}
+	sev, reason := SeverityAndReason(in, fresh)
+	if sev != "critical" {
+		t.Fatalf("severity = %q, want critical", sev)
+	}
+	if reason != "ME pool unavailable, traffic stopped" {
+		t.Fatalf("reason = %q", reason)
 	}
 }
 

@@ -84,7 +84,7 @@ func (s *Server) collectTelemetryDashboardSnapshot(scope FleetScopeAccess, now t
 func buildTelemetryAttention(items []telemetryServerSummary) []telemetryAttentionItem {
 	attention := make([]telemetryAttentionItem, 0, 5)
 	for _, item := range items {
-		if item.Severity == "good" && item.RuntimeFreshness.State == "fresh" {
+		if (item.Severity == "good" || item.Severity == "ok") && item.RuntimeFreshness.State == "fresh" {
 			continue
 		}
 		attention = append(attention, telemetryAttentionItem{
