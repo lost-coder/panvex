@@ -21,6 +21,7 @@ func (s *Store) PutPanelSettings(ctx context.Context, settings storage.PanelSett
 		Scope:              panelSettingsScope,
 		HttpPublicUrl:      settings.HTTPPublicURL,
 		GrpcPublicEndpoint: settings.GRPCPublicEndpoint,
+		PasswordMinLength:  settings.PasswordMinLength,
 		UpdatedAt:          settings.UpdatedAt.UTC(),
 	})
 }
@@ -39,6 +40,7 @@ func (s *Store) GetPanelSettings(ctx context.Context) (storage.PanelSettingsReco
 	return storage.PanelSettingsRecord{
 		HTTPPublicURL:      row.HttpPublicUrl,
 		GRPCPublicEndpoint: row.GrpcPublicEndpoint,
+		PasswordMinLength:  row.PasswordMinLength,
 		UpdatedAt:          row.UpdatedAt.UTC(),
 	}, nil
 }

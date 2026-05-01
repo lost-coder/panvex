@@ -328,6 +328,10 @@ type AgentCertificateRecoveryGrantRecord struct {
 type PanelSettingsRecord struct {
 	HTTPPublicURL      string
 	GRPCPublicEndpoint string
+	// PasswordMinLength is the operator-configured minimum password length.
+	// Zero is sentinel for "not configured" — callers should treat it as
+	// the compiled-in default (auth.DefaultPasswordMinLength).
+	PasswordMinLength  int32
 	UpdatedAt          time.Time
 }
 

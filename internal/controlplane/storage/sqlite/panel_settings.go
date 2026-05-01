@@ -16,14 +16,16 @@ func (s *Store) PutPanelSettings(ctx context.Context, settings storage.PanelSett
 			scope,
 			http_public_url,
 			grpc_public_endpoint,
+			password_min_length,
 			updated_at_unix
 		)
-		VALUES (?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(scope) DO UPDATE SET
 			http_public_url = excluded.http_public_url,
 			grpc_public_endpoint = excluded.grpc_public_endpoint,
+			password_min_length = excluded.password_min_length,
 			updated_at_unix = excluded.updated_at_unix
-	`, panelSettingsScope, settings.HTTPPublicURL, settings.GRPCPublicEndpoint, toUnix(settings.UpdatedAt))
+	`, panelSettingsScope, settings.HTTPPublicURL, settings.GRPCPublicEndpoint, settings.PasswordMinLength, toUnix(settings.UpdatedAt))
 	return err
 }
 
@@ -32,6 +34,7 @@ func (s *Store) GetPanelSettings(ctx context.Context) (storage.PanelSettingsReco
 		SELECT
 			http_public_url,
 			grpc_public_endpoint,
+			password_min_length,
 			updated_at_unix
 		FROM panel_settings
 		WHERE scope = ?
@@ -39,7 +42,7 @@ func (s *Store) GetPanelSettings(ctx context.Context) (storage.PanelSettingsReco
 
 	var settings storage.PanelSettingsRecord
 	var updatedAt int64
-	if err := row.Scan(&settings.HTTPPublicURL, &settings.GRPCPublicEndpoint, &updatedAt); err != nil {
+	if err := row.Scan(&settings.HTTPPublicURL, &settings.GRPCPublicEndpoint, &settings.PasswordMinLength, &updatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.PanelSettingsRecord{}, storage.ErrNotFound
 		}

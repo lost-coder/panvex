@@ -23,6 +23,7 @@ func runSettingsContract(t *testing.T, open OpenStore) {
 		settings := storage.PanelSettingsRecord{
 			HTTPPublicURL:      "https://panel.example.com",
 			GRPCPublicEndpoint: "panel.example.com:8443",
+			PasswordMinLength:  9,
 			UpdatedAt:          time.Date(2026, time.March, 16, 18, 0, 0, 0, time.UTC),
 		}
 
@@ -43,6 +44,34 @@ func runSettingsContract(t *testing.T, open OpenStore) {
 		}
 		if !stored.UpdatedAt.Equal(settings.UpdatedAt) {
 			t.Fatalf("GetPanelSettings() UpdatedAt = %v, want %v", stored.UpdatedAt, settings.UpdatedAt)
+		}
+		if stored.PasswordMinLength != settings.PasswordMinLength {
+			t.Fatalf("GetPanelSettings() PasswordMinLength = %d, want %d", stored.PasswordMinLength, settings.PasswordMinLength)
+		}
+	})
+
+	// TestPanelSettingsRoundTripPasswordPolicy asserts that PasswordMinLength
+	// survives a Put/Get round-trip on every backend (S-01).
+	t.Run("panel settings password policy round trip", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		in := storage.PanelSettingsRecord{
+			HTTPPublicURL:      "https://panel.example",
+			GRPCPublicEndpoint: "agents.example:8443",
+			PasswordMinLength:  14,
+			UpdatedAt:          time.Date(2026, time.March, 16, 18, 0, 0, 0, time.UTC),
+		}
+		if err := store.PutPanelSettings(ctx, in); err != nil {
+			t.Fatalf("PutPanelSettings: %v", err)
+		}
+		got, err := store.GetPanelSettings(ctx)
+		if err != nil {
+			t.Fatalf("GetPanelSettings: %v", err)
+		}
+		if got.PasswordMinLength != in.PasswordMinLength {
+			t.Fatalf("PasswordMinLength = %d, want %d", got.PasswordMinLength, in.PasswordMinLength)
 		}
 	})
 
