@@ -43,9 +43,11 @@ function rec(v: unknown): Record<string, unknown> {
     : {};
 }
 
-function mapSeverity(s: "good" | "warn" | "bad"): Severity {
-  if (s === "good") return "ok";
-  if (s === "bad") return "error";
+function mapSeverity(
+  s: "good" | "ok" | "warn" | "critical" | "bad",
+): Severity {
+  if (s === "good" || s === "ok") return "ok";
+  if (s === "bad" || s === "critical") return "error";
   return "warn";
 }
 

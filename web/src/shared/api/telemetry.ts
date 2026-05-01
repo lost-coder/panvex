@@ -51,7 +51,7 @@ export type TelemetryDiagnosticsRefreshResponse = {
 
 export type TelemetryServerSummary = {
   agent: Agent;
-  severity: "good" | "warn" | "bad";
+  severity: "good" | "ok" | "warn" | "critical" | "bad";
   reason: string;
   runtime_freshness: TelemetryFreshness;
   detail_boost: TelemetryDetailBoost;
@@ -61,7 +61,7 @@ export type TelemetryAttentionItem = {
   agent_id: string;
   node_name: string;
   fleet_group_id: string;
-  severity: "good" | "warn" | "bad";
+  severity: "good" | "ok" | "warn" | "critical" | "bad";
   reason: string;
   presence_state: string;
   runtime: AgentRuntime;

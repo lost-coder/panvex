@@ -72,7 +72,7 @@ const telemetryDetailBoostSchema = z.object({
 
 const telemetryServerSummarySchema = z.object({
   agent: agentSchema,
-  severity: z.enum(["good", "warn", "bad"]),
+  severity: z.enum(["good", "ok", "warn", "critical", "bad"]),
   reason: z.string(),
   runtime_freshness: telemetryFreshnessSchema,
   detail_boost: telemetryDetailBoostSchema,
@@ -82,7 +82,7 @@ const telemetryAttentionItemSchema = z.object({
   agent_id: z.string(),
   node_name: z.string(),
   fleet_group_id: z.string(),
-  severity: z.enum(["good", "warn", "bad"]),
+  severity: z.enum(["good", "ok", "warn", "critical", "bad"]),
   reason: z.string(),
   presence_state: z.string(),
   runtime: agentRuntimeSchema,
