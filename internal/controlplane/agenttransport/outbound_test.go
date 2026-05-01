@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"errors"
 	"log/slog"
 	"math/big"
 	"net"
@@ -110,6 +111,68 @@ func TestOutboundSupervisorEnrollsWhenPending(t *testing.T) {
 	}
 	if got := connectCalls.Load(); got < 2 {
 		t.Errorf("connect calls: got %d, want >= 2", got)
+	}
+}
+
+// TestOutboundSupervisorRetriesAfterEnrollFailure verifies that when enrollFn
+// returns an error the supervisor backs off and tries again, and that once
+// enrollFn eventually succeeds the normal mTLS dial is reached. This guards
+// the failure-then-recover path that the happy-path test does not exercise.
+func TestOutboundSupervisorRetriesAfterEnrollFailure(t *testing.T) {
+	stub := newAgentStubServer(t)
+	defer stub.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var enrollCalls atomic.Int32
+	var connectCalls atomic.Int32
+
+	// Stay "pending" until enrollFn succeeds, then flip to "active" so the
+	// supervisor stops trying to enroll and proceeds to the mTLS dial.
+	state := atomic.Value{}
+	state.Store("pending")
+	bootstrapStateFn := func(_ context.Context, _ string) (string, error) {
+		return state.Load().(string), nil
+	}
+	// First two calls fail; third succeeds and flips the bootstrap state.
+	enrollFn := func(_ context.Context, _, _ string) error {
+		n := enrollCalls.Add(1)
+		if n < 3 {
+			return errors.New("enroll: simulated transient failure")
+		}
+		state.Store("active")
+		return nil
+	}
+	handler := func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+		connectCalls.Add(1)
+		return nil
+	}
+
+	sup := newOutboundSupervisor(
+		NodeMeta{NodeID: "n1", AgentID: "agent-1", DialAddress: stub.address},
+		stub.clientTLS,
+		handler,
+		slog.Default(),
+	)
+	sup.backoffInitial = 10 * time.Millisecond
+	sup.backoffMax = 50 * time.Millisecond
+	sup.enrollFn = enrollFn
+	sup.bootstrapStateFn = bootstrapStateFn
+
+	go sup.run(ctx)
+
+	deadline := time.Now().Add(3 * time.Second)
+	for (enrollCalls.Load() < 3 || connectCalls.Load() < 1) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+
+	if got := enrollCalls.Load(); got < 3 {
+		t.Errorf("enrollFn calls: got %d, want >= 3 (two failures + one success)", got)
+	}
+	if got := connectCalls.Load(); got < 1 {
+		t.Errorf("connect calls: got %d, want >= 1 (mTLS dial after successful enrollment)", got)
 	}
 }
 
