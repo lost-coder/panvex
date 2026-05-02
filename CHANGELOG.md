@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Security / DX — Sprint S-12 (2026-05-02)
+
+- **BP-02 (part 1):** wired Zod runtime validation onto every response in `web/src/shared/api/auth.ts`. Added `totpSetupResponseSchema` and `totpStatusResponseSchema` to `schemas/auth.ts`; the `login`, `startTotpSetup`, `enableTotp`, and `disableTotp` API calls now parse responses through their schemas instead of casting `as T`. Auth is the highest-leverage area to migrate first — every other endpoint protects already-authenticated state, so a schema-mismatch on auth responses now fails loudly rather than corrupting the login flow. Added 4 schema tests covering shape acceptance + edge-case rejection (empty secret, non-boolean state).
+- **BP-02 (remaining scope):** ~60 more endpoints across `clients.ts` (12), `fleet-groups.ts` (15), `telemetry.ts` (8), `settings.ts` (8), `servers.ts` (6), `users.ts` (4), `enrollment.ts` (3), `updates.ts` (5), `jobs.ts` (1) still cast `as T`. The pattern is established and tested; full migration is mechanical but per-endpoint work — owned by each feature team during ongoing maintenance. Audit `BP-02` partially closed; remaining endpoints can be tracked individually.
+
 ### Performance — Sprint S-11 (2026-05-02)
 
 - **P-04:** lazy-loaded the three `ServerDetail` tab components (`ConnectionsTab`, `MePoolTab`, `EventsTab`) via `React.lazy` + `Suspense`. The initial `ServerDetailContainer-*.js` chunk shrunk from ~30 KB to **12.79 KB gzip**; each tab now streams in its own ~5–10 KB chunk only when the user activates it (mobile swipe / desktop Fold open). Tightened the `size-limit` page-chunk budget from 60 KB to 20 KB to lock the win in CI. The smaller initial chunk reduces time-to-interactive on first navigation to a server's detail page, especially on flaky networks where each round-trip costs.
