@@ -54,3 +54,10 @@ Closes 5 High/Medium-severity findings from the 2026-05-01 audit (S-01, S-02, S-
 - `useClientIPHistory`, `useServerHistory` (×2), `useUpdates`: 60s → 300s/60s
 
 No `staleTime` / `gcTime` settings were modified.
+
+## [Unreleased] — Sprint S-3 (2026-05-02)
+
+### Code Quality / DX — Sprint S-3 (2026-05-XX)
+
+- **Q-02:** decomposed `internal/controlplane/auth/service.go` (was 1327 LOC, 30+ functions) into four focused files. `service.go` is now ~186 LOC and holds only the `Service` struct, constructors, global setters (`SetVault`, `SetNow`, `SetPasswordPolicy`), `Role` constants, `User` / `Session` / `LoginInput` types, and shared error sentinels. TOTP code (setup / enable / disable / reset / verify, replay store, vault encryption) lives in `totp.go`. Session lifecycle (`Authenticate`, `RevokeSessionsForUser`, `TouchSession`, `Logout`, persistence restore, idle/absolute TTL bookkeeping, timing-safe `dummyPasswordHash`) lives in `sessions.go`. Full user lifecycle (`BootstrapUser`, `CreateUser`, `UpdateUser`, `DeleteUser`, `GetUserByID`, snapshot/load) is consolidated in `users.go`. No behavioural change — pure refactor; the audit's stale `// see lockouts.go` comment is removed.
+- **Q-09 + BP-01:** removed every `*WithContext` paired method on `auth.Service`. Public API now accepts `ctx context.Context` as the first argument: `Authenticate`, `BootstrapUser`, `CreateUser`, `UpdateUser`, `DeleteUser`, `GetUserByID`, `RevokeSessionsForUser`, `TouchSession`, `Logout`, `StartTotpSetup`, `EnableTotp`, `DisableTotp`, `ResetTotp`. Call-sites in HTTP handlers (`internal/controlplane/server/`) and the `cmd/control-plane bootstrap-admin` subcommand updated. Test fixtures pass `context.Background()`.
