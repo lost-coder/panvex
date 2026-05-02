@@ -271,3 +271,47 @@ func TestIsCSRFExemptPath(t *testing.T) {
 		}
 	}
 }
+
+// TestIsCSRFExemptPath_RejectsAttackerControlledPrefix is a regression test
+// for S-05. It locks down the exact-match semantics of isCSRFExemptPath and
+// verifies that attacker-controlled prefixes (trailing slash, double-leading
+// slash, path traversal, case folding, unconfigured prefix) are NOT exempt.
+func TestIsCSRFExemptPath_RejectsAttackerControlledPrefix(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		path       string
+		panelRoot  string
+		agentRoot  string
+		wantExempt bool
+	}{
+		// Canonical positive cases — must remain exempt.
+		{"plain agent bootstrap empty roots", "/api/agent/bootstrap", "", "", true},
+		{"plain agent recover empty roots", "/api/agent/recover-certificate", "", "", true},
+
+		// Attacker-controlled prefixes — must NOT be exempt.
+		{"attacker-prefixed bootstrap", "/attacker/api/agent/bootstrap", "", "", false},
+		{"path traversal", "/api/agent/bootstrap/../../etc/passwd", "", "", false},
+		{"double slash leading", "//api/agent/bootstrap", "", "", false},
+		// The bare /api/... form is always exempt regardless of configured roots —
+		// agents dial /api/... directly and do not know the panel root path.
+		{"bare path still exempt when roots configured", "/api/agent/bootstrap", "/panel", "/agent", true},
+		{"panel root match", "/panel/api/agent/bootstrap", "/panel", "/agent", true},
+		{"agent root match", "/agent/api/agent/bootstrap", "/panel", "/agent", true},
+		{"trailing slash", "/api/agent/bootstrap/", "", "", false},
+		{"case folded", "/API/AGENT/BOOTSTRAP", "", "", false},
+		{"empty path", "", "", "", false},
+		{"only the panel root no suffix", "/panel", "/panel", "", false},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := isCSRFExemptPath(tt.path, tt.panelRoot, tt.agentRoot)
+			if got != tt.wantExempt {
+				t.Fatalf("isCSRFExemptPath(%q, panel=%q, agent=%q) = %v, want %v",
+					tt.path, tt.panelRoot, tt.agentRoot, got, tt.wantExempt)
+			}
+		})
+	}
+}
