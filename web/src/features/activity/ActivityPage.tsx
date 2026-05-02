@@ -1,254 +1,28 @@
 // P3-FE-01: recomposed locally from UI-kit primitives.
 // Phase-7 redesign: pulse row + chip-tab + status filter + search + paging.
 import { useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
 import {
-  AgeCell,
   DataTable,
   EmptyState,
   FilterBar,
   FilterChip,
   PageHeader,
   PulseRow,
-  StatusLabel,
-  cn,
-  formatTime,
   type PulseTick,
   type PulseTone,
-  type StatusTone,
 } from "@/ui";
-import { formatAge, shortId } from "@/shared/lib/pages-shared";
 import { useNowSec } from "@/shared/hooks/useNowSec";
 import { usePagination } from "@/shared/hooks/usePagination";
 import type {
   ActivityPageProps,
-  JobListItem,
-  AuditListItem,
 } from "@/shared/api/types-pages/pages";
+import { AuditList } from "./components/AuditList";
+import { getJobColumns } from "./components/JobsTable";
+import { useTranslation } from "react-i18next";
 
 const DAY = 86_400;
 
 type JobTone = PulseTone;
-
-const jobStatusVariant: Record<string, JobTone> = {
-  succeeded: "ok",
-  running: "warn",
-  queued: "default",
-  failed: "error",
-  expired: "error",
-};
-
-// Backend emits snake_case action tags ("rollout_client_config",
-// "agent_restart"). Pretty-case inline so the table reads like prose without
-// a translation map.
-function prettyAction(action: string) {
-  return action.replaceAll("_", " ");
-}
-
-// ─── Jobs view ────────────────────────────────────────────────────────────────
-
-function JobStatusCell({ status }: Readonly<{ status: string }>) {
-  const tone: StatusTone = jobStatusVariant[status] ?? "default";
-  return <StatusLabel tone={tone} label={status} animate={status === "running"} />;
-}
-
-// Q4.U-Q-09: column headers come from i18n so the operator sees the
-// labels in the language they picked in profile settings. Computed via
-// a factory so the static import-time const can carry untranslated
-// labels and the component call-site supplies the translated values.
-function getJobColumns(t: (key: string) => string) {
-  return [
-    {
-      key: "action",
-      header: t("columns.action"),
-      render: (j: Readonly<JobListItem>) => (
-        <div className="flex flex-col gap-0.5 min-w-0">
-          <span className="font-mono text-xs text-fg">{prettyAction(j.action)}</span>
-          {j.failureReason && (
-            // Failure reason as a dim second line under the action so operators
-            // see *why* a job failed without opening a detail modal.
-            <span
-              className="text-[11px] text-status-error/80 truncate"
-              title={j.failureReason}
-            >
-              {j.failureReason}
-            </span>
-          )}
-        </div>
-      ),
-      className: "min-w-[220px] max-w-[360px]",
-    },
-    {
-      key: "status",
-      header: t("columns.status"),
-      render: (j: Readonly<JobListItem>) => <JobStatusCell status={j.status} />,
-      className: "w-[140px]",
-    },
-    {
-      key: "targets",
-      header: t("columns.targets"),
-      render: (j: Readonly<JobListItem>) => (
-        <span className="font-mono text-xs text-fg-muted tabular-nums">
-          {j.targetCount === 0 ? "—" : `×${j.targetCount}`}
-        </span>
-      ),
-      className: "hidden sm:table-cell text-center w-[80px]",
-    },
-    {
-      key: "actor",
-      header: t("columns.actor"),
-      render: (j: Readonly<JobListItem>) => (
-        <span
-          className={cn(
-            "text-[11px] truncate",
-            j.actorLabel ? "text-fg" : "font-mono text-fg-muted",
-          )}
-          title={j.actorId}
-        >
-          {j.actorLabel ?? shortId(j.actorId)}
-        </span>
-      ),
-      className: "hidden md:table-cell w-[140px]",
-    },
-    {
-      key: "created",
-      header: t("columns.created"),
-      render: (j: Readonly<JobListItem>) => <AgeCell unixSec={j.createdAtUnix} mode="age" />,
-      className: "text-right w-[120px]",
-    },
-  ];
-}
-
-// ─── Audit view ───────────────────────────────────────────────────────────────
-
-// Audit action slugs like "user.login" / "client.update" have a namespace
-// prefix — color it faintly to anchor the eye on the real verb.
-function ActionCell({ action }: Readonly<{ action: string }>) {
-  const dot = action.indexOf(".");
-  if (dot < 0) {
-    return <span className="font-mono text-xs text-fg">{action}</span>;
-  }
-  return (
-    <span className="font-mono text-xs">
-      <span className="text-fg-muted">{action.slice(0, dot + 1)}</span>
-      <span className="text-fg">{action.slice(dot + 1)}</span>
-    </span>
-  );
-}
-
-function groupByDay(events: AuditListItem[]) {
-  const groups = new Map<string, AuditListItem[]>();
-  for (const e of events) {
-    const d = new Date(e.createdAtUnix * 1000);
-    const key = d.toLocaleDateString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-    const bucket = groups.get(key) ?? [];
-    bucket.push(e);
-    groups.set(key, bucket);
-  }
-  return Array.from(groups.entries());
-}
-
-function AuditRowActor({ e }: Readonly<{ e: AuditListItem }>) {
-  const label = e.actorLabel ?? shortId(e.actorId);
-  return (
-    <span
-      className={cn(
-        "truncate",
-        e.actorLabel ? "text-fg" : "font-mono text-fg-muted",
-      )}
-      title={e.actorId}
-    >
-      {label}
-    </span>
-  );
-}
-
-function AuditRowTarget({ e }: Readonly<{ e: AuditListItem }>) {
-  if (!e.targetId) return null;
-  const label = e.targetLabel ?? shortId(e.targetId);
-  const kindTone: Record<string, string> = {
-    user: "bg-accent/10 text-accent",
-    client: "bg-status-ok/10 text-status-ok",
-    agent: "bg-status-warn/15 text-status-warn",
-  };
-  return (
-    <span className="inline-flex items-center gap-1.5 truncate">
-      <span className="text-fg-faint">→</span>
-      {e.targetKind && (
-        <span
-          className={cn(
-            "rounded-xs px-1 py-px text-[9px] font-mono uppercase tracking-wider",
-            kindTone[e.targetKind] ?? "bg-fg-faint/30 text-fg-muted",
-          )}
-        >
-          {e.targetKind}
-        </span>
-      )}
-      <span
-        className={cn(
-          "truncate",
-          e.targetLabel ? "text-fg" : "font-mono text-fg-muted",
-        )}
-        title={e.targetId}
-      >
-        {label}
-      </span>
-    </span>
-  );
-}
-
-function AuditList({ events }: Readonly<{ events: AuditListItem[] }>) {
-  const groups = useMemo(() => groupByDay(events), [events]);
-  if (events.length === 0) {
-    return (
-      <EmptyState
-        title="Audit trail is empty"
-        description="Every login, mutation, and admin action appears here. Activity from the last 30 days is retained by default."
-      />
-    );
-  }
-  return (
-    <div className="flex flex-col gap-4">
-      {groups.map(([day, rows]) => (
-        <section key={day} className="flex flex-col rounded-xs border border-border overflow-hidden">
-          <header className="bg-bg-card px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider text-fg-muted border-b border-divider">
-            {day}
-            <span className="ml-2 text-fg-faint">({rows.length})</span>
-          </header>
-          <ul className="flex flex-col">
-            {rows.map((e) => (
-              <li
-                key={e.id}
-                className="flex items-center gap-3 px-3 py-2 border-b border-divider last:border-b-0 hover:bg-bg-hover transition-colors"
-              >
-                <span className="text-[10px] font-mono text-fg-muted tabular-nums w-[56px] shrink-0">
-                  {formatTime(e.createdAtUnix)}
-                </span>
-                <div className="shrink-0">
-                  <ActionCell action={e.action} />
-                </div>
-                <span className="text-[11px] text-fg-muted flex items-center gap-1.5 min-w-0 flex-1">
-                  <span className="text-fg-faint shrink-0">by</span>
-                  <AuditRowActor e={e} />
-                  <AuditRowTarget e={e} />
-                </span>
-                <span className="ml-auto text-[10px] font-mono text-fg-faint shrink-0">
-                  {formatAge(e.createdAtUnix)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
-    </div>
-  );
-}
-
-// ─── Main ─────────────────────────────────────────────────────────────────────
 
 const JOB_STATUSES = ["all", "running", "queued", "succeeded", "failed"] as const;
 type JobStatusFilter = (typeof JOB_STATUSES)[number];
@@ -300,13 +74,13 @@ export function ActivityPage({
         label: "Running now",
         value: running.length.toLocaleString(),
         hint: running.length > 0 ? "active or queued" : "nothing in flight",
-        tone: running.length > 0 ? "warn" : "default",
+        tone: running.length > 0 ? ("warn" as JobTone) : ("default" as JobTone),
       },
       {
         label: "Failed 24h",
         value: failed24h.length.toLocaleString(),
         hint: failed24h.length > 0 ? "needs review" : "clean window",
-        tone: failed24h.length > 0 ? "error" : "default",
+        tone: failed24h.length > 0 ? ("error" as JobTone) : ("default" as JobTone),
       },
       {
         label: "Audit 24h",
@@ -485,7 +259,7 @@ export function ActivityPage({
                     type="button"
                     onClick={pager.next}
                     disabled={!pager.hasNext}
-                    className="rounded-xs border border-border bg-bg-card px-2.5 py-1 font-mono uppercase tracking-wider text-fg-muted transition-colors hover:text-fg disabled:opacity-40 disabled:pointer-events-none"
+                    className="rounded-xs border border-border bg-bg-card px-2.5 py-1 font-mono uppercase tracking-wider text-fg-muted transition-colors hover:text-fg disabled:pointer-events-none disabled:opacity-40"
                   >
                     Next →
                   </button>
