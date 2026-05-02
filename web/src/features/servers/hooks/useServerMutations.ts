@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/shared/api/api";
+import { notifyMutationError } from "@/shared/api/http";
 
 export function useServerMutations(serverId: string) {
   const qc = useQueryClient();
@@ -12,25 +13,25 @@ export function useServerMutations(serverId: string) {
   const allowCertRecoveryMutation = useMutation({
     mutationFn: () => apiClient.allowAgentCertificateRecovery(serverId),
     onSuccess: invalidateServer,
-    onError: (err) => console.error("Failed to allow certificate recovery:", err),
+    onError: (err) => notifyMutationError("servers", "cert-recovery.allow", err),
   });
 
   const revokeCertRecoveryMutation = useMutation({
     mutationFn: () => apiClient.revokeAgentCertificateRecovery(serverId),
     onSuccess: invalidateServer,
-    onError: (err) => console.error("Failed to revoke certificate recovery:", err),
+    onError: (err) => notifyMutationError("servers", "cert-recovery.revoke", err),
   });
 
   const boostDetailMutation = useMutation({
     mutationFn: () => apiClient.activateTelemetryDetailBoost(serverId),
     onSuccess: invalidateServer,
-    onError: (err) => console.error("Failed to activate detail boost:", err),
+    onError: (err) => notifyMutationError("servers", "detail-boost.activate", err),
   });
 
   const renameMutation = useMutation({
     mutationFn: (nodeName: string) => apiClient.renameAgent(serverId, nodeName),
     onSuccess: invalidateServer,
-    onError: (err) => console.error("Failed to rename agent:", err),
+    onError: (err) => notifyMutationError("servers", "agent.rename", err),
   });
 
   const updateFleetGroupMutation = useMutation({
@@ -40,7 +41,7 @@ export function useServerMutations(serverId: string) {
       // Fleet-group member counts on the groups list change too.
       qc.invalidateQueries({ queryKey: ["fleet-groups"] });
     },
-    onError: (err) => console.error("Failed to reassign agent fleet group:", err),
+    onError: (err) => notifyMutationError("servers", "agent.update-fleet-group", err),
   });
 
   const deregisterMutation = useMutation({
@@ -50,7 +51,7 @@ export function useServerMutations(serverId: string) {
       qc.invalidateQueries({ queryKey: ["agents"] });
       qc.invalidateQueries({ queryKey: ["control-room"] });
     },
-    onError: (err) => console.error("Failed to deregister agent:", err),
+    onError: (err) => notifyMutationError("servers", "agent.deregister", err),
   });
 
   return {

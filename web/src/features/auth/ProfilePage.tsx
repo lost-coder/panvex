@@ -2,6 +2,8 @@
 // two-column sections (Appearance · Security) on desktop, stacked on mobile.
 import { useState } from "react";
 import { Palette, ShieldCheck } from "lucide-react";
+
+import { notifyMutationError } from "@/shared/api/http";
 import {
   Badge,
   Button,
@@ -45,7 +47,7 @@ export function ProfilePage({
       // log so unexpected failures (malformed response, render-time bug)
       // still leave a trace in the console rather than silently closing
       // the sheet.
-      console.error("TOTP setup failed", err);
+      notifyMutationError("auth", "totp.setup", err);
     }
   }
 
@@ -198,7 +200,7 @@ export function ProfilePage({
                     // API errors land in `totpError` and keep the sheet
                     // open intentionally. Log so unexpected throws still
                     // leave a trace.
-                    console.error("TOTP enable failed", err);
+                    notifyMutationError("auth", "totp.enable", err);
                   }
                 }}
                 onCancel={() => setSetupOpen(false)}
@@ -229,7 +231,7 @@ export function ProfilePage({
                     // API errors land in `totpError` and keep the sheet
                     // open intentionally. Log so unexpected throws still
                     // leave a trace.
-                    console.error("TOTP disable failed", err);
+                    notifyMutationError("auth", "totp.disable", err);
                   }
                 }}
                 onCancel={() => setDisableOpen(false)}

@@ -90,6 +90,52 @@ export interface ForbiddenEventDetail {
   code?: string | undefined;
 }
 
+/**
+ * Name of the CustomEvent dispatched when a React Query mutation fails. The
+ * UI's ToastProvider (or a future Sentry-bridge) listens for these to show a
+ * single user-visible error and to forward the failure to a remote sink in
+ * production. (BP-04 — replaces ad-hoc console.error in onError handlers.)
+ *
+ * In development we also call console.error for fast triage; in production
+ * the console call is dropped (process.env.NODE_ENV check inside notifyMutationError)
+ * so operator devtools stay clean.
+ */
+export const MUTATION_ERROR_EVENT = "panvex:mutation-error";
+
+export interface MutationErrorDetail {
+  /** Logical area: "auth", "servers", "clients", etc. */
+  feature: string;
+  /** Specific action — e.g. "totp.enable", "agent.rename". */
+  action: string;
+  /** The thrown error object — usually ApiError or schema parse error. */
+  error: unknown;
+}
+
+/**
+ * notifyMutationError is the canonical replacement for `console.error` in
+ * React Query `onError` handlers. It dispatches MUTATION_ERROR_EVENT on
+ * window so listeners (toast, Sentry-bridge) get a uniform structured event,
+ * and in development still writes a console.error for live triage.
+ *
+ * Safe to call from non-window contexts (SSR, tests) — guarded.
+ */
+export function notifyMutationError(
+  feature: string,
+  action: string,
+  error: unknown,
+): void {
+  if (process.env.NODE_ENV !== "production") {
+    // Dev-only triage aid — drops out of production builds via
+    // process.env.NODE_ENV constant folding.
+    console.error(`[${feature}.${action}]`, error);
+  }
+  if (typeof globalThis.window === "undefined") return;
+  const detail: MutationErrorDetail = { feature, action, error };
+  globalThis.dispatchEvent(
+    new CustomEvent<MutationErrorDetail>(MUTATION_ERROR_EVENT, { detail }),
+  );
+}
+
 function isAuthBootstrapPath(path: string): boolean {
   // Strip any root-path prefix; we only care about the /api/... tail.
   // Match both `/api/auth/login` and `/api/auth/me` (with any query string).

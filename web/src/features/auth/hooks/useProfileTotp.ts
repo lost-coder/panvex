@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/shared/api/api";
+import { notifyMutationError } from "@/shared/api/http";
 
 export function useProfileTotp() {
   const qc = useQueryClient();
@@ -10,7 +11,7 @@ export function useProfileTotp() {
 
   const setupMutation = useMutation({
     mutationFn: () => apiClient.startTotpSetup(),
-    onError: (err) => console.error("Failed to start TOTP setup:", err),
+    onError: (err) => notifyMutationError("auth", "totp.setup", err),
   });
 
   const enableMutation = useMutation({
@@ -21,14 +22,14 @@ export function useProfileTotp() {
       // Clear TOTP secret from mutation cache after successful enable
       setupMutation.reset();
     },
-    onError: (err) => console.error("Failed to enable TOTP:", err),
+    onError: (err) => notifyMutationError("auth", "totp.enable", err),
   });
 
   const disableMutation = useMutation({
     mutationFn: (payload: { password: string; totp_code: string }) =>
       apiClient.disableTotp(payload),
     onSuccess: invalidateProfile,
-    onError: (err) => console.error("Failed to disable TOTP:", err),
+    onError: (err) => notifyMutationError("auth", "totp.disable", err),
   });
 
   return { setupMutation, enableMutation, disableMutation };
