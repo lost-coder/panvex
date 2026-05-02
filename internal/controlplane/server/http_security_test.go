@@ -204,6 +204,32 @@ func TestSecurityHeadersDoNotAllowInlineScripts(t *testing.T) {
 	}
 }
 
+// TestSecurityHeaders_CSPScopesWssToRequestHost verifies that the CSP
+// connect-src directive contains a host-scoped wss:// origin rather than the
+// unbounded wss: source (S-08).
+func TestSecurityHeaders_CSPScopesWssToRequestHost(t *testing.T) {
+	t.Parallel()
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://panel.example:8080/api/health", nil)
+	req.Host = "panel.example:8080"
+	securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(rr, req)
+	csp := rr.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "wss://panel.example:8080") {
+		t.Fatalf("CSP missing scoped wss: %q", csp)
+	}
+	// The bare keyword "wss:" (not followed by //) must NOT appear.
+	// We check the connect-src directive specifically to avoid matching
+	// the scheme in the scoped wss:// value.
+	connectSrc := extractDirective(csp, "connect-src")
+	for _, token := range strings.Fields(connectSrc) {
+		if token == "wss:" {
+			t.Fatalf("CSP connect-src still has unbounded wss: keyword: %q", csp)
+		}
+	}
+}
+
 // extractDirective returns the token list for a single CSP directive,
 // without the directive name.
 func extractDirective(csp, name string) string {

@@ -37,6 +37,10 @@ var csrfExemptAPISuffixes = []string{
 //     the app. (Radix UI and some component libraries occasionally use inline
 //     style attributes; those are governed by the HTML style="..." attribute
 //     and are allowed regardless of style-src policy under CSP Level 3.)
+//   - connect-src 'self' wss://<host> (S-08): WebSocket connections are scoped
+//     to the request host so a script cannot redirect websockets to arbitrary
+//     HTTPS endpoints. The Origin header and ws Origin-Pattern check enforce
+//     this server-side too. The CSP is built per-request.
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
@@ -54,7 +58,16 @@ func securityHeaders(next http.Handler) http.Handler {
 		// off-origin URL and exfiltrate fields. 'self' restricts every
 		// form post to the panel's own origin, lining up with
 		// connect-src for fetch/XHR.
-		h.Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' wss:; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
+		// S-08: scope wss to request host so a script cannot redirect
+		// websockets to arbitrary HTTPS endpoints. The Origin header
+		// and ws Origin-Pattern check enforce this server-side too.
+		wsOrigin := "wss://" + r.Host
+		h.Set("Content-Security-Policy",
+			"default-src 'self'; script-src 'self'; style-src 'self'; "+
+				"connect-src 'self' "+wsOrigin+"; "+
+				"img-src 'self' data:; font-src 'self'; "+
+				"object-src 'none'; base-uri 'self'; form-action 'self'; "+
+				"frame-ancestors 'none'")
 		h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		next.ServeHTTP(w, r)
 	})
