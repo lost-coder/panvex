@@ -480,7 +480,7 @@ func TestRecordClientJobResultDoesNotPanicWhenDeploymentPersistenceFails(t *test
 
 	store.putClientDeploymentErr = errors.New("put client deployment failed")
 
-	server.recordClientJobResult("agent-000001", jobList[0].ID, true, "ok", `{"connection_links":["tg://proxy?secret=abc"]}`, now.Add(time.Minute))
+	server.recordClientJobResultWithContext(t.Context(), "agent-000001", jobList[0].ID, true, "ok", `{"connection_links":["tg://proxy?secret=abc"]}`, now.Add(time.Minute))
 
 	detailClient, _, deployments, err := server.clientDetailSnapshot(client.ID)
 	if err != nil {
