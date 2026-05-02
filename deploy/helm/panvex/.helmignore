@@ -1,0 +1,11 @@
+# Patterns to ignore when building packages.
+# Operators don't need the helmfiles, READMEs, or test artefacts inside the
+# rendered tarball.
+.git/
+.gitignore
+*.bak
+*.tmp
+*~
+.DS_Store
+README.md.tmpl
+tests/

@@ -1,0 +1,20 @@
+apiVersion: v2
+name: panvex
+description: Panvex control-plane — manage fleets of Telemt MTProxy nodes from a single Kubernetes cluster.
+type: application
+version: 0.1.0
+# Application version is the panvex-control-plane release this chart is
+# pinned to. Bump it together with the image tag in values.yaml when
+# upgrading; never publish a chart with a `latest` image.
+appVersion: "0.1.0"
+home: https://github.com/lost-coder/panvex
+sources:
+  - https://github.com/lost-coder/panvex
+keywords:
+  - mtproxy
+  - telegram
+  - control-plane
+  - panvex
+maintainers:
+  - name: Panvex Maintainers
+    url: https://github.com/lost-coder/panvex

@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "panvex.fullname" . }}
+  labels: {{- include "panvex.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels: {{- include "panvex.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "panvex.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # S-04: keep this strictly above controlPlaneShutdownGraceMin (45s)
+      # so the audit-event flush completes before SIGKILL.
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: control-plane
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          args:
+            - "-storage-driver"
+            - {{ .Values.storage.driver | quote }}
+            - "-http-addr"
+            - ":{{ .Values.service.httpPort }}"
+            - "-grpc-addr"
+            - ":{{ .Values.service.grpcPort }}"
+            {{- if .Values.trustedProxyCIDRs }}
+            - "-trusted-proxy-cidrs"
+            - {{ .Values.trustedProxyCIDRs | quote }}
+            {{- end }}
+          env:
+            - name: PANVEX_DB_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ if .Values.storage.existingSecret }}{{ .Values.storage.existingSecret }}{{ else }}{{ include "panvex.fullname" . }}-db{{ end }}
+                  key: dsn
+            - name: PANVEX_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ if .Values.encryptionKey.existingSecret }}{{ .Values.encryptionKey.existingSecret }}{{ else }}{{ include "panvex.fullname" . }}-encryption{{ end }}
+                  key: {{ .Values.encryptionKey.existingSecretKey | default "encryption-key" }}
+            {{- if .Values.hstsPreload }}
+            - name: PANVEX_HSTS_PRELOAD
+              value: {{ .Values.hstsPreload | quote }}
+            {{- end }}
+            - name: PANVEX_ENV
+              value: production
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.httpPort }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ .Values.service.grpcPort }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # readOnlyRootFilesystem requires a writable /tmp for the SQLite
+        # journal-file path (even when driver=postgres, modernc/sqlite still
+        # touches /tmp during init); cheap to provide and prevents surprises.
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

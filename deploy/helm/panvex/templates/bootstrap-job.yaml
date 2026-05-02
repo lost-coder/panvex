@@ -1,0 +1,69 @@
+{{- if .Values.bootstrap.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "panvex.fullname" . }}-bootstrap
+  labels: {{- include "panvex.labels" . | nindent 4 }}
+  annotations:
+    # Run once on first install. Helm hooks tie execution to release lifecycle:
+    # post-install runs after the Deployment is up; the bootstrap-admin
+    # subcommand refuses to plant on a non-empty store, so re-running it after
+    # the first admin exists is a no-op.
+    "helm.sh/hook": post-install
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels: {{- include "panvex.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: bootstrap
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          command:
+            - "/usr/local/bin/panvex-control-plane"
+            - "bootstrap-admin"
+            - "-username"
+            - {{ .Values.bootstrap.username | quote }}
+            - "-password-file"
+            - "/var/run/panvex/bootstrap-password"
+            - "-storage-driver"
+            - {{ .Values.storage.driver | quote }}
+          env:
+            - name: PANVEX_DB_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ if .Values.storage.existingSecret }}{{ .Values.storage.existingSecret }}{{ else }}{{ include "panvex.fullname" . }}-db{{ end }}
+                  key: dsn
+            - name: PANVEX_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ if .Values.encryptionKey.existingSecret }}{{ .Values.encryptionKey.existingSecret }}{{ else }}{{ include "panvex.fullname" . }}-encryption{{ end }}
+                  key: {{ .Values.encryptionKey.existingSecretKey | default "encryption-key" }}
+          volumeMounts:
+            - name: bootstrap-password
+              mountPath: /var/run/panvex
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: bootstrap-password
+          secret:
+            secretName: {{ .Values.bootstrap.passwordExistingSecret | required ".Values.bootstrap.passwordExistingSecret is required when bootstrap.enabled is true" }}
+            items:
+              - key: {{ .Values.bootstrap.passwordExistingSecretKey | default "password" }}
+                path: bootstrap-password
+                mode: 0400
+        - name: tmp
+          emptyDir:
+            sizeLimit: 16Mi
+{{- end }}

@@ -1,0 +1,139 @@
+# Panvex Helm chart values.
+#
+# This chart deploys the control-plane as a single replica StatefulSet/Deployment
+# with the embedded React UI. It does NOT bundle Postgres — bring your own
+# (operator's responsibility), or run docker-compose for SQLite-backed dev.
+
+image:
+  # Operators MUST override repository to point at their registry mirror or
+  # the upstream digest-pinned image. `latest` is intentionally absent from
+  # this template so a fresh install never gets a moving target.
+  repository: ghcr.io/lost-coder/panvex-control-plane
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+  # Optional: imagePullSecrets, propagated into pod spec verbatim.
+  pullSecrets: []
+
+# Number of replicas. The control-plane uses an external Postgres for
+# persistence and broadcasts state via WebSocket; multiple replicas behind a
+# load balancer are safe as long as session affinity is configured (or all
+# replicas trust the same auth.csrf secret + Postgres).
+replicaCount: 1
+
+# Storage driver: "postgres" or "sqlite". Sqlite is intended for dev only;
+# in K8s use postgres.
+storage:
+  driver: postgres
+  # Connection DSN — see https://github.com/jackc/pgx for syntax. Use
+  # sslmode=require in production.
+  dsn: ""
+  # If you don't want to put the DSN in values.yaml verbatim (recommended),
+  # supply it from an existing Secret with the key `dsn`.
+  existingSecret: ""
+
+# Encryption key passphrase used by the secret-vault for at-rest envelope
+# encryption of TOTP secrets, client secrets, etc. PVS2 ciphertexts written
+# under a different passphrase will not decrypt — treat this as load-bearing.
+encryptionKey:
+  # Inline value (test-only). Use existingSecret for production.
+  value: ""
+  existingSecret: ""
+  existingSecretKey: "encryption-key"
+
+# Network exposure. The Service is ClusterIP by default; pair with the Ingress
+# block below or your own.
+service:
+  type: ClusterIP
+  httpPort: 8080
+  grpcPort: 8443
+
+ingress:
+  # When enabled=true, an Ingress for the HTTP panel is created. Agents dial
+  # the gRPC port directly via the Service or a separate L4 ingress
+  # (annotations vary per controller; not templated here).
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: panvex.example
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  # tls:
+  #   - secretName: panvex-tls
+  #     hosts:
+  #       - panvex.example
+
+# Pod resources. Bumped above defaults so the audit-event drain has headroom.
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+# S-04 (audit-events vs SIGKILL): terminationGracePeriodSeconds MUST exceed
+# controlPlaneShutdownGraceMin = 45s in cmd/control-plane/server_lifecycle.go
+# so the in-flight audit batch finishes before the kubelet sends SIGKILL.
+# 60s gives a 15s buffer.
+terminationGracePeriodSeconds: 60
+
+# Pod disruption budget. Keeps at least one replica up during voluntary
+# disruptions (node drains, autoscaler events). For replicaCount=1, this
+# blocks node drain — that is intended; raise replicaCount before relying on PDB.
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Liveness / readiness probes. /healthz is always registered on the
+# control-plane router and returns 200 once the HTTP listener is up.
+probes:
+  liveness:
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readiness:
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+# Trusted-proxy CIDRs (S-06). Required if the panel sits behind an Ingress.
+# Default covers Kubernetes service CIDRs + Docker bridge + IPv6 ULA.
+trustedProxyCIDRs: "172.16.0.0/12,10.0.0.0/8,fd00::/8"
+
+# HSTS preload opt-in (S-09). Set to "1" to enable a 2-year HSTS with the
+# preload directive.
+hstsPreload: ""
+
+# Optional: pod-level securityContext + container securityContext.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+  readOnlyRootFilesystem: true
+
+# Bootstrap admin job (one-shot). Set bootstrap.enabled=true to run a
+# `bootstrap-admin` job once and never again. Subsequent helm upgrades
+# leave the existing user untouched (`bootstrap-admin` refuses to plant
+# on a non-empty store).
+bootstrap:
+  enabled: false
+  username: admin
+  passwordExistingSecret: ""
+  passwordExistingSecretKey: "password"
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
