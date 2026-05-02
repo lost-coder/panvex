@@ -553,6 +553,24 @@ func (s *memoryStore) UpdateAgentTransportMode(_ context.Context, agentID, _, _ 
 	return nil
 }
 
+func (s *memoryStore) UpdateAgentCertPin(_ context.Context, agentID string, pin []byte) error {
+	agent, ok := s.agents[agentID]
+	if !ok {
+		return storage.ErrNotFound
+	}
+	agent.CertSPKISHA256 = pin
+	s.agents[agentID] = agent
+	return nil
+}
+
+func (s *memoryStore) GetAgentCertPin(_ context.Context, agentID string) ([]byte, error) {
+	agent, ok := s.agents[agentID]
+	if !ok {
+		return nil, storage.ErrNotFound
+	}
+	return agent.CertSPKISHA256, nil
+}
+
 func (s *memoryStore) DeleteInstancesByAgent(_ context.Context, agentID string) error {
 	for id, inst := range s.instances {
 		if inst.AgentID == agentID {

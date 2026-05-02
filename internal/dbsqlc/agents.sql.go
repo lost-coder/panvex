@@ -13,6 +13,19 @@ import (
 	"github.com/google/uuid"
 )
 
+const getAgentCertPin = `-- name: GetAgentCertPin :one
+SELECT cert_spki_sha256
+FROM agents
+WHERE id = $1
+`
+
+func (q *Queries) GetAgentCertPin(ctx context.Context, id string) ([]byte, error) {
+	row := q.db.QueryRowContext(ctx, getAgentCertPin, id)
+	var cert_spki_sha256 []byte
+	err := row.Scan(&cert_spki_sha256)
+	return cert_spki_sha256, err
+}
+
 const listAgents = `-- name: ListAgents :many
 SELECT id, node_name, fleet_group_id, version, read_only,
        last_seen_at, cert_issued_at, cert_expires_at
@@ -61,6 +74,22 @@ func (q *Queries) ListAgents(ctx context.Context) ([]ListAgentsRow, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateAgentCertPin = `-- name: UpdateAgentCertPin :exec
+UPDATE agents
+SET cert_spki_sha256 = $2
+WHERE id = $1
+`
+
+type UpdateAgentCertPinParams struct {
+	ID             string
+	CertSpkiSha256 []byte
+}
+
+func (q *Queries) UpdateAgentCertPin(ctx context.Context, arg UpdateAgentCertPinParams) error {
+	_, err := q.db.ExecContext(ctx, updateAgentCertPin, arg.ID, arg.CertSpkiSha256)
+	return err
 }
 
 const upsertAgent = `-- name: UpsertAgent :exec

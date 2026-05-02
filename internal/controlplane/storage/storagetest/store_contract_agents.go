@@ -1,7 +1,9 @@
 package storagetest
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -176,6 +178,68 @@ func runAgentsContract(t *testing.T, open OpenStore) {
 		}
 		if len(discovered) != 0 {
 			t.Fatalf("ListDiscoveredClientsByAgent() = %d rows, want 0 (cascade did not purge)", len(discovered))
+		}
+	})
+
+	// TestUpdateAgentCertPinRoundTrip verifies that an agent's SPKI pin
+	// survives a Put/Get round-trip on every backend (S-02).
+	t.Run("UpdateAgentCertPin round-trip", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		group := storage.FleetGroupRecord{
+			ID:        testFleetGroupID,
+			Name:      "Default",
+			CreatedAt: time.Date(2026, time.March, 15, 8, 20, 0, 0, time.UTC),
+		}
+		agent := storage.AgentRecord{
+			ID:         "agent-pin-test",
+			NodeName:   "node-pin",
+			FleetGroupID: group.ID,
+			Version:    "dev",
+			LastSeenAt: time.Date(2026, time.March, 15, 8, 25, 0, 0, time.UTC),
+		}
+		if err := store.PutFleetGroup(ctx, group); err != nil {
+			t.Fatalf("PutFleetGroup() error = %v", err)
+		}
+		if err := store.PutAgent(ctx, agent); err != nil {
+			t.Fatalf("PutAgent() error = %v", err)
+		}
+
+		pin := bytes.Repeat([]byte{0xAB}, 32)
+		if err := store.UpdateAgentCertPin(ctx, agent.ID, pin); err != nil {
+			t.Fatalf("UpdateAgentCertPin() error = %v", err)
+		}
+		got, err := store.GetAgentCertPin(ctx, agent.ID)
+		if err != nil {
+			t.Fatalf("GetAgentCertPin() error = %v", err)
+		}
+		if !bytes.Equal(got, pin) {
+			t.Fatalf("GetAgentCertPin() = %x, want %x", got, pin)
+		}
+	})
+
+	// TestGetAgentCertPinUnknownAgent verifies the missing-agent error path.
+	t.Run("GetAgentCertPin unknown agent returns ErrNotFound", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		_, err := store.GetAgentCertPin(ctx, "no-such-agent")
+		if !errors.Is(err, storage.ErrNotFound) {
+			t.Fatalf("GetAgentCertPin() err = %v, want ErrNotFound", err)
+		}
+	})
+
+	t.Run("UpdateAgentCertPin unknown agent returns ErrNotFound", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+		ctx := context.Background()
+		pin := bytes.Repeat([]byte{0xCD}, 32)
+		err := store.UpdateAgentCertPin(ctx, "no-such-agent", pin)
+		if !errors.Is(err, storage.ErrNotFound) {
+			t.Fatalf("err = %v, want ErrNotFound", err)
 		}
 	})
 }

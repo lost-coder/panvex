@@ -17,3 +17,13 @@ SET node_name       = EXCLUDED.node_name,
     last_seen_at    = EXCLUDED.last_seen_at,
     cert_issued_at  = EXCLUDED.cert_issued_at,
     cert_expires_at = EXCLUDED.cert_expires_at;
+
+-- name: UpdateAgentCertPin :exec
+UPDATE agents
+SET cert_spki_sha256 = $2
+WHERE id = $1;
+
+-- name: GetAgentCertPin :one
+SELECT cert_spki_sha256
+FROM agents
+WHERE id = $1;

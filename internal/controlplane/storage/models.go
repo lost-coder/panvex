@@ -249,6 +249,11 @@ type AgentRecord struct {
 	// from a backup or rotation log) cannot impersonate the agent
 	// (Q4.U-S-04). Hex-encoded big-endian serial.
 	CertSerial string
+	// CertSPKISHA256 is the SHA-256 hash of the agent's serving cert SPKI,
+	// set on first successful enroll (S-02). Empty bytes mean "not yet
+	// pinned"; subsequent dials must verify the served cert hashes to this
+	// value via storage.UpdateAgentCertPin.
+	CertSPKISHA256 []byte
 }
 
 // InstanceRecord stores one Telemt runtime observed through an agent.

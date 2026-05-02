@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
@@ -61,6 +62,37 @@ func (s *Store) GetAgentCertSerial(ctx context.Context, agentID string) (string,
 		return "", err
 	}
 	return serial, nil
+}
+
+// UpdateAgentCertPin persists the SPKI SHA-256 hash for an agent (S-02).
+func (s *Store) UpdateAgentCertPin(ctx context.Context, agentID string, pin []byte) error {
+	result, err := s.db.ExecContext(ctx, `UPDATE agents SET cert_spki_sha256 = ? WHERE id = ?`, pin, agentID)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return storage.ErrNotFound
+	}
+	return nil
+}
+
+// GetAgentCertPin returns the SPKI pin for the agent. Returns ErrNotFound
+// when no agent with the given ID exists; returns empty bytes (no error)
+// when the agent exists but is not yet pinned.
+func (s *Store) GetAgentCertPin(ctx context.Context, agentID string) ([]byte, error) {
+	var pin []byte
+	err := s.db.QueryRowContext(ctx, `SELECT cert_spki_sha256 FROM agents WHERE id = ?`, agentID).Scan(&pin)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, storage.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return pin, nil
 }
 
 func (s *Store) ListAgents(ctx context.Context) ([]storage.AgentRecord, error) {

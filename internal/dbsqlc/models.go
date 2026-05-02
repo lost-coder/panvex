@@ -28,6 +28,7 @@ type Agent struct {
 	BootstrapState     string
 	BootstrapTokenHash []byte
 	BootstrapExpiresAt sql.NullTime
+	CertSpkiSha256     []byte
 }
 
 type AgentCertificateRecoveryGrant struct {

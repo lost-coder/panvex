@@ -87,6 +87,17 @@ type FleetStore interface {
 	// GetAgentCertSerial returns the pinned serial; "" means unpinned
 	// (legacy agent whose cert pre-dates the schema migration).
 	GetAgentCertSerial(ctx context.Context, agentID string) (string, error)
+	// UpdateAgentCertPin persists the SPKI SHA-256 hash for an agent. Set
+	// after first successful enroll; subsequent dials verify against this
+	// value. Empty pin means "not yet pinned" (S-02). Returns ErrNotFound
+	// if no agent with the given ID exists, matching the convention of
+	// every other Update* method on this interface.
+	UpdateAgentCertPin(ctx context.Context, agentID string, pin []byte) error
+	// GetAgentCertPin returns the SPKI pin previously stored via
+	// UpdateAgentCertPin. Returns ErrNotFound if no agent with the given
+	// ID exists; returns empty bytes (no error) if the agent exists but
+	// is not yet pinned.
+	GetAgentCertPin(ctx context.Context, agentID string) ([]byte, error)
 	// UpdateAgentTransportMode changes the agent's transport_mode and
 	// dial_address. dialAddress is empty when switching to inbound mode.
 	// Returns ErrNotFound when the agent doesn't exist.
