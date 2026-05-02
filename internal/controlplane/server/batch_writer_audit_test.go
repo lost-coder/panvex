@@ -86,7 +86,7 @@ func TestAuditWriteIsAsync(t *testing.T) {
 		// Drain the single queued row in a best-effort call so the store's
 		// ring buffer does not leak past the test. 200ms is more than
 		// enough for one slow insert.
-		_ = w.StopWithTimeout(200 * time.Millisecond)
+		_ = w.StopWithTimeout(t.Context(), 200*time.Millisecond)
 	})
 
 	start := time.Now()
@@ -127,7 +127,7 @@ func TestAuditBufferFlushesOnShutdown(t *testing.T) {
 	}
 
 	// Stop must drain synchronously; 10s is the production budget.
-	if err := w.StopWithTimeout(10 * time.Second); err != nil {
+	if err := w.StopWithTimeout(t.Context(), 10*time.Second); err != nil {
 		t.Fatalf("StopWithTimeout: %v", err)
 	}
 

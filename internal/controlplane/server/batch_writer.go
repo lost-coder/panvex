@@ -243,16 +243,26 @@ func (w *storeBatchWriter) Start() {
 // returns a context.DeadlineExceeded error so the caller can record the
 // partial-flush condition (we do not panic or block indefinitely).
 //
+// parentCtx is the shutdown-scope ctx the timeout is layered on top of. It
+// MUST NOT be a ctx that the caller has already cancelled (e.g. a server
+// lifecycle ctx that Close cancelled prior to this call) — the drain would
+// abort immediately and queued audit rows would be lost. Callers that need
+// to detach from a cancelled lifecycle ctx should pass
+// context.WithoutCancel(serverCtx) so values propagate but cancellation
+// does not. Plan 3 / BP-01 routes the literal Background away from this
+// path; tests and call sites that have no lifecycle ctx still pass
+// context.Background() at the call edge.
+//
 // Events enqueued AFTER StopWithTimeout begins are still accepted by the
 // lock-free Enqueue path, but they may be dropped if the drain goroutine is
 // already past the per-buffer Drain call — callers that must not lose events
 // should stop upstream producers (HTTP handlers, gRPC streams) before
 // invoking StopWithTimeout.
-func (w *storeBatchWriter) StopWithTimeout(timeout time.Duration) error {
+func (w *storeBatchWriter) StopWithTimeout(parentCtx context.Context, timeout time.Duration) error {
 	w.stopOnce.Do(func() { close(w.done) })
 	w.wg.Wait()
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(parentCtx, timeout)
 	defer cancel()
 
 	done := make(chan struct{})
@@ -513,7 +523,7 @@ var streamAlerts = map[string]string{
 	// after a control-plane restart. Surface flush failures via the same
 	// alert-key channel so operators can page on a single stable key
 	// (cold-start hydrate failures in restoreFallbackState use the same
-	// key — see the TODO there).
+	// key — see state_restore.go).
 	"fallback_state": "fallback_state_persist_failed",
 }
 

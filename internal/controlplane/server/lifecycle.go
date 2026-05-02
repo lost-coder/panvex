@@ -323,7 +323,12 @@ func (s *Server) Close() {
 		}
 	})
 	if s.batchWriter != nil {
-		if err := s.batchWriter.StopWithTimeout(10 * time.Second); err != nil {
+		// serverCtx was cancelled above so we detach from cancellation
+		// (values still propagate) — otherwise the WithTimeout below would
+		// be born already-cancelled and the drain would abort before any
+		// queued audit row could be flushed. Plan 3 / BP-01.
+		drainParent := context.WithoutCancel(s.serverCtx)
+		if err := s.batchWriter.StopWithTimeout(drainParent, 10*time.Second); err != nil {
 			s.logger.Error("batch writer drain timed out on shutdown",
 				"error", err,
 				"alert", "audit_persist_failed",

@@ -206,7 +206,7 @@ func TestChaosShutdownMidAudit(t *testing.T) {
 	// Very tight timeout — the drain WILL be interrupted on slow runners
 	// and WILL finish on fast ones. The chaos invariant is that neither
 	// outcome corrupts data.
-	stopErr := w.StopWithTimeout(50 * time.Millisecond)
+	stopErr := w.StopWithTimeout(t.Context(), 50*time.Millisecond)
 
 	// The returned error is either nil (drained in time) or
 	// context.DeadlineExceeded (per the StopWithTimeout contract). Anything

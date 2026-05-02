@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -190,7 +189,10 @@ func (s *Server) restoreStoredPanelSettings() error {
 		return nil
 	}
 
-	record, err := s.store.GetPanelSettings(context.Background())
+	// ctx is the boot-time lifecycle context (s.serverCtx) so a Close()
+	// during a slow GetPanelSettings storage call aborts the read instead
+	// of holding the constructor open (Plan 3 / BP-01).
+	record, err := s.store.GetPanelSettings(s.Context())
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			return nil
@@ -238,7 +240,11 @@ type UpdateState struct {
 }
 
 func (s *Server) restoreUpdateSettings() error {
-	data, err := s.store.GetUpdateSettings(context.Background())
+	// ctx is the boot-time lifecycle context (s.serverCtx) so a Close()
+	// during a slow update-settings/state read aborts the read instead of
+	// holding the constructor open (Plan 3 / BP-01).
+	ctx := s.Context()
+	data, err := s.store.GetUpdateSettings(ctx)
 	if err != nil {
 		return err
 	}
@@ -247,7 +253,7 @@ func (s *Server) restoreUpdateSettings() error {
 			return err
 		}
 	}
-	data, err = s.store.GetUpdateState(context.Background())
+	data, err = s.store.GetUpdateState(ctx)
 	if err != nil {
 		return err
 	}
