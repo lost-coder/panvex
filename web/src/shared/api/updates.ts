@@ -1,4 +1,11 @@
 import { api, apiBasePath } from "./http";
+import {
+  checkForUpdatesResponseSchema,
+  updateAgentResponseSchema,
+  updatePanelResponseSchema,
+  updateSettingsResponseSchema,
+  updateSettingsSchema,
+} from "./schemas";
 
 export interface UpdateSettings {
   check_interval_hours: number;
@@ -24,22 +31,42 @@ export interface UpdateSettingsResponse {
 }
 
 export const updatesApi = {
-  getUpdateSettings: () => api<UpdateSettingsResponse>(`${apiBasePath}/settings/updates`),
+  // R-Q-20: Zod parse on every read/write; response schemas mirror the
+  // runtime types so the api<T>() overload accepts them.
+  getUpdateSettings: () =>
+    api<UpdateSettingsResponse>(
+      `${apiBasePath}/settings/updates`,
+      undefined,
+      updateSettingsResponseSchema,
+    ),
   putUpdateSettings: (settings: UpdateSettings) =>
-    api<UpdateSettings>(`${apiBasePath}/settings/updates`, {
-      method: "PUT",
-      body: JSON.stringify(settings),
-    }),
+    api<UpdateSettings>(
+      `${apiBasePath}/settings/updates`,
+      {
+        method: "PUT",
+        body: JSON.stringify(settings),
+      },
+      updateSettingsSchema,
+    ),
   checkForUpdates: () =>
-    api<{ status: string }>(`${apiBasePath}/settings/updates/check`, { method: "POST" }),
+    api<{ status: string }>(
+      `${apiBasePath}/settings/updates/check`,
+      { method: "POST" },
+      checkForUpdatesResponseSchema,
+    ),
   updatePanel: (version?: string) =>
-    api<{ status: string; from: string; to: string }>(`${apiBasePath}/settings/panel/update`, {
-      method: "POST",
-      body: JSON.stringify({ version: version || "" }),
-    }),
+    api<{ status: string; from: string; to: string }>(
+      `${apiBasePath}/settings/panel/update`,
+      {
+        method: "POST",
+        body: JSON.stringify({ version: version || "" }),
+      },
+      updatePanelResponseSchema,
+    ),
   updateAgent: (agentId: string, version?: string) =>
     api<{ job_id: string; status: string; version: string }>(
       `${apiBasePath}/agents/${agentId}/update`,
-      { method: "POST", body: JSON.stringify({ version: version || "" }) }
+      { method: "POST", body: JSON.stringify({ version: version || "" }) },
+      updateAgentResponseSchema,
     ),
 };

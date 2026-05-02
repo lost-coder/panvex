@@ -20,4 +20,8 @@ export * from "./users.ts";
 export * from "./settings.ts";
 export * from "./fleet.ts";
 export * from "./enrollment.ts";
+export * from "./updates.ts";
+export * from "./telemetry.ts";
+export * from "./clients.ts";
+export * from "./fleet-groups.ts";
 export * from "./requests/index.ts";
