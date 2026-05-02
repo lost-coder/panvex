@@ -71,7 +71,9 @@ func (s *Store) runTransact(ctx context.Context, fn storage.TxFn) (retErr error)
 		return err
 	}
 
-	txStore := &Store{db: tx, sqlDB: nil}
+	// P-02: queries inside the transaction also count toward the per-request
+	// total — wrap the *sql.Tx the same way Open wraps the pool.
+	txStore := &Store{db: newInstrumentedExecutor(tx), sqlDB: nil}
 
 	defer func() {
 		if p := recover(); p != nil {

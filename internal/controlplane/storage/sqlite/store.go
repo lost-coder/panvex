@@ -123,7 +123,7 @@ func OpenContext(ctx context.Context, dsn string) (*Store, error) {
 		return nil, err
 	}
 
-	return &Store{db: db, sqlDB: db}, nil
+	return &Store{db: newInstrumentedExecutor(db), sqlDB: db}, nil
 }
 
 // Ping verifies that the database connection is alive.

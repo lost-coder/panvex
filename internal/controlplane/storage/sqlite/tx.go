@@ -50,7 +50,9 @@ func (s *Store) Transact(ctx context.Context, fn storage.TxFn) (retErr error) {
 		}
 	}()
 
-	txStore := &Store{db: connExecutor{conn: conn}, sqlDB: nil}
+	// P-02: queries inside the transaction count toward the per-request total
+	// just like the non-transactional path — wrap the conn executor.
+	txStore := &Store{db: newInstrumentedExecutor(connExecutor{conn: conn}), sqlDB: nil}
 	if err := fn(txStore); err != nil {
 		return err
 	}

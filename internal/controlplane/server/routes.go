@@ -48,6 +48,10 @@ func (s *Server) routes() http.Handler {
 	// first and can emit a clean error instead of being torn down by
 	// the transport.
 	router.Use(requestTimeoutMiddleware(defaultRequestTimeout))
+	// P-02: count DB round-trips per panel request and WARN above the
+	// N+1 threshold. Mounted before route dispatch so every handler is
+	// covered, including agent endpoints under /api/agent/*.
+	router.Use(s.dbQueryCountMiddleware)
 	router.Use(s.csrfOriginCheck(s.panelRuntime.HTTPRootPath, s.panelRuntime.AgentHTTPRootPath))
 	router.Get("/healthz", handleHealthz())
 	router.Get("/readyz", s.handleReadyz())

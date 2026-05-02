@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Performance / Observability — Sprint S-20 (2026-05-02)
+
+- **P-02:** added per-request DB query counter + N+1 detection middleware. Storage backends (`postgres` + `sqlite`) now wrap their `dbExecutor` with `instrumentedExecutor`, which increments a context-bound counter on every `Exec`/`Query`/`QueryRow` call. HTTP middleware `dbQueryCountMiddleware` installs a fresh counter per inbound request and emits a structured WARN with `alert=high_db_query_count`, `path`, `method`, `query_count`, `threshold` when the count exceeds **30** for a single request — that's the audit's N+1 paging signal. Calls running outside a tracked HTTP request (background batch writer, gRPC streams, startup hooks) are unaffected — `IncrementDBQuery` is a cheap atomic no-op when the context carries no counter. Closes the audit's "no SQL tracing → can't confirm N+1" gap; gives operators the dashboard signal needed to drill into specific endpoints. Added 8 unit tests covering counter semantics (zero-init, increments, request-scoping, thread safety, no-op when ctx unset) and middleware behaviour (under-threshold quiet, above-threshold WARN with audit-stable alert key, no-logger safety).
+
 ### Security / DX — Sprint S-19 (2026-05-02)
 
 - **BP-02 (final):** completed the Zod schema sweep across all 9 API files in `web/src/shared/api/`. Every `api<T>(...)` call that returns a non-empty body now passes a Zod schema as the third argument; responses are validated at the boundary instead of cast `as T`. Closes the audit's "no-schema migration list" TODO. Added 36 new response schemas for endpoints that previously lacked one. The full migration matches the pattern Sprint S-12 established for auth.ts. Exact file-by-file coverage:
