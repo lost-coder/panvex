@@ -20,7 +20,7 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 		t.Fatalf("sqlite.Open() error = %v", err)
 	}
 	defer store.Close()
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -217,7 +217,7 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 		t.Fatal("jobs.List() did not contain telemetry.refresh_diagnostics job")
 	}
 
-	restored := New(Options{
+	restored := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now.Add(time.Minute) },
 		Store: store,
@@ -249,7 +249,7 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 
 func TestHTTPTelemetryDetailExposesInitializationWatchActiveAndCooldown(t *testing.T) {
 	now := time.Date(2026, time.March, 29, 16, 0, 0, 0, time.UTC)
-	server := New(Options{Now: func() time.Time { return now }})
+	server := mustNew(t, Options{Now: func() time.Time { return now }})
 	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",

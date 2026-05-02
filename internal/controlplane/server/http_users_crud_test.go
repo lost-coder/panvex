@@ -20,7 +20,7 @@ func TestHTTPUsersCreateUpdateDeleteRoundTrip(t *testing.T) {
 	}
 	defer store.Close()
 
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -135,7 +135,7 @@ func TestHTTPUsersRejectSelfDeleteAndLastAdminDemotion(t *testing.T) {
 	}
 	defer store.Close()
 
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,

@@ -28,7 +28,7 @@ func TestLoginAbortsWhenAuditPersistFails(t *testing.T) {
 	injectedErr := errors.New("synthetic audit persist failure")
 	store := &failingStore{Store: base, appendAuditEventErr: injectedErr}
 
-	srv := New(Options{
+	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -87,7 +87,7 @@ func TestLoginSuccess(t *testing.T) {
 	}
 	defer store.Close()
 
-	srv := New(Options{
+	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -132,7 +132,7 @@ func TestLoginSuccess(t *testing.T) {
 
 func TestLoginInvalidCredentials(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
-	srv := New(Options{
+	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
@@ -166,7 +166,7 @@ func TestLoginInvalidCredentials(t *testing.T) {
 
 func TestLoginPasswordExceedsMaxLength(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
-	srv := New(Options{
+	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
@@ -194,7 +194,7 @@ func TestLoginLockoutIntegration(t *testing.T) {
 	}
 	defer store.Close()
 
-	srv := New(Options{
+	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -235,7 +235,7 @@ func TestLogoutClearsCookie(t *testing.T) {
 	}
 	defer store.Close()
 
-	srv := New(Options{
+	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -277,7 +277,7 @@ func TestLogoutClearsCookie(t *testing.T) {
 
 func TestLogoutWithoutSessionReturnsUnauthorized(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
-	srv := New(Options{
+	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
@@ -296,7 +296,7 @@ func TestMeReturnsUserInfo(t *testing.T) {
 	}
 	defer store.Close()
 
-	srv := New(Options{
+	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -343,7 +343,7 @@ func TestMeReturnsUserInfo(t *testing.T) {
 
 func TestMeWithoutSessionReturnsUnauthorized(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
-	srv := New(Options{
+	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
@@ -393,7 +393,7 @@ func searchSubstring(s, substr string) bool {
 // value, and the old value must no longer authenticate subsequent requests.
 func TestLoginRotatesSessionIDOnExistingCookie(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
-	srv := New(Options{
+	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
@@ -480,7 +480,7 @@ func TestLoginRotatesSessionIDOnExistingCookie(t *testing.T) {
 // target re-authenticates under the new privilege level.
 func TestRoleChangeInvalidatesTargetUserSessions(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
-	srv := New(Options{
+	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
@@ -547,7 +547,7 @@ func TestRoleChangeInvalidatesTargetUserSessions(t *testing.T) {
 func TestLogin_AlwaysRotatesSessionID(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, time.May, 2, 10, 0, 0, 0, time.UTC)
-	srv := New(Options{
+	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:              func() time.Time { return now },
 	})
@@ -592,7 +592,7 @@ func TestLogin_AlwaysRotatesSessionID(t *testing.T) {
 func TestLogin_PriorSessionIDIsRevoked(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, time.May, 2, 10, 0, 0, 0, time.UTC)
-	srv := New(Options{
+	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:              func() time.Time { return now },
 	})

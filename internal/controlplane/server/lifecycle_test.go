@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -19,10 +21,13 @@ import (
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
 	now := time.Date(2026, time.May, 2, 10, 0, 0, 0, time.UTC)
-	srv := New(Options{
+	srv, err := New(Options{
 		LoginTimingFloor: -1,
 		Now:              func() time.Time { return now },
 	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
 	t.Cleanup(func() {
 		// Close is idempotent — calling it after a test that already closed
 		// must not panic.
@@ -130,7 +135,7 @@ func TestServer_RollupHonoursServerCtxCancellation(t *testing.T) {
 	}
 
 	now := time.Date(2026, time.May, 2, 10, 0, 0, 0, time.UTC)
-	srv := New(Options{
+	srv, err := New(Options{
 		Store:            observer,
 		LoginTimingFloor: -1,
 		Now:              func() time.Time { return now },
@@ -139,6 +144,9 @@ func TestServer_RollupHonoursServerCtxCancellation(t *testing.T) {
 		// into this assertion.
 		Intervals: Intervals{Rollup: 25 * time.Millisecond},
 	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
 	t.Cleanup(srv.Close)
 
 	// Wait for the rollup worker to enter its first storage call.
@@ -160,5 +168,56 @@ func TestServer_RollupHonoursServerCtxCancellation(t *testing.T) {
 		// Migration successful: rollup ctx is derived from serverCtx.
 	case <-time.After(500 * time.Millisecond):
 		t.Fatalf("rollup ctx did not honour serverCancel; rollup parent is not serverCtx")
+	}
+}
+
+// failingCPSecretStore returns errFailingCPSecretStore from every CPSecret
+// call so the boot path that loads the vault HKDF salt fails. Plan 3 Task 4
+// (Q-7): library-level panics violate Go style — embedders/tests cannot
+// recover. Used to pin that New surfaces the failure as an error instead.
+type failingCPSecretStore struct {
+	storage.Store
+}
+
+var errFailingCPSecretStore = errors.New("disk failure")
+
+func (failingCPSecretStore) GetCPSecret(_ context.Context, _ string) ([]byte, error) {
+	return nil, errFailingCPSecretStore
+}
+
+func (failingCPSecretStore) PutCPSecret(_ context.Context, _ string, _ []byte) error {
+	return errFailingCPSecretStore
+}
+
+// TestNew_ReturnsErrorOnVaultSaltFailure pins Plan 3 Task 4 (Q-7): when
+// loadOrCreateVaultSalt fails (storage error on the salt row), New must
+// return the error rather than panic. Pre-fix the constructor panicked,
+// which makes embedders unable to recover and forces tests to wrap calls
+// in defer/recover. Post-fix the error is bubbled through to the caller.
+func TestNew_ReturnsErrorOnVaultSaltFailure(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("New must return error, not panic, on store failure: %v", r)
+		}
+	}()
+	store := failingCPSecretStore{}
+	now := time.Date(2026, time.May, 2, 10, 0, 0, 0, time.UTC)
+	srv, err := New(Options{
+		Store:            store,
+		EncryptionKey:    "any-passphrase-for-vault",
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+	})
+	if err == nil {
+		if srv != nil {
+			srv.Close()
+		}
+		t.Fatalf("New must return error on store failure, got nil")
+	}
+	if srv != nil {
+		t.Fatalf("New must return nil server on error, got %v", srv)
+	}
+	if !errors.Is(err, errFailingCPSecretStore) && !strings.Contains(err.Error(), "vault HKDF salt") {
+		t.Fatalf("err = %v, want wrapping errFailingCPSecretStore or vault salt context", err)
 	}
 }

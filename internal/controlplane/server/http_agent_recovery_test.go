@@ -27,7 +27,7 @@ func TestHTTPAgentCertificateRecoveryRejectsWithoutActiveGrant(t *testing.T) {
 	}
 	defer store.Close()
 
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -58,7 +58,7 @@ func TestHTTPAgentCertificateRecoveryConsumesAdminGrant(t *testing.T) {
 	}
 	defer store.Close()
 
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -207,7 +207,7 @@ func TestHTTPAgentCertificateRecoveryGrantCreateResponseRoundTrip(t *testing.T) 
 	}
 	defer store.Close()
 
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -275,7 +275,7 @@ func TestHTTPAgentCertificateRecoveryGrantRejectsExcessiveTTL(t *testing.T) {
 	}
 	defer store.Close()
 
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -321,7 +321,7 @@ func TestHTTPAgentsExposeCertificateRecoveryStatus(t *testing.T) {
 	}
 	defer store.Close()
 
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,

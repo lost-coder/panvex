@@ -48,7 +48,7 @@ func TestFleetScopeAccessFilter(t *testing.T) {
 func TestResolveFleetScopeAdminAlwaysGlobal(t *testing.T) {
 	// Admins skip the store lookup entirely — even with non-empty scope
 	// rows in the table, the admin role wins.
-	srv := New(Options{
+	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return time.Unix(0, 0) },
 	})
@@ -90,7 +90,7 @@ func TestResolveFleetScopeOperatorEmptyMeansGlobal(t *testing.T) {
 	// keeps the legacy global view. The store is nil here so the helper
 	// short-circuits with global; the same property is asserted in the
 	// integration tests once the multi-tenant rollout lands.
-	srv := New(Options{
+	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return time.Unix(0, 0) },
 	})

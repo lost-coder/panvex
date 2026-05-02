@@ -25,7 +25,7 @@ import (
 // against s.agents will fail the test.
 func TestResolveClientTargetAgentIDsRunsCleanUnderRace(t *testing.T) {
 	now := time.Date(2026, time.April, 17, 12, 0, 0, 0, time.UTC)
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
@@ -170,7 +170,7 @@ func TestResolveClientTargetAgentIDsRunsCleanUnderRace(t *testing.T) {
 // snapshots update lastSeenAt (Heartbeat) but leave connectedAt stable.
 func TestPresenceConnectedAtPersistsAcrossSnapshots(t *testing.T) {
 	now := time.Date(2026, time.April, 17, 9, 0, 0, 0, time.UTC)
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -20,15 +21,18 @@ import (
 // from server.go so the Server type definition stays focused on
 // shape; this file is the composition root.
 
-// initSecrets resolves the time source, CSRF secret and secret vault. Any
-// fatal failure (no entropy or unparseable encryption key) panics here so
-// the operator notices at boot rather than later when sessions or certs
-// silently break.
+// initSecrets resolves the time source, CSRF secret and secret vault.
+// Any fatal failure (no entropy, unparseable encryption key, or storage
+// error) is returned as a wrapped error so the constructor can surface
+// it to the caller (Plan 3 Task 4 / Q-7). Library-level panics violate
+// Go style — embedders and tests cannot recover — so the boot path
+// bubbles errors instead of crashing the process from inside a
+// dependency.
 //
 // bootCtx is the lifecycle context (Server.serverCtx) so a Close() while
 // startup is still wedged on a slow GetCPSecret aborts the storage call
 // instead of leaking past shutdown (Plan 3 Task 3).
-func initSecrets(bootCtx context.Context, options Options) (func() time.Time, []byte, *secretvault.Vault) {
+func initSecrets(bootCtx context.Context, options Options) (func() time.Time, []byte, *secretvault.Vault, error) {
 	now := options.Now
 	if now == nil {
 		now = time.Now
@@ -41,7 +45,7 @@ func initSecrets(bootCtx context.Context, options Options) (func() time.Time, []
 		// without it (sessions, certs all need it too). Fail loudly so
 		// an operator notices instead of falling back to CSRF-disabled
 		// mode.
-		panic("control-plane: cannot initialise CSRF secret: " + err.Error())
+		return nil, nil, nil, fmt.Errorf("init CSRF secret: %w", err)
 	}
 
 	// Build the secret vault once from the operator passphrase. A nil or
@@ -51,13 +55,13 @@ func initSecrets(bootCtx context.Context, options Options) (func() time.Time, []
 	// sharing a master passphrase do not derive identical domain keys.
 	saltBytes, saltErr := loadOrCreateVaultSalt(bootCtx, options.Store)
 	if saltErr != nil {
-		panic("control-plane: cannot resolve vault HKDF salt: " + saltErr.Error())
+		return nil, nil, nil, fmt.Errorf("resolve vault HKDF salt: %w", saltErr)
 	}
 	vault, vaultErr := secretvault.NewWithSalt(options.EncryptionKey, secretvault.AllDomains, saltBytes)
 	if vaultErr != nil {
-		panic("control-plane: cannot initialise secret vault: " + vaultErr.Error())
+		return nil, nil, nil, fmt.Errorf("init secret vault: %w", vaultErr)
 	}
-	return now, csrfSecret, vault
+	return now, csrfSecret, vault, nil
 }
 
 // newServerFromOptions populates the Server struct literal. Pure data plumbing
@@ -203,14 +207,25 @@ func (s *Server) startBackgroundWorkers() {
 	}
 }
 
-func New(options Options) *Server {
+// New constructs the control-plane Server. Returns an error (Plan 3
+// Task 4 / Q-7) when boot-time secret initialisation fails — CSRF
+// secret load, vault HKDF salt resolution, secret-vault construction,
+// or username log-hash key derivation. The lifecycle context created
+// up front is cancelled before returning the error so a wedged
+// storage call started during initSecrets does not outlive the failed
+// constructor.
+func New(options Options) (*Server, error) {
 	// Lifecycle context — cancelled by Close(). Plan 3 Task 1 introduces
 	// the field; Tasks 2-6 migrate the long-lived workers (rollup, metrics
 	// poller, fleet-ensure, lockout-restore, batch-writer drain) onto it.
 	// Created BEFORE initSecrets so a slow CSRF/HKDF/CA storage call at
 	// boot can be aborted by Close() (Plan 3 Task 3).
 	bootCtx, bootCancel := context.WithCancel(context.Background())
-	now, csrfSecret, vault := initSecrets(bootCtx, options)
+	now, csrfSecret, vault, err := initSecrets(bootCtx, options)
+	if err != nil {
+		bootCancel()
+		return nil, err
+	}
 	server := newServerFromOptions(options, now, csrfSecret, vault)
 	server.serverCtx, server.serverCancel = bootCtx, bootCancel
 	if server.logger == nil {
@@ -218,7 +233,14 @@ func New(options Options) *Server {
 	}
 	// R-S-09: route lockout-tracker warnings through the same HMAC
 	// redaction that http_auth.go uses so log aggregators never see raw
-	// usernames even when the persistent store fails.
+	// usernames even when the persistent store fails. The HMAC key is
+	// primed up front (Plan 3 Task 4 / Q-7) so the redactor never has
+	// to derive entropy on the hot path and entropy failures surface as
+	// a New() error rather than a library-level panic.
+	if err := server.initUsernameHashKey(); err != nil {
+		bootCancel()
+		return nil, err
+	}
 	server.loginLockout.SetRedactor(server.logUsername)
 	server.panelSettings = defaultPanelSettings()
 	server.updateSettings = defaultUpdateSettings()
@@ -267,7 +289,7 @@ func New(options Options) *Server {
 		server.batchWriter.Start()
 	}
 
-	return server
+	return server, nil
 }
 
 // Close stops background workers and drains pending writes. It should be

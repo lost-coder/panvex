@@ -194,7 +194,7 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 	}
 	defer store.Close()
 
-	first := New(Options{
+	first := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -245,7 +245,7 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 
 	first.Close()
 
-	restored := New(Options{
+	restored := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now.Add(time.Minute) },
 		Store: store,
@@ -289,7 +289,7 @@ func TestServerApplyAgentSnapshotUpdatesInMemoryStateEvenWhenPersistenceFails(t 
 	defer sqliteStore.Close()
 
 	store := &failingStore{Store: sqliteStore}
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -504,7 +504,7 @@ func TestServerApplyAgentSnapshotKeepsEnrolledScopeWhenSnapshotDiffers(t *testin
 	}
 	defer store.Close()
 
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -732,7 +732,7 @@ func TestServerEnrollmentTokenPersistsAcrossRestart(t *testing.T) {
 	}
 	defer store.Close()
 
-	first := New(Options{
+	first := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -747,7 +747,7 @@ func TestServerEnrollmentTokenPersistsAcrossRestart(t *testing.T) {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
 
-	restored := New(Options{
+	restored := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now.Add(10 * time.Second) },
 		Store: store,
@@ -775,7 +775,7 @@ func TestServerRestoresPersistedCertificateAuthority(t *testing.T) {
 	}
 	defer store.Close()
 
-	first := New(Options{
+	first := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -786,7 +786,7 @@ func TestServerRestoresPersistedCertificateAuthority(t *testing.T) {
 		t.Fatal("first.authority.caPEM = empty, want persisted authority")
 	}
 
-	restored := New(Options{
+	restored := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now.Add(30 * time.Second) },
 		Store: store,
@@ -836,7 +836,7 @@ func TestServerRecordsStartupErrorInsteadOfPanickingOnRestoreFailure(t *testing.
 		Store:         sqliteStore,
 		listAgentsErr: errors.New("list agents failed"),
 	}
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -856,7 +856,7 @@ func TestServerConsumedEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) 
 	}
 	defer store.Close()
 
-	first := New(Options{
+	first := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -879,7 +879,7 @@ func TestServerConsumedEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) 
 		t.Fatalf("enrollAgent() error = %v", err)
 	}
 
-	restored := New(Options{
+	restored := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now.Add(20 * time.Second) },
 		Store: store,
@@ -902,7 +902,7 @@ func TestEnrollmentSetsCertificateDates(t *testing.T) {
 	}
 	defer store.Close()
 
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -1102,7 +1102,7 @@ func TestServerExpiredEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) {
 	}
 	defer store.Close()
 
-	first := New(Options{
+	first := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -1117,7 +1117,7 @@ func TestServerExpiredEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
 
-	restored := New(Options{
+	restored := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now.Add(2 * time.Second) },
 		Store: store,

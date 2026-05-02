@@ -13,7 +13,7 @@ import (
 
 func TestHTTPRootPathPrefixesAPIRoutesAndEmbeddedUI(t *testing.T) {
 	now := time.Date(2026, time.March, 16, 22, 0, 0, 0, time.UTC)
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 		UIFiles: fstest.MapFS{

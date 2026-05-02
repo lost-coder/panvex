@@ -20,7 +20,7 @@ func TestHTTPAppearanceSettingsReadDefaultsAndPersistCurrentUserValues(t *testin
 	}
 	defer store.Close()
 
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -128,7 +128,7 @@ func TestHTTPAppearanceSettingsRejectsUnauthorizedAndInvalidValues(t *testing.T)
 	}
 	defer store.Close()
 
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -195,7 +195,7 @@ func TestHTTPAppearanceSettingsRejectsUnauthorizedAndInvalidValues(t *testing.T)
 
 func TestHTTPAppearanceSettingsRequirePersistentStore(t *testing.T) {
 	now := time.Date(2026, time.March, 21, 15, 0, 0, 0, time.UTC)
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
