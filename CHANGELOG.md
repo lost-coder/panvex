@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Deployment — Sprint S-13 (2026-05-02)
+
+- **BP-06:** added a minimal production Helm chart at `deploy/helm/panvex/`. Covers Deployment + Service + Secret + Ingress + PodDisruptionBudget + a one-shot `bootstrap-admin` Job (Helm `post-install` hook). The chart deliberately does NOT bundle Postgres — operators bring their own (managed cloud DB, in-cluster CloudNativePG/Crunchy/Zalando, or external) and pass the DSN via `storage.dsn` (or `storage.existingSecret` for external-secrets / sealed-secrets workflows). `encryptionKey` is required and treated as load-bearing — rotating it without re-encrypting the database invalidates every PVS2 row. Includes a comprehensive `README.md` documenting required values, quick-start, bootstrap procedure, and audit-related notes.
+- **S-04:** chart sets `terminationGracePeriodSeconds: 60`, exactly 15 s above `controlPlaneShutdownGraceMin = 45 s`, so the in-flight audit-event flush completes before the kubelet sends SIGKILL. Includes a `PodDisruptionBudget` with `minAvailable: 1` so node drains don't void in-flight requests when running multiple replicas.
+
 ### Security / DX — Sprint S-12 (2026-05-02)
 
 - **BP-02 (part 1):** wired Zod runtime validation onto every response in `web/src/shared/api/auth.ts`. Added `totpSetupResponseSchema` and `totpStatusResponseSchema` to `schemas/auth.ts`; the `login`, `startTotpSetup`, `enableTotp`, and `disableTotp` API calls now parse responses through their schemas instead of casting `as T`. Auth is the highest-leverage area to migrate first — every other endpoint protects already-authenticated state, so a schema-mismatch on auth responses now fails loudly rather than corrupting the login flow. Added 4 schema tests covering shape acceptance + edge-case rejection (empty secret, non-boolean state).
