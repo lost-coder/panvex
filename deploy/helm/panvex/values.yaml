@@ -109,6 +109,13 @@ trustedProxyCIDRs: "172.16.0.0/12,10.0.0.0/8,fd00::/8"
 # preload directive.
 hstsPreload: ""
 
+# Pprof separate-listener address (S-07). When non-empty (e.g. 127.0.0.1:6060)
+# the panel skips the admin-router /debug/pprof registration and instead binds
+# a dedicated loopback HTTP listener at this address. Operators reach pprof via
+# `kubectl port-forward` or `kubectl exec`-driven curl. Empty value preserves
+# the in-panel admin-only pprof.
+pprofAddr: ""
+
 # Optional: pod-level securityContext + container securityContext.
 podSecurityContext:
   runAsNonRoot: true

@@ -86,6 +86,12 @@ func runServe(args []string) error {
 	restartRequests := make(chan struct{}, 1)
 
 	api := newAPIServer(options, store, logger, panelRuntime, restartRequests)
+	// S-07: opt-in separate-listener pprof. PANVEX_PPROF_ADDR (e.g.
+	// 127.0.0.1:6060) tells the panel to skip the admin-router /debug/pprof
+	// registration and bring up a dedicated loopback listener instead.
+	// Operator reaches it via `ssh -L 6060:localhost:6060 host`. Empty env
+	// preserves the existing admin-router behavior.
+	api.SetPprofListenerAddr(strings.TrimSpace(os.Getenv("PANVEX_PPROF_ADDR")))
 	// Shutdown order (enforced by defer stack, LIFO):
 	//   1. HTTP server Shutdown — stops accepting new panel/API requests so
 	//      no new audit or metric events are produced.
@@ -100,6 +106,21 @@ func runServe(args []string) error {
 	defer api.Close()
 	if err := api.StartupError(); err != nil {
 		return err
+	}
+
+	// S-07: bring up the dedicated pprof listener if PANVEX_PPROF_ADDR was set.
+	// Failing to bind means the admin opted in but cannot use the feature —
+	// fail-closed rather than silently re-registering on the admin router.
+	pprofShutdown, err := startPprofListenerIfConfigured(api)
+	if err != nil {
+		return err
+	}
+	if pprofShutdown != nil {
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = pprofShutdown(ctx)
+		}()
 	}
 
 	// P3-OBS-01: wrap the chi-rooted handler with otelhttp so every
@@ -407,4 +428,25 @@ func resolvePanelRuntime(configuration serveConfig) (server.PanelRuntime, error)
 	runtime.PanelAllowedCIDRs = panelCIDRs
 
 	return runtime, nil
+}
+
+// startPprofListenerIfConfigured brings up the S-07 separate pprof listener
+// when PANVEX_PPROF_ADDR is set. Returns the shutdown func from the listener
+// (callers must invoke it during graceful shutdown) or nil when the feature
+// is disabled. A bind error is fatal — the operator opted in expecting
+// pprof to be available; silently falling back to "no pprof" hides the
+// misconfiguration.
+func startPprofListenerIfConfigured(api *server.Server) (func(context.Context) error, error) {
+	if api == nil {
+		return nil, nil
+	}
+	addr := strings.TrimSpace(os.Getenv("PANVEX_PPROF_ADDR"))
+	if addr == "" {
+		return nil, nil
+	}
+	_, shutdown, err := api.StartPprofListener(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("start pprof listener on %s: %w", addr, err)
+	}
+	return shutdown, nil
 }

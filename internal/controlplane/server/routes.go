@@ -176,7 +176,13 @@ func (s *Server) routes() http.Handler {
 					// P3-OBS-02: /debug/pprof/* is admin-only. The enclosing
 					// authentication + role middleware ensures operators and
 					// viewers receive 403 without ever reaching the profiler.
-					registerPprofRoutes(admin)
+					//
+					// S-07: when SetPprofListenerAddr enabled the dedicated
+					// loopback listener, skip the admin-router registration
+					// — pprof is then reachable only via the local listener.
+					if !s.pprofListenerEnabled() {
+						registerPprofRoutes(admin)
+					}
 					admin.Get("/users", s.handleUsers())
 					admin.With(sensitive).Post("/users", s.handleCreateUser())
 					admin.With(sensitive).Put("/users/{id}", s.handleUpdateUser())

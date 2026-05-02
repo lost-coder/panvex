@@ -50,6 +50,10 @@ spec:
             - name: PANVEX_HSTS_PRELOAD
               value: {{ .Values.hstsPreload | quote }}
             {{- end }}
+            {{- if .Values.pprofAddr }}
+            - name: PANVEX_PPROF_ADDR
+              value: {{ .Values.pprofAddr | quote }}
+            {{- end }}
             - name: PANVEX_ENV
               value: production
           ports:

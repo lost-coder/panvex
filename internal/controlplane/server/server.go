@@ -174,6 +174,11 @@ type Server struct {
 	metricsPollerCancel context.CancelFunc
 	metricsPollerWG     sync.WaitGroup
 
+	// pprofListenerAddr is non-empty when the operator has opted into the
+	// separate-listener pprof mode (S-07). When set, the admin-router
+	// /debug/pprof registration is skipped — see http_pprof.go.
+	pprofListenerAddr string
+
 	// N-1: detached operator-driven background goroutines (panel
 	// self-update, manual update-check) register themselves with this
 	// WaitGroup so Shutdown can wait for them to finish before exiting
