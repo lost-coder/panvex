@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -644,5 +646,58 @@ func TestLogin_PriorSessionIDIsRevoked(t *testing.T) {
 		[]*http.Cookie{{Name: sessionCookieName, Value: priorID}})
 	if meAfter.Code != http.StatusUnauthorized {
 		t.Fatalf("old session still authenticates: code=%d, want 401", meAfter.Code)
+	}
+}
+
+// Plan 3 / Task 7: a disconnected client must not pin the login goroutine
+// for the full constant-time delay budget. The login slow-path pads every
+// response to LoginTimingFloor so wall-clock timing can't distinguish
+// branches; that padding must be cancellable when r.Context() is Done.
+func TestLogin_ConstantTimeDelayHonoursClientDisconnect(t *testing.T) {
+	now := time.Date(2026, time.April, 19, 10, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	// Use a large floor so a non-cancellable Sleep would clearly exceed
+	// the 500ms threshold, while a cancellable select returns promptly.
+	srv := mustNew(t, Options{
+		LoginTimingFloor: 3 * time.Second,
+		Now:              func() time.Time { return now },
+		Store:            store,
+	})
+	defer srv.Close()
+
+	// Cancel shortly after the handler enters its slow-path so the
+	// earlier pre-floor work (lockout/auth DB queries) completes against
+	// a live context — only the constant-time padding itself should
+	// observe the cancellation. Without the Task 7 fix the floor sleeps
+	// for the full 3s; with the fix the select returns as soon as
+	// ctx.Done() and the handler responds in well under a second.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		time.Sleep(700 * time.Millisecond)
+		cancel()
+	}()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login",
+		strings.NewReader(`{"username":"nobody","password":"x"}`)).WithContext(ctx)
+	req.Header.Set("Content-Type", "application/json")
+	// Satisfy the CSRF Origin check so the request reaches the login
+	// handler (otherwise the middleware short-circuits with 403 and we
+	// never enter the timing-floor slow-path under test).
+	req.Header.Set("Origin", "http://"+req.Host)
+	rec := httptest.NewRecorder()
+
+	start := time.Now()
+	srv.Handler().ServeHTTP(rec, req)
+	elapsed := time.Since(start)
+
+	if elapsed > 1500*time.Millisecond {
+		t.Fatalf("disconnected client should not pin for full slow-path budget (3s); status=%d body=%s elapsed=%v",
+			rec.Code, rec.Body.String(), elapsed)
 	}
 }

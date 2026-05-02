@@ -95,7 +95,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		// loginTimingFloor before being written, so attackers cannot
 		// distinguish lockout-cache hits from DB misses from real-auth
 		// branches by wall-clock timing.
-		ensureFloor := s.newLoginTimingFloor()
+		ensureFloor := s.newLoginTimingFloor(r.Context())
 
 		// Q2.U-S-15: serialise the entire IsLocked → verify → RecordFailure
 		// sequence under a per-username shard lock. Without it, two
@@ -159,8 +159,11 @@ func (s *Server) handleLogin() http.HandlerFunc {
 // newLoginTimingFloor returns a closure that ensures any login response is
 // delayed at least s.loginTimingFloor since the call site started. The
 // closure is idempotent — multiple calls within one request only sleep
-// once.
-func (s *Server) newLoginTimingFloor() func() {
+// once. The wait is cancellable via ctx so a disconnected client does not
+// pin the goroutine for the full slow-path budget (Plan 3 / Task 7); the
+// constant-time guarantee is preserved for connected clients because the
+// select still blocks until time.After fires.
+func (s *Server) newLoginTimingFloor(ctx context.Context) func() {
 	start := s.now()
 	floored := false
 	return func() {
@@ -170,7 +173,10 @@ func (s *Server) newLoginTimingFloor() func() {
 		floored = true
 		elapsed := s.now().Sub(start)
 		if remaining := s.loginTimingFloor - elapsed; remaining > 0 {
-			time.Sleep(remaining)
+			select {
+			case <-time.After(remaining):
+			case <-ctx.Done():
+			}
 		}
 	}
 }
