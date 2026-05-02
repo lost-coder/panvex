@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { JobListItem, AuditListItem } from "@/shared/api/types-pages/pages";
 import { apiClient, type Job } from "@/shared/api/api";
 import { useProfile } from "@/features/auth/hooks/useProfile";
-import { useWsStatus } from "@/app/providers/EventsSynchronizer";
+import { useEventAwareInterval } from "@/shared/hooks/useEventAwareInterval";
 
 // Pull the first failing target's result_text as the job's failure reason.
 // The jobs list endpoint doesn't carry a top-level error field yet — the
@@ -56,9 +56,7 @@ export function useActivity() {
   // when WS is open, fall back to the original 15s refresh while WS
   // is connecting/reconnecting/closed so the page does not silently
   // freeze if the live feed is down.
-  const { status: wsStatus } = useWsStatus();
-  const wsHealthy = wsStatus === "open";
-  const refetchInterval = wsHealthy ? 60_000 : 15_000;
+  const refetchInterval = useEventAwareInterval(60_000, 15_000);
 
   const jobsQuery = useQuery({
     queryKey: ["jobs"],
