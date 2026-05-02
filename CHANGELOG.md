@@ -4,6 +4,14 @@ All notable changes to Panvex are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Documentation — Sprint S-10 (2026-05-02)
+
+- **Q-06:** removed two stale TODO comments. `bootstrap/enroll.go` no longer claims `EnrollDriver` is unwired — the production path constructs an `enrollFn` closure in `cmd/control-plane/serve.go` and registers it via `agenttransport.Manager.SetEnrollCallbacks`. `agenttransport/manager.go` no longer claims outbound TLS is unwired — production passes `api.GRPCTLSConfig()` (the panel's mTLS config), and Sprint S-1 cert-pinning layers SPKI verification on top.
+- **Q-07:** rewrote the `state_restore.restoreFallbackState` doc-block to acknowledge that the inline `slog.Error` with stable `alert=streamAlerts["fallback_state"]` attribute is intentional and adequate. The previous TODO suggested unifying with the batch writer's emission pipeline, but the batch writer's retry/queue machinery is for high-frequency background streams; a one-shot startup hook does not need it. Operators page on the alert key, not the call path.
+- **S-11:** added a `# DEV-ONLY compose profile` header to `deploy/docker-compose.sqlite.yml`, mirroring the existing comment in `deploy/docker-compose.postgres.yml`. Both dev compose files now explicitly warn against production use and point to `docker-compose.prod.yml`.
+
 ## [Unreleased] — Sprint S-1 Security Tightening (2026-05-02)
 
 Closes 5 High/Medium-severity findings from the 2026-05-01 audit (S-01, S-02, S-03, S-05, S-06).
