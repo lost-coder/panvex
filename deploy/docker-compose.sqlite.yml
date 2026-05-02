@@ -1,3 +1,11 @@
+# DEV-ONLY compose profile.
+#
+# SQLite + plaintext gRPC, persisted to a local volume. Convenient for laptop
+# development; FATAL for any production deployment — there is no encryption-
+# at-rest, no TLS termination, and no PANVEX_ENCRYPTION_KEY required by the
+# backend. For real deployments use docker-compose.prod.yml, which mandates
+# Postgres + sslmode=require + PANVEX_ENCRYPTION_KEY and binds the backend
+# port to loopback only.
 services:
   backend:
     build:
