@@ -1,0 +1,35 @@
+# Changelog
+
+All notable changes to Panvex are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+## [Unreleased] — Sprint S-1 Security Tightening (2026-05-02)
+
+Closes 5 High/Medium-severity findings from the 2026-05-01 audit (S-01, S-02, S-03, S-05, S-06).
+
+### Security
+
+- **S-01:** Operator-tunable `password_min_length` on `panel_settings`. Default 10, range 8–128 enforced both in the Postgres CHECK constraint and in `auth.effectivePolicy`. Existing passwords are not invalidated; the policy applies only to creation and rotation. UI control added to the Settings page.
+- **S-02:** SPKI cert-pinning for agents. `EnrollDriver.Run` captures `sha256(leaf.RawSubjectPublicKeyInfo)` after first successful enroll and persists via `Storage.UpdateAgentCertPin`. Subsequent panel→agent dials verify the served leaf cert SPKI hash via a `VerifyConnection` hook on the cloned `tls.Config`; mismatch returns `ErrCertPinMismatch` and rejects the connection. New metric `panvex_agent_cert_pin_total{result=ok|mismatch|missing}` (pre-init to zero) tracks each dial outcome. Bootstrap-token install-command TTL tightened from 24h to 5min and locked down with a regression test.
+- **S-03:** Regression tests assert that login always rotates the session-ID and that the prior cookie is revoked server-side after re-login.
+- **S-05:** Regression tests for `isCSRFExemptPath` lock down exact-string matching against attacker-controlled prefixes, path traversal, leading double-slash, trailing slash, and case folding.
+- **S-06:** Startup WARN log emitted when the panel binds to a non-loopback address but `trusted_proxy_cidrs` is empty (silent XFF/Proto trust disable). `PANVEX_TRUSTED_PROXY_CIDRS` honoured as a flag fallback; `deploy/docker-compose.prod.yml` now ships a sensible default covering Docker bridge + K8s service CIDRs + IPv6 ULA.
+
+### Observability
+
+- New Prometheus counter `panvex_agent_cert_pin_total{result=ok|mismatch|missing}`.
+- New WARN structured event with `alert=trusted_proxy_misconfigured` at startup.
+
+### Migrations
+
+- `0032_password_policy.sql` (postgres + sqlite): adds `panel_settings.password_min_length INTEGER NOT NULL DEFAULT 10`, with `CHECK (password_min_length BETWEEN 8 AND 128)` on Postgres.
+- `0033_agent_cert_pin.sql` (postgres + sqlite): adds `agents.cert_spki_sha256` (BYTEA / BLOB) with `CHECK (length IN (0, 32))` on Postgres and a partial index on non-empty values. Postgres uses `CREATE INDEX CONCURRENTLY` (with `+goose NO TRANSACTION`) to avoid blocking the agents table.
+
+### Internal API additions
+
+- `auth.Service.SetPasswordPolicy(int32)` and `auth.DefaultPasswordMinLength = 10`.
+- `storage.Store.UpdateAgentCertPin(ctx, agentID, pin) error` and `GetAgentCertPin(ctx, agentID) ([]byte, error)`. Update returns `ErrNotFound` when the agent does not exist.
+- `agenttransport.CertPinReader` interface + `Manager.SetCertPinReader(reader, observer)` setter.
+- `bootstrap.CertPinWriter` interface + `EnrollDriver.SetCertPinWriter(writer)` setter.
+- New sentinel `agenttransport.ErrCertPinMismatch`.
