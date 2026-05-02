@@ -1,6 +1,7 @@
 package server
 
 import (
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -126,6 +127,39 @@ func trustedClientIPString(r *http.Request, trustedCIDRs []*net.IPNet) string {
 		return ""
 	}
 	return ip.String()
+}
+
+// warnIfTrustedProxyMisconfigured emits a single WARN at startup when the
+// operator binds the panel to a non-loopback address but has not listed
+// any trusted-proxy CIDRs. In that configuration X-Forwarded-For is
+// ignored, every request keys to the proxy IP, and rate-limit buckets the
+// entire fleet as one client (S-06).
+func warnIfTrustedProxyMisconfigured(logger *slog.Logger, bindAddr string, trustedCIDRs []*net.IPNet) {
+	if logger == nil {
+		return
+	}
+	if len(trustedCIDRs) > 0 {
+		return
+	}
+	host, _, err := net.SplitHostPort(bindAddr)
+	if err != nil {
+		host = bindAddr
+	}
+	host = strings.TrimSpace(host)
+	// SplitHostPort returns the bare IPv6 host without brackets when given
+	// "[::1]:8080", so no bracket stripping is needed for that case.
+	// Handle the edge case where the input had no port (rare but safe).
+	host = strings.Trim(host, "[]")
+	if host == "127.0.0.1" || host == "::1" || host == "localhost" {
+		return
+	}
+	// Empty host means listening on all interfaces — a public bind.
+	logger.Warn(
+		"trusted_proxy_cidrs is empty while bind is non-loopback; X-Forwarded-For/Proto headers will be ignored, rate limits will bucket the fleet as one client",
+		slog.String("bind_addr", bindAddr),
+		slog.String("alert", "trusted_proxy_misconfigured"),
+		slog.String("remediation", "set PANVEX_TRUSTED_PROXY_CIDRS to your reverse-proxy/CNI subnets"),
+	)
 }
 
 // remoteAddrIsTrustedProxy reports whether the TCP peer on r (r.RemoteAddr)

@@ -240,6 +240,12 @@ func New(options Options) *Server {
 	server.auth.SetNow(now)
 	server.jobs.SetNow(now)
 
+	// S-06: warn once at startup if the panel binds to a non-loopback
+	// address but no trusted-proxy CIDRs are configured. In that state
+	// X-Forwarded-For is silently ignored and rate-limit buckets the
+	// entire fleet as one client.
+	warnIfTrustedProxyMisconfigured(server.logger, server.panelRuntime.HTTPListenAddress, server.trustedProxyCIDRs)
+
 	server.startBackgroundWorkers()
 
 	if server.store != nil {

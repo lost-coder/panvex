@@ -1,9 +1,12 @@
 package server
 
 import (
+	"bytes"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -109,6 +112,37 @@ func TestResolveTrustedClientIP_EmptyRemoteAddr(t *testing.T) {
 	ip := resolveTrustedClientIP(r, nil)
 	if ip != nil {
 		t.Fatalf("got %v, want nil for empty RemoteAddr", ip)
+	}
+}
+
+func TestWarnIfTrustedProxyMisconfigured(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		bind        string
+		cidrs       []*net.IPNet
+		wantWarning bool
+	}{
+		{"loopback bind, empty CIDR", "127.0.0.1:8080", nil, false},
+		{"public bind, empty CIDR", "0.0.0.0:8080", nil, true},
+		{"public bind, configured CIDR", "0.0.0.0:8080", []*net.IPNet{mustCIDR(t, "10.0.0.0/8")}, false},
+		{"unspecified bind, empty CIDR", ":8080", nil, true},
+		{"localhost name, empty CIDR", "localhost:8080", nil, false},
+		{"ipv6 loopback, empty CIDR", "[::1]:8080", nil, false},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+			warnIfTrustedProxyMisconfigured(logger, tt.bind, tt.cidrs)
+			got := strings.Contains(buf.String(), "trusted_proxy_cidrs is empty")
+			if got != tt.wantWarning {
+				t.Fatalf("warning emitted = %v, want %v\nlog: %s", got, tt.wantWarning, buf.String())
+			}
+		})
 	}
 }
 

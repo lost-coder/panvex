@@ -605,7 +605,7 @@ func parseServeConfig(args []string) (serveConfig, error) {
 	restartMode := flags.String("restart-mode", config.RestartModeDisabled, "Panel restart mode (disabled or supervised)")
 	storageDriver := flags.String(flagStorageDriver, "", helpStorageDriver)
 	storageDSN := flags.String(flagStorageDSN, "", helpStorageDSN)
-	trustedProxyCIDRs := flags.String("trusted-proxy-cidrs", "", "Comma-separated trusted proxy CIDRs for X-Forwarded-For (e.g. 172.16.0.0/12,10.0.0.0/8)")
+	trustedProxyCIDRs := flags.String("trusted-proxy-cidrs", strings.TrimSpace(os.Getenv("PANVEX_TRUSTED_PROXY_CIDRS")), "Comma-separated trusted proxy CIDRs for X-Forwarded-For (e.g. 172.16.0.0/12,10.0.0.0/8)")
 	// CA encryption passphrase is never accepted on the command line because
 	// argv is visible in /proc/<pid>/cmdline and ps output. Sources, in priority
 	// order: --encryption-key-stdin, --encryption-key-file, PANVEX_ENCRYPTION_KEY.
