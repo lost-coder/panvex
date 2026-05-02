@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 
 import {
   Breadcrumbs,
@@ -35,9 +35,27 @@ import {
   toDcStripItems,
   toTimelineEvents,
 } from "./format";
-import { ConnectionsTab } from "./tabs/ConnectionsTab";
-import { MePoolTab } from "./tabs/MePoolTab";
-import { EventsTab } from "./tabs/EventsTab";
+// P-04: lazy-load tab components so the initial ServerDetailContainer chunk
+// stays tight. Each tab streams in only when it is rendered (active tab on
+// mobile swipe / opened Fold on desktop). MePoolTab in particular is the
+// heaviest sibling — extracting it shaves ~6-8 KB gzip off the page chunk.
+const ConnectionsTab = lazy(() =>
+  import("./tabs/ConnectionsTab").then((m) => ({ default: m.ConnectionsTab })),
+);
+const MePoolTab = lazy(() =>
+  import("./tabs/MePoolTab").then((m) => ({ default: m.MePoolTab })),
+);
+const EventsTab = lazy(() =>
+  import("./tabs/EventsTab").then((m) => ({ default: m.EventsTab })),
+);
+
+function TabSuspenseFallback() {
+  return (
+    <div className="px-4 py-6 text-xs text-fg-muted" aria-busy aria-live="polite">
+      Loading…
+    </div>
+  );
+}
 import { ServerDetailProvider } from "./ServerDetailContext";
 
 const noop = () => {};
@@ -235,9 +253,30 @@ export function ServerDetailPage({
     ],
   );
 
-  const connectionsContent = useMemo(() => <ConnectionsTab server={server} />, [server]);
-  const mePoolContent = useMemo(() => <MePoolTab server={server} />, [server]);
-  const eventsContent = useMemo(() => <EventsTab server={server} />, [server]);
+  const connectionsContent = useMemo(
+    () => (
+      <Suspense fallback={<TabSuspenseFallback />}>
+        <ConnectionsTab server={server} />
+      </Suspense>
+    ),
+    [server],
+  );
+  const mePoolContent = useMemo(
+    () => (
+      <Suspense fallback={<TabSuspenseFallback />}>
+        <MePoolTab server={server} />
+      </Suspense>
+    ),
+    [server],
+  );
+  const eventsContent = useMemo(
+    () => (
+      <Suspense fallback={<TabSuspenseFallback />}>
+        <EventsTab server={server} />
+      </Suspense>
+    ),
+    [server],
+  );
 
   // Mobile tab content for gates + upstreams — mirrors the desktop
   // "one card, two columns" composition but stacks vertically so it

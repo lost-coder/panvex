@@ -36,7 +36,7 @@
     {
       "name": "Largest single page chunk (gzip)",
       "path": "dist/assets/ServerDetailContainer-*.js",
-      "limit": "60 KB",
+      "limit": "20 KB",
       "gzip": true
     },
     {
