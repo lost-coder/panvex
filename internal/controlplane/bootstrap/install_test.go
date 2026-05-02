@@ -57,7 +57,7 @@ func TestInstallCommandHappyPath(t *testing.T) {
 		Now:        func() time.Time { return time.Unix(1_000_000, 0) },
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/agent-1/install-command", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/agents/agent-1/install-command", nil)
 	rec := httptest.NewRecorder()
 	newInstallTestRouter(h).ServeHTTP(rec, req)
 
@@ -105,7 +105,7 @@ func TestInstallCommandRejectsInboundAgent(t *testing.T) {
 		"agent-2": {ID: "agent-2", TransportMode: "inbound"},
 	}}
 	h := NewInstallCommandHandler(fake, InstallCommandConfig{ScriptURL: "x", PanelURL: "panel.example.com:8443"})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/agent-2/install-command", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/agents/agent-2/install-command", nil)
 	rec := httptest.NewRecorder()
 	newInstallTestRouter(h).ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
@@ -119,7 +119,7 @@ func TestInstallCommandRejectsInboundAgent(t *testing.T) {
 func TestInstallCommandReturns404ForMissingAgent(t *testing.T) {
 	fake := &fakeInstallQueries{rows: map[string]dbsqlc.GetAgentTransportRow{}}
 	h := NewInstallCommandHandler(fake, InstallCommandConfig{ScriptURL: "x", PanelURL: "panel.example.com:8443"})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/ghost/install-command", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/agents/ghost/install-command", nil)
 	rec := httptest.NewRecorder()
 	newInstallTestRouter(h).ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {

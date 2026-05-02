@@ -134,9 +134,16 @@ func reverseBootstrap(cfg reverseBootstrapConfig) error {
 		NextProtos:            []string{"h2"},
 	}
 
+	// Reverse-bootstrap is bounded by reverseBootstrapTimeout end-to-end; tie
+	// the bind syscall to the same deadline so a SIGINT/timeout aborts a slow
+	// kernel listen() too (noctx requires ListenConfig.Listen with a ctx).
+	ctx, cancel := context.WithTimeout(context.Background(), reverseBootstrapTimeout)
+	defer cancel()
+
 	// Use a plain TCP listener; gRPC handles TLS via credentials so that ALPN
 	// negotiation (h2) is performed correctly by the gRPC stack.
-	rawListener, err := net.Listen("tcp", cfg.ListenAddr)
+	var lc net.ListenConfig
+	rawListener, err := lc.Listen(ctx, "tcp", cfg.ListenAddr)
 	if err != nil {
 		return fmt.Errorf("listen %s: %w", cfg.ListenAddr, err)
 	}
@@ -166,10 +173,7 @@ func reverseBootstrap(cfg reverseBootstrapConfig) error {
 		serveErrCh <- grpcServer.Serve(listener)
 	}()
 
-	// 6. Wait for result, error, or timeout.
-	ctx, cancel := context.WithTimeout(context.Background(), reverseBootstrapTimeout)
-	defer cancel()
-
+	// 6. Wait for result, error, or timeout (ctx already bounded above).
 	var result enrollResult
 	select {
 	case result = <-resultCh:

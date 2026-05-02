@@ -60,7 +60,8 @@ func (t *listenTransport) RunOnce(ctx context.Context, runner SessionRunner) err
 	if err != nil {
 		return fmt.Errorf("listen: build tls: %w", err)
 	}
-	listener, err := net.Listen("tcp", t.cfg.Addr)
+	var lc net.ListenConfig
+	listener, err := lc.Listen(ctx, "tcp", t.cfg.Addr)
 	if err != nil {
 		return fmt.Errorf("listen: bind: %w", err)
 	}

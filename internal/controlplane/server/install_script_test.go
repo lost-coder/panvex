@@ -32,7 +32,7 @@ func TestInstallAgentScriptHandlerServesEmbeddedBody(t *testing.T) {
 	t.Parallel()
 	srv := &Server{}
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/install-agent.sh", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/install-agent.sh", nil)
 
 	srv.handleInstallAgentScript()(rr, req)
 

@@ -683,8 +683,8 @@ func TestLogin_ConstantTimeDelayHonoursClientDisconnect(t *testing.T) {
 		cancel()
 	}()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/login",
-		strings.NewReader(`{"username":"nobody","password":"x"}`)).WithContext(ctx)
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/auth/login",
+		strings.NewReader(`{"username":"nobody","password":"x"}`))
 	req.Header.Set("Content-Type", "application/json")
 	// Satisfy the CSRF Origin check so the request reaches the login
 	// handler (otherwise the middleware short-circuits with 403 and we

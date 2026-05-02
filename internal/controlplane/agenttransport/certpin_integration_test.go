@@ -177,11 +177,16 @@ func TestOutboundSupervisor_EmptyPinSkips(t *testing.T) {
 func getStubServerCert(t *testing.T, stub *agentStubServer) *x509.Certificate {
 	t.Helper()
 	// Re-use the clientTLS config (trusts the stub's CA) to do a quick dial.
-	conn, err := tls.Dial("tcp", stub.address, stub.clientTLS.Clone())
+	dialer := &tls.Dialer{Config: stub.clientTLS.Clone()}
+	netConn, err := dialer.DialContext(t.Context(), "tcp", stub.address)
 	if err != nil {
 		t.Fatalf("getStubServerCert: tls.Dial: %v", err)
 	}
-	defer conn.Close()
+	defer netConn.Close()
+	conn, ok := netConn.(*tls.Conn)
+	if !ok {
+		t.Fatalf("getStubServerCert: expected *tls.Conn, got %T", netConn)
+	}
 	state := conn.ConnectionState()
 	if len(state.PeerCertificates) == 0 {
 		t.Fatal("getStubServerCert: no peer certificates")

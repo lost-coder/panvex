@@ -28,7 +28,7 @@ func TestDBQueryCountMiddlewareUnderThresholdNoWarn(t *testing.T) {
 	}))
 
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/clients", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/clients", nil)
 	handler.ServeHTTP(rr, req)
 
 	if strings.Contains(buf.String(), "high_db_query_count") {
@@ -53,7 +53,7 @@ func TestDBQueryCountMiddlewareAboveThresholdWarns(t *testing.T) {
 	}))
 
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/dashboard", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/dashboard", nil)
 	handler.ServeHTTP(rr, req)
 
 	out := buf.String()
@@ -80,6 +80,6 @@ func TestDBQueryCountMiddlewareNoLoggerNoCrash(t *testing.T) {
 	}))
 
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/clients", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/clients", nil)
 	handler.ServeHTTP(rr, req) // must not panic
 }

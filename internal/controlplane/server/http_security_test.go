@@ -210,7 +210,7 @@ func TestSecurityHeadersDoNotAllowInlineScripts(t *testing.T) {
 func TestSecurityHeaders_CSPScopesWssToRequestHost(t *testing.T) {
 	t.Parallel()
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "http://panel.example:8080/api/health", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "http://panel.example:8080/api/health", nil)
 	req.Host = "panel.example:8080"
 	securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -235,7 +235,7 @@ func TestSecurityHeaders_CSPScopesWssToRequestHost(t *testing.T) {
 func TestHSTSHeader_DefaultIsOneYearWithoutPreload(t *testing.T) {
 	t.Setenv("PANVEX_HSTS_PRELOAD", "")
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "https://panel.example/", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://panel.example/", nil)
 	securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})).ServeHTTP(rr, req)
 	got := rr.Header().Get("Strict-Transport-Security")
 	if got != "max-age=31536000; includeSubDomains" {
@@ -248,7 +248,7 @@ func TestHSTSHeader_DefaultIsOneYearWithoutPreload(t *testing.T) {
 func TestHSTSHeader_PreloadEnvOptIn(t *testing.T) {
 	t.Setenv("PANVEX_HSTS_PRELOAD", "1")
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "https://panel.example/", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://panel.example/", nil)
 	securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})).ServeHTTP(rr, req)
 	got := rr.Header().Get("Strict-Transport-Security")
 	if got != "max-age=63072000; includeSubDomains; preload" {
