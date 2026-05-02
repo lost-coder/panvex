@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"strconv"
 	"testing"
 	"time"
@@ -23,7 +24,7 @@ func TestServerApplyAgentSnapshotKeepsRecentMetricSnapshotsInMemory(t *testing.T
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
-	identity, err := server.enrollAgent(agentEnrollmentRequest{
+	identity, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
@@ -38,7 +39,7 @@ func TestServerApplyAgentSnapshotKeepsRecentMetricSnapshotsInMemory(t *testing.T
 
 	totalSnapshots := testMaxInMemoryMetricSnapshots + 3
 	for index := 0; index < totalSnapshots; index++ {
-		if err := server.applyAgentSnapshot(agentSnapshot{
+		if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
 			AgentID:      identity.AgentID,
 			NodeName:     "node-a",
 			FleetGroupID: fleetGroupID,

@@ -72,11 +72,7 @@ type clientIPSnapshot struct {
 	ActiveIPs []string
 }
 
-func (s *Server) enrollAgent(request agentEnrollmentRequest, now time.Time) (agentEnrollmentResponse, error) {
-	return s.enrollAgentWithContext(context.Background(), request, now)
-}
-
-func (s *Server) enrollAgentWithContext(ctx context.Context, request agentEnrollmentRequest, now time.Time) (agentEnrollmentResponse, error) {
+func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest, now time.Time) (agentEnrollmentResponse, error) {
 	// P3-OBS-01: agent enrollment is a low-volume, high-value path
 	// (token consumption + cert issuance + first DB write). Wrap it in
 	// a custom span so operators can diagnose slow enrollments even

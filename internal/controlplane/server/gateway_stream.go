@@ -160,14 +160,14 @@ func (s *Server) startSnapshotApplyLoop(ctx context.Context, cancel context.Canc
 			select {
 			case <-ctx.Done():
 				drainRegularSnapshots(ch.regularSnapshots, func(snapshot agentSnapshot) error { //nolint:contextcheck
-					return s.applyAgentSnapshotWithContext(context.Background(), snapshot)
+					return s.applyAgentSnapshot(context.Background(), snapshot)
 				})
 				return
 			case snapshot := <-ch.regularSnapshots:
 				if snapshot.AgentID == "" {
 					continue
 				}
-				if err := s.applyAgentSnapshotWithContext(ctx, snapshot); err != nil {
+				if err := s.applyAgentSnapshot(ctx, snapshot); err != nil {
 					processErr(err)
 					return
 				}

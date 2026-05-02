@@ -669,7 +669,7 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
 
-	identity, err := first.enrollAgent(agentEnrollmentRequest{
+	identity, err := first.enrollAgent(context.Background(), agentEnrollmentRequest{
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
@@ -678,7 +678,7 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 		t.Fatalf("enrollAgent() error = %v", err)
 	}
 
-	if err := first.applyAgentSnapshot(agentSnapshot{
+	if err := first.applyAgentSnapshot(context.Background(), agentSnapshot{
 		AgentID:      identity.AgentID,
 		NodeName:     "node-a",
 		FleetGroupID: fleetGroupID,
@@ -877,7 +877,7 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken(agent-1) error = %v", err)
 	}
-	agentOne, err := first.enrollAgent(agentEnrollmentRequest{
+	agentOne, err := first.enrollAgent(context.Background(), agentEnrollmentRequest{
 		Token:    tokenOne.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
@@ -893,7 +893,7 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken(agent-2) error = %v", err)
 	}
-	agentTwo, err := first.enrollAgent(agentEnrollmentRequest{
+	agentTwo, err := first.enrollAgent(context.Background(), agentEnrollmentRequest{
 		Token:    tokenTwo.Value,
 		NodeName: "node-b",
 		Version:  "1.0.0",
@@ -1843,7 +1843,7 @@ func TestRenameAgentReturnsErrorWhenStorageFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
-	identity, err := server.enrollAgent(agentEnrollmentRequest{
+	identity, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
@@ -1913,7 +1913,7 @@ func TestDeregisterAgentReturnsErrorWhenStorageFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
-	identity, err := server.enrollAgent(agentEnrollmentRequest{
+	identity, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",

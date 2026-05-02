@@ -37,13 +37,13 @@ func TestEnrollAgentWithContextUsesCallerContextForPersistence(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err = server.enrollAgentWithContext(ctx, agentEnrollmentRequest{
+	_, err = server.enrollAgent(ctx, agentEnrollmentRequest{
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
 	}, now)
 	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("enrollAgentWithContext() error = %v, want %v", err, context.Canceled)
+		t.Fatalf("enrollAgent() error = %v, want %v", err, context.Canceled)
 	}
 }
 
@@ -78,7 +78,7 @@ func TestApplyAgentSnapshotWithContextSucceedsRegardlessOfCallerContext(t *testi
 	cancel()
 
 	// Cancelled context should not prevent in-memory state update.
-	err = server.applyAgentSnapshotWithContext(ctx, agentSnapshot{
+	err = server.applyAgentSnapshot(ctx, agentSnapshot{
 		AgentID:      "agent-1",
 		NodeName:     "node-a",
 		FleetGroupID: "ams",
@@ -86,7 +86,7 @@ func TestApplyAgentSnapshotWithContextSucceedsRegardlessOfCallerContext(t *testi
 		ObservedAt:   now,
 	})
 	if err != nil {
-		t.Fatalf("applyAgentSnapshotWithContext() error = %v, want nil (async persistence)", err)
+		t.Fatalf("applyAgentSnapshot() error = %v, want nil (async persistence)", err)
 	}
 
 	server.mu.RLock()

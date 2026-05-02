@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"testing"
@@ -205,7 +206,7 @@ func TestPresenceConnectedAtPersistsAcrossSnapshots(t *testing.T) {
 	// rewrite connectedAt.
 	for idx := 1; idx <= 3; idx++ {
 		snapshotAt := streamOpenT1.Add(time.Duration(idx) * 5 * time.Second)
-		if err := server.applyAgentSnapshot(agentSnapshot{
+		if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
 			AgentID:      agentID,
 			NodeName:     "node-xyz",
 			FleetGroupID: "grp",

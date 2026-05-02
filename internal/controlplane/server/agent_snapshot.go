@@ -8,10 +8,6 @@ import (
 	controltelemetry "github.com/lost-coder/panvex/internal/controlplane/telemetry"
 )
 
-func (s *Server) applyAgentSnapshot(snapshot agentSnapshot) error {
-	return s.applyAgentSnapshotWithContext(context.Background(), snapshot)
-}
-
 // updateAgentRecordFromSnapshot folds the snapshot's identity / runtime
 // fields into the existing agent record under s.mu, refreshing the
 // initialization-watch cooldown table along the way. Returns the new agent
@@ -192,7 +188,7 @@ func (s *Server) commitMetricSnapshotLocked(snapshot agentSnapshot) *MetricSnaps
 	return &metric
 }
 
-func (s *Server) applyAgentSnapshotWithContext(ctx context.Context, snapshot agentSnapshot) error {
+func (s *Server) applyAgentSnapshot(ctx context.Context, snapshot agentSnapshot) error {
 	s.logger.Debug("agent heartbeat applied", "agent_id", snapshot.AgentID, "node", snapshot.NodeName)
 
 	// Lock section: build all state objects AND commit to in-memory maps

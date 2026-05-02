@@ -24,7 +24,7 @@ func TestServerEnrollAgentConsumesTokenAndIssuesIdentity(t *testing.T) {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
 
-	response, err := server.enrollAgent(agentEnrollmentRequest{
+	response, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
@@ -54,7 +54,7 @@ func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
 
-	identity, err := server.enrollAgent(agentEnrollmentRequest{
+	identity, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
@@ -63,7 +63,7 @@ func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T
 		t.Fatalf("enrollAgent() error = %v", err)
 	}
 
-	if err := server.applyAgentSnapshot(agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
 		AgentID:      identity.AgentID,
 		NodeName:     "node-a",
 		FleetGroupID: fleetGroupID,
@@ -152,7 +152,7 @@ func TestApplyAgentSnapshotIgnoresRevokedAgent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
-	identity, err := server.enrollAgent(agentEnrollmentRequest{
+	identity, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
@@ -168,7 +168,7 @@ func TestApplyAgentSnapshotIgnoresRevokedAgent(t *testing.T) {
 	server.revokedAgentIDs[identity.AgentID] = struct{}{}
 	server.mu.Unlock()
 
-	if err := server.applyAgentSnapshot(agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
 		AgentID:      identity.AgentID,
 		NodeName:     "node-a",
 		FleetGroupID: fleetGroupID,
@@ -208,7 +208,7 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
 
-	identity, err := first.enrollAgent(agentEnrollmentRequest{
+	identity, err := first.enrollAgent(context.Background(), agentEnrollmentRequest{
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
@@ -217,7 +217,7 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 		t.Fatalf("enrollAgent() error = %v", err)
 	}
 
-	if err := first.applyAgentSnapshot(agentSnapshot{
+	if err := first.applyAgentSnapshot(context.Background(), agentSnapshot{
 		AgentID:      identity.AgentID,
 		NodeName:     "node-a",
 		FleetGroupID: fleetGroupID,
@@ -304,7 +304,7 @@ func TestServerApplyAgentSnapshotUpdatesInMemoryStateEvenWhenPersistenceFails(t 
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
 
-	identity, err := server.enrollAgent(agentEnrollmentRequest{
+	identity, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
@@ -316,7 +316,7 @@ func TestServerApplyAgentSnapshotUpdatesInMemoryStateEvenWhenPersistenceFails(t 
 	store.putAgentErr = errors.New("put agent failed")
 
 	// Async batch writer means persistence failures do not block the caller.
-	if err := server.applyAgentSnapshot(agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
 		AgentID:      identity.AgentID,
 		NodeName:     "node-a",
 		FleetGroupID: fleetGroupID,
@@ -348,7 +348,7 @@ func TestServerApplyAgentSnapshotTracksRuntimeLifecycleState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
-	identity, err := server.enrollAgent(agentEnrollmentRequest{Token: token.Value, NodeName: "node-a", Version: "1.0.0"}, now.Add(10*time.Second))
+	identity, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{Token: token.Value, NodeName: "node-a", Version: "1.0.0"}, now.Add(10*time.Second))
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
 	}
@@ -362,7 +362,7 @@ func TestServerApplyAgentSnapshotTracksRuntimeLifecycleState(t *testing.T) {
 	runtime.InitializationProgressPct = 10
 	runtime.Degraded = true
 
-	if err := server.applyAgentSnapshot(agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
 		AgentID:      identity.AgentID,
 		NodeName:     "node-a",
 		FleetGroupID: fleetGroupID,
@@ -387,7 +387,7 @@ func TestServerApplyAgentSnapshotStartsInitializationWatchCooldownAfterReadyTran
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
-	identity, err := server.enrollAgent(agentEnrollmentRequest{Token: token.Value, NodeName: "node-a", Version: "1.0.0"}, now.Add(10*time.Second))
+	identity, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{Token: token.Value, NodeName: "node-a", Version: "1.0.0"}, now.Add(10*time.Second))
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
 	}
@@ -402,7 +402,7 @@ func TestServerApplyAgentSnapshotStartsInitializationWatchCooldownAfterReadyTran
 	initializingRuntime.InitializationStage = "warming_me_pool"
 	initializingRuntime.InitializationProgressPct = 38
 
-	if err := server.applyAgentSnapshot(agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
 		AgentID:      identity.AgentID,
 		NodeName:     "node-a",
 		FleetGroupID: fleetGroupID,
@@ -419,7 +419,7 @@ func TestServerApplyAgentSnapshotStartsInitializationWatchCooldownAfterReadyTran
 	}
 
 	readyObservedAt := now.Add(50 * time.Second)
-	if err := server.applyAgentSnapshot(agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
 		AgentID:      identity.AgentID,
 		NodeName:     "node-a",
 		FleetGroupID: fleetGroupID,
@@ -523,7 +523,7 @@ func TestServerApplyAgentSnapshotKeepsEnrolledScopeWhenSnapshotDiffers(t *testin
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
 
-	identity, err := server.enrollAgent(agentEnrollmentRequest{
+	identity, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
@@ -532,7 +532,7 @@ func TestServerApplyAgentSnapshotKeepsEnrolledScopeWhenSnapshotDiffers(t *testin
 		t.Fatalf("enrollAgent() error = %v", err)
 	}
 
-	if err := server.applyAgentSnapshot(agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
 		AgentID:      identity.AgentID,
 		NodeName:     "node-a",
 		FleetGroupID: amsGroupID,
@@ -571,7 +571,7 @@ func TestApplyAgentSnapshotPrunesStaleInstances(t *testing.T) {
 	if err != nil {
 		t.Fatalf("IssueToken() error = %v", err)
 	}
-	identity, err := server.enrollAgent(agentEnrollmentRequest{
+	identity, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
@@ -581,7 +581,7 @@ func TestApplyAgentSnapshotPrunesStaleInstances(t *testing.T) {
 	}
 
 	// Seed three instances for agent A.
-	if err := server.applyAgentSnapshot(agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
 		AgentID:      identity.AgentID,
 		NodeName:     "node-a",
 		FleetGroupID: fleetGroupID,
@@ -604,7 +604,7 @@ func TestApplyAgentSnapshotPrunesStaleInstances(t *testing.T) {
 	}
 
 	// Apply a new snapshot reporting only two instances — inst-3 must be pruned.
-	if err := server.applyAgentSnapshot(agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
 		AgentID:      identity.AgentID,
 		NodeName:     "node-a",
 		FleetGroupID: fleetGroupID,
@@ -649,7 +649,7 @@ func TestApplyAgentSnapshotDoesNotPruneOtherAgentsInstances(t *testing.T) {
 	if err != nil {
 		t.Fatalf("IssueToken(A) error = %v", err)
 	}
-	agentA, err := server.enrollAgent(agentEnrollmentRequest{
+	agentA, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{
 		Token:    tokenA.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
@@ -665,7 +665,7 @@ func TestApplyAgentSnapshotDoesNotPruneOtherAgentsInstances(t *testing.T) {
 	if err != nil {
 		t.Fatalf("IssueToken(B) error = %v", err)
 	}
-	agentB, err := server.enrollAgent(agentEnrollmentRequest{
+	agentB, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{
 		Token:    tokenB.Value,
 		NodeName: "node-b",
 		Version:  "1.0.0",
@@ -674,7 +674,7 @@ func TestApplyAgentSnapshotDoesNotPruneOtherAgentsInstances(t *testing.T) {
 		t.Fatalf("enrollAgent(B) error = %v", err)
 	}
 
-	if err := server.applyAgentSnapshot(agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
 		AgentID:      agentA.AgentID,
 		NodeName:     "node-a",
 		FleetGroupID: fleetGroupID,
@@ -686,7 +686,7 @@ func TestApplyAgentSnapshotDoesNotPruneOtherAgentsInstances(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("applyAgentSnapshot(A) error = %v", err)
 	}
-	if err := server.applyAgentSnapshot(agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
 		AgentID:      agentB.AgentID,
 		NodeName:     "node-b",
 		FleetGroupID: fleetGroupID,
@@ -699,7 +699,7 @@ func TestApplyAgentSnapshotDoesNotPruneOtherAgentsInstances(t *testing.T) {
 	}
 
 	// Agent A reports only inst-a1 now. inst-a2 must be pruned; inst-b1 must remain.
-	if err := server.applyAgentSnapshot(agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
 		AgentID:      agentA.AgentID,
 		NodeName:     "node-a",
 		FleetGroupID: fleetGroupID,
@@ -753,7 +753,7 @@ func TestServerEnrollmentTokenPersistsAcrossRestart(t *testing.T) {
 		Store: store,
 	})
 	defer restored.Close()
-	response, err := restored.enrollAgent(agentEnrollmentRequest{
+	response, err := restored.enrollAgent(context.Background(), agentEnrollmentRequest{
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
@@ -810,7 +810,7 @@ func TestServerEnrollmentIssuesOperationalCertificateLifetime(t *testing.T) {
 	}
 
 	issuedAt := now.Add(10 * time.Second)
-	response, err := server.enrollAgent(agentEnrollmentRequest{
+	response, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
@@ -871,7 +871,7 @@ func TestServerConsumedEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) 
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
 
-	if _, err := first.enrollAgent(agentEnrollmentRequest{
+	if _, err := first.enrollAgent(context.Background(), agentEnrollmentRequest{
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
@@ -885,7 +885,7 @@ func TestServerConsumedEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) 
 		Store: store,
 	})
 	defer restored.Close()
-	if _, err := restored.enrollAgent(agentEnrollmentRequest{
+	if _, err := restored.enrollAgent(context.Background(), agentEnrollmentRequest{
 		Token:    token.Value,
 		NodeName: "node-b",
 		Version:  "1.0.1",
@@ -919,7 +919,7 @@ func TestEnrollmentSetsCertificateDates(t *testing.T) {
 	}
 
 	enrolledAt := now.Add(10 * time.Second)
-	identity, err := server.enrollAgent(agentEnrollmentRequest{
+	identity, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
@@ -1123,7 +1123,7 @@ func TestServerExpiredEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) {
 		Store: store,
 	})
 	defer restored.Close()
-	if _, err := restored.enrollAgent(agentEnrollmentRequest{
+	if _, err := restored.enrollAgent(context.Background(), agentEnrollmentRequest{
 		Token:    token.Value,
 		NodeName: "node-b",
 		Version:  "1.0.1",

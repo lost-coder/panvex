@@ -333,7 +333,7 @@ func TestHTTPClientsAggregateUsageAcrossAgentSnapshots(t *testing.T) {
 		t.Fatalf("json.Unmarshal(create) error = %v", err)
 	}
 
-	if err := server.applyAgentSnapshot(agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
 		AgentID:    "agent-000001",
 		NodeName:   "node-a",
 		Version:    "dev",
@@ -351,7 +351,7 @@ func TestHTTPClientsAggregateUsageAcrossAgentSnapshots(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("applyAgentSnapshot(agent-000001) error = %v", err)
 	}
-	if err := server.applyAgentSnapshot(agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
 		AgentID:    "agent-000002",
 		NodeName:   "node-b",
 		Version:    "dev",

@@ -279,7 +279,7 @@ func (s *Server) handleAgentBootstrap() http.HandlerFunc {
 			return
 		}
 
-		response, err := s.enrollAgentWithContext(r.Context(), agentEnrollmentRequest{
+		response, err := s.enrollAgent(r.Context(), agentEnrollmentRequest{
 			Token:    token,
 			NodeName: request.NodeName,
 			Version:  request.Version,
