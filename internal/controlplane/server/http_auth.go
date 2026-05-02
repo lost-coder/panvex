@@ -122,7 +122,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 			priorSessionID = existing.Value
 		}
 
-		session, err := s.auth.AuthenticateWithContext(r.Context(), auth.LoginInput{
+		session, err := s.auth.Authenticate(r.Context(), auth.LoginInput{
 			Username:       request.Username,
 			Password:       request.Password,
 			TotpCode:       request.TotpCode,
@@ -225,7 +225,7 @@ func (s *Server) persistLoginAudit(w http.ResponseWriter, r *http.Request, sessi
 	if auditErr == nil {
 		return true
 	}
-	if logoutErr := s.auth.LogoutWithContext(r.Context(), session.ID); logoutErr != nil {
+	if logoutErr := s.auth.Logout(r.Context(), session.ID); logoutErr != nil {
 		s.logger.Error("failed to revoke session after audit persist failure",
 			"session_hash", s.logSessionID(session.ID), "error", logoutErr)
 	}
@@ -246,7 +246,7 @@ func (s *Server) handleLogout() http.HandlerFunc {
 			return
 		}
 
-		if err := s.auth.LogoutWithContext(r.Context(), session.ID); err != nil {
+		if err := s.auth.Logout(r.Context(), session.ID); err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -399,7 +399,7 @@ func (s *Server) requireSession(r *http.Request) (auth.Session, auth.User, error
 	// of authenticated requests does not churn the session map. Cheap
 	// enough (one map read + conditional write under the auth mutex) to
 	// run on every authenticated handler.
-	s.auth.TouchSessionWithContext(r.Context(), session.ID)
+	s.auth.TouchSession(r.Context(), session.ID)
 
 	return session, user, nil
 }

@@ -105,7 +105,7 @@ func (s *Service) UpdateUserWithContext(ctx context.Context, input UpdateUserInp
 	passwordChanged := strings.TrimSpace(input.NewPassword) != ""
 	roleChanged := previousRole != input.Role
 	if passwordChanged || roleChanged {
-		_ = s.RevokeSessionsForUserWithContext(ctx, user.ID)
+		_ = s.RevokeSessionsForUser(ctx, user.ID)
 	}
 
 	_ = now
@@ -201,7 +201,7 @@ func (s *Service) DeleteUserWithContext(ctx context.Context, userID string) erro
 	// Drop the deleted user's active sessions from both the in-memory map and
 	// the persistent session store. Done outside the lock because
 	// RevokeSessionsForUser takes s.mu itself.
-	_ = s.RevokeSessionsForUserWithContext(ctx, userID)
+	_ = s.RevokeSessionsForUser(ctx, userID)
 
 	return nil
 }

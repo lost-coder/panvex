@@ -53,7 +53,7 @@ func TestServiceAuthenticateAllowsOperatorWithoutTotpWhenDisabled(t *testing.T) 
 		t.Fatalf("BootstrapUser() secret = %q, want empty", secret)
 	}
 
-	session, err := service.Authenticate(LoginInput{
+	session, err := service.Authenticate(context.Background(), LoginInput{
 		Username: "operator",
 		Password: "Correct1horse2battery",
 	}, now.Add(30*time.Second))
@@ -143,7 +143,7 @@ func TestServiceEnableTotpRequiresValidPasswordAndCode(t *testing.T) {
 		t.Fatalf("EnableTotp() TotpSecret = %q, want %q", enabledUser.TotpSecret, secret)
 	}
 
-	session, err := service.Authenticate(LoginInput{
+	session, err := service.Authenticate(context.Background(), LoginInput{
 		Username: "operator",
 		Password: "Correct1horse2battery",
 		TotpCode: code,
@@ -220,7 +220,7 @@ func TestServiceDisableTotpRequiresValidPasswordAndCode(t *testing.T) {
 		t.Fatalf("DisableTotp() TotpSecret = %q, want empty", disabledUser.TotpSecret)
 	}
 
-	session, err := service.Authenticate(LoginInput{
+	session, err := service.Authenticate(context.Background(), LoginInput{
 		Username: "operator",
 		Password: "Correct1horse2battery",
 	}, now.Add(2*time.Minute))
@@ -246,7 +246,7 @@ func TestServiceAuthenticateAllowsViewerWithoutTotp(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	session, err := service.Authenticate(LoginInput{
+	session, err := service.Authenticate(context.Background(), LoginInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 	}, now.Add(time.Minute))
@@ -290,7 +290,7 @@ func TestServiceSessionLifecycle(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	session, err := service.Authenticate(LoginInput{
+	session, err := service.Authenticate(context.Background(), LoginInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 	}, now.Add(time.Minute))
@@ -307,7 +307,7 @@ func TestServiceSessionLifecycle(t *testing.T) {
 		t.Fatalf("stored.UserID = %q, want %q", stored.UserID, user.ID)
 	}
 
-	if err := service.Logout(session.ID); err != nil {
+	if err := service.Logout(context.Background(), session.ID); err != nil {
 		t.Fatalf("Logout() error = %v", err)
 	}
 
@@ -330,7 +330,7 @@ func TestServiceGetSessionPrunesOtherExpiredSessions(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	session, err := service.Authenticate(LoginInput{
+	session, err := service.Authenticate(context.Background(), LoginInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 	}, now)
@@ -383,7 +383,7 @@ func TestServiceSnapshotAndLoadUsers(t *testing.T) {
 		t.Fatal("SnapshotUsers()[0].TotpEnabled = true, want false")
 	}
 
-	session, err := restored.Authenticate(LoginInput{
+	session, err := restored.Authenticate(context.Background(), LoginInput{
 		Username: "admin",
 		Password: "Admin1password",
 	}, now)
@@ -464,7 +464,7 @@ func TestServiceBootstrapUserPersistsThroughStore(t *testing.T) {
 	}
 
 	restored := NewServiceWithStore(store)
-	session, err := restored.Authenticate(LoginInput{
+	session, err := restored.Authenticate(context.Background(), LoginInput{
 		Username: "admin",
 		Password: "Admin1password",
 	}, now.Add(time.Minute))
@@ -493,7 +493,7 @@ func TestServiceSessionIdleTimeout(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	session, err := service.Authenticate(LoginInput{
+	session, err := service.Authenticate(context.Background(), LoginInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 	}, clock)
@@ -523,7 +523,7 @@ func TestServiceTouchSessionSlidesIdleTimeout(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	session, err := service.Authenticate(LoginInput{
+	session, err := service.Authenticate(context.Background(), LoginInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 	}, clock)
@@ -536,7 +536,7 @@ func TestServiceTouchSessionSlidesIdleTimeout(t *testing.T) {
 	// steps larger than sessionTouchThrottle so every Touch is effective.
 	for i := 0; i < 12; i++ {
 		clock = clock.Add(10 * time.Minute)
-		service.TouchSession(session.ID)
+		service.TouchSession(context.Background(), session.ID)
 	}
 
 	if _, err := service.GetSession(session.ID); err != nil {
@@ -559,7 +559,7 @@ func TestServiceTouchSessionDoesNotRevivePastMaxLifetime(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	session, err := service.Authenticate(LoginInput{
+	session, err := service.Authenticate(context.Background(), LoginInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 	}, clock)
@@ -568,7 +568,7 @@ func TestServiceTouchSessionDoesNotRevivePastMaxLifetime(t *testing.T) {
 	}
 
 	clock = clock.Add(sessionMaxLifetime + time.Minute)
-	service.TouchSession(session.ID)
+	service.TouchSession(context.Background(), session.ID)
 
 	if _, err := service.GetSession(session.ID); err == nil {
 		t.Fatal("session past sessionMaxLifetime should not survive Touch, got nil error")

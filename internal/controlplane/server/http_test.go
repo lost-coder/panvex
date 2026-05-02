@@ -621,14 +621,14 @@ func TestServerNewDoesNotReseedExistingStoreUsers(t *testing.T) {
 	})
 	defer server.Close()
 
-	if _, err := server.auth.Authenticate(auth.LoginInput{
+	if _, err := server.auth.Authenticate(context.Background(), auth.LoginInput{
 		Username: "admin",
 		Password: "Current1password",
 	}, now.Add(2*time.Minute)); err != nil {
 		t.Fatalf("Authenticate() with stored password error = %v", err)
 	}
 
-	if _, err := server.auth.Authenticate(auth.LoginInput{
+	if _, err := server.auth.Authenticate(context.Background(), auth.LoginInput{
 		Username: "admin",
 		Password: "Stale1password",
 	}, now.Add(2*time.Minute)); !errors.Is(err, auth.ErrInvalidCredentials) {

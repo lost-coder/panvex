@@ -63,7 +63,7 @@ func TestLoginFailsWhenSessionStoreBroken(t *testing.T) {
 	broken := &brokenSessionStore{putErr: storeErr}
 	service.SetSessionStore(broken)
 
-	session, err := service.Authenticate(LoginInput{
+	session, err := service.Authenticate(context.Background(), LoginInput{
 		Username: "operator",
 		Password: "Correct1horse2battery",
 	}, now.Add(time.Minute))
@@ -115,7 +115,7 @@ func TestLogoutToleratesBrokenSessionStore(t *testing.T) {
 	// First login while the store is healthy.
 	good := &brokenSessionStore{putErr: nil}
 	service.SetSessionStore(good)
-	session, err := service.Authenticate(LoginInput{
+	session, err := service.Authenticate(context.Background(), LoginInput{
 		Username: "operator",
 		Password: "Correct1horse2battery",
 	}, now.Add(time.Minute))
@@ -126,7 +126,7 @@ func TestLogoutToleratesBrokenSessionStore(t *testing.T) {
 	// Now swap in a store that fails DeleteSession. The in-memory map still
 	// drops the session and the caller sees success.
 	service.SetSessionStore(&failingDeleteStore{delErr: errors.New("delete broken")})
-	if err := service.Logout(session.ID); err != nil {
+	if err := service.Logout(context.Background(), session.ID); err != nil {
 		t.Fatalf("Logout() error = %v, want nil (tolerated)", err)
 	}
 

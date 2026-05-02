@@ -99,7 +99,7 @@ func TestUpdateUserRevokesSessionsOnPasswordChange(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	session, err := service.Authenticate(LoginInput{
+	session, err := service.Authenticate(context.Background(), LoginInput{
 		Username: "admin",
 		Password: "Admin1password",
 	}, now.Add(time.Minute))
@@ -150,7 +150,7 @@ func TestUpdateUserRevokesSessionsOnRoleDemotion(t *testing.T) {
 		t.Fatalf("BootstrapUser() second admin error = %v", err)
 	}
 
-	session, err := service.Authenticate(LoginInput{
+	session, err := service.Authenticate(context.Background(), LoginInput{
 		Username: "admin1",
 		Password: "Admin1password",
 	}, now.Add(time.Minute))
@@ -190,7 +190,7 @@ func TestUpdateUserKeepsSessionsOnUsernameChange(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	session, err := service.Authenticate(LoginInput{
+	session, err := service.Authenticate(context.Background(), LoginInput{
 		Username: "operator",
 		Password: "Correct1horse2battery",
 	}, now.Add(time.Minute))
@@ -231,7 +231,7 @@ func TestUpdateUserRevokesSessionsOnRolePromotion(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	session, err := service.Authenticate(LoginInput{
+	session, err := service.Authenticate(context.Background(), LoginInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 	}, now.Add(time.Minute))
@@ -274,7 +274,7 @@ func TestAuthenticateInvalidatesPriorSessionID(t *testing.T) {
 
 	// Simulate an existing pre-auth session (e.g. a stale cookie in the
 	// browser or an attacker-planted fixture).
-	first, err := service.Authenticate(LoginInput{
+	first, err := service.Authenticate(context.Background(), LoginInput{
 		Username: "operator",
 		Password: "Correct1horse2battery",
 	}, now.Add(time.Minute))
@@ -288,7 +288,7 @@ func TestAuthenticateInvalidatesPriorSessionID(t *testing.T) {
 
 	// Re-login carrying the prior session ID as happens when the browser
 	// submits the login form with the old cookie still attached.
-	second, err := service.Authenticate(LoginInput{
+	second, err := service.Authenticate(context.Background(), LoginInput{
 		Username:       "operator",
 		Password:       "Correct1horse2battery",
 		PriorSessionID: first.ID,
@@ -326,7 +326,7 @@ func TestAuthenticateIgnoresUnknownPriorSessionID(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	session, err := service.Authenticate(LoginInput{
+	session, err := service.Authenticate(context.Background(), LoginInput{
 		Username:       "operator",
 		Password:       "Correct1horse2battery",
 		PriorSessionID: "not-a-real-session-id",
@@ -365,20 +365,20 @@ func TestRevokeSessionsForUserPurgesOnlyTargetUser(t *testing.T) {
 		t.Fatalf("BootstrapUser(bob) error = %v", err)
 	}
 
-	alice1, err := service.Authenticate(LoginInput{Username: "alice", Password: "Alice1password"}, now.Add(time.Minute))
+	alice1, err := service.Authenticate(context.Background(), LoginInput{Username: "alice", Password: "Alice1password"}, now.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("Authenticate(alice 1) error = %v", err)
 	}
-	alice2, err := service.Authenticate(LoginInput{Username: "alice", Password: "Alice1password"}, now.Add(2*time.Minute))
+	alice2, err := service.Authenticate(context.Background(), LoginInput{Username: "alice", Password: "Alice1password"}, now.Add(2*time.Minute))
 	if err != nil {
 		t.Fatalf("Authenticate(alice 2) error = %v", err)
 	}
-	bobSession, err := service.Authenticate(LoginInput{Username: "bob", Password: "Bob1password1"}, now.Add(3*time.Minute))
+	bobSession, err := service.Authenticate(context.Background(), LoginInput{Username: "bob", Password: "Bob1password1"}, now.Add(3*time.Minute))
 	if err != nil {
 		t.Fatalf("Authenticate(bob) error = %v", err)
 	}
 
-	revoked := service.RevokeSessionsForUser(target.ID)
+	revoked := service.RevokeSessionsForUser(context.Background(), target.ID)
 	if revoked != 2 {
 		t.Fatalf("RevokeSessionsForUser() = %d, want %d", revoked, 2)
 	}
@@ -437,7 +437,7 @@ func TestAuthenticatePurgesPriorSessionFromStoreEvenWhenNotInMemory(t *testing.T
 		t.Fatal("precondition: store.has(priorID) = false, want present before login")
 	}
 
-	if _, err := service.Authenticate(LoginInput{
+	if _, err := service.Authenticate(context.Background(), LoginInput{
 		Username:       "operator",
 		Password:       "Correct1horse2battery",
 		PriorSessionID: priorID,

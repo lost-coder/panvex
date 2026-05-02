@@ -208,15 +208,7 @@ func (s *Service) persistAuthenticatedSession(ctx context.Context, session Sessi
 }
 
 // Authenticate validates credentials and enforces TOTP only for users who enabled it.
-//
-// Note: preferAuthenticateWithContext from request handlers so the
-// underlying user-store and session-store calls inherit request cancellation.
-func (s *Service) Authenticate(input LoginInput, now time.Time) (Session, error) {
-	return s.AuthenticateWithContext(context.Background(), input, now)
-}
-
-// AuthenticateWithContext is the ctx-aware variant of Authenticate.
-func (s *Service) AuthenticateWithContext(ctx context.Context, input LoginInput, now time.Time) (Session, error) {
+func (s *Service) Authenticate(ctx context.Context, input LoginInput, now time.Time) (Session, error) {
 	user, err := s.loadUserByUsernameCtx(ctx, input.Username)
 	if err != nil {
 		// P1-SEC-12: burn Argon2id time on a dummy hash so the response
@@ -295,15 +287,7 @@ func (s *Service) AuthenticateWithContext(ctx context.Context, input LoginInput,
 // subsequent GetSession rejects the old IDs. Callers should invoke this
 // whenever a user's privileges or credentials change in a way that ought to
 // force re-authentication (role change, forced password reset, etc.).
-//
-// Note: preferRevokeSessionsForUserWithContext to thread request ctx.
-func (s *Service) RevokeSessionsForUser(userID string) int {
-	return s.RevokeSessionsForUserWithContext(context.Background(), userID)
-}
-
-// RevokeSessionsForUserWithContext is the ctx-aware variant of
-// RevokeSessionsForUser.
-func (s *Service) RevokeSessionsForUserWithContext(ctx context.Context, userID string) int {
+func (s *Service) RevokeSessionsForUser(ctx context.Context, userID string) int {
 	if strings.TrimSpace(userID) == "" {
 		return 0
 	}
@@ -379,16 +363,7 @@ func (s *Service) GetSession(sessionID string) (Session, error) {
 // that would couple every authenticated request to a DB round-trip for a
 // value we rebuild from CreatedAt on restart anyway. Callers should invoke
 // it after a successful session lookup on any authenticated HTTP handler.
-//
-// TouchSession is the legacy ctx-less entrypoint. New callers should use
-// TouchSessionWithContext so the persistence side-effect inherits the
-// request's cancellation budget.
-func (s *Service) TouchSession(sessionID string) {
-	s.TouchSessionWithContext(context.Background(), sessionID)
-}
-
-// TouchSessionWithContext is the ctx-aware variant of TouchSession.
-func (s *Service) TouchSessionWithContext(ctx context.Context, sessionID string) {
+func (s *Service) TouchSession(ctx context.Context, sessionID string) {
 	if sessionID == "" {
 		return
 	}
@@ -424,14 +399,7 @@ func (s *Service) TouchSessionWithContext(ctx context.Context, sessionID string)
 }
 
 // Logout revokes a session so it can no longer authenticate requests.
-//
-// Note: preferLogoutWithContext from request handlers.
-func (s *Service) Logout(sessionID string) error {
-	return s.LogoutWithContext(context.Background(), sessionID)
-}
-
-// LogoutWithContext is the ctx-aware variant of Logout.
-func (s *Service) LogoutWithContext(ctx context.Context, sessionID string) error {
+func (s *Service) Logout(ctx context.Context, sessionID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
