@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"path/filepath"
@@ -34,7 +35,7 @@ func setupTransportModeServer(t *testing.T) (*Server, []*http.Cookie) {
 		store.Close()
 	})
 
-	if _, _, err := srv.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := srv.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -245,7 +246,7 @@ func TestUpdateAgentTransportModeRequiresAdminRole(t *testing.T) {
 		store.Close()
 	})
 
-	if _, _, err := srv.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := srv.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "operator",
 		Password: "Operator1password",
 		Role:     auth.RoleOperator,

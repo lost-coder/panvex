@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"path/filepath"
@@ -25,7 +26,7 @@ func TestHTTPUsersCreateUpdateDeleteRoundTrip(t *testing.T) {
 		Store: store,
 	})
 	defer server.Close()
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -140,7 +141,7 @@ func TestHTTPUsersRejectSelfDeleteAndLastAdminDemotion(t *testing.T) {
 		Store: store,
 	})
 	defer server.Close()
-	adminUser, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	adminUser, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,

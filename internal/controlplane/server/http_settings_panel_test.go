@@ -34,14 +34,14 @@ func TestHTTPPanelSettingsRequiresAdminAndPersistsSharedEndpointChanges(t *testi
 		},
 	})
 	defer server.Close()
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser(admin) error = %v", err)
 	}
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
@@ -176,7 +176,7 @@ func TestHTTPPanelSettingsMarksRestartUnavailableWhenRuntimeCannotSelfRestart(t 
 			RestartSupported:  false,
 		},
 	})
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -230,7 +230,7 @@ func TestHTTPPanelSettingsRejectsRuntimeMutationsInLegacyMode(t *testing.T) {
 			RestartSupported:  true,
 		},
 	})
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -268,7 +268,7 @@ func TestHTTPPanelSettingsRejectsOversizedPayload(t *testing.T) {
 			RestartSupported:  true,
 		},
 	})
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -318,7 +318,7 @@ func TestHTTPPanelSettingsExposesConfigManagedRuntimeAsReadOnly(t *testing.T) {
 		},
 	})
 	defer server.Close()
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -408,7 +408,7 @@ func TestHTTPPanelSettingsRejectsRuntimeMutationsWhenConfigManagesRuntime(t *tes
 			ConfigPath:        "/etc/panvex/config.toml",
 		},
 	})
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -456,14 +456,14 @@ func TestHTTPPanelRestartRequiresAdminAndInvokesRuntimeHook(t *testing.T) {
 			return nil
 		},
 	})
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser(admin) error = %v", err)
 	}
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
@@ -516,7 +516,7 @@ func TestHTTPPanelRestartRejectsUnsupportedRuntime(t *testing.T) {
 			RestartSupported:  false,
 		},
 	})
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -553,7 +553,7 @@ func TestHTTPPanelRestartReturnsInternalErrorWhenRuntimeHookFails(t *testing.T) 
 			return errors.New("restart hook failed")
 		},
 	})
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -596,7 +596,7 @@ func TestPutPanelSettings_PersistsPasswordPolicy(t *testing.T) {
 		},
 	})
 	defer server.Close()
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -651,7 +651,7 @@ func TestPutPanelSettings_RejectsBelowFloor(t *testing.T) {
 		},
 	})
 	defer server.Close()
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -691,7 +691,7 @@ func TestPutPanelSettings_RejectsAboveCeiling(t *testing.T) {
 		},
 	})
 	defer server.Close()
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,

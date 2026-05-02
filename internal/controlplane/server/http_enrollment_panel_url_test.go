@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"path/filepath"
@@ -32,7 +33,7 @@ func TestHTTPEnrollmentTokensExposeConfiguredPanelURL(t *testing.T) {
 		},
 	})
 	defer server.Close()
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "operator",
 		Password: "Operator1password",
 		Role:     auth.RoleOperator,
@@ -71,7 +72,7 @@ func TestHTTPEnrollmentTokensExposeConfiguredPanelURL(t *testing.T) {
 		t.Fatalf("PUT /api/settings/panel as operator status = %d, want %d", settingsResponse.Code, http.StatusForbidden)
 	}
 
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -185,7 +186,7 @@ func TestEnrollmentTokenUsesAgentRootPathInPanelURL(t *testing.T) {
 	})
 	defer srv.Close()
 
-	if _, _, err := srv.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := srv.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin", Password: "Admin1password", Role: auth.RoleAdmin,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)

@@ -14,7 +14,7 @@ func TestServiceBootstrapUserLeavesTotpDisabledByDefault(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	service := NewService()
 
-	user, secret, err := service.BootstrapUser(BootstrapInput{
+	user, secret, err := service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     RoleAdmin,
@@ -40,7 +40,7 @@ func TestServiceAuthenticateAllowsOperatorWithoutTotpWhenDisabled(t *testing.T) 
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	service := NewService()
 
-	user, secret, err := service.BootstrapUser(BootstrapInput{
+	user, secret, err := service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "operator",
 		Password: "Correct1horse2battery",
 		Role:     RoleOperator,
@@ -70,7 +70,7 @@ func TestServiceEnableTotpRequiresPendingSetup(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	service := NewService()
 
-	user, _, err := service.BootstrapUser(BootstrapInput{
+	user, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "operator",
 		Password: "Correct1horse2battery",
 		Role:     RoleOperator,
@@ -93,7 +93,7 @@ func TestServiceEnableTotpRequiresValidPasswordAndCode(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	service := NewService()
 
-	user, _, err := service.BootstrapUser(BootstrapInput{
+	user, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "operator",
 		Password: "Correct1horse2battery",
 		Role:     RoleOperator,
@@ -161,7 +161,7 @@ func TestServiceDisableTotpRequiresValidPasswordAndCode(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	service := NewService()
 
-	user, _, err := service.BootstrapUser(BootstrapInput{
+	user, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "operator",
 		Password: "Correct1horse2battery",
 		Role:     RoleOperator,
@@ -237,7 +237,7 @@ func TestServiceAuthenticateAllowsViewerWithoutTotp(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	service := NewService()
 
-	user, _, err := service.BootstrapUser(BootstrapInput{
+	user, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 		Role:     RoleViewer,
@@ -281,7 +281,7 @@ func TestServiceSessionLifecycle(t *testing.T) {
 	service := NewService()
 	service.SetNow(func() time.Time { return now.Add(time.Minute) })
 
-	user, _, err := service.BootstrapUser(BootstrapInput{
+	user, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 		Role:     RoleViewer,
@@ -321,7 +321,7 @@ func TestServiceGetSessionPrunesOtherExpiredSessions(t *testing.T) {
 	service := NewService()
 	service.SetNow(func() time.Time { return now })
 
-	user, _, err := service.BootstrapUser(BootstrapInput{
+	user, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 		Role:     RoleViewer,
@@ -362,7 +362,7 @@ func TestServiceSnapshotAndLoadUsers(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	service := NewService()
 
-	user, _, err := service.BootstrapUser(BootstrapInput{
+	user, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     RoleAdmin,
@@ -400,7 +400,7 @@ func TestServiceResetTotpClearsEnabledState(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	service := NewService()
 
-	user, _, err := service.BootstrapUser(BootstrapInput{
+	user, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "operator",
 		Password: "Correct1horse2battery",
 		Role:     RoleOperator,
@@ -446,7 +446,7 @@ func TestServiceBootstrapUserPersistsThroughStore(t *testing.T) {
 	defer store.Close()
 
 	service := NewServiceWithStore(store)
-	user, secret, err := service.BootstrapUser(BootstrapInput{
+	user, secret, err := service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     RoleAdmin,
@@ -485,7 +485,7 @@ func TestServiceSessionIdleTimeout(t *testing.T) {
 	service := NewService()
 	service.SetNow(func() time.Time { return clock })
 
-	if _, _, err := service.BootstrapUser(BootstrapInput{
+	if _, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 		Role:     RoleViewer,
@@ -515,7 +515,7 @@ func TestServiceTouchSessionSlidesIdleTimeout(t *testing.T) {
 	service := NewService()
 	service.SetNow(func() time.Time { return clock })
 
-	if _, _, err := service.BootstrapUser(BootstrapInput{
+	if _, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 		Role:     RoleViewer,
@@ -551,7 +551,7 @@ func TestServiceTouchSessionDoesNotRevivePastMaxLifetime(t *testing.T) {
 	service := NewService()
 	service.SetNow(func() time.Time { return clock })
 
-	if _, _, err := service.BootstrapUser(BootstrapInput{
+	if _, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 		Role:     RoleViewer,

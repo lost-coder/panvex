@@ -16,7 +16,7 @@ func TestDisableTotpRaceIsBlocked(t *testing.T) {
 	now := time.Date(2026, time.April, 17, 11, 0, 0, 0, time.UTC)
 	service := NewService()
 
-	user, _, err := service.BootstrapUser(BootstrapInput{
+	user, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "operator",
 		Password: "Correct1horse2battery",
 		Role:     RoleOperator,
@@ -92,7 +92,7 @@ func TestDisableTotpRaceIsBlocked(t *testing.T) {
 	}
 
 	// Final state: TOTP is disabled on the user record.
-	refreshed, err := service.GetUserByID(user.ID)
+	refreshed, err := service.GetUserByID(context.Background(), user.ID)
 	if err != nil {
 		t.Fatalf("GetUserByID: %v", err)
 	}

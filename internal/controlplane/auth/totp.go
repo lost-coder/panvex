@@ -147,7 +147,7 @@ func (s *Service) cleanupPendingTotpSetupLocked(now time.Time) {
 
 // StartTotpSetup creates a short-lived TOTP setup secret for the provided user.
 func (s *Service) StartTotpSetup(ctx context.Context, userID string, now time.Time) (string, error) {
-	if _, err := s.GetUserByIDWithContext(ctx, userID); err != nil {
+	if _, err := s.GetUserByID(ctx, userID); err != nil {
 		return "", err
 	}
 
@@ -170,7 +170,7 @@ func (s *Service) StartTotpSetup(ctx context.Context, userID string, now time.Ti
 
 // EnableTotp validates a pending setup and persists it as the active user TOTP secret.
 func (s *Service) EnableTotp(ctx context.Context, userID, password, totpCode string, now time.Time) (User, error) {
-	user, err := s.GetUserByIDWithContext(ctx, userID)
+	user, err := s.GetUserByID(ctx, userID)
 	if err != nil {
 		return User{}, err
 	}
@@ -211,7 +211,7 @@ func (s *Service) EnableTotp(ctx context.Context, userID, password, totpCode str
 
 // DisableTotp disables TOTP after validating the current password and active TOTP code.
 func (s *Service) DisableTotp(ctx context.Context, userID, password, totpCode string, now time.Time) (User, error) {
-	user, err := s.GetUserByIDWithContext(ctx, userID)
+	user, err := s.GetUserByID(ctx, userID)
 	if err != nil {
 		return User{}, err
 	}
@@ -257,7 +257,7 @@ func (s *Service) DisableTotp(ctx context.Context, userID, password, totpCode st
 // ResetTotp clears the active TOTP configuration for the provided user.
 // Callers must verify that the authenticated principal is authorized to reset TOTP for the target user.
 func (s *Service) ResetTotp(ctx context.Context, userID string) (User, error) {
-	user, err := s.GetUserByIDWithContext(ctx, userID)
+	user, err := s.GetUserByID(ctx, userID)
 	if err != nil {
 		return User{}, err
 	}

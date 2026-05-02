@@ -29,7 +29,7 @@ func TestHTTPClientsCreateTracksDeploymentsAndStructuredJobPayload(t *testing.T)
 		Store: store,
 	})
 	defer server.Close()
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -153,7 +153,7 @@ func TestHTTPClientsUpdateRotateAndDeleteQueueLifecycleJobs(t *testing.T) {
 		Store: store,
 	})
 	defer server.Close()
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -264,7 +264,7 @@ func TestHTTPClientsRejectInvalidUserADTag(t *testing.T) {
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -296,7 +296,7 @@ func TestHTTPClientsAggregateUsageAcrossAgentSnapshots(t *testing.T) {
 		Store: store,
 	})
 	defer server.Close()
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -409,7 +409,7 @@ func TestHTTPClientsCreateReturnsInternalErrorWhenPersistenceFails(t *testing.T)
 		Store: store,
 	})
 	defer server.Close()
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -450,7 +450,7 @@ func TestRecordClientJobResultDoesNotPanicWhenDeploymentPersistenceFails(t *test
 		Store: store,
 	})
 	defer server.Close()
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,

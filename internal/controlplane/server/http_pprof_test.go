@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"path/filepath"
 	"testing"
@@ -30,7 +31,7 @@ func TestPprofAdminOnly(t *testing.T) {
 	})
 	defer server.Close()
 
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -61,7 +62,7 @@ func TestPprofAdminOnly(t *testing.T) {
 	}
 
 	// Viewer account — must receive 403.
-	if _, err := server.auth.CreateUser(auth.BootstrapInput{
+	if _, err := server.auth.CreateUser(context.Background(), auth.BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 		Role:     auth.RoleViewer,

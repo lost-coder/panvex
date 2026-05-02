@@ -90,7 +90,7 @@ func TestUpdateUserRevokesSessionsOnPasswordChange(t *testing.T) {
 	service := NewService()
 	service.SetNow(func() time.Time { return now.Add(time.Minute) })
 
-	user, _, err := service.BootstrapUser(BootstrapInput{
+	user, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     RoleAdmin,
@@ -111,7 +111,7 @@ func TestUpdateUserRevokesSessionsOnPasswordChange(t *testing.T) {
 		t.Fatalf("GetSession() before update error = %v", err)
 	}
 
-	_, err = service.UpdateUser(UpdateUserInput{
+	_, err = service.UpdateUser(context.Background(), UpdateUserInput{
 		UserID:      user.ID,
 		Username:    "admin",
 		Role:        RoleAdmin,
@@ -131,7 +131,7 @@ func TestUpdateUserRevokesSessionsOnRoleDemotion(t *testing.T) {
 	service := NewService()
 	service.SetNow(func() time.Time { return now.Add(time.Minute) })
 
-	user, _, err := service.BootstrapUser(BootstrapInput{
+	user, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "admin1",
 		Password: "Admin1password",
 		Role:     RoleAdmin,
@@ -141,7 +141,7 @@ func TestUpdateUserRevokesSessionsOnRoleDemotion(t *testing.T) {
 	}
 
 	// Create a second admin so demotion of the first is allowed.
-	_, _, err = service.BootstrapUser(BootstrapInput{
+	_, _, err = service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "admin2",
 		Password: "Admin2password",
 		Role:     RoleAdmin,
@@ -162,7 +162,7 @@ func TestUpdateUserRevokesSessionsOnRoleDemotion(t *testing.T) {
 		t.Fatalf("GetSession() before demotion error = %v", err)
 	}
 
-	_, err = service.UpdateUser(UpdateUserInput{
+	_, err = service.UpdateUser(context.Background(), UpdateUserInput{
 		UserID:   user.ID,
 		Username: "admin1",
 		Role:     RoleOperator,
@@ -181,7 +181,7 @@ func TestUpdateUserKeepsSessionsOnUsernameChange(t *testing.T) {
 	service := NewService()
 	service.SetNow(func() time.Time { return now.Add(time.Minute) })
 
-	user, _, err := service.BootstrapUser(BootstrapInput{
+	user, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "operator",
 		Password: "Correct1horse2battery",
 		Role:     RoleOperator,
@@ -198,7 +198,7 @@ func TestUpdateUserKeepsSessionsOnUsernameChange(t *testing.T) {
 		t.Fatalf("Authenticate() error = %v", err)
 	}
 
-	_, err = service.UpdateUser(UpdateUserInput{
+	_, err = service.UpdateUser(context.Background(), UpdateUserInput{
 		UserID:   user.ID,
 		Username: "operator-renamed",
 		Role:     RoleOperator,
@@ -222,7 +222,7 @@ func TestUpdateUserRevokesSessionsOnRolePromotion(t *testing.T) {
 	service := NewService()
 	service.SetNow(func() time.Time { return now.Add(time.Minute) })
 
-	user, _, err := service.BootstrapUser(BootstrapInput{
+	user, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 		Role:     RoleViewer,
@@ -239,7 +239,7 @@ func TestUpdateUserRevokesSessionsOnRolePromotion(t *testing.T) {
 		t.Fatalf("Authenticate() error = %v", err)
 	}
 
-	_, err = service.UpdateUser(UpdateUserInput{
+	_, err = service.UpdateUser(context.Background(), UpdateUserInput{
 		UserID:   user.ID,
 		Username: "viewer",
 		Role:     RoleOperator,
@@ -264,7 +264,7 @@ func TestAuthenticateInvalidatesPriorSessionID(t *testing.T) {
 	service := NewService()
 	service.SetNow(func() time.Time { return now.Add(time.Minute) })
 
-	if _, _, err := service.BootstrapUser(BootstrapInput{
+	if _, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "operator",
 		Password: "Correct1horse2battery",
 		Role:     RoleOperator,
@@ -318,7 +318,7 @@ func TestAuthenticateIgnoresUnknownPriorSessionID(t *testing.T) {
 	service := NewService()
 	service.SetNow(func() time.Time { return now.Add(time.Minute) })
 
-	if _, _, err := service.BootstrapUser(BootstrapInput{
+	if _, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "operator",
 		Password: "Correct1horse2battery",
 		Role:     RoleOperator,
@@ -347,7 +347,7 @@ func TestRevokeSessionsForUserPurgesOnlyTargetUser(t *testing.T) {
 	service := NewService()
 	service.SetNow(func() time.Time { return now.Add(time.Minute) })
 
-	target, _, err := service.BootstrapUser(BootstrapInput{
+	target, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "alice",
 		Password: "Alice1password",
 		Role:     RoleOperator,
@@ -356,7 +356,7 @@ func TestRevokeSessionsForUserPurgesOnlyTargetUser(t *testing.T) {
 		t.Fatalf("BootstrapUser(alice) error = %v", err)
 	}
 
-	_, _, err = service.BootstrapUser(BootstrapInput{
+	_, _, err = service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "bob",
 		Password: "Bob1password1",
 		Role:     RoleOperator,
@@ -407,7 +407,7 @@ func TestAuthenticatePurgesPriorSessionFromStoreEvenWhenNotInMemory(t *testing.T
 	store := newStubSessionStore()
 	service.SetSessionStore(store)
 
-	user, _, err := service.BootstrapUser(BootstrapInput{
+	user, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "operator",
 		Password: "Correct1horse2battery",
 		Role:     RoleOperator,

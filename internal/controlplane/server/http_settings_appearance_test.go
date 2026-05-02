@@ -26,7 +26,7 @@ func TestHTTPAppearanceSettingsReadDefaultsAndPersistCurrentUserValues(t *testin
 		Store: store,
 	})
 	defer server.Close()
-	user, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	user, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
@@ -134,7 +134,7 @@ func TestHTTPAppearanceSettingsRejectsUnauthorizedAndInvalidValues(t *testing.T)
 		Store: store,
 	})
 	defer server.Close()
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
@@ -199,7 +199,7 @@ func TestHTTPAppearanceSettingsRequirePersistentStore(t *testing.T) {
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 		Role:     auth.RoleViewer,

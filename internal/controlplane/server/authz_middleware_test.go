@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -46,7 +47,7 @@ func TestRequireAuthenticatedSessionAllowsValidSession(t *testing.T) {
 	})
 	defer srv.Close()
 
-	if _, _, err := srv.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := srv.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -85,7 +86,7 @@ func TestRequireMinimumRoleAdminRejectsViewer(t *testing.T) {
 	})
 	defer srv.Close()
 
-	if _, _, err := srv.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := srv.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -142,7 +143,7 @@ func TestRequireMinimumRoleAdminAllowsAdmin(t *testing.T) {
 	})
 	defer srv.Close()
 
-	if _, _, err := srv.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := srv.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,

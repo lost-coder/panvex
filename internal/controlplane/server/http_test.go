@@ -27,7 +27,7 @@ func TestServerLoginSetsSessionAndReturnsMe(t *testing.T) {
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
@@ -87,7 +87,7 @@ func TestServerLoginIgnoresSpoofedForwardedProtoFromUntrustedPeer(t *testing.T) 
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
@@ -135,7 +135,7 @@ func TestServerLoginRejectsWhenAuditPersistenceFails(t *testing.T) {
 		Store: store,
 	})
 	defer server.Close()
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
@@ -166,7 +166,7 @@ func TestServerLoginLeavesSessionCookieInsecureForPlainHTTP(t *testing.T) {
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
@@ -197,7 +197,7 @@ func TestServerLoginRateLimitRejectsBurstFromSameClient(t *testing.T) {
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
@@ -230,7 +230,7 @@ func TestServerCreateJobRejectsViewerRole(t *testing.T) {
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
@@ -266,7 +266,7 @@ func TestServerCreateJobAcceptsOperatorWithTotp(t *testing.T) {
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
-	user, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	user, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "operator",
 		Password: "Operator1password",
 		Role:     auth.RoleOperator,
@@ -321,7 +321,7 @@ func TestHTTPAuthTotpSetupEnableDisableFlow(t *testing.T) {
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
-	user, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	user, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "operator",
 		Password: "Operator1password",
 		Role:     auth.RoleOperator,
@@ -448,7 +448,7 @@ func TestHTTPAuthTotpSetupEnableDisableFlow(t *testing.T) {
 		t.Fatal("me.totp_enabled = true after disable, want false")
 	}
 
-	storedUser, err := server.auth.GetUserByID(user.ID)
+	storedUser, err := server.auth.GetUserByID(context.Background(), user.ID)
 	if err != nil {
 		t.Fatalf("GetUserByID() error = %v", err)
 	}
@@ -463,7 +463,7 @@ func TestHTTPUsersTotpResetRequiresAdminAndClearsTarget(t *testing.T) {
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
-	adminUser, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	adminUser, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -471,7 +471,7 @@ func TestHTTPUsersTotpResetRequiresAdminAndClearsTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BootstrapUser(admin) error = %v", err)
 	}
-	operatorUser, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	operatorUser, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "operator",
 		Password: "Operator1password",
 		Role:     auth.RoleOperator,
@@ -492,7 +492,7 @@ func TestHTTPUsersTotpResetRequiresAdminAndClearsTarget(t *testing.T) {
 		t.Fatalf("EnableTotp() error = %v", err)
 	}
 
-	viewerUser, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	viewerUser, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
@@ -545,7 +545,7 @@ func TestHTTPUsersTotpResetRequiresAdminAndClearsTarget(t *testing.T) {
 		t.Fatalf("POST /api/users/{id}/totp/reset status = %d, want %d", resetResponse.Code, http.StatusNoContent)
 	}
 
-	resetUser, err := server.auth.GetUserByID(operatorUser.ID)
+	resetUser, err := server.auth.GetUserByID(context.Background(), operatorUser.ID)
 	if err != nil {
 		t.Fatalf("GetUserByID(reset target) error = %v", err)
 	}
@@ -596,7 +596,7 @@ func TestServerNewDoesNotReseedExistingStoreUsers(t *testing.T) {
 	defer store.Close()
 
 	seeded := auth.NewServiceWithStore(store)
-	user, _, err := seeded.BootstrapUser(auth.BootstrapInput{
+	user, _, err := seeded.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Current1password",
 		Role:     auth.RoleViewer,
@@ -645,7 +645,7 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 	defer store.Close()
 
 	bootstrap := auth.NewService()
-	user, _, err := bootstrap.BootstrapUser(auth.BootstrapInput{
+	user, _, err := bootstrap.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
@@ -779,7 +779,7 @@ func TestHTTPAgentsReturnsEmptyRuntimeSlicesForAgentsWithoutRuntimeSnapshot(t *t
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
@@ -841,7 +841,7 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 	defer store.Close()
 
 	bootstrap := auth.NewService()
-	user, _, err := bootstrap.BootstrapUser(auth.BootstrapInput{
+	user, _, err := bootstrap.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "operator",
 		Password: "Operator1password",
 		Role:     auth.RoleOperator,
@@ -1227,7 +1227,7 @@ func TestHTTPEnrollmentTokenListAndRevoke(t *testing.T) {
 		Store: store,
 	})
 	defer server.Close()
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "operator",
 		Password: "Operator1password",
 		Role:     auth.RoleOperator,
@@ -1359,7 +1359,7 @@ func TestHTTPControlRoomShowsFirstServerOnboarding(t *testing.T) {
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -1425,7 +1425,7 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return currentTime },
 	})
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -1765,7 +1765,7 @@ func TestHTTPEmbeddedUIDoesNotShadowAPIRoutes(t *testing.T) {
 			"index.html": &fstest.MapFile{Data: []byte("<html><body>panvex</body></html>")},
 		},
 	})
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
@@ -1818,7 +1818,7 @@ func TestRenameAgentReturnsErrorWhenStorageFails(t *testing.T) {
 	defer server.Close()
 
 	// Bootstrap an admin user for authentication.
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -1888,7 +1888,7 @@ func TestDeregisterAgentReturnsErrorWhenStorageFails(t *testing.T) {
 	defer server.Close()
 
 	// Bootstrap an admin user for authentication.
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,

@@ -390,7 +390,7 @@ func (s *Server) requireSession(r *http.Request) (auth.Session, auth.User, error
 		return auth.Session{}, auth.User{}, err
 	}
 
-	user, err := s.auth.GetUserByIDWithContext(r.Context(), session.UserID)
+	user, err := s.auth.GetUserByID(r.Context(), session.UserID)
 	if err != nil {
 		return auth.Session{}, auth.User{}, err
 	}

@@ -104,7 +104,7 @@ func (s *Server) handleCreateUser() http.HandlerFunc {
 			return
 		}
 
-		createdUser, err := s.auth.CreateUserWithContext(r.Context(), auth.BootstrapInput{
+		createdUser, err := s.auth.CreateUser(r.Context(), auth.BootstrapInput{
 			Username: request.Username,
 			Password: request.Password,
 			Role:     auth.Role(request.Role),
@@ -165,7 +165,7 @@ func (s *Server) handleUpdateUser() http.HandlerFunc {
 			return
 		}
 
-		updatedUser, err := s.auth.UpdateUserWithContext(r.Context(), auth.UpdateUserInput{
+		updatedUser, err := s.auth.UpdateUser(r.Context(), auth.UpdateUserInput{
 			UserID:      targetUserID,
 			Username:    request.Username,
 			Role:        auth.Role(request.Role),
@@ -225,7 +225,7 @@ func (s *Server) handleDeleteUser() http.HandlerFunc {
 			return
 		}
 
-		if err := s.auth.DeleteUserWithContext(r.Context(), targetUserID); err != nil {
+		if err := s.auth.DeleteUser(r.Context(), targetUserID); err != nil {
 			switch {
 			case errors.Is(err, auth.ErrUserNotFound):
 				writeError(w, http.StatusNotFound, err.Error())

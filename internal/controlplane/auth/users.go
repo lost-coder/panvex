@@ -28,14 +28,7 @@ type UpdateUserInput struct {
 }
 
 // CreateUser creates one local user account with TOTP disabled by default.
-//
-// Note: preferCreateUserWithContext from request handlers.
-func (s *Service) CreateUser(input BootstrapInput, now time.Time) (User, error) {
-	return s.CreateUserWithContext(context.Background(), input, now)
-}
-
-// CreateUserWithContext is the ctx-aware variant of CreateUser.
-func (s *Service) CreateUserWithContext(ctx context.Context, input BootstrapInput, now time.Time) (User, error) {
+func (s *Service) CreateUser(ctx context.Context, input BootstrapInput, now time.Time) (User, error) {
 	username := strings.TrimSpace(input.Username)
 	if username == "" {
 		return User{}, ErrInvalidCredentials
@@ -47,7 +40,7 @@ func (s *Service) CreateUserWithContext(ctx context.Context, input BootstrapInpu
 		return User{}, err
 	}
 
-	user, _, err := s.BootstrapUserWithContext(ctx, BootstrapInput{
+	user, _, err := s.BootstrapUser(ctx, BootstrapInput{
 		Username: username,
 		Password: input.Password,
 		Role:     input.Role,
@@ -63,14 +56,7 @@ func (s *Service) CreateUserWithContext(ctx context.Context, input BootstrapInpu
 }
 
 // UpdateUser mutates the mutable fields of one existing local user.
-//
-// Note: preferUpdateUserWithContext from request handlers.
-func (s *Service) UpdateUser(input UpdateUserInput, now time.Time) (User, error) {
-	return s.UpdateUserWithContext(context.Background(), input, now)
-}
-
-// UpdateUserWithContext is the ctx-aware variant of UpdateUser.
-func (s *Service) UpdateUserWithContext(ctx context.Context, input UpdateUserInput, now time.Time) (User, error) {
+func (s *Service) UpdateUser(ctx context.Context, input UpdateUserInput, now time.Time) (User, error) {
 	user, err := s.loadManagedUserByIDCtx(ctx, input.UserID)
 	if err != nil {
 		return User{}, err
@@ -161,14 +147,7 @@ func (s *Service) applyOptionalPasswordChange(user *User, newPassword string) er
 }
 
 // DeleteUser removes one local user account and its active sessions.
-//
-// Note: preferDeleteUserWithContext from request handlers.
-func (s *Service) DeleteUser(userID string) error {
-	return s.DeleteUserWithContext(context.Background(), userID)
-}
-
-// DeleteUserWithContext is the ctx-aware variant of DeleteUser.
-func (s *Service) DeleteUserWithContext(ctx context.Context, userID string) error {
+func (s *Service) DeleteUser(ctx context.Context, userID string) error {
 	user, err := s.loadManagedUserByIDCtx(ctx, userID)
 	if err != nil {
 		return err
@@ -311,16 +290,7 @@ func (s *Service) deleteUserLocked(user User) {
 }
 
 // BootstrapUser creates a local user with TOTP disabled by default.
-//
-// Note: callers that have a request context should use
-// BootstrapUserWithContext to propagate cancellation through the user store.
-// This wrapper stays for CLI bootstrap and tests where no request ctx exists.
-func (s *Service) BootstrapUser(input BootstrapInput, now time.Time) (User, string, error) {
-	return s.BootstrapUserWithContext(context.Background(), input, now)
-}
-
-// BootstrapUserWithContext is the ctx-aware variant of BootstrapUser.
-func (s *Service) BootstrapUserWithContext(ctx context.Context, input BootstrapInput, now time.Time) (User, string, error) {
+func (s *Service) BootstrapUser(ctx context.Context, input BootstrapInput, now time.Time) (User, string, error) {
 	if err := validatePassword(input.Password, s.passwordMinLength()); err != nil {
 		return User{}, "", err
 	}
@@ -435,14 +405,7 @@ func (s *Service) LoadUsers(users []User) {
 }
 
 // GetUserByID returns the user record that owns the provided identifier.
-//
-// Note: preferGetUserByIDWithContext from request handlers.
-func (s *Service) GetUserByID(userID string) (User, error) {
-	return s.GetUserByIDWithContext(context.Background(), userID)
-}
-
-// GetUserByIDWithContext is the ctx-aware variant of GetUserByID.
-func (s *Service) GetUserByIDWithContext(ctx context.Context, userID string) (User, error) {
+func (s *Service) GetUserByID(ctx context.Context, userID string) (User, error) {
 	if s.userStore != nil {
 		record, err := s.userStore.GetUserByID(ctx, userID)
 		if err != nil {

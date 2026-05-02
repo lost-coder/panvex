@@ -50,7 +50,7 @@ func TestLoginFailsWhenSessionStoreBroken(t *testing.T) {
 	now := time.Date(2026, time.April, 17, 10, 0, 0, 0, time.UTC)
 	service := NewService()
 
-	_, _, err := service.BootstrapUser(BootstrapInput{
+	_, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "operator",
 		Password: "Correct1horse2battery",
 		Role:     RoleOperator,
@@ -103,7 +103,7 @@ func TestLogoutToleratesBrokenSessionStore(t *testing.T) {
 	// in-memory map and cause it to return ErrSessionNotFound.
 	service.SetNow(func() time.Time { return now.Add(2 * time.Minute) })
 
-	_, _, err := service.BootstrapUser(BootstrapInput{
+	_, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
 		Username: "operator",
 		Password: "Correct1horse2battery",
 		Role:     RoleOperator,

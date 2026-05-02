@@ -313,7 +313,7 @@ func TestRunResetUserTotpClearsEnabledState(t *testing.T) {
 	}
 
 	service := auth.NewServiceWithStore(store)
-	user, _, err := service.BootstrapUser(auth.BootstrapInput{
+	user, _, err := service.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "StrongPassword123!",
 		Role:     auth.RoleAdmin,

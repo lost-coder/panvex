@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"path/filepath"
@@ -33,7 +34,7 @@ func TestRetentionSettingsSurviveRestart(t *testing.T) {
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
-	if _, _, err := server.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -119,7 +120,7 @@ func TestRetentionSettingsSurviveRestart(t *testing.T) {
 
 	// And the HTTP surface must agree. Bootstrap the admin on the new
 	// process (a real restart re-runs the same seed step) and log in.
-	if _, _, err := restartedServer.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := restartedServer.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,

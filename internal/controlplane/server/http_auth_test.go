@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -34,7 +35,7 @@ func TestLoginAbortsWhenAuditPersistFails(t *testing.T) {
 	})
 	defer srv.Close()
 
-	if _, _, err := srv.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := srv.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -93,7 +94,7 @@ func TestLoginSuccess(t *testing.T) {
 	})
 	defer srv.Close()
 
-	if _, _, err := srv.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := srv.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -136,7 +137,7 @@ func TestLoginInvalidCredentials(t *testing.T) {
 		Now: func() time.Time { return now },
 	})
 
-	if _, _, err := srv.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := srv.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -200,7 +201,7 @@ func TestLoginLockoutIntegration(t *testing.T) {
 	})
 	defer srv.Close()
 
-	if _, _, err := srv.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := srv.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -241,7 +242,7 @@ func TestLogoutClearsCookie(t *testing.T) {
 	})
 	defer srv.Close()
 
-	if _, _, err := srv.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := srv.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
@@ -302,7 +303,7 @@ func TestMeReturnsUserInfo(t *testing.T) {
 	})
 	defer srv.Close()
 
-	if _, _, err := srv.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := srv.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "operator",
 		Password: "Operator1pass",
 		Role:     auth.RoleOperator,
@@ -397,7 +398,7 @@ func TestLoginRotatesSessionIDOnExistingCookie(t *testing.T) {
 		Now: func() time.Time { return now },
 	})
 
-	if _, _, err := srv.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := srv.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "operator",
 		Password: "Operator1password",
 		Role:     auth.RoleOperator,
@@ -484,14 +485,14 @@ func TestRoleChangeInvalidatesTargetUserSessions(t *testing.T) {
 		Now: func() time.Time { return now },
 	})
 
-	if _, _, err := srv.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := srv.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser(admin) error = %v", err)
 	}
-	viewer, _, err := srv.auth.BootstrapUser(auth.BootstrapInput{
+	viewer, _, err := srv.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 		Role:     auth.RoleViewer,
@@ -552,7 +553,7 @@ func TestLogin_AlwaysRotatesSessionID(t *testing.T) {
 	})
 	defer srv.Close()
 
-	if _, _, err := srv.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := srv.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "alice",
 		Password: "Alice-Password-1",
 		Role:     auth.RoleOperator,
@@ -597,7 +598,7 @@ func TestLogin_PriorSessionIDIsRevoked(t *testing.T) {
 	})
 	defer srv.Close()
 
-	if _, _, err := srv.auth.BootstrapUser(auth.BootstrapInput{
+	if _, _, err := srv.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "alice",
 		Password: "Alice-Password-1",
 		Role:     auth.RoleOperator,

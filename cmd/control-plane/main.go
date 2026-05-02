@@ -818,7 +818,7 @@ func runBootstrapAdmin(args []string) error {
 	}
 
 	service := auth.NewServiceWithStore(store)
-	_, _, err = service.BootstrapUserWithContext(ctx, auth.BootstrapInput{
+	_, _, err = service.BootstrapUser(ctx, auth.BootstrapInput{
 		Username: *username,
 		Password: *password,
 		Role:     auth.RoleAdmin,
