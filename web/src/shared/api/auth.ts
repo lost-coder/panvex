@@ -1,32 +1,29 @@
 import { api, apiBasePath, encodeRequest } from "./http";
 import {
   loginRequestSchema,
+  loginResponseSchema,
   meResponseSchema,
+  totpSetupResponseSchema,
+  totpStatusResponseSchema,
   updateTotpRequestSchema,
 } from "./schemas";
+import type {
+  LoginParsed,
+  MeParsed,
+  TotpSetupParsed,
+  TotpStatusParsed,
+} from "./schemas/auth";
 
-export type MeResponse = {
-  id: string;
-  username: string;
-  role: string;
-  totp_enabled: boolean;
-};
-
-export type TotpSetupResponse = {
-  secret: string;
-  otpauth_url: string;
-};
-
-export type TotpStatusResponse = {
-  totp_enabled: boolean;
-};
+export type MeResponse = MeParsed;
+export type TotpSetupResponse = TotpSetupParsed;
+export type TotpStatusResponse = TotpStatusParsed;
 
 export const authApi = {
   login: (payload: { username: string; password: string; totp_code?: string }) =>
-    api<{ status: string }>(`${apiBasePath}/auth/login`, {
+    api<LoginParsed>(`${apiBasePath}/auth/login`, {
       method: "POST",
       body: encodeRequest(`${apiBasePath}/auth/login`, loginRequestSchema, payload),
-    }),
+    }, loginResponseSchema),
   logout: () =>
     api<void>(`${apiBasePath}/auth/logout`, {
       method: "POST"
@@ -35,7 +32,7 @@ export const authApi = {
   startTotpSetup: () =>
     api<TotpSetupResponse>(`${apiBasePath}/auth/totp/setup`, {
       method: "POST"
-    }),
+    }, totpSetupResponseSchema),
   enableTotp: (payload: { password: string; totp_code: string }) =>
     api<TotpStatusResponse>(`${apiBasePath}/auth/totp/enable`, {
       method: "POST",
@@ -44,7 +41,7 @@ export const authApi = {
         updateTotpRequestSchema,
         payload,
       ),
-    }),
+    }, totpStatusResponseSchema),
   disableTotp: (payload: { password: string; totp_code: string }) =>
     api<TotpStatusResponse>(`${apiBasePath}/auth/totp/disable`, {
       method: "POST",
@@ -53,5 +50,5 @@ export const authApi = {
         updateTotpRequestSchema,
         payload,
       ),
-    }),
+    }, totpStatusResponseSchema),
 };
