@@ -202,6 +202,10 @@ func (s *Server) startBackgroundWorkers() {
 func New(options Options) *Server {
 	now, csrfSecret, vault := initSecrets(options)
 	server := newServerFromOptions(options, now, csrfSecret, vault)
+	// Lifecycle context — cancelled by Close(). Plan 3 Task 1 introduces
+	// the field; Tasks 2-6 migrate the long-lived workers (rollup, metrics
+	// poller, fleet-ensure, lockout-restore, batch-writer drain) onto it.
+	server.serverCtx, server.serverCancel = context.WithCancel(context.Background())
 	if server.logger == nil {
 		server.logger = slog.Default()
 	}
@@ -275,6 +279,18 @@ func New(options Options) *Server {
 // be dropped — upstream callers (HTTP handlers, gRPC streams) must stop
 // before Close() runs to guarantee zero loss.
 func (s *Server) Close() {
+	// Cancel the lifecycle context FIRST so any worker subscribed to it
+	// observes shutdown before the batch writer drain or rollup stop runs.
+	// Tasks 2-6 will migrate workers onto serverCtx; until then this is
+	// effectively a no-op for the existing workers (which still use their
+	// own cancel funcs) but the contract — Close cancels Context() — must
+	// hold from this task forward. Idempotent: if Close is invoked twice
+	// (e.g. test cleanup after an explicit Close), the nil-check stops a
+	// double-cancel panic.
+	if s.serverCancel != nil {
+		s.serverCancel()
+		s.serverCancel = nil
+	}
 	if s.batchWriter != nil {
 		if err := s.batchWriter.StopWithTimeout(10 * time.Second); err != nil {
 			s.logger.Error("batch writer drain timed out on shutdown",
