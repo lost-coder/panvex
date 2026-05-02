@@ -52,8 +52,19 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lost-coder/panvex/m
 
 ### Agent
 
+The control-plane embeds the installer and serves it at
+`<panel>/install-agent.sh`, so once you have a running panel:
+
 ```sh
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lost-coder/panvex/main/deploy/install-agent.sh)"
+sudo bash -c "$(curl -fsSL https://panel.example.com/install-agent.sh)"
+```
+
+For the GitHub-hosted bootstrap script (when no panel is reachable yet —
+typically the very first agent on a fresh control-plane), the upstream
+copy is also published:
+
+```sh
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lost-coder/panvex/main/internal/controlplane/server/install_agent.sh)"
 ```
 
 > Requires a panel URL and enrollment token (create one in **Settings → Enrollment Tokens**).
@@ -269,8 +280,11 @@ binds publishers to loopback (terminate TLS at a reverse proxy — see
 2. On each Telemt server:
 
 ```sh
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lost-coder/panvex/main/deploy/install-agent.sh)"
+sudo bash -c "$(curl -fsSL https://panel.example.com/install-agent.sh)"
 ```
+
+The script is embedded into the control-plane binary and served from the
+panel itself — no external CDN required.
 
 <details>
 <summary>Manual bootstrap (without installer)</summary>

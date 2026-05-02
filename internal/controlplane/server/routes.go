@@ -51,6 +51,12 @@ func (s *Server) routes() http.Handler {
 	router.Use(s.csrfOriginCheck(s.panelRuntime.HTTPRootPath, s.panelRuntime.AgentHTTPRootPath))
 	router.Get("/healthz", handleHealthz())
 	router.Get("/readyz", s.handleReadyz())
+	// Q-05: serve the bash installer the install-command points at. Top-level
+	// path so the generated `curl <panel>/install-agent.sh | bash` works as
+	// pasted, with no /api prefix to remember. Unauthenticated by design — the
+	// per-agent bootstrap token (single-use, 5min TTL) is on the curl arg, not
+	// here. See install_script.go for rationale.
+	router.Get("/install-agent.sh", s.handleInstallAgentScript())
 	// /metrics is registered at the top level (outside the /api group) so
 	// Prometheus does not need session cookies. It is bearer-token gated in
 	// handleMetrics; when no token is configured, the route is omitted.
@@ -180,7 +186,9 @@ func (s *Server) routes() http.Handler {
 					admin.With(sensitive).Post("/agents/{id}/certificate-recovery-grants/revoke", s.handleRevokeAgentCertificateRecoveryGrant())
 					admin.With(sensitive).Delete("/agents/{id}", s.handleDeregisterAgent())
 					admin.With(sensitive).Put("/agents/{id}/transport-mode", s.handleUpdateAgentTransportMode())
-					// TODO: wire ScriptURL/PanelCAPin/PanelCN from serveConfig once those fields are added.
+					// ScriptURL/PanelCAPin/PanelCN are wired in cmd/control-plane/serve.go
+					// at NewInstallCommandHandler — see install_script.go for the
+					// embedded /install-agent.sh route the URL points to. (Q-05)
 					admin.With(sensitive).Post("/agents/{id}/install-command", s.handleAgentInstallCommand())
 					admin.Get("/settings/panel", s.handleGetPanelSettings())
 					admin.Put("/settings/panel", s.handlePutPanelSettings())

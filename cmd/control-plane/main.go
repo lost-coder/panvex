@@ -169,10 +169,15 @@ func parseCIDRList(raw string) ([]*net.IPNet, error) {
 	return result, nil
 }
 
-// installScriptURL derives a best-effort public URL for the agent install
-// script from the panel's HTTP listen address. It is intentionally simple:
-// if the operator has a custom domain, they should set PANVEX_INSTALL_SCRIPT_URL.
-// TODO(install-command): replace with a stable CDN URL once one is published.
+// installScriptURL derives the public URL for the agent install script from
+// the panel's HTTP listen address. The script is embedded into the
+// control-plane binary and served by the panel itself at /install-agent.sh
+// (see internal/controlplane/server/install_script.go), so there is no
+// external CDN dependency — the panel is its own distribution channel.
+//
+// Operators behind a reverse proxy / CDN with a custom hostname should set
+// PANVEX_INSTALL_SCRIPT_URL to the fully-qualified URL agents will reach.
+// (Q-05.)
 func installScriptURL(rt server.PanelRuntime) string {
 	if v := strings.TrimSpace(os.Getenv("PANVEX_INSTALL_SCRIPT_URL")); v != "" {
 		return v

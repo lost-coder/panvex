@@ -68,7 +68,6 @@ CLAUDE.md
 **/CLAUDE.md
 docs/
 deploy/install.sh
-deploy/install-agent.sh
 deploy/prometheus/
 Makefile
 

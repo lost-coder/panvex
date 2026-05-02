@@ -155,11 +155,11 @@ func runServe(args []string) error {
 	// endpoint agents dial. ScriptURL, PanelCAPin, and PanelCN are derived
 	// from the panel's CA certificate (same CA that signs agent certs).
 	//
-	// TODO(install-command): ScriptURL should point to a publicly accessible
-	// install script (e.g. https://get.panvex.io/install-agent.sh). Until a
-	// CDN/release URL is established, the command is syntactically valid but
-	// the script download will fail. Operators can override by editing the
-	// generated command before running it.
+	// Q-05: ScriptURL is the panel's own /install-agent.sh route — see
+	// internal/controlplane/server/install_script.go. The script is embedded
+	// into the binary, so the curl|bash one-liner the install-command handler
+	// generates works against any reachable panel host. Operators with a
+	// custom domain set PANVEX_INSTALL_SCRIPT_URL to override.
 	if queries != nil {
 		installHandler := bootstrap.NewInstallCommandHandler(queries, bootstrap.InstallCommandConfig{
 			ScriptURL:  installScriptURL(panelRuntime),
