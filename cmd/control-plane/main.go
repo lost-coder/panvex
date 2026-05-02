@@ -316,6 +316,7 @@ func runServe(args []string) error {
 	// trusted cert yet; the enrollment token authenticates the exchange in-band.
 	if queries != nil {
 		enrollDriver := bootstrap.NewEnrollDriver(queries, api.CertificateAuthority(), logger, time.Now)
+		enrollDriver.SetCertPinWriter(store) // persist SPKI pin on each successful enroll (S-02)
 		api.WireEnrollDriver(enrollDriver)
 
 		bootstrapTLS := &tls.Config{

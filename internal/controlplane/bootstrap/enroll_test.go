@@ -1,19 +1,23 @@
 package bootstrap
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"database/sql"
+	"errors"
 	"math/big"
 	"net"
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/dbsqlc"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"github.com/stretchr/testify/require"
@@ -61,6 +65,43 @@ func (f *enrollFakeQueries) ClearAgentBootstrapToken(_ context.Context, id strin
 		r.BootstrapExpiresAt = sql.NullTime{}
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// fakeCertPinWriter implements CertPinWriter for tests.
+// ---------------------------------------------------------------------------
+
+type fakeCertPinWriter struct {
+	knownAgents map[string]struct{} // agents that exist; UpdateAgentCertPin returns ErrNotFound for others
+	pins        map[string][]byte   // agentID → SPKI SHA-256 pin
+}
+
+// newFakeCertPinWriter creates a fakeCertPinWriter that accepts updates for the
+// given set of agentIDs and returns storage.ErrNotFound for all others.
+func newFakeCertPinWriter(agentIDs ...string) *fakeCertPinWriter {
+	f := &fakeCertPinWriter{
+		knownAgents: make(map[string]struct{}),
+		pins:        make(map[string][]byte),
+	}
+	for _, id := range agentIDs {
+		f.knownAgents[id] = struct{}{}
+	}
+	return f
+}
+
+func (f *fakeCertPinWriter) UpdateAgentCertPin(_ context.Context, agentID string, pin []byte) error {
+	if _, ok := f.knownAgents[agentID]; !ok {
+		return storage.ErrNotFound
+	}
+	cp := make([]byte, len(pin))
+	copy(cp, pin)
+	f.pins[agentID] = cp
+	return nil
+}
+
+// getPin returns the stored pin for test assertions; returns nil if not set.
+func (f *fakeCertPinWriter) getPin(agentID string) []byte {
+	return f.pins[agentID]
 }
 
 // fakeCA implements CertificateAuthority, recording SignCSR inputs and
@@ -122,8 +163,10 @@ func (s *agentEnrollStubServer) EnrollOutbound(stream gatewayrpc.AgentGateway_En
 
 // startAgentEnrollStub starts a real gRPC server with TLS, registering the
 // stub as the AgentGateway. The returned *tls.Config is suitable for the
-// panel (gRPC client) to dial. The caller must call t.Cleanup(gs.GracefulStop).
-func startAgentEnrollStub(t *testing.T, stub *agentEnrollStubServer) *tls.Config {
+// panel (gRPC client) to dial; the *x509.Certificate is the server's leaf cert
+// (used by callers that need to compute the expected SPKI pin).
+// The caller must call t.Cleanup(gs.GracefulStop).
+func startAgentEnrollStub(t *testing.T, stub *agentEnrollStubServer) (*tls.Config, *x509.Certificate) {
 	t.Helper()
 
 	caCert, caKey := mustEnrollCA(t)
@@ -150,7 +193,7 @@ func startAgentEnrollStub(t *testing.T, stub *agentEnrollStubServer) *tls.Config
 	go gs.Serve(lis) //nolint:errcheck
 	t.Cleanup(gs.GracefulStop)
 
-	return clientTLS
+	return clientTLS, serverCert
 }
 
 // ---------------------------------------------------------------------------
@@ -238,7 +281,7 @@ func TestEnrollDriverHappyPath(t *testing.T) {
 		agentID:        agentID,
 		csrPEM:         "fake-csr",
 	}
-	clientTLS := startAgentEnrollStub(t, stub)
+	clientTLS, _ := startAgentEnrollStub(t, stub)
 
 	driver := NewEnrollDriver(fq, ca, nil, time.Now)
 	err := driver.Run(context.Background(), stub.address, clientTLS, agentID)
@@ -276,7 +319,7 @@ func TestEnrollDriverRejectsExpiredToken(t *testing.T) {
 		agentID:        agentID,
 		csrPEM:         "fake-csr",
 	}
-	clientTLS := startAgentEnrollStub(t, stub)
+	clientTLS, _ := startAgentEnrollStub(t, stub)
 
 	driver := NewEnrollDriver(fq, ca, nil, time.Now)
 	err := driver.Run(context.Background(), stub.address, clientTLS, agentID)
@@ -306,7 +349,7 @@ func TestEnrollDriverRejectsTokenMismatch(t *testing.T) {
 		agentID:        agentID,
 		csrPEM:         "fake-csr",
 	}
-	clientTLS := startAgentEnrollStub(t, stub)
+	clientTLS, _ := startAgentEnrollStub(t, stub)
 
 	driver := NewEnrollDriver(fq, ca, nil, time.Now)
 	err := driver.Run(context.Background(), stub.address, clientTLS, agentID)
@@ -335,7 +378,7 @@ func TestEnrollDriverRejectsAgentIDMismatch(t *testing.T) {
 		agentID:        "evil-agent",
 		csrPEM:         "fake-csr",
 	}
-	clientTLS := startAgentEnrollStub(t, stub)
+	clientTLS, _ := startAgentEnrollStub(t, stub)
 
 	driver := NewEnrollDriver(fq, ca, nil, time.Now)
 	err := driver.Run(context.Background(), stub.address, clientTLS, agentID)
@@ -382,7 +425,7 @@ func TestEnrollDriverCallbacksOnHappyPath(t *testing.T) {
 		agentID:        agentID,
 		csrPEM:         "fake-csr",
 	}
-	clientTLS := startAgentEnrollStub(t, stub)
+	clientTLS, _ := startAgentEnrollStub(t, stub)
 
 	var recordedResult string
 	var notifiedActions []string
@@ -420,7 +463,7 @@ func TestEnrollDriverCallbacksOnExpiredToken(t *testing.T) {
 		agentID:        agentID,
 		csrPEM:         "fake-csr",
 	}
-	clientTLS := startAgentEnrollStub(t, stub)
+	clientTLS, _ := startAgentEnrollStub(t, stub)
 
 	var recordedResult string
 	var notifiedActions []string
@@ -437,4 +480,112 @@ func TestEnrollDriverCallbacksOnExpiredToken(t *testing.T) {
 	require.Equal(t, "expired", recordedResult, "AttemptRecorder must be called with 'expired'")
 	require.Contains(t, notifiedActions, "bootstrap.enrollment_attempted")
 	require.Contains(t, notifiedActions, "bootstrap.enrollment_expired")
+}
+
+// ---------------------------------------------------------------------------
+// persistCertPin unit tests (S-02)
+// ---------------------------------------------------------------------------
+
+// newSelfSignedTestCert creates a minimal self-signed x509.Certificate whose
+// RawSubjectPublicKeyInfo is populated — enough to test SPKI pinning.
+func newSelfSignedTestCert(t *testing.T) *x509.Certificate {
+	t.Helper()
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(42),
+		Subject:      pkix.Name{CommonName: "test-pin-cert"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	require.NoError(t, err)
+	cert, err := x509.ParseCertificate(der)
+	require.NoError(t, err)
+	return cert
+}
+
+// TestEnrollDriver_PersistsCertPinOnSuccess verifies that persistCertPin
+// computes SHA-256(SPKI) and writes it via UpdateAgentCertPin (S-02).
+func TestEnrollDriver_PersistsCertPinOnSuccess(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	agentID := "agent-pin-success"
+	fq := newEnrollFakeQueries(&dbsqlc.GetAgentTransportRow{ID: agentID})
+	pw := newFakeCertPinWriter(agentID)
+
+	cert := newSelfSignedTestCert(t)
+	expected := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
+
+	driver := NewEnrollDriver(fq, &fakeCA{}, nil, time.Now)
+	driver.SetCertPinWriter(pw)
+	require.NoError(t, driver.persistCertPin(ctx, agentID, cert))
+
+	pin := pw.getPin(agentID)
+	if !bytes.Equal(pin, expected[:]) {
+		t.Fatalf("pin = %x, want %x", pin, expected[:])
+	}
+}
+
+// TestEnrollDriver_PersistCertPin_UnknownAgent verifies that persistCertPin
+// propagates ErrNotFound when the agent does not exist in storage (S-02).
+func TestEnrollDriver_PersistCertPin_UnknownAgent(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	fq := newEnrollFakeQueries() // empty — no agents seeded
+	pw := newFakeCertPinWriter() // empty — no known agents
+	cert := newSelfSignedTestCert(t)
+
+	driver := NewEnrollDriver(fq, &fakeCA{}, nil, time.Now)
+	driver.SetCertPinWriter(pw)
+	err := driver.persistCertPin(ctx, "no-such-agent", cert)
+	if !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("err = %v, want storage.ErrNotFound", err)
+	}
+}
+
+// TestEnrollDriverHappyPath_PersistsCertPin is an end-to-end integration test
+// that exercises the full Run path: the tls.Config.Clone() + VerifyConnection
+// hook that captures agentLeafCert, and the call to persistCertPin that stores
+// the SPKI pin. A future refactor that breaks the wiring will fail here (S-02).
+func TestEnrollDriverHappyPath_PersistsCertPin(t *testing.T) {
+	t.Parallel()
+
+	tok := mustIssueToken(t, time.Hour)
+	agentID := "agent-pin-e2e"
+
+	row := &dbsqlc.GetAgentTransportRow{
+		ID:                 agentID,
+		BootstrapState:     "pending",
+		BootstrapTokenHash: tok.Hash[:],
+		BootstrapExpiresAt: sql.NullTime{Time: tok.ExpiresAt, Valid: true},
+	}
+	fq := newEnrollFakeQueries(row)
+	pw := newFakeCertPinWriter(agentID)
+
+	stub := &agentEnrollStubServer{
+		bootstrapToken: tok.Raw,
+		agentID:        agentID,
+		csrPEM:         "fake-csr",
+	}
+	clientTLS, serverCert := startAgentEnrollStub(t, stub)
+
+	driver := NewEnrollDriver(fq, &fakeCA{}, nil, time.Now)
+	driver.SetCertPinWriter(pw)
+
+	if err := driver.Run(context.Background(), stub.address, clientTLS, agentID); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	got := pw.getPin(agentID)
+	if len(got) == 0 {
+		t.Fatalf("pin was NOT persisted via Run path — VerifyConnection hook may not be wired into the actual handshake")
+	}
+
+	expected := sha256.Sum256(serverCert.RawSubjectPublicKeyInfo)
+	if !bytes.Equal(got, expected[:]) {
+		t.Fatalf("pin mismatch: got %x, want %x", got, expected[:])
+	}
 }

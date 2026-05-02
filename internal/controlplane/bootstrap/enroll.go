@@ -2,7 +2,9 @@ package bootstrap
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -55,6 +57,17 @@ type EnrollQueries interface {
 	ClearAgentBootstrapToken(ctx context.Context, id string) error
 }
 
+// CertPinWriter is the subset of storage.FleetStore that EnrollDriver uses to
+// persist the SPKI pin after a successful enrollment exchange. It is separated
+// from EnrollQueries because the dbsqlc-generated Queries type uses a params
+// struct signature; the storage layer provides the cleaner (agentID, pin)
+// signature that matches this interface.
+type CertPinWriter interface {
+	// UpdateAgentCertPin persists the SHA-256 SPKI pin for the agent. Returns
+	// ErrNotFound if no agent with the given ID exists.
+	UpdateAgentCertPin(ctx context.Context, agentID string, pin []byte) error
+}
+
 // AttemptRecorder is called by EnrollDriver.Run at each terminal outcome to
 // record the result label. The concrete wiring is
 // (*metricsCollectors).ObserveBootstrapAttempt in package server. Bounded
@@ -66,12 +79,13 @@ type AttemptRecorder func(result string)
 // reverse (panel-dials-agent) gRPC connection. Wiring it into the outbound
 // supervisor when bootstrap_state=pending is the next step.
 type EnrollDriver struct {
-	queries  EnrollQueries
-	ca       CertificateAuthority
-	logger   *slog.Logger
-	now      func() time.Time
-	recorder AttemptRecorder // optional; nil → no-op
-	notifier EventNotifier   // optional; nil → no-op
+	queries   EnrollQueries
+	ca        CertificateAuthority
+	logger    *slog.Logger
+	now       func() time.Time
+	recorder  AttemptRecorder // optional; nil → no-op
+	notifier  EventNotifier   // optional; nil → no-op
+	pinWriter CertPinWriter   // optional; nil → cert pinning skipped (logged)
 }
 
 // NewEnrollDriver constructs an EnrollDriver. If now is nil, time.Now is used;
@@ -104,6 +118,17 @@ func (d *EnrollDriver) SetEventNotifier(n EventNotifier) {
 	d.notifier = n
 }
 
+// SetCertPinWriter wires the storage backend that persists agent SPKI pins
+// after successful enrollment (S-02). MUST be called once at startup, before
+// the first Run begins. Concurrent calls or calls during an active Run are not
+// supported and will race with the unsynchronized pinWriter read in Run.
+// If not set, cert pinning is skipped and a warning is logged; enrollment still
+// completes. Callers SHOULD always set this in production to enable pin
+// verification on subsequent dials (Task 10).
+func (d *EnrollDriver) SetCertPinWriter(w CertPinWriter) {
+	d.pinWriter = w
+}
+
 // record invokes d.recorder if set. Inlined at every return path in Run.
 func (d *EnrollDriver) record(result string) {
 	if d.recorder != nil {
@@ -116,6 +141,26 @@ func (d *EnrollDriver) notify(action, agentID string) {
 	if d.notifier != nil {
 		d.notifier(action, agentID)
 	}
+}
+
+// persistCertPin computes the SHA-256 of the agent's serving certificate's
+// SubjectPublicKeyInfo and persists it via the storage layer.
+//
+// The pin is bound to the public key (not the full DER cert) so a renewed
+// certificate carrying the same keypair still passes verification — exactly
+// the behaviour needed for rolling cert renewals. Subsequent dials (Task 10)
+// verify the served leaf cert hashes to this value (S-02).
+//
+// Returns an error if pinWriter is nil (caller must set it via SetCertPinWriter).
+func (d *EnrollDriver) persistCertPin(ctx context.Context, agentID string, cert *x509.Certificate) error {
+	if cert == nil {
+		return errors.New("persistCertPin: nil certificate")
+	}
+	if d.pinWriter == nil {
+		return errors.New("persistCertPin: no CertPinWriter configured")
+	}
+	pin := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
+	return d.pinWriter.UpdateAgentCertPin(ctx, agentID, pin[:])
 }
 
 // Run executes the panel-side enrollment exchange against an agent listening
@@ -166,7 +211,24 @@ func (d *EnrollDriver) Run(ctx context.Context, agentAddr string, tlsCfg *tls.Co
 	ctx, cancel := context.WithTimeout(ctx, enrollDeadline)
 	defer cancel()
 
-	conn, err := grpc.NewClient(agentAddr, grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)))
+	// Clone tlsCfg so we can add a VerifyConnection hook without mutating the
+	// caller's config. The hook captures the agent's leaf cert (SPKI) for
+	// pinning; it fires inside the gRPC transport TLS handshake, before any
+	// RPC data is exchanged.
+	var agentLeafCert *x509.Certificate
+	enrollTLS := tlsCfg.Clone()
+	prevVerifyConn := enrollTLS.VerifyConnection
+	enrollTLS.VerifyConnection = func(cs tls.ConnectionState) error {
+		if len(cs.PeerCertificates) > 0 {
+			agentLeafCert = cs.PeerCertificates[0]
+		}
+		if prevVerifyConn != nil {
+			return prevVerifyConn(cs)
+		}
+		return nil
+	}
+
+	conn, err := grpc.NewClient(agentAddr, grpc.WithTransportCredentials(credentials.NewTLS(enrollTLS)))
 	if err != nil {
 		d.record("error")
 		return fmt.Errorf("enroll: dial: %w", err)
@@ -260,6 +322,31 @@ func (d *EnrollDriver) Run(ctx context.Context, agentAddr string, tlsCfg *tls.Co
 		d.record("error")
 		return fmt.Errorf("enroll: clear token: %w", err)
 	}
+
+	// Persist the SPKI pin for the agent's serving cert (S-02). This must
+	// happen after the bootstrap token is cleared (agent is now active) and
+	// before Run returns nil so callers can rely on the pin being set.
+	//
+	// Fail-closed: if storage is broken the operator must know; the agent will
+	// retry enrollment and the panel will re-attempt pinning on the next Run.
+	// If no pinWriter is configured (e.g. legacy wiring), log a warning and
+	// continue — cert-serial verification (Q4.U-S-04) still provides layered
+	// defence; operators should wire SetCertPinWriter for full S-02 coverage.
+	if d.pinWriter != nil {
+		if agentLeafCert == nil {
+			d.record("error")
+			return fmt.Errorf("enroll: TLS handshake completed but no peer certificate captured for agent %s", agentID)
+		}
+		if err := d.persistCertPin(ctx, agentID, agentLeafCert); err != nil {
+			d.record("error")
+			return fmt.Errorf("enroll: persist cert pin: %w", err)
+		}
+	} else {
+		d.logger.Warn("bootstrap: CertPinWriter not configured; SPKI pin not persisted (S-02 disabled)",
+			"agent_id", agentID,
+			"hint", "call SetCertPinWriter on EnrollDriver at startup")
+	}
+
 	d.record("success")
 	d.notify("bootstrap.enrollment_completed", agentID)
 	return nil
