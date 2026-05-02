@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { UserListItem } from "@/shared/api/types-pages/pages";
 import { apiClient } from "@/shared/api/api";
+import { useEventAwareInterval } from "@/shared/hooks/useEventAwareInterval";
 
 function transformUsers(raw: Awaited<ReturnType<typeof apiClient.users>>): UserListItem[] {
   return raw.map((u) => ({
@@ -14,11 +15,12 @@ function transformUsers(raw: Awaited<ReturnType<typeof apiClient.users>>): UserL
 
 export function useUsers() {
   const qc = useQueryClient();
+  const refetchInterval = useEventAwareInterval(90_000, 30_000);
 
   const query = useQuery({
     queryKey: ["users"],
     queryFn: () => apiClient.users(),
-    refetchInterval: 30_000,
+    refetchInterval,
   });
 
   const users: UserListItem[] = query.data ? transformUsers(query.data) : [];

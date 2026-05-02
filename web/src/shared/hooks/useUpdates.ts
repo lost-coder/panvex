@@ -1,13 +1,15 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/shared/api/api";
+import { useEventAwareInterval } from "@/shared/hooks/useEventAwareInterval";
 
 export function useUpdates() {
   const queryClient = useQueryClient();
+  const refetchInterval = useEventAwareInterval(300_000, 60_000);
 
   const query = useQuery({
     queryKey: ["updates"],
     queryFn: () => apiClient.getUpdateSettings(),
-    refetchInterval: 60_000,
+    refetchInterval,
   });
 
   const saveSettings = useMutation({

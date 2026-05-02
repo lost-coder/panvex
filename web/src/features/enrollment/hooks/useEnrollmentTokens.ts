@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { EnrollmentTokenData } from "@/shared/api/types-pages/pages";
 import { apiClient } from "@/shared/api/api";
 import { useToast } from "@/app/providers/ToastProvider";
+import { useEventAwareInterval } from "@/shared/hooks/useEventAwareInterval";
 
 function transformTokens(raw: Awaited<ReturnType<typeof apiClient.listEnrollmentTokens>>): EnrollmentTokenData[] {
   return raw.map((t) => ({
@@ -20,11 +21,12 @@ export function useEnrollmentTokens() {
   // — React Query would log to console, invisible to the operator. Mirrors
   // the useClientMutations pattern.
   const toast = useToast();
+  const refetchInterval = useEventAwareInterval(90_000, 30_000);
 
   const query = useQuery({
     queryKey: ["enrollmentTokens"],
     queryFn: () => apiClient.listEnrollmentTokens(),
-    refetchInterval: 30_000,
+    refetchInterval,
   });
 
   const tokens: EnrollmentTokenData[] = query.data ? transformTokens(query.data) : [];
