@@ -1,8 +1,14 @@
 import { api, apiBasePath } from "./http";
 import {
   fleetGroupDeletionPreviewSchema,
+  fleetGroupDeletionResultSchema,
+  fleetGroupIntegrationSchema,
   fleetGroupListSchema,
   fleetGroupSchema,
+  integrationKindListSchema,
+  integrationProviderKindListSchema,
+  integrationProviderListSchema,
+  integrationProviderSchema,
 } from "./schemas";
 
 export type FleetGroupIntegration = {
@@ -60,7 +66,9 @@ export type FleetGroupDeletionResult = {
 export type IntegrationKind = {
   name: string;
   description: string;
-  provider_kind?: string;
+  // R-Q-20: `| undefined` widens the optional shape so Zod schemas
+  // line up with exactOptionalPropertyTypes.
+  provider_kind?: string | undefined;
 };
 
 export type IntegrationProviderKind = {
@@ -102,7 +110,7 @@ export type UpdateFleetGroupIntegrationRequest = {
 };
 
 export const fleetGroupsApi = {
-  // R-Q-20: response Zod-parse on the read paths.
+  // R-Q-20: Zod parse on every response that carries a body.
   fleetGroups: () =>
     api<FleetGroupEntry[]>(`${apiBasePath}/fleet-groups`, undefined, fleetGroupListSchema),
   fleetGroup: (id: string) =>
@@ -136,25 +144,54 @@ export const fleetGroupsApi = {
   // through a confirm dialog that picks a target group first.
   deleteFleetGroup: (id: string, reassignTo?: string) => {
     const qs = reassignTo ? `?reassign_to=${encodeURIComponent(reassignTo)}` : "";
-    return api<FleetGroupDeletionResult>(`${apiBasePath}/fleet-groups/${id}${qs}`, {
-      method: "DELETE",
-    });
+    return api<FleetGroupDeletionResult>(
+      `${apiBasePath}/fleet-groups/${id}${qs}`,
+      { method: "DELETE" },
+      fleetGroupDeletionResultSchema,
+    );
   },
-  integrationKinds: () => api<IntegrationKind[]>(`${apiBasePath}/integration-kinds`),
-  integrationProviderKinds: () => api<IntegrationProviderKind[]>(`${apiBasePath}/integration-provider-kinds`),
-  integrationProviders: () => api<IntegrationProvider[]>(`${apiBasePath}/integration-providers`),
+  integrationKinds: () =>
+    api<IntegrationKind[]>(
+      `${apiBasePath}/integration-kinds`,
+      undefined,
+      integrationKindListSchema,
+    ),
+  integrationProviderKinds: () =>
+    api<IntegrationProviderKind[]>(
+      `${apiBasePath}/integration-provider-kinds`,
+      undefined,
+      integrationProviderKindListSchema,
+    ),
+  integrationProviders: () =>
+    api<IntegrationProvider[]>(
+      `${apiBasePath}/integration-providers`,
+      undefined,
+      integrationProviderListSchema,
+    ),
   integrationProvider: (id: string) =>
-    api<IntegrationProvider>(`${apiBasePath}/integration-providers/${id}`),
+    api<IntegrationProvider>(
+      `${apiBasePath}/integration-providers/${id}`,
+      undefined,
+      integrationProviderSchema,
+    ),
   createIntegrationProvider: (payload: CreateIntegrationProviderRequest) =>
-    api<IntegrationProvider>(`${apiBasePath}/integration-providers`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
+    api<IntegrationProvider>(
+      `${apiBasePath}/integration-providers`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+      integrationProviderSchema,
+    ),
   updateIntegrationProvider: (id: string, payload: UpdateIntegrationProviderRequest) =>
-    api<IntegrationProvider>(`${apiBasePath}/integration-providers/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(payload),
-    }),
+    api<IntegrationProvider>(
+      `${apiBasePath}/integration-providers/${id}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      },
+      integrationProviderSchema,
+    ),
   deleteIntegrationProvider: (id: string) =>
     api<void>(`${apiBasePath}/integration-providers/${id}`, { method: "DELETE" }),
   installFleetGroupIntegration: (
@@ -164,10 +201,13 @@ export const fleetGroupsApi = {
     api<FleetGroupIntegration>(
       `${apiBasePath}/fleet-groups/${fleetGroupID}/integrations`,
       { method: "POST", body: JSON.stringify(payload) },
+      fleetGroupIntegrationSchema,
     ),
   fleetGroupIntegration: (fleetGroupID: string, integrationID: string) =>
     api<FleetGroupIntegration>(
       `${apiBasePath}/fleet-groups/${fleetGroupID}/integrations/${integrationID}`,
+      undefined,
+      fleetGroupIntegrationSchema,
     ),
   updateFleetGroupIntegration: (
     fleetGroupID: string,
@@ -177,6 +217,7 @@ export const fleetGroupsApi = {
     api<FleetGroupIntegration>(
       `${apiBasePath}/fleet-groups/${fleetGroupID}/integrations/${integrationID}`,
       { method: "PATCH", body: JSON.stringify(payload) },
+      fleetGroupIntegrationSchema,
     ),
   uninstallFleetGroupIntegration: (fleetGroupID: string, integrationID: string) =>
     api<void>(
