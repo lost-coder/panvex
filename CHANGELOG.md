@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Performance — Sprint S-11 (2026-05-02)
+
+- **P-04:** lazy-loaded the three `ServerDetail` tab components (`ConnectionsTab`, `MePoolTab`, `EventsTab`) via `React.lazy` + `Suspense`. The initial `ServerDetailContainer-*.js` chunk shrunk from ~30 KB to **12.79 KB gzip**; each tab now streams in its own ~5–10 KB chunk only when the user activates it (mobile swipe / desktop Fold open). Tightened the `size-limit` page-chunk budget from 60 KB to 20 KB to lock the win in CI. The smaller initial chunk reduces time-to-interactive on first navigation to a server's detail page, especially on flaky networks where each round-trip costs.
+- **Q-11 (deferred):** the four large feature-page tsx files (`EnrollmentWizard.tsx` 538 LOC, `ActivityPage.tsx` 500, `DashboardPage.tsx` 479, `ServersPage.tsx` 477) remain at-size — each is at the edge of the recommended LOC threshold but already lazy-loaded at the route level via TanStack Router's `lazyRouteComponent`. Splitting their internal step/section components is feature-extraction work better done in a dedicated sprint with corresponding test coverage; deferring intentionally rather than risking a bug at the end of an audit-driven cleanup.
+
 ### Documentation — Sprint S-10 (2026-05-02)
 
 - **Q-06:** removed two stale TODO comments. `bootstrap/enroll.go` no longer claims `EnrollDriver` is unwired — the production path constructs an `enrollFn` closure in `cmd/control-plane/serve.go` and registers it via `agenttransport.Manager.SetEnrollCallbacks`. `agenttransport/manager.go` no longer claims outbound TLS is unwired — production passes `api.GRPCTLSConfig()` (the panel's mTLS config), and Sprint S-1 cert-pinning layers SPKI verification on top.
