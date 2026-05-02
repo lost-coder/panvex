@@ -14,10 +14,12 @@ import (
 )
 
 // installCommandTTL bounds how long an issued bootstrap token is valid.
-// 24h is generous enough for an operator to copy-paste the curl into a VPS
-// terminal but short enough that a leaked panel-side token is exposed for at
-// most one operational day before expiring.
-const installCommandTTL = 24 * time.Hour
+// 5 minutes is the S-02 upper-bound: an operator copies the curl one-liner
+// and runs it immediately; a leaked token is only exploitable for a very short
+// window before it expires.  Changing this constant above 5 minutes would
+// violate the S-02 security requirement — see the regression test
+// TestBootstrapToken_DefaultTTLIsAtMost5Minutes.
+const installCommandTTL = 5 * time.Minute
 
 // defaultListenAddr is what the agent binds to when reverse-mode is selected
 // without an explicit override. :8443 mirrors the panel's gRPC listen port

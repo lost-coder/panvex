@@ -22,7 +22,9 @@ import (
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/status"
 )
 
 // ---------------------------------------------------------------------------
@@ -587,5 +589,67 @@ func TestEnrollDriverHappyPath_PersistsCertPin(t *testing.T) {
 	expected := sha256.Sum256(serverCert.RawSubjectPublicKeyInfo)
 	if !bytes.Equal(got, expected[:]) {
 		t.Fatalf("pin mismatch: got %x, want %x", got, expected[:])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// S-02 regression tests
+// ---------------------------------------------------------------------------
+
+// TestBootstrapToken_DefaultTTLIsAtMost5Minutes locks down the S-02
+// requirement that the production default bootstrap-token TTL must not exceed
+// 5 minutes.  A future change that bumps installCommandTTL above 5 minutes
+// will fail here immediately.
+func TestBootstrapToken_DefaultTTLIsAtMost5Minutes(t *testing.T) {
+	t.Parallel()
+	const maxTTL = 5 * time.Minute
+	if installCommandTTL > maxTTL {
+		t.Fatalf("installCommandTTL = %s, want <= %s (S-02 hardening)", installCommandTTL, maxTTL)
+	}
+}
+
+// TestBootstrapToken_SingleUse verifies that a bootstrap token cannot be
+// consumed a second time.  After a successful enrollment, bootstrap_state
+// transitions to "active" and any subsequent Run attempt is rejected with a
+// FailedPrecondition error — ensuring the token is single-use (S-02).
+func TestBootstrapToken_SingleUse(t *testing.T) {
+	t.Parallel()
+
+	tok := mustIssueToken(t, time.Hour)
+	agentID := "agent-single-use"
+
+	row := &dbsqlc.GetAgentTransportRow{
+		ID:                 agentID,
+		BootstrapState:     "pending",
+		BootstrapTokenHash: tok.Hash[:],
+		BootstrapExpiresAt: sql.NullTime{Time: tok.ExpiresAt, Valid: true},
+	}
+	fq := newEnrollFakeQueries(row)
+	ca := &fakeCA{}
+
+	stub := &agentEnrollStubServer{
+		bootstrapToken: tok.Raw,
+		agentID:        agentID,
+		csrPEM:         "fake-csr",
+	}
+	clientTLS, _ := startAgentEnrollStub(t, stub)
+
+	// First Run — must succeed (token consumed, state → active).
+	driver := NewEnrollDriver(fq, ca, nil, time.Now)
+	if err := driver.Run(context.Background(), stub.address, clientTLS, agentID); err != nil {
+		t.Fatalf("first Run: %v", err)
+	}
+	if got := fq.rows[agentID].BootstrapState; got != "active" {
+		t.Fatalf("after first Run: BootstrapState = %q, want %q", got, "active")
+	}
+
+	// Second Run — must fail because state is now "active" (not "pending").
+	// The driver returns a gRPC FailedPrecondition status wrapping the state.
+	err := driver.Run(context.Background(), stub.address, clientTLS, agentID)
+	if err == nil {
+		t.Fatal("second Run: succeeded; expected FailedPrecondition (token is single-use, S-02)")
+	}
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("second Run: got code %s (err=%v), want FailedPrecondition", status.Code(err), err)
 	}
 }
