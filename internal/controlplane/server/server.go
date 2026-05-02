@@ -256,12 +256,25 @@ func (s *Server) SetInstallCommandHandler(h *bootstrap.InstallCommandHandler) {
 // SetAgentTransportManager wires the agenttransport.Manager so the
 // transport-mode change handler can notify it when an agent's mode is
 // updated. Safe to call concurrently with HTTP requests. Also wires the
-// Prometheus supervisor-gauge callback if metrics are enabled.
+// Prometheus supervisor-gauge callback and the SPKI cert-pin reader (S-02)
+// if metrics / storage are available.
 func (s *Server) SetAgentTransportManager(m *agenttransport.Manager) {
 	s.agentTransportManager.Store(m)
-	if m != nil && s.obs != nil {
+	if m == nil {
+		return
+	}
+	if s.obs != nil {
 		m.SetSupervisorGaugeDelta(s.obs.AddOutboundSupervisor)
 	}
+	// Wire SPKI pin verification (S-02): use the server's storage backend as
+	// the CertPinReader and the metrics collector as the observer. Both may
+	// be nil (e.g., in tests without full wiring) — SetCertPinReader handles
+	// nil reader safely (skips verification for all dials).
+	var obs agenttransport.CertPinVerifyObserver
+	if s.obs != nil {
+		obs = s.obs.ObserveAgentCertPin
+	}
+	m.SetCertPinReader(s.store, obs)
 }
 
 // notifyTransportManager calls Manager.OnNodeChanged if a manager has

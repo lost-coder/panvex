@@ -104,6 +104,10 @@ type metricsCollectors struct {
 	// result. Bounded label enum: success|expired|mismatch|agent_id_mismatch|
 	// misbehavior|error. Pre-initialised to zero for alert stability.
 	bootstrapAttemptsTotal *prometheus.CounterVec
+	// agentCertPinTotal counts dial-time SPKI pin verification outcomes,
+	// labelled by result. Bounded enum: ok|mismatch|missing.
+	// Pre-initialised to zero for PromQL alert stability. (S-02)
+	agentCertPinTotal *prometheus.CounterVec
 }
 
 // rateLimitScopes enumerates every scope label that can appear on
@@ -255,6 +259,10 @@ func newMetricsCollectors() *metricsCollectors {
 			Name: "panvex_bootstrap_attempts_total",
 			Help: "Reverse-mode bootstrap enrollment attempts by result. Bounded label enum: success|expired|mismatch|agent_id_mismatch|misbehavior|error.",
 		}, []string{"result"}),
+		agentCertPinTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "panvex_agent_cert_pin_total",
+			Help: "Dial-time SPKI pin verification outcomes per outbound agent TLS handshake. Bounded label enum: ok|mismatch|missing. (S-02)",
+		}, []string{"result"}),
 	}
 
 	reg.MustRegister(
@@ -285,6 +293,7 @@ func newMetricsCollectors() *metricsCollectors {
 		mc.rateLimitRejectedTotal,
 		mc.outboundSupervisorsTotal,
 		mc.bootstrapAttemptsTotal,
+		mc.agentCertPinTotal,
 	)
 
 	// Pre-initialise the per-buffer series to zero so Prometheus rules that
@@ -320,6 +329,9 @@ func newMetricsCollectors() *metricsCollectors {
 	for _, result := range bootstrapResultLabels {
 		mc.bootstrapAttemptsTotal.WithLabelValues(result).Add(0)
 	}
+	for _, result := range certPinResultLabels {
+		mc.agentCertPinTotal.WithLabelValues(result).Add(0)
+	}
 
 	return mc
 }
@@ -336,6 +348,11 @@ var bootstrapResultLabels = []string{
 	"error",
 }
 
+// certPinResultLabels is the bounded enum of result label values for
+// panvex_agent_cert_pin_total. Pre-initialised to zero at startup so
+// PromQL rate() alerts never see an absent series on a fresh panel. (S-02)
+var certPinResultLabels = []string{"ok", "mismatch", "missing"}
+
 // ObserveBootstrapAttempt increments the bootstrap attempt counter for the
 // given result label. Safe to call on a nil receiver (metrics disabled).
 func (mc *metricsCollectors) ObserveBootstrapAttempt(result string) {
@@ -343,6 +360,17 @@ func (mc *metricsCollectors) ObserveBootstrapAttempt(result string) {
 		return
 	}
 	mc.bootstrapAttemptsTotal.WithLabelValues(result).Inc()
+}
+
+// ObserveAgentCertPin increments the SPKI pin verification counter for the
+// given result label ("ok", "mismatch", or "missing"). Called from the
+// outbound supervisor's VerifyConnection hook after each TLS handshake.
+// Safe to call on a nil receiver (metrics disabled). (S-02)
+func (mc *metricsCollectors) ObserveAgentCertPin(result string) {
+	if mc == nil {
+		return
+	}
+	mc.agentCertPinTotal.WithLabelValues(result).Inc()
 }
 
 // AddOutboundSupervisor increments the outbound supervisor gauge by delta.

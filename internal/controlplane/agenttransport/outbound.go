@@ -3,6 +3,7 @@ package agenttransport
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -58,6 +60,14 @@ type outboundSupervisor struct {
 	// bootstrapStateFn, when non-nil, is consulted at the top of each
 	// connectAndServe iteration to decide whether enrollment is needed.
 	bootstrapStateFn BootstrapStateFunc
+
+	// pinReader, when non-nil, is consulted during the TLS handshake to
+	// verify the agent's leaf certificate SPKI hash against the stored pin
+	// (S-02). Nil disables pin verification (legacy agents pre-S-02).
+	pinReader CertPinReader
+	// pinObserver, when non-nil, is called after each pin verification with
+	// result "ok", "mismatch", or "missing". Used for Prometheus metrics.
+	pinObserver CertPinVerifyObserver
 }
 
 func newOutboundSupervisor(meta NodeMeta, tlsCfg *tls.Config, h SessionHandler, l *slog.Logger) *outboundSupervisor {
@@ -133,8 +143,54 @@ func (s *outboundSupervisor) connectAndServe(ctx context.Context) error {
 	if s.tlsCfg == nil {
 		return fmt.Errorf("%w (node_id=%s)", errOutboundTLSMissing, s.meta.NodeID)
 	}
+
+	// Clone the TLS config so we can install a per-dial VerifyConnection hook
+	// without mutating the shared base config. (S-02)
+	tlsCfg := s.tlsCfg.Clone()
+	if s.pinReader != nil {
+		agentID := s.meta.AgentID
+		pinReader := s.pinReader
+		pinObserver := s.pinObserver
+		prevVerify := tlsCfg.VerifyConnection
+		tlsCfg.VerifyConnection = func(state tls.ConnectionState) error {
+			// Chain any pre-existing hook first (e.g., mTLS client-cert
+			// validation wired by the panel CA setup).
+			if prevVerify != nil {
+				if err := prevVerify(state); err != nil {
+					return err
+				}
+			}
+			pin, err := pinReader.GetAgentCertPin(ctx, agentID)
+			if err != nil && !errors.Is(err, storage.ErrNotFound) {
+				return fmt.Errorf("agenttransport: cert pin lookup (node_id=%s): %w", agentID, err)
+			}
+			if len(pin) == 0 {
+				// No pin stored — agent enrolled before S-02 or pin not yet
+				// captured. Skip verification for this dial.
+				if pinObserver != nil {
+					pinObserver("missing")
+				}
+				return nil
+			}
+			var leaf *x509.Certificate
+			if len(state.PeerCertificates) > 0 {
+				leaf = state.PeerCertificates[0]
+			}
+			if err := verifyCertPin(leaf, pin); err != nil {
+				if pinObserver != nil {
+					pinObserver("mismatch")
+				}
+				return fmt.Errorf("%w (node_id=%s)", err, agentID)
+			}
+			if pinObserver != nil {
+				pinObserver("ok")
+			}
+			return nil
+		}
+	}
+
 	conn, err := grpc.NewClient(s.meta.DialAddress,
-		grpc.WithTransportCredentials(credentials.NewTLS(s.tlsCfg)))
+		grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)))
 	if err != nil {
 		return err
 	}
@@ -180,6 +236,12 @@ type outboundTransport struct {
 	enrollFn         EnrollFunc
 	bootstrapStateFn BootstrapStateFunc
 
+	// pinReader and pinObserver are wired by Manager.SetCertPinReader and
+	// forwarded to every outboundSupervisor for post-handshake SPKI
+	// verification. (S-02)
+	pinReader   CertPinReader
+	pinObserver CertPinVerifyObserver
+
 	mu          sync.RWMutex
 	supervisors map[string]*outboundSupervisorEntry
 	wg          sync.WaitGroup
@@ -206,6 +268,8 @@ func (t *outboundTransport) ensureSupervisor(meta NodeMeta) {
 	fn := t.onSupervisorDelta
 	enrollFn := t.enrollFn
 	bootstrapStateFn := t.bootstrapStateFn
+	pinReader := t.pinReader
+	pinObserver := t.pinObserver
 	t.mu.Unlock()
 
 	if fn != nil {
@@ -214,6 +278,8 @@ func (t *outboundTransport) ensureSupervisor(meta NodeMeta) {
 	sup := newOutboundSupervisor(meta, t.tlsCfg, t.handler, t.logger)
 	sup.enrollFn = enrollFn
 	sup.bootstrapStateFn = bootstrapStateFn
+	sup.pinReader = pinReader
+	sup.pinObserver = pinObserver
 	go func() {
 		defer t.wg.Done()
 		sup.run(ctx)

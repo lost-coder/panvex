@@ -218,3 +218,18 @@ func (m *Manager) SetEnrollCallbacks(enrollFn EnrollFunc, bootstrapStateFn Boots
 	m.outbound.bootstrapStateFn = bootstrapStateFn
 	m.outbound.mu.Unlock()
 }
+
+// SetCertPinReader wires the storage backend used to read the SPKI pin for
+// each agent during the TLS handshake (S-02 dial-time verification). Must be
+// called once at startup, before Start, from a single goroutine. The optional
+// observer callback is invoked with "ok", "mismatch", or "missing" after each
+// verification attempt — used by the server's Prometheus collector to maintain
+// panvex_agent_cert_pin_total. If r is nil, pin verification is skipped for
+// all outbound dials (backward-compatible: agents enrolled pre-S-02 also
+// produce an empty pin which skips verification).
+func (m *Manager) SetCertPinReader(r CertPinReader, obs CertPinVerifyObserver) {
+	m.outbound.mu.Lock()
+	m.outbound.pinReader = r
+	m.outbound.pinObserver = obs
+	m.outbound.mu.Unlock()
+}
