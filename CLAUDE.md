@@ -22,6 +22,32 @@ A "client" in Panvex maps to a Telemt proxy client: it has a secret, limits
 fleet group or explicitly. After each save, Panvex queues rollout jobs; each
 node returns its own Telegram connection link.
 
+### Terminology — node vs agent vs server (Q-08)
+
+These three words appear all over the code/docs and mean *related but distinct
+things*. Consolidated mapping, authoritative for new code:
+
+| Term | Meaning | Where it shows up |
+|---|---|---|
+| **Node** | The Telemt host being managed — one operator-visible "thing" with a name, a fleet group, telemetry, and clients deployed on it. Conceptual / domain layer. | Specs, plans, UI section headers ("Servers" page renders Nodes). |
+| **Agent** | The `panvex-agent` Go process running on the node — the on-host runtime that drives Telemt, dials the panel (or listens), and reports telemetry. | Go code (`cmd/agent`, `internal/agent/...`), DB table `agents`, gRPC `AgentGateway`, HTTP `/api/agents/*`, audit events. **One row in `agents` ⇄ one node.** |
+| **Server** | UI label for what the operator perceives as "the box". Synonymous with Node in user-facing copy. | React dashboard pages: `ServersPage`, `ServerDetailPage`, `AddServerContainer`. |
+
+When writing new code:
+
+- **Database, Go types, HTTP/gRPC routes** → use `agent` / `agents` / `agent_id`.
+  This is the canonical machine-side identifier; do not introduce a `nodes`
+  table or `node_id` column.
+- **User-facing UI copy** → use "Server" (existing convention). "Node" is
+  acceptable in lower-level technical labels (e.g. fleet detail page).
+- **Specs / planning docs** → prefer "agent" so the plan's tokens map 1-to-1
+  onto the schema. If the doc reaches for "node" for readability, add an
+  explicit "node ≡ agent in DB" note (see
+  `docs/superpowers/specs/2026-04-29-reverse-connection-mode-design.md`).
+
+The `node_name` column on `agents` is the operator-supplied display name —
+that is the one place where "node" survives in the schema, intentionally.
+
 ## Repository layout
 
 ```
