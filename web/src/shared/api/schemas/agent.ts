@@ -132,7 +132,7 @@ export const agentRuntimeSchema = z.object({
   me_writers_summary: meWritersSummarySchema.optional(),
 });
 
-const agentCertificateRecoverySchema = z.object({
+export const agentCertificateRecoverySchema = z.object({
   status: z.enum(["allowed", "expired", "used", "revoked"]),
   issued_at_unix: z.number(),
   expires_at_unix: z.number(),
@@ -160,4 +160,23 @@ export const agentSchema = z.object({
 
 export const agentListSchema = z.array(agentSchema);
 
+/**
+ * Instance DTO returned by GET /api/instances. Each agent may report
+ * zero or more running Telemt process instances.
+ */
+export const instanceSchema = z.object({
+  id,
+  agent_id: z.string(),
+  name: z.string(),
+  version: z.string(),
+  config_fingerprint: z.string(),
+  connected_users: z.number(),
+  read_only: z.boolean(),
+  updated_at: timestamp,
+});
+
+export const instanceListSchema = z.array(instanceSchema);
+
 export type AgentParsed = z.infer<typeof agentSchema>;
+export type InstanceParsed = z.infer<typeof instanceSchema>;
+export type AgentCertificateRecoveryParsed = z.infer<typeof agentCertificateRecoverySchema>;

@@ -1,7 +1,10 @@
 import { api, apiBasePath, encodeRequest } from "./http";
 import {
   agentCertificateRecoveryGrantRequestSchema,
+  agentCertificateRecoverySchema,
   agentListSchema,
+  agentSchema,
+  instanceListSchema,
   renameAgentRequestSchema,
   updateAgentFleetGroupRequestSchema,
 } from "./schemas";
@@ -136,26 +139,36 @@ export type Instance = {
 };
 
 export const serversApi = {
+  // R-Q-20: Zod parse on every response that carries a body.
   agents: () => api<Agent[]>(`${apiBasePath}/agents`, undefined, agentListSchema),
-  instances: () => api<Instance[]>(`${apiBasePath}/instances`),
+  instances: () =>
+    api<Instance[]>(`${apiBasePath}/instances`, undefined, instanceListSchema),
   renameAgent: (agentID: string, nodeName: string) =>
-    api<Agent>(`${apiBasePath}/agents/${agentID}`, {
-      method: "PATCH",
-      body: encodeRequest(
-        `${apiBasePath}/agents/${agentID}`,
-        renameAgentRequestSchema,
-        { node_name: nodeName },
-      )
-    }),
+    api<Agent>(
+      `${apiBasePath}/agents/${agentID}`,
+      {
+        method: "PATCH",
+        body: encodeRequest(
+          `${apiBasePath}/agents/${agentID}`,
+          renameAgentRequestSchema,
+          { node_name: nodeName },
+        ),
+      },
+      agentSchema,
+    ),
   updateAgentFleetGroup: (agentID: string, fleetGroupID: string) =>
-    api<Agent>(`${apiBasePath}/agents/${agentID}/fleet-group`, {
-      method: "PUT",
-      body: encodeRequest(
-        `${apiBasePath}/agents/${agentID}/fleet-group`,
-        updateAgentFleetGroupRequestSchema,
-        { fleet_group_id: fleetGroupID },
-      ),
-    }),
+    api<Agent>(
+      `${apiBasePath}/agents/${agentID}/fleet-group`,
+      {
+        method: "PUT",
+        body: encodeRequest(
+          `${apiBasePath}/agents/${agentID}/fleet-group`,
+          updateAgentFleetGroupRequestSchema,
+          { fleet_group_id: fleetGroupID },
+        ),
+      },
+      agentSchema,
+    ),
   deregisterAgent: (agentID: string) =>
     api<void>(`${apiBasePath}/agents/${agentID}`, {
       method: "DELETE"
@@ -173,9 +186,12 @@ export const serversApi = {
             )
           : JSON.stringify({}),
       },
+      agentCertificateRecoverySchema,
     ),
   revokeAgentCertificateRecovery: (agentID: string) =>
-    api<AgentCertificateRecovery>(`${apiBasePath}/agents/${agentID}/certificate-recovery-grants/revoke`, {
-      method: "POST"
-    }),
+    api<AgentCertificateRecovery>(
+      `${apiBasePath}/agents/${agentID}/certificate-recovery-grants/revoke`,
+      { method: "POST" },
+      agentCertificateRecoverySchema,
+    ),
 };
