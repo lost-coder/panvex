@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Security / DX — Sprint S-19 (2026-05-02)
+
+- **BP-02 (final):** completed the Zod schema sweep across all 9 API files in `web/src/shared/api/`. Every `api<T>(...)` call that returns a non-empty body now passes a Zod schema as the third argument; responses are validated at the boundary instead of cast `as T`. Closes the audit's "no-schema migration list" TODO. Added 36 new response schemas for endpoints that previously lacked one. The full migration matches the pattern Sprint S-12 established for auth.ts. Exact file-by-file coverage:
+  - `users.ts`: already covered from S-12 (userSchema, userListSchema) — 0 new schemas.
+  - `enrollment.ts`: already covered from S-12 (enrollmentTokenResponseSchema, enrollmentTokenListSchema) — 0 new schemas.
+  - `jobs.ts`: already covered from S-12 (jobSchema, jobListSchema, auditEventListSchema) — 0 new schemas.
+  - `settings.ts`: already covered (panelSettingsResponseSchema, appearanceSettingsResponseSchema, retentionSettingsSchema, versionSchema) — 0 new schemas.
+  - `updates.ts`: 5 new schemas in `schemas/updates.ts` — updateSettingsSchema, updateSettingsResponseSchema, checkForUpdatesResponseSchema, updatePanelResponseSchema, updateAgentResponseSchema.
+  - `servers.ts`: 2 new schemas added to `schemas/agent.ts` — instanceSchema, instanceListSchema; agentCertificateRecoverySchema promoted to export; agentSchema reused for mutation responses.
+  - `telemetry.ts`: 8 new schemas in `schemas/telemetry.ts` — fleetResponseSchema, metricSnapshotSchema/List, telemetryDetailBoostSchema, telemetryDiagnosticsRefreshResponseSchema, telemetryServersResponseSchema, telemetryServerDetailResponseSchema, serverLoadHistoryResponseSchema, dcHealthHistoryResponseSchema.
+  - `clients.ts`: 4 new schemas in `schemas/clients.ts` — adoptDiscoveredClientResponseSchema, bulkAdoptDiscoveredResponseSchema, clientIPHistoryResponseSchema, bulkClientResponseSchema; clientSchema reused for 5 mutation endpoints.
+  - `fleet-groups.ts`: 7 new schemas in `schemas/fleet-groups.ts` — fleetGroupDeletionResultSchema, integrationKindSchema/List, integrationProviderKindSchema/List, integrationProviderSchema/List; fleetGroupIntegrationSchema reused for integration CRUD.
+  - Final coverage: 70 non-void api calls, 70 with schema — 100%.
+
 ### Code Quality — Sprint S-18 (2026-05-02)
 
 - **Q-11:** decomposed the four edge-of-threshold feature pages into per-component sibling files.
