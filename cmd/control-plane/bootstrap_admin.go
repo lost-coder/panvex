@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,15 +20,27 @@ import (
 func runBootstrapAdmin(args []string) error {
 	flags := flag.NewFlagSet("bootstrap-admin", flag.ContinueOnError)
 	username := flags.String("username", "admin", "Admin username")
-	password := flags.String("password", os.Getenv("PANVEX_BOOTSTRAP_PASSWORD"), "Admin password")
+	passwordFile := flags.String("password-file", os.Getenv("PANVEX_BOOTSTRAP_PASSWORD_FILE"),
+		"Read admin password from file (preferred over -password for systemd LoadCredential and Docker secrets)")
+	password := flags.String("password", os.Getenv("PANVEX_BOOTSTRAP_PASSWORD"),
+		"Admin password (use -password-file in production)")
 	storageDriver := flags.String(flagStorageDriver, "", helpStorageDriver)
 	storageDSN := flags.String(flagStorageDSN, "", helpStorageDSN)
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 
-	if *password == "" {
-		return errors.New("password is required through -password or PANVEX_BOOTSTRAP_PASSWORD")
+	resolvedPassword := strings.TrimSpace(*password)
+	if pf := strings.TrimSpace(*passwordFile); pf != "" {
+		data, err := os.ReadFile(pf)
+		if err != nil {
+			return fmt.Errorf("read password-file %q: %w", pf, err)
+		}
+		resolvedPassword = strings.TrimRight(string(data), " \t\r\n")
+	}
+
+	if resolvedPassword == "" {
+		return errors.New("password is required through -password / PANVEX_BOOTSTRAP_PASSWORD or -password-file / PANVEX_BOOTSTRAP_PASSWORD_FILE")
 	}
 
 	// Bind ctx to SIGINT/SIGTERM so a wedged DB lookup can be cancelled
@@ -69,7 +82,7 @@ func runBootstrapAdmin(args []string) error {
 	service := auth.NewServiceWithStore(store)
 	_, _, err = service.BootstrapUser(ctx, auth.BootstrapInput{
 		Username: *username,
-		Password: *password,
+		Password: resolvedPassword,
 		Role:     auth.RoleAdmin,
 	}, time.Now())
 	if err != nil {

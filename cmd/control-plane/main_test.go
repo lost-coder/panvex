@@ -566,3 +566,76 @@ func TestNewControlPlaneGRPCServerConstructs(t *testing.T) {
 	}
 	grpcServer.Stop()
 }
+
+// TestRunBootstrapAdminUsesPasswordFile verifies that -password-file reads the
+// admin password from a file and creates the account successfully (S-10).
+func TestRunBootstrapAdminUsesPasswordFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	pwFile := filepath.Join(dir, "admin.pw")
+	if err := os.WriteFile(pwFile, []byte("S3curePassword!\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	dbPath := filepath.Join(dir, "panvex.db")
+	err := runBootstrapAdmin([]string{
+		"-username", "admin",
+		"-password-file", pwFile,
+		"-storage-driver", "sqlite",
+		"-storage-dsn", dbPath,
+	})
+	if err != nil {
+		t.Fatalf("runBootstrapAdmin: %v", err)
+	}
+
+	store, err := sqlite.Open(dbPath)
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	user, err := store.GetUserByUsername(context.Background(), "admin")
+	if err != nil {
+		t.Fatalf("GetUserByUsername() error = %v", err)
+	}
+	if user.Username != "admin" {
+		t.Fatalf("user.Username = %q, want %q", user.Username, "admin")
+	}
+}
+
+// TestRunBootstrapAdminPasswordFileTakesPrecedence verifies that -password-file
+// overrides -password when both are supplied (S-10).
+func TestRunBootstrapAdminPasswordFileTakesPrecedence(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	pwFile := filepath.Join(dir, "admin.pw")
+	if err := os.WriteFile(pwFile, []byte("FromFile1234"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	dbPath := filepath.Join(dir, "panvex.db")
+	// Both flags supplied — file should win.
+	err := runBootstrapAdmin([]string{
+		"-username", "admin",
+		"-password", "FromFlag",
+		"-password-file", pwFile,
+		"-storage-driver", "sqlite",
+		"-storage-dsn", dbPath,
+	})
+	if err != nil {
+		t.Fatalf("runBootstrapAdmin: %v", err)
+	}
+
+	store, err := sqlite.Open(dbPath)
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	svc := auth.NewServiceWithStore(store)
+	// Authenticate with the file password to confirm it was used.
+	if _, err := svc.Authenticate(context.Background(), auth.LoginInput{
+		Username: "admin",
+		Password: "FromFile1234",
+	}, time.Now()); err != nil {
+		t.Fatalf("Authenticate with file password failed: %v — file password was not used", err)
+	}
+}
