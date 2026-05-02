@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Code Quality — Sprint S-18 (2026-05-02)
+
+- **Q-11:** decomposed the four edge-of-threshold feature pages into per-component sibling files.
+  - `EnrollmentWizard.tsx`: 538 → **33** LOC. Extracted `ConfigureStep`, `InstallStep`, `ConnectStep` into `enrollment/steps/*.tsx`.
+  - `ActivityPage.tsx`: 500 → **274** LOC. Extracted `JobsTable` and `AuditList` into `activity/components/*.tsx` (plus all helper cells/grouping logic).
+  - `DashboardPage.tsx`: 479 → **160** LOC. Extracted `KpiStrip`, `FleetPanel` (with FleetList + LoadCell as internals), `TimelinePanel` into `dashboard/ui/*.tsx`; helpers `deltaClass`/`deltaArrow` moved to `dashboard/format.ts`.
+  - `ServersPage.tsx`: 477 → **241** LOC. Extracted `ServerCardView` and `ServerListView` into `servers/ui/*.tsx`.
+  - Pure refactor — no behaviour change, no prop signature changes; vitest suite (299 tests across 55 files) all green; ESLint baseline unchanged.
+
 ### Documentation — Sprint S-17 (2026-05-02)
 
 - **Q-08:** added an authoritative "Terminology — node vs agent vs server" section to `src/CLAUDE.md` that maps the three overlapping terms to their concrete usage layers (DB / Go / UI). Resolves the documentation drift the audit flagged: spec docs say "node", DB calls them `agents`, frontend calls them "Servers". The new section locks down: DB and Go canonicalise on `agent` / `agents` / `agent_id`; UI copy uses "Server"; the `node_name` column on `agents` is the operator-supplied display name and is the single intentional surviving "node" reference in the schema. New code follows this mapping; existing 95 backend "node" + 204 frontend "node" mentions stay where they are because they correctly refer to the conceptual domain entity.
