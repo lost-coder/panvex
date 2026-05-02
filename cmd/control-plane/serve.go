@@ -1,0 +1,410 @@
+package main
+
+import (
+	"context"
+	"crypto/tls"
+	"flag"
+	"fmt"
+	"log/slog"
+	"net"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/lost-coder/panvex/internal/controlplane/agenttransport"
+	"github.com/lost-coder/panvex/internal/controlplane/bootstrap"
+	"github.com/lost-coder/panvex/internal/controlplane/config"
+	"github.com/lost-coder/panvex/internal/controlplane/server"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/dbsqlc"
+	"github.com/lost-coder/panvex/internal/gatewayrpc"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+)
+
+type serveConfig struct {
+	ConfigPath           string
+	ConfigManagedRuntime bool
+	HTTPAddr             string
+	HTTPRootPath         string
+	AgentHTTPRootPath    string
+	PanelAllowedCIDRs    []string
+	GRPCAddr             string
+	RestartMode          string
+	TLSMode              string
+	TLSCertFile          string
+	TLSKeyFile           string
+	Storage              config.StorageConfig
+	TrustedProxyCIDRs    []*net.IPNet
+	EncryptionKey        string
+	LogLevel             string
+	// LogFile, when non-empty, mirrors every log line into the named
+	// path in addition to stderr. The file is opened in append mode.
+	// Rotation is delegated to the host (logrotate, systemd-journal, …)
+	// — the panel does not rotate it itself.
+	LogFile string
+}
+
+func runServe(args []string) error {
+	options, err := parseServeConfig(args)
+	if err != nil {
+		return err
+	}
+
+	// Wrap the text handler with the per-request slog handler so every
+	// log line emitted from inside an HTTP handler picks up request_id
+	// from the request context (see server.requestIDMiddleware).
+	logSink, logCloser, err := openLogSink(options.LogFile)
+	if err != nil {
+		return fmt.Errorf("open log file: %w", err)
+	}
+	if logCloser != nil {
+		defer func() { _ = logCloser() }()
+	}
+	baseHandler := slog.NewTextHandler(logSink, &slog.HandlerOptions{Level: parseLogLevel(options.LogLevel)})
+	logger := slog.New(server.NewSlogContextHandler(baseHandler))
+	slog.SetDefault(logger)
+	if options.LogFile != "" {
+		logger.Info("logging to file", "path", options.LogFile)
+	}
+
+	otelShutdown := initOtelTracing()
+	// Shutdown BEFORE store.Close/api.Close so exporter can flush while
+	// the process is still otherwise healthy. defer LIFO => this runs
+	// first among the defers registered below it.
+	defer shutdownOtel(otelShutdown)
+
+	store, err := openStore(options.Storage)
+	if err != nil {
+		return err
+	}
+	defer store.Close() // closed after api.Close() stops background workers
+
+	panelRuntime, err := resolvePanelRuntime(options)
+	if err != nil {
+		return err
+	}
+	restartRequests := make(chan struct{}, 1)
+
+	api := newAPIServer(options, store, logger, panelRuntime, restartRequests)
+	// Shutdown order (enforced by defer stack, LIFO):
+	//   1. HTTP server Shutdown — stops accepting new panel/API requests so
+	//      no new audit or metric events are produced.
+	//   2. gRPC GracefulStop — drains active agent streams so upstream
+	//      producers stop before api.Close runs the final batch drain.
+	//   3. api.Close — final batch_writer drain + in-memory state flush.
+	//   4. store.Close — close the underlying SQL/pgx pool.
+	//
+	// P3-REL-01: api.Close and store.Close are deferred here (not only in the
+	// run loop) so that a panic, early return, or unexpected exit still
+	// flushes buffered audit events before the process exits.
+	defer api.Close()
+	if err := api.StartupError(); err != nil {
+		return err
+	}
+
+	// P3-OBS-01: wrap the chi-rooted handler with otelhttp so every
+	// inbound HTTP request becomes a root span. When tracing is
+	// disabled (no endpoint set) the global no-op TracerProvider makes
+	// this effectively free.
+	httpHandler := otelhttp.NewHandler(api.Handler(), "panvex-api")
+	httpServer := newControlPlaneHTTPServer(panelRuntime.HTTPListenAddress, httpHandler)
+
+	// Use ListenConfig with a Background ctx — the listener is meant to
+	// outlive any single request and is closed via grpcListener.Close()
+	// in the shutdown sequence above. ctx-aware Listen lets the kernel
+	// surface errors via the cancellation channel; Background is correct
+	// here because the listener has no notion of "request lifetime".
+	listenConfig := net.ListenConfig{}
+	grpcListener, err := listenConfig.Listen(context.Background(), "tcp", panelRuntime.GRPCListenAddress)
+	if err != nil {
+		return err
+	}
+
+	grpcServer := newControlPlaneGRPCServer(api.GRPCTLSConfig())
+	gatewayrpc.RegisterAgentGatewayServer(grpcServer, api)
+
+	// Шов 1 & 2: obtain *dbsqlc.Queries from the concrete store so the
+	// agenttransport.Manager, bootstrap.InstallCommandHandler, and
+	// bootstrap.EnrollDriver can execute transport/bootstrap SQL directly.
+	// Both sqlite.Store and postgres.Store expose a Queries() method that
+	// wraps the same connection pool. If the runtime store doesn't implement
+	// the interface (e.g. a test double) we fall back to nil and the
+	// downstream nil-guards keep the server functional without these features.
+	type queriesProvider interface {
+		Queries() *dbsqlc.Queries
+	}
+	var queries *dbsqlc.Queries
+	if qp, ok := store.(queriesProvider); ok {
+		queries = qp.Queries()
+	} else {
+		logger.Warn("storage backend does not expose Queries(); install-command and enrollment pre-flight disabled")
+	}
+
+	// agenttransport.Manager owns outbound supervisors and (in a later task)
+	// the inbound dispatch path. Now wired with real DB queries so outbound
+	// supervisors are restored at startup and the enrollment pre-flight runs.
+	// The outbound TLS config is the panel's server-side mTLS config (agents
+	// must present a cert signed by the panel CA). The CA is available via
+	// api.GRPCTLSConfig() once the server is constructed above.
+	outboundTLS := api.GRPCTLSConfig()
+	manager := agenttransport.NewManager(queries, api.RunAgentSession, outboundTLS, logger)
+	api.SetAgentTransportManager(manager)
+
+	// Шов 1: wire the install-command handler so POST /agents/{id}/install-command
+	// returns a curl | bash one-liner instead of 503. PanelURL is the gRPC
+	// endpoint agents dial. ScriptURL, PanelCAPin, and PanelCN are derived
+	// from the panel's CA certificate (same CA that signs agent certs).
+	//
+	// TODO(install-command): ScriptURL should point to a publicly accessible
+	// install script (e.g. https://get.panvex.io/install-agent.sh). Until a
+	// CDN/release URL is established, the command is syntactically valid but
+	// the script download will fail. Operators can override by editing the
+	// generated command before running it.
+	if queries != nil {
+		installHandler := bootstrap.NewInstallCommandHandler(queries, bootstrap.InstallCommandConfig{
+			ScriptURL:  installScriptURL(panelRuntime),
+			PanelCAPin: api.CAPINHex(),
+			PanelCN:    api.CACN(),
+			PanelURL:   panelRuntime.GRPCListenAddress,
+			Now:        time.Now,
+		})
+		api.SetInstallCommandHandler(installHandler)
+	}
+
+	// Шов 2: wire the enrollment pre-flight into the outbound supervisor pool.
+	// EnrollDriver.Run is called before the mTLS dial when bootstrap_state=pending.
+	// The bootstrap TLS config uses InsecureSkipVerify because the agent has no
+	// trusted cert yet; the enrollment token authenticates the exchange in-band.
+	if queries != nil {
+		enrollDriver := bootstrap.NewEnrollDriver(queries, api.CertificateAuthority(), logger, time.Now)
+		enrollDriver.SetCertPinWriter(store) // persist SPKI pin on each successful enroll (S-02)
+		api.WireEnrollDriver(enrollDriver)
+
+		bootstrapTLS := &tls.Config{
+			// The agent presents a self-signed cert during enrollment; the panel
+			// cannot verify it before the cert is issued, so we skip server cert
+			// verification here. The exchange is authenticated by the bootstrap
+			// token embedded in the EnrollOpening message.
+			InsecureSkipVerify: true, //nolint:gosec // intentional: pre-enrollment, no trust anchor yet
+		}
+		enrollFn := func(ctx context.Context, agentAddr, agentID string) error {
+			return enrollDriver.Run(ctx, agentAddr, bootstrapTLS, agentID)
+		}
+		bootstrapStateFn := func(ctx context.Context, agentID string) (string, error) {
+			row, err := queries.GetAgentTransport(ctx, agentID)
+			if err != nil {
+				return "", err
+			}
+			return row.BootstrapState, nil
+		}
+		manager.SetEnrollCallbacks(enrollFn, bootstrapStateFn)
+	}
+
+	if err := manager.Start(context.Background()); err != nil {
+		return fmt.Errorf("start agent transport manager: %w", err)
+	}
+	// Shutdown order: shutdownServers (HTTP + gRPC drain) runs before any
+	// defer; manager.Stop tears down outbound supervisors AFTER gRPC has
+	// drained but BEFORE api.Close flushes batch writers.
+	defer manager.Stop()
+
+	shutdownServers := func() {
+		shutdownHTTPAndGRPC(httpServer, grpcServer, grpcListener)
+	}
+
+	httpErrors := make(chan error, 4)
+	startHTTPServer(httpServer, panelRuntime, httpErrors)
+	startGRPCServer(grpcServer, grpcListener, panelRuntime.GRPCListenAddress, httpErrors)
+
+	return waitForServeShutdown(restartRequests, httpErrors, shutdownServers)
+}
+
+// newAPIServer wires the high-level server.Server with options, runtime
+// dependencies, and the restart-request signalling channel.
+func newAPIServer(
+	options serveConfig,
+	store storage.Store,
+	logger *slog.Logger,
+	panelRuntime server.PanelRuntime,
+	restartRequests chan<- struct{},
+) *server.Server {
+	// The Prometheus /metrics scrape endpoint is a silent opt-in: when the
+	// operator sets PANVEX_METRICS_SCRAPE_TOKEN the route is registered and
+	// requires that bearer token; when unset, nothing is exposed. Accepted
+	// only from the environment — never a CLI flag — so the secret does not
+	// leak into process listings or shell history.
+	metricsScrapeToken := strings.TrimSpace(os.Getenv("PANVEX_METRICS_SCRAPE_TOKEN"))
+
+	return server.New(server.Options{
+		Now:                time.Now,
+		Store:              store,
+		Logger:             logger,
+		UIFiles:            embeddedUIFiles(),
+		PanelRuntime:       panelRuntime,
+		TrustedProxyCIDRs:  options.TrustedProxyCIDRs,
+		EncryptionKey:      options.EncryptionKey,
+		Version:            Version,
+		CommitSHA:          CommitSHA,
+		BuildTime:          BuildTime,
+		MetricsScrapeToken: metricsScrapeToken,
+		RequestRestart: func() error {
+			select {
+			case restartRequests <- struct{}{}:
+			default:
+			}
+			return nil
+		},
+	})
+}
+
+// loadConfigFileServeConfig builds the serveConfig from a config.toml
+// path while rejecting any conflicting legacy CLI flags.
+func loadConfigFileServeConfig(configPath string, explicitLegacyFlags map[string]bool, parsedCIDRs []*net.IPNet, encryptionKey, logLevel string) (serveConfig, error) {
+	for _, flagName := range []string{"http-addr", "grpc-addr", "restart-mode", flagStorageDriver, flagStorageDSN} {
+		if explicitLegacyFlags[flagName] {
+			return serveConfig{}, fmt.Errorf("flag -%s cannot be used together with -config", flagName)
+		}
+	}
+
+	configuration, err := config.LoadControlPlaneConfig(configPath)
+	if err != nil {
+		return serveConfig{}, err
+	}
+
+	return serveConfig{
+		ConfigPath:           configPath,
+		ConfigManagedRuntime: true,
+		HTTPAddr:             configuration.HTTPListenAddress,
+		HTTPRootPath:         configuration.HTTPRootPath,
+		AgentHTTPRootPath:    configuration.AgentHTTPRootPath,
+		PanelAllowedCIDRs:    configuration.PanelAllowedCIDRs,
+		GRPCAddr:             configuration.GRPCListenAddress,
+		RestartMode:          configuration.RestartMode,
+		TLSMode:              configuration.TLSMode,
+		TLSCertFile:          configuration.TLSCertFile,
+		TLSKeyFile:           configuration.TLSKeyFile,
+		Storage:              configuration.Storage,
+		TrustedProxyCIDRs:    parsedCIDRs,
+		EncryptionKey:        encryptionKey,
+		LogLevel:             logLevel,
+	}, nil
+}
+
+// loadLegacyServeConfig builds the serveConfig from the legacy CLI
+// flag set, used when -config is absent.
+func loadLegacyServeConfig(httpAddr, grpcAddr, restartMode, storageDriver, storageDSN string, parsedCIDRs []*net.IPNet, encryptionKey, logLevel string) (serveConfig, error) {
+	configuration, err := config.ResolveLegacyControlPlaneConfig(httpAddr, grpcAddr, restartMode, "", storageDriver, storageDSN)
+	if err != nil {
+		return serveConfig{}, err
+	}
+
+	return serveConfig{
+		ConfigPath:           "",
+		ConfigManagedRuntime: false,
+		HTTPAddr:             configuration.HTTPListenAddress,
+		HTTPRootPath:         configuration.HTTPRootPath,
+		AgentHTTPRootPath:    configuration.AgentHTTPRootPath,
+		PanelAllowedCIDRs:    configuration.PanelAllowedCIDRs,
+		GRPCAddr:             configuration.GRPCListenAddress,
+		RestartMode:          configuration.RestartMode,
+		TLSMode:              configuration.TLSMode,
+		TLSCertFile:          configuration.TLSCertFile,
+		TLSKeyFile:           configuration.TLSKeyFile,
+		Storage:              configuration.Storage,
+		TrustedProxyCIDRs:    parsedCIDRs,
+		EncryptionKey:        encryptionKey,
+		LogLevel:             logLevel,
+	}, nil
+}
+
+func parseServeConfig(args []string) (serveConfig, error) {
+	flags := flag.NewFlagSet("control-plane", flag.ContinueOnError)
+	configPath := flags.String("config", strings.TrimSpace(os.Getenv("PANVEX_CONFIG")), "Path to runtime config.toml")
+	httpAddr := flags.String("http-addr", ":8080", "HTTP listen address")
+	grpcAddr := flags.String("grpc-addr", ":8443", "gRPC listen address")
+	restartMode := flags.String("restart-mode", config.RestartModeDisabled, "Panel restart mode (disabled or supervised)")
+	storageDriver := flags.String(flagStorageDriver, "", helpStorageDriver)
+	storageDSN := flags.String(flagStorageDSN, "", helpStorageDSN)
+	trustedProxyCIDRs := flags.String("trusted-proxy-cidrs", strings.TrimSpace(os.Getenv("PANVEX_TRUSTED_PROXY_CIDRS")), "Comma-separated trusted proxy CIDRs for X-Forwarded-For (e.g. 172.16.0.0/12,10.0.0.0/8)")
+	// CA encryption passphrase is never accepted on the command line because
+	// argv is visible in /proc/<pid>/cmdline and ps output. Sources, in priority
+	// order: --encryption-key-stdin, --encryption-key-file, PANVEX_ENCRYPTION_KEY.
+	encryptionKeyFile := flags.String("encryption-key-file", "", "Path to file containing the passphrase for CA private key encryption")
+	encryptionKeyStdin := flags.Bool("encryption-key-stdin", false, "Read the CA private key encryption passphrase from stdin (single line)")
+	logLevel := flags.String("log-level", "info", "Log level: debug, info, warn, error")
+	logFile := flags.String("log-file", strings.TrimSpace(os.Getenv("PANVEX_LOG_FILE")), "Path to log file (mirrors stderr; appended). Empty = stderr only.")
+	if err := flags.Parse(args); err != nil {
+		return serveConfig{}, err
+	}
+
+	encryptionKey, err := resolveEncryptionKey(*encryptionKeyFile, *encryptionKeyStdin)
+	if err != nil {
+		return serveConfig{}, err
+	}
+
+	parsedCIDRs, err := parseCIDRList(*trustedProxyCIDRs)
+	if err != nil {
+		return serveConfig{}, fmt.Errorf("invalid -trusted-proxy-cidrs: %w", err)
+	}
+
+	explicitLegacyFlags := make(map[string]bool)
+	flags.Visit(func(currentFlag *flag.Flag) {
+		explicitLegacyFlags[currentFlag.Name] = true
+	})
+
+	if path := strings.TrimSpace(*configPath); path != "" {
+		cfg, err := loadConfigFileServeConfig(path, explicitLegacyFlags, parsedCIDRs, encryptionKey, *logLevel)
+		if err != nil {
+			return cfg, err
+		}
+		// CLI/env --log-file overrides any config-file value: ops can
+		// flip a runaway log destination without re-rendering the TOML.
+		if v := strings.TrimSpace(*logFile); v != "" {
+			cfg.LogFile = v
+		}
+		return cfg, nil
+	}
+
+	cfg, err := loadLegacyServeConfig(*httpAddr, *grpcAddr, *restartMode, *storageDriver, *storageDSN, parsedCIDRs, encryptionKey, *logLevel)
+	if err != nil {
+		return cfg, err
+	}
+	cfg.LogFile = strings.TrimSpace(*logFile)
+	return cfg, nil
+}
+
+func resolvePanelRuntime(configuration serveConfig) (server.PanelRuntime, error) {
+	tlsMode := configuration.TLSMode
+	if strings.TrimSpace(tlsMode) == "" {
+		tlsMode = config.PanelTLSModeProxy
+	}
+
+	runtime := server.PanelRuntime{
+		HTTPListenAddress: configuration.HTTPAddr,
+		HTTPRootPath:      configuration.HTTPRootPath,
+		GRPCListenAddress: configuration.GRPCAddr,
+		TLSMode:           tlsMode,
+		TLSCertFile:       configuration.TLSCertFile,
+		TLSKeyFile:        configuration.TLSKeyFile,
+		RestartSupported:  configuration.RestartMode == config.RestartModeSupervised,
+		ConfigSource:      server.PanelRuntimeSourceLegacy,
+		ConfigPath:        configuration.ConfigPath,
+	}
+	if configuration.ConfigManagedRuntime {
+		runtime.ConfigSource = server.PanelRuntimeSourceConfigFile
+	}
+
+	runtime.AgentHTTPRootPath = configuration.AgentHTTPRootPath
+
+	var panelCIDRs []*net.IPNet
+	for _, cidrStr := range configuration.PanelAllowedCIDRs {
+		_, ipNet, err := net.ParseCIDR(cidrStr)
+		if err != nil {
+			return server.PanelRuntime{}, fmt.Errorf("invalid panel_allowed_cidrs entry %q: %w", cidrStr, err)
+		}
+		panelCIDRs = append(panelCIDRs, ipNet)
+	}
+	runtime.PanelAllowedCIDRs = panelCIDRs
+
+	return runtime, nil
+}
