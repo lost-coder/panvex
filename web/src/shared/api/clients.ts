@@ -1,7 +1,12 @@
 import { api, apiBasePath, encodeRequest } from "./http";
 import {
+  adoptDiscoveredClientResponseSchema,
+  bulkAdoptDiscoveredResponseSchema,
+  bulkClientResponseSchema,
+  clientIPHistoryResponseSchema,
   clientListSchema,
   clientMutationRequestSchema,
+  clientSchema,
   discoveredClientListSchema,
 } from "./schemas";
 
@@ -102,9 +107,11 @@ export type BulkAdoptResultStatus = "adopted" | "already_adopted" | "error";
 export type BulkAdoptResult = {
   id: string;
   status: BulkAdoptResultStatus;
-  client_id?: string;
-  name?: string;
-  message?: string;
+  // R-Q-20: `| undefined` widens the optional shape so Zod schemas
+  // line up with exactOptionalPropertyTypes.
+  client_id?: string | undefined;
+  name?: string | undefined;
+  message?: string | undefined;
 };
 
 export type BulkAdoptDiscoveredResponse = {
@@ -112,7 +119,9 @@ export type BulkAdoptDiscoveredResponse = {
   adopted_count: number;
   already_adopted_count: number;
   error_count: number;
-  skipped_out_of_scope?: number;
+  // R-Q-20: `| undefined` widens the optional shape so Zod schemas
+  // line up with exactOptionalPropertyTypes.
+  skipped_out_of_scope?: number | undefined;
 };
 
 export type ClientIPEntry = {
@@ -141,34 +150,48 @@ export type BulkClientResponse = {
 };
 
 export const clientsApi = {
+  // R-Q-20: Zod parse on every response that carries a body.
   clients: () => api<ClientListItem[]>(`${apiBasePath}/clients`, undefined, clientListSchema),
-  client: (clientID: string) => api<Client>(`${apiBasePath}/clients/${clientID}`),
+  client: (clientID: string) =>
+    api<Client>(`${apiBasePath}/clients/${clientID}`, undefined, clientSchema),
   createClient: (payload: ClientInput) =>
-    api<Client>(`${apiBasePath}/clients`, {
-      method: "POST",
-      body: encodeRequest(`${apiBasePath}/clients`, clientMutationRequestSchema, payload),
-    }),
+    api<Client>(
+      `${apiBasePath}/clients`,
+      {
+        method: "POST",
+        body: encodeRequest(`${apiBasePath}/clients`, clientMutationRequestSchema, payload),
+      },
+      clientSchema,
+    ),
   updateClient: (clientID: string, payload: ClientInput) =>
-    api<Client>(`${apiBasePath}/clients/${clientID}`, {
-      method: "PUT",
-      body: encodeRequest(
-        `${apiBasePath}/clients/${clientID}`,
-        clientMutationRequestSchema,
-        payload,
-      ),
-    }),
+    api<Client>(
+      `${apiBasePath}/clients/${clientID}`,
+      {
+        method: "PUT",
+        body: encodeRequest(
+          `${apiBasePath}/clients/${clientID}`,
+          clientMutationRequestSchema,
+          payload,
+        ),
+      },
+      clientSchema,
+    ),
   rotateClientSecret: (clientID: string) =>
-    api<Client>(`${apiBasePath}/clients/${clientID}/rotate-secret`, {
-      method: "POST"
-    }),
+    api<Client>(
+      `${apiBasePath}/clients/${clientID}/rotate-secret`,
+      { method: "POST" },
+      clientSchema,
+    ),
   // Re-runs the client.create rollout for every target agent — used
   // to recover a client whose initial deployment failed on at least
   // one node. Backend reuses the stored client state, so callers do
   // not need to re-send form fields.
   redeployClient: (clientID: string) =>
-    api<Client>(`${apiBasePath}/clients/${clientID}/redeploy`, {
-      method: "POST"
-    }),
+    api<Client>(
+      `${apiBasePath}/clients/${clientID}/redeploy`,
+      { method: "POST" },
+      clientSchema,
+    ),
   deleteClient: (clientID: string) =>
     api<void>(`${apiBasePath}/clients/${clientID}`, {
       method: "DELETE"
@@ -180,9 +203,11 @@ export const clientsApi = {
       discoveredClientListSchema,
     ),
   adoptDiscoveredClient: (id: string) =>
-    api<AdoptDiscoveredClientResponse>(`${apiBasePath}/discovered-clients/${id}/adopt`, {
-      method: "POST"
-    }),
+    api<AdoptDiscoveredClientResponse>(
+      `${apiBasePath}/discovered-clients/${id}/adopt`,
+      { method: "POST" },
+      adoptDiscoveredClientResponseSchema,
+    ),
   // Bulk adopt: server processes the whole list under one rate-limit
   // token and folds duplicate-by-(name, secret) discovered records into
   // the same managed client automatically. The frontend no longer
@@ -190,10 +215,14 @@ export const clientsApi = {
   // dance was the source of both the rate-limit cascade and the
   // accidental ad_tag auto-generation triggered by the follow-up PUT.
   bulkAdoptDiscoveredClients: (ids: string[]) =>
-    api<BulkAdoptDiscoveredResponse>(`${apiBasePath}/discovered-clients/bulk-adopt`, {
-      method: "POST",
-      body: JSON.stringify({ ids }),
-    }),
+    api<BulkAdoptDiscoveredResponse>(
+      `${apiBasePath}/discovered-clients/bulk-adopt`,
+      {
+        method: "POST",
+        body: JSON.stringify({ ids }),
+      },
+      bulkAdoptDiscoveredResponseSchema,
+    ),
   ignoreDiscoveredClient: (id: string) =>
     api<void>(`${apiBasePath}/discovered-clients/${id}/ignore`, {
       method: "POST"
@@ -202,15 +231,23 @@ export const clientsApi = {
   // fan-out from the dashboard with one authoritative POST. Capped at
   // 500 ids by the server; the UI typically operates on far fewer.
   bulkClientAction: (action: BulkClientServerAction, ids: string[]) =>
-    api<BulkClientResponse>(`${apiBasePath}/clients/bulk-action`, {
-      method: "POST",
-      body: JSON.stringify({ action, ids }),
-    }),
+    api<BulkClientResponse>(
+      `${apiBasePath}/clients/bulk-action`,
+      {
+        method: "POST",
+        body: JSON.stringify({ action, ids }),
+      },
+      bulkClientResponseSchema,
+    ),
   clientIPHistory: (clientID: string, from?: string, to?: string) => {
     const params = new URLSearchParams();
     if (from) params.set("from", from);
     if (to) params.set("to", to);
     const qs = params.toString();
-    return api<ClientIPHistoryResponse>(`${apiBasePath}/clients/${clientID}/history/ips${qs ? "?" + qs : ""}`);
+    return api<ClientIPHistoryResponse>(
+      `${apiBasePath}/clients/${clientID}/history/ips${qs ? "?" + qs : ""}`,
+      undefined,
+      clientIPHistoryResponseSchema,
+    );
   },
 };
