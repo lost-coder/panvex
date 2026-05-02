@@ -88,9 +88,9 @@ func TestDeleteClientPersistsStateBeforeJob(t *testing.T) {
 
 	jobsBefore := len(server.jobs.List())
 
-	err = server.deleteClientWithContext(ctx, clientID, "user-1", now)
+	err = server.deleteClient(ctx, clientID, "user-1", now)
 	if !errors.Is(err, persistErr) {
-		t.Fatalf("deleteClientWithContext() error = %v, want %v", err, persistErr)
+		t.Fatalf("deleteClient() error = %v, want %v", err, persistErr)
 	}
 
 	jobsAfter := server.jobs.List()

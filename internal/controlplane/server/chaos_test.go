@@ -101,9 +101,9 @@ func TestChaosDBDropDuringTransact(t *testing.T) {
 
 	jobsBefore := len(server.jobs.List())
 
-	_, _, _, createErr := server.createClientWithContext(ctx, "user-1", input, now)
+	_, _, _, createErr := server.createClient(ctx, "user-1", input, now)
 	if !errors.Is(createErr, chaosErr) {
-		t.Fatalf("createClientWithContext() error = %v, want chaos injection error", createErr)
+		t.Fatalf("createClient() error = %v, want chaos injection error", createErr)
 	}
 
 	// Invariant 1: no orphaned managedClient record in the in-memory map.

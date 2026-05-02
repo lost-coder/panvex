@@ -465,7 +465,7 @@ func TestRecordClientJobResultDoesNotPanicWhenDeploymentPersistenceFails(t *test
 		LastSeenAt: now.Add(-time.Minute),
 	})
 
-	client, _, _, err := server.createClient("user-000001", clientMutationInput{
+	client, _, _, err := server.createClient(context.Background(), "user-000001", clientMutationInput{
 		Name:          "alice",
 		FleetGroupIDs: []string{defaultGroupID},
 	}, now)

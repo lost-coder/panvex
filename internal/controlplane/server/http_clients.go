@@ -30,7 +30,7 @@ type clientMutationRequest struct {
 }
 
 // toMutationInput converts a client mutation request into the input record
-// expected by createClientWithContext / updateClientWithContext.
+// expected by createClient / updateClient.
 func (r clientMutationRequest) toMutationInput() clientMutationInput {
 	return clientMutationInput{
 		Name:              r.Name,
@@ -223,7 +223,7 @@ func (s *Server) handleCreateClient() http.HandlerFunc {
 			return
 		}
 
-		client, assignments, deployments, err := s.createClientWithContext(r.Context(), session.UserID, request.toMutationInput(), s.now())
+		client, assignments, deployments, err := s.createClient(r.Context(), session.UserID, request.toMutationInput(), s.now())
 		if !handleClientMutationError(w, err) {
 			return
 		}
@@ -303,7 +303,7 @@ func (s *Server) handleUpdateClient() http.HandlerFunc {
 			return
 		}
 
-		client, assignments, deployments, err := s.updateClientWithContext(r.Context(), clientID, session.UserID, request.toMutationInput(), s.now())
+		client, assignments, deployments, err := s.updateClient(r.Context(), clientID, session.UserID, request.toMutationInput(), s.now())
 		if !handleClientMutationError(w, err) {
 			return
 		}
@@ -336,7 +336,7 @@ func (s *Server) handleDeleteClient() http.HandlerFunc {
 			return
 		}
 
-		if err := s.deleteClientWithContext(r.Context(), clientID, session.UserID, s.now()); err != nil {
+		if err := s.deleteClient(r.Context(), clientID, session.UserID, s.now()); err != nil {
 			handleClientMutationError(w, err)
 			return
 		}
@@ -433,7 +433,7 @@ func (s *Server) handleBulkClientAction() http.HandlerFunc {
 
 // applyBulkClientEnable runs the enable/disable variant. It loads each
 // client, flips Enabled if it differs from the requested value, and
-// dispatches the existing updateClientWithContext flow. Clients whose
+// dispatches the existing updateClient flow. Clients whose
 // state already matches are recorded as "skipped" so the UI can show
 // accurate counts.
 func (s *Server) applyBulkClientEnable(ctx context.Context, actorID string, scope FleetScopeAccess, request bulkClientRequest, response *bulkClientResponse) {
@@ -469,7 +469,7 @@ func (s *Server) applyBulkClientEnable(ctx context.Context, actorID string, scop
 			FleetGroupIDs:     assignmentFleetGroupIDs(assignments),
 			AgentIDs:          assignmentAgentIDs(assignments),
 		}
-		if _, _, _, err := s.updateClientWithContext(ctx, id, actorID, input, s.now()); err != nil {
+		if _, _, _, err := s.updateClient(ctx, id, actorID, input, s.now()); err != nil {
 			response.Failed = append(response.Failed, bulkClientFailure{ID: id, Error: err.Error()})
 			continue
 		}
@@ -496,7 +496,7 @@ func (s *Server) applyBulkClientDelete(ctx context.Context, actorID string, scop
 			response.Failed = append(response.Failed, bulkClientFailure{ID: id, Error: msgClientNotFound})
 			continue
 		}
-		if err := s.deleteClientWithContext(ctx, id, actorID, s.now()); err != nil {
+		if err := s.deleteClient(ctx, id, actorID, s.now()); err != nil {
 			response.Failed = append(response.Failed, bulkClientFailure{ID: id, Error: err.Error()})
 			continue
 		}
@@ -521,7 +521,7 @@ func (s *Server) handleRotateClientSecret() http.HandlerFunc {
 			return
 		}
 
-		client, assignments, deployments, err := s.rotateClientSecretWithContext(r.Context(), clientID, session.UserID, s.now())
+		client, assignments, deployments, err := s.rotateClientSecret(r.Context(), clientID, session.UserID, s.now())
 		if !handleClientMutationError(w, err) {
 			return
 		}

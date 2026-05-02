@@ -81,11 +81,7 @@ type clientJobResultPayload struct {
 // they are renamed to use the clients package directly.
 type aggregatedClientUsage = clients.AggregatedUsage
 
-func (s *Server) createClient(actorID string, input clientMutationInput, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
-	return s.createClientWithContext(context.Background(), actorID, input, observedAt)
-}
-
-func (s *Server) createClientWithContext(ctx context.Context, actorID string, input clientMutationInput, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
+func (s *Server) createClient(ctx context.Context, actorID string, input clientMutationInput, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
 	observedAt = observedAt.UTC()
 
 	name := strings.TrimSpace(input.Name)
@@ -153,11 +149,7 @@ func (s *Server) createClientWithContext(ctx context.Context, actorID string, in
 	return client, assignments, deployments, nil
 }
 
-func (s *Server) updateClient(clientID, actorID string, input clientMutationInput, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
-	return s.updateClientWithContext(context.Background(), clientID, actorID, input, observedAt)
-}
-
-func (s *Server) updateClientWithContext(ctx context.Context, clientID, actorID string, input clientMutationInput, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
+func (s *Server) updateClient(ctx context.Context, clientID, actorID string, input clientMutationInput, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
 	observedAt = observedAt.UTC()
 
 	currentClient, _, currentDeployments, err := s.clientDetailSnapshot(clientID)
@@ -226,10 +218,6 @@ func applyClientMutationFields(currentClient *managedClient, input clientMutatio
 	return previousName, nil
 }
 
-func (s *Server) rotateClientSecret(clientID, actorID string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
-	return s.rotateClientSecretWithContext(context.Background(), clientID, actorID, observedAt)
-}
-
 // redeployClientWithContext re-queues the create job for every target
 // agent on the client. Used to recover a client whose initial rollout
 // partially or fully failed — the panel still has the record, but one
@@ -265,7 +253,7 @@ func (s *Server) redeployClientWithContext(ctx context.Context, clientID, actorI
 	return currentClient, assignments, deployments, nil
 }
 
-func (s *Server) rotateClientSecretWithContext(ctx context.Context, clientID, actorID string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
+func (s *Server) rotateClientSecret(ctx context.Context, clientID, actorID string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
 	observedAt = observedAt.UTC()
 
 	currentClient, assignments, deployments, err := s.clientDetailSnapshot(clientID)
@@ -300,11 +288,7 @@ func (s *Server) rotateClientSecretWithContext(ctx context.Context, clientID, ac
 	return currentClient, assignments, deployments, nil
 }
 
-func (s *Server) deleteClient(clientID, actorID string, observedAt time.Time) error {
-	return s.deleteClientWithContext(context.Background(), clientID, actorID, observedAt)
-}
-
-func (s *Server) deleteClientWithContext(ctx context.Context, clientID, actorID string, observedAt time.Time) error {
+func (s *Server) deleteClient(ctx context.Context, clientID, actorID string, observedAt time.Time) error {
 	observedAt = observedAt.UTC()
 
 	currentClient, assignments, deployments, err := s.clientDetailSnapshot(clientID)
