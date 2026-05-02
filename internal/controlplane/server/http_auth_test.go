@@ -539,3 +539,109 @@ func TestRoleChangeInvalidatesTargetUserSessions(t *testing.T) {
 		t.Fatalf("admin /me after unrelated role change status = %d, want %d", adminMe.Code, http.StatusOK)
 	}
 }
+
+// TestLogin_AlwaysRotatesSessionID is an S-03 regression: login must issue a
+// brand-new session-ID even when the browser carries a forged (attacker-known)
+// cookie.  The returned Set-Cookie value must differ from the planted value.
+func TestLogin_AlwaysRotatesSessionID(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, time.May, 2, 10, 0, 0, 0, time.UTC)
+	srv := New(Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+	})
+	defer srv.Close()
+
+	if _, _, err := srv.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "alice",
+		Password: "Alice-Password-1",
+		Role:     auth.RoleOperator,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	// Plant a forged cookie value — the attacker knows this string.
+	forgedCookie := &http.Cookie{Name: sessionCookieName, Value: "attacker-known-id-123"}
+
+	resp := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login",
+		map[string]string{"username": "alice", "password": "Alice-Password-1"},
+		[]*http.Cookie{forgedCookie})
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("login: code=%d body=%s", resp.Code, resp.Body.String())
+	}
+
+	var newID string
+	for _, c := range resp.Result().Cookies() {
+		if c.Name == sessionCookieName {
+			newID = c.Value
+		}
+	}
+	if newID == "" {
+		t.Fatal("no session cookie issued after login")
+	}
+	if newID == forgedCookie.Value {
+		t.Fatalf("session-ID was NOT rotated: server reused forged value %q", forgedCookie.Value)
+	}
+}
+
+// TestLogin_PriorSessionIDIsRevoked is an S-03 regression: after a second
+// login the original session-ID must be invalidated server-side — a request
+// carrying the old cookie must receive 401.
+func TestLogin_PriorSessionIDIsRevoked(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, time.May, 2, 10, 0, 0, 0, time.UTC)
+	srv := New(Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+	})
+	defer srv.Close()
+
+	if _, _, err := srv.auth.BootstrapUser(auth.BootstrapInput{
+		Username: "alice",
+		Password: "Alice-Password-1",
+		Role:     auth.RoleOperator,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	// Step 1: initial login — capture the real session-ID.
+	firstResp := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login",
+		map[string]string{"username": "alice", "password": "Alice-Password-1"},
+		nil)
+	if firstResp.Code != http.StatusOK {
+		t.Fatalf("first login: code=%d body=%s", firstResp.Code, firstResp.Body.String())
+	}
+
+	firstCookies := firstResp.Result().Cookies()
+	var priorID string
+	for _, c := range firstCookies {
+		if c.Name == sessionCookieName {
+			priorID = c.Value
+		}
+	}
+	if priorID == "" {
+		t.Fatal("no session cookie from initial login")
+	}
+
+	// Verify the initial session works.
+	meOK := performJSONRequest(t, srv, http.MethodGet, "/api/auth/me", nil, firstCookies)
+	if meOK.Code != http.StatusOK {
+		t.Fatalf("GET /api/auth/me before re-login: code=%d, want 200", meOK.Code)
+	}
+
+	// Step 2: re-login carrying the prior session cookie.
+	secondResp := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login",
+		map[string]string{"username": "alice", "password": "Alice-Password-1"},
+		firstCookies)
+	if secondResp.Code != http.StatusOK {
+		t.Fatalf("re-login: code=%d body=%s", secondResp.Code, secondResp.Body.String())
+	}
+
+	// Step 3: old session-ID must now return 401.
+	meAfter := performJSONRequest(t, srv, http.MethodGet, "/api/auth/me", nil,
+		[]*http.Cookie{{Name: sessionCookieName, Value: priorID}})
+	if meAfter.Code != http.StatusUnauthorized {
+		t.Fatalf("old session still authenticates: code=%d, want 401", meAfter.Code)
+	}
+}
