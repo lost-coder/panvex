@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 )
 
@@ -68,9 +69,29 @@ func securityHeaders(next http.Handler) http.Handler {
 				"img-src 'self' data:; font-src 'self'; "+
 				"object-src 'none'; base-uri 'self'; form-action 'self'; "+
 				"frame-ancestors 'none'")
-		h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		h.Set("Strict-Transport-Security", hstsHeaderValue())
 		next.ServeHTTP(w, r)
 	})
+}
+
+// hstsHeaderValue returns the Strict-Transport-Security value, optionally
+// extended with `preload` and a 2-year max-age when PANVEX_HSTS_PRELOAD is set.
+// Default (env unset) keeps the previous 1-year + includeSubDomains policy.
+// (S-09)
+func hstsHeaderValue() string {
+	if hstsPreloadEnabled() {
+		return "max-age=63072000; includeSubDomains; preload"
+	}
+	return "max-age=31536000; includeSubDomains"
+}
+
+func hstsPreloadEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("PANVEX_HSTS_PRELOAD"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 // csrfOriginCheck rejects state-changing requests (POST, PUT, DELETE, PATCH)

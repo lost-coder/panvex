@@ -230,6 +230,32 @@ func TestSecurityHeaders_CSPScopesWssToRequestHost(t *testing.T) {
 	}
 }
 
+// TestHSTSHeader_DefaultIsOneYearWithoutPreload verifies that HSTS defaults
+// to 1-year + includeSubDomains when PANVEX_HSTS_PRELOAD is unset (S-09).
+func TestHSTSHeader_DefaultIsOneYearWithoutPreload(t *testing.T) {
+	t.Setenv("PANVEX_HSTS_PRELOAD", "")
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "https://panel.example/", nil)
+	securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})).ServeHTTP(rr, req)
+	got := rr.Header().Get("Strict-Transport-Security")
+	if got != "max-age=31536000; includeSubDomains" {
+		t.Fatalf("HSTS = %q, want default", got)
+	}
+}
+
+// TestHSTSHeader_PreloadEnvOptIn verifies that HSTS uses a 2-year max-age
+// with preload when PANVEX_HSTS_PRELOAD=1 (S-09).
+func TestHSTSHeader_PreloadEnvOptIn(t *testing.T) {
+	t.Setenv("PANVEX_HSTS_PRELOAD", "1")
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "https://panel.example/", nil)
+	securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})).ServeHTTP(rr, req)
+	got := rr.Header().Get("Strict-Transport-Security")
+	if got != "max-age=63072000; includeSubDomains; preload" {
+		t.Fatalf("HSTS = %q, want preload form", got)
+	}
+}
+
 // extractDirective returns the token list for a single CSP directive,
 // without the directive name.
 func extractDirective(csp, name string) string {
