@@ -1,9 +1,15 @@
 package server
 
 import (
+	"context"
+	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 )
 
 // newTestServer constructs a minimal Server for lifecycle assertions. It
@@ -67,5 +73,92 @@ func TestServer_CloseIsRaceSafeUnderConcurrentInvocation(t *testing.T) {
 	case <-srv.Context().Done():
 	case <-time.After(time.Second):
 		t.Fatalf("ctx not cancelled after concurrent Close")
+	}
+}
+
+// rollupCtxObserverStore wraps a Store so the rollup worker's first
+// RollupServerLoadHourly call publishes its ctx to the test and blocks
+// until that ctx is cancelled. Lets the regression test observe whether
+// the ctx the worker handed to storage is rooted in serverCtx (good) or
+// context.Background() (bad — Close cannot abort it via serverCancel).
+type rollupCtxObserverStore struct {
+	storage.Store
+	once    sync.Once
+	started chan context.Context
+	calls   atomic.Int32
+}
+
+func (s *rollupCtxObserverStore) RollupServerLoadHourly(ctx context.Context, bucketHour time.Time) error {
+	s.calls.Add(1)
+	// Publish the ctx exactly once so the test can wait for the worker to
+	// be in-flight, then sleep until ctx fires. If ctx is Background-rooted
+	// (pre-migration), serverCancel never propagates here and the wait
+	// blocks indefinitely — that is the bug the migration fixes.
+	s.once.Do(func() {
+		select {
+		case s.started <- ctx:
+		default:
+		}
+	})
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// TestServer_RollupHonoursServerCtxCancellation pins Task 2 of Plan 3:
+// the rollup worker's context must be derived from serverCtx, so a direct
+// serverCancel() (or any future SIGTERM-handler that cancels serverCtx
+// without going through Close's full ordered shutdown) propagates to
+// in-flight storage calls.
+//
+// Pre-migration the rollup ctx is rooted in context.Background(); only the
+// stopRollup() call in Close cancels it, and that runs *after* the batch
+// writer drain (up to 10s) — so a wedged batch writer leaves the rollup
+// goroutine stuck on slow storage for the whole drain window.
+//
+// Post-migration the rollup ctx is rooted in serverCtx, so serverCancel
+// alone aborts in-flight storage immediately.
+func TestServer_RollupHonoursServerCtxCancellation(t *testing.T) {
+	base, err := sqlite.Open(filepath.Join(t.TempDir(), "rollup-ctx.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	t.Cleanup(func() { _ = base.Close() })
+
+	observer := &rollupCtxObserverStore{
+		Store:   base,
+		started: make(chan context.Context, 1),
+	}
+
+	now := time.Date(2026, time.May, 2, 10, 0, 0, 0, time.UTC)
+	srv := New(Options{
+		Store:            observer,
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+		// Tiny rollup interval so the first tick fires within the test
+		// budget. Other intervals stay at defaults — they do not factor
+		// into this assertion.
+		Intervals: Intervals{Rollup: 25 * time.Millisecond},
+	})
+	t.Cleanup(srv.Close)
+
+	// Wait for the rollup worker to enter its first storage call.
+	var rollupCtx context.Context
+	select {
+	case rollupCtx = <-observer.started:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("rollup worker never invoked RollupServerLoadHourly")
+	}
+
+	// Cancel only serverCtx — do not call Close. We are asserting that
+	// serverCtx-cancellation alone (i.e. step 1 of Close) is enough to
+	// abort the in-flight storage call. Pre-migration this is a no-op
+	// because rollupCtx is Background-rooted.
+	srv.serverCancel()
+
+	select {
+	case <-rollupCtx.Done():
+		// Migration successful: rollup ctx is derived from serverCtx.
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("rollup ctx did not honour serverCancel; rollup parent is not serverCtx")
 	}
 }

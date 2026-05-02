@@ -134,7 +134,7 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 	// empty.
 	s.loginLockout.SetStore(newLockoutStoreAdapter(store))
 	s.trySetStartupErr(func() error {
-		return s.loginLockout.Restore(context.Background(), s.now())
+		return s.loginLockout.Restore(s.serverCtx, s.now())
 	})
 	s.trySetStartupErr(s.jobs.StartupError)
 	s.trySetStartupErr(func() error { return s.seedUsers(options.Users) })
@@ -154,7 +154,7 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 	// API; the `default` slug is kept so docs and scripts can rely on a
 	// predictable name.
 	s.trySetStartupErr(func() error {
-		_, err := s.fleetSvc.EnsureDefault(context.Background())
+		_, err := s.fleetSvc.EnsureDefault(s.serverCtx)
 		return err
 	})
 }
@@ -163,7 +163,7 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 // metrics-poller goroutines. Returns the rollup ctx so the caller stays in
 // charge of cleanup wiring.
 func (s *Server) startBackgroundWorkers() {
-	rollupCtx, rollupCancel := context.WithCancel(context.Background())
+	rollupCtx, rollupCancel := context.WithCancel(s.serverCtx)
 	s.stopRollup = rollupCancel
 	s.startTimeseriesRollupWorker(rollupCtx)
 	s.startUpdateCheckerWorker(rollupCtx)
@@ -193,7 +193,7 @@ func (s *Server) startBackgroundWorkers() {
 	// Skipping the poller when metrics are disabled keeps the race-free
 	// clock-mock pattern working for tests.
 	if s.metricsScrapeToken != "" {
-		metricsCtx, metricsCancel := context.WithCancel(context.Background())
+		metricsCtx, metricsCancel := context.WithCancel(s.serverCtx)
 		s.metricsPollerCancel = metricsCancel
 		s.startMetricsPoller(metricsCtx, s.intervals.MetricsPoller)
 	}
@@ -319,7 +319,7 @@ func (s *Server) seedUsers(users []auth.User) error {
 		return nil
 	}
 
-	records, err := s.store.ListUsers(context.Background())
+	records, err := s.store.ListUsers(s.serverCtx)
 	if err != nil {
 		return err
 	}
@@ -328,7 +328,7 @@ func (s *Server) seedUsers(users []auth.User) error {
 	}
 
 	for _, user := range users {
-		if err := s.store.PutUser(context.Background(), storage.UserRecord{
+		if err := s.store.PutUser(s.serverCtx, storage.UserRecord{
 			ID:           user.ID,
 			Username:     user.Username,
 			PasswordHash: user.PasswordHash,
