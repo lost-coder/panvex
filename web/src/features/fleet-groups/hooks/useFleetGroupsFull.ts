@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "@/shared/api/api";
+import { useEventAwareInterval } from "@/shared/hooks/useEventAwareInterval";
 import type {
   CreateFleetGroupRequest,
   UpdateFleetGroupRequest,
@@ -16,16 +17,20 @@ import type {
 // we keep both so migration can roll forward per-consumer instead
 // of a big-bang rewrite.
 export function useFleetGroupsList() {
+  const groupsInterval = useEventAwareInterval(90_000, 30_000);
+
   return useQuery({
     queryKey: ["fleet-groups"],
     queryFn: () => apiClient.fleetGroups(),
-    refetchInterval: 30_000,
+    refetchInterval: groupsInterval,
   });
 }
 
 // Detail query includes integrations[]. Skipped while id is empty
 // so the page can keep its loading state while the router settles.
 export function useFleetGroupDetail(id: string | undefined) {
+  const groupDetailInterval = useEventAwareInterval(60_000, 15_000);
+
   return useQuery({
     queryKey: ["fleet-group", id],
     queryFn: () => {
@@ -33,7 +38,7 @@ export function useFleetGroupDetail(id: string | undefined) {
       return apiClient.fleetGroup(id);
     },
     enabled: !!id,
-    refetchInterval: 15_000,
+    refetchInterval: groupDetailInterval,
   });
 }
 
@@ -110,10 +115,12 @@ export function useIntegrationProviderKinds() {
 }
 
 export function useIntegrationProvidersList() {
+  const providersInterval = useEventAwareInterval(300_000, 60_000);
+
   return useQuery({
     queryKey: ["integration-providers"],
     queryFn: () => apiClient.integrationProviders(),
-    refetchInterval: 60_000,
+    refetchInterval: providersInterval,
   });
 }
 
