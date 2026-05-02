@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Documentation — Sprint S-17 (2026-05-02)
+
+- **Q-08:** added an authoritative "Terminology — node vs agent vs server" section to `src/CLAUDE.md` that maps the three overlapping terms to their concrete usage layers (DB / Go / UI). Resolves the documentation drift the audit flagged: spec docs say "node", DB calls them `agents`, frontend calls them "Servers". The new section locks down: DB and Go canonicalise on `agent` / `agents` / `agent_id`; UI copy uses "Server"; the `node_name` column on `agents` is the operator-supplied display name and is the single intentional surviving "node" reference in the schema. New code follows this mapping; existing 95 backend "node" + 204 frontend "node" mentions stay where they are because they correctly refer to the conceptual domain entity.
+
 ### DX / Performance — Sprint S-16 (2026-05-02)
 
 - **BP-04:** replaced ad-hoc `console.error` calls in React Query `onError` handlers with `notifyMutationError(feature, action, err)`. The helper dispatches a structured `panvex:mutation-error` CustomEvent on `window` so a single ToastProvider (or future Sentry-bridge) handles every mutation failure uniformly — previously each hook/page logged independently and operators got nothing actionable in production. The dev-only `console.error` is kept inside the helper (drops out of production via `process.env.NODE_ENV` constant folding). Migrated 14 call-sites across `useProfileTotp`, `ProfilePage`, and `useServerMutations`. The auth + servers feature folders now have zero raw `console.error` in `onError` handlers.
