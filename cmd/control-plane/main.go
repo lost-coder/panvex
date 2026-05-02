@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
-	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
@@ -23,7 +22,6 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/config"
 	"github.com/lost-coder/panvex/internal/controlplane/server"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
-	storagemigrate "github.com/lost-coder/panvex/internal/controlplane/storage/migrate"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/postgres"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 	"github.com/lost-coder/panvex/internal/dbsqlc"
@@ -519,38 +517,6 @@ func resolvePanelRuntime(configuration serveConfig) (server.PanelRuntime, error)
 	return runtime, nil
 }
 
-func runMigrateStorage(args []string) error {
-	flags := flag.NewFlagSet("migrate-storage", flag.ContinueOnError)
-	sourceDriver := flags.String("from-driver", "sqlite", "Source storage backend driver")
-	sourceDSN := flags.String("from-dsn", "", "Source storage backend DSN")
-	targetDriver := flags.String("to-driver", "postgres", "Target storage backend driver")
-	targetDSN := flags.String("to-dsn", "", "Target storage backend DSN")
-	if err := flags.Parse(args); err != nil {
-		return err
-	}
-
-	summary, err := storagemigrate.Run(context.Background(), storagemigrate.Options{
-		SourceDriver: *sourceDriver,
-		SourceDSN:    *sourceDSN,
-		TargetDriver: *targetDriver,
-		TargetDSN:    *targetDSN,
-	})
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("Migration completed.\n")
-	fmt.Printf("Users: %d\n", summary.Users)
-	fmt.Printf("Fleet groups: %d\n", summary.FleetGroups)
-	fmt.Printf("Agents: %d\n", summary.Agents)
-	fmt.Printf("Instances: %d\n", summary.Instances)
-	fmt.Printf("Jobs: %d\n", summary.Jobs)
-	fmt.Printf("Job targets: %d\n", summary.JobTargets)
-	fmt.Printf("Audit events: %d\n", summary.AuditEvents)
-	fmt.Printf("Metric snapshots: %d\n", summary.MetricSnapshots)
-	fmt.Printf("Enrollment tokens: %d\n", summary.EnrollmentTokens)
-	return nil
-}
 
 // resolveEncryptionKey returns the CA private-key passphrase from the most specific
 // source provided. Priority: --encryption-key-stdin > --encryption-key-file >
@@ -766,75 +732,6 @@ func runSelfUpdate(args []string) error {
 	return nil
 }
 
-// runMigrateSchema invokes goose against the configured storage backend.
-//
-//	migrate-schema          -> runs `goose up` (the default when opening the
-//	                           store also does this, but the subcommand is
-//	                           useful for first-time setup without booting the
-//	                           full HTTP/gRPC servers).
-//	migrate-schema status   -> prints the applied/pending migration list.
-//
-// The older `migrate-storage` subcommand handles cross-driver DATA migration
-// and is unrelated to schema versioning; it is preserved unchanged.
-func runMigrateSchema(args []string) error {
-	sub := "up"
-	rest := args
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		sub = args[0]
-		rest = args[1:]
-	}
-
-	flags := flag.NewFlagSet("migrate-schema", flag.ContinueOnError)
-	storageDriver := flags.String(flagStorageDriver, "", helpStorageDriver)
-	storageDSN := flags.String(flagStorageDSN, "", helpStorageDSN)
-	if err := flags.Parse(rest); err != nil {
-		return err
-	}
-
-	storageConfig, err := config.ResolveStorage(*storageDriver, *storageDSN)
-	if err != nil {
-		return err
-	}
-
-	ctx := context.Background()
-
-	switch storageConfig.Driver {
-	case config.StorageDriverSQLite:
-		db, err := sql.Open("sqlite", storageConfig.DSN)
-		if err != nil {
-			return err
-		}
-		defer db.Close()
-		db.SetMaxOpenConns(1)
-		if _, err := db.ExecContext(context.Background(), "PRAGMA foreign_keys = ON"); err != nil {
-			return err
-		}
-		switch sub {
-		case "up":
-			return sqlite.Migrate(db)
-		case "status":
-			return sqlite.Status(ctx, db)
-		default:
-			return fmt.Errorf("migrate-schema: unknown subcommand %q (expected 'up' or 'status')", sub)
-		}
-	case config.StorageDriverPostgres:
-		db, err := sql.Open("pgx", storageConfig.DSN)
-		if err != nil {
-			return err
-		}
-		defer db.Close()
-		switch sub {
-		case "up":
-			return postgres.Migrate(db)
-		case "status":
-			return postgres.Status(ctx, db)
-		default:
-			return fmt.Errorf("migrate-schema: unknown subcommand %q (expected 'up' or 'status')", sub)
-		}
-	default:
-		return fmt.Errorf("unsupported storage driver %q", storageConfig.Driver)
-	}
-}
 
 // installScriptURL derives a best-effort public URL for the agent install
 // script from the panel's HTTP listen address. It is intentionally simple:
