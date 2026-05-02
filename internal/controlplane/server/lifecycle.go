@@ -284,13 +284,15 @@ func (s *Server) Close() {
 	// Tasks 2-6 will migrate workers onto serverCtx; until then this is
 	// effectively a no-op for the existing workers (which still use their
 	// own cancel funcs) but the contract — Close cancels Context() — must
-	// hold from this task forward. Idempotent: if Close is invoked twice
-	// (e.g. test cleanup after an explicit Close), the nil-check stops a
-	// double-cancel panic.
-	if s.serverCancel != nil {
-		s.serverCancel()
-		s.serverCancel = nil
-	}
+	// hold from this task forward. Idempotent under concurrent invocation:
+	// sync.Once guarantees cancel runs exactly once even if two goroutines
+	// race into Close() simultaneously (a bare nil-check + assign would
+	// race; see the regression test in lifecycle_test.go).
+	s.serverCloseOnce.Do(func() {
+		if s.serverCancel != nil {
+			s.serverCancel()
+		}
+	})
 	if s.batchWriter != nil {
 		if err := s.batchWriter.StopWithTimeout(10 * time.Second); err != nil {
 			s.logger.Error("batch writer drain timed out on shutdown",

@@ -166,10 +166,12 @@ type Server struct {
 	// metrics poller, fleet-ensure, lockout-restore, batch-writer drain)
 	// can abort wedged storage calls during shutdown. Subsequent Plan 3
 	// tasks migrate the existing `context.Background()` call sites onto
-	// this context. serverCancel is invoked at most once: Close() guards
-	// against double-cancel via a nil check.
-	serverCtx    context.Context
-	serverCancel context.CancelFunc
+	// this context. serverCloseOnce guarantees the cancel runs exactly
+	// once even under concurrent Close() invocation; bare nil-check +
+	// assign would race two competing goroutines.
+	serverCtx       context.Context
+	serverCancel    context.CancelFunc
+	serverCloseOnce sync.Once
 	stopRollup   context.CancelFunc
 	rollupWg     sync.WaitGroup
 	batchWriter  *storeBatchWriter
@@ -249,7 +251,15 @@ func (s *Server) vault() *secretvault.Vault {
 // the returned context across a Close — derive child contexts via
 // context.WithCancel/WithTimeout from the value returned here at
 // goroutine start.
+//
+// If the Server was constructed via a path that did not initialise the
+// lifecycle context (e.g. test helpers using newServerFromOptions
+// directly), returns context.Background() so worker code that does
+// <-ctx.Done() does not panic on a nil receiver.
 func (s *Server) Context() context.Context {
+	if s.serverCtx == nil {
+		return context.Background()
+	}
 	return s.serverCtx
 }
 

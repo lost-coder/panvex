@@ -1,6 +1,7 @@
 package server
 
 import (
+	"sync"
 	"testing"
 	"time"
 )
@@ -43,5 +44,28 @@ func TestServer_CloseCancelsServerCtx(t *testing.T) {
 	case <-derived.Done():
 	case <-time.After(time.Second):
 		t.Fatalf("serverCtx not cancelled after Close")
+	}
+}
+
+// TestServer_CloseIsRaceSafeUnderConcurrentInvocation pins the idempotency
+// contract under racing callers. Bare nil-check + assign on serverCancel
+// would let two goroutines both observe non-nil and double-cancel; sync.Once
+// is the new guard. Run with `-race -count=3` to catch regressions.
+func TestServer_CloseIsRaceSafeUnderConcurrentInvocation(t *testing.T) {
+	srv := newTestServer(t)
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			srv.Close()
+		}()
+	}
+	wg.Wait()
+	// Server.Context().Done() must still be closed exactly once.
+	select {
+	case <-srv.Context().Done():
+	case <-time.After(time.Second):
+		t.Fatalf("ctx not cancelled after concurrent Close")
 	}
 }
