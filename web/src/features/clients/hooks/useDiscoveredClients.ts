@@ -8,6 +8,7 @@ import {
   type DiscoveredGroupCounts,
 } from "@/features/clients/lib/groupDiscovered";
 import { useToast } from "@/app/providers/ToastProvider";
+import { useEventAwareInterval } from "@/shared/hooks/useEventAwareInterval";
 
 /**
  * Adopt / ignore flow
@@ -33,10 +34,12 @@ export function useDiscoveredClients() {
   // the button they clicked actually hit an error.
   const toast = useToast();
 
+  const refetchInterval = useEventAwareInterval(90_000, 30_000);
+
   const query = useQuery({
     queryKey: ["discovered-clients"],
     queryFn: () => apiClient.discoveredClients(),
-    refetchInterval: 30_000,
+    refetchInterval,
   });
 
   // R-Q-24: memoise the transformed list so the useMemo at line 179

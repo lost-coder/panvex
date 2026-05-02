@@ -2,12 +2,15 @@ import { useQuery } from "@tanstack/react-query";
 import type { ClientDetailPageProps } from "@/shared/api/types-pages/pages";
 import { apiClient } from "@/shared/api/api";
 import { transformClientDetail } from "@/shared/api/transforms/clients";
+import { useEventAwareInterval } from "@/shared/hooks/useEventAwareInterval";
 
 export function useClientDetail(clientId: string) {
+  const refetchInterval = useEventAwareInterval(60_000, 10_000);
+
   const query = useQuery({
     queryKey: ["client", clientId],
     queryFn: () => apiClient.client(clientId),
-    refetchInterval: 10_000,
+    refetchInterval,
     enabled: !!clientId,
   });
 
