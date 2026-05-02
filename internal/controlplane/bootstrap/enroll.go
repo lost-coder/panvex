@@ -187,8 +187,10 @@ func (d *EnrollDriver) persistCertPin(ctx context.Context, agentID string, cert 
 // indefinitely. The caller's ctx is still respected; whichever fires first
 // terminates the exchange.
 //
-// TODO: invoke EnrollDriver before connectAndServe in outboundSupervisor.run
-// when bootstrap_state=pending (agenttransport/outbound.go).
+// Production wiring: cmd/control-plane/serve.go constructs an enrollFn closure
+// over Run and passes it to agenttransport.Manager.SetEnrollCallbacks. The
+// outbound supervisor invokes enrollFn before connectAndServe whenever the
+// agent's bootstrap_state is "pending" (see agenttransport/outbound.go).
 func (d *EnrollDriver) Run(ctx context.Context, agentAddr string, tlsCfg *tls.Config, agentID string) error {
 	d.notify("bootstrap.enrollment_attempted", agentID)
 

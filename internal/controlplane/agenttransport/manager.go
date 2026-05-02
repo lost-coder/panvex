@@ -73,8 +73,10 @@ var ErrManagerStopped = errors.New("agenttransport: manager already stopped")
 // NewManager creates a new Manager. db may be nil — OnNodeChanged returns early
 // when db is nil (used in tests and during pre-wiring startup). tlsCfg is the
 // TLS configuration used by outbound supervisors when dialing agents; nil is
-// acceptable while no outbound supervisors are active (TODO: wire real client
-// TLS once the panel's CA/cert infrastructure is available for outbound use).
+// acceptable while no outbound supervisors are active. Production passes
+// api.GRPCTLSConfig() (the panel's mTLS config) — see cmd/control-plane/serve.go.
+// SetCertPinReader (S-02) layers SPKI verification on top of this base config
+// per outbound dial.
 func NewManager(db *dbsqlc.Queries, handler SessionHandler, tlsCfg *tls.Config, logger *slog.Logger) *Manager {
 	var queries transportQueries
 	if db != nil {
