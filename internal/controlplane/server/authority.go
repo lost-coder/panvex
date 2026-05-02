@@ -102,25 +102,31 @@ func storedPEMIsLegacyV1(stored string) bool {
 	return strings.HasPrefix(stored, encryptedPEMPrefix) && !strings.HasPrefix(stored, encryptedPEMPrefixV2)
 }
 
-func loadOrCreateCertificateAuthority(store storage.CertificateAuthorityStore, now time.Time, encryptionKey string) (*certificateAuthority, error) {
+// loadOrCreateCertificateAuthority resolves the panel CA: load the persisted
+// record, regenerate if expired, otherwise mint a new one and persist it.
+//
+// ctx is the boot-time lifecycle context (s.serverCtx) so Close() during a
+// wedged storage call aborts the goroutine instead of leaking it past
+// shutdown (Plan 3 Task 3).
+func loadOrCreateCertificateAuthority(ctx context.Context, store storage.CertificateAuthorityStore, now time.Time, encryptionKey string) (*certificateAuthority, error) {
 	if store == nil {
 		return newCertificateAuthority(now)
 	}
 
-	record, err := store.GetCertificateAuthority(context.Background())
+	record, err := store.GetCertificateAuthority(ctx)
 	if err == nil {
-		return loadExistingCertificateAuthority(store, record, now, encryptionKey)
+		return loadExistingCertificateAuthority(ctx, store, record, now, encryptionKey)
 	}
 	if !errors.Is(err, storage.ErrNotFound) {
 		return nil, err
 	}
-	return persistNewCertificateAuthority(store, now, encryptionKey)
+	return persistNewCertificateAuthority(ctx, store, now, encryptionKey)
 }
 
 // loadExistingCertificateAuthority validates and (when needed) migrates
 // a stored CA record. Lifecycle: legacy-ENC:v1 guard, decrypt, parse,
 // expiry check, opportunistic re-encryption.
-func loadExistingCertificateAuthority(store storage.CertificateAuthorityStore, record storage.CertificateAuthorityRecord, now time.Time, encryptionKey string) (*certificateAuthority, error) {
+func loadExistingCertificateAuthority(ctx context.Context, store storage.CertificateAuthorityStore, record storage.CertificateAuthorityRecord, now time.Time, encryptionKey string) (*certificateAuthority, error) {
 	// P2-SEC-05: refuse to silently retain a legacy ENC:v1 blob without
 	// an encryption key. The legacy derivation is SHA-256 with no salt,
 	// so keeping it in place forever leaves the CA key weakly protected.
@@ -144,12 +150,12 @@ func loadExistingCertificateAuthority(store storage.CertificateAuthorityStore, r
 		return nil, err
 	}
 
-	if expired, regenAuth, regenErr := handleCertificateAuthorityExpiry(store, authority, now, encryptionKey); expired {
+	if expired, regenAuth, regenErr := handleCertificateAuthorityExpiry(ctx, store, authority, now, encryptionKey); expired {
 		return regenAuth, regenErr
 	}
 
 	if encryptionKey != "" && needsReEncryption(record.PrivateKeyPEM) {
-		if err := reEncryptCertificateAuthority(store, authority, now, encryptionKey, legacyV1); err != nil {
+		if err := reEncryptCertificateAuthority(ctx, store, authority, now, encryptionKey, legacyV1); err != nil {
 			return nil, err
 		}
 	}
@@ -160,11 +166,11 @@ func loadExistingCertificateAuthority(store storage.CertificateAuthorityStore, r
 // the stored CA has expired so the caller short-circuits to a freshly
 // regenerated authority. Otherwise it logs the expiring-soon warning
 // (when remaining <30d) and returns (false, nil, nil).
-func handleCertificateAuthorityExpiry(store storage.CertificateAuthorityStore, authority *certificateAuthority, now time.Time, encryptionKey string) (bool, *certificateAuthority, error) {
+func handleCertificateAuthorityExpiry(ctx context.Context, store storage.CertificateAuthorityStore, authority *certificateAuthority, now time.Time, encryptionKey string) (bool, *certificateAuthority, error) {
 	remaining := authority.certificate.NotAfter.Sub(now)
 	if remaining <= 0 {
 		slog.Warn("control-plane CA certificate expired, regenerating", "expired_ago", (-remaining).String())
-		regen, err := persistNewCertificateAuthority(store, now, encryptionKey)
+		regen, err := persistNewCertificateAuthority(ctx, store, now, encryptionKey)
 		return true, regen, err
 	}
 	if remaining < 30*24*time.Hour {
@@ -177,7 +183,7 @@ func handleCertificateAuthorityExpiry(store storage.CertificateAuthorityStore, a
 // key to ENC2:. P2-SEC-05: legacy ENC:v1 migration is mandatory — any
 // error is fatal; for plaintext or other cases we log but do not block
 // startup.
-func reEncryptCertificateAuthority(store storage.CertificateAuthorityStore, authority *certificateAuthority, now time.Time, encryptionKey string, legacyV1 bool) error {
+func reEncryptCertificateAuthority(ctx context.Context, store storage.CertificateAuthorityStore, authority *certificateAuthority, now time.Time, encryptionKey string, legacyV1 bool) error {
 	rec, recErr := authority.record(now, encryptionKey)
 	if recErr != nil {
 		if legacyV1 {
@@ -186,7 +192,7 @@ func reEncryptCertificateAuthority(store storage.CertificateAuthorityStore, auth
 		slog.Warn("control-plane CA private key re-encryption failed", "error", recErr)
 		return nil
 	}
-	if putErr := store.PutCertificateAuthority(context.Background(), rec); putErr != nil {
+	if putErr := store.PutCertificateAuthority(ctx, rec); putErr != nil {
 		if legacyV1 {
 			return fmt.Errorf("auto-migrate legacy ENC:v1 CA private key: %w", putErr)
 		}
@@ -204,7 +210,7 @@ func reEncryptCertificateAuthority(store storage.CertificateAuthorityStore, auth
 // record expired or unrecoverable) — the body is identical, so there is one
 // implementation. The two call sites read better with the shared name than
 // with two trivial wrappers.
-func persistNewCertificateAuthority(store storage.CertificateAuthorityStore, now time.Time, encryptionKey string) (*certificateAuthority, error) {
+func persistNewCertificateAuthority(ctx context.Context, store storage.CertificateAuthorityStore, now time.Time, encryptionKey string) (*certificateAuthority, error) {
 	authority, err := newCertificateAuthority(now)
 	if err != nil {
 		return nil, err
@@ -213,7 +219,7 @@ func persistNewCertificateAuthority(store storage.CertificateAuthorityStore, now
 	if err != nil {
 		return nil, err
 	}
-	if err := store.PutCertificateAuthority(context.Background(), record); err != nil {
+	if err := store.PutCertificateAuthority(ctx, record); err != nil {
 		return nil, err
 	}
 	return authority, nil

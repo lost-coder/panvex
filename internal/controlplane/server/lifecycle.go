@@ -24,13 +24,17 @@ import (
 // fatal failure (no entropy or unparseable encryption key) panics here so
 // the operator notices at boot rather than later when sessions or certs
 // silently break.
-func initSecrets(options Options) (func() time.Time, []byte, *secretvault.Vault) {
+//
+// bootCtx is the lifecycle context (Server.serverCtx) so a Close() while
+// startup is still wedged on a slow GetCPSecret aborts the storage call
+// instead of leaking past shutdown (Plan 3 Task 3).
+func initSecrets(bootCtx context.Context, options Options) (func() time.Time, []byte, *secretvault.Vault) {
 	now := options.Now
 	if now == nil {
 		now = time.Now
 	}
 
-	csrfSecret, err := loadOrCreateCSRFSecret(options.Store)
+	csrfSecret, err := loadOrCreateCSRFSecret(bootCtx, options.Store)
 	if err != nil {
 		// crypto/rand.Read returning an error means the OS entropy pool
 		// is unavailable — there is nothing meaningful the panel can do
@@ -45,7 +49,7 @@ func initSecrets(options Options) (func() time.Time, []byte, *secretvault.Vault)
 	// keep using plaintext at-rest. The HKDF salt is per-install: load
 	// from cp_secrets or mint+persist on first start so two deployments
 	// sharing a master passphrase do not derive identical domain keys.
-	saltBytes, saltErr := loadOrCreateVaultSalt(options.Store)
+	saltBytes, saltErr := loadOrCreateVaultSalt(bootCtx, options.Store)
 	if saltErr != nil {
 		panic("control-plane: cannot resolve vault HKDF salt: " + saltErr.Error())
 	}
@@ -200,12 +204,15 @@ func (s *Server) startBackgroundWorkers() {
 }
 
 func New(options Options) *Server {
-	now, csrfSecret, vault := initSecrets(options)
-	server := newServerFromOptions(options, now, csrfSecret, vault)
 	// Lifecycle context — cancelled by Close(). Plan 3 Task 1 introduces
 	// the field; Tasks 2-6 migrate the long-lived workers (rollup, metrics
 	// poller, fleet-ensure, lockout-restore, batch-writer drain) onto it.
-	server.serverCtx, server.serverCancel = context.WithCancel(context.Background())
+	// Created BEFORE initSecrets so a slow CSRF/HKDF/CA storage call at
+	// boot can be aborted by Close() (Plan 3 Task 3).
+	bootCtx, bootCancel := context.WithCancel(context.Background())
+	now, csrfSecret, vault := initSecrets(bootCtx, options)
+	server := newServerFromOptions(options, now, csrfSecret, vault)
+	server.serverCtx, server.serverCancel = bootCtx, bootCancel
 	if server.logger == nil {
 		server.logger = slog.Default()
 	}
@@ -217,7 +224,7 @@ func New(options Options) *Server {
 	server.updateSettings = defaultUpdateSettings()
 	server.retention = defaultRetentionSettings()
 
-	authority, err := loadOrCreateCertificateAuthority(options.Store, now(), options.EncryptionKey)
+	authority, err := loadOrCreateCertificateAuthority(server.serverCtx, options.Store, now(), options.EncryptionKey)
 	if err != nil {
 		server.startupErr = err
 	} else {

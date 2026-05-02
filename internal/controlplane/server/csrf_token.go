@@ -47,9 +47,12 @@ const csrfSecretStoreKey = "csrf_secret_v1"
 // and persisting a fresh one if no row exists or no store is wired.
 // Best-effort persistence: a write failure logs but does not abort
 // startup — the panel keeps running with the in-memory secret.
-func loadOrCreateCSRFSecret(store storage.Store) ([]byte, error) {
+//
+// ctx is the boot-time lifecycle context (s.serverCtx) so a Close()
+// during a wedged GetCPSecret/PutCPSecret aborts the storage call
+// instead of leaking it past shutdown (Plan 3 Task 3).
+func loadOrCreateCSRFSecret(ctx context.Context, store storage.Store) ([]byte, error) {
 	if store != nil {
-		ctx := context.Background()
 		existing, err := store.GetCPSecret(ctx, csrfSecretStoreKey)
 		if err == nil && len(existing) == csrfSecretBytes {
 			return existing, nil
@@ -80,7 +83,10 @@ const vaultHKDFSaltStoreKey = "vault_hkdf_salt_v1"
 // without an existing row plus a write failure means the operator
 // would lose the only path to decrypt later writes — so we fail loud
 // rather than silently fall back to the legacy hard-coded salt.
-func loadOrCreateVaultSalt(store storage.Store) ([]byte, error) {
+//
+// ctx is the boot-time lifecycle context (s.serverCtx) so Close()
+// can abort a wedged storage call (Plan 3 Task 3).
+func loadOrCreateVaultSalt(ctx context.Context, store storage.Store) ([]byte, error) {
 	if store == nil {
 		// No store wired (in-memory dev/tests). Mint a transient salt
 		// — values encrypted in this process won't survive a restart,
@@ -91,7 +97,6 @@ func loadOrCreateVaultSalt(store storage.Store) ([]byte, error) {
 		}
 		return fresh, nil
 	}
-	ctx := context.Background()
 	existing, err := store.GetCPSecret(ctx, vaultHKDFSaltStoreKey)
 	if err == nil && len(existing) >= 16 {
 		return existing, nil
