@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/agent/runtime"
@@ -174,7 +176,19 @@ func runRuntime(args []string) error {
 		"telemt_metrics", cfg.telemtMetricsURL,
 	)
 
-	return runRuntimeReconnectLoop(&cfg, &credentialsState, agent, schedule, transportReload)
+	// Supervisor context: cancelled on SIGINT/SIGTERM so the reconnect
+	// backoff sleep, gRPC stream context, and all derived workers exit
+	// promptly instead of waiting out the full ~15-30s backoff window.
+	supervisorCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	err = runRuntimeReconnectLoop(supervisorCtx, &cfg, &credentialsState, agent, schedule, transportReload)
+	if errors.Is(err, context.Canceled) && supervisorCtx.Err() != nil {
+		// Shutdown signalled — treat as clean exit.
+		slog.Info("agent shutting down on signal")
+		return nil
+	}
+	return err
 }
 
 // runRuntimeReconnectLoop is the agent's outer main-loop: refresh certs,
@@ -188,9 +202,14 @@ func runRuntime(args []string) error {
 // systemd's RestartPreventExitStatus=78 in the unit file written by
 // install-agent.sh. Any other error keeps the historic forever-retry
 // behaviour.
-func runRuntimeReconnectLoop(cfg *runtimeFlags, credentialsState *agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule, tr *transportReloadState) error {
+func runRuntimeReconnectLoop(supervisorCtx context.Context, cfg *runtimeFlags, credentialsState *agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule, tr *transportReloadState) error {
 	reconnectAttempt := 0
 	for {
+		// Honour shutdown before we begin another iteration.
+		if err := supervisorCtx.Err(); err != nil {
+			return err
+		}
+
 		// If a switch_transport_mode job fired during the last connection, reload
 		// state from disk so the new mode and listen address take effect.
 		tr.mu.Lock()
@@ -219,22 +238,29 @@ func runRuntimeReconnectLoop(cfg *runtimeFlags, credentialsState *agentstate.Cre
 		// only pre-connection renewal when in listen mode; the in-stream path
 		// in runConnectionMainLoop covers that case.
 		if credentialsState.TransportMode != "listen" {
-			refreshCtx, cancelRefresh := context.WithTimeout(context.Background(), certificateRefreshTimeout)
+			// Derive the refresh ctx from supervisorCtx so SIGTERM during
+			// the renewal RPC also unblocks promptly.
+			refreshCtx, cancelRefresh := context.WithTimeout(supervisorCtx, certificateRefreshTimeout)
 			refreshed, err := renewRuntimeCredentialsIfNeeded(refreshCtx, cfg.stateFile, cfg.gatewayAddr, cfg.gatewayServerName, *credentialsState, time.Now())
 			cancelRefresh()
 			if err != nil {
 				if agentrevocation.IsAgentRevoked(err) {
 					return agentrevocation.ErrAgentRevoked
 				}
+				if supervisorCtx.Err() != nil {
+					return supervisorCtx.Err()
+				}
 				reconnectAttempt++
 				slog.Error("certificate refresh failed", "error", err)
-				time.Sleep(reconnectDelay(reconnectAttempt))
+				if waitErr := waitWithCancel(supervisorCtx, reconnectDelay(reconnectAttempt)); waitErr != nil {
+					return waitErr
+				}
 				continue
 			}
 			*credentialsState = refreshed
 		}
 
-		afterConn, connErr := runConnection(cfg.gatewayAddr, cfg.gatewayServerName, cfg.stateFile, *credentialsState, agent, schedule, cfg.clientDataConcurrency, tr)
+		afterConn, connErr := runConnection(supervisorCtx, cfg.gatewayAddr, cfg.gatewayServerName, cfg.stateFile, *credentialsState, agent, schedule, cfg.clientDataConcurrency, tr)
 		*credentialsState = afterConn
 		if connErr == nil || errors.Is(connErr, errRuntimeCredentialsRefreshed) {
 			reconnectAttempt = 0
@@ -243,9 +269,28 @@ func runRuntimeReconnectLoop(cfg *runtimeFlags, credentialsState *agentstate.Cre
 		if agentrevocation.IsAgentRevoked(connErr) {
 			return agentrevocation.ErrAgentRevoked
 		}
+		if supervisorCtx.Err() != nil {
+			return supervisorCtx.Err()
+		}
 		reconnectAttempt++
 		slog.Error("connection ended", "error", connErr)
-		time.Sleep(reconnectDelay(reconnectAttempt))
+		if waitErr := waitWithCancel(supervisorCtx, reconnectDelay(reconnectAttempt)); waitErr != nil {
+			return waitErr
+		}
+	}
+}
+
+// waitWithCancel sleeps for d, returning early with ctx.Err() if the
+// supervisor ctx is cancelled. Replaces bare time.Sleep so a SIGTERM
+// during the reconnect backoff (up to 15s) does not hold up shutdown.
+func waitWithCancel(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 

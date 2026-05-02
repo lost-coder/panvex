@@ -483,6 +483,100 @@ func TestReconnectDelayCapsBackoff(t *testing.T) {
 	}
 }
 
+// TestWaitWithCancelHonoursContextCancellation verifies that the helper
+// replacing the bare time.Sleep in runRuntimeReconnectLoop returns
+// promptly when the supervisor ctx is cancelled, rather than waiting
+// out the full backoff delay (~15s in production at max attempt).
+func TestWaitWithCancelHonoursContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	start := time.Now()
+
+	go func() {
+		// 30s mirrors the worst-case backoff window the bug report cites.
+		done <- waitWithCancel(ctx, 30*time.Second)
+	}()
+
+	// Let the goroutine enter the timer wait, then cancel.
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("waitWithCancel error = %v, want context.Canceled", err)
+		}
+		if elapsed := time.Since(start); elapsed > time.Second {
+			t.Fatalf("waitWithCancel took %v after cancel, want <1s", elapsed)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("waitWithCancel did not return within 1s after cancel")
+	}
+}
+
+// TestWaitWithCancelExpiresOnTimer verifies waitWithCancel returns nil
+// (no error) when the timer fires before ctx is cancelled.
+func TestWaitWithCancelExpiresOnTimer(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	if err := waitWithCancel(ctx, 10*time.Millisecond); err != nil {
+		t.Fatalf("waitWithCancel error = %v, want nil", err)
+	}
+}
+
+// TestReconnectBackoffHonoursContextCancellation drives the reconnect
+// pattern (the loop's inner select{timer, ctx.Done}) directly, asserting
+// that a cancellation while sitting in the backoff sleep unblocks the
+// loop within milliseconds — not after the full reconnectDelay (up to
+// 15s). This guards against regressions to the bare-time.Sleep code
+// path that this task removed.
+func TestReconnectBackoffHonoursContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+
+	go func() {
+		// Simulate the production loop body: do "work" that fails, then
+		// sleep with reconnectDelay, repeat. The supervisor ctx must
+		// short-circuit the sleep.
+		attempt := 0
+		for {
+			if err := ctx.Err(); err != nil {
+				done <- err
+				return
+			}
+			attempt++
+			if waitErr := waitWithCancel(ctx, reconnectDelay(attempt)); waitErr != nil {
+				done <- waitErr
+				return
+			}
+			// Saturate at the max backoff so a regression that ignored
+			// ctx would block this goroutine for 15s.
+			if attempt > 5 {
+				done <- errors.New("loop did not exit despite ctx cancellation")
+				return
+			}
+		}
+	}()
+
+	// Give the goroutine time to enter waitWithCancel.
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("loop exit error = %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("reconnect loop did not exit on cancellation within 1s")
+	}
+}
+
 func TestNewConnectionScheduleDisablesZeroIntervals(t *testing.T) {
 	schedule := newConnectionSchedule(15*time.Second, 15*time.Second, time.Minute, 0, 25*time.Second, 0)
 
