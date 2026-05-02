@@ -281,7 +281,7 @@ func TestServerCreateJobAcceptsOperatorWithTotp(t *testing.T) {
 		ReadOnly:     false,
 	}
 
-	secret, err := server.auth.StartTotpSetup(user.ID, now)
+	secret, err := server.auth.StartTotpSetup(context.Background(), user.ID, now)
 	if err != nil {
 		t.Fatalf("StartTotpSetup() error = %v", err)
 	}
@@ -291,7 +291,7 @@ func TestServerCreateJobAcceptsOperatorWithTotp(t *testing.T) {
 		t.Fatalf("GenerateTotpCode() error = %v", err)
 	}
 
-	if _, err := server.auth.EnableTotp(user.ID, "Operator1password", code, now); err != nil {
+	if _, err := server.auth.EnableTotp(context.Background(), user.ID, "Operator1password", code, now); err != nil {
 		t.Fatalf("EnableTotp() error = %v", err)
 	}
 
@@ -480,7 +480,7 @@ func TestHTTPUsersTotpResetRequiresAdminAndClearsTarget(t *testing.T) {
 		t.Fatalf("BootstrapUser(operator) error = %v", err)
 	}
 
-	secret, err := server.auth.StartTotpSetup(operatorUser.ID, now)
+	secret, err := server.auth.StartTotpSetup(context.Background(), operatorUser.ID, now)
 	if err != nil {
 		t.Fatalf("StartTotpSetup() error = %v", err)
 	}
@@ -488,7 +488,7 @@ func TestHTTPUsersTotpResetRequiresAdminAndClearsTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateTotpCode() error = %v", err)
 	}
-	if _, err := server.auth.EnableTotp(operatorUser.ID, "Operator1password", code, now); err != nil {
+	if _, err := server.auth.EnableTotp(context.Background(), operatorUser.ID, "Operator1password", code, now); err != nil {
 		t.Fatalf("EnableTotp() error = %v", err)
 	}
 
@@ -857,7 +857,7 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 		Store: store,
 	})
 
-	secret, err := first.auth.StartTotpSetup(user.ID, now)
+	secret, err := first.auth.StartTotpSetup(context.Background(), user.ID, now)
 	if err != nil {
 		t.Fatalf("StartTotpSetup() error = %v", err)
 	}
@@ -865,7 +865,7 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateTotpCode(enable) error = %v", err)
 	}
-	if _, err := first.auth.EnableTotp(user.ID, "Operator1password", enableCode, now.Add(10*time.Second)); err != nil {
+	if _, err := first.auth.EnableTotp(context.Background(), user.ID, "Operator1password", enableCode, now.Add(10*time.Second)); err != nil {
 		t.Fatalf("EnableTotp() error = %v", err)
 	}
 

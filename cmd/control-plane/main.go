@@ -873,7 +873,7 @@ func runResetUserTotp(args []string) error {
 	}
 
 	service := auth.NewServiceWithStore(store)
-	user, err := service.ResetTotpWithContext(ctx, record.ID)
+	user, err := service.ResetTotp(ctx, record.ID)
 	if err != nil {
 		return err
 	}

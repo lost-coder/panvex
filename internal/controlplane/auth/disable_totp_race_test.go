@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -24,7 +25,7 @@ func TestDisableTotpRaceIsBlocked(t *testing.T) {
 		t.Fatalf("BootstrapUser: %v", err)
 	}
 
-	secret, err := service.StartTotpSetup(user.ID, now.Add(10*time.Second))
+	secret, err := service.StartTotpSetup(context.Background(), user.ID, now.Add(10*time.Second))
 	if err != nil {
 		t.Fatalf("StartTotpSetup: %v", err)
 	}
@@ -32,7 +33,7 @@ func TestDisableTotpRaceIsBlocked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateTotpCode: %v", err)
 	}
-	if _, err := service.EnableTotp(user.ID, "Correct1horse2battery", enableCode, now.Add(30*time.Second)); err != nil {
+	if _, err := service.EnableTotp(context.Background(), user.ID, "Correct1horse2battery", enableCode, now.Add(30*time.Second)); err != nil {
 		t.Fatalf("EnableTotp: %v", err)
 	}
 
@@ -59,7 +60,7 @@ func TestDisableTotpRaceIsBlocked(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			_, err := service.DisableTotp(user.ID, "Correct1horse2battery", disableCode, disableAt)
+			_, err := service.DisableTotp(context.Background(), user.ID, "Correct1horse2battery", disableCode, disableAt)
 			errs[i] = err
 			if err == nil {
 				successes.Add(1)

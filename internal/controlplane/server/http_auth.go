@@ -292,7 +292,7 @@ func (s *Server) handleTotpSetup() http.HandlerFunc {
 			return
 		}
 
-		secret, err := s.auth.StartTotpSetupWithContext(r.Context(), user.ID, s.now())
+		secret, err := s.auth.StartTotpSetup(r.Context(), user.ID, s.now())
 		if err != nil {
 			s.logger.Error("start totp setup failed", "user_id", user.ID, "error", err)
 			writeError(w, http.StatusInternalServerError, msgInternalError)
@@ -321,7 +321,7 @@ func (s *Server) handleTotpEnable() http.HandlerFunc {
 			return
 		}
 
-		updatedUser, err := s.auth.EnableTotpWithContext(r.Context(), user.ID, request.Password, request.TotpCode, s.now())
+		updatedUser, err := s.auth.EnableTotp(r.Context(), user.ID, request.Password, request.TotpCode, s.now())
 		if err != nil {
 			switch {
 			case errors.Is(err, auth.ErrInvalidCredentials), errors.Is(err, auth.ErrTotpRequired), errors.Is(err, auth.ErrInvalidTotpCode):
@@ -356,7 +356,7 @@ func (s *Server) handleTotpDisable() http.HandlerFunc {
 			return
 		}
 
-		updatedUser, err := s.auth.DisableTotpWithContext(r.Context(), user.ID, request.Password, request.TotpCode, s.now())
+		updatedUser, err := s.auth.DisableTotp(r.Context(), user.ID, request.Password, request.TotpCode, s.now())
 		if err != nil {
 			switch {
 			case errors.Is(err, auth.ErrInvalidCredentials), errors.Is(err, auth.ErrTotpRequired), errors.Is(err, auth.ErrInvalidTotpCode):

@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -78,7 +79,7 @@ func TestServiceEnableTotpRequiresPendingSetup(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	_, err = service.EnableTotp(user.ID, "Correct1horse2battery", "123456", now.Add(30*time.Second))
+	_, err = service.EnableTotp(context.Background(), user.ID, "Correct1horse2battery", "123456", now.Add(30*time.Second))
 	if err == nil {
 		t.Fatal("EnableTotp() error = nil, want pending setup failure")
 	}
@@ -101,7 +102,7 @@ func TestServiceEnableTotpRequiresValidPasswordAndCode(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	secret, err := service.StartTotpSetup(user.ID, now.Add(10*time.Second))
+	secret, err := service.StartTotpSetup(context.Background(), user.ID, now.Add(10*time.Second))
 	if err != nil {
 		t.Fatalf("StartTotpSetup() error = %v", err)
 	}
@@ -111,7 +112,7 @@ func TestServiceEnableTotpRequiresValidPasswordAndCode(t *testing.T) {
 		t.Fatalf("GenerateTotpCode() error = %v", err)
 	}
 
-	_, err = service.EnableTotp(user.ID, "wrong-password", code, now.Add(30*time.Second))
+	_, err = service.EnableTotp(context.Background(), user.ID, "wrong-password", code, now.Add(30*time.Second))
 	if err == nil {
 		t.Fatal("EnableTotp() error = nil, want password validation failure")
 	}
@@ -120,7 +121,7 @@ func TestServiceEnableTotpRequiresValidPasswordAndCode(t *testing.T) {
 		t.Fatalf("EnableTotp() error = %v, want %v", err, ErrInvalidCredentials)
 	}
 
-	_, err = service.EnableTotp(user.ID, "Correct1horse2battery", "000000", now.Add(30*time.Second))
+	_, err = service.EnableTotp(context.Background(), user.ID, "Correct1horse2battery", "000000", now.Add(30*time.Second))
 	if err == nil {
 		t.Fatal("EnableTotp() error = nil, want TOTP validation failure")
 	}
@@ -129,7 +130,7 @@ func TestServiceEnableTotpRequiresValidPasswordAndCode(t *testing.T) {
 		t.Fatalf("EnableTotp() error = %v, want %v", err, ErrInvalidTotpCode)
 	}
 
-	enabledUser, err := service.EnableTotp(user.ID, "Correct1horse2battery", code, now.Add(30*time.Second))
+	enabledUser, err := service.EnableTotp(context.Background(), user.ID, "Correct1horse2battery", code, now.Add(30*time.Second))
 	if err != nil {
 		t.Fatalf("EnableTotp() error = %v", err)
 	}
@@ -169,7 +170,7 @@ func TestServiceDisableTotpRequiresValidPasswordAndCode(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	secret, err := service.StartTotpSetup(user.ID, now.Add(10*time.Second))
+	secret, err := service.StartTotpSetup(context.Background(), user.ID, now.Add(10*time.Second))
 	if err != nil {
 		t.Fatalf("StartTotpSetup() error = %v", err)
 	}
@@ -179,7 +180,7 @@ func TestServiceDisableTotpRequiresValidPasswordAndCode(t *testing.T) {
 		t.Fatalf("GenerateTotpCode() error = %v", err)
 	}
 
-	if _, err := service.EnableTotp(user.ID, "Correct1horse2battery", code, now.Add(30*time.Second)); err != nil {
+	if _, err := service.EnableTotp(context.Background(), user.ID, "Correct1horse2battery", code, now.Add(30*time.Second)); err != nil {
 		t.Fatalf("EnableTotp() error = %v", err)
 	}
 
@@ -188,7 +189,7 @@ func TestServiceDisableTotpRequiresValidPasswordAndCode(t *testing.T) {
 		t.Fatalf("GenerateTotpCode() current error = %v", err)
 	}
 
-	_, err = service.DisableTotp(user.ID, "wrong-password", currentCode, now.Add(time.Minute))
+	_, err = service.DisableTotp(context.Background(), user.ID, "wrong-password", currentCode, now.Add(time.Minute))
 	if err == nil {
 		t.Fatal("DisableTotp() error = nil, want password validation failure")
 	}
@@ -197,7 +198,7 @@ func TestServiceDisableTotpRequiresValidPasswordAndCode(t *testing.T) {
 		t.Fatalf("DisableTotp() error = %v, want %v", err, ErrInvalidCredentials)
 	}
 
-	_, err = service.DisableTotp(user.ID, "Correct1horse2battery", "000000", now.Add(time.Minute))
+	_, err = service.DisableTotp(context.Background(), user.ID, "Correct1horse2battery", "000000", now.Add(time.Minute))
 	if err == nil {
 		t.Fatal("DisableTotp() error = nil, want TOTP validation failure")
 	}
@@ -206,7 +207,7 @@ func TestServiceDisableTotpRequiresValidPasswordAndCode(t *testing.T) {
 		t.Fatalf("DisableTotp() error = %v, want %v", err, ErrInvalidTotpCode)
 	}
 
-	disabledUser, err := service.DisableTotp(user.ID, "Correct1horse2battery", currentCode, now.Add(time.Minute))
+	disabledUser, err := service.DisableTotp(context.Background(), user.ID, "Correct1horse2battery", currentCode, now.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("DisableTotp() error = %v", err)
 	}
@@ -408,7 +409,7 @@ func TestServiceResetTotpClearsEnabledState(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	secret, err := service.StartTotpSetup(user.ID, now.Add(10*time.Second))
+	secret, err := service.StartTotpSetup(context.Background(), user.ID, now.Add(10*time.Second))
 	if err != nil {
 		t.Fatalf("StartTotpSetup() error = %v", err)
 	}
@@ -418,11 +419,11 @@ func TestServiceResetTotpClearsEnabledState(t *testing.T) {
 		t.Fatalf("GenerateTotpCode() error = %v", err)
 	}
 
-	if _, err := service.EnableTotp(user.ID, "Correct1horse2battery", code, now.Add(30*time.Second)); err != nil {
+	if _, err := service.EnableTotp(context.Background(), user.ID, "Correct1horse2battery", code, now.Add(30*time.Second)); err != nil {
 		t.Fatalf("EnableTotp() error = %v", err)
 	}
 
-	resetUser, err := service.ResetTotp(user.ID)
+	resetUser, err := service.ResetTotp(context.Background(), user.ID)
 	if err != nil {
 		t.Fatalf("ResetTotp() error = %v", err)
 	}

@@ -146,14 +146,7 @@ func (s *Service) cleanupPendingTotpSetupLocked(now time.Time) {
 }
 
 // StartTotpSetup creates a short-lived TOTP setup secret for the provided user.
-//
-// Note: preferStartTotpSetupWithContext from request handlers.
-func (s *Service) StartTotpSetup(userID string, now time.Time) (string, error) {
-	return s.StartTotpSetupWithContext(context.Background(), userID, now)
-}
-
-// StartTotpSetupWithContext is the ctx-aware variant of StartTotpSetup.
-func (s *Service) StartTotpSetupWithContext(ctx context.Context, userID string, now time.Time) (string, error) {
+func (s *Service) StartTotpSetup(ctx context.Context, userID string, now time.Time) (string, error) {
 	if _, err := s.GetUserByIDWithContext(ctx, userID); err != nil {
 		return "", err
 	}
@@ -176,14 +169,7 @@ func (s *Service) StartTotpSetupWithContext(ctx context.Context, userID string, 
 }
 
 // EnableTotp validates a pending setup and persists it as the active user TOTP secret.
-//
-// Note: preferEnableTotpWithContext from request handlers.
-func (s *Service) EnableTotp(userID, password, totpCode string, now time.Time) (User, error) {
-	return s.EnableTotpWithContext(context.Background(), userID, password, totpCode, now)
-}
-
-// EnableTotpWithContext is the ctx-aware variant of EnableTotp.
-func (s *Service) EnableTotpWithContext(ctx context.Context, userID, password, totpCode string, now time.Time) (User, error) {
+func (s *Service) EnableTotp(ctx context.Context, userID, password, totpCode string, now time.Time) (User, error) {
 	user, err := s.GetUserByIDWithContext(ctx, userID)
 	if err != nil {
 		return User{}, err
@@ -224,14 +210,7 @@ func (s *Service) EnableTotpWithContext(ctx context.Context, userID, password, t
 }
 
 // DisableTotp disables TOTP after validating the current password and active TOTP code.
-//
-// Note: preferDisableTotpWithContext from request handlers.
-func (s *Service) DisableTotp(userID, password, totpCode string, now time.Time) (User, error) {
-	return s.DisableTotpWithContext(context.Background(), userID, password, totpCode, now)
-}
-
-// DisableTotpWithContext is the ctx-aware variant of DisableTotp.
-func (s *Service) DisableTotpWithContext(ctx context.Context, userID, password, totpCode string, now time.Time) (User, error) {
+func (s *Service) DisableTotp(ctx context.Context, userID, password, totpCode string, now time.Time) (User, error) {
 	user, err := s.GetUserByIDWithContext(ctx, userID)
 	if err != nil {
 		return User{}, err
@@ -277,14 +256,7 @@ func (s *Service) DisableTotpWithContext(ctx context.Context, userID, password, 
 
 // ResetTotp clears the active TOTP configuration for the provided user.
 // Callers must verify that the authenticated principal is authorized to reset TOTP for the target user.
-//
-// Note: preferResetTotpWithContext from request handlers.
-func (s *Service) ResetTotp(userID string) (User, error) {
-	return s.ResetTotpWithContext(context.Background(), userID)
-}
-
-// ResetTotpWithContext is the ctx-aware variant of ResetTotp.
-func (s *Service) ResetTotpWithContext(ctx context.Context, userID string) (User, error) {
+func (s *Service) ResetTotp(ctx context.Context, userID string) (User, error) {
 	user, err := s.GetUserByIDWithContext(ctx, userID)
 	if err != nil {
 		return User{}, err

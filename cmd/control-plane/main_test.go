@@ -322,7 +322,7 @@ func TestRunResetUserTotpClearsEnabledState(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	secret, err := service.StartTotpSetup(user.ID, now)
+	secret, err := service.StartTotpSetup(context.Background(), user.ID, now)
 	if err != nil {
 		t.Fatalf("StartTotpSetup() error = %v", err)
 	}
@@ -332,7 +332,7 @@ func TestRunResetUserTotpClearsEnabledState(t *testing.T) {
 		t.Fatalf("GenerateTotpCode() error = %v", err)
 	}
 
-	if _, err := service.EnableTotp(user.ID, "StrongPassword123!", code, now); err != nil {
+	if _, err := service.EnableTotp(context.Background(), user.ID, "StrongPassword123!", code, now); err != nil {
 		t.Fatalf("EnableTotp() error = %v", err)
 	}
 
