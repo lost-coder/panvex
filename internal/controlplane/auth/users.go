@@ -2,12 +2,30 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
+
+// BootstrapInput describes the initial user record to create.
+type BootstrapInput struct {
+	Username string
+	Password string
+	Role     Role
+}
+
+// UpdateUserInput describes the mutable fields for one existing local user.
+type UpdateUserInput struct {
+	UserID      string
+	Username    string
+	Role        Role
+	NewPassword string
+}
 
 // CreateUser creates one local user account with TOTP disabled by default.
 //
@@ -267,4 +285,297 @@ func (s *Service) countAdminsCtx(ctx context.Context) (int, error) {
 		}
 	}
 	return count, nil
+}
+
+// putUserLocked installs (or updates) a user record in both indices.
+// Caller must hold s.mu for write. previousUsername (when non-empty)
+// removes the stale name->record entry left over from a username
+// rename so the username index does not double-up.
+func (s *Service) putUserLocked(user User, previousUsername string) {
+	if previousUsername != "" && previousUsername != user.Username {
+		delete(s.users, previousUsername)
+	}
+	s.users[user.Username] = user
+	if user.ID != "" {
+		s.usersByID[user.ID] = user
+	}
+}
+
+// deleteUserLocked removes a user from both indices. Caller must hold
+// s.mu for write.
+func (s *Service) deleteUserLocked(user User) {
+	delete(s.users, user.Username)
+	if user.ID != "" {
+		delete(s.usersByID, user.ID)
+	}
+}
+
+// BootstrapUser creates a local user with TOTP disabled by default.
+//
+// Note: callers that have a request context should use
+// BootstrapUserWithContext to propagate cancellation through the user store.
+// This wrapper stays for CLI bootstrap and tests where no request ctx exists.
+func (s *Service) BootstrapUser(input BootstrapInput, now time.Time) (User, string, error) {
+	return s.BootstrapUserWithContext(context.Background(), input, now)
+}
+
+// BootstrapUserWithContext is the ctx-aware variant of BootstrapUser.
+func (s *Service) BootstrapUserWithContext(ctx context.Context, input BootstrapInput, now time.Time) (User, string, error) {
+	if err := validatePassword(input.Password, s.passwordMinLength()); err != nil {
+		return User{}, "", err
+	}
+
+	hash, err := s.HashPassword(input.Password)
+	if err != nil {
+		return User{}, "", err
+	}
+
+	if s.userStore == nil {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		id, err := randomUserID()
+		if err != nil {
+			return User{}, "", err
+		}
+		s.sequence++
+		user := User{
+			ID:           id,
+			Username:     input.Username,
+			PasswordHash: hash,
+			Role:         input.Role,
+			TotpEnabled:  false,
+			TotpSecret:   "",
+			CreatedAt:    now.UTC(),
+		}
+		s.putUserLocked(user, "")
+
+		return user, "", nil
+	}
+
+	users, err := s.userStore.ListUsers(ctx)
+	if err != nil {
+		return User{}, "", err
+	}
+
+	// M-17: do not hold s.mu across the userStore.PutUser round-trip.
+	// The previous form blocked every other auth-flow caller for a full
+	// DB RTT. Now we (a) reserve the next sequence/ID under the lock,
+	// (b) drop the lock, (c) hit the store, (d) re-take the lock only
+	// to install the row. Failure paths re-take the lock briefly to
+	// roll the sequence back so concurrent bootstraps never re-use an
+	// allocated ID.
+	id, err := randomUserID()
+	if err != nil {
+		return User{}, "", err
+	}
+
+	s.mu.Lock()
+	s.sequence = maxSequence(s.sequence, maxUserSequence(users))
+	s.sequence++
+	s.mu.Unlock()
+
+	user := User{
+		ID:           id,
+		Username:     input.Username,
+		PasswordHash: hash,
+		Role:         input.Role,
+		TotpEnabled:  false,
+		TotpSecret:   "",
+		CreatedAt:    now.UTC(),
+	}
+
+	bootstrapRecord := userToRecord(user)
+	encrypted, encErr := s.encryptTotp(bootstrapRecord.TotpSecret)
+	if encErr != nil {
+		s.mu.Lock()
+		s.sequence--
+		s.mu.Unlock()
+		return User{}, "", encErr
+	}
+	bootstrapRecord.TotpSecret = encrypted
+
+	if err := s.userStore.PutUser(ctx, bootstrapRecord); err != nil {
+		s.mu.Lock()
+		s.sequence--
+		s.mu.Unlock()
+		return User{}, "", err
+	}
+
+	s.mu.Lock()
+	s.putUserLocked(user, "")
+	s.mu.Unlock()
+
+	return user, "", nil
+}
+
+// SnapshotUsers returns a copy of the current local-account state.
+func (s *Service) SnapshotUsers() []User {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	result := make([]User, 0, len(s.users))
+	for _, user := range s.users {
+		result = append(result, user)
+	}
+
+	return result
+}
+
+// LoadUsers replaces the current local-account state with the provided users.
+func (s *Service) LoadUsers(users []User) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.users = make(map[string]User, len(users))
+	s.usersByID = make(map[string]User, len(users))
+	for _, user := range users {
+		s.putUserLocked(user, "")
+	}
+}
+
+// GetUserByID returns the user record that owns the provided identifier.
+//
+// Note: preferGetUserByIDWithContext from request handlers.
+func (s *Service) GetUserByID(userID string) (User, error) {
+	return s.GetUserByIDWithContext(context.Background(), userID)
+}
+
+// GetUserByIDWithContext is the ctx-aware variant of GetUserByID.
+func (s *Service) GetUserByIDWithContext(ctx context.Context, userID string) (User, error) {
+	if s.userStore != nil {
+		record, err := s.userStore.GetUserByID(ctx, userID)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				return User{}, ErrInvalidCredentials
+			}
+			return User{}, err
+		}
+		return s.userFromStoredRecord(record)
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if user, ok := s.usersByID[userID]; ok {
+		return user, nil
+	}
+
+	return User{}, ErrInvalidCredentials
+}
+
+func userToRecord(user User) storage.UserRecord {
+	return storage.UserRecord{
+		ID:           user.ID,
+		Username:     user.Username,
+		PasswordHash: user.PasswordHash,
+		Role:         string(user.Role),
+		TotpEnabled:  user.TotpEnabled,
+		TotpSecret:   user.TotpSecret,
+		CreatedAt:    user.CreatedAt.UTC(),
+	}
+}
+
+func userFromRecord(record storage.UserRecord) User {
+	return User{
+		ID:           record.ID,
+		Username:     record.Username,
+		PasswordHash: record.PasswordHash,
+		Role:         Role(record.Role),
+		TotpEnabled:  record.TotpEnabled,
+		TotpSecret:   record.TotpSecret,
+		CreatedAt:    record.CreatedAt.UTC(),
+	}
+}
+
+func (s *Service) loadUserByUsernameCtx(ctx context.Context, username string) (User, error) {
+	s.mu.RLock()
+	userStore := s.userStore
+	s.mu.RUnlock()
+
+	if userStore != nil {
+		record, err := userStore.GetUserByUsername(ctx, username)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				return User{}, ErrInvalidCredentials
+			}
+			return User{}, err
+		}
+		return s.userFromStoredRecord(record)
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	user, ok := s.users[username]
+	if !ok {
+		return User{}, ErrInvalidCredentials
+	}
+
+	return user, nil
+}
+
+func (s *Service) storeUserWithContext(ctx context.Context, user User) error {
+	if s.userStore != nil {
+		record := userToRecord(user)
+		encrypted, err := s.encryptTotp(record.TotpSecret)
+		if err != nil {
+			return err
+		}
+		record.TotpSecret = encrypted
+		if err := s.userStore.PutUser(ctx, record); err != nil {
+			return err
+		}
+	}
+
+	s.mu.Lock()
+	s.putUserLocked(user, "")
+	s.mu.Unlock()
+
+	return nil
+}
+
+// userFromStoredRecord wraps userFromRecord with TOTP decryption. Used
+// by all paths that load a user from the userStore.
+func (s *Service) userFromStoredRecord(record storage.UserRecord) (User, error) {
+	plaintext, err := s.decryptTotp(record.TotpSecret)
+	if err != nil {
+		return User{}, err
+	}
+	record.TotpSecret = plaintext
+	return userFromRecord(record), nil
+}
+
+func maxUserSequence(users []storage.UserRecord) uint64 {
+	var maxValue uint64
+	for _, user := range users {
+		if !strings.HasPrefix(user.ID, "user-") {
+			continue
+		}
+		value, err := strconv.ParseUint(strings.TrimPrefix(user.ID, "user-"), 10, 64)
+		if err != nil {
+			continue
+		}
+		if value > maxValue {
+			maxValue = value
+		}
+	}
+
+	return maxValue
+}
+
+func maxSequence(left, right uint64) uint64 {
+	if right > left {
+		return right
+	}
+
+	return left
+}
+
+func randomUserID() (string, error) {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return "user-" + hex.EncodeToString(buf), nil
 }
