@@ -33,3 +33,24 @@ Closes 5 High/Medium-severity findings from the 2026-05-01 audit (S-01, S-02, S-
 - `agenttransport.CertPinReader` interface + `Manager.SetCertPinReader(reader, observer)` setter.
 - `bootstrap.CertPinWriter` interface + `EnrollDriver.SetCertPinWriter(writer)` setter.
 - New sentinel `agenttransport.ErrCertPinMismatch`.
+
+## [Unreleased] — Sprint S-2 (2026-05-02)
+
+### Performance / DX — Sprint S-2 (2026-05-XX)
+
+- **P-01 + BP-03:** all React Query polling hooks now consult `useWsStatus()` via the new `useEventAwareInterval(slowMs, fastMs)` shared hook. While the WebSocket is `"open"`, every hook polls at a slow keep-alive cadence (3–6× the original); on disconnect/reconnect/close the original fast cadence resumes. Eliminates the dashboard-polling storm at scale and unifies what was a one-off pattern in `useActivity`.
+
+### Internal API additions
+
+- `web/src/shared/hooks/useEventAwareInterval(slowMs, fastMs): number` — single source of truth for WS-aware refetch cadence.
+
+### Migrated hooks
+
+- `useActivity` (canonical example, kept its 60s/15s cadence)
+- `useUsers`, `useEnrollmentTokens`, `useDiscoveredClients`, `useFleetGroups` (servers): 30s → 90s/30s
+- `useClientsList`: 15s → 60s/15s
+- `useClientDetail`: 10s → 60s/10s
+- `useFleetGroupsFull` (3 active intervals; `refetchInterval: false` entries preserved as intentional disables)
+- `useClientIPHistory`, `useServerHistory` (×2), `useUpdates`: 60s → 300s/60s
+
+No `staleTime` / `gcTime` settings were modified.

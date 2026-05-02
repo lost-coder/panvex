@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { useEventAwareInterval } from "./useEventAwareInterval";
 
@@ -12,6 +12,10 @@ vi.mock("@/app/providers/EventsSynchronizer", () => {
 import * as evMod from "@/app/providers/EventsSynchronizer";
 
 describe("useEventAwareInterval", () => {
+  beforeEach(() => {
+    (evMod as unknown as { __setStatus: (s: string) => void }).__setStatus("open");
+  });
+
   it("returns slow interval when ws is open", () => {
     (evMod as unknown as { __setStatus: (s: string) => void }).__setStatus("open");
     const { result } = renderHook(() => useEventAwareInterval(60_000, 15_000));
