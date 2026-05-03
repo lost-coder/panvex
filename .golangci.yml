@@ -133,6 +133,15 @@ linters:
       - linters: [gosec]
         text: "G115"
         path: "internal/controlplane/storage/sqlite/telemetry.go"
+      # P-1 (sprint S-23 perf-critical): bulk variants flatten the same
+      # uint64 traffic / last_seq counters as their single-row siblings in
+      # clients.go — re-using the same exclusion semantics.
+      - linters: [gosec]
+        text: "G115"
+        path: "internal/controlplane/storage/postgres/bulk.go"
+      - linters: [gosec]
+        text: "G115"
+        path: "internal/controlplane/storage/sqlite/bulk.go"
 
       # G117 — JSON tag matches secret pattern. clients_flow returns
       # the rotated client secret in the API response on purpose.

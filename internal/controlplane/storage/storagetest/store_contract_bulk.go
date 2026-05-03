@@ -327,4 +327,115 @@ func runBulkWriteContract(t *testing.T, open OpenStore) {
 			t.Fatalf("%s last_seen = %v, want %v (updated on conflict)", fixtureClientIPv4, first10.LastSeen, later)
 		}
 	})
+
+	t.Run("UpsertClientUsageBulk persists all rows and updates on conflict (P-1)", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		group := storage.FleetGroupRecord{ID: "usage-grp", Name: "Usage", CreatedAt: time.Now().UTC()}
+		if err := store.PutFleetGroup(ctx, group); err != nil {
+			t.Fatalf(errPutFleetGroupShort, err)
+		}
+		agentA := storage.AgentRecord{ID: "usage-agent-a", NodeName: "a", FleetGroupID: group.ID, LastSeenAt: time.Now().UTC()}
+		agentB := storage.AgentRecord{ID: "usage-agent-b", NodeName: "b", FleetGroupID: group.ID, LastSeenAt: time.Now().UTC()}
+		for _, a := range []storage.AgentRecord{agentA, agentB} {
+			if err := store.PutAgent(ctx, a); err != nil {
+				t.Fatalf(errPutAgentShort, err)
+			}
+		}
+		client := storage.ClientRecord{
+			ID: "usage-client", Name: "alice", SecretCiphertext: "s",
+			UserADTag: "0123456789abcdef0123456789abcdef",
+			Enabled:   true, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+		}
+		if err := store.PutClient(ctx, client); err != nil {
+			t.Fatalf("PutClient: %v", err)
+		}
+
+		// Persistence probe — backends that intentionally drop client_usage
+		// (none today, but keeps the contract robust like the IP-history test).
+		probeAt := time.Date(2026, time.April, 3, 12, 0, 0, 0, time.UTC)
+		probe := storage.ClientUsageRecord{
+			ClientID: client.ID, AgentID: agentA.ID,
+			TrafficUsedBytes: 1, UniqueIPsUsed: 1,
+			ActiveTCPConns: 1, ActiveUniqueIPs: 1,
+			LastSeq: 1, ObservedAt: probeAt,
+		}
+		if err := store.UpsertClientUsage(ctx, probe); err != nil {
+			t.Fatalf("UpsertClientUsage(probe): %v", err)
+		}
+		seen, err := store.ListClientUsage(ctx)
+		if err != nil {
+			t.Fatalf("ListClientUsage(probe): %v", err)
+		}
+		persistent := len(seen) > 0
+
+		first := time.Date(2026, time.April, 3, 13, 0, 0, 0, time.UTC)
+		later := first.Add(5 * time.Minute)
+		batch := []storage.ClientUsageRecord{
+			// Updates the probe row (same key as agentA).
+			{
+				ClientID: client.ID, AgentID: agentA.ID,
+				TrafficUsedBytes: 100, UniqueIPsUsed: 2,
+				ActiveTCPConns: 3, ActiveUniqueIPs: 2,
+				LastSeq: 2, ObservedAt: first,
+			},
+			// Fresh (client, agentB) pair.
+			{
+				ClientID: client.ID, AgentID: agentB.ID,
+				TrafficUsedBytes: 50, UniqueIPsUsed: 1,
+				ActiveTCPConns: 1, ActiveUniqueIPs: 1,
+				LastSeq: 7, ObservedAt: first,
+			},
+			// Duplicate of agentA key in the same batch — the last entry must
+			// win (P-1 dedup-within-batch contract).
+			{
+				ClientID: client.ID, AgentID: agentA.ID,
+				TrafficUsedBytes: 999, UniqueIPsUsed: 4,
+				ActiveTCPConns: 5, ActiveUniqueIPs: 4,
+				LastSeq: 9, ObservedAt: later,
+			},
+		}
+		if err := store.UpsertClientUsageBulk(ctx, batch); err != nil {
+			t.Fatalf("UpsertClientUsageBulk: %v", err)
+		}
+		if err := store.UpsertClientUsageBulk(ctx, nil); err != nil {
+			t.Fatalf("UpsertClientUsageBulk(nil): %v", err)
+		}
+		if !persistent {
+			return
+		}
+
+		got, err := store.ListClientUsage(ctx)
+		if err != nil {
+			t.Fatalf("ListClientUsage: %v", err)
+		}
+		// 2 distinct (client, agent) pairs survive: (client, agentA) — the
+		// batch's duplicate collapses by ON CONFLICT — plus (client, agentB).
+		if len(got) != 2 {
+			t.Fatalf("len(client_usage) = %d, want 2 (probe replaced + agentB row)", len(got))
+		}
+		var rowA, rowB storage.ClientUsageRecord
+		for _, r := range got {
+			switch r.AgentID {
+			case agentA.ID:
+				rowA = r
+			case agentB.ID:
+				rowB = r
+			}
+		}
+		// agentA: last entry in the batch (TrafficUsedBytes=999, LastSeq=9, ObservedAt=later).
+		if rowA.TrafficUsedBytes != 999 || rowA.LastSeq != 9 {
+			t.Fatalf("agentA traffic=%d seq=%d, want 999/9 (last-write-wins within batch)",
+				rowA.TrafficUsedBytes, rowA.LastSeq)
+		}
+		if !rowA.ObservedAt.Equal(later) {
+			t.Fatalf("agentA observed_at = %v, want %v", rowA.ObservedAt, later)
+		}
+		// agentB: single row, unchanged from the batch entry.
+		if rowB.TrafficUsedBytes != 50 || rowB.LastSeq != 7 {
+			t.Fatalf("agentB traffic=%d seq=%d, want 50/7", rowB.TrafficUsedBytes, rowB.LastSeq)
+		}
+	})
 }

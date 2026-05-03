@@ -270,16 +270,22 @@ func (s *Server) mergeClientUsageBatch(agentID string, clients []clientUsageSnap
 }
 
 // persistClientUsageRecords write-throughs the merged usage state to storage
-// (when configured). Per-row failures are logged but never abort the loop.
+// (when configured). The batch flushes in a single transaction via
+// UpsertClientUsageBulk — the singular UpsertClientUsage is the slow path and
+// is not used here. P-1 (sprint S-23 perf-critical): a 500-clients x 50-agents
+// tick was issuing 25k single-row Exec calls; the bulk variant collapses
+// that to a handful of multi-row INSERTs in one transaction.
+//
+// On error the whole batch is logged once. ON CONFLICT (client_id, agent_id)
+// DO UPDATE preserves the per-row last-write-wins semantics the old loop had —
+// duplicates within one batch collapse to the trailing entry.
 func (s *Server) persistClientUsageRecords(ctx context.Context, toPersist []storage.ClientUsageRecord) {
-	if s.store == nil {
+	if s.store == nil || len(toPersist) == 0 {
 		return
 	}
-	for _, rec := range toPersist {
-		if err := s.store.UpsertClientUsage(ctx, rec); err != nil {
-			s.logger.Warn("persist client_usage",
-				"client_id", rec.ClientID, "agent_id", rec.AgentID, "error", err)
-		}
+	if err := s.store.UpsertClientUsageBulk(ctx, toPersist); err != nil {
+		s.logger.Warn("persist client_usage (bulk)",
+			"rows", len(toPersist), "error", err)
 	}
 }
 
