@@ -122,7 +122,7 @@ func buildServerTLS(cfg ListenConfig) (*tls.Config, error) {
 		Certificates: []tls.Certificate{cfg.Cert},
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		ClientCAs:    roots,
-		MinVersion:   tls.VersionTLS12,
+		MinVersion:   tls.VersionTLS13,
 	}, nil
 }
 
