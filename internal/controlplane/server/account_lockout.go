@@ -24,6 +24,23 @@ func newAccountLockoutTracker() *accountLockoutTracker {
 	return sessions.NewLockoutTracker()
 }
 
+// S-6: separate, stricter counter for TOTP failures so that an attacker
+// who already has the password cannot brute-force the 6-digit code at
+// the password lockout's 5-attempts-per-15-min budget. The new tracker
+// trips at 3 attempts per 5 min and is in-memory only — survival across
+// a control-plane restart adds no value because the user must produce a
+// fresh code on retry anyway.
+const (
+	totpLockoutMaxAttempts = sessions.TOTPLockoutMaxAttempts
+	totpLockoutDuration    = sessions.TOTPLockoutDuration
+)
+
+type totpLockoutTracker = sessions.TOTPLockoutTracker
+
+func newTOTPLockoutTracker() *totpLockoutTracker {
+	return sessions.NewTOTPLockoutTracker()
+}
+
 // lockoutStoreAdapter bridges sessions.LockoutStore (defined locally in
 // the sessions package to keep it free of storage imports) and
 // storage.LoginLockoutStore (the real persistence interface). The

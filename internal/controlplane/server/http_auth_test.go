@@ -227,6 +227,128 @@ func TestLoginLockoutIntegration(t *testing.T) {
 	}
 }
 
+// S-6: when a TOTP-enabled user supplies a wrong second-factor code
+// repeatedly, the request handler must lock the account on the new
+// stricter TOTP counter (3 attempts / 5 min) — not on the lenient
+// password counter — and the next attempt with a fresh, valid code
+// must be rejected as locked.
+func TestLoginTOTPLockoutIntegration(t *testing.T) {
+	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
+	srv := New(Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+	})
+	defer srv.Close()
+
+	user, _, err := srv.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
+		Username: "alice",
+		Password: "Alice1password",
+		Role:     auth.RoleOperator,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	secret, err := srv.auth.StartTotpSetup(context.Background(), user.ID, now)
+	if err != nil {
+		t.Fatalf("StartTotpSetup() error = %v", err)
+	}
+	enableCode, err := srv.auth.GenerateTotpCode(secret, now)
+	if err != nil {
+		t.Fatalf("GenerateTotpCode() error = %v", err)
+	}
+	if _, err := srv.auth.EnableTotp(context.Background(), user.ID, "Alice1password", enableCode, now); err != nil {
+		t.Fatalf("EnableTotp() error = %v", err)
+	}
+
+	// Submit TOTPLockoutMaxAttempts wrong codes against the right password.
+	// The counter should be on the TOTP tracker, not the password tracker.
+	for i := 0; i < totpLockoutMaxAttempts; i++ {
+		resp := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login", map[string]string{
+			"username":  "alice",
+			"password":  "Alice1password",
+			"totp_code": "000000",
+		}, nil)
+		if resp.Code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d: status = %d, want %d", i+1, resp.Code, http.StatusUnauthorized)
+		}
+	}
+
+	// A valid code must now be rejected as locked. Generate a code at a
+	// later time so the consumed-TOTP map can't possibly be the cause of
+	// rejection — the only reason this fails is the TOTP lockout.
+	freshAt := now.Add(60 * time.Second)
+	freshCode, err := srv.auth.GenerateTotpCode(secret, freshAt)
+	if err != nil {
+		t.Fatalf("GenerateTotpCode(fresh) error = %v", err)
+	}
+	resp := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login", map[string]string{
+		"username":  "alice",
+		"password":  "Alice1password",
+		"totp_code": freshCode,
+	}, nil)
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("locked-out login with fresh code status = %d, want %d", resp.Code, http.StatusUnauthorized)
+	}
+
+	// Sanity: the password tracker should NOT be locked. A direct check on
+	// the in-process trackers proves the two counters are independent.
+	if srv.loginLockout.IsLocked("alice", now) {
+		t.Fatal("password lockout tripped by TOTP-only failures, want only TOTP tracker locked")
+	}
+	if !srv.totpLockout.IsLocked("alice", now) {
+		t.Fatal("TOTP lockout not engaged after threshold failures")
+	}
+}
+
+// S-6: the password tracker must not be incremented by TOTP failures.
+// This is the converse of TestTOTPLockoutIndependentFromPasswordLockout
+// at the unit level — exercise the same property through the HTTP
+// surface so the wiring in handleLoginAuthError is also covered.
+func TestLoginPasswordCounterNotBumpedByTOTPFailures(t *testing.T) {
+	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
+	srv := New(Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+	})
+	defer srv.Close()
+
+	user, _, err := srv.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
+		Username: "bob",
+		Password: "Bob1password",
+		Role:     auth.RoleOperator,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+	secret, err := srv.auth.StartTotpSetup(context.Background(), user.ID, now)
+	if err != nil {
+		t.Fatalf("StartTotpSetup() error = %v", err)
+	}
+	enableCode, err := srv.auth.GenerateTotpCode(secret, now)
+	if err != nil {
+		t.Fatalf("GenerateTotpCode() error = %v", err)
+	}
+	if _, err := srv.auth.EnableTotp(context.Background(), user.ID, "Bob1password", enableCode, now); err != nil {
+		t.Fatalf("EnableTotp() error = %v", err)
+	}
+
+	// Burn one TOTP failure (below the threshold). The password counter
+	// must remain at zero — sub-threshold TOTP failures should never
+	// touch the password tracker.
+	resp := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login", map[string]string{
+		"username":  "bob",
+		"password":  "Bob1password",
+		"totp_code": "000000",
+	}, nil)
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong-totp status = %d, want %d", resp.Code, http.StatusUnauthorized)
+	}
+	if srv.loginLockout.IsLocked("bob", now) {
+		t.Fatal("password tracker locked after TOTP failure, want unaffected")
+	}
+}
+
 func TestLogoutClearsCookie(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))

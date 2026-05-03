@@ -105,8 +105,26 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		releaseAttempt := s.loginLockout.AttemptLock(request.Username)
 		defer releaseAttempt()
 
+		// S-6: serialise the TOTP lockout window the same way. The two
+		// trackers are independent counters (password vs second factor),
+		// so each needs its own per-username shard lock to close the same
+		// IsLocked → verify → RecordFailure race on its own counter.
+		releaseTotpAttempt := s.totpLockout.AttemptLock(request.Username)
+		defer releaseTotpAttempt()
+
 		if s.loginLockout.IsLockedWithContext(r.Context(), request.Username, s.now()) {
 			s.logger.Info("login attempt on locked account", "username_hash", s.logUsername(request.Username))
+			ensureFloor()
+			writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
+			return
+		}
+
+		// S-6: also reject if the second-factor counter is locked. This
+		// returns the same generic "temporarily locked" message as the
+		// password lockout so an attacker cannot tell which counter
+		// tripped (and therefore cannot infer that the password is right).
+		if s.totpLockout.IsLockedWithContext(r.Context(), request.Username, s.now()) {
+			s.logger.Info("login attempt on totp-locked account", "username_hash", s.logUsername(request.Username))
 			ensureFloor()
 			writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
 			return
@@ -134,6 +152,11 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		}
 
 		s.loginLockout.RecordSuccessWithContext(r.Context(), request.Username)
+		// S-6: a fully successful login proves the user controls both the
+		// password and the second factor (or that TOTP is disabled), so
+		// clear the TOTP failure counter too. Symmetric with the password
+		// reset above.
+		s.totpLockout.RecordSuccessWithContext(r.Context(), request.Username)
 		s.logger.Info("user logged in", "username_hash", s.logUsername(request.Username), "user_id", session.UserID, "session_hash", s.logSessionID(session.ID))
 
 		if !s.persistLoginAudit(w, r, session, request.Username, ensureFloor) {
@@ -177,11 +200,27 @@ func (s *Server) newLoginTimingFloor() func() {
 
 // handleLoginAuthError records lockout-eligible failures and writes the
 // appropriate HTTP response for a failed AuthenticateWithContext call.
+//
+// S-6: password failures and TOTP failures feed independent counters.
+// The password tracker is the lenient one (LockoutMaxAttempts /
+// LockoutDuration) so legitimate users who fat-finger a password don't
+// get locked out instantly. The TOTP tracker is the stricter one
+// (TOTPLockoutMaxAttempts / TOTPLockoutDuration) because by the time an
+// attempt reaches the TOTP step the attacker has already proven they
+// hold the password — at that point a 6-digit code is the only
+// remaining defence and should not share the password budget.
 func (s *Server) handleLoginAuthError(w http.ResponseWriter, r *http.Request, username string, err error, ensureFloor func()) {
-	// Record lockout-eligible failures: wrong password or wrong TOTP code.
-	if errors.Is(err, auth.ErrInvalidCredentials) || errors.Is(err, auth.ErrInvalidTotpCode) {
+	switch {
+	case errors.Is(err, auth.ErrInvalidCredentials):
 		if s.loginLockout.CheckAndRecordFailureWithContext(r.Context(), username, s.now()) {
 			s.logger.Info("account locked out", "username_hash", s.logUsername(username))
+			ensureFloor()
+			writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
+			return
+		}
+	case errors.Is(err, auth.ErrInvalidTotpCode):
+		if s.totpLockout.CheckAndRecordFailureWithContext(r.Context(), username, s.now()) {
+			s.logger.Info("account totp locked out", "username_hash", s.logUsername(username))
 			ensureFloor()
 			writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
 			return

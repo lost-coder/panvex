@@ -62,6 +62,7 @@ type Server struct {
 	grpcConnectRateLimiter    *fixedWindowRateLimiter
 	sensitiveRateLimiter      *fixedWindowRateLimiter
 	loginLockout              *accountLockoutTracker
+	totpLockout               *totpLockoutTracker
 	trustedProxyCIDRs         []*net.IPNet
 	encryptionKey             string
 	secretVault               *secretvault.Vault

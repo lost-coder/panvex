@@ -74,6 +74,7 @@ func newServerFromOptions(options Options, now func() time.Time, csrfSecret []by
 		grpcConnectRateLimiter:       newFixedWindowRateLimiter(grpcConnectRateLimitPerWindow, defaultRateLimitWindow),
 		sensitiveRateLimiter:         newFixedWindowRateLimiter(httpSensitiveRateLimitPerWindow, defaultRateLimitWindow),
 		loginLockout:                 newAccountLockoutTracker(),
+		totpLockout:                  newTOTPLockoutTracker(),
 		trustedProxyCIDRs:            options.TrustedProxyCIDRs,
 		encryptionKey:                options.EncryptionKey,
 		secretVault:                  vault,
