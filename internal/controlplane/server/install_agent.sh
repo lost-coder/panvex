@@ -1,6 +1,37 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ── Self-verification (T-5) ──────────────────────────────────────────────────
+# If PANVEX_INSTALL_SCRIPT_SHA256 is set in the environment, refuse to execute
+# unless our own bytes hash to that digest. This closes the gap left by the
+# panel-rendered curl|bash one-liner: that wrapper hashes the downloaded body
+# in a temp file before sudo, but an operator who runs install-agent.sh
+# directly (or any future bootstrapper that bypasses the wrapper) still gets
+# integrity verification as long as PANVEX_INSTALL_SCRIPT_SHA256 is exported.
+# A missing env var means "verification not requested" and is allowed — the
+# panel-side wrapper remains the primary defense in that path.
+panvex_self_check_hash() {
+    local expected="${PANVEX_INSTALL_SCRIPT_SHA256:-}"
+    [ -z "$expected" ] && return 0
+    if ! command -v sha256sum >/dev/null 2>&1; then
+        echo "panvex: PANVEX_INSTALL_SCRIPT_SHA256 set but sha256sum unavailable" >&2
+        return 1
+    fi
+    local script_path="${BASH_SOURCE[0]:-$0}"
+    if [ ! -r "$script_path" ]; then
+        echo "panvex: PANVEX_INSTALL_SCRIPT_SHA256 set but script path unreadable: $script_path" >&2
+        return 1
+    fi
+    local actual
+    actual=$(sha256sum "$script_path" | awk '{print $1}')
+    if [ "$actual" != "$expected" ]; then
+        echo "panvex: install-script self-check failed (expected $expected, got $actual)" >&2
+        return 1
+    fi
+    return 0
+}
+panvex_self_check_hash || exit 1
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Panvex Agent — Interactive Installer
 # ─────────────────────────────────────────────────────────────────────────────
