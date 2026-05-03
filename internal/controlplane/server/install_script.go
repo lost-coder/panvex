@@ -1,9 +1,12 @@
 package server
 
 import (
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"net/http"
 	"strconv"
+	"sync"
 )
 
 // installAgentScript is the canonical bash installer that operators pipe into
@@ -14,6 +17,35 @@ import (
 //
 //go:embed install_agent.sh
 var installAgentScript []byte
+
+// Alias exposed for tests; matches the variable name used in the plan's
+// reference test snippet (S-3, T3).
+var installScriptBytes = installAgentScript
+
+// installScriptHashOnce memoizes the hex-encoded SHA-256 of installAgentScript.
+// The script body is immutable for the lifetime of the binary (it is embedded
+// at build time via go:embed), so a single hash is computed once and reused
+// on every request. (S-3.)
+var (
+	installScriptHashOnce sync.Once
+	installScriptHashHex  string
+	installScriptHashErr  error
+)
+
+// installScriptSHA256 returns the lowercase hex SHA-256 digest of the embedded
+// install-agent.sh body. The first call computes the hash; subsequent calls
+// return the cached value. The error return exists for symmetry with
+// hash-producing helpers elsewhere in the codebase — sha256.Sum256 itself is
+// infallible, so err is always nil today, but keeping the slot lets future
+// implementations (e.g. read-from-disk during dev) surface failures without a
+// signature change. (S-3.)
+func installScriptSHA256() (string, error) {
+	installScriptHashOnce.Do(func() {
+		sum := sha256.Sum256(installAgentScript)
+		installScriptHashHex = hex.EncodeToString(sum[:])
+	})
+	return installScriptHashHex, installScriptHashErr
+}
 
 // handleInstallAgentScript serves the embedded install-agent.sh script.
 // Mounted at root path /install-agent.sh (NOT under /api/) because the
@@ -29,6 +61,12 @@ var installAgentScript []byte
 //     UX.
 //
 // (Q-05.)
+//
+// X-Install-Script-SHA256 advertises the lowercase hex SHA-256 of the body so
+// operators (and the install-command generator in bootstrap) can pin the
+// expected hash. The script self-verifies against PANVEX_INSTALL_SCRIPT_SHA256
+// before any state-changing operation, which closes the curl|bash MITM hole.
+// (S-3.)
 func (s *Server) handleInstallAgentScript() http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		h := w.Header()
@@ -37,8 +75,13 @@ func (s *Server) handleInstallAgentScript() http.HandlerFunc {
 		// Stable script body — operators may pin a specific panel version
 		// for reproducible installs. Cache for 5 minutes; release of a new
 		// panel version invalidates downstream caches via the response body
-		// hash that operators pin in CI.
-		h.Set("Cache-Control", "public, max-age=300")
+		// hash that operators pin in CI. must-revalidate forces caches to
+		// re-check once the max-age window expires rather than serving a
+		// stale body that could mismatch the advertised SHA256. (S-3.)
+		h.Set("Cache-Control", "public, max-age=300, must-revalidate")
+		if hash, err := installScriptSHA256(); err == nil {
+			h.Set("X-Install-Script-SHA256", hash)
+		}
 		_, _ = w.Write(installAgentScript)
 	}
 }
