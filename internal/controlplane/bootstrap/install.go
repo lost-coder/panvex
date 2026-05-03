@@ -185,17 +185,17 @@ type installCommandInput struct {
 // buildInstallCommand returns the shell one-liner the operator runs on the
 // agent host. When ScriptHash is non-empty the command:
 //
-//  1. Defines an inline verify_script_hash function that recomputes sha256
-//     of stdin and compares against the expected digest. The function name
-//     matches the helper baked into install-agent.sh (T-5) so an operator
-//     reading the line sees a single, recognizable verifier.
-//  2. Downloads the script body into a shell variable (no streaming into
-//     bash directly — we need the bytes twice: once to hash, once to
-//     execute).
-//  3. Pipes the body through verify_script_hash; on mismatch && short-
-//     circuits before any privileged execution, aborting with a non-zero
-//     status the operator's terminal will show.
-//  4. Re-pipes the verified body into `sudo -E bash -s -- <flags>` with
+//  1. Allocates a temp file via mktemp and registers a trap to delete it on
+//     exit. We deliberately avoid the `SCRIPT=$(curl ...)` round-trip: POSIX
+//     `$()` strips trailing newlines, so hashing the captured variable would
+//     diverge from the byte-exact server hash (which covers the embedded
+//     file as-is, including its trailing \n) and every install would fail
+//     with a hash mismatch.
+//  2. Downloads the script to the temp file with curl -o.
+//  3. Hashes the file with `sha256sum < file` and compares against the
+//     expected digest. On mismatch the command exits non-zero before any
+//     privileged execution.
+//  4. Execs the file via `sudo -E bash <file> -- <flags>` with
 //     PANVEX_INSTALL_SCRIPT_SHA256 exported so the script's own self-check
 //     (T-5) re-validates against the same digest in the privileged context.
 //
@@ -214,11 +214,11 @@ func buildInstallCommand(in installCommandInput) string {
 	// The single-line form is intentional — operators copy the whole thing
 	// from the dashboard and paste it into a shell. Keeping it on one line
 	// also means a copy that drops trailing newlines does not split the
-	// pipeline. The `verify_script_hash` function name mirrors install-
-	// agent.sh so a curious operator can `grep` either side and find the
-	// same verifier.
+	// pipeline. We hash the file on disk (`sha256sum < "$TMP"`) so the
+	// digest is byte-exact with what the panel hashes server-side; piping
+	// `$()`-captured bytes would silently strip trailing newlines.
 	return fmt.Sprintf(
-		`PANVEX_INSTALL_SCRIPT_SHA256=%s; verify_script_hash() { local expected=$1 actual; actual=$(sha256sum | awk '{print $1}'); if [ "$actual" != "$expected" ]; then echo "panvex: install-script hash mismatch (expected $expected, got $actual)" >&2; return 1; fi; }; SCRIPT=$(curl -fsSL %s) && printf '%%s' "$SCRIPT" | verify_script_hash "$PANVEX_INSTALL_SCRIPT_SHA256" && printf '%%s' "$SCRIPT" | sudo -E PANVEX_INSTALL_SCRIPT_SHA256="$PANVEX_INSTALL_SCRIPT_SHA256" bash -s -- %s`,
-		in.ScriptHash, in.ScriptURL, flags,
+		`TMP=$(mktemp /tmp/panvex-install.XXXXXX) || exit 1; trap 'rm -f "$TMP"' EXIT; curl -fsSL %s -o "$TMP" || { echo 'panvex: install-script download failed' >&2; exit 1; }; ACTUAL=$(sha256sum < "$TMP" | awk '{print $1}'); if [ "$ACTUAL" != "%s" ]; then echo "panvex: install-script hash mismatch (expected %s, got $ACTUAL)" >&2; exit 1; fi; sudo -E PANVEX_INSTALL_SCRIPT_SHA256="%s" bash "$TMP" %s`,
+		in.ScriptURL, in.ScriptHash, in.ScriptHash, in.ScriptHash, flags,
 	)
 }
