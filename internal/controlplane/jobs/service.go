@@ -136,8 +136,15 @@ type CreateJobInput struct {
 }
 
 // Service validates orchestration jobs before they enter the delivery queue.
+//
+// P-6: mu is an RWMutex so high-frequency read paths (QueueDepth on the
+// metrics scrape loop, plus the read-mostly fast path of ListWithContext /
+// PendingForAgent when no jobs are due to expire) do not serialize against
+// each other or against the slow persistence-driving Enqueue path. Every
+// mutating call site (Enqueue, *Locked helpers, prune workers, target
+// updates) still takes the exclusive write lock.
 type Service struct {
-	mu         sync.Mutex
+	mu         sync.RWMutex
 	sequence   uint64
 	updateSeq  uint64
 	jobs       map[string]Job
@@ -294,9 +301,12 @@ func (s *Service) StartupError() error {
 // QueueDepth returns the number of jobs currently in the queued or running
 // state. Exposed for metrics (panvex_job_queue_depth); counts only live jobs
 // so terminal (succeeded/failed/expired) entries do not inflate the gauge.
+//
+// P-6: pure read; takes RLock so the metrics scraper does not block
+// concurrent Enqueue / target-update writers.
 func (s *Service) QueueDepth() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	count := 0
 	for _, job := range s.jobs {
@@ -434,31 +444,67 @@ func (s *Service) List() []Job {
 
 // ListWithContext is the ctx-aware variant of List. The ctx is forwarded to
 // any expiry-driven persistence performed by this call.
+//
+// P-6: hot read path. We take RLock first and check whether any job is due
+// to expire. If none is, the snapshot is built entirely under RLock so
+// concurrent List/Pending callers do not serialize on each other. Only when
+// expiry work is actually required do we drop the read lock and re-acquire
+// the exclusive write lock — racing readers may briefly see the pre-expiry
+// state, which is fine because expiry is itself best-effort housekeeping.
 func (s *Service) ListWithContext(ctx context.Context) []Job {
-	var candidates []persistCandidate
+	s.mu.RLock()
+	now := s.now().UTC()
+	if !s.anyJobNeedsExpiryLocked(now) {
+		result := make([]Job, 0, len(s.jobs))
+		for _, job := range s.jobs {
+			result = append(result, cloneJob(job))
+		}
+		s.mu.RUnlock()
+		sortJobsByCreatedAt(result)
+		return result
+	}
+	s.mu.RUnlock()
 
 	s.mu.Lock()
-	now := s.now().UTC()
-	candidates = s.expireJobsLocked(now)
-
+	now = s.now().UTC()
+	candidates := s.expireJobsLocked(now)
 	result := make([]Job, 0, len(s.jobs))
 	for _, job := range s.jobs {
 		result = append(result, cloneJob(job))
 	}
 	s.mu.Unlock()
 
-	sort.Slice(result, func(left, right int) bool {
-		if result[left].CreatedAt.Equal(result[right].CreatedAt) {
-			return result[left].ID < result[right].ID
-		}
-		return result[left].CreatedAt.Before(result[right].CreatedAt)
-	})
+	sortJobsByCreatedAt(result)
 
 	for _, candidate := range candidates {
 		s.persistLatestJobVersion(ctx, candidate.jobID, candidate.version, candidate.job)
 	}
 
 	return result
+}
+
+// sortJobsByCreatedAt orders jobs by CreatedAt ascending, breaking ties on
+// ID so the output is deterministic for callers (UI, tests).
+func sortJobsByCreatedAt(jobs []Job) {
+	sort.Slice(jobs, func(left, right int) bool {
+		if jobs[left].CreatedAt.Equal(jobs[right].CreatedAt) {
+			return jobs[left].ID < jobs[right].ID
+		}
+		return jobs[left].CreatedAt.Before(jobs[right].CreatedAt)
+	})
+}
+
+// anyJobNeedsExpiryLocked reports whether at least one queued/running job has
+// passed its TTL at `now`. Read-only; safe under either RLock or Lock. Used
+// by the read-mostly fast path of ListWithContext / PendingForAgent so we
+// can skip the exclusive-lock branch entirely when nothing is due to expire.
+func (s *Service) anyJobNeedsExpiryLocked(now time.Time) bool {
+	for _, job := range s.jobs {
+		if jobShouldExpire(job, now) {
+			return true
+		}
+	}
+	return false
 }
 
 // DefaultListRecentLimit caps the HTTP /jobs response so a long-lived
@@ -494,12 +540,35 @@ func (s *Service) ExpireStale() {
 }
 
 // PendingForAgent returns queued and stale-sent jobs for one agent in creation order.
+//
+// P-6: hottest read path on the long-poll Connect handler. Same fast/slow
+// pattern as ListWithContext — the no-expiry branch never escalates past
+// RLock, so concurrent agents polling for jobs do not serialize on each
+// other or on the metrics scraper.
 func (s *Service) PendingForAgent(ctx context.Context, agentID string, retryAfter time.Duration) []Job {
-	var candidates []persistCandidate
+	s.mu.RLock()
+	now := s.now().UTC()
+	if !s.anyJobNeedsExpiryLocked(now) {
+		jobsForAgent := s.agentJobs[agentID]
+		result := make([]Job, 0, len(jobsForAgent))
+		for jobID := range jobsForAgent {
+			job, ok := s.jobs[jobID]
+			if !ok {
+				continue
+			}
+			if jobIsPendingForAgent(job, agentID, now, retryAfter) {
+				result = append(result, cloneJob(job))
+			}
+		}
+		s.mu.RUnlock()
+		sortJobsByCreatedAt(result)
+		return result
+	}
+	s.mu.RUnlock()
 
 	s.mu.Lock()
-	now := s.now().UTC()
-	candidates = s.expireJobsLocked(now)
+	now = s.now().UTC()
+	candidates := s.expireJobsLocked(now)
 
 	jobsForAgent := s.agentJobs[agentID]
 	result := make([]Job, 0, len(jobsForAgent))
@@ -514,12 +583,7 @@ func (s *Service) PendingForAgent(ctx context.Context, agentID string, retryAfte
 	}
 	s.mu.Unlock()
 
-	sort.Slice(result, func(left, right int) bool {
-		if result[left].CreatedAt.Equal(result[right].CreatedAt) {
-			return result[left].ID < result[right].ID
-		}
-		return result[left].CreatedAt.Before(result[right].CreatedAt)
-	})
+	sortJobsByCreatedAt(result)
 
 	for _, candidate := range candidates {
 		s.persistLatestJobVersion(ctx, candidate.jobID, candidate.version, candidate.job)
