@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -447,5 +448,250 @@ func TestAuthenticatePurgesPriorSessionFromStoreEvenWhenNotInMemory(t *testing.T
 
 	if store.has(priorID) {
 		t.Fatal("sessionStore still contains priorID after Authenticate, want purged")
+	}
+}
+
+// S-5: a self-edit password change without a CurrentPassword must fail with
+// ErrCurrentPasswordRequired and leave the stored hash intact. This blocks a
+// hijacked session from rotating the password without re-proving possession
+// of the current credential.
+func TestUpdateUserSelfPasswordChangeRequiresCurrentPassword(t *testing.T) {
+	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return now.Add(time.Minute) })
+
+	user, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
+		Username: "operator",
+		Password: "Correct1horse2battery",
+		Role:     RoleOperator,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	session, err := service.Authenticate(context.Background(), LoginInput{
+		Username: "operator",
+		Password: "Correct1horse2battery",
+	}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("Authenticate() error = %v", err)
+	}
+
+	_, err = service.UpdateUser(context.Background(), UpdateUserInput{
+		UserID:                 user.ID,
+		Username:               "operator",
+		Role:                   RoleOperator,
+		NewPassword:            "RotatedPwd1pass",
+		RequireCurrentPassword: true,
+		// CurrentPassword intentionally empty — must be rejected.
+		ExceptSessionID: session.ID,
+	}, now.Add(2*time.Minute))
+	if !errors.Is(err, ErrCurrentPasswordRequired) {
+		t.Fatalf("UpdateUser() error = %v, want ErrCurrentPasswordRequired", err)
+	}
+
+	// Original password must still authenticate — the service rejected the
+	// change before mutating any state.
+	if _, err := service.Authenticate(context.Background(), LoginInput{
+		Username: "operator",
+		Password: "Correct1horse2battery",
+	}, now.Add(3*time.Minute)); err != nil {
+		t.Fatalf("Authenticate() with original password error = %v, want still valid", err)
+	}
+
+	// Caller session must still be valid since the rotation never happened.
+	if _, err := service.GetSession(session.ID); err != nil {
+		t.Fatalf("GetSession() caller session error = %v, want preserved", err)
+	}
+}
+
+// S-5: a self-edit password change with a wrong CurrentPassword must fail
+// with ErrCurrentPasswordIncorrect, leave the stored hash intact, and not
+// silently revoke any sessions.
+func TestUpdateUserSelfPasswordChangeWrongCurrentPassword(t *testing.T) {
+	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return now.Add(time.Minute) })
+
+	user, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
+		Username: "operator",
+		Password: "Correct1horse2battery",
+		Role:     RoleOperator,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	session, err := service.Authenticate(context.Background(), LoginInput{
+		Username: "operator",
+		Password: "Correct1horse2battery",
+	}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("Authenticate() error = %v", err)
+	}
+
+	_, err = service.UpdateUser(context.Background(), UpdateUserInput{
+		UserID:                 user.ID,
+		Username:               "operator",
+		Role:                   RoleOperator,
+		NewPassword:            "RotatedPwd1pass",
+		RequireCurrentPassword: true,
+		CurrentPassword:        "WrongOriginal1pwd",
+		ExceptSessionID:        session.ID,
+	}, now.Add(2*time.Minute))
+	if !errors.Is(err, ErrCurrentPasswordIncorrect) {
+		t.Fatalf("UpdateUser() error = %v, want ErrCurrentPasswordIncorrect", err)
+	}
+
+	// State unchanged: original password still authenticates and the
+	// caller session is still live.
+	if _, err := service.Authenticate(context.Background(), LoginInput{
+		Username: "operator",
+		Password: "Correct1horse2battery",
+	}, now.Add(3*time.Minute)); err != nil {
+		t.Fatalf("Authenticate() with original password error = %v, want still valid", err)
+	}
+	if _, err := service.GetSession(session.ID); err != nil {
+		t.Fatalf("GetSession() caller session error = %v, want preserved", err)
+	}
+}
+
+// S-5: a self-edit password change with the correct CurrentPassword must
+// succeed, revoke every other session belonging to the target, and preserve
+// the calling session named via ExceptSessionID.
+func TestUpdateUserSelfPasswordChangeRevokesOtherSessionsKeepsCaller(t *testing.T) {
+	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return now.Add(time.Minute) })
+
+	user, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
+		Username: "operator",
+		Password: "Correct1horse2battery",
+		Role:     RoleOperator,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	callerSession, err := service.Authenticate(context.Background(), LoginInput{
+		Username: "operator",
+		Password: "Correct1horse2battery",
+	}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("Authenticate() caller error = %v", err)
+	}
+	otherSession, err := service.Authenticate(context.Background(), LoginInput{
+		Username: "operator",
+		Password: "Correct1horse2battery",
+	}, now.Add(2*time.Minute))
+	if err != nil {
+		t.Fatalf("Authenticate() other error = %v", err)
+	}
+
+	_, err = service.UpdateUser(context.Background(), UpdateUserInput{
+		UserID:                 user.ID,
+		Username:               "operator",
+		Role:                   RoleOperator,
+		NewPassword:            "RotatedPwd1pass",
+		RequireCurrentPassword: true,
+		CurrentPassword:        "Correct1horse2battery",
+		ExceptSessionID:        callerSession.ID,
+	}, now.Add(3*time.Minute))
+	if err != nil {
+		t.Fatalf("UpdateUser() error = %v", err)
+	}
+
+	// Caller's session must survive.
+	if _, err := service.GetSession(callerSession.ID); err != nil {
+		t.Fatalf("GetSession() caller error = %v, want preserved", err)
+	}
+	// Every other session for the user must be gone.
+	if _, err := service.GetSession(otherSession.ID); err == nil {
+		t.Fatal("GetSession() other session error = nil, want revoked")
+	}
+	// New password works, old one does not.
+	if _, err := service.Authenticate(context.Background(), LoginInput{
+		Username: "operator",
+		Password: "RotatedPwd1pass",
+	}, now.Add(4*time.Minute)); err != nil {
+		t.Fatalf("Authenticate() new password error = %v", err)
+	}
+	if _, err := service.Authenticate(context.Background(), LoginInput{
+		Username: "operator",
+		Password: "Correct1horse2battery",
+	}, now.Add(5*time.Minute)); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("Authenticate() old password error = %v, want ErrInvalidCredentials", err)
+	}
+}
+
+// S-5: when an admin rotates a different user's password the target's
+// existing sessions must all be revoked. The admin path does not pass
+// ExceptSessionID, so no session for the target survives.
+func TestUpdateUserAdminPasswordChangeRevokesAllTargetSessions(t *testing.T) {
+	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return now.Add(time.Minute) })
+
+	target, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
+		Username: "operator",
+		Password: "Correct1horse2battery",
+		Role:     RoleOperator,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser(target) error = %v", err)
+	}
+	_, _, err = service.BootstrapUser(context.Background(), BootstrapInput{
+		Username: "admin",
+		Password: "Admin1password",
+		Role:     RoleAdmin,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser(admin) error = %v", err)
+	}
+
+	target1, err := service.Authenticate(context.Background(), LoginInput{
+		Username: "operator",
+		Password: "Correct1horse2battery",
+	}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("Authenticate(target 1) error = %v", err)
+	}
+	target2, err := service.Authenticate(context.Background(), LoginInput{
+		Username: "operator",
+		Password: "Correct1horse2battery",
+	}, now.Add(2*time.Minute))
+	if err != nil {
+		t.Fatalf("Authenticate(target 2) error = %v", err)
+	}
+	adminSession, err := service.Authenticate(context.Background(), LoginInput{
+		Username: "admin",
+		Password: "Admin1password",
+	}, now.Add(3*time.Minute))
+	if err != nil {
+		t.Fatalf("Authenticate(admin) error = %v", err)
+	}
+
+	// Admin acting on a different user: RequireCurrentPassword=false,
+	// ExceptSessionID empty. Verifies that admin-on-other never asks for
+	// the target's password and never preserves any target session.
+	_, err = service.UpdateUser(context.Background(), UpdateUserInput{
+		UserID:      target.ID,
+		Username:    "operator",
+		Role:        RoleOperator,
+		NewPassword: "AdminRotated1pass",
+	}, now.Add(4*time.Minute))
+	if err != nil {
+		t.Fatalf("UpdateUser() error = %v", err)
+	}
+
+	if _, err := service.GetSession(target1.ID); err == nil {
+		t.Fatal("GetSession(target1) error = nil, want revoked")
+	}
+	if _, err := service.GetSession(target2.ID); err == nil {
+		t.Fatal("GetSession(target2) error = nil, want revoked")
+	}
+	// Admin's own session must not be touched — different user.
+	if _, err := service.GetSession(adminSession.ID); err != nil {
+		t.Fatalf("GetSession(admin) error = %v, want preserved", err)
 	}
 }

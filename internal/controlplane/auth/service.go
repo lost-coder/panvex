@@ -21,6 +21,17 @@ var (
 	// ErrPasswordTooWeak reports a password that is shorter than the
 	// minimum length, empty, or exceeds the length cap.
 	ErrPasswordTooWeak = errors.New("password does not meet the minimum length policy")
+	// ErrCurrentPasswordRequired reports a self-edit password change that
+	// did not include the caller's current password. Self-edits must
+	// re-prove possession of the current credential before rotating it
+	// (S-5): otherwise a hijacked session can rotate the password without
+	// challenge, locking the legitimate user out.
+	ErrCurrentPasswordRequired = errors.New("current password is required to change own password")
+	// ErrCurrentPasswordIncorrect reports a self-edit password change in
+	// which the supplied current password did not match the stored hash.
+	// Distinct from ErrInvalidCredentials so the caller can return a
+	// specific 401 without confusing it with a login failure.
+	ErrCurrentPasswordIncorrect = errors.New("current password is incorrect")
 )
 
 // Role identifies the RBAC role assigned to a local operator account.

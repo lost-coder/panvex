@@ -288,6 +288,16 @@ func (s *Service) Authenticate(ctx context.Context, input LoginInput, now time.T
 // whenever a user's privileges or credentials change in a way that ought to
 // force re-authentication (role change, forced password reset, etc.).
 func (s *Service) RevokeSessionsForUser(ctx context.Context, userID string) int {
+	return s.RevokeSessionsForUserExcept(ctx, userID, "")
+}
+
+// RevokeSessionsForUserExcept is the same as RevokeSessionsForUser but
+// preserves a single session whose ID matches exceptSessionID. Self-edit
+// password rotations (S-5) call this with the caller's own session ID so
+// the user is not logged out of the browser they just used to perform the
+// rotation. Pass an empty exceptSessionID to revoke every session
+// (the legacy RevokeSessionsForUser semantics).
+func (s *Service) RevokeSessionsForUserExcept(ctx context.Context, userID, exceptSessionID string) int {
 	if strings.TrimSpace(userID) == "" {
 		return 0
 	}
@@ -295,9 +305,13 @@ func (s *Service) RevokeSessionsForUser(ctx context.Context, userID string) int 
 	s.mu.Lock()
 	toDelete := make([]string, 0)
 	for sessionID, session := range s.sessions {
-		if session.UserID == userID {
-			toDelete = append(toDelete, sessionID)
+		if session.UserID != userID {
+			continue
 		}
+		if exceptSessionID != "" && sessionID == exceptSessionID {
+			continue
+		}
+		toDelete = append(toDelete, sessionID)
 	}
 	for _, sessionID := range toDelete {
 		delete(s.sessions, sessionID)

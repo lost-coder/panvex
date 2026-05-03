@@ -29,6 +29,10 @@ type updateUserRequest struct {
 	Username    string `json:"username"`
 	Role        string `json:"role"`
 	NewPassword string `json:"new_password"`
+	// CurrentPassword is required only when the caller is editing their
+	// own account and is rotating the password. The auth service ignores
+	// it for admin-on-other-user updates (S-5).
+	CurrentPassword string `json:"current_password"`
 }
 
 const errUserIDRequired = "user id is required"
@@ -165,12 +169,27 @@ func (s *Server) handleUpdateUser() http.HandlerFunc {
 			return
 		}
 
-		updatedUser, err := s.auth.UpdateUser(r.Context(), auth.UpdateUserInput{
+		// S-5: a self-edit must re-prove the current password before the
+		// auth service rotates it, and the caller's own session must
+		// survive the post-rotation revocation pass so the user is not
+		// logged out of the browser tab they just used. An admin acting
+		// on a different user is already gated by RoleAdmin above; that
+		// path skips current-password reauth and revokes every session
+		// for the target.
+		selfEdit := targetUserID == session.UserID
+		input := auth.UpdateUserInput{
 			UserID:      targetUserID,
 			Username:    request.Username,
 			Role:        auth.Role(request.Role),
 			NewPassword: request.NewPassword,
-		}, s.now())
+		}
+		if selfEdit {
+			input.RequireCurrentPassword = true
+			input.CurrentPassword = request.CurrentPassword
+			input.ExceptSessionID = session.ID
+		}
+
+		updatedUser, err := s.auth.UpdateUser(r.Context(), input, s.now())
 		if err != nil {
 			switch {
 			case errors.Is(err, auth.ErrUserNotFound):
@@ -181,6 +200,10 @@ func (s *Server) handleUpdateUser() http.HandlerFunc {
 				writeError(w, http.StatusBadRequest, err.Error())
 			case errors.Is(err, auth.ErrPasswordTooWeak):
 				writeError(w, http.StatusBadRequest, err.Error())
+			case errors.Is(err, auth.ErrCurrentPasswordRequired):
+				writeError(w, http.StatusBadRequest, err.Error())
+			case errors.Is(err, auth.ErrCurrentPasswordIncorrect):
+				writeError(w, http.StatusUnauthorized, err.Error())
 			default:
 				s.logger.Error("update user failed", "user_id", targetUserID, "error", err)
 				writeError(w, http.StatusInternalServerError, msgInternalError)

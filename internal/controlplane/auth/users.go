@@ -25,6 +25,24 @@ type UpdateUserInput struct {
 	Username    string
 	Role        Role
 	NewPassword string
+	// CurrentPassword carries the caller's plaintext current password and
+	// is consulted only when RequireCurrentPassword is true. Self-edits
+	// must supply this to re-prove possession of the credential before
+	// rotating it (S-5).
+	CurrentPassword string
+	// RequireCurrentPassword forces UpdateUser to verify CurrentPassword
+	// against the stored hash whenever NewPassword is non-empty. Set this
+	// for self-edit calls (caller and target are the same user). Admin
+	// password resets on other users skip this check, so the field stays
+	// false for those calls.
+	RequireCurrentPassword bool
+	// ExceptSessionID, when non-empty, names the one session that should
+	// survive the post-update revocation pass. Set this to the caller's
+	// own session ID on self-edits so the user is not logged out of the
+	// browser they just used to rotate their password. Leave empty when
+	// an admin rotates another user's password — every session belonging
+	// to the target must be invalidated in that case.
+	ExceptSessionID string
 }
 
 // CreateUser creates one local user account with TOTP disabled by default.
@@ -71,6 +89,25 @@ func (s *Service) UpdateUser(ctx context.Context, input UpdateUserInput, now tim
 	}
 
 	previousRole := user.Role
+	previousPasswordHash := user.PasswordHash
+	passwordChanged := strings.TrimSpace(input.NewPassword) != ""
+
+	// S-5: when the caller is editing their own password they must re-prove
+	// possession of the current credential. This blocks a hijacked session
+	// from silently rotating the password and locking out the legitimate
+	// user. Admin password resets on *other* users intentionally skip this
+	// check (the admin role is the trusted authority there) and set
+	// RequireCurrentPassword=false. Verify before any state mutation so a
+	// failure leaves the record untouched.
+	if passwordChanged && input.RequireCurrentPassword {
+		if strings.TrimSpace(input.CurrentPassword) == "" {
+			return User{}, ErrCurrentPasswordRequired
+		}
+		if err := s.VerifyPassword(previousPasswordHash, input.CurrentPassword); err != nil {
+			return User{}, ErrCurrentPasswordIncorrect
+		}
+	}
+
 	user.Username = updatedUsername
 	user.Role = input.Role
 	if err := s.applyOptionalPasswordChange(&user, input.NewPassword); err != nil {
@@ -85,13 +122,18 @@ func (s *Service) UpdateUser(ctx context.Context, input UpdateUserInput, now tim
 	// the role changes in either direction. Previously only role demotions
 	// triggered revocation; promotions now rotate too so that any outstanding
 	// session tied to the prior privilege level is forced to re-authenticate
-	// under the new one. RevokeSessionsForUser also clears the persistent
-	// session store so a control-plane restart does not resurrect the old
-	// sessions.
-	passwordChanged := strings.TrimSpace(input.NewPassword) != ""
+	// under the new one. RevokeSessionsForUserExcept also clears the
+	// persistent session store so a control-plane restart does not resurrect
+	// the old sessions.
+	//
+	// S-5: ExceptSessionID lets a self-edit preserve the caller's own
+	// session — the user is not logged out of the browser tab they just
+	// used to rotate the credential. When the caller is an admin acting on
+	// a different user, ExceptSessionID is empty and every session for the
+	// target is invalidated.
 	roleChanged := previousRole != input.Role
 	if passwordChanged || roleChanged {
-		_ = s.RevokeSessionsForUser(ctx, user.ID)
+		_ = s.RevokeSessionsForUserExcept(ctx, user.ID, input.ExceptSessionID)
 	}
 
 	_ = now
