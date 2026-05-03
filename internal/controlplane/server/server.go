@@ -75,6 +75,12 @@ type Server struct {
 	sensitiveRateLimiter      *fixedWindowRateLimiter
 	loginLockout              *accountLockoutTracker
 	totpLockout               *totpLockoutTracker
+	// wsConnLimiter caps the number of live /events WebSocket connections
+	// per user-id (and per-IP for unauthenticated callers, defence-in-depth).
+	// Goroutine exhaustion otherwise — every accepted socket holds a reader
+	// goroutine, a writer goroutine, and an event-bus subscription. See
+	// ws_conn_limit.go.
+	wsConnLimiter             *wsConnLimiter
 	trustedProxyCIDRs         []*net.IPNet
 	encryptionKey             string
 	secretVault               *secretvault.Vault
