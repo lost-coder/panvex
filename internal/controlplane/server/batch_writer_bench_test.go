@@ -56,7 +56,7 @@ func BenchmarkBatchWriterEnqueue(b *testing.B) {
 		// Drop the buffer every maxSize items to keep the benchmark bounded
 		// in memory. We measure Enqueue in isolation; the flush path is
 		// covered by BenchmarkBatchWriterFlush.
-		if (i+1)%batchMaxSize == 0 {
+		if (i+1)%batchSizeFor("agents") == 0 {
 			w.agents.mu.Lock()
 			w.agents.items = w.agents.items[:0]
 			w.agents.mu.Unlock()
@@ -70,10 +70,11 @@ func BenchmarkBatchWriterEnqueue(b *testing.B) {
 }
 
 // BenchmarkBatchWriterFlush measures one full drain of a saturated agents
-// buffer (batchMaxSize items) through the real SQLite PutAgent path. This
-// is the main target for PERF-06 bulk-insert: a bulk path should drop this
-// number substantially vs the current row-at-a-time loop. Each op corresponds
-// to one full batch; divide by batchMaxSize to get per-row cost.
+// buffer (batchSizeFor("agents") items) through the real SQLite PutAgent
+// path. This is the main target for PERF-06 bulk-insert: a bulk path should
+// drop this number substantially vs the current row-at-a-time loop. Each op
+// corresponds to one full batch; divide by batchSizeFor("agents") to get
+// per-row cost.
 func BenchmarkBatchWriterFlush(b *testing.B) {
 	store, err := sqlite.Open(filepath.Join(b.TempDir(), "bench.db"))
 	if err != nil {
@@ -87,7 +88,7 @@ func BenchmarkBatchWriterFlush(b *testing.B) {
 	// Build unique records per iteration so the UNIQUE(id) constraint does
 	// not force a retry loop; upserts on the same ID would also collapse
 	// into no-op writes and misrepresent the flush cost.
-	const batchSize = batchMaxSize
+	batchSize := batchSizeFor("agents")
 	records := make([]storage.AgentRecord, batchSize)
 	for i := range records {
 		records[i] = storage.AgentRecord{
@@ -122,7 +123,7 @@ func BenchmarkBatchWriterMetricsFlush(b *testing.B) {
 	w := newStoreBatchWriter(store, nil, nil)
 	w.sleep = func(time.Duration) {}
 
-	const batchSize = batchMaxSize
+	batchSize := batchSizeFor("metrics")
 	records := make([]storage.MetricSnapshotRecord, batchSize)
 	for i := range records {
 		records[i] = storage.MetricSnapshotRecord{
@@ -173,7 +174,7 @@ func BenchmarkBatchWriterAuditEnqueue(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		w.auditEvents.Enqueue(rec)
-		if (i+1)%batchMaxSize == 0 {
+		if (i+1)%batchSizeFor("audit") == 0 {
 			w.auditEvents.mu.Lock()
 			w.auditEvents.items = w.auditEvents.items[:0]
 			w.auditEvents.mu.Unlock()
