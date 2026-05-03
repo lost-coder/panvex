@@ -28,9 +28,21 @@ import (
 )
 
 const (
-	sessionCookieName          = "panvex_session"
-	apiBasePath                = "/api"
-	maxInMemoryMetricSnapshots = 512
+	// sessionCookieName is the bare cookie name used when the cookie cannot be
+	// marked Secure (plain-HTTP dev / loopback). The browser accepts it without
+	// the __Host- prefix's strict requirements, at the cost of weaker isolation.
+	sessionCookieName = "panvex_session"
+	// sessionCookieNameHostPrefix is the production cookie name. The __Host-
+	// prefix forces the browser to enforce three constraints:
+	//   1. Secure flag is set
+	//   2. Path is "/"
+	//   3. Domain attribute is empty (origin-bound — no sibling/subdomain leak)
+	// We only emit this name when sessionCookieSecure(r) is true; otherwise the
+	// browser would refuse it. Reads accept either form so a session issued
+	// under one prefix still works while a deployment toggles Secure.
+	sessionCookieNameHostPrefix = "__Host-panvex_session"
+	apiBasePath                 = "/api"
+	maxInMemoryMetricSnapshots  = 512
 	maxInMemoryAuditEvents               = 1024
 	httpLoginRateLimitPerWindow          = 30
 	httpAgentBootstrapRateLimitPerWindow = 30

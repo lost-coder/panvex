@@ -136,8 +136,8 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		// login (e.g. via XSS or a shared device) must not remain valid after
 		// the victim authenticates.
 		priorSessionID := ""
-		if existing, err := r.Cookie(sessionCookieName); err == nil {
-			priorSessionID = existing.Value
+		if existing := readSessionCookie(r); existing != "" {
+			priorSessionID = existing
 		}
 
 		session, err := s.auth.Authenticate(r.Context(), auth.LoginInput{
@@ -164,13 +164,17 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		}
 
 		ensureFloor()
+		secure := s.sessionCookieSecure(r)
 		http.SetCookie(w, &http.Cookie{
-			Name:     sessionCookieName,
+			// __Host- prefix when Secure: browser enforces Path=/, Secure,
+			// no Domain attribute. Falls back to bare name in plain-HTTP
+			// dev where Secure must be false. (Q3.U-S-13 / S-22.)
+			Name:     sessionCookieNameFor(secure),
 			Value:    session.ID,
 			Path:     "/",
 			HttpOnly: true,
 			SameSite: http.SameSiteStrictMode,
-			Secure:   s.sessionCookieSecure(r),
+			Secure:   secure,
 		})
 
 		writeJSON(w, http.StatusOK, map[string]string{
@@ -291,6 +295,19 @@ func (s *Server) handleLogout() http.HandlerFunc {
 		}
 
 		s.logger.Info("user logged out", "user_id", session.UserID, "session_hash", s.logSessionID(session.ID))
+		secure := s.sessionCookieSecure(r)
+		// Expire BOTH cookie names so a deployment that toggles Secure (or a
+		// browser that still holds a stale variant) cannot retain a logged-out
+		// session under the other name.
+		http.SetCookie(w, &http.Cookie{
+			Name:     sessionCookieNameHostPrefix,
+			Value:    "",
+			Path:     "/",
+			HttpOnly: true,
+			MaxAge:   -1,
+			SameSite: http.SameSiteStrictMode,
+			Secure:   true,
+		})
 		http.SetCookie(w, &http.Cookie{
 			Name:     sessionCookieName,
 			Value:    "",
@@ -298,7 +315,7 @@ func (s *Server) handleLogout() http.HandlerFunc {
 			HttpOnly: true,
 			MaxAge:   -1,
 			SameSite: http.SameSiteStrictMode,
-			Secure:   s.sessionCookieSecure(r),
+			Secure:   secure,
 		})
 		s.appendAuditWithContext(r.Context(), session.UserID, "auth.logout", s.logSessionID(session.ID), nil)
 
@@ -419,12 +436,12 @@ func (s *Server) requireSession(r *http.Request) (auth.Session, auth.User, error
 		return session, user, nil
 	}
 
-	cookie, err := r.Cookie(sessionCookieName)
-	if err != nil {
-		return auth.Session{}, auth.User{}, err
+	value := readSessionCookie(r)
+	if value == "" {
+		return auth.Session{}, auth.User{}, http.ErrNoCookie
 	}
 
-	session, err := s.auth.GetSession(cookie.Value)
+	session, err := s.auth.GetSession(value)
 	if err != nil {
 		return auth.Session{}, auth.User{}, err
 	}
@@ -457,6 +474,33 @@ func (s *Server) trustedForwardedProto(r *http.Request) string {
 		return ""
 	}
 	return r.Header.Get("X-Forwarded-Proto")
+}
+
+// sessionCookieNameFor returns the cookie name to emit on Set-Cookie based on
+// whether the cookie will be marked Secure. The __Host- prefix is only valid
+// when Secure=true and Path=/ and Domain is unset; we satisfy the latter two
+// unconditionally and gate the prefix on the Secure decision so dev/loopback
+// clients (where Secure is false) still receive a usable cookie. (S-22.)
+func sessionCookieNameFor(secure bool) string {
+	if secure {
+		return sessionCookieNameHostPrefix
+	}
+	return sessionCookieName
+}
+
+// readSessionCookie returns the session ID carried by either the host-prefix
+// cookie (preferred — production) or the bare cookie (dev/loopback). When
+// both are present the host-prefix variant wins, since it is the variant a
+// modern Secure deployment would have just issued. Returns "" if neither is
+// present.
+func readSessionCookie(r *http.Request) string {
+	if c, err := r.Cookie(sessionCookieNameHostPrefix); err == nil && c.Value != "" {
+		return c.Value
+	}
+	if c, err := r.Cookie(sessionCookieName); err == nil && c.Value != "" {
+		return c.Value
+	}
+	return ""
 }
 
 // EnvForceSecureCookie unconditionally marks the session cookie Secure,
