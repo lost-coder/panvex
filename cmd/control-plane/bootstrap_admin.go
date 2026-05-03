@@ -17,6 +17,37 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/config"
 )
 
+// errPasswordFlagInsecure is returned when the operator passes -password
+// without an interactive TTY and without explicit opt-in. The flag value
+// leaks via /proc/<pid>/cmdline; -password-file or the interactive prompt
+// avoid that.
+var errPasswordFlagInsecure = errors.New(
+	"--password flag exposes secrets via /proc/<pid>/cmdline; " +
+		"use -password-file or interactive prompt instead " +
+		"(set PANVEX_BOOTSTRAP_ALLOW_INSECURE_FLAG=1 to bypass)",
+)
+
+// passwordSource captures the inputs validatePasswordSource needs to decide
+// whether the password-supply path is safe.
+type passwordSource struct {
+	FlagValue     string
+	FlagWasSet    bool
+	FilePath      string
+	StdinIsTTY    bool
+	AllowInsecure bool
+}
+
+// validatePasswordSource rejects the -password flag in non-interactive
+// contexts unless the operator has explicitly opted into the legacy
+// behaviour. -password-file and interactive TTY prompts are always
+// allowed.
+func validatePasswordSource(src passwordSource) error {
+	if src.FlagWasSet && !src.AllowInsecure && !src.StdinIsTTY {
+		return errPasswordFlagInsecure
+	}
+	return nil
+}
+
 func runBootstrapAdmin(args []string) error {
 	flags := flag.NewFlagSet("bootstrap-admin", flag.ContinueOnError)
 	username := flags.String("username", "admin", "Admin username")
