@@ -247,6 +247,7 @@ func TestResolvePanelRuntimeMarksSupervisedRestartAsSupported(t *testing.T) {
 }
 
 func TestRunBootstrapAdminWritesAdminIntoSelectedBackend(t *testing.T) {
+	t.Setenv("PANVEX_BOOTSTRAP_ALLOW_INSECURE_FLAG", "1")
 	databasePath := filepath.Join(t.TempDir(), "panvex.db")
 	if err := runBootstrapAdmin([]string{
 		"-storage-driver", "sqlite",
@@ -282,6 +283,7 @@ func TestRunBootstrapAdminWritesAdminIntoSelectedBackend(t *testing.T) {
 }
 
 func TestRunBootstrapAdminDoesNotPrintTotpSecret(t *testing.T) {
+	t.Setenv("PANVEX_BOOTSTRAP_ALLOW_INSECURE_FLAG", "1")
 	databasePath := filepath.Join(t.TempDir(), "panvex.db")
 	output := captureStdout(t, func() {
 		if err := runBootstrapAdmin([]string{
@@ -605,7 +607,7 @@ func TestRunBootstrapAdminUsesPasswordFile(t *testing.T) {
 // TestRunBootstrapAdminPasswordFileTakesPrecedence verifies that -password-file
 // overrides -password when both are supplied (S-10).
 func TestRunBootstrapAdminPasswordFileTakesPrecedence(t *testing.T) {
-	t.Parallel()
+	t.Setenv("PANVEX_BOOTSTRAP_ALLOW_INSECURE_FLAG", "1")
 	dir := t.TempDir()
 	pwFile := filepath.Join(dir, "admin.pw")
 	if err := os.WriteFile(pwFile, []byte("FromFile1234"), 0600); err != nil {

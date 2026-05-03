@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"path/filepath"
 	"testing"
 )
 
@@ -47,5 +48,25 @@ func TestBootstrapAdmin_AllowsExplicitOverride(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("expected explicit override to be accepted, got %v", err)
+	}
+}
+
+// TestRunBootstrapAdmin_RejectsInsecurePasswordFlag verifies the validation
+// is wired into runBootstrapAdmin and aborts before any storage is opened or
+// any user is created. Tests run with stdin detached from a TTY, so the
+// -password flag must be rejected.
+func TestRunBootstrapAdmin_RejectsInsecurePasswordFlag(t *testing.T) {
+	t.Setenv("PANVEX_BOOTSTRAP_ALLOW_INSECURE_FLAG", "")
+	t.Setenv("PANVEX_BOOTSTRAP_PASSWORD", "")
+	t.Setenv("PANVEX_BOOTSTRAP_PASSWORD_FILE", "")
+
+	err := runBootstrapAdmin([]string{
+		"-username", "root",
+		"-password", "leak",
+		"-storage-driver", "sqlite",
+		"-storage-dsn", filepath.Join(t.TempDir(), "test.db"),
+	})
+	if !errors.Is(err, errPasswordFlagInsecure) {
+		t.Fatalf("expected errPasswordFlagInsecure, got %v", err)
 	}
 }

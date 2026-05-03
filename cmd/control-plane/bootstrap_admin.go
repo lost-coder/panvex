@@ -15,6 +15,7 @@ import (
 
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/config"
+	"golang.org/x/term"
 )
 
 // errPasswordFlagInsecure is returned when the operator passes -password
@@ -58,6 +59,24 @@ func runBootstrapAdmin(args []string) error {
 	storageDriver := flags.String(flagStorageDriver, "", helpStorageDriver)
 	storageDSN := flags.String(flagStorageDSN, "", helpStorageDSN)
 	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	passwordFlagSet := false
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "password" {
+			passwordFlagSet = true
+		}
+	})
+
+	allowInsecure := os.Getenv("PANVEX_BOOTSTRAP_ALLOW_INSECURE_FLAG") == "1"
+	if err := validatePasswordSource(passwordSource{
+		FlagValue:     *password,
+		FlagWasSet:    passwordFlagSet,
+		FilePath:      *passwordFile,
+		StdinIsTTY:    term.IsTerminal(int(os.Stdin.Fd())),
+		AllowInsecure: allowInsecure,
+	}); err != nil {
 		return err
 	}
 
