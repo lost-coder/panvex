@@ -87,6 +87,10 @@ func TestCSRFTokenMiddleware_RejectsMissingToken(t *testing.T) {
 		t.Fatal("handler must not be invoked when token is missing")
 	}))
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/anything", nil)
+	// S22 Task 5: CSRF token is bound to the cookie value, so the
+	// fixture must carry both the session context (post-auth) and
+	// the cookie that the browser would have sent.
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "cookie-token-1"})
 	req = withRequestAuthContext(req,
 		auth.Session{ID: "sess-1", UserID: "user-1"},
 		auth.User{ID: "user-1", Username: "alice"})
@@ -106,7 +110,12 @@ func TestCSRFTokenMiddleware_AcceptsValidToken(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/anything", nil)
-	req.Header.Set(csrfTokenHeader, csrfTokenForSession("sess-1", secret))
+	// S22 Task 5: token derives from the cookie value the browser
+	// sends, not from the internal Session.ID. Set both so the
+	// middleware can read the cookie out of the request and match
+	// the supplied X-CSRF-Token.
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "cookie-token-1"})
+	req.Header.Set(csrfTokenHeader, csrfTokenForSession("cookie-token-1", secret))
 	req = withRequestAuthContext(req,
 		auth.Session{ID: "sess-1", UserID: "user-1"},
 		auth.User{ID: "user-1", Username: "alice"})
@@ -127,10 +136,10 @@ func TestCSRFTokenMiddleware_RejectsTokenForOtherSession(t *testing.T) {
 		t.Fatal("handler must not be invoked when token is for a different session")
 	}))
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/anything", nil)
-	// Token derived from a different session should not validate the
-	// current one — prevents an attacker who steals a token from one
-	// session using it on another.
-	req.Header.Set(csrfTokenHeader, csrfTokenForSession("other-sess", secret))
+	// The browser carries cookie A but the attacker forwards a
+	// CSRF token derived from cookie B — must not validate.
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "cookie-token-1"})
+	req.Header.Set(csrfTokenHeader, csrfTokenForSession("other-cookie-token", secret))
 	req = withRequestAuthContext(req,
 		auth.Session{ID: "sess-1", UserID: "user-1"},
 		auth.User{ID: "user-1", Username: "alice"})

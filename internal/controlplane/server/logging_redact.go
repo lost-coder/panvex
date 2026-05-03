@@ -98,6 +98,27 @@ func (s *Server) logSessionID(sessionID string) string {
 	return "s-" + hex.EncodeToString(mac.Sum(nil)[:8])
 }
 
+// deriveSessionLookupKey derives the per-server session-lookup HMAC
+// key (S22 Task 5, S-medium) from the operator-provided encryption
+// key. Domain tag "panvex-session-lookup-v1" keeps this key
+// independent of the username/audit log-hash key (also derived from
+// EncryptionKey) and the CA private-key cipher: leaking one
+// derivative does not weaken the others.
+//
+// Empty EncryptionKey returns nil, signalling "do not configure" — the
+// auth service then falls back to a per-process random key on first
+// use (sessions stay correlatable within a single run but rotate on
+// restart, which means restored cookies stop verifying after a
+// fail-over). Production deployments must always set EncryptionKey.
+func deriveSessionLookupKey(encryptionKey string) []byte {
+	key := strings.TrimSpace(encryptionKey)
+	if key == "" {
+		return nil
+	}
+	sum := sha256.Sum256([]byte("panvex-session-lookup-v1\x00" + key))
+	return sum[:]
+}
+
 // usernameHashKey returns the cached HMAC key for username log
 // hashing. Derivation:
 //

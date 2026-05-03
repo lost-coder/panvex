@@ -289,10 +289,13 @@ func TestAuthenticateInvalidatesPriorSessionID(t *testing.T) {
 
 	// Re-login carrying the prior session ID as happens when the browser
 	// submits the login form with the old cookie still attached.
+	// S22 Task 5: PriorSessionID is the *opaque cookie* the browser
+	// sends, not the internal lookup hash, so we pass first.Cookie
+	// here exactly as the HTTP layer would.
 	second, err := service.Authenticate(context.Background(), LoginInput{
 		Username:       "operator",
 		Password:       "Correct1horse2battery",
-		PriorSessionID: first.ID,
+		PriorSessionID: first.Cookie,
 	}, now.Add(2*time.Minute))
 	if err != nil {
 		t.Fatalf("Authenticate() second error = %v", err)
@@ -421,7 +424,12 @@ func TestAuthenticatePurgesPriorSessionFromStoreEvenWhenNotInMemory(t *testing.T
 	// exists in the persistent store but the in-memory map is empty (the
 	// service was just constructed fresh and RestoreSessions has not been
 	// called with this ID yet, or it was evicted some other way).
-	priorID := "pre-restart-session-id"
+	//
+	// S22 Task 5: SessionRecord.id is the HMAC of the opaque cookie
+	// token, not the cookie itself. Stage the row under that hash so
+	// the post-Authenticate purge actually finds and deletes it.
+	priorCookie := "pre-restart-cookie-token"
+	priorID := service.hashSessionToken(priorCookie)
 	if err := store.PutSession(context.Background(), storage.SessionRecord{
 		ID:        priorID,
 		UserID:    user.ID,
@@ -441,7 +449,7 @@ func TestAuthenticatePurgesPriorSessionFromStoreEvenWhenNotInMemory(t *testing.T
 	if _, err := service.Authenticate(context.Background(), LoginInput{
 		Username:       "operator",
 		Password:       "Correct1horse2battery",
-		PriorSessionID: priorID,
+		PriorSessionID: priorCookie,
 	}, now.Add(2*time.Minute)); err != nil {
 		t.Fatalf("Authenticate() error = %v", err)
 	}

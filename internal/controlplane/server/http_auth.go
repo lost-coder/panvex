@@ -181,8 +181,14 @@ func (s *Server) handleLogin() http.HandlerFunc {
 			// __Host- prefix when Secure: browser enforces Path=/, Secure,
 			// no Domain attribute. Falls back to bare name in plain-HTTP
 			// dev where Secure must be false. (Q3.U-S-13 / S-22.)
-			Name:     sessionCookieNameFor(secure),
-			Value:    session.ID,
+			Name: sessionCookieNameFor(secure),
+			// S22 Task 5 (S-medium): the cookie carries an opaque
+			// random token. The DB primary key and in-memory map are
+			// keyed on its HMAC, not on this value, so a leaked DB
+			// row plus the audit log-redaction key cannot be
+			// correlated back to a live cookie. session.Cookie is
+			// only populated on fresh issuance from Authenticate.
+			Value:    session.Cookie,
 			Path:     "/",
 			HttpOnly: true,
 			SameSite: http.SameSiteStrictMode,
@@ -471,7 +477,14 @@ func (s *Server) requireSession(r *http.Request) (auth.Session, auth.User, error
 		return auth.Session{}, auth.User{}, http.ErrNoCookie
 	}
 
-	session, err := s.auth.GetSession(value)
+	// S22 Task 5: the cookie carries the *opaque* token; the auth
+	// service hashes it under its per-server lookup key before
+	// touching the in-memory map or persistent store. We deliberately
+	// route through GetSessionByCookie (not GetSession) so cookie
+	// values cannot accidentally be used as direct map keys —
+	// GetSession is reserved for internal callers that already hold
+	// the hashed Session.ID.
+	session, err := s.auth.GetSessionByCookie(value)
 	if err != nil {
 		return auth.Session{}, auth.User{}, err
 	}

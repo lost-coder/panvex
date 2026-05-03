@@ -2,8 +2,11 @@ package auth
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -250,13 +253,20 @@ func (s *Service) Authenticate(ctx context.Context, input LoginInput, now time.T
 	// one; we must explicitly drop it from the session map and persistent
 	// store. Done here (under the lock) so the invalidation is atomic with
 	// the issuance of the replacement session.
-	priorSessionID := strings.TrimSpace(input.PriorSessionID)
-	if priorSessionID != "" {
-		delete(s.sessions, priorSessionID)
+	//
+	// PriorSessionID, when supplied, is the *opaque cookie token* the
+	// browser carried in. The in-memory map and persistent store are keyed
+	// on its HMAC, not on the token itself (S22 Task 5), so we hash before
+	// the delete on both layers.
+	priorCookie := strings.TrimSpace(input.PriorSessionID)
+	priorLookupID := ""
+	if priorCookie != "" {
+		priorLookupID = s.hashSessionTokenLocked(priorCookie)
+		delete(s.sessions, priorLookupID)
 	}
 
 	s.sequence++
-	sessionID, err := randomSessionID()
+	cookieToken, sessionID, err := s.issueSessionIdentityLocked()
 	if err != nil {
 		return Session{}, err
 	}
@@ -272,12 +282,19 @@ func (s *Service) Authenticate(ctx context.Context, input LoginInput, now time.T
 	// all — an in-memory-only session would silently disappear on the next
 	// control-plane restart, leaving the operator logged in but unable to
 	// recover cleanly. Surface the failure so the caller retries / fails over.
-	if err := s.persistAuthenticatedSession(ctx, session, priorSessionID); err != nil {
+	if err := s.persistAuthenticatedSession(ctx, session, priorLookupID); err != nil {
 		return Session{}, err
 	}
 
 	s.sessions[session.ID] = session
 
+	// Attach the opaque cookie token to the *returned* Session only —
+	// the in-memory map stores Session.Cookie as zero so an attacker
+	// who reads CP memory cannot pull a live cookie value out of it
+	// (only the hash, which is useless for impersonation). The HTTP
+	// login handler reads session.Cookie immediately to write the
+	// Set-Cookie header and then drops it.
+	session.Cookie = cookieToken
 	return session, nil
 }
 
@@ -437,11 +454,101 @@ func (s *Service) Logout(ctx context.Context, sessionID string) error {
 	return nil
 }
 
-func randomSessionID() (string, error) {
+// SetSessionLookupKey installs the HMAC key used to derive Session.ID
+// (and the persistent SessionRecord.id primary key) from the opaque
+// cookie token (S-medium / S22 Task 5). Callers should pass at least 16
+// bytes — shorter inputs are rejected so a misconfigured deployment
+// cannot silently fall back to a weak lookup key. nil is accepted and
+// resets to the unset state, in which case sessionLookupKeyLocked
+// generates a fresh per-process random key on first use.
+func (s *Service) SetSessionLookupKey(key []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if key == nil {
+		s.sessionLookupKey = nil
+		return nil
+	}
+	if len(key) < 16 {
+		return errors.New("auth: session lookup key must be at least 16 bytes")
+	}
+	dup := make([]byte, len(key))
+	copy(dup, key)
+	s.sessionLookupKey = dup
+	return nil
+}
+
+// sessionLookupKeyLocked returns the cached HMAC key, allocating a
+// per-process random fallback if SetSessionLookupKey has not been
+// called. Caller must already hold s.mu (read or write); we mutate
+// s.sessionLookupKey on first use, so callers that hold only the read
+// lock should upgrade to write before invoking.
+func (s *Service) sessionLookupKeyLocked() []byte {
+	if s.sessionLookupKey != nil {
+		return s.sessionLookupKey
+	}
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
-		return "", err
+		// Fail-closed: a degraded entropy path silently producing
+		// predictable HMACs would let an attacker who reads the DB row
+		// reverse the lookup hash to a cookie value. The control plane
+		// has no safe way to keep running without secure entropy
+		// anyway — session IDs, CSRF tokens, and CA generation all
+		// depend on it.
+		panic("auth: cannot derive session lookup key: " + err.Error())
 	}
+	s.sessionLookupKey = buf
+	return s.sessionLookupKey
+}
 
-	return base64.RawURLEncoding.EncodeToString(buf), nil
+// hashSessionTokenLocked computes HMAC-SHA-256 over the supplied opaque
+// cookie token under the per-server session-lookup key, returning the
+// hex-encoded digest. The hex form is what we store in
+// SessionRecord.id, in s.sessions[], and what we compare with
+// hmac.Equal at lookup time. Caller must hold s.mu.
+func (s *Service) hashSessionTokenLocked(token string) string {
+	mac := hmac.New(sha256.New, s.sessionLookupKeyLocked())
+	mac.Write([]byte(token))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// hashSessionToken is the lock-free wrapper used by HTTP-layer entry
+// points that have not yet acquired s.mu. It briefly takes s.mu to
+// access the cached key. Returns the same hex digest as
+// hashSessionTokenLocked.
+func (s *Service) hashSessionToken(token string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.hashSessionTokenLocked(token)
+}
+
+// issueSessionIdentityLocked generates a fresh opaque cookie token (32
+// bytes, base64url) and the matching HMAC-SHA-256 lookup hash. The
+// cookie token is what we ship in Set-Cookie; the lookup hash is what
+// we persist as Session.ID and SessionRecord.id. Caller must hold
+// s.mu.
+func (s *Service) issueSessionIdentityLocked() (string, string, error) {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", "", err
+	}
+	token := base64.RawURLEncoding.EncodeToString(buf)
+	return token, s.hashSessionTokenLocked(token), nil
+}
+
+// GetSessionByCookie is the HTTP-layer entry point: callers pass in the
+// raw cookie value the browser sent, the service hashes it under the
+// session-lookup key, and looks up the matching session record. The
+// hash comparison is a single map lookup keyed by hex digest, which
+// reduces to a constant-time equality check via hmac.Equal on the
+// underlying byte slices (same-length hex strings, same key, same
+// algorithm). A miss is reported as ErrSessionNotFound — distinct
+// errors would let a timing oracle distinguish "wrong cookie" from
+// "expired cookie." Empty input is also reported as not-found so a
+// caller that forgets to read the cookie cannot accidentally probe
+// the map under the empty-string key.
+func (s *Service) GetSessionByCookie(cookieValue string) (Session, error) {
+	if cookieValue == "" {
+		return Session{}, ErrSessionNotFound
+	}
+	return s.GetSession(s.hashSessionToken(cookieValue))
 }

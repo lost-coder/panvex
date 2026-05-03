@@ -708,6 +708,102 @@ func TestLogin_AlwaysRotatesSessionID(t *testing.T) {
 	}
 }
 
+// TestLogin_CookieIsOpaque covers S22 Task 5 (S-medium): the cookie
+// value emitted at login must be the *opaque* session token, not the
+// internal Session.ID (which is the HMAC-SHA-256 lookup hash and the
+// DB primary key). Hashing the cookie back under the service's
+// session-lookup key must reproduce the in-memory session.ID — that
+// is the round-trip the HTTP layer relies on every authenticated
+// request. The audit-log target ID embedded in the auth.login event
+// must also not echo the cookie verbatim: the audit pipeline runs its
+// own log-redaction HMAC with a different key, so the persisted
+// target is two layers away from a live cookie.
+func TestLogin_CookieIsOpaque(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, time.May, 3, 10, 0, 0, 0, time.UTC)
+	base, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer base.Close()
+
+	srv := New(Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+		Store:            base,
+		EncryptionKey:    "test-encryption-key-for-session-lookup",
+	})
+	defer srv.Close()
+
+	if _, _, err := srv.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
+		Username: "alice",
+		Password: "Alice-Password-1",
+		Role:     auth.RoleOperator,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	resp := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login",
+		map[string]string{"username": "alice", "password": "Alice-Password-1"},
+		nil)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("login: code=%d body=%s", resp.Code, resp.Body.String())
+	}
+
+	var cookieValue string
+	for _, c := range resp.Result().Cookies() {
+		if c.Name == sessionCookieName {
+			cookieValue = c.Value
+		}
+	}
+	if cookieValue == "" {
+		t.Fatal("no session cookie issued after login")
+	}
+
+	// Resolve the cookie back to the in-memory session and check the
+	// HMAC round-trip. The auth service keeps Session.Cookie zero on
+	// reads, so we look up via GetSessionByCookie — exactly the
+	// production HTTP path.
+	session, err := srv.auth.GetSessionByCookie(cookieValue)
+	if err != nil {
+		t.Fatalf("GetSessionByCookie() error = %v", err)
+	}
+	if session.ID == "" {
+		t.Fatal("resolved session.ID is empty")
+	}
+	if session.ID == cookieValue {
+		t.Fatalf("session.ID == cookie value = %q; the DB primary key must be the HMAC of the cookie, not the cookie itself", cookieValue)
+	}
+	if got := len(session.ID); got != 64 {
+		t.Fatalf("len(session.ID) = %d, want 64 (hex SHA-256)", got)
+	}
+
+	// The audit pipeline must not write the cookie verbatim either.
+	// auth.login is appended synchronously during login, so by the
+	// time the response returns the row is already present.
+	events, err := base.ListAuditEvents(context.Background(), 0)
+	if err != nil {
+		t.Fatalf("ListAuditEvents() error = %v", err)
+	}
+	if len(events) == 0 {
+		t.Fatal("no audit events recorded for login")
+	}
+	for _, evt := range events {
+		if evt.Action != "auth.login" {
+			continue
+		}
+		if evt.TargetID == cookieValue {
+			t.Fatalf("audit event TargetID equals cookie value %q; want redacted hash", cookieValue)
+		}
+		if evt.TargetID == session.ID {
+			t.Fatalf("audit event TargetID equals internal lookup hash %q; want a separately-keyed redaction so a leak of the audit table cannot be replayed against the session DB", session.ID)
+		}
+		if evt.TargetID == "" {
+			t.Fatal("audit event TargetID empty; want s-… log-redacted form")
+		}
+	}
+}
+
 // TestLogin_PriorSessionIDIsRevoked is an S-03 regression: after a second
 // login the original session-ID must be invalidated server-side — a request
 // carrying the old cookie must receive 401.

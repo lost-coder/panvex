@@ -78,6 +78,22 @@ type User struct {
 
 // Session stores the authenticated session record returned after login.
 //
+// ID is the *internal* session identifier — an HMAC-SHA-256 over the
+// opaque cookie token, keyed by the per-server session-lookup key
+// (S-medium / S22 Task 5). It is what we store in s.sessions[] and in
+// the persistent SessionRecord.id column. Treat ID as a server-side
+// handle: do NOT write it to a Set-Cookie header, because the DB is
+// keyed on this value and exposing it to the client would re-create
+// the previous "cookie == DB primary key" coupling we are removing.
+//
+// Cookie carries the opaque random token (32 bytes, base64url) that
+// the browser receives as the session cookie. It is populated only on
+// fresh issuance from Authenticate; subsequent GetSession calls
+// return a Session whose Cookie is empty (we never store the opaque
+// token, only its hash). Callers that need to write the cookie header
+// (the login HTTP handler) read Cookie immediately after Authenticate
+// returns and never touch it again.
+//
 // LastSeenAt is an in-memory sliding-refresh timestamp (S5). It is not
 // persisted to storage: on control-plane restart we reload the session
 // from SessionRecord and seed LastSeenAt = CreatedAt. This is a small
@@ -87,6 +103,7 @@ type User struct {
 // shrinking a stolen cookie's window.
 type Session struct {
 	ID         string
+	Cookie     string
 	UserID     string
 	CreatedAt  time.Time
 	LastSeenAt time.Time
@@ -110,6 +127,13 @@ type Service struct {
 	sessionStore     storage.SessionStore
 	consumedTotpStore storage.ConsumedTotpStore
 	vault            *secretvault.Vault
+	// sessionLookupKey is the per-server HMAC key used to derive the
+	// internal Session.ID (DB primary key, in-memory map key) from the
+	// opaque cookie token (S-medium / S22 Task 5). Plumbed in by the
+	// server during construction; left nil falls back to a fresh
+	// per-process random key on first use. Must be at least 16 bytes;
+	// shorter inputs are rejected at SetSessionLookupKey.
+	sessionLookupKey []byte
 	// passwordPolicy is the operator-configured minimum length, mirrored
 	// from panel_settings. Zero means "use the compiled-in default".
 	// Guarded by s.mu like other mutable Service state.
