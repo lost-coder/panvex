@@ -1535,3 +1535,66 @@ func writeSuccessEnvelope(w http.ResponseWriter, data any) {
 		"revision": "test-revision",
 	})
 }
+
+// TestClientFetchRuntimeStateParallelism verifies P-10: independent Telemt
+// sub-fetches must run in parallel via errgroup. We mount a server that
+// answers every endpoint with a fixed 100ms delay. Sequential execution of
+// the ~10 sub-fetches would sum to >1s; parallel execution must finish in
+// well under that. We only need a coarse upper bound — 800ms is generous
+// enough to absorb scheduler jitter on slow CI while still proving the
+// fan-out is real.
+func TestClientFetchRuntimeStateParallelism(t *testing.T) {
+	const handlerDelay = 100 * time.Millisecond
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Sleep BEFORE writing so concurrent requests must overlap their
+		// sleeps for the fan-out to deliver any wall-clock benefit. If
+		// FetchRuntimeState is sequential, requests serialise here.
+		select {
+		case <-time.After(handlerDelay):
+		case <-r.Context().Done():
+			return
+		}
+		// Respond with a minimal success envelope for every path; the
+		// runtime state assembler tolerates empty payloads gracefully.
+		writeSuccessEnvelope(w, map[string]any{})
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Config{
+		BaseURL:       server.URL,
+		Authorization: "secret",
+	}, server.Client())
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	// Disable the slow-state cache so the heavy endpoints are exercised
+	// every call and contribute their own delays into the wall-clock
+	// budget under measurement.
+	client.slowDataTTL = 0
+	// Provide a synchronous, instant systemLoad sampler so it doesn't
+	// dominate the timing budget in either direction.
+	client.systemLoadSampler = func(context.Context) (RuntimeSystemLoad, error) {
+		return RuntimeSystemLoad{}, nil
+	}
+
+	start := time.Now()
+	state, err := client.FetchRuntimeState(context.Background())
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("FetchRuntimeState() error = %v", err)
+	}
+	// state.Partial may be true because the empty payloads don't carry
+	// every required sub-field; we don't care about content here, only
+	// timing.
+	_ = state
+
+	// FetchRuntimeState issues ~10 sub-fetches. Sequential = >=1000ms.
+	// Parallel (concurrency=8) = >=200ms (two waves) plus overhead.
+	// Set the bar at 800ms: well below sequential, well above the
+	// parallel best case.
+	if elapsed >= 800*time.Millisecond {
+		t.Fatalf("FetchRuntimeState() elapsed = %s with parallel fan-out; want < 800ms (sequential would be >= 1s)", elapsed)
+	}
+}
