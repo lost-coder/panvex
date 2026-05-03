@@ -27,7 +27,11 @@ var csrfExemptAPISuffixes = []string{
 
 // securityHeaders applies standard security response headers to every HTTP response.
 //
-// Content-Security-Policy:
+// Content-Security-Policy (S-medium tightening):
+//   - default-src 'none': no fallback. Every fetch destination must match
+//     an explicit directive below; anything we forgot to allow-list is
+//     blocked. Replaces the previous default-src 'self' which silently
+//     allowed (e.g.) frame-src, media-src, prefetch-src, child-src.
 //   - script-src 'self' only: no 'unsafe-inline'. All scripts must be loaded
 //     as external files (Vite production build emits external ES modules).
 //     Runtime configuration such as the UI root path is carried via the
@@ -38,10 +42,22 @@ var csrfExemptAPISuffixes = []string{
 //     the app. (Radix UI and some component libraries occasionally use inline
 //     style attributes; those are governed by the HTML style="..." attribute
 //     and are allowed regardless of style-src policy under CSP Level 3.)
+//   - img-src 'self' data: blob:: data: covers Vite-inlined SVGs / tiny
+//     icons; blob: covers any future canvas/object-URL preview.
 //   - connect-src 'self' wss://<host> (S-08): WebSocket connections are scoped
 //     to the request host so a script cannot redirect websockets to arbitrary
 //     HTTPS endpoints. The Origin header and ws Origin-Pattern check enforce
 //     this server-side too. The CSP is built per-request.
+//   - font-src 'self' data:: @fontsource ships self-hosted woff2; data:
+//     guards against future inline-fallback faces.
+//   - manifest-src 'self', worker-src 'self' blob:: belt-and-suspenders.
+//     The current build ships neither a web-app manifest nor service /
+//     web workers; an attacker who manages to inject a <link rel="manifest">
+//     or `new Worker(blobURL)` is held to this origin only.
+//   - object-src 'none', base-uri 'none', frame-ancestors 'none': hard no.
+//     base-uri 'none' (was 'self') prevents same-origin XSS from injecting
+//     a <base href> that would re-anchor every relative URL on the page.
+//   - form-action 'self' (M-15): login / recovery forms must POST same-origin.
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
@@ -49,25 +65,22 @@ func securityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-		// Fonts are bundled by Vite from @fontsource (see web/src/ui-kit.css),
-		// so style-src and font-src no longer need fonts.googleapis.com /
-		// fonts.gstatic.com — both are tightened to 'self'. Tightening shrinks
-		// the trusted-source surface for stylesheet/font injection.
-		// form-action 'self' (M-15): the panel renders a couple of
-		// classic <form> elements (login, recovery). Without this
-		// directive a maliciously injected form could submit to an
-		// off-origin URL and exfiltrate fields. 'self' restricts every
-		// form post to the panel's own origin, lining up with
-		// connect-src for fetch/XHR.
 		// S-08: scope wss to request host so a script cannot redirect
 		// websockets to arbitrary HTTPS endpoints. The Origin header
 		// and ws Origin-Pattern check enforce this server-side too.
 		wsOrigin := "wss://" + r.Host
 		h.Set("Content-Security-Policy",
-			"default-src 'self'; script-src 'self'; style-src 'self'; "+
+			"default-src 'none'; "+
+				"script-src 'self'; "+
+				"style-src 'self'; "+
+				"img-src 'self' data: blob:; "+
 				"connect-src 'self' "+wsOrigin+"; "+
-				"img-src 'self' data:; font-src 'self'; "+
-				"object-src 'none'; base-uri 'self'; form-action 'self'; "+
+				"font-src 'self' data:; "+
+				"manifest-src 'self'; "+
+				"worker-src 'self' blob:; "+
+				"object-src 'none'; "+
+				"base-uri 'none'; "+
+				"form-action 'self'; "+
 				"frame-ancestors 'none'")
 		h.Set("Strict-Transport-Security", hstsHeaderValue())
 		next.ServeHTTP(w, r)
