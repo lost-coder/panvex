@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -200,21 +199,26 @@ func runServe(args []string) error {
 
 	// Шов 2: wire the enrollment pre-flight into the outbound supervisor pool.
 	// EnrollDriver.Run is called before the mTLS dial when bootstrap_state=pending.
-	// The bootstrap TLS config uses InsecureSkipVerify because the agent has no
-	// trusted cert yet; the enrollment token authenticates the exchange in-band.
+	//
+	// S-2: the bootstrap TLS dialer used to set bare InsecureSkipVerify, which
+	// left a window between the TLS handshake and the in-band token check
+	// where a MITM could intercept the CSR exchange and proxy the bootstrap
+	// token. We now substitute a VerifyPeerCertificate callback that pins
+	// the agent's SPKI on a Trust-On-First-Use basis, keyed by agent ID
+	// (see newBootstrapTLSConfig). InsecureSkipVerify is still set because
+	// the agent's enrollment cert is self-signed (no chain to verify), but
+	// any subsequent reconnect against a different leaf cert is rejected.
 	if queries != nil {
 		enrollDriver := bootstrap.NewEnrollDriver(queries, api.CertificateAuthority(), logger, time.Now)
 		enrollDriver.SetCertPinWriter(store) // persist SPKI pin on each successful enroll (S-02)
 		api.WireEnrollDriver(enrollDriver)
 
-		bootstrapTLS := &tls.Config{
-			// The agent presents a self-signed cert during enrollment; the panel
-			// cannot verify it before the cert is issued, so we skip server cert
-			// verification here. The exchange is authenticated by the bootstrap
-			// token embedded in the EnrollOpening message.
-			InsecureSkipVerify: true, //nolint:gosec // intentional: pre-enrollment, no trust anchor yet
-		}
 		enrollFn := func(ctx context.Context, agentAddr, agentID string) error {
+			// Build the TLS config per-call so the VerifyPeerCertificate
+			// callback can close over agentID and ctx for the storage
+			// pin lookup. store satisfies bootstrapPinReader via its
+			// GetAgentCertPin method.
+			bootstrapTLS := newBootstrapTLSConfig(ctx, agentID, store)
 			return enrollDriver.Run(ctx, agentAddr, bootstrapTLS, agentID)
 		}
 		bootstrapStateFn := func(ctx context.Context, agentID string) (string, error) {
