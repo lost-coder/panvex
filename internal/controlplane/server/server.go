@@ -130,6 +130,15 @@ type Server struct {
 	clientAssignments            map[string][]managedClientAssignment
 	clientDeployments            map[string]map[string]managedClientDeployment
 	clientUsage                  map[string]map[string]clientUsageSnapshot
+	// agentClientUsage is the inverse of clientUsage's outer/inner key
+	// orientation: agentID -> set of clientIDs that this agent has a
+	// usage entry for. Maintained in lock-step with clientUsage so
+	// zeroLiveGaugesForUntouchedClients can iterate only the clients
+	// this agent owns instead of scanning every (clientID, agentID)
+	// combination on the entire panel (P-11).
+	//
+	// Same lock as clientUsage (s.clientsMu).
+	agentClientUsage             map[string]map[string]struct{}
 	// lastUsageSeq tracks the highest client-usage snapshot sequence number
 	// applied per agent. Snapshots whose seq is <= the stored value are
 	// discarded (duplicate/replay). seq == 1 after a non-zero stored value

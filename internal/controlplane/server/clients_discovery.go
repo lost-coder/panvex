@@ -685,6 +685,7 @@ func (s *Server) seedClientUsage(ctx context.Context, clientID, agentID string, 
 		ObservedAt:       observedAt,
 	}
 	s.clientUsage[clientID][agentID] = snap
+	s.trackClientUsageOwnerLocked(clientID, agentID)
 	lastSeq := s.lastUsageSeq[agentID]
 	s.clientsMu.Unlock()
 
