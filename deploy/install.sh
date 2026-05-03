@@ -25,6 +25,28 @@ else
 fi
 readonly CURL_INSECURE_FLAG
 
+# ── S-4: detached signature verification (opt-in) ────────────────────────────
+#
+# Default flow: SHA-256 over TLS only (TOFU on first deploy). A CDN/registry
+# compromise can serve a matching archive+sha256 pair, so production deployments
+# should set PANVEX_INSTALL_REQUIRE_SIGNATURE=1 and replace PANVEX_INSTALL_PUBKEY
+# with the project's release-signing public key.
+#
+# Signature format: minisign detached signatures (RWQ-prefixed Ed25519 pubkey,
+# .minisig sidecar published alongside each release asset). minisign is a
+# single static binary with no GPG keyring complexity — see deploy/install.sh
+# header comments and docs/release-signing.md.
+#
+# Default release-signing public key (RWQ format). Replace via env if you
+# distribute your own builds. NOTE: the literal below is a placeholder — a
+# real release-signing key must be filled in by maintainers before the S-4
+# verifier is enabled in production. Operators distributing their own builds
+# can override at install time:
+#   PANVEX_INSTALL_REQUIRE_SIGNATURE=1 \
+#   PANVEX_INSTALL_PUBKEY='RWQ...' \
+#   bash install.sh
+: "${PANVEX_INSTALL_PUBKEY:=RWReplaceMeWithRealPanvexReleaseSigningKey/0000000000000000000000000000000000}"
+
 # ── Colors ──────────────────────────────────────────────────────────────────
 
 BOLD=$'\033[1m'
@@ -208,6 +230,49 @@ download_file() {
     return
   fi
   die "curl or wget is required"
+}
+
+# verify_signature checks a detached minisign signature for $archive against
+# $sig_url. Returns 0 if verification is not required (default) or if it
+# passes. Returns non-zero — caller MUST treat as fatal — only when the
+# operator opted in via PANVEX_INSTALL_REQUIRE_SIGNATURE=1 and verification
+# failed (missing tool, missing pubkey, download failure, signature mismatch).
+#
+# This runs AFTER the existing sha256sum check, so both must pass: hash
+# guards integrity, signature guards authenticity.
+verify_signature() {
+  local archive="$1"
+  local sig_url="$2"
+  local require="${PANVEX_INSTALL_REQUIRE_SIGNATURE:-}"
+  if [[ -z "$require" ]] || [[ "$require" != "1" ]]; then
+    return 0  # not required — backward-compatible default
+  fi
+  if [[ -z "${PANVEX_INSTALL_PUBKEY:-}" ]]; then
+    echo "panvex: PANVEX_INSTALL_REQUIRE_SIGNATURE=1 but PANVEX_INSTALL_PUBKEY is empty" >&2
+    return 1
+  fi
+  if ! command -v minisign >/dev/null 2>&1; then
+    echo "panvex: signature verification requires 'minisign' (install via 'apt install minisign' or equivalent)" >&2
+    return 1
+  fi
+  local sig
+  sig=$(mktemp /tmp/panvex-sig.XXXXXX) || return 1
+  if ! download_file "$sig_url" "$sig"; then
+    echo "panvex: failed to download signature: $sig_url" >&2
+    rm -f "$sig"
+    return 1
+  fi
+  # minisign -P accepts the public key as a literal argument (avoids
+  # process-substitution incompatibility with /bin/sh). The pubkey is a
+  # short single-line RWQ string, safe to pass on the command line.
+  if ! minisign -V -P "$PANVEX_INSTALL_PUBKEY" -m "$archive" -x "$sig" >/dev/null 2>&1; then
+    echo "panvex: signature verification FAILED for $archive" >&2
+    rm -f "$sig"
+    return 1
+  fi
+  rm -f "$sig"
+  echo "panvex: signature verified" >&2
+  return 0
 }
 
 # ── Firewall helper ──────────────────────────────────────────────────────────
@@ -485,6 +550,14 @@ install_panvex() {
     die "Checksum verification failed (expected: $expected_hash, got: $actual_hash)"
   fi
   success "Checksum verified"
+
+  # S-4: detached signature verification (opt-in via
+  # PANVEX_INSTALL_REQUIRE_SIGNATURE=1). Runs AFTER the sha256 check so
+  # both must pass — defence in depth against a CDN/registry serving a
+  # matching archive+hash pair.
+  if ! verify_signature "$TMP_DIR/$asset_name" "${archive_url}.minisig"; then
+    die "Signature verification failed — refusing to install"
+  fi
 
   info "Extracting..."
   tar -xzf "$TMP_DIR/$asset_name" -C "$TMP_DIR"
@@ -975,6 +1048,17 @@ Non-interactive mode (set environment variables):
   PANVEX_CONFIG_DIR       Config directory (default: /etc/panvex)
   PANVEX_DATA_DIR         Data directory (default: /var/lib/panvex)
   PANVEX_REPO             GitHub repo (default: lost-coder/panvex)
+
+Security (S-4 release-asset signing):
+  PANVEX_INSTALL_REQUIRE_SIGNATURE
+                          Require minisign signature on release archive
+                          (default: unset — sha256-only TOFU). Set to 1
+                          for production deployments.
+  PANVEX_INSTALL_PUBKEY   Release-signing public key (RWQ format, one
+                          line). Replace the in-script placeholder with
+                          your real release-signing key. Required when
+                          PANVEX_INSTALL_REQUIRE_SIGNATURE=1.
+                          See docs/release-signing.md.
 EOF
   exit 0
 fi
