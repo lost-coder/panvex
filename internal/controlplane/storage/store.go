@@ -6,6 +6,15 @@ import (
 	"time"
 )
 
+// DefaultListLimit caps unbounded list queries so a long-lived control plane
+// can never stream millions of rows back to the caller (P-7). Queries that
+// already accept an explicit limit override this value; queries that have no
+// natural ceiling (per-client IP history, raw timeseries) apply this value
+// silently as a safety floor. 1000 is large enough that the dashboard page-
+// sized views (typically <= 500 rows) are unaffected, while bounding the
+// worst case at a few hundred kilobytes of result data.
+const DefaultListLimit = 1000
+
 // UserStore persists local control-plane user records.
 type UserStore interface {
 	PutUser(ctx context.Context, user UserRecord) error

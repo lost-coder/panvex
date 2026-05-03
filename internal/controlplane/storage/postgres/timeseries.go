@@ -257,13 +257,20 @@ func (s *Store) UpsertClientIPHistory(ctx context.Context, record storage.Client
 	return err
 }
 
+// ListClientIPHistory returns the per-(agent, ip) seen rows for `clientID`
+// inside the time window [from, to]. Capped at storage.DefaultListLimit
+// rows (P-7) so a high-cardinality client cannot stream millions of rows
+// when a caller forgets to pre-aggregate. Operators that genuinely need
+// every row should use AggregateClientIPHistory or a cursor-paginated
+// follow-up query.
 func (s *Store) ListClientIPHistory(ctx context.Context, clientID string, from time.Time, to time.Time) ([]storage.ClientIPHistoryRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT agent_id, client_id, ip_address, first_seen, last_seen
 		FROM client_ip_history
 		WHERE client_id = $1 AND last_seen >= $2 AND first_seen <= $3
 		ORDER BY last_seen DESC
-	`, clientID, from.UTC(), to.UTC())
+		LIMIT $4
+	`, clientID, from.UTC(), to.UTC(), storage.DefaultListLimit)
 	if err != nil {
 		return nil, err
 	}
