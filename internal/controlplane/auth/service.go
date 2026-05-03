@@ -21,6 +21,11 @@ var (
 	// ErrPasswordTooWeak reports a password that is shorter than the
 	// minimum length, empty, or exceeds the length cap.
 	ErrPasswordTooWeak = errors.New("password does not meet the minimum length policy")
+	// ErrPasswordCommonlyBreached reports a password that appears on the
+	// embedded common-breached denylist. Returned on password set / change
+	// paths only; existing logins still authenticate so legitimate users
+	// can rotate their credential without being locked out (S-medium).
+	ErrPasswordCommonlyBreached = errors.New("password matches a commonly breached password and cannot be used")
 	// ErrCurrentPasswordRequired reports a self-edit password change that
 	// did not include the caller's current password. Self-edits must
 	// re-prove possession of the current credential before rotating it
