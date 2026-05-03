@@ -100,6 +100,111 @@ func TestHubNonBlockingWithSlowSubscriber(t *testing.T) {
 	}
 }
 
+// TestHubPublishZeroAllocHotPath verifies P-5: Publish must not allocate per
+// call. The copy-on-write snapshot pattern lets Publish read the subscriber
+// list via a single atomic load — no per-publish slice copy, no map iter.
+// Per-subscriber RWMutex.RLock guards the send against a concurrent close
+// but is uncontended (and therefore zero-alloc) in the steady state. We
+// attach 10 fast subscribers and run Publish via testing.AllocsPerRun,
+// which already discards the first iteration so warm-up allocations don't
+// taint the measurement.
+func TestHubPublishZeroAllocHotPath(t *testing.T) {
+	hub := NewHub()
+
+	// 10 fast subscribers; drained by background goroutines so the channels
+	// never block and Publish always takes the success branch of its select.
+	const subCount = 10
+	var wg sync.WaitGroup
+	cancels := make([]func(), 0, subCount)
+	for i := 0; i < subCount; i++ {
+		ch, cancel := hub.Subscribe()
+		cancels = append(cancels, cancel)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range ch {
+				_ = struct{}{}
+			}
+		}()
+	}
+
+	evt := Event{Type: "test.event", Data: 42}
+	allocs := testing.AllocsPerRun(1000, func() {
+		hub.Publish(evt)
+	})
+
+	for _, cancel := range cancels {
+		cancel()
+	}
+	wg.Wait()
+
+	// Each Publish should perform zero heap allocations: no slice copy, no
+	// closure capture, no map iteration. Allow tiny slack for runtime jitter
+	// (e.g. slog.Debug which is gated by level and shouldn't fire here).
+	if allocs > 0 {
+		t.Fatalf("Publish allocates per call: AllocsPerRun = %.2f, want 0", allocs)
+	}
+}
+
+// TestHubSubscribeCancelRace stresses Subscribe + cancel + Publish under
+// concurrent load to catch lock-free snapshot bugs (use-after-free, double
+// close, lost subscriber). Run with `go test -race` in CI.
+func TestHubSubscribeCancelRace(t *testing.T) {
+	hub := NewHub()
+
+	stop := make(chan struct{})
+	var pubWG sync.WaitGroup
+
+	// Two publishers hammer Publish concurrently with Subscribe/cancel churn.
+	for i := 0; i < 2; i++ {
+		pubWG.Add(1)
+		go func() {
+			defer pubWG.Done()
+			evt := Event{Type: "race.event", Data: nil}
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					hub.Publish(evt)
+				}
+			}
+		}()
+	}
+
+	// Worker that subscribes, drains briefly, then cancels — repeatedly.
+	const workers = 8
+	const iterations = 200
+	var workerWG sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		workerWG.Add(1)
+		go func() {
+			defer workerWG.Done()
+			for i := 0; i < iterations; i++ {
+				ch, cancel := hub.Subscribe()
+				// Drain whatever lands until cancel closes the channel.
+				done := make(chan struct{})
+				go func() {
+					for range ch {
+						_ = struct{}{}
+					}
+					close(done)
+				}()
+				cancel()
+				<-done
+			}
+		}()
+	}
+
+	workerWG.Wait()
+	close(stop)
+	pubWG.Wait()
+
+	if got := hub.SubscriberCount(); got != 0 {
+		t.Fatalf("subscriber count after race = %d, want 0", got)
+	}
+}
+
 func TestHubSubscriberCountTracksActiveSubscribers(t *testing.T) {
 	hub := NewHub()
 	if got := hub.SubscriberCount(); got != 0 {

@@ -10,8 +10,10 @@
 package eventbus
 
 import (
+	"context"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 )
 
 // Event is a transport-agnostic envelope broadcast to every subscriber. The
@@ -84,36 +86,65 @@ func (h *Hub) SetDropHook(fn func()) { h.backend.SetDropHook(fn) }
 // are unaffected. Matches the pre-extraction constant (64).
 const memorySubscriberBuffer = 64
 
-// memoryBackend is the default in-process pub/sub implementation. It is a
-// direct move of the previous server.eventHub type. The RWMutex + snapshot
-// pattern (landed in P2-PERF-01) is preserved so one slow subscriber cannot
-// stall publish() for others.
+// subscriber pairs a unique id with its delivery channel and a per-channel
+// state pointer. The id lets the cancel closure identify which entry to
+// drop from the snapshot. The state pointer carries a sync.RWMutex + closed
+// flag that serialises sends against close so the race detector and
+// runtime never see send-on-closed:
+//
+//   - Publish takes state.mu.RLock() before sending. Many publishers hold
+//     RLocks simultaneously — no contention in the steady state.
+//   - cancel takes state.mu.Lock() to flip closed and close the channel.
+//     This blocks behind any in-flight Publish RLock holder, guaranteeing
+//     close runs only when no goroutine is mid-send on this channel.
+//
+// All snapshot copies share the same *subState so close visibility is
+// consistent regardless of which slice generation a Publisher loaded.
+type subscriber struct {
+	id    uint64
+	ch    chan Event
+	state *subState
+}
+
+type subState struct {
+	mu     sync.RWMutex
+	closed bool
+}
+
+// memoryBackend is the default in-process pub/sub implementation. It uses
+// a copy-on-write atomic.Pointer snapshot so Publish reads the subscriber
+// list lock-free. Subscribe / Unsubscribe serialise on `mu` and replace
+// the snapshot pointer; this trades a per-mutation O(N) copy for a
+// completely lock-free, allocation-free hot publish path (P-5).
 type memoryBackend struct {
-	mu          sync.RWMutex
-	sequence    uint64
-	subscribers map[uint64]chan Event
+	subs atomic.Pointer[[]subscriber] // immutable snapshot, never mutated in place
+
+	// mu serialises Subscribe / cancel / SetDropHook so concurrent
+	// mutations do not race when copying the subscriber slice.
+	mu       sync.Mutex
+	sequence uint64
 
 	// onDrop, if non-nil, is invoked every time Publish drops an event for a
 	// slow subscriber. The metrics subsystem wires this to increment
-	// panvex_event_hub_drop_total. Kept as a func so the hub has no direct
-	// dependency on Prometheus.
-	//
-	// Read under RLock so Publish can invoke it without holding the write
-	// lock.
-	onDrop func()
+	// panvex_event_hub_drop_total. Stored via atomic.Pointer so Publish can
+	// read it without acquiring mu.
+	onDrop atomic.Pointer[func()]
 }
 
 func newMemoryBackend() *memoryBackend {
-	return &memoryBackend{
-		subscribers: make(map[uint64]chan Event),
-	}
+	b := &memoryBackend{}
+	empty := make([]subscriber, 0)
+	b.subs.Store(&empty)
+	return b
 }
 
 // SubscriberCount returns the current number of active subscribers.
 func (h *memoryBackend) SubscriberCount() int {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return len(h.subscribers)
+	snap := h.subs.Load()
+	if snap == nil {
+		return 0
+	}
+	return len(*snap)
 }
 
 // SetDropHook installs the callback invoked on every dropped event. Calling
@@ -123,66 +154,108 @@ func (h *memoryBackend) SubscriberCount() int {
 // re-entry into the hub is allowed, but keep it cheap — Publish calls it
 // for every slow subscriber.
 func (h *memoryBackend) SetDropHook(fn func()) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.onDrop = fn
+	if fn == nil {
+		h.onDrop.Store(nil)
+		return
+	}
+	h.onDrop.Store(&fn)
 }
 
 // Subscribe returns a receive-only channel and a cancel func. Safe for
-// concurrent use.
+// concurrent use. Replaces the subscriber snapshot using copy-on-write so
+// the publish hot path stays lock-free.
 func (h *memoryBackend) Subscribe() (<-chan Event, func()) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 
 	h.sequence++
 	id := h.sequence
 	ch := make(chan Event, memorySubscriberBuffer)
-	h.subscribers[id] = ch
+	state := &subState{}
+	sub := subscriber{id: id, ch: ch, state: state}
+
+	old := h.subs.Load()
+	newSubs := make([]subscriber, 0, len(*old)+1)
+	newSubs = append(newSubs, *old...)
+	newSubs = append(newSubs, sub)
+	h.subs.Store(&newSubs)
+
+	h.mu.Unlock()
 
 	cancel := func() {
 		h.mu.Lock()
 		defer h.mu.Unlock()
 
-		existing, ok := h.subscribers[id]
-		if !ok {
+		cur := h.subs.Load()
+		filtered := make([]subscriber, 0, len(*cur))
+		found := false
+		for _, s := range *cur {
+			if s.id == id {
+				found = true
+				continue
+			}
+			filtered = append(filtered, s)
+		}
+		if !found {
 			return
 		}
-
-		delete(h.subscribers, id)
-		close(existing)
+		h.subs.Store(&filtered)
+		// Synchronise close against any in-flight Publish. A Publish that
+		// loaded the prior snapshot is currently inside state.mu.RLock();
+		// taking state.mu.Lock() blocks until it returns, then we flip
+		// closed and close the channel. All subsequent Publish calls see
+		// closed==true under their RLock and skip the send.
+		state.mu.Lock()
+		state.closed = true
+		close(ch)
+		state.mu.Unlock()
 	}
 
 	return ch, cancel
 }
 
-// Publish delivers one event to every current subscriber without holding the
-// hub write lock across sends. The subscriber slice is snapshotted under
-// RLock, then released before the non-blocking select for each channel. This
-// ensures a slow subscriber cannot stall concurrent Publish callers or block
-// Subscribe / cancel.
+// Publish delivers one event to every current subscriber. Reads the
+// subscriber snapshot via a single atomic load — no mutex on the hub,
+// no allocation, no per-publish copy of the channel slice. Per-subscriber
+// state.mu RLock serialises the send against a concurrent close so the
+// race detector and runtime never observe a send on a closed channel.
+// RLocks are uncontended in the steady state (cancel is rare relative to
+// publish), so the cost is a single atomic-CAS-equivalent per subscriber.
 //
 // Drop-on-full semantics: if a subscriber's buffered channel is full the
 // event is dropped for that subscriber and the onDrop hook fires.
 func (h *memoryBackend) Publish(evt Event) {
-	h.mu.RLock()
-	// Snapshot subscriber channels onto a local slice so we do not hold the
-	// lock while sending. Map iteration under RLock is safe; allocating a
-	// small slice per publish is cheap compared to the cost of holding the
-	// lock across 100+ channel sends to sluggish HTTP SSE clients.
-	subscribers := make([]chan Event, 0, len(h.subscribers))
-	for _, subscriber := range h.subscribers {
-		subscribers = append(subscribers, subscriber)
+	snap := h.subs.Load()
+	if snap == nil {
+		return
 	}
-	onDrop := h.onDrop
-	h.mu.RUnlock()
-
-	for _, subscriber := range subscribers {
+	subs := *snap
+	if len(subs) == 0 {
+		return
+	}
+	hookPtr := h.onDrop.Load()
+	for i := range subs {
+		sub := &subs[i]
+		sub.state.mu.RLock()
+		if sub.state.closed {
+			sub.state.mu.RUnlock()
+			continue
+		}
+		dropped := false
 		select {
-		case subscriber <- evt:
+		case sub.ch <- evt:
 		default:
-			slog.Debug("event dropped for slow subscriber", "event_type", evt.Type)
-			if onDrop != nil {
-				onDrop()
+			dropped = true
+		}
+		sub.state.mu.RUnlock()
+		if dropped {
+			// Gate slog.Debug behind Enabled() so we don't pay the
+			// interface-boxing alloc on the hot path when debug logging
+			// is disabled (the common case in production).
+			if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
+				slog.Debug("event dropped for slow subscriber", "event_type", evt.Type)
+			}
+			if hookPtr != nil {
+				(*hookPtr)()
 			}
 		}
 	}
