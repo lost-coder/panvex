@@ -183,7 +183,13 @@ func runServe(args []string) error {
 	// custom domain set PANVEX_INSTALL_SCRIPT_URL to override.
 	if queries != nil {
 		installHandler := bootstrap.NewInstallCommandHandler(queries, bootstrap.InstallCommandConfig{
-			ScriptURL:  installScriptURL(panelRuntime),
+			ScriptURL: installScriptURL(panelRuntime),
+			// S-3: bind the install-command to the embedded script body
+			// the panel is serving right now. The shell one-liner verifies
+			// the downloaded body before sudo-bash, and the script self-
+			// checks PANVEX_INSTALL_SCRIPT_SHA256 (T-5). A TLS-MITM that
+			// rewrites /install-agent.sh therefore cannot escalate.
+			ScriptHash: server.InstallScriptSHA256(),
 			PanelCAPin: api.CAPINHex(),
 			PanelCN:    api.CACN(),
 			PanelURL:   panelRuntime.GRPCListenAddress,

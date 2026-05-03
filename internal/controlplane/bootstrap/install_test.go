@@ -51,6 +51,7 @@ func TestInstallCommandHappyPath(t *testing.T) {
 	}}
 	h := NewInstallCommandHandler(fake, InstallCommandConfig{
 		ScriptURL:  "https://example.com/install.sh",
+		ScriptHash: strings.Repeat("a", 64),
 		PanelCAPin: "sha256:fakepin",
 		PanelCN:    "panel.example.com",
 		PanelURL:   "panel.example.com:8443",
