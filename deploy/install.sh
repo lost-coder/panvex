@@ -14,6 +14,17 @@ readonly STORAGE_SQLITE="sqlite"
 readonly TLS_MODE_DIRECT="direct"
 readonly AWK_FIRST_FIELD='{print $1}'
 
+# Opt-in escape hatch for self-signed/loopback TLS during initial bring-up.
+# Defaults to verifying TLS. Operators must explicitly set
+# PANVEX_INSTALL_INSECURE_TLS=1 to disable verification (audit-visible).
+if [[ "${PANVEX_INSTALL_INSECURE_TLS:-}" = "1" ]]; then
+  CURL_INSECURE_FLAG="-k"
+  echo "panvex: WARNING — TLS verification disabled via PANVEX_INSTALL_INSECURE_TLS=1" >&2
+else
+  CURL_INSECURE_FLAG=""
+fi
+readonly CURL_INSECURE_FLAG
+
 # ── Colors ──────────────────────────────────────────────────────────────────
 
 BOLD=$'\033[1m'
@@ -344,7 +355,7 @@ wait_healthy() {
   local url="${scheme}://127.0.0.1:${port}${path_prefix}/healthz"
   info "Waiting for service (${url})..."
   while [[ $waited -lt $timeout ]]; do
-    if curl -sfk --max-time 3 "$url" >/dev/null 2>&1; then
+    if curl -sf $CURL_INSECURE_FLAG --max-time 3 "$url" >/dev/null 2>&1; then
       echo ""
       success "Health check passed"
       return 0
@@ -355,7 +366,8 @@ wait_healthy() {
   done
   echo ""
   warn "Service not responding after ${timeout}s"
-  warn "Try manually: curl -k ${url}"
+  warn "Try manually: curl --cacert /path/to/ca.pem ${url}"
+  warn "  (or set PANVEX_INSTALL_INSECURE_TLS=1 to skip TLS verification — not recommended)"
   warn "Check logs: journalctl -u ${SERVICE_NAME} -n 20"
   return 1
 }
