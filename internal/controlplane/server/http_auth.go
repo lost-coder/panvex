@@ -97,6 +97,18 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		// branches by wall-clock timing.
 		ensureFloor := s.newLoginTimingFloor()
 
+		// Task 6 (S-medium): IP-keyed lockout runs BEFORE the username
+		// check so a locked IP can be rejected without our response
+		// revealing whether the username exists or is itself locked. The
+		// generic 401 message matches the username-locked branch below.
+		clientIP := s.requestClientRateLimitKey(r)
+		if s.ipLockout.IsLockedWithContext(r.Context(), clientIP, s.now()) {
+			s.logger.Info("login attempt from locked ip", "ip_hash", logIPHash(clientIP))
+			ensureFloor()
+			writeError(w, http.StatusTooManyRequests, "too many attempts; try again later")
+			return
+		}
+
 		// Q2.U-S-15: serialise the entire IsLocked → verify → RecordFailure
 		// sequence under a per-username shard lock. Without it, two
 		// concurrent attempts on the same username can both pass the
@@ -214,6 +226,24 @@ func (s *Server) newLoginTimingFloor() func() {
 // hold the password — at that point a 6-digit code is the only
 // remaining defence and should not share the password budget.
 func (s *Server) handleLoginAuthError(w http.ResponseWriter, r *http.Request, username string, err error, ensureFloor func()) {
+	// Task 6 (S-medium): bump the IP-keyed counter on any auth-style
+	// failure (bad password OR bad TOTP). The username-keyed counters
+	// run independently below; we still record per-username so the
+	// existing single-account lockout semantics are preserved.
+	clientIP := s.requestClientRateLimitKey(r)
+	switch {
+	case errors.Is(err, auth.ErrInvalidCredentials), errors.Is(err, auth.ErrInvalidTotpCode):
+		if s.ipLockout.CheckAndRecordFailureWithContext(r.Context(), clientIP, s.now()) {
+			// IP was already locked at decision time. Same generic
+			// 429 the pre-username gate returns so an attacker
+			// cannot tell which counter tripped.
+			s.logger.Info("login failure from locked ip", "ip_hash", logIPHash(clientIP))
+			ensureFloor()
+			writeError(w, http.StatusTooManyRequests, "too many attempts; try again later")
+			return
+		}
+	}
+
 	switch {
 	case errors.Is(err, auth.ErrInvalidCredentials):
 		if s.loginLockout.CheckAndRecordFailureWithContext(r.Context(), username, s.now()) {

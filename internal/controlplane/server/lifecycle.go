@@ -75,6 +75,7 @@ func newServerFromOptions(options Options, now func() time.Time, csrfSecret []by
 		sensitiveRateLimiter:         newFixedWindowRateLimiter(httpSensitiveRateLimitPerWindow, defaultRateLimitWindow),
 		loginLockout:                 newAccountLockoutTracker(),
 		totpLockout:                  newTOTPLockoutTracker(),
+		ipLockout:                    newIPLockoutTracker(),
 		wsConnLimiter:                newWSConnLimiter(),
 		trustedProxyCIDRs:            options.TrustedProxyCIDRs,
 		encryptionKey:                options.EncryptionKey,

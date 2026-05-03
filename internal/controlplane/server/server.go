@@ -75,6 +75,13 @@ type Server struct {
 	sensitiveRateLimiter      *fixedWindowRateLimiter
 	loginLockout              *accountLockoutTracker
 	totpLockout               *totpLockoutTracker
+	// ipLockout counts failed login attempts per source IP over a 15-minute
+	// rolling window and locks the IP for 30 min once the budget is hit
+	// (Task 6, S-medium). Runs PARALLEL to loginLockout — usernames and
+	// IPs each have their own counter so an attacker who enumerates
+	// usernames can no longer lock every account by triggering 5 fails per
+	// user. State is in-memory only by design.
+	ipLockout                 *ipLockoutTracker
 	// wsConnLimiter caps the number of live /events WebSocket connections
 	// per user-id (and per-IP for unauthenticated callers, defence-in-depth).
 	// Goroutine exhaustion otherwise — every accepted socket holds a reader
