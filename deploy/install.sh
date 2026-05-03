@@ -34,8 +34,9 @@ readonly CURL_INSECURE_FLAG
 #
 # Signature format: minisign detached signatures (RWQ-prefixed Ed25519 pubkey,
 # .minisig sidecar published alongside each release asset). minisign is a
-# single static binary with no GPG keyring complexity — see deploy/install.sh
-# header comments and docs/release-signing.md.
+# single static binary with no GPG keyring complexity — see
+# deploy/release-signing.md for the operator guide (key generation,
+# signing a release, publishing the pubkey).
 #
 # Default release-signing public key (RWQ format). Replace via env if you
 # distribute your own builds. NOTE: the literal below is a placeholder — a
@@ -1058,7 +1059,7 @@ Security (S-4 release-asset signing):
                           line). Replace the in-script placeholder with
                           your real release-signing key. Required when
                           PANVEX_INSTALL_REQUIRE_SIGNATURE=1.
-                          See docs/release-signing.md.
+                          See deploy/release-signing.md.
 EOF
   exit 0
 fi
