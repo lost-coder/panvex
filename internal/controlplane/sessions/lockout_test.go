@@ -266,6 +266,57 @@ func TestLockoutRecordSuccessPurgesStoredRow(t *testing.T) {
 	}
 }
 
+// cancellingLockoutStore returns ctx.Err() from every call. Used to
+// reproduce the persistLocked-error log path under cancelled context
+// without having to wire a real DB. Embeds fakeLockoutStore so any
+// future LockoutStore additions still satisfy the interface.
+type cancellingLockoutStore struct {
+	fakeLockoutStore
+}
+
+func (c *cancellingLockoutStore) UpsertLoginLockout(ctx context.Context, _ LockoutRecord) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return errors.New("upsert failed")
+}
+
+func (c *cancellingLockoutStore) DeleteLoginLockout(ctx context.Context, _ string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return errors.New("delete failed")
+}
+
+// Regression: persistLocked runs while t.mu is held. Earlier the
+// store-error log path called t.redact(username), which re-acquired
+// t.mu, deadlocking deterministically as soon as the store returned
+// an error (notably under ctx cancellation). The fix uses
+// redactLocked so the lock is not re-entered. Race-detector run
+// surfaced this as a hang in
+// TestLogin_ConstantTimeDelayHonoursClientDisconnect; this unit test
+// pins the invariant inside the sessions package.
+func TestLockoutPersistFailureWithCancelledCtxDoesNotDeadlock(t *testing.T) {
+	tracker := NewLockoutTracker()
+	tracker.SetStore(&cancellingLockoutStore{fakeLockoutStore: *newFakeLockoutStore()})
+	tracker.SetRedactor(func(string) string { return "u-test" })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	done := make(chan struct{})
+	go func() {
+		tracker.CheckAndRecordFailureWithContext(ctx, "alice", time.Now())
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("CheckAndRecordFailureWithContext deadlocked under cancelled ctx")
+	}
+}
+
 // S7: records whose lockout window has already elapsed at restart
 // time must NOT revive the lockout; they were expiring anyway.
 func TestLockoutRestoreSkipsExpiredLockouts(t *testing.T) {
