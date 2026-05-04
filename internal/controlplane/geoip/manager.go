@@ -75,8 +75,8 @@ func (m *Manager) LookupCity(ip net.IP) (CityResult, bool) {
 		return CityResult{}, false
 	}
 	m.mu.RLock()
+	defer m.mu.RUnlock()
 	r := m.city
-	m.mu.RUnlock()
 	if r == nil {
 		return CityResult{}, false
 	}
@@ -103,8 +103,8 @@ func (m *Manager) LookupASN(ip net.IP) (ASNResult, bool) {
 		return ASNResult{}, false
 	}
 	m.mu.RLock()
+	defer m.mu.RUnlock()
 	r := m.asn
-	m.mu.RUnlock()
 	if r == nil {
 		return ASNResult{}, false
 	}
