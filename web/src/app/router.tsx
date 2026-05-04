@@ -6,7 +6,8 @@
 // only — the cost is HMR latency on router edits, not production
 // behaviour.
 /* eslint-disable react-refresh/only-export-components */
-import { QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { QueryClient} from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Outlet,
   createRootRouteWithContext,
