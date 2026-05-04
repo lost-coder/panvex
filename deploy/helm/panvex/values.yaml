@@ -87,8 +87,21 @@ podDisruptionBudget:
   enabled: true
   minAvailable: 1
 
-# Liveness / readiness probes. /healthz is always registered on the
-# control-plane router and returns 200 once the HTTP listener is up.
+# Liveness / readiness probes.
+#
+# /healthz reports 200 once the HTTP listener is bound (process is up). It
+# does NOT validate downstream dependencies — that is the liveness contract
+# we want, otherwise a transient DB blip would cause kubelet to restart
+# the pod and amplify an outage instead of waiting it out.
+#
+# /readyz is the gated readiness endpoint (BP-Medium): it 200s only when
+# the certificate authority is initialized AND the storage backend
+# responds to Ping() within 2s. A failing /readyz pulls the pod out of
+# the Service endpoints without restarting it, which is the right
+# response to "DB is briefly unreachable" — once the dependency
+# recovers, traffic resumes automatically.
+#
+# See internal/controlplane/server/http_health.go for handler bodies.
 probes:
   liveness:
     initialDelaySeconds: 30

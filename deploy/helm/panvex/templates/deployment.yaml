@@ -63,6 +63,10 @@ spec:
             - name: grpc
               containerPort: {{ .Values.service.grpcPort }}
               protocol: TCP
+          # BP-Medium: split liveness/readiness probes so a flaky downstream
+          # (DB unreachable, CA not initialized) drops the pod from the
+          # Service endpoints (readyz fails) without restarting it (livez
+          # stays green). See values.yaml comment for the full rationale.
           livenessProbe:
             httpGet:
               path: /healthz
@@ -73,7 +77,7 @@ spec:
             failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
             initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
             periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
