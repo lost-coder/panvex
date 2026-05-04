@@ -151,20 +151,32 @@ func TestCSRFOriginCheckDoesNotExemptLookalikePaths(t *testing.T) {
 
 // TestSecurityHeadersDoNotAllowInlineScripts verifies the Content-Security-
 // Policy header no longer contains 'unsafe-inline' in script-src, and
-// includes the additional object-src 'none' and base-uri 'self' hardening
-// directives. This is the P2-SEC-09 remediation.
+// includes the default-src 'none' lockdown plus the explicit hardening
+// directives (object-src 'none', base-uri 'none', frame-ancestors 'none').
+// This combines the P2-SEC-09 remediation with the S-medium default-src
+// lockdown: every fetch destination is explicitly allow-listed, with no
+// fallback to default-src.
 func TestSecurityHeadersDoNotAllowInlineScripts(t *testing.T) {
 	handler := securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "http://panel.example.com/", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "http://panel.example.com/", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
 	csp := rec.Header().Get("Content-Security-Policy")
 	if csp == "" {
 		t.Fatal("Content-Security-Policy header not set")
+	}
+
+	// default-src 'none': lockdown. Every fetch destination must match an
+	// explicit directive below; nothing falls back to default-src. Catches
+	// regressions that re-introduce 'self' (which silently allows e.g.
+	// frame-src, media-src, prefetch-src, child-src).
+	defaultSrc := extractDirective(csp, "default-src")
+	if defaultSrc != "'none'" {
+		t.Fatalf("CSP default-src must be 'none', got %q (full CSP: %q)", defaultSrc, csp)
 	}
 
 	// Must contain an explicit script-src 'self' directive.
@@ -183,17 +195,30 @@ func TestSecurityHeadersDoNotAllowInlineScripts(t *testing.T) {
 		t.Fatalf("CSP script-src must not contain 'unsafe-eval': %q", scriptSrc)
 	}
 
-	// object-src 'none' and base-uri 'self' do NOT fall back to default-src,
-	// so both must be explicitly present. These block <object>/<embed>/
-	// <applet> plugin loads and prevent <base> tag injection from changing
-	// relative-URL resolution.
-	objectSrc := extractDirective(csp, "object-src")
-	if objectSrc != "'none'" {
-		t.Fatalf("CSP object-src must be 'none', got %q (full CSP: %q)", objectSrc, csp)
+	// object-src, base-uri, and frame-ancestors do NOT fall back to
+	// default-src, so each must be explicitly present and locked to
+	// 'none'. base-uri 'none' (was 'self') prevents injected <base href>
+	// tags from rewriting relative URLs.
+	for directive, want := range map[string]string{
+		"object-src":      "'none'",
+		"base-uri":        "'none'",
+		"frame-ancestors": "'none'",
+	} {
+		got := extractDirective(csp, directive)
+		if got != want {
+			t.Fatalf("CSP %s must be %s, got %q (full CSP: %q)", directive, want, got, csp)
+		}
 	}
-	baseURI := extractDirective(csp, "base-uri")
-	if baseURI != "'self'" {
-		t.Fatalf("CSP base-uri must be 'self', got %q (full CSP: %q)", baseURI, csp)
+
+	// Explicit allow-list directives must be present so the default-src
+	// 'none' lockdown does not break legitimate fetches.
+	for _, directive := range []string{
+		"script-src", "style-src", "img-src", "connect-src",
+		"font-src", "manifest-src", "worker-src", "form-action",
+	} {
+		if extractDirective(csp, directive) == "" {
+			t.Fatalf("CSP missing explicit %s directive (default-src is 'none'): %q", directive, csp)
+		}
 	}
 
 	// Verify other expected hardening headers are still present.

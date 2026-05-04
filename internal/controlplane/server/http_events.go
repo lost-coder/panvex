@@ -39,10 +39,25 @@ const EnvWSDevLoopback = "PANVEX_WS_DEV_LOOPBACK"
 
 func (s *Server) handleEvents() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, _, err := s.requireSession(r); err != nil {
+		session, _, err := s.requireSession(r)
+		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
+
+		// Cap concurrent /events connections per user (or per-IP for the
+		// unauthenticated path; today the requireSession check above
+		// rejects unauth'd callers, but we still consult the IP key as
+		// defence-in-depth in case the auth gate is moved). 429 is
+		// returned BEFORE the WebSocket upgrade handshake so the client
+		// observes a normal HTTP error rather than an upgraded socket
+		// that immediately closes.
+		limitKey, limit := s.eventsConnLimitKey(r, session.UserID)
+		if !s.wsConnLimiter.acquire(limitKey, limit) {
+			writeError(w, http.StatusTooManyRequests, "too many concurrent connections")
+			return
+		}
+		defer s.wsConnLimiter.release(limitKey)
 
 		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 			OriginPatterns: s.wsOriginPatterns(r),
@@ -107,6 +122,20 @@ func (s *Server) handleEvents() http.HandlerFunc {
 			}
 		}
 	}
+}
+
+// eventsConnLimitKey picks the conn-counter key + cap for a /events
+// request. Authenticated callers (the common case) are keyed by their
+// user-id with maxWSConnsPerUser. If a future refactor exposes /events
+// to unauthenticated traffic the per-IP fallback applies a much higher
+// maxWSConnsPerIP cap. The "user:" / "ip:" prefix mirrors the rate-limit
+// key convention so a user-id whose literal value happens to equal an
+// IP address cannot collide.
+func (s *Server) eventsConnLimitKey(r *http.Request, userID string) (string, int32) {
+	if userID != "" {
+		return "user:" + userID, int32(maxWSConnsPerUser)
+	}
+	return "ip:" + s.requestClientRateLimitKey(r), int32(maxWSConnsPerIP)
 }
 
 // wsOriginPatterns returns the allowed WebSocket origin patterns for the

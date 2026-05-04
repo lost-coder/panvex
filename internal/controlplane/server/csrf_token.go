@@ -115,12 +115,20 @@ func loadOrCreateVaultSalt(ctx context.Context, store storage.Store) ([]byte, er
 }
 
 // csrfTokenForSession derives a stable, opaque CSRF token from the
-// session ID. HMAC means the token cannot be forged without the
-// per-server secret; basing it on session ID means the token is bound
-// to exactly that session — rotating the cookie rotates the token.
-func csrfTokenForSession(sessionID string, secret []byte) string {
+// session-cookie value. HMAC means the token cannot be forged without
+// the per-server secret; basing it on the cookie value means the
+// token is bound to exactly that browser cookie — rotating the
+// cookie rotates the token.
+//
+// S22 Task 5 (S-medium): Session.ID is now the HMAC of the cookie
+// (the DB primary key), not the cookie itself. The CSRF token must
+// stay derivable from a value the *client* possesses, so we keep
+// hashing the cookie value here. The argument name is left as
+// sessionID for source-compatibility with older call-sites; new
+// callers should pass the raw cookie value.
+func csrfTokenForSession(cookieValue string, secret []byte) string {
 	h := hmac.New(sha256.New, secret)
-	h.Write([]byte(sessionID))
+	h.Write([]byte(cookieValue))
 	return base64.RawURLEncoding.EncodeToString(h.Sum(nil))
 }
 
@@ -151,14 +159,24 @@ func (s *Server) csrfTokenMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		session, _, ok := requestAuthContext(r)
+		_, _, ok := requestAuthContext(r)
 		if !ok {
 			// No session yet (e.g. login itself). Origin check and
 			// rate limiting cover unauthenticated state-changing paths.
 			next.ServeHTTP(w, r)
 			return
 		}
-		expected := csrfTokenForSession(session.ID, s.csrfSecret)
+		// S22 Task 5: derive the CSRF token from the *cookie value* the
+		// browser sent, not from the internal Session.ID. The cookie
+		// is what the panel UI also has, so the double-submit
+		// comparison stays correct without exposing or relying on the
+		// server-side lookup hash.
+		cookieValue := readSessionCookie(r)
+		if cookieValue == "" {
+			writeError(w, http.StatusForbidden, "CSRF token missing or invalid")
+			return
+		}
+		expected := csrfTokenForSession(cookieValue, s.csrfSecret)
 		if !csrfTokenMatches(r.Header.Get(csrfTokenHeader), expected) {
 			writeError(w, http.StatusForbidden, "CSRF token missing or invalid")
 			return
@@ -180,13 +198,20 @@ func isStateChangingMethod(method string) bool {
 // remainder of the session.
 func (s *Server) handleCSRFToken() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session, _, ok := requestAuthContext(r)
+		_, _, ok := requestAuthContext(r)
 		if !ok {
+			writeError(w, http.StatusUnauthorized, "no active session")
+			return
+		}
+		// S22 Task 5: CSRF token is bound to the cookie value, not
+		// the internal Session.ID; see csrfTokenForSession.
+		cookieValue := readSessionCookie(r)
+		if cookieValue == "" {
 			writeError(w, http.StatusUnauthorized, "no active session")
 			return
 		}
 		writeJSON(w, http.StatusOK, struct {
 			Token string `json:"token"`
-		}{Token: csrfTokenForSession(session.ID, s.csrfSecret)})
+		}{Token: csrfTokenForSession(cookieValue, s.csrfSecret)})
 	}
 }

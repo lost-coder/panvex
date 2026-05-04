@@ -82,6 +82,9 @@ func newServerFromOptions(options Options, now func() time.Time, csrfSecret []by
 		grpcConnectRateLimiter:       newFixedWindowRateLimiter(grpcConnectRateLimitPerWindow, defaultRateLimitWindow),
 		sensitiveRateLimiter:         newFixedWindowRateLimiter(httpSensitiveRateLimitPerWindow, defaultRateLimitWindow),
 		loginLockout:                 newAccountLockoutTracker(),
+		totpLockout:                  newTOTPLockoutTracker(),
+		ipLockout:                    newIPLockoutTracker(),
+		wsConnLimiter:                newWSConnLimiter(),
 		trustedProxyCIDRs:            options.TrustedProxyCIDRs,
 		encryptionKey:                options.EncryptionKey,
 		secretVault:                  vault,
@@ -134,6 +137,25 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 	s.auth.SetSessionStore(store)
 	s.auth.SetVault(vault)
 	s.auth.SetConsumedTotpStore(store)
+	// S22 Task 5 (S-medium): derive the per-server session-lookup HMAC
+	// key from EncryptionKey under a unique domain tag. The DB primary
+	// key for a session row is HMAC(opaque cookie token) under this
+	// key, so a leaked DB row plus the audit log-redaction key cannot
+	// be correlated back to a live cookie. Empty EncryptionKey leaves
+	// the lookup key unset; the auth service falls back to a fresh
+	// per-process random key on first use (cookies issued before the
+	// process restarts under that fallback are then unrecoverable —
+	// production must always set EncryptionKey for cross-restart
+	// continuity). Any error from SetSessionLookupKey here is fatal
+	// because the alternative is silently shipping with a misconfigured
+	// or weak lookup key.
+	s.trySetStartupErr(func() error {
+		key := deriveSessionLookupKey(s.encryptionKey)
+		if key == nil {
+			return nil
+		}
+		return s.auth.SetSessionLookupKey(key)
+	})
 	s.trySetStartupErr(s.auth.RestoreSessions)
 
 	// S7: wire the lockout tracker to the persistent backend and load any

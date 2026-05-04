@@ -1983,7 +1983,7 @@ func performJSONRequestWithHeaders(t *testing.T, srv *Server, method string, pat
 		// trip per call.
 		if request.Header.Get(csrfTokenHeader) == "" {
 			for _, c := range cookies {
-				if c.Name == sessionCookieName && c.Value != "" {
+				if (c.Name == sessionCookieName || c.Name == sessionCookieNameHostPrefix) && c.Value != "" {
 					request.Header.Set(csrfTokenHeader, csrfTokenForSession(c.Value, srv.csrfSecret))
 					break
 				}

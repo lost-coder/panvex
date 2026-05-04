@@ -28,7 +28,19 @@ import (
 )
 
 const (
-	sessionCookieName                    = "panvex_session"
+	// sessionCookieName is the bare cookie name used when the cookie cannot be
+	// marked Secure (plain-HTTP dev / loopback). The browser accepts it without
+	// the __Host- prefix's strict requirements, at the cost of weaker isolation.
+	sessionCookieName = "panvex_session"
+	// sessionCookieNameHostPrefix is the production cookie name. The __Host-
+	// prefix forces the browser to enforce three constraints:
+	//   1. Secure flag is set
+	//   2. Path is "/"
+	//   3. Domain attribute is empty (origin-bound — no sibling/subdomain leak)
+	// We only emit this name when sessionCookieSecure(r) is true; otherwise the
+	// browser would refuse it. Reads accept either form so a session issued
+	// under one prefix still works while a deployment toggles Secure.
+	sessionCookieNameHostPrefix          = "__Host-panvex_session"
 	apiBasePath                          = "/api"
 	maxInMemoryMetricSnapshots           = 512
 	maxInMemoryAuditEvents               = 1024
@@ -62,6 +74,20 @@ type Server struct {
 	grpcConnectRateLimiter    *fixedWindowRateLimiter
 	sensitiveRateLimiter      *fixedWindowRateLimiter
 	loginLockout              *accountLockoutTracker
+	totpLockout               *totpLockoutTracker
+	// ipLockout counts failed login attempts per source IP over a 15-minute
+	// rolling window and locks the IP for 30 min once the budget is hit
+	// (Task 6, S-medium). Runs PARALLEL to loginLockout — usernames and
+	// IPs each have their own counter so an attacker who enumerates
+	// usernames can no longer lock every account by triggering 5 fails per
+	// user. State is in-memory only by design.
+	ipLockout                 *ipLockoutTracker
+	// wsConnLimiter caps the number of live /events WebSocket connections
+	// per user-id (and per-IP for unauthenticated callers, defence-in-depth).
+	// Goroutine exhaustion otherwise — every accepted socket holds a reader
+	// goroutine, a writer goroutine, and an event-bus subscription. See
+	// ws_conn_limit.go.
+	wsConnLimiter             *wsConnLimiter
 	trustedProxyCIDRs         []*net.IPNet
 	encryptionKey             string
 	secretVault               *secretvault.Vault

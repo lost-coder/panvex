@@ -24,6 +24,41 @@ func newAccountLockoutTracker() *accountLockoutTracker {
 	return sessions.NewLockoutTracker()
 }
 
+// S-6: separate, stricter counter for TOTP failures so that an attacker
+// who already has the password cannot brute-force the 6-digit code at
+// the password lockout's 5-attempts-per-15-min budget. The new tracker
+// trips at 3 attempts per 5 min and is in-memory only — survival across
+// a control-plane restart adds no value because the user must produce a
+// fresh code on retry anyway.
+const (
+	totpLockoutMaxAttempts = sessions.TOTPLockoutMaxAttempts
+	totpLockoutDuration    = sessions.TOTPLockoutDuration
+)
+
+type totpLockoutTracker = sessions.TOTPLockoutTracker
+
+func newTOTPLockoutTracker() *totpLockoutTracker {
+	return sessions.NewTOTPLockoutTracker()
+}
+
+// S-medium (Task 6): a third lockout tracker keyed by source IP closes
+// the targeted-DoS gap left by the username-keyed counter. An attacker
+// who enumerates usernames and triggers 5 failures against each can
+// otherwise lock every account in turn; counting failures per source
+// IP raises the cost of that attack without affecting legitimate
+// fat-fingering in normal usage.
+const (
+	ipLockoutMaxFailures = sessions.IPLockoutMaxFailures
+	ipLockoutWindow      = sessions.IPLockoutWindow
+	ipLockoutDuration    = sessions.IPLockoutDuration
+)
+
+type ipLockoutTracker = sessions.IPLockoutTracker
+
+func newIPLockoutTracker() *ipLockoutTracker {
+	return sessions.NewIPLockoutTracker()
+}
+
 // lockoutStoreAdapter bridges sessions.LockoutStore (defined locally in
 // the sessions package to keep it free of storage imports) and
 // storage.LoginLockoutStore (the real persistence interface). The

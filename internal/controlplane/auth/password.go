@@ -47,14 +47,21 @@ func effectivePolicy(operatorMin int) int {
 	return operatorMin
 }
 
-// validatePassword enforces the configured length policy. There are no
-// character-class checks — Argon2id + per-account lockout cover online
-// brute force, while NIST SP 800-63B explicitly recommends against
-// composition rules. See AUDIT_2026-05-01 §S-01.
+// validatePassword enforces the configured length policy and the embedded
+// common-breached denylist. There are no character-class checks — Argon2id
+// + per-account lockout cover online brute force, while NIST SP 800-63B
+// explicitly recommends against composition rules. See AUDIT_2026-05-01 §S-01.
+//
+// The denylist applies to ALL users on set / change paths (Task 7,
+// S-medium) because any breached password is unsafe regardless of role.
+// Existing logins are not affected — verify paths do not call this.
 func validatePassword(password string, operatorMin int) error {
 	minLen := effectivePolicy(operatorMin)
 	if len(password) < minLen || len(password) > maxPasswordLength {
 		return ErrPasswordTooWeak
+	}
+	if err := validatePasswordAgainstDenylist(password); err != nil {
+		return err
 	}
 	return nil
 }

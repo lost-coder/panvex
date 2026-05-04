@@ -97,6 +97,18 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		// branches by wall-clock timing.
 		ensureFloor := s.newLoginTimingFloor(r.Context())
 
+		// Task 6 (S-medium): IP-keyed lockout runs BEFORE the username
+		// check so a locked IP can be rejected without our response
+		// revealing whether the username exists or is itself locked. The
+		// generic 401 message matches the username-locked branch below.
+		clientIP := s.requestClientRateLimitKey(r)
+		if s.ipLockout.IsLockedWithContext(r.Context(), clientIP, s.now()) {
+			s.logger.Info("login attempt from locked ip", "ip_hash", logIPHash(clientIP))
+			ensureFloor()
+			writeError(w, http.StatusTooManyRequests, "too many attempts; try again later")
+			return
+		}
+
 		// Q2.U-S-15: serialise the entire IsLocked → verify → RecordFailure
 		// sequence under a per-username shard lock. Without it, two
 		// concurrent attempts on the same username can both pass the
@@ -105,8 +117,26 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		releaseAttempt := s.loginLockout.AttemptLock(request.Username)
 		defer releaseAttempt()
 
+		// S-6: serialise the TOTP lockout window the same way. The two
+		// trackers are independent counters (password vs second factor),
+		// so each needs its own per-username shard lock to close the same
+		// IsLocked → verify → RecordFailure race on its own counter.
+		releaseTotpAttempt := s.totpLockout.AttemptLock(request.Username)
+		defer releaseTotpAttempt()
+
 		if s.loginLockout.IsLockedWithContext(r.Context(), request.Username, s.now()) {
 			s.logger.Info("login attempt on locked account", "username_hash", s.logUsername(request.Username))
+			ensureFloor()
+			writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
+			return
+		}
+
+		// S-6: also reject if the second-factor counter is locked. This
+		// returns the same generic "temporarily locked" message as the
+		// password lockout so an attacker cannot tell which counter
+		// tripped (and therefore cannot infer that the password is right).
+		if s.totpLockout.IsLockedWithContext(r.Context(), request.Username, s.now()) {
+			s.logger.Info("login attempt on totp-locked account", "username_hash", s.logUsername(request.Username))
 			ensureFloor()
 			writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
 			return
@@ -118,8 +148,8 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		// login (e.g. via XSS or a shared device) must not remain valid after
 		// the victim authenticates.
 		priorSessionID := ""
-		if existing, err := r.Cookie(sessionCookieName); err == nil {
-			priorSessionID = existing.Value
+		if existing := readSessionCookie(r); existing != "" {
+			priorSessionID = existing
 		}
 
 		session, err := s.auth.Authenticate(r.Context(), auth.LoginInput{
@@ -134,6 +164,11 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		}
 
 		s.loginLockout.RecordSuccessWithContext(r.Context(), request.Username)
+		// S-6: a fully successful login proves the user controls both the
+		// password and the second factor (or that TOTP is disabled), so
+		// clear the TOTP failure counter too. Symmetric with the password
+		// reset above.
+		s.totpLockout.RecordSuccessWithContext(r.Context(), request.Username)
 		s.logger.Info("user logged in", "username_hash", s.logUsername(request.Username), "user_id", session.UserID, "session_hash", s.logSessionID(session.ID))
 
 		if !s.persistLoginAudit(w, r, session, request.Username, ensureFloor) {
@@ -141,13 +176,23 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		}
 
 		ensureFloor()
+		secure := s.sessionCookieSecure(r)
 		http.SetCookie(w, &http.Cookie{
-			Name:     sessionCookieName,
-			Value:    session.ID,
+			// __Host- prefix when Secure: browser enforces Path=/, Secure,
+			// no Domain attribute. Falls back to bare name in plain-HTTP
+			// dev where Secure must be false. (Q3.U-S-13 / S-22.)
+			Name: sessionCookieNameFor(secure),
+			// S22 Task 5 (S-medium): the cookie carries an opaque
+			// random token. The DB primary key and in-memory map are
+			// keyed on its HMAC, not on this value, so a leaked DB
+			// row plus the audit log-redaction key cannot be
+			// correlated back to a live cookie. session.Cookie is
+			// only populated on fresh issuance from Authenticate.
+			Value:    session.Cookie,
 			Path:     "/",
 			HttpOnly: true,
 			SameSite: http.SameSiteStrictMode,
-			Secure:   s.sessionCookieSecure(r),
+			Secure:   secure,
 		})
 
 		writeJSON(w, http.StatusOK, map[string]string{
@@ -183,11 +228,45 @@ func (s *Server) newLoginTimingFloor(ctx context.Context) func() {
 
 // handleLoginAuthError records lockout-eligible failures and writes the
 // appropriate HTTP response for a failed AuthenticateWithContext call.
+//
+// S-6: password failures and TOTP failures feed independent counters.
+// The password tracker is the lenient one (LockoutMaxAttempts /
+// LockoutDuration) so legitimate users who fat-finger a password don't
+// get locked out instantly. The TOTP tracker is the stricter one
+// (TOTPLockoutMaxAttempts / TOTPLockoutDuration) because by the time an
+// attempt reaches the TOTP step the attacker has already proven they
+// hold the password — at that point a 6-digit code is the only
+// remaining defence and should not share the password budget.
 func (s *Server) handleLoginAuthError(w http.ResponseWriter, r *http.Request, username string, err error, ensureFloor func()) {
-	// Record lockout-eligible failures: wrong password or wrong TOTP code.
-	if errors.Is(err, auth.ErrInvalidCredentials) || errors.Is(err, auth.ErrInvalidTotpCode) {
+	// Task 6 (S-medium): bump the IP-keyed counter on any auth-style
+	// failure (bad password OR bad TOTP). The username-keyed counters
+	// run independently below; we still record per-username so the
+	// existing single-account lockout semantics are preserved.
+	clientIP := s.requestClientRateLimitKey(r)
+	switch {
+	case errors.Is(err, auth.ErrInvalidCredentials), errors.Is(err, auth.ErrInvalidTotpCode):
+		if s.ipLockout.CheckAndRecordFailureWithContext(r.Context(), clientIP, s.now()) {
+			// IP was already locked at decision time. Same generic
+			// 429 the pre-username gate returns so an attacker
+			// cannot tell which counter tripped.
+			s.logger.Info("login failure from locked ip", "ip_hash", logIPHash(clientIP))
+			ensureFloor()
+			writeError(w, http.StatusTooManyRequests, "too many attempts; try again later")
+			return
+		}
+	}
+
+	switch {
+	case errors.Is(err, auth.ErrInvalidCredentials):
 		if s.loginLockout.CheckAndRecordFailureWithContext(r.Context(), username, s.now()) {
 			s.logger.Info("account locked out", "username_hash", s.logUsername(username))
+			ensureFloor()
+			writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
+			return
+		}
+	case errors.Is(err, auth.ErrInvalidTotpCode):
+		if s.totpLockout.CheckAndRecordFailureWithContext(r.Context(), username, s.now()) {
+			s.logger.Info("account totp locked out", "username_hash", s.logUsername(username))
 			ensureFloor()
 			writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
 			return
@@ -258,6 +337,19 @@ func (s *Server) handleLogout() http.HandlerFunc {
 		}
 
 		s.logger.Info("user logged out", "user_id", session.UserID, "session_hash", s.logSessionID(session.ID))
+		secure := s.sessionCookieSecure(r)
+		// Expire BOTH cookie names so a deployment that toggles Secure (or a
+		// browser that still holds a stale variant) cannot retain a logged-out
+		// session under the other name.
+		http.SetCookie(w, &http.Cookie{
+			Name:     sessionCookieNameHostPrefix,
+			Value:    "",
+			Path:     "/",
+			HttpOnly: true,
+			MaxAge:   -1,
+			SameSite: http.SameSiteStrictMode,
+			Secure:   true,
+		})
 		http.SetCookie(w, &http.Cookie{
 			Name:     sessionCookieName,
 			Value:    "",
@@ -265,7 +357,7 @@ func (s *Server) handleLogout() http.HandlerFunc {
 			HttpOnly: true,
 			MaxAge:   -1,
 			SameSite: http.SameSiteStrictMode,
-			Secure:   s.sessionCookieSecure(r),
+			Secure:   secure,
 		})
 		s.appendAuditWithContext(r.Context(), session.UserID, "auth.logout", s.logSessionID(session.ID), nil)
 
@@ -386,12 +478,19 @@ func (s *Server) requireSession(r *http.Request) (auth.Session, auth.User, error
 		return session, user, nil
 	}
 
-	cookie, err := r.Cookie(sessionCookieName)
-	if err != nil {
-		return auth.Session{}, auth.User{}, err
+	value := readSessionCookie(r)
+	if value == "" {
+		return auth.Session{}, auth.User{}, http.ErrNoCookie
 	}
 
-	session, err := s.auth.GetSession(cookie.Value)
+	// S22 Task 5: the cookie carries the *opaque* token; the auth
+	// service hashes it under its per-server lookup key before
+	// touching the in-memory map or persistent store. We deliberately
+	// route through GetSessionByCookie (not GetSession) so cookie
+	// values cannot accidentally be used as direct map keys —
+	// GetSession is reserved for internal callers that already hold
+	// the hashed Session.ID.
+	session, err := s.auth.GetSessionByCookie(value)
 	if err != nil {
 		return auth.Session{}, auth.User{}, err
 	}
@@ -424,6 +523,33 @@ func (s *Server) trustedForwardedProto(r *http.Request) string {
 		return ""
 	}
 	return r.Header.Get("X-Forwarded-Proto")
+}
+
+// sessionCookieNameFor returns the cookie name to emit on Set-Cookie based on
+// whether the cookie will be marked Secure. The __Host- prefix is only valid
+// when Secure=true and Path=/ and Domain is unset; we satisfy the latter two
+// unconditionally and gate the prefix on the Secure decision so dev/loopback
+// clients (where Secure is false) still receive a usable cookie. (S-22.)
+func sessionCookieNameFor(secure bool) string {
+	if secure {
+		return sessionCookieNameHostPrefix
+	}
+	return sessionCookieName
+}
+
+// readSessionCookie returns the session ID carried by either the host-prefix
+// cookie (preferred — production) or the bare cookie (dev/loopback). When
+// both are present the host-prefix variant wins, since it is the variant a
+// modern Secure deployment would have just issued. Returns "" if neither is
+// present.
+func readSessionCookie(r *http.Request) string {
+	if c, err := r.Cookie(sessionCookieNameHostPrefix); err == nil && c.Value != "" {
+		return c.Value
+	}
+	if c, err := r.Cookie(sessionCookieName); err == nil && c.Value != "" {
+		return c.Value
+	}
+	return ""
 }
 
 // EnvForceSecureCookie unconditionally marks the session cookie Secure,
