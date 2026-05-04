@@ -27,7 +27,7 @@ func TestHandleEvents_Returns429WhenUserAtCap(t *testing.T) {
 	}
 	t.Cleanup(func() { store.Close() })
 
-	srv := New(Options{
+	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:              func() time.Time { return now },
 		Store:            store,
@@ -107,7 +107,7 @@ func TestHandleEvents_429DoesNotConsumeSlot(t *testing.T) {
 	}
 	t.Cleanup(func() { store.Close() })
 
-	srv := New(Options{
+	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:              func() time.Time { return now },
 		Store:            store,

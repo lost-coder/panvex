@@ -236,7 +236,7 @@ func TestLoginLockoutIntegration(t *testing.T) {
 // must be rejected as locked.
 func TestLoginTOTPLockoutIntegration(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
-	srv := New(Options{
+	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:              func() time.Time { return now },
 	})
@@ -309,7 +309,7 @@ func TestLoginTOTPLockoutIntegration(t *testing.T) {
 // surface so the wiring in handleLoginAuthError is also covered.
 func TestLoginPasswordCounterNotBumpedByTOTPFailures(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
-	srv := New(Options{
+	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:              func() time.Time { return now },
 	})
@@ -729,7 +729,7 @@ func TestLogin_CookieIsOpaque(t *testing.T) {
 	}
 	defer base.Close()
 
-	srv := New(Options{
+	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:              func() time.Time { return now },
 		Store:            base,

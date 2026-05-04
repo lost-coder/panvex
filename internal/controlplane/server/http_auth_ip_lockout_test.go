@@ -60,7 +60,7 @@ func TestLogin_IPLockoutBlocksFurtherAttempts(t *testing.T) {
 	}
 	t.Cleanup(func() { store.Close() })
 
-	srv := New(Options{
+	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:              func() time.Time { return now },
 		Store:            store,
@@ -112,7 +112,7 @@ func TestLogin_IPLockoutDoesNotAffectOtherIPs(t *testing.T) {
 	}
 	t.Cleanup(func() { store.Close() })
 
-	srv := New(Options{
+	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:              func() time.Time { return now },
 		Store:            store,
@@ -154,7 +154,7 @@ func TestLogin_IPLockoutWindowExpiry(t *testing.T) {
 	}
 	t.Cleanup(func() { store.Close() })
 
-	srv := New(Options{
+	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:              func() time.Time { return clock },
 		Store:            store,
@@ -202,7 +202,7 @@ func TestLogin_IPLockoutAccumulatesAcrossUsernames(t *testing.T) {
 	}
 	t.Cleanup(func() { store.Close() })
 
-	srv := New(Options{
+	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:              func() time.Time { return now },
 		Store:            store,
