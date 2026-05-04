@@ -130,6 +130,10 @@ export type ClientIPEntry = {
   ip_address: string;
   first_seen: string;
   last_seen: string;
+  country_code?: string | undefined;
+  country_name?: string | undefined;
+  city?: string | undefined;
+  asn?: string | undefined;
 };
 
 export type ClientIPHistoryResponse = {
