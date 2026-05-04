@@ -309,7 +309,7 @@ func New(options Options) (*Server, error) {
 		// errors surface to operators (P2-REL-06 / H14). obs is always set
 		// earlier in New(); nil would fall back to the no-op sink.
 		server.batchWriter = newStoreBatchWriter(server.store, server.obs, server.now)
-		server.batchWriter.Start()
+		server.batchWriter.Start(server.serverCtx)
 	}
 
 	return server, nil

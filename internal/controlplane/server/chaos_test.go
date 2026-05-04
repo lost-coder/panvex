@@ -190,7 +190,7 @@ func TestChaosShutdownMidAudit(t *testing.T) {
 	// fast machines drain a handful of rows cleanly.
 	counting := &chaosCountingAuditStore{Store: base, stall: 5 * time.Millisecond}
 	w := newStoreBatchWriter(counting, nil, nil)
-	w.Start()
+	w.Start(t.Context())
 
 	const n = 40
 	for i := 0; i < n; i++ {

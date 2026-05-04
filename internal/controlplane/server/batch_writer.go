@@ -258,9 +258,20 @@ func newStoreBatchWriter(store storage.Store, metrics batchMetricsSink, now func
 }
 
 // Start launches the background flush goroutine.
-func (w *storeBatchWriter) Start() {
+//
+// parentCtx is the writer's lifecycle context — typically Server.serverCtx so
+// in-flight drains inherit cancellation when the server shuts down. The flush
+// loop derives a local cancellable ctx from it that is also tripped when
+// w.done is closed (StopWithTimeout). The shutdown final-drain runs on its
+// own caller-supplied parentCtx via StopWithTimeout and is unaffected by this
+// cancellation. parentCtx may be nil/Background only in tests; production
+// callers must pass a real lifecycle ctx (Plan 3 tail / S25 T2).
+func (w *storeBatchWriter) Start(parentCtx context.Context) {
+	if parentCtx == nil {
+		parentCtx = context.WithoutCancel(context.Background()) //nolint:noctx // reason: test-only fallback when Start is called without a lifecycle ctx; production wiring (lifecycle.go) always supplies serverCtx.
+	}
 	w.wg.Add(1)
-	go w.flushLoop()
+	go w.flushLoop(parentCtx)
 }
 
 // Stop cancels the background goroutine, waits for it to exit, then performs
@@ -317,10 +328,25 @@ func (w *storeBatchWriter) StopWithTimeout(parentCtx context.Context, timeout ti
 	}
 }
 
-func (w *storeBatchWriter) flushLoop() {
+func (w *storeBatchWriter) flushLoop(parentCtx context.Context) {
 	defer w.wg.Done()
 	ticker := time.NewTicker(batchFlushInterval)
 	defer ticker.Stop()
+
+	// flushCtx is the writer-local context for steady-state drains. It is
+	// derived directly from parentCtx (Server.serverCtx in production) so
+	// in-flight DB writes inherit cancellation when the server lifecycle
+	// ends, replacing the prior context.Background() at the call edge
+	// (Plan 3 tail / S25 T2).
+	//
+	// Crucially, flushCtx is NOT cancelled when w.done closes. A graceful
+	// StopWithTimeout(close(done) -> wg.Wait()) lets any in-flight drain
+	// complete; the loop checks `case <-w.done` only between iterations.
+	// Cancelling on done would abort the final inline drain mid-flush and
+	// drop audit rows (regression caught by TestAuditBufferFlushesOnShutdown).
+	// The shutdown final-drain runs separately in StopWithTimeout on its
+	// own caller-supplied ctx after the loop has returned.
+	flushCtx := parentCtx
 
 	for {
 		select {
@@ -340,7 +366,7 @@ func (w *storeBatchWriter) flushLoop() {
 		// Any signal (including ticker) triggers a full drain of all buffers.
 		// This prevents signal coalescing from letting individual buffers grow
 		// beyond its per-stream batch size for more than one flush cycle.
-		w.drainAll(context.Background())
+		w.drainAll(flushCtx)
 	}
 }
 
