@@ -15,4 +15,7 @@ export const settingsKeys = {
 
   /** Retention (audit/jobs TTL) settings. */
   retention: () => [...settingsKeys.all, "retention"] as const,
+
+  /** GeoIP (city/ASN database) settings + runtime state. */
+  geoip: () => [...settingsKeys.all, "geoip"] as const,
 };
