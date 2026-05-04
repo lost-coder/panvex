@@ -7,6 +7,7 @@ import { useAppearance } from "@/app/providers/AppearanceProvider";
 import { ErrorState } from "@/components/ErrorState";
 import { SkeletonRows } from "@/ui";
 import { UpdatesSettingsSection } from "./UpdatesSettingsSection";
+import { GeoIPSettingsSection } from "./GeoIPSettingsSection";
 
 export function SettingsContainer() {
   const navigate = useNavigate();
@@ -51,6 +52,7 @@ export function SettingsContainer() {
       retentionSaving={saveRetention.isPending}
     >
       {isAdmin && <UpdatesSettingsSection />}
+      {isAdmin && <GeoIPSettingsSection />}
     </SettingsPage>
   );
 }
