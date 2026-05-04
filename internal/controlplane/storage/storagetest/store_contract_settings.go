@@ -166,5 +166,68 @@ func runSettingsContract(t *testing.T, open OpenStore) {
 		}
 	})
 
+	runGeoIPSettingsContract(t, open)
+}
 
+// runGeoIPSettingsContract verifies the geoip settings/state round-trip
+// against every backend. An unwritten store returns (nil, nil) so the
+// caller can fall back to defaults; both blobs are independent and a
+// write to one must not blank the other.
+func runGeoIPSettingsContract(t *testing.T, open OpenStore) {
+	t.Helper()
+
+	t.Run("geoip settings and state round trip", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+
+		got, err := store.GetGeoIPSettings(ctx)
+		if err != nil {
+			t.Fatalf("GetGeoIPSettings() empty error = %v", err)
+		}
+		if got != nil {
+			t.Errorf("GetGeoIPSettings() empty = %s, want nil", string(got))
+		}
+		gotState, err := store.GetGeoIPState(ctx)
+		if err != nil {
+			t.Fatalf("GetGeoIPState() empty error = %v", err)
+		}
+		if gotState != nil {
+			t.Errorf("GetGeoIPState() empty = %s, want nil", string(gotState))
+		}
+
+		settings := json.RawMessage(`{"mode":"auto","city":{"enabled":true},"asn":{"enabled":true}}`)
+		if err := store.PutGeoIPSettings(ctx, settings); err != nil {
+			t.Fatalf("PutGeoIPSettings() error = %v", err)
+		}
+		got, err = store.GetGeoIPSettings(ctx)
+		if err != nil {
+			t.Fatalf("GetGeoIPSettings() round-trip error = %v", err)
+		}
+		if string(got) != string(settings) {
+			t.Errorf("GetGeoIPSettings() = %s, want %s", got, settings)
+		}
+
+		state := json.RawMessage(`{"city":{"etag":"abc","size_bytes":42}}`)
+		if err := store.PutGeoIPState(ctx, state); err != nil {
+			t.Fatalf("PutGeoIPState() error = %v", err)
+		}
+		gotState, err = store.GetGeoIPState(ctx)
+		if err != nil {
+			t.Fatalf("GetGeoIPState() round-trip error = %v", err)
+		}
+		if string(gotState) != string(state) {
+			t.Errorf("GetGeoIPState() = %s, want %s", gotState, state)
+		}
+
+		// Settings must survive a state-only write (independent columns).
+		got, err = store.GetGeoIPSettings(ctx)
+		if err != nil {
+			t.Fatalf("GetGeoIPSettings() after state write error = %v", err)
+		}
+		if string(got) != string(settings) {
+			t.Errorf("GetGeoIPSettings() after state write = %s, want %s", got, settings)
+		}
+	})
 }

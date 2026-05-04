@@ -300,6 +300,10 @@ type UpdateConfigStore interface {
 	GetUpdateSettings(ctx context.Context) (json.RawMessage, error)
 	PutUpdateState(ctx context.Context, state json.RawMessage) error
 	GetUpdateState(ctx context.Context) (json.RawMessage, error)
+	PutGeoIPSettings(ctx context.Context, settings json.RawMessage) error
+	GetGeoIPSettings(ctx context.Context) (json.RawMessage, error)
+	PutGeoIPState(ctx context.Context, state json.RawMessage) error
+	GetGeoIPState(ctx context.Context) (json.RawMessage, error)
 }
 
 // CertificateAuthorityStore persists the control-plane root CA required for agent mTLS continuity.

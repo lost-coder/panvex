@@ -56,6 +56,8 @@ type memoryStore struct {
 	retentionSettings              *storage.RetentionSettings
 	updateSettings                 json.RawMessage
 	updateState                    json.RawMessage
+	geoipSettings                  json.RawMessage
+	geoipState                     json.RawMessage
 	certificateAuthority           *storage.CertificateAuthorityRecord
 	integrationProviders           map[string]storage.IntegrationProviderRecord
 	fleetGroupIntegrations         map[string]storage.FleetGroupIntegrationRecord
@@ -1012,6 +1014,30 @@ func (s *memoryStore) GetUpdateState(_ context.Context) (json.RawMessage, error)
 	return append(json.RawMessage(nil), s.updateState...), nil
 }
 
+func (s *memoryStore) PutGeoIPSettings(_ context.Context, data json.RawMessage) error {
+	s.geoipSettings = append(json.RawMessage(nil), data...)
+	return nil
+}
+
+func (s *memoryStore) GetGeoIPSettings(_ context.Context) (json.RawMessage, error) {
+	if s.geoipSettings == nil {
+		return nil, nil
+	}
+	return append(json.RawMessage(nil), s.geoipSettings...), nil
+}
+
+func (s *memoryStore) PutGeoIPState(_ context.Context, data json.RawMessage) error {
+	s.geoipState = append(json.RawMessage(nil), data...)
+	return nil
+}
+
+func (s *memoryStore) GetGeoIPState(_ context.Context) (json.RawMessage, error) {
+	if s.geoipState == nil {
+		return nil, nil
+	}
+	return append(json.RawMessage(nil), s.geoipState...), nil
+}
+
 func (s *memoryStore) PutCertificateAuthority(_ context.Context, authority storage.CertificateAuthorityRecord) error {
 	copyAuthority := authority
 	s.certificateAuthority = &copyAuthority
@@ -1485,6 +1511,8 @@ type memoryStoreSnapshot struct {
 	retentionSettings              *storage.RetentionSettings
 	updateSettings                 json.RawMessage
 	updateState                    json.RawMessage
+	geoipSettings                  json.RawMessage
+	geoipState                     json.RawMessage
 	certificateAuthority           *storage.CertificateAuthorityRecord
 }
 
@@ -1541,6 +1569,8 @@ func (s *memoryStore) snapshot() memoryStoreSnapshot {
 		agentFallbackState:             copyMap(s.agentFallbackState),
 		updateSettings:                 append(json.RawMessage(nil), s.updateSettings...),
 		updateState:                    append(json.RawMessage(nil), s.updateState...),
+		geoipSettings:                  append(json.RawMessage(nil), s.geoipSettings...),
+		geoipState:                     append(json.RawMessage(nil), s.geoipState...),
 	}
 	if s.panelSettings != nil {
 		ps := *s.panelSettings
@@ -1589,5 +1619,7 @@ func (s *memoryStore) restore(snap memoryStoreSnapshot) {
 	s.retentionSettings = snap.retentionSettings
 	s.updateSettings = snap.updateSettings
 	s.updateState = snap.updateState
+	s.geoipSettings = snap.geoipSettings
+	s.geoipState = snap.geoipState
 	s.certificateAuthority = snap.certificateAuthority
 }
