@@ -251,33 +251,39 @@ func (s *Server) runGeoIPUpdate(ctx context.Context, k geoip.Kind) geoip.SourceS
 			state.Error = err.Error()
 			return state
 		}
-		return s.downloadGeoIP(ctx, k, url, prevState.ETag, dir)
+		return s.downloadGeoIP(ctx, k, url, prevState, dir)
 
 	case geoip.ModeURL:
-		return s.downloadGeoIP(ctx, k, src.URL, prevState.ETag, dir)
+		return s.downloadGeoIP(ctx, k, src.URL, prevState, dir)
 	}
 	return state
 }
 
-// downloadGeoIP wraps geoip.Downloader for one Kind. On success
-// returns the new SourceState; on 304 keeps the previous ETag and
-// only refreshes LastCheckedAt; on error records Error and leaves
-// the rest of the state intact for diagnostics.
-func (s *Server) downloadGeoIP(ctx context.Context, k geoip.Kind, url, ifNoneMatch, dir string) geoip.SourceState {
+// downloadGeoIP wraps geoip.Downloader for one Kind. On 200 returns
+// the new SourceState (LastUpdatedAt + SizeBytes set to fresh values).
+// On 304 the cached file is still current, so it keeps prev's
+// LastUpdatedAt / SizeBytes / ETag and only bumps LastCheckedAt. On
+// error keeps prev's last-known-good fields and surfaces the error
+// for diagnostics.
+func (s *Server) downloadGeoIP(ctx context.Context, k geoip.Kind, url string, prev geoip.SourceState, dir string) geoip.SourceState {
 	now := s.now().Unix()
 	dest := geoip.PathFor(dir, k)
 	d := geoip.NewDownloader(http.DefaultClient)
-	res, err := d.Fetch(ctx, geoip.FetchRequest{URL: url, Dest: dest, Kind: k, IfNoneMatch: ifNoneMatch})
-	state := geoip.SourceState{LastCheckedAt: now, Path: dest}
+	res, err := d.Fetch(ctx, geoip.FetchRequest{URL: url, Dest: dest, Kind: k, IfNoneMatch: prev.ETag})
+
+	// Always start from prev so we never erase a known-good
+	// LastUpdatedAt / SizeBytes by transitioning through 304 or error.
+	state := prev
+	state.LastCheckedAt = now
+	state.Path = dest
+	state.Error = ""
+
 	if err != nil {
 		state.Error = err.Error()
 		return state
 	}
 	if res.NotModified {
-		// 304 path: leave LastUpdatedAt untouched (the cached file is
-		// still current), keep the previous etag so the next request
-		// is also conditional.
-		state.ETag = ifNoneMatch
+		// File on disk is still current; nothing to update.
 		return state
 	}
 	state.LastUpdatedAt = now
