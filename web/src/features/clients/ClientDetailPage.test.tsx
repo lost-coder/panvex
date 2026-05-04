@@ -55,4 +55,50 @@ describe("ClientDetailPage", () => {
       render(<ClientDetailPage {...makeProps()} />),
     ).not.toThrow();
   });
+
+  it("renders the Redeploy action when at least one deployment is not yet succeeded", () => {
+    const onRedeploy = vi.fn();
+    for (const status of ["failed", "queued"] as const) {
+      const { unmount } = render(
+        <ClientDetailPage
+          {...makeProps({
+            deployments: [
+              {
+                agentId: "agent-1",
+                desiredOperation: "client.create",
+                status,
+                lastError: status === "failed" ? "telemt rejected" : "",
+                links: { classic: [], secure: [], tls: [] },
+                lastAppliedAtUnix: 0,
+              },
+            ],
+          })}
+          onRedeploy={onRedeploy}
+        />,
+      );
+      expect(screen.getAllByRole("button", { name: /redeploy/i }).length).toBeGreaterThan(0);
+      unmount();
+    }
+  });
+
+  it("hides the Redeploy action when every deployment has succeeded", () => {
+    render(
+      <ClientDetailPage
+        {...makeProps({
+          deployments: [
+            {
+              agentId: "agent-1",
+              desiredOperation: "client.create",
+              status: "succeeded",
+              lastError: "",
+              links: { classic: [], secure: [], tls: [] },
+              lastAppliedAtUnix: 0,
+            },
+          ],
+        })}
+        onRedeploy={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /redeploy/i })).toBeNull();
+  });
 });

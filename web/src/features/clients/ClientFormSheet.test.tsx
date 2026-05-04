@@ -298,4 +298,37 @@ describe("ClientFormSheet", () => {
     const submit = screen.getByRole("button", { name: /create client/i });
     expect(submit).toBeEnabled();
   });
+
+  // Mirrors Telemt's username constraint enforced server-side
+  // (clientNameRegex in internal/controlplane/server/clients_flow.go).
+  // Without this front-end gate, the panel would still POST and the
+  // backend would 400 — but operators wouldn't see the rule until then.
+  it("flags an invalid client name and disables submit", () => {
+    render(
+      <ClientFormSheet
+        mode="create"
+        data={{ ...filledForm, name: "premium users" }}
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/A.+Z, a.+z, 0.+9/)).toBeInTheDocument();
+    const submit = screen.getByRole("button", { name: /create client/i });
+    expect(submit).toBeDisabled();
+  });
+
+  it("rejects names exceeding the 64-char Telemt limit", () => {
+    render(
+      <ClientFormSheet
+        mode="create"
+        data={{ ...filledForm, name: "a".repeat(65) }}
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    const submit = screen.getByRole("button", { name: /create client/i });
+    expect(submit).toBeDisabled();
+  });
 });

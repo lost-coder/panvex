@@ -5,6 +5,12 @@ import { FormField } from "@/ui/base/form-field";
 import { cn } from "@/ui/lib/cn";
 import type { ClientFormSheetProps } from "@/shared/api/types-pages/pages";
 
+// Mirrors Telemt's username constraint (and the panel's clientNameRegex
+// in internal/controlplane/server/clients_flow.go). Catching it client-side
+// avoids round-tripping just to surface a guaranteed 400.
+const CLIENT_NAME_REGEX = /^[A-Za-z0-9_.-]{1,64}$/;
+const CLIENT_NAME_RULE = "Use A–Z, a–z, 0–9, _, . or -. Up to 64 chars.";
+
 export function ClientFormSheet({
   mode,
   data,
@@ -19,6 +25,9 @@ export function ClientFormSheet({
   const [showLimits, setShowLimits] = useState(
     data.maxTcpConns > 0 || data.maxUniqueIps > 0 || data.dataQuotaBytes > 0,
   );
+
+  const trimmedName = data.name.trim();
+  const nameInvalid = trimmedName.length > 0 && !CLIENT_NAME_REGEX.test(trimmedName);
 
   function update<K extends keyof typeof data>(key: K, value: (typeof data)[K]) {
     onChange({ ...data, [key]: value });
@@ -68,12 +77,20 @@ export function ClientFormSheet({
         </p>
       </div>
 
-      <FormField label="Client Name" variant="uppercase" required>
+      <FormField
+        label="Client Name"
+        variant="uppercase"
+        required
+        description={CLIENT_NAME_RULE}
+        {...(nameInvalid ? { error: CLIENT_NAME_RULE } : {})}
+      >
         <Input
           value={data.name}
           onChange={(e) => update("name", e.target.value)}
           placeholder="e.g. premium-users"
           disabled={loading}
+          aria-invalid={nameInvalid || undefined}
+          maxLength={64}
         />
       </FormField>
 
@@ -294,7 +311,8 @@ export function ClientFormSheet({
           onClick={onSubmit}
           disabled={
             loading ||
-            !data.name ||
+            !trimmedName ||
+            nameInvalid ||
             // Selectors are only rendered when the container supplied options.
             // When they are rendered, at least one target must be picked —
             // the backend otherwise rejects with errClientTargetsRequired.

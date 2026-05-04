@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -279,6 +280,46 @@ func TestHTTPClientsRejectInvalidUserADTag(t *testing.T) {
 	}, cookies)
 	if createResponse.Code != http.StatusBadRequest {
 		t.Fatalf("POST /api/clients invalid user_ad_tag status = %d, want %d", createResponse.Code, http.StatusBadRequest)
+	}
+}
+
+// TestHTTPClientsRejectInvalidName verifies that a client name violating
+// Telemt's username constraint ([A-Za-z0-9_.-], 1..64 chars) is rejected
+// with 400 instead of being accepted server-side and failing irrecoverably
+// on every node.
+func TestHTTPClientsRejectInvalidName(t *testing.T) {
+	now := time.Date(2026, time.May, 4, 12, 0, 0, 0, time.UTC)
+	server := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now: func() time.Time { return now },
+	})
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
+		Username: "admin",
+		Password: "Admin1password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+	cookies := loginAdminForClients(t, server)
+
+	cases := []struct {
+		label string
+		name  string
+	}{
+		{"contains space", "premium users"},
+		{"contains slash", "premium/users"},
+		{"contains cyrillic", "клиент"},
+		{"too long", strings.Repeat("a", 65)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			resp := performJSONRequest(t, server, http.MethodPost, "/api/clients", map[string]any{
+				"name": tc.name,
+			}, cookies)
+			if resp.Code != http.StatusBadRequest {
+				t.Fatalf("POST /api/clients name=%q status = %d, want %d", tc.name, resp.Code, http.StatusBadRequest)
+			}
+		})
 	}
 }
 

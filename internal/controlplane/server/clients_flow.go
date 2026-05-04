@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -31,10 +32,18 @@ import (
 
 var (
 	errClientNameRequired    = errors.New("client name is required")
+	errClientNameInvalid     = errors.New("client name must match [A-Za-z0-9_.-] and be 1..64 chars")
 	errClientUserADTag       = errors.New("user_ad_tag must contain exactly 32 hex characters")
 	errClientExpiration      = errors.New("expiration_rfc3339 must be a valid RFC3339 timestamp")
 	errClientTargetsRequired = errors.New("client must target at least one agent")
 )
+
+// clientNameRegex mirrors Telemt's username constraint
+// (telemt-server: username must match [A-Za-z0-9_.-] and be 1..64 chars).
+// The panel rejects mismatches up-front so an operator never ends up
+// with a control-plane row whose rollout job is guaranteed to fail on
+// every agent.
+var clientNameRegex = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
 
 const clientJobTTL = 10 * time.Minute
 
@@ -87,6 +96,9 @@ func (s *Server) createClient(ctx context.Context, actorID string, input clientM
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
 		return managedClient{}, nil, nil, errClientNameRequired
+	}
+	if !clientNameRegex.MatchString(name) {
+		return managedClient{}, nil, nil, errClientNameInvalid
 	}
 
 	userADTag, err := resolveUserADTagForMutation(input, "")
@@ -189,6 +201,9 @@ func applyClientMutationFields(currentClient *managedClient, input clientMutatio
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
 		return "", errClientNameRequired
+	}
+	if !clientNameRegex.MatchString(name) {
+		return "", errClientNameInvalid
 	}
 
 	userADTag, err := resolveUserADTagForMutation(input, currentClient.UserADTag)

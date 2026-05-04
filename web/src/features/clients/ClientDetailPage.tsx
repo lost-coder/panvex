@@ -58,11 +58,12 @@ export function ClientDetailPage({
   agentLabels,
 }: Readonly<ClientDetailPageProps>) {
   // Expose "Redeploy" as a prominent action whenever at least one
-  // deployment landed in `failed` state. Without this button operators
-  // get stuck — they see an angry red status per node but have no
-  // direct way to retry the rollout short of editing fields.
+  // deployment is not yet succeeded — failed (Telemt rejected the
+  // apply) or queued (agent offline / job in flight too long).
+  // Without this, operators get stuck on a stale "queued" or "failed"
+  // status with no way to retry short of editing fields.
   const hasFailedDeployment =
-    onRedeploy !== undefined && client.deployments.some((d) => d.status === "failed");
+    onRedeploy !== undefined && client.deployments.some((d) => d.status !== "succeeded");
   const [editOpen, setEditOpen] = useState(false);
   const [editData, setEditData] = useState<ClientFormData>(() => formStateFromClient(client));
   // Reseed the form each time the sheet opens — editing a client whose
