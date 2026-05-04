@@ -23,6 +23,8 @@ function mockServer(overrides: Partial<ServerListItem> = {}): ServerListItem {
     me2dcFallbackEnabled: false,
     healthyUpstreams: 0,
     totalUpstreams: 0,
+    healthyDcs: 0,
+    totalDcs: 0,
     severity: "ok",
     ...overrides,
   };

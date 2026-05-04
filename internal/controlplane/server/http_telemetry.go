@@ -125,6 +125,17 @@ func (s *Server) handleTelemetryDashboard() http.HandlerFunc {
 
 		snapshot := s.collectTelemetryDashboardSnapshot(scope, now, metricSnapshots)
 
+		// Project the panel's per-agent client-traffic sum onto each
+		// summary so the dashboard server cards render the same Traffic
+		// figure as the /telemetry/servers list. Lock order s.mu ->
+		// s.clientsMu — collectTelemetryDashboardSnapshot already
+		// released s.mu before returning.
+		s.clientsMu.RLock()
+		for i := range snapshot.items {
+			snapshot.items[i].TrafficBytes = s.agentTotalTrafficLocked(snapshot.items[i].Agent.ID)
+		}
+		s.clientsMu.RUnlock()
+
 		loadSeries := s.dashboardAgentLoadSeries(r.Context(), snapshot.agentIDs, now)
 
 		sortTelemetrySummaries(snapshot.items)
@@ -273,6 +284,15 @@ func (s *Server) handleTelemetryServers() http.HandlerFunc {
 		}
 		s.mu.RUnlock()
 
+		// Lock order is s.mu -> s.clientsMu (clients_flow.go), so taking
+		// clientsMu here AFTER releasing s.mu is safe. We sum in a single
+		// pass so the read lock is held for one short critical section.
+		s.clientsMu.RLock()
+		for i := range items {
+			items[i].TrafficBytes = s.agentTotalTrafficLocked(items[i].Agent.ID)
+		}
+		s.clientsMu.RUnlock()
+
 		sortTelemetrySummaries(items)
 		writeJSON(w, http.StatusOK, telemetryServersResponse{Servers: items})
 	}
@@ -321,6 +341,10 @@ func (s *Server) handleTelemetryServerDetail() http.HandlerFunc {
 			writeError(w, http.StatusNotFound, msgServerNotFound)
 			return
 		}
+
+		s.clientsMu.RLock()
+		summary.TrafficBytes = s.agentTotalTrafficLocked(agentID)
+		s.clientsMu.RUnlock()
 
 		diagnostics := telemetryDiagnosticsResponse{}
 		securityInventory := telemetrySecurityInventoryResponse{}

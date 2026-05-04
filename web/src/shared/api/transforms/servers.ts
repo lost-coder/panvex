@@ -91,12 +91,26 @@ function mapDcs(
 function summaryToListItem(card: TelemetryServerSummary): ServerListItem {
   const agent = card.agent;
   const runtime = agent?.runtime;
+  const dcs = runtime?.dcs ?? [];
+  // Healthy DC = full coverage (>= 99.5 %), matching the dcCoverageStatus
+  // threshold used in the detail page. We keep totals in sync with the
+  // payload Telemt actually exposes — operators in ME mode otherwise saw
+  // a misleading "1/1 upstreams" instead of "N/M datacenters".
+  const totalDcs = dcs.length;
+  const healthyDcs = dcs.filter((dc) => dc.coverage_pct >= 99.5).length;
   return {
     id: agent?.id ?? "",
     name: agent?.node_name ?? "",
     status: mapSeverity(card.severity),
     connections: runtime?.current_connections ?? 0,
-    trafficBytes: 0,
+    // active_users / configured_users come straight from Telemt; the
+    // previous fallback (connections × 2) was a placeholder that
+    // surfaced as nonsense like "24 / 48" during normal operation.
+    usersOnline: runtime?.active_users ?? 0,
+    usersTotal: runtime?.configured_users ?? 0,
+    // Per-agent client-traffic sum projected by the panel. See
+    // telemetryServerSummary.TrafficBytes on the backend.
+    trafficBytes: card.traffic_bytes ?? 0,
     cpuPct: pct1(runtime?.system_load?.cpu_usage_pct),
     memPct: pct1(runtime?.system_load?.memory_usage_pct),
     dcCoveragePct: pct1(runtime?.dc_coverage_pct),
@@ -112,6 +126,8 @@ function summaryToListItem(card: TelemetryServerSummary): ServerListItem {
     me2dcFallbackEnabled: runtime?.me2dc_fallback_enabled ?? false,
     healthyUpstreams: runtime?.healthy_upstreams ?? 0,
     totalUpstreams: runtime?.total_upstreams ?? 0,
+    healthyDcs,
+    totalDcs,
     severity: card.severity === "good" ? "ok" : card.severity,
   };
 }

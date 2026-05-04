@@ -8,10 +8,27 @@ import {
   type ServerListItem,
 } from "@/ui";
 
+// formatTrafficBytes picks the largest unit that yields a non-zero
+// integer-ish number. Returning "0" for anything below 1 MB lets a
+// freshly-deployed fleet still show a meaningful column without the
+// "always 0 GB" rounding artefact the legacy implementation produced.
+function formatTrafficBytes(bytes: number): string {
+  if (bytes <= 0) return "0";
+  const TB = 1024 ** 4;
+  const GB = 1024 ** 3;
+  const MB = 1024 ** 2;
+  const KB = 1024;
+  if (bytes >= TB) return `${(bytes / TB).toFixed(2)} TB`;
+  if (bytes >= GB) return `${(bytes / GB).toFixed(2)} GB`;
+  if (bytes >= MB) return `${(bytes / MB).toFixed(1)} MB`;
+  if (bytes >= KB) return `${Math.round(bytes / KB)} KB`;
+  return `${bytes} B`;
+}
+
 export function TrafficCell({ bytes }: Readonly<{ bytes: number }>) {
   return (
     <span className="text-sm font-mono text-fg-muted">
-      {Math.round(bytes / 1024 / 1024 / 1024)} GB
+      {formatTrafficBytes(bytes)}
     </span>
   );
 }
@@ -95,8 +112,8 @@ export function ServerListView({
             meRuntimeReady: s.meRuntimeReady,
             me2dcFallbackEnabled: s.me2dcFallbackEnabled,
           })}
-          healthy={s.healthyUpstreams}
-          total={s.totalUpstreams}
+          healthy={s.totalDcs > 0 ? s.healthyDcs : s.healthyUpstreams}
+          total={s.totalDcs > 0 ? s.totalDcs : s.totalUpstreams}
           severity={s.severity}
         />
       ),
@@ -105,16 +122,18 @@ export function ServerListView({
     {
       key: "users",
       header: "Users",
-      render: (s: Readonly<ServerListItem>) => (
-        <div className="flex items-baseline gap-1 font-mono whitespace-nowrap justify-center">
-          <span className="text-sm text-fg">
-            {(s.usersOnline ?? s.connections).toLocaleString()}
-          </span>
-          <span className="text-xs text-fg-muted">
-            /{(s.usersTotal ?? s.connections * 2).toLocaleString()}
-          </span>
-        </div>
-      ),
+      render: (s: Readonly<ServerListItem>) => {
+        const online = s.usersOnline ?? 0;
+        const configured = s.usersTotal ?? 0;
+        return (
+          <div className="flex items-baseline gap-1 font-mono whitespace-nowrap justify-center">
+            <span className="text-sm text-fg">{online.toLocaleString()}</span>
+            {configured > 0 && (
+              <span className="text-xs text-fg-muted">/{configured.toLocaleString()}</span>
+            )}
+          </div>
+        );
+      },
       sortable: true,
       className: "hidden sm:table-cell text-center w-[110px]",
     },
@@ -187,8 +206,8 @@ export function ServerListView({
               meRuntimeReady: s.meRuntimeReady,
               me2dcFallbackEnabled: s.me2dcFallbackEnabled,
             })}
-            healthyUpstreams={s.healthyUpstreams}
-            totalUpstreams={s.totalUpstreams}
+            healthyUpstreams={s.totalDcs > 0 ? s.healthyDcs : s.healthyUpstreams}
+            totalUpstreams={s.totalDcs > 0 ? s.totalDcs : s.totalUpstreams}
             severity={s.severity}
             cpu={s.cpuPct}
             mem={s.memPct}

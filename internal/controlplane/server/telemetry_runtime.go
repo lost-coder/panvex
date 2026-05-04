@@ -46,6 +46,12 @@ type telemetryServerSummary struct {
 	Reason          string                    `json:"reason"`
 	RuntimeFreshness telemetryFreshnessResponse `json:"runtime_freshness"`
 	DetailBoost     telemetryDetailBoostResponse `json:"detail_boost"`
+	// TrafficBytes is the panel-side sum of TrafficUsedBytes across every
+	// managed client deployed to this agent. The agent runtime payload
+	// itself does not carry a per-node aggregate (Telemt reports per-user
+	// usage), so we project the panel's clientUsage map here at response
+	// time. Includes adopted/discovered clients tracked on this agent.
+	TrafficBytes    uint64                    `json:"traffic_bytes"`
 }
 
 type telemetryDashboardResponse struct {

@@ -52,6 +52,9 @@ const telemetryServerSummarySchema = z.object({
   reason: z.string(),
   runtime_freshness: telemetryFreshnessSchema,
   detail_boost: telemetryDetailBoostSchema,
+  // Default keeps legacy responses (no traffic_bytes field) parsing
+  // cleanly during a rolling deploy.
+  traffic_bytes: z.number().default(0),
 });
 
 export const telemetryServersResponseSchema = z.object({

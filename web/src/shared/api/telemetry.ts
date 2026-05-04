@@ -66,6 +66,13 @@ export type TelemetryServerSummary = {
   reason: string;
   runtime_freshness: TelemetryFreshness;
   detail_boost: TelemetryDetailBoost;
+  /**
+   * Sum of TrafficUsedBytes across every managed client deployed to
+   * this agent (panel-side aggregate of clientUsage). Lifetime since
+   * the panel started tracking — agents never pull this counter back
+   * to zero.
+   */
+  traffic_bytes: number;
 };
 
 export type TelemetryAttentionItem = {

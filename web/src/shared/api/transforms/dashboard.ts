@@ -191,8 +191,26 @@ export function transformDashboardOverview(
     })
   );
 
-  const alerts = (raw.attention ?? [])
-    .filter((item) => item.severity !== "good")
+  // Backend emits the Phase-3 vocabulary ("ok"/"warn"/"critical"/"bad");
+  // "good" is the legacy spelling kept for back-compat but never produced
+  // today. Treat both as "healthy" so a fresh + healthy fleet still
+  // populates the dashboard cards instead of falling through to the
+  // "No servers registered yet" empty state.
+  const isHealthy = (sev: string): boolean => sev === "good" || sev === "ok";
+
+  // The backend's `attention` list is already authoritative — it carries
+  // exactly the items operators should look at (non-healthy, or healthy
+  // but stale). Trust it as-is rather than re-filtering on the FE; the
+  // legacy `severity !== "good"` filter hid no items in practice but
+  // muddled the contract.
+  const attentionRaw = raw.attention ?? [];
+  // Build a set of agent ids the backend already routed to attention so
+  // we don't render the same node twice when it surfaces in server_cards
+  // too (e.g. a stale-but-healthy agent).
+  const attentionIds = new Set(attentionRaw.map((item) => item.agent_id));
+
+  const alerts = attentionRaw
+    .filter((item) => !isHealthy(item.severity))
     .map((item) => ({
       severity:
         item.severity === "bad" ? ("crit" as const) : ("warn" as const),
@@ -207,12 +225,12 @@ export function transformDashboardOverview(
     (raw.agent_load_series ?? []).map((s) => [s.agent_id, s]),
   );
 
-  const attentionNodes = (raw.attention ?? [])
-    .filter((item) => item.severity !== "good")
-    .map((item) => mapAttentionItemToNode(item, seriesByAgent));
+  const attentionNodes = attentionRaw.map((item) =>
+    mapAttentionItemToNode(item, seriesByAgent),
+  );
 
   const healthyNodes = (raw.server_cards ?? [])
-    .filter((card) => card.severity === "good")
+    .filter((card) => isHealthy(card.severity) && !attentionIds.has(card.agent?.id ?? ""))
     .map((card) => {
       const runtime = card.agent?.runtime;
       const series = seriesByAgent.get(card.agent?.id ?? "");

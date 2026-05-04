@@ -3,9 +3,10 @@ import { describe, expect, it } from "vitest";
 import type {
   AgentRuntime,
   TelemetryServerDetailResponse,
+  TelemetryServersResponse,
 } from "@/shared/api/api";
 
-import { transformServerDetail } from "./servers";
+import { transformServerDetail, transformServerList } from "./servers";
 
 // Minimal AgentRuntime fixture. Tests override individual fields rather
 // than rebuilding the whole object — keeps each case focused on the
@@ -105,6 +106,7 @@ function makeDetailResponse(runtime: AgentRuntime): TelemetryServerDetailRespons
       reason: "",
       runtime_freshness: { state: "fresh", observed_at_unix: 0 },
       detail_boost: { active: false, expires_at_unix: 0, remaining_seconds: 0 },
+      traffic_bytes: 0,
     },
     initialization_watch: {
       visible: false,
@@ -195,5 +197,66 @@ describe("transformServerDetail", () => {
     const runtime = makeRuntime();
     const result = transformServerDetail(makeDetailResponse(runtime));
     expect(result.fallbackEnteredAtUnix).toBeNull();
+  });
+});
+
+describe("transformServerList", () => {
+  // The Servers list rebuild swapped Transport off proxy upstreams onto
+  // datacenter coverage, swapped Users off connections × 2 onto active /
+  // configured users, and stopped hard-coding Traffic to zero. These
+  // fields all have to flow from the wire shape the panel emits today.
+  function listResponse(runtime: AgentRuntime, trafficBytes: number): TelemetryServersResponse {
+    return {
+      servers: [
+        {
+          agent: {
+            id: "a-1",
+            node_name: "node-1",
+            fleet_group_id: "fg-1",
+            version: "1.0.0",
+            read_only: false,
+            presence_state: "online",
+            runtime,
+            last_seen_at: "2024-01-01T00:00:00Z",
+          },
+          severity: "ok",
+          reason: "",
+          runtime_freshness: { state: "fresh", observed_at_unix: 0 },
+          detail_boost: { active: false, expires_at_unix: 0, remaining_seconds: 0 },
+          traffic_bytes: trafficBytes,
+        },
+      ],
+    };
+  }
+
+  it("counts healthy / total DCs from per-DC coverage_pct", () => {
+    const runtime = makeRuntime({
+      use_middle_proxy: true,
+      me_runtime_ready: true,
+      healthy_upstreams: 1,
+      total_upstreams: 1,
+      dcs: [
+        { dc: 1, available_endpoints: 0, available_pct: 100, required_writers: 1, alive_writers: 2, coverage_pct: 100, fresh_alive_writers: 2, fresh_coverage_pct: 100, rtt_ms: 5, load: 0 },
+        { dc: 2, available_endpoints: 0, available_pct: 100, required_writers: 1, alive_writers: 2, coverage_pct: 99.7, fresh_alive_writers: 2, fresh_coverage_pct: 99.7, rtt_ms: 6, load: 0 },
+        { dc: 4, available_endpoints: 0, available_pct: 50,  required_writers: 1, alive_writers: 1, coverage_pct: 80,  fresh_alive_writers: 1, fresh_coverage_pct: 80,  rtt_ms: 9, load: 0 },
+      ],
+    });
+    const [item] = transformServerList(listResponse(runtime, 0));
+    expect(item).toBeDefined();
+    expect(item!.totalDcs).toBe(3);
+    expect(item!.healthyDcs).toBe(2);
+  });
+
+  it("flows active_users / configured_users into Users column inputs", () => {
+    const runtime = makeRuntime({ active_users: 24, configured_users: 100 });
+    const [item] = transformServerList(listResponse(runtime, 0));
+    expect(item!.usersOnline).toBe(24);
+    expect(item!.usersTotal).toBe(100);
+  });
+
+  it("uses summary.traffic_bytes for the Traffic column instead of hard-coding 0", () => {
+    const runtime = makeRuntime();
+    const [item] = transformServerList(listResponse(runtime, 1_500_000_000));
+    expect(item!.trafficBytes).toBe(1_500_000_000);
   });
 });

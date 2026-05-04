@@ -76,6 +76,7 @@ const telemetryServerSummarySchema = z.object({
   reason: z.string(),
   runtime_freshness: telemetryFreshnessSchema,
   detail_boost: telemetryDetailBoostSchema,
+  traffic_bytes: z.number().default(0),
 });
 
 const telemetryAttentionItemSchema = z.object({

@@ -329,6 +329,27 @@ func (s *Server) zeroLiveGaugesForUntouchedClients(agentID string, seen map[stri
 	}
 }
 
+// agentTotalTrafficLocked sums TrafficUsedBytes across every client this
+// agent has reported usage for. Used by the telemetry summary so the
+// servers list can show real per-node traffic instead of synthetic
+// placeholders. Caller MUST already hold s.clientsMu (read or write) —
+// the function only reads the maps and never escalates the lock.
+func (s *Server) agentTotalTrafficLocked(agentID string) uint64 {
+	owned := s.agentClientUsage[agentID]
+	if len(owned) == 0 {
+		return 0
+	}
+	var total uint64
+	for clientID := range owned {
+		usage, ok := s.clientUsage[clientID][agentID]
+		if !ok {
+			continue
+		}
+		total += usage.TrafficUsedBytes
+	}
+	return total
+}
+
 // trackClientUsageOwnerLocked records that `agentID` owns a usage entry
 // for `clientID` in s.clientUsage. Idempotent. Caller must hold
 // s.clientsMu (write).

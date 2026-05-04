@@ -28,6 +28,14 @@ export interface ServerListItem {
   me2dcFallbackEnabled: boolean;
   healthyUpstreams: number;
   totalUpstreams: number;
+  /**
+   * Healthy / total DC count derived from the agent's per-DC coverage
+   * report. The Transport column renders these for ME-mode nodes
+   * because "upstreams" only counts configured proxy upstreams (often
+   * 1 in middle-proxy mode), which is misleading for fleet operators.
+   */
+  healthyDcs: number;
+  totalDcs: number;
   severity: Severity;
 }
 
