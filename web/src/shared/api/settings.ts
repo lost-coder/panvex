@@ -1,11 +1,14 @@
 import { api, apiBasePath, encodeRequest } from "./http";
 import {
   appearanceSettingsResponseSchema,
+  geoipResponseSchema,
   panelSettingsResponseSchema,
   retentionSettingsSchema,
   updateAppearanceSettingsRequestSchema,
   updatePanelSettingsRequestSchema,
   versionSchema,
+  type GeoIPResponseParsed,
+  type GeoIPSettingsParsed,
   type VersionParsed,
 } from "./schemas";
 
@@ -113,6 +116,27 @@ export const settingsApi = {
         body: JSON.stringify(settings),
       },
       retentionSettingsSchema,
+    ),
+  getGeoIPSettings: () =>
+    api<GeoIPResponseParsed>(
+      `${apiBasePath}/settings/geoip`,
+      undefined,
+      geoipResponseSchema,
+    ),
+  putGeoIPSettings: (settings: GeoIPSettingsParsed) =>
+    api<GeoIPResponseParsed>(
+      `${apiBasePath}/settings/geoip`,
+      {
+        method: "PUT",
+        body: JSON.stringify(settings),
+      },
+      geoipResponseSchema,
+    ),
+  refreshGeoIP: () =>
+    api<GeoIPResponseParsed>(
+      `${apiBasePath}/settings/geoip/refresh`,
+      { method: "POST" },
+      geoipResponseSchema,
     ),
   /**
    * GET /api/version — returns different shapes by role (P1-SEC-15). The
