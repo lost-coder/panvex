@@ -47,6 +47,8 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:8443:8443"
+    volumes:
+      - panvex_geoip:/var/lib/panvex/geoip
     # Must exceed cmd/control-plane controlPlaneShutdownGraceMin (45s) so
     # the audit-event drain finishes before docker sends SIGKILL.
     stop_grace_period: 45s
@@ -94,3 +96,4 @@ services:
 
 volumes:
   panvex_postgres_data:
+  panvex_geoip:

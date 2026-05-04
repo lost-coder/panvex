@@ -101,6 +101,8 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:8443:8443"
+    volumes:
+      - panvex_geoip:/var/lib/panvex/geoip
     deploy:
       resources:
         limits:
@@ -174,3 +176,4 @@ services:
 
 volumes:
   panvex_postgres_data:
+  panvex_geoip:

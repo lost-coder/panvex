@@ -270,6 +270,11 @@ binds publishers to loopback (terminate TLS at a reverse proxy — see
 
 > Override the admin username via `PANVEX_BOOTSTRAP_USERNAME` (default: `admin`).
 >
+> `PANVEX_GEOIP_DIR` is an optional override for where auto/URL-mode GeoIP
+> `.mmdb` files are written. Defaults to `<dir(panvex.db)>/geoip` for SQLite
+> deployments or `/var/lib/panvex/geoip` otherwise. Local-mode files are read
+> from operator-supplied absolute paths and ignore this setting.
+>
 > Dashboard: `http://localhost:8080` &nbsp;·&nbsp; gRPC: `localhost:8443`
 
 ---
