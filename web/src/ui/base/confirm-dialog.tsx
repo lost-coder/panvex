@@ -35,6 +35,13 @@ export function ConfirmDialog({
   }, [open]);
 
   return (
+    // <dialog> already handles Escape natively (fires onClose) — a
+    // dedicated keyboard listener on the dialog itself would just
+    // duplicate the platform behaviour. The backdrop click below is
+    // the only mouse hook we add; jsx-a11y can't see the native
+    // Escape path so we suppress its companion warnings here with a
+    // documented reason.
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions
     <dialog
       ref={dialogRef}
       onClose={onCancel}

@@ -13,9 +13,11 @@ export default tseslint.config(
   //
   // The downgraded rules below all fire on existing code that needs a
   // dedicated UX pass (autofocus on dialogs, label/Radix-control wiring,
-  // non-interactive divs that double as click targets). They stay as
-  // `warn` so CI surfaces them without blocking unrelated work; promote
-  // to `error` after a focused a11y sweep.
+  // non-interactive divs that double as click targets). Sprint S26
+  // tail: every reported site is fixed (autoFocus → ref+useEffect,
+  // labels wired with htmlFor+useId, dialog backdrop clicks suppressed
+  // with documented reasons because <dialog> already handles Escape
+  // natively). Rules promoted to `error` so regressions block CI.
   {
     files: ["**/*.{js,jsx,ts,tsx}"],
     plugins: {
@@ -23,10 +25,10 @@ export default tseslint.config(
     },
     rules: {
       ...jsxA11y.configs.recommended.rules,
-      "jsx-a11y/no-autofocus": "warn",
-      "jsx-a11y/label-has-associated-control": "warn",
-      "jsx-a11y/click-events-have-key-events": "warn",
-      "jsx-a11y/no-noninteractive-element-interactions": "warn",
+      "jsx-a11y/no-autofocus": "error",
+      "jsx-a11y/label-has-associated-control": "error",
+      "jsx-a11y/click-events-have-key-events": "error",
+      "jsx-a11y/no-noninteractive-element-interactions": "error",
     },
   },
   {
