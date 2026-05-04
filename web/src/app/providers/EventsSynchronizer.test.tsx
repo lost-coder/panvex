@@ -1,0 +1,174 @@
+// Q-10 (audit, HIGH): regression coverage for the WebSocket-message
+// decode path. The previous implementation did
+// `JSON.parse(message.data) as EventEnvelope` — a runtime cast with no
+// validation. These tests pin two contracts:
+//
+//   1. The new `eventEnvelopeSchema` rejects malformed payloads.
+//   2. The synchronizer drops malformed envelopes silently (no React
+//      Query invalidation, no state mutation, no exception propagation).
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { eventEnvelopeSchema } from "@/shared/api/schemas/events";
+
+// The synchronizer's `onclose` handler calls apiClient.me() to decide
+// whether to reconnect or dispatch SESSION_EXPIRED_EVENT. We never close
+// the socket in these tests, but vitest still imports the module — stub
+// the API client so no real network call is wired up.
+vi.mock("@/shared/api/api", async () => {
+  const actual = await vi.importActual<typeof import("@/shared/api/api")>("@/shared/api/api");
+  return {
+    ...actual,
+    apiClient: {
+      me: vi.fn().mockResolvedValue({
+        id: "u1",
+        username: "admin",
+        role: "admin",
+        totp_enabled: false,
+      }),
+    },
+  };
+});
+
+// Capture the WebSocket instance the provider creates so each test can
+// drive its `onmessage` handler directly. We don't simulate a full WS
+// lifecycle — the provider treats the socket as opaque and we only care
+// about the message-decode contract here.
+class FakeWebSocket {
+  static OPEN = 1;
+  static CONNECTING = 0;
+  static CLOSED = 3;
+  static CLOSING = 2;
+  static instances: FakeWebSocket[] = [];
+  readyState: number = FakeWebSocket.CONNECTING;
+  onopen: ((ev: Event) => void) | null = null;
+  onmessage: ((ev: MessageEvent) => void) | null = null;
+  onerror: ((ev: Event) => void) | null = null;
+  onclose: ((ev: CloseEvent) => void) | null = null;
+  url: string;
+  constructor(url: string) {
+    this.url = url;
+    FakeWebSocket.instances.push(this);
+  }
+  close(): void { this.readyState = FakeWebSocket.CLOSED; }
+}
+
+import { EventsSynchronizer } from "./EventsSynchronizer";
+
+describe("eventEnvelopeSchema", () => {
+  it("accepts a well-formed envelope with arbitrary data", () => {
+    const result = eventEnvelopeSchema.safeParse({
+      type: "agents.enrolled",
+      data: { agent_id: "a-1" },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.type).toBe("agents.enrolled");
+    }
+  });
+
+  it("accepts an envelope where data is null/undefined/scalar", () => {
+    expect(eventEnvelopeSchema.safeParse({ type: "x", data: null }).success).toBe(true);
+    // missing `data` is fine because z.unknown() accepts anything including absent
+    expect(eventEnvelopeSchema.safeParse({ type: "x" }).success).toBe(true);
+    expect(eventEnvelopeSchema.safeParse({ type: "x", data: 42 }).success).toBe(true);
+  });
+
+  it("rejects a payload missing `type`", () => {
+    expect(eventEnvelopeSchema.safeParse({ data: {} }).success).toBe(false);
+  });
+
+  it("rejects a payload where `type` is not a string", () => {
+    expect(eventEnvelopeSchema.safeParse({ type: 7, data: {} }).success).toBe(false);
+    expect(eventEnvelopeSchema.safeParse({ type: null, data: {} }).success).toBe(false);
+  });
+
+  it("rejects non-object payloads outright", () => {
+    expect(eventEnvelopeSchema.safeParse(null).success).toBe(false);
+    expect(eventEnvelopeSchema.safeParse("agents.enrolled").success).toBe(false);
+    expect(eventEnvelopeSchema.safeParse(42).success).toBe(false);
+  });
+});
+
+describe("EventsSynchronizer onmessage decode", () => {
+  let originalWS: typeof globalThis.WebSocket;
+
+  beforeEach(() => {
+    FakeWebSocket.instances = [];
+    originalWS = globalThis.WebSocket;
+    // The provider checks `globalThis.window` and `globalThis.location`.
+    // jsdom provides both; we just need to override WebSocket.
+    (globalThis as unknown as { WebSocket: typeof FakeWebSocket }).WebSocket = FakeWebSocket;
+    // jsdom default location.pathname is "/", so the provider's
+    // `endsWith("/login")` guard does not bail. We deliberately do not
+    // redefine pathname here because jsdom's Location is non-configurable.
+  });
+
+  afterEach(() => {
+    (globalThis as unknown as { WebSocket: typeof globalThis.WebSocket }).WebSocket = originalWS;
+    vi.restoreAllMocks();
+  });
+
+  function mount(): { qc: QueryClient } {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <EventsSynchronizer>
+          <span data-testid="child">ok</span>
+        </EventsSynchronizer>
+      </QueryClientProvider>,
+    );
+    return { qc };
+  }
+
+  it("invalidates queries on a well-formed envelope", async () => {
+    const { qc } = mount();
+    const spy = vi.spyOn(qc, "invalidateQueries").mockResolvedValue();
+    const ws = FakeWebSocket.instances.at(-1)!;
+    expect(ws).toBeDefined();
+    expect(ws.onmessage).toBeTypeOf("function");
+
+    ws.onmessage?.(new MessageEvent("message", {
+      data: JSON.stringify({ type: "audit.created", data: {} }),
+    }));
+    // Yield once for the async applyInvalidation loop.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(spy).toHaveBeenCalled();
+    const firstCallArg = spy.mock.calls[0]?.[0] as { queryKey?: unknown };
+    expect(firstCallArg.queryKey).toEqual(["audit"]);
+  });
+
+  it("drops a malformed JSON payload without crashing or invalidating", async () => {
+    const { qc } = mount();
+    const spy = vi.spyOn(qc, "invalidateQueries").mockResolvedValue();
+    const ws = FakeWebSocket.instances.at(-1)!;
+
+    expect(() => {
+      ws.onmessage?.(new MessageEvent("message", { data: "not json {{{" }));
+    }).not.toThrow();
+    await Promise.resolve();
+
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("drops a payload that parses as JSON but fails the envelope schema", async () => {
+    const { qc } = mount();
+    const spy = vi.spyOn(qc, "invalidateQueries").mockResolvedValue();
+    const ws = FakeWebSocket.instances.at(-1)!;
+
+    // type missing
+    ws.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ data: {} }) }));
+    // type wrong shape
+    ws.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ type: 42, data: {} }) }));
+    // top-level array
+    ws.onmessage?.(new MessageEvent("message", { data: JSON.stringify(["agents.enrolled"]) }));
+    await Promise.resolve();
+
+    expect(spy).not.toHaveBeenCalled();
+  });
+});
