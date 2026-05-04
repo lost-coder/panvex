@@ -1,12 +1,13 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/shared/api/api";
+import { authKeys } from "@/features/auth/queryKeys";
 import { notifyMutationError } from "@/shared/api/http";
 
 export function useProfileTotp() {
   const qc = useQueryClient();
 
   const invalidateProfile = () => {
-    qc.invalidateQueries({ queryKey: ["me"] });
+    qc.invalidateQueries({ queryKey: authKeys.me() });
   };
 
   const setupMutation = useMutation({

@@ -1,6 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/shared/api/api";
+import { authKeys } from "@/features/auth/queryKeys";
 
 // Router guard test (P2-TEST-01). The `shellRoute.beforeLoad` logic is
 // the single place that translates a 401 from `/auth/me` into a
@@ -15,7 +16,7 @@ async function runBeforeLoad(apiMe: () => Promise<unknown>): Promise<unknown> {
   });
   try {
     await queryClient.ensureQueryData({
-      queryKey: ["me"],
+      queryKey: authKeys.me(),
       queryFn: apiMe,
       staleTime: 30_000,
     });

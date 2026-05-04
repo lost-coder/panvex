@@ -8,7 +8,9 @@ import { SkeletonRows } from "@/ui";
 import { useClientsList } from "./hooks/useClientsList";
 import { useDiscoveredClients } from "./hooks/useDiscoveredClients";
 import { useClientCreate } from "./hooks/useClientCreate";
+import { clientsKeys } from "@/features/clients/queryKeys";
 import { useFleetGroups } from "@/features/servers/hooks/useFleetGroups";
+import { agentsKeys } from "@/features/servers/queryKeys";
 import { useViewMode } from "@/shared/hooks/useViewMode";
 import { useUrlSearchState } from "@/shared/hooks/useUrlSearchState";
 import { useWsUpdateFlash } from "@/shared/hooks/useWsUpdateFlash";
@@ -22,8 +24,11 @@ export function ClientsContainer() {
   // Agents feed both the "pin individual node" selector and the fleet-group
   // count in the create sheet. Shared cache key with the servers page so
   // bouncing between /servers and /clients reuses the snapshot.
+  // BP-02 audit: pulls `agentsKeys` from the servers feature instead of a
+  // bare `["agents"]` literal — the leak made it impossible to track which
+  // surface invalidates which key.
   const agentsQuery = useQuery({
-    queryKey: ["agents"],
+    queryKey: agentsKeys.list(),
     queryFn: () => apiClient.agents(),
     staleTime: 30_000,
   });
@@ -72,7 +77,7 @@ export function ClientsContainer() {
               .join("; ")}`
           : undefined,
       );
-      queryClient.invalidateQueries({ queryKey: ["clients"] });
+      queryClient.invalidateQueries({ queryKey: clientsKeys.all });
     },
   });
 

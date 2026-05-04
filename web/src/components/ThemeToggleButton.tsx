@@ -3,6 +3,7 @@ import { Moon, Sun } from "lucide-react";
 
 import { cn } from "@/ui/lib/cn";
 import { apiClient } from "@/shared/api/api";
+import { authKeys } from "@/features/auth/queryKeys";
 import {
   defaultAppearanceSettings,
   getAppearanceQueryKey,
@@ -34,7 +35,7 @@ export interface ThemeToggleButtonProps {
 export function ThemeToggleButton({ expanded = false }: Readonly<ThemeToggleButtonProps> = {}) {
   const queryClient = useQueryClient();
   const meQuery = useQuery<MeResponse>({
-    queryKey: ["me"],
+    queryKey: authKeys.me(),
     queryFn: () => apiClient.me(),
   });
   const userID = meQuery.data?.id ?? "";

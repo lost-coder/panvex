@@ -1,12 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/shared/api/api";
+import { clientsKeys } from "@/features/clients/queryKeys";
 import { useEventAwareInterval } from "@/shared/hooks/useEventAwareInterval";
 
 export function useClientIPHistory(clientID: string) {
   const refetchInterval = useEventAwareInterval(300_000, 60_000);
 
   const query = useQuery({
-    queryKey: ["client", clientID, "ip-history"],
+    queryKey: clientsKeys.ipHistory(clientID),
     queryFn: () => apiClient.clientIPHistory(clientID),
     enabled: !!clientID,
     refetchInterval,

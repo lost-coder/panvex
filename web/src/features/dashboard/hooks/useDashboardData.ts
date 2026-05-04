@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { DashboardOverviewData, DashboardTimelineData } from "@/shared/api/types-pages/pages";
 import { apiClient } from "@/shared/api/api";
 import { useWsStatus } from "@/app/providers/EventsSynchronizer";
+import { dashboardKeys } from "@/features/dashboard/queryKeys";
 import {
   transformDashboardOverview,
   transformDashboardTimeline,
@@ -17,7 +18,7 @@ export function useDashboardData() {
   const refetchInterval = ws.status === "open" ? 60_000 : 15_000;
 
   const query = useQuery({
-    queryKey: ["telemetry", "dashboard"],
+    queryKey: dashboardKeys.overview(),
     queryFn: () => apiClient.telemetryDashboard(),
     refetchInterval,
   });

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { ServerListItem } from "@/shared/api/types-pages/pages";
 import { apiClient } from "@/shared/api/api";
 import { useWsStatus } from "@/app/providers/EventsSynchronizer";
+import { telemetryKeys } from "@/features/servers/queryKeys";
 import { transformServerList, extractAgentVersions } from "@/shared/api/transforms/servers";
 
 export function useServersList() {
@@ -11,7 +12,7 @@ export function useServersList() {
   const refetchInterval = ws.status === "open" ? 60_000 : 15_000;
 
   const query = useQuery({
-    queryKey: ["telemetry", "servers"],
+    queryKey: telemetryKeys.servers(),
     queryFn: () => apiClient.telemetryServers(),
     refetchInterval,
   });
