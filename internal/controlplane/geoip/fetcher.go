@@ -9,26 +9,25 @@ import (
 	"strings"
 )
 
-// DefaultGitHubBaseURL is the production endpoint. Tests override.
+// DefaultGitHubBaseURL is the GitHub REST API base. Tests override.
 const DefaultGitHubBaseURL = "https://api.github.com"
 
-// DefaultRepo is the upstream auto-mode source.
+// DefaultRepo is the upstream auto-mode source. P3TERX publishes a
+// fresh release roughly weekly under a date-based tag (e.g.
+// `2026.05.04`); we always pull the latest.
 const DefaultRepo = "P3TERX/GeoLite.mmdb"
 
-// DefaultTag is the rolling release tag P3TERX overwrites weekly.
-const DefaultTag = "download"
-
-// Fetcher resolves asset download URLs from a GitHub release. Hard-coded
-// to the P3TERX/GeoLite.mmdb repo + rolling `download` tag — that pair
+// Fetcher resolves asset download URLs from the latest GitHub release
+// of the upstream repo. Hard-coded to P3TERX/GeoLite.mmdb — that pair
 // IS the auto-mode contract.
 type Fetcher struct {
 	client  *http.Client
 	baseURL string
 }
 
-// NewFetcher constructs a Fetcher. baseURL is the GitHub API base
+// NewFetcher constructs a Fetcher. baseURL is the GitHub REST API base
 // (https://api.github.com in production); tests pass an httptest
-// server URL.
+// server URL. nil client falls back to http.DefaultClient.
 func NewFetcher(client *http.Client, baseURL string) *Fetcher {
 	if client == nil {
 		client = http.DefaultClient
@@ -40,10 +39,10 @@ func NewFetcher(client *http.Client, baseURL string) *Fetcher {
 }
 
 // AssetURL returns the browser_download_url for the asset matching k
-// in the rolling release. Returns an error if the asset is missing
+// in the latest release. Returns an error if the asset is missing
 // from the release payload.
 func (f *Fetcher) AssetURL(ctx context.Context, k Kind) (string, error) {
-	url := fmt.Sprintf("%s/repos/%s/releases/tags/%s", f.baseURL, DefaultRepo, DefaultTag)
+	url := fmt.Sprintf("%s/repos/%s/releases/latest", f.baseURL, DefaultRepo)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -79,7 +78,7 @@ func (f *Fetcher) AssetURL(ctx context.Context, k Kind) (string, error) {
 			return a.BrowserDownloadURL, nil
 		}
 	}
-	return "", fmt.Errorf("asset %q not in release", wanted)
+	return "", fmt.Errorf("asset %q not in release %q", wanted, release.TagName)
 }
 
 func assetName(k Kind) string {

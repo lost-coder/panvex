@@ -11,17 +11,17 @@ import (
 )
 
 const fakeReleasePayload = `{
-  "tag_name": "download",
+  "tag_name": "2026.05.04",
   "assets": [
-    {"name": "GeoLite2-City.mmdb", "browser_download_url": "https://example.test/city.mmdb"},
-    {"name": "GeoLite2-ASN.mmdb",  "browser_download_url": "https://example.test/asn.mmdb"},
-    {"name": "GeoLite2-Country.mmdb", "browser_download_url": "https://example.test/country.mmdb"}
+    {"name": "GeoLite2-City.mmdb", "browser_download_url": "https://github.com/P3TERX/GeoLite.mmdb/releases/download/2026.05.04/GeoLite2-City.mmdb"},
+    {"name": "GeoLite2-ASN.mmdb",  "browser_download_url": "https://github.com/P3TERX/GeoLite.mmdb/releases/download/2026.05.04/GeoLite2-ASN.mmdb"},
+    {"name": "GeoLite2-Country.mmdb", "browser_download_url": "https://github.com/P3TERX/GeoLite.mmdb/releases/download/2026.05.04/GeoLite2-Country.mmdb"}
   ]
 }`
 
 func TestFetcherResolvesAssetURLs(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/repos/P3TERX/GeoLite.mmdb/releases/tags/download" {
+		if r.URL.Path != "/repos/P3TERX/GeoLite.mmdb/releases/latest" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -34,20 +34,22 @@ func TestFetcherResolvesAssetURLs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AssetURL city: %v", err)
 	}
-	if city != "https://example.test/city.mmdb" {
-		t.Errorf("city url = %q", city)
+	want := "https://github.com/P3TERX/GeoLite.mmdb/releases/download/2026.05.04/GeoLite2-City.mmdb"
+	if city != want {
+		t.Errorf("city url = %q, want %q", city, want)
 	}
 	asn, err := f.AssetURL(context.Background(), geoip.KindASN)
 	if err != nil {
 		t.Fatalf("AssetURL asn: %v", err)
 	}
-	if asn != "https://example.test/asn.mmdb" {
-		t.Errorf("asn url = %q", asn)
+	wantASN := "https://github.com/P3TERX/GeoLite.mmdb/releases/download/2026.05.04/GeoLite2-ASN.mmdb"
+	if asn != wantASN {
+		t.Errorf("asn url = %q, want %q", asn, wantASN)
 	}
 }
 
 func TestFetcherErrorsOnMissingAsset(t *testing.T) {
-	payload := `{"tag_name":"download","assets":[]}`
+	payload := `{"tag_name":"2026.05.04","assets":[]}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(payload))
 	}))
@@ -83,7 +85,7 @@ func TestFetcherJSONShapeMatchesGitHub(t *testing.T) {
 	if err := json.Unmarshal([]byte(fakeReleasePayload), &release); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if release.TagName != "download" || len(release.Assets) != 3 {
+	if release.TagName != "2026.05.04" || len(release.Assets) != 3 {
 		t.Errorf("payload drifted: %+v", release)
 	}
 }
