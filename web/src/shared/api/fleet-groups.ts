@@ -1,16 +1,20 @@
 import { api, apiBasePath, encodeRequest } from "./http";
 import {
   createFleetGroupRequestSchema,
+  createIntegrationProviderRequestSchema,
   fleetGroupDeletionPreviewSchema,
   fleetGroupDeletionResultSchema,
   fleetGroupIntegrationSchema,
   fleetGroupListSchema,
   fleetGroupSchema,
+  installFleetGroupIntegrationRequestSchema,
   integrationKindListSchema,
   integrationProviderKindListSchema,
   integrationProviderListSchema,
   integrationProviderSchema,
+  updateFleetGroupIntegrationRequestSchema,
   updateFleetGroupRequestSchema,
+  updateIntegrationProviderRequestSchema,
 } from "./schemas";
 
 export type FleetGroupIntegration = {
@@ -189,7 +193,11 @@ export const fleetGroupsApi = {
       `${apiBasePath}/integration-providers`,
       {
         method: "POST",
-        body: JSON.stringify(payload),
+        body: encodeRequest(
+          `${apiBasePath}/integration-providers`,
+          createIntegrationProviderRequestSchema,
+          payload,
+        ),
       },
       integrationProviderSchema,
     ),
@@ -198,7 +206,11 @@ export const fleetGroupsApi = {
       `${apiBasePath}/integration-providers/${id}`,
       {
         method: "PATCH",
-        body: JSON.stringify(payload),
+        body: encodeRequest(
+          `${apiBasePath}/integration-providers/${id}`,
+          updateIntegrationProviderRequestSchema,
+          payload,
+        ),
       },
       integrationProviderSchema,
     ),
@@ -210,7 +222,14 @@ export const fleetGroupsApi = {
   ) =>
     api<FleetGroupIntegration>(
       `${apiBasePath}/fleet-groups/${fleetGroupID}/integrations`,
-      { method: "POST", body: JSON.stringify(payload) },
+      {
+        method: "POST",
+        body: encodeRequest(
+          `${apiBasePath}/fleet-groups/${fleetGroupID}/integrations`,
+          installFleetGroupIntegrationRequestSchema,
+          payload,
+        ),
+      },
       fleetGroupIntegrationSchema,
     ),
   fleetGroupIntegration: (fleetGroupID: string, integrationID: string) =>
@@ -226,7 +245,14 @@ export const fleetGroupsApi = {
   ) =>
     api<FleetGroupIntegration>(
       `${apiBasePath}/fleet-groups/${fleetGroupID}/integrations/${integrationID}`,
-      { method: "PATCH", body: JSON.stringify(payload) },
+      {
+        method: "PATCH",
+        body: encodeRequest(
+          `${apiBasePath}/fleet-groups/${fleetGroupID}/integrations/${integrationID}`,
+          updateFleetGroupIntegrationRequestSchema,
+          payload,
+        ),
+      },
       fleetGroupIntegrationSchema,
     ),
   uninstallFleetGroupIntegration: (fleetGroupID: string, integrationID: string) =>
