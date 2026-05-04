@@ -71,7 +71,7 @@ export function useFleetGroupMutations() {
   const createMutation = useMutation({
     mutationFn: (payload: CreateFleetGroupRequest) => apiClient.createFleetGroup(payload),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: fleetGroupsKeys.all });
+      void qc.invalidateQueries({ queryKey: fleetGroupsKeys.all });
     },
   });
 
@@ -79,8 +79,8 @@ export function useFleetGroupMutations() {
     mutationFn: ({ id, payload }: { id: string; payload: UpdateFleetGroupRequest }) =>
       apiClient.updateFleetGroup(id, payload),
     onSuccess: (_data, variables) => {
-      qc.invalidateQueries({ queryKey: fleetGroupsKeys.all });
-      qc.invalidateQueries({ queryKey: fleetGroupsKeys.detail(variables.id) });
+      void qc.invalidateQueries({ queryKey: fleetGroupsKeys.all });
+      void qc.invalidateQueries({ queryKey: fleetGroupsKeys.detail(variables.id) });
     },
   });
 
@@ -88,12 +88,12 @@ export function useFleetGroupMutations() {
     mutationFn: ({ id, reassignTo }: { id: string; reassignTo?: string | undefined }) =>
       apiClient.deleteFleetGroup(id, reassignTo),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: fleetGroupsKeys.all });
+      void qc.invalidateQueries({ queryKey: fleetGroupsKeys.all });
       // Invalidate the agents list too — agents may have been moved
       // to the reassignTo group as part of the delete flow. BP-02:
       // pulls `agentsKeys` from the servers feature instead of a
       // bare ["agents"] literal so cache identity stays canonical.
-      qc.invalidateQueries({ queryKey: agentsKeys.all });
+      void qc.invalidateQueries({ queryKey: agentsKeys.all });
     },
   });
 
@@ -140,7 +140,7 @@ export function useIntegrationProviderMutations() {
     mutationFn: (payload: CreateIntegrationProviderRequest) =>
       apiClient.createIntegrationProvider(payload),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: integrationProvidersKeys.all });
+      void qc.invalidateQueries({ queryKey: integrationProvidersKeys.all });
     },
   });
 
@@ -148,15 +148,15 @@ export function useIntegrationProviderMutations() {
     mutationFn: ({ id, payload }: { id: string; payload: UpdateIntegrationProviderRequest }) =>
       apiClient.updateIntegrationProvider(id, payload),
     onSuccess: (_data, variables) => {
-      qc.invalidateQueries({ queryKey: integrationProvidersKeys.all });
-      qc.invalidateQueries({ queryKey: integrationProvidersKeys.detail(variables.id) });
+      void qc.invalidateQueries({ queryKey: integrationProvidersKeys.all });
+      void qc.invalidateQueries({ queryKey: integrationProvidersKeys.detail(variables.id) });
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiClient.deleteIntegrationProvider(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: integrationProvidersKeys.all });
+      void qc.invalidateQueries({ queryKey: integrationProvidersKeys.all });
     },
   });
 
@@ -168,8 +168,8 @@ export function useIntegrationProviderMutations() {
 export function useFleetGroupIntegrationMutations(fleetGroupID: string) {
   const qc = useQueryClient();
   const invalidate = () => {
-    qc.invalidateQueries({ queryKey: fleetGroupsKeys.detail(fleetGroupID) });
-    qc.invalidateQueries({ queryKey: fleetGroupsKeys.all });
+    void qc.invalidateQueries({ queryKey: fleetGroupsKeys.detail(fleetGroupID) });
+    void qc.invalidateQueries({ queryKey: fleetGroupsKeys.all });
   };
 
   const installMutation = useMutation({

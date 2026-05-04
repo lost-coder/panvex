@@ -227,7 +227,7 @@ export function AddServerContainer() {
         }
       }
     };
-    poll();
+    void poll();
     return () => {
       cancelled = true;
     };
@@ -307,7 +307,7 @@ export function AddServerContainer() {
           connectedAgent={connectedAgent}
           onViewDetails={() => {
             if (connectedAgent) {
-              navigate({
+              void navigate({
                 to: "/servers/$serverId",
                 params: { serverId: connectedAgent.id },
               });

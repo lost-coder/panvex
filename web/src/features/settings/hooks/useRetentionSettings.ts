@@ -15,7 +15,7 @@ export function useRetentionSettings() {
   const saveMutation = useMutation({
     mutationFn: (settings: RetentionSettings) => apiClient.putRetentionSettings(settings),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: settingsKeys.retention() });
+      void qc.invalidateQueries({ queryKey: settingsKeys.retention() });
       toast.success("Retention settings saved.");
     },
     onError: (err: Error) => toast.error(`Save failed: ${err.message}`),

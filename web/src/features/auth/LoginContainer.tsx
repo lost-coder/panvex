@@ -36,7 +36,7 @@ export function LoginContainer() {
     setLoading(true);
     try {
       await apiClient.login({ username, password });
-      router.navigate({ to: "/" });
+      void router.navigate({ to: "/" });
     } catch (err: unknown) {
       if (err instanceof ApiError && (err.code === "totp_required" || err.code === "totp_invalid")) {
         setSavedCredentials({ username, password });
@@ -57,7 +57,7 @@ export function LoginContainer() {
     try {
       await apiClient.login({ ...savedCredentials, totp_code: totpCode });
       setSavedCredentials(undefined);
-      router.navigate({ to: "/" });
+      void router.navigate({ to: "/" });
     } catch (err: unknown) {
       if (err instanceof ApiError && err.code && TRANSIENT_LOGIN_CODES.has(err.code)) {
         setError(loginErrorMessage(err));

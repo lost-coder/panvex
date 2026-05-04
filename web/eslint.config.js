@@ -79,11 +79,11 @@ export default tseslint.config(
         },
       ],
       // BP — catch fire-and-forget promises. Real bug surface.
-      // Currently `warn`: the React Query mutation/invalidation patterns
-      // throughout features/* fire promises intentionally; sweeping them
-      // to `void mutate()` / `void invalidate()` is its own follow-up
-      // (~47 sites). Promote to `error` after that sweep.
-      "@typescript-eslint/no-floating-promises": "warn",
+      // Sprint S26 tail: every site has been swept (`void
+      // mutate()` / `void invalidate()` / `void navigate()` for the
+      // intentional fire-and-forget paths). Promoted to `error` so
+      // regressions block CI.
+      "@typescript-eslint/no-floating-promises": "error",
       // BP — exhaustive-deps was 'warn' from recommended; promote to error
       // so missing-dep regressions block CI.
       "react-hooks/exhaustive-deps": "error",

@@ -58,7 +58,7 @@ export function ThemeToggleButton({ expanded = false }: Readonly<ThemeToggleButt
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: getAppearanceQueryKey(userID) });
+      void queryClient.invalidateQueries({ queryKey: getAppearanceQueryKey(userID) });
     },
   });
 
