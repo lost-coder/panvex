@@ -141,11 +141,6 @@ export const apiClient = {
  *                                          form layer; left as raw POST here
  *                                          because the request type already
  *                                          mirrors the runtime type 1:1
- *   - /settings/panel/update (POST)        BUG: client sends `{version}` but
- *                                          server expects `{target_version}`.
- *                                          Adding a request schema here would
- *                                          mask the bug — fix the client first
- *                                          (separate ticket), then migrate.
  *   - /fleet-groups/{id}/integrations*     four endpoints; medium-shaped
  *                                          payloads with a free-form `config`
  *                                          (json.RawMessage on the server). A

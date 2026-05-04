@@ -2,6 +2,7 @@ import { api, apiBasePath, encodeRequest } from "./http";
 import {
   agentUpdateRequestSchema,
   checkForUpdatesResponseSchema,
+  panelUpdateRequestSchema,
   updateAgentResponseSchema,
   updatePanelResponseSchema,
   updateSettingsResponseSchema,
@@ -55,12 +56,20 @@ export const updatesApi = {
       { method: "POST" },
       checkForUpdatesResponseSchema,
     ),
-  updatePanel: (version?: string) =>
+  // R-Q-20: server expects `{target_version}`, not `{version}` — historic
+  // typo in the JS client used the wrong key, so the body was silently
+  // ignored and the server fell back to its cached latest version. Schema
+  // validation via encodeRequest now enforces the correct wire shape.
+  updatePanel: (targetVersion: string) =>
     api<{ status: string; from: string; to: string }>(
       `${apiBasePath}/settings/panel/update`,
       {
         method: "POST",
-        body: JSON.stringify({ version: version || "" }),
+        body: encodeRequest(
+          `${apiBasePath}/settings/panel/update`,
+          panelUpdateRequestSchema,
+          { target_version: targetVersion },
+        ),
       },
       updatePanelResponseSchema,
     ),

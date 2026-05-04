@@ -28,7 +28,7 @@ export function useUpdates() {
   });
 
   const updatePanel = useMutation({
-    mutationFn: (version?: string) => apiClient.updatePanel(version),
+    mutationFn: (targetVersion: string) => apiClient.updatePanel(targetVersion),
   });
 
   return { query, saveSettings, checkNow, updatePanel };
