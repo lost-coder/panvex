@@ -114,6 +114,134 @@ func TestStoreBatchWriterStartAndStop(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------
+// P-2/P-3: per-stream batch sizes (streamBatchSizes table).
+// -----------------------------------------------------------------------
+
+// TestBatchSizeForKnownStreams locks the per-stream sizing table to the
+// values listed in the spec. Bumping a number here is fine; flipping a hot
+// stream to the small-batch tier (or vice versa) should require an explicit
+// review of the SQLite/PostgreSQL bulk-INSERT ceiling.
+func TestBatchSizeForKnownStreams(t *testing.T) {
+	cases := []struct {
+		stream string
+		want   int
+	}{
+		{"telemetry", 500},
+		{"client_ips", 500},
+		{"dc_health", 500},
+		{"audit", 50},
+		{"fallback_state", 50},
+	}
+	for _, tc := range cases {
+		if got := batchSizeFor(tc.stream); got != tc.want {
+			t.Errorf("batchSizeFor(%q) = %d, want %d", tc.stream, got, tc.want)
+		}
+	}
+}
+
+// TestBatchSizeForUnknownStreamUsesDefault guards against typos in caller code:
+// passing an unlisted stream name must NOT silently produce an unbounded buffer
+// (or the legacy 50 from before this change).
+func TestBatchSizeForUnknownStreamUsesDefault(t *testing.T) {
+	if got := batchSizeFor("does-not-exist"); got != defaultBatchMaxSize {
+		t.Errorf("batchSizeFor(unknown) = %d, want %d", got, defaultBatchMaxSize)
+	}
+	if got := batchSizeFor(""); got != defaultBatchMaxSize {
+		t.Errorf("batchSizeFor(\"\") = %d, want %d", got, defaultBatchMaxSize)
+	}
+}
+
+// TestStoreBatchWriterPerStreamBufferCapacities asserts that newStoreBatchWriter
+// wires each typed buffer to its configured per-stream size. Catches regressions
+// where a new buffer is added but forgotten in batchSizeFor() or where the
+// constructor is changed back to a single global threshold.
+func TestStoreBatchWriterPerStreamBufferCapacities(t *testing.T) {
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	w := newStoreBatchWriter(store, nil, nil)
+
+	cases := []struct {
+		name string
+		got  int
+		want int
+	}{
+		{"telemetry", w.telemetry.maxSize, batchSizeFor("telemetry")},
+		{"client_ips", w.clientIPs.maxSize, batchSizeFor("client_ips")},
+		{"dc_health", w.dcHealth.maxSize, batchSizeFor("dc_health")},
+		{"audit", w.auditEvents.maxSize, batchSizeFor("audit")},
+		{"fallback_state", w.fallbackState.maxSize, batchSizeFor("fallback_state")},
+		{"agents", w.agents.maxSize, batchSizeFor("agents")},
+		{"instances", w.instances.maxSize, batchSizeFor("instances")},
+		{"metrics", w.metricsBuf.maxSize, batchSizeFor("metrics")},
+		{"server_load", w.serverLoad.maxSize, batchSizeFor("server_load")},
+	}
+	for _, tc := range cases {
+		if tc.got != tc.want {
+			t.Errorf("buffer %q maxSize = %d, want %d", tc.name, tc.got, tc.want)
+		}
+	}
+}
+
+// TestBatchBufferTelemetryFlushesAt500 wires a telemetry-sized batchBuffer
+// directly and verifies that the size-based signal fires at the configured
+// 500-row threshold (not the legacy 50). This guards the actual per-stream
+// flush trigger, not just the constant table.
+func TestBatchBufferTelemetryFlushesAt500(t *testing.T) {
+	threshold := batchSizeFor("telemetry")
+	if threshold != 500 {
+		t.Fatalf("telemetry threshold changed unexpectedly: %d", threshold)
+	}
+	buf := newBatchBuffer(threshold, func(_ context.Context, _ []int) {})
+
+	for i := 0; i < threshold-1; i++ {
+		buf.Enqueue(i)
+	}
+	select {
+	case <-buf.signal:
+		t.Fatalf("signal fired before reaching %d items", threshold)
+	default:
+	}
+
+	buf.Enqueue(threshold)
+	select {
+	case <-buf.signal:
+	default:
+		t.Fatalf("signal did not fire at %d items", threshold)
+	}
+}
+
+// TestBatchBufferAuditFlushesAt50 verifies the low-rate side of the table:
+// audit's small batch size keeps log latency bounded, so 50 items must fire
+// the signal — not 200 (default) and not 500 (telemetry).
+func TestBatchBufferAuditFlushesAt50(t *testing.T) {
+	threshold := batchSizeFor("audit")
+	if threshold != 50 {
+		t.Fatalf("audit threshold changed unexpectedly: %d", threshold)
+	}
+	buf := newBatchBuffer(threshold, func(_ context.Context, _ []int) {})
+
+	for i := 0; i < threshold-1; i++ {
+		buf.Enqueue(i)
+	}
+	select {
+	case <-buf.signal:
+		t.Fatalf("signal fired before reaching %d items", threshold)
+	default:
+	}
+
+	buf.Enqueue(threshold)
+	select {
+	case <-buf.signal:
+	default:
+		t.Fatalf("signal did not fire at %d items", threshold)
+	}
+}
+
+// -----------------------------------------------------------------------
 // P2-REL-06: batch_writer error classification + retry + metrics tests.
 // -----------------------------------------------------------------------
 

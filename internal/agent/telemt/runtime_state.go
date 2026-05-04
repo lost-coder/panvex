@@ -1,6 +1,17 @@
 package telemt
 
-import "context"
+import (
+	"context"
+	"sync/atomic"
+
+	"golang.org/x/sync/errgroup"
+)
+
+// runtimeFetchConcurrency bounds the number of in-flight Telemt sub-fetches
+// during a single FetchRuntimeState cycle. Telemt is a local loopback
+// service; 8 concurrent goroutines saturate its event loop without
+// inducing tail-latency from queueing on its single accept thread (P-10).
+const runtimeFetchConcurrency = 8
 
 // FetchRuntimeState queries the Telemt health, security posture, and summary endpoints.
 //
@@ -22,54 +33,118 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 		defer cancel()
 	}
 
-	result := RuntimeState{}
+	// partial is shared across the parallel sub-fetches and is the only
+	// piece of mutable state read after collectRuntimeStateRaw returns.
+	// atomic.Bool keeps the markPartial/setPartial closures race-free
+	// without an extra mutex.
+	var partial atomic.Bool
 	markPartial := func(path string, err error) {
-		result.Partial = true
+		partial.Store(true)
 		c.logger.Warn("telemt runtime sub-fetch failed",
 			"path", path,
 			"err", err,
 			"ctx_err", ctx.Err(),
 		)
 	}
-	setPartial := func() { result.Partial = true }
+	setPartial := func() { partial.Store(true) }
 
 	raw := c.collectRuntimeStateRaw(ctx, markPartial, setPartial)
 
-	partial := result.Partial
-	return c.assembleRuntimeState(raw, partial), nil
+	return c.assembleRuntimeState(raw, partial.Load()), nil
 }
 
 // collectRuntimeStateRaw runs every Telemt sub-fetch FetchRuntimeState
 // needs, marking partial-failures via markPartial (logs + flags) or
 // setPartial (flag only). It is a thin orchestration wrapper so
 // FetchRuntimeState's flow stays linear.
+//
+// P-10: independent sub-fetches run in parallel via errgroup, bounded at
+// runtimeFetchConcurrency. Each helper writes to its own field on `raw`,
+// so per-subfetch state is partition-safe; the only shared mutable
+// surface is the partial flag (atomic) and the slow-state cache (already
+// guarded by c.mu inside loadSlowRuntimeStateForFetch). Errors are NOT
+// returned to errgroup — every helper records failure via markPartial
+// instead — preserving the original "first failure does not abort other
+// fetches" semantic. errgroup is used purely as a bounded WaitGroup.
 func (c *Client) collectRuntimeStateRaw(ctx context.Context, markPartial func(string, error), setPartial func()) fetchRuntimeStateRaw {
 	raw := fetchRuntimeStateRaw{}
 
-	c.fetchHealth(ctx, markPartial)
-	c.fetchSecurityPosture(ctx, &raw, markPartial)
-	c.fetchRuntimeGates(ctx, &raw, markPartial)
-	c.fetchInitialization(ctx, &raw, markPartial)
-	c.fetchConnectionSummary(ctx, &raw, markPartial)
-	c.fetchSummary(ctx, &raw, markPartial)
-	raw.dcs = c.fetchDCs(ctx, markPartial)
+	// dcs and users live in fields the parallel goroutines write directly;
+	// usersMu is unnecessary because only one goroutine writes raw.users.
+	// The slow-state collector writes raw.slowData; it's the single writer
+	// for that field too. No cross-goroutine field aliasing.
 
-	c.collectSlowRuntimeState(ctx, &raw, markPartial, setPartial)
+	eg, gctx := errgroup.WithContext(ctx)
+	eg.SetLimit(runtimeFetchConcurrency)
 
-	users, err := c.fetchClientUsage(ctx)
-	if err != nil {
-		markPartial("/v1/stats/users", err)
-		users = nil
-	}
-	raw.users = users
+	eg.Go(func() error {
+		c.fetchHealth(gctx, markPartial)
+		return nil
+	})
+	eg.Go(func() error {
+		c.fetchSecurityPosture(gctx, &raw, markPartial)
+		return nil
+	})
+	eg.Go(func() error {
+		c.fetchRuntimeGates(gctx, &raw, markPartial)
+		return nil
+	})
+	eg.Go(func() error {
+		c.fetchInitialization(gctx, &raw, markPartial)
+		return nil
+	})
+	eg.Go(func() error {
+		c.fetchConnectionSummary(gctx, &raw, markPartial)
+		return nil
+	})
+	eg.Go(func() error {
+		c.fetchSummary(gctx, &raw, markPartial)
+		return nil
+	})
+
+	// fetchDCs returns its slice; capture into raw.dcs from the goroutine.
+	eg.Go(func() error {
+		dcs := c.fetchDCs(gctx, markPartial)
+		raw.dcs = dcs
+		return nil
+	})
+
+	// Slow runtime state owns the heaviest endpoints and uses an internal
+	// TTL cache; running it in parallel with the fast endpoints does not
+	// disturb the cache contract because loadSlowRuntimeStateForFetch is
+	// already mutex-protected internally.
+	eg.Go(func() error {
+		c.collectSlowRuntimeState(gctx, &raw, markPartial, setPartial)
+		return nil
+	})
+
+	eg.Go(func() error {
+		users, err := c.fetchClientUsage(gctx)
+		if err != nil {
+			markPartial("/v1/stats/users", err)
+			users = nil
+		}
+		raw.users = users
+		return nil
+	})
 
 	if c.systemLoadSampler != nil {
-		if load, err := c.systemLoadSampler(ctx); err == nil {
-			raw.systemLoad = load
-		} else {
-			markPartial("system_load_sampler", err)
-		}
+		eg.Go(func() error {
+			if load, err := c.systemLoadSampler(gctx); err == nil {
+				raw.systemLoad = load
+			} else {
+				markPartial("system_load_sampler", err)
+			}
+			return nil
+		})
 	}
+
+	// errgroup.Wait returns the first non-nil error from any Go call.
+	// Every helper above returns nil unconditionally, so Wait will only
+	// surface a context error propagated by gctx — which the
+	// partial-snapshot semantics already covers via markPartial. The _ =
+	// is intentional; nothing actionable to surface here.
+	_ = eg.Wait()
 	return raw
 }
 

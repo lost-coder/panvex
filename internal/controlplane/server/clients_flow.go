@@ -520,14 +520,11 @@ func applyClientJobOutcome(deployment *managedClientDeployment, action jobs.Acti
 	}
 }
 
-func (s *Server) jobByID(ctx context.Context, jobID string) (jobs.Job, bool) {
-	for _, job := range s.jobs.ListWithContext(ctx) {
-		if job.ID == jobID {
-			return job, true
-		}
-	}
-
-	return jobs.Job{}, false
+// jobByID returns the job with the given ID. P-4: backed by the O(1)
+// jobs.Service.Get index — historically this iterated ListWithContext,
+// which was O(jobs) per result-recording call.
+func (s *Server) jobByID(_ context.Context, jobID string) (jobs.Job, bool) {
+	return s.jobs.Get(jobID)
 }
 
 // aggregatedClientUsage delegates the sum-over-agents computation to

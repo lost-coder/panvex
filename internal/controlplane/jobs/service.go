@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -136,8 +137,15 @@ type CreateJobInput struct {
 }
 
 // Service validates orchestration jobs before they enter the delivery queue.
+//
+// P-6: mu is an RWMutex so high-frequency read paths (QueueDepth on the
+// metrics scrape loop, plus the read-mostly fast path of ListWithContext /
+// PendingForAgent when no jobs are due to expire) do not serialize against
+// each other or against the slow persistence-driving Enqueue path. Every
+// mutating call site (Enqueue, *Locked helpers, prune workers, target
+// updates) still takes the exclusive write lock.
 type Service struct {
-	mu         sync.Mutex
+	mu         sync.RWMutex
 	sequence   uint64
 	updateSeq  uint64
 	jobs       map[string]Job
@@ -151,6 +159,13 @@ type Service struct {
 	// until the job completes.
 	keyTerminalAt map[string]time.Time
 	jobVersion map[string]uint64
+	// latestSucceededByClient maps a Telemt client_id (extracted from a
+	// client.* job's PayloadJSON) to the most recently observed succeeded
+	// job for that client. Updated under s.mu whenever a client.* job
+	// transitions into StatusSucceeded. Backs LatestSucceededWithContext
+	// so the call site no longer needs an O(N) ListWithContext scan to
+	// recover a client's connection_links result (P-4).
+	latestSucceededByClient map[string]Job
 	jobStore   storage.JobStore
 	startupErr error
 	now        func() time.Time
@@ -165,25 +180,27 @@ type persistCandidate struct {
 // NewService constructs an in-memory job validation and storage service.
 func NewService() *Service {
 	return &Service{
-		jobs:          make(map[string]Job),
-		agentJobs:     make(map[string]map[string]struct{}),
-		keys:          make(map[string]string),
-		keyTerminalAt: make(map[string]time.Time),
-		jobVersion:    make(map[string]uint64),
-		now:           time.Now,
+		jobs:                    make(map[string]Job),
+		agentJobs:               make(map[string]map[string]struct{}),
+		keys:                    make(map[string]string),
+		keyTerminalAt:           make(map[string]time.Time),
+		jobVersion:              make(map[string]uint64),
+		latestSucceededByClient: make(map[string]Job),
+		now:                     time.Now,
 	}
 }
 
 // NewServiceWithStore constructs a job service that persists state through the shared store.
 func NewServiceWithStore(jobStore storage.JobStore) *Service {
 	service := &Service{
-		jobs:          make(map[string]Job),
-		agentJobs:     make(map[string]map[string]struct{}),
-		keys:          make(map[string]string),
-		keyTerminalAt: make(map[string]time.Time),
-		jobVersion:    make(map[string]uint64),
-		jobStore:      jobStore,
-		now:           time.Now,
+		jobs:                    make(map[string]Job),
+		agentJobs:               make(map[string]map[string]struct{}),
+		keys:                    make(map[string]string),
+		keyTerminalAt:           make(map[string]time.Time),
+		jobVersion:              make(map[string]uint64),
+		latestSucceededByClient: make(map[string]Job),
+		jobStore:                jobStore,
+		now:                     time.Now,
 	}
 	service.startupErr = service.restore()
 	return service
@@ -252,6 +269,15 @@ func (s *Service) PruneKeys(olderThan time.Duration) int {
 		// storage layer owns long-term retention for /api/audit-style
 		// historical queries.
 		if jobID != "" {
+			// P-4: drop any latestSucceededByClient pointer that names
+			// this jobID so the index never references an evicted job.
+			if existingJob, ok := s.jobs[jobID]; ok {
+				if cid := clientIDFromPayload(existingJob.Action, existingJob.PayloadJSON); cid != "" {
+					if cur, has := s.latestSucceededByClient[cid]; has && cur.ID == jobID {
+						delete(s.latestSucceededByClient, cid)
+					}
+				}
+			}
 			delete(s.jobs, jobID)
 			delete(s.jobVersion, jobID)
 		}
@@ -294,9 +320,12 @@ func (s *Service) StartupError() error {
 // QueueDepth returns the number of jobs currently in the queued or running
 // state. Exposed for metrics (panvex_job_queue_depth); counts only live jobs
 // so terminal (succeeded/failed/expired) entries do not inflate the gauge.
+//
+// P-6: pure read; takes RLock so the metrics scraper does not block
+// concurrent Enqueue / target-update writers.
 func (s *Service) QueueDepth() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	count := 0
 	for _, job := range s.jobs {
@@ -420,6 +449,87 @@ func isMutatingAction(action Action) bool {
 	}
 }
 
+// Get returns a snapshot of the job identified by jobID, if any. O(1)
+// against the in-memory index (P-4); supersedes the historical pattern of
+// scanning ListWithContext for a single ID.
+func (s *Service) Get(jobID string) (Job, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	job, ok := s.jobs[jobID]
+	if !ok {
+		return Job{}, false
+	}
+	return cloneJob(job), true
+}
+
+// LatestSucceededWithContext returns the most recently observed succeeded
+// client.* job for the given Telemt client_id, or (nil, false) if no such
+// job has been recorded yet. The lookup is O(1) — backed by the
+// latestSucceededByClient index that this package updates whenever a
+// client.* job transitions into StatusSucceeded (P-4).
+//
+// The ctx parameter is reserved for future asynchronous storage hydration
+// (parity with ListWithContext / RecordResult); the in-memory path does
+// not currently consult ctx.
+func (s *Service) LatestSucceededWithContext(_ context.Context, clientID string) (*Job, bool) {
+	if clientID == "" {
+		return nil, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	job, ok := s.latestSucceededByClient[clientID]
+	if !ok {
+		return nil, false
+	}
+	cloned := cloneJob(job)
+	return &cloned, true
+}
+
+// clientIDFromPayload returns the Telemt client_id embedded in a client.*
+// job's PayloadJSON, or "" if the action is not a client action or the
+// payload is malformed. Decoupling this here keeps the index-maintenance
+// path inside the jobs package without leaking the controlplane/server
+// payload type into this lower-level package.
+func clientIDFromPayload(action Action, payloadJSON string) string {
+	switch action {
+	case ActionClientCreate, ActionClientUpdate, ActionClientDelete, ActionClientRotateSecret:
+	default:
+		return ""
+	}
+	if payloadJSON == "" {
+		return ""
+	}
+	var probe struct {
+		ClientID string `json:"client_id"`
+	}
+	if err := json.Unmarshal([]byte(payloadJSON), &probe); err != nil {
+		return ""
+	}
+	return probe.ClientID
+}
+
+// indexLatestSucceededLocked records `job` as the most recent succeeded job
+// for its embedded client_id, if and only if it is a succeeded client.*
+// job. Caller must hold s.mu (write).
+func (s *Service) indexLatestSucceededLocked(job Job) {
+	if job.Status != StatusSucceeded {
+		return
+	}
+	clientID := clientIDFromPayload(job.Action, job.PayloadJSON)
+	if clientID == "" {
+		return
+	}
+	if existing, ok := s.latestSucceededByClient[clientID]; ok {
+		// Only overwrite if the new job is at least as recent as the
+		// existing one. This keeps the index monotone-by-CreatedAt even
+		// if results arrive out-of-order across agents.
+		if !existing.CreatedAt.Before(job.CreatedAt) {
+			return
+		}
+	}
+	s.latestSucceededByClient[clientID] = cloneJob(job)
+}
+
 // List returns a snapshot of the queued jobs known to the service.
 //
 // List intentionally does not take a context because some callers (notably
@@ -434,31 +544,67 @@ func (s *Service) List() []Job {
 
 // ListWithContext is the ctx-aware variant of List. The ctx is forwarded to
 // any expiry-driven persistence performed by this call.
+//
+// P-6: hot read path. We take RLock first and check whether any job is due
+// to expire. If none is, the snapshot is built entirely under RLock so
+// concurrent List/Pending callers do not serialize on each other. Only when
+// expiry work is actually required do we drop the read lock and re-acquire
+// the exclusive write lock — racing readers may briefly see the pre-expiry
+// state, which is fine because expiry is itself best-effort housekeeping.
 func (s *Service) ListWithContext(ctx context.Context) []Job {
-	var candidates []persistCandidate
+	s.mu.RLock()
+	now := s.now().UTC()
+	if !s.anyJobNeedsExpiryLocked(now) {
+		result := make([]Job, 0, len(s.jobs))
+		for _, job := range s.jobs {
+			result = append(result, cloneJob(job))
+		}
+		s.mu.RUnlock()
+		sortJobsByCreatedAt(result)
+		return result
+	}
+	s.mu.RUnlock()
 
 	s.mu.Lock()
-	now := s.now().UTC()
-	candidates = s.expireJobsLocked(now)
-
+	now = s.now().UTC()
+	candidates := s.expireJobsLocked(now)
 	result := make([]Job, 0, len(s.jobs))
 	for _, job := range s.jobs {
 		result = append(result, cloneJob(job))
 	}
 	s.mu.Unlock()
 
-	sort.Slice(result, func(left, right int) bool {
-		if result[left].CreatedAt.Equal(result[right].CreatedAt) {
-			return result[left].ID < result[right].ID
-		}
-		return result[left].CreatedAt.Before(result[right].CreatedAt)
-	})
+	sortJobsByCreatedAt(result)
 
 	for _, candidate := range candidates {
 		s.persistLatestJobVersion(ctx, candidate.jobID, candidate.version, candidate.job)
 	}
 
 	return result
+}
+
+// sortJobsByCreatedAt orders jobs by CreatedAt ascending, breaking ties on
+// ID so the output is deterministic for callers (UI, tests).
+func sortJobsByCreatedAt(jobs []Job) {
+	sort.Slice(jobs, func(left, right int) bool {
+		if jobs[left].CreatedAt.Equal(jobs[right].CreatedAt) {
+			return jobs[left].ID < jobs[right].ID
+		}
+		return jobs[left].CreatedAt.Before(jobs[right].CreatedAt)
+	})
+}
+
+// anyJobNeedsExpiryLocked reports whether at least one queued/running job has
+// passed its TTL at `now`. Read-only; safe under either RLock or Lock. Used
+// by the read-mostly fast path of ListWithContext / PendingForAgent so we
+// can skip the exclusive-lock branch entirely when nothing is due to expire.
+func (s *Service) anyJobNeedsExpiryLocked(now time.Time) bool {
+	for _, job := range s.jobs {
+		if jobShouldExpire(job, now) {
+			return true
+		}
+	}
+	return false
 }
 
 // DefaultListRecentLimit caps the HTTP /jobs response so a long-lived
@@ -494,12 +640,35 @@ func (s *Service) ExpireStale() {
 }
 
 // PendingForAgent returns queued and stale-sent jobs for one agent in creation order.
+//
+// P-6: hottest read path on the long-poll Connect handler. Same fast/slow
+// pattern as ListWithContext — the no-expiry branch never escalates past
+// RLock, so concurrent agents polling for jobs do not serialize on each
+// other or on the metrics scraper.
 func (s *Service) PendingForAgent(ctx context.Context, agentID string, retryAfter time.Duration) []Job {
-	var candidates []persistCandidate
+	s.mu.RLock()
+	now := s.now().UTC()
+	if !s.anyJobNeedsExpiryLocked(now) {
+		jobsForAgent := s.agentJobs[agentID]
+		result := make([]Job, 0, len(jobsForAgent))
+		for jobID := range jobsForAgent {
+			job, ok := s.jobs[jobID]
+			if !ok {
+				continue
+			}
+			if jobIsPendingForAgent(job, agentID, now, retryAfter) {
+				result = append(result, cloneJob(job))
+			}
+		}
+		s.mu.RUnlock()
+		sortJobsByCreatedAt(result)
+		return result
+	}
+	s.mu.RUnlock()
 
 	s.mu.Lock()
-	now := s.now().UTC()
-	candidates = s.expireJobsLocked(now)
+	now = s.now().UTC()
+	candidates := s.expireJobsLocked(now)
 
 	jobsForAgent := s.agentJobs[agentID]
 	result := make([]Job, 0, len(jobsForAgent))
@@ -514,12 +683,7 @@ func (s *Service) PendingForAgent(ctx context.Context, agentID string, retryAfte
 	}
 	s.mu.Unlock()
 
-	sort.Slice(result, func(left, right int) bool {
-		if result[left].CreatedAt.Equal(result[right].CreatedAt) {
-			return result[left].ID < result[right].ID
-		}
-		return result[left].CreatedAt.Before(result[right].CreatedAt)
-	})
+	sortJobsByCreatedAt(result)
 
 	for _, candidate := range candidates {
 		s.persistLatestJobVersion(ctx, candidate.jobID, candidate.version, candidate.job)
@@ -659,6 +823,7 @@ func (s *Service) commitPrunedJobLocked(jobID string, job Job, now time.Time, ca
 	if isTerminalStatus(job.Status) {
 		s.markKeyTerminalLocked(job.IdempotencyKey, now)
 	}
+	s.indexLatestSucceededLocked(job)
 	if s.jobStore == nil {
 		return candidates
 	}
@@ -783,6 +948,8 @@ func (s *Service) applyTargetMutationLocked(job Job, agentID string, observedAt,
 	} else {
 		s.clearKeyTerminalLocked(job.IdempotencyKey)
 	}
+	// P-4: keep latestSucceededByClient in sync with the canonical job map.
+	s.indexLatestSucceededLocked(job)
 
 	if s.jobStore == nil {
 		return nil
@@ -966,6 +1133,10 @@ func (s *Service) installRestoredJob(job Job) {
 		// desired behaviour for jobs persisted long enough ago.
 		s.keyTerminalAt[job.IdempotencyKey] = job.CreatedAt
 	}
+	// P-4: rebuild the per-client succeeded-job index from the restored
+	// state so LatestSucceededWithContext returns the correct entry after
+	// a control-plane restart.
+	s.indexLatestSucceededLocked(job)
 	s.sequence = maxJobSequence(s.sequence, job.ID)
 	s.updateSeq++
 	s.jobVersion[job.ID] = s.updateSeq

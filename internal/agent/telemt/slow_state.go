@@ -3,6 +3,8 @@ package telemt
 import (
 	"context"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 )
 
 // loadSlowRuntimeStateForFetch returns a slow-runtime snapshot: the cached
@@ -45,18 +47,60 @@ func (c *Client) loadSlowRuntimeStateForFetch(ctx context.Context) (slowRuntimeS
 // advisory sub-endpoint failed but the core system/info payload still arrived),
 // and a non-nil error only when the required /v1/system/info payload itself is
 // unreachable. See P2-REL-07.
+//
+// P-10: the dependent /v1/system/info call is fetched first because
+// buildSlowDiagnostics needs its payload. Once it returns, the four remaining
+// independent sub-fetches (upstreams, recent events, me-writers, security
+// inventory) plus the diagnostics builder run in parallel via errgroup. The
+// outer caching contract (loadSlowRuntimeStateForFetch) is unchanged: the
+// TTL still wraps a single fetchSlowRuntimeState invocation.
 func (c *Client) fetchSlowRuntimeState(ctx context.Context) (slowRuntimeState, bool, error) {
 	systemInfo, err := c.getJSONPayload(ctx, "/v1/system/info")
 	if err != nil {
 		return slowRuntimeState{}, true, err
 	}
-	partial := false
+	// Each parallel sub-fetch writes its own *bool partial flag; we OR
+	// them together after Wait. This avoids racing on a shared *bool from
+	// the existing helper signatures and keeps those helpers untouched.
+	var (
+		partialUpstream    bool
+		partialRecent      bool
+		partialDiagnostics bool
+		partialMeWriters   bool
+		partialSecurity    bool
 
-	upstreamStatus := c.fetchUpstreamStatus(ctx, &partial)
-	recentEvents := c.fetchRecentEvents(ctx, &partial)
-	diagnostics := c.buildSlowDiagnostics(ctx, systemInfo, &partial)
-	meWritersSummary := c.fetchMeWritersSummary(ctx, &partial)
-	securityInventory := c.fetchSecurityInventory(ctx, &partial)
+		upstreamStatus    upstreamStatusResponse
+		recentEvents      recentEventsResponse
+		diagnostics       RuntimeDiagnostics
+		meWritersSummary  RuntimeMeWritersSummary
+		securityInventory RuntimeSecurityInventory
+	)
+
+	eg, gctx := errgroup.WithContext(ctx)
+	eg.SetLimit(runtimeFetchConcurrency)
+	eg.Go(func() error {
+		upstreamStatus = c.fetchUpstreamStatus(gctx, &partialUpstream)
+		return nil
+	})
+	eg.Go(func() error {
+		recentEvents = c.fetchRecentEvents(gctx, &partialRecent)
+		return nil
+	})
+	eg.Go(func() error {
+		diagnostics = c.buildSlowDiagnostics(gctx, systemInfo, &partialDiagnostics)
+		return nil
+	})
+	eg.Go(func() error {
+		meWritersSummary = c.fetchMeWritersSummary(gctx, &partialMeWriters)
+		return nil
+	})
+	eg.Go(func() error {
+		securityInventory = c.fetchSecurityInventory(gctx, &partialSecurity)
+		return nil
+	})
+	_ = eg.Wait()
+
+	partial := partialUpstream || partialRecent || partialDiagnostics || partialMeWriters || partialSecurity
 
 	return slowRuntimeState{
 		Version:       jsonString(systemInfo["version"]),

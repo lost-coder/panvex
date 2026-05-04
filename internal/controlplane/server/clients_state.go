@@ -54,6 +54,7 @@ func (s *Server) rehydrateClientAssignmentUsage(ctx context.Context, client mana
 			ActiveUniqueIPs:  u.ActiveUniqueIPs,
 			ObservedAt:       u.ObservedAt,
 		}
+		s.trackClientUsageOwnerLocked(client.ID, assignment.AgentID)
 		return
 	}
 	if dc, ok := discoveredIdx[assignment.AgentID+"\x00"+client.Name]; ok {

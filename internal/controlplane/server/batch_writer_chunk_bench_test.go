@@ -6,8 +6,10 @@ package server
 //
 // It varies the number of rows handed to PutAgentsBulk / AppendMetricSnapshotsBulk
 // in one call. bulkChunkSize (500) is the *upper* bound used to split large
-// buffers into multiple INSERTs; batchMaxSize (50) is the *actual* size that
-// the control-plane batch writer hands over in production. Sweeping both sides
+// buffers into multiple INSERTs; the *actual* size that the control-plane
+// batch writer hands over in production now varies per stream — see
+// streamBatchSizes in batch_writer.go (200 default; 500 for hot streams;
+// 50 for audit/fallback_state). Sweeping both sides
 // of 500 tells us whether the constant should be lowered (less SQL string
 // build cost, fewer bind params) or raised (fewer statements per buffer drain).
 //

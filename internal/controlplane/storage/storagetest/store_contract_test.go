@@ -1227,6 +1227,10 @@ func (s *memoryStore) UpsertClientUsage(_ context.Context, _ storage.ClientUsage
 	return nil
 }
 
+func (s *memoryStore) UpsertClientUsageBulk(_ context.Context, _ []storage.ClientUsageRecord) error {
+	return nil
+}
+
 func (s *memoryStore) ListClientUsage(_ context.Context) ([]storage.ClientUsageRecord, error) {
 	return nil, nil
 }

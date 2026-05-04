@@ -362,6 +362,57 @@ func (s *Store) AppendDCHealthPointsBulk(ctx context.Context, records []storage.
 	})
 }
 
+// clientUsageBulkArgs flattens one ClientUsageRecord into the parameter slice
+// used by UpsertClientUsageBulk. Splitting it out keeps the per-chunk loop
+// body simple (Sonar S3776).
+func clientUsageBulkArgs(r storage.ClientUsageRecord) []any {
+	return []any{
+		r.ClientID, r.AgentID,
+		int64(r.TrafficUsedBytes), r.UniqueIPsUsed,
+		r.ActiveTCPConns, r.ActiveUniqueIPs,
+		int64(r.LastSeq), toUnix(r.ObservedAt),
+	}
+}
+
+// UpsertClientUsageBulk upserts a batch of (client, agent) usage counters in
+// a single transaction. Same ON CONFLICT (client_id, agent_id) DO UPDATE
+// semantics as the single-row UpsertClientUsage; duplicate keys within one
+// batch collapse to last-write-wins. P-1 (sprint S-23 perf-critical) — the
+// hot-path agent-flow tick was issuing N single-row Exec calls per snapshot
+// (500 clients x 50 agents = 25k round-trips); this batches them into one.
+func (s *Store) UpsertClientUsageBulk(ctx context.Context, records []storage.ClientUsageRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
+	const cols = 8
+	return s.execInTx(ctx, func(exec dbExecutor) error {
+		return runBulkChunks(ctx, exec, len(records), cols,
+			func(placeholders string) string {
+				return fmt.Sprintf(
+					`INSERT INTO client_usage (
+						client_id, agent_id, traffic_used_bytes, unique_ips_used,
+						active_tcp_conns, active_unique_ips, last_seq, observed_at_unix
+					) VALUES %s
+					ON CONFLICT(client_id, agent_id) DO UPDATE SET
+						traffic_used_bytes = excluded.traffic_used_bytes,
+						unique_ips_used    = excluded.unique_ips_used,
+						active_tcp_conns   = excluded.active_tcp_conns,
+						active_unique_ips  = excluded.active_unique_ips,
+						last_seq           = excluded.last_seq,
+						observed_at_unix   = excluded.observed_at_unix`,
+					placeholders)
+			},
+			func(start, end int) ([]any, error) {
+				args := make([]any, 0, (end-start)*cols)
+				for _, r := range records[start:end] {
+					args = append(args, clientUsageBulkArgs(r)...)
+				}
+				return args, nil
+			},
+		)
+	})
+}
+
 // UpsertClientIPHistoryBulk upserts a batch of client-ip history rows. Same
 // ON CONFLICT (agent_id, client_id, ip_address) DO UPDATE SET last_seen_unix
 // as the single-row variant.

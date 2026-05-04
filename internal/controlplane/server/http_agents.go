@@ -214,7 +214,23 @@ func (s *Server) purgeAgentInMemory(agentID string) {
 		}
 	}
 	s.clientsMu.Lock()
-	delete(s.clientUsage, agentID)
+	// Remove every (clientID, agentID) usage entry that belongs to this
+	// agent. The previous implementation called delete(s.clientUsage,
+	// agentID) which used the wrong outer key — clientUsage is keyed by
+	// clientID. The agentClientUsage reverse index (P-11) records exactly
+	// the clientIDs this agent owns gauges for, so we can iterate the
+	// small set rather than the full clientUsage map.
+	for clientID := range s.agentClientUsage[agentID] {
+		inner := s.clientUsage[clientID]
+		if inner == nil {
+			continue
+		}
+		delete(inner, agentID)
+		if len(inner) == 0 {
+			delete(s.clientUsage, clientID)
+		}
+	}
+	delete(s.agentClientUsage, agentID)
 	s.clientsMu.Unlock()
 	s.revokedAgentIDs[agentID] = struct{}{}
 	s.mu.Unlock()

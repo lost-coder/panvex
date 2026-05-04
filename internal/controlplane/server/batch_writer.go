@@ -16,8 +16,41 @@ import (
 
 const (
 	batchFlushInterval = 500 * time.Millisecond
-	batchMaxSize       = 50
+	// defaultBatchMaxSize is the fallback per-stream buffer size used when
+	// streamBatchSizes does not list the stream explicitly. SQLite and
+	// PostgreSQL both prefer 200–1000 rows per multi-row INSERT for the
+	// hot streams; 200 keeps the bound memory footprint reasonable for
+	// streams whose volume profile we have not measured.
+	defaultBatchMaxSize = 200
 )
+
+// streamBatchSizes is the per-stream flush threshold (in items) used by
+// newBatchBuffer to size each typed batchBuffer. The previous global
+// batchMaxSize=50 forced every stream to flush 50 rows at a time, which on
+// PostgreSQL meant ~200 round-trips/sec under fleet telemetry load. Bulk
+// INSERT efficiency tops out around 500–1000 rows on both drivers, while
+// audit and fallback_state remain low-volume / latency-sensitive — keep
+// those at 50 so audit log lines surface within one flush interval.
+//
+// Streams not listed here use defaultBatchMaxSize. Time-based flushing is
+// unchanged: any stream still flushes every batchFlushInterval regardless
+// of size.
+var streamBatchSizes = map[string]int{
+	"telemetry":      500, // fleet runtime/diag/security parts, dominant traffic
+	"client_ips":     500, // per-client IP history rows, very chatty
+	"dc_health":      500, // per-DC health point timeseries, high-rate
+	"audit":          50,  // low-frequency, small batch keeps latency low
+	"fallback_state": 50,  // critical, must persist promptly
+}
+
+// batchSizeFor returns the configured per-stream flush threshold, falling
+// back to defaultBatchMaxSize when the stream is not in streamBatchSizes.
+func batchSizeFor(stream string) int {
+	if n, ok := streamBatchSizes[stream]; ok {
+		return n
+	}
+	return defaultBatchMaxSize
+}
 
 // retryBackoffs defines the exponential backoff schedule used when retrying
 // transient flush errors (P2-REL-06 / remediation finding H14). Each entry is
@@ -211,15 +244,15 @@ func newStoreBatchWriter(store storage.Store, metrics batchMetricsSink, now func
 		now:     now,
 	}
 
-	w.agents = newBatchBuffer(batchMaxSize, w.flushAgents)
-	w.instances = newBatchBuffer(batchMaxSize, w.flushInstances)
-	w.metricsBuf = newBatchBuffer(batchMaxSize, w.flushMetrics)
-	w.serverLoad = newBatchBuffer(batchMaxSize, w.flushServerLoad)
-	w.dcHealth = newBatchBuffer(batchMaxSize, w.flushDCHealth)
-	w.clientIPs = newBatchBuffer(batchMaxSize, w.flushClientIPs)
-	w.telemetry = newBatchBuffer(batchMaxSize, w.flushTelemetry)
-	w.auditEvents = newBatchBuffer(batchMaxSize, w.flushAuditEvents)
-	w.fallbackState = newBatchBuffer(batchMaxSize, w.flushFallbackState)
+	w.agents = newBatchBuffer(batchSizeFor("agents"), w.flushAgents)
+	w.instances = newBatchBuffer(batchSizeFor("instances"), w.flushInstances)
+	w.metricsBuf = newBatchBuffer(batchSizeFor("metrics"), w.flushMetrics)
+	w.serverLoad = newBatchBuffer(batchSizeFor("server_load"), w.flushServerLoad)
+	w.dcHealth = newBatchBuffer(batchSizeFor("dc_health"), w.flushDCHealth)
+	w.clientIPs = newBatchBuffer(batchSizeFor("client_ips"), w.flushClientIPs)
+	w.telemetry = newBatchBuffer(batchSizeFor("telemetry"), w.flushTelemetry)
+	w.auditEvents = newBatchBuffer(batchSizeFor("audit"), w.flushAuditEvents)
+	w.fallbackState = newBatchBuffer(batchSizeFor("fallback_state"), w.flushFallbackState)
 
 	return w
 }
@@ -306,7 +339,7 @@ func (w *storeBatchWriter) flushLoop() {
 		}
 		// Any signal (including ticker) triggers a full drain of all buffers.
 		// This prevents signal coalescing from letting individual buffers grow
-		// beyond batchMaxSize for more than one flush cycle.
+		// beyond its per-stream batch size for more than one flush cycle.
 		w.drainAll(context.Background())
 	}
 }

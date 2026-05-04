@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -1129,5 +1130,180 @@ func TestServerExpiredEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) {
 		Version:  "1.0.1",
 	}, now.Add(2*time.Second)); !errors.Is(err, security.ErrEnrollmentTokenExpired) {
 		t.Fatalf("enrollAgent() error = %v, want %v", err, security.ErrEnrollmentTokenExpired)
+	}
+}
+
+// TestZeroLiveGaugesForUntouchedClientsTouchedSubset verifies P-11: when an
+// agent reports a snapshot covering exactly the clients it currently owns
+// gauges for, no entry should be zeroed. The in-memory gauges remain intact
+// because every clientID is in `seen`.
+func TestZeroLiveGaugesForUntouchedClientsTouchedSubset(t *testing.T) {
+	now := time.Date(2026, time.April, 20, 9, 0, 0, 0, time.UTC)
+	server := testServerWithSQLite(t, now)
+	defer server.Close()
+
+	const agentID = "agent-p11-touched"
+
+	clients := []clientUsageSnapshot{
+		{ClientID: "client-1", ActiveTCPConns: 7, ActiveUniqueIPs: 3, ObservedAt: now},
+		{ClientID: "client-2", ActiveTCPConns: 5, ActiveUniqueIPs: 2, ObservedAt: now},
+		{ClientID: "client-3", ActiveTCPConns: 1, ActiveUniqueIPs: 1, ObservedAt: now},
+	}
+
+	// Seed 3 clients via a snapshot, then re-publish the same set — none
+	// should be zeroed because every clientID is "touched" again.
+	server.clientsMu.Lock()
+	server.applyClientUsageSnapshot(context.Background(), agentID, clients)
+	server.applyClientUsageSnapshot(context.Background(), agentID, clients)
+	server.clientsMu.Unlock()
+
+	server.clientsMu.RLock()
+	defer server.clientsMu.RUnlock()
+	for _, c := range clients {
+		got := server.clientUsage[c.ClientID][agentID]
+		if got.ActiveTCPConns != c.ActiveTCPConns {
+			t.Fatalf("client %s ActiveTCPConns = %d, want %d (touched client must keep its gauge)", c.ClientID, got.ActiveTCPConns, c.ActiveTCPConns)
+		}
+	}
+}
+
+// TestZeroLiveGaugesForUntouchedClientsZerosUntouched verifies P-11: when
+// an agent reports a snapshot that omits a previously-tracked client, that
+// client's live gauges (ActiveTCPConns, ActiveUniqueIPs) must be zeroed
+// for this agent while accumulated traffic stays intact.
+func TestZeroLiveGaugesForUntouchedClientsZerosUntouched(t *testing.T) {
+	now := time.Date(2026, time.April, 20, 10, 0, 0, 0, time.UTC)
+	server := testServerWithSQLite(t, now)
+	defer server.Close()
+
+	const agentID = "agent-p11-untouched"
+
+	full := []clientUsageSnapshot{
+		{ClientID: "client-A", ActiveTCPConns: 9, ActiveUniqueIPs: 3, TrafficUsedBytes: 1024, ObservedAt: now},
+		{ClientID: "client-B", ActiveTCPConns: 4, ActiveUniqueIPs: 2, TrafficUsedBytes: 512, ObservedAt: now},
+		{ClientID: "client-C", ActiveTCPConns: 1, ActiveUniqueIPs: 1, TrafficUsedBytes: 256, ObservedAt: now},
+	}
+	// Second snapshot drops client-B.
+	partial := []clientUsageSnapshot{
+		{ClientID: "client-A", ActiveTCPConns: 11, ActiveUniqueIPs: 4, TrafficUsedBytes: 100, ObservedAt: now.Add(time.Second)},
+		{ClientID: "client-C", ActiveTCPConns: 2, ActiveUniqueIPs: 1, TrafficUsedBytes: 50, ObservedAt: now.Add(time.Second)},
+	}
+
+	server.clientsMu.Lock()
+	server.applyClientUsageSnapshot(context.Background(), agentID, full)
+	server.applyClientUsageSnapshot(context.Background(), agentID, partial)
+	server.clientsMu.Unlock()
+
+	server.clientsMu.RLock()
+	defer server.clientsMu.RUnlock()
+
+	gotB := server.clientUsage["client-B"][agentID]
+	if gotB.ActiveTCPConns != 0 {
+		t.Fatalf("client-B ActiveTCPConns = %d, want 0 (untouched client must be zeroed)", gotB.ActiveTCPConns)
+	}
+	if gotB.ActiveUniqueIPs != 0 {
+		t.Fatalf("client-B ActiveUniqueIPs = %d, want 0 (untouched client must be zeroed)", gotB.ActiveUniqueIPs)
+	}
+	if gotB.TrafficUsedBytes != 512 {
+		t.Fatalf("client-B TrafficUsedBytes = %d, want 512 (accumulated traffic must be preserved)", gotB.TrafficUsedBytes)
+	}
+
+	// Touched clients keep their fresh gauges.
+	gotA := server.clientUsage["client-A"][agentID]
+	if gotA.ActiveTCPConns != 11 {
+		t.Fatalf("client-A ActiveTCPConns = %d, want 11", gotA.ActiveTCPConns)
+	}
+}
+
+// TestAgentClientUsageReverseIndexTracksWrites verifies P-11: every write
+// to s.clientUsage updates the agentClientUsage reverse index so the
+// delta-only zero pass can iterate only the clients this agent owns
+// gauges for.
+func TestAgentClientUsageReverseIndexTracksWrites(t *testing.T) {
+	now := time.Date(2026, time.April, 20, 11, 0, 0, 0, time.UTC)
+	server := testServerWithSQLite(t, now)
+	defer server.Close()
+
+	const agentID = "agent-p11-index"
+
+	server.clientsMu.Lock()
+	server.applyClientUsageSnapshot(context.Background(), agentID, []clientUsageSnapshot{
+		{ClientID: "c1", ObservedAt: now},
+		{ClientID: "c2", ObservedAt: now},
+	})
+	server.clientsMu.Unlock()
+
+	server.clientsMu.RLock()
+	owned := server.agentClientUsage[agentID]
+	server.clientsMu.RUnlock()
+
+	if _, ok := owned["c1"]; !ok {
+		t.Fatal("agentClientUsage missing c1 after write")
+	}
+	if _, ok := owned["c2"]; !ok {
+		t.Fatal("agentClientUsage missing c2 after write")
+	}
+}
+
+// TestZeroLiveGaugesForUntouchedClientsScalesWithAgentNotPanel verifies
+// P-11's headline benefit: zeroLiveGaugesForUntouchedClients does NOT
+// touch clients owned by other agents. Two agents A and B each own 100
+// disjoint clients; A then sends a partial snapshot covering only its
+// first client. The 99 clients dropped from A's snapshot must be zeroed
+// for A; B's 100 clients must be untouched (the test fails if the old
+// outer×inner full scan zeroed any of B's gauges).
+func TestZeroLiveGaugesForUntouchedClientsScalesWithAgentNotPanel(t *testing.T) {
+	now := time.Date(2026, time.April, 20, 12, 0, 0, 0, time.UTC)
+	server := testServerWithSQLite(t, now)
+	defer server.Close()
+
+	const agentA = "agent-A"
+	const agentB = "agent-B"
+
+	mkBatch := func(prefix string, count int) []clientUsageSnapshot {
+		out := make([]clientUsageSnapshot, 0, count)
+		for i := 0; i < count; i++ {
+			out = append(out, clientUsageSnapshot{
+				ClientID:        fmt.Sprintf("%s-c%03d", prefix, i),
+				ActiveTCPConns:  3,
+				ActiveUniqueIPs: 2,
+				ObservedAt:      now,
+			})
+		}
+		return out
+	}
+
+	server.clientsMu.Lock()
+	server.applyClientUsageSnapshot(context.Background(), agentA, mkBatch("A", 100))
+	server.applyClientUsageSnapshot(context.Background(), agentB, mkBatch("B", 100))
+
+	// Agent A reports a snapshot containing only its very first client; the
+	// other 99 must be zeroed for agent A. Agent B's gauges must NOT change.
+	server.applyClientUsageSnapshot(context.Background(), agentA, []clientUsageSnapshot{
+		{ClientID: "A-c000", ActiveTCPConns: 3, ActiveUniqueIPs: 2, ObservedAt: now.Add(time.Second)},
+	})
+	server.clientsMu.Unlock()
+
+	server.clientsMu.RLock()
+	defer server.clientsMu.RUnlock()
+
+	// Agent A: c000 stays, c001..c099 zeroed.
+	if got := server.clientUsage["A-c000"][agentA].ActiveTCPConns; got != 3 {
+		t.Fatalf("agentA c000 ActiveTCPConns = %d, want 3", got)
+	}
+	for i := 1; i < 100; i++ {
+		key := fmt.Sprintf("A-c%03d", i)
+		if got := server.clientUsage[key][agentA].ActiveTCPConns; got != 0 {
+			t.Fatalf("agentA %s ActiveTCPConns = %d, want 0 (untouched)", key, got)
+		}
+	}
+
+	// Agent B's 100 gauges are owned by a different agent and must not be
+	// touched by A's snapshot processing — this is the core P-11 invariant.
+	for i := 0; i < 100; i++ {
+		key := fmt.Sprintf("B-c%03d", i)
+		if got := server.clientUsage[key][agentB].ActiveTCPConns; got != 3 {
+			t.Fatalf("agentB %s ActiveTCPConns = %d, want 3 (other agent must not affect B)", key, got)
+		}
 	}
 }

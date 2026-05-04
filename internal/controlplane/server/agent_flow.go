@@ -255,6 +255,7 @@ func (s *Server) mergeClientUsageBatch(agentID string, clients []clientUsageSnap
 		current.ActiveUniqueIPs = usage.ActiveUniqueIPs
 		current.ObservedAt = usage.ObservedAt
 		s.clientUsage[usage.ClientID][agentID] = current
+		s.trackClientUsageOwnerLocked(usage.ClientID, agentID)
 		toPersist = append(toPersist, storage.ClientUsageRecord{
 			ClientID:         usage.ClientID,
 			AgentID:          agentID,
@@ -270,16 +271,22 @@ func (s *Server) mergeClientUsageBatch(agentID string, clients []clientUsageSnap
 }
 
 // persistClientUsageRecords write-throughs the merged usage state to storage
-// (when configured). Per-row failures are logged but never abort the loop.
+// (when configured). The batch flushes in a single transaction via
+// UpsertClientUsageBulk — the singular UpsertClientUsage is the slow path and
+// is not used here. P-1 (sprint S-23 perf-critical): a 500-clients x 50-agents
+// tick was issuing 25k single-row Exec calls; the bulk variant collapses
+// that to a handful of multi-row INSERTs in one transaction.
+//
+// On error the whole batch is logged once. ON CONFLICT (client_id, agent_id)
+// DO UPDATE preserves the per-row last-write-wins semantics the old loop had —
+// duplicates within one batch collapse to the trailing entry.
 func (s *Server) persistClientUsageRecords(ctx context.Context, toPersist []storage.ClientUsageRecord) {
-	if s.store == nil {
+	if s.store == nil || len(toPersist) == 0 {
 		return
 	}
-	for _, rec := range toPersist {
-		if err := s.store.UpsertClientUsage(ctx, rec); err != nil {
-			s.logger.Warn("persist client_usage",
-				"client_id", rec.ClientID, "agent_id", rec.AgentID, "error", err)
-		}
+	if err := s.store.UpsertClientUsageBulk(ctx, toPersist); err != nil {
+		s.logger.Warn("persist client_usage (bulk)",
+			"rows", len(toPersist), "error", err)
 	}
 }
 
@@ -287,19 +294,51 @@ func (s *Server) persistClientUsageRecords(ctx context.Context, toPersist []stor
 // any client that this agent did not include in the snapshot. Accumulated
 // traffic is preserved — deleting the entry would lose the seeded/historical
 // total.
+//
+// P-11: walks only the per-agent reverse index (agentClientUsage[agentID])
+// rather than the full clientUsage map. With 5k clients × 50 agents, the
+// old outer×inner scan was 250k iterations per snapshot ack under
+// s.clientsMu; the delta-only walk visits at most "clients this agent
+// has gauges for" per ack — typically a small fraction of the total.
+//
+// Caller must hold s.clientsMu (write).
 func (s *Server) zeroLiveGaugesForUntouchedClients(agentID string, seen map[string]struct{}) {
-	for clientID, usageByAgent := range s.clientUsage {
-		current, ok := usageByAgent[agentID]
-		if !ok {
+	owned := s.agentClientUsage[agentID]
+	if len(owned) == 0 {
+		return
+	}
+	for clientID := range owned {
+		if _, ok := seen[clientID]; ok {
 			continue
 		}
-		if _, ok := seen[clientID]; ok {
+		usageByAgent := s.clientUsage[clientID]
+		if usageByAgent == nil {
+			// Defensive: if the forward map disagrees with the reverse
+			// index, drop the stale reverse entry rather than crash.
+			delete(owned, clientID)
+			continue
+		}
+		current, ok := usageByAgent[agentID]
+		if !ok {
+			delete(owned, clientID)
 			continue
 		}
 		current.ActiveTCPConns = 0
 		current.ActiveUniqueIPs = 0
 		usageByAgent[agentID] = current
 	}
+}
+
+// trackClientUsageOwnerLocked records that `agentID` owns a usage entry
+// for `clientID` in s.clientUsage. Idempotent. Caller must hold
+// s.clientsMu (write).
+func (s *Server) trackClientUsageOwnerLocked(clientID, agentID string) {
+	owned := s.agentClientUsage[agentID]
+	if owned == nil {
+		owned = make(map[string]struct{})
+		s.agentClientUsage[agentID] = owned
+	}
+	owned[clientID] = struct{}{}
 }
 
 func (s *Server) applyClientIPSnapshot(agentID string, clients []clientIPSnapshot) {
@@ -314,5 +353,6 @@ func (s *Server) applyClientIPSnapshot(agentID string, clients []clientIPSnapsho
 		current.UniqueIPsUsed = len(snapshot.ActiveIPs)
 		current.ActiveUniqueIPs = len(snapshot.ActiveIPs)
 		usageByAgent[agentID] = current
+		s.trackClientUsageOwnerLocked(snapshot.ClientID, agentID)
 	}
 }

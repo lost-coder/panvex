@@ -103,6 +103,7 @@ func newServerFromOptions(options Options, now func() time.Time, csrfSecret []by
 		clientAssignments:            make(map[string][]managedClientAssignment),
 		clientDeployments:            make(map[string]map[string]managedClientDeployment),
 		clientUsage:                  make(map[string]map[string]clientUsageSnapshot),
+		agentClientUsage:             make(map[string]map[string]struct{}),
 		lastUsageSeq:                 make(map[string]uint64),
 		sessions:                     agents.NewSessionManager(),
 		clientsSvc:                   clients.NewServiceWithVault(options.Store, now, vault),
