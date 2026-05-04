@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   EmptyState,
   cn,
@@ -87,8 +88,54 @@ export function AuditRowTarget({ e }: Readonly<{ e: AuditListItem }>) {
   );
 }
 
+// Flat-item shape consumed by the virtualizer. We flatten the per-day
+// groups into a single linear list of `header` and `row` items so a
+// single useVirtualizer can drive the scroll surface — driving multiple
+// nested scrollers (one per day) would defeat the purpose since the
+// outermost scrollbar is what the user actually scrolls.
+type HeaderItem = { kind: "header"; day: string; count: number };
+type RowItem = { kind: "row"; e: AuditListItem };
+type Item = HeaderItem | RowItem;
+
+function flattenItems(events: AuditListItem[]): Item[] {
+  const groups = groupByDay(events);
+  const out: Item[] = [];
+  for (const [day, rows] of groups) {
+    out.push({ kind: "header", day, count: rows.length });
+    for (const e of rows) {
+      out.push({ kind: "row", e });
+    }
+  }
+  return out;
+}
+
+// Estimated heights match the actual rendered density (px-3 py-1.5 header,
+// px-3 py-2 row). measureElement refines these once each item mounts so
+// scroll-position math stays accurate even if a row wraps — the estimate
+// only matters until the row first enters the viewport.
+const HEADER_ESTIMATE = 28;
+const ROW_ESTIMATE = 36;
+
+// P-8 (Plan 4 / BP-Audit): virtualize the audit feed. With 5000 events
+// the previous render emitted 5000+ DOM nodes; this version keeps only
+// the slice intersecting the viewport (plus overscan) on the page.
 export function AuditList({ events }: Readonly<{ events: AuditListItem[] }>) {
-  const groups = useMemo(() => groupByDay(events), [events]);
+  const items = useMemo(() => flattenItems(events), [events]);
+  const parentRef = useRef<HTMLDivElement | null>(null);
+
+  // R-Q-24: TanStack Virtual returns memoization-incompatible callbacks;
+  // mirror the lint-suppression used in DataTable.tsx for consistency.
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const virtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: (index) => {
+      const item = items[index];
+      return item?.kind === "header" ? HEADER_ESTIMATE : ROW_ESTIMATE;
+    },
+    overscan: 8,
+  });
+
   if (events.length === 0) {
     return (
       <EmptyState
@@ -97,39 +144,72 @@ export function AuditList({ events }: Readonly<{ events: AuditListItem[] }>) {
       />
     );
   }
+
+  const virtualItems = virtualizer.getVirtualItems();
+
   return (
-    <div className="flex flex-col gap-4">
-      {groups.map(([day, rows]) => (
-        <section key={day} className="flex flex-col rounded-xs border border-border overflow-hidden">
-          <header className="bg-bg-card px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider text-fg-muted border-b border-divider">
-            {day}
-            <span className="ml-2 text-fg-faint">({rows.length})</span>
-          </header>
-          <ul className="flex flex-col">
-            {rows.map((e) => (
-              <li
-                key={e.id}
-                className="flex items-center gap-3 px-3 py-2 border-b border-divider last:border-b-0 hover:bg-bg-hover transition-colors"
+    <div
+      ref={parentRef}
+      // The parent must be the scroll container (overflow:auto) and have
+      // a bounded height — otherwise the virtualizer cannot determine
+      // which items are visible. 70vh keeps the feed tall on desktop
+      // while leaving room for the surrounding ActivityPage chrome.
+      className="rounded-xs border border-border overflow-auto bg-bg-card"
+      style={{ maxHeight: "70vh" }}
+      role="list"
+      aria-label="Audit events"
+    >
+      <div
+        // Inner spacer gives the scrollbar the correct total range.
+        // Children are positioned absolutely against this spacer.
+        style={{ height: virtualizer.getTotalSize(), width: "100%", position: "relative" }}
+      >
+        {virtualItems.map((virtualRow) => {
+          const item = items[virtualRow.index];
+          if (!item) return null;
+          const transform = `translateY(${virtualRow.start}px)`;
+          if (item.kind === "header") {
+            return (
+              <div
+                key={`h:${item.day}`}
+                ref={virtualizer.measureElement}
+                data-index={virtualRow.index}
+                className="absolute left-0 top-0 w-full bg-bg-card px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider text-fg-muted border-b border-divider"
+                style={{ transform }}
               >
-                <span className="text-[10px] font-mono text-fg-muted tabular-nums w-[56px] shrink-0">
-                  {formatTime(e.createdAtUnix)}
-                </span>
-                <div className="shrink-0">
-                  <ActionCell action={e.action} />
-                </div>
-                <span className="text-[11px] text-fg-muted flex items-center gap-1.5 min-w-0 flex-1">
-                  <span className="text-fg-faint shrink-0">by</span>
-                  <AuditRowActor e={e} />
-                  <AuditRowTarget e={e} />
-                </span>
-                <span className="ml-auto text-[10px] font-mono text-fg-faint shrink-0">
-                  {formatAge(e.createdAtUnix)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
+                {item.day}
+                <span className="ml-2 text-fg-faint">({item.count})</span>
+              </div>
+            );
+          }
+          const e = item.e;
+          return (
+            <div
+              key={e.id}
+              ref={virtualizer.measureElement}
+              data-index={virtualRow.index}
+              role="listitem"
+              className="absolute left-0 top-0 w-full flex items-center gap-3 px-3 py-2 border-b border-divider hover:bg-bg-hover transition-colors"
+              style={{ transform }}
+            >
+              <span className="text-[10px] font-mono text-fg-muted tabular-nums w-[56px] shrink-0">
+                {formatTime(e.createdAtUnix)}
+              </span>
+              <div className="shrink-0">
+                <ActionCell action={e.action} />
+              </div>
+              <span className="text-[11px] text-fg-muted flex items-center gap-1.5 min-w-0 flex-1">
+                <span className="text-fg-faint shrink-0">by</span>
+                <AuditRowActor e={e} />
+                <AuditRowTarget e={e} />
+              </span>
+              <span className="ml-auto text-[10px] font-mono text-fg-faint shrink-0">
+                {formatAge(e.createdAtUnix)}
+              </span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
