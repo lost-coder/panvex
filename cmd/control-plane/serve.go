@@ -277,6 +277,16 @@ func newAPIServer(
 	// leak into process listings or shell history.
 	metricsScrapeToken := strings.TrimSpace(os.Getenv("PANVEX_METRICS_SCRAPE_TOKEN"))
 
+	// sqlitePath is non-empty only when the SQLite driver is selected.
+	// The geoip subsystem uses it to derive a default storage directory
+	// (<dir(SQLitePath)>/geoip) so .mmdb files live next to the DB; for
+	// Postgres deployments it stays empty and geoip falls back to its
+	// generic default (or PANVEX_GEOIP_DIR).
+	var sqlitePath string
+	if options.Storage.Driver == config.StorageDriverSQLite {
+		sqlitePath = options.Storage.DSN
+	}
+
 	return server.New(server.Options{
 		Now:                time.Now,
 		Store:              store,
@@ -289,6 +299,7 @@ func newAPIServer(
 		CommitSHA:          CommitSHA,
 		BuildTime:          BuildTime,
 		MetricsScrapeToken: metricsScrapeToken,
+		SQLitePath:         sqlitePath,
 		RequestRestart: func() error {
 			select {
 			case restartRequests <- struct{}{}:

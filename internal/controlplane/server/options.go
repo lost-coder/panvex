@@ -60,4 +60,10 @@ type Options struct {
 	// to disable the pad entirely — tests use this to avoid burning
 	// real wall-clock seconds in the suite.
 	LoginTimingFloor time.Duration
+	// SQLitePath is the on-disk path of the SQLite database when the
+	// SQLite driver is in use. Empty for Postgres deployments. Used by
+	// the geoip subsystem to derive a default storage directory
+	// (<dir(SQLitePath)>/geoip) so auto/URL-mode .mmdb files live next
+	// to the DB file. PANVEX_GEOIP_DIR overrides regardless.
+	SQLitePath string
 }

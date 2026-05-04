@@ -11,6 +11,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/fleet"
+	"github.com/lost-coder/panvex/internal/controlplane/geoip"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/presence"
 	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
@@ -111,6 +112,7 @@ func newServerFromOptions(options Options, now func() time.Time, csrfSecret []by
 		instances:                    make(map[string]Instance),
 		metrics:                      make([]MetricSnapshot, 0, maxInMemoryMetricSnapshots),
 		intervals:                    options.Intervals.withDefaults(),
+		sqlitePath:                   options.SQLitePath,
 	}
 }
 
@@ -179,6 +181,11 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 	s.auth.SetPasswordPolicy(s.panelSettings.PasswordMinLength)
 	s.trySetStartupErr(s.restoreUpdateSettings)
 	s.trySetStartupErr(s.restoreRetentionSettings)
+	// Restore persisted geoip settings + state and reload the manager
+	// from disk if the configured .mmdb paths exist. Failures are
+	// fatal at boot so a corrupt settings blob does not silently
+	// disable lookups.
+	s.trySetStartupErr(s.restoreGeoIPSettings)
 
 	// Fresh databases need at least one fleet group so enrollment tokens can
 	// reference it. Operators can rename the label afterwards via the HTTP
@@ -213,6 +220,12 @@ func (s *Server) startBackgroundWorkers() {
 	// deduplicate.
 	s.rollupWg.Add(1)
 	s.jobs.StartAcknowledgedExpiryWorker(rollupCtx, s.intervals.JobsAckExpiry, s.intervals.JobsAckExpiryTTL, &s.rollupWg)
+
+	// Spawn the geoip auto/URL refresh worker. No-op when mode is
+	// disabled or local — those modes do not pull files from the
+	// network. The worker registers itself with rollupWg so Close()
+	// joins on it before returning.
+	s.startGeoIPUpdaterWorker(rollupCtx)
 
 	// The metrics poller samples derived gauges (agent connected count,
 	// event-hub subscribers, job queue depth, lockout count) on a 5-second
@@ -254,6 +267,11 @@ func New(options Options) (*Server, error) {
 	if server.logger == nil {
 		server.logger = slog.Default()
 	}
+	// Build the geoip Manager up front (logger only) so handlers can
+	// safely call into it before restoreGeoIPSettings runs. The Manager
+	// owns no files until Reload — which is invoked later from
+	// restoreGeoIPSettings if the configured paths exist on disk.
+	server.geoip = geoip.NewManager(server.logger)
 	// R-S-09: route lockout-tracker warnings through the same HMAC
 	// redaction that http_auth.go uses so log aggregators never see raw
 	// usernames even when the persistent store fails. The HMAC key is
@@ -365,6 +383,11 @@ func (s *Server) Close() {
 	// Wait for the rollup goroutine to finish before closing the store,
 	// so it does not query a closed storage backend.
 	s.rollupWg.Wait()
+	// Close the geoip Manager AFTER the worker has joined via rollupWg
+	// so we never close a reader that is mid-Reload. Idempotent.
+	if s.geoip != nil {
+		_ = s.geoip.Close()
+	}
 	// N-1: wait for any operator-driven background goroutines (panel
 	// self-update, manual update-check) so a graceful restart cannot
 	// race a half-applied binary swap.

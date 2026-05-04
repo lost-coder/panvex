@@ -20,6 +20,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/fleet"
+	"github.com/lost-coder/panvex/internal/controlplane/geoip"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/presence"
 	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
@@ -194,8 +195,34 @@ type Server struct {
 	updateSettings UpdateSettings
 	updateState    UpdateState
 	retention      RetentionSettings
-	handler        http.Handler
-	startupErr     error
+	// geoip owns the live City/ASN MaxMind readers. Constructed in
+	// New() (logger only) and reloaded from disk during boot if the
+	// configured paths exist; lookups are RWMutex-guarded inside the
+	// Manager. Closed during Close() after rollupWg.Wait().
+	geoip *geoip.Manager
+	// geoipSettings is the operator-managed configuration (mode +
+	// per-source enable/URL/local_path). Persisted as opaque JSON via
+	// UpdateConfigStore.{Get,Put}GeoIPSettings. Read/written under
+	// settingsMu (shared with retention/update settings).
+	geoipSettings geoip.Settings
+	// geoipState tracks last-checked / last-updated / etag / size /
+	// error per source. Persisted independently so the worker can
+	// write it without contending with operator edits. Read/written
+	// under settingsMu.
+	geoipState geoip.State
+	// geoipPaths caches the resolved on-disk directory used in
+	// auto/URL modes. Computed once at boot from Options.SQLitePath
+	// (with PANVEX_GEOIP_DIR override). Read-only after init.
+	geoipPaths geoipPaths
+	// geoipWorkerCancel cancels the auto/URL refresh worker. Reset
+	// when the worker is respawned after a settings change. Held
+	// under settingsMu.
+	geoipWorkerCancel context.CancelFunc
+	// sqlitePath mirrors Options.SQLitePath for geoip directory
+	// resolution. Empty when running against Postgres.
+	sqlitePath string
+	handler    http.Handler
+	startupErr error
 	// serverCtx is the lifecycle context owned by the Server. It is created
 	// in New() and cancelled by Close() so long-lived workers (rollup,
 	// metrics poller, fleet-ensure, lockout-restore, batch-writer drain)
