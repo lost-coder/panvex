@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -127,10 +128,48 @@ func (s *Server) handleDCHealthHistory() http.HandlerFunc {
 // clientIPRow is the public shape returned by handleClientIPHistory.
 // First/last seen are aggregated across nodes so the same physical IP
 // only shows up once per client even when several agents report it.
+//
+// CountryCode/CountryName/City/ASN are populated by the GeoIP Manager
+// when one is loaded (see Server.geoip). They are emitted with
+// `omitempty` so panels running with GeoIP disabled — or rows whose IP
+// has no DB record (private/loopback/unknown) — see the legacy shape
+// {ip_address, first_seen, last_seen} unchanged.
 type clientIPRow struct {
-	IPAddress string    `json:"ip_address"`
-	FirstSeen time.Time `json:"first_seen"`
-	LastSeen  time.Time `json:"last_seen"`
+	IPAddress   string    `json:"ip_address"`
+	FirstSeen   time.Time `json:"first_seen"`
+	LastSeen    time.Time `json:"last_seen"`
+	CountryCode string    `json:"country_code,omitempty"`
+	CountryName string    `json:"country_name,omitempty"`
+	City        string    `json:"city,omitempty"`
+	ASN         string    `json:"asn,omitempty"`
+}
+
+// enrichIPRows fills in the GeoIP-derived fields on each row when a
+// Manager is loaded. Extracted from handleClientIPHistory so the
+// enrichment logic is unit-testable without seeding client_ip_history.
+// Skips unparseable IPs (defensive — AggregateClientIPHistory only
+// returns rows that originally went through net.IP serialisation, but
+// a future caller might not). Private/loopback addresses are filtered
+// inside Manager.LookupCity/LookupASN via ShouldLookup, so the loop
+// itself does not need to repeat that policy.
+func (s *Server) enrichIPRows(rows []clientIPRow) {
+	if s.geoip == nil {
+		return
+	}
+	for i := range rows {
+		ip := net.ParseIP(rows[i].IPAddress)
+		if ip == nil {
+			continue
+		}
+		if city, ok := s.geoip.LookupCity(ip); ok {
+			rows[i].CountryCode = city.CountryCode
+			rows[i].CountryName = city.CountryName
+			rows[i].City = city.City
+		}
+		if asn, ok := s.geoip.LookupASN(ip); ok {
+			rows[i].ASN = asn.Display()
+		}
+	}
 }
 
 func (s *Server) handleClientIPHistory() http.HandlerFunc {
@@ -197,6 +236,7 @@ func (s *Server) handleClientIPHistory() http.HandlerFunc {
 				LastSeen:  agg.LastSeen,
 			}
 		}
+		s.enrichIPRows(ips)
 		totalUnique, err := s.store.CountUniqueClientIPs(r.Context(), clientID)
 		if err != nil {
 			s.logger.Warn("count unique client ips failed", "client_id", clientID, "error", err)
