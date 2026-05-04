@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
-test("router config wires page routes through lazyRouteComponent", async () => {
+void test("router config wires page routes through lazyRouteComponent", async () => {
   // Phase-4 moved router.tsx into app/. The @ts-nocheck above used to
   // hide both the move and the stale assertion below — counted lazy
   // routes drifted from 8 to 15 as new pages landed. Now the path is

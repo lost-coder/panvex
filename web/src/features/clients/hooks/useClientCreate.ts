@@ -24,7 +24,7 @@ export function useClientCreate() {
   const mutation = useMutation({
     mutationFn: (data: ClientFormData) => apiClient.createClient(formToInput(data)),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: clientsKeys.all });
+      void qc.invalidateQueries({ queryKey: clientsKeys.all });
     },
   });
 

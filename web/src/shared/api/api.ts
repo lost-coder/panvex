@@ -141,19 +141,14 @@ export const apiClient = {
  *                                          form layer; left as raw POST here
  *                                          because the request type already
  *                                          mirrors the runtime type 1:1
- *   - /settings/panel/update (POST)        BUG: client sends `{version}` but
- *                                          server expects `{target_version}`.
- *                                          Adding a request schema here would
- *                                          mask the bug — fix the client first
- *                                          (separate ticket), then migrate.
- *   - /fleet-groups/{id}/integrations*     four endpoints; medium-shaped
- *                                          payloads with a free-form `config`
- *                                          (json.RawMessage on the server). A
- *                                          single integrationConfig union schema
- *                                          would cover all four — defer to the
- *                                          integrations refactor.
- *   - /integration-providers (POST/PATCH)  same `config` blob constraint as
- *                                          above; moved with the same refactor.
- *
  * Everything else is migrated as of BP-02 final tail.
+ *
+ * BP-02 S26 tail: the four /fleet-groups/{id}/integrations* endpoints
+ * and the two /integration-providers (POST/PATCH) endpoints now go
+ * through encodeRequest + a discriminated-union schema scoped to the
+ * two most-likely kinds (webhook + dns-rr). Unknown kinds fall
+ * through to a permissive branch since the server's IntegrationKind
+ * registry is open. See
+ * shared/api/schemas/requests/fleetGroupIntegrationRequest.ts for the
+ * TODO(union) markers.
  */

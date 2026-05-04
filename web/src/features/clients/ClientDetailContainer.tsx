@@ -82,8 +82,8 @@ export function ClientDetailContainer() {
       return apiClient.updateClient(raw.id, payload);
     },
     onSuccess: () => {
-      if (clientId) qc.invalidateQueries({ queryKey: clientsKeys.detail(clientId) });
-      qc.invalidateQueries({ queryKey: clientsKeys.all });
+      if (clientId) void qc.invalidateQueries({ queryKey: clientsKeys.detail(clientId) });
+      void qc.invalidateQueries({ queryKey: clientsKeys.all });
     },
   });
 
@@ -160,7 +160,7 @@ export function ClientDetailContainer() {
         });
         if (!ok) return;
         await deleteMutation.mutateAsync();
-        navigate({ to: "/clients" });
+        void navigate({ to: "/clients" });
       }}
       ipHistory={ips.length > 0 ? { ips, totalUnique } : undefined}
       agentLabels={agentLabels}

@@ -7,7 +7,7 @@ export function useProfileTotp() {
   const qc = useQueryClient();
 
   const invalidateProfile = () => {
-    qc.invalidateQueries({ queryKey: authKeys.me() });
+    void qc.invalidateQueries({ queryKey: authKeys.me() });
   };
 
   const setupMutation = useMutation({

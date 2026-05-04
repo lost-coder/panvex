@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { EnrollmentTokenData } from "@/shared/api/types-pages/pages";
 import { apiClient } from "@/shared/api/api";
+import { enrollmentTokensKeys } from "@/features/enrollment/queryKeys";
 import { useToast } from "@/app/providers/ToastProvider";
 import { useEventAwareInterval } from "@/shared/hooks/useEventAwareInterval";
 
@@ -24,7 +25,7 @@ export function useEnrollmentTokens() {
   const refetchInterval = useEventAwareInterval(90_000, 30_000);
 
   const query = useQuery({
-    queryKey: ["enrollmentTokens"],
+    queryKey: enrollmentTokensKeys.list(),
     queryFn: () => apiClient.listEnrollmentTokens(),
     refetchInterval,
   });
@@ -34,13 +35,13 @@ export function useEnrollmentTokens() {
   const createToken = useMutation({
     mutationFn: (payload: { fleet_group_id: string; ttl_seconds: number }) =>
       apiClient.createEnrollmentToken(payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["enrollmentTokens"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: enrollmentTokensKeys.all }),
     onError: (err: Error) => toast.error(err.message),
   });
 
   const revokeToken = useMutation({
     mutationFn: (value: string) => apiClient.revokeEnrollmentToken(value),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["enrollmentTokens"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: enrollmentTokensKeys.all }),
     onError: (err: Error) => toast.error(err.message),
   });
 

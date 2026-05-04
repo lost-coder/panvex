@@ -35,6 +35,7 @@ export function TypeToConfirmDialog({
   onCancel,
 }: Readonly<TypeToConfirmDialogProps>) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const titleId = useId();
   const descId = useId();
   const inputId = useId();
@@ -46,6 +47,11 @@ export function TypeToConfirmDialog({
     if (open && !el.open) {
       el.showModal();
       setTyped("");
+      // Replaces the autoFocus attribute (jsx-a11y/no-autofocus) — we
+      // still need initial focus on the confirm-text input so the
+      // operator can start typing immediately, but moving it into a
+      // post-mount effect keeps the rule happy.
+      inputRef.current?.focus();
     } else if (!open && el.open) {
       el.close();
     }
@@ -54,6 +60,12 @@ export function TypeToConfirmDialog({
   const matches = typed === requireTypeMatch;
 
   return (
+    // <dialog> already handles Escape natively (fires onClose), so a
+    // dedicated keyboard listener on the dialog itself would duplicate
+    // the platform behaviour. The backdrop click is the only mouse
+    // hook we add; jsx-a11y can't see the native Escape path, so we
+    // suppress its companion warnings with a documented reason.
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions
     <dialog
       ref={dialogRef}
       onClose={onCancel}
@@ -79,10 +91,10 @@ export function TypeToConfirmDialog({
         <label htmlFor={inputId} className="text-xs text-fg-muted flex flex-col gap-1.5">
           Чтобы подтвердить, введите <span className="font-mono text-fg">{requireTypeMatch}</span>
           <Input
+            ref={inputRef}
             id={inputId}
             value={typed}
             onChange={(e) => setTyped(e.target.value)}
-            autoFocus
             spellCheck={false}
             autoComplete="off"
             aria-invalid={typed.length > 0 && !matches}

@@ -7,7 +7,7 @@ import {
   normalizeAppearanceSettings,
 } from "./appearance.ts";
 
-test("appearance helpers default and normalize help_mode", () => {
+void test("appearance helpers default and normalize help_mode", () => {
   assert.equal(defaultAppearanceSettings.help_mode, "basic");
 
   const normalized = normalizeAppearanceSettings({

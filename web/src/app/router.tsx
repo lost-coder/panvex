@@ -117,7 +117,7 @@ function ProtectedShell() {
       await apiClient.logout();
     } finally {
       queryClient.clear();
-      navigate({ to: "/login" });
+      void navigate({ to: "/login" });
     }
   };
 

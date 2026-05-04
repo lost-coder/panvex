@@ -55,8 +55,8 @@ export function useDiscoveredClients() {
   const adoptMutation = useMutation({
     mutationFn: (id: string) => apiClient.adoptDiscoveredClient(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: clientsKeys.discovered });
-      queryClient.invalidateQueries({ queryKey: clientsKeys.all });
+      void queryClient.invalidateQueries({ queryKey: clientsKeys.discovered });
+      void queryClient.invalidateQueries({ queryKey: clientsKeys.all });
     },
     onError: (err: Error) => toast.error(`Adopt failed: ${err.message}`),
   });
@@ -64,7 +64,7 @@ export function useDiscoveredClients() {
   const ignoreMutation = useMutation({
     mutationFn: (id: string) => apiClient.ignoreDiscoveredClient(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: clientsKeys.discovered });
+      void queryClient.invalidateQueries({ queryKey: clientsKeys.discovered });
     },
     onError: (err: Error) => toast.error(`Ignore failed: ${err.message}`),
   });
@@ -95,8 +95,8 @@ export function useDiscoveredClients() {
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: clientsKeys.discovered });
-      queryClient.invalidateQueries({ queryKey: clientsKeys.all });
+      void queryClient.invalidateQueries({ queryKey: clientsKeys.discovered });
+      void queryClient.invalidateQueries({ queryKey: clientsKeys.all });
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -112,7 +112,7 @@ export function useDiscoveredClients() {
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: clientsKeys.discovered });
+      void queryClient.invalidateQueries({ queryKey: clientsKeys.discovered });
     },
     onError: (err: Error) => toast.error(err.message),
   });

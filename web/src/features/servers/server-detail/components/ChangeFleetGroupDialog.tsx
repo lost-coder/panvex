@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/ui";
 import type { FleetGroupEntry } from "@/shared/api/api";
@@ -22,6 +22,15 @@ export function ChangeFleetGroupDialog({
   onChange?: ((fleetGroupId: string) => void) | undefined;
 }>) {
   const [value, setValue] = useState(currentFleetGroupId);
+  const selectRef = useRef<HTMLSelectElement>(null);
+
+  // Initial focus on the select when the sheet opens. Replaces the
+  // bare autoFocus prop (jsx-a11y/no-autofocus) with a controlled
+  // post-mount focus call so the warning goes away without changing
+  // the UX (operator opens the sheet, immediately picks a group).
+  useEffect(() => {
+    if (open) selectRef.current?.focus();
+  }, [open]);
 
   // Mirrors RenameDialog: refresh the field whenever the sheet opens
   // so cancel + reopen always lands on the server's current group,
@@ -51,10 +60,10 @@ export function ChangeFleetGroupDialog({
             <label className="flex flex-col gap-1.5">
               <span className="text-sm text-fg-muted">Fleet Group</span>
               <select
+                ref={selectRef}
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
                 className="rounded-xs border border-border bg-bg px-3 py-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-accent"
-                autoFocus
               >
                 {fleetGroups.length === 0 ? (
                   <option value="">No groups available</option>

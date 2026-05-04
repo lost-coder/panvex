@@ -1,18 +1,19 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { SettingsPageProps } from "@/shared/api/types-pages/pages";
 import { apiClient } from "@/shared/api/api";
+import { settingsKeys } from "@/features/settings/queryKeys";
 import { transformSettings } from "@/shared/api/transforms/settings";
 
 export function useSettings(swipeNavigation: boolean = false) {
   const queryClient = useQueryClient();
 
   const panelQuery = useQuery({
-    queryKey: ["settings", "panel"],
+    queryKey: settingsKeys.panel(),
     queryFn: () => apiClient.panelSettings(),
   });
 
   const appearanceQuery = useQuery({
-    queryKey: ["settings", "appearance"],
+    queryKey: settingsKeys.appearance(),
     queryFn: () => apiClient.appearanceSettings(),
   });
 
@@ -31,7 +32,7 @@ export function useSettings(swipeNavigation: boolean = false) {
       help_mode: "off" | "basic" | "full";
     }) => apiClient.updateAppearanceSettings(payload),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["settings", "appearance"] });
+      await queryClient.invalidateQueries({ queryKey: settingsKeys.appearance() });
     },
   });
 
@@ -42,7 +43,7 @@ export function useSettings(swipeNavigation: boolean = false) {
       password_min_length: number;
     }) => apiClient.updatePanelSettings(payload),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["settings", "panel"] });
+      await queryClient.invalidateQueries({ queryKey: settingsKeys.panel() });
     },
   });
 

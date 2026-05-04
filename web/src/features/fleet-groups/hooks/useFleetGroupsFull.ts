@@ -1,6 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "@/shared/api/api";
+import {
+  fleetGroupsKeys,
+  integrationKindsKeys,
+  integrationProviderKindsKeys,
+  integrationProvidersKeys,
+} from "@/features/fleet-groups/queryKeys";
+import { agentsKeys } from "@/features/servers/queryKeys";
 import { useEventAwareInterval } from "@/shared/hooks/useEventAwareInterval";
 import type {
   CreateFleetGroupRequest,
@@ -20,7 +27,7 @@ export function useFleetGroupsList() {
   const groupsInterval = useEventAwareInterval(90_000, 30_000);
 
   return useQuery({
-    queryKey: ["fleet-groups"],
+    queryKey: fleetGroupsKeys.list(),
     queryFn: () => apiClient.fleetGroups(),
     refetchInterval: groupsInterval,
   });
@@ -32,7 +39,7 @@ export function useFleetGroupDetail(id: string | undefined) {
   const groupDetailInterval = useEventAwareInterval(60_000, 15_000);
 
   return useQuery({
-    queryKey: ["fleet-group", id],
+    queryKey: fleetGroupsKeys.detail(id),
     queryFn: () => {
       if (!id) throw new Error("fleet group id is required");
       return apiClient.fleetGroup(id);
@@ -47,7 +54,7 @@ export function useFleetGroupDetail(id: string | undefined) {
 // force the operator to pick a target group.
 export function useFleetGroupDeletionPreview(id: string | undefined, enabled = true) {
   return useQuery({
-    queryKey: ["fleet-group-deletion-preview", id],
+    queryKey: fleetGroupsKeys.deletionPreview(id),
     queryFn: () => {
       if (!id) throw new Error("fleet group id is required");
       return apiClient.fleetGroupDeletionPreview(id);
@@ -64,7 +71,7 @@ export function useFleetGroupMutations() {
   const createMutation = useMutation({
     mutationFn: (payload: CreateFleetGroupRequest) => apiClient.createFleetGroup(payload),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["fleet-groups"] });
+      void qc.invalidateQueries({ queryKey: fleetGroupsKeys.all });
     },
   });
 
@@ -72,8 +79,8 @@ export function useFleetGroupMutations() {
     mutationFn: ({ id, payload }: { id: string; payload: UpdateFleetGroupRequest }) =>
       apiClient.updateFleetGroup(id, payload),
     onSuccess: (_data, variables) => {
-      qc.invalidateQueries({ queryKey: ["fleet-groups"] });
-      qc.invalidateQueries({ queryKey: ["fleet-group", variables.id] });
+      void qc.invalidateQueries({ queryKey: fleetGroupsKeys.all });
+      void qc.invalidateQueries({ queryKey: fleetGroupsKeys.detail(variables.id) });
     },
   });
 
@@ -81,10 +88,12 @@ export function useFleetGroupMutations() {
     mutationFn: ({ id, reassignTo }: { id: string; reassignTo?: string | undefined }) =>
       apiClient.deleteFleetGroup(id, reassignTo),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["fleet-groups"] });
+      void qc.invalidateQueries({ queryKey: fleetGroupsKeys.all });
       // Invalidate the agents list too — agents may have been moved
-      // to the reassignTo group as part of the delete flow.
-      qc.invalidateQueries({ queryKey: ["agents"] });
+      // to the reassignTo group as part of the delete flow. BP-02:
+      // pulls `agentsKeys` from the servers feature instead of a
+      // bare ["agents"] literal so cache identity stays canonical.
+      void qc.invalidateQueries({ queryKey: agentsKeys.all });
     },
   });
 
@@ -95,7 +104,7 @@ export function useFleetGroupMutations() {
 
 export function useIntegrationKinds() {
   return useQuery({
-    queryKey: ["integration-kinds"],
+    queryKey: integrationKindsKeys.list(),
     queryFn: () => apiClient.integrationKinds(),
     // Kinds are registry-driven and change at control-plane boot
     // only; a 10-minute stale window keeps the hook well-behaved
@@ -107,7 +116,7 @@ export function useIntegrationKinds() {
 
 export function useIntegrationProviderKinds() {
   return useQuery({
-    queryKey: ["integration-provider-kinds"],
+    queryKey: integrationProviderKindsKeys.list(),
     queryFn: () => apiClient.integrationProviderKinds(),
     staleTime: 10 * 60 * 1000,
     refetchInterval: false,
@@ -118,7 +127,7 @@ export function useIntegrationProvidersList() {
   const providersInterval = useEventAwareInterval(300_000, 60_000);
 
   return useQuery({
-    queryKey: ["integration-providers"],
+    queryKey: integrationProvidersKeys.list(),
     queryFn: () => apiClient.integrationProviders(),
     refetchInterval: providersInterval,
   });
@@ -131,7 +140,7 @@ export function useIntegrationProviderMutations() {
     mutationFn: (payload: CreateIntegrationProviderRequest) =>
       apiClient.createIntegrationProvider(payload),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["integration-providers"] });
+      void qc.invalidateQueries({ queryKey: integrationProvidersKeys.all });
     },
   });
 
@@ -139,15 +148,15 @@ export function useIntegrationProviderMutations() {
     mutationFn: ({ id, payload }: { id: string; payload: UpdateIntegrationProviderRequest }) =>
       apiClient.updateIntegrationProvider(id, payload),
     onSuccess: (_data, variables) => {
-      qc.invalidateQueries({ queryKey: ["integration-providers"] });
-      qc.invalidateQueries({ queryKey: ["integration-provider", variables.id] });
+      void qc.invalidateQueries({ queryKey: integrationProvidersKeys.all });
+      void qc.invalidateQueries({ queryKey: integrationProvidersKeys.detail(variables.id) });
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiClient.deleteIntegrationProvider(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["integration-providers"] });
+      void qc.invalidateQueries({ queryKey: integrationProvidersKeys.all });
     },
   });
 
@@ -159,8 +168,8 @@ export function useIntegrationProviderMutations() {
 export function useFleetGroupIntegrationMutations(fleetGroupID: string) {
   const qc = useQueryClient();
   const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ["fleet-group", fleetGroupID] });
-    qc.invalidateQueries({ queryKey: ["fleet-groups"] });
+    void qc.invalidateQueries({ queryKey: fleetGroupsKeys.detail(fleetGroupID) });
+    void qc.invalidateQueries({ queryKey: fleetGroupsKeys.all });
   };
 
   const installMutation = useMutation({

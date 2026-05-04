@@ -127,7 +127,7 @@ export function FleetGroupDetailContainer() {
     try {
       await deleteMutation.mutateAsync({ id, reassignTo });
       toast.success("Fleet group удалена.");
-      navigate({ to: "/fleet-groups" });
+      void navigate({ to: "/fleet-groups" });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Delete failed");
     }

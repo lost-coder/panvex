@@ -77,7 +77,7 @@ export function ClientsContainer() {
               .join("; ")}`
           : undefined,
       );
-      queryClient.invalidateQueries({ queryKey: clientsKeys.all });
+      void queryClient.invalidateQueries({ queryKey: clientsKeys.all });
     },
   });
 

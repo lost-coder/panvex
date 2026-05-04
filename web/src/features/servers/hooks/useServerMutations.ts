@@ -12,8 +12,8 @@ export function useServerMutations(serverId: string) {
   const qc = useQueryClient();
 
   const invalidateServer = () => {
-    qc.invalidateQueries({ queryKey: telemetryKeys.server(serverId) });
-    qc.invalidateQueries({ queryKey: telemetryKeys.servers() });
+    void qc.invalidateQueries({ queryKey: telemetryKeys.server(serverId) });
+    void qc.invalidateQueries({ queryKey: telemetryKeys.servers() });
   };
 
   const allowCertRecoveryMutation = useMutation({
@@ -45,7 +45,7 @@ export function useServerMutations(serverId: string) {
     onSuccess: () => {
       invalidateServer();
       // Fleet-group member counts on the groups list change too.
-      qc.invalidateQueries({ queryKey: fleetGroupsKeys.all });
+      void qc.invalidateQueries({ queryKey: fleetGroupsKeys.all });
     },
     onError: (err) => notifyMutationError("servers", "agent.update-fleet-group", err),
   });
@@ -54,8 +54,8 @@ export function useServerMutations(serverId: string) {
     mutationFn: () => apiClient.deregisterAgent(serverId),
     onSuccess: () => {
       invalidateServer();
-      qc.invalidateQueries({ queryKey: agentsKeys.all });
-      qc.invalidateQueries({ queryKey: controlRoomKeys.all });
+      void qc.invalidateQueries({ queryKey: agentsKeys.all });
+      void qc.invalidateQueries({ queryKey: controlRoomKeys.all });
     },
     onError: (err) => notifyMutationError("servers", "agent.deregister", err),
   });

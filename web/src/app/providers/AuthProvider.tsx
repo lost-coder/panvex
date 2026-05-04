@@ -53,7 +53,7 @@ export function AuthProvider({ children }: Readonly<{ children: React.ReactNode 
         return;
       }
       toast.info("Сессия истекла, переход на /login…");
-      navigate({ to: "/login" });
+      void navigate({ to: "/login" });
     };
     globalThis.addEventListener(SESSION_EXPIRED_EVENT, handler);
     return () => {

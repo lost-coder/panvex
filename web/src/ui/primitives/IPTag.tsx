@@ -10,7 +10,7 @@ export function IPTag({ address, className }: Readonly<IPTagProps>) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(address).then(() => {
+    void navigator.clipboard.writeText(address).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     });
