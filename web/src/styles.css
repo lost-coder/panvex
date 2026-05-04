@@ -181,3 +181,131 @@ body {
   outline: 2px solid var(--accent-bright);
   outline-offset: 2px;
 }
+
+/*
+  Boot fallback: rendered as static HTML inside #root in index.html and
+  cleared by React on mount. Visible during the brief window before the
+  bundle parses, and stays put when the bundle never loads (CSP/MIME
+  failure, broken deploy, network offline). The "Still blank?" hint
+  fades in via a CSS-only delayed animation so a healthy boot keeps the
+  panel calm — operators only see the troubleshooting block when the
+  app is actually stuck. No inline script: that would require relaxing
+  script-src, which the panel's CSP forbids.
+*/
+.boot-fallback {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px;
+  background: var(--bg-gradient), var(--bg-page);
+  color: var(--text-1);
+  font-family: var(--font);
+  text-align: center;
+  z-index: 1;
+}
+
+.boot-fallback__spinner {
+  width: 32px;
+  height: 32px;
+  border: 2px solid var(--border-hover);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: bootFallbackSpin 0.9s linear infinite;
+}
+
+.boot-fallback__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-2);
+}
+
+.boot-fallback__error {
+  max-width: 460px;
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--bad-dim);
+  color: var(--bad-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.boot-fallback__hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 460px;
+  padding: 16px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+  /* Hidden until the spinner has been on screen for ~6s — by then the
+     bundle should have either parsed and replaced #root or failed
+     visibly enough that the operator wants the troubleshooting block.
+     Forwards keeps the final state once revealed. */
+  opacity: 0;
+  transform: translateY(6px);
+  animation: bootFallbackHint 600ms ease-out 6s forwards;
+}
+
+.boot-fallback__hint-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.boot-fallback__hint-body {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+.boot-fallback__hint-action {
+  display: inline-block;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.boot-fallback__hint-action:hover,
+.boot-fallback__hint-action:focus {
+  background: var(--accent-bright);
+}
+
+@keyframes bootFallbackSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes bootFallbackHint {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Operators with prefers-reduced-motion get the hint immediately and
+   no spinner animation — match the rest of the app's a11y posture. */
+@media (prefers-reduced-motion: reduce) {
+  .boot-fallback__spinner {
+    animation: none;
+  }
+  .boot-fallback__hint {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}

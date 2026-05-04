@@ -15,7 +15,7 @@ import { buildClientInput } from "@/shared/api/transforms/clients";
 
 export function ClientDetailContainer() {
   const { clientId } = useParams({ strict: false });
-  const { client, raw, isLoading } = useClientDetail(clientId ?? "");
+  const { client, raw, isLoading, error } = useClientDetail(clientId ?? "");
   const { editMutation, rotateMutation, redeployMutation, deleteMutation } = useClientMutations(clientId ?? "", raw);
   const { ips, totalUnique } = useClientIPHistory(clientId ?? "");
   const navigate = useNavigate();
@@ -98,6 +98,28 @@ export function ClientDetailContainer() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [raw]);
+
+  if (error) {
+    // Without this branch any failure (network, schema-mismatch, 404)
+    // left the page hanging on the spinner forever — the parent
+    // ErrorBoundary never sees React Query errors and the prior copy
+    // of this container only checked `isLoading || !client`.
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-2 text-center px-6">
+        <p className="text-sm text-fg">Failed to load client.</p>
+        <p className="text-xs text-fg-muted max-w-md">{error.message}</p>
+        <button
+          type="button"
+          onClick={() => {
+            if (clientId) void qc.invalidateQueries({ queryKey: clientsKeys.detail(clientId) });
+          }}
+          className="mt-2 px-3 py-1 text-xs font-mono rounded-xs border border-border-hi hover:border-accent"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   if (isLoading || !client) {
     return <div className="flex items-center justify-center h-64"><Spinner /></div>;

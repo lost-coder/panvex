@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { z } from "zod";
 import { ErrorBoundary } from "@/ui";
 
 import { AppErrorFallback } from "./providers/AppErrorFallback";
@@ -11,6 +12,16 @@ import { ToastProvider } from "./providers/ToastProvider";
 import { router } from "./router";
 import { initI18n } from "@/shared/lib/i18n";
 import "../styles.css";
+
+// Disable Zod v4's JIT validator-compilation path. The fast path
+// builds per-schema validators dynamically at parse time, which the
+// panel's CSP forbids (no `script-src 'unsafe-eval'`). Zod's own
+// allowsEval probe trips a CSP violation in the browser console even
+// though it catches the failure and falls back gracefully. Setting
+// `jitless: true` short-circuits the probe entirely so we get a clean
+// console + the safer slow path. Must run before any schema is
+// evaluated.
+z.config({ jitless: true });
 
 // Phase-3 §3.2: bootstrap i18next before React mounts so the very
 // first render of every component already has translations available.

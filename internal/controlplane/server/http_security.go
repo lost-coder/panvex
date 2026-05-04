@@ -54,9 +54,17 @@ var csrfExemptAPISuffixes = []string{
 //     The current build ships neither a web-app manifest nor service /
 //     web workers; an attacker who manages to inject a <link rel="manifest">
 //     or `new Worker(blobURL)` is held to this origin only.
-//   - object-src 'none', base-uri 'none', frame-ancestors 'none': hard no.
-//     base-uri 'none' (was 'self') prevents same-origin XSS from injecting
-//     a <base href> that would re-anchor every relative URL on the page.
+//   - object-src 'none', frame-ancestors 'none': hard no.
+//   - base-uri 'self': the panel's serveUIIndex injects a <base href="/">
+//     so relative asset URLs in index.html resolve correctly when the
+//     operator deep-links into a nested SPA route (/clients/<id>, etc.).
+//     Vite emits the embed bundle with `base: "./"` and the runtime
+//     preload loader writes `link.href = "assets/..."` against that base
+//     — without it the browser anchors against the document URL and
+//     fetches `/clients/assets/...`, which the SPA fallback serves as
+//     HTML and trips the strict-MIME module check. 'self' is sufficient
+//     here: the only base hrefs that would resolve are same-origin (a
+//     cross-origin <base href="https://attacker/"> is still blocked).
 //   - form-action 'self' (M-15): login / recovery forms must POST same-origin.
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -79,7 +87,7 @@ func securityHeaders(next http.Handler) http.Handler {
 				"manifest-src 'self'; "+
 				"worker-src 'self' blob:; "+
 				"object-src 'none'; "+
-				"base-uri 'none'; "+
+				"base-uri 'self'; "+
 				"form-action 'self'; "+
 				"frame-ancestors 'none'")
 		h.Set("Strict-Transport-Security", hstsHeaderValue())

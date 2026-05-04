@@ -152,7 +152,7 @@ func TestCSRFOriginCheckDoesNotExemptLookalikePaths(t *testing.T) {
 // TestSecurityHeadersDoNotAllowInlineScripts verifies the Content-Security-
 // Policy header no longer contains 'unsafe-inline' in script-src, and
 // includes the default-src 'none' lockdown plus the explicit hardening
-// directives (object-src 'none', base-uri 'none', frame-ancestors 'none').
+// directives (object-src 'none', base-uri 'self', frame-ancestors 'none').
 // This combines the P2-SEC-09 remediation with the S-medium default-src
 // lockdown: every fetch destination is explicitly allow-listed, with no
 // fallback to default-src.
@@ -195,13 +195,15 @@ func TestSecurityHeadersDoNotAllowInlineScripts(t *testing.T) {
 		t.Fatalf("CSP script-src must not contain 'unsafe-eval': %q", scriptSrc)
 	}
 
-	// object-src, base-uri, and frame-ancestors do NOT fall back to
-	// default-src, so each must be explicitly present and locked to
-	// 'none'. base-uri 'none' (was 'self') prevents injected <base href>
-	// tags from rewriting relative URLs.
+	// object-src and frame-ancestors do NOT fall back to default-src, so
+	// each must be explicitly present and locked to 'none'. base-uri is
+	// 'self' (not 'none') so the panel's serveUIIndex can inject a
+	// <base href="/"> for SPA deep-link reloads — the strict-MIME module
+	// check breaks otherwise. 'self' still rejects cross-origin <base>
+	// tags an attacker might inject.
 	for directive, want := range map[string]string{
 		"object-src":      "'none'",
-		"base-uri":        "'none'",
+		"base-uri":        "'self'",
 		"frame-ancestors": "'none'",
 	} {
 		got := extractDirective(csp, directive)

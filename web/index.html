@@ -16,7 +16,37 @@
       keeps the visual design untouched for pointer users.
     -->
     <a href="#main-content" class="skip-link">Skip to main content</a>
-    <div id="root"></div>
+    <div id="root">
+      <!--
+        Boot fallback. Rendered as static HTML so the operator sees a
+        meaningful state before the JS bundle has parsed — and, crucially,
+        if the bundle never loads at all (CSP/MIME failure, broken deploy,
+        offline). React clears #root when it mounts, so this disappears on
+        a healthy boot. The "Still blank?" hint fades in via a CSS-only
+        animation after a few seconds; we deliberately avoid an inline
+        script (would require script-src 'unsafe-inline').
+      -->
+      <div class="boot-fallback" role="status" aria-live="polite">
+        <div class="boot-fallback__spinner" aria-hidden="true"></div>
+        <h1 class="boot-fallback__title">Loading Panvex…</h1>
+        <noscript>
+          <p class="boot-fallback__error">
+            JavaScript is disabled. Panvex needs JavaScript to render the
+            control room. Enable it in your browser settings and reload.
+          </p>
+        </noscript>
+        <div class="boot-fallback__hint">
+          <p class="boot-fallback__hint-title">Still blank?</p>
+          <p class="boot-fallback__hint-body">
+            The UI bundle didn't finish loading. This is usually a stale
+            browser cache, a blocked asset, or a panel that hasn't been
+            rebuilt after a deploy. Open the browser console (F12) for
+            details, then hard-reload (Ctrl/Cmd + Shift + R).
+          </p>
+          <a class="boot-fallback__hint-action" href=".">Reload page</a>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/app/main.tsx"></script>
   </body>
   </html>

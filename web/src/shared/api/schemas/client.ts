@@ -32,13 +32,21 @@ export const clientListItemSchema = z.object({
 export const clientListSchema = z.array(clientListItemSchema);
 
 /**
- * Full client DTO returned from GET /api/clients/{id}. Contains the
- * MTProxy secret so this response must never be logged.
+ * Full client DTO returned from GET /api/clients/{id}. The MTProxy
+ * secret is only embedded on disclosure-opted endpoints (POST create,
+ * POST rotate-secret); the plain GET path strips it server-side and
+ * the JSON tag is `omitempty`, so the field is missing from the wire
+ * payload entirely. Default it to "" so the schema parses cleanly on
+ * the read path while still typing as a required string downstream
+ * (SecretSection renders an "ask to reveal" state for the empty case).
+ * Without this, the GET response was silently rejected by zod →
+ * useClientDetail.query.data stayed undefined → the detail page hung
+ * on the loading spinner forever (no console log in production builds).
  */
 export const clientSchema = z.object({
   id,
   name: z.string(),
-  secret: z.string(),
+  secret: z.string().default(""),
   user_ad_tag: z.string(),
   enabled: z.boolean(),
   traffic_used_bytes: z.number(),

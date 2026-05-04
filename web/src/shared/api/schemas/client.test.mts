@@ -52,7 +52,7 @@ test("clientSchema requires deployments array (detail view)", () => {
   assert.equal(parsed.deployments.length, 0);
 });
 
-test("clientSchema rejects missing secret — detail view must include it", () => {
+test("clientSchema defaults missing secret to '' (GET strips it via omitempty)", () => {
   const detail = {
     ...minimalListItem,
     user_ad_tag: "",
@@ -65,6 +65,29 @@ test("clientSchema rejects missing secret — detail view must include it", () =
     updated_at_unix: 0,
     deleted_at_unix: 0,
   };
+  // Backend's clientDetailResponse.Secret is `json:"secret,omitempty"`.
+  // GET /api/clients/{id} runs with showSecret=false and emits no field.
+  // Schema must accept that — otherwise zod silently rejects the response
+  // and ClientDetailContainer hangs on the loading spinner.
   const result = clientSchema.safeParse(detail);
-  assert.equal(result.success, false);
+  assert.equal(result.success, true);
+  assert.equal(result.success && result.data.secret, "");
+});
+
+test("clientSchema preserves explicit secret value (POST create / rotate path)", () => {
+  const detail = {
+    ...minimalListItem,
+    secret: "deadbeefdeadbeefdeadbeefdeadbeef",
+    user_ad_tag: "",
+    max_tcp_conns: 10,
+    max_unique_ips: 5,
+    fleet_group_ids: [],
+    agent_ids: [],
+    deployments: [],
+    created_at_unix: 0,
+    updated_at_unix: 0,
+    deleted_at_unix: 0,
+  };
+  const parsed = clientSchema.parse(detail);
+  assert.equal(parsed.secret, "deadbeefdeadbeefdeadbeefdeadbeef");
 });
