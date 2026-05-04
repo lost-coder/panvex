@@ -282,10 +282,6 @@ func (s *Server) handleResetUserTotp() http.HandlerFunc {
 	}
 }
 
-func (s *Server) listUsers() ([]auth.User, error) {
-	return s.listUsersWithContext(context.Background())
-}
-
 func (s *Server) listUsersWithContext(ctx context.Context) ([]auth.User, error) {
 	if s.store == nil {
 		users := s.auth.SnapshotUsers()

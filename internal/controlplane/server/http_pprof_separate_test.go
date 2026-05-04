@@ -73,7 +73,11 @@ func TestStartPprofListenerServesPprofIndex(t *testing.T) {
 
 	url := "http://" + addr.String() + "/debug/pprof/"
 	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(url)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("GET %s: %v", url, err)
 	}

@@ -19,7 +19,7 @@ func TestEnrollAgentWithContextUsesCallerContextForPersistence(t *testing.T) {
 	}
 	defer store.Close()
 
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -60,7 +60,7 @@ func TestApplyAgentSnapshotWithContextSucceedsRegardlessOfCallerContext(t *testi
 
 	fleetGroupID := seedTestFleetGroup(t, store, "ams", now)
 
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,

@@ -22,7 +22,7 @@ func TestHTTPPanelSettingsRequiresAdminAndPersistsSharedEndpointChanges(t *testi
 	}
 	defer store.Close()
 
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -166,7 +166,7 @@ func TestHTTPPanelSettingsRequiresAdminAndPersistsSharedEndpointChanges(t *testi
 
 func TestHTTPPanelSettingsMarksRestartUnavailableWhenRuntimeCannotSelfRestart(t *testing.T) {
 	now := time.Date(2026, time.March, 16, 19, 30, 0, 0, time.UTC)
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 		PanelRuntime: PanelRuntime{
@@ -220,7 +220,7 @@ func TestHTTPPanelSettingsMarksRestartUnavailableWhenRuntimeCannotSelfRestart(t 
 
 func TestHTTPPanelSettingsRejectsRuntimeMutationsInLegacyMode(t *testing.T) {
 	now := time.Date(2026, time.March, 17, 10, 40, 0, 0, time.UTC)
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 		PanelRuntime: PanelRuntime{
@@ -258,7 +258,7 @@ func TestHTTPPanelSettingsRejectsRuntimeMutationsInLegacyMode(t *testing.T) {
 
 func TestHTTPPanelSettingsRejectsOversizedPayload(t *testing.T) {
 	now := time.Date(2026, time.March, 17, 11, 0, 0, 0, time.UTC)
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 		PanelRuntime: PanelRuntime{
@@ -301,7 +301,7 @@ func TestHTTPPanelSettingsExposesConfigManagedRuntimeAsReadOnly(t *testing.T) {
 	}
 	defer store.Close()
 
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -395,7 +395,7 @@ func TestHTTPPanelSettingsExposesConfigManagedRuntimeAsReadOnly(t *testing.T) {
 
 func TestHTTPPanelSettingsRejectsRuntimeMutationsWhenConfigManagesRuntime(t *testing.T) {
 	now := time.Date(2026, time.March, 20, 20, 30, 0, 0, time.UTC)
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 		PanelRuntime: PanelRuntime{
@@ -442,7 +442,7 @@ func TestHTTPPanelSettingsRejectsRuntimeMutationsWhenConfigManagesRuntime(t *tes
 func TestHTTPPanelRestartRequiresAdminAndInvokesRuntimeHook(t *testing.T) {
 	now := time.Date(2026, time.March, 17, 1, 20, 0, 0, time.UTC)
 	restartRequests := make(chan struct{}, 1)
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 		PanelRuntime: PanelRuntime{
@@ -506,7 +506,7 @@ func TestHTTPPanelRestartRequiresAdminAndInvokesRuntimeHook(t *testing.T) {
 
 func TestHTTPPanelRestartRejectsUnsupportedRuntime(t *testing.T) {
 	now := time.Date(2026, time.March, 17, 1, 30, 0, 0, time.UTC)
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 		PanelRuntime: PanelRuntime{
@@ -540,7 +540,7 @@ func TestHTTPPanelRestartRejectsUnsupportedRuntime(t *testing.T) {
 
 func TestHTTPPanelRestartReturnsInternalErrorWhenRuntimeHookFails(t *testing.T) {
 	now := time.Date(2026, time.March, 18, 13, 0, 0, 0, time.UTC)
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 		PanelRuntime: PanelRuntime{
@@ -584,7 +584,7 @@ func TestPutPanelSettings_PersistsPasswordPolicy(t *testing.T) {
 	}
 	defer store.Close()
 
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -640,7 +640,7 @@ func TestPutPanelSettings_PersistsPasswordPolicy(t *testing.T) {
 func TestPutPanelSettings_RejectsBelowFloor(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, time.May, 1, 12, 1, 0, 0, time.UTC)
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 		PanelRuntime: PanelRuntime{
@@ -680,7 +680,7 @@ func TestPutPanelSettings_RejectsBelowFloor(t *testing.T) {
 func TestPutPanelSettings_RejectsAboveCeiling(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, time.May, 1, 12, 2, 0, 0, time.UTC)
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 		PanelRuntime: PanelRuntime{

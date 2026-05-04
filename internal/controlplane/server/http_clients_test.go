@@ -23,7 +23,7 @@ func TestHTTPClientsCreateTracksDeploymentsAndStructuredJobPayload(t *testing.T)
 	}
 	defer store.Close()
 
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -147,7 +147,7 @@ func TestHTTPClientsUpdateRotateAndDeleteQueueLifecycleJobs(t *testing.T) {
 	}
 	defer store.Close()
 
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -260,7 +260,7 @@ func TestHTTPClientsUpdateRotateAndDeleteQueueLifecycleJobs(t *testing.T) {
 
 func TestHTTPClientsRejectInvalidUserADTag(t *testing.T) {
 	now := time.Date(2026, time.March, 17, 16, 40, 0, 0, time.UTC)
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})
@@ -290,7 +290,7 @@ func TestHTTPClientsAggregateUsageAcrossAgentSnapshots(t *testing.T) {
 	}
 	defer store.Close()
 
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -403,7 +403,7 @@ func TestHTTPClientsCreateReturnsInternalErrorWhenPersistenceFails(t *testing.T)
 	defer sqliteStore.Close()
 
 	store := &failingStore{Store: sqliteStore}
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -444,7 +444,7 @@ func TestRecordClientJobResultDoesNotPanicWhenDeploymentPersistenceFails(t *test
 	defer sqliteStore.Close()
 
 	store := &failingStore{Store: sqliteStore}
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
@@ -480,7 +480,7 @@ func TestRecordClientJobResultDoesNotPanicWhenDeploymentPersistenceFails(t *test
 
 	store.putClientDeploymentErr = errors.New("put client deployment failed")
 
-	server.recordClientJobResult("agent-000001", jobList[0].ID, true, "ok", `{"connection_links":["tg://proxy?secret=abc"]}`, now.Add(time.Minute))
+	server.recordClientJobResultWithContext(t.Context(), "agent-000001", jobList[0].ID, true, "ok", `{"connection_links":["tg://proxy?secret=abc"]}`, now.Add(time.Minute))
 
 	detailClient, _, deployments, err := server.clientDetailSnapshot(client.ID)
 	if err != nil {

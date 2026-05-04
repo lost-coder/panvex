@@ -103,8 +103,10 @@ func (s *Server) restoreStoredClients() error {
 
 	// Q2.U-P-09: bound the entire restore sequence so a stuck DB cannot
 	// hang startup forever. 60s covers a multi-thousand-row clients
-	// table on commodity hardware with comfortable headroom.
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	// table on commodity hardware with comfortable headroom. The parent
+	// is the lifecycle context (Server.serverCtx) so a Close() during a
+	// slow restore aborts rather than waiting the full 60s (BP-01).
+	ctx, cancel := context.WithTimeout(s.serverCtx, 60*time.Second)
 	defer cancel()
 
 	records, err := s.store.ListClients(ctx)

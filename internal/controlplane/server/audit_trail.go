@@ -13,8 +13,16 @@ import (
 // isolation while the larger god-object decomposition lands
 // incrementally.
 
+// appendAudit is the no-ctx convenience shim retained for fire-and-forget
+// callers (test helpers, post-result job audits, enroll-driver event
+// notifier) that do not have a request- or stream-scoped ctx in hand. It
+// routes through the lifecycle context (Server.Context()) so a Close()
+// during a wedged audit publish surfaces cancellation rather than an
+// unbounded Background tree (Plan 3 / BP-01). Callers that DO have a
+// request ctx should call appendAuditWithContext directly so audit
+// cancellation tracks the request.
 func (s *Server) appendAudit(actorID string, action string, targetID string, details map[string]any) {
-	s.appendAuditWithContext(context.Background(), actorID, action, targetID, details)
+	s.appendAuditWithContext(s.Context(), actorID, action, targetID, details)
 }
 
 func (s *Server) appendAuditWithContext(ctx context.Context, actorID string, action string, targetID string, details map[string]any) {

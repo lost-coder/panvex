@@ -1,12 +1,73 @@
 package server
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
+
+// ctxCapturingStore is a minimal storage.Store stub that records the ctx
+// it received on the first GetCPSecret call, then returns ErrNotFound so
+// callers proceed to the mint path. Used by the cancellation tests to pin
+// Plan 3 Task 3: the secret loaders must thread the caller ctx through to
+// storage instead of substituting context.Background().
+type ctxCapturingStore struct {
+	storage.Store
+	captured context.Context
+}
+
+func (s *ctxCapturingStore) GetCPSecret(ctx context.Context, _ string) ([]byte, error) {
+	if s.captured == nil {
+		s.captured = ctx
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return nil, storage.ErrNotFound
+}
+
+func (*ctxCapturingStore) PutCPSecret(ctx context.Context, _ string, _ []byte) error {
+	return ctx.Err()
+}
+
+// TestLoadOrCreateCSRFSecret_PropagatesCallerCtx pins Plan 3 Task 3: the
+// CSRF secret loader must hand the caller's ctx to storage so a Close()
+// during a wedged GetCPSecret aborts it via serverCtx cancellation. The
+// loader itself is best-effort (a storage failure logs and falls back to
+// the in-memory fresh secret) so this test asserts ctx propagation, not
+// that loadOrCreateCSRFSecret returns a context.Canceled error.
+func TestLoadOrCreateCSRFSecret_PropagatesCallerCtx(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	store := &ctxCapturingStore{}
+	if _, err := loadOrCreateCSRFSecret(ctx, store); err != nil {
+		t.Fatalf("loadOrCreateCSRFSecret returned error: %v", err)
+	}
+	if store.captured == nil {
+		t.Fatal("GetCPSecret was not invoked")
+	}
+	if store.captured != ctx {
+		t.Fatalf("GetCPSecret ctx = %v, want caller ctx %v", store.captured, ctx)
+	}
+}
+
+// TestLoadOrCreateVaultSalt_RespectsContextCancellation pins the same
+// contract for the vault HKDF salt loader. Unlike the CSRF loader the
+// vault salt loader is fail-loud — a storage error must propagate so the
+// operator does not silently lose the only path to decrypt later writes.
+func TestLoadOrCreateVaultSalt_RespectsContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := loadOrCreateVaultSalt(ctx, &ctxCapturingStore{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("loadOrCreateVaultSalt error = %v, want context.Canceled", err)
+	}
+}
 
 func TestCSRFTokenForSession_Stable(t *testing.T) {
 	secret := []byte("fixed-server-secret-32-bytes-okok")

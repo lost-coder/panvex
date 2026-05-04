@@ -92,7 +92,8 @@ func (s *Server) StartPprofListener(ctx context.Context) (net.Addr, func(context
 	router := chi.NewRouter()
 	registerPprofRoutes(router)
 
-	listener, err := net.Listen("tcp", s.pprofListenerAddr)
+	var lc net.ListenConfig
+	listener, err := lc.Listen(ctx, "tcp", s.pprofListenerAddr)
 	if err != nil {
 		return nil, nil, err
 	}

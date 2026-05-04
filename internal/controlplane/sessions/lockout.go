@@ -141,6 +141,21 @@ func (t *LockoutTracker) redact(username string) string {
 	return defaultRedact(username)
 }
 
+// redactLocked is the variant of redact callable while the caller
+// already holds t.mu — used by persistLocked / deletePersistedLocked
+// in their store-error log paths. Reading t.redactor without
+// re-locking is safe because the caller holds t.mu (matched against
+// SetRedactor which writes under the same lock). Avoiding the
+// re-acquisition prevents a deterministic deadlock when the store
+// returns an error (e.g. ctx cancellation) inside a locked critical
+// section.
+func (t *LockoutTracker) redactLocked(username string) string {
+	if t.redactor != nil {
+		return t.redactor(username)
+	}
+	return defaultRedact(username)
+}
+
 func defaultRedact(username string) string {
 	u := strings.TrimSpace(username)
 	if u == "" {
@@ -199,7 +214,7 @@ func (t *LockoutTracker) persistLocked(ctx context.Context, username string, ent
 		record.LockedAt = &lockedAt
 	}
 	if err := t.store.UpsertLoginLockout(ctx, record); err != nil {
-		slog.Warn("sessions: failed to persist login lockout", "username_hash", t.redact(username), "error", err)
+		slog.Warn("sessions: failed to persist login lockout", "username_hash", t.redactLocked(username), "error", err)
 	}
 }
 
@@ -208,7 +223,7 @@ func (t *LockoutTracker) deletePersistedLocked(ctx context.Context, username str
 		return
 	}
 	if err := t.store.DeleteLoginLockout(ctx, username); err != nil {
-		slog.Warn("sessions: failed to delete login lockout", "username_hash", t.redact(username), "error", err)
+		slog.Warn("sessions: failed to delete login lockout", "username_hash", t.redactLocked(username), "error", err)
 	}
 }
 

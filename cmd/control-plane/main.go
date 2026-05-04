@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"net"
 	"os"
@@ -53,7 +52,8 @@ func main() {
 		if errors.Is(err, errPanelRestartRequested) {
 			os.Exit(restartExitCode)
 		}
-		log.Fatal(err)
+		slog.Error("control-plane fatal", slog.Any("error", err))
+		os.Exit(1)
 	}
 }
 

@@ -25,7 +25,7 @@ func setupTransportModeServer(t *testing.T) (*Server, []*http.Cookie) {
 		t.Fatalf("sqlite.Open() error = %v", err)
 	}
 
-	srv := New(Options{
+	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:              func() time.Time { return now },
 		Store:            store,
@@ -236,7 +236,7 @@ func TestUpdateAgentTransportModeRequiresAdminRole(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sqlite.Open() error = %v", err)
 	}
-	srv := New(Options{
+	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:              func() time.Time { return now },
 		Store:            store,

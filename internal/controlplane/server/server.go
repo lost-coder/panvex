@@ -28,9 +28,9 @@ import (
 )
 
 const (
-	sessionCookieName          = "panvex_session"
-	apiBasePath                = "/api"
-	maxInMemoryMetricSnapshots = 512
+	sessionCookieName                    = "panvex_session"
+	apiBasePath                          = "/api"
+	maxInMemoryMetricSnapshots           = 512
 	maxInMemoryAuditEvents               = 1024
 	httpLoginRateLimitPerWindow          = 30
 	httpAgentBootstrapRateLimitPerWindow = 30
@@ -126,10 +126,10 @@ type Server struct {
 	// Run(); updated synchronously under mu and persisted asynchronously via
 	// the batch writer. Crash-window caveat: see spec.
 	fallbackEnteredAt map[string]time.Time
-	clients                      map[string]managedClient
-	clientAssignments            map[string][]managedClientAssignment
-	clientDeployments            map[string]map[string]managedClientDeployment
-	clientUsage                  map[string]map[string]clientUsageSnapshot
+	clients           map[string]managedClient
+	clientAssignments map[string][]managedClientAssignment
+	clientDeployments map[string]map[string]managedClientDeployment
+	clientUsage       map[string]map[string]clientUsageSnapshot
 	// lastUsageSeq tracks the highest client-usage snapshot sequence number
 	// applied per agent. Snapshots whose seq is <= the stored value are
 	// discarded (duplicate/replay). seq == 1 after a non-zero stored value
@@ -161,9 +161,20 @@ type Server struct {
 	retention      RetentionSettings
 	handler        http.Handler
 	startupErr     error
-	stopRollup     context.CancelFunc
-	rollupWg       sync.WaitGroup
-	batchWriter    *storeBatchWriter
+	// serverCtx is the lifecycle context owned by the Server. It is created
+	// in New() and cancelled by Close() so long-lived workers (rollup,
+	// metrics poller, fleet-ensure, lockout-restore, batch-writer drain)
+	// can abort wedged storage calls during shutdown. Subsequent Plan 3
+	// tasks migrate the existing `context.Background()` call sites onto
+	// this context. serverCloseOnce guarantees the cancel runs exactly
+	// once even under concurrent Close() invocation; bare nil-check +
+	// assign would race two competing goroutines.
+	serverCtx       context.Context
+	serverCancel    context.CancelFunc
+	serverCloseOnce sync.Once
+	stopRollup   context.CancelFunc
+	rollupWg     sync.WaitGroup
+	batchWriter  *storeBatchWriter
 
 	// obs holds the Prometheus collectors exposed at /metrics. Nil when the
 	// server is constructed without a scrape token — the /metrics route is
@@ -232,6 +243,24 @@ func (s *Server) vault() *secretvault.Vault {
 		return nil
 	}
 	return s.secretVault
+}
+
+// Context returns the Server's lifecycle context. The context is alive
+// between New() and Close(); Close() cancels it so long-lived workers can
+// abort in-flight storage calls during shutdown. Callers must NOT cache
+// the returned context across a Close — derive child contexts via
+// context.WithCancel/WithTimeout from the value returned here at
+// goroutine start.
+//
+// If the Server was constructed via a path that did not initialise the
+// lifecycle context (e.g. test helpers using newServerFromOptions
+// directly), returns context.Background() so worker code that does
+// <-ctx.Done() does not panic on a nil receiver.
+func (s *Server) Context() context.Context {
+	if s.serverCtx == nil {
+		return context.Background()
+	}
+	return s.serverCtx
 }
 
 // New constructs a control-plane server with in-memory state suitable for local development.

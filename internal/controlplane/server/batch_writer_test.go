@@ -110,7 +110,7 @@ func TestStoreBatchWriterStartAndStop(t *testing.T) {
 
 	w := newStoreBatchWriter(store, nil, nil)
 	w.Start()
-	_ = w.StopWithTimeout(2 * time.Second)
+	_ = w.StopWithTimeout(t.Context(), 2*time.Second)
 }
 
 // -----------------------------------------------------------------------
@@ -567,7 +567,7 @@ func TestStoreBatchWriterDrainsOnStop(t *testing.T) {
 	})
 
 	// Stop triggers a final drain of all buffers.
-	_ = w.StopWithTimeout(2 * time.Second)
+	_ = w.StopWithTimeout(t.Context(), 2*time.Second)
 
 	agents, err := store.ListAgents(context.Background())
 	if err != nil {

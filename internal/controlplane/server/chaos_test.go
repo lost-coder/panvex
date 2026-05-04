@@ -74,7 +74,7 @@ func TestChaosDBDropDuringTransact(t *testing.T) {
 		putClientAssignmentErr: chaosErr,
 	}
 
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: failing,
@@ -206,7 +206,7 @@ func TestChaosShutdownMidAudit(t *testing.T) {
 	// Very tight timeout — the drain WILL be interrupted on slow runners
 	// and WILL finish on fast ones. The chaos invariant is that neither
 	// outcome corrupts data.
-	stopErr := w.StopWithTimeout(50 * time.Millisecond)
+	stopErr := w.StopWithTimeout(t.Context(), 50*time.Millisecond)
 
 	// The returned error is either nil (drained in time) or
 	// context.DeadlineExceeded (per the StopWithTimeout contract). Anything
@@ -271,7 +271,7 @@ func TestChaosShutdownMidAudit(t *testing.T) {
 
 func TestChaosAgentReconnectSeqReset(t *testing.T) {
 	now := time.Date(2026, time.April, 18, 13, 0, 0, 0, time.UTC)
-	server := New(Options{Now: func() time.Time { return now }})
+	server := mustNew(t, Options{Now: func() time.Time { return now }})
 	defer server.Close()
 
 	const agentID = "chaos-agent"
@@ -451,7 +451,7 @@ func TestChaosClockDrift(t *testing.T) {
 		clockMu.Unlock()
 	}
 
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   nowFn,
 		Store: baseStore,

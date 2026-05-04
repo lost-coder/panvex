@@ -325,10 +325,6 @@ func (s *Server) deleteClient(ctx context.Context, clientID, actorID string, obs
 	return nil
 }
 
-func (s *Server) replaceClientState(client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment) error {
-	return s.replaceClientStateWithContext(context.Background(), client, assignments, deployments)
-}
-
 func (s *Server) replaceClientStateWithContext(ctx context.Context, client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment) error {
 	if s.store != nil {
 		if err := s.persistClientState(ctx, client, assignments, deployments); err != nil {
@@ -436,10 +432,6 @@ func (s *Server) resolveClientTargetAgentIDs(assignments []managedClientAssignme
 		RegisteredAgents: registeredAgents,
 		FleetMembers:     fleetMembers,
 	})
-}
-
-func (s *Server) recordClientJobResult(agentID, jobID string, success bool, message, resultJSON string, observedAt time.Time) {
-	s.recordClientJobResultWithContext(context.Background(), agentID, jobID, success, message, resultJSON, observedAt)
 }
 
 func (s *Server) recordClientJobResultWithContext(ctx context.Context, agentID, jobID string, success bool, message, resultJSON string, observedAt time.Time) {

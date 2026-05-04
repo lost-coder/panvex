@@ -106,7 +106,8 @@ func (ca *testCA) issueClientCert(t *testing.T, cn string) tls.Certificate {
 // freeTCPAddrT returns a free loopback TCP address; helper for tests.
 func freeTCPAddrT(t *testing.T) string {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
+	var lc net.ListenConfig
+	l, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	addr := l.Addr().String()
 	require.NoError(t, l.Close())
@@ -346,8 +347,9 @@ func TestReverseBootstrapRejectsWrongPanelCN(t *testing.T) {
 func waitForListener(t *testing.T, addr string, deadline time.Duration) {
 	t.Helper()
 	end := time.Now().Add(deadline)
+	dialer := &net.Dialer{Timeout: 100 * time.Millisecond}
 	for time.Now().Before(end) {
-		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
+		conn, err := dialer.DialContext(t.Context(), "tcp", addr)
 		if err == nil {
 			_ = conn.Close()
 			return

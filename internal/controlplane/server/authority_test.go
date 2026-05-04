@@ -104,7 +104,7 @@ func TestLegacyEnc1BlobAutoMigrates(t *testing.T) {
 	}
 
 	// Run the load path with the matching encryption key configured.
-	authority, err := loadOrCreateCertificateAuthority(store, now, passphrase)
+	authority, err := loadOrCreateCertificateAuthority(context.Background(), store, now, passphrase)
 	if err != nil {
 		t.Fatalf("loadOrCreateCertificateAuthority: %v", err)
 	}
@@ -132,6 +132,39 @@ func TestLegacyEnc1BlobAutoMigrates(t *testing.T) {
 	}
 }
 
+// authorityCancellationStore is a CertificateAuthorityStore stub that
+// returns ctx.Err() from Get/Put when the supplied ctx is already
+// cancelled. Used to pin Plan 3 Task 3: the CA loader must propagate
+// caller ctx instead of falling back to context.Background().
+type authorityCancellationStore struct{}
+
+func (authorityCancellationStore) GetCertificateAuthority(ctx context.Context) (storage.CertificateAuthorityRecord, error) {
+	if err := ctx.Err(); err != nil {
+		return storage.CertificateAuthorityRecord{}, err
+	}
+	return storage.CertificateAuthorityRecord{}, storage.ErrNotFound
+}
+
+func (authorityCancellationStore) PutCertificateAuthority(ctx context.Context, _ storage.CertificateAuthorityRecord) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// TestLoadOrCreateCertificateAuthority_RespectsContextCancellation pins
+// Plan 3 Task 3: the CA loader must propagate caller ctx so a Close()
+// during a wedged GetCertificateAuthority aborts the storage call.
+func TestLoadOrCreateCertificateAuthority_RespectsContextCancellation(t *testing.T) {
+	now := time.Date(2026, time.April, 17, 9, 0, 0, 0, time.UTC)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := loadOrCreateCertificateAuthority(ctx, authorityCancellationStore{}, now, "")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("loadOrCreateCertificateAuthority error = %v, want context.Canceled", err)
+	}
+}
+
 // TestLegacyEnc1WithoutKeyFailsFast verifies that a legacy ENC:v1 blob with
 // no --encryption-key-file configured produces a fatal startup error instead
 // of silently continuing with the weaker derivation. (P2-SEC-05)
@@ -145,7 +178,7 @@ func TestLegacyEnc1WithoutKeyFailsFast(t *testing.T) {
 
 	seedLegacyEnc1CA(t, store, "doesnt-matter", now)
 
-	_, err = loadOrCreateCertificateAuthority(store, now, "")
+	_, err = loadOrCreateCertificateAuthority(context.Background(), store, now, "")
 	if err == nil {
 		t.Fatal("loadOrCreateCertificateAuthority(ENC:v1, no key) error = nil, want fatal")
 	}

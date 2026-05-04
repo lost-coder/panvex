@@ -40,7 +40,7 @@ func TestDeleteClientPersistsStateBeforeJob(t *testing.T) {
 	persistErr := errors.New("persist failure injected")
 	failing := &failingStore{Store: baseStore, putClientErr: persistErr}
 
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: failing,
@@ -120,7 +120,7 @@ func TestDeleteClientPersistsStateBeforeJob(t *testing.T) {
 func TestResolveClientIDByNameHitsFleetGroupAssignment(t *testing.T) {
 	now := time.Date(2026, time.April, 17, 12, 30, 0, 0, time.UTC)
 
-	server := New(Options{
+	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now: func() time.Time { return now },
 	})

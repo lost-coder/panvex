@@ -85,7 +85,15 @@ func runServe(args []string) error {
 	}
 	restartRequests := make(chan struct{}, 1)
 
-	api := newAPIServer(options, store, logger, panelRuntime, restartRequests)
+	api, err := newAPIServer(options, store, logger, panelRuntime, restartRequests)
+	if err != nil {
+		// Plan 3 Task 4 (Q-7): server.New now returns boot-time
+		// initialisation failures (CSRF/HKDF/vault/log-hash key)
+		// instead of panicking. Surface them as a normal CLI error
+		// path so the operator gets a clean message and a non-zero
+		// exit instead of a stack trace.
+		return fmt.Errorf("control-plane init: %w", err)
+	}
 	// S-07: opt-in separate-listener pprof. PANVEX_PPROF_ADDR (e.g.
 	// 127.0.0.1:6060) tells the panel to skip the admin-router /debug/pprof
 	// registration and bring up a dedicated loopback listener instead.
@@ -241,14 +249,17 @@ func runServe(args []string) error {
 }
 
 // newAPIServer wires the high-level server.Server with options, runtime
-// dependencies, and the restart-request signalling channel.
+// dependencies, and the restart-request signalling channel. Returns an
+// error if server.New fails to initialise its boot-time secrets (Plan
+// 3 Task 4 / Q-7) instead of relying on the previous panic-recovery
+// path.
 func newAPIServer(
 	options serveConfig,
 	store storage.Store,
 	logger *slog.Logger,
 	panelRuntime server.PanelRuntime,
 	restartRequests chan<- struct{},
-) *server.Server {
+) (*server.Server, error) {
 	// The Prometheus /metrics scrape endpoint is a silent opt-in: when the
 	// operator sets PANVEX_METRICS_SCRAPE_TOKEN the route is registered and
 	// requires that bearer token; when unset, nothing is exposed. Accepted

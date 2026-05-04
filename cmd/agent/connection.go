@@ -42,7 +42,7 @@ func selectTransport(creds agentstate.Credentials, dialCfg agentTransport.DialCo
 	return agentTransport.NewDialTransport(dialCfg), nil
 }
 
-func runConnection(gatewayAddr string, serverName string, stateFile string, credentialsState agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule, clientDataConcurrency int, tr *transportReloadState) (agentstate.Credentials, error) {
+func runConnection(supervisorCtx context.Context, gatewayAddr string, serverName string, stateFile string, credentialsState agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule, clientDataConcurrency int, tr *transportReloadState) (agentstate.Credentials, error) {
 	certificate, err := tls.X509KeyPair([]byte(credentialsState.CertificatePEM), []byte(credentialsState.PrivateKeyPEM))
 	if err != nil {
 		return credentialsState, err
@@ -61,20 +61,39 @@ func runConnection(gatewayAddr string, serverName string, stateFile string, cred
 		return credentialsState, err
 	}
 
+	// Derive a cancellable ctx from supervisorCtx for the dial / accept
+	// step so SIGTERM during connect tears it down promptly. Previously
+	// this was context.Background(), which left the dial blocked until
+	// gatewayStreamConnectTimeout.
+	dialCtx, cancelDial := context.WithCancel(supervisorCtx)
+	defer cancelDial()
+
 	var updatedCredentials agentstate.Credentials
-	runErr := t.RunOnce(context.Background(), func(_ context.Context, stream agentTransport.BidiStream, client gatewayrpc.AgentGatewayClient) error {
+	runErr := t.RunOnce(dialCtx, func(_ context.Context, stream agentTransport.BidiStream, client gatewayrpc.AgentGatewayClient) error {
 		// gosec G706: slog uses structured key/value attributes — neither agent
 		// id nor gateway address is interpreted as a format string, so the
 		// taint-analysis warning is a false positive.
 		//nolint:gosec // G706: structured logging, no format-string injection vector
 		slog.Info("connected to control-plane", "agent_id", agent.AgentID(), "gateway", gatewayAddr)
 
-		// Derive the connection context from the stream. The concrete stream
-		// returned by client.Connect implements grpc.ClientStream which exposes
-		// Context(); we type-assert to obtain it and fall back to Background().
-		streamCtx := context.Background()
+		// Derive the connection context from the supervisor ctx so SIGTERM
+		// reaches every per-connection worker (outbound pump, inbound pump,
+		// job workers, polling loops). The stream's own ctx (when
+		// available) is composed in too so a server-side close still
+		// tears the connection down.
+		streamCtx, streamCancel := context.WithCancel(supervisorCtx)
+		defer streamCancel()
 		if cs, ok := stream.(interface{ Context() context.Context }); ok {
-			streamCtx = cs.Context()
+			// Propagate stream cancellation into streamCtx without
+			// replacing the supervisor parentage.
+			scStream := cs.Context()
+			go func() {
+				select {
+				case <-scStream.Done():
+					streamCancel()
+				case <-streamCtx.Done():
+				}
+			}()
 		}
 		connectionCtx, cancelConnection := context.WithCancel(streamCtx)
 		defer cancelConnection()

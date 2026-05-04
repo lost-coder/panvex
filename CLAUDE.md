@@ -140,3 +140,12 @@ POSTGRES_PASSWORD=... PANVEX_ENCRYPTION_KEY=... \
 # Bootstrap first admin (SQLite default)
 go run ./cmd/control-plane bootstrap-admin -username admin -password '<pw>'
 ```
+
+## Context Propagation
+
+- `Server.serverCtx` is the lifecycle root context, created in `New()` and cancelled by `Close()` (idempotent via `sync.Once`).
+- `Server.Context()` returns `serverCtx`, or `context.Background()` if the server was constructed without going through `New()` (defensive for test fixtures).
+- All long-lived workers (rollup, metrics-poller, fleet-ensure, lockout-restore, batch-writer drain) MUST derive their context from `s.serverCtx` (or in shutdown paths, from `context.WithoutCancel(s.serverCtx)` when the parent has already been cancelled — see `lifecycle.go: Close`).
+- HTTP/gRPC handlers MUST use `r.Context()` (or stream ctx) — never `context.Background()`.
+- Boot-only paths (`New`, migrations) accept a caller-supplied ctx (typically `bootCtx` derived from `s.serverCtx`); never use `context.Background()` literal.
+- `golangci-lint noctx` enforces this; suppression `//nolint:noctx // reason:` requires an explicit rationale.

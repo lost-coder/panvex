@@ -73,7 +73,10 @@ func (s *Server) restoreRetentionSettings() error {
 	if s.store == nil {
 		return nil
 	}
-	record, err := s.store.GetRetentionSettings(context.Background())
+	// ctx is the boot-time lifecycle context (s.serverCtx) so a Close()
+	// during a slow GetRetentionSettings storage call aborts the read
+	// instead of holding the constructor open (Plan 3 / BP-01).
+	record, err := s.store.GetRetentionSettings(s.Context())
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			return nil
