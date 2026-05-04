@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/lost-coder/panvex/internal/controlplane/geoip"
@@ -145,5 +146,63 @@ func TestDownloaderHTTPErrorPropagates(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+// TestDownloaderConcurrentFetchesShareDestSafely guards against the
+// race that surfaces when the background updater tick and a manual
+// "Update now" both fire for the same Kind: with a single
+// `<dest>.tmp` filename plus `O_TRUNC`, the second open clobbers the
+// first's bytes mid-write. CreateTemp gives each fetch a unique
+// suffix so both can complete cleanly and one rename wins.
+func TestDownloaderConcurrentFetchesShareDestSafely(t *testing.T) {
+	body := loadFixture(t, "GeoLite2-City-Test.mmdb")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "city.mmdb")
+	d := geoip.NewDownloader(http.DefaultClient)
+
+	const N = 6
+	var wg sync.WaitGroup
+	errs := make([]error, N)
+	for i := 0; i < N; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, err := d.Fetch(context.Background(), geoip.FetchRequest{
+				URL:  srv.URL,
+				Dest: dest,
+				Kind: geoip.KindCity,
+			})
+			errs[i] = err
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("Fetch[%d]: %v", i, err)
+		}
+	}
+	got, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("read dest: %v", err)
+	}
+	if len(got) != len(body) {
+		t.Errorf("dest size = %d, want %d", len(got), len(body))
+	}
+
+	// No tmp files should survive — every successful Fetch renames its
+	// own tmp away, and any losers in a same-name race wouldn't exist
+	// anyway. Glob to catch the random suffix.
+	leftovers, _ := filepath.Glob(filepath.Join(dir, "*.tmp.*"))
+	if len(leftovers) > 0 {
+		t.Errorf("tmp leftovers: %v", leftovers)
 	}
 }

@@ -68,15 +68,21 @@ func (d *Downloader) Fetch(ctx context.Context, req FetchRequest) (FetchResult, 
 		return FetchResult{}, fmt.Errorf("get %s: status %d", req.URL, resp.StatusCode)
 	}
 
-	if mkErr := os.MkdirAll(filepath.Dir(req.Dest), 0o750); mkErr != nil {
+	parent := filepath.Dir(req.Dest)
+	if mkErr := os.MkdirAll(parent, 0o750); mkErr != nil {
 		return FetchResult{}, fmt.Errorf("mkdir: %w", mkErr)
 	}
 
-	tmp := req.Dest + ".tmp"
-	tmpFile, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600) //nolint:gosec // G304: dest path is controlled by Manager via paths.go, not user input
+	// CreateTemp generates a unique suffix per call (mode 0o600). This
+	// matters because two concurrent fetches for the same Kind would
+	// otherwise share `<dest>.tmp` — `O_TRUNC` from the second open
+	// would clobber the first's in-flight bytes, leaving the verifier
+	// to read a half-written file.
+	tmpFile, err := os.CreateTemp(parent, filepath.Base(req.Dest)+".tmp.*")
 	if err != nil {
 		return FetchResult{}, fmt.Errorf("open tmp: %w", err)
 	}
+	tmp := tmpFile.Name()
 	cleanup := func() { _ = tmpFile.Close(); _ = os.Remove(tmp) }
 
 	n, copyErr := io.Copy(tmpFile, resp.Body)
