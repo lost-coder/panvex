@@ -51,6 +51,11 @@ func (s *Store) GetJobByIdempotencyKey(ctx context.Context, idempotencyKey strin
 // pagination. Phase-3 §3.1 (continued): wired through dbsqlc.ListJobs;
 // the SQL definition in db/queries/jobs.sql is the single source of
 // truth for column set + ORDER BY.
+//
+// S25 T1: defensive cap. dbsqlc.ListJobs is unbounded; we read into a slice
+// and trim to DefaultListLimit so a long-lived control plane cannot stream
+// millions of rows even if a caller forgets to paginate. Operator-facing
+// list APIs should call ListJobsCursor instead.
 func (s *Store) ListJobs(ctx context.Context) ([]storage.JobRecord, error) {
 	if s.sqlDB == nil {
 		return nil, errTxBoundStore
@@ -59,11 +64,77 @@ func (s *Store) ListJobs(ctx context.Context) ([]storage.JobRecord, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(rows) > storage.DefaultListLimit {
+		rows = rows[:storage.DefaultListLimit]
+	}
 	result := make([]storage.JobRecord, 0, len(rows))
 	for _, row := range rows {
 		result = append(result, jobRecordFromRow(row))
 	}
 	return result, nil
+}
+
+// ListJobsCursor returns one keyset-paginated page of jobs in (created_at
+// DESC, id DESC) order. See storage.JobStore for the contract. The query is
+// hand-written rather than going through sqlc so the cursor variant can ship
+// without regenerating the entire dbsqlc tree (sqlc parametrises tuple
+// comparisons differently across drivers — keeping this local keeps the
+// change footprint small).
+func (s *Store) ListJobsCursor(ctx context.Context, params storage.ListJobsCursorParams) ([]storage.JobRecord, storage.ListJobsCursorParams, error) {
+	if s.sqlDB == nil {
+		return nil, storage.ListJobsCursorParams{}, errTxBoundStore
+	}
+	limit := storage.NormalizeCursorLimit(params.Limit)
+
+	var rows *sql.Rows
+	var err error
+	if params.AfterID == "" && params.AfterCreatedAt.IsZero() {
+		rows, err = s.sqlDB.QueryContext(ctx, `
+			SELECT id, action, idempotency_key, actor_id, status, created_at, ttl_nanos, payload_json
+			FROM jobs
+			ORDER BY created_at DESC, id DESC
+			LIMIT $1
+		`, limit+1)
+	} else {
+		rows, err = s.sqlDB.QueryContext(ctx, `
+			SELECT id, action, idempotency_key, actor_id, status, created_at, ttl_nanos, payload_json
+			FROM jobs
+			WHERE (created_at, id) < ($1, $2)
+			ORDER BY created_at DESC, id DESC
+			LIMIT $3
+		`, params.AfterCreatedAt.UTC(), params.AfterID, limit+1)
+	}
+	if err != nil {
+		return nil, storage.ListJobsCursorParams{}, err
+	}
+	defer rows.Close()
+
+	result := make([]storage.JobRecord, 0, limit)
+	for rows.Next() {
+		var job storage.JobRecord
+		var ttlNanos int64
+		if err := rows.Scan(&job.ID, &job.Action, &job.IdempotencyKey, &job.ActorID, &job.Status, &job.CreatedAt, &ttlNanos, &job.PayloadJSON); err != nil {
+			return nil, storage.ListJobsCursorParams{}, err
+		}
+		job.CreatedAt = job.CreatedAt.UTC()
+		job.TTL = time.Duration(ttlNanos)
+		result = append(result, job)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, storage.ListJobsCursorParams{}, err
+	}
+
+	var next storage.ListJobsCursorParams
+	if len(result) > limit {
+		result = result[:limit]
+		last := result[len(result)-1]
+		next = storage.ListJobsCursorParams{
+			Limit:          limit,
+			AfterCreatedAt: last.CreatedAt,
+			AfterID:        last.ID,
+		}
+	}
+	return result, next, nil
 }
 
 // jobRecordFromRow bridges the sqlc-emitted Job to the domain

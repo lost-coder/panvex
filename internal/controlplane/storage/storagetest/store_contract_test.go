@@ -810,6 +810,44 @@ func (s *memoryStore) ListJobs(_ context.Context) ([]storage.JobRecord, error) {
 	return result, nil
 }
 
+// ListJobsCursor mirrors the SQL contract: (created_at DESC, id DESC) order,
+// limit+1 fetch to detect "more". The memory store keeps jobs in a map so
+// we materialise + sort each call; that's fine for tests since the volume
+// is tiny.
+func (s *memoryStore) ListJobsCursor(_ context.Context, params storage.ListJobsCursorParams) ([]storage.JobRecord, storage.ListJobsCursorParams, error) {
+	limit := storage.NormalizeCursorLimit(params.Limit)
+	all := make([]storage.JobRecord, 0, len(s.jobs))
+	for _, job := range s.jobs {
+		all = append(all, job)
+	}
+	// Sort newest-first so iteration mirrors the SQL ORDER BY.
+	sortJobsDesc(all)
+
+	out := make([]storage.JobRecord, 0, limit+1)
+	for _, job := range all {
+		if !params.AfterCreatedAt.IsZero() || params.AfterID != "" {
+			if !jobAfterCursor(job, params.AfterCreatedAt, params.AfterID) {
+				continue
+			}
+		}
+		out = append(out, job)
+		if len(out) > limit {
+			break
+		}
+	}
+	var next storage.ListJobsCursorParams
+	if len(out) > limit {
+		out = out[:limit]
+		last := out[len(out)-1]
+		next = storage.ListJobsCursorParams{
+			Limit:          limit,
+			AfterCreatedAt: last.CreatedAt,
+			AfterID:        last.ID,
+		}
+	}
+	return out, next, nil
+}
+
 func (s *memoryStore) PutJobTarget(_ context.Context, target storage.JobTargetRecord) error {
 	s.jobTargets[fmt.Sprintf("%s/%s", target.JobID, target.AgentID)] = target
 	return nil
@@ -845,6 +883,36 @@ func (s *memoryStore) ListAuditEvents(_ context.Context, limit int) ([]storage.A
 		events = events[len(events)-limit:]
 	}
 	return events, nil
+}
+
+func (s *memoryStore) ListAuditEventsCursor(_ context.Context, params storage.ListAuditEventsCursorParams) ([]storage.AuditEventRecord, storage.ListAuditEventsCursorParams, error) {
+	limit := storage.NormalizeCursorLimit(params.Limit)
+	all := append([]storage.AuditEventRecord(nil), s.auditEvents...)
+	sortAuditDesc(all)
+
+	out := make([]storage.AuditEventRecord, 0, limit+1)
+	for _, e := range all {
+		if !params.AfterCreatedAt.IsZero() || params.AfterID != "" {
+			if !auditAfterCursor(e, params.AfterCreatedAt, params.AfterID) {
+				continue
+			}
+		}
+		out = append(out, e)
+		if len(out) > limit {
+			break
+		}
+	}
+	var next storage.ListAuditEventsCursorParams
+	if len(out) > limit {
+		out = out[:limit]
+		last := out[len(out)-1]
+		next = storage.ListAuditEventsCursorParams{
+			Limit:          limit,
+			AfterCreatedAt: last.CreatedAt,
+			AfterID:        last.ID,
+		}
+	}
+	return out, next, nil
 }
 
 func (s *memoryStore) PruneAuditEvents(_ context.Context, before time.Time) (int64, error) {

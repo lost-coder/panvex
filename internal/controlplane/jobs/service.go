@@ -1297,6 +1297,13 @@ func jobFromRecord(record storage.JobRecord) Job {
 	}
 }
 
+// JobFromRecord exposes the JobRecord -> Job transcription so HTTP-layer
+// cursor pagination (S25 T1) can render store rows in the same shape as the
+// in-memory Service uses, without duplicating the field map.
+func JobFromRecord(record storage.JobRecord) Job {
+	return jobFromRecord(record)
+}
+
 func jobTargetToRecord(jobID string, target JobTarget) storage.JobTargetRecord {
 	return storage.JobTargetRecord{
 		JobID:      jobID,
