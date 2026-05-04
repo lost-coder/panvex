@@ -2,10 +2,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { apiClient, SESSION_EXPIRED_EVENT } from "@/shared/api/api";
+import { eventEnvelopeSchema } from "@/shared/api/schemas/events";
 import { invalidateTelemetryQueries } from "@/shared/events/telemetry-query-invalidation";
 import { buildEventsURL, resolveConfiguredRootPath } from "@/shared/lib/runtime-path";
 import {
-  type EventEnvelope,
   type EventInvalidation,
   invalidationsForEvent,
   isKnownEventType,
@@ -51,7 +51,11 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
     let stopped = false;
     const applyInvalidation = async (invalidation: EventInvalidation) => {
       for (const key of invalidation.keys) {
-        await queryClient.invalidateQueries({ queryKey: key as unknown[] });
+        // Q-10: queryKey was previously typed via `key as unknown[]`. The
+        // input is `readonly unknown[]` from our own EventInvalidation map
+        // (not runtime data), but TanStack expects a mutable `unknown[]` —
+        // copy into a fresh array instead of an unchecked cast.
+        await queryClient.invalidateQueries({ queryKey: [...key] });
         // "clients" sweep also refreshes per-client detail queries
         // (["client", id]) so the detail view updates in-flight.
         if (key[0] === "clients") {
@@ -90,9 +94,31 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
         setStatus("open");
       };
       socket.onmessage = (message) => {
-        let event: EventEnvelope;
-        try { event = JSON.parse(message.data as string) as EventEnvelope; } catch { return; }
-        if (typeof event?.type !== "string") { return; }
+        // Q-10 (audit, HIGH): runtime-validate the WebSocket payload via
+        // Zod before treating it as a typed EventEnvelope. The previous
+        // `JSON.parse(...) as EventEnvelope` cast was the same DF-10
+        // failure mode the HTTP layer was hardened against — a malformed
+        // or hostile payload would flow through with a TS shape it didn't
+        // actually have. On parse failure we drop the event silently
+        // (DEV-only console.debug) so the synchronizer never crashes.
+        let raw: unknown;
+        try { raw = JSON.parse(message.data as string); } catch { return; }
+        const result = eventEnvelopeSchema.safeParse(raw);
+        if (!result.success) {
+          // Mirror the panvex-ui dev-flag pattern (see ui/base/sheet.tsx):
+          // `import.meta.env.DEV` is Vite's compile-time dev flag; the
+          // narrow cast keeps TypeScript happy without a global ambient
+          // declaration. Drops out of production builds via constant
+          // folding.
+          if (
+            import.meta !== undefined &&
+            (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV
+          ) {
+            console.debug("events: malformed event envelope, dropping", result.error);
+          }
+          return;
+        }
+        const event = result.data;
         if (!isKnownEventType(event.type) && console !== undefined) {
           console.debug("events: unknown event type, falling back to broad sweep", event.type);
         }

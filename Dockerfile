@@ -67,13 +67,35 @@ ENTRYPOINT ["./panvex-control-plane"]
 
 FROM nginx:1.29-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de AS web
 
+# BP-Medium: switch the nginx stage from the default root-PID-1 entrypoint
+# to running as the built-in unprivileged `nginx` user (UID 101). The
+# upstream image starts as root only to bind :80 before dropping to the
+# `nginx` worker — we don't need that, our default.conf binds a high port
+# (:8080) so no NET_BIND_SERVICE capability is required and the container
+# can run with `runAsNonRoot: true` under PodSecurity `restricted`.
+#
+# The default.conf we ship is rewritten to `listen 8080;` to match. The
+# Helm chart's service.httpPort is set to 8080 to match the container port.
 COPY deploy/nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY --from=web-builder /src/cmd/control-plane/.embedded-ui /usr/share/nginx/html
 
-EXPOSE 80
+# nginx writes pid/access/error logs and creates several runtime
+# directories (/var/cache/nginx, /var/run) at startup. The base image
+# leaves these owned by root; chown them to the unprivileged `nginx`
+# user so the worker can write without an explicit volume mount, and
+# move the pid file out of /var/run/ (which is symlinked to /run/ and
+# is root-owned on alpine).
+RUN sed -i 's|listen 80;|listen 8080;|' /etc/nginx/conf.d/default.conf && \
+    sed -i 's|^pid .*|pid /tmp/nginx.pid;|' /etc/nginx/nginx.conf && \
+    chown -R nginx:nginx /usr/share/nginx/html /var/cache/nginx /etc/nginx/conf.d && \
+    touch /tmp/nginx.pid && chown nginx:nginx /tmp/nginx.pid
+
+USER nginx
+
+EXPOSE 8080
 
 # nginx is a pass-through static/proxy layer. We probe the local nginx
 # port so the container reports unhealthy when the worker has crashed
 # even though the backend may still be reachable from another path.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget -q -O - http://127.0.0.1:80/ >/dev/null 2>&1 || exit 1
+    CMD wget -q -O - http://127.0.0.1:8080/ >/dev/null 2>&1 || exit 1

@@ -8,6 +8,7 @@ import {
   type DiscoveredGroupCounts,
 } from "@/features/clients/lib/groupDiscovered";
 import { useToast } from "@/app/providers/ToastProvider";
+import { clientsKeys } from "@/features/clients/queryKeys";
 import { useEventAwareInterval } from "@/shared/hooks/useEventAwareInterval";
 
 /**
@@ -37,7 +38,7 @@ export function useDiscoveredClients() {
   const refetchInterval = useEventAwareInterval(90_000, 30_000);
 
   const query = useQuery({
-    queryKey: ["discovered-clients"],
+    queryKey: clientsKeys.discovered,
     queryFn: () => apiClient.discoveredClients(),
     refetchInterval,
   });
@@ -54,8 +55,8 @@ export function useDiscoveredClients() {
   const adoptMutation = useMutation({
     mutationFn: (id: string) => apiClient.adoptDiscoveredClient(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["discovered-clients"] });
-      queryClient.invalidateQueries({ queryKey: ["clients"] });
+      queryClient.invalidateQueries({ queryKey: clientsKeys.discovered });
+      queryClient.invalidateQueries({ queryKey: clientsKeys.all });
     },
     onError: (err: Error) => toast.error(`Adopt failed: ${err.message}`),
   });
@@ -63,7 +64,7 @@ export function useDiscoveredClients() {
   const ignoreMutation = useMutation({
     mutationFn: (id: string) => apiClient.ignoreDiscoveredClient(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["discovered-clients"] });
+      queryClient.invalidateQueries({ queryKey: clientsKeys.discovered });
     },
     onError: (err: Error) => toast.error(`Ignore failed: ${err.message}`),
   });
@@ -94,8 +95,8 @@ export function useDiscoveredClients() {
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["discovered-clients"] });
-      queryClient.invalidateQueries({ queryKey: ["clients"] });
+      queryClient.invalidateQueries({ queryKey: clientsKeys.discovered });
+      queryClient.invalidateQueries({ queryKey: clientsKeys.all });
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -111,7 +112,7 @@ export function useDiscoveredClients() {
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["discovered-clients"] });
+      queryClient.invalidateQueries({ queryKey: clientsKeys.discovered });
     },
     onError: (err: Error) => toast.error(err.message),
   });

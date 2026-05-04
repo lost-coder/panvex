@@ -5,7 +5,9 @@ import { ClientDetailPage } from "@/features/clients/ClientDetailPage";
 import { useClientDetail } from "./hooks/useClientDetail";
 import { useClientMutations } from "./hooks/useClientMutations";
 import { useClientIPHistory } from "./hooks/useClientIPHistory";
+import { clientsKeys } from "@/features/clients/queryKeys";
 import { useFleetGroups } from "@/features/servers/hooks/useFleetGroups";
+import { agentsKeys } from "@/features/servers/queryKeys";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useConfirm } from "@/app/providers/ConfirmProvider";
 import { apiClient } from "@/shared/api/api";
@@ -29,7 +31,7 @@ export function ClientDetailContainer() {
   // is shared when an operator bounces between /servers and a client
   // detail page. See backend-followup #5.
   const agentsQuery = useQuery({
-    queryKey: ["agents"],
+    queryKey: agentsKeys.list(),
     queryFn: () => apiClient.agents(),
     staleTime: 30_000,
   });
@@ -80,8 +82,8 @@ export function ClientDetailContainer() {
       return apiClient.updateClient(raw.id, payload);
     },
     onSuccess: () => {
-      if (clientId) qc.invalidateQueries({ queryKey: ["client", clientId] });
-      qc.invalidateQueries({ queryKey: ["clients"] });
+      if (clientId) qc.invalidateQueries({ queryKey: clientsKeys.detail(clientId) });
+      qc.invalidateQueries({ queryKey: clientsKeys.all });
     },
   });
 

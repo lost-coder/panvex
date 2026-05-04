@@ -8,6 +8,7 @@ import {
   type ForbiddenEventDetail,
   type MeResponse,
 } from "@/shared/api/api";
+import { authKeys } from "@/features/auth/queryKeys";
 import { useToast } from "@/app/providers/ToastProvider";
 
 interface AuthContextValue {
@@ -24,7 +25,7 @@ const AuthContext = React.createContext<AuthContextValue>({
 
 export function AuthProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   const { data, isLoading } = useQuery({
-    queryKey: ["me"],
+    queryKey: authKeys.me(),
     queryFn: () => apiClient.me(),
     retry: false,
   });

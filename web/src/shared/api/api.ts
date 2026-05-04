@@ -127,25 +127,33 @@ export const apiClient = {
 
 /*
  * =============================================================================
- * P2-FE-01 — Zod runtime validation migration status.
+ * P2-FE-01 / BP-02 — Zod runtime validation migration status.
  * =============================================================================
  *
- * Migrated (schema-validated):
- *   - /auth/me                  meResponseSchema
- *   - /agents                   agentListSchema
- *   - /clients                  clientListSchema
- *   - /discovered-clients       discoveredClientListSchema
- *   - /version                  versionSchema (discriminated viewer/operator)
- *   - /control-room             controlRoomSchema
- *   - /telemetry/dashboard      dashboardSchema
+ * All response endpoints with a JSON body now flow through `parseWithSchema`,
+ * and the bulk of the request payloads are validated via `encodeRequest`.
  *
- * Pending schema wiring (next priority order):
+ * Remaining unvalidated request payloads (all responses are validated):
  *
- *   1. /telemetry/servers       derive from dashboardSchema
- *   2. /telemetry/servers/{id}  new schema (large diagnostics payload)
- *   3. /clients/{id}            clientSchema (already drafted, not wired
- *                               because write endpoints share the type)
- *   4. /users, /jobs, /audit    medium priority
- *   5. /settings/*              low priority (admin-only)
- *   6. /fleet, /fleet-groups    low priority (small shapes)
+ *   - /settings/retention (PUT)            small admin-only shape
+ *   - /settings/updates (PUT)              wide config blob, validated via
+ *                                          updateSettingsRequestSchema in the
+ *                                          form layer; left as raw POST here
+ *                                          because the request type already
+ *                                          mirrors the runtime type 1:1
+ *   - /settings/panel/update (POST)        BUG: client sends `{version}` but
+ *                                          server expects `{target_version}`.
+ *                                          Adding a request schema here would
+ *                                          mask the bug — fix the client first
+ *                                          (separate ticket), then migrate.
+ *   - /fleet-groups/{id}/integrations*     four endpoints; medium-shaped
+ *                                          payloads with a free-form `config`
+ *                                          (json.RawMessage on the server). A
+ *                                          single integrationConfig union schema
+ *                                          would cover all four — defer to the
+ *                                          integrations refactor.
+ *   - /integration-providers (POST/PATCH)  same `config` blob constraint as
+ *                                          above; moved with the same refactor.
+ *
+ * Everything else is migrated as of BP-02 final tail.
  */

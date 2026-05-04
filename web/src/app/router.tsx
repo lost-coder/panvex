@@ -6,7 +6,8 @@
 // only — the cost is HMR latency on router edits, not production
 // behaviour.
 /* eslint-disable react-refresh/only-export-components */
-import { QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { QueryClient} from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Outlet,
   createRootRouteWithContext,
@@ -29,6 +30,7 @@ import { ShortcutsOverlay } from "@/components/ShortcutsOverlay";
 import { ThemeToggleButton } from "@/components/ThemeToggleButton";
 import { WsStatusBanner } from "@/components/WsStatusBanner";
 import { apiClient } from "@/shared/api/api";
+import { authKeys } from "@/features/auth/queryKeys";
 import { useFocusMainOnRouteChange, useKeyboardShortcut } from "@/shared/hooks";
 import { resolveConfiguredRootPath, getRouterBasepath } from "@/shared/lib/runtime-path";
 
@@ -71,7 +73,7 @@ const NAV_ITEMS: NavItem[] = [...NAV_PRIMARY, ...NAV_SECONDARY];
 
 function ProtectedShell() {
   const { data: me } = useQuery({
-    queryKey: ["me"],
+    queryKey: authKeys.me(),
     queryFn: () => apiClient.me(),
   });
   const navigate = useNavigate();
@@ -228,13 +230,14 @@ const shellRoute = createRoute({
   component: ProtectedShell,
   // P2-FE-05 / M-P5: route into the QueryClient cache instead of firing a
   // fresh `apiClient.me()` on every navigation. ensureQueryData reuses the
-  // same ["me"] entry that ProtectedShell/AuthProvider already read, so a
-  // navigation inside the 30s staleTime is a cache hit — no extra round
-  // trip. A 401 still rejects, and the catch branch redirects to /login.
+  // same authKeys.me() entry that ProtectedShell/AuthProvider already read,
+  // so a navigation inside the 30s staleTime is a cache hit — no extra
+  // round trip. A 401 still rejects, and the catch branch redirects to
+  // /login.
   beforeLoad: async ({ context }) => {
     try {
       await context.queryClient.ensureQueryData({
-        queryKey: ["me"],
+        queryKey: authKeys.me(),
         queryFn: () => apiClient.me(),
         staleTime: 30_000,
       });

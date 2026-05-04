@@ -1,5 +1,6 @@
-import { api, apiBasePath } from "./http";
+import { api, apiBasePath, encodeRequest } from "./http";
 import {
+  agentUpdateRequestSchema,
   checkForUpdatesResponseSchema,
   updateAgentResponseSchema,
   updatePanelResponseSchema,
@@ -66,7 +67,14 @@ export const updatesApi = {
   updateAgent: (agentId: string, version?: string) =>
     api<{ job_id: string; status: string; version: string }>(
       `${apiBasePath}/agents/${agentId}/update`,
-      { method: "POST", body: JSON.stringify({ version: version || "" }) },
+      {
+        method: "POST",
+        body: encodeRequest(
+          `${apiBasePath}/agents/${agentId}/update`,
+          agentUpdateRequestSchema,
+          { version: version || "" },
+        ),
+      },
       updateAgentResponseSchema,
     ),
 };

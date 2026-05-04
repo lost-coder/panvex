@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ClientFormData } from "@/shared/api/types-pages/pages";
 import { apiClient } from "@/shared/api/api";
 import type { ClientInput } from "@/shared/api/api";
+import { clientsKeys } from "@/features/clients/queryKeys";
 
 function formToInput(form: ClientFormData): ClientInput {
   return {
@@ -23,7 +24,7 @@ export function useClientCreate() {
   const mutation = useMutation({
     mutationFn: (data: ClientFormData) => apiClient.createClient(formToInput(data)),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["clients"] });
+      qc.invalidateQueries({ queryKey: clientsKeys.all });
     },
   });
 

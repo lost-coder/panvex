@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { UserListItem } from "@/shared/api/types-pages/pages";
 import { apiClient } from "@/shared/api/api";
+import { usersKeys } from "@/features/users/queryKeys";
 import { useEventAwareInterval } from "@/shared/hooks/useEventAwareInterval";
 
 function transformUsers(raw: Awaited<ReturnType<typeof apiClient.users>>): UserListItem[] {
@@ -18,7 +19,7 @@ export function useUsers() {
   const refetchInterval = useEventAwareInterval(90_000, 30_000);
 
   const query = useQuery({
-    queryKey: ["users"],
+    queryKey: usersKeys.list(),
     queryFn: () => apiClient.users(),
     refetchInterval,
   });
@@ -28,23 +29,23 @@ export function useUsers() {
   const createUser = useMutation({
     mutationFn: (data: { username: string; password: string; role: string }) =>
       apiClient.createUser(data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: usersKeys.all }),
   });
 
   const updateUser = useMutation({
     mutationFn: ({ userId, data }: { userId: string; data: { username: string; role: string; new_password?: string } }) =>
       apiClient.updateUser(userId, data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: usersKeys.all }),
   });
 
   const deleteUser = useMutation({
     mutationFn: (userId: string) => apiClient.deleteUser(userId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: usersKeys.all }),
   });
 
   const resetTotp = useMutation({
     mutationFn: (userId: string) => apiClient.resetUserTotp(userId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: usersKeys.all }),
   });
 
   return { users, isLoading: query.isLoading, createUser, updateUser, deleteUser, resetTotp };

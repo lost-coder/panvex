@@ -2,6 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import type { JobListItem, AuditListItem } from "@/shared/api/types-pages/pages";
 import { apiClient, type Job } from "@/shared/api/api";
 import { useProfile } from "@/features/auth/hooks/useProfile";
+import { clientsKeys } from "@/features/clients/queryKeys";
+import { agentsKeys } from "@/features/servers/queryKeys";
+import { usersKeys } from "@/features/users/queryKeys";
 import { useEventAwareInterval } from "@/shared/hooks/useEventAwareInterval";
 
 // Pull the first failing target's result_text as the job's failure reason.
@@ -73,21 +76,24 @@ export function useActivity() {
   // Lookup tables. /api/users is admin-only — skip the fetch for non-admins to
   // avoid a 403 in the query error channel. Agents + clients are open to any
   // authenticated user, so their label maps always populate.
+  // BP-02: cross-feature lookups read keys from the owning feature's
+  // factory so the cache identity stays canonical (no string-literal
+  // drift between activity and the source feature's hooks).
   const usersQuery = useQuery({
-    queryKey: ["users"],
+    queryKey: usersKeys.list(),
     queryFn: () => apiClient.users(),
     enabled: isAdmin,
     staleTime: 60_000,
   });
 
   const agentsQuery = useQuery({
-    queryKey: ["agents"],
+    queryKey: agentsKeys.list(),
     queryFn: () => apiClient.agents(),
     staleTime: 30_000,
   });
 
   const clientsQuery = useQuery({
-    queryKey: ["clients"],
+    queryKey: clientsKeys.list(),
     queryFn: () => apiClient.clients(),
     staleTime: 30_000,
   });

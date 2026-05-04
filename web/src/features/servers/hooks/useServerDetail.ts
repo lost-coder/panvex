@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { ServerDetailPageProps, InitCardProps } from "@/shared/api/types-pages/pages";
 import { apiClient } from "@/shared/api/api";
 import { useWsStatus } from "@/app/providers/EventsSynchronizer";
+import { telemetryKeys } from "@/features/servers/queryKeys";
 import { transformServerDetail, transformInitState } from "@/shared/api/transforms/servers";
 
 export function useServerDetail(serverId: string) {
@@ -11,7 +12,7 @@ export function useServerDetail(serverId: string) {
   const refetchInterval = ws.status === "open" ? 30_000 : 10_000;
 
   const query = useQuery({
-    queryKey: ["telemetry", "server", serverId],
+    queryKey: telemetryKeys.server(serverId),
     queryFn: () => apiClient.telemetryServer(serverId),
     refetchInterval,
     enabled: !!serverId,

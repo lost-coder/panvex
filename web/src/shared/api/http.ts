@@ -43,7 +43,7 @@ export interface ApiSchemaMismatchDetail {
  */
 export class ApiSchemaError extends Error {
   readonly path: string;
-  readonly cause: unknown;
+  override readonly cause: unknown;
   constructor(path: string, cause: unknown) {
     super(`Response from ${path} did not match expected schema`);
     this.name = "ApiSchemaError";
@@ -399,10 +399,15 @@ export async function api<T>(
 export function encodeRequest<T>(path: string, schema: ZodType<T>, payload: unknown): string {
   const parsed = schema.safeParse(payload);
   if (!parsed.success) {
-    console.error("[api] request schema mismatch", {
-      path,
-      issues: parsed.error.issues,
-    });
+    // Q-9: match the response-side guard at L290 — keep dev visibility
+    // for the Zod issue list but drop the noisy red error in production
+    // builds. The thrown ApiSchemaError still propagates to callers.
+    if (process.env.NODE_ENV !== "production") {
+      console.error("[api] request schema mismatch", {
+        path,
+        issues: parsed.error.issues,
+      });
+    }
     throw new ApiSchemaError(`${path} (request)`, parsed.error);
   }
   return JSON.stringify(parsed.data);

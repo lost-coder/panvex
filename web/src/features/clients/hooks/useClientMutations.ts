@@ -3,6 +3,7 @@ import type { ClientFormData } from "@/shared/api/types-pages/pages";
 import type { Client as ApiClient } from "@/shared/api/api";
 import { apiClient } from "@/shared/api/api";
 import { buildClientInput } from "@/shared/api/transforms/clients";
+import { clientsKeys } from "@/features/clients/queryKeys";
 import { useToast } from "@/app/providers/ToastProvider";
 
 // P2-FE-03: every mutation here surfaces its failure through the global
@@ -21,8 +22,8 @@ export function useClientMutations(clientId: string, rawClient: ApiClient | unde
       return apiClient.updateClient(clientId, buildClientInput(data, rawClient));
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["client", clientId] });
-      qc.invalidateQueries({ queryKey: ["clients"] });
+      qc.invalidateQueries({ queryKey: clientsKeys.detail(clientId) });
+      qc.invalidateQueries({ queryKey: clientsKeys.all });
     },
     onError: (err: Error) => {
       toast.error(err.message);
@@ -32,7 +33,7 @@ export function useClientMutations(clientId: string, rawClient: ApiClient | unde
   const rotateMutation = useMutation({
     mutationFn: () => apiClient.rotateClientSecret(clientId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["client", clientId] });
+      qc.invalidateQueries({ queryKey: clientsKeys.detail(clientId) });
     },
     onError: (err: Error) => {
       toast.error(err.message);
@@ -46,8 +47,8 @@ export function useClientMutations(clientId: string, rawClient: ApiClient | unde
   const redeployMutation = useMutation({
     mutationFn: () => apiClient.redeployClient(clientId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["client", clientId] });
-      qc.invalidateQueries({ queryKey: ["clients"] });
+      qc.invalidateQueries({ queryKey: clientsKeys.detail(clientId) });
+      qc.invalidateQueries({ queryKey: clientsKeys.all });
     },
     onError: (err: Error) => {
       toast.error(err.message);
@@ -57,7 +58,7 @@ export function useClientMutations(clientId: string, rawClient: ApiClient | unde
   const deleteMutation = useMutation({
     mutationFn: () => apiClient.deleteClient(clientId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["clients"] });
+      qc.invalidateQueries({ queryKey: clientsKeys.all });
     },
     onError: (err: Error) => {
       toast.error(err.message);
