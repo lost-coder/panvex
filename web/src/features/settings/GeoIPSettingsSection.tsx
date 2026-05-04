@@ -87,7 +87,22 @@ function GeoIPForm({
   const [draft, setDraft] = useState<GeoIPSettingsParsed>(initial.settings);
 
   function setMode(m: Mode) {
-    setDraft((d) => ({ ...d, mode: m }));
+    setDraft((d) => {
+      // The backend rejects any non-disabled mode where both sources are
+      // disabled. A fresh panel arrives with both enabled=false (zero
+      // value), and the UI doesn't expose per-source toggles, so picking
+      // a mode here implicitly enables both. Operators with custom
+      // per-source preferences will get UI toggles in a later iteration.
+      if (m !== "" && !d.city.enabled && !d.asn.enabled) {
+        return {
+          ...d,
+          mode: m,
+          city: { ...d.city, enabled: true },
+          asn: { ...d.asn, enabled: true },
+        };
+      }
+      return { ...d, mode: m };
+    });
   }
 
   function patchSrc(
