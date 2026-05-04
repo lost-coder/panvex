@@ -43,7 +43,7 @@ export interface ApiSchemaMismatchDetail {
  */
 export class ApiSchemaError extends Error {
   readonly path: string;
-  readonly cause: unknown;
+  override readonly cause: unknown;
   constructor(path: string, cause: unknown) {
     super(`Response from ${path} did not match expected schema`);
     this.name = "ApiSchemaError";
