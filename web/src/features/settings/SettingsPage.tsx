@@ -4,7 +4,6 @@
 import { useState } from "react";
 import {
   Palette,
-  Download,
   Users as UsersIcon,
   Database,
   Power,
@@ -200,16 +199,7 @@ export function SettingsPage({
                 prop is absent the section disappears cleanly instead of
                 rendering an empty card. */}
 
-            {hasAdmin && (
-              <PageSection
-                icon={Download}
-                title="Updates"
-                description="Panel + agent version management."
-                badge={<AdminBadge />}
-              >
-                {children}
-              </PageSection>
-            )}
+            {hasAdmin && children}
 
             {onManageUsers && (
               <PageSection

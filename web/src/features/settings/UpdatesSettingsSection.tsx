@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { SettingsGroup, SettingsRow, Button, Input } from "@/ui";
-import { RefreshCw } from "lucide-react";
+import { PageSection, SettingsRow, Button, Input } from "@/ui";
+import { Download, RefreshCw } from "lucide-react";
 import { useUpdates } from "@/shared/hooks/useUpdates";
 import type { UpdateSettings } from "@/shared/api/api";
 
@@ -33,7 +33,11 @@ export function UpdatesSettingsSection() {
   }
 
   return (
-    <SettingsGroup title="Updates">
+    <PageSection
+      icon={Download}
+      title="Updates"
+      description="Panel + agent version management."
+    >
       {/* Update available banner */}
       {hasNewerPanel && (
         <div className="mx-4 mt-3 rounded-lg border border-accent/30 bg-accent/5 px-4 py-3 flex items-center justify-between">
@@ -134,6 +138,6 @@ export function UpdatesSettingsSection() {
           </div>
         </div>
       )}
-    </SettingsGroup>
+    </PageSection>
   );
 }
