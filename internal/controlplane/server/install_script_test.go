@@ -2,6 +2,8 @@ package server
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -46,6 +48,58 @@ func TestInstallAgentScriptHandlerServesEmbeddedBody(t *testing.T) {
 	if !bytes.Equal(rr.Body.Bytes(), installAgentScript) {
 		t.Fatalf("body length = %d, want %d (embedded script bytes)",
 			rr.Body.Len(), len(installAgentScript))
+	}
+}
+
+// TestInstallScriptSHA256_StableHash exercises the cached hash helper. The
+// digest must be stable across calls (sync.Once) and must equal a freshly
+// computed SHA-256 over the embedded body — guards against a regression that
+// e.g. accidentally hashes a copy or applies a transformation. (S-3.)
+func TestInstallScriptSHA256_StableHash(t *testing.T) {
+	t.Parallel()
+	h1, err := installScriptSHA256()
+	if err != nil {
+		t.Fatalf("installScriptSHA256: %v", err)
+	}
+	h2, err := installScriptSHA256()
+	if err != nil {
+		t.Fatalf("installScriptSHA256 second call: %v", err)
+	}
+	if h1 != h2 {
+		t.Fatalf("hash not stable: %s vs %s", h1, h2)
+	}
+	want := sha256.Sum256(installScriptBytes)
+	if hex.EncodeToString(want[:]) != h1 {
+		t.Fatalf("hash mismatch: got %s, want %s", h1, hex.EncodeToString(want[:]))
+	}
+	if len(h1) != 64 {
+		t.Fatalf("expected 64 hex chars, got %d (%q)", len(h1), h1)
+	}
+}
+
+// TestServeInstallScript_AdvertisesSHA256Header asserts the install-script
+// handler emits X-Install-Script-SHA256 carrying the body's lowercase hex
+// digest. The header is what the bootstrap install-command embeds into the
+// curl|bash one-liner so the script self-verifies (T-5). (S-3.)
+func TestServeInstallScript_AdvertisesSHA256Header(t *testing.T) {
+	t.Parallel()
+	srv := &Server{}
+	req := httptest.NewRequest(http.MethodGet, "/install-agent.sh", nil)
+	rec := httptest.NewRecorder()
+
+	srv.handleInstallAgentScript()(rec, req)
+
+	got := rec.Header().Get("X-Install-Script-SHA256")
+	if len(got) != 64 {
+		t.Fatalf("expected 64-char hex, got %q (len=%d)", got, len(got))
+	}
+	want := sha256.Sum256(installAgentScript)
+	if got != hex.EncodeToString(want[:]) {
+		t.Fatalf("hash header mismatch: got %s, want %s", got, hex.EncodeToString(want[:]))
+	}
+	cc := rec.Header().Get("Cache-Control")
+	if !strings.Contains(cc, "must-revalidate") {
+		t.Fatalf("Cache-Control = %q, want must-revalidate", cc)
 	}
 }
 

@@ -51,6 +51,7 @@ func TestInstallCommandHappyPath(t *testing.T) {
 	}}
 	h := NewInstallCommandHandler(fake, InstallCommandConfig{
 		ScriptURL:  "https://example.com/install.sh",
+		ScriptHash: strings.Repeat("a", 64),
 		PanelCAPin: "sha256:fakepin",
 		PanelCN:    "panel.example.com",
 		PanelURL:   "panel.example.com:8443",
@@ -77,11 +78,26 @@ func TestInstallCommandHappyPath(t *testing.T) {
 		"--ca-pin=sha256:fakepin",
 		"--panel-cn=panel.example.com",
 		"--panel-url-grpc=panel.example.com:8443",
+		// Pinned-branch markers: prove the rendered command is the
+		// hash-verifying form (mktemp + sha256sum + sudo -E with the
+		// PANVEX_INSTALL_SCRIPT_SHA256 env var) rather than the legacy
+		// `curl ... | sudo bash` shape. Guards against silent regression
+		// to the unverified pipeline (HIGH-2 review feedback).
+		"mktemp",
+		"sha256sum",
+		"PANVEX_INSTALL_SCRIPT_SHA256=",
+		"sudo -E",
 	}
 	for _, p := range wantParts {
 		if !strings.Contains(resp.Command, p) {
 			t.Errorf("install command missing %q\ncmd=%s", p, resp.Command)
 		}
+	}
+	// The legacy `| sudo bash` pipeline must NOT appear when ScriptHash is
+	// set: it would imply the unverified body is being piped into a
+	// privileged shell, which is exactly the MITM hole S-3 closes.
+	if strings.Contains(resp.Command, "| sudo bash") {
+		t.Errorf("pinned-hash command unexpectedly contains legacy `| sudo bash` pipeline\ncmd=%s", resp.Command)
 	}
 	if resp.ExpiresAtUnix != time.Unix(1_000_000, 0).Add(installCommandTTL).Unix() {
 		t.Errorf("ExpiresAtUnix mismatch")
@@ -97,6 +113,51 @@ func TestInstallCommandHappyPath(t *testing.T) {
 	}
 	if !fake.last.BootstrapExpiresAt.Valid {
 		t.Errorf("expiry not marked valid")
+	}
+}
+
+// TestBuildInstallCommand_LegacyWhenHashEmpty drives the empty-ScriptHash
+// branch of buildInstallCommand. With no hash configured (test fixtures or
+// transitional deploys that have not yet wired server.InstallScriptSHA256())
+// the legacy `curl ... | sudo bash` form must be emitted and none of the
+// pinned-branch markers may leak in. Guards the fallback against an over-
+// eager refactor that drops the legacy shape (HIGH-2 review feedback).
+func TestBuildInstallCommand_LegacyWhenHashEmpty(t *testing.T) {
+	t.Parallel()
+	cmd := buildInstallCommand(installCommandInput{
+		ScriptURL:  "https://example.com/install.sh",
+		ScriptHash: "",
+		Token:      "tok",
+		AgentID:    "agent-1",
+		ListenAddr: ":8443",
+		PanelCAPin: "sha256:fakepin",
+		PanelCN:    "panel.example.com",
+		PanelURL:   "panel.example.com:8443",
+	})
+	wantLegacy := []string{
+		"curl -fsSL https://example.com/install.sh",
+		"| sudo bash -s --",
+		"--mode=reverse",
+		"--bootstrap-token=tok",
+		"--agent-id=agent-1",
+	}
+	for _, p := range wantLegacy {
+		if !strings.Contains(cmd, p) {
+			t.Errorf("legacy command missing %q\ncmd=%s", p, cmd)
+		}
+	}
+	// None of the pinned-branch markers should appear when verification
+	// is disabled — they are meaningful only with a non-empty ScriptHash.
+	forbidden := []string{
+		"mktemp",
+		"sha256sum",
+		"PANVEX_INSTALL_SCRIPT_SHA256",
+		"sudo -E",
+	}
+	for _, p := range forbidden {
+		if strings.Contains(cmd, p) {
+			t.Errorf("legacy command unexpectedly contains pinned marker %q\ncmd=%s", p, cmd)
+		}
 	}
 }
 

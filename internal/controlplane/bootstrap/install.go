@@ -47,6 +47,7 @@ type InstallCommandResponse struct {
 type InstallCommandHandler struct {
 	queries    Queries
 	scriptURL  string
+	scriptHash string
 	panelCAPin string
 	panelCN    string
 	panelURL   string
@@ -57,7 +58,15 @@ type InstallCommandHandler struct {
 // InstallCommandConfig groups the non-DB inputs to the handler so callers
 // don't accidentally swap two strings of the same Go type.
 type InstallCommandConfig struct {
-	ScriptURL  string // public URL of the install-agent.sh script
+	ScriptURL string // public URL of the install-agent.sh script
+	// ScriptHash is the lowercase hex SHA-256 of the install-agent.sh body
+	// the panel currently serves. Embedded into the curl|bash one-liner so
+	// the operator's shell verifies the downloaded body before piping it
+	// into sudo bash, and so the script can self-check via the
+	// PANVEX_INSTALL_SCRIPT_SHA256 env var (T-5). Empty string disables
+	// verification — only acceptable in tests or transitional deploys; any
+	// production caller should pass server.installScriptSHA256(). (S-3.)
+	ScriptHash string
 	PanelCAPin string // SHA-256 fingerprint of the panel's CA cert
 	PanelCN    string // CN agents use to verify the panel's TLS cert
 	PanelURL   string // gRPC endpoint (host:port) agents dial when switching back to inbound mode
@@ -86,6 +95,7 @@ func NewInstallCommandHandler(q Queries, cfg InstallCommandConfig) *InstallComma
 	return &InstallCommandHandler{
 		queries:    q,
 		scriptURL:  cfg.ScriptURL,
+		scriptHash: cfg.ScriptHash,
 		panelCAPin: cfg.PanelCAPin,
 		panelCN:    cfg.PanelCN,
 		panelURL:   cfg.PanelURL,
@@ -138,10 +148,16 @@ func (h *InstallCommandHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	cmd := fmt.Sprintf(
-		"curl -fsSL %s | sudo bash -s -- --mode=reverse --bootstrap-token=%s --agent-id=%s --listen-addr=%s --ca-pin=%s --panel-cn=%s --panel-url-grpc=%s",
-		h.scriptURL, issued.Raw, agentID, h.listenAddr, h.panelCAPin, h.panelCN, h.panelURL,
-	)
+	cmd := buildInstallCommand(installCommandInput{
+		ScriptURL:  h.scriptURL,
+		ScriptHash: h.scriptHash,
+		Token:      issued.Raw,
+		AgentID:    agentID,
+		ListenAddr: h.listenAddr,
+		PanelCAPin: h.panelCAPin,
+		PanelCN:    h.panelCN,
+		PanelURL:   h.panelURL,
+	})
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(InstallCommandResponse{
 		Command:       cmd,
@@ -150,4 +166,59 @@ func (h *InstallCommandHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 		// Body partially written; can't change status.
 		return
 	}
+}
+
+// installCommandInput carries the fields buildInstallCommand interpolates into
+// the curl|bash one-liner. Kept package-private — the public surface is
+// InstallCommandConfig + ServeHTTP. (S-3.)
+type installCommandInput struct {
+	ScriptURL  string
+	ScriptHash string // lowercase hex SHA-256; "" disables verification (legacy)
+	Token      string
+	AgentID    string
+	ListenAddr string
+	PanelCAPin string
+	PanelCN    string
+	PanelURL   string
+}
+
+// buildInstallCommand returns the shell one-liner the operator runs on the
+// agent host. When ScriptHash is non-empty the command:
+//
+//  1. Allocates a temp file via mktemp and registers a trap to delete it on
+//     exit. We deliberately avoid the `SCRIPT=$(curl ...)` round-trip: POSIX
+//     `$()` strips trailing newlines, so hashing the captured variable would
+//     diverge from the byte-exact server hash (which covers the embedded
+//     file as-is, including its trailing \n) and every install would fail
+//     with a hash mismatch.
+//  2. Downloads the script to the temp file with curl -o.
+//  3. Hashes the file with `sha256sum < file` and compares against the
+//     expected digest. On mismatch the command exits non-zero before any
+//     privileged execution.
+//  4. Execs the file via `sudo -E bash <file> -- <flags>` with
+//     PANVEX_INSTALL_SCRIPT_SHA256 exported so the script's own self-check
+//     (T-5) re-validates against the same digest in the privileged context.
+//
+// When ScriptHash is empty (test fixtures, transitional configs that have
+// not been re-deployed yet) the legacy curl|bash form is emitted unchanged
+// so the install path keeps working — at the cost of MITM exposure that
+// the deploy is opting into. (S-3.)
+func buildInstallCommand(in installCommandInput) string {
+	flags := fmt.Sprintf(
+		"--mode=reverse --bootstrap-token=%s --agent-id=%s --listen-addr=%s --ca-pin=%s --panel-cn=%s --panel-url-grpc=%s",
+		in.Token, in.AgentID, in.ListenAddr, in.PanelCAPin, in.PanelCN, in.PanelURL,
+	)
+	if in.ScriptHash == "" {
+		return fmt.Sprintf("curl -fsSL %s | sudo bash -s -- %s", in.ScriptURL, flags)
+	}
+	// The single-line form is intentional — operators copy the whole thing
+	// from the dashboard and paste it into a shell. Keeping it on one line
+	// also means a copy that drops trailing newlines does not split the
+	// pipeline. We hash the file on disk (`sha256sum < "$TMP"`) so the
+	// digest is byte-exact with what the panel hashes server-side; piping
+	// `$()`-captured bytes would silently strip trailing newlines.
+	return fmt.Sprintf(
+		`TMP=$(mktemp /tmp/panvex-install.XXXXXX) || exit 1; trap 'rm -f "$TMP"' EXIT; curl -fsSL %s -o "$TMP" || { echo 'panvex: install-script download failed' >&2; exit 1; }; ACTUAL=$(sha256sum < "$TMP" | awk '{print $1}'); if [ "$ACTUAL" != "%s" ]; then echo "panvex: install-script hash mismatch (expected %s, got $ACTUAL)" >&2; exit 1; fi; sudo -E PANVEX_INSTALL_SCRIPT_SHA256="%s" bash "$TMP" %s`,
+		in.ScriptURL, in.ScriptHash, in.ScriptHash, in.ScriptHash, flags,
+	)
 }

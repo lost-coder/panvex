@@ -332,6 +332,57 @@ jobs:
           exit-code: '1'
           format: table
 
+  # Plan 1 (S-21 security bootstrap) regression gate. Pure grep checks —
+  # fast (no compile, no deps) — that fail CI if a future refactor undoes
+  # any of the security fixes landed in S-1..S-9 / T-4 / T-5. Runs in
+  # parallel with the slower test/lint jobs so it surfaces a regression
+  # within seconds of the PR opening.
+  security-gate:
+    name: Security regression gate (Plan 1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Plan 1 regression checks
+        run: |
+          set -eu
+          # S-2: SPKI pin must remain wired at the bootstrap dialer.
+          if ! grep -q 'newBootstrapTLSConfig\|VerifyPeerCertificate' cmd/control-plane/serve.go cmd/control-plane/bootstrap_tls.go; then
+            echo "S-2 regression: SPKI pin gone from bootstrap dialer" >&2
+            exit 1
+          fi
+          # S-1: bootstrap-admin CLI must validate the password source.
+          if ! grep -q 'validatePasswordSource' cmd/control-plane/bootstrap_admin.go; then
+            echo "S-1 regression: validatePasswordSource gone from bootstrap-admin" >&2
+            exit 1
+          fi
+          # T-5: install-agent.sh must self-check its own hash before exec.
+          if ! grep -q 'panvex_self_check_hash' internal/controlplane/server/install_agent.sh; then
+            echo "T-5 regression: install-agent.sh self-check gone" >&2
+            exit 1
+          fi
+          # T-4: install command issuance must bind the script hash.
+          if ! grep -q 'ScriptHash\b' internal/controlplane/bootstrap/install.go; then
+            echo "T-4 regression: ScriptHash binding gone from install command" >&2
+            exit 1
+          fi
+          # S-8: deploy/install.sh must not reintroduce unconditional `curl -k`.
+          # The CURL_INSECURE_FLAG path is the sanctioned (loopback-only) escape.
+          if grep -nE 'curl[[:space:]]+[^|]*-k\b' deploy/install.sh | grep -v 'CURL_INSECURE_FLAG'; then
+            echo "S-8 regression: unconditional curl -k reintroduced in deploy/install.sh" >&2
+            exit 1
+          fi
+          # S-7: agent listener must keep TLS 1.3 floor.
+          if ! grep -q 'tls.VersionTLS13' internal/agent/transport/listen.go; then
+            echo "S-7 regression: TLS 1.3 minimum gone from agent listener" >&2
+            exit 1
+          fi
+          # S-9: install-command TTL must stay minute-scale; reject hour-scale.
+          if grep -nE 'installCommandTTL[[:space:]]*=[[:space:]]*[0-9]+[[:space:]]*\*[[:space:]]*time\.Hour' internal/controlplane/bootstrap/install.go; then
+            echo "S-9 regression: installCommandTTL bumped to hour-scale" >&2
+            exit 1
+          fi
+          echo "All Plan 1 security gates pass."
+
   gitleaks:
     name: gitleaks (secret scan)
     runs-on: ubuntu-latest
