@@ -1,5 +1,6 @@
-import { api, apiBasePath } from "./http";
+import { api, apiBasePath, encodeRequest } from "./http";
 import {
+  createFleetGroupRequestSchema,
   fleetGroupDeletionPreviewSchema,
   fleetGroupDeletionResultSchema,
   fleetGroupIntegrationSchema,
@@ -9,6 +10,7 @@ import {
   integrationProviderKindListSchema,
   integrationProviderListSchema,
   integrationProviderSchema,
+  updateFleetGroupRequestSchema,
 } from "./schemas";
 
 export type FleetGroupIntegration = {
@@ -120,7 +122,11 @@ export const fleetGroupsApi = {
       `${apiBasePath}/fleet-groups`,
       {
         method: "POST",
-        body: JSON.stringify(payload),
+        body: encodeRequest(
+          `${apiBasePath}/fleet-groups`,
+          createFleetGroupRequestSchema,
+          payload,
+        ),
       },
       fleetGroupSchema,
     ),
@@ -129,7 +135,11 @@ export const fleetGroupsApi = {
       `${apiBasePath}/fleet-groups/${id}`,
       {
         method: "PATCH",
-        body: JSON.stringify(payload),
+        body: encodeRequest(
+          `${apiBasePath}/fleet-groups/${id}`,
+          updateFleetGroupRequestSchema,
+          payload,
+        ),
       },
       fleetGroupSchema,
     ),

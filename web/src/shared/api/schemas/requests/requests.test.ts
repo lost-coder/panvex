@@ -4,14 +4,19 @@ import {
   agentBootstrapRequestSchema,
   agentCertificateRecoveryGrantRequestSchema,
   agentCertificateRecoveryRequestSchema,
+  agentUpdateRequestSchema,
+  bulkAdoptDiscoveredRequestSchema,
+  bulkClientActionRequestSchema,
   clientMutationRequestSchema,
   createEnrollmentTokenRequestSchema,
+  createFleetGroupRequestSchema,
   createJobRequestSchema,
   createUserRequestSchema,
   loginRequestSchema,
   panelUpdateRequestSchema,
   renameAgentRequestSchema,
   updateAppearanceSettingsRequestSchema,
+  updateFleetGroupRequestSchema,
   updatePanelSettingsRequestSchema,
   updateSettingsRequestSchema,
   updateTotpRequestSchema,
@@ -343,5 +348,77 @@ describe("agentCertificateRecoveryGrantRequestSchema", () => {
     expect(() =>
       agentCertificateRecoveryGrantRequestSchema.parse({ ttl_seconds: 0 }),
     ).toThrow();
+  });
+});
+
+describe("bulkClientActionRequestSchema", () => {
+  it("accepts known actions", () => {
+    expect(
+      bulkClientActionRequestSchema.parse({ action: "enable", ids: ["a"] }),
+    ).toEqual({ action: "enable", ids: ["a"] });
+  });
+  it("rejects unknown action", () => {
+    expect(() =>
+      bulkClientActionRequestSchema.parse({ action: "rename", ids: ["a"] }),
+    ).toThrow();
+  });
+  it("rejects empty ids", () => {
+    expect(() =>
+      bulkClientActionRequestSchema.parse({ action: "delete", ids: [] }),
+    ).toThrow();
+  });
+  it("rejects > 500 ids (server cap)", () => {
+    const ids = Array.from({ length: 501 }, (_, i) => `id-${i}`);
+    expect(() =>
+      bulkClientActionRequestSchema.parse({ action: "disable", ids }),
+    ).toThrow();
+  });
+});
+
+describe("bulkAdoptDiscoveredRequestSchema", () => {
+  it("accepts a small id list", () => {
+    expect(bulkAdoptDiscoveredRequestSchema.parse({ ids: ["a", "b"] })).toEqual({
+      ids: ["a", "b"],
+    });
+  });
+  it("rejects empty ids", () => {
+    expect(() => bulkAdoptDiscoveredRequestSchema.parse({ ids: [] })).toThrow();
+  });
+});
+
+describe("createFleetGroupRequestSchema", () => {
+  it("requires name and label, defaults description", () => {
+    expect(
+      createFleetGroupRequestSchema.parse({ name: "us-east", label: "US East" }),
+    ).toEqual({ name: "us-east", label: "US East", description: "" });
+  });
+  it("rejects empty name", () => {
+    expect(() =>
+      createFleetGroupRequestSchema.parse({ name: "", label: "x" }),
+    ).toThrow();
+  });
+});
+
+describe("updateFleetGroupRequestSchema", () => {
+  it("requires label", () => {
+    expect(
+      updateFleetGroupRequestSchema.parse({ label: "Renamed" }),
+    ).toEqual({ label: "Renamed", description: "" });
+  });
+  it("rejects empty label", () => {
+    expect(() =>
+      updateFleetGroupRequestSchema.parse({ label: "" }),
+    ).toThrow();
+  });
+});
+
+describe("agentUpdateRequestSchema", () => {
+  it("accepts an explicit version", () => {
+    expect(agentUpdateRequestSchema.parse({ version: "v1.2.3" })).toEqual({
+      version: "v1.2.3",
+    });
+  });
+  it("defaults version to empty when omitted", () => {
+    expect(agentUpdateRequestSchema.parse({})).toEqual({ version: "" });
   });
 });

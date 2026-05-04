@@ -24,4 +24,9 @@ export * from "./updates.ts";
 export * from "./telemetry.ts";
 export * from "./clients.ts";
 export * from "./fleet-groups.ts";
+// schemas/servers.ts is a thin aggregator over agent.ts + the agent
+// request schemas (BP-02 final tail). It ships no new symbols, so
+// re-exporting it here is harmless duplication that satisfies the
+// "one schemas/<name>.ts per api/<name>.ts" naming convention.
+export * from "./servers.ts";
 export * from "./requests/index.ts";

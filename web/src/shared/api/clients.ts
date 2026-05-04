@@ -1,7 +1,9 @@
 import { api, apiBasePath, encodeRequest } from "./http";
 import {
   adoptDiscoveredClientResponseSchema,
+  bulkAdoptDiscoveredRequestSchema,
   bulkAdoptDiscoveredResponseSchema,
+  bulkClientActionRequestSchema,
   bulkClientResponseSchema,
   clientIPHistoryResponseSchema,
   clientListSchema,
@@ -219,7 +221,11 @@ export const clientsApi = {
       `${apiBasePath}/discovered-clients/bulk-adopt`,
       {
         method: "POST",
-        body: JSON.stringify({ ids }),
+        body: encodeRequest(
+          `${apiBasePath}/discovered-clients/bulk-adopt`,
+          bulkAdoptDiscoveredRequestSchema,
+          { ids },
+        ),
       },
       bulkAdoptDiscoveredResponseSchema,
     ),
@@ -235,7 +241,11 @@ export const clientsApi = {
       `${apiBasePath}/clients/bulk-action`,
       {
         method: "POST",
-        body: JSON.stringify({ action, ids }),
+        body: encodeRequest(
+          `${apiBasePath}/clients/bulk-action`,
+          bulkClientActionRequestSchema,
+          { action, ids },
+        ),
       },
       bulkClientResponseSchema,
     ),

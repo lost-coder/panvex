@@ -14,3 +14,8 @@ export * from "./updateSettingsRequest";
 export * from "./agentBootstrapRequest";
 export * from "./agentCertificateRecoveryRequest";
 export * from "./agentCertificateRecoveryGrantRequest";
+export * from "./agentUpdateRequest";
+export * from "./bulkAdoptDiscoveredRequest";
+export * from "./bulkClientActionRequest";
+export * from "./createFleetGroupRequest";
+export * from "./updateFleetGroupRequest";
