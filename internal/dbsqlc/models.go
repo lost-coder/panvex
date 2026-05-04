@@ -238,6 +238,8 @@ type PanelSetting struct {
 	UpdatedAt          time.Time
 	RetentionJson      string
 	PasswordMinLength  int32
+	GeoipJson          string
+	GeoipStateJson     string
 }
 
 type Session struct {
