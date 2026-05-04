@@ -45,6 +45,40 @@ export const retentionSettingsSchema = z.object({
   event_history_seconds: z.number().int(),
 });
 
+export const geoipSourceSchema = z.object({
+  enabled: z.boolean(),
+  url: z.string().optional().default(""),
+  local_path: z.string().optional().default(""),
+});
+
+export const geoipSettingsSchema = z.object({
+  mode: z.enum(["", "auto", "url", "local"]),
+  city: geoipSourceSchema,
+  asn: geoipSourceSchema,
+});
+
+export const geoipSourceStateSchema = z.object({
+  last_checked_at: z.number().int().optional().default(0),
+  last_updated_at: z.number().int().optional().default(0),
+  etag: z.string().optional().default(""),
+  path: z.string().optional().default(""),
+  size_bytes: z.number().int().optional().default(0),
+  error: z.string().optional().default(""),
+});
+
+export const geoipStateSchema = z.object({
+  city: geoipSourceStateSchema,
+  asn: geoipSourceStateSchema,
+});
+
+export const geoipResponseSchema = z.object({
+  settings: geoipSettingsSchema,
+  state: geoipStateSchema,
+});
+
 export type PanelSettingsResponseParsed = z.infer<typeof panelSettingsResponseSchema>;
 export type AppearanceSettingsResponseParsed = z.infer<typeof appearanceSettingsResponseSchema>;
 export type RetentionSettingsParsed = z.infer<typeof retentionSettingsSchema>;
+export type GeoIPSettingsParsed = z.infer<typeof geoipSettingsSchema>;
+export type GeoIPStateParsed = z.infer<typeof geoipStateSchema>;
+export type GeoIPResponseParsed = z.infer<typeof geoipResponseSchema>;

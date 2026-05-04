@@ -36,6 +36,10 @@ const clientIPEntrySchema = z.object({
   ip_address: z.string(),
   first_seen: z.string(),
   last_seen: z.string(),
+  country_code: z.string().optional(),
+  country_name: z.string().optional(),
+  city: z.string().optional(),
+  asn: z.string().optional(),
 });
 
 export const clientIPHistoryResponseSchema = z.object({
