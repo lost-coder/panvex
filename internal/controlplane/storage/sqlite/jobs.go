@@ -48,11 +48,16 @@ func (s *Store) GetJobByIdempotencyKey(ctx context.Context, idempotencyKey strin
 }
 
 func (s *Store) ListJobs(ctx context.Context) ([]storage.JobRecord, error) {
+	// S25 T1: defensive cap. The legacy contract is "every job"; in practice
+	// the boot-time restore path and the migrate tool are the only callers,
+	// and DefaultListLimit (1000) is large enough for both. Operator-facing
+	// list APIs should call ListJobsCursor instead.
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, action, actor_id, status, created_at_unix, ttl_nanos, idempotency_key, payload_json
 		FROM jobs
 		ORDER BY created_at_unix, id
-	`)
+		LIMIT ?
+	`, storage.DefaultListLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -72,6 +77,73 @@ func (s *Store) ListJobs(ctx context.Context) ([]storage.JobRecord, error) {
 	}
 
 	return result, rows.Err()
+}
+
+// ListJobsCursor returns one keyset-paginated page of jobs in (created_at
+// DESC, id DESC) order — newest first. See storage.JobStore for the contract.
+//
+// We fetch limit+1 rows so we can answer "is there a next page?" without a
+// second COUNT(*). When that overflow row appears the public next-cursor
+// points at the last in-page row, callers thread it back through
+// params.AfterCreatedAt + params.AfterID. SQLite stores created_at as a unix
+// int (toUnix/fromUnix pair) so the cursor value is converted at the boundary.
+func (s *Store) ListJobsCursor(ctx context.Context, params storage.ListJobsCursorParams) ([]storage.JobRecord, storage.ListJobsCursorParams, error) {
+	limit := storage.NormalizeCursorLimit(params.Limit)
+
+	// Two-branch query: with / without keyset clause. Keeping them separate
+	// makes the SQL trivially indexable and avoids a CASE WHEN that would
+	// disable index use on every row.
+	var rows *sql.Rows
+	var err error
+	if params.AfterID == "" && params.AfterCreatedAt.IsZero() {
+		rows, err = s.db.QueryContext(ctx, `
+			SELECT id, action, actor_id, status, created_at_unix, ttl_nanos, idempotency_key, payload_json
+			FROM jobs
+			ORDER BY created_at_unix DESC, id DESC
+			LIMIT ?
+		`, limit+1)
+	} else {
+		rows, err = s.db.QueryContext(ctx, `
+			SELECT id, action, actor_id, status, created_at_unix, ttl_nanos, idempotency_key, payload_json
+			FROM jobs
+			WHERE (created_at_unix, id) < (?, ?)
+			ORDER BY created_at_unix DESC, id DESC
+			LIMIT ?
+		`, toUnix(params.AfterCreatedAt), params.AfterID, limit+1)
+	}
+	if err != nil {
+		return nil, storage.ListJobsCursorParams{}, err
+	}
+	defer rows.Close()
+
+	result := make([]storage.JobRecord, 0, limit)
+	for rows.Next() {
+		var job storage.JobRecord
+		var createdAt int64
+		var ttlNanos int64
+		if err := rows.Scan(&job.ID, &job.Action, &job.ActorID, &job.Status, &createdAt, &ttlNanos, &job.IdempotencyKey, &job.PayloadJSON); err != nil {
+			return nil, storage.ListJobsCursorParams{}, err
+		}
+		job.CreatedAt = fromUnix(createdAt)
+		job.TTL = time.Duration(ttlNanos)
+		result = append(result, job)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, storage.ListJobsCursorParams{}, err
+	}
+
+	var next storage.ListJobsCursorParams
+	if len(result) > limit {
+		// Drop the overflow row; cursor points at the last in-page item.
+		result = result[:limit]
+		last := result[len(result)-1]
+		next = storage.ListJobsCursorParams{
+			Limit:          limit,
+			AfterCreatedAt: last.CreatedAt,
+			AfterID:        last.ID,
+		}
+	}
+	return result, next, nil
 }
 
 func (s *Store) PutJobTarget(ctx context.Context, target storage.JobTargetRecord) error {

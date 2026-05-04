@@ -109,7 +109,7 @@ func TestStoreBatchWriterStartAndStop(t *testing.T) {
 	defer store.Close()
 
 	w := newStoreBatchWriter(store, nil, nil)
-	w.Start()
+	w.Start(t.Context())
 	_ = w.StopWithTimeout(t.Context(), 2*time.Second)
 }
 
@@ -680,7 +680,7 @@ func TestStoreBatchWriterDrainsOnStop(t *testing.T) {
 	defer store.Close()
 
 	w := newStoreBatchWriter(store, nil, nil)
-	w.Start()
+	w.Start(t.Context())
 
 	now := time.Now().UTC()
 	w.agents.Enqueue(storage.AgentRecord{

@@ -12,6 +12,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 type createJobRequest struct {
@@ -35,6 +36,19 @@ func (s *Server) handleJobs() http.HandlerFunc {
 		if !ok {
 			return
 		}
+
+		// S25 T1: opt-in keyset pagination. Presence of the ?cursor=
+		// query param (even empty, == first page) routes through the
+		// store-backed cursor path; legacy callers get the in-memory
+		// jobs.ListRecentWithContext snapshot unchanged. The two paths
+		// intentionally differ: the cursor path goes to disk and can
+		// reach beyond the in-memory ring; the legacy path is faster
+		// but bounded by jobs.DefaultListRecentLimit.
+		if r.URL.Query().Has("cursor") {
+			s.handleJobsCursor(w, r, scope)
+			return
+		}
+
 		listed := s.jobs.ListRecentWithContext(r.Context(), parseListLimit(r))
 		listed = s.filterJobsByScope(listed, scope)
 		// Q2.U-S-07: redact PayloadJSON for ALL roles in the list
@@ -49,6 +63,78 @@ func (s *Server) handleJobs() http.HandlerFunc {
 		}
 		writeJSON(w, http.StatusOK, listed)
 	}
+}
+
+// jobsCursorResponse is the wire shape returned by handleJobsCursor. Items
+// match the redacted-payload row shape used by the legacy /api/jobs response;
+// next_cursor is the opaque base64-url string a client passes back as
+// ?cursor= to fetch the next page. Empty string means "no more pages".
+type jobsCursorResponse struct {
+	Items      []jobs.Job `json:"items"`
+	NextCursor string     `json:"next_cursor"`
+}
+
+// handleJobsCursor serves the cursor-paginated branch of /api/jobs. Falls
+// back to writeError for any decoding failure so a stale-but-valid-looking
+// cursor surfaces as 400 rather than silently restarting the page walk.
+func (s *Server) handleJobsCursor(w http.ResponseWriter, r *http.Request, scope FleetScopeAccess) {
+	if s.store == nil {
+		// No store wired (in-memory test fixtures). Return an empty
+		// page rather than 500 — the caller can opt back into the
+		// legacy endpoint by dropping the cursor param.
+		writeJSON(w, http.StatusOK, jobsCursorResponse{Items: []jobs.Job{}})
+		return
+	}
+	createdAt, afterID, err := storage.DecodeKeysetCursor(r.URL.Query().Get("cursor"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid cursor")
+		return
+	}
+	limit := parseCursorLimit(r)
+	records, next, err := s.store.ListJobsCursor(r.Context(), storage.ListJobsCursorParams{
+		Limit:          limit,
+		AfterCreatedAt: createdAt,
+		AfterID:        afterID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list jobs failed")
+		return
+	}
+	items := make([]jobs.Job, 0, len(records))
+	for _, rec := range records {
+		job := jobs.JobFromRecord(rec)
+		if !scope.Global {
+			s.mu.RLock()
+			inScope := s.jobHasInScopeTargetLocked(job, scope)
+			s.mu.RUnlock()
+			if !inScope {
+				continue
+			}
+		}
+		// Same secret-hygiene contract as the legacy branch — never
+		// expose PayloadJSON in the list response.
+		job.PayloadJSON = ""
+		items = append(items, job)
+	}
+	writeJSON(w, http.StatusOK, jobsCursorResponse{
+		Items:      items,
+		NextCursor: storage.EncodeKeysetCursor(next.AfterCreatedAt, next.AfterID),
+	})
+}
+
+// parseCursorLimit reads ?limit= for the cursor branch and applies the
+// DefaultCursorPageSize / MaxCursorPageSize envelope. A missing or invalid
+// value falls back to the default; values above the cap are clamped.
+func parseCursorLimit(r *http.Request) int {
+	raw := strings.TrimSpace(r.URL.Query().Get("limit"))
+	if raw == "" {
+		return storage.DefaultCursorPageSize
+	}
+	parsed, err := strconv.Atoi(raw)
+	if err != nil || parsed <= 0 {
+		return storage.DefaultCursorPageSize
+	}
+	return storage.NormalizeCursorLimit(parsed)
 }
 
 // parseListLimit returns the operator-supplied ?limit= when present and

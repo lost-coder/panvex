@@ -170,12 +170,66 @@ func (s *Server) handleAudit() http.HandlerFunc {
 			return
 		}
 
+		// S25 T1: opt-in keyset pagination. Presence of the ?cursor=
+		// query param routes through the store; legacy callers continue
+		// to read the bounded in-memory ring buffer. The two paths
+		// intentionally differ in event order: the legacy ring is
+		// chronological-ascending (timeline replay), the cursor path
+		// returns newest-first (operator browsing) so the UI can show
+		// "page 1 = most recent" with a consistent ORDER BY across pages.
+		if r.URL.Query().Has("cursor") {
+			s.handleAuditCursor(w, r)
+			return
+		}
+
 		s.metricsAuditMu.RLock()
 		trail := s.snapshotAuditTrailLocked()
 		s.metricsAuditMu.RUnlock()
 
 		writeJSON(w, http.StatusOK, trail)
 	}
+}
+
+// auditCursorResponse is the wire shape of /api/audit?cursor=. Items match
+// the AuditEvent struct used by the legacy ring response; next_cursor is the
+// opaque base64-url string a client passes back as ?cursor= for the next
+// page. Empty string means "no more pages".
+type auditCursorResponse struct {
+	Items      []AuditEvent `json:"items"`
+	NextCursor string       `json:"next_cursor"`
+}
+
+// handleAuditCursor serves the cursor-paginated branch of /api/audit. Same
+// scope semantics as the legacy branch (no per-row scope check — audit is
+// admin-visible across the fleet).
+func (s *Server) handleAuditCursor(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeJSON(w, http.StatusOK, auditCursorResponse{Items: []AuditEvent{}})
+		return
+	}
+	createdAt, afterID, err := storage.DecodeKeysetCursor(r.URL.Query().Get("cursor"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid cursor")
+		return
+	}
+	limit := parseCursorLimit(r)
+	records, next, err := s.store.ListAuditEventsCursor(r.Context(), storage.ListAuditEventsCursorParams{
+		Limit:          limit,
+		AfterCreatedAt: createdAt,
+		AfterID:        afterID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list audit events failed")
+		return
+	}
+	items := make([]AuditEvent, 0, len(records))
+	for _, rec := range records {
+		items = append(items, auditEventFromRecord(rec))
+	}
+	writeJSON(w, http.StatusOK, auditCursorResponse{
+		Items:      items,
+		NextCursor: storage.EncodeKeysetCursor(next.AfterCreatedAt, next.AfterID),
+	})
 }
 
 func normalizeAgentRuntime(runtime AgentRuntime) AgentRuntime {

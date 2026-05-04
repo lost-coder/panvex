@@ -15,6 +15,45 @@ import (
 // worst case at a few hundred kilobytes of result data.
 const DefaultListLimit = 1000
 
+// Cursor pagination defaults (S25 T1). Callers omit Limit (== 0) to get
+// DefaultCursorPageSize; values above MaxCursorPageSize are clamped down so
+// an operator cannot ask for an unbounded page.
+const (
+	DefaultCursorPageSize = 100
+	MaxCursorPageSize     = 500
+)
+
+// ListJobsCursorParams selects a single page of jobs in (created_at DESC,
+// id DESC) order. AfterCreatedAt + AfterID is the keyset cursor — leave both
+// zero for the first page. Limit <= 0 falls back to DefaultCursorPageSize and
+// values above MaxCursorPageSize are clamped.
+type ListJobsCursorParams struct {
+	Limit           int
+	AfterCreatedAt  time.Time
+	AfterID         string
+}
+
+// ListAuditEventsCursorParams selects a single page of audit events in
+// (created_at DESC, id DESC) order. Same cursor + limit semantics as
+// ListJobsCursorParams.
+type ListAuditEventsCursorParams struct {
+	Limit           int
+	AfterCreatedAt  time.Time
+	AfterID         string
+}
+
+// NormalizeCursorLimit applies the DefaultCursorPageSize/MaxCursorPageSize
+// envelope. Exposed so storage backends and HTTP handlers stay consistent.
+func NormalizeCursorLimit(limit int) int {
+	if limit <= 0 {
+		return DefaultCursorPageSize
+	}
+	if limit > MaxCursorPageSize {
+		return MaxCursorPageSize
+	}
+	return limit
+}
+
 // UserStore persists local control-plane user records.
 type UserStore interface {
 	PutUser(ctx context.Context, user UserRecord) error
@@ -81,6 +120,12 @@ type FleetStore interface {
 	// INSERTs per flush. See also storage/postgres and storage/sqlite
 	// implementations which chunk large batches.
 	PutAgentsBulk(ctx context.Context, agents []AgentRecord) error
+	// TODO(cursor): add ListAgentsCursor next sprint. ListAgents is currently
+	// only called at boot and from the operator agents-page; the boot path is
+	// safe because the table is small, but the operator path can grow without
+	// bound on large fleets. S25 deferred this to keep T1 scope to the two
+	// worst offenders (jobs + audit) — see commit feat(server): cursor
+	// pagination for ListJobs and ListAuditEvents.
 	ListAgents(ctx context.Context) ([]AgentRecord, error)
 	DeleteAgent(ctx context.Context, agentID string) error
 	UpdateAgentNodeName(ctx context.Context, agentID string, nodeName string) error
@@ -116,6 +161,8 @@ type FleetStore interface {
 	// transaction. Same semantics as PutInstance per row; empty slice is a
 	// no-op. See P3-PERF-01a.
 	PutInstancesBulk(ctx context.Context, instances []InstanceRecord) error
+	// TODO(cursor): add ListInstancesCursor next sprint. Same rationale as
+	// ListAgents above — deferred from S25 T1 to bound the change footprint.
 	ListInstances(ctx context.Context) ([]InstanceRecord, error)
 	DeleteInstancesByAgent(ctx context.Context, agentID string) error
 }
@@ -124,7 +171,16 @@ type FleetStore interface {
 type JobStore interface {
 	PutJob(ctx context.Context, job JobRecord) error
 	GetJobByIdempotencyKey(ctx context.Context, idempotencyKey string) (JobRecord, error)
+	// ListJobs returns every job. S25 T1: capped defensively at
+	// DefaultListLimit by the SQL backends so a long-lived store cannot
+	// stream millions of rows even if a caller forgets to paginate. New
+	// callers should use ListJobsCursor (keyset pagination) instead.
 	ListJobs(ctx context.Context) ([]JobRecord, error)
+	// ListJobsCursor returns one page of jobs in (created_at DESC, id DESC)
+	// order. The returned next cursor is non-empty iff a further page may
+	// exist; callers thread it back through params.AfterCreatedAt /
+	// params.AfterID. Limit follows DefaultCursorPageSize / MaxCursorPageSize.
+	ListJobsCursor(ctx context.Context, params ListJobsCursorParams) ([]JobRecord, ListJobsCursorParams, error)
 	PutJobTarget(ctx context.Context, target JobTargetRecord) error
 	ListJobTargets(ctx context.Context, jobID string) ([]JobTargetRecord, error)
 	// ListAllJobTargets returns every job_targets row in one round-trip.
@@ -145,6 +201,14 @@ type AuditStore interface {
 	// chronological order. limit caps the number of rows returned; values
 	// <= 0 fall back to a hard maximum of 1024.
 	ListAuditEvents(ctx context.Context, limit int) ([]AuditEventRecord, error)
+	// ListAuditEventsCursor returns one page in (created_at DESC, id DESC)
+	// order — newest first — for keyset pagination. The returned next cursor
+	// is non-empty iff a further page may exist. Limit follows
+	// DefaultCursorPageSize / MaxCursorPageSize. Note this differs from
+	// ListAuditEvents which returns ASCENDING for legacy timeline replay;
+	// the cursor variant goes newest-first because that's the operator's
+	// audit-page reading order.
+	ListAuditEventsCursor(ctx context.Context, params ListAuditEventsCursorParams) ([]AuditEventRecord, ListAuditEventsCursorParams, error)
 	// PruneAuditEvents deletes audit_events rows with created_at strictly
 	// before the cutoff and returns the number of deleted rows. Used by the
 	// retention worker (P2-REL-04 / finding M-R2) to keep audit_events from
@@ -158,6 +222,10 @@ type MetricStore interface {
 	// AppendMetricSnapshotsBulk inserts a batch of metric snapshots in a
 	// single transaction. Empty slice is a no-op. See P3-PERF-01a.
 	AppendMetricSnapshotsBulk(ctx context.Context, snapshots []MetricSnapshotRecord) error
+	// TODO(cursor): add ListMetricSnapshotsCursor next sprint. The current
+	// implementations cap the result at 512 rows internally so this is not
+	// catastrophically unbounded, but operators viewing more than 512 most-
+	// recent snapshots silently lose history. Deferred from S25 T1.
 	ListMetricSnapshots(ctx context.Context) ([]MetricSnapshotRecord, error)
 	// PruneMetricSnapshots deletes metric_snapshots rows with captured_at
 	// strictly before the cutoff and returns the number of deleted rows.
@@ -421,6 +489,9 @@ type AgentFallbackStateStore interface {
 	PutAgentFallbackState(ctx context.Context, rec AgentFallbackStateRecord) error
 	DeleteAgentFallbackState(ctx context.Context, agentID string) error
 	GetAgentFallbackState(ctx context.Context, agentID string) (AgentFallbackStateRecord, error)
+	// TODO(cursor): add ListAgentFallbackStateCursor next sprint. This is the
+	// boot-time restore path; deferred from S25 T1 because the bound is
+	// "agents in fallback simultaneously" which is small in practice.
 	ListAgentFallbackState(ctx context.Context) ([]AgentFallbackStateRecord, error)
 }
 

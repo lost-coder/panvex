@@ -2,6 +2,7 @@ package storagetest
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -93,6 +94,56 @@ func runAuditContract(t *testing.T, open OpenStore) {
 		}
 		if pruned2 != 0 {
 			t.Fatalf("PruneAuditEvents(second) pruned = %d, want 0", pruned2)
+		}
+	})
+
+	t.Run("ListAuditEventsCursor paginates newest-first with stable cursor", func(t *testing.T) {
+		// S25 T1 mirror of the jobs cursor contract — same shape, same
+		// guarantees: contiguous newest-first pages, no overlap, no gaps.
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		base := time.Date(2026, time.May, 1, 9, 0, 0, 0, time.UTC)
+		const total = 9
+		want := make([]string, 0, total)
+		for i := 0; i < total; i++ {
+			id := fmt.Sprintf("audit-%02d", i)
+			if err := store.AppendAuditEvent(ctx, storage.AuditEventRecord{
+				ID:        id,
+				ActorID:   "user-1",
+				Action:    "test.cursor",
+				TargetID:  "t",
+				CreatedAt: base.Add(time.Duration(i) * time.Minute),
+				Details:   map[string]any{"i": i},
+			}); err != nil {
+				t.Fatalf("AppendAuditEvent(%s): %v", id, err)
+			}
+			want = append([]string{id}, want...)
+		}
+
+		got := make([]string, 0, total)
+		params := storage.ListAuditEventsCursorParams{Limit: 4}
+		for page := 0; page < 5; page++ {
+			rows, next, err := store.ListAuditEventsCursor(ctx, params)
+			if err != nil {
+				t.Fatalf("ListAuditEventsCursor page %d: %v", page, err)
+			}
+			for _, row := range rows {
+				got = append(got, row.ID)
+			}
+			if next.AfterID == "" {
+				break
+			}
+			params = next
+		}
+		if len(got) != total {
+			t.Fatalf("walked %d audit events across pages, want %d", len(got), total)
+		}
+		for i, id := range want {
+			if got[i] != id {
+				t.Fatalf("page-walk[%d] = %q, want %q (sequence: %v)", i, got[i], id, got)
+			}
 		}
 	})
 
