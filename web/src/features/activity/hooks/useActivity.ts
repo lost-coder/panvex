@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { JobListItem, AuditListItem } from "@/shared/api/types-pages/pages";
 import { apiClient, type Job } from "@/shared/api/api";
+import { auditKeys, jobsKeys } from "@/features/activity/queryKeys";
 import { useProfile } from "@/features/auth/hooks/useProfile";
 import { clientsKeys } from "@/features/clients/queryKeys";
 import { agentsKeys } from "@/features/servers/queryKeys";
@@ -62,13 +63,13 @@ export function useActivity() {
   const refetchInterval = useEventAwareInterval(60_000, 15_000);
 
   const jobsQuery = useQuery({
-    queryKey: ["jobs"],
+    queryKey: jobsKeys.list(),
     queryFn: () => apiClient.jobs(),
     refetchInterval,
   });
 
   const auditQuery = useQuery({
-    queryKey: ["audit"],
+    queryKey: auditKeys.list(),
     queryFn: () => apiClient.audit(),
     refetchInterval,
   });

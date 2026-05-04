@@ -2,6 +2,15 @@
 // invalidations. Kept out of the EventsSynchronizer provider so it
 // can be unit-tested and later reused from the features/* slices
 // after the migration (shared/events/ lives here pre-Phase-4).
+//
+// BP-02: keys are read from the owning feature's factory rather
+// than inline string literals so cache identity stays canonical
+// across the codebase. Shapes are unchanged — the factories
+// preserve the original tuples verbatim.
+
+import { auditKeys, jobsKeys } from "@/features/activity/queryKeys";
+import { clientsKeys } from "@/features/clients/queryKeys";
+import { agentsKeys, controlRoomKeys } from "@/features/servers/queryKeys";
 
 export interface EventEnvelope {
   type: string;
@@ -35,22 +44,28 @@ export function invalidationsForEvent(event: EventEnvelope): EventInvalidation {
   const agentID = extractAgentID(event.data);
   if (event.type.startsWith("agents.")) {
     return {
-      keys: [["control-room"], ["agents"]],
+      keys: [controlRoomKeys.all, agentsKeys.all],
       telemetry: true,
       telemetryAgentID: agentID,
     };
   }
   if (event.type.startsWith("jobs.")) {
-    return { keys: [["jobs"], ["control-room"]] };
+    return { keys: [jobsKeys.all, controlRoomKeys.all] };
   }
   if (event.type === "audit.created") {
-    return { keys: [["audit"]] };
+    return { keys: [auditKeys.all] };
   }
   if (event.type.startsWith("clients.")) {
-    return { keys: [["clients"], ["control-room"]] };
+    return { keys: [clientsKeys.all, controlRoomKeys.all] };
   }
   return {
-    keys: [["control-room"], ["agents"], ["clients"], ["audit"], ["jobs"]],
+    keys: [
+      controlRoomKeys.all,
+      agentsKeys.all,
+      clientsKeys.all,
+      auditKeys.all,
+      jobsKeys.all,
+    ],
     telemetry: true,
   };
 }

@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient, type RetentionSettings } from "@/shared/api/api";
+import { settingsKeys } from "@/features/settings/queryKeys";
 import { useToast } from "@/app/providers/ToastProvider";
 
 export function useRetentionSettings() {
@@ -7,14 +8,14 @@ export function useRetentionSettings() {
   const toast = useToast();
 
   const query = useQuery({
-    queryKey: ["settings", "retention"],
+    queryKey: settingsKeys.retention(),
     queryFn: () => apiClient.getRetentionSettings(),
   });
 
   const saveMutation = useMutation({
     mutationFn: (settings: RetentionSettings) => apiClient.putRetentionSettings(settings),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["settings", "retention"] });
+      qc.invalidateQueries({ queryKey: settingsKeys.retention() });
       toast.success("Retention settings saved.");
     },
     onError: (err: Error) => toast.error(`Save failed: ${err.message}`),
