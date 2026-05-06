@@ -273,6 +273,24 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 	return snapshot, nil
 }
 
+// BuildRuntimeUnreachableSnapshot emits a degraded snapshot used while the
+// local Telemt API has been confirmed unreachable for at least
+// telemtUnreachableThreshold (see cmd/agent/polling.go). The Runtime payload
+// carries the reachability flag plus a "since" timestamp; all other runtime
+// fields are intentionally zero — the panel zeroes/stubs the corresponding
+// UI views to avoid showing stale "last known" data while we have nothing
+// fresh to report.
+func (a *Agent) BuildRuntimeUnreachableSnapshot(observedAt, since time.Time) *gatewayrpc.Snapshot {
+	snapshot := a.baseSnapshot(observedAt)
+	snapshot.Runtime = &gatewayrpc.RuntimeSnapshot{
+		TelemtReachable:            false,
+		TelemtUnreachableSinceUnix: since.Unix(),
+	}
+	snapshot.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{}
+	snapshot.RuntimeSecurityInventory = &gatewayrpc.RuntimeSecurityInventorySnapshot{}
+	return snapshot
+}
+
 // convertRuntimeDCs converts internal DC entries to gateway protobuf snapshots.
 func convertRuntimeDCs(dcsIn []telemt.RuntimeDC) []*gatewayrpc.RuntimeDCSnapshot {
 	dcs := make([]*gatewayrpc.RuntimeDCSnapshot, 0, len(dcsIn))

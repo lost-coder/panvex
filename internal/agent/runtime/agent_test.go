@@ -770,3 +770,49 @@ func TestAgentUsageSeqPersists(t *testing.T) {
 		t.Fatalf("UsageSeq() = %d, want 43", got)
 	}
 }
+
+func TestBuildRuntimeUnreachableSnapshot(t *testing.T) {
+	stub := &errTelemt{}
+	agent := New(Config{
+		AgentID:      "agent-1",
+		NodeName:     "node-1",
+		FleetGroupID: "fleet-a",
+		Version:      "1.2.3",
+	}, stub)
+
+	since := time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC)
+	observedAt := since.Add(45 * time.Second)
+
+	snap := agent.BuildRuntimeUnreachableSnapshot(observedAt, since)
+
+	if snap == nil {
+		t.Fatal("BuildRuntimeUnreachableSnapshot = nil, want snapshot")
+	}
+	if snap.AgentId != "agent-1" {
+		t.Fatalf("AgentId = %q, want agent-1", snap.AgentId)
+	}
+	if snap.ObservedAtUnix != observedAt.Unix() {
+		t.Fatalf("ObservedAtUnix = %d, want %d", snap.ObservedAtUnix, observedAt.Unix())
+	}
+	if snap.Runtime == nil {
+		t.Fatal("Runtime = nil, want non-nil RuntimeSnapshot")
+	}
+	if snap.Runtime.TelemtReachable {
+		t.Fatal("Runtime.TelemtReachable = true, want false")
+	}
+	if snap.Runtime.TelemtUnreachableSinceUnix != since.Unix() {
+		t.Fatalf("Runtime.TelemtUnreachableSinceUnix = %d, want %d",
+			snap.Runtime.TelemtUnreachableSinceUnix, since.Unix())
+	}
+	// Runtime data fields must be zero — we have no telemt data.
+	if snap.Runtime.UseMiddleProxy || snap.Runtime.MeRuntimeReady ||
+		snap.Runtime.AcceptingNewConnections {
+		t.Fatal("expected zero runtime gates while telemt unreachable")
+	}
+	if snap.Runtime.CurrentConnections != 0 || snap.Runtime.ActiveUsers != 0 {
+		t.Fatal("expected zero runtime counters while telemt unreachable")
+	}
+	if snap.RuntimeDiagnostics == nil || snap.RuntimeSecurityInventory == nil {
+		t.Fatal("expected empty diagnostics / security inventory shells, not nil")
+	}
+}
