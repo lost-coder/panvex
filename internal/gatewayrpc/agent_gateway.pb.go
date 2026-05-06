@@ -1501,8 +1501,20 @@ type RuntimeSnapshot struct {
 	StaleCacheUsed            bool                       `protobuf:"varint,34,opt,name=stale_cache_used,json=staleCacheUsed,proto3" json:"stale_cache_used,omitempty"`
 	TopByConnections          []*ConnectionTopEntry      `protobuf:"bytes,35,rep,name=top_by_connections,json=topByConnections,proto3" json:"top_by_connections,omitempty"`
 	TopByThroughput           []*ConnectionTopEntry      `protobuf:"bytes,36,rep,name=top_by_throughput,json=topByThroughput,proto3" json:"top_by_throughput,omitempty"`
-	unknownFields             protoimpl.UnknownFields
-	sizeCache                 protoimpl.SizeCache
+	// Reachability of local Telemt API as observed by the agent. The agent
+	// sets this to false (with telemt_unreachable_since_unix populated) once it
+	// has been failing to reach Telemt for ≥30s. The panel uses the flag to
+	// surface a "Telemt API unreachable" critical severity instead of
+	// mis-classifying the node as Direct from zero gates.
+	//
+	// Wire default: proto3 bool defaults to false. Old agents that never set
+	// this field will appear as TelemtReachable=false. The panel-side
+	// back-compat strategy is owned by Task 6 of the implementation plan
+	// (project doc, outside the repo).
+	TelemtReachable            bool  `protobuf:"varint,37,opt,name=telemt_reachable,json=telemtReachable,proto3" json:"telemt_reachable,omitempty"`
+	TelemtUnreachableSinceUnix int64 `protobuf:"varint,38,opt,name=telemt_unreachable_since_unix,json=telemtUnreachableSinceUnix,proto3" json:"telemt_unreachable_since_unix,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
 }
 
 func (x *RuntimeSnapshot) Reset() {
@@ -1785,6 +1797,20 @@ func (x *RuntimeSnapshot) GetTopByThroughput() []*ConnectionTopEntry {
 		return x.TopByThroughput
 	}
 	return nil
+}
+
+func (x *RuntimeSnapshot) GetTelemtReachable() bool {
+	if x != nil {
+		return x.TelemtReachable
+	}
+	return false
+}
+
+func (x *RuntimeSnapshot) GetTelemtUnreachableSinceUnix() int64 {
+	if x != nil {
+		return x.TelemtUnreachableSinceUnix
+	}
+	return 0
 }
 
 type ConnectionTopEntry struct {
@@ -3443,7 +3469,7 @@ const file_proto_agent_gateway_proto_rawDesc = "" +
 	"rtt_ms_max\x18\x05 \x01(\x01R\brttMsMax\x12*\n" +
 	"\x11alive_writers_min\x18\x06 \x01(\x05R\x0faliveWritersMin\x12)\n" +
 	"\x10required_writers\x18\a \x01(\x05R\x0frequiredWriters\x12\x19\n" +
-	"\bload_max\x18\b \x01(\x05R\aloadMax\"\xf3\x0f\n" +
+	"\bload_max\x18\b \x01(\x05R\aloadMax\"\xe1\x10\n" +
 	"\x0fRuntimeSnapshot\x12:\n" +
 	"\x19accepting_new_connections\x18\x01 \x01(\bR\x17acceptingNewConnections\x12(\n" +
 	"\x10me_runtime_ready\x18\x02 \x01(\bR\x0emeRuntimeReady\x124\n" +
@@ -3483,7 +3509,9 @@ const file_proto_agent_gateway_proto_rawDesc = "" +
 	"\x12me2dc_fast_enabled\x18! \x01(\bR\x10me2dcFastEnabled\x12(\n" +
 	"\x10stale_cache_used\x18\" \x01(\bR\x0estaleCacheUsed\x12S\n" +
 	"\x12top_by_connections\x18# \x03(\v2%.panvex.gateway.v1.ConnectionTopEntryR\x10topByConnections\x12Q\n" +
-	"\x11top_by_throughput\x18$ \x03(\v2%.panvex.gateway.v1.ConnectionTopEntryR\x0ftopByThroughput\"}\n" +
+	"\x11top_by_throughput\x18$ \x03(\v2%.panvex.gateway.v1.ConnectionTopEntryR\x0ftopByThroughput\x12)\n" +
+	"\x10telemt_reachable\x18% \x01(\bR\x0ftelemtReachable\x12A\n" +
+	"\x1dtelemt_unreachable_since_unix\x18& \x01(\x03R\x1atelemtUnreachableSinceUnix\"}\n" +
 	"\x12ConnectionTopEntry\x12\x1a\n" +
 	"\busername\x18\x01 \x01(\tR\busername\x12 \n" +
 	"\vconnections\x18\x02 \x01(\x05R\vconnections\x12)\n" +
