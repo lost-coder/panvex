@@ -166,9 +166,11 @@ func runtimeCurrentRecordFromAgent(agent Agent) storage.TelemetryRuntimeCurrentR
 		ConnectionsBadTotal:       agent.Runtime.ConnectionsBadTotal,
 		HandshakeTimeoutsTotal:    agent.Runtime.HandshakeTimeoutsTotal,
 		ConfiguredUsers:           agent.Runtime.ConfiguredUsers,
-		DCCoveragePct:             agent.Runtime.DCCoveragePct,
-		HealthyUpstreams:          agent.Runtime.HealthyUpstreams,
-		TotalUpstreams:            agent.Runtime.TotalUpstreams,
+		DCCoveragePct:              agent.Runtime.DCCoveragePct,
+		HealthyUpstreams:           agent.Runtime.HealthyUpstreams,
+		TotalUpstreams:             agent.Runtime.TotalUpstreams,
+		TelemtReachable:            agent.Runtime.TelemtReachable,
+		TelemtUnreachableSinceUnix: agent.Runtime.TelemtUnreachableSinceUnix,
 	}
 }
 

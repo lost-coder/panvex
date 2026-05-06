@@ -109,8 +109,10 @@ type AgentRuntime struct {
 	Upstreams                 []RuntimeUpstream `json:"upstreams"`
 	RecentEvents              []RuntimeEvent    `json:"recent_events"`
 	SystemLoad                RuntimeSystemLoad          `json:"system_load"`
-	MeWritersSummary          *RuntimeMeWritersSummary   `json:"me_writers_summary,omitempty"`
-	UpdatedAt                 time.Time                  `json:"updated_at"`
+	MeWritersSummary           *RuntimeMeWritersSummary   `json:"me_writers_summary,omitempty"`
+	TelemtReachable            bool                       `json:"telemt_reachable"`
+	TelemtUnreachableSinceUnix int64                      `json:"telemt_unreachable_since_unix"`
+	UpdatedAt                  time.Time                  `json:"updated_at"`
 }
 
 // FailRatePct5mPtr returns the 5-minute upstream connect fail-rate as a

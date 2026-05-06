@@ -122,8 +122,10 @@ func agentRuntimeFromSnapshot(snapshot *gatewayrpc.RuntimeSnapshot, observedAt t
 		Upstreams:                 upstreams,
 		RecentEvents:              recentEvents,
 		SystemLoad:                systemLoadFromSnapshot(snapshot.SystemLoad),
-		MeWritersSummary:          meWritersSummaryFromSnapshot(snapshot.MeWritersSummary),
-		UpdatedAt:                 observedAt.UTC(),
+		MeWritersSummary:           meWritersSummaryFromSnapshot(snapshot.MeWritersSummary),
+		TelemtReachable:            snapshot.TelemtReachable,
+		TelemtUnreachableSinceUnix: snapshot.TelemtUnreachableSinceUnix,
+		UpdatedAt:                  observedAt.UTC(),
 	}
 }
 
