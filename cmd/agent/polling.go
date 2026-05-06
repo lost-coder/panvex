@@ -9,6 +9,13 @@ import (
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
+// telemtUnreachableThreshold is the wall-clock window of consecutive
+// FetchRuntimeState failures before the agent declares Telemt unreachable
+// and starts emitting BuildRuntimeUnreachableSnapshot payloads to the panel.
+// Sized to absorb a normal Telemt restart (typically 5–15s) without
+// triggering a false alarm.
+const telemtUnreachableThreshold = 30 * time.Second
+
 func startPollingWorkers(
 	connectionCtx context.Context,
 	schedule connectionSchedule,
@@ -19,7 +26,7 @@ func startPollingWorkers(
 		makeHeartbeatTick(connectionCtx, agent, telemetryOutbound))
 
 	runtimeBuffer := runtime.NewRuntimeRingBuffer(8)
-	startRuntimePollWorker(connectionCtx, schedule.config(pollRuntime), agent, runtimeBuffer)
+	startRuntimePollWorker(connectionCtx, schedule.config(pollRuntime), agent, runtimeBuffer, telemetryOutbound)
 	startRuntimeUploadWorker(connectionCtx, schedule.config(pollRuntimeUpload), runtimeBuffer, telemetryOutbound)
 
 	startPeriodicPollingWorker(connectionCtx, schedule.config(pollUsage),
@@ -116,18 +123,26 @@ func startPeriodicPollingWorker(
 	}()
 }
 
+// telemtReachabilityTracker accumulates consecutive runtime-snapshot failures
+// and decides when to start emitting BuildRuntimeUnreachableSnapshot payloads.
+// Zero value is "Telemt healthy".
+type telemtReachabilityTracker struct {
+	firstFailureAt time.Time
+}
+
 // startRuntimePollWorker polls Telemt at a fast interval and stores samples in the ring buffer.
 func startRuntimePollWorker(
 	connectionCtx context.Context,
 	config pollingGroupConfig,
 	agent *runtime.Agent,
 	buffer *runtime.RuntimeRingBuffer,
+	telemetryOutbound chan<- *gatewayrpc.ConnectClientMessage,
 ) {
 	if !config.Enabled || config.Interval <= 0 {
 		return
 	}
 
-	go runRuntimePollLoop(connectionCtx, config, agent, buffer)
+	go runRuntimePollLoop(connectionCtx, config, agent, buffer, telemetryOutbound)
 }
 
 func runRuntimePollLoop(
@@ -135,17 +150,18 @@ func runRuntimePollLoop(
 	config pollingGroupConfig,
 	agent *runtime.Agent,
 	buffer *runtime.RuntimeRingBuffer,
+	telemetryOutbound chan<- *gatewayrpc.ConnectClientMessage,
 ) {
 	consecutiveFailures := 0
+	tracker := &telemtReachabilityTracker{}
 	for {
 		delay := nextRuntimePollDelay(agent, config, consecutiveFailures)
 		observedAt, ok := waitRuntimePollTick(connectionCtx, delay)
 		if !ok {
 			return
 		}
-		if performRuntimePoll(connectionCtx, agent, buffer, observedAt, &consecutiveFailures) {
-			continue
-		}
+		performRuntimePoll(connectionCtx, agent, buffer, telemetryOutbound, observedAt,
+			&consecutiveFailures, tracker)
 	}
 }
 
@@ -178,30 +194,46 @@ func waitRuntimePollTick(connectionCtx context.Context, delay time.Duration) (ti
 }
 
 // performRuntimePoll executes one snapshot fetch, updates failure counters,
-// and pushes a sample on success. Always returns true so the loop continues.
+// and pushes either a real sample on success or — once we've been failing for
+// telemtUnreachableThreshold — an unreachable snapshot directly to the
+// outbound channel. The ring buffer is left untouched while we are unreachable
+// so the upload worker keeps sending nothing (no aggregated noise).
 func performRuntimePoll(
 	connectionCtx context.Context,
 	agent *runtime.Agent,
 	buffer *runtime.RuntimeRingBuffer,
+	telemetryOutbound chan<- *gatewayrpc.ConnectClientMessage,
 	observedAt time.Time,
 	consecutiveFailures *int,
-) bool {
+	tracker *telemtReachabilityTracker,
+) {
 	runtimeCtx, cancelRuntime := context.WithTimeout(connectionCtx, runtimeOperationTimeout)
 	snapshot, err := agent.BuildRuntimeSnapshot(runtimeCtx, observedAt.UTC())
 	cancelRuntime()
 	if err != nil {
 		*consecutiveFailures++
+		if tracker.firstFailureAt.IsZero() {
+			tracker.firstFailureAt = observedAt.UTC()
+		}
 		if *consecutiveFailures <= 3 || *consecutiveFailures%10 == 0 {
 			slog.Error("runtime poll failed", "attempt", *consecutiveFailures, "error", err)
 		}
-		return true
+		if observedAt.UTC().Sub(tracker.firstFailureAt) >= telemtUnreachableThreshold {
+			unreachable := agent.BuildRuntimeUnreachableSnapshot(observedAt.UTC(), tracker.firstFailureAt)
+			if !enqueueOutboundMessage(connectionCtx, telemetryOutbound, &gatewayrpc.ConnectClientMessage{
+				Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: unreachable},
+			}) && connectionCtx.Err() == nil {
+				slog.Warn("telemt unreachable snapshot dropped due to outbound backpressure")
+			}
+		}
+		return
 	}
 	*consecutiveFailures = 0
+	tracker.firstFailureAt = time.Time{}
 	buffer.Push(runtime.RuntimeSample{
 		ObservedAt: observedAt.UTC(),
 		Snapshot:   snapshot,
 	})
-	return true
 }
 
 // startRuntimeUploadWorker drains the ring buffer, aggregates samples, and sends one snapshot.
