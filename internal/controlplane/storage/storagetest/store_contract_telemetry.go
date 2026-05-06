@@ -213,6 +213,85 @@ func runTelemetryContract(t *testing.T, open OpenStore) {
 	})
 
 
+	t.Run("telemt_unreachable_round_trip", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		group := storage.FleetGroupRecord{
+			ID:        testFleetGroupID,
+			Name:      "Default",
+			CreatedAt: time.Date(2026, time.March, 28, 12, 0, 0, 0, time.UTC),
+		}
+
+		agentUnreachable := storage.AgentRecord{
+			ID:           "agent-unreachable",
+			NodeName:     "telemt-unreachable",
+			FleetGroupID: group.ID,
+			Version:      "dev",
+			ReadOnly:     false,
+			LastSeenAt:   time.Date(2026, time.March, 28, 12, 1, 0, 0, time.UTC),
+		}
+		agentDefault := storage.AgentRecord{
+			ID:           "agent-default",
+			NodeName:     "telemt-default",
+			FleetGroupID: group.ID,
+			Version:      "dev",
+			ReadOnly:     false,
+			LastSeenAt:   time.Date(2026, time.March, 28, 12, 2, 0, 0, time.UTC),
+		}
+
+		if err := store.PutFleetGroup(ctx, group); err != nil {
+			t.Fatalf("PutFleetGroup() error = %v", err)
+		}
+		if err := store.PutAgent(ctx, agentUnreachable); err != nil {
+			t.Fatalf("PutAgent(unreachable) error = %v", err)
+		}
+		if err := store.PutAgent(ctx, agentDefault); err != nil {
+			t.Fatalf("PutAgent(default) error = %v", err)
+		}
+
+		rec := storage.TelemetryRuntimeCurrentRecord{
+			AgentID:                    "agent-unreachable",
+			ObservedAt:                 time.Unix(1700000000, 0).UTC(),
+			TelemtReachable:            false,
+			TelemtUnreachableSinceUnix: 1699999970,
+		}
+		if err := store.PutTelemetryRuntimeCurrent(ctx, rec); err != nil {
+			t.Fatalf("PutTelemetryRuntimeCurrent() error = %v", err)
+		}
+		got, err := store.GetTelemetryRuntimeCurrent(ctx, "agent-unreachable")
+		if err != nil {
+			t.Fatalf("GetTelemetryRuntimeCurrent() error = %v", err)
+		}
+		if got.TelemtReachable {
+			t.Fatal("TelemtReachable round-trip = true, want false")
+		}
+		if got.TelemtUnreachableSinceUnix != 1699999970 {
+			t.Fatalf("TelemtUnreachableSinceUnix = %d, want 1699999970",
+				got.TelemtUnreachableSinceUnix)
+		}
+
+		rec2 := storage.TelemetryRuntimeCurrentRecord{
+			AgentID:         "agent-default",
+			ObservedAt:      time.Unix(1700000100, 0).UTC(),
+			TelemtReachable: true,
+		}
+		if err := store.PutTelemetryRuntimeCurrent(ctx, rec2); err != nil {
+			t.Fatalf("PutTelemetryRuntimeCurrent(default) error = %v", err)
+		}
+		got2, err := store.GetTelemetryRuntimeCurrent(ctx, "agent-default")
+		if err != nil {
+			t.Fatalf("GetTelemetryRuntimeCurrent(default) error = %v", err)
+		}
+		if !got2.TelemtReachable {
+			t.Fatal("TelemtReachable for default record = false, want true")
+		}
+		if got2.TelemtUnreachableSinceUnix != 0 {
+			t.Fatalf("TelemtUnreachableSinceUnix for default = %d, want 0", got2.TelemtUnreachableSinceUnix)
+		}
+	})
+
 	t.Run("telemetry detail boost round trip", func(t *testing.T) {
 		store := open(t)
 		defer store.Close()

@@ -110,6 +110,8 @@ type TelemetryRuntimeCurrentRecord struct {
 	DCCoveragePct             float64
 	HealthyUpstreams          int
 	TotalUpstreams            int
+	TelemtReachable            bool
+	TelemtUnreachableSinceUnix int64
 }
 
 // TelemetryRuntimeDCRecord stores one node's latest DC health row.
