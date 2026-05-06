@@ -118,9 +118,11 @@ func (s *Server) commitInstancesLocked(agentID string, instances []Instance) {
 // Caller must hold s.mu.
 func (s *Server) applyFallbackStateTransitionLocked(agent Agent) {
 	mode := controltelemetry.ClassifyMode(controltelemetry.SeverityInput{
-		UseMiddleProxy:       agent.Runtime.UseMiddleProxy,
-		MERuntimeReady:       agent.Runtime.MERuntimeReady,
-		ME2DCFallbackEnabled: agent.Runtime.ME2DCFallbackEnabled,
+		UseMiddleProxy:             agent.Runtime.UseMiddleProxy,
+		MERuntimeReady:             agent.Runtime.MERuntimeReady,
+		ME2DCFallbackEnabled:       agent.Runtime.ME2DCFallbackEnabled,
+		TelemtReachable:            agent.Runtime.TelemtReachable,
+		TelemtUnreachableSinceUnix: agent.Runtime.TelemtUnreachableSinceUnix,
 	})
 	_, hadPrev := s.fallbackEnteredAt[agent.ID]
 	switch mode {

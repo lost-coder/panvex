@@ -44,6 +44,7 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 		Runtime: AgentRuntime{
 			AcceptingNewConnections:   true,
 			MERuntimeReady:            true,
+			TelemtReachable:           true,
 			TransportMode:             "direct",
 			CurrentConnections:        120,
 			CurrentConnectionsME:      70,
@@ -68,6 +69,7 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 			AcceptingNewConnections:   false,
 			MERuntimeReady:            true,
 			Degraded:                  true,
+			TelemtReachable:           true,
 			TransportMode:             "middle_proxy",
 			CurrentConnections:        12,
 			CurrentConnectionsME:      10,

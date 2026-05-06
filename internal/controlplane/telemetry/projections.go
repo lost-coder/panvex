@@ -54,6 +54,13 @@ type SeverityInput struct {
 	UpstreamFailRateKnown bool
 
 	FallbackActiveDuration time.Duration
+
+	// TelemtReachable is the agent's last reported reachability of its local
+	// Telemt API. Default true on the wire — explicit false (with the
+	// timestamp below) is the panel's signal to surface a critical "Telemt
+	// API unreachable" reason instead of mis-classifying the node as Direct.
+	TelemtReachable            bool
+	TelemtUnreachableSinceUnix int64
 }
 
 // ClassifyMode derives the operating mode from runtime flags. Used by the
@@ -99,6 +106,8 @@ func SeverityAndReason(input SeverityInput, freshness Freshness) (string, string
 	switch {
 	case input.PresenceState == presence.StateOffline:
 		return "bad", "Agent heartbeat is offline"
+	case !input.TelemtReachable:
+		return "critical", "Telemt API unreachable since " + formatTelemtSince(input.TelemtUnreachableSinceUnix)
 	case freshness.State == "stale":
 		return "warn", "Telemetry is stale"
 	case input.ReadOnly:
@@ -228,4 +237,14 @@ func SeverityRank(value string) int {
 	default:
 		return 1
 	}
+}
+
+// formatTelemtSince renders the unreachable-since timestamp as RFC3339 UTC.
+// Returns "unknown time" when the unix value is zero — defensive; in
+// practice the agent always sets it when reachable=false.
+func formatTelemtSince(unix int64) string {
+	if unix <= 0 {
+		return "unknown time"
+	}
+	return time.Unix(unix, 0).UTC().Format(time.RFC3339)
 }

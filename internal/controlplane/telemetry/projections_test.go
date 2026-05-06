@@ -36,6 +36,7 @@ func TestSeverityAndReasonPrefersOfflineOverOtherSignals(t *testing.T) {
 		ReadOnly:                true,
 		AcceptingNewConnections: false,
 		Degraded:                true,
+		TelemtReachable:         true,
 	}, freshness)
 
 	if severity != "bad" {
@@ -59,6 +60,7 @@ func TestSeverityAndReasonDCCoverageMatrix(t *testing.T) {
 		StartupStatus:           "ready",
 		UseMiddleProxy:          true,
 		MERuntimeReady:          true,
+		TelemtReachable:         true,
 	}
 	freshness := Freshness{State: "fresh"}
 
@@ -101,6 +103,7 @@ func TestSeverityAndReasonDirectMatrix(t *testing.T) {
 		AcceptingNewConnections: true,
 		UseMiddleProxy:          false,
 		UptimeSeconds:           120, // past 60s grace
+		TelemtReachable:         true,
 	}
 
 	cases := []struct {
@@ -150,6 +153,7 @@ func TestSeverityAndReasonDirectGracePeriod(t *testing.T) {
 		UptimeSeconds:           30, // before 60s grace
 		HealthyUpstreams:        0,
 		TotalUpstreams:          3,
+		TelemtReachable:         true,
 	}
 	sev, _ := SeverityAndReason(in, fresh)
 	if sev != "ok" {
@@ -167,6 +171,7 @@ func TestSeverityAndReasonMeDown(t *testing.T) {
 		MERuntimeReady:          false,
 		ME2DCFallbackEnabled:    false,
 		UptimeSeconds:           120,
+		TelemtReachable:         true,
 	}
 	sev, reason := SeverityAndReason(in, fresh)
 	if sev != "critical" {
@@ -198,6 +203,7 @@ func TestClassifyMode(t *testing.T) {
 				UseMiddleProxy:       tc.useME,
 				MERuntimeReady:       tc.meReady,
 				ME2DCFallbackEnabled: tc.fallbackOn,
+				TelemtReachable:      true,
 			}
 			got := ClassifyMode(in)
 			if got != tc.want {
@@ -219,6 +225,7 @@ func TestSeverityAndReasonFallbackMatrix(t *testing.T) {
 		UptimeSeconds:           120,
 		HealthyUpstreams:        3,
 		TotalUpstreams:          3,
+		TelemtReachable:         true,
 	}
 
 	t.Run("baseline_warn", func(t *testing.T) {
@@ -273,4 +280,53 @@ func TestSeverityAndReasonFallbackMatrix(t *testing.T) {
 			t.Fatalf("reason = %q, want to contain baseline reason", reason)
 		}
 	})
+}
+
+func TestSeverityAndReason_TelemtUnreachable_Critical(t *testing.T) {
+	in := SeverityInput{
+		PresenceState:              presence.StateOnline,
+		AcceptingNewConnections:    true,
+		TelemtReachable:            false,
+		TelemtUnreachableSinceUnix: 1700000000,
+	}
+	fresh := Freshness{State: "fresh", ObservedAtUnix: 1700000050}
+	sev, reason := SeverityAndReason(in, fresh)
+	if sev != "critical" {
+		t.Fatalf("severity = %q, want critical", sev)
+	}
+	if !strings.Contains(reason, "Telemt API unreachable since") {
+		t.Fatalf("reason = %q, want substring \"Telemt API unreachable since\"", reason)
+	}
+	// 1700000000 in UTC → "2023-11-14T22:13:20Z"
+	if !strings.Contains(reason, "2023-11-14T22:13:20Z") {
+		t.Fatalf("reason = %q missing formatted timestamp", reason)
+	}
+}
+
+func TestSeverityAndReason_OfflinePresenceWinsOverTelemtUnreachable(t *testing.T) {
+	in := SeverityInput{
+		PresenceState:   presence.StateOffline,
+		TelemtReachable: false,
+	}
+	fresh := Freshness{State: "fresh"}
+	sev, reason := SeverityAndReason(in, fresh)
+	if sev != "bad" {
+		t.Fatalf("severity = %q, want bad (offline takes precedence)", sev)
+	}
+	if reason != "Agent heartbeat is offline" {
+		t.Fatalf("reason = %q, want \"Agent heartbeat is offline\"", reason)
+	}
+}
+
+func TestSeverityAndReason_TelemtUnreachable_BeatsStaleFreshness(t *testing.T) {
+	in := SeverityInput{
+		PresenceState:              presence.StateOnline,
+		TelemtReachable:            false,
+		TelemtUnreachableSinceUnix: 1700000000,
+	}
+	fresh := Freshness{State: "stale", ObservedAtUnix: 1699000000}
+	sev, _ := SeverityAndReason(in, fresh)
+	if sev != "critical" {
+		t.Fatalf("severity = %q, want critical (telemt unreachable beats stale)", sev)
+	}
 }

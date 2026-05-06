@@ -492,7 +492,9 @@ func (s *Server) telemetrySeverityAndReason(agent Agent, presenceState presence.
 		UseMiddleProxy:       agent.Runtime.UseMiddleProxy,
 		MERuntimeReady:       agent.Runtime.MERuntimeReady,
 		ME2DCFallbackEnabled: agent.Runtime.ME2DCFallbackEnabled,
-		UptimeSeconds:        agent.Runtime.UptimeSeconds,
+		UptimeSeconds:              agent.Runtime.UptimeSeconds,
+		TelemtReachable:            agent.Runtime.TelemtReachable,
+		TelemtUnreachableSinceUnix: agent.Runtime.TelemtUnreachableSinceUnix,
 	}
 	// Pull the (rate, known) pair through the helper so a future caller
 	// who forgets to set one of the parallel fields gets nil-is-unknown
