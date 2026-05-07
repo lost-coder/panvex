@@ -106,6 +106,10 @@ type Server struct {
 	// settings is the operational settings store, loaded at startup from the
 	// DB and reloaded on demand. Nil when the server has no persistent store.
 	settings         *settings.OperationalStore
+	// settingsActive is an immutable snapshot of operational values captured
+	// right after the initial Reload. Used to detect pending restart-required
+	// changes when comparing against live values.
+	settingsActive   *settings.ActiveSnapshot
 	bootstrap        *settings.Bootstrap
 	bootstrapSources settings.SourceMap
 	// sessions multiplexes live gRPC stream sessions keyed by agent ID.

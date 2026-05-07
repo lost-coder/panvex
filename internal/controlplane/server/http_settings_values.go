@@ -81,11 +81,20 @@ func (s *Server) operationalEntry(f settings.FieldMeta) valuesEntry {
 		return valuesEntry{Source: "default", Locked: true}
 	}
 	raw := s.settings.RawByName(f.Name)
-	return valuesEntry{
+	entry := valuesEntry{
 		Value:  rawToTyped(f, raw),
 		Source: "db",
 		Locked: false,
 	}
+	// pending_restart bookkeeping
+	if f.Restart && s.settingsActive != nil {
+		if active, ok := s.settingsActive.Get(f.Name); ok && active != raw {
+			entry.PendingRestart = true
+			entry.PendingValue = rawToTyped(f, raw)
+			entry.Value = rawToTyped(f, active)
+		}
+	}
+	return entry
 }
 
 func rawToTyped(f settings.FieldMeta, raw string) any {

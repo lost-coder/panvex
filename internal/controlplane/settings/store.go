@@ -261,3 +261,54 @@ func encodeRuntimeJSON(t Type, raw string) (string, error) {
 	}
 	return "", fmt.Errorf("settings: encodeRuntimeJSON: unsupported type %s", t)
 }
+
+// ActiveSnapshot is an immutable copy of operational values captured at
+// process start. Used to detect pending restart-required changes.
+type ActiveSnapshot struct{ values map[string]string }
+
+// Get returns the active value for the named setting, if any.
+func (a *ActiveSnapshot) Get(name string) (string, bool) {
+	if a == nil {
+		return "", false
+	}
+	v, ok := a.values[name]
+	return v, ok
+}
+
+// CaptureActive returns a copy of the current snapshot. Call after the
+// initial Reload to record the values that the running process
+// "actually applied" — operational changes that require restart are
+// detected by comparing live values against this baseline.
+func (s *OperationalStore) CaptureActive() *ActiveSnapshot {
+	snap := s.cache.Load()
+	if snap == nil {
+		return &ActiveSnapshot{values: map[string]string{}}
+	}
+	out := make(map[string]string, len(snap.values))
+	for k, v := range snap.values {
+		out[k] = v
+	}
+	return &ActiveSnapshot{values: out}
+}
+
+// PendingChanges returns the names of operational fields whose live
+// value differs from `active` AND that are declared restart=true.
+func (s *OperationalStore) PendingChanges(active *ActiveSnapshot) []string {
+	if active == nil {
+		return nil
+	}
+	live := s.cache.Load()
+	if live == nil {
+		return nil
+	}
+	var out []string
+	for _, f := range AllFields() {
+		if f.Class != ClassOperational || !f.Restart {
+			continue
+		}
+		if live.values[f.Name] != active.values[f.Name] {
+			out = append(out, f.Name)
+		}
+	}
+	return out
+}

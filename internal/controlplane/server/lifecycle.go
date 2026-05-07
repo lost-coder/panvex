@@ -203,6 +203,7 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 			s.trySetStartupErr(func() error {
 				return s.settings.Reload(s.serverCtx)
 			})
+			s.settingsActive = s.settings.CaptureActive()
 		}
 	}
 
