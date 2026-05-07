@@ -37,9 +37,13 @@ x-logging: &default-logging
 
 services:
   postgres:
-    # TODO: pin to a digest (postgres:16-alpine@sha256:...) once Dependabot
-    # has produced the first PR. The Dockerfile base images are already
-    # pinned; this image is the only floating tag in the prod stack.
+    # The Dependabot docker-compose ecosystem in /deploy (see
+    # .github/dependabot.yml) opens a PR with the `@sha256:...` digest
+    # whenever the upstream tag moves. Operators rolling out manually
+    # should pin the digest here too:
+    #     image: postgres:16-alpine@sha256:<...>
+    # `docker pull postgres:16-alpine` then `docker inspect ... |
+    # jq -r '.[].RepoDigests'` returns the SHA to copy in.
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-panvex}

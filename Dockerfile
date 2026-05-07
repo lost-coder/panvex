@@ -41,13 +41,49 @@ COPY db ./db
 #                    builders and don't leak host filesystem layout.
 RUN go build -ldflags="-s -w" -trimpath -o /out/panvex-control-plane ./cmd/control-plane
 
+# SBOM stage: produce a CycloneDX JSON manifest of every Go module that
+# made it into the binary. Anchore syft reads the build artefact
+# directly — no source-tree round-trip — so the SBOM matches what the
+# operator actually ships. The output is copied into the final image at
+# /sbom/control-plane.cdx.json so cluster scanners (Trivy, Grype) can
+# read it without re-deriving from go.sum. Release archives already
+# carry their own SBOM via release.yml; this entry covers the image
+# distribution path.
+# anchore/syft is initially un-pinned: Dependabot's docker rule
+# (.github/dependabot.yml, /) opens the first "add @sha256:..." PR
+# the next time it runs, then keeps the digest current alongside the
+# tag. Until that PR lands, every build pulls whatever the registry
+# resolves :v1.18 to that day — operators who care about strict
+# reproducibility before the first Dependabot PR should resolve the
+# digest manually:
+#     docker manifest inspect anchore/syft:v1.18 \
+#       | jq -r '.manifests[0].digest // .config.digest'
+# and replace `:v1.18` below with `:v1.18@sha256:<digest>`.
+FROM anchore/syft:v1.18 AS sbom-builder
+COPY --from=control-plane-builder /out/panvex-control-plane /panvex-control-plane
+RUN /syft /panvex-control-plane -o cyclonedx-json=/sbom/control-plane.cdx.json && \
+    # Defensive assert: a future syft major that changes the -o flag
+    # semantics could exit zero with an empty file, leaving the final
+    # image carrying a useless SBOM. Fail the build instead.
+    test -s /sbom/control-plane.cdx.json && \
+    head -c1 /sbom/control-plane.cdx.json | grep -q '{'
+
 FROM alpine:3.23@sha256:5b10f432ef3da1b8d4c7eb6c487f2f5a8f096bc91145e68878dd4a5019afde11 AS control-plane
 WORKDIR /app
+
+# OCI image labels — operator scanners look these up to attribute the
+# image back to the project, the SBOM file, and the source repo.
+LABEL org.opencontainers.image.title="panvex-control-plane" \
+      org.opencontainers.image.source="https://github.com/lost-coder/panvex" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.description="Panvex control plane (HTTP + gRPC + embedded UI)." \
+      org.opencontainers.image.sbom="/sbom/control-plane.cdx.json"
 
 RUN apk add --no-cache ca-certificates && \
     addgroup -S panvex && adduser -S panvex -G panvex
 
 COPY --from=control-plane-builder /out/panvex-control-plane ./panvex-control-plane
+COPY --from=sbom-builder /sbom/control-plane.cdx.json /sbom/control-plane.cdx.json
 
 USER panvex
 
