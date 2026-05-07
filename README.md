@@ -12,6 +12,7 @@
   <a href="#-quick-install">Quick Install</a> &nbsp;&bull;&nbsp;
   <a href="#-features">Features</a> &nbsp;&bull;&nbsp;
   <a href="#%EF%B8%8F-architecture">Architecture</a> &nbsp;&bull;&nbsp;
+  <a href="#%EF%B8%8F-configuration">Configuration</a> &nbsp;&bull;&nbsp;
   <a href="#-development">Development</a> &nbsp;&bull;&nbsp;
   <a href="#-docker">Docker</a>
 </p>
@@ -139,6 +140,53 @@ Run `bash install.sh --help` for all environment variables.
 | Deploy | Multi-stage Docker · systemd · nginx |
 
 </details>
+
+---
+
+## ⚙️ Configuration
+
+Panvex reads its configuration from environment variables and a
+`config.toml` file at startup. Operational tunables (password policy,
+job worker cadences, presence thresholds, GeoIP, retention) are
+edited at runtime via the dashboard and stored in the database.
+
+### Quick reference
+
+| Layer | Source | Edited via |
+|---|---|---|
+| Bootstrap | `PANVEX_*` env / `config.toml` | Edit and restart panel |
+| Operational | DB | Settings → ⚙️ Sections |
+| Per-user | DB (`user_appearance`) | Settings → Appearance |
+
+### Essential env vars (bootstrap)
+
+| Name | Required | Purpose |
+|---|---|---|
+| `PANVEX_STORAGE_DSN` | yes | sqlite path or postgres URL |
+| `PANVEX_ENCRYPTION_KEY` | yes | master at-rest encryption key |
+| `PANVEX_DB_PASSWORD` | postgres | overrides DSN password (keeps it out of files) |
+| `PANVEX_HTTP_ADDR` | no | HTTP bind, default `:8080` |
+| `PANVEX_GRPC_ADDR` | no | gRPC bind, default `:8443` |
+| `PANVEX_TLS_MODE` | no | `proxy` (default) or `direct` |
+| `PANVEX_TRUSTED_PROXY_CIDRS` | reverse-proxy | trust X-Forwarded-* from these CIDRs |
+| `PANVEX_ENV` | no | `production` tightens cookie/HSTS defaults |
+
+The full list of bootstrap variables (~26) lives in
+[docs/settings/reference.md](docs/settings/reference.md). A
+ready-to-edit example config is at
+[docs/settings/example.config.toml](docs/settings/example.config.toml).
+
+### Operational settings
+
+Operational tunables (password lockout, session timeouts, presence
+thresholds, retention, GeoIP, update channel, plus 20 others) are
+managed through the dashboard at **Settings**. Changes take effect
+immediately; a few items (session timeouts) require a panel restart
+and the UI surfaces a banner when that's the case.
+
+The same list is also visible at the
+[`/api/settings/schema`](docs/settings/reference.md) endpoint and
+documented in [docs/settings/reference.md](docs/settings/reference.md).
 
 ---
 
