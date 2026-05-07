@@ -44,6 +44,13 @@ fi
 echo "=== Pre-push: Go lint ==="
 ~/go/bin/golangci-lint run ./...
 
+echo "=== Pre-push: Settings codegen drift ==="
+go generate ./internal/controlplane/settings/... >/dev/null 2>&1
+if ! git diff --quiet -- internal/controlplane/settings/gen/schema.json docs/settings/reference.md docs/settings/example.config.toml; then
+    echo "!!! Settings codegen drift; run 'make gen-settings' and commit."
+    exit 1
+fi
+
 echo "=== Pre-push: Go tests (race) ==="
 go test -race -count=1 ./...
 
