@@ -18,3 +18,14 @@ func TestSourceConstants(t *testing.T) {
 		seen[s] = true
 	}
 }
+
+func TestTypeConstants(t *testing.T) {
+	got := []Type{TypeInt, TypeDuration, TypeString, TypeBool, TypeHostPort, TypeURL, TypeEnum, TypeJSON}
+	seen := map[Type]bool{}
+	for _, ty := range got {
+		if seen[ty] {
+			t.Fatalf("duplicate type %q", ty)
+		}
+		seen[ty] = true
+	}
+}
