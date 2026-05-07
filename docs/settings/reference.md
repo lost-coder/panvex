@@ -48,3 +48,23 @@ Operational settings are stored in the database and edited via the panel UI or t
 | `geoip` | json | — | — | — | GeoIP data source mode (off/local/url) and database paths. |
 | `updates.channel` | enum | `stable` | — | — | Release channel used to discover panel + agent updates. |
 | `updates.allow_prerelease` | bool | `false` | — | — | Permit prerelease tags in the chosen channel. |
+| `agents.outbound_backoff_initial` | duration | `1s` | — | — | Initial reconnect delay for outbound agent supervisors after a transport failure. |
+| `agents.outbound_backoff_max` | duration | `60s` | — | — | Maximum reconnect delay (with jitter) for outbound agent supervisors. |
+| `agents.presence_degraded_after` | duration | `30s` | — | — | Heartbeat silence after which an agent is marked degraded. |
+| `agents.presence_offline_after` | duration | `90s` | — | — | Heartbeat silence after which an agent is marked offline. |
+| `auth.password_lockout_duration` | duration | `15m` | — | — | How long an account stays locked after exceeding the password failure cap. |
+| `auth.password_lockout_max_attempts` | int | `5` | — | — | Consecutive password failures before the account is locked. |
+| `auth.session_idle_timeout` | duration | `30m` | — | — | Session expires after this period of inactivity. Restart required. |
+| `auth.session_max_lifetime` | duration | `8h` | — | — | Absolute maximum session lifetime before re-authentication. Restart required. |
+| `auth.totp_lockout_duration` | duration | `5m` | — | — | How long the TOTP factor stays locked after exceeding the code-failure cap. |
+| `auth.totp_setup_ttl` | duration | `10m` | — | — | TTL for pending TOTP enrollment invitations. |
+| `jobs.ack_expiry_interval` | duration | `1h` | — | — | Cadence of the worker that scans acknowledged-but-incomplete job targets. |
+| `jobs.ack_expiry_ttl` | duration | `2h` | — | — | Time-to-live for acknowledged job targets without a result. |
+| `jobs.client_job_ttl` | duration | `10m` | — | — | TTL for cached client-job records. |
+| `jobs.key_eviction_interval` | duration | `1h` | — | — | Cadence of the worker that evicts expired job idempotency keys. |
+| `jobs.key_eviction_ttl` | duration | `24h` | — | — | Age threshold at which terminal job idempotency keys are evicted. |
+| `observability.metrics_poll_interval` | duration | `5s` | — | — | Cadence for sampling Prometheus-derived gauges. |
+| `observability.telemetry_dashboard_window` | duration | `40m` | — | — | Lookback window for the dashboard load sparkline. |
+| `observability.telemetry_detail_boost_ttl` | duration | `10m` | — | — | TTL for the dashboard detail-boost cache (high-resolution graph window). |
+| `storage.batch_flush_interval` | duration | `500ms` | — | — | Cadence for flushing accumulated audit/agent events to storage. |
+| `storage.rollup_interval` | duration | `5m` | — | — | Cadence for the timeseries rollup worker. |

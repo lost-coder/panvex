@@ -313,5 +313,207 @@
     "default": "false",
     "store": "runtime_settings",
     "desc": "Permit prerelease tags in the chosen channel."
+  },
+  {
+    "name": "agents.outbound_backoff_initial",
+    "class": "operational",
+    "type": "duration",
+    "default": "1s",
+    "min": "500ms",
+    "max": "30s",
+    "store": "runtime_settings",
+    "desc": "Initial reconnect delay for outbound agent supervisors after a transport failure."
+  },
+  {
+    "name": "agents.outbound_backoff_max",
+    "class": "operational",
+    "type": "duration",
+    "default": "60s",
+    "min": "5s",
+    "max": "10m",
+    "store": "runtime_settings",
+    "desc": "Maximum reconnect delay (with jitter) for outbound agent supervisors."
+  },
+  {
+    "name": "agents.presence_degraded_after",
+    "class": "operational",
+    "type": "duration",
+    "default": "30s",
+    "min": "10s",
+    "max": "5m",
+    "store": "runtime_settings",
+    "desc": "Heartbeat silence after which an agent is marked degraded."
+  },
+  {
+    "name": "agents.presence_offline_after",
+    "class": "operational",
+    "type": "duration",
+    "default": "90s",
+    "min": "30s",
+    "max": "30m",
+    "store": "runtime_settings",
+    "desc": "Heartbeat silence after which an agent is marked offline."
+  },
+  {
+    "name": "auth.password_lockout_duration",
+    "class": "operational",
+    "type": "duration",
+    "default": "15m",
+    "min": "1m",
+    "max": "24h",
+    "store": "runtime_settings",
+    "desc": "How long an account stays locked after exceeding the password failure cap."
+  },
+  {
+    "name": "auth.password_lockout_max_attempts",
+    "class": "operational",
+    "type": "int",
+    "default": "5",
+    "min": "3",
+    "max": "20",
+    "store": "runtime_settings",
+    "desc": "Consecutive password failures before the account is locked."
+  },
+  {
+    "name": "auth.session_idle_timeout",
+    "class": "operational",
+    "type": "duration",
+    "default": "30m",
+    "min": "5m",
+    "max": "12h",
+    "store": "runtime_settings",
+    "restart": true,
+    "desc": "Session expires after this period of inactivity. Restart required."
+  },
+  {
+    "name": "auth.session_max_lifetime",
+    "class": "operational",
+    "type": "duration",
+    "default": "8h",
+    "min": "1h",
+    "max": "168h",
+    "store": "runtime_settings",
+    "restart": true,
+    "desc": "Absolute maximum session lifetime before re-authentication. Restart required."
+  },
+  {
+    "name": "auth.totp_lockout_duration",
+    "class": "operational",
+    "type": "duration",
+    "default": "5m",
+    "min": "1m",
+    "max": "1h",
+    "store": "runtime_settings",
+    "desc": "How long the TOTP factor stays locked after exceeding the code-failure cap."
+  },
+  {
+    "name": "auth.totp_setup_ttl",
+    "class": "operational",
+    "type": "duration",
+    "default": "10m",
+    "min": "2m",
+    "max": "2h",
+    "store": "runtime_settings",
+    "desc": "TTL for pending TOTP enrollment invitations."
+  },
+  {
+    "name": "jobs.ack_expiry_interval",
+    "class": "operational",
+    "type": "duration",
+    "default": "1h",
+    "min": "5m",
+    "max": "12h",
+    "store": "runtime_settings",
+    "desc": "Cadence of the worker that scans acknowledged-but-incomplete job targets."
+  },
+  {
+    "name": "jobs.ack_expiry_ttl",
+    "class": "operational",
+    "type": "duration",
+    "default": "2h",
+    "min": "30m",
+    "max": "24h",
+    "store": "runtime_settings",
+    "desc": "Time-to-live for acknowledged job targets without a result."
+  },
+  {
+    "name": "jobs.client_job_ttl",
+    "class": "operational",
+    "type": "duration",
+    "default": "10m",
+    "min": "1m",
+    "max": "2h",
+    "store": "runtime_settings",
+    "desc": "TTL for cached client-job records."
+  },
+  {
+    "name": "jobs.key_eviction_interval",
+    "class": "operational",
+    "type": "duration",
+    "default": "1h",
+    "min": "5m",
+    "max": "12h",
+    "store": "runtime_settings",
+    "desc": "Cadence of the worker that evicts expired job idempotency keys."
+  },
+  {
+    "name": "jobs.key_eviction_ttl",
+    "class": "operational",
+    "type": "duration",
+    "default": "24h",
+    "min": "1h",
+    "max": "720h",
+    "store": "runtime_settings",
+    "desc": "Age threshold at which terminal job idempotency keys are evicted."
+  },
+  {
+    "name": "observability.metrics_poll_interval",
+    "class": "operational",
+    "type": "duration",
+    "default": "5s",
+    "min": "1s",
+    "max": "60s",
+    "store": "runtime_settings",
+    "desc": "Cadence for sampling Prometheus-derived gauges."
+  },
+  {
+    "name": "observability.telemetry_dashboard_window",
+    "class": "operational",
+    "type": "duration",
+    "default": "40m",
+    "min": "15m",
+    "max": "6h",
+    "store": "runtime_settings",
+    "desc": "Lookback window for the dashboard load sparkline."
+  },
+  {
+    "name": "observability.telemetry_detail_boost_ttl",
+    "class": "operational",
+    "type": "duration",
+    "default": "10m",
+    "min": "1m",
+    "max": "2h",
+    "store": "runtime_settings",
+    "desc": "TTL for the dashboard detail-boost cache (high-resolution graph window)."
+  },
+  {
+    "name": "storage.batch_flush_interval",
+    "class": "operational",
+    "type": "duration",
+    "default": "500ms",
+    "min": "100ms",
+    "max": "5s",
+    "store": "runtime_settings",
+    "desc": "Cadence for flushing accumulated audit/agent events to storage."
+  },
+  {
+    "name": "storage.rollup_interval",
+    "class": "operational",
+    "type": "duration",
+    "default": "5m",
+    "min": "1m",
+    "max": "1h",
+    "store": "runtime_settings",
+    "desc": "Cadence for the timeseries rollup worker."
   }
 ]
