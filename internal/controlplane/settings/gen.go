@@ -3,6 +3,9 @@ package settings
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
 )
 
 type schemaEntry struct {
@@ -54,4 +57,97 @@ func RenderSchemaJSON() ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// RenderReferenceMarkdown renders a human-readable reference doc for
+// every registered setting, grouped by class.
+func RenderReferenceMarkdown() ([]byte, error) {
+	var w strings.Builder
+	w.WriteString("# Panvex Settings Reference\n\n")
+	w.WriteString("_Auto-generated from `internal/controlplane/settings/registry.go`. Do not edit by hand — run `make gen-settings`._\n\n")
+
+	w.WriteString("## Bootstrap settings\n\n")
+	w.WriteString("Bootstrap settings are read once at process start. Edit them via environment variables or `config.toml`. Changes require a panel restart.\n\n")
+	writeMarkdownTable(&w, AllFields(), ClassBootstrap)
+
+	w.WriteString("\n## Operational settings\n\n")
+	w.WriteString("Operational settings are stored in the database and edited via the panel UI or the `/api/settings/values` endpoint.\n\n")
+	writeMarkdownTable(&w, AllFields(), ClassOperational)
+
+	return []byte(w.String()), nil
+}
+
+func writeMarkdownTable(w *strings.Builder, fields []FieldMeta, class Class) {
+	w.WriteString("| Name | Type | Default | ENV | TOML | Description |\n")
+	w.WriteString("|---|---|---|---|---|---|\n")
+	for _, f := range fields {
+		if f.Class != class {
+			continue
+		}
+		def := "—"
+		if f.Secret {
+			def = "_(secret, no default)_"
+		} else if f.HasDefault {
+			if f.Default == "" {
+				def = "_(empty)_"
+			} else {
+				def = "`" + f.Default + "`"
+			}
+		}
+		envCell := "—"
+		if f.Env != "" {
+			envCell = "`" + f.Env + "`"
+		}
+		tomlCell := "—"
+		if f.Toml != "" {
+			tomlCell = "`" + f.Toml + "`"
+		}
+		fmt.Fprintf(w, "| `%s` | %s | %s | %s | %s | %s |\n",
+			f.Name, f.Type, def, envCell, tomlCell, f.Desc)
+	}
+}
+
+// RenderExampleConfigTOML renders a fully commented example config
+// covering every bootstrap field that has a toml= attribute.
+func RenderExampleConfigTOML() ([]byte, error) {
+	type sectionEntry struct {
+		key, defaultV, desc string
+		secret              bool
+	}
+	sections := map[string][]sectionEntry{}
+	for _, f := range AllFields() {
+		if f.Class != ClassBootstrap || f.Toml == "" {
+			continue
+		}
+		dot := strings.IndexByte(f.Toml, '.')
+		if dot < 0 {
+			continue
+		}
+		section := f.Toml[:dot]
+		key := f.Toml[dot+1:]
+		sections[section] = append(sections[section], sectionEntry{
+			key: key, defaultV: f.Default, desc: f.Desc, secret: f.Secret,
+		})
+	}
+	names := make([]string, 0, len(sections))
+	for n := range sections {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	var w strings.Builder
+	w.WriteString("# Panvex control-plane example config\n")
+	w.WriteString("# Auto-generated from internal/controlplane/settings/registry.go.\n")
+	w.WriteString("# Copy to /etc/panvex/config.toml or pass via -config <path>.\n\n")
+	for _, sec := range names {
+		fmt.Fprintf(&w, "[%s]\n", sec)
+		for _, e := range sections[sec] {
+			fmt.Fprintf(&w, "# %s\n", e.desc)
+			if e.secret {
+				fmt.Fprintf(&w, "# %s = \"\"  # set via env var instead\n\n", e.key)
+				continue
+			}
+			fmt.Fprintf(&w, "%s = %q\n\n", e.key, e.defaultV)
+		}
+	}
+	return []byte(w.String()), nil
 }
