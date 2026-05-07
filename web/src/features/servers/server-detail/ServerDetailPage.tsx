@@ -18,6 +18,7 @@ import { ServerHero } from "./components/ServerHero";
 import { MobileLayout } from "./components/MobileLayout";
 import { DesktopLayout } from "./components/DesktopLayout";
 import { MeDownHero } from "./components/MeDownHero";
+import { TelemtUnreachableBanner } from "./components/TelemtUnreachableBanner";
 import { GatesPanel } from "./components/GatesPanel";
 import { UpstreamsList } from "./components/UpstreamsList";
 import { DcDetailSheet } from "./components/DcDetailSheet";
@@ -379,61 +380,67 @@ export function ServerDetailPage({
       />
 
       <div className="px-4 md:px-8 flex flex-col gap-6 pb-8 pt-6">
-        {mode === "me" && (
+        {server.telemtReachable === false ? (
+          <TelemtUnreachableBanner sinceUnix={server.telemtUnreachableSinceUnix} />
+        ) : (
           <>
-            <MobileLayout
-              initState={initState}
-              pulseItems={mobilePulseItems}
-              alertItems={alertItems}
-              metricsChart={metricsChart}
-              sortedDcs={sortedDcs}
-              dcItems={dcItems}
-              mobileTabs={mobileTabs}
-              onSelectDc={handleSelectDc}
-            />
+            {mode === "me" && (
+              <>
+                <MobileLayout
+                  initState={initState}
+                  pulseItems={mobilePulseItems}
+                  alertItems={alertItems}
+                  metricsChart={metricsChart}
+                  sortedDcs={sortedDcs}
+                  dcItems={dcItems}
+                  mobileTabs={mobileTabs}
+                  onSelectDc={handleSelectDc}
+                />
 
-            <DesktopLayout
-              server={server}
-              initState={initState}
-              pulseItems={desktopPulseItems}
-              sortedDcs={sortedDcs}
-              dcOk={dcOk}
-              dcWarn={dcWarn}
-              dcErr={dcErr}
-              metricsChart={metricsChart}
-              timelineEvents={timelineEvents}
-              alertItems={alertItems}
-              mePoolContent={mePoolContent}
-              connectionsContent={connectionsContent}
-              eventsContent={eventsContent}
-              onSelectDc={handleSelectDc}
-            />
+                <DesktopLayout
+                  server={server}
+                  initState={initState}
+                  pulseItems={desktopPulseItems}
+                  sortedDcs={sortedDcs}
+                  dcOk={dcOk}
+                  dcWarn={dcWarn}
+                  dcErr={dcErr}
+                  metricsChart={metricsChart}
+                  timelineEvents={timelineEvents}
+                  alertItems={alertItems}
+                  mePoolContent={mePoolContent}
+                  connectionsContent={connectionsContent}
+                  eventsContent={eventsContent}
+                  onSelectDc={handleSelectDc}
+                />
+              </>
+            )}
+
+            {(mode === "direct" || mode === "fallback") && (
+              <>
+                <div className="md:hidden">
+                  <DirectRelayMobile
+                    server={server}
+                    initState={initState}
+                    metricsChart={metricsChart}
+                    fallback={fallback}
+                  />
+                </div>
+                <div className="hidden md:block">
+                  <DirectRelayDesktop
+                    server={server}
+                    initState={initState}
+                    alertItems={alertItems}
+                    metricsChart={metricsChart}
+                    fallback={fallback}
+                  />
+                </div>
+              </>
+            )}
+
+            {mode === "me_down" && <MeDownHero recentEvents={server.events} />}
           </>
         )}
-
-        {(mode === "direct" || mode === "fallback") && (
-          <>
-            <div className="md:hidden">
-              <DirectRelayMobile
-                server={server}
-                initState={initState}
-                metricsChart={metricsChart}
-                fallback={fallback}
-              />
-            </div>
-            <div className="hidden md:block">
-              <DirectRelayDesktop
-                server={server}
-                initState={initState}
-                alertItems={alertItems}
-                metricsChart={metricsChart}
-                fallback={fallback}
-              />
-            </div>
-          </>
-        )}
-
-        {mode === "me_down" && <MeDownHero recentEvents={server.events} />}
 
         {agentConnection && (
           <AgentConnectionSection

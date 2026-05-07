@@ -26,6 +26,8 @@ function mockServer(overrides: Partial<ServerListItem> = {}): ServerListItem {
     healthyDcs: 0,
     totalDcs: 0,
     severity: "ok",
+    telemtReachable: true,
+    telemtUnreachableSinceUnix: 0,
     ...overrides,
   };
 }

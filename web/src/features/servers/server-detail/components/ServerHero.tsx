@@ -66,6 +66,11 @@ export function ServerHero({
               reloads: {systemInfo.configReloadCount}
             </span>
           )}
+          {server.telemtReachable === false && (
+            <span className="font-mono text-[11px] text-neutral-400 px-2 py-0.5 rounded-xs border border-neutral-500/30 bg-neutral-500/10">
+              Режим неизвестен
+            </span>
+          )}
           {relativeTime && <RelativeTimeBadge label={relativeTime} stale={relativeTimeStale} />}
           <ServerActionsDropdown
             onReload={onReload}
