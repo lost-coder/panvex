@@ -1,8 +1,11 @@
 package server
 
 import (
+	"compress/gzip"
 	"context"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -66,5 +69,68 @@ func TestHTTPSettingsSchema_ReturnsRegistry(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q in body", want)
 		}
+	}
+}
+
+func TestHTTPSettingsSchema_ReturnsETag(t *testing.T) {
+	server, _, cookies := newAuthedServer(t)
+	resp := performJSONRequest(t, server, http.MethodGet, "/api/settings/schema", nil, cookies)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d", resp.Code)
+	}
+	etag := resp.Header().Get("ETag")
+	if etag == "" || !strings.HasPrefix(etag, `"`) || !strings.HasSuffix(etag, `"`) {
+		t.Fatalf("ETag malformed: %q", etag)
+	}
+}
+
+func TestHTTPSettingsSchema_HonoursIfNoneMatch(t *testing.T) {
+	server, _, cookies := newAuthedServer(t)
+	first := performJSONRequest(t, server, http.MethodGet, "/api/settings/schema", nil, cookies)
+	etag := first.Header().Get("ETag")
+	if etag == "" {
+		t.Fatal("expected ETag on first request")
+	}
+	// second request with If-None-Match should return 304
+	req := httptest.NewRequest(http.MethodGet, "/api/settings/schema", nil)
+	req.Header.Set("If-None-Match", etag)
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
+	rr := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotModified {
+		t.Fatalf("status = %d, want 304", rr.Code)
+	}
+	if rr.Header().Get("ETag") != etag {
+		t.Errorf("304 must echo ETag")
+	}
+}
+
+func TestHTTPSettingsSchema_GzipCompresses(t *testing.T) {
+	server, _, cookies := newAuthedServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/settings/schema", nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
+	rr := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d", rr.Code)
+	}
+	if rr.Header().Get("Content-Encoding") != "gzip" {
+		t.Fatalf("Content-Encoding = %q", rr.Header().Get("Content-Encoding"))
+	}
+	gz, err := gzip.NewReader(rr.Body)
+	if err != nil {
+		t.Fatalf("gzip reader: %v", err)
+	}
+	body, err := io.ReadAll(gz)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"http.listen_address"`) {
+		t.Errorf("decompressed body missing schema content")
 	}
 }
