@@ -1,0 +1,57 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "panvex.fullname" . }}
+  labels:
+    {{- include "panvex.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "panvex.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Same-namespace pods may reach the panel — operator dashboards
+    # talking to its own backend, sibling pods using kubectl exec.
+    # Restricted to the published service ports so a co-tenant cannot
+    # poke arbitrary listeners (e.g. /debug/pprof on a separate
+    # listener) just because they share the namespace.
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.httpPort | default 8080 }}
+        - protocol: TCP
+          port: {{ .Values.service.grpcPort | default 8443 }}
+    {{- if .Values.networkPolicy.ingressFrom }}
+    - from:
+        {{- toYaml .Values.networkPolicy.ingressFrom | nindent 8 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.httpPort | default 8080 }}
+        - protocol: TCP
+          port: {{ .Values.service.grpcPort | default 8443 }}
+    {{- end }}
+  egress:
+    # DNS — required for resolving the Postgres DSN host as well as
+    # any external services (OTLP, GeoIP). 53/UDP is the floor.
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Postgres backend.
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.networkPolicy.postgresCIDR | quote }}
+      ports:
+        - protocol: TCP
+          port: 5432
+    {{- with .Values.networkPolicy.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}

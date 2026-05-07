@@ -157,3 +157,27 @@ bootstrap:
 nodeSelector: {}
 tolerations: []
 affinity: {}
+
+# Default-deny NetworkPolicy. When enabled, same-namespace pods may
+# reach the panel on its published HTTP/gRPC ports, plus any peers
+# you whitelist under `ingressFrom`; egress is restricted to DNS and
+# the Postgres backend. Disable only on clusters that already enforce
+# zero-trust at the CNI/service-mesh layer.
+networkPolicy:
+  enabled: true
+  # Cross-namespace ingress — typically your ingress controller's
+  # namespace. Empty default means same-namespace only, which is
+  # safe for a fresh install: a stock `helm install` produces a
+  # working policy without locking the panel out. Add entries when
+  # your ingress controller lives elsewhere, e.g.:
+  #
+  #   ingressFrom:
+  #     - namespaceSelector:
+  #         matchLabels:
+  #           kubernetes.io/metadata.name: ingress-nginx
+  ingressFrom: []
+  # Egress: where the panel pods may dial.
+  # Postgres CIDR — narrow to the actual DB subnet in production.
+  postgresCIDR: "10.0.0.0/8"
+  # Optional extra egress rules (e.g. OTLP collector, GeoIP fetch).
+  extraEgress: []
