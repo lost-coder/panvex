@@ -33,3 +33,19 @@ func walkRegistry(t reflect.Type, class Class) ([]FieldMeta, error) {
 	}
 	return out, nil
 }
+
+// AllFields returns the canonical-ordered concatenation of the
+// Bootstrap and Operational registries. Used by codegen and the HTTP
+// layer; never returns an error because the registry is statically
+// validated by the test suite.
+func AllFields() []FieldMeta {
+	bs, err := walkRegistry(reflect.TypeOf(Bootstrap{}), ClassBootstrap)
+	if err != nil {
+		panic("settings: invalid Bootstrap registry: " + err.Error())
+	}
+	op, err := walkRegistry(reflect.TypeOf(Operational{}), ClassOperational)
+	if err != nil {
+		panic("settings: invalid Operational registry: " + err.Error())
+	}
+	return append(bs, op...)
+}

@@ -49,3 +49,24 @@ func TestWalkRegistry_RejectMissingTag(t *testing.T) {
 		t.Fatal("expected error for field without setting tag")
 	}
 }
+
+func TestAllFields_Order(t *testing.T) {
+	all := AllFields()
+	if len(all) < 10 {
+		t.Fatalf("AllFields too short: %d", len(all))
+	}
+	// bootstrap entries come first
+	bsCount := 0
+	for _, f := range all {
+		if f.Class == ClassBootstrap {
+			bsCount++
+		} else {
+			break
+		}
+	}
+	for _, f := range all[bsCount:] {
+		if f.Class != ClassOperational {
+			t.Fatalf("after bootstrap, expected operational, got %q for %s", f.Class, f.Name)
+		}
+	}
+}
