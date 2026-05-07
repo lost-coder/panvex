@@ -2,7 +2,7 @@
 # Mirrors CI checks so pre-push and local runs match GitHub Actions.
 
 .PHONY: help test test-fast test-pkg lint vuln check build build-embed \
-        sqlc tidy fmt clean install-tools bench all
+        sqlc tidy fmt clean install-tools bench gen-settings all
 
 # Default target: list available commands.
 help:
@@ -68,6 +68,13 @@ install-tools:
 	go install golang.org/x/vuln/cmd/govulncheck@latest
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 	go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
+
+# gen-settings runs the registry codegen.
+gen-settings:
+	go generate ./internal/controlplane/settings/...
+	@echo "wrote internal/controlplane/settings/gen/schema.json"
+	@echo "wrote docs/settings/reference.md"
+	@echo "wrote docs/settings/example.config.toml"
 
 # Control-plane microbenchmarks (batch writer, event bus, bulk insert).
 bench:

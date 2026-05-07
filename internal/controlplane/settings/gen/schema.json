@@ -1,0 +1,317 @@
+[
+  {
+    "name": "http.listen_address",
+    "class": "bootstrap",
+    "type": "hostport",
+    "default": ":8080",
+    "env": "PANVEX_HTTP_ADDR",
+    "toml": "http.listen_address",
+    "desc": "HTTP bind address for the control-plane API and dashboard."
+  },
+  {
+    "name": "http.root_path",
+    "class": "bootstrap",
+    "type": "string",
+    "default": "",
+    "env": "PANVEX_HTTP_ROOT_PATH",
+    "toml": "http.root_path",
+    "desc": "URL prefix when behind a path-rewriting reverse proxy (empty = none)."
+  },
+  {
+    "name": "http.agent_root_path",
+    "class": "bootstrap",
+    "type": "string",
+    "default": "",
+    "env": "PANVEX_HTTP_AGENT_ROOT_PATH",
+    "toml": "http.agent_root_path",
+    "desc": "URL prefix for the agent gRPC-gateway when fronted separately."
+  },
+  {
+    "name": "http.panel_allowed_cidrs",
+    "class": "bootstrap",
+    "type": "string",
+    "default": "",
+    "env": "PANVEX_PANEL_ALLOWED_CIDRS",
+    "toml": "http.panel_allowed_cidrs",
+    "desc": "Comma-separated CIDRs allowed to reach the panel API (empty = no restriction)."
+  },
+  {
+    "name": "http.trusted_proxy_cidrs",
+    "class": "bootstrap",
+    "type": "string",
+    "default": "",
+    "env": "PANVEX_TRUSTED_PROXY_CIDRS",
+    "toml": "http.trusted_proxy_cidrs",
+    "desc": "Trusted reverse-proxy CIDRs whose X-Forwarded-For headers are honoured."
+  },
+  {
+    "name": "grpc.listen_address",
+    "class": "bootstrap",
+    "type": "hostport",
+    "default": ":8443",
+    "env": "PANVEX_GRPC_ADDR",
+    "toml": "grpc.listen_address",
+    "desc": "gRPC bind address for the agent gateway."
+  },
+  {
+    "name": "tls.mode",
+    "class": "bootstrap",
+    "type": "enum",
+    "default": "proxy",
+    "values": [
+      "proxy",
+      "direct"
+    ],
+    "env": "PANVEX_TLS_MODE",
+    "toml": "tls.mode",
+    "desc": "TLS termination mode. proxy = terminate at reverse proxy; direct = serve TLS from the panel."
+  },
+  {
+    "name": "tls.cert_file",
+    "class": "bootstrap",
+    "type": "string",
+    "default": "",
+    "env": "PANVEX_TLS_CERT_FILE",
+    "toml": "tls.cert_file",
+    "desc": "PEM certificate path when tls.mode=direct."
+  },
+  {
+    "name": "tls.key_file",
+    "class": "bootstrap",
+    "type": "string",
+    "default": "",
+    "env": "PANVEX_TLS_KEY_FILE",
+    "toml": "tls.key_file",
+    "desc": "PEM private key path when tls.mode=direct."
+  },
+  {
+    "name": "panel.restart_mode",
+    "class": "bootstrap",
+    "type": "enum",
+    "default": "disabled",
+    "values": [
+      "disabled",
+      "supervised"
+    ],
+    "env": "PANVEX_RESTART_MODE",
+    "toml": "panel.restart_mode",
+    "desc": "Self-restart capability. supervised requires a process supervisor."
+  },
+  {
+    "name": "panel.env",
+    "class": "bootstrap",
+    "type": "enum",
+    "default": "development",
+    "values": [
+      "development",
+      "production"
+    ],
+    "env": "PANVEX_ENV",
+    "toml": "panel.env",
+    "desc": "Deployment environment. production tightens defaults (cookies, HSTS, ws origin)."
+  },
+  {
+    "name": "panel.multi_tenant",
+    "class": "bootstrap",
+    "type": "bool",
+    "default": "false",
+    "env": "PANVEX_MULTI_TENANT",
+    "toml": "panel.multi_tenant",
+    "desc": "Enable per-fleet-group scoping for non-admin users."
+  },
+  {
+    "name": "storage.driver",
+    "class": "bootstrap",
+    "type": "enum",
+    "default": "sqlite",
+    "values": [
+      "sqlite",
+      "postgres"
+    ],
+    "env": "PANVEX_STORAGE_DRIVER",
+    "toml": "storage.driver",
+    "desc": "Storage backend driver. Use postgres for production deployments."
+  },
+  {
+    "name": "storage.dsn",
+    "class": "bootstrap",
+    "type": "string",
+    "env": "PANVEX_STORAGE_DSN",
+    "toml": "storage.dsn",
+    "desc": "Storage data source name. Required. SQLite path or postgres URL."
+  },
+  {
+    "name": "storage.db_password",
+    "class": "bootstrap",
+    "type": "string",
+    "env": "PANVEX_DB_PASSWORD",
+    "secret": true,
+    "desc": "Postgres password override. Env-only — keeps the secret out of config files."
+  },
+  {
+    "name": "storage.allow_insecure_db",
+    "class": "bootstrap",
+    "type": "bool",
+    "default": "false",
+    "env": "PANVEX_ALLOW_INSECURE_DB",
+    "desc": "Permit Postgres DSNs with sslmode=disable. Env-only safety guard."
+  },
+  {
+    "name": "storage.allow_empty_db_password",
+    "class": "bootstrap",
+    "type": "bool",
+    "default": "false",
+    "env": "PANVEX_ALLOW_EMPTY_DB_PASSWORD",
+    "desc": "Permit empty Postgres password. Env-only safety guard for development only."
+  },
+  {
+    "name": "auth.encryption_key",
+    "class": "bootstrap",
+    "type": "string",
+    "env": "PANVEX_ENCRYPTION_KEY",
+    "secret": true,
+    "desc": "Master at-rest encryption key. Required. No default, no TOML."
+  },
+  {
+    "name": "auth.force_secure_cookie",
+    "class": "bootstrap",
+    "type": "enum",
+    "default": "auto",
+    "values": [
+      "auto",
+      "true",
+      "false"
+    ],
+    "env": "PANVEX_FORCE_SECURE_COOKIE",
+    "desc": "Override the auto-detected Secure cookie flag. Env-only."
+  },
+  {
+    "name": "auth.hsts_preload",
+    "class": "bootstrap",
+    "type": "bool",
+    "default": "false",
+    "env": "PANVEX_HSTS_PRELOAD",
+    "desc": "Emit the preload directive in HSTS headers. Env-only."
+  },
+  {
+    "name": "observability.log_level",
+    "class": "bootstrap",
+    "type": "enum",
+    "default": "info",
+    "values": [
+      "debug",
+      "info",
+      "warn",
+      "error"
+    ],
+    "env": "PANVEX_LOG_LEVEL",
+    "toml": "observability.log_level",
+    "desc": "Logger verbosity."
+  },
+  {
+    "name": "observability.log_file",
+    "class": "bootstrap",
+    "type": "string",
+    "default": "",
+    "env": "PANVEX_LOG_FILE",
+    "toml": "observability.log_file",
+    "desc": "Path to log file. Empty = stderr only."
+  },
+  {
+    "name": "observability.pprof_addr",
+    "class": "bootstrap",
+    "type": "string",
+    "default": "",
+    "env": "PANVEX_PPROF_ADDR",
+    "toml": "observability.pprof_addr",
+    "desc": "pprof listener host:port. Empty disables pprof."
+  },
+  {
+    "name": "observability.metrics_scrape_token",
+    "class": "bootstrap",
+    "type": "string",
+    "env": "PANVEX_METRICS_SCRAPE_TOKEN",
+    "secret": true,
+    "desc": "Bearer token required to scrape /metrics. Env-only."
+  },
+  {
+    "name": "updates.install_script_url",
+    "class": "bootstrap",
+    "type": "string",
+    "default": "",
+    "env": "PANVEX_INSTALL_SCRIPT_URL",
+    "toml": "updates.install_script_url",
+    "desc": "Override default agent install-script URL emitted by /api/agents/{id}/install-command."
+  },
+  {
+    "name": "agent.client_data_concurrency",
+    "class": "bootstrap",
+    "type": "int",
+    "default": "4",
+    "min": "1",
+    "max": "32",
+    "env": "PANVEX_AGENT_CLIENT_DATA_CONCURRENCY",
+    "toml": "agent.client_data_concurrency",
+    "desc": "Per-agent concurrency for the panel-side client-data fetcher."
+  },
+  {
+    "name": "http.public_url",
+    "class": "operational",
+    "type": "string",
+    "default": "",
+    "store": "panel_settings.http_public_url",
+    "desc": "Externally visible URL of the panel; used in agent install scripts."
+  },
+  {
+    "name": "grpc.public_endpoint",
+    "class": "operational",
+    "type": "string",
+    "default": "",
+    "store": "panel_settings.grpc_public_endpoint",
+    "desc": "Externally visible gRPC endpoint for agents to dial."
+  },
+  {
+    "name": "auth.password_min_length",
+    "class": "operational",
+    "type": "int",
+    "default": "10",
+    "min": "8",
+    "max": "64",
+    "store": "panel_settings.password_min_length",
+    "desc": "Minimum length for newly created or rotated passwords."
+  },
+  {
+    "name": "retention",
+    "class": "operational",
+    "type": "json",
+    "store": "panel_settings.retention_json",
+    "desc": "Retention policy: how long to keep audit events, metrics, jobs, presence rows."
+  },
+  {
+    "name": "geoip",
+    "class": "operational",
+    "type": "json",
+    "store": "panel_settings.geoip_json",
+    "desc": "GeoIP data source mode (off/local/url) and database paths."
+  },
+  {
+    "name": "updates.channel",
+    "class": "operational",
+    "type": "enum",
+    "default": "stable",
+    "values": [
+      "stable",
+      "beta"
+    ],
+    "store": "runtime_settings",
+    "desc": "Release channel used to discover panel + agent updates."
+  },
+  {
+    "name": "updates.allow_prerelease",
+    "class": "operational",
+    "type": "bool",
+    "default": "false",
+    "store": "runtime_settings",
+    "desc": "Permit prerelease tags in the chosen channel."
+  }
+]

@@ -1,0 +1,69 @@
+# Panvex control-plane example config
+# Auto-generated from internal/controlplane/settings/registry.go.
+# Copy to /etc/panvex/config.toml or pass via -config <path>.
+
+[agent]
+# Per-agent concurrency for the panel-side client-data fetcher.
+client_data_concurrency = "4"
+
+[grpc]
+# gRPC bind address for the agent gateway.
+listen_address = ":8443"
+
+[http]
+# HTTP bind address for the control-plane API and dashboard.
+listen_address = ":8080"
+
+# URL prefix when behind a path-rewriting reverse proxy (empty = none).
+root_path = ""
+
+# URL prefix for the agent gRPC-gateway when fronted separately.
+agent_root_path = ""
+
+# Comma-separated CIDRs allowed to reach the panel API (empty = no restriction).
+panel_allowed_cidrs = ""
+
+# Trusted reverse-proxy CIDRs whose X-Forwarded-For headers are honoured.
+trusted_proxy_cidrs = ""
+
+[observability]
+# Logger verbosity.
+log_level = "info"
+
+# Path to log file. Empty = stderr only.
+log_file = ""
+
+# pprof listener host:port. Empty disables pprof.
+pprof_addr = ""
+
+[panel]
+# Self-restart capability. supervised requires a process supervisor.
+restart_mode = "disabled"
+
+# Deployment environment. production tightens defaults (cookies, HSTS, ws origin).
+env = "development"
+
+# Enable per-fleet-group scoping for non-admin users.
+multi_tenant = "false"
+
+[storage]
+# Storage backend driver. Use postgres for production deployments.
+driver = "sqlite"
+
+# Storage data source name. Required. SQLite path or postgres URL.
+dsn = ""
+
+[tls]
+# TLS termination mode. proxy = terminate at reverse proxy; direct = serve TLS from the panel.
+mode = "proxy"
+
+# PEM certificate path when tls.mode=direct.
+cert_file = ""
+
+# PEM private key path when tls.mode=direct.
+key_file = ""
+
+[updates]
+# Override default agent install-script URL emitted by /api/agents/{id}/install-command.
+install_script_url = ""
+
