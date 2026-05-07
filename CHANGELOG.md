@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Settings system overhaul
+
+- Bootstrap config (ports, TLS, DSN, encryption key, log/observability) is now read once at startup from environment variables or `config.toml`. Legacy CLI flags (`-http-addr`, `-grpc-addr`, `-storage-driver`, `-storage-dsn`, `-restart-mode`) are removed.
+- Operational tunables (password lockout, session timeouts, presence thresholds, job/storage cadences, retention, GeoIP, update channel) live in the database and are edited via the dashboard.
+- New endpoints: `GET /api/settings/schema`, `GET/PUT /api/settings/values`, `GET /api/settings/restart-status`. The dashboard renders the settings page from `/api/settings/schema` with locked rendering for bootstrap fields.
+- `runtime_settings` kv table introduced; bootstrap-only columns dropped from `panel_settings`.
+- Every setting carries metadata (type, range, default, source, description) in a central Go registry; codegen produces `docs/settings/reference.md` and `docs/settings/example.config.toml`.
+
 ### Performance / Observability — Sprint S-20 (2026-05-02)
 
 - **P-02:** added per-request DB query counter + N+1 detection middleware. Storage backends (`postgres` + `sqlite`) now wrap their `dbExecutor` with `instrumentedExecutor`, which increments a context-bound counter on every `Exec`/`Query`/`QueryRow` call. HTTP middleware `dbQueryCountMiddleware` installs a fresh counter per inbound request and emits a structured WARN with `alert=high_db_query_count`, `path`, `method`, `query_count`, `threshold` when the count exceeds **30** for a single request — that's the audit's N+1 paging signal. Calls running outside a tracked HTTP request (background batch writer, gRPC streams, startup hooks) are unaffected — `IncrementDBQuery` is a cheap atomic no-op when the context carries no counter. Closes the audit's "no SQL tracing → can't confirm N+1" gap; gives operators the dashboard signal needed to drill into specific endpoints. Added 8 unit tests covering counter semantics (zero-init, increments, request-scoping, thread safety, no-op when ctx unset) and middleware behaviour (under-threshold quiet, above-threshold WARN with audit-stable alert key, no-logger safety).
