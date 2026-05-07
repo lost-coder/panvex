@@ -27,6 +27,14 @@ linters:
       # code or get an explicit path-scoped entry with a comment.
       excludes: []
   exclusions:
+    # protoc-gen-go output and other regenerated trees should never gate
+    # the build: lint/style noise there reflects upstream codegen, not
+    # author intent. Generated headers live in the files themselves; we
+    # also list paths explicitly so the directories don't need re-marking
+    # whenever a generator adds a file.
+    paths:
+      - "internal/gatewayrpc"
+      - "internal/dbsqlc"
     rules:
       - linters:
           - errcheck

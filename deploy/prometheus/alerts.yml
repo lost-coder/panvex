@@ -191,3 +191,23 @@ groups:
             The batch_writer audit stream reports persistent failures for
             5 minutes. Check Postgres availability and the alert tag
             `audit_persist_failed` in slog.
+
+  - name: panvex.runtime
+    rules:
+      # Q3.U-Q-15: any goroutine panic that the recover() handler caught
+      # is a latent bug — the request/job continued, but the invariant
+      # that crashed once will likely crash again. Page on first
+      # occurrence so we get the stack trace from slog before logs roll.
+      - alert: PanvexGoroutinePanicRecovered
+        expr: increase(panvex_goroutine_panic_recovered_total[10m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: control-plane
+        annotations:
+          summary: "Recovered goroutine panic ({{ $labels.goroutine }})"
+          description: |
+            A panic was recovered in goroutine {{ $labels.goroutine }} in
+            the last 10 minutes. Recovery keeps the process alive but the
+            failed work was abandoned and the underlying invariant is
+            broken — find the stack trace in slog and fix the bug.
