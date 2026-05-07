@@ -216,7 +216,25 @@ npm run build                     # Production build
 npm run lint                      # ESLint
 ```
 
+### Glossary
+
+Three terms appear in different layers and mean *related but distinct* things:
+
+| Term | Where you see it | Meaning |
+|---|---|---|
+| **Server** | Dashboard UI ("Servers" page) | Operator-facing label for the box being managed. |
+| **Node** | Specs, design docs, fleet-group detail | Same thing as Server, used in lower-level technical copy. |
+| **Agent** | DB tables, Go types, gRPC routes (`agents`, `/api/agents/*`) | The `panvex-agent` Go process running on the node. **One agent row ⇄ one node.** |
+
+When writing code, always use `agent` / `agent_id`. When writing user copy, prefer "Server".
+
 ### 🏃 Local Development Flow
+
+> The dev fleet (`scripts/dev-panel.sh`, `scripts/dev-agents.sh`,
+> `scripts/dev-stop.sh`) lives one level above this repo, in the
+> workspace. It writes its DB, logs, and PIDs to `.tmp/dev/`. See
+> [the workspace scripts/README.md](../scripts/README.md) for the full
+> orchestration loop. The flow below is the manual equivalent.
 
 **1.** Bootstrap admin:
 
@@ -377,6 +395,32 @@ Emergency TOTP reset via CLI:
   -storage-dsn /var/lib/panvex/panvex.db \
   -username admin
 ```
+
+---
+
+## 🛟 Operator tooling
+
+| Subcommand | Purpose |
+|---|---|
+| `diagnose` | Markdown health snapshot — schema version, row counts, pool stats, CA expiry, encryption-key fingerprint. Paste into a support ticket. |
+| `backup` | SQLite-only `tar.gz` of a `VACUUM INTO` snapshot plus `metadata.json`. Postgres operators use `pg_dump`. |
+| `restore` | Prints the manual restore recipe (`tar -xzf` + `migrate-schema`). Auto-restore is intentionally not supported — overwriting a populated DB is the kind of mistake we refuse to make easy. |
+
+```sh
+./panvex-control-plane diagnose \
+  -storage-driver sqlite \
+  -storage-dsn /var/lib/panvex/panvex.db
+
+./panvex-control-plane backup \
+  -storage-driver sqlite \
+  -storage-dsn /var/lib/panvex/panvex.db \
+  -out /var/backups/panvex-$(date -u +%Y%m%dT%H%M%SZ).tar.gz
+```
+
+The encryption-key fingerprint embedded in both `diagnose` output and
+`metadata.json` is a one-way SHA-256 prefix — operators can confirm two
+panels share the same `PANVEX_ENCRYPTION_KEY` without ever exchanging
+the key itself.
 
 ---
 

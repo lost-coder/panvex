@@ -62,7 +62,7 @@ db/
   migrations/        PostgreSQL schema
   queries/           SQL source for sqlc
 proto/               Protobuf definitions for gRPC gateway
-web/                 React dashboard (src/ui/ is the inlined panvex-ui kit — Phase 4)
+web/                 React dashboard (web/src/ui/ is the in-tree UI kit)
 deploy/              Docker Compose, nginx, install scripts
 .githooks/pre-push   Mirrors CI: golangci-lint + race tests + govulncheck +
                      frontend build/lint/audit. Bypass: PANVEX_SKIP_PREPUSH=1.
