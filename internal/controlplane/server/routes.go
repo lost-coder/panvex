@@ -117,6 +117,7 @@ func (s *Server) routes() http.Handler {
 				authenticated.Get("/events", s.handleEvents())
 				authenticated.Get("/settings/appearance", s.handleGetUserAppearance())
 				authenticated.Put("/settings/appearance", s.handlePutUserAppearance())
+				authenticated.Get("/settings/schema", s.handleSettingsSchemaGET)
 				authenticated.Get("/telemetry/dashboard", s.handleTelemetryDashboard())
 				authenticated.Get("/telemetry/servers", s.handleTelemetryServers())
 				authenticated.Get("/telemetry/servers/{id}", s.handleTelemetryServerDetail())
