@@ -131,6 +131,12 @@ func (s *Server) handlePutPanelSettings() http.HandlerFunc {
 			UpdatedAt:          s.now().UTC().Unix(),
 		})
 
+		// Dual-write: route through OperationalStore so /api/settings/values
+		// stays consistent with this typed endpoint, then update the
+		// in-memory snapshot below for subsystems (auth/enrollment) that
+		// don't go through the store yet. Mirrors the retention/geoip
+		// pattern; can be collapsed once boot init reorders to construct
+		// OperationalStore before the snapshot consumers.
 		if s.settings != nil {
 			who := fmt.Sprintf("user:%s", session.UserID)
 			updates := map[string]string{

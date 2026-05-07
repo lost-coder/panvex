@@ -1,5 +1,5 @@
 -- +goose Up
--- 0035: drop bootstrap-only columns from panel_settings.
+-- 0036: drop bootstrap-only columns from panel_settings.
 -- Project is pre-release; no compatibility shim.
 -- These columns are now sourced from env/config.toml via the settings registry.
 
