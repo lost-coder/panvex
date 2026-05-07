@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -45,10 +46,11 @@ func (s *Server) handlePutGeoIPSettings() http.HandlerFunc {
 			return
 		}
 
+		who := fmt.Sprintf("user:%s", session.UserID)
 		s.settingsMu.Lock()
 		prevMode := s.geoipSettings.Mode
 		s.geoipSettings = req
-		if err := s.persistGeoIPSettings(r.Context()); err != nil {
+		if err := s.persistGeoIPSettings(r.Context(), who); err != nil {
 			s.settingsMu.Unlock()
 			s.logger.Error("persist geoip settings", "error", err)
 			writeError(w, http.StatusInternalServerError, "internal error")

@@ -177,18 +177,25 @@ func validateGeoIPSettings(s geoip.Settings) error {
 }
 
 // persistGeoIPSettings marshals s.geoipSettings and writes it through
-// the store. Caller holds settingsMu so the marshalled snapshot
-// matches the in-memory state observed by lookups during the same
-// critical section.
-func (s *Server) persistGeoIPSettings(ctx context.Context) error {
-	if s.store == nil {
-		return nil
-	}
+// both the OperationalStore (for /api/settings/values consistency) and
+// the raw store (for restoreGeoIPSettings boot-time reload).
+// Caller holds settingsMu so the marshalled snapshot matches the
+// in-memory state observed by lookups during the same critical section.
+// who is the audit principal (e.g. "user:42").
+func (s *Server) persistGeoIPSettings(ctx context.Context, who string) error {
 	data, err := json.Marshal(s.geoipSettings)
 	if err != nil {
 		return err
 	}
-	return s.store.PutGeoIPSettings(ctx, data)
+	if s.settings != nil {
+		if err := s.settings.Put(ctx, map[string]string{"geoip": string(data)}, who); err != nil {
+			return err
+		}
+	}
+	if s.store != nil {
+		return s.store.PutGeoIPSettings(ctx, data)
+	}
+	return nil
 }
 
 // persistGeoIPState marshals s.geoipState and writes it. Caller holds

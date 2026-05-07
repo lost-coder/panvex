@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -36,6 +37,20 @@ const (
 	errInvalidPanelSettings   = "invalid panel settings payload"
 )
 
+// panelSettingsFromStore builds a PanelSettings from the OperationalStore
+// typed getters. Falls back to panelSettingsSnapshot when the store is nil
+// (test fixtures without a DB-backed store).
+func (s *Server) panelSettingsFromStore() PanelSettings {
+	if s.settings == nil {
+		return s.panelSettingsSnapshot()
+	}
+	return PanelSettings{
+		HTTPPublicURL:      s.settings.HTTPPublicURL(),
+		GRPCPublicEndpoint: s.settings.GRPCPublicEndpoint(),
+		PasswordMinLength:  int32(s.settings.PasswordMinLength()), //nolint:gosec // bounded 8–64 in registry
+	}
+}
+
 func (s *Server) handleGetPanelSettings() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, user, err := s.requireSession(r)
@@ -48,40 +63,33 @@ func (s *Server) handleGetPanelSettings() http.HandlerFunc {
 			return
 		}
 
-		settings := s.panelSettingsSnapshot()
+		settings := s.panelSettingsFromStore()
 		writeJSON(w, http.StatusOK, panelSettingsResponseFromSettings(settings, s.panelRuntime, s.panelRestartStatus()))
 	}
 }
 
 // readPanelSettingsBody reads, length-limits, and JSON-decodes the panel
-// settings payload twice (once into a typed struct, once into a raw-fields
-// map for rejectRuntimeMutation). Writes the HTTP error and returns false
-// on any failure.
-func readPanelSettingsBody(w http.ResponseWriter, r *http.Request) (updatePanelSettingsRequest, map[string]json.RawMessage, bool) {
+// settings payload. Writes the HTTP error and returns false on any failure.
+func readPanelSettingsBody(w http.ResponseWriter, r *http.Request) (updatePanelSettingsRequest, bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxPanelSettingsBodyBytes)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		var maxBytesError *http.MaxBytesError
 		if errors.As(err, &maxBytesError) {
 			writeError(w, http.StatusRequestEntityTooLarge, "panel settings payload too large")
-			return updatePanelSettingsRequest{}, nil, false
+			return updatePanelSettingsRequest{}, false
 		}
 		writeError(w, http.StatusBadRequest, errInvalidPanelSettings)
-		return updatePanelSettingsRequest{}, nil, false
+		return updatePanelSettingsRequest{}, false
 	}
 	_ = r.Body.Close()
 
 	var request updatePanelSettingsRequest
 	if err := json.Unmarshal(body, &request); err != nil {
 		writeError(w, http.StatusBadRequest, errInvalidPanelSettings)
-		return updatePanelSettingsRequest{}, nil, false
+		return updatePanelSettingsRequest{}, false
 	}
-	var requestFields map[string]json.RawMessage
-	if err := json.Unmarshal(body, &requestFields); err != nil {
-		writeError(w, http.StatusBadRequest, errInvalidPanelSettings)
-		return updatePanelSettingsRequest{}, nil, false
-	}
-	return request, requestFields, true
+	return request, true
 }
 
 func (s *Server) handlePutPanelSettings() http.HandlerFunc {
@@ -96,12 +104,8 @@ func (s *Server) handlePutPanelSettings() http.HandlerFunc {
 			return
 		}
 
-		request, requestFields, ok := readPanelSettingsBody(w, r)
+		request, ok := readPanelSettingsBody(w, r)
 		if !ok {
-			return
-		}
-		if err := rejectRuntimeMutation(requestFields, s.panelRuntime); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 
@@ -113,8 +117,11 @@ func (s *Server) handlePutPanelSettings() http.HandlerFunc {
 		// Preserve the existing password_min_length when the caller omits it (zero value).
 		effectivePasswordMinLength := request.PasswordMinLength
 		if effectivePasswordMinLength == 0 {
-			existing := s.panelSettingsSnapshot()
-			effectivePasswordMinLength = existing.PasswordMinLength
+			if s.settings != nil {
+				effectivePasswordMinLength = int32(s.settings.PasswordMinLength()) //nolint:gosec // bounded 8–64 in registry
+			} else {
+				effectivePasswordMinLength = s.panelSettingsSnapshot().PasswordMinLength
+			}
 		}
 
 		settings := normalizePanelSettings(PanelSettings{
@@ -124,14 +131,22 @@ func (s *Server) handlePutPanelSettings() http.HandlerFunc {
 			UpdatedAt:          s.now().UTC().Unix(),
 		})
 
-		if s.store != nil {
-			if err := s.store.PutPanelSettings(r.Context(), panelSettingsToRecord(settings)); err != nil {
+		if s.settings != nil {
+			who := fmt.Sprintf("user:%s", session.UserID)
+			updates := map[string]string{
+				"http.public_url":          settings.HTTPPublicURL,
+				"grpc.public_endpoint":     settings.GRPCPublicEndpoint,
+				"auth.password_min_length": fmt.Sprintf("%d", settings.PasswordMinLength),
+			}
+			if err := s.settings.Put(r.Context(), updates, who); err != nil {
 				s.logger.Error("put panel settings failed", "error", err)
 				writeError(w, http.StatusInternalServerError, "internal error")
 				return
 			}
 		}
 
+		// Keep in-memory snapshot in sync so enrollment/auth handlers see
+		// the new values without re-reading from the store.
 		s.settingsMu.Lock()
 		s.panelSettings = settings
 		s.settingsMu.Unlock()
@@ -161,7 +176,7 @@ func (s *Server) handleRestartPanel() http.HandlerFunc {
 			return
 		}
 
-		settings := s.panelSettingsSnapshot()
+		settings := s.panelSettingsFromStore()
 		restart := s.panelRestartStatus()
 		if !restart.Supported || s.requestRestart == nil {
 			writeError(w, http.StatusConflict, "panel restart is unavailable in the current runtime")
@@ -202,24 +217,4 @@ func panelSettingsResponseFromSettings(settings PanelSettings, runtime PanelRunt
 		UpdatedAtUnix:      settings.UpdatedAt,
 		Restart:            restart,
 	}
-}
-
-func rejectRuntimeMutation(requestFields map[string]json.RawMessage, runtime PanelRuntime) error {
-	for _, field := range []string{
-		"http_root_path",
-		"http_listen_address",
-		"grpc_listen_address",
-		"tls_mode",
-		"tls_cert_file",
-		"tls_key_file",
-	} {
-		if _, exists := requestFields[field]; !exists {
-			continue
-		}
-		if runtime.ConfigSource == PanelRuntimeSourceConfigFile {
-			return errors.New(field + " is managed by the panel config file")
-		}
-		return errors.New(field + " is a read-only runtime value")
-	}
-	return nil
 }

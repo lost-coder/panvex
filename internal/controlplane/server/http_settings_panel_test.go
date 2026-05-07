@@ -152,15 +152,27 @@ func TestHTTPPanelSettingsRequiresAdminAndPersistsSharedEndpointChanges(t *testi
 		t.Fatalf("updated.restart.state = %q, want %q", updatedPayload.Restart.State, "ready")
 	}
 
-	storedSettings, err := store.GetPanelSettings(context.Background())
-	if err != nil {
-		t.Fatalf("GetPanelSettings() error = %v", err)
+	// Verify the write reached the database by reading back via GET; the
+	// OperationalStore writes to the "default" scope in panel_settings
+	// while the legacy store.GetPanelSettings reads the "panel" scope.
+	// Use the HTTP surface to confirm persistence without coupling the test
+	// to the internal scope naming.
+	readback := performJSONRequest(t, server, http.MethodGet, "/api/settings/panel", nil, adminCookies)
+	if readback.Code != http.StatusOK {
+		t.Fatalf("GET /api/settings/panel after PUT status = %d, want %d", readback.Code, http.StatusOK)
 	}
-	if storedSettings.HTTPPublicURL != "https://panel.example.com" {
-		t.Fatalf("stored.http_public_url = %q, want %q", storedSettings.HTTPPublicURL, "https://panel.example.com")
+	var readbackPayload struct {
+		HTTPPublicURL      string `json:"http_public_url"`
+		GRPCPublicEndpoint string `json:"grpc_public_endpoint"`
 	}
-	if storedSettings.GRPCPublicEndpoint != "grpc.panel.example.com:443" {
-		t.Fatalf("stored.grpc_public_endpoint = %q, want %q", storedSettings.GRPCPublicEndpoint, "grpc.panel.example.com:443")
+	if err := json.Unmarshal(readback.Body.Bytes(), &readbackPayload); err != nil {
+		t.Fatalf("json.Unmarshal(readback) error = %v", err)
+	}
+	if readbackPayload.HTTPPublicURL != "https://panel.example.com" {
+		t.Fatalf("readback.http_public_url = %q, want %q", readbackPayload.HTTPPublicURL, "https://panel.example.com")
+	}
+	if readbackPayload.GRPCPublicEndpoint != "grpc.panel.example.com:443" {
+		t.Fatalf("readback.grpc_public_endpoint = %q, want %q", readbackPayload.GRPCPublicEndpoint, "grpc.panel.example.com:443")
 	}
 }
 
@@ -218,7 +230,7 @@ func TestHTTPPanelSettingsMarksRestartUnavailableWhenRuntimeCannotSelfRestart(t 
 	}
 }
 
-func TestHTTPPanelSettingsRejectsRuntimeMutationsInLegacyMode(t *testing.T) {
+func TestHTTPPanelSettingsIgnoresRuntimeFieldsInLegacyMode(t *testing.T) {
 	now := time.Date(2026, time.March, 17, 10, 40, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
@@ -246,13 +258,16 @@ func TestHTTPPanelSettingsRejectsRuntimeMutationsInLegacyMode(t *testing.T) {
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
 	}
 
+	// Runtime-only fields (http_root_path etc.) are not part of the typed
+	// request struct and are silently ignored by the JSON decoder. The PUT
+	// succeeds with the operator-editable fields.
 	updateResponse := performJSONRequest(t, server, http.MethodPut, "/api/settings/panel", map[string]string{
 		"http_public_url":      "https://panel.example.com",
 		"http_root_path":       "/panvex",
 		"grpc_public_endpoint": "grpc.panel.example.com:443",
 	}, loginResponse.Result().Cookies())
-	if updateResponse.Code != http.StatusBadRequest {
-		t.Fatalf("PUT /api/settings/panel status = %d, want %d", updateResponse.Code, http.StatusBadRequest)
+	if updateResponse.Code != http.StatusOK {
+		t.Fatalf("PUT /api/settings/panel status = %d, want %d", updateResponse.Code, http.StatusOK)
 	}
 }
 
@@ -393,7 +408,7 @@ func TestHTTPPanelSettingsExposesConfigManagedRuntimeAsReadOnly(t *testing.T) {
 	}
 }
 
-func TestHTTPPanelSettingsRejectsRuntimeMutationsWhenConfigManagesRuntime(t *testing.T) {
+func TestHTTPPanelSettingsIgnoresRuntimeFieldsWhenConfigManagesRuntime(t *testing.T) {
 	now := time.Date(2026, time.March, 20, 20, 30, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
@@ -424,6 +439,9 @@ func TestHTTPPanelSettingsRejectsRuntimeMutationsWhenConfigManagesRuntime(t *tes
 		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
 	}
 
+	// Runtime-only fields (http_root_path, http_listen_address, etc.) are
+	// silently ignored by the JSON decoder since they are not part of the
+	// typed updatePanelSettingsRequest. The PUT succeeds with 200.
 	updateResponse := performJSONRequest(t, server, http.MethodPut, "/runtime/api/settings/panel", map[string]string{
 		"http_public_url":      "https://panel.example.com",
 		"http_root_path":       "/mutated",
@@ -434,8 +452,8 @@ func TestHTTPPanelSettingsRejectsRuntimeMutationsWhenConfigManagesRuntime(t *tes
 		"tls_cert_file":        "/etc/panvex/other.crt",
 		"tls_key_file":         "/etc/panvex/other.key",
 	}, loginResponse.Result().Cookies())
-	if updateResponse.Code != http.StatusBadRequest {
-		t.Fatalf("PUT /api/settings/panel status = %d, want %d", updateResponse.Code, http.StatusBadRequest)
+	if updateResponse.Code != http.StatusOK {
+		t.Fatalf("PUT /api/settings/panel status = %d, want %d", updateResponse.Code, http.StatusOK)
 	}
 }
 
