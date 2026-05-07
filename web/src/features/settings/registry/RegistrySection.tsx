@@ -21,21 +21,26 @@ export function RegistrySection({ namespace, fields, onChange }: Readonly<Regist
   // Skip json-typed fields — they have dedicated sections.
   const renderable = fields.filter((f) => f.schema.type !== "json");
 
+  const descProps = label.desc ? { description: label.desc } : {};
+
   return (
     <PageSection
       icon={Settings}
       title={label.title}
-      description={label.desc || undefined}
+      {...descProps}
     >
-      {renderable.map((f) => (
-        <RegistryField
-          key={f.schema.name}
-          schema={f.schema}
-          values={f.values}
-          onChange={onChange}
-          error={f.error}
-        />
-      ))}
+      {renderable.map((f) => {
+        const errorProps = f.error ? { error: f.error } : {};
+        return (
+          <RegistryField
+            key={f.schema.name}
+            schema={f.schema}
+            values={f.values}
+            onChange={onChange}
+            {...errorProps}
+          />
+        );
+      })}
     </PageSection>
   );
 }
