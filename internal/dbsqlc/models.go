@@ -228,18 +228,19 @@ type MetricSnapshot struct {
 type PanelSetting struct {
 	Scope              string
 	HttpPublicUrl      string
-	HttpRootPath       string
 	GrpcPublicEndpoint string
-	HttpListenAddress  string
-	GrpcListenAddress  string
-	TlsMode            string
-	TlsCertFile        string
-	TlsKeyFile         string
 	UpdatedAt          time.Time
 	RetentionJson      string
 	PasswordMinLength  int32
 	GeoipJson          string
 	GeoipStateJson     string
+}
+
+type RuntimeSetting struct {
+	Name      string
+	ValueJson string
+	UpdatedAt int64
+	UpdatedBy string
 }
 
 type Session struct {
@@ -280,35 +281,37 @@ type TelemtInstance struct {
 }
 
 type TelemtRuntimeCurrent struct {
-	AgentID                   string
-	ObservedAt                time.Time
-	State                     string
-	StateReason               string
-	ReadOnly                  bool
-	AcceptingNewConnections   bool
-	MeRuntimeReady            bool
-	Me2dcFallbackEnabled      bool
-	UseMiddleProxy            bool
-	StartupStatus             string
-	StartupStage              string
-	StartupProgressPct        float64
-	InitializationStatus      string
-	Degraded                  bool
-	InitializationStage       string
-	InitializationProgressPct float64
-	TransportMode             string
-	CurrentConnections        int64
-	CurrentConnectionsMe      int64
-	CurrentConnectionsDirect  int64
-	ActiveUsers               int64
-	UptimeSeconds             float64
-	ConnectionsTotal          int64
-	ConnectionsBadTotal       int64
-	HandshakeTimeoutsTotal    int64
-	ConfiguredUsers           int64
-	DcCoveragePct             float64
-	HealthyUpstreams          int64
-	TotalUpstreams            int64
+	AgentID                    string
+	ObservedAt                 time.Time
+	State                      string
+	StateReason                string
+	ReadOnly                   bool
+	AcceptingNewConnections    bool
+	MeRuntimeReady             bool
+	Me2dcFallbackEnabled       bool
+	UseMiddleProxy             bool
+	StartupStatus              string
+	StartupStage               string
+	StartupProgressPct         float64
+	InitializationStatus       string
+	Degraded                   bool
+	InitializationStage        string
+	InitializationProgressPct  float64
+	TransportMode              string
+	CurrentConnections         int64
+	CurrentConnectionsMe       int64
+	CurrentConnectionsDirect   int64
+	ActiveUsers                int64
+	UptimeSeconds              float64
+	ConnectionsTotal           int64
+	ConnectionsBadTotal        int64
+	HandshakeTimeoutsTotal     int64
+	ConfiguredUsers            int64
+	DcCoveragePct              float64
+	HealthyUpstreams           int64
+	TotalUpstreams             int64
+	TelemtReachable            bool
+	TelemtUnreachableSinceUnix int64
 }
 
 type TelemtRuntimeDcsCurrent struct {
