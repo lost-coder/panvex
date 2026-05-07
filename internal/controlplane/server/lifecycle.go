@@ -328,6 +328,17 @@ func New(options Options) (*Server, error) {
 		server.auth.LoadUsers(options.Users)
 	}
 
+	// Rebuild the presence tracker with thresholds from the operational
+	// settings store (Task 5). Must run after initStoreBackedSubsystems so
+	// s.settings has been reloaded. When s.settings is nil (no persistent
+	// store, e.g. tests), the tracker keeps the defaults wired above.
+	if server.settings != nil {
+		server.presence = presence.NewTracker(
+			server.settings.AgentsPresenceDegradedAfter(),
+			server.settings.AgentsPresenceOfflineAfter(),
+		)
+	}
+
 	// Metrics collectors are always constructed (observation is cheap) but
 	// the /metrics HTTP route is only registered when a scrape token is set.
 	// This keeps the in-process counters available for internal consumption
