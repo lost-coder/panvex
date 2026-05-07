@@ -182,6 +182,105 @@ func (s *OperationalStore) UpdatesAllowPrerelease() bool {
 	return b
 }
 
+// --- duration/int helpers (fall back to registry default on miss or parse error) ---
+
+func (s *OperationalStore) durationByName(name string) time.Duration {
+	if raw := s.rawByName(name); raw != "" {
+		if d, err := time.ParseDuration(raw); err == nil {
+			return d
+		}
+	}
+	for _, f := range AllFields() {
+		if f.Name == name && f.HasDefault {
+			d, _ := time.ParseDuration(f.Default)
+			return d
+		}
+	}
+	return 0
+}
+
+func (s *OperationalStore) intByName(name string) int {
+	if raw := s.rawByName(name); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			return n
+		}
+	}
+	for _, f := range AllFields() {
+		if f.Name == name && f.HasDefault {
+			n, _ := strconv.Atoi(f.Default)
+			return n
+		}
+	}
+	return 0
+}
+
+// --- typed getters for audited operational fields ---
+
+func (s *OperationalStore) AgentsOutboundBackoffInitial() time.Duration {
+	return s.durationByName("agents.outbound_backoff_initial")
+}
+func (s *OperationalStore) AgentsOutboundBackoffMax() time.Duration {
+	return s.durationByName("agents.outbound_backoff_max")
+}
+func (s *OperationalStore) AgentsPresenceDegradedAfter() time.Duration {
+	return s.durationByName("agents.presence_degraded_after")
+}
+func (s *OperationalStore) AgentsPresenceOfflineAfter() time.Duration {
+	return s.durationByName("agents.presence_offline_after")
+}
+
+func (s *OperationalStore) AuthPasswordLockoutDuration() time.Duration {
+	return s.durationByName("auth.password_lockout_duration")
+}
+func (s *OperationalStore) AuthPasswordLockoutMaxAttempts() int {
+	return s.intByName("auth.password_lockout_max_attempts")
+}
+func (s *OperationalStore) AuthSessionIdleTimeout() time.Duration {
+	return s.durationByName("auth.session_idle_timeout")
+}
+func (s *OperationalStore) AuthSessionMaxLifetime() time.Duration {
+	return s.durationByName("auth.session_max_lifetime")
+}
+func (s *OperationalStore) AuthTOTPLockoutDuration() time.Duration {
+	return s.durationByName("auth.totp_lockout_duration")
+}
+func (s *OperationalStore) AuthTOTPSetupTTL() time.Duration {
+	return s.durationByName("auth.totp_setup_ttl")
+}
+
+func (s *OperationalStore) JobsAckExpiryInterval() time.Duration {
+	return s.durationByName("jobs.ack_expiry_interval")
+}
+func (s *OperationalStore) JobsAckExpiryTTL() time.Duration {
+	return s.durationByName("jobs.ack_expiry_ttl")
+}
+func (s *OperationalStore) JobsClientJobTTL() time.Duration {
+	return s.durationByName("jobs.client_job_ttl")
+}
+func (s *OperationalStore) JobsKeyEvictionInterval() time.Duration {
+	return s.durationByName("jobs.key_eviction_interval")
+}
+func (s *OperationalStore) JobsKeyEvictionTTL() time.Duration {
+	return s.durationByName("jobs.key_eviction_ttl")
+}
+
+func (s *OperationalStore) MetricsPollInterval() time.Duration {
+	return s.durationByName("observability.metrics_poll_interval")
+}
+func (s *OperationalStore) TelemetryDashboardWindow() time.Duration {
+	return s.durationByName("observability.telemetry_dashboard_window")
+}
+func (s *OperationalStore) TelemetryDetailBoostTTL() time.Duration {
+	return s.durationByName("observability.telemetry_detail_boost_ttl")
+}
+
+func (s *OperationalStore) StorageBatchFlushInterval() time.Duration {
+	return s.durationByName("storage.batch_flush_interval")
+}
+func (s *OperationalStore) StorageRollupInterval() time.Duration {
+	return s.durationByName("storage.rollup_interval")
+}
+
 // Put validates and writes a batch of operational settings, then
 // updates the in-memory snapshot. Bootstrap fields cause an error.
 func (s *OperationalStore) Put(ctx context.Context, updates map[string]string, who string) error {

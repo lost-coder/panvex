@@ -133,3 +133,31 @@ func TestOperationalStore_PutValidates(t *testing.T) {
 		t.Fatalf("expected validation error, got %v", err)
 	}
 }
+
+func TestOperationalStore_DurationGettersFallBackToDefault(t *testing.T) {
+	r := &fakeReader{panel: map[string]string{}, runtime: map[string]string{}}
+	s := NewOperationalStore(r)
+	if err := s.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.MetricsPollInterval(); got != 5*time.Second {
+		t.Errorf("got %v, want 5s default", got)
+	}
+	if got := s.AuthPasswordLockoutMaxAttempts(); got != 5 {
+		t.Errorf("got %d, want 5 default", got)
+	}
+}
+
+func TestOperationalStore_DurationGettersUseStoredValue(t *testing.T) {
+	r := &fakeReader{
+		panel:   map[string]string{},
+		runtime: map[string]string{"observability.metrics_poll_interval": `"15s"`},
+	}
+	s := NewOperationalStore(r)
+	if err := s.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.MetricsPollInterval(); got != 15*time.Second {
+		t.Errorf("got %v, want 15s", got)
+	}
+}
