@@ -21,6 +21,32 @@ export interface MockDirectAgentOverrides {
   totalUpstreams?: number;
 }
 
+/**
+ * mockTelemtUnreachableAgent returns the same shape as mockDirectAgent but
+ * with telemt_reachable=false so e2e specs can exercise the
+ * banner-and-hidden-mode rendering path.
+ */
+export function mockTelemtUnreachableAgent(
+  overrides: { agentId?: string; nodeName?: string; sinceUnixOffsetSec?: number } = {},
+) {
+  const base = mockDirectAgent({
+    agentId: overrides.agentId ?? "agent-telemt-down-1",
+    nodeName: overrides.nodeName ?? "node-telemt-down",
+  });
+  const offsetSec = overrides.sinceUnixOffsetSec ?? 90;
+  // Clone deeply so we don't mutate the shared base object on subsequent calls.
+  const out = structuredClone(base);
+  out.server.agent.runtime.telemt_reachable = false;
+  out.server.agent.runtime.telemt_unreachable_since_unix =
+    Math.floor(Date.now() / 1000) - offsetSec;
+  // Zero the runtime metrics — they should not appear in the UI.
+  out.server.agent.runtime.current_connections = 0;
+  out.server.agent.runtime.current_connections_me = 0;
+  out.server.agent.runtime.current_connections_direct = 0;
+  out.server.agent.runtime.dc_coverage_pct = 0;
+  return out;
+}
+
 export function mockDirectAgent(overrides: MockDirectAgentOverrides = {}) {
   const agentId = overrides.agentId ?? "agent-direct-1";
   const nodeName = overrides.nodeName ?? "node-direct";
@@ -107,13 +133,12 @@ export function mockDirectAgent(overrides: MockDirectAgentOverrides = {}) {
       severity: "good",
       reason: "",
       runtime_freshness: {
-        is_fresh: true,
-        age_seconds: 1,
-        last_updated_unix: Math.floor(Date.now() / 1000),
+        state: "fresh",
+        observed_at_unix: Math.floor(Date.now() / 1000),
       },
       detail_boost: {
-        boosted_until_unix: 0,
         active: false,
+        expires_at_unix: 0,
         remaining_seconds: 0,
       },
     },

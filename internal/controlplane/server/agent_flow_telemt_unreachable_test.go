@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -27,7 +28,10 @@ import (
 )
 
 func TestTelemtUnreachableEndToEndSeverityLifecycle(t *testing.T) {
-	now := time.Date(2026, time.May, 7, 12, 0, 0, 0, time.UTC)
+	var nowPtr atomic.Pointer[time.Time]
+	setNow := func(t time.Time) { tt := t; nowPtr.Store(&tt) }
+	getNow := func() time.Time { return *nowPtr.Load() }
+	setNow(time.Date(2026, time.May, 7, 12, 0, 0, 0, time.UTC))
 
 	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
 	if err != nil {
@@ -35,7 +39,7 @@ func TestTelemtUnreachableEndToEndSeverityLifecycle(t *testing.T) {
 	}
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:              func() time.Time { return now },
+		Now:              getNow,
 		Store:            store,
 	})
 	t.Cleanup(func() {
@@ -48,17 +52,17 @@ func TestTelemtUnreachableEndToEndSeverityLifecycle(t *testing.T) {
 		Username: "admin",
 		Password: "Admin1password",
 		Role:     auth.RoleAdmin,
-	}, now); err != nil {
+	}, getNow()); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	fleetGroupID := seedTestFleetGroup(t, store, "eu", now)
+	fleetGroupID := seedTestFleetGroup(t, store, "eu", getNow())
 
 	// Enroll an agent through the production path.
 	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
 		FleetGroupID: fleetGroupID,
 		TTL:          time.Minute,
-	}, now)
+	}, getNow())
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
@@ -66,7 +70,7 @@ func TestTelemtUnreachableEndToEndSeverityLifecycle(t *testing.T) {
 		Token:    token.Value,
 		NodeName: "node-eu-1",
 		Version:  "1.0.0",
-	}, now)
+	}, getNow())
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
 	}
@@ -148,7 +152,7 @@ func TestTelemtUnreachableEndToEndSeverityLifecycle(t *testing.T) {
 		TransportMode:              "middle_proxy",
 		Dcs:                        healthyDCs,
 	}
-	pushSnapshot(healthySnap, now.Add(5*time.Second))
+	pushSnapshot(healthySnap, getNow().Add(5*time.Second))
 
 	sev, _ := getSeverityAndReason(cookies)
 	if sev != "ok" && sev != "good" {
@@ -157,7 +161,7 @@ func TestTelemtUnreachableEndToEndSeverityLifecycle(t *testing.T) {
 
 	// ── Phase 2: Telemt API unreachable ─────────────────────────────────────
 	// The agent sees TelemtReachable=false and records when it first went down.
-	unreachableSince := now.Add(10 * time.Second)
+	unreachableSince := getNow().Add(10 * time.Second)
 	unreachableSnap := &gatewayrpc.RuntimeSnapshot{
 		UseMiddleProxy:             true,
 		MeRuntimeReady:             true,
@@ -175,7 +179,7 @@ func TestTelemtUnreachableEndToEndSeverityLifecycle(t *testing.T) {
 	// Push snapshot ~30 s after unreachable started (past any debounce).
 	pushSnapshot(unreachableSnap, unreachableSince.Add(30*time.Second))
 	// Advance server clock past the snapshot so runtime is fresh.
-	now = unreachableSince.Add(35 * time.Second)
+	setNow(unreachableSince.Add(35 * time.Second))
 
 	sev, reason := getSeverityAndReason(cookies)
 	if sev != "critical" {
@@ -188,7 +192,7 @@ func TestTelemtUnreachableEndToEndSeverityLifecycle(t *testing.T) {
 	// ── Phase 3: recovery ────────────────────────────────────────────────────
 	// Telemt becomes reachable again; the fresh healthy snapshot should clear
 	// the unreachable state and return severity to "ok"/"good".
-	recoveryTime := now.Add(5 * time.Second)
+	recoveryTime := getNow().Add(5 * time.Second)
 	recoverySnap := &gatewayrpc.RuntimeSnapshot{
 		UseMiddleProxy:             true,
 		MeRuntimeReady:             true,
@@ -205,7 +209,7 @@ func TestTelemtUnreachableEndToEndSeverityLifecycle(t *testing.T) {
 		Dcs:                        healthyDCs,
 	}
 	pushSnapshot(recoverySnap, recoveryTime)
-	now = recoveryTime.Add(5 * time.Second)
+	setNow(recoveryTime.Add(5 * time.Second))
 
 	sev, _ = getSeverityAndReason(cookies)
 	if sev != "ok" && sev != "good" {
