@@ -44,6 +44,16 @@
       "path": "dist/assets/index-*.css",
       "limit": "50 KB",
       "gzip": true
+    },
+    {
+      "name": "Total initial load (gzip)",
+      "path": [
+        "dist/assets/index-*.js",
+        "dist/assets/vendor-*.js",
+        "dist/assets/index-*.css"
+      ],
+      "limit": "425 KB",
+      "gzip": true
     }
   ],
   "dependencies": {

@@ -59,7 +59,6 @@ docs/superpowers/
 # Compiled binaries (root-level only)
 /agent
 /control-plane
-.panvex-ui
 
 # Editor index files (ctags, etc.)
 /tags

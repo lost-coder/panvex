@@ -105,7 +105,7 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
         try { raw = JSON.parse(message.data as string); } catch { return; }
         const result = eventEnvelopeSchema.safeParse(raw);
         if (!result.success) {
-          // Mirror the panvex-ui dev-flag pattern (see ui/base/sheet.tsx):
+          // Mirror the ui/sheet dev-flag pattern (see ui/base/sheet.tsx):
           // `import.meta.env.DEV` is Vite's compile-time dev flag; the
           // narrow cast keeps TypeScript happy without a global ambient
           // declaration. Drops out of production builds via constant

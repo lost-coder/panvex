@@ -1,5 +1,6 @@
-// P3-FE-01: recomposed locally from UI-kit primitives/components/compositions
-// instead of importing the pre-built page from @lost-coder/panvex-ui/pages.
+// ServersPage — composed locally from UI-kit primitives, components, and
+// compositions. Page composition is feature-side; the kit at `@/ui` only
+// ships the building blocks.
 import { useMemo, useState } from "react";
 import {
   BulkActionBar,

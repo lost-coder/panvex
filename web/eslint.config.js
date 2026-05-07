@@ -142,6 +142,20 @@ export default tseslint.config(
           ],
         },
       ],
+      // i18n discipline: any user-visible string in feature JSX must go
+      // through the `t()` translator from react-i18next. AST-level guard
+      // catches the easy-to-miss "<button>Save</button>" pattern. Single
+      // characters (punctuation, separators) and stripped non-letter
+      // glyphs are excluded so layout pieces like " · " keep working.
+      // Set to `warn` for now while the existing tree migrates; promote
+      // to `error` once the BP-translation sweep completes.
+      "no-restricted-syntax": [
+        "warn",
+        {
+          selector: "JSXText[value=/[A-Za-zА-Яа-я]{2,}/]",
+          message: "Hard-coded JSX text — wrap in t('...') from react-i18next so it can be localised.",
+        },
+      ],
     },
   },
   // Stories — non-typed lint plus the rules-of-hooks waiver. Stories are

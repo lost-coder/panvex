@@ -50,7 +50,7 @@ const SheetContent = React.forwardRef<
       (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV
     ) {
       console.warn(
-        "[panvex-ui] <SheetContent> needs an accessible name — either render a <SheetTitle> inside children or pass the `title` prop. Radix Dialog will otherwise log a missing-title warning.",
+        "[ui/sheet] <SheetContent> needs an accessible name — either render a <SheetTitle> inside children or pass the `title` prop. Radix Dialog will otherwise log a missing-title warning.",
       );
     }
 

@@ -1,6 +1,6 @@
-// P3-FE-01: recomposed locally from UI-kit primitives (Button, Input) instead
-// of importing the pre-built page from @lost-coder/panvex-ui/pages. The UI-kit
-// only ships primitives/components/compositions — page composition lives here.
+// LoginPage — composed locally from UI-kit primitives (Button, Input).
+// The kit at `@/ui` ships primitives/components/compositions only;
+// page composition lives in features/.
 import * as React from "react";
 import { useEffect, useId, useRef } from "react";
 import { Button, Input, type LoginPageProps } from "@/ui";

@@ -1,10 +1,6 @@
-// Phase 4e local UI barrel.
-//
-// After `@/ui-kit-shim` carried consumers through 4a–4d, this barrel
-// takes over as files physically move out of @lost-coder/panvex-ui
-// into the slots below. Each sub-slot (tokens, base, primitives,
-// layout, components, compositions) grows its own `export * from`
-// line as its contents land.
+// Local UI barrel. The kit lives entirely under `web/src/ui/`; each
+// sub-slot (tokens, base, primitives, layout, components, compositions)
+// re-exports through this file so consumers always import from `@/ui`.
 export * from "./tokens";
 export * from "./lib";
 export * from "./base";
