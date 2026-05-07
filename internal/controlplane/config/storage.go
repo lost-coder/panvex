@@ -81,10 +81,9 @@ func ResolveStorage(driver, dsn string) (StorageConfig, error) {
 }
 
 // ValidateStorageSecurity rejects insecure storage configurations the
-// operator almost certainly did not intend. Called from the top-level
-// config loaders (LoadControlPlaneConfig / ResolveLegacyControlPlaneConfig)
-// after ResolveStorage, so ResolveStorage itself stays a pure normalizer
-// that downstream unit tests can drive with any DSN shape.
+// operator almost certainly did not intend. Called after ResolveStorage,
+// so ResolveStorage itself stays a pure normalizer that downstream unit
+// tests can drive with any DSN shape.
 //
 // Currently enforced (S10): PostgreSQL DSN with sslmode=disable is refused
 // unless PANVEX_ALLOW_INSECURE_DB is set. Matches both URL-form
