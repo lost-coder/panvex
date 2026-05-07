@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/lost-coder/panvex/internal/security"
+	"golang.org/x/mod/semver"
 )
 
 // Payload is the JSON payload of an agent.self-update job.
@@ -24,18 +25,28 @@ type Payload struct {
 	SignatureURL     string `json:"signature_url"`
 	DownloadViaPanel bool   `json:"download_via_panel"`
 	PanelProxyURL    string `json:"panel_proxy_url,omitempty"`
+	// AllowDowngrade lets an operator install an older binary on
+	// purpose (e.g. emergency rollback). Without it the agent refuses
+	// any version below the running one — protects against a
+	// compromised panel pinning agents to a vulnerable past release.
+	AllowDowngrade bool `json:"allow_downgrade,omitempty"`
 }
 
 // Execute performs the self-update: download, verify signature (required),
 // verify checksum (defence-in-depth), extract, replace, restart.
-func Execute(ctx context.Context, payload Payload, logger *slog.Logger) error {
-	return executeWith(ctx, payload, logger, defaultConfig())
+//
+// currentVersion is the running agent's compiled-in version string
+// (cmd/agent/main.go's AgentVersion ldflag). It is compared to
+// payload.Version so a panel that tries to silently roll an agent
+// back to a vulnerable older release is rejected.
+func Execute(ctx context.Context, payload Payload, currentVersion string, logger *slog.Logger) error {
+	return executeWith(ctx, payload, currentVersion, logger, defaultConfig())
 }
 
 // executeWith is the testable form: same logic but the download policy
 // (HTTP client, host allowlist, archive cap) comes from cfg instead of
 // hard-coded production defaults.
-func executeWith(ctx context.Context, payload Payload, logger *slog.Logger, cfg Config) error {
+func executeWith(ctx context.Context, payload Payload, currentVersion string, logger *slog.Logger, cfg Config) error {
 	url := payload.DownloadURL
 	dlCfg := cfg
 	// Panel-proxy mode: the URL came from the panel this agent is enrolled
@@ -51,6 +62,40 @@ func executeWith(ctx context.Context, payload Payload, logger *slog.Logger, cfg 
 	}
 	if payload.SignatureURL == "" {
 		return fmt.Errorf("no signature URL provided; refusing to install unsigned update")
+	}
+
+	// Downgrade gate (fail-closed). The whole point of this check is to
+	// defeat a hostile panel that pins agents back to a vulnerable
+	// release, so the un-pinned escape hatches must be explicit.
+	//
+	// - The agent's own version must parse as a real semver. A binary
+	//   without ldflags ("dev", "", "snapshot") cannot prove its lineage,
+	//   so any update must be opted in via AllowDowngrade.
+	// - The payload version must also parse as a real semver. A panel
+	//   that omits the field is sending an unsigned-in-spirit update;
+	//   refuse it for the same reason we refuse missing SignatureURL.
+	// - golang.org/x/mod/semver gives proper pre-release/build-metadata
+	//   ordering, so "1.4.7-rc1" sorts below "1.4.7", not equal.
+	if !payload.AllowDowngrade {
+		curr, currOK := canonicalSemver(currentVersion)
+		next, nextOK := canonicalSemver(payload.Version)
+		switch {
+		case !currOK:
+			return fmt.Errorf(
+				"refusing self-update: running version %q is not a parseable semver (set allow_downgrade=true to override; typically only the panel-issued production binary has a real version)",
+				currentVersion,
+			)
+		case !nextOK:
+			return fmt.Errorf(
+				"refusing self-update: payload version %q is not a parseable semver (set allow_downgrade=true to override)",
+				payload.Version,
+			)
+		case semver.Compare(next, curr) < 0:
+			return fmt.Errorf(
+				"refusing downgrade: payload version %q is older than running version %q (set allow_downgrade=true on the job to override)",
+				payload.Version, currentVersion,
+			)
+		}
 	}
 
 	logger.Info("agent self-update: downloading", "version", payload.Version, "url", url)
@@ -110,6 +155,31 @@ func executeWith(ctx context.Context, payload Payload, logger *slog.Logger, cfg 
 	}
 	os.Exit(0)
 	return nil // unreachable
+}
+
+// canonicalSemver normalises an operator- or panel-supplied version
+// string into the leading-"v" form that golang.org/x/mod/semver
+// expects, and reports whether the result is a real semver.
+//
+// Rules:
+//   - "" / "dev" / "snapshot" → not parseable (caller treats as
+//     "no provable version", fails closed).
+//   - "1.4.7" or "v1.4.7" → "v1.4.7", ok.
+//   - "1.4.7-rc1+build" → "v1.4.7-rc1+build", ok (semver handles
+//     pre-release ordering correctly: 1.4.7-rc1 < 1.4.7).
+//   - "alpha" / "main" / "1.x" → not parseable.
+func canonicalSemver(v string) (string, bool) {
+	v = strings.TrimSpace(v)
+	if v == "" || strings.EqualFold(v, "dev") || strings.EqualFold(v, "snapshot") {
+		return "", false
+	}
+	if !strings.HasPrefix(v, "v") {
+		v = "v" + v
+	}
+	if !semver.IsValid(v) {
+		return "", false
+	}
+	return v, true
 }
 
 func verifyChecksum(path, expected string) error {
