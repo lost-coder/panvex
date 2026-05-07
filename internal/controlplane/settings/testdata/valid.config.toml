@@ -1,0 +1,23 @@
+[http]
+listen_address = "127.0.0.1:9090"
+panel_allowed_cidrs = "10.0.0.0/8"
+
+[grpc]
+listen_address = "127.0.0.1:9091"
+
+[storage]
+driver = "postgres"
+dsn = "postgres://panvex:panvex@127.0.0.1:5432/panvex?sslmode=require"
+
+[tls]
+mode = "direct"
+cert_file = "/etc/panvex/cert.pem"
+key_file = "/etc/panvex/key.pem"
+
+[panel]
+restart_mode = "supervised"
+env = "production"
+
+[observability]
+log_level = "warn"
+log_file = "/var/log/panvex.log"

@@ -1,0 +1,2 @@
+[storage]
+dsn = "file:./testdata/test.db?mode=rwc"
