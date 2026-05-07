@@ -54,6 +54,13 @@ jobs:
         with:
           go-version: "1.26"
       - run: go test -count=1 ./...
+      # Loadtest correctness gate: the Test* variants of the realistic
+      # concurrency scenarios (agent burst, login storm, job fan-out)
+      # assert no errors / no audit drops / no missed lockouts under
+      # contention. Cheap (<30s) and runs on every PR. The full
+      # throughput sweep is separate (see load-bench job).
+      - name: Loadtest correctness assertions
+        run: go test -count=1 ./internal/loadtest/...
 
   # Slow gate: race detector + coverage. Runs on:
   #   - PRs that touch Go files / go.mod / go.sum (real merge gate
@@ -74,6 +81,18 @@ jobs:
         with:
           go-version: "1.26"
       - run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+      # Coverage floor: total backend coverage must stay above the
+      # baseline. Fail loud here instead of relying on Codecov's
+      # asynchronous diff-coverage (which is informational, not a gate).
+      # The threshold is intentionally below the current measured
+      # number so a small regression flags rather than every PR — bump
+      # in lockstep with new test waves.
+      - name: Enforce coverage floor (>=45%)
+        run: |
+          set -eu
+          total=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}' | tr -d '%')
+          echo "total coverage: ${total}%"
+          awk -v t="$total" 'BEGIN { if (t+0 < 45.0) exit 1 }'
       - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@v7
@@ -87,6 +106,26 @@ jobs:
           files: coverage.out
           flags: backend
           fail_ci_if_error: false
+
+  # Canary build against the next Go version. Non-blocking — surfaces
+  # toolchain regressions before we lock the next version into the
+  # required matrix but does not gate merges if upstream has a
+  # transient bug.
+  go-test-next:
+    name: Go Tests (next version, canary)
+    needs: detect-changes
+    if: |
+      (github.event_name == 'pull_request' && needs.detect-changes.outputs.go == 'true') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.0-rc.1"
+          check-latest: true
+      - run: go test -count=1 ./...
 
   schema-sync:
     # C9: verify the PostgreSQL and SQLite migration bundles produce
@@ -120,6 +159,13 @@ jobs:
           go-version: "1.26"
       - name: Run schema-sync tests
         run: go test -count=1 -run TestSchemaSync ./internal/controlplane/storage/migrate/...
+      # Plan-shape regression gate: piggybacks on this job's Postgres
+      # service so we don't spin up a second container. Locks in the
+      # query plan for the hottest read queries — a future migration
+      # that drops an index or rewrites a query into a Seq Scan fails
+      # here. Same skip-without-DSN convention as schema-sync above.
+      - name: Run EXPLAIN ANALYZE plan-shape tests
+        run: go test -count=1 -run TestExplainAnalyze ./internal/controlplane/storage/postgres/...
 
   panel-build:
     name: Build Binaries
@@ -382,6 +428,43 @@ jobs:
             exit 1
           fi
           echo "All Plan 1 security gates pass."
+
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      # CodeQL covers Go + JS but not shell. install-agent.sh, deploy/
+      # install.sh and the dev fleet scripts each touch host state on
+      # operator machines, so a shell-injection bug there is high blast
+      # radius. ludeeus/action-shellcheck enumerates *.sh by default
+      # and respects shellcheckdirective comments inline.
+      - uses: ludeeus/action-shellcheck@2.0.0
+        env:
+          SHELLCHECK_OPTS: -e SC1091
+        with:
+          severity: warning
+          ignore_paths: >-
+            web/node_modules
+            node_modules
+
+  # Per-PR supply-chain check: refuses any new dependency with a known
+  # vuln (>= moderate) or a license outside the allow-list. CodeQL +
+  # govulncheck + npm audit + Trivy already gate post-merge / on-tip,
+  # but they don't surface a new transitive coming in via package-lock
+  # diff during review. dependency-review-action does exactly that.
+  dependency-review:
+    name: Dependency Review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
+          comment-summary-in-pr: on-failure
 
   gitleaks:
     name: gitleaks (secret scan)

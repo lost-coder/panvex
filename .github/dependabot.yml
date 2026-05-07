@@ -33,3 +33,16 @@ updates:
     labels:
       - enhancement
       - security
+
+  # docker-compose pulls postgres/nginx/etc directly. Without a scan
+  # entry for /deploy, the floating `postgres:16-alpine` tag in the
+  # prod compose file silently rides registry updates. With this
+  # entry, Dependabot files digest-pin PRs the same way it does for
+  # the Dockerfile.
+  - package-ecosystem: docker-compose
+    directory: /deploy
+    schedule:
+      interval: weekly
+    labels:
+      - enhancement
+      - security
