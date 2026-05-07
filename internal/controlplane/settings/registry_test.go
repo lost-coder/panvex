@@ -73,3 +73,10 @@ func TestRegistry_AllNamesGloballyUnique(t *testing.T) {
 		seen[f.Name] = true
 	}
 }
+
+func TestRegistry_OperationalCountAfterAudit(t *testing.T) {
+	fields, _ := walkRegistry(reflect.TypeOf(Operational{}), ClassOperational)
+	if len(fields) < 27 {
+		t.Fatalf("expected ≥27 operational fields after audit, got %d", len(fields))
+	}
+}
