@@ -43,3 +43,33 @@ func TestRegistry_BootstrapHasRequiredFields(t *testing.T) {
 		}
 	}
 }
+
+func TestRegistry_OperationalAllFieldsParse(t *testing.T) {
+	fields, err := walkRegistry(reflect.TypeOf(Operational{}), ClassOperational)
+	if err != nil {
+		t.Fatalf("walkRegistry(Operational): %v", err)
+	}
+	if len(fields) == 0 {
+		t.Fatal("Operational registry empty")
+	}
+	for _, f := range fields {
+		if f.Class != ClassOperational {
+			t.Fatalf("%s class = %q, want operational", f.Name, f.Class)
+		}
+		if f.Store == "" {
+			t.Errorf("%s: operational must declare store=", f.Name)
+		}
+	}
+}
+
+func TestRegistry_AllNamesGloballyUnique(t *testing.T) {
+	bf, _ := walkRegistry(reflect.TypeOf(Bootstrap{}), ClassBootstrap)
+	of, _ := walkRegistry(reflect.TypeOf(Operational{}), ClassOperational)
+	seen := map[string]bool{}
+	for _, f := range append(bf, of...) {
+		if seen[f.Name] {
+			t.Fatalf("name %q appears in both Bootstrap and Operational", f.Name)
+		}
+		seen[f.Name] = true
+	}
+}

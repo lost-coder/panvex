@@ -43,3 +43,18 @@ type Bootstrap struct {
 
 	AgentClientDataConcurrency int `setting:"name=agent.client_data_concurrency, type=int, min=1, max=32, default=4, env=PANVEX_AGENT_CLIENT_DATA_CONCURRENCY, toml=agent.client_data_concurrency, desc='Per-agent concurrency for the panel-side client-data fetcher.'"`
 }
+
+// Operational is the registry of settings persisted in the database
+// and editable by panel administrators.
+type Operational struct {
+	HTTPPublicURL      string `setting:"name=http.public_url, type=string, default=, restart=false, store=panel_settings.http_public_url, desc='Externally visible URL of the panel; used in agent install scripts.'"`
+	GRPCPublicEndpoint string `setting:"name=grpc.public_endpoint, type=string, default=, restart=false, store=panel_settings.grpc_public_endpoint, desc='Externally visible gRPC endpoint for agents to dial.'"`
+
+	AuthPasswordMinLength int `setting:"name=auth.password_min_length, type=int, default=10, min=8, max=64, restart=false, store=panel_settings.password_min_length, desc='Minimum length for newly created or rotated passwords.'"`
+
+	Retention string `setting:"name=retention, type=json, restart=false, store=panel_settings.retention_json, desc='Retention policy: how long to keep audit events, metrics, jobs, presence rows.'"`
+	GeoIP     string `setting:"name=geoip, type=json, restart=false, store=panel_settings.geoip_json, desc='GeoIP data source mode (off/local/url) and database paths.'"`
+
+	UpdatesChannel         string `setting:"name=updates.channel, type=enum, values=stable|beta, default=stable, restart=false, store=runtime_settings, desc='Release channel used to discover panel + agent updates.'"`
+	UpdatesAllowPrerelease string `setting:"name=updates.allow_prerelease, type=bool, default=false, restart=false, store=runtime_settings, desc='Permit prerelease tags in the chosen channel.'"`
+}
