@@ -47,7 +47,7 @@ export function useSettingsRegistry(): UseSettingsRegistryResult {
 
   const [draft, setDraftState] = useState<Record<string, string>>({});
 
-  const schema = schemaQ.data ?? [];
+  const schema = useMemo(() => schemaQ.data ?? [], [schemaQ.data]);
 
   // Merge bootstrap + operational into a single flat lookup for rendering.
   const values: Record<string, ValuesEntry> = useMemo(() => {
@@ -71,16 +71,16 @@ export function useSettingsRegistry(): UseSettingsRegistryResult {
     mutationFn: () => apiClient.putSettingsValues(coerceForSave(schema, draft)),
     onSuccess: () => {
       setDraftState({});
-      qc.invalidateQueries({ queryKey: VALUES_KEY });
-      qc.invalidateQueries({ queryKey: RESTART_KEY });
+      void qc.invalidateQueries({ queryKey: VALUES_KEY });
+      void qc.invalidateQueries({ queryKey: RESTART_KEY });
     },
   });
 
   const restartMut = useMutation({
     mutationFn: () => apiClient.restartPanel(),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: VALUES_KEY });
-      qc.invalidateQueries({ queryKey: RESTART_KEY });
+      void qc.invalidateQueries({ queryKey: VALUES_KEY });
+      void qc.invalidateQueries({ queryKey: RESTART_KEY });
     },
   });
 
