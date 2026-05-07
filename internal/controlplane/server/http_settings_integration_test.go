@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSettingsIntegration_FullCycle(t *testing.T) {
@@ -66,5 +67,26 @@ func TestSettingsIntegration_FullCycle(t *testing.T) {
 	rsBody := rs.Body.String()
 	if !strings.Contains(rsBody, `"pending":false`) && !strings.Contains(rsBody, `"pending": false`) {
 		t.Errorf("expected pending:false in restart-status, got: %s", rsBody)
+	}
+}
+
+func TestSettingsIntegration_AuditedFieldsRoundTrip(t *testing.T) {
+	server, _, cookies := newAuthedServer(t)
+
+	body := map[string]any{
+		"auth.password_lockout_max_attempts":  7,
+		"observability.metrics_poll_interval": "10s",
+	}
+	put := performJSONRequest(t, server, http.MethodPut, "/api/settings/values", body, cookies)
+	if put.Code != http.StatusOK {
+		t.Fatalf("PUT %d: %s", put.Code, put.Body.String())
+	}
+
+	store := server.Settings()
+	if got := store.AuthPasswordLockoutMaxAttempts(); got != 7 {
+		t.Errorf("getter still %d, want 7", got)
+	}
+	if got := store.MetricsPollInterval(); got != 10*time.Second {
+		t.Errorf("getter still %v, want 10s", got)
 	}
 }
