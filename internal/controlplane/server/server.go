@@ -105,7 +105,9 @@ type Server struct {
 	settingsMu     sync.RWMutex
 	// settings is the operational settings store, loaded at startup from the
 	// DB and reloaded on demand. Nil when the server has no persistent store.
-	settings       *settings.OperationalStore
+	settings         *settings.OperationalStore
+	bootstrap        *settings.Bootstrap
+	bootstrapSources settings.SourceMap
 	// sessions multiplexes live gRPC stream sessions keyed by agent ID.
 	// Extracted into controlplane/agents.SessionManager by P3-ARCH-01a —
 	// this field replaces the previous sessionMu + agentSessions + sessionSeq
@@ -333,6 +335,13 @@ func (s *Server) Context() context.Context {
 
 // Settings returns the operational settings store.
 func (s *Server) Settings() *settings.OperationalStore { return s.settings }
+
+// SetTestBootstrap is for tests only; production wiring goes via the
+// constructor in T27.
+func (s *Server) SetTestBootstrap(b *settings.Bootstrap, src settings.SourceMap) {
+	s.bootstrap = b
+	s.bootstrapSources = src
+}
 
 // Handler returns the configured HTTP handler for the control-plane API.
 func (s *Server) Handler() http.Handler {

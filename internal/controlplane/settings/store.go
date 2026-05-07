@@ -148,6 +148,12 @@ func (s *OperationalStore) rawByName(name string) string {
 	return snap.values[name]
 }
 
+// RawByName exposes the cached raw scalar for HTTP rendering.
+// Returns "" when the store is empty.
+func (s *OperationalStore) RawByName(name string) string {
+	return s.rawByName(name)
+}
+
 // --- typed getters (one per operational field) ---
 
 func (s *OperationalStore) HTTPPublicURL() string      { return s.rawByName("http.public_url") }
