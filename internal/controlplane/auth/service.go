@@ -143,6 +143,40 @@ type Service struct {
 	// seconds after startup the TOTP verifier skips the past (-30s) window
 	// to prevent replay of codes that may have been consumed before a restart.
 	startedAt time.Time
+
+	// totpSetupTTLFn, when non-nil, is called to obtain the pending TOTP
+	// setup expiry window (auth.totp_setup_ttl). Nil falls back to the
+	// pendingTotpSetupTTL constant. Set via SetTOTPSetupTTLFn.
+	totpSetupTTLFn func() time.Duration
+
+	// idleTimeoutFn / maxLifetimeFn supply the auth.session_idle_timeout
+	// and auth.session_max_lifetime values for session evaluation. For
+	// restart=true fields these are captured once at startup and provided
+	// here as fixed-value closures (returning s.activeSessionIdleTimeout /
+	// s.activeSessionMaxLifetime from the Server). Nil falls back to the
+	// compiled-in constants (sessionIdleTimeout / sessionMaxLifetime).
+	idleTimeoutFn  func() time.Duration
+	maxLifetimeFn  func() time.Duration
+}
+
+// SetTOTPSetupTTLFn wires a live getter for the pending TOTP setup TTL
+// (auth.totp_setup_ttl). Called at startup after the OperationalStore has
+// been reloaded. Pass nil to fall back to the pendingTotpSetupTTL constant.
+func (s *Service) SetTOTPSetupTTLFn(fn func() time.Duration) {
+	s.mu.Lock()
+	s.totpSetupTTLFn = fn
+	s.mu.Unlock()
+}
+
+// SetSessionTimeoutFns wires captured-at-startup getters for the
+// restart=true session window fields. Both fns must return the value
+// captured at Server startup (not live from the store); see activeSession*
+// on the Server struct. Pass nil to fall back to the compiled-in constants.
+func (s *Service) SetSessionTimeoutFns(idleTimeout, maxLifetime func() time.Duration) {
+	s.mu.Lock()
+	s.idleTimeoutFn = idleTimeout
+	s.maxLifetimeFn = maxLifetime
+	s.mu.Unlock()
 }
 
 // SetVault wires the at-rest encryption vault. Called by Server during

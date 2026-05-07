@@ -136,8 +136,15 @@ func (s *Service) verifyTotpAndConsumeLocked(ctx context.Context, user User, cod
 	return nil
 }
 
+func (s *Service) effectiveTOTPSetupTTL() time.Duration {
+	if s.totpSetupTTLFn != nil {
+		return s.totpSetupTTLFn()
+	}
+	return pendingTotpSetupTTL
+}
+
 func (s *Service) cleanupPendingTotpSetupLocked(now time.Time) {
-	cutoff := now.UTC().Add(-pendingTotpSetupTTL)
+	cutoff := now.UTC().Add(-s.effectiveTOTPSetupTTL())
 	for userID, setup := range s.pendingTotpSetup {
 		if setup.CreatedAt.Before(cutoff) {
 			delete(s.pendingTotpSetup, userID)

@@ -17,6 +17,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/presence"
 	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
+	"github.com/lost-coder/panvex/internal/controlplane/sessions"
 	"github.com/lost-coder/panvex/internal/controlplane/settings"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
@@ -211,6 +212,11 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 				return s.settings.Reload(s.serverCtx)
 			})
 			s.settingsActive = s.settings.CaptureActive()
+			// Capture restart=true session fields once at startup. A change
+			// to these fields only takes effect after an operator-initiated
+			// panel restart; the running process uses the values below.
+			s.activeSessionIdleTimeout = s.settings.AuthSessionIdleTimeout()
+			s.activeSessionMaxLifetime = s.settings.AuthSessionMaxLifetime()
 		}
 	}
 
@@ -336,6 +342,34 @@ func New(options Options) (*Server, error) {
 		server.presence = presence.NewTracker(
 			server.settings.AgentsPresenceDegradedAfter(),
 			server.settings.AgentsPresenceOfflineAfter(),
+		)
+	}
+
+	// Wire settings-backed thresholds into auth / lockout subsystems
+	// (Task 6). Must run after initStoreBackedSubsystems so s.settings
+	// and s.activeSession* are populated. All setters are no-ops when
+	// their argument is nil — tests that construct without a store keep
+	// the compiled-in constant behaviour unchanged.
+	if server.settings != nil {
+		// restart=false: re-read on each evaluation via live getters.
+		server.loginLockout.SetThresholds(
+			server.settings.AuthPasswordLockoutMaxAttempts,
+			server.settings.AuthPasswordLockoutDuration,
+		)
+		// TOTP lockout: duration is audited (restart=false); max attempts is
+		// not an audited tunable — keep the compiled-in constant.
+		server.totpLockout.SetThresholds(
+			sessions.TOTPLockoutMaxAttempts,
+			server.settings.AuthTOTPLockoutDuration,
+		)
+		// TOTP setup TTL: live getter, restart=false.
+		server.auth.SetTOTPSetupTTLFn(server.settings.AuthTOTPSetupTTL)
+		// restart=true: captured once at startup — return the fixed value.
+		idleTimeout := server.activeSessionIdleTimeout
+		maxLifetime := server.activeSessionMaxLifetime
+		server.auth.SetSessionTimeoutFns(
+			func() time.Duration { return idleTimeout },
+			func() time.Duration { return maxLifetime },
 		)
 	}
 

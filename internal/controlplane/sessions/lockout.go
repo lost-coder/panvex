@@ -46,6 +46,10 @@ const LockoutDuration = 15 * time.Minute
 //
 // Concurrency: all methods are safe for use by multiple goroutines.
 //
+// The lockout thresholds default to LockoutMaxAttempts / LockoutDuration.
+// Call SetThresholds to wire live getters from an OperationalStore so
+// operator changes are picked up without restarting the control-plane.
+//
 // Persistence (S7): when a LockoutStore is attached via SetStore, every
 // mutation (failure record, release after window, success reset) is
 // mirrored to the store synchronously. The in-memory map stays the hot
@@ -65,12 +69,49 @@ type LockoutTracker struct {
 	// usernames either.
 	redactor func(string) string
 
+	// maxAttemptsFn / lockoutDurationFn, when non-nil, override the
+	// LockoutMaxAttempts / LockoutDuration constants so that operator
+	// changes via the OperationalStore are visible on the next auth
+	// attempt without a panel restart. Set via SetThresholds.
+	maxAttemptsFn     func() int
+	lockoutDurationFn func() time.Duration
+
 	// shards holds 16 attempt-mutexes used by AttemptLock to serialize
 	// the read-verify-write sequence on a single username (Q2.U-S-15).
 	// Sharding keeps the lock cheap — different users hash to different
 	// slots and never block each other except on collisions, which are
 	// short-lived (one auth attempt).
 	shards [lockoutShardCount]sync.Mutex
+}
+
+// SetThresholds wires live getter functions for the lockout thresholds.
+// Each function is called on every lockout evaluation so operator changes
+// to auth.password_lockout_max_attempts / auth.password_lockout_duration
+// take effect without restarting the control-plane. Pass nil for either
+// argument to keep the compiled-in constant as fallback.
+func (t *LockoutTracker) SetThresholds(maxAttempts func() int, duration func() time.Duration) {
+	t.mu.Lock()
+	t.maxAttemptsFn = maxAttempts
+	t.lockoutDurationFn = duration
+	t.mu.Unlock()
+}
+
+// maxAttemptsLocked returns the effective max-attempts threshold.
+// Caller must hold t.mu.
+func (t *LockoutTracker) maxAttemptsLocked() int {
+	if t.maxAttemptsFn != nil {
+		return t.maxAttemptsFn()
+	}
+	return LockoutMaxAttempts
+}
+
+// lockoutDurationLocked returns the effective lockout duration.
+// Caller must hold t.mu.
+func (t *LockoutTracker) lockoutDurationLocked() time.Duration {
+	if t.lockoutDurationFn != nil {
+		return t.lockoutDurationFn()
+	}
+	return LockoutDuration
 }
 
 const lockoutShardCount = 16
@@ -183,10 +224,11 @@ func (t *LockoutTracker) Restore(ctx context.Context, now time.Time) error {
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	lockoutDuration := t.lockoutDurationLocked()
 	for _, record := range records {
 		entry := lockoutEntry{failures: record.Failures}
 		if record.LockedAt != nil {
-			if now.Sub(*record.LockedAt) >= LockoutDuration {
+			if now.Sub(*record.LockedAt) >= lockoutDuration {
 				continue
 			}
 			entry.lockedAt = *record.LockedAt
@@ -245,10 +287,10 @@ func (t *LockoutTracker) IsLockedWithContext(ctx context.Context, username strin
 	if !ok {
 		return false
 	}
-	if entry.failures < LockoutMaxAttempts {
+	if entry.failures < t.maxAttemptsLocked() {
 		return false
 	}
-	if now.Sub(entry.lockedAt) >= LockoutDuration {
+	if now.Sub(entry.lockedAt) >= t.lockoutDurationLocked() {
 		delete(t.accounts, username)
 		t.deletePersistedLocked(ctx, username)
 		return false
@@ -268,9 +310,10 @@ func (t *LockoutTracker) RecordFailureWithContext(ctx context.Context, username 
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	maxAttempts := t.maxAttemptsLocked()
 	entry := t.accounts[username]
 	entry.failures++
-	if entry.failures >= LockoutMaxAttempts {
+	if entry.failures >= maxAttempts {
 		entry.lockedAt = now
 	}
 	t.accounts[username] = entry
@@ -293,16 +336,18 @@ func (t *LockoutTracker) CheckAndRecordFailureWithContext(ctx context.Context, u
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	maxAttempts := t.maxAttemptsLocked()
+	lockoutDuration := t.lockoutDurationLocked()
 	entry, ok := t.accounts[username]
-	if ok && entry.failures >= LockoutMaxAttempts {
-		if now.Sub(entry.lockedAt) < LockoutDuration {
+	if ok && entry.failures >= maxAttempts {
+		if now.Sub(entry.lockedAt) < lockoutDuration {
 			return true
 		}
 		entry = lockoutEntry{}
 	}
 
 	entry.failures++
-	if entry.failures >= LockoutMaxAttempts {
+	if entry.failures >= maxAttempts {
 		entry.lockedAt = now
 	}
 	t.accounts[username] = entry
@@ -317,12 +362,14 @@ func (t *LockoutTracker) ActiveCount(now time.Time) int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	maxAttempts := t.maxAttemptsLocked()
+	lockoutDuration := t.lockoutDurationLocked()
 	count := 0
 	for _, entry := range t.accounts {
-		if entry.failures < LockoutMaxAttempts {
+		if entry.failures < maxAttempts {
 			continue
 		}
-		if now.Sub(entry.lockedAt) >= LockoutDuration {
+		if now.Sub(entry.lockedAt) >= lockoutDuration {
 			continue
 		}
 		count++
@@ -350,8 +397,10 @@ func (t *LockoutTracker) cleanupLocked(ctx context.Context, now time.Time) {
 	if len(t.accounts) < 64 {
 		return
 	}
+	maxAttempts := t.maxAttemptsLocked()
+	lockoutDuration := t.lockoutDurationLocked()
 	for username, entry := range t.accounts {
-		if entry.failures >= LockoutMaxAttempts && now.Sub(entry.lockedAt) >= LockoutDuration {
+		if entry.failures >= maxAttempts && now.Sub(entry.lockedAt) >= lockoutDuration {
 			delete(t.accounts, username)
 			t.deletePersistedLocked(ctx, username)
 		}

@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -71,13 +72,35 @@ func exampleValueFor(name string) any {
 		if f.Name != name {
 			continue
 		}
+		// Use the field's Max bound when present — it always passes range
+		// validation and is guaranteed to differ from the default so the
+		// active-snapshot comparison detects a change.
+		if f.Max != "" {
+			switch f.Type {
+			case settingspkg2.TypeInt:
+				var n int
+				if _, err := fmt.Sscanf(f.Max, "%d", &n); err == nil {
+					return n
+				}
+			case settingspkg2.TypeBool:
+				return f.Max == "true"
+			default:
+				return f.Max
+			}
+		}
+		// No Max — use the default as a safe fallback (may not trigger a
+		// change detection, but at least the PUT will not fail validation).
+		if f.HasDefault && f.Default != "" {
+			return f.Default
+		}
+		// Last resort: generic type-appropriate value.
 		switch f.Type {
 		case settingspkg2.TypeInt:
 			return 1
 		case settingspkg2.TypeBool:
 			return true
 		case settingspkg2.TypeDuration:
-			return "5s"
+			return "1h"
 		default:
 			return "x"
 		}

@@ -39,6 +39,10 @@ type TOTPLockoutTracker struct {
 	accounts map[string]totpLockoutEntry
 	max      int
 	window   time.Duration
+	// windowFn, when non-nil, overrides window on each evaluation so that
+	// operator changes to auth.totp_lockout_duration take effect without a
+	// panel restart. Set via SetThresholds.
+	windowFn func() time.Duration
 
 	// shards mirrors LockoutTracker.shards: 16 per-username serialisation
 	// mutexes used by AttemptLock to close the IsLocked → verify →
@@ -59,6 +63,28 @@ func NewTOTPLockoutTracker() *TOTPLockoutTracker {
 		max:      TOTPLockoutMaxAttempts,
 		window:   TOTPLockoutDuration,
 	}
+}
+
+// SetThresholds wires a live getter for the lockout window and fixes the
+// max-attempts threshold. windowFn is called on every lockout evaluation
+// so that operator changes to auth.totp_lockout_duration take effect
+// without restarting the control-plane. maxAttempts is fixed at construction
+// time (TOTPLockoutMaxAttempts is not an audited tunable). Safe to call
+// from any goroutine.
+func (t *TOTPLockoutTracker) SetThresholds(maxAttempts int, windowFn func() time.Duration) {
+	t.mu.Lock()
+	t.max = maxAttempts
+	t.windowFn = windowFn
+	t.mu.Unlock()
+}
+
+// effectiveWindowLocked returns the current lockout window.
+// Caller must hold t.mu.
+func (t *TOTPLockoutTracker) effectiveWindowLocked() time.Duration {
+	if t.windowFn != nil {
+		return t.windowFn()
+	}
+	return t.window
 }
 
 // AttemptLock acquires a per-username serialisation lock that closes
@@ -91,7 +117,7 @@ func (t *TOTPLockoutTracker) IsLockedWithContext(_ context.Context, username str
 	if entry.failures < t.max {
 		return false
 	}
-	if now.Sub(entry.lockedAt) >= t.window {
+	if now.Sub(entry.lockedAt) >= t.effectiveWindowLocked() {
 		delete(t.accounts, username)
 		return false
 	}
@@ -118,6 +144,7 @@ func (t *TOTPLockoutTracker) RecordFailureWithContext(_ context.Context, usernam
 	t.cleanupLocked(now)
 }
 
+
 // CheckAndRecordFailure atomically checks lockout and records a failure.
 // Returns true if the account is locked (failure is NOT recorded when
 // already locked). Use CheckAndRecordFailureWithContext from request
@@ -132,9 +159,10 @@ func (t *TOTPLockoutTracker) CheckAndRecordFailureWithContext(_ context.Context,
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	window := t.effectiveWindowLocked()
 	entry, ok := t.accounts[username]
 	if ok && entry.failures >= t.max {
-		if now.Sub(entry.lockedAt) < t.window {
+		if now.Sub(entry.lockedAt) < window {
 			return true
 		}
 		entry = totpLockoutEntry{}
@@ -168,12 +196,13 @@ func (t *TOTPLockoutTracker) ActiveCount(now time.Time) int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	window := t.effectiveWindowLocked()
 	count := 0
 	for _, entry := range t.accounts {
 		if entry.failures < t.max {
 			continue
 		}
-		if now.Sub(entry.lockedAt) >= t.window {
+		if now.Sub(entry.lockedAt) >= window {
 			continue
 		}
 		count++
@@ -185,8 +214,9 @@ func (t *TOTPLockoutTracker) cleanupLocked(now time.Time) {
 	if len(t.accounts) < 64 {
 		return
 	}
+	window := t.effectiveWindowLocked()
 	for username, entry := range t.accounts {
-		if entry.failures >= t.max && now.Sub(entry.lockedAt) >= t.window {
+		if entry.failures >= t.max && now.Sub(entry.lockedAt) >= window {
 			delete(t.accounts, username)
 		}
 	}

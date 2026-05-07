@@ -81,6 +81,25 @@ const (
 // the new idle-timeout is enforced in addition, not instead.
 const sessionTTL = sessionMaxLifetime
 
+// effectiveSessionMaxLifetime returns the operator-configured session max
+// lifetime, falling back to the compiled-in constant when no fn is wired.
+// May be called with or without s.mu held — the fn is set once at startup.
+func (s *Service) effectiveSessionMaxLifetime() time.Duration {
+	if s.maxLifetimeFn != nil {
+		return s.maxLifetimeFn()
+	}
+	return sessionMaxLifetime
+}
+
+// effectiveSessionIdleTimeout returns the operator-configured idle timeout,
+// falling back to the compiled-in constant when no fn is wired.
+func (s *Service) effectiveSessionIdleTimeout() time.Duration {
+	if s.idleTimeoutFn != nil {
+		return s.idleTimeoutFn()
+	}
+	return sessionIdleTimeout
+}
+
 // dummyPasswordHash is used to equalise login latency when the supplied
 // username does not exist, so timing does not leak user-enumeration signal.
 // It is computed once on first use; the derived hash value is discarded
@@ -162,8 +181,8 @@ func (s *Service) installRestoredSessions(records []storage.SessionRecord, cutof
 }
 
 func (s *Service) cleanupExpiredSessionsLocked(now time.Time) {
-	maxCutoff := now.UTC().Add(-sessionMaxLifetime)
-	idleCutoff := now.UTC().Add(-sessionIdleTimeout)
+	maxCutoff := now.UTC().Add(-s.effectiveSessionMaxLifetime())
+	idleCutoff := now.UTC().Add(-s.effectiveSessionIdleTimeout())
 	for sessionID, session := range s.sessions {
 		// S5: evict on either the absolute cap or the idle-timeout.
 		// Whichever fires first wins.
@@ -374,8 +393,8 @@ func (s *Service) GetSession(sessionID string) (Session, error) {
 	if !ok {
 		return Session{}, ErrSessionNotFound
 	}
-	if now.After(session.CreatedAt.Add(sessionMaxLifetime)) ||
-		now.After(session.LastSeenAt.Add(sessionIdleTimeout)) {
+	if now.After(session.CreatedAt.Add(s.effectiveSessionMaxLifetime())) ||
+		now.After(session.LastSeenAt.Add(s.effectiveSessionIdleTimeout())) {
 		delete(s.sessions, sessionID)
 		return Session{}, ErrSessionNotFound
 	}
@@ -405,7 +424,7 @@ func (s *Service) TouchSession(ctx context.Context, sessionID string) {
 		return
 	}
 	now := s.now().UTC()
-	if now.After(session.CreatedAt.Add(sessionMaxLifetime)) {
+	if now.After(session.CreatedAt.Add(s.effectiveSessionMaxLifetime())) {
 		// Absolute cap already reached — don't extend; cleanup will evict.
 		s.mu.Unlock()
 		return
