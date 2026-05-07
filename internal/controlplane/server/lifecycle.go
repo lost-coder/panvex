@@ -198,9 +198,14 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 	// code is the only caller.
 	if rawDBer, ok := options.Store.(interface{ DB() *sql.DB }); ok {
 		if rawDB := rawDBer.DB(); rawDB != nil {
+			// SQLitePath is empty for postgres deployments (set only for sqlite).
+			ph := settings.PlaceholderQ
+			if options.SQLitePath == "" {
+				ph = settings.PlaceholderDollar
+			}
 			s.settings = settings.NewOperationalStoreRW(
-				settings.NewDBStore(rawDB),
-				settings.NewDBStore(rawDB),
+				settings.NewDBStore(rawDB, ph),
+				settings.NewDBStore(rawDB, ph),
 			)
 			s.trySetStartupErr(func() error {
 				return s.settings.Reload(s.serverCtx)

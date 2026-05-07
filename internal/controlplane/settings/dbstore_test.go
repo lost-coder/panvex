@@ -37,7 +37,7 @@ func openTestDB(t *testing.T) *sql.DB {
 
 func TestDBStore_RoundTrip(t *testing.T) {
 	db := openTestDB(t)
-	store := NewDBStore(db)
+	store := NewDBStore(db, PlaceholderQ)
 	ctx := context.Background()
 
 	// --- panel column round-trip ---
@@ -70,7 +70,7 @@ func TestDBStore_RoundTrip(t *testing.T) {
 
 func TestDBStore_ReadPanelColumn_Missing(t *testing.T) {
 	db := openTestDB(t)
-	store := NewDBStore(db)
+	store := NewDBStore(db, PlaceholderQ)
 	ctx := context.Background()
 
 	// No row yet — should return "" with nil error.
@@ -85,7 +85,7 @@ func TestDBStore_ReadPanelColumn_Missing(t *testing.T) {
 
 func TestDBStore_ReadPanelColumn_InvalidColumn(t *testing.T) {
 	db := openTestDB(t)
-	store := NewDBStore(db)
+	store := NewDBStore(db, PlaceholderQ)
 	ctx := context.Background()
 
 	_, err := store.ReadPanelColumn(ctx, "nonexistent_col")
@@ -96,11 +96,38 @@ func TestDBStore_ReadPanelColumn_InvalidColumn(t *testing.T) {
 
 func TestDBStore_WritePanelColumn_InvalidColumn(t *testing.T) {
 	db := openTestDB(t)
-	store := NewDBStore(db)
+	store := NewDBStore(db, PlaceholderQ)
 	ctx := context.Background()
 
 	err := store.WritePanelColumn(ctx, "drop_table_foo", "evil", "test")
 	if err == nil {
 		t.Fatal("expected error for invalid column, got nil")
+	}
+}
+
+// TestDBStore_PlaceholderRendering verifies the p() helper without a real DB.
+// Postgres round-trip coverage relies on the CI matrix running
+// PANVEX_POSTGRES_TEST_DSN against the broader storage test suite, which
+// exercises OperationalStore → DBStore via the wiring in lifecycle.go.
+func TestDBStore_PlaceholderRendering(t *testing.T) {
+	dollar := &DBStore{ph: PlaceholderDollar}
+	for _, tc := range []struct {
+		n    int
+		want string
+	}{
+		{1, "$1"},
+		{2, "$2"},
+		{3, "$3"},
+	} {
+		if got := dollar.p(tc.n); got != tc.want {
+			t.Errorf("PlaceholderDollar p(%d) = %q, want %q", tc.n, got, tc.want)
+		}
+	}
+
+	q := &DBStore{ph: PlaceholderQ}
+	for _, n := range []int{1, 2, 7} {
+		if got := q.p(n); got != "?" {
+			t.Errorf("PlaceholderQ p(%d) = %q, want %q", n, got, "?")
+		}
 	}
 }

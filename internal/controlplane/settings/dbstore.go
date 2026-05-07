@@ -10,22 +10,40 @@ import (
 	"github.com/lost-coder/panvex/internal/dbsqlc"
 )
 
+// Placeholder selects the SQL positional-parameter style for raw queries.
+// sqlc-generated queries are handled by the sqlc driver and do not need this.
+type Placeholder int
+
+const (
+	// PlaceholderQ uses ? as the parameter marker (SQLite, MySQL).
+	PlaceholderQ Placeholder = iota
+	// PlaceholderDollar uses $1, $2, … as parameter markers (PostgreSQL).
+	PlaceholderDollar
+)
+
 // DBStore implements StoreReader and StoreWriter against a raw *sql.DB
 // plus sqlc-generated queries. It scopes panel_settings to the canonical
 // "default" scope.
-//
-// Placeholder style: uses ? (SQLite). Postgres callers would need a
-// separate adapter; DBStore is currently wired only from the sqlite path.
 type DBStore struct {
 	db *sql.DB
 	q  *dbsqlc.Queries
+	ph Placeholder
 }
 
-// NewDBStore wraps a *sql.DB. dbsqlc.New(db) is called internally so the
-// same instance can serve as both StoreReader and StoreWriter passed to
-// settings.NewOperationalStoreRW.
-func NewDBStore(db *sql.DB) *DBStore {
-	return &DBStore{db: db, q: dbsqlc.New(db)}
+// NewDBStore wraps a *sql.DB. ph selects the SQL placeholder style:
+// PlaceholderQ for SQLite/MySQL (?), PlaceholderDollar for PostgreSQL ($1…).
+// dbsqlc.New(db) is called internally so the same instance can serve as both
+// StoreReader and StoreWriter passed to settings.NewOperationalStoreRW.
+func NewDBStore(db *sql.DB, ph Placeholder) *DBStore {
+	return &DBStore{db: db, q: dbsqlc.New(db), ph: ph}
+}
+
+// p returns the placeholder token for the n-th parameter (1-indexed).
+func (s *DBStore) p(n int) string {
+	if s.ph == PlaceholderDollar {
+		return fmt.Sprintf("$%d", n)
+	}
+	return "?"
 }
 
 const settingsScope = "default"
@@ -50,7 +68,7 @@ func (s *DBStore) ReadPanelColumn(ctx context.Context, col string) (string, erro
 		return "", fmt.Errorf("settings: column %q not on panel_settings", col)
 	}
 	//nolint:gosec // col validated against allowlist above
-	q := fmt.Sprintf("SELECT %s FROM panel_settings WHERE scope = ?", col)
+	q := fmt.Sprintf("SELECT %s FROM panel_settings WHERE scope = %s", col, s.p(1))
 	row := s.db.QueryRowContext(ctx, q, settingsScope)
 	var raw sql.NullString
 	if err := row.Scan(&raw); err != nil {
@@ -74,15 +92,19 @@ func (s *DBStore) WritePanelColumn(ctx context.Context, col, raw, _ string) erro
 	}
 	now := time.Now().Unix()
 	// Ensure the row exists first.
-	if _, err := s.db.ExecContext(ctx,
-		`INSERT INTO panel_settings (scope, updated_at_unix) VALUES (?, ?)
-		 ON CONFLICT (scope) DO NOTHING`,
-		settingsScope, now); err != nil {
+	insert := fmt.Sprintf(
+		"INSERT INTO panel_settings (scope, updated_at_unix) VALUES (%s, %s) ON CONFLICT (scope) DO NOTHING",
+		s.p(1), s.p(2),
+	)
+	if _, err := s.db.ExecContext(ctx, insert, settingsScope, now); err != nil {
 		return err
 	}
 	//nolint:gosec // col validated against allowlist above
-	q := fmt.Sprintf("UPDATE panel_settings SET %s = ?, updated_at_unix = ? WHERE scope = ?", col)
-	_, err := s.db.ExecContext(ctx, q, raw, now, settingsScope)
+	update := fmt.Sprintf(
+		"UPDATE panel_settings SET %s = %s, updated_at_unix = %s WHERE scope = %s",
+		col, s.p(1), s.p(2), s.p(3),
+	)
+	_, err := s.db.ExecContext(ctx, update, raw, now, settingsScope)
 	return err
 }
 
