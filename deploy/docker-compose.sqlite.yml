@@ -12,16 +12,13 @@ services:
       context: ..
       dockerfile: Dockerfile
       target: control-plane
+    environment:
+      PANVEX_HTTP_ADDR: :8080
+      PANVEX_GRPC_ADDR: :8443
+      PANVEX_STORAGE_DRIVER: sqlite
+      PANVEX_STORAGE_DSN: /var/lib/panvex/panvex.db
     command:
       - ./panvex-control-plane
-      - -http-addr
-      - :8080
-      - -grpc-addr
-      - :8443
-      - -storage-driver
-      - sqlite
-      - -storage-dsn
-      - /var/lib/panvex/panvex.db
     ports:
       - "127.0.0.1:8443:8443"
     volumes:

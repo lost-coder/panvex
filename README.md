@@ -181,7 +181,7 @@ go run ./cmd/control-plane bootstrap-admin \
 **2.** Start control plane:
 
 ```sh
-go run ./cmd/control-plane -http-addr :8080 -grpc-addr :8443
+PANVEX_STORAGE_DSN=data/panvex.db PANVEX_ENCRYPTION_KEY=<your-key> go run ./cmd/control-plane
 ```
 
 **3.** Start frontend dev server:

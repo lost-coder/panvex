@@ -116,6 +116,8 @@ func newServerFromOptions(options Options, now func() time.Time, csrfSecret []by
 		metrics:                      make([]MetricSnapshot, 0, maxInMemoryMetricSnapshots),
 		intervals:                    options.Intervals.withDefaults(),
 		sqlitePath:                   options.SQLitePath,
+		bootstrap:                    options.Bootstrap,
+		bootstrapSources:             options.BootstrapSources,
 	}
 }
 

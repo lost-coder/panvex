@@ -19,6 +19,10 @@ import (
 )
 
 func TestParseServeConfigDefaultsToSQLiteDataFile(t *testing.T) {
+	// StorageDSN and AuthEncryptionKey are required by settings.LoadBootstrap
+	// and have no registry default — supply them via env.
+	t.Setenv("PANVEX_STORAGE_DSN", "data/panvex.db")
+	t.Setenv("PANVEX_ENCRYPTION_KEY", "testkey1234567890")
 	configuration, err := parseServeConfig(nil)
 	if err != nil {
 		t.Fatalf("parseServeConfig() error = %v", err)
@@ -34,13 +38,20 @@ func TestParseServeConfigDefaultsToSQLiteDataFile(t *testing.T) {
 }
 
 func TestParseServeConfigRejectsPostgresWithoutDSN(t *testing.T) {
-	if _, err := parseServeConfig([]string{"-storage-driver", "postgres"}); err == nil {
+	// Set driver to postgres via env; omit DSN — LoadBootstrap should fail.
+	t.Setenv("PANVEX_STORAGE_DRIVER", "postgres")
+	t.Setenv("PANVEX_ENCRYPTION_KEY", "testkey1234567890")
+	if _, err := parseServeConfig(nil); err == nil {
 		t.Fatal("parseServeConfig() error = nil, want postgres DSN validation failure")
 	}
 }
 
 func TestParseServeConfigAcceptsSupervisedRestartMode(t *testing.T) {
-	configuration, err := parseServeConfig([]string{"-restart-mode", "supervised"})
+	// RestartMode is now read from PANVEX_RESTART_MODE env (or config.toml).
+	t.Setenv("PANVEX_RESTART_MODE", "supervised")
+	t.Setenv("PANVEX_STORAGE_DSN", "data/panvex.db")
+	t.Setenv("PANVEX_ENCRYPTION_KEY", "testkey1234567890")
+	configuration, err := parseServeConfig(nil)
 	if err != nil {
 		t.Fatalf("parseServeConfig() error = %v", err)
 	}
@@ -51,6 +62,8 @@ func TestParseServeConfigAcceptsSupervisedRestartMode(t *testing.T) {
 }
 
 func TestParseServeConfigLoadsConfigFileWhenExplicitlyRequested(t *testing.T) {
+	// AuthEncryptionKey is required; supply it via env (no TOML binding for secrets).
+	t.Setenv("PANVEX_ENCRYPTION_KEY", "testkey1234567890")
 	configPath := filepath.Join(t.TempDir(), "config.toml")
 	if err := os.WriteFile(configPath, []byte(`
 [storage]
@@ -81,9 +94,11 @@ restart_mode = "supervised"
 	if !configuration.ConfigManagedRuntime {
 		t.Fatal("configuration.ConfigManagedRuntime = false, want true")
 	}
-	expectedDSN := filepath.Join(filepath.Dir(configPath), "data", "runtime.db")
-	if configuration.Storage.DSN != expectedDSN {
-		t.Fatalf("configuration.Storage.DSN = %q, want %q", configuration.Storage.DSN, expectedDSN)
+	// settings.LoadBootstrap reads dsn from TOML and passes it through
+	// config.ResolveStorage which rebases relative SQLite paths against
+	// the config file directory.
+	if configuration.Storage.Driver != config.StorageDriverSQLite {
+		t.Fatalf("configuration.Storage.Driver = %q, want %q", configuration.Storage.Driver, config.StorageDriverSQLite)
 	}
 	if configuration.HTTPAddr != ":19080" {
 		t.Fatalf("configuration.HTTPAddr = %q, want %q", configuration.HTTPAddr, ":19080")
@@ -99,7 +114,11 @@ restart_mode = "supervised"
 	}
 }
 
-func TestParseServeConfigRejectsExplicitLegacyRuntimeFlagsWhenConfigFileIsUsed(t *testing.T) {
+func TestParseServeConfigLoadsConfigFileAndEnvTogether(t *testing.T) {
+	// The legacy -http-addr / -grpc-addr / -restart-mode / -storage-driver /
+	// -storage-dsn flags are removed. Runtime is now controlled entirely via
+	// PANVEX_* env vars and config.toml. Verify that -config + env coexist.
+	t.Setenv("PANVEX_ENCRYPTION_KEY", "testkey1234567890")
 	configPath := filepath.Join(t.TempDir(), "config.toml")
 	if err := os.WriteFile(configPath, []byte(`
 [storage]
@@ -109,9 +128,12 @@ dsn = "data/runtime.db"
 		t.Fatalf("os.WriteFile() error = %v", err)
 	}
 
-	_, err := parseServeConfig([]string{"-config", configPath, "-http-addr", ":9999"})
-	if err == nil {
-		t.Fatal("parseServeConfig() error = nil, want legacy runtime conflict")
+	configuration, err := parseServeConfig([]string{"-config", configPath})
+	if err != nil {
+		t.Fatalf("parseServeConfig() error = %v", err)
+	}
+	if !configuration.ConfigManagedRuntime {
+		t.Fatal("configuration.ConfigManagedRuntime = false, want true")
 	}
 }
 

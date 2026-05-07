@@ -14,6 +14,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/bootstrap"
 	"github.com/lost-coder/panvex/internal/controlplane/config"
 	"github.com/lost-coder/panvex/internal/controlplane/server"
+	"github.com/lost-coder/panvex/internal/controlplane/settings"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/dbsqlc"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
@@ -40,7 +41,9 @@ type serveConfig struct {
 	// path in addition to stderr. The file is opened in append mode.
 	// Rotation is delegated to the host (logrotate, systemd-journal, …)
 	// — the panel does not rotate it itself.
-	LogFile string
+	LogFile          string
+	Boot             *settings.Bootstrap
+	BootstrapSources settings.SourceMap
 }
 
 func runServe(args []string) error {
@@ -300,6 +303,8 @@ func newAPIServer(
 		BuildTime:          BuildTime,
 		MetricsScrapeToken: metricsScrapeToken,
 		SQLitePath:         sqlitePath,
+		Bootstrap:          options.Boot,
+		BootstrapSources:   options.BootstrapSources,
 		RequestRestart: func() error {
 			select {
 			case restartRequests <- struct{}{}:
@@ -310,120 +315,126 @@ func newAPIServer(
 	})
 }
 
-// loadConfigFileServeConfig builds the serveConfig from a config.toml
-// path while rejecting any conflicting legacy CLI flags.
-func loadConfigFileServeConfig(configPath string, explicitLegacyFlags map[string]bool, parsedCIDRs []*net.IPNet, encryptionKey, logLevel string) (serveConfig, error) {
-	for _, flagName := range []string{"http-addr", "grpc-addr", "restart-mode", flagStorageDriver, flagStorageDSN} {
-		if explicitLegacyFlags[flagName] {
-			return serveConfig{}, fmt.Errorf("flag -%s cannot be used together with -config", flagName)
-		}
-	}
-
-	configuration, err := config.LoadControlPlaneConfig(configPath)
-	if err != nil {
-		return serveConfig{}, err
-	}
-
-	return serveConfig{
-		ConfigPath:           configPath,
-		ConfigManagedRuntime: true,
-		HTTPAddr:             configuration.HTTPListenAddress,
-		HTTPRootPath:         configuration.HTTPRootPath,
-		AgentHTTPRootPath:    configuration.AgentHTTPRootPath,
-		PanelAllowedCIDRs:    configuration.PanelAllowedCIDRs,
-		GRPCAddr:             configuration.GRPCListenAddress,
-		RestartMode:          configuration.RestartMode,
-		TLSMode:              configuration.TLSMode,
-		TLSCertFile:          configuration.TLSCertFile,
-		TLSKeyFile:           configuration.TLSKeyFile,
-		Storage:              configuration.Storage,
-		TrustedProxyCIDRs:    parsedCIDRs,
-		EncryptionKey:        encryptionKey,
-		LogLevel:             logLevel,
-	}, nil
-}
-
-// loadLegacyServeConfig builds the serveConfig from the legacy CLI
-// flag set, used when -config is absent.
-func loadLegacyServeConfig(httpAddr, grpcAddr, restartMode, storageDriver, storageDSN string, parsedCIDRs []*net.IPNet, encryptionKey, logLevel string) (serveConfig, error) {
-	configuration, err := config.ResolveLegacyControlPlaneConfig(httpAddr, grpcAddr, restartMode, "", storageDriver, storageDSN)
-	if err != nil {
-		return serveConfig{}, err
-	}
-
-	return serveConfig{
-		ConfigPath:           "",
-		ConfigManagedRuntime: false,
-		HTTPAddr:             configuration.HTTPListenAddress,
-		HTTPRootPath:         configuration.HTTPRootPath,
-		AgentHTTPRootPath:    configuration.AgentHTTPRootPath,
-		PanelAllowedCIDRs:    configuration.PanelAllowedCIDRs,
-		GRPCAddr:             configuration.GRPCListenAddress,
-		RestartMode:          configuration.RestartMode,
-		TLSMode:              configuration.TLSMode,
-		TLSCertFile:          configuration.TLSCertFile,
-		TLSKeyFile:           configuration.TLSKeyFile,
-		Storage:              configuration.Storage,
-		TrustedProxyCIDRs:    parsedCIDRs,
-		EncryptionKey:        encryptionKey,
-		LogLevel:             logLevel,
-	}, nil
-}
-
 func parseServeConfig(args []string) (serveConfig, error) {
 	flags := flag.NewFlagSet("control-plane", flag.ContinueOnError)
-	configPath := flags.String("config", strings.TrimSpace(os.Getenv("PANVEX_CONFIG")), "Path to runtime config.toml")
-	httpAddr := flags.String("http-addr", ":8080", "HTTP listen address")
-	grpcAddr := flags.String("grpc-addr", ":8443", "gRPC listen address")
-	restartMode := flags.String("restart-mode", config.RestartModeDisabled, "Panel restart mode (disabled or supervised)")
-	storageDriver := flags.String(flagStorageDriver, "", helpStorageDriver)
-	storageDSN := flags.String(flagStorageDSN, "", helpStorageDSN)
-	trustedProxyCIDRs := flags.String("trusted-proxy-cidrs", strings.TrimSpace(os.Getenv("PANVEX_TRUSTED_PROXY_CIDRS")), "Comma-separated trusted proxy CIDRs for X-Forwarded-For (e.g. 172.16.0.0/12,10.0.0.0/8)")
+	configPath := flags.String("config", strings.TrimSpace(os.Getenv("PANVEX_CONFIG")), "Path to runtime config.toml (also PANVEX_CONFIG)")
+	trustedProxyCIDRs := flags.String("trusted-proxy-cidrs", "", "Comma-separated trusted proxy CIDRs for X-Forwarded-For (e.g. 172.16.0.0/12,10.0.0.0/8). Overrides PANVEX_TRUSTED_PROXY_CIDRS.")
 	// CA encryption passphrase is never accepted on the command line because
 	// argv is visible in /proc/<pid>/cmdline and ps output. Sources, in priority
 	// order: --encryption-key-stdin, --encryption-key-file, PANVEX_ENCRYPTION_KEY.
 	encryptionKeyFile := flags.String("encryption-key-file", "", "Path to file containing the passphrase for CA private key encryption")
 	encryptionKeyStdin := flags.Bool("encryption-key-stdin", false, "Read the CA private key encryption passphrase from stdin (single line)")
-	logLevel := flags.String("log-level", "info", "Log level: debug, info, warn, error")
-	logFile := flags.String("log-file", strings.TrimSpace(os.Getenv("PANVEX_LOG_FILE")), "Path to log file (mirrors stderr; appended). Empty = stderr only.")
+	logLevel := flags.String("log-level", "", "Log level: debug, info, warn, error. Overrides PANVEX_LOG_LEVEL.")
+	logFile := flags.String("log-file", "", "Path to log file (mirrors stderr; appended). Overrides PANVEX_LOG_FILE.")
 	if err := flags.Parse(args); err != nil {
 		return serveConfig{}, err
 	}
 
-	encryptionKey, err := resolveEncryptionKey(*encryptionKeyFile, *encryptionKeyStdin)
+	// Build the env slice, injecting CLI overrides so LoadBootstrap sees
+	// the final merged view. CLI flags win over env when explicitly set.
+	env := os.Environ()
+	if v := strings.TrimSpace(*logLevel); v != "" {
+		env = appendEnvOverride(env, "PANVEX_LOG_LEVEL", v)
+	}
+	if v := strings.TrimSpace(*logFile); v != "" {
+		env = appendEnvOverride(env, "PANVEX_LOG_FILE", v)
+	}
+	// -trusted-proxy-cidrs CLI wins over PANVEX_TRUSTED_PROXY_CIDRS env.
+	if v := strings.TrimSpace(*trustedProxyCIDRs); v != "" {
+		env = appendEnvOverride(env, "PANVEX_TRUSTED_PROXY_CIDRS", v)
+	}
+
+	boot, srcs, err := settings.LoadBootstrap(settings.LoaderInput{
+		ConfigPath: strings.TrimSpace(*configPath),
+		Env:        env,
+	})
 	if err != nil {
 		return serveConfig{}, err
 	}
 
-	parsedCIDRs, err := parseCIDRList(*trustedProxyCIDRs)
+	// -encryption-key-file / -encryption-key-stdin override PANVEX_ENCRYPTION_KEY
+	// because they supply the secret from a non-argv, non-env source. When
+	// neither flag is provided resolveEncryptionKey falls through to env, which
+	// LoadBootstrap has already read — so we only override when a file/stdin
+	// path was explicitly requested.
+	encryptionKey, err := resolveEncryptionKey(*encryptionKeyFile, *encryptionKeyStdin)
 	if err != nil {
-		return serveConfig{}, fmt.Errorf("invalid -trusted-proxy-cidrs: %w", err)
+		return serveConfig{}, err
+	}
+	if encryptionKey != "" {
+		// File/stdin takes priority; boot already has PANVEX_ENCRYPTION_KEY
+		// from env — replace it with the stronger source.
+		boot.AuthEncryptionKey = encryptionKey
+	} else {
+		// No file/stdin — honour what LoadBootstrap resolved from env/default.
+		encryptionKey = boot.AuthEncryptionKey
 	}
 
-	explicitLegacyFlags := make(map[string]bool)
-	flags.Visit(func(currentFlag *flag.Flag) {
-		explicitLegacyFlags[currentFlag.Name] = true
-	})
-
-	if path := strings.TrimSpace(*configPath); path != "" {
-		cfg, err := loadConfigFileServeConfig(path, explicitLegacyFlags, parsedCIDRs, encryptionKey, *logLevel)
-		if err != nil {
-			return cfg, err
-		}
-		// CLI/env --log-file overrides any config-file value: ops can
-		// flip a runaway log destination without re-rendering the TOML.
-		if v := strings.TrimSpace(*logFile); v != "" {
-			cfg.LogFile = v
-		}
-		return cfg, nil
-	}
-
-	cfg, err := loadLegacyServeConfig(*httpAddr, *grpcAddr, *restartMode, *storageDriver, *storageDSN, parsedCIDRs, encryptionKey, *logLevel)
+	parsedCIDRs, err := parseCIDRList(boot.HTTPTrustedProxyCIDRs)
 	if err != nil {
-		return cfg, err
+		return serveConfig{}, fmt.Errorf("invalid trusted_proxy_cidrs: %w", err)
 	}
-	cfg.LogFile = strings.TrimSpace(*logFile)
-	return cfg, nil
+
+	panelAllowedCIDRs := splitCSV(boot.HTTPPanelAllowedCIDRs)
+
+	storage, err := config.ResolveStorage(boot.StorageDriver, boot.StorageDSN)
+	if err != nil {
+		return serveConfig{}, err
+	}
+
+	configManagedRuntime := strings.TrimSpace(*configPath) != ""
+
+	return serveConfig{
+		ConfigPath:           strings.TrimSpace(*configPath),
+		ConfigManagedRuntime: configManagedRuntime,
+		HTTPAddr:             boot.HTTPListenAddress,
+		HTTPRootPath:         boot.HTTPRootPath,
+		AgentHTTPRootPath:    boot.HTTPAgentRootPath,
+		PanelAllowedCIDRs:    panelAllowedCIDRs,
+		GRPCAddr:             boot.GRPCListenAddress,
+		RestartMode:          boot.PanelRestartMode,
+		TLSMode:              boot.TLSMode,
+		TLSCertFile:          boot.TLSCertFile,
+		TLSKeyFile:           boot.TLSKeyFile,
+		Storage:              storage,
+		TrustedProxyCIDRs:    parsedCIDRs,
+		EncryptionKey:        encryptionKey,
+		LogLevel:             boot.ObservabilityLogLevel,
+		LogFile:              boot.ObservabilityLogFile,
+		Boot:                 boot,
+		BootstrapSources:     srcs,
+	}, nil
+}
+
+// appendEnvOverride appends KEY=VALUE to the env slice, overriding any
+// existing value for KEY. LoadBootstrap uses the last entry for a given
+// key (first-match is the loader's model), so append is sufficient.
+func appendEnvOverride(env []string, key, value string) []string {
+	// Remove any existing entry for this key so the override is unambiguous.
+	prefix := key + "="
+	out := env[:0:len(env)]
+	for _, kv := range env {
+		if !strings.HasPrefix(kv, prefix) {
+			out = append(out, kv)
+		}
+	}
+	return append(out, key+"="+value)
+}
+
+// splitCSV splits a comma-separated string into a trimmed slice of
+// non-empty tokens. Used to parse PANVEX_PANEL_ALLOWED_CIDRS.
+func splitCSV(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if v := strings.TrimSpace(p); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 func resolvePanelRuntime(configuration serveConfig) (server.PanelRuntime, error) {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/settings"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
@@ -66,4 +67,11 @@ type Options struct {
 	// (<dir(SQLitePath)>/geoip) so auto/URL-mode .mmdb files live next
 	// to the DB file. PANVEX_GEOIP_DIR overrides regardless.
 	SQLitePath string
+	// Bootstrap is the typed snapshot of all bootstrap settings loaded at
+	// startup by settings.LoadBootstrap. Stored on the Server so handlers
+	// (e.g. GET /api/settings/values) can report the origin of each value.
+	Bootstrap *settings.Bootstrap
+	// BootstrapSources maps each setting name to its SourceInfo (env,
+	// config_file, or default). Populated alongside Bootstrap.
+	BootstrapSources settings.SourceMap
 }

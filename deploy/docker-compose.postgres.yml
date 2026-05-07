@@ -31,17 +31,15 @@ services:
     env_file:
       - path: .env
         required: false
+    environment:
+      PANVEX_HTTP_ADDR: :8080
+      PANVEX_GRPC_ADDR: :8443
+      PANVEX_STORAGE_DRIVER: postgres
+      # NOTE: sslmode=disable is acceptable for local dev; use sslmode=require or stricter in production.
+      PANVEX_STORAGE_DSN: postgres://${POSTGRES_USER:-panvex}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}@postgres:5432/${POSTGRES_DB:-panvex}?sslmode=disable
+      PANVEX_ALLOW_INSECURE_DB: "1"
     command:
       - ./panvex-control-plane
-      - -http-addr
-      - :8080
-      - -grpc-addr
-      - :8443
-      - -storage-driver
-      - postgres
-      - -storage-dsn
-      # NOTE: sslmode=disable is acceptable for local dev; use sslmode=require or stricter in production.
-      - postgres://${POSTGRES_USER:-panvex}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}@postgres:5432/${POSTGRES_DB:-panvex}?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy

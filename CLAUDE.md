@@ -109,8 +109,10 @@ retained as a fallback but is skipped in listen mode.
 - Frontend embeds into the binary via `npm run build:embed` ->
   `cmd/control-plane/.embedded-ui/`; build tag `embeddedui` activates it
 - `config.toml` and `proxy-secret` are local runtime files, not committed
-- Storage driver is selected at startup via `-storage-driver sqlite|postgres`
-  and `-storage-dsn <dsn>`
+- Storage backend is configured via `PANVEX_STORAGE_DRIVER` (sqlite|postgres) and
+  `PANVEX_STORAGE_DSN` env vars (or `[storage]` in config.toml).
+  The `-storage-driver`/`-storage-dsn` flags remain only on the
+  `bootstrap-admin`, `reset-user-totp`, and `migrate-schema` subcommands.
 
 ## Commands
 
