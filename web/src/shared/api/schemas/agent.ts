@@ -130,6 +130,8 @@ export const agentRuntimeSchema = z.object({
   recent_events: z.array(runtimeEventSchema),
   system_load: systemLoadSchema,
   me_writers_summary: meWritersSummarySchema.optional(),
+  telemt_reachable: z.boolean().default(true),
+  telemt_unreachable_since_unix: z.number().default(0),
 });
 
 export const agentCertificateRecoverySchema = z.object({

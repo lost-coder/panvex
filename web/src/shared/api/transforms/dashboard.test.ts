@@ -20,6 +20,8 @@ const baseRuntime: AgentRuntime = {
   me_runtime_ready: true,
   me2dc_fallback_enabled: false,
   use_middle_proxy: false,
+  telemt_reachable: true,
+  telemt_unreachable_since_unix: 0,
   startup_status: "ready",
   startup_stage: "done",
   startup_progress_pct: 100,
