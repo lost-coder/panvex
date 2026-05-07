@@ -22,7 +22,8 @@ export interface UseSettingsRegistryResult {
   setDraft(name: string, value: string): void;
   resetDraft(): void;
   save(): Promise<void>;
-  restart(): Promise<void>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  restart(): Promise<any>;
 }
 
 export function useSettingsRegistry(): UseSettingsRegistryResult {

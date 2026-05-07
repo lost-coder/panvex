@@ -1,5 +1,25 @@
 // --- Settings ---
 
+import type { SchemaEntry, ValuesEntry } from "@/features/settings/registry/types";
+
+/** Registry bundle passed from SettingsContainer to SettingsPage. */
+export interface SettingsRegistryProps {
+  schema: SchemaEntry[];
+  values: Record<string, ValuesEntry>;
+  bootstrapNames: Set<string>;
+  pendingRestart: string[];
+  draft: Record<string, string>;
+  isDirty: boolean;
+  errors: Record<string, string>;
+  isSaving: boolean;
+  isRestartInFlight: boolean;
+  onDraftChange: (name: string, value: string) => void;
+  onSave: () => Promise<void>;
+  onCancelDraft: () => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onRestart: () => Promise<any>;
+}
+
 export interface SettingsPageProps {
   panelSettings: {
     httpPublicUrl: string;
@@ -29,4 +49,7 @@ export interface SettingsPageProps {
   retentionSaving?: boolean | undefined;
   /** Content injected into the "Updates" tab (e.g. UpdatesSettingsSection from core/web). */
   children?: React.ReactNode | undefined;
+  /** Registry props — schema-driven sections + restart banner. Optional so existing
+   *  tests and usage without the registry hook continue to work. */
+  registry?: SettingsRegistryProps | undefined;
 }

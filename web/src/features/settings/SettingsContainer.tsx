@@ -8,6 +8,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { SkeletonRows } from "@/ui";
 import { UpdatesSettingsSection } from "./UpdatesSettingsSection";
 import { GeoIPSettingsSection } from "./GeoIPSettingsSection";
+import { useSettingsRegistry } from "./registry";
 
 export function SettingsContainer() {
   const navigate = useNavigate();
@@ -16,6 +17,8 @@ export function SettingsContainer() {
   const { profile } = useProfile();
   const { retention, save: saveRetention } = useRetentionSettings();
   const isAdmin = profile?.role === "admin";
+
+  const reg = useSettingsRegistry();
 
   if (isLoading || !settings) {
     return (
@@ -50,6 +53,21 @@ export function SettingsContainer() {
       retentionSettings={isAdmin && retention ? retention : undefined}
       onRetentionChange={isAdmin ? (s) => saveRetention.mutate(s) : undefined}
       retentionSaving={saveRetention.isPending}
+      registry={{
+        schema: reg.schema,
+        values: reg.values,
+        bootstrapNames: reg.bootstrapNames,
+        pendingRestart: reg.pendingRestart,
+        draft: reg.draft,
+        isDirty: reg.isDirty,
+        errors: reg.errors,
+        isSaving: reg.isSaving,
+        isRestartInFlight: reg.isRestartInFlight,
+        onDraftChange: reg.setDraft,
+        onSave: reg.save,
+        onCancelDraft: reg.resetDraft,
+        onRestart: reg.restart,
+      }}
     >
       {isAdmin && <UpdatesSettingsSection />}
       {isAdmin && <GeoIPSettingsSection />}

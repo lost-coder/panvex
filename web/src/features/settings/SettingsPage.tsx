@@ -9,6 +9,8 @@ import {
   Power,
   Server as ServerIcon,
   ShieldCheck,
+  Save,
+  Info,
 } from "lucide-react";
 import {
   Button,
@@ -19,7 +21,12 @@ import {
   SettingsRow,
 } from "@/ui";
 import { secondsToDisplay, displayToSeconds } from "@/shared/lib/pages-shared";
-import type { SettingsPageProps } from "@/shared/api/types-pages/pages";
+import type { SettingsPageProps, SettingsRegistryProps } from "@/shared/api/types-pages/pages";
+import { RestartBanner, RegistrySection, RegistryField, namespaceOf, labelFor } from "@/features/settings/registry";
+import type { RegistrySectionField } from "@/features/settings/registry";
+
+// Operational namespaces rendered as schema-driven sections.
+const OPERATIONAL_NAMESPACES = ["http", "agents", "auth", "jobs", "observability", "storage"] as const;
 
 // Compact "Admin" pill reused across admin-gated sections.
 function AdminBadge() {
@@ -41,6 +48,7 @@ export function SettingsPage({
   retentionSettings,
   onRetentionChange,
   retentionSaving,
+  registry,
   children,
 }: Readonly<SettingsPageProps>) {
   const hasAdmin = !!(onManageUsers || (retentionSettings && onRetentionChange) || onRestart);
@@ -64,11 +72,81 @@ export function SettingsPage({
         }
       />
 
+      {/* Pending-restart banner — shown above content when registry detects fields
+          that need a restart before their new value takes effect. */}
+      {registry && registry.pendingRestart.length > 0 && (
+        <div className="px-4 md:px-8 pt-4">
+          <RestartBanner
+            pendingFields={registry.pendingRestart}
+            onRestart={registry.onRestart}
+            restartInFlight={registry.isRestartInFlight}
+          />
+        </div>
+      )}
+
       <div className="px-4 md:px-8 pb-8">
+        {/* Registry Save/Cancel toolbar — floats above the grid when there are
+            unsaved schema-driven changes. */}
+        {registry && registry.isDirty && (
+          <div className="flex items-center justify-between gap-4 py-3 mb-2 border-b border-border">
+            <span className="text-xs font-mono text-fg-muted">
+              {Object.keys(registry.draft).length}{" "}
+              unsaved {Object.keys(registry.draft).length === 1 ? "change" : "changes"}
+            </span>
+            <div className="flex gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={registry.onCancelDraft}
+                disabled={registry.isSaving}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={registry.onSave}
+                disabled={registry.isSaving}
+              >
+                <Save className="h-3.5 w-3.5 mr-1" aria-hidden />
+                {registry.isSaving ? "Saving…" : "Save"}
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* 2-col grid on desktop keeps both halves of the viewport busy:
             short sections (System, Users) sit next to longer ones (Retention,
             Appearance) instead of leaving empty half-screen real estate. */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-8 items-start">
+
+            {/* Schema-driven operational sections — one per namespace. */}
+            {registry && OPERATIONAL_NAMESPACES.map((ns) => {
+              const nsFields: RegistrySectionField[] = registry.schema
+                .filter(
+                  (s) =>
+                    s.class === "operational" &&
+                    namespaceOf(s.name) === ns,
+                )
+                .map((s) => {
+                  const err = registry.errors[s.name];
+                  const field: RegistrySectionField = {
+                    schema: s,
+                    values: registry.values[s.name] ?? { value: "", source: "default" as const, locked: false },
+                    ...(err !== undefined ? { error: err } : {}),
+                  };
+                  return field;
+                });
+              if (nsFields.length === 0) return null;
+              return (
+                <RegistrySection
+                  key={ns}
+                  namespace={ns}
+                  fields={nsFields}
+                  onChange={registry.onDraftChange}
+                />
+              );
+            })}
+
             <PageSection
               icon={ServerIcon}
               title="Panel"
@@ -245,8 +323,65 @@ export function SettingsPage({
                 </SettingsRow>
               </PageSection>
             )}
+
+            {/* System Info — bootstrap fields, all locked (read-only). Grouped by
+                namespace using subheadings inside a single collapsible section. */}
+            {registry && registry.schema.some((s) => s.class === "bootstrap") && (
+              <SystemInfoSection registry={registry} />
+            )}
+
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── SystemInfo ───────────────────────────────────────────────────────────────
+
+function SystemInfoSection({ registry }: Readonly<{ registry: SettingsRegistryProps }>) {
+  // Collect all bootstrap schema entries grouped by namespace.
+  const byNamespace = new Map<string, typeof registry.schema>();
+  for (const s of registry.schema) {
+    if (s.class !== "bootstrap") continue;
+    const ns = namespaceOf(s.name);
+    const existing = byNamespace.get(ns) ?? [];
+    existing.push(s);
+    byNamespace.set(ns, existing);
+  }
+
+  return (
+    <div className="md:col-span-2">
+      <PageSection
+        icon={Info}
+        title="System info"
+        description="Bootstrap settings — locked by environment or config file."
+      >
+        {Array.from(byNamespace.entries()).map(([ns, fields]) => {
+          const label = labelFor(ns);
+          return (
+            <div key={ns}>
+              <h3 className="px-4 pt-3 pb-1 text-xs font-mono uppercase tracking-wider text-fg-muted">
+                {label.title}
+              </h3>
+              {fields.map((s) => {
+                const entry = registry.values[s.name] ?? {
+                  value: "",
+                  source: "default" as const,
+                  locked: true,
+                };
+                return (
+                  <RegistryField
+                    key={s.name}
+                    schema={s}
+                    values={{ ...entry, locked: true }}
+                    onChange={() => {}}
+                  />
+                );
+              })}
+            </div>
+          );
+        })}
+      </PageSection>
     </div>
   );
 }
