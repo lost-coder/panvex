@@ -175,3 +175,83 @@ func (s *OperationalStore) UpdatesAllowPrerelease() bool {
 	b, _ := strconv.ParseBool(s.rawByName("updates.allow_prerelease"))
 	return b
 }
+
+// Put validates and writes a batch of operational settings, then
+// updates the in-memory snapshot. Bootstrap fields cause an error.
+func (s *OperationalStore) Put(ctx context.Context, updates map[string]string, who string) error {
+	if s.writer == nil {
+		return fmt.Errorf("settings: store opened read-only")
+	}
+
+	allByName := map[string]FieldMeta{}
+	for _, f := range AllFields() {
+		allByName[f.Name] = f
+	}
+
+	for name, raw := range updates {
+		f, ok := allByName[name]
+		if !ok {
+			return fmt.Errorf("settings: unknown setting %q", name)
+		}
+		if f.Class == ClassBootstrap {
+			return fmt.Errorf("settings: %q is a bootstrap setting; edit config.toml or env", name)
+		}
+		if _, err := Validate(f, raw); err != nil {
+			return err
+		}
+	}
+
+	for name, raw := range updates {
+		f := allByName[name]
+		if strings.HasPrefix(f.Store, "panel_settings.") {
+			col := strings.TrimPrefix(f.Store, "panel_settings.")
+			if err := s.writer.WritePanelColumn(ctx, col, raw, who); err != nil {
+				return err
+			}
+		} else if f.Store == "runtime_settings" {
+			body, err := encodeRuntimeJSON(f.Type, raw)
+			if err != nil {
+				return err
+			}
+			if err := s.writer.WriteRuntimeSetting(ctx, f.Name, body, who); err != nil {
+				return err
+			}
+		} else {
+			return fmt.Errorf("settings: %q has unknown store %q", name, f.Store)
+		}
+	}
+
+	return s.Reload(ctx)
+}
+
+func encodeRuntimeJSON(t Type, raw string) (string, error) {
+	switch t {
+	case TypeString, TypeEnum, TypeURL, TypeHostPort:
+		b, err := json.Marshal(raw)
+		if err != nil {
+			return "", err
+		}
+		return string(b), nil
+	case TypeInt:
+		n, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			return "", err
+		}
+		return strconv.FormatInt(n, 10), nil
+	case TypeBool:
+		b, err := strconv.ParseBool(raw)
+		if err != nil {
+			return "", err
+		}
+		return strconv.FormatBool(b), nil
+	case TypeDuration:
+		j, err := json.Marshal(raw)
+		if err != nil {
+			return "", err
+		}
+		return string(j), nil
+	case TypeJSON:
+		return raw, nil
+	}
+	return "", fmt.Errorf("settings: encodeRuntimeJSON: unsupported type %s", t)
+}
