@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"strings"
 
+	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/settings"
 )
 
@@ -102,4 +104,63 @@ func rawToTyped(f settings.FieldMeta, raw string) any {
 		return raw
 	}
 	return raw
+}
+
+func (s *Server) handleSettingsValuesPUT(w http.ResponseWriter, r *http.Request) {
+	session, user, err := s.requireSession(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if user.Role != auth.RoleAdmin {
+		writeError(w, http.StatusForbidden, msgAdminRoleRequired)
+		return
+	}
+	_ = session // retained for future audit wiring
+
+	var body map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid json body", http.StatusBadRequest)
+		return
+	}
+	updates := make(map[string]string, len(body))
+	for k, v := range body {
+		updates[k] = scalarToString(v)
+	}
+	who := user.Username
+	if err := s.settings.Put(r.Context(), updates, who); err != nil {
+		switch {
+		case strings.Contains(err.Error(), "bootstrap setting"):
+			http.Error(w, err.Error(), http.StatusConflict)
+		default:
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		}
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func scalarToString(v any) string {
+	switch t := v.(type) {
+	case string:
+		return t
+	case bool:
+		if t {
+			return "true"
+		}
+		return "false"
+	case float64:
+		if t == float64(int64(t)) {
+			return fmt.Sprintf("%d", int64(t))
+		}
+		return fmt.Sprintf("%v", t)
+	case nil:
+		return ""
+	default:
+		body, err := json.Marshal(v)
+		if err == nil {
+			return string(body)
+		}
+		return fmt.Sprintf("%v", v)
+	}
 }

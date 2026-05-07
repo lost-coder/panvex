@@ -202,6 +202,7 @@ func (s *Server) routes() http.Handler {
 					// at NewInstallCommandHandler — see install_script.go for the
 					// embedded /install-agent.sh route the URL points to. (Q-05)
 					admin.With(sensitive).Post("/agents/{id}/install-command", s.handleAgentInstallCommand())
+					admin.Put("/settings/values", s.handleSettingsValuesPUT)
 					admin.Get("/settings/panel", s.handleGetPanelSettings())
 					admin.Put("/settings/panel", s.handlePutPanelSettings())
 					admin.With(sensitive).Post("/settings/panel/restart", s.handleRestartPanel())

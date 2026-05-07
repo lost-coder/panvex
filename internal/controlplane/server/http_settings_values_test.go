@@ -52,6 +52,44 @@ func TestHTTPSettingsValues_RedactsSecrets(t *testing.T) {
 	}
 }
 
+func TestHTTPSettingsValues_PutOperationalSucceeds(t *testing.T) {
+	server, _, cookies := newAuthedServer(t)
+	body := map[string]any{
+		"auth.password_min_length": 18,
+		"updates.channel":          "beta",
+	}
+	resp := performJSONRequest(t, server, http.MethodPut, "/api/settings/values", body, cookies)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+	got := performJSONRequest(t, server, http.MethodGet, "/api/settings/values", nil, cookies)
+	if !strings.Contains(got.Body.String(), `"value":18`) && !strings.Contains(got.Body.String(), `"value": 18`) {
+		t.Errorf("password_min_length not updated:\n%s", got.Body.String())
+	}
+}
+
+func TestHTTPSettingsValues_PutBootstrapRejected(t *testing.T) {
+	server, _, cookies := newAuthedServer(t)
+	body := map[string]any{
+		"http.listen_address": ":7777",
+	}
+	resp := performJSONRequest(t, server, http.MethodPut, "/api/settings/values", body, cookies)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body = %s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestHTTPSettingsValues_PutInvalidValueRejected(t *testing.T) {
+	server, _, cookies := newAuthedServer(t)
+	body := map[string]any{
+		"auth.password_min_length": 3,
+	}
+	resp := performJSONRequest(t, server, http.MethodPut, "/api/settings/values", body, cookies)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", resp.Code)
+	}
+}
+
 func testBootstrap(key string) *settingspkg.Bootstrap {
 	return &settingspkg.Bootstrap{AuthEncryptionKey: key}
 }
