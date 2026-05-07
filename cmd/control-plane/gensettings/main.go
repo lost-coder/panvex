@@ -35,6 +35,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	//nolint:gosec // schema.json is a public registry file; 0644 is intentional for checked-in docs
 	if err := os.WriteFile(filepath.Join(root, "internal/controlplane/settings/gen/schema.json"), schema, 0o644); err != nil {
 		return err
 	}
@@ -42,6 +43,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	//nolint:gosec // reference.md is a public docs file; 0644 is intentional for checked-in docs
 	if err := os.WriteFile(filepath.Join(root, "docs/settings/reference.md"), ref, 0o644); err != nil {
 		return err
 	}
@@ -49,6 +51,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	//nolint:gosec // example.config.toml is a public docs file; 0644 is intentional for checked-in docs
 	if err := os.WriteFile(filepath.Join(root, "docs/settings/example.config.toml"), tomlBody, 0o644); err != nil {
 		return err
 	}
