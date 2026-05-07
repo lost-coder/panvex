@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"time"
 
+	"database/sql"
+
 	"github.com/lost-coder/panvex/internal/controlplane/agents"
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
@@ -15,6 +17,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/presence"
 	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
+	"github.com/lost-coder/panvex/internal/controlplane/settings"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
@@ -186,6 +189,22 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 	// fatal at boot so a corrupt settings blob does not silently
 	// disable lookups.
 	s.trySetStartupErr(s.restoreGeoIPSettings)
+
+	// Wire the operational settings store. Type-assert the concrete store to
+	// obtain *sql.DB without growing the storage.Store interface — only the
+	// sqlite and postgres concrete types need to expose DB(), and lifecycle
+	// code is the only caller.
+	if rawDBer, ok := options.Store.(interface{ DB() *sql.DB }); ok {
+		if rawDB := rawDBer.DB(); rawDB != nil {
+			s.settings = settings.NewOperationalStoreRW(
+				settings.NewDBStore(rawDB),
+				settings.NewDBStore(rawDB),
+			)
+			s.trySetStartupErr(func() error {
+				return s.settings.Reload(s.serverCtx)
+			})
+		}
+	}
 
 	// Fresh databases need at least one fleet group so enrollment tokens can
 	// reference it. Operators can rename the label afterwards via the HTTP

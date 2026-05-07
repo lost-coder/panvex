@@ -124,3 +124,8 @@ func (s *Store) Queries() *dbsqlc.Queries {
 	}
 	return dbsqlc.New(s.sqlDB)
 }
+
+// DB returns the underlying *sql.DB. Used by adapters that need raw SQL
+// (e.g. settings.NewDBStore for column-keyed UPDATE).
+// Returns nil when the store is tx-bound (no pool of its own).
+func (s *Store) DB() *sql.DB { return s.sqlDB }
