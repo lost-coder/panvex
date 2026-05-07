@@ -77,6 +77,15 @@ func run(args []string) error {
 	if len(args) > 0 && args[0] == "self-update" {
 		return runSelfUpdate(args[1:])
 	}
+	if len(args) > 0 && args[0] == "diagnose" {
+		return runDiagnose(args[1:])
+	}
+	if len(args) > 0 && args[0] == "backup" {
+		return runBackup(args[1:])
+	}
+	if len(args) > 0 && args[0] == "restore" {
+		return runRestore(args[1:])
+	}
 
 	return runServe(args)
 }
