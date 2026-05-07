@@ -163,6 +163,12 @@ type storeBatchWriter struct {
 	stopOnce sync.Once
 	wg       sync.WaitGroup
 
+	// flushInterval is the ticker cadence for the background flush loop.
+	// Defaults to batchFlushInterval (500ms). May be overridden before
+	// Start() is called so tests and the operational-settings store can
+	// tune the interval without recompiling.
+	flushInterval time.Duration
+
 	// sleep is the backoff sleeper used by retryWithBackoff. Exported through
 	// a field so tests can override it to zero-duration sleeps without
 	// blocking the test for seconds.
@@ -237,11 +243,12 @@ func newStoreBatchWriter(store storage.Store, metrics batchMetricsSink, now func
 		now = time.Now
 	}
 	w := &storeBatchWriter{
-		store:   store,
-		metrics: metrics,
-		done:    make(chan struct{}),
-		sleep:   time.Sleep,
-		now:     now,
+		store:         store,
+		metrics:       metrics,
+		done:          make(chan struct{}),
+		flushInterval: batchFlushInterval,
+		sleep:         time.Sleep,
+		now:           now,
 	}
 
 	w.agents = newBatchBuffer(batchSizeFor("agents"), w.flushAgents)
@@ -330,7 +337,7 @@ func (w *storeBatchWriter) StopWithTimeout(parentCtx context.Context, timeout ti
 
 func (w *storeBatchWriter) flushLoop(parentCtx context.Context) {
 	defer w.wg.Done()
-	ticker := time.NewTicker(batchFlushInterval)
+	ticker := time.NewTicker(w.flushInterval)
 	defer ticker.Stop()
 
 	// flushCtx is the writer-local context for steady-state drains. It is

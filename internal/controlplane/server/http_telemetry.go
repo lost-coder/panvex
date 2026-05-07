@@ -13,12 +13,39 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
+// telemetryDetailBoostTTL is the compiled-in default for how long a
+// detail-boost request keeps the high-frequency polling window open.
+// The live value is read from the operational settings store at request time
+// via s.effectiveTelemetryDetailBoostTTL().
 const telemetryDetailBoostTTL = 10 * time.Minute
 
-// telemetryDashboardLoadWindow bounds how far back the dashboard sparklines
-// look. 40 minutes at the 2-minute Telemt polling cadence gives ~20 samples,
+// telemetryDashboardLoadWindow is the compiled-in default for how far back
+// the dashboard sparklines look. The live value is read from the operational
+// settings store at request time via s.effectiveTelemetryDashboardWindow().
+// 40 minutes at the 2-minute Telemt polling cadence gives ~20 samples,
 // which is enough for a legible mini-chart without making the payload heavy.
 const telemetryDashboardLoadWindow = 40 * time.Minute
+
+// effectiveTelemetryDetailBoostTTL returns the current detail-boost TTL.
+// When the operational settings store is wired, the live value is used so
+// operator changes take effect without a panel restart. Falls back to the
+// compiled-in constant when no store is configured (tests, no-DB mode).
+func (s *Server) effectiveTelemetryDetailBoostTTL() time.Duration {
+	if s.settings != nil {
+		return s.settings.TelemetryDetailBoostTTL()
+	}
+	return telemetryDetailBoostTTL
+}
+
+// effectiveTelemetryDashboardWindow returns the current dashboard sparkline
+// look-back window. Live when the operational settings store is wired;
+// falls back to the compiled-in constant otherwise.
+func (s *Server) effectiveTelemetryDashboardWindow() time.Duration {
+	if s.settings != nil {
+		return s.settings.TelemetryDashboardWindow()
+	}
+	return telemetryDashboardLoadWindow
+}
 
 // telemetryDashboardEventLimit is the UI budget for the "Recent Events"
 // feed. Stays in lock-step with the value passed to
@@ -236,7 +263,7 @@ func (s *Server) dashboardAgentLoadSeries(
 	if s.store == nil {
 		return out
 	}
-	from := now.UTC().Add(-telemetryDashboardLoadWindow)
+	from := now.UTC().Add(-s.effectiveTelemetryDashboardWindow())
 	to := now.UTC()
 	bulk, err := s.store.ListServerLoadPointsForAgents(ctx, agentIDs, from, to)
 	if err != nil {
@@ -408,7 +435,8 @@ func (s *Server) handleTelemetryServerDetailBoost() http.HandlerFunc {
 			writeError(w, http.StatusNotFound, msgServerNotFound)
 			return
 		}
-		expiresAt := now.UTC().Add(telemetryDetailBoostTTL)
+		boostTTL := s.effectiveTelemetryDetailBoostTTL()
+		expiresAt := now.UTC().Add(boostTTL)
 		s.detailBoosts[agentID] = expiresAt
 		s.mu.Unlock()
 		if s.store != nil {
@@ -425,7 +453,7 @@ func (s *Server) handleTelemetryServerDetailBoost() http.HandlerFunc {
 		writeJSON(w, http.StatusOK, telemetryDetailBoostResponse{
 			Active:           true,
 			ExpiresAtUnix:    expiresAt.Unix(),
-			RemainingSeconds: int64(telemetryDetailBoostTTL.Seconds()),
+			RemainingSeconds: int64(boostTTL.Seconds()),
 		})
 	}
 }

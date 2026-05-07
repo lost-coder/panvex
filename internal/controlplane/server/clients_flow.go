@@ -45,7 +45,20 @@ var (
 // every agent.
 var clientNameRegex = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
 
+// clientJobTTL is the compiled-in default TTL for client-mutation jobs.
+// The live value is resolved via s.effectiveClientJobTTL() so operator
+// changes to jobs.client_job_ttl take effect without a panel restart.
 const clientJobTTL = 10 * time.Minute
+
+// effectiveClientJobTTL returns the current client-job TTL. When the
+// operational settings store is wired, the live value is used; falls back
+// to the compiled-in constant otherwise.
+func (s *Server) effectiveClientJobTTL() time.Duration {
+	if s.settings != nil {
+		return s.settings.JobsClientJobTTL()
+	}
+	return clientJobTTL
+}
 
 type clientMutationInput struct {
 	Name      string

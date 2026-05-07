@@ -234,9 +234,27 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 // metrics-poller goroutines. Returns the rollup ctx so the caller stays in
 // charge of cleanup wiring.
 func (s *Server) startBackgroundWorkers() {
+	// Resolve worker cadences: prefer OperationalStore getters when a store
+	// is wired (production); fall back to s.intervals for tests and
+	// no-persistent-store configurations.
+	rollupInterval := s.intervals.Rollup
+	keyEvictionInterval := s.intervals.JobsKeyEviction
+	keyEvictionTTL := s.intervals.JobsKeyEvictionTTL
+	ackExpiryInterval := s.intervals.JobsAckExpiry
+	ackExpiryTTL := s.intervals.JobsAckExpiryTTL
+	metricsPoller := s.intervals.MetricsPoller
+	if s.settings != nil {
+		rollupInterval = s.settings.StorageRollupInterval()
+		keyEvictionInterval = s.settings.JobsKeyEvictionInterval()
+		keyEvictionTTL = s.settings.JobsKeyEvictionTTL()
+		ackExpiryInterval = s.settings.JobsAckExpiryInterval()
+		ackExpiryTTL = s.settings.JobsAckExpiryTTL()
+		metricsPoller = s.settings.MetricsPollInterval()
+	}
+
 	rollupCtx, rollupCancel := context.WithCancel(s.serverCtx)
 	s.stopRollup = rollupCancel
-	s.startTimeseriesRollupWorker(rollupCtx)
+	s.startTimeseriesRollupWorker(rollupCtx, rollupInterval)
 	s.startUpdateCheckerWorker(rollupCtx)
 
 	// Evict idempotency keys for terminal jobs on an hourly tick to keep
@@ -244,7 +262,7 @@ func (s *Server) startBackgroundWorkers() {
 	// operational expectation that clients will not retry the same
 	// idempotency key after a full day.
 	s.rollupWg.Add(1)
-	s.jobs.StartKeyEvictionWorker(rollupCtx, s.intervals.JobsKeyEviction, s.intervals.JobsKeyEvictionTTL, &s.rollupWg)
+	s.jobs.StartKeyEvictionWorker(rollupCtx, keyEvictionInterval, keyEvictionTTL, &s.rollupWg)
 
 	// P2-LOG-05 (L-14): expire acknowledged-but-never-resulted targets after
 	// 2h so jobs do not stay "acknowledged" forever when the agent restarts
@@ -252,7 +270,7 @@ func (s *Server) startBackgroundWorkers() {
 	// cache so the CP gives up in sync with the agent's ability to safely
 	// deduplicate.
 	s.rollupWg.Add(1)
-	s.jobs.StartAcknowledgedExpiryWorker(rollupCtx, s.intervals.JobsAckExpiry, s.intervals.JobsAckExpiryTTL, &s.rollupWg)
+	s.jobs.StartAcknowledgedExpiryWorker(rollupCtx, ackExpiryInterval, ackExpiryTTL, &s.rollupWg)
 
 	// Spawn the geoip auto/URL refresh worker. No-op when mode is
 	// disabled or local — those modes do not pull files from the
@@ -272,7 +290,7 @@ func (s *Server) startBackgroundWorkers() {
 	if s.metricsScrapeToken != "" {
 		metricsCtx, metricsCancel := context.WithCancel(s.serverCtx)
 		s.metricsPollerCancel = metricsCancel
-		s.startMetricsPoller(metricsCtx, s.intervals.MetricsPoller)
+		s.startMetricsPoller(metricsCtx, metricsPoller)
 	}
 }
 
@@ -399,6 +417,9 @@ func New(options Options) (*Server, error) {
 		// errors surface to operators (P2-REL-06 / H14). obs is always set
 		// earlier in New(); nil would fall back to the no-op sink.
 		server.batchWriter = newStoreBatchWriter(server.store, server.obs, server.now)
+		if server.settings != nil {
+			server.batchWriter.flushInterval = server.settings.StorageBatchFlushInterval()
+		}
 		server.batchWriter.Start(server.serverCtx)
 	}
 

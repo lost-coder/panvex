@@ -57,7 +57,7 @@ func (s *Server) enqueueClientJob(ctx context.Context, actorID string, action jo
 	job, err := s.jobs.Enqueue(ctx, jobs.CreateJobInput{
 		Action:         action,
 		TargetAgentIDs: targetAgentIDs,
-		TTL:            clientJobTTL,
+		TTL:            s.effectiveClientJobTTL(),
 		IdempotencyKey: fmt.Sprintf("%s:%s:%d", action, client.ID, observedAt.UnixNano()),
 		ActorID:        actorID,
 		ReadOnlyAgents: readOnlyAgents,
