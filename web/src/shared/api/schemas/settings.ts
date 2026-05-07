@@ -122,6 +122,8 @@ export const restartStatusSchema = z.object({
   fields: z.array(z.string()),
 });
 
+export const schemaArraySchema = z.array(schemaEntrySchema);
+
 export type SchemaEntry = z.infer<typeof schemaEntrySchema>;
 export type ValuesEntry = z.infer<typeof valuesEntrySchema>;
 export type ValuesResponse = z.infer<typeof valuesResponseSchema>;

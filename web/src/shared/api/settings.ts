@@ -4,11 +4,17 @@ import {
   geoipResponseSchema,
   panelSettingsResponseSchema,
   retentionSettingsSchema,
+  restartStatusSchema,
+  schemaArraySchema,
   updateAppearanceSettingsRequestSchema,
   updatePanelSettingsRequestSchema,
+  valuesResponseSchema,
   versionSchema,
   type GeoIPResponseParsed,
   type GeoIPSettingsParsed,
+  type RestartStatus,
+  type SchemaEntry,
+  type ValuesResponse,
   type VersionParsed,
 } from "./schemas";
 
@@ -144,4 +150,30 @@ export const settingsApi = {
    * narrow via `isOperatorVersion(v)` from lib/schemas/version.
    */
   version: () => api<VersionParsed>(`${apiBasePath}/version`, undefined, versionSchema),
+  getSettingsSchema: () =>
+    api<SchemaEntry[]>(
+      `${apiBasePath}/settings/schema`,
+      undefined,
+      schemaArraySchema,
+    ),
+  getSettingsValues: () =>
+    api<ValuesResponse>(
+      `${apiBasePath}/settings/values`,
+      undefined,
+      valuesResponseSchema,
+    ),
+  getRestartStatus: () =>
+    api<RestartStatus>(
+      `${apiBasePath}/settings/restart-status`,
+      undefined,
+      restartStatusSchema,
+    ),
+  putSettingsValues: (updates: Record<string, string | number | boolean>) =>
+    api<void>(
+      `${apiBasePath}/settings/values`,
+      {
+        method: "PUT",
+        body: JSON.stringify(updates),
+      },
+    ),
 };
