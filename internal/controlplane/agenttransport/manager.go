@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/lost-coder/panvex/internal/dbsqlc"
 )
@@ -233,5 +234,18 @@ func (m *Manager) SetCertPinReader(r CertPinReader, obs CertPinVerifyObserver) {
 	m.outbound.mu.Lock()
 	m.outbound.pinReader = r
 	m.outbound.pinObserver = obs
+	m.outbound.mu.Unlock()
+}
+
+// SetBackoffGetters wires live getters for the outbound supervisor reconnect
+// backoff windows. Each getter is called on every reconnect iteration, so an
+// operator change to agents.outbound_backoff_initial /
+// agents.outbound_backoff_max is picked up without restarting the panel.
+// Must be called before Start; safe to call with nil (falls back to package
+// constants). The getters should return values from an OperationalStore.
+func (m *Manager) SetBackoffGetters(initialFn, maxFn func() time.Duration) {
+	m.outbound.mu.Lock()
+	m.outbound.backoffInitialFn = initialFn
+	m.outbound.backoffMaxFn = maxFn
 	m.outbound.mu.Unlock()
 }

@@ -56,8 +56,8 @@ func TestOutboundSupervisor_PinMatch(t *testing.T) {
 		handler,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
-	sup.backoffInitial = 10 * time.Millisecond
-	sup.backoffMax = 50 * time.Millisecond
+	sup.backoffInitialFn = func() time.Duration { return 10 * time.Millisecond }
+	sup.backoffMaxFn = func() time.Duration { return 50 * time.Millisecond }
 	sup.pinReader = &fakePinReader{pins: map[string][]byte{"agent-match": pin[:]}}
 
 	go sup.run(ctx)
@@ -98,8 +98,8 @@ func TestOutboundSupervisor_PinMismatch(t *testing.T) {
 		handler,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
-	sup.backoffInitial = 10 * time.Millisecond
-	sup.backoffMax = 50 * time.Millisecond
+	sup.backoffInitialFn = func() time.Duration { return 10 * time.Millisecond }
+	sup.backoffMaxFn = func() time.Duration { return 50 * time.Millisecond }
 	sup.pinReader = &fakePinReader{pins: map[string][]byte{"agent-mismatch": wrongPin}}
 	sup.pinObserver = func(result string) {
 		if result == "mismatch" {
@@ -147,8 +147,8 @@ func TestOutboundSupervisor_EmptyPinSkips(t *testing.T) {
 		handler,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
-	sup.backoffInitial = 10 * time.Millisecond
-	sup.backoffMax = 50 * time.Millisecond
+	sup.backoffInitialFn = func() time.Duration { return 10 * time.Millisecond }
+	sup.backoffMaxFn = func() time.Duration { return 50 * time.Millisecond }
 	// ErrNotFound → empty pin → skip verification.
 	sup.pinReader = &fakePinReader{pins: map[string][]byte{}} // no entry
 	sup.pinObserver = func(result string) {

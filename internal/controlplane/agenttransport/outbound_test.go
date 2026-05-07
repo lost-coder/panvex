@@ -41,8 +41,8 @@ func TestOutboundSupervisorReconnectsAfterDisconnect(t *testing.T) {
 		handler,
 		slog.Default(),
 	)
-	sup.backoffInitial = 10 * time.Millisecond
-	sup.backoffMax = 50 * time.Millisecond
+	sup.backoffInitialFn = func() time.Duration { return 10 * time.Millisecond }
+	sup.backoffMaxFn = func() time.Duration { return 50 * time.Millisecond }
 	go sup.run(ctx)
 
 	deadline := time.Now().Add(2 * time.Second)
@@ -92,8 +92,8 @@ func TestOutboundSupervisorEnrollsWhenPending(t *testing.T) {
 		handler,
 		slog.Default(),
 	)
-	sup.backoffInitial = 10 * time.Millisecond
-	sup.backoffMax = 50 * time.Millisecond
+	sup.backoffInitialFn = func() time.Duration { return 10 * time.Millisecond }
+	sup.backoffMaxFn = func() time.Duration { return 50 * time.Millisecond }
 	sup.enrollFn = enrollFn
 	sup.bootstrapStateFn = bootstrapStateFn
 
@@ -155,8 +155,8 @@ func TestOutboundSupervisorRetriesAfterEnrollFailure(t *testing.T) {
 		handler,
 		slog.Default(),
 	)
-	sup.backoffInitial = 10 * time.Millisecond
-	sup.backoffMax = 50 * time.Millisecond
+	sup.backoffInitialFn = func() time.Duration { return 10 * time.Millisecond }
+	sup.backoffMaxFn = func() time.Duration { return 50 * time.Millisecond }
 	sup.enrollFn = enrollFn
 	sup.bootstrapStateFn = bootstrapStateFn
 
@@ -206,8 +206,8 @@ func TestOutboundSupervisorSkipsEnrollWhenActive(t *testing.T) {
 		handler,
 		slog.Default(),
 	)
-	sup.backoffInitial = 10 * time.Millisecond
-	sup.backoffMax = 50 * time.Millisecond
+	sup.backoffInitialFn = func() time.Duration { return 10 * time.Millisecond }
+	sup.backoffMaxFn = func() time.Duration { return 50 * time.Millisecond }
 	sup.enrollFn = enrollFn
 	sup.bootstrapStateFn = bootstrapStateFn
 
@@ -252,6 +252,49 @@ func TestOutboundTransportSupervisorGaugeDelta(t *testing.T) {
 	ot.stopAll()
 	if total != 0 {
 		t.Fatalf("after stopAll: total=%d, want 0", total)
+	}
+}
+
+// TestOutboundSupervisorUsesBackoffGetters verifies that backoffInitialFn /
+// backoffMaxFn are consulted on each reconnect iteration rather than using
+// the package-level constants. The test wires getter functions that return
+// very short durations (so the supervisor reconnects quickly in CI), then
+// confirms multiple connects occur within the deadline, proving the getter
+// path drives the backoff.
+func TestOutboundSupervisorUsesBackoffGetters(t *testing.T) {
+	stub := newAgentStubServer(t)
+	defer stub.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var connectCount atomic.Int32
+	handler := func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+		connectCount.Add(1)
+		return nil
+	}
+
+	// Values deliberately different from the package constants to prove the
+	// getter path is exercised.
+	const wantInitial = 5 * time.Millisecond
+	const wantMax = 20 * time.Millisecond
+
+	sup := newOutboundSupervisor(
+		NodeMeta{NodeID: "n1", AgentID: "agent-getter", DialAddress: stub.address},
+		stub.clientTLS,
+		handler,
+		slog.Default(),
+	)
+	sup.backoffInitialFn = func() time.Duration { return wantInitial }
+	sup.backoffMaxFn = func() time.Duration { return wantMax }
+	go sup.run(ctx)
+
+	deadline := time.Now().Add(3 * time.Second)
+	for connectCount.Load() < 3 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := connectCount.Load(); got < 3 {
+		t.Fatalf("expected >= 3 connects via getter-driven backoff, got %d", got)
 	}
 }
 

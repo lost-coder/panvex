@@ -39,6 +39,8 @@ type EnrollFunc func(ctx context.Context, agentAddr, agentID string) error
 // the mTLS dial (safe default for already-enrolled agents).
 type BootstrapStateFunc func(ctx context.Context, agentID string) (string, error)
 
+// Default outbound backoff constants — used as documentation defaults and
+// as fallback values when no OperationalStore getter is wired.
 const (
 	outboundBackoffInitial = 1 * time.Second
 	outboundBackoffMax     = 60 * time.Second
@@ -47,12 +49,16 @@ const (
 // outboundSupervisor maintains a single agent's outbound (panel-dials-agent)
 // gRPC connection with exponential backoff + jitter on disconnects.
 type outboundSupervisor struct {
-	meta           NodeMeta
-	tlsCfg         *tls.Config
-	handler        SessionHandler
-	logger         *slog.Logger
-	backoffInitial time.Duration
-	backoffMax     time.Duration
+	meta    NodeMeta
+	tlsCfg  *tls.Config
+	handler SessionHandler
+	logger  *slog.Logger
+	// backoffInitialFn and backoffMaxFn are called on each reconnect
+	// iteration so that an operator change to agents.outbound_backoff_initial
+	// / agents.outbound_backoff_max is picked up without restarting the
+	// panel. When nil, the constants above are used.
+	backoffInitialFn func() time.Duration
+	backoffMaxFn     func() time.Duration
 
 	// enrollFn, when non-nil, is called before the normal mTLS dial whenever
 	// bootstrapStateFn reports "pending". See EnrollFunc for the contract.
@@ -70,19 +76,31 @@ type outboundSupervisor struct {
 	pinObserver CertPinVerifyObserver
 }
 
+func (s *outboundSupervisor) effectiveBackoffInitial() time.Duration {
+	if s.backoffInitialFn != nil {
+		return s.backoffInitialFn()
+	}
+	return outboundBackoffInitial
+}
+
+func (s *outboundSupervisor) effectiveBackoffMax() time.Duration {
+	if s.backoffMaxFn != nil {
+		return s.backoffMaxFn()
+	}
+	return outboundBackoffMax
+}
+
 func newOutboundSupervisor(meta NodeMeta, tlsCfg *tls.Config, h SessionHandler, l *slog.Logger) *outboundSupervisor {
 	return &outboundSupervisor{
-		meta:           meta,
-		tlsCfg:         tlsCfg,
-		handler:        h,
-		logger:         l,
-		backoffInitial: outboundBackoffInitial,
-		backoffMax:     outboundBackoffMax,
+		meta:    meta,
+		tlsCfg:  tlsCfg,
+		handler: h,
+		logger:  l,
 	}
 }
 
 func (s *outboundSupervisor) run(ctx context.Context) {
-	backoff := s.backoffInitial
+	backoff := s.effectiveBackoffInitial()
 	for {
 		if ctx.Err() != nil {
 			return
@@ -96,8 +114,11 @@ func (s *outboundSupervisor) run(ctx context.Context) {
 		// failure-driven inflation should be considered ancient history.
 		// Without this, a stable connection that occasionally flaps would
 		// accumulate ever-longer reconnect delays.
-		if time.Since(start) >= s.backoffMax {
-			backoff = s.backoffInitial
+		// Re-read max each iteration so an operator change takes effect
+		// without restarting the panel.
+		backoffMax := s.effectiveBackoffMax()
+		if time.Since(start) >= backoffMax {
+			backoff = s.effectiveBackoffInitial()
 		}
 		delay := jitter(backoff)
 		timer := time.NewTimer(delay)
@@ -107,10 +128,10 @@ func (s *outboundSupervisor) run(ctx context.Context) {
 			return
 		case <-timer.C:
 		}
-		if backoff < s.backoffMax {
+		if backoff < backoffMax {
 			backoff *= 2
-			if backoff > s.backoffMax {
-				backoff = s.backoffMax
+			if backoff > backoffMax {
+				backoff = backoffMax
 			}
 		}
 	}
@@ -242,6 +263,13 @@ type outboundTransport struct {
 	pinReader   CertPinReader
 	pinObserver CertPinVerifyObserver
 
+	// backoffInitialFn / backoffMaxFn are forwarded to every supervisor so
+	// each reconnect iteration reads the current value from the
+	// OperationalStore. Nil → each supervisor falls back to the package
+	// constants (outboundBackoffInitial / outboundBackoffMax).
+	backoffInitialFn func() time.Duration
+	backoffMaxFn     func() time.Duration
+
 	mu          sync.RWMutex
 	supervisors map[string]*outboundSupervisorEntry
 	wg          sync.WaitGroup
@@ -270,6 +298,8 @@ func (t *outboundTransport) ensureSupervisor(meta NodeMeta) {
 	bootstrapStateFn := t.bootstrapStateFn
 	pinReader := t.pinReader
 	pinObserver := t.pinObserver
+	backoffInitialFn := t.backoffInitialFn
+	backoffMaxFn := t.backoffMaxFn
 	t.mu.Unlock()
 
 	if fn != nil {
@@ -280,6 +310,8 @@ func (t *outboundTransport) ensureSupervisor(meta NodeMeta) {
 	sup.bootstrapStateFn = bootstrapStateFn
 	sup.pinReader = pinReader
 	sup.pinObserver = pinObserver
+	sup.backoffInitialFn = backoffInitialFn
+	sup.backoffMaxFn = backoffMaxFn
 	go func() {
 		defer t.wg.Done()
 		sup.run(ctx)

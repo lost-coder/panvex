@@ -372,8 +372,9 @@ func (s *Server) SetInstallCommandHandler(h *bootstrap.InstallCommandHandler) {
 // SetAgentTransportManager wires the agenttransport.Manager so the
 // transport-mode change handler can notify it when an agent's mode is
 // updated. Safe to call concurrently with HTTP requests. Also wires the
-// Prometheus supervisor-gauge callback and the SPKI cert-pin reader (S-02)
-// if metrics / storage are available.
+// Prometheus supervisor-gauge callback, the SPKI cert-pin reader (S-02),
+// and the outbound backoff getters (settings Task 4) if metrics / storage
+// are available.
 func (s *Server) SetAgentTransportManager(m *agenttransport.Manager) {
 	s.agentTransportManager.Store(m)
 	if m == nil {
@@ -391,6 +392,17 @@ func (s *Server) SetAgentTransportManager(m *agenttransport.Manager) {
 		obs = s.obs.ObserveAgentCertPin
 	}
 	m.SetCertPinReader(s.store, obs)
+	// Wire live backoff getters so operator changes to
+	// agents.outbound_backoff_initial / agents.outbound_backoff_max are
+	// picked up on the next reconnect iteration without a panel restart.
+	// When s.settings is nil (no persistent store / tests) the manager
+	// falls back to the package constants.
+	if s.settings != nil {
+		m.SetBackoffGetters(
+			s.settings.AgentsOutboundBackoffInitial,
+			s.settings.AgentsOutboundBackoffMax,
+		)
+	}
 }
 
 // notifyTransportManager calls Manager.OnNodeChanged if a manager has
