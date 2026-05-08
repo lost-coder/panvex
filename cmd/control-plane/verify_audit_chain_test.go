@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/audit/hashchain"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
@@ -97,7 +98,7 @@ func buildChainedRows(t *testing.T, n int) []storage.AuditEventRecord {
 			Details:   map[string]any{"step": i, "label": "row"},
 			PrevHash:  prev,
 		}
-		hash, err := computeAuditEventHashLocal(prev, r)
+		hash, err := hashchain.ComputeEventHash(prev, r)
 		if err != nil {
 			t.Fatalf("compute: %v", err)
 		}

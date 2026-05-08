@@ -2,9 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -16,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/audit/hashchain"
 	"github.com/lost-coder/panvex/internal/controlplane/config"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
@@ -144,7 +142,7 @@ func verifyAuditChainRows(rows []storage.AuditEventRecord) (report string, misma
 
 		// Recompute the event hash to detect rewrites of the row's
 		// own fields (id/actor/action/target/created_at/details).
-		recomputed, err := computeAuditEventHashLocal(prev, row)
+		recomputed, err := hashchain.ComputeEventHash(prev, row)
 		if err != nil {
 			return b.String() + fmt.Sprintf(
 				"hash compute failed at event %s: %v\n",
@@ -186,89 +184,9 @@ func short(h string) string {
 	return h
 }
 
-// computeAuditEventHashLocal mirrors the producer-side hash function
-// (server.computeAuditEventHash) but lives in the cmd/ tree so the
-// verifier doesn't pull in the entire control-plane runtime. Keep the
-// two implementations byte-identical — there is a contract test in
-// internal/controlplane/server/audit_hash_chain_test.go that pins the
-// algorithm.
-func computeAuditEventHashLocal(prevHash string, r storage.AuditEventRecord) (string, error) {
-	canonical, err := canonicaliseDetailsLocal(r.Details)
-	if err != nil {
-		return "", err
-	}
-	payload := fmt.Sprintf(
-		"%s|%s|%s|%s|%s|%s",
-		r.ID, r.ActorID, r.Action, r.TargetID,
-		r.CreatedAt.UTC().Format(time.RFC3339Nano),
-		canonical,
-	)
-	h := sha256.New()
-	h.Write([]byte(prevHash))
-	h.Write([]byte{0x1f})
-	h.Write([]byte(payload))
-	return hex.EncodeToString(h.Sum(nil)), nil
-}
-
-func canonicaliseDetailsLocal(details map[string]any) (string, error) {
-	if len(details) == 0 {
-		return "{}", nil
-	}
-	return canonicaliseJSONValueLocal(details)
-}
-
-func canonicaliseJSONValueLocal(v any) (string, error) {
-	switch t := v.(type) {
-	case nil:
-		return "null", nil
-	case bool, float64, int, int64, uint64, int32:
-		b, err := json.Marshal(t)
-		if err != nil {
-			return "", err
-		}
-		return string(b), nil
-	case string:
-		b, err := json.Marshal(t)
-		if err != nil {
-			return "", err
-		}
-		return string(b), nil
-	case json.Number:
-		return t.String(), nil
-	case []any:
-		parts := make([]string, 0, len(t))
-		for _, item := range t {
-			s, err := canonicaliseJSONValueLocal(item)
-			if err != nil {
-				return "", err
-			}
-			parts = append(parts, s)
-		}
-		return "[" + strings.Join(parts, ",") + "]", nil
-	case map[string]any:
-		keys := make([]string, 0, len(t))
-		for k := range t {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		parts := make([]string, 0, len(t))
-		for _, k := range keys {
-			kEnc, err := json.Marshal(k)
-			if err != nil {
-				return "", err
-			}
-			vEnc, err := canonicaliseJSONValueLocal(t[k])
-			if err != nil {
-				return "", err
-			}
-			parts = append(parts, string(kEnc)+":"+vEnc)
-		}
-		return "{" + strings.Join(parts, ",") + "}", nil
-	default:
-		b, err := json.Marshal(t)
-		if err != nil {
-			return "", err
-		}
-		return string(b), nil
-	}
-}
+// Wave 4.1 (2026-05-08) extracted the producer-side hash function
+// and its canonicalisation helpers into a shared package
+// internal/controlplane/audit/hashchain. Both server (producer) and
+// this verifier (consumer) now import the same source of truth —
+// the previous "Local" copy that lived here drifted-by-design and is
+// gone.

@@ -1,4 +1,4 @@
-package server
+package hashchain
 
 import (
 	"strings"
@@ -8,7 +8,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
-func TestComputeAuditEventHash_Deterministic(t *testing.T) {
+func TestComputeEventHashDeterministic(t *testing.T) {
 	r := storage.AuditEventRecord{
 		ID:        "evt_42",
 		ActorID:   "user_admin",
@@ -18,13 +18,13 @@ func TestComputeAuditEventHash_Deterministic(t *testing.T) {
 		Details:   map[string]any{"name": "demo", "limits": map[string]any{"max_tcp_conns": 10, "quota_mb": 1024}},
 	}
 
-	h1, err := computeAuditEventHash("", r)
+	h1, err := ComputeEventHash("", r)
 	if err != nil {
-		t.Fatalf("computeAuditEventHash: %v", err)
+		t.Fatalf("ComputeEventHash: %v", err)
 	}
-	h2, err := computeAuditEventHash("", r)
+	h2, err := ComputeEventHash("", r)
 	if err != nil {
-		t.Fatalf("computeAuditEventHash: %v", err)
+		t.Fatalf("ComputeEventHash: %v", err)
 	}
 	if h1 != h2 {
 		t.Fatalf("identical records produced different hashes: %s vs %s", h1, h2)
@@ -34,7 +34,7 @@ func TestComputeAuditEventHash_Deterministic(t *testing.T) {
 	}
 }
 
-func TestComputeAuditEventHash_DetailsKeyOrderIrrelevant(t *testing.T) {
+func TestComputeEventHashDetailsKeyOrderIrrelevant(t *testing.T) {
 	base := storage.AuditEventRecord{
 		ID:        "evt_1",
 		ActorID:   "user_x",
@@ -52,11 +52,11 @@ func TestComputeAuditEventHash_DetailsKeyOrderIrrelevant(t *testing.T) {
 	b := base
 	b.Details = map[string]any{"gamma": map[string]any{"z": "w", "x": "y"}, "beta": 2, "alpha": 1}
 
-	ha, err := computeAuditEventHash("prev", a)
+	ha, err := ComputeEventHash("prev", a)
 	if err != nil {
 		t.Fatal(err)
 	}
-	hb, err := computeAuditEventHash("prev", b)
+	hb, err := ComputeEventHash("prev", b)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestComputeAuditEventHash_DetailsKeyOrderIrrelevant(t *testing.T) {
 	}
 }
 
-func TestComputeAuditEventHash_PrevHashChangesOutput(t *testing.T) {
+func TestComputeEventHashPrevHashChangesOutput(t *testing.T) {
 	r := storage.AuditEventRecord{
 		ID:        "evt_2",
 		ActorID:   "user_y",
@@ -75,11 +75,11 @@ func TestComputeAuditEventHash_PrevHashChangesOutput(t *testing.T) {
 		Details:   map[string]any{"reason": "manual"},
 	}
 
-	h1, err := computeAuditEventHash("aaaa", r)
+	h1, err := ComputeEventHash("aaaa", r)
 	if err != nil {
 		t.Fatal(err)
 	}
-	h2, err := computeAuditEventHash("bbbb", r)
+	h2, err := ComputeEventHash("bbbb", r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,13 +88,13 @@ func TestComputeAuditEventHash_PrevHashChangesOutput(t *testing.T) {
 	}
 }
 
-// TestComputeAuditEventHash_PrevHashCantSpoofPayload verifies the
-// unit-separator boundary between prev_hash and the payload. Without
-// it, an attacker who chose a prev_hash that embedded the next
-// payload's prefix could compute a colliding hash. The 0x1F separator
-// is not part of the hex alphabet so a real prev_hash (always hex)
-// cannot collide.
-func TestComputeAuditEventHash_PrevHashCantSpoofPayload(t *testing.T) {
+// TestComputeEventHashPrevHashCantSpoofPayload verifies the
+// unit-separator boundary between prev_hash and the payload.
+// Without it, an attacker who chose a prev_hash that embedded the
+// next payload's prefix could compute a colliding hash. The 0x1F
+// separator is not part of the hex alphabet so a real prev_hash
+// (always hex) cannot collide.
+func TestComputeEventHashPrevHashCantSpoofPayload(t *testing.T) {
 	r := storage.AuditEventRecord{
 		ID:        "evt_3",
 		ActorID:   "u",
@@ -104,11 +104,11 @@ func TestComputeAuditEventHash_PrevHashCantSpoofPayload(t *testing.T) {
 		Details:   map[string]any{},
 	}
 
-	hWith, err := computeAuditEventHash("evt_3|u", r) // tries to embed payload prefix into prev_hash
+	hWith, err := ComputeEventHash("evt_3|u", r) // tries to embed payload prefix into prev_hash
 	if err != nil {
 		t.Fatal(err)
 	}
-	hClean, err := computeAuditEventHash("", r)
+	hClean, err := ComputeEventHash("", r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,9 +117,9 @@ func TestComputeAuditEventHash_PrevHashCantSpoofPayload(t *testing.T) {
 	}
 }
 
-func TestCanonicaliseDetails_EmptyMap(t *testing.T) {
+func TestCanonicaliseDetailsEmptyMap(t *testing.T) {
 	for _, in := range []map[string]any{nil, {}} {
-		s, err := canonicaliseDetails(in)
+		s, err := CanonicaliseDetails(in)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -129,8 +129,8 @@ func TestCanonicaliseDetails_EmptyMap(t *testing.T) {
 	}
 }
 
-func TestCanonicaliseDetails_StableNesting(t *testing.T) {
-	got, err := canonicaliseDetails(map[string]any{
+func TestCanonicaliseDetailsStableNesting(t *testing.T) {
+	got, err := CanonicaliseDetails(map[string]any{
 		"a": []any{3, 1, 2}, // arrays preserve order
 		"b": map[string]any{"y": 2, "x": 1},
 	})
