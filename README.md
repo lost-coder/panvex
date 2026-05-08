@@ -405,6 +405,7 @@ Emergency TOTP reset via CLI:
 | `diagnose` | Markdown health snapshot — schema version, row counts, pool stats, CA expiry, encryption-key fingerprint. Paste into a support ticket. |
 | `backup` | SQLite-only `tar.gz` of a `VACUUM INTO` snapshot plus `metadata.json`. Postgres operators use `pg_dump`. |
 | `restore` | Prints the manual restore recipe (`tar -xzf` + `migrate-schema`). Auto-restore is intentionally not supported — overwriting a populated DB is the kind of mistake we refuse to make easy. |
+| `verify-audit-chain` | Walks `audit_events` chronologically, recomputes the SHA-256 chain (migration 0038), exits non-zero on the first tampered or missing link. Run after a suspected incident or as part of a periodic compliance check. |
 
 ```sh
 ./panvex-control-plane diagnose \
