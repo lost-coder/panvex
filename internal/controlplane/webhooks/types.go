@@ -83,3 +83,14 @@ type Storage interface {
 // (e.g. the endpoint was deleted via cascade). Callers treat it as a
 // no-op, not a failure.
 var ErrNotFound = errors.New("webhooks: outbox row not found")
+
+// SecretDecrypter resolves an endpoint's stored ciphertext to the
+// plaintext HMAC key. Real implementations close over a
+// secretvault.Vault and the DomainWebhookSecret domain; tests pass
+// a no-op (`func(s string) ([]byte, error) { return []byte(s), nil }`).
+//
+// The decrypter is owned by the storage backend, not the worker —
+// this keeps webhooks.Storage's plaintext-Secret contract (documented
+// on Endpoint) while letting the worker stay agnostic about how the
+// secret was at-rest protected.
+type SecretDecrypter func(ciphertext string) ([]byte, error)

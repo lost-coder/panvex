@@ -45,12 +45,16 @@ const (
 	// DomainTOTP is the per-user TOTP shared secret stored in
 	// users.totp_secret.
 	DomainTOTP = "totp_secret"
+	// DomainWebhookSecret is the per-endpoint HMAC key stored in
+	// webhook_endpoints.secret_ciphertext. Used by the webhook
+	// outbox worker to sign each delivery body.
+	DomainWebhookSecret = "webhook_secret"
 )
 
 // AllDomains is the canonical list of registered domains. Callers
 // should pass this to New to avoid reasoning about which subset is in
 // use at any given site.
-var AllDomains = []string{DomainClientSecret, DomainTOTP}
+var AllDomains = []string{DomainClientSecret, DomainTOTP, DomainWebhookSecret}
 
 const (
 	// Prefix1 marks values encrypted under the legacy (hard-coded) HKDF
