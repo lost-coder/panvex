@@ -1,115 +1,25 @@
 package server
 
 import (
-	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
-	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/csrf"
 )
 
-// ctxCapturingStore is a minimal storage.Store stub that records the ctx
-// it received on the first GetCPSecret call, then returns ErrNotFound so
-// callers proceed to the mint path. Used by the cancellation tests to pin
-// Plan 3 Task 3: the secret loaders must thread the caller ctx through to
-// storage instead of substituting context.Background().
-type ctxCapturingStore struct {
-	storage.Store
-	captured context.Context
-}
-
-func (s *ctxCapturingStore) GetCPSecret(ctx context.Context, _ string) ([]byte, error) {
-	if s.captured == nil {
-		s.captured = ctx
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	return nil, storage.ErrNotFound
-}
-
-func (*ctxCapturingStore) PutCPSecret(ctx context.Context, _ string, _ []byte) error {
-	return ctx.Err()
-}
-
-// TestLoadOrCreateCSRFSecret_PropagatesCallerCtx pins Plan 3 Task 3: the
-// CSRF secret loader must hand the caller's ctx to storage so a Close()
-// during a wedged GetCPSecret aborts it via serverCtx cancellation. The
-// loader itself is best-effort (a storage failure logs and falls back to
-// the in-memory fresh secret) so this test asserts ctx propagation, not
-// that loadOrCreateCSRFSecret returns a context.Canceled error.
-func TestLoadOrCreateCSRFSecret_PropagatesCallerCtx(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	store := &ctxCapturingStore{}
-	if _, err := loadOrCreateCSRFSecret(ctx, store); err != nil {
-		t.Fatalf("loadOrCreateCSRFSecret returned error: %v", err)
-	}
-	if store.captured == nil {
-		t.Fatal("GetCPSecret was not invoked")
-	}
-	if store.captured != ctx {
-		t.Fatalf("GetCPSecret ctx = %v, want caller ctx %v", store.captured, ctx)
-	}
-}
-
-// TestLoadOrCreateVaultSalt_RespectsContextCancellation pins the same
-// contract for the vault HKDF salt loader. Unlike the CSRF loader the
-// vault salt loader is fail-loud — a storage error must propagate so the
-// operator does not silently lose the only path to decrypt later writes.
-func TestLoadOrCreateVaultSalt_RespectsContextCancellation(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	_, err := loadOrCreateVaultSalt(ctx, &ctxCapturingStore{})
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("loadOrCreateVaultSalt error = %v, want context.Canceled", err)
-	}
-}
-
-func TestCSRFTokenForSession_Stable(t *testing.T) {
-	secret := []byte("fixed-server-secret-32-bytes-okok")
-	a := csrfTokenForSession("sess-1", secret)
-	b := csrfTokenForSession("sess-1", secret)
-	if a != b {
-		t.Fatalf("token must be stable for same input, got %q vs %q", a, b)
-	}
-}
-
-func TestCSRFTokenForSession_DifferentSession(t *testing.T) {
-	secret := []byte("fixed-server-secret-32-bytes-okok")
-	if csrfTokenForSession("sess-1", secret) == csrfTokenForSession("sess-2", secret) {
-		t.Fatal("different sessions must yield different tokens")
-	}
-}
-
-func TestCSRFTokenForSession_DifferentSecret(t *testing.T) {
-	a := csrfTokenForSession("sess-1", []byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
-	b := csrfTokenForSession("sess-1", []byte("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"))
-	if a == b {
-		t.Fatal("different secrets must yield different tokens")
-	}
-}
-
-func TestCSRFTokenMatches_ConstantTime(t *testing.T) {
-	if csrfTokenMatches("", "abc") {
-		t.Fatal("empty supplied must not match")
-	}
-	if csrfTokenMatches("abc", "") {
-		t.Fatal("empty expected must not match")
-	}
-	if !csrfTokenMatches("abc", "abc") {
-		t.Fatal("equal strings must match")
-	}
-	if csrfTokenMatches("abc", "abd") {
-		t.Fatal("differing strings must not match")
+// newCSRFTestServer builds a minimal Server with a deterministic CSRF
+// Manager so middleware tests don't need to thread a fixture secret
+// through every call site.
+func newCSRFTestServer() *Server {
+	return &Server{
+		csrfManager: &csrf.Manager{Secret: []byte("any-secret-32-bytes-zero-padded.")},
 	}
 }
 
 func TestCSRFTokenMiddleware_AllowsSafeMethods(t *testing.T) {
-	srv := &Server{csrfSecret: []byte("any-secret-32-bytes-zero-padded.")}
+	srv := newCSRFTestServer()
 
 	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodOptions} {
 		t.Run(method, func(t *testing.T) {
@@ -130,7 +40,7 @@ func TestCSRFTokenMiddleware_AllowsUnauthenticated(t *testing.T) {
 	// State-changing methods reach the middleware without a session
 	// (POST /auth/login). The middleware lets them through; downstream
 	// auth + Origin check handles the rest.
-	srv := &Server{csrfSecret: []byte("any-secret-32-bytes-zero-padded.")}
+	srv := newCSRFTestServer()
 	handler := srv.csrfTokenMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -143,7 +53,7 @@ func TestCSRFTokenMiddleware_AllowsUnauthenticated(t *testing.T) {
 }
 
 func TestCSRFTokenMiddleware_RejectsMissingToken(t *testing.T) {
-	srv := &Server{csrfSecret: []byte("any-secret-32-bytes-zero-padded.")}
+	srv := newCSRFTestServer()
 	handler := srv.csrfTokenMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Fatal("handler must not be invoked when token is missing")
 	}))
@@ -163,8 +73,7 @@ func TestCSRFTokenMiddleware_RejectsMissingToken(t *testing.T) {
 }
 
 func TestCSRFTokenMiddleware_AcceptsValidToken(t *testing.T) {
-	secret := []byte("any-secret-32-bytes-zero-padded.")
-	srv := &Server{csrfSecret: secret}
+	srv := newCSRFTestServer()
 	called := false
 	handler := srv.csrfTokenMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
@@ -176,7 +85,7 @@ func TestCSRFTokenMiddleware_AcceptsValidToken(t *testing.T) {
 	// middleware can read the cookie out of the request and match
 	// the supplied X-CSRF-Token.
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "cookie-token-1"})
-	req.Header.Set(csrfTokenHeader, csrfTokenForSession("cookie-token-1", secret))
+	req.Header.Set(csrf.TokenHeader, srv.csrfManager.TokenForSession("cookie-token-1"))
 	req = withRequestAuthContext(req,
 		auth.Session{ID: "sess-1", UserID: "user-1"},
 		auth.User{ID: "user-1", Username: "alice"})
@@ -191,8 +100,7 @@ func TestCSRFTokenMiddleware_AcceptsValidToken(t *testing.T) {
 }
 
 func TestCSRFTokenMiddleware_RejectsTokenForOtherSession(t *testing.T) {
-	secret := []byte("any-secret-32-bytes-zero-padded.")
-	srv := &Server{csrfSecret: secret}
+	srv := newCSRFTestServer()
 	handler := srv.csrfTokenMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Fatal("handler must not be invoked when token is for a different session")
 	}))
@@ -200,7 +108,7 @@ func TestCSRFTokenMiddleware_RejectsTokenForOtherSession(t *testing.T) {
 	// The browser carries cookie A but the attacker forwards a
 	// CSRF token derived from cookie B — must not validate.
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "cookie-token-1"})
-	req.Header.Set(csrfTokenHeader, csrfTokenForSession("other-cookie-token", secret))
+	req.Header.Set(csrf.TokenHeader, srv.csrfManager.TokenForSession("other-cookie-token"))
 	req = withRequestAuthContext(req,
 		auth.Session{ID: "sess-1", UserID: "user-1"},
 		auth.User{ID: "user-1", Username: "alice"})

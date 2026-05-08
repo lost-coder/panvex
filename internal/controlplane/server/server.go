@@ -18,6 +18,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/bootstrap"
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
+	"github.com/lost-coder/panvex/internal/controlplane/csrf"
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/fleet"
 	"github.com/lost-coder/panvex/internal/controlplane/geoip"
@@ -299,10 +300,11 @@ type Server struct {
 	poolStatsMu   sync.Mutex
 	prevPoolStats sql.DBStats
 
-	// Phase-2 §2.5: per-server CSRF HMAC secret. Random 32 bytes
-	// generated at startup; rotated implicitly on every restart (which
-	// just makes the FE re-fetch /api/auth/csrf-token).
-	csrfSecret []byte
+	// Phase-2 §2.5: per-server CSRF HMAC secret wrapped as a Manager.
+	// Random 32 bytes loaded from cp_secrets at startup (or minted
+	// fresh on first start); rotated implicitly only when the
+	// persisted row is wiped, since restarts re-load the same value.
+	csrfManager *csrf.Manager
 
 	// loginTimingFloor is the wall-clock minimum the login handler pads
 	// every response to (R-S-19). Per-Server field instead of a package

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/csrf"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 	"github.com/lost-coder/panvex/internal/security"
@@ -1978,13 +1979,13 @@ func performJSONRequestWithHeaders(t *testing.T, srv *Server, method string, pat
 		}
 		// Phase-2 §2.5: auto-attach the double-submit CSRF token on
 		// state-changing requests that ship a session cookie. The token
-		// is HMAC(s.csrfSecret, sessionID) — derive in-test rather than
-		// fetching from /api/auth/csrf-token to avoid an extra round
-		// trip per call.
-		if request.Header.Get(csrfTokenHeader) == "" {
+		// is HMAC(s.csrfManager.Secret, cookie) — derive in-test rather
+		// than fetching from /api/auth/csrf-token to avoid an extra
+		// round trip per call.
+		if request.Header.Get(csrf.TokenHeader) == "" {
 			for _, c := range cookies {
 				if (c.Name == sessionCookieName || c.Name == sessionCookieNameHostPrefix) && c.Value != "" {
-					request.Header.Set(csrfTokenHeader, csrfTokenForSession(c.Value, srv.csrfSecret))
+					request.Header.Set(csrf.TokenHeader, srv.csrfManager.TokenForSession(c.Value))
 					break
 				}
 			}

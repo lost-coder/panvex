@@ -11,6 +11,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/agents"
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
+	"github.com/lost-coder/panvex/internal/controlplane/csrf"
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/fleet"
 	"github.com/lost-coder/panvex/internal/controlplane/geoip"
@@ -38,13 +39,13 @@ import (
 // bootCtx is the lifecycle context (Server.serverCtx) so a Close() while
 // startup is still wedged on a slow GetCPSecret aborts the storage call
 // instead of leaking past shutdown (Plan 3 Task 3).
-func initSecrets(bootCtx context.Context, options Options) (func() time.Time, []byte, *secretvault.Vault, error) {
+func initSecrets(bootCtx context.Context, options Options) (func() time.Time, *csrf.Manager, *secretvault.Vault, error) {
 	now := options.Now
 	if now == nil {
 		now = time.Now
 	}
 
-	csrfSecret, err := loadOrCreateCSRFSecret(bootCtx, options.Store)
+	csrfManager, err := csrf.NewManager(bootCtx, options.Store, slog.Default())
 	if err != nil {
 		// crypto/rand.Read returning an error means the OS entropy pool
 		// is unavailable — there is nothing meaningful the panel can do
@@ -67,12 +68,12 @@ func initSecrets(bootCtx context.Context, options Options) (func() time.Time, []
 	if vaultErr != nil {
 		return nil, nil, nil, fmt.Errorf("init secret vault: %w", vaultErr)
 	}
-	return now, csrfSecret, vault, nil
+	return now, csrfManager, vault, nil
 }
 
 // newServerFromOptions populates the Server struct literal. Pure data plumbing
 // — no I/O, no error paths.
-func newServerFromOptions(options Options, now func() time.Time, csrfSecret []byte, vault *secretvault.Vault) *Server {
+func newServerFromOptions(options Options, now func() time.Time, csrfManager *csrf.Manager, vault *secretvault.Vault) *Server {
 	return &Server{
 		auth:                         auth.NewService(),
 		store:                        options.Store,
@@ -98,7 +99,7 @@ func newServerFromOptions(options Options, now func() time.Time, csrfSecret []by
 		version:                      options.Version,
 		commitSHA:                    options.CommitSHA,
 		buildTime:                    options.BuildTime,
-		csrfSecret:                   csrfSecret,
+		csrfManager:                  csrfManager,
 		loginTimingFloor:             resolveLoginTimingFloor(options.LoginTimingFloor),
 		revokedAgentIDs:              make(map[string]struct{}),
 		agents:                       make(map[string]Agent),
@@ -347,12 +348,12 @@ func New(options Options) (*Server, error) {
 	// Created BEFORE initSecrets so a slow CSRF/HKDF/CA storage call at
 	// boot can be aborted by Close() (Plan 3 Task 3).
 	bootCtx, bootCancel := context.WithCancel(context.Background())
-	now, csrfSecret, vault, err := initSecrets(bootCtx, options)
+	now, csrfManager, vault, err := initSecrets(bootCtx, options)
 	if err != nil {
 		bootCancel()
 		return nil, err
 	}
-	server := newServerFromOptions(options, now, csrfSecret, vault)
+	server := newServerFromOptions(options, now, csrfManager, vault)
 	server.serverCtx, server.serverCancel = bootCtx, bootCancel
 	if server.logger == nil {
 		server.logger = slog.Default()
