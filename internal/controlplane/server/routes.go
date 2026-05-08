@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/openapi"
 )
 
 // routes wires every HTTP endpoint into a chi router and returns the
@@ -33,6 +34,14 @@ import (
 // operator / admin) without context-switching across files.
 func (s *Server) routes() http.Handler {
 	router := chi.NewRouter()
+	// OpenAPI adapter: codegen-generated wrapper handlers delegate
+	// path-param decoding + spec compliance to oapi-codegen, while the
+	// existing per-feature handlers keep their auth/scope/middleware
+	// logic. Per Wave 3.3 plan we DON'T mount via openapi.HandlerFromMux
+	// — that would flatten routes and skip the nested
+	// authenticated/operator/admin + sensitive middleware groups. We
+	// register the wrapper methods directly inside those groups below.
+	oapi := openapi.ServerInterfaceWrapper{Handler: newOapiAdapter(s)}
 	// metricsMiddleware must be the outermost user middleware so every
 	// response — including 401s from ipWhitelist, 429s from rate-limiters,
 	// and 404s from the UI fallback — is observed with its route pattern.
@@ -53,7 +62,7 @@ func (s *Server) routes() http.Handler {
 	// covered, including agent endpoints under /api/agent/*.
 	router.Use(s.dbQueryCountMiddleware)
 	router.Use(s.csrfOriginCheck(s.panelRuntime.HTTPRootPath, s.panelRuntime.AgentHTTPRootPath))
-	router.Get("/healthz", handleHealthz())
+	router.Get("/healthz", oapi.GetHealthz)
 	router.Get("/readyz", s.handleReadyz())
 	// Q-05: serve the bash installer the install-command points at. Top-level
 	// path so the generated `curl <panel>/install-agent.sh | bash` works as
@@ -95,7 +104,7 @@ func (s *Server) routes() http.Handler {
 				// session.ID it needs to derive the expected token, and
 				// BEFORE every state-changing handler in the chain.
 				authenticated.Use(s.csrfTokenMiddleware)
-				authenticated.Get("/version", s.handleVersion())
+				authenticated.Get("/version", oapi.GetVersion)
 				authenticated.Get("/auth/me", s.handleMe())
 				authenticated.Get("/auth/csrf-token", s.handleCSRFToken())
 				authenticated.Post("/auth/logout", s.handleLogout())
@@ -109,7 +118,7 @@ func (s *Server) routes() http.Handler {
 				authenticated.With(sensitive).Post("/auth/totp/disable", s.handleTotpDisable())
 				authenticated.Get("/control-room", s.handleControlRoom())
 				authenticated.Get("/fleet", s.handleFleet())
-				authenticated.Get("/agents", s.handleAgents())
+				authenticated.Get("/agents", oapi.ListAgents)
 				authenticated.Get("/instances", s.handleInstances())
 				authenticated.Get("/jobs", s.handleJobs())
 				authenticated.Get("/audit", s.handleAudit())
@@ -169,12 +178,12 @@ func (s *Server) routes() http.Handler {
 					operator.Get("/integration-providers/{id}", s.handleGetIntegrationProvider())
 					operator.Patch("/integration-providers/{id}", s.handleUpdateIntegrationProvider())
 					operator.Delete("/integration-providers/{id}", s.handleDeleteIntegrationProvider())
-					operator.Patch("/agents/{id}", s.handleRenameAgent())
-					operator.With(sensitive).Put("/agents/{id}/fleet-group", s.handleUpdateAgentFleetGroup())
-					operator.Get("/agents/enrollment-tokens", s.handleListEnrollmentTokens())
-					operator.With(sensitive).Post("/agents/enrollment-tokens", s.handleCreateEnrollmentToken())
-					operator.With(sensitive).Post("/agents/enrollment-tokens/{value}/revoke", s.handleRevokeEnrollmentToken())
-					operator.With(sensitive).Post("/agents/{id}/update", s.handleAgentUpdate())
+					operator.Patch("/agents/{id}", oapi.RenameAgent)
+					operator.With(sensitive).Put("/agents/{id}/fleet-group", oapi.UpdateAgentFleetGroup)
+					operator.Get("/agents/enrollment-tokens", oapi.ListEnrollmentTokens)
+					operator.With(sensitive).Post("/agents/enrollment-tokens", oapi.CreateEnrollmentToken)
+					operator.With(sensitive).Post("/agents/enrollment-tokens/{value}/revoke", oapi.RevokeEnrollmentToken)
+					operator.With(sensitive).Post("/agents/{id}/update", oapi.DispatchAgentUpdate)
 					operator.Get("/agent/update/binary", s.handleAgentBinaryProxy())
 				})
 
@@ -195,14 +204,14 @@ func (s *Server) routes() http.Handler {
 					admin.With(sensitive).Put("/users/{id}", s.handleUpdateUser())
 					admin.With(sensitive).Delete("/users/{id}", s.handleDeleteUser())
 					admin.With(sensitive).Post("/users/{id}/totp/reset", s.handleResetUserTotp())
-					admin.With(sensitive).Post("/agents/{id}/certificate-recovery-grants", s.handleCreateAgentCertificateRecoveryGrant())
-					admin.With(sensitive).Post("/agents/{id}/certificate-recovery-grants/revoke", s.handleRevokeAgentCertificateRecoveryGrant())
-					admin.With(sensitive).Delete("/agents/{id}", s.handleDeregisterAgent())
-					admin.With(sensitive).Put("/agents/{id}/transport-mode", s.handleUpdateAgentTransportMode())
+					admin.With(sensitive).Post("/agents/{id}/certificate-recovery-grants", oapi.CreateAgentCertificateRecoveryGrant)
+					admin.With(sensitive).Post("/agents/{id}/certificate-recovery-grants/revoke", oapi.RevokeAgentCertificateRecoveryGrant)
+					admin.With(sensitive).Delete("/agents/{id}", oapi.DeregisterAgent)
+					admin.With(sensitive).Put("/agents/{id}/transport-mode", oapi.UpdateAgentTransportMode)
 					// ScriptURL/PanelCAPin/PanelCN are wired in cmd/control-plane/serve.go
 					// at NewInstallCommandHandler — see install_script.go for the
 					// embedded /install-agent.sh route the URL points to. (Q-05)
-					admin.With(sensitive).Post("/agents/{id}/install-command", s.handleAgentInstallCommand())
+					admin.With(sensitive).Post("/agents/{id}/install-command", oapi.CreateAgentInstallCommand)
 					admin.Put("/settings/values", s.handleSettingsValuesPUT)
 					admin.Get("/settings/panel", s.handleGetPanelSettings())
 					admin.Put("/settings/panel", s.handlePutPanelSettings())

@@ -1,8 +1,9 @@
 # Panvex control-plane public API — OpenAPI 3.1 source of truth.
 #
 # Wave 3.3 — see docs/superpowers/plans/2026-05-08-api-codegen.md
-# for the migration plan. This file currently carries the seed
-# (info/servers/error schema) and grows one route group per PR.
+# for the migration plan. Currently covers the trivial pilots
+# (/healthz, /api/version) plus the /api/agents/* route group; future
+# PRs add /api/clients/*, /api/jobs/*, etc. one group at a time.
 #
 # Generation:
 #   make gen-openapi          # regenerate Go server + TypeScript types
@@ -66,11 +67,370 @@ paths:
               schema:
                 $ref: '#/components/schemas/VersionResponse'
         '401':
-          description: Unauthenticated.
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/agents:
+    get:
+      operationId: listAgents
+      summary: List enrolled agents in operator's fleet scope
+      description: |
+        Returns every agent the calling operator can see, filtered by
+        their fleet-group scope (R-S-14). Each entry carries the live
+        runtime snapshot the panel last received plus optional
+        certificate recovery state.
+      tags: [agents]
+      responses:
+        '200':
+          description: Agent inventory.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/AgentList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/agents/enrollment-tokens:
+    get:
+      operationId: listEnrollmentTokens
+      summary: List enrollment tokens visible to the operator
+      description: |
+        Returns every enrollment token whose fleet-group sits within
+        the caller's scope (R-S-14). Raw token values are masked —
+        only the creation response surfaces the bearer secret. Use
+        `handle` to revoke without exposing the raw value.
+      tags: [agents, enrollment]
+      responses:
+        '200':
+          description: Token list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollmentTokenList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: createEnrollmentToken
+      summary: Mint a new enrollment token
+      description: |
+        Issues a one-time bootstrap token for an agent to enroll into
+        the named fleet group. The raw `value` is returned ONLY here;
+        listing endpoints expose only a masked form afterwards.
+      tags: [agents, enrollment]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEnrollmentTokenRequest'
+      responses:
+        '201':
+          description: Token created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateEnrollmentTokenResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/agents/enrollment-tokens/{value}/revoke:
+    parameters:
+      - name: value
+        in: path
+        required: true
+        description: |
+          Either the raw token value or the stable handle (SHA-256
+          prefix) returned in the listing payload. Both forms resolve
+          to the same persistent record.
+        schema:
+          type: string
+    post:
+      operationId: revokeEnrollmentToken
+      summary: Revoke an enrollment token
+      description: |
+        Marks the token as revoked so subsequent bootstrap attempts
+        fail. Idempotent — revoking an already-revoked token returns
+        204 without an audit event.
+      tags: [agents, enrollment]
+      responses:
+        '204':
+          description: Token revoked (or already revoked).
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/agents/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Agent UUID.
+        schema:
+          type: string
+    patch:
+      operationId: renameAgent
+      summary: Rename an agent's display node-name
+      description: |
+        Updates the operator-facing label only; the agent's UUID and
+        certificate identity are unaffected. Idempotent (no audit
+        event when the new name equals the existing one).
+      tags: [agents]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameAgentRequest'
+      responses:
+        '200':
+          description: Updated agent record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      operationId: deregisterAgent
+      summary: Deregister an agent
+      description: |
+        Terminates the agent's gRPC session, deletes its persistent
+        records (instances, recovery grants), and adds the agent ID
+        to the in-memory revocation list so a reconnect with valid
+        mTLS material is rejected at Connect time.
+      tags: [agents]
+      responses:
+        '204':
+          description: Agent deregistered.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/agents/{id}/fleet-group:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      operationId: updateAgentFleetGroup
+      summary: Reassign an agent to a different fleet group
+      description: |
+        Operator must be scoped over BOTH the current and target
+        groups. No-op responses (existing == target) are returned
+        with the current agent shape so the client can refresh
+        without a special-cased branch.
+      tags: [agents]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAgentFleetGroupRequest'
+      responses:
+        '200':
+          description: Agent reassigned (or no-op).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/agents/{id}/update:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: dispatchAgentUpdate
+      summary: Enqueue a self-update job for an agent
+      description: |
+        Schedules an `agent_self_update` job carrying the resolved
+        binary asset metadata. The agent picks it up via its
+        long-poll session.
+      tags: [agents]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DispatchAgentUpdateRequest'
+      responses:
+        '200':
+          description: Update job dispatched.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DispatchAgentUpdateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/agents/{id}/transport-mode:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      operationId: updateAgentTransportMode
+      summary: Switch an agent between inbound and outbound transport
+      description: |
+        Persists the new transport mode in the DB, enqueues a
+        `switch_transport_mode` job, and notifies the in-process
+        transport manager so outbound supervisors are spawned or
+        torn down immediately. `dial_address` is required when
+        switching to outbound; the agent's listen-bind defaults
+        to `:<port>` derived from `dial_address` when
+        `listen_address` is omitted.
+      tags: [agents]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAgentTransportModeRequest'
+      responses:
+        '204':
+          description: Mode updated and job dispatched.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/agents/{id}/install-command:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: createAgentInstallCommand
+      summary: Generate a one-line installer for an outbound agent
+      description: |
+        Issues a fresh bootstrap token (replacing any prior token)
+        and returns a `curl ... | sudo bash` one-liner the operator
+        runs on the agent host. Available only for agents already
+        in `outbound` transport mode.
+      tags: [agents]
+      responses:
+        '200':
+          description: Install command issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstallCommandResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          description: Install-command endpoint not configured.
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /api/agents/{id}/certificate-recovery-grants:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: createAgentCertificateRecoveryGrant
+      summary: Allow an agent to recover an expired certificate
+      description: |
+        Admins issue a time-bounded grant so an agent whose mTLS
+        certificate has expired can present a proof-of-possession
+        and receive a fresh certificate without re-enrolling.
+      tags: [agents, recovery]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCertificateRecoveryGrantRequest'
+      responses:
+        '201':
+          description: Grant created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentCertificateRecoveryGrant'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/agents/{id}/certificate-recovery-grants/revoke:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: revokeAgentCertificateRecoveryGrant
+      summary: Revoke a previously-issued recovery grant
+      description: |
+        Marks the agent's recovery grant as revoked so a stale grant
+        cannot be redeemed. Returns the updated grant snapshot.
+      tags: [agents, recovery]
+      responses:
+        '200':
+          description: Grant revoked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentCertificateRecoveryGrant'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
 components:
   schemas:
@@ -106,6 +466,522 @@ components:
           type: object
           description: Optional structured context. Shape varies per error code.
           additionalProperties: true
+
+    Agent:
+      type: object
+      description: |
+        Control-plane snapshot of one enrolled agent. Mirrors the Go
+        `server.Agent` struct (`internal/controlplane/server/types.go`).
+      required:
+        - id
+        - node_name
+        - fleet_group_id
+        - version
+        - read_only
+        - presence_state
+        - runtime
+        - last_seen_at
+      properties:
+        id:
+          type: string
+          description: Agent UUID.
+        node_name:
+          type: string
+          description: Operator-facing display name.
+        fleet_group_id:
+          type: string
+          description: UUID of the fleet group the agent belongs to.
+        version:
+          type: string
+          description: Agent binary semver as last reported.
+        read_only:
+          type: boolean
+          description: True when the agent serves read-only Telemt instances.
+        presence_state:
+          type: string
+          description: |
+            Live presence evaluation — `online`, `flapping`, `offline`, etc.
+            Computed at request time from session + heartbeat data.
+        certificate_recovery:
+          allOf:
+            - $ref: '#/components/schemas/AgentCertificateRecoveryGrant'
+          description: |
+            Optional snapshot of any active certificate-recovery grant
+            for the agent. Absent when no grant has been issued.
+        cert_issued_at:
+          type: string
+          format: date-time
+          description: Issuance timestamp of the agent's current certificate.
+        cert_expires_at:
+          type: string
+          format: date-time
+          description: Expiry timestamp of the agent's current certificate.
+        runtime:
+          $ref: '#/components/schemas/AgentRuntime'
+        last_seen_at:
+          type: string
+          format: date-time
+          description: Last successful heartbeat timestamp.
+
+    AgentList:
+      type: array
+      description: List response from `GET /api/agents`.
+      items:
+        $ref: '#/components/schemas/Agent'
+
+    AgentRuntime:
+      type: object
+      description: |
+        Telemt operator overview reported by the agent. The set of
+        fields is defensive on the Zod side because backends can ship
+        new counters without an immediate web release; on the spec
+        side we list every field the panel currently consumes.
+      required:
+        - accepting_new_connections
+        - me_runtime_ready
+        - me2dc_fallback_enabled
+        - use_middle_proxy
+        - startup_status
+        - startup_stage
+        - startup_progress_pct
+        - initialization_status
+        - degraded
+        - initialization_stage
+        - initialization_progress_pct
+        - transport_mode
+        - current_connections
+        - current_connections_me
+        - current_connections_direct
+        - active_users
+        - uptime_seconds
+        - connections_total
+        - connections_bad_total
+        - handshake_timeouts_total
+        - configured_users
+        - dc_coverage_pct
+        - healthy_upstreams
+        - total_upstreams
+        - fail_rate_pct_5m
+        - fail_rate_known
+        - connect_attempt_total
+        - connect_success_total
+        - connect_fail_total
+        - connect_failfast_total
+        - dcs
+        - upstreams
+        - recent_events
+        - system_load
+        - telemt_reachable
+        - telemt_unreachable_since_unix
+        - updated_at
+      properties:
+        accepting_new_connections: { type: boolean }
+        me_runtime_ready: { type: boolean }
+        me2dc_fallback_enabled: { type: boolean }
+        use_middle_proxy: { type: boolean }
+        startup_status: { type: string }
+        startup_stage: { type: string }
+        startup_progress_pct: { type: number, format: double }
+        initialization_status: { type: string }
+        degraded: { type: boolean }
+        lifecycle_state: { type: string }
+        initialization_stage: { type: string }
+        initialization_progress_pct: { type: number, format: double }
+        transport_mode: { type: string }
+        current_connections: { type: integer }
+        current_connections_me: { type: integer }
+        current_connections_direct: { type: integer }
+        active_users: { type: integer }
+        uptime_seconds: { type: number, format: double }
+        connections_total: { type: integer, format: int64, minimum: 0 }
+        connections_bad_total: { type: integer, format: int64, minimum: 0 }
+        handshake_timeouts_total: { type: integer, format: int64, minimum: 0 }
+        configured_users: { type: integer }
+        dc_coverage_pct: { type: number, format: double }
+        healthy_upstreams: { type: integer }
+        total_upstreams: { type: integer }
+        fail_rate_pct_5m:
+          type: number
+          format: double
+          description: |
+            5-minute upstream connect fail-rate. Read together with
+            `fail_rate_known`: `false` means "unknown", not "0%".
+        fail_rate_known: { type: boolean }
+        connect_attempt_total: { type: integer, format: int64, minimum: 0 }
+        connect_success_total: { type: integer, format: int64, minimum: 0 }
+        connect_fail_total: { type: integer, format: int64, minimum: 0 }
+        connect_failfast_total: { type: integer, format: int64, minimum: 0 }
+        fallback_entered_at_unix:
+          type: integer
+          format: int64
+          nullable: true
+          description: |
+            Unix timestamp the panel observed this agent enter
+            ME→DC fallback. Absent when not in fallback.
+        reroute_active: { type: boolean }
+        route_mode: { type: string }
+        me2dc_fast_enabled: { type: boolean }
+        stale_cache_used: { type: boolean }
+        top_by_connections:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeTopByConnections'
+        top_by_throughput:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeTopByThroughput'
+        dcs:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeDC'
+        upstreams:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeUpstream'
+        recent_events:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeEvent'
+        system_load:
+          $ref: '#/components/schemas/RuntimeSystemLoad'
+        me_writers_summary:
+          $ref: '#/components/schemas/RuntimeMeWritersSummary'
+        telemt_reachable: { type: boolean }
+        telemt_unreachable_since_unix: { type: integer, format: int64 }
+        updated_at:
+          type: string
+          format: date-time
+
+    RuntimeEvent:
+      type: object
+      required: [sequence, timestamp_unix, event_type, context]
+      properties:
+        sequence: { type: integer, format: int64, minimum: 0 }
+        timestamp_unix: { type: integer, format: int64 }
+        event_type: { type: string }
+        context: { type: string }
+
+    RuntimeDC:
+      type: object
+      required:
+        - dc
+        - available_endpoints
+        - available_pct
+        - required_writers
+        - alive_writers
+        - coverage_pct
+        - fresh_alive_writers
+        - fresh_coverage_pct
+        - rtt_ms
+        - load
+      properties:
+        dc: { type: integer }
+        available_endpoints: { type: integer }
+        available_pct: { type: number, format: double }
+        required_writers: { type: integer }
+        alive_writers: { type: integer }
+        coverage_pct: { type: number, format: double }
+        fresh_alive_writers: { type: integer }
+        fresh_coverage_pct: { type: number, format: double }
+        rtt_ms: { type: number, format: double }
+        load: { type: integer }
+
+    RuntimeUpstream:
+      type: object
+      required:
+        - upstream_id
+        - route_kind
+        - address
+        - healthy
+        - fails
+        - effective_latency_ms
+        - weight
+        - last_check_age_secs
+      properties:
+        upstream_id: { type: integer }
+        route_kind: { type: string }
+        address: { type: string }
+        healthy: { type: boolean }
+        fails: { type: integer }
+        effective_latency_ms: { type: number, format: double }
+        weight: { type: integer }
+        last_check_age_secs: { type: integer }
+        scopes:
+          type: array
+          items: { type: string }
+
+    RuntimeSystemLoad:
+      type: object
+      required:
+        - cpu_usage_pct
+        - memory_used_bytes
+        - memory_total_bytes
+        - memory_usage_pct
+        - disk_used_bytes
+        - disk_total_bytes
+        - disk_usage_pct
+        - load_1m
+        - load_5m
+        - load_15m
+        - net_bytes_sent
+        - net_bytes_recv
+      properties:
+        cpu_usage_pct: { type: number, format: double }
+        memory_used_bytes: { type: integer, format: int64, minimum: 0 }
+        memory_total_bytes: { type: integer, format: int64, minimum: 0 }
+        memory_usage_pct: { type: number, format: double }
+        disk_used_bytes: { type: integer, format: int64, minimum: 0 }
+        disk_total_bytes: { type: integer, format: int64, minimum: 0 }
+        disk_usage_pct: { type: number, format: double }
+        load_1m: { type: number, format: double }
+        load_5m: { type: number, format: double }
+        load_15m: { type: number, format: double }
+        net_bytes_sent: { type: integer, format: int64, minimum: 0 }
+        net_bytes_recv: { type: integer, format: int64, minimum: 0 }
+
+    RuntimeMeWritersSummary:
+      type: object
+      required:
+        - configured_endpoints
+        - available_endpoints
+        - coverage_pct
+        - fresh_alive_writers
+        - fresh_coverage_pct
+        - required_writers
+        - alive_writers
+      properties:
+        configured_endpoints: { type: integer }
+        available_endpoints: { type: integer }
+        coverage_pct: { type: number, format: double }
+        fresh_alive_writers: { type: integer }
+        fresh_coverage_pct: { type: number, format: double }
+        required_writers: { type: integer }
+        alive_writers: { type: integer }
+
+    RuntimeTopByConnections:
+      type: object
+      required: [username, connections]
+      properties:
+        username: { type: string }
+        connections: { type: integer }
+
+    RuntimeTopByThroughput:
+      type: object
+      required: [username, throughput_bytes]
+      properties:
+        username: { type: string }
+        throughput_bytes: { type: integer, format: int64, minimum: 0 }
+
+    AgentCertificateRecoveryGrant:
+      type: object
+      description: Lifecycle snapshot of a single recovery grant.
+      required:
+        - agent_id
+        - status
+        - issued_at_unix
+        - expires_at_unix
+      properties:
+        agent_id: { type: string }
+        status:
+          type: string
+          enum: [allowed, expired, used, revoked]
+        issued_at_unix: { type: integer, format: int64 }
+        expires_at_unix: { type: integer, format: int64 }
+        used_at_unix:
+          type: integer
+          format: int64
+          nullable: true
+        revoked_at_unix:
+          type: integer
+          format: int64
+          nullable: true
+
+    EnrollmentTokenList:
+      type: array
+      items:
+        $ref: '#/components/schemas/EnrollmentTokenListItem'
+
+    EnrollmentTokenListItem:
+      type: object
+      description: |
+        Listing-safe view of an enrollment token. The raw `value` is
+        intentionally absent — only the creation response surfaces
+        the bearer secret. Use `handle` (SHA-256 prefix) to revoke.
+      required:
+        - panel_url
+        - fleet_group_id
+        - status
+        - issued_at_unix
+        - expires_at_unix
+      properties:
+        masked_value:
+          type: string
+          description: Truncated form of the raw value, ellipsis-suffixed.
+        handle:
+          type: string
+          description: SHA-256 prefix of the raw value, hex-encoded.
+        panel_url:
+          type: string
+        fleet_group_id:
+          type: string
+        status:
+          type: string
+          enum: [active, expired, consumed, revoked]
+        issued_at_unix: { type: integer, format: int64 }
+        expires_at_unix: { type: integer, format: int64 }
+        consumed_at_unix:
+          type: integer
+          format: int64
+          nullable: true
+        revoked_at_unix:
+          type: integer
+          format: int64
+          nullable: true
+
+    CreateEnrollmentTokenRequest:
+      type: object
+      required: [ttl_seconds]
+      properties:
+        fleet_group_id:
+          type: string
+          description: |
+            Either the canonical UUID or the friendly slug; empty
+            string falls back to the default fleet group.
+        ttl_seconds:
+          type: integer
+          minimum: 1
+          description: Token lifetime in seconds.
+
+    CreateEnrollmentTokenResponse:
+      type: object
+      description: |
+        Response to a successful `POST /api/agents/enrollment-tokens`.
+        The raw `value` is exposed once at this moment; subsequent
+        listings only carry the masked form.
+      required:
+        - value
+        - panel_url
+        - fleet_group_id
+        - issued_at_unix
+        - expires_at_unix
+        - ca_pem
+      properties:
+        value:
+          type: string
+          description: The raw bootstrap token. Returned only at creation.
+        panel_url:
+          type: string
+        fleet_group_id:
+          type: string
+        issued_at_unix: { type: integer, format: int64 }
+        expires_at_unix: { type: integer, format: int64 }
+        ca_pem:
+          type: string
+          description: PEM-encoded panel CA certificate.
+
+    RenameAgentRequest:
+      type: object
+      required: [node_name]
+      properties:
+        node_name:
+          type: string
+          minLength: 1
+
+    UpdateAgentFleetGroupRequest:
+      type: object
+      required: [fleet_group_id]
+      properties:
+        fleet_group_id:
+          type: string
+          minLength: 1
+          description: Target fleet-group UUID. Must already exist.
+
+    UpdateAgentTransportModeRequest:
+      type: object
+      required: [transport_mode]
+      properties:
+        transport_mode:
+          type: string
+          enum: [inbound, outbound]
+        dial_address:
+          type: string
+          description: |
+            Public host:port the panel dials (required for outbound).
+        listen_address:
+          type: string
+          description: |
+            Agent-side bind spec. Optional — defaults to `:<port>`
+            derived from `dial_address` when omitted.
+
+    DispatchAgentUpdateRequest:
+      type: object
+      required: [version]
+      properties:
+        version:
+          type: string
+          description: Target agent binary version.
+
+    DispatchAgentUpdateResponse:
+      type: object
+      required: [job_id, status, version]
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+          example: dispatched
+        version:
+          type: string
+
+    InstallCommandResponse:
+      type: object
+      description: |
+        Pre-baked `curl ... | sudo bash -s -- ...` one-liner the
+        operator runs on the host to install or re-bootstrap a
+        reverse-mode agent.
+      required: [command, expires_at_unix]
+      properties:
+        command:
+          type: string
+        expires_at_unix:
+          type: integer
+          format: int64
+
+    CreateCertificateRecoveryGrantRequest:
+      type: object
+      properties:
+        ttl_seconds:
+          type: integer
+          minimum: 0
+          description: |
+            Grant lifetime in seconds. Zero or omitted yields the
+            server's default TTL (15m, capped at 1h).
+
+  responses:
+    BadRequest:
+      description: Validation error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Caller is not authenticated.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Caller is authenticated but lacks the required role/scope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Requested resource does not exist or is out-of-scope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
 
   securitySchemes:
     sessionCookie:

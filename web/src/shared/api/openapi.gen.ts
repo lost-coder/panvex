@@ -49,6 +49,268 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List enrolled agents in operator's fleet scope
+         * @description Returns every agent the calling operator can see, filtered by
+         *     their fleet-group scope (R-S-14). Each entry carries the live
+         *     runtime snapshot the panel last received plus optional
+         *     certificate recovery state.
+         */
+        get: operations["listAgents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/enrollment-tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List enrollment tokens visible to the operator
+         * @description Returns every enrollment token whose fleet-group sits within
+         *     the caller's scope (R-S-14). Raw token values are masked —
+         *     only the creation response surfaces the bearer secret. Use
+         *     `handle` to revoke without exposing the raw value.
+         */
+        get: operations["listEnrollmentTokens"];
+        put?: never;
+        /**
+         * Mint a new enrollment token
+         * @description Issues a one-time bootstrap token for an agent to enroll into
+         *     the named fleet group. The raw `value` is returned ONLY here;
+         *     listing endpoints expose only a masked form afterwards.
+         */
+        post: operations["createEnrollmentToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/enrollment-tokens/{value}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Either the raw token value or the stable handle (SHA-256
+                 *     prefix) returned in the listing payload. Both forms resolve
+                 *     to the same persistent record.
+                 */
+                value: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke an enrollment token
+         * @description Marks the token as revoked so subsequent bootstrap attempts
+         *     fail. Idempotent — revoking an already-revoked token returns
+         *     204 without an audit event.
+         */
+        post: operations["revokeEnrollmentToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent UUID. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Deregister an agent
+         * @description Terminates the agent's gRPC session, deletes its persistent
+         *     records (instances, recovery grants), and adds the agent ID
+         *     to the in-memory revocation list so a reconnect with valid
+         *     mTLS material is rejected at Connect time.
+         */
+        delete: operations["deregisterAgent"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename an agent's display node-name
+         * @description Updates the operator-facing label only; the agent's UUID and
+         *     certificate identity are unaffected. Idempotent (no audit
+         *     event when the new name equals the existing one).
+         */
+        patch: operations["renameAgent"];
+        trace?: never;
+    };
+    "/api/agents/{id}/fleet-group": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reassign an agent to a different fleet group
+         * @description Operator must be scoped over BOTH the current and target
+         *     groups. No-op responses (existing == target) are returned
+         *     with the current agent shape so the client can refresh
+         *     without a special-cased branch.
+         */
+        put: operations["updateAgentFleetGroup"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/{id}/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enqueue a self-update job for an agent
+         * @description Schedules an `agent_self_update` job carrying the resolved
+         *     binary asset metadata. The agent picks it up via its
+         *     long-poll session.
+         */
+        post: operations["dispatchAgentUpdate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/{id}/transport-mode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Switch an agent between inbound and outbound transport
+         * @description Persists the new transport mode in the DB, enqueues a
+         *     `switch_transport_mode` job, and notifies the in-process
+         *     transport manager so outbound supervisors are spawned or
+         *     torn down immediately. `dial_address` is required when
+         *     switching to outbound; the agent's listen-bind defaults
+         *     to `:<port>` derived from `dial_address` when
+         *     `listen_address` is omitted.
+         */
+        put: operations["updateAgentTransportMode"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/{id}/install-command": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate a one-line installer for an outbound agent
+         * @description Issues a fresh bootstrap token (replacing any prior token)
+         *     and returns a `curl ... | sudo bash` one-liner the operator
+         *     runs on the agent host. Available only for agents already
+         *     in `outbound` transport mode.
+         */
+        post: operations["createAgentInstallCommand"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/{id}/certificate-recovery-grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Allow an agent to recover an expired certificate
+         * @description Admins issue a time-bounded grant so an agent whose mTLS
+         *     certificate has expired can present a proof-of-possession
+         *     and receive a fresh certificate without re-enrolling.
+         */
+        post: operations["createAgentCertificateRecoveryGrant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/{id}/certificate-recovery-grants/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke a previously-issued recovery grant
+         * @description Marks the agent's recovery grant as revoked so a stale grant
+         *     cannot be redeemed. Returns the updated grant snapshot.
+         */
+        post: operations["revokeAgentCertificateRecoveryGrant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -79,8 +341,357 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /**
+         * @description Control-plane snapshot of one enrolled agent. Mirrors the Go
+         *     `server.Agent` struct (`internal/controlplane/server/types.go`).
+         */
+        Agent: {
+            /** @description Agent UUID. */
+            id: string;
+            /** @description Operator-facing display name. */
+            node_name: string;
+            /** @description UUID of the fleet group the agent belongs to. */
+            fleet_group_id: string;
+            /** @description Agent binary semver as last reported. */
+            version: string;
+            /** @description True when the agent serves read-only Telemt instances. */
+            read_only: boolean;
+            /**
+             * @description Live presence evaluation — `online`, `flapping`, `offline`, etc.
+             *     Computed at request time from session + heartbeat data.
+             */
+            presence_state: string;
+            /**
+             * @description Optional snapshot of any active certificate-recovery grant
+             *     for the agent. Absent when no grant has been issued.
+             */
+            certificate_recovery?: components["schemas"]["AgentCertificateRecoveryGrant"];
+            /**
+             * Format: date-time
+             * @description Issuance timestamp of the agent's current certificate.
+             */
+            cert_issued_at?: string;
+            /**
+             * Format: date-time
+             * @description Expiry timestamp of the agent's current certificate.
+             */
+            cert_expires_at?: string;
+            runtime: components["schemas"]["AgentRuntime"];
+            /**
+             * Format: date-time
+             * @description Last successful heartbeat timestamp.
+             */
+            last_seen_at: string;
+        };
+        /** @description List response from `GET /api/agents`. */
+        AgentList: components["schemas"]["Agent"][];
+        /**
+         * @description Telemt operator overview reported by the agent. The set of
+         *     fields is defensive on the Zod side because backends can ship
+         *     new counters without an immediate web release; on the spec
+         *     side we list every field the panel currently consumes.
+         */
+        AgentRuntime: {
+            accepting_new_connections: boolean;
+            me_runtime_ready: boolean;
+            me2dc_fallback_enabled: boolean;
+            use_middle_proxy: boolean;
+            startup_status: string;
+            startup_stage: string;
+            /** Format: double */
+            startup_progress_pct: number;
+            initialization_status: string;
+            degraded: boolean;
+            lifecycle_state?: string;
+            initialization_stage: string;
+            /** Format: double */
+            initialization_progress_pct: number;
+            transport_mode: string;
+            current_connections: number;
+            current_connections_me: number;
+            current_connections_direct: number;
+            active_users: number;
+            /** Format: double */
+            uptime_seconds: number;
+            /** Format: int64 */
+            connections_total: number;
+            /** Format: int64 */
+            connections_bad_total: number;
+            /** Format: int64 */
+            handshake_timeouts_total: number;
+            configured_users: number;
+            /** Format: double */
+            dc_coverage_pct: number;
+            healthy_upstreams: number;
+            total_upstreams: number;
+            /**
+             * Format: double
+             * @description 5-minute upstream connect fail-rate. Read together with
+             *     `fail_rate_known`: `false` means "unknown", not "0%".
+             */
+            fail_rate_pct_5m: number;
+            fail_rate_known: boolean;
+            /** Format: int64 */
+            connect_attempt_total: number;
+            /** Format: int64 */
+            connect_success_total: number;
+            /** Format: int64 */
+            connect_fail_total: number;
+            /** Format: int64 */
+            connect_failfast_total: number;
+            /**
+             * Format: int64
+             * @description Unix timestamp the panel observed this agent enter
+             *     ME→DC fallback. Absent when not in fallback.
+             */
+            fallback_entered_at_unix?: number | null;
+            reroute_active?: boolean;
+            route_mode?: string;
+            me2dc_fast_enabled?: boolean;
+            stale_cache_used?: boolean;
+            top_by_connections?: components["schemas"]["RuntimeTopByConnections"][];
+            top_by_throughput?: components["schemas"]["RuntimeTopByThroughput"][];
+            dcs: components["schemas"]["RuntimeDC"][];
+            upstreams: components["schemas"]["RuntimeUpstream"][];
+            recent_events: components["schemas"]["RuntimeEvent"][];
+            system_load: components["schemas"]["RuntimeSystemLoad"];
+            me_writers_summary?: components["schemas"]["RuntimeMeWritersSummary"];
+            telemt_reachable: boolean;
+            /** Format: int64 */
+            telemt_unreachable_since_unix: number;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        RuntimeEvent: {
+            /** Format: int64 */
+            sequence: number;
+            /** Format: int64 */
+            timestamp_unix: number;
+            event_type: string;
+            context: string;
+        };
+        RuntimeDC: {
+            dc: number;
+            available_endpoints: number;
+            /** Format: double */
+            available_pct: number;
+            required_writers: number;
+            alive_writers: number;
+            /** Format: double */
+            coverage_pct: number;
+            fresh_alive_writers: number;
+            /** Format: double */
+            fresh_coverage_pct: number;
+            /** Format: double */
+            rtt_ms: number;
+            load: number;
+        };
+        RuntimeUpstream: {
+            upstream_id: number;
+            route_kind: string;
+            address: string;
+            healthy: boolean;
+            fails: number;
+            /** Format: double */
+            effective_latency_ms: number;
+            weight: number;
+            last_check_age_secs: number;
+            scopes?: string[];
+        };
+        RuntimeSystemLoad: {
+            /** Format: double */
+            cpu_usage_pct: number;
+            /** Format: int64 */
+            memory_used_bytes: number;
+            /** Format: int64 */
+            memory_total_bytes: number;
+            /** Format: double */
+            memory_usage_pct: number;
+            /** Format: int64 */
+            disk_used_bytes: number;
+            /** Format: int64 */
+            disk_total_bytes: number;
+            /** Format: double */
+            disk_usage_pct: number;
+            /** Format: double */
+            load_1m: number;
+            /** Format: double */
+            load_5m: number;
+            /** Format: double */
+            load_15m: number;
+            /** Format: int64 */
+            net_bytes_sent: number;
+            /** Format: int64 */
+            net_bytes_recv: number;
+        };
+        RuntimeMeWritersSummary: {
+            configured_endpoints: number;
+            available_endpoints: number;
+            /** Format: double */
+            coverage_pct: number;
+            fresh_alive_writers: number;
+            /** Format: double */
+            fresh_coverage_pct: number;
+            required_writers: number;
+            alive_writers: number;
+        };
+        RuntimeTopByConnections: {
+            username: string;
+            connections: number;
+        };
+        RuntimeTopByThroughput: {
+            username: string;
+            /** Format: int64 */
+            throughput_bytes: number;
+        };
+        /** @description Lifecycle snapshot of a single recovery grant. */
+        AgentCertificateRecoveryGrant: {
+            agent_id: string;
+            /** @enum {string} */
+            status: "allowed" | "expired" | "used" | "revoked";
+            /** Format: int64 */
+            issued_at_unix: number;
+            /** Format: int64 */
+            expires_at_unix: number;
+            /** Format: int64 */
+            used_at_unix?: number | null;
+            /** Format: int64 */
+            revoked_at_unix?: number | null;
+        };
+        EnrollmentTokenList: components["schemas"]["EnrollmentTokenListItem"][];
+        /**
+         * @description Listing-safe view of an enrollment token. The raw `value` is
+         *     intentionally absent — only the creation response surfaces
+         *     the bearer secret. Use `handle` (SHA-256 prefix) to revoke.
+         */
+        EnrollmentTokenListItem: {
+            /** @description Truncated form of the raw value, ellipsis-suffixed. */
+            masked_value?: string;
+            /** @description SHA-256 prefix of the raw value, hex-encoded. */
+            handle?: string;
+            panel_url: string;
+            fleet_group_id: string;
+            /** @enum {string} */
+            status: "active" | "expired" | "consumed" | "revoked";
+            /** Format: int64 */
+            issued_at_unix: number;
+            /** Format: int64 */
+            expires_at_unix: number;
+            /** Format: int64 */
+            consumed_at_unix?: number | null;
+            /** Format: int64 */
+            revoked_at_unix?: number | null;
+        };
+        CreateEnrollmentTokenRequest: {
+            /**
+             * @description Either the canonical UUID or the friendly slug; empty
+             *     string falls back to the default fleet group.
+             */
+            fleet_group_id?: string;
+            /** @description Token lifetime in seconds. */
+            ttl_seconds: number;
+        };
+        /**
+         * @description Response to a successful `POST /api/agents/enrollment-tokens`.
+         *     The raw `value` is exposed once at this moment; subsequent
+         *     listings only carry the masked form.
+         */
+        CreateEnrollmentTokenResponse: {
+            /** @description The raw bootstrap token. Returned only at creation. */
+            value: string;
+            panel_url: string;
+            fleet_group_id: string;
+            /** Format: int64 */
+            issued_at_unix: number;
+            /** Format: int64 */
+            expires_at_unix: number;
+            /** @description PEM-encoded panel CA certificate. */
+            ca_pem: string;
+        };
+        RenameAgentRequest: {
+            node_name: string;
+        };
+        UpdateAgentFleetGroupRequest: {
+            /** @description Target fleet-group UUID. Must already exist. */
+            fleet_group_id: string;
+        };
+        UpdateAgentTransportModeRequest: {
+            /** @enum {string} */
+            transport_mode: "inbound" | "outbound";
+            /** @description Public host:port the panel dials (required for outbound). */
+            dial_address?: string;
+            /**
+             * @description Agent-side bind spec. Optional — defaults to `:<port>`
+             *     derived from `dial_address` when omitted.
+             */
+            listen_address?: string;
+        };
+        DispatchAgentUpdateRequest: {
+            /** @description Target agent binary version. */
+            version: string;
+        };
+        DispatchAgentUpdateResponse: {
+            job_id: string;
+            /** @example dispatched */
+            status: string;
+            version: string;
+        };
+        /**
+         * @description Pre-baked `curl ... | sudo bash -s -- ...` one-liner the
+         *     operator runs on the host to install or re-bootstrap a
+         *     reverse-mode agent.
+         */
+        InstallCommandResponse: {
+            command: string;
+            /** Format: int64 */
+            expires_at_unix: number;
+        };
+        CreateCertificateRecoveryGrantRequest: {
+            /**
+             * @description Grant lifetime in seconds. Zero or omitted yields the
+             *     server's default TTL (15m, capped at 1h).
+             */
+            ttl_seconds?: number;
+        };
     };
-    responses: never;
+    responses: {
+        /** @description Validation error. */
+        BadRequest: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Caller is not authenticated. */
+        Unauthorized: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Caller is authenticated but lacks the required role/scope. */
+        Forbidden: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Requested resource does not exist or is out-of-scope. */
+        NotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+    };
     parameters: never;
     requestBodies: never;
     headers: never;
@@ -126,15 +737,335 @@ export interface operations {
                     "application/json": components["schemas"]["VersionResponse"];
                 };
             };
-            /** @description Unauthenticated. */
-            401: {
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    listAgents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent inventory. */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"];
+                    "application/json": components["schemas"]["AgentList"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    listEnrollmentTokens: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Token list. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollmentTokenList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createEnrollmentToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateEnrollmentTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description Token created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateEnrollmentTokenResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    revokeEnrollmentToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Either the raw token value or the stable handle (SHA-256
+                 *     prefix) returned in the listing payload. Both forms resolve
+                 *     to the same persistent record.
+                 */
+                value: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Token revoked (or already revoked). */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deregisterAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent UUID. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent deregistered. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    renameAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent UUID. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameAgentRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated agent record. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Agent"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateAgentFleetGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAgentFleetGroupRequest"];
+            };
+        };
+        responses: {
+            /** @description Agent reassigned (or no-op). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Agent"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    dispatchAgentUpdate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DispatchAgentUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Update job dispatched. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DispatchAgentUpdateResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateAgentTransportMode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAgentTransportModeRequest"];
+            };
+        };
+        responses: {
+            /** @description Mode updated and job dispatched. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createAgentInstallCommand: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Install command issued. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstallCommandResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description Install-command endpoint not configured. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+        };
+    };
+    createAgentCertificateRecoveryGrant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCertificateRecoveryGrantRequest"];
+            };
+        };
+        responses: {
+            /** @description Grant created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentCertificateRecoveryGrant"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    revokeAgentCertificateRecoveryGrant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Grant revoked. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentCertificateRecoveryGrant"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
 }

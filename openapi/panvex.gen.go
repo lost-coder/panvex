@@ -18,11 +18,265 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/go-chi/chi/v5"
+	"github.com/oapi-codegen/runtime"
 )
 
 const (
 	SessionCookieScopes sessionCookieContextKey = "sessionCookie.Scopes"
 )
+
+// Defines values for AgentCertificateRecoveryGrantStatus.
+const (
+	AgentCertificateRecoveryGrantStatusAllowed AgentCertificateRecoveryGrantStatus = "allowed"
+	AgentCertificateRecoveryGrantStatusExpired AgentCertificateRecoveryGrantStatus = "expired"
+	AgentCertificateRecoveryGrantStatusRevoked AgentCertificateRecoveryGrantStatus = "revoked"
+	AgentCertificateRecoveryGrantStatusUsed    AgentCertificateRecoveryGrantStatus = "used"
+)
+
+// Valid indicates whether the value is a known member of the AgentCertificateRecoveryGrantStatus enum.
+func (e AgentCertificateRecoveryGrantStatus) Valid() bool {
+	switch e {
+	case AgentCertificateRecoveryGrantStatusAllowed:
+		return true
+	case AgentCertificateRecoveryGrantStatusExpired:
+		return true
+	case AgentCertificateRecoveryGrantStatusRevoked:
+		return true
+	case AgentCertificateRecoveryGrantStatusUsed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EnrollmentTokenListItemStatus.
+const (
+	EnrollmentTokenListItemStatusActive   EnrollmentTokenListItemStatus = "active"
+	EnrollmentTokenListItemStatusConsumed EnrollmentTokenListItemStatus = "consumed"
+	EnrollmentTokenListItemStatusExpired  EnrollmentTokenListItemStatus = "expired"
+	EnrollmentTokenListItemStatusRevoked  EnrollmentTokenListItemStatus = "revoked"
+)
+
+// Valid indicates whether the value is a known member of the EnrollmentTokenListItemStatus enum.
+func (e EnrollmentTokenListItemStatus) Valid() bool {
+	switch e {
+	case EnrollmentTokenListItemStatusActive:
+		return true
+	case EnrollmentTokenListItemStatusConsumed:
+		return true
+	case EnrollmentTokenListItemStatusExpired:
+		return true
+	case EnrollmentTokenListItemStatusRevoked:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for UpdateAgentTransportModeRequestTransportMode.
+const (
+	Inbound  UpdateAgentTransportModeRequestTransportMode = "inbound"
+	Outbound UpdateAgentTransportModeRequestTransportMode = "outbound"
+)
+
+// Valid indicates whether the value is a known member of the UpdateAgentTransportModeRequestTransportMode enum.
+func (e UpdateAgentTransportModeRequestTransportMode) Valid() bool {
+	switch e {
+	case Inbound:
+		return true
+	case Outbound:
+		return true
+	default:
+		return false
+	}
+}
+
+// Agent Control-plane snapshot of one enrolled agent. Mirrors the Go
+// `server.Agent` struct (`internal/controlplane/server/types.go`).
+type Agent struct {
+	// CertExpiresAt Expiry timestamp of the agent's current certificate.
+	CertExpiresAt *time.Time `json:"cert_expires_at,omitempty"`
+
+	// CertIssuedAt Issuance timestamp of the agent's current certificate.
+	CertIssuedAt *time.Time `json:"cert_issued_at,omitempty"`
+
+	// CertificateRecovery Optional snapshot of any active certificate-recovery grant
+	// for the agent. Absent when no grant has been issued.
+	CertificateRecovery *AgentCertificateRecoveryGrant `json:"certificate_recovery,omitempty"`
+
+	// FleetGroupId UUID of the fleet group the agent belongs to.
+	FleetGroupId string `json:"fleet_group_id"`
+
+	// Id Agent UUID.
+	Id string `json:"id"`
+
+	// LastSeenAt Last successful heartbeat timestamp.
+	LastSeenAt time.Time `json:"last_seen_at"`
+
+	// NodeName Operator-facing display name.
+	NodeName string `json:"node_name"`
+
+	// PresenceState Live presence evaluation — `online`, `flapping`, `offline`, etc.
+	// Computed at request time from session + heartbeat data.
+	PresenceState string `json:"presence_state"`
+
+	// ReadOnly True when the agent serves read-only Telemt instances.
+	ReadOnly bool `json:"read_only"`
+
+	// Runtime Telemt operator overview reported by the agent. The set of
+	// fields is defensive on the Zod side because backends can ship
+	// new counters without an immediate web release; on the spec
+	// side we list every field the panel currently consumes.
+	Runtime AgentRuntime `json:"runtime"`
+
+	// Version Agent binary semver as last reported.
+	Version string `json:"version"`
+}
+
+// AgentCertificateRecoveryGrant Lifecycle snapshot of a single recovery grant.
+type AgentCertificateRecoveryGrant struct {
+	AgentId       string                              `json:"agent_id"`
+	ExpiresAtUnix int64                               `json:"expires_at_unix"`
+	IssuedAtUnix  int64                               `json:"issued_at_unix"`
+	RevokedAtUnix *int64                              `json:"revoked_at_unix,omitempty"`
+	Status        AgentCertificateRecoveryGrantStatus `json:"status"`
+	UsedAtUnix    *int64                              `json:"used_at_unix,omitempty"`
+}
+
+// AgentCertificateRecoveryGrantStatus defines model for AgentCertificateRecoveryGrant.Status.
+type AgentCertificateRecoveryGrantStatus string
+
+// AgentList List response from `GET /api/agents`.
+type AgentList = []Agent
+
+// AgentRuntime Telemt operator overview reported by the agent. The set of
+// fields is defensive on the Zod side because backends can ship
+// new counters without an immediate web release; on the spec
+// side we list every field the panel currently consumes.
+type AgentRuntime struct {
+	AcceptingNewConnections  bool        `json:"accepting_new_connections"`
+	ActiveUsers              int         `json:"active_users"`
+	ConfiguredUsers          int         `json:"configured_users"`
+	ConnectAttemptTotal      int64       `json:"connect_attempt_total"`
+	ConnectFailTotal         int64       `json:"connect_fail_total"`
+	ConnectFailfastTotal     int64       `json:"connect_failfast_total"`
+	ConnectSuccessTotal      int64       `json:"connect_success_total"`
+	ConnectionsBadTotal      int64       `json:"connections_bad_total"`
+	ConnectionsTotal         int64       `json:"connections_total"`
+	CurrentConnections       int         `json:"current_connections"`
+	CurrentConnectionsDirect int         `json:"current_connections_direct"`
+	CurrentConnectionsMe     int         `json:"current_connections_me"`
+	DcCoveragePct            float64     `json:"dc_coverage_pct"`
+	Dcs                      []RuntimeDC `json:"dcs"`
+	Degraded                 bool        `json:"degraded"`
+	FailRateKnown            bool        `json:"fail_rate_known"`
+
+	// FailRatePct5m 5-minute upstream connect fail-rate. Read together with
+	// `fail_rate_known`: `false` means "unknown", not "0%".
+	FailRatePct5m float64 `json:"fail_rate_pct_5m"`
+
+	// FallbackEnteredAtUnix Unix timestamp the panel observed this agent enter
+	// ME→DC fallback. Absent when not in fallback.
+	FallbackEnteredAtUnix      *int64                     `json:"fallback_entered_at_unix,omitempty"`
+	HandshakeTimeoutsTotal     int64                      `json:"handshake_timeouts_total"`
+	HealthyUpstreams           int                        `json:"healthy_upstreams"`
+	InitializationProgressPct  float64                    `json:"initialization_progress_pct"`
+	InitializationStage        string                     `json:"initialization_stage"`
+	InitializationStatus       string                     `json:"initialization_status"`
+	LifecycleState             *string                    `json:"lifecycle_state,omitempty"`
+	Me2dcFallbackEnabled       bool                       `json:"me2dc_fallback_enabled"`
+	Me2dcFastEnabled           *bool                      `json:"me2dc_fast_enabled,omitempty"`
+	MeRuntimeReady             bool                       `json:"me_runtime_ready"`
+	MeWritersSummary           *RuntimeMeWritersSummary   `json:"me_writers_summary,omitempty"`
+	RecentEvents               []RuntimeEvent             `json:"recent_events"`
+	RerouteActive              *bool                      `json:"reroute_active,omitempty"`
+	RouteMode                  *string                    `json:"route_mode,omitempty"`
+	StaleCacheUsed             *bool                      `json:"stale_cache_used,omitempty"`
+	StartupProgressPct         float64                    `json:"startup_progress_pct"`
+	StartupStage               string                     `json:"startup_stage"`
+	StartupStatus              string                     `json:"startup_status"`
+	SystemLoad                 RuntimeSystemLoad          `json:"system_load"`
+	TelemtReachable            bool                       `json:"telemt_reachable"`
+	TelemtUnreachableSinceUnix int64                      `json:"telemt_unreachable_since_unix"`
+	TopByConnections           *[]RuntimeTopByConnections `json:"top_by_connections,omitempty"`
+	TopByThroughput            *[]RuntimeTopByThroughput  `json:"top_by_throughput,omitempty"`
+	TotalUpstreams             int                        `json:"total_upstreams"`
+	TransportMode              string                     `json:"transport_mode"`
+	UpdatedAt                  time.Time                  `json:"updated_at"`
+	Upstreams                  []RuntimeUpstream          `json:"upstreams"`
+	UptimeSeconds              float64                    `json:"uptime_seconds"`
+	UseMiddleProxy             bool                       `json:"use_middle_proxy"`
+}
+
+// CreateCertificateRecoveryGrantRequest defines model for CreateCertificateRecoveryGrantRequest.
+type CreateCertificateRecoveryGrantRequest struct {
+	// TtlSeconds Grant lifetime in seconds. Zero or omitted yields the
+	// server's default TTL (15m, capped at 1h).
+	TtlSeconds *int `json:"ttl_seconds,omitempty"`
+}
+
+// CreateEnrollmentTokenRequest defines model for CreateEnrollmentTokenRequest.
+type CreateEnrollmentTokenRequest struct {
+	// FleetGroupId Either the canonical UUID or the friendly slug; empty
+	// string falls back to the default fleet group.
+	FleetGroupId *string `json:"fleet_group_id,omitempty"`
+
+	// TtlSeconds Token lifetime in seconds.
+	TtlSeconds int `json:"ttl_seconds"`
+}
+
+// CreateEnrollmentTokenResponse Response to a successful `POST /api/agents/enrollment-tokens`.
+// The raw `value` is exposed once at this moment; subsequent
+// listings only carry the masked form.
+type CreateEnrollmentTokenResponse struct {
+	// CaPem PEM-encoded panel CA certificate.
+	CaPem         string `json:"ca_pem"`
+	ExpiresAtUnix int64  `json:"expires_at_unix"`
+	FleetGroupId  string `json:"fleet_group_id"`
+	IssuedAtUnix  int64  `json:"issued_at_unix"`
+	PanelUrl      string `json:"panel_url"`
+
+	// Value The raw bootstrap token. Returned only at creation.
+	Value string `json:"value"`
+}
+
+// DispatchAgentUpdateRequest defines model for DispatchAgentUpdateRequest.
+type DispatchAgentUpdateRequest struct {
+	// Version Target agent binary version.
+	Version string `json:"version"`
+}
+
+// DispatchAgentUpdateResponse defines model for DispatchAgentUpdateResponse.
+type DispatchAgentUpdateResponse struct {
+	JobId   string `json:"job_id"`
+	Status  string `json:"status"`
+	Version string `json:"version"`
+}
+
+// EnrollmentTokenList defines model for EnrollmentTokenList.
+type EnrollmentTokenList = []EnrollmentTokenListItem
+
+// EnrollmentTokenListItem Listing-safe view of an enrollment token. The raw `value` is
+// intentionally absent — only the creation response surfaces
+// the bearer secret. Use `handle` (SHA-256 prefix) to revoke.
+type EnrollmentTokenListItem struct {
+	ConsumedAtUnix *int64 `json:"consumed_at_unix,omitempty"`
+	ExpiresAtUnix  int64  `json:"expires_at_unix"`
+	FleetGroupId   string `json:"fleet_group_id"`
+
+	// Handle SHA-256 prefix of the raw value, hex-encoded.
+	Handle       *string `json:"handle,omitempty"`
+	IssuedAtUnix int64   `json:"issued_at_unix"`
+
+	// MaskedValue Truncated form of the raw value, ellipsis-suffixed.
+	MaskedValue   *string                       `json:"masked_value,omitempty"`
+	PanelUrl      string                        `json:"panel_url"`
+	RevokedAtUnix *int64                        `json:"revoked_at_unix,omitempty"`
+	Status        EnrollmentTokenListItemStatus `json:"status"`
+}
+
+// EnrollmentTokenListItemStatus defines model for EnrollmentTokenListItem.Status.
+type EnrollmentTokenListItemStatus string
 
 // Error Standard error envelope used by every 4xx / 5xx response.
 type Error struct {
@@ -36,6 +290,113 @@ type Error struct {
 	Message *string `json:"message,omitempty"`
 }
 
+// InstallCommandResponse Pre-baked `curl ... | sudo bash -s -- ...` one-liner the
+// operator runs on the host to install or re-bootstrap a
+// reverse-mode agent.
+type InstallCommandResponse struct {
+	Command       string `json:"command"`
+	ExpiresAtUnix int64  `json:"expires_at_unix"`
+}
+
+// RenameAgentRequest defines model for RenameAgentRequest.
+type RenameAgentRequest struct {
+	NodeName string `json:"node_name"`
+}
+
+// RuntimeDC defines model for RuntimeDC.
+type RuntimeDC struct {
+	AliveWriters       int     `json:"alive_writers"`
+	AvailableEndpoints int     `json:"available_endpoints"`
+	AvailablePct       float64 `json:"available_pct"`
+	CoveragePct        float64 `json:"coverage_pct"`
+	Dc                 int     `json:"dc"`
+	FreshAliveWriters  int     `json:"fresh_alive_writers"`
+	FreshCoveragePct   float64 `json:"fresh_coverage_pct"`
+	Load               int     `json:"load"`
+	RequiredWriters    int     `json:"required_writers"`
+	RttMs              float64 `json:"rtt_ms"`
+}
+
+// RuntimeEvent defines model for RuntimeEvent.
+type RuntimeEvent struct {
+	Context       string `json:"context"`
+	EventType     string `json:"event_type"`
+	Sequence      int64  `json:"sequence"`
+	TimestampUnix int64  `json:"timestamp_unix"`
+}
+
+// RuntimeMeWritersSummary defines model for RuntimeMeWritersSummary.
+type RuntimeMeWritersSummary struct {
+	AliveWriters        int     `json:"alive_writers"`
+	AvailableEndpoints  int     `json:"available_endpoints"`
+	ConfiguredEndpoints int     `json:"configured_endpoints"`
+	CoveragePct         float64 `json:"coverage_pct"`
+	FreshAliveWriters   int     `json:"fresh_alive_writers"`
+	FreshCoveragePct    float64 `json:"fresh_coverage_pct"`
+	RequiredWriters     int     `json:"required_writers"`
+}
+
+// RuntimeSystemLoad defines model for RuntimeSystemLoad.
+type RuntimeSystemLoad struct {
+	CpuUsagePct      float64 `json:"cpu_usage_pct"`
+	DiskTotalBytes   int64   `json:"disk_total_bytes"`
+	DiskUsagePct     float64 `json:"disk_usage_pct"`
+	DiskUsedBytes    int64   `json:"disk_used_bytes"`
+	Load15m          float64 `json:"load_15m"`
+	Load1m           float64 `json:"load_1m"`
+	Load5m           float64 `json:"load_5m"`
+	MemoryTotalBytes int64   `json:"memory_total_bytes"`
+	MemoryUsagePct   float64 `json:"memory_usage_pct"`
+	MemoryUsedBytes  int64   `json:"memory_used_bytes"`
+	NetBytesRecv     int64   `json:"net_bytes_recv"`
+	NetBytesSent     int64   `json:"net_bytes_sent"`
+}
+
+// RuntimeTopByConnections defines model for RuntimeTopByConnections.
+type RuntimeTopByConnections struct {
+	Connections int    `json:"connections"`
+	Username    string `json:"username"`
+}
+
+// RuntimeTopByThroughput defines model for RuntimeTopByThroughput.
+type RuntimeTopByThroughput struct {
+	ThroughputBytes int64  `json:"throughput_bytes"`
+	Username        string `json:"username"`
+}
+
+// RuntimeUpstream defines model for RuntimeUpstream.
+type RuntimeUpstream struct {
+	Address            string    `json:"address"`
+	EffectiveLatencyMs float64   `json:"effective_latency_ms"`
+	Fails              int       `json:"fails"`
+	Healthy            bool      `json:"healthy"`
+	LastCheckAgeSecs   int       `json:"last_check_age_secs"`
+	RouteKind          string    `json:"route_kind"`
+	Scopes             *[]string `json:"scopes,omitempty"`
+	UpstreamId         int       `json:"upstream_id"`
+	Weight             int       `json:"weight"`
+}
+
+// UpdateAgentFleetGroupRequest defines model for UpdateAgentFleetGroupRequest.
+type UpdateAgentFleetGroupRequest struct {
+	// FleetGroupId Target fleet-group UUID. Must already exist.
+	FleetGroupId string `json:"fleet_group_id"`
+}
+
+// UpdateAgentTransportModeRequest defines model for UpdateAgentTransportModeRequest.
+type UpdateAgentTransportModeRequest struct {
+	// DialAddress Public host:port the panel dials (required for outbound).
+	DialAddress *string `json:"dial_address,omitempty"`
+
+	// ListenAddress Agent-side bind spec. Optional — defaults to `:<port>`
+	// derived from `dial_address` when omitted.
+	ListenAddress *string                                      `json:"listen_address,omitempty"`
+	TransportMode UpdateAgentTransportModeRequestTransportMode `json:"transport_mode"`
+}
+
+// UpdateAgentTransportModeRequestTransportMode defines model for UpdateAgentTransportModeRequest.TransportMode.
+type UpdateAgentTransportModeRequestTransportMode string
+
 // VersionResponse Build metadata for the running control-plane process.
 type VersionResponse struct {
 	// BuildTime RFC3339 build timestamp. Operator+ only.
@@ -48,11 +409,77 @@ type VersionResponse struct {
 	Version string `json:"version"`
 }
 
+// BadRequest Standard error envelope used by every 4xx / 5xx response.
+type BadRequest = Error
+
+// Forbidden Standard error envelope used by every 4xx / 5xx response.
+type Forbidden = Error
+
+// NotFound Standard error envelope used by every 4xx / 5xx response.
+type NotFound = Error
+
+// Unauthorized Standard error envelope used by every 4xx / 5xx response.
+type Unauthorized = Error
+
 // sessionCookieContextKey is the context key for sessionCookie security scheme
 type sessionCookieContextKey string
 
+// CreateEnrollmentTokenJSONRequestBody defines body for CreateEnrollmentToken for application/json ContentType.
+type CreateEnrollmentTokenJSONRequestBody = CreateEnrollmentTokenRequest
+
+// RenameAgentJSONRequestBody defines body for RenameAgent for application/json ContentType.
+type RenameAgentJSONRequestBody = RenameAgentRequest
+
+// CreateAgentCertificateRecoveryGrantJSONRequestBody defines body for CreateAgentCertificateRecoveryGrant for application/json ContentType.
+type CreateAgentCertificateRecoveryGrantJSONRequestBody = CreateCertificateRecoveryGrantRequest
+
+// UpdateAgentFleetGroupJSONRequestBody defines body for UpdateAgentFleetGroup for application/json ContentType.
+type UpdateAgentFleetGroupJSONRequestBody = UpdateAgentFleetGroupRequest
+
+// UpdateAgentTransportModeJSONRequestBody defines body for UpdateAgentTransportMode for application/json ContentType.
+type UpdateAgentTransportModeJSONRequestBody = UpdateAgentTransportModeRequest
+
+// DispatchAgentUpdateJSONRequestBody defines body for DispatchAgentUpdate for application/json ContentType.
+type DispatchAgentUpdateJSONRequestBody = DispatchAgentUpdateRequest
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// List enrolled agents in operator's fleet scope
+	// (GET /api/agents)
+	ListAgents(w http.ResponseWriter, r *http.Request)
+	// List enrollment tokens visible to the operator
+	// (GET /api/agents/enrollment-tokens)
+	ListEnrollmentTokens(w http.ResponseWriter, r *http.Request)
+	// Mint a new enrollment token
+	// (POST /api/agents/enrollment-tokens)
+	CreateEnrollmentToken(w http.ResponseWriter, r *http.Request)
+	// Revoke an enrollment token
+	// (POST /api/agents/enrollment-tokens/{value}/revoke)
+	RevokeEnrollmentToken(w http.ResponseWriter, r *http.Request, value string)
+	// Deregister an agent
+	// (DELETE /api/agents/{id})
+	DeregisterAgent(w http.ResponseWriter, r *http.Request, id string)
+	// Rename an agent's display node-name
+	// (PATCH /api/agents/{id})
+	RenameAgent(w http.ResponseWriter, r *http.Request, id string)
+	// Allow an agent to recover an expired certificate
+	// (POST /api/agents/{id}/certificate-recovery-grants)
+	CreateAgentCertificateRecoveryGrant(w http.ResponseWriter, r *http.Request, id string)
+	// Revoke a previously-issued recovery grant
+	// (POST /api/agents/{id}/certificate-recovery-grants/revoke)
+	RevokeAgentCertificateRecoveryGrant(w http.ResponseWriter, r *http.Request, id string)
+	// Reassign an agent to a different fleet group
+	// (PUT /api/agents/{id}/fleet-group)
+	UpdateAgentFleetGroup(w http.ResponseWriter, r *http.Request, id string)
+	// Generate a one-line installer for an outbound agent
+	// (POST /api/agents/{id}/install-command)
+	CreateAgentInstallCommand(w http.ResponseWriter, r *http.Request, id string)
+	// Switch an agent between inbound and outbound transport
+	// (PUT /api/agents/{id}/transport-mode)
+	UpdateAgentTransportMode(w http.ResponseWriter, r *http.Request, id string)
+	// Enqueue a self-update job for an agent
+	// (POST /api/agents/{id}/update)
+	DispatchAgentUpdate(w http.ResponseWriter, r *http.Request, id string)
 	// Panel build identification
 	// (GET /api/version)
 	GetVersion(w http.ResponseWriter, r *http.Request)
@@ -64,6 +491,78 @@ type ServerInterface interface {
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct{}
+
+// List enrolled agents in operator's fleet scope
+// (GET /api/agents)
+func (_ Unimplemented) ListAgents(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List enrollment tokens visible to the operator
+// (GET /api/agents/enrollment-tokens)
+func (_ Unimplemented) ListEnrollmentTokens(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Mint a new enrollment token
+// (POST /api/agents/enrollment-tokens)
+func (_ Unimplemented) CreateEnrollmentToken(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Revoke an enrollment token
+// (POST /api/agents/enrollment-tokens/{value}/revoke)
+func (_ Unimplemented) RevokeEnrollmentToken(w http.ResponseWriter, r *http.Request, value string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Deregister an agent
+// (DELETE /api/agents/{id})
+func (_ Unimplemented) DeregisterAgent(w http.ResponseWriter, r *http.Request, id string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Rename an agent's display node-name
+// (PATCH /api/agents/{id})
+func (_ Unimplemented) RenameAgent(w http.ResponseWriter, r *http.Request, id string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Allow an agent to recover an expired certificate
+// (POST /api/agents/{id}/certificate-recovery-grants)
+func (_ Unimplemented) CreateAgentCertificateRecoveryGrant(w http.ResponseWriter, r *http.Request, id string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Revoke a previously-issued recovery grant
+// (POST /api/agents/{id}/certificate-recovery-grants/revoke)
+func (_ Unimplemented) RevokeAgentCertificateRecoveryGrant(w http.ResponseWriter, r *http.Request, id string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Reassign an agent to a different fleet group
+// (PUT /api/agents/{id}/fleet-group)
+func (_ Unimplemented) UpdateAgentFleetGroup(w http.ResponseWriter, r *http.Request, id string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Generate a one-line installer for an outbound agent
+// (POST /api/agents/{id}/install-command)
+func (_ Unimplemented) CreateAgentInstallCommand(w http.ResponseWriter, r *http.Request, id string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Switch an agent between inbound and outbound transport
+// (PUT /api/agents/{id}/transport-mode)
+func (_ Unimplemented) UpdateAgentTransportMode(w http.ResponseWriter, r *http.Request, id string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Enqueue a self-update job for an agent
+// (POST /api/agents/{id}/update)
+func (_ Unimplemented) DispatchAgentUpdate(w http.ResponseWriter, r *http.Request, id string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
 
 // Panel build identification
 // (GET /api/version)
@@ -85,6 +584,354 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// ListAgents operation middleware
+func (siw *ServerInterfaceWrapper) ListAgents(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, SessionCookieScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAgents(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListEnrollmentTokens operation middleware
+func (siw *ServerInterfaceWrapper) ListEnrollmentTokens(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, SessionCookieScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListEnrollmentTokens(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateEnrollmentToken operation middleware
+func (siw *ServerInterfaceWrapper) CreateEnrollmentToken(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, SessionCookieScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateEnrollmentToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeEnrollmentToken operation middleware
+func (siw *ServerInterfaceWrapper) RevokeEnrollmentToken(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "value" -------------
+	var value string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "value", chi.URLParam(r, "value"), &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "value", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, SessionCookieScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeEnrollmentToken(w, r, value)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeregisterAgent operation middleware
+func (siw *ServerInterfaceWrapper) DeregisterAgent(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, SessionCookieScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeregisterAgent(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RenameAgent operation middleware
+func (siw *ServerInterfaceWrapper) RenameAgent(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, SessionCookieScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RenameAgent(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateAgentCertificateRecoveryGrant operation middleware
+func (siw *ServerInterfaceWrapper) CreateAgentCertificateRecoveryGrant(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, SessionCookieScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateAgentCertificateRecoveryGrant(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeAgentCertificateRecoveryGrant operation middleware
+func (siw *ServerInterfaceWrapper) RevokeAgentCertificateRecoveryGrant(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, SessionCookieScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeAgentCertificateRecoveryGrant(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateAgentFleetGroup operation middleware
+func (siw *ServerInterfaceWrapper) UpdateAgentFleetGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, SessionCookieScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateAgentFleetGroup(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateAgentInstallCommand operation middleware
+func (siw *ServerInterfaceWrapper) CreateAgentInstallCommand(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, SessionCookieScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateAgentInstallCommand(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateAgentTransportMode operation middleware
+func (siw *ServerInterfaceWrapper) UpdateAgentTransportMode(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, SessionCookieScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateAgentTransportMode(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DispatchAgentUpdate operation middleware
+func (siw *ServerInterfaceWrapper) DispatchAgentUpdate(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, SessionCookieScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DispatchAgentUpdate(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // GetVersion operation middleware
 func (siw *ServerInterfaceWrapper) GetVersion(w http.ResponseWriter, r *http.Request) {
@@ -234,6 +1081,42 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	}
 
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/agents", wrapper.ListAgents)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/agents/enrollment-tokens", wrapper.ListEnrollmentTokens)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/agents/enrollment-tokens", wrapper.CreateEnrollmentToken)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/agents/enrollment-tokens/{value}/revoke", wrapper.RevokeEnrollmentToken)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/agents/{id}", wrapper.DeregisterAgent)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/api/agents/{id}", wrapper.RenameAgent)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/agents/{id}/certificate-recovery-grants", wrapper.CreateAgentCertificateRecoveryGrant)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/agents/{id}/certificate-recovery-grants/revoke", wrapper.RevokeAgentCertificateRecoveryGrant)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/agents/{id}/fleet-group", wrapper.UpdateAgentFleetGroup)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/agents/{id}/install-command", wrapper.CreateAgentInstallCommand)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/agents/{id}/transport-mode", wrapper.UpdateAgentTransportMode)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/agents/{id}/update", wrapper.DispatchAgentUpdate)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/version", wrapper.GetVersion)
 	})
 	r.Group(func(r chi.Router) {
@@ -241,6 +1124,778 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 
 	return r
+}
+
+type BadRequestJSONResponse Error
+
+type ForbiddenJSONResponse Error
+
+type NotFoundJSONResponse Error
+
+type UnauthorizedJSONResponse Error
+
+type ListAgentsRequestObject struct {
+}
+
+type ListAgentsResponseObject interface {
+	VisitListAgentsResponse(w http.ResponseWriter) error
+}
+
+type ListAgents200JSONResponse AgentList
+
+func (response ListAgents200JSONResponse) VisitListAgentsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAgents401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListAgents401JSONResponse) VisitListAgentsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAgents403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListAgents403JSONResponse) VisitListAgentsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListEnrollmentTokensRequestObject struct {
+}
+
+type ListEnrollmentTokensResponseObject interface {
+	VisitListEnrollmentTokensResponse(w http.ResponseWriter) error
+}
+
+type ListEnrollmentTokens200JSONResponse EnrollmentTokenList
+
+func (response ListEnrollmentTokens200JSONResponse) VisitListEnrollmentTokensResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListEnrollmentTokens401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListEnrollmentTokens401JSONResponse) VisitListEnrollmentTokensResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListEnrollmentTokens403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListEnrollmentTokens403JSONResponse) VisitListEnrollmentTokensResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateEnrollmentTokenRequestObject struct {
+	Body *CreateEnrollmentTokenJSONRequestBody
+}
+
+type CreateEnrollmentTokenResponseObject interface {
+	VisitCreateEnrollmentTokenResponse(w http.ResponseWriter) error
+}
+
+type CreateEnrollmentToken201JSONResponse CreateEnrollmentTokenResponse
+
+func (response CreateEnrollmentToken201JSONResponse) VisitCreateEnrollmentTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateEnrollmentToken400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreateEnrollmentToken400JSONResponse) VisitCreateEnrollmentTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateEnrollmentToken401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateEnrollmentToken401JSONResponse) VisitCreateEnrollmentTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateEnrollmentToken403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateEnrollmentToken403JSONResponse) VisitCreateEnrollmentTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeEnrollmentTokenRequestObject struct {
+	Value string `json:"value"`
+}
+
+type RevokeEnrollmentTokenResponseObject interface {
+	VisitRevokeEnrollmentTokenResponse(w http.ResponseWriter) error
+}
+
+type RevokeEnrollmentToken204Response struct {
+}
+
+func (response RevokeEnrollmentToken204Response) VisitRevokeEnrollmentTokenResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RevokeEnrollmentToken401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response RevokeEnrollmentToken401JSONResponse) VisitRevokeEnrollmentTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeEnrollmentToken403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RevokeEnrollmentToken403JSONResponse) VisitRevokeEnrollmentTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeEnrollmentToken404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RevokeEnrollmentToken404JSONResponse) VisitRevokeEnrollmentTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeregisterAgentRequestObject struct {
+	Id string `json:"id"`
+}
+
+type DeregisterAgentResponseObject interface {
+	VisitDeregisterAgentResponse(w http.ResponseWriter) error
+}
+
+type DeregisterAgent204Response struct {
+}
+
+func (response DeregisterAgent204Response) VisitDeregisterAgentResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeregisterAgent401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeregisterAgent401JSONResponse) VisitDeregisterAgentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeregisterAgent403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeregisterAgent403JSONResponse) VisitDeregisterAgentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeregisterAgent404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeregisterAgent404JSONResponse) VisitDeregisterAgentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RenameAgentRequestObject struct {
+	Id   string `json:"id"`
+	Body *RenameAgentJSONRequestBody
+}
+
+type RenameAgentResponseObject interface {
+	VisitRenameAgentResponse(w http.ResponseWriter) error
+}
+
+type RenameAgent200JSONResponse Agent
+
+func (response RenameAgent200JSONResponse) VisitRenameAgentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RenameAgent400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response RenameAgent400JSONResponse) VisitRenameAgentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RenameAgent401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response RenameAgent401JSONResponse) VisitRenameAgentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RenameAgent404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RenameAgent404JSONResponse) VisitRenameAgentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAgentCertificateRecoveryGrantRequestObject struct {
+	Id   string `json:"id"`
+	Body *CreateAgentCertificateRecoveryGrantJSONRequestBody
+}
+
+type CreateAgentCertificateRecoveryGrantResponseObject interface {
+	VisitCreateAgentCertificateRecoveryGrantResponse(w http.ResponseWriter) error
+}
+
+type CreateAgentCertificateRecoveryGrant201JSONResponse AgentCertificateRecoveryGrant
+
+func (response CreateAgentCertificateRecoveryGrant201JSONResponse) VisitCreateAgentCertificateRecoveryGrantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAgentCertificateRecoveryGrant400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreateAgentCertificateRecoveryGrant400JSONResponse) VisitCreateAgentCertificateRecoveryGrantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAgentCertificateRecoveryGrant401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateAgentCertificateRecoveryGrant401JSONResponse) VisitCreateAgentCertificateRecoveryGrantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAgentCertificateRecoveryGrant403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateAgentCertificateRecoveryGrant403JSONResponse) VisitCreateAgentCertificateRecoveryGrantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAgentCertificateRecoveryGrant404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response CreateAgentCertificateRecoveryGrant404JSONResponse) VisitCreateAgentCertificateRecoveryGrantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeAgentCertificateRecoveryGrantRequestObject struct {
+	Id string `json:"id"`
+}
+
+type RevokeAgentCertificateRecoveryGrantResponseObject interface {
+	VisitRevokeAgentCertificateRecoveryGrantResponse(w http.ResponseWriter) error
+}
+
+type RevokeAgentCertificateRecoveryGrant200JSONResponse AgentCertificateRecoveryGrant
+
+func (response RevokeAgentCertificateRecoveryGrant200JSONResponse) VisitRevokeAgentCertificateRecoveryGrantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeAgentCertificateRecoveryGrant401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response RevokeAgentCertificateRecoveryGrant401JSONResponse) VisitRevokeAgentCertificateRecoveryGrantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeAgentCertificateRecoveryGrant403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RevokeAgentCertificateRecoveryGrant403JSONResponse) VisitRevokeAgentCertificateRecoveryGrantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeAgentCertificateRecoveryGrant404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RevokeAgentCertificateRecoveryGrant404JSONResponse) VisitRevokeAgentCertificateRecoveryGrantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAgentFleetGroupRequestObject struct {
+	Id   string `json:"id"`
+	Body *UpdateAgentFleetGroupJSONRequestBody
+}
+
+type UpdateAgentFleetGroupResponseObject interface {
+	VisitUpdateAgentFleetGroupResponse(w http.ResponseWriter) error
+}
+
+type UpdateAgentFleetGroup200JSONResponse Agent
+
+func (response UpdateAgentFleetGroup200JSONResponse) VisitUpdateAgentFleetGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAgentFleetGroup400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response UpdateAgentFleetGroup400JSONResponse) VisitUpdateAgentFleetGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAgentFleetGroup401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response UpdateAgentFleetGroup401JSONResponse) VisitUpdateAgentFleetGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAgentFleetGroup403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateAgentFleetGroup403JSONResponse) VisitUpdateAgentFleetGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAgentFleetGroup404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateAgentFleetGroup404JSONResponse) VisitUpdateAgentFleetGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAgentInstallCommandRequestObject struct {
+	Id string `json:"id"`
+}
+
+type CreateAgentInstallCommandResponseObject interface {
+	VisitCreateAgentInstallCommandResponse(w http.ResponseWriter) error
+}
+
+type CreateAgentInstallCommand200JSONResponse InstallCommandResponse
+
+func (response CreateAgentInstallCommand200JSONResponse) VisitCreateAgentInstallCommandResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAgentInstallCommand400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreateAgentInstallCommand400JSONResponse) VisitCreateAgentInstallCommandResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAgentInstallCommand401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateAgentInstallCommand401JSONResponse) VisitCreateAgentInstallCommandResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAgentInstallCommand404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response CreateAgentInstallCommand404JSONResponse) VisitCreateAgentInstallCommandResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAgentInstallCommand503TextResponse string
+
+func (response CreateAgentInstallCommand503TextResponse) VisitCreateAgentInstallCommandResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(503)
+
+	_, err := w.Write([]byte(response))
+	return err
+}
+
+type UpdateAgentTransportModeRequestObject struct {
+	Id   string `json:"id"`
+	Body *UpdateAgentTransportModeJSONRequestBody
+}
+
+type UpdateAgentTransportModeResponseObject interface {
+	VisitUpdateAgentTransportModeResponse(w http.ResponseWriter) error
+}
+
+type UpdateAgentTransportMode204Response struct {
+}
+
+func (response UpdateAgentTransportMode204Response) VisitUpdateAgentTransportModeResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type UpdateAgentTransportMode400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response UpdateAgentTransportMode400JSONResponse) VisitUpdateAgentTransportModeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAgentTransportMode401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response UpdateAgentTransportMode401JSONResponse) VisitUpdateAgentTransportModeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAgentTransportMode404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateAgentTransportMode404JSONResponse) VisitUpdateAgentTransportModeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DispatchAgentUpdateRequestObject struct {
+	Id   string `json:"id"`
+	Body *DispatchAgentUpdateJSONRequestBody
+}
+
+type DispatchAgentUpdateResponseObject interface {
+	VisitDispatchAgentUpdateResponse(w http.ResponseWriter) error
+}
+
+type DispatchAgentUpdate200JSONResponse DispatchAgentUpdateResponse
+
+func (response DispatchAgentUpdate200JSONResponse) VisitDispatchAgentUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DispatchAgentUpdate400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response DispatchAgentUpdate400JSONResponse) VisitDispatchAgentUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DispatchAgentUpdate401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DispatchAgentUpdate401JSONResponse) VisitDispatchAgentUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DispatchAgentUpdate404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DispatchAgentUpdate404JSONResponse) VisitDispatchAgentUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
 }
 
 type GetVersionRequestObject struct {
@@ -264,7 +1919,7 @@ func (response GetVersion200JSONResponse) VisitGetVersionResponse(w http.Respons
 	return err
 }
 
-type GetVersion401JSONResponse Error
+type GetVersion401JSONResponse struct{ UnauthorizedJSONResponse }
 
 func (response GetVersion401JSONResponse) VisitGetVersionResponse(w http.ResponseWriter) error {
 
@@ -298,6 +1953,42 @@ func (response GetHealthz200TextResponse) VisitGetHealthzResponse(w http.Respons
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// List enrolled agents in operator's fleet scope
+	// (GET /api/agents)
+	ListAgents(ctx context.Context, request ListAgentsRequestObject) (ListAgentsResponseObject, error)
+	// List enrollment tokens visible to the operator
+	// (GET /api/agents/enrollment-tokens)
+	ListEnrollmentTokens(ctx context.Context, request ListEnrollmentTokensRequestObject) (ListEnrollmentTokensResponseObject, error)
+	// Mint a new enrollment token
+	// (POST /api/agents/enrollment-tokens)
+	CreateEnrollmentToken(ctx context.Context, request CreateEnrollmentTokenRequestObject) (CreateEnrollmentTokenResponseObject, error)
+	// Revoke an enrollment token
+	// (POST /api/agents/enrollment-tokens/{value}/revoke)
+	RevokeEnrollmentToken(ctx context.Context, request RevokeEnrollmentTokenRequestObject) (RevokeEnrollmentTokenResponseObject, error)
+	// Deregister an agent
+	// (DELETE /api/agents/{id})
+	DeregisterAgent(ctx context.Context, request DeregisterAgentRequestObject) (DeregisterAgentResponseObject, error)
+	// Rename an agent's display node-name
+	// (PATCH /api/agents/{id})
+	RenameAgent(ctx context.Context, request RenameAgentRequestObject) (RenameAgentResponseObject, error)
+	// Allow an agent to recover an expired certificate
+	// (POST /api/agents/{id}/certificate-recovery-grants)
+	CreateAgentCertificateRecoveryGrant(ctx context.Context, request CreateAgentCertificateRecoveryGrantRequestObject) (CreateAgentCertificateRecoveryGrantResponseObject, error)
+	// Revoke a previously-issued recovery grant
+	// (POST /api/agents/{id}/certificate-recovery-grants/revoke)
+	RevokeAgentCertificateRecoveryGrant(ctx context.Context, request RevokeAgentCertificateRecoveryGrantRequestObject) (RevokeAgentCertificateRecoveryGrantResponseObject, error)
+	// Reassign an agent to a different fleet group
+	// (PUT /api/agents/{id}/fleet-group)
+	UpdateAgentFleetGroup(ctx context.Context, request UpdateAgentFleetGroupRequestObject) (UpdateAgentFleetGroupResponseObject, error)
+	// Generate a one-line installer for an outbound agent
+	// (POST /api/agents/{id}/install-command)
+	CreateAgentInstallCommand(ctx context.Context, request CreateAgentInstallCommandRequestObject) (CreateAgentInstallCommandResponseObject, error)
+	// Switch an agent between inbound and outbound transport
+	// (PUT /api/agents/{id}/transport-mode)
+	UpdateAgentTransportMode(ctx context.Context, request UpdateAgentTransportModeRequestObject) (UpdateAgentTransportModeResponseObject, error)
+	// Enqueue a self-update job for an agent
+	// (POST /api/agents/{id}/update)
+	DispatchAgentUpdate(ctx context.Context, request DispatchAgentUpdateRequestObject) (DispatchAgentUpdateResponseObject, error)
 	// Panel build identification
 	// (GET /api/version)
 	GetVersion(ctx context.Context, request GetVersionRequestObject) (GetVersionResponseObject, error)
@@ -333,6 +2024,354 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// ListAgents operation middleware
+func (sh *strictHandler) ListAgents(w http.ResponseWriter, r *http.Request) {
+	var request ListAgentsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListAgents(ctx, request.(ListAgentsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListAgents")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListAgentsResponseObject); ok {
+		if err := validResponse.VisitListAgentsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListEnrollmentTokens operation middleware
+func (sh *strictHandler) ListEnrollmentTokens(w http.ResponseWriter, r *http.Request) {
+	var request ListEnrollmentTokensRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListEnrollmentTokens(ctx, request.(ListEnrollmentTokensRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListEnrollmentTokens")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListEnrollmentTokensResponseObject); ok {
+		if err := validResponse.VisitListEnrollmentTokensResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateEnrollmentToken operation middleware
+func (sh *strictHandler) CreateEnrollmentToken(w http.ResponseWriter, r *http.Request) {
+	var request CreateEnrollmentTokenRequestObject
+
+	var body CreateEnrollmentTokenJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateEnrollmentToken(ctx, request.(CreateEnrollmentTokenRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateEnrollmentToken")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateEnrollmentTokenResponseObject); ok {
+		if err := validResponse.VisitCreateEnrollmentTokenResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RevokeEnrollmentToken operation middleware
+func (sh *strictHandler) RevokeEnrollmentToken(w http.ResponseWriter, r *http.Request, value string) {
+	var request RevokeEnrollmentTokenRequestObject
+
+	request.Value = value
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RevokeEnrollmentToken(ctx, request.(RevokeEnrollmentTokenRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RevokeEnrollmentToken")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RevokeEnrollmentTokenResponseObject); ok {
+		if err := validResponse.VisitRevokeEnrollmentTokenResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeregisterAgent operation middleware
+func (sh *strictHandler) DeregisterAgent(w http.ResponseWriter, r *http.Request, id string) {
+	var request DeregisterAgentRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeregisterAgent(ctx, request.(DeregisterAgentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeregisterAgent")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeregisterAgentResponseObject); ok {
+		if err := validResponse.VisitDeregisterAgentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RenameAgent operation middleware
+func (sh *strictHandler) RenameAgent(w http.ResponseWriter, r *http.Request, id string) {
+	var request RenameAgentRequestObject
+
+	request.Id = id
+
+	var body RenameAgentJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RenameAgent(ctx, request.(RenameAgentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RenameAgent")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RenameAgentResponseObject); ok {
+		if err := validResponse.VisitRenameAgentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateAgentCertificateRecoveryGrant operation middleware
+func (sh *strictHandler) CreateAgentCertificateRecoveryGrant(w http.ResponseWriter, r *http.Request, id string) {
+	var request CreateAgentCertificateRecoveryGrantRequestObject
+
+	request.Id = id
+
+	var body CreateAgentCertificateRecoveryGrantJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateAgentCertificateRecoveryGrant(ctx, request.(CreateAgentCertificateRecoveryGrantRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateAgentCertificateRecoveryGrant")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateAgentCertificateRecoveryGrantResponseObject); ok {
+		if err := validResponse.VisitCreateAgentCertificateRecoveryGrantResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RevokeAgentCertificateRecoveryGrant operation middleware
+func (sh *strictHandler) RevokeAgentCertificateRecoveryGrant(w http.ResponseWriter, r *http.Request, id string) {
+	var request RevokeAgentCertificateRecoveryGrantRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RevokeAgentCertificateRecoveryGrant(ctx, request.(RevokeAgentCertificateRecoveryGrantRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RevokeAgentCertificateRecoveryGrant")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RevokeAgentCertificateRecoveryGrantResponseObject); ok {
+		if err := validResponse.VisitRevokeAgentCertificateRecoveryGrantResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateAgentFleetGroup operation middleware
+func (sh *strictHandler) UpdateAgentFleetGroup(w http.ResponseWriter, r *http.Request, id string) {
+	var request UpdateAgentFleetGroupRequestObject
+
+	request.Id = id
+
+	var body UpdateAgentFleetGroupJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateAgentFleetGroup(ctx, request.(UpdateAgentFleetGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateAgentFleetGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateAgentFleetGroupResponseObject); ok {
+		if err := validResponse.VisitUpdateAgentFleetGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateAgentInstallCommand operation middleware
+func (sh *strictHandler) CreateAgentInstallCommand(w http.ResponseWriter, r *http.Request, id string) {
+	var request CreateAgentInstallCommandRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateAgentInstallCommand(ctx, request.(CreateAgentInstallCommandRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateAgentInstallCommand")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateAgentInstallCommandResponseObject); ok {
+		if err := validResponse.VisitCreateAgentInstallCommandResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateAgentTransportMode operation middleware
+func (sh *strictHandler) UpdateAgentTransportMode(w http.ResponseWriter, r *http.Request, id string) {
+	var request UpdateAgentTransportModeRequestObject
+
+	request.Id = id
+
+	var body UpdateAgentTransportModeJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateAgentTransportMode(ctx, request.(UpdateAgentTransportModeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateAgentTransportMode")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateAgentTransportModeResponseObject); ok {
+		if err := validResponse.VisitUpdateAgentTransportModeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DispatchAgentUpdate operation middleware
+func (sh *strictHandler) DispatchAgentUpdate(w http.ResponseWriter, r *http.Request, id string) {
+	var request DispatchAgentUpdateRequestObject
+
+	request.Id = id
+
+	var body DispatchAgentUpdateJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DispatchAgentUpdate(ctx, request.(DispatchAgentUpdateRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DispatchAgentUpdate")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DispatchAgentUpdateResponseObject); ok {
+		if err := validResponse.VisitDispatchAgentUpdateResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // GetVersion operation middleware
@@ -388,28 +2427,107 @@ func (sh *strictHandler) GetHealthz(w http.ResponseWriter, r *http.Request) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,
