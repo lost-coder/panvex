@@ -1,0 +1,69 @@
+# Panvex control-plane public API — OpenAPI 3.1 source of truth.
+#
+# Wave 3.3 — see docs/superpowers/plans/2026-05-08-api-codegen.md
+# for the migration plan. This file currently carries the seed
+# (info/servers/error schema) and grows one route group per PR.
+#
+# Generation:
+#   make gen-openapi          # regenerate Go server + TypeScript types
+#   make verify-openapi       # CI: assert generated outputs are in sync
+#
+# Tools (installed via `make install-tools`):
+#   - oapi-codegen v2 (chi-server mode)
+#   - openapi-typescript
+
+openapi: 3.1.0
+
+info:
+  title: Panvex Control Plane API
+  description: |
+    Operator-facing HTTP API for the Panvex fleet management
+    control-plane. Migrated incrementally from hand-rolled Zod
+    schemas; consult `web/src/shared/api/schemas/` for endpoints not
+    yet covered here.
+  version: "1.0.0-pre"
+  contact:
+    name: Panvex maintainers
+    url: https://github.com/lost-coder/panvex
+
+servers:
+  - url: /
+    description: Same-origin (the panel serves both API and UI)
+
+paths:
+  # First pilot endpoints land here in the next session
+  # (see migration order in 2026-05-08-api-codegen.md).
+  {}
+
+components:
+  schemas:
+    Error:
+      type: object
+      description: Standard error envelope used by every 4xx / 5xx response.
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Machine-readable error code (e.g. `not_found`, `forbidden`).
+        message:
+          type: string
+          description: Human-readable message; safe to display to operators.
+        details:
+          type: object
+          description: Optional structured context. Shape varies per error code.
+          additionalProperties: true
+
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: panvex_session
+      description: |
+        Server-issued session cookie set by `POST /api/login`. Marked
+        Secure + HttpOnly + SameSite=Lax in production; the bare
+        non-prefixed name above is the dev fallback for plain-HTTP
+        loopback (the production runtime sets `__Host-panvex_session`
+        instead — same auth flow, different cookie attribute set).
+
+security:
+  - sessionCookie: []

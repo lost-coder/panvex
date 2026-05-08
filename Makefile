@@ -2,7 +2,8 @@
 # Mirrors CI checks so pre-push and local runs match GitHub Actions.
 
 .PHONY: help test test-fast test-pkg lint vuln check build build-embed \
-        sqlc tidy fmt clean install-tools bench gen-settings all
+        sqlc tidy fmt clean install-tools bench gen-settings all \
+        gen-openapi-go gen-openapi-ts gen-openapi verify-openapi
 
 # Default target: list available commands.
 help:
@@ -68,6 +69,8 @@ install-tools:
 	go install golang.org/x/vuln/cmd/govulncheck@latest
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 	go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
+	go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest
+	cd web && npm install -D openapi-typescript
 
 # gen-settings runs the registry codegen.
 gen-settings:
@@ -75,6 +78,28 @@ gen-settings:
 	@echo "wrote internal/controlplane/settings/gen/schema.json"
 	@echo "wrote docs/settings/reference.md"
 	@echo "wrote docs/settings/example.config.toml"
+
+# OpenAPI codegen pipeline (Wave 3.3 — see
+# docs/superpowers/plans/2026-05-08-api-codegen.md). The spec at
+# openapi/panvex.yaml is the single source of truth; both Go server
+# stubs and TypeScript types are regenerated from it.
+#
+# Generated outputs are committed (matches sqlc / gen-settings) so CI
+# does not need the codegen tools on the hot path; verify-openapi
+# regenerates and asserts no diff.
+gen-openapi-go:
+	@command -v oapi-codegen >/dev/null || { echo "oapi-codegen not installed (make install-tools)"; exit 1; }
+	oapi-codegen -config openapi/config.yaml openapi/panvex.yaml
+
+gen-openapi-ts:
+	@command -v npx >/dev/null || { echo "npx not installed"; exit 1; }
+	cd web && npx openapi-typescript ../openapi/panvex.yaml -o src/shared/api/openapi.gen.ts
+
+gen-openapi: gen-openapi-go gen-openapi-ts
+
+verify-openapi: gen-openapi
+	@git diff --exit-code -- openapi/ web/src/shared/api/openapi.gen.ts \
+	    || { echo ""; echo "OpenAPI generated files are out of date — run 'make gen-openapi'."; exit 1; }
 
 # Control-plane microbenchmarks (batch writer, event bus, bulk insert).
 bench:

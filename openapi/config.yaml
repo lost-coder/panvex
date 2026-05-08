@@ -1,0 +1,23 @@
+# oapi-codegen configuration for the Panvex control-plane spec.
+#
+# The chi-server generator emits a ServerInterface that maps each
+# operationId to a Go method, plus a wrapper that mounts the routes
+# on a chi.Router. We commit the generated panvex.gen.go file
+# alongside the spec so CI does not need oapi-codegen on the hot
+# path; `make verify-openapi` is the drift guard.
+
+package: openapi
+output: openapi/panvex.gen.go
+
+generate:
+  models: true
+  chi-server: true
+  embedded-spec: true
+  strict-server: true
+
+# Strict-server mode produces a typed handler interface where each
+# operation has a request/response struct, eliminating the need for
+# manual decode/encode glue. Combined with chi-server it wires
+# straight into the existing chi.Router in cmd/control-plane.
+output-options:
+  skip-prune: true
