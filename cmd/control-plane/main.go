@@ -86,6 +86,9 @@ func run(args []string) error {
 	if len(args) > 0 && args[0] == "restore" {
 		return runRestore(args[1:])
 	}
+	if len(args) > 0 && args[0] == "verify-audit-chain" {
+		return runVerifyAuditChain(args[1:])
+	}
 
 	return runServe(args)
 }

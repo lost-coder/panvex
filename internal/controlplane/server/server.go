@@ -153,6 +153,14 @@ type Server struct {
 	// (session/audit/metric/client) are still monotonic because they do not
 	// participate in mTLS identity.
 	auditSeq            uint64
+	// auditChainTail tracks the latest persisted/enqueued audit
+	// event_hash so the next append can be chained onto it. Loaded
+	// lazily from the store the first time we need it (or initialised
+	// to "" on a fresh table, which the verifier treats as the
+	// chain-genesis sentinel). Migration 0038 added the underlying
+	// column. Read/write under metricsAuditMu.
+	auditChainTail   string
+	auditChainLoaded bool
 	metricSeq           uint64
 	clientSeq           uint64
 	assignmentSeq       uint64

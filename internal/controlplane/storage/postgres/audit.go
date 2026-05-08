@@ -30,7 +30,21 @@ func (s *Store) AppendAuditEvent(ctx context.Context, event storage.AuditEventRe
 		TargetID:  event.TargetID,
 		Details:   detailsJSON,
 		CreatedAt: event.CreatedAt.UTC(),
+		PrevHash:  event.PrevHash,
+		EventHash: event.EventHash,
 	})
+}
+
+// LatestAuditChainHash returns the EventHash of the most recently
+// persisted audit row. Empty string when the table is empty.
+//
+// Producers read this once per batch flush so each row is chained
+// onto the tail of the existing chain. See AuditStore.LatestAuditChainHash.
+func (s *Store) LatestAuditChainHash(ctx context.Context) (string, error) {
+	if s.sqlDB == nil {
+		return "", errTxBoundStore
+	}
+	return dbsqlc.New(s.sqlDB).LatestAuditChainHash(ctx)
 }
 
 func (s *Store) ListAuditEvents(ctx context.Context, limit int) ([]storage.AuditEventRecord, error) {
@@ -52,6 +66,8 @@ func (s *Store) ListAuditEvents(ctx context.Context, limit int) ([]storage.Audit
 			Action:    row.Action,
 			TargetID:  row.TargetID,
 			CreatedAt: row.CreatedAt.UTC(),
+			PrevHash:  row.PrevHash,
+			EventHash: row.EventHash,
 		}
 		if err := decodeJSON(row.Details, &event.Details); err != nil {
 			return nil, err
@@ -75,14 +91,14 @@ func (s *Store) ListAuditEventsCursor(ctx context.Context, params storage.ListAu
 	var err error
 	if params.AfterID == "" && params.AfterCreatedAt.IsZero() {
 		rows, err = s.sqlDB.QueryContext(ctx, `
-			SELECT id, actor_id, action, target_id, details, created_at
+			SELECT id, actor_id, action, target_id, details, created_at, prev_hash, event_hash
 			FROM audit_events
 			ORDER BY created_at DESC, id DESC
 			LIMIT $1
 		`, limit+1)
 	} else {
 		rows, err = s.sqlDB.QueryContext(ctx, `
-			SELECT id, actor_id, action, target_id, details, created_at
+			SELECT id, actor_id, action, target_id, details, created_at, prev_hash, event_hash
 			FROM audit_events
 			WHERE (created_at, id) < ($1, $2)
 			ORDER BY created_at DESC, id DESC
@@ -98,7 +114,7 @@ func (s *Store) ListAuditEventsCursor(ctx context.Context, params storage.ListAu
 	for rows.Next() {
 		var event storage.AuditEventRecord
 		var detailsJSON []byte
-		if err := rows.Scan(&event.ID, &event.ActorID, &event.Action, &event.TargetID, &detailsJSON, &event.CreatedAt); err != nil {
+		if err := rows.Scan(&event.ID, &event.ActorID, &event.Action, &event.TargetID, &detailsJSON, &event.CreatedAt, &event.PrevHash, &event.EventHash); err != nil {
 			return nil, storage.ListAuditEventsCursorParams{}, err
 		}
 		event.CreatedAt = event.CreatedAt.UTC()

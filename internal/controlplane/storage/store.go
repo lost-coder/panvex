@@ -214,6 +214,12 @@ type AuditStore interface {
 	// retention worker (P2-REL-04 / finding M-R2) to keep audit_events from
 	// growing unbounded.
 	PruneAuditEvents(ctx context.Context, before time.Time) (int64, error)
+	// LatestAuditChainHash returns the event_hash of the most recently
+	// persisted audit row, or "" when the table is empty (no chain yet).
+	// Producers read this once before each batch flush so each new row's
+	// PrevHash is the previous row's EventHash. Migration 0038 added the
+	// underlying columns.
+	LatestAuditChainHash(ctx context.Context) (string, error)
 }
 
 // MetricStore persists aggregated control-plane metric snapshots.

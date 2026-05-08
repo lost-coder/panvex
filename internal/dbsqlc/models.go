@@ -58,6 +58,8 @@ type AuditEvent struct {
 	TargetID  string
 	Details   json.RawMessage
 	CreatedAt time.Time
+	PrevHash  string
+	EventHash string
 }
 
 type CertificateAuthority struct {

@@ -293,6 +293,14 @@ type JobTargetRecord struct {
 }
 
 // AuditEventRecord stores one immutable control-plane audit event.
+//
+// PrevHash and EventHash form the tamper-evident chain (migration 0038).
+// PrevHash is the EventHash of the previous row in (created_at, id)
+// ascending order; EventHash is sha256(prev_hash || canonical(record))
+// computed by the producer side. Both fields are empty on rows written
+// before the migration and on the synthetic genesis position. The
+// verify-audit-chain subcommand walks the chain and recomputes; any
+// admin who silently rewrites a row will fail the verifier.
 type AuditEventRecord struct {
 	ID        string
 	ActorID   string
@@ -300,6 +308,8 @@ type AuditEventRecord struct {
 	TargetID  string
 	CreatedAt time.Time
 	Details   map[string]any
+	PrevHash  string
+	EventHash string
 }
 
 // MetricSnapshotRecord stores one aggregated metric capture.

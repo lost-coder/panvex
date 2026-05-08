@@ -37,6 +37,7 @@ func (s *Server) appendAuditWithContext(ctx context.Context, actorID string, act
 		Details:   normalizeAuditDetails(details),
 	}
 	s.appendAuditTrailLocked(event)
+	record := s.chainAuditRecordLocked(event)
 	s.metricsAuditMu.Unlock()
 
 	// P2-LOG-10 / M-R4 / P7-R6: audit writes no longer block the HTTP
@@ -55,7 +56,7 @@ func (s *Server) appendAuditWithContext(ctx context.Context, actorID string, act
 	// is nothing the HTTP request's cancellation should abort.
 	_ = ctx
 	if s.batchWriter != nil {
-		s.batchWriter.auditEvents.Enqueue(auditEventToRecord(event))
+		s.batchWriter.auditEvents.Enqueue(record)
 	}
 
 	s.events.Publish(eventbus.Event{
@@ -94,11 +95,12 @@ func (s *Server) appendAuditSync(ctx context.Context, actorID, action, targetID 
 		Details:   normalizeAuditDetails(details),
 	}
 	s.appendAuditTrailLocked(event)
+	record := s.chainAuditRecordLocked(event)
 	s.metricsAuditMu.Unlock()
 
 	var persistErr error
 	if s.store != nil {
-		persistErr = s.store.AppendAuditEvent(ctx, auditEventToRecord(event))
+		persistErr = s.store.AppendAuditEvent(ctx, record)
 		if persistErr != nil {
 			s.logger.Error("audit persist (sync) failed",
 				"action", action,

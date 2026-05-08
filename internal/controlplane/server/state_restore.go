@@ -151,6 +151,15 @@ func (s *Server) restoreAuditEvents() error {
 	for _, record := range auditEvents {
 		s.appendAuditTrailLocked(auditEventFromRecord(record))
 	}
+	// Seed the chain tail from the persisted store so the next
+	// in-process append continues the chain instead of starting a
+	// fresh empty-prev branch (migration 0038).
+	tail, err := s.store.LatestAuditChainHash(context.Background())
+	if err != nil {
+		return err
+	}
+	s.auditChainTail = tail
+	s.auditChainLoaded = true
 	return nil
 }
 

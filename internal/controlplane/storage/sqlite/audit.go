@@ -15,10 +15,30 @@ func (s *Store) AppendAuditEvent(ctx context.Context, event storage.AuditEventRe
 	}
 
 	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO audit_events (id, actor_id, action, target_id, created_at_unix, details)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, event.ID, event.ActorID, event.Action, event.TargetID, toUnix(event.CreatedAt), detailsJSON)
+		INSERT INTO audit_events (id, actor_id, action, target_id, created_at_unix, details, prev_hash, event_hash)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, event.ID, event.ActorID, event.Action, event.TargetID, toUnix(event.CreatedAt), detailsJSON, event.PrevHash, event.EventHash)
 	return err
+}
+
+// LatestAuditChainHash returns the EventHash of the most recently
+// persisted audit row, or "" when the table is empty. Mirrors the
+// postgres companion; producers rely on a stable empty string for the
+// chain-genesis position.
+func (s *Store) LatestAuditChainHash(ctx context.Context) (string, error) {
+	var hash sql.NullString
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT event_hash
+		FROM audit_events
+		ORDER BY created_at_unix DESC, id DESC
+		LIMIT 1
+	`).Scan(&hash); err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		return "", err
+	}
+	return hash.String, nil
 }
 
 func (s *Store) ListAuditEvents(ctx context.Context, limit int) ([]storage.AuditEventRecord, error) {
@@ -26,8 +46,9 @@ func (s *Store) ListAuditEvents(ctx context.Context, limit int) ([]storage.Audit
 		limit = 1024
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, actor_id, action, target_id, created_at_unix, details
-		FROM (SELECT * FROM audit_events ORDER BY created_at_unix DESC, id DESC LIMIT ?)
+		SELECT id, actor_id, action, target_id, created_at_unix, details, prev_hash, event_hash
+		FROM (SELECT id, actor_id, action, target_id, created_at_unix, details, prev_hash, event_hash
+		      FROM audit_events ORDER BY created_at_unix DESC, id DESC LIMIT ?)
 		ORDER BY created_at_unix, id
 	`, limit)
 	if err != nil {
@@ -40,7 +61,7 @@ func (s *Store) ListAuditEvents(ctx context.Context, limit int) ([]storage.Audit
 		var event storage.AuditEventRecord
 		var createdAt int64
 		var detailsJSON string
-		if err := rows.Scan(&event.ID, &event.ActorID, &event.Action, &event.TargetID, &createdAt, &detailsJSON); err != nil {
+		if err := rows.Scan(&event.ID, &event.ActorID, &event.Action, &event.TargetID, &createdAt, &detailsJSON, &event.PrevHash, &event.EventHash); err != nil {
 			return nil, err
 		}
 		event.CreatedAt = fromUnix(createdAt)
@@ -65,14 +86,14 @@ func (s *Store) ListAuditEventsCursor(ctx context.Context, params storage.ListAu
 	var err error
 	if params.AfterID == "" && params.AfterCreatedAt.IsZero() {
 		rows, err = s.db.QueryContext(ctx, `
-			SELECT id, actor_id, action, target_id, created_at_unix, details
+			SELECT id, actor_id, action, target_id, created_at_unix, details, prev_hash, event_hash
 			FROM audit_events
 			ORDER BY created_at_unix DESC, id DESC
 			LIMIT ?
 		`, limit+1)
 	} else {
 		rows, err = s.db.QueryContext(ctx, `
-			SELECT id, actor_id, action, target_id, created_at_unix, details
+			SELECT id, actor_id, action, target_id, created_at_unix, details, prev_hash, event_hash
 			FROM audit_events
 			WHERE (created_at_unix, id) < (?, ?)
 			ORDER BY created_at_unix DESC, id DESC
@@ -89,7 +110,7 @@ func (s *Store) ListAuditEventsCursor(ctx context.Context, params storage.ListAu
 		var event storage.AuditEventRecord
 		var createdAt int64
 		var detailsJSON string
-		if err := rows.Scan(&event.ID, &event.ActorID, &event.Action, &event.TargetID, &createdAt, &detailsJSON); err != nil {
+		if err := rows.Scan(&event.ID, &event.ActorID, &event.Action, &event.TargetID, &createdAt, &detailsJSON, &event.PrevHash, &event.EventHash); err != nil {
 			return nil, storage.ListAuditEventsCursorParams{}, err
 		}
 		event.CreatedAt = fromUnix(createdAt)

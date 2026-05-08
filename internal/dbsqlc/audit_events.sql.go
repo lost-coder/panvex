@@ -13,8 +13,8 @@ import (
 
 const appendAuditEvent = `-- name: AppendAuditEvent :exec
 
-INSERT INTO audit_events (id, actor_id, action, target_id, details, created_at)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO audit_events (id, actor_id, action, target_id, details, created_at, prev_hash, event_hash)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 `
 
 type AppendAuditEventParams struct {
@@ -24,6 +24,8 @@ type AppendAuditEventParams struct {
 	TargetID  string
 	Details   json.RawMessage
 	CreatedAt time.Time
+	PrevHash  string
+	EventHash string
 }
 
 // R-Q-03: extend sqlc coverage to audit_events.
@@ -35,14 +37,42 @@ func (q *Queries) AppendAuditEvent(ctx context.Context, arg AppendAuditEventPara
 		arg.TargetID,
 		arg.Details,
 		arg.CreatedAt,
+		arg.PrevHash,
+		arg.EventHash,
 	)
 	return err
 }
 
+const latestAuditChainHash = `-- name: LatestAuditChainHash :one
+SELECT CAST(COALESCE(
+    (SELECT event_hash
+       FROM audit_events
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1),
+    ''
+) AS TEXT) AS hash
+`
+
+// Returns the event_hash of the most recently persisted audit row,
+// or empty string when the table is empty. The batch writer reads
+// this once before each flush and chains every row in the batch
+// onto the tail of the existing chain.
+//
+// The CAST forces sqlc to infer a `string` return rather than the
+// generic interface{} that COALESCE would otherwise produce — the
+// column is TEXT NOT NULL in both backends, so the cast is a no-op
+// at the SQL layer.
+func (q *Queries) LatestAuditChainHash(ctx context.Context) (string, error) {
+	row := q.db.QueryRowContext(ctx, latestAuditChainHash)
+	var hash string
+	err := row.Scan(&hash)
+	return hash, err
+}
+
 const listAuditEvents = `-- name: ListAuditEvents :many
-SELECT id, actor_id, action, target_id, details, created_at
+SELECT id, actor_id, action, target_id, details, created_at, prev_hash, event_hash
 FROM (
-    SELECT id, actor_id, action, target_id, details, created_at
+    SELECT id, actor_id, action, target_id, details, created_at, prev_hash, event_hash
     FROM audit_events
     ORDER BY created_at DESC, id DESC
     LIMIT $1
@@ -70,6 +100,8 @@ func (q *Queries) ListAuditEvents(ctx context.Context, limit int32) ([]AuditEven
 			&i.TargetID,
 			&i.Details,
 			&i.CreatedAt,
+			&i.PrevHash,
+			&i.EventHash,
 		); err != nil {
 			return nil, err
 		}

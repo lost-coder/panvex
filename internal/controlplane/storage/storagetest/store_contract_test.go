@@ -879,6 +879,16 @@ func (s *memoryStore) AppendAuditEvent(_ context.Context, event storage.AuditEve
 	return nil
 }
 
+func (s *memoryStore) LatestAuditChainHash(_ context.Context) (string, error) {
+	if len(s.auditEvents) == 0 {
+		return "", nil
+	}
+	// Mirrors the postgres/sqlite contract: most recently inserted
+	// row wins. The in-memory store appends in arrival order so the
+	// last entry is the youngest.
+	return s.auditEvents[len(s.auditEvents)-1].EventHash, nil
+}
+
 func (s *memoryStore) ListAuditEvents(_ context.Context, limit int) ([]storage.AuditEventRecord, error) {
 	events := append([]storage.AuditEventRecord(nil), s.auditEvents...)
 	if limit > 0 && len(events) > limit {
