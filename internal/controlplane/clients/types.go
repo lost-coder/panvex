@@ -110,6 +110,24 @@ type UsageSnapshot struct {
 	Seq              uint64
 }
 
+// Usage is the domain-level row type for the (client, agent) traffic
+// counter. Mirrors the persisted client_usage row but exposes
+// strong-typed ClientID. AgentID stays as plain string until
+// agents-domain strong typing lands (Wave 4.2-agents).
+//
+// Distinct from UsageSnapshot, which is the in-memory mirror's value
+// type (missing AgentID since the map key already encodes it).
+type Usage struct {
+	ClientID         ClientID
+	AgentID          string
+	TrafficUsedBytes uint64
+	UniqueIPsUsed    int
+	ActiveTCPConns   int
+	ActiveUniqueIPs  int
+	LastSeq          uint64
+	ObservedAt       time.Time
+}
+
 // AggregatedUsage is the sum-over-agents of UsageSnapshot for a single
 // client. Returned by Service.AggregateUsage and the equivalent method
 // on controlplane/server.Server.
