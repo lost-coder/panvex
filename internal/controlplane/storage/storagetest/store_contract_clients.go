@@ -1,3 +1,9 @@
+// DEPRECATED: superseded by clients/storagetest/repository_contract.go.
+// Removed in Phase 8 of Wave 4.2 (clients-domain refactor).
+//
+// Tests in this file remain temporarily so the storage.Store aggregate
+// continues to compile until ClientStore is removed from the public
+// Store interface.
 package storagetest
 
 import (
