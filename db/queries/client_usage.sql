@@ -26,3 +26,6 @@ SET traffic_used_bytes = EXCLUDED.traffic_used_bytes,
     active_unique_ips  = EXCLUDED.active_unique_ips,
     last_seq           = EXCLUDED.last_seq,
     observed_at        = EXCLUDED.observed_at;
+
+-- name: DeleteClientUsageByClient :exec
+DELETE FROM client_usage WHERE client_id = $1;

@@ -449,3 +449,28 @@ type UserFleetGroupScope struct {
 	GrantedAt    time.Time
 	GrantedBy    string
 }
+
+type WebhookEndpoint struct {
+	ID               string
+	Name             string
+	Url              string
+	SecretCiphertext string
+	EventFilter      string
+	AllowPrivate     bool
+	Enabled          bool
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+type WebhookOutbox struct {
+	ID            string
+	EndpointID    string
+	EventAction   string
+	Payload       json.RawMessage
+	Attempt       int32
+	NextAttemptAt time.Time
+	LastError     string
+	Dead          bool
+	CreatedAt     time.Time
+	DeliveredAt   sql.NullTime
+}
