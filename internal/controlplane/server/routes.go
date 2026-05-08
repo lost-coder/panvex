@@ -216,6 +216,17 @@ func (s *Server) routes() http.Handler {
 					admin.Get("/settings/geoip", s.handleGetGeoIPSettings())
 					admin.Put("/settings/geoip", s.handlePutGeoIPSettings())
 					admin.With(sensitive).Post("/settings/geoip/refresh", s.handleRefreshGeoIP())
+
+					// Webhook outbox (Wave 3.4 follow-up). Admin-only:
+					// endpoint URLs, secrets, and the event filter that
+					// drives fan-out are operational config; viewers and
+					// operators don't need to touch them. CRUD audits
+					// itself via webhook.endpoint.{create,update,delete}.
+					admin.Get("/webhook-endpoints", s.handleListWebhookEndpoints())
+					admin.Get("/webhook-endpoints/{id}", s.handleGetWebhookEndpoint())
+					admin.With(sensitive).Post("/webhook-endpoints", s.handleCreateWebhookEndpoint())
+					admin.With(sensitive).Put("/webhook-endpoints/{id}", s.handleUpdateWebhookEndpoint())
+					admin.With(sensitive).Delete("/webhook-endpoints/{id}", s.handleDeleteWebhookEndpoint())
 				})
 			})
 		})

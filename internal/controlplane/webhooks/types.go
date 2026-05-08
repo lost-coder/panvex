@@ -58,6 +58,21 @@ type Delivery struct {
 	Endpoint Endpoint
 }
 
+// EndpointInput is the operator-supplied form for create / update.
+// SecretCiphertext is the already-vault-encrypted form of the HMAC
+// key — handlers do the encryption before calling the store so the
+// plaintext never lands in storage code. EventFilter uses CSV
+// representation (the same format webhook_endpoints stores).
+type EndpointInput struct {
+	ID               string // ignored on Update; assigned by Create
+	Name             string
+	URL              string
+	SecretCiphertext string // pass empty to leave the existing secret on Update
+	EventFilter      string // CSV; empty = match all
+	AllowPrivate     bool
+	Enabled          bool
+}
+
 // Storage is the seam between webhooks and persistent state. The
 // in-memory implementation in memstore_test.go is the testing
 // fixture; real backends live in
@@ -71,12 +86,31 @@ type Delivery struct {
 //     SQLite)
 //   - write CreatedAt / NextAttemptAt as the producer/worker provided
 //     them — no clock drift on the DB side
+//
+// CRUD methods (CreateEndpoint / UpdateEndpoint / DeleteEndpoint /
+// GetEndpoint / ListEndpoints) operate on the operator-facing
+// representation and never expose plaintext secrets back — only the
+// outbox-fan-out path returns Endpoint.Secret in plaintext, and only
+// after the storage's injected SecretDecrypter has been invoked.
 type Storage interface {
 	ListEnabledEndpoints(ctx context.Context) ([]Endpoint, error)
 	InsertOutbox(ctx context.Context, row OutboxRow) error
 	ClaimReady(ctx context.Context, now time.Time, max int) ([]Delivery, error)
 	MarkDelivered(ctx context.Context, id string, deliveredAt time.Time) error
 	MarkFailed(ctx context.Context, id string, attempt int, nextAttempt time.Time, errMsg string, dead bool) error
+
+	// Operator CRUD (does NOT decrypt — secrets stay at-rest).
+	CreateEndpoint(ctx context.Context, in EndpointInput, now time.Time) error
+	UpdateEndpoint(ctx context.Context, in EndpointInput, now time.Time) error
+	DeleteEndpoint(ctx context.Context, id string) error
+	// GetEndpointMeta returns the row's operator-visible fields
+	// without the secret. SecretCiphertext is intentionally elided
+	// from the returned Endpoint so handlers don't accidentally
+	// echo it.
+	GetEndpointMeta(ctx context.Context, id string) (Endpoint, error)
+	// ListEndpointMeta is the admin view: includes disabled rows.
+	// Same secret-elision rule as GetEndpointMeta.
+	ListEndpointMeta(ctx context.Context) ([]Endpoint, error)
 }
 
 // ErrNotFound is returned by Mark* when the row id no longer exists

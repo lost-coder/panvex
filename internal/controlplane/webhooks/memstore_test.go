@@ -118,6 +118,87 @@ func (s *memStore) MarkFailed(ctx context.Context, id string, attempt int, nextA
 	return nil
 }
 
+// CRUD — minimal stubs so memStore satisfies Storage. Producer/Worker
+// tests don't exercise these paths; storage-backend tests use the
+// real DB.
+
+func (s *memStore) CreateEndpoint(ctx context.Context, in EndpointInput, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, ep := range s.endpoints {
+		if ep.ID == in.ID || ep.Name == in.Name {
+			return ErrNotFound // memStore doesn't model duplicate-key — tests don't hit it
+		}
+	}
+	s.endpoints = append(s.endpoints, Endpoint{
+		ID:           in.ID,
+		Name:         in.Name,
+		URL:          in.URL,
+		Secret:       []byte(in.SecretCiphertext),
+		EventFilter:  parseFilter(in.EventFilter),
+		AllowPrivate: in.AllowPrivate,
+		Enabled:      in.Enabled,
+	})
+	return nil
+}
+
+func (s *memStore) UpdateEndpoint(ctx context.Context, in EndpointInput, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, ep := range s.endpoints {
+		if ep.ID == in.ID {
+			ep.Name = in.Name
+			ep.URL = in.URL
+			if in.SecretCiphertext != "" {
+				ep.Secret = []byte(in.SecretCiphertext)
+			}
+			ep.EventFilter = parseFilter(in.EventFilter)
+			ep.AllowPrivate = in.AllowPrivate
+			ep.Enabled = in.Enabled
+			s.endpoints[i] = ep
+			return nil
+		}
+	}
+	return ErrNotFound
+}
+
+func (s *memStore) DeleteEndpoint(ctx context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, ep := range s.endpoints {
+		if ep.ID == id {
+			s.endpoints = append(s.endpoints[:i], s.endpoints[i+1:]...)
+			return nil
+		}
+	}
+	return ErrNotFound
+}
+
+func (s *memStore) GetEndpointMeta(ctx context.Context, id string) (Endpoint, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, ep := range s.endpoints {
+		if ep.ID == id {
+			cp := ep
+			cp.Secret = nil
+			return cp, nil
+		}
+	}
+	return Endpoint{}, ErrNotFound
+}
+
+func (s *memStore) ListEndpointMeta(ctx context.Context) ([]Endpoint, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]Endpoint, 0, len(s.endpoints))
+	for _, ep := range s.endpoints {
+		cp := ep
+		cp.Secret = nil
+		out = append(out, cp)
+	}
+	return out, nil
+}
+
 func (s *memStore) snapshot(id string) (OutboxRow, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

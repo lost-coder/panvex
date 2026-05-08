@@ -167,3 +167,105 @@ func TestSQLiteWebhookStoreMarkPaths(t *testing.T) {
 		t.Errorf("MarkDelivered missing row err = %v, want webhooks.ErrNotFound", err)
 	}
 }
+
+func TestSQLiteWebhookStoreCRUD(t *testing.T) {
+	ws, cleanup := seedTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+	now := time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+
+	// Create.
+	if err := ws.CreateEndpoint(ctx, webhooks.EndpointInput{
+		ID: "ep-1", Name: "slack-prod", URL: "https://hooks.slack.com/x",
+		SecretCiphertext: "PVS2:ciphered", EventFilter: "audit.*",
+		AllowPrivate: false, Enabled: true,
+	}, now); err != nil {
+		t.Fatalf("CreateEndpoint: %v", err)
+	}
+
+	// GetEndpointMeta — Secret must NOT be returned.
+	meta, err := ws.GetEndpointMeta(ctx, "ep-1")
+	if err != nil {
+		t.Fatalf("GetEndpointMeta: %v", err)
+	}
+	if meta.Name != "slack-prod" || meta.URL != "https://hooks.slack.com/x" {
+		t.Errorf("meta mismatch: %+v", meta)
+	}
+	if len(meta.Secret) != 0 {
+		t.Errorf("Secret leaked through GetEndpointMeta: %q", meta.Secret)
+	}
+	if !meta.Enabled || meta.AllowPrivate {
+		t.Errorf("flags not preserved: %+v", meta)
+	}
+	if got := meta.EventFilter; len(got) != 1 || got[0] != "audit.*" {
+		t.Errorf("EventFilter = %v, want [audit.*]", got)
+	}
+
+	// Update without changing secret — existing ciphertext stays put.
+	if err := ws.UpdateEndpoint(ctx, webhooks.EndpointInput{
+		ID: "ep-1", Name: "slack-renamed", URL: "https://hooks.slack.com/y",
+		SecretCiphertext: "", // empty = leave it
+		EventFilter:      "audit.*,agent.*",
+		AllowPrivate:     true, Enabled: false,
+	}, now.Add(time.Minute)); err != nil {
+		t.Fatalf("UpdateEndpoint(no-secret): %v", err)
+	}
+	// ListEnabledEndpoints excludes the now-disabled row.
+	enabled, _ := ws.ListEnabledEndpoints(ctx)
+	if len(enabled) != 0 {
+		t.Errorf("ListEnabledEndpoints after disable should be empty, got %d", len(enabled))
+	}
+	// ListEndpointMeta is the admin view; includes disabled.
+	all, _ := ws.ListEndpointMeta(ctx)
+	if len(all) != 1 || all[0].Name != "slack-renamed" || all[0].Enabled {
+		t.Errorf("ListEndpointMeta after rename+disable: %+v", all)
+	}
+	if got := all[0].EventFilter; len(got) != 2 || got[0] != "audit.*" || got[1] != "agent.*" {
+		t.Errorf("EventFilter not updated: %v", got)
+	}
+
+	// Re-enable and re-verify worker can pick it up — confirms the
+	// ciphertext on the row is still the original (the no-op
+	// SecretCiphertext path didn't blank it).
+	if err := ws.UpdateEndpoint(ctx, webhooks.EndpointInput{
+		ID: "ep-1", Name: "slack-renamed", URL: "https://hooks.slack.com/y",
+		SecretCiphertext: "", EventFilter: "audit.*",
+		AllowPrivate: true, Enabled: true,
+	}, now.Add(2*time.Minute)); err != nil {
+		t.Fatalf("UpdateEndpoint(re-enable): %v", err)
+	}
+	enabled, _ = ws.ListEnabledEndpoints(ctx)
+	if len(enabled) != 1 {
+		t.Fatalf("expected 1 enabled endpoint after re-enable, got %d", len(enabled))
+	}
+	if string(enabled[0].Secret) != "PVS2:ciphered" {
+		t.Errorf("Secret lost across no-secret update: %q", enabled[0].Secret)
+	}
+
+	// Update WITH a new secret — rotates it.
+	if err := ws.UpdateEndpoint(ctx, webhooks.EndpointInput{
+		ID: "ep-1", Name: "slack-renamed", URL: "https://hooks.slack.com/y",
+		SecretCiphertext: "PVS2:new",
+		EventFilter:      "audit.*", AllowPrivate: true, Enabled: true,
+	}, now.Add(3*time.Minute)); err != nil {
+		t.Fatalf("UpdateEndpoint(rotate-secret): %v", err)
+	}
+	enabled, _ = ws.ListEnabledEndpoints(ctx)
+	if string(enabled[0].Secret) != "PVS2:new" {
+		t.Errorf("Secret rotation failed: got %q want PVS2:new", enabled[0].Secret)
+	}
+
+	// Delete → not found.
+	if err := ws.DeleteEndpoint(ctx, "ep-1"); err != nil {
+		t.Fatalf("DeleteEndpoint: %v", err)
+	}
+	if _, err := ws.GetEndpointMeta(ctx, "ep-1"); err != webhooks.ErrNotFound {
+		t.Errorf("GetEndpointMeta after delete err = %v, want ErrNotFound", err)
+	}
+	if err := ws.DeleteEndpoint(ctx, "ep-1"); err != webhooks.ErrNotFound {
+		t.Errorf("DeleteEndpoint(missing) err = %v, want ErrNotFound", err)
+	}
+	if err := ws.UpdateEndpoint(ctx, webhooks.EndpointInput{ID: "ep-1", Name: "x", URL: "https://y", Enabled: true}, now); err != webhooks.ErrNotFound {
+		t.Errorf("UpdateEndpoint(missing) err = %v, want ErrNotFound", err)
+	}
+}

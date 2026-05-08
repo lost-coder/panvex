@@ -274,3 +274,141 @@ func checkAffected(res sql.Result) error {
 	}
 	return nil
 }
+
+// CreateEndpoint inserts a new operator-defined receiver. The
+// caller has already vault-encrypted the HMAC key into
+// SecretCiphertext.
+func (s *WebhookStore) CreateEndpoint(ctx context.Context, in webhooks.EndpointInput, now time.Time) error {
+	allowInt := 0
+	if in.AllowPrivate {
+		allowInt = 1
+	}
+	enabledInt := 0
+	if in.Enabled {
+		enabledInt = 1
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO webhook_endpoints
+			(id, name, url, secret_ciphertext, event_filter, allow_private, enabled, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, in.ID, in.Name, in.URL, in.SecretCiphertext, in.EventFilter, allowInt, enabledInt, now.UTC(), now.UTC())
+	if err != nil {
+		return fmt.Errorf("webhooks: create endpoint: %w", err)
+	}
+	return nil
+}
+
+// UpdateEndpoint replaces an existing row's operator-visible fields.
+// Empty SecretCiphertext leaves the existing secret untouched —
+// rotating the secret is opt-in (the operator must explicitly send
+// a new value) so an accidental form-submission with the field
+// blanked doesn't silently break HMAC verification on every
+// receiver.
+func (s *WebhookStore) UpdateEndpoint(ctx context.Context, in webhooks.EndpointInput, now time.Time) error {
+	allowInt := 0
+	if in.AllowPrivate {
+		allowInt = 1
+	}
+	enabledInt := 0
+	if in.Enabled {
+		enabledInt = 1
+	}
+	var (
+		res sql.Result
+		err error
+	)
+	if in.SecretCiphertext == "" {
+		res, err = s.db.ExecContext(ctx, `
+			UPDATE webhook_endpoints
+			SET name = ?, url = ?, event_filter = ?, allow_private = ?, enabled = ?, updated_at = ?
+			WHERE id = ?
+		`, in.Name, in.URL, in.EventFilter, allowInt, enabledInt, now.UTC(), in.ID)
+	} else {
+		res, err = s.db.ExecContext(ctx, `
+			UPDATE webhook_endpoints
+			SET name = ?, url = ?, secret_ciphertext = ?, event_filter = ?, allow_private = ?, enabled = ?, updated_at = ?
+			WHERE id = ?
+		`, in.Name, in.URL, in.SecretCiphertext, in.EventFilter, allowInt, enabledInt, now.UTC(), in.ID)
+	}
+	if err != nil {
+		return fmt.Errorf("webhooks: update endpoint: %w", err)
+	}
+	return checkAffected(res)
+}
+
+// DeleteEndpoint removes the endpoint row; ON DELETE CASCADE on
+// webhook_outbox cleans up any pending deliveries.
+func (s *WebhookStore) DeleteEndpoint(ctx context.Context, id string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM webhook_endpoints WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("webhooks: delete endpoint: %w", err)
+	}
+	return checkAffected(res)
+}
+
+// GetEndpointMeta returns the operator-visible fields without the
+// secret ciphertext. The secret never leaves storage on the read
+// path — only the worker's outbox claim path joins it for HMAC
+// signing, decrypted via the SecretDecrypter at that point.
+func (s *WebhookStore) GetEndpointMeta(ctx context.Context, id string) (webhooks.Endpoint, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, name, url, event_filter, allow_private, enabled
+		FROM webhook_endpoints
+		WHERE id = ?
+	`, id)
+	return scanEndpointMeta(row)
+}
+
+// ListEndpointMeta returns every endpoint (including disabled) in
+// stable order — admin view for the operator UI.
+func (s *WebhookStore) ListEndpointMeta(ctx context.Context) ([]webhooks.Endpoint, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, name, url, event_filter, allow_private, enabled
+		FROM webhook_endpoints
+		ORDER BY name ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("webhooks: list endpoint meta: %w", err)
+	}
+	defer rows.Close()
+	var out []webhooks.Endpoint
+	for rows.Next() {
+		ep, err := scanEndpointMetaRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ep)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("webhooks: list endpoint meta rows: %w", err)
+	}
+	return out, nil
+}
+
+// rowScanner is the subset of *sql.Row / *sql.Rows the scan helpers
+// need — lets meta-row scanning reuse one routine across single-row
+// and many-row variants.
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanEndpointMeta(s rowScanner) (webhooks.Endpoint, error) {
+	var (
+		ep              webhooks.Endpoint
+		filterCSV       string
+		allowPrivateInt int
+		enabledInt      int
+	)
+	if err := s.Scan(&ep.ID, &ep.Name, &ep.URL, &filterCSV, &allowPrivateInt, &enabledInt); err != nil {
+		if err == sql.ErrNoRows {
+			return webhooks.Endpoint{}, webhooks.ErrNotFound
+		}
+		return webhooks.Endpoint{}, fmt.Errorf("webhooks: scan endpoint meta: %w", err)
+	}
+	ep.EventFilter = parseFilterCSV(filterCSV)
+	ep.AllowPrivate = allowPrivateInt != 0
+	ep.Enabled = enabledInt != 0
+	return ep, nil
+}
+
+func scanEndpointMetaRow(rows *sql.Rows) (webhooks.Endpoint, error) { return scanEndpointMeta(rows) }

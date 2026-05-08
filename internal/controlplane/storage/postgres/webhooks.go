@@ -255,3 +255,106 @@ func checkWebhookAffected(res sql.Result) error {
 	}
 	return nil
 }
+
+// CRUD — Postgres mirror of sqlite/webhooks.go. Same secret-elision
+// rules: meta reads do NOT return SecretCiphertext.
+
+func (s *WebhookStore) CreateEndpoint(ctx context.Context, in webhooks.EndpointInput, now time.Time) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO webhook_endpoints
+			(id, name, url, secret_ciphertext, event_filter, allow_private, enabled, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	`, in.ID, in.Name, in.URL, in.SecretCiphertext, in.EventFilter, in.AllowPrivate, in.Enabled, now.UTC(), now.UTC())
+	if err != nil {
+		return fmt.Errorf("webhooks: create endpoint: %w", err)
+	}
+	return nil
+}
+
+func (s *WebhookStore) UpdateEndpoint(ctx context.Context, in webhooks.EndpointInput, now time.Time) error {
+	var (
+		res sql.Result
+		err error
+	)
+	if in.SecretCiphertext == "" {
+		res, err = s.db.ExecContext(ctx, `
+			UPDATE webhook_endpoints
+			SET name = $1, url = $2, event_filter = $3, allow_private = $4, enabled = $5, updated_at = $6
+			WHERE id = $7
+		`, in.Name, in.URL, in.EventFilter, in.AllowPrivate, in.Enabled, now.UTC(), in.ID)
+	} else {
+		res, err = s.db.ExecContext(ctx, `
+			UPDATE webhook_endpoints
+			SET name = $1, url = $2, secret_ciphertext = $3, event_filter = $4, allow_private = $5, enabled = $6, updated_at = $7
+			WHERE id = $8
+		`, in.Name, in.URL, in.SecretCiphertext, in.EventFilter, in.AllowPrivate, in.Enabled, now.UTC(), in.ID)
+	}
+	if err != nil {
+		return fmt.Errorf("webhooks: update endpoint: %w", err)
+	}
+	return checkWebhookAffected(res)
+}
+
+func (s *WebhookStore) DeleteEndpoint(ctx context.Context, id string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM webhook_endpoints WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("webhooks: delete endpoint: %w", err)
+	}
+	return checkWebhookAffected(res)
+}
+
+func (s *WebhookStore) GetEndpointMeta(ctx context.Context, id string) (webhooks.Endpoint, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, name, url, event_filter, allow_private, enabled
+		FROM webhook_endpoints
+		WHERE id = $1
+	`, id)
+	return scanWebhookEndpointMeta(row)
+}
+
+func (s *WebhookStore) ListEndpointMeta(ctx context.Context) ([]webhooks.Endpoint, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, name, url, event_filter, allow_private, enabled
+		FROM webhook_endpoints
+		ORDER BY name ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("webhooks: list endpoint meta: %w", err)
+	}
+	defer rows.Close()
+	var out []webhooks.Endpoint
+	for rows.Next() {
+		ep, err := scanWebhookEndpointMeta(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ep)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("webhooks: list endpoint meta rows: %w", err)
+	}
+	return out, nil
+}
+
+type webhookRowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanWebhookEndpointMeta(s webhookRowScanner) (webhooks.Endpoint, error) {
+	var (
+		ep           webhooks.Endpoint
+		filterCSV    string
+		allowPrivate bool
+		enabled      bool
+	)
+	if err := s.Scan(&ep.ID, &ep.Name, &ep.URL, &filterCSV, &allowPrivate, &enabled); err != nil {
+		if err == sql.ErrNoRows {
+			return webhooks.Endpoint{}, webhooks.ErrNotFound
+		}
+		return webhooks.Endpoint{}, fmt.Errorf("webhooks: scan endpoint meta: %w", err)
+	}
+	ep.EventFilter = parseWebhookFilterCSV(filterCSV)
+	ep.AllowPrivate = allowPrivate
+	ep.Enabled = enabled
+	return ep, nil
+}
