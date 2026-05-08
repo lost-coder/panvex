@@ -91,7 +91,7 @@ func TestPersistStateEncryptsClientSecretWhenVaultEnabled(t *testing.T) {
 		t.Fatalf("PersistState() error = %v", err)
 	}
 
-	stored, ok := store.fake.clients[client.ID]
+	stored, ok := store.fake.clients[string(client.ID)]
 	if !ok {
 		t.Fatal("PersistState() did not persist client record")
 	}
@@ -122,7 +122,7 @@ func TestPersistStateLeavesPlaintextWhenVaultDisabled(t *testing.T) {
 	if err := PersistState(context.Background(), store, client, nil, nil, nil); err != nil {
 		t.Fatalf("PersistState(nil vault) error = %v", err)
 	}
-	stored := store.fake.clients[client.ID]
+	stored := store.fake.clients[string(client.ID)]
 	if stored.SecretCiphertext != "still-plain-secret" {
 		t.Fatalf("nil vault should pass through, got %q", stored.SecretCiphertext)
 	}

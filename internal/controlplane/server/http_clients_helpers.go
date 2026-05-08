@@ -93,7 +93,7 @@ func (s *Server) clientInScope(scope FleetScopeAccess, assignments []managedClie
 		return true
 	}
 	for _, a := range assignments {
-		if a.FleetGroupID != "" && scope.IsAllowed(a.FleetGroupID) {
+		if a.FleetGroupID != "" && scope.IsAllowed(string(a.FleetGroupID)) {
 			return true
 		}
 	}
@@ -107,7 +107,7 @@ func (s *Server) clientInScope(scope FleetScopeAccess, assignments []managedClie
 func (s *Server) bulkUniqueIPCountsForClients(ctx context.Context, clients []managedClient) map[string]int {
 	clientIDs := make([]string, 0, len(clients))
 	for _, c := range clients {
-		clientIDs = append(clientIDs, c.ID)
+		clientIDs = append(clientIDs, string(c.ID))
 	}
 	uniqueIPCounts := map[string]int{}
 	if s.store == nil || len(clientIDs) == 0 {
@@ -137,11 +137,11 @@ func (s *Server) buildClientListRow(
 		return clientListResponse{}, false
 	}
 	uniqueIPs := usage.UniqueIPsUsed
-	if count, ok := uniqueIPCounts[client.ID]; ok && count > 0 {
+	if count, ok := uniqueIPCounts[string(client.ID)]; ok && count > 0 {
 		uniqueIPs = count
 	}
 	return clientListResponse{
-		ID:                 client.ID,
+		ID:                 string(client.ID),
 		Name:               client.Name,
 		Enabled:            client.Enabled,
 		AssignedNodesCount: len(s.resolveClientTargetAgentIDs(assignments)),
@@ -180,11 +180,11 @@ func handleClientMutationError(w http.ResponseWriter, err error) bool {
 // a client, including resolved usage, unique-IP count, and deployment
 // status rows.
 func (s *Server) buildClientDetailResponse(ctx context.Context, client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment, showSecret bool) clientDetailResponse {
-	usage := s.aggregatedClientUsage(client.ID)
-	uniqueIPs := s.resolveUniqueClientIPs(ctx, client.ID, usage.UniqueIPsUsed)
+	usage := s.aggregatedClientUsage(string(client.ID))
+	uniqueIPs := s.resolveUniqueClientIPs(ctx, string(client.ID), usage.UniqueIPsUsed)
 
 	response := clientDetailResponse{
-		ID:                client.ID,
+		ID:                string(client.ID),
 		Name:              client.Name,
 		Secret:            secretIfRevealed(client.Secret, showSecret),
 		UserADTag:         client.UserADTag,
@@ -334,7 +334,7 @@ func assignmentFleetGroupIDs(assignments []managedClientAssignment) []string {
 	values := make([]string, 0)
 	for _, assignment := range assignments {
 		if assignment.TargetType == clientAssignmentTargetFleetGroup {
-			values = append(values, assignment.FleetGroupID)
+			values = append(values, string(assignment.FleetGroupID))
 		}
 	}
 	return normalizedIDs(values)

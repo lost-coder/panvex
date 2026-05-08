@@ -24,7 +24,7 @@ const seqClientAssignment = "client-assignment"
 // methods onto Service once the jobs + events dependencies are
 // constructor-injected.
 //
-// Lock discipline
+// # Lock discipline
 //
 // Service.mu protects the four in-memory maps (clients, assignments,
 // deployments, usage) and the client/assignment sequence counters. The
@@ -33,7 +33,7 @@ const seqClientAssignment = "client-assignment"
 // asking the server for topology. This preserves the documented lock
 // ordering (Server.mu -> Service.mu -> Server.metricsAuditMu).
 //
-// Nil-store mode
+// # Nil-store mode
 //
 // When the optional Store dependency is nil, Service acts as a pure
 // in-memory store — no persistence is attempted. This matches how the
@@ -243,13 +243,13 @@ func (s *Service) DetailSnapshot(clientID string) (Client, []Assignment, []Deplo
 func (s *Service) ReplaceInMemory(client Client, assignments []Assignment, deployments []Deployment) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.clients[client.ID] = client
-	s.assignments[client.ID] = append([]Assignment(nil), assignments...)
+	s.clients[string(client.ID)] = client
+	s.assignments[string(client.ID)] = append([]Assignment(nil), assignments...)
 	nextDeployments := make(map[string]Deployment, len(deployments))
 	for _, deployment := range deployments {
 		nextDeployments[deployment.AgentID] = deployment
 	}
-	s.deployments[client.ID] = nextDeployments
+	s.deployments[string(client.ID)] = nextDeployments
 }
 
 // ReplaceState persists the client + assignments + deployments to the
@@ -344,7 +344,7 @@ func (s *Service) SeedUsage(clientID, agentID string, trafficBytes uint64, activ
 		s.usage[clientID] = make(map[string]UsageSnapshot)
 	}
 	s.usage[clientID][agentID] = UsageSnapshot{
-		ClientID:         clientID,
+		ClientID:         ClientID(clientID),
 		TrafficUsedBytes: trafficBytes,
 		UniqueIPsUsed:    activeUniqueIPs,
 		ActiveTCPConns:   activeConns,
@@ -409,21 +409,21 @@ func (s *Service) acceptUsageSeqLocked(agentID string, maxSeqSeen uint64) bool {
 }
 
 func shouldRecordSnapshot(snapshot UsageSnapshot, onlyKnownClients map[string]struct{}) bool {
-	if snapshot.ClientID == "" {
+	if snapshot.ClientID.IsZero() {
 		return false
 	}
 	if onlyKnownClients == nil {
 		return true
 	}
-	_, ok := onlyKnownClients[snapshot.ClientID]
+	_, ok := onlyKnownClients[string(snapshot.ClientID)]
 	return ok
 }
 
 func (s *Service) storeUsageSnapshotLocked(agentID string, snapshot UsageSnapshot) {
-	byAgent, ok := s.usage[snapshot.ClientID]
+	byAgent, ok := s.usage[string(snapshot.ClientID)]
 	if !ok {
 		byAgent = make(map[string]UsageSnapshot)
-		s.usage[snapshot.ClientID] = byAgent
+		s.usage[string(snapshot.ClientID)] = byAgent
 	}
 	byAgent[agentID] = snapshot
 }
@@ -455,20 +455,20 @@ func (s *Service) RestoreFromRecords(
 
 	for _, record := range clientRecords {
 		client := ClientFromRecord(record)
-		s.clients[client.ID] = client
-		s.clientSeq = maxPrefixedSequence(s.clientSeq, "client", client.ID)
+		s.clients[string(client.ID)] = client
+		s.clientSeq = maxPrefixedSequence(s.clientSeq, "client", string(client.ID))
 	}
 	for _, record := range assignmentRecords {
 		assignment := AssignmentFromRecord(record)
-		s.assignments[assignment.ClientID] = append(s.assignments[assignment.ClientID], assignment)
-		s.assignmentSeq = maxPrefixedSequence(s.assignmentSeq, seqClientAssignment, assignment.ID)
+		s.assignments[string(assignment.ClientID)] = append(s.assignments[string(assignment.ClientID)], assignment)
+		s.assignmentSeq = maxPrefixedSequence(s.assignmentSeq, seqClientAssignment, string(assignment.ID))
 	}
 	for _, record := range deploymentRecords {
 		deployment := DeploymentFromRecord(record)
-		byAgent, ok := s.deployments[deployment.ClientID]
+		byAgent, ok := s.deployments[string(deployment.ClientID)]
 		if !ok {
 			byAgent = make(map[string]Deployment)
-			s.deployments[deployment.ClientID] = byAgent
+			s.deployments[string(deployment.ClientID)] = byAgent
 		}
 		byAgent[deployment.AgentID] = deployment
 	}

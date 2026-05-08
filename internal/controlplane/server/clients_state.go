@@ -42,23 +42,23 @@ func (s *Server) rehydrateClientAssignmentUsage(ctx context.Context, client mana
 	if assignment.AgentID == "" {
 		return
 	}
-	if u, ok := usageIdx[client.ID+"\x00"+assignment.AgentID]; ok {
-		if s.clientUsage[client.ID] == nil {
-			s.clientUsage[client.ID] = make(map[string]clientUsageSnapshot)
+	if u, ok := usageIdx[string(client.ID)+"\x00"+assignment.AgentID]; ok {
+		if s.clientUsage[string(client.ID)] == nil {
+			s.clientUsage[string(client.ID)] = make(map[string]clientUsageSnapshot)
 		}
-		s.clientUsage[client.ID][assignment.AgentID] = clientUsageSnapshot{
-			ClientID:         u.ClientID,
+		s.clientUsage[string(client.ID)][assignment.AgentID] = clientUsageSnapshot{
+			ClientID:         clients.ClientID(u.ClientID),
 			TrafficUsedBytes: u.TrafficUsedBytes,
 			UniqueIPsUsed:    u.UniqueIPsUsed,
 			ActiveTCPConns:   u.ActiveTCPConns,
 			ActiveUniqueIPs:  u.ActiveUniqueIPs,
 			ObservedAt:       u.ObservedAt,
 		}
-		s.trackClientUsageOwnerLocked(client.ID, assignment.AgentID)
+		s.trackClientUsageOwnerLocked(string(client.ID), assignment.AgentID)
 		return
 	}
 	if dc, ok := discoveredIdx[assignment.AgentID+"\x00"+client.Name]; ok {
-		s.seedClientUsage(ctx, client.ID, assignment.AgentID, dc.TotalOctets,
+		s.seedClientUsage(ctx, string(client.ID), assignment.AgentID, dc.TotalOctets,
 			dc.CurrentConnections, dc.ActiveUniqueIPs, dc.UpdatedAt)
 	}
 }
@@ -66,15 +66,15 @@ func (s *Server) rehydrateClientAssignmentUsage(ctx context.Context, client mana
 // restoreClientAssignments loads + memoises the assignments for one
 // client and rehydrates the volatile usage counter for each one.
 func (s *Server) restoreClientAssignments(ctx context.Context, client managedClient, usageIdx map[string]storage.ClientUsageRecord, discoveredIdx map[string]storage.DiscoveredClientRecord) error {
-	assignments, err := s.store.ListClientAssignments(ctx, client.ID)
+	assignments, err := s.store.ListClientAssignments(ctx, string(client.ID))
 	if err != nil {
 		return err
 	}
-	s.clientAssignments[client.ID] = make([]managedClientAssignment, 0, len(assignments))
+	s.clientAssignments[string(client.ID)] = make([]managedClientAssignment, 0, len(assignments))
 	for _, assignmentRecord := range assignments {
 		assignment := clients.AssignmentFromRecord(assignmentRecord)
-		s.clientAssignments[client.ID] = append(s.clientAssignments[client.ID], assignment)
-		s.assignmentSeq = maxPrefixedSequence(s.assignmentSeq, "client-assignment", assignment.ID)
+		s.clientAssignments[string(client.ID)] = append(s.clientAssignments[string(client.ID)], assignment)
+		s.assignmentSeq = maxPrefixedSequence(s.assignmentSeq, "client-assignment", string(assignment.ID))
 		s.rehydrateClientAssignmentUsage(ctx, client, assignment, usageIdx, discoveredIdx)
 	}
 	return nil
@@ -123,13 +123,13 @@ func (s *Server) restoreStoredClients() error {
 			return fmt.Errorf("decrypt client %s: %w", record.ID, err)
 		}
 		client := clients.ClientFromRecord(decoded)
-		s.clients[client.ID] = client
-		s.clientSeq = maxPrefixedSequence(s.clientSeq, "client", client.ID)
+		s.clients[string(client.ID)] = client
+		s.clientSeq = maxPrefixedSequence(s.clientSeq, "client", string(client.ID))
 
 		if err := s.restoreClientAssignments(ctx, client, usageIdx, discoveredIdx); err != nil {
 			return err
 		}
-		if err := s.restoreClientDeployments(ctx, client.ID); err != nil {
+		if err := s.restoreClientDeployments(ctx, string(client.ID)); err != nil {
 			return err
 		}
 	}

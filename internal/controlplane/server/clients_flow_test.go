@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 )
@@ -42,8 +43,8 @@ func TestDeleteClientPersistsStateBeforeJob(t *testing.T) {
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: failing,
+		Now:              func() time.Time { return now },
+		Store:            failing,
 	})
 	defer server.Close()
 
@@ -61,7 +62,7 @@ func TestDeleteClientPersistsStateBeforeJob(t *testing.T) {
 
 	server.clientsMu.Lock()
 	server.clients[clientID] = managedClient{
-		ID:        clientID,
+		ID:        clients.ClientID(clientID),
 		Name:      "alice",
 		Secret:    "0123456789abcdef0123456789abcdef",
 		Enabled:   true,
@@ -70,14 +71,14 @@ func TestDeleteClientPersistsStateBeforeJob(t *testing.T) {
 	}
 	server.clientAssignments[clientID] = []managedClientAssignment{{
 		ID:         "assign-1",
-		ClientID:   clientID,
+		ClientID:   clients.ClientID(clientID),
 		TargetType: clientAssignmentTargetAgent,
 		AgentID:    "agent-A",
 		CreatedAt:  now.Add(-time.Minute),
 	}}
 	server.clientDeployments[clientID] = map[string]managedClientDeployment{
 		"agent-A": {
-			ClientID:         clientID,
+			ClientID:         clients.ClientID(clientID),
 			AgentID:          "agent-A",
 			DesiredOperation: "create",
 			Status:           clientDeploymentStatusSucceeded,
@@ -122,7 +123,7 @@ func TestResolveClientIDByNameHitsFleetGroupAssignment(t *testing.T) {
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 	})
 	defer server.Close()
 
@@ -155,7 +156,7 @@ func TestResolveClientIDByNameHitsFleetGroupAssignment(t *testing.T) {
 	clientID := "client-42"
 	server.clientsMu.Lock()
 	server.clients[clientID] = managedClient{
-		ID:        clientID,
+		ID:        clients.ClientID(clientID),
 		Name:      "bob",
 		Secret:    "0123456789abcdef0123456789abcdef",
 		Enabled:   true,
@@ -164,7 +165,7 @@ func TestResolveClientIDByNameHitsFleetGroupAssignment(t *testing.T) {
 	}
 	server.clientAssignments[clientID] = []managedClientAssignment{{
 		ID:           "assign-fg",
-		ClientID:     clientID,
+		ClientID:     clients.ClientID(clientID),
 		TargetType:   clientAssignmentTargetFleetGroup,
 		FleetGroupID: "eu",
 		CreatedAt:    now,
@@ -188,7 +189,7 @@ func TestResolveClientIDByNameHitsFleetGroupAssignment(t *testing.T) {
 	directClientID := "client-direct"
 	server.clientsMu.Lock()
 	server.clients[directClientID] = managedClient{
-		ID:        directClientID,
+		ID:        clients.ClientID(directClientID),
 		Name:      "carol",
 		Secret:    "0123456789abcdef0123456789abcdef",
 		Enabled:   true,
@@ -197,7 +198,7 @@ func TestResolveClientIDByNameHitsFleetGroupAssignment(t *testing.T) {
 	}
 	server.clientAssignments[directClientID] = []managedClientAssignment{{
 		ID:         "assign-direct",
-		ClientID:   directClientID,
+		ClientID:   clients.ClientID(directClientID),
 		TargetType: clientAssignmentTargetAgent,
 		AgentID:    "agent-US",
 		CreatedAt:  now,

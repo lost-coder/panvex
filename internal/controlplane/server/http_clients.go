@@ -104,9 +104,9 @@ func (s *Server) handleClients() http.HandlerFunc {
 			row, included := s.buildClientListRow(
 				client,
 				scope,
-				listing.assignments[client.ID],
-				listing.deployments[client.ID],
-				listing.usage[client.ID],
+				listing.assignments[string(client.ID)],
+				listing.deployments[string(client.ID)],
+				listing.usage[string(client.ID)],
 				uniqueIPCounts,
 			)
 			if !included {
@@ -153,7 +153,7 @@ func (s *Server) handleCreateClient() http.HandlerFunc {
 		}
 
 		s.logger.Info("client created", "client_id", client.ID, "name", client.Name, "user_id", session.UserID)
-		s.appendAuditWithContext(r.Context(), session.UserID, "clients.create", client.ID, map[string]any{
+		s.appendAuditWithContext(r.Context(), session.UserID, "clients.create", string(client.ID), map[string]any{
 			"name":             client.Name,
 			"enabled":          client.Enabled,
 			"fleet_group_ids":  assignmentFleetGroupIDs(assignments),
@@ -233,7 +233,7 @@ func (s *Server) handleUpdateClient() http.HandlerFunc {
 		}
 
 		s.logger.Info("client updated", "client_id", client.ID, "name", client.Name, "user_id", session.UserID)
-		s.appendAuditWithContext(r.Context(), session.UserID, "clients.update", client.ID, map[string]any{
+		s.appendAuditWithContext(r.Context(), session.UserID, "clients.update", string(client.ID), map[string]any{
 			"name":            client.Name,
 			"fleet_group_ids": assignmentFleetGroupIDs(assignments),
 			"agent_ids":       assignmentAgentIDs(assignments),
@@ -378,7 +378,7 @@ func (s *Server) handleRotateClientSecret() http.HandlerFunc {
 		}
 
 		s.logger.Info("client secret rotated", "client_id", client.ID, "user_id", session.UserID)
-		s.appendAuditWithContext(r.Context(), session.UserID, "clients.rotate_secret", client.ID, nil)
+		s.appendAuditWithContext(r.Context(), session.UserID, "clients.rotate_secret", string(client.ID), nil)
 		writeJSON(w, http.StatusOK, s.buildClientDetailResponse(r.Context(), client, assignments, deployments, true))
 	}
 }
@@ -411,10 +411,9 @@ func (s *Server) handleRedeployClient() http.HandlerFunc {
 		}
 
 		s.logger.Info("client redeployed", "client_id", client.ID, "user_id", session.UserID)
-		s.appendAuditWithContext(r.Context(), session.UserID, "clients.redeploy", client.ID, map[string]any{
+		s.appendAuditWithContext(r.Context(), session.UserID, "clients.redeploy", string(client.ID), map[string]any{
 			"target_agent_ids": deploymentAgentIDsFromResponses(deployments),
 		})
 		writeJSON(w, http.StatusOK, s.buildClientDetailResponse(r.Context(), client, assignments, deployments, false))
 	}
 }
-

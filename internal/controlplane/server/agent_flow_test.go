@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"github.com/lost-coder/panvex/internal/security"
@@ -197,8 +198,8 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 
 	first := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	fleetGroupID := seedTestFleetGroup(t, store, "ams-1", now)
 	token, err := first.issueEnrollmentToken(security.EnrollmentScope{
@@ -248,8 +249,8 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 
 	restored := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now.Add(time.Minute) },
-		Store: store,
+		Now:              func() time.Time { return now.Add(time.Minute) },
+		Store:            store,
 	})
 	defer restored.Close()
 
@@ -292,8 +293,8 @@ func TestServerApplyAgentSnapshotUpdatesInMemoryStateEvenWhenPersistenceFails(t 
 	store := &failingStore{Store: sqliteStore}
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
 	fleetGroupID := seedTestFleetGroup(t, sqliteStore, "ams-1", now)
@@ -507,8 +508,8 @@ func TestServerApplyAgentSnapshotKeepsEnrolledScopeWhenSnapshotDiffers(t *testin
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
 	// Enrollment pins the agent to the "default" group; the snapshot
@@ -735,8 +736,8 @@ func TestServerEnrollmentTokenPersistsAcrossRestart(t *testing.T) {
 
 	first := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer first.Close()
 	fleetGroupID := seedTestFleetGroup(t, store, "ams-1", now)
@@ -750,8 +751,8 @@ func TestServerEnrollmentTokenPersistsAcrossRestart(t *testing.T) {
 
 	restored := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now.Add(10 * time.Second) },
-		Store: store,
+		Now:              func() time.Time { return now.Add(10 * time.Second) },
+		Store:            store,
 	})
 	defer restored.Close()
 	response, err := restored.enrollAgent(context.Background(), agentEnrollmentRequest{
@@ -778,8 +779,8 @@ func TestServerRestoresPersistedCertificateAuthority(t *testing.T) {
 
 	first := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer first.Close()
 	firstAuthority := first.authority.caPEM
@@ -789,8 +790,8 @@ func TestServerRestoresPersistedCertificateAuthority(t *testing.T) {
 
 	restored := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now.Add(30 * time.Second) },
-		Store: store,
+		Now:              func() time.Time { return now.Add(30 * time.Second) },
+		Store:            store,
 	})
 	defer restored.Close()
 	if restored.authority.caPEM != firstAuthority {
@@ -839,8 +840,8 @@ func TestServerRecordsStartupErrorInsteadOfPanickingOnRestoreFailure(t *testing.
 	}
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
 
@@ -859,8 +860,8 @@ func TestServerConsumedEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) 
 
 	first := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer first.Close()
 	fleetGroupID := seedTestFleetGroup(t, store, "ams-1", now)
@@ -882,8 +883,8 @@ func TestServerConsumedEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) 
 
 	restored := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now.Add(20 * time.Second) },
-		Store: store,
+		Now:              func() time.Time { return now.Add(20 * time.Second) },
+		Store:            store,
 	})
 	defer restored.Close()
 	if _, err := restored.enrollAgent(context.Background(), agentEnrollmentRequest{
@@ -905,8 +906,8 @@ func TestEnrollmentSetsCertificateDates(t *testing.T) {
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
 	fleetGroupID := seedTestFleetGroup(t, store, "ams-1", now)
@@ -1105,8 +1106,8 @@ func TestServerExpiredEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) {
 
 	first := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer first.Close()
 	fleetGroupID := seedTestFleetGroup(t, store, "ams-1", now)
@@ -1120,8 +1121,8 @@ func TestServerExpiredEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) {
 
 	restored := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now.Add(2 * time.Second) },
-		Store: store,
+		Now:              func() time.Time { return now.Add(2 * time.Second) },
+		Store:            store,
 	})
 	defer restored.Close()
 	if _, err := restored.enrollAgent(context.Background(), agentEnrollmentRequest{
@@ -1160,7 +1161,7 @@ func TestZeroLiveGaugesForUntouchedClientsTouchedSubset(t *testing.T) {
 	server.clientsMu.RLock()
 	defer server.clientsMu.RUnlock()
 	for _, c := range clients {
-		got := server.clientUsage[c.ClientID][agentID]
+		got := server.clientUsage[string(c.ClientID)][agentID]
 		if got.ActiveTCPConns != c.ActiveTCPConns {
 			t.Fatalf("client %s ActiveTCPConns = %d, want %d (touched client must keep its gauge)", c.ClientID, got.ActiveTCPConns, c.ActiveTCPConns)
 		}
@@ -1264,7 +1265,7 @@ func TestZeroLiveGaugesForUntouchedClientsScalesWithAgentNotPanel(t *testing.T) 
 		out := make([]clientUsageSnapshot, 0, count)
 		for i := 0; i < count; i++ {
 			out = append(out, clientUsageSnapshot{
-				ClientID:        fmt.Sprintf("%s-c%03d", prefix, i),
+				ClientID:        clients.ClientID(fmt.Sprintf("%s-c%03d", prefix, i)),
 				ActiveTCPConns:  3,
 				ActiveUniqueIPs: 2,
 				ObservedAt:      now,

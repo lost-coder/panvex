@@ -129,7 +129,7 @@ func (s *Server) handleAdoptDiscoveredClient() http.HandlerFunc {
 		}
 
 		writeJSON(w, http.StatusOK, map[string]string{
-			"client_id": client.ID,
+			"client_id": string(client.ID),
 			"name":      client.Name,
 		})
 	}
@@ -343,8 +343,8 @@ func (s *Server) resolveAgentNodeNames(clients []discoveredClient) map[string]st
 // pivot key (secret or name) and tracks the distinct opposite-axis
 // values so the caller can decide whether the group is a real conflict.
 type discoveredConflictGroup struct {
-	ids        []string
-	otherAxis  map[string]struct{}
+	ids       []string
+	otherAxis map[string]struct{}
 }
 
 // otherIDs returns every id in the group except `id`.

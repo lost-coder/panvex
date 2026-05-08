@@ -40,7 +40,7 @@ func PersistState(
 	if err := store.PutClient(ctx, record); err != nil {
 		return err
 	}
-	if err := store.DeleteClientAssignments(ctx, client.ID); err != nil {
+	if err := store.DeleteClientAssignments(ctx, string(client.ID)); err != nil {
 		return err
 	}
 	for _, assignment := range assignments {

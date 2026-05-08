@@ -32,7 +32,7 @@ func ResolveTargetAgentIDs(assignments []Assignment, topology AgentTopology) []s
 	for _, assignment := range assignments {
 		switch assignment.TargetType {
 		case TargetTypeFleetGroup:
-			for _, agentID := range topology.FleetMembers[assignment.FleetGroupID] {
+			for _, agentID := range topology.FleetMembers[string(assignment.FleetGroupID)] {
 				targetAgentIDs[agentID] = struct{}{}
 			}
 		case TargetTypeAgent:
@@ -98,7 +98,7 @@ func assignmentMatchesAgent(assignments []Assignment, agentID, agentFleetGroupID
 				return true
 			}
 		case TargetTypeFleetGroup:
-			if agentFleetGroupID != "" && a.FleetGroupID == agentFleetGroupID {
+			if agentFleetGroupID != "" && string(a.FleetGroupID) == agentFleetGroupID {
 				return true
 			}
 		}

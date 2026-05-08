@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/agenttransport"
+	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
@@ -291,9 +292,9 @@ func (s *Server) adoptDiscoveredClientLocked(ctx context.Context, id, actorID st
 
 	// Seed live usage with the stats Telemt already reported for this user
 	// — primary record plus every sibling we just folded in.
-	s.seedClientUsage(ctx, client.ID, record.AgentID, record.TotalOctets, record.CurrentConnections, record.ActiveUniqueIPs, observedAt)
+	s.seedClientUsage(ctx, string(client.ID), record.AgentID, record.TotalOctets, record.CurrentConnections, record.ActiveUniqueIPs, observedAt)
 	for _, sib := range siblings {
-		s.seedClientUsage(ctx, client.ID, sib.AgentID, sib.TotalOctets, sib.CurrentConnections, sib.ActiveUniqueIPs, observedAt)
+		s.seedClientUsage(ctx, string(client.ID), sib.AgentID, sib.TotalOctets, sib.CurrentConnections, sib.ActiveUniqueIPs, observedAt)
 	}
 
 	s.appendAuditWithContext(ctx, actorID, "clients.adopted", id, map[string]any{
@@ -362,7 +363,7 @@ func (s *Server) bulkAdoptDiscoveredClients(ctx context.Context, ids []string, a
 			results = append(results, BulkAdoptResult{
 				ID:       id,
 				Status:   "adopted",
-				ClientID: client.ID,
+				ClientID: string(client.ID),
 				Name:     client.Name,
 			})
 		case errors.Is(err, ErrAlreadyAdopted):
@@ -591,9 +592,9 @@ func (s *Server) mergeAdoptIntoExistingClient(
 	// already covered so we don't append duplicates when adding the
 	// primary record + siblings.
 	s.clientsMu.RLock()
-	existingAssignments := append([]managedClientAssignment(nil), s.clientAssignments[existing.ID]...)
-	existingDeployments := make([]managedClientDeployment, 0, len(s.clientDeployments[existing.ID])+1+len(siblings))
-	for _, d := range s.clientDeployments[existing.ID] {
+	existingAssignments := append([]managedClientAssignment(nil), s.clientAssignments[string(existing.ID)]...)
+	existingDeployments := make([]managedClientDeployment, 0, len(s.clientDeployments[string(existing.ID)])+1+len(siblings))
+	for _, d := range s.clientDeployments[string(existing.ID)] {
 		existingDeployments = append(existingDeployments, d)
 	}
 	s.clientsMu.RUnlock()
@@ -643,12 +644,12 @@ func (s *Server) mergeAdoptIntoExistingClient(
 	}
 
 	// Seed usage from primary + siblings.
-	s.seedClientUsage(ctx, existing.ID, record.AgentID, record.TotalOctets, record.CurrentConnections, record.ActiveUniqueIPs, observedAt)
+	s.seedClientUsage(ctx, string(existing.ID), record.AgentID, record.TotalOctets, record.CurrentConnections, record.ActiveUniqueIPs, observedAt)
 	for _, sib := range siblings {
 		if sib.AgentID == record.AgentID {
 			continue
 		}
-		s.seedClientUsage(ctx, existing.ID, sib.AgentID, sib.TotalOctets, sib.CurrentConnections, sib.ActiveUniqueIPs, observedAt)
+		s.seedClientUsage(ctx, string(existing.ID), sib.AgentID, sib.TotalOctets, sib.CurrentConnections, sib.ActiveUniqueIPs, observedAt)
 	}
 
 	// Mark discovered record as adopted.
@@ -677,7 +678,7 @@ func (s *Server) seedClientUsage(ctx context.Context, clientID, agentID string, 
 		s.clientUsage[clientID] = make(map[string]clientUsageSnapshot)
 	}
 	snap := clientUsageSnapshot{
-		ClientID:         clientID,
+		ClientID:         clients.ClientID(clientID),
 		TrafficUsedBytes: trafficBytes,
 		UniqueIPsUsed:    uniqueIPs,
 		ActiveTCPConns:   connections,

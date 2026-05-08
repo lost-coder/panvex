@@ -190,9 +190,9 @@ func (s *Server) updateClient(ctx context.Context, clientID, actorID string, inp
 		return managedClient{}, nil, nil, err
 	}
 
-	assignments := s.buildClientAssignments(clientID, input, observedAt)
+	assignments := s.buildClientAssignments(clients.ClientID(clientID), input, observedAt)
 	targetAgentIDs := s.resolveClientTargetAgentIDs(assignments)
-	deployments := buildClientDeployments(currentDeployments, clientID, targetAgentIDs, string(jobs.ActionClientUpdate), observedAt)
+	deployments := buildClientDeployments(currentDeployments, clients.ClientID(clientID), targetAgentIDs, string(jobs.ActionClientUpdate), observedAt)
 
 	// Persist client state before enqueuing jobs so a failure in
 	// persistence does not leave dispatched jobs referencing stale state.
@@ -271,7 +271,7 @@ func (s *Server) redeployClientWithContext(ctx context.Context, clientID, actorI
 		return currentClient, assignments, deployments, nil
 	}
 
-	deployments = buildClientDeployments(deployments, clientID, targetAgentIDs, string(jobs.ActionClientCreate), observedAt)
+	deployments = buildClientDeployments(deployments, clients.ClientID(clientID), targetAgentIDs, string(jobs.ActionClientCreate), observedAt)
 	if err := s.replaceClientStateWithContext(ctx, currentClient, assignments, deployments); err != nil {
 		return managedClient{}, nil, nil, err
 	}
@@ -300,7 +300,7 @@ func (s *Server) rotateClientSecret(ctx context.Context, clientID, actorID strin
 	currentClient.UpdatedAt = observedAt
 
 	targetAgentIDs := s.resolveClientTargetAgentIDs(assignments)
-	deployments = buildClientDeployments(deployments, clientID, targetAgentIDs, string(jobs.ActionClientRotateSecret), observedAt)
+	deployments = buildClientDeployments(deployments, clients.ClientID(clientID), targetAgentIDs, string(jobs.ActionClientRotateSecret), observedAt)
 	// Persist the new secret before enqueuing the rotation job so a
 	// persistence failure does not leave a dispatched job with a secret
 	// the control-plane never recorded.
@@ -335,7 +335,7 @@ func (s *Server) deleteClient(ctx context.Context, clientID, actorID string, obs
 	if len(targetAgentIDs) == 0 {
 		targetAgentIDs = deploymentAgentIDs(deployments)
 	}
-	deployments = buildClientDeployments(deployments, clientID, targetAgentIDs, string(jobs.ActionClientDelete), observedAt)
+	deployments = buildClientDeployments(deployments, clients.ClientID(clientID), targetAgentIDs, string(jobs.ActionClientDelete), observedAt)
 
 	// Persist the tombstone before dispatching the delete job so a persistence
 	// failure does not leave the agent with a removed client while the DB
@@ -372,13 +372,13 @@ func (s *Server) replaceClientStateWithContext(ctx context.Context, client manag
 func (s *Server) replaceClientStateInMemory(client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment) {
 	s.clientsMu.Lock()
 	defer s.clientsMu.Unlock()
-	s.clients[client.ID] = client
-	s.clientAssignments[client.ID] = append([]managedClientAssignment(nil), assignments...)
+	s.clients[string(client.ID)] = client
+	s.clientAssignments[string(client.ID)] = append([]managedClientAssignment(nil), assignments...)
 	nextDeployments := make(map[string]managedClientDeployment, len(deployments))
 	for _, deployment := range deployments {
 		nextDeployments[deployment.AgentID] = deployment
 	}
-	s.clientDeployments[client.ID] = nextDeployments
+	s.clientDeployments[string(client.ID)] = nextDeployments
 }
 
 func (s *Server) persistClientState(ctx context.Context, client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment) error {
@@ -393,14 +393,14 @@ func persistClientStateVia(ctx context.Context, store storage.Store, client mana
 	return clients.PersistState(ctx, store, client, assignments, deployments, vault)
 }
 
-func (s *Server) buildClientAssignments(clientID string, input clientMutationInput, observedAt time.Time) []managedClientAssignment {
+func (s *Server) buildClientAssignments(clientID clients.ClientID, input clientMutationInput, observedAt time.Time) []managedClientAssignment {
 	assignments := make([]managedClientAssignment, 0, len(input.FleetGroupIDs)+len(input.AgentIDs))
 	for _, fleetGroupID := range normalizedIDs(input.FleetGroupIDs) {
 		assignments = append(assignments, managedClientAssignment{
 			ID:           s.nextClientAssignmentID(),
 			ClientID:     clientID,
 			TargetType:   clientAssignmentTargetFleetGroup,
-			FleetGroupID: fleetGroupID,
+			FleetGroupID: clients.FleetGroupID(fleetGroupID),
 			CreatedAt:    observedAt,
 		})
 	}
@@ -510,7 +510,7 @@ func (s *Server) applyClientJobDeployment(clientID, agentID string, job jobs.Job
 	}
 	deployment := s.clientDeployments[clientID][agentID]
 
-	deployment.ClientID = clientID
+	deployment.ClientID = clients.ClientID(clientID)
 	deployment.AgentID = agentID
 	deployment.DesiredOperation = string(job.Action)
 	deployment.UpdatedAt = observedAt.UTC()
@@ -597,26 +597,26 @@ func (s *Server) resolveClientIDByName(agentID, clientName string) string {
 	return s.clientsSvc.ResolveIDByName(s.clients, s.clientAssignments, agentID, agentFleetGroupID, clientName)
 }
 
-func (s *Server) nextClientID() string {
+func (s *Server) nextClientID() clients.ClientID {
 	s.clientsMu.Lock()
 	defer s.clientsMu.Unlock()
 
 	s.clientSeq++
-	return newSequenceID("client", s.clientSeq)
+	return clients.ClientID(newSequenceID("client", s.clientSeq))
 }
 
-func (s *Server) nextClientAssignmentID() string {
+func (s *Server) nextClientAssignmentID() clients.AssignmentID {
 	s.clientsMu.Lock()
 	defer s.clientsMu.Unlock()
 
 	s.assignmentSeq++
-	return newSequenceID("client-assignment", s.assignmentSeq)
+	return clients.AssignmentID(newSequenceID("client-assignment", s.assignmentSeq))
 }
 
 // buildClientDeployments delegates to clients.BuildDeployments.
 // Agents no longer in the target set are marked for deletion; see
 // deployments.go in the clients package.
-func buildClientDeployments(current []managedClientDeployment, clientID string, targetAgentIDs []string, desiredOperation string, observedAt time.Time) []managedClientDeployment {
+func buildClientDeployments(current []managedClientDeployment, clientID clients.ClientID, targetAgentIDs []string, desiredOperation string, observedAt time.Time) []managedClientDeployment {
 	return clients.BuildDeployments(current, clientID, targetAgentIDs, desiredOperation, string(jobs.ActionClientDelete), observedAt)
 }
 

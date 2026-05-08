@@ -19,7 +19,7 @@ import (
 // Service.ReplaceState.
 func BuildDeployments(
 	current []Deployment,
-	clientID string,
+	clientID ClientID,
 	targetAgentIDs []string,
 	desiredOperation string,
 	deleteOperation string,

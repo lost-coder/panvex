@@ -27,7 +27,7 @@ const (
 // strings, and keeps the plaintext Secret field until at-rest encryption
 // lands (see controlplane/server/clients_types.go comment).
 type Client struct {
-	ID                string
+	ID                ClientID
 	Name              string
 	Secret            string
 	UserADTag         string
@@ -45,10 +45,10 @@ type Client struct {
 // FleetGroup. TargetType distinguishes the two cases; exactly one of
 // FleetGroupID / AgentID is populated per row, matching the TargetType.
 type Assignment struct {
-	ID           string
-	ClientID     string
+	ID           AssignmentID
+	ClientID     ClientID
 	TargetType   string
-	FleetGroupID string
+	FleetGroupID FleetGroupID
 	AgentID      string
 	CreatedAt    time.Time
 }
@@ -58,7 +58,7 @@ type Assignment struct {
 // holds every link Telemt reported for this user (one per tls_domain ×
 // host combination), populated on a successful apply.
 type Deployment struct {
-	ClientID         string
+	ClientID         ClientID
 	AgentID          string
 	DesiredOperation string
 	Status           string
@@ -101,7 +101,7 @@ type DiscoveredRecord struct {
 // and accumulates unconditionally, preserving pre-P2-LOG-06 behavior.
 // See Service.ApplyUsageSnapshot for the dedup semantics.
 type UsageSnapshot struct {
-	ClientID         string
+	ClientID         ClientID
 	TrafficUsedBytes uint64
 	UniqueIPsUsed    int
 	ActiveTCPConns   int

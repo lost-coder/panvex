@@ -241,11 +241,11 @@ func (s *Server) mergeClientUsageBatch(agentID string, clients []clientUsageSnap
 	seen := make(map[string]struct{}, len(clients))
 	toPersist := make([]storage.ClientUsageRecord, 0, len(clients))
 	for _, usage := range clients {
-		seen[usage.ClientID] = struct{}{}
-		if s.clientUsage[usage.ClientID] == nil {
-			s.clientUsage[usage.ClientID] = make(map[string]clientUsageSnapshot)
+		seen[string(usage.ClientID)] = struct{}{}
+		if s.clientUsage[string(usage.ClientID)] == nil {
+			s.clientUsage[string(usage.ClientID)] = make(map[string]clientUsageSnapshot)
 		}
-		current := s.clientUsage[usage.ClientID][agentID]
+		current := s.clientUsage[string(usage.ClientID)][agentID]
 		current.ClientID = usage.ClientID
 		if applyTrafficDelta {
 			current.TrafficUsedBytes += usage.TrafficUsedBytes
@@ -254,10 +254,10 @@ func (s *Server) mergeClientUsageBatch(agentID string, clients []clientUsageSnap
 		current.ActiveTCPConns = usage.ActiveTCPConns
 		current.ActiveUniqueIPs = usage.ActiveUniqueIPs
 		current.ObservedAt = usage.ObservedAt
-		s.clientUsage[usage.ClientID][agentID] = current
-		s.trackClientUsageOwnerLocked(usage.ClientID, agentID)
+		s.clientUsage[string(usage.ClientID)][agentID] = current
+		s.trackClientUsageOwnerLocked(string(usage.ClientID), agentID)
 		toPersist = append(toPersist, storage.ClientUsageRecord{
-			ClientID:         usage.ClientID,
+			ClientID:         string(usage.ClientID),
 			AgentID:          agentID,
 			TrafficUsedBytes: current.TrafficUsedBytes,
 			UniqueIPsUsed:    current.UniqueIPsUsed,
@@ -362,15 +362,15 @@ func (s *Server) trackClientUsageOwnerLocked(clientID, agentID string) {
 	owned[clientID] = struct{}{}
 }
 
-func (s *Server) applyClientIPSnapshot(agentID string, clients []clientIPSnapshot) {
-	for _, snapshot := range clients {
+func (s *Server) applyClientIPSnapshot(agentID string, ipSnapshots []clientIPSnapshot) {
+	for _, snapshot := range ipSnapshots {
 		usageByAgent := s.clientUsage[snapshot.ClientID]
 		if usageByAgent == nil {
 			usageByAgent = make(map[string]clientUsageSnapshot)
 			s.clientUsage[snapshot.ClientID] = usageByAgent
 		}
 		current := usageByAgent[agentID]
-		current.ClientID = snapshot.ClientID
+		current.ClientID = clients.ClientID(snapshot.ClientID)
 		current.UniqueIPsUsed = len(snapshot.ActiveIPs)
 		current.ActiveUniqueIPs = len(snapshot.ActiveIPs)
 		usageByAgent[agentID] = current

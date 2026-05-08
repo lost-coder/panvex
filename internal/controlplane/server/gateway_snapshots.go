@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
@@ -65,7 +66,7 @@ func convertInstanceSnapshots(in []*gatewayrpc.InstanceSnapshot) []instanceSnaps
 // missing client_ids by name. Returns the converted slice plus resolved/skipped
 // counters for logging.
 func (s *Server) convertClientUsageSnapshots(agentID string, in []*gatewayrpc.ClientUsageSnapshot, observedAt time.Time) ([]clientUsageSnapshot, int, int) {
-	clients := make([]clientUsageSnapshot, 0, len(in))
+	result := make([]clientUsageSnapshot, 0, len(in))
 	var resolved, skipped int
 	for _, client := range in {
 		clientID := client.ClientId
@@ -77,8 +78,8 @@ func (s *Server) convertClientUsageSnapshots(agentID string, in []*gatewayrpc.Cl
 			continue
 		}
 		resolved++
-		clients = append(clients, clientUsageSnapshot{
-			ClientID:         clientID,
+		result = append(result, clientUsageSnapshot{
+			ClientID:         clients.ClientID(clientID),
 			TrafficUsedBytes: client.TrafficDeltaBytes,
 			UniqueIPsUsed:    int(client.UniqueIpsUsed),
 			ActiveTCPConns:   int(client.ActiveTcpConns),
@@ -89,7 +90,7 @@ func (s *Server) convertClientUsageSnapshots(agentID string, in []*gatewayrpc.Cl
 			Seq: client.Seq,
 		})
 	}
-	return clients, resolved, skipped
+	return result, resolved, skipped
 }
 
 // convertClientIPSnapshots translates wire client-IP rows, resolving missing

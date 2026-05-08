@@ -49,7 +49,7 @@ func DecryptClientRecord(record storage.ClientRecord, vault *secretvault.Vault) 
 // encryption lands (see controlplane/server/clients_types.go comment).
 func ClientToRecord(client Client) storage.ClientRecord {
 	return storage.ClientRecord{
-		ID:                client.ID,
+		ID:                string(client.ID),
 		Name:              client.Name,
 		SecretCiphertext:  client.Secret,
 		UserADTag:         client.UserADTag,
@@ -68,7 +68,7 @@ func ClientToRecord(client Client) storage.ClientRecord {
 // storage.
 func ClientFromRecord(record storage.ClientRecord) Client {
 	return Client{
-		ID:                record.ID,
+		ID:                ClientID(record.ID),
 		Name:              record.Name,
 		Secret:            record.SecretCiphertext,
 		UserADTag:         record.UserADTag,
@@ -86,10 +86,10 @@ func ClientFromRecord(record storage.ClientRecord) Client {
 // AssignmentToRecord converts an Assignment to its persistent form.
 func AssignmentToRecord(assignment Assignment) storage.ClientAssignmentRecord {
 	return storage.ClientAssignmentRecord{
-		ID:           assignment.ID,
-		ClientID:     assignment.ClientID,
+		ID:           string(assignment.ID),
+		ClientID:     string(assignment.ClientID),
 		TargetType:   assignment.TargetType,
-		FleetGroupID: assignment.FleetGroupID,
+		FleetGroupID: string(assignment.FleetGroupID),
 		AgentID:      assignment.AgentID,
 		CreatedAt:    assignment.CreatedAt.UTC(),
 	}
@@ -99,10 +99,10 @@ func AssignmentToRecord(assignment Assignment) storage.ClientAssignmentRecord {
 // storage.
 func AssignmentFromRecord(record storage.ClientAssignmentRecord) Assignment {
 	return Assignment{
-		ID:           record.ID,
-		ClientID:     record.ClientID,
+		ID:           AssignmentID(record.ID),
+		ClientID:     ClientID(record.ClientID),
 		TargetType:   record.TargetType,
-		FleetGroupID: record.FleetGroupID,
+		FleetGroupID: FleetGroupID(record.FleetGroupID),
 		AgentID:      record.AgentID,
 		CreatedAt:    record.CreatedAt.UTC(),
 	}
@@ -111,7 +111,7 @@ func AssignmentFromRecord(record storage.ClientAssignmentRecord) Assignment {
 // DeploymentToRecord converts a Deployment to its persistent form.
 func DeploymentToRecord(deployment Deployment) storage.ClientDeploymentRecord {
 	return storage.ClientDeploymentRecord{
-		ClientID:         deployment.ClientID,
+		ClientID:         string(deployment.ClientID),
 		AgentID:          deployment.AgentID,
 		DesiredOperation: deployment.DesiredOperation,
 		Status:           deployment.Status,
@@ -126,7 +126,7 @@ func DeploymentToRecord(deployment Deployment) storage.ClientDeploymentRecord {
 // storage.
 func DeploymentFromRecord(record storage.ClientDeploymentRecord) Deployment {
 	return Deployment{
-		ClientID:         record.ClientID,
+		ClientID:         ClientID(record.ClientID),
 		AgentID:          record.AgentID,
 		DesiredOperation: record.DesiredOperation,
 		Status:           record.Status,

@@ -42,8 +42,8 @@ func TestUpsertDiscoveredClientDedupes(t *testing.T) {
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
 
@@ -128,8 +128,8 @@ func TestUpsertDiscoveredClientPreservesIgnoredStatus(t *testing.T) {
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
 
@@ -197,8 +197,8 @@ func TestAdoptDiscoveredClientConcurrentIsAtomic(t *testing.T) {
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
 
@@ -237,7 +237,7 @@ func TestAdoptDiscoveredClientConcurrentIsAtomic(t *testing.T) {
 			switch {
 			case err == nil:
 				successes++
-				createdIDs = append(createdIDs, client.ID)
+				createdIDs = append(createdIDs, string(client.ID))
 			case errors.Is(err, ErrAlreadyAdopted):
 				alreadyAdopted++
 			default:
@@ -270,7 +270,7 @@ func TestAdoptDiscoveredClientConcurrentIsAtomic(t *testing.T) {
 	if len(matching) != 1 {
 		t.Fatalf("managed clients named %q: got %d, want 1", "external-charlie", len(matching))
 	}
-	if len(createdIDs) != 1 || createdIDs[0] != matching[0].ID {
+	if len(createdIDs) != 1 || createdIDs[0] != string(matching[0].ID) {
 		t.Fatalf("createdIDs = %v, matching[0].ID = %q (must agree; only the winner created the client)", createdIDs, matching[0].ID)
 	}
 
@@ -329,8 +329,8 @@ func TestMergeAdoptNoTOCTOU(t *testing.T) {
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
 
@@ -420,8 +420,8 @@ func TestMergeAdoptNoTOCTOU(t *testing.T) {
 	// frontend rate-limit and ad_tag-generation issues during bulk
 	// imports).
 	server.clientsMu.RLock()
-	assignments := append([]managedClientAssignment(nil), server.clientAssignments[existing.ID]...)
-	deployments := server.clientDeployments[existing.ID]
+	assignments := append([]managedClientAssignment(nil), server.clientAssignments[string(existing.ID)]...)
+	deployments := server.clientDeployments[string(existing.ID)]
 	server.clientsMu.RUnlock()
 
 	if len(assignments) != 2 {
@@ -525,8 +525,8 @@ func TestRestoreStoredClients_RehydratesUsageFromDiscovered(t *testing.T) {
 	// persisted discovered_clients row.
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
 	if err := server.restoreStoredClients(); err != nil {
@@ -625,8 +625,8 @@ func TestRestoreStoredClients_PrefersPersistedUsage(t *testing.T) {
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
 	if err := server.restoreStoredClients(); err != nil {

@@ -29,7 +29,7 @@ func (s *Server) dispatchClientUpdateJobs(ctx context.Context, actorID string, c
 
 func (s *Server) enqueueClientJob(ctx context.Context, actorID string, action jobs.Action, client managedClient, previousName string, targetAgentIDs []string, observedAt time.Time) (jobs.Job, error) {
 	payloadJSON, err := json.Marshal(clientJobPayload{
-		ClientID:          client.ID,
+		ClientID:          string(client.ID),
 		PreviousName:      previousName,
 		Name:              client.Name,
 		Secret:            client.Secret,
