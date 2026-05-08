@@ -26,6 +26,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
 	"github.com/lost-coder/panvex/internal/controlplane/settings"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/webhooks"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
@@ -161,6 +162,13 @@ type Server struct {
 	// column. Read/write under metricsAuditMu.
 	auditChainTail   string
 	auditChainLoaded bool
+	// webhookStorage / webhookProducer power the outbox subsystem.
+	// Both are nil when Options.WebhookStorage was unset (test
+	// fixtures, or operators with no webhook endpoints configured) —
+	// publishWebhookEvent is the nil-safe wrapper every event source
+	// uses, so callers don't have to nil-check at every site.
+	webhookStorage  webhooks.Storage
+	webhookProducer *webhooks.Producer
 	metricSeq           uint64
 	clientSeq           uint64
 	assignmentSeq       uint64

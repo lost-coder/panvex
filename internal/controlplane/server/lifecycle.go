@@ -20,6 +20,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/sessions"
 	"github.com/lost-coder/panvex/internal/controlplane/settings"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/webhooks"
 )
 
 // R-Q-01/07: lifecycle (constructor + shutdown + seed) extracted
@@ -122,6 +123,33 @@ func newServerFromOptions(options Options, now func() time.Time, csrfSecret []by
 	}
 }
 
+// initWebhookSubsystem builds the outbox storage + producer once
+// the secret vault is available. Called from initStoreBackedSubsystems
+// (which runs after initSecrets has produced the vault). When
+// Options.WebhookStorageFactory is unset the subsystem stays
+// disabled — webhookProducer remains nil and publishWebhookEvent is
+// a no-op.
+func (s *Server) initWebhookSubsystem(options Options, vault *secretvault.Vault) {
+	if options.WebhookStorageFactory == nil {
+		return
+	}
+	decrypt := func(ciphertext string) ([]byte, error) {
+		// nil/zero vault is a documented pass-through (see
+		// secretvault.Vault.Decrypt). Production deployments always
+		// have a vault; dev/test installs without an encryption key
+		// receive plaintext back unchanged.
+		plain, err := vault.Decrypt(secretvault.DomainWebhookSecret, ciphertext)
+		if err != nil {
+			return nil, err
+		}
+		return []byte(plain), nil
+	}
+	s.webhookStorage = options.WebhookStorageFactory(decrypt)
+	if s.webhookStorage != nil {
+		s.webhookProducer = webhooks.NewProducer(s.webhookStorage)
+	}
+}
+
 // trySetStartupErr runs fn only if no earlier startup step has already failed,
 // recording its error into s.startupErr. Lets the constructor express its
 // long startup pipeline as a flat sequence of `s.trySetStartupErr(...)` calls
@@ -146,6 +174,11 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 	s.auth.SetSessionStore(store)
 	s.auth.SetVault(vault)
 	s.auth.SetConsumedTotpStore(store)
+	// Webhook outbox subsystem: builds Storage + Producer if the
+	// caller wired a factory. Must run after the vault is available
+	// (it provides the SecretDecrypter), and before
+	// startBackgroundWorkers (which spawns the worker goroutine).
+	s.initWebhookSubsystem(options, vault)
 	// S22 Task 5 (S-medium): derive the per-server session-lookup HMAC
 	// key from EncryptionKey under a unique domain tag. The DB primary
 	// key for a session row is HMAC(opaque cookie token) under this
@@ -292,6 +325,12 @@ func (s *Server) startBackgroundWorkers() {
 		s.metricsPollerCancel = metricsCancel
 		s.startMetricsPoller(metricsCtx, metricsPoller)
 	}
+
+	// Webhook outbox worker — no-op when WebhookStorage was not
+	// supplied (Producer is also nil; event sources skip publish).
+	// Lives on rollupCtx so Close()'s rollupCancel reaps it together
+	// with the other long-lived background loops.
+	s.startWebhookWorker(rollupCtx, s.webhookStorage)
 }
 
 // New constructs the control-plane Server. Returns an error (Plan 3

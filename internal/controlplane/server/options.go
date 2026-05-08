@@ -9,6 +9,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/settings"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/webhooks"
 )
 
 // R-Q-01/07: runtime dependencies bundle (Options) extracted from
@@ -74,4 +75,18 @@ type Options struct {
 	// BootstrapSources maps each setting name to its SourceInfo (env,
 	// config_file, or default). Populated alongside Bootstrap.
 	BootstrapSources settings.SourceMap
+	// WebhookStorageFactory, when non-nil, enables the webhook outbox
+	// subsystem: server.New invokes the factory with a vault-backed
+	// decrypter, stores the returned Storage on the Server, builds a
+	// Producer over it, and spawns a Worker goroutine attached to
+	// the lifecycle context. nil disables webhooks entirely (event
+	// sources call publish via a nil-safe wrapper).
+	//
+	// The factory pattern is here because the concrete storage
+	// backend is known at the cmd/control-plane layer (where the
+	// *sql.DB is opened) but the secret decrypter is built by
+	// server.New itself (vault HKDF salt is loaded from
+	// cp_secrets at boot). The factory closes over the *sql.DB and
+	// gets the decrypter when the vault is ready.
+	WebhookStorageFactory func(decrypt webhooks.SecretDecrypter) webhooks.Storage
 }

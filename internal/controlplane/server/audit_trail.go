@@ -116,6 +116,16 @@ func (s *Server) appendAuditSync(ctx context.Context, actorID, action, targetID 
 		Type: "audit.created",
 		Data: event,
 	})
+
+	// Webhook fan-out: send every successfully persisted audit
+	// event to operator-configured external receivers via the
+	// outbox. Skipped when persist failed — the outbox would
+	// reference a non-existent audit row, breaking the chain
+	// invariant the verifier relies on. Filtering by action is
+	// the receiver's job (event_filter on webhook_endpoints).
+	if persistErr == nil {
+		s.publishWebhookEvent(ctx, "audit."+action, event)
+	}
 	return persistErr
 }
 

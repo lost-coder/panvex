@@ -291,20 +291,21 @@ func newAPIServer(
 	}
 
 	return server.New(server.Options{
-		Now:                time.Now,
-		Store:              store,
-		Logger:             logger,
-		UIFiles:            embeddedUIFiles(),
-		PanelRuntime:       panelRuntime,
-		TrustedProxyCIDRs:  options.TrustedProxyCIDRs,
-		EncryptionKey:      options.EncryptionKey,
-		Version:            Version,
-		CommitSHA:          CommitSHA,
-		BuildTime:          BuildTime,
-		MetricsScrapeToken: metricsScrapeToken,
-		SQLitePath:         sqlitePath,
-		Bootstrap:          options.Boot,
-		BootstrapSources:   options.BootstrapSources,
+		Now:                   time.Now,
+		Store:                 store,
+		Logger:                logger,
+		UIFiles:               embeddedUIFiles(),
+		PanelRuntime:          panelRuntime,
+		TrustedProxyCIDRs:     options.TrustedProxyCIDRs,
+		EncryptionKey:         options.EncryptionKey,
+		Version:               Version,
+		CommitSHA:             CommitSHA,
+		BuildTime:             BuildTime,
+		MetricsScrapeToken:    metricsScrapeToken,
+		SQLitePath:            sqlitePath,
+		Bootstrap:             options.Boot,
+		BootstrapSources:      options.BootstrapSources,
+		WebhookStorageFactory: webhookStorageFactory(store),
 		RequestRestart: func() error {
 			select {
 			case restartRequests <- struct{}{}:
