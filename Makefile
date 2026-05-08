@@ -70,7 +70,7 @@ install-tools:
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 	go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
 	go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest
-	cd web && npm install -D openapi-typescript
+	@echo "openapi-typescript is invoked via npx — no install required"
 
 # gen-settings runs the registry codegen.
 gen-settings:
@@ -93,7 +93,7 @@ gen-openapi-go:
 
 gen-openapi-ts:
 	@command -v npx >/dev/null || { echo "npx not installed"; exit 1; }
-	cd web && npx openapi-typescript ../openapi/panvex.yaml -o src/shared/api/openapi.gen.ts
+	cd web && npx --yes openapi-typescript ../openapi/panvex.yaml -o src/shared/api/openapi.gen.ts
 
 gen-openapi: gen-openapi-go gen-openapi-ts
 

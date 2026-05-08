@@ -31,12 +31,66 @@ servers:
     description: Same-origin (the panel serves both API and UI)
 
 paths:
-  # First pilot endpoints land here in the next session
-  # (see migration order in 2026-05-08-api-codegen.md).
-  {}
+  /healthz:
+    get:
+      operationId: getHealthz
+      summary: Liveness probe
+      description: |
+        Returns 200 OK when the HTTP server is accepting connections.
+        Plain `text/plain` body containing the literal string `ok` —
+        kept text rather than JSON so kubelet's default probe parser
+        doesn't have to recurse JSON.
+      security: []  # unauthenticated probe
+      responses:
+        '200':
+          description: Service is alive.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: ok
+
+  /api/version:
+    get:
+      operationId: getVersion
+      summary: Panel build identification
+      description: |
+        Returns the running panel's build metadata. Operator+ callers
+        also get `commit_sha` and `build_time`; viewer-role responses
+        carry only `version`.
+      responses:
+        '200':
+          description: Panel build info.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionResponse'
+        '401':
+          description: Unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
 components:
   schemas:
+    VersionResponse:
+      type: object
+      description: Build metadata for the running control-plane process.
+      required: [version]
+      properties:
+        version:
+          type: string
+          description: Semantic version (or "dev" for unstamped builds).
+          example: 1.4.7
+        commit_sha:
+          type: string
+          description: Git commit hash baked in at build time. Operator+ only.
+        build_time:
+          type: string
+          format: date-time
+          description: RFC3339 build timestamp. Operator+ only.
+
     Error:
       type: object
       description: Standard error envelope used by every 4xx / 5xx response.

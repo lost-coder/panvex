@@ -35,6 +35,9 @@ linters:
     paths:
       - "internal/gatewayrpc"
       - "internal/dbsqlc"
+      # openapi/ holds oapi-codegen generated stubs; same exclusion
+      # rationale as the two above. Source of truth: openapi/panvex.yaml.
+      - "openapi"
     rules:
       - linters:
           - errcheck

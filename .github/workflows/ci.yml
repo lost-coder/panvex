@@ -206,6 +206,26 @@ jobs:
       - name: Run govulncheck
         run: govulncheck ./...
 
+  # Drift guard for the OpenAPI codegen pipeline (Wave 3.3): ensure
+  # openapi/panvex.gen.go and web/src/shared/api/openapi.gen.ts match
+  # the canonical openapi/panvex.yaml. Mirrors the gen-settings drift
+  # guard pattern.
+  openapi-drift:
+    name: OpenAPI Codegen Drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Install oapi-codegen
+        run: go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.7.0
+      - name: Verify generated files in sync with spec
+        run: make verify-openapi
+
   # Phase 4 inlined @lost-coder/panvex-ui into web/src/ui/, so the
   # frontend jobs no longer need to clone + build a side-repo UI-kit
   # or symlink ../ui. They just npm ci + run the target script.
