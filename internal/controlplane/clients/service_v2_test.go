@@ -564,3 +564,42 @@ func TestService_AdoptDiscovered_NonPendingFails(t *testing.T) {
 	}
 }
 
+// --- Phase 6.7 tests: Service.Delete ---
+
+func TestService_Delete_RemovesFromMirror(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	repo.clientsByID[ClientID("c-del")] = Client{ID: ClientID("c-del"), Name: "del"}
+	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo(), audit: newFakeAuditRepo()}
+	svc := NewServiceV2(ServiceConfig{
+		Repo:  repo,
+		UoW:   newFakeUoW(rs),
+		Vault: makeTestVault(t),
+	})
+	if err := svc.Restore(context.Background()); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	if err := svc.Delete(context.Background(), ClientID("c-del")); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, err := svc.Get(context.Background(), ClientID("c-del")); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Get after Delete: err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestService_Delete_PropagatesRepoError(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	repo.failOn = "Delete"
+	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo(), audit: newFakeAuditRepo()}
+	svc := NewServiceV2(ServiceConfig{
+		Repo:  repo,
+		UoW:   newFakeUoW(rs),
+		Vault: makeTestVault(t),
+	})
+	if err := svc.Delete(context.Background(), ClientID("c-x")); err == nil {
+		t.Fatal("expected error from injected Delete failure")
+	}
+}

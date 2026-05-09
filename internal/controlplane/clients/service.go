@@ -720,7 +720,7 @@ func (s *Service) List(ctx context.Context) ([]Client, error) {
 	return out, nil
 }
 
-// --- Phase 6.4–6.6: Service.Save, Service.SaveState, Service.AdoptDiscovered ---
+// --- Phase 6.4–6.7: UoW-backed mutation methods ---
 
 // encryptSecret seals the plaintext secret via the vault's
 // DomainClientSecret key. A nil or disabled vault is a no-op.
@@ -901,4 +901,27 @@ func buildClientFromDiscovered(dc discovered.DiscoveredClient, secret, id string
 		CreatedAt: observedAt,
 		UpdatedAt: observedAt,
 	}
+}
+
+// Delete removes the client from the Repository via a UoW transaction
+// and evicts all mirror entries for that client ID on success.
+//
+// No name collision: the legacy Service has no Delete method; only the
+// fakeRepo in tests had a stub.
+func (s *Service) Delete(ctx context.Context, id ClientID) error {
+	if s.uow == nil || s.repo == nil {
+		return errors.New("clients.Service: Delete requires UoW + Repository (NewServiceV2)")
+	}
+	if err := s.uow.Do(ctx, func(rs ClientsRepoSet) error {
+		return rs.Clients().Delete(ctx, id)
+	}); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	delete(s.mirrorClients, id)
+	delete(s.mirrorAssignments, id)
+	delete(s.mirrorDeployments, id)
+	delete(s.mirrorUsage, id)
+	s.mu.Unlock()
+	return nil
 }
