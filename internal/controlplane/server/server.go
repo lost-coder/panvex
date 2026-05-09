@@ -19,6 +19,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/bootstrap"
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/csrf"
+	"github.com/lost-coder/panvex/internal/controlplane/discovered"
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/fleet"
 	"github.com/lost-coder/panvex/internal/controlplane/geoip"
@@ -128,14 +129,23 @@ type Server struct {
 	// the new package; the server only holds a pointer.
 	sessions *agents.SessionManager
 	// clientsSvc is the managed-client service introduced by P3-ARCH-01b.
-	// It currently exposes the pure helpers (ResolveTargetAgentIDs,
-	// ResolveIDByName, AggregateUsage, ValidateHexSecret) plus the
-	// persistence + deployment-builder helpers via package-level
-	// functions. Future work will migrate the in-memory maps + mutation
-	// flows (createClient, updateClient, rotateClientSecret,
-	// deleteClient, adoptDiscoveredClient, reconcileDiscoveredClients)
-	// from Server onto this struct.
+	// Phase 7 wires it with the full NewServiceV2 deps (Repo, DiscoveredRepo,
+	// UoW) so persistence and mirror operations route through the domain
+	// service rather than the legacy storage.Store facade.
 	clientsSvc *clients.Service
+	// discoveredRepo is the domain-level repository for discovered clients.
+	// Wired in initStoreBackedSubsystems alongside clientsSvc. Nil when the
+	// server has no persistent store (e.g. in-memory test fixtures).
+	//
+	// Phase 7 note: clients_discovery.go uses storage.DiscoveredClientRecord
+	// which is richer than discovered.DiscoveredClient (carries Secret,
+	// ConnectionLinks, MaxTCPConns, etc.). Full migration of those callsites to
+	// discoveredRepo requires extending the discovered domain type — deferred
+	// to Phase 8 (TODO wave-4-2-clients-phase-8: migrate discovered ops).
+	// The UpsertClientUsage callsite in clients_discovery.go IS migrated here
+	// (via clientsSvc.UpsertUsage); the Put/Get/List discovered callsites remain
+	// on s.store pending the Phase 8 domain enrichment.
+	discoveredRepo discovered.Repository
 	// fleetSvc owns the create/update/delete lifecycle for fleet
 	// groups and the per-group integrations table. HTTP handlers
 	// delegate every mutation through it so validation, uniqueness

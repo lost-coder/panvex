@@ -2,16 +2,16 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"time"
-
-	"database/sql"
 
 	"github.com/lost-coder/panvex/internal/controlplane/agents"
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/csrf"
+	"github.com/lost-coder/panvex/internal/controlplane/discovered"
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/fleet"
 	"github.com/lost-coder/panvex/internal/controlplane/geoip"
@@ -21,6 +21,9 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/sessions"
 	"github.com/lost-coder/panvex/internal/controlplane/settings"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/storage/uow"
+	"github.com/lost-coder/panvex/internal/controlplane/storage/postgres"
+	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 	"github.com/lost-coder/panvex/internal/controlplane/webhooks"
 )
 
@@ -212,6 +215,50 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 	s.trySetStartupErr(s.jobs.StartupError)
 	s.trySetStartupErr(func() error { return s.seedUsers(options.Users) })
 	s.trySetStartupErr(s.restoreStoredState)
+	// Phase 7: wire clientsSvc with NewServiceV2 when a raw *sql.DB is
+	// available. Both SQLite and Postgres stores expose DB() *sql.DB; the
+	// concrete type determines which backend constructors to use.
+	// When the store does not expose DB() (e.g. test doubles), clientsSvc
+	// keeps its NewServiceWithVault wiring from newServerFromOptions.
+	s.trySetStartupErr(func() error {
+		rawDBer, ok := store.(interface{ DB() *sql.DB })
+		if !ok {
+			return nil
+		}
+		rawDB := rawDBer.DB()
+		if rawDB == nil {
+			return nil
+		}
+		var (
+			clientsRepo    clients.Repository
+			discoveredRepoV2 discovered.Repository
+			uowImpl        uow.UnitOfWork
+		)
+		switch store.(type) {
+		case *sqlite.Store:
+			clientsRepo = sqlite.NewClientsRepository(rawDB)
+			discoveredRepoV2 = sqlite.NewDiscoveredRepository(rawDB)
+			uowImpl = sqlite.NewUoW(rawDB)
+		case *postgres.Store:
+			clientsRepo = postgres.NewClientsRepository(rawDB)
+			discoveredRepoV2 = postgres.NewDiscoveredRepository(rawDB)
+			uowImpl = postgres.NewUoW(rawDB)
+		default:
+			// Unknown concrete store type — fall back to NewServiceWithVault
+			// wiring already set in newServerFromOptions. No error.
+			return nil
+		}
+		s.clientsSvc = clients.NewServiceV2(clients.ServiceConfig{
+			Repo:           clientsRepo,
+			DiscoveredRepo: discoveredRepoV2,
+			UoW:            newClientsUoWAdapter(uowImpl),
+			Vault:          vault,
+			Now:            s.now,
+			Store:          store, // legacy methods coexist during phase 7
+		})
+		s.discoveredRepo = discoveredRepoV2
+		return nil
+	})
 	s.trySetStartupErr(s.restoreStoredClients)
 	s.trySetStartupErr(s.restoreStoredDiscoveredClients)
 	s.trySetStartupErr(s.restoreStoredPanelSettings)
