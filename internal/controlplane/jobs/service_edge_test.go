@@ -1,65 +1,21 @@
-package jobs
+// package jobs_test uses the external test package to avoid the import cycle
+// that arises when storage/sqlite/jobs_repository.go imports package jobs
+// while the tests in package jobs import storage/sqlite. The one test that
+// required package jobs (TestEnqueueRetryAfterTransientStoreError, which
+// accessed the unexported failingJobStore) has been moved to service_test.go.
+package jobs_test
 
 import (
 	"context"
-	"errors"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 )
-
-// TestEnqueueRetryAfterTransientStoreError verifies that when PutJob fails
-// the idempotency-key reservation is released so the caller can retry the
-// SAME key. Existing TestEnqueuePersistFailureRollsBack covers the
-// retry-with-different-key case; this one closes the gap on retry-after-
-// failure with the original key (S27 T2).
-func TestEnqueueRetryAfterTransientStoreError(t *testing.T) {
-	now := time.Date(2026, time.April, 18, 10, 0, 0, 0, time.UTC)
-	sqliteStore, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
-	if err != nil {
-		t.Fatalf("sqlite.Open: %v", err)
-	}
-	defer sqliteStore.Close()
-
-	store := &failingJobStore{JobStore: sqliteStore}
-	service := NewServiceWithStore(store)
-
-	store.putJobErr = errors.New("transient")
-
-	if _, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
-		TargetAgentIDs: []string{"agent-1"},
-		TTL:            time.Minute,
-		IdempotencyKey: "retry-key",
-		ActorID:        "user-1",
-	}, now); err == nil {
-		t.Fatal("Enqueue first attempt err = nil, want transient error")
-	}
-
-	// Retry with the same idempotency key — must succeed because the
-	// reservation was rolled back.
-	store.putJobErr = nil
-	job, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
-		TargetAgentIDs: []string{"agent-1"},
-		TTL:            time.Minute,
-		IdempotencyKey: "retry-key",
-		ActorID:        "user-1",
-	}, now)
-	if err != nil {
-		t.Fatalf("Enqueue retry err = %v, want nil (key must have been released)", err)
-	}
-	if job.IdempotencyKey != "retry-key" {
-		t.Fatalf("retry job key = %q, want %q", job.IdempotencyKey, "retry-key")
-	}
-	if job.Status != StatusQueued {
-		t.Fatalf("retry job status = %q, want queued", job.Status)
-	}
-}
 
 // TestExpireStaleSealsQueuedJob verifies the ExpireStale path: once a
 // job's TTL has elapsed, ExpireStale must seal it as expired and the
@@ -72,11 +28,11 @@ func TestEnqueueRetryAfterTransientStoreError(t *testing.T) {
 func TestExpireStaleSealsQueuedJob(t *testing.T) {
 	start := time.Date(2026, time.April, 18, 10, 0, 0, 0, time.UTC)
 	currentNow := start
-	service := NewService()
+	service := jobs.NewService()
 	service.SetNow(func() time.Time { return currentNow })
 
-	if _, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+	if _, err := service.Enqueue(context.Background(), jobs.CreateJobInput{
+		Action:         jobs.ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "expire-key",
@@ -97,12 +53,12 @@ func TestExpireStaleSealsQueuedJob(t *testing.T) {
 	currentNow = start.Add(2 * time.Minute)
 	service.ExpireStale()
 
-	jobs := service.List()
-	if len(jobs) != 1 {
-		t.Fatalf("List len = %d, want 1", len(jobs))
+	list := service.List()
+	if len(list) != 1 {
+		t.Fatalf("List len = %d, want 1", len(list))
 	}
-	if jobs[0].Status != StatusExpired {
-		t.Fatalf("expired job status = %q, want %q", jobs[0].Status, StatusExpired)
+	if list[0].Status != jobs.StatusExpired {
+		t.Fatalf("expired job status = %q, want %q", list[0].Status, jobs.StatusExpired)
 	}
 
 	// PruneKeys with TTL > age must NOT evict — terminal-at is recent.
@@ -128,11 +84,11 @@ func TestExpireStaleSealsQueuedJob(t *testing.T) {
 func TestRecordResultIdempotentForSealedTarget(t *testing.T) {
 	start := time.Date(2026, time.April, 18, 10, 0, 0, 0, time.UTC)
 	currentNow := start
-	service := NewService()
+	service := jobs.NewService()
 	service.SetNow(func() time.Time { return currentNow })
 
-	job, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+	job, err := service.Enqueue(context.Background(), jobs.CreateJobInput{
+		Action:         jobs.ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "seal-key",
@@ -157,12 +113,12 @@ func TestRecordResultIdempotentForSealedTarget(t *testing.T) {
 	if !ok {
 		t.Fatal("Get after late RecordResult: not found")
 	}
-	if got.Targets[0].Status != TargetStatusExpired {
+	if got.Targets[0].Status != jobs.TargetStatusExpired {
 		t.Fatalf("target status = %q, want %q (late RecordResult must not unseal)",
-			got.Targets[0].Status, TargetStatusExpired)
+			got.Targets[0].Status, jobs.TargetStatusExpired)
 	}
-	if got.Status != StatusExpired {
-		t.Fatalf("job status = %q, want %q", got.Status, StatusExpired)
+	if got.Status != jobs.StatusExpired {
+		t.Fatalf("job status = %q, want %q", got.Status, jobs.StatusExpired)
 	}
 }
 
@@ -178,7 +134,7 @@ func TestConcurrentEnqueueListRecordResult(t *testing.T) {
 	start := time.Date(2026, time.April, 18, 10, 0, 0, 0, time.UTC)
 	currentNow := start
 	var nowMu sync.RWMutex
-	service := NewService()
+	service := jobs.NewService()
 	service.SetNow(func() time.Time {
 		nowMu.RLock()
 		defer nowMu.RUnlock()
@@ -196,8 +152,8 @@ func TestConcurrentEnqueueListRecordResult(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < perEnq; i++ {
 				key := keyFor(w, i)
-				job, err := service.Enqueue(context.Background(), CreateJobInput{
-					Action:         ActionRuntimeReload,
+				job, err := service.Enqueue(context.Background(), jobs.CreateJobInput{
+					Action:         jobs.ActionRuntimeReload,
 					TargetAgentIDs: []string{"agent-1"},
 					TTL:            time.Hour,
 					IdempotencyKey: key,
@@ -248,13 +204,13 @@ func TestConcurrentEnqueueListRecordResult(t *testing.T) {
 		}
 	}
 
-	jobs := service.List()
-	if len(jobs) != enqueuers*perEnq {
-		t.Fatalf("List len after seals = %d, want %d (jobs must not be dropped)", len(jobs), enqueuers*perEnq)
+	list := service.List()
+	if len(list) != enqueuers*perEnq {
+		t.Fatalf("List len after seals = %d, want %d (jobs must not be dropped)", len(list), enqueuers*perEnq)
 	}
-	for _, j := range jobs {
-		if j.Status != StatusSucceeded {
-			t.Fatalf("job %q status = %q, want %q", j.ID, j.Status, StatusSucceeded)
+	for _, j := range list {
+		if j.Status != jobs.StatusSucceeded {
+			t.Fatalf("job %q status = %q, want %q", j.ID, j.Status, jobs.StatusSucceeded)
 		}
 	}
 	if d := service.QueueDepth(); d != 0 {
@@ -297,10 +253,10 @@ func TestRestoreRebuildsLatestSucceededByClient(t *testing.T) {
 	clientID := "client-restored"
 	payload := `{"client_id":"` + clientID + `","name":"alice"}`
 
-	first := NewServiceWithStore(store)
+	first := jobs.NewServiceWithStore(store)
 	first.SetNow(func() time.Time { return now })
-	job, err := first.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionClientCreate,
+	job, err := first.Enqueue(context.Background(), jobs.CreateJobInput{
+		Action:         jobs.ActionClientCreate,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
 		IdempotencyKey: "client-create-restore",
@@ -317,7 +273,7 @@ func TestRestoreRebuildsLatestSucceededByClient(t *testing.T) {
 	}
 
 	// New service, same store — must re-hydrate the index.
-	restored := NewServiceWithStore(store)
+	restored := jobs.NewServiceWithStore(store)
 	restored.SetNow(func() time.Time { return now.Add(time.Minute) })
 	if err := restored.StartupError(); err != nil {
 		t.Fatalf("StartupError: %v", err)
@@ -330,8 +286,8 @@ func TestRestoreRebuildsLatestSucceededByClient(t *testing.T) {
 	if got.ID != job.ID {
 		t.Fatalf("LatestSucceededWithContext.ID = %q, want %q", got.ID, job.ID)
 	}
-	if got.Status != StatusSucceeded {
-		t.Fatalf("status = %q, want %q", got.Status, StatusSucceeded)
+	if got.Status != jobs.StatusSucceeded {
+		t.Fatalf("status = %q, want %q", got.Status, jobs.StatusSucceeded)
 	}
 	if len(got.Targets) != 1 || got.Targets[0].ResultJSON == "" {
 		t.Fatalf("Targets[0].ResultJSON empty after restore — result-blob persistence regression")
@@ -351,12 +307,12 @@ func TestLatestSucceededByClientMonotone(t *testing.T) {
 	now2 := now1.Add(10 * time.Minute) // newer
 
 	currentNow := now2
-	service := NewService()
+	service := jobs.NewService()
 	service.SetNow(func() time.Time { return currentNow })
 
 	// Enqueue+complete the NEWER job first (now2).
-	jobNew, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionClientUpdate,
+	jobNew, err := service.Enqueue(context.Background(), jobs.CreateJobInput{
+		Action:         jobs.ActionClientUpdate,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
 		IdempotencyKey: "k-new",
@@ -376,8 +332,8 @@ func TestLatestSucceededByClientMonotone(t *testing.T) {
 	// index. Pin clock to now1 for the Enqueue so CreatedAt is older,
 	// but back to now2 for the rest so ExpireStale doesn't fire.
 	currentNow = now1
-	jobOld, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionClientUpdate,
+	jobOld, err := service.Enqueue(context.Background(), jobs.CreateJobInput{
+		Action:         jobs.ActionClientUpdate,
 		TargetAgentIDs: []string{"agent-2"},
 		TTL:            time.Hour,
 		IdempotencyKey: "k-old",
@@ -420,10 +376,10 @@ func TestPersistedAcknowledgedTargetsRedispatchedAfterRestart(t *testing.T) {
 	}
 	defer store.Close()
 
-	first := NewServiceWithStore(store)
+	first := jobs.NewServiceWithStore(store)
 	first.SetNow(func() time.Time { return now })
-	job, err := first.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+	job, err := first.Enqueue(context.Background(), jobs.CreateJobInput{
+		Action:         jobs.ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
 		IdempotencyKey: "ack-restore-key",
@@ -440,12 +396,12 @@ func TestPersistedAcknowledgedTargetsRedispatchedAfterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListJobTargets: %v", err)
 	}
-	if len(persisted) != 1 || persisted[0].Status != string(TargetStatusAcknowledged) {
-		t.Fatalf("persisted target status = %v, want %q", persisted, TargetStatusAcknowledged)
+	if len(persisted) != 1 || persisted[0].Status != string(jobs.TargetStatusAcknowledged) {
+		t.Fatalf("persisted target status = %v, want %q", persisted, jobs.TargetStatusAcknowledged)
 	}
 
 	// Restart.
-	restored := NewServiceWithStore(store)
+	restored := jobs.NewServiceWithStore(store)
 	restored.SetNow(func() time.Time { return now.Add(time.Minute) })
 
 	// PendingForAgent must re-include this job because acknowledged
