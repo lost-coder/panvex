@@ -36,11 +36,16 @@ func NewDiscoveredRepository(db dbtx) discovered.Repository {
 // Repository methods
 // ---------------------------------------------------------------------------
 
+const discoveredClientSelectCols = `
+	id, agent_id, client_name, secret, status,
+	total_octets, current_connections, active_unique_ips,
+	connection_links, max_tcp_conns, max_unique_ips,
+	data_quota_bytes, expiration,
+	discovered_at_unix, updated_at_unix`
+
 func (r *discoveredRepository) Get(ctx context.Context, id discovered.DiscoveredID) (discovered.DiscoveredClient, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, agent_id, client_name, status,
-			total_octets, current_connections, active_unique_ips,
-			discovered_at_unix, updated_at_unix
+		SELECT `+discoveredClientSelectCols+`
 		FROM discovered_clients
 		WHERE id = ?
 	`, string(id))
@@ -56,9 +61,7 @@ func (r *discoveredRepository) Get(ctx context.Context, id discovered.Discovered
 
 func (r *discoveredRepository) GetByAgentAndName(ctx context.Context, agentID, clientName string) (discovered.DiscoveredClient, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, agent_id, client_name, status,
-			total_octets, current_connections, active_unique_ips,
-			discovered_at_unix, updated_at_unix
+		SELECT `+discoveredClientSelectCols+`
 		FROM discovered_clients
 		WHERE agent_id = ? AND client_name = ?
 	`, agentID, clientName)
@@ -74,9 +77,7 @@ func (r *discoveredRepository) GetByAgentAndName(ctx context.Context, agentID, c
 
 func (r *discoveredRepository) List(ctx context.Context) ([]discovered.DiscoveredClient, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, agent_id, client_name, status,
-			total_octets, current_connections, active_unique_ips,
-			discovered_at_unix, updated_at_unix
+		SELECT `+discoveredClientSelectCols+`
 		FROM discovered_clients
 		ORDER BY discovered_at_unix DESC, id
 	`)
@@ -89,9 +90,7 @@ func (r *discoveredRepository) List(ctx context.Context) ([]discovered.Discovere
 
 func (r *discoveredRepository) ListByAgent(ctx context.Context, agentID string) ([]discovered.DiscoveredClient, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, agent_id, client_name, status,
-			total_octets, current_connections, active_unique_ips,
-			discovered_at_unix, updated_at_unix
+		SELECT `+discoveredClientSelectCols+`
 		FROM discovered_clients
 		WHERE agent_id = ?
 		ORDER BY discovered_at_unix DESC, id
@@ -115,17 +114,26 @@ func (r *discoveredRepository) Save(ctx context.Context, dc discovered.Discovere
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			status              = excluded.status,
+			secret              = excluded.secret,
 			total_octets        = excluded.total_octets,
 			current_connections = excluded.current_connections,
 			active_unique_ips   = excluded.active_unique_ips,
+			connection_links    = excluded.connection_links,
+			max_tcp_conns       = excluded.max_tcp_conns,
+			max_unique_ips      = excluded.max_unique_ips,
+			data_quota_bytes    = excluded.data_quota_bytes,
+			expiration          = excluded.expiration,
 			discovered_at_unix  = excluded.discovered_at_unix,
 			updated_at_unix     = excluded.updated_at_unix
 	`,
-		string(dc.ID), dc.AgentID, dc.ClientName, "", string(dc.Status),
+		string(dc.ID), dc.AgentID, dc.ClientName, dc.Secret, string(dc.Status),
 		int64(dc.TotalOctets),        //nolint:gosec
 		int64(dc.CurrentConnections), //nolint:gosec
 		int64(dc.ActiveUniqueIPs),    //nolint:gosec
-		"[]", 0, 0, 0, "",
+		encodeStringArray(dc.ConnectionLinks),
+		int64(dc.MaxTCPConns),    //nolint:gosec
+		int64(dc.MaxUniqueIPs),   //nolint:gosec
+		dc.DataQuotaBytes, dc.Expiration,
 		toUnix(dc.FirstSeen), toUnix(dc.UpdatedAt),
 	)
 	if err != nil {
@@ -197,16 +205,19 @@ type discoveredClientScanner interface {
 
 func scanDiscoveredClient(s discoveredClientScanner) (discovered.DiscoveredClient, error) {
 	var (
-		dc            discovered.DiscoveredClient
-		id            string
-		agentID       string
-		status        string
-		firstSeenUnix int64
-		updatedAtUnix int64
+		dc             discovered.DiscoveredClient
+		id             string
+		agentID        string
+		status         string
+		connectionJSON string
+		firstSeenUnix  int64
+		updatedAtUnix  int64
 	)
 	if err := s.Scan(
-		&id, &agentID, &dc.ClientName, &status,
+		&id, &agentID, &dc.ClientName, &dc.Secret, &status,
 		&dc.TotalOctets, &dc.CurrentConnections, &dc.ActiveUniqueIPs,
+		&connectionJSON, &dc.MaxTCPConns, &dc.MaxUniqueIPs,
+		&dc.DataQuotaBytes, &dc.Expiration,
 		&firstSeenUnix, &updatedAtUnix,
 	); err != nil {
 		return discovered.DiscoveredClient{}, err
@@ -214,6 +225,7 @@ func scanDiscoveredClient(s discoveredClientScanner) (discovered.DiscoveredClien
 	dc.ID = discovered.DiscoveredID(id)
 	dc.AgentID = agentID
 	dc.Status = discovered.Status(status)
+	dc.ConnectionLinks = decodeStringArray(connectionJSON)
 	dc.FirstSeen = fromUnix(firstSeenUnix)
 	dc.UpdatedAt = fromUnix(updatedAtUnix)
 	return dc, nil

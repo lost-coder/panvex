@@ -24,7 +24,10 @@ const testFleetGroupID = "00000000-0000-4000-a000-000000000001"
 func RunStoreContract(t *testing.T, open OpenStore) {
 	t.Helper()
 
-	runClientsContract(t, open)
+	// clients and discovered contracts removed in Wave 4.2 Phase 8:
+	// superseded by per-domain Repository contracts in
+	// internal/controlplane/clients/storagetest/ and
+	// internal/controlplane/discovered/storagetest/.
 	runSettingsContract(t, open)
 	runAuthorityContract(t, open)
 	runUsersContract(t, open)
@@ -35,7 +38,6 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 	runMetricsContract(t, open)
 	runTelemetryContract(t, open)
 	runSessionsContract(t, open)
-	runDiscoveredContract(t, open)
 	runFallbackContract(t, open)
 
 	// Transact contract (P2-ARCH-01) lives in store_contract_transact.go.

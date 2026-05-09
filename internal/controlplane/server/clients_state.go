@@ -34,8 +34,9 @@ func (s *Server) restoreStoredClients() error {
 	defer cancel()
 
 	if !s.clientsSvc.HasRepo() {
-		// NewServiceV2 not available (test double or no DB). Fall back to
-		// the legacy store-based restore (retained for test compat).
+		// NewServiceV2 not wired (no DB or unknown store type). Run the
+		// legacy store-backed restore so context cancellation is still
+		// honoured (BP-01: the WithTimeout above is parented to serverCtx).
 		return s.restoreStoredClientsLegacy(ctx)
 	}
 
@@ -95,11 +96,8 @@ func (s *Server) restoreStoredClients() error {
 	// Discovered-client seeding: when client_usage has no entry for a
 	// (clientID, agentID) pair, fall back to discovered_clients.total_octets
 	// as the initial traffic counter (mirrors the legacy rehydrateClientAssignmentUsage
-	// behaviour). The discovered.Repository type is stripped of TotalOctets so
-	// we still read via s.store here.
-	// TODO(Phase 8): extend discovered.DiscoveredClient with TotalOctets so this
-	// can migrate to s.discoveredRepo.List.
-	if s.store != nil {
+	// behaviour).
+	if s.discoveredRepo != nil {
 		s.seedUsageFromDiscoveredLocked(ctx, snap)
 	}
 	return nil
@@ -109,15 +107,27 @@ func (s *Server) restoreStoredClients() error {
 // using discovered_clients.total_octets where available. Must be called with
 // s.clientsMu held for writing.
 func (s *Server) seedUsageFromDiscoveredLocked(ctx context.Context, snap clients.MirrorState) {
-	dcRecords, err := s.store.ListDiscoveredClients(ctx)
+	dcRecs, err := s.discoveredRepo.List(ctx)
 	if err != nil {
 		s.logger.Warn("restore: list discovered clients for usage seed failed", "error", err)
 		return
 	}
-	// Build index: agentID+\x00+clientName → record
-	dcIdx := make(map[string]storage.DiscoveredClientRecord, len(dcRecords))
-	for _, r := range dcRecords {
-		dcIdx[r.AgentID+"\x00"+r.ClientName] = r
+
+	type dcSeed struct {
+		totalOctets uint64
+		uniqueIPs   int
+		tcpConns    int
+		updatedAt   time.Time
+	}
+	// Build index: agentID+\x00+clientName → seed values
+	dcIdx := make(map[string]dcSeed, len(dcRecs))
+	for _, r := range dcRecs {
+		dcIdx[r.AgentID+"\x00"+r.ClientName] = dcSeed{
+			totalOctets: r.TotalOctets,
+			uniqueIPs:   int(r.ActiveUniqueIPs),    //nolint:gosec
+			tcpConns:    int(r.CurrentConnections),  //nolint:gosec
+			updatedAt:   r.UpdatedAt,
+		}
 	}
 
 	for id, c := range snap.Clients {
@@ -141,29 +151,32 @@ func (s *Server) seedUsageFromDiscoveredLocked(ctx context.Context, snap clients
 			}
 			s.clientUsage[string(id)][a.AgentID] = clientUsageSnapshot{
 				ClientID:         clients.ClientID(string(id)),
-				TrafficUsedBytes: dc.TotalOctets,
-				UniqueIPsUsed:    dc.ActiveUniqueIPs,
-				ActiveTCPConns:   dc.CurrentConnections,
-				ActiveUniqueIPs:  dc.ActiveUniqueIPs,
-				ObservedAt:       dc.UpdatedAt,
+				TrafficUsedBytes: dc.totalOctets,
+				UniqueIPsUsed:    dc.uniqueIPs,
+				ActiveTCPConns:   dc.tcpConns,
+				ActiveUniqueIPs:  dc.uniqueIPs,
+				ObservedAt:       dc.updatedAt,
 			}
 			s.trackClientUsageOwnerLocked(string(id), a.AgentID)
 		}
 	}
 }
 
-// restoreStoredClientsLegacy is the pre-Phase-7 store-backed restore path.
-// Called when clientsSvc has not been wired with NewServiceV2 (e.g. test
-// doubles). Retained for test compatibility only — production always takes
-// the clientsSvc.Restore path above.
+
+// restoreStoredClientsLegacy is the pre-Wave-4.2 store-backed restore path.
+// Only reached when clientsSvc was not wired with NewServiceV2 (i.e. the
+// store does not expose DB() — e.g. a wrapped test-double). In practice this
+// path is never taken in production; it exists so that the BP-01 context-
+// cancellation invariant (the WithTimeout above is parented to serverCtx) is
+// exercised by TestClientsState_RestoreHonoursServerCtxCancellation.
 func (s *Server) restoreStoredClientsLegacy(ctx context.Context) error {
-	records, err := s.store.ListClients(ctx)
+	if s.store == nil {
+		return nil
+	}
+	records, err := s.store.ListClients(ctx) //nolint:staticcheck // legacy path; ClientStore deprecated but retained
 	if err != nil {
 		return err
 	}
-
-	usageIdx, discoveredIdx := s.restoreClientUsageIndexes(ctx)
-
 	for _, record := range records {
 		decoded, err := clients.DecryptClientRecord(record, s.vault())
 		if err != nil {
@@ -172,95 +185,6 @@ func (s *Server) restoreStoredClientsLegacy(ctx context.Context) error {
 		client := clients.ClientFromRecord(decoded)
 		s.clients[string(client.ID)] = client
 		s.clientSeq = maxPrefixedSequence(s.clientSeq, "client", string(client.ID))
-
-		if err := s.restoreClientAssignments(ctx, client, usageIdx, discoveredIdx); err != nil {
-			return err
-		}
-		if err := s.restoreClientDeployments(ctx, string(client.ID)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// restoreClientUsageIndexes builds two lookup tables used during
-// restoreStoredClientsLegacy. Retained for the legacy/test-double path only.
-func (s *Server) restoreClientUsageIndexes(ctx context.Context) (map[string]storage.ClientUsageRecord, map[string]storage.DiscoveredClientRecord) {
-	usageIdx := make(map[string]storage.ClientUsageRecord)
-	if usage, err := s.store.ListClientUsage(ctx); err == nil {
-		for _, u := range usage {
-			usageIdx[u.ClientID+"\x00"+u.AgentID] = u
-			if u.LastSeq > s.lastUsageSeq[u.AgentID] {
-				s.lastUsageSeq[u.AgentID] = u.LastSeq
-			}
-		}
-	}
-	discoveredIdx := make(map[string]storage.DiscoveredClientRecord)
-	if dc, err := s.store.ListDiscoveredClients(ctx); err == nil {
-		for _, r := range dc {
-			discoveredIdx[r.AgentID+"\x00"+r.ClientName] = r
-		}
-	}
-	return usageIdx, discoveredIdx
-}
-
-// rehydrateClientAssignmentUsage restores the volatile traffic
-// counter for a single (client, agent) pair. Used by the legacy path only.
-func (s *Server) rehydrateClientAssignmentUsage(ctx context.Context, client managedClient, assignment managedClientAssignment, usageIdx map[string]storage.ClientUsageRecord, discoveredIdx map[string]storage.DiscoveredClientRecord) {
-	if assignment.AgentID == "" {
-		return
-	}
-	if u, ok := usageIdx[string(client.ID)+"\x00"+assignment.AgentID]; ok {
-		if s.clientUsage[string(client.ID)] == nil {
-			s.clientUsage[string(client.ID)] = make(map[string]clientUsageSnapshot)
-		}
-		s.clientUsage[string(client.ID)][assignment.AgentID] = clientUsageSnapshot{
-			ClientID:         clients.ClientID(u.ClientID),
-			TrafficUsedBytes: u.TrafficUsedBytes,
-			UniqueIPsUsed:    u.UniqueIPsUsed,
-			ActiveTCPConns:   u.ActiveTCPConns,
-			ActiveUniqueIPs:  u.ActiveUniqueIPs,
-			ObservedAt:       u.ObservedAt,
-		}
-		s.trackClientUsageOwnerLocked(string(client.ID), assignment.AgentID)
-		return
-	}
-	if dc, ok := discoveredIdx[assignment.AgentID+"\x00"+client.Name]; ok {
-		s.seedClientUsage(ctx, string(client.ID), assignment.AgentID, dc.TotalOctets,
-			dc.CurrentConnections, dc.ActiveUniqueIPs, dc.UpdatedAt)
-	}
-}
-
-// restoreClientAssignments loads + memoises the assignments for one
-// client (legacy path). Used by restoreStoredClientsLegacy only.
-func (s *Server) restoreClientAssignments(ctx context.Context, client managedClient, usageIdx map[string]storage.ClientUsageRecord, discoveredIdx map[string]storage.DiscoveredClientRecord) error {
-	assignments, err := s.store.ListClientAssignments(ctx, string(client.ID))
-	if err != nil {
-		return err
-	}
-	s.clientAssignments[string(client.ID)] = make([]managedClientAssignment, 0, len(assignments))
-	for _, assignmentRecord := range assignments {
-		assignment := clients.AssignmentFromRecord(assignmentRecord)
-		s.clientAssignments[string(client.ID)] = append(s.clientAssignments[string(client.ID)], assignment)
-		s.assignmentSeq = maxPrefixedSequence(s.assignmentSeq, "client-assignment", string(assignment.ID))
-		s.rehydrateClientAssignmentUsage(ctx, client, assignment, usageIdx, discoveredIdx)
-	}
-	return nil
-}
-
-// restoreClientDeployments loads + memoises the per-agent deployment
-// records for one client (legacy path). Used by restoreStoredClientsLegacy only.
-func (s *Server) restoreClientDeployments(ctx context.Context, clientID string) error {
-	deployments, err := s.store.ListClientDeployments(ctx, clientID)
-	if err != nil {
-		return err
-	}
-	if s.clientDeployments[clientID] == nil {
-		s.clientDeployments[clientID] = make(map[string]managedClientDeployment)
-	}
-	for _, deploymentRecord := range deployments {
-		deployment := clients.DeploymentFromRecord(deploymentRecord)
-		s.clientDeployments[clientID][deployment.AgentID] = deployment
 	}
 	return nil
 }

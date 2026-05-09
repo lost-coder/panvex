@@ -10,6 +10,7 @@ import (
 
 	"github.com/lost-coder/panvex/internal/controlplane/agenttransport"
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
+	"github.com/lost-coder/panvex/internal/controlplane/discovered"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
@@ -53,7 +54,7 @@ func (s *Server) reconcileDiscoveredClients(ctx context.Context, agentID string,
 
 	managedNames, managedSecrets := s.managedClientIdentifiersForAgent(agentID)
 
-	var discovered, skippedManaged, skippedPanelID int
+	var disc, skippedManaged, skippedPanelID int
 	for _, record := range records {
 		clientName := strings.TrimSpace(record.GetClientName())
 		if clientName == "" {
@@ -81,10 +82,10 @@ func (s *Server) reconcileDiscoveredClients(ctx context.Context, agentID string,
 			continue
 		}
 
-		discovered++
+		disc++
 		s.upsertDiscoveredClient(ctx, agentID, record, observedAt)
 	}
-	s.logger.Info("reconciled discovered clients", "agent_id", agentID, "total", len(records), "new", discovered, "managed", skippedManaged, "panel_assigned", skippedPanelID)
+	s.logger.Info("reconciled discovered clients", "agent_id", agentID, "total", len(records), "new", disc, "managed", skippedManaged, "panel_assigned", skippedPanelID)
 }
 
 // managedClientIdentifiersForAgent returns the set of client names and secrets deployed on an agent.
@@ -123,16 +124,12 @@ func (s *Server) upsertDiscoveredClient(ctx context.Context, agentID string, rec
 	// sequence ID each time and keeps the audit log free of spurious
 	// "clients.discovered" events for the same user.
 	var (
-		existing     storage.DiscoveredClientRecord
+		existing     discovered.DiscoveredClient
 		haveExisting bool
 		existingErr  error
 	)
-	// TODO(Phase 8): migrate to s.discoveredRepo.GetByAgentAndName once
-	// discovered.DiscoveredClient carries Secret + ConnectionLinks + limit
-	// fields (currently stripped in the domain type, mismatch with
-	// storage.DiscoveredClientRecord). See Wave 4.2 DONE_WITH_CONCERNS note.
-	if s.store != nil {
-		existing, existingErr = s.store.GetDiscoveredClientByAgentAndName(ctx, agentID, clientName)
+	if s.discoveredRepo != nil {
+		existing, existingErr = s.discoveredRepo.GetByAgentAndName(ctx, agentID, clientName)
 		switch {
 		case existingErr == nil:
 			haveExisting = true
@@ -146,7 +143,7 @@ func (s *Server) upsertDiscoveredClient(ctx context.Context, agentID string, rec
 
 	var id string
 	if haveExisting {
-		id = existing.ID
+		id = string(existing.ID)
 	} else {
 		s.clientsMu.Lock()
 		s.discoveredClientSeq++
@@ -154,44 +151,41 @@ func (s *Server) upsertDiscoveredClient(ctx context.Context, agentID string, rec
 		s.clientsMu.Unlock()
 	}
 
-	discoveredAt := observedAt.UTC()
+	firstSeen := observedAt.UTC()
 	if haveExisting {
-		discoveredAt = existing.DiscoveredAt
+		firstSeen = existing.FirstSeen
 	}
 
-	status := discoveredClientStatusPendingReview
+	status := discovered.StatusPending
 	if haveExisting {
 		// Preserve non-pending status (ignored/adopted) across updates; only
 		// refresh mutable observability fields. Without this guard a later
 		// reconcile could resurrect an ignored row back to pending_review.
-		if existing.Status != discoveredClientStatusPendingReview {
+		if existing.Status != discovered.StatusPending {
 			status = existing.Status
 		}
 	}
 
-	dc := storage.DiscoveredClientRecord{
-		ID:                 id,
+	dc := discovered.DiscoveredClient{
+		ID:                 discovered.DiscoveredID(id),
 		AgentID:            agentID,
 		ClientName:         clientName,
 		Secret:             record.GetSecret(),
 		Status:             status,
 		TotalOctets:        record.GetTotalOctets(),
-		CurrentConnections: int(record.GetCurrentConnections()),
-		ActiveUniqueIPs:    int(record.GetActiveUniqueIps()),
+		CurrentConnections: uint32(record.GetCurrentConnections()), //nolint:gosec
+		ActiveUniqueIPs:    uint32(record.GetActiveUniqueIps()),    //nolint:gosec
 		ConnectionLinks:    record.GetConnectionLinks(),
-		MaxTCPConns:        int(record.GetMaxTcpConns()),
-		MaxUniqueIPs:       int(record.GetMaxUniqueIps()),
-		DataQuotaBytes:     int64(record.GetDataQuotaBytes()),
+		MaxTCPConns:        int(record.GetMaxTcpConns()),      //nolint:gosec
+		MaxUniqueIPs:       int(record.GetMaxUniqueIps()),     //nolint:gosec
+		DataQuotaBytes:     int64(record.GetDataQuotaBytes()), //nolint:gosec
 		Expiration:         record.GetExpiration(),
-		DiscoveredAt:       discoveredAt,
+		FirstSeen:          firstSeen,
 		UpdatedAt:          observedAt.UTC(),
 	}
 
-	// TODO(Phase 8): migrate to s.discoveredRepo.Save once
-	// discovered.DiscoveredClient carries Secret + ConnectionLinks + limit
-	// fields. Currently the domain type is stripped; Save() would lose data.
-	if s.store != nil {
-		if err := s.store.PutDiscoveredClient(ctx, dc); err != nil {
+	if s.discoveredRepo != nil {
+		if err := s.discoveredRepo.Save(ctx, dc); err != nil {
 			s.logger.Error("discovered client persistence failed", "client_name", dc.ClientName, "agent_id", agentID, "error", err)
 			return
 		}
@@ -200,7 +194,7 @@ func (s *Server) upsertDiscoveredClient(ctx context.Context, agentID string, rec
 	// Only audit the first-time discovery; subsequent observations of the
 	// same (agent, client) are just re-reports of the same finding.
 	if !haveExisting {
-		s.appendAuditWithContext(ctx, "system", "clients.discovered", dc.ID, map[string]any{
+		s.appendAuditWithContext(ctx, "system", "clients.discovered", id, map[string]any{
 			"agent_id":    agentID,
 			"client_name": dc.ClientName,
 		})
@@ -208,20 +202,17 @@ func (s *Server) upsertDiscoveredClient(ctx context.Context, agentID string, rec
 }
 
 func (s *Server) listDiscoveredClients(ctx context.Context) ([]discoveredClient, error) {
-	if s.store == nil {
+	if s.discoveredRepo == nil {
 		return nil, nil
 	}
 
-	// TODO(Phase 8): migrate to s.discoveredRepo.List once discovered.DiscoveredClient
-	// carries Secret, ConnectionLinks, and limit fields. discoveredClientFromRecord uses
-	// all those fields; migrating now would silently return zero values for them.
-	records, err := s.store.ListDiscoveredClients(ctx)
+	recs, err := s.discoveredRepo.List(ctx)
 	if err != nil {
 		return nil, err
 	}
-	result := make([]discoveredClient, 0, len(records))
-	for _, r := range records {
-		result = append(result, discoveredClientFromRecord(r))
+	result := make([]discoveredClient, 0, len(recs))
+	for _, r := range recs {
+		result = append(result, discoveredClientFromDomain(r))
 	}
 	return result, nil
 }
@@ -242,21 +233,19 @@ func (s *Server) adoptDiscoveredClient(ctx context.Context, id, actorID string, 
 // MUST hold adoptMu. Splitting this out lets bulk-adopt take the lock
 // once for the whole batch instead of churning it per id.
 func (s *Server) adoptDiscoveredClientLocked(ctx context.Context, id, actorID string, observedAt time.Time) (managedClient, error) {
-	if s.store == nil {
+	if s.discoveredRepo == nil {
 		return managedClient{}, storage.ErrNotFound
 	}
 
 	// Fresh read under the lock — do NOT trust a record fetched before the
 	// mutex was acquired; another goroutine may have already flipped the
 	// status to "adopted" while we were waiting.
-	// TODO(Phase 8): migrate to s.discoveredRepo.Get once discovered.DiscoveredClient
-	// carries Secret + ConnectionLinks + limit fields (data loss risk if migrated now).
-	record, err := s.store.GetDiscoveredClient(ctx, id)
+	record, err := s.discoveredRepo.Get(ctx, discovered.DiscoveredID(id))
 	if err != nil {
 		return managedClient{}, err
 	}
 
-	if record.Status == discoveredClientStatusAdopted {
+	if record.Status == discovered.StatusAdopted {
 		return managedClient{}, ErrAlreadyAdopted
 	}
 
@@ -304,9 +293,9 @@ func (s *Server) adoptDiscoveredClientLocked(ctx context.Context, id, actorID st
 
 	// Seed live usage with the stats Telemt already reported for this user
 	// — primary record plus every sibling we just folded in.
-	s.seedClientUsage(ctx, string(client.ID), record.AgentID, record.TotalOctets, record.CurrentConnections, record.ActiveUniqueIPs, observedAt)
+	s.seedClientUsage(ctx, string(client.ID), record.AgentID, record.TotalOctets, int(record.CurrentConnections), int(record.ActiveUniqueIPs), observedAt) //nolint:gosec
 	for _, sib := range siblings {
-		s.seedClientUsage(ctx, string(client.ID), sib.AgentID, sib.TotalOctets, sib.CurrentConnections, sib.ActiveUniqueIPs, observedAt)
+		s.seedClientUsage(ctx, string(client.ID), sib.AgentID, sib.TotalOctets, int(sib.CurrentConnections), int(sib.ActiveUniqueIPs), observedAt) //nolint:gosec
 	}
 
 	s.appendAuditWithContext(ctx, actorID, "clients.adopted", id, map[string]any{
@@ -323,21 +312,19 @@ func (s *Server) adoptDiscoveredClientLocked(ctx context.Context, id, actorID st
 // already adopted/ignored are skipped, as is the primary itself. An
 // empty secret never matches siblings (we cannot trust name alone to
 // represent the same Telemt user).
-func (s *Server) collectAdoptSiblings(ctx context.Context, primary storage.DiscoveredClientRecord) []storage.DiscoveredClientRecord {
-	if s.store == nil || strings.TrimSpace(primary.Secret) == "" {
+func (s *Server) collectAdoptSiblings(ctx context.Context, primary discovered.DiscoveredClient) []discovered.DiscoveredClient {
+	if s.discoveredRepo == nil || strings.TrimSpace(primary.Secret) == "" {
 		return nil
 	}
-	// TODO(Phase 8): migrate to s.discoveredRepo.List once discovered.DiscoveredClient
-	// carries Secret (needed for sibling-matching by shared secret).
-	all, err := s.store.ListDiscoveredClients(ctx)
+	all, err := s.discoveredRepo.List(ctx)
 	if err != nil {
 		s.logger.Warn("collectAdoptSiblings: list discovered failed", "error", err)
 		return nil
 	}
-	siblings := make([]storage.DiscoveredClientRecord, 0)
+	siblings := make([]discovered.DiscoveredClient, 0)
 	seenAgents := map[string]struct{}{primary.AgentID: {}}
 	for _, dc := range all {
-		if dc.ID == primary.ID || dc.Status == discoveredClientStatusAdopted {
+		if dc.ID == primary.ID || dc.Status == discovered.StatusAdopted {
 			continue
 		}
 		if dc.Secret != primary.Secret || dc.ClientName != primary.ClientName {
@@ -428,7 +415,7 @@ func normalizedAdoptSecret(raw string) (string, error) {
 // record. When siblings is non-empty, every sibling's agent_id is
 // included so the resulting managed client is scoped to every node
 // where Telemt was already running this user.
-func (s *Server) buildAdoptedClientState(record storage.DiscoveredClientRecord, siblings []storage.DiscoveredClientRecord, secret string, expirationRFC3339 string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment) { // gitleaks:allow — `secret` is a function parameter name, not a value
+func (s *Server) buildAdoptedClientState(record discovered.DiscoveredClient, siblings []discovered.DiscoveredClient, secret string, expirationRFC3339 string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment) { // gitleaks:allow — `secret` is a function parameter name, not a value
 	client := managedClient{
 		ID:                s.nextClientID(),
 		Name:              record.ClientName,
@@ -511,12 +498,10 @@ func (s *Server) persistAdoptedClient(ctx context.Context, discoveredID string, 
 // markDuplicateDiscoveredClientsAdopted marks all other discovered clients with the same
 // secret as adopted, since they represent the same user on different servers.
 func (s *Server) markDuplicateDiscoveredClientsAdopted(ctx context.Context, excludeID, secret string, observedAt time.Time) {
-	if s.store == nil {
+	if s.discoveredRepo == nil {
 		return
 	}
-	// TODO(Phase 8): migrate to s.discoveredRepo.List once discovered.DiscoveredClient
-	// carries Secret (needed for duplicate-detection by shared secret).
-	all, err := s.store.ListDiscoveredClients(ctx)
+	all, err := s.discoveredRepo.List(ctx)
 	if err != nil {
 		return
 	}
@@ -526,7 +511,11 @@ func (s *Server) markDuplicateDiscoveredClientsAdopted(ctx context.Context, excl
 	if len(ids) == 0 {
 		return
 	}
-	if err := s.store.UpdateDiscoveredClientStatusBulk(ctx, ids, discoveredClientStatusAdopted, observedAt.UTC()); err != nil {
+	discIDs := make([]discovered.DiscoveredID, len(ids))
+	for i, id := range ids {
+		discIDs[i] = discovered.DiscoveredID(id)
+	}
+	if err := s.discoveredRepo.UpdateStatusBulk(ctx, discIDs, discovered.StatusAdopted, observedAt.UTC()); err != nil {
 		s.logger.Error("bulk mark duplicate discovered clients adopted failed", "count", len(ids), "error", err)
 	}
 }
@@ -543,7 +532,11 @@ func markDuplicateDiscoveredClientsAdoptedTx(ctx context.Context, store storage.
 	if err != nil {
 		return err
 	}
-	ids := collectDuplicateDiscoveredIDs(all, excludeID, secret)
+	domainAll := make([]discovered.DiscoveredClient, len(all))
+	for i, r := range all {
+		domainAll[i] = discoveredClientFromStorageRecord(r)
+	}
+	ids := collectDuplicateDiscoveredIDs(domainAll, excludeID, secret)
 	if len(ids) == 0 {
 		return nil
 	}
@@ -553,16 +546,16 @@ func markDuplicateDiscoveredClientsAdoptedTx(ctx context.Context, store storage.
 // collectDuplicateDiscoveredIDs returns IDs of every non-adopted
 // duplicate of (secret) excluding the primary adopt target. Lifted into
 // a helper so the tx and non-tx paths share the same filter logic.
-func collectDuplicateDiscoveredIDs(all []storage.DiscoveredClientRecord, excludeID, secret string) []string {
+func collectDuplicateDiscoveredIDs(all []discovered.DiscoveredClient, excludeID, secret string) []string {
 	if secret == "" {
 		return nil
 	}
 	ids := make([]string, 0)
 	for _, dc := range all {
-		if dc.ID == excludeID || dc.Secret != secret || dc.Status == discoveredClientStatusAdopted {
+		if string(dc.ID) == excludeID || dc.Secret != secret || dc.Status == discovered.StatusAdopted {
 			continue
 		}
-		ids = append(ids, dc.ID)
+		ids = append(ids, string(dc.ID))
 	}
 	return ids
 }
@@ -598,8 +591,8 @@ func (s *Server) findManagedClientByNameAndSecret(name, secret string) (managedC
 func (s *Server) mergeAdoptIntoExistingClient(
 	ctx context.Context,
 	existing managedClient,
-	record storage.DiscoveredClientRecord,
-	siblings []storage.DiscoveredClientRecord,
+	record discovered.DiscoveredClient,
+	siblings []discovered.DiscoveredClient,
 	actorID string,
 	discoveredID string,
 	observedAt time.Time,
@@ -660,17 +653,23 @@ func (s *Server) mergeAdoptIntoExistingClient(
 	}
 
 	// Seed usage from primary + siblings.
-	s.seedClientUsage(ctx, string(existing.ID), record.AgentID, record.TotalOctets, record.CurrentConnections, record.ActiveUniqueIPs, observedAt)
+	s.seedClientUsage(ctx, string(existing.ID), record.AgentID, record.TotalOctets, int(record.CurrentConnections), int(record.ActiveUniqueIPs), observedAt) //nolint:gosec
 	for _, sib := range siblings {
 		if sib.AgentID == record.AgentID {
 			continue
 		}
-		s.seedClientUsage(ctx, string(existing.ID), sib.AgentID, sib.TotalOctets, sib.CurrentConnections, sib.ActiveUniqueIPs, observedAt)
+		s.seedClientUsage(ctx, string(existing.ID), sib.AgentID, sib.TotalOctets, int(sib.CurrentConnections), int(sib.ActiveUniqueIPs), observedAt) //nolint:gosec
 	}
 
 	// Mark discovered record as adopted.
-	if err := s.store.UpdateDiscoveredClientStatus(ctx, discoveredID, discoveredClientStatusAdopted, observedAt.UTC()); err != nil {
-		s.logger.Error("failed to update discovered client status", "error", err)
+	if s.discoveredRepo != nil {
+		if err := s.discoveredRepo.UpdateStatus(ctx, discovered.DiscoveredID(discoveredID), discovered.StatusAdopted, observedAt.UTC()); err != nil {
+			s.logger.Error("failed to update discovered client status", "error", err)
+		}
+	} else if s.store != nil {
+		if err := s.store.UpdateDiscoveredClientStatus(ctx, discoveredID, discoveredClientStatusAdopted, observedAt.UTC()); err != nil {
+			s.logger.Error("failed to update discovered client status (legacy)", "error", err)
+		}
 	}
 	if record.Secret != "" {
 		s.markDuplicateDiscoveredClientsAdopted(ctx, discoveredID, record.Secret, observedAt)
@@ -724,11 +723,11 @@ func (s *Server) seedClientUsage(ctx context.Context, clientID, agentID string, 
 }
 
 func (s *Server) ignoreDiscoveredClient(ctx context.Context, id, actorID string, observedAt time.Time) error {
-	if s.store == nil {
+	if s.discoveredRepo == nil {
 		return storage.ErrNotFound
 	}
 
-	if err := s.store.UpdateDiscoveredClientStatus(ctx, id, discoveredClientStatusIgnored, observedAt.UTC()); err != nil {
+	if err := s.discoveredRepo.UpdateStatus(ctx, discovered.DiscoveredID(id), discovered.StatusIgnored, observedAt.UTC()); err != nil {
 		return err
 	}
 
@@ -737,7 +736,7 @@ func (s *Server) ignoreDiscoveredClient(ctx context.Context, id, actorID string,
 }
 
 func (s *Server) restoreStoredDiscoveredClients() error {
-	// Phase 7: prefer the domain Repository when available (avoids direct
+	// Prefer the domain Repository when available (avoids direct
 	// store dependency). Only the record ID is needed here to rebuild the
 	// sequence counter; discovered.DiscoveredClient.ID is sufficient.
 	if s.discoveredRepo != nil {
@@ -779,22 +778,47 @@ func sendClientDataRequest(sess agenttransport.AgentSession, requestID string) e
 	})
 }
 
-func discoveredClientFromRecord(r storage.DiscoveredClientRecord) discoveredClient {
+// discoveredClientFromDomain converts a discovered.DiscoveredClient domain value
+// into the server-local discoveredClient view type.
+func discoveredClientFromDomain(r discovered.DiscoveredClient) discoveredClient {
 	return discoveredClient{
-		ID:                 r.ID,
+		ID:                 string(r.ID),
 		AgentID:            r.AgentID,
 		ClientName:         r.ClientName,
 		Secret:             r.Secret,
-		Status:             r.Status,
+		Status:             string(r.Status),
 		TotalOctets:        r.TotalOctets,
-		CurrentConnections: r.CurrentConnections,
-		ActiveUniqueIPs:    r.ActiveUniqueIPs,
+		CurrentConnections: int(r.CurrentConnections), //nolint:gosec
+		ActiveUniqueIPs:    int(r.ActiveUniqueIPs),    //nolint:gosec
 		ConnectionLinks:    r.ConnectionLinks,
 		MaxTCPConns:        r.MaxTCPConns,
 		MaxUniqueIPs:       r.MaxUniqueIPs,
 		DataQuotaBytes:     r.DataQuotaBytes,
 		Expiration:         r.Expiration,
-		DiscoveredAt:       r.DiscoveredAt,
+		DiscoveredAt:       r.FirstSeen,
+		UpdatedAt:          r.UpdatedAt,
+	}
+}
+
+// discoveredClientFromStorageRecord maps a storage.DiscoveredClientRecord to a
+// discovered.DiscoveredClient for the tx-path functions that still receive a
+// storage record (persistAdoptedClient's Transact closure).
+func discoveredClientFromStorageRecord(r storage.DiscoveredClientRecord) discovered.DiscoveredClient {
+	return discovered.DiscoveredClient{
+		ID:                 discovered.DiscoveredID(r.ID),
+		AgentID:            r.AgentID,
+		ClientName:         r.ClientName,
+		Secret:             r.Secret,
+		Status:             discovered.Status(r.Status),
+		TotalOctets:        r.TotalOctets,
+		CurrentConnections: uint32(r.CurrentConnections), //nolint:gosec
+		ActiveUniqueIPs:    uint32(r.ActiveUniqueIPs),    //nolint:gosec
+		ConnectionLinks:    r.ConnectionLinks,
+		MaxTCPConns:        r.MaxTCPConns,
+		MaxUniqueIPs:       r.MaxUniqueIPs,
+		DataQuotaBytes:     r.DataQuotaBytes,
+		Expiration:         r.Expiration,
+		FirstSeen:          r.DiscoveredAt,
 		UpdatedAt:          r.UpdatedAt,
 	}
 }

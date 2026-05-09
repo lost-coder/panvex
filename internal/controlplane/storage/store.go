@@ -319,6 +319,11 @@ type CertificateAuthorityStore interface {
 }
 
 // ClientStore persists centrally managed Telemt clients, rollout assignments, and per-node deployment state.
+//
+// Deprecated: Wave 4.2 replaced direct Store access with clients.Repository + UnitOfWork.
+// Retained in the Store aggregate only because clients/persist.go and the Transact-based
+// persistAdoptedClient path in server/clients_discovery.go still use it.
+// Remove when persistAdoptedClient is migrated to clients.Service.AdoptDiscovered (follow-up wave).
 type ClientStore interface {
 	PutClient(ctx context.Context, client ClientRecord) error
 	GetClientByID(ctx context.Context, clientID string) (ClientRecord, error)
@@ -348,7 +353,12 @@ type ClientStore interface {
 	DeleteClientUsageByClient(ctx context.Context, clientID string) error
 }
 
-// DiscoveredClientStore persists Telemt users found on agents that are not managed by the panel.
+// DiscoveredClientStore persists discovered clients via the raw storage layer.
+//
+// Deprecated: Wave 4.2 replaced direct Store access with discovered.Repository.
+// Retained because persistAdoptedClient in server/clients_discovery.go uses Store.Transact
+// and requires tx-bound GetDiscoveredClient / UpdateDiscoveredClientStatus calls. Remove
+// when that path is migrated to clients.Service.AdoptDiscovered + UnitOfWork (follow-up wave).
 type DiscoveredClientStore interface {
 	PutDiscoveredClient(ctx context.Context, record DiscoveredClientRecord) error
 	ListDiscoveredClients(ctx context.Context) ([]DiscoveredClientRecord, error)
