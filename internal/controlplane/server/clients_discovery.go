@@ -666,10 +666,6 @@ func (s *Server) mergeAdoptIntoExistingClient(
 		if err := s.discoveredRepo.UpdateStatus(ctx, discovered.DiscoveredID(discoveredID), discovered.StatusAdopted, observedAt.UTC()); err != nil {
 			s.logger.Error("failed to update discovered client status", "error", err)
 		}
-	} else if s.store != nil {
-		if err := s.store.UpdateDiscoveredClientStatus(ctx, discoveredID, discoveredClientStatusAdopted, observedAt.UTC()); err != nil {
-			s.logger.Error("failed to update discovered client status (legacy)", "error", err)
-		}
 	}
 	if record.Secret != "" {
 		s.markDuplicateDiscoveredClientsAdopted(ctx, discoveredID, record.Secret, observedAt)
@@ -736,32 +732,17 @@ func (s *Server) ignoreDiscoveredClient(ctx context.Context, id, actorID string,
 }
 
 func (s *Server) restoreStoredDiscoveredClients() error {
-	// Prefer the domain Repository when available (avoids direct
-	// store dependency). Only the record ID is needed here to rebuild the
-	// sequence counter; discovered.DiscoveredClient.ID is sufficient.
-	if s.discoveredRepo != nil {
-		ctx, cancel := context.WithTimeout(s.serverCtx, 30*time.Second)
-		defer cancel()
-		recs, err := s.discoveredRepo.List(ctx)
-		if err != nil {
-			return err
-		}
-		for _, r := range recs {
-			s.discoveredClientSeq = maxPrefixedSequence(s.discoveredClientSeq, "discovered", string(r.ID))
-		}
+	if s.discoveredRepo == nil {
 		return nil
 	}
-
-	// Legacy fallback for test doubles that have no discoveredRepo wired.
-	if s.store == nil {
-		return nil
-	}
-	records, err := s.store.ListDiscoveredClients(context.Background())
+	ctx, cancel := context.WithTimeout(s.serverCtx, 30*time.Second)
+	defer cancel()
+	recs, err := s.discoveredRepo.List(ctx)
 	if err != nil {
 		return err
 	}
-	for _, record := range records {
-		s.discoveredClientSeq = maxPrefixedSequence(s.discoveredClientSeq, "discovered", record.ID)
+	for _, r := range recs {
+		s.discoveredClientSeq = maxPrefixedSequence(s.discoveredClientSeq, "discovered", string(r.ID))
 	}
 	return nil
 }
