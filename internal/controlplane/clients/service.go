@@ -3,6 +3,7 @@ package clients
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -609,4 +610,79 @@ func (s *Service) WithStateWriteLocked(fn func(clients map[string]Client, assign
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	fn(s.clients, s.assignments, s.deployments, s.usage)
+}
+
+// --- Phase 6: Repository-backed mirror methods ---
+
+// Restore loads all clients (and their assignments, deployments, usage)
+// from the Repository into the in-memory mirror. Idempotent: subsequent
+// calls overwrite the mirror with the latest snapshot.
+//
+// Phase 6.2: Service-owned mirror replaces the historical Server-owned
+// mirror in clients_state.go. The legacy restoreStoredClients on Server
+// delegates to this once Phase 7 lands.
+func (s *Service) Restore(ctx context.Context) error {
+	if s.repo == nil {
+		return errors.New("clients.Service: Restore requires Repository (NewServiceV2 wiring)")
+	}
+
+	list, err := s.repo.List(ctx)
+	if err != nil {
+		return fmt.Errorf("clients.Service.Restore: list clients: %w", err)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Reset mirror — Restore is a full snapshot, not incremental.
+	s.mirrorClients = make(map[ClientID]Client, len(list))
+	s.mirrorAssignments = make(map[ClientID][]Assignment, len(list))
+	s.mirrorDeployments = make(map[ClientID]map[string]Deployment, len(list))
+	s.mirrorUsage = make(map[ClientID]map[string]usageMirror)
+	s.mirrorLastUsageSeq = make(map[string]uint64)
+
+	for _, c := range list {
+		s.mirrorClients[c.ID] = c
+
+		assigns, err := s.repo.ListAssignments(ctx, c.ID)
+		if err != nil {
+			return fmt.Errorf("clients.Service.Restore: list assignments for %s: %w", c.ID, err)
+		}
+		s.mirrorAssignments[c.ID] = assigns
+
+		deploys, err := s.repo.ListDeployments(ctx, c.ID)
+		if err != nil {
+			return fmt.Errorf("clients.Service.Restore: list deployments for %s: %w", c.ID, err)
+		}
+		dmap := make(map[string]Deployment, len(deploys))
+		for _, d := range deploys {
+			dmap[d.AgentID] = d
+		}
+		s.mirrorDeployments[c.ID] = dmap
+	}
+
+	// Usage rehydration via single ListUsage call.
+	usages, err := s.repo.ListUsage(ctx)
+	if err != nil {
+		return fmt.Errorf("clients.Service.Restore: list usage: %w", err)
+	}
+	for _, u := range usages {
+		if s.mirrorUsage[u.ClientID] == nil {
+			s.mirrorUsage[u.ClientID] = make(map[string]usageMirror)
+		}
+		s.mirrorUsage[u.ClientID][u.AgentID] = usageMirror{
+			ClientID:         u.ClientID,
+			TrafficUsedBytes: u.TrafficUsedBytes,
+			UniqueIPsUsed:    u.UniqueIPsUsed,
+			ActiveTCPConns:   u.ActiveTCPConns,
+			ActiveUniqueIPs:  u.ActiveUniqueIPs,
+			ObservedAt:       u.ObservedAt,
+			LastSeq:          u.LastSeq,
+		}
+		if u.LastSeq > s.mirrorLastUsageSeq[u.AgentID] {
+			s.mirrorLastUsageSeq[u.AgentID] = u.LastSeq
+		}
+	}
+
+	return nil
 }
