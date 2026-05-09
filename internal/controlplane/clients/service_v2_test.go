@@ -5,16 +5,22 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/lost-coder/panvex/internal/controlplane/audit"
+	"github.com/lost-coder/panvex/internal/controlplane/discovered"
+	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
 )
 
 // fakeRepo is a minimal in-memory clients.Repository for Service tests.
-// Only the methods exercised by Service.Restore are implemented;
-// unimplemented methods return a sentinel error.
+// Methods needed for Restore are implemented; others return a sentinel
+// error unless failOn is set to inject a specific failure.
 type fakeRepo struct {
 	clientsByID         map[ClientID]Client
 	assignmentsByClient map[ClientID][]Assignment
 	deploymentsByClient map[ClientID][]Deployment
 	usageRows           []Usage
+	// failOn is the method name to fail on (e.g. "SaveAssignments").
+	failOn string
 }
 
 func newFakeRepo() *fakeRepo {
@@ -43,20 +49,32 @@ func (r *fakeRepo) List(_ context.Context) ([]Client, error) {
 	return out, nil
 }
 
-func (r *fakeRepo) Save(_ context.Context, _ Client) error {
-	return errors.New("fakeRepo: Save: not implemented")
+func (r *fakeRepo) Save(_ context.Context, c Client) error {
+	if r.failOn == "Save" {
+		return errors.New("fakeRepo: Save: injected failure")
+	}
+	r.clientsByID[c.ID] = c
+	return nil
 }
 
-func (r *fakeRepo) Delete(_ context.Context, _ ClientID) error {
-	return errors.New("fakeRepo: Delete: not implemented")
+func (r *fakeRepo) Delete(_ context.Context, id ClientID) error {
+	if r.failOn == "Delete" {
+		return errors.New("fakeRepo: Delete: injected failure")
+	}
+	delete(r.clientsByID, id)
+	return nil
 }
 
 func (r *fakeRepo) ListAssignments(_ context.Context, clientID ClientID) ([]Assignment, error) {
 	return append([]Assignment(nil), r.assignmentsByClient[clientID]...), nil
 }
 
-func (r *fakeRepo) SaveAssignments(_ context.Context, _ ClientID, _ []Assignment) error {
-	return errors.New("fakeRepo: SaveAssignments: not implemented")
+func (r *fakeRepo) SaveAssignments(_ context.Context, clientID ClientID, assignments []Assignment) error {
+	if r.failOn == "SaveAssignments" {
+		return errors.New("fakeRepo: SaveAssignments: injected failure")
+	}
+	r.assignmentsByClient[clientID] = append([]Assignment(nil), assignments...)
+	return nil
 }
 
 func (r *fakeRepo) DeleteAssignments(_ context.Context, _ ClientID) error {
@@ -67,8 +85,12 @@ func (r *fakeRepo) ListDeployments(_ context.Context, clientID ClientID) ([]Depl
 	return append([]Deployment(nil), r.deploymentsByClient[clientID]...), nil
 }
 
-func (r *fakeRepo) SaveDeployments(_ context.Context, _ ClientID, _ []Deployment) error {
-	return errors.New("fakeRepo: SaveDeployments: not implemented")
+func (r *fakeRepo) SaveDeployments(_ context.Context, clientID ClientID, deployments []Deployment) error {
+	if r.failOn == "SaveDeployments" {
+		return errors.New("fakeRepo: SaveDeployments: injected failure")
+	}
+	r.deploymentsByClient[clientID] = append([]Deployment(nil), deployments...)
+	return nil
 }
 
 func (r *fakeRepo) UpsertUsage(_ context.Context, _ Usage) error {
@@ -85,6 +107,118 @@ func (r *fakeRepo) ListUsage(_ context.Context) ([]Usage, error) {
 
 func (r *fakeRepo) DeleteUsageByClient(_ context.Context, _ ClientID) error {
 	return errors.New("fakeRepo: DeleteUsageByClient: not implemented")
+}
+
+// --- fakeRepoSet: implements ClientsRepoSet ---
+
+type fakeRepoSet struct {
+	clients    Repository
+	discovered discovered.Repository
+	audit      audit.Repository
+}
+
+func (r *fakeRepoSet) Clients() Repository               { return r.clients }
+func (r *fakeRepoSet) Discovered() discovered.Repository { return r.discovered }
+func (r *fakeRepoSet) Audit() audit.Repository           { return r.audit }
+
+// --- fakeUoW: implements ServiceUoW ---
+
+type fakeUoW struct {
+	rs ClientsRepoSet
+}
+
+func newFakeUoW(rs ClientsRepoSet) *fakeUoW { return &fakeUoW{rs: rs} }
+
+func (u *fakeUoW) Do(_ context.Context, fn func(rs ClientsRepoSet) error) error {
+	return fn(u.rs)
+}
+
+// --- fakeDiscoveredRepo: implements discovered.Repository ---
+
+type fakeDiscoveredRepo struct {
+	byID map[discovered.DiscoveredID]discovered.DiscoveredClient
+}
+
+func newFakeDiscoveredRepo() *fakeDiscoveredRepo {
+	return &fakeDiscoveredRepo{byID: make(map[discovered.DiscoveredID]discovered.DiscoveredClient)}
+}
+
+func (r *fakeDiscoveredRepo) Get(_ context.Context, id discovered.DiscoveredID) (discovered.DiscoveredClient, error) {
+	dc, ok := r.byID[id]
+	if !ok {
+		return discovered.DiscoveredClient{}, errors.New("fakeDiscoveredRepo: Get: not found")
+	}
+	return dc, nil
+}
+
+func (r *fakeDiscoveredRepo) GetByAgentAndName(_ context.Context, _, _ string) (discovered.DiscoveredClient, error) {
+	return discovered.DiscoveredClient{}, errors.New("fakeDiscoveredRepo: GetByAgentAndName: not implemented")
+}
+
+func (r *fakeDiscoveredRepo) List(_ context.Context) ([]discovered.DiscoveredClient, error) {
+	out := make([]discovered.DiscoveredClient, 0, len(r.byID))
+	for _, dc := range r.byID {
+		out = append(out, dc)
+	}
+	return out, nil
+}
+
+func (r *fakeDiscoveredRepo) ListByAgent(_ context.Context, _ string) ([]discovered.DiscoveredClient, error) {
+	return nil, errors.New("fakeDiscoveredRepo: ListByAgent: not implemented")
+}
+
+func (r *fakeDiscoveredRepo) Save(_ context.Context, dc discovered.DiscoveredClient) error {
+	r.byID[dc.ID] = dc
+	return nil
+}
+
+func (r *fakeDiscoveredRepo) UpdateStatus(_ context.Context, id discovered.DiscoveredID, status discovered.Status, _ time.Time) error {
+	dc, ok := r.byID[id]
+	if !ok {
+		return errors.New("fakeDiscoveredRepo: UpdateStatus: not found")
+	}
+	dc.Status = status
+	r.byID[id] = dc
+	return nil
+}
+
+func (r *fakeDiscoveredRepo) UpdateStatusBulk(_ context.Context, ids []discovered.DiscoveredID, status discovered.Status, _ time.Time) error {
+	for _, id := range ids {
+		dc, ok := r.byID[id]
+		if !ok {
+			continue
+		}
+		dc.Status = status
+		r.byID[id] = dc
+	}
+	return nil
+}
+
+func (r *fakeDiscoveredRepo) Delete(_ context.Context, id discovered.DiscoveredID) error {
+	delete(r.byID, id)
+	return nil
+}
+
+// --- fakeAuditRepo: implements audit.Repository ---
+
+type fakeAuditRepo struct {
+	events []audit.Event
+}
+
+func newFakeAuditRepo() *fakeAuditRepo { return &fakeAuditRepo{} }
+
+func (r *fakeAuditRepo) Append(_ context.Context, e audit.Event) error {
+	r.events = append(r.events, e)
+	return nil
+}
+
+// --- makeTestVault: returns a no-op vault for tests ---
+
+// makeTestVault returns a nil vault, which causes encryptSecret to
+// pass plaintext through unchanged. Tests that want real encryption
+// can construct a secretvault.Vault directly.
+func makeTestVault(_ *testing.T) *secretvault.Vault {
+	return nil
 }
 
 // --- Phase 6.2 tests: Service.Restore ---
@@ -236,3 +370,74 @@ func TestService_Get_BeforeRestore_Empty(t *testing.T) {
 		t.Fatalf("List before Restore: len = %d, want 0", len(list))
 	}
 }
+
+// --- Phase 6.4 tests: Service.Save ---
+
+func TestService_Save_EncryptsAndPersists(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo(), audit: newFakeAuditRepo()}
+	svc := NewServiceV2(ServiceConfig{
+		Repo:  repo,
+		UoW:   newFakeUoW(rs),
+		Vault: makeTestVault(t),
+	})
+
+	plain := "plaintext-secret"
+	c := Client{ID: ClientID("c-new"), Name: "n", Secret: plain}
+	if err := svc.Save(context.Background(), c); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	// With nil vault, plaintext passes through — the important thing is
+	// the repo was called and the mirror is updated.
+	stored, ok := repo.clientsByID[c.ID]
+	if !ok {
+		t.Fatal("client not written to repo")
+	}
+	_ = stored // vault is nil, so Secret passes through unchanged in this test
+
+	got, err := svc.Get(context.Background(), c.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Secret != plain {
+		t.Fatalf("mirror Secret = %q, want plaintext %q", got.Secret, plain)
+	}
+}
+
+func TestService_Save_VaultEncryptsSecret(t *testing.T) {
+	t.Parallel()
+
+	vault, err := secretvault.New("test-passphrase-32bytes-long-ok!", secretvault.AllDomains)
+	if err != nil {
+		t.Fatalf("new vault: %v", err)
+	}
+
+	repo := newFakeRepo()
+	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo(), audit: newFakeAuditRepo()}
+	svc := NewServiceV2(ServiceConfig{
+		Repo:  repo,
+		UoW:   newFakeUoW(rs),
+		Vault: vault,
+	})
+
+	plain := "deadbeefdeadbeefdeadbeefdeadbeef"
+	c := Client{ID: ClientID("c-enc"), Name: "enc", Secret: plain}
+	if err := svc.Save(context.Background(), c); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	stored := repo.clientsByID[c.ID]
+	if stored.Secret == plain {
+		t.Fatal("Secret stored as plaintext — encryption boundary violated")
+	}
+	// Mirror must hold plaintext.
+	got, err := svc.Get(context.Background(), c.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Secret != plain {
+		t.Fatalf("mirror Secret = %q, want plaintext %q", got.Secret, plain)
+	}
+}
+

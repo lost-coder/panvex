@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/audit"
 	"github.com/lost-coder/panvex/internal/controlplane/discovered"
 	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
@@ -41,6 +42,7 @@ var ErrNotFound = errors.New("clients: not found")
 type ClientsRepoSet interface {
 	Clients() Repository
 	Discovered() discovered.Repository
+	Audit() audit.Repository
 }
 
 // ServiceUoW is the unit-of-work interface that clients.Service
@@ -716,4 +718,60 @@ func (s *Service) List(ctx context.Context) ([]Client, error) {
 		out = append(out, c)
 	}
 	return out, nil
+}
+
+// --- Phase 6.4: Service.Save with vault encryption ---
+
+// encryptSecret seals the plaintext secret via the vault's
+// DomainClientSecret key. A nil or disabled vault is a no-op.
+// An empty plaintext is returned unchanged.
+func (s *Service) encryptSecret(plaintext string) (string, error) {
+	if s.vault == nil || !s.vault.Enabled() || plaintext == "" {
+		return plaintext, nil
+	}
+	ct, err := s.vault.Encrypt(secretvault.DomainClientSecret, plaintext)
+	if err != nil {
+		return "", fmt.Errorf("encryptSecret: %w", err)
+	}
+	return ct, nil
+}
+
+// decryptSecret reverses encryptSecret. Plaintext (non-prefixed) values
+// are returned unchanged for backwards compatibility.
+func (s *Service) decryptSecret(ciphertext string) (string, error) {
+	if s.vault == nil || !s.vault.Enabled() || ciphertext == "" {
+		return ciphertext, nil
+	}
+	pt, err := s.vault.Decrypt(secretvault.DomainClientSecret, ciphertext)
+	if err != nil {
+		return "", fmt.Errorf("decryptSecret: %w", err)
+	}
+	return pt, nil
+}
+
+// Save persists the client (encrypted) via the Repository inside a UoW
+// transaction, then updates the in-memory mirror with the plaintext
+// Client. The Repository always stores ciphertext for Secret.
+func (s *Service) Save(ctx context.Context, c Client) error {
+	if s.uow == nil || s.repo == nil {
+		return errors.New("clients.Service: Save requires UoW + Repository (NewServiceV2)")
+	}
+	encryptedSecret, err := s.encryptSecret(c.Secret)
+	if err != nil {
+		return fmt.Errorf("clients.Service.Save: encrypt secret: %w", err)
+	}
+	toStore := c
+	toStore.Secret = encryptedSecret
+
+	if err := s.uow.Do(ctx, func(rs ClientsRepoSet) error {
+		return rs.Clients().Save(ctx, toStore)
+	}); err != nil {
+		return err
+	}
+
+	// Mirror holds plaintext (handler-facing).
+	s.mu.Lock()
+	s.mirrorClients[c.ID] = c
+	s.mu.Unlock()
+	return nil
 }
