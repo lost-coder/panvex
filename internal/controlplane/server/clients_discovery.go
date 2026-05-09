@@ -212,6 +212,9 @@ func (s *Server) listDiscoveredClients(ctx context.Context) ([]discoveredClient,
 		return nil, nil
 	}
 
+	// TODO(Phase 8): migrate to s.discoveredRepo.List once discovered.DiscoveredClient
+	// carries Secret, ConnectionLinks, and limit fields. discoveredClientFromRecord uses
+	// all those fields; migrating now would silently return zero values for them.
 	records, err := s.store.ListDiscoveredClients(ctx)
 	if err != nil {
 		return nil, err

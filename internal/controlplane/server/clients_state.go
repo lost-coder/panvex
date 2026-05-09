@@ -91,7 +91,65 @@ func (s *Server) restoreStoredClients() error {
 			s.lastUsageSeq[agentID] = seq
 		}
 	}
+
+	// Discovered-client seeding: when client_usage has no entry for a
+	// (clientID, agentID) pair, fall back to discovered_clients.total_octets
+	// as the initial traffic counter (mirrors the legacy rehydrateClientAssignmentUsage
+	// behaviour). The discovered.Repository type is stripped of TotalOctets so
+	// we still read via s.store here.
+	// TODO(Phase 8): extend discovered.DiscoveredClient with TotalOctets so this
+	// can migrate to s.discoveredRepo.List.
+	if s.store != nil {
+		s.seedUsageFromDiscoveredLocked(ctx, snap)
+	}
 	return nil
+}
+
+// seedUsageFromDiscoveredLocked fills in zero-usage entries in s.clientUsage
+// using discovered_clients.total_octets where available. Must be called with
+// s.clientsMu held for writing.
+func (s *Server) seedUsageFromDiscoveredLocked(ctx context.Context, snap clients.MirrorState) {
+	dcRecords, err := s.store.ListDiscoveredClients(ctx)
+	if err != nil {
+		s.logger.Warn("restore: list discovered clients for usage seed failed", "error", err)
+		return
+	}
+	// Build index: agentID+\x00+clientName → record
+	dcIdx := make(map[string]storage.DiscoveredClientRecord, len(dcRecords))
+	for _, r := range dcRecords {
+		dcIdx[r.AgentID+"\x00"+r.ClientName] = r
+	}
+
+	for id, c := range snap.Clients {
+		assignments := snap.Assignments[id]
+		for _, a := range assignments {
+			if a.AgentID == "" {
+				continue
+			}
+			// Only seed if there's no persisted usage entry.
+			if byAgent, ok := s.clientUsage[string(id)]; ok {
+				if _, hasUsage := byAgent[a.AgentID]; hasUsage {
+					continue
+				}
+			}
+			dc, ok := dcIdx[a.AgentID+"\x00"+c.Name]
+			if !ok {
+				continue
+			}
+			if s.clientUsage[string(id)] == nil {
+				s.clientUsage[string(id)] = make(map[string]clientUsageSnapshot)
+			}
+			s.clientUsage[string(id)][a.AgentID] = clientUsageSnapshot{
+				ClientID:         clients.ClientID(string(id)),
+				TrafficUsedBytes: dc.TotalOctets,
+				UniqueIPsUsed:    dc.ActiveUniqueIPs,
+				ActiveTCPConns:   dc.CurrentConnections,
+				ActiveUniqueIPs:  dc.ActiveUniqueIPs,
+				ObservedAt:       dc.UpdatedAt,
+			}
+			s.trackClientUsageOwnerLocked(string(id), a.AgentID)
+		}
+	}
 }
 
 // restoreStoredClientsLegacy is the pre-Phase-7 store-backed restore path.
