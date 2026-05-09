@@ -481,8 +481,8 @@ func (s *Server) recordClientJobResultWithContext(ctx context.Context, agentID, 
 		return
 	}
 
-	if s.store != nil {
-		if err := s.store.PutClientDeployment(ctx, clients.DeploymentToRecord(deployment)); err != nil {
+	if s.clientsSvc != nil {
+		if err := s.clientsSvc.PersistDeployment(ctx, deployment); err != nil {
 			s.logger.Error("client deployment persistence failed", "client_id", payload.ClientID, "agent_id", agentID, "error", err)
 		}
 	}
