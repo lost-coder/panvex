@@ -22,6 +22,13 @@ import (
 // The vault parameter, when non-nil and enabled, encrypts the client
 // secret at-rest. Passing nil keeps legacy plaintext behaviour for
 // dev/tests where no encryption key is configured.
+//
+// Deprecated: new code should use Service.SaveState (UoW-backed, uses
+// clients.Repository). PersistState is retained only because
+// persistAdoptedClient in server/clients_discovery.go drives it inside
+// a Store.Transact closure where a full UoW migration is not yet
+// feasible (P2-ARCH-01). AC#12 deletion is deferred to the wave that
+// migrates persistAdoptedClient to Service.AdoptDiscovered.
 func PersistState(
 	ctx context.Context,
 	store storage.Store,

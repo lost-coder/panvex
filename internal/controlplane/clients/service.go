@@ -351,11 +351,16 @@ func (s *Service) ReplaceInMemory(client Client, assignments []Assignment, deplo
 	s.deployments[string(client.ID)] = nextDeployments
 }
 
-// ReplaceState persists the client + assignments + deployments to the
-// Service's store (when present) and mirrors them in memory. Returns
-// storage errors unchanged; under nil-store mode only the in-memory
+// ReplaceState persists the client + assignments + deployments and mirrors
+// them in memory. When the Service was wired via NewServiceV2 (repo != nil)
+// the UoW-backed SaveState is used; otherwise it falls back to the legacy
+// storage.Store path. Under nil-store + nil-repo mode only the in-memory
 // mirror is updated.
 func (s *Service) ReplaceState(ctx context.Context, client Client, assignments []Assignment, deployments []Deployment) error {
+	if s.repo != nil {
+		// NewServiceV2 path: SaveState handles encryption + UoW + mirror.
+		return s.SaveState(ctx, client, assignments, deployments)
+	}
 	if s.store != nil {
 		if err := PersistState(ctx, s.store, client, assignments, deployments, s.vault); err != nil {
 			return err

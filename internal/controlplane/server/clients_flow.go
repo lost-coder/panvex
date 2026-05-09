@@ -354,7 +354,15 @@ func (s *Server) deleteClient(ctx context.Context, clientID, actorID string, obs
 }
 
 func (s *Server) replaceClientStateWithContext(ctx context.Context, client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment) error {
-	if s.store != nil {
+	if s.clientsSvc.HasRepo() {
+		// NewServiceV2 path: use the UoW-backed SaveState which atomically
+		// writes to the Repository and updates the Service mirror. The legacy
+		// s.clients / s.clientAssignments maps are kept in sync below so
+		// existing read paths continue to work until Phase 9 removes them.
+		if err := s.clientsSvc.SaveState(ctx, client, assignments, deployments); err != nil {
+			return err
+		}
+	} else if s.store != nil {
 		if err := s.persistClientState(ctx, client, assignments, deployments); err != nil {
 			return err
 		}
