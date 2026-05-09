@@ -6,7 +6,7 @@ import "time"
 type Status string
 
 const (
-	StatusPending Status = "pending"
+	StatusPending Status = "pending_review"
 	StatusAdopted Status = "adopted"
 	StatusIgnored Status = "ignored"
 )
