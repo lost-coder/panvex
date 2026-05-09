@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"time"
 
@@ -10,11 +9,124 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
+// restoreStoredClients populates the server's in-memory client mirrors.
+//
+// Phase 7 migration: when clientsSvc was wired with NewServiceV2 (i.e.
+// HasRepo() is true), this delegates all persistence reads to
+// clients.Service.Restore and then syncs the Service's V2 mirror back into
+// the server's legacy maps so existing handlers continue to work.
+//
+// The legacy maps (s.clients, s.clientAssignments, etc.) are KEPT during
+// Phase 7 to avoid a too-large cascade; Phase 8 will migrate every reader
+// to call s.clientsSvc.DetailSnapshot / ListSnapshot directly and remove
+// the maps from the Server struct.
+func (s *Server) restoreStoredClients() error {
+	if s.store == nil {
+		return nil
+	}
+
+	// Q2.U-P-09: bound the entire restore sequence so a stuck DB cannot
+	// hang startup forever. 60s covers a multi-thousand-row clients
+	// table on commodity hardware with comfortable headroom. The parent
+	// is the lifecycle context (Server.serverCtx) so a Close() during a
+	// slow restore aborts rather than waiting the full 60s (BP-01).
+	ctx, cancel := context.WithTimeout(s.serverCtx, 60*time.Second)
+	defer cancel()
+
+	if !s.clientsSvc.HasRepo() {
+		// NewServiceV2 not available (test double or no DB). Fall back to
+		// the legacy store-based restore (retained for test compat).
+		return s.restoreStoredClientsLegacy(ctx)
+	}
+
+	// Delegate all persistence reads to clients.Service.Restore which uses
+	// the domain Repository rather than storage.Store directly.
+	if err := s.clientsSvc.Restore(ctx); err != nil {
+		return err
+	}
+
+	// Sync the Service's V2 mirror into the server's legacy maps.
+	// Phase 8 will remove this step once every reader migrates to
+	// s.clientsSvc.Get / DetailSnapshot / ListSnapshot.
+	snap := s.clientsSvc.MirrorSnapshot()
+	s.clientsMu.Lock()
+	defer s.clientsMu.Unlock()
+
+	for id, c := range snap.Clients {
+		s.clients[string(id)] = c
+		s.clientSeq = maxPrefixedSequence(s.clientSeq, "client", string(id))
+	}
+	for id, as := range snap.Assignments {
+		s.clientAssignments[string(id)] = as
+		for _, a := range as {
+			s.assignmentSeq = maxPrefixedSequence(s.assignmentSeq, "client-assignment", string(a.ID))
+		}
+	}
+	for id, byAgent := range snap.Deployments {
+		if s.clientDeployments[string(id)] == nil {
+			s.clientDeployments[string(id)] = make(map[string]managedClientDeployment)
+		}
+		for agentID, d := range byAgent {
+			s.clientDeployments[string(id)][agentID] = d
+		}
+	}
+	for id, byAgent := range snap.Usage {
+		if s.clientUsage[string(id)] == nil {
+			s.clientUsage[string(id)] = make(map[string]clientUsageSnapshot)
+		}
+		for agentID, u := range byAgent {
+			s.clientUsage[string(id)][agentID] = clientUsageSnapshot{
+				ClientID:         u.ClientID,
+				TrafficUsedBytes: u.TrafficUsedBytes,
+				UniqueIPsUsed:    u.UniqueIPsUsed,
+				ActiveTCPConns:   u.ActiveTCPConns,
+				ActiveUniqueIPs:  u.ActiveUniqueIPs,
+				ObservedAt:       u.ObservedAt,
+			}
+			s.trackClientUsageOwnerLocked(string(id), agentID)
+		}
+	}
+	for agentID, seq := range snap.LastUsageSeq {
+		if seq > s.lastUsageSeq[agentID] {
+			s.lastUsageSeq[agentID] = seq
+		}
+	}
+	return nil
+}
+
+// restoreStoredClientsLegacy is the pre-Phase-7 store-backed restore path.
+// Called when clientsSvc has not been wired with NewServiceV2 (e.g. test
+// doubles). Retained for test compatibility only — production always takes
+// the clientsSvc.Restore path above.
+func (s *Server) restoreStoredClientsLegacy(ctx context.Context) error {
+	records, err := s.store.ListClients(ctx)
+	if err != nil {
+		return err
+	}
+
+	usageIdx, discoveredIdx := s.restoreClientUsageIndexes(ctx)
+
+	for _, record := range records {
+		decoded, err := clients.DecryptClientRecord(record, s.vault())
+		if err != nil {
+			return err
+		}
+		client := clients.ClientFromRecord(decoded)
+		s.clients[string(client.ID)] = client
+		s.clientSeq = maxPrefixedSequence(s.clientSeq, "client", string(client.ID))
+
+		if err := s.restoreClientAssignments(ctx, client, usageIdx, discoveredIdx); err != nil {
+			return err
+		}
+		if err := s.restoreClientDeployments(ctx, string(client.ID)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // restoreClientUsageIndexes builds two lookup tables used during
-// restoreStoredClients to rehydrate volatile traffic counters: the
-// primary `client_usage` rows keyed by (client_id, agent_id), and a
-// fallback index of the latest discovered_clients snapshot keyed by
-// (agent_id, client_name).
+// restoreStoredClientsLegacy. Retained for the legacy/test-double path only.
 func (s *Server) restoreClientUsageIndexes(ctx context.Context) (map[string]storage.ClientUsageRecord, map[string]storage.DiscoveredClientRecord) {
 	usageIdx := make(map[string]storage.ClientUsageRecord)
 	if usage, err := s.store.ListClientUsage(ctx); err == nil {
@@ -35,9 +147,7 @@ func (s *Server) restoreClientUsageIndexes(ctx context.Context) (map[string]stor
 }
 
 // rehydrateClientAssignmentUsage restores the volatile traffic
-// counter for a single (client, agent) pair. Prefers the persisted
-// client_usage row; falls back to the latest discovered_clients
-// snapshot when no usage row exists yet.
+// counter for a single (client, agent) pair. Used by the legacy path only.
 func (s *Server) rehydrateClientAssignmentUsage(ctx context.Context, client managedClient, assignment managedClientAssignment, usageIdx map[string]storage.ClientUsageRecord, discoveredIdx map[string]storage.DiscoveredClientRecord) {
 	if assignment.AgentID == "" {
 		return
@@ -64,7 +174,7 @@ func (s *Server) rehydrateClientAssignmentUsage(ctx context.Context, client mana
 }
 
 // restoreClientAssignments loads + memoises the assignments for one
-// client and rehydrates the volatile usage counter for each one.
+// client (legacy path). Used by restoreStoredClientsLegacy only.
 func (s *Server) restoreClientAssignments(ctx context.Context, client managedClient, usageIdx map[string]storage.ClientUsageRecord, discoveredIdx map[string]storage.DiscoveredClientRecord) error {
 	assignments, err := s.store.ListClientAssignments(ctx, string(client.ID))
 	if err != nil {
@@ -81,7 +191,7 @@ func (s *Server) restoreClientAssignments(ctx context.Context, client managedCli
 }
 
 // restoreClientDeployments loads + memoises the per-agent deployment
-// records for one client.
+// records for one client (legacy path). Used by restoreStoredClientsLegacy only.
 func (s *Server) restoreClientDeployments(ctx context.Context, clientID string) error {
 	deployments, err := s.store.ListClientDeployments(ctx, clientID)
 	if err != nil {
@@ -94,46 +204,6 @@ func (s *Server) restoreClientDeployments(ctx context.Context, clientID string) 
 		deployment := clients.DeploymentFromRecord(deploymentRecord)
 		s.clientDeployments[clientID][deployment.AgentID] = deployment
 	}
-	return nil
-}
-
-func (s *Server) restoreStoredClients() error {
-	if s.store == nil {
-		return nil
-	}
-
-	// Q2.U-P-09: bound the entire restore sequence so a stuck DB cannot
-	// hang startup forever. 60s covers a multi-thousand-row clients
-	// table on commodity hardware with comfortable headroom. The parent
-	// is the lifecycle context (Server.serverCtx) so a Close() during a
-	// slow restore aborts rather than waiting the full 60s (BP-01).
-	ctx, cancel := context.WithTimeout(s.serverCtx, 60*time.Second)
-	defer cancel()
-
-	records, err := s.store.ListClients(ctx)
-	if err != nil {
-		return err
-	}
-
-	usageIdx, discoveredIdx := s.restoreClientUsageIndexes(ctx)
-
-	for _, record := range records {
-		decoded, err := clients.DecryptClientRecord(record, s.vault())
-		if err != nil {
-			return fmt.Errorf("decrypt client %s: %w", record.ID, err)
-		}
-		client := clients.ClientFromRecord(decoded)
-		s.clients[string(client.ID)] = client
-		s.clientSeq = maxPrefixedSequence(s.clientSeq, "client", string(client.ID))
-
-		if err := s.restoreClientAssignments(ctx, client, usageIdx, discoveredIdx); err != nil {
-			return err
-		}
-		if err := s.restoreClientDeployments(ctx, string(client.ID)); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 

@@ -973,6 +973,114 @@ func (s *Service) applyUsageMirror(u Usage) {
 	s.mu.Unlock()
 }
 
+// PersistDeployment writes a single deployment record to the legacy
+// storage.Store via the client service. This is used by the server's
+// recordClientJobResultWithContext during Phase 7 to eliminate the
+// direct s.store.PutClientDeployment callsite. When no store is wired
+// (nil), the call is a no-op (in-memory mode for tests).
+//
+// Phase 8 will replace this with a Repository-backed path once the
+// Repository.SaveDeployments API is enriched to support upsert-one.
+func (s *Service) PersistDeployment(ctx context.Context, d Deployment) error {
+	if s.store == nil {
+		return nil
+	}
+	return s.store.PutClientDeployment(ctx, DeploymentToRecord(d))
+}
+
+// --- Phase 7: server-legacy bridge ---
+
+// MirrorUsageEntry is the per-(client, agent) usage value returned by
+// MirrorSnapshot. It mirrors usageMirror but is exported so the server
+// package can read it to sync its own legacy maps during Phase 7.
+type MirrorUsageEntry struct {
+	ClientID         ClientID
+	TrafficUsedBytes uint64
+	UniqueIPsUsed    int
+	ActiveTCPConns   int
+	ActiveUniqueIPs  int
+	ObservedAt       time.Time
+	LastSeq          uint64
+}
+
+// MirrorState is the full snapshot of the V2 in-memory mirror, returned by
+// MirrorSnapshot. Callers must treat the maps as read-only; they are copies.
+type MirrorState struct {
+	Clients      map[ClientID]Client
+	Assignments  map[ClientID][]Assignment
+	Deployments  map[ClientID]map[string]Deployment
+	Usage        map[ClientID]map[string]MirrorUsageEntry
+	LastUsageSeq map[string]uint64 // per-agent
+}
+
+// MirrorSnapshot returns a deep copy of the current V2 mirror state.
+// Used by the server's restoreStoredClients bridge during Phase 7 so
+// the server's legacy maps are synced from the domain service rather
+// than queried directly from storage.Store. Safe to call from any
+// goroutine; acquires the read lock internally.
+func (s *Service) MirrorSnapshot() MirrorState {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	clients := make(map[ClientID]Client, len(s.mirrorClients))
+	for k, v := range s.mirrorClients {
+		clients[k] = v
+	}
+
+	assignments := make(map[ClientID][]Assignment, len(s.mirrorAssignments))
+	for k, v := range s.mirrorAssignments {
+		cp := make([]Assignment, len(v))
+		copy(cp, v)
+		assignments[k] = cp
+	}
+
+	deployments := make(map[ClientID]map[string]Deployment, len(s.mirrorDeployments))
+	for k, byAgent := range s.mirrorDeployments {
+		cp := make(map[string]Deployment, len(byAgent))
+		for agentID, d := range byAgent {
+			cp[agentID] = d
+		}
+		deployments[k] = cp
+	}
+
+	usage := make(map[ClientID]map[string]MirrorUsageEntry, len(s.mirrorUsage))
+	for k, byAgent := range s.mirrorUsage {
+		cp := make(map[string]MirrorUsageEntry, len(byAgent))
+		for agentID, u := range byAgent {
+			cp[agentID] = MirrorUsageEntry{
+				ClientID:         u.ClientID,
+				TrafficUsedBytes: u.TrafficUsedBytes,
+				UniqueIPsUsed:    u.UniqueIPsUsed,
+				ActiveTCPConns:   u.ActiveTCPConns,
+				ActiveUniqueIPs:  u.ActiveUniqueIPs,
+				ObservedAt:       u.ObservedAt,
+				LastSeq:          u.LastSeq,
+			}
+		}
+		usage[k] = cp
+	}
+
+	lastUsageSeq := make(map[string]uint64, len(s.mirrorLastUsageSeq))
+	for agentID, seq := range s.mirrorLastUsageSeq {
+		lastUsageSeq[agentID] = seq
+	}
+
+	return MirrorState{
+		Clients:      clients,
+		Assignments:  assignments,
+		Deployments:  deployments,
+		Usage:        usage,
+		LastUsageSeq: lastUsageSeq,
+	}
+}
+
+// HasRepo reports whether the service was wired with a Repository
+// (i.e. constructed via NewServiceV2). Used by the server to decide
+// whether to delegate persistence operations to the service.
+func (s *Service) HasRepo() bool {
+	return s.repo != nil
+}
+
 // applyUsageMirrorLocked updates the mirror maps. Must be called with
 // s.mu held for writing.
 func (s *Service) applyUsageMirrorLocked(u Usage) {
