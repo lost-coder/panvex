@@ -441,3 +441,57 @@ func TestService_Save_VaultEncryptsSecret(t *testing.T) {
 	}
 }
 
+// --- Phase 6.5 tests: Service.SaveState ---
+
+func TestService_SaveState_AtomicAcrossThreeWrites(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	repo.failOn = "SaveAssignments"
+	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo(), audit: newFakeAuditRepo()}
+	svc := NewServiceV2(ServiceConfig{
+		Repo:  repo,
+		UoW:   newFakeUoW(rs),
+		Vault: makeTestVault(t),
+	})
+
+	c := Client{ID: ClientID("c-1"), Name: "n", Secret: "s"}
+	a := Assignment{ID: AssignmentID("a-1"), ClientID: c.ID}
+
+	err := svc.SaveState(context.Background(), c, []Assignment{a}, nil)
+	if err == nil {
+		t.Fatal("expected failure from SaveAssignments injection")
+	}
+	// Mirror must NOT have c-1 (Tx rolled back).
+	if _, getErr := svc.Get(context.Background(), c.ID); !errors.Is(getErr, ErrNotFound) {
+		t.Fatal("mirror updated despite Tx rollback")
+	}
+}
+
+func TestService_SaveState_UpdatesMirror(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo(), audit: newFakeAuditRepo()}
+	svc := NewServiceV2(ServiceConfig{
+		Repo:  repo,
+		UoW:   newFakeUoW(rs),
+		Vault: makeTestVault(t),
+	})
+
+	c := Client{ID: ClientID("c-1"), Name: "n", Secret: "s"}
+	a := Assignment{ID: AssignmentID("a-1"), ClientID: c.ID}
+	d := Deployment{ClientID: c.ID, AgentID: "a-1"}
+
+	if err := svc.SaveState(context.Background(), c, []Assignment{a}, []Deployment{d}); err != nil {
+		t.Fatalf("SaveState: %v", err)
+	}
+	got, err := svc.Get(context.Background(), c.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Name != "n" {
+		t.Fatal("mirror not updated")
+	}
+}
+

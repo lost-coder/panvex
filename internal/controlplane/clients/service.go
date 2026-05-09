@@ -720,7 +720,7 @@ func (s *Service) List(ctx context.Context) ([]Client, error) {
 	return out, nil
 }
 
-// --- Phase 6.4: Service.Save with vault encryption ---
+// --- Phase 6.4–6.5: Service.Save and Service.SaveState ---
 
 // encryptSecret seals the plaintext secret via the vault's
 // DomainClientSecret key. A nil or disabled vault is a no-op.
@@ -772,6 +772,47 @@ func (s *Service) Save(ctx context.Context, c Client) error {
 	// Mirror holds plaintext (handler-facing).
 	s.mu.Lock()
 	s.mirrorClients[c.ID] = c
+	s.mu.Unlock()
+	return nil
+}
+
+// SaveState atomically persists client + assignments + deployments in
+// one UoW transaction, then updates the in-memory mirror. On any Tx
+// error the mirror is left unchanged.
+func (s *Service) SaveState(ctx context.Context, c Client, assignments []Assignment, deployments []Deployment) error {
+	if s.uow == nil || s.repo == nil {
+		return errors.New("clients.Service: SaveState requires UoW + Repository (NewServiceV2)")
+	}
+	encryptedSecret, err := s.encryptSecret(c.Secret)
+	if err != nil {
+		return fmt.Errorf("clients.Service.SaveState: encrypt: %w", err)
+	}
+	toStore := c
+	toStore.Secret = encryptedSecret
+
+	if err := s.uow.Do(ctx, func(rs ClientsRepoSet) error {
+		if err := rs.Clients().Save(ctx, toStore); err != nil {
+			return err
+		}
+		if err := rs.Clients().SaveAssignments(ctx, c.ID, assignments); err != nil {
+			return err
+		}
+		if err := rs.Clients().SaveDeployments(ctx, c.ID, deployments); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	s.mirrorClients[c.ID] = c
+	s.mirrorAssignments[c.ID] = append([]Assignment(nil), assignments...)
+	dmap := make(map[string]Deployment, len(deployments))
+	for _, d := range deployments {
+		dmap[d.AgentID] = d
+	}
+	s.mirrorDeployments[c.ID] = dmap
 	s.mu.Unlock()
 	return nil
 }
