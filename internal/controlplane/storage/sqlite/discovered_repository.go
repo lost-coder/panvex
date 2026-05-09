@@ -131,8 +131,8 @@ func (r *discoveredRepository) Save(ctx context.Context, dc discovered.Discovere
 		int64(dc.CurrentConnections), //nolint:gosec
 		int64(dc.ActiveUniqueIPs),    //nolint:gosec
 		encodeStringArray(dc.ConnectionLinks),
-		int64(dc.MaxTCPConns),    //nolint:gosec
-		int64(dc.MaxUniqueIPs),   //nolint:gosec
+		int64(dc.MaxTCPConns),  //nolint:gosec
+		int64(dc.MaxUniqueIPs), //nolint:gosec
 		dc.DataQuotaBytes, dc.Expiration,
 		toUnix(dc.FirstSeen), toUnix(dc.UpdatedAt),
 	)

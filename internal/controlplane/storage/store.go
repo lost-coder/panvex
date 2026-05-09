@@ -28,18 +28,18 @@ const (
 // zero for the first page. Limit <= 0 falls back to DefaultCursorPageSize and
 // values above MaxCursorPageSize are clamped.
 type ListJobsCursorParams struct {
-	Limit           int
-	AfterCreatedAt  time.Time
-	AfterID         string
+	Limit          int
+	AfterCreatedAt time.Time
+	AfterID        string
 }
 
 // ListAuditEventsCursorParams selects a single page of audit events in
 // (created_at DESC, id DESC) order. Same cursor + limit semantics as
 // ListJobsCursorParams.
 type ListAuditEventsCursorParams struct {
-	Limit           int
-	AfterCreatedAt  time.Time
-	AfterID         string
+	Limit          int
+	AfterCreatedAt time.Time
+	AfterID        string
 }
 
 // NormalizeCursorLimit applies the DefaultCursorPageSize/MaxCursorPageSize

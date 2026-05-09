@@ -125,7 +125,7 @@ func (s *Server) seedUsageFromDiscoveredLocked(ctx context.Context, snap clients
 		dcIdx[r.AgentID+"\x00"+r.ClientName] = dcSeed{
 			totalOctets: r.TotalOctets,
 			uniqueIPs:   int(r.ActiveUniqueIPs),    //nolint:gosec
-			tcpConns:    int(r.CurrentConnections),  //nolint:gosec
+			tcpConns:    int(r.CurrentConnections), //nolint:gosec
 			updatedAt:   r.UpdatedAt,
 		}
 	}
@@ -161,7 +161,6 @@ func (s *Server) seedUsageFromDiscoveredLocked(ctx context.Context, snap clients
 		}
 	}
 }
-
 
 // restoreStoredClientsLegacy is the pre-Wave-4.2 store-backed restore path.
 // Only reached when clientsSvc was not wired with NewServiceV2 (i.e. the

@@ -19,7 +19,7 @@ type DiscoveredClient struct {
 	ID                 DiscoveredID
 	AgentID            string // agents-domain ID; not strong-typed yet (Wave 4.2-agents will)
 	ClientName         string
-	Secret             string   // Telemt client secret (hex); carried for adopt + sibling-dedup
+	Secret             string // Telemt client secret (hex); carried for adopt + sibling-dedup
 	Status             Status
 	TotalOctets        uint64
 	CurrentConnections uint32

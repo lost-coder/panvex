@@ -393,12 +393,12 @@ func (s *Server) persistClientState(ctx context.Context, client managedClient, a
 	return persistClientStateVia(ctx, s.store, client, assignments, deployments, s.vault())
 }
 
-// persistClientStateVia delegates to clients.PersistState. Kept as a
-// server-package shim so call sites inside Store.Transact closures
-// continue to read idiomatically (P2-ARCH-01). Will be removed once
-// callers invoke clients.PersistState directly.
+// persistClientStateVia delegates to clients.PersistState. Retained only
+// for the persistAdoptedClient Store.Transact closure (P2-ARCH-01);
+// all other callers now route through clientsSvc.SaveState. Will be
+// removed when persistAdoptedClient migrates to Service.AdoptDiscovered.
 func persistClientStateVia(ctx context.Context, store storage.Store, client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment, vault *secretvault.Vault) error {
-	return clients.PersistState(ctx, store, client, assignments, deployments, vault)
+	return clients.PersistState(ctx, store, client, assignments, deployments, vault) //nolint:staticcheck // legacy Transact path; see comment above
 }
 
 func (s *Server) buildClientAssignments(clientID clients.ClientID, input clientMutationInput, observedAt time.Time) []managedClientAssignment {
