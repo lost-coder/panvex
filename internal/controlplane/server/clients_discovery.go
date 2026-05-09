@@ -127,6 +127,10 @@ func (s *Server) upsertDiscoveredClient(ctx context.Context, agentID string, rec
 		haveExisting bool
 		existingErr  error
 	)
+	// TODO(Phase 8): migrate to s.discoveredRepo.GetByAgentAndName once
+	// discovered.DiscoveredClient carries Secret + ConnectionLinks + limit
+	// fields (currently stripped in the domain type, mismatch with
+	// storage.DiscoveredClientRecord). See Wave 4.2 DONE_WITH_CONCERNS note.
 	if s.store != nil {
 		existing, existingErr = s.store.GetDiscoveredClientByAgentAndName(ctx, agentID, clientName)
 		switch {
@@ -183,6 +187,9 @@ func (s *Server) upsertDiscoveredClient(ctx context.Context, agentID string, rec
 		UpdatedAt:          observedAt.UTC(),
 	}
 
+	// TODO(Phase 8): migrate to s.discoveredRepo.Save once
+	// discovered.DiscoveredClient carries Secret + ConnectionLinks + limit
+	// fields. Currently the domain type is stripped; Save() would lose data.
 	if s.store != nil {
 		if err := s.store.PutDiscoveredClient(ctx, dc); err != nil {
 			s.logger.Error("discovered client persistence failed", "client_name", dc.ClientName, "agent_id", agentID, "error", err)
@@ -239,6 +246,8 @@ func (s *Server) adoptDiscoveredClientLocked(ctx context.Context, id, actorID st
 	// Fresh read under the lock — do NOT trust a record fetched before the
 	// mutex was acquired; another goroutine may have already flipped the
 	// status to "adopted" while we were waiting.
+	// TODO(Phase 8): migrate to s.discoveredRepo.Get once discovered.DiscoveredClient
+	// carries Secret + ConnectionLinks + limit fields (data loss risk if migrated now).
 	record, err := s.store.GetDiscoveredClient(ctx, id)
 	if err != nil {
 		return managedClient{}, err
@@ -315,6 +324,8 @@ func (s *Server) collectAdoptSiblings(ctx context.Context, primary storage.Disco
 	if s.store == nil || strings.TrimSpace(primary.Secret) == "" {
 		return nil
 	}
+	// TODO(Phase 8): migrate to s.discoveredRepo.List once discovered.DiscoveredClient
+	// carries Secret (needed for sibling-matching by shared secret).
 	all, err := s.store.ListDiscoveredClients(ctx)
 	if err != nil {
 		s.logger.Warn("collectAdoptSiblings: list discovered failed", "error", err)
@@ -500,6 +511,8 @@ func (s *Server) markDuplicateDiscoveredClientsAdopted(ctx context.Context, excl
 	if s.store == nil {
 		return
 	}
+	// TODO(Phase 8): migrate to s.discoveredRepo.List once discovered.DiscoveredClient
+	// carries Secret (needed for duplicate-detection by shared secret).
 	all, err := s.store.ListDiscoveredClients(ctx)
 	if err != nil {
 		return
@@ -690,9 +703,9 @@ func (s *Server) seedClientUsage(ctx context.Context, clientID, agentID string, 
 	lastSeq := s.lastUsageSeq[agentID]
 	s.clientsMu.Unlock()
 
-	if s.store != nil {
-		if err := s.store.UpsertClientUsage(ctx, storage.ClientUsageRecord{
-			ClientID:         clientID,
+	if s.clientsSvc != nil && s.clientsSvc.HasRepo() {
+		if err := s.clientsSvc.UpsertUsage(ctx, clients.Usage{
+			ClientID:         clients.ClientID(clientID),
 			AgentID:          agentID,
 			TrafficUsedBytes: trafficBytes,
 			UniqueIPsUsed:    uniqueIPs,
@@ -721,15 +734,30 @@ func (s *Server) ignoreDiscoveredClient(ctx context.Context, id, actorID string,
 }
 
 func (s *Server) restoreStoredDiscoveredClients() error {
-	if s.store == nil {
+	// Phase 7: prefer the domain Repository when available (avoids direct
+	// store dependency). Only the record ID is needed here to rebuild the
+	// sequence counter; discovered.DiscoveredClient.ID is sufficient.
+	if s.discoveredRepo != nil {
+		ctx, cancel := context.WithTimeout(s.serverCtx, 30*time.Second)
+		defer cancel()
+		recs, err := s.discoveredRepo.List(ctx)
+		if err != nil {
+			return err
+		}
+		for _, r := range recs {
+			s.discoveredClientSeq = maxPrefixedSequence(s.discoveredClientSeq, "discovered", string(r.ID))
+		}
 		return nil
 	}
 
+	// Legacy fallback for test doubles that have no discoveredRepo wired.
+	if s.store == nil {
+		return nil
+	}
 	records, err := s.store.ListDiscoveredClients(context.Background())
 	if err != nil {
 		return err
 	}
-
 	for _, record := range records {
 		s.discoveredClientSeq = maxPrefixedSequence(s.discoveredClientSeq, "discovered", record.ID)
 	}
