@@ -18,7 +18,7 @@ type fakeRepo struct {
 	clientsByID         map[ClientID]Client
 	assignmentsByClient map[ClientID][]Assignment
 	deploymentsByClient map[ClientID][]Deployment
-	usage []Usage
+	usage               []Usage
 	// failOn is the method name to fail on (e.g. "SaveAssignments").
 	failOn string
 }
