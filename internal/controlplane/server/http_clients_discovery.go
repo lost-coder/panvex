@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/lost-coder/panvex/internal/controlplane/discovered"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
@@ -95,6 +96,25 @@ func (s *Server) discoveredClientInScope(ctx context.Context, scope FleetScopeAc
 	if scope.Global {
 		return true, nil
 	}
+
+	// Phase 7: prefer the domain Repository for the scope check — only
+	// AgentID is needed, which discovered.DiscoveredClient carries.
+	if s.discoveredRepo != nil {
+		rec, err := s.discoveredRepo.Get(ctx, discovered.DiscoveredID(dcID))
+		if err != nil {
+			return false, err
+		}
+		s.mu.RLock()
+		agent, agentOK := s.agents[rec.AgentID]
+		s.mu.RUnlock()
+		if !agentOK {
+			return false, nil
+		}
+		return scope.IsAllowed(agent.FleetGroupID), nil
+	}
+
+	// Legacy fallback for test doubles / no-repo configurations.
+	// TODO(Phase 8): remove once discoveredRepo is always wired.
 	if s.store == nil {
 		return false, nil
 	}
