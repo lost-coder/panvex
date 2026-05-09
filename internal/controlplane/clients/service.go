@@ -2,15 +2,53 @@ package clients
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/discovered"
 	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 const seqClientAssignment = "client-assignment"
+
+// usageMirror is the in-Service snapshot of (client, agent) usage.
+// Distinct from clients.Usage (Repository row type) and clients.UsageSnapshot
+// (in-memory mirror value type used by legacy methods) to avoid name
+// collision while we migrate in Phase 6.
+type usageMirror struct {
+	ClientID         ClientID
+	TrafficUsedBytes uint64
+	UniqueIPsUsed    int
+	ActiveTCPConns   int
+	ActiveUniqueIPs  int
+	ObservedAt       time.Time
+	LastSeq          uint64
+}
+
+// ErrNotFound is returned by Service.Get when the requested Client ID
+// is not present in the in-memory mirror. Use errors.Is for checks.
+var ErrNotFound = errors.New("clients: not found")
+
+// ClientsRepoSet is the subset of uow.RepoSet that clients.Service
+// requires. Defined here to avoid an import cycle:
+// uow → clients, so clients must not import uow.
+// The concrete uow.UnitOfWork satisfies ServiceUoW via an adapter in
+// the server/bootstrap layer.
+type ClientsRepoSet interface {
+	Clients() Repository
+	Discovered() discovered.Repository
+}
+
+// ServiceUoW is the unit-of-work interface that clients.Service
+// accepts. It is structurally equivalent to uow.UnitOfWork but scoped
+// to the two repositories Service needs (Clients + Discovered).
+// Callers provide an adapter that delegates to the real uow.UnitOfWork.
+type ServiceUoW interface {
+	Do(ctx context.Context, fn func(rs ClientsRepoSet) error) error
+}
 
 // Service is the orchestration entry point for managed clients. It owns
 // the in-memory store for clients, assignments, deployments, and live
@@ -52,6 +90,17 @@ type Service struct {
 	clientSeq     uint64
 	assignmentSeq uint64
 	discoveredSeq uint64
+
+	// Phase 6 additions: Repository + UoW + in-memory mirror.
+	repo           Repository
+	discoveredRepo discovered.Repository
+	uow            ServiceUoW
+
+	mirrorClients      map[ClientID]Client
+	mirrorAssignments  map[ClientID][]Assignment
+	mirrorDeployments  map[ClientID]map[string]Deployment // outer=ClientID, inner=AgentID
+	mirrorUsage        map[ClientID]map[string]usageMirror
+	mirrorLastUsageSeq map[string]uint64 // per-agent
 }
 
 // NewService returns a Service with no Store and the wall clock. Kept
@@ -83,6 +132,53 @@ func NewServiceWithVault(store storage.Store, now func() time.Time, vault *secre
 		deployments:  make(map[string]map[string]Deployment),
 		usage:        make(map[string]map[string]UsageSnapshot),
 		lastUsageSeq: make(map[string]uint64),
+	}
+}
+
+// ServiceConfig carries the dependencies for NewServiceV2. Fields are
+// additive over the legacy constructors — Store is optional during
+// Phase 6 (legacy methods still use it).
+type ServiceConfig struct {
+	Repo           Repository
+	DiscoveredRepo discovered.Repository
+	UoW            ServiceUoW
+	Vault          *secretvault.Vault
+	Store          storage.Store
+	Now            func() time.Time
+}
+
+// NewServiceV2 constructs a Service with the full Phase 6 dependency
+// set: a clients.Repository, a discovered.Repository, a UoW, and the
+// optional legacy Store. The in-memory mirror maps are pre-allocated;
+// call Service.Restore to populate them from the Repository.
+//
+// Phase 7 will wire the server to use NewServiceV2 and migrate handlers
+// to the new mirror-backed methods; Phase 8 removes the legacy Store
+// path and the old constructors.
+func NewServiceV2(cfg ServiceConfig) *Service {
+	now := cfg.Now
+	if now == nil {
+		now = time.Now
+	}
+	return &Service{
+		store:        cfg.Store,
+		now:          now,
+		vault:        cfg.Vault,
+		clients:      make(map[string]Client),
+		assignments:  make(map[string][]Assignment),
+		deployments:  make(map[string]map[string]Deployment),
+		usage:        make(map[string]map[string]UsageSnapshot),
+		lastUsageSeq: make(map[string]uint64),
+
+		repo:           cfg.Repo,
+		discoveredRepo: cfg.DiscoveredRepo,
+		uow:            cfg.UoW,
+
+		mirrorClients:      make(map[ClientID]Client),
+		mirrorAssignments:  make(map[ClientID][]Assignment),
+		mirrorDeployments:  make(map[ClientID]map[string]Deployment),
+		mirrorUsage:        make(map[ClientID]map[string]usageMirror),
+		mirrorLastUsageSeq: make(map[string]uint64),
 	}
 }
 
