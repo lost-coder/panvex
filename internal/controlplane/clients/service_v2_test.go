@@ -18,7 +18,7 @@ type fakeRepo struct {
 	clientsByID         map[ClientID]Client
 	assignmentsByClient map[ClientID][]Assignment
 	deploymentsByClient map[ClientID][]Deployment
-	usageRows           []Usage
+	usage []Usage
 	// failOn is the method name to fail on (e.g. "SaveAssignments").
 	failOn string
 }
@@ -93,16 +93,33 @@ func (r *fakeRepo) SaveDeployments(_ context.Context, clientID ClientID, deploym
 	return nil
 }
 
-func (r *fakeRepo) UpsertUsage(_ context.Context, _ Usage) error {
-	return errors.New("fakeRepo: UpsertUsage: not implemented")
+func (r *fakeRepo) UpsertUsage(_ context.Context, u Usage) error {
+	if r.failOn == "UpsertUsage" {
+		return errors.New("fakeRepo: UpsertUsage: injected failure")
+	}
+	// last-write-wins by (clientID, agentID)
+	for i, row := range r.usage {
+		if row.ClientID == u.ClientID && row.AgentID == u.AgentID {
+			r.usage[i] = u
+			return nil
+		}
+	}
+	r.usage = append(r.usage, u)
+	return nil
 }
 
-func (r *fakeRepo) UpsertUsageBulk(_ context.Context, _ []Usage) error {
-	return errors.New("fakeRepo: UpsertUsageBulk: not implemented")
+func (r *fakeRepo) UpsertUsageBulk(_ context.Context, batch []Usage) error {
+	if r.failOn == "UpsertUsageBulk" {
+		return errors.New("fakeRepo: UpsertUsageBulk: injected failure")
+	}
+	for _, u := range batch {
+		_ = r.UpsertUsage(context.Background(), u)
+	}
+	return nil
 }
 
 func (r *fakeRepo) ListUsage(_ context.Context) ([]Usage, error) {
-	return append([]Usage(nil), r.usageRows...), nil
+	return append([]Usage(nil), r.usage...), nil
 }
 
 func (r *fakeRepo) DeleteUsageByClient(_ context.Context, _ ClientID) error {
@@ -230,7 +247,7 @@ func TestService_Restore_PopulatesMirror(t *testing.T) {
 	repo.clientsByID["c-1"] = Client{ID: "c-1", Name: "one"}
 	repo.clientsByID["c-2"] = Client{ID: "c-2", Name: "two"}
 	repo.assignmentsByClient["c-1"] = []Assignment{{ID: "a-1", ClientID: "c-1"}}
-	repo.usageRows = []Usage{
+	repo.usage = []Usage{
 		{
 			ClientID:         "c-1",
 			AgentID:          "agent-1",
@@ -601,5 +618,113 @@ func TestService_Delete_PropagatesRepoError(t *testing.T) {
 	})
 	if err := svc.Delete(context.Background(), ClientID("c-x")); err == nil {
 		t.Fatal("expected error from injected Delete failure")
+	}
+}
+
+// --- Phase 6.8 tests: Service.UpsertUsage / UpsertUsageBulk ---
+
+func TestService_UpsertUsageBulk_PersistsAndUpdatesMirror(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	svc := NewServiceV2(ServiceConfig{Repo: repo})
+	batch := []Usage{
+		{ClientID: ClientID("c-1"), AgentID: "a-1", TrafficUsedBytes: 100, LastSeq: 5},
+		{ClientID: ClientID("c-2"), AgentID: "a-1", TrafficUsedBytes: 200, LastSeq: 6},
+	}
+	if err := svc.UpsertUsageBulk(context.Background(), batch); err != nil {
+		t.Fatalf("UpsertUsageBulk: %v", err)
+	}
+	if len(repo.usage) != 2 {
+		t.Fatalf("repo.usage = %d, want 2", len(repo.usage))
+	}
+	svc.mu.RLock()
+	defer svc.mu.RUnlock()
+	if svc.mirrorUsage[ClientID("c-1")]["a-1"].TrafficUsedBytes != 100 {
+		t.Fatal("mirror usage c-1/a-1 not updated")
+	}
+	if svc.mirrorLastUsageSeq["a-1"] != 6 {
+		t.Fatalf("lastUsageSeq[a-1] = %d, want 6", svc.mirrorLastUsageSeq["a-1"])
+	}
+}
+
+func TestService_UpsertUsageBulk_EmptySlice(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	svc := NewServiceV2(ServiceConfig{Repo: repo})
+	if err := svc.UpsertUsageBulk(context.Background(), nil); err != nil {
+		t.Fatalf("empty bulk: %v", err)
+	}
+	if len(repo.usage) != 0 {
+		t.Fatal("repo.usage non-empty after empty bulk")
+	}
+}
+
+func TestService_UpsertUsage_Single(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	svc := NewServiceV2(ServiceConfig{Repo: repo})
+	u := Usage{ClientID: ClientID("c-x"), AgentID: "a-x", TrafficUsedBytes: 42, LastSeq: 1}
+	if err := svc.UpsertUsage(context.Background(), u); err != nil {
+		t.Fatalf("UpsertUsage: %v", err)
+	}
+	if len(repo.usage) != 1 || repo.usage[0].TrafficUsedBytes != 42 {
+		t.Fatalf("repo.usage = %+v", repo.usage)
+	}
+}
+
+// --- Phase 6.9 additional coverage tests ---
+
+func TestService_Save_NilVault_PlaintextRoundtrip(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo(), audit: newFakeAuditRepo()}
+	// nil Vault: encryptSecret is a no-op, secret stored as plaintext.
+	svc := NewServiceV2(ServiceConfig{
+		Repo:  repo,
+		UoW:   newFakeUoW(rs),
+		Vault: nil,
+	})
+	c := Client{ID: "c-plain", Name: "plain", Secret: "my-secret"}
+	if err := svc.Save(context.Background(), c); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	stored := repo.clientsByID["c-plain"]
+	if stored.Secret != "my-secret" {
+		t.Fatalf("stored.Secret = %q, want %q (nil vault = plaintext passthrough)", stored.Secret, "my-secret")
+	}
+	mirror, err := svc.Get(context.Background(), "c-plain")
+	if err != nil {
+		t.Fatalf("Get after Save: %v", err)
+	}
+	if mirror.Secret != "my-secret" {
+		t.Fatalf("mirror.Secret = %q, want %q", mirror.Secret, "my-secret")
+	}
+}
+
+func TestService_SaveState_EmptyAssignmentsAndDeployments(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo(), audit: newFakeAuditRepo()}
+	svc := NewServiceV2(ServiceConfig{
+		Repo:  repo,
+		UoW:   newFakeUoW(rs),
+		Vault: nil,
+	})
+	c := Client{ID: "c-empty", Name: "empty"}
+	if err := svc.SaveState(context.Background(), c, nil, nil); err != nil {
+		t.Fatalf("SaveState with nil slices: %v", err)
+	}
+	svc.mu.RLock()
+	defer svc.mu.RUnlock()
+	if len(svc.mirrorAssignments["c-empty"]) != 0 {
+		t.Fatalf("mirrorAssignments[c-empty] len = %d, want 0", len(svc.mirrorAssignments["c-empty"]))
+	}
+	if len(svc.mirrorDeployments["c-empty"]) != 0 {
+		t.Fatalf("mirrorDeployments[c-empty] len = %d, want 0", len(svc.mirrorDeployments["c-empty"]))
 	}
 }

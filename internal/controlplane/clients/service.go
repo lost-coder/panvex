@@ -925,3 +925,70 @@ func (s *Service) Delete(ctx context.Context, id ClientID) error {
 	s.mu.Unlock()
 	return nil
 }
+
+// --- Phase 6.8: UpsertUsage / UpsertUsageBulk ---
+
+// UpsertUsage persists a single (client, agent) usage record and
+// updates the in-memory mirror. Bypasses UoW — usage updates are not
+// part of any cross-domain transaction.
+func (s *Service) UpsertUsage(ctx context.Context, u Usage) error {
+	if s.repo == nil {
+		return errors.New("clients.Service: UpsertUsage requires Repository (NewServiceV2)")
+	}
+	if err := s.repo.UpsertUsage(ctx, u); err != nil {
+		return err
+	}
+	s.applyUsageMirror(u)
+	return nil
+}
+
+// UpsertUsageBulk is the hot-path bulk variant called from agent-flow
+// telemetry tick. 500x50 batches flush in a single Repository call.
+// Empty slice is a no-op.
+//
+// No name collision: the legacy Service has no UpsertUsage(Bulk) method.
+func (s *Service) UpsertUsageBulk(ctx context.Context, batch []Usage) error {
+	if len(batch) == 0 {
+		return nil
+	}
+	if s.repo == nil {
+		return errors.New("clients.Service: UpsertUsageBulk requires Repository (NewServiceV2)")
+	}
+	if err := s.repo.UpsertUsageBulk(ctx, batch); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	for _, u := range batch {
+		s.applyUsageMirrorLocked(u)
+	}
+	s.mu.Unlock()
+	return nil
+}
+
+// applyUsageMirror acquires the write lock and delegates to
+// applyUsageMirrorLocked.
+func (s *Service) applyUsageMirror(u Usage) {
+	s.mu.Lock()
+	s.applyUsageMirrorLocked(u)
+	s.mu.Unlock()
+}
+
+// applyUsageMirrorLocked updates the mirror maps. Must be called with
+// s.mu held for writing.
+func (s *Service) applyUsageMirrorLocked(u Usage) {
+	if s.mirrorUsage[u.ClientID] == nil {
+		s.mirrorUsage[u.ClientID] = make(map[string]usageMirror)
+	}
+	s.mirrorUsage[u.ClientID][u.AgentID] = usageMirror{
+		ClientID:         u.ClientID,
+		TrafficUsedBytes: u.TrafficUsedBytes,
+		UniqueIPsUsed:    u.UniqueIPsUsed,
+		ActiveTCPConns:   u.ActiveTCPConns,
+		ActiveUniqueIPs:  u.ActiveUniqueIPs,
+		ObservedAt:       u.ObservedAt,
+		LastSeq:          u.LastSeq,
+	}
+	if u.LastSeq > s.mirrorLastUsageSeq[u.AgentID] {
+		s.mirrorLastUsageSeq[u.AgentID] = u.LastSeq
+	}
+}
