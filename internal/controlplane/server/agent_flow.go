@@ -281,7 +281,35 @@ func (s *Server) mergeClientUsageBatch(agentID string, clients []clientUsageSnap
 // DO UPDATE preserves the per-row last-write-wins semantics the old loop had —
 // duplicates within one batch collapse to the trailing entry.
 func (s *Server) persistClientUsageRecords(ctx context.Context, toPersist []storage.ClientUsageRecord) {
-	if s.store == nil || len(toPersist) == 0 {
+	if len(toPersist) == 0 {
+		return
+	}
+
+	// Phase 7: prefer clients.Service.UpsertUsageBulk (domain layer) when the
+	// service has been wired with a real Repository.
+	if s.clientsSvc != nil && s.clientsSvc.HasRepo() {
+		batch := make([]clients.Usage, len(toPersist))
+		for i, r := range toPersist {
+			batch[i] = clients.Usage{
+				ClientID:         clients.ClientID(r.ClientID),
+				AgentID:          r.AgentID,
+				TrafficUsedBytes: r.TrafficUsedBytes,
+				UniqueIPsUsed:    r.UniqueIPsUsed,
+				ActiveTCPConns:   r.ActiveTCPConns,
+				ActiveUniqueIPs:  r.ActiveUniqueIPs,
+				LastSeq:          r.LastSeq,
+				ObservedAt:       r.ObservedAt,
+			}
+		}
+		if err := s.clientsSvc.UpsertUsageBulk(ctx, batch); err != nil {
+			s.logger.Warn("persist client_usage (bulk)",
+				"rows", len(toPersist), "error", err)
+		}
+		return
+	}
+
+	// Legacy fallback for test doubles / no-repo configurations.
+	if s.store == nil {
 		return
 	}
 	if err := s.store.UpsertClientUsageBulk(ctx, toPersist); err != nil {
