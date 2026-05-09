@@ -495,3 +495,72 @@ func TestService_SaveState_UpdatesMirror(t *testing.T) {
 	}
 }
 
+// --- Phase 6.6 tests: Service.AdoptDiscovered ---
+
+func TestService_AdoptDiscovered_AtomicCrossDomain(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	discoveredRepo := newFakeDiscoveredRepo()
+	discoveredRepo.byID[discovered.DiscoveredID("d-1")] = discovered.DiscoveredClient{
+		ID:         discovered.DiscoveredID("d-1"),
+		ClientName: "alpha",
+		AgentID:    "a-1",
+		Status:     discovered.StatusPending,
+	}
+	auditRepo := newFakeAuditRepo()
+	rs := &fakeRepoSet{clients: repo, discovered: discoveredRepo, audit: auditRepo}
+	svc := NewServiceV2(ServiceConfig{
+		Repo:           repo,
+		DiscoveredRepo: discoveredRepo,
+		UoW:            newFakeUoW(rs),
+		Vault:          makeTestVault(t),
+	})
+
+	c, err := svc.AdoptDiscovered(context.Background(), AdoptInput{
+		DiscoveredID: discovered.DiscoveredID("d-1"),
+		ActorID:      "u-admin",
+	})
+	if err != nil {
+		t.Fatalf("Adopt: %v", err)
+	}
+	if c.Name != "alpha" {
+		t.Fatalf("client name = %q, want alpha", c.Name)
+	}
+	// Discovered status flipped.
+	if discoveredRepo.byID[discovered.DiscoveredID("d-1")].Status != discovered.StatusAdopted {
+		t.Fatal("discovered status not flipped")
+	}
+	// Audit event appended.
+	if len(auditRepo.events) != 1 {
+		t.Fatalf("audit events = %d, want 1", len(auditRepo.events))
+	}
+	if auditRepo.events[0].Action != "client.adopt" {
+		t.Fatalf("audit action = %q, want client.adopt", auditRepo.events[0].Action)
+	}
+}
+
+func TestService_AdoptDiscovered_NonPendingFails(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	discoveredRepo := newFakeDiscoveredRepo()
+	discoveredRepo.byID[discovered.DiscoveredID("d-2")] = discovered.DiscoveredClient{
+		ID:     discovered.DiscoveredID("d-2"),
+		Status: discovered.StatusAdopted,
+	}
+	rs := &fakeRepoSet{clients: repo, discovered: discoveredRepo, audit: newFakeAuditRepo()}
+	svc := NewServiceV2(ServiceConfig{
+		Repo: repo, DiscoveredRepo: discoveredRepo,
+		UoW: newFakeUoW(rs), Vault: makeTestVault(t),
+	})
+
+	_, err := svc.AdoptDiscovered(context.Background(), AdoptInput{
+		DiscoveredID: discovered.DiscoveredID("d-2"),
+		ActorID:      "u-admin",
+	})
+	if err == nil {
+		t.Fatal("expected error adopting non-pending discovered client")
+	}
+}
+

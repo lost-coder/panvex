@@ -720,7 +720,7 @@ func (s *Service) List(ctx context.Context) ([]Client, error) {
 	return out, nil
 }
 
-// --- Phase 6.4–6.5: Service.Save and Service.SaveState ---
+// --- Phase 6.4–6.6: Service.Save, Service.SaveState, Service.AdoptDiscovered ---
 
 // encryptSecret seals the plaintext secret via the vault's
 // DomainClientSecret key. A nil or disabled vault is a no-op.
@@ -815,4 +815,90 @@ func (s *Service) SaveState(ctx context.Context, c Client, assignments []Assignm
 	s.mirrorDeployments[c.ID] = dmap
 	s.mu.Unlock()
 	return nil
+}
+
+// AdoptInput carries the parameters for Service.AdoptDiscovered.
+type AdoptInput struct {
+	DiscoveredID discovered.DiscoveredID
+	// Secret is the plaintext MTProto secret for the client being adopted.
+	// The discovered.DiscoveredClient domain type does not carry the
+	// secret; callers that have it (e.g. the gRPC handler) supply it here.
+	// Empty is valid — the repository row will store an empty ciphertext.
+	Secret     string
+	ActorID    string
+	ObservedAt time.Time
+}
+
+// AdoptDiscovered promotes a discovered client to a managed client in
+// one cross-domain UoW transaction: reads the discovered record,
+// creates the managed client, flips the discovered status to Adopted,
+// and appends an audit event. Mirror is updated on success only.
+func (s *Service) AdoptDiscovered(ctx context.Context, in AdoptInput) (Client, error) {
+	if s.uow == nil || s.repo == nil {
+		return Client{}, errors.New("clients.Service: AdoptDiscovered requires UoW + Repository (NewServiceV2)")
+	}
+	if in.ObservedAt.IsZero() {
+		in.ObservedAt = s.now().UTC()
+	}
+	var adopted Client
+
+	err := s.uow.Do(ctx, func(rs ClientsRepoSet) error {
+		dc, err := rs.Discovered().Get(ctx, in.DiscoveredID)
+		if err != nil {
+			return err
+		}
+		if dc.Status != discovered.StatusPending {
+			return fmt.Errorf("clients.Service.AdoptDiscovered: cannot adopt %s in status %s", dc.ID, dc.Status)
+		}
+
+		c := buildClientFromDiscovered(dc, in.Secret, s.NextClientID(), in.ObservedAt)
+
+		encryptedSecret, err := s.encryptSecret(c.Secret)
+		if err != nil {
+			return fmt.Errorf("clients.Service.AdoptDiscovered: encrypt: %w", err)
+		}
+		toStore := c
+		toStore.Secret = encryptedSecret
+
+		if err := rs.Clients().Save(ctx, toStore); err != nil {
+			return err
+		}
+		if err := rs.Discovered().UpdateStatus(ctx, dc.ID, discovered.StatusAdopted, in.ObservedAt); err != nil {
+			return err
+		}
+		if err := rs.Audit().Append(ctx, audit.Event{
+			ActorID:   in.ActorID,
+			Action:    "client.adopt",
+			TargetID:  string(c.ID),
+			CreatedAt: in.ObservedAt,
+			Details:   map[string]any{"discovered_id": string(dc.ID)},
+		}); err != nil {
+			return err
+		}
+		adopted = c
+		return nil
+	})
+	if err != nil {
+		return Client{}, err
+	}
+
+	s.mu.Lock()
+	s.mirrorClients[adopted.ID] = adopted
+	s.mu.Unlock()
+	return adopted, nil
+}
+
+// buildClientFromDiscovered constructs a managed Client from a
+// DiscoveredClient. Pure function — no I/O, no encryption.
+// ID generation uses the same sequential "client-N" scheme as
+// Service.NextClientID (legacy server.buildAdoptedClientState).
+func buildClientFromDiscovered(dc discovered.DiscoveredClient, secret, id string, observedAt time.Time) Client {
+	return Client{
+		ID:        ClientID(id),
+		Name:      dc.ClientName,
+		Secret:    secret,
+		Enabled:   true,
+		CreatedAt: observedAt,
+		UpdatedAt: observedAt,
+	}
 }
