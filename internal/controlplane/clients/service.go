@@ -686,3 +686,34 @@ func (s *Service) Restore(ctx context.Context) error {
 
 	return nil
 }
+
+// Get returns the cached Client by ID. The mirror is populated by
+// Restore; after a Save/SaveState/AdoptDiscovered the mirror is updated
+// atomically. Returns ErrNotFound if the ID is unknown.
+//
+// No name collision with existing Service methods: legacy read paths use
+// DetailSnapshot (single-client) and ListSnapshot (all clients).
+func (s *Service) Get(ctx context.Context, id ClientID) (Client, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	c, ok := s.mirrorClients[id]
+	if !ok {
+		return Client{}, ErrNotFound
+	}
+	return c, nil
+}
+
+// List returns all cached Clients (snapshot of the mirror at call
+// time). Order is unspecified — callers that need ordering must sort.
+//
+// No name collision with existing Service methods: the legacy path uses
+// ListSnapshot which filters deleted clients and sorts by CreatedAt.
+func (s *Service) List(ctx context.Context) ([]Client, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]Client, 0, len(s.mirrorClients))
+	for _, c := range s.mirrorClients {
+		out = append(out, c)
+	}
+	return out, nil
+}

@@ -178,3 +178,61 @@ func TestService_Restore_Idempotent(t *testing.T) {
 		t.Fatal("after 2nd Restore: c-2 missing from mirror")
 	}
 }
+
+// --- Phase 6.3 tests: Service.Get + Service.List ---
+
+func TestService_Get_NotFound(t *testing.T) {
+	t.Parallel()
+
+	svc := NewServiceV2(ServiceConfig{Repo: newFakeRepo()})
+	_, err := svc.Get(context.Background(), ClientID("missing"))
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestService_GetList_FromMirror(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	repo.clientsByID["c-1"] = Client{ID: "c-1", Name: "alpha"}
+
+	svc := NewServiceV2(ServiceConfig{Repo: repo})
+	if err := svc.Restore(context.Background()); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+
+	got, err := svc.Get(context.Background(), ClientID("c-1"))
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Name != "alpha" {
+		t.Fatalf("name = %q, want alpha", got.Name)
+	}
+
+	list, err := svc.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("List len = %d, want 1", len(list))
+	}
+}
+
+func TestService_Get_BeforeRestore_Empty(t *testing.T) {
+	t.Parallel()
+
+	// Without calling Restore, mirror is empty — Get must return ErrNotFound.
+	svc := NewServiceV2(ServiceConfig{Repo: newFakeRepo()})
+	_, err := svc.Get(context.Background(), "c-1")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Get before Restore: err = %v, want ErrNotFound", err)
+	}
+	list, err := svc.List(context.Background())
+	if err != nil {
+		t.Fatalf("List before Restore: %v", err)
+	}
+	if len(list) != 0 {
+		t.Fatalf("List before Restore: len = %d, want 0", len(list))
+	}
+}
