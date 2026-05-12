@@ -117,6 +117,54 @@ func newStubServer(t *testing.T) *stubServer {
 	return stub
 }
 
+// TestDialTransportRunOnceCancelsConnectViaParentCtx verifies that when the
+// caller's ctx is cancelled, the in-flight Connect RPC unwinds promptly rather
+// than waiting for ConnectTimeout. Regression for A-3: connectCtx previously
+// descended from context.Background(), divorcing it from agent shutdown.
+func TestDialTransportRunOnceCancelsConnectViaParentCtx(t *testing.T) {
+	// Use a never-accepting listener so the Connect RPC blocks until cancel.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer listener.Close()
+
+	// CA cert that the dial config trusts; we deliberately do NOT run a gRPC
+	// server, so client.Connect blocks on the TLS handshake.
+	caCert, _ := mustGenerateCA(t)
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caCert.Raw})
+
+	cfg := DialConfig{
+		GatewayAddr:    listener.Addr().String(),
+		ServerName:     "nope",
+		CAPEM:          string(caPEM),
+		ConnectTimeout: 5 * time.Second, // larger than the test deadline below
+	}
+
+	tr := NewDialTransport(cfg)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- tr.RunOnce(ctx, func(_ context.Context, _ BidiStream, _ gatewayrpc.AgentGatewayClient) error {
+			return nil
+		})
+	}()
+
+	// Cancel the parent ctx; RunOnce should unwind quickly, NOT wait the
+	// full 5s ConnectTimeout. If connectCtx still descended from
+	// context.Background(), this test would time out.
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-errCh:
+		// ok — returned promptly after parent cancel
+	case <-time.After(2 * time.Second):
+		t.Fatal("RunOnce did not honour parent ctx cancel")
+	}
+}
+
 // ---- listen transport test ----
 
 func TestListenTransportAcceptsIncomingStream(t *testing.T) {

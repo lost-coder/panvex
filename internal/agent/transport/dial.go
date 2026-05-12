@@ -40,8 +40,9 @@ func NewDialTransport(cfg DialConfig) Transport { return &dialTransport{cfg: cfg
 // RunOnce dials the gateway, opens the Connect stream, calls the SessionRunner,
 // and returns when the session ends. The gRPC connection is closed on return.
 //
-// If DialConfig.ConnectTimeout is set, the Connect RPC must return within that
-// duration; otherwise the dial context is used directly.
+// connectCtx inherits ctx so caller cancellation (e.g. agent shutdown)
+// propagates into the in-flight Connect RPC. If DialConfig.ConnectTimeout
+// is set, an AfterFunc on the same ctx enforces the dial-side deadline.
 func (t *dialTransport) RunOnce(ctx context.Context, run SessionRunner) error {
 	conn, err := dialGateway(ctx, t.cfg.GatewayAddr, t.cfg.ServerName, t.cfg.CAPEM, &t.cfg.Cert)
 	if err != nil {
@@ -51,24 +52,23 @@ func (t *dialTransport) RunOnce(ctx context.Context, run SessionRunner) error {
 
 	client := gatewayrpc.NewAgentGatewayClient(conn)
 
-	// Apply optional connect timeout using the same timer-cancel pattern as the
-	// previous connectStreamWithSetupTimeout helper in cmd/agent/main.go.
-	connectCtx, cancelConnect := context.WithCancel(context.Background())
-	var setupTimer *time.Timer
+	// connectCtx inherits the caller's ctx so agent shutdown propagates into
+	// the in-flight Connect call. If ConnectTimeout is set, an AfterFunc cancels
+	// the same ctx to enforce the dial-side deadline. The cancel is invoked via
+	// defer to release the context once RunOnce returns; the stream itself is
+	// bound to this ctx, so its lifetime is tied to RunOnce's return.
+	connectCtx, cancelConnect := context.WithCancel(ctx)
+	defer cancelConnect()
+
 	if t.cfg.ConnectTimeout > 0 {
-		setupTimer = time.AfterFunc(t.cfg.ConnectTimeout, cancelConnect)
+		setupTimer := time.AfterFunc(t.cfg.ConnectTimeout, cancelConnect)
+		defer setupTimer.Stop()
 	}
+
 	stream, err := client.Connect(connectCtx)
-	if setupTimer != nil {
-		setupTimer.Stop()
-	}
 	if err != nil {
-		cancelConnect()
 		return err
 	}
-	// On success the stream owns connectCtx — cancelling it would kill the
-	// stream immediately. The context is released when the stream closes naturally.
-	_ = cancelConnect //nolint:ineffassign // cancel is transferred to the stream lifecycle
 
 	return run(ctx, stream, client)
 }
