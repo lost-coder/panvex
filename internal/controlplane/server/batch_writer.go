@@ -342,20 +342,28 @@ func (w *storeBatchWriter) flushLoop(parentCtx context.Context) {
 	ticker := time.NewTicker(w.flushInterval)
 	defer ticker.Stop()
 
-	// flushCtx is the writer-local context for steady-state drains. It is
-	// derived directly from parentCtx (Server.serverCtx in production) so
-	// in-flight DB writes inherit cancellation when the server lifecycle
-	// ends, replacing the prior context.Background() at the call edge
-	// (Plan 3 tail / S25 T2).
+	// flushCtx inherits VALUES from parentCtx (Server.serverCtx in
+	// production — tracing spans, request IDs) but NOT cancellation:
+	// the writer's own `w.done` channel is the shutdown signal, not
+	// parentCtx cancellation.
 	//
-	// Crucially, flushCtx is NOT cancelled when w.done closes. A graceful
-	// StopWithTimeout(close(done) -> wg.Wait()) lets any in-flight drain
+	// Why detach cancellation: Server.Close() cancels serverCtx first so
+	// other workers observe shutdown promptly, then calls StopWithTimeout
+	// to drain. If flushCtx tracked serverCtx cancellation, an in-flight
+	// drainAll at the moment Close() fires (e.g. an audit batch that was
+	// signalled microseconds before) would see ctx.Done() inside the
+	// retry loop, get marked retry_exhausted, and the rows would be lost.
+	// Detaching means any drain already in progress completes against
+	// the original DB connection regardless of serverCtx cancel.
+	//
+	// flushCtx is NOT cancelled when w.done closes either: graceful
+	// StopWithTimeout (close(done) → wg.Wait()) lets any in-flight drain
 	// complete; the loop checks `case <-w.done` only between iterations.
-	// Cancelling on done would abort the final inline drain mid-flush and
-	// drop audit rows (regression caught by TestAuditBufferFlushesOnShutdown).
+	// Cancelling on done would abort the final inline drain mid-flush
+	// and drop rows (regression caught by TestAuditBufferFlushesOnShutdown).
 	// The shutdown final-drain runs separately in StopWithTimeout on its
-	// own caller-supplied ctx after the loop has returned.
-	flushCtx := parentCtx
+	// own caller-supplied ctx after this loop returns.
+	flushCtx := context.WithoutCancel(parentCtx)
 
 	for {
 		select {
