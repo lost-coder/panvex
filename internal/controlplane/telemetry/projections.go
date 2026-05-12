@@ -55,11 +55,12 @@ type SeverityInput struct {
 
 	FallbackActiveDuration time.Duration
 
-	// TelemtReachable is the agent's last reported reachability of its local
-	// Telemt API. Default true on the wire — explicit false (with the
-	// timestamp below) is the panel's signal to surface a critical "Telemt
-	// API unreachable" reason instead of mis-classifying the node as Direct.
-	TelemtReachable            bool
+	// TelemtUnreachable is the agent's last reported unreachability of its
+	// local Telemt API. Default false on the wire (proto3 bool default) =
+	// healthy/reachable — explicit true (with the timestamp below) is the
+	// panel's signal to surface a critical "Telemt API unreachable" reason
+	// instead of mis-classifying the node as Direct.
+	TelemtUnreachable          bool
 	TelemtUnreachableSinceUnix int64
 }
 
@@ -106,7 +107,7 @@ func SeverityAndReason(input SeverityInput, freshness Freshness) (string, string
 	switch {
 	case input.PresenceState == presence.StateOffline:
 		return "bad", "Agent heartbeat is offline"
-	case !input.TelemtReachable:
+	case input.TelemtUnreachable:
 		return "critical", "Telemt API unreachable since " + formatTelemtSince(input.TelemtUnreachableSinceUnix)
 	case freshness.State == "stale":
 		return "warn", "Telemetry is stale"

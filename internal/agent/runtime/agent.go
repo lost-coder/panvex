@@ -79,39 +79,39 @@ type Agent struct {
 	telemt telemtClient
 	mu     sync.RWMutex
 
-	clientNames       map[string]string
-	lastOctets        map[string]uint64
-	lastConnections   map[string]int
-	lastMetricsUptime float64
-	lastRuntimeUptime float64
-	lastLifecycle     runtimeLifecycleState
-	runtimeInitializationActive bool
+	clientNames                        map[string]string
+	lastOctets                         map[string]uint64
+	lastConnections                    map[string]int
+	lastMetricsUptime                  float64
+	lastRuntimeUptime                  float64
+	lastLifecycle                      runtimeLifecycleState
+	runtimeInitializationActive        bool
 	runtimeInitializationCooldownUntil time.Time
-	completedJobs     map[string]completedJobRecord
-	completedJobRetention time.Duration
-	ipCollector       *telemt.IPCollector
+	completedJobs                      map[string]completedJobRecord
+	completedJobRetention              time.Duration
+	ipCollector                        *telemt.IPCollector
 	// usageSeq is the last monotonic client-usage sequence number emitted
 	// by this agent process. Loaded from persisted state on boot (InitialUsageSeq)
 	// and incremented for every BuildUsageSnapshot. The control-plane dedups
 	// duplicate seqs and resets its baseline when seq rewinds (agent restart
 	// on a fresh state file). See P2-LOG-06 / L-07.
-	usageSeq uint64
+	usageSeq        uint64
 	persistUsageSeq func(seq uint64) error
 }
 
 // New constructs a runtime agent bound to one local Telemt client.
 func New(config Config, client telemtClient) *Agent {
 	return &Agent{
-		config:          config,
-		telemt:          client,
-		clientNames:     make(map[string]string),
-		lastOctets:      make(map[string]uint64),
-		lastConnections: make(map[string]int),
-		completedJobs:   make(map[string]completedJobRecord),
+		config:                config,
+		telemt:                client,
+		clientNames:           make(map[string]string),
+		lastOctets:            make(map[string]uint64),
+		lastConnections:       make(map[string]int),
+		completedJobs:         make(map[string]completedJobRecord),
 		completedJobRetention: defaultCompletedJobRetention,
-		ipCollector:     telemt.NewIPCollector(),
-		usageSeq:        config.InitialUsageSeq,
-		persistUsageSeq: config.PersistUsageSeq,
+		ipCollector:           telemt.NewIPCollector(),
+		usageSeq:              config.InitialUsageSeq,
+		persistUsageSeq:       config.PersistUsageSeq,
 	}
 }
 
@@ -283,7 +283,7 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 func (a *Agent) BuildRuntimeUnreachableSnapshot(observedAt, since time.Time) *gatewayrpc.Snapshot {
 	snapshot := a.baseSnapshot(observedAt)
 	snapshot.Runtime = &gatewayrpc.RuntimeSnapshot{
-		TelemtReachable:            false,
+		TelemtUnreachable:          true,
 		TelemtUnreachableSinceUnix: since.Unix(),
 	}
 	snapshot.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{}
@@ -381,12 +381,11 @@ func buildRuntimeSnapshotProto(
 	wasRestarting bool,
 ) *gatewayrpc.RuntimeSnapshot {
 	return &gatewayrpc.RuntimeSnapshot{
-		// TelemtReachable is true on every snapshot the agent successfully
-		// builds from a real telemt.RuntimeState — by definition we just
-		// talked to Telemt to obtain this state. The unreachable signal
-		// (false + TelemtUnreachableSinceUnix) is emitted by the separate
-		// BuildRuntimeUnreachableSnapshot path in cmd/agent/polling.go.
-		TelemtReachable:           true,
+		// TelemtUnreachable is left at its proto3 default (false) on every
+		// snapshot the agent successfully builds from a real telemt.RuntimeState
+		// — by definition we just talked to Telemt to obtain this state. The
+		// unreachable signal (true + TelemtUnreachableSinceUnix) is emitted by
+		// the separate BuildRuntimeUnreachableSnapshot path in cmd/agent/polling.go.
 		AcceptingNewConnections:   state.Gates.AcceptingNewConnections,
 		MeRuntimeReady:            state.Gates.MERuntimeReady,
 		Me2DcFallbackEnabled:      state.Gates.ME2DCFallbackEnabled,

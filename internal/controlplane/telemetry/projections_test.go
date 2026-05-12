@@ -36,7 +36,7 @@ func TestSeverityAndReasonPrefersOfflineOverOtherSignals(t *testing.T) {
 		ReadOnly:                true,
 		AcceptingNewConnections: false,
 		Degraded:                true,
-		TelemtReachable:         true,
+		TelemtUnreachable:       false,
 	}, freshness)
 
 	if severity != "bad" {
@@ -60,7 +60,7 @@ func TestSeverityAndReasonDCCoverageMatrix(t *testing.T) {
 		StartupStatus:           "ready",
 		UseMiddleProxy:          true,
 		MERuntimeReady:          true,
-		TelemtReachable:         true,
+		TelemtUnreachable:       false,
 	}
 	freshness := Freshness{State: "fresh"}
 
@@ -103,26 +103,26 @@ func TestSeverityAndReasonDirectMatrix(t *testing.T) {
 		AcceptingNewConnections: true,
 		UseMiddleProxy:          false,
 		UptimeSeconds:           120, // past 60s grace
-		TelemtReachable:         true,
+		TelemtUnreachable:       false,
 	}
 
 	cases := []struct {
-		name             string
-		healthy          int
-		total            int
-		rate             float64
-		rateKnown        bool
-		wantSeverity     string
-		wantReasonExact  string
+		name            string
+		healthy         int
+		total           int
+		rate            float64
+		rateKnown       bool
+		wantSeverity    string
+		wantReasonExact string
 	}{
-		{"all_healthy_no_rate",        3, 3, 0,    false, "ok", ""},
-		{"some_unhealthy",             2, 3, 0,    false, "warn", "some upstreams unhealthy"},
-		{"all_down",                   0, 3, 0,    false, "critical", "all upstreams down"},
-		{"none_configured",            0, 0, 0,    false, "warn", "no upstreams configured"},
-		{"rate_below_warn",            3, 3, 5,    true,  "ok", ""},
-		{"rate_warn_band",             3, 3, 25,   true,  "warn", "degraded DC connectivity"},
-		{"rate_critical_band",         3, 3, 60,   true,  "critical", "upstream DC connect failing"},
-		{"rate_unknown_falls_to_health", 0, 3, 0,  false, "critical", "all upstreams down"},
+		{"all_healthy_no_rate", 3, 3, 0, false, "ok", ""},
+		{"some_unhealthy", 2, 3, 0, false, "warn", "some upstreams unhealthy"},
+		{"all_down", 0, 3, 0, false, "critical", "all upstreams down"},
+		{"none_configured", 0, 0, 0, false, "warn", "no upstreams configured"},
+		{"rate_below_warn", 3, 3, 5, true, "ok", ""},
+		{"rate_warn_band", 3, 3, 25, true, "warn", "degraded DC connectivity"},
+		{"rate_critical_band", 3, 3, 60, true, "critical", "upstream DC connect failing"},
+		{"rate_unknown_falls_to_health", 0, 3, 0, false, "critical", "all upstreams down"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -153,7 +153,7 @@ func TestSeverityAndReasonDirectGracePeriod(t *testing.T) {
 		UptimeSeconds:           30, // before 60s grace
 		HealthyUpstreams:        0,
 		TotalUpstreams:          3,
-		TelemtReachable:         true,
+		TelemtUnreachable:       false,
 	}
 	sev, _ := SeverityAndReason(in, fresh)
 	if sev != "ok" {
@@ -171,7 +171,7 @@ func TestSeverityAndReasonMeDown(t *testing.T) {
 		MERuntimeReady:          false,
 		ME2DCFallbackEnabled:    false,
 		UptimeSeconds:           120,
-		TelemtReachable:         true,
+		TelemtUnreachable:       false,
 	}
 	sev, reason := SeverityAndReason(in, fresh)
 	if sev != "critical" {
@@ -203,7 +203,7 @@ func TestClassifyMode(t *testing.T) {
 				UseMiddleProxy:       tc.useME,
 				MERuntimeReady:       tc.meReady,
 				ME2DCFallbackEnabled: tc.fallbackOn,
-				TelemtReachable:      true,
+				TelemtUnreachable:    false,
 			}
 			got := ClassifyMode(in)
 			if got != tc.want {
@@ -225,7 +225,7 @@ func TestSeverityAndReasonFallbackMatrix(t *testing.T) {
 		UptimeSeconds:           120,
 		HealthyUpstreams:        3,
 		TotalUpstreams:          3,
-		TelemtReachable:         true,
+		TelemtUnreachable:       false,
 	}
 
 	t.Run("baseline_warn", func(t *testing.T) {
@@ -286,7 +286,7 @@ func TestSeverityAndReason_TelemtUnreachable_Critical(t *testing.T) {
 	in := SeverityInput{
 		PresenceState:              presence.StateOnline,
 		AcceptingNewConnections:    true,
-		TelemtReachable:            false,
+		TelemtUnreachable:          true,
 		TelemtUnreachableSinceUnix: 1700000000,
 	}
 	fresh := Freshness{State: "fresh", ObservedAtUnix: 1700000050}
@@ -305,8 +305,8 @@ func TestSeverityAndReason_TelemtUnreachable_Critical(t *testing.T) {
 
 func TestSeverityAndReason_OfflinePresenceWinsOverTelemtUnreachable(t *testing.T) {
 	in := SeverityInput{
-		PresenceState:   presence.StateOffline,
-		TelemtReachable: false,
+		PresenceState:     presence.StateOffline,
+		TelemtUnreachable: true,
 	}
 	fresh := Freshness{State: "fresh"}
 	sev, reason := SeverityAndReason(in, fresh)
@@ -321,7 +321,7 @@ func TestSeverityAndReason_OfflinePresenceWinsOverTelemtUnreachable(t *testing.T
 func TestSeverityAndReason_TelemtUnreachable_BeatsStaleFreshness(t *testing.T) {
 	in := SeverityInput{
 		PresenceState:              presence.StateOnline,
-		TelemtReachable:            false,
+		TelemtUnreachable:          true,
 		TelemtUnreachableSinceUnix: 1700000000,
 	}
 	fresh := Freshness{State: "stale", ObservedAtUnix: 1699000000}

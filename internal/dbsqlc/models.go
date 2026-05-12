@@ -312,8 +312,8 @@ type TelemtRuntimeCurrent struct {
 	DcCoveragePct              float64
 	HealthyUpstreams           int64
 	TotalUpstreams             int64
-	TelemtReachable            bool
 	TelemtUnreachableSinceUnix int64
+	TelemtUnreachable          bool
 }
 
 type TelemtRuntimeDcsCurrent struct {

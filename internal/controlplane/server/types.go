@@ -8,22 +8,22 @@ import (
 
 // Agent stores the control-plane view of a connected host agent.
 type Agent struct {
-	ID           string    `json:"id"`
-	NodeName     string    `json:"node_name"`
-	FleetGroupID string    `json:"fleet_group_id"`
-	Version      string    `json:"version"`
-	ReadOnly     bool      `json:"read_only"`
-	PresenceState string   `json:"presence_state"`
+	ID                  string                                 `json:"id"`
+	NodeName            string                                 `json:"node_name"`
+	FleetGroupID        string                                 `json:"fleet_group_id"`
+	Version             string                                 `json:"version"`
+	ReadOnly            bool                                   `json:"read_only"`
+	PresenceState       string                                 `json:"presence_state"`
 	CertificateRecovery *agentCertificateRecoveryGrantResponse `json:"certificate_recovery,omitempty"`
-	CertIssuedAt  *time.Time `json:"cert_issued_at,omitempty"`
-	CertExpiresAt *time.Time `json:"cert_expires_at,omitempty"`
+	CertIssuedAt        *time.Time                             `json:"cert_issued_at,omitempty"`
+	CertExpiresAt       *time.Time                             `json:"cert_expires_at,omitempty"`
 	// CertSerial is the serial of the most recently issued client cert.
 	// Used to pin agent identity at gRPC connect time (Q4.U-S-04). Not
 	// exposed in the public JSON shape — operators don't need it and
 	// it's noise in the dashboard.
-	CertSerial   string    `json:"-"`
-	Runtime      AgentRuntime `json:"runtime"`
-	LastSeenAt   time.Time `json:"last_seen_at"`
+	CertSerial string       `json:"-"`
+	Runtime    AgentRuntime `json:"runtime"`
+	LastSeenAt time.Time    `json:"last_seen_at"`
 }
 
 // RuntimeEvent stores one recent Telemt runtime event normalized by the agent.
@@ -63,56 +63,56 @@ type RuntimeUpstream struct {
 
 // AgentRuntime stores the normalized Telemt operator overview for one agent.
 type AgentRuntime struct {
-	AcceptingNewConnections   bool              `json:"accepting_new_connections"`
-	MERuntimeReady            bool              `json:"me_runtime_ready"`
-	ME2DCFallbackEnabled      bool              `json:"me2dc_fallback_enabled"`
-	UseMiddleProxy            bool              `json:"use_middle_proxy"`
-	StartupStatus             string            `json:"startup_status"`
-	StartupStage              string            `json:"startup_stage"`
-	StartupProgressPct        float64           `json:"startup_progress_pct"`
-	InitializationStatus      string            `json:"initialization_status"`
-	Degraded                  bool              `json:"degraded"`
-	LifecycleState            string            `json:"lifecycle_state"`
-	InitializationStage       string            `json:"initialization_stage"`
-	InitializationProgressPct float64           `json:"initialization_progress_pct"`
-	TransportMode             string            `json:"transport_mode"`
-	CurrentConnections        int               `json:"current_connections"`
-	CurrentConnectionsME      int               `json:"current_connections_me"`
-	CurrentConnectionsDirect  int               `json:"current_connections_direct"`
-	ActiveUsers               int               `json:"active_users"`
-	UptimeSeconds             float64           `json:"uptime_seconds"`
-	ConnectionsTotal          uint64            `json:"connections_total"`
-	ConnectionsBadTotal       uint64            `json:"connections_bad_total"`
-	HandshakeTimeoutsTotal    uint64            `json:"handshake_timeouts_total"`
-	ConfiguredUsers           int               `json:"configured_users"`
-	DCCoveragePct             float64           `json:"dc_coverage_pct"`
-	HealthyUpstreams          int               `json:"healthy_upstreams"`
-	TotalUpstreams            int               `json:"total_upstreams"`
+	AcceptingNewConnections   bool    `json:"accepting_new_connections"`
+	MERuntimeReady            bool    `json:"me_runtime_ready"`
+	ME2DCFallbackEnabled      bool    `json:"me2dc_fallback_enabled"`
+	UseMiddleProxy            bool    `json:"use_middle_proxy"`
+	StartupStatus             string  `json:"startup_status"`
+	StartupStage              string  `json:"startup_stage"`
+	StartupProgressPct        float64 `json:"startup_progress_pct"`
+	InitializationStatus      string  `json:"initialization_status"`
+	Degraded                  bool    `json:"degraded"`
+	LifecycleState            string  `json:"lifecycle_state"`
+	InitializationStage       string  `json:"initialization_stage"`
+	InitializationProgressPct float64 `json:"initialization_progress_pct"`
+	TransportMode             string  `json:"transport_mode"`
+	CurrentConnections        int     `json:"current_connections"`
+	CurrentConnectionsME      int     `json:"current_connections_me"`
+	CurrentConnectionsDirect  int     `json:"current_connections_direct"`
+	ActiveUsers               int     `json:"active_users"`
+	UptimeSeconds             float64 `json:"uptime_seconds"`
+	ConnectionsTotal          uint64  `json:"connections_total"`
+	ConnectionsBadTotal       uint64  `json:"connections_bad_total"`
+	HandshakeTimeoutsTotal    uint64  `json:"handshake_timeouts_total"`
+	ConfiguredUsers           int     `json:"configured_users"`
+	DCCoveragePct             float64 `json:"dc_coverage_pct"`
+	HealthyUpstreams          int     `json:"healthy_upstreams"`
+	TotalUpstreams            int     `json:"total_upstreams"`
 	// FailRatePct5m and FailRateKnown encode the same "nil-is-unknown"
 	// pattern as RuntimeUpstreamSummary on the agent side. The wire format
 	// (JSON tags fail_rate_pct_5m + fail_rate_known) is split for
 	// backward-compatible consumers; internal Go callers should prefer
 	// FailRatePct5mPtr() / SetFailRatePct5m() so the pair stays in lockstep.
-	FailRatePct5m             float64           `json:"fail_rate_pct_5m"`
-	FailRateKnown             bool              `json:"fail_rate_known"`
-	ConnectAttemptTotal       uint64            `json:"connect_attempt_total"`
-	ConnectSuccessTotal       uint64            `json:"connect_success_total"`
-	ConnectFailTotal          uint64            `json:"connect_fail_total"`
-	ConnectFailfastTotal      uint64            `json:"connect_failfast_total"`
+	FailRatePct5m        float64 `json:"fail_rate_pct_5m"`
+	FailRateKnown        bool    `json:"fail_rate_known"`
+	ConnectAttemptTotal  uint64  `json:"connect_attempt_total"`
+	ConnectSuccessTotal  uint64  `json:"connect_success_total"`
+	ConnectFailTotal     uint64  `json:"connect_fail_total"`
+	ConnectFailfastTotal uint64  `json:"connect_failfast_total"`
 	// FallbackEnteredAtUnix is the unix timestamp the panel saw this agent
 	// transition into ME->DC fallback. Absent (omitempty) when the agent is
 	// not currently in fallback. Sourced from the in-memory
 	// fallbackEnteredAt map; surfaced so the dashboard can render a live
 	// "fallback for Xm" timer without a second round-trip.
-	FallbackEnteredAtUnix     *int64            `json:"fallback_entered_at_unix,omitempty"`
-	DCs                       []RuntimeDC       `json:"dcs"`
-	Upstreams                 []RuntimeUpstream `json:"upstreams"`
-	RecentEvents              []RuntimeEvent    `json:"recent_events"`
-	SystemLoad                RuntimeSystemLoad          `json:"system_load"`
-	MeWritersSummary           *RuntimeMeWritersSummary   `json:"me_writers_summary,omitempty"`
-	TelemtReachable            bool                       `json:"telemt_reachable"`
-	TelemtUnreachableSinceUnix int64                      `json:"telemt_unreachable_since_unix"`
-	UpdatedAt                  time.Time                  `json:"updated_at"`
+	FallbackEnteredAtUnix      *int64                   `json:"fallback_entered_at_unix,omitempty"`
+	DCs                        []RuntimeDC              `json:"dcs"`
+	Upstreams                  []RuntimeUpstream        `json:"upstreams"`
+	RecentEvents               []RuntimeEvent           `json:"recent_events"`
+	SystemLoad                 RuntimeSystemLoad        `json:"system_load"`
+	MeWritersSummary           *RuntimeMeWritersSummary `json:"me_writers_summary,omitempty"`
+	TelemtUnreachable          bool                     `json:"telemt_unreachable"`
+	TelemtUnreachableSinceUnix int64                    `json:"telemt_unreachable_since_unix"`
+	UpdatedAt                  time.Time                `json:"updated_at"`
 }
 
 // FailRatePct5mPtr returns the 5-minute upstream connect fail-rate as a
@@ -170,14 +170,14 @@ type RuntimeMeWritersSummary struct {
 
 // Instance stores the Telemt runtime metadata discovered through an agent.
 type Instance struct {
-	ID               string    `json:"id"`
-	AgentID          string    `json:"agent_id"`
-	Name             string    `json:"name"`
-	Version          string    `json:"version"`
-	ConfigFingerprint string   `json:"config_fingerprint"`
-	ConnectedUsers   int       `json:"connected_users"`
-	ReadOnly         bool      `json:"read_only"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	ID                string    `json:"id"`
+	AgentID           string    `json:"agent_id"`
+	Name              string    `json:"name"`
+	Version           string    `json:"version"`
+	ConfigFingerprint string    `json:"config_fingerprint"`
+	ConnectedUsers    int       `json:"connected_users"`
+	ReadOnly          bool      `json:"read_only"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 // MetricSnapshot stores an aggregated view of a single agent or instance metric set.

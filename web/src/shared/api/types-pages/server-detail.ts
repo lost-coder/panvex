@@ -79,8 +79,8 @@ export interface ServerDetailPageProps {
     me2dcFallbackEnabled: boolean;
     transportMode: TransportMode;
     fallbackEnteredAtUnix: number | null;
-    /** false only when the agent's telemetry stream reports reachability loss. */
-    telemtReachable: boolean;
+    /** true only when the agent's telemetry stream reports reachability loss. */
+    telemtUnreachable: boolean;
     /** Unix timestamp (seconds) when telemt became unreachable; 0 when unknown. */
     telemtUnreachableSinceUnix: number;
   };

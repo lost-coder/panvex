@@ -318,7 +318,7 @@ CREATE TABLE telemt_runtime_current (
     configured_users INTEGER NOT NULL DEFAULT 0,
     dc_coverage_pct REAL NOT NULL DEFAULT 0,
     healthy_upstreams INTEGER NOT NULL DEFAULT 0,
-    total_upstreams INTEGER NOT NULL DEFAULT 0, telemt_reachable INTEGER NOT NULL DEFAULT 1, telemt_unreachable_since_unix INTEGER NOT NULL DEFAULT 0,
+    total_upstreams INTEGER NOT NULL DEFAULT 0, telemt_unreachable_since_unix INTEGER NOT NULL DEFAULT 0, telemt_unreachable INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
 );
 
@@ -627,4 +627,5 @@ INSERT INTO goose_db_version (version_id, is_applied) VALUES
   (36, 1),
   (37, 1),
   (38, 1),
-  (39, 1);
+  (39, 1),
+  (40, 1);

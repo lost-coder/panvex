@@ -62,7 +62,7 @@ function makeProps(): ServerDetailPageProps {
       me2dcFallbackEnabled: false,
       transportMode: "middle_proxy",
       fallbackEnteredAtUnix: null,
-      telemtReachable: true,
+      telemtUnreachable: false,
       telemtUnreachableSinceUnix: 0,
     },
   };

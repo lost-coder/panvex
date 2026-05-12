@@ -12,7 +12,7 @@ export function ServerCardView({
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
       {servers.map((s) => (
         <div key={s.id} className="flex flex-col gap-1">
-          {s.telemtReachable === false && (
+          {s.telemtUnreachable && (
             <div className="text-xs font-mono text-red-400 px-1">⚠ Telemt недоступен</div>
           )}
           <NodeSummaryCard

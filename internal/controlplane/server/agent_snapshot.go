@@ -121,7 +121,7 @@ func (s *Server) applyFallbackStateTransitionLocked(agent Agent) {
 		UseMiddleProxy:             agent.Runtime.UseMiddleProxy,
 		MERuntimeReady:             agent.Runtime.MERuntimeReady,
 		ME2DCFallbackEnabled:       agent.Runtime.ME2DCFallbackEnabled,
-		TelemtReachable:            agent.Runtime.TelemtReachable,
+		TelemtUnreachable:          agent.Runtime.TelemtUnreachable,
 		TelemtUnreachableSinceUnix: agent.Runtime.TelemtUnreachableSinceUnix,
 	})
 	_, hadPrev := s.fallbackEnteredAt[agent.ID]

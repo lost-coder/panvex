@@ -104,11 +104,11 @@ export type AgentRuntime = {
     alive_writers: number;
   } | undefined;
   /**
-   * Reachability of the local Telemt API as observed by the agent.
-   * False means the panel must hide the mode badge and render
+   * Unreachability of the local Telemt API as observed by the agent.
+   * True means the panel must hide the mode badge and render
    * runtime metrics as "—" (zero data, not stale).
    */
-  telemt_reachable: boolean;
+  telemt_unreachable: boolean;
   telemt_unreachable_since_unix: number;
 };
 

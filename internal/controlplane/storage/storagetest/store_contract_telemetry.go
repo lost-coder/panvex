@@ -212,7 +212,6 @@ func runTelemetryContract(t *testing.T, open OpenStore) {
 		}
 	})
 
-
 	t.Run("telemt_unreachable_round_trip", func(t *testing.T) {
 		store := open(t)
 		defer store.Close()
@@ -254,7 +253,7 @@ func runTelemetryContract(t *testing.T, open OpenStore) {
 		rec := storage.TelemetryRuntimeCurrentRecord{
 			AgentID:                    "agent-unreachable",
 			ObservedAt:                 time.Unix(1700000000, 0).UTC(),
-			TelemtReachable:            false,
+			TelemtUnreachable:          true,
 			TelemtUnreachableSinceUnix: 1699999970,
 		}
 		if err := store.PutTelemetryRuntimeCurrent(ctx, rec); err != nil {
@@ -264,8 +263,8 @@ func runTelemetryContract(t *testing.T, open OpenStore) {
 		if err != nil {
 			t.Fatalf("GetTelemetryRuntimeCurrent() error = %v", err)
 		}
-		if got.TelemtReachable {
-			t.Fatal("TelemtReachable round-trip = true, want false")
+		if !got.TelemtUnreachable {
+			t.Fatal("TelemtUnreachable round-trip = false, want true")
 		}
 		if got.TelemtUnreachableSinceUnix != 1699999970 {
 			t.Fatalf("TelemtUnreachableSinceUnix = %d, want 1699999970",
@@ -273,9 +272,8 @@ func runTelemetryContract(t *testing.T, open OpenStore) {
 		}
 
 		rec2 := storage.TelemetryRuntimeCurrentRecord{
-			AgentID:         "agent-default",
-			ObservedAt:      time.Unix(1700000100, 0).UTC(),
-			TelemtReachable: true,
+			AgentID:    "agent-default",
+			ObservedAt: time.Unix(1700000100, 0).UTC(),
 		}
 		if err := store.PutTelemetryRuntimeCurrent(ctx, rec2); err != nil {
 			t.Fatalf("PutTelemetryRuntimeCurrent(default) error = %v", err)
@@ -284,8 +282,8 @@ func runTelemetryContract(t *testing.T, open OpenStore) {
 		if err != nil {
 			t.Fatalf("GetTelemetryRuntimeCurrent(default) error = %v", err)
 		}
-		if !got2.TelemtReachable {
-			t.Fatal("TelemtReachable for default record = false, want true")
+		if got2.TelemtUnreachable {
+			t.Fatal("TelemtUnreachable for default record = true, want false (healthy by default)")
 		}
 		if got2.TelemtUnreachableSinceUnix != 0 {
 			t.Fatalf("TelemtUnreachableSinceUnix for default = %d, want 0", got2.TelemtUnreachableSinceUnix)

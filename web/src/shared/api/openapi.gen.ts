@@ -456,7 +456,7 @@ export interface components {
             recent_events: components["schemas"]["RuntimeEvent"][];
             system_load: components["schemas"]["RuntimeSystemLoad"];
             me_writers_summary?: components["schemas"]["RuntimeMeWritersSummary"];
-            telemt_reachable: boolean;
+            telemt_unreachable: boolean;
             /** Format: int64 */
             telemt_unreachable_since_unix: number;
             /** Format: date-time */

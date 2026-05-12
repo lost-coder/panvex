@@ -19,7 +19,7 @@ func (s *Store) PutTelemetryRuntimeCurrent(ctx context.Context, record storage.T
 			transport_mode, current_connections, current_connections_me, current_connections_direct, active_users,
 			uptime_seconds, connections_total, connections_bad_total, handshake_timeouts_total, configured_users,
 			dc_coverage_pct, healthy_upstreams, total_upstreams,
-			telemt_reachable, telemt_unreachable_since_unix
+			telemt_unreachable, telemt_unreachable_since_unix
 		)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(agent_id) DO UPDATE SET
@@ -51,7 +51,7 @@ func (s *Store) PutTelemetryRuntimeCurrent(ctx context.Context, record storage.T
 			dc_coverage_pct = excluded.dc_coverage_pct,
 			healthy_upstreams = excluded.healthy_upstreams,
 			total_upstreams = excluded.total_upstreams,
-			telemt_reachable = excluded.telemt_reachable,
+			telemt_unreachable = excluded.telemt_unreachable,
 			telemt_unreachable_since_unix = excluded.telemt_unreachable_since_unix
 	`,
 		record.AgentID, toUnix(record.ObservedAt), record.State, record.StateReason, boolToInt(record.ReadOnly),
@@ -61,7 +61,7 @@ func (s *Store) PutTelemetryRuntimeCurrent(ctx context.Context, record storage.T
 		record.TransportMode, record.CurrentConnections, record.CurrentConnectionsME, record.CurrentConnectionsDirect,
 		record.ActiveUsers, record.UptimeSeconds, int64(record.ConnectionsTotal), int64(record.ConnectionsBadTotal),
 		int64(record.HandshakeTimeoutsTotal), record.ConfiguredUsers, record.DCCoveragePct, record.HealthyUpstreams, record.TotalUpstreams,
-		boolToInt(record.TelemtReachable), record.TelemtUnreachableSinceUnix,
+		boolToInt(record.TelemtUnreachable), record.TelemtUnreachableSinceUnix,
 	)
 	return err
 }
@@ -74,7 +74,7 @@ func (s *Store) GetTelemetryRuntimeCurrent(ctx context.Context, agentID string) 
 		       transport_mode, current_connections, current_connections_me, current_connections_direct, active_users,
 		       uptime_seconds, connections_total, connections_bad_total, handshake_timeouts_total, configured_users,
 		       dc_coverage_pct, healthy_upstreams, total_upstreams,
-		       telemt_reachable, telemt_unreachable_since_unix
+		       telemt_unreachable, telemt_unreachable_since_unix
 		FROM telemt_runtime_current
 		WHERE agent_id = ?
 	`, agentID)
@@ -90,7 +90,7 @@ func (s *Store) GetTelemetryRuntimeCurrent(ctx context.Context, agentID string) 
 	var connectionsTotal int64
 	var connectionsBadTotal int64
 	var handshakeTimeoutsTotal int64
-	var telemtReachable int
+	var telemtUnreachable int
 	var telemtUnreachableSince int64
 	if err := row.Scan(
 		&record.AgentID, &observedAt, &record.State, &record.StateReason, &readOnly, &accepting,
@@ -99,7 +99,7 @@ func (s *Store) GetTelemetryRuntimeCurrent(ctx context.Context, agentID string) 
 		&record.TransportMode, &record.CurrentConnections, &record.CurrentConnectionsME, &record.CurrentConnectionsDirect, &record.ActiveUsers,
 		&record.UptimeSeconds, &connectionsTotal, &connectionsBadTotal, &handshakeTimeoutsTotal, &record.ConfiguredUsers,
 		&record.DCCoveragePct, &record.HealthyUpstreams, &record.TotalUpstreams,
-		&telemtReachable, &telemtUnreachableSince,
+		&telemtUnreachable, &telemtUnreachableSince,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.TelemetryRuntimeCurrentRecord{}, storage.ErrNotFound
@@ -117,7 +117,7 @@ func (s *Store) GetTelemetryRuntimeCurrent(ctx context.Context, agentID string) 
 	record.ConnectionsTotal = uint64(connectionsTotal)
 	record.ConnectionsBadTotal = uint64(connectionsBadTotal)
 	record.HandshakeTimeoutsTotal = uint64(handshakeTimeoutsTotal)
-	record.TelemtReachable = intToBool(telemtReachable)
+	record.TelemtUnreachable = intToBool(telemtUnreachable)
 	record.TelemtUnreachableSinceUnix = telemtUnreachableSince
 	return record, nil
 }
@@ -130,7 +130,7 @@ func (s *Store) ListTelemetryRuntimeCurrent(ctx context.Context) ([]storage.Tele
 		       transport_mode, current_connections, current_connections_me, current_connections_direct, active_users,
 		       uptime_seconds, connections_total, connections_bad_total, handshake_timeouts_total, configured_users,
 		       dc_coverage_pct, healthy_upstreams, total_upstreams,
-		       telemt_reachable, telemt_unreachable_since_unix
+		       telemt_unreachable, telemt_unreachable_since_unix
 		FROM telemt_runtime_current
 		ORDER BY observed_at_unix, agent_id
 	`)
@@ -152,7 +152,7 @@ func (s *Store) ListTelemetryRuntimeCurrent(ctx context.Context) ([]storage.Tele
 		var connectionsTotal int64
 		var connectionsBadTotal int64
 		var handshakeTimeoutsTotal int64
-		var telemtReachable int
+		var telemtUnreachable int
 		var telemtUnreachableSince int64
 		if err := rows.Scan(
 			&record.AgentID, &observedAt, &record.State, &record.StateReason, &readOnly, &accepting,
@@ -161,7 +161,7 @@ func (s *Store) ListTelemetryRuntimeCurrent(ctx context.Context) ([]storage.Tele
 			&record.TransportMode, &record.CurrentConnections, &record.CurrentConnectionsME, &record.CurrentConnectionsDirect, &record.ActiveUsers,
 			&record.UptimeSeconds, &connectionsTotal, &connectionsBadTotal, &handshakeTimeoutsTotal, &record.ConfiguredUsers,
 			&record.DCCoveragePct, &record.HealthyUpstreams, &record.TotalUpstreams,
-			&telemtReachable, &telemtUnreachableSince,
+			&telemtUnreachable, &telemtUnreachableSince,
 		); err != nil {
 			return nil, err
 		}
@@ -175,7 +175,7 @@ func (s *Store) ListTelemetryRuntimeCurrent(ctx context.Context) ([]storage.Tele
 		record.ConnectionsTotal = uint64(connectionsTotal)
 		record.ConnectionsBadTotal = uint64(connectionsBadTotal)
 		record.HandshakeTimeoutsTotal = uint64(handshakeTimeoutsTotal)
-		record.TelemtReachable = intToBool(telemtReachable)
+		record.TelemtUnreachable = intToBool(telemtUnreachable)
 		record.TelemtUnreachableSinceUnix = telemtUnreachableSince
 		result = append(result, record)
 	}

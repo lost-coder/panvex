@@ -4,9 +4,9 @@ package server
 // snapshot pipeline — gatewayrpc.RuntimeSnapshot → applyAgentSnapshot →
 // server state → /api/telemetry/servers HTTP response — across three phases:
 //
-//  1. Healthy: TelemtReachable=true → severity "ok"
-//  2. Unreachable: TelemtReachable=false → severity "critical", reason contains "Telemt API unreachable"
-//  3. Recovery: TelemtReachable=true again → severity "ok"
+//  1. Healthy: TelemtUnreachable=false → severity "ok"
+//  2. Unreachable: TelemtUnreachable=true → severity "critical", reason contains "Telemt API unreachable"
+//  3. Recovery: TelemtUnreachable=false again → severity "ok"
 //
 // This is the inbound-path complement of TestServerSeverityCriticalWhenTelemtUnreachable
 // (agent_telemetry_test.go), which exercises telemetrySeverityAndReason directly.
@@ -130,7 +130,7 @@ func TestTelemtUnreachableEndToEndSeverityLifecycle(t *testing.T) {
 	cookies := loginAndGetCookies()
 
 	// ── Phase 1: healthy ME ──────────────────────────────────────────────────
-	// TelemtReachable=true, UseMiddleProxy=true, MeRuntimeReady=true,
+	// TelemtUnreachable=false, UseMiddleProxy=true, MeRuntimeReady=true,
 	// AcceptingNewConnections=true.
 	// A DC with 100% coverage is required: severityME returns "critical" when
 	// AgentReported=true (UpdatedAt non-zero) and DCCoveragePct==0.
@@ -141,7 +141,6 @@ func TestTelemtUnreachableEndToEndSeverityLifecycle(t *testing.T) {
 		UseMiddleProxy:             true,
 		MeRuntimeReady:             true,
 		AcceptingNewConnections:    true,
-		TelemtReachable:            true,
 		TelemtUnreachableSinceUnix: 0,
 		StartupStatus:              "ready",
 		StartupStage:               "serving",
@@ -160,13 +159,13 @@ func TestTelemtUnreachableEndToEndSeverityLifecycle(t *testing.T) {
 	}
 
 	// ── Phase 2: Telemt API unreachable ─────────────────────────────────────
-	// The agent sees TelemtReachable=false and records when it first went down.
+	// The agent sees TelemtUnreachable=true and records when it first went down.
 	unreachableSince := getNow().Add(10 * time.Second)
 	unreachableSnap := &gatewayrpc.RuntimeSnapshot{
 		UseMiddleProxy:             true,
 		MeRuntimeReady:             true,
 		AcceptingNewConnections:    true,
-		TelemtReachable:            false,
+		TelemtUnreachable:          true,
 		TelemtUnreachableSinceUnix: unreachableSince.Unix(),
 		StartupStatus:              "ready",
 		StartupStage:               "serving",
@@ -197,7 +196,6 @@ func TestTelemtUnreachableEndToEndSeverityLifecycle(t *testing.T) {
 		UseMiddleProxy:             true,
 		MeRuntimeReady:             true,
 		AcceptingNewConnections:    true,
-		TelemtReachable:            true,
 		TelemtUnreachableSinceUnix: 0,
 		StartupStatus:              "ready",
 		StartupStage:               "serving",

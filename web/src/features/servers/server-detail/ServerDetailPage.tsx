@@ -380,7 +380,7 @@ export function ServerDetailPage({
       />
 
       <div className="px-4 md:px-8 flex flex-col gap-6 pb-8 pt-6">
-        {server.telemtReachable === false ? (
+        {server.telemtUnreachable ? (
           <TelemtUnreachableBanner sinceUnix={server.telemtUnreachableSinceUnix} />
         ) : (
           <>

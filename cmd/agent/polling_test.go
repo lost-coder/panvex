@@ -75,8 +75,8 @@ func TestRuntimePollEmitsUnreachableAfterThreshold(t *testing.T) {
 	if snap == nil || snap.Runtime == nil {
 		t.Fatal("emitted message missing runtime snapshot")
 	}
-	if snap.Runtime.TelemtReachable {
-		t.Fatal("emitted runtime.TelemtReachable = true, want false")
+	if !snap.Runtime.TelemtUnreachable {
+		t.Fatal("emitted runtime.TelemtUnreachable = false, want true")
 	}
 	if snap.Runtime.TelemtUnreachableSinceUnix != start.Unix() {
 		t.Fatalf("emitted since = %d, want %d", snap.Runtime.TelemtUnreachableSinceUnix, start.Unix())

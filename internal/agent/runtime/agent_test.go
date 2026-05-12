@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/lost-coder/panvex/internal/agent/telemt"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
@@ -197,10 +199,10 @@ func TestAgentBuildSnapshotUsesTelemtRuntimeState(t *testing.T) {
 				MEPoolJSON:          `{"enabled":true}`,
 			},
 			SecurityInventory: telemt.RuntimeSecurityInventory{
-				State:       "fresh",
-				Enabled:     true,
+				State:        "fresh",
+				Enabled:      true,
 				EntriesTotal: 2,
-				EntriesJSON: `["10.0.0.0/24","192.168.0.0/24"]`,
+				EntriesJSON:  `["10.0.0.0/24","192.168.0.0/24"]`,
 			},
 		},
 	}
@@ -279,16 +281,16 @@ func TestAgentBuildSnapshotIncludesSystemLoad(t *testing.T) {
 				TransportMode: "middle_proxy",
 			},
 			SystemLoad: telemt.RuntimeSystemLoad{
-				CPUUsagePct:     37.5,
-				MemoryUsedBytes: 6_442_450_944,
+				CPUUsagePct:      37.5,
+				MemoryUsedBytes:  6_442_450_944,
 				MemoryTotalBytes: 8_589_934_592,
-				MemoryUsagePct:  75.0,
-				DiskUsedBytes:   214_748_364_800,
-				DiskTotalBytes:  536_870_912_000,
-				DiskUsagePct:    40.0,
-				Load1M:          1.22,
-				Load5M:          0.98,
-				Load15M:         0.73,
+				MemoryUsagePct:   75.0,
+				DiskUsedBytes:    214_748_364_800,
+				DiskTotalBytes:   536_870_912_000,
+				DiskUsagePct:     40.0,
+				Load1M:           1.22,
+				Load5M:           0.98,
+				Load15M:          0.73,
 			},
 		},
 	}
@@ -629,17 +631,17 @@ func TestAgentBuildSnapshotMapsTelemtClientNamesBackToManagedClientIDs(t *testin
 }
 
 type fakeTelemtClient struct {
-	state             telemt.RuntimeState
-	metricsUsage      []telemt.ClientUsage
-	metricsUptime     float64
-	activeIPs         []telemt.UserActiveIPs
-	reloadCalled      bool
-	reloadCalls       int
-	createdClient     telemt.ManagedClient
-	updatedClient     telemt.ManagedClient
-	deletedClientName string
-	createResult      telemt.ClientApplyResult
-	updateResult      telemt.ClientApplyResult
+	state                   telemt.RuntimeState
+	metricsUsage            []telemt.ClientUsage
+	metricsUptime           float64
+	activeIPs               []telemt.UserActiveIPs
+	reloadCalled            bool
+	reloadCalls             int
+	createdClient           telemt.ManagedClient
+	updatedClient           telemt.ManagedClient
+	deletedClientName       string
+	createResult            telemt.ClientApplyResult
+	updateResult            telemt.ClientApplyResult
 	invalidateSlowDataCalls int
 }
 
@@ -797,8 +799,8 @@ func TestBuildRuntimeUnreachableSnapshot(t *testing.T) {
 	if snap.Runtime == nil {
 		t.Fatal("Runtime = nil, want non-nil RuntimeSnapshot")
 	}
-	if snap.Runtime.TelemtReachable {
-		t.Fatal("Runtime.TelemtReachable = true, want false")
+	if !snap.Runtime.TelemtUnreachable {
+		t.Fatal("Runtime.TelemtUnreachable = false, want true")
 	}
 	if snap.Runtime.TelemtUnreachableSinceUnix != since.Unix() {
 		t.Fatalf("Runtime.TelemtUnreachableSinceUnix = %d, want %d",
@@ -817,11 +819,15 @@ func TestBuildRuntimeUnreachableSnapshot(t *testing.T) {
 	}
 }
 
-// TestBuildRuntimeSnapshot_SetsTelemtReachableTrue guards the wire contract:
-// every successful runtime snapshot must carry TelemtReachable=true.
-// Without this, proto3's bool default (false) would make the panel
-// interpret healthy agents as Telemt-unreachable.
-func TestBuildRuntimeSnapshot_SetsTelemtReachableTrue(t *testing.T) {
+// TestBuildRuntimeSnapshotHealthyTelemtUnreachableFalse guards the wire
+// contract: every successful runtime snapshot must leave TelemtUnreachable
+// at proto3's bool default (false) and TelemtUnreachableSinceUnix=0. The
+// inverted semantic means proto3's default already represents the healthy
+// case, but a regression that flips the field would still mis-classify
+// healthy agents as Telemt-unreachable. The check is performed on both the
+// in-memory proto struct and the marshalled wire bytes to guard against
+// presence-wrapper or oneOf changes that might alter wire semantics.
+func TestBuildRuntimeSnapshotHealthyTelemtUnreachableFalse(t *testing.T) {
 	client := &fakeTelemtClient{
 		state: telemt.RuntimeState{
 			Version:        "2026.03",
@@ -846,11 +852,27 @@ func TestBuildRuntimeSnapshot_SetsTelemtReachableTrue(t *testing.T) {
 	if snap.Runtime == nil {
 		t.Fatal("Runtime = nil, want non-nil")
 	}
-	if !snap.Runtime.TelemtReachable {
-		t.Fatal("Runtime.TelemtReachable = false, want true for a successful snapshot")
+	if snap.Runtime.TelemtUnreachable {
+		t.Fatal("Runtime.TelemtUnreachable = true, want false for a successful snapshot")
 	}
 	if snap.Runtime.TelemtUnreachableSinceUnix != 0 {
 		t.Fatalf("Runtime.TelemtUnreachableSinceUnix = %d, want 0 (healthy path)",
 			snap.Runtime.TelemtUnreachableSinceUnix)
+	}
+
+	wire, err := proto.Marshal(snap.Runtime)
+	if err != nil {
+		t.Fatalf("proto.Marshal(Runtime) error = %v", err)
+	}
+	var roundtrip gatewayrpc.RuntimeSnapshot
+	if err := proto.Unmarshal(wire, &roundtrip); err != nil {
+		t.Fatalf("proto.Unmarshal(Runtime) error = %v", err)
+	}
+	if roundtrip.TelemtUnreachable {
+		t.Fatal("roundtrip Runtime.TelemtUnreachable = true, want false")
+	}
+	if roundtrip.TelemtUnreachableSinceUnix != 0 {
+		t.Fatalf("roundtrip Runtime.TelemtUnreachableSinceUnix = %d, want 0",
+			roundtrip.TelemtUnreachableSinceUnix)
 	}
 }

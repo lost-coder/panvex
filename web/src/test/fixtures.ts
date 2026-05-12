@@ -115,7 +115,7 @@ export function mockDirectServer(overrides: MockDirectServerOverrides = {}): Ser
     me2dcFallbackEnabled: overrides.fallback === true,
     transportMode: "direct",
     fallbackEnteredAtUnix,
-    telemtReachable: true,
+    telemtUnreachable: false,
     telemtUnreachableSinceUnix: 0,
   };
 }

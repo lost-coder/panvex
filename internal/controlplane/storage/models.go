@@ -15,9 +15,9 @@ type UserRecord struct {
 
 // SessionRecord stores one authenticated user session.
 type SessionRecord struct {
-	ID         string
-	UserID     string
-	CreatedAt  time.Time
+	ID        string
+	UserID    string
+	CreatedAt time.Time
 	// LastSeenAt is the persisted sliding-refresh timestamp (Q2.U-S-12).
 	// Updated by SessionStore.TouchSession at most every
 	// sessionTouchThrottle so the idle-timeout survives a restart
@@ -81,36 +81,36 @@ type UserAppearanceRecord struct {
 
 // TelemetryRuntimeCurrentRecord stores one node's latest fast Telemt runtime summary.
 type TelemetryRuntimeCurrentRecord struct {
-	AgentID                   string
-	ObservedAt                time.Time
-	State                     string
-	StateReason               string
-	ReadOnly                  bool
-	AcceptingNewConnections   bool
-	MERuntimeReady            bool
-	ME2DCFallbackEnabled      bool
-	UseMiddleProxy            bool
-	StartupStatus             string
-	StartupStage              string
-	StartupProgressPct        float64
-	InitializationStatus      string
-	Degraded                  bool
-	InitializationStage       string
-	InitializationProgressPct float64
-	TransportMode             string
-	CurrentConnections        int
-	CurrentConnectionsME      int
-	CurrentConnectionsDirect  int
-	ActiveUsers               int
-	UptimeSeconds             float64
-	ConnectionsTotal          uint64
-	ConnectionsBadTotal       uint64
-	HandshakeTimeoutsTotal    uint64
-	ConfiguredUsers           int
-	DCCoveragePct             float64
-	HealthyUpstreams          int
-	TotalUpstreams            int
-	TelemtReachable            bool
+	AgentID                    string
+	ObservedAt                 time.Time
+	State                      string
+	StateReason                string
+	ReadOnly                   bool
+	AcceptingNewConnections    bool
+	MERuntimeReady             bool
+	ME2DCFallbackEnabled       bool
+	UseMiddleProxy             bool
+	StartupStatus              string
+	StartupStage               string
+	StartupProgressPct         float64
+	InitializationStatus       string
+	Degraded                   bool
+	InitializationStage        string
+	InitializationProgressPct  float64
+	TransportMode              string
+	CurrentConnections         int
+	CurrentConnectionsME       int
+	CurrentConnectionsDirect   int
+	ActiveUsers                int
+	UptimeSeconds              float64
+	ConnectionsTotal           uint64
+	ConnectionsBadTotal        uint64
+	HandshakeTimeoutsTotal     uint64
+	ConfiguredUsers            int
+	DCCoveragePct              float64
+	HealthyUpstreams           int
+	TotalUpstreams             int
+	TelemtUnreachable          bool
 	TelemtUnreachableSinceUnix int64
 }
 
@@ -348,8 +348,8 @@ type PanelSettingsRecord struct {
 	// PasswordMinLength is the operator-configured minimum password length.
 	// Zero is sentinel for "not configured" — callers should treat it as
 	// the compiled-in default (auth.DefaultPasswordMinLength).
-	PasswordMinLength  int32
-	UpdatedAt          time.Time
+	PasswordMinLength int32
+	UpdatedAt         time.Time
 }
 
 // RetentionSettingsRecord stores operator-managed timeseries/event retention

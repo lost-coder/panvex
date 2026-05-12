@@ -18,7 +18,7 @@ func (s *Store) PutTelemetryRuntimeCurrent(ctx context.Context, record storage.T
 			transport_mode, current_connections, current_connections_me, current_connections_direct, active_users,
 			uptime_seconds, connections_total, connections_bad_total, handshake_timeouts_total, configured_users,
 			dc_coverage_pct, healthy_upstreams, total_upstreams,
-			telemt_reachable, telemt_unreachable_since_unix
+			telemt_unreachable, telemt_unreachable_since_unix
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31)
 		ON CONFLICT (agent_id) DO UPDATE
@@ -50,7 +50,7 @@ func (s *Store) PutTelemetryRuntimeCurrent(ctx context.Context, record storage.T
 		    dc_coverage_pct = EXCLUDED.dc_coverage_pct,
 		    healthy_upstreams = EXCLUDED.healthy_upstreams,
 		    total_upstreams = EXCLUDED.total_upstreams,
-		    telemt_reachable = EXCLUDED.telemt_reachable,
+		    telemt_unreachable = EXCLUDED.telemt_unreachable,
 		    telemt_unreachable_since_unix = EXCLUDED.telemt_unreachable_since_unix
 	`,
 		record.AgentID, record.ObservedAt.UTC(), record.State, record.StateReason, record.ReadOnly, record.AcceptingNewConnections,
@@ -59,7 +59,7 @@ func (s *Store) PutTelemetryRuntimeCurrent(ctx context.Context, record storage.T
 		record.TransportMode, record.CurrentConnections, record.CurrentConnectionsME, record.CurrentConnectionsDirect, record.ActiveUsers,
 		record.UptimeSeconds, int64(record.ConnectionsTotal), int64(record.ConnectionsBadTotal), int64(record.HandshakeTimeoutsTotal),
 		record.ConfiguredUsers, record.DCCoveragePct, record.HealthyUpstreams, record.TotalUpstreams,
-		record.TelemtReachable, record.TelemtUnreachableSinceUnix,
+		record.TelemtUnreachable, record.TelemtUnreachableSinceUnix,
 	)
 	return err
 }
@@ -72,7 +72,7 @@ func (s *Store) GetTelemetryRuntimeCurrent(ctx context.Context, agentID string) 
 		       transport_mode, current_connections, current_connections_me, current_connections_direct, active_users,
 		       uptime_seconds, connections_total, connections_bad_total, handshake_timeouts_total, configured_users,
 		       dc_coverage_pct, healthy_upstreams, total_upstreams,
-		       telemt_reachable, telemt_unreachable_since_unix
+		       telemt_unreachable, telemt_unreachable_since_unix
 		FROM telemt_runtime_current
 		WHERE agent_id = $1
 	`, agentID)
@@ -88,7 +88,7 @@ func (s *Store) GetTelemetryRuntimeCurrent(ctx context.Context, agentID string) 
 		&record.TransportMode, &record.CurrentConnections, &record.CurrentConnectionsME, &record.CurrentConnectionsDirect, &record.ActiveUsers,
 		&record.UptimeSeconds, &connectionsTotal, &connectionsBadTotal, &handshakeTimeoutsTotal, &record.ConfiguredUsers,
 		&record.DCCoveragePct, &record.HealthyUpstreams, &record.TotalUpstreams,
-		&record.TelemtReachable, &record.TelemtUnreachableSinceUnix,
+		&record.TelemtUnreachable, &record.TelemtUnreachableSinceUnix,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.TelemetryRuntimeCurrentRecord{}, storage.ErrNotFound
@@ -111,7 +111,7 @@ func (s *Store) ListTelemetryRuntimeCurrent(ctx context.Context) ([]storage.Tele
 		       transport_mode, current_connections, current_connections_me, current_connections_direct, active_users,
 		       uptime_seconds, connections_total, connections_bad_total, handshake_timeouts_total, configured_users,
 		       dc_coverage_pct, healthy_upstreams, total_upstreams,
-		       telemt_reachable, telemt_unreachable_since_unix
+		       telemt_unreachable, telemt_unreachable_since_unix
 		FROM telemt_runtime_current
 		ORDER BY observed_at, agent_id
 	`)
@@ -133,7 +133,7 @@ func (s *Store) ListTelemetryRuntimeCurrent(ctx context.Context) ([]storage.Tele
 			&record.TransportMode, &record.CurrentConnections, &record.CurrentConnectionsME, &record.CurrentConnectionsDirect, &record.ActiveUsers,
 			&record.UptimeSeconds, &connectionsTotal, &connectionsBadTotal, &handshakeTimeoutsTotal, &record.ConfiguredUsers,
 			&record.DCCoveragePct, &record.HealthyUpstreams, &record.TotalUpstreams,
-			&record.TelemtReachable, &record.TelemtUnreachableSinceUnix,
+			&record.TelemtUnreachable, &record.TelemtUnreachableSinceUnix,
 		); err != nil {
 			return nil, err
 		}

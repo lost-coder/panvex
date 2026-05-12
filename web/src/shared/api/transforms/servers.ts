@@ -129,7 +129,7 @@ function summaryToListItem(card: TelemetryServerSummary): ServerListItem {
     healthyDcs,
     totalDcs,
     severity: card.severity === "good" ? "ok" : card.severity,
-    telemtReachable: runtime?.telemt_reachable ?? true,
+    telemtUnreachable: runtime?.telemt_unreachable ?? false,
     telemtUnreachableSinceUnix: runtime?.telemt_unreachable_since_unix ?? 0,
   };
 }
@@ -433,7 +433,7 @@ export function transformServerDetail(
     me2dcFallbackEnabled,
     transportMode,
     fallbackEnteredAtUnix,
-    telemtReachable: runtime?.telemt_reachable ?? true,
+    telemtUnreachable: runtime?.telemt_unreachable ?? false,
     telemtUnreachableSinceUnix: runtime?.telemt_unreachable_since_unix ?? 0,
   };
 }

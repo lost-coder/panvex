@@ -22,8 +22,8 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 	defer store.Close()
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
 	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
@@ -42,20 +42,20 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 		FleetGroupID: euGroupID,
 		Version:      "1.0.0",
 		Runtime: AgentRuntime{
-			AcceptingNewConnections:   true,
-			MERuntimeReady:            true,
-			TelemtReachable:           true,
-			TransportMode:             "direct",
-			CurrentConnections:        120,
-			CurrentConnectionsME:      70,
-			CurrentConnectionsDirect:  50,
-			ActiveUsers:               95,
-			DCCoveragePct:             100,
-			HealthyUpstreams:          2,
-			TotalUpstreams:            2,
-			UpdatedAt:                 now.Add(-10 * time.Second),
-			DCs: []RuntimeDC{{DC: 2, AvailableEndpoints: 4, AvailablePct: 100, RequiredWriters: 6, AliveWriters: 6, CoveragePct: 100, RTTMs: 18, Load: 1}},
-			RecentEvents: []RuntimeEvent{{Sequence: 1, TimestampUnix: now.Add(-15 * time.Second).Unix(), EventType: "upstream_recovered", Context: "dc=2 upstream=1"}},
+			AcceptingNewConnections:  true,
+			MERuntimeReady:           true,
+			TelemtUnreachable:        false,
+			TransportMode:            "direct",
+			CurrentConnections:       120,
+			CurrentConnectionsME:     70,
+			CurrentConnectionsDirect: 50,
+			ActiveUsers:              95,
+			DCCoveragePct:            100,
+			HealthyUpstreams:         2,
+			TotalUpstreams:           2,
+			UpdatedAt:                now.Add(-10 * time.Second),
+			DCs:                      []RuntimeDC{{DC: 2, AvailableEndpoints: 4, AvailablePct: 100, RequiredWriters: 6, AliveWriters: 6, CoveragePct: 100, RTTMs: 18, Load: 1}},
+			RecentEvents:             []RuntimeEvent{{Sequence: 1, TimestampUnix: now.Add(-15 * time.Second).Unix(), EventType: "upstream_recovered", Context: "dc=2 upstream=1"}},
 		},
 		LastSeenAt: now.Add(-5 * time.Second),
 	}
@@ -66,21 +66,21 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 		Version:      "1.0.0",
 		ReadOnly:     true,
 		Runtime: AgentRuntime{
-			AcceptingNewConnections:   false,
-			MERuntimeReady:            true,
-			Degraded:                  true,
-			TelemtReachable:           true,
-			TransportMode:             "middle_proxy",
-			CurrentConnections:        12,
-			CurrentConnectionsME:      10,
-			CurrentConnectionsDirect:  2,
-			ActiveUsers:               9,
-			DCCoveragePct:             73,
-			HealthyUpstreams:          1,
-			TotalUpstreams:            3,
-			UpdatedAt:                 now.Add(-120 * time.Second),
-			DCs: []RuntimeDC{{DC: 4, AvailableEndpoints: 4, AvailablePct: 100, RequiredWriters: 6, AliveWriters: 4, CoveragePct: 73, RTTMs: 64, Load: 2}},
-			RecentEvents: []RuntimeEvent{{Sequence: 2, TimestampUnix: now.Add(-20 * time.Second).Unix(), EventType: "dc_coverage_dropped", Context: "dc=4 coverage=73"}},
+			AcceptingNewConnections:  false,
+			MERuntimeReady:           true,
+			Degraded:                 true,
+			TelemtUnreachable:        false,
+			TransportMode:            "middle_proxy",
+			CurrentConnections:       12,
+			CurrentConnectionsME:     10,
+			CurrentConnectionsDirect: 2,
+			ActiveUsers:              9,
+			DCCoveragePct:            73,
+			HealthyUpstreams:         1,
+			TotalUpstreams:           3,
+			UpdatedAt:                now.Add(-120 * time.Second),
+			DCs:                      []RuntimeDC{{DC: 4, AvailableEndpoints: 4, AvailablePct: 100, RequiredWriters: 6, AliveWriters: 4, CoveragePct: 73, RTTMs: 64, Load: 2}},
+			RecentEvents:             []RuntimeEvent{{Sequence: 2, TimestampUnix: now.Add(-20 * time.Second).Unix(), EventType: "dc_coverage_dropped", Context: "dc=4 coverage=73"}},
 		},
 		LastSeenAt: now.Add(-40 * time.Second),
 	}
@@ -221,8 +221,8 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 
 	restored := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now.Add(time.Minute) },
-		Store: store,
+		Now:              func() time.Time { return now.Add(time.Minute) },
+		Store:            store,
 	})
 	defer restored.Close()
 	restored.agents["agent-a"] = server.agents["agent-a"]

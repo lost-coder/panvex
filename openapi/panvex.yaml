@@ -571,7 +571,7 @@ components:
         - upstreams
         - recent_events
         - system_load
-        - telemt_reachable
+        - telemt_unreachable
         - telemt_unreachable_since_unix
         - updated_at
       properties:
@@ -646,7 +646,7 @@ components:
           $ref: '#/components/schemas/RuntimeSystemLoad'
         me_writers_summary:
           $ref: '#/components/schemas/RuntimeMeWritersSummary'
-        telemt_reachable: { type: boolean }
+        telemt_unreachable: { type: boolean }
         telemt_unreachable_since_unix: { type: integer, format: int64 }
         updated_at:
           type: string

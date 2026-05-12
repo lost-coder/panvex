@@ -209,16 +209,14 @@ message RuntimeSnapshot {
   repeated ConnectionTopEntry top_by_connections = 35;
   repeated ConnectionTopEntry top_by_throughput = 36;
   // Reachability of local Telemt API as observed by the agent. The agent
-  // sets this to false (with telemt_unreachable_since_unix populated) once it
-  // has been failing to reach Telemt for ≥30s. The panel uses the flag to
-  // surface a "Telemt API unreachable" critical severity instead of
-  // mis-classifying the node as Direct from zero gates.
+  // sets telemt_unreachable=true (with telemt_unreachable_since_unix
+  // populated) once it has been failing to reach Telemt for ≥30s. The panel
+  // uses the flag to surface a "Telemt API unreachable" critical severity
+  // instead of mis-classifying the node as Direct from zero gates.
   //
-  // Wire default: proto3 bool defaults to false. Old agents that never set
-  // this field will appear as TelemtReachable=false. The panel-side
-  // back-compat strategy is owned by Task 6 of the implementation plan
-  // (project doc, outside the repo).
-  bool  telemt_reachable              = 37;
+  // Semantic is inverted (unreachable=true is the bad state) so the proto3
+  // default of false correctly represents the healthy/reachable case.
+  bool  telemt_unreachable            = 37;
   int64 telemt_unreachable_since_unix = 38;
 }
 

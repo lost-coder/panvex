@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	telemetryRuntimeStaleAfter = 90 * time.Second
+	telemetryRuntimeStaleAfter           = 90 * time.Second
 	telemetryInitializationWatchCooldown = 90 * time.Second
 )
 
@@ -29,39 +29,39 @@ type telemetryDetailBoostResponse struct {
 }
 
 type telemetryAttentionItem struct {
-	AgentID        string                    `json:"agent_id"`
-	NodeName       string                    `json:"node_name"`
-	FleetGroupID   string                    `json:"fleet_group_id"`
-	Severity       string                    `json:"severity"`
-	Reason         string                    `json:"reason"`
-	PresenceState  string                    `json:"presence_state"`
-	Runtime        AgentRuntime              `json:"runtime"`
-	RuntimeFreshness telemetryFreshnessResponse `json:"runtime_freshness"`
-	DetailBoost    telemetryDetailBoostResponse `json:"detail_boost"`
+	AgentID          string                       `json:"agent_id"`
+	NodeName         string                       `json:"node_name"`
+	FleetGroupID     string                       `json:"fleet_group_id"`
+	Severity         string                       `json:"severity"`
+	Reason           string                       `json:"reason"`
+	PresenceState    string                       `json:"presence_state"`
+	Runtime          AgentRuntime                 `json:"runtime"`
+	RuntimeFreshness telemetryFreshnessResponse   `json:"runtime_freshness"`
+	DetailBoost      telemetryDetailBoostResponse `json:"detail_boost"`
 }
 
 type telemetryServerSummary struct {
-	Agent           Agent                     `json:"agent"`
-	Severity        string                    `json:"severity"`
-	Reason          string                    `json:"reason"`
-	RuntimeFreshness telemetryFreshnessResponse `json:"runtime_freshness"`
-	DetailBoost     telemetryDetailBoostResponse `json:"detail_boost"`
+	Agent            Agent                        `json:"agent"`
+	Severity         string                       `json:"severity"`
+	Reason           string                       `json:"reason"`
+	RuntimeFreshness telemetryFreshnessResponse   `json:"runtime_freshness"`
+	DetailBoost      telemetryDetailBoostResponse `json:"detail_boost"`
 	// TrafficBytes is the panel-side sum of TrafficUsedBytes across every
 	// managed client deployed to this agent. The agent runtime payload
 	// itself does not carry a per-node aggregate (Telemt reports per-user
 	// usage), so we project the panel's clientUsage map here at response
 	// time. Includes adopted/discovered clients tracked on this agent.
-	TrafficBytes    uint64                    `json:"traffic_bytes"`
+	TrafficBytes uint64 `json:"traffic_bytes"`
 }
 
 type telemetryDashboardResponse struct {
-	Fleet              fleetResponse             `json:"fleet"`
-	Attention          []telemetryAttentionItem  `json:"attention"`
-	ServerCards        []telemetryServerSummary  `json:"server_cards"`
+	Fleet               fleetResponse            `json:"fleet"`
+	Attention           []telemetryAttentionItem `json:"attention"`
+	ServerCards         []telemetryServerSummary `json:"server_cards"`
 	RuntimeDistribution map[string]int           `json:"runtime_distribution"`
 	// RecentRuntimeEvents carries the original aggregator payload for
 	// backward-compatible consumers (ControlRoom still uses it as-is).
-	RecentRuntimeEvents []RuntimeEvent           `json:"recent_runtime_events"`
+	RecentRuntimeEvents []RuntimeEvent `json:"recent_runtime_events"`
 	// RecentEvents is the dashboard-specific enriched feed: same events
 	// as RecentRuntimeEvents but tagged with the originating agent so
 	// the UI can render "node-name · message" rows.
@@ -90,9 +90,9 @@ type telemetryRecentEvent struct {
 // rendered as sparklines on the dashboard. Arrays are the same length
 // (paired samples) so the UI does not need to align timestamps.
 type telemetryAgentLoadSeries struct {
-	AgentID   string    `json:"agent_id"`
-	CPUPct    []float64 `json:"cpu_pct"`
-	MemPct    []float64 `json:"mem_pct"`
+	AgentID string    `json:"agent_id"`
+	CPUPct  []float64 `json:"cpu_pct"`
+	MemPct  []float64 `json:"mem_pct"`
 }
 
 type telemetryServersResponse struct {
@@ -100,23 +100,23 @@ type telemetryServersResponse struct {
 }
 
 type telemetryServerDetailResponse struct {
-	Server            telemetryServerSummary             `json:"server"`
+	Server              telemetryServerSummary               `json:"server"`
 	InitializationWatch telemetryInitializationWatchResponse `json:"initialization_watch"`
-	Diagnostics       telemetryDiagnosticsResponse       `json:"diagnostics"`
-	SecurityInventory telemetrySecurityInventoryResponse `json:"security_inventory"`
+	Diagnostics         telemetryDiagnosticsResponse         `json:"diagnostics"`
+	SecurityInventory   telemetrySecurityInventoryResponse   `json:"security_inventory"`
 }
 
 type telemetryInitializationWatchResponse struct {
-	Visible                    bool    `json:"visible"`
-	Mode                       string  `json:"mode"`
-	RemainingSeconds           int64   `json:"remaining_seconds"`
-	CompletedAtUnix            int64   `json:"completed_at_unix"`
-	StartupStatus              string  `json:"startup_status"`
-	StartupStage               string  `json:"startup_stage"`
-	StartupProgressPct         float64 `json:"startup_progress_pct"`
-	InitializationStatus       string  `json:"initialization_status"`
-	InitializationStage        string  `json:"initialization_stage"`
-	InitializationProgressPct  float64 `json:"initialization_progress_pct"`
+	Visible                   bool    `json:"visible"`
+	Mode                      string  `json:"mode"`
+	RemainingSeconds          int64   `json:"remaining_seconds"`
+	CompletedAtUnix           int64   `json:"completed_at_unix"`
+	StartupStatus             string  `json:"startup_status"`
+	StartupStage              string  `json:"startup_stage"`
+	StartupProgressPct        float64 `json:"startup_progress_pct"`
+	InitializationStatus      string  `json:"initialization_status"`
+	InitializationStage       string  `json:"initialization_stage"`
+	InitializationProgressPct float64 `json:"initialization_progress_pct"`
 }
 
 type telemetryDiagnosticsResponse struct {
@@ -140,36 +140,36 @@ type telemetrySecurityInventoryResponse struct {
 
 func runtimeCurrentRecordFromAgent(agent Agent) storage.TelemetryRuntimeCurrentRecord {
 	return storage.TelemetryRuntimeCurrentRecord{
-		AgentID:                   agent.ID,
-		ObservedAt:                agent.Runtime.UpdatedAt,
-		State:                     "fresh",
-		StateReason:               "",
-		ReadOnly:                  agent.ReadOnly,
-		AcceptingNewConnections:   agent.Runtime.AcceptingNewConnections,
-		MERuntimeReady:            agent.Runtime.MERuntimeReady,
-		ME2DCFallbackEnabled:      agent.Runtime.ME2DCFallbackEnabled,
-		UseMiddleProxy:            agent.Runtime.UseMiddleProxy,
-		StartupStatus:             agent.Runtime.StartupStatus,
-		StartupStage:              agent.Runtime.StartupStage,
-		StartupProgressPct:        agent.Runtime.StartupProgressPct,
-		InitializationStatus:      agent.Runtime.InitializationStatus,
-		Degraded:                  agent.Runtime.Degraded,
-		InitializationStage:       agent.Runtime.InitializationStage,
-		InitializationProgressPct: agent.Runtime.InitializationProgressPct,
-		TransportMode:             agent.Runtime.TransportMode,
-		CurrentConnections:        agent.Runtime.CurrentConnections,
-		CurrentConnectionsME:      agent.Runtime.CurrentConnectionsME,
-		CurrentConnectionsDirect:  agent.Runtime.CurrentConnectionsDirect,
-		ActiveUsers:               agent.Runtime.ActiveUsers,
-		UptimeSeconds:             agent.Runtime.UptimeSeconds,
-		ConnectionsTotal:          agent.Runtime.ConnectionsTotal,
-		ConnectionsBadTotal:       agent.Runtime.ConnectionsBadTotal,
-		HandshakeTimeoutsTotal:    agent.Runtime.HandshakeTimeoutsTotal,
-		ConfiguredUsers:           agent.Runtime.ConfiguredUsers,
+		AgentID:                    agent.ID,
+		ObservedAt:                 agent.Runtime.UpdatedAt,
+		State:                      "fresh",
+		StateReason:                "",
+		ReadOnly:                   agent.ReadOnly,
+		AcceptingNewConnections:    agent.Runtime.AcceptingNewConnections,
+		MERuntimeReady:             agent.Runtime.MERuntimeReady,
+		ME2DCFallbackEnabled:       agent.Runtime.ME2DCFallbackEnabled,
+		UseMiddleProxy:             agent.Runtime.UseMiddleProxy,
+		StartupStatus:              agent.Runtime.StartupStatus,
+		StartupStage:               agent.Runtime.StartupStage,
+		StartupProgressPct:         agent.Runtime.StartupProgressPct,
+		InitializationStatus:       agent.Runtime.InitializationStatus,
+		Degraded:                   agent.Runtime.Degraded,
+		InitializationStage:        agent.Runtime.InitializationStage,
+		InitializationProgressPct:  agent.Runtime.InitializationProgressPct,
+		TransportMode:              agent.Runtime.TransportMode,
+		CurrentConnections:         agent.Runtime.CurrentConnections,
+		CurrentConnectionsME:       agent.Runtime.CurrentConnectionsME,
+		CurrentConnectionsDirect:   agent.Runtime.CurrentConnectionsDirect,
+		ActiveUsers:                agent.Runtime.ActiveUsers,
+		UptimeSeconds:              agent.Runtime.UptimeSeconds,
+		ConnectionsTotal:           agent.Runtime.ConnectionsTotal,
+		ConnectionsBadTotal:        agent.Runtime.ConnectionsBadTotal,
+		HandshakeTimeoutsTotal:     agent.Runtime.HandshakeTimeoutsTotal,
+		ConfiguredUsers:            agent.Runtime.ConfiguredUsers,
 		DCCoveragePct:              agent.Runtime.DCCoveragePct,
 		HealthyUpstreams:           agent.Runtime.HealthyUpstreams,
 		TotalUpstreams:             agent.Runtime.TotalUpstreams,
-		TelemtReachable:            agent.Runtime.TelemtReachable,
+		TelemtUnreachable:          agent.Runtime.TelemtUnreachable,
 		TelemtUnreachableSinceUnix: agent.Runtime.TelemtUnreachableSinceUnix,
 	}
 }
@@ -243,34 +243,34 @@ func runtimeEventSeverity(event RuntimeEvent) string {
 
 func runtimeFromCurrentRecord(runtime storage.TelemetryRuntimeCurrentRecord) AgentRuntime {
 	return AgentRuntime{
-		AcceptingNewConnections:   runtime.AcceptingNewConnections,
-		MERuntimeReady:            runtime.MERuntimeReady,
-		ME2DCFallbackEnabled:      runtime.ME2DCFallbackEnabled,
-		UseMiddleProxy:            runtime.UseMiddleProxy,
-		StartupStatus:             runtime.StartupStatus,
-		StartupStage:              runtime.StartupStage,
-		StartupProgressPct:        runtime.StartupProgressPct,
-		InitializationStatus:      runtime.InitializationStatus,
-		Degraded:                  runtime.Degraded,
-		LifecycleState:            runtimeLifecycleStateFromCurrent(runtime),
-		InitializationStage:       runtime.InitializationStage,
-		InitializationProgressPct: runtime.InitializationProgressPct,
-		TransportMode:             runtime.TransportMode,
-		CurrentConnections:        runtime.CurrentConnections,
-		CurrentConnectionsME:      runtime.CurrentConnectionsME,
-		CurrentConnectionsDirect:  runtime.CurrentConnectionsDirect,
-		ActiveUsers:               runtime.ActiveUsers,
-		UptimeSeconds:             runtime.UptimeSeconds,
-		ConnectionsTotal:          runtime.ConnectionsTotal,
-		ConnectionsBadTotal:       runtime.ConnectionsBadTotal,
-		HandshakeTimeoutsTotal:    runtime.HandshakeTimeoutsTotal,
-		ConfiguredUsers:           runtime.ConfiguredUsers,
-		DCCoveragePct:             runtime.DCCoveragePct,
-		HealthyUpstreams:          runtime.HealthyUpstreams,
-		TotalUpstreams:            runtime.TotalUpstreams,
-		TelemtReachable:            runtime.TelemtReachable,
+		AcceptingNewConnections:    runtime.AcceptingNewConnections,
+		MERuntimeReady:             runtime.MERuntimeReady,
+		ME2DCFallbackEnabled:       runtime.ME2DCFallbackEnabled,
+		UseMiddleProxy:             runtime.UseMiddleProxy,
+		StartupStatus:              runtime.StartupStatus,
+		StartupStage:               runtime.StartupStage,
+		StartupProgressPct:         runtime.StartupProgressPct,
+		InitializationStatus:       runtime.InitializationStatus,
+		Degraded:                   runtime.Degraded,
+		LifecycleState:             runtimeLifecycleStateFromCurrent(runtime),
+		InitializationStage:        runtime.InitializationStage,
+		InitializationProgressPct:  runtime.InitializationProgressPct,
+		TransportMode:              runtime.TransportMode,
+		CurrentConnections:         runtime.CurrentConnections,
+		CurrentConnectionsME:       runtime.CurrentConnectionsME,
+		CurrentConnectionsDirect:   runtime.CurrentConnectionsDirect,
+		ActiveUsers:                runtime.ActiveUsers,
+		UptimeSeconds:              runtime.UptimeSeconds,
+		ConnectionsTotal:           runtime.ConnectionsTotal,
+		ConnectionsBadTotal:        runtime.ConnectionsBadTotal,
+		HandshakeTimeoutsTotal:     runtime.HandshakeTimeoutsTotal,
+		ConfiguredUsers:            runtime.ConfiguredUsers,
+		DCCoveragePct:              runtime.DCCoveragePct,
+		HealthyUpstreams:           runtime.HealthyUpstreams,
+		TotalUpstreams:             runtime.TotalUpstreams,
+		TelemtUnreachable:          runtime.TelemtUnreachable,
 		TelemtUnreachableSinceUnix: runtime.TelemtUnreachableSinceUnix,
-		UpdatedAt:                 runtime.ObservedAt.UTC(),
+		UpdatedAt:                  runtime.ObservedAt.UTC(),
 	}
 }
 
@@ -491,11 +491,11 @@ func (s *Server) telemetrySeverityAndReason(agent Agent, presenceState presence.
 		TotalUpstreams:          agent.Runtime.TotalUpstreams,
 		AgentReported:           !agent.Runtime.UpdatedAt.IsZero(),
 
-		UseMiddleProxy:       agent.Runtime.UseMiddleProxy,
-		MERuntimeReady:       agent.Runtime.MERuntimeReady,
-		ME2DCFallbackEnabled: agent.Runtime.ME2DCFallbackEnabled,
+		UseMiddleProxy:             agent.Runtime.UseMiddleProxy,
+		MERuntimeReady:             agent.Runtime.MERuntimeReady,
+		ME2DCFallbackEnabled:       agent.Runtime.ME2DCFallbackEnabled,
 		UptimeSeconds:              agent.Runtime.UptimeSeconds,
-		TelemtReachable:            agent.Runtime.TelemtReachable,
+		TelemtUnreachable:          agent.Runtime.TelemtUnreachable,
 		TelemtUnreachableSinceUnix: agent.Runtime.TelemtUnreachableSinceUnix,
 	}
 	// Pull the (rate, known) pair through the helper so a future caller

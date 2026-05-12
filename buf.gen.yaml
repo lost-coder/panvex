@@ -4,9 +4,9 @@ plugins:
   - local: protoc-gen-go
     out: .
     opt:
-      - module=github.com/panvex/panvex
+      - module=github.com/lost-coder/panvex
   - local: protoc-gen-go-grpc
     out: .
     opt:
-      - module=github.com/panvex/panvex
+      - module=github.com/lost-coder/panvex
       - require_unimplemented_servers=false

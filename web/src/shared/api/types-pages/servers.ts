@@ -37,8 +37,8 @@ export interface ServerListItem {
   healthyDcs: number;
   totalDcs: number;
   severity: Severity;
-  /** false only when the agent's telemetry stream reports reachability loss. */
-  telemtReachable: boolean;
+  /** true only when the agent's telemetry stream reports reachability loss. */
+  telemtUnreachable: boolean;
   /** Unix timestamp (seconds) when telemt became unreachable; 0 when unknown. */
   telemtUnreachableSinceUnix: number;
 }
