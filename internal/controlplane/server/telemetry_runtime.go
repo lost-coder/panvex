@@ -268,6 +268,8 @@ func runtimeFromCurrentRecord(runtime storage.TelemetryRuntimeCurrentRecord) Age
 		DCCoveragePct:             runtime.DCCoveragePct,
 		HealthyUpstreams:          runtime.HealthyUpstreams,
 		TotalUpstreams:            runtime.TotalUpstreams,
+		TelemtReachable:            runtime.TelemtReachable,
+		TelemtUnreachableSinceUnix: runtime.TelemtUnreachableSinceUnix,
 		UpdatedAt:                 runtime.ObservedAt.UTC(),
 	}
 }

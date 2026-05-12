@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/presence"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
@@ -73,5 +74,36 @@ func TestServerSeverityCriticalWhenTelemtUnreachable(t *testing.T) {
 	}
 	if !strings.Contains(reason, "Telemt API unreachable since") {
 		t.Errorf("reason = %q, want it to contain %q", reason, "Telemt API unreachable since")
+	}
+}
+
+// TestRuntimeFromCurrentRecord_PropagatesTelemtReachability guards the
+// cold-start path: when the panel rebuilds in-memory AgentRuntime from a
+// persisted TelemetryRuntimeCurrentRecord (after restart, or whenever the
+// list endpoint re-hydrates from storage), the reachability fields must
+// survive. Without this, a panel restart would silently flip every healthy
+// agent into the unreachable-banner branch until a fresh snapshot arrives.
+func TestRuntimeFromCurrentRecord_PropagatesTelemtReachability(t *testing.T) {
+	rec := storage.TelemetryRuntimeCurrentRecord{
+		AgentID:                    "agent-1",
+		ObservedAt:                 time.Unix(1700000000, 0).UTC(),
+		UseMiddleProxy:             true,
+		MERuntimeReady:             true,
+		TelemtReachable:            true,
+		TelemtUnreachableSinceUnix: 0,
+	}
+	out := runtimeFromCurrentRecord(rec)
+	if !out.TelemtReachable {
+		t.Fatal("healthy record: TelemtReachable = false, want true")
+	}
+
+	rec.TelemtReachable = false
+	rec.TelemtUnreachableSinceUnix = 1699999970
+	out = runtimeFromCurrentRecord(rec)
+	if out.TelemtReachable {
+		t.Fatal("unreachable record: TelemtReachable = true, want false")
+	}
+	if out.TelemtUnreachableSinceUnix != 1699999970 {
+		t.Fatalf("TelemtUnreachableSinceUnix = %d, want 1699999970", out.TelemtUnreachableSinceUnix)
 	}
 }
