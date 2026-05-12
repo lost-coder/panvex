@@ -460,13 +460,11 @@ func (v *Vault) RotateKEK(ctx context.Context, store CPSecretReader, newPassphra
 	}
 	newFP := sha256Sum(newKEK)
 
-	rewrapped := 0
 	if err := txStore.WithCPSecretTx(ctx, func(tx CPSecretReader) error {
 		for _, r := range rows {
 			if err := tx.PutCPSecret(ctx, r.key, r.bytes); err != nil {
 				return fmt.Errorf("persist re-wrapped DEK %s: %w", r.key, err)
 			}
-			rewrapped++
 		}
 		if err := tx.PutCPSecret(ctx, cpSecretKEKFingerprint, newFP); err != nil {
 			return fmt.Errorf("persist new KEK fingerprint: %w", err)
@@ -476,6 +474,12 @@ func (v *Vault) RotateKEK(ctx context.Context, store CPSecretReader, newPassphra
 		zero(newKEK)
 		return 0, err
 	}
+
+	// Re-wrapped count is derived from len(rows) AFTER successful commit so
+	// a retry-aware Tx implementation cannot inflate the value by replaying
+	// the callback. Each row's wrapped bytes were pre-computed before the Tx
+	// began, so len(rows) == "DEKs actually persisted under the new KEK".
+	rewrapped := len(rows)
 
 	// Atomic commit succeeded — flip in-memory state and wipe the
 	// old KEK so a heap dump can't recover it.
