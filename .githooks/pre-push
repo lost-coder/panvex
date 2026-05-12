@@ -51,8 +51,17 @@ if ! git diff --quiet -- internal/controlplane/settings/gen/schema.json docs/set
     exit 1
 fi
 
-echo "=== Pre-push: Go tests (race) ==="
-go test -race -count=1 ./...
+echo "=== Pre-push: Go tests (race, loadtest excluded) ==="
+# The internal/loadtest scenarios spawn ~100 concurrent Argon2id verifies
+# (~96 MiB each) and ~200-agent enrolls; under -race the working set tips
+# past 22 GB RSS, which OOM-kills the test on memory-constrained dev hosts
+# (e.g. WSL2 with default RAM cap). CI splits the same way — see
+# .github/workflows/ci.yml jobs `test-go-race` vs `test-go-loadtest`.
+RACE_PKGS=$(go list ./... | grep -v '^github.com/lost-coder/panvex/internal/loadtest$')
+go test -race -count=1 $RACE_PKGS
+
+echo "=== Pre-push: Go tests (loadtest, no -race) ==="
+go test -count=1 ./internal/loadtest/...
 
 echo "=== Pre-push: Go vulnerability scan ==="
 if command -v govulncheck >/dev/null 2>&1; then

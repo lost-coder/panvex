@@ -28,7 +28,11 @@ help:
 	@echo "                     (batch writer + event hub + jobs; 3s per bench)"
 
 test:
-	go test -race -count=1 ./...
+	# Mirror CI: race-suite excludes loadtest, then loadtest runs without -race.
+	# loadtest scenarios (100 concurrent Argon2id, 200-agent enroll) tip past
+	# 22 GB RSS under -race and OOM-kill on memory-constrained dev hosts.
+	go test -race -count=1 $$(go list ./... | grep -v '^github.com/lost-coder/panvex/internal/loadtest$$')
+	go test -count=1 ./internal/loadtest/...
 
 test-fast:
 	go test -count=1 ./...
