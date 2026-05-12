@@ -84,10 +84,13 @@ func (t *listenTransport) RunOnce(ctx context.Context, runner SessionRunner) err
 		serveErr <- server.Serve(listener)
 	}()
 
-	// ctx-bound graceful stop: if the caller cancels before a stream arrives,
-	// GracefulStop drains any in-flight stream and Serve returns.
+	// ctx-bound graceful stop scoped to this RunOnce invocation. Without the
+	// local stopCtx, the goroutine would leak until the outer ctx is cancelled
+	// — one leaked goroutine per reconnect cycle in long-running agents (B-1).
+	stopCtx, stopCancel := context.WithCancel(ctx)
+	defer stopCancel()
 	go func() {
-		<-ctx.Done()
+		<-stopCtx.Done()
 		server.GracefulStop()
 	}()
 

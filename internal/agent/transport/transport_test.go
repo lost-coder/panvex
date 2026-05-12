@@ -11,6 +11,7 @@ import (
 	"encoding/pem"
 	"math/big"
 	"net"
+	"runtime"
 	"testing"
 	"time"
 
@@ -279,6 +280,115 @@ func mustGenerateCA(t *testing.T) (*x509.Certificate, *ecdsa.PrivateKey) {
 		t.Fatalf("ca parse: %v", err)
 	}
 	return cert, priv
+}
+
+// TestListenTransportRunOnceNoGoroutineLeak asserts that the GracefulStop
+// helper goroutine inside RunOnce is scoped to the call and does not survive
+// after RunOnce returns. Without the fix, each reconnect cycle leaked one
+// goroutine until the outer ctx was cancelled.
+//
+// The leak only manifests when RunOnce returns via the `done` or `serveErr`
+// branches *while the caller's ctx is still alive* — that is, when the runner
+// finishes naturally (one accepted stream completed) before any cancel.
+// We simulate this by dialing in as a panel, sending one frame, closing send,
+// and letting the runner return. The parent ctx is kept alive across all
+// iterations so any leaked goroutine stays parked.
+func TestListenTransportRunOnceNoGoroutineLeak(t *testing.T) {
+	if testing.Short() {
+		t.Skip("goroutine leak test is slow")
+	}
+
+	caCert, caKey := mustGenerateCA(t)
+	agentCert, agentKey := mustGenerateLeaf(t, caCert, caKey, "127.0.0.1")
+	panelCert, panelKey := mustGenerateLeaf(t, caCert, caKey, "panel.test")
+	caPEM := encodeCertPEM(caCert)
+
+	cfg := ListenConfig{
+		Addr: "127.0.0.1:0",
+		Cert: tls.Certificate{
+			Certificate: [][]byte{agentCert.Raw},
+			PrivateKey:  agentKey,
+		},
+		CAPEM: caPEM,
+	}
+
+	clientTLS := &tls.Config{
+		ServerName: "127.0.0.1",
+		RootCAs:    certPoolFromCert(caCert),
+		Certificates: []tls.Certificate{{
+			Certificate: [][]byte{panelCert.Raw},
+			PrivateKey:  panelKey,
+		}},
+	}
+
+	// Parent ctx must stay alive across all iterations — that is what keeps
+	// any leaked `<-ctx.Done(); GracefulStop()` goroutine parked.
+	parentCtx, parentCancel := context.WithCancel(context.Background())
+	t.Cleanup(parentCancel)
+
+	runOnceCycle := func() {
+		tr := NewListenTransport(cfg).(*listenTransport)
+		done := make(chan error, 1)
+		go func() {
+			done <- tr.RunOnce(parentCtx, func(_ context.Context, stream BidiStream, _ gatewayrpc.AgentGatewayClient) error {
+				_, err := stream.Recv()
+				return err
+			})
+		}()
+
+		// Wait for the listener to bind.
+		deadline := time.Now().Add(2 * time.Second)
+		for tr.Address() == "" && time.Now().Before(deadline) {
+			time.Sleep(time.Millisecond)
+		}
+		if tr.Address() == "" {
+			t.Fatal("listener never bound")
+		}
+
+		conn, err := grpc.NewClient(tr.Address(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)))
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		client := gatewayrpc.NewAgentGatewayClient(conn)
+		stream, err := client.Connect(parentCtx)
+		if err != nil {
+			conn.Close()
+			t.Fatalf("client.Connect: %v", err)
+		}
+		if err := stream.SendMsg(&gatewayrpc.ConnectServerMessage{}); err != nil {
+			conn.Close()
+			t.Fatalf("send: %v", err)
+		}
+		_ = stream.CloseSend()
+
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			conn.Close()
+			t.Fatal("RunOnce did not return within 3s")
+		}
+		conn.Close()
+	}
+
+	// Warm-up: one full cycle so gRPC's internal pools spawn their permanent
+	// goroutines; baseline reflects steady state.
+	runOnceCycle()
+	time.Sleep(200 * time.Millisecond)
+	runtime.GC()
+	baseline := runtime.NumGoroutine()
+
+	const iters = 20
+	for i := 0; i < iters; i++ {
+		runOnceCycle()
+	}
+	time.Sleep(300 * time.Millisecond)
+	runtime.GC()
+	final := runtime.NumGoroutine()
+
+	if final > baseline+5 {
+		t.Fatalf("goroutine leak: baseline=%d final=%d (delta %d > 5 over %d iterations)",
+			baseline, final, final-baseline, iters)
+	}
 }
 
 func mustGenerateLeaf(t *testing.T, parent *x509.Certificate, parentKey *ecdsa.PrivateKey, host string) (*x509.Certificate, *ecdsa.PrivateKey) {
