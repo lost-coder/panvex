@@ -92,7 +92,7 @@ func TestHTTPSettingsSchema_HonoursIfNoneMatch(t *testing.T) {
 		t.Fatal("expected ETag on first request")
 	}
 	// second request with If-None-Match should return 304
-	req := httptest.NewRequest(http.MethodGet, "/api/settings/schema", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/settings/schema", nil)
 	req.Header.Set("If-None-Match", etag)
 	for _, c := range cookies {
 		req.AddCookie(c)
@@ -109,7 +109,7 @@ func TestHTTPSettingsSchema_HonoursIfNoneMatch(t *testing.T) {
 
 func TestHTTPSettingsSchema_GzipCompresses(t *testing.T) {
 	server, _, cookies := newAuthedServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/settings/schema", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/settings/schema", nil)
 	req.Header.Set("Accept-Encoding", "gzip")
 	for _, c := range cookies {
 		req.AddCookie(c)

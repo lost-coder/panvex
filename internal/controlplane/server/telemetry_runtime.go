@@ -342,17 +342,17 @@ func runtimeLifecycleStateFromCurrent(runtime storage.TelemetryRuntimeCurrentRec
 	}
 }
 
-func (s *Server) restoreStoredTelemetry() error {
+func (s *Server) restoreStoredTelemetry(ctx context.Context) error {
 	if s.store == nil {
 		return nil
 	}
 
-	if err := s.restoreDetailBoosts(); err != nil {
+	if err := s.restoreDetailBoosts(ctx); err != nil {
 		return err
 	}
 
 	for agentID, agent := range s.agents {
-		if err := s.restoreAgentRuntime(agentID, agent); err != nil {
+		if err := s.restoreAgentRuntime(ctx, agentID, agent); err != nil {
 			return err
 		}
 	}
@@ -360,15 +360,15 @@ func (s *Server) restoreStoredTelemetry() error {
 	return nil
 }
 
-func (s *Server) restoreDetailBoosts() error {
-	boosts, err := s.store.ListTelemetryDetailBoosts(context.Background())
+func (s *Server) restoreDetailBoosts(ctx context.Context) error {
+	boosts, err := s.store.ListTelemetryDetailBoosts(ctx)
 	if err != nil {
 		return err
 	}
 	now := s.now().UTC()
 	for _, boost := range boosts {
 		if !boost.ExpiresAt.After(now) {
-			_ = s.store.DeleteTelemetryDetailBoost(context.Background(), boost.AgentID)
+			_ = s.store.DeleteTelemetryDetailBoost(ctx, boost.AgentID)
 			continue
 		}
 		s.detailBoosts[boost.AgentID] = boost.ExpiresAt.UTC()
@@ -376,23 +376,23 @@ func (s *Server) restoreDetailBoosts() error {
 	return nil
 }
 
-func (s *Server) restoreAgentRuntime(agentID string, agent Agent) error {
-	runtime, err := s.store.GetTelemetryRuntimeCurrent(context.Background(), agentID)
+func (s *Server) restoreAgentRuntime(ctx context.Context, agentID string, agent Agent) error {
+	runtime, err := s.store.GetTelemetryRuntimeCurrent(ctx, agentID)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			return nil
 		}
 		return err
 	}
-	dcs, err := s.store.ListTelemetryRuntimeDCs(context.Background(), agentID)
+	dcs, err := s.store.ListTelemetryRuntimeDCs(ctx, agentID)
 	if err != nil {
 		return err
 	}
-	upstreams, err := s.store.ListTelemetryRuntimeUpstreams(context.Background(), agentID)
+	upstreams, err := s.store.ListTelemetryRuntimeUpstreams(ctx, agentID)
 	if err != nil {
 		return err
 	}
-	events, err := s.store.ListTelemetryRuntimeEvents(context.Background(), agentID, 10)
+	events, err := s.store.ListTelemetryRuntimeEvents(ctx, agentID, 10)
 	if err != nil {
 		return err
 	}

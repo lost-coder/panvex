@@ -91,7 +91,10 @@ func (s *DBStore) WritePanelColumn(ctx context.Context, col, raw, _ string) erro
 		return fmt.Errorf("settings: column %q not writable", col)
 	}
 	now := time.Now().Unix()
-	// Ensure the row exists first.
+	// Ensure the row exists first. The format args are placeholder
+	// generators (`?` for SQLite, `$N` for Postgres) — there is no
+	// user data interpolated into the SQL string.
+	//nolint:gosec // G201: placeholder substitution only; values bound via ExecContext args.
 	insert := fmt.Sprintf(
 		"INSERT INTO panel_settings (scope, updated_at_unix) VALUES (%s, %s) ON CONFLICT (scope) DO NOTHING",
 		s.p(1), s.p(2),

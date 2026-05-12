@@ -129,7 +129,7 @@ func TestSendInitialMessagesContinuesWhenUsageMetricsAreUnavailable(t *testing.T
 	log.SetOutput(&logs)
 	defer log.SetOutput(originalWriter)
 
-	err := sendInitialMessages(outbound, agent)
+	err := sendInitialMessages(t.Context(), outbound, agent)
 	if err != nil {
 		t.Fatalf("sendInitialMessages() error = %v, want nil when only usage metrics are unavailable", err)
 	}

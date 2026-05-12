@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -107,7 +108,7 @@ func (t *listenTransport) RunOnce(ctx context.Context, runner SessionRunner) err
 		return runErr
 	}
 	server.GracefulStop()
-	if sErr := <-serveErr; sErr != nil && sErr != grpc.ErrServerStopped {
+	if sErr := <-serveErr; sErr != nil && !errors.Is(sErr, grpc.ErrServerStopped) {
 		// Serve error after a successful runner is unusual; surface only
 		// if runErr didn't already capture a real failure.
 		if runErr == nil {

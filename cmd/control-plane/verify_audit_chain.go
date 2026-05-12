@@ -37,10 +37,10 @@ func runVerifyAuditChain(args []string) error {
 	pageSize := flags.Int("page-size", 1000, "Page size for the chronological walk")
 	maxRows := flags.Int("max-rows", 200_000, "Soft cap on total rows walked (the chain is held in memory once)")
 	flags.Usage = func() {
-		fmt.Fprintf(flags.Output(), "Usage: panvex-control-plane verify-audit-chain [flags]\n\n")
-		fmt.Fprintf(flags.Output(), "Walks audit_events chronologically and recomputes the SHA-256 chain.\n")
-		fmt.Fprintf(flags.Output(), "Exits non-zero on the first mismatch (or after walking the full table\n")
-		fmt.Fprintf(flags.Output(), "without finding one).\n\n")
+		_, _ = fmt.Fprintf(flags.Output(), "Usage: panvex-control-plane verify-audit-chain [flags]\n\n")
+		_, _ = fmt.Fprintf(flags.Output(), "Walks audit_events chronologically and recomputes the SHA-256 chain.\n")
+		_, _ = fmt.Fprintf(flags.Output(), "Exits non-zero on the first mismatch (or after walking the full table\n")
+		_, _ = fmt.Fprintf(flags.Output(), "without finding one).\n\n")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {
@@ -55,7 +55,7 @@ func runVerifyAuditChain(args []string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	store, err := openStore(storageConfig)
+	store, err := openStore(ctx, storageConfig)
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
 	}

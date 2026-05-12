@@ -238,8 +238,8 @@ func TestOutboundTransportSupervisorGaugeDelta(t *testing.T) {
 	// Add two supervisors. Their goroutines will loop on connectAndServe
 	// and fail immediately (tlsCfg==nil → errOutboundTLSMissing), but that
 	// only affects the goroutines — the delta callback fires before they run.
-	ot.ensureSupervisor(NodeMeta{NodeID: "n1", AgentID: "a1", DialAddress: "127.0.0.1:1"})
-	ot.ensureSupervisor(NodeMeta{NodeID: "n2", AgentID: "a2", DialAddress: "127.0.0.1:2"})
+	ot.ensureSupervisor(t.Context(), NodeMeta{NodeID: "n1", AgentID: "a1", DialAddress: "127.0.0.1:1"})
+	ot.ensureSupervisor(t.Context(), NodeMeta{NodeID: "n2", AgentID: "a2", DialAddress: "127.0.0.1:2"})
 
 	if total != 2 {
 		t.Fatalf("after 2 ensureSupervisor: total=%d, want 2", total)
@@ -314,7 +314,7 @@ func TestOutboundEnsureSupervisorCancelsViaParentCtx(t *testing.T) {
 	parentCtx, cancelParent := context.WithCancel(context.Background())
 	tr.setLifecycleCtx(parentCtx)
 
-	tr.ensureSupervisor(NodeMeta{AgentID: "n1", NodeID: "n1", DialAddress: "127.0.0.1:1"})
+	tr.ensureSupervisor(t.Context(), NodeMeta{AgentID: "n1", NodeID: "n1", DialAddress: "127.0.0.1:1"})
 	if !tr.has("n1") {
 		t.Fatal("supervisor not registered")
 	}
@@ -351,7 +351,7 @@ func TestOutboundEnsureSupervisorAfterStopIsNoop(t *testing.T) {
 	tr.setLifecycleCtx(context.Background())
 
 	tr.stopAll()
-	tr.ensureSupervisor(NodeMeta{AgentID: "n1", NodeID: "n1", DialAddress: "127.0.0.1:1"})
+	tr.ensureSupervisor(t.Context(), NodeMeta{AgentID: "n1", NodeID: "n1", DialAddress: "127.0.0.1:1"})
 	if tr.has("n1") {
 		t.Fatal("ensureSupervisor must not register entries after stopAll")
 	}

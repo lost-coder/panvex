@@ -34,9 +34,12 @@ func runBackup(args []string) error {
 	storageDSN := flags.String(flagStorageDSN, "", helpStorageDSN)
 	out := flags.String("out", "", "Output path for the .tar.gz archive (required)")
 	flags.Usage = func() {
-		fmt.Fprintf(flags.Output(), "Usage: panvex-control-plane backup -out <path.tar.gz> [flags]\n\n")
-		fmt.Fprintf(flags.Output(), "Captures a SQLite-only backup. Postgres operators should use pg_dump.\n")
-		fmt.Fprintf(flags.Output(), "Restore: tar -xzf <archive>, then point the panel at the extracted .db file.\n\n")
+		// Best-effort writes to the flag output; failure to print usage
+		// text is not actionable, callers will see no usage but the
+		// command still returns the parse error.
+		_, _ = fmt.Fprintf(flags.Output(), "Usage: panvex-control-plane backup -out <path.tar.gz> [flags]\n\n")
+		_, _ = fmt.Fprintf(flags.Output(), "Captures a SQLite-only backup. Postgres operators should use pg_dump.\n")
+		_, _ = fmt.Fprintf(flags.Output(), "Restore: tar -xzf <archive>, then point the panel at the extracted .db file.\n\n")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {
@@ -73,7 +76,12 @@ func writeSQLiteBackup(ctx context.Context, sourceDSN, outPath string) error {
 	if err != nil {
 		return fmt.Errorf("backup: tempdir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		// Best-effort tempdir cleanup. A leftover snapshot DB in
+		// /tmp/panvex-backup-* is harmless; the archive (if produced)
+		// already contains a sealed copy of it.
+		_ = os.RemoveAll(tmpDir)
+	}()
 
 	snapshotPath := filepath.Join(tmpDir, "panvex.db")
 	schemaVersion, err := vacuumIntoSQLite(ctx, sourceDSN, snapshotPath)
@@ -141,6 +149,7 @@ func vacuumIntoSQLite(ctx context.Context, sourceDSN, dest string) (int64, error
 	// operator-controlled input, so the literal string interpolation
 	// is safe; we still escape single quotes defensively.
 	escaped := strings.ReplaceAll(dest, "'", "''")
+	//nolint:gosec // G201: VACUUM INTO requires literal path; dest is a tempdir we control.
 	stmt := fmt.Sprintf("VACUUM INTO '%s'", escaped)
 	if _, err := db.ExecContext(ctx, stmt); err != nil {
 		return 0, fmt.Errorf("backup: VACUUM INTO: %w", err)
@@ -301,9 +310,11 @@ func writeTarFile(tw *tar.Writer, name, srcPath string) error {
 func runRestore(args []string) error {
 	flags := flag.NewFlagSet("restore", flag.ContinueOnError)
 	flags.Usage = func() {
-		fmt.Fprintf(flags.Output(), "Usage: panvex-control-plane restore\n\n")
-		fmt.Fprintf(flags.Output(), "Prints the manual restore steps. We deliberately do NOT auto-restore:\n")
-		fmt.Fprintf(flags.Output(), "overwriting a populated DB is the kind of mistake that loses fleets.\n")
+		// Best-effort writes to the flag output; failure to print usage
+		// text is not actionable.
+		_, _ = fmt.Fprintf(flags.Output(), "Usage: panvex-control-plane restore\n\n")
+		_, _ = fmt.Fprintf(flags.Output(), "Prints the manual restore steps. We deliberately do NOT auto-restore:\n")
+		_, _ = fmt.Fprintf(flags.Output(), "overwriting a populated DB is the kind of mistake that loses fleets.\n")
 	}
 	if err := flags.Parse(args); err != nil {
 		return err

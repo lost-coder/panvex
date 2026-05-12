@@ -84,7 +84,7 @@ func TestInstallScriptSHA256_StableHash(t *testing.T) {
 func TestServeInstallScript_AdvertisesSHA256Header(t *testing.T) {
 	t.Parallel()
 	srv := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/install-agent.sh", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/install-agent.sh", nil)
 	rec := httptest.NewRecorder()
 
 	srv.handleInstallAgentScript()(rec, req)

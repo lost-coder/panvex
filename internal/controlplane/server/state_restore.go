@@ -41,7 +41,7 @@ func (s *Server) restoreStoredState(ctx context.Context) error {
 		s.restoreInstances,
 		s.restoreMetrics,
 		s.restoreAuditEvents,
-		func(context.Context) error { return s.restoreStoredTelemetry() },
+		s.restoreStoredTelemetry,
 		s.restoreFallbackState,
 	} {
 		if err := step(ctx); err != nil {

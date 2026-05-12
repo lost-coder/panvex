@@ -87,8 +87,11 @@ func (s *Server) RenewCertificate(ctx context.Context, request *gatewayrpc.Renew
 // per-store cert serial pin, and per-agent rate limit. Returns the agent id
 // and the cert serial it presented (so the mid-stream watcher can re-check
 // the pin) on success.
-func (s *Server) authorizeAgentConnect(sess agenttransport.AgentSession) (string, string, error) {
-	agentID, presentedSerial, err := authenticatedAgentIdentity(sess.Context())
+func (s *Server) authorizeAgentConnect(ctx context.Context, sess agenttransport.AgentSession) (string, string, error) {
+	// authenticatedAgentIdentity reads the peer cert from the stream's
+	// gRPC context; sess.Context() is the canonical source for that
+	// metadata even though `ctx` is plumbed for the downstream DB call.
+	agentID, presentedSerial, err := authenticatedAgentIdentity(sess.Context()) //nolint:contextcheck // peer cert lives on sess.Context() (gRPC peer metadata), not the parent request ctx.
 	if err != nil {
 		return "", "", err
 	}
@@ -110,7 +113,7 @@ func (s *Server) authorizeAgentConnect(sess agenttransport.AgentSession) (string
 	// it — we'd rather break the new connect attempt than let a leaked
 	// cert resurrect a stream during a pool blip.
 	if s.store != nil {
-		expected, err := s.store.GetAgentCertSerial(sess.Context(), agentID)
+		expected, err := s.store.GetAgentCertSerial(ctx, agentID)
 		if err != nil {
 			s.logger.Error("agent cert serial lookup failed — rejecting connect",
 				"agent_id", agentID,
@@ -136,7 +139,7 @@ func (s *Server) authorizeAgentConnect(sess agenttransport.AgentSession) (string
 // transport session. Direction-agnostic — works for both inbound (agent
 // dialed the panel) and outbound (panel dialed the agent) sessions.
 func (s *Server) runAgentSession(ctx context.Context, sess agenttransport.AgentSession) error {
-	agentID, presentedSerial, err := s.authorizeAgentConnect(sess)
+	agentID, presentedSerial, err := s.authorizeAgentConnect(ctx, sess)
 	if err != nil {
 		return err
 	}

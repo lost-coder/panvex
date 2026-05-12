@@ -36,7 +36,7 @@ func runResetUserTotp(args []string) error {
 		return err
 	}
 
-	store, err := openStore(storageConfig)
+	store, err := openStore(ctx, storageConfig)
 	if err != nil {
 		return err
 	}

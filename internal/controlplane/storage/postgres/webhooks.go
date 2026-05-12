@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -348,7 +349,7 @@ func scanWebhookEndpointMeta(s webhookRowScanner) (webhooks.Endpoint, error) {
 		enabled      bool
 	)
 	if err := s.Scan(&ep.ID, &ep.Name, &ep.URL, &filterCSV, &allowPrivate, &enabled); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return webhooks.Endpoint{}, webhooks.ErrNotFound
 		}
 		return webhooks.Endpoint{}, fmt.Errorf("webhooks: scan endpoint meta: %w", err)

@@ -38,14 +38,14 @@ func runRotateEncryptionKey(args []string) error {
 	allowLegacy := flags.Bool("allow-legacy-ciphertexts", false,
 		"WARNING: rotate even if PVS1/PVS2 ciphertexts remain. They will become unreadable after rotation. Used only by tests.")
 	flags.Usage = func() {
-		fmt.Fprintf(flags.Output(), "Usage: panvex-control-plane rotate-encryption-key [flags]\n\n")
-		fmt.Fprintf(flags.Output(), "Re-wraps the at-rest encryption envelope under a new passphrase.\n")
-		fmt.Fprintf(flags.Output(), "Data ciphertexts are NOT re-encrypted (the whole point of the envelope).\n\n")
-		fmt.Fprintf(flags.Output(), "Workflow:\n")
-		fmt.Fprintf(flags.Output(), "  1. Stop the panel.\n")
-		fmt.Fprintf(flags.Output(), "  2. Run this command; supply the CURRENT passphrase, then the NEW passphrase.\n")
-		fmt.Fprintf(flags.Output(), "  3. Update PANVEX_ENCRYPTION_KEY across the deployment.\n")
-		fmt.Fprintf(flags.Output(), "  4. Restart the panel.\n\n")
+		_, _ = fmt.Fprintf(flags.Output(), "Usage: panvex-control-plane rotate-encryption-key [flags]\n\n")
+		_, _ = fmt.Fprintf(flags.Output(), "Re-wraps the at-rest encryption envelope under a new passphrase.\n")
+		_, _ = fmt.Fprintf(flags.Output(), "Data ciphertexts are NOT re-encrypted (the whole point of the envelope).\n\n")
+		_, _ = fmt.Fprintf(flags.Output(), "Workflow:\n")
+		_, _ = fmt.Fprintf(flags.Output(), "  1. Stop the panel.\n")
+		_, _ = fmt.Fprintf(flags.Output(), "  2. Run this command; supply the CURRENT passphrase, then the NEW passphrase.\n")
+		_, _ = fmt.Fprintf(flags.Output(), "  3. Update PANVEX_ENCRYPTION_KEY across the deployment.\n")
+		_, _ = fmt.Fprintf(flags.Output(), "  4. Restart the panel.\n\n")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {
@@ -59,7 +59,7 @@ func runRotateEncryptionKey(args []string) error {
 	if err != nil {
 		return err
 	}
-	store, err := openStore(storageConfig)
+	store, err := openStore(ctx, storageConfig)
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
 	}

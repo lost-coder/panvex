@@ -75,7 +75,7 @@ func runServe(args []string) error {
 	// first among the defers registered below it.
 	defer shutdownOtel(otelShutdown)
 
-	store, err := openStore(options.Storage)
+	store, err := openStore(context.Background(), options.Storage)
 	if err != nil {
 		return err
 	}

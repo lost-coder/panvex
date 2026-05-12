@@ -86,11 +86,13 @@ func TestWorkerRetriesOn5xx(t *testing.T) {
 		AllowPrivate: true, Enabled: true,
 	})
 	now := time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
-	store.InsertOutbox(context.Background(), OutboxRow{
+	if err := store.InsertOutbox(context.Background(), OutboxRow{
 		ID: "r1", EndpointID: "ep-1",
 		EventAction: "x.y", Payload: json.RawMessage(`{}`),
 		NextAttemptAt: now, CreatedAt: now,
-	})
+	}); err != nil {
+		t.Fatalf("InsertOutbox: %v", err)
+	}
 
 	w := NewWorker(store, WorkerConfig{
 		Clock:   func() time.Time { return now },
@@ -131,12 +133,14 @@ func TestWorkerDeadLettersAfterMaxAttempts(t *testing.T) {
 		AllowPrivate: true, Enabled: true,
 	})
 	now := time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
-	store.InsertOutbox(context.Background(), OutboxRow{
+	if err := store.InsertOutbox(context.Background(), OutboxRow{
 		ID: "r1", EndpointID: "ep-1",
 		EventAction: "x.y", Payload: json.RawMessage(`{}`),
 		Attempt:     2, // one tick away from MaxAttempts=3 below
 		NextAttemptAt: now, CreatedAt: now,
-	})
+	}); err != nil {
+		t.Fatalf("InsertOutbox: %v", err)
+	}
 
 	w := NewWorker(store, WorkerConfig{
 		MaxAttempts: 3,
@@ -162,11 +166,13 @@ func TestWorkerPreflightRejectsHTTPInProd(t *testing.T) {
 		AllowPrivate: true, Enabled: true,
 	})
 	now := time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
-	store.InsertOutbox(context.Background(), OutboxRow{
+	if err := store.InsertOutbox(context.Background(), OutboxRow{
 		ID: "r1", EndpointID: "ep-1",
 		EventAction: "x.y", Payload: json.RawMessage(`{}`),
 		NextAttemptAt: now, CreatedAt: now,
-	})
+	}); err != nil {
+		t.Fatalf("InsertOutbox: %v", err)
+	}
 	w := NewWorker(store, WorkerConfig{
 		MaxAttempts: 5,
 		Clock:       func() time.Time { return now },
@@ -187,11 +193,13 @@ func TestWorkerPreflightRejectsPrivateCIDRWithoutOptIn(t *testing.T) {
 		AllowPrivate: false, Enabled: true,
 	})
 	now := time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
-	store.InsertOutbox(context.Background(), OutboxRow{
+	if err := store.InsertOutbox(context.Background(), OutboxRow{
 		ID: "r1", EndpointID: "ep-1",
 		EventAction: "x.y", Payload: json.RawMessage(`{}`),
 		NextAttemptAt: now, CreatedAt: now,
-	})
+	}); err != nil {
+		t.Fatalf("InsertOutbox: %v", err)
+	}
 	w := NewWorker(store, WorkerConfig{
 		MaxAttempts: 5,
 		Clock:       func() time.Time { return now },

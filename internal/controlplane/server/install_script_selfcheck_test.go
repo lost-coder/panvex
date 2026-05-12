@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,7 +37,7 @@ func writeEmbeddedScript(t *testing.T) (string, []byte) {
 // self-check accepted or rejected the body.
 func runScript(t *testing.T, path string, env ...string) (int, string, string) {
 	t.Helper()
-	cmd := exec.Command("bash", path, "--help")
+	cmd := exec.CommandContext(t.Context(), "bash", path, "--help")
 	cmd.Env = append(os.Environ(), env...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -44,7 +45,8 @@ func runScript(t *testing.T, path string, env ...string) (int, string, string) {
 	err := cmd.Run()
 	exit := 0
 	if err != nil {
-		if ee, ok := err.(*exec.ExitError); ok {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
 			exit = ee.ExitCode()
 		} else {
 			t.Fatalf("exec bash: %v", err)
@@ -107,7 +109,7 @@ func TestInstallAgentScript_SelfCheckSkippedWhenEnvUnset(t *testing.T) {
 		}
 		clean = append(clean, e)
 	}
-	cmd := exec.Command("bash", path, "--help")
+	cmd := exec.CommandContext(t.Context(), "bash", path, "--help")
 	cmd.Env = clean
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

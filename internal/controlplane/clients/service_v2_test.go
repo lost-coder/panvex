@@ -124,12 +124,12 @@ func (r *fakeRepo) UpsertUsage(_ context.Context, u Usage) error {
 	return nil
 }
 
-func (r *fakeRepo) UpsertUsageBulk(_ context.Context, batch []Usage) error {
+func (r *fakeRepo) UpsertUsageBulk(ctx context.Context, batch []Usage) error {
 	if r.failOn == "UpsertUsageBulk" {
 		return errors.New("fakeRepo: UpsertUsageBulk: injected failure")
 	}
 	for _, u := range batch {
-		_ = r.UpsertUsage(context.Background(), u)
+		_ = r.UpsertUsage(ctx, u)
 	}
 	return nil
 }

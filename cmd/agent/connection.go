@@ -146,7 +146,7 @@ func runConnection(supervisorCtx context.Context, gatewayAddr string, serverName
 		startInboundPump(connectionCtx, &streamWG, stream, agent, jobInflight, jobQueues, criticalOutbound, clientDataSem, renewalResponses, sendErrorAndCancel)
 		startJobWorkers(connectionCtx, agent, jobInflight, jobQueues, criticalOutbound)
 
-		if initErr := sendInitialMessages(criticalOutbound, agent); initErr != nil {
+		if initErr := sendInitialMessages(connectionCtx, criticalOutbound, agent); initErr != nil {
 			cancelConnection()
 			return initErr
 		}

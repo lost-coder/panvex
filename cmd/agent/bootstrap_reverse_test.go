@@ -97,7 +97,10 @@ func (ca *testCA) issueClientCert(t *testing.T, cn string) tls.Certificate {
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
 
 	// Include the CA cert in the chain so the agent verifier can check the pin.
-	chainPEM := append(certPEM, ca.certPEM...)
+	// Build a fresh slice so appendAssign doesn't alias certPEM's backing array.
+	chainPEM := make([]byte, 0, len(certPEM)+len(ca.certPEM))
+	chainPEM = append(chainPEM, certPEM...)
+	chainPEM = append(chainPEM, ca.certPEM...)
 	tlsCert, err := tls.X509KeyPair(chainPEM, keyPEM)
 	require.NoError(t, err)
 	return tlsCert

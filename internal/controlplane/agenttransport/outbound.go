@@ -307,7 +307,15 @@ func (t *outboundTransport) setLifecycleCtx(ctx context.Context) {
 	t.mu.Unlock()
 }
 
-func (t *outboundTransport) ensureSupervisor(meta NodeMeta) {
+// ensureSupervisor accepts a ctx purely for contextcheck/log-trace
+// propagation in the caller; the supervisor goroutine derives its own
+// lifetime from t.lifecycleCtx (set at Manager.Start) so it can outlive
+// any individual caller request. The caller's ctx is therefore
+// intentionally unused for cancellation but is required so the call
+// site can satisfy contextcheck.
+//
+//nolint:contextcheck // supervisor lifetime is bound to t.lifecycleCtx, not the caller's ctx.
+func (t *outboundTransport) ensureSupervisor(_ context.Context, meta NodeMeta) {
 	t.mu.Lock()
 	if t.stopped {
 		// stopAll has run; refuse to register new supervisors so that no
@@ -320,6 +328,7 @@ func (t *outboundTransport) ensureSupervisor(meta NodeMeta) {
 		t.mu.Unlock()
 		return
 	}
+	//nolint:gosec // G118: supervisor cancel is stored in supervisors[meta.NodeID].cancel and invoked by stopAll/removeSupervisor.
 	ctx, cancel := context.WithCancel(t.lifecycleCtx)
 	t.supervisors[meta.NodeID] = &outboundSupervisorEntry{cancel: cancel}
 	t.wg.Add(1)

@@ -273,9 +273,11 @@ func newStoreBatchWriter(store storage.Store, metrics batchMetricsSink, now func
 // own caller-supplied parentCtx via StopWithTimeout and is unaffected by this
 // cancellation. parentCtx may be nil/Background only in tests; production
 // callers must pass a real lifecycle ctx (Plan 3 tail / S25 T2).
+//
+//nolint:contextcheck // test-only nil parentCtx triggers a Background fallback; production callers always supply serverCtx.
 func (w *storeBatchWriter) Start(parentCtx context.Context) {
 	if parentCtx == nil {
-		parentCtx = context.WithoutCancel(context.Background()) //nolint:noctx // reason: test-only fallback when Start is called without a lifecycle ctx; production wiring (lifecycle.go) always supplies serverCtx.
+		parentCtx = context.WithoutCancel(context.Background()) //nolint:noctx,contextcheck // reason: test-only fallback when Start is called without a lifecycle ctx; production wiring (lifecycle.go) always supplies serverCtx.
 	}
 	w.wg.Add(1)
 	go w.flushLoop(parentCtx)

@@ -991,6 +991,13 @@ func (s *Service) PersistDeployment(ctx context.Context, d Deployment) error {
 	if s.store == nil {
 		return nil
 	}
+	// storage.ClientStore is deprecated for the hot path (Wave 4.2
+	// moved clients onto clients.Repository + UnitOfWork) but the
+	// pre-migration fallback here is intentional: this service is
+	// constructed with a bare Store when the operator has not yet
+	// finished the migrate-schema step. Retained until S26 deletes
+	// the legacy code path entirely.
+	//nolint:staticcheck // SA1019: legacy fallback for pre-migrate stores.
 	cs, ok := s.store.(storage.ClientStore)
 	if !ok {
 		return nil

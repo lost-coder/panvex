@@ -58,7 +58,6 @@ type Manager struct {
 	// before any outbound flow runs.
 	db       transportQueries
 	handler  SessionHandler
-	inbound  *inboundTransport
 	outbound *outboundTransport
 	logger   *slog.Logger
 
@@ -139,7 +138,7 @@ func (m *Manager) Start(ctx context.Context) error {
 				"node_id", row.ID)
 			continue
 		}
-		m.outbound.ensureSupervisor(NodeMeta{
+		m.outbound.ensureSupervisor(ctx, NodeMeta{
 			AgentID:     row.ID,
 			NodeID:      row.ID,
 			DialAddress: row.DialAddress.String,
@@ -191,7 +190,7 @@ func (m *Manager) OnNodeChanged(ctx context.Context, nodeID string) {
 	}
 	switch row.TransportMode {
 	case TransportModeOutbound:
-		m.outbound.ensureSupervisor(meta)
+		m.outbound.ensureSupervisor(ctx, meta)
 	case TransportModeInbound:
 		m.outbound.removeSupervisor(nodeID)
 	default:

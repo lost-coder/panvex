@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -208,12 +209,18 @@ func installScriptURL(rt server.PanelRuntime) string {
 	return scheme + "://" + host + "/install-agent.sh"
 }
 
-func openStore(configuration config.StorageConfig) (storage.Store, error) {
+// openStore accepts a context so callers can propagate cancellation
+// into future ctx-aware Open variants without re-plumbing every CLI
+// subcommand. The current sqlite/postgres Open implementations don't
+// dial the DB synchronously, so ctx is documented but unused — keep
+// the parameter to satisfy contextcheck and to avoid a churn-y
+// signature change once the driver-side Open grows a ctx parameter.
+func openStore(_ context.Context, configuration config.StorageConfig) (storage.Store, error) {
 	switch configuration.Driver {
 	case config.StorageDriverSQLite:
-		return sqlite.Open(configuration.DSN)
+		return sqlite.Open(configuration.DSN) //nolint:contextcheck // driver Open does not yet accept ctx; ctx is plumbed in for future use.
 	case config.StorageDriverPostgres:
-		return postgres.Open(configuration.DSN)
+		return postgres.Open(configuration.DSN) //nolint:contextcheck // driver Open does not yet accept ctx; ctx is plumbed in for future use.
 	default:
 		return nil, fmt.Errorf("unsupported storage driver %q", configuration.Driver)
 	}

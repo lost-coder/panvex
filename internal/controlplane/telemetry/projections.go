@@ -191,10 +191,10 @@ func severityFallback(in SeverityInput) (severity, reason string) {
 	directSev, directReason := severityDirect(in)
 	baselineSev := maxSeverity(directSev, "warn")
 	var baselineReason string
-	switch {
-	case directSev == "ok":
+	switch directSev {
+	case "ok":
 		baselineReason = "running on ME→Direct fallback"
-	case directSev == "warn":
+	case "warn":
 		baselineReason = directReason + " (on ME→Direct fallback)"
 	default: // critical or other
 		baselineReason = directReason + " (on ME→Direct fallback)"

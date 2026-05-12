@@ -37,9 +37,10 @@ func runDiagnose(args []string) error {
 	storageDSN := flags.String(flagStorageDSN, "", helpStorageDSN)
 	output := flags.String("out", "", "Optional path to write the report (default: stdout)")
 	flags.Usage = func() {
-		fmt.Fprintf(flags.Output(), "Usage: panvex-control-plane diagnose [flags]\n\n")
-		fmt.Fprintf(flags.Output(), "Collects a one-shot health snapshot suitable for support tickets.\n")
-		fmt.Fprintf(flags.Output(), "Output is a Markdown table on stdout (or -out <path>).\n\n")
+		// Best-effort writes; failure to print usage text is non-actionable.
+		_, _ = fmt.Fprintf(flags.Output(), "Usage: panvex-control-plane diagnose [flags]\n\n")
+		_, _ = fmt.Fprintf(flags.Output(), "Collects a one-shot health snapshot suitable for support tickets.\n")
+		_, _ = fmt.Fprintf(flags.Output(), "Output is a Markdown table on stdout (or -out <path>).\n\n")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {
@@ -104,7 +105,7 @@ func collectDiagnostics(ctx context.Context, storageConfig config.StorageConfig)
 		{"Storage DSN", maskDSN(storageConfig.DSN)},
 	}
 
-	store, err := openStore(storageConfig)
+	store, err := openStore(ctx, storageConfig)
 	if err != nil {
 		return "", fmt.Errorf("open store: %w", err)
 	}
@@ -178,6 +179,12 @@ func collectRowCounts(ctx context.Context, store storage.Store) []diagnosticRow 
 		rows = append(rows, diagnosticRow{"Agents", fmt.Sprintf("%d", len(agents))})
 	}
 
+	// storage.ClientStore is deprecated for the in-server hot path
+	// (Wave 4.2 moved clients to clients.Repository + UnitOfWork) but
+	// is intentionally retained as a standalone interface for the
+	// migrate-schema CLI and storagetest contract tests. The diagnose
+	// CLI is allowed to use it for the row-count tally.
+	//nolint:staticcheck // SA1019: retained for CLI diagnose path (Wave 4.2 retention).
 	if cs, ok := store.(storage.ClientStore); ok {
 		if clients, err := cs.ListClients(ctx); err != nil {
 			rows = append(rows, diagnosticRow{"Clients", fmt.Sprintf("error: %v", err)})

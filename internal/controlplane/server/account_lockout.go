@@ -46,13 +46,9 @@ func newTOTPLockoutTracker() *totpLockoutTracker {
 // who enumerates usernames and triggers 5 failures against each can
 // otherwise lock every account in turn; counting failures per source
 // IP raises the cost of that attack without affecting legitimate
-// fat-fingering in normal usage.
-const (
-	ipLockoutMaxFailures = sessions.IPLockoutMaxFailures
-	ipLockoutWindow      = sessions.IPLockoutWindow
-	ipLockoutDuration    = sessions.IPLockoutDuration
-)
-
+// fat-fingering in normal usage. Threshold/window/duration constants
+// live in package sessions (IPLockoutMaxFailures etc.); they were
+// previously re-exported here but no callsite read the local aliases.
 type ipLockoutTracker = sessions.IPLockoutTracker
 
 func newIPLockoutTracker() *ipLockoutTracker {

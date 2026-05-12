@@ -89,10 +89,10 @@ func heartbeatMessage(agent *runtime.Agent, observedAt time.Time) *gatewayrpc.Co
 	}
 }
 
-func sendInitialMessages(outbound chan<- *gatewayrpc.ConnectClientMessage, agent *runtime.Agent) error {
+func sendInitialMessages(ctx context.Context, outbound chan<- *gatewayrpc.ConnectClientMessage, agent *runtime.Agent) error {
 	outbound <- heartbeatMessage(agent, time.Now())
 
-	runtimeCtx, cancelRuntime := context.WithTimeout(context.Background(), runtimeOperationTimeout)
+	runtimeCtx, cancelRuntime := context.WithTimeout(ctx, runtimeOperationTimeout)
 	runtimeSnapshot, err := agent.BuildRuntimeSnapshot(runtimeCtx, time.Now())
 	cancelRuntime()
 	if err != nil {
@@ -103,7 +103,7 @@ func sendInitialMessages(outbound chan<- *gatewayrpc.ConnectClientMessage, agent
 	}
 	slog.Info("initial runtime snapshot sent", "agent_id", agent.AgentID(), "node", agent.NodeName())
 
-	usageCtx, cancelUsage := context.WithTimeout(context.Background(), runtimeOperationTimeout)
+	usageCtx, cancelUsage := context.WithTimeout(ctx, runtimeOperationTimeout)
 	usageSnapshot, err := agent.BuildUsageSnapshot(usageCtx, time.Now())
 	cancelUsage()
 	if err == nil {
@@ -114,7 +114,7 @@ func sendInitialMessages(outbound chan<- *gatewayrpc.ConnectClientMessage, agent
 		slog.Warn("initial usage snapshot unavailable, continuing without metrics", "error", err)
 	}
 
-	ipPollCtx, cancelIPPoll := context.WithTimeout(context.Background(), runtimeOperationTimeout)
+	ipPollCtx, cancelIPPoll := context.WithTimeout(ctx, runtimeOperationTimeout)
 	if err := agent.PollActiveIPs(ipPollCtx); err == nil {
 		ipSnapshot := agent.BuildIPSnapshot(time.Now())
 		slog.Info("initial ip snapshot built", "client_ips_count", len(ipSnapshot.ClientIps))

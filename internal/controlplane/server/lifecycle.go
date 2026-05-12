@@ -363,6 +363,7 @@ func (s *Server) startBackgroundWorkers() {
 		metricsPoller = s.settings.MetricsPollInterval()
 	}
 
+	//nolint:gosec // G118: rollupCancel is assigned to s.stopRollup on the next line and invoked from Close().
 	rollupCtx, rollupCancel := context.WithCancel(s.serverCtx)
 	s.stopRollup = rollupCancel
 	s.startTimeseriesRollupWorker(rollupCtx, rollupInterval)
