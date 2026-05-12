@@ -66,44 +66,90 @@ func validatePassword(password string, operatorMin int) error {
 	return nil
 }
 
+// Hash format constants.
+//
+// Legacy (pre-C-1 fix): "argon2id$<b64-salt>$<b64-hash>" — 3 parts,
+// Argon2id with 3 iterations and 64 MiB memory.
+//
+// Current (v2): "argon2id$v=2$<b64-salt>$<b64-hash>" — 4 parts,
+// Argon2id with 4 iterations and 96 MiB memory.
+//
+// verifyPassword selects the parameter set from the hash structure and
+// invokes Argon2id ONCE per call — never falls through to a second
+// parameter set. This eliminates the timing oracle where a correct
+// password against a legacy hash took ~2x the CPU of a correct password
+// against a current hash (which let an attacker classify hash age and
+// focus brute-force attempts).
+const (
+	hashSchemeArgon2id = "argon2id"
+	hashVersionTagV2   = "v=2"
+
+	hashIterLegacy uint32 = 3
+	hashMemLegacy  uint32 = 64 * 1024
+	hashIterV2     uint32 = 4
+	hashMemV2      uint32 = 96 * 1024
+
+	hashParallelism uint8  = 2
+	hashKeyLen      uint32 = 32
+	hashSaltLen            = 16
+)
+
 // hashPassword derives an Argon2id hash with the project's hardened
-// parameters (4 iters, 96 MiB, 2 threads). Moved from service.go so
-// password concerns live in one file.
+// parameters (4 iters, 96 MiB, 2 threads) and tags the result with the
+// v=2 format marker so verifyPassword can select parameters without
+// running both variants (C-1).
 func hashPassword(password string) (string, error) {
-	salt := make([]byte, 16)
+	salt := make([]byte, hashSaltLen)
 	if _, err := rand.Read(salt); err != nil {
 		return "", err
 	}
-	derived := argon2.IDKey([]byte(password), salt, 4, 96*1024, 2, 32)
+	derived := argon2.IDKey([]byte(password), salt, hashIterV2, hashMemV2, hashParallelism, hashKeyLen)
 	return fmt.Sprintf(
-		"argon2id$%s$%s",
+		"%s$%s$%s$%s",
+		hashSchemeArgon2id,
+		hashVersionTagV2,
 		base64.RawStdEncoding.EncodeToString(salt),
 		base64.RawStdEncoding.EncodeToString(derived),
 	), nil
 }
 
-// verifyPassword validates a plaintext password against an Argon2id hash,
-// trying current parameters first and falling back to legacy 3/64 MiB so
-// pre-bump hashes keep authenticating until the user rotates.
+// verifyPassword validates a plaintext password against an Argon2id
+// hash. Parameter selection is driven by the stored hash's structure,
+// not by trial: a 3-part hash is verified against legacy params, a
+// 4-part v=2 hash against current params, anything else is rejected.
+// Exactly one Argon2id derivation runs per call (C-1, timing oracle).
+//
+// Malformed base64 is mapped to ErrInvalidCredentials rather than the
+// raw decoding error so the error type does not leak hash-shape
+// information to callers / clients.
 func verifyPassword(hash, password string) error {
 	parts := strings.Split(hash, "$")
-	if len(parts) != 3 || parts[0] != "argon2id" {
+	switch {
+	case len(parts) == 3 && parts[0] == hashSchemeArgon2id:
+		// Legacy: argon2id$salt$hash — 3 iters, 64 MiB.
+		return verifyArgon2(parts[1], parts[2], password, hashIterLegacy, hashMemLegacy)
+	case len(parts) == 4 && parts[0] == hashSchemeArgon2id && parts[1] == hashVersionTagV2:
+		// Current: argon2id$v=2$salt$hash — 4 iters, 96 MiB.
+		return verifyArgon2(parts[2], parts[3], password, hashIterV2, hashMemV2)
+	default:
 		return ErrInvalidCredentials
 	}
-	salt, err := base64.RawStdEncoding.DecodeString(parts[1])
+}
+
+// verifyArgon2 decodes the salt + expected hash, runs a single Argon2id
+// derivation with the supplied params, and constant-time compares. Any
+// failure short of a clean match maps to ErrInvalidCredentials.
+func verifyArgon2(saltB64, expectedB64, password string, iterations, memory uint32) error {
+	salt, err := base64.RawStdEncoding.DecodeString(saltB64)
 	if err != nil {
-		return err
+		return ErrInvalidCredentials
 	}
-	expected, err := base64.RawStdEncoding.DecodeString(parts[2])
+	expected, err := base64.RawStdEncoding.DecodeString(expectedB64)
 	if err != nil {
-		return err
+		return ErrInvalidCredentials
 	}
-	derived := argon2.IDKey([]byte(password), salt, 4, 96*1024, 2, uint32(len(expected)))
-	if subtle.ConstantTimeCompare(expected, derived) == 1 {
-		return nil
-	}
-	legacy := argon2.IDKey([]byte(password), salt, 3, 64*1024, 2, uint32(len(expected)))
-	if subtle.ConstantTimeCompare(expected, legacy) != 1 {
+	derived := argon2.IDKey([]byte(password), salt, iterations, memory, hashParallelism, uint32(len(expected)))
+	if subtle.ConstantTimeCompare(expected, derived) != 1 {
 		return ErrInvalidCredentials
 	}
 	return nil

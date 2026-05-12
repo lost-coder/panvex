@@ -104,9 +104,17 @@ func (s *Service) effectiveSessionIdleTimeout() time.Duration {
 // username does not exist, so timing does not leak user-enumeration signal.
 // It is computed once on first use; the derived hash value is discarded
 // (it is never compared for equality), only the Argon2id CPU cost matters.
+//
+// CRITICAL: this MUST emit the SAME format and SAME Argon2id params as the
+// current hashPassword in password.go. Otherwise verifyPassword routes the
+// dummy through a different branch (e.g. legacy 3-part path with 3 iters /
+// 64 MiB) and the unknown-user code path burns measurably less CPU than the
+// real-user path with a v=2 hash (4 iters / 96 MiB) — reopening the
+// user-enumeration timing oracle that this dummy hash exists to close
+// (C-1 follow-up).
 var dummyPasswordHash = sync.OnceValue(func() string {
-	salt := make([]byte, 16)
-	dummyPwd := make([]byte, 32)
+	salt := make([]byte, hashSaltLen)
+	dummyPwd := make([]byte, hashKeyLen)
 	if _, err := rand.Read(salt); err != nil {
 		// Fall back to derived bytes — the value is meaningless, we just need
 		// a well-formed input for VerifyPassword to derive on.
@@ -117,8 +125,10 @@ var dummyPasswordHash = sync.OnceValue(func() string {
 	if _, err := rand.Read(dummyPwd); err != nil {
 		copy(dummyPwd, salt)
 	}
-	derived := argon2.IDKey(dummyPwd, salt, 4, 96*1024, 2, 32)
-	return fmt.Sprintf("argon2id$%s$%s",
+	derived := argon2.IDKey(dummyPwd, salt, hashIterV2, hashMemV2, hashParallelism, hashKeyLen)
+	return fmt.Sprintf("%s$%s$%s$%s",
+		hashSchemeArgon2id,
+		hashVersionTagV2,
 		base64.RawStdEncoding.EncodeToString(salt),
 		base64.RawStdEncoding.EncodeToString(derived))
 })
