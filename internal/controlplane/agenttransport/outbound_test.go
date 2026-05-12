@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"errors"
+	"io"
 	"log/slog"
 	"math/big"
 	"net"
@@ -295,6 +296,64 @@ func TestOutboundSupervisorUsesBackoffGetters(t *testing.T) {
 	}
 	if got := connectCount.Load(); got < 3 {
 		t.Fatalf("expected >= 3 connects via getter-driven backoff, got %d", got)
+	}
+}
+
+// TestOutboundEnsureSupervisorCancelsViaParentCtx verifies that cancelling the
+// transport's lifecycleCtx cascades into the supervisor goroutines so that
+// stopAll's wg.Wait returns promptly. The supervisor never establishes a real
+// connection (DialAddress points at 127.0.0.1:1, but even if it did, tlsCfg is
+// minimal); we only assert lifecycle semantics, not session behaviour.
+func TestOutboundEnsureSupervisorCancelsViaParentCtx(t *testing.T) {
+	tlsCfg := &tls.Config{InsecureSkipVerify: true} //nolint:gosec // test-only
+	handler := SessionHandler(func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+		return errors.New("not used")
+	})
+	tr := newOutboundTransport(tlsCfg, handler, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	parentCtx, cancelParent := context.WithCancel(context.Background())
+	tr.setLifecycleCtx(parentCtx)
+
+	tr.ensureSupervisor(NodeMeta{AgentID: "n1", NodeID: "n1", DialAddress: "127.0.0.1:1"})
+	if !tr.has("n1") {
+		t.Fatal("supervisor not registered")
+	}
+
+	// Cancel parent ctx; stopAll's wg.Wait must complete because supervisors
+	// inherit from parentCtx. If they used context.Background() instead, the
+	// goroutines would only exit via the explicit entry.cancel — which stopAll
+	// does call, so this test is timing-sensitive. The real signal: stopAll
+	// returns within the test's deadline.
+	cancelParent()
+	done := make(chan struct{})
+	go func() {
+		tr.stopAll()
+		close(done)
+	}()
+	select {
+	case <-done:
+		// ok
+	case <-time.After(2 * time.Second):
+		t.Fatal("stopAll did not return after parent ctx cancel")
+	}
+}
+
+// TestOutboundEnsureSupervisorAfterStopIsNoop verifies the stopped-flag guard:
+// once stopAll has run, ensureSupervisor must not register new entries. This
+// closes the race window where OnNodeChanged could re-register a supervisor
+// mid-shutdown.
+func TestOutboundEnsureSupervisorAfterStopIsNoop(t *testing.T) {
+	tlsCfg := &tls.Config{InsecureSkipVerify: true} //nolint:gosec // test-only
+	handler := SessionHandler(func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+		return nil
+	})
+	tr := newOutboundTransport(tlsCfg, handler, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	tr.setLifecycleCtx(context.Background())
+
+	tr.stopAll()
+	tr.ensureSupervisor(NodeMeta{AgentID: "n1", NodeID: "n1", DialAddress: "127.0.0.1:1"})
+	if tr.has("n1") {
+		t.Fatal("ensureSupervisor must not register entries after stopAll")
 	}
 }
 

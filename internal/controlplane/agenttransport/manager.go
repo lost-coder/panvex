@@ -109,6 +109,13 @@ func (m *Manager) Start(ctx context.Context) error {
 	db := m.db
 	m.mu.Unlock()
 
+	// Wire the supervisor lifecycle context BEFORE any ensureSupervisor calls.
+	// Context cancellation cascades to every supervisor goroutine when the
+	// manager (or its owning server) shuts down. This complements the
+	// explicit per-entry cancel issued by stopAll/removeSupervisor as
+	// defence-in-depth against missed cancel-paths.
+	m.outbound.setLifecycleCtx(ctx)
+
 	// No DB wired yet — Start is a no-op (e.g., main.go currently passes nil
 	// during pre-bootstrap startup; outbound supervisors will be reconciled
 	// once a real Queries handle is plumbed).

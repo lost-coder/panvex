@@ -270,27 +270,57 @@ type outboundTransport struct {
 	backoffInitialFn func() time.Duration
 	backoffMaxFn     func() time.Duration
 
-	mu          sync.RWMutex
+	mu sync.RWMutex
+	// lifecycleCtx is the parent context for every supervisor goroutine.
+	// Wired by Manager.Start via setLifecycleCtx; defaults to
+	// context.Background() so unit tests that bypass Manager.Start still
+	// produce safe (if non-cancellable) supervisor contexts. Cancelling
+	// this context cascades into all supervisors as a defence-in-depth
+	// complement to the explicit per-entry cancel.
+	lifecycleCtx context.Context
+	// stopped is set by stopAll and gates ensureSupervisor so that no new
+	// supervisors can be registered mid-shutdown (e.g. a late
+	// OnNodeChanged firing after Manager.Stop). Read/written under mu.
+	stopped     bool
 	supervisors map[string]*outboundSupervisorEntry
 	wg          sync.WaitGroup
 }
 
 func newOutboundTransport(tlsCfg *tls.Config, handler SessionHandler, logger *slog.Logger) *outboundTransport {
 	return &outboundTransport{
-		tlsCfg:      tlsCfg,
-		handler:     handler,
-		logger:      logger,
-		supervisors: map[string]*outboundSupervisorEntry{},
+		tlsCfg:       tlsCfg,
+		handler:      handler,
+		logger:       logger,
+		lifecycleCtx: context.Background(),
+		supervisors:  map[string]*outboundSupervisorEntry{},
 	}
+}
+
+// setLifecycleCtx wires the parent context used as the root for all
+// supervisor goroutines. Call this once at startup (Manager.Start) before
+// any supervisor is registered. Cancellation of the parent cascades to all
+// supervisors as a defence-in-depth complement to the explicit per-entry
+// cancel.
+func (t *outboundTransport) setLifecycleCtx(ctx context.Context) {
+	t.mu.Lock()
+	t.lifecycleCtx = ctx
+	t.mu.Unlock()
 }
 
 func (t *outboundTransport) ensureSupervisor(meta NodeMeta) {
 	t.mu.Lock()
+	if t.stopped {
+		// stopAll has run; refuse to register new supervisors so that no
+		// goroutine outlives the shutdown defer chain. Closes the narrow
+		// race where OnNodeChanged could fire after Manager.Stop.
+		t.mu.Unlock()
+		return
+	}
 	if _, exists := t.supervisors[meta.NodeID]; exists {
 		t.mu.Unlock()
 		return
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.lifecycleCtx)
 	t.supervisors[meta.NodeID] = &outboundSupervisorEntry{cancel: cancel}
 	t.wg.Add(1)
 	fn := t.onSupervisorDelta
@@ -346,6 +376,7 @@ func (t *outboundTransport) has(nodeID string) bool {
 // outbound goroutine outlives the shutdown defer chain.
 func (t *outboundTransport) stopAll() {
 	t.mu.Lock()
+	t.stopped = true
 	cancels := make([]context.CancelFunc, 0, len(t.supervisors))
 	for _, entry := range t.supervisors {
 		cancels = append(cancels, entry.cancel)
