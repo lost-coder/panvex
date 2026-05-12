@@ -816,3 +816,41 @@ func TestBuildRuntimeUnreachableSnapshot(t *testing.T) {
 		t.Fatal("expected empty diagnostics / security inventory shells, not nil")
 	}
 }
+
+// TestBuildRuntimeSnapshot_SetsTelemtReachableTrue guards the wire contract:
+// every successful runtime snapshot must carry TelemtReachable=true.
+// Without this, proto3's bool default (false) would make the panel
+// interpret healthy agents as Telemt-unreachable.
+func TestBuildRuntimeSnapshot_SetsTelemtReachableTrue(t *testing.T) {
+	client := &fakeTelemtClient{
+		state: telemt.RuntimeState{
+			Version:        "2026.03",
+			UptimeSeconds:  60,
+			ConnectedUsers: 1,
+			Gates: telemt.RuntimeGates{
+				AcceptingNewConnections: true,
+				MERuntimeReady:          true,
+				UseMiddleProxy:          true,
+				StartupStatus:           "ready",
+			},
+			Initialization: telemt.RuntimeInitialization{
+				Status: "ready",
+			},
+		},
+	}
+	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
+	snap, err := agent.BuildRuntimeSnapshot(context.Background(), time.Date(2026, time.May, 7, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("BuildRuntimeSnapshot() error = %v", err)
+	}
+	if snap.Runtime == nil {
+		t.Fatal("Runtime = nil, want non-nil")
+	}
+	if !snap.Runtime.TelemtReachable {
+		t.Fatal("Runtime.TelemtReachable = false, want true for a successful snapshot")
+	}
+	if snap.Runtime.TelemtUnreachableSinceUnix != 0 {
+		t.Fatalf("Runtime.TelemtUnreachableSinceUnix = %d, want 0 (healthy path)",
+			snap.Runtime.TelemtUnreachableSinceUnix)
+	}
+}

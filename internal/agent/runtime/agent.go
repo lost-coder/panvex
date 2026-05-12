@@ -381,6 +381,12 @@ func buildRuntimeSnapshotProto(
 	wasRestarting bool,
 ) *gatewayrpc.RuntimeSnapshot {
 	return &gatewayrpc.RuntimeSnapshot{
+		// TelemtReachable is true on every snapshot the agent successfully
+		// builds from a real telemt.RuntimeState — by definition we just
+		// talked to Telemt to obtain this state. The unreachable signal
+		// (false + TelemtUnreachableSinceUnix) is emitted by the separate
+		// BuildRuntimeUnreachableSnapshot path in cmd/agent/polling.go.
+		TelemtReachable:           true,
 		AcceptingNewConnections:   state.Gates.AcceptingNewConnections,
 		MeRuntimeReady:            state.Gates.MERuntimeReady,
 		Me2DcFallbackEnabled:      state.Gates.ME2DCFallbackEnabled,
