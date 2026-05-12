@@ -284,37 +284,24 @@ func (s *Server) persistClientUsageRecords(ctx context.Context, toPersist []stor
 	if len(toPersist) == 0 {
 		return
 	}
-
-	// Phase 7: prefer clients.Service.UpsertUsageBulk (domain layer) when the
-	// service has been wired with a real Repository.
-	if s.clientsSvc != nil && s.clientsSvc.HasRepo() {
-		batch := make([]clients.Usage, len(toPersist))
-		for i, r := range toPersist {
-			batch[i] = clients.Usage{
-				ClientID:         clients.ClientID(r.ClientID),
-				AgentID:          r.AgentID,
-				TrafficUsedBytes: r.TrafficUsedBytes,
-				UniqueIPsUsed:    r.UniqueIPsUsed,
-				ActiveTCPConns:   r.ActiveTCPConns,
-				ActiveUniqueIPs:  r.ActiveUniqueIPs,
-				LastSeq:          r.LastSeq,
-				ObservedAt:       r.ObservedAt,
-			}
-		}
-		if err := s.clientsSvc.UpsertUsageBulk(ctx, batch); err != nil {
-			s.logger.Warn("persist client_usage (bulk)",
-				"rows", len(toPersist), "error", err)
-		}
-		return
+	if s.clientsSvc == nil {
+		return // defensive — Server not fully wired (early init / test fixture)
 	}
-
-	// Legacy fallback for test doubles / no-repo configurations.
-	if s.store == nil {
-		return
+	batch := make([]clients.Usage, len(toPersist))
+	for i, r := range toPersist {
+		batch[i] = clients.Usage{
+			ClientID:         clients.ClientID(r.ClientID),
+			AgentID:          r.AgentID,
+			TrafficUsedBytes: r.TrafficUsedBytes,
+			UniqueIPsUsed:    r.UniqueIPsUsed,
+			ActiveTCPConns:   r.ActiveTCPConns,
+			ActiveUniqueIPs:  r.ActiveUniqueIPs,
+			LastSeq:          r.LastSeq,
+			ObservedAt:       r.ObservedAt,
+		}
 	}
-	if err := s.store.UpsertClientUsageBulk(ctx, toPersist); err != nil {
-		s.logger.Warn("persist client_usage (bulk)",
-			"rows", len(toPersist), "error", err)
+	if err := s.clientsSvc.UpsertUsageBulk(ctx, batch); err != nil {
+		s.logger.Warn("persist client_usage (bulk)", "rows", len(toPersist), "error", err)
 	}
 }
 

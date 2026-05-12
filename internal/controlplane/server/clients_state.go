@@ -34,10 +34,8 @@ func (s *Server) restoreStoredClients() error {
 	defer cancel()
 
 	if !s.clientsSvc.HasRepo() {
-		// NewServiceV2 not wired (no DB or unknown store type). Run the
-		// legacy store-backed restore so context cancellation is still
-		// honoured (BP-01: the WithTimeout above is parented to serverCtx).
-		return s.restoreStoredClientsLegacy(ctx)
+		// NewServiceV2 not wired (no DB or unknown store type) — nothing to restore.
+		return nil
 	}
 
 	// Delegate all persistence reads to clients.Service.Restore which uses
@@ -162,31 +160,6 @@ func (s *Server) seedUsageFromDiscoveredLocked(ctx context.Context, snap clients
 	}
 }
 
-// restoreStoredClientsLegacy is the pre-Wave-4.2 store-backed restore path.
-// Only reached when clientsSvc was not wired with NewServiceV2 (i.e. the
-// store does not expose DB() — e.g. a wrapped test-double). In practice this
-// path is never taken in production; it exists so that the BP-01 context-
-// cancellation invariant (the WithTimeout above is parented to serverCtx) is
-// exercised by TestClientsState_RestoreHonoursServerCtxCancellation.
-func (s *Server) restoreStoredClientsLegacy(ctx context.Context) error {
-	if s.store == nil {
-		return nil
-	}
-	records, err := s.store.ListClients(ctx) //nolint:staticcheck // legacy path; ClientStore deprecated but retained
-	if err != nil {
-		return err
-	}
-	for _, record := range records {
-		decoded, err := clients.DecryptClientRecord(record, s.vault())
-		if err != nil {
-			return err
-		}
-		client := clients.ClientFromRecord(decoded)
-		s.clients[string(client.ID)] = client
-		s.clientSeq = maxPrefixedSequence(s.clientSeq, "client", string(client.ID))
-	}
-	return nil
-}
 
 func (s *Server) listClientsSnapshot() []managedClient {
 	s.clientsMu.RLock()
