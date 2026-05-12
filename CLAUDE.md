@@ -111,8 +111,12 @@ retained as a fallback but is skipped in listen mode.
 - `config.toml` and `proxy-secret` are local runtime files, not committed
 - Storage backend is configured via `PANVEX_STORAGE_DRIVER` (sqlite|postgres) and
   `PANVEX_STORAGE_DSN` env vars (or `[storage]` in config.toml).
-  The `-storage-driver`/`-storage-dsn` flags remain only on the
-  `bootstrap-admin`, `reset-user-totp`, and `migrate-schema` subcommands.
+  The `-storage-driver`/`-storage-dsn` flags are supported on operator CLI
+  subcommands that need direct store access without runtime config:
+  `bootstrap-admin`, `reset-user-totp`, `migrate-schema`, `backup`,
+  `diagnose`, `rotate-encryption-key`, `verify-audit-chain`. The `serve`
+  subcommand reads `PANVEX_STORAGE_*` env / config.toml and never accepts
+  these flags.
 
 ## Commands
 
