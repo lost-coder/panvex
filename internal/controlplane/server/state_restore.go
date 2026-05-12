@@ -26,25 +26,33 @@ import (
 //
 // Errors short-circuit so the caller can fail boot loudly instead of
 // running on a half-restored snapshot.
-func (s *Server) restoreStoredState() error {
-	for _, step := range []func() error{
+//
+// ctx is the caller-supplied boot context (typically s.serverCtx) so a
+// Close() arriving mid-restore — e.g. SIGINT during a slow Postgres
+// startup — propagates cancellation into the DB calls instead of
+// hanging on context.Background(). Restore steps are idempotent — they
+// populate in-memory mirrors and at most issue idempotent cleanup
+// deletes (expired-boost GC), so an aborted restore leaves no torn
+// persistent state.
+func (s *Server) restoreStoredState(ctx context.Context) error {
+	for _, step := range []func(context.Context) error{
 		s.restoreAgents,
 		s.restoreAgentRevocations,
 		s.restoreInstances,
 		s.restoreMetrics,
 		s.restoreAuditEvents,
-		s.restoreStoredTelemetry,
+		func(context.Context) error { return s.restoreStoredTelemetry() },
 		s.restoreFallbackState,
 	} {
-		if err := step(); err != nil {
+		if err := step(ctx); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *Server) restoreAgents() error {
-	agents, err := s.store.ListAgents(context.Background())
+func (s *Server) restoreAgents(ctx context.Context) error {
+	agents, err := s.store.ListAgents(ctx)
 	if err != nil {
 		return err
 	}
@@ -58,8 +66,8 @@ func (s *Server) restoreAgents() error {
 // restoreAgentRevocations replays persisted agent revocations (P1-SEC-06)
 // so a control-plane restart cannot silently forget a revocation while a
 // deleted agent's 30-day client cert is still otherwise valid.
-func (s *Server) restoreAgentRevocations() error {
-	revocations, err := s.store.ListAgentRevocations(context.Background())
+func (s *Server) restoreAgentRevocations(ctx context.Context) error {
+	revocations, err := s.store.ListAgentRevocations(ctx)
 	if err != nil {
 		return err
 	}
@@ -75,8 +83,8 @@ func (s *Server) restoreAgentRevocations() error {
 	return nil
 }
 
-func (s *Server) restoreInstances() error {
-	instances, err := s.store.ListInstances(context.Background())
+func (s *Server) restoreInstances(ctx context.Context) error {
+	instances, err := s.store.ListInstances(ctx)
 	if err != nil {
 		return err
 	}
@@ -87,8 +95,8 @@ func (s *Server) restoreInstances() error {
 	return nil
 }
 
-func (s *Server) restoreMetrics() error {
-	metrics, err := s.store.ListMetricSnapshots(context.Background())
+func (s *Server) restoreMetrics(ctx context.Context) error {
+	metrics, err := s.store.ListMetricSnapshots(ctx)
 	if err != nil {
 		return err
 	}
@@ -119,8 +127,8 @@ func (s *Server) restoreMetrics() error {
 // batch writer's flushItem path. The batch writer is for high-frequency
 // background streams; this is a one-shot startup hook with no need for the
 // retry/queue machinery. Operators page on the alert key, not the call path.
-func (s *Server) restoreFallbackState() error {
-	records, err := s.store.ListAgentFallbackState(context.Background())
+func (s *Server) restoreFallbackState(ctx context.Context) error {
+	records, err := s.store.ListAgentFallbackState(ctx)
 	if err != nil {
 		s.logger.Error("hydrate fallback state failed",
 			"err", err,
@@ -136,8 +144,8 @@ func (s *Server) restoreFallbackState() error {
 	return nil
 }
 
-func (s *Server) restoreAuditEvents() error {
-	auditEvents, err := s.store.ListAuditEvents(context.Background(), maxInMemoryAuditEvents)
+func (s *Server) restoreAuditEvents(ctx context.Context) error {
+	auditEvents, err := s.store.ListAuditEvents(ctx, maxInMemoryAuditEvents)
 	if err != nil {
 		return err
 	}
@@ -154,7 +162,7 @@ func (s *Server) restoreAuditEvents() error {
 	// Seed the chain tail from the persisted store so the next
 	// in-process append continues the chain instead of starting a
 	// fresh empty-prev branch (migration 0038).
-	tail, err := s.store.LatestAuditChainHash(context.Background())
+	tail, err := s.store.LatestAuditChainHash(ctx)
 	if err != nil {
 		return err
 	}

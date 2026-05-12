@@ -227,7 +227,9 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 	})
 	s.trySetStartupErr(s.jobs.StartupError)
 	s.trySetStartupErr(func() error { return s.seedUsers(options.Users) })
-	s.trySetStartupErr(s.restoreStoredState)
+	s.trySetStartupErr(func() error {
+		return s.restoreStoredState(s.serverCtx)
+	})
 	// Phase 7: wire clientsSvc with NewServiceV2 when a raw *sql.DB is
 	// available. Both SQLite and Postgres stores expose DB() *sql.DB; the
 	// concrete type determines which backend constructors to use.
