@@ -59,12 +59,12 @@ func TestRegenerateSQLiteBaseline(t *testing.T) {
 	}
 
 	baselinePath := filepath.Join(repoRootForTest(t), "db", "migrations", "sqlite", "baseline", "baseline_v1.sql")
-	if err := os.MkdirAll(filepath.Dir(baselinePath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(baselinePath), 0o750); err != nil {
 		t.Fatalf("mkdir baseline dir: %v", err)
 	}
 
 	if *regenBaseline {
-		if err := os.WriteFile(baselinePath, []byte(dump), 0o644); err != nil {
+		if err := os.WriteFile(baselinePath, []byte(dump), 0o600); err != nil {
 			t.Fatalf("write baseline: %v", err)
 		}
 		t.Logf("rewrote %s (%d bytes)", baselinePath, len(dump))
@@ -79,7 +79,7 @@ func TestRegenerateSQLiteBaseline(t *testing.T) {
 		if !os.IsNotExist(err) {
 			t.Fatalf("read baseline: %v", err)
 		}
-		if err := os.WriteFile(baselinePath, []byte(dump), 0o644); err != nil {
+		if err := os.WriteFile(baselinePath, []byte(dump), 0o600); err != nil {
 			t.Fatalf("write first-time baseline: %v", err)
 		}
 		t.Logf("first-time wrote %s (%d bytes)", baselinePath, len(dump))

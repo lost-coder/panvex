@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	postgresstore "github.com/lost-coder/panvex/internal/controlplane/storage/postgres"
 	sqlitestore "github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
@@ -56,13 +57,15 @@ func loadOrCreateVaultSaltCLI(ctx context.Context, store storage.Store) ([]byte,
 // cliCPSecretAdapter mirrors server.vaultCPSecretAdapter. Translates
 // storage.ErrNotFound to the empty-bytes convention the secretvault
 // CPSecretReader interface uses; everything else passes through.
+// nil store surfaces an explicit error so a CLI fixture cannot
+// silently drop a vault write.
 type cliCPSecretAdapter struct {
 	store storage.Store
 }
 
 func (a cliCPSecretAdapter) GetCPSecret(ctx context.Context, key string) ([]byte, error) {
 	if a.store == nil {
-		return nil, nil
+		return nil, errCLIAdapterNoStore
 	}
 	value, err := a.store.GetCPSecret(ctx, key)
 	if err == nil {
@@ -76,10 +79,26 @@ func (a cliCPSecretAdapter) GetCPSecret(ctx context.Context, key string) ([]byte
 
 func (a cliCPSecretAdapter) PutCPSecret(ctx context.Context, key string, value []byte) error {
 	if a.store == nil {
-		return nil
+		return errCLIAdapterNoStore
 	}
 	return a.store.PutCPSecret(ctx, key, value)
 }
+
+// WithCPSecretTx makes the CLI adapter satisfy
+// secretvault.TxCPSecretStore so RotateKEK lands its multi-row write
+// (re-wrapped DEKs + new fingerprint) atomically. Reuses
+// storage.Store.Transact (SQLite BEGIN IMMEDIATE / Postgres
+// serializable+retry).
+func (a cliCPSecretAdapter) WithCPSecretTx(ctx context.Context, fn func(tx secretvault.CPSecretReader) error) error {
+	if a.store == nil {
+		return errCLIAdapterNoStore
+	}
+	return a.store.Transact(ctx, func(tx storage.Store) error {
+		return fn(cliCPSecretAdapter{store: tx})
+	})
+}
+
+var errCLIAdapterNoStore = errors.New("vault adapter: store unset (rotate-encryption-key requires a real CPSecretStore)")
 
 // tryStoreSQLDB extracts the underlying *sql.DB from a concrete
 // storage.Store. Used by subcommands that need ad-hoc cross-table

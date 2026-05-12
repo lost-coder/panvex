@@ -13,7 +13,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
+	"io/fs"
+	"log/slog"
 	"sync"
 
 	sqlitebaseline "github.com/lost-coder/panvex/db/migrations/sqlite/baseline"
@@ -78,12 +79,15 @@ func applyBaselineIfFresh(ctx context.Context, db *sql.DB) error {
 		// Existing install — leave the linear migration tail to goose.
 		return nil
 	}
-	sql, err := sqlitebaseline.FS.ReadFile("baseline_v1.sql")
+	sqlBytes, err := sqlitebaseline.FS.ReadFile("baseline_v1.sql")
 	if err != nil {
 		// Missing baseline (e.g. a fork that stripped it) → fall back
 		// to the linear apply path so goose.Up still produces a
-		// correct schema. Documented intentional fallback.
-		if errors.Is(err, errFileMissing) || strings.Contains(err.Error(), "file does not exist") {
+		// correct schema. Log loudly so the operator sees the
+		// degraded path; embed.FS surfaces missing files via the
+		// fs.ErrNotExist sentinel.
+		if errors.Is(err, fs.ErrNotExist) {
+			slog.Default().Warn("sqlite baseline missing, falling back to linear migrations")
 			return nil
 		}
 		return fmt.Errorf("read baseline: %w", err)
@@ -93,7 +97,15 @@ func applyBaselineIfFresh(ctx context.Context, db *sql.DB) error {
 		return fmt.Errorf("begin baseline tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }() //nolint:errcheck // best-effort on commit-success
-	if _, err := tx.ExecContext(ctx, string(sql)); err != nil {
+	// PRAGMA foreign_keys is connection-scoped and silently ignored
+	// inside a transaction in SQLite, but enabling it on the
+	// tx-backing connection keeps the baseline apply symmetric with
+	// the per-migration apply path (each goose migration runs under
+	// foreign_keys=ON via the pool-wide DSN pragmas).
+	if _, err := tx.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
+		return fmt.Errorf("enable FK on baseline tx: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, string(sqlBytes)); err != nil {
 		return fmt.Errorf("exec baseline: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -102,11 +114,6 @@ func applyBaselineIfFresh(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-// errFileMissing is a sentinel used only by the comparison above; the
-// embed package surfaces "file does not exist" as a fs.PathError. The
-// string-contains guard plus this sentinel keeps the fallback robust
-// against future embed.FS error shape changes.
-var errFileMissing = errors.New("baseline file missing")
 
 func tableExists(ctx context.Context, db *sql.DB, name string) (bool, error) {
 	var n int

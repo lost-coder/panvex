@@ -155,40 +155,64 @@ func readPassphrase(reader *bufio.Reader, prompt string) (string, error) {
 // Legacy columns are documented in secretvault.go's Domain constants
 // — `clients.secret_ciphertext`,
 // `discovered_clients.secret_ciphertext`, `users.totp_secret`,
-// `webhook_endpoints.secret_ciphertext`. Falls back to a best-effort
-// skip on tables that don't exist (fresh install before the
-// corresponding domain ran its migration).
+// `webhook_endpoints.secret_ciphertext`.
+//
+// Errors are surfaced rather than swallowed: an unknown store type
+// or a per-table query failure other than "table missing" must
+// block rotation so a future wrapped/decorated Store can't silently
+// disable the safety net (finding #2 in the 2026-05-12 review).
 func countLegacyCiphertexts(ctx context.Context, store storage.Store) (int, error) {
 	sqlDB, ok := tryStoreSQLDB(store)
 	if !ok {
-		// Test fixtures / in-memory stores can't be scanned — assume
-		// clean.
-		return 0, nil
+		return 0, fmt.Errorf("rotation safety scan unavailable: store type %T not recognised; "+
+			"pass --allow-legacy-ciphertexts to override (DESTRUCTIVE)", store)
 	}
+	// Columns matching the secretvault.Domain* constants:
+	//   DomainClientSecret  → clients.secret_ciphertext
+	//   DomainTOTP          → users.totp_secret
+	//   DomainWebhookSecret → webhook_endpoints.secret_ciphertext
+	// discovered_clients.secret holds a plaintext value scraped from
+	// the agent BEFORE adoption; it never carries a vault prefix, so
+	// it's intentionally absent here.
 	tables := []struct {
 		name   string
 		column string
 	}{
 		{"clients", "secret_ciphertext"},
-		{"discovered_clients", "secret_ciphertext"},
 		{"users", "totp_secret"},
 		{"webhook_endpoints", "secret_ciphertext"},
 	}
 	total := 0
 	for _, t := range tables {
 		var n int
+		// #nosec G201 — table/column names are hard-coded above; no operator input reaches this format string.
 		q := fmt.Sprintf(
 			"SELECT COUNT(*) FROM %s WHERE %s LIKE 'PVS1:%%' OR %s LIKE 'PVS2:%%'",
 			t.name, t.column, t.column,
 		)
 		if err := sqlDB.QueryRowContext(ctx, q).Scan(&n); err != nil {
-			// Schema may not carry the table yet (fresh install
-			// before first migration ran), or the column is gone in
-			// a future schema. Either way: don't block rotation on
-			// a missing table.
-			continue
+			if isTableMissingError(err) {
+				// Fresh install before the corresponding domain's
+				// migration ran — legitimately no rows to scan.
+				continue
+			}
+			return 0, fmt.Errorf("scan %s.%s: %w", t.name, t.column, err)
 		}
 		total += n
 	}
 	return total, nil
+}
+
+// isTableMissingError discriminates "no such table" from real query
+// failures (locked DB, permission error, transient I/O). Both
+// supported drivers surface the missing-table case via the message
+// rather than a typed code that's stable across versions.
+func isTableMissingError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no such table") || // sqlite
+		strings.Contains(msg, "does not exist") || // postgres relation-not-found
+		strings.Contains(msg, "42p01") // pg SQLSTATE relation_undefined
 }

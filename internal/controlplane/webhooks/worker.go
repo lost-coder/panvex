@@ -110,7 +110,7 @@ func (w *Worker) tick(ctx context.Context) {
 }
 
 func (w *Worker) deliver(ctx context.Context, d Delivery) {
-	if err := preflight(d.Endpoint); err != nil {
+	if err := preflight(ctx, d.Endpoint); err != nil {
 		w.failPermanently(ctx, d, fmt.Errorf("preflight: %w", err))
 		return
 	}
@@ -136,8 +136,10 @@ func (w *Worker) deliver(ctx context.Context, d Delivery) {
 		return
 	}
 	defer func() {
-		_, _ = io.Copy(io.Discard, resp.Body) //nolint:errcheck // best-effort drain
-		resp.Body.Close()
+		// best-effort drain + close: ignoring errors is intentional
+		// (connection re-use only, no caller depends on either).
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
 	}()
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
@@ -192,7 +194,7 @@ func (w *Worker) failPermanently(ctx context.Context, d Delivery, deliverErr err
 // before each attempt because endpoint config can change between
 // publish and delivery (operator edits the URL after a row is
 // already in the outbox).
-func preflight(ep Endpoint) error {
+func preflight(ctx context.Context, ep Endpoint) error {
 	u, err := url.Parse(ep.URL)
 	if err != nil {
 		return fmt.Errorf("parse url: %w", err)
@@ -212,7 +214,7 @@ func preflight(ep Endpoint) error {
 		return fmt.Errorf("webhook URL has no host")
 	}
 	if !ep.AllowPrivate {
-		if isPrivateHost(host) {
+		if isPrivateHost(ctx, host) {
 			return fmt.Errorf("webhook URL %q resolves to private/loopback CIDR; set allow_private=true to override", host)
 		}
 	}
@@ -228,13 +230,17 @@ func insecureAllowed() bool {
 // real defence-in-depth is the AllowPrivate flag — this function
 // only catches the obvious cases without making the dev experience
 // painful (operators are expected to override deliberately).
-func isPrivateHost(host string) bool {
-	ips, err := net.LookupIP(host)
+//
+// Uses the context-aware resolver so a wedged DNS lookup can be
+// reaped by the worker's tick / shutdown context (noctx lint).
+func isPrivateHost(ctx context.Context, host string) bool {
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 	if err != nil {
 		// Fail closed: if we can't resolve, treat as private.
 		return true
 	}
-	for _, ip := range ips {
+	for _, a := range addrs {
+		ip := a.IP
 		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
 			return true
 		}

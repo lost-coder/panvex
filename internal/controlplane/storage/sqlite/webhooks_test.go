@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -163,7 +164,7 @@ func TestSQLiteWebhookStoreMarkPaths(t *testing.T) {
 	// Marking a non-existent ID must surface ErrNotFound (so the
 	// worker logs without crashing).
 	err = ws.MarkDelivered(ctx, "no-such-row", now)
-	if err != webhooks.ErrNotFound {
+	if !errors.Is(err, webhooks.ErrNotFound) {
 		t.Errorf("MarkDelivered missing row err = %v, want webhooks.ErrNotFound", err)
 	}
 }
@@ -259,13 +260,13 @@ func TestSQLiteWebhookStoreCRUD(t *testing.T) {
 	if err := ws.DeleteEndpoint(ctx, "ep-1"); err != nil {
 		t.Fatalf("DeleteEndpoint: %v", err)
 	}
-	if _, err := ws.GetEndpointMeta(ctx, "ep-1"); err != webhooks.ErrNotFound {
+	if _, err := ws.GetEndpointMeta(ctx, "ep-1"); !errors.Is(err, webhooks.ErrNotFound) {
 		t.Errorf("GetEndpointMeta after delete err = %v, want ErrNotFound", err)
 	}
-	if err := ws.DeleteEndpoint(ctx, "ep-1"); err != webhooks.ErrNotFound {
+	if err := ws.DeleteEndpoint(ctx, "ep-1"); !errors.Is(err, webhooks.ErrNotFound) {
 		t.Errorf("DeleteEndpoint(missing) err = %v, want ErrNotFound", err)
 	}
-	if err := ws.UpdateEndpoint(ctx, webhooks.EndpointInput{ID: "ep-1", Name: "x", URL: "https://y", Enabled: true}, now); err != webhooks.ErrNotFound {
+	if err := ws.UpdateEndpoint(ctx, webhooks.EndpointInput{ID: "ep-1", Name: "x", URL: "https://y", Enabled: true}, now); !errors.Is(err, webhooks.ErrNotFound) {
 		t.Errorf("UpdateEndpoint(missing) err = %v, want ErrNotFound", err)
 	}
 }

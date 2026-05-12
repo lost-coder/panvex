@@ -42,8 +42,12 @@ import (
 // land here once the vault is initialised in envelope mode.
 const Prefix3 = "PVS3:"
 
+// cp_secrets key templates. These are storage-row labels, not secret
+// values; gosec G101's hardcoded-credential heuristic trips on the
+// "kek_fp" substring but the actual secret lives in the row's VALUE,
+// not its KEY.
 const (
-	cpSecretKEKFingerprint = "vault_kek_fp"
+	cpSecretKEKFingerprint = "vault_kek_fp" //nolint:gosec // storage key label, not a credential
 	dekActiveKeyTemplate   = "vault_dek_%s_active"
 	dekWrappedKeyTemplate  = "vault_dek_%s_v%d_wrapped"
 	// dekVersion is the only DEK version this revision ships. Multi-
@@ -61,6 +65,29 @@ type CPSecretReader interface {
 	GetCPSecret(ctx context.Context, key string) ([]byte, error)
 	PutCPSecret(ctx context.Context, key string, value []byte) error
 }
+
+// TxCPSecretStore is the optional transactional capability RotateKEK
+// requires for safe atomic rotation. Production sqlite/postgres
+// adapters implement it via a Tx wrapper around the underlying
+// *sql.DB. RotateKEK probes for it and refuses to run on stores
+// that don't satisfy the interface (an in-memory fixture without
+// transaction semantics would leave the operator with a half-rotated
+// cp_secrets table on a mid-flight crash).
+type TxCPSecretStore interface {
+	CPSecretReader
+	// WithCPSecretTx runs fn inside a single database transaction.
+	// All PutCPSecret calls on the CPSecretReader passed to fn are
+	// part of that transaction; the tx commits on fn returning nil
+	// and rolls back on any error.
+	WithCPSecretTx(ctx context.Context, fn func(tx CPSecretReader) error) error
+}
+
+// ErrNonTransactionalStore reports that the configured CPSecret
+// store doesn't satisfy TxCPSecretStore. RotateKEK refuses to run
+// against such a store because a mid-rotation crash would leave the
+// cp_secrets rows half re-wrapped — neither old nor new passphrase
+// could subsequently open the vault.
+var ErrNonTransactionalStore = errors.New("secretvault: store does not support transactions; cannot safely rotate KEK")
 
 // ErrEnvelopeWrongKEK reports that the passphrase passed at startup
 // does not match the fingerprint persisted on first start. Catches
@@ -322,6 +349,13 @@ func (v *Vault) decryptEnvelope(domain, body string) (string, error) {
 	if colon < 2 || body[0] != 'v' {
 		return "", fmt.Errorf("%w: bad PVS3 version prefix", ErrCorrupted)
 	}
+	// Cap the parsed width before strconv.Atoi to bound parsing time
+	// + log-pollution from attacker-supplied ciphertexts. Real
+	// rotations bump dekVersion by one each time; 4 digits leaves
+	// orders-of-magnitude headroom over any sane rotation cadence.
+	if colon-1 > 4 {
+		return "", fmt.Errorf("%w: PVS3 version too wide", ErrCorrupted)
+	}
 	version, err := strconv.Atoi(body[1:colon])
 	if err != nil || version < 1 {
 		return "", fmt.Errorf("%w: parse PVS3 version: %w", ErrCorrupted, err)
@@ -373,15 +407,16 @@ func (v *Vault) EnvelopeEnabled() bool {
 	return v != nil && v.envelope != nil
 }
 
-// RotateKEK re-wraps every persisted DEK under newPassphrase. The
-// vault's in-memory state is also flipped to the new KEK so the
-// process can continue serving requests without a restart.
+// RotateKEK re-wraps every persisted DEK under newPassphrase atomically.
+// The store MUST implement TxCPSecretStore — every cp_secrets write
+// (re-wrapped DEKs + new fingerprint) lands in a single database
+// transaction, so a mid-rotation crash never leaves the operator
+// locked out by half-rotated rows.
 //
-// Returns the number of DEKs re-wrapped (one per (domain, version)
-// pair persisted). Aborts on first failure; cp_secrets state at that
-// point is a mix of old + new wraps. The caller (rotate-encryption-
-// key subcommand) is responsible for the surrounding transaction so
-// a partial failure can be rolled back.
+// On success the vault's in-memory KEK is replaced and the OLD KEK
+// bytes are wiped so a heap dump from this process can't recover
+// them. Returns the number of DEKs re-wrapped (one per
+// (domain, version) pair persisted).
 func (v *Vault) RotateKEK(ctx context.Context, store CPSecretReader, newPassphrase string) (int, error) {
 	if v == nil || !v.enabled {
 		return 0, errors.New("secretvault: cannot rotate KEK on a disabled vault")
@@ -392,33 +427,72 @@ func (v *Vault) RotateKEK(ctx context.Context, store CPSecretReader, newPassphra
 	if strings.TrimSpace(newPassphrase) == "" {
 		return 0, ErrPassphraseRequired
 	}
+	txStore, ok := store.(TxCPSecretStore)
+	if !ok {
+		return 0, ErrNonTransactionalStore
+	}
 	newKEK := deriveKEK(newPassphrase)
 	if subtle.ConstantTimeCompare(newKEK, v.kek) == 1 {
+		zero(newKEK)
 		return 0, errors.New("secretvault: new passphrase is identical to current — refusing no-op rotation")
 	}
-	rewrapped := 0
+
+	// Pre-compute every re-wrapped DEK in memory so the transaction
+	// body is pure I/O without crypto failure modes. A wrap error
+	// here aborts the rotation before any cp_secrets row is touched.
+	type wrappedRow struct {
+		key   string
+		bytes []byte
+	}
+	rows := make([]wrappedRow, 0, len(v.envelope.deks))
 	for cacheKey, dek := range v.envelope.deks {
 		domain, version, err := parseDEKCacheKey(cacheKey)
 		if err != nil {
-			return rewrapped, err
+			zero(newKEK)
+			return 0, err
 		}
 		wrapped, err := wrapDEK(newKEK, dek, domain, version)
 		if err != nil {
-			return rewrapped, fmt.Errorf("re-wrap DEK %s v%d: %w", domain, version, err)
+			zero(newKEK)
+			return 0, fmt.Errorf("re-wrap DEK %s v%d: %w", domain, version, err)
 		}
-		if err := store.PutCPSecret(ctx, wrappedKey(domain, version), wrapped); err != nil {
-			return rewrapped, fmt.Errorf("persist re-wrapped DEK %s v%d: %w", domain, version, err)
+		rows = append(rows, wrappedRow{key: wrappedKey(domain, version), bytes: wrapped})
+	}
+	newFP := sha256Sum(newKEK)
+
+	rewrapped := 0
+	if err := txStore.WithCPSecretTx(ctx, func(tx CPSecretReader) error {
+		for _, r := range rows {
+			if err := tx.PutCPSecret(ctx, r.key, r.bytes); err != nil {
+				return fmt.Errorf("persist re-wrapped DEK %s: %w", r.key, err)
+			}
+			rewrapped++
 		}
-		rewrapped++
+		if err := tx.PutCPSecret(ctx, cpSecretKEKFingerprint, newFP); err != nil {
+			return fmt.Errorf("persist new KEK fingerprint: %w", err)
+		}
+		return nil
+	}); err != nil {
+		zero(newKEK)
+		return 0, err
 	}
-	// Replace the fingerprint last so a mid-rotation crash leaves the
-	// old fingerprint in place; the operator can re-run the rotation
-	// with the same new key and idempotently complete.
-	if err := store.PutCPSecret(ctx, cpSecretKEKFingerprint, sha256Sum(newKEK)); err != nil {
-		return rewrapped, fmt.Errorf("persist new KEK fingerprint: %w", err)
-	}
+
+	// Atomic commit succeeded — flip in-memory state and wipe the
+	// old KEK so a heap dump can't recover it.
+	oldKEK := v.kek
 	v.kek = newKEK
+	zero(oldKEK)
 	return rewrapped, nil
+}
+
+// zero wipes a byte slice in place. The defensive wipe means a heap
+// dump (or swap page) from a panel running under the new KEK can't
+// recover the previously-loaded one. Not a substitute for OS-level
+// mlock; this is best-effort defence-in-depth.
+func zero(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
 }
 
 // parseDEKCacheKey reverses dekCacheKey. Format: "domain|vN".

@@ -31,6 +31,44 @@ func (m *memStore) PutCPSecret(_ context.Context, key string, value []byte) erro
 	return nil
 }
 
+// WithCPSecretTx satisfies TxCPSecretStore. The in-memory fixture
+// gives RotateKEK an all-or-nothing semantic by buffering every
+// PutCPSecret in a side map and merging on commit. On fn returning
+// an error nothing is merged, mirroring a SQL rollback.
+func (m *memStore) WithCPSecretTx(ctx context.Context, fn func(tx CPSecretReader) error) error {
+	pending := &memStoreTx{parent: m, writes: map[string][]byte{}}
+	if err := fn(pending); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for k, v := range pending.writes {
+		m.rows[k] = append([]byte(nil), v...)
+	}
+	return nil
+}
+
+// memStoreTx buffers writes inside a fake transaction. Reads fall
+// through to the parent so RotateKEK's tx callback can still
+// observe committed state via GetCPSecret if it needs to (it
+// doesn't today, but the contract is the realistic one).
+type memStoreTx struct {
+	parent *memStore
+	writes map[string][]byte
+}
+
+func (t *memStoreTx) GetCPSecret(ctx context.Context, key string) ([]byte, error) {
+	if v, ok := t.writes[key]; ok {
+		return append([]byte(nil), v...), nil
+	}
+	return t.parent.GetCPSecret(ctx, key)
+}
+
+func (t *memStoreTx) PutCPSecret(_ context.Context, key string, value []byte) error {
+	t.writes[key] = append([]byte(nil), value...)
+	return nil
+}
+
 const testPassphrase = "correct horse battery staple"
 
 func TestEnvelopeFirstStartMintsDEKs(t *testing.T) {
