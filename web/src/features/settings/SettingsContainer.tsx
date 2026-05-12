@@ -8,6 +8,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { SkeletonRows } from "@/ui";
 import { UpdatesSettingsSection } from "./UpdatesSettingsSection";
 import { GeoIPSettingsSection } from "./GeoIPSettingsSection";
+import { WebhooksSection } from "./webhooks";
 import { useSettingsRegistry } from "./registry";
 
 export function SettingsContainer() {
@@ -71,6 +72,7 @@ export function SettingsContainer() {
     >
       {isAdmin && <UpdatesSettingsSection />}
       {isAdmin && <GeoIPSettingsSection />}
+      {isAdmin && <WebhooksSection />}
     </SettingsPage>
   );
 }

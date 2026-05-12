@@ -100,6 +100,12 @@ export type {
   UpdateSettingsResponse,
   UpdateState,
 } from "./updates";
+export type {
+  CreateWebhookEndpointInput,
+  UpdateWebhookEndpointInput,
+  WebhookEndpoint,
+  WebhookEndpointListResponse,
+} from "./webhooks";
 
 import { authApi } from "./auth";
 import { clientsApi } from "./clients";
@@ -111,6 +117,7 @@ import { settingsApi } from "./settings";
 import { telemetryApi } from "./telemetry";
 import { updatesApi } from "./updates";
 import { usersApi } from "./users";
+import { webhooksApi } from "./webhooks";
 
 export const apiClient = {
   ...authApi,
@@ -123,6 +130,7 @@ export const apiClient = {
   ...enrollmentApi,
   ...fleetGroupsApi,
   ...updatesApi,
+  ...webhooksApi,
 };
 
 /*
