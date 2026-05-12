@@ -11,9 +11,12 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
+	sqlitebaseline "github.com/lost-coder/panvex/db/migrations/sqlite/baseline"
 	sqlitemigrations "github.com/lost-coder/panvex/db/migrations/sqlite"
 	"github.com/pressly/goose/v3"
 )
@@ -42,6 +45,9 @@ func MigrateContext(ctx context.Context, db *sql.DB) error {
 	gooseMu.Lock()
 	defer gooseMu.Unlock()
 
+	if err := applyBaselineIfFresh(ctx, db); err != nil {
+		return fmt.Errorf("sqlite: baseline: %w", err)
+	}
 	if err := configureGoose(); err != nil {
 		return err
 	}
@@ -49,6 +55,68 @@ func MigrateContext(ctx context.Context, db *sql.DB) error {
 		return fmt.Errorf("sqlite: goose up: %w", err)
 	}
 	return nil
+}
+
+// applyBaselineIfFresh checks whether the database has never been
+// migrated (goose_db_version table missing) and, if so, applies the
+// consolidated baseline_v1.sql in a single transaction. The baseline
+// recreates the schema as it stood at version 39 and INSERTs every
+// historical version row into goose_db_version so the subsequent
+// goose.UpContext call sees a no-op for migrations 1..39 and runs
+// only the (currently zero) post-baseline migrations.
+//
+// Pre-existing databases are left untouched; the goose_db_version
+// presence check is the cheap idempotency gate.
+//
+// Wave 6.2 — see docs/superpowers/plans/2026-05-09-baseline-migration.md.
+func applyBaselineIfFresh(ctx context.Context, db *sql.DB) error {
+	hasGoose, err := tableExists(ctx, db, "goose_db_version")
+	if err != nil {
+		return err
+	}
+	if hasGoose {
+		// Existing install — leave the linear migration tail to goose.
+		return nil
+	}
+	sql, err := sqlitebaseline.FS.ReadFile("baseline_v1.sql")
+	if err != nil {
+		// Missing baseline (e.g. a fork that stripped it) → fall back
+		// to the linear apply path so goose.Up still produces a
+		// correct schema. Documented intentional fallback.
+		if errors.Is(err, errFileMissing) || strings.Contains(err.Error(), "file does not exist") {
+			return nil
+		}
+		return fmt.Errorf("read baseline: %w", err)
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin baseline tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }() //nolint:errcheck // best-effort on commit-success
+	if _, err := tx.ExecContext(ctx, string(sql)); err != nil {
+		return fmt.Errorf("exec baseline: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit baseline: %w", err)
+	}
+	return nil
+}
+
+// errFileMissing is a sentinel used only by the comparison above; the
+// embed package surfaces "file does not exist" as a fs.PathError. The
+// string-contains guard plus this sentinel keeps the fallback robust
+// against future embed.FS error shape changes.
+var errFileMissing = errors.New("baseline file missing")
+
+func tableExists(ctx context.Context, db *sql.DB, name string) (bool, error) {
+	var n int
+	if err := db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
+		name,
+	).Scan(&n); err != nil {
+		return false, fmt.Errorf("probe %s: %w", name, err)
+	}
+	return n > 0, nil
 }
 
 // Status writes the applied/pending migration list to stdout via goose's
