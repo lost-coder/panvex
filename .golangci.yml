@@ -80,6 +80,12 @@ linters:
       - linters: [gosec]
         text: "G101"
         path: "internal/controlplane/storage/storagetest/store_contract.go"
+      # csrf.go: TokenHeader = "X-CSRF-Token" (HTTP header name) and
+      # secretStoreKey = "csrf_secret_v1" (cp_secrets row identifier)
+      # are identifier strings, not credentials.
+      - linters: [gosec]
+        text: "G101"
+        path: "internal/controlplane/csrf/csrf.go"
 
       # G104 — unchecked error returns. The general errcheck linter
       # already catches these with finer-grained policies; keep gosec
@@ -220,3 +226,135 @@ linters:
       - linters: [gosec]
         text: "G706"
         path: "cmd/control-plane/main.go"
+      # otel.go: logs OTEL_EXPORTER_OTLP_ENDPOINT (operator env var)
+      # via slog.Warn with a structured field; control bytes are
+      # escaped automatically by the text handler.
+      - linters: [gosec]
+        text: "G706"
+        path: "cmd/control-plane/otel.go"
+      # server_lifecycle.go: logs the operator-configured HTTP listen
+      # address via slog.Info structured field.
+      - linters: [gosec]
+        text: "G706"
+        path: "cmd/control-plane/server_lifecycle.go"
+
+      # G115 — int conversion overflow, additional paths.
+      # diagnose.go: host.Uptime() returns uint64 seconds; time.Duration
+      # is int64 nanoseconds. 2^63 ns ≈ 292 years, so the conversion
+      # cannot overflow on any plausible host uptime.
+      - linters: [gosec]
+        text: "G115"
+        path: "cmd/control-plane/diagnose.go"
+      # bootstrap_admin.go: int(os.Stdin.Fd()) — fd is a small kernel
+      # handle, never overflows int.
+      - linters: [gosec]
+        text: "G115"
+        path: "cmd/control-plane/bootstrap_admin.go"
+      # upstream_rate.go: uint64 telemetry counters → int64 for proto
+      # wire types; counters are bounded by the agent's per-interval
+      # sampling window.
+      - linters: [gosec]
+        text: "G115"
+        path: "internal/agent/telemt/upstream_rate.go"
+      # auth/password.go: uint32(len(expected)) — expected is the
+      # argon2 hash output, always 32 bytes.
+      - linters: [gosec]
+        text: "G115"
+        path: "internal/controlplane/auth/password.go"
+      # auth/totp.go: uint64(timestep) — RFC 6238 timesteps are
+      # bounded to TOTP epoch ranges, no overflow possible.
+      - linters: [gosec]
+        text: "G115"
+        path: "internal/controlplane/auth/totp.go"
+      # Test fixtures cast small loop counters (e.g. writer*1000 + i)
+      # to uint64 to fill protobuf counter fields; values are
+      # explicitly bounded by the test loop.
+      - linters: [gosec]
+        text: "G115"
+        path: "_test\\.go$"
+
+      # G117 — Marshaled struct field "Secret". clients_jobs.go is the
+      # canonical job payload carrying the rotated client secret to
+      # the agent; the JSON tag is intentional.
+      - linters: [gosec]
+        text: "G117"
+        path: "internal/controlplane/server/clients_jobs.go"
+
+      # G118 — context.CancelFunc not called. outbound.go stores the
+      # supervisor cancel in supervisors[meta.NodeID].cancel and
+      # invokes it from stopAll/removeSupervisor. Annotated in code
+      # but gosec's static scan does not follow the assignment.
+      - linters: [gosec]
+        text: "G118"
+        path: "internal/controlplane/agenttransport/outbound.go"
+
+      # G201 — SQL string formatting. backup.go uses fmt.Sprintf to
+      # build a VACUUM INTO statement against a tempdir path we own;
+      # settings/dbstore.go interpolates placeholder tokens (`?` /
+      # `$N`) only — values bind via ExecContext args.
+      - linters: [gosec]
+        text: "G201"
+        path: "cmd/control-plane/backup.go"
+      - linters: [gosec]
+        text: "G201"
+        path: "internal/controlplane/settings/dbstore.go"
+
+      # G202 — SQL string concatenation. explain_test.go prepends
+      # "EXPLAIN (FORMAT JSON, ANALYZE, BUFFERS) " to a test-fixture
+      # query string; no user input.
+      - linters: [gosec]
+        text: "G202"
+        path: "internal/controlplane/storage/postgres/explain_test.go"
+
+      # G204 — subprocess launched with a variable. install_script
+      # selfcheck tests exec the embedded install script from a path
+      # written under t.TempDir.
+      - linters: [gosec]
+        text: "G204"
+        path: "internal/controlplane/server/install_script_selfcheck_test.go"
+
+      # G304 — file inclusion via variable, additional paths.
+      # backup.go reads/writes archive paths from operator -out flag
+      # (intended) and the tempdir snapshot path we own.
+      - linters: [gosec]
+        text: "G304"
+        path: "cmd/control-plane/backup.go"
+      # bootstrap_admin.go opens the operator-supplied password file
+      # path; access to that path is governed by filesystem perms,
+      # not by gosec's static taint analysis.
+      - linters: [gosec]
+        text: "G304"
+        path: "cmd/control-plane/bootstrap_admin.go"
+      - linters: [gosec]
+        text: "G703"
+        path: "cmd/control-plane/bootstrap_admin.go"
+
+      # G306 — file permissions. install_script_selfcheck_test.go
+      # writes the embedded script to a temp path with 0o755 so the
+      # subprocess can exec it; the file lives under t.TempDir and is
+      # removed by Cleanup.
+      - linters: [gosec]
+        text: "G306"
+        path: "internal/controlplane/server/install_script_selfcheck_test.go"
+
+      # G402 — TLS InsecureSkipVerify. bootstrap_reverse_test.go is a
+      # panel-side test stub dialing the agent's self-signed listener;
+      # production code uses the verified pinning verifier.
+      - linters: [gosec]
+        text: "G402"
+        path: "cmd/agent/bootstrap_reverse_test.go"
+
+      # G404 — math/rand for non-cryptographic backoff jitter.
+      # agenttransport/outbound.go uses math/rand/v2 to add jitter to
+      # reconnect timers — not security-sensitive.
+      - linters: [gosec]
+        text: "G404"
+        path: "internal/controlplane/agenttransport/outbound.go"
+
+      # G505 — SHA-1 import. auth/totp.go imports crypto/sha1 because
+      # RFC 6238 (TOTP) mandates HMAC-SHA1 for Google Authenticator
+      # / Authy / 1Password interop. SHA-1's collision weakness does
+      # not affect HMAC-SHA1 within the TOTP construction.
+      - linters: [gosec]
+        text: "G505"
+        path: "internal/controlplane/auth/totp.go"
