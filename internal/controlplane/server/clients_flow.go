@@ -11,7 +11,6 @@ import (
 
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
-	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
@@ -362,10 +361,6 @@ func (s *Server) replaceClientStateWithContext(ctx context.Context, client manag
 		if err := s.clientsSvc.SaveState(ctx, client, assignments, deployments); err != nil {
 			return err
 		}
-	} else if s.store != nil {
-		if err := s.persistClientState(ctx, client, assignments, deployments); err != nil {
-			return err
-		}
 	}
 
 	s.replaceClientStateInMemory(client, assignments, deployments)
@@ -389,17 +384,6 @@ func (s *Server) replaceClientStateInMemory(client managedClient, assignments []
 	s.clientDeployments[string(client.ID)] = nextDeployments
 }
 
-func (s *Server) persistClientState(ctx context.Context, client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment) error {
-	return persistClientStateVia(ctx, s.store, client, assignments, deployments, s.vault())
-}
-
-// persistClientStateVia delegates to clients.PersistState. Retained only
-// for the persistAdoptedClient Store.Transact closure (P2-ARCH-01);
-// all other callers now route through clientsSvc.SaveState. Will be
-// removed when persistAdoptedClient migrates to Service.AdoptDiscovered.
-func persistClientStateVia(ctx context.Context, store storage.Store, client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment, vault *secretvault.Vault) error {
-	return clients.PersistState(ctx, store, client, assignments, deployments, vault) //nolint:staticcheck // legacy Transact path; see comment above
-}
 
 func (s *Server) buildClientAssignments(clientID clients.ClientID, input clientMutationInput, observedAt time.Time) []managedClientAssignment {
 	assignments := make([]managedClientAssignment, 0, len(input.FleetGroupIDs)+len(input.AgentIDs))

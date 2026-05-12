@@ -28,6 +28,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
 	"github.com/lost-coder/panvex/internal/controlplane/settings"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/storage/uow"
 	"github.com/lost-coder/panvex/internal/controlplane/webhooks"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
@@ -133,6 +134,11 @@ type Server struct {
 	// UoW) so persistence and mirror operations route through the domain
 	// service rather than the legacy storage.Store facade.
 	clientsSvc *clients.Service
+	// uow is the raw UnitOfWork used by server-package code that needs to
+	// open a cross-domain transaction directly (e.g. persistAdoptedClient).
+	// Wired alongside clientsSvc in lifecycle.go initStoreBackedSubsystems.
+	// Nil when the store does not expose DB() (e.g. test doubles).
+	uow uow.UnitOfWork
 	// discoveredRepo is the domain-level repository for discovered clients.
 	// Wired in initStoreBackedSubsystems alongside clientsSvc. Nil when the
 	// server has no persistent store (e.g. in-memory test fixtures).

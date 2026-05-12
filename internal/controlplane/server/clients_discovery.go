@@ -12,6 +12,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/discovered"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/storage/uow"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
@@ -464,30 +465,43 @@ func (s *Server) buildAdoptedClientState(record discovered.DiscoveredClient, sib
 
 // persistAdoptedClient performs the atomic write of the new managed client,
 // flips the discovered row, and bulk-marks duplicates of the same secret.
-// P2-ARCH-01: all writes share one Transact so a partial failure cannot
-// leave the system half-converted.
+// P2-ARCH-01: all writes share one UoW.Do transaction so a partial failure
+// cannot leave the system half-converted.
 func (s *Server) persistAdoptedClient(ctx context.Context, discoveredID string, client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment, observedAt time.Time) error {
-	return s.store.Transact(ctx, func(tx storage.Store) error {
+	encryptedSecret, err := s.clientsSvc.EncryptSecret(client.Secret)
+	if err != nil {
+		return fmt.Errorf("persistAdoptedClient: encrypt secret: %w", err)
+	}
+	toStore := client
+	toStore.Secret = encryptedSecret
+
+	return s.uow.Do(ctx, func(rs uow.RepoSet) error {
 		// Re-read the discovered record inside the tx so another
 		// concurrent adopt on a different control-plane instance cannot
 		// slip past the pre-check. adoptMu covers the current instance;
 		// the tx + re-read covers cross-instance racing.
-		freshRecord, err := tx.GetDiscoveredClient(ctx, discoveredID)
+		freshRecord, err := rs.Discovered().Get(ctx, discovered.DiscoveredID(discoveredID))
 		if err != nil {
 			return err
 		}
-		if freshRecord.Status == discoveredClientStatusAdopted {
+		if freshRecord.Status == discovered.StatusAdopted {
 			return ErrAlreadyAdopted
 		}
 
-		if err := persistClientStateVia(ctx, tx, client, assignments, deployments, s.vault()); err != nil {
+		if err := rs.Clients().Save(ctx, toStore); err != nil {
 			return err
 		}
-		if err := tx.UpdateDiscoveredClientStatus(ctx, discoveredID, discoveredClientStatusAdopted, observedAt.UTC()); err != nil {
+		if err := rs.Clients().SaveAssignments(ctx, client.ID, assignments); err != nil {
+			return err
+		}
+		if err := rs.Clients().SaveDeployments(ctx, client.ID, deployments); err != nil {
+			return err
+		}
+		if err := rs.Discovered().UpdateStatus(ctx, discovered.DiscoveredID(discoveredID), discovered.StatusAdopted, observedAt.UTC()); err != nil {
 			return err
 		}
 		if freshRecord.Secret != "" {
-			if err := markDuplicateDiscoveredClientsAdoptedTx(ctx, tx, discoveredID, freshRecord.Secret, observedAt); err != nil {
+			if err := markDuplicateDiscoveredClientsAdoptedUoW(ctx, rs, discoveredID, freshRecord.Secret, observedAt); err != nil {
 				return err
 			}
 		}
@@ -520,27 +534,26 @@ func (s *Server) markDuplicateDiscoveredClientsAdopted(ctx context.Context, excl
 	}
 }
 
-// markDuplicateDiscoveredClientsAdoptedTx is the Transact-bound twin of
-// markDuplicateDiscoveredClientsAdopted. It operates against the
-// caller-provided Store (typically a tx-bound Store inside Transact)
-// so the duplicate-flip lands in the same atomic unit as the primary
-// adopt writes. Unlike the untransacted variant it surfaces errors to
-// the caller — inside a Transact, failing one write must abort the
-// whole sequence.
-func markDuplicateDiscoveredClientsAdoptedTx(ctx context.Context, store storage.Store, excludeID, secret string, observedAt time.Time) error {
-	all, err := store.ListDiscoveredClients(ctx)
+// markDuplicateDiscoveredClientsAdoptedUoW is the UoW-bound twin of
+// markDuplicateDiscoveredClientsAdopted. It operates via the
+// caller-provided RepoSet (tx-bound inside uow.Do) so the duplicate-flip
+// lands in the same atomic unit as the primary adopt writes. Unlike the
+// untransacted variant it surfaces errors to the caller — inside a UoW.Do,
+// failing one write must abort the whole transaction.
+func markDuplicateDiscoveredClientsAdoptedUoW(ctx context.Context, rs uow.RepoSet, excludeID, secret string, observedAt time.Time) error {
+	all, err := rs.Discovered().List(ctx)
 	if err != nil {
 		return err
 	}
-	domainAll := make([]discovered.DiscoveredClient, len(all))
-	for i, r := range all {
-		domainAll[i] = discoveredClientFromStorageRecord(r)
-	}
-	ids := collectDuplicateDiscoveredIDs(domainAll, excludeID, secret)
+	ids := collectDuplicateDiscoveredIDs(all, excludeID, secret)
 	if len(ids) == 0 {
 		return nil
 	}
-	return store.UpdateDiscoveredClientStatusBulk(ctx, ids, discoveredClientStatusAdopted, observedAt.UTC())
+	discIDs := make([]discovered.DiscoveredID, len(ids))
+	for i, id := range ids {
+		discIDs[i] = discovered.DiscoveredID(id)
+	}
+	return rs.Discovered().UpdateStatusBulk(ctx, discIDs, discovered.StatusAdopted, observedAt.UTC())
 }
 
 // collectDuplicateDiscoveredIDs returns IDs of every non-adopted

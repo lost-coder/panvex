@@ -257,6 +257,7 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 			Store:          store, // legacy methods coexist during phase 7
 		})
 		s.discoveredRepo = discoveredRepoV2
+		s.uow = uowImpl
 		return nil
 	})
 	s.trySetStartupErr(s.restoreStoredClients)

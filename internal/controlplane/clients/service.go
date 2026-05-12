@@ -727,6 +727,14 @@ func (s *Service) List(ctx context.Context) ([]Client, error) {
 
 // --- Phase 6.4–6.7: UoW-backed mutation methods ---
 
+// EncryptSecret seals the plaintext secret using the vault's
+// DomainClientSecret key. Delegates to encryptSecret. Exposed as a
+// public method so server-package code (e.g. persistAdoptedClient) can
+// encrypt at the correct boundary without importing secretvault directly.
+func (s *Service) EncryptSecret(plaintext string) (string, error) {
+	return s.encryptSecret(plaintext)
+}
+
 // encryptSecret seals the plaintext secret via the vault's
 // DomainClientSecret key. A nil or disabled vault is a no-op.
 // An empty plaintext is returned unchanged.
