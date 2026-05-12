@@ -103,15 +103,29 @@ func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest
 	agentID := id7.String()
 	span.SetAttributes(attribute.String("panvex.agent_id", agentID))
 
-	s.mu.Lock()
-	agent := Agent{
-		ID:           agentID,
-		NodeName:     request.NodeName,
-		FleetGroupID: token.FleetGroupID,
-		Version:      request.Version,
-		LastSeenAt:   now.UTC(),
+	// D-1: issue the cert FIRST so a failure here cannot leave a partial
+	// DB row + in-memory entry + consumed token behind. Cert issuance is
+	// in-memory crypto (ECDSA keygen + sign) with no IO, so the realistic
+	// failure modes are RNG / OOM / misconfigured CA — fast-fail before
+	// touching persistence.
+	issued, err := s.authority.issueClientCertificate(agentID, now)
+	if err != nil {
+		span.RecordError(err)
+		return agentEnrollmentResponse{}, fmt.Errorf("issue client certificate: %w", err)
 	}
-	s.mu.Unlock()
+
+	certIssuedAt := now.UTC()
+	certExpiresAt := issued.ExpiresAt.UTC()
+	agent := Agent{
+		ID:            agentID,
+		NodeName:      request.NodeName,
+		FleetGroupID:  token.FleetGroupID,
+		Version:       request.Version,
+		LastSeenAt:    now.UTC(),
+		CertIssuedAt:  &certIssuedAt,
+		CertExpiresAt: &certExpiresAt,
+		CertSerial:    issued.Serial,
+	}
 
 	if s.store != nil {
 		// Fleet-group existence is resolved/auto-created at token-issue
@@ -129,29 +143,15 @@ func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest
 	s.agents[agentID] = agent
 	s.mu.Unlock()
 
-	issued, err := s.authority.issueClientCertificate(agentID, now)
-	if err != nil {
-		return agentEnrollmentResponse{}, err
-	}
-
-	// Record certificate dates in the agent so they are persisted and
-	// returned via the API instead of being fabricated on the frontend.
-	certIssuedAt := now.UTC()
-	certExpiresAt := issued.ExpiresAt.UTC()
-	s.mu.Lock()
-	storedAgent := s.agents[agentID]
-	storedAgent.CertIssuedAt = &certIssuedAt
-	storedAgent.CertExpiresAt = &certExpiresAt
-	storedAgent.CertSerial = issued.Serial
-	s.agents[agentID] = storedAgent
-	s.mu.Unlock()
 	if s.batchWriter != nil {
-		s.batchWriter.agents.Enqueue(agentToRecord(storedAgent))
+		s.batchWriter.agents.Enqueue(agentToRecord(agent))
 	}
 	// Q4.U-S-04: persist the freshly-issued cert serial as the
-	// authoritative pin. Best-effort — a write failure is logged but
-	// does not block enrollment, since the in-memory pin in
-	// storedAgent already protects this process lifetime.
+	// authoritative pin. PutAgent above does not write cert_serial
+	// (see storage/{sqlite,postgres}/agents.go) so the dedicated update
+	// is still required to populate the pin column. Best-effort — a
+	// write failure is logged but does not roll back enrollment, since
+	// the in-memory pin already protects this process lifetime.
 	if s.store != nil {
 		if err := s.store.UpdateAgentCertSerial(ctx, agentID, issued.Serial); err != nil {
 			s.logger.Warn("persist agent cert serial failed", "agent_id", agentID, "error", err)
@@ -164,7 +164,7 @@ func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest
 	})
 	s.events.Publish(eventbus.Event{
 		Type: "agents.enrolled",
-		Data: storedAgent,
+		Data: agent,
 	})
 
 	return agentEnrollmentResponse{

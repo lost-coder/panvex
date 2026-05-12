@@ -2,6 +2,9 @@ package server
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -950,6 +953,67 @@ func TestEnrollmentSetsCertificateDates(t *testing.T) {
 	expectedExpiry := enrolledAt.UTC().Add(30 * 24 * time.Hour)
 	if !agent.CertExpiresAt.Equal(expectedExpiry) {
 		t.Fatalf("agent.CertExpiresAt = %v, want %v", *agent.CertExpiresAt, expectedExpiry)
+	}
+}
+
+// TestEnrollAgentCertIssuanceFailureLeavesNoPartialState pins D-1: when
+// issueClientCertificate fails, enrollAgent must not leave the agent
+// persisted in the DB or in the in-memory mirror. Pre-D-1 ordering wrote
+// PutAgent first and only then issued the cert, so a cert-issuance error
+// left a partial row + memory entry that required manual cleanup.
+//
+// We inject the failure by zeroing the authority's signing private key
+// after construction. x509.CreateCertificate then fails inside
+// issueClientCertificate before any cert bytes are produced.
+func TestEnrollAgentCertIssuanceFailureLeavesNoPartialState(t *testing.T) {
+	now := time.Date(2026, time.May, 12, 10, 0, 0, 0, time.UTC)
+	server := testServerWithSQLite(t, now)
+	fleetGroupID := seedTestFleetGroup(t, server.store, "ams-1", now)
+	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
+		FleetGroupID: fleetGroupID,
+		TTL:          time.Minute,
+	}, now)
+	if err != nil {
+		t.Fatalf("issueEnrollmentToken() error = %v", err)
+	}
+
+	// Sabotage cert issuance: swap the CA signing key for one on a
+	// different curve so x509.CreateCertificate fails ("provided
+	// PrivateKey doesn't match parent's PublicKey") instead of
+	// panicking on nil.
+	mismatched, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey() error = %v", err)
+	}
+	server.authority.privateKey = mismatched
+
+	_, err = server.enrollAgent(context.Background(), agentEnrollmentRequest{
+		Token:    token.Value,
+		NodeName: "node-fail",
+		Version:  "1.0.0",
+	}, now.Add(10*time.Second))
+	if err == nil {
+		t.Fatal("enrollAgent() error = nil, want cert issuance failure")
+	}
+
+	// No agent row should be persisted.
+	rows, listErr := server.store.ListAgents(context.Background())
+	if listErr != nil {
+		t.Fatalf("ListAgents() error = %v", listErr)
+	}
+	for _, r := range rows {
+		if r.NodeName == "node-fail" {
+			t.Fatalf("partial agent row persisted despite cert failure: %+v", r)
+		}
+	}
+
+	// No in-memory mirror entry either.
+	server.mu.RLock()
+	defer server.mu.RUnlock()
+	for id, a := range server.agents {
+		if a.NodeName == "node-fail" {
+			t.Fatalf("partial in-memory agent entry id=%s: %+v", id, a)
+		}
 	}
 }
 
