@@ -88,6 +88,12 @@ func newBootstrapTLSConfig(ctx context.Context, agentID string, pinReader bootst
 		// gated by the bootstrap token EnrollDriver.Run validates in-band.
 		InsecureSkipVerify:    true, //nolint:gosec // S-2: replaced with VerifyPeerCertificate SPKI pin check below
 		VerifyPeerCertificate: v.verifyPeerCertificate,
+		// G123: VerifyPeerCertificate only runs on a full handshake; a
+		// resumed TLS session would skip the SPKI pin check. The
+		// bootstrap dialer makes a single short-lived enrollment call,
+		// so disabling session tickets has no measurable cost and
+		// guarantees the pin check fires every time.
+		SessionTicketsDisabled: true,
 	}
 }
 

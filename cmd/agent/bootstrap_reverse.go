@@ -132,6 +132,13 @@ func reverseBootstrap(cfg reverseBootstrapConfig) error {
 		Certificates:          []tls.Certificate{selfCert},
 		VerifyPeerCertificate: verifier,
 		NextProtos:            []string{"h2"},
+		// G123: VerifyPeerCertificate runs only during the full
+		// handshake; resumed TLS sessions reuse the prior verification
+		// state. Disable session tickets so every handshake re-runs the
+		// CA-pin + panel-CN check. The reverse-bootstrap listener is
+		// short-lived and accepts a single connection, so the cost of
+		// disabling resumption is negligible.
+		SessionTicketsDisabled: true,
 	}
 
 	// Reverse-bootstrap is bounded by reverseBootstrapTimeout end-to-end; tie
