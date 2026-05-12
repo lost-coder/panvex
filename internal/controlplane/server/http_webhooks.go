@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -13,6 +14,12 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
 	"github.com/lost-coder/panvex/internal/controlplane/webhooks"
 )
+
+// webhookSecretMinLength is the floor (in bytes) for a non-empty
+// webhook HMAC secret. 16 bytes = 128 bits, the threshold below which
+// HMAC-SHA-256's keyed-MAC strength becomes practically defeasible.
+// See C-2 in docs/superpowers/specs/2026-05-12-code-review-batch-2.md.
+const webhookSecretMinLength = 16
 
 // webhookEndpointDTO is the JSON shape returned by GET endpoints.
 // Mirrors webhooks.Endpoint minus the secret (which never leaves the
@@ -241,8 +248,19 @@ func validateWebhookForm(name, urlStr, secret, filter string, requireSecret bool
 	if len(name) > 128 {
 		return errors.New("name too long (max 128)")
 	}
-	if requireSecret && strings.TrimSpace(secret) == "" {
+	trimmed := strings.TrimSpace(secret)
+	if requireSecret && trimmed == "" {
 		return errors.New("secret is required")
+	}
+	// Min-entropy floor: any non-empty submitted secret must have at
+	// least webhookSecretMinLength non-whitespace bytes. This rejects
+	// both whitespace-padded short keys ("a" + 15 spaces — 16 bytes,
+	// 1 byte of entropy) and all-whitespace strings on the Update path
+	// (raw non-empty but trimmed empty, which would otherwise persist
+	// as a zero-entropy HMAC key). Empty raw secret on Update means
+	// "keep existing" and skips this check.
+	if secret != "" && len(trimmed) < webhookSecretMinLength {
+		return fmt.Errorf("secret too short (min %d non-whitespace bytes)", webhookSecretMinLength)
 	}
 	if len(secret) > 1024 {
 		return errors.New("secret too long (max 1024)")

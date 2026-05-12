@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -77,7 +78,7 @@ func TestWebhookEndpointCRUDFlow(t *testing.T) {
 	createResp := performJSONRequest(t, server, http.MethodPost, "/api/webhook-endpoints", map[string]any{
 		"name":          "slack-prod",
 		"url":           "https://hooks.slack.com/x",
-		"secret":        "supersecret",
+		"secret":        "supersecretkey-01",
 		"event_filter":  "audit.*",
 		"allow_private": false,
 		"enabled":       true,
@@ -130,7 +131,7 @@ func TestWebhookEndpointCRUDFlow(t *testing.T) {
 	// Secret was vault-encrypted on create (the vault is a no-op
 	// pass-through when EncryptionKey is empty in test, so the
 	// plaintext should round-trip unchanged).
-	if string(enabled[0].Secret) != "supersecret" {
+	if string(enabled[0].Secret) != "supersecretkey-01" {
 		t.Errorf("Secret lost across no-rotate update: %q", enabled[0].Secret)
 	}
 
@@ -138,7 +139,7 @@ func TestWebhookEndpointCRUDFlow(t *testing.T) {
 	rotResp := performJSONRequest(t, server, http.MethodPut, "/api/webhook-endpoints/"+created.ID, map[string]any{
 		"name":          "slack-renamed",
 		"url":           "https://hooks.slack.com/y",
-		"secret":        "rotated",
+		"secret":        "rotated-key-12345",
 		"event_filter":  "audit.*",
 		"allow_private": false,
 		"enabled":       true,
@@ -147,7 +148,7 @@ func TestWebhookEndpointCRUDFlow(t *testing.T) {
 		t.Fatalf("PUT(rotate) status = %d", rotResp.Code)
 	}
 	enabled, _ = server.webhookStorage.ListEnabledEndpoints(context.Background())
-	if string(enabled[0].Secret) != "rotated" {
+	if string(enabled[0].Secret) != "rotated-key-12345" {
 		t.Errorf("Secret rotation failed: %q", enabled[0].Secret)
 	}
 
@@ -255,7 +256,7 @@ func TestWebhookEndpointAuditFlow(t *testing.T) {
 	createResp := performJSONRequest(t, server, http.MethodPost, "/api/webhook-endpoints", map[string]any{
 		"name":    "ep1",
 		"url":     "https://x.example.com",
-		"secret":  "s",
+		"secret":  "audit-flow-secret",
 		"enabled": true,
 	}, cookies)
 	if createResp.Code != http.StatusCreated {
@@ -285,4 +286,78 @@ func auditActions(events []AuditEvent) []string {
 		out = append(out, e.Action)
 	}
 	return out
+}
+
+// TestValidateWebhookFormRejectsShortSecret asserts that Create-path
+// validation rejects a 1-character secret. HMAC-SHA-256 with a key
+// that short is trivially forgeable; see C-2 in the 2026-05-12 review.
+func TestValidateWebhookFormRejectsShortSecret(t *testing.T) {
+	err := validateWebhookForm("ok-name", "https://example.com/", "x", "", true)
+	if err == nil {
+		t.Fatal("expected error for 1-char secret")
+	}
+	if !strings.Contains(err.Error(), "secret too short") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestValidateWebhookFormAcceptsMinLengthSecret asserts that a secret
+// at exactly the 16-byte minimum is accepted on the Create path.
+func TestValidateWebhookFormAcceptsMinLengthSecret(t *testing.T) {
+	err := validateWebhookForm("ok-name", "https://example.com/", strings.Repeat("a", 16), "", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestValidateWebhookFormUpdateWithShortSecretRejected asserts that a
+// non-empty short secret on the Update path is still rejected — Update
+// with a non-empty secret persists it, so the min-length floor must
+// apply there too.
+func TestValidateWebhookFormUpdateWithShortSecretRejected(t *testing.T) {
+	err := validateWebhookForm("ok-name", "https://example.com/", "short", "", false)
+	if err == nil {
+		t.Fatal("expected error for short secret on Update path")
+	}
+	if !strings.Contains(err.Error(), "secret too short") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestValidateWebhookFormUpdateWithEmptySecretAccepted asserts that
+// keep-existing semantics (empty secret on Update) still work. The
+// min-length check must not regress this case.
+func TestValidateWebhookFormUpdateWithEmptySecretAccepted(t *testing.T) {
+	err := validateWebhookForm("ok-name", "https://example.com/", "", "", false)
+	if err != nil {
+		t.Fatalf("unexpected error for empty secret on Update: %v", err)
+	}
+}
+
+// TestValidateWebhookFormRejectsWhitespacePaddedSecret asserts that a
+// 16-byte string with only one non-whitespace byte (e.g. "a" + 15
+// spaces) is rejected. Raw byte length passes the old check but the
+// HMAC entropy is effectively 1 byte.
+func TestValidateWebhookFormRejectsWhitespacePaddedSecret(t *testing.T) {
+	padded := "a" + strings.Repeat(" ", 15)
+	if len(padded) != 16 {
+		t.Fatalf("test fixture wrong length: %d", len(padded))
+	}
+	err := validateWebhookForm("ok-name", "https://example.com/", padded, "", true)
+	if err == nil || !strings.Contains(err.Error(), "secret too short") {
+		t.Fatalf("expected 'secret too short' error, got %v", err)
+	}
+}
+
+// TestValidateWebhookFormRejectsAllWhitespaceOnUpdate asserts that a
+// non-empty all-whitespace secret on the Update path is rejected
+// rather than persisted as a zero-entropy HMAC key. The handler keys
+// rotation off req.Secret != "", so 16 spaces would otherwise sneak
+// past as a "rotation" to an all-whitespace key.
+func TestValidateWebhookFormRejectsAllWhitespaceOnUpdate(t *testing.T) {
+	allWs := strings.Repeat(" ", 16)
+	err := validateWebhookForm("ok-name", "https://example.com/", allWs, "", false)
+	if err == nil || !strings.Contains(err.Error(), "secret too short") {
+		t.Fatalf("expected 'secret too short' on Update with whitespace-only secret, got %v", err)
+	}
 }
