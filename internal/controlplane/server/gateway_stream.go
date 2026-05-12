@@ -11,6 +11,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/agents"
 	"github.com/lost-coder/panvex/internal/controlplane/agenttransport"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -55,6 +56,10 @@ func nonBlockingSend(ch chan<- error, err error) {
 // startReceiveLoop reads messages off the gRPC stream and routes them into
 // the priority/regular inbound queues until the stream errors out.
 func (s *Server) startReceiveLoop(ctx context.Context, cancel context.CancelFunc, agentID string, sess agenttransport.AgentSession, ch *agentStreamChannels) {
+	var dropCounter prometheus.Counter
+	if s.obs != nil {
+		dropCounter = s.obs.agentInboundDropsTotal
+	}
 	go func() {
 		defer s.recoverAgentStreamGoroutine(agentID, "receive", cancel)
 		for {
@@ -63,7 +68,7 @@ func (s *Server) startReceiveLoop(ctx context.Context, cancel context.CancelFunc
 				nonBlockingSend(ch.receiveErrors, err)
 				return
 			}
-			if !enqueueInboundAgentMessage(ctx, ch.priorityInbound, ch.regularInbound, message) {
+			if !enqueueInboundAgentMessage(ctx, ch.priorityInbound, ch.regularInbound, message, dropCounter) {
 				return
 			}
 		}

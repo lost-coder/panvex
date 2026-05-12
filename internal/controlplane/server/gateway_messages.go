@@ -8,13 +8,24 @@ import (
 
 	"github.com/lost-coder/panvex/internal/controlplane/agenttransport"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
+// enqueueInboundAgentMessage routes a freshly-received agent message into
+// either the priority or the regular inbound queue. Priority messages
+// (job_result / job_acknowledgement) block until the queue accepts them.
+// Regular messages follow drop-oldest semantics: try once, drain one stale
+// slot, try again. If a concurrent reader races with the drain the final
+// send may still find the channel full — in that rare case we bump
+// dropCounter (when non-nil) so operators get visibility into the silent
+// drop (D-2). The counter is intentionally label-less; see metrics.go for
+// the cardinality rationale.
 func enqueueInboundAgentMessage(
 	connectionCtx context.Context,
 	priorityInbound chan<- *gatewayrpc.ConnectClientMessage,
 	regularInbound chan *gatewayrpc.ConnectClientMessage,
 	message *gatewayrpc.ConnectClientMessage,
+	dropCounter prometheus.Counter,
 ) bool {
 	if connectionCtx.Err() != nil {
 		return false
@@ -47,9 +58,15 @@ func enqueueInboundAgentMessage(
 	case <-connectionCtx.Done():
 		return false
 	case regularInbound <- message:
+		return true
 	default:
 	}
 
+	// Backpressure — drop-oldest semantics failed because a concurrent reader
+	// raced with the drain. Record the drop so operators can see it.
+	if dropCounter != nil {
+		dropCounter.Inc()
+	}
 	return true
 }
 

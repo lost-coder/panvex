@@ -58,6 +58,15 @@ type metricsCollectors struct {
 	eventHubDropTotal   prometheus.Counter
 	eventHubSubscribers prometheus.Gauge
 
+	// D-2: silent-drop visibility for regular-priority inbound agent
+	// messages. enqueueInboundAgentMessage uses drop-oldest semantics under
+	// backpressure, but the rare "all three non-blocking attempts lost"
+	// case (drained slot snatched by a concurrent reader) used to vanish
+	// silently. Bumped from the regular-path drop branch only — priority
+	// messages still block and never feed this counter. Intentionally
+	// label-less to honour the cardinality rule above (no agent_id).
+	agentInboundDropsTotal prometheus.Counter
+
 	jobQueueDepth prometheus.Gauge
 	lockoutActive prometheus.Gauge
 
@@ -187,6 +196,10 @@ func newMetricsCollectors() *metricsCollectors {
 			Name: "panvex_event_hub_drop_total",
 			Help: "Total number of events dropped because a subscriber channel was full.",
 		}),
+		agentInboundDropsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "panvex_agent_inbound_drops_total",
+			Help: "Inbound agent messages dropped on the regular-priority queue when the drop-oldest retry races with a concurrent reader. Intentionally label-less to keep cardinality bounded (D-2).",
+		}),
 		eventHubSubscribers: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "panvex_event_hub_subscribers",
 			Help: "Current number of event-hub subscribers.",
@@ -276,6 +289,7 @@ func newMetricsCollectors() *metricsCollectors {
 		mc.batchFlushDuration,
 		mc.eventHubDropTotal,
 		mc.eventHubSubscribers,
+		mc.agentInboundDropsTotal,
 		mc.jobQueueDepth,
 		mc.lockoutActive,
 		mc.auditBufferDepth,

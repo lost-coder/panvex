@@ -18,6 +18,8 @@ import (
 	"github.com/lost-coder/panvex/internal/agent/telemt"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
@@ -110,7 +112,7 @@ func TestEnqueueInboundAgentMessageDropsStaleRegularUpdateWhenQueueIsFull(t *tes
 	latest := heartbeatMessageForTest("latest")
 	regularInbound <- stale
 
-	ok := enqueueInboundAgentMessage(context.Background(), priorityInbound, regularInbound, latest)
+	ok := enqueueInboundAgentMessage(context.Background(), priorityInbound, regularInbound, latest, nil)
 	if !ok {
 		t.Fatal("enqueueInboundAgentMessage() = false, want true")
 	}
@@ -135,7 +137,7 @@ func TestEnqueueInboundAgentMessagePrioritizesJobAcknowledgement(t *testing.T) {
 	ack := jobAcknowledgementMessageForTest("job-1")
 	regularInbound <- stale
 
-	ok := enqueueInboundAgentMessage(context.Background(), priorityInbound, regularInbound, ack)
+	ok := enqueueInboundAgentMessage(context.Background(), priorityInbound, regularInbound, ack, nil)
 	if !ok {
 		t.Fatal("enqueueInboundAgentMessage() = false, want true")
 	}
@@ -171,7 +173,7 @@ func TestEnqueueInboundAgentMessageStopsWhenContextCancelled(t *testing.T) {
 	priorityInbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
 	regularInbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
 
-	ok := enqueueInboundAgentMessage(connectionCtx, priorityInbound, regularInbound, heartbeatMessageForTest("latest"))
+	ok := enqueueInboundAgentMessage(connectionCtx, priorityInbound, regularInbound, heartbeatMessageForTest("latest"), nil)
 	if ok {
 		t.Fatal("enqueueInboundAgentMessage() = true, want false")
 	}
@@ -180,6 +182,76 @@ func TestEnqueueInboundAgentMessageStopsWhenContextCancelled(t *testing.T) {
 	}
 	if len(regularInbound) != 0 {
 		t.Fatalf("len(regularInbound) = %d, want %d", len(regularInbound), 0)
+	}
+}
+
+// TestEnqueueInboundAgentMessageIncrementsDropCounter covers the silent-drop
+// branch (D-2): all three non-blocking steps fail and the function used to
+// return true without recording the loss. An unbuffered regular-inbound chan
+// with no concurrent reader/writer makes every select hit `default`, so the
+// drop path is reached deterministically and the counter must increment.
+func TestEnqueueInboundAgentMessageIncrementsDropCounter(t *testing.T) {
+	priorityInbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
+	regularInbound := make(chan *gatewayrpc.ConnectClientMessage) // unbuffered → all selects miss
+	counter := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "panvex_agent_inbound_drops_total_test",
+		Help: "test-local counter",
+	})
+
+	ok := enqueueInboundAgentMessage(
+		context.Background(),
+		priorityInbound,
+		regularInbound,
+		heartbeatMessageForTest("dropped"),
+		counter,
+	)
+	if !ok {
+		t.Fatal("enqueueInboundAgentMessage() = false, want true (drop path still reports routed=true)")
+	}
+	if got := testutil.ToFloat64(counter); got != 1 {
+		t.Fatalf("dropCounter = %v, want 1", got)
+	}
+	if len(priorityInbound) != 0 {
+		t.Fatalf("len(priorityInbound) = %d, want 0", len(priorityInbound))
+	}
+}
+
+// TestEnqueueInboundAgentMessageDoesNotIncrementOnSuccess guards against a
+// spurious Inc() in the happy path: when the first non-blocking send accepts
+// the message, the counter must remain at zero.
+func TestEnqueueInboundAgentMessageDoesNotIncrementOnSuccess(t *testing.T) {
+	priorityInbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
+	regularInbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
+	counter := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "panvex_agent_inbound_drops_total_test_success",
+		Help: "test-local counter",
+	})
+
+	ok := enqueueInboundAgentMessage(
+		context.Background(),
+		priorityInbound,
+		regularInbound,
+		heartbeatMessageForTest("ok"),
+		counter,
+	)
+	if !ok {
+		t.Fatal("enqueueInboundAgentMessage() = false, want true")
+	}
+	if got := testutil.ToFloat64(counter); got != 0 {
+		t.Fatalf("dropCounter = %v, want 0 (no drop on happy path)", got)
+	}
+}
+
+// TestAgentInboundDropsTotalRegistered makes sure the production counter is
+// wired through newMetricsCollectors and surfaces on /metrics scrapes.
+func TestAgentInboundDropsTotalRegistered(t *testing.T) {
+	mc := newMetricsCollectors()
+	if mc.agentInboundDropsTotal == nil {
+		t.Fatal("agentInboundDropsTotal is nil after newMetricsCollectors()")
+	}
+	mc.agentInboundDropsTotal.Inc()
+	if got := testutil.ToFloat64(mc.agentInboundDropsTotal); got != 1 {
+		t.Fatalf("agentInboundDropsTotal = %v, want 1", got)
 	}
 }
 
