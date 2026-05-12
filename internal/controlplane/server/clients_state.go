@@ -160,7 +160,6 @@ func (s *Server) seedUsageFromDiscoveredLocked(ctx context.Context, snap clients
 	}
 }
 
-
 func (s *Server) listClientsSnapshot() []managedClient {
 	s.clientsMu.RLock()
 	defer s.clientsMu.RUnlock()

@@ -21,9 +21,9 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/sessions"
 	"github.com/lost-coder/panvex/internal/controlplane/settings"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
-	"github.com/lost-coder/panvex/internal/controlplane/storage/uow"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/postgres"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
+	"github.com/lost-coder/panvex/internal/controlplane/storage/uow"
 	"github.com/lost-coder/panvex/internal/controlplane/webhooks"
 )
 
@@ -230,9 +230,9 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 			return nil
 		}
 		var (
-			clientsRepo    clients.Repository
+			clientsRepo      clients.Repository
 			discoveredRepoV2 discovered.Repository
-			uowImpl        uow.UnitOfWork
+			uowImpl          uow.UnitOfWork
 		)
 		switch store.(type) {
 		case *sqlite.Store:

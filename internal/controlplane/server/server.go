@@ -87,21 +87,21 @@ type Server struct {
 	// IPs each have their own counter so an attacker who enumerates
 	// usernames can no longer lock every account by triggering 5 fails per
 	// user. State is in-memory only by design.
-	ipLockout                 *ipLockoutTracker
+	ipLockout *ipLockoutTracker
 	// wsConnLimiter caps the number of live /events WebSocket connections
 	// per user-id (and per-IP for unauthenticated callers, defence-in-depth).
 	// Goroutine exhaustion otherwise — every accepted socket holds a reader
 	// goroutine, a writer goroutine, and an event-bus subscription. See
 	// ws_conn_limit.go.
-	wsConnLimiter             *wsConnLimiter
-	trustedProxyCIDRs         []*net.IPNet
-	encryptionKey             string
-	secretVault               *secretvault.Vault
-	logger                    *slog.Logger
-	version                   string
-	commitSHA                 string
-	buildTime                 string
-	intervals                 Intervals
+	wsConnLimiter     *wsConnLimiter
+	trustedProxyCIDRs []*net.IPNet
+	encryptionKey     string
+	secretVault       *secretvault.Vault
+	logger            *slog.Logger
+	version           string
+	commitSHA         string
+	buildTime         string
+	intervals         Intervals
 
 	mu             sync.RWMutex
 	clientsMu      sync.RWMutex
@@ -109,11 +109,11 @@ type Server struct {
 	settingsMu     sync.RWMutex
 	// settings is the operational settings store, loaded at startup from the
 	// DB and reloaded on demand. Nil when the server has no persistent store.
-	settings         *settings.OperationalStore
+	settings *settings.OperationalStore
 	// settingsActive is an immutable snapshot of operational values captured
 	// right after the initial Reload. Used to detect pending restart-required
 	// changes when comparing against live values.
-	settingsActive   *settings.ActiveSnapshot
+	settingsActive *settings.ActiveSnapshot
 	// activeSessionIdleTimeout / activeSessionMaxLifetime capture the
 	// restart=true session window values at startup. They must not be
 	// re-read from the live store on the request path — a change only takes
@@ -121,8 +121,8 @@ type Server struct {
 	// right after s.settingsActive is captured.
 	activeSessionIdleTimeout time.Duration
 	activeSessionMaxLifetime time.Duration
-	bootstrap        *settings.Bootstrap
-	bootstrapSources settings.SourceMap
+	bootstrap                *settings.Bootstrap
+	bootstrapSources         settings.SourceMap
 	// sessions multiplexes live gRPC stream sessions keyed by agent ID.
 	// Extracted into controlplane/agents.SessionManager by P3-ARCH-01a —
 	// this field replaces the previous sessionMu + agentSessions + sessionSeq
@@ -170,7 +170,7 @@ type Server struct {
 	// restart cannot re-issue a previously-used ID. Other entity sequences
 	// (session/audit/metric/client) are still monotonic because they do not
 	// participate in mTLS identity.
-	auditSeq            uint64
+	auditSeq uint64
 	// auditChainTail tracks the latest persisted/enqueued audit
 	// event_hash so the next append can be chained onto it. Loaded
 	// lazily from the store the first time we need it (or initialised
@@ -184,8 +184,8 @@ type Server struct {
 	// fixtures, or operators with no webhook endpoints configured) —
 	// publishWebhookEvent is the nil-safe wrapper every event source
 	// uses, so callers don't have to nil-check at every site.
-	webhookStorage  webhooks.Storage
-	webhookProducer *webhooks.Producer
+	webhookStorage      webhooks.Storage
+	webhookProducer     *webhooks.Producer
 	metricSeq           uint64
 	clientSeq           uint64
 	assignmentSeq       uint64
@@ -284,9 +284,9 @@ type Server struct {
 	serverCtx       context.Context
 	serverCancel    context.CancelFunc
 	serverCloseOnce sync.Once
-	stopRollup   context.CancelFunc
-	rollupWg     sync.WaitGroup
-	batchWriter  *storeBatchWriter
+	stopRollup      context.CancelFunc
+	rollupWg        sync.WaitGroup
+	batchWriter     *storeBatchWriter
 
 	// obs holds the Prometheus collectors exposed at /metrics. Nil when the
 	// server is constructed without a scrape token — the /metrics route is

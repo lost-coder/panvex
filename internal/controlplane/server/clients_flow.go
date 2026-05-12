@@ -384,7 +384,6 @@ func (s *Server) replaceClientStateInMemory(client managedClient, assignments []
 	s.clientDeployments[string(client.ID)] = nextDeployments
 }
 
-
 func (s *Server) buildClientAssignments(clientID clients.ClientID, input clientMutationInput, observedAt time.Time) []managedClientAssignment {
 	assignments := make([]managedClientAssignment, 0, len(input.FleetGroupIDs)+len(input.AgentIDs))
 	for _, fleetGroupID := range normalizedIDs(input.FleetGroupIDs) {

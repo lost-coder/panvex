@@ -321,9 +321,9 @@ type CertificateAuthorityStore interface {
 // ClientStore persists centrally managed Telemt clients, rollout assignments, and per-node deployment state.
 //
 // Deprecated: Wave 4.2 replaced direct Store access with clients.Repository + UnitOfWork.
-// Retained in the Store aggregate only because clients/persist.go and the Transact-based
-// persistAdoptedClient path in server/clients_discovery.go still use it.
-// Remove when persistAdoptedClient is migrated to clients.Service.AdoptDiscovered (follow-up wave).
+// Retained in the Store aggregate because migrate.go, storagetest, and
+// clients.Service.PersistDeployment still call these methods through the storage.Store
+// interface. Remove once those callers are migrated to clients.Repository.
 type ClientStore interface {
 	PutClient(ctx context.Context, client ClientRecord) error
 	GetClientByID(ctx context.Context, clientID string) (ClientRecord, error)
@@ -356,9 +356,10 @@ type ClientStore interface {
 // DiscoveredClientStore persists discovered clients via the raw storage layer.
 //
 // Deprecated: Wave 4.2 replaced direct Store access with discovered.Repository.
-// Retained because persistAdoptedClient in server/clients_discovery.go uses Store.Transact
-// and requires tx-bound GetDiscoveredClient / UpdateDiscoveredClientStatus calls. Remove
-// when that path is migrated to clients.Service.AdoptDiscovered + UnitOfWork (follow-up wave).
+// The Transact-based persistAdoptedClient path is now fully migrated to UnitOfWork.
+// Retained in the Store aggregate because storagetest contract tests and
+// clients_discovery.go still call these methods through storage.Store for
+// non-adopt paths. Remove once those callers are migrated to discovered.Repository.
 type DiscoveredClientStore interface {
 	PutDiscoveredClient(ctx context.Context, record DiscoveredClientRecord) error
 	ListDiscoveredClients(ctx context.Context) ([]DiscoveredClientRecord, error)
