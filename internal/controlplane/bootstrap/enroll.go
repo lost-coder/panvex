@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/dbsqlc"
@@ -83,9 +84,9 @@ type EnrollDriver struct {
 	ca        CertificateAuthority
 	logger    *slog.Logger
 	now       func() time.Time
-	recorder  AttemptRecorder // optional; nil → no-op
-	notifier  EventNotifier   // optional; nil → no-op
-	pinWriter CertPinWriter   // optional; nil → cert pinning skipped (logged)
+	recorder  AttemptRecorder               // optional; nil → no-op
+	notifier  EventNotifier                 // optional; nil → no-op
+	pinWriter atomic.Pointer[CertPinWriter] // optional; nil → cert pinning skipped (logged)
 }
 
 // NewEnrollDriver constructs an EnrollDriver. If now is nil, time.Now is used;
@@ -119,14 +120,18 @@ func (d *EnrollDriver) SetEventNotifier(n EventNotifier) {
 }
 
 // SetCertPinWriter wires the storage backend that persists agent SPKI pins
-// after successful enrollment (S-02). MUST be called once at startup, before
-// the first Run begins. Concurrent calls or calls during an active Run are not
-// supported and will race with the unsynchronized pinWriter read in Run.
-// If not set, cert pinning is skipped and a warning is logged; enrollment still
+// after successful enrollment (S-02). Safe to call concurrently with active
+// Run invocations — atomic.Pointer guarantees a tear-free swap, so callers
+// may rewire the writer at any point in the driver's lifecycle. If not set,
+// cert pinning is skipped and a warning is logged; enrollment still
 // completes. Callers SHOULD always set this in production to enable pin
 // verification on subsequent dials (Task 10).
 func (d *EnrollDriver) SetCertPinWriter(w CertPinWriter) {
-	d.pinWriter = w
+	if w == nil {
+		d.pinWriter.Store(nil)
+		return
+	}
+	d.pinWriter.Store(&w)
 }
 
 // record invokes d.recorder if set. Inlined at every return path in Run.
@@ -156,11 +161,12 @@ func (d *EnrollDriver) persistCertPin(ctx context.Context, agentID string, cert 
 	if cert == nil {
 		return errors.New("persistCertPin: nil certificate")
 	}
-	if d.pinWriter == nil {
+	pw := d.pinWriter.Load()
+	if pw == nil {
 		return errors.New("persistCertPin: no CertPinWriter configured")
 	}
 	pin := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
-	return d.pinWriter.UpdateAgentCertPin(ctx, agentID, pin[:])
+	return (*pw).UpdateAgentCertPin(ctx, agentID, pin[:])
 }
 
 // Run executes the panel-side enrollment exchange against an agent listening
@@ -334,7 +340,7 @@ func (d *EnrollDriver) Run(ctx context.Context, agentAddr string, tlsCfg *tls.Co
 	// If no pinWriter is configured (e.g. legacy wiring), log a warning and
 	// continue — cert-serial verification (Q4.U-S-04) still provides layered
 	// defence; operators should wire SetCertPinWriter for full S-02 coverage.
-	if d.pinWriter != nil {
+	if d.pinWriter.Load() != nil {
 		if agentLeafCert == nil {
 			d.record("error")
 			return fmt.Errorf("enroll: TLS handshake completed but no peer certificate captured for agent %s", agentID)

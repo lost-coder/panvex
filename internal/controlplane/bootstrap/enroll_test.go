@@ -14,6 +14,7 @@ import (
 	"errors"
 	"math/big"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -652,5 +653,38 @@ func TestBootstrapToken_SingleUse(t *testing.T) {
 	}
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("second Run: got code %s (err=%v), want FailedPrecondition", status.Code(err), err)
+	}
+}
+
+// TestEnrollDriverPinWriterAtomicAccess locks down the atomic.Pointer wiring
+// for EnrollDriver.pinWriter (Task 11 / B-3). Concurrent SetCertPinWriter +
+// pinWriter.Load callers must not trip the race detector. The previous
+// implementation stored the writer as a plain interface field and documented
+// the resulting race; this test would fail under -race against that version.
+func TestEnrollDriverPinWriterAtomicAccess(t *testing.T) {
+	t.Parallel()
+
+	d := &EnrollDriver{}
+
+	const iters = 100
+	var wg sync.WaitGroup
+	wg.Add(iters * 2)
+	for i := 0; i < iters; i++ {
+		go func() {
+			defer wg.Done()
+			d.SetCertPinWriter(newFakeCertPinWriter())
+		}()
+		go func() {
+			defer wg.Done()
+			_ = d.pinWriter.Load()
+		}()
+	}
+	wg.Wait()
+
+	// Also confirm SetCertPinWriter(nil) clears the pointer (regression
+	// guard for the nil branch in the setter).
+	d.SetCertPinWriter(nil)
+	if got := d.pinWriter.Load(); got != nil {
+		t.Fatalf("after SetCertPinWriter(nil): pinWriter.Load() = %v, want nil", got)
 	}
 }
