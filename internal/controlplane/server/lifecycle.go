@@ -67,7 +67,20 @@ func initSecrets(bootCtx context.Context, options Options) (func() time.Time, *c
 	if saltErr != nil {
 		return nil, nil, nil, fmt.Errorf("resolve vault HKDF salt: %w", saltErr)
 	}
-	vault, vaultErr := secretvault.NewWithSalt(options.EncryptionKey, secretvault.AllDomains, saltBytes)
+	// Wave 5.2: envelope encryption + key rotation. NewWithEnvelope
+	// generates per-domain DEKs on first start (or loads + decrypts
+	// the existing ones under the KEK on subsequent starts), and
+	// records a KEK fingerprint so a typo'd PANVEX_ENCRYPTION_KEY
+	// fails fast instead of silently producing garbage Decrypts.
+	// Falls back to the bare per-install salt path when no passphrase
+	// is set (dev installs) — NewWithEnvelope short-circuits to a
+	// pass-through vault in that case.
+	//
+	// secretvault doesn't import the storage package (would cycle), so
+	// we wrap options.Store in an adapter that translates the
+	// storage.ErrNotFound sentinel to the empty-bytes convention the
+	// vault's CPSecretReader interface uses for "no row".
+	vault, vaultErr := secretvault.NewWithEnvelope(bootCtx, options.EncryptionKey, secretvault.AllDomains, saltBytes, vaultCPSecretAdapter{store: options.Store})
 	if vaultErr != nil {
 		return nil, nil, nil, fmt.Errorf("init secret vault: %w", vaultErr)
 	}

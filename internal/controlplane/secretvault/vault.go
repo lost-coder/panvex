@@ -116,6 +116,15 @@ type Vault struct {
 	// legacyKeys holds keys derived under the hard-coded legacyHKDFSalt
 	// so PVS1 ciphertexts remain decryptable.
 	legacyKeys map[string][]byte
+	// envelope, when non-nil, switches Encrypt to PVS3 (per-domain
+	// DEKs wrapped under the KEK; see envelope.go). Decrypt continues
+	// to handle PVS1/PVS2 via keys/legacyKeys and dispatches PVS3 to
+	// the envelope path.
+	envelope *envelope
+	// kek is the current key-encryption-key. Held in memory so
+	// RotateKEK can replace it atomically with the new derivation
+	// after re-wrapping every persisted DEK.
+	kek []byte
 }
 
 // New constructs a vault using the legacy hard-coded HKDF salt for
@@ -195,14 +204,18 @@ func (v *Vault) Enabled() bool {
 // Encrypt seals the plaintext under the given domain key. Empty
 // plaintext is returned as-is (no point storing ciphertext for an
 // empty secret). When the vault is disabled the plaintext is returned
-// unchanged so callers can stay simple. New ciphertexts always carry
-// Prefix2.
+// unchanged so callers can stay simple. New ciphertexts target the
+// envelope path (PVS3) once DEKs are loaded; the legacy PVS2 path is
+// the fallback for bare NewWithSalt vaults (tests / dev).
 func (v *Vault) Encrypt(domain, plaintext string) (string, error) {
 	if plaintext == "" {
 		return "", nil
 	}
 	if v == nil || !v.enabled {
 		return plaintext, nil
+	}
+	if v.envelope != nil {
+		return v.encryptEnvelope(domain, plaintext)
 	}
 	key, ok := v.keys[domain]
 	if !ok {
@@ -230,12 +243,14 @@ func (v *Vault) Encrypt(domain, plaintext string) (string, error) {
 
 // Decrypt reverses Encrypt. Values without any vault prefix are
 // returned unchanged so legacy rows keep working until they're next
-// written. PVS1 values decrypt under the legacy salt; PVS2 values
-// decrypt under the per-install salt. A prefixed value with an
-// unconfigured vault is an error — the caller would otherwise see the
-// raw ciphertext bytes.
+// written. PVS3 routes through the envelope (per-domain DEK); PVS2
+// uses the per-install HKDF-derived key; PVS1 uses the legacy
+// hard-coded salt. A prefixed value with an unconfigured vault is an
+// error — the caller would otherwise see the raw ciphertext bytes.
 func (v *Vault) Decrypt(domain, value string) (string, error) {
 	switch {
+	case strings.HasPrefix(value, Prefix3):
+		return v.decryptEnvelope(domain, strings.TrimPrefix(value, Prefix3))
 	case strings.HasPrefix(value, Prefix2):
 		return v.decryptWithKey(domain, strings.TrimPrefix(value, Prefix2), false)
 	case strings.HasPrefix(value, Prefix1):
@@ -285,6 +300,18 @@ func (v *Vault) decryptWithKey(domain, body string, useLegacy bool) (string, err
 // IsEncrypted reports whether the value carries any vault prefix. Used
 // by migration tooling to decide whether to re-encrypt a row.
 func IsEncrypted(value string) bool {
+	return strings.HasPrefix(value, Prefix1) ||
+		strings.HasPrefix(value, Prefix2) ||
+		strings.HasPrefix(value, Prefix3)
+}
+
+// IsLegacyEncrypted reports whether the value uses one of the
+// pre-envelope wire formats (PVS1 or PVS2). Used by the
+// rotate-encryption-key subcommand's safety check: PVS1/PVS2
+// ciphertexts depend on keys derived directly from the current
+// passphrase, so rotating the KEK invalidates them. The upgrade-vault
+// migration (follow-up) re-encrypts them to PVS3.
+func IsLegacyEncrypted(value string) bool {
 	return strings.HasPrefix(value, Prefix1) || strings.HasPrefix(value, Prefix2)
 }
 
