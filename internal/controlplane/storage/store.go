@@ -321,9 +321,8 @@ type CertificateAuthorityStore interface {
 // ClientStore persists centrally managed Telemt clients, rollout assignments, and per-node deployment state.
 //
 // Deprecated: Wave 4.2 replaced direct Store access with clients.Repository + UnitOfWork.
-// Retained in the Store aggregate because migrate.go, storagetest, and
-// clients.Service.PersistDeployment still call these methods through the storage.Store
-// interface. Remove once those callers are migrated to clients.Repository.
+// No longer embedded in the Store aggregate (AC#10). Retained as a standalone interface
+// for MigrationStore (migrate-schema CLI) and storagetest Transact contract tests.
 type ClientStore interface {
 	PutClient(ctx context.Context, client ClientRecord) error
 	GetClientByID(ctx context.Context, clientID string) (ClientRecord, error)
@@ -357,9 +356,8 @@ type ClientStore interface {
 //
 // Deprecated: Wave 4.2 replaced direct Store access with discovered.Repository.
 // The Transact-based persistAdoptedClient path is now fully migrated to UnitOfWork.
-// Retained in the Store aggregate because storagetest contract tests and
-// clients_discovery.go still call these methods through storage.Store for
-// non-adopt paths. Remove once those callers are migrated to discovered.Repository.
+// No longer embedded in the Store aggregate (AC#10). Retained as a standalone interface
+// for MigrationStore (migrate-schema CLI) and storagetest Transact contract tests.
 type DiscoveredClientStore interface {
 	PutDiscoveredClient(ctx context.Context, record DiscoveredClientRecord) error
 	ListDiscoveredClients(ctx context.Context) ([]DiscoveredClientRecord, error)
@@ -516,6 +514,21 @@ type AgentFallbackStateStore interface {
 	ListAgentFallbackState(ctx context.Context) ([]AgentFallbackStateRecord, error)
 }
 
+// MigrationStore is the full storage surface required by the
+// migrate-schema CLI subcommand and storagetest Transact contract tests.
+// It composes Store with the legacy row-level client and discovered-client
+// interfaces so migration code can iterate every table without needing to
+// assemble per-domain Repositories.
+//
+// Production code MUST NOT accept or return MigrationStore — it exists
+// only for offline migration tooling and low-level storage contract tests.
+// Both SQLite and Postgres concrete stores satisfy this interface.
+type MigrationStore interface {
+	Store
+	ClientStore
+	DiscoveredClientStore
+}
+
 // TxFn is the callback invoked by Store.Transact. The tx argument
 // implements the full Store interface so that existing methods compose
 // without duplication — see P2-ARCH-01.
@@ -548,8 +561,6 @@ type Store interface {
 	RetentionSettingsStore
 	UpdateConfigStore
 	CertificateAuthorityStore
-	ClientStore
-	DiscoveredClientStore
 	TimeseriesStore
 	IntegrationStore
 

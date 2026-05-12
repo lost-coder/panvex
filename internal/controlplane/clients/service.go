@@ -979,19 +979,23 @@ func (s *Service) applyUsageMirror(u Usage) {
 	s.mu.Unlock()
 }
 
-// PersistDeployment writes a single deployment record to the legacy
-// storage.Store via the client service. This is used by the server's
-// recordClientJobResultWithContext during Phase 7 to eliminate the
-// direct s.store.PutClientDeployment callsite. When no store is wired
-// (nil), the call is a no-op (in-memory mode for tests).
-//
-// Phase 8 will replace this with a Repository-backed path once the
-// Repository.SaveDeployments API is enriched to support upsert-one.
+// PersistDeployment writes a single deployment record. When wired with
+// NewServiceV2 (repo != nil) it calls Repository.PutDeployment; otherwise
+// it falls back to the legacy ClientStore.PutClientDeployment path via
+// type assertion on s.store (NewServiceWithVault wiring, Phase 7 fallback).
+// When neither is wired (in-memory mode for tests) the call is a no-op.
 func (s *Service) PersistDeployment(ctx context.Context, d Deployment) error {
+	if s.repo != nil {
+		return s.repo.PutDeployment(ctx, d)
+	}
 	if s.store == nil {
 		return nil
 	}
-	return s.store.PutClientDeployment(ctx, DeploymentToRecord(d))
+	cs, ok := s.store.(storage.ClientStore)
+	if !ok {
+		return nil
+	}
+	return cs.PutClientDeployment(ctx, DeploymentToRecord(d))
 }
 
 // --- Phase 7: server-legacy bridge ---

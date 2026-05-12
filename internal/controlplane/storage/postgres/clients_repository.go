@@ -161,6 +161,15 @@ func (r *clientsRepository) SaveDeployments(ctx context.Context, clientID client
 	return nil
 }
 
+// PutDeployment upserts a single deployment row (client_id, agent_id natural key).
+// This is the Repository-backed replacement for the legacy ClientStore.PutClientDeployment.
+func (r *clientsRepository) PutDeployment(ctx context.Context, d clients.Deployment) error {
+	if err := r.q.UpsertClientDeployment(ctx, deploymentToUpsertParams(d)); err != nil {
+		return fmt.Errorf("clientsRepository.PutDeployment (%s/%s): %w", d.ClientID, d.AgentID, err)
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Usage ops
 // ---------------------------------------------------------------------------

@@ -244,14 +244,28 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 			discoveredRepoV2 = postgres.NewDiscoveredRepository(rawDB)
 			uowImpl = postgres.NewUoW(rawDB)
 		default:
-			// Unknown concrete store type — fall back to NewServiceWithVault
-			// wiring already set in newServerFromOptions. No error.
-			return nil
+			if options.ClientsRepoOverride == nil {
+				// Unknown concrete store type with no override — fall back to
+				// NewServiceWithVault wiring already set in newServerFromOptions.
+				return nil
+			}
+			// Test double wrapping a real SQLite store: use the override repo
+			// for clients while building UoW and discoveredRepo from rawDB
+			// (SQLite assumed; tests always use SQLite via failingStore).
+			clientsRepo = options.ClientsRepoOverride
+			discoveredRepoV2 = sqlite.NewDiscoveredRepository(rawDB)
+			uowImpl = sqlite.NewUoW(rawDB)
+		}
+		uowAdapter := newClientsUoWAdapter(uowImpl)
+		if options.ClientsRepoOverride != nil {
+			// Failure-injection tests need rs.Clients() inside SaveState's UoW
+			// callback to return the override repo (not the tx-bound real one).
+			uowAdapter = newClientsUoWAdapterWithOverride(uowImpl, options.ClientsRepoOverride)
 		}
 		s.clientsSvc = clients.NewServiceV2(clients.ServiceConfig{
 			Repo:           clientsRepo,
 			DiscoveredRepo: discoveredRepoV2,
-			UoW:            newClientsUoWAdapter(uowImpl),
+			UoW:            uowAdapter,
 			Vault:          vault,
 			Now:            s.now,
 			Store:          store, // legacy methods coexist during phase 7

@@ -28,12 +28,12 @@ func TestLoginAbortsWhenAuditPersistFails(t *testing.T) {
 	defer base.Close()
 
 	injectedErr := errors.New("synthetic audit persist failure")
-	store := &failingStore{Store: base, appendAuditEventErr: injectedErr}
+	store := &failingStore{MigrationStore: base, appendAuditEventErr: injectedErr}
 
 	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer srv.Close()
 
@@ -91,8 +91,8 @@ func TestLoginSuccess(t *testing.T) {
 
 	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer srv.Close()
 
@@ -136,7 +136,7 @@ func TestLoginInvalidCredentials(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 	})
 
 	if _, _, err := srv.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
@@ -170,7 +170,7 @@ func TestLoginPasswordExceedsMaxLength(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 	})
 
 	longPassword := make([]byte, 1025)
@@ -198,8 +198,8 @@ func TestLoginLockoutIntegration(t *testing.T) {
 
 	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer srv.Close()
 
@@ -361,8 +361,8 @@ func TestLogoutClearsCookie(t *testing.T) {
 
 	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer srv.Close()
 
@@ -403,7 +403,7 @@ func TestLogoutWithoutSessionReturnsUnauthorized(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 	})
 
 	resp := performJSONRequest(t, srv, http.MethodPost, "/api/auth/logout", nil, nil)
@@ -422,8 +422,8 @@ func TestMeReturnsUserInfo(t *testing.T) {
 
 	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer srv.Close()
 
@@ -469,7 +469,7 @@ func TestMeWithoutSessionReturnsUnauthorized(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 	})
 
 	resp := performJSONRequest(t, srv, http.MethodGet, "/api/auth/me", nil, nil)
@@ -519,7 +519,7 @@ func TestLoginRotatesSessionIDOnExistingCookie(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 	})
 
 	if _, _, err := srv.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
@@ -606,7 +606,7 @@ func TestRoleChangeInvalidatesTargetUserSessions(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 	})
 
 	if _, _, err := srv.auth.BootstrapUser(context.Background(), auth.BootstrapInput{

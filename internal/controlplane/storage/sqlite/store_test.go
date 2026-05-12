@@ -44,7 +44,7 @@ func TestOpenCreatesParentDirectory(t *testing.T) {
 }
 
 func TestStoreContract(t *testing.T) {
-	storagetest.RunStoreContract(t, func(t *testing.T) storage.Store {
+	storagetest.RunStoreContract(t, func(t *testing.T) storage.MigrationStore {
 		t.Helper()
 
 		store, err := Open(filepath.Join(t.TempDir(), "panvex.db"))

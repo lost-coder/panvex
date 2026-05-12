@@ -178,10 +178,12 @@ func collectRowCounts(ctx context.Context, store storage.Store) []diagnosticRow 
 		rows = append(rows, diagnosticRow{"Agents", fmt.Sprintf("%d", len(agents))})
 	}
 
-	if clients, err := store.ListClients(ctx); err != nil {
-		rows = append(rows, diagnosticRow{"Clients", fmt.Sprintf("error: %v", err)})
-	} else {
-		rows = append(rows, diagnosticRow{"Clients", fmt.Sprintf("%d", len(clients))})
+	if cs, ok := store.(storage.ClientStore); ok {
+		if clients, err := cs.ListClients(ctx); err != nil {
+			rows = append(rows, diagnosticRow{"Clients", fmt.Sprintf("error: %v", err)})
+		} else {
+			rows = append(rows, diagnosticRow{"Clients", fmt.Sprintf("%d", len(clients))})
+		}
 	}
 
 	if groups, err := store.ListFleetGroups(ctx); err != nil {

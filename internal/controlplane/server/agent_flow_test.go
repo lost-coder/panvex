@@ -290,7 +290,7 @@ func TestServerApplyAgentSnapshotUpdatesInMemoryStateEvenWhenPersistenceFails(t 
 	}
 	defer sqliteStore.Close()
 
-	store := &failingStore{Store: sqliteStore}
+	store := &failingStore{MigrationStore: sqliteStore}
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:              func() time.Time { return now },
@@ -835,8 +835,8 @@ func TestServerRecordsStartupErrorInsteadOfPanickingOnRestoreFailure(t *testing.
 	defer sqliteStore.Close()
 
 	store := &failingStore{
-		Store:         sqliteStore,
-		listAgentsErr: errors.New("list agents failed"),
+		MigrationStore: sqliteStore,
+		listAgentsErr:  errors.New("list agents failed"),
 	}
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,

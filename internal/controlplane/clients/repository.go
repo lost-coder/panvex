@@ -32,6 +32,9 @@ type Repository interface {
 	// Deployment ops (per-client list).
 	ListDeployments(ctx context.Context, clientID ClientID) ([]Deployment, error)
 	SaveDeployments(ctx context.Context, clientID ClientID, deployments []Deployment) error
+	// PutDeployment upserts a single deployment record (per-client, per-agent).
+	// Used by PersistDeployment to replace the legacy s.store.PutClientDeployment path.
+	PutDeployment(ctx context.Context, d Deployment) error
 
 	// Per-(client, agent) usage counters.
 	UpsertUsage(ctx context.Context, u Usage) error

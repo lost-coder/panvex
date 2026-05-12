@@ -7,7 +7,10 @@ import (
 )
 
 // OpenStore constructs a fresh storage backend for one contract test run.
-type OpenStore func(t *testing.T) storage.Store
+// It returns MigrationStore so that low-level storagetest helpers (agents
+// cascade, bulk ops) can access ClientStore and DiscoveredClientStore
+// methods without those interfaces being part of the Store aggregate.
+type OpenStore func(t *testing.T) storage.MigrationStore
 
 // testFleetGroupID is a deterministic UUIDv4 used as the fleet-group
 // primary key inside contract-test fixtures. Postgres stores ids in a

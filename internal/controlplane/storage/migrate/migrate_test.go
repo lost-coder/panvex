@@ -212,7 +212,7 @@ func TestCopyStoreCopiesUserAppearanceWithZeroUpdatedAt(t *testing.T) {
 	}
 }
 
-func openSQLiteStore(t *testing.T, path string) storage.Store {
+func openSQLiteStore(t *testing.T, path string) storage.MigrationStore {
 	t.Helper()
 
 	store, err := sqlite.Open(path)

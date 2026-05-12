@@ -29,21 +29,21 @@ type Options struct {
 
 // Summary reports how many persistent records the migration copied.
 type Summary struct {
-	Users             int
-	UserAppearance    int
-	FleetGroups       int
-	Agents            int
-	Instances         int
-	Jobs              int
-	JobTargets        int
-	AuditEvents       int
-	MetricSnapshots   int
-	EnrollmentTokens  int
+	Users                          int
+	UserAppearance                 int
+	FleetGroups                    int
+	Agents                         int
+	Instances                      int
+	Jobs                           int
+	JobTargets                     int
+	AuditEvents                    int
+	MetricSnapshots                int
+	EnrollmentTokens               int
 	AgentCertificateRecoveryGrants int
-	Clients           int
-	ClientAssignments int
-	ClientDeployments int
-	PanelSettings     int
+	Clients                        int
+	ClientAssignments              int
+	ClientDeployments              int
+	PanelSettings                  int
 }
 
 // Run validates the backend pair, opens both stores, and performs one offline copy.
@@ -92,7 +92,7 @@ func copyEntities[T any](ctx context.Context, listFn func(context.Context) ([]T,
 	return nil
 }
 
-func copyJobsAndTargets(ctx context.Context, source, target storage.Store, summary *Summary) error {
+func copyJobsAndTargets(ctx context.Context, source, target storage.MigrationStore, summary *Summary) error {
 	jobs, err := source.ListJobs(ctx)
 	if err != nil {
 		return err
@@ -116,7 +116,7 @@ func copyJobsAndTargets(ctx context.Context, source, target storage.Store, summa
 	return nil
 }
 
-func copyClientsAndChildren(ctx context.Context, source, target storage.Store, summary *Summary) error {
+func copyClientsAndChildren(ctx context.Context, source, target storage.MigrationStore, summary *Summary) error {
 	clients, err := source.ListClients(ctx)
 	if err != nil {
 		return err
@@ -130,7 +130,7 @@ func copyClientsAndChildren(ctx context.Context, source, target storage.Store, s
 	return nil
 }
 
-func copyClientWithChildren(ctx context.Context, source, target storage.Store, clientID string, client storage.ClientRecord, summary *Summary) error {
+func copyClientWithChildren(ctx context.Context, source, target storage.MigrationStore, clientID string, client storage.ClientRecord, summary *Summary) error {
 	if err := target.PutClient(ctx, client); err != nil {
 		return err
 	}
@@ -148,7 +148,7 @@ func copyClientWithChildren(ctx context.Context, source, target storage.Store, c
 	return nil
 }
 
-func copyClientAssignments(ctx context.Context, source, target storage.Store, clientID string) (int, error) {
+func copyClientAssignments(ctx context.Context, source, target storage.MigrationStore, clientID string) (int, error) {
 	assignments, err := source.ListClientAssignments(ctx, clientID)
 	if err != nil {
 		return 0, err
@@ -161,7 +161,7 @@ func copyClientAssignments(ctx context.Context, source, target storage.Store, cl
 	return len(assignments), nil
 }
 
-func copyClientDeployments(ctx context.Context, source, target storage.Store, clientID string) (int, error) {
+func copyClientDeployments(ctx context.Context, source, target storage.MigrationStore, clientID string) (int, error) {
 	deployments, err := source.ListClientDeployments(ctx, clientID)
 	if err != nil {
 		return 0, err
@@ -177,7 +177,7 @@ func copyClientDeployments(ctx context.Context, source, target storage.Store, cl
 // copySingletonAuthority returns the source authority record (if any) so the
 // caller can verify it round-tripped to the target. errors.Is(_, ErrNotFound)
 // is treated as "nothing to copy" rather than a hard failure.
-func copySingletonAuthority(ctx context.Context, source, target storage.Store) (storage.CertificateAuthorityRecord, bool, error) {
+func copySingletonAuthority(ctx context.Context, source, target storage.MigrationStore) (storage.CertificateAuthorityRecord, bool, error) {
 	authority, err := source.GetCertificateAuthority(ctx)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
@@ -191,7 +191,7 @@ func copySingletonAuthority(ctx context.Context, source, target storage.Store) (
 	return authority, true, nil
 }
 
-func copySingletonPanelSettings(ctx context.Context, source, target storage.Store, summary *Summary) error {
+func copySingletonPanelSettings(ctx context.Context, source, target storage.MigrationStore, summary *Summary) error {
 	settings, err := source.GetPanelSettings(ctx)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
@@ -206,7 +206,7 @@ func copySingletonPanelSettings(ctx context.Context, source, target storage.Stor
 	return nil
 }
 
-func verifyAuthorityRoundTrip(ctx context.Context, target storage.Store, expected storage.CertificateAuthorityRecord) error {
+func verifyAuthorityRoundTrip(ctx context.Context, target storage.MigrationStore, expected storage.CertificateAuthorityRecord) error {
 	stored, err := target.GetCertificateAuthority(ctx)
 	if err != nil {
 		return err
@@ -217,7 +217,7 @@ func verifyAuthorityRoundTrip(ctx context.Context, target storage.Store, expecte
 	return nil
 }
 
-func copyStore(ctx context.Context, source storage.Store, target storage.Store) (Summary, error) {
+func copyStore(ctx context.Context, source storage.MigrationStore, target storage.MigrationStore) (Summary, error) {
 	if err := ensureTargetEmpty(ctx, target); err != nil {
 		return Summary{}, err
 	}
@@ -257,7 +257,7 @@ func copyStore(ctx context.Context, source storage.Store, target storage.Store) 
 	return summary, nil
 }
 
-func copyPrimaryEntities(ctx context.Context, source, target storage.Store, summary *Summary) error {
+func copyPrimaryEntities(ctx context.Context, source, target storage.MigrationStore, summary *Summary) error {
 	if err := copyEntities(ctx, source.ListUsers, target.PutUser, func(n int) { summary.Users = n }); err != nil {
 		return err
 	}
@@ -273,7 +273,7 @@ func copyPrimaryEntities(ctx context.Context, source, target storage.Store, summ
 	return copyEntities(ctx, source.ListInstances, target.PutInstance, func(n int) { summary.Instances = n })
 }
 
-func copyAuxiliaryEntities(ctx context.Context, source, target storage.Store, summary *Summary) error {
+func copyAuxiliaryEntities(ctx context.Context, source, target storage.MigrationStore, summary *Summary) error {
 	if err := copyEntities(ctx,
 		func(c context.Context) ([]storage.AuditEventRecord, error) { return source.ListAuditEvents(c, 0) },
 		target.AppendAuditEvent,
@@ -290,7 +290,7 @@ func copyAuxiliaryEntities(ctx context.Context, source, target storage.Store, su
 	return copyEntities(ctx, source.ListAgentCertificateRecoveryGrants, target.PutAgentCertificateRecoveryGrant, func(n int) { summary.AgentCertificateRecoveryGrants = n })
 }
 
-func ensureTargetEmpty(ctx context.Context, target storage.Store) error {
+func ensureTargetEmpty(ctx context.Context, target storage.MigrationStore) error {
 	counts, err := listCounts(ctx, target)
 	if err != nil {
 		return err
@@ -312,7 +312,7 @@ func ensureTargetEmpty(ctx context.Context, target storage.Store) error {
 	return nil
 }
 
-func verifyCounts(ctx context.Context, target storage.Store, expected Summary) error {
+func verifyCounts(ctx context.Context, target storage.MigrationStore, expected Summary) error {
 	actual, err := listCounts(ctx, target)
 	if err != nil {
 		return err
@@ -324,7 +324,7 @@ func verifyCounts(ctx context.Context, target storage.Store, expected Summary) e
 	return nil
 }
 
-func listCounts(ctx context.Context, store storage.Store) (Summary, error) {
+func listCounts(ctx context.Context, store storage.MigrationStore) (Summary, error) {
 	var summary Summary
 
 	if err := countPrimaryEntities(ctx, store, &summary); err != nil {
@@ -346,7 +346,7 @@ func listCounts(ctx context.Context, store storage.Store) (Summary, error) {
 	return summary, nil
 }
 
-func countPrimaryEntities(ctx context.Context, store storage.Store, summary *Summary) error {
+func countPrimaryEntities(ctx context.Context, store storage.MigrationStore, summary *Summary) error {
 	users, err := store.ListUsers(ctx)
 	if err != nil {
 		return err
@@ -379,7 +379,7 @@ func countPrimaryEntities(ctx context.Context, store storage.Store, summary *Sum
 	return nil
 }
 
-func countJobsAndTargets(ctx context.Context, store storage.Store, summary *Summary) error {
+func countJobsAndTargets(ctx context.Context, store storage.MigrationStore, summary *Summary) error {
 	jobs, err := store.ListJobs(ctx)
 	if err != nil {
 		return err
@@ -395,7 +395,7 @@ func countJobsAndTargets(ctx context.Context, store storage.Store, summary *Summ
 	return nil
 }
 
-func countAuxiliaryEntities(ctx context.Context, store storage.Store, summary *Summary) error {
+func countAuxiliaryEntities(ctx context.Context, store storage.MigrationStore, summary *Summary) error {
 	auditEvents, err := store.ListAuditEvents(ctx, 0)
 	if err != nil {
 		return err
@@ -422,7 +422,7 @@ func countAuxiliaryEntities(ctx context.Context, store storage.Store, summary *S
 	return nil
 }
 
-func countClientsAndChildren(ctx context.Context, store storage.Store, summary *Summary) error {
+func countClientsAndChildren(ctx context.Context, store storage.MigrationStore, summary *Summary) error {
 	clients, err := store.ListClients(ctx)
 	if err != nil {
 		return err
@@ -444,7 +444,7 @@ func countClientsAndChildren(ctx context.Context, store storage.Store, summary *
 	return nil
 }
 
-func countPanelSettings(ctx context.Context, store storage.Store, summary *Summary) error {
+func countPanelSettings(ctx context.Context, store storage.MigrationStore, summary *Summary) error {
 	if _, err := store.GetPanelSettings(ctx); err == nil {
 		summary.PanelSettings = 1
 	} else if !errors.Is(err, storage.ErrNotFound) {

@@ -22,34 +22,32 @@ func runTransactContract(t *testing.T, open OpenStore) {
 		defer store.Close()
 
 		ctx := context.Background()
-		group := storage.FleetGroupRecord{
-			ID:        "tx-commit-group",
-			Name:      "tx-commit-group",
+		groupA := storage.FleetGroupRecord{
+			ID:        "tx-commit-group-a",
+			Name:      "tx-commit-group-a",
 			CreatedAt: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
 		}
-		client := storage.ClientRecord{
-			ID:        "tx-commit-client",
-			Name:      "tx-commit-client",
-			SecretCiphertext: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-			CreatedAt: group.CreatedAt,
-			UpdatedAt: group.CreatedAt,
+		groupB := storage.FleetGroupRecord{
+			ID:        "tx-commit-group-b",
+			Name:      "tx-commit-group-b",
+			CreatedAt: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
 		}
 
 		if err := store.Transact(ctx, func(tx storage.Store) error {
-			if err := tx.PutFleetGroup(ctx, group); err != nil {
+			if err := tx.PutFleetGroup(ctx, groupA); err != nil {
 				return err
 			}
-			return tx.PutClient(ctx, client)
+			return tx.PutFleetGroup(ctx, groupB)
 		}); err != nil {
 			t.Fatalf("Transact() commit error = %v", err)
 		}
 
-		got, err := store.GetClientByID(ctx, client.ID)
+		got, err := store.GetFleetGroup(ctx, groupB.ID)
 		if err != nil {
-			t.Fatalf("GetClientByID() after commit error = %v", err)
+			t.Fatalf("GetFleetGroup() after commit error = %v", err)
 		}
-		if got.ID != client.ID {
-			t.Fatalf("GetClientByID().ID = %q, want %q", got.ID, client.ID)
+		if got.ID != groupB.ID {
+			t.Fatalf("GetFleetGroup().ID = %q, want %q", got.ID, groupB.ID)
 		}
 	})
 
@@ -58,25 +56,23 @@ func runTransactContract(t *testing.T, open OpenStore) {
 		defer store.Close()
 
 		ctx := context.Background()
-		group := storage.FleetGroupRecord{
-			ID:        "tx-rollback-group",
-			Name:      "tx-rollback-group",
+		groupA := storage.FleetGroupRecord{
+			ID:        "tx-rollback-group-a",
+			Name:      "tx-rollback-group-a",
 			CreatedAt: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
 		}
-		client := storage.ClientRecord{
-			ID:        "tx-rollback-client",
-			Name:      "tx-rollback-client",
-			SecretCiphertext: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-			CreatedAt: group.CreatedAt,
-			UpdatedAt: group.CreatedAt,
+		groupB := storage.FleetGroupRecord{
+			ID:        "tx-rollback-group-b",
+			Name:      "tx-rollback-group-b",
+			CreatedAt: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
 		}
 
 		sentinel := errors.New("sentinel rollback")
 		err := store.Transact(ctx, func(tx storage.Store) error {
-			if err := tx.PutFleetGroup(ctx, group); err != nil {
+			if err := tx.PutFleetGroup(ctx, groupA); err != nil {
 				return err
 			}
-			if err := tx.PutClient(ctx, client); err != nil {
+			if err := tx.PutFleetGroup(ctx, groupB); err != nil {
 				return err
 			}
 			return sentinel
@@ -85,8 +81,8 @@ func runTransactContract(t *testing.T, open OpenStore) {
 			t.Fatalf("Transact() err = %v, want %v", err, sentinel)
 		}
 
-		if _, err := store.GetClientByID(ctx, client.ID); !errors.Is(err, storage.ErrNotFound) {
-			t.Fatalf("GetClientByID() after rollback err = %v, want ErrNotFound", err)
+		if _, err := store.GetFleetGroup(ctx, groupB.ID); !errors.Is(err, storage.ErrNotFound) {
+			t.Fatalf("GetFleetGroup() after rollback err = %v, want ErrNotFound", err)
 		}
 	})
 
@@ -95,12 +91,10 @@ func runTransactContract(t *testing.T, open OpenStore) {
 		defer store.Close()
 
 		ctx := context.Background()
-		client := storage.ClientRecord{
-			ID:        "tx-panic-client",
-			Name:      "tx-panic-client",
-			SecretCiphertext: "cccccccccccccccccccccccccccccccc",
+		group := storage.FleetGroupRecord{
+			ID:        "tx-panic-group",
+			Name:      "tx-panic-group",
 			CreatedAt: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
-			UpdatedAt: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
 		}
 
 		func() {
@@ -110,15 +104,15 @@ func runTransactContract(t *testing.T, open OpenStore) {
 				}
 			}()
 			_ = store.Transact(ctx, func(tx storage.Store) error {
-				if err := tx.PutClient(ctx, client); err != nil {
-					t.Fatalf("PutClient inside Transact error = %v", err)
+				if err := tx.PutFleetGroup(ctx, group); err != nil {
+					t.Fatalf("PutFleetGroup inside Transact error = %v", err)
 				}
 				panic("boom")
 			})
 		}()
 
-		if _, err := store.GetClientByID(ctx, client.ID); !errors.Is(err, storage.ErrNotFound) {
-			t.Fatalf("GetClientByID() after panic-rollback err = %v, want ErrNotFound", err)
+		if _, err := store.GetFleetGroup(ctx, group.ID); !errors.Is(err, storage.ErrNotFound) {
+			t.Fatalf("GetFleetGroup() after panic-rollback err = %v, want ErrNotFound", err)
 		}
 	})
 
@@ -161,16 +155,8 @@ func runTransactContract(t *testing.T, open OpenStore) {
 		defer store.Close()
 
 		ctx := context.Background()
-		group := storage.FleetGroupRecord{
-			ID:        "tx-concurrent-group",
-			Name:      "tx-concurrent-group",
-			CreatedAt: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
-		}
-		if err := store.PutFleetGroup(ctx, group); err != nil {
-			t.Fatalf("PutFleetGroup() error = %v", err)
-		}
 
-		const clientID = "tx-concurrent-client"
+		const groupID = "tx-concurrent-group"
 		type result struct {
 			err    error
 			winner string
@@ -178,23 +164,12 @@ func runTransactContract(t *testing.T, open OpenStore) {
 		results := make(chan result, 2)
 		run := func(name string) {
 			err := store.Transact(ctx, func(tx storage.Store) error {
-				client := storage.ClientRecord{
-					ID:        clientID,
+				group := storage.FleetGroupRecord{
+					ID:        groupID,
 					Name:      name,
-					SecretCiphertext: "dddddddddddddddddddddddddddddddd",
 					CreatedAt: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
-					UpdatedAt: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
 				}
-				if err := tx.PutClient(ctx, client); err != nil {
-					return err
-				}
-				assignment := storage.ClientAssignmentRecord{
-					ID:           name + "-assignment",
-					ClientID:     clientID,
-					FleetGroupID: group.ID,
-					CreatedAt:    client.CreatedAt,
-				}
-				return tx.PutClientAssignment(ctx, assignment)
+				return tx.PutFleetGroup(ctx, group)
 			})
 			results <- result{err: err, winner: name}
 		}
@@ -207,20 +182,12 @@ func runTransactContract(t *testing.T, open OpenStore) {
 			t.Fatalf("both Transacts failed: r1=%v r2=%v", r1.err, r2.err)
 		}
 
-		got, err := store.GetClientByID(ctx, clientID)
+		got, err := store.GetFleetGroup(ctx, groupID)
 		if err != nil {
-			t.Fatalf("GetClientByID() error = %v", err)
+			t.Fatalf("GetFleetGroup() error = %v", err)
 		}
 		if got.Name != "name-a" && got.Name != "name-b" {
-			t.Fatalf("GetClientByID().Name = %q, want name-a or name-b", got.Name)
-		}
-
-		assignments, err := store.ListClientAssignments(ctx, clientID)
-		if err != nil {
-			t.Fatalf("ListClientAssignments() error = %v", err)
-		}
-		if len(assignments) == 0 {
-			t.Fatalf("expected at least one assignment from the winning Transact")
+			t.Fatalf("GetFleetGroup().Name = %q, want name-a or name-b", got.Name)
 		}
 	})
 

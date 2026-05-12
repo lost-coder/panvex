@@ -23,7 +23,7 @@ func TestStoreContract(t *testing.T) {
 		t.Skip("PANVEX_POSTGRES_TEST_DSN is not set")
 	}
 
-	storagetest.RunStoreContract(t, func(t *testing.T) storage.Store {
+	storagetest.RunStoreContract(t, func(t *testing.T) storage.MigrationStore {
 		t.Helper()
 
 		store, err := Open(dsn)

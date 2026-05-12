@@ -12,7 +12,7 @@ import (
 )
 
 func TestStoreContractWithMemoryStore(t *testing.T) {
-	RunStoreContract(t, func(t *testing.T) storage.Store {
+	RunStoreContract(t, func(t *testing.T) storage.MigrationStore {
 		t.Helper()
 		return newMemoryStore()
 	})

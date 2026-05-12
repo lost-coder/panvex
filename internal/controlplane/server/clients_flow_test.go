@@ -39,12 +39,21 @@ func TestDeleteClientPersistsStateBeforeJob(t *testing.T) {
 	}
 
 	persistErr := errors.New("persist failure injected")
-	failing := &failingStore{Store: baseStore, putClientErr: persistErr}
+	// After Wave 4.2 the production path is clientsSvc.SaveState →
+	// uow.Do → clients.Repository.Save, not s.store.PutClient. Failure is
+	// injected at the Repository layer so replaceClientStateWithContext
+	// returns the error before the in-memory state is committed.
+	failing := &failingStore{MigrationStore: baseStore}
+	failingRepo := &failingClientsRepository{
+		Repository: sqlite.NewClientsRepository(baseStore.DB()),
+		saveErr:    persistErr,
+	}
 
 	server := mustNew(t, Options{
-		LoginTimingFloor: -1,
-		Now:              func() time.Time { return now },
-		Store:            failing,
+		LoginTimingFloor:    -1,
+		Now:                 func() time.Time { return now },
+		Store:               failing,
+		ClientsRepoOverride: failingRepo,
 	})
 	defer server.Close()
 

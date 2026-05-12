@@ -7,14 +7,15 @@
 // per-commit CI.
 //
 // Scenarios audited against remediation plan v4:
-//   1. DB drop mid-transaction (partial write rollback of in-memory state)
-//   2. SIGKILL between audit enqueue and flush
-//   3. Agent restart during snapshot burst (seq-reset baseline, P2-LOG-06)
-//   4. Network partition mid-job-dispatch (ack-expiry redispatch, P2-LOG-05)
-//   5. Clock drift (retention worker does not prune future events)
+//  1. DB drop mid-transaction (partial write rollback of in-memory state)
+//  2. SIGKILL between audit enqueue and flush
+//  3. Agent restart during snapshot burst (seq-reset baseline, P2-LOG-06)
+//  4. Network partition mid-job-dispatch (ack-expiry redispatch, P2-LOG-05)
+//  5. Clock drift (retention worker does not prune future events)
 //
 // Naming follows the ChaosXxx prefix so they can be run as a group:
-//   go test -run Chaos ./internal/controlplane/server
+//
+//	go test -run Chaos ./internal/controlplane/server
 package server
 
 import (
@@ -64,20 +65,29 @@ func TestChaosDBDropDuringTransact(t *testing.T) {
 		t.Fatalf("PutAgent() error = %v", err)
 	}
 
-	// Inject failure on the SECOND persistence step (PutClientAssignment)
-	// so the first write (PutClient) has already gone in. This mirrors a
-	// real partial-transaction abort where some rows hit disk before the DB
+	// Inject failure on the SECOND persistence step (SaveAssignments) so the
+	// first write (Save client) has already gone in. This mirrors a real
+	// partial-transaction abort where some rows hit disk before the DB
 	// connection dropped.
+	//
+	// After Wave 4.2 the production path is clientsSvc.SaveState →
+	// uow.Do → clients.Repository, not s.store.PutClientAssignment. Failure
+	// is injected at the Repository layer via failingClientsRepository and
+	// wired through Options.ClientsRepoOverride.
 	chaosErr := errors.New("chaos: DB connection dropped mid-transaction")
 	failing := &failingStore{
-		Store:                  baseStore,
-		putClientAssignmentErr: chaosErr,
+		MigrationStore: baseStore,
+	}
+	failingRepo := &failingClientsRepository{
+		Repository:         sqlite.NewClientsRepository(baseStore.DB()),
+		saveAssignmentsErr: chaosErr,
 	}
 
 	server := mustNew(t, Options{
-		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: failing,
+		LoginTimingFloor:    -1,
+		Now:                 func() time.Time { return now },
+		Store:               failing,
+		ClientsRepoOverride: failingRepo,
 	})
 	defer server.Close()
 
@@ -453,8 +463,8 @@ func TestChaosClockDrift(t *testing.T) {
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   nowFn,
-		Store: baseStore,
+		Now:              nowFn,
+		Store:            baseStore,
 	})
 	defer server.Close()
 

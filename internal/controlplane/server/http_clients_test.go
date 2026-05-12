@@ -444,11 +444,21 @@ func TestHTTPClientsCreateReturnsInternalErrorWhenPersistenceFails(t *testing.T)
 	}
 	defer sqliteStore.Close()
 
-	store := &failingStore{Store: sqliteStore}
+	store := &failingStore{MigrationStore: sqliteStore}
+	// After Wave 4.2 the production path is clientsSvc.SaveState →
+	// uow.Do → clients.Repository.Save, not s.store.PutClient. Failure is
+	// injected at the Repository layer via failingClientsRepository and
+	// wired through Options.ClientsRepoOverride. The saveErr is set after
+	// server construction (same timing as the old store.putClientErr) so
+	// that setup writes (fleet group, agent seed) still succeed.
+	failingRepo := &failingClientsRepository{
+		Repository: sqlite.NewClientsRepository(sqliteStore.DB()),
+	}
 	server := mustNew(t, Options{
-		LoginTimingFloor: -1,
-		Now:              func() time.Time { return now },
-		Store:            store,
+		LoginTimingFloor:    -1,
+		Now:                 func() time.Time { return now },
+		Store:               store,
+		ClientsRepoOverride: failingRepo,
 	})
 	defer server.Close()
 	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
@@ -466,7 +476,7 @@ func TestHTTPClientsCreateReturnsInternalErrorWhenPersistenceFails(t *testing.T)
 		LastSeenAt: now.Add(-time.Minute),
 	})
 
-	store.putClientErr = errors.New("put client failed")
+	failingRepo.saveErr = errors.New("put client failed")
 
 	createResponse := performJSONRequest(t, server, http.MethodPost, "/api/clients", map[string]any{
 		"name":            "alice",
@@ -485,7 +495,7 @@ func TestRecordClientJobResultDoesNotPanicWhenDeploymentPersistenceFails(t *test
 	}
 	defer sqliteStore.Close()
 
-	store := &failingStore{Store: sqliteStore}
+	store := &failingStore{MigrationStore: sqliteStore}
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:              func() time.Time { return now },

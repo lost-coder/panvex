@@ -2,24 +2,25 @@ package server
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 type failingStore struct {
-	storage.Store
+	storage.MigrationStore
 
-	putAgentErr              error
-	listAgentsErr            error
-	listUsersErr             error
-	putInstanceErr           error
-	appendMetricSnapshotErr  error
-	appendAuditEventErr      error
-	putClientErr             error
-	putClientAssignmentErr   error
-	putClientDeploymentErr   error
-	updateAgentNodeNameErr   error
-	deleteAgentErr           error
+	putAgentErr               error
+	listAgentsErr             error
+	listUsersErr              error
+	putInstanceErr            error
+	appendMetricSnapshotErr   error
+	appendAuditEventErr       error
+	putClientErr              error
+	putClientAssignmentErr    error
+	putClientDeploymentErr    error
+	updateAgentNodeNameErr    error
+	deleteAgentErr            error
 	deleteInstancesByAgentErr error
 }
 
@@ -28,7 +29,7 @@ func (s *failingStore) PutAgent(ctx context.Context, agent storage.AgentRecord) 
 		return s.putAgentErr
 	}
 
-	return s.Store.PutAgent(ctx, agent)
+	return s.MigrationStore.PutAgent(ctx, agent)
 }
 
 func (s *failingStore) ListAgents(ctx context.Context) ([]storage.AgentRecord, error) {
@@ -36,7 +37,7 @@ func (s *failingStore) ListAgents(ctx context.Context) ([]storage.AgentRecord, e
 		return nil, s.listAgentsErr
 	}
 
-	return s.Store.ListAgents(ctx)
+	return s.MigrationStore.ListAgents(ctx)
 }
 
 func (s *failingStore) ListUsers(ctx context.Context) ([]storage.UserRecord, error) {
@@ -44,7 +45,7 @@ func (s *failingStore) ListUsers(ctx context.Context) ([]storage.UserRecord, err
 		return nil, s.listUsersErr
 	}
 
-	return s.Store.ListUsers(ctx)
+	return s.MigrationStore.ListUsers(ctx)
 }
 
 func (s *failingStore) PutInstance(ctx context.Context, instance storage.InstanceRecord) error {
@@ -52,7 +53,7 @@ func (s *failingStore) PutInstance(ctx context.Context, instance storage.Instanc
 		return s.putInstanceErr
 	}
 
-	return s.Store.PutInstance(ctx, instance)
+	return s.MigrationStore.PutInstance(ctx, instance)
 }
 
 func (s *failingStore) AppendMetricSnapshot(ctx context.Context, snapshot storage.MetricSnapshotRecord) error {
@@ -60,7 +61,7 @@ func (s *failingStore) AppendMetricSnapshot(ctx context.Context, snapshot storag
 		return s.appendMetricSnapshotErr
 	}
 
-	return s.Store.AppendMetricSnapshot(ctx, snapshot)
+	return s.MigrationStore.AppendMetricSnapshot(ctx, snapshot)
 }
 
 func (s *failingStore) AppendAuditEvent(ctx context.Context, event storage.AuditEventRecord) error {
@@ -68,7 +69,7 @@ func (s *failingStore) AppendAuditEvent(ctx context.Context, event storage.Audit
 		return s.appendAuditEventErr
 	}
 
-	return s.Store.AppendAuditEvent(ctx, event)
+	return s.MigrationStore.AppendAuditEvent(ctx, event)
 }
 
 func (s *failingStore) PutClient(ctx context.Context, client storage.ClientRecord) error {
@@ -76,7 +77,7 @@ func (s *failingStore) PutClient(ctx context.Context, client storage.ClientRecor
 		return s.putClientErr
 	}
 
-	return s.Store.PutClient(ctx, client)
+	return s.MigrationStore.PutClient(ctx, client)
 }
 
 func (s *failingStore) PutClientAssignment(ctx context.Context, assignment storage.ClientAssignmentRecord) error {
@@ -84,7 +85,7 @@ func (s *failingStore) PutClientAssignment(ctx context.Context, assignment stora
 		return s.putClientAssignmentErr
 	}
 
-	return s.Store.PutClientAssignment(ctx, assignment)
+	return s.MigrationStore.PutClientAssignment(ctx, assignment)
 }
 
 func (s *failingStore) PutClientDeployment(ctx context.Context, deployment storage.ClientDeploymentRecord) error {
@@ -92,7 +93,7 @@ func (s *failingStore) PutClientDeployment(ctx context.Context, deployment stora
 		return s.putClientDeploymentErr
 	}
 
-	return s.Store.PutClientDeployment(ctx, deployment)
+	return s.MigrationStore.PutClientDeployment(ctx, deployment)
 }
 
 func (s *failingStore) UpdateAgentNodeName(ctx context.Context, agentID string, nodeName string) error {
@@ -100,7 +101,7 @@ func (s *failingStore) UpdateAgentNodeName(ctx context.Context, agentID string, 
 		return s.updateAgentNodeNameErr
 	}
 
-	return s.Store.UpdateAgentNodeName(ctx, agentID, nodeName)
+	return s.MigrationStore.UpdateAgentNodeName(ctx, agentID, nodeName)
 }
 
 func (s *failingStore) DeleteAgent(ctx context.Context, agentID string) error {
@@ -108,7 +109,7 @@ func (s *failingStore) DeleteAgent(ctx context.Context, agentID string) error {
 		return s.deleteAgentErr
 	}
 
-	return s.Store.DeleteAgent(ctx, agentID)
+	return s.MigrationStore.DeleteAgent(ctx, agentID)
 }
 
 func (s *failingStore) DeleteInstancesByAgent(ctx context.Context, agentID string) error {
@@ -116,5 +117,18 @@ func (s *failingStore) DeleteInstancesByAgent(ctx context.Context, agentID strin
 		return s.deleteInstancesByAgentErr
 	}
 
-	return s.Store.DeleteInstancesByAgent(ctx, agentID)
+	return s.MigrationStore.DeleteInstancesByAgent(ctx, agentID)
+}
+
+// DB forwards the underlying store's *sql.DB so that lifecycle.go's
+// initStoreBackedSubsystems can detect DB availability and build UoW /
+// discoveredRepo even when the concrete store is wrapped in failingStore.
+func (s *failingStore) DB() *sql.DB {
+	type dbExposer interface {
+		DB() *sql.DB
+	}
+	if e, ok := s.MigrationStore.(dbExposer); ok {
+		return e.DB()
+	}
+	return nil
 }

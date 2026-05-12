@@ -26,7 +26,7 @@ func TestServerLoginSetsSessionAndReturnsMe(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 	})
 	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "viewer",
@@ -86,7 +86,7 @@ func TestServerLoginIgnoresSpoofedForwardedProtoFromUntrustedPeer(t *testing.T) 
 	now := time.Date(2026, time.March, 18, 12, 0, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 	})
 	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "viewer",
@@ -129,11 +129,11 @@ func TestServerLoginRejectsWhenAuditPersistenceFails(t *testing.T) {
 	}
 	defer sqliteStore.Close()
 
-	store := &failingStore{Store: sqliteStore}
+	store := &failingStore{MigrationStore: sqliteStore}
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
 	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
@@ -165,7 +165,7 @@ func TestServerLoginLeavesSessionCookieInsecureForPlainHTTP(t *testing.T) {
 	now := time.Date(2026, time.March, 18, 12, 10, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 	})
 	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "viewer",
@@ -196,7 +196,7 @@ func TestServerLoginRateLimitRejectsBurstFromSameClient(t *testing.T) {
 	now := time.Date(2026, time.March, 18, 12, 30, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 	})
 	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "viewer",
@@ -229,7 +229,7 @@ func TestServerCreateJobRejectsViewerRole(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 	})
 	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "viewer",
@@ -265,7 +265,7 @@ func TestServerCreateJobAcceptsOperatorWithTotp(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 	})
 	user, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "operator",
@@ -320,7 +320,7 @@ func TestHTTPAuthTotpSetupEnableDisableFlow(t *testing.T) {
 	now := time.Date(2026, time.March, 15, 8, 0, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 	})
 	user, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "operator",
@@ -462,7 +462,7 @@ func TestHTTPUsersTotpResetRequiresAdminAndClearsTarget(t *testing.T) {
 	now := time.Date(2026, time.March, 15, 8, 30, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 	})
 	adminUser, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
@@ -608,7 +608,7 @@ func TestServerNewDoesNotReseedExistingStoreUsers(t *testing.T) {
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now.Add(time.Minute) },
+		Now:              func() time.Time { return now.Add(time.Minute) },
 		Users: []auth.User{
 			{
 				ID:           user.ID,
@@ -657,9 +657,9 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 
 	first := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Users: []auth.User{user},
-		Store: store,
+		Now:              func() time.Time { return now },
+		Users:            []auth.User{user},
+		Store:            store,
 	})
 	fleetGroupID := seedTestFleetGroup(t, store, "ams-1", now)
 	token, err := first.issueEnrollmentToken(security.EnrollmentScope{
@@ -705,9 +705,9 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 
 	restored := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now.Add(2 * time.Minute) },
-		Users: []auth.User{user},
-		Store: store,
+		Now:              func() time.Time { return now.Add(2 * time.Minute) },
+		Users:            []auth.User{user},
+		Store:            store,
 	})
 	defer restored.Close()
 	loginResponse := performJSONRequest(t, restored, http.MethodPost, "/api/auth/login", map[string]string{
@@ -778,7 +778,7 @@ func TestHTTPAgentsReturnsEmptyRuntimeSlicesForAgentsWithoutRuntimeSnapshot(t *t
 	now := time.Date(2026, time.March, 18, 10, 0, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 	})
 	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "viewer",
@@ -853,9 +853,9 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 
 	first := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Users: []auth.User{user},
-		Store: store,
+		Now:              func() time.Time { return now },
+		Users:            []auth.User{user},
+		Store:            store,
 	})
 
 	secret, err := first.auth.StartTotpSetup(context.Background(), user.ID, now)
@@ -940,9 +940,9 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 
 	restored := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now.Add(2 * time.Minute) },
-		Users: []auth.User{user},
-		Store: store,
+		Now:              func() time.Time { return now.Add(2 * time.Minute) },
+		Users:            []auth.User{user},
+		Store:            store,
 	})
 	defer restored.Close()
 	restoredCode, err := restored.auth.GenerateTotpCode(secret, now.Add(2*time.Minute))
@@ -1014,8 +1014,8 @@ func TestHTTPAgentBootstrapConsumesTokenAndReturnsIdentityBundle(t *testing.T) {
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
 	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
@@ -1104,8 +1104,8 @@ func TestHTTPAgentBootstrapRejectsConsumedToken(t *testing.T) {
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
 	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
@@ -1224,8 +1224,8 @@ func TestHTTPEnrollmentTokenListAndRevoke(t *testing.T) {
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
 	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
@@ -1358,7 +1358,7 @@ func TestHTTPControlRoomShowsFirstServerOnboarding(t *testing.T) {
 	now := time.Date(2026, time.March, 16, 9, 0, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 	})
 	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
@@ -1424,7 +1424,7 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 	currentTime := time.Date(2026, time.March, 16, 10, 0, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return currentTime },
+		Now:              func() time.Time { return currentTime },
 	})
 	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
@@ -1673,7 +1673,7 @@ func TestHTTPEmbeddedUIFallsBackToIndexForSPARoute(t *testing.T) {
 	now := time.Date(2026, time.March, 15, 12, 0, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 		UIFiles: fstest.MapFS{
 			"index.html":    &fstest.MapFile{Data: []byte("<html><body>panvex</body></html>")},
 			"assets/app.js": &fstest.MapFile{Data: []byte("console.log('panvex')")},
@@ -1709,7 +1709,7 @@ func TestHTTPEmbeddedUIBaseHrefOnDeepLinkReload(t *testing.T) {
 	now := time.Date(2026, time.April, 24, 12, 0, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 		UIFiles: fstest.MapFS{
 			"index.html": &fstest.MapFile{Data: []byte(
 				`<html><head><meta charset="utf-8"></head><body><div id="root"></div></body></html>`,
@@ -1738,7 +1738,7 @@ func TestHTTPEmbeddedUIServesStaticAsset(t *testing.T) {
 	now := time.Date(2026, time.March, 15, 12, 0, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 		UIFiles: fstest.MapFS{
 			"index.html":    &fstest.MapFile{Data: []byte("<html><body>panvex</body></html>")},
 			"assets/app.js": &fstest.MapFile{Data: []byte("console.log('panvex')")},
@@ -1761,7 +1761,7 @@ func TestHTTPEmbeddedUIDoesNotShadowAPIRoutes(t *testing.T) {
 	now := time.Date(2026, time.March, 15, 12, 0, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 		UIFiles: fstest.MapFS{
 			"index.html": &fstest.MapFile{Data: []byte("<html><body>panvex</body></html>")},
 		},
@@ -1792,8 +1792,8 @@ func TestHTTPWithoutEmbeddedUIStillReturnsAPIOnlyNotFound(t *testing.T) {
 	now := time.Date(2026, time.March, 15, 12, 0, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:     func() time.Time { return now },
-		UIFiles: nil,
+		Now:              func() time.Time { return now },
+		UIFiles:          nil,
 	})
 
 	response := performRequest(t, server.Handler(), http.MethodGet, "/app", nil)
@@ -1810,11 +1810,11 @@ func TestRenameAgentReturnsErrorWhenStorageFails(t *testing.T) {
 	}
 	defer sqliteStore.Close()
 
-	store := &failingStore{Store: sqliteStore}
+	store := &failingStore{MigrationStore: sqliteStore}
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
 
@@ -1880,11 +1880,11 @@ func TestDeregisterAgentReturnsErrorWhenStorageFails(t *testing.T) {
 	}
 	defer sqliteStore.Close()
 
-	store := &failingStore{Store: sqliteStore}
+	store := &failingStore{MigrationStore: sqliteStore}
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
 
@@ -2008,8 +2008,8 @@ func TestPanelBlockedByWhitelistButAgentAllowed(t *testing.T) {
 
 	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 		PanelRuntime: PanelRuntime{
 			HTTPRootPath:      "/panel",
 			AgentHTTPRootPath: "/agent",
@@ -2022,7 +2022,7 @@ func TestPanelBlockedByWhitelistButAgentAllowed(t *testing.T) {
 	handler := srv.Handler()
 
 	// Panel login from non-whitelisted IP — should be blocked
-	loginReq := httptest.NewRequestWithContext(t.Context(),http.MethodPost, "/panel/api/auth/login", strings.NewReader(`{}`))
+	loginReq := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/panel/api/auth/login", strings.NewReader(`{}`))
 	loginReq.Header.Set("Content-Type", "application/json")
 	loginReq.RemoteAddr = "203.0.113.5:12345"
 	loginRec := httptest.NewRecorder()
@@ -2033,7 +2033,7 @@ func TestPanelBlockedByWhitelistButAgentAllowed(t *testing.T) {
 	}
 
 	// Agent bootstrap from same IP — should NOT be blocked
-	bootstrapReq := httptest.NewRequestWithContext(t.Context(),http.MethodPost, "/agent/api/agent/bootstrap", strings.NewReader(`{}`))
+	bootstrapReq := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/agent/api/agent/bootstrap", strings.NewReader(`{}`))
 	bootstrapReq.Header.Set("Content-Type", "application/json")
 	bootstrapReq.RemoteAddr = "203.0.113.5:12345"
 	bootstrapRec := httptest.NewRecorder()
@@ -2044,7 +2044,7 @@ func TestPanelBlockedByWhitelistButAgentAllowed(t *testing.T) {
 	}
 
 	// Health check under panel path — also protected by whitelist
-	healthReq := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "/panel/healthz", nil)
+	healthReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/panel/healthz", nil)
 	healthReq.RemoteAddr = "10.0.0.1:12345" // whitelisted IP
 	healthRec := httptest.NewRecorder()
 	handler.ServeHTTP(healthRec, healthReq)
@@ -2062,7 +2062,7 @@ func performRequest(t *testing.T, handler http.Handler, method string, path stri
 		reader = body
 	}
 
-	request := httptest.NewRequestWithContext(t.Context(),method, path, reader)
+	request := httptest.NewRequestWithContext(t.Context(), method, path, reader)
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 	return recorder

@@ -93,6 +93,22 @@ func (r *fakeRepo) SaveDeployments(_ context.Context, clientID ClientID, deploym
 	return nil
 }
 
+func (r *fakeRepo) PutDeployment(_ context.Context, d Deployment) error {
+	if r.failOn == "PutDeployment" {
+		return errors.New("fakeRepo: PutDeployment: injected failure")
+	}
+	existing := r.deploymentsByClient[d.ClientID]
+	for i, e := range existing {
+		if e.AgentID == d.AgentID {
+			existing[i] = d
+			r.deploymentsByClient[d.ClientID] = existing
+			return nil
+		}
+	}
+	r.deploymentsByClient[d.ClientID] = append(existing, d)
+	return nil
+}
+
 func (r *fakeRepo) UpsertUsage(_ context.Context, u Usage) error {
 	if r.failOn == "UpsertUsage" {
 		return errors.New("fakeRepo: UpsertUsage: injected failure")
