@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/lost-coder/panvex/internal/dbsqlc"
 )
@@ -39,9 +40,20 @@ func TestManagerStartAfterStopReturnsError(t *testing.T) {
 type fakeTransportQueries struct {
 	rows     map[string]dbsqlc.GetAgentTransportRow
 	listRows map[string][]dbsqlc.ListAgentsByTransportModeRow
+	// getDelay, when non-nil, blocks GetAgentTransport until the channel
+	// is closed (or the ctx is cancelled). Used to exercise ctx-cancellation
+	// behaviour without spinning up a real database.
+	getDelay <-chan struct{}
 }
 
-func (f *fakeTransportQueries) GetAgentTransport(_ context.Context, id string) (dbsqlc.GetAgentTransportRow, error) {
+func (f *fakeTransportQueries) GetAgentTransport(ctx context.Context, id string) (dbsqlc.GetAgentTransportRow, error) {
+	if f.getDelay != nil {
+		select {
+		case <-f.getDelay:
+		case <-ctx.Done():
+			return dbsqlc.GetAgentTransportRow{}, ctx.Err()
+		}
+	}
 	if r, ok := f.rows[id]; ok {
 		return r, nil
 	}
@@ -66,7 +78,7 @@ func TestManagerHandlesTransportModeChange(t *testing.T) {
 	}
 
 	// Initial state: node-1 is inbound — no supervisor expected.
-	m.OnNodeChanged("node-1")
+	m.OnNodeChanged(context.Background(), "node-1")
 	if m.HasOutboundSupervisor("node-1") {
 		t.Fatal("inbound node-1 should not have a supervisor")
 	}
@@ -77,14 +89,14 @@ func TestManagerHandlesTransportModeChange(t *testing.T) {
 		TransportMode: "outbound",
 		DialAddress:   sql.NullString{String: "vps:8443", Valid: true},
 	}
-	m.OnNodeChanged("node-1")
+	m.OnNodeChanged(context.Background(), "node-1")
 	if !m.HasOutboundSupervisor("node-1") {
 		t.Fatal("expected outbound supervisor for node-1 after mode change")
 	}
 
 	// Flip back to inbound.
 	fake.rows["node-1"] = dbsqlc.GetAgentTransportRow{ID: "node-1", TransportMode: "inbound"}
-	m.OnNodeChanged("node-1")
+	m.OnNodeChanged(context.Background(), "node-1")
 	if m.HasOutboundSupervisor("node-1") {
 		t.Fatal("supervisor should be removed when mode flips back to inbound")
 	}
@@ -158,5 +170,43 @@ func TestManagerStartFailsWhenOutboundRequiresTLS(t *testing.T) {
 	err := m.Start(context.Background())
 	if err == nil {
 		t.Fatal("expected error when tlsCfg is nil but outbound rows exist")
+	}
+}
+
+func TestManagerOnNodeChangedRespectsContextCancel(t *testing.T) {
+	// Slow fake DB blocks on a channel; the test cancels ctx and verifies
+	// OnNodeChanged returns promptly instead of waiting for the DB.
+	release := make(chan struct{})
+	fake := &fakeTransportQueries{
+		rows: map[string]dbsqlc.GetAgentTransportRow{
+			"node-1": {ID: "node-1", TransportMode: TransportModeOutbound},
+		},
+		getDelay: release,
+	}
+	m := NewManager(nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	m.db = fake
+	if err := m.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(m.Stop)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		m.OnNodeChanged(ctx, "node-1")
+		close(done)
+	}()
+
+	// Cancel is the ONLY way out: the fake's GetAgentTransport is blocked on
+	// release (never closed in this test) and must bail via <-ctx.Done(). If
+	// OnNodeChanged regressed to context.Background(), the fake would block
+	// forever and the 2s deadline would fire.
+	cancel()
+
+	select {
+	case <-done:
+		// ok — OnNodeChanged returned promptly after cancel
+	case <-time.After(2 * time.Second):
+		t.Fatal("OnNodeChanged did not honour ctx cancel")
 	}
 }

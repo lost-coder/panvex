@@ -448,10 +448,11 @@ func (s *Server) SetAgentTransportManager(m *agenttransport.Manager) {
 
 // notifyTransportManager calls Manager.OnNodeChanged if a manager has
 // been wired. No-op when the manager is nil (e.g. in unit tests that
-// do not wire the full transport stack).
-func (s *Server) notifyTransportManager(agentID string) {
+// do not wire the full transport stack). Pass through the caller's ctx
+// so DB lookups are cancellable.
+func (s *Server) notifyTransportManager(ctx context.Context, agentID string) {
 	if m := s.agentTransportManager.Load(); m != nil {
-		m.OnNodeChanged(agentID)
+		m.OnNodeChanged(ctx, agentID)
 	}
 }
 

@@ -148,7 +148,7 @@ func (s *Server) handleUpdateAgentTransportMode() http.HandlerFunc {
 
 		// Notify the transport manager so outbound supervisors are
 		// spawned or torn down immediately (best-effort: no error if nil).
-		s.notifyTransportManager(agentID)
+		s.notifyTransportManager(r.Context(), agentID)
 
 		s.appendAuditWithContext(r.Context(), session.UserID, "agents.update_transport_mode", agentID, map[string]any{
 			"transport_mode": req.TransportMode,

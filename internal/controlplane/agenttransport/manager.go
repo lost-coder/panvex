@@ -155,7 +155,10 @@ func (m *Manager) Stop() {
 // agents.transport_mode (added in a later phase) and on direct DB updates from
 // operator tooling. It looks up the current transport_mode for the agent and
 // ensures the outbound supervisor map reflects the new state.
-func (m *Manager) OnNodeChanged(nodeID string) {
+// The ctx parameter governs the DB lookup; callers SHOULD pass the request
+// context (HTTP) or the server's lifecycle context (operator tooling) so a
+// stalled DB cannot pin the goroutine indefinitely.
+func (m *Manager) OnNodeChanged(ctx context.Context, nodeID string) {
 	// Snapshot the guards under m.mu, then release before any blocking IO.
 	// outbound has its own mutex; the m.outbound pointer itself is set once
 	// in NewManager and never reassigned, so it is safe to use without
@@ -168,7 +171,7 @@ func (m *Manager) OnNodeChanged(nodeID string) {
 	db := m.db
 	m.mu.Unlock()
 
-	row, err := db.GetAgentTransport(context.Background(), nodeID)
+	row, err := db.GetAgentTransport(ctx, nodeID)
 	if err != nil {
 		m.logger.Warn("agenttransport: OnNodeChanged lookup failed",
 			"node_id", nodeID, "error", err)
