@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import { useState, type ReactElement } from "react";
 
 interface TelemtUnreachableBannerProps {
   sinceUnix: number;
@@ -32,7 +32,11 @@ export function TelemtUnreachableBanner(
   props: TelemtUnreachableBannerProps,
 ): ReactElement {
   const { sinceUnix, nowUnix } = props;
-  const now = nowUnix ?? Date.now() / 1000;
+  // Date.now() is impure and would violate the react-compiler "no impure
+  // calls during render" rule; wrap it in a lazy useState initializer so
+  // the value is captured once at mount and stays stable across rerenders.
+  const [fallbackNow] = useState(() => Date.now() / 1000);
+  const now = nowUnix ?? fallbackNow;
   const elapsed = sinceUnix > 0 ? now - sinceUnix : 0;
   const sinceText = formatHHMMSS(sinceUnix);
   const elapsedText = formatElapsed(elapsed);
