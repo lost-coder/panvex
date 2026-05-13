@@ -516,7 +516,8 @@ install_panvex() {
     warn "Existing installation detected: $current_ver"
 
     if [[ -f "$config_file" ]]; then
-      local backup="${config_file}.bak.$(date +%s)"
+      local backup
+      backup="${config_file}.bak.$(date +%s)"
       cp "$config_file" "$backup"
       success "Config backed up: $backup"
     fi

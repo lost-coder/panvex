@@ -192,7 +192,8 @@ download_file() {
 
 summary_box() {
   local width=60
-  local border="${CYAN}$(printf '─%.0s' $(seq 1 $width))${RESET}"
+  local border
+  border="${CYAN}$(printf '─%.0s' $(seq 1 $width))${RESET}"
   echo ""
   echo "  $border"
   while [[ $# -gt 0 ]]; do
@@ -227,7 +228,8 @@ install_agent() {
     warn "Existing installation detected: $current_ver"
 
     if [[ -f "$env_file" ]]; then
-      local backup="${env_file}.bak.$(date +%s)"
+      local backup
+      backup="${env_file}.bak.$(date +%s)"
       cp "$env_file" "$backup"
       success "Config backed up: $backup"
     fi

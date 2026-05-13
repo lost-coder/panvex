@@ -114,9 +114,10 @@ jobs:
   go-test-next:
     name: Go Tests (next version, canary)
     needs: detect-changes
-    if: |
-      (github.event_name == 'pull_request' && needs.detect-changes.outputs.go == 'true') ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    # Re-enable once Go 1.27 ships an RC build that actions/setup-go can
+    # resolve. The job is non-blocking (continue-on-error) but currently
+    # shows red because 1.27.0-rc.1 cannot be resolved (May 2026).
+    if: false
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
