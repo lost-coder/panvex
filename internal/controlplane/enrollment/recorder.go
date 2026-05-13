@@ -9,14 +9,38 @@ import (
 	"github.com/google/uuid"
 )
 
+// Attempt is the persistent shape of an enrollment attempt.
+type Attempt struct {
+	ID         string
+	TokenID    string
+	AgentID    string
+	Mode       Mode
+	ClientAddr string
+	RequestID  string
+	Status     Status
+	ErrorCode  ErrorCode
+	ErrorMsg   string
+	StartedAt  time.Time
+	FinishedAt time.Time
+}
+
+// Event is the persistent shape of one timeline event.
+type Event struct {
+	Step       Step
+	Level      Level
+	Message    string
+	FieldsJSON string
+	Ts         time.Time
+}
+
 // Store is the persistence boundary for enrollment attempts. The real
 // implementation wraps sqlc-generated code; tests use an in-memory mock.
 type Store interface {
-	CreateAttempt(ctx context.Context, a memAttempt) error
-	AppendEvent(ctx context.Context, attemptID string, ev memEvent) error
+	CreateAttempt(ctx context.Context, a Attempt) error
+	AppendEvent(ctx context.Context, attemptID string, ev Event) error
 	AttachAgent(ctx context.Context, attemptID, agentID string) error
-	Complete(ctx context.Context, attemptID string, finishedAt time.Time) error
-	Fail(ctx context.Context, attemptID string, finishedAt time.Time, code ErrorCode, msg string) error
+	Complete(ctx context.Context, attemptID string, finishedAt time.Time) (changed bool, err error)
+	Fail(ctx context.Context, attemptID string, finishedAt time.Time, code ErrorCode, msg string) (changed bool, err error)
 }
 
 // Publisher publishes timeline events on the existing /events bus.
@@ -49,7 +73,7 @@ func (r *Recorder) WithLogger(lg *slog.Logger) *Recorder {
 
 func (r *Recorder) Begin(ctx context.Context, mode Mode, tokenID, clientAddr string) (string, error) {
 	id := uuid.NewString()
-	att := memAttempt{
+	att := Attempt{
 		ID:         id,
 		TokenID:    tokenID,
 		Mode:       mode,
@@ -66,6 +90,7 @@ func (r *Recorder) Begin(ctx context.Context, mode Mode, tokenID, clientAddr str
 		slog.String("mode", string(mode)),
 		slog.String("token_id", tokenID),
 		slog.String("client_addr", clientAddr),
+		slog.String("request_id", att.RequestID),
 	)
 	return id, nil
 }
@@ -77,7 +102,7 @@ func (r *Recorder) Event(ctx context.Context, attemptID string, step Step, level
 			fieldsJSON = string(b)
 		}
 	}
-	ev := memEvent{
+	ev := Event{
 		Step:       step,
 		Level:      level,
 		Message:    message,
@@ -119,8 +144,12 @@ func (r *Recorder) AttachAgent(ctx context.Context, attemptID, agentID string) e
 // Complete marks the attempt successful. No-op on already-terminal attempts.
 func (r *Recorder) Complete(ctx context.Context, attemptID string) error {
 	now := r.now().UTC()
-	if err := r.store.Complete(ctx, attemptID, now); err != nil {
+	changed, err := r.store.Complete(ctx, attemptID, now)
+	if err != nil {
 		return err
+	}
+	if !changed {
+		return nil
 	}
 	r.log.LogAttrs(ctx, slog.LevelInfo, "enrollment attempt succeeded",
 		slog.String("attempt_id", attemptID),
@@ -141,8 +170,12 @@ func (r *Recorder) Fail(ctx context.Context, attemptID string, code ErrorCode, c
 		msg = "Enrollment failed."
 	}
 	now := r.now().UTC()
-	if err := r.store.Fail(ctx, attemptID, now, code, msg); err != nil {
+	changed, err := r.store.Fail(ctx, attemptID, now, code, msg)
+	if err != nil {
 		return err
+	}
+	if !changed {
+		return nil
 	}
 	attrs := []slog.Attr{
 		slog.String("attempt_id", attemptID),
@@ -186,7 +219,7 @@ func (r *Recorder) Ingest(ctx context.Context, attemptID string, events []AgentR
 				fieldsJSON = string(b)
 			}
 		}
-		if err := r.store.AppendEvent(ctx, attemptID, memEvent{
+		if err := r.store.AppendEvent(ctx, attemptID, Event{
 			Step:       e.Step,
 			Level:      e.Level,
 			Message:    e.Message,

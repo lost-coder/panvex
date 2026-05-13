@@ -6,49 +6,27 @@ import (
 	"time"
 )
 
-type memAttempt struct {
-	ID         string
-	TokenID    string
-	AgentID    string
-	Mode       Mode
-	ClientAddr string
-	RequestID  string
-	Status     Status
-	ErrorCode  ErrorCode
-	ErrorMsg   string
-	StartedAt  time.Time
-	FinishedAt time.Time
-}
-
-type memEvent struct {
-	Step       Step
-	Level      Level
-	Message    string
-	FieldsJSON string
-	Ts         time.Time
-}
-
 type memStore struct {
 	mu       sync.Mutex
-	attempts map[string]*memAttempt
-	events   map[string][]memEvent
+	attempts map[string]*Attempt
+	events   map[string][]Event
 }
 
 func newMemStore() *memStore {
 	return &memStore{
-		attempts: map[string]*memAttempt{},
-		events:   map[string][]memEvent{},
+		attempts: map[string]*Attempt{},
+		events:   map[string][]Event{},
 	}
 }
 
-func (m *memStore) CreateAttempt(_ context.Context, a memAttempt) error {
+func (m *memStore) CreateAttempt(_ context.Context, a Attempt) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.attempts[a.ID] = &a
 	return nil
 }
 
-func (m *memStore) AppendEvent(_ context.Context, attemptID string, ev memEvent) error {
+func (m *memStore) AppendEvent(_ context.Context, attemptID string, ev Event) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.events[attemptID] = append(m.events[attemptID], ev)
@@ -64,17 +42,18 @@ func (m *memStore) AttachAgent(_ context.Context, attemptID, agentID string) err
 	return nil
 }
 
-func (m *memStore) Complete(_ context.Context, attemptID string, finishedAt time.Time) error {
+func (m *memStore) Complete(_ context.Context, attemptID string, finishedAt time.Time) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if a, ok := m.attempts[attemptID]; ok && a.Status == StatusInProgress {
 		a.Status = StatusSuccess
 		a.FinishedAt = finishedAt
+		return true, nil
 	}
-	return nil
+	return false, nil
 }
 
-func (m *memStore) Fail(_ context.Context, attemptID string, finishedAt time.Time, code ErrorCode, msg string) error {
+func (m *memStore) Fail(_ context.Context, attemptID string, finishedAt time.Time, code ErrorCode, msg string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if a, ok := m.attempts[attemptID]; ok && a.Status == StatusInProgress {
@@ -82,8 +61,9 @@ func (m *memStore) Fail(_ context.Context, attemptID string, finishedAt time.Tim
 		a.FinishedAt = finishedAt
 		a.ErrorCode = code
 		a.ErrorMsg = msg
+		return true, nil
 	}
-	return nil
+	return false, nil
 }
 
 func fixedClock(t time.Time) func() time.Time {
