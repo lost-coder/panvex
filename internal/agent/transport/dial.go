@@ -108,5 +108,10 @@ func dialGateway(ctx context.Context, gatewayAddr, serverName, caPEM string, cer
 			grpc.MaxCallRecvMsgSize(dialMaxMessageSize),
 			grpc.MaxCallSendMsgSize(dialMaxMessageSize),
 		),
+		// Attach x-request-id to outgoing metadata when callers have
+		// seeded the call ctx via WithRequestID, so the panel can
+		// correlate agent-side logs with the originating HTTP request.
+		grpc.WithChainUnaryInterceptor(RequestIDUnaryInterceptor()),
+		grpc.WithChainStreamInterceptor(RequestIDStreamInterceptor()),
 	)
 }

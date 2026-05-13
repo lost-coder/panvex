@@ -15,6 +15,7 @@ import (
 	agentstate "github.com/lost-coder/panvex/internal/agent/state"
 	"github.com/lost-coder/panvex/internal/agent/telemt"
 	"github.com/lost-coder/panvex/internal/controlplane/agentrevocation"
+	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
 )
 
 // runtimeFlags holds the parsed CLI options for the agent runtime. Pulling
@@ -176,13 +177,33 @@ func runRuntime(args []string) error {
 		"telemt_metrics", cfg.telemtMetricsURL,
 	)
 
+	// enrollment reporter collects local timeline steps (agent_persisted_cert,
+	// gateway_dialed, tls_handshake_ok, first_sync_ok) and ships them to the
+	// panel via ReportEnrollmentSteps after the first sync is up. Bind only
+	// fires for state files persisted by a Phase-1+ bootstrap; older state
+	// files carry an empty EnrollmentAttemptID and the reporter becomes a
+	// no-op. We back-date agent_persisted_cert with the bootstrap's
+	// disk-write timestamp so the panel timeline reflects when the cert
+	// actually landed on disk, not when the agent runtime started.
+	reporter := newEnrollmentReporter()
+	if credentialsState.EnrollmentAttemptID != "" {
+		reporter.Bind(credentialsState.EnrollmentAttemptID)
+		reporter.RecordAt(
+			string(enrollment.StepAgentPersistedCert),
+			string(enrollment.LevelInfo),
+			"cert saved",
+			credentialsState.AgentPersistedCertAt,
+			nil,
+		)
+	}
+
 	// Supervisor context: cancelled on SIGINT/SIGTERM so the reconnect
 	// backoff sleep, gRPC stream context, and all derived workers exit
 	// promptly instead of waiting out the full ~15-30s backoff window.
 	supervisorCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	err = runRuntimeReconnectLoop(supervisorCtx, &cfg, &credentialsState, agent, schedule, transportReload)
+	err = runRuntimeReconnectLoop(supervisorCtx, &cfg, &credentialsState, agent, schedule, transportReload, reporter)
 	if errors.Is(err, context.Canceled) && supervisorCtx.Err() != nil {
 		// Shutdown signalled — treat as clean exit.
 		slog.Info("agent shutting down on signal")
@@ -202,7 +223,7 @@ func runRuntime(args []string) error {
 // systemd's RestartPreventExitStatus=78 in the unit file written by
 // install-agent.sh. Any other error keeps the historic forever-retry
 // behaviour.
-func runRuntimeReconnectLoop(supervisorCtx context.Context, cfg *runtimeFlags, credentialsState *agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule, tr *transportReloadState) error {
+func runRuntimeReconnectLoop(supervisorCtx context.Context, cfg *runtimeFlags, credentialsState *agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule, tr *transportReloadState, reporter *enrollmentReporter) error {
 	reconnectAttempt := 0
 	for {
 		// Honour shutdown before we begin another iteration.
@@ -260,7 +281,7 @@ func runRuntimeReconnectLoop(supervisorCtx context.Context, cfg *runtimeFlags, c
 			*credentialsState = refreshed
 		}
 
-		afterConn, connErr := runConnection(supervisorCtx, cfg.gatewayAddr, cfg.gatewayServerName, cfg.stateFile, *credentialsState, agent, schedule, cfg.clientDataConcurrency, tr)
+		afterConn, connErr := runConnection(supervisorCtx, cfg.gatewayAddr, cfg.gatewayServerName, cfg.stateFile, *credentialsState, agent, schedule, cfg.clientDataConcurrency, tr, reporter)
 		*credentialsState = afterConn
 		if connErr == nil || errors.Is(connErr, errRuntimeCredentialsRefreshed) {
 			reconnectAttempt = 0

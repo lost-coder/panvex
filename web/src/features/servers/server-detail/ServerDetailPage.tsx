@@ -90,6 +90,7 @@ export function ServerDetailPage({
   currentFleetGroupId,
   onDeregister,
   metricsChart,
+  enrollmentHistorySlot,
 }: Readonly<ServerDetailPageProps>) {
   const { label: relativeTime, stale: relativeTimeStale } = useRelativeTime(lastUpdatedAt);
   const { systemInfo, gates, connections, summary, dcs } = server;
@@ -449,6 +450,14 @@ export function ServerDetailPage({
             onRevokeGrant={onRevokeGrant ?? noop}
           />
         )}
+
+        {/*
+          Phase-1 observability: the container passes an EnrollmentHistory
+          slot here so this presentational page does not need a
+          QueryClient in unit tests. The slot is rendered as-is below the
+          AgentConnectionSection card.
+        */}
+        {enrollmentHistorySlot}
       </div>
 
       {/* Shared DC detail sheet — opens from mobile strip, desktop radar, and desktop tiles. */}

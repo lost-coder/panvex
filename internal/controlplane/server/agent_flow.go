@@ -2,14 +2,17 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
+	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
+	"github.com/lost-coder/panvex/internal/security"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -23,6 +26,78 @@ type agentEnrollmentRequest struct {
 	Token    string
 	NodeName string
 	Version  string
+	// AttemptID is the enrollment.Recorder attempt opened by the HTTP
+	// handler before this call. Optional — when empty, enrollAgent skips
+	// timeline emission. Always set in the production HTTP path so the
+	// per-step events line up with the right attempt row.
+	AttemptID string
+}
+
+// enrollmentError carries an operator-friendly ErrorCode alongside the
+// underlying cause. The HTTP handler wraps returns from enrollAgent in
+// this so mapAndFailEnrollment can dispatch the right Recorder.Fail code
+// without re-classifying the cause from a string match.
+//
+// Task 13 limits this to the success path (cert sign step) and a generic
+// fall-through; Task 15 will tighten the negative-path classification
+// alongside the new tests.
+type enrollmentError struct {
+	code   enrollment.ErrorCode
+	cause  error
+	fields map[string]any
+}
+
+func (e *enrollmentError) Error() string {
+	if e.cause != nil {
+		return e.cause.Error()
+	}
+	return string(e.code)
+}
+
+func (e *enrollmentError) Unwrap() error { return e.cause }
+
+// classifyEnrollmentError maps an error returned by enrollAgent (or the
+// surrounding HTTP handler) to the enrollment.ErrorCode the Recorder
+// should report. Returns ErrInternal as a fall-through so the attempt
+// still terminates with a code rather than lingering in in_progress.
+//
+// Task 15: token-expired and token-already-used now classify into their
+// dedicated codes; the prior wiring routed both to ErrInternal because
+// only the cert-sign path constructed a typed enrollmentError. The check
+// uses errors.Is so a wrapped sentinel still classifies correctly.
+func classifyEnrollmentError(err error) enrollment.ErrorCode {
+	switch {
+	case errors.Is(err, security.ErrEnrollmentTokenExpired):
+		return enrollment.ErrTokenExpired
+	case errors.Is(err, security.ErrEnrollmentTokenConsumed):
+		return enrollment.ErrTokenAlreadyUsed
+	case errors.Is(err, security.ErrEnrollmentTokenInvalid),
+		errors.Is(err, errEnrollmentTokenRevoked):
+		return enrollment.ErrTokenNotFound
+	default:
+		return enrollment.ErrInternal
+	}
+}
+
+// mapAndFailEnrollment dispatches the appropriate enrollment.ErrorCode
+// onto Recorder.Fail. Typed enrollmentError wins; otherwise the error is
+// classified via classifyEnrollmentError so security sentinels surface
+// as their dedicated codes instead of ErrInternal.
+func (s *Server) mapAndFailEnrollment(ctx context.Context, attemptID string, err error) {
+	if s.enrollmentRec == nil || attemptID == "" {
+		return
+	}
+	var ee *enrollmentError
+	if errors.As(err, &ee) {
+		if failErr := s.enrollmentRec.Fail(ctx, attemptID, ee.code, ee.cause, ee.fields); failErr != nil {
+			s.logger.Warn("enrollment.recorder fail", "attempt_id", attemptID, "error", failErr)
+		}
+		return
+	}
+	code := classifyEnrollmentError(err)
+	if failErr := s.enrollmentRec.Fail(ctx, attemptID, code, err, nil); failErr != nil {
+		s.logger.Warn("enrollment.recorder fail", "attempt_id", attemptID, "error", failErr)
+	}
 }
 
 type agentEnrollmentResponse struct {
@@ -90,6 +165,11 @@ func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest
 		attribute.String("panvex.agent_version", request.Version),
 		attribute.String("panvex.fleet_group_id", token.FleetGroupID),
 	)
+	if s.enrollmentRec != nil && request.AttemptID != "" {
+		s.enrollmentRec.Event(ctx, request.AttemptID, enrollment.StepTokenValidated, enrollment.LevelInfo, "token consumed", map[string]any{
+			"fleet_group_id": token.FleetGroupID,
+		})
+	}
 
 	// Agent IDs are UUIDv7 instead of the old monotonic "agent_<N>" scheme
 	// because the old counter was process-local and reset on CP restart,
@@ -111,7 +191,15 @@ func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest
 	issued, err := s.authority.issueClientCertificate(agentID, now)
 	if err != nil {
 		span.RecordError(err)
-		return agentEnrollmentResponse{}, fmt.Errorf("issue client certificate: %w", err)
+		return agentEnrollmentResponse{}, &enrollmentError{
+			code:  enrollment.ErrCertSignFailed,
+			cause: fmt.Errorf("issue client certificate: %w", err),
+		}
+	}
+	if s.enrollmentRec != nil && request.AttemptID != "" {
+		s.enrollmentRec.Event(ctx, request.AttemptID, enrollment.StepCertSigned, enrollment.LevelInfo, "cert signed", map[string]any{
+			"serial": issued.Serial,
+		})
 	}
 
 	certIssuedAt := now.UTC()

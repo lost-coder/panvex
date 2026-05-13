@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
 	"github.com/lost-coder/panvex/internal/controlplane/fleet"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/security"
@@ -68,6 +69,12 @@ type agentBootstrapResponse struct {
 	GRPCEndpoint   string `json:"grpc_endpoint"`
 	GRPCServerName string `json:"grpc_server_name"`
 	ExpiresAtUnix  int64  `json:"expires_at_unix"`
+	// AttemptID is the enrollment.Recorder attempt id opened on the panel
+	// side for this bootstrap request. The agent echoes it back in
+	// subsequent ReportEnrollmentSteps gRPC calls so locally-buffered
+	// agent-side events line up with the panel timeline (Task 20).
+	// Empty when the panel has no enrollment recorder wired (test fixtures).
+	AttemptID string `json:"attempt_id,omitempty"`
 }
 
 type agentCertificateRecoveryRequest struct {
@@ -263,28 +270,77 @@ func (s *Server) resolveAndAuthorizeEnrollmentScope(w http.ResponseWriter, r *ht
 
 func (s *Server) handleAgentBootstrap() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		// Task 13: open the enrollment attempt FIRST so even an early
+		// rejection (missing header, malformed body) shows up in the
+		// timeline. The token id is not known yet — leave it blank and
+		// the agent id is attached after enrollAgent returns.
+		//
+		// enrollmentRec is nil when no SQL-backed store is wired (test
+		// fixtures with in-memory mocks); in that case every Recorder
+		// call below is short-circuited so the legacy behaviour is
+		// unchanged.
+		var attemptID string
+		if s.enrollmentRec != nil {
+			id, err := s.enrollmentRec.Begin(ctx, enrollment.ModeInbound, "", r.RemoteAddr)
+			if err != nil {
+				s.logger.Error("begin enrollment attempt", "error", err)
+				// Begin failure must not block the handler; carry on
+				// without timeline recording so production traffic still
+				// flows even if the enrollment_attempts table is unhappy.
+			} else {
+				attemptID = id
+				s.enrollmentRec.Event(ctx, attemptID, enrollment.StepBootstrapRequestReceived, enrollment.LevelInfo, "bootstrap request received", nil)
+			}
+		}
+
 		token, ok := bearerTokenFromHeader(r.Header.Get("Authorization"))
 		if !ok {
+			if s.enrollmentRec != nil && attemptID != "" {
+				s.mapAndFailEnrollment(ctx, attemptID, &enrollmentError{
+					code:   enrollment.ErrTokenNotFound,
+					fields: map[string]any{"reason": "missing Authorization header"},
+				})
+			}
 			writeError(w, http.StatusUnauthorized, "missing bootstrap token")
 			return
 		}
 
 		var request agentBootstrapRequest
 		if err := decodeJSON(r, &request); err != nil {
+			if s.enrollmentRec != nil && attemptID != "" {
+				s.mapAndFailEnrollment(ctx, attemptID, &enrollmentError{
+					code:  enrollment.ErrCSRInvalid,
+					cause: err,
+				})
+			}
 			writeError(w, http.StatusBadRequest, "invalid bootstrap payload")
 			return
 		}
 		if request.NodeName == "" || request.Version == "" {
+			if s.enrollmentRec != nil && attemptID != "" {
+				s.mapAndFailEnrollment(ctx, attemptID, &enrollmentError{
+					code:   enrollment.ErrCSRInvalid,
+					fields: map[string]any{"reason": "missing node_name or version"},
+				})
+			}
 			writeError(w, http.StatusBadRequest, "node_name and version are required")
 			return
 		}
 
-		response, err := s.enrollAgent(r.Context(), agentEnrollmentRequest{
-			Token:    token,
-			NodeName: request.NodeName,
-			Version:  request.Version,
+		response, err := s.enrollAgent(ctx, agentEnrollmentRequest{
+			Token:     token,
+			NodeName:  request.NodeName,
+			Version:   request.Version,
+			AttemptID: attemptID,
 		}, s.now())
 		if err != nil {
+			if s.enrollmentRec != nil && attemptID != "" {
+				s.mapAndFailEnrollment(ctx, attemptID, err)
+			}
+			// Preserve the existing status-code mapping verbatim — operator
+			// automation reads on these specific codes/strings.
 			switch {
 			case errors.Is(err, security.ErrEnrollmentTokenInvalid),
 				errors.Is(err, security.ErrEnrollmentTokenConsumed),
@@ -298,6 +354,16 @@ func (s *Server) handleAgentBootstrap() http.HandlerFunc {
 			return
 		}
 
+		if s.enrollmentRec != nil && attemptID != "" {
+			if attachErr := s.enrollmentRec.AttachAgent(ctx, attemptID, response.AgentID); attachErr != nil {
+				s.logger.Warn("attach agent to enrollment attempt", "attempt_id", attemptID, "agent_id", response.AgentID, "error", attachErr)
+			}
+			s.enrollmentRec.Event(ctx, attemptID, enrollment.StepCertReturned, enrollment.LevelInfo, "cert returned", nil)
+			if completeErr := s.enrollmentRec.Complete(ctx, attemptID); completeErr != nil {
+				s.logger.Warn("complete enrollment attempt", "attempt_id", attemptID, "error", completeErr)
+			}
+		}
+
 		grpcEndpoint, grpcServerName := s.bootstrapGatewayAddress(r.Host)
 		writeJSON(w, http.StatusOK, agentBootstrapResponse{
 			AgentID:        response.AgentID,
@@ -307,6 +373,7 @@ func (s *Server) handleAgentBootstrap() http.HandlerFunc {
 			GRPCEndpoint:   grpcEndpoint,
 			GRPCServerName: grpcServerName,
 			ExpiresAtUnix:  response.ExpiresAt.Unix(),
+			AttemptID:      attemptID,
 		})
 	}
 }

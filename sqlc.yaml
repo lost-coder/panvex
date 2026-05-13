@@ -15,3 +15,16 @@ sql:
         # and parameters.
         sql_package: "database/sql"
         emit_pointers_for_null_types: true
+        overrides:
+          # The only nullable JSONB column in the schema. Mapping it to
+          # json.RawMessage matches every other JSONB column in the
+          # codebase (audit_events.details, jobs.payload, etc.) and avoids
+          # pulling in github.com/sqlc-dev/pqtype just for one column:
+          # database/sql scans SQL NULL into a nil json.RawMessage
+          # natively and accepts a nil json.RawMessage as a NULL parameter.
+          - column: "enrollment_events.fields_json"
+            go_type:
+              import: "encoding/json"
+              type: "RawMessage"
+              pointer: true
+            nullable: true

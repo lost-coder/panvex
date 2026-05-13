@@ -9,6 +9,7 @@ package gatewayrpc
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -3328,11 +3329,180 @@ func (x *EnrollOpening) GetCsrPem() string {
 	return ""
 }
 
+// AgentEnrollmentEvent is one step recorded locally on the agent during the
+// inbound bootstrap flow (e.g. agent_persisted_cert, gateway_dialed,
+// tls_handshake_ok). The agent batches these and ships them to the panel via
+// ReportEnrollmentSteps once the first sync is up so the panel's timeline
+// captures the agent-side stages it cannot otherwise observe.
+type AgentEnrollmentEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Step          string                 `protobuf:"bytes,1,opt,name=step,proto3" json:"step,omitempty"`
+	Ts            *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=ts,proto3" json:"ts,omitempty"`
+	Level         string                 `protobuf:"bytes,3,opt,name=level,proto3" json:"level,omitempty"`
+	Message       string                 `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
+	Fields        map[string]string      `protobuf:"bytes,5,rep,name=fields,proto3" json:"fields,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentEnrollmentEvent) Reset() {
+	*x = AgentEnrollmentEvent{}
+	mi := &file_agent_gateway_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentEnrollmentEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentEnrollmentEvent) ProtoMessage() {}
+
+func (x *AgentEnrollmentEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_gateway_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentEnrollmentEvent.ProtoReflect.Descriptor instead.
+func (*AgentEnrollmentEvent) Descriptor() ([]byte, []int) {
+	return file_agent_gateway_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *AgentEnrollmentEvent) GetStep() string {
+	if x != nil {
+		return x.Step
+	}
+	return ""
+}
+
+func (x *AgentEnrollmentEvent) GetTs() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Ts
+	}
+	return nil
+}
+
+func (x *AgentEnrollmentEvent) GetLevel() string {
+	if x != nil {
+		return x.Level
+	}
+	return ""
+}
+
+func (x *AgentEnrollmentEvent) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *AgentEnrollmentEvent) GetFields() map[string]string {
+	if x != nil {
+		return x.Fields
+	}
+	return nil
+}
+
+type ReportEnrollmentStepsRequest struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	AttemptId     string                  `protobuf:"bytes,1,opt,name=attempt_id,json=attemptId,proto3" json:"attempt_id,omitempty"`
+	Events        []*AgentEnrollmentEvent `protobuf:"bytes,2,rep,name=events,proto3" json:"events,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportEnrollmentStepsRequest) Reset() {
+	*x = ReportEnrollmentStepsRequest{}
+	mi := &file_agent_gateway_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportEnrollmentStepsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportEnrollmentStepsRequest) ProtoMessage() {}
+
+func (x *ReportEnrollmentStepsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_gateway_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportEnrollmentStepsRequest.ProtoReflect.Descriptor instead.
+func (*ReportEnrollmentStepsRequest) Descriptor() ([]byte, []int) {
+	return file_agent_gateway_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *ReportEnrollmentStepsRequest) GetAttemptId() string {
+	if x != nil {
+		return x.AttemptId
+	}
+	return ""
+}
+
+func (x *ReportEnrollmentStepsRequest) GetEvents() []*AgentEnrollmentEvent {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+type ReportEnrollmentStepsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportEnrollmentStepsResponse) Reset() {
+	*x = ReportEnrollmentStepsResponse{}
+	mi := &file_agent_gateway_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportEnrollmentStepsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportEnrollmentStepsResponse) ProtoMessage() {}
+
+func (x *ReportEnrollmentStepsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_gateway_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportEnrollmentStepsResponse.ProtoReflect.Descriptor instead.
+func (*ReportEnrollmentStepsResponse) Descriptor() ([]byte, []int) {
+	return file_agent_gateway_proto_rawDescGZIP(), []int{36}
+}
+
 var File_agent_gateway_proto protoreflect.FileDescriptor
 
 const file_agent_gateway_proto_rawDesc = "" +
 	"\n" +
-	"\x13agent_gateway.proto\x12\x11panvex.gateway.v1\"4\n" +
+	"\x13agent_gateway.proto\x12\x11panvex.gateway.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"4\n" +
 	"\x17RenewCertificateRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\"\xaa\x01\n" +
 	"\x18RenewCertificateResponse\x12'\n" +
@@ -3639,11 +3809,26 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\rEnrollOpening\x12'\n" +
 	"\x0fbootstrap_token\x18\x01 \x01(\tR\x0ebootstrapToken\x12\x19\n" +
 	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x17\n" +
-	"\acsr_pem\x18\x03 \x01(\tR\x06csrPem2\xc2\x02\n" +
+	"\acsr_pem\x18\x03 \x01(\tR\x06csrPem\"\x8e\x02\n" +
+	"\x14AgentEnrollmentEvent\x12\x12\n" +
+	"\x04step\x18\x01 \x01(\tR\x04step\x12*\n" +
+	"\x02ts\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x02ts\x12\x14\n" +
+	"\x05level\x18\x03 \x01(\tR\x05level\x12\x18\n" +
+	"\amessage\x18\x04 \x01(\tR\amessage\x12K\n" +
+	"\x06fields\x18\x05 \x03(\v23.panvex.gateway.v1.AgentEnrollmentEvent.FieldsEntryR\x06fields\x1a9\n" +
+	"\vFieldsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"~\n" +
+	"\x1cReportEnrollmentStepsRequest\x12\x1d\n" +
+	"\n" +
+	"attempt_id\x18\x01 \x01(\tR\tattemptId\x12?\n" +
+	"\x06events\x18\x02 \x03(\v2'.panvex.gateway.v1.AgentEnrollmentEventR\x06events\"\x1f\n" +
+	"\x1dReportEnrollmentStepsResponse2\xbe\x03\n" +
 	"\fAgentGateway\x12k\n" +
 	"\x10RenewCertificate\x12*.panvex.gateway.v1.RenewCertificateRequest\x1a+.panvex.gateway.v1.RenewCertificateResponse\x12_\n" +
 	"\aConnect\x12'.panvex.gateway.v1.ConnectClientMessage\x1a'.panvex.gateway.v1.ConnectServerMessage(\x010\x01\x12d\n" +
-	"\x0eEnrollOutbound\x12&.panvex.gateway.v1.EnrollClientMessage\x1a&.panvex.gateway.v1.EnrollServerMessage(\x010\x01B2Z0github.com/lost-coder/panvex/internal/gatewayrpcb\x06proto3"
+	"\x0eEnrollOutbound\x12&.panvex.gateway.v1.EnrollClientMessage\x1a&.panvex.gateway.v1.EnrollServerMessage(\x010\x01\x12z\n" +
+	"\x15ReportEnrollmentSteps\x12/.panvex.gateway.v1.ReportEnrollmentStepsRequest\x1a0.panvex.gateway.v1.ReportEnrollmentStepsResponseB2Z0github.com/lost-coder/panvex/internal/gatewayrpcb\x06proto3"
 
 var (
 	file_agent_gateway_proto_rawDescOnce sync.Once
@@ -3658,7 +3843,7 @@ func file_agent_gateway_proto_rawDescGZIP() []byte {
 }
 
 var file_agent_gateway_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_agent_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
+var file_agent_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 39)
 var file_agent_gateway_proto_goTypes = []any{
 	(ClientDataRequest_RequestType)(0),       // 0: panvex.gateway.v1.ClientDataRequest.RequestType
 	(*RenewCertificateRequest)(nil),          // 1: panvex.gateway.v1.RenewCertificateRequest
@@ -3695,7 +3880,12 @@ var file_agent_gateway_proto_goTypes = []any{
 	(*EnrollCertificate)(nil),                // 32: panvex.gateway.v1.EnrollCertificate
 	(*EnrollServerMessage)(nil),              // 33: panvex.gateway.v1.EnrollServerMessage
 	(*EnrollOpening)(nil),                    // 34: panvex.gateway.v1.EnrollOpening
-	nil,                                      // 35: panvex.gateway.v1.Snapshot.MetricsEntry
+	(*AgentEnrollmentEvent)(nil),             // 35: panvex.gateway.v1.AgentEnrollmentEvent
+	(*ReportEnrollmentStepsRequest)(nil),     // 36: panvex.gateway.v1.ReportEnrollmentStepsRequest
+	(*ReportEnrollmentStepsResponse)(nil),    // 37: panvex.gateway.v1.ReportEnrollmentStepsResponse
+	nil,                                      // 38: panvex.gateway.v1.Snapshot.MetricsEntry
+	nil,                                      // 39: panvex.gateway.v1.AgentEnrollmentEvent.FieldsEntry
+	(*timestamppb.Timestamp)(nil),            // 40: google.protobuf.Timestamp
 }
 var file_agent_gateway_proto_depIdxs = []int32{
 	9,  // 0: panvex.gateway.v1.RuntimeUpstreamSnapshot.rows:type_name -> panvex.gateway.v1.RuntimeUpstreamRowSnapshot
@@ -3710,7 +3900,7 @@ var file_agent_gateway_proto_depIdxs = []int32{
 	17, // 9: panvex.gateway.v1.RuntimeSnapshot.top_by_connections:type_name -> panvex.gateway.v1.ConnectionTopEntry
 	17, // 10: panvex.gateway.v1.RuntimeSnapshot.top_by_throughput:type_name -> panvex.gateway.v1.ConnectionTopEntry
 	4,  // 11: panvex.gateway.v1.Snapshot.instances:type_name -> panvex.gateway.v1.InstanceSnapshot
-	35, // 12: panvex.gateway.v1.Snapshot.metrics:type_name -> panvex.gateway.v1.Snapshot.MetricsEntry
+	38, // 12: panvex.gateway.v1.Snapshot.metrics:type_name -> panvex.gateway.v1.Snapshot.MetricsEntry
 	5,  // 13: panvex.gateway.v1.Snapshot.clients:type_name -> panvex.gateway.v1.ClientUsageSnapshot
 	16, // 14: panvex.gateway.v1.Snapshot.runtime:type_name -> panvex.gateway.v1.RuntimeSnapshot
 	6,  // 15: panvex.gateway.v1.Snapshot.client_ips:type_name -> panvex.gateway.v1.ClientIPSnapshot
@@ -3729,17 +3919,22 @@ var file_agent_gateway_proto_depIdxs = []int32{
 	28, // 28: panvex.gateway.v1.ConnectServerMessage.renewal_response:type_name -> panvex.gateway.v1.RenewalResponse
 	32, // 29: panvex.gateway.v1.EnrollClientMessage.certificate:type_name -> panvex.gateway.v1.EnrollCertificate
 	34, // 30: panvex.gateway.v1.EnrollServerMessage.opening:type_name -> panvex.gateway.v1.EnrollOpening
-	1,  // 31: panvex.gateway.v1.AgentGateway.RenewCertificate:input_type -> panvex.gateway.v1.RenewCertificateRequest
-	29, // 32: panvex.gateway.v1.AgentGateway.Connect:input_type -> panvex.gateway.v1.ConnectClientMessage
-	31, // 33: panvex.gateway.v1.AgentGateway.EnrollOutbound:input_type -> panvex.gateway.v1.EnrollClientMessage
-	2,  // 34: panvex.gateway.v1.AgentGateway.RenewCertificate:output_type -> panvex.gateway.v1.RenewCertificateResponse
-	30, // 35: panvex.gateway.v1.AgentGateway.Connect:output_type -> panvex.gateway.v1.ConnectServerMessage
-	33, // 36: panvex.gateway.v1.AgentGateway.EnrollOutbound:output_type -> panvex.gateway.v1.EnrollServerMessage
-	34, // [34:37] is the sub-list for method output_type
-	31, // [31:34] is the sub-list for method input_type
-	31, // [31:31] is the sub-list for extension type_name
-	31, // [31:31] is the sub-list for extension extendee
-	0,  // [0:31] is the sub-list for field type_name
+	40, // 31: panvex.gateway.v1.AgentEnrollmentEvent.ts:type_name -> google.protobuf.Timestamp
+	39, // 32: panvex.gateway.v1.AgentEnrollmentEvent.fields:type_name -> panvex.gateway.v1.AgentEnrollmentEvent.FieldsEntry
+	35, // 33: panvex.gateway.v1.ReportEnrollmentStepsRequest.events:type_name -> panvex.gateway.v1.AgentEnrollmentEvent
+	1,  // 34: panvex.gateway.v1.AgentGateway.RenewCertificate:input_type -> panvex.gateway.v1.RenewCertificateRequest
+	29, // 35: panvex.gateway.v1.AgentGateway.Connect:input_type -> panvex.gateway.v1.ConnectClientMessage
+	31, // 36: panvex.gateway.v1.AgentGateway.EnrollOutbound:input_type -> panvex.gateway.v1.EnrollClientMessage
+	36, // 37: panvex.gateway.v1.AgentGateway.ReportEnrollmentSteps:input_type -> panvex.gateway.v1.ReportEnrollmentStepsRequest
+	2,  // 38: panvex.gateway.v1.AgentGateway.RenewCertificate:output_type -> panvex.gateway.v1.RenewCertificateResponse
+	30, // 39: panvex.gateway.v1.AgentGateway.Connect:output_type -> panvex.gateway.v1.ConnectServerMessage
+	33, // 40: panvex.gateway.v1.AgentGateway.EnrollOutbound:output_type -> panvex.gateway.v1.EnrollServerMessage
+	37, // 41: panvex.gateway.v1.AgentGateway.ReportEnrollmentSteps:output_type -> panvex.gateway.v1.ReportEnrollmentStepsResponse
+	38, // [38:42] is the sub-list for method output_type
+	34, // [34:38] is the sub-list for method input_type
+	34, // [34:34] is the sub-list for extension type_name
+	34, // [34:34] is the sub-list for extension extendee
+	0,  // [0:34] is the sub-list for field type_name
 }
 
 func init() { file_agent_gateway_proto_init() }
@@ -3772,7 +3967,7 @@ func file_agent_gateway_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_gateway_proto_rawDesc), len(file_agent_gateway_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   35,
+			NumMessages:   39,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

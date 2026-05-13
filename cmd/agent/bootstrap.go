@@ -58,6 +58,12 @@ type bootstrapResponse struct {
 	GRPCEndpoint   string `json:"grpc_endpoint"`
 	GRPCServerName string `json:"grpc_server_name"`
 	ExpiresAtUnix  int64  `json:"expires_at_unix"`
+	// AttemptID is the enrollment.Recorder attempt id opened on the panel
+	// for this bootstrap call (Phase 1 enrollment-logging). The agent
+	// persists it so the runtime can ship local steps via
+	// ReportEnrollmentSteps once the first sync is up. Older panels omit
+	// the field — empty string is treated as "no reporting".
+	AttemptID string `json:"attempt_id"`
 }
 
 type agentCertificateRecoveryRequest struct {
@@ -209,6 +215,12 @@ func bootstrapAgent(ctx context.Context, client *http.Client, config bootstrapCo
 		// (see recoverRuntimeCredentialsIfNeeded) can honor it without
 		// needing a CLI re-flag.
 		InsecureTransport: config.InsecureTransport,
+		// Carry the panel's attempt id forward so the next process
+		// (runRuntime) can ship local timeline steps via
+		// ReportEnrollmentSteps. Empty when the panel pre-dates Phase 1
+		// enrollment logging — the reporter then becomes a no-op.
+		EnrollmentAttemptID:  bootstrap.AttemptID,
+		AgentPersistedCertAt: time.Now().UTC(),
 	}
 	if bootstrap.ExpiresAtUnix != 0 {
 		credentialsState.ExpiresAt = time.Unix(bootstrap.ExpiresAtUnix, 0).UTC()

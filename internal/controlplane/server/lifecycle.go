@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/agents"
@@ -12,6 +14,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/csrf"
 	"github.com/lost-coder/panvex/internal/controlplane/discovered"
+	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/fleet"
 	"github.com/lost-coder/panvex/internal/controlplane/geoip"
@@ -25,6 +28,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/uow"
 	"github.com/lost-coder/panvex/internal/controlplane/webhooks"
+	"github.com/lost-coder/panvex/internal/dbsqlc"
 )
 
 // R-Q-01/07: lifecycle (constructor + shutdown + seed) extracted
@@ -328,6 +332,20 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 			// panel restart; the running process uses the values below.
 			s.activeSessionIdleTimeout = s.settings.AuthSessionIdleTimeout()
 			s.activeSessionMaxLifetime = s.settings.AuthSessionMaxLifetime()
+
+			// Enrollment-logging Phase 1 / Task 13: wire the timeline
+			// recorder so the inbound bootstrap handler (and later the
+			// outbound flow) can record per-attempt steps and surface
+			// them on the /events bus the dashboard already subscribes
+			// to. Construction is gated on DB() — test fixtures with
+			// mock stores leave enrollmentRec nil, and handlers must
+			// nil-check before calling.
+			s.enrollmentRec = enrollment.NewRecorder(
+				enrollment.NewSQLStore(dbsqlc.New(rawDB), rawDB),
+				s.now,
+			).
+				WithPublisher(enrollmentBusAdapter{bus: s.events}).
+				WithLogger(s.logger)
 		}
 	}
 
@@ -410,6 +428,29 @@ func (s *Server) startBackgroundWorkers() {
 	// Lives on rollupCtx so Close()'s rollupCancel reaps it together
 	// with the other long-lived background loops.
 	s.startWebhookWorker(rollupCtx, s.webhookStorage)
+
+	// Enrollment attempts retention worker — prunes attempt rows older
+	// than the configured retention so the timeline table does not grow
+	// unbounded. Defaults to 30 days; PANVEX_ENROLLMENT_RETENTION_DAYS
+	// overrides at boot, and setting it to 0 disables retention
+	// entirely. Lives on rollupCtx for the same reason as the other
+	// long-lived loops above.
+	s.startEnrollmentCleanupWorker(rollupCtx, enrollmentRetention())
+}
+
+// enrollmentRetention resolves the attempt retention window from the
+// environment, defaulting to 30 days. Returning a time.Duration (rather
+// than days as int) keeps the boot-time conversion in one place; the
+// worker treats ≤0 as "disabled".
+func enrollmentRetention() time.Duration {
+	const defaultDays = 30
+	days := defaultDays
+	if v := os.Getenv("PANVEX_ENROLLMENT_RETENTION_DAYS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			days = n
+		}
+	}
+	return time.Duration(days) * 24 * time.Hour
 }
 
 // New constructs the control-plane Server. Returns an error (Plan 3

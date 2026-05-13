@@ -11,6 +11,7 @@ import (
 	"github.com/lost-coder/panvex/internal/agent/runtime"
 	agentstate "github.com/lost-coder/panvex/internal/agent/state"
 	agentTransport "github.com/lost-coder/panvex/internal/agent/transport"
+	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
@@ -42,7 +43,7 @@ func selectTransport(creds agentstate.Credentials, dialCfg agentTransport.DialCo
 	return agentTransport.NewDialTransport(dialCfg), nil
 }
 
-func runConnection(supervisorCtx context.Context, gatewayAddr string, serverName string, stateFile string, credentialsState agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule, clientDataConcurrency int, tr *transportReloadState) (agentstate.Credentials, error) {
+func runConnection(supervisorCtx context.Context, gatewayAddr string, serverName string, stateFile string, credentialsState agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule, clientDataConcurrency int, tr *transportReloadState, reporter *enrollmentReporter) (agentstate.Credentials, error) {
 	certificate, err := tls.X509KeyPair([]byte(credentialsState.CertificatePEM), []byte(credentialsState.PrivateKeyPEM))
 	if err != nil {
 		return credentialsState, err
@@ -59,6 +60,21 @@ func runConnection(supervisorCtx context.Context, gatewayAddr string, serverName
 	t, err := selectTransport(credentialsState, cfg)
 	if err != nil {
 		return credentialsState, err
+	}
+
+	// Record the dial intent ahead of RunOnce. We treat the successful
+	// connect callback as evidence that both the TCP dial and the TLS
+	// handshake succeeded — the transport layer hands us a live stream on
+	// the same callback for both dial and listen modes. A dial failure
+	// surfaces via the runErr below and is reported as an error-level
+	// gateway_dialed step.
+	if credentialsState.TransportMode != "listen" {
+		reporter.Record(
+			string(enrollment.StepGatewayDialed),
+			string(enrollment.LevelInfo),
+			"dialing panel",
+			map[string]string{"endpoint": gatewayAddr},
+		)
 	}
 
 	// Derive a cancellable ctx from supervisorCtx for the dial / accept
@@ -146,11 +162,36 @@ func runConnection(supervisorCtx context.Context, gatewayAddr string, serverName
 		startInboundPump(connectionCtx, &streamWG, stream, agent, jobInflight, jobQueues, criticalOutbound, clientDataSem, renewalResponses, sendErrorAndCancel)
 		startJobWorkers(connectionCtx, agent, jobInflight, jobQueues, criticalOutbound)
 
+		// TLS handshake succeeded by the time RunOnce calls back — the
+		// stream is live and authenticated. Record before the initial
+		// sync so the panel timeline orders tls_handshake_ok before
+		// first_sync_ok regardless of how fast sendInitialMessages
+		// returns.
+		reporter.Record(
+			string(enrollment.StepTLSHandshakeOK),
+			string(enrollment.LevelInfo),
+			"panel reached",
+			nil,
+		)
+
 		if initErr := sendInitialMessages(connectionCtx, criticalOutbound, agent); initErr != nil {
 			cancelConnection()
 			return initErr
 		}
 		slog.Info("initial sync completed", "agent_id", agent.AgentID(), "node", agent.NodeName())
+
+		// First sync confirmed: outbound queue accepted heartbeat + snapshot.
+		// Flush buffered events to the panel. Failure is non-fatal — events
+		// stay in the buffer so the next reconnect retries.
+		reporter.Record(
+			string(enrollment.StepFirstSyncOK),
+			string(enrollment.LevelInfo),
+			"initial sync completed",
+			nil,
+		)
+		if flushErr := reporter.Flush(connectionCtx, client); flushErr != nil {
+			slog.WarnContext(connectionCtx, "enrollment report flush failed", "error", flushErr)
+		}
 
 		credentialRefreshTimer := newRuntimeCredentialRefreshTimer(credentialsState, time.Now())
 		if credentialRefreshTimer != nil {
@@ -163,6 +204,20 @@ func runConnection(supervisorCtx context.Context, gatewayAddr string, serverName
 		return loopErr
 	})
 	if runErr != nil {
+		// Record dial / handshake failure so the panel timeline carries
+		// the cause. We cannot distinguish "TCP dial failed" from
+		// "TLS handshake failed" from "first sync failed" here without
+		// poking inside the transport package, so we log the error
+		// string and rely on operators to read it. Flush is best-effort
+		// from the supervisor ctx because connectionCtx is gone.
+		if credentialsState.TransportMode != "listen" {
+			reporter.Record(
+				string(enrollment.StepGatewayDialed),
+				string(enrollment.LevelError),
+				runErr.Error(),
+				nil,
+			)
+		}
 		return credentialsState, runErr
 	}
 	return updatedCredentials, nil

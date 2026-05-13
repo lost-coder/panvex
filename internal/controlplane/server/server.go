@@ -20,6 +20,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/csrf"
 	"github.com/lost-coder/panvex/internal/controlplane/discovered"
+	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/fleet"
 	"github.com/lost-coder/panvex/internal/controlplane/geoip"
@@ -72,6 +73,12 @@ type Server struct {
 	presence                  *presence.Tracker
 	events                    *eventbus.Hub
 	authority                 *certificateAuthority
+	// enrollmentRec records per-attempt timeline events for inbound and
+	// outbound enrollment (Task 13 of the enrollment-logging Phase 1 plan).
+	// Nil when no persistent store with a *sql.DB handle is wired — handlers
+	// must nil-check before calling. See initStoreBackedSubsystems for the
+	// wiring (only sqlite/postgres backends expose DB()).
+	enrollmentRec             *enrollment.Recorder
 	now                       func() time.Time
 	panelRuntime              PanelRuntime
 	requestRestart            func() error
@@ -348,6 +355,23 @@ type Server struct {
 	agentTransportManager atomic.Pointer[agenttransport.Manager]
 }
 
+// enrollmentBusAdapter adapts eventbus.Hub to the enrollment.Publisher
+// interface so the Recorder can broadcast timeline events on the same
+// /events websocket bus that the dashboard already subscribes to.
+type enrollmentBusAdapter struct {
+	bus *eventbus.Hub
+}
+
+// Publish wraps the (type, payload) pair into the Hub's Event envelope.
+// Nil-safe: a missing bus turns Publish into a no-op so tests that
+// construct a Recorder without a hub do not panic.
+func (a enrollmentBusAdapter) Publish(t string, payload any) {
+	if a.bus == nil {
+		return
+	}
+	a.bus.Publish(eventbus.Event{Type: t, Data: payload})
+}
+
 // vault exposes the secret vault initialised from EncryptionKey. A nil
 // or disabled return value means encryption is off and callers should
 // continue to operate on plaintext (legacy mode).
@@ -433,6 +457,12 @@ func (s *Server) SetAgentTransportManager(m *agenttransport.Manager) {
 		obs = s.obs.ObserveAgentCertPin
 	}
 	m.SetCertPinReader(s.store, obs)
+	// Wire the enrollment timeline recorder into outbound supervisors so
+	// each panel-dials-agent cycle records its own attempt + steps + final
+	// status. s.enrollmentRec is nil for stores without a *sql.DB handle
+	// (test fixtures with mock stores) — SetEnrollmentRecorder handles nil
+	// safely and outbound supervisors fall back to "no recording".
+	m.SetEnrollmentRecorder(s.enrollmentRec)
 	// Wire live backoff getters so operator changes to
 	// agents.outbound_backoff_initial / agents.outbound_backoff_max are
 	// picked up on the next reconnect iteration without a panel restart.

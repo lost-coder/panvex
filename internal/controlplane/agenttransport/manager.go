@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
 	"github.com/lost-coder/panvex/internal/dbsqlc"
 )
 
@@ -243,6 +244,18 @@ func (m *Manager) SetCertPinReader(r CertPinReader, obs CertPinVerifyObserver) {
 	m.outbound.mu.Lock()
 	m.outbound.pinReader = r
 	m.outbound.pinObserver = obs
+	m.outbound.mu.Unlock()
+}
+
+// SetEnrollmentRecorder wires the enrollment timeline recorder into every
+// outbound supervisor created after this call. Each connectAndServe cycle
+// opens a fresh attempt (mode=outbound), records the dial timeline, and
+// completes/fails the attempt before returning. A nil recorder disables
+// recording — existing supervisors keep using whatever value they were
+// initialised with. Safe to call before Start.
+func (m *Manager) SetEnrollmentRecorder(rec *enrollment.Recorder) {
+	m.outbound.mu.Lock()
+	m.outbound.rec = rec
 	m.outbound.mu.Unlock()
 }
 

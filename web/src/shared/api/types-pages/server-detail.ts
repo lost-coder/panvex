@@ -110,4 +110,11 @@ export interface ServerDetailPageProps {
     timeRange: string;
     onTimeRangeChange?: ((range: string) => void) | undefined;
   } | undefined;
+  /**
+   * Optional render slot for the enrollment-history block. The owning
+   * container supplies a fully-wired `<EnrollmentHistory agentId=… />`
+   * here. We pass it as a node — not import the component — so the
+   * presentational page can render in unit tests without a QueryClient.
+   */
+  enrollmentHistorySlot?: import("react").ReactNode;
 }

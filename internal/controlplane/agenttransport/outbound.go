@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"google.golang.org/grpc"
@@ -74,6 +75,14 @@ type outboundSupervisor struct {
 	// pinObserver, when non-nil, is called after each pin verification with
 	// result "ok", "mismatch", or "missing". Used for Prometheus metrics.
 	pinObserver CertPinVerifyObserver
+
+	// rec, when non-nil, records a per-dial enrollment timeline for the
+	// outbound (panel-dials-agent) flow. Every call site is gated on
+	// rec != nil && attemptID != "" so a missing recorder degrades to
+	// existing behaviour without panicking. Persistence failures inside the
+	// Recorder are logged and silently dropped — observability must never
+	// abort an outbound reconnect.
+	rec *enrollment.Recorder
 }
 
 func (s *outboundSupervisor) effectiveBackoffInitial() time.Duration {
@@ -143,17 +152,69 @@ func (s *outboundSupervisor) run(ctx context.Context) {
 //     returns so the supervisor's backoff loop retries.
 //  2. After successful enrollment (or when state is already "active"), the
 //     normal mTLS gRPC dial proceeds.
+//
+// Recorder calls are layered on top of the existing control flow: each dial
+// cycle opens a fresh enrollment.Recorder attempt (mode=outbound) at the
+// top, records timeline steps as the dial progresses, and marks the attempt
+// failed/completed before returning. A nil Recorder or a Begin error skips
+// recording — the underlying business logic is unchanged.
 func (s *outboundSupervisor) connectAndServe(ctx context.Context) error {
+	// Open a per-cycle attempt so the operator can see why a particular
+	// dial succeeded or failed. attemptID="" disables every subsequent
+	// recorder call (defence against Begin errors or missing recorder).
+	var attemptID string
+	if s.rec != nil {
+		id, err := s.rec.Begin(ctx, enrollment.ModeOutbound, "", s.meta.DialAddress)
+		if err != nil {
+			s.logger.Warn("agenttransport: enrollment Begin failed",
+				"node_id", s.meta.NodeID, "error", err)
+		} else {
+			attemptID = id
+			// Tie the attempt to its agent row from the start so the UI
+			// can surface it under the right agent without waiting for a
+			// later AttachAgent.
+			if attachErr := s.rec.AttachAgent(ctx, attemptID, s.meta.AgentID); attachErr != nil {
+				s.logger.Warn("agenttransport: enrollment AttachAgent failed",
+					"node_id", s.meta.NodeID, "attempt_id", attemptID, "error", attachErr)
+			}
+		}
+	}
+	// Best-effort cleanup: if this cycle returns without reaching the
+	// Complete/Fail path explicitly (e.g. an early return after a future
+	// refactor), mark the attempt failed so it doesn't dangle as
+	// in_progress. No-op on already-terminal attempts.
+	completed := false
+	defer func() {
+		if s.rec != nil && attemptID != "" && !completed {
+			_ = s.rec.Fail(ctx, attemptID, enrollment.ErrInternal, nil, nil)
+		}
+	}()
+
+	if s.rec != nil && attemptID != "" {
+		s.rec.Event(ctx, attemptID, enrollment.StepPanelDialAttempted, enrollment.LevelInfo,
+			"dialing agent", map[string]any{"addr": s.meta.DialAddress})
+	}
+
 	// Enrollment pre-flight: run if bootstrap_state is "pending".
 	if s.bootstrapStateFn != nil && s.enrollFn != nil {
 		state, err := s.bootstrapStateFn(ctx, s.meta.AgentID)
 		if err != nil {
+			if s.rec != nil && attemptID != "" {
+				_ = s.rec.Fail(ctx, attemptID, enrollment.ErrInternal, err,
+					map[string]any{"stage": "bootstrap_state_lookup"}) // failures are best-effort; primary err is what matters
+				completed = true
+			}
 			return fmt.Errorf("agenttransport: bootstrap state lookup (node_id=%s): %w", s.meta.NodeID, err)
 		}
 		if state == "pending" {
 			s.logger.Info("agenttransport: bootstrap_state=pending; running enrollment",
 				"node_id", s.meta.NodeID, "addr", s.meta.DialAddress)
 			if err := s.enrollFn(ctx, s.meta.DialAddress, s.meta.AgentID); err != nil {
+				if s.rec != nil && attemptID != "" {
+					_ = s.rec.Fail(ctx, attemptID, classifyDialError(err), err,
+						map[string]any{"stage": "enroll"}) // failures are best-effort; primary err is what matters
+					completed = true
+				}
 				return fmt.Errorf("agenttransport: enrollment (node_id=%s): %w", s.meta.NodeID, err)
 			}
 			s.logger.Info("agenttransport: enrollment completed; proceeding to mTLS dial",
@@ -162,6 +223,11 @@ func (s *outboundSupervisor) connectAndServe(ctx context.Context) error {
 	}
 
 	if s.tlsCfg == nil {
+		if s.rec != nil && attemptID != "" {
+			_ = s.rec.Fail(ctx, attemptID, enrollment.ErrInternal, errOutboundTLSMissing,
+				map[string]any{"stage": "tls_config"}) // failures are best-effort; primary err is what matters
+			completed = true
+		}
 		return fmt.Errorf("%w (node_id=%s)", errOutboundTLSMissing, s.meta.NodeID)
 	}
 
@@ -213,14 +279,38 @@ func (s *outboundSupervisor) connectAndServe(ctx context.Context) error {
 	conn, err := grpc.NewClient(s.meta.DialAddress,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)))
 	if err != nil {
+		if s.rec != nil && attemptID != "" {
+			_ = s.rec.Fail(ctx, attemptID, classifyDialError(err), err,
+				map[string]any{"stage": "grpc_new_client", "addr": s.meta.DialAddress}) // failures are best-effort; primary err is what matters
+			completed = true
+		}
 		return err
 	}
 	defer conn.Close()
 	client := gatewayrpc.NewAgentGatewayClient(conn)
 	stream, err := client.Connect(ctx)
 	if err != nil {
+		if s.rec != nil && attemptID != "" {
+			_ = s.rec.Fail(ctx, attemptID, classifyDialError(err), err,
+				map[string]any{"stage": "grpc_connect", "addr": s.meta.DialAddress}) // failures are best-effort; primary err is what matters
+			completed = true
+		}
 		return err
 	}
+
+	// Stream opened — the TLS handshake completed successfully (grpc.NewClient
+	// is lazy, so handshake errors surface here on the first RPC). Record the
+	// happy path then hand off to the session handler.
+	if s.rec != nil && attemptID != "" {
+		s.rec.Event(ctx, attemptID, enrollment.StepTLSHandshakeOK, enrollment.LevelInfo, "panel reached", nil)
+		s.rec.Event(ctx, attemptID, enrollment.StepFirstSyncOK, enrollment.LevelInfo, "first sync ok", nil)
+		if err := s.rec.Complete(ctx, attemptID); err != nil {
+			s.logger.Warn("agenttransport: enrollment Complete failed",
+				"node_id", s.meta.NodeID, "attempt_id", attemptID, "error", err)
+		}
+		completed = true
+	}
+
 	sess := &ClientStreamSession{Stream: stream}
 	return s.handler(ctx, sess, s.meta)
 }
@@ -269,6 +359,10 @@ type outboundTransport struct {
 	// constants (outboundBackoffInitial / outboundBackoffMax).
 	backoffInitialFn func() time.Duration
 	backoffMaxFn     func() time.Duration
+
+	// rec is forwarded to every outboundSupervisor so each dial cycle can
+	// record its own enrollment timeline. Nil disables recording.
+	rec *enrollment.Recorder
 
 	mu sync.RWMutex
 	// lifecycleCtx is the parent context for every supervisor goroutine.
@@ -339,6 +433,7 @@ func (t *outboundTransport) ensureSupervisor(_ context.Context, meta NodeMeta) {
 	pinObserver := t.pinObserver
 	backoffInitialFn := t.backoffInitialFn
 	backoffMaxFn := t.backoffMaxFn
+	rec := t.rec
 	t.mu.Unlock()
 
 	if fn != nil {
@@ -351,6 +446,7 @@ func (t *outboundTransport) ensureSupervisor(_ context.Context, meta NodeMeta) {
 	sup.pinObserver = pinObserver
 	sup.backoffInitialFn = backoffInitialFn
 	sup.backoffMaxFn = backoffMaxFn
+	sup.rec = rec
 	go func() {
 		defer t.wg.Done()
 		sup.run(ctx)
