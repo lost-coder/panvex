@@ -124,6 +124,20 @@ func TestExplainAnalyze_HotQueries(t *testing.T) {
 		t.Fatalf("ANALYZE: %v", err)
 	}
 
+	// Disable Seq Scan so the planner picks index paths even on the
+	// tiny seeded tables, where a single-row heap scan would otherwise
+	// be cost-optimal. This makes the `mustNotSeqScan` assertions check
+	// the "is there a usable index?" invariant — which is what production
+	// will need at scale — rather than the cost crossover on a 1-row
+	// fixture. A missing-index regression still surfaces because the
+	// planner falls back to Seq Scan even with this disabled.
+	if _, err := store.sqlDB.ExecContext(ctx, "SET enable_seqscan = off"); err != nil {
+		t.Fatalf("SET enable_seqscan = off: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = store.sqlDB.ExecContext(ctx, "RESET enable_seqscan")
+	})
+
 	for _, q := range hotQueries(fixtures) {
 		q := q
 		t.Run(q.name, func(t *testing.T) {
