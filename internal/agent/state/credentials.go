@@ -34,6 +34,20 @@ type Credentials struct {
 	// deployment). Persisted so certificate recovery on later runs honors
 	// the same transport relaxation without needing a CLI re-flag.
 	InsecureTransport bool `json:"insecure_transport,omitempty"`
+	// EnrollmentAttemptID identifies the panel-side enrollment attempt this
+	// agent was minted under. The agent uses it to ship local steps
+	// (cert persisted, gateway dialed, tls handshake ok) via the
+	// ReportEnrollmentSteps RPC once the first sync is up. Empty for
+	// agents that bootstrapped against a panel that pre-dates the
+	// enrollment-logging timeline (Phase 1) — in that case the agent
+	// silently skips reporting.
+	EnrollmentAttemptID string `json:"enrollment_attempt_id,omitempty"`
+	// AgentPersistedCertAt is the wall-clock time at which the bootstrap
+	// command first wrote the credential bundle to disk. Captured here so
+	// the runtime can stamp the agent_persisted_cert timeline event with
+	// the original moment rather than the runtime start time. Zero value
+	// for state files pre-dating Phase 1.
+	AgentPersistedCertAt time.Time `json:"agent_persisted_cert_at,omitempty"`
 }
 
 // Load reads persisted agent credentials from disk.
