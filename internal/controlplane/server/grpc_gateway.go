@@ -6,6 +6,7 @@ import (
 
 	"github.com/lost-coder/panvex/internal/controlplane/agentrevocation"
 	"github.com/lost-coder/panvex/internal/controlplane/agenttransport"
+	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -80,6 +81,53 @@ func (s *Server) RenewCertificate(ctx context.Context, request *gatewayrpc.Renew
 		CaPem:          issued.CAPEM,
 		ExpiresAtUnix:  issued.ExpiresAt.Unix(),
 	}, nil
+}
+
+// ReportEnrollmentSteps ingests an agent-reported batch of enrollment
+// timeline events for the attempt identified by attempt_id. The agent
+// calls this once the Connect stream is up so the panel timeline gains
+// the agent-side stages it cannot otherwise observe (cert persisted,
+// gateway dialed, tls handshake). An empty attempt_id, a nil recorder
+// (mock stores without DB() — see lifecycle.go), or zero events all
+// short-circuit to a successful no-op so the agent never panics on its
+// best-effort flush. A genuine store error surfaces back to the caller
+// so the agent's slog.Warn captures it.
+func (s *Server) ReportEnrollmentSteps(ctx context.Context, req *gatewayrpc.ReportEnrollmentStepsRequest) (*gatewayrpc.ReportEnrollmentStepsResponse, error) {
+	if req == nil || req.GetAttemptId() == "" {
+		return &gatewayrpc.ReportEnrollmentStepsResponse{}, nil
+	}
+	rec := s.enrollmentRec
+	if rec == nil {
+		return &gatewayrpc.ReportEnrollmentStepsResponse{}, nil
+	}
+	events := req.GetEvents()
+	if len(events) == 0 {
+		return &gatewayrpc.ReportEnrollmentStepsResponse{}, nil
+	}
+	out := make([]enrollment.AgentReportedEvent, 0, len(events))
+	for _, e := range events {
+		if e == nil {
+			continue
+		}
+		var fields map[string]any
+		if raw := e.GetFields(); len(raw) > 0 {
+			fields = make(map[string]any, len(raw))
+			for k, v := range raw {
+				fields[k] = v
+			}
+		}
+		out = append(out, enrollment.AgentReportedEvent{
+			Step:    enrollment.Step(e.GetStep()),
+			Level:   enrollment.Level(e.GetLevel()),
+			Ts:      e.GetTs().AsTime(),
+			Message: e.GetMessage(),
+			Fields:  fields,
+		})
+	}
+	if err := rec.Ingest(ctx, req.GetAttemptId(), out); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &gatewayrpc.ReportEnrollmentStepsResponse{}, nil
 }
 
 // authorizeAgentConnect runs the synchronous handshake required before the
