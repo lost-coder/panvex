@@ -76,6 +76,14 @@ export type {
   EnrollmentTokenResponse,
 } from "./enrollment";
 export type {
+  EnrollmentAttempt,
+  EnrollmentAttemptDetail,
+  EnrollmentEvent,
+  EnrollmentLevel,
+  EnrollmentMode,
+  EnrollmentStatus,
+} from "./types-enrollment";
+export type {
   CreateFleetGroupRequest,
   CreateIntegrationProviderRequest,
   FleetGroupDeletionPreview,

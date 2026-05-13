@@ -1,9 +1,16 @@
 import { api, apiBasePath, encodeRequest } from "./http";
 import {
   createEnrollmentTokenRequestSchema,
+  enrollmentAttemptDetailSchema,
+  enrollmentAttemptListResponseSchema,
   enrollmentTokenListSchema,
   enrollmentTokenResponseSchema,
 } from "./schemas";
+import type {
+  EnrollmentAttempt,
+  EnrollmentAttemptDetail,
+  EnrollmentStatus,
+} from "./types-enrollment";
 
 export type EnrollmentTokenResponse = {
   value: string;
@@ -55,4 +62,36 @@ export const enrollmentApi = {
     api<void>(`${apiBasePath}/agents/enrollment-tokens/${value}/revoke`, {
       method: "POST"
     }),
+
+  // Phase-1 observability: list recent enrollment attempts. The filter
+  // arguments are all optional — the server defaults to the 20 most
+  // recent attempts across the fleet when nothing is provided.
+  listEnrollmentAttempts: (
+    filter: {
+      token_id?: string;
+      agent_id?: string;
+      status?: EnrollmentStatus;
+      limit?: number;
+    } = {},
+  ) => {
+    const params = new URLSearchParams();
+    if (filter.token_id) params.set("token_id", filter.token_id);
+    if (filter.agent_id) params.set("agent_id", filter.agent_id);
+    if (filter.status) params.set("status", filter.status);
+    if (filter.limit) params.set("limit", String(filter.limit));
+    const qs = params.toString();
+    const path = `${apiBasePath}/enrollment-attempts${qs ? "?" + qs : ""}`;
+    return api<{ items: EnrollmentAttempt[] }>(
+      path,
+      undefined,
+      enrollmentAttemptListResponseSchema,
+    );
+  },
+
+  getEnrollmentAttempt: (id: string) =>
+    api<EnrollmentAttemptDetail>(
+      `${apiBasePath}/enrollment-attempts/${encodeURIComponent(id)}`,
+      undefined,
+      enrollmentAttemptDetailSchema,
+    ),
 };
