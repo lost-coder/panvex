@@ -148,6 +148,30 @@ CREATE TABLE "discovered_clients" (
     FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
 );
 
+CREATE TABLE enrollment_attempts (
+    id              TEXT PRIMARY KEY,
+    token_id        TEXT,
+    agent_id        TEXT,
+    mode            TEXT NOT NULL CHECK (mode IN ('inbound', 'outbound')),
+    client_addr     TEXT,
+    request_id      TEXT NOT NULL,
+    status          TEXT NOT NULL CHECK (status IN ('in_progress', 'success', 'failed')),
+    error_code      TEXT,
+    error_message   TEXT,
+    started_at      TIMESTAMP NOT NULL,
+    finished_at     TIMESTAMP
+);
+
+CREATE TABLE enrollment_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    attempt_id  TEXT NOT NULL REFERENCES enrollment_attempts(id) ON DELETE CASCADE,
+    ts          TIMESTAMP NOT NULL,
+    step        TEXT NOT NULL,
+    level       TEXT NOT NULL CHECK (level IN ('info', 'warn', 'error')),
+    message     TEXT,
+    fields_json TEXT
+);
+
 CREATE TABLE enrollment_tokens (
     value TEXT PRIMARY KEY,
     fleet_group_id TEXT,
@@ -538,6 +562,14 @@ CREATE UNIQUE INDEX idx_discovered_clients_pending_unique
     ON discovered_clients (agent_id, client_name)
     WHERE status = 'pending_review';
 
+CREATE INDEX idx_enrollment_attempts_agent   ON enrollment_attempts(agent_id);
+
+CREATE INDEX idx_enrollment_attempts_started ON enrollment_attempts(started_at);
+
+CREATE INDEX idx_enrollment_attempts_token   ON enrollment_attempts(token_id);
+
+CREATE INDEX idx_enrollment_events_attempt ON enrollment_events(attempt_id, ts);
+
 CREATE INDEX idx_enrollment_tokens_fleet_group_id ON enrollment_tokens (fleet_group_id);
 
 CREATE INDEX idx_enrollment_tokens_value_hash ON enrollment_tokens(value_hash);
@@ -628,4 +660,5 @@ INSERT INTO goose_db_version (version_id, is_applied) VALUES
   (37, 1),
   (38, 1),
   (39, 1),
-  (40, 1);
+  (40, 1),
+  (41, 1);
