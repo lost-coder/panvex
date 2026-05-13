@@ -10,7 +10,7 @@
 # (or `docker buildx imagetools inspect <image>:<tag>` once docker is
 # new enough on the operator's box).
 
-FROM node:25-alpine@sha256:bdf2cca6fe3dabd014ea60163eca3f0f7015fbd5c7ee1b0e9ccb4ced6eb02ef4 AS web-builder
+FROM node:26-alpine@sha256:e71ac5e964b9201072425d59d2e876359efa25dc96bb1768cb73295728d6e4ea AS web-builder
 WORKDIR /src/web
 
 COPY web/package*.json ./
@@ -59,7 +59,7 @@ RUN go build -ldflags="-s -w" -trimpath -o /out/panvex-control-plane ./cmd/contr
 #     docker manifest inspect anchore/syft:v1.18 \
 #       | jq -r '.manifests[0].digest // .config.digest'
 # and replace `:v1.18` below with `:v1.18@sha256:<digest>`.
-FROM anchore/syft:v1.18 AS sbom-builder
+FROM anchore/syft:v1.44.0 AS sbom-builder
 COPY --from=control-plane-builder /out/panvex-control-plane /panvex-control-plane
 RUN /syft /panvex-control-plane -o cyclonedx-json=/sbom/control-plane.cdx.json && \
     # Defensive assert: a future syft major that changes the -o flag
