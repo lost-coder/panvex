@@ -200,8 +200,8 @@ func (s *outboundSupervisor) connectAndServe(ctx context.Context) error {
 		state, err := s.bootstrapStateFn(ctx, s.meta.AgentID)
 		if err != nil {
 			if s.rec != nil && attemptID != "" {
-				s.rec.Fail(ctx, attemptID, enrollment.ErrInternal, err,
-					map[string]any{"stage": "bootstrap_state_lookup"})
+				_ = s.rec.Fail(ctx, attemptID, enrollment.ErrInternal, err,
+					map[string]any{"stage": "bootstrap_state_lookup"}) // failures are best-effort; primary err is what matters
 				completed = true
 			}
 			return fmt.Errorf("agenttransport: bootstrap state lookup (node_id=%s): %w", s.meta.NodeID, err)
@@ -211,8 +211,8 @@ func (s *outboundSupervisor) connectAndServe(ctx context.Context) error {
 				"node_id", s.meta.NodeID, "addr", s.meta.DialAddress)
 			if err := s.enrollFn(ctx, s.meta.DialAddress, s.meta.AgentID); err != nil {
 				if s.rec != nil && attemptID != "" {
-					s.rec.Fail(ctx, attemptID, classifyDialError(err), err,
-						map[string]any{"stage": "enroll"})
+					_ = s.rec.Fail(ctx, attemptID, classifyDialError(err), err,
+						map[string]any{"stage": "enroll"}) // failures are best-effort; primary err is what matters
 					completed = true
 				}
 				return fmt.Errorf("agenttransport: enrollment (node_id=%s): %w", s.meta.NodeID, err)
@@ -224,8 +224,8 @@ func (s *outboundSupervisor) connectAndServe(ctx context.Context) error {
 
 	if s.tlsCfg == nil {
 		if s.rec != nil && attemptID != "" {
-			s.rec.Fail(ctx, attemptID, enrollment.ErrInternal, errOutboundTLSMissing,
-				map[string]any{"stage": "tls_config"})
+			_ = s.rec.Fail(ctx, attemptID, enrollment.ErrInternal, errOutboundTLSMissing,
+				map[string]any{"stage": "tls_config"}) // failures are best-effort; primary err is what matters
 			completed = true
 		}
 		return fmt.Errorf("%w (node_id=%s)", errOutboundTLSMissing, s.meta.NodeID)
@@ -280,8 +280,8 @@ func (s *outboundSupervisor) connectAndServe(ctx context.Context) error {
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)))
 	if err != nil {
 		if s.rec != nil && attemptID != "" {
-			s.rec.Fail(ctx, attemptID, classifyDialError(err), err,
-				map[string]any{"stage": "grpc_new_client", "addr": s.meta.DialAddress})
+			_ = s.rec.Fail(ctx, attemptID, classifyDialError(err), err,
+				map[string]any{"stage": "grpc_new_client", "addr": s.meta.DialAddress}) // failures are best-effort; primary err is what matters
 			completed = true
 		}
 		return err
@@ -291,8 +291,8 @@ func (s *outboundSupervisor) connectAndServe(ctx context.Context) error {
 	stream, err := client.Connect(ctx)
 	if err != nil {
 		if s.rec != nil && attemptID != "" {
-			s.rec.Fail(ctx, attemptID, classifyDialError(err), err,
-				map[string]any{"stage": "grpc_connect", "addr": s.meta.DialAddress})
+			_ = s.rec.Fail(ctx, attemptID, classifyDialError(err), err,
+				map[string]any{"stage": "grpc_connect", "addr": s.meta.DialAddress}) // failures are best-effort; primary err is what matters
 			completed = true
 		}
 		return err

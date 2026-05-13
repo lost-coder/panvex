@@ -19,6 +19,7 @@ const (
 	ErrInternal                ErrorCode = "INTERNAL_ERROR"
 )
 
+//nolint:gosec // G101: false positive — values are operator-facing UI strings, not secrets
 var messages = map[ErrorCode]string{
 	ErrTokenExpired:            "Токен истёк. Сгенерируйте новый в Настройки → Токены подключения.",
 	ErrTokenAlreadyUsed:        "Этот токен уже использован. Удалите старого агента или создайте новый токен.",
