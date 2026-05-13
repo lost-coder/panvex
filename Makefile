@@ -97,7 +97,14 @@ gen-openapi-go:
 
 gen-openapi-ts:
 	@command -v npx >/dev/null || { echo "npx not installed"; exit 1; }
-	cd web && npx --yes openapi-typescript ../openapi/panvex.yaml -o src/shared/api/openapi.gen.ts
+	# openapi-typescript needs `typescript` as a peer in its runtime env.
+	# `npx --yes openapi-typescript` alone installs it into an ephemeral
+	# cache that does NOT include typescript, so the import resolution
+	# fails in CI ("Cannot find package 'typescript' imported from ...").
+	# Install both into the same ephemeral env via `-p` so the peer is
+	# resolvable. Locally this is a no-op the second time because npx
+	# caches the env, so the dev-loop cost is negligible.
+	cd web && npx --yes -p typescript@5 -p openapi-typescript -- openapi-typescript ../openapi/panvex.yaml -o src/shared/api/openapi.gen.ts
 
 gen-openapi: gen-openapi-go gen-openapi-ts
 
