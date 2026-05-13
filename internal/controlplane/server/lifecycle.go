@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/agents"
@@ -426,6 +428,29 @@ func (s *Server) startBackgroundWorkers() {
 	// Lives on rollupCtx so Close()'s rollupCancel reaps it together
 	// with the other long-lived background loops.
 	s.startWebhookWorker(rollupCtx, s.webhookStorage)
+
+	// Enrollment attempts retention worker — prunes attempt rows older
+	// than the configured retention so the timeline table does not grow
+	// unbounded. Defaults to 30 days; PANVEX_ENROLLMENT_RETENTION_DAYS
+	// overrides at boot, and setting it to 0 disables retention
+	// entirely. Lives on rollupCtx for the same reason as the other
+	// long-lived loops above.
+	s.startEnrollmentCleanupWorker(rollupCtx, enrollmentRetention())
+}
+
+// enrollmentRetention resolves the attempt retention window from the
+// environment, defaulting to 30 days. Returning a time.Duration (rather
+// than days as int) keeps the boot-time conversion in one place; the
+// worker treats ≤0 as "disabled".
+func enrollmentRetention() time.Duration {
+	const defaultDays = 30
+	days := defaultDays
+	if v := os.Getenv("PANVEX_ENROLLMENT_RETENTION_DAYS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			days = n
+		}
+	}
+	return time.Duration(days) * 24 * time.Hour
 }
 
 // New constructs the control-plane Server. Returns an error (Plan 3
