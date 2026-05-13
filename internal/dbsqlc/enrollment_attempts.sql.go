@@ -54,7 +54,7 @@ func (q *Queries) AttachEnrollmentAttemptAgent(ctx context.Context, arg AttachEn
 	return err
 }
 
-const completeEnrollmentAttempt = `-- name: CompleteEnrollmentAttempt :exec
+const completeEnrollmentAttempt = `-- name: CompleteEnrollmentAttempt :execrows
 UPDATE enrollment_attempts
 SET status = 'success', finished_at = $1
 WHERE id = $2 AND status = 'in_progress'
@@ -65,9 +65,14 @@ type CompleteEnrollmentAttemptParams struct {
 	ID         uuid.UUID
 }
 
-func (q *Queries) CompleteEnrollmentAttempt(ctx context.Context, arg CompleteEnrollmentAttemptParams) error {
-	_, err := q.db.ExecContext(ctx, completeEnrollmentAttempt, arg.FinishedAt, arg.ID)
-	return err
+// Returns the number of rows affected so the Go adapter can report
+// whether the transition actually happened (idempotent finalize).
+func (q *Queries) CompleteEnrollmentAttempt(ctx context.Context, arg CompleteEnrollmentAttemptParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, completeEnrollmentAttempt, arg.FinishedAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const createEnrollmentAttempt = `-- name: CreateEnrollmentAttempt :exec
@@ -116,7 +121,7 @@ func (q *Queries) DeleteOldEnrollmentAttempts(ctx context.Context, startedAt tim
 	return result.RowsAffected()
 }
 
-const failEnrollmentAttempt = `-- name: FailEnrollmentAttempt :exec
+const failEnrollmentAttempt = `-- name: FailEnrollmentAttempt :execrows
 UPDATE enrollment_attempts
 SET status = 'failed', finished_at = $1, error_code = $2, error_message = $3
 WHERE id = $4 AND status = 'in_progress'
@@ -129,14 +134,19 @@ type FailEnrollmentAttemptParams struct {
 	ID           uuid.UUID
 }
 
-func (q *Queries) FailEnrollmentAttempt(ctx context.Context, arg FailEnrollmentAttemptParams) error {
-	_, err := q.db.ExecContext(ctx, failEnrollmentAttempt,
+// Returns the number of rows affected so the Go adapter can report
+// whether the transition actually happened (idempotent finalize).
+func (q *Queries) FailEnrollmentAttempt(ctx context.Context, arg FailEnrollmentAttemptParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, failEnrollmentAttempt,
 		arg.FinishedAt,
 		arg.ErrorCode,
 		arg.ErrorMessage,
 		arg.ID,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const getEnrollmentAttempt = `-- name: GetEnrollmentAttempt :one

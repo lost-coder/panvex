@@ -11,12 +11,16 @@ INSERT INTO enrollment_attempts (
 -- name: AttachEnrollmentAttemptAgent :exec
 UPDATE enrollment_attempts SET agent_id = $1 WHERE id = $2;
 
--- name: CompleteEnrollmentAttempt :exec
+-- name: CompleteEnrollmentAttempt :execrows
+-- Returns the number of rows affected so the Go adapter can report
+-- whether the transition actually happened (idempotent finalize).
 UPDATE enrollment_attempts
 SET status = 'success', finished_at = $1
 WHERE id = $2 AND status = 'in_progress';
 
--- name: FailEnrollmentAttempt :exec
+-- name: FailEnrollmentAttempt :execrows
+-- Returns the number of rows affected so the Go adapter can report
+-- whether the transition actually happened (idempotent finalize).
 UPDATE enrollment_attempts
 SET status = 'failed', finished_at = $1, error_code = $2, error_message = $3
 WHERE id = $4 AND status = 'in_progress';
