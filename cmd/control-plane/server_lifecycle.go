@@ -106,6 +106,13 @@ func newControlPlaneGRPCServer(tlsConfig *tls.Config) *grpc.Server {
 		}),
 		grpc.MaxRecvMsgSize(grpcMaxMessageSize),
 		grpc.MaxSendMsgSize(grpcMaxMessageSize),
+		// Request-ID interceptors run before auth so any log line emitted
+		// during authentication carries the correlation ID. Inbound
+		// metadata is trusted when well-formed; otherwise a fresh UUID is
+		// minted server-side. Chained so additional interceptors can be
+		// appended without losing this one.
+		grpc.ChainUnaryInterceptor(server.RequestIDUnaryServerInterceptor()),
+		grpc.ChainStreamInterceptor(server.RequestIDStreamServerInterceptor()),
 		// P3-OBS-01: propagate W3C trace context from agent calls and
 		// create per-RPC server spans. Uses the global TracerProvider,
 		// which is the no-op provider unless otelcp.Init installed one.

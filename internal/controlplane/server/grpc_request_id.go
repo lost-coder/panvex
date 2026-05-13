@@ -51,3 +51,18 @@ func requestIDStreamInterceptor() grpc.StreamServerInterceptor {
 		return handler(srv, &wrappedRequestIDStream{ServerStream: ss, ctx: injectRequestID(ss.Context())})
 	}
 }
+
+// RequestIDUnaryServerInterceptor is the exported entrypoint to the gRPC
+// unary interceptor that extracts (or mints) an x-request-id and seeds it
+// into both the server-internal request-ID context and the enrollment
+// request-ID context — letting cmd/control-plane wire it into the gateway
+// gRPC server.
+func RequestIDUnaryServerInterceptor() grpc.UnaryServerInterceptor {
+	return requestIDUnaryInterceptor()
+}
+
+// RequestIDStreamServerInterceptor mirrors RequestIDUnaryServerInterceptor
+// for server-streaming RPCs.
+func RequestIDStreamServerInterceptor() grpc.StreamServerInterceptor {
+	return requestIDStreamInterceptor()
+}

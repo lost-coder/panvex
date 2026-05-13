@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
 )
 
 // requestIDHeader is the canonical header used both inbound (clients
@@ -44,6 +45,7 @@ func requestIDMiddleware(next http.Handler) http.Handler {
 		}
 		w.Header().Set(requestIDHeader, id)
 		ctx := context.WithValue(r.Context(), requestIDKey{}, id)
+		ctx = enrollment.WithRequestID(ctx, id)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
