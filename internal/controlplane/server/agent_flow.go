@@ -12,6 +12,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
+	"github.com/lost-coder/panvex/internal/security"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -55,12 +56,33 @@ func (e *enrollmentError) Error() string {
 
 func (e *enrollmentError) Unwrap() error { return e.cause }
 
+// classifyEnrollmentError maps an error returned by enrollAgent (or the
+// surrounding HTTP handler) to the enrollment.ErrorCode the Recorder
+// should report. Returns ErrInternal as a fall-through so the attempt
+// still terminates with a code rather than lingering in in_progress.
+//
+// Task 15: token-expired and token-already-used now classify into their
+// dedicated codes; the prior wiring routed both to ErrInternal because
+// only the cert-sign path constructed a typed enrollmentError. The check
+// uses errors.Is so a wrapped sentinel still classifies correctly.
+func classifyEnrollmentError(err error) enrollment.ErrorCode {
+	switch {
+	case errors.Is(err, security.ErrEnrollmentTokenExpired):
+		return enrollment.ErrTokenExpired
+	case errors.Is(err, security.ErrEnrollmentTokenConsumed):
+		return enrollment.ErrTokenAlreadyUsed
+	case errors.Is(err, security.ErrEnrollmentTokenInvalid),
+		errors.Is(err, errEnrollmentTokenRevoked):
+		return enrollment.ErrTokenNotFound
+	default:
+		return enrollment.ErrInternal
+	}
+}
+
 // mapAndFailEnrollment dispatches the appropriate enrollment.ErrorCode
-// onto Recorder.Fail based on whether the error carries a typed
-// enrollmentError. Anything else is reported as ErrInternal so the
-// attempt still terminates with a code rather than lingering in
-// in_progress; Task 15 will swap in the proper code for plain string
-// errors as it adds the negative-path tests.
+// onto Recorder.Fail. Typed enrollmentError wins; otherwise the error is
+// classified via classifyEnrollmentError so security sentinels surface
+// as their dedicated codes instead of ErrInternal.
 func (s *Server) mapAndFailEnrollment(ctx context.Context, attemptID string, err error) {
 	if s.enrollmentRec == nil || attemptID == "" {
 		return
@@ -72,7 +94,8 @@ func (s *Server) mapAndFailEnrollment(ctx context.Context, attemptID string, err
 		}
 		return
 	}
-	if failErr := s.enrollmentRec.Fail(ctx, attemptID, enrollment.ErrInternal, err, nil); failErr != nil {
+	code := classifyEnrollmentError(err)
+	if failErr := s.enrollmentRec.Fail(ctx, attemptID, code, err, nil); failErr != nil {
 		s.logger.Warn("enrollment.recorder fail", "attempt_id", attemptID, "error", failErr)
 	}
 }
