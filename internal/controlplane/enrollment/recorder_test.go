@@ -93,3 +93,34 @@ func TestRecorderFailIsTerminal(t *testing.T) {
 		t.Fatalf("status changed: %q", store.attempts[attemptID].Status)
 	}
 }
+
+func TestRecorderIngestAgentEvents(t *testing.T) {
+	store := newMemStore()
+	rec := NewRecorder(store, fixedClock(time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)))
+
+	ctx := context.Background()
+	attemptID, err := rec.Begin(ctx, ModeInbound, "tok-3", "10.0.0.7")
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+
+	earlier := time.Date(2026, 5, 13, 11, 59, 30, 0, time.UTC)
+	events := []AgentReportedEvent{
+		{Step: StepAgentPersistedCert, Level: LevelInfo, Ts: earlier, Message: "saved"},
+		{Step: StepGatewayDialed, Level: LevelInfo, Ts: earlier.Add(time.Second), Message: "dialed"},
+	}
+	if err := rec.Ingest(ctx, attemptID, events); err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+
+	stored := store.events[attemptID]
+	if len(stored) != 2 {
+		t.Fatalf("event count = %d", len(stored))
+	}
+	if !stored[0].Ts.Equal(earlier) {
+		t.Fatalf("ts not preserved: %v", stored[0].Ts)
+	}
+	if stored[0].Step != StepAgentPersistedCert {
+		t.Fatalf("step = %q", stored[0].Step)
+	}
+}
