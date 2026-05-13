@@ -4,6 +4,7 @@ import type { EnrollmentWizardProps } from "@/shared/api/types-pages/pages";
 import { useFleetGroups } from "./hooks/useFleetGroups";
 import { useFleetGroupMutations } from "@/features/fleet-groups/hooks/useFleetGroupsFull";
 import { FleetGroupFormSheet, type FleetGroupFormData } from "@/features/fleet-groups/FleetGroupFormSheet";
+import { EnrollmentLiveSection } from "./enrollment/EnrollmentLiveSection";
 import { Sheet, SheetBody, SheetContent } from "@/ui";
 import { useToast } from "@/app/providers/ToastProvider";
 import { useNavigate } from "@tanstack/react-router";
@@ -317,6 +318,14 @@ export function AddServerContainer() {
           loading={loading}
           error={error}
         />
+        {/*
+          Phase-1 observability: once the bootstrap probe resolves an
+          agent ID, surface the enrollment-attempts timeline so operators
+          can see exactly which step the agent reached (or which one
+          failed). Hidden until the agent is known — the wizard's
+          built-in three-stage status covers the pre-bootstrap window.
+        */}
+        <EnrollmentLiveSection agentId={connectedAgent?.id ?? null} />
       </section>
 
       <Sheet
