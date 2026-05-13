@@ -20,6 +20,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/csrf"
 	"github.com/lost-coder/panvex/internal/controlplane/discovered"
+	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/fleet"
 	"github.com/lost-coder/panvex/internal/controlplane/geoip"
@@ -72,6 +73,12 @@ type Server struct {
 	presence                  *presence.Tracker
 	events                    *eventbus.Hub
 	authority                 *certificateAuthority
+	// enrollmentRec records per-attempt timeline events for inbound and
+	// outbound enrollment (Task 13 of the enrollment-logging Phase 1 plan).
+	// Nil when no persistent store with a *sql.DB handle is wired — handlers
+	// must nil-check before calling. See initStoreBackedSubsystems for the
+	// wiring (only sqlite/postgres backends expose DB()).
+	enrollmentRec             *enrollment.Recorder
 	now                       func() time.Time
 	panelRuntime              PanelRuntime
 	requestRestart            func() error
@@ -346,6 +353,23 @@ type Server struct {
 	// transport-mode change handler notifies it when an agent's mode
 	// changes so outbound supervisors can be spawned or torn down.
 	agentTransportManager atomic.Pointer[agenttransport.Manager]
+}
+
+// enrollmentBusAdapter adapts eventbus.Hub to the enrollment.Publisher
+// interface so the Recorder can broadcast timeline events on the same
+// /events websocket bus that the dashboard already subscribes to.
+type enrollmentBusAdapter struct {
+	bus *eventbus.Hub
+}
+
+// Publish wraps the (type, payload) pair into the Hub's Event envelope.
+// Nil-safe: a missing bus turns Publish into a no-op so tests that
+// construct a Recorder without a hub do not panic.
+func (a enrollmentBusAdapter) Publish(t string, payload any) {
+	if a.bus == nil {
+		return
+	}
+	a.bus.Publish(eventbus.Event{Type: t, Data: payload})
 }
 
 // vault exposes the secret vault initialised from EncryptionKey. A nil

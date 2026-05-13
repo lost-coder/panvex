@@ -12,6 +12,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/csrf"
 	"github.com/lost-coder/panvex/internal/controlplane/discovered"
+	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/fleet"
 	"github.com/lost-coder/panvex/internal/controlplane/geoip"
@@ -25,6 +26,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/uow"
 	"github.com/lost-coder/panvex/internal/controlplane/webhooks"
+	"github.com/lost-coder/panvex/internal/dbsqlc"
 )
 
 // R-Q-01/07: lifecycle (constructor + shutdown + seed) extracted
@@ -328,6 +330,20 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 			// panel restart; the running process uses the values below.
 			s.activeSessionIdleTimeout = s.settings.AuthSessionIdleTimeout()
 			s.activeSessionMaxLifetime = s.settings.AuthSessionMaxLifetime()
+
+			// Enrollment-logging Phase 1 / Task 13: wire the timeline
+			// recorder so the inbound bootstrap handler (and later the
+			// outbound flow) can record per-attempt steps and surface
+			// them on the /events bus the dashboard already subscribes
+			// to. Construction is gated on DB() — test fixtures with
+			// mock stores leave enrollmentRec nil, and handlers must
+			// nil-check before calling.
+			s.enrollmentRec = enrollment.NewRecorder(
+				enrollment.NewSQLStore(dbsqlc.New(rawDB)),
+				s.now,
+			).
+				WithPublisher(enrollmentBusAdapter{bus: s.events}).
+				WithLogger(s.logger)
 		}
 	}
 
