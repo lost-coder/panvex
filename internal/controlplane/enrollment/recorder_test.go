@@ -54,3 +54,42 @@ func TestRecorderBeginEventComplete(t *testing.T) {
 		t.Fatalf("fields token_id = %v", fields["token_id"])
 	}
 }
+
+func TestRecorderFailIsTerminal(t *testing.T) {
+	store := newMemStore()
+	rec := NewRecorder(store, fixedClock(time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)))
+
+	ctx := WithRequestID(context.Background(), "req-2")
+	attemptID, err := rec.Begin(ctx, ModeInbound, "tok-2", "10.0.0.6")
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+
+	if err := rec.Fail(ctx, attemptID, ErrTokenExpired, nil, nil); err != nil {
+		t.Fatalf("Fail: %v", err)
+	}
+	att := store.attempts[attemptID]
+	if att.Status != StatusFailed {
+		t.Fatalf("status = %q, want failed", att.Status)
+	}
+	if att.ErrorCode != ErrTokenExpired {
+		t.Fatalf("error_code = %q", att.ErrorCode)
+	}
+	if att.ErrorMsg == "" {
+		t.Fatalf("error_message is empty")
+	}
+
+	if err := rec.Fail(ctx, attemptID, ErrInternal, nil, nil); err != nil {
+		t.Fatalf("second Fail: %v", err)
+	}
+	if store.attempts[attemptID].ErrorCode != ErrTokenExpired {
+		t.Fatalf("error_code overwritten: %q", store.attempts[attemptID].ErrorCode)
+	}
+
+	if err := rec.Complete(ctx, attemptID); err != nil {
+		t.Fatalf("Complete after Fail: %v", err)
+	}
+	if store.attempts[attemptID].Status != StatusFailed {
+		t.Fatalf("status changed: %q", store.attempts[attemptID].Status)
+	}
+}
