@@ -457,6 +457,12 @@ func (s *Server) SetAgentTransportManager(m *agenttransport.Manager) {
 		obs = s.obs.ObserveAgentCertPin
 	}
 	m.SetCertPinReader(s.store, obs)
+	// Wire the enrollment timeline recorder into outbound supervisors so
+	// each panel-dials-agent cycle records its own attempt + steps + final
+	// status. s.enrollmentRec is nil for stores without a *sql.DB handle
+	// (test fixtures with mock stores) — SetEnrollmentRecorder handles nil
+	// safely and outbound supervisors fall back to "no recording".
+	m.SetEnrollmentRecorder(s.enrollmentRec)
 	// Wire live backoff getters so operator changes to
 	// agents.outbound_backoff_initial / agents.outbound_backoff_max are
 	// picked up on the next reconnect iteration without a panel restart.
