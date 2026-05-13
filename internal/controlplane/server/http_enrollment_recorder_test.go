@@ -104,6 +104,24 @@ func lastEnrollmentAttemptID(t *testing.T, db *sql.DB) string {
 	return raw
 }
 
+// firstFailedEnrollmentAttemptID returns the id of the (single) attempt whose
+// status is "failed". Used by negative tests that fire multiple bootstrap
+// requests in the same logical second: the fixed-clock Server.now() collapses
+// started_at to one-second resolution, so a "latest" helper that tiebreaks on
+// uuid lex order becomes flaky. There is exactly one failed attempt in each
+// negative scenario, so selecting by status is deterministic regardless of
+// timestamp collisions.
+func firstFailedEnrollmentAttemptID(t *testing.T, db *sql.DB) string {
+	t.Helper()
+	var raw string
+	err := db.QueryRowContext(context.Background(),
+		"SELECT id FROM enrollment_attempts WHERE status = 'failed' ORDER BY started_at ASC, id ASC LIMIT 1").Scan(&raw)
+	if err != nil {
+		t.Fatalf("read failed attempt: %v", err)
+	}
+	return raw
+}
+
 func attemptIDFromBootstrapBody(body []byte) string {
 	var decoded map[string]any
 	if err := json.Unmarshal(body, &decoded); err != nil {
@@ -313,7 +331,11 @@ func TestInboundEnrollmentRecordsUsedToken(t *testing.T) {
 		t.Fatalf("second call status = 200, want failure; body = %s", second.Body.String())
 	}
 
-	attemptID := lastEnrollmentAttemptID(t, db)
+	// Both attempts share started_at under the fixed clock, so locate the
+	// failed one by status instead of by "latest" (uuid lex tiebreaker is
+	// non-deterministic). The happy path's first call must have produced a
+	// success row, so there is exactly one failed attempt to find here.
+	attemptID := firstFailedEnrollmentAttemptID(t, db)
 	att := loadEnrollmentAttempt(t, db, attemptID)
 	if !att.ErrorCode.Valid {
 		t.Fatalf("attempt.ErrorCode is null (status=%q)", att.Status)
