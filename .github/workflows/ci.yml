@@ -29,7 +29,7 @@ jobs:
       # third-party actions can have their tags rewritten to point at
       # a malicious commit, so consume the action by immutable hash.
       # Tag at the time of pinning: v3 (commit d1c1ffe).
-      - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590  # v3
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d  # v4.0.1
         id: filter
         with:
           filters: |
