@@ -153,6 +153,30 @@ type DiscoveredClient struct {
 	ConnectionLinks    json.RawMessage
 }
 
+type EnrollmentAttempt struct {
+	ID           uuid.UUID
+	TokenID      uuid.NullUUID
+	AgentID      uuid.NullUUID
+	Mode         string
+	ClientAddr   sql.NullString
+	RequestID    string
+	Status       string
+	ErrorCode    sql.NullString
+	ErrorMessage sql.NullString
+	StartedAt    time.Time
+	FinishedAt   sql.NullTime
+}
+
+type EnrollmentEvent struct {
+	ID         int64
+	AttemptID  uuid.UUID
+	Ts         time.Time
+	Step       string
+	Level      string
+	Message    sql.NullString
+	FieldsJson json.RawMessage
+}
+
 type EnrollmentToken struct {
 	Value        string
 	FleetGroupID uuid.NullUUID
