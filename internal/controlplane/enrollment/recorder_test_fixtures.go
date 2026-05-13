@@ -1,3 +1,9 @@
+// This file ships in the production binary (no `_test.go` suffix) so that
+// external test packages — e.g. internal/controlplane/server's HTTP-level
+// integration tests — can swap a memStore into a Recorder without each
+// caller redefining its own fixture. Do not reference memStore from
+// non-test production code.
+
 package enrollment
 
 import (

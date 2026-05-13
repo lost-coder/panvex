@@ -48,6 +48,16 @@ type Publisher interface {
 	Publish(eventType string, payload any)
 }
 
+// Recorder records the per-attempt timeline of enrollment.
+//
+// A single Recorder is safe for concurrent use by multiple goroutines once
+// constructed: its fields are set only by NewRecorder and the WithPublisher /
+// WithLogger copy-returning options.
+//
+// Persistence failures inside Event are logged via slog and silently dropped
+// — timeline observability must never abort an in-flight enrollment. Ingest
+// is the exception: it returns an error so the caller (the agent-side
+// ReportEnrollmentSteps handler) can decide whether to retry.
 type Recorder struct {
 	store Store
 	now   func() time.Time
@@ -95,6 +105,10 @@ func (r *Recorder) Begin(ctx context.Context, mode Mode, tokenID, clientAddr str
 	return id, nil
 }
 
+// Event records one stage in the attempt and dual-writes to slog. It never
+// returns an error: a missed timeline write must not block enrollment.
+// Storage failures surface only via the slog "enrollment event persist
+// failed" line.
 func (r *Recorder) Event(ctx context.Context, attemptID string, step Step, level Level, message string, fields map[string]any) {
 	fieldsJSON := ""
 	if len(fields) > 0 {
@@ -137,6 +151,9 @@ func (r *Recorder) Event(ctx context.Context, attemptID string, step Step, level
 	}
 }
 
+// AttachAgent sets the attempt's agent_id once the panel has issued the
+// cert and minted the agent row. Unlike Begin and Complete, it does not
+// emit a slog line on its own — the surrounding handler logs are enough.
 func (r *Recorder) AttachAgent(ctx context.Context, attemptID, agentID string) error {
 	return r.store.AttachAgent(ctx, attemptID, agentID)
 }
@@ -210,7 +227,12 @@ type AgentReportedEvent struct {
 	Fields  map[string]any
 }
 
-// Ingest appends agent-reported events to the timeline preserving timestamps.
+// Ingest appends agent-reported events to the timeline preserving original
+// timestamps. The agent sends one batch per attempt after first_sync_ok,
+// so partial-batch persistence on error is acceptable: the caller will not
+// retry, and the panel-side events captured before this call still give a
+// usable partial timeline. Phase 2 may wrap this in a store-level
+// transaction if richer agent-retry semantics are needed.
 func (r *Recorder) Ingest(ctx context.Context, attemptID string, events []AgentReportedEvent) error {
 	for _, e := range events {
 		fieldsJSON := ""
