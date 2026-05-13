@@ -8,7 +8,7 @@ import (
 )
 
 func TestRecorderBeginEventComplete(t *testing.T) {
-	store := newMemStore()
+	store := NewMemStoreForTest()
 	rec := NewRecorder(store, fixedClock(time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)))
 
 	ctx := WithRequestID(context.Background(), "req-1")
@@ -56,7 +56,7 @@ func TestRecorderBeginEventComplete(t *testing.T) {
 }
 
 func TestRecorderFailIsTerminal(t *testing.T) {
-	store := newMemStore()
+	store := NewMemStoreForTest()
 	rec := NewRecorder(store, fixedClock(time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)))
 
 	ctx := WithRequestID(context.Background(), "req-2")
@@ -95,7 +95,7 @@ func TestRecorderFailIsTerminal(t *testing.T) {
 }
 
 func TestRecorderIngestAgentEvents(t *testing.T) {
-	store := newMemStore()
+	store := NewMemStoreForTest()
 	rec := NewRecorder(store, fixedClock(time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)))
 
 	ctx := context.Background()
