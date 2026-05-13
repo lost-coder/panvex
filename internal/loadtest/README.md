@@ -8,7 +8,7 @@ Two parallel modes:
 
 | Mode | What runs | When | Wall-clock |
 |---|---|---|---|
-| **Correctness** | `go test ./internal/loadtest/...` (the `Test*` variants) | every PR via the `go-test` CI job | ~25s |
+| **Correctness** | `go test ./internal/loadtest/...` (the `Test*` variants) | every PR via the `go-test` CI job | ~5s |
 | **Bench smoke** | `go test -run '^$' -bench . -benchtime=1x ./internal/loadtest/...` | every PR via the `load-bench` CI job | ~25s |
 | **Bench full** | `go test -run '^$' -bench . -benchtime=10s ./internal/loadtest/...` | operator-run, locally or nightly | ~5–10 min |
 
@@ -62,9 +62,12 @@ a 4-core developer laptop or a `ubuntu-latest` GitHub runner:
 Total smoke run: **under 30 seconds**, well inside the existing
 `load-bench` CI job's wall-clock budget.
 
-The `Test*` correctness mode runs in the same shape but without the
-inner-loop iteration: ~25 s end-to-end, the bulk again being the login
-storm's 100 parallel Argon2id verifies.
+The `Test*` correctness mode runs in the same shape but with smaller
+worker pools — the lockout assertion only needs enough bad-password
+attempts to exceed `LockoutMaxAttempts=5`, and the good-login pool
+exists to exercise concurrency, not to publish a p99. The login storm's
+fan-out drops from 100×100 (Bench) to 20×20 (Test) so the Argon2id
+allocation peak fits in ~2 GiB instead of ~10 GiB. End-to-end: ~5 s.
 
 ## Adding a scenario
 

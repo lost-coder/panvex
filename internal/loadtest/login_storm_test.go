@@ -45,8 +45,18 @@ import (
 )
 
 const (
-	loginStormGoodWorkers = 100
-	loginStormBadWorkers  = 100
+	// Argon2id is configured at 96 MiB / verify (hashMemV2 in
+	// internal/controlplane/auth/password.go). The Benchmark variant
+	// runs the full 100×100 fan-out to surface contention on the auth
+	// service's mu; the Test variant only needs enough workers to trip
+	// the lockout (LockoutMaxAttempts=5) and exercise the concurrent
+	// Authenticate path, so we run a much smaller pool. With 100×100
+	// the in-flight Argon2id allocations alone are ~10 GiB, which OOMs
+	// the GitHub Actions runner and developer machines under load.
+	loginStormGoodWorkersBench = 100
+	loginStormBadWorkersBench  = 100
+	loginStormGoodWorkersTest  = 20
+	loginStormBadWorkersTest   = 20
 	// loginStormPassword satisfies the default password policy
 	// (validatePassword in internal/controlplane/auth/password.go).
 	loginStormPassword = "Correct1horse2battery"
@@ -57,8 +67,9 @@ const (
 // runLoginStorm executes the scenario: bootstrap the user, fire two
 // pools of concurrent Authenticate calls (good + bad), and return
 // observed latencies plus the resulting lockout outcome. Used by both
-// the Test and Benchmark entry points.
-func runLoginStorm(tb testing.TB) (good, bad *latencySamples, lockoutFired bool, successCount, lockoutBlocked int64) {
+// the Test and Benchmark entry points; callers pass the worker counts
+// because Test-mode runs a much smaller pool than Bench-mode.
+func runLoginStorm(tb testing.TB, goodWorkers, badWorkers int) (good, bad *latencySamples, lockoutFired bool, successCount, lockoutBlocked int64) {
 	tb.Helper()
 	now := time.Now()
 
@@ -82,10 +93,10 @@ func runLoginStorm(tb testing.TB) (good, bad *latencySamples, lockoutFired bool,
 
 	// ---- Good logins. ----
 	var goodWG sync.WaitGroup
-	goodWG.Add(loginStormGoodWorkers)
-	goodErr := make(chan error, loginStormGoodWorkers)
+	goodWG.Add(goodWorkers)
+	goodErr := make(chan error, goodWorkers)
 	var goodOK atomic.Int64
-	for i := 0; i < loginStormGoodWorkers; i++ {
+	for i := 0; i < goodWorkers; i++ {
 		go func(idx int) {
 			defer goodWG.Done()
 			t0 := time.Now()
@@ -112,9 +123,9 @@ func runLoginStorm(tb testing.TB) (good, bad *latencySamples, lockoutFired bool,
 	// The tracker rejects the call once max-attempts (5) is exceeded; we
 	// count those rejections to assert the lockout actually fired.
 	var badWG sync.WaitGroup
-	badWG.Add(loginStormBadWorkers)
+	badWG.Add(badWorkers)
 	var lockoutBlock atomic.Int64
-	for i := 0; i < loginStormBadWorkers; i++ {
+	for i := 0; i < badWorkers; i++ {
 		go func(idx int) {
 			defer badWG.Done()
 			t0 := time.Now()
@@ -159,31 +170,43 @@ func runLoginStorm(tb testing.TB) (good, bad *latencySamples, lockoutFired bool,
 }
 
 // TestLoginStormLockoutCorrectness is the correctness gate. Asserts the
-// auth + lockout invariants under concurrency.
+// auth + lockout invariants under concurrency. Uses the smaller Test-mode
+// worker pool — 100×100 belongs in the Benchmark variant, where the
+// contention measurement justifies the ~10 GiB Argon2id allocation peak.
 func TestLoginStormLockoutCorrectness(t *testing.T) {
-	good, bad, lockoutFired, successCount, lockoutBlocked := runLoginStorm(t)
+	good, bad, lockoutFired, successCount, lockoutBlocked := runLoginStorm(t,
+		loginStormGoodWorkersTest, loginStormBadWorkersTest)
 
-	if got, want := successCount, int64(loginStormGoodWorkers); got != want {
+	if got, want := successCount, int64(loginStormGoodWorkersTest); got != want {
 		t.Errorf("good logins succeeded = %d, want %d", got, want)
 	}
 	if !lockoutFired {
-		t.Errorf("lockout did not fire after %d bad attempts", loginStormBadWorkers)
+		t.Errorf("lockout did not fire after %d bad attempts", loginStormBadWorkersTest)
 	}
-	// Sanity: at least most of the bad attempts were rejected by the
-	// locked branch. Loose bound — we already asserted lockoutFired.
-	if lockoutBlocked < int64(loginStormBadWorkers-sessions.LockoutMaxAttempts*4) {
-		t.Errorf("lockout-blocked attempts = %d, want >> 0 (lockout under-firing)", lockoutBlocked)
+	// Sanity: most of the bad attempts should hit the locked branch.
+	// Loose bound — we already asserted lockoutFired. The slack accounts
+	// for the race between RecordFailure increment and IsLocked read.
+	wantBlockedAtLeast := int64(loginStormBadWorkersTest - sessions.LockoutMaxAttempts*2)
+	if wantBlockedAtLeast < 0 {
+		wantBlockedAtLeast = 0
+	}
+	if lockoutBlocked < wantBlockedAtLeast {
+		t.Errorf("lockout-blocked attempts = %d, want >= %d (lockout under-firing)",
+			lockoutBlocked, wantBlockedAtLeast)
 	}
 	t.Logf("good login p50=%v p99=%v", good.Percentile(0.5), good.Percentile(0.99))
 	t.Logf("bad  login p50=%v p99=%v (lockout-blocked=%d)", bad.Percentile(0.5), bad.Percentile(0.99), lockoutBlocked)
 }
 
-// BenchmarkLoginStorm is the load-bench entry point.
+// BenchmarkLoginStorm is the load-bench entry point. Uses the full
+// 100×100 fan-out: enough concurrency to surface contention on the
+// auth-service lock that this scenario exists to track.
 func BenchmarkLoginStorm(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		good, _, _, _, _ := runLoginStorm(b)
+		good, _, _, _, _ := runLoginStorm(b,
+			loginStormGoodWorkersBench, loginStormBadWorkersBench)
 		b.ReportMetric(float64(good.Percentile(0.99).Milliseconds()), "login-p99-ms")
 	}
 }
