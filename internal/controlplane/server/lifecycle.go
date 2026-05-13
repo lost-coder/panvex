@@ -339,7 +339,7 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 			// mock stores leave enrollmentRec nil, and handlers must
 			// nil-check before calling.
 			s.enrollmentRec = enrollment.NewRecorder(
-				enrollment.NewSQLStore(dbsqlc.New(rawDB)),
+				enrollment.NewSQLStore(dbsqlc.New(rawDB), rawDB),
 				s.now,
 			).
 				WithPublisher(enrollmentBusAdapter{bus: s.events}).

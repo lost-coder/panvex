@@ -33,6 +33,47 @@ type Event struct {
 	Ts         time.Time
 }
 
+// ListFilter constrains ListAttempts. Pointer fields are absent ⇒ no
+// filter on that column. Limit ≤ 0 means "use the store's default".
+type ListFilter struct {
+	TokenID *string
+	AgentID *string
+	Status  *Status
+	Limit   int
+}
+
+// AttemptDTO is the JSON-friendly projection of an Attempt returned by
+// the read-side handlers. Empty optional columns are omitted via the
+// `omitempty` tag so callers can distinguish "not set" from zero values.
+type AttemptDTO struct {
+	ID           string     `json:"id"`
+	TokenID      string     `json:"token_id,omitempty"`
+	AgentID      string     `json:"agent_id,omitempty"`
+	Mode         Mode       `json:"mode"`
+	ClientAddr   string     `json:"client_addr,omitempty"`
+	RequestID    string     `json:"request_id"`
+	Status       Status     `json:"status"`
+	ErrorCode    string     `json:"error_code,omitempty"`
+	ErrorMessage string     `json:"error_message,omitempty"`
+	StartedAt    time.Time  `json:"started_at"`
+	FinishedAt   *time.Time `json:"finished_at,omitempty"`
+}
+
+// EventDTO is the JSON-friendly projection of a stored timeline event.
+type EventDTO struct {
+	Step    Step           `json:"step"`
+	Level   Level          `json:"level"`
+	Message string         `json:"message,omitempty"`
+	Fields  map[string]any `json:"fields,omitempty"`
+	Ts      time.Time      `json:"ts"`
+}
+
+// AttemptWithEvents bundles an attempt with its full ordered timeline.
+type AttemptWithEvents struct {
+	Attempt AttemptDTO `json:"attempt"`
+	Events  []EventDTO `json:"events"`
+}
+
 // Store is the persistence boundary for enrollment attempts. The real
 // implementation wraps sqlc-generated code; tests use an in-memory mock.
 type Store interface {
@@ -41,6 +82,9 @@ type Store interface {
 	AttachAgent(ctx context.Context, attemptID, agentID string) error
 	Complete(ctx context.Context, attemptID string, finishedAt time.Time) (changed bool, err error)
 	Fail(ctx context.Context, attemptID string, finishedAt time.Time, code ErrorCode, msg string) (changed bool, err error)
+	ListAttempts(ctx context.Context, f ListFilter) ([]AttemptDTO, error)
+	GetWithEvents(ctx context.Context, id string) (*AttemptWithEvents, error)
+	DeleteOlderThan(ctx context.Context, cutoff time.Time) (int64, error)
 }
 
 // Publisher publishes timeline events on the existing /events bus.
@@ -252,6 +296,25 @@ func (r *Recorder) Ingest(ctx context.Context, attemptID string, events []AgentR
 		}
 	}
 	return nil
+}
+
+// ListAttempts returns recent attempts matching the filter, most-recent
+// first. Used by the dashboard's enrollment-attempts list view.
+func (r *Recorder) ListAttempts(ctx context.Context, f ListFilter) ([]AttemptDTO, error) {
+	return r.store.ListAttempts(ctx, f)
+}
+
+// GetAttemptWithEvents returns the attempt and its full ordered timeline
+// for the detail view. Returns (nil, nil) when no attempt exists for id.
+func (r *Recorder) GetAttemptWithEvents(ctx context.Context, id string) (*AttemptWithEvents, error) {
+	return r.store.GetWithEvents(ctx, id)
+}
+
+// DeleteOlderThan removes attempts (and their cascaded events) whose
+// started_at is strictly before cutoff. Returns the number of attempts
+// removed for observability.
+func (r *Recorder) DeleteOlderThan(ctx context.Context, cutoff time.Time) (int64, error) {
+	return r.store.DeleteOlderThan(ctx, cutoff)
 }
 
 func slogLevel(l Level) slog.Level {

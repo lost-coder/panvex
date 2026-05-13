@@ -129,6 +129,8 @@ func (s *Server) routes() http.Handler {
 				authenticated.Get("/settings/schema", s.handleSettingsSchemaGET)
 				authenticated.Get("/settings/values", s.handleSettingsValuesGET)
 				authenticated.Get("/settings/restart-status", s.handleSettingsRestartStatusGET)
+				authenticated.Get("/enrollment-attempts", s.handleListEnrollmentAttempts())
+				authenticated.Get("/enrollment-attempts/{id}", s.handleGetEnrollmentAttempt())
 				authenticated.Get("/telemetry/dashboard", s.handleTelemetryDashboard())
 				authenticated.Get("/telemetry/servers", s.handleTelemetryServers())
 				authenticated.Get("/telemetry/servers/{id}", s.handleTelemetryServerDetail())
