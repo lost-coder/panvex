@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/shared/api/api";
@@ -31,8 +31,6 @@ interface LiveAttempt {
  * terminal state.
  */
 export function useEnrollmentLiveAttempt(agentId: string | null): LiveAttempt {
-  const [latestId, setLatestId] = useState<string | null>(null);
-
   const list = useQuery({
     queryKey: ["enrollment-attempts", "by-agent", agentId],
     queryFn: () => apiClient.listEnrollmentAttempts({ agent_id: agentId!, limit: 1 }),
@@ -40,12 +38,11 @@ export function useEnrollmentLiveAttempt(agentId: string | null): LiveAttempt {
     refetchInterval: LIST_POLL_MS,
   });
 
-  useEffect(() => {
-    const id = list.data?.items[0]?.id ?? null;
-    if (id !== null && id !== latestId) {
-      setLatestId(id);
-    }
-  }, [list.data, latestId]);
+  // Derive the latest attempt id directly from the list query rather
+  // than mirroring it into local state — that keeps the React Query
+  // cache as the single source of truth and avoids the cascading
+  // setState-in-effect warning from react-hooks 7.x.
+  const latestId = list.data?.items[0]?.id ?? null;
 
   const detail = useQuery({
     queryKey: ["enrollment-attempts", "detail", latestId],
