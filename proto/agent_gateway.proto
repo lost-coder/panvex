@@ -2,12 +2,15 @@ syntax = "proto3";
 
 package panvex.gateway.v1;
 
+import "google/protobuf/timestamp.proto";
+
 option go_package = "github.com/lost-coder/panvex/internal/gatewayrpc";
 
 service AgentGateway {
   rpc RenewCertificate(RenewCertificateRequest) returns (RenewCertificateResponse);
   rpc Connect(stream ConnectClientMessage) returns (stream ConnectServerMessage);
   rpc EnrollOutbound(stream EnrollClientMessage) returns (stream EnrollServerMessage);
+  rpc ReportEnrollmentSteps(ReportEnrollmentStepsRequest) returns (ReportEnrollmentStepsResponse);
 }
 
 message RenewCertificateRequest {
@@ -391,3 +394,23 @@ message EnrollOpening {
   string agent_id = 2;
   string csr_pem = 3;
 }
+
+// AgentEnrollmentEvent is one step recorded locally on the agent during the
+// inbound bootstrap flow (e.g. agent_persisted_cert, gateway_dialed,
+// tls_handshake_ok). The agent batches these and ships them to the panel via
+// ReportEnrollmentSteps once the first sync is up so the panel's timeline
+// captures the agent-side stages it cannot otherwise observe.
+message AgentEnrollmentEvent {
+  string step = 1;
+  google.protobuf.Timestamp ts = 2;
+  string level = 3;
+  string message = 4;
+  map<string, string> fields = 5;
+}
+
+message ReportEnrollmentStepsRequest {
+  string attempt_id = 1;
+  repeated AgentEnrollmentEvent events = 2;
+}
+
+message ReportEnrollmentStepsResponse {}
