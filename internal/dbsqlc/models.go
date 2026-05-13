@@ -174,7 +174,7 @@ type EnrollmentEvent struct {
 	Step       string
 	Level      string
 	Message    sql.NullString
-	FieldsJson json.RawMessage
+	FieldsJson *json.RawMessage
 }
 
 type EnrollmentToken struct {

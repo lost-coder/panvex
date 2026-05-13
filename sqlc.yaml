@@ -23,5 +23,8 @@ sql:
           # database/sql scans SQL NULL into a nil json.RawMessage
           # natively and accepts a nil json.RawMessage as a NULL parameter.
           - column: "enrollment_events.fields_json"
-            go_type: "encoding/json.RawMessage"
+            go_type:
+              import: "encoding/json"
+              type: "RawMessage"
+              pointer: true
             nullable: true

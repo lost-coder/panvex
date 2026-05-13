@@ -78,9 +78,10 @@ func (s *SQLStore) AppendEvent(ctx context.Context, attemptID string, ev Event) 
 	if err != nil {
 		return fmt.Errorf("parse attempt id: %w", err)
 	}
-	var fields json.RawMessage
+	var fields *json.RawMessage
 	if ev.FieldsJSON != "" {
-		fields = json.RawMessage(ev.FieldsJSON)
+		raw := json.RawMessage(ev.FieldsJSON)
+		fields = &raw
 	}
 	return s.q.AppendEnrollmentEvent(ctx, dbsqlc.AppendEnrollmentEventParams{
 		AttemptID:  id,

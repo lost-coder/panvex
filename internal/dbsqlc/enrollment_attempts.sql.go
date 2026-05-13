@@ -25,7 +25,7 @@ type AppendEnrollmentEventParams struct {
 	Step       string
 	Level      string
 	Message    sql.NullString
-	FieldsJson json.RawMessage
+	FieldsJson *json.RawMessage
 }
 
 func (q *Queries) AppendEnrollmentEvent(ctx context.Context, arg AppendEnrollmentEventParams) error {
