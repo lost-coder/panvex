@@ -80,7 +80,19 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
-      - run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+      # The internal/loadtest scenarios spawn ~100 concurrent Argon2id
+      # verifies (~96 MiB each) and ~200-agent enrolls; under -race the
+      # working set climbs past 20 GB RSS and the runner spends 25+ min
+      # thrashing the page cache. Mirror the local pre-push hook split:
+      # everything else gets -race + coverage; loadtest gets a separate
+      # no-race pass below. The fast-PR gate (go-test) already covers
+      # loadtest correctness on every PR.
+      - name: Go race + coverage (loadtest excluded)
+        run: |
+          PKGS=$(go list ./... | grep -v '^github.com/lost-coder/panvex/internal/loadtest$')
+          go test -race -coverprofile=coverage.out -covermode=atomic $PKGS
+      - name: Go tests (loadtest, no -race)
+        run: go test -count=1 ./internal/loadtest/...
       # Coverage floor: total backend coverage must stay above the
       # baseline. Fail loud here instead of relying on Codecov's
       # asynchronous diff-coverage (which is informational, not a gate).
@@ -222,6 +234,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
       - name: Install oapi-codegen
         run: go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.7.0
       - name: Verify generated files in sync with spec
@@ -238,6 +252,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
       - name: Install and build frontend
         working-directory: web
         run: npm ci && npm run build
@@ -257,6 +273,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
       # P2-TEST-01: vitest suite. npm run test = vitest run which exits
       # non-zero on any failure; coverage is gated by thresholds in
       # vitest.config.ts so a regression under 40% also fails CI.
@@ -275,6 +293,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
       - name: Lint frontend
         working-directory: web
         run: npm ci && npm run lint
@@ -291,6 +311,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
       - name: Install npm deps
         working-directory: web
         run: npm ci
@@ -316,6 +338,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
       - name: Audit web dependencies
         working-directory: web
         # `--audit-level=moderate` matches the bar the security audit
