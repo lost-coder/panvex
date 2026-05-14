@@ -83,6 +83,15 @@ func (s *Server) processRegularAgentMessage(
 ) error {
 	if hb := message.GetHeartbeat(); hb != nil {
 		s.logger.Debug(logMessageReceived, "agent_id", agentID, "type", "heartbeat")
+		// P2-LOG-11 / L-11: heartbeat-specific Debug log with the
+		// agent-supplied observed_at so silent-agent troubleshooting can
+		// confirm the panel actually received the heartbeat (vs the
+		// agent never sending it). Debug-level — off by default in
+		// prod, no per-tick spam at Info.
+		s.logger.DebugContext(connectionCtx, "heartbeat received",
+			"agent_id", agentID,
+			"observed_at_unix", hb.ObservedAtUnix,
+		)
 		enqueueRegularSnapshot(connectionCtx, regularSnapshots, agentSnapshot{
 			AgentID:      agentID,
 			NodeName:     hb.NodeName,

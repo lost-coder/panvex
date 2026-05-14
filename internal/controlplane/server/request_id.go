@@ -107,7 +107,15 @@ func (h *slogContextHandler) Enabled(ctx context.Context, level slog.Level) bool
 }
 
 func (h *slogContextHandler) Handle(ctx context.Context, record slog.Record) error {
-	if id := requestIDFromContext(ctx); id != "" {
+	id := requestIDFromContext(ctx)
+	if id == "" {
+		// Fallback so callers that propagate request_id via the
+		// enrollment package's helper (e.g. cmd/agent, integration
+		// tests in non-server packages) still benefit from the
+		// structured attribute.
+		id = enrollment.RequestIDFromContext(ctx)
+	}
+	if id != "" {
 		record.AddAttrs(slog.String("request_id", id))
 	}
 	return h.wrapped.Handle(ctx, record)

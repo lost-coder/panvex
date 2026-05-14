@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -26,7 +27,7 @@ func (s *Server) handleJobs() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, user, err := s.requireSession(r)
 		if err != nil {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
+			writeErrorLogged(r.Context(), w, http.StatusUnauthorized, "unauthorized", err)
 			return
 		}
 		// R-S-14: load the operator's scope so the response can be
@@ -87,7 +88,7 @@ func (s *Server) handleJobsCursor(w http.ResponseWriter, r *http.Request, scope 
 	}
 	createdAt, afterID, err := storage.DecodeKeysetCursor(r.URL.Query().Get("cursor"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid cursor")
+		writeErrorLogged(r.Context(), w, http.StatusBadRequest, "invalid cursor", err)
 		return
 	}
 	limit := parseCursorLimit(r)
@@ -97,7 +98,7 @@ func (s *Server) handleJobsCursor(w http.ResponseWriter, r *http.Request, scope 
 		AfterID:        afterID,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list jobs failed")
+		writeErrorLogged(r.Context(), w, http.StatusInternalServerError, "list jobs failed", err)
 		return
 	}
 	items := make([]jobs.Job, 0, len(records))
@@ -239,14 +240,14 @@ func (s *Server) validateCreateJobRequest(w http.ResponseWriter, r *http.Request
 }
 
 // writeCreateJobError maps Enqueue errors to HTTP status codes.
-func writeCreateJobError(w http.ResponseWriter, err error) {
+func writeCreateJobError(ctx context.Context, w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, jobs.ErrDuplicateIdempotencyKey):
-		writeError(w, http.StatusConflict, err.Error())
+		writeErrorLogged(ctx, w, http.StatusConflict, err.Error(), err)
 	case errors.Is(err, jobs.ErrReadOnlyTarget):
-		writeError(w, http.StatusConflict, err.Error())
+		writeErrorLogged(ctx, w, http.StatusConflict, err.Error(), err)
 	default:
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorLogged(ctx, w, http.StatusBadRequest, err.Error(), err)
 	}
 }
 
@@ -254,13 +255,13 @@ func (s *Server) handleCreateJob() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		session, user, err := s.requireSession(r)
 		if err != nil {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
+			writeErrorLogged(r.Context(), w, http.StatusUnauthorized, "unauthorized", err)
 			return
 		}
 
 		var request createJobRequest
 		if err := decodeJSON(r, &request); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid job payload")
+			writeErrorLogged(r.Context(), w, http.StatusBadRequest, "invalid job payload", err)
 			return
 		}
 
@@ -286,7 +287,7 @@ func (s *Server) handleCreateJob() http.HandlerFunc {
 			ReadOnlyAgents: readOnlyAgents,
 		}, s.now())
 		if err != nil {
-			writeCreateJobError(w, err)
+			writeCreateJobError(r.Context(), w, err)
 			return
 		}
 		s.notifyAgentSessions(job.TargetAgentIDs)

@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
 )
 
 func TestRequestIDMiddleware_GeneratesWhenAbsent(t *testing.T) {
@@ -102,5 +104,34 @@ func TestSlogContextHandler_NoIDNoAttribute(t *testing.T) {
 
 	if strings.Contains(buf.String(), "request_id=") {
 		t.Fatalf("should not emit empty request_id: %q", buf.String())
+	}
+}
+
+func TestSlogContextHandlerReadsEnrollmentKey(t *testing.T) {
+	var buf bytes.Buffer
+	inner := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})
+	h := NewSlogContextHandler(inner)
+	lg := slog.New(h)
+
+	ctx := enrollment.WithRequestID(context.Background(), "rid-enroll")
+	lg.LogAttrs(ctx, slog.LevelInfo, "hello")
+
+	if !strings.Contains(buf.String(), "request_id=rid-enroll") {
+		t.Fatalf("expected request_id from enrollment key in output: %q", buf.String())
+	}
+}
+
+func TestSlogContextHandlerServerKeyTakesPrecedence(t *testing.T) {
+	var buf bytes.Buffer
+	inner := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})
+	h := NewSlogContextHandler(inner)
+	lg := slog.New(h)
+
+	ctx := context.WithValue(context.Background(), requestIDKey{}, "rid-server")
+	ctx = enrollment.WithRequestID(ctx, "rid-enroll")
+	lg.LogAttrs(ctx, slog.LevelInfo, "hello")
+
+	if !strings.Contains(buf.String(), "request_id=rid-server") {
+		t.Fatalf("expected server key to win: %q", buf.String())
 	}
 }

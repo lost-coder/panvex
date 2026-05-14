@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"log"
 	"log/slog"
 	"os"
 	"strconv"
@@ -48,7 +47,11 @@ func main() {
 		slog.Error("agent has been deregistered on the panel; uninstall the service or re-enroll with a new token", "error", err)
 		os.Exit(agentDeregisteredExitCode)
 	}
-	log.Fatal(err)
+	// runRuntime / runBootstrapCommand have already initialised slog by
+	// the time we reach here, so route the fatal through the structured
+	// logger instead of the legacy log package.
+	slog.Error("agent fatal", "error", err)
+	os.Exit(1)
 }
 
 func run(args []string) error {

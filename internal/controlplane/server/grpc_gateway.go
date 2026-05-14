@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/agentrevocation"
@@ -189,6 +190,22 @@ func (s *Server) authorizeAgentConnect(ctx context.Context, sess agenttransport.
 func (s *Server) runAgentSession(ctx context.Context, sess agenttransport.AgentSession) error {
 	agentID, presentedSerial, err := s.authorizeAgentConnect(ctx, sess)
 	if err != nil {
+		// P2-LOG-11 / L-11: ensure every stream-close path produces a
+		// single "agent stream closed" log line. The post-auth paths
+		// log via awaitAgentStreamShutdown; this branch covers the
+		// pre-auth reject so the close is observable from logs alone.
+		// agentID may be empty here (auth never produced a CN); slog
+		// drops empty values cleanly.
+		reason := "auth_rejected"
+		switch {
+		case errors.Is(err, context.Canceled):
+			reason = "context_cancelled"
+		}
+		s.logger.InfoContext(ctx, logAgentStreamClosed,
+			"agent_id", agentID,
+			"reason", reason,
+			"error", err,
+		)
 		return err
 	}
 

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
@@ -103,7 +104,18 @@ func (s *Server) startTimeseriesRollupWorker(ctx context.Context, interval time.
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				start := time.Now()
 				s.runTimeseriesRollup(ctx)
+				elapsed := time.Since(start)
+				// Per-tick lap log (P2-LOG-10 / L-10). The constituent
+				// rollup/prune helpers each log their own row counts at
+				// Info when they touch rows and at Error on failure; this
+				// outer log captures cadence + lap latency at Debug so
+				// production stays quiet but enables troubleshooting a
+				// slow tick without code changes.
+				slog.DebugContext(ctx, "rollup worker tick ok",
+					"worker", "timeseries",
+					"lap_ms", elapsed.Milliseconds())
 			}
 		}
 	}()

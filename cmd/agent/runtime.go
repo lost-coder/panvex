@@ -16,6 +16,7 @@ import (
 	"github.com/lost-coder/panvex/internal/agent/telemt"
 	"github.com/lost-coder/panvex/internal/controlplane/agentrevocation"
 	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
+	"github.com/lost-coder/panvex/internal/logutil"
 )
 
 // runtimeFlags holds the parsed CLI options for the agent runtime. Pulling
@@ -40,6 +41,7 @@ type runtimeFlags struct {
 	ipPoll                time.Duration
 	ipUpload              time.Duration
 	logLevel              string
+	logFormat             string
 	clientDataConcurrency int
 }
 
@@ -65,6 +67,8 @@ func parseRuntimeFlags(args []string) (runtimeFlags, error) {
 	flags.DurationVar(&cfg.ipPoll, "ip-poll-interval", 15*time.Second, "Client IP polling interval")
 	flags.DurationVar(&cfg.ipUpload, "ip-upload-interval", time.Minute, "Client IP upload interval")
 	flags.StringVar(&cfg.logLevel, "log-level", "info", "Log level: debug, info, warn, error")
+	flags.StringVar(&cfg.logFormat, "log-format", os.Getenv("PANVEX_LOG_FORMAT"),
+		"Log output format (text or json). Env: PANVEX_LOG_FORMAT.")
 	flags.IntVar(&cfg.clientDataConcurrency, "client-data-concurrency", clientDataConcurrencyDefault(), "Max concurrent in-flight ClientDataRequest goroutines (env: PANVEX_AGENT_CLIENT_DATA_CONCURRENCY)")
 	if err := flags.Parse(args); err != nil {
 		return runtimeFlags{}, err
@@ -83,7 +87,16 @@ func runRuntime(args []string) error {
 		return err
 	}
 
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: parseLogLevel(cfg.logLevel)})))
+	logFormat, err := logutil.ParseFormat(cfg.logFormat)
+	if err != nil {
+		return fmt.Errorf("agent: invalid log format: %w", err)
+	}
+	handler := logutil.NewHandler(logutil.Options{
+		Format: logFormat,
+		Level:  parseLogLevel(cfg.logLevel),
+		Sink:   os.Stderr,
+	})
+	slog.SetDefault(slog.New(handler))
 
 	credentialsState, err := loadRuntimeCredentials(cfg.stateFile)
 	if err != nil {

@@ -18,6 +18,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/dbsqlc"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
+	"github.com/lost-coder/panvex/internal/logutil"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
@@ -41,7 +42,11 @@ type serveConfig struct {
 	// path in addition to stderr. The file is opened in append mode.
 	// Rotation is delegated to the host (logrotate, systemd-journal, …)
 	// — the panel does not rotate it itself.
-	LogFile          string
+	LogFile string
+	// LogFormat selects the slog encoder used by logutil.NewHandler.
+	// Empty falls back to text via logutil.ParseFormat. Sourced from
+	// the -log-format flag or PANVEX_LOG_FORMAT env.
+	LogFormat        string
 	Boot             *settings.Bootstrap
 	BootstrapSources settings.SourceMap
 }
@@ -52,9 +57,10 @@ func runServe(args []string) error {
 		return err
 	}
 
-	// Wrap the text handler with the per-request slog handler so every
-	// log line emitted from inside an HTTP handler picks up request_id
-	// from the request context (see server.requestIDMiddleware).
+	// Wrap the text/json handler with the per-request slog handler (via
+	// logutil.NewHandler) so every log line emitted from inside an HTTP
+	// handler picks up request_id from the request context (see
+	// server.requestIDMiddleware).
 	logSink, logCloser, err := openLogSink(options.LogFile)
 	if err != nil {
 		return fmt.Errorf("open log file: %w", err)
@@ -62,8 +68,16 @@ func runServe(args []string) error {
 	if logCloser != nil {
 		defer func() { _ = logCloser() }()
 	}
-	baseHandler := slog.NewTextHandler(logSink, &slog.HandlerOptions{Level: parseLogLevel(options.LogLevel)})
-	logger := slog.New(server.NewSlogContextHandler(baseHandler))
+	logFormat, err := logutil.ParseFormat(options.LogFormat)
+	if err != nil {
+		return fmt.Errorf("control-plane: invalid log format: %w", err)
+	}
+	handler := logutil.NewHandler(logutil.Options{
+		Format: logFormat,
+		Level:  parseLogLevel(options.LogLevel),
+		Sink:   logSink,
+	})
+	logger := slog.New(handler)
 	slog.SetDefault(logger)
 	if options.LogFile != "" {
 		logger.Info("logging to file", "path", options.LogFile)
@@ -346,6 +360,8 @@ func parseServeConfig(args []string) (serveConfig, error) {
 	encryptionKeyStdin := flags.Bool("encryption-key-stdin", false, "Read the CA private key encryption passphrase from stdin (single line)")
 	logLevel := flags.String("log-level", "", "Log level: debug, info, warn, error. Overrides PANVEX_LOG_LEVEL.")
 	logFile := flags.String("log-file", "", "Path to log file (mirrors stderr; appended). Overrides PANVEX_LOG_FILE.")
+	logFormat := flags.String("log-format", os.Getenv("PANVEX_LOG_FORMAT"),
+		"Log output format (text or json). Env: PANVEX_LOG_FORMAT.")
 	if err := flags.Parse(args); err != nil {
 		return serveConfig{}, err
 	}
@@ -421,6 +437,7 @@ func parseServeConfig(args []string) (serveConfig, error) {
 		EncryptionKey:        encryptionKey,
 		LogLevel:             boot.ObservabilityLogLevel,
 		LogFile:              boot.ObservabilityLogFile,
+		LogFormat:            strings.TrimSpace(*logFormat),
 		Boot:                 boot,
 		BootstrapSources:     srcs,
 	}, nil

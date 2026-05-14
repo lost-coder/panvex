@@ -1,8 +1,10 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 )
@@ -70,6 +72,32 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, errorResponse{Error: scrubErrorMessage(message)})
+}
+
+// writeErrorLogged writes the operator-friendly message to the HTTP
+// response (identical to writeError) AND logs the original error with
+// request context. Use this anywhere the original err is meaningful to
+// operators — almost every non-trivial handler error path.
+//
+//   - status 4xx -> slog.Warn (client mistake, not a system bug)
+//   - status 5xx -> slog.Error (system failure)
+//
+// The client response is unchanged from writeError; observability is the
+// only effect.
+func writeErrorLogged(ctx context.Context, w http.ResponseWriter, status int, msg string, err error) {
+	attrs := []slog.Attr{
+		slog.Int("status", status),
+		slog.String("message", msg),
+	}
+	if err != nil {
+		attrs = append(attrs, slog.Any("error", err))
+	}
+	level := slog.LevelWarn
+	if status >= 500 {
+		level = slog.LevelError
+	}
+	slog.Default().LogAttrs(ctx, level, "http handler error", attrs...)
+	writeError(w, status, msg)
 }
 
 func newSequenceID(prefix string, value uint64) string {

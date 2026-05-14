@@ -139,7 +139,7 @@ func (s *Server) handleCreateClient() http.HandlerFunc {
 
 		var request clientMutationRequest
 		if err := decodeJSON(r, &request); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid client payload")
+			writeErrorLogged(r.Context(), w, http.StatusBadRequest, "invalid client payload", err)
 			return
 		}
 
@@ -180,7 +180,7 @@ func (s *Server) handleClient() http.HandlerFunc {
 		client, assignments, deployments, err := s.clientDetailSnapshot(clientID)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
-				writeError(w, http.StatusNotFound, err.Error())
+				writeErrorLogged(r.Context(), w, http.StatusNotFound, err.Error(), err)
 				return
 			}
 			s.logger.Error("load client failed", "client_id", clientID, "error", err)
@@ -219,7 +219,7 @@ func (s *Server) handleUpdateClient() http.HandlerFunc {
 
 		var request clientMutationRequest
 		if err := decodeJSON(r, &request); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid client payload")
+			writeErrorLogged(r.Context(), w, http.StatusBadRequest, "invalid client payload", err)
 			return
 		}
 
@@ -322,7 +322,7 @@ func (s *Server) handleBulkClientAction() http.HandlerFunc {
 
 		var request bulkClientRequest
 		if err := decodeJSON(r, &request); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid bulk payload")
+			writeErrorLogged(r.Context(), w, http.StatusBadRequest, "invalid bulk payload", err)
 			return
 		}
 		if len(request.IDs) == 0 {

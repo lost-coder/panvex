@@ -437,6 +437,13 @@ func (s *Service) Enqueue(ctx context.Context, input CreateJobInput, now time.Ti
 	s.updateSeq++
 	s.jobVersion[job.ID] = s.updateSeq
 
+	slog.InfoContext(ctx, "job dispatched",
+		"job_id", job.ID,
+		"action", string(job.Action),
+		"target_agent_ids", job.TargetAgentIDs,
+		"actor_id", job.ActorID,
+	)
+
 	return job, nil
 }
 
@@ -870,7 +877,7 @@ func (s *Service) StartAcknowledgedExpiryWorker(ctx context.Context, interval ti
 // expiry worker or terminal-key eviction may have dropped the job before
 // the result arrived).
 func (s *Service) RecordResult(ctx context.Context, agentID, jobID string, success bool, message, resultJSON string, observedAt time.Time) bool {
-	return s.updateTarget(ctx, agentID, jobID, observedAt, func(target *JobTarget) {
+	applied := s.updateTarget(ctx, agentID, jobID, observedAt, func(target *JobTarget) {
 		if target.Status == TargetStatusExpired {
 			return
 		}
@@ -882,6 +889,30 @@ func (s *Service) RecordResult(ctx context.Context, agentID, jobID string, succe
 		target.ResultText = message
 		target.ResultJSON = resultJSON
 	})
+	if applied {
+		// Look up the job's action for the log record. We tolerate a miss
+		// (job may have been evicted between updateTarget and this read);
+		// in that case we drop the action field rather than fabricating.
+		var action string
+		if job, ok := s.Get(jobID); ok {
+			action = string(job.Action)
+		}
+		if success {
+			slog.InfoContext(ctx, "job completed",
+				"job_id", jobID,
+				"agent_id", agentID,
+				"action", action,
+			)
+		} else {
+			slog.WarnContext(ctx, "job failed",
+				"job_id", jobID,
+				"agent_id", agentID,
+				"action", action,
+				"error", message,
+			)
+		}
+	}
+	return applied
 }
 
 // expireJobAndCollectCandidatesLocked transitions every still-active

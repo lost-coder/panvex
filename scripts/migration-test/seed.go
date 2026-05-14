@@ -27,7 +27,7 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -148,12 +148,13 @@ type counts struct {
 
 func main() {
 	if err := runSeed(); err != nil {
-		log.Fatalf("%v", err)
+		slog.Error("seed failed", "error", err)
+		os.Exit(1)
 	}
 }
 
 // runSeed encapsulates all work so the deferred db.Close() always runs before
-// main's log.Fatalf exits the process (gocritic exitAfterDefer).
+// main's os.Exit() path (gocritic exitAfterDefer).
 // applySeedPragmas tunes the SQLite connection for bulk inserts.
 // These PRAGMAs are local to this process and discarded once it exits.
 func applySeedPragmas(db *sql.DB) error {
@@ -179,7 +180,7 @@ func runSeedStages(db *sql.DB, c counts, statusReport bool) error {
 			return fmt.Errorf("seed %s: %w", name, err)
 		}
 		if statusReport {
-			log.Printf("seeded %-20s in %s", name, time.Since(t0))
+			slog.Info("stage complete", "stage", name, "duration", time.Since(t0))
 		}
 		return nil
 	}
@@ -215,7 +216,7 @@ func reportSeededRowCounts(db *sql.DB) error {
 		if err := db.QueryRowContext(context.Background(), fmt.Sprintf("SELECT COUNT(*) FROM %s", tbl)).Scan(&n); err != nil {
 			return fmt.Errorf("count %s: %w", tbl, err)
 		}
-		log.Printf("  %-20s rows=%d", tbl, n)
+		slog.Info("row count", "table", tbl, "rows", n)
 	}
 	return nil
 }
