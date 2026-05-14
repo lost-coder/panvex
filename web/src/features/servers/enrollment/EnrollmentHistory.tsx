@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/shared/api/api";
 import type { EnrollmentAttempt } from "@/shared/api/types-enrollment";
+import { resolveConfiguredRootPath } from "@/shared/lib/runtime-path";
 import { StatusLabel, type StatusTone } from "@/ui";
 
 import { Fold } from "../server-detail/components/Fold";
@@ -36,6 +37,10 @@ export function EnrollmentHistory({ agentId }: Props) {
   });
 
   const [expanded, setExpanded] = useState<string | null>(null);
+  // Honour the configured panel root path so the deep-link still resolves
+  // when the dashboard is mounted under a non-root prefix (e.g. /panvex).
+  const rootPath = resolveConfiguredRootPath();
+  const viewAllHref = `${rootPath}/enrollment-attempts?agent_id=${encodeURIComponent(agentId)}`;
 
   const detail = useQuery({
     queryKey: ["enrollment-attempts", "detail", expanded],
@@ -100,7 +105,7 @@ export function EnrollmentHistory({ agentId }: Props) {
             here is appropriate (the destination is a lazy-loaded
             route chunk regardless). */}
         <a
-          href={`/enrollment-attempts?agent_id=${encodeURIComponent(agentId)}`}
+          href={viewAllHref}
           className="self-start text-xs text-fg-muted underline"
         >
           {t("history.viewAll")}
