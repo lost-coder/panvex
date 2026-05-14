@@ -5,6 +5,12 @@ import type { EnrollmentAttemptDetail } from "@/shared/api/types-enrollment";
 
 import { EnrollmentTimeline } from "./EnrollmentTimeline";
 
+// vitest.setup.ts initialises i18next with the project's default
+// language (English), so assertions match the EN translation that the
+// component will resolve at render time. If you flip the default back
+// to Russian (or any other locale), update the expected substrings
+// here too — the test still covers the same lookup path.
+
 const baseFixture: EnrollmentAttemptDetail = {
   attempt: {
     id: "att-1",
@@ -31,12 +37,12 @@ const baseFixture: EnrollmentAttemptDetail = {
 };
 
 describe("EnrollmentTimeline", () => {
-  it("renders each known step with its Russian label", () => {
+  it("renders each known step using the i18n step label", () => {
     render(<EnrollmentTimeline detail={baseFixture} />);
     expect(
-      screen.getByText(/Запрос на установку получен/),
+      screen.getByText(/Bootstrap request received/),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Токен проверен/)).toBeInTheDocument();
+    expect(screen.getByText(/Token validated/)).toBeInTheDocument();
   });
 
   it("falls back to the raw step key for unknown labels", () => {
@@ -65,6 +71,7 @@ describe("EnrollmentTimeline", () => {
       },
     };
     render(<EnrollmentTimeline detail={failed} />);
+    expect(screen.getByText(/Connection failed/)).toBeInTheDocument();
     expect(screen.getByText(/Токен истёк/)).toBeInTheDocument();
     expect(screen.getByText(/TOKEN_EXPIRED/)).toBeInTheDocument();
   });

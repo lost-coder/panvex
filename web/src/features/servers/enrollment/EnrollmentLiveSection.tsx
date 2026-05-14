@@ -1,3 +1,6 @@
+import { useTranslation } from "react-i18next";
+
+import { Fold } from "../server-detail/components/Fold";
 import { EnrollmentTimeline } from "./EnrollmentTimeline";
 import { useEnrollmentLiveAttempt } from "./useEnrollmentLiveAttempt";
 
@@ -17,34 +20,30 @@ interface Props {
 // populated by the HTTP path, so token-based filtering would return
 // nothing useful for inbound enrollment.
 export function EnrollmentLiveSection({ agentId }: Props) {
+  const { t } = useTranslation("enrollment");
   const { detail, isLoading } = useEnrollmentLiveAttempt(agentId);
 
   if (!agentId) return null;
 
   if (isLoading && !detail) {
     return (
-      <section className="mt-6">
-        <h3 className="text-base font-medium mb-3">Подключение агента</h3>
-        <div className="text-sm text-fg-muted">Ожидаем подключения агента…</div>
-      </section>
+      <Fold title={t("live.heading")}>
+        <div className="text-sm text-fg-muted">{t("live.waiting")}</div>
+      </Fold>
     );
   }
 
   if (!detail) {
     return (
-      <section className="mt-6">
-        <h3 className="text-base font-medium mb-3">Подключение агента</h3>
-        <div className="text-sm text-fg-muted">
-          Подключение ещё не начиналось.
-        </div>
-      </section>
+      <Fold title={t("live.heading")}>
+        <div className="text-sm text-fg-muted">{t("live.idle")}</div>
+      </Fold>
     );
   }
 
   return (
-    <section className="mt-6">
-      <h3 className="text-base font-medium mb-3">Подключение агента</h3>
+    <Fold title={t("live.heading")}>
       <EnrollmentTimeline detail={detail} />
-    </section>
+    </Fold>
   );
 }

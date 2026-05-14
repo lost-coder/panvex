@@ -52,7 +52,7 @@ describe("LoginContainer — transient login failures (2.1)", () => {
     render(<LoginContainer />);
     fireEvent.click(screen.getByTestId("submit"));
 
-    await screen.findByText(/временно недоступен/);
+    await screen.findByText(/temporarily unavailable/i);
     expect(navigateSpy).not.toHaveBeenCalled();
   });
 
@@ -63,7 +63,7 @@ describe("LoginContainer — transient login failures (2.1)", () => {
     render(<LoginContainer />);
     fireEvent.click(screen.getByTestId("submit"));
 
-    await screen.findByText(/временно недоступен/);
+    await screen.findByText(/temporarily unavailable/i);
   });
 
   it("passes through the raw server message for plain login failures", async () => {

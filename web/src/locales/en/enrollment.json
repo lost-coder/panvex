@@ -1,0 +1,31 @@
+{
+  "history": {
+    "heading": "Enrollment history",
+    "loading": "Loading history…",
+    "detailLoading": "Loading…"
+  },
+  "live": {
+    "heading": "Agent connection",
+    "waiting": "Waiting for the agent to connect…",
+    "idle": "No connection attempts yet."
+  },
+  "timeline": {
+    "failed": "Connection failed",
+    "errorCode": "Code: {{code}}"
+  },
+  "step": {
+    "bootstrap_request_received": "Bootstrap request received",
+    "token_validated": "Token validated",
+    "csr_received": "CSR received",
+    "csr_validated": "CSR validated",
+    "cert_signed": "Certificate signed",
+    "cert_returned": "Certificate returned to agent",
+    "agent_persisted_cert": "Agent saved certificate",
+    "gateway_dialed": "Agent connecting to gRPC gateway",
+    "tls_handshake_ok": "TLS handshake completed",
+    "first_sync_ok": "First sync successful",
+    "install_command_issued": "Install command issued",
+    "outbound_listener_started": "Agent listening for inbound connections",
+    "panel_dial_attempted": "Panel dialing agent"
+  }
+}
