@@ -5,9 +5,46 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 	"sync"
 )
+
+// defaultInstallScriptGitHubURL points at the canonical raw copy on
+// GitHub. Operators forking the project (or staging a private mirror)
+// override via PANVEX_INSTALL_SCRIPT_GITHUB_URL — the wizard renders
+// this URL when the operator picks "GitHub" as the install source.
+const defaultInstallScriptGitHubURL = "https://raw.githubusercontent.com/lost-coder/panvex/main/deploy/install-agent.sh"
+
+// InstallScriptGitHubURL returns the GitHub-raw URL operators should
+// curl when the panel is unreachable from the agent host (typical for
+// outbound bootstrap, where the panel is firewalled, and for the very
+// first agent on a fresh control-plane). PANVEX_INSTALL_SCRIPT_GITHUB_URL
+// allows operators to point at a fork or private mirror.
+//
+// Trim whitespace so an env value with a trailing newline (common when
+// rendered from K8s ConfigMap values) does not produce a broken URL.
+func InstallScriptGitHubURL() string {
+	if v := strings.TrimSpace(os.Getenv("PANVEX_INSTALL_SCRIPT_GITHUB_URL")); v != "" {
+		return v
+	}
+	return defaultInstallScriptGitHubURL
+}
+
+// installScriptPanelURL builds the panel-hosted install-script URL the
+// wizard renders when the operator picks "Panel" as the install source.
+// PANVEX_INSTALL_SCRIPT_URL takes precedence — operators behind a CDN /
+// reverse proxy with a custom hostname set it once and forget. Otherwise
+// the URL is derived from the panel-public URL the caller passes in
+// (typically buildAgentPublicURL output for the current request) so
+// reverse-proxied deployments work without explicit configuration.
+func installScriptPanelURL(panelURL string) string {
+	if v := strings.TrimSpace(os.Getenv("PANVEX_INSTALL_SCRIPT_URL")); v != "" {
+		return v
+	}
+	return strings.TrimRight(panelURL, "/") + "/install-agent.sh"
+}
 
 // installAgentScript is the canonical bash installer that operators pipe into
 // `sudo bash` after retrieving the per-agent install command from

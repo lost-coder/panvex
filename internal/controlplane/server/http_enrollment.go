@@ -48,12 +48,66 @@ type createEnrollmentTokenRequest struct {
 }
 
 type createEnrollmentTokenResponse struct {
-	Value         string `json:"value"`
-	PanelURL      string `json:"panel_url"`
-	FleetGroupID  string `json:"fleet_group_id"`
-	IssuedAtUnix  int64  `json:"issued_at_unix"`
-	ExpiresAtUnix int64  `json:"expires_at_unix"`
-	CAPEM         string `json:"ca_pem"`
+	Value         string                       `json:"value"`
+	PanelURL      string                       `json:"panel_url"`
+	FleetGroupID  string                       `json:"fleet_group_id"`
+	IssuedAtUnix  int64                        `json:"issued_at_unix"`
+	ExpiresAtUnix int64                        `json:"expires_at_unix"`
+	CAPEM         string                       `json:"ca_pem"`
+	ScriptSources createEnrollmentScriptSources `json:"script_sources"`
+}
+
+// createEnrollmentScriptSources mirrors the OpenAPI ScriptSources schema.
+// It is duplicated here (rather than imported from openapi.gen.go) so the
+// hand-written response type does not pull in the generated package's
+// pointer-to-string SHA-256 representation; we want a JSON-`null` for
+// the GitHub source's sha256 field, which matches the spec contract.
+type createEnrollmentScriptSources struct {
+	Panel  createEnrollmentScriptSource `json:"panel"`
+	GitHub createEnrollmentScriptSource `json:"github"`
+}
+
+type createEnrollmentScriptSource struct {
+	URL string `json:"url"`
+	// SHA256 is the lowercase hex digest of the install-script body. Set
+	// only for the panel-served source (the panel knows the bytes it is
+	// serving); null for GitHub (`omitempty` would drop the field
+	// entirely, which violates the spec's nullable contract — keep the
+	// JSON tag without omitempty so the field is always present, and
+	// rely on the *string nil to produce `null`).
+	SHA256 *string `json:"sha256"`
+}
+
+// buildEnrollmentScriptSources assembles the two install-script source
+// pointers returned to the wizard. `panelURL` is the publicly-reachable
+// panel URL the operator's browser currently sees (or its
+// PANVEX_PANEL_PUBLIC_URL override) — passed in so the panel-source URL
+// is derived from the same authoritative value as `panel_url` in the
+// outer response, avoiding split-brain between two paths to the same
+// document.
+//
+// The panel-source SHA-256 is the digest of the embedded install
+// script — that is, the exact bytes the panel will hand back to a
+// `GET /install-agent.sh`. The GitHub-source SHA-256 is intentionally
+// nil: the panel cannot vouch for bytes hosted at a URL it does not
+// control, and operators relying on the GitHub copy pin a release tag
+// in their deploy automation instead.
+func buildEnrollmentScriptSources(panelURL string) createEnrollmentScriptSources {
+	panelHash := InstallScriptSHA256()
+	var panelSHA *string
+	if panelHash != "" {
+		panelSHA = &panelHash
+	}
+	return createEnrollmentScriptSources{
+		Panel: createEnrollmentScriptSource{
+			URL:    installScriptPanelURL(panelURL),
+			SHA256: panelSHA,
+		},
+		GitHub: createEnrollmentScriptSource{
+			URL:    InstallScriptGitHubURL(),
+			SHA256: nil,
+		},
+	}
 }
 
 type agentBootstrapRequest struct {
@@ -235,13 +289,15 @@ func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 			"ttl_seconds":    request.TTLSeconds,
 		})
 		settings := s.panelSettingsSnapshot()
+		panelURL := buildAgentPublicURL(settings, s.panelRuntime, r.URL, s.trustedForwardedProto(r), r.Host)
 		writeJSON(w, http.StatusCreated, createEnrollmentTokenResponse{
 			Value:         token.Value,
-			PanelURL:      buildAgentPublicURL(settings, s.panelRuntime, r.URL, s.trustedForwardedProto(r), r.Host),
+			PanelURL:      panelURL,
 			FleetGroupID:  token.FleetGroupID,
 			IssuedAtUnix:  token.IssuedAt.Unix(),
 			ExpiresAtUnix: token.ExpiresAt.Unix(),
 			CAPEM:         s.authority.caPEM,
+			ScriptSources: buildEnrollmentScriptSources(panelURL),
 		})
 	}
 }

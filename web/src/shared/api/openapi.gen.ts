@@ -592,6 +592,35 @@ export interface components {
             ttl_seconds: number;
         };
         /**
+         * @description Pointer to a hosted copy of the agent install script
+         *     (`install-agent.sh`). Each source carries its own URL; the
+         *     Panel-served copy also exports its SHA-256 so the operator
+         *     client can render a tamper-resistant curl|sudo-bash form.
+         */
+        ScriptSource: {
+            /** @description Fully-qualified HTTPS URL to install-agent.sh. */
+            url: string;
+            /**
+             * @description Lowercase hex SHA-256 of the script body. Populated for the
+             *     Panel-served source (the panel knows the exact bytes it is
+             *     serving); null for the GitHub-hosted fallback (no
+             *     panel-side integrity guarantee — operators pin a release
+             *     tag instead).
+             */
+            sha256?: string | null;
+        };
+        /**
+         * @description The two canonical sources from which an agent host can fetch
+         *     the install script. Operators choose between them in the
+         *     Add-Server wizard — Panel for the default inbound case (panel
+         *     is reachable, integrity-checked), GitHub for outbound (panel
+         *     is firewalled from the agent host) or cold-bootstrap.
+         */
+        ScriptSources: {
+            panel: components["schemas"]["ScriptSource"];
+            github: components["schemas"]["ScriptSource"];
+        };
+        /**
          * @description Response to a successful `POST /api/agents/enrollment-tokens`.
          *     The raw `value` is exposed once at this moment; subsequent
          *     listings only carry the masked form.
@@ -607,6 +636,7 @@ export interface components {
             expires_at_unix: number;
             /** @description PEM-encoded panel CA certificate. */
             ca_pem: string;
+            script_sources: components["schemas"]["ScriptSources"];
         };
         RenameAgentRequest: {
             node_name: string;
