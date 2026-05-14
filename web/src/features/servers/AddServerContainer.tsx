@@ -136,30 +136,19 @@ export function AddServerContainer() {
   const panelUrl = tokenData?.panel_url ?? "";
   const tokenValue = tokenData?.value ?? "";
 
-  // Panel-source URL + hash come from script_sources in the enrollment
-  // response. We expose the toggle only when both are present (script
-  // sources arrived AND hash is non-null). Falls back to GitHub URL +
-  // null hash when sources are absent (e.g. older backend).
-  const panelScriptUrl = tokenData?.script_sources?.panel.url ?? "";
-  const panelScriptSha256 = tokenData?.script_sources?.panel.sha256 ?? null;
+  // Resolve which install-script URL the inbound curl points at.
+  // Prefer the backend's `script_sources` payload (PR-2a) when present
+  // — that's the exact URL/digest the panel is serving. Fall back to
+  // a derived `<panel>/install-agent.sh` for older backends so the
+  // Panel toggle is never blocked by missing payload.
+  const panelScriptUrl =
+    tokenData?.script_sources?.panel.url ??
+    (panelUrl ? `${panelUrl.replace(/\/+$/, "")}/install-agent.sh` : "");
   const githubScriptUrl =
     tokenData?.script_sources?.github.url ??
     "https://raw.githubusercontent.com/lost-coder/panvex/main/deploy/install-agent.sh";
-  const scriptSourcePanelAvailable = Boolean(
-    panelScriptUrl && panelScriptSha256,
-  );
-
-  // Resolve the URL + hash the wizard renders into the curl. Outbound
-  // gets its command pre-baked by the server; only inbound builds the
-  // command client-side.
   const inboundScriptUrl =
-    scriptSource === "panel" && scriptSourcePanelAvailable
-      ? panelScriptUrl
-      : githubScriptUrl;
-  const inboundScriptSha256 =
-    scriptSource === "panel" && scriptSourcePanelAvailable
-      ? panelScriptSha256
-      : null;
+    scriptSource === "panel" && panelScriptUrl ? panelScriptUrl : githubScriptUrl;
 
   const inboundInstallCommand = tokenData
     ? buildInstallCommand(
@@ -168,7 +157,6 @@ export function AddServerContainer() {
         nodeName,
         advancedOptions,
         inboundScriptUrl,
-        inboundScriptSha256,
       )
     : "";
   const outboundInstallCommand = outboundData?.command ?? "";
@@ -490,7 +478,6 @@ export function AddServerContainer() {
           onDialAddressChange={setDialAddress}
           scriptSource={scriptSource}
           onScriptSourceChange={setScriptSource}
-          scriptSourcePanelAvailable={scriptSourcePanelAvailable}
           installCommand={installCommand}
           tokenValue={wizardTokenValue}
           tokenExpiresInSecs={tokenExpiresInSecs}

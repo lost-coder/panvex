@@ -57,7 +57,12 @@ describe("buildInstallCommand", () => {
     expect(cmd).toContain("--insecure-transport");
   });
 
-  // PR-3a: scriptUrl + scriptSha256 parametrisation.
+  // PR-3a / PR-3c: scriptUrl parametrisation. The verified-form
+  // experiment was removed in PR-3c (the multi-line shell snippet
+  // looked like a script source, not a "paste this" affordance);
+  // the wizard always emits the plain curl|sudo-bash form, and
+  // operators who want SHA-256 verification do it manually using
+  // the digest surfaced separately by the rendering component.
 
   it("defaults to the upstream GitHub-raw URL when scriptUrl is omitted", () => {
     const cmd = buildInstallCommand("https://p", "tok", "node");
@@ -66,47 +71,20 @@ describe("buildInstallCommand", () => {
     );
   });
 
-  it("emits the legacy curl|sudo-bash form when scriptSha256 is null (github source)", () => {
-    const cmd = buildInstallCommand(
-      "https://p",
-      "tok",
-      "node",
-      undefined,
-      "https://raw.githubusercontent.com/forky/panvex/v1.2/deploy/install-agent.sh",
-      null,
-    );
-    expect(cmd).toContain(
-      "curl -fsSL https://raw.githubusercontent.com/forky/panvex/v1.2/deploy/install-agent.sh",
-    );
-    expect(cmd).toContain("| \\\n  sudo bash -s --");
-    // No verification step in the legacy form — panel cannot vouch for
-    // upstream bytes.
-    expect(cmd).not.toContain("sha256sum");
-    expect(cmd).not.toContain("PANVEX_INSTALL_SCRIPT_SHA256");
-    expect(cmd).not.toContain("mktemp");
-  });
-
-  it("emits the verified temp-file form when scriptSha256 is set (panel source)", () => {
-    const hash = "a".repeat(64);
+  it("honours a custom scriptUrl (Panel source)", () => {
     const cmd = buildInstallCommand(
       "https://panel.example.com",
       "tok",
       "node",
       undefined,
       "https://panel.example.com/install-agent.sh",
-      hash,
     );
-    // Verified form: mktemp → curl -o → sha256sum compare → sudo -E bash.
-    expect(cmd).toContain("mktemp /tmp/panvex-install.");
     expect(cmd).toContain(
-      "curl -fsSL https://panel.example.com/install-agent.sh -o",
+      "curl -fsSL https://panel.example.com/install-agent.sh | \\\n  sudo bash -s --",
     );
-    expect(cmd).toContain("sha256sum < \"$TMP\"");
-    // Both the in-shell guard and the env var for the script's own
-    // self-check carry the same digest, single-quoted.
-    expect(cmd).toContain(`if [ "$ACTUAL" != '${hash}' ]; then`);
-    expect(cmd).toContain(`PANVEX_INSTALL_SCRIPT_SHA256='${hash}' bash`);
-    // No bare `curl | sudo bash` — the verified form pipes nothing.
-    expect(cmd).not.toMatch(/curl [^|]*\| sudo bash/);
+    // Never the multi-line verified form regardless of source.
+    expect(cmd).not.toContain("mktemp");
+    expect(cmd).not.toContain("sha256sum");
+    expect(cmd).not.toContain("PANVEX_INSTALL_SCRIPT_SHA256");
   });
 });

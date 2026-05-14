@@ -32,10 +32,14 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
     onDialAddressChange,
     scriptSource,
     onScriptSourceChange,
-    scriptSourcePanelAvailable,
     loading,
     error,
   } = props;
+
+  // PR-3c: Advanced section is collapsed by default — operators rarely
+  // tune Telemt URLs or flip insecure-transport; surfacing them up-front
+  // crowded the wizard.
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   // The mode picker only appears when the container threads both pieces
   // of state — older callers that don't supply mode/onModeChange keep
@@ -80,56 +84,42 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
     <div className="flex flex-col gap-4">
       {showModePicker && (
         <FormField label="Transport mode" variant="uppercase">
-          <fieldset className="flex flex-col gap-2 border-0 p-0 m-0">
-            <legend className="sr-only">Agent transport mode</legend>
+          <div
+            role="radiogroup"
+            aria-label="Agent transport mode"
+            className="inline-flex rounded-xs border border-border p-0.5 bg-bg w-full"
+          >
             {([
-              {
-                value: "inbound",
-                title: "Agent connects to panel",
-                detail:
-                  "Default — use when the panel is internet-reachable from the agent host.",
-              },
-              {
-                value: "outbound",
-                title: "Panel connects to agent",
-                detail:
-                  "Use when the panel is firewalled (private network / VPN) but the agent has a public address.",
-              },
+              { value: "inbound", label: "Agent → Panel" },
+              { value: "outbound", label: "Panel → Agent" },
             ] as const).map((opt) => {
               const selected = effectiveMode === opt.value;
-              const inputId = `enroll-mode-${opt.value}`;
               return (
-                <label
+                <button
                   key={opt.value}
-                  htmlFor={inputId}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  aria-label={opt.value === "inbound" ? "Agent connects to panel" : "Panel connects to agent"}
+                  onClick={() => onModeChange?.(opt.value)}
+                  disabled={loading}
                   className={cn(
-                    "flex items-start gap-2 rounded-xs border p-3 cursor-pointer transition-colors",
+                    "flex-1 px-3 py-1.5 rounded-xs text-xs transition-colors",
                     selected
-                      ? "border-accent bg-accent/8"
-                      : "border-border hover:border-accent/50",
+                      ? "bg-accent text-white"
+                      : "text-fg-muted hover:text-fg",
                   )}
                 >
-                  <input
-                    id={inputId}
-                    type="radio"
-                    name="enroll-mode"
-                    value={opt.value}
-                    checked={selected}
-                    onChange={() => onModeChange?.(opt.value)}
-                    disabled={loading}
-                    aria-label={opt.title}
-                    className="mt-0.5 h-4 w-4 accent-[var(--color-accent)] cursor-pointer"
-                  />
-                  <span className="flex flex-col gap-0.5">
-                    <span className="text-xs font-medium text-fg">{opt.title}</span>
-                    <span className="text-[11px] text-fg-muted leading-snug">
-                      {opt.detail}
-                    </span>
-                  </span>
-                </label>
+                  {opt.label}
+                </button>
               );
             })}
-          </fieldset>
+          </div>
+          <div className="text-[11px] text-fg-muted mt-1 leading-snug">
+            {effectiveMode === "inbound"
+              ? "Agent dials the panel. Use when the panel is internet-reachable from the agent host."
+              : "Panel dials the agent on its public host:port. Use when the panel is firewalled (private network / VPN)."}
+          </div>
         </FormField>
       )}
 
@@ -275,119 +265,126 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
       </FormField>
       )}
 
-      {/* Telemt endpoints + auth are always visible — no collapsible
-          fold. Defaults work for a local Telemt on the same host. The
-          metrics-disabled-by-default warning lives on step 2's
-          checklist so we don't repeat it per-field here. */}
+      {/* PR-3c: collapse all the niche knobs (Telemt URLs, auth header,
+          insecure-transport flag, install-script source) behind a
+          single "Advanced" disclosure. Defaults work for the common
+          single-host deploy; operators only open this when they need
+          to deviate. */}
       {advancedOptions && onAdvancedOptionsChange && (
         <div className="flex flex-col gap-3">
-          <FormField label="Telemt API URL" variant="uppercase">
-            <Input
-              value={advancedOptions.telemtUrl}
-              onChange={(e) =>
-                onAdvancedOptionsChange({ ...advancedOptions, telemtUrl: e.target.value })
-              }
-              className="font-mono text-xs"
-            />
-          </FormField>
-          <FormField label="Telemt metrics URL" variant="uppercase">
-            <Input
-              value={advancedOptions.telemtMetricsUrl}
-              onChange={(e) =>
-                onAdvancedOptionsChange({
-                  ...advancedOptions,
-                  telemtMetricsUrl: e.target.value,
-                })
-              }
-              placeholder="http://127.0.0.1:8081"
-              className="font-mono text-xs"
-            />
-          </FormField>
-          <FormField label="Telemt auth header" variant="uppercase">
-            <Input
-              value={advancedOptions.telemtAuth}
-              onChange={(e) =>
-                onAdvancedOptionsChange({ ...advancedOptions, telemtAuth: e.target.value })
-              }
-              placeholder="optional"
-              className="font-mono text-xs"
-            />
-          </FormField>
-          {/* Opt-in relaxation of the agent's "https required unless
-              loopback" guard. Surface the warning tone so operators
-              who don't read the description can still see this is not
-              the default. */}
-          <label
-            className="flex items-start gap-2 rounded-xs border border-status-warn/30 bg-status-warn/5 p-3 cursor-pointer"
-            aria-label="Allow plaintext on public-IP / hostname panel"
+          <button
+            type="button"
+            onClick={() => setAdvancedOpen((v) => !v)}
+            aria-expanded={advancedOpen}
+            className="self-start text-xs text-fg-muted hover:text-fg flex items-center gap-1"
           >
-            <input
-              type="checkbox"
-              className="mt-0.5 h-4 w-4 accent-[var(--color-status-warn)] cursor-pointer"
-              checked={advancedOptions.insecureTransport}
-              onChange={(e) =>
-                onAdvancedOptionsChange({
-                  ...advancedOptions,
-                  insecureTransport: e.target.checked,
-                })
-              }
-            />
-            <span className="flex flex-col gap-0.5">
-              <span className="text-xs font-medium text-status-warn">
-                Allow plaintext on public-IP / hostname panel
-              </span>
-              <span className="text-[11px] text-fg-muted leading-snug">
-                Passes <code className="font-mono">--insecure-transport</code> so the
-                agent accepts an http:// panel URL on a public IP or a
-                hostname. Private IPs (10/8, 172.16/12, 192.168/16,
-                CGNAT, IPv6 ULA) are auto-trusted without this flag.
-                Bootstrap exchanges the agent private key in cleartext —
-                only tick on a trusted link.
-              </span>
-            </span>
-          </label>
+            <span aria-hidden="true">{advancedOpen ? "▾" : "▸"}</span>
+            Advanced
+          </button>
+          {advancedOpen && (
+            <div className="flex flex-col gap-3 pl-3 border-l border-divider">
+              {showSourceToggle && (
+                <FormField label="Install-script source" variant="uppercase">
+                  <fieldset className="flex flex-wrap gap-2 border-0 p-0 m-0">
+                    <legend className="sr-only">Install-script source toggle</legend>
+                    {([
+                      { value: "panel" as const, label: "Panel" },
+                      { value: "github" as const, label: "GitHub" },
+                    ]).map((opt) => {
+                      const pressed = scriptSource === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          aria-pressed={pressed}
+                          disabled={loading}
+                          onClick={() => onScriptSourceChange?.(opt.value)}
+                          className={cn(
+                            "px-3 py-1.5 rounded-xs text-xs transition-colors",
+                            pressed
+                              ? "bg-accent text-white"
+                              : "border border-border text-fg-muted hover:text-fg",
+                          )}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </fieldset>
+                  <div className="text-[11px] text-fg-muted mt-1 leading-snug">
+                    {scriptSource === "panel"
+                      ? "Curl pulls install-agent.sh from <panel>/install-agent.sh."
+                      : "Curl pulls install-agent.sh from raw.githubusercontent.com. Default for outbound (panel may be firewalled from the agent)."}
+                  </div>
+                </FormField>
+              )}
+              <FormField label="Telemt API URL" variant="uppercase">
+                <Input
+                  value={advancedOptions.telemtUrl}
+                  onChange={(e) =>
+                    onAdvancedOptionsChange({ ...advancedOptions, telemtUrl: e.target.value })
+                  }
+                  className="font-mono text-xs"
+                />
+              </FormField>
+              <FormField label="Telemt metrics URL" variant="uppercase">
+                <Input
+                  value={advancedOptions.telemtMetricsUrl}
+                  onChange={(e) =>
+                    onAdvancedOptionsChange({
+                      ...advancedOptions,
+                      telemtMetricsUrl: e.target.value,
+                    })
+                  }
+                  placeholder="http://127.0.0.1:8081"
+                  className="font-mono text-xs"
+                />
+              </FormField>
+              <FormField label="Telemt auth header" variant="uppercase">
+                <Input
+                  value={advancedOptions.telemtAuth}
+                  onChange={(e) =>
+                    onAdvancedOptionsChange({ ...advancedOptions, telemtAuth: e.target.value })
+                  }
+                  placeholder="optional"
+                  className="font-mono text-xs"
+                />
+              </FormField>
+              {/* Opt-in relaxation of the agent's "https required unless
+                  loopback" guard. Warning tone so operators who don't
+                  read the description still see this isn't the default. */}
+              <label
+                className="flex items-start gap-2 rounded-xs border border-status-warn/30 bg-status-warn/5 p-3 cursor-pointer"
+                aria-label="Allow plaintext on public-IP / hostname panel"
+              >
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 accent-[var(--color-status-warn)] cursor-pointer"
+                  checked={advancedOptions.insecureTransport}
+                  onChange={(e) =>
+                    onAdvancedOptionsChange({
+                      ...advancedOptions,
+                      insecureTransport: e.target.checked,
+                    })
+                  }
+                />
+                <span className="flex flex-col gap-0.5">
+                  <span className="text-xs font-medium text-status-warn">
+                    Allow plaintext on public-IP / hostname panel
+                  </span>
+                  <span className="text-[11px] text-fg-muted leading-snug">
+                    Passes <code className="font-mono">--insecure-transport</code> so the
+                    agent accepts an http:// panel URL on a public IP or a
+                    hostname. Private IPs (10/8, 172.16/12, 192.168/16,
+                    CGNAT, IPv6 ULA) are auto-trusted without this flag.
+                    Bootstrap exchanges the agent private key in cleartext —
+                    only tick on a trusted link.
+                  </span>
+                </span>
+              </label>
+            </div>
+          )}
         </div>
-      )}
-
-      {showSourceToggle && (
-        <FormField label="Install-script source" variant="uppercase">
-          <fieldset className="flex flex-wrap gap-2 border-0 p-0 m-0">
-            <legend className="sr-only">Install-script source toggle</legend>
-            {([
-              {
-                value: "panel" as const,
-                label: "Panel",
-                disabled: !scriptSourcePanelAvailable,
-              },
-              { value: "github" as const, label: "GitHub", disabled: false },
-            ]).map((opt) => {
-              const pressed = scriptSource === opt.value;
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  aria-pressed={pressed}
-                  disabled={opt.disabled || loading}
-                  onClick={() => onScriptSourceChange?.(opt.value)}
-                  className={cn(
-                    "px-3 py-1.5 rounded-xs text-xs transition-colors",
-                    pressed
-                      ? "bg-accent text-white"
-                      : "border border-border text-fg-muted hover:text-fg",
-                    opt.disabled && "opacity-50 cursor-not-allowed",
-                  )}
-                >
-                  {opt.label}
-                </button>
-              );
-            })}
-          </fieldset>
-          <div className="text-[11px] font-mono text-fg-muted mt-1">
-            {scriptSource === "panel"
-              ? "Curl pulls from <panel>/install-agent.sh with SHA-256 self-check."
-              : "Curl pulls from raw.githubusercontent.com — operator pins a release tag for integrity."}
-          </div>
-        </FormField>
       )}
 
       <div className="rounded-xs bg-accent/8 border border-accent/20 p-3 text-xs text-accent">

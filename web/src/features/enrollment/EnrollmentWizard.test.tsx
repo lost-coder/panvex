@@ -165,8 +165,10 @@ describe("EnrollmentWizard", () => {
         onModeChange={onModeChange}
       />,
     );
-    expect(screen.getByText(/agent connects to panel/i)).toBeInTheDocument();
-    expect(screen.getByText(/panel connects to agent/i)).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /agent connects to panel/i })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /panel connects to agent/i })).toBeInTheDocument();
+    // Caption reflects the selected mode.
+    expect(screen.getByText(/agent dials the panel/i)).toBeInTheDocument();
   });
 
   it("shows dial_address only when mode === outbound", () => {
@@ -239,7 +241,8 @@ describe("EnrollmentWizard", () => {
     expect(screen.getByText(/must be host:port/i)).toBeInTheDocument();
   });
 
-  it("renders the source toggle when script_sources are wired", () => {
+  it("renders the source toggle inside Advanced when the operator opens it", async () => {
+    const user = userEvent.setup();
     render(
       <EnrollmentWizard
         {...baseProps}
@@ -248,36 +251,26 @@ describe("EnrollmentWizard", () => {
         onModeChange={vi.fn()}
         scriptSource="panel"
         onScriptSourceChange={vi.fn()}
-        scriptSourcePanelAvailable={true}
+        advancedOptions={{
+          telemtUrl: "http://127.0.0.1:9091",
+          telemtMetricsUrl: "http://127.0.0.1:8081",
+          telemtAuth: "",
+          insecureTransport: false,
+        }}
+        onAdvancedOptionsChange={vi.fn()}
       />,
     );
-    expect(screen.getByRole("button", { name: /^panel$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^github$/i })).toBeInTheDocument();
+    // Default: Advanced is collapsed, source toggle hidden.
+    expect(screen.queryByRole("button", { name: /^panel$/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^advanced$/i }));
+    // Both source options are now visible and selectable — PR-3c removes
+    // the availability gate, so Panel is never disabled.
+    expect(screen.getByRole("button", { name: /^panel$/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /^github$/i })).toBeEnabled();
     expect(screen.getByRole("button", { name: /^panel$/i })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
-  });
-
-  it("disables the Panel toggle when no panel script URL is available", () => {
-    render(
-      <EnrollmentWizard
-        {...baseProps}
-        step={1}
-        mode="outbound"
-        onModeChange={vi.fn()}
-        scriptSource="github"
-        onScriptSourceChange={vi.fn()}
-        scriptSourcePanelAvailable={false}
-        dialAddress="vps.example.com:8443"
-        onDialAddressChange={vi.fn()}
-      />,
-    );
-    // Panel button is visible but disabled — operator sees the choice
-    // exists but understands why it isn't selectable.
-    const panel = screen.getByRole("button", { name: /^panel$/i });
-    expect(panel).toBeDisabled();
-    expect(screen.getByRole("button", { name: /^github$/i })).toBeEnabled();
   });
 
   it("calls onModeChange when the operator switches transport", async () => {
@@ -292,7 +285,30 @@ describe("EnrollmentWizard", () => {
         onDialAddressChange={vi.fn()}
       />,
     );
-    await user.click(screen.getByLabelText(/panel connects to agent/i, { selector: "input" }));
+    await user.click(screen.getByRole("radio", { name: /panel connects to agent/i }));
     expect(onModeChange).toHaveBeenCalledWith("outbound");
+  });
+
+  it("keeps Telemt and insecure-transport knobs hidden until Advanced is opened", async () => {
+    const user = userEvent.setup();
+    render(
+      <EnrollmentWizard
+        {...baseProps}
+        step={1}
+        advancedOptions={{
+          telemtUrl: "http://127.0.0.1:9091",
+          telemtMetricsUrl: "http://127.0.0.1:8081",
+          telemtAuth: "",
+          insecureTransport: false,
+        }}
+        onAdvancedOptionsChange={vi.fn()}
+      />,
+    );
+    // Default state — none of the niche knobs surface in the main form.
+    expect(screen.queryByLabelText(/telemt api url/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: /allow plaintext/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^advanced$/i }));
+    expect(screen.getByLabelText(/telemt api url/i)).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /allow plaintext/i })).toBeInTheDocument();
   });
 });

@@ -43,14 +43,13 @@ export interface EnrollmentWizardProps {
    *  outbound. */
   dialAddress?: string | undefined;
   onDialAddressChange?: ((addr: string) => void) | undefined;
-  /** Install-script source toggle state (Advanced section). */
+  /** Install-script source toggle state (Advanced section). The toggle
+   *  is rendered iff both `scriptSource` and `onScriptSourceChange` are
+   *  provided; Panel is always selectable because the container can
+   *  always derive `<panel>/install-agent.sh` from the panel URL even
+   *  when the backend's `script_sources` payload is absent (legacy). */
   scriptSource?: ScriptSourceKind | undefined;
   onScriptSourceChange?: ((src: ScriptSourceKind) => void) | undefined;
-  /** True when the container knows the panel install-script URL +
-   *  hash (i.e. the enrollment-tokens response carried `script_sources`).
-   *  Wizard hides the toggle when false so we don't ship a Panel option
-   *  that would render an empty URL. */
-  scriptSourcePanelAvailable?: boolean | undefined;
   // Step 2
   installCommand: string;
   tokenValue: string;
