@@ -181,15 +181,29 @@ FROM enrollment_attempts
 WHERE ($1::uuid IS NULL OR token_id = $1::uuid)
   AND ($2::uuid IS NULL OR agent_id = $2::uuid)
   AND ($3::text   IS NULL OR status   = $3::text)
+  AND ($4::text     IS NULL OR mode     = $4::text)
+  AND ($5::text IS NULL OR error_code = $5::text)
+  AND ($6::timestamptz  IS NULL OR started_at >= $6::timestamptz)
+  AND ($7::timestamptz IS NULL OR started_at <  $7::timestamptz)
+  AND ($8::timestamptz IS NULL
+       OR started_at < $8::timestamptz
+       OR (started_at = $8::timestamptz
+           AND id     < $9::uuid))
 ORDER BY started_at DESC, id DESC
-LIMIT $4
+LIMIT $10
 `
 
 type ListEnrollmentAttemptsParams struct {
-	TokenID uuid.NullUUID
-	AgentID uuid.NullUUID
-	Status  sql.NullString
-	Limit   int32
+	TokenID       uuid.NullUUID
+	AgentID       uuid.NullUUID
+	Status        sql.NullString
+	Mode          sql.NullString
+	ErrorCode     sql.NullString
+	StartedAfter  sql.NullTime
+	StartedBefore sql.NullTime
+	CursorTs      sql.NullTime
+	CursorID      uuid.NullUUID
+	Limit         int32
 }
 
 // Optional filters use sqlc.narg so each parameter becomes nullable in
@@ -201,6 +215,12 @@ func (q *Queries) ListEnrollmentAttempts(ctx context.Context, arg ListEnrollment
 		arg.TokenID,
 		arg.AgentID,
 		arg.Status,
+		arg.Mode,
+		arg.ErrorCode,
+		arg.StartedAfter,
+		arg.StartedBefore,
+		arg.CursorTs,
+		arg.CursorID,
 		arg.Limit,
 	)
 	if err != nil {

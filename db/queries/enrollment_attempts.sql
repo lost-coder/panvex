@@ -41,6 +41,14 @@ FROM enrollment_attempts
 WHERE (sqlc.narg('token_id')::uuid IS NULL OR token_id = sqlc.narg('token_id')::uuid)
   AND (sqlc.narg('agent_id')::uuid IS NULL OR agent_id = sqlc.narg('agent_id')::uuid)
   AND (sqlc.narg('status')::text   IS NULL OR status   = sqlc.narg('status')::text)
+  AND (sqlc.narg('mode')::text     IS NULL OR mode     = sqlc.narg('mode')::text)
+  AND (sqlc.narg('error_code')::text IS NULL OR error_code = sqlc.narg('error_code')::text)
+  AND (sqlc.narg('started_after')::timestamptz  IS NULL OR started_at >= sqlc.narg('started_after')::timestamptz)
+  AND (sqlc.narg('started_before')::timestamptz IS NULL OR started_at <  sqlc.narg('started_before')::timestamptz)
+  AND (sqlc.narg('cursor_ts')::timestamptz IS NULL
+       OR started_at < sqlc.narg('cursor_ts')::timestamptz
+       OR (started_at = sqlc.narg('cursor_ts')::timestamptz
+           AND id     < sqlc.narg('cursor_id')::uuid))
 ORDER BY started_at DESC, id DESC
 LIMIT sqlc.arg('limit');
 
