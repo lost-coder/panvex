@@ -117,14 +117,14 @@ func TestInstallCommandHappyPath(t *testing.T) {
 }
 
 // TestBuildInstallCommand_LegacyWhenHashEmpty drives the empty-ScriptHash
-// branch of buildInstallCommand. With no hash configured (test fixtures or
+// branch of BuildInstallCommand. With no hash configured (test fixtures or
 // transitional deploys that have not yet wired server.InstallScriptSHA256())
 // the legacy `curl ... | sudo bash` form must be emitted and none of the
 // pinned-branch markers may leak in. Guards the fallback against an over-
 // eager refactor that drops the legacy shape (HIGH-2 review feedback).
 func TestBuildInstallCommand_LegacyWhenHashEmpty(t *testing.T) {
 	t.Parallel()
-	cmd := buildInstallCommand(installCommandInput{
+	cmd := BuildInstallCommand(InstallCommandInput{
 		ScriptURL:  "https://example.com/install.sh",
 		ScriptHash: "",
 		Token:      "tok",

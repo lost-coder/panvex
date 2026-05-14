@@ -148,7 +148,7 @@ func (h *InstallCommandHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	cmd := buildInstallCommand(installCommandInput{
+	cmd := BuildInstallCommand(InstallCommandInput{
 		ScriptURL:  h.scriptURL,
 		ScriptHash: h.scriptHash,
 		Token:      issued.Raw,
@@ -168,10 +168,10 @@ func (h *InstallCommandHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 	}
 }
 
-// installCommandInput carries the fields buildInstallCommand interpolates into
+// InstallCommandInput carries the fields BuildInstallCommand interpolates into
 // the curl|bash one-liner. Kept package-private — the public surface is
 // InstallCommandConfig + ServeHTTP. (S-3.)
-type installCommandInput struct {
+type InstallCommandInput struct {
 	ScriptURL  string
 	ScriptHash string // lowercase hex SHA-256; "" disables verification (legacy)
 	Token      string
@@ -182,7 +182,7 @@ type installCommandInput struct {
 	PanelURL   string
 }
 
-// buildInstallCommand returns the shell one-liner the operator runs on the
+// BuildInstallCommand returns the shell one-liner the operator runs on the
 // agent host. When ScriptHash is non-empty the command:
 //
 //  1. Allocates a temp file via mktemp and registers a trap to delete it on
@@ -203,7 +203,7 @@ type installCommandInput struct {
 // not been re-deployed yet) the legacy curl|bash form is emitted unchanged
 // so the install path keeps working — at the cost of MITM exposure that
 // the deploy is opting into. (S-3.)
-func buildInstallCommand(in installCommandInput) string {
+func BuildInstallCommand(in InstallCommandInput) string {
 	flags := fmt.Sprintf(
 		"--mode=reverse --bootstrap-token=%s --agent-id=%s --listen-addr=%s --ca-pin=%s --panel-cn=%s --panel-url-grpc=%s",
 		in.Token, in.AgentID, in.ListenAddr, in.PanelCAPin, in.PanelCN, in.PanelURL,
