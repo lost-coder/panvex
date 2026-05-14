@@ -12,11 +12,24 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/agent/runtime"
+	"github.com/lost-coder/panvex/internal/agent/runtimeevents"
 	agentstate "github.com/lost-coder/panvex/internal/agent/state"
 	"github.com/lost-coder/panvex/internal/agent/telemt"
 	"github.com/lost-coder/panvex/internal/controlplane/agentrevocation"
 	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
 	"github.com/lost-coder/panvex/internal/logutil"
+)
+
+// runtimeEventsBuf is the process-wide ring of recent Info+ slog records
+// populated by the runtimeevents.Handler installed in runRuntime. It is
+// drained by the pusher goroutine started in runConnection. We use a
+// package-level handle (rather than a state struct) because cmd/agent
+// already threads cross-cutting hooks through positional parameters and
+// the slog default itself is process-global — see runtime.go comment
+// near the wiring for the rationale.
+var (
+	runtimeEventsBuf    *runtimeevents.Buffer
+	runtimeEventsNotify chan struct{}
 )
 
 // runtimeFlags holds the parsed CLI options for the agent runtime. Pulling
@@ -91,12 +104,21 @@ func runRuntime(args []string) error {
 	if err != nil {
 		return fmt.Errorf("agent: invalid log format: %w", err)
 	}
-	handler := logutil.NewHandler(logutil.Options{
+	inner := logutil.NewHandler(logutil.Options{
 		Format: logFormat,
 		Level:  parseLogLevel(cfg.logLevel),
 		Sink:   os.Stderr,
 	})
-	slog.SetDefault(slog.New(handler))
+	// runtimeBuf is the agent-side ring of recent Info+ slog records. The
+	// pusher goroutine started in connection.go drains this buffer and
+	// ships batches to the panel via the Connect bidi-stream. We park it
+	// on a package-level handle (runtimeEventsBuf) because the existing
+	// cmd/agent code threads cross-cutting hooks through positional
+	// parameters and there is no aggregate state struct; introducing one
+	// purely for the buffer would touch every connection.go callsite.
+	runtimeBuf := runtimeevents.NewBuffer(200)
+	slog.SetDefault(slog.New(runtimeevents.NewHandler(inner, runtimeBuf)))
+	runtimeEventsBuf = runtimeBuf
 
 	credentialsState, err := loadRuntimeCredentials(cfg.stateFile)
 	if err != nil {
