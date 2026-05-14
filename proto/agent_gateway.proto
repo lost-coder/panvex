@@ -351,7 +351,23 @@ message ConnectClientMessage {
     JobAcknowledgement job_acknowledgement = 4;
     ClientDataResponse client_data_response = 5;
     RenewalRequest renewal_request = 6;
+    RuntimeEventsBatch runtime_events = 7;
   }
+}
+
+// AgentRuntimeEvent is a single slog-derived record shipped from the
+// agent to the panel for the live "Recent events" UI section.
+message AgentRuntimeEvent {
+  google.protobuf.Timestamp ts = 1;
+  string level = 2;             // "info" | "warn" | "error"
+  string message = 3;
+  map<string, string> fields = 4;
+}
+
+// RuntimeEventsBatch is a one-shot batch sent inside ConnectClientMessage.
+message RuntimeEventsBatch {
+  string agent_id = 1;
+  repeated AgentRuntimeEvent events = 2;
 }
 
 message ConnectServerMessage {
