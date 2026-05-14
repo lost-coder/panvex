@@ -61,37 +61,51 @@ export function EnrollmentHistory({ agentId }: Props) {
       rightHint={`${list.data.items.length} ${list.data.items.length === 1 ? "attempt" : "attempts"}`}
       defaultOpen={false}
     >
-      <ul className="flex flex-col gap-2">
-        {list.data.items.map((a: EnrollmentAttempt) => {
-          const isOpen = expanded === a.id;
-          const label = a.error_code ? `${a.status} (${a.error_code})` : a.status;
-          return (
-            <li key={a.id} className="rounded-md border border-divider p-3">
-              <button
-                type="button"
-                onClick={() => setExpanded(isOpen ? null : a.id)}
-                className="flex w-full items-center justify-between text-left text-sm"
-                aria-expanded={isOpen}
-              >
-                <span className="text-fg">
-                  {new Date(a.started_at).toLocaleString()} · {a.mode}
-                </span>
-                <StatusLabel tone={statusTone(a.status)} label={label} />
-              </button>
-              {isOpen && detail.data && (
-                <div className="mt-3">
-                  <EnrollmentTimeline detail={detail.data} />
-                </div>
-              )}
-              {isOpen && detail.isLoading && (
-                <div className="mt-3 text-xs text-fg-muted">
-                  {t("history.detailLoading")}
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+      <div className="flex flex-col gap-3">
+        <ul className="flex flex-col gap-2">
+          {list.data.items.map((a: EnrollmentAttempt) => {
+            const isOpen = expanded === a.id;
+            const label = a.error_code ? `${a.status} (${a.error_code})` : a.status;
+            return (
+              <li key={a.id} className="rounded-md border border-divider p-3">
+                <button
+                  type="button"
+                  onClick={() => setExpanded(isOpen ? null : a.id)}
+                  className="flex w-full items-center justify-between text-left text-sm"
+                  aria-expanded={isOpen}
+                >
+                  <span className="text-fg">
+                    {new Date(a.started_at).toLocaleString()} · {a.mode}
+                  </span>
+                  <StatusLabel tone={statusTone(a.status)} label={label} />
+                </button>
+                {isOpen && detail.data && (
+                  <div className="mt-3">
+                    <EnrollmentTimeline detail={detail.data} />
+                  </div>
+                )}
+                {isOpen && detail.isLoading && (
+                  <div className="mt-3 text-xs text-fg-muted">
+                    {t("history.detailLoading")}
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+        {/* Phase-3 §3.b: deep-link into the fleet-wide enrollment
+            attempts page, pre-filtered to this agent. Plain <a> keeps
+            the dependency surface narrow — the rest of the panel
+            doesn't pull tanstack-router's Link, and a full navigation
+            here is appropriate (the destination is a lazy-loaded
+            route chunk regardless). */}
+        <a
+          href={`/enrollment-attempts?agent_id=${encodeURIComponent(agentId)}`}
+          className="self-start text-xs text-fg-muted underline"
+        >
+          {t("history.viewAll")}
+        </a>
+      </div>
     </Fold>
   );
 }
