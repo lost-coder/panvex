@@ -11,7 +11,7 @@ export function Fold({
   children,
 }: Readonly<{
   title: string;
-  rightHint?: string;
+  rightHint?: React.ReactNode;
   defaultOpen?: boolean;
   children: React.ReactNode;
 }>) {
