@@ -54,6 +54,12 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
+      # //go:embed cannot reference paths outside the package, so the
+      # canonical deploy/install-agent.sh is mirrored into the server
+      # package via `go generate`. Mirror Makefile's gen-install-script
+      # so every Go-touching CI step sees the embedded file.
+      - name: Mirror install-agent.sh for //go:embed
+        run: go generate ./internal/controlplane/server/...
       - run: go test -count=1 ./...
       # Loadtest correctness gate: the Test* variants of the realistic
       # concurrency scenarios (agent burst, login storm, job fan-out)
@@ -86,6 +92,8 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
+      - name: Mirror install-agent.sh for //go:embed
+        run: go generate ./internal/controlplane/server/...
       # The internal/loadtest scenarios spawn ~100 concurrent Argon2id
       # verifies (~96 MiB each) and ~200-agent enrolls; under -race the
       # working set climbs past 20 GB RSS and the runner spends 25+ min
@@ -144,6 +152,8 @@ jobs:
         with:
           go-version: "1.27.0-rc.1"
           check-latest: true
+      - name: Mirror install-agent.sh for //go:embed
+        run: go generate ./internal/controlplane/server/...
       - run: go test -count=1 ./...
 
   schema-sync:
@@ -194,6 +204,8 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
+      - name: Mirror install-agent.sh for //go:embed
+        run: go generate ./internal/controlplane/server/...
       - run: go build -o /dev/null ./cmd/control-plane
       - run: go build -o /dev/null ./cmd/agent
 
@@ -205,6 +217,8 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
+      - name: Mirror install-agent.sh for //go:embed
+        run: go generate ./internal/controlplane/server/...
       - uses: golangci/golangci-lint-action@v9
         with:
           # Pin to a known-good golangci-lint version. Bumping is a deliberate
@@ -459,7 +473,10 @@ jobs:
             exit 1
           fi
           # T-5: install-agent.sh must self-check its own hash before exec.
-          if ! grep -q 'panvex_self_check_hash' internal/controlplane/server/install_agent.sh; then
+          # Canonical script lives at deploy/install-agent.sh after ba6aadc;
+          # the server-package mirror is .gitignored and only materialised
+          # by `go generate`, so grep the source-of-truth path here.
+          if ! grep -q 'panvex_self_check_hash' deploy/install-agent.sh; then
             echo "T-5 regression: install-agent.sh self-check gone" >&2
             exit 1
           fi

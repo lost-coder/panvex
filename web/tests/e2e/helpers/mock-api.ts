@@ -146,6 +146,17 @@ export async function mockApi(page: Page, overrides: ApiMocks = {}) {
   await page.route(apiPath("/api/agents"), (route) =>
     json(route, overrides.agents ?? []),
   );
+  // /api/agents/{id}/runtime-events lives under the /api/agents prefix
+  // and is matched by the regex above, but the runtime-events hook
+  // expects `{ items: [] }`, not the bare array used for the agent
+  // list. Register a more specific match after the generic one so
+  // last-wins semantics in Playwright route the deep path here.
+  await page.route(/\/api\/agents\/[^/]+\/runtime-events(\?.*)?$/, (route) =>
+    json(route, { items: [] }),
+  );
+  await page.route(apiPath("/api/enrollment-attempts"), (route) =>
+    json(route, { items: [], next_cursor: null }),
+  );
   await page.route(apiPath("/api/fleet-groups"), (route) =>
     json(route, overrides.fleetGroups ?? []),
   );
