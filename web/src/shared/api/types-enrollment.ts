@@ -42,16 +42,21 @@ export interface EnrollmentAttemptDetail {
 // previous default (latest 20 attempts across the fleet). `cursor` is
 // the opaque base64 token returned by a prior call and threads
 // pagination across calls.
+//
+// Each field carries an explicit `| undefined`: callers commonly
+// build filters incrementally with the spread-then-clear idiom
+// (`{ ...value, status: undefined }`) and exactOptionalPropertyTypes
+// rejects `undefined` for plain `?: T` fields.
 export interface EnrollmentAttemptsFilter {
-  token_id?: string;
-  agent_id?: string;
-  status?: EnrollmentStatus;
-  mode?: EnrollmentMode;
-  error_code?: string;
-  started_after?: string;
-  started_before?: string;
-  limit?: number;
-  cursor?: string;
+  token_id?: string | undefined;
+  agent_id?: string | undefined;
+  status?: EnrollmentStatus | undefined;
+  mode?: EnrollmentMode | undefined;
+  error_code?: string | undefined;
+  started_after?: string | undefined;
+  started_before?: string | undefined;
+  limit?: number | undefined;
+  cursor?: string | undefined;
 }
 
 // EnrollmentAttemptsPage mirrors the cursor-paginated response shape

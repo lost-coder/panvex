@@ -1,0 +1,28 @@
+{
+  "page": {
+    "title": "Попытки подключения",
+    "subtitle": "Все попытки подключения по флоту"
+  },
+  "filters": {
+    "status": "Статус",
+    "mode": "Режим",
+    "errorCode": "Код ошибки",
+    "startedAfter": "С",
+    "startedBefore": "По",
+    "anyStatus": "Любой статус",
+    "anyMode": "Любой режим",
+    "anyErrorCode": "Любой код",
+    "apply": "Применить",
+    "reset": "Сбросить"
+  },
+  "table": {
+    "startedAt": "Начато",
+    "mode": "Режим",
+    "agent": "Агент",
+    "status": "Статус",
+    "errorCode": "Ошибка",
+    "requestId": "Запрос"
+  },
+  "loadMore": "Загрузить ещё",
+  "empty": "Нет попыток под текущие фильтры."
+}

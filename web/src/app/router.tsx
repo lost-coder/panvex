@@ -224,6 +224,17 @@ const AddServerContainer = lazyRouteComponent(
   "default",
 );
 
+// Phase-3 §3.b enrollment-attempts page. Fleet-wide observability view
+// for the GET /api/enrollment-attempts list; deep-linkable from the
+// per-agent EnrollmentHistory fold via `?agent_id=…`.
+const EnrollmentAttemptsPage = lazyRouteComponent(
+  () =>
+    import("@/features/enrollment-attempts/EnrollmentAttemptsPage").then((m) => ({
+      default: m.EnrollmentAttemptsPage,
+    })),
+  "default",
+);
+
 const shellRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "shell",
@@ -319,6 +330,12 @@ const addServerRoute = createRoute({
   component: AddServerContainer,
 });
 
+const enrollmentAttemptsRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/enrollment-attempts",
+  component: EnrollmentAttemptsPage,
+});
+
 const activityRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/activity",
@@ -350,6 +367,7 @@ const routeTree = rootRoute.addChildren([
     usersRoute,
     enrollmentTokensRoute,
     addServerRoute,
+    enrollmentAttemptsRoute,
     activityRoute,
     fleetGroupsRoute,
     fleetGroupDetailRoute,
