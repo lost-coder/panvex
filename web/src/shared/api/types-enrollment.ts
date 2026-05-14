@@ -36,3 +36,30 @@ export interface EnrollmentAttemptDetail {
   attempt: EnrollmentAttempt;
   events: EnrollmentEvent[];
 }
+
+// Phase-3 §3.b: filter shape for GET /api/enrollment-attempts. The
+// backend treats every field as optional; absent params restore the
+// previous default (latest 20 attempts across the fleet). `cursor` is
+// the opaque base64 token returned by a prior call and threads
+// pagination across calls.
+export interface EnrollmentAttemptsFilter {
+  token_id?: string;
+  agent_id?: string;
+  status?: EnrollmentStatus;
+  mode?: EnrollmentMode;
+  error_code?: string;
+  started_after?: string;
+  started_before?: string;
+  limit?: number;
+  cursor?: string;
+}
+
+// EnrollmentAttemptsPage mirrors the cursor-paginated response shape
+// the server emits: `next_cursor` is `null` (not omitted) when the
+// caller has reached the end, so we model it as `string | null` rather
+// than optional. Earlier Phase-1 callers that only read `.items` keep
+// working — the extra field is additive.
+export interface EnrollmentAttemptsPage {
+  items: EnrollmentAttempt[];
+  next_cursor: string | null;
+}

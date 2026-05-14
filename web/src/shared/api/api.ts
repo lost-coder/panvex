@@ -81,6 +81,8 @@ export type {
 export type {
   EnrollmentAttempt,
   EnrollmentAttemptDetail,
+  EnrollmentAttemptsFilter,
+  EnrollmentAttemptsPage,
   EnrollmentEvent,
   EnrollmentLevel,
   EnrollmentMode,
