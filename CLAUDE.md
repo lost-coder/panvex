@@ -117,6 +117,10 @@ retained as a fallback but is skipped in listen mode.
   `diagnose`, `rotate-encryption-key`, `verify-audit-chain`. The `serve`
   subcommand reads `PANVEX_STORAGE_*` env / config.toml and never accepts
   these flags.
+- Logging: see `../docs/superpowers/logging.md` for level semantics,
+  mandatory attrs by layer, and forbidden patterns. New Go code must
+  use `log/slog` with the `*Context` variants (`slog.InfoContext`
+  etc.) so `request_id` propagates.
 
 ## Commands
 
