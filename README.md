@@ -347,8 +347,22 @@ binds publishers to loopback (terminate TLS at a reverse proxy — see
 
 ## 🤖 Agent Deployment
 
-1. Create an enrollment token: **Settings → Enrollment Tokens**
-2. On each Telemt server:
+Panvex supports **two transport modes** per agent:
+
+- **Inbound (default).** The agent dials the panel. Use this when the
+  panel is internet-reachable from the agent host.
+- **Outbound (reverse).** The panel dials an agent that listens on a
+  public host:port. Use this when the panel is firewalled (private
+  network, VPN-only, behind NAT) but the agent has a public address.
+
+The **Add Server wizard** (Dashboard → Servers → Add) generates the
+install command for either mode in one click.
+
+### Inbound (the agent dials the panel)
+
+1. Create an enrollment token: **Settings → Enrollment Tokens**, or the
+   wizard mints one for you.
+2. Paste the rendered command on the Telemt host:
 
 ```sh
 sudo bash -c "$(curl -fsSL https://panel.example.com/install-agent.sh)"
@@ -356,6 +370,32 @@ sudo bash -c "$(curl -fsSL https://panel.example.com/install-agent.sh)"
 
 The script is embedded into the control-plane binary and served from the
 panel itself — no external CDN required.
+
+### Outbound (the panel dials the agent)
+
+Use `POST /api/agents/provision-outbound` (admin) or the wizard's
+"Panel connects to agent" branch. The endpoint creates the agent row,
+mints a 5-minute bootstrap token, and returns a pre-baked install
+command pre-configured with `--mode=reverse`, `--listen-addr=:<port>`,
+and the panel's CA pin. The agent listens; the panel's outbound
+supervisor dials it via mTLS.
+
+### Install-script source
+
+Each wizard run lets the operator pick one of two install-script
+sources:
+
+| Source  | URL                                                                                  | Integrity                                                  | Default for |
+| ------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------- | ----------- |
+| Panel   | `<panel>/install-agent.sh`                                                            | SHA-256 self-check baked into the rendered curl command    | Inbound     |
+| GitHub  | `https://raw.githubusercontent.com/lost-coder/panvex/main/deploy/install-agent.sh`    | Pin a release tag in your deploy automation for reproducibility | Outbound    |
+
+Operators on a fork or behind a private mirror override the URLs via:
+
+```sh
+PANVEX_INSTALL_SCRIPT_URL=https://panel.example.com/install-agent.sh   # panel source
+PANVEX_INSTALL_SCRIPT_GITHUB_URL=https://github.example.com/raw/panvex/main/deploy/install-agent.sh
+```
 
 <details>
 <summary>Manual bootstrap (without installer)</summary>

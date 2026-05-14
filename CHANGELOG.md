@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Add-Server wizard — outbound mode + script-source toggle (Sprint S-22 · 2026-05-14)
+
+- **PR-1.5 refactor(install).** Move the canonical `install-agent.sh` back to `deploy/install-agent.sh` so the public GitHub-raw URL no longer leaks `internal/controlplane/server/` into operator-facing docs. `//go:embed` keeps a `.gitignored` mirror in the server package via `go generate`; the Makefile, pre-push hook, and Dockerfile all run `go generate ./internal/controlplane/server/...` before build/test. A new drift test (`install_script_drift_test.go`) asserts the embedded bytes match `deploy/install-agent.sh`.
+- **PR-2a feat(api).** `POST /api/agents/enrollment-tokens` response gains `script_sources`: a typed `{panel:{url,sha256}, github:{url,sha256:null}}` pointer pair the wizard renders into a Panel/GitHub install-source toggle. Panel source includes the lowercase hex SHA-256 of the embedded body so the rendered curl can self-verify before sudo bash; GitHub source carries `null` because the panel cannot vouch for upstream bytes. `PANVEX_INSTALL_SCRIPT_GITHUB_URL` overrides the GitHub URL for forks and private mirrors.
+- **PR-2b refactor(bootstrap).** Export `bootstrap.BuildInstallCommand` and `bootstrap.InstallCommandInput`. No behaviour change — the rename lets the new provision-outbound handler share the curl-builder with the existing `POST /api/agents/{id}/install-command`.
+- **PR-2c feat(api).** New `POST /api/agents/provision-outbound` (admin, sensitive rate-limit) creates an outbound agent row and returns its install command in a single round-trip, mirroring the simplicity of the inbound enrollment-token flow. The handler validates `node_name` against `[A-Za-z0-9._-]{1,64}`, parses `dial_address` as host:port, derives the agent's listen-bind from the port, and renders the curl form chosen by `script_source` (`panel` → SHA-256-self-check; `github` → legacy curl|bash). Best-effort rollback (`DeleteAgent`) when token issuance fails. Emits `agents.provision_outbound` audit. Backed by 7 handler tests covering happy path, validation, source-shape contrasts, 503 when unconfigured, and admin role enforcement.
+- **PR-3a feat(web).** Frontend API surface for the wizard's PR-3b rebuild: `apiClient.provisionOutboundAgent`, `ScriptSource` / `ScriptSources` types, and a parametrised `buildInstallCommand(scriptUrl, scriptSha256)` that emits the SHA-256-self-check temp-file form when a hash is provided and the legacy curl|sudo-bash form when null. Default behaviour matches the existing wizard call site so this PR alone does not change UI.
+
 ### Settings system overhaul
 
 - Bootstrap config (ports, TLS, DSN, encryption key, log/observability) is now read once at startup from environment variables or `config.toml`. Legacy CLI flags (`-http-addr`, `-grpc-addr`, `-storage-driver`, `-storage-dsn`, `-restart-mode`) are removed.
