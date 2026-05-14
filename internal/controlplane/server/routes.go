@@ -214,6 +214,13 @@ func (s *Server) routes() http.Handler {
 					// at NewInstallCommandHandler — see install_script.go for the
 					// embedded /install-agent.sh route the URL points to. (Q-05)
 					admin.With(sensitive).Post("/agents/{id}/install-command", oapi.CreateAgentInstallCommand)
+					// PR-2c: one-shot provisioning for outbound (reverse-mode)
+					// agents. Combines the agent-row INSERT and the install-
+					// command issuance into a single round-trip so the wizard's
+					// outbound branch has parity with the inbound enrollment-
+					// token flow. Sensitive rate-limit because each call mints
+					// a bootstrap token and inserts a DB row.
+					admin.With(sensitive).Post("/agents/provision-outbound", oapi.ProvisionOutboundAgent)
 					admin.Put("/settings/values", s.handleSettingsValuesPUT)
 					admin.Get("/settings/panel", s.handleGetPanelSettings())
 					admin.Put("/settings/panel", s.handlePutPanelSettings())

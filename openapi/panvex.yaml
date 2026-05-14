@@ -331,6 +331,51 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/agents/provision-outbound:
+    post:
+      operationId: provisionOutboundAgent
+      summary: Create an outbound agent and return its install command
+      description: |
+        One-call provisioning for outbound (reverse-mode) agents: inserts
+        the agent row, issues a 5-minute bootstrap token, and returns the
+        pre-baked `curl ... | sudo bash` one-liner the operator pastes on
+        the agent host. Combines what would otherwise be `POST /agents`
+        (no such endpoint today) and `POST /agents/{id}/install-command`
+        into a single round-trip, mirroring the simplicity of the inbound
+        `POST /agents/enrollment-tokens` flow.
+
+        Cancellation: if the operator backs out of the wizard before
+        running the command, the frontend should call
+        `DELETE /api/agents/{id}` (admin) to remove the orphan row. A
+        nightly sweep also prunes rows whose `bootstrap_expires_at` has
+        elapsed without a first connection.
+      tags: [agents]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProvisionOutboundAgentRequest' }
+      responses:
+        '201':
+          description: Agent provisioned, install command issued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProvisionOutboundAgentResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: node_name already in use within this fleet group.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Install-command endpoint not configured.
+          content:
+            text/plain:
+              schema:
+                type: string
+
   /api/agents/{id}/install-command:
     parameters:
       - name: id
@@ -972,6 +1017,97 @@ components:
           example: dispatched
         version:
           type: string
+
+    InstallCommandAdvancedOptions:
+      type: object
+      description: |
+        Optional per-install overrides — the wizard's "Advanced" section.
+        All fields nullable / omittable so the default install (with the
+        agent's built-in Telemt defaults) needs none of these.
+      properties:
+        telemt_url:
+          type: string
+          nullable: true
+          description: Override the agent's Telemt API URL.
+        telemt_metrics_url:
+          type: string
+          nullable: true
+          description: Override the agent's Telemt metrics URL.
+        telemt_auth:
+          type: string
+          nullable: true
+          description: |
+            Authorization header value (e.g. "Bearer xxx") the agent
+            forwards to Telemt. Empty / omitted = no auth header.
+        insecure_transport:
+          type: boolean
+          nullable: true
+          description: |
+            Opt-in: allow plain-HTTP panel URLs on non-loopback hosts.
+            Intended for VPN-only / private-network deploys where the
+            bootstrap-key handshake transits in cleartext.
+
+    ProvisionOutboundAgentRequest:
+      type: object
+      required: [node_name, fleet_group_id, dial_address]
+      properties:
+        node_name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: |
+            Operator-supplied display name. Must satisfy the same
+            character class enforced for inbound enrollment
+            (`[A-Za-z0-9._-]+`), since the value is interpolated into
+            the curl|bash one-liner as a CLI flag value.
+        fleet_group_id:
+          type: string
+          description: |
+            Canonical fleet-group UUID or friendly slug. Empty string
+            falls back to the operator's default fleet group.
+        dial_address:
+          type: string
+          description: |
+            Public host:port the panel dials to reach the agent. Used
+            both for the agent's listen bind (derived port) and for
+            the panel's outbound supervisor target.
+          example: "203.0.113.10:8443"
+        script_source:
+          type: string
+          enum: [panel, github]
+          default: github
+          description: |
+            Source from which the agent host fetches install-agent.sh.
+            'github' is the default for outbound because the panel is
+            typically firewalled from the agent host (otherwise the
+            operator would use inbound mode); 'panel' is supported for
+            cases where the agent can reach the panel during bootstrap
+            even though the steady-state transport is reverse.
+        advanced:
+          $ref: '#/components/schemas/InstallCommandAdvancedOptions'
+
+    ProvisionOutboundAgentResponse:
+      type: object
+      description: |
+        Returned by `POST /api/agents/provision-outbound`. Mirrors
+        InstallCommandResponse plus the freshly-minted agent_id so the
+        wizard can poll `GET /api/agents/{id}` for the first connection
+        and call `DELETE /api/agents/{id}` on cancel.
+      required: [agent_id, command, expires_at_unix, script_url]
+      properties:
+        agent_id:
+          type: string
+        command:
+          type: string
+          description: Pre-baked `curl ... | sudo bash -s -- ...` one-liner.
+        expires_at_unix:
+          type: integer
+          format: int64
+        script_url:
+          type: string
+          description: |
+            The URL the curl in the command points at — exposed so the
+            wizard can show the operator which source was used.
 
     InstallCommandResponse:
       type: object

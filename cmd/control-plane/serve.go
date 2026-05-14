@@ -192,20 +192,39 @@ func runServe(args []string) error {
 	// generates works against any reachable panel host. Operators with a
 	// custom domain set PANVEX_INSTALL_SCRIPT_URL to override.
 	if queries != nil {
+		panelScriptURL := installScriptURL(panelRuntime)
+		panelScriptHash := server.InstallScriptSHA256()
 		installHandler := bootstrap.NewInstallCommandHandler(queries, bootstrap.InstallCommandConfig{
-			ScriptURL: installScriptURL(panelRuntime),
+			ScriptURL: panelScriptURL,
 			// S-3: bind the install-command to the embedded script body
 			// the panel is serving right now. The shell one-liner verifies
 			// the downloaded body before sudo-bash, and the script self-
 			// checks PANVEX_INSTALL_SCRIPT_SHA256 (T-5). A TLS-MITM that
 			// rewrites /install-agent.sh therefore cannot escalate.
-			ScriptHash: server.InstallScriptSHA256(),
+			ScriptHash: panelScriptHash,
 			PanelCAPin: api.CAPINHex(),
 			PanelCN:    api.CACN(),
 			PanelURL:   panelRuntime.GRPCListenAddress,
 			Now:        time.Now,
 		})
 		api.SetInstallCommandHandler(installHandler)
+
+		// PR-2c: feed the same install-command parameters into the
+		// provision-outbound handler so its rendered curl matches what
+		// POST /agents/{id}/install-command would emit for the freshly
+		// inserted agent. GitHubScriptURL is the alternative source the
+		// wizard picks when the panel is firewalled from the agent
+		// host (typical outbound scenario).
+		api.SetProvisionOutboundDeps(&server.ProvisionOutboundDeps{
+			Queries:         queries,
+			PanelScriptURL:  panelScriptURL,
+			PanelScriptHash: panelScriptHash,
+			GitHubScriptURL: server.InstallScriptGitHubURL(),
+			PanelCAPin:      api.CAPINHex(),
+			PanelCN:         api.CACN(),
+			PanelGRPCURL:    panelRuntime.GRPCListenAddress,
+			Now:             time.Now,
+		})
 	}
 
 	// Шов 2: wire the enrollment pre-flight into the outbound supervisor pool.

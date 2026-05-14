@@ -353,6 +353,12 @@ type Server struct {
 	// transport-mode change handler notifies it when an agent's mode
 	// changes so outbound supervisors can be spawned or torn down.
 	agentTransportManager atomic.Pointer[agenttransport.Manager]
+
+	// provisionOutbound carries the dependencies the
+	// POST /api/agents/provision-outbound handler needs (typed Queries
+	// and the install-command parameters). Nil until wired in via
+	// SetProvisionOutboundDeps; the route 503s when unset.
+	provisionOutbound atomic.Pointer[ProvisionOutboundDeps]
 }
 
 // enrollmentBusAdapter adapts eventbus.Hub to the enrollment.Publisher

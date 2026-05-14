@@ -70,6 +70,10 @@ func (a *oapiAdapter) CreateAgentInstallCommand(w http.ResponseWriter, r *http.R
 	a.s.handleAgentInstallCommand().ServeHTTP(w, r)
 }
 
+func (a *oapiAdapter) ProvisionOutboundAgent(w http.ResponseWriter, r *http.Request) {
+	a.s.handleProvisionOutboundAgent().ServeHTTP(w, r)
+}
+
 func (a *oapiAdapter) ListEnrollmentTokens(w http.ResponseWriter, r *http.Request) {
 	a.s.handleListEnrollmentTokens().ServeHTTP(w, r)
 }

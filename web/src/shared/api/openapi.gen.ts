@@ -239,6 +239,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agents/provision-outbound": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create an outbound agent and return its install command
+         * @description One-call provisioning for outbound (reverse-mode) agents: inserts
+         *     the agent row, issues a 5-minute bootstrap token, and returns the
+         *     pre-baked `curl ... | sudo bash` one-liner the operator pastes on
+         *     the agent host. Combines what would otherwise be `POST /agents`
+         *     (no such endpoint today) and `POST /agents/{id}/install-command`
+         *     into a single round-trip, mirroring the simplicity of the inbound
+         *     `POST /agents/enrollment-tokens` flow.
+         *
+         *     Cancellation: if the operator backs out of the wizard before
+         *     running the command, the frontend should call
+         *     `DELETE /api/agents/{id}` (admin) to remove the orphan row. A
+         *     nightly sweep also prunes rows whose `bootstrap_expires_at` has
+         *     elapsed without a first connection.
+         */
+        post: operations["provisionOutboundAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agents/{id}/install-command": {
         parameters: {
             query?: never;
@@ -667,6 +699,79 @@ export interface components {
             version: string;
         };
         /**
+         * @description Optional per-install overrides — the wizard's "Advanced" section.
+         *     All fields nullable / omittable so the default install (with the
+         *     agent's built-in Telemt defaults) needs none of these.
+         */
+        InstallCommandAdvancedOptions: {
+            /** @description Override the agent's Telemt API URL. */
+            telemt_url?: string | null;
+            /** @description Override the agent's Telemt metrics URL. */
+            telemt_metrics_url?: string | null;
+            /**
+             * @description Authorization header value (e.g. "Bearer xxx") the agent
+             *     forwards to Telemt. Empty / omitted = no auth header.
+             */
+            telemt_auth?: string | null;
+            /**
+             * @description Opt-in: allow plain-HTTP panel URLs on non-loopback hosts.
+             *     Intended for VPN-only / private-network deploys where the
+             *     bootstrap-key handshake transits in cleartext.
+             */
+            insecure_transport?: boolean | null;
+        };
+        ProvisionOutboundAgentRequest: {
+            /**
+             * @description Operator-supplied display name. Must satisfy the same
+             *     character class enforced for inbound enrollment
+             *     (`[A-Za-z0-9._-]+`), since the value is interpolated into
+             *     the curl|bash one-liner as a CLI flag value.
+             */
+            node_name: string;
+            /**
+             * @description Canonical fleet-group UUID or friendly slug. Empty string
+             *     falls back to the operator's default fleet group.
+             */
+            fleet_group_id: string;
+            /**
+             * @description Public host:port the panel dials to reach the agent. Used
+             *     both for the agent's listen bind (derived port) and for
+             *     the panel's outbound supervisor target.
+             * @example 203.0.113.10:8443
+             */
+            dial_address: string;
+            /**
+             * @description Source from which the agent host fetches install-agent.sh.
+             *     'github' is the default for outbound because the panel is
+             *     typically firewalled from the agent host (otherwise the
+             *     operator would use inbound mode); 'panel' is supported for
+             *     cases where the agent can reach the panel during bootstrap
+             *     even though the steady-state transport is reverse.
+             * @default github
+             * @enum {string}
+             */
+            script_source: "panel" | "github";
+            advanced?: components["schemas"]["InstallCommandAdvancedOptions"];
+        };
+        /**
+         * @description Returned by `POST /api/agents/provision-outbound`. Mirrors
+         *     InstallCommandResponse plus the freshly-minted agent_id so the
+         *     wizard can poll `GET /api/agents/{id}` for the first connection
+         *     and call `DELETE /api/agents/{id}` on cancel.
+         */
+        ProvisionOutboundAgentResponse: {
+            agent_id: string;
+            /** @description Pre-baked `curl ... | sudo bash -s -- ...` one-liner. */
+            command: string;
+            /** Format: int64 */
+            expires_at_unix: number;
+            /**
+             * @description The URL the curl in the command points at — exposed so the
+             *     wizard can show the operator which source was used.
+             */
+            script_url: string;
+        };
+        /**
          * @description Pre-baked `curl ... | sudo bash -s -- ...` one-liner the
          *     operator runs on the host to install or re-bootstrap a
          *     reverse-mode agent.
@@ -1007,6 +1112,51 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    provisionOutboundAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProvisionOutboundAgentRequest"];
+            };
+        };
+        responses: {
+            /** @description Agent provisioned, install command issued. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProvisionOutboundAgentResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description node_name already in use within this fleet group. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Install-command endpoint not configured. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
         };
     };
     createAgentInstallCommand: {
