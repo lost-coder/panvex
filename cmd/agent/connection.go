@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -190,7 +191,20 @@ func runConnection(supervisorCtx context.Context, gatewayAddr string, serverName
 			nil,
 		)
 		if flushErr := reporter.Flush(connectionCtx, client); flushErr != nil {
-			slog.WarnContext(connectionCtx, "enrollment report flush failed", "error", flushErr)
+			// Connection tear-down (server-close, supervisor cancel,
+			// transport-mode switch) races the flush; the gRPC call
+			// returns context.Canceled in that window. That is not
+			// operator-actionable noise — surface it at Debug so a
+			// real flush failure on a live connection still warns.
+			if errors.Is(flushErr, context.Canceled) || connectionCtx.Err() != nil {
+				slog.DebugContext(connectionCtx, "enrollment report flush skipped (context cancelled)")
+			} else {
+				slog.WarnContext(connectionCtx, "enrollment report flush failed", "error", flushErr)
+			}
+		} else {
+			// Enrollment is one-shot. After the first successful flush, do not let
+			// subsequent reconnect cycles pollute the same enrollment_attempts row.
+			reporter.Disable()
 		}
 
 		credentialRefreshTimer := newRuntimeCredentialRefreshTimer(credentialsState, time.Now())
@@ -315,7 +329,14 @@ func runConnectionMainLoop(
 			if criticalOutbound != nil {
 				updatedCredentials, err := renewCertificateInStream(connectionCtx, credentialsState, stateFile, criticalOutbound, renewalResponses)
 				if err != nil {
-					slog.Error("in-stream certificate renewal failed", "error", err)
+					// A cancelled connection ctx (server-side close, supervisor
+					// shutdown) propagates as context.Canceled here. The
+					// reconnect loop will pick up cleanly — no operator action.
+					if errors.Is(err, context.Canceled) || connectionCtx.Err() != nil {
+						slog.Debug("in-stream certificate renewal aborted (context cancelled)")
+					} else {
+						slog.Error("in-stream certificate renewal failed", "error", err)
+					}
 					resetRuntimeCredentialRefreshTimer(credentialRefreshTimer, runtimeCertificateRenewRetry)
 					continue
 				}
@@ -332,7 +353,14 @@ func runConnectionMainLoop(
 			updatedCredentials, err := refreshRuntimeCredentialsIfNeeded(refreshCtx, stateFile, credentialsState, client, time.Now())
 			cancelRefresh()
 			if err != nil {
-				slog.Error("certificate renewal failed", "error", err)
+				// Same demotion as the in-stream path: a cancelled
+				// connectionCtx surfaces here as context.Canceled and is
+				// expected lifecycle, not an Error.
+				if errors.Is(err, context.Canceled) || connectionCtx.Err() != nil {
+					slog.Debug("certificate renewal aborted (context cancelled)")
+				} else {
+					slog.Error("certificate renewal failed", "error", err)
+				}
 				resetRuntimeCredentialRefreshTimer(credentialRefreshTimer, runtimeCertificateRenewRetry)
 				continue
 			}

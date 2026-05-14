@@ -167,6 +167,143 @@ func TestDialTransportRunOnceCancelsConnectViaParentCtx(t *testing.T) {
 	}
 }
 
+// TestDialTransportConnectTimeoutDoesNotCancelLiveStream verifies that the
+// ConnectTimeout AfterFunc fires only against the dial-setup phase: once
+// client.Connect returns a stream, the timer must be stopped so it cannot
+// later cancel connectCtx mid-session. Regression for the bug where
+// setupTimer.Stop() was deferred — the timer kept running through the
+// long-lived stream and cancelled the inherited stream ctx after the
+// ConnectTimeout window expired.
+//
+// Setup: a real in-process gRPC server that holds the Connect stream open,
+// a 50ms ConnectTimeout, and a runner that calls stream.Recv() (which blocks
+// on the connectCtx-derived stream context). With the bug the 50ms timer
+// fires while the runner is blocked in Recv(), cancels connectCtx, and Recv
+// returns a context-cancelled error. With the fix the timer is stopped once
+// Connect returns and the server's eventual graceful close drives Recv to
+// return io.EOF cleanly.
+func TestDialTransportConnectTimeoutDoesNotCancelLiveStream(t *testing.T) {
+	stub := newBlockingStubServer(t)
+	defer stub.close()
+
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: stub.caCert.Raw})
+
+	cfg := DialConfig{
+		GatewayAddr:    stub.address,
+		ServerName:     "localhost",
+		CAPEM:          string(caPEM),
+		Cert:           stub.clientCert,
+		ConnectTimeout: 50 * time.Millisecond,
+	}
+
+	runnerEntered := make(chan struct{})
+	runnerErr := make(chan error, 1)
+	runner := SessionRunner(func(_ context.Context, stream BidiStream, _ gatewayrpc.AgentGatewayClient) error {
+		close(runnerEntered)
+		// Block in Recv for ~250ms — longer than the 50ms ConnectTimeout.
+		// On the buggy code, the timer cancels connectCtx mid-flight and
+		// stream.Recv returns a context-cancelled error. On the fixed
+		// code, Recv stays blocked until we release the server.
+		_, err := stream.Recv()
+		runnerErr <- err
+		return err
+	})
+
+	tr := NewDialTransport(cfg)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- tr.RunOnce(context.Background(), runner)
+	}()
+
+	select {
+	case <-runnerEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("runner did not start within 2s")
+	}
+
+	// Wait well past the ConnectTimeout. With the bug, the timer fires at
+	// ~50ms and the runner's Recv returns immediately with context.Canceled.
+	// With the fix, Recv is still blocked here.
+	select {
+	case err := <-runnerErr:
+		t.Fatalf("runner returned during live stream (timer fired mid-session): err=%v", err)
+	case <-time.After(250 * time.Millisecond):
+		// good — Recv is still blocked, timer did not cancel the stream
+	}
+
+	// Release the server so Recv unblocks and RunOnce returns.
+	stub.release()
+
+	select {
+	case <-errCh:
+		// fine — Recv returned (likely io.EOF) and RunOnce unwound
+	case <-time.After(3 * time.Second):
+		t.Fatal("RunOnce did not return within 3s after server release")
+	}
+}
+
+// blockingStubServer is a variant of stubServer whose Connect handler holds
+// the stream open until release() is called, so the agent-side stream.Recv()
+// stays blocked instead of returning EOF immediately.
+type blockingStubServer struct {
+	*stubServer
+	releaseCh chan struct{}
+}
+
+func (s *blockingStubServer) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
+	select {
+	case <-s.releaseCh:
+		return nil
+	case <-stream.Context().Done():
+		return stream.Context().Err()
+	}
+}
+
+func (s *blockingStubServer) release() { close(s.releaseCh) }
+
+func newBlockingStubServer(t *testing.T) *blockingStubServer {
+	t.Helper()
+	caCert, caKey := mustGenerateCA(t)
+	serverCert, serverKey := mustGenerateLeaf(t, caCert, caKey, "localhost")
+	clientCert, clientKey := mustGenerateLeaf(t, caCert, caKey, "agent")
+
+	serverTLSCert := tls.Certificate{
+		Certificate: [][]byte{serverCert.Raw},
+		PrivateKey:  serverKey,
+	}
+	clientTLSCert := tls.Certificate{
+		Certificate: [][]byte{clientCert.Raw},
+		PrivateKey:  clientKey,
+	}
+
+	caPool := x509.NewCertPool()
+	caPool.AddCert(caCert)
+	serverTLSCfg := &tls.Config{
+		Certificates: []tls.Certificate{serverTLSCert},
+		ClientCAs:    caPool,
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+	}
+
+	var lc net.ListenConfig
+	lis, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+
+	gs := grpc.NewServer(grpc.Creds(credentials.NewTLS(serverTLSCfg)))
+	inner := &stubServer{
+		server:     gs,
+		listener:   lis,
+		address:    lis.Addr().String(),
+		caCert:     caCert,
+		clientCert: clientTLSCert,
+	}
+	stub := &blockingStubServer{stubServer: inner, releaseCh: make(chan struct{})}
+	gatewayrpc.RegisterAgentGatewayServer(gs, stub)
+	go gs.Serve(lis) //nolint:errcheck
+	return stub
+}
+
 // ---- listen transport test ----
 
 func TestListenTransportAcceptsIncomingStream(t *testing.T) {

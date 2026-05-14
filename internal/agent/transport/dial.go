@@ -60,12 +60,20 @@ func (t *dialTransport) RunOnce(ctx context.Context, run SessionRunner) error {
 	connectCtx, cancelConnect := context.WithCancel(ctx)
 	defer cancelConnect()
 
+	// The AfterFunc enforces a deadline only on the dial-setup phase
+	// (client.Connect). Stop the timer immediately once Connect returns so it
+	// cannot fire later and cancel connectCtx mid-stream — the stream context
+	// inherits connectCtx, so a late cancellation would surface as
+	// context.Canceled from stream.Recv() during the long-lived session.
+	var setupTimer *time.Timer
 	if t.cfg.ConnectTimeout > 0 {
-		setupTimer := time.AfterFunc(t.cfg.ConnectTimeout, cancelConnect)
-		defer setupTimer.Stop()
+		setupTimer = time.AfterFunc(t.cfg.ConnectTimeout, cancelConnect)
 	}
 
 	stream, err := client.Connect(connectCtx)
+	if setupTimer != nil {
+		setupTimer.Stop()
+	}
 	if err != nil {
 		return err
 	}

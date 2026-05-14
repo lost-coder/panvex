@@ -272,7 +272,15 @@ func runRuntimeReconnectLoop(supervisorCtx context.Context, cfg *runtimeFlags, c
 					return supervisorCtx.Err()
 				}
 				reconnectAttempt++
-				slog.Error("certificate refresh failed", "error", err)
+				// A wrapped context.Canceled at this point means the refresh
+				// RPC was torn down by a near-simultaneous shutdown — the
+				// outer ctx.Err() check above just missed it. Demote to Info
+				// so shutdown does not produce a stray Error line.
+				if errors.Is(err, context.Canceled) {
+					slog.Info("certificate refresh aborted (context cancelled)")
+				} else {
+					slog.Error("certificate refresh failed", "error", err)
+				}
 				if waitErr := waitWithCancel(supervisorCtx, reconnectDelay(reconnectAttempt)); waitErr != nil {
 					return waitErr
 				}
@@ -294,7 +302,17 @@ func runRuntimeReconnectLoop(supervisorCtx context.Context, cfg *runtimeFlags, c
 			return supervisorCtx.Err()
 		}
 		reconnectAttempt++
-		slog.Error("connection ended", "error", connErr)
+		// A connection that ends because its own connection ctx was cancelled
+		// (e.g. switch_transport_mode job dropping the stream, in-stream cert
+		// renewal triggering a reconnect, or a server-side close that races a
+		// shutdown signal) surfaces a wrapped context.Canceled here. That is
+		// not an Error condition — it's expected lifecycle. Demote to Info so
+		// the reconnect remains visible without polluting the Error stream.
+		if errors.Is(connErr, context.Canceled) {
+			slog.Info("connection ended (context cancelled); reconnecting")
+		} else {
+			slog.Error("connection ended", "error", connErr)
+		}
 		if waitErr := waitWithCancel(supervisorCtx, reconnectDelay(reconnectAttempt)); waitErr != nil {
 			return waitErr
 		}

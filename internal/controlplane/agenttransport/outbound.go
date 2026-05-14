@@ -116,8 +116,18 @@ func (s *outboundSupervisor) run(ctx context.Context) {
 		}
 		start := time.Now()
 		if err := s.connectAndServe(ctx); err != nil {
-			s.logger.Warn("agenttransport: outbound session ended",
-				"node_id", s.meta.NodeID, "addr", s.meta.DialAddress, "error", err)
+			// Suppress noise: a supervisor whose ctx is cancelled (panel
+			// shutdown, agent removal, transport-mode switch) routinely
+			// surfaces a wrapped context.Canceled here. Log at Debug so
+			// operators can still trace lifecycle if -log-level=debug,
+			// but the default Info/Warn floor stays quiet.
+			if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+				s.logger.Debug("agenttransport: outbound session ended (context cancelled)",
+					"node_id", s.meta.NodeID, "addr", s.meta.DialAddress)
+			} else {
+				s.logger.Warn("agenttransport: outbound session ended",
+					"node_id", s.meta.NodeID, "addr", s.meta.DialAddress, "error", err)
+			}
 		}
 		// Reset backoff if the session lived long enough that any prior
 		// failure-driven inflation should be considered ancient history.
@@ -159,6 +169,14 @@ func (s *outboundSupervisor) run(ctx context.Context) {
 // failed/completed before returning. A nil Recorder or a Begin error skips
 // recording — the underlying business logic is unchanged.
 func (s *outboundSupervisor) connectAndServe(ctx context.Context) error {
+	// Short-circuit on a cancelled ctx so a shutting-down panel does not
+	// spawn a new enrollment_attempts row for every backoff tick. Without
+	// this guard, Recorder.Begin races the surrounding context cancel and
+	// each failed cycle pollutes the UI timeline with a "failed (internal)"
+	// row whose only cause is "we were already stopping".
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	// Open a per-cycle attempt so the operator can see why a particular
 	// dial succeeded or failed. attemptID="" disables every subsequent
 	// recorder call (defence against Begin errors or missing recorder).

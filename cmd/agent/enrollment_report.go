@@ -39,6 +39,20 @@ type enrollmentReporter struct {
 // attempt id before any Record call has effect.
 func newEnrollmentReporter() *enrollmentReporter { return &enrollmentReporter{} }
 
+// Disable clears the bound attempt id and discards any buffered events.
+// Use after a successful flush to mark enrollment as one-shot — subsequent
+// reconnects are not enrollment events and must not pollute the same
+// enrollment_attempts row.
+func (r *enrollmentReporter) Disable() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.attemptID = ""
+	r.events = r.events[:0]
+}
+
 // Bind associates the reporter with a panel-side enrollment attempt. Empty
 // attemptID is allowed (treated as "reporting disabled"). Resetting the
 // attempt id discards any previously buffered events because they belong to
