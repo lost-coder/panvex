@@ -2,10 +2,52 @@ package main
 
 import (
 	"context"
+	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/agent/runtimeevents"
+	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
+
+// runtimeEventsPushInterval is how often the pusher drains the buffer in
+// the absence of an urgent (Warn/Error) notify. Info-level records
+// accumulated during the interval ship as a single batch.
+const runtimeEventsPushInterval = 5 * time.Second
+
+// startRuntimeEventsPusher binds the package-level runtimeEventsBuf +
+// runtimeEventsNotify (set by runRuntime) to the per-connection telemetry
+// outbound channel and spawns the pusher goroutine on streamWG. The
+// goroutine exits when connectionCtx is cancelled. No-op if the buffer
+// hasn't been initialised (e.g. unit-test wiring that bypasses runRuntime).
+func startRuntimeEventsPusher(
+	connectionCtx context.Context,
+	streamWG *sync.WaitGroup,
+	agentID string,
+	telemetryOutbound chan<- *gatewayrpc.ConnectClientMessage,
+) {
+	if runtimeEventsBuf == nil {
+		slog.DebugContext(connectionCtx, "runtime events pusher disabled (buffer not initialised)")
+		return
+	}
+	notify := runtimeEventsNotify
+	if notify == nil {
+		// No urgent-callback wiring: still run the pusher on its tick so
+		// Info events ship; urgent-immediate just degrades to "next tick".
+		notify = make(chan struct{})
+	}
+	pusher := newRuntimeEventsPusher(
+		runtimeEventsBuf,
+		sendRuntimeEventsFunc(connectionCtx, telemetryOutbound, agentID),
+		runtimeEventsPushInterval,
+		notify,
+	)
+	streamWG.Add(1)
+	go func() {
+		defer streamWG.Done()
+		pusher.Run(connectionCtx)
+	}()
+}
 
 // runtimeEventsPusher drains a runtime-event Buffer and pushes batches
 // to the panel via the caller-supplied send function. Triggers:

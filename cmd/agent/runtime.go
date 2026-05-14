@@ -117,8 +117,23 @@ func runRuntime(args []string) error {
 	// parameters and there is no aggregate state struct; introducing one
 	// purely for the buffer would touch every connection.go callsite.
 	runtimeBuf := runtimeevents.NewBuffer(200)
-	slog.SetDefault(slog.New(runtimeevents.NewHandler(inner, runtimeBuf)))
+	runtimeHandler := runtimeevents.NewHandler(inner, runtimeBuf)
+	// runtimeNotify wakes the pusher goroutine immediately whenever a Warn
+	// or Error record is appended. Buffered cap=1 + select-default in the
+	// callback guarantees the slog Handle path never blocks: if a notify
+	// is already pending, the urgent record is still buffered and the
+	// pusher will pick it up on the next iteration.
+	runtimeNotify := make(chan struct{}, 1)
+	runtimeHandler.SetUrgentCallback(func() {
+		select {
+		case runtimeNotify <- struct{}{}:
+		default:
+			// notify already pending; pusher will pick this event up next cycle.
+		}
+	})
+	slog.SetDefault(slog.New(runtimeHandler))
 	runtimeEventsBuf = runtimeBuf
+	runtimeEventsNotify = runtimeNotify
 
 	credentialsState, err := loadRuntimeCredentials(cfg.stateFile)
 	if err != nil {

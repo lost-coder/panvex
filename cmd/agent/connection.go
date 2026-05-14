@@ -212,6 +212,7 @@ func runConnection(supervisorCtx context.Context, gatewayAddr string, serverName
 			defer credentialRefreshTimer.Stop()
 		}
 		startPollingWorkers(connectionCtx, schedule, agent, telemetryOutbound)
+		startRuntimeEventsPusher(connectionCtx, &streamWG, agent.AgentID(), telemetryOutbound)
 
 		var loopErr error
 		updatedCredentials, loopErr = runConnectionMainLoop(connectionCtx, cancelConnection, credentialsState, stateFile, client, criticalOutbound, renewalResponses, credentialRefreshTimer, sendErrors)

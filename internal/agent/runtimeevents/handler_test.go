@@ -62,3 +62,20 @@ func TestHandlerEnabledDelegates(t *testing.T) {
 		t.Fatalf("Enabled(Info) should be true")
 	}
 }
+
+func TestHandlerFiresUrgentCallbackOnWarnAndError(t *testing.T) {
+	inner := slog.NewTextHandler(&bytes.Buffer{}, &slog.HandlerOptions{Level: slog.LevelInfo})
+	buf := runtimeevents.NewBuffer(10)
+	h := runtimeevents.NewHandler(inner, buf)
+	fired := 0
+	h.SetUrgentCallback(func() { fired++ })
+	lg := slog.New(h)
+
+	lg.Info("ignored")
+	lg.Warn("urgent1")
+	lg.Error("urgent2")
+
+	if fired != 2 {
+		t.Fatalf("fired = %d, want 2 (Info ignored)", fired)
+	}
+}

@@ -12,12 +12,20 @@ import (
 //
 // Handler is safe for concurrent use if the inner handler is.
 type Handler struct {
-	inner slog.Handler
-	buf   *Buffer
+	inner    slog.Handler
+	buf      *Buffer
+	onUrgent func() // optional, fired after Warn/Error is buffered; non-blocking
 }
 
 func NewHandler(inner slog.Handler, buf *Buffer) *Handler {
 	return &Handler{inner: inner, buf: buf}
+}
+
+// SetUrgentCallback installs a callback fired after a Warn or Error record
+// is buffered. The callback must be non-blocking; the only legitimate
+// implementation is a select-default send onto a notify channel.
+func (h *Handler) SetUrgentCallback(fn func()) {
+	h.onUrgent = fn
 }
 
 func (h *Handler) Enabled(ctx context.Context, lvl slog.Level) bool {
@@ -25,6 +33,7 @@ func (h *Handler) Enabled(ctx context.Context, lvl slog.Level) bool {
 }
 
 func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
+	var isUrgent bool
 	if r.Level >= slog.LevelInfo {
 		h.buf.Append(Event{
 			Ts:      r.Time,
@@ -32,16 +41,21 @@ func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
 			Message: r.Message,
 			Fields:  recordFields(r),
 		})
+		isUrgent = r.Level >= slog.LevelWarn
 	}
-	return h.inner.Handle(ctx, r)
+	err := h.inner.Handle(ctx, r)
+	if isUrgent && h.onUrgent != nil {
+		h.onUrgent()
+	}
+	return err
 }
 
 func (h *Handler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &Handler{inner: h.inner.WithAttrs(attrs), buf: h.buf}
+	return &Handler{inner: h.inner.WithAttrs(attrs), buf: h.buf, onUrgent: h.onUrgent}
 }
 
 func (h *Handler) WithGroup(name string) slog.Handler {
-	return &Handler{inner: h.inner.WithGroup(name), buf: h.buf}
+	return &Handler{inner: h.inner.WithGroup(name), buf: h.buf, onUrgent: h.onUrgent}
 }
 
 func levelString(lvl slog.Level) string {
