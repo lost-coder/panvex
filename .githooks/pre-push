@@ -41,6 +41,12 @@ if [ "${PANVEX_SKIP_PREPUSH:-}" = "1" ]; then
     exit 0
 fi
 
+echo "=== Pre-push: Mirror install-agent.sh into server package ==="
+# //go:embed cannot reference files outside the package, so we mirror
+# deploy/install-agent.sh into internal/controlplane/server/ before any
+# Go build/test/lint. See internal/controlplane/server/install_script.go.
+go generate ./internal/controlplane/server/...
+
 echo "=== Pre-push: Go lint ==="
 ~/go/bin/golangci-lint run ./...
 

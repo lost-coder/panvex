@@ -15,6 +15,16 @@ import (
 // `curl <panel>/install-agent.sh | sudo bash -s -- ...` works without a
 // dependency on an external CDN — the panel is its own distribution channel.
 //
+// The single source of truth lives at deploy/install-agent.sh (so the public
+// GitHub raw URL stays under deploy/ and matches README). //go:embed cannot
+// reference paths outside the package directory, so we mirror the file into
+// the package via `go generate` before build/test. The mirror is .gitignored;
+// the Makefile, pre-push hook, and Dockerfile all run `go generate ./...`
+// before `go build`/`go test`. A drift test (install_script_drift_test.go)
+// asserts the embedded bytes match deploy/install-agent.sh so a hand-edit
+// of the mirror cannot escape review.
+//
+//go:generate sh -c "cp ../../../deploy/install-agent.sh install_agent.sh"
 //go:embed install_agent.sh
 var installAgentScript []byte
 

@@ -73,3 +73,8 @@ TAGS
 *signing*.key
 *signing-key*.pem
 *.private.pem
+
+# go:generate mirror of deploy/install-agent.sh — canonical source lives in
+# deploy/, this copy is recreated by `go generate ./internal/controlplane/server/...`
+# before build/test (see install_script.go).
+/internal/controlplane/server/install_agent.sh

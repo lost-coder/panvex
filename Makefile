@@ -3,7 +3,8 @@
 
 .PHONY: help test test-fast test-pkg lint vuln check build build-embed \
         sqlc tidy fmt clean install-tools bench gen-settings all \
-        gen-openapi-go gen-openapi-ts gen-openapi verify-openapi
+        gen-openapi-go gen-openapi-ts gen-openapi verify-openapi \
+        gen-install-script
 
 # Default target: list available commands.
 help:
@@ -26,18 +27,27 @@ help:
 	@echo "  make install-tools Install govulncheck, golangci-lint, sqlc"
 	@echo "  make bench         Run P2-PERF-05 microbenchmarks"
 	@echo "                     (batch writer + event hub + jobs; 3s per bench)"
+	@echo "  make gen-install-script  Mirror deploy/install-agent.sh into the"
+	@echo "                     server package for //go:embed"
 
-test:
+# Canonical install-agent.sh lives in deploy/. //go:embed cannot reference
+# paths outside the package, so we mirror it into internal/controlplane/server/
+# before any build/test. The mirror is .gitignored; a drift test asserts
+# the embedded bytes match deploy/ so this step is mandatory.
+gen-install-script:
+	go generate ./internal/controlplane/server/...
+
+test: gen-install-script
 	# Mirror CI: race-suite excludes loadtest, then loadtest runs without -race.
 	# loadtest scenarios (100 concurrent Argon2id, 200-agent enroll) tip past
 	# 22 GB RSS under -race and OOM-kill on memory-constrained dev hosts.
 	go test -race -count=1 $$(go list ./... | grep -v '^github.com/lost-coder/panvex/internal/loadtest$$')
 	go test -count=1 ./internal/loadtest/...
 
-test-fast:
+test-fast: gen-install-script
 	go test -count=1 ./...
 
-test-pkg:
+test-pkg: gen-install-script
 	@if [ -z "$(PKG)" ]; then echo "usage: make test-pkg PKG=./path/to/pkg"; exit 1; fi
 	go test -race -count=1 -v $(PKG)
 
@@ -49,11 +59,11 @@ vuln:
 
 check: lint test vuln
 
-build:
+build: gen-install-script
 	go build -o bin/panvex-control-plane ./cmd/control-plane
 	go build -o bin/panvex-agent ./cmd/agent
 
-build-embed:
+build-embed: gen-install-script
 	cd web && npm ci && npm run build:embed
 	go build -tags embeddedui -o bin/panvex-control-plane ./cmd/control-plane
 

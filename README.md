@@ -65,7 +65,7 @@ typically the very first agent on a fresh control-plane), the upstream
 copy is also published:
 
 ```sh
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lost-coder/panvex/main/internal/controlplane/server/install_agent.sh)"
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lost-coder/panvex/main/deploy/install-agent.sh)"
 ```
 
 > Requires a panel URL and enrollment token (create one in **Settings → Enrollment Tokens**).

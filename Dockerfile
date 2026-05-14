@@ -35,6 +35,13 @@ COPY cmd ./cmd
 COPY internal ./internal
 COPY proto ./proto
 COPY db ./db
+# deploy/install-agent.sh is the canonical bash installer. //go:embed in
+# internal/controlplane/server/install_script.go cannot reference paths
+# outside the package, so we mirror the file into the package via
+# `go generate` before the build. The mirror is .gitignored; this step
+# also runs in the Makefile, pre-push hook, and CI.
+COPY deploy/install-agent.sh ./deploy/install-agent.sh
+RUN go generate ./internal/controlplane/server/...
 # -ldflags="-s -w"  strip symbol + DWARF tables — saves ~25% binary size.
 # -trimpath          remove $GOPATH absolute paths from the binary so
 #                    panic stacks/build IDs stay reproducible across
