@@ -54,6 +54,13 @@ jobs:
         run: |
           cd web && npm ci && npm run build:embed
 
+      # ba6aadc moved the canonical install-agent.sh to deploy/ and .gitignored
+      # the server-package mirror that //go:embed references. Without this step
+      # `go build` fails with "pattern install_agent.sh: no matching files
+      # found". Mirrors the same generate invocation used across ci.yml.
+      - name: Generate embedded install-agent.sh mirror
+        run: go generate ./internal/controlplane/server/...
+
       - name: Build binary
         env:
           GOOS: linux
