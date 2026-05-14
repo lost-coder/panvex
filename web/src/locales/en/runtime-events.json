@@ -1,0 +1,18 @@
+{
+  "section": {
+    "title": "Recent events",
+    "empty": "No events recorded yet.",
+    "live": "Live"
+  },
+  "filters": {
+    "info": "Info",
+    "warn": "Warnings",
+    "error": "Errors",
+    "all": "All levels"
+  },
+  "row": {
+    "fields": "Fields",
+    "fieldsExpand": "Show fields",
+    "fieldsCollapse": "Hide fields"
+  }
+}

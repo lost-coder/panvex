@@ -123,6 +123,7 @@ import { clientsApi } from "./clients";
 import { enrollmentApi } from "./enrollment";
 import { fleetGroupsApi } from "./fleet-groups";
 import { jobsApi } from "./jobs";
+import { runtimeEventsApi } from "./runtime-events";
 import { serversApi } from "./servers";
 import { settingsApi } from "./settings";
 import { telemetryApi } from "./telemetry";
@@ -140,6 +141,7 @@ export const apiClient = {
   ...jobsApi,
   ...enrollmentApi,
   ...fleetGroupsApi,
+  ...runtimeEventsApi,
   ...updatesApi,
   ...webhooksApi,
 };
