@@ -188,6 +188,44 @@ The same list is also visible at the
 [`/api/settings/schema`](docs/settings/reference.md) endpoint and
 documented in [docs/settings/reference.md](docs/settings/reference.md).
 
+### Logging
+
+Both binaries log via `log/slog` to stderr by default. Three controls
+are available on the command line; each backend also accepts an env
+fallback so deployments can configure without flag plumbing.
+
+| Flag | Env | Binary | Values | Default | Effect |
+|---|---|---|---|---|---|
+| `-log-level` | `PANVEX_LOG_LEVEL` | both | `debug` \| `info` \| `warn` \| `error` | `info` | Minimum level emitted. |
+| `-log-format` | `PANVEX_LOG_FORMAT` | both | `text` \| `json` | `text` | Output encoding. `json` is flat (no envelope) and ingests directly via Loki/Promtail/journald `json` parsers. |
+| `-log-file` | `PANVEX_LOG_FILE` | control-plane | path | _none_ | When set, tees stderr to the file (append). Agent logs go to stderr only — daemonise via systemd / Docker. |
+
+Both formats carry the same fields. The structured attributes per
+layer (`request_id`, `agent_id`, `attempt_id`, `job_id`, …) follow the
+conventions in [docs/superpowers/logging.md](../docs/superpowers/logging.md);
+new code should use the `slog.*Context` variants so the request-id
+correlation works through HTTP and gRPC.
+
+Typical recipes:
+
+```sh
+# Dev: verbose text on stderr
+panvex-control-plane -log-level=debug
+
+# Prod: JSON to stdout for Loki, plus a local rotation file
+PANVEX_LOG_FORMAT=json PANVEX_LOG_FILE=/var/log/panvex/panel.log \
+  panvex-control-plane
+
+# Agent under systemd: structured logs picked up by journald
+panvex-agent -log-format=json
+```
+
+The control-plane also exposes a per-attempt enrollment timeline in the
+dashboard (Server Detail → Enrollment history, plus the fleet-wide
+`/enrollment-attempts` page) and a live "Recent events" section on the
+Server Detail page that streams the agent's slog Info+ records in real
+time over the existing gRPC connection.
+
 ---
 
 ## 💻 Development
