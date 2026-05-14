@@ -26,6 +26,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/geoip"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/presence"
+	"github.com/lost-coder/panvex/internal/controlplane/runtimeevents"
 	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
 	"github.com/lost-coder/panvex/internal/controlplane/settings"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
@@ -79,6 +80,12 @@ type Server struct {
 	// must nil-check before calling. See initStoreBackedSubsystems for the
 	// wiring (only sqlite/postgres backends expose DB()).
 	enrollmentRec             *enrollment.Recorder
+	// runtimeEvents holds per-agent in-memory ring buffers of slog
+	// records shipped from agents over the Connect bidi-stream
+	// (Runtime Events Phase 3). Constructed unconditionally in
+	// lifecycle.go so handlers/tests can rely on it being non-nil
+	// regardless of whether a persistent store is wired.
+	runtimeEvents             *runtimeevents.Buffer
 	now                       func() time.Time
 	panelRuntime              PanelRuntime
 	requestRestart            func() error

@@ -20,6 +20,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/geoip"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/presence"
+	"github.com/lost-coder/panvex/internal/controlplane/runtimeevents"
 	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
 	"github.com/lost-coder/panvex/internal/controlplane/sessions"
 	"github.com/lost-coder/panvex/internal/controlplane/settings"
@@ -101,6 +102,11 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		jobs:                         jobs.NewService(),
 		presence:                     presence.NewTracker(30*time.Second, 90*time.Second),
 		events:                       eventbus.NewHub(),
+		// Runtime Events Phase 3: 500-event ring buffer per agent for
+		// slog records shipped over the Connect bidi-stream. Always
+		// constructed (independent of Store wiring) so the message
+		// dispatcher and HTTP handler can rely on a non-nil pointer.
+		runtimeEvents:                runtimeevents.New(500),
 		now:                          now,
 		panelRuntime:                 defaultPanelRuntime(options.PanelRuntime),
 		requestRestart:               options.RequestRestart,

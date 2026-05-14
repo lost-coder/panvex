@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/agenttransport"
+	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
+	"github.com/lost-coder/panvex/internal/controlplane/runtimeevents"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -122,7 +124,72 @@ func (s *Server) processRegularAgentMessage(
 		return nil
 	}
 
+	if batch := message.GetRuntimeEvents(); batch != nil {
+		s.logger.Debug(logMessageReceived, "agent_id", agentID, "type", "runtime_events")
+		s.handleRuntimeEventsBatch(agentID, batch)
+		return nil
+	}
+
 	return s.processPriorityAgentMessage(connectionCtx, agentID, message)
+}
+
+// handleRuntimeEventsBatch converts a proto RuntimeEventsBatch into the
+// panel-side runtimeevents.Event shape, appends the events to the
+// per-agent ring buffer, and publishes one runtime.event entry per
+// record on the events bus. The dashboard's /events websocket
+// subscribes to that bus so warnings and errors surface live without
+// polling. The buffer is constructed unconditionally in
+// newServerFromOptions; a nil-check is kept for defence in depth so a
+// future code path that constructs a Server without going through the
+// canonical constructor cannot panic here.
+func (s *Server) handleRuntimeEventsBatch(agentID string, batch *gatewayrpc.RuntimeEventsBatch) {
+	if batch == nil {
+		return
+	}
+	protoEvents := batch.GetEvents()
+	if len(protoEvents) == 0 {
+		return
+	}
+	events := make([]runtimeevents.Event, 0, len(protoEvents))
+	for _, e := range protoEvents {
+		if e == nil {
+			continue
+		}
+		var fields map[string]string
+		if pf := e.GetFields(); len(pf) > 0 {
+			fields = make(map[string]string, len(pf))
+			for k, v := range pf {
+				fields[k] = v
+			}
+		}
+		events = append(events, runtimeevents.Event{
+			Ts:      e.GetTs().AsTime(),
+			Level:   e.GetLevel(),
+			Message: e.GetMessage(),
+			Fields:  fields,
+		})
+	}
+	if len(events) == 0 {
+		return
+	}
+	if s.runtimeEvents != nil {
+		s.runtimeEvents.AppendBatch(agentID, events)
+	}
+	if s.events == nil {
+		return
+	}
+	for _, ev := range events {
+		s.events.Publish(eventbus.Event{
+			Type: "runtime.event",
+			Data: map[string]any{
+				"agent_id": agentID,
+				"ts":       ev.Ts,
+				"level":    ev.Level,
+				"message":  ev.Message,
+				"fields":   ev.Fields,
+			},
+		})
+	}
 }
 
 func (s *Server) processPriorityAgentMessage(ctx context.Context, agentID string, message *gatewayrpc.ConnectClientMessage) error {
