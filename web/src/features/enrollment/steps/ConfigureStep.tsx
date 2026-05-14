@@ -26,20 +26,51 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
     onGenerateToken,
     advancedOptions,
     onAdvancedOptionsChange,
+    mode,
+    onModeChange,
+    dialAddress,
+    onDialAddressChange,
+    scriptSource,
+    onScriptSourceChange,
+    scriptSourcePanelAvailable,
     loading,
     error,
   } = props;
 
+  // The mode picker only appears when the container threads both pieces
+  // of state — older callers that don't supply mode/onModeChange keep
+  // rendering the inbound-only form unchanged.
+  const showModePicker = mode !== undefined && onModeChange !== undefined;
+  const effectiveMode: "inbound" | "outbound" = mode ?? "inbound";
+  const isOutbound = effectiveMode === "outbound";
+
+  const showSourceToggle =
+    scriptSource !== undefined && onScriptSourceChange !== undefined;
+
   const [customTtl, setCustomTtl] = useState(false);
-  const [touched, setTouched] = useState<{ nodeName?: boolean; ttl?: boolean }>({});
+  const [touched, setTouched] = useState<{
+    nodeName?: boolean;
+    ttl?: boolean;
+    dialAddress?: boolean;
+  }>({});
 
   const nodeNameError = nodeName.trim() ? undefined : "Node name is required.";
   const ttlError = tokenTtl <= 0 ? "Token lifetime must be greater than zero." : undefined;
-  const hasError = Boolean(nodeNameError || ttlError);
+  // Outbound requires a host:port the panel can dial. We don't validate
+  // the full RFC here — the server enforces `net.SplitHostPort` — but a
+  // visible colon catches the most common typo before the round-trip.
+  const dialError = isOutbound
+    ? !dialAddress || !dialAddress.trim()
+      ? "Dial address is required for outbound mode."
+      : !/^\S+:\d+$/.test(dialAddress.trim())
+        ? "Dial address must be host:port (e.g. vps.example.com:8443)."
+        : undefined
+    : undefined;
+  const hasError = Boolean(nodeNameError || (!isOutbound && ttlError) || dialError);
 
   const handleGenerate = () => {
     if (hasError) {
-      setTouched({ nodeName: true, ttl: true });
+      setTouched({ nodeName: true, ttl: true, dialAddress: true });
       return;
     }
     onGenerateToken();
@@ -47,6 +78,61 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
 
   return (
     <div className="flex flex-col gap-4">
+      {showModePicker && (
+        <FormField label="Transport mode" variant="uppercase">
+          <fieldset className="flex flex-col gap-2 border-0 p-0 m-0">
+            <legend className="sr-only">Agent transport mode</legend>
+            {([
+              {
+                value: "inbound",
+                title: "Agent connects to panel",
+                detail:
+                  "Default — use when the panel is internet-reachable from the agent host.",
+              },
+              {
+                value: "outbound",
+                title: "Panel connects to agent",
+                detail:
+                  "Use when the panel is firewalled (private network / VPN) but the agent has a public address.",
+              },
+            ] as const).map((opt) => {
+              const selected = effectiveMode === opt.value;
+              const inputId = `enroll-mode-${opt.value}`;
+              return (
+                <label
+                  key={opt.value}
+                  htmlFor={inputId}
+                  className={cn(
+                    "flex items-start gap-2 rounded-xs border p-3 cursor-pointer transition-colors",
+                    selected
+                      ? "border-accent bg-accent/8"
+                      : "border-border hover:border-accent/50",
+                  )}
+                >
+                  <input
+                    id={inputId}
+                    type="radio"
+                    name="enroll-mode"
+                    value={opt.value}
+                    checked={selected}
+                    onChange={() => onModeChange?.(opt.value)}
+                    disabled={loading}
+                    aria-label={opt.title}
+                    className="mt-0.5 h-4 w-4 accent-[var(--color-accent)] cursor-pointer"
+                  />
+                  <span className="flex flex-col gap-0.5">
+                    <span className="text-xs font-medium text-fg">{opt.title}</span>
+                    <span className="text-[11px] text-fg-muted leading-snug">
+                      {opt.detail}
+                    </span>
+                  </span>
+                </label>
+              );
+            })}
+          </fieldset>
+        </FormField>
+      )}
+
       <FormField label="Node name" variant="uppercase" required>
         <Input
           type="text"
@@ -100,6 +186,34 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
         </div>
       </FormField>
 
+      {isOutbound && (
+        <FormField label="Agent dial address" variant="uppercase" required>
+          <Input
+            type="text"
+            placeholder="vps.example.com:8443"
+            value={dialAddress ?? ""}
+            onChange={(e) => onDialAddressChange?.(e.target.value)}
+            onBlur={() => setTouched((t) => ({ ...t, dialAddress: true }))}
+            disabled={loading}
+            aria-invalid={touched.dialAddress && !!dialError}
+            aria-describedby={
+              touched.dialAddress && dialError ? "enroll-dial-err" : undefined
+            }
+            className="font-mono text-xs"
+          />
+          {touched.dialAddress && dialError && (
+            <div id="enroll-dial-err" className="text-xs text-status-error mt-1">
+              {dialError}
+            </div>
+          )}
+          <div className="text-[11px] font-mono text-fg-muted mt-1">
+            The panel dials this from its egress to reach the agent. The agent will
+            listen on the matching port locally.
+          </div>
+        </FormField>
+      )}
+
+      {!isOutbound && (
       <FormField label="Token lifetime" variant="uppercase">
         <fieldset className="flex flex-wrap gap-2 border-0 p-0 m-0">
           <legend className="sr-only">Token lifetime presets</legend>
@@ -159,6 +273,7 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
           <div className="text-xs text-status-error mt-1">{ttlError}</div>
         )}
       </FormField>
+      )}
 
       {/* Telemt endpoints + auth are always visible — no collapsible
           fold. Defaults work for a local Telemt on the same host. The
@@ -232,6 +347,47 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
             </span>
           </label>
         </div>
+      )}
+
+      {showSourceToggle && (
+        <FormField label="Install-script source" variant="uppercase">
+          <fieldset className="flex flex-wrap gap-2 border-0 p-0 m-0">
+            <legend className="sr-only">Install-script source toggle</legend>
+            {([
+              {
+                value: "panel" as const,
+                label: "Panel",
+                disabled: !scriptSourcePanelAvailable,
+              },
+              { value: "github" as const, label: "GitHub", disabled: false },
+            ]).map((opt) => {
+              const pressed = scriptSource === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  aria-pressed={pressed}
+                  disabled={opt.disabled || loading}
+                  onClick={() => onScriptSourceChange?.(opt.value)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-xs text-xs transition-colors",
+                    pressed
+                      ? "bg-accent text-white"
+                      : "border border-border text-fg-muted hover:text-fg",
+                    opt.disabled && "opacity-50 cursor-not-allowed",
+                  )}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </fieldset>
+          <div className="text-[11px] font-mono text-fg-muted mt-1">
+            {scriptSource === "panel"
+              ? "Curl pulls from <panel>/install-agent.sh with SHA-256 self-check."
+              : "Curl pulls from raw.githubusercontent.com — operator pins a release tag for integrity."}
+          </div>
+        </FormField>
       )}
 
       <div className="rounded-xs bg-accent/8 border border-accent/20 p-3 text-xs text-accent">

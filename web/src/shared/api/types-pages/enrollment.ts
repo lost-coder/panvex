@@ -4,6 +4,19 @@ import type { FleetGroupOption } from "./common";
 
 export type EnrollmentStage = "pending" | "waiting" | "done";
 
+/** Wire-level transport mode. Mirrors the agents.transport_mode column
+ *  and the OpenAPI enum. "inbound" = agent dials panel (default);
+ *  "outbound" = panel dials agent on the provided dial_address. */
+export type EnrollmentMode = "inbound" | "outbound";
+
+/** Install-script source the wizard renders into the curl. Inbound
+ *  defaults to "panel" (panel-served with SHA-256 self-check); outbound
+ *  defaults to "github" because the panel is typically firewalled from
+ *  the agent host. The toggle is only rendered when the container
+ *  forwards both `scriptSourcePanelAvailable=true` (a panel URL + hash
+ *  is known) and an `onScriptSourceChange` callback. */
+export type ScriptSourceKind = "panel" | "github";
+
 export interface EnrollmentWizardProps {
   step: 1 | 2 | 3;
   // Step 1
@@ -19,6 +32,25 @@ export interface EnrollmentWizardProps {
   onCreateFleetGroup?: (() => void) | undefined;
   onTokenTtlChange: (seconds: number) => void;
   onGenerateToken: () => void;
+  // Step 1 — transport mode + outbound fields. Optional so existing
+  // callers (and the existing test fixtures) continue to render the
+  // inbound-only flow without changes; when `mode` and `onModeChange`
+  // are both provided the wizard renders a mode picker above the form.
+  mode?: EnrollmentMode | undefined;
+  onModeChange?: ((mode: EnrollmentMode) => void) | undefined;
+  /** Public host:port the panel dials when mode === "outbound". Required
+   *  in that branch; the field renders only when the picker resolves to
+   *  outbound. */
+  dialAddress?: string | undefined;
+  onDialAddressChange?: ((addr: string) => void) | undefined;
+  /** Install-script source toggle state (Advanced section). */
+  scriptSource?: ScriptSourceKind | undefined;
+  onScriptSourceChange?: ((src: ScriptSourceKind) => void) | undefined;
+  /** True when the container knows the panel install-script URL +
+   *  hash (i.e. the enrollment-tokens response carried `script_sources`).
+   *  Wizard hides the toggle when false so we don't ship a Panel option
+   *  that would render an empty URL. */
+  scriptSourcePanelAvailable?: boolean | undefined;
   // Step 2
   installCommand: string;
   tokenValue: string;

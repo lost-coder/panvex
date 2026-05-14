@@ -144,4 +144,155 @@ describe("EnrollmentWizard", () => {
     render(<EnrollmentWizard {...baseProps} step={1} nodeName="test" loading={true} />);
     expect(screen.getByText(/generating/i)).toBeInTheDocument();
   });
+
+  // ── PR-3b: transport-mode picker, dial_address field, source toggle ──
+
+  it("hides the mode picker when mode/onModeChange are not threaded", () => {
+    render(<EnrollmentWizard {...baseProps} step={1} />);
+    // Back-compat: existing AddServerContainer call sites without mode
+    // state must keep rendering the inbound-only flow unchanged.
+    expect(screen.queryByText(/agent connects to panel/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/panel connects to agent/i)).not.toBeInTheDocument();
+  });
+
+  it("renders the mode picker when mode + onModeChange are provided", () => {
+    const onModeChange = vi.fn();
+    render(
+      <EnrollmentWizard
+        {...baseProps}
+        step={1}
+        mode="inbound"
+        onModeChange={onModeChange}
+      />,
+    );
+    expect(screen.getByText(/agent connects to panel/i)).toBeInTheDocument();
+    expect(screen.getByText(/panel connects to agent/i)).toBeInTheDocument();
+  });
+
+  it("shows dial_address only when mode === outbound", () => {
+    const { rerender } = render(
+      <EnrollmentWizard
+        {...baseProps}
+        step={1}
+        mode="inbound"
+        onModeChange={vi.fn()}
+        dialAddress=""
+        onDialAddressChange={vi.fn()}
+      />,
+    );
+    expect(screen.queryByPlaceholderText(/vps\.example\.com:8443/i)).not.toBeInTheDocument();
+    // Token-lifetime presets visible for inbound (TTL belongs to the
+    // enrollment-token flow; outbound uses a fixed 5-min bootstrap).
+    expect(screen.getByRole("button", { name: /1 hour/i })).toBeInTheDocument();
+
+    rerender(
+      <EnrollmentWizard
+        {...baseProps}
+        step={1}
+        mode="outbound"
+        onModeChange={vi.fn()}
+        dialAddress=""
+        onDialAddressChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByPlaceholderText(/vps\.example\.com:8443/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /1 hour/i })).not.toBeInTheDocument();
+  });
+
+  it("validates dial_address shape before invoking onGenerateToken", async () => {
+    const user = userEvent.setup();
+    const onGenerateToken = vi.fn();
+    render(
+      <EnrollmentWizard
+        {...baseProps}
+        step={1}
+        nodeName="edge-01"
+        mode="outbound"
+        onModeChange={vi.fn()}
+        dialAddress=""
+        onDialAddressChange={vi.fn()}
+        onGenerateToken={onGenerateToken}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /generate token/i }));
+    expect(onGenerateToken).not.toHaveBeenCalled();
+    expect(screen.getByText(/dial address is required/i)).toBeInTheDocument();
+  });
+
+  it("rejects dial_address without host:port", async () => {
+    const user = userEvent.setup();
+    const onGenerateToken = vi.fn();
+    render(
+      <EnrollmentWizard
+        {...baseProps}
+        step={1}
+        nodeName="edge-01"
+        mode="outbound"
+        onModeChange={vi.fn()}
+        dialAddress="just-a-host"
+        onDialAddressChange={vi.fn()}
+        onGenerateToken={onGenerateToken}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /generate token/i }));
+    expect(onGenerateToken).not.toHaveBeenCalled();
+    expect(screen.getByText(/must be host:port/i)).toBeInTheDocument();
+  });
+
+  it("renders the source toggle when script_sources are wired", () => {
+    render(
+      <EnrollmentWizard
+        {...baseProps}
+        step={1}
+        mode="inbound"
+        onModeChange={vi.fn()}
+        scriptSource="panel"
+        onScriptSourceChange={vi.fn()}
+        scriptSourcePanelAvailable={true}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /^panel$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^github$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^panel$/i })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("disables the Panel toggle when no panel script URL is available", () => {
+    render(
+      <EnrollmentWizard
+        {...baseProps}
+        step={1}
+        mode="outbound"
+        onModeChange={vi.fn()}
+        scriptSource="github"
+        onScriptSourceChange={vi.fn()}
+        scriptSourcePanelAvailable={false}
+        dialAddress="vps.example.com:8443"
+        onDialAddressChange={vi.fn()}
+      />,
+    );
+    // Panel button is visible but disabled — operator sees the choice
+    // exists but understands why it isn't selectable.
+    const panel = screen.getByRole("button", { name: /^panel$/i });
+    expect(panel).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^github$/i })).toBeEnabled();
+  });
+
+  it("calls onModeChange when the operator switches transport", async () => {
+    const user = userEvent.setup();
+    const onModeChange = vi.fn();
+    render(
+      <EnrollmentWizard
+        {...baseProps}
+        step={1}
+        mode="inbound"
+        onModeChange={onModeChange}
+        onDialAddressChange={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByLabelText(/panel connects to agent/i, { selector: "input" }));
+    expect(onModeChange).toHaveBeenCalledWith("outbound");
+  });
 });

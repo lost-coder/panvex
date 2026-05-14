@@ -1,6 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { EnrollmentWizard } from "@/features/enrollment/EnrollmentWizard";
-import type { EnrollmentWizardProps } from "@/shared/api/types-pages/pages";
+import type {
+  EnrollmentWizardProps,
+  EnrollmentMode,
+  ScriptSourceKind,
+} from "@/shared/api/types-pages/pages";
 import { useFleetGroups } from "./hooks/useFleetGroups";
 import { useFleetGroupMutations } from "@/features/fleet-groups/hooks/useFleetGroupsFull";
 import { FleetGroupFormSheet, type FleetGroupFormData } from "@/features/fleet-groups/FleetGroupFormSheet";
@@ -9,7 +13,11 @@ import { Sheet, SheetBody, SheetContent } from "@/ui";
 import { useToast } from "@/app/providers/ToastProvider";
 import { useNavigate } from "@tanstack/react-router";
 import { apiClient } from "@/shared/api/api";
-import type { EnrollmentTokenResponse, Agent } from "@/shared/api/api";
+import type {
+  Agent,
+  EnrollmentTokenResponse,
+  ProvisionOutboundAgentResponse,
+} from "@/shared/api/api";
 import {
   DEFAULT_TELEMT_METRICS_URL,
   DEFAULT_TELEMT_URL,
@@ -71,7 +79,23 @@ export function AddServerContainer() {
     insecureTransport: false,
   });
 
+  // PR-3b: transport mode + outbound fields. Default to inbound so
+  // operators landing on the wizard see the existing flow unchanged
+  // — outbound is a deliberate radio click, not an accidental switch.
+  const [mode, setMode] = useState<EnrollmentMode>("inbound");
+  const [dialAddress, setDialAddress] = useState("");
+  // The default source flips per mode: inbound users typically have a
+  // reachable panel (Panel + SHA-256 self-check); outbound users have
+  // a firewalled panel relative to the agent host, so GitHub is the
+  // sensible default. Container nudges scriptSource whenever the
+  // operator flips mode (below).
+  const [scriptSource, setScriptSource] = useState<ScriptSourceKind>("panel");
+
   const [tokenData, setTokenData] = useState<EnrollmentTokenResponse | null>(null);
+  // PR-3b: outbound branch stores the provision response so step 2
+  // renders the pre-baked command verbatim and step 3 polls the
+  // resulting agent_id. Mutually exclusive with tokenData.
+  const [outboundData, setOutboundData] = useState<ProvisionOutboundAgentResponse | null>(null);
   // Captured at token-generation time so the displayed countdown is a
   // pure function of render. Calling Date.now() during render is flagged
   // by react-hooks/purity (7.1.x) because the value drifts across renders.
@@ -100,12 +124,62 @@ export function AddServerContainer() {
     }
   }, [fleetGroups, selectedFleetGroup]);
 
+  // Switching mode resets scriptSource to the sensible default for
+  // the new mode so an operator doesn't carry "Panel" into outbound
+  // and end up with a curl the firewalled agent can't reach. The
+  // operator can still re-pick the toggle afterwards.
+  const handleModeChange = useCallback((next: EnrollmentMode) => {
+    setMode(next);
+    setScriptSource(next === "outbound" ? "github" : "panel");
+  }, []);
+
   const panelUrl = tokenData?.panel_url ?? "";
   const tokenValue = tokenData?.value ?? "";
 
-  const installCommand = tokenData
-    ? buildInstallCommand(panelUrl, tokenValue, nodeName, advancedOptions)
+  // Panel-source URL + hash come from script_sources in the enrollment
+  // response. We expose the toggle only when both are present (script
+  // sources arrived AND hash is non-null). Falls back to GitHub URL +
+  // null hash when sources are absent (e.g. older backend).
+  const panelScriptUrl = tokenData?.script_sources?.panel.url ?? "";
+  const panelScriptSha256 = tokenData?.script_sources?.panel.sha256 ?? null;
+  const githubScriptUrl =
+    tokenData?.script_sources?.github.url ??
+    "https://raw.githubusercontent.com/lost-coder/panvex/main/deploy/install-agent.sh";
+  const scriptSourcePanelAvailable = Boolean(
+    panelScriptUrl && panelScriptSha256,
+  );
+
+  // Resolve the URL + hash the wizard renders into the curl. Outbound
+  // gets its command pre-baked by the server; only inbound builds the
+  // command client-side.
+  const inboundScriptUrl =
+    scriptSource === "panel" && scriptSourcePanelAvailable
+      ? panelScriptUrl
+      : githubScriptUrl;
+  const inboundScriptSha256 =
+    scriptSource === "panel" && scriptSourcePanelAvailable
+      ? panelScriptSha256
+      : null;
+
+  const inboundInstallCommand = tokenData
+    ? buildInstallCommand(
+        panelUrl,
+        tokenValue,
+        nodeName,
+        advancedOptions,
+        inboundScriptUrl,
+        inboundScriptSha256,
+      )
     : "";
+  const outboundInstallCommand = outboundData?.command ?? "";
+  const installCommand =
+    mode === "outbound" ? outboundInstallCommand : inboundInstallCommand;
+
+  // The shared "Token: …  Expires in: N min" footer renders either
+  // the enrollment-token value (inbound) or a short agent_id ribbon
+  // for outbound — both stay anchored at the bottom of step 2/3.
+  const wizardTokenValue =
+    mode === "outbound" ? (outboundData?.agent_id ?? "") : tokenValue;
 
   const handleGenerateToken = useCallback(async () => {
     // Validate before the network round-trip so the operator gets an
@@ -120,11 +194,43 @@ export function AddServerContainer() {
     setLoading(true);
     setError(undefined);
     try {
+      if (mode === "outbound") {
+        if (!dialAddress.trim()) {
+          setError("Dial address is required for outbound mode.");
+          return;
+        }
+        const result = await apiClient.provisionOutboundAgent({
+          node_name: nodeName,
+          fleet_group_id: selectedFleetGroup,
+          dial_address: dialAddress.trim(),
+          script_source: scriptSource,
+          advanced: {
+            telemt_url:
+              advancedOptions.telemtUrl !== DEFAULT_TELEMT_URL
+                ? advancedOptions.telemtUrl
+                : null,
+            telemt_metrics_url:
+              advancedOptions.telemtMetricsUrl !== DEFAULT_TELEMT_METRICS_URL
+                ? advancedOptions.telemtMetricsUrl
+                : null,
+            telemt_auth: advancedOptions.telemtAuth || null,
+            insecure_transport: advancedOptions.insecureTransport || null,
+          },
+        });
+        setOutboundData(result);
+        setTokenData(null);
+        setTokenExpiresInSecs(
+          Math.max(0, result.expires_at_unix - Math.floor(Date.now() / 1000)),
+        );
+        setStep(2);
+        return;
+      }
       const result = await apiClient.createEnrollmentToken({
         fleet_group_id: selectedFleetGroup,
         ttl_seconds: tokenTtl,
       });
       setTokenData(result);
+      setOutboundData(null);
       setTokenExpiresInSecs(
         Math.max(0, result.expires_at_unix - Math.floor(Date.now() / 1000)),
       );
@@ -134,7 +240,15 @@ export function AddServerContainer() {
     } finally {
       setLoading(false);
     }
-  }, [selectedFleetGroup, tokenTtl, nodeName]);
+  }, [
+    selectedFleetGroup,
+    tokenTtl,
+    nodeName,
+    mode,
+    dialAddress,
+    scriptSource,
+    advancedOptions,
+  ]);
 
   const handleInstallConfirm = useCallback(() => {
     // Bootstrap is the FIRST thing we wait on — the agent must
@@ -149,7 +263,28 @@ export function AddServerContainer() {
     setStep(3);
   }, []);
 
-  const goBack = useCallback(() => navigate({ to: "/servers" }), [navigate]);
+  // Outbound cancel/close path needs to clean up the agent row we
+  // pre-provisioned. Best-effort: if the DELETE fails the row will be
+  // pruned by the panel's sweep once the bootstrap token expires.
+  const cleanupOutbound = useCallback(async () => {
+    if (mode !== "outbound" || !outboundData?.agent_id) return;
+    try {
+      await apiClient.deregisterAgent(outboundData.agent_id);
+    } catch (err) {
+      // Don't block close on cleanup failures — show a toast so the
+      // operator knows to verify the agent list, but do not throw.
+      toast.error(
+        err instanceof Error
+          ? `Cleanup failed: ${err.message}`
+          : "Cleanup failed; the panel sweep will prune the row.",
+      );
+    }
+  }, [mode, outboundData, toast]);
+
+  const goBack = useCallback(() => {
+    void cleanupOutbound();
+    void navigate({ to: "/servers" });
+  }, [cleanupOutbound, navigate]);
 
   // Apply the three-stage progression once we've picked an agent to follow.
   // Returns true when all three stages landed (caller should stop polling).
@@ -174,8 +309,10 @@ export function AddServerContainer() {
     return false;
   }, []);
 
+  // Inbound polling: watches enrollment-tokens + agents for the
+  // freshly-bootstrapped agent. Unchanged from the pre-PR-3b flow.
   useEffect(() => {
-    if (step !== 3 || !tokenValue) return;
+    if (step !== 3 || mode !== "inbound" || !tokenValue) return;
 
     let cancelled = false;
     let consecutiveFailures = 0;
@@ -232,7 +369,57 @@ export function AddServerContainer() {
     return () => {
       cancelled = true;
     };
-  }, [step, tokenValue, nodeName, applyAgentStatus]);
+  }, [step, mode, tokenValue, nodeName, applyAgentStatus]);
+
+  // Outbound polling: the agent_id is already known (we created it).
+  // We just wait for the panel's outbound supervisor to land a session
+  // — same three stages but bootstrap is "done" as soon as the agent
+  // record exists. Gateway/firstData fall out of `presence_state` and
+  // `runtime` the same way as inbound.
+  useEffect(() => {
+    if (step !== 3 || mode !== "outbound" || !outboundData?.agent_id) return;
+
+    const targetId = outboundData.agent_id;
+    let cancelled = false;
+    let consecutiveFailures = 0;
+
+    setConnectionStatus((prev) =>
+      prev.bootstrap === "done" ? prev : { ...prev, bootstrap: "done" },
+    );
+
+    const probeOnce = async (): Promise<boolean> => {
+      const agents: Agent[] = await apiClient.agents();
+      const match = agents.find((a) => a.id === targetId);
+      if (match) return applyAgentStatus(match);
+      // Row vanished mid-poll — only happens if the operator (or another
+      // admin) deregistered the agent while the wizard was watching.
+      // Surface as an error so the operator can restart.
+      setError("Provisioned agent record is missing — restart the wizard.");
+      return true;
+    };
+
+    const poll = async () => {
+      while (!cancelled) {
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+        if (cancelled) break;
+        try {
+          if (await probeOnce()) return;
+          consecutiveFailures = 0;
+        } catch (err) {
+          consecutiveFailures++;
+          if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+            const reason = err instanceof Error ? `: ${err.message}` : ".";
+            setError(`Probe failed ${consecutiveFailures}× in a row${reason}`);
+            return;
+          }
+        }
+      }
+    };
+    void poll();
+    return () => {
+      cancelled = true;
+    };
+  }, [step, mode, outboundData, applyAgentStatus]);
 
   const fleetGroupOptions = fleetGroups.map((g) => ({
     id: g.id,
@@ -297,8 +484,15 @@ export function AddServerContainer() {
           }}
           onTokenTtlChange={setTokenTtl}
           onGenerateToken={handleGenerateToken}
+          mode={mode}
+          onModeChange={handleModeChange}
+          dialAddress={dialAddress}
+          onDialAddressChange={setDialAddress}
+          scriptSource={scriptSource}
+          onScriptSourceChange={setScriptSource}
+          scriptSourcePanelAvailable={scriptSourcePanelAvailable}
           installCommand={installCommand}
-          tokenValue={tokenValue}
+          tokenValue={wizardTokenValue}
           tokenExpiresInSecs={tokenExpiresInSecs}
           advancedOptions={advancedOptions}
           onAdvancedOptionsChange={setAdvancedOptions}
@@ -324,8 +518,12 @@ export function AddServerContainer() {
           can see exactly which step the agent reached (or which one
           failed). Hidden until the agent is known — the wizard's
           built-in three-stage status covers the pre-bootstrap window.
+          For outbound we already have the id from provision response,
+          so the timeline lights up immediately.
         */}
-        <EnrollmentLiveSection agentId={connectedAgent?.id ?? null} />
+        <EnrollmentLiveSection
+          agentId={connectedAgent?.id ?? outboundData?.agent_id ?? null}
+        />
       </section>
 
       <Sheet
