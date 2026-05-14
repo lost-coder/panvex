@@ -1,6 +1,7 @@
 package presence
 
 import (
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -20,6 +21,12 @@ const (
 type agentPresence struct {
 	connectedAt time.Time
 	lastSeenAt  time.Time
+	// lastState caches the most recently Evaluate-derived state so we can
+	// emit a single Info-level "presence transition" log only when the
+	// derived state actually changes. The zero value (empty string) means
+	// "never evaluated"; the first Evaluate after MarkConnected establishes
+	// the baseline without logging.
+	lastState State
 }
 
 // Tracker evaluates agent liveness from connect and heartbeat timestamps.
@@ -97,22 +104,49 @@ func (t *Tracker) ConnectedAt(agentID string) (time.Time, bool) {
 }
 
 // Evaluate returns the derived liveness state for the requested agent.
+//
+// As a side effect, Evaluate logs a single Info-level "presence transition"
+// event when the derived state differs from the previously observed state
+// for the same agent. Per-tick "no change" evaluations stay silent. The
+// transition log is the single point at which presence flips are surfaced
+// (P2-LOG-09 / L-09); callers that just want the raw state pay the same
+// cost they always did.
 func (t *Tracker) Evaluate(agentID string, now time.Time) State {
-	t.mu.RLock()
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	presence, ok := t.agentTimestamps[agentID]
-	t.mu.RUnlock()
 	if !ok {
 		return StateOffline
 	}
 
 	idle := now.UTC().Sub(presence.lastSeenAt)
-	if idle >= t.offlineAfter {
-		return StateOffline
+	var next State
+	switch {
+	case idle >= t.offlineAfter:
+		next = StateOffline
+	case idle >= t.degradedAfter:
+		next = StateDegraded
+	default:
+		next = StateOnline
 	}
 
-	if idle >= t.degradedAfter {
-		return StateDegraded
+	prev := presence.lastState
+	if prev != "" && prev != next {
+		// Emit Info on every real transition. No ctx is available here —
+		// Evaluate is invoked from request handlers and background metric
+		// pollers alike; using slog.Info propagates default attrs but
+		// drops the per-request span linkage. That's acceptable for an
+		// agent-level lifecycle event.
+		slog.Info("presence transition",
+			"agent_id", agentID,
+			"from", string(prev),
+			"to", string(next),
+		)
 	}
-
-	return StateOnline
+	if prev != next {
+		presence.lastState = next
+		t.agentTimestamps[agentID] = presence
+	}
+	return next
 }
