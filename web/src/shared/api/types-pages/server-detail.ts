@@ -117,4 +117,11 @@ export interface ServerDetailPageProps {
    * presentational page can render in unit tests without a QueryClient.
    */
   enrollmentHistorySlot?: import("react").ReactNode;
+  /**
+   * Optional render slot for the Phase-3 runtime-events block. The
+   * container supplies a wired `<RuntimeEvents agentId=… />`; we accept
+   * it as a node so this presentational page stays decoupled from the
+   * QueryClient + WebSocket dependencies the hook pulls in.
+   */
+  runtimeEventsSlot?: import("react").ReactNode;
 }
