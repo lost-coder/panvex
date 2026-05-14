@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { MoreVertical } from "lucide-react";
 
 export interface ServerActionsDropdownProps {
@@ -16,6 +17,7 @@ export function ServerActionsDropdown({
   onChangeFleetGroup,
   onDeregister,
 }: Readonly<ServerActionsDropdownProps>) {
+  const { t } = useTranslation("servers");
   const [open, setOpen] = React.useState(false);
   return (
     <div className="relative">
@@ -23,8 +25,8 @@ export function ServerActionsDropdown({
         type="button"
         onClick={() => setOpen((o) => !o)}
         className="p-1.5 rounded-xs hover:bg-white/10 transition-colors text-fg-muted hover:text-fg"
-        title="Server actions"
-        aria-label="Server actions"
+        title={t("detail.actions.title")}
+        aria-label={t("detail.actions.title")}
         aria-haspopup="menu"
         aria-expanded={open}
       >
@@ -54,7 +56,7 @@ export function ServerActionsDropdown({
               }}
               className="px-3 py-2 text-left text-sm text-fg hover:bg-bg-card-hover transition-colors"
             >
-              Reload Runtime
+              {t("detail.actions.reload")}
             </button>
             {onBoostDetail && (
               <button
@@ -64,7 +66,7 @@ export function ServerActionsDropdown({
                 }}
                 className="px-3 py-2 text-left text-sm text-fg hover:bg-bg-card-hover transition-colors"
               >
-                Refresh Diagnostics
+                {t("detail.actions.refreshDiagnostics")}
               </button>
             )}
             {onRename && (
@@ -75,7 +77,7 @@ export function ServerActionsDropdown({
                 }}
                 className="px-3 py-2 text-left text-sm text-fg hover:bg-bg-card-hover transition-colors"
               >
-                Rename Server
+                {t("detail.actions.rename")}
               </button>
             )}
             {onChangeFleetGroup && (
@@ -86,7 +88,7 @@ export function ServerActionsDropdown({
                 }}
                 className="px-3 py-2 text-left text-sm text-fg hover:bg-bg-card-hover transition-colors"
               >
-                Change Fleet Group
+                {t("detail.actions.changeFleetGroup")}
               </button>
             )}
             {onDeregister && (
@@ -99,7 +101,7 @@ export function ServerActionsDropdown({
                   }}
                   className="px-3 py-2 text-left text-sm text-status-error hover:bg-bg-card-hover transition-colors"
                 >
-                  Deregister Server
+                  {t("detail.actions.deregister")}
                 </button>
               </>
             )}

@@ -8,6 +8,9 @@
 // would force ClientsPage to learn two import paths for the same domain.
 /* eslint-disable react-refresh/only-export-components */
 
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
+
 import {
   Badge,
   MonoValue,
@@ -35,10 +38,11 @@ export function effectiveClientStatus(
 }
 
 export function ClientStatusBadge({ status }: Readonly<{ status: EffectiveClientStatus }>) {
+  const { t } = useTranslation("clients");
   const map = {
-    active: { label: "Active", variant: "ok" as const },
-    disabled: { label: "Disabled", variant: "default" as const },
-    expired: { label: "Expired", variant: "error" as const },
+    active: { label: t("statusBadge.active"), variant: "ok" as const },
+    disabled: { label: t("statusBadge.disabled"), variant: "default" as const },
+    expired: { label: t("statusBadge.expired"), variant: "error" as const },
   };
   const { label, variant } = map[status];
   return <Badge variant={variant}>{label}</Badge>;
@@ -73,20 +77,25 @@ export function ClientTrafficCell({ used, quota, nodes }: Readonly<{ used: numbe
   );
 }
 
-export function ClientExpiryCell({ rfc, nowSec }: Readonly<{ rfc: string; nowSec: number }>) {
-  if (!rfc) return <span className="text-[11px] font-mono text-fg-muted">Never</span>;
-  const t = Date.parse(rfc);
-  if (!Number.isFinite(t)) return <span className="text-[11px] font-mono text-fg-muted">—</span>;
-  const days = Math.floor((t / 1000 - nowSec) / 86_400);
+export function ClientExpiryCell({
+  rfc,
+  nowSec,
+  t,
+}: Readonly<{ rfc: string; nowSec: number; t: TFunction<"clients"> }>) {
+  if (!rfc) return <span className="text-[11px] font-mono text-fg-muted">{t("expiry.never")}</span>;
+  const parsed = Date.parse(rfc);
+  if (!Number.isFinite(parsed))
+    return <span className="text-[11px] font-mono text-fg-muted">{t("expiry.unknown")}</span>;
+  const days = Math.floor((parsed / 1000 - nowSec) / 86_400);
   const tone = (() => {
     if (days < 0) return "text-status-error";
     if (days < 7) return "text-status-warn";
     return "text-fg-muted";
   })();
   const subtitle = (() => {
-    if (days < 0) return `${Math.abs(days)}d ago`;
-    if (days === 0) return "today";
-    return `in ${days}d`;
+    if (days < 0) return t("expiry.agoDays", { count: Math.abs(days) });
+    if (days === 0) return t("expiry.today");
+    return t("expiry.inDays", { count: days });
   })();
   return (
     <div className="flex flex-col">

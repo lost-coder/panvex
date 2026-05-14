@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { FieldLabel, MonoValue } from "@/ui/primitives";
 import { coverageColor } from "@/ui/lib/status";
 import type { ServerDcData } from "@/shared/api/types-pages/pages";
@@ -10,6 +11,7 @@ function rttClass(rttMs: number): string | undefined {
 }
 
 export function DcTable({ dcs }: Readonly<{ dcs: ServerDcData[] }>) {
+  const { t } = useTranslation("servers");
   const [expandedDc, setExpandedDc] = useState<number | null>(null);
 
   return (
@@ -19,25 +21,25 @@ export function DcTable({ dcs }: Readonly<{ dcs: ServerDcData[] }>) {
           <tr className="border-b border-border bg-bg-card">
             <th className="w-8 px-2 py-2" />
             <th className="px-3 py-2 text-left">
-              <FieldLabel>DC</FieldLabel>
+              <FieldLabel>{t("detail.dcTable.dc")}</FieldLabel>
             </th>
             <th className="px-3 py-2 text-left">
-              <FieldLabel>Available%</FieldLabel>
+              <FieldLabel>{t("detail.dcTable.availablePct")}</FieldLabel>
             </th>
             <th className="px-3 py-2 text-left">
-              <FieldLabel>Writers</FieldLabel>
+              <FieldLabel>{t("detail.dcTable.writers")}</FieldLabel>
             </th>
             <th className="px-3 py-2 text-left">
-              <FieldLabel>Coverage%</FieldLabel>
+              <FieldLabel>{t("detail.dcTable.coveragePct")}</FieldLabel>
             </th>
             <th className="px-3 py-2 text-left">
-              <FieldLabel>Fresh%</FieldLabel>
+              <FieldLabel>{t("detail.dcTable.freshPct")}</FieldLabel>
             </th>
             <th className="px-3 py-2 text-left">
-              <FieldLabel>RTT</FieldLabel>
+              <FieldLabel>{t("detail.dcTable.rtt")}</FieldLabel>
             </th>
             <th className="px-3 py-2 text-left">
-              <FieldLabel>Load</FieldLabel>
+              <FieldLabel>{t("detail.dcTable.load")}</FieldLabel>
             </th>
           </tr>
         </thead>
@@ -45,7 +47,7 @@ export function DcTable({ dcs }: Readonly<{ dcs: ServerDcData[] }>) {
           {dcs.length === 0 && (
             <tr>
               <td colSpan={9} className="px-3 py-6 text-center text-fg-muted text-sm">
-                No DC data
+                {t("detail.dataCenters.noDc")}
               </td>
             </tr>
           )}
@@ -60,7 +62,7 @@ export function DcTable({ dcs }: Readonly<{ dcs: ServerDcData[] }>) {
                   {expandedDc === row.dc ? "▾" : "›"}
                 </td>
                 <td className="px-3 py-2">
-                  <span className="font-mono text-xs font-semibold text-fg">DC{row.dc}</span>
+                  <span className="font-mono text-xs font-semibold text-fg">{`DC${row.dc}`}</span>
                 </td>
                 <td className="px-3 py-2">
                   <MonoValue className={row.availablePct < 100 ? "text-status-warn" : undefined}>
@@ -99,27 +101,34 @@ export function DcTable({ dcs }: Readonly<{ dcs: ServerDcData[] }>) {
                       {/* Floor info */}
                       <div className="flex flex-wrap gap-4 text-xs">
                         <div className="flex flex-col gap-0.5">
-                          <span className="text-label-compact">Floor policy</span>
+                          <span className="text-label-compact">{t("detail.dcTable.floorPolicy")}</span>
                           <span className="font-mono text-fg">
-                            min: {row.floorMin} · target: {row.floorTarget} · max: {row.floorMax}
+                            {t("detail.dcTable.floorValue", {
+                              min: row.floorMin,
+                              target: row.floorTarget,
+                              max: row.floorMax,
+                            })}
                             {row.floorCapped && (
-                              <span className="text-status-warn ml-2">⚠ capped</span>
+                              <span className="text-status-warn ml-2">{"⚠ "}{t("detail.dcTable.capped")}</span>
                             )}
                           </span>
                         </div>
                         <div className="flex flex-col gap-0.5">
-                          <span className="text-label-compact">Endpoints</span>
+                          <span className="text-label-compact">{t("detail.dcTable.endpoints")}</span>
                           <MonoValue>
-                            {row.availableEndpoints}/{row.endpoints.length} available
+                            {t("detail.dcTable.endpointsAvailable", {
+                              available: row.availableEndpoints,
+                              total: row.endpoints.length,
+                            })}
                           </MonoValue>
                         </div>
                       </div>
                       {/* Endpoint writers */}
                       <div className="flex flex-col gap-1">
-                        <span className="text-label-compact">Endpoint Writers</span>
+                        <span className="text-label-compact">{t("detail.dcTable.endpointWriters")}</span>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-1">
                           {row.endpointWriters.length === 0 ? (
-                            <span className="text-xs text-fg-muted">No endpoint data</span>
+                            <span className="text-xs text-fg-muted">{t("detail.dcTable.noEndpointData")}</span>
                           ) : (
                             row.endpointWriters.map((ew) => (
                               <div
@@ -130,7 +139,7 @@ export function DcTable({ dcs }: Readonly<{ dcs: ServerDcData[] }>) {
                                 <span
                                   className={`font-mono text-xs shrink-0 ${ew.activeWriters === 0 ? "text-status-warn" : "text-fg-muted"}`}
                                 >
-                                  {ew.activeWriters} {ew.activeWriters === 1 ? "writer" : "writers"}
+                                  {t("detail.dcTable.writers", { count: ew.activeWriters })}
                                   {ew.activeWriters === 0 && " ⚠"}
                                 </span>
                               </div>

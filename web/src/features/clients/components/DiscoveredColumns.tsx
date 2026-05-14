@@ -5,6 +5,9 @@
 // R-Q-24: factory + helper co-located by design (same as ClientsPageCells).
 /* eslint-disable react-refresh/only-export-components */
 
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
+
 import {
   Badge,
   Button,
@@ -15,10 +18,12 @@ import {
 import type { DiscoveredGroup } from "@/features/clients/lib/groupDiscovered";
 
 export function DiscoveredStatusPill({ status }: Readonly<{ status: DiscoveredGroup["status"] }>) {
-  if (status === "adopted") return <Badge variant="ok">Adopted</Badge>;
-  if (status === "ignored") return <Badge variant="default">Ignored</Badge>;
-  if (status === "mixed") return <Badge variant="warn">Mixed</Badge>;
-  return <Badge variant="warn">Pending</Badge>;
+  const { t } = useTranslation("clients");
+  if (status === "adopted") return <Badge variant="ok">{t("discovered.statusPill.adopted")}</Badge>;
+  if (status === "ignored")
+    return <Badge variant="default">{t("discovered.statusPill.ignored")}</Badge>;
+  if (status === "mixed") return <Badge variant="warn">{t("discovered.statusPill.mixed")}</Badge>;
+  return <Badge variant="warn">{t("discovered.statusPill.pending")}</Badge>;
 }
 
 function rowDotStatus(row: DiscoveredGroup): "ok" | "warn" | "error" {
@@ -42,10 +47,11 @@ export interface DiscoveredColumnsOptions {
   onIgnore?: ((ids: string[]) => void) | undefined;
   busy?: boolean | undefined;
   withActions: boolean;
+  t: TFunction<"clients">;
 }
 
 export function buildDiscoveredColumns(opts: Readonly<DiscoveredColumnsOptions>) {
-  const { selection, onAdopt, onIgnore, busy, withActions } = opts;
+  const { selection, onAdopt, onIgnore, busy, withActions, t } = opts;
   const cols: Array<{
     key: string;
     header: string;
@@ -62,7 +68,7 @@ export function buildDiscoveredColumns(opts: Readonly<DiscoveredColumnsOptions>)
       header: (
         <input
           type="checkbox"
-          aria-label="Select all on this page"
+          aria-label={t("discovered.table.selectAll")}
           checked={selection.allSelected}
           ref={(el) => {
             if (el) el.indeterminate = selection.someSelected && !selection.allSelected;
@@ -75,7 +81,7 @@ export function buildDiscoveredColumns(opts: Readonly<DiscoveredColumnsOptions>)
       render: (row) => (
         <input
           type="checkbox"
-          aria-label={`Select ${row.clientName}`}
+          aria-label={t("discovered.table.selectOne", { name: row.clientName })}
           checked={selection.selected.has(row.key)}
           onChange={() => selection.onToggle(row.key)}
           onClick={(e) => e.stopPropagation()}
@@ -89,14 +95,15 @@ export function buildDiscoveredColumns(opts: Readonly<DiscoveredColumnsOptions>)
   cols.push(
     {
       key: "client",
-      header: "Client",
+      header: t("discovered.table.client"),
       render: (row) => (
         <div className="flex items-center gap-2 min-w-0">
           <StatusDot status={rowDotStatus(row)} />
           <span className="font-medium text-fg truncate">{row.clientName}</span>
           {(() => {
-            if (row.hasNameConflict) return <Badge variant="error">name conflict</Badge>;
-            if (row.hasConflict) return <Badge variant="warn">conflict</Badge>;
+            if (row.hasNameConflict)
+              return <Badge variant="error">{t("discovered.badges.nameConflict")}</Badge>;
+            if (row.hasConflict) return <Badge variant="warn">{t("discovered.badges.conflict")}</Badge>;
             return null;
           })()}
         </div>
@@ -105,7 +112,7 @@ export function buildDiscoveredColumns(opts: Readonly<DiscoveredColumnsOptions>)
     },
     {
       key: "nodes",
-      header: "Discovered on",
+      header: t("discovered.table.discoveredOn"),
       render: (row) => (
         <div className="flex flex-wrap gap-1 min-w-0">
           {row.discoveredOn.length === 0 ? (
@@ -129,11 +136,12 @@ export function buildDiscoveredColumns(opts: Readonly<DiscoveredColumnsOptions>)
     },
     {
       key: "usage",
-      header: "Usage",
+      header: t("discovered.table.usage"),
       render: (row) => (
         <div className="flex flex-col font-mono text-[11px]">
           <span className="text-fg tabular-nums">
-            {row.currentConnections} conns · {row.activeUniqueIps} IPs
+            {row.currentConnections} {t("table.connsSuffix")} · {row.activeUniqueIps}{" "}
+            {t("table.ipsSuffix")}
           </span>
           <span className="text-fg-muted tabular-nums">
             {formatBytes(row.totalOctets)}
@@ -145,7 +153,7 @@ export function buildDiscoveredColumns(opts: Readonly<DiscoveredColumnsOptions>)
     },
     {
       key: "discovered",
-      header: "Discovered at",
+      header: t("discovered.table.discoveredAt"),
       render: (row) => (
         <span className="text-[11px] font-mono text-fg-muted tabular-nums">
           {Number.isFinite(row.discoveredAtUnix) && row.discoveredAtUnix > 0
@@ -157,7 +165,7 @@ export function buildDiscoveredColumns(opts: Readonly<DiscoveredColumnsOptions>)
     },
     {
       key: "status",
-      header: "Status",
+      header: t("discovered.table.status"),
       render: (row) => <DiscoveredStatusPill status={row.status} />,
       className: "w-[110px]",
     },
@@ -177,7 +185,7 @@ export function buildDiscoveredColumns(opts: Readonly<DiscoveredColumnsOptions>)
               onAdopt?.(row.ids);
             }}
           >
-            Adopt
+            {t("discovered.table.adopt")}
           </Button>
           <Button
             size="sm"
@@ -188,7 +196,7 @@ export function buildDiscoveredColumns(opts: Readonly<DiscoveredColumnsOptions>)
               onIgnore?.(row.ids);
             }}
           >
-            Ignore
+            {t("discovered.table.ignore")}
           </Button>
         </div>
       ),

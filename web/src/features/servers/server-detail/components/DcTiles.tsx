@@ -4,6 +4,7 @@
 // on this file only.
 /* eslint-disable react-refresh/only-export-components */
 import { memo } from "react";
+import { useTranslation } from "react-i18next";
 
 import { cn } from "@/ui";
 import type { ServerDcData } from "@/shared/api/types-pages/pages";
@@ -16,6 +17,7 @@ function rttClass(rttMs: number): string {
 
 // ─── 12-DC grid of tiles (problem-first ordering) ─────────────────────
 function DcTile({ dc, onClick }: Readonly<{ dc: ServerDcData; onClick: () => void }>) {
+  const { t } = useTranslation("servers");
   const status: "ok" | "warn" | "error" = (() => {
     if (dc.coveragePct < 70) return "error";
     if (dc.coveragePct < 100) return "warn";
@@ -46,7 +48,7 @@ function DcTile({ dc, onClick }: Readonly<{ dc: ServerDcData; onClick: () => voi
       )}
     >
       <div className="flex items-center justify-between">
-        <span className="text-xs font-mono font-semibold text-fg">DC{dc.dc}</span>
+        <span className="text-xs font-mono font-semibold text-fg">{`DC${dc.dc}`}</span>
         <span className={cn("h-1.5 w-1.5 rounded-full", toneBar)} />
       </div>
       <div className="flex items-baseline gap-1">
@@ -60,18 +62,18 @@ function DcTile({ dc, onClick }: Readonly<{ dc: ServerDcData; onClick: () => voi
       </div>
       <div className="flex items-center justify-between text-[10px] font-mono text-fg-muted">
         <span>
-          w{" "}
+          {t("detail.dcTileLabels.writers")}{" "}
           <span className={cn(dc.aliveWriters < dc.requiredWriters ? "text-status-warn" : "text-fg")}>
             {dc.aliveWriters}/{dc.requiredWriters}
           </span>
         </span>
         <span>
-          rtt{" "}
+          {t("detail.dcTileLabels.rtt")}{" "}
           <span className={cn(rttClass(dc.rttMs ?? 0))}>
             {dc.rttMs ?? "—"}
           </span>
         </span>
-        <span>load {Math.round(dc.load)}%</span>
+        <span>{t("detail.dcTileLabels.load", { value: Math.round(dc.load) })}</span>
       </div>
     </button>
   );

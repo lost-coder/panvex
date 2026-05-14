@@ -1,6 +1,7 @@
 // P3-FE-01: recomposed locally from UI-kit primitives.
 // Phase-7 redesign: pulse row + role chips + denser table.
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Badge,
   Button,
@@ -43,17 +44,20 @@ function AvatarInitial({ user }: Readonly<{ user: UserListItem }>) {
   );
 }
 
-function formatRelative(iso: string | undefined) {
-  if (!iso) return "—";
-  const t = Date.parse(iso);
-  if (!Number.isFinite(t)) return "—";
-  const diff = Math.floor((Date.now() - t) / 1000);
-  if (diff < 60) return "just now";
-  if (diff < 3_600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86_400) return `${Math.floor(diff / 3_600)}h ago`;
-  if (diff < 30 * 86_400) return `${Math.floor(diff / 86_400)}d ago`;
-  const d = new Date(t);
-  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+function useFormatRelative() {
+  const { t } = useTranslation("users");
+  return (iso: string | undefined) => {
+    if (!iso) return "—";
+    const ts = Date.parse(iso);
+    if (!Number.isFinite(ts)) return "—";
+    const diff = Math.floor((Date.now() - ts) / 1000);
+    if (diff < 60) return t("relative.justNow");
+    if (diff < 3_600) return t("relative.minutesAgo", { count: Math.floor(diff / 60) });
+    if (diff < 86_400) return t("relative.hoursAgo", { count: Math.floor(diff / 3_600) });
+    if (diff < 30 * 86_400) return t("relative.daysAgo", { count: Math.floor(diff / 86_400) });
+    const d = new Date(ts);
+    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  };
 }
 
 type TickTone = "default" | "ok" | "warn" | "error";
@@ -75,6 +79,8 @@ export function UsersManagementPage({
   onResetTotp,
   sheet,
 }: Readonly<UsersManagementPageProps>) {
+  const { t } = useTranslation("users");
+  const formatRelative = useFormatRelative();
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
 
@@ -100,14 +106,14 @@ export function UsersManagementPage({
   const columns = [
     {
       key: "user",
-      header: "User",
+      header: t("table.user"),
       render: (u: Readonly<UserListItem>) => (
         <div className="flex items-center gap-3 min-w-0">
           <AvatarInitial user={u} />
           <div className="flex flex-col min-w-0">
             <span className="text-sm font-medium text-fg truncate">{u.username}</span>
             <span className="text-[10px] font-mono text-fg-muted">
-              Added {formatRelative(u.createdAt)}
+              {t("table.addedRelative", { when: formatRelative(u.createdAt) })}
             </span>
           </div>
         </div>
@@ -116,7 +122,7 @@ export function UsersManagementPage({
     },
     {
       key: "role",
-      header: "Role",
+      header: t("table.role"),
       render: (u: Readonly<UserListItem>) => (
         <Badge variant={roleVariant[u.role] ?? "default"}>{u.role}</Badge>
       ),
@@ -124,11 +130,11 @@ export function UsersManagementPage({
     },
     {
       key: "totp",
-      header: "2FA",
+      header: t("table.totp"),
       render: (u: Readonly<UserListItem>) => (
         <StatusLabel
           tone={u.totpEnabled ? "ok" : "warn"}
-          label={u.totpEnabled ? "Enabled" : "Off"}
+          label={u.totpEnabled ? t("totp.enabled") : t("totp.disabled")}
         />
       ),
       className: "w-[110px]",
@@ -139,11 +145,11 @@ export function UsersManagementPage({
       render: (u: Readonly<UserListItem>) => (
         <div className="flex gap-1 justify-end">
           <Button variant="ghost" size="sm" onClick={() => onEdit(u.id)}>
-            Edit
+            {t("actions.edit")}
           </Button>
           {u.totpEnabled && (
             <Button variant="ghost" size="sm" onClick={() => onResetTotp(u.id)}>
-              Reset 2FA
+              {t("actions.resetTotp")}
             </Button>
           )}
           <Button
@@ -152,7 +158,7 @@ export function UsersManagementPage({
             onClick={() => onDelete(u.id)}
             className="text-status-error hover:text-status-error"
           >
-            Delete
+            {t("actions.delete")}
           </Button>
         </div>
       ),
@@ -166,11 +172,11 @@ export function UsersManagementPage({
   return (
     <div className="flex flex-col">
       <PageHeader
-        title="User Management"
-        subtitle={`${users.length} user${users.length === 1 ? "" : "s"} · panel access`}
+        title={t("page.title")}
+        subtitle={t("page.subtitle", { count: users.length })}
         trailing={
           <Button size="sm" onClick={onAdd}>
-            Add User
+            {t("page.add")}
           </Button>
         }
       />
@@ -179,25 +185,25 @@ export function UsersManagementPage({
         <PulseRow
           ticks={[
             {
-              label: "Total",
+              label: t("pulse.total"),
               value: counts.total.toLocaleString(),
-              hint: `${counts.viewer} viewer${counts.viewer === 1 ? "" : "s"}`,
+              hint: t("pulse.totalHint", { count: counts.viewer }),
             },
             {
-              label: "Admins",
+              label: t("pulse.admins"),
               value: counts.admin.toLocaleString(),
-              hint: counts.admin === 0 ? "no admins" : "full access",
+              hint: counts.admin === 0 ? t("pulse.adminsNone") : t("pulse.adminsFullAccess"),
               tone: counts.admin === 0 ? "error" : "default",
             },
             {
-              label: "Operators",
+              label: t("pulse.operators"),
               value: counts.operator.toLocaleString(),
-              hint: "mutate nodes & clients",
+              hint: t("pulse.operatorsHint"),
             },
             {
-              label: "2FA coverage",
+              label: t("pulse.totpCoverage"),
               value: `${totpPct}%`,
-              hint: `${counts.totp}/${counts.total} enrolled`,
+              hint: t("pulse.totpHint", { enrolled: counts.totp, total: counts.total }),
               tone: totpTone(counts.total, totpPct),
             },
           ]}
@@ -212,45 +218,45 @@ export function UsersManagementPage({
                 onClick={() => setRoleFilter("all")}
                 count={counts.total}
               >
-                All
+                {t("filter.all")}
               </FilterChip>
               <FilterChip
                 active={roleFilter === "admin"}
                 onClick={() => setRoleFilter("admin")}
                 count={counts.admin}
               >
-                Admin
+                {t("filter.admin")}
               </FilterChip>
               <FilterChip
                 active={roleFilter === "operator"}
                 onClick={() => setRoleFilter("operator")}
                 count={counts.operator}
               >
-                Operator
+                {t("filter.operator")}
               </FilterChip>
               <FilterChip
                 active={roleFilter === "viewer"}
                 onClick={() => setRoleFilter("viewer")}
                 count={counts.viewer}
               >
-                Viewer
+                {t("filter.viewer")}
               </FilterChip>
             </>
           }
           search={{
             value: query,
             onChange: setQuery,
-            placeholder: "Search username…",
+            placeholder: t("filter.searchPlaceholder"),
           }}
         />
 
         {filtered.length === 0 ? (
           <EmptyState
-            title={users.length === 0 ? "No panel users yet" : "No users match the filter"}
+            title={users.length === 0 ? t("empty.noUsersTitle") : t("empty.noMatchTitle")}
             description={
               users.length === 0
-                ? "Add the first panel user to grant dashboard access. Admins can manage everything; operators can mutate fleets; viewers are read-only."
-                : "Widen the filter or clear the search."
+                ? t("empty.noUsersDescription")
+                : t("empty.noMatchDescription")
             }
           />
         ) : (

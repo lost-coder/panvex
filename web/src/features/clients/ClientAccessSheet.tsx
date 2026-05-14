@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
+
 import { SectionHeader } from "@/ui/layout/SectionHeader";
 import { Button } from "@/ui/base/button";
 import { FleetGroupChips } from "@/features/servers/ui/FleetGroupChips";
@@ -16,6 +18,7 @@ export function ClientAccessSheet({
   onCancel,
   loading,
 }: Readonly<ClientAccessSheetProps>) {
+  const { t } = useTranslation("clients");
   const [showFineTune, setShowFineTune] = useState(false);
 
   const groupNodeIds = nodes
@@ -27,12 +30,12 @@ export function ClientAccessSheet({
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h3 className="text-title">Manage Access</h3>
-        <p className="text-sm text-fg-muted mt-0.5">Select which nodes this client can access.</p>
+        <h3 className="text-title">{t("access.title")}</h3>
+        <p className="text-sm text-fg-muted mt-0.5">{t("access.subtitle")}</p>
       </div>
 
       <div>
-        <SectionHeader title="Fleet Groups" />
+        <SectionHeader title={t("access.fleetGroups")} />
         <FleetGroupChips
           groups={fleetGroups}
           selected={selectedFleetGroupIds}
@@ -48,7 +51,7 @@ export function ClientAccessSheet({
         aria-controls="client-access-finetune-section"
         className="text-xs text-fg-muted hover:text-fg text-left"
       >
-        {showFineTune ? "▾" : "▸"} Fine-tune individual nodes
+        {showFineTune ? t("access.fineTuneExpanded") : t("access.fineTuneCollapsed")}
       </button>
 
       {showFineTune && (
@@ -65,15 +68,16 @@ export function ClientAccessSheet({
       )}
 
       <div className="text-xs text-fg-muted">
-        Total: <strong className="text-fg">{allSelected.length}</strong> nodes accessible
+        {t("access.totalPrefix")} <strong className="text-fg">{allSelected.length}</strong>{" "}
+        {t("access.totalSuffix", { count: allSelected.length })}
       </div>
 
       <div className="flex gap-2 justify-end mt-2">
         <Button variant="ghost" onClick={onCancel} disabled={loading}>
-          Cancel
+          {t("access.cancel")}
         </Button>
         <Button onClick={onSubmit} disabled={loading}>
-          {loading ? "Saving..." : "Save Access"}
+          {loading ? t("access.saving") : t("access.save")}
         </Button>
       </div>
     </div>

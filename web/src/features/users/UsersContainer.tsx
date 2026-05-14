@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { type UserFormData, type UserFormSheetProps } from "@/ui";
 import { SkeletonRows } from "@/ui";
 import { UsersManagementPage } from "./UsersManagementPage";
@@ -13,6 +14,7 @@ type SheetState =
 const emptyForm: UserFormData = { username: "", password: "", role: "viewer" };
 
 export function UsersContainer() {
+  const { t } = useTranslation("users");
   const { users, isLoading, createUser, updateUser, deleteUser, resetTotp } = useUsers();
   const confirm = useConfirm();
   const [sheet, setSheet] = useState<SheetState>({ mode: "closed" });
@@ -23,11 +25,11 @@ export function UsersContainer() {
   // the username so the operator can't mistake which row they clicked.
   const handleDelete = async (userId: string) => {
     const user = users.find((u) => u.id === userId);
-    const name = user?.username ?? "this user";
+    const name = user?.username ?? t("confirm.fallbackName");
     const ok = await confirm({
-      title: "Delete user?",
-      body: `"${name}" will be removed from the control-plane and their sessions will end immediately.`,
-      confirmLabel: "Delete user",
+      title: t("confirm.deleteTitle"),
+      body: t("confirm.deleteBody", { name }),
+      confirmLabel: t("confirm.deleteConfirm"),
       variant: "danger",
       // UX-05: deletion revokes all sessions + audit continuity — gate on
       // typing the exact username so a misclick on an admin row cannot
@@ -42,11 +44,11 @@ export function UsersContainer() {
   // login. Mildly disruptive — confirm with the username.
   const handleResetTotp = async (userId: string) => {
     const user = users.find((u) => u.id === userId);
-    const name = user?.username ?? "this user";
+    const name = user?.username ?? t("confirm.fallbackName");
     const ok = await confirm({
-      title: "Reset TOTP?",
-      body: `"${name}" will need to re-enroll their authenticator on next login.`,
-      confirmLabel: "Reset TOTP",
+      title: t("confirm.resetTotpTitle"),
+      body: t("confirm.resetTotpBody", { name }),
+      confirmLabel: t("confirm.resetTotpConfirm"),
     });
     if (!ok) return;
     resetTotp.mutate(userId);
@@ -73,7 +75,7 @@ export function UsersContainer() {
         { username: formData.username, password: formData.password, role: formData.role },
         {
           onSuccess: () => setSheet({ mode: "closed" }),
-          onError: (err) => setFormError(err instanceof Error ? err.message : "Failed to create user"),
+          onError: (err) => setFormError(err instanceof Error ? err.message : t("form.errorCreate")),
         },
       );
     } else if (sheet.mode === "edit") {
@@ -86,7 +88,7 @@ export function UsersContainer() {
         { userId: sheet.userId, data: payload },
         {
           onSuccess: () => setSheet({ mode: "closed" }),
-          onError: (err) => setFormError(err instanceof Error ? err.message : "Failed to update user"),
+          onError: (err) => setFormError(err instanceof Error ? err.message : t("form.errorUpdate")),
         },
       );
     }

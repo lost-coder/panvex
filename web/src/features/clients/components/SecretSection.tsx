@@ -3,6 +3,7 @@
 // the secret + rotate handler.
 
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { Button, CopyButton } from "@/ui";
 
@@ -19,6 +20,7 @@ export function SecretSection({
   rotating,
   pendingRedeploy,
 }: Readonly<SecretSectionProps>) {
+  const { t } = useTranslation("clients");
   // Client secrets need a long-lived reveal/copy flow, not the one-shot
   // <SecretReveal> primitive used for TOTP bootstraps.
   const [revealed, setRevealed] = useState(false);
@@ -32,14 +34,14 @@ export function SecretSection({
     <section className="rounded-xs bg-bg-card border border-divider p-4 flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-baseline gap-2">
-          <span className="text-sm font-semibold text-fg">Secret</span>
+          <span className="text-sm font-semibold text-fg">{t("secret.title")}</span>
           <span className="text-[11px] font-mono text-fg-muted">
-            rotating invalidates every outstanding connection link
+            {t("secret.rotateHint")}
           </span>
         </div>
         {onRotate && (
           <Button size="sm" variant="outline" disabled={rotating} onClick={onRotate}>
-            {rotating ? "Rotating…" : "Rotate secret"}
+            {rotating ? t("secret.rotating") : t("secret.rotate")}
           </Button>
         )}
       </div>
@@ -54,19 +56,18 @@ export function SecretSection({
             onClick={() => setRevealed((v) => !v)}
             className="shrink-0"
           >
-            {revealed ? "Hide" : "Reveal"}
+            {revealed ? t("secret.hide") : t("secret.reveal")}
           </Button>
           <CopyButton text={secret} />
         </div>
       ) : (
         <div className="rounded-xs bg-bg border border-dashed border-divider px-3 py-2 text-[11px] font-mono text-fg-muted">
-          Current secret isn't returned by the detail API — extract it from a
-          fresh connection link below, or rotate to get a new one.
+          {t("secret.absent")}
         </div>
       )}
       {pendingRedeploy && (
         <div className="text-[11px] font-mono text-status-warn">
-          Secret rotated — wait for agents to re-apply before distributing new links.
+          {t("secret.pendingRedeploy")}
         </div>
       )}
     </section>

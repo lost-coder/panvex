@@ -1,0 +1,42 @@
+{
+  "page": {
+    "title": "Дашборд",
+    "subtitle": "Обзор флота в реальном времени · работа MTProto-прокси",
+    "live": "live · обновление 15с",
+    "addClient": "Добавить клиента",
+    "addClientSheetTitle": "Добавить клиента"
+  },
+  "tabs": {
+    "fleet": "Флот",
+    "activity": "События"
+  },
+  "fleet": {
+    "title": "Флот",
+    "summary_one": "{{count}} сервер",
+    "summary_few": "{{count}} сервера",
+    "summary_many": "{{count}} серверов",
+    "issues_one": " · {{count}} проблема",
+    "issues_few": " · {{count}} проблемы",
+    "issues_many": " · {{count}} проблем",
+    "viewAll": "Все серверы →",
+    "empty": "Серверы пока не зарегистрированы.",
+    "sectionAttention": "Требуют внимания",
+    "sectionHealthy": "В норме",
+    "sectionCount_one": "{{count}} сервер",
+    "sectionCount_few": "{{count}} сервера",
+    "sectionCount_many": "{{count}} серверов",
+    "more_one": "+ ещё {{count}} — откройте страницу «Серверы», чтобы увидеть весь флот",
+    "more_few": "+ ещё {{count}} — откройте страницу «Серверы», чтобы увидеть весь флот",
+    "more_many": "+ ещё {{count}} — откройте страницу «Серверы», чтобы увидеть весь флот",
+    "connections": "соед.",
+    "statusDown": "НЕДОСТУПЕН",
+    "statusDegraded": "ДЕГРАДАЦИЯ"
+  },
+  "timeline": {
+    "title": "Последние события",
+    "live": "live"
+  },
+  "metrics": {
+    "noData": "Нет данных за выбранный период"
+  }
+}

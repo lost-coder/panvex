@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 import { StatusBeacon, cn, formatUptime } from "@/ui";
 import type { ServerDetailPageProps } from "@/shared/api/types-pages/pages";
 
@@ -30,6 +32,7 @@ export function ServerHero({
   onChangeFleetGroup?: (() => void) | undefined;
   onDeregister?: (() => void) | undefined;
 }>) {
+  const { t } = useTranslation("servers");
   const { systemInfo } = server;
   return (
     <section className="hidden md:block border-y border-divider">
@@ -56,19 +59,19 @@ export function ServerHero({
             </span>
           )}
           <span className="font-mono text-[11px] text-fg-muted px-2 py-0.5 rounded-xs border border-divider bg-bg">
-            v{systemInfo.version}
+            {t("detail.metaVersion", { version: systemInfo.version })}
           </span>
           <span className="font-mono text-[11px] text-fg-muted px-2 py-0.5 rounded-xs border border-divider bg-bg">
-            up {formatUptime(systemInfo.uptimeSeconds)}
+            {t("detail.metaUp", { value: formatUptime(systemInfo.uptimeSeconds) })}
           </span>
           {systemInfo.configReloadCount > 0 && (
             <span className="font-mono text-[11px] text-fg-muted px-2 py-0.5 rounded-xs border border-divider bg-bg">
-              reloads: {systemInfo.configReloadCount}
+              {t("detail.metaReloads", { count: systemInfo.configReloadCount })}
             </span>
           )}
           {server.telemtUnreachable && (
             <span className="font-mono text-[11px] text-neutral-400 px-2 py-0.5 rounded-xs border border-neutral-500/30 bg-neutral-500/10">
-              Режим неизвестен
+              {t("detail.modeUnknown")}
             </span>
           )}
           {relativeTime && <RelativeTimeBadge label={relativeTime} stale={relativeTimeStale} />}

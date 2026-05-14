@@ -1,4 +1,5 @@
 import { Settings } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { PageSection } from "@/ui/compositions/PageSection";
 import { labelFor } from "./namespaceLabels";
 import { RegistryField } from "./RegistryField";
@@ -17,7 +18,8 @@ export interface RegistrySectionProps {
 }
 
 export function RegistrySection({ namespace, fields, onChange }: Readonly<RegistrySectionProps>) {
-  const label = labelFor(namespace);
+  const { t } = useTranslation("settings");
+  const label = labelFor(namespace, t);
   // Skip json-typed fields — they have dedicated sections.
   const renderable = fields.filter((f) => f.schema.type !== "json");
 

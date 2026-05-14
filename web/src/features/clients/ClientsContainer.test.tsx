@@ -82,6 +82,7 @@ vi.mock("@/features/clients/ClientsPage", () => ({
     <div>
       <span data-testid="count">{props.clients.length}</span>
       <span data-testid="pending">{props.pendingDiscoveredCount}</span>
+      {/* eslint-disable-next-line no-restricted-syntax -- test fixture literal */}
       <button onClick={() => props.onClientClick("c42")}>click</button>
     </div>
   ),

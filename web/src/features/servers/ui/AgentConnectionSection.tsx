@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 import { cn } from "@/ui/lib/cn";
 import { presenceSeverity } from "@/ui/lib/status";
 import { Badge } from "@/ui/primitives/Badge";
@@ -19,6 +21,7 @@ export function AgentConnectionSection({
   onAllowReEnrollment,
   onRevokeGrant,
 }: Readonly<AgentConnectionSectionProps>) {
+  const { t } = useTranslation("servers");
   const certTone = (() => {
     if (data.certificate.remainingDays > 7) return "text-status-ok";
     if (data.certificate.remainingDays > 1) return "text-status-warn";
@@ -41,7 +44,7 @@ export function AgentConnectionSection({
           <StatusBeacon status={presenceStatus} />
           <span className="text-sm font-semibold text-fg capitalize">{data.presenceState}</span>
           <span className="ml-auto text-[10px] font-mono text-fg-muted">
-            last seen {data.lastSeenAt}
+            {t("detail.agentConnection.lastSeen", { value: data.lastSeenAt })}
           </span>
         </div>
         <div className="flex items-baseline gap-2">
@@ -49,15 +52,17 @@ export function AgentConnectionSection({
             {data.version}
           </span>
           {updateAvailable && (
-            <Badge variant="accent">update: {data.latestAgentVersion}</Badge>
+            <Badge variant="accent">
+              {t("detail.agentConnection.update", { version: data.latestAgentVersion })}
+            </Badge>
           )}
         </div>
         <div className="flex items-center justify-between gap-2 text-[11px] font-mono text-fg-muted">
-          <span>fleet: {data.fleetGroup}</span>
+          <span>{t("detail.agentConnection.fleet", { value: data.fleetGroup })}</span>
         </div>
         {updateAvailable && data.onUpdate && (
           <Button size="sm" onClick={data.onUpdate} className="self-start">
-            Update agent to {data.latestAgentVersion}
+            {t("detail.agentConnection.updateAgent", { version: data.latestAgentVersion })}
           </Button>
         )}
       </div>
@@ -65,9 +70,9 @@ export function AgentConnectionSection({
       {/* Certificate — lifecycle + re-enrollment grant */}
       <div className="p-4 flex flex-col gap-3">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-semibold text-fg">Certificate</span>
+          <span className="text-sm font-semibold text-fg">{t("detail.agentConnection.certificate")}</span>
           <span className={cn("text-xs font-mono font-semibold tabular-nums", certTone)}>
-            {data.certificate.remainingDays}d left
+            {t("detail.agentConnection.daysLeft", { count: data.certificate.remainingDays })}
           </span>
         </div>
         <div className="h-1.5 w-full rounded-full bg-border overflow-hidden">
@@ -79,25 +84,27 @@ export function AgentConnectionSection({
           />
         </div>
         <div className="flex items-center justify-between text-[11px] font-mono text-fg-muted">
-          <span>issued {data.certificate.issuedAt}</span>
-          <span>expires {data.certificate.expiresAt}</span>
+          <span>{t("detail.agentConnection.issued", { value: data.certificate.issuedAt })}</span>
+          <span>{t("detail.agentConnection.expires", { value: data.certificate.expiresAt })}</span>
         </div>
 
         {data.recoveryGrant ? (
           <div className="flex items-center justify-between mt-auto">
             <div className="flex items-center gap-2">
               <Badge variant={data.recoveryGrant.status === "allowed" ? "ok" : "default"}>
-                Recovery {data.recoveryGrant.status}
+                {t("detail.agentConnection.recoveryStatus", { status: data.recoveryGrant.status })}
               </Badge>
               {data.recoveryGrant.status === "allowed" && (
                 <span className="text-[10px] font-mono text-fg-muted">
-                  expires {new Date(data.recoveryGrant.expiresAtUnix * 1000).toLocaleTimeString()}
+                  {t("detail.agentConnection.recoveryExpires", {
+                    value: new Date(data.recoveryGrant.expiresAtUnix * 1000).toLocaleTimeString(),
+                  })}
                 </span>
               )}
             </div>
             {data.recoveryGrant.status === "allowed" && (
               <Button variant="ghost" size="sm" onClick={onRevokeGrant}>
-                Revoke
+                {t("detail.agentConnection.revoke")}
               </Button>
             )}
           </div>
@@ -108,7 +115,7 @@ export function AgentConnectionSection({
             onClick={onAllowReEnrollment}
             className="self-start"
           >
-            Allow re-enrollment
+            {t("detail.agentConnection.allowReEnrollment")}
           </Button>
         )}
       </div>

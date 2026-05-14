@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/ui/lib/cn";
 import type { Status } from "@/ui/tokens/colors";
 
@@ -47,11 +48,11 @@ function hasIssues(dcs: NodeDcInfo[]): boolean {
   return dcs.some((d) => d.status !== "ok");
 }
 
-function dcSummaryText(dcs: NodeDcInfo[]): { text: string; cls: string } | null {
+function dcSummaryCounts(dcs: NodeDcInfo[]): { err: number; warn: number; cls: string } | null {
   const err = dcs.filter((d) => d.status === "error").length;
   const warn = dcs.filter((d) => d.status === "warn").length;
-  if (err > 0) return { text: `${err} DC down`, cls: "text-status-error" };
-  if (warn > 0) return { text: `${warn} DC degraded`, cls: "text-status-warn" };
+  if (err > 0) return { err, warn: 0, cls: "text-status-error" };
+  if (warn > 0) return { err: 0, warn, cls: "text-status-warn" };
   return null;
 }
 
@@ -74,9 +75,15 @@ export function NodeSummaryCard({
   onClick,
   className,
 }: Readonly<NodeSummaryCardProps>) {
+  const { t } = useTranslation("servers");
   const shouldAutoExpand = autoExpandOnIssue && hasIssues(dcs);
   const [expanded, setExpanded] = useState(defaultExpanded ?? shouldAutoExpand);
-  const issue = dcSummaryText(dcs);
+  const issue = dcSummaryCounts(dcs);
+  const issueText = (() => {
+    if (!issue) return null;
+    if (issue.err > 0) return t("list.card.dcDown", { count: issue.err });
+    return t("list.card.dcDegraded", { count: issue.warn });
+  })();
 
   return (
     <div
@@ -106,7 +113,7 @@ export function NodeSummaryCard({
 
           {issue && (
             <span className={cn("text-[10px] font-mono shrink-0 ml-auto", issue.cls)}>
-              {issue.text}
+              {issueText}
             </span>
           )}
           {!issue && <span className="ml-auto" />}
@@ -114,7 +121,7 @@ export function NodeSummaryCard({
           {dcs.length > 0 && (
             <button
               type="button"
-              aria-label={expanded ? "Collapse" : "Expand"}
+              aria-label={expanded ? t("list.card.collapse") : t("list.card.expand")}
               onClick={(e) => {
                 e.stopPropagation();
                 setExpanded((v) => !v);
@@ -145,17 +152,17 @@ export function NodeSummaryCard({
         {/* Row 2: inline metrics — hidden on mobile, visible on md+ */}
         <div className="hidden md:flex items-center gap-4 pl-[22px] text-xs font-mono">
           <span className="text-fg-muted">
-            <span className="text-fg">{connections.toLocaleString()}</span> conn
+            <span className="text-fg">{connections.toLocaleString()}</span> {t("list.card.connections")}
           </span>
           <span className="text-fg-muted">
             <span className="text-fg">{formatTraffic(trafficBytes)}</span>
           </span>
           <span className="text-fg-muted">
-            cpu <span className={pctColor(cpuPct)}>{cpuPct}%</span>
+            {"cpu "}<span className={pctColor(cpuPct)}>{cpuPct}%</span>
           </span>
           {memPct !== undefined && (
             <span className="text-fg-muted">
-              mem <span className={pctColor(memPct)}>{memPct}%</span>
+              {"mem "}<span className={pctColor(memPct)}>{memPct}%</span>
             </span>
           )}
         </div>
@@ -167,17 +174,17 @@ export function NodeSummaryCard({
           {/* Metrics — shown on mobile (hidden on md+ because already in header) */}
           <div className="flex items-center gap-4 px-4 py-2.5 text-xs font-mono md:hidden">
             <span className="text-fg-muted">
-              <span className="text-fg">{connections.toLocaleString()}</span> conn
+              <span className="text-fg">{connections.toLocaleString()}</span> {t("list.card.connections")}
             </span>
             <span className="text-fg-muted">
               <span className="text-fg">{formatTraffic(trafficBytes)}</span>
             </span>
             <span className="text-fg-muted">
-              cpu <span className={pctColor(cpuPct)}>{cpuPct}%</span>
+              {"cpu "}<span className={pctColor(cpuPct)}>{cpuPct}%</span>
             </span>
             {memPct !== undefined && (
               <span className="text-fg-muted">
-                mem <span className={pctColor(memPct)}>{memPct}%</span>
+                {"mem "}<span className={pctColor(memPct)}>{memPct}%</span>
               </span>
             )}
           </div>

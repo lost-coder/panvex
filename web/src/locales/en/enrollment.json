@@ -28,5 +28,202 @@
     "install_command_issued": "Install command issued",
     "outbound_listener_started": "Agent listening for inbound connections",
     "panel_dial_attempted": "Panel dialing agent"
+  },
+  "tokens": {
+    "title": "Enrollment Tokens",
+    "subtitle_one": "{{count}} token · agent bootstrap",
+    "subtitle_other": "{{count}} tokens · agent bootstrap",
+    "newToken": "+ New Token",
+    "pulse": {
+      "active": "Active",
+      "consumed": "Consumed",
+      "expired": "Expired",
+      "revoked": "Revoked",
+      "expiringSoon": "{{count}} expiring <5m",
+      "noneReady": "none ready to consume",
+      "readyToEnroll": "ready to enroll",
+      "agentsBootstrapped": "agents bootstrapped",
+      "notConsumedInTtl": "not consumed in TTL",
+      "nonePastTtl": "none past TTL",
+      "manuallyCancelled": "manually cancelled",
+      "noRevocations": "no revocations"
+    },
+    "filters": {
+      "all": "All",
+      "active": "Active",
+      "consumed": "Consumed",
+      "expired": "Expired",
+      "revoked": "Revoked",
+      "searchPlaceholder": "Search token or fleet…"
+    },
+    "empty": {
+      "title": "No enrollment tokens",
+      "description": "Generate a token to onboard a new Panvex agent. Each token is single-use and expires after its TTL.",
+      "filterTitleAll": "No tokens match",
+      "filterTitleStatus": "No {{status}} tokens match",
+      "filterDescription": "Widen the filter or clear the search.",
+      "listTitle": "No enrollment tokens",
+      "listDescription": "No active tokens match the current filter."
+    },
+    "table": {
+      "token": "Token",
+      "fleetGroup": "Fleet Group",
+      "status": "Status",
+      "issued": "Issued",
+      "expires": "Expires",
+      "defaultScope": "default scope",
+      "revoke": "Revoke"
+    }
+  },
+  "wizard": {
+    "title": "Add server node",
+    "subtitle": {
+      "step1": "Pick a node name; we'll mint a one-shot token.",
+      "step2": "Run this command on the target Linux server as root.",
+      "step3": "Waiting for the agent to come online."
+    },
+    "steps": {
+      "configure": "Configure",
+      "install": "Install",
+      "connect": "Connect"
+    }
+  },
+  "configure": {
+    "mode": {
+      "label": "Transport mode",
+      "groupLabel": "Agent transport mode",
+      "inbound": "Agent → Panel",
+      "outbound": "Panel → Agent",
+      "inboundAria": "Agent connects to panel",
+      "outboundAria": "Panel connects to agent",
+      "inboundHint": "Agent dials the panel. Use when the panel is internet-reachable from the agent host.",
+      "outboundHint": "Panel dials the agent on its public host:port. Use when the panel is firewalled (private network / VPN)."
+    },
+    "nodeName": {
+      "label": "Node name",
+      "placeholder": "e.g. prod-eu-west-1",
+      "required": "Node name is required."
+    },
+    "fleetGroup": {
+      "label": "Fleet group",
+      "none": "— none (default scope) —",
+      "option": "{{name}} ({{count}} nodes)",
+      "createAria": "Create new fleet group",
+      "new": "+ New",
+      "hint": "Leave empty to add the node without a group — it'll land in the default scope."
+    },
+    "dialAddress": {
+      "label": "Agent dial address",
+      "placeholder": "vps.example.com:8443",
+      "required": "Dial address is required for outbound mode.",
+      "invalid": "Dial address must be host:port (e.g. vps.example.com:8443).",
+      "hint": "The panel dials this from its egress to reach the agent. The agent will listen on the matching port locally."
+    },
+    "ttl": {
+      "label": "Token lifetime",
+      "legend": "Token lifetime presets",
+      "preset1h": "1 hour",
+      "preset6h": "6 hours",
+      "preset24h": "24 hours",
+      "custom": "Custom",
+      "customPlaceholder": "Seconds",
+      "invalid": "Token lifetime must be greater than zero."
+    },
+    "advanced": {
+      "toggle": "Advanced",
+      "scriptSource": {
+        "label": "Install-script source",
+        "legend": "Install-script source toggle",
+        "panel": "Panel",
+        "github": "GitHub",
+        "panelHint": "Curl pulls install-agent.sh from <panel>/install-agent.sh.",
+        "githubHint": "Curl pulls install-agent.sh from raw.githubusercontent.com. Default for outbound (panel may be firewalled from the agent)."
+      },
+      "telemtUrl": "Telemt API URL",
+      "telemtMetricsUrl": "Telemt metrics URL",
+      "telemtMetricsPlaceholder": "http://127.0.0.1:8081",
+      "telemtAuth": "Telemt auth header",
+      "telemtAuthPlaceholder": "optional",
+      "insecure": {
+        "aria": "Allow plaintext on public-IP / hostname panel",
+        "title": "Allow plaintext on public-IP / hostname panel",
+        "description": "Passes <0>--insecure-transport</0> so the agent accepts an http:// panel URL on a public IP or a hostname. Private IPs (10/8, 172.16/12, 192.168/16, CGNAT, IPv6 ULA) are auto-trusted without this flag. Bootstrap exchanges the agent private key in cleartext — only tick on a trusted link."
+      }
+    },
+    "telemtNote": {
+      "label": "Note:",
+      "text": "Telemt (mtproto-proxy) must already be running on the target server."
+    },
+    "generate": "Generate token →",
+    "generating": "Generating…"
+  },
+  "installCommand": {
+    "requirementsHeading": "Before you run the command",
+    "requirements": {
+      "linux": "Linux host (amd64 / arm64)",
+      "root": "Root privileges (sudo)",
+      "systemd": "systemd service manager",
+      "curl": "curl or wget for bootstrap",
+      "telemt": "Telemt (mtproto-proxy) running locally",
+      "metrics": "Enable Telemt metrics export (disabled by default)",
+      "metricsDetail": "agent will poll {{url}}"
+    },
+    "commandHeading": "Install command",
+    "troubleshooting": {
+      "toggle": "Troubleshooting",
+      "connectionRefused": {
+        "title": "Connection refused",
+        "body": "Check Telemt is running:"
+      },
+      "metricsEmpty": {
+        "title": "Metrics empty after connect",
+        "bodyBefore": "Telemt ships with metrics off. Enable the metrics exporter in your Telemt config and confirm",
+        "bodyAfter": "answers before bootstrapping."
+      },
+      "permissionDenied": {
+        "title": "Permission denied",
+        "bodyBefore": "Run with",
+        "bodyAfter": "— root is required for systemd."
+      },
+      "tokenExpired": {
+        "title": "Token expired",
+        "body": "Go back and generate a new token. Tokens are single-use and time-limited."
+      }
+    },
+    "footer": {
+      "token": "Token:",
+      "expiresIn": "Expires in:",
+      "minutes": "{{count}} min"
+    },
+    "back": "← Back",
+    "confirm": "I've run the command →"
+  },
+  "connect": {
+    "stages": {
+      "bootstrap": {
+        "label": "Bootstrap",
+        "detail": "Agent received enrollment certificate"
+      },
+      "grpcConnect": {
+        "label": "Gateway connected",
+        "detail": "gRPC stream to control-plane established"
+      },
+      "firstData": {
+        "label": "First snapshot",
+        "detail": "Runtime telemetry received"
+      },
+      "state": {
+        "pending": "pending",
+        "waiting": "waiting",
+        "done": "done"
+      }
+    },
+    "online": "is online. Redirecting to the server page…",
+    "footer": {
+      "token": "Token:",
+      "expiresIn": "Expires in:",
+      "minutes": "{{count}} min"
+    },
+    "cancel": "Cancel"
   }
 }

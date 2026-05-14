@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { useTranslation } from "react-i18next";
 
 import { cn } from "@/ui";
 import type { ServerDetailPageProps } from "@/shared/api/types-pages/pages";
@@ -8,16 +9,17 @@ import type { ServerDetailPageProps } from "@/shared/api/types-pages/pages";
 // Memoised — `upstreams` is a slice of the parent `server` object and
 // is referentially stable across re-renders that don't change the
 // server payload, so the row list doesn't churn.
-export const UpstreamsList = memo(_UpstreamsList);
+export const UpstreamsList = memo(UpstreamsListInner);
 
-function _UpstreamsList({
+function UpstreamsListInner({
   upstreams,
 }: {
   upstreams: ServerDetailPageProps["server"]["upstreams"];
 }) {
+  const { t } = useTranslation("servers");
   if (upstreams.length === 0) {
     return (
-      <div className="text-xs font-mono text-fg-muted px-3 py-6 text-center">No upstreams reported.</div>
+      <div className="text-xs font-mono text-fg-muted px-3 py-6 text-center">{t("detail.upstreams.empty")}</div>
     );
   }
   return (

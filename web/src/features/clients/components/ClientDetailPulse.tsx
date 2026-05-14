@@ -3,6 +3,8 @@
 // expiry helpers from `clientDetailHelpers` and renders the four-tile
 // strip used on both mobile and desktop layouts.
 
+import { useTranslation } from "react-i18next";
+
 import { PulseRow, formatBytes, formatExpiry, formatQuota, type PulseTick } from "@/ui";
 import type { ClientDetailPageProps } from "@/shared/api/types-pages/pages";
 
@@ -21,6 +23,7 @@ function ratioTone(
 }
 
 export function ClientDetailPulse({ client }: Readonly<{ client: Client }>) {
+  const { t } = useTranslation("clients");
   // Limits are per-Telemt-node; usage is summed across deployments.
   // Multiply the per-node limit by deployment count so the ratio
   // compares like with like (otherwise a 4-node client with 50/conn
@@ -42,37 +45,37 @@ export function ClientDetailPulse({ client }: Readonly<{ client: Client }>) {
       ticks={
         [
           {
-            label: "Connections",
+            label: t("pulseDetail.connections"),
             value: client.activeTcpConns.toLocaleString(),
             hint:
               effectiveConns > 0
-                ? `of ${effectiveConns.toLocaleString()} max`
-                : "no limit",
+                ? t("pulseDetail.connectionsHint", { max: effectiveConns.toLocaleString() })
+                : t("pulseDetail.noLimit"),
             tone: ratioTone(connsPct, false),
             barPct: connsPct,
           },
           {
-            label: "Unique IPs",
+            label: t("pulseDetail.uniqueIps"),
             value: client.uniqueIpsUsed.toLocaleString(),
             hint:
               effectiveIps > 0
-                ? `of ${effectiveIps.toLocaleString()} max`
-                : "no limit",
+                ? t("pulseDetail.uniqueIpsHint", { max: effectiveIps.toLocaleString() })
+                : t("pulseDetail.noLimit"),
             tone: ratioTone(ipsPct, false),
             barPct: ipsPct,
           },
           {
-            label: "Traffic",
+            label: t("pulseDetail.traffic"),
             value: formatBytes(client.trafficUsedBytes),
             hint:
               effectiveQuota > 0
-                ? `of ${formatQuota(effectiveQuota)}`
-                : "no quota",
+                ? t("pulseDetail.trafficHint", { max: formatQuota(effectiveQuota) })
+                : t("pulseDetail.noQuota"),
             tone: ratioTone(trafficPct, true),
             barPct: trafficPct,
           },
           {
-            label: "Expires",
+            label: t("pulseDetail.expires"),
             value: formatExpiry(client.expirationRfc3339),
             hint: expiresSuffix(client.expirationRfc3339),
             tone: expiresTone(client.expirationRfc3339),

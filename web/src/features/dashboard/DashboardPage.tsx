@@ -4,6 +4,7 @@
 import { ClientFormSheet } from "@/features/clients/ClientFormSheet";
 import { DiscoveredClientsBanner } from "@/features/clients/DiscoveredClientsBanner";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Button,
   PageHeader,
@@ -42,14 +43,15 @@ export function DashboardPage({
   onDiscoveredClick,
   onViewAllServers,
 }: Readonly<DashboardPageProps>) {
+  const { t } = useTranslation("dashboard");
   const [createOpen, setCreateOpen] = useState(false);
   const [createData, setCreateData] = useState<ClientFormData>({ ...emptyFormData });
 
   return (
     <>
       <PageHeader
-        title="Dashboard"
-        subtitle="Realtime fleet overview · MTProto proxy operations"
+        title={t("page.title")}
+        subtitle={t("page.subtitle")}
         trailing={
           <div className="flex items-center gap-3">
             {/* Phase-7 live indicator: mirrors the 15s refetch interval of
@@ -60,7 +62,7 @@ export function DashboardPage({
               className="hidden sm:flex items-center gap-1.5 text-[11px] font-mono text-fg-muted"
             >
               <StatusDot status="ok" className="animate-pulse" />
-              live · 15s refresh
+              {t("page.live")}
             </span>
             {onCreate && (
               <Button
@@ -70,7 +72,7 @@ export function DashboardPage({
                   setCreateOpen(true);
                 }}
               >
-                Add Client
+                {t("page.addClient")}
               </Button>
             )}
           </div>
@@ -92,7 +94,7 @@ export function DashboardPage({
             tabs={[
               {
                 id: "fleet",
-                label: "Fleet",
+                label: t("tabs.fleet"),
                 content: (
                   <div className="pt-4">
                     <FleetPanel
@@ -105,7 +107,7 @@ export function DashboardPage({
               },
               {
                 id: "timeline",
-                label: "Activity",
+                label: t("tabs.activity"),
                 content: (
                   <div className="pt-4">
                     <TimelinePanel data={timeline} />
@@ -137,7 +139,7 @@ export function DashboardPage({
             if (!open) setCreateOpen(false);
           }}
         >
-          <SheetContent side="bottom" title="Add client">
+          <SheetContent side="bottom" title={t("page.addClientSheetTitle")}>
             <SheetBody>
               <ClientFormSheet
                 mode="create"

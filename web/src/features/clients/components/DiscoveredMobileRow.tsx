@@ -1,6 +1,8 @@
 // R-Q-08: mobile compact row + small pulse-cell extracted from
 // DiscoveredClientsPage.tsx.
 
+import { useTranslation } from "react-i18next";
+
 import { Button, cn, formatBytes } from "@/ui";
 import type { DiscoveredGroup } from "@/features/clients/lib/groupDiscovered";
 
@@ -23,6 +25,7 @@ export function DiscoveredMobileRow({
   onIgnore,
   busy,
 }: Readonly<DiscoveredMobileRowProps>) {
+  const { t } = useTranslation("clients");
   const interactive = row.status === "pending_review";
   return (
     <div className="flex flex-col gap-2 px-4 py-3 border-b border-divider">
@@ -30,7 +33,7 @@ export function DiscoveredMobileRow({
         {interactive && (
           <input
             type="checkbox"
-            aria-label={`Select ${row.clientName}`}
+            aria-label={t("discovered.table.selectOne", { name: row.clientName })}
             checked={selected}
             onChange={() => onToggleSelect(row.key)}
             className="accent-accent size-4 cursor-pointer"
@@ -51,7 +54,8 @@ export function DiscoveredMobileRow({
       </div>
       <div className="flex items-center justify-between pl-7 text-[11px] font-mono text-fg-muted">
         <span>
-          {row.currentConnections} conns · {row.activeUniqueIps} IPs · {formatBytes(row.totalOctets)}
+          {row.currentConnections} {t("table.connsSuffix")} · {row.activeUniqueIps}{" "}
+          {t("table.ipsSuffix")} · {formatBytes(row.totalOctets)}
         </span>
         {Number.isFinite(row.discoveredAtUnix) && row.discoveredAtUnix > 0 && (
           <span>{new Date(row.discoveredAtUnix * 1000).toLocaleString()}</span>
@@ -60,10 +64,10 @@ export function DiscoveredMobileRow({
       {interactive && (
         <div className="flex gap-2 pl-7">
           <Button size="sm" disabled={busy} onClick={() => onAdopt?.(row.ids)}>
-            Adopt
+            {t("discovered.table.adopt")}
           </Button>
           <Button size="sm" variant="outline" disabled={busy} onClick={() => onIgnore?.(row.ids)}>
-            Ignore
+            {t("discovered.table.ignore")}
           </Button>
         </div>
       )}

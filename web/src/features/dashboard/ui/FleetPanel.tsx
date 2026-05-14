@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Badge,
   MiniChart,
@@ -54,9 +55,10 @@ function LoadCell({
 // row only depends on its immutable `node` snapshot and a stable
 // onClick callback from the parent.
 const FleetRow = memo(function FleetRow({ node, onClick }: Readonly<{ node: DashboardNodeData; onClick?: () => void }>) {
+  const { t } = useTranslation("dashboard");
   const isProblem = node.status !== "ok";
   const badgeVariant = node.status === "error" ? "error" : "warn";
-  const badgeLabel = node.status === "error" ? "DOWN" : "DEGRADED";
+  const badgeLabel = node.status === "error" ? t("fleet.statusDown") : t("fleet.statusDegraded");
   // `border-l-2` + `border-l-status-error` / `border-l-transparent` keep
   // the left-edge tint scoped; the separate `border-b border-divider`
   // rule on the button below then paints the row divider without being
@@ -84,7 +86,7 @@ const FleetRow = memo(function FleetRow({ node, onClick }: Readonly<{ node: Dash
         {isProblem && <Badge variant={badgeVariant}>{badgeLabel}</Badge>}
         <span className="flex items-baseline gap-1 text-[11px] font-mono tabular-nums shrink-0 md:hidden">
           <span className="text-fg">{node.connections.toLocaleString()}</span>
-          <span className="text-fg-muted opacity-60">conn</span>
+          <span className="text-fg-muted opacity-60">{t("fleet.connections")}</span>
         </span>
         <span className="text-[11px] font-mono text-fg-muted tabular-nums shrink-0 md:hidden">
           {formatBytes(node.trafficBytes)}
@@ -99,7 +101,7 @@ const FleetRow = memo(function FleetRow({ node, onClick }: Readonly<{ node: Dash
             line 1 next to the name. */}
         <span className="hidden md:flex items-baseline gap-1 text-[11px] font-mono tabular-nums shrink-0 w-[92px] justify-end">
           <span className="text-fg">{node.connections.toLocaleString()}</span>
-          <span className="text-fg-muted opacity-60">conn</span>
+          <span className="text-fg-muted opacity-60">{t("fleet.connections")}</span>
         </span>
         <span className="hidden md:inline text-[11px] font-mono text-fg-muted tabular-nums shrink-0 w-[64px] text-right">
           {formatBytes(node.trafficBytes)}
@@ -122,13 +124,14 @@ function FleetList({
   onNodeClick?: ((id: string) => void) | undefined;
   maxHealthy?: number | undefined;
 }>) {
+  const { t } = useTranslation("dashboard");
   const trimmedHealthy = healthy.slice(0, maxHealthy);
   const hiddenCount = Math.max(0, healthy.length - trimmedHealthy.length);
   const totalShown = attention.length + trimmedHealthy.length;
 
   if (totalShown === 0) {
     return (
-      <div className="py-12 text-center text-sm text-fg-muted">No servers registered yet.</div>
+      <div className="py-12 text-center text-sm text-fg-muted">{t("fleet.empty")}</div>
     );
   }
 
@@ -138,10 +141,10 @@ function FleetList({
         <>
           <div className="px-4 pt-3 pb-1 flex items-center justify-between border-b border-divider">
             <span className="text-[10px] font-mono uppercase tracking-wider text-status-error">
-              Needs attention
+              {t("fleet.sectionAttention")}
             </span>
             <span className="text-[10px] font-mono text-fg-muted">
-              {attention.length} server{attention.length === 1 ? "" : "s"}
+              {t("fleet.sectionCount", { count: attention.length })}
             </span>
           </div>
           {attention.map((n) => (
@@ -153,7 +156,7 @@ function FleetList({
         <>
           {attention.length > 0 && (
             <div className="px-4 pt-3 pb-1 text-[10px] font-mono uppercase tracking-wider text-fg-muted border-b border-divider">
-              Healthy
+              {t("fleet.sectionHealthy")}
             </div>
           )}
           {trimmedHealthy.map((n) => (
@@ -163,7 +166,7 @@ function FleetList({
       )}
       {hiddenCount > 0 && (
         <div className="px-3 py-2 text-[11px] font-mono text-fg-muted text-center border-t border-border">
-          + {hiddenCount} more — open the Servers page to see the full fleet
+          {t("fleet.more", { count: hiddenCount })}
         </div>
       )}
     </div>
@@ -175,6 +178,7 @@ export function FleetPanel({
   onNodeClick,
   onViewAll,
 }: OverviewPanelProps & { onViewAll?: (() => void) | undefined }) {
+  const { t } = useTranslation("dashboard");
   const totalFleet = data.attentionNodes.length + data.healthyNodes.length;
   const issues = data.attentionNodes.length;
   return (
@@ -185,10 +189,10 @@ export function FleetPanel({
           self-titled instead of relying on the external SectionHeader. */}
       <header className="flex items-center justify-between gap-3 px-4 py-3 border-b border-divider">
         <div className="flex items-baseline gap-3 min-w-0">
-          <h2 className="text-sm font-semibold text-fg">Fleet</h2>
+          <h2 className="text-sm font-semibold text-fg">{t("fleet.title")}</h2>
           <span className="text-[11px] font-mono text-fg-muted truncate">
-            {totalFleet} server{totalFleet === 1 ? "" : "s"}
-            {issues > 0 && ` · ${issues} issue${issues === 1 ? "" : "s"}`}
+            {t("fleet.summary", { count: totalFleet })}
+            {issues > 0 && t("fleet.issues", { count: issues })}
           </span>
         </div>
         {onViewAll && (
@@ -197,7 +201,7 @@ export function FleetPanel({
             onClick={onViewAll}
             className="text-[11px] font-mono text-fg-muted hover:text-fg transition-colors shrink-0"
           >
-            View all →
+            {t("fleet.viewAll")}
           </button>
         )}
       </header>

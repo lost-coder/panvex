@@ -2,6 +2,8 @@
 // ClientDetailPage.tsx. The page hands over the deployments array and
 // optional agent label resolver; the card owns the link-strip layout.
 
+import { useTranslation } from "react-i18next";
+
 import {
   Badge,
   CopyButton,
@@ -14,17 +16,18 @@ interface LinksStripProps {
 }
 
 function LinksStrip({ links }: Readonly<LinksStripProps>) {
+  const { t } = useTranslation("clients");
   type LinkGroup = { key: "tls" | "secure" | "classic"; label: string; items: string[] };
   const groups: LinkGroup[] = (
     [
-      { key: "tls", label: "TLS", items: links.tls },
-      { key: "secure", label: "Secure", items: links.secure },
-      { key: "classic", label: "Classic", items: links.classic },
+      { key: "tls", label: t("deployments.links.tls"), items: links.tls },
+      { key: "secure", label: t("deployments.links.secure"), items: links.secure },
+      { key: "classic", label: t("deployments.links.classic"), items: links.classic },
     ] satisfies LinkGroup[]
   ).filter((g) => g.items.length > 0);
   if (groups.length === 0) {
     return (
-      <div className="mt-2 text-[11px] font-mono text-fg-muted">No links generated yet.</div>
+      <div className="mt-2 text-[11px] font-mono text-fg-muted">{t("deployments.links.none")}</div>
     );
   }
   return (
@@ -57,10 +60,11 @@ export function DeployLinksCard({
   secretPendingRedeploy,
   agentLabels,
 }: Readonly<DeployLinksCardProps>) {
+  const { t } = useTranslation("clients");
   if (deployments.length === 0) {
     return (
       <div className="rounded-xs bg-bg-card border border-divider p-4 text-sm text-fg-muted text-center">
-        No deployments yet.
+        {t("deployments.noneYet")}
       </div>
     );
   }
@@ -68,12 +72,12 @@ export function DeployLinksCard({
     <section className="rounded-xs bg-bg-card border border-divider overflow-hidden">
       <header className="px-4 py-3 border-b border-divider flex items-center justify-between gap-2">
         <div className="flex items-baseline gap-2">
-          <span className="text-sm font-semibold text-fg">Deployments & links</span>
+          <span className="text-sm font-semibold text-fg">{t("deployments.title")}</span>
           <span className="text-[11px] font-mono text-fg-muted">
-            {deployments.length} node{deployments.length === 1 ? "" : "s"}
+            {t("deployments.nodeCount", { count: deployments.length })}
           </span>
         </div>
-        {secretPendingRedeploy && <Badge variant="warn">Secret rotated — awaiting redeploy</Badge>}
+        {secretPendingRedeploy && <Badge variant="warn">{t("deployments.secretRotatedBadge")}</Badge>}
       </header>
       <div className="flex flex-col">
         {deployments.map((d) => {
@@ -97,7 +101,7 @@ export function DeployLinksCard({
                 <span className="ml-auto text-[11px] font-mono text-fg-muted tabular-nums">
                   {d.lastAppliedAtUnix > 0
                     ? new Date(d.lastAppliedAtUnix * 1000).toLocaleString()
-                    : "never applied"}
+                    : t("deployments.neverApplied")}
                 </span>
               </div>
               {d.lastError && (

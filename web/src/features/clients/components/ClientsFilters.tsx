@@ -2,6 +2,8 @@
 // ClientsPage.tsx. Pure factory functions — no hooks — so the host
 // page just plugs the result into TableView / BulkActionBar.
 
+import type { TFunction } from "i18next";
+
 import type { BulkClientAction } from "@/ui";
 
 import type { ClientCounts } from "./ClientsPagePulse";
@@ -10,9 +12,11 @@ export interface ClientsStatusFilterOptions {
   value: string;
   onChange: (next: string) => void;
   counts: ClientCounts;
+  t: TFunction<"clients">;
 }
 
 export function buildClientsStatusFilter(opts: ClientsStatusFilterOptions) {
+  const { t } = opts;
   return {
     key: "status",
     value: opts.value,
@@ -22,24 +26,39 @@ export function buildClientsStatusFilter(opts: ClientsStatusFilterOptions) {
     // client list.
     variant: "chips" as const,
     options: [
-      { value: "all", label: `All · ${opts.counts.all}` },
-      { value: "active", label: `Active · ${opts.counts.active}`, tone: "ok" as const },
-      { value: "disabled", label: `Disabled · ${opts.counts.disabled}`, tone: "warn" as const },
-      { value: "expired", label: `Expired · ${opts.counts.expired}`, tone: "error" as const },
+      { value: "all", label: t("filters.status.all", { count: opts.counts.all }) },
+      {
+        value: "active",
+        label: t("filters.status.active", { count: opts.counts.active }),
+        tone: "ok" as const,
+      },
+      {
+        value: "disabled",
+        label: t("filters.status.disabled", { count: opts.counts.disabled }),
+        tone: "warn" as const,
+      },
+      {
+        value: "expired",
+        label: t("filters.status.expired", { count: opts.counts.expired }),
+        tone: "error" as const,
+      },
     ],
-    placeholder: "Status",
+    placeholder: t("filters.status.placeholder"),
   };
 }
 
-export function buildClientsBulkActions(enabled: boolean): Array<{
+export function buildClientsBulkActions(
+  enabled: boolean,
+  t: TFunction<"clients">,
+): Array<{
   id: BulkClientAction;
   label: string;
   variant: "ghost";
   disabled: boolean;
 }> {
   return [
-    { id: "enable", label: "Enable", variant: "ghost", disabled: !enabled },
-    { id: "disable", label: "Disable", variant: "ghost", disabled: !enabled },
-    { id: "delete", label: "Delete", variant: "ghost", disabled: !enabled },
+    { id: "enable", label: t("filters.bulk.enable"), variant: "ghost", disabled: !enabled },
+    { id: "disable", label: t("filters.bulk.disable"), variant: "ghost", disabled: !enabled },
+    { id: "delete", label: t("filters.bulk.delete"), variant: "ghost", disabled: !enabled },
   ];
 }

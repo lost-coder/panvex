@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { cn } from "@/ui/lib/cn";
 
@@ -15,6 +16,7 @@ export function FallbackBanner({
   escalated,
   enteredAtUnix = null,
 }: Readonly<FallbackBannerProps>) {
+  const { t } = useTranslation("servers");
   const [liveDurationSeconds, setLiveDurationSeconds] =
     useState(durationSeconds);
 
@@ -31,11 +33,11 @@ export function FallbackBanner({
 
   const severity = escalated ? "critical" : "warn";
   const headline = escalated
-    ? "ME pool down — fallback active"
-    : "Running on direct fallback";
+    ? t("detail.fallback.criticalHeadline")
+    : t("detail.fallback.warnHeadline");
   const body = escalated
-    ? "ME pool has been unavailable for over 30 minutes. Investigate ME diagnostics."
-    : "ME pool currently unavailable; traffic flowing via direct fallback.";
+    ? t("detail.fallback.criticalBody")
+    : t("detail.fallback.warnBody");
 
   return (
     <div
@@ -49,7 +51,7 @@ export function FallbackBanner({
     >
       <strong>{headline}</strong>
       <p className="mt-1 text-fg">
-        {body} Active for {Math.round(liveDurationSeconds / 60)} min.
+        {body} {t("detail.fallback.activeFor", { minutes: Math.round(liveDurationSeconds / 60) })}
       </p>
     </div>
   );

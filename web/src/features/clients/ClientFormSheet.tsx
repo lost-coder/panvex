@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+
 import { Button } from "@/ui/base/button";
 import { Input } from "@/ui/base/input";
 import { FormField } from "@/ui/base/form-field";
@@ -9,7 +11,6 @@ import type { ClientFormSheetProps } from "@/shared/api/types-pages/pages";
 // in internal/controlplane/server/clients_flow.go). Catching it client-side
 // avoids round-tripping just to surface a guaranteed 400.
 const CLIENT_NAME_REGEX = /^[A-Za-z0-9_.-]{1,64}$/;
-const CLIENT_NAME_RULE = "Use A–Z, a–z, 0–9, _, . or -. Up to 64 chars.";
 
 export function ClientFormSheet({
   mode,
@@ -22,6 +23,8 @@ export function ClientFormSheet({
   fleetGroups,
   agents,
 }: Readonly<ClientFormSheetProps>) {
+  const { t } = useTranslation("clients");
+  const nameRule = t("form.nameRule");
   const [showLimits, setShowLimits] = useState(
     data.maxTcpConns > 0 || data.maxUniqueIps > 0 || data.dataQuotaBytes > 0,
   );
@@ -71,23 +74,23 @@ export function ClientFormSheet({
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h3 className="text-title">{mode === "create" ? "New Client" : "Edit Client"}</h3>
+        <h3 className="text-title">{mode === "create" ? t("form.createTitle") : t("form.editTitle")}</h3>
         <p className="text-sm text-fg-muted mt-0.5">
-          {mode === "create" ? "Configure a new Telemt client." : "Update client parameters."}
+          {mode === "create" ? t("form.createSubtitle") : t("form.editSubtitle")}
         </p>
       </div>
 
       <FormField
-        label="Client Name"
+        label={t("form.nameLabel")}
         variant="uppercase"
         required
-        description={CLIENT_NAME_RULE}
-        {...(nameInvalid ? { error: CLIENT_NAME_RULE } : {})}
+        description={nameRule}
+        {...(nameInvalid ? { error: nameRule } : {})}
       >
         <Input
           value={data.name}
           onChange={(e) => update("name", e.target.value)}
-          placeholder="e.g. premium-users"
+          placeholder={t("form.namePlaceholder")}
           disabled={loading}
           aria-invalid={nameInvalid || undefined}
           maxLength={64}
@@ -95,12 +98,12 @@ export function ClientFormSheet({
       </FormField>
 
       <FormField
-        label="Ad Tag"
+        label={t("form.adTagLabel")}
         variant="uppercase"
         description={
           data.userAdTagAuto
-            ? "Auto-generate a random 32-hex tag on save."
-            : "Leave blank to save a client without an ad tag, or paste a 32-hex value."
+            ? t("form.adTagAutoDescription")
+            : t("form.adTagManualDescription")
         }
       >
         <div className="flex flex-col gap-2">
@@ -122,15 +125,15 @@ export function ClientFormSheet({
                 });
               }}
             />
-            <span>Auto-generate</span>
+            <span>{t("form.adTagAutoCheckbox")}</span>
           </label>
           <Input
             value={data.userAdTag}
             onChange={(e) => update("userAdTag", e.target.value)}
             placeholder={
               data.userAdTagAuto
-                ? "Will be generated on save"
-                : "32-hex tag or blank for no tag"
+                ? t("form.adTagAutoPlaceholder")
+                : t("form.adTagManualPlaceholder")
             }
             disabled={loading || data.userAdTagAuto}
             className="font-mono text-xs"
@@ -138,7 +141,7 @@ export function ClientFormSheet({
         </div>
       </FormField>
 
-      <FormField label="Expiration" variant="uppercase">
+      <FormField label={t("form.expirationLabel")} variant="uppercase">
         <div className="flex gap-2">
           <Input
             type="date"
@@ -164,7 +167,7 @@ export function ClientFormSheet({
             size="sm"
             onClick={() => update("expirationRfc3339", "")}
           >
-            Never
+            {t("form.expirationNever")}
           </Button>
         </div>
       </FormField>
@@ -173,15 +176,15 @@ export function ClientFormSheet({
         <div className="flex flex-col gap-3 border-t border-border pt-3 mt-1">
           <div className="flex items-center justify-between">
             <span className="text-xs uppercase tracking-wide text-fg-muted">
-              Deployment targets
+              {t("form.deploymentTargets")}
             </span>
             {!hasDeploymentTargets && (
-              <span className="text-[11px] text-status-warn">Assign at least one</span>
+              <span className="text-[11px] text-status-warn">{t("form.deploymentTargetsHint")}</span>
             )}
           </div>
 
           {fleetGroups && fleetGroups.length > 0 && (
-            <FormField label="Fleet groups" variant="uppercase">
+            <FormField label={t("form.fleetGroupsLabel")} variant="uppercase">
               <div className="flex flex-wrap gap-1.5">
                 {fleetGroups.map((g) => {
                   const active = data.fleetGroupIds.includes(g.id);
@@ -215,9 +218,9 @@ export function ClientFormSheet({
 
           {agents && agents.length > 0 && (
             <FormField
-              label="Pinned agents"
+              label={t("form.pinnedAgentsLabel")}
               variant="uppercase"
-              description="Override for nodes outside the selected groups"
+              description={t("form.pinnedAgentsDescription")}
             >
               <div className="max-h-40 overflow-y-auto rounded-xs border border-border-hi bg-bg-card divide-y divide-border/60">
                 {Array.from(agentsByGroup.entries()).map(([groupId, list]) => (
@@ -244,7 +247,7 @@ export function ClientFormSheet({
                           />
                           <span className="font-mono text-fg truncate">{a.nodeName || a.id}</span>
                           {a.online === false && (
-                            <span className="ml-auto text-[10px] text-status-warn">offline</span>
+                            <span className="ml-auto text-[10px] text-status-warn">{t("form.agentOffline")}</span>
                           )}
                         </label>
                       );
@@ -264,36 +267,36 @@ export function ClientFormSheet({
         aria-controls="client-form-limits-section"
         className="text-xs text-fg-muted hover:text-fg text-left border-t border-border pt-3 mt-1"
       >
-        {showLimits ? "▾" : "▸"} Limits (optional)
+        {showLimits ? t("form.limitsToggleExpanded") : t("form.limitsToggleCollapsed")}
       </button>
       {showLimits && (
         <div id="client-form-limits-section" className="grid grid-cols-3 gap-3">
-          <FormField label="Max TCP Conns" variant="compact">
+          <FormField label={t("form.maxTcpConnsLabel")} variant="compact">
             <Input
               type="number"
               value={data.maxTcpConns}
               onChange={(e) => update("maxTcpConns", Number(e.target.value))}
-              placeholder="0 = unlimited"
+              placeholder={t("form.unlimitedPlaceholder")}
               className="font-mono text-xs"
               disabled={loading}
             />
           </FormField>
-          <FormField label="Max Unique IPs" variant="compact">
+          <FormField label={t("form.maxUniqueIpsLabel")} variant="compact">
             <Input
               type="number"
               value={data.maxUniqueIps}
               onChange={(e) => update("maxUniqueIps", Number(e.target.value))}
-              placeholder="0 = unlimited"
+              placeholder={t("form.unlimitedPlaceholder")}
               className="font-mono text-xs"
               disabled={loading}
             />
           </FormField>
-          <FormField label="Data Quota (bytes)" variant="compact">
+          <FormField label={t("form.dataQuotaLabel")} variant="compact">
             <Input
               type="number"
               value={data.dataQuotaBytes}
               onChange={(e) => update("dataQuotaBytes", Number(e.target.value))}
-              placeholder="0 = unlimited"
+              placeholder={t("form.unlimitedPlaceholder")}
               className="font-mono text-xs"
               disabled={loading}
             />
@@ -305,7 +308,7 @@ export function ClientFormSheet({
 
       <div className="flex gap-2 justify-end mt-2">
         <Button variant="ghost" onClick={onCancel} disabled={loading}>
-          Cancel
+          {t("form.cancel")}
         </Button>
         <Button
           onClick={onSubmit}
@@ -320,9 +323,9 @@ export function ClientFormSheet({
           }
         >
           {(() => {
-            if (loading) return "Saving...";
-            if (mode === "create") return "Create Client";
-            return "Save Changes";
+            if (loading) return t("form.saving");
+            if (mode === "create") return t("form.create");
+            return t("form.save");
           })()}
         </Button>
       </div>

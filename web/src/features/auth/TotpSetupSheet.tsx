@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/ui/base/button";
 import { Input } from "@/ui/base/input";
 import { FormField } from "@/ui/base/form-field";
@@ -28,16 +29,16 @@ export function TotpSetupSheet({
   loading,
   error,
 }: Readonly<TotpSetupSheetProps>) {
+  const { t } = useTranslation("auth");
   const [password, setPassword] = useState("");
   const [totpCode, setTotpCode] = useState("");
 
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <h3 className="text-title">Set Up Two-Factor Authentication</h3>
+        <h3 className="text-title">{t("totp.setup.title")}</h3>
         <p className="text-sm text-fg-muted mt-0.5">
-          Scan the QR code with your authenticator app, then enter your password and the generated
-          code to verify.
+          {t("totp.setup.description")}
         </p>
       </div>
 
@@ -47,7 +48,7 @@ export function TotpSetupSheet({
           fallback={
             <output
               className="flex items-center justify-center h-[180px] w-[180px] text-fg-muted text-xs"
-              aria-label="Loading QR code"
+              aria-label={t("totp.setup.qrLoading")}
             >
               …
             </output>
@@ -59,7 +60,7 @@ export function TotpSetupSheet({
 
       {/* Manual secret */}
       <div>
-        <FieldLabel>Manual Entry Key</FieldLabel>
+        <FieldLabel>{t("totp.setup.manualKeyLabel")}</FieldLabel>
         <div className="flex items-center gap-2 mt-1">
           <MonoValue className="text-xs break-all">{secret}</MonoValue>
           <CopyButton text={secret} />
@@ -67,23 +68,23 @@ export function TotpSetupSheet({
       </div>
 
       {/* Verification */}
-      <FormField label="Password" variant="uppercase" required>
+      <FormField label={t("totp.setup.passwordLabel")} variant="uppercase" required>
         <Input
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="Your current password"
+          placeholder={t("totp.setup.passwordPlaceholder")}
           disabled={loading}
         />
       </FormField>
 
-      <FormField label="Authenticator Code" variant="uppercase" required>
+      <FormField label={t("totp.setup.codeLabel")} variant="uppercase" required>
         <Input
           value={totpCode}
           onChange={(e) => setTotpCode(e.target.value.replaceAll(/\D/g, ""))}
           inputMode="numeric"
           pattern="[0-9]*"
-          placeholder="6-digit code"
+          placeholder={t("totp.setup.codePlaceholder")}
           maxLength={6}
           disabled={loading}
           className="font-mono tracking-widest"
@@ -94,13 +95,13 @@ export function TotpSetupSheet({
 
       <div className="flex gap-2 justify-end mt-2">
         <Button variant="ghost" onClick={onCancel} disabled={loading}>
-          Cancel
+          {t("totp.setup.cancel")}
         </Button>
         <Button
           onClick={() => onEnable(password, totpCode)}
           disabled={loading || !password || totpCode.length < 6}
         >
-          {loading ? "Verifying..." : "Enable 2FA"}
+          {loading ? t("totp.setup.submitLoading") : t("totp.setup.submit")}
         </Button>
       </div>
     </div>

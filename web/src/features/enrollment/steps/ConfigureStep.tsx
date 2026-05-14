@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 
 import { cn } from "@/ui/lib/cn";
 import { Button } from "@/ui/base/button";
@@ -7,13 +8,15 @@ import { Input } from "@/ui/base/input";
 import { Select } from "@/ui/base/select";
 import type { EnrollmentWizardProps } from "@/shared/api/types-pages/pages";
 
-const TTL_PRESETS = [
-  { value: 3600, label: "1 hour" },
-  { value: 21600, label: "6 hours" },
-  { value: 86400, label: "24 hours" },
-];
-
 export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
+  const { t } = useTranslation("enrollment");
+
+  const TTL_PRESETS = [
+    { value: 3600, label: t("configure.ttl.preset1h") },
+    { value: 21600, label: t("configure.ttl.preset6h") },
+    { value: 86400, label: t("configure.ttl.preset24h") },
+  ];
+
   const {
     fleetGroups,
     nodeName,
@@ -58,16 +61,16 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
     dialAddress?: boolean;
   }>({});
 
-  const nodeNameError = nodeName.trim() ? undefined : "Node name is required.";
-  const ttlError = tokenTtl <= 0 ? "Token lifetime must be greater than zero." : undefined;
+  const nodeNameError = nodeName.trim() ? undefined : t("configure.nodeName.required");
+  const ttlError = tokenTtl <= 0 ? t("configure.ttl.invalid") : undefined;
   // Outbound requires a host:port the panel can dial. We don't validate
   // the full RFC here — the server enforces `net.SplitHostPort` — but a
   // visible colon catches the most common typo before the round-trip.
   const dialError = isOutbound
     ? !dialAddress || !dialAddress.trim()
-      ? "Dial address is required for outbound mode."
+      ? t("configure.dialAddress.required")
       : !/^\S+:\d+$/.test(dialAddress.trim())
-        ? "Dial address must be host:port (e.g. vps.example.com:8443)."
+        ? t("configure.dialAddress.invalid")
         : undefined
     : undefined;
   const hasError = Boolean(nodeNameError || (!isOutbound && ttlError) || dialError);
@@ -83,15 +86,15 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
   return (
     <div className="flex flex-col gap-4">
       {showModePicker && (
-        <FormField label="Transport mode" variant="uppercase">
+        <FormField label={t("configure.mode.label")} variant="uppercase">
           <div
             role="radiogroup"
-            aria-label="Agent transport mode"
+            aria-label={t("configure.mode.groupLabel")}
             className="inline-flex rounded-xs border border-border p-0.5 bg-bg w-full"
           >
             {([
-              { value: "inbound", label: "Agent → Panel" },
-              { value: "outbound", label: "Panel → Agent" },
+              { value: "inbound", label: t("configure.mode.inbound"), aria: t("configure.mode.inboundAria") },
+              { value: "outbound", label: t("configure.mode.outbound"), aria: t("configure.mode.outboundAria") },
             ] as const).map((opt) => {
               const selected = effectiveMode === opt.value;
               return (
@@ -100,7 +103,7 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
                   type="button"
                   role="radio"
                   aria-checked={selected}
-                  aria-label={opt.value === "inbound" ? "Agent connects to panel" : "Panel connects to agent"}
+                  aria-label={opt.aria}
                   onClick={() => onModeChange?.(opt.value)}
                   disabled={loading}
                   className={cn(
@@ -117,19 +120,19 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
           </div>
           <div className="text-[11px] text-fg-muted mt-1 leading-snug">
             {effectiveMode === "inbound"
-              ? "Agent dials the panel. Use when the panel is internet-reachable from the agent host."
-              : "Panel dials the agent on its public host:port. Use when the panel is firewalled (private network / VPN)."}
+              ? t("configure.mode.inboundHint")
+              : t("configure.mode.outboundHint")}
           </div>
         </FormField>
       )}
 
-      <FormField label="Node name" variant="uppercase" required>
+      <FormField label={t("configure.nodeName.label")} variant="uppercase" required>
         <Input
           type="text"
-          placeholder="e.g. prod-eu-west-1"
+          placeholder={t("configure.nodeName.placeholder")}
           value={nodeName}
           onChange={(e) => onNodeNameChange(e.target.value)}
-          onBlur={() => setTouched((t) => ({ ...t, nodeName: true }))}
+          onBlur={() => setTouched((tt) => ({ ...tt, nodeName: true }))}
           disabled={loading}
           aria-invalid={touched.nodeName && !!nodeNameError}
           aria-describedby={touched.nodeName && nodeNameError ? "enroll-node-err" : undefined}
@@ -144,16 +147,19 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
       {/* Fleet group is optional — empty string means the backend
           attaches the new agent to the default scope. Select still
           renders when groups exist so operators can opt-in. */}
-      <FormField label="Fleet group" variant="uppercase">
+      <FormField label={t("configure.fleetGroup.label")} variant="uppercase">
         <div className="flex gap-2">
           <Select
             className="flex-1"
             value={selectedFleetGroup}
             options={[
-              { value: "", label: "— none (default scope) —" },
+              { value: "", label: t("configure.fleetGroup.none") },
               ...fleetGroups.map((g) => ({
                 value: g.id,
-                label: `${g.name ?? g.label ?? g.id} (${g.nodeCount ?? g.agentCount ?? 0} nodes)`,
+                label: t("configure.fleetGroup.option", {
+                  name: g.name ?? g.label ?? g.id,
+                  count: g.nodeCount ?? g.agentCount ?? 0,
+                }),
               })),
             ]}
             onChange={onFleetGroupChange}
@@ -165,25 +171,25 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
               variant="outline"
               onClick={onCreateFleetGroup}
               disabled={loading}
-              aria-label="Create new fleet group"
+              aria-label={t("configure.fleetGroup.createAria")}
             >
-              + New
+              {t("configure.fleetGroup.new")}
             </Button>
           )}
         </div>
         <div className="text-[11px] font-mono text-fg-muted mt-1">
-          Leave empty to add the node without a group — it'll land in the default scope.
+          {t("configure.fleetGroup.hint")}
         </div>
       </FormField>
 
       {isOutbound && (
-        <FormField label="Agent dial address" variant="uppercase" required>
+        <FormField label={t("configure.dialAddress.label")} variant="uppercase" required>
           <Input
             type="text"
-            placeholder="vps.example.com:8443"
+            placeholder={t("configure.dialAddress.placeholder")}
             value={dialAddress ?? ""}
             onChange={(e) => onDialAddressChange?.(e.target.value)}
-            onBlur={() => setTouched((t) => ({ ...t, dialAddress: true }))}
+            onBlur={() => setTouched((tt) => ({ ...tt, dialAddress: true }))}
             disabled={loading}
             aria-invalid={touched.dialAddress && !!dialError}
             aria-describedby={
@@ -197,16 +203,15 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
             </div>
           )}
           <div className="text-[11px] font-mono text-fg-muted mt-1">
-            The panel dials this from its egress to reach the agent. The agent will
-            listen on the matching port locally.
+            {t("configure.dialAddress.hint")}
           </div>
         </FormField>
       )}
 
       {!isOutbound && (
-      <FormField label="Token lifetime" variant="uppercase">
+      <FormField label={t("configure.ttl.label")} variant="uppercase">
         <fieldset className="flex flex-wrap gap-2 border-0 p-0 m-0">
-          <legend className="sr-only">Token lifetime presets</legend>
+          <legend className="sr-only">{t("configure.ttl.legend")}</legend>
           {TTL_PRESETS.map((p) => {
             const pressed = !customTtl && tokenTtl === p.value;
             return (
@@ -217,7 +222,7 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
                 onClick={() => {
                   setCustomTtl(false);
                   onTokenTtlChange(p.value);
-                  setTouched((t) => ({ ...t, ttl: true }));
+                  setTouched((tt) => ({ ...tt, ttl: true }));
                 }}
                 className={cn(
                   "px-3 py-1.5 rounded-xs text-xs transition-colors",
@@ -235,7 +240,7 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
             aria-pressed={customTtl}
             onClick={() => {
               setCustomTtl(true);
-              setTouched((t) => ({ ...t, ttl: true }));
+              setTouched((tt) => ({ ...tt, ttl: true }));
             }}
             className={cn(
               "px-3 py-1.5 rounded-xs text-xs transition-colors",
@@ -244,17 +249,17 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
                 : "border border-border text-fg-muted hover:text-fg",
             )}
           >
-            Custom
+            {t("configure.ttl.custom")}
           </button>
         </fieldset>
         {customTtl && (
           <Input
             type="number"
             min={1}
-            placeholder="Seconds"
+            placeholder={t("configure.ttl.customPlaceholder")}
             value={tokenTtl}
             onChange={(e) => onTokenTtlChange(Number(e.target.value))}
-            onBlur={() => setTouched((t) => ({ ...t, ttl: true }))}
+            onBlur={() => setTouched((tt) => ({ ...tt, ttl: true }))}
             aria-invalid={touched.ttl && !!ttlError}
             className="mt-2 w-32"
           />
@@ -279,17 +284,17 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
             className="self-start text-xs text-fg-muted hover:text-fg flex items-center gap-1"
           >
             <span aria-hidden="true">{advancedOpen ? "▾" : "▸"}</span>
-            Advanced
+            {t("configure.advanced.toggle")}
           </button>
           {advancedOpen && (
             <div className="flex flex-col gap-3 pl-3 border-l border-divider">
               {showSourceToggle && (
-                <FormField label="Install-script source" variant="uppercase">
+                <FormField label={t("configure.advanced.scriptSource.label")} variant="uppercase">
                   <fieldset className="flex flex-wrap gap-2 border-0 p-0 m-0">
-                    <legend className="sr-only">Install-script source toggle</legend>
+                    <legend className="sr-only">{t("configure.advanced.scriptSource.legend")}</legend>
                     {([
-                      { value: "panel" as const, label: "Panel" },
-                      { value: "github" as const, label: "GitHub" },
+                      { value: "panel" as const, label: t("configure.advanced.scriptSource.panel") },
+                      { value: "github" as const, label: t("configure.advanced.scriptSource.github") },
                     ]).map((opt) => {
                       const pressed = scriptSource === opt.value;
                       return (
@@ -313,12 +318,12 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
                   </fieldset>
                   <div className="text-[11px] text-fg-muted mt-1 leading-snug">
                     {scriptSource === "panel"
-                      ? "Curl pulls install-agent.sh from <panel>/install-agent.sh."
-                      : "Curl pulls install-agent.sh from raw.githubusercontent.com. Default for outbound (panel may be firewalled from the agent)."}
+                      ? t("configure.advanced.scriptSource.panelHint")
+                      : t("configure.advanced.scriptSource.githubHint")}
                   </div>
                 </FormField>
               )}
-              <FormField label="Telemt API URL" variant="uppercase">
+              <FormField label={t("configure.advanced.telemtUrl")} variant="uppercase">
                 <Input
                   value={advancedOptions.telemtUrl}
                   onChange={(e) =>
@@ -327,7 +332,7 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
                   className="font-mono text-xs"
                 />
               </FormField>
-              <FormField label="Telemt metrics URL" variant="uppercase">
+              <FormField label={t("configure.advanced.telemtMetricsUrl")} variant="uppercase">
                 <Input
                   value={advancedOptions.telemtMetricsUrl}
                   onChange={(e) =>
@@ -336,17 +341,17 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
                       telemtMetricsUrl: e.target.value,
                     })
                   }
-                  placeholder="http://127.0.0.1:8081"
+                  placeholder={t("configure.advanced.telemtMetricsPlaceholder")}
                   className="font-mono text-xs"
                 />
               </FormField>
-              <FormField label="Telemt auth header" variant="uppercase">
+              <FormField label={t("configure.advanced.telemtAuth")} variant="uppercase">
                 <Input
                   value={advancedOptions.telemtAuth}
                   onChange={(e) =>
                     onAdvancedOptionsChange({ ...advancedOptions, telemtAuth: e.target.value })
                   }
-                  placeholder="optional"
+                  placeholder={t("configure.advanced.telemtAuthPlaceholder")}
                   className="font-mono text-xs"
                 />
               </FormField>
@@ -355,7 +360,7 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
                   read the description still see this isn't the default. */}
               <label
                 className="flex items-start gap-2 rounded-xs border border-status-warn/30 bg-status-warn/5 p-3 cursor-pointer"
-                aria-label="Allow plaintext on public-IP / hostname panel"
+                aria-label={t("configure.advanced.insecure.aria")}
               >
                 <input
                   type="checkbox"
@@ -370,15 +375,14 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
                 />
                 <span className="flex flex-col gap-0.5">
                   <span className="text-xs font-medium text-status-warn">
-                    Allow plaintext on public-IP / hostname panel
+                    {t("configure.advanced.insecure.title")}
                   </span>
                   <span className="text-[11px] text-fg-muted leading-snug">
-                    Passes <code className="font-mono">--insecure-transport</code> so the
-                    agent accepts an http:// panel URL on a public IP or a
-                    hostname. Private IPs (10/8, 172.16/12, 192.168/16,
-                    CGNAT, IPv6 ULA) are auto-trusted without this flag.
-                    Bootstrap exchanges the agent private key in cleartext —
-                    only tick on a trusted link.
+                    <Trans
+                      i18nKey="configure.advanced.insecure.description"
+                      ns="enrollment"
+                      components={[<code key="0" className="font-mono" />]}
+                    />
                   </span>
                 </span>
               </label>
@@ -388,13 +392,13 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
       )}
 
       <div className="rounded-xs bg-accent/8 border border-accent/20 p-3 text-xs text-accent">
-        <strong>Note:</strong> Telemt (mtproto-proxy) must already be running on the target server.
+        <strong>{t("configure.telemtNote.label")}</strong> {t("configure.telemtNote.text")}
       </div>
 
       {error && <div className="text-xs text-status-error">{error}</div>}
 
       <Button onClick={handleGenerate} disabled={loading}>
-        {loading ? "Generating…" : "Generate token →"}
+        {loading ? t("configure.generating") : t("configure.generate")}
       </Button>
     </div>
   );

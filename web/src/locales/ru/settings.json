@@ -1,0 +1,271 @@
+{
+  "page": {
+    "title": "Настройки",
+    "subtitle": "Управление панелью",
+    "adminBadge": "Admin",
+    "userBadge": "User"
+  },
+  "registry": {
+    "unsaved_one": "{{count}} несохранённое изменение",
+    "unsaved_few": "{{count}} несохранённых изменения",
+    "unsaved_many": "{{count}} несохранённых изменений",
+    "cancel": "Отмена",
+    "save": "Сохранить",
+    "saving": "Сохраняем…"
+  },
+  "panel": {
+    "title": "Панель",
+    "description": "Публичные адреса, которые панель сообщает агентам и клиентам.",
+    "httpPublicUrlLabel": "Публичный HTTP-адрес",
+    "httpPublicUrlDescription": "Публичный URL этой панели",
+    "httpPublicUrlPlaceholder": "https://panvex.example.com",
+    "grpcEndpointLabel": "gRPC-эндпоинт",
+    "grpcEndpointDescription": "Адрес для подключения агентов",
+    "grpcEndpointPlaceholder": "panvex.example.com:443",
+    "passwordMinLengthLabel": "Минимальная длина пароля",
+    "passwordMinLengthDescription": "Операторы при создании или смене пароля обязаны соблюдать этот минимум (8–128). Существующие учётные записи не сбрасываются.",
+    "passwordMinLengthAriaLabel": "Минимальная длина пароля"
+  },
+  "appearance": {
+    "title": "Внешний вид",
+    "description": "Как выглядит панель в вашей учётной записи.",
+    "themeLabel": "Тема",
+    "themeOptions": {
+      "system": "Системная",
+      "light": "Светлая",
+      "dark": "Тёмная"
+    },
+    "densityLabel": "Плотность",
+    "densityOptions": {
+      "comfortable": "Свободная",
+      "compact": "Компактная"
+    },
+    "helpModeLabel": "Подсказки",
+    "helpModeOptions": {
+      "off": "Выкл.",
+      "basic": "Базовые",
+      "full": "Полные"
+    },
+    "swipeNavigationLabel": "Свайп-навигация",
+    "swipeNavigationDescription": "Переключение страниц свайпом на мобильных устройствах"
+  },
+  "users": {
+    "title": "Пользователи",
+    "description": "Создание, редактирование и управление учётными записями панели.",
+    "accountsLabel": "Учётные записи",
+    "accountsDescription": "Перейдите к списку пользователей, чтобы добавить администраторов, сменить пароли или отозвать доступ.",
+    "manageButton": "Управление пользователями"
+  },
+  "system": {
+    "title": "Система",
+    "description": "Опасные операции над самой панелью.",
+    "restartLabel": "Перезапустить панель",
+    "restartDescription": "Корректно перезапускает процесс панели. Активные WebSocket- и gRPC-подключения кратковременно прервутся.",
+    "restartButton": "Перезапустить"
+  },
+  "systemInfo": {
+    "title": "Системная информация",
+    "description": "Bootstrap-настройки — задаются окружением или config-файлом и недоступны для изменения."
+  },
+  "retention": {
+    "title": "Хранение данных",
+    "description": "Сколько панель хранит временные ряды и истории до очистки.",
+    "fields": {
+      "ts_raw_seconds": {
+        "label": "Сырые метрики",
+        "description": "Сырые точки нагрузки сервера и здоровья DC"
+      },
+      "ts_hourly_seconds": {
+        "label": "Часовые агрегаты",
+        "description": "Агрегированные часовые метрики"
+      },
+      "ts_dc_seconds": {
+        "label": "Здоровье DC",
+        "description": "История покрытия и RTT по дата-центрам"
+      },
+      "ip_history_seconds": {
+        "label": "История IP клиентов",
+        "description": "Записи об IP-адресах клиентов"
+      },
+      "event_history_seconds": {
+        "label": "Runtime-события",
+        "description": "Журнал runtime-событий Telemt"
+      }
+    },
+    "units": {
+      "seconds": "Секунды",
+      "minutes": "Минуты",
+      "hours": "Часы",
+      "days": "Дни"
+    },
+    "unsavedNotice": "Несохранённые изменения · окна хранения применятся при следующем цикле очистки.",
+    "cancel": "Отмена",
+    "save": "Сохранить настройки хранения",
+    "saving": "Сохраняем…"
+  },
+  "registryNamespaces": {
+    "http": {
+      "title": "Публичный доступ",
+      "desc": "Публичные URL, которые панель сообщает агентам и клиентам."
+    },
+    "agents": {
+      "title": "Агенты",
+      "desc": "Пороги heartbeat и backoff для исходящих супервизоров."
+    },
+    "auth": {
+      "title": "Аутентификация",
+      "desc": "Политика паролей, тайм-ауты сессий, окна TOTP."
+    },
+    "jobs": {
+      "title": "Задачи",
+      "desc": "Тайминги воркеров задач и TTL."
+    },
+    "observability": {
+      "title": "Наблюдаемость",
+      "desc": "Сэмплирование телеметрии и окна дашборда."
+    },
+    "storage": {
+      "title": "Хранилище",
+      "desc": "Тайминги пакетной записи и агрегаций."
+    }
+  },
+  "registryField": {
+    "sourceEnvNamed": "Задано через {{name}}",
+    "sourceEnv": "Задано через env",
+    "sourceConfigFile": "Задано в config.toml",
+    "sourceDefault": "Default",
+    "jsonNotice": "Изменяется в специальном разделе ниже",
+    "placeholderDuration": "например, 30s, 5m, 1h",
+    "placeholderHostport": "например, 0.0.0.0:8080",
+    "pendingRestart": "перезапуск ожидается"
+  },
+  "restartBanner": {
+    "needs_one": "настройка требует",
+    "needs_few": "настройки требуют",
+    "needs_many": "настроек требуют",
+    "suffix": "перезапуска панели, чтобы применить новое значение:",
+    "restartNow": "Перезапустить",
+    "restarting": "Перезапускаем…"
+  },
+  "updates": {
+    "title": "Обновления",
+    "description": "Управление версиями панели и агентов.",
+    "panelUpdateAvailable": "Доступно обновление панели",
+    "updateButton": "Обновить до {{version}}",
+    "updating": "Обновляем…",
+    "versionsLabel": "Версии",
+    "panel": "Панель",
+    "agents": "Агенты",
+    "checkNowTitle": "Проверить обновления",
+    "autoUpdateLabel": "Автообновление",
+    "checkIntervalLabel": "Интервал проверки",
+    "hours": "часов",
+    "cancel": "Отмена",
+    "save": "Сохранить",
+    "saving": "Сохраняем…"
+  },
+  "geoip": {
+    "title": "GeoIP",
+    "description": "Обогащение таблицы истории IP страной, городом и ASN.",
+    "loading": "Загрузка…",
+    "modeLabel": "Режим",
+    "modeAriaLabel": "Режим GeoIP",
+    "modes": {
+      "disabled": {
+        "label": "Отключено",
+        "help": "Без GeoIP-обогащения."
+      },
+      "auto": {
+        "label": "Авто (P3TERX)",
+        "help": "Еженедельное обновление из github.com/P3TERX/GeoLite.mmdb."
+      },
+      "url": {
+        "label": "Свои URL",
+        "help": "Периодическая загрузка с URL, указанных оператором."
+      },
+      "local": {
+        "label": "Локальные файлы",
+        "help": "Файлы, управляемые оператором на диске."
+      }
+    },
+    "cityUrlLabel": "URL для City",
+    "cityUrlPlaceholder": "https://…/GeoLite2-City.mmdb",
+    "asnUrlLabel": "URL для ASN",
+    "asnUrlPlaceholder": "https://…/GeoLite2-ASN.mmdb",
+    "cityPathLabel": "Путь к файлу City",
+    "cityPathPlaceholder": "/var/lib/panvex/geoip/city.mmdb",
+    "asnPathLabel": "Путь к файлу ASN",
+    "asnPathPlaceholder": "/var/lib/panvex/geoip/asn.mmdb",
+    "save": "Сохранить",
+    "saving": "Сохраняем…",
+    "updateNow": "Обновить сейчас",
+    "updatingNow": "Обновляем…",
+    "statusLabel": "Состояние",
+    "statusCity": "City",
+    "statusAsn": "ASN",
+    "never": "никогда",
+    "errorPrefix": "ошибка"
+  },
+  "webhooks": {
+    "title": "Webhook-эндпоинты",
+    "description": "HMAC-подписанная исходящая доставка событий аудита и алертов. Получатели выбираются по event_filter и ретраются с экспоненциальной задержкой.",
+    "adminBadge": "Admin",
+    "addButton": "Добавить webhook",
+    "endpoints_one": "{{count}} эндпоинт",
+    "endpoints_few": "{{count}} эндпоинта",
+    "endpoints_many": "{{count}} эндпоинтов",
+    "loadError": "Не удалось загрузить webhook-эндпоинты.",
+    "empty": "Webhook-эндпоинты ещё не настроены.",
+    "emptyHint": "Добавьте первый, чтобы рассылать события аудита и алертов в Slack, PagerDuty или собственный получатель.",
+    "row": {
+      "enabled": "Включён",
+      "disabled": "Выключен",
+      "allowPrivate": "Частный OK",
+      "filterPrefix": "Фильтр:",
+      "allEvents": "все события",
+      "edit": "Изменить",
+      "deleteAriaLabel": "Удалить {{name}}"
+    },
+    "deleteConfirm": {
+      "title": "Удалить webhook-эндпоинт?",
+      "body": "«{{name}}» немедленно перестанет получать события. Ожидающие записи outbox для этого эндпоинта также будут удалены (CASCADE).",
+      "confirm": "Удалить эндпоинт",
+      "fallbackName": "этот эндпоинт"
+    },
+    "errors": {
+      "create": "Не удалось создать webhook-эндпоинт.",
+      "update": "Не удалось обновить webhook-эндпоинт."
+    },
+    "form": {
+      "createTitle": "Добавить webhook-эндпоинт",
+      "editTitle": "Изменить webhook-эндпоинт",
+      "intro": "Исходящий HTTP-получатель событий аудита и алертов. Тело подписывается HMAC-SHA256 секретом эндпоинта; получатели проверяют подпись через заголовок <1>X-Panvex-Signature</1>.",
+      "nameLabel": "Название",
+      "namePlaceholder": "ops-slack",
+      "urlLabel": "URL",
+      "urlPlaceholder": "https://hooks.example.com/services/…",
+      "secretLabel": "Секрет",
+      "secretLabelEdit": "Секрет (оставьте пустым, чтобы сохранить прежний)",
+      "secretDescription": "Ключ HMAC для подписи тел доставки. Считается учётными данными — API не возвращает его после сохранения.",
+      "secretPlaceholderEdit": "••••••••",
+      "filterLabel": "Фильтр событий",
+      "filterDescription": "Список действий или префиксов через запятую (например, `audit.*,alert.fired`). Пусто = все события.",
+      "filterPlaceholder": "audit.*,alert.fired",
+      "enabledLabel": "Включён",
+      "enabledHint": "Выключённые эндпоинты перестают получать новые события; ожидающие записи дренируются только после повторного включения.",
+      "allowPrivateLabel": "Разрешить приватные адреса",
+      "allowPrivateHint": "Отключает SSRF-проверку. Включайте только для получателей в приватных сетях оператора.",
+      "cancel": "Отмена",
+      "saving": "Сохраняем…",
+      "create": "Добавить webhook",
+      "save": "Сохранить изменения",
+      "validation": {
+        "nameRequired": "Название обязательно.",
+        "nameTooLong": "Название не длиннее 128 символов.",
+        "urlScheme": "URL должен начинаться с http:// или https://.",
+        "secretRequired": "Секрет обязателен.",
+        "secretTooLong": "Секрет не длиннее 1024 символов."
+      }
+    }
+  }
+}

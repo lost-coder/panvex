@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useMutation } from "@tanstack/react-query";
 import { type BulkServerAction, type ViewMode, Button, EmptyState } from "@/ui";
 import { ServersPage } from "@/features/servers/ServersPage";
@@ -19,6 +20,7 @@ const BULK_ACTION_MAP: Record<BulkServerAction, string> = {
 };
 
 export function ServersContainer() {
+  const { t } = useTranslation("servers");
   const { servers, agentVersions, isLoading, error } = useServersList();
   const { fleetGroups } = useFleetGroups();
   const { resolveMode, setMode } = useViewMode("servers");
@@ -44,7 +46,7 @@ export function ServersContainer() {
       });
     },
     onError: (err: unknown) =>
-      setBulkError(err instanceof Error ? err.message : "Bulk action failed"),
+      setBulkError(err instanceof Error ? err.message : t("error.bulkActionFailed")),
     onSuccess: () => setBulkError(undefined),
   });
 
@@ -64,8 +66,8 @@ export function ServersContainer() {
   if (error) {
     return (
       <ErrorState
-        title="Failed to load fleet"
-        description={error.message || "Telemetry service unreachable. Retry once the panel recovers."}
+        title={t("error.loadFleet")}
+        description={error.message || t("error.fallbackDescription")}
         onRetry={() => globalThis.location.reload()}
       />
     );
@@ -79,11 +81,11 @@ export function ServersContainer() {
       <div className="p-6">
         <EmptyState
           icon="🖥️"
-          title="Серверов пока нет"
-          description="Добавьте первую ноду Telemt — она появится здесь, как только агент подключится."
+          title={t("empty.title")}
+          description={t("empty.description")}
           action={
             <Button onClick={() => navigate({ to: "/servers/add" })}>
-              Добавить сервер
+              {t("empty.addServer")}
             </Button>
           }
         />

@@ -1,6 +1,8 @@
 // Q5.U-Q-08: extracted from ClientDetailPage.tsx so the page-level
 // orchestrator stays under ~600 LOC. The card has no dependency on
 // the page's local state, so a clean component move was sufficient.
+import { useTranslation } from "react-i18next";
+
 import { DataTable, MonoValue } from "@/ui";
 
 export interface IPRow {
@@ -20,16 +22,17 @@ export function IPHistoryCard({
   ips: IPRow[];
   totalUnique: number;
 }>) {
+  const { t } = useTranslation("clients");
   const columns = [
     {
       key: "ip",
-      header: "IP",
+      header: t("ipHistory.ip"),
       render: (row: Readonly<IPRow>) => <MonoValue>{row.ip}</MonoValue>,
       className: "w-[160px]",
     },
     {
       key: "country",
-      header: "Country",
+      header: t("ipHistory.country"),
       render: (row: Readonly<IPRow>) =>
         row.countryName || row.countryCode ? (
           <span className="text-xs text-fg">
@@ -45,7 +48,7 @@ export function IPHistoryCard({
     },
     {
       key: "city",
-      header: "City",
+      header: t("ipHistory.city"),
       render: (row: Readonly<IPRow>) =>
         row.city ? (
           <span className="text-xs text-fg">{row.city}</span>
@@ -56,7 +59,7 @@ export function IPHistoryCard({
     },
     {
       key: "asn",
-      header: "ASN",
+      header: t("ipHistory.asn"),
       render: (row: Readonly<IPRow>) =>
         row.asn ? (
           <MonoValue className="text-xs">{row.asn}</MonoValue>
@@ -67,7 +70,7 @@ export function IPHistoryCard({
     },
     {
       key: "firstSeen",
-      header: "First seen",
+      header: t("ipHistory.firstSeen"),
       render: (row: Readonly<IPRow>) => (
         <span className="text-[11px] font-mono text-fg-muted tabular-nums">
           {new Date(row.firstSeen).toLocaleString()}
@@ -77,7 +80,7 @@ export function IPHistoryCard({
     },
     {
       key: "lastSeen",
-      header: "Last seen",
+      header: t("ipHistory.lastSeen"),
       render: (row: Readonly<IPRow>) => (
         <span className="text-[11px] font-mono text-fg tabular-nums">
           {new Date(row.lastSeen).toLocaleString()}
@@ -90,23 +93,25 @@ export function IPHistoryCard({
     <section className="rounded-xs bg-bg-card border border-divider overflow-hidden">
       <header className="px-4 py-3 border-b border-divider flex items-center justify-between gap-2">
         <div className="flex items-baseline gap-2">
-          <span className="text-sm font-semibold text-fg">IP history</span>
-          <span className="text-[11px] font-mono text-fg-muted">{totalUnique} unique</span>
+          <span className="text-sm font-semibold text-fg">{t("ipHistory.title")}</span>
+          <span className="text-[11px] font-mono text-fg-muted">
+            {t("ipHistory.uniqueCount", { count: totalUnique })}
+          </span>
         </div>
         <span className="text-[10px] font-mono text-fg-muted truncate">
-          GeoIP enrichment pending — see backend-followup #3
+          {t("ipHistory.geoipNote")}
         </span>
       </header>
       {ips.length === 0 ? (
         <div className="px-4 py-8 text-sm text-fg-muted text-center">
-          No IP activity recorded.
+          {t("ipHistory.empty")}
         </div>
       ) : (
         <DataTable
           columns={columns}
           data={ips}
           keyExtractor={(row) => row.ip}
-          emptyMessage="No IPs"
+          emptyMessage={t("ipHistory.emptyShort")}
         />
       )}
     </section>

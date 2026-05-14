@@ -1,4 +1,6 @@
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
+
 import { NodeCard } from "@/features/servers/ui/NodeCard";
 import { TransportBadge } from "@/features/servers/ui/TransportBadge";
 import { classifyMode } from "@/features/servers/server-detail/classifyMode";
@@ -52,6 +54,7 @@ export function ServerListView({
   visibleColumns: Record<string, boolean>;
   selection?: ServerSelectionConfig | undefined;
 }>) {
+  const { t } = useTranslation("servers");
   // L-20: column array embeds inline render lambdas — without useMemo
   // every parent rerender produces a fresh array reference, defeating
   // any memoisation downstream of `columns`.
@@ -63,7 +66,7 @@ export function ServerListView({
             header: (
               <input
                 type="checkbox"
-                aria-label="Select all servers on this page"
+                aria-label={t("list.card.selectAll")}
                 checked={selection.allSelected}
                 ref={(el) => {
                   if (el) el.indeterminate = selection.someSelected && !selection.allSelected;
@@ -76,7 +79,7 @@ export function ServerListView({
             render: (s: Readonly<ServerListItem>) => (
               <input
                 type="checkbox"
-                aria-label={`Select ${s.name}`}
+                aria-label={t("list.card.selectOne", { name: s.name })}
                 checked={selection.selected.has(s.id)}
                 onChange={() => selection.onToggle(s.id)}
                 onClick={(e) => e.stopPropagation()}
@@ -89,7 +92,7 @@ export function ServerListView({
       : []),
     {
       key: "server",
-      header: "Server",
+      header: t("list.columns.server"),
       render: (s: Readonly<ServerListItem>) => (
         <div className="flex flex-col gap-0.5 min-w-0">
           <div className="flex items-center gap-2">
@@ -104,7 +107,7 @@ export function ServerListView({
     },
     {
       key: "transport",
-      header: "Transport",
+      header: t("list.columns.transport"),
       render: (s: Readonly<ServerListItem>) => (
         <TransportBadge
           mode={classifyMode({
@@ -121,7 +124,7 @@ export function ServerListView({
     },
     {
       key: "users",
-      header: "Users",
+      header: t("list.columns.users"),
       render: (s: Readonly<ServerListItem>) => {
         const online = s.usersOnline ?? 0;
         const configured = s.usersTotal ?? 0;
@@ -139,7 +142,7 @@ export function ServerListView({
     },
     {
       key: "traffic",
-      header: "Traffic",
+      header: t("list.columns.traffic"),
       render: (s: Readonly<ServerListItem>) => (
         <div className="flex justify-center">
           <TrafficCell bytes={s.trafficBytes} />
@@ -150,7 +153,7 @@ export function ServerListView({
     },
     {
       key: "uptime",
-      header: "Uptime",
+      header: t("list.columns.uptime"),
       render: (s: Readonly<ServerListItem>) => {
         const days = Math.floor(s.uptimeSeconds / 86400);
         const hours = Math.floor((s.uptimeSeconds % 86400) / 3600);
@@ -167,18 +170,18 @@ export function ServerListView({
     },
     {
       key: "load",
-      header: "Load",
+      header: t("list.columns.load"),
       render: (s: Readonly<ServerListItem>) => (
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-1.5 text-[10px] font-mono leading-none">
-            <span className="w-7 text-fg-muted shrink-0">CPU</span>
+            <span className="w-7 text-fg-muted shrink-0">{t("list.columns.cpu")}</span>
             <div className="h-1.5 flex-1 bg-border rounded-full overflow-hidden">
               <div className="h-full bg-fg rounded-full" style={{ width: `${s.cpuPct}%` }} />
             </div>
             <span className="text-fg-muted w-7 text-right shrink-0">{s.cpuPct}%</span>
           </div>
           <div className="flex items-center gap-1.5 text-[10px] font-mono leading-none">
-            <span className="w-7 text-fg-muted shrink-0">MEM</span>
+            <span className="w-7 text-fg-muted shrink-0">{t("list.columns.mem")}</span>
             <div className="h-1.5 flex-1 bg-border rounded-full overflow-hidden">
               <div className="h-full bg-fg-muted rounded-full" style={{ width: `${s.memPct}%` }} />
             </div>
@@ -188,7 +191,7 @@ export function ServerListView({
       ),
       className: "hidden lg:table-cell w-[140px]",
     },
-  ], [selection]);
+  ], [selection, t]);
 
   const columns = allColumns.filter((c) => c.key === "server" || visibleColumns[c.key] !== false);
 

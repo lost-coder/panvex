@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 import { Button } from "@/ui/base/button";
 import { Input } from "@/ui/base/input";
 import { FormField } from "@/ui/base/form-field";
@@ -29,6 +31,8 @@ export function FleetGroupFormSheet({
   loading,
   error,
 }: Readonly<FleetGroupFormSheetProps>) {
+  const { t } = useTranslation("fleet-groups");
+
   function update<K extends keyof FleetGroupFormData>(key: K, value: FleetGroupFormData[K]) {
     onChange({ ...data, [key]: value });
   }
@@ -38,38 +42,38 @@ export function FleetGroupFormSheet({
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h3 className="text-title">{isCreate ? "New fleet group" : "Edit fleet group"}</h3>
+        <h3 className="text-title">
+          {isCreate ? t("form.createTitle") : t("form.editTitle")}
+        </h3>
         <p className="text-sm text-fg-muted mt-0.5">
-          {isCreate
-            ? "Pick a URL-safe slug and a human-readable label. The slug is permanent."
-            : "Update the label and description. The slug stays locked for API/CLI stability."}
+          {isCreate ? t("form.createSubtitle") : t("form.editSubtitle")}
         </p>
       </div>
 
-      <FormField label="Slug (immutable)" variant="uppercase" required>
+      <FormField label={t("form.slugLabel")} variant="uppercase" required>
         <Input
           value={data.name}
           onChange={(e) => update("name", e.target.value.toLowerCase())}
-          placeholder="e.g. edge-eu"
+          placeholder={t("form.slugPlaceholder")}
           disabled={!isCreate || loading}
           className="font-mono"
         />
       </FormField>
 
-      <FormField label="Label" variant="uppercase" required>
+      <FormField label={t("form.labelLabel")} variant="uppercase" required>
         <Input
           value={data.label}
           onChange={(e) => update("label", e.target.value)}
-          placeholder="e.g. Edge Europe"
+          placeholder={t("form.labelPlaceholder")}
           disabled={loading}
         />
       </FormField>
 
-      <FormField label="Description" variant="uppercase">
+      <FormField label={t("form.descriptionLabel")} variant="uppercase">
         <Input
           value={data.description}
           onChange={(e) => update("description", e.target.value)}
-          placeholder="Optional — where, what, why"
+          placeholder={t("form.descriptionPlaceholder")}
           disabled={loading}
         />
       </FormField>
@@ -78,16 +82,16 @@ export function FleetGroupFormSheet({
 
       <div className="flex gap-2 justify-end mt-2">
         <Button variant="ghost" onClick={onCancel} disabled={loading}>
-          Cancel
+          {t("form.cancel")}
         </Button>
         <Button
           onClick={onSubmit}
           disabled={loading || !data.label || (isCreate && !data.name)}
         >
           {(() => {
-            if (loading) return "Saving…";
-            if (isCreate) return "Create group";
-            return "Save changes";
+            if (loading) return t("form.saving");
+            if (isCreate) return t("form.create");
+            return t("form.save");
           })()}
         </Button>
       </div>

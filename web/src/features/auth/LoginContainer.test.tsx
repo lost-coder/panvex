@@ -32,7 +32,7 @@ vi.mock("@/features/auth/LoginPage", () => ({
         data-testid="submit"
         onClick={() => props.onCredentials("admin", "hunter2")}
       >
-        submit
+        {"submit"}
       </button>
       <span data-testid="error">{props.error ?? ""}</span>
     </div>

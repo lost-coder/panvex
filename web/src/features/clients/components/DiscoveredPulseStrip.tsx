@@ -5,6 +5,9 @@
 // R-Q-24: pulse component + filter-spec factory co-located by design.
 /* eslint-disable react-refresh/only-export-components */
 
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
+
 import { DiscoveredPulseCell } from "./DiscoveredMobileRow";
 
 export interface DiscoveredCounts {
@@ -16,14 +19,20 @@ export interface DiscoveredCounts {
 }
 
 export function DiscoveredPulseStrip({ counts }: Readonly<{ counts: DiscoveredCounts }>) {
+  const { t } = useTranslation("clients");
   return (
     <section className="rounded-xs bg-bg-card border border-border grid grid-cols-2 md:grid-cols-4">
-      <DiscoveredPulseCell i={0} label="Pending" value={counts.pending} tone="warn" />
-      <DiscoveredPulseCell i={1} label="Adopted" value={counts.adopted} tone="ok" />
-      <DiscoveredPulseCell i={2} label="Ignored" value={counts.ignored} tone="default" />
+      <DiscoveredPulseCell i={0} label={t("discovered.pulse.pending")} value={counts.pending} tone="warn" />
+      <DiscoveredPulseCell i={1} label={t("discovered.pulse.adopted")} value={counts.adopted} tone="ok" />
+      <DiscoveredPulseCell
+        i={2}
+        label={t("discovered.pulse.ignored")}
+        value={counts.ignored}
+        tone="default"
+      />
       <DiscoveredPulseCell
         i={3}
-        label="Conflicts"
+        label={t("discovered.pulse.conflicts")}
         value={counts.conflicts}
         tone={counts.conflicts > 0 ? "error" : "default"}
       />
@@ -35,9 +44,11 @@ export interface DiscoveredFilterOptions {
   status: { value: string; onChange: (next: string) => void };
   conflicts: { value: string; onChange: (next: string) => void };
   counts: DiscoveredCounts;
+  t: TFunction<"clients">;
 }
 
 export function buildDiscoveredFilters(opts: Readonly<DiscoveredFilterOptions>) {
+  const { t } = opts;
   return [
     {
       key: "status",
@@ -45,12 +56,23 @@ export function buildDiscoveredFilters(opts: Readonly<DiscoveredFilterOptions>) 
       onChange: opts.status.onChange,
       variant: "chips" as const,
       options: [
-        { value: "all", label: `All · ${opts.counts.all}` },
-        { value: "pending", label: `Pending · ${opts.counts.pending}`, tone: "warn" as const },
-        { value: "adopted", label: `Adopted · ${opts.counts.adopted}`, tone: "ok" as const },
-        { value: "ignored", label: `Ignored · ${opts.counts.ignored}` },
+        { value: "all", label: t("discovered.filters.all", { count: opts.counts.all }) },
+        {
+          value: "pending",
+          label: t("discovered.filters.pending", { count: opts.counts.pending }),
+          tone: "warn" as const,
+        },
+        {
+          value: "adopted",
+          label: t("discovered.filters.adopted", { count: opts.counts.adopted }),
+          tone: "ok" as const,
+        },
+        {
+          value: "ignored",
+          label: t("discovered.filters.ignored", { count: opts.counts.ignored }),
+        },
       ],
-      placeholder: "Status",
+      placeholder: t("discovered.filters.statusPlaceholder"),
     },
     {
       key: "conflicts",
@@ -58,14 +80,14 @@ export function buildDiscoveredFilters(opts: Readonly<DiscoveredFilterOptions>) 
       onChange: opts.conflicts.onChange,
       variant: "chips" as const,
       options: [
-        { value: "all", label: "All" },
+        { value: "all", label: t("discovered.filters.anyConflict") },
         {
           value: "only",
-          label: `Conflicts · ${opts.counts.conflicts}`,
+          label: t("discovered.filters.onlyConflicts", { count: opts.counts.conflicts }),
           tone: "error" as const,
         },
       ],
-      placeholder: "Conflicts",
+      placeholder: t("discovered.filters.conflictsPlaceholder"),
     },
   ];
 }

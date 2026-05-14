@@ -5,6 +5,7 @@
 // R-Q-08: every sub-section lives in `./components/` so this file is
 // left with composition + the edit-form state machine.
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { ClientDetailHero } from "./components/ClientDetailHero";
 import { ClientDetailPulse } from "./components/ClientDetailPulse";
@@ -57,6 +58,7 @@ export function ClientDetailPage({
   ipHistory,
   agentLabels,
 }: Readonly<ClientDetailPageProps>) {
+  const { t } = useTranslation("clients");
   // Expose "Redeploy" as a prominent action whenever at least one
   // deployment is not yet succeeded — failed (Telemt rejected the
   // apply) or queued (agent offline / job in flight too long).
@@ -76,9 +78,9 @@ export function ClientDetailPage({
 
   const status = clientStatus(client.enabled, client.expirationRfc3339);
   const statusLabel = (() => {
-    if (status === "expired") return "EXPIRED";
-    if (status === "disabled") return "DISABLED";
-    return "ACTIVE";
+    if (status === "expired") return t("detail.statusExpired");
+    if (status === "disabled") return t("detail.statusDisabled");
+    return t("detail.statusActive");
   })();
 
   // Rotate confirmation is owned by the container (global ConfirmProvider
@@ -107,7 +109,7 @@ export function ClientDetailPage({
   return (
     <>
       <div className="px-4 md:px-8 pt-3 pb-3">
-        <Breadcrumbs items={[{ label: "Clients", onClick: onBack }, { label: client.name }]} />
+        <Breadcrumbs items={[{ label: t("detail.breadcrumb"), onClick: onBack }, { label: client.name }]} />
       </div>
 
       <ClientDetailHero
@@ -132,10 +134,10 @@ export function ClientDetailPage({
         <div className="md:hidden">
           <SwipeTabView
             tabs={[
-              { id: "secret", label: "Secret", content: secretSection },
-              { id: "deploy", label: "Deployments", content: deployLinks },
-              { id: "ips", label: "IP history", content: ipHistoryCard },
-              { id: "limits", label: "Limits", content: limitsCard },
+              { id: "secret", label: t("detail.tabs.secret"), content: secretSection },
+              { id: "deploy", label: t("detail.tabs.deploy"), content: deployLinks },
+              { id: "ips", label: t("detail.tabs.ips"), content: ipHistoryCard },
+              { id: "limits", label: t("detail.tabs.limits"), content: limitsCard },
             ]}
           />
         </div>

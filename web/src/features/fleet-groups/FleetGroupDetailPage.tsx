@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 import {
   Badge,
   Breadcrumbs,
@@ -39,6 +41,7 @@ export function FleetGroupDetailPage({
   onCancelEdit,
   saving,
 }: Readonly<FleetGroupDetailPageProps>) {
+  const { t } = useTranslation("fleet-groups");
   const hasIntegrations = (group.integrations ?? []).length > 0;
 
   return (
@@ -46,7 +49,7 @@ export function FleetGroupDetailPage({
       <div className="px-4 md:px-8 pt-3 pb-3">
         <Breadcrumbs
           items={[
-            { label: "Fleet groups", onClick: onBack },
+            { label: t("page.title"), onClick: onBack },
             { label: group.label || group.name },
           ]}
         />
@@ -54,11 +57,14 @@ export function FleetGroupDetailPage({
 
       <PageHeader
         title={group.label || group.name}
-        subtitle={`${group.agent_count} agent${group.agent_count === 1 ? "" : "s"} · slug: ${group.name}`}
+        subtitle={t("detail.subtitle", {
+          count: group.agent_count,
+          slug: group.name,
+        })}
         trailing={
           <div className="flex gap-2">
             <Button size="sm" variant="outline" onClick={onEdit}>
-              Edit
+              {t("detail.edit")}
             </Button>
             <Button
               size="sm"
@@ -66,7 +72,7 @@ export function FleetGroupDetailPage({
               onClick={onDelete}
               className="text-status-error hover:text-status-error"
             >
-              Delete
+              {t("detail.delete")}
             </Button>
           </div>
         }
@@ -74,19 +80,19 @@ export function FleetGroupDetailPage({
 
       <div className="px-4 md:px-8 pb-8 pt-4 flex flex-col gap-5">
         <section className="rounded-xs bg-bg-card border border-divider p-4">
-          <span className="text-sm font-semibold text-fg mb-3 block">Details</span>
+          <span className="text-sm font-semibold text-fg mb-3 block">{t("detail.details")}</span>
           <KvGrid
             rows={[
-              { label: "Slug", value: <span className="font-mono text-xs">{group.name}</span> },
-              { label: "Label", value: group.label || "—" },
-              { label: "Description", value: group.description || "—" },
-              { label: "Agents", value: group.agent_count.toString() },
+              { label: t("detail.slug"), value: <span className="font-mono text-xs">{group.name}</span> },
+              { label: t("detail.label"), value: group.label || "—" },
+              { label: t("detail.description"), value: group.description || "—" },
+              { label: t("detail.agents"), value: group.agent_count.toString() },
               {
-                label: "Created",
+                label: t("detail.created"),
                 value: new Date(group.created_at_unix * 1000).toLocaleString(),
               },
               {
-                label: "Updated",
+                label: t("detail.updated"),
                 value: new Date(group.updated_at_unix * 1000).toLocaleString(),
               },
             ]}
@@ -95,7 +101,7 @@ export function FleetGroupDetailPage({
 
         <section className="rounded-xs bg-bg-card border border-divider p-4 flex flex-col gap-3">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold text-fg">Integrations</span>
+            <span className="text-sm font-semibold text-fg">{t("detail.integrations")}</span>
             {hasIntegrations && <Badge variant="default">{group.integrations.length}</Badge>}
           </div>
           {hasIntegrations ? (
@@ -108,18 +114,15 @@ export function FleetGroupDetailPage({
                   <div className="flex flex-col">
                     <span className="text-sm text-fg font-mono">{i.kind}</span>
                     <span className="text-[11px] text-fg-muted">
-                      {i.enabled ? "enabled" : "disabled"}
-                      {i.provider_id ? ` · provider ${i.provider_id.slice(0, 8)}…` : ""}
+                      {i.enabled ? t("detail.enabled") : t("detail.disabled")}
+                      {i.provider_id ? t("detail.providerSuffix", { id: i.provider_id.slice(0, 8) }) : ""}
                     </span>
                   </div>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="text-xs text-fg-muted">
-              Интеграций пока нет. Каталог пополняется из backend-registry: DNS round-robin,
-              webhooks и др. будут доступны после регистрации соответствующих kind'ов.
-            </p>
+            <p className="text-xs text-fg-muted">{t("detail.noIntegrations")}</p>
           )}
         </section>
       </div>
@@ -127,7 +130,7 @@ export function FleetGroupDetailPage({
       <Sheet open={editOpen} onOpenChange={(open) => { if (!open) onCancelEdit(); }}>
         <SheetContent
           side="bottom"
-          title="Edit fleet group"
+          title={t("form.editTitle")}
           onOpenChange={(open) => { if (!open) onCancelEdit(); }}
         >
           <SheetBody>

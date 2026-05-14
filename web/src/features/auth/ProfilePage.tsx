@@ -1,6 +1,7 @@
 // P3-FE-01: Phase-7 redesign — full-width hero with avatar + identity meta,
 // two-column sections (Appearance · Security) on desktop, stacked on mobile.
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Palette, ShieldCheck } from "lucide-react";
 
 import { notifyMutationError } from "@/shared/api/http";
@@ -31,6 +32,7 @@ export function ProfilePage({
   totpDisableLoading,
   totpError,
 }: Readonly<ProfilePageProps>) {
+  const { t } = useTranslation("auth");
   const initials = user.username.charAt(0).toUpperCase();
   const [setupOpen, setSetupOpen] = useState(false);
   const [disableOpen, setDisableOpen] = useState(false);
@@ -53,7 +55,7 @@ export function ProfilePage({
 
   return (
     <div className="flex flex-col">
-      <PageHeader title="Profile" subtitle="Account information and preferences" />
+      <PageHeader title={t("profile.title")} subtitle={t("profile.subtitle")} />
 
       <div className="px-4 md:px-8 flex flex-col gap-6 pb-8">
         {/* Hero card — left-aligned so the avatar anchors the eye and the
@@ -69,15 +71,15 @@ export function ProfilePage({
             <div className="flex items-center gap-2 flex-wrap">
               <Badge variant="accent">{user.role}</Badge>
               {user.totpEnabled ? (
-                <Badge variant="ok">2FA Enabled</Badge>
+                <Badge variant="ok">{t("profile.badges.totpEnabled")}</Badge>
               ) : (
-                <Badge variant="warn">2FA Disabled</Badge>
+                <Badge variant="warn">{t("profile.badges.totpDisabled")}</Badge>
               )}
               <span
                 className="font-mono text-[10px] text-fg-muted truncate"
                 title={user.id}
               >
-                id {user.id.slice(0, 8)}…
+                {t("profile.idShort", { id: user.id.slice(0, 8) })}
               </span>
             </div>
           </div>
@@ -88,17 +90,17 @@ export function ProfilePage({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-8 items-start">
           <PageSection
             icon={Palette}
-            title="Appearance"
-            description="Your personal dashboard preferences."
+            title={t("profile.appearance.title")}
+            description={t("profile.appearance.description")}
           >
-            <SettingsRow label="Theme">
+            <SettingsRow label={t("profile.appearance.themeLabel")}>
               <Select
                 className="w-36"
                 value={appearance.theme}
                 options={[
-                  { value: "system", label: "System" },
-                  { value: "light", label: "Light" },
-                  { value: "dark", label: "Dark" },
+                  { value: "system", label: t("profile.appearance.themeOptions.system") },
+                  { value: "light", label: t("profile.appearance.themeOptions.light") },
+                  { value: "dark", label: t("profile.appearance.themeOptions.dark") },
                 ]}
                 onChange={(v) =>
                   onAppearanceChange?.({
@@ -108,13 +110,13 @@ export function ProfilePage({
                 }
               />
             </SettingsRow>
-            <SettingsRow label="Density">
+            <SettingsRow label={t("profile.appearance.densityLabel")}>
               <Select
                 className="w-36"
                 value={appearance.density}
                 options={[
-                  { value: "comfortable", label: "Comfortable" },
-                  { value: "compact", label: "Compact" },
+                  { value: "comfortable", label: t("profile.appearance.densityOptions.comfortable") },
+                  { value: "compact", label: t("profile.appearance.densityOptions.compact") },
                 ]}
                 onChange={(v) =>
                   onAppearanceChange?.({
@@ -124,7 +126,7 @@ export function ProfilePage({
                 }
               />
             </SettingsRow>
-            <SettingsRow label="Swipe Navigation" description="Swipe between pages on mobile">
+            <SettingsRow label={t("profile.appearance.swipeLabel")} description={t("profile.appearance.swipeDescription")}>
               <input
                 type="checkbox"
                 className="h-4 w-4 accent-[var(--color-accent)] cursor-pointer"
@@ -141,16 +143,16 @@ export function ProfilePage({
 
           <PageSection
             icon={ShieldCheck}
-            title="Security"
-            description="Protect your account with a second factor."
+            title={t("profile.security.title")}
+            description={t("profile.security.description")}
             tone={user.totpEnabled ? "default" : "warn"}
           >
             <SettingsRow
-              label="Two-Factor Authentication"
+              label={t("profile.security.totpRowLabel")}
               description={
                 user.totpEnabled
-                  ? "Your account is protected with a TOTP authenticator."
-                  : "Add an authenticator app to require a 6-digit code at sign-in."
+                  ? t("profile.security.totpEnabledDescription")
+                  : t("profile.security.totpDisabledDescription")
               }
             >
               {user.totpEnabled ? (
@@ -160,7 +162,7 @@ export function ProfilePage({
                   onClick={() => setDisableOpen(true)}
                   disabled={!onDisableTotp}
                 >
-                  Disable 2FA
+                  {t("profile.security.disableButton")}
                 </Button>
               ) : (
                 <Button
@@ -168,7 +170,7 @@ export function ProfilePage({
                   onClick={handleStartSetup}
                   disabled={!onStartTotpSetup || totpSetupLoading}
                 >
-                  {totpSetupLoading ? "Loading…" : "Set Up 2FA"}
+                  {totpSetupLoading ? t("profile.security.setupLoading") : t("profile.security.setupButton")}
                 </Button>
               )}
             </SettingsRow>

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   AreaChart,
   Area,
@@ -270,6 +271,7 @@ export default function MetricsChartSectionInner({
   onTimeRangeChange,
   availableRanges = TIME_RANGES,
 }: Readonly<MetricsChartSectionProps>) {
+  const { t } = useTranslation("dashboard");
   const [tab, setTab] = useState<MetricsTab>("system");
 
   return (
@@ -315,7 +317,7 @@ export default function MetricsChartSectionInner({
       <div className="bg-bg-card border border-border rounded-lg p-4">
         {points.length === 0 ? (
           <div className={chartFallbackClass}>
-            No data available for this time range
+            {t("metrics.noData")}
           </div>
         ) : (
           <>

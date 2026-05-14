@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 import { Badge } from "@/ui/primitives/Badge";
 import { formatTime } from "@/ui/lib/format";
 import { cn } from "@/ui/lib/cn";
@@ -39,18 +41,19 @@ function EventRow({ event }: Readonly<{ event: ServerEventData }>) {
 }
 
 export function EventsTab({ server }: Readonly<{ server: ServerDetailPageProps["server"] }>) {
+  const { t } = useTranslation("servers");
   const { events, eventsDroppedTotal } = server;
 
   if (events.length === 0) {
     return (
-      <div className="py-8 text-center text-sm text-fg-muted">No events.</div>
+      <div className="py-8 text-center text-sm text-fg-muted">{t("detail.events.empty")}</div>
     );
   }
 
   return (
     <div className="flex flex-col gap-3">
       {eventsDroppedTotal > 0 && (
-        <Badge variant="warn">⚠ {eventsDroppedTotal} events dropped</Badge>
+        <Badge variant="warn">{t("detail.events.dropped", { count: eventsDroppedTotal })}</Badge>
       )}
       <div className="flex flex-col">
         {events.map((event) => (

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/ui";
 
@@ -17,6 +18,7 @@ export function RenameDialog({
   currentName: string;
   onRename?: ((name: string) => void) | undefined;
 }>) {
+  const { t } = useTranslation("servers");
   const [value, setValue] = useState(currentName);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -40,7 +42,7 @@ export function RenameDialog({
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent>
         <SheetHeader>
-          <SheetTitle>Rename Server</SheetTitle>
+          <SheetTitle>{t("rename.title")}</SheetTitle>
         </SheetHeader>
         <SheetBody>
           <form
@@ -55,7 +57,7 @@ export function RenameDialog({
             className="flex flex-col gap-4"
           >
             <label className="flex flex-col gap-1.5">
-              <span className="text-sm text-fg-muted">Server Name</span>
+              <span className="text-sm text-fg-muted">{t("rename.label")}</span>
               <input
                 ref={inputRef}
                 type="text"
@@ -70,14 +72,14 @@ export function RenameDialog({
                 onClick={() => onOpenChange(false)}
                 className="px-3 py-1.5 text-sm rounded-xs border border-border text-fg hover:bg-bg-card-hover transition-colors"
               >
-                Cancel
+                {t("rename.cancel")}
               </button>
               <button
                 type="submit"
                 disabled={!value.trim() || value.trim() === currentName}
                 className="px-3 py-1.5 text-sm rounded-xs bg-accent text-white hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Save
+                {t("rename.save")}
               </button>
             </div>
           </form>

@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { DiscoveredClientsPage } from "./DiscoveredClientsPage";
 import { useDiscoveredClients } from "./hooks/useDiscoveredClients";
 import { useNavigate } from "@tanstack/react-router";
@@ -9,6 +10,7 @@ import { useUrlSearchState } from "@/shared/hooks/useUrlSearchState";
 import { groupDiscovered } from "./lib/groupDiscovered";
 
 export function DiscoveredClientsContainer() {
+  const { t } = useTranslation("clients");
   const { discoveredClients, isLoading, error, adopt, ignore, adoptMany, ignoreMany, isAdopting, isIgnoring } =
     useDiscoveredClients();
   const navigate = useNavigate();
@@ -25,26 +27,26 @@ export function DiscoveredClientsContainer() {
   // the rules-of-hooks. Move them up.
   const handleIgnoreOne = useCallback(async (id: string) => {
     const ok = await confirm({
-      title: "Ignore this discovered client?",
-      body: "It will not appear in pending review unless reset.",
-      confirmLabel: "Ignore",
+      title: t("discovered.confirm.ignoreOneTitle"),
+      body: t("discovered.confirm.ignoreOneBody"),
+      confirmLabel: t("discovered.confirm.ignoreConfirm"),
       variant: "danger",
     });
     if (!ok) return;
     await ignore(id);
-  }, [confirm, ignore]);
+  }, [confirm, ignore, t]);
 
   const handleIgnoreMany = useCallback(async (ids: string[]) => {
     if (ids.length === 0) return;
     const ok = await confirm({
-      title: `Ignore ${ids.length} discovered record${ids.length === 1 ? "" : "s"}?`,
-      body: "Ignored candidates are filtered out of future scans until re-discovered.",
-      confirmLabel: "Ignore",
+      title: t("discovered.confirm.ignoreManyTitle", { count: ids.length }),
+      body: t("discovered.confirm.ignoreManyBody"),
+      confirmLabel: t("discovered.confirm.ignoreConfirm"),
       variant: "danger",
     });
     if (!ok) return;
     await ignoreMany(ids);
-  }, [confirm, ignoreMany]);
+  }, [confirm, ignoreMany, t]);
 
   const handleAdoptMany = useCallback(async (ids: string[]) => {
     if (ids.length === 0) return;
@@ -58,17 +60,17 @@ export function DiscoveredClientsContainer() {
     );
     const clients = touchedGroups.length || ids.length;
     const ok = await confirm({
-      title: `Adopt ${clients} client${clients === 1 ? "" : "s"}?`,
+      title: t("discovered.confirm.adoptManyTitle", { count: clients }),
       body:
         clients === 1
-          ? "The client will be registered as managed on every node where it was discovered."
-          : `Each of the ${clients} clients will be registered as managed on every node where it was discovered.`,
-      confirmLabel: "Adopt",
+          ? t("discovered.confirm.adoptOneBody")
+          : t("discovered.confirm.adoptManyBody", { count: clients }),
+      confirmLabel: t("discovered.confirm.adoptConfirm"),
       variant: "default",
     });
     if (!ok) return;
     await adoptMany(ids);
-  }, [confirm, adoptMany, discoveredClients]);
+  }, [confirm, adoptMany, discoveredClients, t]);
 
   if (isLoading) {
     return (

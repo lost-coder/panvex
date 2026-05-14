@@ -44,7 +44,7 @@ vi.mock("@/features/servers/ServersPage", () => ({
       <span data-testid="has-update">
         {props.servers.some((s) => s.updateAvailable) ? "yes" : "no"}
       </span>
-      <button onClick={() => props.onServerClick("s99")}>click</button>
+      <button onClick={() => props.onServerClick("s99")}>{"click"}</button>
     </div>
   ),
 }));

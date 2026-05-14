@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 import {
   AgeCell,
   Button,
@@ -28,57 +30,58 @@ function TokenCell({ value }: Readonly<{ value: string }>) {
 }
 
 export function TokenList({ tokens, onRevoke, nowSec }: Readonly<TokenListProps>) {
+  const { t } = useTranslation("enrollment");
   const columns = [
     {
       key: "value",
-      header: "Token",
-      render: (t: Readonly<EnrollmentTokenData>) => <TokenCell value={t.value} />,
+      header: t("tokens.table.token"),
+      render: (tok: Readonly<EnrollmentTokenData>) => <TokenCell value={tok.value} />,
       className: "min-w-[200px]",
     },
     {
       key: "fleetGroup",
-      header: "Fleet Group",
-      render: (t: Readonly<EnrollmentTokenData>) => (
+      header: t("tokens.table.fleetGroup"),
+      render: (tok: Readonly<EnrollmentTokenData>) => (
         <span
           className={cn(
             "text-sm",
-            t.fleetGroupId ? "text-fg font-mono" : "text-fg-faint italic",
+            tok.fleetGroupId ? "text-fg font-mono" : "text-fg-faint italic",
           )}
         >
-          {t.fleetGroupId || "default scope"}
+          {tok.fleetGroupId || t("tokens.table.defaultScope")}
         </span>
       ),
       className: "hidden md:table-cell w-[160px]",
     },
     {
       key: "status",
-      header: "Status",
-      render: (t: Readonly<EnrollmentTokenData>) => (
-        <StatusLabel tone={statusTone[t.status]} label={t.status} />
+      header: t("tokens.table.status"),
+      render: (tok: Readonly<EnrollmentTokenData>) => (
+        <StatusLabel tone={statusTone[tok.status]} label={tok.status} />
       ),
       className: "w-[120px]",
     },
     {
       key: "issued",
-      header: "Issued",
-      render: (t: Readonly<EnrollmentTokenData>) => (
+      header: t("tokens.table.issued"),
+      render: (tok: Readonly<EnrollmentTokenData>) => (
         <span className="text-[11px] font-mono text-fg-muted tabular-nums">
-          {formatTime(t.issuedAtUnix)}
+          {formatTime(tok.issuedAtUnix)}
         </span>
       ),
       className: "hidden sm:table-cell w-[100px]",
     },
     {
       key: "expires",
-      header: "Expires",
+      header: t("tokens.table.expires"),
       // Countdown is meaningful only for active tokens; past that the column
       // falls back to a plain absolute time.
-      render: (t: Readonly<EnrollmentTokenData>) =>
-        t.status === "active" ? (
-          <AgeCell unixSec={t.expiresAtUnix} mode="expires" nowSec={nowSec} />
+      render: (tok: Readonly<EnrollmentTokenData>) =>
+        tok.status === "active" ? (
+          <AgeCell unixSec={tok.expiresAtUnix} mode="expires" nowSec={nowSec} />
         ) : (
           <span className="text-[11px] font-mono text-fg-muted tabular-nums">
-            {formatTime(t.expiresAtUnix)}
+            {formatTime(tok.expiresAtUnix)}
           </span>
         ),
       className: "text-right w-[120px]",
@@ -86,15 +89,15 @@ export function TokenList({ tokens, onRevoke, nowSec }: Readonly<TokenListProps>
     {
       key: "actions",
       header: "",
-      render: (t: Readonly<EnrollmentTokenData>) =>
-        t.status === "active" ? (
+      render: (tok: Readonly<EnrollmentTokenData>) =>
+        tok.status === "active" ? (
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => onRevoke(t.value)}
+            onClick={() => onRevoke(tok.value)}
             className="text-status-error hover:text-status-error"
           >
-            Revoke
+            {t("tokens.table.revoke")}
           </Button>
         ) : null,
       className: "text-right",
@@ -104,11 +107,11 @@ export function TokenList({ tokens, onRevoke, nowSec }: Readonly<TokenListProps>
   if (tokens.length === 0) {
     return (
       <EmptyState
-        title="No enrollment tokens"
-        description="No active tokens match the current filter."
+        title={t("tokens.empty.listTitle")}
+        description={t("tokens.empty.listDescription")}
       />
     );
   }
 
-  return <DataTable data={tokens} columns={columns} keyExtractor={(t) => t.value} />;
+  return <DataTable data={tokens} columns={columns} keyExtractor={(tok) => tok.value} />;
 }

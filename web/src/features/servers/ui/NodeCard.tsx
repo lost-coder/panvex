@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 import { cn } from "@/ui/lib/cn";
 import type { Status } from "@/ui/tokens/colors";
 import { StatusDot } from "@/ui/primitives/StatusDot";
@@ -45,6 +47,7 @@ export function NodeCard({
   onClick,
   className,
 }: Readonly<NodeCardProps>) {
+  const { t } = useTranslation("servers");
   return (
     <button
       type="button"
@@ -59,7 +62,7 @@ export function NodeCard({
       {updateAvailable && (
         <ArrowUpCircle
           className="absolute top-2 right-2 w-4 h-4 text-accent"
-          aria-label="Update available"
+          aria-label={t("list.card.updateAvailable")}
         />
       )}
       <div className="flex items-center gap-2">
@@ -82,15 +85,15 @@ export function NodeCard({
               "bg-bg-card-hi text-fg-muted border-border",
             )}
           >
-            idle
+            {t("list.card.idle")}
           </span>
         )}
       </div>
 
       <div className="grid grid-cols-3 gap-2">
-        <Metric value={`${cpu}%`} label="CPU" />
-        <Metric value={`${mem}%`} label="MEM" />
-        <Metric value={String(clients)} label="Clients" />
+        <Metric value={`${cpu}%`} label={t("list.columns.cpu")} />
+        <Metric value={`${mem}%`} label={t("list.columns.mem")} />
+        <Metric value={String(clients)} label={t("list.columns.clients")} />
       </div>
     </button>
   );

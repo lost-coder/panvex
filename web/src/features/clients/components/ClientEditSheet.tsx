@@ -3,6 +3,8 @@
 // with the host page (which seeds it from the latest server snapshot
 // each time the sheet opens).
 
+import { useTranslation } from "react-i18next";
+
 import { ClientFormSheet } from "@/features/clients/ClientFormSheet";
 import {
   Sheet,
@@ -36,6 +38,7 @@ export function ClientEditSheet({
   fleetGroups,
   agents,
 }: Readonly<ClientEditSheetProps>) {
+  const { t } = useTranslation("clients");
   return (
     <Sheet
       open={open}
@@ -45,7 +48,7 @@ export function ClientEditSheet({
     >
       <SheetContent
         side="bottom"
-        title="Edit client"
+        title={t("detail.editSheetTitle")}
         onOpenChange={(next) => {
           if (!next) onClose();
         }}

@@ -4,6 +4,7 @@
 // R-Q-08: cell renderers, column factory, and mobile row live in
 // `./components/` so this file stays focused on data orchestration.
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { DiscoveredClientsBanner } from "@/features/clients/DiscoveredClientsBanner";
 import { ClientsCreateSheet } from "@/features/clients/components/ClientsCreateSheet";
@@ -63,6 +64,7 @@ export function ClientsPage({
   bulkError,
   bulkPending,
 }: Readonly<ClientsPageProps>) {
+  const { t } = useTranslation("clients");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
@@ -108,7 +110,7 @@ export function ClientsPage({
     sel.clear();
   };
 
-  const columns = buildClientColumns(nowSec, {
+  const columns = buildClientColumns(nowSec, t, {
     selected: sel.selected,
     onToggle: sel.toggleOne,
     onToggleAll: sel.toggleAllOnPage,
@@ -119,8 +121,8 @@ export function ClientsPage({
   return (
     <>
       <PageHeader
-        title="Clients"
-        subtitle={`${clients.length} client${clients.length === 1 ? "" : "s"}`}
+        title={t("page.title")}
+        subtitle={t("page.count", { count: clients.length })}
         trailing={
           <div className="flex items-center gap-2">
             {onDiscoveredClick && (
@@ -128,9 +130,9 @@ export function ClientsPage({
                 size="sm"
                 variant="outline"
                 onClick={onDiscoveredClick}
-                title="Review clients running on agents that the panel hasn't adopted yet"
+                title={t("page.discoveredTitle")}
               >
-                Discovered
+                {t("page.discovered")}
                 {pendingDiscoveredCount ? (
                   <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-accent text-bg text-[10px] font-mono">
                     {pendingDiscoveredCount}
@@ -146,7 +148,7 @@ export function ClientsPage({
                   setCreateOpen(true);
                 }}
               >
-                Add Client
+                {t("page.addClient")}
               </Button>
             )}
           </div>
@@ -164,8 +166,8 @@ export function ClientsPage({
           <div className="py-10">
             <EmptyState
               icon="👥"
-              title="Клиентов пока нет"
-              description="Создайте первого клиента, чтобы начать назначать его на ноды Telemt."
+              title={t("empty.title")}
+              description={t("empty.description")}
             />
           </div>
         ) : (
@@ -176,8 +178,8 @@ export function ClientsPage({
 
             <BulkActionBar
               count={sel.selected.size}
-              hint="run a bulk action or clear the selection"
-              actions={buildClientsBulkActions(!!onBulkAction)}
+              hint={t("filters.bulkHint")}
+              actions={buildClientsBulkActions(!!onBulkAction, t)}
               onAction={(id) => runBulk(id as BulkClientAction)}
               onClear={sel.clear}
               pending={bulkPending}
@@ -191,7 +193,7 @@ export function ClientsPage({
                   setSearch(v);
                   setCurrentPage(1);
                 },
-                placeholder: "Search by name…",
+                placeholder: t("filters.searchPlaceholder"),
               }}
               filters={[
                 buildClientsStatusFilter({
@@ -201,6 +203,7 @@ export function ClientsPage({
                     setCurrentPage(1);
                   },
                   counts: statusCounts,
+                  t,
                 }),
               ]}
               viewMode={

@@ -1,0 +1,55 @@
+{
+  "page": {
+    "title": "Группы серверов",
+    "count_one": "{{count}} группа",
+    "count_few": "{{count}} группы",
+    "count_many": "{{count}} групп",
+    "new": "Новая группа"
+  },
+  "empty": {
+    "title": "Групп пока нет",
+    "description": "Создайте первую группу, чтобы назначать клиентов и токены сразу на набор серверов."
+  },
+  "table": {
+    "label": "Название",
+    "agents": "Агенты",
+    "integrations": "Интеграции",
+    "description": "Описание",
+    "edit": "Изменить"
+  },
+  "form": {
+    "createTitle": "Новая группа",
+    "editTitle": "Изменить группу",
+    "createSubtitle": "Укажите URL-совместимый slug и человекочитаемое название. Slug менять нельзя.",
+    "editSubtitle": "Можно изменить название и описание. Slug остаётся неизменным ради стабильности API/CLI.",
+    "slugLabel": "Slug (неизменяемый)",
+    "slugPlaceholder": "например, edge-eu",
+    "labelLabel": "Название",
+    "labelPlaceholder": "например, Edge Europe",
+    "descriptionLabel": "Описание",
+    "descriptionPlaceholder": "Необязательно — где, что, зачем",
+    "cancel": "Отмена",
+    "saving": "Сохраняем…",
+    "create": "Создать группу",
+    "save": "Сохранить"
+  },
+  "detail": {
+    "edit": "Изменить",
+    "delete": "Удалить",
+    "subtitle_one": "{{count}} агент · slug: {{slug}}",
+    "subtitle_few": "{{count}} агента · slug: {{slug}}",
+    "subtitle_many": "{{count}} агентов · slug: {{slug}}",
+    "details": "Детали",
+    "slug": "Slug",
+    "label": "Название",
+    "description": "Описание",
+    "agents": "Агенты",
+    "created": "Создана",
+    "updated": "Обновлена",
+    "integrations": "Интеграции",
+    "noIntegrations": "Интеграций пока нет. Каталог пополняется из backend-registry: DNS round-robin, webhooks и др. будут доступны после регистрации соответствующих kind'ов.",
+    "providerSuffix": " · провайдер {{id}}…",
+    "enabled": "включена",
+    "disabled": "выключена"
+  }
+}

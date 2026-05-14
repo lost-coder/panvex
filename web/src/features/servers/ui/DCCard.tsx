@@ -32,7 +32,7 @@ export function DCCard({ code, city, latency, load, status, onClick, className }
       <div className="flex items-center gap-3 mt-auto">
         <span className="text-xs font-mono text-fg-muted">
           {latency}
-          <span className="text-fg-muted/50">ms</span>
+          <span className="text-fg-muted/50">{"ms"}</span>
         </span>
         <span className="text-xs font-mono text-fg-muted">
           {load}

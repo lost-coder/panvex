@@ -1,4 +1,5 @@
 import { useState, type ReactElement } from "react";
+import { useTranslation } from "react-i18next";
 
 interface TelemtUnreachableBannerProps {
   sinceUnix: number;
@@ -8,15 +9,6 @@ interface TelemtUnreachableBannerProps {
    * back to Date.now().
    */
   nowUnix?: number;
-}
-
-function formatElapsed(seconds: number): string {
-  if (seconds < 60) return `${Math.max(0, Math.floor(seconds))} с`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes} мин`;
-  const hours = Math.floor(minutes / 60);
-  const restMin = minutes % 60;
-  return restMin === 0 ? `${hours} ч` : `${hours} ч ${restMin} мин`;
 }
 
 function formatHHMMSS(unix: number): string {
@@ -31,6 +23,7 @@ function formatHHMMSS(unix: number): string {
 export function TelemtUnreachableBanner(
   props: TelemtUnreachableBannerProps,
 ): ReactElement {
+  const { t } = useTranslation("servers");
   const { sinceUnix, nowUnix } = props;
   // Date.now() is impure and would violate the react-compiler "no impure
   // calls during render" rule; wrap it in a lazy useState initializer so
@@ -39,16 +32,25 @@ export function TelemtUnreachableBanner(
   const now = nowUnix ?? fallbackNow;
   const elapsed = sinceUnix > 0 ? now - sinceUnix : 0;
   const sinceText = formatHHMMSS(sinceUnix);
+  const formatElapsed = (seconds: number): string => {
+    if (seconds < 60) return t("detail.elapsedSec", { value: Math.max(0, Math.floor(seconds)) });
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return t("detail.elapsedMin", { value: minutes });
+    const hours = Math.floor(minutes / 60);
+    const restMin = minutes % 60;
+    return restMin === 0
+      ? t("detail.elapsedHour", { value: hours })
+      : t("detail.elapsedHourMin", { hours, minutes: restMin });
+  };
   const elapsedText = formatElapsed(elapsed);
   return (
     <div
       role="alert"
       className="rounded-md border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-100"
     >
-      <div className="font-semibold">Связь с Telemt потеряна</div>
+      <div className="font-semibold">{t("detail.telemtLost")}</div>
       <div className="text-red-200/80">
-        с {sinceText} UTC ({elapsedText}). Проверьте, что Telemt запущен и слушает
-        loopback. Метрики и режим работы недоступны до восстановления связи.
+        {t("detail.telemtLostDetail", { since: sinceText, elapsed: elapsedText })}
       </div>
     </div>
   );

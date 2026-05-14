@@ -6,6 +6,7 @@
 // R-Q-08: pulse strip, filter spec, pending/reviewed sections, the
 // column factory, and mobile row all live in `./components/`.
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { Button, EmptyState, PageHeader, TableView } from "@/ui";
 import type { DiscoveredClientsPageProps } from "@/shared/api/types-pages/pages";
@@ -48,6 +49,7 @@ export function DiscoveredClientsPage({
   onBack,
   busy,
 }: Readonly<DiscoveredClientsPageProps>) {
+  const { t } = useTranslation("clients");
   const groups = useMemo(() => groupDiscovered(clients), [clients]);
   const counts = useMemo(() => buildCounts(groups), [groups]);
 
@@ -132,18 +134,23 @@ export function DiscoveredClientsPage({
     onIgnore: runIgnore,
     busy,
     withActions: true,
+    t,
   });
-  const reviewedColumns = buildDiscoveredColumns({ busy, withActions: false });
+  const reviewedColumns = buildDiscoveredColumns({ busy, withActions: false, t });
 
   return (
     <>
       <PageHeader
-        title="Discovered clients"
-        subtitle={`${counts.pending} pending · ${counts.adopted} adopted · ${counts.ignored} ignored`}
+        title={t("discovered.title")}
+        subtitle={t("discovered.subtitle", {
+          pending: counts.pending,
+          adopted: counts.adopted,
+          ignored: counts.ignored,
+        })}
         trailing={
           onBack ? (
             <Button size="sm" variant="outline" onClick={onBack}>
-              Back to Clients
+              {t("discovered.back")}
             </Button>
           ) : undefined
         }
@@ -155,18 +162,19 @@ export function DiscoveredClientsPage({
           search={{
             value: search,
             onChange: setSearch,
-            placeholder: "Search client or node…",
+            placeholder: t("discovered.searchPlaceholder"),
           }}
           filters={buildDiscoveredFilters({
             status: { value: statusFilter, onChange: setStatusFilter },
             conflicts: { value: conflictFilter, onChange: setConflictFilter },
             counts,
+            t,
           })}
         >
           {filtered.length === 0 ? (
             <EmptyState
-              title="No discovered clients"
-              description="Agents report users that aren't managed by the panel. They'll show up here for review."
+              title={t("discovered.empty.title")}
+              description={t("discovered.empty.description")}
             />
           ) : (
             <div className="flex flex-col gap-6">

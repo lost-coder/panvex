@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetBody } from "@/ui/base/sheet";
 import { Button } from "@/ui/base/button";
 import { Input } from "@/ui/base/input";
@@ -14,6 +15,8 @@ export function UserFormSheet({
   loading,
   error,
 }: Readonly<UserFormSheetProps>) {
+  const { t } = useTranslation("users");
+
   function update<K extends keyof typeof data>(key: K, value: (typeof data)[K]) {
     onChange({ ...data, [key]: value });
   }
@@ -27,24 +30,24 @@ export function UserFormSheet({
     >
       <SheetContent>
         <SheetHeader>
-          <SheetTitle>{mode === "create" ? "Add User" : "Edit User"}</SheetTitle>
+          <SheetTitle>{mode === "create" ? t("form.addTitle") : t("form.editTitle")}</SheetTitle>
         </SheetHeader>
         <SheetBody>
           <div className="flex flex-col gap-4">
-            <p className="text-sm text-fg-muted">Panel administrator account.</p>
+            <p className="text-sm text-fg-muted">{t("form.description")}</p>
 
-            <FormField label="Username" variant="uppercase" required>
+            <FormField label={t("form.usernameLabel")} variant="uppercase" required>
               <Input
                 value={data.username}
                 onChange={(e) => update("username", e.target.value)}
-                placeholder="admin"
+                placeholder={t("form.usernamePlaceholder")}
                 disabled={loading || mode === "edit"}
                 autoComplete="off"
               />
             </FormField>
 
             <FormField
-              label={mode === "create" ? "Password" : "Password (leave blank to keep)"}
+              label={mode === "create" ? t("form.passwordLabel") : t("form.passwordLabelKeep")}
               variant="uppercase"
               required={mode === "create"}
             >
@@ -52,19 +55,19 @@ export function UserFormSheet({
                 type="password"
                 value={data.password}
                 onChange={(e) => update("password", e.target.value)}
-                placeholder={mode === "edit" ? "••••••••" : ""}
+                placeholder={mode === "edit" ? t("form.passwordPlaceholderKeep") : ""}
                 disabled={loading}
                 autoComplete="new-password"
               />
             </FormField>
 
-            <FormField label="Role" variant="uppercase" required>
+            <FormField label={t("form.roleLabel")} variant="uppercase" required>
               <Select
                 value={data.role}
                 options={[
-                  { value: "admin", label: "Admin — Full access" },
-                  { value: "operator", label: "Operator — Manage nodes & clients" },
-                  { value: "viewer", label: "Viewer — Read-only" },
+                  { value: "admin", label: t("form.roleAdmin") },
+                  { value: "operator", label: t("form.roleOperator") },
+                  { value: "viewer", label: t("form.roleViewer") },
                 ]}
                 onChange={(v) => update("role", v as typeof data.role)}
               />
@@ -74,16 +77,16 @@ export function UserFormSheet({
 
             <div className="flex gap-2 justify-end mt-2">
               <Button variant="ghost" onClick={onCancel} disabled={loading}>
-                Cancel
+                {t("form.cancel")}
               </Button>
               <Button
                 onClick={onSubmit}
                 disabled={loading || !data.username || (mode === "create" && !data.password)}
               >
                 {(() => {
-                  if (loading) return "Saving...";
-                  if (mode === "create") return "Add User";
-                  return "Save Changes";
+                  if (loading) return t("form.saving");
+                  if (mode === "create") return t("form.submitAdd");
+                  return t("form.submitSave");
                 })()}
               </Button>
             </div>

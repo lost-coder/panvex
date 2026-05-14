@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 import {
   FieldLabel,
   MonoValue,
@@ -30,6 +32,7 @@ export function DcDetailSheet({
   selectedDc: ServerDcData | null;
   onClose: () => void;
 }>) {
+  const { t } = useTranslation("servers");
   return (
     <Sheet
       open={selectedDc !== null}
@@ -46,53 +49,60 @@ export function DcDetailSheet({
         {selectedDc && (
           <>
             <SheetHeader>
-              <SheetTitle>DC{selectedDc.dc} Details</SheetTitle>
+              <SheetTitle>{t("detail.dcSheet.title", { dc: selectedDc.dc })}</SheetTitle>
             </SheetHeader>
             <SheetBody>
               <div className="flex flex-col gap-4">
                 <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
-                  <span className="text-fg-muted">Coverage</span>
+                  <span className="text-fg-muted">{t("detail.dcSheet.coverage")}</span>
                   <span
                     className={`font-mono font-semibold ${coverageColor(selectedDc.coveragePct)}`}
                   >
                     {selectedDc.coveragePct}%
                   </span>
-                  <span className="text-fg-muted">Available</span>
+                  <span className="text-fg-muted">{t("detail.dcSheet.available")}</span>
                   <span
                     className={`font-mono ${selectedDc.availablePct < 100 ? "text-status-warn" : "text-fg"}`}
                   >
                     {selectedDc.availablePct}%
                   </span>
-                  <span className="text-fg-muted">Writers</span>
+                  <span className="text-fg-muted">{t("detail.dcSheet.writers")}</span>
                   <span className="font-mono text-fg">
-                    {selectedDc.aliveWriters}/{selectedDc.requiredWriters} alive
+                    {t("detail.dcSheet.writersAlive", {
+                      alive: selectedDc.aliveWriters,
+                      required: selectedDc.requiredWriters,
+                    })}
                   </span>
-                  <span className="text-fg-muted">RTT</span>
+                  <span className="text-fg-muted">{t("detail.dcSheet.rtt")}</span>
                   <span
                     className={`font-mono ${rttClass(selectedDc.rttMs ?? 0)}`}
                   >
                     {selectedDc.rttMs == null ? "—" : `${selectedDc.rttMs}ms`}
                   </span>
-                  <span className="text-fg-muted">Load</span>
+                  <span className="text-fg-muted">{t("detail.dcSheet.load")}</span>
                   <span className="font-mono text-fg">{selectedDc.load}</span>
-                  <span className="text-fg-muted">Floor</span>
+                  <span className="text-fg-muted">{t("detail.dcSheet.floor")}</span>
                   <span className="font-mono text-fg">
-                    {selectedDc.floorMin}..{selectedDc.floorTarget}..{selectedDc.floorMax}
+                    {t("detail.dcSheet.floorRange", {
+                      min: selectedDc.floorMin,
+                      target: selectedDc.floorTarget,
+                      max: selectedDc.floorMax,
+                    })}
                     {selectedDc.floorCapped && (
-                      <span className="text-status-warn ml-1">⚠ capped</span>
+                      <span className="text-status-warn ml-1">{"⚠ "}{t("detail.dcSheet.capped")}</span>
                     )}
                   </span>
                 </div>
 
                 {selectedDc.endpointWriters.length > 0 && (
                   <div className="flex flex-col gap-2">
-                    <FieldLabel>Endpoints & Writers</FieldLabel>
+                    <FieldLabel>{t("detail.dcSheet.endpointsAndWriters")}</FieldLabel>
                     {selectedDc.endpointWriters.map((ew) => (
                       <div key={ew.endpoint} className="flex items-center gap-2 text-sm">
                         <MonoValue>{ew.endpoint}</MonoValue>
                         <span className="text-fg-muted">→</span>
                         <MonoValue>
-                          {ew.activeWriters} active writer{ew.activeWriters === 1 ? "" : "s"}
+                          {t("detail.dcSheet.activeWriters", { count: ew.activeWriters })}
                         </MonoValue>
                       </div>
                     ))}

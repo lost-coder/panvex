@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { Plus, ShieldCheck, Trash2, Webhook } from "lucide-react";
 
 import { Button, PageSection, SkeletonRows, StatusLabel } from "@/ui";
@@ -20,17 +22,18 @@ type SheetState =
   | { mode: "edit"; endpointId: string };
 
 function AdminBadge() {
+  const { t } = useTranslation("settings");
   return (
     <span className="inline-flex items-center gap-1 rounded-xs border border-accent/20 bg-accent/5 px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wider text-accent">
       <ShieldCheck className="h-2.5 w-2.5" aria-hidden />
-      Admin
+      {t("webhooks.adminBadge")}
     </span>
   );
 }
 
-function describeFilter(raw: string): string {
+function describeFilter(raw: string, allEventsLabel: string): string {
   const trimmed = raw.trim();
-  if (!trimmed) return "all events";
+  if (!trimmed) return allEventsLabel;
   return trimmed;
 }
 
@@ -44,9 +47,10 @@ interface RowProps {
   endpoint: WebhookEndpoint;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
+  t: TFunction;
 }
 
-function WebhookRow({ endpoint, onEdit, onDelete }: Readonly<RowProps>) {
+function WebhookRow({ endpoint, onEdit, onDelete, t }: Readonly<RowProps>) {
   return (
     <div className="flex items-start justify-between gap-3 px-4 py-3 border-t border-border first:border-t-0">
       <div className="flex flex-col gap-1 min-w-0 flex-1">
@@ -54,28 +58,29 @@ function WebhookRow({ endpoint, onEdit, onDelete }: Readonly<RowProps>) {
           <span className="text-sm font-medium text-fg truncate">{endpoint.name}</span>
           <StatusLabel
             tone={endpoint.enabled ? "ok" : "default"}
-            label={endpoint.enabled ? "Enabled" : "Disabled"}
+            label={endpoint.enabled ? t("webhooks.row.enabled") : t("webhooks.row.disabled")}
           />
           {endpoint.allow_private && (
             <span className="inline-flex items-center rounded-xs border border-status-warn/30 bg-status-warn/10 px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wider text-status-warn">
-              Private OK
+              {t("webhooks.row.allowPrivate")}
             </span>
           )}
         </div>
         <span className="text-xs font-mono text-fg-muted truncate">{endpoint.url}</span>
         <span className="text-[11px] text-fg-muted truncate">
-          Filter: <span className="font-mono">{describeFilter(endpoint.event_filter)}</span>
+          {t("webhooks.row.filterPrefix")}{" "}
+          <span className="font-mono">{describeFilter(endpoint.event_filter, t("webhooks.row.allEvents"))}</span>
         </span>
       </div>
       <div className="flex gap-1 shrink-0">
         <Button variant="ghost" size="sm" onClick={() => onEdit(endpoint.id)}>
-          Edit
+          {t("webhooks.row.edit")}
         </Button>
         <Button
           variant="ghost"
           size="sm"
           onClick={() => onDelete(endpoint.id)}
-          aria-label={`Delete ${endpoint.name}`}
+          aria-label={t("webhooks.row.deleteAriaLabel", { name: endpoint.name })}
           className="text-status-error hover:text-status-error"
         >
           <Trash2 className="h-3.5 w-3.5" aria-hidden />
@@ -86,6 +91,7 @@ function WebhookRow({ endpoint, onEdit, onDelete }: Readonly<RowProps>) {
 }
 
 export function WebhooksSection() {
+  const { t } = useTranslation("settings");
   const { endpoints, isLoading, error, createWebhook, updateWebhook, deleteWebhook } = useWebhooks();
   const confirm = useConfirm();
 
@@ -111,11 +117,11 @@ export function WebhooksSection() {
 
   async function handleDelete(id: string) {
     const ep = endpoints.find((e) => e.id === id);
-    const name = ep?.name ?? "this endpoint";
+    const name = ep?.name ?? t("webhooks.deleteConfirm.fallbackName");
     const ok = await confirm({
-      title: "Delete webhook endpoint?",
-      body: `"${name}" will stop receiving events immediately. Pending outbox rows for this endpoint will also be removed (CASCADE).`,
-      confirmLabel: "Delete endpoint",
+      title: t("webhooks.deleteConfirm.title"),
+      body: t("webhooks.deleteConfirm.body", { name }),
+      confirmLabel: t("webhooks.deleteConfirm.confirm"),
       variant: "danger",
     });
     if (!ok) return;
@@ -130,7 +136,7 @@ export function WebhooksSection() {
         {
           onSuccess: () => setSheet({ mode: "closed" }),
           onError: (err) =>
-            setFormError(errorMessage(err, "Failed to create webhook endpoint.")),
+            setFormError(errorMessage(err, t("webhooks.errors.create"))),
         },
       );
       return;
@@ -142,7 +148,7 @@ export function WebhooksSection() {
         {
           onSuccess: () => setSheet({ mode: "closed" }),
           onError: (err) =>
-            setFormError(errorMessage(err, "Failed to update webhook endpoint.")),
+            setFormError(errorMessage(err, t("webhooks.errors.update"))),
         },
       );
     }
@@ -151,17 +157,17 @@ export function WebhooksSection() {
   return (
     <PageSection
       icon={Webhook}
-      title="Webhook Endpoints"
-      description="HMAC-signed outbound delivery for audit + alert events. Receivers are matched by event_filter and retried with exponential backoff."
+      title={t("webhooks.title")}
+      description={t("webhooks.description")}
       badge={<AdminBadge />}
     >
       <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border">
         <span className="text-xs font-mono text-fg-muted">
-          {endpoints.length} endpoint{endpoints.length === 1 ? "" : "s"}
+          {t("webhooks.endpoints", { count: endpoints.length })}
         </span>
         <Button size="sm" onClick={handleAdd}>
           <Plus className="h-3.5 w-3.5 mr-1" aria-hidden />
-          Add Webhook
+          {t("webhooks.addButton")}
         </Button>
       </div>
 
@@ -173,17 +179,17 @@ export function WebhooksSection() {
 
       {!isLoading && error && (
         <div className="px-4 py-3 text-xs text-status-error">
-          {errorMessage(error, "Failed to load webhook endpoints.")}
+          {errorMessage(error, t("webhooks.loadError"))}
         </div>
       )}
 
       {!isLoading && !error && endpoints.length === 0 && (
         <div className="px-4 py-6 text-center">
           <p className="text-sm text-fg-muted">
-            No webhook endpoints configured yet.
+            {t("webhooks.empty")}
           </p>
           <p className="text-caption mt-1">
-            Add one to start fanning out audit + alert events to Slack, PagerDuty, or your own receiver.
+            {t("webhooks.emptyHint")}
           </p>
         </div>
       )}
@@ -196,6 +202,7 @@ export function WebhooksSection() {
               endpoint={ep}
               onEdit={handleEdit}
               onDelete={handleDelete}
+              t={t}
             />
           ))}
         </div>

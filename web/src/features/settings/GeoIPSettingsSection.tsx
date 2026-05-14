@@ -10,6 +10,8 @@
 //   - response.state.{city,asn}: timestamps + size + error from the loader.
 
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { Globe } from "lucide-react";
 import { Button, Input, PageSection, SettingsRow } from "@/ui";
 import { useGeoIPSettings } from "./hooks/useGeoIPSettings";
@@ -23,27 +25,17 @@ type UseGeoIPSettings = ReturnType<typeof useGeoIPSettings>;
 type Mode = GeoIPSettingsParsed["mode"];
 type SourceState = GeoIPResponseParsed["state"]["city"];
 
-const MODES: ReadonlyArray<{ value: Mode; label: string; help: string }> = [
-  { value: "", label: "Disabled", help: "No GeoIP enrichment." },
-  {
-    value: "auto",
-    label: "Auto (P3TERX)",
-    help: "Refreshed weekly from github.com/P3TERX/GeoLite.mmdb.",
-  },
-  {
-    value: "url",
-    label: "Custom URLs",
-    help: "Periodic download from operator-supplied URLs.",
-  },
-  {
-    value: "local",
-    label: "Local files",
-    help: "Operator-managed files on disk.",
-  },
+type ModeKey = "disabled" | "auto" | "url" | "local";
+
+const MODE_DEFS: ReadonlyArray<{ value: Mode; key: ModeKey }> = [
+  { value: "", key: "disabled" },
+  { value: "auto", key: "auto" },
+  { value: "url", key: "url" },
+  { value: "local", key: "local" },
 ];
 
-function formatTimestamp(unix: number): string {
-  if (!unix) return "never";
+function formatTimestamp(unix: number, neverLabel: string): string {
+  if (!unix) return neverLabel;
   return new Date(unix * 1000).toUTCString();
 }
 
@@ -55,6 +47,7 @@ function formatBytes(n: number): string {
 }
 
 export function GeoIPSettingsSection() {
+  const { t } = useTranslation("settings");
   const hook = useGeoIPSettings();
   const { response, isLoading } = hook;
 
@@ -62,10 +55,10 @@ export function GeoIPSettingsSection() {
     return (
       <PageSection
         icon={Globe}
-        title="GeoIP"
-        description="Country / city / ASN enrichment for the IP history table."
+        title={t("geoip.title")}
+        description={t("geoip.description")}
       >
-        <div className="px-4 py-3 text-sm text-fg-muted">Loading…</div>
+        <div className="px-4 py-3 text-sm text-fg-muted">{t("geoip.loading")}</div>
       </PageSection>
     );
   }
@@ -83,6 +76,7 @@ function GeoIPForm({
   initial,
   hook,
 }: Readonly<{ initial: GeoIPResponseParsed; hook: UseGeoIPSettings }>) {
+  const { t } = useTranslation("settings");
   const { save, refresh } = hook;
   const [draft, setDraft] = useState<GeoIPSettingsParsed>(initial.settings);
 
@@ -120,15 +114,15 @@ function GeoIPForm({
   return (
     <PageSection
       icon={Globe}
-      title="GeoIP"
-      description="Country / city / ASN enrichment for the IP history table."
+      title={t("geoip.title")}
+      description={t("geoip.description")}
     >
-      <SettingsRow label="Mode">
-        <div role="radiogroup" aria-label="GeoIP mode" className="flex flex-col gap-1">
-          {MODES.map((m) => {
-            const id = `geoip-mode-${m.value || "disabled"}`;
+      <SettingsRow label={t("geoip.modeLabel")}>
+        <div role="radiogroup" aria-label={t("geoip.modeAriaLabel")} className="flex flex-col gap-1">
+          {MODE_DEFS.map((m) => {
+            const id = `geoip-mode-${m.key}`;
             return (
-              <div key={m.value || "disabled"} className="flex items-start gap-2 text-sm">
+              <div key={m.key} className="flex items-start gap-2 text-sm">
                 <input
                   id={id}
                   type="radio"
@@ -138,8 +132,8 @@ function GeoIPForm({
                   onChange={() => setMode(m.value)}
                 />
                 <label htmlFor={id} className="cursor-pointer">
-                  <span className="font-medium text-fg">{m.label}</span>
-                  <span className="block text-xs text-fg-muted">{m.help}</span>
+                  <span className="font-medium text-fg">{t(`geoip.modes.${m.key}.label`)}</span>
+                  <span className="block text-xs text-fg-muted">{t(`geoip.modes.${m.key}.help`)}</span>
                 </label>
               </div>
             );
@@ -149,19 +143,19 @@ function GeoIPForm({
 
       {draft.mode === "url" && (
         <>
-          <SettingsRow label="City URL">
+          <SettingsRow label={t("geoip.cityUrlLabel")}>
             <Input
               className="w-80"
               value={draft.city.url}
-              placeholder="https://…/GeoLite2-City.mmdb"
+              placeholder={t("geoip.cityUrlPlaceholder")}
               onChange={(e) => patchSrc("city", { url: e.target.value })}
             />
           </SettingsRow>
-          <SettingsRow label="ASN URL">
+          <SettingsRow label={t("geoip.asnUrlLabel")}>
             <Input
               className="w-80"
               value={draft.asn.url}
-              placeholder="https://…/GeoLite2-ASN.mmdb"
+              placeholder={t("geoip.asnUrlPlaceholder")}
               onChange={(e) => patchSrc("asn", { url: e.target.value })}
             />
           </SettingsRow>
@@ -170,19 +164,19 @@ function GeoIPForm({
 
       {draft.mode === "local" && (
         <>
-          <SettingsRow label="City file path">
+          <SettingsRow label={t("geoip.cityPathLabel")}>
             <Input
               className="w-80"
               value={draft.city.local_path}
-              placeholder="/var/lib/panvex/geoip/city.mmdb"
+              placeholder={t("geoip.cityPathPlaceholder")}
               onChange={(e) => patchSrc("city", { local_path: e.target.value })}
             />
           </SettingsRow>
-          <SettingsRow label="ASN file path">
+          <SettingsRow label={t("geoip.asnPathLabel")}>
             <Input
               className="w-80"
               value={draft.asn.local_path}
-              placeholder="/var/lib/panvex/geoip/asn.mmdb"
+              placeholder={t("geoip.asnPathPlaceholder")}
               onChange={(e) => patchSrc("asn", { local_path: e.target.value })}
             />
           </SettingsRow>
@@ -195,7 +189,7 @@ function GeoIPForm({
           onClick={() => save.mutate(draft)}
           disabled={save.isPending || !isDirty}
         >
-          {save.isPending ? "Saving…" : "Save"}
+          {save.isPending ? t("geoip.saving") : t("geoip.save")}
         </Button>
         {refreshSupported && (
           <Button
@@ -204,36 +198,37 @@ function GeoIPForm({
             onClick={() => refresh.mutate()}
             disabled={refresh.isPending}
           >
-            {refresh.isPending ? "Updating…" : "Update now"}
+            {refresh.isPending ? t("geoip.updatingNow") : t("geoip.updateNow")}
           </Button>
         )}
       </div>
 
-      <SettingsRow label="Status">
-        <StatusBlock state={initial} />
+      <SettingsRow label={t("geoip.statusLabel")}>
+        <StatusBlock state={initial} t={t} />
       </SettingsRow>
     </PageSection>
   );
 }
 
-function StatusBlock({ state }: Readonly<{ state: GeoIPResponseParsed }>) {
+function StatusBlock({ state, t }: Readonly<{ state: GeoIPResponseParsed; t: TFunction }>) {
   return (
     <div className="text-xs font-mono space-y-1 text-right">
-      <StatusRow label="City" s={state.state.city} />
-      <StatusRow label="ASN" s={state.state.asn} />
+      <StatusRow label={t("geoip.statusCity")} s={state.state.city} t={t} />
+      <StatusRow label={t("geoip.statusAsn")} s={state.state.asn} t={t} />
     </div>
   );
 }
 
-function StatusRow({ label, s }: Readonly<{ label: string; s: SourceState }>) {
+function StatusRow({ label, s, t }: Readonly<{ label: string; s: SourceState; t: TFunction }>) {
+  const never = t("geoip.never");
   return (
     <div>
       <span className="text-fg-muted">{label}: </span>
       <span className="text-fg">
-        {formatTimestamp(s.last_updated_at)} · {formatBytes(s.size_bytes)}
+        {formatTimestamp(s.last_updated_at, never)} · {formatBytes(s.size_bytes)}
       </span>
       {s.error ? (
-        <div className="text-status-error">error: {s.error}</div>
+        <div className="text-status-error">{t("geoip.errorPrefix")}: {s.error}</div>
       ) : null}
     </div>
   );

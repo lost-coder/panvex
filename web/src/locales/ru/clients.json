@@ -1,0 +1,302 @@
+{
+  "page": {
+    "title": "Клиенты",
+    "count_one": "{{count}} клиент",
+    "count_few": "{{count}} клиента",
+    "count_many": "{{count}} клиентов",
+    "addClient": "Добавить клиента",
+    "discovered": "Обнаруженные",
+    "discoveredTitle": "Просмотреть клиентов на агентах, которые ещё не приняты в панель"
+  },
+  "empty": {
+    "title": "Клиентов пока нет",
+    "description": "Создайте первого клиента, чтобы начать назначать его на ноды Telemt."
+  },
+  "row": {
+    "totalClients": "Всего клиентов",
+    "active": "Активные"
+  },
+  "filters": {
+    "searchPlaceholder": "Поиск по имени…",
+    "bulkHint": "выполните массовое действие или сбросьте выбор",
+    "status": {
+      "placeholder": "Статус",
+      "all": "Все · {{count}}",
+      "active": "Активные · {{count}}",
+      "disabled": "Отключены · {{count}}",
+      "expired": "Истекли · {{count}}"
+    },
+    "bulk": {
+      "enable": "Включить",
+      "disable": "Отключить",
+      "delete": "Удалить"
+    }
+  },
+  "pulse": {
+    "total": "Всего",
+    "totalHint": "{{count}} отключено",
+    "activeNow": "Активны сейчас",
+    "activeNowHint": "удерживают соединения",
+    "expired": "Истекли",
+    "expiredHintWith": "после даты окончания",
+    "expiredHintNone": "без просрочек",
+    "quotaExhausted": "Квота исчерпана",
+    "quotaExhaustedHintWith": "трафик ≥ квоты",
+    "quotaExhaustedHintNone": "все в пределах лимитов"
+  },
+  "statusBadge": {
+    "active": "Активен",
+    "disabled": "Отключён",
+    "expired": "Истёк"
+  },
+  "table": {
+    "client": "Клиент",
+    "status": "Статус",
+    "usage": "Использование",
+    "traffic": "Трафик",
+    "expires": "Истекает",
+    "nodes": "Ноды",
+    "connsSuffix": "соед.",
+    "ipsSuffix": "IP",
+    "selectAll": "Выбрать всех клиентов на этой странице",
+    "selectOne": "Выбрать {{name}}"
+  },
+  "expiry": {
+    "never": "Никогда",
+    "unknown": "—",
+    "today": "сегодня",
+    "inDays": "через {{count}} дн.",
+    "agoDays": "{{count}} дн. назад"
+  },
+  "form": {
+    "createTitle": "Новый клиент",
+    "editTitle": "Редактировать клиента",
+    "createSubtitle": "Настройте нового клиента Telemt.",
+    "editSubtitle": "Обновите параметры клиента.",
+    "nameLabel": "Имя клиента",
+    "nameRule": "Допустимы A–Z, a–z, 0–9, _, . и -. До 64 символов.",
+    "namePlaceholder": "например, premium-users",
+    "adTagLabel": "Ad Tag",
+    "adTagAutoDescription": "При сохранении сгенерировать случайный 32-символьный hex-тег.",
+    "adTagManualDescription": "Оставьте пустым, чтобы сохранить клиента без ad-тега, либо вставьте 32-символьное hex-значение.",
+    "adTagAutoCheckbox": "Авто-генерация",
+    "adTagAutoPlaceholder": "Будет сгенерирован при сохранении",
+    "adTagManualPlaceholder": "32-символьный hex-тег или пусто",
+    "expirationLabel": "Срок действия",
+    "expirationNever": "Никогда",
+    "deploymentTargets": "Цели развёртывания",
+    "deploymentTargetsHint": "Назначьте хотя бы одну",
+    "fleetGroupsLabel": "Группы серверов",
+    "pinnedAgentsLabel": "Закреплённые агенты",
+    "pinnedAgentsDescription": "Переопределение для нод вне выбранных групп",
+    "agentOffline": "оффлайн",
+    "limitsToggleCollapsed": "▸ Лимиты (опционально)",
+    "limitsToggleExpanded": "▾ Лимиты (опционально)",
+    "maxTcpConnsLabel": "Макс. TCP-соединений",
+    "maxUniqueIpsLabel": "Макс. уникальных IP",
+    "dataQuotaLabel": "Квота трафика (байт)",
+    "unlimitedPlaceholder": "0 = без ограничений",
+    "cancel": "Отмена",
+    "saving": "Сохраняем…",
+    "create": "Создать клиента",
+    "save": "Сохранить изменения"
+  },
+  "access": {
+    "title": "Управление доступом",
+    "subtitle": "Выберите ноды, к которым может обращаться этот клиент.",
+    "fleetGroups": "Группы серверов",
+    "fineTuneCollapsed": "▸ Тонкая настройка по нодам",
+    "fineTuneExpanded": "▾ Тонкая настройка по нодам",
+    "totalPrefix": "Всего:",
+    "totalSuffix_one": "нода доступна",
+    "totalSuffix_few": "ноды доступны",
+    "totalSuffix_many": "нод доступно",
+    "cancel": "Отмена",
+    "saving": "Сохраняем…",
+    "save": "Сохранить доступ"
+  },
+  "detail": {
+    "breadcrumb": "Клиенты",
+    "subtitle": "{{status}} · {{expires}}",
+    "statusActive": "АКТИВЕН",
+    "statusDisabled": "ОТКЛЮЧЁН",
+    "statusExpired": "ИСТЁК",
+    "actions": {
+      "edit": "Изменить",
+      "disable": "Отключить",
+      "enable": "Включить",
+      "redeploy": "Перевыкатить",
+      "redeploying": "Перевыкатываем…",
+      "redeployTitle": "Запустить раскатку клиента на все целевые ноды заново",
+      "delete": "Удалить"
+    },
+    "hero": {
+      "group": "группа",
+      "expires": "истекает"
+    },
+    "loadError": "Не удалось загрузить клиента.",
+    "retry": "Повторить",
+    "editSheetTitle": "Редактировать клиента",
+    "addSheetTitle": "Добавить клиента",
+    "tabs": {
+      "secret": "Секрет",
+      "deploy": "Развёртывания",
+      "ips": "История IP",
+      "limits": "Лимиты"
+    },
+    "confirm": {
+      "rotateTitle": "Сменить секрет клиента?",
+      "rotateBody": "Существующие ссылки подключения для «{{name}}» перестанут работать, пока операторы не перевыкатят их.",
+      "rotateConfirm": "Сменить секрет",
+      "enableTitle": "Включить клиента?",
+      "disableTitle": "Отключить клиента?",
+      "enableBody": "«{{name}}» снова начнёт принимать подключения после повторного применения агентами.",
+      "disableBody": "«{{name}}» перестанет принимать новые подключения на всех нодах, пока не будет включён заново.",
+      "enableConfirm": "Включить",
+      "disableConfirm": "Отключить",
+      "deleteTitle": "Удалить клиента?",
+      "deleteBody": "Удалит «{{name}}» со всех нод и отзовёт все его ссылки подключения.",
+      "deleteConfirm": "Удалить клиента"
+    }
+  },
+  "pulseDetail": {
+    "connections": "Соединения",
+    "connectionsHint": "из {{max}} макс.",
+    "noLimit": "без ограничений",
+    "uniqueIps": "Уникальные IP",
+    "uniqueIpsHint": "из {{max}} макс.",
+    "traffic": "Трафик",
+    "trafficHint": "из {{max}}",
+    "noQuota": "без квоты",
+    "expires": "Истекает"
+  },
+  "secret": {
+    "title": "Секрет",
+    "rotateHint": "смена секрета аннулирует все действующие ссылки подключения",
+    "rotate": "Сменить секрет",
+    "rotating": "Меняем…",
+    "reveal": "Показать",
+    "hide": "Скрыть",
+    "absent": "Текущий секрет не возвращается detail API — извлеките его из свежей ссылки ниже либо смените, чтобы получить новый.",
+    "pendingRedeploy": "Секрет сменён — дождитесь повторного применения агентами перед раздачей новых ссылок."
+  },
+  "deployments": {
+    "noneYet": "Развёртываний пока нет.",
+    "title": "Развёртывания и ссылки",
+    "nodeCount_one": "{{count}} нода",
+    "nodeCount_few": "{{count}} ноды",
+    "nodeCount_many": "{{count}} нод",
+    "secretRotatedBadge": "Секрет сменён — ждём перевыкатывания",
+    "neverApplied": "никогда не применялось",
+    "links": {
+      "tls": "TLS",
+      "secure": "Secure",
+      "classic": "Classic",
+      "none": "Ссылки ещё не сгенерированы."
+    }
+  },
+  "ipHistory": {
+    "title": "История IP",
+    "uniqueCount": "{{count}} уникальных",
+    "geoipNote": "Обогащение GeoIP в работе — см. backend-followup #3",
+    "empty": "Активность по IP не зафиксирована.",
+    "emptyShort": "Нет IP",
+    "ip": "IP",
+    "country": "Страна",
+    "city": "Город",
+    "asn": "ASN",
+    "firstSeen": "Впервые",
+    "lastSeen": "В последний раз"
+  },
+  "limits": {
+    "title": "Лимиты и метаданные",
+    "adTag": "Ad-тег",
+    "maxTcpConns": "Макс. TCP-соед.",
+    "maxUniqueIps": "Макс. уникальных IP",
+    "quota": "Квота",
+    "fleetGroups": "Группы серверов",
+    "unlimited": "Без ограничений",
+    "perNodeSuffix_one": "({{per}} × {{count}} нода)",
+    "perNodeSuffix_few": "({{per}} × {{count}} ноды)",
+    "perNodeSuffix_many": "({{per}} × {{count}} нод)"
+  },
+  "banner": {
+    "pending_one": "Обнаружен {{count}} клиент, ожидающий проверки",
+    "pending_few": "Обнаружено {{count}} клиента, ожидающих проверки",
+    "pending_many": "Обнаружено {{count}} клиентов, ожидающих проверки"
+  },
+  "discovered": {
+    "title": "Обнаруженные клиенты",
+    "subtitle": "{{pending}} ожидают · {{adopted}} приняты · {{ignored}} проигнорированы",
+    "back": "К списку клиентов",
+    "searchPlaceholder": "Поиск по клиенту или ноде…",
+    "empty": {
+      "title": "Обнаруженных клиентов нет",
+      "description": "Агенты сообщают о пользователях, не управляемых панелью. Они появятся здесь для проверки."
+    },
+    "filters": {
+      "statusPlaceholder": "Статус",
+      "all": "Все · {{count}}",
+      "pending": "Ожидают · {{count}}",
+      "adopted": "Приняты · {{count}}",
+      "ignored": "Проигнорированы · {{count}}",
+      "conflictsPlaceholder": "Конфликты",
+      "anyConflict": "Все",
+      "onlyConflicts": "Конфликты · {{count}}"
+    },
+    "pulse": {
+      "pending": "Ожидают",
+      "adopted": "Приняты",
+      "ignored": "Проигнорированы",
+      "conflicts": "Конфликты"
+    },
+    "pendingSection_one": "Ожидает ({{count}})",
+    "pendingSection_few": "Ожидают ({{count}})",
+    "pendingSection_many": "Ожидают ({{count}})",
+    "reviewedSection": "Ранее просмотренные ({{count}})",
+    "selection": {
+      "summary_one": "{{count}} выбран · {{records}} записей",
+      "summary_few": "{{count}} выбрано · {{records}} записей",
+      "summary_many": "{{count}} выбрано · {{records}} записей",
+      "adopt": "Принять",
+      "ignore": "Игнорировать",
+      "clear": "Очистить"
+    },
+    "table": {
+      "client": "Клиент",
+      "discoveredOn": "Обнаружен на",
+      "usage": "Использование",
+      "discoveredAt": "Обнаружен",
+      "status": "Статус",
+      "selectAll": "Выбрать всех на этой странице",
+      "selectOne": "Выбрать {{name}}",
+      "adopt": "Принять",
+      "ignore": "Игнорировать"
+    },
+    "statusPill": {
+      "adopted": "Принят",
+      "ignored": "Проигнорирован",
+      "mixed": "Смешанный",
+      "pending": "Ожидает"
+    },
+    "badges": {
+      "nameConflict": "конфликт имени",
+      "conflict": "конфликт"
+    },
+    "confirm": {
+      "ignoreOneTitle": "Игнорировать этого обнаруженного клиента?",
+      "ignoreOneBody": "Он не появится в ожидающих, пока не будет сброшен.",
+      "ignoreManyTitle_one": "Игнорировать {{count}} обнаруженную запись?",
+      "ignoreManyTitle_few": "Игнорировать {{count}} обнаруженные записи?",
+      "ignoreManyTitle_many": "Игнорировать {{count}} обнаруженных записей?",
+      "ignoreManyBody": "Проигнорированные кандидаты исключаются из будущих сканов до повторного обнаружения.",
+      "ignoreConfirm": "Игнорировать",
+      "adoptManyTitle_one": "Принять {{count}} клиента?",
+      "adoptManyTitle_few": "Принять {{count}} клиентов?",
+      "adoptManyTitle_many": "Принять {{count}} клиентов?",
+      "adoptOneBody": "Клиент будет зарегистрирован как управляемый на каждой ноде, где он был обнаружен.",
+      "adoptManyBody": "Каждый из {{count}} клиентов будет зарегистрирован как управляемый на каждой ноде, где он был обнаружен.",
+      "adoptConfirm": "Принять"
+    }
+  }
+}

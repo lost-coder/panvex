@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Button } from "@/ui/base/button";
 
 export interface RestartBannerProps {
@@ -7,6 +8,7 @@ export interface RestartBannerProps {
 }
 
 export function RestartBanner({ pendingFields, onRestart, restartInFlight }: Readonly<RestartBannerProps>) {
+  const { t } = useTranslation("settings");
   if (pendingFields.length === 0) return null;
 
   const count = pendingFields.length;
@@ -16,8 +18,8 @@ export function RestartBanner({ pendingFields, onRestart, restartInFlight }: Rea
     <div className="flex items-center justify-between gap-4 rounded-xs border border-status-warn/40 bg-status-warn/10 px-4 py-3 text-sm">
       <p className="text-fg leading-snug">
         <span className="font-semibold text-status-warn">{count}</span>{" "}
-        {count === 1 ? "setting needs" : "settings need"} a panel restart to
-        take effect:{" "}
+        {t("restartBanner.needs", { count })}{" "}
+        {t("restartBanner.suffix")}{" "}
         <span className="font-mono text-fg-muted">{fieldList}</span>.
       </p>
       <Button
@@ -27,7 +29,7 @@ export function RestartBanner({ pendingFields, onRestart, restartInFlight }: Rea
         disabled={restartInFlight}
         className="shrink-0 border-status-warn/50 text-status-warn hover:bg-status-warn/10"
       >
-        {restartInFlight ? "Restarting…" : "Restart now"}
+        {restartInFlight ? t("restartBanner.restarting") : t("restartBanner.restartNow")}
       </Button>
     </div>
   );

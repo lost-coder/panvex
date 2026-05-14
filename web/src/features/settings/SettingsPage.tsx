@@ -2,6 +2,8 @@
 // Phase-7 redesign: single-scroll, multi-section page. No rail nav — with only
 // 2–6 sections scrolling beats a table-of-contents.
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import {
   Palette,
   Users as UsersIcon,
@@ -30,10 +32,11 @@ const OPERATIONAL_NAMESPACES = ["http", "agents", "auth", "jobs", "observability
 
 // Compact "Admin" pill reused across admin-gated sections.
 function AdminBadge() {
+  const { t } = useTranslation("settings");
   return (
     <span className="inline-flex items-center gap-1 rounded-xs border border-accent/20 bg-accent/5 px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wider text-accent">
       <ShieldCheck className="h-2.5 w-2.5" aria-hidden />
-      Admin
+      {t("page.adminBadge")}
     </span>
   );
 }
@@ -51,22 +54,23 @@ export function SettingsPage({
   registry,
   children,
 }: Readonly<SettingsPageProps>) {
+  const { t } = useTranslation("settings");
   const hasAdmin = !!(onManageUsers || (retentionSettings && onRetentionChange) || onRestart);
 
   return (
     <div className="flex flex-col">
       <PageHeader
-        title="Settings"
-        subtitle="Configure your control plane"
+        title={t("page.title")}
+        subtitle={t("page.subtitle")}
         trailing={
           hasAdmin ? (
             <span className="inline-flex items-center gap-1.5 rounded-xs border border-accent/30 bg-accent/10 px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-accent">
               <ShieldCheck className="h-3 w-3" aria-hidden />
-              Admin
+              {t("page.adminBadge")}
             </span>
           ) : (
             <span className="inline-flex items-center gap-1.5 rounded-xs border border-border bg-bg-card px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-fg-muted">
-              User
+              {t("page.userBadge")}
             </span>
           )
         }
@@ -90,8 +94,7 @@ export function SettingsPage({
         {registry && registry.isDirty && (
           <div className="flex items-center justify-between gap-4 py-3 mb-2 border-b border-border">
             <span className="text-xs font-mono text-fg-muted">
-              {Object.keys(registry.draft).length}{" "}
-              unsaved {Object.keys(registry.draft).length === 1 ? "change" : "changes"}
+              {t("registry.unsaved", { count: Object.keys(registry.draft).length })}
             </span>
             <div className="flex gap-2">
               <Button
@@ -100,7 +103,7 @@ export function SettingsPage({
                 onClick={registry.onCancelDraft}
                 disabled={registry.isSaving}
               >
-                Cancel
+                {t("registry.cancel")}
               </Button>
               <Button
                 size="sm"
@@ -108,7 +111,7 @@ export function SettingsPage({
                 disabled={registry.isSaving}
               >
                 <Save className="h-3.5 w-3.5 mr-1" aria-hidden />
-                {registry.isSaving ? "Saving…" : "Save"}
+                {registry.isSaving ? t("registry.saving") : t("registry.save")}
               </Button>
             </div>
           </div>
@@ -149,17 +152,17 @@ export function SettingsPage({
 
             <PageSection
               icon={ServerIcon}
-              title="Panel"
-              description="Endpoints the control plane and agents advertise publicly."
+              title={t("panel.title")}
+              description={t("panel.description")}
             >
               <SettingsRow
-                label="HTTP Public URL"
-                description="Public-facing URL for this control plane"
+                label={t("panel.httpPublicUrlLabel")}
+                description={t("panel.httpPublicUrlDescription")}
               >
                 <Input
                   className="w-64"
                   value={panelSettings.httpPublicUrl}
-                  placeholder="https://panvex.example.com"
+                  placeholder={t("panel.httpPublicUrlPlaceholder")}
                   onChange={(e) =>
                     onPanelSettingsChange?.({
                       ...panelSettings,
@@ -168,11 +171,11 @@ export function SettingsPage({
                   }
                 />
               </SettingsRow>
-              <SettingsRow label="gRPC Endpoint" description="Agent connection endpoint">
+              <SettingsRow label={t("panel.grpcEndpointLabel")} description={t("panel.grpcEndpointDescription")}>
                 <Input
                   className="w-64"
                   value={panelSettings.grpcPublicEndpoint}
-                  placeholder="panvex.example.com:443"
+                  placeholder={t("panel.grpcEndpointPlaceholder")}
                   onChange={(e) =>
                     onPanelSettingsChange?.({
                       ...panelSettings,
@@ -182,8 +185,8 @@ export function SettingsPage({
                 />
               </SettingsRow>
               <SettingsRow
-                label="Minimum password length"
-                description="Operators creating or rotating passwords must meet this floor (8–128). Existing accounts are not invalidated."
+                label={t("panel.passwordMinLengthLabel")}
+                description={t("panel.passwordMinLengthDescription")}
               >
                 <Input
                   type="number"
@@ -198,24 +201,24 @@ export function SettingsPage({
                       passwordMinLength: Number(e.target.value) || 8,
                     })
                   }
-                  aria-label="Minimum password length"
+                  aria-label={t("panel.passwordMinLengthAriaLabel")}
                 />
               </SettingsRow>
             </PageSection>
 
             <PageSection
               icon={Palette}
-              title="Appearance"
-              description="How the dashboard looks and feels for your account."
+              title={t("appearance.title")}
+              description={t("appearance.description")}
             >
-              <SettingsRow label="Theme">
+              <SettingsRow label={t("appearance.themeLabel")}>
                 <Select
                   className="w-36"
                   value={appearanceSettings.theme}
                   options={[
-                    { value: "system", label: "System" },
-                    { value: "light", label: "Light" },
-                    { value: "dark", label: "Dark" },
+                    { value: "system", label: t("appearance.themeOptions.system") },
+                    { value: "light", label: t("appearance.themeOptions.light") },
+                    { value: "dark", label: t("appearance.themeOptions.dark") },
                   ]}
                   onChange={(v) =>
                     onAppearanceChange?.({
@@ -225,13 +228,13 @@ export function SettingsPage({
                   }
                 />
               </SettingsRow>
-              <SettingsRow label="Density">
+              <SettingsRow label={t("appearance.densityLabel")}>
                 <Select
                   className="w-36"
                   value={appearanceSettings.density}
                   options={[
-                    { value: "comfortable", label: "Comfortable" },
-                    { value: "compact", label: "Compact" },
+                    { value: "comfortable", label: t("appearance.densityOptions.comfortable") },
+                    { value: "compact", label: t("appearance.densityOptions.compact") },
                   ]}
                   onChange={(v) =>
                     onAppearanceChange?.({
@@ -241,14 +244,14 @@ export function SettingsPage({
                   }
                 />
               </SettingsRow>
-              <SettingsRow label="Help Mode">
+              <SettingsRow label={t("appearance.helpModeLabel")}>
                 <Select
                   className="w-36"
                   value={appearanceSettings.helpMode}
                   options={[
-                    { value: "off", label: "Off" },
-                    { value: "basic", label: "Basic" },
-                    { value: "full", label: "Full" },
+                    { value: "off", label: t("appearance.helpModeOptions.off") },
+                    { value: "basic", label: t("appearance.helpModeOptions.basic") },
+                    { value: "full", label: t("appearance.helpModeOptions.full") },
                   ]}
                   onChange={(v) =>
                     onAppearanceChange?.({
@@ -258,7 +261,7 @@ export function SettingsPage({
                   }
                 />
               </SettingsRow>
-              <SettingsRow label="Swipe Navigation" description="Swipe between pages on mobile">
+              <SettingsRow label={t("appearance.swipeNavigationLabel")} description={t("appearance.swipeNavigationDescription")}>
                 <input
                   type="checkbox"
                   className="h-4 w-4 accent-[var(--color-accent)] cursor-pointer"
@@ -282,16 +285,16 @@ export function SettingsPage({
             {onManageUsers && (
               <PageSection
                 icon={UsersIcon}
-                title="User Management"
-                description="Create, edit, and manage user accounts for this panel."
+                title={t("users.title")}
+                description={t("users.description")}
                 badge={<AdminBadge />}
               >
                 <SettingsRow
-                  label="Accounts"
-                  description="Go to the user list to add admins, rotate passwords, or revoke access."
+                  label={t("users.accountsLabel")}
+                  description={t("users.accountsDescription")}
                 >
                   <Button size="sm" onClick={onManageUsers}>
-                    Manage Users
+                    {t("users.manageButton")}
                   </Button>
                 </SettingsRow>
               </PageSection>
@@ -308,17 +311,17 @@ export function SettingsPage({
             {onRestart && (
               <PageSection
                 icon={Power}
-                title="System"
-                description="Destructive operations on the control plane itself."
+                title={t("system.title")}
+                description={t("system.description")}
                 badge={<AdminBadge />}
                 tone="danger"
               >
                 <SettingsRow
-                  label="Restart Control Plane"
-                  description="Gracefully restart the control-plane process. Active WebSocket and gRPC connections will briefly drop."
+                  label={t("system.restartLabel")}
+                  description={t("system.restartDescription")}
                 >
                   <Button variant="danger" size="sm" onClick={onRestart}>
-                    Restart
+                    {t("system.restartButton")}
                   </Button>
                 </SettingsRow>
               </PageSection>
@@ -339,6 +342,7 @@ export function SettingsPage({
 // ─── SystemInfo ───────────────────────────────────────────────────────────────
 
 function SystemInfoSection({ registry }: Readonly<{ registry: SettingsRegistryProps }>) {
+  const { t } = useTranslation("settings");
   // Collect all bootstrap schema entries grouped by namespace.
   const byNamespace = new Map<string, typeof registry.schema>();
   for (const s of registry.schema) {
@@ -353,11 +357,11 @@ function SystemInfoSection({ registry }: Readonly<{ registry: SettingsRegistryPr
     <div className="md:col-span-2">
       <PageSection
         icon={Info}
-        title="System info"
-        description="Bootstrap settings — locked by environment or config file."
+        title={t("systemInfo.title")}
+        description={t("systemInfo.description")}
       >
         {Array.from(byNamespace.entries()).map(([ns, fields]) => {
-          const label = labelFor(ns);
+          const label = labelFor(ns, t);
           return (
             <div key={ns}>
               <h3 className="px-4 pt-3 pb-1 text-xs font-mono uppercase tracking-wider text-fg-muted">
@@ -388,36 +392,24 @@ function SystemInfoSection({ registry }: Readonly<{ registry: SettingsRegistryPr
 
 // ─── Retention ────────────────────────────────────────────────────────────────
 
-const RETENTION_FIELDS: {
-  key: keyof NonNullable<SettingsPageProps["retentionSettings"]>;
-  label: string;
-  description: string;
-}[] = [
-  {
-    key: "ts_raw_seconds",
-    label: "Raw Metrics",
-    description: "Server load and DC health raw data points",
-  },
-  { key: "ts_hourly_seconds", label: "Hourly Rollups", description: "Aggregated hourly metrics" },
-  { key: "ts_dc_seconds", label: "DC Health", description: "Per-DC coverage and RTT history" },
-  {
-    key: "ip_history_seconds",
-    label: "Client IP History",
-    description: "Client IP address records",
-  },
-  {
-    key: "event_history_seconds",
-    label: "Runtime Events",
-    description: "Telemt runtime event log",
-  },
+const RETENTION_FIELD_KEYS: ReadonlyArray<
+  keyof NonNullable<SettingsPageProps["retentionSettings"]>
+> = [
+  "ts_raw_seconds",
+  "ts_hourly_seconds",
+  "ts_dc_seconds",
+  "ip_history_seconds",
+  "event_history_seconds",
 ];
 
-const UNITS = [
-  { value: "seconds", label: "Seconds" },
-  { value: "minutes", label: "Minutes" },
-  { value: "hours", label: "Hours" },
-  { value: "days", label: "Days" },
-];
+function unitOptions(t: TFunction) {
+  return [
+    { value: "seconds", label: t("retention.units.seconds") },
+    { value: "minutes", label: t("retention.units.minutes") },
+    { value: "hours", label: t("retention.units.hours") },
+    { value: "days", label: t("retention.units.days") },
+  ];
+}
 
 function RetentionSection({
   settings,
@@ -428,8 +420,10 @@ function RetentionSection({
   onChange: (s: Readonly<NonNullable<SettingsPageProps["retentionSettings"]>>) => void;
   saving?: boolean | undefined;
 }>) {
+  const { t } = useTranslation("settings");
   const [draft, setDraft] = useState(settings);
   const isDirty = JSON.stringify(draft) !== JSON.stringify(settings);
+  const units = unitOptions(t);
 
   function updateField(key: keyof typeof draft, value: number, unit: string) {
     setDraft((prev) => ({ ...prev, [key]: displayToSeconds(value, unit) }));
@@ -438,14 +432,18 @@ function RetentionSection({
   return (
     <PageSection
       icon={Database}
-      title="Data Retention"
-      description="How long the panel keeps timeseries and history records before pruning."
+      title={t("retention.title")}
+      description={t("retention.description")}
       badge={<AdminBadge />}
     >
-      {RETENTION_FIELDS.map(({ key, label, description }) => {
+      {RETENTION_FIELD_KEYS.map((key) => {
         const display = secondsToDisplay(draft[key]);
         return (
-          <SettingsRow key={key} label={label} description={description}>
+          <SettingsRow
+            key={key}
+            label={t(`retention.fields.${key}.label`)}
+            description={t(`retention.fields.${key}.description`)}
+          >
             <div className="flex items-center gap-2">
               <Input
                 type="number"
@@ -457,7 +455,7 @@ function RetentionSection({
               <Select
                 value={display.unit}
                 onChange={(v) => updateField(key, display.value, v)}
-                options={UNITS}
+                options={units}
               />
             </div>
           </SettingsRow>
@@ -466,7 +464,7 @@ function RetentionSection({
       {isDirty && (
         <div className="flex items-center justify-between px-4 py-3 bg-accent/5">
           <span className="text-xs font-mono text-fg-muted">
-            Unsaved changes · retention windows will apply on next prune cycle.
+            {t("retention.unsavedNotice")}
           </span>
           <div className="flex gap-2">
             <Button
@@ -475,10 +473,10 @@ function RetentionSection({
               onClick={() => setDraft(settings)}
               disabled={saving}
             >
-              Cancel
+              {t("retention.cancel")}
             </Button>
             <Button size="sm" onClick={() => onChange(draft)} disabled={saving}>
-              {saving ? "Saving…" : "Save Retention Settings"}
+              {saving ? t("retention.saving") : t("retention.save")}
             </Button>
           </div>
         </div>

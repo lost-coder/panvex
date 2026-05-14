@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   Breadcrumbs,
@@ -51,9 +52,10 @@ const EventsTab = lazy(() =>
 );
 
 function TabSuspenseFallback() {
+  const { t } = useTranslation("servers");
   return (
     <div className="px-4 py-6 text-xs text-fg-muted" aria-busy aria-live="polite">
-      Loading…
+      {t("loading.tab")}
     </div>
   );
 }
@@ -93,6 +95,7 @@ export function ServerDetailPage({
   enrollmentHistorySlot,
   runtimeEventsSlot,
 }: Readonly<ServerDetailPageProps>) {
+  const { t } = useTranslation("servers");
   const { label: relativeTime, stale: relativeTimeStale } = useRelativeTime(lastUpdatedAt);
   const { systemInfo, gates, connections, summary, dcs } = server;
 
@@ -149,39 +152,48 @@ export function ServerDetailPage({
     () =>
       [
         pulseWord.toLowerCase(),
-        `v${systemInfo.version}`,
-        `up ${formatUptime(systemInfo.uptimeSeconds)}`,
-        systemInfo.configReloadCount > 0 ? `${systemInfo.configReloadCount} reloads` : null,
+        t("detail.subtitleVersion", { version: systemInfo.version }),
+        t("detail.subtitleUp", { value: formatUptime(systemInfo.uptimeSeconds) }),
+        systemInfo.configReloadCount > 0
+          ? t("detail.subtitleReloads", { count: systemInfo.configReloadCount })
+          : null,
       ]
         .filter(Boolean)
         .join(" · "),
-    [pulseWord, systemInfo.version, systemInfo.uptimeSeconds, systemInfo.configReloadCount],
+    [pulseWord, systemInfo.version, systemInfo.uptimeSeconds, systemInfo.configReloadCount, t],
   );
 
   // Desktop pulse ribbon — full hint strings, 4-col layout.
   const desktopPulseItems = useMemo<PulseTickData[]>(
     () => [
       {
-        label: "Connections",
+        label: t("detail.pulse.connections"),
         value: connections.current.toLocaleString(),
-        hint: `${connections.currentMe.toLocaleString()} ME · ${connections.currentDirect.toLocaleString()} direct · total ${summary.connectionsTotal.toLocaleString()}`,
+        hint: t("detail.pulse.connectionsHint", {
+          me: connections.currentMe.toLocaleString(),
+          direct: connections.currentDirect.toLocaleString(),
+          total: summary.connectionsTotal.toLocaleString(),
+        }),
       },
       {
-        label: "Active users",
+        label: t("detail.pulse.activeUsers"),
         value: connections.activeUsers.toLocaleString(),
-        hint: `of ${summary.configuredUsers.toLocaleString()} configured`,
+        hint: t("detail.pulse.activeUsersHint", { configured: summary.configuredUsers.toLocaleString() }),
       },
       {
-        label: "Bad rate",
+        label: t("detail.pulse.badRate"),
         value: `${badRate.toFixed(2)}%`,
-        hint: `${summary.connectionsBadTotal.toLocaleString()} bad / ${summary.connectionsTotal.toLocaleString()} total`,
+        hint: t("detail.pulse.badRateHint", {
+          bad: summary.connectionsBadTotal.toLocaleString(),
+          total: summary.connectionsTotal.toLocaleString(),
+        }),
         tone: badRateTone(badRate),
       },
       {
-        label: "DC coverage",
+        label: t("detail.pulse.coverage"),
         value: avgCoverage,
         unit: "%",
-        hint: `min ${minCoverage}% · ${dcOk} ok · ${dcWarn} warn · ${dcErr} err`,
+        hint: t("detail.pulse.coverageHint", { min: minCoverage, ok: dcOk, warn: dcWarn, err: dcErr }),
         tone: coverageTone(avgCoverage),
       },
     ],
@@ -213,26 +225,29 @@ export function ServerDetailPage({
   const mobilePulseItems = useMemo<PulseTickData[]>(
     () => [
       {
-        label: "Connections",
+        label: t("detail.pulse.connections"),
         value: connections.current.toLocaleString(),
-        hint: `${connections.currentMe.toLocaleString()} ME · ${connections.currentDirect.toLocaleString()} direct`,
+        hint: t("detail.pulse.connectionsHintMobile", {
+          me: connections.currentMe.toLocaleString(),
+          direct: connections.currentDirect.toLocaleString(),
+        }),
       },
       {
-        label: "Active users",
+        label: t("detail.pulse.activeUsers"),
         value: connections.activeUsers.toLocaleString(),
-        hint: `of ${summary.configuredUsers.toLocaleString()}`,
+        hint: t("detail.pulse.activeUsersHintMobile", { configured: summary.configuredUsers.toLocaleString() }),
       },
       {
-        label: "Bad rate",
+        label: t("detail.pulse.badRate"),
         value: `${badRate.toFixed(2)}%`,
-        hint: `${summary.connectionsBadTotal.toLocaleString()} bad`,
+        hint: t("detail.pulse.badRateHintMobile", { bad: summary.connectionsBadTotal.toLocaleString() }),
         tone: badRateTone(badRate),
       },
       {
-        label: "DC coverage",
+        label: t("detail.pulse.coverage"),
         value: avgCoverage,
         unit: "%",
-        hint: `min ${minCoverage}% · ${dcOk}/${dcWarn}/${dcErr}`,
+        hint: t("detail.pulse.coverageHintMobile", { min: minCoverage, ok: dcOk, warn: dcWarn, err: dcErr }),
         tone: coverageTone(avgCoverage),
       },
     ],
@@ -288,21 +303,21 @@ export function ServerDetailPage({
     () => (
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
-          <span className="text-sm font-semibold text-fg">Gates</span>
+          <span className="text-sm font-semibold text-fg">{t("detail.gates.title")}</span>
           <GatesPanel gates={gates} />
         </div>
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold text-fg">Upstreams</span>
+            <span className="text-sm font-semibold text-fg">{t("detail.upstreams.title")}</span>
             <span className="text-[10px] font-mono text-fg-muted">
-              {server.upstreams.length} peer{server.upstreams.length === 1 ? "" : "s"}
+              {t("detail.upstreams.peers", { count: server.upstreams.length })}
             </span>
           </div>
           <UpstreamsList upstreams={server.upstreams} />
         </div>
       </div>
     ),
-    [gates, server.upstreams],
+    [gates, server.upstreams, t],
   );
 
   // Diagnostics tab removed — version + reload counts now ride in the
@@ -310,12 +325,12 @@ export function ServerDetailPage({
   // Upstreams" so the mobile flow mirrors the desktop card.
   const mobileTabs = useMemo(
     () => [
-      { id: "connections", label: "Top clients", content: connectionsContent },
-      { id: "me-pool", label: "ME Pool", content: mePoolContent },
-      { id: "gates", label: "Gates & Upstreams", content: gatesUpstreamsContent },
-      { id: "events", label: "Events", content: eventsContent },
+      { id: "connections", label: t("detail.folds.topClients"), content: connectionsContent },
+      { id: "me-pool", label: t("detail.folds.mePool"), content: mePoolContent },
+      { id: "gates", label: `${t("detail.gates.title")} & ${t("detail.upstreams.title")}`, content: gatesUpstreamsContent },
+      { id: "events", label: t("detail.folds.events"), content: eventsContent },
     ],
-    [connectionsContent, mePoolContent, gatesUpstreamsContent, eventsContent],
+    [connectionsContent, mePoolContent, gatesUpstreamsContent, eventsContent, t],
   );
 
   // Stable handlers so the dropdowns/sheets don't churn on every parent
@@ -340,7 +355,7 @@ export function ServerDetailPage({
   return (
     <ServerDetailProvider server={server} serverId={server.id}>
       <div className="px-4 md:px-8 pt-3 pb-3">
-        <Breadcrumbs items={[{ label: "Servers", onClick: onBack }, { label: server.name }]} />
+        <Breadcrumbs items={[{ label: t("detail.breadcrumbServers"), onClick: onBack }, { label: server.name }]} />
       </div>
 
       {/* Desktop: no PageHeader — the hero pulse-bar inside the page body

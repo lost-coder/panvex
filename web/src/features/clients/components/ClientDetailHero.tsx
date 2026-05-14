@@ -3,6 +3,8 @@
 // desktop HeroStrip) live together so a designer changing the action
 // list updates one file instead of two parallel JSX sections.
 
+import { useTranslation } from "react-i18next";
+
 import {
   Button,
   HeroStrip,
@@ -51,16 +53,17 @@ export function ClientDetailHero({
   redeploying,
   onDelete,
 }: Readonly<ClientDetailHeroProps>) {
+  const { t } = useTranslation("clients");
   const actions = (
     <>
       {onEdit && (
         <Button size="sm" variant="outline" onClick={onEdit}>
-          Edit
+          {t("detail.actions.edit")}
         </Button>
       )}
       {onDisable && (
         <Button size="sm" variant="ghost" onClick={onDisable}>
-          {enabled ? "Disable" : "Enable"}
+          {enabled ? t("detail.actions.disable") : t("detail.actions.enable")}
         </Button>
       )}
       {hasFailedDeployment && onRedeploy && (
@@ -70,9 +73,9 @@ export function ClientDetailHero({
           onClick={onRedeploy}
           disabled={redeploying}
           className="text-status-warn border-status-warn/60 hover:text-status-warn"
-          title="Re-run the client rollout to every target node"
+          title={t("detail.actions.redeployTitle")}
         >
-          {redeploying ? "Redeploying…" : "Redeploy"}
+          {redeploying ? t("detail.actions.redeploying") : t("detail.actions.redeploy")}
         </Button>
       )}
       {onDelete && (
@@ -82,7 +85,7 @@ export function ClientDetailHero({
           onClick={onDelete}
           className="text-status-error hover:text-status-error"
         >
-          Delete
+          {t("detail.actions.delete")}
         </Button>
       )}
     </>
@@ -93,11 +96,14 @@ export function ClientDetailHero({
       <div className="md:hidden">
         <PageHeader
           title={name}
-          subtitle={`${statusLabel.toLowerCase()} · ${expiresSuffix(expirationRfc3339)}`}
+          subtitle={t("detail.subtitle", {
+            status: statusLabel.toLowerCase(),
+            expires: expiresSuffix(expirationRfc3339),
+          })}
           trailing={
             onEdit ? (
               <Button size="sm" onClick={onEdit}>
-                Edit
+                {t("detail.actions.edit")}
               </Button>
             ) : undefined
           }
@@ -114,12 +120,12 @@ export function ClientDetailHero({
         }}
         pills={[
           ...fleetGroupIds.map<HeroMetaPill>((g) => ({
-            label: "group",
+            label: t("detail.hero.group"),
             value: g,
             mono: true,
           })),
           {
-            label: "expires",
+            label: t("detail.hero.expires"),
             value: expiresSuffix(expirationRfc3339),
             mono: true,
             tone: expiresTone(expirationRfc3339) as StatusTone,

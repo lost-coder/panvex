@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 import { MonoValue } from "@/ui/primitives";
 import { SectionHeader } from "@/ui/layout/SectionHeader";
 import { Badge } from "@/ui/primitives/Badge";
@@ -12,26 +14,27 @@ import type { ServerDetailPageProps } from "@/shared/api/types-pages/pages";
  * to that plus a `staleCacheUsed` warning.
  */
 export function ConnectionsTab({ server }: Readonly<{ server: ServerDetailPageProps["server"] }>) {
+  const { t } = useTranslation("servers");
   const { connections } = server;
 
   const byConnColumns = [
     {
       key: "username",
-      header: "Username",
+      header: t("detail.topClients.username"),
       render: (row: { username: string; connections: number; octets: number }) => (
         <MonoValue>{row.username}</MonoValue>
       ),
     },
     {
       key: "connections",
-      header: "Connections",
+      header: t("detail.topClients.connections"),
       render: (row: { username: string; connections: number; octets: number }) => (
         <MonoValue>{row.connections}</MonoValue>
       ),
     },
     {
       key: "traffic",
-      header: "Traffic",
+      header: t("detail.topClients.traffic"),
       render: (row: { username: string; connections: number; octets: number }) => (
         <MonoValue>{formatBytes(row.octets)}</MonoValue>
       ),
@@ -41,21 +44,21 @@ export function ConnectionsTab({ server }: Readonly<{ server: ServerDetailPagePr
   const byThroughputColumns = [
     {
       key: "username",
-      header: "Username",
+      header: t("detail.topClients.username"),
       render: (row: { username: string; connections: number; octets: number }) => (
         <MonoValue>{row.username}</MonoValue>
       ),
     },
     {
       key: "traffic",
-      header: "Traffic",
+      header: t("detail.topClients.traffic"),
       render: (row: { username: string; connections: number; octets: number }) => (
         <MonoValue>{formatBytes(row.octets)}</MonoValue>
       ),
     },
     {
       key: "connections",
-      header: "Connections",
+      header: t("detail.topClients.connections"),
       render: (row: { username: string; connections: number; octets: number }) => (
         <MonoValue>{row.connections}</MonoValue>
       ),
@@ -67,17 +70,19 @@ export function ConnectionsTab({ server }: Readonly<{ server: ServerDetailPagePr
 
   return (
     <div className="flex flex-col gap-5">
-      {connections.staleCacheUsed && <Badge variant="warn">⚠ Stale cache in use</Badge>}
+      {connections.staleCacheUsed && (
+        <Badge variant="warn">{t("detail.topClients.staleCache")}</Badge>
+      )}
 
       {!hasData && (
         <div className="py-6 text-center text-sm text-fg-muted">
-          No client activity recorded yet.
+          {t("detail.topClients.noClientActivity")}
         </div>
       )}
 
       {connections.topByConnections.length > 0 && (
         <div className="flex flex-col gap-2">
-          <SectionHeader title="Top by connections" />
+          <SectionHeader title={t("detail.topClients.topByConnections")} />
           <DataTable
             columns={byConnColumns}
             data={connections.topByConnections}
@@ -88,7 +93,7 @@ export function ConnectionsTab({ server }: Readonly<{ server: ServerDetailPagePr
 
       {connections.topByThroughput.length > 0 && (
         <div className="flex flex-col gap-2">
-          <SectionHeader title="Top by throughput" />
+          <SectionHeader title={t("detail.topClients.topByThroughput")} />
           <DataTable
             columns={byThroughputColumns}
             data={connections.topByThroughput}

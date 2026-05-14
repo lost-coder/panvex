@@ -8,13 +8,13 @@ describe("TelemtUnreachableBanner", () => {
     const now = since + 90; // 90 seconds elapsed
     render(<TelemtUnreachableBanner sinceUnix={since} nowUnix={now} />);
 
-    expect(screen.getByRole("alert")).toHaveTextContent(/связь с telemt потеряна/i);
-    expect(screen.getByRole("alert")).toHaveTextContent("1 мин");
+    expect(screen.getByRole("alert")).toHaveTextContent(/Telemt connection lost/i);
+    expect(screen.getByRole("alert")).toHaveTextContent("1m");
     expect(screen.getByRole("alert")).toHaveTextContent("22:13:20");
   });
 
   it("falls back to a neutral message when sinceUnix is missing", () => {
     render(<TelemtUnreachableBanner sinceUnix={0} nowUnix={Date.now() / 1000} />);
-    expect(screen.getByRole("alert")).toHaveTextContent(/связь с telemt потеряна/i);
+    expect(screen.getByRole("alert")).toHaveTextContent(/Telemt connection lost/i);
   });
 });

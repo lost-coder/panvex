@@ -1,9 +1,68 @@
 {
+  "page": {
+    "title": "Активность",
+    "subtitle": "Задачи и журнал аудита"
+  },
   "columns": {
     "action": "Действие",
     "status": "Статус",
     "targets": "Цели",
     "actor": "Инициатор",
     "created": "Создано"
+  },
+  "pulse": {
+    "jobs24h": "Задачи 24ч",
+    "jobsTotal": "всего {{count}}",
+    "runningNow": "Выполняются",
+    "runningHint": "активны или в очереди",
+    "runningIdleHint": "ничего не запущено",
+    "failed24h": "Ошибки 24ч",
+    "failedHint": "требуется проверка",
+    "failedCleanHint": "без ошибок",
+    "audit24h": "Аудит 24ч",
+    "auditTotal": "всего {{count}}"
+  },
+  "tabs": {
+    "jobs": "Задачи",
+    "audit": "Аудит"
+  },
+  "search": {
+    "jobsPlaceholder": "Поиск по действию или инициатору…",
+    "auditPlaceholder": "Поиск по аудиту…"
+  },
+  "jobStatus": {
+    "all": "все",
+    "running": "выполняются",
+    "queued": "в очереди",
+    "succeeded": "успех",
+    "failed": "ошибка"
+  },
+  "auditWindow": {
+    "label": "Окно",
+    "1h": "1ч",
+    "24h": "24ч",
+    "7d": "7д",
+    "all": "Все",
+    "events_one": "{{count}} событие",
+    "events_few": "{{count}} события",
+    "events_many": "{{count}} событий"
+  },
+  "empty": {
+    "jobsTitle": "Здесь появятся задачи",
+    "jobsDescription": "Изменения, инициированные операторами (раскатка клиентов, перезагрузка рантайма, самообновление), попадают сюда после первого запуска.",
+    "jobsFilteredTitle": "Нет задач, подходящих под фильтр",
+    "jobsFilteredDescription": "Расширьте фильтр или очистите поиск.",
+    "auditTitle": "Журнал аудита пуст",
+    "auditDescription": "Сюда попадают все входы, изменения и административные действия. По умолчанию хранится активность за последние 30 дней."
+  },
+  "pager": {
+    "page": "Стр. {{page}} из {{total}}",
+    "range": "· {{start}}–{{end}} из {{total}}",
+    "prev": "← Назад",
+    "next": "Вперёд →"
+  },
+  "auditList": {
+    "label": "События аудита",
+    "by": "—"
   }
 }

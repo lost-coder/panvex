@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { useTranslation } from "react-i18next";
 
 import type { MetricsPoint } from "@/features/dashboard/ui/internal/MetricsChartSectionInner";
 
@@ -10,19 +11,20 @@ import type { MetricsPoint } from "@/features/dashboard/ui/internal/MetricsChart
 // Memoised — `metricsPoints` and `events` come from memoised parent
 // values, so the SVG normalisation only re-runs when the upstream
 // telemetry actually changes.
-export const TimelineStrip = memo(_TimelineStrip);
+export const TimelineStrip = memo(TimelineStripInner);
 
-function _TimelineStrip({
+function TimelineStripInner({
   metricsPoints,
   events,
 }: {
   metricsPoints: MetricsPoint[];
   events: { tsEpochSecs: number; kind: "ok" | "warn" | "error" | "info" }[];
 }) {
+  const { t } = useTranslation("servers");
   if (metricsPoints.length < 2) {
     return (
       <div className="flex items-center justify-center h-[140px] text-xs font-mono text-fg-muted">
-        Gathering telemetry…
+        {t("detail.telemetry.gathering")}
       </div>
     );
   }
@@ -133,13 +135,13 @@ function _TimelineStrip({
       <div className="flex items-center justify-between text-[10px] font-mono text-fg-muted">
         <div className="flex gap-3">
           <span>
-            <span style={{ color: "var(--color-accent)" }}>●</span> connections
+            <span style={{ color: "var(--color-accent)" }}>●</span> {t("detail.telemetry.legendConnections")}
           </span>
           <span>
-            <span style={{ color: "var(--color-status-warn)" }}>●</span> cpu
+            <span style={{ color: "var(--color-status-warn)" }}>●</span> {t("detail.telemetry.legendCpu")}
           </span>
         </div>
-        <span>{events.length} events</span>
+        <span>{t("detail.telemetry.events", { count: events.length })}</span>
       </div>
     </div>
   );

@@ -147,10 +147,10 @@ export default tseslint.config(
       // catches the easy-to-miss "<button>Save</button>" pattern. Single
       // characters (punctuation, separators) and stripped non-letter
       // glyphs are excluded so layout pieces like " · " keep working.
-      // Set to `warn` for now while the existing tree migrates; promote
-      // to `error` once the BP-translation sweep completes.
+      // Promoted to `error` once the BP-translation sweep completed —
+      // regressions now block CI instead of accruing as warnings.
       "no-restricted-syntax": [
-        "warn",
+        "error",
         {
           selector: "JSXText[value=/[A-Za-zА-Яа-я]{2,}/]",
           message: "Hard-coded JSX text — wrap in t('...') from react-i18next so it can be localised.",

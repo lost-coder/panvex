@@ -1,4 +1,6 @@
 import { useEffect, useId, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { Button, FormField, Input } from "@/ui";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/ui/base/sheet";
 import type { WebhookEndpoint } from "@/shared/api/webhooks";
@@ -49,12 +51,12 @@ export interface WebhookFormSheetProps {
 // trip. The Zod request schema in shared/api/schemas/requests/
 // webhookEndpointRequest.ts is the canonical source of truth; this
 // mirror catches the obvious cases.
-function validate(mode: WebhookFormMode, data: WebhookFormData): string | null {
-  if (!data.name.trim()) return "Name is required.";
-  if (data.name.length > 128) return "Name must be 128 characters or fewer.";
-  if (!/^https?:\/\//i.test(data.url.trim())) return "URL must start with http:// or https://.";
-  if (mode === "create" && !data.secret.trim()) return "Secret is required.";
-  if (data.secret.length > 1024) return "Secret must be 1024 characters or fewer.";
+function validate(mode: WebhookFormMode, data: WebhookFormData, t: TFunction): string | null {
+  if (!data.name.trim()) return t("webhooks.form.validation.nameRequired");
+  if (data.name.length > 128) return t("webhooks.form.validation.nameTooLong");
+  if (!/^https?:\/\//i.test(data.url.trim())) return t("webhooks.form.validation.urlScheme");
+  if (mode === "create" && !data.secret.trim()) return t("webhooks.form.validation.secretRequired");
+  if (data.secret.length > 1024) return t("webhooks.form.validation.secretTooLong");
   return null;
 }
 
@@ -67,6 +69,7 @@ export function WebhookFormSheet({
   loading,
   error,
 }: Readonly<WebhookFormSheetProps>) {
+  const { t } = useTranslation("settings");
   const [localError, setLocalError] = useState<string | null>(null);
   const enabledId = useId();
   const allowPrivateId = useId();
@@ -82,7 +85,7 @@ export function WebhookFormSheet({
   }
 
   function handleSubmit() {
-    const v = validate(mode, data);
+    const v = validate(mode, data, t);
     if (v) {
       setLocalError(v);
       return;
@@ -92,9 +95,9 @@ export function WebhookFormSheet({
   }
 
   const submitLabel = (() => {
-    if (loading) return "Saving…";
-    if (mode === "create") return "Add Webhook";
-    return "Save Changes";
+    if (loading) return t("webhooks.form.saving");
+    if (mode === "create") return t("webhooks.form.create");
+    return t("webhooks.form.save");
   })();
 
   const visibleError = localError ?? error;
@@ -108,31 +111,30 @@ export function WebhookFormSheet({
     >
       <SheetContent>
         <SheetHeader>
-          <SheetTitle>{mode === "create" ? "Add Webhook Endpoint" : "Edit Webhook Endpoint"}</SheetTitle>
+          <SheetTitle>{mode === "create" ? t("webhooks.form.createTitle") : t("webhooks.form.editTitle")}</SheetTitle>
         </SheetHeader>
         <SheetBody>
           <div className="flex flex-col gap-4">
             <p className="text-sm text-fg-muted">
-              Outbound HTTP receiver for audit + alert events. Bodies are HMAC-SHA256 signed
-              with the endpoint secret; receivers verify via the <code>X-Panvex-Signature</code> header.
+              <Trans i18nKey="webhooks.form.intro" ns="settings" components={{ 1: <code /> }} />
             </p>
 
-            <FormField label="Name" variant="uppercase" required>
+            <FormField label={t("webhooks.form.nameLabel")} variant="uppercase" required>
               <Input
                 value={data.name}
                 onChange={(e) => update("name", e.target.value)}
-                placeholder="ops-slack"
+                placeholder={t("webhooks.form.namePlaceholder")}
                 disabled={loading}
                 autoComplete="off"
                 maxLength={128}
               />
             </FormField>
 
-            <FormField label="URL" variant="uppercase" required>
+            <FormField label={t("webhooks.form.urlLabel")} variant="uppercase" required>
               <Input
                 value={data.url}
                 onChange={(e) => update("url", e.target.value)}
-                placeholder="https://hooks.example.com/services/…"
+                placeholder={t("webhooks.form.urlPlaceholder")}
                 disabled={loading}
                 autoComplete="off"
                 inputMode="url"
@@ -140,16 +142,16 @@ export function WebhookFormSheet({
             </FormField>
 
             <FormField
-              label={mode === "create" ? "Secret" : "Secret (leave blank to keep)"}
+              label={mode === "create" ? t("webhooks.form.secretLabel") : t("webhooks.form.secretLabelEdit")}
               variant="uppercase"
-              description="HMAC key used to sign delivery bodies. Treated as a credential — not returned by the API after save."
+              description={t("webhooks.form.secretDescription")}
               required={mode === "create"}
             >
               <Input
                 type="password"
                 value={data.secret}
                 onChange={(e) => update("secret", e.target.value)}
-                placeholder={mode === "edit" ? "••••••••" : ""}
+                placeholder={mode === "edit" ? t("webhooks.form.secretPlaceholderEdit") : ""}
                 disabled={loading}
                 autoComplete="new-password"
                 maxLength={1024}
@@ -157,14 +159,14 @@ export function WebhookFormSheet({
             </FormField>
 
             <FormField
-              label="Event filter"
+              label={t("webhooks.form.filterLabel")}
               variant="uppercase"
-              description="Comma-separated event actions or prefixes (e.g. `audit.*,alert.fired`). Empty = match all."
+              description={t("webhooks.form.filterDescription")}
             >
               <Input
                 value={data.event_filter}
                 onChange={(e) => update("event_filter", e.target.value)}
-                placeholder="audit.*,alert.fired"
+                placeholder={t("webhooks.form.filterPlaceholder")}
                 disabled={loading}
                 autoComplete="off"
               />
@@ -180,8 +182,8 @@ export function WebhookFormSheet({
                 disabled={loading}
               />
               <label htmlFor={enabledId} className="flex flex-col cursor-pointer">
-                <span>Enabled</span>
-                <span className="text-caption">Disabled endpoints stop receiving new events; queued rows drain only when re-enabled.</span>
+                <span>{t("webhooks.form.enabledLabel")}</span>
+                <span className="text-caption">{t("webhooks.form.enabledHint")}</span>
               </label>
             </div>
 
@@ -195,8 +197,8 @@ export function WebhookFormSheet({
                 disabled={loading}
               />
               <label htmlFor={allowPrivateId} className="flex flex-col cursor-pointer">
-                <span>Allow private destinations</span>
-                <span className="text-caption">Bypasses SSRF preflight. Only enable for receivers on operator-owned private networks.</span>
+                <span>{t("webhooks.form.allowPrivateLabel")}</span>
+                <span className="text-caption">{t("webhooks.form.allowPrivateHint")}</span>
               </label>
             </div>
 
@@ -204,7 +206,7 @@ export function WebhookFormSheet({
 
             <div className="flex gap-2 justify-end mt-2">
               <Button variant="ghost" onClick={onCancel} disabled={loading}>
-                Cancel
+                {t("webhooks.form.cancel")}
               </Button>
               <Button onClick={handleSubmit} disabled={loading}>
                 {submitLabel}

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { Spinner } from "@/ui";
 import { ServerDetailPage } from "./ServerDetailPage";
 import { ErrorState } from "@/components/ErrorState";
@@ -52,6 +53,7 @@ function toMetricsPoints(points: ServerLoadPoint[]): MetricsPoint[] {
 }
 
 export function ServerDetailContainer() {
+  const { t } = useTranslation("servers");
   const { serverId } = useParams({ strict: false });
   const { server, initState, lastUpdatedAt, raw, isLoading, error } = useServerDetail(serverId ?? "");
   const {
@@ -103,9 +105,9 @@ export function ServerDetailContainer() {
               setUpdateFeedback(null);
               try {
                 await apiClient.updateAgent(serverId, latestAgentVersion);
-                setUpdateFeedback("Update initiated");
+                setUpdateFeedback(t("delete.feedbackInitiated"));
               } catch {
-                setUpdateFeedback("Update failed");
+                setUpdateFeedback(t("error.updateFailed"));
               }
             }
           : undefined,
@@ -131,9 +133,9 @@ export function ServerDetailContainer() {
       // from the fleet — a second click shouldn't happen on a slip.
       onDeregister={async () => {
         const ok = await confirm({
-          title: "Deregister this server?",
-          body: `"${server.name}" will disconnect from the control-plane and stop receiving rollouts. Re-enrollment requires a new token.`,
-          confirmLabel: "Deregister",
+          title: t("delete.confirmTitle"),
+          body: t("delete.confirmBody", { name: server.name }),
+          confirmLabel: t("delete.confirm"),
           variant: "danger",
         });
         if (!ok) return;

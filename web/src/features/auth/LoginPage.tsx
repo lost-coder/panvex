@@ -3,6 +3,7 @@
 // page composition lives in features/.
 import * as React from "react";
 import { useEffect, useId, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { Button, Input, type LoginPageProps } from "@/ui";
 
 // ─── Stage panels ─────────────────────────────────────────────────────────────
@@ -22,6 +23,7 @@ function CredentialsPanel({
   onSubmit: (e: React.FormEvent) => void | Promise<void>;
   loading?: boolean | undefined;
 }>) {
+  const { t } = useTranslation("auth");
   const usernameId = useId();
   const passwordId = useId();
   const usernameRef = useRef<HTMLInputElement>(null);
@@ -38,14 +40,14 @@ function CredentialsPanel({
     <form onSubmit={onSubmit} className="flex flex-col gap-4">
       <label htmlFor={usernameId} className="flex flex-col gap-1.5">
         <span className="text-xs font-medium text-fg-muted uppercase tracking-wider">
-          Username
+          {t("login.credentials.usernameLabel")}
         </span>
         <Input
           ref={usernameRef}
           id={usernameId}
           type="text"
           autoComplete="username"
-          placeholder="admin"
+          placeholder={t("login.credentials.usernamePlaceholder")}
           value={username}
           onChange={(e) => onUsernameChange(e.target.value)}
           disabled={loading}
@@ -55,13 +57,13 @@ function CredentialsPanel({
 
       <label htmlFor={passwordId} className="flex flex-col gap-1.5">
         <span className="text-xs font-medium text-fg-muted uppercase tracking-wider">
-          Password
+          {t("login.credentials.passwordLabel")}
         </span>
         <Input
           id={passwordId}
           type="password"
           autoComplete="current-password"
-          placeholder="••••••••"
+          placeholder={t("login.credentials.passwordPlaceholder")}
           value={password}
           onChange={(e) => onPasswordChange(e.target.value)}
           disabled={loading}
@@ -70,7 +72,7 @@ function CredentialsPanel({
       </label>
 
       <Button type="submit" className="w-full mt-2" disabled={loading || !username || !password}>
-        {loading ? "Signing in…" : "Sign in"}
+        {loading ? t("login.credentials.submitLoading") : t("login.credentials.submit")}
       </Button>
     </form>
   );
@@ -89,6 +91,7 @@ function TotpPanel({
   onBack: () => void;
   loading?: boolean | undefined;
 }>) {
+  const { t } = useTranslation("auth");
   const totpId = useId();
   const totpRef = useRef<HTMLInputElement>(null);
 
@@ -113,7 +116,7 @@ function TotpPanel({
     <form onSubmit={onSubmit} className="flex flex-col gap-4">
       <label htmlFor={totpId} className="flex flex-col gap-1.5">
         <span className="text-xs font-medium text-fg-muted uppercase tracking-wider">
-          2FA Code
+          {t("login.totp.codeLabel")}
         </span>
         <Input
           ref={totpRef}
@@ -123,7 +126,7 @@ function TotpPanel({
           inputMode="numeric"
           pattern="[0-9]*"
           maxLength={6}
-          placeholder="000000"
+          placeholder={t("login.totp.codePlaceholder")}
           value={totpCode}
           onChange={(e) => handleChange(e.target.value)}
           disabled={loading}
@@ -133,11 +136,11 @@ function TotpPanel({
           // on the panel at this stage.
           className="font-mono text-center text-2xl tracking-[0.5em] tabular-nums"
         />
-        <p className="text-xs text-fg-muted">Enter the 6-digit code from your authenticator app.</p>
+        <p className="text-xs text-fg-muted">{t("login.totp.hint")}</p>
       </label>
 
       <Button type="submit" className="w-full mt-2" disabled={loading || totpCode.length < 6}>
-        {loading ? "Verifying…" : "Verify"}
+        {loading ? t("login.totp.submitLoading") : t("login.totp.submit")}
       </Button>
 
       <button
@@ -146,7 +149,7 @@ function TotpPanel({
         disabled={loading}
         className="text-xs text-fg-muted hover:text-fg self-center transition-colors disabled:opacity-50"
       >
-        ← Back
+        {t("login.totp.back")}
       </button>
     </form>
   );
@@ -162,6 +165,7 @@ export function LoginPage({
   error,
   loading,
 }: Readonly<LoginPageProps>) {
+  const { t } = useTranslation("auth");
   const [username, setUsername] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [totpCode, setTotpCode] = React.useState("");
@@ -207,18 +211,18 @@ export function LoginPage({
         {/* Brand — status beacon next to "Control plane" so operators
             see "this is a live panel" before they even type a password. */}
         <div className="flex flex-col items-center gap-1">
-          <span className="font-mono text-3xl font-bold text-fg tracking-tight">Panvex</span>
+          <span className="font-mono text-3xl font-bold text-fg tracking-tight">{t("login.brand")}</span>
           <span className="text-[11px] text-fg-muted uppercase tracking-widest font-mono inline-flex items-center gap-1.5">
             <span
               aria-hidden="true"
               className="h-1.5 w-1.5 rounded-full bg-status-ok shadow-[0_0_6px_var(--color-status-ok)]"
             />
-            Control plane
+            {t("login.controlPlane")}
             {stage === "totp" && (
               <span className="text-fg-faint mx-1">/</span>
             )}
             {stage === "totp" && (
-              <span className="text-status-warn">2FA</span>
+              <span className="text-status-warn">{t("login.twoFactor")}</span>
             )}
           </span>
         </div>

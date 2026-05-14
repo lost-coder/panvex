@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 import type { ServerDetailPageProps } from "@/shared/api/types-pages/pages";
 
 import { GatesPanel } from "./GatesPanel";
@@ -16,17 +18,18 @@ export function GatesUpstreamsCard({
   gates: ServerDetailPageProps["server"]["gates"];
   upstreams: ServerDetailPageProps["server"]["upstreams"];
 }>) {
+  const { t } = useTranslation("servers");
   return (
     <section className="rounded-xs bg-bg-card border border-border p-4 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-6">
       <div className="flex flex-col gap-3">
-        <span className="text-sm font-semibold text-fg">Gates</span>
+        <span className="text-sm font-semibold text-fg">{t("detail.gates.title")}</span>
         <GatesPanel gates={gates} />
       </div>
       <div className="flex flex-col gap-3 border-l border-divider pl-6">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-semibold text-fg">Upstreams</span>
+          <span className="text-sm font-semibold text-fg">{t("detail.upstreams.title")}</span>
           <span className="text-[10px] font-mono text-fg-muted">
-            {upstreams.length} peer{upstreams.length === 1 ? "" : "s"}
+            {t("detail.upstreams.peers", { count: upstreams.length })}
           </span>
         </div>
         <UpstreamsList upstreams={upstreams} />

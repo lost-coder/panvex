@@ -1,0 +1,293 @@
+{
+  "page": {
+    "title": "Clients",
+    "count_one": "{{count}} client",
+    "count_other": "{{count}} clients",
+    "addClient": "Add Client",
+    "discovered": "Discovered",
+    "discoveredTitle": "Review clients running on agents that the panel hasn't adopted yet"
+  },
+  "empty": {
+    "title": "No clients yet",
+    "description": "Create your first client to start assigning it to Telemt nodes."
+  },
+  "row": {
+    "totalClients": "Total clients",
+    "active": "Active"
+  },
+  "filters": {
+    "searchPlaceholder": "Search by name…",
+    "bulkHint": "run a bulk action or clear the selection",
+    "status": {
+      "placeholder": "Status",
+      "all": "All · {{count}}",
+      "active": "Active · {{count}}",
+      "disabled": "Disabled · {{count}}",
+      "expired": "Expired · {{count}}"
+    },
+    "bulk": {
+      "enable": "Enable",
+      "disable": "Disable",
+      "delete": "Delete"
+    }
+  },
+  "pulse": {
+    "total": "Total",
+    "totalHint": "{{count}} disabled",
+    "activeNow": "Active now",
+    "activeNowHint": "holding connections",
+    "expired": "Expired",
+    "expiredHintWith": "past expiration date",
+    "expiredHintNone": "none past expiry",
+    "quotaExhausted": "Quota exhausted",
+    "quotaExhaustedHintWith": "traffic ≥ quota",
+    "quotaExhaustedHintNone": "all within limits"
+  },
+  "statusBadge": {
+    "active": "Active",
+    "disabled": "Disabled",
+    "expired": "Expired"
+  },
+  "table": {
+    "client": "Client",
+    "status": "Status",
+    "usage": "Usage",
+    "traffic": "Traffic",
+    "expires": "Expires",
+    "nodes": "Nodes",
+    "connsSuffix": "conns",
+    "ipsSuffix": "IPs",
+    "selectAll": "Select all clients on this page",
+    "selectOne": "Select {{name}}"
+  },
+  "expiry": {
+    "never": "Never",
+    "unknown": "—",
+    "today": "today",
+    "inDays": "in {{count}}d",
+    "agoDays": "{{count}}d ago"
+  },
+  "form": {
+    "createTitle": "New Client",
+    "editTitle": "Edit Client",
+    "createSubtitle": "Configure a new Telemt client.",
+    "editSubtitle": "Update client parameters.",
+    "nameLabel": "Client Name",
+    "nameRule": "Use A–Z, a–z, 0–9, _, . or -. Up to 64 chars.",
+    "namePlaceholder": "e.g. premium-users",
+    "adTagLabel": "Ad Tag",
+    "adTagAutoDescription": "Auto-generate a random 32-hex tag on save.",
+    "adTagManualDescription": "Leave blank to save a client without an ad tag, or paste a 32-hex value.",
+    "adTagAutoCheckbox": "Auto-generate",
+    "adTagAutoPlaceholder": "Will be generated on save",
+    "adTagManualPlaceholder": "32-hex tag or blank for no tag",
+    "expirationLabel": "Expiration",
+    "expirationNever": "Never",
+    "deploymentTargets": "Deployment targets",
+    "deploymentTargetsHint": "Assign at least one",
+    "fleetGroupsLabel": "Fleet groups",
+    "pinnedAgentsLabel": "Pinned agents",
+    "pinnedAgentsDescription": "Override for nodes outside the selected groups",
+    "agentOffline": "offline",
+    "limitsToggleCollapsed": "▸ Limits (optional)",
+    "limitsToggleExpanded": "▾ Limits (optional)",
+    "maxTcpConnsLabel": "Max TCP Conns",
+    "maxUniqueIpsLabel": "Max Unique IPs",
+    "dataQuotaLabel": "Data Quota (bytes)",
+    "unlimitedPlaceholder": "0 = unlimited",
+    "cancel": "Cancel",
+    "saving": "Saving...",
+    "create": "Create Client",
+    "save": "Save Changes"
+  },
+  "access": {
+    "title": "Manage Access",
+    "subtitle": "Select which nodes this client can access.",
+    "fleetGroups": "Fleet Groups",
+    "fineTuneCollapsed": "▸ Fine-tune individual nodes",
+    "fineTuneExpanded": "▾ Fine-tune individual nodes",
+    "totalPrefix": "Total:",
+    "totalSuffix_one": "node accessible",
+    "totalSuffix_other": "nodes accessible",
+    "cancel": "Cancel",
+    "saving": "Saving...",
+    "save": "Save Access"
+  },
+  "detail": {
+    "breadcrumb": "Clients",
+    "subtitle": "{{status}} · {{expires}}",
+    "statusActive": "ACTIVE",
+    "statusDisabled": "DISABLED",
+    "statusExpired": "EXPIRED",
+    "actions": {
+      "edit": "Edit",
+      "disable": "Disable",
+      "enable": "Enable",
+      "redeploy": "Redeploy",
+      "redeploying": "Redeploying…",
+      "redeployTitle": "Re-run the client rollout to every target node",
+      "delete": "Delete"
+    },
+    "hero": {
+      "group": "group",
+      "expires": "expires"
+    },
+    "loadError": "Failed to load client.",
+    "retry": "Retry",
+    "editSheetTitle": "Edit client",
+    "addSheetTitle": "Add client",
+    "tabs": {
+      "secret": "Secret",
+      "deploy": "Deployments",
+      "ips": "IP history",
+      "limits": "Limits"
+    },
+    "confirm": {
+      "rotateTitle": "Rotate client secret?",
+      "rotateBody": "Existing connection links for \"{{name}}\" will stop working until operators redeploy them.",
+      "rotateConfirm": "Rotate secret",
+      "enableTitle": "Enable client?",
+      "disableTitle": "Disable client?",
+      "enableBody": "\"{{name}}\" will start accepting connections again after agents re-apply.",
+      "disableBody": "\"{{name}}\" will stop accepting new connections on every node until re-enabled.",
+      "enableConfirm": "Enable",
+      "disableConfirm": "Disable",
+      "deleteTitle": "Delete client?",
+      "deleteBody": "This removes \"{{name}}\" from every node and revokes all its connection links.",
+      "deleteConfirm": "Delete client"
+    }
+  },
+  "pulseDetail": {
+    "connections": "Connections",
+    "connectionsHint": "of {{max}} max",
+    "noLimit": "no limit",
+    "uniqueIps": "Unique IPs",
+    "uniqueIpsHint": "of {{max}} max",
+    "traffic": "Traffic",
+    "trafficHint": "of {{max}}",
+    "noQuota": "no quota",
+    "expires": "Expires"
+  },
+  "secret": {
+    "title": "Secret",
+    "rotateHint": "rotating invalidates every outstanding connection link",
+    "rotate": "Rotate secret",
+    "rotating": "Rotating…",
+    "reveal": "Reveal",
+    "hide": "Hide",
+    "absent": "Current secret isn't returned by the detail API — extract it from a fresh connection link below, or rotate to get a new one.",
+    "pendingRedeploy": "Secret rotated — wait for agents to re-apply before distributing new links."
+  },
+  "deployments": {
+    "noneYet": "No deployments yet.",
+    "title": "Deployments & links",
+    "nodeCount_one": "{{count}} node",
+    "nodeCount_other": "{{count}} nodes",
+    "secretRotatedBadge": "Secret rotated — awaiting redeploy",
+    "neverApplied": "never applied",
+    "links": {
+      "tls": "TLS",
+      "secure": "Secure",
+      "classic": "Classic",
+      "none": "No links generated yet."
+    }
+  },
+  "ipHistory": {
+    "title": "IP history",
+    "uniqueCount": "{{count}} unique",
+    "geoipNote": "GeoIP enrichment pending — see backend-followup #3",
+    "empty": "No IP activity recorded.",
+    "emptyShort": "No IPs",
+    "ip": "IP",
+    "country": "Country",
+    "city": "City",
+    "asn": "ASN",
+    "firstSeen": "First seen",
+    "lastSeen": "Last seen"
+  },
+  "limits": {
+    "title": "Limits & metadata",
+    "adTag": "Ad tag",
+    "maxTcpConns": "Max TCP conns",
+    "maxUniqueIps": "Max unique IPs",
+    "quota": "Quota",
+    "fleetGroups": "Fleet groups",
+    "unlimited": "Unlimited",
+    "perNodeSuffix_one": "({{per}} × {{count}} node)",
+    "perNodeSuffix_other": "({{per}} × {{count}} nodes)"
+  },
+  "banner": {
+    "pending_one": "Discovered {{count}} client pending review",
+    "pending_other": "Discovered {{count}} clients pending review"
+  },
+  "discovered": {
+    "title": "Discovered clients",
+    "subtitle": "{{pending}} pending · {{adopted}} adopted · {{ignored}} ignored",
+    "back": "Back to Clients",
+    "searchPlaceholder": "Search client or node…",
+    "empty": {
+      "title": "No discovered clients",
+      "description": "Agents report users that aren't managed by the panel. They'll show up here for review."
+    },
+    "filters": {
+      "statusPlaceholder": "Status",
+      "all": "All · {{count}}",
+      "pending": "Pending · {{count}}",
+      "adopted": "Adopted · {{count}}",
+      "ignored": "Ignored · {{count}}",
+      "conflictsPlaceholder": "Conflicts",
+      "anyConflict": "All",
+      "onlyConflicts": "Conflicts · {{count}}"
+    },
+    "pulse": {
+      "pending": "Pending",
+      "adopted": "Adopted",
+      "ignored": "Ignored",
+      "conflicts": "Conflicts"
+    },
+    "pendingSection_one": "Pending ({{count}})",
+    "pendingSection_other": "Pending ({{count}})",
+    "reviewedSection": "Previously reviewed ({{count}})",
+    "selection": {
+      "summary_one": "{{count}} selected · {{records}} records",
+      "summary_other": "{{count}} selected · {{records}} records",
+      "adopt": "Adopt",
+      "ignore": "Ignore",
+      "clear": "Clear"
+    },
+    "table": {
+      "client": "Client",
+      "discoveredOn": "Discovered on",
+      "usage": "Usage",
+      "discoveredAt": "Discovered at",
+      "status": "Status",
+      "selectAll": "Select all on this page",
+      "selectOne": "Select {{name}}",
+      "adopt": "Adopt",
+      "ignore": "Ignore"
+    },
+    "statusPill": {
+      "adopted": "Adopted",
+      "ignored": "Ignored",
+      "mixed": "Mixed",
+      "pending": "Pending"
+    },
+    "badges": {
+      "nameConflict": "name conflict",
+      "conflict": "conflict"
+    },
+    "confirm": {
+      "ignoreOneTitle": "Ignore this discovered client?",
+      "ignoreOneBody": "It will not appear in pending review unless reset.",
+      "ignoreManyTitle_one": "Ignore {{count}} discovered record?",
+      "ignoreManyTitle_other": "Ignore {{count}} discovered records?",
+      "ignoreManyBody": "Ignored candidates are filtered out of future scans until re-discovered.",
+      "ignoreConfirm": "Ignore",
+      "adoptManyTitle_one": "Adopt {{count}} client?",
+      "adoptManyTitle_other": "Adopt {{count}} clients?",
+      "adoptOneBody": "The client will be registered as managed on every node where it was discovered.",
+      "adoptManyBody": "Each of the {{count}} clients will be registered as managed on every node where it was discovered.",
+      "adoptConfirm": "Adopt"
+    }
+  }
+}

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { EnrollmentWizard } from "@/features/enrollment/EnrollmentWizard";
 import type {
   EnrollmentWizardProps,
@@ -29,13 +30,9 @@ const POLL_INTERVAL_MS = 3000;
 const MAX_CONSECUTIVE_FAILURES = 3;
 const FALLBACK_WINDOW_SECS = 300;
 
-function terminalTokenError(status: string | undefined): string | null {
-  if (status === "expired") {
-    return "Enrollment token expired before the agent dialed in. Generate a new token and re-run the install command.";
-  }
-  if (status === "revoked") {
-    return "Enrollment token was revoked. Generate a new token and re-run the install command.";
-  }
+function terminalTokenErrorKey(status: string | undefined): string | null {
+  if (status === "expired") return "error.tokenExpired";
+  if (status === "revoked") return "error.tokenRevoked";
   return null;
 }
 
@@ -61,6 +58,7 @@ function findFallbackAgent(
 }
 
 export function AddServerContainer() {
+  const { t } = useTranslation("servers");
   const navigate = useNavigate();
   const toast = useToast();
   const { fleetGroups } = useFleetGroups();
@@ -174,9 +172,7 @@ export function AddServerContainer() {
     // immediate, scoped error. The same predicate also keeps anything
     // shell-unsafe out of the rendered install command.
     if (!isValidNodeName(nodeName)) {
-      setError(
-        "Node name must be 1-64 chars: letters, digits, dot, dash, underscore.",
-      );
+      setError(t("error.nodeName"));
       return;
     }
     setLoading(true);
@@ -184,7 +180,7 @@ export function AddServerContainer() {
     try {
       if (mode === "outbound") {
         if (!dialAddress.trim()) {
-          setError("Dial address is required for outbound mode.");
+          setError(t("error.dialAddressRequired"));
           return;
         }
         const result = await apiClient.provisionOutboundAgent({
@@ -224,7 +220,7 @@ export function AddServerContainer() {
       );
       setStep(2);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create token");
+      setError(err instanceof Error ? err.message : t("error.tokenCreateFailed"));
     } finally {
       setLoading(false);
     }
@@ -236,6 +232,7 @@ export function AddServerContainer() {
     dialAddress,
     scriptSource,
     advancedOptions,
+    t,
   ]);
 
   const handleInstallConfirm = useCallback(() => {
@@ -263,11 +260,11 @@ export function AddServerContainer() {
       // operator knows to verify the agent list, but do not throw.
       toast.error(
         err instanceof Error
-          ? `Cleanup failed: ${err.message}`
-          : "Cleanup failed; the panel sweep will prune the row.",
+          ? t("error.cleanupFailed", { message: err.message })
+          : t("error.cleanupFallback"),
       );
     }
-  }, [mode, outboundData, toast]);
+  }, [mode, outboundData, toast, t]);
 
   const goBack = useCallback(() => {
     void cleanupOutbound();
@@ -316,10 +313,10 @@ export function AddServerContainer() {
       if (match) return applyAgentStatus(match);
 
       const tokens = await apiClient.listEnrollmentTokens();
-      const ourToken = tokens.find((t) => t.value === tokenValue);
-      const terminal = terminalTokenError(ourToken?.status);
-      if (terminal) {
-        setError(terminal);
+      const ourToken = tokens.find((tk) => tk.value === tokenValue);
+      const terminalKey = terminalTokenErrorKey(ourToken?.status);
+      if (terminalKey) {
+        setError(t(terminalKey));
         return true;
       }
       if (ourToken?.status === "consumed" && ourToken.consumed_at_unix) {
@@ -347,7 +344,7 @@ export function AddServerContainer() {
           consecutiveFailures++;
           if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
             const reason = err instanceof Error ? `: ${err.message}` : ".";
-            setError(`Probe failed ${consecutiveFailures}× in a row${reason}`);
+            setError(t("error.probeFailed", { count: consecutiveFailures, reason }));
             return;
           }
         }
@@ -357,7 +354,7 @@ export function AddServerContainer() {
     return () => {
       cancelled = true;
     };
-  }, [step, mode, tokenValue, nodeName, applyAgentStatus]);
+  }, [step, mode, tokenValue, nodeName, applyAgentStatus, t]);
 
   // Outbound polling: the agent_id is already known (we created it).
   // We just wait for the panel's outbound supervisor to land a session
@@ -382,7 +379,7 @@ export function AddServerContainer() {
       // Row vanished mid-poll — only happens if the operator (or another
       // admin) deregistered the agent while the wizard was watching.
       // Surface as an error so the operator can restart.
-      setError("Provisioned agent record is missing — restart the wizard.");
+      setError(t("error.outboundMissing"));
       return true;
     };
 
@@ -397,7 +394,7 @@ export function AddServerContainer() {
           consecutiveFailures++;
           if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
             const reason = err instanceof Error ? `: ${err.message}` : ".";
-            setError(`Probe failed ${consecutiveFailures}× in a row${reason}`);
+            setError(t("error.probeFailed", { count: consecutiveFailures, reason }));
             return;
           }
         }
@@ -407,7 +404,7 @@ export function AddServerContainer() {
     return () => {
       cancelled = true;
     };
-  }, [step, mode, outboundData, applyAgentStatus]);
+  }, [step, mode, outboundData, applyAgentStatus, t]);
 
   const fleetGroupOptions = fleetGroups.map((g) => ({
     id: g.id,
@@ -434,26 +431,26 @@ export function AddServerContainer() {
         label: quickCreateData.label,
         description: quickCreateData.description,
       });
-      toast.success(`Fleet group «${created.label}» created.`);
+      toast.success(t("addServer.fleetGroupCreated", { label: created.label }));
       setSelectedFleetGroup(created.id);
       setQuickCreateOpen(false);
       setQuickCreateData({ name: "", label: "", description: "" });
     } catch (err) {
-      setQuickCreateError(err instanceof Error ? err.message : "Request failed");
+      setQuickCreateError(err instanceof Error ? err.message : t("error.requestFailed"));
     }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <section
-        aria-label="Add server wizard"
+        aria-label={t("addServer.ariaLabel")}
         className="relative bg-bg-card rounded-lg border border-border shadow-xl w-full max-w-[480px] max-h-[85vh] overflow-y-auto mx-4 p-6"
       >
         <button
           type="button"
           onClick={goBack}
           className="absolute top-3 right-3 text-fg-muted hover:text-fg text-lg leading-none"
-          aria-label="Close"
+          aria-label={t("addServer.close")}
         >
           ✕
         </button>
@@ -519,7 +516,7 @@ export function AddServerContainer() {
       >
         <SheetContent
           side="bottom"
-          title="New fleet group"
+          title={t("addServer.quickCreateTitle")}
           onOpenChange={(open) => { if (!open) setQuickCreateOpen(false); }}
         >
           <SheetBody>

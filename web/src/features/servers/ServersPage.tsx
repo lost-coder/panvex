@@ -2,6 +2,8 @@
 // compositions. Page composition is feature-side; the kit at `@/ui` only
 // ships the building blocks.
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+
 import {
   BulkActionBar,
   Button,
@@ -27,6 +29,7 @@ export function ServersPage({
   bulkError,
   bulkPending,
 }: Readonly<ServersPageProps>) {
+  const { t } = useTranslation("servers");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [groupFilter, setGroupFilter] = useState("all");
@@ -101,19 +104,19 @@ export function ServersPage({
   return (
     <>
       <PageHeader
-        title="Servers"
-        subtitle={`${servers.length} active nodes`}
+        title={t("page.title")}
+        subtitle={t("page.subtitle", { count: servers.length })}
         trailing={
           onManageTokens || onAddServer ? (
             <div className="flex items-center gap-2">
               {onManageTokens && (
                 <Button variant="ghost" size="sm" onClick={onManageTokens}>
-                  Manage Tokens
+                  {t("page.manageTokens")}
                 </Button>
               )}
               {onAddServer && (
                 <Button size="sm" onClick={onAddServer}>
-                  Add Server
+                  {t("page.addServer")}
                 </Button>
               )}
             </div>
@@ -123,17 +126,17 @@ export function ServersPage({
       <div className="px-4 md:px-8 pb-8 flex flex-col gap-5">
         <BulkActionBar
           count={selected.size}
-          hint="run a bulk action or clear the selection"
+          hint={t("list.bulk.hint")}
           actions={[
             {
               id: "reload",
-              label: "Reload runtime",
+              label: t("list.bulk.reload"),
               variant: "ghost",
               disabled: !onBulkAction,
             },
             {
               id: "selfUpdate",
-              label: "Self-update",
+              label: t("list.bulk.selfUpdate"),
               variant: "ghost",
               disabled: !onBulkAction,
             },
@@ -150,7 +153,7 @@ export function ServersPage({
               setSearch(v);
               setCurrentPage(1);
             },
-            placeholder: "Search by name or IP...",
+            placeholder: t("list.filter.searchPlaceholder"),
           }}
           filters={[
             {
@@ -162,12 +165,12 @@ export function ServersPage({
               },
               variant: "chips" as const,
               options: [
-                { value: "all", label: `All · ${statusCounts.all}` },
-                { value: "ok", label: `Online · ${statusCounts.ok}`, tone: "ok" as const },
-                { value: "warn", label: `Warning · ${statusCounts.warn}`, tone: "warn" as const },
-                { value: "error", label: `Error · ${statusCounts.error}`, tone: "error" as const },
+                { value: "all", label: t("list.filter.all", { count: statusCounts.all }) },
+                { value: "ok", label: t("list.filter.ok", { count: statusCounts.ok }), tone: "ok" as const },
+                { value: "warn", label: t("list.filter.warn", { count: statusCounts.warn }), tone: "warn" as const },
+                { value: "error", label: t("list.filter.error", { count: statusCounts.error }), tone: "error" as const },
               ],
-              placeholder: "Status",
+              placeholder: t("list.filter.statusPlaceholder"),
             },
             {
               key: "group",
@@ -177,13 +180,13 @@ export function ServersPage({
                 setCurrentPage(1);
               },
               options: [
-                { value: "all", label: "All Groups" },
+                { value: "all", label: t("list.filter.allGroups") },
                 ...(fleetGroups ?? []).map((g) => ({
                   value: g.id,
                   label: g.label ?? g.name ?? g.id,
                 })),
               ],
-              placeholder: "Group",
+              placeholder: t("list.filter.groupPlaceholder"),
             },
           ]}
           viewMode={
@@ -191,11 +194,11 @@ export function ServersPage({
           }
           columns={{
             available: [
-              { key: "transport", label: "Transport" },
-              { key: "users", label: "Users" },
-              { key: "traffic", label: "Traffic" },
-              { key: "uptime", label: "Uptime" },
-              { key: "load", label: "Load" },
+              { key: "transport", label: t("list.columns.transport") },
+              { key: "users", label: t("list.columns.users") },
+              { key: "traffic", label: t("list.columns.traffic") },
+              { key: "uptime", label: t("list.columns.uptime") },
+              { key: "load", label: t("list.columns.load") },
             ],
             visibility: columnVisibility,
             onChange: (key, visible) =>

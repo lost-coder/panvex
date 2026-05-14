@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { useTranslation } from "react-i18next";
 
 import type { ServerDcData } from "@/shared/api/types-pages/pages";
 
@@ -9,15 +10,16 @@ import type { ServerDcData } from "@/shared/api/types-pages/pages";
 // Memoised — the parent passes a memoised `sortedDcs` array and a
 // stable `useCallback` setter, so the radar only re-renders when the
 // DC list actually changes.
-export const HealthRadar = memo(_HealthRadar);
+export const HealthRadar = memo(HealthRadarInner);
 
-function _HealthRadar({
+function HealthRadarInner({
   dcs,
   onSelect,
 }: {
   dcs: ServerDcData[];
   onSelect: (dc: ServerDcData) => void;
 }) {
+  const { t } = useTranslation("servers");
   const size = 240;
   const cx = size / 2;
   const cy = size / 2;
@@ -129,7 +131,7 @@ function _HealthRadar({
           fill="var(--color-fg-muted)"
           letterSpacing="1"
         >
-          {okCount}/{total} NOMINAL
+          {t("detail.dataCenters.nominal", { ok: okCount, total })}
         </text>
       </svg>
     </div>

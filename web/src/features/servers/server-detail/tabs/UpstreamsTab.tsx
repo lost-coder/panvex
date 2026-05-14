@@ -1,17 +1,20 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
+
 import { FieldLabel, MonoValue } from "@/ui/primitives";
 import { Badge } from "@/ui/primitives/Badge";
 import { DataTable } from "@/ui/components/DataTable";
 import type { ServerDetailPageProps, ServerUpstreamData } from "@/shared/api/types-pages/pages";
 
 export function UpstreamsTab({ server }: Readonly<{ server: ServerDetailPageProps["server"] }>) {
+  const { t } = useTranslation("servers");
   const { upstreams, upstreamSummary, upstreamZeroCounters } = server;
   const [showZeroCounters, setShowZeroCounters] = useState(false);
 
   const columns = [
     {
       key: "id",
-      header: "#",
+      header: t("detail.upstreamsTab.id"),
       render: (row: Readonly<ServerUpstreamData>) => (
         <span className="font-mono text-xs text-fg-muted">{row.upstreamId}</span>
       ),
@@ -19,24 +22,26 @@ export function UpstreamsTab({ server }: Readonly<{ server: ServerDetailPageProp
     },
     {
       key: "routeKind",
-      header: "Type",
+      header: t("detail.upstreamsTab.type"),
       render: (row: Readonly<ServerUpstreamData>) => <Badge variant="default">{row.routeKind}</Badge>,
     },
     {
       key: "address",
-      header: "Address",
+      header: t("detail.upstreamsTab.address"),
       render: (row: Readonly<ServerUpstreamData>) => <MonoValue>{row.address}</MonoValue>,
     },
     {
       key: "healthy",
-      header: "Health",
+      header: t("detail.upstreamsTab.health"),
       render: (row: Readonly<ServerUpstreamData>) => (
-        <Badge variant={row.healthy ? "ok" : "error"}>{row.healthy ? "✓ OK" : "✗ FAIL"}</Badge>
+        <Badge variant={row.healthy ? "ok" : "error"}>
+          {row.healthy ? t("detail.upstreamsTab.ok") : t("detail.upstreamsTab.fail")}
+        </Badge>
       ),
     },
     {
       key: "fails",
-      header: "Fails",
+      header: t("detail.upstreamsTab.fails"),
       render: (row: Readonly<ServerUpstreamData>) => (
         <span className={`font-mono text-xs ${row.fails > 0 ? "text-status-warn" : ""}`}>
           {row.fails}
@@ -45,7 +50,7 @@ export function UpstreamsTab({ server }: Readonly<{ server: ServerDetailPageProp
     },
     {
       key: "latency",
-      header: "Latency",
+      header: t("detail.upstreamsTab.latency"),
       render: (row: Readonly<ServerUpstreamData>) => (
         <MonoValue>
           {row.effectiveLatencyMs != null && row.effectiveLatencyMs > 0
@@ -56,9 +61,11 @@ export function UpstreamsTab({ server }: Readonly<{ server: ServerDetailPageProp
     },
     {
       key: "lastCheck",
-      header: "Last Check",
+      header: t("detail.upstreamsTab.lastCheck"),
       render: (row: Readonly<ServerUpstreamData>) => (
-        <span className="font-mono text-xs text-fg-muted">{row.lastCheckAgeSecs}s ago</span>
+        <span className="font-mono text-xs text-fg-muted">
+          {t("detail.upstreamsTab.lastCheckAgo", { seconds: row.lastCheckAgeSecs })}
+        </span>
       ),
     },
   ];
@@ -68,16 +75,16 @@ export function UpstreamsTab({ server }: Readonly<{ server: ServerDetailPageProp
       {/* Summary badges */}
       {upstreamSummary && (
         <div className="flex flex-wrap gap-2">
-          <Badge variant="default">Total: {upstreamSummary.configuredTotal}</Badge>
-          <Badge variant="ok">✓ Healthy: {upstreamSummary.healthyTotal}</Badge>
+          <Badge variant="default">{t("detail.upstreamsTab.total", { count: upstreamSummary.configuredTotal })}</Badge>
+          <Badge variant="ok">{t("detail.upstreamsTab.healthy", { count: upstreamSummary.healthyTotal })}</Badge>
           {upstreamSummary.unhealthyTotal > 0 && (
-            <Badge variant="error">✗ Unhealthy: {upstreamSummary.unhealthyTotal}</Badge>
+            <Badge variant="error">{t("detail.upstreamsTab.unhealthy", { count: upstreamSummary.unhealthyTotal })}</Badge>
           )}
           {upstreamSummary.directTotal > 0 && (
-            <Badge variant="default">Direct: {upstreamSummary.directTotal}</Badge>
+            <Badge variant="default">{t("detail.upstreamsTab.direct", { count: upstreamSummary.directTotal })}</Badge>
           )}
           {upstreamSummary.socks5Total > 0 && (
-            <Badge variant="default">SOCKS5: {upstreamSummary.socks5Total}</Badge>
+            <Badge variant="default">{t("detail.upstreamsTab.socks5", { count: upstreamSummary.socks5Total })}</Badge>
           )}
         </div>
       )}
@@ -86,7 +93,7 @@ export function UpstreamsTab({ server }: Readonly<{ server: ServerDetailPageProp
         columns={columns}
         data={upstreams}
         keyExtractor={(row) => String(row.upstreamId)}
-        emptyMessage="No upstreams configured"
+        emptyMessage={t("detail.upstreamsTab.noUpstreams")}
       />
 
       {/* Connect Statistics (collapsible) */}
@@ -96,7 +103,7 @@ export function UpstreamsTab({ server }: Readonly<{ server: ServerDetailPageProp
             onClick={() => setShowZeroCounters((v) => !v)}
             className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-bg-card-hover transition-colors"
           >
-            <FieldLabel>Connect Statistics</FieldLabel>
+            <FieldLabel>{t("detail.upstreamsTab.connectStats")}</FieldLabel>
             <span className="text-fg-muted text-xs select-none">
               {showZeroCounters ? "▾" : "›"}
             </span>
@@ -104,43 +111,43 @@ export function UpstreamsTab({ server }: Readonly<{ server: ServerDetailPageProp
           {showZeroCounters && (
             <div className="px-4 pb-4 grid grid-cols-2 md:grid-cols-4 gap-2">
               {[
-                { label: "Attempt Total", value: upstreamZeroCounters.connectAttemptTotal },
-                { label: "Success Total", value: upstreamZeroCounters.connectSuccessTotal },
-                { label: "Fail Total", value: upstreamZeroCounters.connectFailTotal },
+                { label: t("detail.upstreamsTab.attemptTotal"), value: upstreamZeroCounters.connectAttemptTotal },
+                { label: t("detail.upstreamsTab.successTotal"), value: upstreamZeroCounters.connectSuccessTotal },
+                { label: t("detail.upstreamsTab.failTotal"), value: upstreamZeroCounters.connectFailTotal },
                 {
-                  label: "Failfast Hard Error",
+                  label: t("detail.upstreamsTab.failfastHardError"),
                   value: upstreamZeroCounters.connectFailfastHardErrorTotal,
                 },
                 {
-                  label: "Success ≤100ms",
+                  label: t("detail.upstreamsTab.successLe100"),
                   value: upstreamZeroCounters.connectDurationSuccessBucketLe100ms,
                 },
                 {
-                  label: "Success 101–500ms",
+                  label: t("detail.upstreamsTab.success101_500"),
                   value: upstreamZeroCounters.connectDurationSuccessBucket101_500ms,
                 },
                 {
-                  label: "Success 501–1000ms",
+                  label: t("detail.upstreamsTab.success501_1000"),
                   value: upstreamZeroCounters.connectDurationSuccessBucket501_1000ms,
                 },
                 {
-                  label: "Success >1000ms",
+                  label: t("detail.upstreamsTab.successGt1000"),
                   value: upstreamZeroCounters.connectDurationSuccessBucketGt1000ms,
                 },
                 {
-                  label: "Fail ≤100ms",
+                  label: t("detail.upstreamsTab.failLe100"),
                   value: upstreamZeroCounters.connectDurationFailBucketLe100ms,
                 },
                 {
-                  label: "Fail 101–500ms",
+                  label: t("detail.upstreamsTab.fail101_500"),
                   value: upstreamZeroCounters.connectDurationFailBucket101_500ms,
                 },
                 {
-                  label: "Fail 501–1000ms",
+                  label: t("detail.upstreamsTab.fail501_1000"),
                   value: upstreamZeroCounters.connectDurationFailBucket501_1000ms,
                 },
                 {
-                  label: "Fail >1000ms",
+                  label: t("detail.upstreamsTab.failGt1000"),
                   value: upstreamZeroCounters.connectDurationFailBucketGt1000ms,
                 },
               ].map(({ label, value }) => (

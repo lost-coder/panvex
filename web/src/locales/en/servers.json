@@ -1,0 +1,364 @@
+{
+  "page": {
+    "title": "Servers",
+    "subtitle_one": "{{count}} active node",
+    "subtitle_other": "{{count}} active nodes",
+    "manageTokens": "Manage tokens",
+    "addServer": "Add server"
+  },
+  "loading": {
+    "label": "Loading list…",
+    "tab": "Loading…"
+  },
+  "error": {
+    "title": "Failed to load fleet",
+    "fallbackDescription": "Telemetry service unreachable. Retry once the panel recovers.",
+    "telemtUnreachable": "Telemt unreachable",
+    "modeUnknown": "Mode unknown",
+    "loadFleet": "Failed to load fleet",
+    "bulkActionFailed": "Bulk action failed",
+    "tokenCreateFailed": "Failed to create token",
+    "requestFailed": "Request failed",
+    "probeFailed": "Probe failed {{count}}× in a row{{reason}}",
+    "outboundMissing": "Provisioned agent record is missing — restart the wizard.",
+    "tokenExpired": "Enrollment token expired before the agent dialed in. Generate a new token and re-run the install command.",
+    "tokenRevoked": "Enrollment token was revoked. Generate a new token and re-run the install command.",
+    "nodeName": "Node name must be 1-64 chars: letters, digits, dot, dash, underscore.",
+    "dialAddressRequired": "Dial address is required for outbound mode.",
+    "cleanupFailed": "Cleanup failed: {{message}}",
+    "cleanupFallback": "Cleanup failed; the panel sweep will prune the row.",
+    "updateFailed": "Update failed"
+  },
+  "empty": {
+    "title": "No servers yet",
+    "description": "Add the first Telemt node — it will appear here as soon as the agent connects.",
+    "addServer": "Add server",
+    "noNodes": "No nodes found"
+  },
+  "list": {
+    "filter": {
+      "searchPlaceholder": "Search by name or IP...",
+      "statusPlaceholder": "Status",
+      "groupPlaceholder": "Group",
+      "allGroups": "All Groups",
+      "all": "All · {{count}}",
+      "ok": "Online · {{count}}",
+      "warn": "Warning · {{count}}",
+      "error": "Error · {{count}}"
+    },
+    "columns": {
+      "server": "Server",
+      "transport": "Transport",
+      "users": "Users",
+      "traffic": "Traffic",
+      "uptime": "Uptime",
+      "load": "Load",
+      "cpu": "CPU",
+      "mem": "MEM",
+      "clients": "Clients"
+    },
+    "bulk": {
+      "hint": "run a bulk action or clear the selection",
+      "reload": "Reload runtime",
+      "selfUpdate": "Self-update"
+    },
+    "card": {
+      "updateAvailable": "Update available",
+      "idle": "idle",
+      "region": "Region",
+      "selectAll": "Select all servers on this page",
+      "selectOne": "Select {{name}}",
+      "expand": "Expand",
+      "collapse": "Collapse",
+      "connections": "conn",
+      "dcDown_one": "{{count}} DC down",
+      "dcDown_other": "{{count}} DC down",
+      "dcDegraded_one": "{{count}} DC degraded",
+      "dcDegraded_other": "{{count}} DC degraded"
+    },
+    "nodeSelector": {
+      "searchPlaceholder": "Search nodes...",
+      "ariaLabel": "Node selection — {{selected}} of {{total}} selected",
+      "ariaOption": "{{name}} ({{group}})",
+      "selectionSummary": "{{selected}} of {{total}} nodes selected"
+    },
+    "fleetGroupChips": {
+      "nodes": "{{count}} nodes",
+      "summary_one": "{{nodes}} nodes selected — {{groups}} group",
+      "summary_other": "{{nodes}} nodes selected — {{groups}} groups"
+    }
+  },
+  "addServer": {
+    "ariaLabel": "Add server wizard",
+    "close": "Close",
+    "quickCreateTitle": "New fleet group",
+    "fleetGroupCreated": "Fleet group «{{label}}» created."
+  },
+  "detail": {
+    "breadcrumbServers": "Servers",
+    "subtitleVersion": "v{{version}}",
+    "subtitleUp": "up {{value}}",
+    "subtitleReloads_one": "{{count}} reload",
+    "subtitleReloads_other": "{{count}} reloads",
+    "metaVersion": "v{{version}}",
+    "metaUp": "up {{value}}",
+    "metaReloads": "reloads: {{count}}",
+    "modeUnknown": "Mode unknown",
+    "telemtLost": "Telemt connection lost",
+    "telemtLostDetail": "since {{since}} UTC ({{elapsed}}). Make sure Telemt is running and listening on loopback. Metrics and mode are unavailable until the connection is restored.",
+    "elapsedSec": "{{value}}s",
+    "elapsedMin": "{{value}}m",
+    "elapsedHour": "{{value}}h",
+    "elapsedHourMin": "{{hours}}h {{minutes}}m",
+    "actions": {
+      "title": "Server actions",
+      "reload": "Reload runtime",
+      "refreshDiagnostics": "Refresh diagnostics",
+      "rename": "Rename server",
+      "changeFleetGroup": "Change fleet group",
+      "deregister": "Deregister server"
+    },
+    "pulse": {
+      "connections": "Connections",
+      "connectionsHint": "{{me}} ME · {{direct}} direct · total {{total}}",
+      "connectionsHintMobile": "{{me}} ME · {{direct}} direct",
+      "activeUsers": "Active users",
+      "activeUsersHint": "of {{configured}} configured",
+      "activeUsersHintMobile": "of {{configured}}",
+      "badRate": "Bad rate",
+      "badRateHint": "{{bad}} bad / {{total}} total",
+      "badRateHintMobile": "{{bad}} bad",
+      "coverage": "DC coverage",
+      "coverageHint": "min {{min}}% · {{ok}} ok · {{warn}} warn · {{err}} err",
+      "coverageHintMobile": "min {{min}}% · {{ok}}/{{warn}}/{{err}}"
+    },
+    "fleetRoutes": {
+      "title": "Fleet routes · 12 DC",
+      "ok": "{{count}} ok",
+      "warn": "{{count}} warn",
+      "err": "{{count}} err"
+    },
+    "telemetry": {
+      "live": "Live telemetry",
+      "liveRange": "Live telemetry · last {{range}}",
+      "gathering": "Gathering telemetry…",
+      "legendConnections": "connections",
+      "legendCpu": "cpu",
+      "events_one": "{{count}} event",
+      "events_other": "{{count}} events"
+    },
+    "dataCenters": {
+      "title": "Data Centers",
+      "sortedHint": "sorted by coverage · worst first",
+      "nominal": "{{ok}}/{{total}} NOMINAL",
+      "noDc": "No DC data"
+    },
+    "dcTable": {
+      "dc": "DC",
+      "availablePct": "Available%",
+      "writers": "Writers",
+      "coveragePct": "Coverage%",
+      "freshPct": "Fresh%",
+      "rtt": "RTT",
+      "load": "Load",
+      "floorPolicy": "Floor policy",
+      "floorValue": "min: {{min}} · target: {{target}} · max: {{max}}",
+      "capped": "capped",
+      "endpoints": "Endpoints",
+      "endpointsAvailable": "{{available}}/{{total}} available",
+      "endpointWriters": "Endpoint Writers",
+      "noEndpointData": "No endpoint data",
+      "writers_one": "{{count}} writer",
+      "writers_other": "{{count}} writers"
+    },
+    "dcTileLabels": {
+      "writers": "w",
+      "rtt": "rtt",
+      "load": "load {{value}}%"
+    },
+    "dcSheet": {
+      "title": "DC{{dc}} Details",
+      "coverage": "Coverage",
+      "available": "Available",
+      "writers": "Writers",
+      "writersAlive": "{{alive}}/{{required}} alive",
+      "rtt": "RTT",
+      "load": "Load",
+      "floor": "Floor",
+      "floorRange": "{{min}}..{{target}}..{{max}}",
+      "capped": "capped",
+      "endpointsAndWriters": "Endpoints & Writers",
+      "activeWriters_one": "{{count}} active writer",
+      "activeWriters_other": "{{count}} active writers"
+    },
+    "gates": {
+      "title": "Gates"
+    },
+    "upstreams": {
+      "title": "Upstreams",
+      "empty": "No upstreams reported.",
+      "peers_one": "{{count}} peer",
+      "peers_other": "{{count}} peers"
+    },
+    "folds": {
+      "mePool": "ME Pool",
+      "mePoolHint": "{{alive}}/{{required}} writers alive",
+      "topClients": "Top clients",
+      "topClientsHint": "{{connCount}} by conn · {{trafficCount}} by traffic",
+      "events": "Events",
+      "eventsHint_one": "{{count}} entry",
+      "eventsHint_other": "{{count}} entries",
+      "eventsHintDropped": "{{count}} entries · {{dropped}} dropped",
+      "gates": "Gates"
+    },
+    "topClients": {
+      "username": "Username",
+      "connections": "Connections",
+      "traffic": "Traffic",
+      "topByConnections": "Top by connections",
+      "topByThroughput": "Top by throughput",
+      "noClientActivity": "No client activity recorded yet.",
+      "staleCache": "⚠ Stale cache in use"
+    },
+    "events": {
+      "empty": "No events.",
+      "dropped": "⚠ {{count}} events dropped"
+    },
+    "mePool": {
+      "unavailable": "ME Pool is not available on this server.",
+      "coverage": "Coverage",
+      "coverageCaption": "{{alive}} / {{required}} writers alive",
+      "freshCoverage": "Fresh coverage",
+      "freshCoverageCaption": "{{count}} fresh-alive",
+      "endpoints": "Endpoints",
+      "endpointsCaption": "{{available}} / {{configured}} reachable",
+      "generations": "Generations",
+      "generationsHint": "{{count}} DC groups",
+      "active": "Active",
+      "warm": "Warm",
+      "pendingHardswap": "Pending hardswap",
+      "hardswap": "Hardswap",
+      "hardswapOn": "ON",
+      "hardswapOff": "OFF",
+      "hardswapPending": " · pending",
+      "draining": "Draining",
+      "contour": "Contour",
+      "writerState": "Writer state",
+      "healthy": "Healthy",
+      "degraded": "Degraded",
+      "required": "Required",
+      "refill": "Refill",
+      "refillHint": "inflight work",
+      "inflightEndpoints": "Inflight endpoints",
+      "inflightDc": "Inflight DC",
+      "writers": "Writers",
+      "filterAll": "all",
+      "filterActive": "active",
+      "filterWarmup": "warmup",
+      "filterDraining": "draining",
+      "filterDegraded": "degraded",
+      "writerCol": {
+        "id": "#",
+        "dc": "DC",
+        "endpoint": "Endpoint",
+        "state": "State",
+        "rtt": "RTT",
+        "clients": "Clients",
+        "idle": "Idle"
+      },
+      "writerEmpty": "No writers match this filter"
+    },
+    "upstreamsTab": {
+      "id": "#",
+      "type": "Type",
+      "address": "Address",
+      "health": "Health",
+      "fails": "Fails",
+      "latency": "Latency",
+      "lastCheck": "Last Check",
+      "lastCheckAgo": "{{seconds}}s ago",
+      "ok": "✓ OK",
+      "fail": "✗ FAIL",
+      "noUpstreams": "No upstreams configured",
+      "total": "Total: {{count}}",
+      "healthy": "✓ Healthy: {{count}}",
+      "unhealthy": "✗ Unhealthy: {{count}}",
+      "direct": "Direct: {{count}}",
+      "socks5": "SOCKS5: {{count}}",
+      "connectStats": "Connect Statistics",
+      "attemptTotal": "Attempt Total",
+      "successTotal": "Success Total",
+      "failTotal": "Fail Total",
+      "failfastHardError": "Failfast Hard Error",
+      "successLe100": "Success ≤100ms",
+      "success101_500": "Success 101–500ms",
+      "success501_1000": "Success 501–1000ms",
+      "successGt1000": "Success >1000ms",
+      "failLe100": "Fail ≤100ms",
+      "fail101_500": "Fail 101–500ms",
+      "fail501_1000": "Fail 501–1000ms",
+      "failGt1000": "Fail >1000ms"
+    },
+    "directRelay": {
+      "upstreamHealth": "Upstream health",
+      "healthyTotal": "Healthy / Total",
+      "failRate5m": "Fail rate (5m)",
+      "directConnections": "Direct connections",
+      "unknown": "unknown",
+      "liveTelemetry": "Live telemetry",
+      "liveTelemetryRange": "Live telemetry · last {{range}}",
+      "upstreams": "Upstreams",
+      "gates": "Gates"
+    },
+    "fallback": {
+      "warnHeadline": "Running on direct fallback",
+      "criticalHeadline": "ME pool down — fallback active",
+      "warnBody": "ME pool currently unavailable; traffic flowing via direct fallback.",
+      "criticalBody": "ME pool has been unavailable for over 30 minutes. Investigate ME diagnostics.",
+      "activeFor": "Active for {{minutes}} min."
+    },
+    "agentConnection": {
+      "lastSeen": "last seen {{value}}",
+      "update": "update: {{version}}",
+      "fleet": "fleet: {{value}}",
+      "updateAgent": "Update agent to {{version}}",
+      "certificate": "Certificate",
+      "daysLeft": "{{count}}d left",
+      "issued": "issued {{value}}",
+      "expires": "expires {{value}}",
+      "recoveryStatus": "Recovery {{status}}",
+      "recoveryExpires": "expires {{value}}",
+      "revoke": "Revoke",
+      "allowReEnrollment": "Allow re-enrollment"
+    },
+    "meDown": {
+      "headline": "ME pool unavailable, traffic stopped",
+      "body": "Telemt is configured to require Middle-End proxies. The pool failed to initialise and ME→Direct fallback is disabled. New client connections are not being accepted."
+    }
+  },
+  "rename": {
+    "title": "Rename Server",
+    "label": "Server Name",
+    "cancel": "Cancel",
+    "save": "Save"
+  },
+  "fleetGroupDialog": {
+    "title": "Change Fleet Group",
+    "label": "Fleet Group",
+    "noGroups": "No groups available",
+    "current": " (current)",
+    "helper": "Reassigning the server moves it to the target group's fleet-wide client deployments. The agent stays online — no re-enrollment needed.",
+    "cancel": "Cancel",
+    "move": "Move"
+  },
+  "delete": {
+    "title": "Deregister Server",
+    "body": "This will disconnect the agent, revoke its credentials, and remove all associated data. This action cannot be undone.",
+    "cancel": "Cancel",
+    "confirm": "Deregister",
+    "dismiss": "Dismiss dialog",
+    "confirmTitle": "Deregister this server?",
+    "confirmBody": "\"{{name}}\" will disconnect from the control-plane and stop receiving rollouts. Re-enrollment requires a new token.",
+    "feedbackInitiated": "Update initiated"
+  }
+}

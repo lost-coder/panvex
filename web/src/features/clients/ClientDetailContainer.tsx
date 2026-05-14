@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { Spinner } from "@/ui";
 import { ClientDetailPage } from "@/features/clients/ClientDetailPage";
 import { useClientDetail } from "./hooks/useClientDetail";
@@ -14,6 +15,7 @@ import { apiClient } from "@/shared/api/api";
 import { buildClientInput } from "@/shared/api/transforms/clients";
 
 export function ClientDetailContainer() {
+  const { t } = useTranslation("clients");
   const { clientId } = useParams({ strict: false });
   const { client, raw, isLoading, error } = useClientDetail(clientId ?? "");
   const { editMutation, rotateMutation, redeployMutation, deleteMutation } = useClientMutations(clientId ?? "", raw);
@@ -106,7 +108,7 @@ export function ClientDetailContainer() {
     // of this container only checked `isLoading || !client`.
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-2 text-center px-6">
-        <p className="text-sm text-fg">Failed to load client.</p>
+        <p className="text-sm text-fg">{t("detail.loadError")}</p>
         <p className="text-xs text-fg-muted max-w-md">{error.message}</p>
         <button
           type="button"
@@ -115,7 +117,7 @@ export function ClientDetailContainer() {
           }}
           className="mt-2 px-3 py-1 text-xs font-mono rounded-xs border border-border-hi hover:border-accent"
         >
-          Retry
+          {t("detail.retry")}
         </button>
       </div>
     );
@@ -140,9 +142,9 @@ export function ClientDetailContainer() {
       // it behind a confirm dialog so an accidental click doesn't lock users out.
       onRotateSecret={async () => {
         const ok = await confirm({
-          title: "Rotate client secret?",
-          body: `Existing connection links for "${client.name}" will stop working until operators redeploy them.`,
-          confirmLabel: "Rotate secret",
+          title: t("detail.confirm.rotateTitle"),
+          body: t("detail.confirm.rotateBody", { name: client.name }),
+          confirmLabel: t("detail.confirm.rotateConfirm"),
           variant: "danger",
         });
         if (!ok) return;
@@ -158,11 +160,11 @@ export function ClientDetailContainer() {
       onDisable={async () => {
         const next = !(raw?.enabled ?? true);
         const ok = await confirm({
-          title: next ? "Enable client?" : "Disable client?",
+          title: next ? t("detail.confirm.enableTitle") : t("detail.confirm.disableTitle"),
           body: next
-            ? `"${client.name}" will start accepting connections again after agents re-apply.`
-            : `"${client.name}" will stop accepting new connections on every node until re-enabled.`,
-          confirmLabel: next ? "Enable" : "Disable",
+            ? t("detail.confirm.enableBody", { name: client.name })
+            : t("detail.confirm.disableBody", { name: client.name }),
+          confirmLabel: next ? t("detail.confirm.enableConfirm") : t("detail.confirm.disableConfirm"),
           variant: next ? "default" : "danger",
         });
         if (!ok) return;
@@ -172,9 +174,9 @@ export function ClientDetailContainer() {
       // last safety net before the client row disappears fleet-wide.
       onDelete={async () => {
         const ok = await confirm({
-          title: "Delete client?",
-          body: `This removes "${client.name}" from every node and revokes all its connection links.`,
-          confirmLabel: "Delete client",
+          title: t("detail.confirm.deleteTitle"),
+          body: t("detail.confirm.deleteBody", { name: client.name }),
+          confirmLabel: t("detail.confirm.deleteConfirm"),
           variant: "danger",
           // UX-05: irreversible and fleet-wide — force the operator to
           // type the client name so a misclick can't wipe a tenant.

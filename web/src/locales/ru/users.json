@@ -1,0 +1,94 @@
+{
+  "page": {
+    "title": "Управление пользователями",
+    "subtitle_one": "{{count}} пользователь · доступ к панели",
+    "subtitle_few": "{{count}} пользователя · доступ к панели",
+    "subtitle_many": "{{count}} пользователей · доступ к панели",
+    "add": "Добавить пользователя"
+  },
+  "table": {
+    "user": "Пользователь",
+    "username": "Имя пользователя",
+    "role": "Роль",
+    "totp": "2FA",
+    "addedRelative": "Добавлен {{when}}"
+  },
+  "relative": {
+    "justNow": "только что",
+    "minutesAgo": "{{count}} мин назад",
+    "hoursAgo": "{{count}} ч назад",
+    "daysAgo": "{{count}} д назад"
+  },
+  "totp": {
+    "enabled": "Включено",
+    "disabled": "Выключено"
+  },
+  "actions": {
+    "edit": "Изменить",
+    "resetTotp": "Сбросить 2FA",
+    "delete": "Удалить"
+  },
+  "pulse": {
+    "total": "Всего",
+    "totalHint_one": "{{count}} наблюдатель",
+    "totalHint_few": "{{count}} наблюдателя",
+    "totalHint_many": "{{count}} наблюдателей",
+    "admins": "Администраторы",
+    "adminsNone": "нет администраторов",
+    "adminsFullAccess": "полный доступ",
+    "operators": "Операторы",
+    "operatorsHint": "управляют агентами и клиентами",
+    "totpCoverage": "Покрытие 2FA",
+    "totpHint": "{{enrolled}}/{{total}} с 2FA"
+  },
+  "filter": {
+    "all": "Все",
+    "admin": "Администратор",
+    "operator": "Оператор",
+    "viewer": "Наблюдатель",
+    "searchPlaceholder": "Поиск по имени…"
+  },
+  "empty": {
+    "noUsersTitle": "Пользователей панели пока нет",
+    "noUsersDescription": "Добавьте первого пользователя, чтобы открыть доступ к дашборду. Администраторы управляют всем; операторы изменяют флоты; наблюдатели — только чтение.",
+    "noMatchTitle": "Под фильтр ничего не подходит",
+    "noMatchDescription": "Расширьте фильтр или очистите поиск."
+  },
+  "form": {
+    "addTitle": "Добавить пользователя",
+    "editTitle": "Изменить пользователя",
+    "description": "Учётная запись администратора панели.",
+    "usernameLabel": "Имя пользователя",
+    "usernamePlaceholder": "admin",
+    "passwordLabel": "Пароль",
+    "passwordLabelKeep": "Пароль (оставьте пустым, чтобы не менять)",
+    "passwordPlaceholderKeep": "••••••••",
+    "roleLabel": "Роль",
+    "roleAdmin": "Администратор — полный доступ",
+    "roleOperator": "Оператор — управление агентами и клиентами",
+    "roleViewer": "Наблюдатель — только чтение",
+    "cancel": "Отмена",
+    "saving": "Сохраняем…",
+    "submitAdd": "Добавить пользователя",
+    "submitSave": "Сохранить изменения",
+    "errorCreate": "Не удалось создать пользователя",
+    "errorUpdate": "Не удалось обновить пользователя"
+  },
+  "confirm": {
+    "fallbackName": "этот пользователь",
+    "deleteTitle": "Удалить пользователя?",
+    "deleteBody": "«{{name}}» будет удалён из control-plane, а его сессии немедленно прекратятся.",
+    "deleteConfirm": "Удалить пользователя",
+    "resetTotpTitle": "Сбросить TOTP?",
+    "resetTotpBody": "«{{name}}» потребуется заново привязать приложение-аутентификатор при следующем входе.",
+    "resetTotpConfirm": "Сбросить TOTP"
+  },
+  "section": {
+    "title": "Пользователи панели"
+  },
+  "card": {
+    "ips_one": "{{count}} IP",
+    "ips_few": "{{count}} IP",
+    "ips_many": "{{count}} IP"
+  }
+}

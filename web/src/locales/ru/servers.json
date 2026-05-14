@@ -1,0 +1,374 @@
+{
+  "page": {
+    "title": "Серверы",
+    "subtitle_one": "{{count}} активная нода",
+    "subtitle_few": "{{count}} активные ноды",
+    "subtitle_many": "{{count}} активных нод",
+    "manageTokens": "Токены подключения",
+    "addServer": "Добавить сервер"
+  },
+  "loading": {
+    "label": "Загрузка списка…",
+    "tab": "Загружаем…"
+  },
+  "error": {
+    "title": "Не удалось загрузить флот",
+    "fallbackDescription": "Сервис телеметрии недоступен. Повторите попытку, когда панель восстановит связь.",
+    "telemtUnreachable": "Telemt недоступен",
+    "modeUnknown": "Режим неизвестен",
+    "loadFleet": "Загрузка флота не удалась",
+    "bulkActionFailed": "Массовое действие не удалось",
+    "tokenCreateFailed": "Не удалось создать токен",
+    "requestFailed": "Запрос не удался",
+    "probeFailed": "Попытка опроса не удалась {{count}} раз подряд{{reason}}",
+    "outboundMissing": "Запись подготовленного агента пропала — перезапустите мастер.",
+    "tokenExpired": "Токен подключения истёк до того, как агент дозвонился. Создайте новый токен и снова запустите установочный скрипт.",
+    "tokenRevoked": "Токен подключения был отозван. Создайте новый токен и снова запустите установочный скрипт.",
+    "nodeName": "Имя ноды: 1–64 символа — буквы, цифры, точка, дефис, нижнее подчёркивание.",
+    "dialAddressRequired": "Для исходящего режима нужен адрес дозвона.",
+    "cleanupFailed": "Очистка не удалась: {{message}}",
+    "cleanupFallback": "Очистка не удалась — панель удалит запись в ходе планового опроса.",
+    "updateFailed": "Обновление не удалось"
+  },
+  "empty": {
+    "title": "Серверов пока нет",
+    "description": "Добавьте первую ноду Telemt — она появится здесь, как только агент подключится.",
+    "addServer": "Добавить сервер",
+    "noNodes": "Ноды не найдены"
+  },
+  "list": {
+    "filter": {
+      "searchPlaceholder": "Поиск по имени или IP…",
+      "statusPlaceholder": "Статус",
+      "groupPlaceholder": "Группа",
+      "allGroups": "Все группы",
+      "all": "Все · {{count}}",
+      "ok": "В сети · {{count}}",
+      "warn": "Предупреждение · {{count}}",
+      "error": "Ошибка · {{count}}"
+    },
+    "columns": {
+      "server": "Сервер",
+      "transport": "Транспорт",
+      "users": "Пользователи",
+      "traffic": "Трафик",
+      "uptime": "Uptime",
+      "load": "Нагрузка",
+      "cpu": "CPU",
+      "mem": "MEM",
+      "clients": "Клиенты"
+    },
+    "bulk": {
+      "hint": "выполните массовое действие или снимите выбор",
+      "reload": "Перезапустить рантайм",
+      "selfUpdate": "Самообновление"
+    },
+    "card": {
+      "updateAvailable": "Доступно обновление",
+      "idle": "простой",
+      "region": "Регион",
+      "selectAll": "Выбрать все серверы на странице",
+      "selectOne": "Выбрать {{name}}",
+      "expand": "Развернуть",
+      "collapse": "Свернуть",
+      "connections": "соед.",
+      "dcDown_one": "{{count}} DC недоступен",
+      "dcDown_few": "{{count}} DC недоступны",
+      "dcDown_many": "{{count}} DC недоступно",
+      "dcDegraded_one": "{{count}} DC деградирован",
+      "dcDegraded_few": "{{count}} DC деградированы",
+      "dcDegraded_many": "{{count}} DC деградированы"
+    },
+    "nodeSelector": {
+      "searchPlaceholder": "Поиск нод…",
+      "ariaLabel": "Выбор нод — выбрано {{selected}} из {{total}}",
+      "ariaOption": "{{name}} ({{group}})",
+      "selectionSummary": "Выбрано нод: {{selected}} из {{total}}"
+    },
+    "fleetGroupChips": {
+      "nodes": "{{count}} нод",
+      "summary_one": "Выбрано {{nodes}} нод — {{groups}} группа",
+      "summary_few": "Выбрано {{nodes}} нод — {{groups}} группы",
+      "summary_many": "Выбрано {{nodes}} нод — {{groups}} групп"
+    }
+  },
+  "addServer": {
+    "ariaLabel": "Мастер добавления сервера",
+    "close": "Закрыть",
+    "quickCreateTitle": "Новая группа серверов",
+    "fleetGroupCreated": "Группа «{{label}}» создана."
+  },
+  "detail": {
+    "breadcrumbServers": "Серверы",
+    "subtitleVersion": "v{{version}}",
+    "subtitleUp": "uptime {{value}}",
+    "subtitleReloads_one": "{{count}} перезагрузка",
+    "subtitleReloads_few": "{{count}} перезагрузки",
+    "subtitleReloads_many": "{{count}} перезагрузок",
+    "metaVersion": "v{{version}}",
+    "metaUp": "up {{value}}",
+    "metaReloads": "перезагрузки: {{count}}",
+    "modeUnknown": "Режим неизвестен",
+    "telemtLost": "Связь с Telemt потеряна",
+    "telemtLostDetail": "с {{since}} UTC ({{elapsed}}). Проверьте, что Telemt запущен и слушает loopback. Метрики и режим работы недоступны до восстановления связи.",
+    "elapsedSec": "{{value}} с",
+    "elapsedMin": "{{value}} мин",
+    "elapsedHour": "{{value}} ч",
+    "elapsedHourMin": "{{hours}} ч {{minutes}} мин",
+    "actions": {
+      "title": "Действия с сервером",
+      "reload": "Перезапустить рантайм",
+      "refreshDiagnostics": "Обновить диагностику",
+      "rename": "Переименовать сервер",
+      "changeFleetGroup": "Сменить группу",
+      "deregister": "Удалить сервер"
+    },
+    "pulse": {
+      "connections": "Соединения",
+      "connectionsHint": "{{me}} ME · {{direct}} direct · всего {{total}}",
+      "connectionsHintMobile": "{{me}} ME · {{direct}} direct",
+      "activeUsers": "Активные пользователи",
+      "activeUsersHint": "из {{configured}} настроенных",
+      "activeUsersHintMobile": "из {{configured}}",
+      "badRate": "Доля сбоев",
+      "badRateHint": "{{bad}} плохих / {{total}} всего",
+      "badRateHintMobile": "{{bad}} плохих",
+      "coverage": "Покрытие DC",
+      "coverageHint": "мин {{min}}% · {{ok}} ок · {{warn}} предупр · {{err}} ош",
+      "coverageHintMobile": "мин {{min}}% · {{ok}}/{{warn}}/{{err}}"
+    },
+    "fleetRoutes": {
+      "title": "Маршруты флота · 12 DC",
+      "ok": "{{count}} ок",
+      "warn": "{{count}} предупр",
+      "err": "{{count}} ош"
+    },
+    "telemetry": {
+      "live": "Текущая телеметрия",
+      "liveRange": "Текущая телеметрия · последние {{range}}",
+      "gathering": "Собираем телеметрию…",
+      "legendConnections": "соединения",
+      "legendCpu": "cpu",
+      "events_one": "{{count}} событие",
+      "events_few": "{{count}} события",
+      "events_many": "{{count}} событий"
+    },
+    "dataCenters": {
+      "title": "Дата-центры",
+      "sortedHint": "сортировка по покрытию · сначала худшие",
+      "nominal": "{{ok}}/{{total}} В НОРМЕ",
+      "noDc": "Нет данных по DC"
+    },
+    "dcTable": {
+      "dc": "DC",
+      "availablePct": "Доступно%",
+      "writers": "Писатели",
+      "coveragePct": "Покрытие%",
+      "freshPct": "Свежие%",
+      "rtt": "RTT",
+      "load": "Нагрузка",
+      "floorPolicy": "Политика floor",
+      "floorValue": "мин: {{min}} · цель: {{target}} · макс: {{max}}",
+      "capped": "ограничено",
+      "endpoints": "Эндпоинты",
+      "endpointsAvailable": "{{available}}/{{total}} доступно",
+      "endpointWriters": "Писатели по эндпоинтам",
+      "noEndpointData": "Нет данных по эндпоинтам",
+      "writers_one": "{{count}} писатель",
+      "writers_few": "{{count}} писателя",
+      "writers_many": "{{count}} писателей"
+    },
+    "dcTileLabels": {
+      "writers": "пис",
+      "rtt": "rtt",
+      "load": "нагр {{value}}%"
+    },
+    "dcSheet": {
+      "title": "DC{{dc}} · подробности",
+      "coverage": "Покрытие",
+      "available": "Доступно",
+      "writers": "Писатели",
+      "writersAlive": "{{alive}}/{{required}} живы",
+      "rtt": "RTT",
+      "load": "Нагрузка",
+      "floor": "Floor",
+      "floorRange": "{{min}}..{{target}}..{{max}}",
+      "capped": "ограничено",
+      "endpointsAndWriters": "Эндпоинты и писатели",
+      "activeWriters_one": "{{count}} активный писатель",
+      "activeWriters_few": "{{count}} активных писателя",
+      "activeWriters_many": "{{count}} активных писателей"
+    },
+    "gates": {
+      "title": "Гейты"
+    },
+    "upstreams": {
+      "title": "Аплинки",
+      "empty": "Аплинки не объявлены.",
+      "peers_one": "{{count}} пир",
+      "peers_few": "{{count}} пира",
+      "peers_many": "{{count}} пиров"
+    },
+    "folds": {
+      "mePool": "ME-пул",
+      "mePoolHint": "{{alive}}/{{required}} писателей живы",
+      "topClients": "Топ клиентов",
+      "topClientsHint": "{{connCount}} по соед · {{trafficCount}} по трафику",
+      "events": "События",
+      "eventsHint_one": "{{count}} запись",
+      "eventsHint_few": "{{count}} записи",
+      "eventsHint_many": "{{count}} записей",
+      "eventsHintDropped": "{{count}} записей · {{dropped}} потеряно",
+      "gates": "Гейты"
+    },
+    "topClients": {
+      "username": "Пользователь",
+      "connections": "Соединения",
+      "traffic": "Трафик",
+      "topByConnections": "Топ по соединениям",
+      "topByThroughput": "Топ по трафику",
+      "noClientActivity": "Активности клиентов пока не зафиксировано.",
+      "staleCache": "⚠ Используется устаревший кэш"
+    },
+    "events": {
+      "empty": "Событий нет.",
+      "dropped": "⚠ {{count}} событий потеряно"
+    },
+    "mePool": {
+      "unavailable": "ME-пул недоступен на этом сервере.",
+      "coverage": "Покрытие",
+      "coverageCaption": "{{alive}} / {{required}} писателей живы",
+      "freshCoverage": "Свежее покрытие",
+      "freshCoverageCaption": "{{count}} свежих живых",
+      "endpoints": "Эндпоинты",
+      "endpointsCaption": "{{available}} / {{configured}} доступны",
+      "generations": "Поколения",
+      "generationsHint": "{{count}} DC-групп",
+      "active": "Активные",
+      "warm": "Прогретые",
+      "pendingHardswap": "Ожидают hardswap",
+      "hardswap": "Hardswap",
+      "hardswapOn": "ВКЛ",
+      "hardswapOff": "ВЫКЛ",
+      "hardswapPending": " · ожидание",
+      "draining": "Сливаются",
+      "contour": "Контур",
+      "writerState": "Состояние писателей",
+      "healthy": "Здоровые",
+      "degraded": "Деградировали",
+      "required": "Требуется",
+      "refill": "Дозаполнение",
+      "refillHint": "работа в полёте",
+      "inflightEndpoints": "Эндпоинты в полёте",
+      "inflightDc": "DC в полёте",
+      "writers": "Писатели",
+      "filterAll": "все",
+      "filterActive": "активные",
+      "filterWarmup": "прогрев",
+      "filterDraining": "слив",
+      "filterDegraded": "деградация",
+      "writerCol": {
+        "id": "#",
+        "dc": "DC",
+        "endpoint": "Эндпоинт",
+        "state": "Состояние",
+        "rtt": "RTT",
+        "clients": "Клиенты",
+        "idle": "Простой"
+      },
+      "writerEmpty": "Под фильтр писатели не подходят"
+    },
+    "upstreamsTab": {
+      "id": "#",
+      "type": "Тип",
+      "address": "Адрес",
+      "health": "Состояние",
+      "fails": "Сбои",
+      "latency": "Задержка",
+      "lastCheck": "Последняя проверка",
+      "lastCheckAgo": "{{seconds}}с назад",
+      "ok": "✓ OK",
+      "fail": "✗ FAIL",
+      "noUpstreams": "Аплинки не настроены",
+      "total": "Всего: {{count}}",
+      "healthy": "✓ Здоровых: {{count}}",
+      "unhealthy": "✗ Нездоровых: {{count}}",
+      "direct": "Direct: {{count}}",
+      "socks5": "SOCKS5: {{count}}",
+      "connectStats": "Статистика подключений",
+      "attemptTotal": "Всего попыток",
+      "successTotal": "Всего успешных",
+      "failTotal": "Всего сбоев",
+      "failfastHardError": "Failfast hard error",
+      "successLe100": "Успешные ≤100мс",
+      "success101_500": "Успешные 101–500мс",
+      "success501_1000": "Успешные 501–1000мс",
+      "successGt1000": "Успешные >1000мс",
+      "failLe100": "Сбои ≤100мс",
+      "fail101_500": "Сбои 101–500мс",
+      "fail501_1000": "Сбои 501–1000мс",
+      "failGt1000": "Сбои >1000мс"
+    },
+    "directRelay": {
+      "upstreamHealth": "Состояние аплинков",
+      "healthyTotal": "Здоровые / Всего",
+      "failRate5m": "Доля сбоев (5 мин)",
+      "directConnections": "Прямые соединения",
+      "unknown": "неизвестно",
+      "liveTelemetry": "Текущая телеметрия",
+      "liveTelemetryRange": "Текущая телеметрия · последние {{range}}",
+      "upstreams": "Аплинки",
+      "gates": "Гейты"
+    },
+    "fallback": {
+      "warnHeadline": "Работаем на прямом фоллбэке",
+      "criticalHeadline": "ME-пул недоступен — активен фоллбэк",
+      "warnBody": "ME-пул сейчас недоступен; трафик идёт через прямой фоллбэк.",
+      "criticalBody": "ME-пул недоступен более 30 минут. Проверьте диагностику ME.",
+      "activeFor": "Активен уже {{minutes}} мин."
+    },
+    "agentConnection": {
+      "lastSeen": "последний раз в сети {{value}}",
+      "update": "обновление: {{version}}",
+      "fleet": "группа: {{value}}",
+      "updateAgent": "Обновить агент до {{version}}",
+      "certificate": "Сертификат",
+      "daysLeft": "осталось {{count}}д",
+      "issued": "выдан {{value}}",
+      "expires": "истекает {{value}}",
+      "recoveryStatus": "Восстановление: {{status}}",
+      "recoveryExpires": "истекает {{value}}",
+      "revoke": "Отозвать",
+      "allowReEnrollment": "Разрешить повторное подключение"
+    },
+    "meDown": {
+      "headline": "ME-пул недоступен, трафик остановлен",
+      "body": "Telemt настроен на обязательное использование Middle-End прокси. Пул не запустился, ME→Direct фоллбэк отключён. Новые клиентские соединения не принимаются."
+    }
+  },
+  "rename": {
+    "title": "Переименовать сервер",
+    "label": "Имя сервера",
+    "cancel": "Отмена",
+    "save": "Сохранить"
+  },
+  "fleetGroupDialog": {
+    "title": "Сменить группу",
+    "label": "Группа серверов",
+    "noGroups": "Группы недоступны",
+    "current": " (текущая)",
+    "helper": "Перенос сервера переключит его в раскатки клиентов целевой группы. Агент останется онлайн — повторное подключение не требуется.",
+    "cancel": "Отмена",
+    "move": "Перенести"
+  },
+  "delete": {
+    "title": "Удалить сервер",
+    "body": "Это отключит агент, отзовёт его учётные данные и удалит все связанные данные. Действие необратимо.",
+    "cancel": "Отмена",
+    "confirm": "Удалить",
+    "dismiss": "Закрыть диалог",
+    "confirmTitle": "Удалить этот сервер?",
+    "confirmBody": "«{{name}}» отключится от панели управления и перестанет получать раскатки. Для повторного подключения потребуется новый токен.",
+    "feedbackInitiated": "Обновление запущено"
+  }
+}

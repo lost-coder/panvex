@@ -1,0 +1,268 @@
+{
+  "page": {
+    "title": "Settings",
+    "subtitle": "Configure your control plane",
+    "adminBadge": "Admin",
+    "userBadge": "User"
+  },
+  "registry": {
+    "unsaved_one": "{{count}} unsaved change",
+    "unsaved_other": "{{count}} unsaved changes",
+    "cancel": "Cancel",
+    "save": "Save",
+    "saving": "Saving…"
+  },
+  "panel": {
+    "title": "Panel",
+    "description": "Endpoints the control plane and agents advertise publicly.",
+    "httpPublicUrlLabel": "HTTP Public URL",
+    "httpPublicUrlDescription": "Public-facing URL for this control plane",
+    "httpPublicUrlPlaceholder": "https://panvex.example.com",
+    "grpcEndpointLabel": "gRPC Endpoint",
+    "grpcEndpointDescription": "Agent connection endpoint",
+    "grpcEndpointPlaceholder": "panvex.example.com:443",
+    "passwordMinLengthLabel": "Minimum password length",
+    "passwordMinLengthDescription": "Operators creating or rotating passwords must meet this floor (8–128). Existing accounts are not invalidated.",
+    "passwordMinLengthAriaLabel": "Minimum password length"
+  },
+  "appearance": {
+    "title": "Appearance",
+    "description": "How the dashboard looks and feels for your account.",
+    "themeLabel": "Theme",
+    "themeOptions": {
+      "system": "System",
+      "light": "Light",
+      "dark": "Dark"
+    },
+    "densityLabel": "Density",
+    "densityOptions": {
+      "comfortable": "Comfortable",
+      "compact": "Compact"
+    },
+    "helpModeLabel": "Help Mode",
+    "helpModeOptions": {
+      "off": "Off",
+      "basic": "Basic",
+      "full": "Full"
+    },
+    "swipeNavigationLabel": "Swipe Navigation",
+    "swipeNavigationDescription": "Swipe between pages on mobile"
+  },
+  "users": {
+    "title": "User Management",
+    "description": "Create, edit, and manage user accounts for this panel.",
+    "accountsLabel": "Accounts",
+    "accountsDescription": "Go to the user list to add admins, rotate passwords, or revoke access.",
+    "manageButton": "Manage Users"
+  },
+  "system": {
+    "title": "System",
+    "description": "Destructive operations on the control plane itself.",
+    "restartLabel": "Restart Control Plane",
+    "restartDescription": "Gracefully restart the control-plane process. Active WebSocket and gRPC connections will briefly drop.",
+    "restartButton": "Restart"
+  },
+  "systemInfo": {
+    "title": "System info",
+    "description": "Bootstrap settings — locked by environment or config file."
+  },
+  "retention": {
+    "title": "Data Retention",
+    "description": "How long the panel keeps timeseries and history records before pruning.",
+    "fields": {
+      "ts_raw_seconds": {
+        "label": "Raw Metrics",
+        "description": "Server load and DC health raw data points"
+      },
+      "ts_hourly_seconds": {
+        "label": "Hourly Rollups",
+        "description": "Aggregated hourly metrics"
+      },
+      "ts_dc_seconds": {
+        "label": "DC Health",
+        "description": "Per-DC coverage and RTT history"
+      },
+      "ip_history_seconds": {
+        "label": "Client IP History",
+        "description": "Client IP address records"
+      },
+      "event_history_seconds": {
+        "label": "Runtime Events",
+        "description": "Telemt runtime event log"
+      }
+    },
+    "units": {
+      "seconds": "Seconds",
+      "minutes": "Minutes",
+      "hours": "Hours",
+      "days": "Days"
+    },
+    "unsavedNotice": "Unsaved changes · retention windows will apply on next prune cycle.",
+    "cancel": "Cancel",
+    "save": "Save Retention Settings",
+    "saving": "Saving…"
+  },
+  "registryNamespaces": {
+    "http": {
+      "title": "Public access",
+      "desc": "Public URLs the panel advertises to agents and clients."
+    },
+    "agents": {
+      "title": "Agents",
+      "desc": "Heartbeat thresholds and outbound supervisor backoff."
+    },
+    "auth": {
+      "title": "Authentication",
+      "desc": "Password policy, session timeouts, TOTP windows."
+    },
+    "jobs": {
+      "title": "Jobs",
+      "desc": "Job worker cadences and TTLs."
+    },
+    "observability": {
+      "title": "Observability",
+      "desc": "Telemetry sampling and dashboard windows."
+    },
+    "storage": {
+      "title": "Storage",
+      "desc": "Batch flush + rollup cadences."
+    }
+  },
+  "registryField": {
+    "sourceEnvNamed": "Set via {{name}}",
+    "sourceEnv": "Set via env",
+    "sourceConfigFile": "Set in config.toml",
+    "sourceDefault": "Default",
+    "jsonNotice": "Edit via the dedicated section below",
+    "placeholderDuration": "e.g. 30s, 5m, 1h",
+    "placeholderHostport": "e.g. 0.0.0.0:8080",
+    "pendingRestart": "restart pending"
+  },
+  "restartBanner": {
+    "needs_one": "setting needs",
+    "needs_other": "settings need",
+    "suffix": "a panel restart to take effect:",
+    "restartNow": "Restart now",
+    "restarting": "Restarting…"
+  },
+  "updates": {
+    "title": "Updates",
+    "description": "Panel + agent version management.",
+    "panelUpdateAvailable": "Panel update available",
+    "updateButton": "Update to {{version}}",
+    "updating": "Updating…",
+    "versionsLabel": "Versions",
+    "panel": "Panel",
+    "agents": "Agents",
+    "checkNowTitle": "Check for updates",
+    "autoUpdateLabel": "Auto-Update",
+    "checkIntervalLabel": "Check Interval",
+    "hours": "hours",
+    "cancel": "Cancel",
+    "save": "Save",
+    "saving": "Saving…"
+  },
+  "geoip": {
+    "title": "GeoIP",
+    "description": "Country / city / ASN enrichment for the IP history table.",
+    "loading": "Loading…",
+    "modeLabel": "Mode",
+    "modeAriaLabel": "GeoIP mode",
+    "modes": {
+      "disabled": {
+        "label": "Disabled",
+        "help": "No GeoIP enrichment."
+      },
+      "auto": {
+        "label": "Auto (P3TERX)",
+        "help": "Refreshed weekly from github.com/P3TERX/GeoLite.mmdb."
+      },
+      "url": {
+        "label": "Custom URLs",
+        "help": "Periodic download from operator-supplied URLs."
+      },
+      "local": {
+        "label": "Local files",
+        "help": "Operator-managed files on disk."
+      }
+    },
+    "cityUrlLabel": "City URL",
+    "cityUrlPlaceholder": "https://…/GeoLite2-City.mmdb",
+    "asnUrlLabel": "ASN URL",
+    "asnUrlPlaceholder": "https://…/GeoLite2-ASN.mmdb",
+    "cityPathLabel": "City file path",
+    "cityPathPlaceholder": "/var/lib/panvex/geoip/city.mmdb",
+    "asnPathLabel": "ASN file path",
+    "asnPathPlaceholder": "/var/lib/panvex/geoip/asn.mmdb",
+    "save": "Save",
+    "saving": "Saving…",
+    "updateNow": "Update now",
+    "updatingNow": "Updating…",
+    "statusLabel": "Status",
+    "statusCity": "City",
+    "statusAsn": "ASN",
+    "never": "never",
+    "errorPrefix": "error"
+  },
+  "webhooks": {
+    "title": "Webhook Endpoints",
+    "description": "HMAC-signed outbound delivery for audit + alert events. Receivers are matched by event_filter and retried with exponential backoff.",
+    "adminBadge": "Admin",
+    "addButton": "Add Webhook",
+    "endpoints_one": "{{count}} endpoint",
+    "endpoints_other": "{{count}} endpoints",
+    "loadError": "Failed to load webhook endpoints.",
+    "empty": "No webhook endpoints configured yet.",
+    "emptyHint": "Add one to start fanning out audit + alert events to Slack, PagerDuty, or your own receiver.",
+    "row": {
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "allowPrivate": "Private OK",
+      "filterPrefix": "Filter:",
+      "allEvents": "all events",
+      "edit": "Edit",
+      "deleteAriaLabel": "Delete {{name}}"
+    },
+    "deleteConfirm": {
+      "title": "Delete webhook endpoint?",
+      "body": "\"{{name}}\" will stop receiving events immediately. Pending outbox rows for this endpoint will also be removed (CASCADE).",
+      "confirm": "Delete endpoint",
+      "fallbackName": "this endpoint"
+    },
+    "errors": {
+      "create": "Failed to create webhook endpoint.",
+      "update": "Failed to update webhook endpoint."
+    },
+    "form": {
+      "createTitle": "Add Webhook Endpoint",
+      "editTitle": "Edit Webhook Endpoint",
+      "intro": "Outbound HTTP receiver for audit + alert events. Bodies are HMAC-SHA256 signed with the endpoint secret; receivers verify via the <1>X-Panvex-Signature</1> header.",
+      "nameLabel": "Name",
+      "namePlaceholder": "ops-slack",
+      "urlLabel": "URL",
+      "urlPlaceholder": "https://hooks.example.com/services/…",
+      "secretLabel": "Secret",
+      "secretLabelEdit": "Secret (leave blank to keep)",
+      "secretDescription": "HMAC key used to sign delivery bodies. Treated as a credential — not returned by the API after save.",
+      "secretPlaceholderEdit": "••••••••",
+      "filterLabel": "Event filter",
+      "filterDescription": "Comma-separated event actions or prefixes (e.g. `audit.*,alert.fired`). Empty = match all.",
+      "filterPlaceholder": "audit.*,alert.fired",
+      "enabledLabel": "Enabled",
+      "enabledHint": "Disabled endpoints stop receiving new events; queued rows drain only when re-enabled.",
+      "allowPrivateLabel": "Allow private destinations",
+      "allowPrivateHint": "Bypasses SSRF preflight. Only enable for receivers on operator-owned private networks.",
+      "cancel": "Cancel",
+      "saving": "Saving…",
+      "create": "Add Webhook",
+      "save": "Save Changes",
+      "validation": {
+        "nameRequired": "Name is required.",
+        "nameTooLong": "Name must be 128 characters or fewer.",
+        "urlScheme": "URL must start with http:// or https://.",
+        "secretRequired": "Secret is required.",
+        "secretTooLong": "Secret must be 1024 characters or fewer."
+      }
+    }
+  }
+}

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { SectionHeader } from "@/ui/layout/SectionHeader";
 import { Badge } from "@/ui/primitives/Badge";
 import { Button } from "@/ui/base/button";
@@ -6,27 +7,28 @@ import { roleVariant } from "@/ui/lib/status";
 import type { UsersSectionProps, UserListItem } from "@/shared/api/types-pages/pages";
 
 export function UsersSection({ users, onAdd, onEdit, onResetTotp, onDelete }: Readonly<UsersSectionProps>) {
+  const { t } = useTranslation("users");
   const columns = [
     {
       key: "username",
-      header: "Username",
+      header: t("table.username"),
       render: (u: Readonly<UserListItem>) => (
         <span className="text-sm font-medium text-fg">{u.username}</span>
       ),
     },
     {
       key: "role",
-      header: "Role",
+      header: t("table.role"),
       render: (u: Readonly<UserListItem>) => (
         <Badge variant={roleVariant[u.role] ?? "default"}>{u.role}</Badge>
       ),
     },
     {
       key: "totp",
-      header: "2FA",
+      header: t("table.totp"),
       render: (u: Readonly<UserListItem>) => (
         <span className={`text-xs ${u.totpEnabled ? "text-status-ok" : "text-fg-muted"}`}>
-          {u.totpEnabled ? "Enabled" : "Off"}
+          {u.totpEnabled ? t("totp.enabled") : t("totp.disabled")}
         </span>
       ),
     },
@@ -36,11 +38,11 @@ export function UsersSection({ users, onAdd, onEdit, onResetTotp, onDelete }: Re
       render: (u: Readonly<UserListItem>) => (
         <div className="flex gap-1 justify-end">
           <Button variant="ghost" size="sm" onClick={() => onEdit(u.id)}>
-            Edit
+            {t("actions.edit")}
           </Button>
           {u.totpEnabled && (
             <Button variant="ghost" size="sm" onClick={() => onResetTotp(u.id)}>
-              Reset 2FA
+              {t("actions.resetTotp")}
             </Button>
           )}
           <Button
@@ -49,7 +51,7 @@ export function UsersSection({ users, onAdd, onEdit, onResetTotp, onDelete }: Re
             onClick={() => onDelete(u.id)}
             className="text-status-error hover:text-status-error"
           >
-            Delete
+            {t("actions.delete")}
           </Button>
         </div>
       ),
@@ -59,9 +61,9 @@ export function UsersSection({ users, onAdd, onEdit, onResetTotp, onDelete }: Re
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <SectionHeader title="Panel Users" />
+        <SectionHeader title={t("section.title")} />
         <Button size="sm" onClick={onAdd}>
-          Add User
+          {t("page.add")}
         </Button>
       </div>
       <DataTable data={users} columns={columns} keyExtractor={(u) => u.id} />

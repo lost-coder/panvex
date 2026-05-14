@@ -1,4 +1,5 @@
 import { useMemo, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   EmptyState,
@@ -120,6 +121,7 @@ const ROW_ESTIMATE = 36;
 // the previous render emitted 5000+ DOM nodes; this version keeps only
 // the slice intersecting the viewport (plus overscan) on the page.
 export function AuditList({ events }: Readonly<{ events: AuditListItem[] }>) {
+  const { t } = useTranslation("activity");
   const items = useMemo(() => flattenItems(events), [events]);
   const parentRef = useRef<HTMLDivElement | null>(null);
 
@@ -139,8 +141,8 @@ export function AuditList({ events }: Readonly<{ events: AuditListItem[] }>) {
   if (events.length === 0) {
     return (
       <EmptyState
-        title="Audit trail is empty"
-        description="Every login, mutation, and admin action appears here. Activity from the last 30 days is retained by default."
+        title={t("empty.auditTitle")}
+        description={t("empty.auditDescription")}
       />
     );
   }
@@ -157,7 +159,7 @@ export function AuditList({ events }: Readonly<{ events: AuditListItem[] }>) {
       className="rounded-xs border border-border overflow-auto bg-bg-card"
       style={{ maxHeight: "70vh" }}
       role="list"
-      aria-label="Audit events"
+      aria-label={t("auditList.label")}
     >
       <div
         // Inner spacer gives the scrollbar the correct total range.
@@ -199,7 +201,7 @@ export function AuditList({ events }: Readonly<{ events: AuditListItem[] }>) {
                 <ActionCell action={e.action} />
               </div>
               <span className="text-[11px] text-fg-muted flex items-center gap-1.5 min-w-0 flex-1">
-                <span className="text-fg-faint shrink-0">by</span>
+                <span className="text-fg-faint shrink-0">{t("auditList.by")}</span>
                 <AuditRowActor e={e} />
                 <AuditRowTarget e={e} />
               </span>

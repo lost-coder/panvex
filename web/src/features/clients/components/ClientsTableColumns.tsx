@@ -2,6 +2,8 @@
 // column descriptors consumed by DataTable; the host page passes the
 // "now" snapshot + selection config so the factory stays pure.
 
+import type { TFunction } from "i18next";
+
 import { MonoValue, StatusDot, type ClientListItem } from "@/ui";
 
 import {
@@ -19,7 +21,11 @@ export interface ClientSelectionConfig {
   someSelected: boolean;
 }
 
-export function buildClientColumns(nowSec: number, selection?: ClientSelectionConfig) {
+export function buildClientColumns(
+  nowSec: number,
+  t: TFunction<"clients">,
+  selection?: ClientSelectionConfig,
+) {
   return [
     ...(selection
       ? [
@@ -28,7 +34,7 @@ export function buildClientColumns(nowSec: number, selection?: ClientSelectionCo
             header: (
               <input
                 type="checkbox"
-                aria-label="Select all clients on this page"
+                aria-label={t("table.selectAll")}
                 checked={selection.allSelected}
                 ref={(el) => {
                   if (el) el.indeterminate = selection.someSelected && !selection.allSelected;
@@ -41,7 +47,7 @@ export function buildClientColumns(nowSec: number, selection?: ClientSelectionCo
             render: (c: ClientListItem) => (
               <input
                 type="checkbox"
-                aria-label={`Select ${c.name}`}
+                aria-label={t("table.selectOne", { name: c.name })}
                 checked={selection.selected.has(c.id)}
                 onChange={() => selection.onToggle(c.id)}
                 onClick={(e) => e.stopPropagation()}
@@ -54,7 +60,7 @@ export function buildClientColumns(nowSec: number, selection?: ClientSelectionCo
       : []),
     {
       key: "client",
-      header: "Client",
+      header: t("table.client"),
       render: (c: ClientListItem) => (
         <div className="flex items-center gap-2 min-w-0">
           <StatusDot status={c.enabled ? "ok" : "error"} />
@@ -65,7 +71,7 @@ export function buildClientColumns(nowSec: number, selection?: ClientSelectionCo
     },
     {
       key: "status",
-      header: "Status",
+      header: t("table.status"),
       render: (c: ClientListItem) => (
         <ClientStatusBadge status={effectiveClientStatus(c, nowSec * 1000)} />
       ),
@@ -73,18 +79,22 @@ export function buildClientColumns(nowSec: number, selection?: ClientSelectionCo
     },
     {
       key: "usage",
-      header: "Usage",
+      header: t("table.usage"),
       render: (c: ClientListItem) => (
         <div className="flex flex-col font-mono text-[11px]">
-          <span className="text-fg tabular-nums">{c.activeTcpConns} conns</span>
-          <span className="text-fg-muted tabular-nums">{c.uniqueIpsUsed} IPs</span>
+          <span className="text-fg tabular-nums">
+            {c.activeTcpConns} {t("table.connsSuffix")}
+          </span>
+          <span className="text-fg-muted tabular-nums">
+            {c.uniqueIpsUsed} {t("table.ipsSuffix")}
+          </span>
         </div>
       ),
       className: "hidden md:table-cell w-[110px]",
     },
     {
       key: "traffic",
-      header: "Traffic",
+      header: t("table.traffic"),
       render: (c: ClientListItem) => (
         <ClientTrafficCell used={c.trafficUsedBytes} quota={c.dataQuotaBytes} nodes={c.assignedNodesCount} />
       ),
@@ -92,15 +102,15 @@ export function buildClientColumns(nowSec: number, selection?: ClientSelectionCo
     },
     {
       key: "expires",
-      header: "Expires",
+      header: t("table.expires"),
       render: (c: ClientListItem) => (
-        <ClientExpiryCell rfc={c.expirationRfc3339} nowSec={nowSec} />
+        <ClientExpiryCell rfc={c.expirationRfc3339} nowSec={nowSec} t={t} />
       ),
       className: "hidden md:table-cell w-[120px]",
     },
     {
       key: "nodes",
-      header: "Nodes",
+      header: t("table.nodes"),
       render: (c: ClientListItem) => (
         <MonoValue className="text-fg-muted">{c.assignedNodesCount}</MonoValue>
       ),

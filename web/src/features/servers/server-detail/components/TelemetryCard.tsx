@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 import { cn } from "@/ui";
 import type { ServerDcData, ServerDetailPageProps } from "@/shared/api/types-pages/pages";
 
@@ -28,6 +30,7 @@ export function TelemetryCard({
   timelineEvents: TimelineEvent[];
   onSelectDc: (dc: Readonly<ServerDcData>) => void;
 }>) {
+  const { t } = useTranslation("servers");
   const timelinePoints = metricsChart?.points ?? [];
   return (
     <section className="rounded-xs bg-bg-card border border-border p-4">
@@ -35,20 +38,20 @@ export function TelemetryCard({
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3 pb-2 border-b border-divider">
             <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">
-              Fleet routes · 12 DC
+              {t("detail.fleetRoutes.title")}
             </span>
             <div className="flex items-center gap-2 text-[10px] font-mono text-fg-muted">
               <span className="flex items-center gap-1">
                 <span className="h-1.5 w-1.5 rounded-full bg-status-ok" />
-                {dcOk} ok
+                {t("detail.fleetRoutes.ok", { count: dcOk })}
               </span>
               <span className="flex items-center gap-1">
                 <span className="h-1.5 w-1.5 rounded-full bg-status-warn" />
-                {dcWarn} warn
+                {t("detail.fleetRoutes.warn", { count: dcWarn })}
               </span>
               <span className="flex items-center gap-1">
                 <span className="h-1.5 w-1.5 rounded-full bg-status-error" />
-                {dcErr} err
+                {t("detail.fleetRoutes.err", { count: dcErr })}
               </span>
             </div>
           </div>
@@ -57,7 +60,9 @@ export function TelemetryCard({
         <div className="flex flex-col gap-3 min-w-0">
           <div className="flex items-center justify-between pb-2 border-b border-divider">
             <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">
-              Live telemetry{metricsChart?.timeRange ? ` · last ${metricsChart.timeRange}` : ""}
+              {metricsChart?.timeRange
+                ? t("detail.telemetry.liveRange", { range: metricsChart.timeRange })
+                : t("detail.telemetry.live")}
             </span>
             {metricsChart?.onTimeRangeChange && (
               <div className="inline-flex items-center gap-0.5 p-0.5 rounded-xs border border-border-hi bg-bg">

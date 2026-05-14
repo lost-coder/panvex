@@ -9,15 +9,18 @@
 // dashboard shows 200 active conns out of a 50 "limit" — usage is
 // summed across nodes, the limit is per-node.
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
+
 import { Badge, KvGrid, MonoValue, formatQuota } from "@/ui";
 import type { ClientDetailPageProps } from "@/shared/api/types-pages/pages";
 
 export function LimitsCard({ client }: Readonly<{ client: ClientDetailPageProps["client"] }>) {
+  const { t } = useTranslation("clients");
   const nodes = Math.max(1, client.deployments.length);
 
   const renderCountLimit = (perNode: number): ReactNode => {
     if (perNode <= 0) {
-      return <MonoValue>Unlimited</MonoValue>;
+      return <MonoValue>{t("limits.unlimited")}</MonoValue>;
     }
     if (nodes <= 1) {
       return <MonoValue>{perNode}</MonoValue>;
@@ -26,7 +29,7 @@ export function LimitsCard({ client }: Readonly<{ client: ClientDetailPageProps[
       <span className="flex items-baseline gap-1.5 flex-wrap">
         <MonoValue>{perNode * nodes}</MonoValue>
         <span className="text-[11px] font-mono text-fg-muted">
-          ({perNode} × {nodes} nodes)
+          {t("limits.perNodeSuffix", { per: perNode, count: nodes })}
         </span>
       </span>
     );
@@ -43,7 +46,7 @@ export function LimitsCard({ client }: Readonly<{ client: ClientDetailPageProps[
       <span className="flex items-baseline gap-1.5 flex-wrap">
         <MonoValue>{formatQuota(client.dataQuotaBytes * nodes)}</MonoValue>
         <span className="text-[11px] font-mono text-fg-muted">
-          ({formatQuota(client.dataQuotaBytes)} × {nodes} nodes)
+          {t("limits.perNodeSuffix", { per: formatQuota(client.dataQuotaBytes), count: nodes })}
         </span>
       </span>
     );
@@ -51,11 +54,11 @@ export function LimitsCard({ client }: Readonly<{ client: ClientDetailPageProps[
 
   return (
     <section className="rounded-xs bg-bg-card border border-divider p-4 flex flex-col gap-3">
-      <span className="text-sm font-semibold text-fg">Limits & metadata</span>
+      <span className="text-sm font-semibold text-fg">{t("limits.title")}</span>
       <KvGrid
         rows={[
           {
-            label: "Ad tag",
+            label: t("limits.adTag"),
             value: client.userAdTag ? (
               <MonoValue>{client.userAdTag}</MonoValue>
             ) : (
@@ -63,19 +66,19 @@ export function LimitsCard({ client }: Readonly<{ client: ClientDetailPageProps[
             ),
           },
           {
-            label: "Max TCP conns",
+            label: t("limits.maxTcpConns"),
             value: renderCountLimit(client.maxTcpConns),
           },
           {
-            label: "Max unique IPs",
+            label: t("limits.maxUniqueIps"),
             value: renderCountLimit(client.maxUniqueIps),
           },
           {
-            label: "Quota",
+            label: t("limits.quota"),
             value: renderQuota(),
           },
           {
-            label: "Fleet groups",
+            label: t("limits.fleetGroups"),
             value:
               client.fleetGroupIds.length === 0 ? (
                 <span className="text-xs text-fg-faint">—</span>

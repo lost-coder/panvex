@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 import {
   Badge,
   Button,
@@ -30,51 +32,6 @@ interface FleetGroupsPageProps {
   saving: boolean;
 }
 
-const COLUMNS = [
-  {
-    key: "label",
-    header: "Label",
-    render: (g: Readonly<FleetGroupEntry>) => (
-      <div className="flex flex-col min-w-0">
-        <span className="font-medium text-fg truncate">{g.label || g.name}</span>
-        <span className="text-[11px] font-mono text-fg-muted truncate">{g.name}</span>
-      </div>
-    ),
-    className: "w-[40%]",
-  },
-  {
-    key: "agents",
-    header: "Agents",
-    render: (g: Readonly<FleetGroupEntry>) => (
-      <MonoValue className="text-fg">{g.agent_count}</MonoValue>
-    ),
-    className: "w-[90px] text-center",
-  },
-  {
-    key: "integrations",
-    header: "Integrations",
-    render: (g: Readonly<FleetGroupEntry>) => {
-      const count = g.integrations?.length ?? 0;
-      return count > 0 ? (
-        <Badge variant="default">{count}</Badge>
-      ) : (
-        <span className="text-[11px] font-mono text-fg-muted">—</span>
-      );
-    },
-    className: "hidden md:table-cell w-[120px]",
-  },
-  {
-    key: "description",
-    header: "Description",
-    render: (g: Readonly<FleetGroupEntry>) => (
-      <span className="text-sm text-fg-muted line-clamp-1">
-        {g.description || "—"}
-      </span>
-    ),
-    className: "hidden lg:table-cell",
-  },
-];
-
 export function FleetGroupsPage({
   groups,
   sheet,
@@ -88,14 +45,61 @@ export function FleetGroupsPage({
   onCancel,
   saving,
 }: Readonly<FleetGroupsPageProps>) {
+  const { t } = useTranslation("fleet-groups");
+
+  const columns = [
+    {
+      key: "label",
+      header: t("table.label"),
+      render: (g: Readonly<FleetGroupEntry>) => (
+        <div className="flex flex-col min-w-0">
+          <span className="font-medium text-fg truncate">{g.label || g.name}</span>
+          <span className="text-[11px] font-mono text-fg-muted truncate">{g.name}</span>
+        </div>
+      ),
+      className: "w-[40%]",
+    },
+    {
+      key: "agents",
+      header: t("table.agents"),
+      render: (g: Readonly<FleetGroupEntry>) => (
+        <MonoValue className="text-fg">{g.agent_count}</MonoValue>
+      ),
+      className: "w-[90px] text-center",
+    },
+    {
+      key: "integrations",
+      header: t("table.integrations"),
+      render: (g: Readonly<FleetGroupEntry>) => {
+        const count = g.integrations?.length ?? 0;
+        return count > 0 ? (
+          <Badge variant="default">{count}</Badge>
+        ) : (
+          <span className="text-[11px] font-mono text-fg-muted">—</span>
+        );
+      },
+      className: "hidden md:table-cell w-[120px]",
+    },
+    {
+      key: "description",
+      header: t("table.description"),
+      render: (g: Readonly<FleetGroupEntry>) => (
+        <span className="text-sm text-fg-muted line-clamp-1">
+          {g.description || "—"}
+        </span>
+      ),
+      className: "hidden lg:table-cell",
+    },
+  ];
+
   return (
     <>
       <PageHeader
-        title="Fleet groups"
-        subtitle={`${groups.length} group${groups.length === 1 ? "" : "s"}`}
+        title={t("page.title")}
+        subtitle={t("page.count", { count: groups.length })}
         trailing={
           <Button size="sm" onClick={onCreate}>
-            New group
+            {t("page.new")}
           </Button>
         }
       />
@@ -104,14 +108,14 @@ export function FleetGroupsPage({
         {groups.length === 0 ? (
           <EmptyState
             icon="🗂"
-            title="Групп пока нет"
-            description="Создайте первую группу, чтобы назначать клиентов и токены сразу на набор серверов."
+            title={t("empty.title")}
+            description={t("empty.description")}
           />
         ) : (
           <div className="bg-bg-card border border-border rounded-xl shadow-sm overflow-hidden">
             <DataTable
               columns={[
-                ...COLUMNS,
+                ...columns,
                 {
                   key: "actions",
                   header: "",
@@ -125,7 +129,7 @@ export function FleetGroupsPage({
                           onEdit(g.id);
                         }}
                       >
-                        Edit
+                        {t("table.edit")}
                       </Button>
                     </div>
                   ),
@@ -143,7 +147,7 @@ export function FleetGroupsPage({
       <Sheet open={sheet.mode !== "closed"} onOpenChange={(open) => { if (!open) onCancel(); }}>
         <SheetContent
           side="bottom"
-          title={sheet.mode === "edit" ? "Edit fleet group" : "New fleet group"}
+          title={sheet.mode === "edit" ? t("form.editTitle") : t("form.createTitle")}
           onOpenChange={(open) => { if (!open) onCancel(); }}
         >
           <SheetBody>

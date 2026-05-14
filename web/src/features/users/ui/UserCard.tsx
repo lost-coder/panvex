@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { cn } from "@/ui/lib/cn";
 import { UserAvatar } from "@/ui/primitives/UserAvatar";
 import { ConnectionBadge } from "@/ui/primitives/ConnectionBadge";
@@ -24,6 +25,7 @@ export function UserCard({
   onClick,
   className,
 }: Readonly<UserCardProps>) {
+  const { t } = useTranslation("users");
   return (
     <button
       type="button"
@@ -45,7 +47,7 @@ export function UserCard({
           <TrafficCell bytes={trafficUp} label="↑" />
           {ips !== undefined && (
             <span className="text-[11px] font-mono text-fg-muted">
-              {ips} IP{ips === 1 ? "" : "s"}
+              {t("card.ips", { count: ips })}
             </span>
           )}
         </div>

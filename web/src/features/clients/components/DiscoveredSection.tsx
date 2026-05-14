@@ -3,6 +3,8 @@
 // columns, and selection state; this file owns only the responsive
 // switch between MobileRow and DataTable.
 
+import { useTranslation } from "react-i18next";
+
 import { Button, DataTable } from "@/ui";
 import type { DiscoveredGroup } from "@/features/clients/lib/groupDiscovered";
 
@@ -27,6 +29,7 @@ export interface DiscoveredPendingSectionProps {
 }
 
 export function DiscoveredPendingSection(props: Readonly<DiscoveredPendingSectionProps>) {
+  const { t } = useTranslation("clients");
   const {
     rows,
     columns,
@@ -44,20 +47,25 @@ export function DiscoveredPendingSection(props: Readonly<DiscoveredPendingSectio
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h3 className="text-sm font-semibold text-fg">Pending ({rows.length})</h3>
+        <h3 className="text-sm font-semibold text-fg">
+          {t("discovered.pendingSection", { count: rows.length })}
+        </h3>
         {selected.size > 0 && (
           <div className="flex items-center gap-2 rounded-xs bg-bg-card border border-accent/40 px-3 py-1.5">
             <span className="text-xs font-mono text-fg">
-              {selected.size} selected · {selectedRecordCount} records
+              {t("discovered.selection.summary", {
+                count: selected.size,
+                records: selectedRecordCount,
+              })}
             </span>
             <Button size="sm" disabled={busy} onClick={onBulkAdopt}>
-              Adopt
+              {t("discovered.selection.adopt")}
             </Button>
             <Button size="sm" variant="outline" disabled={busy} onClick={onBulkIgnore}>
-              Ignore
+              {t("discovered.selection.ignore")}
             </Button>
             <Button size="sm" variant="ghost" onClick={onClearSelection}>
-              Clear
+              {t("discovered.selection.clear")}
             </Button>
           </div>
         )}
@@ -97,11 +105,12 @@ export function DiscoveredReviewedSection({
   columns,
   busy,
 }: Readonly<DiscoveredReviewedSectionProps>) {
+  const { t } = useTranslation("clients");
   if (rows.length === 0) return null;
   return (
     <section className="flex flex-col gap-3">
       <h3 className="text-sm font-semibold text-fg-muted">
-        Previously reviewed ({rows.length})
+        {t("discovered.reviewedSection", { count: rows.length })}
       </h3>
       <div className="md:hidden rounded-xs bg-bg-card border border-border overflow-hidden">
         {rows.map((g) => (

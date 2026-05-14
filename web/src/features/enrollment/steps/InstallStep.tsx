@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { cn } from "@/ui/lib/cn";
 import { Button } from "@/ui/base/button";
@@ -13,6 +14,7 @@ export function InstallStep({
   tokenValue,
   tokenExpiresInSecs,
 }: Readonly<EnrollmentWizardProps>) {
+  const { t } = useTranslation("enrollment");
   const [showTroubleshooting, setShowTroubleshooting] = useState(false);
   const expiresMin = Math.round(tokenExpiresInSecs / 60);
 
@@ -21,28 +23,32 @@ export function InstallStep({
     detail?: string | undefined;
     tone?: "default" | "warn" | undefined;
   }> = [
-    { label: "Linux host (amd64 / arm64)" },
-    { label: "Root privileges (sudo)" },
-    { label: "systemd service manager" },
-    { label: "curl or wget for bootstrap" },
-    { label: "Telemt (mtproto-proxy) running locally" },
+    { label: t("installCommand.requirements.linux") },
+    { label: t("installCommand.requirements.root") },
+    { label: t("installCommand.requirements.systemd") },
+    { label: t("installCommand.requirements.curl") },
+    { label: t("installCommand.requirements.telemt") },
     {
       // Highlighted in amber because Telemt ships with metrics OFF —
       // operators routinely miss this and then wonder why per-client
       // traffic / IP / quota counters stay empty.
       tone: "warn",
-      label: "Enable Telemt metrics export (disabled by default)",
+      label: t("installCommand.requirements.metrics"),
       detail: advancedOptions?.telemtMetricsUrl
-        ? `agent will poll ${advancedOptions.telemtMetricsUrl}`
+        ? t("installCommand.requirements.metricsDetail", {
+            url: advancedOptions.telemtMetricsUrl,
+          })
         : undefined,
     },
   ];
+
+  const metricsUrl = advancedOptions?.telemtMetricsUrl || "http://127.0.0.1:8081";
 
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-xs bg-bg-card border border-divider p-3">
         <div className="text-[10px] font-medium text-fg-muted uppercase tracking-wider mb-2">
-          Before you run the command
+          {t("installCommand.requirementsHeading")}
         </div>
         <div className="flex flex-col gap-1.5 text-xs text-fg">
           {requirements.map((r) => (
@@ -71,7 +77,7 @@ export function InstallStep({
       <div>
         <div className="flex justify-between items-center mb-1.5">
           <span className="text-[10px] font-medium text-fg-muted uppercase tracking-wider">
-            Install command
+            {t("installCommand.commandHeading")}
           </span>
           <CopyButton text={installCommand} />
         </div>
@@ -85,41 +91,47 @@ export function InstallStep({
         onClick={() => setShowTroubleshooting((v) => !v)}
         className="text-xs text-fg-muted hover:text-fg text-left"
       >
-        {showTroubleshooting ? "▾" : "▸"} Troubleshooting
+        {showTroubleshooting ? "▾" : "▸"} {t("installCommand.troubleshooting.toggle")}
       </button>
       {showTroubleshooting && (
         <div className="rounded-xs border border-divider p-3 flex flex-col gap-3 text-xs">
           <div>
-            <div className="font-medium text-fg">Connection refused</div>
+            <div className="font-medium text-fg">
+              {t("installCommand.troubleshooting.connectionRefused.title")}
+            </div>
             <div className="text-fg-muted">
-              Check Telemt is running:{" "}
+              {t("installCommand.troubleshooting.connectionRefused.body")}{" "}
               <code className="bg-black/30 px-1 rounded">
-                curl http://127.0.0.1:9091/v1/health
+                {"curl http://127.0.0.1:9091/v1/health"}
               </code>
             </div>
           </div>
           <div>
-            <div className="font-medium text-fg">Metrics empty after connect</div>
+            <div className="font-medium text-fg">
+              {t("installCommand.troubleshooting.metricsEmpty.title")}
+            </div>
             <div className="text-fg-muted">
-              Telemt ships with metrics off. Enable the metrics exporter in your Telemt
-              config and confirm{" "}
-              <code className="bg-black/30 px-1 rounded">
-                curl {advancedOptions?.telemtMetricsUrl || "http://127.0.0.1:8081"}
-              </code>{" "}
-              answers before bootstrapping.
+              {t("installCommand.troubleshooting.metricsEmpty.bodyBefore")}{" "}
+              <code className="bg-black/30 px-1 rounded">{`curl ${metricsUrl}`}</code>{" "}
+              {t("installCommand.troubleshooting.metricsEmpty.bodyAfter")}
             </div>
           </div>
           <div>
-            <div className="font-medium text-fg">Permission denied</div>
+            <div className="font-medium text-fg">
+              {t("installCommand.troubleshooting.permissionDenied.title")}
+            </div>
             <div className="text-fg-muted">
-              Run with <code className="bg-black/30 px-1 rounded">sudo</code> — root is required
-              for systemd.
+              {t("installCommand.troubleshooting.permissionDenied.bodyBefore")}{" "}
+              <code className="bg-black/30 px-1 rounded">{"sudo"}</code>{" "}
+              {t("installCommand.troubleshooting.permissionDenied.bodyAfter")}
             </div>
           </div>
           <div>
-            <div className="font-medium text-fg">Token expired</div>
+            <div className="font-medium text-fg">
+              {t("installCommand.troubleshooting.tokenExpired.title")}
+            </div>
             <div className="text-fg-muted">
-              Go back and generate a new token. Tokens are single-use and time-limited.
+              {t("installCommand.troubleshooting.tokenExpired.body")}
             </div>
           </div>
         </div>
@@ -127,19 +139,23 @@ export function InstallStep({
 
       <div className="flex items-center justify-between text-xs text-fg-muted rounded-xs bg-bg-card border border-divider px-3 py-2">
         <span>
-          Token: <span className="font-mono">{tokenValue.slice(0, 12)}…</span>
+          {t("installCommand.footer.token")}{" "}
+          <span className="font-mono">{tokenValue.slice(0, 12)}…</span>
         </span>
         <span>
-          Expires in: <span className="text-status-warn">{expiresMin} min</span>
+          {t("installCommand.footer.expiresIn")}{" "}
+          <span className="text-status-warn">
+            {t("installCommand.footer.minutes", { count: expiresMin })}
+          </span>
         </span>
       </div>
 
       <div className="flex gap-2">
         <Button variant="ghost" onClick={onBack}>
-          ← Back
+          {t("installCommand.back")}
         </Button>
         <Button className="flex-1" onClick={onInstallConfirm}>
-          I've run the command →
+          {t("installCommand.confirm")}
         </Button>
       </div>
     </div>

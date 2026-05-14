@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 import { AlertStrip, InitCard, SectionHeader } from "@/ui";
 import type { ServerDcData, ServerDetailPageProps } from "@/shared/api/types-pages/pages";
 
@@ -45,6 +47,7 @@ export function DesktopLayout({
   eventsContent: React.ReactNode;
   onSelectDc: (dc: Readonly<ServerDcData>) => void;
 }>) {
+  const { t } = useTranslation("servers");
   return (
     <div className="hidden md:flex flex-col gap-6">
       {initState && <InitCard {...initState} />}
@@ -70,9 +73,9 @@ export function DesktopLayout({
       {/* DC tiles grid — problem-first ordering already applied. */}
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <SectionHeader title="Data Centers" badge={sortedDcs.length} />
+          <SectionHeader title={t("detail.dataCenters.title")} badge={sortedDcs.length} />
           <span className="text-[10px] font-mono text-fg-muted">
-            sorted by coverage · worst first
+            {t("detail.dataCenters.sortedHint")}
           </span>
         </div>
         <DcTiles dcs={sortedDcs} onSelect={onSelectDc} />
@@ -84,8 +87,11 @@ export function DesktopLayout({
           we don't lose any data surface during the rework. */}
       {server.mePool?.enabled && (
         <Fold
-          title="ME Pool"
-          rightHint={`${server.mePool.summary.aliveWriters}/${server.mePool.summary.requiredWriters} writers alive`}
+          title={t("detail.folds.mePool")}
+          rightHint={t("detail.folds.mePoolHint", {
+            alive: server.mePool.summary.aliveWriters,
+            required: server.mePool.summary.requiredWriters,
+          })}
         >
           {mePoolContent}
         </Fold>
@@ -96,19 +102,25 @@ export function DesktopLayout({
       {(server.connections.topByConnections.length > 0 ||
         server.connections.topByThroughput.length > 0) && (
         <Fold
-          title="Top clients"
-          rightHint={`${server.connections.topByConnections.length} by conn · ${server.connections.topByThroughput.length} by traffic`}
+          title={t("detail.folds.topClients")}
+          rightHint={t("detail.folds.topClientsHint", {
+            connCount: server.connections.topByConnections.length,
+            trafficCount: server.connections.topByThroughput.length,
+          })}
           defaultOpen={false}
         >
           {connectionsContent}
         </Fold>
       )}
       <Fold
-        title="Events"
+        title={t("detail.folds.events")}
         rightHint={
           server.eventsDroppedTotal
-            ? `${server.events.length} entries · ${server.eventsDroppedTotal} dropped`
-            : `${server.events.length} entries`
+            ? t("detail.folds.eventsHintDropped", {
+                count: server.events.length,
+                dropped: server.eventsDroppedTotal,
+              })
+            : t("detail.folds.eventsHint", { count: server.events.length })
         }
         defaultOpen={false}
       >

@@ -1,0 +1,53 @@
+{
+  "page": {
+    "title": "Fleet groups",
+    "count_one": "{{count}} group",
+    "count_other": "{{count}} groups",
+    "new": "New group"
+  },
+  "empty": {
+    "title": "No groups yet",
+    "description": "Create your first group to assign clients and tokens to a set of servers at once."
+  },
+  "table": {
+    "label": "Label",
+    "agents": "Agents",
+    "integrations": "Integrations",
+    "description": "Description",
+    "edit": "Edit"
+  },
+  "form": {
+    "createTitle": "New fleet group",
+    "editTitle": "Edit fleet group",
+    "createSubtitle": "Pick a URL-safe slug and a human-readable label. The slug is permanent.",
+    "editSubtitle": "Update the label and description. The slug stays locked for API/CLI stability.",
+    "slugLabel": "Slug (immutable)",
+    "slugPlaceholder": "e.g. edge-eu",
+    "labelLabel": "Label",
+    "labelPlaceholder": "e.g. Edge Europe",
+    "descriptionLabel": "Description",
+    "descriptionPlaceholder": "Optional — where, what, why",
+    "cancel": "Cancel",
+    "saving": "Saving…",
+    "create": "Create group",
+    "save": "Save changes"
+  },
+  "detail": {
+    "edit": "Edit",
+    "delete": "Delete",
+    "subtitle_one": "{{count}} agent · slug: {{slug}}",
+    "subtitle_other": "{{count}} agents · slug: {{slug}}",
+    "details": "Details",
+    "slug": "Slug",
+    "label": "Label",
+    "description": "Description",
+    "agents": "Agents",
+    "created": "Created",
+    "updated": "Updated",
+    "integrations": "Integrations",
+    "noIntegrations": "No integrations yet. The catalog expands as new kinds get registered in the backend — DNS round-robin, webhooks and others will appear once their kind is on file.",
+    "providerSuffix": " · provider {{id}}…",
+    "enabled": "enabled",
+    "disabled": "disabled"
+  }
+}

@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 
 import { cn } from "@/ui/lib/cn";
 import { Button } from "@/ui/base/button";
@@ -12,6 +13,7 @@ export function ConnectStep({
   onViewDetails,
   onCancel,
 }: Readonly<EnrollmentWizardProps>) {
+  const { t } = useTranslation("enrollment");
   const allDone =
     connectionStatus.bootstrap === "done" &&
     connectionStatus.grpcConnect === "done" &&
@@ -34,20 +36,20 @@ export function ConnectStep({
   }> = [
     {
       key: "bootstrap",
-      label: "Bootstrap",
-      detail: "Agent received enrollment certificate",
+      label: t("connect.stages.bootstrap.label"),
+      detail: t("connect.stages.bootstrap.detail"),
       state: connectionStatus.bootstrap,
     },
     {
       key: "grpcConnect",
-      label: "Gateway connected",
-      detail: "gRPC stream to control-plane established",
+      label: t("connect.stages.grpcConnect.label"),
+      detail: t("connect.stages.grpcConnect.detail"),
       state: connectionStatus.grpcConnect,
     },
     {
       key: "firstData",
-      label: "First snapshot",
-      detail: "Runtime telemetry received",
+      label: t("connect.stages.firstData.label"),
+      detail: t("connect.stages.firstData.detail"),
       state: connectionStatus.firstData,
     },
   ];
@@ -87,7 +89,7 @@ export function ConnectStep({
                   {s.label}
                 </span>
                 <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">
-                  {s.state}
+                  {t(`connect.stages.state.${s.state}`)}
                 </span>
               </div>
               <div className="text-[11px] font-mono text-fg-muted">{s.detail}</div>
@@ -98,21 +100,24 @@ export function ConnectStep({
 
       {allDone && connectedAgent && (
         <div className="rounded-xs bg-status-ok/8 border border-status-ok/25 p-3 text-xs text-status-ok">
-          <strong>{connectedAgent.id}</strong> is online. Redirecting to the server page…
+          <strong>{connectedAgent.id}</strong> {t("connect.online")}
         </div>
       )}
 
       <div className="flex items-center justify-between text-xs text-fg-muted rounded-xs bg-bg-card border border-divider px-3 py-2">
         <span>
-          Token: <span className="font-mono">{tokenValue.slice(0, 12)}…</span>
+          {t("connect.footer.token")} <span className="font-mono">{tokenValue.slice(0, 12)}…</span>
         </span>
         <span>
-          Expires in: <span className="text-status-warn">{expiresMin} min</span>
+          {t("connect.footer.expiresIn")}{" "}
+          <span className="text-status-warn">
+            {t("connect.footer.minutes", { count: expiresMin })}
+          </span>
         </span>
       </div>
 
       <Button variant="ghost" onClick={onCancel}>
-        Cancel
+        {t("connect.cancel")}
       </Button>
     </div>
   );

@@ -2,6 +2,8 @@
 // shape as the original inline component — only the import paths change
 // for the host page.
 
+import { useTranslation } from "react-i18next";
+
 import { StatusDot, formatBytes, type ClientListItem } from "@/ui";
 
 import { ClientStatusBadge, effectiveClientStatus } from "./ClientsPageCells";
@@ -23,6 +25,7 @@ export function ClientListRow({
   onToggleSelect,
   nowMs,
 }: Readonly<ClientListRowProps>) {
+  const { t } = useTranslation("clients");
   const status = effectiveClientStatus(client, nowMs);
   return (
     <div
@@ -40,7 +43,7 @@ export function ClientListRow({
       {selectable && (
         <input
           type="checkbox"
-          aria-label={`Select ${client.name}`}
+          aria-label={t("table.selectOne", { name: client.name })}
           checked={!!selected}
           onChange={() => onToggleSelect?.(client.id)}
           onClick={(e) => e.stopPropagation()}
@@ -51,7 +54,7 @@ export function ClientListRow({
       <div className="flex flex-col min-w-0 flex-1">
         <span className="font-medium text-fg truncate">{client.name}</span>
         <span className="text-[11px] font-mono text-fg-muted tabular-nums">
-          {client.activeTcpConns} conns · {formatBytes(client.trafficUsedBytes)}
+          {client.activeTcpConns} {t("table.connsSuffix")} · {formatBytes(client.trafficUsedBytes)}
         </span>
       </div>
       <ClientStatusBadge status={status} />

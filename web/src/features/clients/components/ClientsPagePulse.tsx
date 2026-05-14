@@ -6,6 +6,8 @@
 // R-Q-24: pulse component + buildClientCounts helper co-located by design.
 /* eslint-disable react-refresh/only-export-components */
 
+import { useTranslation } from "react-i18next";
+
 import { PulseRow, type ClientListItem, type PulseTick } from "@/ui";
 
 import { effectiveClientStatus } from "./ClientsPageCells";
@@ -43,31 +45,35 @@ export function buildClientCounts(clients: ClientListItem[], nowMs: number): Cli
 }
 
 export function ClientsPagePulse({ counts }: Readonly<{ counts: ClientCounts }>) {
+  const { t } = useTranslation("clients");
   return (
     <PulseRow
       ticks={
         [
           {
-            label: "Total",
+            label: t("pulse.total"),
             value: counts.all.toLocaleString(),
-            hint: `${counts.disabled.toLocaleString()} disabled`,
+            hint: t("pulse.totalHint", { count: counts.disabled }),
           },
           {
-            label: "Active now",
+            label: t("pulse.activeNow"),
             value: counts.online.toLocaleString(),
-            hint: "holding connections",
+            hint: t("pulse.activeNowHint"),
             tone: counts.online > 0 ? "ok" : "default",
           },
           {
-            label: "Expired",
+            label: t("pulse.expired"),
             value: counts.expired.toLocaleString(),
-            hint: counts.expired > 0 ? "past expiration date" : "none past expiry",
+            hint: counts.expired > 0 ? t("pulse.expiredHintWith") : t("pulse.expiredHintNone"),
             tone: counts.expired > 0 ? "error" : "default",
           },
           {
-            label: "Quota exhausted",
+            label: t("pulse.quotaExhausted"),
             value: counts.quotaExhausted.toLocaleString(),
-            hint: counts.quotaExhausted > 0 ? "traffic ≥ quota" : "all within limits",
+            hint:
+              counts.quotaExhausted > 0
+                ? t("pulse.quotaExhaustedHintWith")
+                : t("pulse.quotaExhaustedHintNone"),
             tone: counts.quotaExhausted > 0 ? "warn" : "default",
           },
         ] satisfies PulseTick[]

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { cn } from "@/ui/lib/cn";
 import { Badge } from "@/ui/primitives/Badge";
@@ -25,6 +26,7 @@ import type {
  * sub-section with state filtering.
  */
 export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["server"] }>) {
+  const { t } = useTranslation("servers");
   const { mePool } = server;
   const [stateFilter, setStateFilter] = useState<
     "all" | "active" | "warmup" | "draining" | "degraded"
@@ -33,7 +35,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
   if (!mePool?.enabled) {
     return (
       <div className="py-8 text-center text-fg-muted text-sm">
-        ME Pool is not available on this server.
+        {t("detail.mePool.unavailable")}
       </div>
     );
   }
@@ -61,13 +63,13 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
   const writerColumns = [
     {
       key: "writerId",
-      header: "#",
+      header: t("detail.mePool.writerCol.id"),
       render: (row: Readonly<ServerMeWriterData>) => <MonoValue>{row.writerId}</MonoValue>,
       className: "w-12",
     },
     {
       key: "dc",
-      header: "DC",
+      header: t("detail.mePool.writerCol.dc"),
       render: (row: Readonly<ServerMeWriterData>) => (
         <MonoValue>{row.dc == null ? "—" : `DC${row.dc}`}</MonoValue>
       ),
@@ -75,14 +77,14 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
     },
     {
       key: "endpoint",
-      header: "Endpoint",
+      header: t("detail.mePool.writerCol.endpoint"),
       render: (row: Readonly<ServerMeWriterData>) => (
         <MonoValue className="truncate">{row.endpoint}</MonoValue>
       ),
     },
     {
       key: "state",
-      header: "State",
+      header: t("detail.mePool.writerCol.state"),
       render: (row: Readonly<ServerMeWriterData>) => (
         <Badge variant={writerStateVariant(row)}>
           {row.state}
@@ -93,7 +95,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
     },
     {
       key: "rtt",
-      header: "RTT",
+      header: t("detail.mePool.writerCol.rtt"),
       render: (row: Readonly<ServerMeWriterData>) => (
         <MonoValue>{row.rttEmaMs == null ? "—" : `${row.rttEmaMs.toFixed(1)}ms`}</MonoValue>
       ),
@@ -101,13 +103,13 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
     },
     {
       key: "clients",
-      header: "Clients",
+      header: t("detail.mePool.writerCol.clients"),
       render: (row: Readonly<ServerMeWriterData>) => <MonoValue>{row.boundClients}</MonoValue>,
       className: "w-16",
     },
     {
       key: "idle",
-      header: "Idle",
+      header: t("detail.mePool.writerCol.idle"),
       render: (row: Readonly<ServerMeWriterData>) => (
         <MonoValue>{row.idleForSecs == null ? "—" : `${row.idleForSecs}s`}</MonoValue>
       ),
@@ -122,27 +124,33 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
           is the fresh pool healthy, are enough endpoints reachable. */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <HealthHeroMetric
-          label="Coverage"
+          label={t("detail.mePool.coverage")}
           value={summary.coveragePct}
           unit="%"
           tone={coverageTone(summary.coveragePct)}
-          caption={`${summary.aliveWriters} / ${summary.requiredWriters} writers alive`}
+          caption={t("detail.mePool.coverageCaption", {
+            alive: summary.aliveWriters,
+            required: summary.requiredWriters,
+          })}
           barPct={summary.coveragePct}
         />
         <HealthHeroMetric
-          label="Fresh coverage"
+          label={t("detail.mePool.freshCoverage")}
           value={summary.freshCoveragePct}
           unit="%"
           tone={coverageTone(summary.freshCoveragePct)}
-          caption={`${summary.freshAliveWriters} fresh-alive`}
+          caption={t("detail.mePool.freshCoverageCaption", { count: summary.freshAliveWriters })}
           barPct={summary.freshCoveragePct}
         />
         <HealthHeroMetric
-          label="Endpoints"
+          label={t("detail.mePool.endpoints")}
           value={summary.availablePct}
           unit="%"
           tone={coverageTone(summary.availablePct)}
-          caption={`${summary.availableEndpoints} / ${summary.configuredEndpoints} reachable`}
+          caption={t("detail.mePool.endpointsCaption", {
+            available: summary.availableEndpoints,
+            configured: summary.configuredEndpoints,
+          })}
           barPct={summary.availablePct}
         />
       </div>
@@ -151,11 +159,14 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
           Each card is a compact labelled row-list so the panel reads
           as structured data rather than a free-form blob. */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <MiniCard title="Generations" hint={`${summary.configuredDcGroups} DC groups`}>
-          <Kv k="Active" v={<span className="font-mono text-fg">{generations.active}</span>} />
-          <Kv k="Warm" v={<span className="font-mono text-fg">{generations.warm}</span>} />
+        <MiniCard
+          title={t("detail.mePool.generations")}
+          hint={t("detail.mePool.generationsHint", { count: summary.configuredDcGroups })}
+        >
+          <Kv k={t("detail.mePool.active")} v={<span className="font-mono text-fg">{generations.active}</span>} />
+          <Kv k={t("detail.mePool.warm")} v={<span className="font-mono text-fg">{generations.warm}</span>} />
           <Kv
-            k="Pending hardswap"
+            k={t("detail.mePool.pendingHardswap")}
             v={
               generations.pendingHardswap > 0 ? (
                 <Badge variant="warn">{generations.pendingHardswap}</Badge>
@@ -165,17 +176,17 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
             }
           />
           <Kv
-            k="Hardswap"
+            k={t("detail.mePool.hardswap")}
             v={
               <Badge variant={hardswap.enabled ? "ok" : "default"}>
-                {hardswap.enabled ? "ON" : "OFF"}
-                {hardswap.pending ? " · pending" : ""}
+                {hardswap.enabled ? t("detail.mePool.hardswapOn") : t("detail.mePool.hardswapOff")}
+                {hardswap.pending ? t("detail.mePool.hardswapPending") : ""}
               </Badge>
             }
           />
           {generations.drainingGenerations.length > 0 && (
             <Kv
-              k="Draining"
+              k={t("detail.mePool.draining")}
               v={
                 <span className="font-mono text-[11px] text-fg-muted">
                   [{generations.drainingGenerations.join(", ")}]
@@ -184,7 +195,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
             />
           )}
           <Kv
-            k="Contour"
+            k={t("detail.mePool.contour")}
             v={
               <span className="font-mono text-[11px] text-fg-muted">
                 A{contour.active} · W{contour.warm} · D{contour.draining}
@@ -193,9 +204,9 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
           />
         </MiniCard>
 
-        <MiniCard title="Writer state">
+        <MiniCard title={t("detail.mePool.writerState")}>
           <Kv
-            k="Healthy"
+            k={t("detail.mePool.healthy")}
             v={
               <span className="font-mono font-semibold text-status-ok tabular-nums">
                 {writersHealth.healthy}
@@ -203,7 +214,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
             }
           />
           <Kv
-            k="Degraded"
+            k={t("detail.mePool.degraded")}
             v={
               <span
                 className={cn(
@@ -216,7 +227,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
             }
           />
           <Kv
-            k="Draining"
+            k={t("detail.mePool.draining")}
             v={
               <span className="font-mono font-semibold text-fg tabular-nums">
                 {writersHealth.draining}
@@ -224,7 +235,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
             }
           />
           <Kv
-            k="Required"
+            k={t("detail.mePool.required")}
             v={
               <span className="font-mono text-fg-muted tabular-nums">
                 {summary.requiredWriters}
@@ -233,9 +244,9 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
           />
         </MiniCard>
 
-        <MiniCard title="Refill" hint="inflight work">
+        <MiniCard title={t("detail.mePool.refill")} hint={t("detail.mePool.refillHint")}>
           <Kv
-            k="Inflight endpoints"
+            k={t("detail.mePool.inflightEndpoints")}
             v={
               <span
                 className={cn(
@@ -248,7 +259,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
             }
           />
           <Kv
-            k="Inflight DC"
+            k={t("detail.mePool.inflightDc")}
             v={
               <span
                 className={cn(
@@ -267,7 +278,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
                   key={`${e.dc}-${e.family}`}
                   className="font-mono text-[10px] px-1.5 py-0.5 rounded-xs bg-bg border border-divider text-fg-muted"
                 >
-                  DC{e.dc}
+                  {`DC${e.dc}`}
                   <span className="opacity-60">·{e.family}</span>{" "}
                   <span className="text-fg">{e.inflight}</span>
                 </span>
@@ -281,7 +292,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-fg">Writers</span>
+            <span className="text-sm font-semibold text-fg">{t("detail.mePool.writers")}</span>
             <span className="text-[11px] font-mono text-fg-muted">
               {filteredWriters.length}/{writersList.length}
             </span>
@@ -289,6 +300,13 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
           <div className="inline-flex items-center gap-0.5 p-0.5 rounded-xs border border-border-hi bg-bg">
             {(["all", "active", "warmup", "draining", "degraded"] as const).map((key) => {
               const active = stateFilter === key;
+              const labelKey = (() => {
+                if (key === "all") return "detail.mePool.filterAll";
+                if (key === "active") return "detail.mePool.filterActive";
+                if (key === "warmup") return "detail.mePool.filterWarmup";
+                if (key === "draining") return "detail.mePool.filterDraining";
+                return "detail.mePool.filterDegraded";
+              })();
               return (
                 <button
                   key={key}
@@ -301,7 +319,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
                       : "text-fg-muted hover:text-fg hover:bg-bg-hover",
                   )}
                 >
-                  {key}
+                  {t(labelKey)}
                 </button>
               );
             })}
@@ -311,7 +329,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
           columns={writerColumns}
           data={filteredWriters}
           keyExtractor={(row) => String(row.writerId)}
-          emptyMessage="No writers match this filter"
+          emptyMessage={t("detail.mePool.writerEmpty")}
         />
       </div>
     </div>

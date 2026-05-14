@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 import { SectionHeader } from "@/ui";
 
 export interface UpstreamHealthCardProps {
@@ -15,24 +17,25 @@ export function UpstreamHealthCard({
   failRateKnown,
   currentDirectConnections,
 }: Readonly<UpstreamHealthCardProps>) {
+  const { t } = useTranslation("servers");
   return (
     <section className="bg-bg-card border border-border rounded-md p-4 flex flex-col gap-3">
-      <SectionHeader title="Upstream health" />
+      <SectionHeader title={t("detail.directRelay.upstreamHealth")} />
       <dl className="grid grid-cols-3 gap-4 font-mono text-sm">
         <div>
-          <dt className="text-fg-muted text-xs">Healthy / Total</dt>
+          <dt className="text-fg-muted text-xs">{t("detail.directRelay.healthyTotal")}</dt>
           <dd className="text-fg text-lg">
             {healthy}/{total}
           </dd>
         </div>
         <div>
-          <dt className="text-fg-muted text-xs">Fail rate (5m)</dt>
+          <dt className="text-fg-muted text-xs">{t("detail.directRelay.failRate5m")}</dt>
           <dd className="text-fg text-lg">
-            {failRateKnown ? `${failRatePct5m.toFixed(1)}%` : "unknown"}
+            {failRateKnown ? `${failRatePct5m.toFixed(1)}%` : t("detail.directRelay.unknown")}
           </dd>
         </div>
         <div>
-          <dt className="text-fg-muted text-xs">Direct connections</dt>
+          <dt className="text-fg-muted text-xs">{t("detail.directRelay.directConnections")}</dt>
           <dd className="text-fg text-lg">{currentDirectConnections}</dd>
         </div>
       </dl>

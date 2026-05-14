@@ -1,0 +1,91 @@
+{
+  "page": {
+    "title": "User Management",
+    "subtitle_one": "{{count}} user · panel access",
+    "subtitle_other": "{{count}} users · panel access",
+    "add": "Add User"
+  },
+  "table": {
+    "user": "User",
+    "username": "Username",
+    "role": "Role",
+    "totp": "2FA",
+    "addedRelative": "Added {{when}}"
+  },
+  "relative": {
+    "justNow": "just now",
+    "minutesAgo": "{{count}}m ago",
+    "hoursAgo": "{{count}}h ago",
+    "daysAgo": "{{count}}d ago"
+  },
+  "totp": {
+    "enabled": "Enabled",
+    "disabled": "Off"
+  },
+  "actions": {
+    "edit": "Edit",
+    "resetTotp": "Reset 2FA",
+    "delete": "Delete"
+  },
+  "pulse": {
+    "total": "Total",
+    "totalHint_one": "{{count}} viewer",
+    "totalHint_other": "{{count}} viewers",
+    "admins": "Admins",
+    "adminsNone": "no admins",
+    "adminsFullAccess": "full access",
+    "operators": "Operators",
+    "operatorsHint": "mutate agents & clients",
+    "totpCoverage": "2FA coverage",
+    "totpHint": "{{enrolled}}/{{total}} enrolled"
+  },
+  "filter": {
+    "all": "All",
+    "admin": "Admin",
+    "operator": "Operator",
+    "viewer": "Viewer",
+    "searchPlaceholder": "Search username…"
+  },
+  "empty": {
+    "noUsersTitle": "No panel users yet",
+    "noUsersDescription": "Add the first panel user to grant dashboard access. Admins can manage everything; operators can mutate fleets; viewers are read-only.",
+    "noMatchTitle": "No users match the filter",
+    "noMatchDescription": "Widen the filter or clear the search."
+  },
+  "form": {
+    "addTitle": "Add User",
+    "editTitle": "Edit User",
+    "description": "Panel administrator account.",
+    "usernameLabel": "Username",
+    "usernamePlaceholder": "admin",
+    "passwordLabel": "Password",
+    "passwordLabelKeep": "Password (leave blank to keep)",
+    "passwordPlaceholderKeep": "••••••••",
+    "roleLabel": "Role",
+    "roleAdmin": "Admin — Full access",
+    "roleOperator": "Operator — Manage agents & clients",
+    "roleViewer": "Viewer — Read-only",
+    "cancel": "Cancel",
+    "saving": "Saving…",
+    "submitAdd": "Add User",
+    "submitSave": "Save Changes",
+    "errorCreate": "Failed to create user",
+    "errorUpdate": "Failed to update user"
+  },
+  "confirm": {
+    "fallbackName": "this user",
+    "deleteTitle": "Delete user?",
+    "deleteBody": "\"{{name}}\" will be removed from the control-plane and their sessions will end immediately.",
+    "deleteConfirm": "Delete user",
+    "resetTotpTitle": "Reset TOTP?",
+    "resetTotpBody": "\"{{name}}\" will need to re-enroll their authenticator on next login.",
+    "resetTotpConfirm": "Reset TOTP"
+  },
+  "section": {
+    "title": "Panel Users"
+  },
+  "card": {
+    "ips_one": "{{count}} IP",
+    "ips_other": "{{count}} IPs"
+  }
+}

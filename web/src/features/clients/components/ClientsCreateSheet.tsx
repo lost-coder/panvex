@@ -1,6 +1,8 @@
 // R-Q-08: Add-client sheet extracted from ClientsPage.tsx. Owns only
 // open/close transitions on its props — form state stays with the host.
 
+import { useTranslation } from "react-i18next";
+
 import { ClientFormSheet } from "@/features/clients/ClientFormSheet";
 import {
   Sheet,
@@ -34,6 +36,7 @@ export function ClientsCreateSheet({
   fleetGroups,
   agents,
 }: Readonly<ClientsCreateSheetProps>) {
+  const { t } = useTranslation("clients");
   return (
     <Sheet
       open={open}
@@ -43,7 +46,7 @@ export function ClientsCreateSheet({
     >
       <SheetContent
         side="bottom"
-        title="Add client"
+        title={t("detail.addSheetTitle")}
         onOpenChange={(next) => {
           if (!next) onClose();
         }}

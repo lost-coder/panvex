@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 import { AlertStrip, InitCard, SectionHeader } from "@/ui";
 import type { ServerDetailPageProps } from "@/shared/api/types-pages/pages";
 
@@ -38,6 +40,7 @@ export function DirectRelayDesktop({
   metricsChart,
   fallback,
 }: Readonly<DirectRelayDesktopProps>) {
+  const { t } = useTranslation("servers");
   const summary = server.upstreamSummary;
   const healthy = summary?.healthyTotal ?? server.upstreams.filter((u) => u.healthy).length;
   const total = summary?.configuredTotal ?? server.upstreams.length;
@@ -68,7 +71,9 @@ export function DirectRelayDesktop({
       <section className="rounded-xs bg-bg-card border border-border p-4">
         <div className="flex items-center justify-between pb-2 border-b border-divider mb-3">
           <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">
-            Live telemetry{metricsChart?.timeRange ? ` · last ${metricsChart.timeRange}` : ""}
+            {metricsChart?.timeRange
+              ? t("detail.directRelay.liveTelemetryRange", { range: metricsChart.timeRange })
+              : t("detail.directRelay.liveTelemetry")}
           </span>
         </div>
         <TimelineStrip metricsPoints={metricsPoints} events={[]} />
@@ -81,11 +86,11 @@ export function DirectRelayDesktop({
       )}
 
       <section className="flex flex-col gap-2">
-        <SectionHeader title="Upstreams" badge={server.upstreams.length} />
+        <SectionHeader title={t("detail.directRelay.upstreams")} badge={server.upstreams.length} />
         <UpstreamsList upstreams={server.upstreams} />
       </section>
 
-      <Fold title="Gates" rightHint="">
+      <Fold title={t("detail.directRelay.gates")} rightHint="">
         <GatesPanel gates={server.gates} />
       </Fold>
     </div>

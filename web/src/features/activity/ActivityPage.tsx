@@ -27,13 +27,13 @@ type JobTone = PulseTone;
 const JOB_STATUSES = ["all", "running", "queued", "succeeded", "failed"] as const;
 type JobStatusFilter = (typeof JOB_STATUSES)[number];
 
-const AUDIT_WINDOWS: { id: AuditWindow; label: string; seconds: number | null }[] = [
-  { id: "1h", label: "1h", seconds: 3_600 },
-  { id: "24h", label: "24h", seconds: DAY },
-  { id: "7d", label: "7d", seconds: 7 * DAY },
-  { id: "all", label: "All", seconds: null },
-];
 type AuditWindow = "1h" | "24h" | "7d" | "all";
+const AUDIT_WINDOWS: { id: AuditWindow; seconds: number | null }[] = [
+  { id: "1h", seconds: 3_600 },
+  { id: "24h", seconds: DAY },
+  { id: "7d", seconds: 7 * DAY },
+  { id: "all", seconds: null },
+];
 
 const AUDIT_PAGE_SIZE = 50;
 
@@ -66,29 +66,29 @@ export function ActivityPage({
     const audit24h = auditEvents.filter((e) => e.createdAtUnix > now - DAY);
     return [
       {
-        label: "Jobs 24h",
+        label: t("pulse.jobs24h"),
         value: jobs24h.length.toLocaleString(),
-        hint: `${jobs.length.toLocaleString()} total`,
+        hint: t("pulse.jobsTotal", { count: jobs.length }),
       },
       {
-        label: "Running now",
+        label: t("pulse.runningNow"),
         value: running.length.toLocaleString(),
-        hint: running.length > 0 ? "active or queued" : "nothing in flight",
+        hint: running.length > 0 ? t("pulse.runningHint") : t("pulse.runningIdleHint"),
         tone: running.length > 0 ? ("warn" as JobTone) : ("default" as JobTone),
       },
       {
-        label: "Failed 24h",
+        label: t("pulse.failed24h"),
         value: failed24h.length.toLocaleString(),
-        hint: failed24h.length > 0 ? "needs review" : "clean window",
+        hint: failed24h.length > 0 ? t("pulse.failedHint") : t("pulse.failedCleanHint"),
         tone: failed24h.length > 0 ? ("error" as JobTone) : ("default" as JobTone),
       },
       {
-        label: "Audit 24h",
+        label: t("pulse.audit24h"),
         value: audit24h.length.toLocaleString(),
-        hint: `${auditEvents.length.toLocaleString()} total`,
+        hint: t("pulse.auditTotal", { count: auditEvents.length }),
       },
     ];
-  }, [jobs, auditEvents, nowSec]);
+  }, [jobs, auditEvents, nowSec, t]);
 
   const filteredJobs = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -135,7 +135,7 @@ export function ActivityPage({
 
   return (
     <div className="flex flex-col">
-      <PageHeader title="Activity" subtitle="Jobs and audit trail" />
+      <PageHeader title={t("page.title")} subtitle={t("page.subtitle")} />
 
       <div className="px-4 md:px-8 pb-8 flex flex-col gap-5">
         {lookupError && (
@@ -162,14 +162,14 @@ export function ActivityPage({
                 onClick={() => onTabChange("jobs")}
                 count={jobs.length}
               >
-                Jobs
+                {t("tabs.jobs")}
               </FilterChip>
               <FilterChip
                 active={activeTab === "audit"}
                 onClick={() => onTabChange("audit")}
                 count={auditEvents.length}
               >
-                Audit
+                {t("tabs.audit")}
               </FilterChip>
             </>
           }
@@ -177,7 +177,9 @@ export function ActivityPage({
             value: query,
             onChange: setQuery,
             placeholder:
-              activeTab === "jobs" ? "Search action or actor…" : "Search audit…",
+              activeTab === "jobs"
+                ? t("search.jobsPlaceholder")
+                : t("search.auditPlaceholder"),
           }}
         />
 
@@ -190,7 +192,7 @@ export function ActivityPage({
                 onClick={() => setJobStatus(s)}
                 count={jobStatusCounts[s] ?? 0}
               >
-                {s}
+                {t(`jobStatus.${s}`)}
               </FilterChip>
             ))}
           </div>
@@ -201,7 +203,7 @@ export function ActivityPage({
         {activeTab === "audit" && (
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">
-              Window
+              {t("auditWindow.label")}
             </span>
             <div className="flex gap-1.5">
               {AUDIT_WINDOWS.map((w) => (
@@ -210,24 +212,23 @@ export function ActivityPage({
                   active={auditWindow === w.id}
                   onClick={() => setAuditWindow(w.id)}
                 >
-                  {w.label}
+                  {t(`auditWindow.${w.id}`)}
                 </FilterChip>
               ))}
             </div>
             <span className="ml-auto text-[11px] font-mono text-fg-muted tabular-nums">
-              {filteredAudit.length.toLocaleString()} event
-              {filteredAudit.length === 1 ? "" : "s"}
+              {t("auditWindow.events", { count: filteredAudit.length })}
             </span>
           </div>
         )}
 
         {activeTab === "jobs" && filteredJobs.length === 0 && (
           <EmptyState
-            title={jobs.length === 0 ? "Jobs will appear here" : "No jobs match the filter"}
+            title={jobs.length === 0 ? t("empty.jobsTitle") : t("empty.jobsFilteredTitle")}
             description={
               jobs.length === 0
-                ? "Mutations run by operators (client rollouts, runtime reloads, self-updates) are recorded here once the first one fires."
-                : "Widen the filter or clear the search."
+                ? t("empty.jobsDescription")
+                : t("empty.jobsFilteredDescription")
             }
           />
         )}
@@ -240,10 +241,13 @@ export function ActivityPage({
             {pager.pageCount > 1 && (
               <div className="flex items-center justify-between gap-3 px-1 py-2 text-xs">
                 <span className="font-mono text-fg-muted tabular-nums">
-                  Page {pager.page + 1} of {pager.pageCount}
+                  {t("pager.page", { page: pager.page + 1, total: pager.pageCount })}
                   <span className="ml-2 text-fg-faint">
-                    · {pager.rangeStart + 1}–{pager.rangeEnd + 1} of{" "}
-                    {filteredAudit.length.toLocaleString()}
+                    {t("pager.range", {
+                      start: pager.rangeStart + 1,
+                      end: pager.rangeEnd + 1,
+                      total: filteredAudit.length.toLocaleString(),
+                    })}
                   </span>
                 </span>
                 <div className="flex gap-1.5">
@@ -253,7 +257,7 @@ export function ActivityPage({
                     disabled={!pager.hasPrev}
                     className="rounded-xs border border-border bg-bg-card px-2.5 py-1 font-mono uppercase tracking-wider text-fg-muted transition-colors hover:text-fg disabled:opacity-40 disabled:pointer-events-none"
                   >
-                    ← Prev
+                    {t("pager.prev")}
                   </button>
                   <button
                     type="button"
@@ -261,7 +265,7 @@ export function ActivityPage({
                     disabled={!pager.hasNext}
                     className="rounded-xs border border-border bg-bg-card px-2.5 py-1 font-mono uppercase tracking-wider text-fg-muted transition-colors hover:text-fg disabled:pointer-events-none disabled:opacity-40"
                   >
-                    Next →
+                    {t("pager.next")}
                   </button>
                 </div>
               </div>

@@ -1,9 +1,67 @@
 {
+  "page": {
+    "title": "Activity",
+    "subtitle": "Jobs and audit trail"
+  },
   "columns": {
     "action": "Action",
     "status": "Status",
     "targets": "Targets",
     "actor": "Actor",
     "created": "Created"
+  },
+  "pulse": {
+    "jobs24h": "Jobs 24h",
+    "jobsTotal": "{{count}} total",
+    "runningNow": "Running now",
+    "runningHint": "active or queued",
+    "runningIdleHint": "nothing in flight",
+    "failed24h": "Failed 24h",
+    "failedHint": "needs review",
+    "failedCleanHint": "clean window",
+    "audit24h": "Audit 24h",
+    "auditTotal": "{{count}} total"
+  },
+  "tabs": {
+    "jobs": "Jobs",
+    "audit": "Audit"
+  },
+  "search": {
+    "jobsPlaceholder": "Search action or actor…",
+    "auditPlaceholder": "Search audit…"
+  },
+  "jobStatus": {
+    "all": "all",
+    "running": "running",
+    "queued": "queued",
+    "succeeded": "succeeded",
+    "failed": "failed"
+  },
+  "auditWindow": {
+    "label": "Window",
+    "1h": "1h",
+    "24h": "24h",
+    "7d": "7d",
+    "all": "All",
+    "events_one": "{{count}} event",
+    "events_other": "{{count}} events"
+  },
+  "empty": {
+    "jobsTitle": "Jobs will appear here",
+    "jobsDescription": "Mutations run by operators (client rollouts, runtime reloads, self-updates) are recorded here once the first one fires.",
+    "jobsFilteredTitle": "No jobs match the filter",
+    "jobsFilteredDescription": "Widen the filter or clear the search.",
+    "auditTitle": "Audit trail is empty",
+    "auditDescription": "Every login, mutation, and admin action appears here. Activity from the last 30 days is retained by default."
+  },
+  "pager": {
+    "page": "Page {{page}} of {{total}}",
+    "range": "· {{start}}–{{end}} of {{total}}",
+    "prev": "← Prev",
+    "next": "Next →"
+  },
+  "auditList": {
+    "label": "Audit events",
+    "by": "by"
   }
 }

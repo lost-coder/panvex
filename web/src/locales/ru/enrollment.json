@@ -28,5 +28,204 @@
     "install_command_issued": "Команда установки выдана",
     "outbound_listener_started": "Агент слушает входящие подключения",
     "panel_dial_attempted": "Панель подключается к агенту"
+  },
+  "tokens": {
+    "title": "Токены подключения",
+    "subtitle_one": "{{count}} токен · подключение сервера",
+    "subtitle_few": "{{count}} токена · подключение серверов",
+    "subtitle_many": "{{count}} токенов · подключение серверов",
+    "subtitle_other": "{{count}} токенов · подключение серверов",
+    "newToken": "+ Новый токен",
+    "pulse": {
+      "active": "Активные",
+      "consumed": "Использованные",
+      "expired": "Истёкшие",
+      "revoked": "Отозванные",
+      "expiringSoon": "{{count}} истекают через <5 мин",
+      "noneReady": "нет готовых к использованию",
+      "readyToEnroll": "готовы к подключению",
+      "agentsBootstrapped": "серверов подключено",
+      "notConsumedInTtl": "не использованы за TTL",
+      "nonePastTtl": "нет с истёкшим TTL",
+      "manuallyCancelled": "отменены вручную",
+      "noRevocations": "отзывов нет"
+    },
+    "filters": {
+      "all": "Все",
+      "active": "Активные",
+      "consumed": "Использованные",
+      "expired": "Истёкшие",
+      "revoked": "Отозванные",
+      "searchPlaceholder": "Поиск по токену или группе…"
+    },
+    "empty": {
+      "title": "Токенов подключения нет",
+      "description": "Сгенерируйте токен, чтобы подключить новый агент Panvex. Каждый токен одноразовый и действует до истечения TTL.",
+      "filterTitleAll": "Подходящих токенов нет",
+      "filterTitleStatus": "Нет токенов со статусом «{{status}}»",
+      "filterDescription": "Расширьте фильтр или очистите поиск.",
+      "listTitle": "Токенов подключения нет",
+      "listDescription": "По текущему фильтру активных токенов нет."
+    },
+    "table": {
+      "token": "Токен",
+      "fleetGroup": "Группа серверов",
+      "status": "Статус",
+      "issued": "Выдан",
+      "expires": "Истекает",
+      "defaultScope": "по умолчанию",
+      "revoke": "Отозвать"
+    }
+  },
+  "wizard": {
+    "title": "Добавить сервер",
+    "subtitle": {
+      "step1": "Задайте имя сервера — выдадим одноразовый токен.",
+      "step2": "Запустите эту команду на целевом Linux-сервере от root.",
+      "step3": "Ожидаем подключения агента."
+    },
+    "steps": {
+      "configure": "Настройка",
+      "install": "Установка",
+      "connect": "Подключение"
+    }
+  },
+  "configure": {
+    "mode": {
+      "label": "Режим транспорта",
+      "groupLabel": "Режим транспорта агента",
+      "inbound": "Агент → Панель",
+      "outbound": "Панель → Агент",
+      "inboundAria": "Агент подключается к панели",
+      "outboundAria": "Панель подключается к агенту",
+      "inboundHint": "Агент сам подключается к панели. Используйте, если панель доступна из интернета с хоста агента.",
+      "outboundHint": "Панель подключается к агенту по публичному host:port. Используйте, если панель за фаерволом (приватная сеть / VPN)."
+    },
+    "nodeName": {
+      "label": "Имя сервера",
+      "placeholder": "напр. prod-eu-west-1",
+      "required": "Укажите имя сервера."
+    },
+    "fleetGroup": {
+      "label": "Группа серверов",
+      "none": "— нет (по умолчанию) —",
+      "option": "{{name}} ({{count}} серверов)",
+      "createAria": "Создать новую группу серверов",
+      "new": "+ Новая",
+      "hint": "Оставьте пустым, чтобы добавить сервер без группы — он попадёт в область по умолчанию."
+    },
+    "dialAddress": {
+      "label": "Адрес агента для подключения",
+      "placeholder": "vps.example.com:8443",
+      "required": "Для исходящего режима требуется адрес подключения.",
+      "invalid": "Адрес должен быть в формате host:port (напр. vps.example.com:8443).",
+      "hint": "Панель подключается по этому адресу со своего исходящего интерфейса. Агент будет слушать на соответствующем порту локально."
+    },
+    "ttl": {
+      "label": "Срок действия токена",
+      "legend": "Предустановки срока действия токена",
+      "preset1h": "1 час",
+      "preset6h": "6 часов",
+      "preset24h": "24 часа",
+      "custom": "Свой",
+      "customPlaceholder": "Секунд",
+      "invalid": "Срок действия токена должен быть больше нуля."
+    },
+    "advanced": {
+      "toggle": "Дополнительно",
+      "scriptSource": {
+        "label": "Источник install-скрипта",
+        "legend": "Переключатель источника install-скрипта",
+        "panel": "Панель",
+        "github": "GitHub",
+        "panelHint": "curl скачает install-agent.sh с <панели>/install-agent.sh.",
+        "githubHint": "curl скачает install-agent.sh с raw.githubusercontent.com. По умолчанию для исходящего режима (панель может быть недоступна агенту из-за фаервола)."
+      },
+      "telemtUrl": "URL Telemt API",
+      "telemtMetricsUrl": "URL метрик Telemt",
+      "telemtMetricsPlaceholder": "http://127.0.0.1:8081",
+      "telemtAuth": "Заголовок авторизации Telemt",
+      "telemtAuthPlaceholder": "необязательно",
+      "insecure": {
+        "aria": "Разрешить plaintext для панели на публичном IP / хосте",
+        "title": "Разрешить plaintext для панели на публичном IP / хосте",
+        "description": "Передаёт <0>--insecure-transport</0>, чтобы агент принимал http:// URL панели на публичном IP или хосте. Приватные IP (10/8, 172.16/12, 192.168/16, CGNAT, IPv6 ULA) доверяются автоматически без этого флага. Bootstrap передаёт приватный ключ агента в открытом виде — включайте только на доверенном канале."
+      }
+    },
+    "telemtNote": {
+      "label": "Внимание:",
+      "text": "Telemt (mtproto-proxy) уже должен быть запущен на целевом сервере."
+    },
+    "generate": "Сгенерировать токен →",
+    "generating": "Генерируем…"
+  },
+  "installCommand": {
+    "requirementsHeading": "Перед запуском команды",
+    "requirements": {
+      "linux": "Linux-хост (amd64 / arm64)",
+      "root": "Права root (sudo)",
+      "systemd": "Менеджер служб systemd",
+      "curl": "curl или wget для bootstrap",
+      "telemt": "Telemt (mtproto-proxy) запущен локально",
+      "metrics": "Включите экспорт метрик Telemt (выключен по умолчанию)",
+      "metricsDetail": "агент будет опрашивать {{url}}"
+    },
+    "commandHeading": "Команда установки",
+    "troubleshooting": {
+      "toggle": "Решение проблем",
+      "connectionRefused": {
+        "title": "Connection refused",
+        "body": "Проверьте, что Telemt запущен:"
+      },
+      "metricsEmpty": {
+        "title": "Метрики пустые после подключения",
+        "bodyBefore": "В Telemt метрики выключены по умолчанию. Включите экспортер метрик в конфиге Telemt и убедитесь, что",
+        "bodyAfter": "отвечает, перед bootstrap."
+      },
+      "permissionDenied": {
+        "title": "Permission denied",
+        "bodyBefore": "Запустите с",
+        "bodyAfter": "— для systemd нужны права root."
+      },
+      "tokenExpired": {
+        "title": "Токен истёк",
+        "body": "Вернитесь назад и сгенерируйте новый токен. Токены одноразовые и с ограниченным сроком действия."
+      }
+    },
+    "footer": {
+      "token": "Токен:",
+      "expiresIn": "Истекает через:",
+      "minutes": "{{count}} мин"
+    },
+    "back": "← Назад",
+    "confirm": "Я выполнил команду →"
+  },
+  "connect": {
+    "stages": {
+      "bootstrap": {
+        "label": "Bootstrap",
+        "detail": "Агент получил сертификат подключения"
+      },
+      "grpcConnect": {
+        "label": "Шлюз подключён",
+        "detail": "gRPC-поток к control-plane установлен"
+      },
+      "firstData": {
+        "label": "Первый снапшот",
+        "detail": "Получена runtime-телеметрия"
+      },
+      "state": {
+        "pending": "ожидание",
+        "waiting": "в процессе",
+        "done": "готово"
+      }
+    },
+    "online": "онлайн. Переходим к странице сервера…",
+    "footer": {
+      "token": "Токен:",
+      "expiresIn": "Истекает через:",
+      "minutes": "{{count}} мин"
+    },
+    "cancel": "Отмена"
   }
 }

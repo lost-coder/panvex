@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/ui";
 import type { FleetGroupEntry } from "@/shared/api/api";
@@ -21,6 +22,7 @@ export function ChangeFleetGroupDialog({
   fleetGroups: FleetGroupEntry[];
   onChange?: ((fleetGroupId: string) => void) | undefined;
 }>) {
+  const { t } = useTranslation("servers");
   const [value, setValue] = useState(currentFleetGroupId);
   const selectRef = useRef<HTMLSelectElement>(null);
 
@@ -46,7 +48,7 @@ export function ChangeFleetGroupDialog({
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent>
         <SheetHeader>
-          <SheetTitle>Change Fleet Group</SheetTitle>
+          <SheetTitle>{t("fleetGroupDialog.title")}</SheetTitle>
         </SheetHeader>
         <SheetBody>
           <form
@@ -58,7 +60,7 @@ export function ChangeFleetGroupDialog({
             className="flex flex-col gap-4"
           >
             <label className="flex flex-col gap-1.5">
-              <span className="text-sm text-fg-muted">Fleet Group</span>
+              <span className="text-sm text-fg-muted">{t("fleetGroupDialog.label")}</span>
               <select
                 ref={selectRef}
                 value={value}
@@ -66,19 +68,17 @@ export function ChangeFleetGroupDialog({
                 className="rounded-xs border border-border bg-bg px-3 py-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-accent"
               >
                 {fleetGroups.length === 0 ? (
-                  <option value="">No groups available</option>
+                  <option value="">{t("fleetGroupDialog.noGroups")}</option>
                 ) : null}
                 {fleetGroups.map((g) => (
                   <option key={g.id} value={g.id}>
                     {g.label || g.name}
-                    {g.id === currentFleetGroupId ? " (current)" : ""}
+                    {g.id === currentFleetGroupId ? t("fleetGroupDialog.current") : ""}
                   </option>
                 ))}
               </select>
               <span className="text-[11px] font-mono text-fg-muted">
-                Reassigning the server moves it to the target group's
-                fleet-wide client deployments. The agent stays online —
-                no re-enrollment needed.
+                {t("fleetGroupDialog.helper")}
               </span>
             </label>
             <div className="flex justify-end gap-2">
@@ -87,14 +87,14 @@ export function ChangeFleetGroupDialog({
                 onClick={() => onOpenChange(false)}
                 className="px-3 py-1.5 text-sm rounded-xs border border-border text-fg hover:bg-bg-card-hover transition-colors"
               >
-                Cancel
+                {t("fleetGroupDialog.cancel")}
               </button>
               <button
                 type="submit"
                 disabled={!dirty}
                 className="px-3 py-1.5 text-sm rounded-xs bg-accent text-white hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Move
+                {t("fleetGroupDialog.move")}
               </button>
             </div>
           </form>

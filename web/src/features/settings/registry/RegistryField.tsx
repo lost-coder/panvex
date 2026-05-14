@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { Input } from "@/ui/base/input";
 import { Select } from "@/ui/base/select";
 import { Toggle } from "@/ui/base/toggle";
@@ -12,14 +14,16 @@ export interface RegistryFieldProps {
 }
 
 // Source pill label: what's locking this field.
-function sourceLabel(entry: ValuesEntry): string {
+function sourceLabel(entry: ValuesEntry, t: TFunction): string {
   if (entry.source === "env") {
-    return entry.env_var ? `Set via ${entry.env_var}` : "Set via env";
+    return entry.env_var
+      ? t("registryField.sourceEnvNamed", { name: entry.env_var })
+      : t("registryField.sourceEnv");
   }
   if (entry.source === "config_file") {
-    return "Set in config.toml";
+    return t("registryField.sourceConfigFile");
   }
-  return "Default";
+  return t("registryField.sourceDefault");
 }
 
 // Stringify value for controlled inputs.
@@ -29,6 +33,7 @@ function toStr(v: unknown): string {
 }
 
 export function RegistryField({ schema, values, onChange, error }: Readonly<RegistryFieldProps>) {
+  const { t } = useTranslation("settings");
   const { name, type, desc, values: enumValues } = schema;
   const { value, locked, pending_restart, pending_value } = values;
 
@@ -41,7 +46,7 @@ export function RegistryField({ schema, values, onChange, error }: Readonly<Regi
     return (
       <SettingsRow label={name} description={desc}>
         <span className="text-xs text-fg-muted italic">
-          Edit via the dedicated section below
+          {t("registryField.jsonNotice")}
         </span>
       </SettingsRow>
     );
@@ -99,9 +104,9 @@ export function RegistryField({ schema, values, onChange, error }: Readonly<Regi
     // duration, hostport, string — text input with placeholder hint.
     const placeholder =
       type === "duration"
-        ? "e.g. 30s, 5m, 1h"
+        ? t("registryField.placeholderDuration")
         : type === "hostport"
-          ? "e.g. 0.0.0.0:8080"
+          ? t("registryField.placeholderHostport")
           : undefined;
 
     return (
@@ -124,12 +129,12 @@ export function RegistryField({ schema, values, onChange, error }: Readonly<Regi
           {renderInput()}
           {locked && (
             <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-mono font-semibold bg-fg-faint/20 text-fg-muted">
-              {sourceLabel(values)}
+              {sourceLabel(values, t)}
             </span>
           )}
           {hasPendingChange && (
             <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-mono font-semibold bg-status-warn/15 text-status-warn">
-              restart pending
+              {t("registryField.pendingRestart")}
             </span>
           )}
         </div>

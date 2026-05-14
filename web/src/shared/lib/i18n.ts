@@ -11,6 +11,18 @@ import enrollmentAttemptsEN from "@/locales/en/enrollment-attempts.json";
 import enrollmentAttemptsRU from "@/locales/ru/enrollment-attempts.json";
 import runtimeEventsEN from "@/locales/en/runtime-events.json";
 import runtimeEventsRU from "@/locales/ru/runtime-events.json";
+import fleetGroupsEN from "@/locales/en/fleet-groups.json";
+import fleetGroupsRU from "@/locales/ru/fleet-groups.json";
+import dashboardEN from "@/locales/en/dashboard.json";
+import dashboardRU from "@/locales/ru/dashboard.json";
+import usersEN from "@/locales/en/users.json";
+import usersRU from "@/locales/ru/users.json";
+import settingsEN from "@/locales/en/settings.json";
+import settingsRU from "@/locales/ru/settings.json";
+import clientsEN from "@/locales/en/clients.json";
+import clientsRU from "@/locales/ru/clients.json";
+import serversEN from "@/locales/en/servers.json";
+import serversRU from "@/locales/ru/servers.json";
 
 // Phase-3 §3.2: i18n bootstrap. Russian is the canonical source of
 // truth for translation work (the panel was built ru-first), but the
@@ -64,7 +76,19 @@ export function initI18n(): typeof i18next {
     fallbackLng: DEFAULT_LANGUAGE,
     supportedLngs: SUPPORTED_LANGUAGES as readonly string[],
     defaultNS: "common",
-    ns: ["auth", "activity", "enrollment", "enrollment-attempts", "runtime-events"],
+    ns: [
+      "auth",
+      "activity",
+      "enrollment",
+      "enrollment-attempts",
+      "runtime-events",
+      "fleet-groups",
+      "dashboard",
+      "users",
+      "settings",
+      "clients",
+      "servers",
+    ],
     resources: {
       ru: {
         auth: authRU,
@@ -72,6 +96,12 @@ export function initI18n(): typeof i18next {
         enrollment: enrollmentRU,
         "enrollment-attempts": enrollmentAttemptsRU,
         "runtime-events": runtimeEventsRU,
+        "fleet-groups": fleetGroupsRU,
+        dashboard: dashboardRU,
+        users: usersRU,
+        settings: settingsRU,
+        clients: clientsRU,
+        servers: serversRU,
       },
       en: {
         auth: authEN,
@@ -79,6 +109,12 @@ export function initI18n(): typeof i18next {
         enrollment: enrollmentEN,
         "enrollment-attempts": enrollmentAttemptsEN,
         "runtime-events": runtimeEventsEN,
+        "fleet-groups": fleetGroupsEN,
+        dashboard: dashboardEN,
+        users: usersEN,
+        settings: settingsEN,
+        clients: clientsEN,
+        servers: serversEN,
       },
     },
     interpolation: {

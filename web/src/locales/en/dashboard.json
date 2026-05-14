@@ -1,0 +1,38 @@
+{
+  "page": {
+    "title": "Dashboard",
+    "subtitle": "Realtime fleet overview · MTProto proxy operations",
+    "live": "live · 15s refresh",
+    "addClient": "Add Client",
+    "addClientSheetTitle": "Add client"
+  },
+  "tabs": {
+    "fleet": "Fleet",
+    "activity": "Activity"
+  },
+  "fleet": {
+    "title": "Fleet",
+    "summary_one": "{{count}} server",
+    "summary_other": "{{count}} servers",
+    "issues_one": " · {{count}} issue",
+    "issues_other": " · {{count}} issues",
+    "viewAll": "View all →",
+    "empty": "No servers registered yet.",
+    "sectionAttention": "Needs attention",
+    "sectionHealthy": "Healthy",
+    "sectionCount_one": "{{count}} server",
+    "sectionCount_other": "{{count}} servers",
+    "more_one": "+ {{count}} more — open the Servers page to see the full fleet",
+    "more_other": "+ {{count}} more — open the Servers page to see the full fleet",
+    "connections": "conn",
+    "statusDown": "DOWN",
+    "statusDegraded": "DEGRADED"
+  },
+  "timeline": {
+    "title": "Recent Events",
+    "live": "live"
+  },
+  "metrics": {
+    "noData": "No data available for this time range"
+  }
+}
