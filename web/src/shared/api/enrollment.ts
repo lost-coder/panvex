@@ -7,9 +7,9 @@ import {
   enrollmentTokenResponseSchema,
 } from "./schemas";
 import type {
-  EnrollmentAttempt,
   EnrollmentAttemptDetail,
-  EnrollmentStatus,
+  EnrollmentAttemptsFilter,
+  EnrollmentAttemptsPage,
 } from "./types-enrollment";
 
 // ScriptSource mirrors the OpenAPI ScriptSource — wire shape for one
@@ -80,23 +80,26 @@ export const enrollmentApi = {
 
   // Phase-1 observability: list recent enrollment attempts. The filter
   // arguments are all optional — the server defaults to the 20 most
-  // recent attempts across the fleet when nothing is provided.
-  listEnrollmentAttempts: (
-    filter: {
-      token_id?: string;
-      agent_id?: string;
-      status?: EnrollmentStatus;
-      limit?: number;
-    } = {},
-  ) => {
+  // recent attempts across the fleet when nothing is provided. Phase-3
+  // §3.b extended the filter with `mode`, `error_code`, started_*
+  // bounds and an opaque `cursor` token so callers can paginate; the
+  // response also gained `next_cursor` (null when there are no more
+  // pages). Existing callers that only consume `.items` are
+  // unaffected.
+  listEnrollmentAttempts: (filter: EnrollmentAttemptsFilter = {}) => {
     const params = new URLSearchParams();
     if (filter.token_id) params.set("token_id", filter.token_id);
     if (filter.agent_id) params.set("agent_id", filter.agent_id);
     if (filter.status) params.set("status", filter.status);
+    if (filter.mode) params.set("mode", filter.mode);
+    if (filter.error_code) params.set("error_code", filter.error_code);
+    if (filter.started_after) params.set("started_after", filter.started_after);
+    if (filter.started_before) params.set("started_before", filter.started_before);
     if (filter.limit) params.set("limit", String(filter.limit));
+    if (filter.cursor) params.set("cursor", filter.cursor);
     const qs = params.toString();
     const path = `${apiBasePath}/enrollment-attempts${qs ? "?" + qs : ""}`;
-    return api<{ items: EnrollmentAttempt[] }>(
+    return api<EnrollmentAttemptsPage>(
       path,
       undefined,
       enrollmentAttemptListResponseSchema,

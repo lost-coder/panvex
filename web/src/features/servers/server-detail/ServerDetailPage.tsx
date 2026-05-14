@@ -91,6 +91,7 @@ export function ServerDetailPage({
   onDeregister,
   metricsChart,
   enrollmentHistorySlot,
+  runtimeEventsSlot,
 }: Readonly<ServerDetailPageProps>) {
   const { label: relativeTime, stale: relativeTimeStale } = useRelativeTime(lastUpdatedAt);
   const { systemInfo, gates, connections, summary, dcs } = server;
@@ -458,6 +459,13 @@ export function ServerDetailPage({
           AgentConnectionSection card.
         */}
         {enrollmentHistorySlot}
+        {/*
+          Phase-3 observability: parallel slot for the RuntimeEvents
+          Fold. Same rationale as enrollmentHistorySlot — the wired
+          component owns its own data dependencies (React Query +
+          WebSocket), so we accept it as a node from the container.
+        */}
+        {runtimeEventsSlot}
       </div>
 
       {/* Shared DC detail sheet — opens from mobile strip, desktop radar, and desktop tiles. */}

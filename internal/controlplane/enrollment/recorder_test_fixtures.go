@@ -119,9 +119,36 @@ func (m *MemStore) ListAttempts(_ context.Context, f ListFilter) ([]AttemptDTO, 
 		if f.Status != nil && a.Status != *f.Status {
 			continue
 		}
+		if f.Mode != nil && a.Mode != *f.Mode {
+			continue
+		}
+		if f.ErrorCode != nil && string(a.ErrorCode) != *f.ErrorCode {
+			continue
+		}
+		if f.StartedAfter != nil && a.StartedAt.Before(*f.StartedAfter) {
+			continue
+		}
+		if f.StartedBefore != nil && !a.StartedAt.Before(*f.StartedBefore) {
+			continue
+		}
+		if f.CursorTs != nil {
+			if a.StartedAt.After(*f.CursorTs) {
+				continue
+			}
+			if a.StartedAt.Equal(*f.CursorTs) {
+				if f.CursorID == nil || a.ID >= *f.CursorID {
+					continue
+				}
+			}
+		}
 		out = append(out, toAttemptDTO(*a))
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt.After(out[j].StartedAt) })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].StartedAt.Equal(out[j].StartedAt) {
+			return out[i].ID > out[j].ID
+		}
+		return out[i].StartedAt.After(out[j].StartedAt)
+	})
 	if f.Limit > 0 && len(out) > f.Limit {
 		out = out[:f.Limit]
 	}

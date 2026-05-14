@@ -193,12 +193,18 @@ LIMIT $1`
 	defer rows.Close()
 
 	var (
-		wantToken    string
-		wantTokenSet bool
-		wantAgent    string
-		wantAgentSet bool
-		wantStatus   string
+		wantToken     string
+		wantTokenSet  bool
+		wantAgent     string
+		wantAgentSet  bool
+		wantStatus    string
 		wantStatusSet bool
+		wantMode      string
+		wantModeSet   bool
+		wantErrCode   string
+		wantErrSet    bool
+		cursorIDStr   string
+		cursorIDSet   bool
 	)
 	if f.TokenID != nil {
 		if _, perr := uuid.Parse(*f.TokenID); perr == nil {
@@ -222,6 +228,18 @@ LIMIT $1`
 	if f.Status != nil {
 		wantStatus = string(*f.Status)
 		wantStatusSet = true
+	}
+	if f.Mode != nil {
+		wantMode = string(*f.Mode)
+		wantModeSet = true
+	}
+	if f.ErrorCode != nil {
+		wantErrCode = *f.ErrorCode
+		wantErrSet = true
+	}
+	if f.CursorID != nil {
+		cursorIDStr = *f.CursorID
+		cursorIDSet = true
 	}
 
 	out := make([]AttemptDTO, 0, f.Limit)
@@ -254,6 +272,30 @@ LIMIT $1`
 		}
 		if wantStatusSet && r.Status != wantStatus {
 			continue
+		}
+		if wantModeSet && r.Mode != wantMode {
+			continue
+		}
+		if wantErrSet {
+			if !r.ErrorCode.Valid || r.ErrorCode.String != wantErrCode {
+				continue
+			}
+		}
+		if f.StartedAfter != nil && r.StartedAt.Before(*f.StartedAfter) {
+			continue
+		}
+		if f.StartedBefore != nil && !r.StartedAt.Before(*f.StartedBefore) {
+			continue
+		}
+		if f.CursorTs != nil {
+			if r.StartedAt.After(*f.CursorTs) {
+				continue
+			}
+			if r.StartedAt.Equal(*f.CursorTs) {
+				if !cursorIDSet || r.ID.String() >= cursorIDStr {
+					continue
+				}
+			}
 		}
 		out = append(out, rowToAttemptDTO(r))
 		if f.Limit > 0 && len(out) >= f.Limit {

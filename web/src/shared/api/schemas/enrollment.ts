@@ -79,8 +79,14 @@ export const enrollmentEventSchema = z.object({
   ts: z.string(),
 });
 
+// Phase-3 §3.b: the list response now carries an opaque
+// `next_cursor` token (base64-encoded JSON on the wire) so the page
+// can offer Load-more pagination. The server emits `null` when the
+// caller has reached the end — we accept either shape but normalise
+// missing keys to `null` (default) for consumer ergonomics.
 export const enrollmentAttemptListResponseSchema = z.object({
   items: z.array(enrollmentAttemptSchema),
+  next_cursor: z.string().nullable().optional().transform((v) => v ?? null),
 });
 
 export const enrollmentAttemptDetailSchema = z.object({

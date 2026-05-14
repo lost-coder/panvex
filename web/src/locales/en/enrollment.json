@@ -2,7 +2,8 @@
   "history": {
     "heading": "Enrollment history",
     "loading": "Loading history…",
-    "detailLoading": "Loading…"
+    "detailLoading": "Loading…",
+    "viewAll": "View all"
   },
   "live": {
     "heading": "Agent connection",

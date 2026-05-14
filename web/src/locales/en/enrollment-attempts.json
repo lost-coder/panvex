@@ -1,0 +1,28 @@
+{
+  "page": {
+    "title": "Enrollment attempts",
+    "subtitle": "All connection attempts across the fleet"
+  },
+  "filters": {
+    "status": "Status",
+    "mode": "Mode",
+    "errorCode": "Error code",
+    "startedAfter": "From",
+    "startedBefore": "To",
+    "anyStatus": "Any status",
+    "anyMode": "Any mode",
+    "anyErrorCode": "Any error code",
+    "apply": "Apply",
+    "reset": "Reset"
+  },
+  "table": {
+    "startedAt": "Started",
+    "mode": "Mode",
+    "agent": "Agent",
+    "status": "Status",
+    "errorCode": "Error",
+    "requestId": "Request"
+  },
+  "loadMore": "Load more",
+  "empty": "No attempts match the current filters."
+}

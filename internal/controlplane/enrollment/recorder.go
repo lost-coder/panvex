@@ -36,10 +36,32 @@ type Event struct {
 // ListFilter constrains ListAttempts. Pointer fields are absent ⇒ no
 // filter on that column. Limit ≤ 0 means "use the store's default".
 type ListFilter struct {
-	TokenID *string
-	AgentID *string
-	Status  *Status
-	Limit   int
+	TokenID       *string
+	AgentID       *string
+	Status        *Status
+	Mode          *Mode
+	ErrorCode     *string
+	StartedAfter  *time.Time
+	StartedBefore *time.Time
+	CursorTs      *time.Time
+	CursorID      *string
+	Limit         int
+}
+
+// AttemptPage carries one page of attempts plus an optional cursor
+// pointing at the next page. NextCursor is nil at the end of results.
+type AttemptPage struct {
+	Items      []AttemptDTO
+	NextCursor *AttemptCursor
+}
+
+// AttemptCursor identifies the boundary between two pages by the
+// (started_at, id) pair of the last row of the previous page. Newer
+// rows sort first; the next page starts with the first row strictly
+// older than the cursor.
+type AttemptCursor struct {
+	Ts time.Time
+	ID string
 }
 
 // AttemptDTO is the JSON-friendly projection of an Attempt returned by
@@ -302,6 +324,32 @@ func (r *Recorder) Ingest(ctx context.Context, attemptID string, events []AgentR
 // first. Used by the dashboard's enrollment-attempts list view.
 func (r *Recorder) ListAttempts(ctx context.Context, f ListFilter) ([]AttemptDTO, error) {
 	return r.store.ListAttempts(ctx, f)
+}
+
+// ListAttemptsPage fetches one page using filter + cursor and computes
+// NextCursor. Limit defaults to 50 when non-positive. The store is
+// asked for Limit+1 rows so the recorder can detect whether a next
+// page exists without a second round-trip; the extra row is dropped
+// from Items and its predecessor becomes the cursor.
+func (r *Recorder) ListAttemptsPage(ctx context.Context, f ListFilter) (AttemptPage, error) {
+	if f.Limit <= 0 {
+		f.Limit = 50
+	}
+	pageLimit := f.Limit
+	// Fetch one extra row to know if there's a next page.
+	fetch := f
+	fetch.Limit = pageLimit + 1
+	items, err := r.store.ListAttempts(ctx, fetch)
+	if err != nil {
+		return AttemptPage{}, err
+	}
+	var next *AttemptCursor
+	if len(items) > pageLimit {
+		last := items[pageLimit-1]
+		items = items[:pageLimit]
+		next = &AttemptCursor{Ts: last.StartedAt, ID: last.ID}
+	}
+	return AttemptPage{Items: items, NextCursor: next}, nil
 }
 
 // GetAttemptWithEvents returns the attempt and its full ordered timeline

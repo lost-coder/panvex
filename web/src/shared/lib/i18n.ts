@@ -7,6 +7,10 @@ import activityEN from "@/locales/en/activity.json";
 import activityRU from "@/locales/ru/activity.json";
 import enrollmentEN from "@/locales/en/enrollment.json";
 import enrollmentRU from "@/locales/ru/enrollment.json";
+import enrollmentAttemptsEN from "@/locales/en/enrollment-attempts.json";
+import enrollmentAttemptsRU from "@/locales/ru/enrollment-attempts.json";
+import runtimeEventsEN from "@/locales/en/runtime-events.json";
+import runtimeEventsRU from "@/locales/ru/runtime-events.json";
 
 // Phase-3 §3.2: i18n bootstrap. Russian is the canonical source of
 // truth for translation work (the panel was built ru-first), but the
@@ -60,10 +64,22 @@ export function initI18n(): typeof i18next {
     fallbackLng: DEFAULT_LANGUAGE,
     supportedLngs: SUPPORTED_LANGUAGES as readonly string[],
     defaultNS: "common",
-    ns: ["auth", "activity", "enrollment"],
+    ns: ["auth", "activity", "enrollment", "enrollment-attempts", "runtime-events"],
     resources: {
-      ru: { auth: authRU, activity: activityRU, enrollment: enrollmentRU },
-      en: { auth: authEN, activity: activityEN, enrollment: enrollmentEN },
+      ru: {
+        auth: authRU,
+        activity: activityRU,
+        enrollment: enrollmentRU,
+        "enrollment-attempts": enrollmentAttemptsRU,
+        "runtime-events": runtimeEventsRU,
+      },
+      en: {
+        auth: authEN,
+        activity: activityEN,
+        enrollment: enrollmentEN,
+        "enrollment-attempts": enrollmentAttemptsEN,
+        "runtime-events": runtimeEventsEN,
+      },
     },
     interpolation: {
       // React already escapes — letting i18next double-escape would

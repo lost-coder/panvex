@@ -3,6 +3,7 @@ package enrollment
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -122,5 +123,99 @@ func TestRecorderIngestAgentEvents(t *testing.T) {
 	}
 	if stored[0].Step != StepAgentPersistedCert {
 		t.Fatalf("step = %q", stored[0].Step)
+	}
+}
+
+// TestListAttemptsFiltersByMode verifies that the new Mode filter on
+// ListFilter is honoured by ListAttemptsPage and only returns attempts
+// whose mode equals the filter value.
+func TestListAttemptsFiltersByMode(t *testing.T) {
+	store := NewMemStoreForTest()
+	clock := time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)
+	tick := clock
+	rec := NewRecorder(store, func() time.Time {
+		t := tick
+		tick = tick.Add(time.Millisecond)
+		return t
+	})
+	ctx := context.Background()
+
+	id1, err := rec.Begin(ctx, ModeInbound, "", "addr1")
+	if err != nil {
+		t.Fatalf("Begin1: %v", err)
+	}
+	if err := rec.Complete(ctx, id1); err != nil {
+		t.Fatalf("Complete1: %v", err)
+	}
+	id2, err := rec.Begin(ctx, ModeOutbound, "", "addr2")
+	if err != nil {
+		t.Fatalf("Begin2: %v", err)
+	}
+	if err := rec.Complete(ctx, id2); err != nil {
+		t.Fatalf("Complete2: %v", err)
+	}
+
+	in := ModeInbound
+	page, err := rec.ListAttemptsPage(ctx, ListFilter{Mode: &in, Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAttemptsPage: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].ID != id1 {
+		t.Fatalf("got %+v, want only inbound id1", page.Items)
+	}
+	if page.NextCursor != nil {
+		t.Fatalf("NextCursor = %+v, want nil", page.NextCursor)
+	}
+}
+
+// TestListAttemptsCursorPagination drives ListAttemptsPage through two
+// pages and asserts the cursor advances correctly: page 2 starts after
+// page 1's last row, and the second page's NextCursor is nil when the
+// store has no more rows.
+func TestListAttemptsCursorPagination(t *testing.T) {
+	store := NewMemStoreForTest()
+	clock := time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)
+	tick := clock
+	rec := NewRecorder(store, func() time.Time {
+		t := tick
+		tick = tick.Add(2 * time.Millisecond)
+		return t
+	})
+	ctx := context.Background()
+
+	ids := []string{}
+	for i := 0; i < 3; i++ {
+		id, err := rec.Begin(ctx, ModeInbound, "", fmt.Sprintf("addr%d", i))
+		if err != nil {
+			t.Fatalf("Begin %d: %v", i, err)
+		}
+		if err := rec.Complete(ctx, id); err != nil {
+			t.Fatalf("Complete %d: %v", i, err)
+		}
+		ids = append(ids, id)
+	}
+	_ = ids
+
+	p1, err := rec.ListAttemptsPage(ctx, ListFilter{Limit: 2})
+	if err != nil {
+		t.Fatalf("p1: %v", err)
+	}
+	if len(p1.Items) != 2 || p1.NextCursor == nil {
+		t.Fatalf("p1 = %+v", p1)
+	}
+
+	p2, err := rec.ListAttemptsPage(ctx, ListFilter{
+		Limit:    2,
+		CursorTs: &p1.NextCursor.Ts,
+		CursorID: &p1.NextCursor.ID,
+	})
+	if err != nil {
+		t.Fatalf("p2: %v", err)
+	}
+	if len(p2.Items) != 1 {
+		t.Fatalf("p2 items = %d, want 1", len(p2.Items))
+	}
+	if p2.NextCursor != nil {
+		t.Fatalf("p2 cursor should be nil (end of pages)")
 	}
 }

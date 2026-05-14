@@ -2,7 +2,8 @@
   "history": {
     "heading": "История подключений",
     "loading": "Загружаем историю…",
-    "detailLoading": "Загружаем…"
+    "detailLoading": "Загружаем…",
+    "viewAll": "Все попытки"
   },
   "live": {
     "heading": "Подключение агента",
