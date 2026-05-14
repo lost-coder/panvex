@@ -99,14 +99,32 @@ func (w *Worker) Tick(ctx context.Context) { w.tick(ctx) }
 
 func (w *Worker) tick(ctx context.Context) {
 	now := w.cfg.Clock().UTC()
+	start := time.Now()
 	deliveries, err := w.storage.ClaimReady(ctx, now, w.cfg.BatchSize)
 	if err != nil {
-		w.cfg.Logger.Warn("webhooks: claim ready", "error", err)
+		w.cfg.Logger.WarnContext(ctx, "webhooks: claim ready",
+			"worker", "webhook_outbox",
+			"lap_ms", time.Since(start).Milliseconds(),
+			"error", err)
 		return
 	}
 	for _, d := range deliveries {
 		w.deliver(ctx, d)
 	}
+	elapsed := time.Since(start)
+	// Per-tick lap log (P2-LOG-10 / L-10). Idle ticks stay at Debug so
+	// production stays quiet; non-idle ticks go to Info so operators can
+	// see the outbox draining.
+	if len(deliveries) == 0 {
+		w.cfg.Logger.DebugContext(ctx, "rollup worker tick idle",
+			"worker", "webhook_outbox",
+			"lap_ms", elapsed.Milliseconds())
+		return
+	}
+	w.cfg.Logger.InfoContext(ctx, "rollup worker tick",
+		"worker", "webhook_outbox",
+		"lap_ms", elapsed.Milliseconds(),
+		"rows_affected", len(deliveries))
 }
 
 func (w *Worker) deliver(ctx context.Context, d Delivery) {
