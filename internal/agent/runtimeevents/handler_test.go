@@ -79,3 +79,49 @@ func TestHandlerFiresUrgentCallbackOnWarnAndError(t *testing.T) {
 		t.Fatalf("fired = %d, want 2 (Info ignored)", fired)
 	}
 }
+
+func TestHandlerPreservesWithAttrsBoundFields(t *testing.T) {
+	inner := slog.NewTextHandler(&bytes.Buffer{}, &slog.HandlerOptions{Level: slog.LevelInfo})
+	buf := runtimeevents.NewBuffer(10)
+	h := runtimeevents.NewHandler(inner, buf)
+	lg := slog.New(h).With("agent_id", "abc", "node_name", "alpha")
+
+	lg.Info("hello", "step", "boot")
+
+	evs := buf.DrainSince(time.Time{})
+	if len(evs) != 1 {
+		t.Fatalf("got %d events, want 1", len(evs))
+	}
+	ev := evs[0]
+	if ev.Fields["agent_id"] != "abc" {
+		t.Fatalf("agent_id missing: %+v", ev.Fields)
+	}
+	if ev.Fields["node_name"] != "alpha" {
+		t.Fatalf("node_name missing: %+v", ev.Fields)
+	}
+	if ev.Fields["step"] != "boot" {
+		t.Fatalf("step missing: %+v", ev.Fields)
+	}
+}
+
+func TestHandlerPreservesWithGroupPrefix(t *testing.T) {
+	inner := slog.NewTextHandler(&bytes.Buffer{}, &slog.HandlerOptions{Level: slog.LevelInfo})
+	buf := runtimeevents.NewBuffer(10)
+	h := runtimeevents.NewHandler(inner, buf)
+	lg := slog.New(h).WithGroup("agent").With("id", "abc")
+
+	lg.Info("hello", "step", "boot")
+
+	evs := buf.DrainSince(time.Time{})
+	if len(evs) != 1 {
+		t.Fatalf("got %d events, want 1", len(evs))
+	}
+	ev := evs[0]
+	// Bound attrs come under the group prefix; record-local attrs do too.
+	if ev.Fields["agent.id"] != "abc" {
+		t.Fatalf("agent.id missing under group: %+v", ev.Fields)
+	}
+	if ev.Fields["agent.step"] != "boot" {
+		t.Fatalf("agent.step missing under group: %+v", ev.Fields)
+	}
+}

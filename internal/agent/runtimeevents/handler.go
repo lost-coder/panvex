@@ -15,6 +15,12 @@ type Handler struct {
 	inner    slog.Handler
 	buf      *Buffer
 	onUrgent func() // optional, fired after Warn/Error is buffered; non-blocking
+
+	// Bound state copied on WithAttrs/WithGroup so that records buffered
+	// for shipment to the panel include the same attrs the inner handler
+	// sees on stderr.
+	attrs []slog.Attr
+	group string // prefix applied to BOTH attrs and record-local fields
 }
 
 func NewHandler(inner slog.Handler, buf *Buffer) *Handler {
@@ -35,11 +41,12 @@ func (h *Handler) Enabled(ctx context.Context, lvl slog.Level) bool {
 func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
 	var isUrgent bool
 	if r.Level >= slog.LevelInfo {
+		fields := h.collectFields(r)
 		h.buf.Append(Event{
 			Ts:      r.Time,
 			Level:   levelString(r.Level),
 			Message: r.Message,
-			Fields:  recordFields(r),
+			Fields:  fields,
 		})
 		isUrgent = r.Level >= slog.LevelWarn
 	}
@@ -51,11 +58,46 @@ func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
 }
 
 func (h *Handler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &Handler{inner: h.inner.WithAttrs(attrs), buf: h.buf, onUrgent: h.onUrgent}
+	cp := *h
+	cp.inner = h.inner.WithAttrs(attrs)
+	if len(attrs) > 0 {
+		cp.attrs = append(append([]slog.Attr{}, h.attrs...), attrs...)
+	}
+	return &cp
 }
 
 func (h *Handler) WithGroup(name string) slog.Handler {
-	return &Handler{inner: h.inner.WithGroup(name), buf: h.buf, onUrgent: h.onUrgent}
+	cp := *h
+	cp.inner = h.inner.WithGroup(name)
+	if name != "" {
+		if cp.group == "" {
+			cp.group = name
+		} else {
+			cp.group = cp.group + "." + name
+		}
+	}
+	return &cp
+}
+
+// collectFields merges Handler-bound attrs with the record's own attrs into
+// a single string-valued map. Group prefix is applied to all keys.
+func (h *Handler) collectFields(r slog.Record) map[string]string {
+	fields := make(map[string]string, len(h.attrs)+r.NumAttrs())
+	for _, a := range h.attrs {
+		fields[h.keyWithGroup(a.Key)] = a.Value.String()
+	}
+	r.Attrs(func(a slog.Attr) bool {
+		fields[h.keyWithGroup(a.Key)] = a.Value.String()
+		return true
+	})
+	return fields
+}
+
+func (h *Handler) keyWithGroup(key string) string {
+	if h.group == "" {
+		return key
+	}
+	return h.group + "." + key
 }
 
 func levelString(lvl slog.Level) string {
@@ -67,13 +109,4 @@ func levelString(lvl slog.Level) string {
 	default:
 		return "info"
 	}
-}
-
-func recordFields(r slog.Record) map[string]string {
-	fields := make(map[string]string, r.NumAttrs())
-	r.Attrs(func(a slog.Attr) bool {
-		fields[a.Key] = a.Value.String()
-		return true
-	})
-	return fields
 }
