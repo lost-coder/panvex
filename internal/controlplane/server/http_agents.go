@@ -22,7 +22,7 @@ func (s *Server) handleRenameAgent() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		session, user, err := s.requireSession(r)
 		if err != nil {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
+			writeErrorLogged(r.Context(), w, http.StatusUnauthorized, "unauthorized", err)
 			return
 		}
 
@@ -64,7 +64,7 @@ func decodeRenameAgentRequest(w http.ResponseWriter, r *http.Request) (string, s
 
 	var req renameAgentRequest
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeErrorLogged(r.Context(), w, http.StatusBadRequest, "invalid request body", err)
 		return "", "", false
 	}
 
@@ -240,7 +240,7 @@ func (s *Server) handleDeregisterAgent() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		session, user, err := s.requireSession(r)
 		if err != nil {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
+			writeErrorLogged(r.Context(), w, http.StatusUnauthorized, "unauthorized", err)
 			return
 		}
 		agentID, ok := s.agentDeregisterScope(w, r, user)
@@ -294,7 +294,7 @@ func (s *Server) handleUpdateAgentFleetGroup() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		session, user, err := s.requireSession(r)
 		if err != nil {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
+			writeErrorLogged(r.Context(), w, http.StatusUnauthorized, "unauthorized", err)
 			return
 		}
 
@@ -306,7 +306,7 @@ func (s *Server) handleUpdateAgentFleetGroup() http.HandlerFunc {
 
 		var req updateAgentFleetGroupRequest
 		if err := decodeJSON(r, &req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid request body")
+			writeErrorLogged(r.Context(), w, http.StatusBadRequest, "invalid request body", err)
 			return
 		}
 		newGroupID := strings.TrimSpace(req.FleetGroupID)
@@ -354,7 +354,7 @@ func (s *Server) handleUpdateAgentFleetGroup() http.HandlerFunc {
 		if s.store != nil {
 			if _, err := s.store.GetFleetGroup(r.Context(), newGroupID); err != nil {
 				if errors.Is(err, storage.ErrNotFound) {
-					writeError(w, http.StatusNotFound, "fleet group not found")
+					writeErrorLogged(r.Context(), w, http.StatusNotFound, "fleet group not found", err)
 					return
 				}
 				s.logger.Error("get fleet group for reassign failed", "error", err)
@@ -363,7 +363,7 @@ func (s *Server) handleUpdateAgentFleetGroup() http.HandlerFunc {
 			}
 			if err := s.store.UpdateAgentFleetGroup(r.Context(), agentID, newGroupID); err != nil {
 				if errors.Is(err, storage.ErrNotFound) {
-					writeError(w, http.StatusNotFound, msgAgentNotFound)
+					writeErrorLogged(r.Context(), w, http.StatusNotFound, msgAgentNotFound, err)
 					return
 				}
 				s.logger.Error("update agent fleet group in store failed", "error", err)

@@ -236,7 +236,7 @@ func (s *Server) resolveEnrollmentFleetGroupID(w http.ResponseWriter, r *http.Re
 	}
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
-			writeError(w, http.StatusBadRequest, "fleet group not found")
+			writeErrorLogged(r.Context(), w, http.StatusBadRequest, "fleet group not found", err)
 			return "", false
 		}
 		s.logger.Error("lookup fleet group for enrollment failed", "fleet_group_id", fleetGroupID, "error", err)
@@ -250,7 +250,7 @@ func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		session, user, err := s.requireSession(r)
 		if err != nil {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
+			writeErrorLogged(r.Context(), w, http.StatusUnauthorized, "unauthorized", err)
 			return
 		}
 
@@ -261,7 +261,7 @@ func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 
 		var request createEnrollmentTokenRequest
 		if err := decodeJSON(r, &request); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid enrollment payload")
+			writeErrorLogged(r.Context(), w, http.StatusBadRequest, "invalid enrollment payload", err)
 			return
 		}
 
@@ -276,7 +276,7 @@ func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 		}, s.now())
 		if err != nil {
 			if errors.Is(err, security.ErrEnrollmentTokenTTLRequired) {
-				writeError(w, http.StatusBadRequest, err.Error())
+				writeErrorLogged(r.Context(), w, http.StatusBadRequest, err.Error(), err)
 				return
 			}
 			s.logger.Error("create enrollment token failed", "error", err)
@@ -504,7 +504,7 @@ func (s *Server) executeEnrollmentTokenRevoke(w http.ResponseWriter, r *http.Req
 	revoked, changed, err := s.revokeEnrollmentTokenWithContext(r.Context(), value, s.now())
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
-			writeError(w, http.StatusNotFound, msgEnrollmentTokenNotFound)
+			writeErrorLogged(r.Context(), w, http.StatusNotFound, msgEnrollmentTokenNotFound, err)
 			return
 		}
 		s.logger.Error("revoke enrollment token failed", "error", err)
@@ -525,7 +525,7 @@ func (s *Server) executeEnrollmentTokenRevoke(w http.ResponseWriter, r *http.Req
 func (s *Server) requireEnrollmentManager(w http.ResponseWriter, r *http.Request) (auth.Session, auth.User, bool) {
 	session, user, err := s.requireSession(r)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
+		writeErrorLogged(r.Context(), w, http.StatusUnauthorized, "unauthorized", err)
 		return auth.Session{}, auth.User{}, false
 	}
 	if user.Role == auth.RoleViewer {
@@ -546,7 +546,7 @@ func (s *Server) authorizeEnrollmentTokenRevoke(w http.ResponseWriter, r *http.R
 	existing, lookupErr := s.store.GetEnrollmentToken(r.Context(), value)
 	if lookupErr != nil {
 		if errors.Is(lookupErr, storage.ErrNotFound) {
-			writeError(w, http.StatusNotFound, msgEnrollmentTokenNotFound)
+			writeErrorLogged(r.Context(), w, http.StatusNotFound, msgEnrollmentTokenNotFound, lookupErr)
 			return false
 		}
 		s.logger.Error("lookup enrollment token failed", "error", lookupErr)
