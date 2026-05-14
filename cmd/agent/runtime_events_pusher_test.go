@@ -45,10 +45,7 @@ func TestPusherImmediatePushOnWarn(t *testing.T) {
 	notify <- struct{}{}
 
 	deadline := time.After(time.Second)
-	for {
-		if len(sender.callsSnapshot()) >= 1 {
-			break
-		}
+	for len(sender.callsSnapshot()) == 0 {
 		select {
 		case <-deadline:
 			t.Fatalf("no push within 1s")
