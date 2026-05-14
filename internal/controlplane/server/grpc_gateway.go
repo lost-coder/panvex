@@ -197,8 +197,7 @@ func (s *Server) runAgentSession(ctx context.Context, sess agenttransport.AgentS
 		// agentID may be empty here (auth never produced a CN); slog
 		// drops empty values cleanly.
 		reason := "auth_rejected"
-		switch {
-		case errors.Is(err, context.Canceled):
+		if errors.Is(err, context.Canceled) {
 			reason = "context_cancelled"
 		}
 		s.logger.InfoContext(ctx, logAgentStreamClosed,
