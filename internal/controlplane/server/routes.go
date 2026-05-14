@@ -119,6 +119,12 @@ func (s *Server) routes() http.Handler {
 				authenticated.Get("/control-room", s.handleControlRoom())
 				authenticated.Get("/fleet", s.handleFleet())
 				authenticated.Get("/agents", oapi.ListAgents)
+				// Runtime Events Phase 3: read-only window into the
+				// per-agent in-memory ring buffer populated by the
+				// Connect-stream RuntimeEventsBatch handler. Lives in
+				// the authenticated (not operator/admin) group so any
+				// signed-in viewer can poll their own dashboard panel.
+				authenticated.Get("/agents/{id}/runtime-events", s.handleListRuntimeEvents())
 				authenticated.Get("/instances", s.handleInstances())
 				authenticated.Get("/jobs", s.handleJobs())
 				authenticated.Get("/audit", s.handleAudit())
