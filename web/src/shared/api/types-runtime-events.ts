@@ -17,7 +17,10 @@ export interface RuntimeEvent {
   ts: string;
   level: RuntimeEventLevel;
   message: string;
-  fields?: Record<string, string>;
+  // R-Q-20: `| undefined` widens the optional shape so callers under
+  // exactOptionalPropertyTypes can assign `fields: maybeUndefined`
+  // without an extra narrow.
+  fields?: Record<string, string> | undefined;
 }
 
 export interface RuntimeEventsListResponse {
