@@ -1,8 +1,11 @@
 package server
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -30,8 +33,10 @@ func (s *Server) handleListEnrollmentAttempts() http.HandlerFunc {
 			writeError(w, http.StatusServiceUnavailable, "enrollment recorder not available")
 			return
 		}
+		ctx := r.Context()
+		q := r.URL.Query()
 		f := enrollment.ListFilter{Limit: defaultEnrollmentAttemptsLimit}
-		if v := r.URL.Query().Get("limit"); v != "" {
+		if v := q.Get("limit"); v != "" {
 			if n, err := strconv.Atoi(v); err == nil && n > 0 {
 				if n > maxEnrollmentAttemptsLimit {
 					n = maxEnrollmentAttemptsLimit
@@ -39,23 +44,85 @@ func (s *Server) handleListEnrollmentAttempts() http.HandlerFunc {
 				f.Limit = n
 			}
 		}
-		if v := r.URL.Query().Get("token_id"); v != "" {
+		if v := q.Get("token_id"); v != "" {
 			f.TokenID = &v
 		}
-		if v := r.URL.Query().Get("agent_id"); v != "" {
+		if v := q.Get("agent_id"); v != "" {
 			f.AgentID = &v
 		}
-		if v := r.URL.Query().Get("status"); v != "" {
+		if v := q.Get("status"); v != "" {
 			st := enrollment.Status(v)
 			f.Status = &st
 		}
-		out, err := s.enrollmentRec.ListAttempts(r.Context(), f)
+		if v := q.Get("mode"); v != "" {
+			md := enrollment.Mode(v)
+			f.Mode = &md
+		}
+		if v := q.Get("error_code"); v != "" {
+			f.ErrorCode = &v
+		}
+		if v := q.Get("started_after"); v != "" {
+			if ts, err := time.Parse(time.RFC3339, v); err == nil {
+				f.StartedAfter = &ts
+			}
+		}
+		if v := q.Get("started_before"); v != "" {
+			if ts, err := time.Parse(time.RFC3339, v); err == nil {
+				f.StartedBefore = &ts
+			}
+		}
+		if v := q.Get("cursor"); v != "" {
+			if c, err := decodeAttemptCursor(v); err == nil {
+				f.CursorTs = &c.Ts
+				f.CursorID = &c.ID
+			}
+		}
+
+		page, err := s.enrollmentRec.ListAttemptsPage(ctx, f)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "list enrollment attempts")
+			writeErrorLogged(ctx, w, http.StatusInternalServerError, "list enrollment attempts", err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"items": out})
+		resp := map[string]any{
+			"items":       page.Items,
+			"next_cursor": nil,
+		}
+		if page.NextCursor != nil {
+			resp["next_cursor"] = encodeAttemptCursor(*page.NextCursor)
+		}
+		writeJSON(w, http.StatusOK, resp)
 	}
+}
+
+// encodeAttemptCursor packs an AttemptCursor into a URL-safe base64
+// payload. The cursor is opaque to the client; the panel UI is
+// expected to round-trip it without inspection.
+func encodeAttemptCursor(c enrollment.AttemptCursor) string {
+	body := map[string]any{"ts": c.Ts.UTC().Format(time.RFC3339Nano), "id": c.ID}
+	b, _ := json.Marshal(body)
+	return base64.URLEncoding.EncodeToString(b)
+}
+
+// decodeAttemptCursor reverses encodeAttemptCursor. A malformed cursor
+// returns an error; the handler treats that as "no cursor" so a stale
+// or tampered query string returns the first page rather than a 4xx.
+func decodeAttemptCursor(s string) (enrollment.AttemptCursor, error) {
+	b, err := base64.URLEncoding.DecodeString(s)
+	if err != nil {
+		return enrollment.AttemptCursor{}, err
+	}
+	var m struct {
+		Ts string `json:"ts"`
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(b, &m); err != nil {
+		return enrollment.AttemptCursor{}, err
+	}
+	ts, err := time.Parse(time.RFC3339Nano, m.Ts)
+	if err != nil {
+		return enrollment.AttemptCursor{}, err
+	}
+	return enrollment.AttemptCursor{Ts: ts, ID: m.ID}, nil
 }
 
 // handleGetEnrollmentAttempt returns a single attempt and its complete
