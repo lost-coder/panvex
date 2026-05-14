@@ -9,6 +9,7 @@ linters:
     - contextcheck  # context.Background() in code that received a ctx
     - errcheck
     - errorlint     # %v→%w on errors, missing errors.Is/As, type-assert on err
+    - forbidigo     # ban bare log.* in favour of log/slog (Phase-2 logging)
     - govet
     - noctx         # http.Request without context (forces ctx-aware Do)
     - rowserrcheck  # sql.Rows.Err() must be checked after iteration
@@ -19,6 +20,20 @@ linters:
     - misspell
     - unconvert
   settings:
+    forbidigo:
+      # Phase-2 logging: bare log.* drops request_id and bypasses the
+      # slogContextHandler. New code must use log/slog with the
+      # *Context variants. The only exception is preflight code in
+      # cmd/<x>/main.go that runs before slog is initialised — those
+      # callsites carry an inline //nolint:forbidigo with a one-line
+      # rationale. log.Logger methods on a non-default logger are out
+      # of scope (the pattern is anchored to the package-level
+      # functions).
+      forbid:
+        - pattern: '^log\.(Printf|Print|Println|Fatal|Fatalf|Panic|Panicf)$'
+          msg: "Use log/slog with context (slog.InfoContext etc.). Bare log.* is forbidden outside cmd/.../main.go preflight."
+      analyze-types: true
+      exclude-godoc-examples: true
     gosec:
       # No global excludes — historical blanket gosec excludes hid real
       # findings. Per-rule false-positive suppressions live in
