@@ -49,6 +49,7 @@ export type {
   AgentCertificateRecovery,
   AgentRuntime,
   Instance,
+  ProvisionOutboundAgentResponse,
   RuntimeEvent,
 } from "./servers";
 export type {
@@ -74,6 +75,8 @@ export type { AuditEvent, Job, JobCreateInput, JobTarget } from "./jobs";
 export type {
   EnrollmentTokenListItem,
   EnrollmentTokenResponse,
+  ScriptSource,
+  ScriptSources,
 } from "./enrollment";
 export type {
   EnrollmentAttempt,

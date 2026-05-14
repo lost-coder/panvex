@@ -5,6 +5,8 @@ import {
   agentListSchema,
   agentSchema,
   instanceListSchema,
+  provisionOutboundAgentRequestSchema,
+  provisionOutboundAgentResponseSchema,
   renameAgentRequestSchema,
   updateAgentFleetGroupRequestSchema,
 } from "./schemas";
@@ -134,6 +136,17 @@ export type Agent = {
   last_seen_at: string;
 };
 
+// PR-2c: response shape for POST /agents/provision-outbound. The
+// wizard's outbound branch shows `command` verbatim and uses
+// `agent_id` to poll for the first connection (and to call
+// DELETE /agents/{id} on cancel).
+export type ProvisionOutboundAgentResponse = {
+  agent_id: string;
+  command: string;
+  expires_at_unix: number;
+  script_url: string;
+};
+
 export type Instance = {
   id: string;
   agent_id: string;
@@ -180,6 +193,37 @@ export const serversApi = {
     api<void>(`${apiBasePath}/agents/${agentID}`, {
       method: "DELETE"
     }),
+
+  // PR-2c: provision an outbound (reverse-mode) agent and receive the
+  // pre-baked curl|sudo-bash one-liner in a single round-trip. The
+  // backend creates the agent row, mints a 5-minute bootstrap token,
+  // and renders the install command honouring `script_source`
+  // (defaults to "github" for outbound, since the panel is typically
+  // firewalled from the agent host).
+  provisionOutboundAgent: (payload: {
+    node_name: string;
+    fleet_group_id: string;
+    dial_address: string;
+    script_source?: "panel" | "github";
+    advanced?: {
+      telemt_url?: string | null;
+      telemt_metrics_url?: string | null;
+      telemt_auth?: string | null;
+      insecure_transport?: boolean | null;
+    };
+  }) =>
+    api<ProvisionOutboundAgentResponse>(
+      `${apiBasePath}/agents/provision-outbound`,
+      {
+        method: "POST",
+        body: encodeRequest(
+          `${apiBasePath}/agents/provision-outbound`,
+          provisionOutboundAgentRequestSchema,
+          payload,
+        ),
+      },
+      provisionOutboundAgentResponseSchema,
+    ),
   allowAgentCertificateRecovery: (agentID: string, payload?: { ttl_seconds?: number }) =>
     api<AgentCertificateRecovery>(
       `${apiBasePath}/agents/${agentID}/certificate-recovery-grants`,

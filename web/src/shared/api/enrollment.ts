@@ -12,6 +12,20 @@ import type {
   EnrollmentStatus,
 } from "./types-enrollment";
 
+// ScriptSource mirrors the OpenAPI ScriptSource — wire shape for one
+// of the install-script source pointers the wizard renders. `sha256`
+// is nullable rather than optional so callers can branch on
+// `if (src.sha256 !== null)` rather than `if (src.sha256 !== undefined)`.
+export type ScriptSource = {
+  url: string;
+  sha256: string | null;
+};
+
+export type ScriptSources = {
+  panel: ScriptSource;
+  github: ScriptSource;
+};
+
 export type EnrollmentTokenResponse = {
   value: string;
   panel_url: string;
@@ -19,6 +33,7 @@ export type EnrollmentTokenResponse = {
   issued_at_unix: number;
   expires_at_unix: number;
   ca_pem: string;
+  script_sources: ScriptSources;
 };
 
 export type EnrollmentTokenListItem = {
