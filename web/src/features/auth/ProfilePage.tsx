@@ -18,12 +18,15 @@ import {
 } from "@/ui";
 import { TotpSetupSheet } from "@/features/auth/TotpSetupSheet";
 import { TotpDisableSheet } from "@/features/auth/TotpDisableSheet";
+import { SUPPORTED_LANGUAGES, type SupportedLanguage } from "@/shared/lib/i18n";
 import type { ProfilePageProps, TotpSetupData } from "@/shared/api/types-pages/pages";
 
 export function ProfilePage({
   user,
   appearance,
   onAppearanceChange,
+  language,
+  onLanguageChange,
   onStartTotpSetup,
   onEnableTotp,
   onDisableTotp,
@@ -137,6 +140,17 @@ export function ProfilePage({
                     swipeNavigation: e.target.checked,
                   })
                 }
+              />
+            </SettingsRow>
+            <SettingsRow label={t("profile.appearance.languageLabel")}>
+              <Select
+                className="w-36"
+                value={language}
+                options={SUPPORTED_LANGUAGES.map((lng) => ({
+                  value: lng,
+                  label: t(`profile.appearance.languageOptions.${lng}`),
+                }))}
+                onChange={(v) => onLanguageChange?.(v as SupportedLanguage)}
               />
             </SettingsRow>
           </PageSection>

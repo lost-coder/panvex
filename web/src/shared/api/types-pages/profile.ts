@@ -1,3 +1,5 @@
+import type { SupportedLanguage } from "@/shared/lib/i18n";
+
 import type { SettingsPageProps } from "./settings";
 
 // --- Profile ---
@@ -16,6 +18,8 @@ export interface ProfilePageProps {
   };
   appearance: SettingsPageProps["appearanceSettings"];
   onAppearanceChange?: ((settings: SettingsPageProps["appearanceSettings"]) => void) | undefined;
+  language: SupportedLanguage;
+  onLanguageChange?: ((lng: SupportedLanguage) => void) | undefined;
   onStartTotpSetup?: (() => Promise<TotpSetupData>) | undefined;
   onEnableTotp?: ((password: string, totpCode: string) => Promise<void>) | undefined;
   onDisableTotp?: ((password: string, totpCode: string) => Promise<void>) | undefined;

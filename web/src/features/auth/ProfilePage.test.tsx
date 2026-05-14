@@ -20,6 +20,7 @@ function makeProps(overrides: Partial<ProfilePageProps> = {}): ProfilePageProps 
       helpMode: "basic",
       swipeNavigation: true,
     },
+    language: "en",
     ...overrides,
   };
 }

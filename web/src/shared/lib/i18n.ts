@@ -66,6 +66,17 @@ async function loadLanguage(lng: SupportedLanguage) {
 }
 
 let initPromise: Promise<typeof i18next> | null = null;
+const loadedLanguages = new Set<SupportedLanguage>();
+
+function registerResources(
+  lng: SupportedLanguage,
+  resources: Awaited<ReturnType<typeof loadLanguage>>,
+) {
+  for (const [ns, bundle] of Object.entries(resources)) {
+    i18next.addResourceBundle(lng, ns, bundle, true, true);
+  }
+  loadedLanguages.add(lng);
+}
 
 export function initI18n(): Promise<typeof i18next> {
   if (initPromise) return initPromise;
@@ -86,7 +97,32 @@ export function initI18n(): Promise<typeof i18next> {
       },
       returnNull: false,
     });
+    loadedLanguages.add(lng);
     return i18next;
   })();
   return initPromise;
+}
+
+function writeLanguageCookie(lng: SupportedLanguage) {
+  if (typeof document === "undefined") return;
+  // Year-long expiry, root path, SameSite=Lax so the cookie survives
+  // OAuth-style redirects back to the panel.
+  const oneYear = 60 * 60 * 24 * 365;
+  document.cookie =
+    `${LANGUAGE_COOKIE}=${encodeURIComponent(lng)}; ` +
+    `path=/; max-age=${oneYear}; samesite=lax`;
+}
+
+// setLanguage switches the active language at runtime: lazily fetches
+// the requested language's chunk on first use, persists the choice in
+// the panvex_lang cookie, and triggers i18next/react-i18next to
+// re-render every translated string. Components consuming useTranslation
+// pick up the change automatically.
+export async function setLanguage(lng: SupportedLanguage): Promise<void> {
+  if (!loadedLanguages.has(lng)) {
+    const resources = await loadLanguage(lng);
+    registerResources(lng, resources);
+  }
+  writeLanguageCookie(lng);
+  await i18next.changeLanguage(lng);
 }
