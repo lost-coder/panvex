@@ -1,50 +1,42 @@
 import i18next from "i18next";
 import { initReactI18next } from "react-i18next";
 
-import authEN from "@/locales/en/auth.json";
-import authRU from "@/locales/ru/auth.json";
-import activityEN from "@/locales/en/activity.json";
-import activityRU from "@/locales/ru/activity.json";
-import enrollmentEN from "@/locales/en/enrollment.json";
-import enrollmentRU from "@/locales/ru/enrollment.json";
-import enrollmentAttemptsEN from "@/locales/en/enrollment-attempts.json";
-import enrollmentAttemptsRU from "@/locales/ru/enrollment-attempts.json";
-import runtimeEventsEN from "@/locales/en/runtime-events.json";
-import runtimeEventsRU from "@/locales/ru/runtime-events.json";
-import fleetGroupsEN from "@/locales/en/fleet-groups.json";
-import fleetGroupsRU from "@/locales/ru/fleet-groups.json";
-import dashboardEN from "@/locales/en/dashboard.json";
-import dashboardRU from "@/locales/ru/dashboard.json";
-import usersEN from "@/locales/en/users.json";
-import usersRU from "@/locales/ru/users.json";
-import settingsEN from "@/locales/en/settings.json";
-import settingsRU from "@/locales/ru/settings.json";
-import clientsEN from "@/locales/en/clients.json";
-import clientsRU from "@/locales/ru/clients.json";
-import serversEN from "@/locales/en/servers.json";
-import serversRU from "@/locales/ru/servers.json";
-
 // Phase-3 §3.2: i18n bootstrap. Russian is the canonical source of
 // truth for translation work (the panel was built ru-first), but the
-// default for fresh sessions is English: the rest of the panel is
-// still hardcoded English literals, and shipping a half-translated
-// surface in RU is worse than a consistently-English one until every
-// string is i18n'd. Russian remains a fully-supported language and the
-// canonical translation reference; operators who pick "ru" in profile
-// settings keep their choice via the panvex_lang cookie. Future
-// locales add more bundles below; the namespace scheme — one JSON per
-// feature folder — keeps lazy-loading viable once we move to
-// i18next-http-backend.
+// default for fresh sessions is English. Russian remains a
+// fully-supported language and the canonical translation reference;
+// operators who pick "ru" in profile settings keep their choice via
+// the panvex_lang cookie.
 //
 // Detection strategy: cookie fallback is intentional. Browser
 // `navigator.language` is too eager — operators sharing a workstation
 // would each see a different language for the same panel. Instead
 // the panel sticks to the user's last explicit choice (cookie set
 // when the operator picks ru/en in profile settings).
+//
+// Resource loading: each language's bundle is a separate dynamic
+// chunk (i18n-resources-{ru,en}.ts) so only the active language's
+// JSON ships with the page. This keeps the App-entry size budget
+// realistic — eager-importing all 22 namespace JSONs added ~25 KB
+// gzipped to the entry chunk, which is bigger than the entry itself.
 export const SUPPORTED_LANGUAGES = ["ru", "en"] as const;
 export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 export const DEFAULT_LANGUAGE: SupportedLanguage = "en";
 export const LANGUAGE_COOKIE = "panvex_lang";
+
+const NAMESPACES = [
+  "auth",
+  "activity",
+  "enrollment",
+  "enrollment-attempts",
+  "runtime-events",
+  "fleet-groups",
+  "dashboard",
+  "users",
+  "settings",
+  "clients",
+  "servers",
+] as const;
 
 function readCookie(name: string): string | undefined {
   if (typeof document === "undefined") return undefined;
@@ -65,65 +57,36 @@ function detectInitialLanguage(): SupportedLanguage {
   return DEFAULT_LANGUAGE;
 }
 
-let initialised = false;
+async function loadLanguage(lng: SupportedLanguage) {
+  const mod =
+    lng === "ru"
+      ? await import("./i18n-resources-ru")
+      : await import("./i18n-resources-en");
+  return mod.resources;
+}
 
-export function initI18n(): typeof i18next {
-  if (initialised) return i18next;
-  initialised = true;
+let initPromise: Promise<typeof i18next> | null = null;
 
-  void i18next.use(initReactI18next).init({
-    lng: detectInitialLanguage(),
-    fallbackLng: DEFAULT_LANGUAGE,
-    supportedLngs: SUPPORTED_LANGUAGES as readonly string[],
-    defaultNS: "common",
-    ns: [
-      "auth",
-      "activity",
-      "enrollment",
-      "enrollment-attempts",
-      "runtime-events",
-      "fleet-groups",
-      "dashboard",
-      "users",
-      "settings",
-      "clients",
-      "servers",
-    ],
-    resources: {
-      ru: {
-        auth: authRU,
-        activity: activityRU,
-        enrollment: enrollmentRU,
-        "enrollment-attempts": enrollmentAttemptsRU,
-        "runtime-events": runtimeEventsRU,
-        "fleet-groups": fleetGroupsRU,
-        dashboard: dashboardRU,
-        users: usersRU,
-        settings: settingsRU,
-        clients: clientsRU,
-        servers: serversRU,
+export function initI18n(): Promise<typeof i18next> {
+  if (initPromise) return initPromise;
+  initPromise = (async () => {
+    const lng = detectInitialLanguage();
+    const resources = await loadLanguage(lng);
+    await i18next.use(initReactI18next).init({
+      lng,
+      fallbackLng: DEFAULT_LANGUAGE,
+      supportedLngs: SUPPORTED_LANGUAGES as readonly string[],
+      defaultNS: "common",
+      ns: NAMESPACES as readonly string[],
+      resources: { [lng]: resources },
+      interpolation: {
+        // React already escapes — letting i18next double-escape would
+        // mangle apostrophes and ampersands in user-facing strings.
+        escapeValue: false,
       },
-      en: {
-        auth: authEN,
-        activity: activityEN,
-        enrollment: enrollmentEN,
-        "enrollment-attempts": enrollmentAttemptsEN,
-        "runtime-events": runtimeEventsEN,
-        "fleet-groups": fleetGroupsEN,
-        dashboard: dashboardEN,
-        users: usersEN,
-        settings: settingsEN,
-        clients: clientsEN,
-        servers: serversEN,
-      },
-    },
-    interpolation: {
-      // React already escapes — letting i18next double-escape would
-      // mangle apostrophes and ampersands in user-facing strings.
-      escapeValue: false,
-    },
-    returnNull: false,
-  });
-
-  return i18next;
+      returnNull: false,
+    });
+    return i18next;
+  })();
+  return initPromise;
 }

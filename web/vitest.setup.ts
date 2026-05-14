@@ -10,4 +10,4 @@ import "@testing-library/jest-dom/vitest";
 // raw keys. Production code calls initI18n() from app/main.tsx; tests
 // don't render that entry, so we initialise here.
 import { initI18n } from "@/shared/lib/i18n";
-initI18n();
+await initI18n();

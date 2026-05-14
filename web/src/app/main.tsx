@@ -25,8 +25,10 @@ z.config({ jitless: true });
 
 // Phase-3 §3.2: bootstrap i18next before React mounts so the very
 // first render of every component already has translations available.
-// Subsequent calls to initI18n() are no-ops.
-initI18n();
+// The active language's resource bundle is fetched as a dynamic chunk
+// (i18n-resources-{ru,en}) so we have to await it; subsequent calls
+// resolve to the same i18next instance.
+const i18nReady = initI18n();
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -48,8 +50,9 @@ const queryClient = new QueryClient({
   },
 });
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
+void i18nReady.then(() => {
+  ReactDOM.createRoot(document.getElementById("root")!).render(
+    <React.StrictMode>
     {/*
       Root ErrorBoundary (P1-FE-02 / H10): before this was in place, any
       render error in RouterProvider, a provider, or a container would
@@ -85,6 +88,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           </EventsSynchronizer>
         </QueryClientProvider>
       </ToastProvider>
-    </ErrorBoundary>
-  </React.StrictMode>,
-);
+      </ErrorBoundary>
+    </React.StrictMode>,
+  );
+});

@@ -28,7 +28,7 @@ function wrap(node: ReactNode) {
 
 describe("EnrollmentAttemptsPage", () => {
   it("renders the title and the empty state when the list is empty", async () => {
-    initI18n();
+    await initI18n();
     render(wrap(<EnrollmentAttemptsPage />));
     expect(await screen.findByText(/Enrollment attempts/i)).toBeInTheDocument();
     expect(await screen.findByText(/No attempts match/i)).toBeInTheDocument();
