@@ -62,6 +62,13 @@ type clientDeploymentResponse struct {
 	ConnectionLinks  []string `json:"connection_links"`
 	LastAppliedAt    int64    `json:"last_applied_at_unix"`
 	UpdatedAt        int64    `json:"updated_at_unix"`
+	// QuotaUsedBytes is the bytes-since-last-reset counter Telemt
+	// compares against the per-client data_quota_bytes limit. Zero
+	// when this agent has never reported traffic for the client or
+	// when the agent runs against Telemt < 3.4.12 (the source
+	// endpoint /v1/users/quota does not exist there).
+	QuotaUsedBytes     uint64 `json:"quota_used_bytes"`
+	QuotaLastResetUnix uint64 `json:"quota_last_reset_unix"`
 }
 
 type clientDetailResponse struct {

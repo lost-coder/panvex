@@ -551,6 +551,14 @@ func (s *Server) jobByID(_ context.Context, jobID string) (jobs.Job, bool) {
 // map (migrating that off Server is tracked as future follow-up work)
 // so we snapshot + release before calling into the pure helper.
 func (s *Server) aggregatedClientUsage(clientID string) aggregatedClientUsage {
+	return s.clientsSvc.AggregateUsage(s.clientUsageByAgent(clientID))
+}
+
+// clientUsageByAgent returns a defensive copy of the per-(client, agent)
+// usage map for one client. Snapshotting under the read lock keeps the
+// returned map safe to read after release. Callers that only need the
+// aggregate should prefer aggregatedClientUsage, which builds on top.
+func (s *Server) clientUsageByAgent(clientID string) map[string]clients.UsageSnapshot {
 	s.clientsMu.RLock()
 	usageByAgent := s.clientUsage[clientID]
 	snapshot := make(map[string]clients.UsageSnapshot, len(usageByAgent))
@@ -558,8 +566,7 @@ func (s *Server) aggregatedClientUsage(clientID string) aggregatedClientUsage {
 		snapshot[agentID] = value
 	}
 	s.clientsMu.RUnlock()
-
-	return s.clientsSvc.AggregateUsage(snapshot)
+	return snapshot
 }
 
 // resolveClientIDByName finds the panel client ID for a given client name

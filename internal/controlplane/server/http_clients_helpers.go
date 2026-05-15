@@ -8,6 +8,7 @@ import (
 	"sort"
 
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
@@ -180,7 +181,8 @@ func handleClientMutationError(w http.ResponseWriter, err error) bool {
 // a client, including resolved usage, unique-IP count, and deployment
 // status rows.
 func (s *Server) buildClientDetailResponse(ctx context.Context, client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment, showSecret bool) clientDetailResponse {
-	usage := s.aggregatedClientUsage(string(client.ID))
+	usageByAgent := s.clientUsageByAgent(string(client.ID))
+	usage := s.clientsSvc.AggregateUsage(usageByAgent)
 	uniqueIPs := s.resolveUniqueClientIPs(ctx, string(client.ID), usage.UniqueIPsUsed)
 
 	response := clientDetailResponse{
@@ -198,7 +200,7 @@ func (s *Server) buildClientDetailResponse(ctx context.Context, client managedCl
 		ExpirationRFC3339: client.ExpirationRFC3339,
 		FleetGroupIDs:     assignmentFleetGroupIDs(assignments),
 		AgentIDs:          assignmentAgentIDs(assignments),
-		Deployments:       buildClientDeploymentResponses(deployments),
+		Deployments:       buildClientDeploymentResponses(deployments, usageByAgent),
 		CreatedAt:         client.CreatedAt.UTC().Unix(),
 		UpdatedAt:         client.UpdatedAt.UTC().Unix(),
 	}
@@ -306,7 +308,7 @@ func secretIfRevealed(secret string, reveal bool) string {
 
 // buildClientDeploymentResponses converts the deployment slice into the
 // JSON response shape, normalising the optional LastAppliedAt timestamp.
-func buildClientDeploymentResponses(deployments []managedClientDeployment) []clientDeploymentResponse {
+func buildClientDeploymentResponses(deployments []managedClientDeployment, usageByAgent map[string]clients.UsageSnapshot) []clientDeploymentResponse {
 	out := make([]clientDeploymentResponse, 0, len(deployments))
 	for _, deployment := range deployments {
 		lastAppliedAt := int64(0)
@@ -317,14 +319,21 @@ func buildClientDeploymentResponses(deployments []managedClientDeployment) []cli
 		if links == nil {
 			links = []string{}
 		}
+		// usageByAgent may be nil when callers don't have a snapshot
+		// handy (e.g. mutation flows that build a response before the
+		// next usage tick lands). Missing keys mean "no traffic on
+		// record for this agent yet" — zero is the correct default.
+		usage := usageByAgent[deployment.AgentID]
 		out = append(out, clientDeploymentResponse{
-			AgentID:          deployment.AgentID,
-			DesiredOperation: deployment.DesiredOperation,
-			Status:           deployment.Status,
-			LastError:        deployment.LastError,
-			ConnectionLinks:  links,
-			LastAppliedAt:    lastAppliedAt,
-			UpdatedAt:        deployment.UpdatedAt.UTC().Unix(),
+			AgentID:            deployment.AgentID,
+			DesiredOperation:   deployment.DesiredOperation,
+			Status:             deployment.Status,
+			LastError:          deployment.LastError,
+			ConnectionLinks:    links,
+			LastAppliedAt:      lastAppliedAt,
+			UpdatedAt:          deployment.UpdatedAt.UTC().Unix(),
+			QuotaUsedBytes:     usage.QuotaUsedBytes,
+			QuotaLastResetUnix: usage.QuotaLastResetUnix,
 		})
 	}
 	return out
