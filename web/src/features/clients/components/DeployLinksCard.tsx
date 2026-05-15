@@ -7,9 +7,75 @@ import { useTranslation } from "react-i18next";
 import {
   Badge,
   CopyButton,
+  ProgressBar,
   deployVariant,
+  formatAge,
+  formatBytes,
+  formatQuota,
   type ClientDeploymentData,
 } from "@/ui";
+
+interface QuotaCellProps {
+  quotaUsedBytes: number;
+  quotaLastResetUnix: number;
+  dataQuotaBytes: number;
+}
+
+/**
+ * Reset-quota Phase 1 read-only visibility cell. Three render modes:
+ *
+ *   - quota configured + history: progress bar + "Used: X / Y" label
+ *     + relative "Last reset: Nd ago".
+ *   - quota configured + never reset: same bar, "Never reset" subline.
+ *   - no quota configured: collapses to "X used (no quota)" when there
+ *     is any traffic, else "—" (the visually quieter option per brief).
+ */
+function QuotaCell({
+  quotaUsedBytes,
+  quotaLastResetUnix,
+  dataQuotaBytes,
+}: Readonly<QuotaCellProps>) {
+  const { t } = useTranslation("clients");
+  const hasQuota = dataQuotaBytes > 0;
+  const resetLabel =
+    quotaLastResetUnix > 0
+      ? t("detail.quota.lastReset", { when: formatAge(quotaLastResetUnix) })
+      : t("detail.quota.neverReset");
+
+  if (!hasQuota) {
+    if (quotaUsedBytes <= 0) {
+      // Visually quieter option: collapse to em-dash when neither
+      // quota nor used-bytes have any signal.
+      return <span className="text-[11px] font-mono text-fg-muted">—</span>;
+    }
+    return (
+      <div className="text-[11px] font-mono text-fg-muted">
+        {t("detail.quota.usedNoQuota", { used: formatBytes(quotaUsedBytes) })}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1 min-w-[160px]">
+      <ProgressBar
+        value={Math.max(0, quotaUsedBytes)}
+        max={Math.max(1, dataQuotaBytes)}
+        showValue
+        size="sm"
+        variant="threshold"
+      />
+      <div className="text-[11px] font-mono text-fg-muted tabular-nums">
+        {t("detail.quota.usedOfQuota", {
+          used: formatBytes(quotaUsedBytes),
+          quota: formatQuota(dataQuotaBytes),
+        })}
+      </div>
+      <div className="text-[10px] font-mono text-fg-muted">{resetLabel}</div>
+    </div>
+  );
+}
+
+export { QuotaCell };
 
 interface LinksStripProps {
   links: { classic: string[]; secure: string[]; tls: string[] };
@@ -53,12 +119,20 @@ export interface DeployLinksCardProps {
   deployments: ClientDeploymentData[];
   secretPendingRedeploy?: boolean | undefined;
   agentLabels?: Record<string, string> | undefined;
+  /**
+   * Client-level configured quota — same value across every per-agent
+   * row, so the card pulls it as a single prop instead of duplicating
+   * it on each `ClientDeploymentData`. 0/absent means "no quota
+   * configured" and the cell collapses to a quieter line.
+   */
+  dataQuotaBytes?: number | undefined;
 }
 
 export function DeployLinksCard({
   deployments,
   secretPendingRedeploy,
   agentLabels,
+  dataQuotaBytes = 0,
 }: Readonly<DeployLinksCardProps>) {
   const { t } = useTranslation("clients");
   if (deployments.length === 0) {
@@ -109,6 +183,24 @@ export function DeployLinksCard({
                   {d.lastError}
                 </div>
               )}
+              {/*
+                Reset-quota Phase 1: per-agent "Used / quota" cell. Sits
+                above the connection links so the operator sees usage
+                state without scrolling past the link strip. The cell
+                handles its own three render modes (quota+history,
+                quota+never-reset, no-quota); the parent only forwards
+                the values verbatim.
+              */}
+              <div className="mt-2 flex flex-col gap-1">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">
+                  {t("detail.quota.cellHeader")}
+                </span>
+                <QuotaCell
+                  quotaUsedBytes={d.quotaUsedBytes}
+                  quotaLastResetUnix={d.quotaLastResetUnix}
+                  dataQuotaBytes={dataQuotaBytes}
+                />
+              </div>
               <LinksStrip links={d.links} />
             </div>
           );

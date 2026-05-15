@@ -10,6 +10,12 @@ const clientDeploymentSchema = z.object({
   connection_links: z.array(z.string()),
   last_applied_at_unix: z.number(),
   updated_at_unix: z.number(),
+  // Phase 1 of the reset-quota plan: per-agent quota usage surfaced
+  // on the client detail page. Older agents / panels (Telemt < 3.4.6,
+  // or backend still mid-rollout) won't send these — default to 0 so
+  // schema parse stays green and the UI can decide how to render zero.
+  quota_used_bytes: z.number().default(0),
+  quota_last_reset_unix: z.number().default(0),
 });
 
 /**

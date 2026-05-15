@@ -70,6 +70,8 @@ describe("ClientDetailPage", () => {
                 lastError: status === "failed" ? "telemt rejected" : "",
                 links: { classic: [], secure: [], tls: [] },
                 lastAppliedAtUnix: 0,
+                quotaUsedBytes: 0,
+                quotaLastResetUnix: 0,
               },
             ],
           })}
@@ -93,6 +95,8 @@ describe("ClientDetailPage", () => {
               lastError: "",
               links: { classic: [], secure: [], tls: [] },
               lastAppliedAtUnix: 0,
+              quotaUsedBytes: 0,
+              quotaLastResetUnix: 0,
             },
           ],
         })}

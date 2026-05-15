@@ -157,6 +157,13 @@
       "deleteTitle": "Удалить клиента?",
       "deleteBody": "Удалит «{{name}}» со всех нод и отзовёт все его ссылки подключения.",
       "deleteConfirm": "Удалить клиента"
+    },
+    "quota": {
+      "cellHeader": "Квота",
+      "usedOfQuota": "Использовано: {{used}} / {{quota}}",
+      "usedNoQuota": "{{used}} использовано (без лимита)",
+      "lastReset": "Последний сброс: {{when}}",
+      "neverReset": "Сброса не было"
     }
   },
   "pulseDetail": {

@@ -33,6 +33,11 @@ export type ClientDeployment = {
   connection_links: string[];
   last_applied_at_unix: number;
   updated_at_unix: number;
+  // Phase 1 of the reset-quota plan. Optional on the wire so consumers
+  // that don't care don't pay a strict-typing cost; the zod parse
+  // path defaults missing values to 0 (see schemas/client.ts).
+  quota_used_bytes?: number | undefined;
+  quota_last_reset_unix?: number | undefined;
 };
 
 export type Client = {

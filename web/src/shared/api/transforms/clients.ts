@@ -100,6 +100,12 @@ export function transformClientDetail(
       lastError: d.last_error,
       links: categorizeConnectionLinks(d.connection_links),
       lastAppliedAtUnix: d.last_applied_at_unix,
+      // Reset-quota Phase 1: API type carries these as optional so we
+      // do not break callers that don't need them; the zod schema
+      // upstream supplies a `.default(0)`, so a missing field on the
+      // wire is observably "0" by the time it reaches the UI.
+      quotaUsedBytes: d.quota_used_bytes ?? 0,
+      quotaLastResetUnix: d.quota_last_reset_unix ?? 0,
     })),
   };
 }

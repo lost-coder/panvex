@@ -137,6 +137,33 @@ describe("transformClientDetail", () => {
     // tls bucket together.
     expect(r.deployments[0]!.links.tls).toHaveLength(2);
   });
+
+  it("maps snake_case quota_used_bytes/quota_last_reset_unix to camelCase", () => {
+    // Reset-quota Phase 1: the per-agent quota fields ride on the
+    // deployment row. When the backend supplies them, the transform
+    // must surface the value verbatim.
+    const r = transformClientDetail({
+      ...rawClient,
+      deployments: [
+        {
+          ...rawClient.deployments[0]!,
+          quota_used_bytes: 524_288_000,
+          quota_last_reset_unix: 1_700_000_500,
+        },
+      ],
+    });
+    expect(r.deployments[0]!.quotaUsedBytes).toBe(524_288_000);
+    expect(r.deployments[0]!.quotaLastResetUnix).toBe(1_700_000_500);
+  });
+
+  it("defaults quotaUsedBytes/quotaLastResetUnix to 0 when fields are absent", () => {
+    // Backend pre-Phase-1 (or Telemt < 3.4.6) omits the two fields
+    // entirely. The transform must coerce undefined to 0 so the UI
+    // never receives NaN/undefined math downstream.
+    const r = transformClientDetail(rawClient);
+    expect(r.deployments[0]!.quotaUsedBytes).toBe(0);
+    expect(r.deployments[0]!.quotaLastResetUnix).toBe(0);
+  });
 });
 
 describe("buildClientInput", () => {

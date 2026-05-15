@@ -99,6 +99,7 @@ export function ClientDetailPage({
       deployments={client.deployments}
       secretPendingRedeploy={secretPendingRedeploy}
       agentLabels={agentLabels}
+      dataQuotaBytes={client.dataQuotaBytes}
     />
   );
   const ipHistoryCard = (

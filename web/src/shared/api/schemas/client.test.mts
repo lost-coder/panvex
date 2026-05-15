@@ -91,3 +91,68 @@ test("clientSchema preserves explicit secret value (POST create / rotate path)",
   const parsed = clientSchema.parse(detail);
   assert.equal(parsed.secret, "deadbeefdeadbeefdeadbeefdeadbeef");
 });
+
+// Reset-quota Phase 1: per-agent rows pick up two new fields with
+// `.default(0)`. The defaults must hold so older agents that still
+// don't send the fields parse cleanly without breaking the detail
+// page.
+test("clientSchema defaults missing quota_used_bytes/quota_last_reset_unix on deployments to 0", () => {
+  const detail = {
+    ...minimalListItem,
+    secret: "",
+    user_ad_tag: "",
+    max_tcp_conns: 10,
+    max_unique_ips: 5,
+    fleet_group_ids: [],
+    agent_ids: [],
+    deployments: [
+      {
+        agent_id: "a1",
+        desired_operation: "apply",
+        status: "ok",
+        last_error: "",
+        connection_links: [],
+        last_applied_at_unix: 0,
+        updated_at_unix: 0,
+        // quota_* intentionally absent — pre-Phase-1 wire shape.
+      },
+    ],
+    created_at_unix: 0,
+    updated_at_unix: 0,
+    deleted_at_unix: 0,
+  };
+  const parsed = clientSchema.parse(detail);
+  assert.equal(parsed.deployments[0]!.quota_used_bytes, 0);
+  assert.equal(parsed.deployments[0]!.quota_last_reset_unix, 0);
+});
+
+test("clientSchema preserves explicit quota_used_bytes/quota_last_reset_unix on deployments", () => {
+  const detail = {
+    ...minimalListItem,
+    secret: "",
+    user_ad_tag: "",
+    max_tcp_conns: 10,
+    max_unique_ips: 5,
+    fleet_group_ids: [],
+    agent_ids: [],
+    deployments: [
+      {
+        agent_id: "a1",
+        desired_operation: "apply",
+        status: "ok",
+        last_error: "",
+        connection_links: [],
+        last_applied_at_unix: 0,
+        updated_at_unix: 0,
+        quota_used_bytes: 524_288_000,
+        quota_last_reset_unix: 1_747_332_000,
+      },
+    ],
+    created_at_unix: 0,
+    updated_at_unix: 0,
+    deleted_at_unix: 0,
+  };
+  const parsed = clientSchema.parse(detail);
+  assert.equal(parsed.deployments[0]!.quota_used_bytes, 524_288_000);
+  assert.equal(parsed.deployments[0]!.quota_last_reset_unix, 1_747_332_000);
+});

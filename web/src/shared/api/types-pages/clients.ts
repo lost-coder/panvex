@@ -53,6 +53,20 @@ export interface ClientDeploymentData {
   lastError: string;
   links: UserLinks;
   lastAppliedAtUnix: number;
+  /**
+   * Reset-quota Phase 1: per-agent quota usage surfaced on the client
+   * detail page. Defaults to 0 (transform layer) when the backend
+   * omits the field — see schemas/client.ts for the wire-level
+   * default and the rationale.
+   */
+  quotaUsedBytes: number;
+  /**
+   * Reset-quota Phase 1: unix epoch of the last Telemt-side reset
+   * for this (client, agent) pair. 0 means "never reset" (or Telemt
+   * predates 3.4.6 / panel still mid-rollout). The UI renders the
+   * relative age via `formatAge` and falls back to "Never reset".
+   */
+  quotaLastResetUnix: number;
 }
 
 export interface ClientDetailPageProps {
