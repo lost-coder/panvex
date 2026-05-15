@@ -13,6 +13,7 @@ describe("DirectRelayDesktop", () => {
         initState={undefined}
         alertItems={[]}
         metricsChart={undefined}
+        mode="direct"
         fallback={{ active: false, durationSeconds: 0, escalated: false, enteredAtUnix: null }}
       />,
     );
@@ -26,6 +27,7 @@ describe("DirectRelayDesktop", () => {
         initState={undefined}
         alertItems={[]}
         metricsChart={undefined}
+        mode="direct"
         fallback={{ active: true, durationSeconds: 300, escalated: false, enteredAtUnix: 1_700_000_000 }}
       />,
     );

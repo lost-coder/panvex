@@ -104,6 +104,18 @@ export function ServerDetailPage({
   const [fleetGroupOpen, setFleetGroupOpen] = useState(false);
   const [deregisterOpen, setDeregisterOpen] = useState(false);
 
+  // ─── Mode classification — must come first so downstream memos that
+  // shape the hero / pulse strip / alerts can branch on it. Direct
+  // nodes have no DC fleet so the DC-centric vocabulary the ME-era
+  // helpers used would produce nonsense like
+  // "STRAINED · 0 DC under coverage". See format.ts for the per-mode
+  // wording.
+  const mode = classifyMode({
+    useMiddleProxy: server.useMiddleProxy,
+    meRuntimeReady: server.meRuntimeReady,
+    me2dcFallbackEnabled: server.me2dcFallbackEnabled,
+  });
+
   // ─── Derived data — memoised so child components that take props
   //     can be wrapped in React.memo without false-positive re-renders. ──
   const sortedDcs = useMemo(
@@ -118,32 +130,62 @@ export function ServerDetailPage({
     () => computeBadRate(summary.connectionsBadTotal, summary.connectionsTotal),
     [summary.connectionsBadTotal, summary.connectionsTotal],
   );
-  const pulseWord = useMemo(
-    () => statusSentence(server.status, sortedDcs.length, dcWarn, dcErr),
-    [server.status, sortedDcs.length, dcWarn, dcErr],
-  );
+  const upstreamSummary = server.upstreamSummary;
+  const directUpstreamHealthy =
+    upstreamSummary?.healthyTotal ?? server.upstreams.filter((u) => u.healthy).length;
+  const directUpstreamTotal =
+    upstreamSummary?.configuredTotal ?? server.upstreams.length;
+  const directFailRatePct5m = upstreamSummary?.failRatePct5m ?? 0;
+  const directFailRateKnown = upstreamSummary?.failRateKnown ?? false;
+
+  const pulseWord = useMemo(() => {
+    if (mode === "direct") {
+      return statusSentence(server.status, {
+        mode: "direct",
+        upstreamHealthy: directUpstreamHealthy,
+        upstreamTotal: directUpstreamTotal,
+        failRatePct5m: directFailRatePct5m,
+        failRateKnown: directFailRateKnown,
+      });
+    }
+    if (mode === "me_down") {
+      return statusSentence(server.status, { mode: "me_down" });
+    }
+    return statusSentence(server.status, {
+      mode,
+      dcCount: sortedDcs.length,
+      dcWarn,
+      dcErr,
+    });
+  }, [
+    mode,
+    server.status,
+    sortedDcs.length,
+    dcWarn,
+    dcErr,
+    directUpstreamHealthy,
+    directUpstreamTotal,
+    directFailRatePct5m,
+    directFailRateKnown,
+  ]);
   const dcItems = useMemo(() => toDcStripItems(sortedDcs), [sortedDcs]);
   const alertItems = useMemo(
-    () => computeAlertItems(sortedDcs, gates, Boolean(initState)),
-    [sortedDcs, gates, initState],
+    () =>
+      computeAlertItems({
+        mode,
+        sortedDcs,
+        gates,
+        hasInitState: Boolean(initState),
+        upstreamSummary,
+      }),
+    [mode, sortedDcs, gates, initState, upstreamSummary],
   );
   const timelineEvents = useMemo(() => toTimelineEvents(server.events), [server.events]);
 
-  // ─── Direct-mode dispatcher ────────────────────────────────────────
-  //
-  // Mode is derived from the same booleans the backend uses
-  // (see internal/controlplane/telemetry/severity.go ClassifyMode).
-  // Fallback duration is wall-clock based: the page can refresh and
-  // the badge updates monotonically without needing extra polling.
-  const mode = classifyMode({
-    useMiddleProxy: server.useMiddleProxy,
-    meRuntimeReady: server.meRuntimeReady,
-    me2dcFallbackEnabled: server.me2dcFallbackEnabled,
-  });
+  // ─── Fallback escalation badge — wall-clock based via setTimeout so
+  // the 30-min escalation flips even when the page sits idle without a
+  // server re-fetch. See the hook's doc comment.
 
-  // useFallbackEscalation handles the 30-min escalation boundary via a
-  // setTimeout so the badge flips from "warn" to "critical" even when the
-  // page sits idle without a server re-fetch. See the hook's doc comment.
   const fallback = useFallbackEscalation(mode, server.fallbackEnteredAtUnix);
 
   // Mobile subtitle — same status sentence the desktop hero uses, plus
@@ -304,7 +346,10 @@ export function ServerDetailPage({
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
           <span className="text-sm font-semibold text-fg">{t("detail.gates.title")}</span>
-          <GatesPanel gates={gates} />
+          {/* The mobile gates tab is only mounted inside the ME-mode
+              MobileLayout; Direct/Fallback get a dedicated GatesPanel
+              from the DirectRelay variants. */}
+          <GatesPanel gates={gates} mode="me" />
         </div>
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
@@ -440,6 +485,7 @@ export function ServerDetailPage({
                     server={server}
                     initState={initState}
                     metricsChart={metricsChart}
+                    mode={mode}
                     fallback={fallback}
                   />
                 </div>
@@ -449,6 +495,7 @@ export function ServerDetailPage({
                     initState={initState}
                     alertItems={alertItems}
                     metricsChart={metricsChart}
+                    mode={mode}
                     fallback={fallback}
                   />
                 </div>

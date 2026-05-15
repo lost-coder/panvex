@@ -1,5 +1,8 @@
 import { InitCard } from "@/ui";
-import type { ServerDetailPageProps } from "@/shared/api/types-pages/pages";
+import type {
+  ModeKind,
+  ServerDetailPageProps,
+} from "@/shared/api/types-pages/pages";
 
 import { GatesPanel } from "../components/GatesPanel";
 import { TimelineStrip } from "../components/TimelineStrip";
@@ -12,6 +15,7 @@ export interface DirectRelayMobileProps {
   server: ServerDetailPageProps["server"];
   initState: ServerDetailPageProps["initState"];
   metricsChart: ServerDetailPageProps["metricsChart"];
+  mode: ModeKind;
   fallback: {
     active: boolean;
     durationSeconds: number;
@@ -25,7 +29,7 @@ export interface DirectRelayMobileProps {
 // view focused on the data that matters in direct relay (upstream
 // health, fallback state, gates summary).
 export function DirectRelayMobile(props: Readonly<DirectRelayMobileProps>) {
-  const { server, initState, metricsChart, fallback } = props;
+  const { server, initState, metricsChart, mode, fallback } = props;
   const summary = server.upstreamSummary;
   const healthy = summary?.healthyTotal ?? server.upstreams.filter((u) => u.healthy).length;
   const total = summary?.configuredTotal ?? server.upstreams.length;
@@ -54,7 +58,7 @@ export function DirectRelayMobile(props: Readonly<DirectRelayMobileProps>) {
         <TimelineStrip metricsPoints={metricsPoints} events={[]} />
       </section>
       <UpstreamsList upstreams={server.upstreams} />
-      <GatesPanel gates={server.gates} />
+      <GatesPanel gates={server.gates} mode={mode} />
     </div>
   );
 }

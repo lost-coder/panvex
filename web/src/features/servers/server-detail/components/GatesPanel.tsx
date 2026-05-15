@@ -3,7 +3,10 @@
 import { memo } from "react";
 
 import { cn } from "@/ui";
-import type { ServerDetailPageProps } from "@/shared/api/types-pages/pages";
+import type {
+  ModeKind,
+  ServerDetailPageProps,
+} from "@/shared/api/types-pages/pages";
 
 type GateTone = "ok" | "warn" | "error" | "default";
 
@@ -52,19 +55,36 @@ function GateRow({
  * Memoised — `gates` is a slice of the parent `server` object, which
  * is referentially stable across re-renders that don't change the
  * server payload, so the rows don't re-render needlessly.
+ *
+ * `mode` shapes which rows are surfaced: Direct nodes have no ME pool,
+ * so the ME-runtime, ME→DC fallback, Middle-proxy and ME-init Degraded
+ * rows are noise (and the latter was actively misleading — see
+ * normalizeAgentRuntime). Reroute is a ME→DC fast-path concept and
+ * follows the same gating.
  */
 export const GatesPanel = memo(_GatesPanel);
 
-function _GatesPanel({ gates }: Readonly<{ gates: ServerDetailPageProps["server"]["gates"] }>) {
+function _GatesPanel({
+  gates,
+  mode,
+}: Readonly<{
+  gates: ServerDetailPageProps["server"]["gates"];
+  mode: ModeKind;
+}>) {
+  const showMeRows = mode !== "direct";
   return (
     <div className="flex flex-col">
       <GateRow label="Accepting connections" on={gates.acceptingNewConnections} />
-      <GateRow label="ME runtime ready" on={gates.meRuntimeReady} />
-      <GateRow label="Middle proxy" on={gates.useMiddleProxy} neutralWhenOn />
-      <GateRow label="ME → DC fallback" on={gates.me2dcFallbackEnabled} neutralWhenOn />
-      <GateRow label="Reroute active" on={gates.rerouteActive} alertWhenOn />
+      {showMeRows && (
+        <>
+          <GateRow label="ME runtime ready" on={gates.meRuntimeReady} />
+          <GateRow label="Middle proxy" on={gates.useMiddleProxy} neutralWhenOn />
+          <GateRow label="ME → DC fallback" on={gates.me2dcFallbackEnabled} neutralWhenOn />
+          <GateRow label="Reroute active" on={gates.rerouteActive} alertWhenOn />
+        </>
+      )}
       <GateRow label="Read-only mode" on={gates.readOnly} alertWhenOn />
-      <GateRow label="Degraded" on={gates.degraded} alertWhenOn />
+      {showMeRows && <GateRow label="Degraded" on={gates.degraded} alertWhenOn />}
     </div>
   );
 }

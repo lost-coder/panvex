@@ -1,7 +1,10 @@
 import { useTranslation } from "react-i18next";
 
 import { AlertStrip, InitCard, SectionHeader } from "@/ui";
-import type { ServerDetailPageProps } from "@/shared/api/types-pages/pages";
+import type {
+  ModeKind,
+  ServerDetailPageProps,
+} from "@/shared/api/types-pages/pages";
 
 import { GatesPanel } from "../components/GatesPanel";
 import { Fold } from "../components/Fold";
@@ -17,6 +20,11 @@ export interface DirectRelayDesktopProps {
   initState: ServerDetailPageProps["initState"];
   alertItems: AlertItem[];
   metricsChart: ServerDetailPageProps["metricsChart"];
+  // Mode is either "direct" or "fallback" — the dispatcher renders this
+  // component for both branches. We forward it so GatesPanel can hide
+  // the ME-flavoured rows in Direct while keeping them visible in
+  // Fallback, where the ME pool is still the operator's mental model.
+  mode: ModeKind;
   fallback: {
     active: boolean;
     durationSeconds: number;
@@ -38,6 +46,7 @@ export function DirectRelayDesktop({
   initState,
   alertItems,
   metricsChart,
+  mode,
   fallback,
 }: Readonly<DirectRelayDesktopProps>) {
   const { t } = useTranslation("servers");
@@ -91,7 +100,7 @@ export function DirectRelayDesktop({
       </section>
 
       <Fold title={t("detail.directRelay.gates")} rightHint="">
-        <GatesPanel gates={server.gates} />
+        <GatesPanel gates={server.gates} mode={mode} />
       </Fold>
     </div>
   );

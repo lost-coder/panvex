@@ -81,7 +81,11 @@ export function DesktopLayout({
         <DcTiles dcs={sortedDcs} onSelect={onSelectDc} />
       </section>
 
-      <GatesUpstreamsCard gates={server.gates} upstreams={server.upstreams} />
+      {/* DesktopLayout is rendered only by the ME branch of the server
+          detail dispatcher, so the gates panel always uses the ME row
+          set. Direct/Fallback get their own GatesPanel mount via the
+          DirectRelay variants. */}
+      <GatesUpstreamsCard gates={server.gates} upstreams={server.upstreams} mode="me" />
 
       {/* Folds — previously tabs. Reuse the existing tab panels so
           we don't lose any data surface during the rework. */}
