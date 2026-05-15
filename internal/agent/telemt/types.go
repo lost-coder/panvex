@@ -238,13 +238,32 @@ type ManagedClient struct {
 }
 
 // ClientUsage summarizes one managed client's current usage on the local Telemt node.
+//
+// QuotaUsedBytes / QuotaLastResetUnix are sourced from the dedicated
+// GET /v1/users/quota endpoint introduced in Telemt 3.4.12. Both fields
+// stay zero when the user has no quota configured (Telemt omits the row
+// from the response) or when the agent runs against a Telemt that
+// predates the endpoint (404 from /v1/users/quota — see
+// fetchUserQuotaInfo).
 type ClientUsage struct {
-	ClientID         string
-	ClientName       string
-	TrafficUsedBytes uint64
-	UniqueIPsUsed    int
-	CurrentIPsUsed   int
-	ActiveTCPConns   int
+	ClientID           string
+	ClientName         string
+	TrafficUsedBytes   uint64
+	UniqueIPsUsed      int
+	CurrentIPsUsed     int
+	ActiveTCPConns     int
+	QuotaUsedBytes     uint64
+	QuotaLastResetUnix uint64
+}
+
+// UserQuotaInfo carries one row from GET /v1/users/quota. Telemt filters
+// the response to users with data_quota_bytes > 0; absent users are
+// treated as "no quota configured".
+type UserQuotaInfo struct {
+	Username           string
+	DataQuotaBytes     uint64
+	UsedBytes          uint64
+	LastResetEpochSecs uint64
 }
 
 // ClientApplyResult stores the link material returned after Telemt

@@ -144,3 +144,17 @@ type recentEventsResponse struct {
 	Reason  string           `json:"reason"`
 	Data    recentEventsData `json:"data"`
 }
+
+// userQuotaResponse mirrors the GET /v1/users/quota payload (Telemt
+// 3.4.12+). Telemt filters the response to users with
+// data_quota_bytes > 0; absent users mean "no quota configured".
+// On older Telemt (< 3.4.12) the endpoint returns 404; callers must
+// treat that as "no quota data available" and not as a hard error.
+type userQuotaResponse struct {
+	Users []struct {
+		Username           string `json:"username"`
+		DataQuotaBytes     uint64 `json:"data_quota_bytes"`
+		UsedBytes          uint64 `json:"used_bytes"`
+		LastResetEpochSecs uint64 `json:"last_reset_epoch_secs"`
+	} `json:"users"`
+}

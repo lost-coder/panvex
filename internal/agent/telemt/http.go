@@ -14,22 +14,36 @@ import (
 const maxResponseBodySize = 10 << 20 // 10 MiB
 
 func (c *Client) getJSON(ctx context.Context, path string, dest any) error {
+	_, err := c.getJSONWithStatus(ctx, path, dest)
+	return err
+}
+
+// getJSONWithStatus is identical to getJSON but also returns the HTTP
+// status code. Callers that want to distinguish a 404 (e.g. an endpoint
+// added in a newer Telemt release) from a hard transport / 5xx failure
+// use this rather than parsing the wrapped error string.
+//
+// On a transport-level error or a non-2xx response the status is still
+// surfaced (0 when no HTTP exchange completed) so callers can route on
+// it; the returned error is the same wrapped Telemt API error getJSON
+// would have produced.
+func (c *Client) getJSONWithStatus(ctx context.Context, path string, dest any) (int, error) {
 	request, err := c.newRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	response, err := c.httpClient.Do(request)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer response.Body.Close()
 
 	if response.StatusCode >= http.StatusBadRequest {
-		return fmt.Errorf("telemt request failed: %w", decodeAPIError(response.Body, fmt.Sprintf("telemt request failed with status %d", response.StatusCode)))
+		return response.StatusCode, fmt.Errorf("telemt request failed: %w", decodeAPIError(response.Body, fmt.Sprintf("telemt request failed with status %d", response.StatusCode)))
 	}
 
-	return decodeSuccessData(response.Body, dest)
+	return response.StatusCode, decodeSuccessData(response.Body, dest)
 }
 
 func (c *Client) newRequest(ctx context.Context, method string, path string, body any) (*http.Request, error) {
