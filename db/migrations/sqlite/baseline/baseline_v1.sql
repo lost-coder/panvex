@@ -72,7 +72,7 @@ CREATE TABLE "client_deployments" (
     status TEXT NOT NULL,
     last_error TEXT NOT NULL DEFAULT '',
     last_applied_at_unix INTEGER,
-    updated_at_unix INTEGER NOT NULL, connection_links TEXT NOT NULL DEFAULT '[]',
+    updated_at_unix INTEGER NOT NULL, connection_links TEXT NOT NULL DEFAULT '[]', last_reset_epoch_secs INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (client_id, agent_id),
     FOREIGN KEY (client_id) REFERENCES clients (id) ON DELETE CASCADE,
     FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
@@ -661,4 +661,5 @@ INSERT INTO goose_db_version (version_id, is_applied) VALUES
   (38, 1),
   (39, 1),
   (40, 1),
-  (41, 1);
+  (41, 1),
+  (42, 1);

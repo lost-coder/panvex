@@ -111,14 +111,15 @@ func AssignmentFromRecord(record storage.ClientAssignmentRecord) Assignment {
 // DeploymentToRecord converts a Deployment to its persistent form.
 func DeploymentToRecord(deployment Deployment) storage.ClientDeploymentRecord {
 	return storage.ClientDeploymentRecord{
-		ClientID:         string(deployment.ClientID),
-		AgentID:          deployment.AgentID,
-		DesiredOperation: deployment.DesiredOperation,
-		Status:           deployment.Status,
-		LastError:        deployment.LastError,
-		ConnectionLinks:  deployment.ConnectionLinks,
-		LastAppliedAt:    deployment.LastAppliedAt,
-		UpdatedAt:        deployment.UpdatedAt.UTC(),
+		ClientID:           string(deployment.ClientID),
+		AgentID:            deployment.AgentID,
+		DesiredOperation:   deployment.DesiredOperation,
+		Status:             deployment.Status,
+		LastError:          deployment.LastError,
+		ConnectionLinks:    deployment.ConnectionLinks,
+		LastAppliedAt:      deployment.LastAppliedAt,
+		UpdatedAt:          deployment.UpdatedAt.UTC(),
+		LastResetEpochSecs: deployment.LastResetEpochSecs,
 	}
 }
 
@@ -126,13 +127,14 @@ func DeploymentToRecord(deployment Deployment) storage.ClientDeploymentRecord {
 // storage.
 func DeploymentFromRecord(record storage.ClientDeploymentRecord) Deployment {
 	return Deployment{
-		ClientID:         ClientID(record.ClientID),
-		AgentID:          record.AgentID,
-		DesiredOperation: record.DesiredOperation,
-		Status:           record.Status,
-		LastError:        record.LastError,
-		ConnectionLinks:  record.ConnectionLinks,
-		LastAppliedAt:    record.LastAppliedAt,
-		UpdatedAt:        record.UpdatedAt.UTC(),
+		ClientID:           ClientID(record.ClientID),
+		AgentID:            record.AgentID,
+		DesiredOperation:   record.DesiredOperation,
+		Status:             record.Status,
+		LastError:          record.LastError,
+		ConnectionLinks:    record.ConnectionLinks,
+		LastAppliedAt:      record.LastAppliedAt,
+		UpdatedAt:          record.UpdatedAt.UTC(),
+		LastResetEpochSecs: record.LastResetEpochSecs,
 	}
 }

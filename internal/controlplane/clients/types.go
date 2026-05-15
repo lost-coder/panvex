@@ -57,15 +57,24 @@ type Assignment struct {
 // the outcome of the last reconcile attempt for this pair; ConnectionLinks
 // holds every link Telemt reported for this user (one per tls_domain ×
 // host combination), populated on a successful apply.
+//
+// LastResetEpochSecs is the unix-seconds timestamp captured from Telemt's
+// reset-quota response the last time the panel successfully completed a
+// client.reset_quota job on this (client, agent). Zero means "never reset
+// via the panel"; comparing it to ClientUsage.QuotaLastResetUnix surfaces
+// drift between what the panel believes happened and what Telemt still
+// reports (e.g. Telemt restart before sidecar persistence, out-of-band
+// reset).
 type Deployment struct {
-	ClientID         ClientID
-	AgentID          string
-	DesiredOperation string
-	Status           string
-	LastError        string
-	ConnectionLinks  []string
-	LastAppliedAt    *time.Time
-	UpdatedAt        time.Time
+	ClientID           ClientID
+	AgentID            string
+	DesiredOperation   string
+	Status             string
+	LastError          string
+	ConnectionLinks    []string
+	LastAppliedAt      *time.Time
+	UpdatedAt          time.Time
+	LastResetEpochSecs uint64
 }
 
 // DiscoveredRecord describes a proxy client seen on an agent that the

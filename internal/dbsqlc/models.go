@@ -94,14 +94,15 @@ type ClientAssignment struct {
 }
 
 type ClientDeployment struct {
-	ClientID         string
-	AgentID          string
-	DesiredOperation string
-	Status           string
-	LastError        string
-	LastAppliedAt    sql.NullTime
-	UpdatedAt        time.Time
-	ConnectionLinks  json.RawMessage
+	ClientID           string
+	AgentID            string
+	DesiredOperation   string
+	Status             string
+	LastError          string
+	LastAppliedAt      sql.NullTime
+	UpdatedAt          time.Time
+	ConnectionLinks    json.RawMessage
+	LastResetEpochSecs int64
 }
 
 type ClientIpHistory struct {

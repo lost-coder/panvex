@@ -18,4 +18,4 @@ var FS embed.FS
 // as already applied in goose_db_version; goose.Up then only runs
 // migrations > LatestVersion. Bump this constant whenever
 // TestRegenerateSQLiteBaseline writes a new file.
-const LatestVersion = 41
+const LatestVersion = 42

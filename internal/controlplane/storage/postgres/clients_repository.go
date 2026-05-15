@@ -294,12 +294,13 @@ func assignmentToInsertParams(a clients.Assignment) dbsqlc.InsertClientAssignmen
 
 func rowToDeployment(row dbsqlc.ListClientDeploymentsRow) clients.Deployment {
 	d := clients.Deployment{
-		ClientID:         clients.ClientID(row.ClientID),
-		AgentID:          row.AgentID,
-		DesiredOperation: row.DesiredOperation,
-		Status:           row.Status,
-		LastError:        row.LastError,
-		UpdatedAt:        row.UpdatedAt.UTC(),
+		ClientID:           clients.ClientID(row.ClientID),
+		AgentID:            row.AgentID,
+		DesiredOperation:   row.DesiredOperation,
+		Status:             row.Status,
+		LastError:          row.LastError,
+		UpdatedAt:          row.UpdatedAt.UTC(),
+		LastResetEpochSecs: uint64(row.LastResetEpochSecs), //nolint:gosec
 	}
 	if row.LastAppliedAt.Valid {
 		t := row.LastAppliedAt.Time.UTC()
@@ -313,12 +314,13 @@ func rowToDeployment(row dbsqlc.ListClientDeploymentsRow) clients.Deployment {
 
 func deploymentToUpsertParams(d clients.Deployment) dbsqlc.UpsertClientDeploymentParams {
 	p := dbsqlc.UpsertClientDeploymentParams{
-		ClientID:         string(d.ClientID),
-		AgentID:          d.AgentID,
-		DesiredOperation: d.DesiredOperation,
-		Status:           d.Status,
-		LastError:        d.LastError,
-		UpdatedAt:        d.UpdatedAt.UTC(),
+		ClientID:           string(d.ClientID),
+		AgentID:            d.AgentID,
+		DesiredOperation:   d.DesiredOperation,
+		Status:             d.Status,
+		LastError:          d.LastError,
+		UpdatedAt:          d.UpdatedAt.UTC(),
+		LastResetEpochSecs: int64(d.LastResetEpochSecs), //nolint:gosec
 	}
 	if d.LastAppliedAt != nil {
 		p.LastAppliedAt = sql.NullTime{Time: d.LastAppliedAt.UTC(), Valid: true}

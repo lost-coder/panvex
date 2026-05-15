@@ -269,23 +269,25 @@ func (s *Store) PutClientDeployment(ctx context.Context, deployment storage.Clie
 			last_error,
 			connection_links,
 			last_applied_at_unix,
-			updated_at_unix
+			updated_at_unix,
+			last_reset_epoch_secs
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(client_id, agent_id) DO UPDATE SET
 			desired_operation = excluded.desired_operation,
 			status = excluded.status,
 			last_error = excluded.last_error,
 			connection_links = excluded.connection_links,
 			last_applied_at_unix = excluded.last_applied_at_unix,
-			updated_at_unix = excluded.updated_at_unix
-	`, deployment.ClientID, deployment.AgentID, deployment.DesiredOperation, deployment.Status, deployment.LastError, encodeStringArray(deployment.ConnectionLinks), lastAppliedAt, toUnix(deployment.UpdatedAt))
+			updated_at_unix = excluded.updated_at_unix,
+			last_reset_epoch_secs = excluded.last_reset_epoch_secs
+	`, deployment.ClientID, deployment.AgentID, deployment.DesiredOperation, deployment.Status, deployment.LastError, encodeStringArray(deployment.ConnectionLinks), lastAppliedAt, toUnix(deployment.UpdatedAt), int64(deployment.LastResetEpochSecs)) //nolint:gosec
 	return err
 }
 
 func (s *Store) ListClientDeployments(ctx context.Context, clientID string) ([]storage.ClientDeploymentRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT client_id, agent_id, desired_operation, status, last_error, connection_links, last_applied_at_unix, updated_at_unix
+		SELECT client_id, agent_id, desired_operation, status, last_error, connection_links, last_applied_at_unix, updated_at_unix, last_reset_epoch_secs
 		FROM client_deployments
 		WHERE client_id = ?
 		ORDER BY agent_id
@@ -301,7 +303,8 @@ func (s *Store) ListClientDeployments(ctx context.Context, clientID string) ([]s
 		var lastAppliedAt sql.NullInt64
 		var updatedAt int64
 		var linksJSON string
-		if err := rows.Scan(&deployment.ClientID, &deployment.AgentID, &deployment.DesiredOperation, &deployment.Status, &deployment.LastError, &linksJSON, &lastAppliedAt, &updatedAt); err != nil {
+		var lastReset int64
+		if err := rows.Scan(&deployment.ClientID, &deployment.AgentID, &deployment.DesiredOperation, &deployment.Status, &deployment.LastError, &linksJSON, &lastAppliedAt, &updatedAt, &lastReset); err != nil {
 			return nil, err
 		}
 		deployment.ConnectionLinks = decodeStringArray(linksJSON)
@@ -310,6 +313,7 @@ func (s *Store) ListClientDeployments(ctx context.Context, clientID string) ([]s
 			deployment.LastAppliedAt = &timeValue
 		}
 		deployment.UpdatedAt = fromUnix(updatedAt)
+		deployment.LastResetEpochSecs = uint64(lastReset) //nolint:gosec
 		result = append(result, deployment)
 	}
 

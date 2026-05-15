@@ -406,15 +406,20 @@ type ClientAssignmentRecord struct {
 // ClientDeploymentRecord stores the current rollout state for one client on one agent.
 // ConnectionLinks holds every Telemt-reported link for this user (one per
 // tls_domain × host combination). Stored as a JSON array on disk.
+// LastResetEpochSecs is the unix-seconds value Telemt returned the last
+// time the panel completed a client.reset_quota job here — zero when
+// the panel has never reset this pair. Used for drift detection against
+// Telemt's currently-reported quota_last_reset_unix.
 type ClientDeploymentRecord struct {
-	ClientID         string
-	AgentID          string
-	DesiredOperation string
-	Status           string
-	LastError        string
-	ConnectionLinks  []string
-	LastAppliedAt    *time.Time
-	UpdatedAt        time.Time
+	ClientID           string
+	AgentID            string
+	DesiredOperation   string
+	Status             string
+	LastError          string
+	ConnectionLinks    []string
+	LastAppliedAt      *time.Time
+	UpdatedAt          time.Time
+	LastResetEpochSecs uint64
 }
 
 // DiscoveredClientRecord stores one Telemt user found on an agent that is not managed by the panel.
