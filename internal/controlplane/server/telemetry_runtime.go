@@ -328,14 +328,20 @@ func restoreAgentRuntimeFromStorage(agent Agent, runtime storage.TelemetryRuntim
 }
 
 func runtimeLifecycleStateFromCurrent(runtime storage.TelemetryRuntimeCurrentRecord) string {
+	// Direct-mode nodes never have a ME pool; Telemt's Degraded /
+	// MERuntimeReady signals describe ME-pool init and must not
+	// classify a Direct node as "degraded" or "starting".
+	directMode := !runtime.UseMiddleProxy
 	switch {
-	case runtime.Degraded:
+	case !directMode && runtime.Degraded:
 		return "degraded"
 	case runtime.InitializationStatus != "" && runtime.InitializationStatus != "ready":
 		return runtime.InitializationStatus
 	case runtime.StartupStatus != "" && runtime.StartupStatus != "ready":
 		return runtime.StartupStatus
-	case !runtime.AcceptingNewConnections || !runtime.MERuntimeReady:
+	case !runtime.AcceptingNewConnections:
+		return "starting"
+	case !directMode && !runtime.MERuntimeReady:
 		return "starting"
 	default:
 		return "ready"

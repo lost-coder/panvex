@@ -115,11 +115,14 @@ func SeverityAndReason(input SeverityInput, freshness Freshness) (string, string
 		return "warn", "Telemt API is read-only"
 	case !input.AcceptingNewConnections:
 		return "warn", "Admission is closed"
-	case input.Degraded:
-		return "warn", "Runtime is degraded"
 	case input.StartupStatus != "" && input.StartupStatus != "ready":
 		return "warn", "Startup is still in progress"
 	}
+	// NOTE: input.Degraded reflects Telemt's /v1/runtime/initialization, which
+	// is the ME-pool init state. It is meaningful only in ME and (implicitly)
+	// Fallback modes — never in Direct, where Telemt has no ME pool to
+	// initialize and the flag is permanently set on some builds. Handling
+	// happens inside the mode-specific branches below.
 
 	switch ClassifyMode(input) {
 	case ModeME:
@@ -142,6 +145,8 @@ func severityME(in SeverityInput) (severity, reason string) {
 		return "critical", "no reachable DCs"
 	case in.DCCoveragePct > 0 && in.DCCoveragePct < 100:
 		return "warn", "DC coverage is degraded"
+	case in.Degraded:
+		return "warn", "ME runtime is degraded"
 	}
 	return "ok", ""
 }

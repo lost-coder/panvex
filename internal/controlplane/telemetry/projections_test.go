@@ -318,6 +318,116 @@ func TestSeverityAndReason_OfflinePresenceWinsOverTelemtUnreachable(t *testing.T
 	}
 }
 
+// TestSeverityAndReasonDegradedIsModeAware verifies that the ME-runtime
+// `Degraded` flag (sourced from Telemt's /v1/runtime/initialization, which
+// only describes ME-pool init) does not bleed into Direct-mode severity.
+// In Direct mode there is no ME pool; the field reflects a state that is
+// either irrelevant or permanently true and must not surface as "warn".
+func TestSeverityAndReasonDegradedIsModeAware(t *testing.T) {
+	fresh := Freshness{State: "fresh"}
+
+	t.Run("direct_ignores_degraded_when_upstreams_healthy", func(t *testing.T) {
+		in := SeverityInput{
+			PresenceState:           presence.StateOnline,
+			AgentReported:           true,
+			AcceptingNewConnections: true,
+			UseMiddleProxy:          false,
+			Degraded:                true,
+			UptimeSeconds:           120,
+			HealthyUpstreams:        3,
+			TotalUpstreams:          3,
+		}
+		sev, reason := SeverityAndReason(in, fresh)
+		if sev != "ok" {
+			t.Fatalf("severity = %q, want ok (Direct must ignore ME-init Degraded)", sev)
+		}
+		if reason != "" {
+			t.Fatalf("reason = %q, want empty", reason)
+		}
+	})
+
+	t.Run("direct_upstream_critical_wins_over_degraded", func(t *testing.T) {
+		in := SeverityInput{
+			PresenceState:           presence.StateOnline,
+			AgentReported:           true,
+			AcceptingNewConnections: true,
+			UseMiddleProxy:          false,
+			Degraded:                true,
+			UptimeSeconds:           120,
+			HealthyUpstreams:        0,
+			TotalUpstreams:          3,
+		}
+		sev, reason := SeverityAndReason(in, fresh)
+		if sev != "critical" {
+			t.Fatalf("severity = %q, want critical", sev)
+		}
+		if reason != "all upstreams down" {
+			t.Fatalf("reason = %q, want 'all upstreams down'", reason)
+		}
+	})
+
+	t.Run("me_degraded_warns_with_me_specific_reason", func(t *testing.T) {
+		in := SeverityInput{
+			PresenceState:           presence.StateOnline,
+			AgentReported:           true,
+			AcceptingNewConnections: true,
+			UseMiddleProxy:          true,
+			MERuntimeReady:          true,
+			Degraded:                true,
+			DCCoveragePct:           100,
+		}
+		sev, reason := SeverityAndReason(in, fresh)
+		if sev != "warn" {
+			t.Fatalf("severity = %q, want warn", sev)
+		}
+		if reason != "ME runtime is degraded" {
+			t.Fatalf("reason = %q, want 'ME runtime is degraded'", reason)
+		}
+	})
+
+	t.Run("me_dc_critical_wins_over_degraded", func(t *testing.T) {
+		in := SeverityInput{
+			PresenceState:           presence.StateOnline,
+			AgentReported:           true,
+			AcceptingNewConnections: true,
+			UseMiddleProxy:          true,
+			MERuntimeReady:          true,
+			Degraded:                true,
+			DCCoveragePct:           0,
+		}
+		sev, reason := SeverityAndReason(in, fresh)
+		if sev != "critical" {
+			t.Fatalf("severity = %q, want critical (no DCs beats degraded)", sev)
+		}
+		if reason != "no reachable DCs" {
+			t.Fatalf("reason = %q, want 'no reachable DCs'", reason)
+		}
+	})
+
+	t.Run("fallback_with_degraded_keeps_fallback_baseline", func(t *testing.T) {
+		in := SeverityInput{
+			PresenceState:           presence.StateOnline,
+			AgentReported:           true,
+			AcceptingNewConnections: true,
+			UseMiddleProxy:          true,
+			MERuntimeReady:          false,
+			ME2DCFallbackEnabled:    true,
+			Degraded:                true,
+			UptimeSeconds:           120,
+			HealthyUpstreams:        3,
+			TotalUpstreams:          3,
+			FallbackActiveDuration:  5 * time.Minute,
+		}
+		sev, reason := SeverityAndReason(in, fresh)
+		if sev != "warn" {
+			t.Fatalf("severity = %q, want warn", sev)
+		}
+		if reason != "running on ME→Direct fallback" {
+			t.Fatalf("reason = %q, want 'running on ME→Direct fallback'", reason)
+		}
+	})
+}
+
 func TestSeverityAndReason_TelemtUnreachable_BeatsStaleFreshness(t *testing.T) {
 	in := SeverityInput{
 		PresenceState:              presence.StateOnline,

@@ -243,5 +243,20 @@ func normalizeAgentRuntime(runtime AgentRuntime) AgentRuntime {
 		runtime.RecentEvents = []RuntimeEvent{}
 	}
 
+	// Direct-mode projection: the `Degraded` flag is sourced from
+	// Telemt's /v1/runtime/initialization endpoint, which only describes
+	// the ME pool initialization state. Direct nodes have no ME pool,
+	// so the flag is either permanently set on some Telemt builds or
+	// semantically meaningless. Clear it (and the matching lifecycle
+	// label) so the dashboard does not paint healthy Direct nodes as
+	// degraded. The mode-aware severity classifier in projections.go is
+	// the second line of defense.
+	if !runtime.UseMiddleProxy {
+		runtime.Degraded = false
+		if runtime.LifecycleState == "degraded" {
+			runtime.LifecycleState = "ready"
+		}
+	}
+
 	return runtime
 }
