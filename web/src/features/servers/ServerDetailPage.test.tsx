@@ -53,6 +53,8 @@ function makeProps(): ServerDetailPageProps {
         connectionsBadTotal: 0,
         handshakeTimeoutsTotal: 0,
         configuredUsers: 0,
+        connectionsBadByClass: [],
+        handshakeFailuresByClass: [],
       },
       upstreams: [],
       events: [],

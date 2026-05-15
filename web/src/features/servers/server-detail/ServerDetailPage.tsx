@@ -20,6 +20,7 @@ import { MobileLayout } from "./components/MobileLayout";
 import { DesktopLayout } from "./components/DesktopLayout";
 import { MeDownHero } from "./components/MeDownHero";
 import { TelemtUnreachableBanner } from "./components/TelemtUnreachableBanner";
+import { BadConnectionsCard } from "./components/BadConnectionsCard";
 import { GatesPanel } from "./components/GatesPanel";
 import { UpstreamsList } from "./components/UpstreamsList";
 import { DcDetailSheet } from "./components/DcDetailSheet";
@@ -503,6 +504,19 @@ export function ServerDetailPage({
             )}
 
             {mode === "me_down" && <MeDownHero recentEvents={server.events} />}
+
+            {/* Telemt 3.4.10 bad-connection + handshake-failure breakdown.
+                Same data flow for every transport mode — the classifier
+                runs on the inbound TCP path before the connection is
+                routed, so ME, Direct and Fallback all accumulate these
+                counters. me_down still gets the panel since the agent
+                continues to scrape Telemt while the ME pool is down. */}
+            {mode !== "me_down" && (
+              <BadConnectionsCard
+                connectionsBadByClass={server.summary.connectionsBadByClass}
+                handshakeFailuresByClass={server.summary.handshakeFailuresByClass}
+              />
+            )}
           </>
         )}
 

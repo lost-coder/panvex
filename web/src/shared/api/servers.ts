@@ -38,11 +38,20 @@ export type AgentRuntime = {
   uptime_seconds: number;
   connections_total: number;
   connections_bad_total: number;
+  // Telemt 3.4.10 introduces per-class breakdowns for bad connections
+  // and handshake failures. The class string set is open-ended.
+  connections_bad_by_class?: Array<{ class: string; total: number }> | undefined;
+  handshake_failures_by_class?: Array<{ class: string; total: number }> | undefined;
   handshake_timeouts_total: number;
   configured_users: number;
   dc_coverage_pct: number;
   healthy_upstreams: number;
   total_upstreams: number;
+  unhealthy_upstreams?: number | undefined;
+  direct_upstreams?: number | undefined;
+  socks4_upstreams?: number | undefined;
+  socks5_upstreams?: number | undefined;
+  shadowsocks_upstreams?: number | undefined;
   fail_rate_pct_5m?: number | undefined;
   fail_rate_known?: boolean | undefined;
   connect_attempt_total?: number | undefined;

@@ -199,6 +199,24 @@ func connectionTopEntries(entries []telemt.RuntimeConnectionTopEntry) []*gateway
 	return result
 }
 
+// connectionClassCounts marshals telemt class-count rows into the proto
+// wire shape. Empty class slices come back as nil so the proto stays at
+// its zero-value default — the panel treats absence and empty slice the
+// same.
+func connectionClassCounts(rows []telemt.ConnectionClassStat) []*gatewayrpc.ConnectionsClassCount {
+	if len(rows) == 0 {
+		return nil
+	}
+	result := make([]*gatewayrpc.ConnectionsClassCount, 0, len(rows))
+	for _, r := range rows {
+		result = append(result, &gatewayrpc.ConnectionsClassCount{
+			Class: r.Class,
+			Total: r.Total,
+		})
+	}
+	return result
+}
+
 // runtimeSnapshotTelemtDeadline caps how long one snapshot cycle may
 // spend in telemt calls (B6). telemt.Client.FetchRuntimeState has its
 // own 30s ceiling, but from the snapshot loop's perspective 30s is too
@@ -413,13 +431,17 @@ func buildRuntimeSnapshotProto(
 		ConnectionsBadTotal:       state.Summary.ConnectionsBadTotal,
 		HandshakeTimeoutsTotal:    state.Summary.HandshakeTimeoutsTotal,
 		ConfiguredUsers:           int32(state.Summary.ConfiguredUsers),
+		ConnectionsBadByClass:     connectionClassCounts(state.Summary.ConnectionsBadByClass),
+		HandshakeFailuresByClass:  connectionClassCounts(state.Summary.HandshakeFailuresByClass),
 		Dcs:                       dcs,
 		Upstreams: &gatewayrpc.RuntimeUpstreamSnapshot{
 			ConfiguredTotal:      int32(state.Upstreams.ConfiguredTotal),
 			HealthyTotal:         int32(state.Upstreams.HealthyTotal),
 			UnhealthyTotal:       int32(state.Upstreams.UnhealthyTotal),
 			DirectTotal:          int32(state.Upstreams.DirectTotal),
+			Socks4Total:          int32(state.Upstreams.SOCKS4Total),
 			Socks5Total:          int32(state.Upstreams.SOCKS5Total),
+			ShadowsocksTotal:     int32(state.Upstreams.ShadowsocksTotal),
 			Rows:                 upstreamRows,
 			FailRatePct_5M:       state.Upstreams.FailRatePct5m,
 			FailRateKnown:        state.Upstreams.FailRateKnown,

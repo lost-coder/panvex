@@ -209,6 +209,26 @@
       "peers_few": "{{count}} пира",
       "peers_many": "{{count}} пиров"
     },
+    "badConnections": {
+      "title": "Сбойные соединения",
+      "sectionBadHeader": "Закрытия соединений",
+      "sectionHandshakeHeader": "Сбои рукопожатий",
+      "emptyBoth": "Классифицированных сбоев пока нет.",
+      "emptyBad": "Нет классифицированных закрытий.",
+      "emptyHandshake": "Нет классифицированных сбоев рукопожатий.",
+      "totalLabel": "Всего",
+      "ratioLabel": "{{pct}}% от сбоев",
+      "perClassEmpty": "Класс-разбивка не передана. В Telemt < 3.4.10 этих полей нет.",
+      "classLabels": {
+        "other": "Прочее",
+        "unknown_tls_sni": "Неизвестный TLS SNI",
+        "expected_64_got_0_unexpected_eof": "EOF до 64-байтного префикса",
+        "expected_64_got_0_connection_reset": "Connection reset до 64-байтного префикса",
+        "expected_64_got_0_connection_aborted": "Connection aborted до 64-байтного префикса",
+        "expected_64_got_0_broken_pipe": "Broken pipe до 64-байтного префикса",
+        "expected_64_got_0_not_connected": "Not connected до 64-байтного префикса"
+      }
+    },
     "folds": {
       "mePool": "ME-пул",
       "mePoolHint": "{{alive}}/{{required}} писателей живы",

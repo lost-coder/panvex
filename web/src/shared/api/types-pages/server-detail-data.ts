@@ -56,6 +56,18 @@ export interface ServerSummaryData {
   connectionsBadTotal: number;
   handshakeTimeoutsTotal: number;
   configuredUsers: number;
+  // Per-class breakdown of bad connections and handshake failures.
+  // Telemt 3.4.10 surfaces these on /v1/stats/summary; older Telemt
+  // builds emit an empty array (or omit the field, which the schema
+  // normalises to `[]`). The class string set is open — see
+  // ConnectionClassCount on the Go side.
+  connectionsBadByClass: ConnectionClassCount[];
+  handshakeFailuresByClass: ConnectionClassCount[];
+}
+
+export interface ConnectionClassCount {
+  class: string;
+  total: number;
 }
 
 // /v1/system/info

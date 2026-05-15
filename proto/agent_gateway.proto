@@ -116,6 +116,14 @@ message RuntimeUpstreamSnapshot {
   uint64 connect_success_total    = 10;
   uint64 connect_fail_total       = 11;
   uint64 connect_failfast_total   = 12;
+
+  // Route-kind totals introduced in Telemt 3.4.7 (`UpstreamSummaryData`).
+  // socks4_total and shadowsocks_total were exposed before Panvex picked
+  // them up — agents on Telemt ≥ 3.4.7 fill these in; older Telemt and
+  // older agents leave them at zero, which is also the JSON default
+  // surfaced on the panel.
+  int32 socks4_total              = 13;
+  int32 shadowsocks_total         = 14;
 }
 
 message RuntimeEventSnapshot {
@@ -221,6 +229,26 @@ message RuntimeSnapshot {
   // default of false correctly represents the healthy/reachable case.
   bool  telemt_unreachable            = 37;
   int64 telemt_unreachable_since_unix = 38;
+
+  // Classified counters introduced in Telemt 3.4.10 (`SummaryData`).
+  // `class` is a free-form string (Telemt uses a DashMap with static
+  // labels), with documented values including:
+  //   - `unknown_tls_sni`
+  //   - `expected_64_got_0_unexpected_eof` (and `_connection_reset`,
+  //     `_connection_aborted`, `_broken_pipe`, `_not_connected`)
+  //   - `other`
+  // The list is open: agents must not enforce a known-class set so a
+  // newer Telemt can add classes without an agent or panel upgrade.
+  repeated ConnectionsClassCount connections_bad_by_class    = 39;
+  repeated ConnectionsClassCount handshake_failures_by_class = 40;
+}
+
+// ConnectionsClassCount carries a single (class, total) row from
+// Telemt's `connections_bad_by_class` / `handshake_failures_by_class`
+// arrays in `/v1/stats/summary`.
+message ConnectionsClassCount {
+  string class = 1;
+  uint64 total = 2;
 }
 
 message ConnectionTopEntry {

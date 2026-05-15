@@ -100,10 +100,12 @@ type fetchRuntimeStateRaw struct {
 		Data    connectionSummaryData `json:"data"`
 	}
 	summary struct {
-		ConnectionsTotal       uint64 `json:"connections_total"`
-		ConnectionsBadTotal    uint64 `json:"connections_bad_total"`
-		HandshakeTimeoutsTotal uint64 `json:"handshake_timeouts_total"`
-		ConfiguredUsers        int    `json:"configured_users"`
+		ConnectionsTotal         uint64                `json:"connections_total"`
+		ConnectionsBadTotal      uint64                `json:"connections_bad_total"`
+		HandshakeTimeoutsTotal   uint64                `json:"handshake_timeouts_total"`
+		ConfiguredUsers          int                   `json:"configured_users"`
+		ConnectionsBadByClass    []ConnectionClassStat `json:"connections_bad_by_class"`
+		HandshakeFailuresByClass []ConnectionClassStat `json:"handshake_failures_by_class"`
 	}
 	dcs        []RuntimeDC
 	slowData   slowRuntimeState
@@ -116,11 +118,13 @@ type fetchRuntimeStateRaw struct {
 // functions can return it without redeclaring the anonymous struct.
 type upstreamStatusResponse struct {
 	Summary struct {
-		ConfiguredTotal int `json:"configured_total"`
-		HealthyTotal    int `json:"healthy_total"`
-		UnhealthyTotal  int `json:"unhealthy_total"`
-		DirectTotal     int `json:"direct_total"`
-		SOCKS5Total     int `json:"socks5_total"`
+		ConfiguredTotal  int `json:"configured_total"`
+		HealthyTotal     int `json:"healthy_total"`
+		UnhealthyTotal   int `json:"unhealthy_total"`
+		DirectTotal      int `json:"direct_total"`
+		SOCKS4Total      int `json:"socks4_total"`
+		SOCKS5Total      int `json:"socks5_total"`
+		ShadowsocksTotal int `json:"shadowsocks_total"`
 	} `json:"summary"`
 	Upstreams []struct {
 		UpstreamID         int     `json:"upstream_id"`

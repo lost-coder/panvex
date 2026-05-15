@@ -98,11 +98,29 @@ export const agentRuntimeSchema = z.object({
   uptime_seconds: z.number(),
   connections_total: z.number(),
   connections_bad_total: z.number(),
+  // Telemt 3.4.10 added per-class breakdowns on /v1/stats/summary. The
+  // class set is open (e.g. `unknown_tls_sni`, `expected_64_got_0_*`,
+  // `other`), so we accept any string. `.default([])` lets the panel
+  // gracefully handle agents/Telemts that don't emit the breakdown yet.
+  connections_bad_by_class: z
+    .array(z.object({ class: z.string(), total: z.number() }))
+    .default([]),
+  handshake_failures_by_class: z
+    .array(z.object({ class: z.string(), total: z.number() }))
+    .default([]),
   handshake_timeouts_total: z.number(),
   configured_users: z.number(),
   dc_coverage_pct: z.number(),
   healthy_upstreams: z.number(),
   total_upstreams: z.number(),
+  // Authoritative per-route totals introduced in Telemt 3.4.7 and now
+  // surfaced through the gateway. Frontend transforms still derive
+  // counts from the rows as a fallback, but prefer these when present.
+  unhealthy_upstreams: z.number().default(0),
+  direct_upstreams: z.number().default(0),
+  socks4_upstreams: z.number().default(0),
+  socks5_upstreams: z.number().default(0),
+  shadowsocks_upstreams: z.number().default(0),
   // Direct-mode panel fields (Phase 5). `.default(...)` keeps the panel
   // backward-compatible with pre-Phase-3 agents that don't yet emit these
   // counters at the runtime root: zod fills zeros instead of failing the

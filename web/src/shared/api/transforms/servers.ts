@@ -327,6 +327,16 @@ export function transformServerDetail(
     connectionsBadTotal: runtime?.connections_bad_total ?? 0,
     handshakeTimeoutsTotal: runtime?.handshake_timeouts_total ?? 0,
     configuredUsers: runtime?.configured_users ?? 0,
+    connectionsBadByClass:
+      runtime?.connections_bad_by_class?.map((row) => ({
+        class: row.class,
+        total: row.total,
+      })) ?? [],
+    handshakeFailuresByClass:
+      runtime?.handshake_failures_by_class?.map((row) => ({
+        class: row.class,
+        total: row.total,
+      })) ?? [],
   };
 
   const upstreams: ServerDetailPageProps["server"]["upstreams"] = (
@@ -347,12 +357,21 @@ export function transformServerDetail(
   // connect counters at the runtime root (Phase 5). We project them into
   // a ServerUpstreamSummaryData so the DirectRelay layouts can render
   // without falling back to "unknown" for every value.
+  // Prefer the panel-authoritative totals (sourced from Telemt 3.4.7+ via
+  // the agent gateway) so the summary matches Telemt's view of the
+  // configured fleet exactly. Fall back to row-counting only when the
+  // agent or Telemt is too old to surface the totals.
   const healthyTotal = runtime?.healthy_upstreams ?? upstreams.filter((u) => u.healthy).length;
   const configuredTotal = runtime?.total_upstreams ?? upstreams.length;
-  const directTotal = upstreams.filter((u) => u.routeKind === "direct").length;
-  const socks4Total = upstreams.filter((u) => u.routeKind === "socks4").length;
-  const socks5Total = upstreams.filter((u) => u.routeKind === "socks5").length;
-  const shadowsocksTotal = upstreams.filter((u) => u.routeKind === "shadowsocks").length;
+  const directTotal =
+    runtime?.direct_upstreams ?? upstreams.filter((u) => u.routeKind === "direct").length;
+  const socks4Total =
+    runtime?.socks4_upstreams ?? upstreams.filter((u) => u.routeKind === "socks4").length;
+  const socks5Total =
+    runtime?.socks5_upstreams ?? upstreams.filter((u) => u.routeKind === "socks5").length;
+  const shadowsocksTotal =
+    runtime?.shadowsocks_upstreams ??
+    upstreams.filter((u) => u.routeKind === "shadowsocks").length;
   const upstreamSummary: ServerDetailPageProps["server"]["upstreamSummary"] = {
     configuredTotal,
     healthyTotal,

@@ -120,6 +120,21 @@ type RuntimeSummary struct {
 	ConnectionsBadTotal    uint64
 	HandshakeTimeoutsTotal uint64
 	ConfiguredUsers        int
+	// Class-based breakdown of bad connections and handshake failures,
+	// added by Telemt 3.4.10 (`SummaryData.connections_bad_by_class` and
+	// `.handshake_failures_by_class`). The class set is open (e.g.
+	// `unknown_tls_sni`, `expected_64_got_0_unexpected_eof`, `other`);
+	// callers must not enforce a known-class allow-list. Empty when the
+	// agent runs against Telemt < 3.4.10.
+	ConnectionsBadByClass    []ConnectionClassStat
+	HandshakeFailuresByClass []ConnectionClassStat
+}
+
+// ConnectionClassStat is one (class, total) row from Telemt's classified
+// bad-connection and handshake-failure counters. See RuntimeSummary.
+type ConnectionClassStat struct {
+	Class string
+	Total uint64
 }
 
 // RuntimeDC carries one operator-facing DC health row.
@@ -138,12 +153,14 @@ type RuntimeDC struct {
 
 // RuntimeUpstreamSummary carries the upstream health overview.
 type RuntimeUpstreamSummary struct {
-	ConfiguredTotal int
-	HealthyTotal    int
-	UnhealthyTotal  int
-	DirectTotal     int
-	SOCKS5Total     int
-	Rows            []RuntimeUpstream
+	ConfiguredTotal  int
+	HealthyTotal     int
+	UnhealthyTotal   int
+	DirectTotal      int
+	SOCKS4Total      int
+	SOCKS5Total      int
+	ShadowsocksTotal int
+	Rows             []RuntimeUpstream
 
 	// Direct-mode signals — populated from UpstreamRateTracker on each fetch.
 	//

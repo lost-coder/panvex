@@ -296,10 +296,12 @@ func (c *Client) assembleRuntimeState(raw fetchRuntimeStateRaw, partial bool) Ru
 		},
 		ConnectionTotals: buildConnectionTotalsFromSummary(raw.connectionSummary.Data),
 		Summary: RuntimeSummary{
-			ConnectionsTotal:       raw.summary.ConnectionsTotal,
-			ConnectionsBadTotal:    raw.summary.ConnectionsBadTotal,
-			HandshakeTimeoutsTotal: raw.summary.HandshakeTimeoutsTotal,
-			ConfiguredUsers:        raw.summary.ConfiguredUsers,
+			ConnectionsTotal:         raw.summary.ConnectionsTotal,
+			ConnectionsBadTotal:      raw.summary.ConnectionsBadTotal,
+			HandshakeTimeoutsTotal:   raw.summary.HandshakeTimeoutsTotal,
+			ConfiguredUsers:          raw.summary.ConfiguredUsers,
+			ConnectionsBadByClass:    convertClassStats(raw.summary.ConnectionsBadByClass),
+			HandshakeFailuresByClass: convertClassStats(raw.summary.HandshakeFailuresByClass),
 		},
 		DCs:               raw.dcs,
 		Upstreams:         upstreams,
@@ -311,6 +313,23 @@ func (c *Client) assembleRuntimeState(raw fetchRuntimeStateRaw, partial bool) Ru
 		Clients:           raw.users,
 		Partial:           partial,
 	}
+}
+
+// convertClassStats maps the raw Telemt class-count rows into the public
+// ConnectionClassStat slice. Drops rows with empty class to be defensive
+// against malformed payloads while keeping Telemt-driven ordering.
+func convertClassStats(rows []ConnectionClassStat) []ConnectionClassStat {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([]ConnectionClassStat, 0, len(rows))
+	for _, r := range rows {
+		if r.Class == "" {
+			continue
+		}
+		out = append(out, ConnectionClassStat{Class: r.Class, Total: r.Total})
+	}
+	return out
 }
 
 // buildConnectionTotalsFromSummary converts the raw connection-summary

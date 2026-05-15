@@ -41,7 +41,15 @@ func agentRuntimeFromSnapshot(snapshot *gatewayrpc.RuntimeSnapshot, observedAt t
 	}
 
 	var upstreamRows []*gatewayrpc.RuntimeUpstreamRowSnapshot
-	var healthyTotal, configuredTotal int32
+	var (
+		healthyTotal     int32
+		configuredTotal  int32
+		unhealthyTotal   int32
+		directTotal      int32
+		socks4Total      int32
+		socks5Total      int32
+		shadowsocksTotal int32
+	)
 	var (
 		failRatePct5m        float64
 		failRateKnown        bool
@@ -54,6 +62,11 @@ func agentRuntimeFromSnapshot(snapshot *gatewayrpc.RuntimeSnapshot, observedAt t
 		upstreamRows = snapshot.Upstreams.Rows
 		healthyTotal = snapshot.Upstreams.HealthyTotal
 		configuredTotal = snapshot.Upstreams.ConfiguredTotal
+		unhealthyTotal = snapshot.Upstreams.UnhealthyTotal
+		directTotal = snapshot.Upstreams.DirectTotal
+		socks4Total = snapshot.Upstreams.Socks4Total
+		socks5Total = snapshot.Upstreams.Socks5Total
+		shadowsocksTotal = snapshot.Upstreams.ShadowsocksTotal
 		failRatePct5m = snapshot.Upstreams.FailRatePct_5M
 		failRateKnown = snapshot.Upstreams.FailRateKnown
 		connectAttemptTotal = snapshot.Upstreams.ConnectAttemptTotal
@@ -107,11 +120,18 @@ func agentRuntimeFromSnapshot(snapshot *gatewayrpc.RuntimeSnapshot, observedAt t
 		UptimeSeconds:              snapshot.UptimeSeconds,
 		ConnectionsTotal:           snapshot.ConnectionsTotal,
 		ConnectionsBadTotal:        snapshot.ConnectionsBadTotal,
+		ConnectionsBadByClass:      connectionClassCountsFromSnapshot(snapshot.ConnectionsBadByClass),
+		HandshakeFailuresByClass:   connectionClassCountsFromSnapshot(snapshot.HandshakeFailuresByClass),
 		HandshakeTimeoutsTotal:     snapshot.HandshakeTimeoutsTotal,
 		ConfiguredUsers:            int(snapshot.ConfiguredUsers),
 		DCCoveragePct:              coveragePct,
 		HealthyUpstreams:           int(healthyTotal),
 		TotalUpstreams:             int(configuredTotal),
+		UnhealthyUpstreams:         int(unhealthyTotal),
+		DirectUpstreams:            int(directTotal),
+		Socks4Upstreams:            int(socks4Total),
+		Socks5Upstreams:            int(socks5Total),
+		ShadowsocksUpstreams:       int(shadowsocksTotal),
 		FailRatePct5m:              failRatePct5m,
 		FailRateKnown:              failRateKnown,
 		ConnectAttemptTotal:        connectAttemptTotal,
@@ -162,6 +182,28 @@ func meWritersSummaryFromSnapshot(s *gatewayrpc.RuntimeMeWritersSummary) *Runtim
 		RequiredWriters:     int(s.RequiredWriters),
 		AliveWriters:        int(s.AliveWriters),
 	}
+}
+
+// connectionClassCountsFromSnapshot maps the proto wire rows into the
+// JSON-API shape. Returns nil (not empty slice) when the agent does not
+// report a breakdown — the field is omitempty on the wire but keeping
+// nil here avoids creating a JSON `[]` placeholder that would conflict
+// with operator dashboards expecting absence to mean "unknown".
+func connectionClassCountsFromSnapshot(rows []*gatewayrpc.ConnectionsClassCount) []ConnectionClassCount {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([]ConnectionClassCount, 0, len(rows))
+	for _, r := range rows {
+		if r == nil || r.Class == "" {
+			continue
+		}
+		out = append(out, ConnectionClassCount{Class: r.Class, Total: r.Total})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func serverLoadPointFromSnapshot(agent Agent, snapshot agentSnapshot) storage.ServerLoadPointRecord {

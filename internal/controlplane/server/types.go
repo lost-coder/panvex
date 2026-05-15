@@ -61,33 +61,50 @@ type RuntimeUpstream struct {
 	Scopes             []string `json:"scopes,omitempty"`
 }
 
+// ConnectionClassCount is one (class, total) pair from Telemt's
+// classified bad-connection and handshake-failure counters introduced
+// in Telemt 3.4.10. The class set is open-ended; the panel forwards
+// rows as-is so a newer Telemt label surfaces in the UI without a
+// control-plane upgrade.
+type ConnectionClassCount struct {
+	Class string `json:"class"`
+	Total uint64 `json:"total"`
+}
+
 // AgentRuntime stores the normalized Telemt operator overview for one agent.
 type AgentRuntime struct {
-	AcceptingNewConnections   bool    `json:"accepting_new_connections"`
-	MERuntimeReady            bool    `json:"me_runtime_ready"`
-	ME2DCFallbackEnabled      bool    `json:"me2dc_fallback_enabled"`
-	UseMiddleProxy            bool    `json:"use_middle_proxy"`
-	StartupStatus             string  `json:"startup_status"`
-	StartupStage              string  `json:"startup_stage"`
-	StartupProgressPct        float64 `json:"startup_progress_pct"`
-	InitializationStatus      string  `json:"initialization_status"`
-	Degraded                  bool    `json:"degraded"`
-	LifecycleState            string  `json:"lifecycle_state"`
-	InitializationStage       string  `json:"initialization_stage"`
-	InitializationProgressPct float64 `json:"initialization_progress_pct"`
-	TransportMode             string  `json:"transport_mode"`
-	CurrentConnections        int     `json:"current_connections"`
-	CurrentConnectionsME      int     `json:"current_connections_me"`
-	CurrentConnectionsDirect  int     `json:"current_connections_direct"`
-	ActiveUsers               int     `json:"active_users"`
-	UptimeSeconds             float64 `json:"uptime_seconds"`
-	ConnectionsTotal          uint64  `json:"connections_total"`
-	ConnectionsBadTotal       uint64  `json:"connections_bad_total"`
-	HandshakeTimeoutsTotal    uint64  `json:"handshake_timeouts_total"`
-	ConfiguredUsers           int     `json:"configured_users"`
-	DCCoveragePct             float64 `json:"dc_coverage_pct"`
-	HealthyUpstreams          int     `json:"healthy_upstreams"`
-	TotalUpstreams            int     `json:"total_upstreams"`
+	AcceptingNewConnections   bool                   `json:"accepting_new_connections"`
+	MERuntimeReady            bool                   `json:"me_runtime_ready"`
+	ME2DCFallbackEnabled      bool                   `json:"me2dc_fallback_enabled"`
+	UseMiddleProxy            bool                   `json:"use_middle_proxy"`
+	StartupStatus             string                 `json:"startup_status"`
+	StartupStage              string                 `json:"startup_stage"`
+	StartupProgressPct        float64                `json:"startup_progress_pct"`
+	InitializationStatus      string                 `json:"initialization_status"`
+	Degraded                  bool                   `json:"degraded"`
+	LifecycleState            string                 `json:"lifecycle_state"`
+	InitializationStage       string                 `json:"initialization_stage"`
+	InitializationProgressPct float64                `json:"initialization_progress_pct"`
+	TransportMode             string                 `json:"transport_mode"`
+	CurrentConnections        int                    `json:"current_connections"`
+	CurrentConnectionsME      int                    `json:"current_connections_me"`
+	CurrentConnectionsDirect  int                    `json:"current_connections_direct"`
+	ActiveUsers               int                    `json:"active_users"`
+	UptimeSeconds             float64                `json:"uptime_seconds"`
+	ConnectionsTotal          uint64                 `json:"connections_total"`
+	ConnectionsBadTotal       uint64                 `json:"connections_bad_total"`
+	ConnectionsBadByClass     []ConnectionClassCount `json:"connections_bad_by_class"`
+	HandshakeFailuresByClass  []ConnectionClassCount `json:"handshake_failures_by_class"`
+	HandshakeTimeoutsTotal    uint64                 `json:"handshake_timeouts_total"`
+	ConfiguredUsers           int                    `json:"configured_users"`
+	DCCoveragePct             float64                `json:"dc_coverage_pct"`
+	HealthyUpstreams          int                    `json:"healthy_upstreams"`
+	TotalUpstreams            int                    `json:"total_upstreams"`
+	UnhealthyUpstreams        int                    `json:"unhealthy_upstreams"`
+	DirectUpstreams           int                    `json:"direct_upstreams"`
+	Socks4Upstreams           int                    `json:"socks4_upstreams"`
+	Socks5Upstreams           int                    `json:"socks5_upstreams"`
+	ShadowsocksUpstreams      int                    `json:"shadowsocks_upstreams"`
 	// FailRatePct5m and FailRateKnown encode the same "nil-is-unknown"
 	// pattern as RuntimeUpstreamSummary on the agent side. The wire format
 	// (JSON tags fail_rate_pct_5m + fail_rate_known) is split for

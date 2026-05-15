@@ -200,6 +200,26 @@
       "peers_one": "{{count}} peer",
       "peers_other": "{{count}} peers"
     },
+    "badConnections": {
+      "title": "Bad connections",
+      "sectionBadHeader": "Connection drops",
+      "sectionHandshakeHeader": "Handshake failures",
+      "emptyBoth": "No classified drops or handshake failures yet.",
+      "emptyBad": "No classified connection drops.",
+      "emptyHandshake": "No classified handshake failures.",
+      "totalLabel": "Total",
+      "ratioLabel": "{{pct}}% of bad",
+      "perClassEmpty": "No classified rows reported. Telemt < 3.4.10 does not surface this breakdown.",
+      "classLabels": {
+        "other": "Other",
+        "unknown_tls_sni": "Unknown TLS SNI",
+        "expected_64_got_0_unexpected_eof": "Peer EOF before 64-byte prefix",
+        "expected_64_got_0_connection_reset": "Connection reset before 64-byte prefix",
+        "expected_64_got_0_connection_aborted": "Connection aborted before 64-byte prefix",
+        "expected_64_got_0_broken_pipe": "Broken pipe before 64-byte prefix",
+        "expected_64_got_0_not_connected": "Not connected before 64-byte prefix"
+      }
+    },
     "folds": {
       "mePool": "ME Pool",
       "mePoolHint": "{{alive}}/{{required}} writers alive",
