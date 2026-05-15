@@ -576,7 +576,7 @@ func (s *Server) applyClientResetQuotaResult(ctx context.Context, agentID string
 		return
 	}
 
-	var payload clientJobPayload
+	var payload clientResetQuotaJobPayload
 	if err := json.Unmarshal([]byte(job.PayloadJSON), &payload); err != nil {
 		return
 	}
