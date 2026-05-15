@@ -38,6 +38,13 @@ const (
 	ActionClientDelete Action = "client.delete"
 	// ActionClientRotateSecret rotates the managed Telemt client secret on the target node.
 	ActionClientRotateSecret Action = "client.rotate_secret"
+	// ActionClientResetQuota resets the data-quota counter (used_bytes) for
+	// one centrally managed Telemt client on the target node. Hits Telemt's
+	// POST /v1/users/{u}/reset-quota (Telemt ≥ 3.4.6). Agents on older
+	// Telemt versions report the job as failed with a typed reason so the
+	// panel can surface "Reset unavailable (Telemt < 3.4.6)" on the affected
+	// deployment row without halting fan-out on other agents.
+	ActionClientResetQuota Action = "client.reset_quota"
 	// ActionTelemetryRefreshDiagnostics forces a fresh slow-diagnostics pull on the target node.
 	ActionTelemetryRefreshDiagnostics Action = "telemetry.refresh_diagnostics"
 	// ActionAgentSelfUpdate instructs the agent to download and replace its own binary.
@@ -57,6 +64,7 @@ func IsValidAction(a Action) bool {
 		ActionClientUpdate,
 		ActionClientDelete,
 		ActionClientRotateSecret,
+		ActionClientResetQuota,
 		ActionTelemetryRefreshDiagnostics,
 		ActionAgentSelfUpdate,
 		ActionSwitchTransportMode:

@@ -2,11 +2,28 @@ package telemt
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 )
+
+// ErrResetQuotaUnsupported is returned by ResetUserQuota when the local
+// Telemt build predates the POST /v1/users/{u}/reset-quota endpoint
+// (introduced in Telemt 3.4.6). Detected via HTTP 404 on the route
+// itself — Telemt returns 404 for unknown routes even with a known
+// username. The control-plane can match this typed error to render a
+// "Reset unavailable (Telemt < 3.4.6)" affordance per-agent instead of
+// a generic transport failure.
+var ErrResetQuotaUnsupported = errors.New("telemt: reset-quota endpoint not available on this version")
+
+// ErrResetQuotaReadOnly is returned by ResetUserQuota when Telemt is
+// running in API read-only mode and rejects the mutation (HTTP 403).
+// The panel surfaces this distinctly from a transport failure because
+// the operator-actionable remedy is different (lift read-only vs. fix
+// connectivity).
+var ErrResetQuotaReadOnly = errors.New("telemt: API is in read-only mode")
 
 // FetchActiveIPs fetches the /v1/stats/users/active-ips endpoint and returns per-user active IPs.
 func (c *Client) FetchActiveIPs(ctx context.Context) ([]UserActiveIPs, error) {
@@ -52,6 +69,58 @@ func (c *Client) UpdateClient(ctx context.Context, client ManagedClient) (Client
 	}
 
 	return c.applyClient(ctx, http.MethodPatch, "/v1/users/"+url.PathEscape(targetName), client)
+}
+
+// ResetUserQuotaResult carries the post-reset quota snapshot Telemt
+// emits at POST /v1/users/{u}/reset-quota.
+type ResetUserQuotaResult struct {
+	Username           string
+	UsedBytes          uint64
+	LastResetEpochSecs uint64
+}
+
+// ResetUserQuota resets the resettable quota counter (used_bytes) for a
+// single Telemt user. The endpoint was introduced in Telemt 3.4.6; on
+// older builds the route returns 404 and we surface ErrResetQuotaUnsupported
+// so the caller can distinguish "operator needs to upgrade Telemt" from
+// "network glitch / retry". HTTP 403 surfaces as ErrResetQuotaReadOnly.
+func (c *Client) ResetUserQuota(ctx context.Context, username string) (ResetUserQuotaResult, error) {
+	path := "/v1/users/" + url.PathEscape(username) + "/reset-quota"
+	request, err := c.newRequest(ctx, http.MethodPost, path, nil)
+	if err != nil {
+		return ResetUserQuotaResult{}, err
+	}
+
+	response, err := c.httpClient.Do(request)
+	if err != nil {
+		return ResetUserQuotaResult{}, err
+	}
+	defer response.Body.Close()
+
+	switch response.StatusCode {
+	case http.StatusNotFound:
+		return ResetUserQuotaResult{}, ErrResetQuotaUnsupported
+	case http.StatusForbidden:
+		return ResetUserQuotaResult{}, ErrResetQuotaReadOnly
+	}
+	if response.StatusCode >= http.StatusBadRequest {
+		return ResetUserQuotaResult{}, fmt.Errorf("reset user quota failed: %w", decodeAPIError(response.Body, fmt.Sprintf("reset user quota failed with status %d", response.StatusCode)))
+	}
+
+	var body struct {
+		Username           string `json:"username"`
+		UsedBytes          uint64 `json:"used_bytes"`
+		LastResetEpochSecs uint64 `json:"last_reset_epoch_secs"`
+	}
+	if err := decodeSuccessData(response.Body, &body); err != nil {
+		return ResetUserQuotaResult{}, err
+	}
+
+	return ResetUserQuotaResult{
+		Username:           body.Username,
+		UsedBytes:          body.UsedBytes,
+		LastResetEpochSecs: body.LastResetEpochSecs,
+	}, nil
 }
 
 // DeleteClient removes one managed Telemt client from the local Telemt node.
