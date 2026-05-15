@@ -150,6 +150,14 @@ export function useResetQuota(
   const resolversRef = useRef<
     Map<string, (outcome: ResetOutcome) => void>
   >(new Map());
+  // Tracks (jobId, agentId) pairs whose success toast has already
+  // fired. Necessary because TanStack Query intentionally invokes
+  // queryFn twice in React.StrictMode dev mode to surface impurities,
+  // which made processJobs fire the toast twice without this guard.
+  // Production runs are unaffected (queryFn fires once per tick), but
+  // the dedup is cheap and protects against any future retry-on-error
+  // path that could replay the same terminal target.
+  const toastedTargetsRef = useRef<Set<string>>(new Set());
   // Fan-out callers wait on the whole job, not individual targets;
   // store one resolver per active fan-out job so we can hand back the
   // aggregate map once every target is terminal.
@@ -247,6 +255,9 @@ export function useResetQuota(
         if (!w) continue;
         if (w.scope === "agent") {
           for (const a of agentIds) {
+            const key = `${jobId}:${a}`;
+            if (toastedTargetsRef.current.has(key)) continue;
+            toastedTargetsRef.current.add(key);
             onSuccessToast("agent", { agentId: a });
           }
         }
@@ -265,7 +276,11 @@ export function useResetQuota(
         // counting successes recorded in rowStates this tick.
         const succeeded = (successesByJob.get(w.jobId) ?? []).length;
         if (succeeded > 0 && !total) {
-          onSuccessToast("all", { count: succeeded });
+          const key = `${w.jobId}:__all__`;
+          if (!toastedTargetsRef.current.has(key)) {
+            toastedTargetsRef.current.add(key);
+            onSuccessToast("all", { count: succeeded });
+          }
         }
       }
 
