@@ -82,3 +82,45 @@ func TestHTTPRootPathPrefixesAPIRoutesAndEmbeddedUI(t *testing.T) {
 		t.Fatalf("GET /assets/app.js status = %d, want %d", unprefixedAsset.Code, http.StatusNotFound)
 	}
 }
+
+// TestInstallAgentScriptReachableUnderAgentRootPath guards the contract
+// that the install-script URL advertised in createEnrollmentTokenResponse
+// (built via installScriptPanelURL(buildAgentPublicURL(...))) actually
+// resolves to a 200 when agent_root_path is distinct from root_path.
+// Without the outer-mux mirror in routes(), curl <agent_root>/install-
+// agent.sh returns 404 because the inner /install-agent.sh route is only
+// reachable through stripRootPath(panelPath, ...).
+func TestInstallAgentScriptReachableUnderAgentRootPath(t *testing.T) {
+	now := time.Date(2026, time.May, 15, 12, 0, 0, 0, time.UTC)
+	server := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+		PanelRuntime: PanelRuntime{
+			HTTPRootPath:      "/m_APxHhG",
+			AgentHTTPRootPath: "/bi7jXFcP",
+			TLSMode:           "proxy",
+		},
+	})
+	defer server.Close()
+
+	handler := server.Handler()
+
+	panelHit := performRequest(t, handler, http.MethodGet, "/m_APxHhG/install-agent.sh", nil)
+	if panelHit.Code != http.StatusOK {
+		t.Fatalf("GET /m_APxHhG/install-agent.sh status = %d, want %d", panelHit.Code, http.StatusOK)
+	}
+	if got := panelHit.Header().Get("X-Install-Script-SHA256"); got == "" {
+		t.Fatalf("GET /m_APxHhG/install-agent.sh missing X-Install-Script-SHA256 header")
+	}
+
+	agentHit := performRequest(t, handler, http.MethodGet, "/bi7jXFcP/install-agent.sh", nil)
+	if agentHit.Code != http.StatusOK {
+		t.Fatalf("GET /bi7jXFcP/install-agent.sh status = %d, want %d (the URL the enrollment-token panel.url points at)", agentHit.Code, http.StatusOK)
+	}
+	if got := agentHit.Header().Get("X-Install-Script-SHA256"); got == "" {
+		t.Fatalf("GET /bi7jXFcP/install-agent.sh missing X-Install-Script-SHA256 header")
+	}
+	if panelHit.Body.String() != agentHit.Body.String() {
+		t.Fatalf("install-agent.sh body differs between panel and agent paths")
+	}
+}

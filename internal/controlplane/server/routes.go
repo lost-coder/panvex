@@ -274,6 +274,14 @@ func (s *Server) routes() http.Handler {
 			agentAPI.With(s.withRateLimit(s.agentBootstrapRateLimiter, "agent_bootstrap", s.requestClientRateLimitKey)).
 				Post("/agent/recover-certificate", s.handleAgentCertificateRecovery())
 		})
+		// The enrollment-token response advertises the panel install-script as
+		// `<agent_public_url>/install-agent.sh` (buildAgentPublicURL output, see
+		// http_enrollment.go). With a distinct agentPath, that URL would 404
+		// because /install-agent.sh is registered on the inner router and the
+		// outer NotFound only strips panelPath. Mirror the route here so the
+		// generated `curl <agent_root>/install-agent.sh` works end-to-end.
+		outer.With(requestIDMiddleware, s.metricsMiddleware, requestTimeoutMiddleware(defaultRequestTimeout)).
+			Get(agentPath+"/install-agent.sh", s.handleInstallAgentScript())
 		if panelPath != "" {
 			outer.NotFound(stripRootPath(panelPath, router))
 		} else {
