@@ -360,9 +360,11 @@ type ClientUsageSnapshot struct {
 	// increments with every snapshot emitted by the agent. The control-plane
 	// uses it to dedup retried/duplicate deltas and to detect restarts
 	// (seq resets to 1). See P2-LOG-06 / L-07.
-	Seq           uint64 `protobuf:"varint,7,opt,name=seq,proto3" json:"seq,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Seq                uint64 `protobuf:"varint,7,opt,name=seq,proto3" json:"seq,omitempty"`
+	QuotaUsedBytes     uint64 `protobuf:"varint,8,opt,name=quota_used_bytes,json=quotaUsedBytes,proto3" json:"quota_used_bytes,omitempty"`
+	QuotaLastResetUnix uint64 `protobuf:"varint,9,opt,name=quota_last_reset_unix,json=quotaLastResetUnix,proto3" json:"quota_last_reset_unix,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ClientUsageSnapshot) Reset() {
@@ -440,6 +442,20 @@ func (x *ClientUsageSnapshot) GetClientName() string {
 func (x *ClientUsageSnapshot) GetSeq() uint64 {
 	if x != nil {
 		return x.Seq
+	}
+	return 0
+}
+
+func (x *ClientUsageSnapshot) GetQuotaUsedBytes() uint64 {
+	if x != nil {
+		return x.QuotaUsedBytes
+	}
+	return 0
+}
+
+func (x *ClientUsageSnapshot) GetQuotaLastResetUnix() uint64 {
+	if x != nil {
+		return x.QuotaLastResetUnix
 	}
 	return 0
 }
@@ -3764,7 +3780,7 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x12-\n" +
 	"\x12config_fingerprint\x18\x04 \x01(\tR\x11configFingerprint\x12'\n" +
 	"\x0fconnected_users\x18\x05 \x01(\x05R\x0econnectedUsers\x12\x1b\n" +
-	"\tread_only\x18\x06 \x01(\bR\breadOnly\"\x93\x02\n" +
+	"\tread_only\x18\x06 \x01(\bR\breadOnly\"\xf0\x02\n" +
 	"\x13ClientUsageSnapshot\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12.\n" +
 	"\x13traffic_delta_bytes\x18\x02 \x01(\x04R\x11trafficDeltaBytes\x12&\n" +
@@ -3773,7 +3789,9 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\x11active_unique_ips\x18\x05 \x01(\x05R\x0factiveUniqueIps\x12\x1f\n" +
 	"\vclient_name\x18\x06 \x01(\tR\n" +
 	"clientName\x12\x10\n" +
-	"\x03seq\x18\a \x01(\x04R\x03seq\"o\n" +
+	"\x03seq\x18\a \x01(\x04R\x03seq\x12(\n" +
+	"\x10quota_used_bytes\x18\b \x01(\x04R\x0equotaUsedBytes\x121\n" +
+	"\x15quota_last_reset_unix\x18\t \x01(\x04R\x12quotaLastResetUnix\"o\n" +
 	"\x10ClientIPSnapshot\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12\x1d\n" +
 	"\n" +

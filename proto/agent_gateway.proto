@@ -55,6 +55,8 @@ message ClientUsageSnapshot {
   // uses it to dedup retried/duplicate deltas and to detect restarts
   // (seq resets to 1). See P2-LOG-06 / L-07.
   uint64 seq = 7;
+  uint64 quota_used_bytes = 8;
+  uint64 quota_last_reset_unix = 9;
 }
 
 message ClientIPSnapshot {
