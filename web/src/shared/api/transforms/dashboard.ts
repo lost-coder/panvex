@@ -82,12 +82,15 @@ interface AgentRuntimeSnapshot {
   cpu: number;
   mem: number;
   dcCoverage: number;
+  useMiddleProxy: boolean;
 }
 
 // Aggregate runtime stats from both attention items (problem nodes carry full
 // runtime) and server_cards (healthy nodes also have runtime nested under
 // agent.runtime). De-dupe by agent id in case the backend lists the same
-// node in both arrays.
+// node in both arrays. `useMiddleProxy` rides along so the dashboard KPI
+// can exclude Direct nodes (which have no DC fleet → coverage = 0) from
+// the fleet-wide "DC coverage" average.
 function buildRuntimeIndex(
   raw: TelemetryDashboardResponse,
 ): Map<string, AgentRuntimeSnapshot> {
@@ -99,6 +102,7 @@ function buildRuntimeIndex(
       cpu: pct1(r.system_load?.cpu_usage_pct),
       mem: pct1(r.system_load?.memory_usage_pct),
       dcCoverage: pct1(r.dc_coverage_pct),
+      useMiddleProxy: r.use_middle_proxy ?? false,
     });
   }
   for (const card of raw.server_cards ?? []) {
@@ -110,6 +114,7 @@ function buildRuntimeIndex(
       cpu: pct1(r.system_load?.cpu_usage_pct),
       mem: pct1(r.system_load?.memory_usage_pct),
       dcCoverage: pct1(r.dc_coverage_pct),
+      useMiddleProxy: r.use_middle_proxy ?? false,
     });
   }
   return out;
@@ -135,7 +140,12 @@ export function transformDashboardOverview(
     xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : 0;
   const avgCpu = avg(runtimes.map((r) => r.cpu));
   const avgMem = avg(runtimes.map((r) => r.mem));
-  const avgDcCoverage = avg(runtimes.map((r) => r.dcCoverage));
+  // DC coverage is meaningless for Direct-mode nodes (no DC fleet) —
+  // include only ME-mode nodes in the average so a healthy mixed fleet
+  // doesn't paint itself as degraded just because half the agents are
+  // configured as direct relays.
+  const meRuntimes = runtimes.filter((r) => r.useMiddleProxy);
+  const avgDcCoverage = avg(meRuntimes.map((r) => r.dcCoverage));
 
   // Tone drives the value color. Fleet health goes warn/error only when nodes
   // are actually offline or degraded — a healthy fleet stays neutral so the
@@ -150,7 +160,9 @@ export function transformDashboardOverview(
     if (avgCpu >= 70) return "warn";
     return "default";
   })();
+  const hasMeNodes = meRuntimes.length > 0;
   const coverageTone: KpiTone = (() => {
+    if (!hasMeNodes) return "default";
     if (avgDcCoverage < 95) return "error";
     if (avgDcCoverage < 100) return "warn";
     return "ok";
@@ -176,8 +188,10 @@ export function transformDashboardOverview(
     },
     {
       label: "DC coverage",
-      value: `${avgDcCoverage}%`,
-      sub: `${fleet.dc_issue_agents} agent${fleet.dc_issue_agents === 1 ? "" : "s"} with DC issues`,
+      value: hasMeNodes ? `${avgDcCoverage}%` : "n/a",
+      sub: hasMeNodes
+        ? `${fleet.dc_issue_agents} agent${fleet.dc_issue_agents === 1 ? "" : "s"} with DC issues`
+        : "no ME-mode nodes",
       tone: coverageTone,
     },
   ];

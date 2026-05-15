@@ -155,6 +155,68 @@ describe("transformDashboardOverview", () => {
     expect(overview.healthyNodes).toHaveLength(0);
   });
 
+  it("excludes Direct-mode nodes from fleet-wide DC coverage average", () => {
+    const meAgent = makeAgent("a-me", "node-me", {
+      ...baseRuntime,
+      use_middle_proxy: true,
+      dc_coverage_pct: 100,
+    });
+    const directAgent = makeAgent("a-direct", "node-direct", {
+      ...baseRuntime,
+      use_middle_proxy: false,
+      dc_coverage_pct: 0,
+    });
+    const overview = transformDashboardOverview(
+      makeResponse([
+        {
+          agent: meAgent,
+          severity: "ok",
+          reason: "",
+          runtime_freshness: { state: "fresh", observed_at_unix: 0 },
+          detail_boost: { active: false, expires_at_unix: 0, remaining_seconds: 0 },
+          traffic_bytes: 0,
+        },
+        {
+          agent: directAgent,
+          severity: "ok",
+          reason: "",
+          runtime_freshness: { state: "fresh", observed_at_unix: 0 },
+          detail_boost: { active: false, expires_at_unix: 0, remaining_seconds: 0 },
+          traffic_bytes: 0,
+        },
+      ]),
+    );
+    const coverageKpi = overview.kpis.find((k) => k.label === "DC coverage");
+    expect(coverageKpi).toBeDefined();
+    // Without the filter the average would be (100+0)/2 = 50% and the
+    // tone would be "error". With the filter only the ME node counts.
+    expect(coverageKpi?.value).toBe("100%");
+    expect(coverageKpi?.tone).toBe("ok");
+  });
+
+  it("shows 'n/a' for DC coverage when the fleet is all Direct mode", () => {
+    const directAgent = makeAgent("a-direct", "node-direct", {
+      ...baseRuntime,
+      use_middle_proxy: false,
+      dc_coverage_pct: 0,
+    });
+    const overview = transformDashboardOverview(
+      makeResponse([
+        {
+          agent: directAgent,
+          severity: "ok",
+          reason: "",
+          runtime_freshness: { state: "fresh", observed_at_unix: 0 },
+          detail_boost: { active: false, expires_at_unix: 0, remaining_seconds: 0 },
+          traffic_bytes: 0,
+        },
+      ]),
+    );
+    const coverageKpi = overview.kpis.find((k) => k.label === "DC coverage");
+    expect(coverageKpi?.value).toBe("n/a");
+    expect(coverageKpi?.tone).toBe("default");
+  });
+
   it("does not surface healthy stale agents as alerts (severity is still ok)", () => {
     const agent = makeAgent("a-3", "node-stale-2");
     const overview = transformDashboardOverview(
