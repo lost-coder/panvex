@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
@@ -422,5 +423,94 @@ func (s *Server) handleRedeployClient() http.HandlerFunc {
 			"target_agent_ids": deploymentAgentIDsFromResponses(deployments),
 		})
 		writeJSON(w, http.StatusOK, s.buildClientDetailResponse(r.Context(), client, assignments, deployments, false))
+	}
+}
+
+// resetClientQuotaResponse is the wire shape returned by the two
+// reset-quota HTTP routes. `Job` is the freshly-enqueued job — the
+// frontend polls /api/jobs to watch its Targets[i].Status flip and
+// parse Targets[i].ResultJSON (clientResetQuotaJobResult) for typed
+// per-agent reasons (unsupported_telemt / read_only_telemt). `Client`
+// reflects the current detail snapshot so the caller can render the
+// page from the same response.
+type resetClientQuotaResponse struct {
+	Client clientDetailResponse `json:"client"`
+	Job    jobs.Job             `json:"job"`
+}
+
+// handleResetClientQuota fans the client.reset_quota job out to every
+// agent currently hosting the client. Operators hit this when a
+// client's quota counter needs to be cleared everywhere at once (start
+// of a new accounting period, manual quota top-up, etc.).
+func (s *Server) handleResetClientQuota() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		session, _, scope, ok := s.requireClientsAccessWithScope(w, r)
+		if !ok {
+			return
+		}
+
+		clientID := chi.URLParam(r, "id")
+		if clientID == "" {
+			writeError(w, http.StatusBadRequest, msgClientIDRequired)
+			return
+		}
+
+		if !s.ensureClientMutationScope(w, clientID, scope) {
+			return
+		}
+
+		client, assignments, deployments, job, err := s.resetClientQuota(r.Context(), clientID, "", session.UserID, s.now())
+		if !handleClientMutationError(w, err) {
+			return
+		}
+
+		s.logger.Info("client quota reset", "client_id", client.ID, "user_id", session.UserID, "target_agents", job.TargetAgentIDs)
+		s.appendAuditWithContext(r.Context(), session.UserID, "clients.reset_quota", string(client.ID), map[string]any{
+			"target_agent_ids": job.TargetAgentIDs,
+			"job_id":           job.ID,
+		})
+		writeJSON(w, http.StatusOK, resetClientQuotaResponse{
+			Client: s.buildClientDetailResponse(r.Context(), client, assignments, deployments, false),
+			Job:    job,
+		})
+	}
+}
+
+// handleResetClientQuotaOnAgent targets the client.reset_quota job at
+// exactly one agent. Used by the per-deployment Reset affordance on
+// the client detail page — operators can investigate a single
+// misbehaving node without affecting the rest of the fleet.
+func (s *Server) handleResetClientQuotaOnAgent() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		session, _, scope, ok := s.requireClientsAccessWithScope(w, r)
+		if !ok {
+			return
+		}
+
+		clientID := chi.URLParam(r, "id")
+		agentID := chi.URLParam(r, "agent_id")
+		if clientID == "" || agentID == "" {
+			writeError(w, http.StatusBadRequest, "client id and agent id are required")
+			return
+		}
+
+		if !s.ensureClientMutationScope(w, clientID, scope) {
+			return
+		}
+
+		client, assignments, deployments, job, err := s.resetClientQuota(r.Context(), clientID, agentID, session.UserID, s.now())
+		if !handleClientMutationError(w, err) {
+			return
+		}
+
+		s.logger.Info("client quota reset", "client_id", client.ID, "user_id", session.UserID, "agent_id", agentID)
+		s.appendAuditWithContext(r.Context(), session.UserID, "clients.reset_quota", string(client.ID), map[string]any{
+			"agent_id": agentID,
+			"job_id":   job.ID,
+		})
+		writeJSON(w, http.StatusOK, resetClientQuotaResponse{
+			Client: s.buildClientDetailResponse(r.Context(), client, assignments, deployments, false),
+			Job:    job,
+		})
 	}
 }

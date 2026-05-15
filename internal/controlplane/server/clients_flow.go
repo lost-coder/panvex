@@ -315,6 +315,62 @@ func (s *Server) rotateClientSecret(ctx context.Context, clientID, actorID strin
 	return currentClient, assignments, deployments, nil
 }
 
+// resetClientQuota enqueues a client.reset_quota job for one or more
+// agents hosting the given client. When targetAgentID is empty, the
+// job fans out to every currently-assigned agent; otherwise it targets
+// only the one specified agent — caller must have validated that the
+// agent currently hosts the client.
+//
+// Unlike rotate-secret / update / delete this is a counter-reset, not
+// a config mutation, so the panel does NOT persist a new client state
+// before enqueuing. A failed job (e.g. Telemt unreachable) does not
+// leave the panel in an inconsistent state — the operator just sees
+// the failure in the Jobs view and can re-trigger.
+func (s *Server) resetClientQuota(ctx context.Context, clientID, targetAgentID, actorID string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, jobs.Job, error) {
+	observedAt = observedAt.UTC()
+
+	currentClient, assignments, deployments, err := s.clientDetailSnapshot(clientID)
+	if err != nil {
+		return managedClient{}, nil, nil, jobs.Job{}, err
+	}
+	if currentClient.DeletedAt != nil {
+		return managedClient{}, nil, nil, jobs.Job{}, storage.ErrNotFound
+	}
+
+	deploymentAgents := deploymentAgentIDs(deployments)
+	var targetAgentIDs []string
+	if targetAgentID == "" {
+		targetAgentIDs = deploymentAgents
+	} else {
+		// Validate that the requested agent is currently a deployment
+		// target for this client — operators can't reset on agents the
+		// client was never deployed to.
+		matched := false
+		for _, agentID := range deploymentAgents {
+			if agentID == targetAgentID {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return managedClient{}, nil, nil, jobs.Job{}, storage.ErrNotFound
+		}
+		targetAgentIDs = []string{targetAgentID}
+	}
+
+	if len(targetAgentIDs) == 0 {
+		// Nothing to do — no deployments. Return an empty Job so the
+		// caller can render "no agents to reset" without erroring.
+		return currentClient, assignments, deployments, jobs.Job{}, nil
+	}
+
+	job, err := s.enqueueClientResetQuotaJob(ctx, actorID, currentClient, targetAgentIDs, observedAt)
+	if err != nil {
+		return managedClient{}, nil, nil, jobs.Job{}, err
+	}
+	return currentClient, assignments, deployments, job, nil
+}
+
 func (s *Server) deleteClient(ctx context.Context, clientID, actorID string, observedAt time.Time) error {
 	observedAt = observedAt.UTC()
 
