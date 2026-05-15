@@ -70,6 +70,21 @@ type clientDeploymentResponse struct {
 	// endpoint /v1/users/quota does not exist there).
 	QuotaUsedBytes     uint64 `json:"quota_used_bytes"`
 	QuotaLastResetUnix uint64 `json:"quota_last_reset_unix"`
+	// PanelLastResetUnix is the unix-seconds value captured the last
+	// time a panel-driven client.reset_quota job completed
+	// successfully on this (client, agent). Zero means the panel has
+	// never reset this pair. Compared with QuotaLastResetUnix on the
+	// UI to surface reset history and drift (see QuotaResetDrift).
+	PanelLastResetUnix uint64 `json:"panel_last_reset_unix"`
+	// QuotaResetDrift is true when the panel has recorded a more
+	// recent reset than Telemt currently reports — i.e. our reset
+	// job landed but Telemt's persisted state has fallen behind
+	// (Telemt restart before sidecar flush, sidecar wipe, etc.).
+	// The UI uses this to surface "Quota reset did not stick on
+	// {agent}". Both timestamps must be non-zero for the flag to
+	// fire so a not-yet-reported agent (QuotaLastResetUnix == 0)
+	// does not trigger a false positive on first deploy.
+	QuotaResetDrift bool `json:"quota_reset_drift"`
 }
 
 type clientDetailResponse struct {

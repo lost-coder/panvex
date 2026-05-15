@@ -96,6 +96,16 @@ type clientJobResultPayload struct {
 	ConnectionLinks []string `json:"connection_links"`
 }
 
+// clientResetQuotaJobResultPayload mirrors the agent-side
+// clientResetQuotaJobResult JSON (internal/agent/runtime/agent.go). Only
+// the fields the panel acts on are decoded here; the typed-failure flags
+// (unsupported_telemt / read_only_telemt) are inspected at the per-target
+// UI layer via the raw result_json, not by this struct.
+type clientResetQuotaJobResultPayload struct {
+	UsedBytes          uint64 `json:"used_bytes"`
+	LastResetEpochSecs uint64 `json:"last_reset_epoch_secs"`
+}
+
 // aggregatedClientUsage now lives in controlplane/clients as
 // AggregatedUsage. Kept as a server-local alias so existing call sites
 // (HTTP response composition, test assertions) keep compiling until
@@ -514,6 +524,17 @@ func (s *Server) recordClientJobResultWithContext(ctx context.Context, agentID, 
 	if !ok {
 		return
 	}
+
+	// Phase 3 (reset-quota): reset_quota is structurally a client job but
+	// it does NOT change the deployment's desired-state (the client is
+	// already deployed; only the byte counter is reset). Route it through
+	// a slim path that updates LastResetEpochSecs on success without
+	// rewriting DesiredOperation/Status/ConnectionLinks, then persists.
+	if job.Action == jobs.ActionClientResetQuota {
+		s.applyClientResetQuotaResult(ctx, agentID, job, success, resultJSON, observedAt)
+		return
+	}
+
 	if !isClientJobAction(job.Action) {
 		return
 	}
@@ -533,6 +554,70 @@ func (s *Server) recordClientJobResultWithContext(ctx context.Context, agentID, 
 			s.logger.Error("client deployment persistence failed", "client_id", payload.ClientID, "agent_id", agentID, "error", err)
 		}
 	}
+}
+
+// applyClientResetQuotaResult records the panel-side view of a completed
+// client.reset_quota job: on success it extracts last_reset_epoch_secs
+// from the agent's typed result envelope and stamps it onto the
+// (client, agent) deployment row, then write-throughs to storage so the
+// next ClientUsage snapshot can be drift-checked against it. On
+// failure (including the typed unsupported_telemt / read_only_telemt
+// flags) it leaves the deployment row untouched — the per-target
+// reason is already in the Job.Targets[i].ResultJSON the UI reads.
+func (s *Server) applyClientResetQuotaResult(ctx context.Context, agentID string, job jobs.Job, success bool, resultJSON string, observedAt time.Time) {
+	if !success {
+		return
+	}
+	if strings.TrimSpace(resultJSON) == "" {
+		return
+	}
+	var resetPayload clientResetQuotaJobResultPayload
+	if err := json.Unmarshal([]byte(resultJSON), &resetPayload); err != nil || resetPayload.LastResetEpochSecs == 0 {
+		return
+	}
+
+	var payload clientJobPayload
+	if err := json.Unmarshal([]byte(job.PayloadJSON), &payload); err != nil {
+		return
+	}
+
+	deployment, ok := s.recordClientResetQuotaTimestamp(payload.ClientID, agentID, resetPayload.LastResetEpochSecs, observedAt)
+	if !ok {
+		return
+	}
+
+	if s.clientsSvc != nil {
+		if err := s.clientsSvc.PersistDeployment(ctx, deployment); err != nil {
+			s.logger.Error("client deployment persistence failed",
+				"client_id", payload.ClientID, "agent_id", agentID,
+				"action", string(jobs.ActionClientResetQuota), "error", err)
+		}
+	}
+}
+
+// recordClientResetQuotaTimestamp updates the in-memory deployment with
+// the new last-reset timestamp under the clients lock and returns the
+// post-update deployment for persistence. Returns ok=false when the
+// (client, agent) pair is no longer tracked (e.g. the operator
+// unassigned the agent between job enqueue and result).
+func (s *Server) recordClientResetQuotaTimestamp(clientID, agentID string, lastResetEpochSecs uint64, observedAt time.Time) (managedClientDeployment, bool) {
+	s.clientsMu.Lock()
+	defer s.clientsMu.Unlock()
+
+	if _, ok := s.clients[clientID]; !ok {
+		return managedClientDeployment{}, false
+	}
+	deployment, ok := s.clientDeployments[clientID][agentID]
+	if !ok {
+		return managedClientDeployment{}, false
+	}
+	deployment.LastResetEpochSecs = lastResetEpochSecs
+	deployment.UpdatedAt = observedAt.UTC()
+	if s.clientDeployments[clientID] == nil {
+		s.clientDeployments[clientID] = make(map[string]managedClientDeployment)
+	}
+	s.clientDeployments[clientID][agentID] = deployment
+	return deployment, true
 }
 
 func isClientJobAction(action jobs.Action) bool {

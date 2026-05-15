@@ -268,8 +268,70 @@ func (s *Server) applyClientUsageSnapshot(ctx context.Context, agentID string, c
 	applyTrafficDelta := s.shouldApplyClientUsageDelta(agentID, clients)
 
 	seen, toPersist := s.mergeClientUsageBatch(agentID, clients, applyTrafficDelta)
+	// Phase 3 (reset-quota drift): when Telemt's reported quota_last_reset_unix
+	// is ahead of the panel's recorded last_reset_epoch_secs for this
+	// (client, agent), the operator reset out-of-band (e.g. raw
+	// curl against Telemt) and the panel must adopt the newer value so
+	// later ticks don't keep computing the same drift. The reverse
+	// case (panel newer than Telemt) means a reset job we ran did not
+	// stick on Telemt — surfaced at API-response time as a drift flag,
+	// not persisted here.
+	deploymentsToPersist := s.advanceDeploymentsFromTelemtReset(agentID, clients)
 	s.persistClientUsageRecords(ctx, toPersist)
+	s.persistDeploymentsAfterReset(ctx, deploymentsToPersist)
 	s.zeroLiveGaugesForUntouchedClients(agentID, seen)
+}
+
+// advanceDeploymentsFromTelemtReset scans the usage batch and, for each
+// (client, agent) where Telemt's reported quota_last_reset_unix is
+// strictly newer than the panel's recorded last_reset_epoch_secs,
+// updates the in-memory deployment and returns the changed deployments
+// for write-through. Runs under s.clientsMu (held by
+// commitClientSnapshotsLocked).
+func (s *Server) advanceDeploymentsFromTelemtReset(agentID string, clients []clientUsageSnapshot) []managedClientDeployment {
+	if len(clients) == 0 {
+		return nil
+	}
+	var changed []managedClientDeployment
+	for _, usage := range clients {
+		if usage.QuotaLastResetUnix == 0 {
+			continue
+		}
+		clientID := string(usage.ClientID)
+		deployments, ok := s.clientDeployments[clientID]
+		if !ok {
+			continue
+		}
+		deployment, ok := deployments[agentID]
+		if !ok {
+			continue
+		}
+		if usage.QuotaLastResetUnix <= deployment.LastResetEpochSecs {
+			continue
+		}
+		deployment.LastResetEpochSecs = usage.QuotaLastResetUnix
+		deployment.UpdatedAt = usage.ObservedAt.UTC()
+		s.clientDeployments[clientID][agentID] = deployment
+		changed = append(changed, deployment)
+	}
+	return changed
+}
+
+// persistDeploymentsAfterReset write-throughs deployment rows whose
+// last_reset_epoch_secs was bumped to match Telemt. Errors are logged
+// and swallowed — the next snapshot tick will retry. Empty slice is a
+// no-op so the common no-drift path costs nothing extra.
+func (s *Server) persistDeploymentsAfterReset(ctx context.Context, deployments []managedClientDeployment) {
+	if len(deployments) == 0 || s.clientsSvc == nil {
+		return
+	}
+	for _, d := range deployments {
+		if err := s.clientsSvc.PersistDeployment(ctx, d); err != nil {
+			s.logger.Error("client deployment last-reset persistence failed",
+				"client_id", string(d.ClientID), "agent_id", d.AgentID,
+				"last_reset_epoch_secs", d.LastResetEpochSecs, "error", err)
+		}
+	}
 }
 
 // shouldApplyClientUsageDelta evaluates the seq-dedup rules (P2-LOG-06 / L-07)

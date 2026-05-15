@@ -324,6 +324,13 @@ func buildClientDeploymentResponses(deployments []managedClientDeployment, usage
 		// next usage tick lands). Missing keys mean "no traffic on
 		// record for this agent yet" — zero is the correct default.
 		usage := usageByAgent[deployment.AgentID]
+		// Phase 3 drift signal: panel recorded a reset newer than Telemt
+		// currently reports. Both sides must be non-zero — otherwise a
+		// fresh deployment that has not yet reported quota usage would
+		// trip the flag while still mid-deploy.
+		drift := deployment.LastResetEpochSecs > 0 &&
+			usage.QuotaLastResetUnix > 0 &&
+			deployment.LastResetEpochSecs > usage.QuotaLastResetUnix
 		out = append(out, clientDeploymentResponse{
 			AgentID:            deployment.AgentID,
 			DesiredOperation:   deployment.DesiredOperation,
@@ -334,6 +341,8 @@ func buildClientDeploymentResponses(deployments []managedClientDeployment, usage
 			UpdatedAt:          deployment.UpdatedAt.UTC().Unix(),
 			QuotaUsedBytes:     usage.QuotaUsedBytes,
 			QuotaLastResetUnix: usage.QuotaLastResetUnix,
+			PanelLastResetUnix: deployment.LastResetEpochSecs,
+			QuotaResetDrift:    drift,
 		})
 	}
 	return out
