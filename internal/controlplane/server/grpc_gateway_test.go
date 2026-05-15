@@ -858,6 +858,10 @@ func (c *fakeRuntimeReloadClient) FetchDiscoveredUsers(_ context.Context, _ stri
 	return nil, nil
 }
 
+func (c *fakeRuntimeReloadClient) ResetUserQuota(context.Context, string) (telemt.ResetUserQuotaResult, error) {
+	return telemt.ResetUserQuotaResult{}, nil
+}
+
 // ---- In-stream cert renewal tests -----------------------------------------------
 
 // fakeSendSession captures outbound ConnectServerMessages sent by the handler.

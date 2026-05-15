@@ -643,6 +643,10 @@ type fakeTelemtClient struct {
 	createResult            telemt.ClientApplyResult
 	updateResult            telemt.ClientApplyResult
 	invalidateSlowDataCalls int
+	resetQuotaUsername      string
+	resetQuotaCalls         int
+	resetQuotaResult        telemt.ResetUserQuotaResult
+	resetQuotaErr           error
 }
 
 func (c *fakeTelemtClient) FetchRuntimeState(context.Context) (telemt.RuntimeState, error) {
@@ -695,6 +699,15 @@ func (c *fakeTelemtClient) FetchSystemInfo(context.Context) (telemt.SystemInfo, 
 
 func (c *fakeTelemtClient) FetchDiscoveredUsers(_ context.Context, _ string) ([]telemt.DiscoveredUser, error) {
 	return nil, nil
+}
+
+func (c *fakeTelemtClient) ResetUserQuota(_ context.Context, username string) (telemt.ResetUserQuotaResult, error) {
+	c.resetQuotaUsername = username
+	c.resetQuotaCalls++
+	if c.resetQuotaErr != nil {
+		return telemt.ResetUserQuotaResult{}, c.resetQuotaErr
+	}
+	return c.resetQuotaResult, nil
 }
 
 // TestAgentUsageSnapshotSeqIsMonotonic verifies that each BuildUsageSnapshot

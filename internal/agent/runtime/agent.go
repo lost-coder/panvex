@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -19,6 +20,13 @@ import (
 // stay in sync (Sonar S1192).
 const jobActionRotateSecret = "client.rotate_secret"
 
+// jobActionResetQuota is the canonical job-action token for the
+// client.reset_quota rollout. The action is structurally distinct from
+// the other client.* actions because it doesn't carry a ManagedClient
+// payload (only the username) and its Telemt endpoint may be absent on
+// older Telemt builds — see handleClientResetQuotaJob.
+const jobActionResetQuota = "client.reset_quota"
+
 type telemtClient interface {
 	FetchRuntimeState(context.Context) (telemt.RuntimeState, error)
 	FetchClientUsageFromMetrics(context.Context) (telemt.ClientUsageMetricsSnapshot, error)
@@ -29,6 +37,7 @@ type telemtClient interface {
 	CreateClient(context.Context, telemt.ManagedClient) (telemt.ClientApplyResult, error)
 	UpdateClient(context.Context, telemt.ManagedClient) (telemt.ClientApplyResult, error)
 	DeleteClient(context.Context, string) error
+	ResetUserQuota(context.Context, string) (telemt.ResetUserQuotaResult, error)
 	InvalidateSlowDataCache()
 }
 
@@ -668,6 +677,8 @@ func (a *Agent) HandleJob(ctx context.Context, job *gatewayrpc.JobCommand, obser
 		return result
 	case "client.create", "client.update", jobActionRotateSecret, "client.delete":
 		return a.handleClientJob(ctx, job, result)
+	case jobActionResetQuota:
+		return a.handleClientResetQuotaJob(ctx, job, result)
 	case "agent.self-update":
 		return a.handleSelfUpdateJob(ctx, job, result)
 	case "switch_transport_mode":
@@ -813,6 +824,79 @@ func (a *Agent) handleClientDeleteJob(ctx context.Context, payload clientJobPayl
 	result.Message = "client deleted"
 	a.deleteClientName(payload.ClientID)
 	return result
+}
+
+// clientResetQuotaJobPayload is the JSON envelope panel→agent for a
+// client.reset_quota job. Only the Telemt username is needed; the
+// panel resolves it from the client's centrally-stored Name.
+type clientResetQuotaJobPayload struct {
+	ClientID string `json:"client_id"`
+	Name     string `json:"name"`
+}
+
+// clientResetQuotaJobResult is the JSON envelope agent→panel inside
+// JobResult.result_json. UnsupportedTelemt / ReadOnlyTelemt let the
+// panel surface a friendly per-deployment message instead of a generic
+// transport error when the agent's local Telemt cannot honour the
+// reset (older Telemt version, or read-only mode). Both flags are
+// independent of result.Success — when either is true, success stays
+// false and the panel renders the typed reason from the UI.
+type clientResetQuotaJobResult struct {
+	UsedBytes          uint64 `json:"used_bytes"`
+	LastResetEpochSecs uint64 `json:"last_reset_epoch_secs"`
+	UnsupportedTelemt  bool   `json:"unsupported_telemt,omitempty"`
+	ReadOnlyTelemt     bool   `json:"read_only_telemt,omitempty"`
+}
+
+// handleClientResetQuotaJob runs the client.reset_quota action against
+// the local Telemt instance. The two typed errors from the telemt
+// client (ErrResetQuotaUnsupported / ErrResetQuotaReadOnly) surface as
+// flagged failures so the panel UI can show a precise reason instead
+// of a generic transport error. All other failures fall back to the
+// default success=false + message=err.Error() shape so existing
+// observability paths still apply.
+func (a *Agent) handleClientResetQuotaJob(ctx context.Context, job *gatewayrpc.JobCommand, result *gatewayrpc.JobResult) *gatewayrpc.JobResult {
+	var payload clientResetQuotaJobPayload
+	if err := json.Unmarshal([]byte(job.GetPayloadJson()), &payload); err != nil {
+		result.Message = fmt.Sprintf("invalid reset_quota payload: %v", err)
+		return result
+	}
+	if strings.TrimSpace(payload.Name) == "" {
+		result.Message = "invalid reset_quota payload: empty name"
+		return result
+	}
+
+	snapshot, err := a.telemt.ResetUserQuota(ctx, payload.Name)
+	if err != nil {
+		typed := clientResetQuotaJobResult{}
+		switch {
+		case errors.Is(err, telemt.ErrResetQuotaUnsupported):
+			typed.UnsupportedTelemt = true
+		case errors.Is(err, telemt.ErrResetQuotaReadOnly):
+			typed.ReadOnlyTelemt = true
+		}
+		result.Message = err.Error()
+		if typed.UnsupportedTelemt || typed.ReadOnlyTelemt {
+			result.ResultJson = marshalResetQuotaResult(typed)
+		}
+		return result
+	}
+
+	result.Success = true
+	result.Message = "client quota reset"
+	result.ResultJson = marshalResetQuotaResult(clientResetQuotaJobResult{
+		UsedBytes:          snapshot.UsedBytes,
+		LastResetEpochSecs: snapshot.LastResetEpochSecs,
+	})
+	return result
+}
+
+func marshalResetQuotaResult(payload clientResetQuotaJobResult) string {
+	bytes, err := json.Marshal(payload)
+	if err != nil {
+		return ""
+	}
+	return string(bytes)
 }
 
 // handleSelfUpdateJob runs the agent.self-update action.

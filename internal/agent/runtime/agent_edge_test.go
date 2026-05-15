@@ -59,6 +59,9 @@ func (e *errTelemt) DeleteClient(context.Context, string) error {
 	return e.deleteErr
 }
 func (e *errTelemt) InvalidateSlowDataCache() {}
+func (e *errTelemt) ResetUserQuota(context.Context, string) (telemt.ResetUserQuotaResult, error) {
+	return telemt.ResetUserQuotaResult{}, nil
+}
 
 // TestBuildUsageSnapshotPropagatesTelemtError verifies that when Telemt
 // is unreachable the usage path returns the error WITHOUT advancing the
