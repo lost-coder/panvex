@@ -101,13 +101,15 @@ type DiscoveredRecord struct {
 // and accumulates unconditionally, preserving pre-P2-LOG-06 behavior.
 // See Service.ApplyUsageSnapshot for the dedup semantics.
 type UsageSnapshot struct {
-	ClientID         ClientID
-	TrafficUsedBytes uint64
-	UniqueIPsUsed    int
-	ActiveTCPConns   int
-	ActiveUniqueIPs  int
-	ObservedAt       time.Time
-	Seq              uint64
+	ClientID           ClientID  `json:"client_id"`
+	TrafficUsedBytes   uint64    `json:"traffic_used_bytes"`
+	UniqueIPsUsed      int       `json:"unique_ips_used"`
+	ActiveTCPConns     int       `json:"active_tcp_conns"`
+	ActiveUniqueIPs    int       `json:"active_unique_ips"`
+	QuotaUsedBytes     uint64    `json:"quota_used_bytes"`
+	QuotaLastResetUnix uint64    `json:"quota_last_reset_unix"`
+	ObservedAt         time.Time `json:"observed_at"`
+	Seq                uint64    `json:"seq"`
 }
 
 // Usage is the domain-level row type for the (client, agent) traffic

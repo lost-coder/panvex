@@ -341,6 +341,8 @@ func (s *Server) mergeClientUsageBatch(agentID string, clients []clientUsageSnap
 		current.UniqueIPsUsed = usage.UniqueIPsUsed
 		current.ActiveTCPConns = usage.ActiveTCPConns
 		current.ActiveUniqueIPs = usage.ActiveUniqueIPs
+		current.QuotaUsedBytes = usage.QuotaUsedBytes
+		current.QuotaLastResetUnix = usage.QuotaLastResetUnix
 		current.ObservedAt = usage.ObservedAt
 		s.clientUsage[string(usage.ClientID)][agentID] = current
 		s.trackClientUsageOwnerLocked(string(usage.ClientID), agentID)

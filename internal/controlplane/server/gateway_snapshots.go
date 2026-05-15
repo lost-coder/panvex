@@ -79,12 +79,14 @@ func (s *Server) convertClientUsageSnapshots(agentID string, in []*gatewayrpc.Cl
 		}
 		resolved++
 		result = append(result, clientUsageSnapshot{
-			ClientID:         clients.ClientID(clientID),
-			TrafficUsedBytes: client.TrafficDeltaBytes,
-			UniqueIPsUsed:    int(client.UniqueIpsUsed),
-			ActiveTCPConns:   int(client.ActiveTcpConns),
-			ActiveUniqueIPs:  int(client.ActiveUniqueIps),
-			ObservedAt:       observedAt,
+			ClientID:           clients.ClientID(clientID),
+			TrafficUsedBytes:   client.TrafficDeltaBytes,
+			UniqueIPsUsed:      int(client.UniqueIpsUsed),
+			ActiveTCPConns:     int(client.ActiveTcpConns),
+			ActiveUniqueIPs:    int(client.ActiveUniqueIps),
+			QuotaUsedBytes:     client.QuotaUsedBytes,
+			QuotaLastResetUnix: client.QuotaLastResetUnix,
+			ObservedAt:         observedAt,
 			// P2-LOG-06 / L-07: carry the agent-side monotonic snapshot
 			// sequence so the CP can dedup replays/restarts.
 			Seq: client.Seq,

@@ -581,12 +581,14 @@ func (a *Agent) processUsageRowLocked(client telemt.ClientUsage, restarted bool,
 		return nil, false
 	}
 	return &gatewayrpc.ClientUsageSnapshot{
-		ClientId:          clientID,
-		ClientName:        client.ClientName,
-		TrafficDeltaBytes: delta,
-		UniqueIpsUsed:     int32(client.UniqueIPsUsed),
-		ActiveTcpConns:    int32(client.ActiveTCPConns),
-		ActiveUniqueIps:   int32(client.CurrentIPsUsed),
+		ClientId:           clientID,
+		ClientName:         client.ClientName,
+		TrafficDeltaBytes:  delta,
+		UniqueIpsUsed:      int32(client.UniqueIPsUsed),
+		ActiveTcpConns:     int32(client.ActiveTCPConns),
+		ActiveUniqueIps:    int32(client.CurrentIPsUsed),
+		QuotaUsedBytes:     client.QuotaUsedBytes,
+		QuotaLastResetUnix: client.QuotaLastResetUnix,
 	}, true
 }
 
