@@ -100,14 +100,21 @@ export const agentRuntimeSchema = z.object({
   connections_bad_total: z.number(),
   // Telemt 3.4.10 added per-class breakdowns on /v1/stats/summary. The
   // class set is open (e.g. `unknown_tls_sni`, `expected_64_got_0_*`,
-  // `other`), so we accept any string. `.default([])` lets the panel
-  // gracefully handle agents/Telemts that don't emit the breakdown yet.
-  connections_bad_by_class: z
-    .array(z.object({ class: z.string(), total: z.number() }))
-    .default([]),
-  handshake_failures_by_class: z
-    .array(z.object({ class: z.string(), total: z.number() }))
-    .default([]),
+  // `other`), so we accept any string. `connectionClassCountsFromSnapshot`
+  // on the backend deliberately returns a nil slice for the "no
+  // breakdown observed yet" case to keep `null` distinct from `[]`,
+  // which JSON-encodes to `null` on the wire — so `.default([])` alone
+  // is not enough (it only catches *missing* fields). Pre-coerce `null`
+  // and `undefined` to `[]` so a freshly-started agent that hasn't
+  // accumulated any failures yet doesn't fail the whole list parse.
+  connections_bad_by_class: z.preprocess(
+    (v) => v ?? [],
+    z.array(z.object({ class: z.string(), total: z.number() })),
+  ),
+  handshake_failures_by_class: z.preprocess(
+    (v) => v ?? [],
+    z.array(z.object({ class: z.string(), total: z.number() })),
+  ),
   handshake_timeouts_total: z.number(),
   configured_users: z.number(),
   dc_coverage_pct: z.number(),
