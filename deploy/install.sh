@@ -164,6 +164,19 @@ need_cmd() {
   return 0
 }
 
+# Emit a fresh 256-bit key, base64-encoded, no trailing newline. The at-rest
+# vault is mandatory in the control-plane settings layer, so install_panvex
+# falls back to this when the operator did not supply PANVEX_ENCRYPTION_KEY.
+generate_encryption_key() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -base64 32 | tr -d '\n'
+  elif [[ -r /dev/urandom ]]; then
+    head -c 32 /dev/urandom | base64 | tr -d '\n'
+  else
+    die "Cannot generate encryption key: neither openssl nor /dev/urandom available"
+  fi
+}
+
 is_root() { [[ "$(id -u)" -eq 0 ]]; return 0; }
 
 has_systemd() { command -v systemctl >/dev/null 2>&1; return 0; }
@@ -626,22 +639,39 @@ EOF
     success "Config written: $config_file"
   fi
 
-  # Encryption key in separate secrets file
-  if [[ -n "$encryption_key" ]]; then
-    local secrets_file="$config_dir/secrets.env"
-    echo "PANVEX_ENCRYPTION_KEY=${encryption_key}" >"$secrets_file"
+  # Encryption key in separate secrets file. Mandatory: the panel's
+  # at-rest vault (client_secret / totp_secret / webhook_secret) refuses
+  # to boot without it. Resolution order:
+  #   1. preserve an existing secrets.env (upgrade — never silently rotate);
+  #   2. write the operator-supplied PANVEX_ENCRYPTION_KEY;
+  #   3. auto-generate a fresh 256-bit key.
+  local secrets_file="$config_dir/secrets.env"
+  local secrets_action=""
+  if [[ -f "$secrets_file" ]] && grep -q "^PANVEX_ENCRYPTION_KEY=" "$secrets_file"; then
+    secrets_action="kept"
+  elif [[ -f "$secrets_file" ]]; then
+    die "secrets.env exists but lacks PANVEX_ENCRYPTION_KEY — refusing to overwrite. Inspect $secrets_file manually."
+  else
+    if [[ -z "$encryption_key" ]]; then
+      encryption_key=$(generate_encryption_key)
+      secrets_action="generated"
+    else
+      secrets_action="stored"
+    fi
+    (umask 077 && echo "PANVEX_ENCRYPTION_KEY=${encryption_key}" >"$secrets_file")
     chmod 0600 "$secrets_file"
     chown panvex:panvex "$secrets_file"
-    success "Encryption key stored: $secrets_file"
   fi
+  case "$secrets_action" in
+    kept)      info "Encryption key preserved: $secrets_file" ;;
+    generated) success "Encryption key auto-generated: $secrets_file" ;;
+    stored)    success "Encryption key stored: $secrets_file" ;;
+  esac
 
   # ── Systemd service ────────────────────────────────────────────────────
 
   local service_file="/etc/systemd/system/${SERVICE_NAME}.service"
-  local env_file_directive=""
-  if [[ -n "$encryption_key" ]]; then
-    env_file_directive="EnvironmentFile=${config_dir}/secrets.env"
-  fi
+  local env_file_directive="EnvironmentFile=${secrets_file}"
 
   local cap_directive=""
   if [[ "$http_port" -lt 1024 ]] || [[ "$grpc_port" -lt 1024 ]]; then
@@ -776,6 +806,7 @@ UNINSTALL
     "gRPC:" "${host_ip}:${grpc_port}" \
     "Login:" "${admin_user}" \
     "Config:" "${config_file}" \
+    "Secrets:" "${secrets_file} (back up separately)" \
     "Service:" "systemctl status ${SERVICE_NAME}" \
     "Uninstall:" "${uninstall_script}" \
 
@@ -840,7 +871,9 @@ run_interactive() {
   local data_dir="/var/lib/panvex"
   local storage_driver="$STORAGE_SQLITE"
   local storage_dsn=""
-  local encryption_key=""
+  # Encryption key is always provisioned by install_panvex; pre-seed from
+  # env so operators doing HA setup can share one key across panels.
+  local encryption_key="${PANVEX_ENCRYPTION_KEY:-}"
 
   if [[ "$mode" = "Advanced" ]]; then
     version=$(ask "Version (tag or 'latest')" "latest")
@@ -855,11 +888,6 @@ run_interactive() {
     postgres) storage_dsn=$(ask "PostgreSQL DSN" "postgres://panvex:password@127.0.0.1:5432/panvex?sslmode=disable") ;;
     *) die "Unknown storage driver: $storage_driver" ;;
   esac
-
-  if [[ "$mode" = "Advanced" ]] && ask_yesno "Encrypt CA private key at rest?" "n"; then
-    encryption_key=$(ask_password "Encryption passphrase")
-    [[ -n "$encryption_key" ]] || die "Encryption passphrase cannot be empty"
-  fi
 
   # ── 1. TLS ─────────────────────────────────────────────────────────────
   step "1. HTTPS Certificate"
@@ -1043,7 +1071,10 @@ Non-interactive mode (set environment variables):
   PANVEX_TLS_MODE         proxy or direct (default: proxy)
   PANVEX_ADMIN_USER       Admin username (default: admin)
   PANVEX_ADMIN_PASS       Admin password (required)
-  PANVEX_ENCRYPTION_KEY   CA key encryption passphrase (optional)
+  PANVEX_ENCRYPTION_KEY   Master at-rest encryption key. Auto-generated if
+                          unset and stored in <config>/secrets.env. Set
+                          explicitly for HA panels that must share a key.
+                          Losing the key = losing encrypted columns.
   PANVEX_OPEN_FIREWALL    Open ports in firewall: 0 or 1 (default: 0)
   PANVEX_START_NOW        Start service after install: 0 or 1 (default: 1)
   PANVEX_BIN_DIR          Binary directory (default: /usr/local/bin)
