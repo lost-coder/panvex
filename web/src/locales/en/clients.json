@@ -161,7 +161,20 @@
       "usedOfQuota": "Used: {{used}} / {{quota}}",
       "usedNoQuota": "{{used}} used (no quota)",
       "lastReset": "Last reset: {{when}}",
-      "neverReset": "Never reset"
+      "neverReset": "Never reset",
+      "resetButton": "Reset",
+      "resetEverywhereButton": "Reset everywhere",
+      "resetConfirmTitle": "Reset traffic counter?",
+      "resetConfirmBody": "Reset {{client}} quota on {{agent}}? Current usage: {{used}}.",
+      "resetConfirmBodyAll": "Reset {{client}} quota on all {{count}} server(s)? Total usage: {{used}}.",
+      "resetConfirmAction": "Reset",
+      "resetCancel": "Cancel",
+      "resetting": "Resetting…",
+      "resetSuccess": "Quota reset on {{agent}}",
+      "resetSuccessAll": "Quota reset on {{count}} server(s)",
+      "resetUnsupported": "Reset unavailable on this node (Telemt < 3.4.6)",
+      "resetReadOnly": "Telemt is in read-only mode on this node",
+      "resetFailed": "Reset failed: {{error}}"
     }
   },
   "pulseDetail": {

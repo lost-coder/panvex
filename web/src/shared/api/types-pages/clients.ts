@@ -1,5 +1,10 @@
 import type { FleetGroupOption, UserLinks, ViewMode } from "./common";
 import type { ClientAgentOption, ClientFormData } from "./client-form";
+// Reset-quota Phase 2: imported via the @/features path so the
+// public ClientDetailPageProps stays expressively typed for the
+// container without forcing every consumer to also import the hook
+// file. The feature still owns the type; this is a one-way contract.
+import type { ResetOutcome } from "@/features/clients/hooks/useResetQuota";
 
 // --- Clients ---
 
@@ -130,4 +135,20 @@ export interface ClientDetailPageProps {
    * /api/agents. Missing ids fall back to the UUID.
    */
   agentLabels?: Record<string, string> | undefined;
+  /**
+   * Reset-quota Phase 2 callback set. The container wires
+   * `onResetQuota` to a per-agent confirm dialog + mutation pipeline;
+   * passing `undefined` disables the affordance (viewer role).
+   * `resetStates` carries the in-flight or terminal outcome for each
+   * agent the operator has acted on; the cell pulls its state from
+   * here so the parent stays the single source of truth. The "Reset
+   * everywhere" header button is wired separately via
+   * `onResetQuotaEverywhere`, surfaced only when there are ≥2
+   * deployments.
+   */
+  onResetQuota?: ((agentId: string) => void) | undefined;
+  resetStates?: Record<string, ResetOutcome> | undefined;
+  onDismissResetState?: ((agentId: string) => void) | undefined;
+  onResetQuotaEverywhere?: (() => void) | undefined;
+  resetEverywherePending?: boolean | undefined;
 }

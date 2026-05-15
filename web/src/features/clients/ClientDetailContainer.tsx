@@ -1,16 +1,19 @@
-import { useState, useEffect, useMemo } from "react";
+import { useCallback, useRef, useState, useEffect, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Spinner } from "@/ui";
+import { Spinner, formatBytes } from "@/ui";
 import { ClientDetailPage } from "@/features/clients/ClientDetailPage";
 import { useClientDetail } from "./hooks/useClientDetail";
 import { useClientMutations } from "./hooks/useClientMutations";
 import { useClientIPHistory } from "./hooks/useClientIPHistory";
+import { useResetQuota } from "./hooks/useResetQuota";
 import { clientsKeys } from "@/features/clients/queryKeys";
 import { useFleetGroups } from "@/features/servers/hooks/useFleetGroups";
 import { agentsKeys } from "@/features/servers/queryKeys";
 import { useNavigate, useParams } from "@tanstack/react-router";
+import { useAuth } from "@/app/providers/AuthProvider";
 import { useConfirm } from "@/app/providers/ConfirmProvider";
+import { useToast } from "@/app/providers/ToastProvider";
 import { apiClient } from "@/shared/api/api";
 import { buildClientInput } from "@/shared/api/transforms/clients";
 
@@ -22,8 +25,40 @@ export function ClientDetailContainer() {
   const { ips, totalUnique } = useClientIPHistory(clientId ?? "");
   const navigate = useNavigate();
   const confirm = useConfirm();
+  const toast = useToast();
+  const { user } = useAuth();
   const qc = useQueryClient();
   const [secretPending, setSecretPending] = useState(false);
+
+  // Reset-quota Phase 2: only operators+admins can fire the reset.
+  // Viewers see the cell but the button is hidden — the backend also
+  // denies them with 403, but hiding the affordance keeps the UI
+  // honest about what the user can actually do.
+  const canResetQuota = user?.role === "operator" || user?.role === "admin";
+
+  // useResetQuota owns the job-poll state machine and per-row outcome
+  // map; the container provides the toast callback so i18n strings
+  // stay co-located with the page.
+  const agentLabelLookupRef = useRef<Record<string, string>>({});
+  const onResetSuccessToast = useCallback(
+    (scope: "agent" | "all", payload: { agentId?: string; count?: number }) => {
+      if (scope === "agent") {
+        const id = payload.agentId ?? "";
+        const label = agentLabelLookupRef.current[id] ?? id;
+        toast.success(t("detail.quota.resetSuccess", { agent: label }));
+        return;
+      }
+      toast.success(t("detail.quota.resetSuccessAll", { count: payload.count ?? 0 }));
+    },
+    [toast, t, agentLabelLookupRef],
+  );
+  const {
+    rowStates,
+    fanOutPending,
+    resetOnAgent,
+    resetEverywhere,
+    clearRow,
+  } = useResetQuota(clientId ?? "", onResetSuccessToast);
 
   // Toggling `enabled` is a PUT /clients/:id with the full ClientInput,
   // so we fan it out here rather than adding another branch to
@@ -44,6 +79,15 @@ export function ClientDetailContainer() {
     }
     return map;
   }, [agentsQuery.data]);
+  // Keep the latest label lookup on a ref so the reset-success toast
+  // callback can resolve agent_id → node_name without re-binding the
+  // callback (and therefore the hook) on every render. useEffect keeps
+  // the lint rule happy ("Cannot access refs during render"); the
+  // toast callback only reads the ref inside an async handler so the
+  // one-render lag is invisible to the user.
+  useEffect(() => {
+    agentLabelLookupRef.current = agentLabels;
+  }, [agentLabels]);
   const agentOptions = useMemo(
     () =>
       (agentsQuery.data ?? []).map((a) => ({
@@ -188,6 +232,74 @@ export function ClientDetailContainer() {
       }}
       ipHistory={ips.length > 0 ? { ips, totalUnique } : undefined}
       agentLabels={agentLabels}
+      onResetQuota={
+        canResetQuota
+          ? async (agentId: string) => {
+              const deployment = client.deployments.find(
+                (d) => d.agentId === agentId,
+              );
+              const agentLabel = agentLabels[agentId] ?? agentId;
+              const usedLabel = formatBytes(deployment?.quotaUsedBytes ?? 0);
+              const ok = await confirm({
+                title: t("detail.quota.resetConfirmTitle"),
+                body: t("detail.quota.resetConfirmBody", {
+                  client: client.name,
+                  agent: agentLabel,
+                  used: usedLabel,
+                }),
+                confirmLabel: t("detail.quota.resetConfirmAction"),
+                cancelLabel: t("detail.quota.resetCancel"),
+              });
+              if (!ok) return;
+              try {
+                await resetOnAgent(agentId);
+              } catch (err) {
+                // Mutation onError already populated rowStates with
+                // the failure — catch here just suppresses the
+                // unhandled-promise warning when the operator backs
+                // out via a follow-up confirm.
+                if (err instanceof Error) {
+                  // dev-only triage; production drops via
+                  // notifyMutationError elsewhere
+                  console.debug("resetOnAgent failed", err.message);
+                }
+              }
+            }
+          : undefined
+      }
+      resetStates={rowStates}
+      onDismissResetState={clearRow}
+      onResetQuotaEverywhere={
+        canResetQuota
+          ? async () => {
+              const agentIds = client.deployments.map((d) => d.agentId);
+              if (agentIds.length === 0) return;
+              const totalUsed = client.deployments.reduce(
+                (sum, d) => sum + (d.quotaUsedBytes || 0),
+                0,
+              );
+              const ok = await confirm({
+                title: t("detail.quota.resetConfirmTitle"),
+                body: t("detail.quota.resetConfirmBodyAll", {
+                  client: client.name,
+                  count: agentIds.length,
+                  used: formatBytes(totalUsed),
+                }),
+                confirmLabel: t("detail.quota.resetConfirmAction"),
+                cancelLabel: t("detail.quota.resetCancel"),
+              });
+              if (!ok) return;
+              try {
+                await resetEverywhere(agentIds);
+              } catch (err) {
+                if (err instanceof Error) {
+                  console.debug("resetEverywhere failed", err.message);
+                }
+              }
+            }
+          : undefined
+      }
+      resetEverywherePending={fanOutPending}
     />
   );
 }

@@ -57,6 +57,11 @@ export function ClientDetailPage({
   onDelete,
   ipHistory,
   agentLabels,
+  onResetQuota,
+  resetStates,
+  onDismissResetState,
+  onResetQuotaEverywhere,
+  resetEverywherePending,
 }: Readonly<ClientDetailPageProps>) {
   const { t } = useTranslation("clients");
   // Expose "Redeploy" as a prominent action whenever at least one
@@ -100,6 +105,9 @@ export function ClientDetailPage({
       secretPendingRedeploy={secretPendingRedeploy}
       agentLabels={agentLabels}
       dataQuotaBytes={client.dataQuotaBytes}
+      onResetQuota={onResetQuota}
+      resetStates={resetStates}
+      onDismissResetState={onDismissResetState}
     />
   );
   const ipHistoryCard = (
@@ -126,6 +134,13 @@ export function ClientDetailPage({
         onRedeploy={onRedeploy}
         redeploying={redeploying}
         onDelete={onDelete}
+        onResetQuotaEverywhere={
+          // Hide the affordance for single-deployment clients —
+          // there's no fan-out semantic and the per-row Reset already
+          // covers the same intent.
+          client.deployments.length >= 2 ? onResetQuotaEverywhere : undefined
+        }
+        resetEverywherePending={resetEverywherePending}
       />
 
       <div className="px-4 md:px-8 flex flex-col gap-6 pb-8 pt-6">

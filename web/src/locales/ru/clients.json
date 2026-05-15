@@ -163,7 +163,20 @@
       "usedOfQuota": "Использовано: {{used}} / {{quota}}",
       "usedNoQuota": "{{used}} использовано (без лимита)",
       "lastReset": "Последний сброс: {{when}}",
-      "neverReset": "Сброса не было"
+      "neverReset": "Сброса не было",
+      "resetButton": "Сбросить",
+      "resetEverywhereButton": "Сбросить везде",
+      "resetConfirmTitle": "Сбросить счётчик трафика?",
+      "resetConfirmBody": "Сбросить квоту {{client}} на {{agent}}? Сейчас использовано: {{used}}.",
+      "resetConfirmBodyAll": "Сбросить квоту {{client}} на всех {{count}} серверах? Всего использовано: {{used}}.",
+      "resetConfirmAction": "Сбросить",
+      "resetCancel": "Отмена",
+      "resetting": "Сбрасываем…",
+      "resetSuccess": "Квота сброшена на {{agent}}",
+      "resetSuccessAll": "Квота сброшена на {{count}} серверах",
+      "resetUnsupported": "Сброс недоступен на этой ноде (Telemt < 3.4.6)",
+      "resetReadOnly": "Telemt в режиме read-only на этой ноде",
+      "resetFailed": "Сброс не удался: {{error}}"
     }
   },
   "pulseDetail": {

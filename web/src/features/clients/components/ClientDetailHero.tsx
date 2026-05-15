@@ -37,6 +37,13 @@ export interface ClientDetailHeroProps {
   onRedeploy?: (() => void) | undefined;
   redeploying?: boolean | undefined;
   onDelete?: (() => void) | undefined;
+  /**
+   * Reset-quota Phase 2: shown only when there are ≥2 deployments
+   * (single-deployment clients use the per-row affordance directly).
+   * Disabled while a fan-out job is in flight to prevent a double-fire.
+   */
+  onResetQuotaEverywhere?: (() => void) | undefined;
+  resetEverywherePending?: boolean | undefined;
 }
 
 export function ClientDetailHero({
@@ -52,6 +59,8 @@ export function ClientDetailHero({
   onRedeploy,
   redeploying,
   onDelete,
+  onResetQuotaEverywhere,
+  resetEverywherePending,
 }: Readonly<ClientDetailHeroProps>) {
   const { t } = useTranslation("clients");
   const actions = (
@@ -76,6 +85,18 @@ export function ClientDetailHero({
           title={t("detail.actions.redeployTitle")}
         >
           {redeploying ? t("detail.actions.redeploying") : t("detail.actions.redeploy")}
+        </Button>
+      )}
+      {onResetQuotaEverywhere && (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onResetQuotaEverywhere}
+          disabled={resetEverywherePending}
+        >
+          {resetEverywherePending
+            ? t("detail.quota.resetting")
+            : t("detail.quota.resetEverywhereButton")}
         </Button>
       )}
       {onDelete && (
