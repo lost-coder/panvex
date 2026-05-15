@@ -1,4 +1,5 @@
 import { api, apiBasePath, encodeRequest } from "./http";
+import type { Job } from "./jobs";
 import {
   adoptDiscoveredClientResponseSchema,
   bulkAdoptDiscoveredRequestSchema,
@@ -10,6 +11,7 @@ import {
   clientMutationRequestSchema,
   clientSchema,
   discoveredClientListSchema,
+  resetQuotaResponseSchema,
 } from "./schemas";
 
 export type ClientListItem = {
@@ -160,6 +162,18 @@ export type BulkClientResponse = {
   failed: BulkClientFailure[];
 };
 
+/**
+ * Reset-quota Phase 2 wire shape: backend enqueues the reset job and
+ * replies with the refreshed client detail plus the new Job. Callers
+ * watch `job.id` until each target's status reaches a terminal value
+ * (`succeeded` / `failed` / `expired`) and then parse `result_json` for
+ * the typed unsupported / read-only / success payload.
+ */
+export type ResetQuotaResponse = {
+  client: Client;
+  job: Job;
+};
+
 export const clientsApi = {
   // R-Q-20: Zod parse on every response that carries a body.
   clients: () => api<ClientListItem[]>(`${apiBasePath}/clients`, undefined, clientListSchema),
@@ -257,6 +271,31 @@ export const clientsApi = {
         ),
       },
       bulkClientResponseSchema,
+    ),
+  /**
+   * Reset-quota Phase 2 — fan-out variant. Resets the per-agent quota
+   * counter on every agent currently hosting the client. The backend
+   * enqueues one `reset_client_quota` job spanning all targets and
+   * returns immediately; the caller watches `result.job.id` against
+   * /api/jobs to surface per-target outcome.
+   */
+  resetClientQuotaFanOut: (clientID: string) =>
+    api<ResetQuotaResponse>(
+      `${apiBasePath}/clients/${clientID}/reset-quota`,
+      { method: "POST" },
+      resetQuotaResponseSchema,
+    ),
+  /**
+   * Reset-quota Phase 2 — single-agent variant. Same job pipeline as
+   * the fan-out, scoped to one node. Useful when only one deployment
+   * is misbehaving and the operator wants to avoid touching counters
+   * on the rest of the fleet.
+   */
+  resetClientQuotaOnAgent: (clientID: string, agentID: string) =>
+    api<ResetQuotaResponse>(
+      `${apiBasePath}/clients/${clientID}/reset-quota/${agentID}`,
+      { method: "POST" },
+      resetQuotaResponseSchema,
     ),
   clientIPHistory: (clientID: string, from?: string, to?: string) => {
     const params = new URLSearchParams();

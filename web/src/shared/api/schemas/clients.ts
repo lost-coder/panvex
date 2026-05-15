@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+import { clientSchema } from "./client.ts";
+import { jobSchema } from "./jobs.ts";
+
 /**
  * R-Q-20: Zod schemas for the clients / discovered-clients endpoints
  * that were not covered by the existing schemas/client.ts file.
@@ -59,7 +62,21 @@ export const bulkClientResponseSchema = z.object({
   failed: z.array(bulkClientFailureSchema),
 });
 
+/**
+ * Reset-quota Phase 2 response. The backend enqueues a job and returns
+ * the refreshed client detail alongside the freshly created Job. Frontend
+ * keeps a reference to the job so it can poll /api/jobs until the
+ * per-target status reaches a terminal value, then drives per-row UX
+ * (toast on success, inline message on unsupported/read-only/generic
+ * failure) from the Job.Targets payload.
+ */
+export const resetQuotaResponseSchema = z.object({
+  client: clientSchema,
+  job: jobSchema,
+});
+
 export type AdoptDiscoveredClientResponseParsed = z.infer<typeof adoptDiscoveredClientResponseSchema>;
 export type BulkAdoptDiscoveredResponseParsed = z.infer<typeof bulkAdoptDiscoveredResponseSchema>;
 export type ClientIPHistoryResponseParsed = z.infer<typeof clientIPHistoryResponseSchema>;
 export type BulkClientResponseParsed = z.infer<typeof bulkClientResponseSchema>;
+export type ResetQuotaResponseParsed = z.infer<typeof resetQuotaResponseSchema>;

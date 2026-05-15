@@ -43,6 +43,7 @@ export type {
   ClientListItem,
   DiscoveredClient,
   DiscoveredClientConflict,
+  ResetQuotaResponse,
 } from "./clients";
 export type {
   Agent,
