@@ -16,6 +16,14 @@ const clientDeploymentSchema = z.object({
   // schema parse stays green and the UI can decide how to render zero.
   quota_used_bytes: z.number().default(0),
   quota_last_reset_unix: z.number().default(0),
+  // Phase 3 of the reset-quota plan: panel's record of the last
+  // successful reset for this (client, agent), plus a drift flag
+  // computed server-side when the panel's record is newer than what
+  // Telemt currently reports (reset job succeeded but Telemt's
+  // persisted state has fallen behind). Both default to 0 / false so
+  // older backends still produce parseable rows.
+  panel_last_reset_unix: z.number().default(0),
+  quota_reset_drift: z.boolean().default(false),
 });
 
 /**

@@ -174,7 +174,18 @@
       "resetSuccessAll": "Quota reset on {{count}} server(s)",
       "resetUnsupported": "Reset unavailable on this node (Telemt < 3.4.6)",
       "resetReadOnly": "Telemt is in read-only mode on this node",
-      "resetFailed": "Reset failed: {{error}}"
+      "resetFailed": "Reset failed: {{error}}",
+      "driftWarning": "Reset did not stick on Telemt",
+      "panelLastReset": "Panel reset: {{when}}",
+      "history": {
+        "heading": "Reset history",
+        "loading": "Loading reset history…",
+        "empty": "No quota resets recorded yet",
+        "rowSingle": "Reset on {{agent}}",
+        "rowFanout": "Reset across {{count}} server(s)",
+        "rowSingleAgentLabel": "{{agent}}",
+        "by": "by {{actor}}"
+      }
     }
   },
   "pulseDetail": {

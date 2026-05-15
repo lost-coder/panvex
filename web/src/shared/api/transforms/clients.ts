@@ -106,6 +106,12 @@ export function transformClientDetail(
       // wire is observably "0" by the time it reaches the UI.
       quotaUsedBytes: d.quota_used_bytes ?? 0,
       quotaLastResetUnix: d.quota_last_reset_unix ?? 0,
+      // Reset-quota Phase 3: panel-recorded last reset + drift flag
+      // surfaced when the panel believes a reset happened but Telemt
+      // is still reporting an older timestamp. Default both to safe
+      // zero / false so older-backend responses parse cleanly.
+      panelLastResetUnix: d.panel_last_reset_unix ?? 0,
+      quotaResetDrift: d.quota_reset_drift ?? false,
     })),
   };
 }

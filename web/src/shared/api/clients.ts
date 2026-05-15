@@ -40,6 +40,14 @@ export type ClientDeployment = {
   // path defaults missing values to 0 (see schemas/client.ts).
   quota_used_bytes?: number | undefined;
   quota_last_reset_unix?: number | undefined;
+  // Phase 3 of the reset-quota plan. panel_last_reset_unix is the
+  // panel's record of the last successful reset for this pair, and
+  // quota_reset_drift is true when the panel's record is newer than
+  // Telemt's reported quota_last_reset_unix (the reset job succeeded
+  // but Telemt's persisted state has fallen behind). Optional for
+  // wire-compat with older backends.
+  panel_last_reset_unix?: number | undefined;
+  quota_reset_drift?: boolean | undefined;
 };
 
 export type Client = {

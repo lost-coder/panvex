@@ -1,8 +1,24 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, type RenderOptions } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactElement, ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ClientDetailPageProps } from "@/shared/api/types-pages/pages";
 import { ClientDetailPage } from "./ClientDetailPage";
+
+// Phase 3 added a `ResetQuotaHistory` Fold to ClientDetailPage that
+// pulls /api/audit via tanstack-react-query. The page must be rendered
+// inside a QueryClientProvider for that hook to mount — wrap every
+// render here so existing smoke-tests stay green.
+function renderWithClient(ui: ReactElement, options?: RenderOptions) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  function Wrapper({ children }: { children: ReactNode }) {
+    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  }
+  return render(ui, { wrapper: Wrapper, ...options });
+}
 
 // Q5.U-Q-13: smoke-tests for the ClientDetailPage container. Even a
 // minimal "renders without throwing + surfaces basic identity fields"
@@ -41,25 +57,25 @@ function makeProps(
 
 describe("ClientDetailPage", () => {
   it("renders the client name in the page", () => {
-    render(<ClientDetailPage {...makeProps({ name: "client-renders" })} />);
+    renderWithClient(<ClientDetailPage {...makeProps({ name: "client-renders" })} />);
     expect(screen.getAllByText("client-renders").length).toBeGreaterThan(0);
   });
 
   it("renders the page shell without throwing on empty deployments", () => {
-    const { container } = render(<ClientDetailPage {...makeProps()} />);
+    const { container } = renderWithClient(<ClientDetailPage {...makeProps()} />);
     expect(container.querySelectorAll("section").length).toBeGreaterThan(0);
   });
 
   it("does not crash when the optional ip-history is omitted", () => {
     expect(() =>
-      render(<ClientDetailPage {...makeProps()} />),
+      renderWithClient(<ClientDetailPage {...makeProps()} />),
     ).not.toThrow();
   });
 
   it("renders the Redeploy action when at least one deployment is not yet succeeded", () => {
     const onRedeploy = vi.fn();
     for (const status of ["failed", "queued"] as const) {
-      const { unmount } = render(
+      const { unmount } = renderWithClient(
         <ClientDetailPage
           {...makeProps({
             deployments: [
@@ -72,6 +88,8 @@ describe("ClientDetailPage", () => {
                 lastAppliedAtUnix: 0,
                 quotaUsedBytes: 0,
                 quotaLastResetUnix: 0,
+                panelLastResetUnix: 0,
+                quotaResetDrift: false,
               },
             ],
           })}
@@ -84,7 +102,7 @@ describe("ClientDetailPage", () => {
   });
 
   it("hides the Redeploy action when every deployment has succeeded", () => {
-    render(
+    renderWithClient(
       <ClientDetailPage
         {...makeProps({
           deployments: [
@@ -97,6 +115,8 @@ describe("ClientDetailPage", () => {
               lastAppliedAtUnix: 0,
               quotaUsedBytes: 0,
               quotaLastResetUnix: 0,
+              panelLastResetUnix: 0,
+              quotaResetDrift: false,
             },
           ],
         })}

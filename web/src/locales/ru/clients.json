@@ -176,7 +176,18 @@
       "resetSuccessAll": "Квота сброшена на {{count}} серверах",
       "resetUnsupported": "Сброс недоступен на этой ноде (Telemt < 3.4.6)",
       "resetReadOnly": "Telemt в режиме read-only на этой ноде",
-      "resetFailed": "Сброс не удался: {{error}}"
+      "resetFailed": "Сброс не удался: {{error}}",
+      "driftWarning": "Сброс не закрепился в Telemt",
+      "panelLastReset": "Сброс с панели: {{when}}",
+      "history": {
+        "heading": "История сбросов",
+        "loading": "Загружаем историю сбросов…",
+        "empty": "Сбросов квоты ещё не было",
+        "rowSingle": "Сброс на {{agent}}",
+        "rowFanout": "Сброс на {{count}} серверах",
+        "rowSingleAgentLabel": "{{agent}}",
+        "by": "от {{actor}}"
+      }
     }
   },
   "pulseDetail": {

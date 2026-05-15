@@ -35,6 +35,16 @@ interface QuotaCellProps {
   state?: ResetOutcome | undefined;
   /** Optional inline-dismiss for failure messages. */
   onDismiss?: (() => void) | undefined;
+  /**
+   * Reset-quota Phase 3: panel-recorded last reset timestamp + drift
+   * flag (true when the panel believes a reset landed but Telemt's
+   * reported `quotaLastResetUnix` is still older). When drift is
+   * true the cell surfaces a warning badge so the operator can
+   * re-run the reset. Both default to 0 / false so older backend
+   * responses render unchanged.
+   */
+  panelLastResetUnix?: number | undefined;
+  quotaResetDrift?: boolean | undefined;
 }
 
 /**
@@ -60,6 +70,8 @@ function QuotaCell({
   onReset,
   state,
   onDismiss,
+  panelLastResetUnix = 0,
+  quotaResetDrift = false,
 }: Readonly<QuotaCellProps>) {
   const { t } = useTranslation("clients");
   const hasQuota = dataQuotaBytes > 0;
@@ -67,6 +79,13 @@ function QuotaCell({
     quotaLastResetUnix > 0
       ? t("detail.quota.lastReset", { when: formatAge(quotaLastResetUnix) })
       : t("detail.quota.neverReset");
+  const panelLabel =
+    panelLastResetUnix > 0
+      ? t("detail.quota.panelLastReset", { when: formatAge(panelLastResetUnix) })
+      : "";
+  const driftBadge = quotaResetDrift ? (
+    <Badge variant="warn">{t("detail.quota.driftWarning")}</Badge>
+  ) : null;
 
   // Inline reset affordance (Phase 2). Pulled out so both the
   // quota-configured and no-quota branches can render the same control
@@ -77,9 +96,9 @@ function QuotaCell({
   const resetControl = renderResetControl({ t, onReset, state, onDismiss });
 
   if (!hasQuota) {
-    if (quotaUsedBytes <= 0 && !resetControl) {
+    if (quotaUsedBytes <= 0 && !resetControl && !driftBadge) {
       // Visually quieter option: collapse to em-dash when neither
-      // quota nor used-bytes have any signal.
+      // quota, used-bytes nor a drift signal have any signal.
       return <span className="text-[11px] font-mono text-fg-muted">—</span>;
     }
     return (
@@ -91,7 +110,11 @@ function QuotaCell({
               : "—"}
           </span>
           {resetControl}
+          {driftBadge}
         </div>
+        {panelLabel && (
+          <div className="text-[10px] font-mono text-fg-muted">{panelLabel}</div>
+        )}
       </div>
     );
   }
@@ -109,6 +132,7 @@ function QuotaCell({
           />
         </div>
         {resetControl}
+        {driftBadge}
       </div>
       <div className="text-[11px] font-mono text-fg-muted tabular-nums">
         {t("detail.quota.usedOfQuota", {
@@ -117,6 +141,9 @@ function QuotaCell({
         })}
       </div>
       <div className="text-[10px] font-mono text-fg-muted">{resetLabel}</div>
+      {panelLabel && (
+        <div className="text-[10px] font-mono text-fg-muted">{panelLabel}</div>
+      )}
     </div>
   );
 }
@@ -342,6 +369,8 @@ export function DeployLinksCard({
                   onDismiss={
                     onDismissResetState ? () => onDismissResetState(d.agentId) : undefined
                   }
+                  panelLastResetUnix={d.panelLastResetUnix}
+                  quotaResetDrift={d.quotaResetDrift}
                 />
               </div>
               <LinksStrip links={d.links} />

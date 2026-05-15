@@ -32,6 +32,8 @@ function makeDeployment(
     lastAppliedAtUnix: 0,
     quotaUsedBytes: 0,
     quotaLastResetUnix: 0,
+    panelLastResetUnix: 0,
+    quotaResetDrift: false,
     ...overrides,
   };
 }

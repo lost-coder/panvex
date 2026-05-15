@@ -72,6 +72,21 @@ export interface ClientDeploymentData {
    * relative age via `formatAge` and falls back to "Never reset".
    */
   quotaLastResetUnix: number;
+  /**
+   * Reset-quota Phase 3: unix epoch of the last panel-driven reset
+   * captured from the agent's reset-quota job result. 0 means the
+   * panel has never reset this pair (or the backend predates Phase
+   * 3 / is still mid-rollout).
+   */
+  panelLastResetUnix: number;
+  /**
+   * Reset-quota Phase 3: true when the panel has recorded a more
+   * recent reset than Telemt currently reports — the reset job
+   * landed but Telemt's persisted state has fallen behind. UI uses
+   * this to surface a per-deployment warning so the operator can
+   * re-run the reset.
+   */
+  quotaResetDrift: boolean;
 }
 
 export interface ClientDetailPageProps {

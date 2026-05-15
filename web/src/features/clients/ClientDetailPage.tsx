@@ -13,6 +13,7 @@ import { ClientEditSheet } from "./components/ClientEditSheet";
 import { DeployLinksCard } from "./components/DeployLinksCard";
 import { IPHistoryCard } from "./components/IPHistoryCard";
 import { LimitsCard } from "./components/LimitsCard";
+import { ResetQuotaHistory } from "./components/ResetQuotaHistory";
 import { SecretSection } from "./components/SecretSection";
 import { clientStatus } from "./components/clientDetailHelpers";
 import {
@@ -114,6 +115,12 @@ export function ClientDetailPage({
     <IPHistoryCard ips={ipHistory?.ips ?? []} totalUnique={ipHistory?.totalUnique ?? 0} />
   );
   const limitsCard = <LimitsCard client={client} />;
+  // Phase 3: collapsed history of reset_quota audit events for this
+  // client. Self-hides when there are zero rows so the section stays
+  // out of the way until the operator actually resets.
+  const resetHistoryCard = (
+    <ResetQuotaHistory clientId={client.id} agentLabels={agentLabels} />
+  );
 
   return (
     <>
@@ -156,6 +163,7 @@ export function ClientDetailPage({
               { id: "limits", label: t("detail.tabs.limits"), content: limitsCard },
             ]}
           />
+          {resetHistoryCard}
         </div>
 
         {/* Desktop: stacked sections in reading order. */}
@@ -164,6 +172,7 @@ export function ClientDetailPage({
           {deployLinks}
           {ipHistoryCard}
           {limitsCard}
+          {resetHistoryCard}
         </div>
       </div>
 
