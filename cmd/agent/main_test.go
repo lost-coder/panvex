@@ -914,6 +914,10 @@ func (c *fakeInitialSyncTelemtClient) FetchDiscoveredUsers(context.Context, stri
 
 func (c *fakeInitialSyncTelemtClient) InvalidateSlowDataCache() {}
 
+func (c *fakeInitialSyncTelemtClient) ResetUserQuota(context.Context, string) (telemt.ResetUserQuotaResult, error) {
+	return telemt.ResetUserQuotaResult{}, nil
+}
+
 type fakeDiagnosticsRefreshTelemtClient struct {
 	state                     telemt.RuntimeState
 	invalidateSlowDataCalls   int
@@ -961,6 +965,10 @@ func (c *fakeDiagnosticsRefreshTelemtClient) FetchDiscoveredUsers(context.Contex
 
 func (c *fakeDiagnosticsRefreshTelemtClient) InvalidateSlowDataCache() {
 	c.invalidateSlowDataCalls++
+}
+
+func (c *fakeDiagnosticsRefreshTelemtClient) ResetUserQuota(context.Context, string) (telemt.ResetUserQuotaResult, error) {
+	return telemt.ResetUserQuotaResult{}, nil
 }
 
 func (r *fakeCertificateRenewer) RenewCertificate(_ context.Context, request *gatewayrpc.RenewCertificateRequest, _ ...grpc.CallOption) (*gatewayrpc.RenewCertificateResponse, error) {

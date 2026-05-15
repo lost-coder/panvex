@@ -38,6 +38,9 @@ func (failingTelemt) UpdateClient(context.Context, telemt.ManagedClient) (telemt
 }
 func (failingTelemt) DeleteClient(context.Context, string) error { return nil }
 func (failingTelemt) InvalidateSlowDataCache()                   {}
+func (failingTelemt) ResetUserQuota(context.Context, string) (telemt.ResetUserQuotaResult, error) {
+	return telemt.ResetUserQuotaResult{}, nil
+}
 
 func TestRuntimePollEmitsUnreachableAfterThreshold(t *testing.T) {
 	agent := runtime.New(runtime.Config{AgentID: "agent-1", NodeName: "n"}, failingTelemt{})
@@ -158,3 +161,6 @@ func (r *recoveringTelemt) UpdateClient(context.Context, telemt.ManagedClient) (
 }
 func (r *recoveringTelemt) DeleteClient(context.Context, string) error { return nil }
 func (r *recoveringTelemt) InvalidateSlowDataCache()                   {}
+func (r *recoveringTelemt) ResetUserQuota(context.Context, string) (telemt.ResetUserQuotaResult, error) {
+	return telemt.ResetUserQuotaResult{}, nil
+}
