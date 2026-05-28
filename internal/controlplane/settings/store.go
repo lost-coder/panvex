@@ -391,7 +391,7 @@ func (s *OperationalStore) CaptureActive() *ActiveSnapshot {
 }
 
 // PendingChanges returns the names of operational fields whose live
-// value differs from `active` AND that are declared restart=true.
+// value differs from `active` AND that are declared apply=restart.
 func (s *OperationalStore) PendingChanges(active *ActiveSnapshot) []string {
 	if active == nil {
 		return nil
@@ -402,7 +402,7 @@ func (s *OperationalStore) PendingChanges(active *ActiveSnapshot) []string {
 	}
 	var out []string
 	for _, f := range AllFields() {
-		if f.Class != ClassOperational || !f.Restart {
+		if f.Class != ClassOperational || f.Apply != ApplyRestart {
 			continue
 		}
 		if live.values[f.Name] != active.values[f.Name] {

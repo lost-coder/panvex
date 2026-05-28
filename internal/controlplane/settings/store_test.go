@@ -134,6 +134,28 @@ func TestOperationalStore_PutValidates(t *testing.T) {
 	}
 }
 
+func TestPendingChangesUsesApplyTier(t *testing.T) {
+	r := &fakeReader{panel: map[string]string{}, runtime: map[string]string{}}
+	s := NewOperationalStore(r)
+	// Seed the cached snapshot with a restart-tier and a live-tier field.
+	s.cache.Store(&snapshot{values: map[string]string{
+		"auth.session_idle_timeout": "30m",
+		"http.public_url":           "https://a.example",
+	}})
+	active := s.CaptureActive()
+
+	// Mutate BOTH fields in the live cache.
+	s.cache.Store(&snapshot{values: map[string]string{
+		"auth.session_idle_timeout": "45m",
+		"http.public_url":           "https://b.example",
+	}})
+
+	got := s.PendingChanges(active)
+	if len(got) != 1 || got[0] != "auth.session_idle_timeout" {
+		t.Fatalf("PendingChanges = %v, want only [auth.session_idle_timeout]", got)
+	}
+}
+
 func TestOperationalStore_DurationGettersFallBackToDefault(t *testing.T) {
 	r := &fakeReader{panel: map[string]string{}, runtime: map[string]string{}}
 	s := NewOperationalStore(r)
