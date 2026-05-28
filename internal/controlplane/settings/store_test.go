@@ -170,6 +170,24 @@ func TestOperationalStore_DurationGettersFallBackToDefault(t *testing.T) {
 	}
 }
 
+func TestReloadTracksSource(t *testing.T) {
+	r := &fakeReader{panel: map[string]string{}, runtime: map[string]string{}}
+	r.panel["http_public_url"] = "https://set.example"
+	s := NewOperationalStore(r)
+	if err := s.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Source("http.public_url"); got != SourceDB {
+		t.Errorf("Source(http.public_url) = %q, want %q", got, SourceDB)
+	}
+	if got := s.Source("grpc.public_endpoint"); got != SourceDefault {
+		t.Errorf("Source(grpc.public_endpoint) = %q, want %q", got, SourceDefault)
+	}
+	if s.OverriddenByEnv("http.public_url") {
+		t.Errorf("OverriddenByEnv(http.public_url) = true, want false")
+	}
+}
+
 func TestOperationalStore_DurationGettersUseStoredValue(t *testing.T) {
 	r := &fakeReader{
 		panel:   map[string]string{},

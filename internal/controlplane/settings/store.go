@@ -26,9 +26,11 @@ type StoreWriter interface {
 
 // snapshot is the immutable view returned by getters.
 type snapshot struct {
-	values    map[string]string // setting name -> raw scalar value (JSON for json type)
-	updatedAt map[string]time.Time
-	updatedBy map[string]string
+	values     map[string]string // setting name -> raw scalar value (JSON for json type)
+	updatedAt  map[string]time.Time
+	updatedBy  map[string]string
+	sources    map[string]Source // setting name -> resolved source
+	overridden map[string]bool   // setting name -> true when env override applied
 }
 
 // OperationalStore exposes typed getters and (later) batch writers
@@ -37,8 +39,15 @@ type OperationalStore struct {
 	reader StoreReader
 	writer StoreWriter // optional; used by Phase 7 PUT handler
 
+	env map[string]string // optional read-time env overrides; nil disables
+
 	cache atomic.Pointer[snapshot]
 }
+
+// UseEnv enables read-time env overrides from the given environment
+// ("KEY=VALUE", e.g. os.Environ()). Call once during wiring; nil/unset
+// disables env override.
+func (s *OperationalStore) UseEnv(environ []string) { s.env = envSliceToMap(environ) }
 
 // NewOperationalStore wraps a reader; pass NewOperationalStoreRW when
 // writes are also needed.
@@ -60,6 +69,8 @@ func (s *OperationalStore) Reload(ctx context.Context) error {
 	values := map[string]string{}
 	updated := map[string]time.Time{}
 	by := map[string]string{}
+	sources := map[string]Source{}
+	overridden := map[string]bool{}
 
 	for _, f := range AllFields() {
 		if f.Class != ClassOperational {
@@ -69,17 +80,30 @@ func (s *OperationalStore) Reload(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("settings: reload %s: %w", f.Name, err)
 		}
-		if !ok && f.HasDefault {
+		switch {
+		case ok:
+			values[f.Name] = raw
+			sources[f.Name] = SourceDB
+		case f.HasDefault:
 			values[f.Name] = f.Default
-			continue
-		}
-		if !ok {
+			sources[f.Name] = SourceDefault
+		default:
 			values[f.Name] = ""
-			continue
+			sources[f.Name] = SourceDefault
 		}
-		values[f.Name] = raw
+		if envVal, hit := envOverrideValue(f, s.env); hit {
+			values[f.Name] = envVal
+			sources[f.Name] = SourceEnv
+			overridden[f.Name] = true
+		}
 	}
-	s.cache.Store(&snapshot{values: values, updatedAt: updated, updatedBy: by})
+	s.cache.Store(&snapshot{
+		values:     values,
+		updatedAt:  updated,
+		updatedBy:  by,
+		sources:    sources,
+		overridden: overridden,
+	})
 	return nil
 }
 
@@ -152,6 +176,29 @@ func (s *OperationalStore) rawByName(name string) string {
 // Returns "" when the store is empty.
 func (s *OperationalStore) RawByName(name string) string {
 	return s.rawByName(name)
+}
+
+// Source reports the resolved provenance of the named setting in the
+// current snapshot. Unknown / unloaded fields report SourceDefault.
+func (s *OperationalStore) Source(name string) Source {
+	snap := s.cache.Load()
+	if snap == nil || snap.sources == nil {
+		return SourceDefault
+	}
+	if src, ok := snap.sources[name]; ok {
+		return src
+	}
+	return SourceDefault
+}
+
+// OverriddenByEnv reports whether the named setting's value in the
+// current snapshot comes from a read-time env override.
+func (s *OperationalStore) OverriddenByEnv(name string) bool {
+	snap := s.cache.Load()
+	if snap == nil || snap.overridden == nil {
+		return false
+	}
+	return snap.overridden[name]
 }
 
 // --- typed getters (one per operational field) ---
