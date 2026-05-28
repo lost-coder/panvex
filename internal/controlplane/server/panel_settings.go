@@ -266,9 +266,20 @@ func (s *Server) restoreUpdateSettings() error {
 }
 
 func (s *Server) panelSettingsSnapshot() PanelSettings {
+	// Store-backed path is authoritative: every consumer (enrollment URL
+	// builders, auth password policy) reads the live OperationalStore, so a
+	// value saved through EITHER /api/settings/values or /api/settings/panel
+	// is reflected immediately. The legacy s.panelSettings struct is only the
+	// fallback when no store is wired (test fixtures).
+	if s.settings != nil {
+		return normalizePanelSettings(PanelSettings{
+			HTTPPublicURL:      s.settings.HTTPPublicURL(),
+			GRPCPublicEndpoint: s.settings.GRPCPublicEndpoint(),
+			PasswordMinLength:  int32(s.settings.PasswordMinLength()), //nolint:gosec // bounded 8–128 in registry
+		})
+	}
 	s.settingsMu.RLock()
 	defer s.settingsMu.RUnlock()
-
 	return s.panelSettings
 }
 
