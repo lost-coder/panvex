@@ -642,6 +642,19 @@ func (s *Service) Restore(ctx context.Context) error {
 	s.mirrorLastUsageSeq = make(map[string]uint64)
 
 	for _, c := range list {
+		// The Repository always stores the secret encrypted
+		// (secret_ciphertext / PVS2:). Save/SaveState keep the plaintext
+		// in the mirror, so the handler-facing mirror must hold plaintext
+		// here too — otherwise every client-apply job built after a
+		// restart ships the ciphertext to telemt, which rejects it
+		// ("secret must be exactly 32 hex characters"). decryptSecret is a
+		// no-op for plaintext/dev installs and reverses encryptSecret.
+		// decryptSecretFully also heals any row a pre-fix save double-wrapped.
+		plaintext, err := s.decryptSecretFully(c.Secret)
+		if err != nil {
+			return fmt.Errorf("clients.Service.Restore: decrypt secret for %s: %w", c.ID, err)
+		}
+		c.Secret = plaintext
 		s.mirrorClients[c.ID] = c
 
 		assigns, err := s.repo.ListAssignments(ctx, c.ID)
@@ -735,6 +748,15 @@ func (s *Service) encryptSecret(plaintext string) (string, error) {
 	if s.vault == nil || !s.vault.Enabled() || plaintext == "" {
 		return plaintext, nil
 	}
+	// Idempotency guard: never re-encrypt a value that already carries a
+	// vault prefix. A valid 32-hex client secret can never look encrypted,
+	// so a prefixed input means a ciphertext leaked into a save path (e.g.
+	// a pre-decrypt-on-load mirror that still held ciphertext). Encrypting
+	// it again would double-wrap the secret and corrupt the row — exactly
+	// the failure that shipped PVS2: ciphertext to telemt.
+	if secretvault.IsEncrypted(plaintext) {
+		return plaintext, nil
+	}
 	ct, err := s.vault.Encrypt(secretvault.DomainClientSecret, plaintext)
 	if err != nil {
 		return "", fmt.Errorf("encryptSecret: %w", err)
@@ -753,6 +775,33 @@ func (s *Service) decryptSecret(ciphertext string) (string, error) {
 		return "", fmt.Errorf("decryptSecret: %w", err)
 	}
 	return pt, nil
+}
+
+// decryptSecretFully reverses encryptSecret and additionally heals rows
+// that an earlier bug double-wrapped: a save that ran while the in-memory
+// mirror still held ciphertext re-encrypted it (PVS2:PVS2:…). A correct
+// secret decrypts to a plaintext that no longer carries a vault prefix,
+// so a single-encrypted value stops after one pass; a double-wrapped one
+// needs two. Bounded so genuinely corrupt data fails loudly via the
+// final decrypt error rather than spinning.
+func (s *Service) decryptSecretFully(value string) (string, error) {
+	const maxLayers = 4
+	out := value
+	for range maxLayers {
+		if s.vault == nil || !s.vault.Enabled() || !secretvault.IsEncrypted(out) {
+			return out, nil
+		}
+		pt, err := s.decryptSecret(out)
+		if err != nil {
+			return "", err
+		}
+		if pt == out {
+			// Defensive: decrypt made no progress; avoid an infinite loop.
+			return out, nil
+		}
+		out = pt
+	}
+	return out, nil
 }
 
 // Save persists the client (encrypted) via the Repository inside a UoW
