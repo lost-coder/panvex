@@ -53,6 +53,12 @@ type InstallCommandHandler struct {
 	panelURL   string
 	listenAddr string
 	now        func() time.Time
+
+	// scriptURLFn / panelURLFn, when non-nil, are evaluated PER REQUEST
+	// and take precedence over scriptURL / panelURL. See the matching
+	// config fields.
+	scriptURLFn func(*http.Request) string
+	panelURLFn  func(*http.Request) string
 }
 
 // InstallCommandConfig groups the non-DB inputs to the handler so callers
@@ -72,6 +78,14 @@ type InstallCommandConfig struct {
 	PanelURL   string // gRPC endpoint (host:port) agents dial when switching back to inbound mode
 	ListenAddr string // agent-side listen addr; "" → defaultListenAddr
 	Now        func() time.Time // injectable clock; nil → time.Now
+
+	// ScriptURLFn / PanelURLFn, when non-nil, are evaluated PER REQUEST and
+	// take precedence over the static ScriptURL / PanelURL. Used by the
+	// server to derive both from the live panel settings so a saved
+	// http.public_url / grpc.public_endpoint change takes effect without a
+	// restart. Static strings remain the fallback (and the test path).
+	ScriptURLFn func(*http.Request) string
+	PanelURLFn  func(*http.Request) string
 }
 
 // NewInstallCommandHandler constructs a handler using the provided queries and
@@ -98,9 +112,11 @@ func NewInstallCommandHandler(q Queries, cfg InstallCommandConfig) *InstallComma
 		scriptHash: cfg.ScriptHash,
 		panelCAPin: cfg.PanelCAPin,
 		panelCN:    cfg.PanelCN,
-		panelURL:   cfg.PanelURL,
-		listenAddr: listen,
-		now:        now,
+		panelURL:    cfg.PanelURL,
+		listenAddr:  listen,
+		now:         now,
+		scriptURLFn: cfg.ScriptURLFn,
+		panelURLFn:  cfg.PanelURLFn,
 	}
 }
 
@@ -109,7 +125,19 @@ func (h *InstallCommandHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 		http.Error(w, "install-command endpoint not configured", http.StatusServiceUnavailable)
 		return
 	}
-	if h.panelURL == "" {
+
+	// Resolve the script + panel-gRPC URLs. When the *Fn resolvers are set
+	// (production wiring) they read the live panel settings per request;
+	// otherwise the static config strings apply (unit-test path).
+	scriptURL := h.scriptURL
+	if h.scriptURLFn != nil {
+		scriptURL = h.scriptURLFn(r)
+	}
+	panelURL := h.panelURL
+	if h.panelURLFn != nil {
+		panelURL = h.panelURLFn(r)
+	}
+	if panelURL == "" {
 		http.Error(w, "install-command endpoint not configured: panel_url not set", http.StatusServiceUnavailable)
 		return
 	}
@@ -149,14 +177,14 @@ func (h *InstallCommandHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 	}
 
 	cmd := BuildInstallCommand(InstallCommandInput{
-		ScriptURL:  h.scriptURL,
+		ScriptURL:  scriptURL,
 		ScriptHash: h.scriptHash,
 		Token:      issued.Raw,
 		AgentID:    agentID,
 		ListenAddr: h.listenAddr,
 		PanelCAPin: h.panelCAPin,
 		PanelCN:    h.panelCN,
-		PanelURL:   h.panelURL,
+		PanelURL:   panelURL,
 	})
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(InstallCommandResponse{

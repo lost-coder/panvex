@@ -161,6 +161,45 @@ func TestBuildInstallCommand_LegacyWhenHashEmpty(t *testing.T) {
 	}
 }
 
+// TestInstallCommandHandlerUsesResolverFns pins Plan 4: when ScriptURLFn /
+// PanelURLFn are set they are evaluated PER REQUEST and take precedence over
+// the static ScriptURL / PanelURL, so the server can derive both from the
+// live panel settings without a restart.
+func TestInstallCommandHandlerUsesResolverFns(t *testing.T) {
+	fake := &fakeInstallQueries{rows: map[string]dbsqlc.GetAgentTransportRow{
+		"agent-1": {ID: "agent-1", TransportMode: "outbound", DialAddress: sql.NullString{String: "vps:8443", Valid: true}},
+	}}
+	h := NewInstallCommandHandler(fake, InstallCommandConfig{
+		// Static strings are intentionally distinct from the Fn values so a
+		// failure to prefer the resolvers shows up as the static value leaking.
+		ScriptURL:   "https://static.example/install-agent.sh",
+		PanelURL:    "static.example:8443",
+		ScriptURLFn: func(*http.Request) string { return "https://live.example/install-agent.sh" },
+		PanelURLFn:  func(*http.Request) string { return "live.example:8443" },
+		PanelCAPin:  "pin",
+		PanelCN:     "cn",
+	})
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/agents/agent-1/install-command", nil)
+	rec := httptest.NewRecorder()
+	newInstallTestRouter(h).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp InstallCommandResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !strings.Contains(resp.Command, "https://live.example/install-agent.sh") {
+		t.Errorf("command missing live script URL: %s", resp.Command)
+	}
+	if !strings.Contains(resp.Command, "--panel-url-grpc=live.example:8443") {
+		t.Errorf("command missing live panel gRPC URL: %s", resp.Command)
+	}
+	if strings.Contains(resp.Command, "static.example") {
+		t.Errorf("command leaked static URL despite resolver Fns: %s", resp.Command)
+	}
+}
+
 func TestInstallCommandRejectsInboundAgent(t *testing.T) {
 	fake := &fakeInstallQueries{rows: map[string]dbsqlc.GetAgentTransportRow{
 		"agent-2": {ID: "agent-2", TransportMode: "inbound"},
