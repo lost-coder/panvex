@@ -527,7 +527,7 @@ func (s *Server) buildAgentUpdatePayload(assets agentUpdateAssets, checksum stri
 		"download_via_panel": downloadViaPanel,
 	}
 	if downloadViaPanel {
-		panelURL := s.panelSettings.HTTPPublicURL
+		panelURL := s.panelSettingsSnapshot().HTTPPublicURL
 		if panelURL == "" {
 			panelURL = "http://" + requestHost
 		}
