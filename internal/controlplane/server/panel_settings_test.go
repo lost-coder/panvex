@@ -20,3 +20,17 @@ func TestPanelSettingsSnapshotReadsLiveStore(t *testing.T) {
 		t.Fatalf("panelSettingsSnapshot().HTTPPublicURL = %q, want %q", got, "https://changed.example")
 	}
 }
+
+// TestPublicURLChangeReachesAgentURL is the end-to-end regression: a public_url
+// saved via the store must reach the agent install URL builder.
+func TestPublicURLChangeReachesAgentURL(t *testing.T) {
+	srv := testServerWithSQLite(t, time.Date(2026, time.May, 28, 10, 0, 0, 0, time.UTC))
+	ctx := context.Background()
+	if err := srv.settings.Put(ctx, map[string]string{"http.public_url": "https://newpanel.example"}, "test"); err != nil {
+		t.Fatalf("Put error = %v", err)
+	}
+	got := buildAgentPublicURL(srv.panelSettingsSnapshot(), srv.panelRuntime, nil, "", "")
+	if got != "https://newpanel.example" {
+		t.Fatalf("buildAgentPublicURL = %q, want %q", got, "https://newpanel.example")
+	}
+}
