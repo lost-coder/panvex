@@ -376,6 +376,36 @@ func (s *OperationalStore) Put(ctx context.Context, updates map[string]string, w
 	return s.Reload(ctx)
 }
 
+// SeedDefaults writes the first-boot seed (env > config.toml) into the
+// store for every operational field that has a seed source and no value
+// currently stored. Registry defaults are left implicit. Idempotent.
+func (s *OperationalStore) SeedDefaults(ctx context.Context, in LoaderInput) error {
+	if s.writer == nil {
+		return fmt.Errorf("settings: SeedDefaults requires a writer")
+	}
+	env := envSliceToMap(in.Env)
+	tomlVals, err := loadTOMLValues(in.ConfigPath)
+	if err != nil {
+		return fmt.Errorf("settings: SeedDefaults: %w", err)
+	}
+	updates := map[string]string{}
+	for _, f := range AllFields() {
+		if f.Class != ClassOperational {
+			continue
+		}
+		if _, ok, _ := s.read(ctx, f); ok {
+			continue
+		}
+		if v, _, seed := seedValue(f, env, tomlVals); seed {
+			updates[f.Name] = v
+		}
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+	return s.Put(ctx, updates, "seed:firstboot")
+}
+
 func encodeRuntimeJSON(t Type, raw string) (string, error) {
 	switch t {
 	case TypeString, TypeEnum, TypeURL, TypeHostPort:

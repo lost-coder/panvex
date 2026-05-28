@@ -58,7 +58,10 @@ func TestOperationalStore_LoadFromMixedSources(t *testing.T) {
 	}
 }
 
-type fakeWriter struct{ r *fakeReader }
+type fakeWriter struct {
+	r      *fakeReader
+	writes int
+}
 
 func newFakeWriter(r *fakeReader) *fakeWriter { return &fakeWriter{r: r} }
 
@@ -67,6 +70,7 @@ func (w *fakeWriter) WritePanelColumn(_ context.Context, col, raw, _ string) err
 		w.r.panel = map[string]string{}
 	}
 	w.r.panel[col] = raw
+	w.writes++
 	return nil
 }
 func (w *fakeWriter) WriteRuntimeSetting(_ context.Context, name, valueJSON, _ string) error {
@@ -74,6 +78,7 @@ func (w *fakeWriter) WriteRuntimeSetting(_ context.Context, name, valueJSON, _ s
 		w.r.runtime = map[string]string{}
 	}
 	w.r.runtime[name] = valueJSON
+	w.writes++
 	return nil
 }
 
@@ -167,6 +172,31 @@ func TestOperationalStore_DurationGettersFallBackToDefault(t *testing.T) {
 	}
 	if got := s.AuthPasswordLockoutMaxAttempts(); got != 5 {
 		t.Errorf("got %d, want 5 default", got)
+	}
+}
+
+func TestSeedDefaultsNoOpWithoutSeedSources(t *testing.T) {
+	r := &fakeReader{panel: map[string]string{}, runtime: map[string]string{}}
+	w := newFakeWriter(r)
+	s := NewOperationalStoreRW(r, w)
+	if err := s.SeedDefaults(context.Background(), LoaderInput{Env: []string{"PANVEX_HTTP_ADDR=:9090"}}); err != nil {
+		t.Fatal(err)
+	}
+	if w.writes != 0 {
+		t.Errorf("writes = %d, want 0", w.writes)
+	}
+}
+
+func TestSeedDefaultsSkipsAlreadyStored(t *testing.T) {
+	r := &fakeReader{panel: map[string]string{}, runtime: map[string]string{}}
+	r.panel["http_public_url"] = "https://already.example"
+	w := newFakeWriter(r)
+	s := NewOperationalStoreRW(r, w)
+	if err := s.SeedDefaults(context.Background(), LoaderInput{}); err != nil {
+		t.Fatal(err)
+	}
+	if w.writes != 0 {
+		t.Errorf("writes = %d, want 0", w.writes)
 	}
 }
 
