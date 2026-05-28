@@ -21,6 +21,29 @@ const (
 	SourceDefault    Source = "default"
 )
 
+// ApplyTier declares how a setting change takes effect.
+type ApplyTier string
+
+const (
+	// ApplyLive takes effect immediately when saved.
+	ApplyLive ApplyTier = "live"
+	// ApplyRestart is persisted immediately but applied only after a panel restart.
+	ApplyRestart ApplyTier = "restart"
+	// ApplyConfig is managed via env / config.toml / the settings CLI only;
+	// never written through the panel API (e.g. storage DSN, encryption key).
+	ApplyConfig ApplyTier = "config"
+)
+
+// Valid reports whether t is one of the three known tiers.
+func (t ApplyTier) Valid() bool {
+	switch t {
+	case ApplyLive, ApplyRestart, ApplyConfig:
+		return true
+	default:
+		return false
+	}
+}
+
 // Type names the value type carried by a registered field.
 type Type string
 

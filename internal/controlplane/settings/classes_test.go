@@ -19,6 +19,17 @@ func TestSourceConstants(t *testing.T) {
 	}
 }
 
+func TestApplyTierValid(t *testing.T) {
+	for _, tier := range []ApplyTier{ApplyLive, ApplyRestart, ApplyConfig} {
+		if !tier.Valid() {
+			t.Errorf("%q.Valid() = false, want true", tier)
+		}
+	}
+	if ApplyTier("bogus").Valid() {
+		t.Error(`ApplyTier("bogus").Valid() = true, want false`)
+	}
+}
+
 func TestTypeConstants(t *testing.T) {
 	got := []Type{TypeInt, TypeDuration, TypeString, TypeBool, TypeHostPort, TypeURL, TypeEnum, TypeJSON}
 	seen := map[Type]bool{}
