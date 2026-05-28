@@ -74,6 +74,50 @@ func TestRegistry_AllNamesGloballyUnique(t *testing.T) {
 	}
 }
 
+func TestEveryFieldHasValidApplyTier(t *testing.T) {
+	for _, f := range AllFields() {
+		if f.Apply == "" {
+			t.Errorf("%s: missing apply tier", f.Name)
+			continue
+		}
+		if !f.Apply.Valid() {
+			t.Errorf("%s: invalid apply tier %q", f.Name, f.Apply)
+		}
+	}
+}
+
+func TestSessionTimeoutsAreRestartTier(t *testing.T) {
+	byName := map[string]FieldMeta{}
+	for _, f := range AllFields() {
+		byName[f.Name] = f
+	}
+	for _, name := range []string{"auth.session_idle_timeout", "auth.session_max_lifetime"} {
+		f, ok := byName[name]
+		if !ok {
+			t.Fatalf("%s not found in registry", name)
+		}
+		if f.Apply != ApplyRestart {
+			t.Errorf("%s: apply = %q, want %q", name, f.Apply, ApplyRestart)
+		}
+	}
+}
+
+func TestCriticalKeysAreConfigTier(t *testing.T) {
+	byName := map[string]FieldMeta{}
+	for _, f := range AllFields() {
+		byName[f.Name] = f
+	}
+	for _, name := range []string{"storage.dsn", "auth.encryption_key"} {
+		f, ok := byName[name]
+		if !ok {
+			t.Fatalf("%s not found in registry", name)
+		}
+		if f.Apply != ApplyConfig {
+			t.Errorf("%s: apply = %q, want %q", name, f.Apply, ApplyConfig)
+		}
+	}
+}
+
 func TestRegistry_OperationalCountAfterAudit(t *testing.T) {
 	fields, _ := walkRegistry(reflect.TypeOf(Operational{}), ClassOperational)
 	if len(fields) < 27 {

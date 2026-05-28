@@ -382,7 +382,6 @@
     "min": "5m",
     "max": "12h",
     "store": "runtime_settings",
-    "restart": true,
     "desc": "Session expires after this period of inactivity. Restart required."
   },
   {
@@ -393,7 +392,6 @@
     "min": "1h",
     "max": "168h",
     "store": "runtime_settings",
-    "restart": true,
     "desc": "Absolute maximum session lifetime before re-authentication. Restart required."
   },
   {
