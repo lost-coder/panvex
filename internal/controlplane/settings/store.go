@@ -45,8 +45,12 @@ type OperationalStore struct {
 }
 
 // UseEnv enables read-time env overrides from the given environment
-// ("KEY=VALUE", e.g. os.Environ()). Call once during wiring; nil/unset
-// disables env override.
+// ("KEY=VALUE", e.g. os.Environ()). nil/unset disables env override.
+//
+// Concurrency: call exactly once during wiring, before the store is
+// shared with goroutines that call Reload/getters. s.env is read by
+// Reload without synchronisation, so calling UseEnv after the store is
+// in concurrent use is a data race.
 func (s *OperationalStore) UseEnv(environ []string) { s.env = envSliceToMap(environ) }
 
 // NewOperationalStore wraps a reader; pass NewOperationalStoreRW when
@@ -389,6 +393,9 @@ func (s *OperationalStore) SeedDefaults(ctx context.Context, in LoaderInput) err
 		return fmt.Errorf("settings: SeedDefaults: %w", err)
 	}
 	updates := map[string]string{}
+	// Note: this read-check pass plus Put's own Reload means each
+	// operational field is read twice on a seeding boot. Negligible at
+	// the current field count; revisit if the registry grows large.
 	for _, f := range AllFields() {
 		if f.Class != ClassOperational {
 			continue

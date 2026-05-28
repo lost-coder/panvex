@@ -187,7 +187,11 @@ func TestSeedDefaultsNoOpWithoutSeedSources(t *testing.T) {
 	}
 }
 
-func TestSeedDefaultsSkipsAlreadyStored(t *testing.T) {
+// TestSeedDefaultsIdempotentNoOp verifies SeedDefaults writes nothing
+// when there are no operational seed sources, even if a value is already
+// stored. The skip-already-stored guard itself is only meaningfully
+// exercised once Plan 3 adds operational fields with env/toml seeds.
+func TestSeedDefaultsIdempotentNoOp(t *testing.T) {
 	r := &fakeReader{panel: map[string]string{}, runtime: map[string]string{}}
 	r.panel["http_public_url"] = "https://already.example"
 	w := newFakeWriter(r)
