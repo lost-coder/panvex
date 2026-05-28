@@ -333,7 +333,7 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 				return s.settings.Reload(s.serverCtx)
 			})
 			s.settingsActive = s.settings.CaptureActive()
-			// Capture restart=true session fields once at startup. A change
+			// Capture apply=restart session fields once at startup. A change
 			// to these fields only takes effect after an operator-initiated
 			// panel restart; the running process uses the values below.
 			s.activeSessionIdleTimeout = s.settings.AuthSessionIdleTimeout()
@@ -547,7 +547,7 @@ func New(options Options) (*Server, error) {
 		)
 		// TOTP setup TTL: live getter, restart=false.
 		server.auth.SetTOTPSetupTTLFn(server.settings.AuthTOTPSetupTTL)
-		// restart=true: captured once at startup — return the fixed value.
+		// apply=restart: captured once at startup — return the fixed value.
 		idleTimeout := server.activeSessionIdleTimeout
 		maxLifetime := server.activeSessionMaxLifetime
 		server.auth.SetSessionTimeoutFns(

@@ -6,8 +6,8 @@ import (
 )
 
 type sampleBootstrap struct {
-	HTTPListenAddress string `setting:"name=http.listen_address, type=hostport, default=:8080, env=PANVEX_HTTP_ADDR, toml=http.listen_address, desc='HTTP bind address.'"`
-	StorageDriver     string `setting:"name=storage.driver, type=enum, values=sqlite|postgres, default=sqlite, env=PANVEX_STORAGE_DRIVER, toml=storage.driver, desc='Storage driver.'"`
+	HTTPListenAddress string `setting:"name=http.listen_address, type=hostport, default=:8080, env=PANVEX_HTTP_ADDR, toml=http.listen_address, apply=restart, desc='HTTP bind address.'"`
+	StorageDriver     string `setting:"name=storage.driver, type=enum, values=sqlite|postgres, default=sqlite, env=PANVEX_STORAGE_DRIVER, toml=storage.driver, apply=config, desc='Storage driver.'"`
 }
 
 type sampleOperational struct {

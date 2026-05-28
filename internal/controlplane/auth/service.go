@@ -151,7 +151,7 @@ type Service struct {
 
 	// idleTimeoutFn / maxLifetimeFn supply the auth.session_idle_timeout
 	// and auth.session_max_lifetime values for session evaluation. For
-	// restart=true fields these are captured once at startup and provided
+	// apply=restart fields these are captured once at startup and provided
 	// here as fixed-value closures (returning s.activeSessionIdleTimeout /
 	// s.activeSessionMaxLifetime from the Server). Nil falls back to the
 	// compiled-in constants (sessionIdleTimeout / sessionMaxLifetime).
@@ -169,7 +169,7 @@ func (s *Service) SetTOTPSetupTTLFn(fn func() time.Duration) {
 }
 
 // SetSessionTimeoutFns wires captured-at-startup getters for the
-// restart=true session window fields. Both fns must return the value
+// apply=restart session window fields. Both fns must return the value
 // captured at Server startup (not live from the store); see activeSession*
 // on the Server struct. Pass nil to fall back to the compiled-in constants.
 func (s *Service) SetSessionTimeoutFns(idleTimeout, maxLifetime func() time.Duration) {

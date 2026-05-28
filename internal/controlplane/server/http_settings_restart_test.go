@@ -33,7 +33,7 @@ func TestHTTPSettingsRestartStatus_NoneInitially(t *testing.T) {
 
 func TestHTTPSettingsRestartStatus_FlagsRestartFields(t *testing.T) {
 	if !registryHasRestartTrue() {
-		t.Skip("no restart=true operational fields declared yet")
+		t.Skip("no apply=restart operational fields declared")
 	}
 	server, _, cookies := newAuthedServer(t)
 	updateBody := map[string]any{

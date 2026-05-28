@@ -129,7 +129,7 @@ type Server struct {
 	// changes when comparing against live values.
 	settingsActive *settings.ActiveSnapshot
 	// activeSessionIdleTimeout / activeSessionMaxLifetime capture the
-	// restart=true session window values at startup. They must not be
+	// apply=restart session window values at startup. They must not be
 	// re-read from the live store on the request path — a change only takes
 	// effect after the operator restarts the panel. Set in lifecycle.go
 	// right after s.settingsActive is captured.

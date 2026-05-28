@@ -59,7 +59,7 @@ func TestSettingsIntegration_FullCycle(t *testing.T) {
 	}
 
 	// 6. restart-status returns no pending fields after operational PUTs
-	//    (no field in the registry has restart=true today)
+	//    (apply=restart operational fields exist, e.g. auth.session_*)
 	rs := performJSONRequest(t, server, http.MethodGet, "/api/settings/restart-status", nil, cookies)
 	if rs.Code != http.StatusOK {
 		t.Fatalf("restart-status: %d %s", rs.Code, rs.Body.String())

@@ -6,7 +6,7 @@ import (
 )
 
 // parseTag turns the body of a `setting:"…"` struct tag into a FieldMeta.
-// GoField, Class, Min, Max, Values, Restart, Secret are filled from
+// GoField, Class, Min, Max, Values, Apply, Secret are filled from
 // individual keys when present; the caller is responsible for setting
 // GoField and Class (those come from where the field lives in the
 // registry, not from the tag).
