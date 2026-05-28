@@ -16,8 +16,8 @@ type Bootstrap struct {
 	GRPCListenAddress string `setting:"name=grpc.listen_address, type=hostport, default=:8443, env=PANVEX_GRPC_ADDR, toml=grpc.listen_address, apply=restart, desc='gRPC bind address for the agent gateway.'"`
 
 	TLSMode     string `setting:"name=tls.mode, type=enum, values=proxy|direct, default=proxy, env=PANVEX_TLS_MODE, toml=tls.mode, apply=restart, desc='TLS termination mode. proxy = terminate at reverse proxy; direct = serve TLS from the panel.'"`
-	TLSCertFile string `setting:"name=tls.cert_file, type=string, default=, env=PANVEX_TLS_CERT_FILE, toml=tls.cert_file, apply=live, desc='PEM certificate path when tls.mode=direct.'"`
-	TLSKeyFile  string `setting:"name=tls.key_file, type=string, default=, env=PANVEX_TLS_KEY_FILE, toml=tls.key_file, apply=live, desc='PEM private key path when tls.mode=direct.'"`
+	TLSCertFile string `setting:"name=tls.cert_file, type=string, default=, env=PANVEX_TLS_CERT_FILE, toml=tls.cert_file, apply=restart, desc='PEM certificate path when tls.mode=direct.'"`
+	TLSKeyFile  string `setting:"name=tls.key_file, type=string, default=, env=PANVEX_TLS_KEY_FILE, toml=tls.key_file, apply=restart, desc='PEM private key path when tls.mode=direct.'"`
 
 	PanelRestartMode string `setting:"name=panel.restart_mode, type=enum, values=disabled|supervised, default=disabled, env=PANVEX_RESTART_MODE, toml=panel.restart_mode, apply=live, desc='Self-restart capability. supervised requires a process supervisor.'"`
 	PanelEnv         string `setting:"name=panel.env, type=enum, values=development|production, default=development, env=PANVEX_ENV, toml=panel.env, apply=live, desc='Deployment environment. production tightens defaults (cookies, HSTS, ws origin).'"`
