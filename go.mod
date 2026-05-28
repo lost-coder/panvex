@@ -9,7 +9,7 @@ require (
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.2
-	github.com/oapi-codegen/runtime v1.4.0
+	github.com/oapi-codegen/runtime v1.4.1
 	github.com/oschwald/maxminddb-golang v1.13.1
 	github.com/pressly/goose/v3 v3.27.1
 	github.com/prometheus/client_golang v1.23.2
@@ -22,7 +22,7 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.43.0
 	go.opentelemetry.io/otel/sdk v1.43.0
 	golang.org/x/crypto v0.52.0
-	golang.org/x/mod v0.35.0
+	golang.org/x/mod v0.36.0
 	golang.org/x/sync v0.20.0
 	golang.org/x/term v0.43.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260420184626-e10c466a9529
