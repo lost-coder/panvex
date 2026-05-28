@@ -54,14 +54,10 @@ func setupProvisionOutboundFixture(t *testing.T, deps *ProvisionOutboundDeps) pr
 
 	if deps == nil {
 		deps = &ProvisionOutboundDeps{
-			Queries:         store.Queries(),
-			PanelScriptURL:  "https://panel.example.com/install-agent.sh",
-			PanelScriptHash: strings.Repeat("a", 64),
-			GitHubScriptURL: "https://raw.githubusercontent.com/lost-coder/panvex/main/deploy/install-agent.sh",
-			PanelCAPin:      "sha256:fakepin",
-			PanelCN:         "panel.example.com",
-			PanelGRPCURL:    "panel.example.com:8443",
-			Now:             func() time.Time { return now },
+			Queries:    store.Queries(),
+			PanelCAPin: "sha256:fakepin",
+			PanelCN:    "panel.example.com",
+			Now:        func() time.Time { return now },
 		}
 	}
 	srv.SetProvisionOutboundDeps(deps)
@@ -185,7 +181,14 @@ func TestProvisionOutboundAgentRejectsInvalidDialAddress(t *testing.T) {
 // BuildInstallCommand. The wizard renders this when the agent host can
 // reach the panel for bootstrap (rarer for outbound but supported).
 func TestProvisionOutboundAgentPanelSourceEmitsSHA256Form(t *testing.T) {
+	t.Setenv("PANVEX_INSTALL_SCRIPT_URL", "")
 	f := setupProvisionOutboundFixture(t, nil)
+	// Panel-source URL is now resolved live from http.public_url; set it so
+	// the rendered script_url is deterministic.
+	if err := f.srv.settings.Put(context.Background(),
+		map[string]string{"http.public_url": "https://panel.example.com"}, "test"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
 
 	resp := performJSONRequest(t, f.srv, http.MethodPost,
 		"/api/agents/provision-outbound",
@@ -255,6 +258,43 @@ func TestProvisionOutboundAgentGitHubSourceEmitsLegacyForm(t *testing.T) {
 	}
 }
 
+// TestProvisionOutboundUsesLivePanelScriptURL pins Plan 4: the panel-source
+// install URL must be derived from the LIVE http.public_url setting per
+// request, so editing it in the panel changes the rendered command without a
+// restart (instead of a value frozen at process start).
+func TestProvisionOutboundUsesLivePanelScriptURL(t *testing.T) {
+	t.Setenv("PANVEX_INSTALL_SCRIPT_URL", "") // ensure no override masks the live URL
+	f := setupProvisionOutboundFixture(t, nil)
+	if err := f.srv.settings.Put(context.Background(),
+		map[string]string{"http.public_url": "https://live-panel.example"}, "test"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	resp := performJSONRequest(t, f.srv, http.MethodPost,
+		"/api/agents/provision-outbound",
+		map[string]any{
+			"node_name":     "edge-fra-99",
+			"dial_address":  "203.0.113.20:8443",
+			"script_source": "panel",
+		},
+		f.cookies)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201 (body=%s)", resp.Code, resp.Body.String())
+	}
+
+	var body provisionOutboundAgentResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	const wantURL = "https://live-panel.example/install-agent.sh"
+	if body.ScriptURL != wantURL {
+		t.Fatalf("script_url = %q, want live %q", body.ScriptURL, wantURL)
+	}
+	if !strings.Contains(body.Command, wantURL) {
+		t.Fatalf("command missing live script URL %q:\n%s", wantURL, body.Command)
+	}
+}
+
 // TestProvisionOutboundAgentReturns503WhenUnconfigured guards the
 // nil-deps path: if cmd/control-plane forgets to call
 // SetProvisionOutboundDeps (e.g. storage backend without Queries()),
@@ -311,12 +351,8 @@ func TestProvisionOutboundAgentRequiresAdminRole(t *testing.T) {
 	}
 
 	srv.SetProvisionOutboundDeps(&ProvisionOutboundDeps{
-		Queries:         store.Queries(),
-		PanelScriptURL:  "https://panel.example.com/install-agent.sh",
-		PanelScriptHash: strings.Repeat("a", 64),
-		GitHubScriptURL: "https://raw.githubusercontent.com/lost-coder/panvex/main/deploy/install-agent.sh",
-		PanelGRPCURL:    "panel.example.com:8443",
-		Now:             func() time.Time { return now },
+		Queries: store.Queries(),
+		Now:     func() time.Time { return now },
 	})
 
 	login := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login",

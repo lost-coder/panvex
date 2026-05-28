@@ -32,25 +32,14 @@ type ProvisionOutboundDeps struct {
 	// Required; nil here behaves identically to deps==nil at the route
 	// level (handler returns 503).
 	Queries *dbsqlc.Queries
-	// PanelScriptURL is the URL embedded into the curl when the operator
-	// picks `script_source=panel` — typically `<panel>/install-agent.sh`
-	// or the PANVEX_INSTALL_SCRIPT_URL override.
-	PanelScriptURL string
-	// PanelScriptHash is the lowercase hex SHA-256 of the panel-served
-	// install script body. Non-empty enables the temp-file + sha256sum
-	// curl form; an empty string falls back to the legacy `curl|bash`
-	// form (matches BuildInstallCommand semantics).
-	PanelScriptHash string
-	// GitHubScriptURL is the URL embedded into the curl when the
-	// operator picks `script_source=github`. We never carry a hash for
-	// the GitHub source — the panel cannot vouch for upstream bytes.
-	GitHubScriptURL string
-	// PanelCAPin / PanelCN / PanelGRPCURL replay the install-command
-	// flags the agent's bootstrap subcommand consumes; mirror values
-	// used by InstallCommandHandler.
-	PanelCAPin   string
-	PanelCN      string
-	PanelGRPCURL string
+	// PanelCAPin / PanelCN replay the install-command flags the agent's
+	// bootstrap subcommand consumes; mirror values used by
+	// InstallCommandHandler. The install-script URL and gRPC endpoint are
+	// no longer frozen here — they are resolved LIVE per request from the
+	// panel settings (Plan 4) via Server.ResolveInstallScriptURL /
+	// Server.ResolveAgentGRPCEndpoint.
+	PanelCAPin string
+	PanelCN    string
 	// Now is an injectable clock so tests can pin token issuance
 	// timestamps deterministically. nil → time.Now.
 	Now func() time.Time
@@ -159,10 +148,14 @@ func (s *Server) handleProvisionOutboundAgent() http.HandlerFunc {
 		)
 		switch scriptSource {
 		case "panel":
-			scriptURL = deps.PanelScriptURL
-			scriptHash = deps.PanelScriptHash
+			// Resolve the panel-served install URL LIVE per request from
+			// http.public_url (Plan 4) so a saved change takes effect
+			// without a restart. scriptHash is the live panel-served body
+			// digest — same security guarantee as the frozen wiring.
+			scriptURL = s.ResolveInstallScriptURL(r)
+			scriptHash = InstallScriptSHA256()
 		case "github":
-			scriptURL = deps.GitHubScriptURL
+			scriptURL = InstallScriptGitHubURL()
 			scriptHash = "" // panel cannot vouch for upstream bytes
 		default:
 			writeError(w, http.StatusBadRequest, "script_source must be 'panel' or 'github'")
@@ -251,7 +244,7 @@ func (s *Server) handleProvisionOutboundAgent() http.HandlerFunc {
 			ListenAddr: listenBind,
 			PanelCAPin: deps.PanelCAPin,
 			PanelCN:    deps.PanelCN,
-			PanelURL:   deps.PanelGRPCURL,
+			PanelURL:   s.ResolveAgentGRPCEndpoint(r), // live grpc.public_endpoint
 		})
 
 		s.appendAuditWithContext(r.Context(), session.UserID, "agents.provision_outbound", agentID, map[string]any{

@@ -206,38 +206,34 @@ func runServe(args []string) error {
 	// generates works against any reachable panel host. Operators with a
 	// custom domain set PANVEX_INSTALL_SCRIPT_URL to override.
 	if queries != nil {
-		panelScriptURL := installScriptURL(panelRuntime)
-		panelScriptHash := server.InstallScriptSHA256()
 		installHandler := bootstrap.NewInstallCommandHandler(queries, bootstrap.InstallCommandConfig{
-			ScriptURL: panelScriptURL,
+			// Plan 4: resolve the script URL + gRPC endpoint LIVE per
+			// request from the panel settings (http.public_url /
+			// grpc.public_endpoint) so a saved change takes effect without
+			// a restart. The method values close over the *server.Server.
+			ScriptURLFn: api.ResolveInstallScriptURL,
 			// S-3: bind the install-command to the embedded script body
 			// the panel is serving right now. The shell one-liner verifies
 			// the downloaded body before sudo-bash, and the script self-
 			// checks PANVEX_INSTALL_SCRIPT_SHA256 (T-5). A TLS-MITM that
 			// rewrites /install-agent.sh therefore cannot escalate.
-			ScriptHash: panelScriptHash,
+			ScriptHash: server.InstallScriptSHA256(),
 			PanelCAPin: api.CAPINHex(),
 			PanelCN:    api.CACN(),
-			PanelURL:   panelRuntime.GRPCListenAddress,
+			PanelURLFn: api.ResolveAgentGRPCEndpoint,
 			Now:        time.Now,
 		})
 		api.SetInstallCommandHandler(installHandler)
 
-		// PR-2c: feed the same install-command parameters into the
-		// provision-outbound handler so its rendered curl matches what
-		// POST /agents/{id}/install-command would emit for the freshly
-		// inserted agent. GitHubScriptURL is the alternative source the
-		// wizard picks when the panel is firewalled from the agent
-		// host (typical outbound scenario).
+		// PR-2c: the provision-outbound handler renders the same curl as
+		// POST /agents/{id}/install-command. The script URL + gRPC endpoint
+		// are now resolved live inside the handler (Plan 4), so only the CA
+		// pin / CN / clock are passed here.
 		api.SetProvisionOutboundDeps(&server.ProvisionOutboundDeps{
-			Queries:         queries,
-			PanelScriptURL:  panelScriptURL,
-			PanelScriptHash: panelScriptHash,
-			GitHubScriptURL: server.InstallScriptGitHubURL(),
-			PanelCAPin:      api.CAPINHex(),
-			PanelCN:         api.CACN(),
-			PanelGRPCURL:    panelRuntime.GRPCListenAddress,
-			Now:             time.Now,
+			Queries:    queries,
+			PanelCAPin: api.CAPINHex(),
+			PanelCN:    api.CACN(),
+			Now:        time.Now,
 		})
 	}
 
