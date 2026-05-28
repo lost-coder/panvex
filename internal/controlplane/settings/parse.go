@@ -40,8 +40,6 @@ func parseTag(raw string) (FieldMeta, error) {
 			out.Secret = (v == "true")
 		case "store":
 			out.Store = v
-		case "restart":
-			out.Restart = (v == "true")
 		case "apply":
 			out.Apply = ApplyTier(v)
 		case "desc":

@@ -51,7 +51,7 @@ func TestHTTPSettingsRestartStatus_FlagsRestartFields(t *testing.T) {
 
 func registryHasRestartTrue() bool {
 	for _, f := range settingspkg2.AllFields() {
-		if f.Class == settingspkg2.ClassOperational && f.Restart {
+		if f.Class == settingspkg2.ClassOperational && f.Apply == settingspkg2.ApplyRestart {
 			return true
 		}
 	}
@@ -60,7 +60,7 @@ func registryHasRestartTrue() bool {
 
 func firstRestartTrueField() string {
 	for _, f := range settingspkg2.AllFields() {
-		if f.Class == settingspkg2.ClassOperational && f.Restart {
+		if f.Class == settingspkg2.ClassOperational && f.Apply == settingspkg2.ApplyRestart {
 			return f.Name
 		}
 	}

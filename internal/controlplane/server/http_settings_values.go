@@ -87,7 +87,7 @@ func (s *Server) operationalEntry(f settings.FieldMeta) valuesEntry {
 		Locked: false,
 	}
 	// pending_restart bookkeeping
-	if f.Restart && s.settingsActive != nil {
+	if f.Apply == settings.ApplyRestart && s.settingsActive != nil {
 		if active, ok := s.settingsActive.Get(f.Name); ok && active != raw {
 			entry.PendingRestart = true
 			entry.PendingValue = rawToTyped(f, raw)

@@ -7,11 +7,11 @@ import (
 
 type sampleBootstrap struct {
 	HTTPListenAddress string `setting:"name=http.listen_address, type=hostport, default=:8080, env=PANVEX_HTTP_ADDR, toml=http.listen_address, desc='HTTP bind address.'"`
-	StorageDriver    string `setting:"name=storage.driver, type=enum, values=sqlite|postgres, default=sqlite, env=PANVEX_STORAGE_DRIVER, toml=storage.driver, desc='Storage driver.'"`
+	StorageDriver     string `setting:"name=storage.driver, type=enum, values=sqlite|postgres, default=sqlite, env=PANVEX_STORAGE_DRIVER, toml=storage.driver, desc='Storage driver.'"`
 }
 
 type sampleOperational struct {
-	PasswordMinLength int `setting:"name=auth.password_min_length, type=int, default=10, min=8, max=64, restart=false, store=panel_settings.password_min_length, desc='Min password length.'"`
+	PasswordMinLength int `setting:"name=auth.password_min_length, type=int, default=10, min=8, max=64, apply=live, store=panel_settings.password_min_length, desc='Min password length.'"`
 }
 
 func TestWalkRegistry_Bootstrap(t *testing.T) {

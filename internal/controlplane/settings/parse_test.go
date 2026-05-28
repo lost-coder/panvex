@@ -30,7 +30,7 @@ func TestParseTag_BootstrapHostPort(t *testing.T) {
 
 func TestParseTag_OperationalIntWithBounds(t *testing.T) {
 	in := `name=auth.password_min_length, type=int, default=10,
-        min=8, max=64, restart=false,
+        min=8, max=64, apply=live,
         store=panel_settings.password_min_length,
         desc='Minimum length for new passwords.'`
 	got, err := parseTag(in)
@@ -40,8 +40,8 @@ func TestParseTag_OperationalIntWithBounds(t *testing.T) {
 	if got.Min != "8" || got.Max != "64" {
 		t.Fatalf("min/max: got (%q,%q)", got.Min, got.Max)
 	}
-	if got.Restart {
-		t.Fatalf("restart should be false")
+	if got.Apply != ApplyLive {
+		t.Fatalf("apply should be live, got %q", got.Apply)
 	}
 	if got.Store != "panel_settings.password_min_length" {
 		t.Fatalf("store wrong: %q", got.Store)

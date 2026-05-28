@@ -20,7 +20,6 @@ type schemaEntry struct {
 	Toml    string   `json:"toml,omitempty"`
 	Secret  bool     `json:"secret,omitempty"`
 	Store   string   `json:"store,omitempty"`
-	Restart bool     `json:"restart,omitempty"`
 	Desc    string   `json:"desc"`
 }
 
@@ -31,18 +30,17 @@ func RenderSchemaJSON() ([]byte, error) {
 	out := make([]schemaEntry, 0, len(fields))
 	for _, f := range fields {
 		e := schemaEntry{
-			Name:    f.Name,
-			Class:   f.Class,
-			Type:    f.Type,
-			Min:     f.Min,
-			Max:     f.Max,
-			Values:  f.Values,
-			Env:     f.Env,
-			Toml:    f.Toml,
-			Secret:  f.Secret,
-			Store:   f.Store,
-			Restart: f.Restart,
-			Desc:    f.Desc,
+			Name:   f.Name,
+			Class:  f.Class,
+			Type:   f.Type,
+			Min:    f.Min,
+			Max:    f.Max,
+			Values: f.Values,
+			Env:    f.Env,
+			Toml:   f.Toml,
+			Secret: f.Secret,
+			Store:  f.Store,
+			Desc:   f.Desc,
 		}
 		if f.HasDefault && !f.Secret {
 			d := f.Default

@@ -76,9 +76,8 @@ type FieldMeta struct {
 	Secret bool
 
 	// Operational-only
-	Store   string // "panel_settings.column" | "runtime_settings"
-	Restart bool   // DEPRECATED: superseded by Apply; removed in Task 6
-	Apply   ApplyTier
+	Store string // "panel_settings.column" | "runtime_settings"
+	Apply ApplyTier
 
 	Desc string
 }
