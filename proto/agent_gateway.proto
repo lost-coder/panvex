@@ -112,20 +112,20 @@ message RuntimeUpstreamSnapshot {
   // fail_rate_known=false when the agent does not yet have enough samples
   // (cold start, post-reset, or stale-window) and the control-plane should
   // skip rate-based severity rules.
-  double fail_rate_pct_5m         = 7;
-  bool   fail_rate_known          = 8;
-  uint64 connect_attempt_total    = 9;
-  uint64 connect_success_total    = 10;
-  uint64 connect_fail_total       = 11;
-  uint64 connect_failfast_total   = 12;
+  double fail_rate_pct_5m = 7;
+  bool fail_rate_known = 8;
+  uint64 connect_attempt_total = 9;
+  uint64 connect_success_total = 10;
+  uint64 connect_fail_total = 11;
+  uint64 connect_failfast_total = 12;
 
   // Route-kind totals introduced in Telemt 3.4.7 (`UpstreamSummaryData`).
   // socks4_total and shadowsocks_total were exposed before Panvex picked
   // them up — agents on Telemt ≥ 3.4.7 fill these in; older Telemt and
   // older agents leave them at zero, which is also the JSON default
   // surfaced on the panel.
-  int32 socks4_total              = 13;
-  int32 shadowsocks_total         = 14;
+  int32 socks4_total = 13;
+  int32 shadowsocks_total = 14;
 }
 
 message RuntimeEventSnapshot {
@@ -229,7 +229,7 @@ message RuntimeSnapshot {
   //
   // Semantic is inverted (unreachable=true is the bad state) so the proto3
   // default of false correctly represents the healthy/reachable case.
-  bool  telemt_unreachable            = 37;
+  bool telemt_unreachable = 37;
   int64 telemt_unreachable_since_unix = 38;
 
   // Classified counters introduced in Telemt 3.4.10 (`SummaryData`).
@@ -241,7 +241,7 @@ message RuntimeSnapshot {
   //   - `other`
   // The list is open: agents must not enforce a known-class set so a
   // newer Telemt can add classes without an agent or panel upgrade.
-  repeated ConnectionsClassCount connections_bad_by_class    = 39;
+  repeated ConnectionsClassCount connections_bad_by_class = 39;
   repeated ConnectionsClassCount handshake_failures_by_class = 40;
 }
 
@@ -389,7 +389,7 @@ message ConnectClientMessage {
 // agent to the panel for the live "Recent events" UI section.
 message AgentRuntimeEvent {
   google.protobuf.Timestamp ts = 1;
-  string level = 2;             // "info" | "warn" | "error"
+  string level = 2; // "info" | "warn" | "error"
   string message = 3;
   map<string, string> fields = 4;
 }
