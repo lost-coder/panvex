@@ -29,11 +29,13 @@
 # Shared log driver: the default json-file driver grows unbounded and
 # fills the host disk on long-running deployments. Cap at ~150 MiB per
 # service (10 × 15m).
-x-logging: &default-logging
-  driver: json-file
-  options:
-    max-size: "15m"
-    max-file: "10"
+#
+# NOTE: this block is intentionally inlined into every service below
+# rather than factored into a `&default-logging` YAML anchor. Docker
+# Compose handles anchors fine, but the Dependabot docker-compose
+# parser (Psych.safe_load) chokes on aliases and fails the whole
+# /deploy scan — see .github/dependabot.yml. Keep these four copies in
+# sync by hand; do NOT re-introduce an anchor.
 
 services:
   postgres:
@@ -63,7 +65,11 @@ services:
           cpus: "1.0"
         reservations:
           memory: 256m
-    logging: *default-logging
+    logging:
+      driver: json-file
+      options:
+        max-size: "15m"
+        max-file: "10"
     restart: unless-stopped
 
   backend:
@@ -113,7 +119,11 @@ services:
     # Must exceed cmd/control-plane controlPlaneShutdownGraceMin so the
     # audit-event drain finishes before docker sends SIGKILL.
     stop_grace_period: 45s
-    logging: *default-logging
+    logging:
+      driver: json-file
+      options:
+        max-size: "15m"
+        max-file: "10"
     restart: unless-stopped
 
   web:
@@ -132,7 +142,11 @@ services:
         limits:
           memory: 256m
           cpus: "0.5"
-    logging: *default-logging
+    logging:
+      driver: json-file
+      options:
+        max-size: "15m"
+        max-file: "10"
     restart: unless-stopped
 
   # One-shot first-run admin creation. Activate explicitly:
@@ -171,7 +185,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    logging: *default-logging
+    logging:
+      driver: json-file
+      options:
+        max-size: "15m"
+        max-file: "10"
     restart: "no"
 
 volumes:
