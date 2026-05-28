@@ -42,6 +42,8 @@ func parseTag(raw string) (FieldMeta, error) {
 			out.Store = v
 		case "restart":
 			out.Restart = (v == "true")
+		case "apply":
+			out.Apply = ApplyTier(v)
 		case "desc":
 			out.Desc = v
 		default:
@@ -56,6 +58,9 @@ func parseTag(raw string) (FieldMeta, error) {
 	}
 	if out.Desc == "" {
 		return FieldMeta{}, fmt.Errorf("settings: tag for %q missing required attribute 'desc'", out.Name)
+	}
+	if out.Apply != "" && !out.Apply.Valid() {
+		return FieldMeta{}, fmt.Errorf("settings: tag for %q has invalid apply tier %q", out.Name, out.Apply)
 	}
 	return out, nil
 }

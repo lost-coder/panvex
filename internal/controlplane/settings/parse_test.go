@@ -72,6 +72,19 @@ func TestParseTag_Secret(t *testing.T) {
 	}
 }
 
+func TestParseTagApply(t *testing.T) {
+	got, err := parseTag(`name=x.y, type=string, apply=restart, desc='d'`)
+	if err != nil {
+		t.Fatalf("parseTag err: %v", err)
+	}
+	if got.Apply != ApplyRestart {
+		t.Fatalf("Apply = %q, want %q", got.Apply, ApplyRestart)
+	}
+	if _, err := parseTag(`name=x.y, type=string, apply=bogus, desc='d'`); err == nil {
+		t.Fatal("expected error for invalid apply tier, got nil")
+	}
+}
+
 func TestParseTag_Errors(t *testing.T) {
 	cases := []struct {
 		name, in, wantSubstr string
