@@ -16,3 +16,18 @@ func envOverrideValue(f FieldMeta, env map[string]string) (string, bool) {
 	}
 	return v, true
 }
+
+// seedValue resolves the first-boot seed for f: an explicit env var wins,
+// then a config.toml value, otherwise there is no seed (a registry
+// default is left implicit and is never written to the store).
+func seedValue(f FieldMeta, env, tomlVals map[string]string) (string, Source, bool) {
+	if v, ok := envOverrideValue(f, env); ok {
+		return v, SourceEnv, true
+	}
+	if f.Toml != "" && tomlVals != nil {
+		if v, ok := tomlVals[f.Toml]; ok && strings.TrimSpace(v) != "" {
+			return v, SourceConfigFile, true
+		}
+	}
+	return "", SourceDefault, false
+}
