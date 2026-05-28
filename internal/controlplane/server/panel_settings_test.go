@@ -29,6 +29,8 @@ func TestPublicURLChangeReachesAgentURL(t *testing.T) {
 	if err := srv.settings.Put(ctx, map[string]string{"http.public_url": "https://newpanel.example"}, "test"); err != nil {
 		t.Fatalf("Put error = %v", err)
 	}
+	// panelRuntime is the zero value here (AgentHTTPRootPath/HTTPRootPath empty),
+	// so buildAgentPublicURL returns the bare base URL.
 	got := buildAgentPublicURL(srv.panelSettingsSnapshot(), srv.panelRuntime, nil, "", "")
 	if got != "https://newpanel.example" {
 		t.Fatalf("buildAgentPublicURL = %q, want %q", got, "https://newpanel.example")

@@ -725,10 +725,12 @@ func TestPutPanelSettings_RejectsAboveCeiling(t *testing.T) {
 		t.Fatalf("POST /api/auth/login: code=%d", loginResponse.Code)
 	}
 
+	// 100 is in the 65–128 range that the old (8–128) bound wrongly accepted;
+	// it must now be rejected because the registry caps password_min_length at 64.
 	rr := performJSONRequest(t, server, http.MethodPut, "/api/settings/panel", map[string]any{
 		"http_public_url":      "https://panel.example",
 		"grpc_public_endpoint": "agents.example:8443",
-		"password_min_length":  256,
+		"password_min_length":  100,
 	}, loginResponse.Result().Cookies())
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for above-ceiling, got %d body=%s", rr.Code, rr.Body.String())

@@ -275,7 +275,7 @@ func (s *Server) panelSettingsSnapshot() PanelSettings {
 		return normalizePanelSettings(PanelSettings{
 			HTTPPublicURL:      s.settings.HTTPPublicURL(),
 			GRPCPublicEndpoint: s.settings.GRPCPublicEndpoint(),
-			PasswordMinLength:  int32(s.settings.PasswordMinLength()), //nolint:gosec // bounded 8–128 in registry
+			PasswordMinLength:  int32(s.settings.PasswordMinLength()), //nolint:gosec // bounded 8–64 in registry
 		})
 	}
 	s.settingsMu.RLock()

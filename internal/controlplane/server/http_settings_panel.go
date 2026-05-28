@@ -102,8 +102,8 @@ func (s *Server) handlePutPanelSettings() http.HandlerFunc {
 			return
 		}
 
-		if request.PasswordMinLength != 0 && (request.PasswordMinLength < 8 || request.PasswordMinLength > 128) {
-			writeError(w, http.StatusBadRequest, "password_min_length must be between 8 and 128")
+		if request.PasswordMinLength != 0 && (request.PasswordMinLength < 8 || request.PasswordMinLength > 64) {
+			writeError(w, http.StatusBadRequest, "password_min_length must be between 8 and 64")
 			return
 		}
 
