@@ -37,18 +37,11 @@ const (
 	errInvalidPanelSettings   = "invalid panel settings payload"
 )
 
-// panelSettingsFromStore builds a PanelSettings from the OperationalStore
-// typed getters. Falls back to panelSettingsSnapshot when the store is nil
-// (test fixtures without a DB-backed store).
+// panelSettingsFromStore returns the effective panel settings. Retained as
+// a named entry point for the HTTP layer; delegates to panelSettingsSnapshot
+// which is the single source (live store, or legacy struct when no store).
 func (s *Server) panelSettingsFromStore() PanelSettings {
-	if s.settings == nil {
-		return s.panelSettingsSnapshot()
-	}
-	return PanelSettings{
-		HTTPPublicURL:      s.settings.HTTPPublicURL(),
-		GRPCPublicEndpoint: s.settings.GRPCPublicEndpoint(),
-		PasswordMinLength:  int32(s.settings.PasswordMinLength()), //nolint:gosec // bounded 8–64 in registry
-	}
+	return s.panelSettingsSnapshot()
 }
 
 func (s *Server) handleGetPanelSettings() http.HandlerFunc {
@@ -151,11 +144,14 @@ func (s *Server) handlePutPanelSettings() http.HandlerFunc {
 			}
 		}
 
-		// Keep in-memory snapshot in sync so enrollment/auth handlers see
-		// the new values without re-reading from the store.
-		s.settingsMu.Lock()
-		s.panelSettings = settings
-		s.settingsMu.Unlock()
+		// With a store wired, panelSettingsSnapshot() reads it directly, so
+		// the legacy struct only needs updating on the no-store fallback path
+		// (test fixtures without a DB-backed OperationalStore).
+		if s.settings == nil {
+			s.settingsMu.Lock()
+			s.panelSettings = settings
+			s.settingsMu.Unlock()
+		}
 
 		s.auth.SetPasswordPolicy(settings.PasswordMinLength)
 

@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 	"github.com/lost-coder/panvex/internal/security"
 )
@@ -21,20 +20,22 @@ func TestHTTPAgentBootstrapUsesConfiguredGRPCPublicEndpoint(t *testing.T) {
 	}
 	defer store.Close()
 
-	if err := store.PutPanelSettings(context.Background(), storage.PanelSettingsRecord{
-		HTTPPublicURL:      "https://panel.example.com",
-		GRPCPublicEndpoint: "grpc.panel.example.com:443",
-		UpdatedAt:          now,
-	}); err != nil {
-		t.Fatalf("PutPanelSettings() error = %v", err)
-	}
-
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 	})
 	defer server.Close()
+
+	// The OperationalStore is now the authoritative read path for panel
+	// settings (Plan 3), so seed through it rather than the legacy
+	// store.PutPanelSettings (which writes the separate "panel" scope).
+	if err := server.settings.Put(context.Background(), map[string]string{
+		"http.public_url":      "https://panel.example.com",
+		"grpc.public_endpoint": "grpc.panel.example.com:443",
+	}, "test"); err != nil {
+		t.Fatalf("settings.Put() error = %v", err)
+	}
 	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
 		FleetGroupID: "default",
 		TTL:          time.Minute,
