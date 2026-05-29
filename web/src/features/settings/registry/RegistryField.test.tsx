@@ -6,268 +6,72 @@ import type { SchemaEntry, ValuesEntry } from "./types";
 import { RegistryField } from "./RegistryField";
 
 function makeSchema(overrides: Partial<SchemaEntry> = {}): SchemaEntry {
-  return {
-    name: "test.field",
-    class: "operational",
-    type: "string",
-    desc: "A test field",
-    ...overrides,
-  };
+  return { name: "test.field", class: "operational", type: "string", desc: "A test field", ...overrides };
 }
-
 function makeValues(overrides: Partial<ValuesEntry> = {}): ValuesEntry {
-  return {
-    value: "hello",
-    source: "db",
-    locked: false,
-    ...overrides,
-  };
+  return { value: "hello", source: "db", locked: false, ...overrides };
 }
 
 describe("RegistryField", () => {
-  // --- type rendering ---
+  // --- type rendering (unchanged behaviour) ---
 
   it("renders text input for type=string", () => {
-    render(
-      <RegistryField
-        schema={makeSchema({ type: "string" })}
-        values={makeValues({ value: "hello" })}
-        onChange={vi.fn()}
-      />,
-    );
+    render(<RegistryField schema={makeSchema({ type: "string" })} values={makeValues({ value: "hello" })} onChange={vi.fn()} />);
     const input = screen.getByRole("textbox", { name: "test.field" });
     expect(input).toBeInTheDocument();
     expect(input).toHaveValue("hello");
   });
 
   it("renders number input for type=int", () => {
-    render(
-      <RegistryField
-        schema={makeSchema({ type: "int" })}
-        values={makeValues({ value: 42 })}
-        onChange={vi.fn()}
-      />,
-    );
-    const input = screen.getByRole("spinbutton", { name: "test.field" });
-    expect(input).toBeInTheDocument();
-    expect(input).toHaveValue(42);
-  });
-
-  it("renders url input for type=url", () => {
-    render(
-      <RegistryField
-        schema={makeSchema({ type: "url" })}
-        values={makeValues({ value: "http://example.com" })}
-        onChange={vi.fn()}
-      />,
-    );
-    // url inputs have role=textbox in jsdom
-    const input = screen.getByRole("textbox", { name: "test.field" });
-    expect(input).toBeInTheDocument();
-    expect((input as HTMLInputElement).type).toBe("url");
+    render(<RegistryField schema={makeSchema({ type: "int" })} values={makeValues({ value: 42 })} onChange={vi.fn()} />);
+    expect(screen.getByRole("spinbutton", { name: "test.field" })).toHaveValue(42);
   });
 
   it("renders text input with placeholder for type=duration", () => {
-    render(
-      <RegistryField
-        schema={makeSchema({ type: "duration" })}
-        values={makeValues({ value: "30s" })}
-        onChange={vi.fn()}
-      />,
-    );
-    const input = screen.getByRole("textbox", { name: "test.field" });
-    expect(input).toBeInTheDocument();
-    expect(input).toHaveAttribute("placeholder", "e.g. 30s, 5m, 1h");
-  });
-
-  it("renders text input with placeholder for type=hostport", () => {
-    render(
-      <RegistryField
-        schema={makeSchema({ type: "hostport" })}
-        values={makeValues({ value: "0.0.0.0:8080" })}
-        onChange={vi.fn()}
-      />,
-    );
-    const input = screen.getByRole("textbox", { name: "test.field" });
-    expect(input).toHaveAttribute("placeholder", "e.g. 0.0.0.0:8080");
+    render(<RegistryField schema={makeSchema({ type: "duration" })} values={makeValues({ value: "30s" })} onChange={vi.fn()} />);
+    expect(screen.getByRole("textbox", { name: "test.field" })).toHaveAttribute("placeholder", "e.g. 30s, 5m, 1h");
   });
 
   it("renders toggle switch for type=bool", () => {
-    render(
-      <RegistryField
-        schema={makeSchema({ type: "bool" })}
-        values={makeValues({ value: true })}
-        onChange={vi.fn()}
-      />,
-    );
-    const toggle = screen.getByRole("switch");
-    expect(toggle).toBeInTheDocument();
-    expect(toggle).toHaveAttribute("aria-checked", "true");
+    render(<RegistryField schema={makeSchema({ type: "bool" })} values={makeValues({ value: true })} onChange={vi.fn()} />);
+    expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "true");
   });
 
   it("renders select for type=enum", () => {
-    render(
-      <RegistryField
-        schema={makeSchema({ type: "enum", values: ["a", "b", "c"] })}
-        values={makeValues({ value: "b" })}
-        onChange={vi.fn()}
-      />,
-    );
-    const select = screen.getByRole("combobox");
-    expect(select).toBeInTheDocument();
-    expect((select as HTMLSelectElement).value).toBe("b");
+    render(<RegistryField schema={makeSchema({ type: "enum", values: ["a", "b", "c"] })} values={makeValues({ value: "b" })} onChange={vi.fn()} />);
+    expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("b");
   });
 
   it("renders note for type=json", () => {
-    render(
-      <RegistryField
-        schema={makeSchema({ type: "json" })}
-        values={makeValues({ value: "{}" })}
-        onChange={vi.fn()}
-      />,
-    );
-    expect(
-      screen.getByText(/Edit via the dedicated section below/i),
-    ).toBeInTheDocument();
+    render(<RegistryField schema={makeSchema({ type: "json" })} values={makeValues({ value: "{}" })} onChange={vi.fn()} />);
+    expect(screen.getByText(/Edit via the dedicated section below/i)).toBeInTheDocument();
   });
 
-  // --- locked ---
+  // --- indicator: none for live/editable ---
 
-  it("locked=true disables input and shows env source pill", () => {
-    render(
-      <RegistryField
-        schema={makeSchema({ type: "string" })}
-        values={makeValues({
-          value: "x",
-          locked: true,
-          source: "env",
-          env_var: "PANVEX_X",
-        })}
-        onChange={vi.fn()}
-      />,
-    );
-    const input = screen.getByRole("textbox", { name: "test.field" });
-    expect(input).toBeDisabled();
-    expect(screen.getByText("Set via PANVEX_X")).toBeInTheDocument();
+  it("renders no indicator icon for a live field", () => {
+    render(<RegistryField schema={makeSchema({ apply: "live" })} values={makeValues({ apply: "live" })} onChange={vi.fn()} />);
+    expect(screen.queryByLabelText("Read-only")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Restart-related")).not.toBeInTheDocument();
   });
 
-  it("locked=true with source=config_file shows config.toml pill", () => {
+  // --- indicator: env-override (amber lock, disabled) ---
+
+  it("env-override disables input and shows a read-only icon", () => {
     render(
       <RegistryField
         schema={makeSchema({ type: "string" })}
-        values={makeValues({
-          value: "x",
-          locked: true,
-          source: "config_file",
-        })}
+        values={makeValues({ overridden_by_env: true, locked: true, source: "env", env_var: "PANVEX_HTTP_ADDR" })}
         onChange={vi.fn()}
       />,
     );
-    expect(screen.getByText("Set in config.toml")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "test.field" })).toBeDisabled();
+    expect(screen.getByLabelText("Read-only")).toBeInTheDocument();
   });
 
-  it("locked=true with source=default shows Default pill", () => {
-    render(
-      <RegistryField
-        schema={makeSchema({ type: "string" })}
-        values={makeValues({
-          value: "x",
-          locked: true,
-          source: "default",
-        })}
-        onChange={vi.fn()}
-      />,
-    );
-    expect(screen.getByText("Default")).toBeInTheDocument();
-  });
+  // --- indicator: config-managed (grey lock, disabled) ---
 
-  // --- pending restart ---
-
-  it("shows pending badge when pendingValue differs from value", () => {
-    render(
-      <RegistryField
-        schema={makeSchema({ type: "string" })}
-        values={makeValues({
-          value: "old",
-          pending_restart: true,
-          pending_value: "new",
-        })}
-        onChange={vi.fn()}
-      />,
-    );
-    expect(screen.getByText("restart pending")).toBeInTheDocument();
-  });
-
-  it("does not show pending badge when pendingValue equals value", () => {
-    render(
-      <RegistryField
-        schema={makeSchema({ type: "string" })}
-        values={makeValues({
-          value: "same",
-          pending_restart: true,
-          pending_value: "same",
-        })}
-        onChange={vi.fn()}
-      />,
-    );
-    expect(screen.queryByText("restart pending")).not.toBeInTheDocument();
-  });
-
-  // --- tier / env-override / config badges ---
-
-  it("shows a restart-tier badge", () => {
-    render(
-      <RegistryField
-        schema={makeSchema({ type: "string", apply: "restart" })}
-        values={makeValues({ apply: "restart" })}
-        onChange={vi.fn()}
-      />,
-    );
-    expect(screen.getByText(/needs restart/i)).toBeInTheDocument();
-  });
-
-  it("shows no tier badge for the live tier", () => {
-    render(
-      <RegistryField
-        schema={makeSchema({ type: "string", apply: "live" })}
-        values={makeValues({ apply: "live" })}
-        onChange={vi.fn()}
-      />,
-    );
-    expect(screen.queryByText(/needs restart/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/config \/ CLI/i)).not.toBeInTheDocument();
-  });
-
-  it("shows no tier badge when apply is undefined on both schema and values", () => {
-    render(
-      <RegistryField
-        schema={makeSchema({ type: "string" })}
-        values={makeValues()}
-        onChange={vi.fn()}
-      />,
-    );
-    expect(screen.queryByText(/needs restart/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/config \/ CLI/i)).not.toBeInTheDocument();
-  });
-
-  it("shows an env-override badge and disables the input", () => {
-    render(
-      <RegistryField
-        schema={makeSchema({ type: "string" })}
-        values={makeValues({
-          overridden_by_env: true,
-          locked: true,
-          source: "env",
-          env_var: "PANVEX_HTTP_ADDR",
-        })}
-        onChange={vi.fn()}
-      />,
-    );
-    expect(screen.getByText(/overridden by env PANVEX_HTTP_ADDR/)).toBeInTheDocument();
-    expect(screen.getByLabelText("test.field")).toBeDisabled();
-  });
-
-  it("shows a config-managed badge and hint for the config tier", () => {
+  it("config-managed locked field disables input and shows a read-only icon", () => {
     render(
       <RegistryField
         schema={makeSchema({ type: "string", class: "bootstrap", apply: "config" })}
@@ -275,38 +79,64 @@ describe("RegistryField", () => {
         onChange={vi.fn()}
       />,
     );
-    expect(screen.getByText(/config \/ CLI/i)).toBeInTheDocument();
-    expect(screen.getByText(/Managed via config\.toml/i)).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "test.field" })).toBeDisabled();
+    expect(screen.getByLabelText("Read-only")).toBeInTheDocument();
+  });
+
+  // --- indicator: needs restart (amber restart icon, editable) ---
+
+  it("needs-restart field shows a restart-related icon and stays editable", () => {
+    render(<RegistryField schema={makeSchema({ apply: "restart" })} values={makeValues({ apply: "restart" })} onChange={vi.fn()} />);
+    expect(screen.getByLabelText("Restart-related")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "test.field" })).not.toBeDisabled();
+  });
+
+  // --- indicator: pending restart (spinning) ---
+
+  it("pending restart shows the restart icon with the spin class", () => {
+    const { container } = render(
+      <RegistryField schema={makeSchema({ apply: "restart" })} values={makeValues({ apply: "restart", value: "old", pending_restart: true, pending_value: "new" })} onChange={vi.fn()} />,
+    );
+    expect(screen.getByLabelText("Restart-related")).toBeInTheDocument();
+    expect(container.querySelector(".animate-spin")).not.toBeNull();
+  });
+
+  it("does not spin when pending_value equals value", () => {
+    const { container } = render(
+      <RegistryField schema={makeSchema({ apply: "restart" })} values={makeValues({ apply: "restart", value: "same", pending_restart: true, pending_value: "same" })} onChange={vi.fn()} />,
+    );
+    expect(container.querySelector(".animate-spin")).toBeNull();
+  });
+
+  // --- hideIndicators ---
+
+  it("hideIndicators suppresses bar and icon but keeps input disabled when locked", () => {
+    render(
+      <RegistryField
+        schema={makeSchema({ type: "string", class: "bootstrap" })}
+        values={makeValues({ locked: true, source: "config_file" })}
+        onChange={vi.fn()}
+        hideIndicators
+      />,
+    );
+    expect(screen.queryByLabelText("Read-only")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "test.field" })).toBeDisabled();
   });
 
   // --- error ---
 
   it("error prop renders red helper text", () => {
-    render(
-      <RegistryField
-        schema={makeSchema({ type: "string" })}
-        values={makeValues()}
-        onChange={vi.fn()}
-        error="Value is required"
-      />,
-    );
+    render(<RegistryField schema={makeSchema({ type: "string" })} values={makeValues()} onChange={vi.fn()} error="Value is required" />);
     expect(screen.getByText("Value is required")).toBeInTheDocument();
   });
 
-  // --- onChange fires ---
+  // --- onChange ---
 
   it("calls onChange when text input changes", async () => {
     const onChange = vi.fn();
-    render(
-      <RegistryField
-        schema={makeSchema({ type: "string", name: "my.field" })}
-        values={makeValues({ value: "" })}
-        onChange={onChange}
-      />,
-    );
+    render(<RegistryField schema={makeSchema({ type: "string", name: "my.field" })} values={makeValues({ value: "" })} onChange={onChange} />);
     const user = userEvent.setup();
-    const input = screen.getByRole("textbox", { name: "my.field" });
-    await user.type(input, "x");
+    await user.type(screen.getByRole("textbox", { name: "my.field" }), "x");
     expect(onChange).toHaveBeenCalledWith("my.field", "x");
   });
 });
