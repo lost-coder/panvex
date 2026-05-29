@@ -98,6 +98,7 @@ export const schemaEntrySchema = z.object({
   secret: z.boolean().optional(),
   store: z.string().optional(),
   restart: z.boolean().optional(),
+  apply: z.enum(["live", "restart", "config"]).optional(),
   desc: z.string(),
 });
 
@@ -110,6 +111,8 @@ export const valuesEntrySchema = z.object({
   locked: z.boolean(),
   pending_restart: z.boolean().optional(),
   pending_value: z.unknown().optional(),
+  apply: z.enum(["live", "restart", "config"]).optional(),
+  overridden_by_env: z.boolean().optional(),
 });
 
 export const valuesResponseSchema = z.object({
