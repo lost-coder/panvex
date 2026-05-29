@@ -45,16 +45,53 @@ func (s *Server) handleVersion() http.HandlerFunc {
 	}
 }
 
-// updateSettingsResponse is the JSON payload returned by GET /settings/updates.
-type updateSettingsResponse struct {
+// updateSettingsPayload is the operator-tunable update settings object. It is
+// the single source of truth for the field set, so the GET (nested) and PUT
+// (flat) response shapes cannot drift apart — the drift that previously made
+// the dashboard's Updates panel silently disappear.
+type updateSettingsPayload struct {
 	CheckIntervalHours  int    `json:"check_interval_hours"`
 	AutoUpdatePanel     bool   `json:"auto_update_panel"`
 	AutoUpdateAgents    bool   `json:"auto_update_agents"`
 	GitHubRepo          string `json:"github_repo"`
 	GitHubToken         string `json:"github_token"`
 	AgentDownloadSource string `json:"agent_download_source"`
-	CurrentVersion      string `json:"current_version"`
-	State               UpdateState `json:"state"`
+}
+
+// updateSettingsResponse is the JSON returned by PUT /settings/updates: the
+// settings fields are promoted to the top level (flat) via the embedded
+// payload, alongside the cached state and running version.
+type updateSettingsResponse struct {
+	updateSettingsPayload
+	CurrentVersion string      `json:"current_version"`
+	State          UpdateState `json:"state"`
+}
+
+// updateSettingsGetResponse is the JSON returned by GET /settings/updates: the
+// settings object is nested under "settings". The dashboard parses this shape
+// (updateSettingsResponseSchema). GET and PUT intentionally differ — GET reads
+// the full state, PUT echoes just the saved settings.
+type updateSettingsGetResponse struct {
+	Settings       updateSettingsPayload `json:"settings"`
+	State          UpdateState           `json:"state"`
+	CurrentVersion string                `json:"current_version"`
+}
+
+// updateSettingsPayloadFrom maps stored settings to the wire payload, masking
+// the GitHub token so it is never echoed back in full.
+func updateSettingsPayloadFrom(s UpdateSettings) updateSettingsPayload {
+	token := ""
+	if s.GitHubToken != "" {
+		token = maskToken(s.GitHubToken)
+	}
+	return updateSettingsPayload{
+		CheckIntervalHours:  s.CheckIntervalHours,
+		AutoUpdatePanel:     s.AutoUpdatePanel,
+		AutoUpdateAgents:    s.AutoUpdateAgents,
+		GitHubRepo:          s.GitHubRepo,
+		GitHubToken:         token,
+		AgentDownloadSource: s.AgentDownloadSource,
+	}
 }
 
 // updateSettingsRequest is the JSON payload accepted by PUT /settings/updates.
@@ -113,20 +150,10 @@ func (s *Server) handleGetUpdateSettings() http.HandlerFunc {
 		state := s.updateState
 		s.settingsMu.RUnlock()
 
-		token := ""
-		if settings.GitHubToken != "" {
-			token = maskToken(settings.GitHubToken)
-		}
-
-		writeJSON(w, http.StatusOK, updateSettingsResponse{
-			CheckIntervalHours:  settings.CheckIntervalHours,
-			AutoUpdatePanel:     settings.AutoUpdatePanel,
-			AutoUpdateAgents:    settings.AutoUpdateAgents,
-			GitHubRepo:          settings.GitHubRepo,
-			GitHubToken:         token,
-			AgentDownloadSource: settings.AgentDownloadSource,
-			CurrentVersion:      s.version,
-			State:               state,
+		writeJSON(w, http.StatusOK, updateSettingsGetResponse{
+			Settings:       updateSettingsPayloadFrom(settings),
+			State:          state,
+			CurrentVersion: s.version,
 		})
 	}
 }
@@ -198,20 +225,10 @@ func (s *Server) buildUpdateSettingsResponse(updated UpdateSettings) updateSetti
 	state := s.updateState
 	s.settingsMu.RUnlock()
 
-	token := ""
-	if updated.GitHubToken != "" {
-		token = maskToken(updated.GitHubToken)
-	}
-
 	return updateSettingsResponse{
-		CheckIntervalHours:  updated.CheckIntervalHours,
-		AutoUpdatePanel:     updated.AutoUpdatePanel,
-		AutoUpdateAgents:    updated.AutoUpdateAgents,
-		GitHubRepo:          updated.GitHubRepo,
-		GitHubToken:         token,
-		AgentDownloadSource: updated.AgentDownloadSource,
-		CurrentVersion:      s.version,
-		State:               state,
+		updateSettingsPayload: updateSettingsPayloadFrom(updated),
+		CurrentVersion:        s.version,
+		State:                 state,
 	}
 }
 
