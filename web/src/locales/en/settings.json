@@ -171,7 +171,8 @@
     "hours": "hours",
     "cancel": "Cancel",
     "save": "Save",
-    "saving": "Saving…"
+    "saving": "Saving…",
+    "comingSoon": "coming soon"
   },
   "geoip": {
     "title": "GeoIP",

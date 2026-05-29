@@ -173,7 +173,8 @@
     "hours": "часов",
     "cancel": "Отмена",
     "save": "Сохранить",
-    "saving": "Сохраняем…"
+    "saving": "Сохраняем…",
+    "comingSoon": "скоро"
   },
   "geoip": {
     "title": "GeoIP",

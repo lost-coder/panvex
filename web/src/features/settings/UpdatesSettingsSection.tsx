@@ -85,27 +85,32 @@ export function UpdatesSettingsSection() {
         </div>
       </SettingsRow>
 
-      {/* Auto-update toggles: single row with two inline toggles */}
+      {/* Auto-update toggles: disabled until the auto-apply worker lands. */}
       <SettingsRow label={t("updates.autoUpdateLabel")}>
         <div className="flex items-center gap-5 text-sm">
-          <label className="flex items-center gap-1.5 cursor-pointer">
+          <label className="flex items-center gap-1.5 cursor-not-allowed opacity-50">
             <input
               type="checkbox"
-              className="h-4 w-4 accent-[var(--color-accent)] cursor-pointer"
+              className="h-4 w-4 accent-[var(--color-accent)]"
               checked={settings.auto_update_panel}
-              onChange={(e) => applyDraft({ auto_update_panel: e.target.checked })}
+              disabled
+              readOnly
             />
             <span className="text-fg-muted">{t("updates.panel")}</span>
           </label>
-          <label className="flex items-center gap-1.5 cursor-pointer">
+          <label className="flex items-center gap-1.5 cursor-not-allowed opacity-50">
             <input
               type="checkbox"
-              className="h-4 w-4 accent-[var(--color-accent)] cursor-pointer"
+              className="h-4 w-4 accent-[var(--color-accent)]"
               checked={settings.auto_update_agents}
-              onChange={(e) => applyDraft({ auto_update_agents: e.target.checked })}
+              disabled
+              readOnly
             />
             <span className="text-fg-muted">{t("updates.agents")}</span>
           </label>
+          <span className="rounded-full bg-surface-hover px-2 py-0.5 text-xs text-fg-muted">
+            {t("updates.comingSoon")}
+          </span>
         </div>
       </SettingsRow>
 
