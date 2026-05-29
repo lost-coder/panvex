@@ -3,11 +3,14 @@ package updates
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // GitHubRelease represents a single release from the GitHub Releases API.
@@ -113,13 +116,61 @@ func fetchReleasesPage(ctx context.Context, repo, token string) ([]GitHubRelease
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("github api returned status %d", resp.StatusCode)
+		return nil, githubAPIError(resp)
 	}
 	var releases []GitHubRelease
 	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
 		return nil, fmt.Errorf("decode releases: %w", err)
 	}
 	return releases, nil
+}
+
+// githubAPIError turns a non-200 GitHub API response into an operator-readable
+// error. The bare status code ("status 403") hides the cause; GitHub's JSON
+// body and rate-limit headers carry it. For an exhausted rate limit it spells
+// out the limit, the reset time, and the fix (add a token).
+func githubAPIError(resp *http.Response) error {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
+	var parsed struct {
+		Message string `json:"message"`
+	}
+	_ = json.Unmarshal(body, &parsed)
+	msg := strings.TrimSpace(parsed.Message)
+
+	// Rate-limit exhaustion: GitHub returns 403 (or 429) with the remaining
+	// count at 0. Unauthenticated requests are capped at 60/hour per IP.
+	rateLimited := (resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests) &&
+		resp.Header.Get("X-RateLimit-Remaining") == "0"
+	if rateLimited {
+		limit := resp.Header.Get("X-RateLimit-Limit")
+		if limit == "" {
+			limit = "60"
+		}
+		detail := fmt.Sprintf("GitHub API rate limit exceeded (limit %s/hour)", limit)
+		if reset := formatRateLimitReset(resp.Header.Get("X-RateLimit-Reset")); reset != "" {
+			detail += "; resets at " + reset
+		}
+		detail += ". Add a GitHub token in update settings for a higher limit (5000/hour)."
+		return errors.New(detail)
+	}
+
+	if msg != "" {
+		return fmt.Errorf("github api returned status %d: %s", resp.StatusCode, msg)
+	}
+	return fmt.Errorf("github api returned status %d", resp.StatusCode)
+}
+
+// formatRateLimitReset renders the X-RateLimit-Reset epoch header as a UTC
+// time string. Returns "" when the header is missing or unparseable.
+func formatRateLimitReset(header string) string {
+	if header == "" {
+		return ""
+	}
+	secs, err := strconv.ParseInt(header, 10, 64)
+	if err != nil {
+		return ""
+	}
+	return time.Unix(secs, 0).UTC().Format("2006-01-02 15:04 UTC")
 }
 
 // pickLatestPanelAndAgent returns the first matching control-plane and

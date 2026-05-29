@@ -24,6 +24,7 @@ export interface UpdateState {
   panel_changelog: string;
   agent_changelog: string;
   last_checked_at: number;
+  last_check_error: string;
 }
 
 export interface UpdateSettingsResponse {

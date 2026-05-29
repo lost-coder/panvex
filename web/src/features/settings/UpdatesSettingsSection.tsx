@@ -63,6 +63,18 @@ export function UpdatesSettingsSection() {
         </div>
       )}
 
+      {/* Last update-check error (e.g. GitHub rate limit). */}
+      {state.last_check_error && (
+        <div className="mx-4 mt-3 rounded-lg border border-red-500/30 bg-red-500/5 px-4 py-3">
+          <p className="text-sm font-medium text-red-400">
+            {t("updates.checkError")}
+          </p>
+          <p className="mt-0.5 text-xs text-fg-muted break-words">
+            {state.last_check_error}
+          </p>
+        </div>
+      )}
+
       {/* Versions: compact 2-column layout */}
       <SettingsRow label={t("updates.versionsLabel")}>
         <div className="flex items-center gap-6 text-sm">

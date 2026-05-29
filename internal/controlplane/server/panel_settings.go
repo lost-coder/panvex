@@ -237,6 +237,11 @@ type UpdateState struct {
 	PanelChangelog     string `json:"panel_changelog"`
 	AgentChangelog     string `json:"agent_changelog"`
 	LastCheckedAt      int64  `json:"last_checked_at"`
+	// LastCheckError holds the operator-readable reason the most recent update
+	// check failed (e.g. a GitHub rate-limit message). Empty after a
+	// successful check. Surfaced in the dashboard so a failed check is visible,
+	// not silent.
+	LastCheckError string `json:"last_check_error,omitempty"`
 }
 
 func (s *Server) restoreUpdateSettings() error {

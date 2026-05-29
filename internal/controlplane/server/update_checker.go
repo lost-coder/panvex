@@ -92,6 +92,7 @@ func (s *Server) checkForUpdates(ctx context.Context) {
 	panel, agent, err := FetchLatestVersions(fetchCtx, repo, token)
 	if err != nil {
 		s.logger.Warn("update check failed", "error", err)
+		s.recordUpdateCheckError(ctx, err)
 		return
 	}
 
@@ -117,21 +118,43 @@ func (s *Server) checkForUpdates(ctx context.Context) {
 		state.AgentChangelog = agent.Body
 	}
 
+	// A successful check clears any prior error (LastCheckError defaults to "").
 	s.settingsMu.Lock()
 	s.updateState = state
 	s.settingsMu.Unlock()
 
-	if s.store != nil {
-		data, err := json.Marshal(state)
-		if err == nil {
-			if putErr := s.store.PutUpdateState(ctx, data); putErr != nil {
-				s.logger.Error("persist update state failed", "error", putErr)
-			}
-		}
-	}
+	s.persistUpdateState(ctx, state)
 
 	s.logger.Info("update check completed",
 		"panel_version", state.LatestPanelVersion,
 		"agent_version", state.LatestAgentVersion,
 	)
+}
+
+// recordUpdateCheckError stores the reason the latest check failed so the
+// dashboard can show it. Previously-known versions are preserved — only the
+// error and the timestamp are updated.
+func (s *Server) recordUpdateCheckError(ctx context.Context, checkErr error) {
+	s.settingsMu.Lock()
+	s.updateState.LastCheckError = checkErr.Error()
+	s.updateState.LastCheckedAt = s.now().Unix()
+	state := s.updateState
+	s.settingsMu.Unlock()
+
+	s.persistUpdateState(ctx, state)
+}
+
+// persistUpdateState writes the cached update state to the store, if present.
+func (s *Server) persistUpdateState(ctx context.Context, state UpdateState) {
+	if s.store == nil {
+		return
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		s.logger.Error("marshal update state failed", "error", err)
+		return
+	}
+	if putErr := s.store.PutUpdateState(ctx, data); putErr != nil {
+		s.logger.Error("persist update state failed", "error", putErr)
+	}
 }

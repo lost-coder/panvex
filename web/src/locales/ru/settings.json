@@ -174,7 +174,8 @@
     "cancel": "Отмена",
     "save": "Сохранить",
     "saving": "Сохраняем…",
-    "comingSoon": "скоро"
+    "comingSoon": "скоро",
+    "checkError": "Не удалось проверить обновления"
   },
   "geoip": {
     "title": "GeoIP",

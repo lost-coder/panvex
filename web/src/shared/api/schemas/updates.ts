@@ -22,6 +22,10 @@ export const updateStateSchema = z.object({
   panel_changelog: z.string(),
   agent_changelog: z.string(),
   last_checked_at: z.number(),
+  // Reason the most recent update check failed (e.g. a GitHub rate-limit
+  // message). Omitted by the server after a successful check; defaults to ""
+  // so the parsed type stays a plain string.
+  last_check_error: z.string().optional().default(""),
 });
 
 export const updateSettingsResponseSchema = z.object({

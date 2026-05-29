@@ -172,7 +172,8 @@
     "cancel": "Cancel",
     "save": "Save",
     "saving": "Saving…",
-    "comingSoon": "coming soon"
+    "comingSoon": "coming soon",
+    "checkError": "Update check failed"
   },
   "geoip": {
     "title": "GeoIP",
