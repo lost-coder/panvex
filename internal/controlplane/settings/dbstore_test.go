@@ -105,6 +105,36 @@ func TestDBStore_WritePanelColumn_InvalidColumn(t *testing.T) {
 	}
 }
 
+// TestDBStore_WritePanelColumn_PasswordMinLength_IntBind exercises the
+// int-bind conversion path for password_min_length (the only INTEGER column on
+// panel_settings). SQLite coerces a string silently so it won't catch the
+// postgres-specific type error, but this guards the strconv conversion + the
+// round-trip. Postgres (int4 param) is the real beneficiary of binding an int
+// rather than a Go string; that path is exercised by the CI matrix's
+// PANVEX_POSTGRES_TEST_DSN storage suite, not here.
+func TestDBStore_WritePanelColumn_PasswordMinLength_IntBind(t *testing.T) {
+	db := openTestDB(t)
+	store := NewDBStore(db, PlaceholderQ)
+	ctx := context.Background()
+
+	if err := store.WritePanelColumn(ctx, "password_min_length", "12", ""); err != nil {
+		t.Fatalf("WritePanelColumn(password_min_length, 12): %v", err)
+	}
+	got, err := store.ReadPanelColumn(ctx, "password_min_length")
+	if err != nil {
+		t.Fatalf("ReadPanelColumn: %v", err)
+	}
+	if got != "12" {
+		t.Errorf("ReadPanelColumn = %q, want %q", got, "12")
+	}
+
+	// A non-numeric value must now be rejected before the UPDATE rather than
+	// being silently coerced (sqlite) or failing at the driver (postgres).
+	if err := store.WritePanelColumn(ctx, "password_min_length", "abc", ""); err == nil {
+		t.Fatal("expected error for non-numeric password_min_length, got nil")
+	}
+}
+
 // TestDBStore_PlaceholderRendering verifies the p() helper without a real DB.
 // Postgres round-trip coverage relies on the CI matrix running
 // PANVEX_POSTGRES_TEST_DSN against the broader storage test suite, which

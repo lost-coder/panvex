@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/dbsqlc"
@@ -107,7 +109,21 @@ func (s *DBStore) WritePanelColumn(ctx context.Context, col, raw, _ string) erro
 		"UPDATE panel_settings SET %s = %s, updated_at_unix = %s WHERE scope = %s",
 		col, s.p(1), s.p(2), s.p(3),
 	)
-	_, err := s.db.ExecContext(ctx, update, raw, now, settingsScope)
+	// Bind the column value type-correctly. password_min_length is the only
+	// INTEGER column in allowedPanelColumns (the rest are text/json). SQLite
+	// silently coerces a Go string into its INTEGER affinity, but pgx binds a
+	// Go string to a postgres int4 param as text — which the driver rejects
+	// with a type error → 500. Binding a real int is unambiguous for both
+	// backends, so convert here before the UPDATE.
+	var val any = raw
+	if col == "password_min_length" {
+		n, err := strconv.Atoi(strings.TrimSpace(raw))
+		if err != nil {
+			return fmt.Errorf("settings: password_min_length must be an integer, got %q: %w", raw, err)
+		}
+		val = n
+	}
+	_, err := s.db.ExecContext(ctx, update, val, now, settingsScope)
 	return err
 }
 

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	settingspkg "github.com/lost-coder/panvex/internal/controlplane/settings"
 )
 
@@ -186,6 +187,41 @@ func TestHTTPSettingsValues_RedactsDSN(t *testing.T) {
 	}
 	if dsn["secret"] != true {
 		t.Errorf("storage.dsn secret = %v, want true", dsn["secret"])
+	}
+}
+
+// TestHTTPSettingsValues_PutRequiresStore asserts that the values PUT path
+// returns 503 (not a nil-deref panic) on a no-store server where s.settings is
+// nil. The route is registered unconditionally; without the guard the
+// s.settings.Put/PasswordMinLength calls would panic (B1).
+func TestHTTPSettingsValues_PutRequiresStore(t *testing.T) {
+	now := time.Date(2026, time.March, 21, 15, 0, 0, 0, time.UTC)
+	server := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+	})
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
+		Username: "admin",
+		Password: "Admin1password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	loginResp := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "admin",
+		"password": "Admin1password",
+	}, nil)
+	if loginResp.Code != http.StatusOK {
+		t.Fatalf("login status = %d", loginResp.Code)
+	}
+	cookies := loginResp.Result().Cookies()
+
+	resp := performJSONRequest(t, server, http.MethodPut, "/api/settings/values", map[string]any{
+		"auth.password_min_length": 18,
+	}, cookies)
+	if resp.Code != http.StatusServiceUnavailable {
+		t.Fatalf("PUT /api/settings/values without store status = %d, want %d", resp.Code, http.StatusServiceUnavailable)
 	}
 }
 

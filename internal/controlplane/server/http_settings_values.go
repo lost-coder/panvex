@@ -134,6 +134,14 @@ func (s *Server) handleSettingsValuesPUT(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusForbidden, msgAdminRoleRequired)
 		return
 	}
+	// The values route is registered unconditionally, but a no-store server
+	// has a nil settings store. The GET path and every other settings consumer
+	// guard this; without the guard the Put/PasswordMinLength calls below
+	// nil-deref panic instead of returning 503.
+	if s.settings == nil {
+		writeError(w, http.StatusServiceUnavailable, "settings store not available")
+		return
+	}
 
 	var body map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {

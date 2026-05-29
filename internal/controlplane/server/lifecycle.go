@@ -350,7 +350,8 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 				ConfigPath: s.panelRuntime.ConfigPath,
 				Env:        os.Environ(),
 			}); err != nil {
-				s.logger.Warn("seed operational settings failed; continuing with env/defaults", "error", err)
+				s.logger.Error("settings seed to DB failed; env/config values are live this boot but will NOT persist (they revert to defaults once the env var is removed) — investigate the settings store",
+					"error", err, "alert", "settings_seed_persist_failed")
 			}
 			s.trySetStartupErr(func() error {
 				return s.settings.Reload(s.serverCtx)
