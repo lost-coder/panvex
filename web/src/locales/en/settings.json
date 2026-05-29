@@ -136,7 +136,11 @@
     "jsonNotice": "Edit via the dedicated section below",
     "placeholderDuration": "e.g. 30s, 5m, 1h",
     "placeholderHostport": "e.g. 0.0.0.0:8080",
-    "pendingRestart": "restart pending"
+    "pendingRestart": "restart pending",
+    "tierRestart": "needs restart",
+    "tierConfig": "config / CLI",
+    "overriddenByEnv": "overridden by env {{name}}",
+    "configManagedHint": "Managed via config.toml / environment, or the `panvex-control-plane settings` CLI."
   },
   "restartBanner": {
     "needs_one": "setting needs",

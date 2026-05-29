@@ -137,7 +137,11 @@
     "jsonNotice": "Изменяется в специальном разделе ниже",
     "placeholderDuration": "например, 30s, 5m, 1h",
     "placeholderHostport": "например, 0.0.0.0:8080",
-    "pendingRestart": "перезапуск ожидается"
+    "pendingRestart": "перезапуск ожидается",
+    "tierRestart": "нужен перезапуск",
+    "tierConfig": "config / CLI",
+    "overriddenByEnv": "перезаписано через env {{name}}",
+    "configManagedHint": "Управляется через config.toml / переменные окружения или CLI `panvex-control-plane settings`."
   },
   "restartBanner": {
     "needs_one": "настройка требует",
