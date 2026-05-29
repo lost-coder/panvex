@@ -35,4 +35,23 @@ func TestBuildAgentDirectUpdatePayload(t *testing.T) {
 		t.Fatalf("legacy URL fields must be gone, got download_url=%q panel_proxy_url=%q",
 			payload.DownloadURL, payload.PanelProxyURL)
 	}
+
+	// A v-prefixed version must normalise to the bare form in both fields.
+	vPayloadJSON, err := buildAgentDirectUpdatePayload("lost-coder/panvex", "v2.0.0")
+	if err != nil {
+		t.Fatalf("buildAgentDirectUpdatePayload(v-prefixed) error = %v", err)
+	}
+	var vp struct {
+		Version        string `json:"version"`
+		ReleaseBaseURL string `json:"release_base_url"`
+	}
+	if err := json.Unmarshal(vPayloadJSON, &vp); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if vp.Version != "2.0.0" {
+		t.Fatalf("v-prefixed version not normalised: got %q, want %q", vp.Version, "2.0.0")
+	}
+	if vp.ReleaseBaseURL != "https://github.com/lost-coder/panvex/releases/download/agent/v2.0.0" {
+		t.Fatalf("release_base_url = %q, want .../agent/v2.0.0", vp.ReleaseBaseURL)
+	}
 }

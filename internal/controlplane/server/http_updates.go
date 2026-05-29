@@ -490,8 +490,11 @@ func resolveAgentTargetVersion(w http.ResponseWriter, requestVersion string, sta
 // agent resolves the per-arch asset URLs itself from release_base_url, so the
 // panel never picks an architecture and can never send a wrong-arch binary.
 func buildAgentDirectUpdatePayload(repo, version string) ([]byte, error) {
-	base := fmt.Sprintf("https://github.com/%s/releases/download/agent/v%s",
-		repo, strings.TrimPrefix(version, "v"))
+	// Normalise to the bare (no leading "v") form once so the payload's
+	// version field and the release_base_url stay consistent regardless of
+	// how the caller spelled the version.
+	version = strings.TrimPrefix(version, "v")
+	base := fmt.Sprintf("https://github.com/%s/releases/download/agent/v%s", repo, version)
 	return json.Marshal(map[string]any{
 		"version":          version,
 		"release_base_url": base,
