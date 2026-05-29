@@ -1,61 +1,38 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
-	"path/filepath"
 	"testing"
-
-	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 )
 
-// TestBuildAgentUpdatePayloadUsesLivePanelURL verifies that the
-// panel_proxy_url in an agent-update payload is derived from the live
-// OperationalStore (http.public_url) rather than a stale boot-time
-// snapshot of s.panelSettings (Plan 3 read-path unification).
-func TestBuildAgentUpdatePayloadUsesLivePanelURL(t *testing.T) {
-	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+// TestBuildAgentDirectUpdatePayload verifies the agent-update payload carries
+// a release_base_url derived from the configured repo + target version, and
+// no longer embeds arch-specific URLs (the agent resolves those itself).
+func TestBuildAgentDirectUpdatePayload(t *testing.T) {
+	payloadJSON, err := buildAgentDirectUpdatePayload("lost-coder/panvex", "1.2.3")
 	if err != nil {
-		t.Fatalf("sqlite.Open() error = %v", err)
+		t.Fatalf("buildAgentDirectUpdatePayload() error = %v", err)
 	}
-	defer store.Close()
-
-	server := mustNew(t, Options{
-		LoginTimingFloor: -1,
-		Store:            store,
-	})
-	defer server.Close()
-
-	// Seed through the OperationalStore (now the authoritative read path),
-	// matching the other Plan 3 tests rather than the legacy
-	// store.PutPanelSettings "panel" scope.
-	if err := server.settings.Put(context.Background(), map[string]string{
-		"http.public_url": "https://panel.example.com",
-	}, "test"); err != nil {
-		t.Fatalf("settings.Put() error = %v", err)
-	}
-
-	assets := agentUpdateAssets{
-		targetVersion: "v1.2.3",
-		downloadURL:   "https://github.com/example/release/agent",
-		signatureURL:  "https://github.com/example/release/agent.sig",
-	}
-	payloadJSON := server.buildAgentUpdatePayload(
-		assets,
-		"deadbeef",
-		UpdateSettings{AgentDownloadSource: "panel"},
-		"internal.example.net",
-	)
 
 	var payload struct {
-		PanelProxyURL string `json:"panel_proxy_url"`
+		Version        string `json:"version"`
+		ReleaseBaseURL string `json:"release_base_url"`
+		DownloadURL    string `json:"download_url"`
+		PanelProxyURL  string `json:"panel_proxy_url"`
 	}
 	if err := json.Unmarshal(payloadJSON, &payload); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
 
-	want := "https://panel.example.com/api/agent/update/binary?version=1.2.3&arch=amd64"
-	if payload.PanelProxyURL != want {
-		t.Fatalf("panel_proxy_url = %q, want %q", payload.PanelProxyURL, want)
+	const wantBase = "https://github.com/lost-coder/panvex/releases/download/agent/v1.2.3"
+	if payload.ReleaseBaseURL != wantBase {
+		t.Fatalf("release_base_url = %q, want %q", payload.ReleaseBaseURL, wantBase)
+	}
+	if payload.Version != "1.2.3" {
+		t.Fatalf("version = %q, want %q", payload.Version, "1.2.3")
+	}
+	if payload.DownloadURL != "" || payload.PanelProxyURL != "" {
+		t.Fatalf("legacy URL fields must be gone, got download_url=%q panel_proxy_url=%q",
+			payload.DownloadURL, payload.PanelProxyURL)
 	}
 }

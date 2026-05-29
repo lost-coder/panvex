@@ -472,71 +472,30 @@ func (s *Server) installPanelBinaryFromArchive(archivePath string) bool {
 	return true
 }
 
-// agentUpdateAssets captures the URLs and target version resolved
-// from the cached update state plus the operator's request body.
-type agentUpdateAssets struct {
-	targetVersion string
-	downloadURL   string
-	checksumURL   string
-	signatureURL  string
-}
-
-// resolveAgentUpdateAssets validates the requested target version and
-// returns the asset URLs from the cached update state. Returns
-// (false, "", "") and writes the appropriate 4xx if anything is
-// missing.
-func resolveAgentUpdateAssets(w http.ResponseWriter, requestVersion string, state UpdateState) (agentUpdateAssets, bool) {
-	targetVersion := requestVersion
-	if targetVersion == "" {
-		targetVersion = state.LatestAgentVersion
+// resolveAgentTargetVersion picks the target version (request wins over the
+// cached latest) and writes a 400 when neither is available.
+func resolveAgentTargetVersion(w http.ResponseWriter, requestVersion string, state UpdateState) (string, bool) {
+	v := strings.TrimSpace(requestVersion)
+	if v == "" {
+		v = state.LatestAgentVersion
 	}
-	if targetVersion == "" {
+	if v == "" {
 		writeError(w, http.StatusBadRequest, "no agent version available")
-		return agentUpdateAssets{}, false
+		return "", false
 	}
-	if state.AgentDownloadURL == "" {
-		writeError(w, http.StatusBadRequest, "no download URL available")
-		return agentUpdateAssets{}, false
-	}
-	if state.AgentSignatureURL == "" {
-		// Refuse to dispatch an unsigned agent update — the agent side
-		// also refuses, but reject early so the operator sees the error
-		// synchronously rather than via a failed job.
-		writeError(w, http.StatusBadRequest, "release is missing a signature (.sig) asset; cannot update agent")
-		return agentUpdateAssets{}, false
-	}
-	return agentUpdateAssets{
-		targetVersion: targetVersion,
-		downloadURL:   state.AgentDownloadURL,
-		checksumURL:   state.AgentChecksumURL,
-		signatureURL:  state.AgentSignatureURL,
-	}, true
+	return v, true
 }
 
-// buildAgentUpdatePayload assembles the JSON payload sent to the
-// agent. When download_via_panel is set, the agent pulls the binary
-// through the control-plane's proxy endpoint rather than directly
-// from GitHub.
-func (s *Server) buildAgentUpdatePayload(assets agentUpdateAssets, checksum string, settings UpdateSettings, requestHost string) []byte {
-	downloadViaPanel := settings.AgentDownloadSource == "panel"
-	payload := map[string]any{
-		"version":            assets.targetVersion,
-		"download_url":       assets.downloadURL,
-		"checksum_sha256":    checksum,
-		"signature_url":      assets.signatureURL,
-		"download_via_panel": downloadViaPanel,
-	}
-	if downloadViaPanel {
-		panelURL := s.panelSettingsSnapshot().HTTPPublicURL
-		if panelURL == "" {
-			panelURL = "http://" + requestHost
-		}
-		payload["panel_proxy_url"] = strings.TrimRight(panelURL, "/") +
-			"/api/agent/update/binary?version=" + strings.TrimPrefix(assets.targetVersion, "v") +
-			"&arch=amd64"
-	}
-	payloadJSON, _ := json.Marshal(payload)
-	return payloadJSON
+// buildAgentDirectUpdatePayload assembles the JSON the agent receives. The
+// agent resolves the per-arch asset URLs itself from release_base_url, so the
+// panel never picks an architecture and can never send a wrong-arch binary.
+func buildAgentDirectUpdatePayload(repo, version string) ([]byte, error) {
+	base := fmt.Sprintf("https://github.com/%s/releases/download/agent/v%s",
+		repo, strings.TrimPrefix(version, "v"))
+	return json.Marshal(map[string]any{
+		"version":          version,
+		"release_base_url": base,
+	})
 }
 
 func (s *Server) handleAgentUpdate() http.HandlerFunc {
@@ -561,22 +520,31 @@ func (s *Server) handleAgentUpdate() http.HandlerFunc {
 		settings := s.updateSettings
 		s.settingsMu.RUnlock()
 
-		assets, ok := resolveAgentUpdateAssets(w, request.Version, state)
+		targetVersion, ok := resolveAgentTargetVersion(w, request.Version, state)
 		if !ok {
 			return
 		}
+		if err := validateGitHubRepo(settings.GitHubRepo); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid github_repo configured")
+			return
+		}
+		// Proxy download (AgentDownloadSource == "panel") is deferred: the
+		// proxy endpoint is operator-session gated and the agent has no such
+		// session. Fall back to direct download transparently (logged).
+		if settings.AgentDownloadSource == "panel" {
+			s.logger.Warn("agent update: panel proxy download is not yet supported; using direct download",
+				"agent_id", agentID)
+		}
 
-		payloadJSON, ok := s.prepareAgentUpdatePayload(w, r, assets, settings)
-		if !ok {
+		payloadJSON, err := buildAgentDirectUpdatePayload(settings.GitHubRepo, targetVersion)
+		if err != nil {
+			s.logger.Error("agent update: build payload failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to build update payload")
 			return
 		}
 
-		// P1-SEC-11: never discard the requireSession error. Without this
-		// check a malformed/expired cookie here would fall through with an
-		// empty ActorID in both the job record and the audit event, making
-		// the action untraceable. The handler sits in the operator group so
-		// the middleware already gates access, but we verify again and fail
-		// closed rather than silently anonymising a privileged action.
+		// P1-SEC-11: never discard the requireSession error — an empty ActorID
+		// would make the action untraceable. Fail closed.
 		session, _, err := s.requireSession(r)
 		if err != nil {
 			s.logger.Warn("agent update: session check failed in handler body", "error", err)
@@ -598,13 +566,13 @@ func (s *Server) handleAgentUpdate() http.HandlerFunc {
 
 		s.notifyAgentSessions(job.TargetAgentIDs)
 		s.appendAuditWithContext(r.Context(), session.UserID, "agents.update.dispatched", agentID, map[string]any{
-			"version": assets.targetVersion, "node_name": agent.NodeName,
+			"version": targetVersion, "node_name": agent.NodeName,
 		})
 
 		writeJSON(w, http.StatusOK, map[string]any{
 			"job_id":  job.ID,
 			"status":  "dispatched",
-			"version": assets.targetVersion,
+			"version": targetVersion,
 		})
 	}
 }
@@ -620,21 +588,6 @@ func (s *Server) lookupAgentForUpdate(w http.ResponseWriter, agentID string) (Ag
 		return Agent{}, false
 	}
 	return agent, true
-}
-
-// prepareAgentUpdatePayload downloads the GitHub-served checksum (with a
-// per-call timeout) and builds the JSON payload the agent will receive in
-// the update job. Returns ok=false after writing the appropriate HTTP error.
-func (s *Server) prepareAgentUpdatePayload(w http.ResponseWriter, r *http.Request, assets agentUpdateAssets, settings UpdateSettings) ([]byte, bool) {
-	checkCtx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	checksum, err := DownloadChecksum(checkCtx, assets.checksumURL, settings.GitHubToken)
-	if err != nil {
-		s.logger.Error("agent update: fetch checksum failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "failed to fetch checksum")
-		return nil, false
-	}
-	return s.buildAgentUpdatePayload(assets, checksum, settings, r.Host), true
 }
 
 // allowedAgentArches constrains the arch query parameter on the agent
