@@ -12,7 +12,7 @@ import (
 )
 
 func TestOperationalEntrySurfacesSource(t *testing.T) {
-	srv := testServerWithSQLite(t, time.Now())
+	srv := testServerWithSQLite(t, time.Date(2026, time.May, 29, 10, 0, 0, 0, time.UTC))
 	ctx := context.Background()
 	if err := srv.settings.Put(ctx, map[string]string{"http.public_url": "https://p.example"}, "test"); err != nil {
 		t.Fatalf("Put: %v", err)
@@ -38,7 +38,7 @@ func TestOperationalEntrySurfacesSource(t *testing.T) {
 }
 
 func TestBootstrapEntryReportsApplyTier(t *testing.T) {
-	srv := testServerWithSQLite(t, time.Now())
+	srv := testServerWithSQLite(t, time.Date(2026, time.May, 29, 10, 0, 0, 0, time.UTC))
 	var dsn settingspkg.FieldMeta
 	for _, f := range settingspkg.AllFields() {
 		if f.Name == "storage.dsn" {

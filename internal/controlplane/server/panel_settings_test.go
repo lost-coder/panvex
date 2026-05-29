@@ -42,7 +42,7 @@ func TestPublicURLChangeReachesAgentURL(t *testing.T) {
 // (via PendingChanges against the captured-active snapshot) instead of the
 // previously hardcoded false.
 func TestPanelRestartStatusReflectsPendingChanges(t *testing.T) {
-	srv := testServerWithSQLite(t, time.Now())
+	srv := testServerWithSQLite(t, time.Date(2026, time.May, 29, 10, 0, 0, 0, time.UTC))
 	ctx := context.Background()
 	// Change a restart-tier operational setting away from its captured-active
 	// value (default 30m).

@@ -17,7 +17,7 @@ type valuesEntry struct {
 	SourcePath      string `json:"source_path,omitempty"`
 	EnvVar          string `json:"env_var,omitempty"`
 	OverriddenByEnv bool   `json:"overridden_by_env,omitempty"`
-	Apply           string `json:"apply,omitempty"`
+	Apply           string `json:"apply"`
 	Secret          bool   `json:"secret,omitempty"`
 	Locked          bool   `json:"locked"`
 	PendingRestart  bool   `json:"pending_restart,omitempty"`
