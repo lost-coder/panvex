@@ -24,7 +24,7 @@ import {
 } from "@/ui";
 import { secondsToDisplay, displayToSeconds } from "@/shared/lib/pages-shared";
 import type { SettingsPageProps, SettingsRegistryProps } from "@/shared/api/types-pages/pages";
-import { RestartBanner, RegistrySection, RegistryField, namespaceOf, labelFor } from "@/features/settings/registry";
+import { RestartBanner, RegistrySection, RegistryField, SettingsLegend, namespaceOf, labelFor } from "@/features/settings/registry";
 import type { RegistrySectionField } from "@/features/settings/registry";
 
 // Operational namespaces rendered as schema-driven sections.
@@ -114,6 +114,12 @@ export function SettingsPage({
                 {registry.isSaving ? t("registry.saving") : t("registry.save")}
               </Button>
             </div>
+          </div>
+        )}
+
+        {registry && (
+          <div className="mb-4">
+            <SettingsLegend />
           </div>
         )}
 
@@ -379,6 +385,7 @@ function SystemInfoSection({ registry }: Readonly<{ registry: SettingsRegistryPr
                     schema={s}
                     values={{ ...entry, locked: true }}
                     onChange={() => {}}
+                    hideIndicators
                   />
                 );
               })}
