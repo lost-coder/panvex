@@ -99,7 +99,7 @@ func settingsList(out io.Writer, args []string) error {
 	for _, f := range fields {
 		if f.Class != settings.ClassOperational {
 			// config/CLI-managed (env/config.toml) — show guidance, not a value.
-			fmt.Fprintf(out, "%-40s [%s] managed via env/config (%s)\n", f.Name, f.Apply, f.Env)
+			_, _ = fmt.Fprintf(out, "%-40s [%s] managed via env/config (%s)\n", f.Name, f.Apply, f.Env)
 			continue
 		}
 		val := op.RawByName(f.Name)
@@ -111,7 +111,7 @@ func settingsList(out io.Writer, args []string) error {
 		if op.OverriddenByEnv(f.Name) {
 			over = " (overridden by env " + f.Env + ")"
 		}
-		fmt.Fprintf(out, "%-40s [%s] = %q  source=%s%s\n", f.Name, f.Apply, val, src, over)
+		_, _ = fmt.Fprintf(out, "%-40s [%s] = %q  source=%s%s\n", f.Name, f.Apply, val, src, over)
 	}
 	return nil
 }
@@ -137,7 +137,7 @@ func settingsGet(out io.Writer, args []string) error {
 	if f.Secret && val != "" {
 		val = "***"
 	}
-	fmt.Fprintln(out, val)
+	_, _ = fmt.Fprintln(out, val)
 	return nil
 }
 
@@ -164,7 +164,7 @@ func settingsSet(out io.Writer, args []string) error {
 	if err := op.Put(context.Background(), map[string]string{key: value}, "cli"); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "set %s = %q\n", key, value)
+	_, _ = fmt.Fprintf(out, "set %s = %q\n", key, value)
 	return nil
 }
 
@@ -218,6 +218,6 @@ func settingsReset(out io.Writer, args []string) error {
 	if err := op.Put(context.Background(), updates, "cli:reset"); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "reset %d setting(s) to default\n", len(updates))
+	_, _ = fmt.Fprintf(out, "reset %d setting(s) to default\n", len(updates))
 	return nil
 }
