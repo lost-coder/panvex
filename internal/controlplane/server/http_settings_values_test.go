@@ -37,6 +37,19 @@ func TestOperationalEntrySurfacesSource(t *testing.T) {
 	}
 }
 
+func TestBootstrapEntryReportsApplyTier(t *testing.T) {
+	srv := testServerWithSQLite(t, time.Now())
+	var dsn settingspkg.FieldMeta
+	for _, f := range settingspkg.AllFields() {
+		if f.Name == "storage.dsn" {
+			dsn = f
+		}
+	}
+	if got := srv.bootstrapEntry(dsn).Apply; got != "config" {
+		t.Errorf("storage.dsn Apply = %q, want config", got)
+	}
+}
+
 func TestHTTPSettingsValues_ReturnsOperationalAndBootstrap(t *testing.T) {
 	server, _, cookies := newAuthedServer(t)
 

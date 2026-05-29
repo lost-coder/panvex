@@ -73,6 +73,7 @@ func (s *Server) bootstrapEntry(f settings.FieldMeta) valuesEntry {
 		Source:     src,
 		SourcePath: srcPath,
 		EnvVar:     envVar,
+		Apply:      string(f.Apply),
 		Secret:     f.Secret,
 		Locked:     true, // bootstrap is always locked from the panel UI
 	}
