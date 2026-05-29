@@ -57,6 +57,13 @@ func (s *Server) handleGetPanelSettings() http.HandlerFunc {
 		}
 
 		settings := s.panelSettingsFromStore()
+		// panelSettingsSnapshot() reads the live store but omits updated_at_unix
+		// (not a registered setting, so it is absent from the snapshot). Read it
+		// directly here on the GET display path only — the shared snapshot is on
+		// hot enrollment/auth paths and must stay free of the extra query.
+		if s.settings != nil {
+			settings.UpdatedAt = s.settings.PanelSettingsUpdatedAt(r.Context())
+		}
 		writeJSON(w, http.StatusOK, panelSettingsResponseFromSettings(settings, s.panelRuntime, s.EffectiveHTTPListenAddress(), s.EffectiveGRPCListenAddress(), s.panelRestartStatus()))
 	}
 }

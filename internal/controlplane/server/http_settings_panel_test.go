@@ -660,6 +660,70 @@ func TestPutPanelSettings_PersistsPasswordPolicy(t *testing.T) {
 	}
 }
 
+func TestGetPanelSettings_ReportsUpdatedAtAfterWrite(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, time.May, 1, 12, 30, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:   func() time.Time { return now },
+		Store: store,
+		PanelRuntime: PanelRuntime{
+			HTTPListenAddress: ":8080",
+			GRPCListenAddress: ":8443",
+			TLSMode:           "proxy",
+			RestartSupported:  true,
+		},
+	})
+	defer server.Close()
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
+		Username: "admin",
+		Password: "Admin1password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser(admin) error = %v", err)
+	}
+
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "admin",
+		"password": "Admin1password",
+	}, nil)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login: code=%d", loginResponse.Code)
+	}
+	cookies := loginResponse.Result().Cookies()
+
+	rr := performJSONRequest(t, server, http.MethodPut, "/api/settings/panel", map[string]any{
+		"http_public_url":      "https://panel.example",
+		"grpc_public_endpoint": "agents.example:8443",
+	}, cookies)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PUT /api/settings/panel: code=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	// Regression: after Plan 3 rewired panelSettingsSnapshot() to read the live
+	// OperationalStore, GET dropped updated_at_unix (always 0) even though the
+	// column is persisted on every write. GET must report the real timestamp.
+	rr = performJSONRequest(t, server, http.MethodGet, "/api/settings/panel", nil, cookies)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("GET /api/settings/panel: code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var got struct {
+		UpdatedAtUnix int64 `json:"updated_at_unix"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.UpdatedAtUnix == 0 {
+		t.Fatalf("GET updated_at_unix = 0, want non-zero after a panel-settings write")
+	}
+}
+
 func TestPutPanelSettings_RejectsBelowFloor(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, time.May, 1, 12, 1, 0, 0, time.UTC)

@@ -207,6 +207,21 @@ func (s *OperationalStore) OverriddenByEnv(name string) bool {
 
 // --- typed getters (one per operational field) ---
 
+// PanelSettingsUpdatedAt returns the Unix timestamp of the last write to
+// the panel_settings row, or 0 if unset/unreadable. Direct read (not the
+// cached snapshot) since updated_at_unix is not a registered setting.
+func (s *OperationalStore) PanelSettingsUpdatedAt(ctx context.Context) int64 {
+	raw, err := s.reader.ReadPanelColumn(ctx, "updated_at_unix")
+	if err != nil || raw == "" {
+		return 0
+	}
+	n, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
 func (s *OperationalStore) HTTPPublicURL() string      { return s.rawByName("http.public_url") }
 func (s *OperationalStore) GRPCPublicEndpoint() string { return s.rawByName("grpc.public_endpoint") }
 

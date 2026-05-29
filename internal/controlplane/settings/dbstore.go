@@ -60,6 +60,10 @@ var allowedPanelColumns = map[string]struct{}{
 	"retention_json":       {},
 	"geoip_json":           {},
 	"geoip_state_json":     {},
+	// updated_at_unix is read-only here: it is set implicitly by
+	// WritePanelColumn on every write, never registered as a setting / Put
+	// target. Listed so ReadPanelColumn can surface it for display.
+	"updated_at_unix": {},
 }
 
 // ReadPanelColumn reads a single named column from the panel_settings row
