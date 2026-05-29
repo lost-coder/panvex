@@ -35,6 +35,22 @@ func TestRenderSchemaJSON_ContainsKnownField(t *testing.T) {
 	}
 }
 
+func TestRenderSchemaJSONIncludesApply(t *testing.T) {
+	data, err := RenderSchemaJSON()
+	if err != nil {
+		t.Fatalf("RenderSchemaJSON: %v", err)
+	}
+	var entries []map[string]any
+	if err := json.Unmarshal(data, &entries); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	for _, e := range entries {
+		if e["apply"] == nil || e["apply"] == "" {
+			t.Errorf("schema entry %v missing apply tier", e["name"])
+		}
+	}
+}
+
 func TestRenderReferenceMarkdown(t *testing.T) {
 	body, err := RenderReferenceMarkdown()
 	if err != nil {

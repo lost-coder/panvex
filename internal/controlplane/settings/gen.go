@@ -9,18 +9,19 @@ import (
 )
 
 type schemaEntry struct {
-	Name    string   `json:"name"`
-	Class   Class    `json:"class"`
-	Type    Type     `json:"type"`
-	Default *string  `json:"default,omitempty"`
-	Min     string   `json:"min,omitempty"`
-	Max     string   `json:"max,omitempty"`
-	Values  []string `json:"values,omitempty"`
-	Env     string   `json:"env,omitempty"`
-	Toml    string   `json:"toml,omitempty"`
-	Secret  bool     `json:"secret,omitempty"`
-	Store   string   `json:"store,omitempty"`
-	Desc    string   `json:"desc"`
+	Name    string    `json:"name"`
+	Class   Class     `json:"class"`
+	Apply   ApplyTier `json:"apply"`
+	Type    Type      `json:"type"`
+	Default *string   `json:"default,omitempty"`
+	Min     string    `json:"min,omitempty"`
+	Max     string    `json:"max,omitempty"`
+	Values  []string  `json:"values,omitempty"`
+	Env     string    `json:"env,omitempty"`
+	Toml    string    `json:"toml,omitempty"`
+	Secret  bool      `json:"secret,omitempty"`
+	Store   string    `json:"store,omitempty"`
+	Desc    string    `json:"desc"`
 }
 
 // RenderSchemaJSON returns the canonical JSON encoding of the registry
@@ -32,6 +33,7 @@ func RenderSchemaJSON() ([]byte, error) {
 		e := schemaEntry{
 			Name:   f.Name,
 			Class:  f.Class,
+			Apply:  f.Apply,
 			Type:   f.Type,
 			Min:    f.Min,
 			Max:    f.Max,

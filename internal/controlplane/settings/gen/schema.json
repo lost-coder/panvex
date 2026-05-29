@@ -2,6 +2,7 @@
   {
     "name": "http.listen_address",
     "class": "bootstrap",
+    "apply": "restart",
     "type": "hostport",
     "default": ":8080",
     "env": "PANVEX_HTTP_ADDR",
@@ -11,6 +12,7 @@
   {
     "name": "http.root_path",
     "class": "bootstrap",
+    "apply": "live",
     "type": "string",
     "default": "",
     "env": "PANVEX_HTTP_ROOT_PATH",
@@ -20,6 +22,7 @@
   {
     "name": "http.agent_root_path",
     "class": "bootstrap",
+    "apply": "live",
     "type": "string",
     "default": "",
     "env": "PANVEX_HTTP_AGENT_ROOT_PATH",
@@ -29,6 +32,7 @@
   {
     "name": "http.panel_allowed_cidrs",
     "class": "bootstrap",
+    "apply": "live",
     "type": "string",
     "default": "",
     "env": "PANVEX_PANEL_ALLOWED_CIDRS",
@@ -38,6 +42,7 @@
   {
     "name": "http.trusted_proxy_cidrs",
     "class": "bootstrap",
+    "apply": "live",
     "type": "string",
     "default": "",
     "env": "PANVEX_TRUSTED_PROXY_CIDRS",
@@ -47,6 +52,7 @@
   {
     "name": "grpc.listen_address",
     "class": "bootstrap",
+    "apply": "restart",
     "type": "hostport",
     "default": ":8443",
     "env": "PANVEX_GRPC_ADDR",
@@ -56,6 +62,7 @@
   {
     "name": "tls.mode",
     "class": "bootstrap",
+    "apply": "restart",
     "type": "enum",
     "default": "proxy",
     "values": [
@@ -69,6 +76,7 @@
   {
     "name": "tls.cert_file",
     "class": "bootstrap",
+    "apply": "restart",
     "type": "string",
     "default": "",
     "env": "PANVEX_TLS_CERT_FILE",
@@ -78,6 +86,7 @@
   {
     "name": "tls.key_file",
     "class": "bootstrap",
+    "apply": "restart",
     "type": "string",
     "default": "",
     "env": "PANVEX_TLS_KEY_FILE",
@@ -87,6 +96,7 @@
   {
     "name": "panel.restart_mode",
     "class": "bootstrap",
+    "apply": "live",
     "type": "enum",
     "default": "disabled",
     "values": [
@@ -100,6 +110,7 @@
   {
     "name": "panel.env",
     "class": "bootstrap",
+    "apply": "live",
     "type": "enum",
     "default": "development",
     "values": [
@@ -113,6 +124,7 @@
   {
     "name": "panel.multi_tenant",
     "class": "bootstrap",
+    "apply": "live",
     "type": "bool",
     "default": "false",
     "env": "PANVEX_MULTI_TENANT",
@@ -122,6 +134,7 @@
   {
     "name": "storage.driver",
     "class": "bootstrap",
+    "apply": "config",
     "type": "enum",
     "default": "sqlite",
     "values": [
@@ -135,6 +148,7 @@
   {
     "name": "storage.dsn",
     "class": "bootstrap",
+    "apply": "config",
     "type": "string",
     "env": "PANVEX_STORAGE_DSN",
     "toml": "storage.dsn",
@@ -143,6 +157,7 @@
   {
     "name": "storage.db_password",
     "class": "bootstrap",
+    "apply": "config",
     "type": "string",
     "env": "PANVEX_DB_PASSWORD",
     "secret": true,
@@ -151,6 +166,7 @@
   {
     "name": "storage.allow_insecure_db",
     "class": "bootstrap",
+    "apply": "live",
     "type": "bool",
     "default": "false",
     "env": "PANVEX_ALLOW_INSECURE_DB",
@@ -159,6 +175,7 @@
   {
     "name": "storage.allow_empty_db_password",
     "class": "bootstrap",
+    "apply": "live",
     "type": "bool",
     "default": "false",
     "env": "PANVEX_ALLOW_EMPTY_DB_PASSWORD",
@@ -167,6 +184,7 @@
   {
     "name": "auth.encryption_key",
     "class": "bootstrap",
+    "apply": "config",
     "type": "string",
     "env": "PANVEX_ENCRYPTION_KEY",
     "secret": true,
@@ -175,6 +193,7 @@
   {
     "name": "auth.force_secure_cookie",
     "class": "bootstrap",
+    "apply": "live",
     "type": "enum",
     "default": "auto",
     "values": [
@@ -188,6 +207,7 @@
   {
     "name": "auth.hsts_preload",
     "class": "bootstrap",
+    "apply": "live",
     "type": "bool",
     "default": "false",
     "env": "PANVEX_HSTS_PRELOAD",
@@ -196,6 +216,7 @@
   {
     "name": "observability.log_level",
     "class": "bootstrap",
+    "apply": "live",
     "type": "enum",
     "default": "info",
     "values": [
@@ -211,6 +232,7 @@
   {
     "name": "observability.log_file",
     "class": "bootstrap",
+    "apply": "live",
     "type": "string",
     "default": "",
     "env": "PANVEX_LOG_FILE",
@@ -220,6 +242,7 @@
   {
     "name": "observability.pprof_addr",
     "class": "bootstrap",
+    "apply": "live",
     "type": "string",
     "default": "",
     "env": "PANVEX_PPROF_ADDR",
@@ -229,6 +252,7 @@
   {
     "name": "observability.metrics_scrape_token",
     "class": "bootstrap",
+    "apply": "live",
     "type": "string",
     "env": "PANVEX_METRICS_SCRAPE_TOKEN",
     "secret": true,
@@ -237,6 +261,7 @@
   {
     "name": "updates.install_script_url",
     "class": "bootstrap",
+    "apply": "live",
     "type": "string",
     "default": "",
     "env": "PANVEX_INSTALL_SCRIPT_URL",
@@ -246,6 +271,7 @@
   {
     "name": "agent.client_data_concurrency",
     "class": "bootstrap",
+    "apply": "live",
     "type": "int",
     "default": "4",
     "min": "1",
@@ -257,6 +283,7 @@
   {
     "name": "http.public_url",
     "class": "operational",
+    "apply": "live",
     "type": "string",
     "default": "",
     "store": "panel_settings.http_public_url",
@@ -265,6 +292,7 @@
   {
     "name": "grpc.public_endpoint",
     "class": "operational",
+    "apply": "live",
     "type": "string",
     "default": "",
     "store": "panel_settings.grpc_public_endpoint",
@@ -273,6 +301,7 @@
   {
     "name": "auth.password_min_length",
     "class": "operational",
+    "apply": "live",
     "type": "int",
     "default": "10",
     "min": "8",
@@ -283,6 +312,7 @@
   {
     "name": "retention",
     "class": "operational",
+    "apply": "live",
     "type": "json",
     "store": "panel_settings.retention_json",
     "desc": "Retention policy: how long to keep audit events, metrics, jobs, presence rows."
@@ -290,6 +320,7 @@
   {
     "name": "geoip",
     "class": "operational",
+    "apply": "live",
     "type": "json",
     "store": "panel_settings.geoip_json",
     "desc": "GeoIP data source mode (off/local/url) and database paths."
@@ -297,6 +328,7 @@
   {
     "name": "updates.channel",
     "class": "operational",
+    "apply": "live",
     "type": "enum",
     "default": "stable",
     "values": [
@@ -309,6 +341,7 @@
   {
     "name": "updates.allow_prerelease",
     "class": "operational",
+    "apply": "live",
     "type": "bool",
     "default": "false",
     "store": "runtime_settings",
@@ -317,6 +350,7 @@
   {
     "name": "agents.outbound_backoff_initial",
     "class": "operational",
+    "apply": "live",
     "type": "duration",
     "default": "1s",
     "min": "500ms",
@@ -327,6 +361,7 @@
   {
     "name": "agents.outbound_backoff_max",
     "class": "operational",
+    "apply": "live",
     "type": "duration",
     "default": "60s",
     "min": "5s",
@@ -337,6 +372,7 @@
   {
     "name": "agents.presence_degraded_after",
     "class": "operational",
+    "apply": "restart",
     "type": "duration",
     "default": "30s",
     "min": "10s",
@@ -347,6 +383,7 @@
   {
     "name": "agents.presence_offline_after",
     "class": "operational",
+    "apply": "restart",
     "type": "duration",
     "default": "90s",
     "min": "30s",
@@ -357,6 +394,7 @@
   {
     "name": "auth.password_lockout_duration",
     "class": "operational",
+    "apply": "live",
     "type": "duration",
     "default": "15m",
     "min": "1m",
@@ -367,6 +405,7 @@
   {
     "name": "auth.password_lockout_max_attempts",
     "class": "operational",
+    "apply": "live",
     "type": "int",
     "default": "5",
     "min": "3",
@@ -377,6 +416,7 @@
   {
     "name": "auth.session_idle_timeout",
     "class": "operational",
+    "apply": "restart",
     "type": "duration",
     "default": "30m",
     "min": "5m",
@@ -387,6 +427,7 @@
   {
     "name": "auth.session_max_lifetime",
     "class": "operational",
+    "apply": "restart",
     "type": "duration",
     "default": "8h",
     "min": "1h",
@@ -397,6 +438,7 @@
   {
     "name": "auth.totp_lockout_duration",
     "class": "operational",
+    "apply": "live",
     "type": "duration",
     "default": "5m",
     "min": "1m",
@@ -407,6 +449,7 @@
   {
     "name": "auth.totp_setup_ttl",
     "class": "operational",
+    "apply": "live",
     "type": "duration",
     "default": "10m",
     "min": "2m",
@@ -417,6 +460,7 @@
   {
     "name": "jobs.ack_expiry_interval",
     "class": "operational",
+    "apply": "restart",
     "type": "duration",
     "default": "1h",
     "min": "5m",
@@ -427,6 +471,7 @@
   {
     "name": "jobs.ack_expiry_ttl",
     "class": "operational",
+    "apply": "restart",
     "type": "duration",
     "default": "2h",
     "min": "30m",
@@ -437,6 +482,7 @@
   {
     "name": "jobs.client_job_ttl",
     "class": "operational",
+    "apply": "restart",
     "type": "duration",
     "default": "10m",
     "min": "1m",
@@ -447,6 +493,7 @@
   {
     "name": "jobs.key_eviction_interval",
     "class": "operational",
+    "apply": "restart",
     "type": "duration",
     "default": "1h",
     "min": "5m",
@@ -457,6 +504,7 @@
   {
     "name": "jobs.key_eviction_ttl",
     "class": "operational",
+    "apply": "restart",
     "type": "duration",
     "default": "24h",
     "min": "1h",
@@ -467,6 +515,7 @@
   {
     "name": "observability.metrics_poll_interval",
     "class": "operational",
+    "apply": "restart",
     "type": "duration",
     "default": "5s",
     "min": "1s",
@@ -477,6 +526,7 @@
   {
     "name": "observability.telemetry_dashboard_window",
     "class": "operational",
+    "apply": "live",
     "type": "duration",
     "default": "40m",
     "min": "15m",
@@ -487,6 +537,7 @@
   {
     "name": "observability.telemetry_detail_boost_ttl",
     "class": "operational",
+    "apply": "live",
     "type": "duration",
     "default": "10m",
     "min": "1m",
@@ -497,6 +548,7 @@
   {
     "name": "storage.batch_flush_interval",
     "class": "operational",
+    "apply": "restart",
     "type": "duration",
     "default": "500ms",
     "min": "100ms",
@@ -507,6 +559,7 @@
   {
     "name": "storage.rollup_interval",
     "class": "operational",
+    "apply": "restart",
     "type": "duration",
     "default": "5m",
     "min": "1m",
