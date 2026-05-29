@@ -61,3 +61,26 @@ func TestSettingsCLI_GetConfigManagedErrors(t *testing.T) {
 		t.Fatal("get of a config-managed key should error")
 	}
 }
+
+func TestSettingsCLI_SetRoundTrip(t *testing.T) {
+	dsn := newTempSQLite(t)
+	flagsdsn := []string{"-storage-driver", "sqlite", "-storage-dsn", dsn}
+	if err := runSettingsOut(io.Discard, append([]string{"set"}, append(append([]string{}, flagsdsn...), "http.public_url", "https://cli.example")...)); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := runSettingsOut(&buf, append([]string{"get"}, append(append([]string{}, flagsdsn...), "http.public_url")...)); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got := strings.TrimSpace(buf.String()); got != "https://cli.example" {
+		t.Fatalf("get after set = %q, want https://cli.example", got)
+	}
+}
+
+func TestSettingsCLI_SetRejectsBootstrap(t *testing.T) {
+	dsn := newTempSQLite(t)
+	err := runSettingsOut(io.Discard, []string{"set", "-storage-driver", "sqlite", "-storage-dsn", dsn, "storage.dsn", "x"})
+	if err == nil {
+		t.Fatal("set of a config/bootstrap key should error")
+	}
+}

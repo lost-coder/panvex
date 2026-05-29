@@ -142,7 +142,30 @@ func settingsGet(out io.Writer, args []string) error {
 }
 
 func settingsSet(out io.Writer, args []string) error {
-	return fmt.Errorf("settings set: not implemented")
+	op, closer, positional, err := openSettingsStore(args)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = closer() }()
+	if len(positional) != 2 {
+		return fmt.Errorf("usage: settings set -storage-driver <d> -storage-dsn <dsn> <key> <value>")
+	}
+	key, value := positional[0], positional[1]
+	f, ok := fieldByName(key)
+	if !ok {
+		return fmt.Errorf("unknown setting %q", key)
+	}
+	if f.Class != settings.ClassOperational {
+		return fmt.Errorf("%q is managed via env/config (%s); edit config.toml or the environment, not the DB", key, f.Env)
+	}
+	if _, err := settings.Validate(f, value); err != nil {
+		return fmt.Errorf("invalid value for %q: %w", key, err)
+	}
+	if err := op.Put(context.Background(), map[string]string{key: value}, "cli"); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "set %s = %q\n", key, value)
+	return nil
 }
 
 func settingsReset(out io.Writer, args []string) error {
