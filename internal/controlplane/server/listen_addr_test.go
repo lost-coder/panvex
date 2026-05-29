@@ -18,6 +18,7 @@ func TestEffectiveListenAddressFromStore(t *testing.T) {
 		t.Errorf("default gRPC listen = %q, want :8443", got)
 	}
 
+	// Put internally calls Reload, so EffectiveHTTPListenAddress reads the updated cache.
 	if err := srv.settings.Put(context.Background(), map[string]string{"http.listen_address": ":9090"}, "test"); err != nil {
 		t.Fatalf("Put http: %v", err)
 	}

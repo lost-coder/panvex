@@ -52,6 +52,9 @@ type panelRestartStatus struct {
 }
 
 func defaultPanelRuntime(runtime PanelRuntime) PanelRuntime {
+	// Plan 6: listen addresses are resolved from the live settings store via
+	// EffectiveHTTP/GRPCListenAddress. These PanelRuntime defaults remain only
+	// as the no-store fallback (test fixtures without a DB-backed store).
 	if strings.TrimSpace(runtime.HTTPListenAddress) == "" {
 		runtime.HTTPListenAddress = ":8080"
 	}
