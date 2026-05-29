@@ -84,3 +84,39 @@ func TestSettingsCLI_SetRejectsBootstrap(t *testing.T) {
 		t.Fatal("set of a config/bootstrap key should error")
 	}
 }
+
+func TestSettingsCLI_Reset(t *testing.T) {
+	dsn := newTempSQLite(t)
+	f := []string{"-storage-driver", "sqlite", "-storage-dsn", dsn}
+	if err := runSettingsOut(io.Discard, append([]string{"set"}, append(append([]string{}, f...), "http.listen_address", ":9999")...)); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if err := runSettingsOut(io.Discard, append([]string{"reset"}, append(append([]string{}, f...), "http.listen_address")...)); err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := runSettingsOut(&buf, append([]string{"get"}, append(append([]string{}, f...), "http.listen_address")...)); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got := strings.TrimSpace(buf.String()); got != ":8080" {
+		t.Fatalf("after reset = %q, want :8080 (registry default)", got)
+	}
+}
+
+func TestSettingsCLI_ResetAll(t *testing.T) {
+	dsn := newTempSQLite(t)
+	f := []string{"-storage-driver", "sqlite", "-storage-dsn", dsn}
+	if err := runSettingsOut(io.Discard, append([]string{"set"}, append(append([]string{}, f...), "http.listen_address", ":9999")...)); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if err := runSettingsOut(io.Discard, append([]string{"reset"}, append(append([]string{}, f...), "--all")...)); err != nil {
+		t.Fatalf("reset --all: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := runSettingsOut(&buf, append([]string{"get"}, append(append([]string{}, f...), "http.listen_address")...)); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got := strings.TrimSpace(buf.String()); got != ":8080" {
+		t.Fatalf("after reset --all = %q, want :8080 (registry default)", got)
+	}
+}

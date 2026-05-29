@@ -169,5 +169,55 @@ func settingsSet(out io.Writer, args []string) error {
 }
 
 func settingsReset(out io.Writer, args []string) error {
-	return fmt.Errorf("settings reset: not implemented")
+	// `--all` reads as a flag to the stdlib flag package, so strip it out
+	// before flag parsing and track it as a mode toggle. The remaining args
+	// carry the storage flags plus an optional positional <key>.
+	all := false
+	filtered := make([]string, 0, len(args))
+	for _, a := range args {
+		if a == "--all" || a == "-all" {
+			all = true
+			continue
+		}
+		filtered = append(filtered, a)
+	}
+
+	op, closer, positional, err := openSettingsStore(filtered)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = closer() }()
+
+	var key string
+	if len(positional) > 0 {
+		key = positional[0]
+	}
+	updates := map[string]string{}
+	if all {
+		for _, f := range settings.AllFields() {
+			if f.Class == settings.ClassOperational && f.HasDefault {
+				updates[f.Name] = f.Default
+			}
+		}
+	} else {
+		if key == "" {
+			return fmt.Errorf("usage: settings reset -storage-driver <d> -storage-dsn <dsn> <key> | --all")
+		}
+		f, ok := fieldByName(key)
+		if !ok {
+			return fmt.Errorf("unknown setting %q", key)
+		}
+		if f.Class != settings.ClassOperational {
+			return fmt.Errorf("%q is managed via env/config (%s)", key, f.Env)
+		}
+		if !f.HasDefault {
+			return fmt.Errorf("%q has no registry default to reset to", key)
+		}
+		updates[key] = f.Default
+	}
+	if err := op.Put(context.Background(), updates, "cli:reset"); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "reset %d setting(s) to default\n", len(updates))
+	return nil
 }
