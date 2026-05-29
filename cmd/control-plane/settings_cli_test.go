@@ -103,6 +103,16 @@ func TestSettingsCLI_Reset(t *testing.T) {
 	}
 }
 
+func TestSettingsCLI_ResetAllAndKeyMutuallyExclusive(t *testing.T) {
+	dsn := newTempSQLite(t)
+	// `--all` is stripped before flag parse, then both `all` and `key` are set,
+	// so the mutual-exclusion guard must fire.
+	err := runSettingsOut(io.Discard, []string{"reset", "-storage-driver", "sqlite", "-storage-dsn", dsn, "--all", "http.listen_address"})
+	if err == nil {
+		t.Fatal("reset --all with a specific key should error (mutually exclusive)")
+	}
+}
+
 func TestSettingsCLI_ResetAll(t *testing.T) {
 	dsn := newTempSQLite(t)
 	f := []string{"-storage-driver", "sqlite", "-storage-dsn", dsn}

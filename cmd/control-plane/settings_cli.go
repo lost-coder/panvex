@@ -19,7 +19,7 @@ func runSettings(args []string) error { return runSettingsOut(os.Stdout, args) }
 
 func runSettingsOut(out io.Writer, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: settings <list|get|set|reset> [args] -storage-driver <d> -storage-dsn <dsn>")
+		return fmt.Errorf("usage: settings <list|get|set|reset> -storage-driver <d> -storage-dsn <dsn> [args]")
 	}
 	sub := args[0]
 	rest := args[1:]
@@ -39,30 +39,32 @@ func runSettingsOut(out io.Writer, args []string) error {
 
 // openSettingsStore builds an offline OperationalStore over the configured
 // backend, mirroring the server's wiring. Caller must call the returned closer
-// to release the store and the signal context. It returns the positional
-// (non-flag) remainder so subcommands can read their <key>/<value> args.
-func openSettingsStore(args []string) (*settings.OperationalStore, func() error, []string, error) {
+// to release the store and the signal context. It also returns the signal
+// context so write paths can thread Ctrl-C cancellation into Put, plus the
+// positional (non-flag) remainder so subcommands can read their <key>/<value>
+// args.
+func openSettingsStore(args []string) (*settings.OperationalStore, context.Context, func() error, []string, error) {
 	flags := flag.NewFlagSet("settings", flag.ContinueOnError)
 	storageDriver := flags.String(flagStorageDriver, "", helpStorageDriver)
 	storageDSN := flags.String(flagStorageDSN, "", helpStorageDSN)
 	if err := flags.Parse(args); err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	storageConfig, err := config.ResolveStorage(*storageDriver, *storageDSN)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	store, err := openStore(ctx, storageConfig)
 	if err != nil {
 		cancel()
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	rawDBer, ok := store.(interface{ DB() *sql.DB })
 	if !ok || rawDBer.DB() == nil {
 		_ = store.Close()
 		cancel()
-		return nil, nil, nil, fmt.Errorf("settings: storage backend does not expose a *sql.DB")
+		return nil, nil, nil, nil, fmt.Errorf("settings: storage backend does not expose a *sql.DB")
 	}
 	ph := settings.PlaceholderDollar
 	if storageConfig.Driver == config.StorageDriverSQLite {
@@ -73,10 +75,10 @@ func openSettingsStore(args []string) (*settings.OperationalStore, func() error,
 	if err := op.Reload(ctx); err != nil {
 		_ = store.Close()
 		cancel()
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	closer := func() error { cancel(); return store.Close() }
-	return op, closer, flags.Args(), nil
+	return op, ctx, closer, flags.Args(), nil
 }
 
 func fieldByName(name string) (settings.FieldMeta, bool) {
@@ -89,7 +91,7 @@ func fieldByName(name string) (settings.FieldMeta, bool) {
 }
 
 func settingsList(out io.Writer, args []string) error {
-	op, closer, _, err := openSettingsStore(args)
+	op, _, closer, _, err := openSettingsStore(args)
 	if err != nil {
 		return err
 	}
@@ -117,7 +119,7 @@ func settingsList(out io.Writer, args []string) error {
 }
 
 func settingsGet(out io.Writer, args []string) error {
-	op, closer, positional, err := openSettingsStore(args)
+	op, _, closer, positional, err := openSettingsStore(args)
 	if err != nil {
 		return err
 	}
@@ -142,7 +144,7 @@ func settingsGet(out io.Writer, args []string) error {
 }
 
 func settingsSet(out io.Writer, args []string) error {
-	op, closer, positional, err := openSettingsStore(args)
+	op, ctx, closer, positional, err := openSettingsStore(args)
 	if err != nil {
 		return err
 	}
@@ -161,7 +163,7 @@ func settingsSet(out io.Writer, args []string) error {
 	if _, err := settings.Validate(f, value); err != nil {
 		return fmt.Errorf("invalid value for %q: %w", key, err)
 	}
-	if err := op.Put(context.Background(), map[string]string{key: value}, "cli"); err != nil {
+	if err := op.Put(ctx, map[string]string{key: value}, "cli"); err != nil {
 		return err
 	}
 	_, _ = fmt.Fprintf(out, "set %s = %q\n", key, value)
@@ -182,7 +184,7 @@ func settingsReset(out io.Writer, args []string) error {
 		filtered = append(filtered, a)
 	}
 
-	op, closer, positional, err := openSettingsStore(filtered)
+	op, ctx, closer, positional, err := openSettingsStore(filtered)
 	if err != nil {
 		return err
 	}
@@ -191,6 +193,9 @@ func settingsReset(out io.Writer, args []string) error {
 	var key string
 	if len(positional) > 0 {
 		key = positional[0]
+	}
+	if all && key != "" {
+		return fmt.Errorf("settings reset: --all and a specific key are mutually exclusive")
 	}
 	updates := map[string]string{}
 	if all {
@@ -215,7 +220,11 @@ func settingsReset(out io.Writer, args []string) error {
 		}
 		updates[key] = f.Default
 	}
-	if err := op.Put(context.Background(), updates, "cli:reset"); err != nil {
+	if len(updates) == 0 {
+		_, _ = fmt.Fprintln(out, "nothing to reset: no operational settings have a registry default")
+		return nil
+	}
+	if err := op.Put(ctx, updates, "cli:reset"); err != nil {
 		return err
 	}
 	_, _ = fmt.Fprintf(out, "reset %d setting(s) to default\n", len(updates))
