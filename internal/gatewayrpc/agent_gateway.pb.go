@@ -270,7 +270,7 @@ type InstanceSnapshot struct {
 	Name              string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	Version           string                 `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
 	ConfigFingerprint string                 `protobuf:"bytes,4,opt,name=config_fingerprint,json=configFingerprint,proto3" json:"config_fingerprint,omitempty"`
-	ConnectedUsers    int32                  `protobuf:"varint,5,opt,name=connected_users,json=connectedUsers,proto3" json:"connected_users,omitempty"`
+	Connections       int32                  `protobuf:"varint,5,opt,name=connections,proto3" json:"connections,omitempty"`
 	ReadOnly          bool                   `protobuf:"varint,6,opt,name=read_only,json=readOnly,proto3" json:"read_only,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
@@ -334,9 +334,9 @@ func (x *InstanceSnapshot) GetConfigFingerprint() string {
 	return ""
 }
 
-func (x *InstanceSnapshot) GetConnectedUsers() int32 {
+func (x *InstanceSnapshot) GetConnections() int32 {
 	if x != nil {
-		return x.ConnectedUsers
+		return x.Connections
 	}
 	return 0
 }
@@ -2186,7 +2186,7 @@ type Snapshot struct {
 	RuntimeDiagnostics       *RuntimeDiagnosticsSnapshot       `protobuf:"bytes,17,opt,name=runtime_diagnostics,json=runtimeDiagnostics,proto3" json:"runtime_diagnostics,omitempty"`
 	RuntimeSecurityInventory *RuntimeSecurityInventorySnapshot `protobuf:"bytes,18,opt,name=runtime_security_inventory,json=runtimeSecurityInventory,proto3" json:"runtime_security_inventory,omitempty"`
 	// partial=true means at least one telemt sub-endpoint failed or the
-	// per-cycle deadline fired, so version / connected_users / read_only /
+	// per-cycle deadline fired, so version / connections / read_only /
 	// uptime in this snapshot may be missing (zero/empty). The panel must
 	// preserve its last-known values for those fields instead of overwriting
 	// them with the partial blanks (IN-H6).
@@ -3786,13 +3786,13 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\x0efleet_group_id\x18\x04 \x01(\tR\ffleetGroupId\x12\x18\n" +
 	"\aversion\x18\x05 \x01(\tR\aversion\x12\x1b\n" +
 	"\tread_only\x18\x06 \x01(\bR\breadOnly\x12(\n" +
-	"\x10observed_at_unix\x18\a \x01(\x03R\x0eobservedAtUnixJ\x04\b\x03\x10\x04\"\xc5\x01\n" +
+	"\x10observed_at_unix\x18\a \x01(\x03R\x0eobservedAtUnixJ\x04\b\x03\x10\x04\"\xbe\x01\n" +
 	"\x10InstanceSnapshot\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x12-\n" +
-	"\x12config_fingerprint\x18\x04 \x01(\tR\x11configFingerprint\x12'\n" +
-	"\x0fconnected_users\x18\x05 \x01(\x05R\x0econnectedUsers\x12\x1b\n" +
+	"\x12config_fingerprint\x18\x04 \x01(\tR\x11configFingerprint\x12 \n" +
+	"\vconnections\x18\x05 \x01(\x05R\vconnections\x12\x1b\n" +
 	"\tread_only\x18\x06 \x01(\bR\breadOnly\"\xf0\x02\n" +
 	"\x13ClientUsageSnapshot\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12.\n" +

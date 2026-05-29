@@ -3,6 +3,8 @@ package sqlite
 import (
 	"context"
 	"time"
+
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 // ListUserFleetGroupScopes — see storage.UserFleetGroupScopeStore.
@@ -29,6 +31,32 @@ func (s *Store) ListUserFleetGroupScopes(ctx context.Context, userID string) ([]
 		result = append(result, id)
 	}
 	return result, rows.Err()
+}
+
+// ListAllUserFleetGroupScopes returns every scope grant with provenance.
+// Offline-migrate only.
+func (s *Store) ListAllUserFleetGroupScopes(ctx context.Context) ([]storage.UserFleetGroupScopeRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT user_id, fleet_group_id, granted_by, granted_at_unix
+		FROM user_fleet_group_scopes
+		ORDER BY user_id, fleet_group_id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]storage.UserFleetGroupScopeRecord, 0)
+	for rows.Next() {
+		var rec storage.UserFleetGroupScopeRecord
+		var grantedAtUnix int64
+		if err := rows.Scan(&rec.UserID, &rec.FleetGroupID, &rec.GrantedBy, &grantedAtUnix); err != nil {
+			return nil, err
+		}
+		rec.GrantedAt = time.Unix(grantedAtUnix, 0).UTC()
+		out = append(out, rec)
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) SetUserFleetGroupScopes(ctx context.Context, userID string, fleetGroupIDs []string, grantedBy string, grantedAt time.Time) error {

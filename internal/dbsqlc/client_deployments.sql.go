@@ -23,7 +23,7 @@ func (q *Queries) DeleteClientDeploymentsForClient(ctx context.Context, clientID
 
 const listAllClientDeployments = `-- name: ListAllClientDeployments :many
 SELECT client_id, agent_id, desired_operation, status, last_error,
-       connection_links, last_applied_at, updated_at,
+       connection_links, link_diagnostic, last_applied_at, updated_at,
        last_reset_epoch_secs
 FROM client_deployments
 ORDER BY client_id ASC, agent_id ASC
@@ -36,6 +36,7 @@ type ListAllClientDeploymentsRow struct {
 	Status             string
 	LastError          string
 	ConnectionLinks    json.RawMessage
+	LinkDiagnostic     string
 	LastAppliedAt      sql.NullTime
 	UpdatedAt          time.Time
 	LastResetEpochSecs int64
@@ -57,6 +58,7 @@ func (q *Queries) ListAllClientDeployments(ctx context.Context) ([]ListAllClient
 			&i.Status,
 			&i.LastError,
 			&i.ConnectionLinks,
+			&i.LinkDiagnostic,
 			&i.LastAppliedAt,
 			&i.UpdatedAt,
 			&i.LastResetEpochSecs,
@@ -77,7 +79,7 @@ func (q *Queries) ListAllClientDeployments(ctx context.Context) ([]ListAllClient
 const listClientDeployments = `-- name: ListClientDeployments :many
 
 SELECT client_id, agent_id, desired_operation, status, last_error,
-       connection_links, last_applied_at, updated_at,
+       connection_links, link_diagnostic, last_applied_at, updated_at,
        last_reset_epoch_secs
 FROM client_deployments
 WHERE client_id = $1
@@ -91,6 +93,7 @@ type ListClientDeploymentsRow struct {
 	Status             string
 	LastError          string
 	ConnectionLinks    json.RawMessage
+	LinkDiagnostic     string
 	LastAppliedAt      sql.NullTime
 	UpdatedAt          time.Time
 	LastResetEpochSecs int64
@@ -114,6 +117,7 @@ func (q *Queries) ListClientDeployments(ctx context.Context, clientID string) ([
 			&i.Status,
 			&i.LastError,
 			&i.ConnectionLinks,
+			&i.LinkDiagnostic,
 			&i.LastAppliedAt,
 			&i.UpdatedAt,
 			&i.LastResetEpochSecs,
@@ -162,14 +166,16 @@ func (q *Queries) UpdateClientDeploymentLastReset(ctx context.Context, arg Updat
 const upsertClientDeployment = `-- name: UpsertClientDeployment :exec
 INSERT INTO client_deployments (client_id, agent_id, desired_operation,
                                 status, last_error, connection_links,
+                                link_diagnostic,
                                 last_applied_at, updated_at,
                                 last_reset_epoch_secs)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 ON CONFLICT (client_id, agent_id) DO UPDATE
 SET desired_operation = EXCLUDED.desired_operation,
     status            = EXCLUDED.status,
     last_error        = EXCLUDED.last_error,
     connection_links   = EXCLUDED.connection_links,
+    link_diagnostic   = EXCLUDED.link_diagnostic,
     last_applied_at   = EXCLUDED.last_applied_at,
     updated_at        = EXCLUDED.updated_at,
     last_reset_epoch_secs = EXCLUDED.last_reset_epoch_secs
@@ -182,6 +188,7 @@ type UpsertClientDeploymentParams struct {
 	Status             string
 	LastError          string
 	ConnectionLinks    json.RawMessage
+	LinkDiagnostic     string
 	LastAppliedAt      sql.NullTime
 	UpdatedAt          time.Time
 	LastResetEpochSecs int64
@@ -195,6 +202,7 @@ func (q *Queries) UpsertClientDeployment(ctx context.Context, arg UpsertClientDe
 		arg.Status,
 		arg.LastError,
 		arg.ConnectionLinks,
+		arg.LinkDiagnostic,
 		arg.LastAppliedAt,
 		arg.UpdatedAt,
 		arg.LastResetEpochSecs,

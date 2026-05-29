@@ -25,6 +25,28 @@ type SessionRecord struct {
 	LastSeenAt time.Time
 }
 
+// CPSecretRecord is one row of the cp_secrets key/value table. Value is
+// raw byte material (e.g. the CSRF HMAC seed) stored verbatim. Used only
+// by the offline migrate tooling to enumerate every secret for a
+// table-complete sqlite→postgres copy; the runtime path reads/writes a
+// single key at a time via Get/PutCPSecret.
+type CPSecretRecord struct {
+	Key       string
+	Value     []byte
+	UpdatedAt time.Time
+}
+
+// UserFleetGroupScopeRecord is one (user, fleet_group) scope grant with
+// its full provenance. The runtime ListUserFleetGroupScopes returns only
+// the fleet-group ids; this richer record exists for the offline migrate
+// tooling so granted_by / granted_at survive the copy (audit fidelity).
+type UserFleetGroupScopeRecord struct {
+	UserID       string
+	FleetGroupID string
+	GrantedBy    string
+	GrantedAt    time.Time
+}
+
 // ConsumedTotpRecord stores one already-consumed TOTP code for replay
 // prevention (Q2.U-S-17). The persistence layer keeps the code only
 // long enough to bridge the verifier acceptance window (90s) so a CP
@@ -265,7 +287,7 @@ type InstanceRecord struct {
 	Name              string
 	Version           string
 	ConfigFingerprint string
-	ConnectedUsers    int
+	Connections       int
 	ReadOnly          bool
 	UpdatedAt         time.Time
 }
@@ -410,6 +432,10 @@ type ClientAssignmentRecord struct {
 // time the panel completed a client.reset_quota job here — zero when
 // the panel has never reset this pair. Used for drift detection against
 // Telemt's currently-reported quota_last_reset_unix.
+// LinkDiagnostic is an operator-facing warning persisted alongside an
+// otherwise-successful apply (IN-M2). Empty means "no issue". Non-empty
+// when the node reported no connection links on a non-delete success, so
+// ConnectionLinks may be stale.
 type ClientDeploymentRecord struct {
 	ClientID           string
 	AgentID            string
@@ -417,6 +443,7 @@ type ClientDeploymentRecord struct {
 	Status             string
 	LastError          string
 	ConnectionLinks    []string
+	LinkDiagnostic     string
 	LastAppliedAt      *time.Time
 	UpdatedAt          time.Time
 	LastResetEpochSecs uint64

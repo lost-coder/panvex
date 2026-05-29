@@ -144,6 +144,18 @@ export function useIntegrationProviderMutations() {
     },
   });
 
+  // Write-only secret contract (H-6): the API redacts provider secret
+  // fields (e.g. cloudflare api_token) to "" on every read, so the
+  // value never reaches the client. When a provider-management form is
+  // built, it MUST:
+  //   - render secret fields as <input type="password">;
+  //   - show a placeholder like "leave blank to keep current";
+  //   - submit an empty secret to keep the stored value (the backend
+  //     merges empty secrets back from the sealed config — keep-on-empty),
+  //     and a non-empty value to overwrite it.
+  // Non-secret fields (account_id) round-trip normally.
+  // TODO(integrations-ui): no provider-management form exists yet; this
+  // hook is the data layer it will consume.
   const updateMutation = useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: UpdateIntegrationProviderRequest }) =>
       apiClient.updateIntegrationProvider(id, payload),

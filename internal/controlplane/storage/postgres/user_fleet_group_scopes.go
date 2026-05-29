@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/dbsqlc"
 )
 
@@ -24,6 +25,33 @@ func (s *Store) ListUserFleetGroupScopes(ctx context.Context, userID string) ([]
 		return []string{}, nil
 	}
 	return rows, nil
+}
+
+// ListAllUserFleetGroupScopes returns every scope grant with provenance.
+// Offline-migrate only. Uses raw SQL rather than dbsqlc because the
+// migrate-complete listing has no other caller and adding a sqlc query
+// would force a baseline regen.
+func (s *Store) ListAllUserFleetGroupScopes(ctx context.Context) ([]storage.UserFleetGroupScopeRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT user_id, fleet_group_id, granted_by, granted_at
+		FROM user_fleet_group_scopes
+		ORDER BY user_id, fleet_group_id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]storage.UserFleetGroupScopeRecord, 0)
+	for rows.Next() {
+		var rec storage.UserFleetGroupScopeRecord
+		if err := rows.Scan(&rec.UserID, &rec.FleetGroupID, &rec.GrantedBy, &rec.GrantedAt); err != nil {
+			return nil, err
+		}
+		rec.GrantedAt = rec.GrantedAt.UTC()
+		out = append(out, rec)
+	}
+	return out, rows.Err()
 }
 
 // SetUserFleetGroupScopes replaces the user's scope set with the supplied

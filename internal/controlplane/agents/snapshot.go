@@ -30,7 +30,7 @@ type InstanceSnapshot struct {
 	Name              string
 	Version           string
 	ConfigFingerprint string
-	ConnectedUsers    int
+	Connections       int
 	ReadOnly          bool
 }
 

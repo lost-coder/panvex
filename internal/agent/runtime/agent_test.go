@@ -15,10 +15,10 @@ import (
 func TestAgentBuildSnapshotMarksLifecycleRegressionAsDegraded(t *testing.T) {
 	client := &fakeTelemtClient{
 		state: telemt.RuntimeState{
-			Version:        "2026.03",
-			ReadOnly:       false,
-			UptimeSeconds:  120,
-			ConnectedUsers: 8,
+			Version:       "2026.03",
+			ReadOnly:      false,
+			UptimeSeconds: 120,
+			Connections:   8,
 			Gates: telemt.RuntimeGates{
 				AcceptingNewConnections: false,
 				MERuntimeReady:          false,
@@ -121,10 +121,10 @@ func TestAgentRuntimeSnapshotIntervalUsesFastCadenceDuringInitializationAndCoold
 func TestAgentBuildSnapshotUsesTelemtRuntimeState(t *testing.T) {
 	client := &fakeTelemtClient{
 		state: telemt.RuntimeState{
-			Version:        "2026.03",
-			ReadOnly:       true,
-			UptimeSeconds:  90_061,
-			ConnectedUsers: 42,
+			Version:       "2026.03",
+			ReadOnly:      true,
+			UptimeSeconds: 90_061,
+			Connections:   42,
 			Gates: telemt.RuntimeGates{
 				AcceptingNewConnections: true,
 				MERuntimeReady:          true,
@@ -346,9 +346,9 @@ func TestAgentBuildSnapshotIncludesSystemLoad(t *testing.T) {
 func TestAgentBuildSnapshotIncludesClientUsageEntries(t *testing.T) {
 	client := &fakeTelemtClient{
 		state: telemt.RuntimeState{
-			Version:        "2026.03",
-			ReadOnly:       false,
-			ConnectedUsers: 7,
+			Version:     "2026.03",
+			ReadOnly:    false,
+			Connections: 7,
 			Clients: []telemt.ClientUsage{
 				{
 					ClientID:         "client-1",
@@ -657,6 +657,26 @@ func TestAgentHandleJobDeletesManagedClient(t *testing.T) {
 	}
 }
 
+// TestAgentHandleJobDeleteAbsentClientIsIdempotent guards the delete path's
+// idempotency: deleting a client Telemt no longer has (404 → ErrClientNotFound)
+// must report success, mirroring the disable path. A re-delivered client.delete
+// (panel retry after a lost ack) where the client is already gone would
+// otherwise fail forever.
+func TestAgentHandleJobDeleteAbsentClientIsIdempotent(t *testing.T) {
+	client := &fakeTelemtClient{deleteErr: telemt.ErrClientNotFound}
+	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
+
+	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
+		Id:          "job-delete-absent",
+		Action:      "client.delete",
+		PayloadJson: `{"client_id":"client-1","name":"alice"}`,
+	}, time.Date(2026, time.May, 29, 12, 5, 0, 0, time.UTC))
+
+	if !result.Success {
+		t.Fatalf("delete of absent client Success = false, want true (idempotent), message = %q", result.Message)
+	}
+}
+
 func TestAgentHandleJobRefreshDiagnosticsInvalidatesSlowData(t *testing.T) {
 	client := &fakeTelemtClient{}
 	agent := New(Config{
@@ -685,9 +705,9 @@ func TestAgentBuildSnapshotMapsTelemtClientNamesBackToManagedClientIDs(t *testin
 			ConnectionLinks: []string{"tg://proxy?server=node-a&secret=create"},
 		},
 		state: telemt.RuntimeState{
-			Version:        "2026.03",
-			ReadOnly:       false,
-			ConnectedUsers: 1,
+			Version:     "2026.03",
+			ReadOnly:    false,
+			Connections: 1,
 			Clients: []telemt.ClientUsage{
 				{
 					ClientName:       "alice",
@@ -1011,9 +1031,9 @@ func TestBuildRuntimeUnreachableSnapshot(t *testing.T) {
 func TestBuildRuntimeSnapshotHealthyTelemtUnreachableFalse(t *testing.T) {
 	client := &fakeTelemtClient{
 		state: telemt.RuntimeState{
-			Version:        "2026.03",
-			UptimeSeconds:  60,
-			ConnectedUsers: 1,
+			Version:       "2026.03",
+			UptimeSeconds: 60,
+			Connections:   1,
 			Gates: telemt.RuntimeGates{
 				AcceptingNewConnections: true,
 				MERuntimeReady:          true,

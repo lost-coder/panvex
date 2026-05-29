@@ -44,6 +44,24 @@ type Summary struct {
 	ClientAssignments              int
 	ClientDeployments              int
 	PanelSettings                  int
+	DiscoveredClients              int
+
+	// Tier 1 + Tier 2 typed tables (finding L-5).
+	AgentRevocations       int
+	AgentFallbackState     int
+	IntegrationProviders   int
+	FleetGroupIntegrations int
+	UserFleetGroupScopes   int
+	ClientUsage            int
+	ClientIPHistory        int
+	Sessions               int
+	UpdateConfig           int
+	CPSecrets              int
+
+	// Raw row-copy tables (ciphertext / out-of-MigrationStore registries).
+	WebhookEndpoints int
+	WebhookOutbox    int
+	RuntimeSettings  int
 }
 
 // Run validates the backend pair, opens both stores, and performs one offline copy.
@@ -236,6 +254,18 @@ func copyStore(ctx context.Context, source storage.MigrationStore, target storag
 	if err := copyClientsAndChildren(ctx, source, target, &summary); err != nil {
 		return Summary{}, err
 	}
+	if err := copyTierOneEntities(ctx, source, target, &summary); err != nil {
+		return Summary{}, err
+	}
+	if err := copyPerParentEntities(ctx, source, target, &summary); err != nil {
+		return Summary{}, err
+	}
+	if err := copyUpdateConfigSingletons(ctx, source, target, &summary); err != nil {
+		return Summary{}, err
+	}
+	if err := copyRawTables(ctx, source, target, &summary); err != nil {
+		return Summary{}, err
+	}
 	if err := copySingletonPanelSettings(ctx, source, target, &summary); err != nil {
 		return Summary{}, err
 	}
@@ -295,13 +325,13 @@ func ensureTargetEmpty(ctx context.Context, target storage.MigrationStore) error
 	if err != nil {
 		return err
 	}
-	if counts.Users > 0 || counts.UserAppearance > 0 || counts.FleetGroups > 0 || counts.Agents > 0 || counts.Instances > 0 || counts.Jobs > 0 || counts.JobTargets > 0 || counts.AuditEvents > 0 || counts.MetricSnapshots > 0 || counts.EnrollmentTokens > 0 || counts.AgentCertificateRecoveryGrants > 0 || counts.Clients > 0 || counts.ClientAssignments > 0 || counts.ClientDeployments > 0 || counts.PanelSettings > 0 {
+	// listCounts now populates every migrated-table field (typed + raw),
+	// so any non-zero count means the target already holds persistent
+	// state we must not overwrite. Comparing against the zero Summary
+	// keeps this check in lock-step with the copy/verify paths — a new
+	// migrated table cannot be forgotten here.
+	if counts != (Summary{}) {
 		return ErrTargetNotEmpty
-	}
-	if _, err := target.GetPanelSettings(ctx); err == nil {
-		return ErrTargetNotEmpty
-	} else if !errors.Is(err, storage.ErrNotFound) {
-		return err
 	}
 	if _, err := target.GetCertificateAuthority(ctx); err == nil {
 		return ErrTargetNotEmpty
@@ -337,6 +367,18 @@ func listCounts(ctx context.Context, store storage.MigrationStore) (Summary, err
 		return Summary{}, err
 	}
 	if err := countClientsAndChildren(ctx, store, &summary); err != nil {
+		return Summary{}, err
+	}
+	if err := countTierOneEntities(ctx, store, &summary); err != nil {
+		return Summary{}, err
+	}
+	if err := countPerParentEntities(ctx, store, &summary); err != nil {
+		return Summary{}, err
+	}
+	if err := countUpdateConfigSingletons(ctx, store, &summary); err != nil {
+		return Summary{}, err
+	}
+	if err := countRawTables(ctx, store, &summary); err != nil {
 		return Summary{}, err
 	}
 	if err := countPanelSettings(ctx, store, &summary); err != nil {

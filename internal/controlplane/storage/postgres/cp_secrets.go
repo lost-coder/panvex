@@ -27,6 +27,32 @@ func (s *Store) GetCPSecret(ctx context.Context, key string) ([]byte, error) {
 	return value, nil
 }
 
+// ListCPSecrets enumerates every cp_secrets row for the offline migrate
+// tooling. Values are returned verbatim as raw bytes. Uses raw SQL
+// rather than dbsqlc because the migrate-complete listing has no other
+// caller and adding a sqlc query would force a baseline regen.
+func (s *Store) ListCPSecrets(ctx context.Context) ([]storage.CPSecretRecord, error) {
+	if s.sqlDB == nil {
+		return nil, errTxBoundStore
+	}
+	rows, err := s.sqlDB.QueryContext(ctx, `SELECT key, value, updated_at FROM cp_secrets ORDER BY key`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]storage.CPSecretRecord, 0)
+	for rows.Next() {
+		var rec storage.CPSecretRecord
+		if err := rows.Scan(&rec.Key, &rec.Value, &rec.UpdatedAt); err != nil {
+			return nil, err
+		}
+		rec.UpdatedAt = rec.UpdatedAt.UTC()
+		out = append(out, rec)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) PutCPSecret(ctx context.Context, key string, value []byte) error {
 	if s.sqlDB == nil {
 		return errTxBoundStore

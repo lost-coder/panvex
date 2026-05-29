@@ -18,8 +18,8 @@ type stubKind struct {
 	providerKind string
 }
 
-func (k stubKind) Name() string        { return k.name }
-func (k stubKind) Description() string { return "test kind" }
+func (k stubKind) Name() string         { return k.name }
+func (k stubKind) Description() string  { return "test kind" }
 func (k stubKind) ProviderKind() string { return k.providerKind }
 func (k stubKind) Validate(config json.RawMessage, provider *storage.IntegrationProviderRecord) error {
 	if string(config) == `"bad"` {
@@ -32,6 +32,7 @@ type stubProviderKind struct{ name string }
 
 func (k stubProviderKind) Name() string                          { return k.name }
 func (k stubProviderKind) Description() string                   { return "test provider" }
+func (k stubProviderKind) SecretFields() []string                { return nil }
 func (k stubProviderKind) Validate(config json.RawMessage) error { return nil }
 
 func TestIntegrationRegistryRegisterAndGet(t *testing.T) {

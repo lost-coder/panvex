@@ -225,18 +225,18 @@ func (s *Store) PutInstancesBulk(ctx context.Context, instances []storage.Instan
 			for _, instance := range chunk {
 				args = append(args,
 					instance.ID, instance.AgentID, instance.Name, instance.Version,
-					instance.ConfigFingerprint, instance.ConnectedUsers, instance.ReadOnly,
+					instance.ConfigFingerprint, instance.Connections, instance.ReadOnly,
 					instance.UpdatedAt.UTC(),
 				)
 			}
-			query := `INSERT INTO telemt_instances (id, agent_id, name, version, config_fingerprint, connected_users, read_only, updated_at) VALUES ` +
+			query := `INSERT INTO telemt_instances (id, agent_id, name, version, config_fingerprint, connections, read_only, updated_at) VALUES ` +
 				placeholders(len(chunk), cols) +
 				` ON CONFLICT (id) DO UPDATE SET
 					agent_id = EXCLUDED.agent_id,
 					name = EXCLUDED.name,
 					version = EXCLUDED.version,
 					config_fingerprint = EXCLUDED.config_fingerprint,
-					connected_users = EXCLUDED.connected_users,
+					connections = EXCLUDED.connections,
 					read_only = EXCLUDED.read_only,
 					updated_at = EXCLUDED.updated_at`
 			if _, err := exec.ExecContext(ctx, query, args...); err != nil {

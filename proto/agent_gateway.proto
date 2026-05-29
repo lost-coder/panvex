@@ -39,7 +39,7 @@ message InstanceSnapshot {
   string name = 2;
   string version = 3;
   string config_fingerprint = 4;
-  int32 connected_users = 5;
+  int32 connections = 5;
   bool read_only = 6;
 }
 
@@ -297,7 +297,7 @@ message Snapshot {
   RuntimeDiagnosticsSnapshot runtime_diagnostics = 17;
   RuntimeSecurityInventorySnapshot runtime_security_inventory = 18;
   // partial=true means at least one telemt sub-endpoint failed or the
-  // per-cycle deadline fired, so version / connected_users / read_only /
+  // per-cycle deadline fired, so version / connections / read_only /
   // uptime in this snapshot may be missing (zero/empty). The panel must
   // preserve its last-known values for those fields instead of overwriting
   // them with the partial blanks (IN-H6).

@@ -337,6 +337,7 @@ func buildClientDeploymentResponses(deployments []managedClientDeployment, usage
 			Status:             deployment.Status,
 			LastError:          deployment.LastError,
 			ConnectionLinks:    links,
+			LinkDiagnostic:     deployment.LinkDiagnostic,
 			LastAppliedAt:      lastAppliedAt,
 			UpdatedAt:          deployment.UpdatedAt.UTC().Unix(),
 			QuotaUsedBytes:     usage.QuotaUsedBytes,

@@ -84,7 +84,7 @@ func instancesFromSnapshot(snapshot agentSnapshot) []Instance {
 			Name:              instance.Name,
 			Version:           instance.Version,
 			ConfigFingerprint: instance.ConfigFingerprint,
-			ConnectedUsers:    instance.ConnectedUsers,
+			Connections:       instance.Connections,
 			ReadOnly:          instance.ReadOnly,
 			UpdatedAt:         snapshot.ObservedAt.UTC(),
 		})
@@ -236,7 +236,7 @@ func (s *Server) applyAgentSnapshot(ctx context.Context, snapshot agentSnapshot)
 	agent := s.updateAgentRecordFromSnapshot(snapshot)
 	s.agents[snapshot.AgentID] = agent
 	// IN-H6: on a partial snapshot the instance rows are blanked
-	// (version/connected_users/read_only); preserve the last-known instances
+	// (version/connections/read_only); preserve the last-known instances
 	// instead of committing/persisting zeros. The agent is alive (LastSeenAt
 	// advanced); its telemt detail simply could not be fully read this cycle.
 	var instances []Instance

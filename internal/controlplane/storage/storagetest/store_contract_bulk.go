@@ -102,8 +102,8 @@ func runBulkWriteContract(t *testing.T, open OpenStore) {
 		}
 		ts := time.Date(2026, time.April, 1, 12, 0, 0, 0, time.UTC)
 		batch := []storage.InstanceRecord{
-			{ID: "i1", AgentID: agent.ID, Name: "t1", Version: "v1", ConfigFingerprint: "c1", ConnectedUsers: 1, UpdatedAt: ts},
-			{ID: "i2", AgentID: agent.ID, Name: "t2", Version: "v1", ConfigFingerprint: "c2", ConnectedUsers: 2, UpdatedAt: ts},
+			{ID: "i1", AgentID: agent.ID, Name: "t1", Version: "v1", ConfigFingerprint: "c1", Connections: 1, UpdatedAt: ts},
+			{ID: "i2", AgentID: agent.ID, Name: "t2", Version: "v1", ConfigFingerprint: "c2", Connections: 2, UpdatedAt: ts},
 		}
 		if err := store.PutInstancesBulk(ctx, batch); err != nil {
 			t.Fatalf("PutInstancesBulk: %v", err)
@@ -204,6 +204,82 @@ func runBulkWriteContract(t *testing.T, open OpenStore) {
 		}
 		if len(got) != 2 {
 			t.Fatalf("len(server_load) = %d, want 2 (conflict ignored)", len(got))
+		}
+	})
+
+	t.Run("RollupServerLoadHourly weights averages by sample_count (IN-L5)", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		group := storage.FleetGroupRecord{ID: "slw-grp", Name: "SLW", CreatedAt: time.Now().UTC()}
+		if err := store.PutFleetGroup(ctx, group); err != nil {
+			t.Fatalf(errPutFleetGroupShort, err)
+		}
+		agent := storage.AgentRecord{ID: "slw-agent", NodeName: "n", FleetGroupID: group.ID, LastSeenAt: time.Now().UTC()}
+		if err := store.PutAgent(ctx, agent); err != nil {
+			t.Fatalf(errPutAgentShort, err)
+		}
+
+		bucket := time.Date(2026, time.April, 3, 9, 0, 0, 0, time.UTC)
+		// Two raw points in the same hour bucket carrying very different
+		// sample counts. A naive AVG(avg) returns (10+90)/2 = 50; the
+		// sample-weighted mean SUM(avg*count)/SUM(count) =
+		// (10*1 + 90*9)/10 = 82. The hourly sample_count must be the SUM of
+		// underlying samples (10), not the raw-row COUNT(*) (2). See IN-L5.
+		p1 := storage.ServerLoadPointRecord{
+			AgentID: agent.ID, CapturedAt: bucket.Add(5 * time.Minute),
+			CPUPctAvg: 10, MemPctAvg: 10, ConnectionsAvg: 10, ActiveUsersAvg: 10,
+			DCCoverageAvgPct: 10, SampleCount: 1,
+		}
+		// Persistence probe: the in-memory contract stub does not persist
+		// timeseries rows, so skip the rollup assertions there.
+		if err := store.AppendServerLoadPoint(ctx, p1); err != nil {
+			t.Fatalf("AppendServerLoadPoint(p1): %v", err)
+		}
+		seen, err := store.ListServerLoadPoints(ctx, agent.ID, bucket, bucket.Add(time.Hour))
+		if err != nil {
+			t.Fatalf("ListServerLoadPoints(probe): %v", err)
+		}
+		if len(seen) == 0 {
+			return
+		}
+
+		p2 := storage.ServerLoadPointRecord{
+			AgentID: agent.ID, CapturedAt: bucket.Add(15 * time.Minute),
+			CPUPctAvg: 90, MemPctAvg: 90, ConnectionsAvg: 90, ActiveUsersAvg: 90,
+			DCCoverageAvgPct: 90, SampleCount: 9,
+		}
+		if err := store.AppendServerLoadPoint(ctx, p2); err != nil {
+			t.Fatalf("AppendServerLoadPoint(p2): %v", err)
+		}
+
+		if err := store.RollupServerLoadHourly(ctx, bucket); err != nil {
+			t.Fatalf("RollupServerLoadHourly: %v", err)
+		}
+		hourly, err := store.ListServerLoadHourly(ctx, agent.ID, bucket, bucket.Add(time.Hour))
+		if err != nil {
+			t.Fatalf("ListServerLoadHourly: %v", err)
+		}
+		if len(hourly) != 1 {
+			t.Fatalf("len(hourly) = %d, want 1", len(hourly))
+		}
+		h := hourly[0]
+
+		const wantWeighted = 82.0
+		const eps = 1e-9
+		approx := func(name string, got float64) {
+			if d := got - wantWeighted; d > eps || d < -eps {
+				t.Errorf("%s = %v, want weighted %v (naive AVG would give 50)", name, got, wantWeighted)
+			}
+		}
+		approx("CPUPctAvg", h.CPUPctAvg)
+		approx("MemPctAvg", h.MemPctAvg)
+		approx("ConnectionsAvg", h.ConnectionsAvg)
+		approx("ActiveUsersAvg", h.ActiveUsersAvg)
+		approx("DCCoverageAvg", h.DCCoverageAvg)
+		if h.SampleCount != 10 {
+			t.Errorf("SampleCount = %d, want 10 (sum of sample counts, not COUNT(*)=2)", h.SampleCount)
 		}
 	})
 

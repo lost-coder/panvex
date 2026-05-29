@@ -40,7 +40,7 @@ func runAgentsContract(t *testing.T, open OpenStore) {
 			Name:              "telemt-main",
 			Version:           "1.0.0",
 			ConfigFingerprint: "cfg-1",
-			ConnectedUsers:    42,
+			Connections:       42,
 			ReadOnly:          false,
 			UpdatedAt:         agent.LastSeenAt,
 		}
@@ -77,6 +77,11 @@ func runAgentsContract(t *testing.T, open OpenStore) {
 
 		if instances[0].AgentID != agent.ID {
 			t.Fatalf("ListInstances()[0].AgentID = %q, want %q", instances[0].AgentID, agent.ID)
+		}
+
+		// IN-M3: the connections counter must round-trip through storage.
+		if instances[0].Connections != instance.Connections {
+			t.Fatalf("ListInstances()[0].Connections = %d, want %d", instances[0].Connections, instance.Connections)
 		}
 	})
 
@@ -194,11 +199,11 @@ func runAgentsContract(t *testing.T, open OpenStore) {
 			CreatedAt: time.Date(2026, time.March, 15, 8, 20, 0, 0, time.UTC),
 		}
 		agent := storage.AgentRecord{
-			ID:         "agent-pin-test",
-			NodeName:   "node-pin",
+			ID:           "agent-pin-test",
+			NodeName:     "node-pin",
 			FleetGroupID: group.ID,
-			Version:    "dev",
-			LastSeenAt: time.Date(2026, time.March, 15, 8, 25, 0, 0, time.UTC),
+			Version:      "dev",
+			LastSeenAt:   time.Date(2026, time.March, 15, 8, 25, 0, 0, time.UTC),
 		}
 		if err := store.PutFleetGroup(ctx, group); err != nil {
 			t.Fatalf("PutFleetGroup() error = %v", err)

@@ -12,7 +12,7 @@ import (
 
 const listInstances = `-- name: ListInstances :many
 
-SELECT id, agent_id, name, version, config_fingerprint, connected_users, read_only, updated_at
+SELECT id, agent_id, name, version, config_fingerprint, connections, read_only, updated_at
 FROM telemt_instances
 ORDER BY updated_at ASC, id ASC
 `
@@ -34,7 +34,7 @@ func (q *Queries) ListInstances(ctx context.Context) ([]TelemtInstance, error) {
 			&i.Name,
 			&i.Version,
 			&i.ConfigFingerprint,
-			&i.ConnectedUsers,
+			&i.Connections,
 			&i.ReadOnly,
 			&i.UpdatedAt,
 		); err != nil {
@@ -53,7 +53,7 @@ func (q *Queries) ListInstances(ctx context.Context) ([]TelemtInstance, error) {
 
 const upsertInstance = `-- name: UpsertInstance :exec
 INSERT INTO telemt_instances (
-    id, agent_id, name, version, config_fingerprint, connected_users, read_only, updated_at
+    id, agent_id, name, version, config_fingerprint, connections, read_only, updated_at
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (id) DO UPDATE
@@ -61,7 +61,7 @@ SET agent_id = EXCLUDED.agent_id,
     name = EXCLUDED.name,
     version = EXCLUDED.version,
     config_fingerprint = EXCLUDED.config_fingerprint,
-    connected_users = EXCLUDED.connected_users,
+    connections = EXCLUDED.connections,
     read_only = EXCLUDED.read_only,
     updated_at = EXCLUDED.updated_at
 `
@@ -72,7 +72,7 @@ type UpsertInstanceParams struct {
 	Name              string
 	Version           string
 	ConfigFingerprint string
-	ConnectedUsers    int64
+	Connections       int64
 	ReadOnly          bool
 	UpdatedAt         time.Time
 }
@@ -84,7 +84,7 @@ func (q *Queries) UpsertInstance(ctx context.Context, arg UpsertInstanceParams) 
 		arg.Name,
 		arg.Version,
 		arg.ConfigFingerprint,
-		arg.ConnectedUsers,
+		arg.Connections,
 		arg.ReadOnly,
 		arg.UpdatedAt,
 	)

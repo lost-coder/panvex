@@ -61,8 +61,13 @@ type clientDeploymentResponse struct {
 	Status           string   `json:"status"`
 	LastError        string   `json:"last_error"`
 	ConnectionLinks  []string `json:"connection_links"`
-	LastAppliedAt    int64    `json:"last_applied_at_unix"`
-	UpdatedAt        int64    `json:"updated_at_unix"`
+	// LinkDiagnostic is an operator-facing warning for an otherwise
+	// successful apply (IN-M2). Empty means "no issue". Non-empty when
+	// the node returned no connection links on a non-delete success, so
+	// ConnectionLinks may be stale after a host/secret change.
+	LinkDiagnostic string `json:"link_diagnostic"`
+	LastAppliedAt  int64  `json:"last_applied_at_unix"`
+	UpdatedAt      int64  `json:"updated_at_unix"`
 	// QuotaUsedBytes is the bytes-since-last-reset counter Telemt
 	// compares against the per-client data_quota_bytes limit. Zero
 	// when this agent has never reported traffic for the client or

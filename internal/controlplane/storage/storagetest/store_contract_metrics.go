@@ -34,7 +34,7 @@ func runMetricsContract(t *testing.T, open OpenStore) {
 			InstanceID: "instance-000001",
 			CapturedAt: time.Date(2026, time.March, 15, 8, 40, 0, 0, time.UTC),
 			Values: map[string]uint64{
-				"connected_users": 42,
+				"connections": 42,
 			},
 		}
 
@@ -115,6 +115,5 @@ func runMetricsContract(t *testing.T, open OpenStore) {
 			t.Fatalf("PruneMetricSnapshots(second) pruned = %d, want 0", pruned2)
 		}
 	})
-
 
 }

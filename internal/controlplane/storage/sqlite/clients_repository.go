@@ -237,7 +237,7 @@ func (r *clientsRepository) DeleteAssignments(ctx context.Context, clientID clie
 func (r *clientsRepository) ListDeployments(ctx context.Context, clientID clients.ClientID) ([]clients.Deployment, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT client_id, agent_id, desired_operation, status, last_error,
-			connection_links, last_applied_at_unix, updated_at_unix,
+			connection_links, link_diagnostic, last_applied_at_unix, updated_at_unix,
 			last_reset_epoch_secs
 		FROM client_deployments
 		WHERE client_id = ?
@@ -408,21 +408,22 @@ func (r *clientsRepository) upsertDeployment(ctx context.Context, d clients.Depl
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO client_deployments (
 			client_id, agent_id, desired_operation, status, last_error,
-			connection_links, last_applied_at_unix, updated_at_unix,
+			connection_links, link_diagnostic, last_applied_at_unix, updated_at_unix,
 			last_reset_epoch_secs
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(client_id, agent_id) DO UPDATE SET
 			desired_operation     = excluded.desired_operation,
 			status                = excluded.status,
 			last_error            = excluded.last_error,
 			connection_links      = excluded.connection_links,
+			link_diagnostic       = excluded.link_diagnostic,
 			last_applied_at_unix  = excluded.last_applied_at_unix,
 			updated_at_unix       = excluded.updated_at_unix,
 			last_reset_epoch_secs = excluded.last_reset_epoch_secs
 	`,
 		string(d.ClientID), d.AgentID, d.DesiredOperation, d.Status, d.LastError,
-		encodeStringArray(d.ConnectionLinks), lastAppliedAt, toUnix(d.UpdatedAt),
+		encodeStringArray(d.ConnectionLinks), d.LinkDiagnostic, lastAppliedAt, toUnix(d.UpdatedAt),
 		int64(d.LastResetEpochSecs), //nolint:gosec
 	)
 	return err
@@ -601,7 +602,7 @@ func scanDeployment(s deploymentScanner) (clients.Deployment, error) {
 	)
 	if err := s.Scan(
 		&clientID, &d.AgentID, &d.DesiredOperation, &d.Status, &d.LastError,
-		&linksJSON, &lastApplied, &updatedAt, &lastReset,
+		&linksJSON, &d.LinkDiagnostic, &lastApplied, &updatedAt, &lastReset,
 	); err != nil {
 		return clients.Deployment{}, err
 	}

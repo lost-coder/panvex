@@ -103,6 +103,7 @@ type ClientDeployment struct {
 	UpdatedAt          time.Time
 	ConnectionLinks    json.RawMessage
 	LastResetEpochSecs int64
+	LinkDiagnostic     string
 }
 
 type ClientIpHistory struct {
@@ -187,7 +188,6 @@ type EnrollmentToken struct {
 	ExpiresAt    time.Time
 	ConsumedAt   sql.NullTime
 	RevokedAt    sql.NullTime
-	ValueHash    string
 }
 
 type FleetGroup struct {
@@ -304,7 +304,7 @@ type TelemtInstance struct {
 	Name              string
 	Version           string
 	ConfigFingerprint string
-	ConnectedUsers    int64
+	Connections       int64
 	ReadOnly          bool
 	UpdatedAt         time.Time
 }

@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/lost-coder/panvex/internal/agent/runtimeevents"
 )
@@ -39,7 +38,7 @@ func TestHandlerPreservesFields(t *testing.T) {
 
 	lg.Warn("hello", "agent_id", "abc", "code", "TOKEN_EXPIRED")
 
-	evs := buf.DrainSince(time.Time{})
+	evs := buf.DrainAfter(0)
 	if len(evs) != 1 {
 		t.Fatalf("got %d events, want 1", len(evs))
 	}
@@ -88,7 +87,7 @@ func TestHandlerPreservesWithAttrsBoundFields(t *testing.T) {
 
 	lg.Info("hello", "step", "boot")
 
-	evs := buf.DrainSince(time.Time{})
+	evs := buf.DrainAfter(0)
 	if len(evs) != 1 {
 		t.Fatalf("got %d events, want 1", len(evs))
 	}
@@ -112,7 +111,7 @@ func TestHandlerPreservesWithGroupPrefix(t *testing.T) {
 
 	lg.Info("hello", "step", "boot")
 
-	evs := buf.DrainSince(time.Time{})
+	evs := buf.DrainAfter(0)
 	if len(evs) != 1 {
 		t.Fatalf("got %d events, want 1", len(evs))
 	}

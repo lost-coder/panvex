@@ -10,7 +10,7 @@ import (
 
 // TestApplyAgentSnapshotPartialPreservesLastKnown guards IN-H6: a partial
 // snapshot (a telemt sub-endpoint failed mid-cycle) must not overwrite the
-// last-known version / connected_users / uptime with blanks, which would
+// last-known version / connections / uptime with blanks, which would
 // flap the dashboard to zeros during a transient outage.
 func TestApplyAgentSnapshotPartialPreservesLastKnown(t *testing.T) {
 	now := time.Date(2026, 5, 29, 12, 0, 0, 0, time.UTC)
@@ -26,7 +26,7 @@ func TestApplyAgentSnapshotPartialPreservesLastKnown(t *testing.T) {
 		Version:  "2026.03",
 		ReadOnly: true,
 		Instances: []instanceSnapshot{
-			{ID: "telemt-primary", Name: "telemt-primary", Version: "2026.03", ConnectedUsers: 42, ReadOnly: true},
+			{ID: "telemt-primary", Name: "telemt-primary", Version: "2026.03", Connections: 42, ReadOnly: true},
 		},
 		HasRuntime: true,
 		Runtime:    &gatewayrpc.RuntimeSnapshot{UptimeSeconds: 1000},
@@ -62,7 +62,7 @@ func TestApplyAgentSnapshotPartialPreservesLastKnown(t *testing.T) {
 		t.Fatalf("uptime after partial = %v, want preserved 1000", agent.Runtime.UptimeSeconds)
 	}
 	insts := server.instancesForAgentLocked("agent-1")
-	if len(insts) != 1 || insts[0].ConnectedUsers != 42 || insts[0].Version != "2026.03" {
-		t.Fatalf("instances after partial = %+v, want preserved [version=2026.03 connected_users=42]", insts)
+	if len(insts) != 1 || insts[0].Connections != 42 || insts[0].Version != "2026.03" {
+		t.Fatalf("instances after partial = %+v, want preserved [version=2026.03 connections=42]", insts)
 	}
 }

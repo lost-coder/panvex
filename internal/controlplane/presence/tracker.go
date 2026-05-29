@@ -79,8 +79,10 @@ func (t *Tracker) Remove(agentID string) {
 }
 
 // TrackedCount returns the number of agents currently tracked (have an entry
-// in the presence map). Used by the metrics subsystem to expose
-// panvex_agent_connected without reaching into server-internal state.
+// in the presence map), regardless of their evaluated liveness. This is the
+// raw map size; the panvex_agent_connected gauge instead uses EvaluateAll so
+// stale-but-not-deregistered agents are excluded (L-8). Retained for
+// diagnostics/tests.
 func (t *Tracker) TrackedCount() int {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -114,7 +116,32 @@ func (t *Tracker) ConnectedAt(agentID string) (time.Time, bool) {
 func (t *Tracker) Evaluate(agentID string, now time.Time) State {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	return t.evaluateLocked(agentID, now)
+}
 
+// EvaluateAll derives the liveness state of every tracked agent at now —
+// applying the same transition-logging side effect as Evaluate — and
+// returns how many are currently connected (state != StateOffline).
+//
+// This is the background-poller entry point (L-8). Without a periodic
+// sweep, an agent that stops heartbeating never transitions to offline
+// and the panvex_agent_connected gauge (previously TrackedCount) keeps
+// counting it until deregistration. The metrics poller calls this each
+// tick so the gauge reflects evaluated liveness, not raw map size.
+func (t *Tracker) EvaluateAll(now time.Time) (connected int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for agentID := range t.agentTimestamps {
+		if t.evaluateLocked(agentID, now) != StateOffline {
+			connected++
+		}
+	}
+	return connected
+}
+
+// evaluateLocked is the shared core of Evaluate/EvaluateAll. The caller
+// must hold t.mu (write lock — it may mutate cached lastState).
+func (t *Tracker) evaluateLocked(agentID string, now time.Time) State {
 	presence, ok := t.agentTimestamps[agentID]
 	if !ok {
 		return StateOffline

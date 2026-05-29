@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lost-coder/panvex/internal/controlplane/audit"
 	"github.com/lost-coder/panvex/internal/controlplane/discovered"
 	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
 )
@@ -147,12 +146,10 @@ func (r *fakeRepo) DeleteUsageByClient(_ context.Context, _ ClientID) error {
 type fakeRepoSet struct {
 	clients    Repository
 	discovered discovered.Repository
-	audit      audit.Repository
 }
 
 func (r *fakeRepoSet) Clients() Repository               { return r.clients }
 func (r *fakeRepoSet) Discovered() discovered.Repository { return r.discovered }
-func (r *fakeRepoSet) Audit() audit.Repository           { return r.audit }
 
 // --- fakeUoW: implements ServiceUoW ---
 
@@ -229,19 +226,6 @@ func (r *fakeDiscoveredRepo) UpdateStatusBulk(_ context.Context, ids []discovere
 
 func (r *fakeDiscoveredRepo) Delete(_ context.Context, id discovered.DiscoveredID) error {
 	delete(r.byID, id)
-	return nil
-}
-
-// --- fakeAuditRepo: implements audit.Repository ---
-
-type fakeAuditRepo struct {
-	events []audit.Event
-}
-
-func newFakeAuditRepo() *fakeAuditRepo { return &fakeAuditRepo{} }
-
-func (r *fakeAuditRepo) Append(_ context.Context, e audit.Event) error {
-	r.events = append(r.events, e)
 	return nil
 }
 
@@ -410,7 +394,7 @@ func TestService_Save_EncryptsAndPersists(t *testing.T) {
 	t.Parallel()
 
 	repo := newFakeRepo()
-	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo(), audit: newFakeAuditRepo()}
+	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo()}
 	svc := NewServiceV2(ServiceConfig{
 		Repo:  repo,
 		UoW:   newFakeUoW(rs),
@@ -448,7 +432,7 @@ func TestService_Save_VaultEncryptsSecret(t *testing.T) {
 	}
 
 	repo := newFakeRepo()
-	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo(), audit: newFakeAuditRepo()}
+	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo()}
 	svc := NewServiceV2(ServiceConfig{
 		Repo:  repo,
 		UoW:   newFakeUoW(rs),
@@ -481,7 +465,7 @@ func TestService_SaveState_AtomicAcrossThreeWrites(t *testing.T) {
 
 	repo := newFakeRepo()
 	repo.failOn = "SaveAssignments"
-	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo(), audit: newFakeAuditRepo()}
+	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo()}
 	svc := NewServiceV2(ServiceConfig{
 		Repo:  repo,
 		UoW:   newFakeUoW(rs),
@@ -505,7 +489,7 @@ func TestService_SaveState_UpdatesMirror(t *testing.T) {
 	t.Parallel()
 
 	repo := newFakeRepo()
-	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo(), audit: newFakeAuditRepo()}
+	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo()}
 	svc := NewServiceV2(ServiceConfig{
 		Repo:  repo,
 		UoW:   newFakeUoW(rs),
@@ -541,8 +525,7 @@ func TestService_AdoptDiscovered_AtomicCrossDomain(t *testing.T) {
 		AgentID:    "a-1",
 		Status:     discovered.StatusPending,
 	}
-	auditRepo := newFakeAuditRepo()
-	rs := &fakeRepoSet{clients: repo, discovered: discoveredRepo, audit: auditRepo}
+	rs := &fakeRepoSet{clients: repo, discovered: discoveredRepo}
 	svc := NewServiceV2(ServiceConfig{
 		Repo:           repo,
 		DiscoveredRepo: discoveredRepo,
@@ -560,17 +543,19 @@ func TestService_AdoptDiscovered_AtomicCrossDomain(t *testing.T) {
 	if c.Name != "alpha" {
 		t.Fatalf("client name = %q, want alpha", c.Name)
 	}
-	// Discovered status flipped.
+	// Both domains mutate atomically within the UoW: the managed client is
+	// created and the discovered record flips to Adopted.
+	if _, ok := repo.clientsByID[c.ID]; !ok {
+		t.Fatal("managed client not persisted")
+	}
 	if discoveredRepo.byID[discovered.DiscoveredID("d-1")].Status != discovered.StatusAdopted {
 		t.Fatal("discovered status not flipped")
 	}
-	// Audit event appended.
-	if len(auditRepo.events) != 1 {
-		t.Fatalf("audit events = %d, want 1", len(auditRepo.events))
-	}
-	if auditRepo.events[0].Action != "client.adopt" {
-		t.Fatalf("audit action = %q, want client.adopt", auditRepo.events[0].Action)
-	}
+	// C-1b: audit is NOT written through the UoW. It is a cross-cutting
+	// concern owned by the serialized server-side hash-chainer; the caller
+	// emits "clients.adopted" via the server append path after this returns.
+	// The UoW RepoSet no longer exposes an Audit() repository at all, so the
+	// previous broken (unchained) audit write is structurally impossible.
 }
 
 func TestService_AdoptDiscovered_NonPendingFails(t *testing.T) {
@@ -582,7 +567,7 @@ func TestService_AdoptDiscovered_NonPendingFails(t *testing.T) {
 		ID:     discovered.DiscoveredID("d-2"),
 		Status: discovered.StatusAdopted,
 	}
-	rs := &fakeRepoSet{clients: repo, discovered: discoveredRepo, audit: newFakeAuditRepo()}
+	rs := &fakeRepoSet{clients: repo, discovered: discoveredRepo}
 	svc := NewServiceV2(ServiceConfig{
 		Repo: repo, DiscoveredRepo: discoveredRepo,
 		UoW: newFakeUoW(rs), Vault: makeTestVault(t),
@@ -604,7 +589,7 @@ func TestService_Delete_RemovesFromMirror(t *testing.T) {
 
 	repo := newFakeRepo()
 	repo.clientsByID[ClientID("c-del")] = Client{ID: ClientID("c-del"), Name: "del"}
-	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo(), audit: newFakeAuditRepo()}
+	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo()}
 	svc := NewServiceV2(ServiceConfig{
 		Repo:  repo,
 		UoW:   newFakeUoW(rs),
@@ -626,7 +611,7 @@ func TestService_Delete_PropagatesRepoError(t *testing.T) {
 
 	repo := newFakeRepo()
 	repo.failOn = "Delete"
-	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo(), audit: newFakeAuditRepo()}
+	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo()}
 	svc := NewServiceV2(ServiceConfig{
 		Repo:  repo,
 		UoW:   newFakeUoW(rs),
@@ -697,7 +682,7 @@ func TestService_Save_NilVault_PlaintextRoundtrip(t *testing.T) {
 	t.Parallel()
 
 	repo := newFakeRepo()
-	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo(), audit: newFakeAuditRepo()}
+	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo()}
 	// nil Vault: encryptSecret is a no-op, secret stored as plaintext.
 	svc := NewServiceV2(ServiceConfig{
 		Repo:  repo,
@@ -725,7 +710,7 @@ func TestService_SaveState_EmptyAssignmentsAndDeployments(t *testing.T) {
 	t.Parallel()
 
 	repo := newFakeRepo()
-	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo(), audit: newFakeAuditRepo()}
+	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo()}
 	svc := NewServiceV2(ServiceConfig{
 		Repo:  repo,
 		UoW:   newFakeUoW(rs),

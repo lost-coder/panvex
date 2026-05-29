@@ -17,6 +17,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/fleet"
+	"github.com/lost-coder/panvex/internal/controlplane/fleet/integrations"
 	"github.com/lost-coder/panvex/internal/controlplane/geoip"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/presence"
@@ -96,12 +97,12 @@ func initSecrets(bootCtx context.Context, options Options) (func() time.Time, *c
 // — no I/O, no error paths.
 func newServerFromOptions(options Options, now func() time.Time, csrfManager *csrf.Manager, vault *secretvault.Vault) *Server {
 	return &Server{
-		auth:                         auth.NewService(),
-		store:                        options.Store,
-		uiFiles:                      options.UIFiles,
-		jobs:                         jobs.NewService(),
-		presence:                     presence.NewTracker(30*time.Second, 90*time.Second),
-		events:                       eventbus.NewHub(),
+		auth:     auth.NewService(),
+		store:    options.Store,
+		uiFiles:  options.UIFiles,
+		jobs:     jobs.NewService(),
+		presence: presence.NewTracker(30*time.Second, 90*time.Second),
+		events:   eventbus.NewHub(),
 		// Runtime Events Phase 3: 500-event ring buffer per agent for
 		// slog records shipped over the Connect bidi-stream. Always
 		// constructed (independent of Store wiring) so the message
@@ -204,6 +205,13 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 	// Seal integration-provider credentials at rest under the same vault.
 	if s.fleetSvc != nil {
 		s.fleetSvc.SetVault(vault)
+		// Register the concrete provider kinds. Registration is fatal on
+		// failure (duplicate / nil kind) — a misconfigured registry would
+		// otherwise silently disable provider validation and, worse, leave
+		// secret-field redaction fail-safing the whole config blob.
+		s.trySetStartupErr(func() error {
+			return s.fleetSvc.ProviderRegistry().Register(integrations.NewCloudflareProvider())
+		})
 	}
 	// Webhook outbox subsystem: builds Storage + Producer if the
 	// caller wired a factory. Must run after the vault is available

@@ -55,16 +55,17 @@ func startRuntimeEventsPusher(
 //     this on Warn/Error append)
 //   - every `tickInterval`: drains accumulated Info events
 //
-// The pusher maintains its own cursor (lastSent) so it doesn't re-send.
+// The pusher maintains its own cursor (lastSeq) so it doesn't re-send.
 // On send error the cursor is not advanced past the failed batch — the
 // events stay in the ring (subject to overflow) and will be retried on
-// the next cycle.
+// the next cycle. The cursor is the buffer's monotonic Seq, not a
+// timestamp, so events sharing a Ts are never skipped (L-7).
 type runtimeEventsPusher struct {
 	buf          *runtimeevents.Buffer
 	send         func([]runtimeevents.Event) error
 	tickInterval time.Duration
 	notify       <-chan struct{}
-	lastSent     time.Time
+	lastSeq      uint64
 }
 
 // runtimeEventsBatchCap bounds the per-Send message size. The buffer
@@ -105,7 +106,7 @@ func (p *runtimeEventsPusher) flush(ctx context.Context) {
 	if ctx.Err() != nil {
 		return
 	}
-	pending := p.buf.DrainSince(p.lastSent)
+	pending := p.buf.DrainAfter(p.lastSeq)
 	if len(pending) == 0 {
 		return
 	}
@@ -119,6 +120,6 @@ func (p *runtimeEventsPusher) flush(ctx context.Context) {
 			// Stop on send error; buffer retains events, future cycle retries.
 			return
 		}
-		p.lastSent = batch[len(batch)-1].Ts
+		p.lastSeq = batch[len(batch)-1].Seq
 	}
 }

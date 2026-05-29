@@ -9,6 +9,7 @@
 package fleet
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -61,9 +62,9 @@ type Service struct {
 	now   func() time.Time
 	// newID is the UUID factory — overridable in tests to keep
 	// fixtures deterministic.
-	newID                 func() string
-	integrations          *integrations.IntegrationRegistry
-	providerIntegrations  *integrations.ProviderRegistry
+	newID                func() string
+	integrations         *integrations.IntegrationRegistry
+	providerIntegrations *integrations.ProviderRegistry
 	// vault seals integration-provider credential bundles at rest. A nil
 	// or disabled vault is a pass-through (dev installs without an
 	// encryption key); production wires it via SetVault at boot.
@@ -521,22 +522,149 @@ func (s *Service) UpdateProvider(ctx context.Context, providerID string, input U
 	if err != nil {
 		return storage.IntegrationProviderRecord{}, err
 	}
-	if err := s.providerIntegrations.Validate(existing.Kind, input.Config); err != nil {
-		return storage.IntegrationProviderRecord{}, err
-	}
-	sealed, err := s.encryptProviderConfig([]byte(input.Config))
+	// Write-only contract: API responses redact secret fields to "",
+	// so an unchanged form re-submits empty secrets. Merge each empty
+	// secret field back from the stored (decrypted) config so the
+	// operator can edit the label / non-secret fields without re-typing
+	// credentials. Non-secret fields are taken from the input verbatim.
+	merged, err := s.mergeProviderSecrets(existing, input.Config)
 	if err != nil {
 		return storage.IntegrationProviderRecord{}, err
 	}
-	existing.Label = input.Label
+	if err := s.providerIntegrations.Validate(existing.Kind, merged); err != nil {
+		return storage.IntegrationProviderRecord{}, err
+	}
+	sealed, err := s.encryptProviderConfig([]byte(merged))
+	if err != nil {
+		return storage.IntegrationProviderRecord{}, err
+	}
+	// Keep the existing label when the update omits it. Write-only forms
+	// re-submit with secrets blanked and may leave the label empty;
+	// blanking the stored label would silently degrade the operator-facing
+	// name (mirrors fleet-group Update's keep-on-empty).
+	if strings.TrimSpace(input.Label) != "" {
+		existing.Label = input.Label
+	}
 	existing.Config = sealed
 	existing.UpdatedAt = s.now().UTC()
 	if err := s.store.UpdateIntegrationProvider(ctx, existing); err != nil {
 		return storage.IntegrationProviderRecord{}, err
 	}
-	// Return plaintext config to the caller (the persisted row is sealed).
-	existing.Config = []byte(input.Config)
+	// Return plaintext (merged) config to the caller (the persisted row
+	// is sealed). HTTP handlers redact before serialising.
+	existing.Config = []byte(merged)
 	return existing, nil
+}
+
+// mergeProviderSecrets implements keep-on-empty for the write-only
+// secret contract. It decrypts the stored config and, for every secret
+// field of the provider's kind that is empty/absent in `incoming`,
+// substitutes the previously stored value. Non-secret fields and
+// non-empty secrets are taken from `incoming` verbatim. When the kind
+// is unregistered (no SecretFields known) the incoming config is
+// returned unchanged — Validate will then reject it as ErrUnknownKind.
+func (s *Service) mergeProviderSecrets(existing storage.IntegrationProviderRecord, incoming json.RawMessage) (json.RawMessage, error) {
+	secrets := s.secretFieldsFor(existing.Kind)
+	if len(secrets) == 0 {
+		return incoming, nil
+	}
+	var incomingMap map[string]json.RawMessage
+	if len(bytes.TrimSpace(incoming)) > 0 {
+		if err := json.Unmarshal(incoming, &incomingMap); err != nil {
+			// Not an object — leave it to Validate to produce the error.
+			return incoming, nil //nolint:nilerr // defer the JSON error to Validate for a kind-specific message
+		}
+	}
+	if incomingMap == nil {
+		incomingMap = make(map[string]json.RawMessage)
+	}
+
+	prior, err := s.decryptProviderConfig(existing.Config)
+	if err != nil {
+		return nil, err
+	}
+	var priorMap map[string]json.RawMessage
+	if len(bytes.TrimSpace(prior)) > 0 {
+		if err := json.Unmarshal(prior, &priorMap); err != nil {
+			return nil, fmt.Errorf("parse stored provider config: %w", err)
+		}
+	}
+
+	for _, field := range secrets {
+		if isEmptyJSONString(incomingMap[field]) {
+			if v, ok := priorMap[field]; ok {
+				incomingMap[field] = v
+			}
+		}
+	}
+	merged, err := json.Marshal(incomingMap)
+	if err != nil {
+		return nil, fmt.Errorf("marshal merged provider config: %w", err)
+	}
+	return merged, nil
+}
+
+// isEmptyJSONString reports whether a raw JSON value is absent, null,
+// or the empty string "" — the three encodings of "operator left this
+// secret blank, keep the old one".
+func isEmptyJSONString(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return true
+	}
+	if bytes.Equal(trimmed, []byte("null")) || bytes.Equal(trimmed, []byte(`""`)) {
+		return true
+	}
+	return false
+}
+
+// secretFieldsFor returns the secret field names for a provider kind,
+// or nil when the kind is not registered.
+func (s *Service) secretFieldsFor(kind string) []string {
+	k, ok := s.providerIntegrations.Get(kind)
+	if !ok {
+		return nil
+	}
+	return k.SecretFields()
+}
+
+// RedactProviderConfig produces an API-safe copy of a provider's
+// (decrypted) config with every secret field blanked to "". Callers
+// pass a record whose Config is already decrypted (as returned by
+// GetProvider / ListProviders / CreateProvider / UpdateProvider).
+//
+// Fail-safe: when the kind is not registered we cannot know which
+// fields are secret, so the entire config is masked to "{}". Non-secret
+// fields of a known kind (e.g. account_id) are preserved.
+func (s *Service) RedactProviderConfig(record storage.IntegrationProviderRecord) json.RawMessage {
+	config := record.Config
+	if len(bytes.TrimSpace(config)) == 0 {
+		return json.RawMessage("{}")
+	}
+	k, ok := s.providerIntegrations.Get(record.Kind)
+	if !ok {
+		// Unknown kind: cannot identify secrets, mask everything.
+		return json.RawMessage("{}")
+	}
+	secrets := k.SecretFields()
+	if len(secrets) == 0 {
+		return config
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(config, &m); err != nil {
+		// Non-object / malformed: fail safe.
+		return json.RawMessage("{}")
+	}
+	for _, field := range secrets {
+		if _, present := m[field]; present {
+			m[field] = json.RawMessage(`""`)
+		}
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return json.RawMessage("{}")
+	}
+	return out
 }
 
 func (s *Service) GetProvider(ctx context.Context, providerID string) (storage.IntegrationProviderRecord, error) {

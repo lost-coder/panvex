@@ -152,6 +152,10 @@ func (s *memoryStore) ListUserFleetGroupScopes(_ context.Context, _ string) ([]s
 	return nil, nil
 }
 
+func (s *memoryStore) ListAllUserFleetGroupScopes(_ context.Context) ([]storage.UserFleetGroupScopeRecord, error) {
+	return nil, nil
+}
+
 func (s *memoryStore) SetUserFleetGroupScopes(_ context.Context, _ string, _ []string, _ string, _ time.Time) error {
 	return nil
 }
@@ -1429,6 +1433,10 @@ func (s *memoryStore) GetCPSecret(_ context.Context, _ string) ([]byte, error) {
 
 func (s *memoryStore) PutCPSecret(_ context.Context, _ string, _ []byte) error {
 	return nil
+}
+
+func (s *memoryStore) ListCPSecrets(_ context.Context) ([]storage.CPSecretRecord, error) {
+	return nil, nil
 }
 
 func (s *memoryStore) UpsertConsumedTotp(_ context.Context, _ storage.ConsumedTotpRecord) error {

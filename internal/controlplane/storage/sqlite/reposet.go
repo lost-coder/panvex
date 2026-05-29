@@ -1,19 +1,18 @@
 // internal/controlplane/storage/sqlite/reposet.go
 //
-// txRepoSet wires the four domain repositories to a single dbtx
+// txRepoSet wires the domain repositories to a single dbtx
 // (either *sql.Tx or connExecutor) so all Repository calls inside a
 // UnitOfWork.Do belong to the same transaction.
 package sqlite
 
 import (
-	"github.com/lost-coder/panvex/internal/controlplane/audit"
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/discovered"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/uow"
 )
 
-// txRepoSet implements uow.RepoSet with all four repositories bound to
+// txRepoSet implements uow.RepoSet with all repositories bound to
 // the same dbtx executor (connExecutor or *sql.Tx).
 type txRepoSet struct {
 	db dbtx
@@ -33,5 +32,4 @@ func (r *txRepoSet) Clients() clients.Repository {
 }
 
 func (r *txRepoSet) Discovered() discovered.Repository { return NewDiscoveredRepository(r.db) }
-func (r *txRepoSet) Audit() audit.Repository           { return NewAuditRepository(r.db) }
 func (r *txRepoSet) Jobs() jobs.Repository             { return NewJobsRepository(r.db) }

@@ -65,6 +65,12 @@ type Assignment struct {
 // drift between what the panel believes happened and what Telemt still
 // reports (e.g. Telemt restart before sidecar persistence, out-of-band
 // reset).
+// LinkDiagnostic carries an operator-facing warning attached to an
+// otherwise-successful apply. The empty string means "all good". IN-M2:
+// when a non-delete apply succeeds but the node returns no connection
+// links, ConnectionLinks is left untouched (it may now be stale after a
+// host/secret change) and this field explains why — so the dashboard can
+// flag the link as possibly-stale instead of silently serving it.
 type Deployment struct {
 	ClientID           ClientID
 	AgentID            string
@@ -72,6 +78,7 @@ type Deployment struct {
 	Status             string
 	LastError          string
 	ConnectionLinks    []string
+	LinkDiagnostic     string
 	LastAppliedAt      *time.Time
 	UpdatedAt          time.Time
 	LastResetEpochSecs uint64

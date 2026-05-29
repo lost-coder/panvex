@@ -166,7 +166,7 @@ func newMetricsCollectors() *metricsCollectors {
 		}, []string{"method", "path", "status"}),
 		agentConnected: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "panvex_agent_connected",
-			Help: "Number of agents currently tracked as connected (has a non-empty presence entry).",
+			Help: "Number of agents currently evaluated as connected (presence state is not offline).",
 		}),
 		batchQueueDepth: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "panvex_batch_queue_depth",
@@ -698,7 +698,11 @@ func (s *Server) refreshPolledMetrics() {
 	if s.obs == nil {
 		return
 	}
-	s.obs.agentConnected.Set(float64(s.presence.TrackedCount()))
+	// EvaluateAll sweeps every tracked agent at the current time, driving
+	// presence transitions (so silent agents flip to offline) and counting
+	// only non-offline agents — unlike TrackedCount, which counted stale
+	// entries until deregistration (L-8).
+	s.obs.agentConnected.Set(float64(s.presence.EvaluateAll(s.now())))
 	s.obs.eventHubSubscribers.Set(float64(s.events.SubscriberCount()))
 	if s.jobs != nil {
 		s.obs.jobQueueDepth.Set(float64(s.jobs.QueueDepth()))
@@ -745,4 +749,3 @@ func (s *Server) metricsShutdown() {
 	}
 	s.metricsPollerWG.Wait()
 }
-

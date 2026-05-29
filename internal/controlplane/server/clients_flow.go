@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
@@ -564,7 +565,7 @@ func (s *Server) recordClientJobResultWithContext(ctx context.Context, agentID, 
 		return
 	}
 
-	deployment, ok := s.applyClientJobDeployment(payload.ClientID, agentID, job, success, message, resultJSON, observedAt)
+	deployment, ok := s.applyClientJobDeployment(ctx, payload.ClientID, agentID, job, success, message, resultJSON, observedAt)
 	if !ok {
 		return
 	}
@@ -659,7 +660,7 @@ func isClientJobAction(action jobs.Action) bool {
 // applyClientJobDeployment updates the in-memory deployment state for a
 // client job result and returns the updated deployment. Returns ok=false
 // when the client is no longer tracked.
-func (s *Server) applyClientJobDeployment(clientID, agentID string, job jobs.Job, success bool, message, resultJSON string, observedAt time.Time) (managedClientDeployment, bool) {
+func (s *Server) applyClientJobDeployment(ctx context.Context, clientID, agentID string, job jobs.Job, success bool, message, resultJSON string, observedAt time.Time) (managedClientDeployment, bool) {
 	s.clientsMu.Lock()
 	defer s.clientsMu.Unlock()
 
@@ -673,7 +674,7 @@ func (s *Server) applyClientJobDeployment(clientID, agentID string, job jobs.Job
 	deployment.AgentID = agentID
 	deployment.DesiredOperation = string(job.Action)
 	deployment.UpdatedAt = observedAt.UTC()
-	applyClientJobOutcome(&deployment, job.Action, success, message, resultJSON, observedAt)
+	applyClientJobOutcome(ctx, &deployment, job.Action, success, message, resultJSON, observedAt)
 
 	if s.clientDeployments[clientID] == nil {
 		s.clientDeployments[clientID] = make(map[string]managedClientDeployment)
@@ -683,8 +684,16 @@ func (s *Server) applyClientJobDeployment(clientID, agentID string, job jobs.Job
 	return deployment, true
 }
 
-func applyClientJobOutcome(deployment *managedClientDeployment, action jobs.Action, success bool, message, resultJSON string, observedAt time.Time) {
+// staleLinkDiagnostic is the operator-facing warning stamped on a
+// non-delete apply that succeeded without the node returning any
+// connection links (IN-M2). The existing ConnectionLinks are preserved
+// but may no longer be valid after a host/secret change.
+const staleLinkDiagnostic = "apply succeeded but the node returned no connection links; existing links may be stale"
+
+func applyClientJobOutcome(ctx context.Context, deployment *managedClientDeployment, action jobs.Action, success bool, message, resultJSON string, observedAt time.Time) {
 	if !success {
+		// Leave LinkDiagnostic untouched: it reflects the prior
+		// successful-apply state, which a failed job does not change.
 		deployment.Status = clientDeploymentStatusFailed
 		deployment.LastError = message
 		return
@@ -696,15 +705,38 @@ func applyClientJobOutcome(deployment *managedClientDeployment, action jobs.Acti
 
 	if action == jobs.ActionClientDelete {
 		deployment.ConnectionLinks = nil
+		deployment.LinkDiagnostic = ""
 		return
 	}
-	if strings.TrimSpace(resultJSON) == "" {
+
+	links := parseClientJobResultLinks(resultJSON)
+	if len(links) > 0 {
+		deployment.ConnectionLinks = links
+		deployment.LinkDiagnostic = ""
 		return
+	}
+
+	// IN-M2: success without links. Keep the old links (they may still
+	// be the only thing the operator has) but record a diagnostic so the
+	// UI can flag them as possibly-stale instead of serving them blind.
+	deployment.LinkDiagnostic = staleLinkDiagnostic
+	slog.WarnContext(ctx, "client apply succeeded but node returned no connection links; existing links may be stale",
+		"client_id", string(deployment.ClientID),
+		"agent_id", deployment.AgentID,
+		"action", string(action))
+}
+
+// parseClientJobResultLinks extracts the connection links from a job
+// result envelope, returning nil when the payload is empty or malformed.
+func parseClientJobResultLinks(resultJSON string) []string {
+	if strings.TrimSpace(resultJSON) == "" {
+		return nil
 	}
 	var resultPayload clientJobResultPayload
-	if err := json.Unmarshal([]byte(resultJSON), &resultPayload); err == nil && len(resultPayload.ConnectionLinks) > 0 {
-		deployment.ConnectionLinks = resultPayload.ConnectionLinks
+	if err := json.Unmarshal([]byte(resultJSON), &resultPayload); err != nil {
+		return nil
 	}
+	return resultPayload.ConnectionLinks
 }
 
 // jobByID returns the job with the given ID. P-4: backed by the O(1)

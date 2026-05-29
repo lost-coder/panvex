@@ -1,8 +1,6 @@
--- R-Q-03: extend sqlc coverage to enrollment_tokens. value_hash
--- (migration 0021) is not yet read or written by Go code — it has a ''
--- default so the upsert below leaves it untouched. When a future
--- caller needs the hash, the SELECTs and INSERT can be widened in one
--- place.
+-- R-Q-03: sqlc coverage for enrollment_tokens. The dead value_hash
+-- column (added in migration 0021, never read or written) was dropped in
+-- migration 0044 — enrollment tokens are stored plaintext, TTL-bounded.
 
 -- name: GetEnrollmentToken :one
 SELECT value, fleet_group_id, issued_at, expires_at, consumed_at, revoked_at

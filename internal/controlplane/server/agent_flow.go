@@ -113,7 +113,7 @@ type instanceSnapshot struct {
 	Name              string
 	Version           string
 	ConfigFingerprint string
-	ConnectedUsers    int
+	Connections       int
 	ReadOnly          bool
 }
 
@@ -135,7 +135,7 @@ type agentSnapshot struct {
 	Metrics                  map[string]uint64
 	ObservedAt               time.Time
 	// Partial=true when the agent could not collect a full telemt snapshot;
-	// the panel preserves last-known version/connected_users/read_only/uptime
+	// the panel preserves last-known version/connections/read_only/uptime
 	// rather than overwriting them with blanks (IN-H6).
 	Partial bool
 }
@@ -582,12 +582,14 @@ func (s *Server) applyClientIPSnapshot(agentID string, ipSnapshots []clientIPSna
 		}
 		current := usageByAgent[agentID]
 		current.ClientID = clients.ClientID(snapshot.ClientID)
-		// IN-H3: the IP snapshot reports IPs active over the upload interval;
-		// it updates the active-now gauge only. UniqueIPsUsed ("unique over
-		// the observation window") is owned by the usage tick (telemt's
-		// recent_window) and the persisted client_ip_history — do NOT
-		// overwrite it here, which conflated the two distinct signals.
-		current.ActiveUniqueIPs = len(snapshot.ActiveIPs)
+		// IN-M6: the IP snapshot is a monotonic UNION of every IP seen over
+		// the upload interval (IPCollector only resets on Flush), so its
+		// length overstates "active now". Active-now (ActiveUniqueIPs) is
+		// owned exclusively by the usage tick (telemt's instantaneous
+		// CurrentIPsUsed → ActiveUniqueIps), and the snapshot's IPs are
+		// persisted to client_ip_history by enqueueClientIPHistory. So do
+		// NOT set the active-now gauge from the interval union here —
+		// preserve whatever the usage tick last reported.
 		usageByAgent[agentID] = current
 		s.trackClientUsageOwnerLocked(snapshot.ClientID, agentID)
 	}

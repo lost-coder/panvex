@@ -162,7 +162,7 @@ export type Instance = {
   name: string;
   version: string;
   config_fingerprint: string;
-  connected_users: number;
+  connections: number;
   read_only: boolean;
   updated_at: string;
 };

@@ -61,6 +61,12 @@ type IntegrationKind interface {
 type ProviderKind interface {
 	Name() string
 	Description() string
+	// SecretFields names the top-level JSON keys in the provider
+	// config that hold write-only credentials (e.g. an API token).
+	// Read paths blank these values before returning config over the
+	// API so secrets never leave the control plane once stored. A kind
+	// with no secrets returns nil/empty.
+	SecretFields() []string
 	Validate(config json.RawMessage) error
 }
 

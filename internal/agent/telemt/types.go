@@ -5,7 +5,7 @@ type RuntimeState struct {
 	Version           string
 	ReadOnly          bool
 	UptimeSeconds     float64
-	ConnectedUsers    int
+	Connections       int
 	Gates             RuntimeGates
 	Initialization    RuntimeInitialization
 	ConnectionTotals  RuntimeConnectionTotals
@@ -39,6 +39,11 @@ type RuntimeSystemLoad struct {
 	Load15M          float64
 	NetBytesSent     uint64
 	NetBytesRecv     uint64
+	// Partial is true when at least one local probe (CPU, memory, disk,
+	// load average, net counters) failed to sample. The corresponding
+	// fields are left at zero; downstream must not mistake those zeros for
+	// a genuine 0% reading. See IN-L3.
+	Partial bool
 }
 
 // RuntimeDiagnostics carries slower Telemt diagnostics payloads for node detail views.

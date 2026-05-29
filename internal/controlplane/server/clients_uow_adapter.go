@@ -3,7 +3,7 @@
 // clientsUoWAdapter bridges uow.UnitOfWork → clients.ServiceUoW.
 //
 // uow.RepoSet satisfies clients.ClientsRepoSet structurally (both expose
-// Clients(), Discovered(), and Audit()), but Go's type system requires an
+// Clients() and Discovered()), but Go's type system requires an
 // explicit adapter because the callback signatures differ:
 //
 //	uow.UnitOfWork.Do(ctx, func(uow.RepoSet) error)
@@ -18,7 +18,6 @@ package server
 import (
 	"context"
 
-	"github.com/lost-coder/panvex/internal/controlplane/audit"
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/discovered"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
@@ -54,7 +53,7 @@ func newClientsUoWAdapterWithOverride(u uow.UnitOfWork, override clients.Reposit
 }
 
 // Do satisfies clients.ServiceUoW. uow.RepoSet structurally satisfies
-// clients.ClientsRepoSet (Clients(), Discovered(), Audit() are all present),
+// clients.ClientsRepoSet (Clients() and Discovered() are both present),
 // so we forward the concrete rs directly — unless clientsOverride is set, in
 // which case we wrap rs to swap out the Clients() method.
 func (a *clientsUoWAdapter) Do(ctx context.Context, fn func(rs clients.ClientsRepoSet) error) error {
@@ -67,7 +66,7 @@ func (a *clientsUoWAdapter) Do(ctx context.Context, fn func(rs clients.ClientsRe
 }
 
 // overrideClientsRepoSet satisfies clients.ClientsRepoSet by delegating
-// Discovered/Audit to the underlying tx-bound RepoSet, while returning the
+// Discovered to the underlying tx-bound RepoSet, while returning the
 // override Repository from Clients(). Jobs() is also forwarded so the type
 // still satisfies the broader uow.RepoSet shape if anything inspects it.
 type overrideClientsRepoSet struct {
@@ -77,5 +76,4 @@ type overrideClientsRepoSet struct {
 
 func (s *overrideClientsRepoSet) Clients() clients.Repository       { return s.clients }
 func (s *overrideClientsRepoSet) Discovered() discovered.Repository { return s.inner.Discovered() }
-func (s *overrideClientsRepoSet) Audit() audit.Repository           { return s.inner.Audit() }
 func (s *overrideClientsRepoSet) Jobs() jobs.Repository             { return s.inner.Jobs() }

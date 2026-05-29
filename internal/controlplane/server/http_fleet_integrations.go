@@ -86,8 +86,14 @@ type updateIntegrationProviderRequest struct {
 	Config json.RawMessage `json:"config"`
 }
 
-func providerToResponse(p storage.IntegrationProviderRecord) integrationProviderResponse {
-	config := json.RawMessage(p.Config)
+// providerToResponse serialises a provider record for the API. The
+// record's Config is expected to be decrypted plaintext (as returned by
+// fleetSvc.{Get,List,Create,Update}Provider); we redact write-only
+// secret fields here so credentials never leave the control plane on a
+// read. RedactProviderConfig consults the ProviderRegistry and fails
+// safe (masks the whole blob) for unregistered kinds.
+func (s *Server) providerToResponse(p storage.IntegrationProviderRecord) integrationProviderResponse {
+	config := s.fleetSvc.RedactProviderConfig(p)
 	if len(config) == 0 {
 		config = json.RawMessage("{}")
 	}
@@ -115,7 +121,7 @@ func (s *Server) handleListIntegrationProviders() http.HandlerFunc {
 		}
 		response := make([]integrationProviderResponse, 0, len(records))
 		for _, p := range records {
-			response = append(response, providerToResponse(p))
+			response = append(response, s.providerToResponse(p))
 		}
 		writeJSON(w, http.StatusOK, response)
 	}
@@ -142,7 +148,7 @@ func (s *Server) handleGetIntegrationProvider() http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
-		writeJSON(w, http.StatusOK, providerToResponse(provider))
+		writeJSON(w, http.StatusOK, s.providerToResponse(provider))
 	}
 }
 
@@ -171,7 +177,7 @@ func (s *Server) handleCreateIntegrationProvider() http.HandlerFunc {
 			"kind":  provider.Kind,
 			"label": provider.Label,
 		})
-		writeJSON(w, http.StatusCreated, providerToResponse(provider))
+		writeJSON(w, http.StatusCreated, s.providerToResponse(provider))
 	}
 }
 
@@ -207,7 +213,7 @@ func (s *Server) handleUpdateIntegrationProvider() http.HandlerFunc {
 		s.appendAuditWithContext(r.Context(), session.UserID, "integration_providers.update", provider.ID, map[string]any{
 			"label": provider.Label,
 		})
-		writeJSON(w, http.StatusOK, providerToResponse(provider))
+		writeJSON(w, http.StatusOK, s.providerToResponse(provider))
 	}
 }
 

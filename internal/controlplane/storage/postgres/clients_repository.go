@@ -299,6 +299,7 @@ func rowToDeployment(row dbsqlc.ListClientDeploymentsRow) clients.Deployment {
 		DesiredOperation:   row.DesiredOperation,
 		Status:             row.Status,
 		LastError:          row.LastError,
+		LinkDiagnostic:     row.LinkDiagnostic,
 		UpdatedAt:          row.UpdatedAt.UTC(),
 		LastResetEpochSecs: uint64(row.LastResetEpochSecs), //nolint:gosec
 	}
@@ -319,6 +320,7 @@ func deploymentToUpsertParams(d clients.Deployment) dbsqlc.UpsertClientDeploymen
 		DesiredOperation:   d.DesiredOperation,
 		Status:             d.Status,
 		LastError:          d.LastError,
+		LinkDiagnostic:     d.LinkDiagnostic,
 		UpdatedAt:          d.UpdatedAt.UTC(),
 		LastResetEpochSecs: int64(d.LastResetEpochSecs), //nolint:gosec
 	}

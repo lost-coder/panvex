@@ -73,9 +73,9 @@ type ConnectionClassCount struct {
 
 // AgentRuntime stores the normalized Telemt operator overview for one agent.
 type AgentRuntime struct {
-	AcceptingNewConnections   bool                   `json:"accepting_new_connections"`
-	MERuntimeReady            bool                   `json:"me_runtime_ready"`
-	ME2DCFallbackEnabled      bool                   `json:"me2dc_fallback_enabled"`
+	AcceptingNewConnections bool `json:"accepting_new_connections"`
+	MERuntimeReady          bool `json:"me_runtime_ready"`
+	ME2DCFallbackEnabled    bool `json:"me2dc_fallback_enabled"`
 	// IN-H5: route_mode/reroute_active/me2dc_fast_enabled arrive in the
 	// snapshot (proto fields 31/32/33) but were previously dropped on the
 	// panel — the operator could not see the node's actual routing mode or
@@ -199,7 +199,7 @@ type Instance struct {
 	Name              string    `json:"name"`
 	Version           string    `json:"version"`
 	ConfigFingerprint string    `json:"config_fingerprint"`
-	ConnectedUsers    int       `json:"connected_users"`
+	Connections       int       `json:"connections"`
 	ReadOnly          bool      `json:"read_only"`
 	UpdatedAt         time.Time `json:"updated_at"`
 }
@@ -256,7 +256,7 @@ func instanceToRecord(instance Instance) storage.InstanceRecord {
 		Name:              instance.Name,
 		Version:           instance.Version,
 		ConfigFingerprint: instance.ConfigFingerprint,
-		ConnectedUsers:    instance.ConnectedUsers,
+		Connections:       instance.Connections,
 		ReadOnly:          instance.ReadOnly,
 		UpdatedAt:         instance.UpdatedAt.UTC(),
 	}
@@ -269,7 +269,7 @@ func instanceFromRecord(record storage.InstanceRecord) Instance {
 		Name:              record.Name,
 		Version:           record.Version,
 		ConfigFingerprint: record.ConfigFingerprint,
-		ConnectedUsers:    record.ConnectedUsers,
+		Connections:       record.Connections,
 		ReadOnly:          record.ReadOnly,
 		UpdatedAt:         record.UpdatedAt.UTC(),
 	}

@@ -275,7 +275,7 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 
 	snapshot := a.baseSnapshot(observedAt)
 	// IN-H6: tell the panel this snapshot is partial so it preserves
-	// last-known version/connected_users/read_only/uptime instead of
+	// last-known version/connections/read_only/uptime instead of
 	// overwriting them with the (possibly zeroed) partial values.
 	snapshot.Partial = state.Partial
 	snapshot.ReadOnly = state.ReadOnly
@@ -285,12 +285,12 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 			Name:              "telemt-primary",
 			Version:           state.Version,
 			ConfigFingerprint: "runtime",
-			ConnectedUsers:    int32(state.ConnectedUsers),
+			Connections:       int32(state.Connections),
 			ReadOnly:          state.ReadOnly,
 		},
 	}
 	snapshot.Metrics = map[string]uint64{
-		"connected_users": uint64(state.ConnectedUsers),
+		"connections": uint64(state.Connections),
 	}
 	snapshot.Runtime = buildRuntimeSnapshotProto(state, dcs, upstreamRows, recentEvents, wasRestarting)
 	snapshot.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{
@@ -618,9 +618,9 @@ func (a *Agent) processUsageRowLocked(client telemt.ClientUsage, restarted, base
 		return nil, false
 	}
 	return &gatewayrpc.ClientUsageSnapshot{
-		ClientId:           clientID,
-		ClientName:         client.ClientName,
-		TrafficDeltaBytes:  delta,
+		ClientId:          clientID,
+		ClientName:        client.ClientName,
+		TrafficDeltaBytes: delta,
 		// IN-L1: clamp to int32 so a malformed/huge telemt gauge cannot wrap
 		// to a negative count on the wire.
 		UniqueIpsUsed:      clampInt32(client.UniqueIPsUsed),
@@ -910,7 +910,11 @@ func (a *Agent) handleClientUpdateJob(ctx context.Context, job *gatewayrpc.JobCo
 }
 
 func (a *Agent) handleClientDeleteJob(ctx context.Context, payload clientJobPayload, managedClient telemt.ManagedClient, result *gatewayrpc.JobResult) *gatewayrpc.JobResult {
-	if err := a.telemt.DeleteClient(ctx, managedClient.Name); err != nil {
+	// Deleting an already-absent user is an idempotent success — mirrors the
+	// disable path in handleClientUpdateJob. Without this a re-delivered
+	// client.delete (panel retry after a lost ack) on an already-removed
+	// client would fail forever instead of confirming the terminal state.
+	if err := a.telemt.DeleteClient(ctx, managedClient.Name); err != nil && !errors.Is(err, telemt.ErrClientNotFound) {
 		result.Message = err.Error()
 		return result
 	}

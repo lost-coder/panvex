@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lost-coder/panvex/internal/controlplane/audit"
 	"github.com/lost-coder/panvex/internal/controlplane/discovered"
 	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
@@ -44,7 +43,6 @@ var ErrNotFound = errors.New("clients: not found")
 type ClientsRepoSet interface {
 	Clients() Repository
 	Discovered() discovered.Repository
-	Audit() audit.Repository
 }
 
 // ServiceUoW is the unit-of-work interface that clients.Service
@@ -890,8 +888,16 @@ type AdoptInput struct {
 
 // AdoptDiscovered promotes a discovered client to a managed client in
 // one cross-domain UoW transaction: reads the discovered record,
-// creates the managed client, flips the discovered status to Adopted,
-// and appends an audit event. Mirror is updated on success only.
+// creates the managed client, and flips the discovered status to
+// Adopted. Mirror is updated on success only.
+//
+// Audit is intentionally NOT written inside this transaction. Audit is a
+// cross-cutting concern owned by the single serialized server-side
+// hash-chainer (appendAudit*); writing audit through the UoW bypassed
+// that chainer and broke the tamper-evident chain (C-1b). The caller is
+// responsible for emitting the "clients.adopted" audit event via the
+// server append path after this returns — exactly as the live
+// discovery-adopt HTTP handler already does.
 func (s *Service) AdoptDiscovered(ctx context.Context, in AdoptInput) (Client, error) {
 	if s.uow == nil || s.repo == nil {
 		return Client{}, errors.New("clients.Service: AdoptDiscovered requires UoW + Repository (NewServiceV2)")
@@ -923,15 +929,6 @@ func (s *Service) AdoptDiscovered(ctx context.Context, in AdoptInput) (Client, e
 			return err
 		}
 		if err := rs.Discovered().UpdateStatus(ctx, dc.ID, discovered.StatusAdopted, in.ObservedAt); err != nil {
-			return err
-		}
-		if err := rs.Audit().Append(ctx, audit.Event{
-			ActorID:   in.ActorID,
-			Action:    "client.adopt",
-			TargetID:  string(c.ID),
-			CreatedAt: in.ObservedAt,
-			Details:   map[string]any{"discovered_id": string(dc.ID)},
-		}); err != nil {
 			return err
 		}
 		adopted = c

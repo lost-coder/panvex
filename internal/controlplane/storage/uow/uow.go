@@ -18,25 +18,28 @@ package uow
 import (
 	"context"
 
-	"github.com/lost-coder/panvex/internal/controlplane/audit"
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/discovered"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 )
 
-// UnitOfWork opens a single database transaction and exposes all four
-// domain repositories bound to it. Implementations are in the
-// storage/postgres and storage/sqlite sub-packages.
+// UnitOfWork opens a single database transaction and exposes the domain
+// repositories bound to it. Implementations are in the storage/postgres
+// and storage/sqlite sub-packages.
 type UnitOfWork interface {
 	Do(ctx context.Context, fn func(rs RepoSet) error) error
 }
 
-// RepoSet surfaces the four domain repositories that participate in a
-// single UnitOfWork transaction. All method calls on the returned
-// repositories are part of the same transaction.
+// RepoSet surfaces the domain repositories that participate in a single
+// UnitOfWork transaction. All method calls on the returned repositories
+// are part of the same transaction.
+//
+// Audit is intentionally absent: audit is a cross-cutting concern owned
+// by the single serialized server-side hash-chainer, not a transactional
+// domain repository. Writing audit through the UoW bypassed the chainer
+// and broke the tamper-evident chain (C-1b).
 type RepoSet interface {
 	Clients() clients.Repository
 	Discovered() discovered.Repository
-	Audit() audit.Repository
 	Jobs() jobs.Repository
 }

@@ -274,8 +274,8 @@ func TestClientFetchRuntimeStateUsesLoopbackAPI(t *testing.T) {
 		t.Fatal("state.ReadOnly = false, want true")
 	}
 
-	if state.ConnectedUsers != 42 {
-		t.Fatalf("state.ConnectedUsers = %d, want %d", state.ConnectedUsers, 42)
+	if state.Connections != 42 {
+		t.Fatalf("state.Connections = %d, want %d", state.Connections, 42)
 	}
 	if !state.Gates.AcceptingNewConnections {
 		t.Fatal("state.Gates.AcceptingNewConnections = false, want true")
@@ -439,8 +439,8 @@ func TestClientFetchRuntimeStatePreservesDisabledDiagnosticsWithoutFailingFastRu
 	if err != nil {
 		t.Fatalf("FetchRuntimeState() error = %v", err)
 	}
-	if state.ConnectedUsers != 12 {
-		t.Fatalf("state.ConnectedUsers = %d, want %d", state.ConnectedUsers, 12)
+	if state.Connections != 12 {
+		t.Fatalf("state.Connections = %d, want %d", state.Connections, 12)
 	}
 	if state.Diagnostics.State != "unavailable" {
 		t.Fatalf("state.Diagnostics.State = %q, want %q", state.Diagnostics.State, "unavailable")
@@ -752,8 +752,8 @@ func TestClientFetchRuntimeStateAllowsRecentEventsFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchRuntimeState() error = %v", err)
 	}
-	if state.ConnectedUsers != 12 {
-		t.Fatalf("state.ConnectedUsers = %d, want %d", state.ConnectedUsers, 12)
+	if state.Connections != 12 {
+		t.Fatalf("state.Connections = %d, want %d", state.Connections, 12)
 	}
 	if len(state.RecentEvents) != 0 {
 		t.Fatalf("len(state.RecentEvents) = %d, want %d", len(state.RecentEvents), 0)
@@ -948,8 +948,8 @@ func TestClientFetchRuntimeStatePartialOnSomeFailures(t *testing.T) {
 		t.Fatal("state.Partial = false, want true when some sub-fetches fail")
 	}
 	// Successful fields must still be populated.
-	if state.ConnectedUsers != 5 {
-		t.Fatalf("state.ConnectedUsers = %d, want 5 (connection summary succeeded)", state.ConnectedUsers)
+	if state.Connections != 5 {
+		t.Fatalf("state.Connections = %d, want 5 (connection summary succeeded)", state.Connections)
 	}
 	if !state.ReadOnly {
 		t.Fatal("state.ReadOnly = false, want true (security/posture succeeded)")

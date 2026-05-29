@@ -18,6 +18,7 @@ type stubProviderKind struct{}
 
 func (stubProviderKind) Name() string                     { return "cf" }
 func (stubProviderKind) Description() string              { return "test provider" }
+func (stubProviderKind) SecretFields() []string           { return []string{"api_token"} }
 func (stubProviderKind) Validate(_ json.RawMessage) error { return nil }
 
 // TestProviderConfigEncryptedAtRest guards H-6: integration-provider

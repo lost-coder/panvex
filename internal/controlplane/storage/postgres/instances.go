@@ -19,7 +19,7 @@ func (s *Store) PutInstance(ctx context.Context, instance storage.InstanceRecord
 		Name:              instance.Name,
 		Version:           instance.Version,
 		ConfigFingerprint: instance.ConfigFingerprint,
-		ConnectedUsers:    int64(instance.ConnectedUsers),
+		Connections:       int64(instance.Connections),
 		ReadOnly:          instance.ReadOnly,
 		UpdatedAt:         instance.UpdatedAt.UTC(),
 	})
@@ -41,7 +41,7 @@ func (s *Store) ListInstances(ctx context.Context) ([]storage.InstanceRecord, er
 			Name:              row.Name,
 			Version:           row.Version,
 			ConfigFingerprint: row.ConfigFingerprint,
-			ConnectedUsers:    int(row.ConnectedUsers),
+			Connections:       int(row.Connections),
 			ReadOnly:          row.ReadOnly,
 			UpdatedAt:         row.UpdatedAt.UTC(),
 		})

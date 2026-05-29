@@ -24,6 +24,39 @@ func TestTrackerEvaluateTransitionsFromOnlineToDegradedToOffline(t *testing.T) {
 	}
 }
 
+// TestTrackerEvaluateAllCountsNonOfflineAgents is the L-8 regression: the
+// connected gauge must reflect evaluated liveness, not the raw tracked
+// count. An agent that stopped heartbeating past offlineAfter is still in
+// the map (no deregistration) yet must NOT be counted as connected.
+func TestTrackerEvaluateAllCountsNonOfflineAgents(t *testing.T) {
+	base := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
+	tracker := NewTracker(30*time.Second, 90*time.Second)
+
+	tracker.MarkConnected("online", base)
+	tracker.MarkConnected("degraded", base)
+	tracker.MarkConnected("offline", base)
+
+	now := base.Add(100 * time.Second)
+	tracker.Heartbeat("online", now)                        // fresh → online
+	tracker.Heartbeat("degraded", now.Add(-45*time.Second)) // 45s idle → degraded
+	// "offline" never heartbeats again → 100s idle ≥ offlineAfter.
+
+	// All three still have map entries; the naive TrackedCount would be 3.
+	if got := tracker.TrackedCount(); got != 3 {
+		t.Fatalf("TrackedCount() = %d, want 3 (all still tracked)", got)
+	}
+
+	connected := tracker.EvaluateAll(now)
+	if connected != 2 {
+		t.Fatalf("EvaluateAll() connected = %d, want 2 (online+degraded, offline excluded)", connected)
+	}
+
+	// The sweep must have driven the offline agent's state transition.
+	if state := tracker.Evaluate("offline", now); state != StateOffline {
+		t.Fatalf("offline agent state after sweep = %q, want %q", state, StateOffline)
+	}
+}
+
 func TestTrackerHeartbeatRecoversDegradedAgent(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	tracker := NewTracker(30*time.Second, 90*time.Second)

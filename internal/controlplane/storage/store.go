@@ -77,6 +77,11 @@ type UserFleetGroupScopeStore interface {
 	// Caller is expected to pre-validate that every fleet group id
 	// exists; the store relies on FK integrity for the runtime guarantee.
 	SetUserFleetGroupScopes(ctx context.Context, userID string, fleetGroupIDs []string, grantedBy string, grantedAt time.Time) error
+	// ListAllUserFleetGroupScopes returns every scope grant across all
+	// users with full provenance (granted_by / granted_at). Exists for
+	// the offline migrate tooling so the copy preserves audit fields the
+	// per-user ListUserFleetGroupScopes drops. No runtime caller.
+	ListAllUserFleetGroupScopes(ctx context.Context) ([]UserFleetGroupScopeRecord, error)
 }
 
 // UserAppearanceStore persists per-user appearance preferences.
@@ -446,6 +451,12 @@ type SessionStore interface {
 type CPSecretStore interface {
 	GetCPSecret(ctx context.Context, key string) ([]byte, error)
 	PutCPSecret(ctx context.Context, key string, value []byte) error
+	// ListCPSecrets returns every cp_secrets row. cp_secrets has no
+	// natural listing method on the runtime path (callers always know
+	// the key); this exists for the offline migrate tooling so the
+	// table-complete copy can enumerate and re-Put every secret
+	// verbatim. Values are raw bytes — never re-encoded.
+	ListCPSecrets(ctx context.Context) ([]CPSecretRecord, error)
 }
 
 // ConsumedTotpStore persists already-consumed TOTP codes for replay

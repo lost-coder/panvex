@@ -3,7 +3,6 @@ package main
 import (
 	"log/slog"
 	"testing"
-	"time"
 
 	"github.com/lost-coder/panvex/internal/agent/runtimeevents"
 	"github.com/lost-coder/panvex/internal/logutil"
@@ -26,7 +25,7 @@ func TestRuntimeHandlerBuffersInfoPlus(t *testing.T) {
 	lg.Info("i")
 	lg.Warn("w")
 
-	evs := buf.DrainSince(time.Time{})
+	evs := buf.DrainAfter(0)
 	if len(evs) != 2 {
 		t.Fatalf("got %d events, want 2 (Debug excluded)", len(evs))
 	}

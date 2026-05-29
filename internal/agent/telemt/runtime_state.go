@@ -130,9 +130,12 @@ func (c *Client) collectRuntimeStateRaw(ctx context.Context, markPartial func(st
 
 	if c.systemLoadSampler != nil {
 		eg.Go(func() error {
-			if load, err := c.systemLoadSampler(gctx); err == nil {
-				raw.systemLoad = load
-			} else {
+			// Keep whatever probes succeeded even on partial failure; the
+			// sampler flags incomplete fields via RuntimeSystemLoad.Partial
+			// and returns the joined probe errors (IN-L3).
+			load, err := c.systemLoadSampler(gctx)
+			raw.systemLoad = load
+			if err != nil {
 				markPartial("system_load_sampler", err)
 			}
 			return nil
@@ -271,10 +274,10 @@ func (c *Client) assembleRuntimeState(raw fetchRuntimeStateRaw, partial bool) Ru
 	c.upstreamCountersMu.RUnlock()
 
 	return RuntimeState{
-		Version:        raw.slowData.Version,
-		ReadOnly:       raw.posture.APIReadOnly,
-		UptimeSeconds:  raw.slowData.UptimeSeconds,
-		ConnectedUsers: raw.connectionSummary.Data.Totals.CurrentConnections,
+		Version:       raw.slowData.Version,
+		ReadOnly:      raw.posture.APIReadOnly,
+		UptimeSeconds: raw.slowData.UptimeSeconds,
+		Connections:   raw.connectionSummary.Data.Totals.CurrentConnections,
 		Gates: RuntimeGates{
 			AcceptingNewConnections: raw.gates.AcceptingNewConnections,
 			MERuntimeReady:          raw.gates.MERuntimeReady,

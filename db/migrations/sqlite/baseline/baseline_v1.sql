@@ -72,7 +72,7 @@ CREATE TABLE "client_deployments" (
     status TEXT NOT NULL,
     last_error TEXT NOT NULL DEFAULT '',
     last_applied_at_unix INTEGER,
-    updated_at_unix INTEGER NOT NULL, connection_links TEXT NOT NULL DEFAULT '[]', last_reset_epoch_secs INTEGER NOT NULL DEFAULT 0,
+    updated_at_unix INTEGER NOT NULL, connection_links TEXT NOT NULL DEFAULT '[]', last_reset_epoch_secs INTEGER NOT NULL DEFAULT 0, link_diagnostic TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (client_id, agent_id),
     FOREIGN KEY (client_id) REFERENCES clients (id) ON DELETE CASCADE,
     FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
@@ -172,14 +172,14 @@ CREATE TABLE enrollment_events (
     fields_json TEXT
 );
 
-CREATE TABLE enrollment_tokens (
+CREATE TABLE "enrollment_tokens" (
     value TEXT PRIMARY KEY,
     fleet_group_id TEXT,
     issued_at_unix INTEGER NOT NULL,
     expires_at_unix INTEGER NOT NULL,
     consumed_at_unix INTEGER,
     revoked_at_unix INTEGER
-, value_hash TEXT NOT NULL DEFAULT '');
+);
 
 CREATE TABLE fleet_group_integrations (
     id              TEXT PRIMARY KEY,
@@ -307,7 +307,7 @@ CREATE TABLE "telemt_instances" (
     name TEXT NOT NULL,
     version TEXT NOT NULL DEFAULT '',
     config_fingerprint TEXT NOT NULL DEFAULT '',
-    connected_users INTEGER NOT NULL DEFAULT 0,
+    connections INTEGER NOT NULL DEFAULT 0,
     read_only INTEGER NOT NULL DEFAULT 0,
     updated_at_unix INTEGER NOT NULL,
     FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
@@ -572,8 +572,6 @@ CREATE INDEX idx_enrollment_events_attempt ON enrollment_events(attempt_id, ts);
 
 CREATE INDEX idx_enrollment_tokens_fleet_group_id ON enrollment_tokens (fleet_group_id);
 
-CREATE INDEX idx_enrollment_tokens_value_hash ON enrollment_tokens(value_hash);
-
 CREATE INDEX idx_fleet_group_integrations_fleet_group_id
     ON fleet_group_integrations (fleet_group_id);
 
@@ -663,4 +661,7 @@ INSERT INTO goose_db_version (version_id, is_applied) VALUES
   (40, 1),
   (41, 1),
   (42, 1),
-  (43, 1);
+  (43, 1),
+  (44, 1),
+  (45, 1),
+  (46, 1);

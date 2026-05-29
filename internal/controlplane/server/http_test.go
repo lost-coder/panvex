@@ -690,7 +690,7 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 				Name:              "telemt-a",
 				Version:           "2026.03",
 				ConfigFingerprint: "cfg-1",
-				ConnectedUsers:    42,
+				Connections:       42,
 			},
 		},
 		Metrics: map[string]uint64{
@@ -1505,20 +1505,20 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 		LastSeenAt: currentTime.Add(-2 * time.Minute),
 	}
 	server.instances["instance-1"] = Instance{
-		ID:             "instance-1",
-		AgentID:        "agent-1",
-		Name:           "telemt-a",
-		Version:        "1.0.0",
-		ConnectedUsers: 27,
-		UpdatedAt:      currentTime,
+		ID:          "instance-1",
+		AgentID:     "agent-1",
+		Name:        "telemt-a",
+		Version:     "1.0.0",
+		Connections: 27,
+		UpdatedAt:   currentTime,
 	}
 	server.instances["instance-2"] = Instance{
-		ID:             "instance-2",
-		AgentID:        "agent-2",
-		Name:           "telemt-b",
-		Version:        "1.0.0",
-		ConnectedUsers: 8,
-		UpdatedAt:      currentTime.Add(-30 * time.Second),
+		ID:          "instance-2",
+		AgentID:     "agent-2",
+		Name:        "telemt-b",
+		Version:     "1.0.0",
+		Connections: 8,
+		UpdatedAt:   currentTime.Add(-30 * time.Second),
 	}
 	server.presence.MarkConnected("agent-1", currentTime)
 	server.presence.MarkConnected("agent-2", currentTime.Add(-45*time.Second))

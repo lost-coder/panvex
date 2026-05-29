@@ -39,23 +39,12 @@ FROM enrollment_tokens
 WHERE value = $1
 `
 
-type GetEnrollmentTokenRow struct {
-	Value        string
-	FleetGroupID uuid.NullUUID
-	IssuedAt     time.Time
-	ExpiresAt    time.Time
-	ConsumedAt   sql.NullTime
-	RevokedAt    sql.NullTime
-}
-
-// R-Q-03: extend sqlc coverage to enrollment_tokens. value_hash
-// (migration 0021) is not yet read or written by Go code — it has a ”
-// default so the upsert below leaves it untouched. When a future
-// caller needs the hash, the SELECTs and INSERT can be widened in one
-// place.
-func (q *Queries) GetEnrollmentToken(ctx context.Context, value string) (GetEnrollmentTokenRow, error) {
+// R-Q-03: sqlc coverage for enrollment_tokens. The dead value_hash
+// column (added in migration 0021, never read or written) was dropped in
+// migration 0044 — enrollment tokens are stored plaintext, TTL-bounded.
+func (q *Queries) GetEnrollmentToken(ctx context.Context, value string) (EnrollmentToken, error) {
 	row := q.db.QueryRowContext(ctx, getEnrollmentToken, value)
-	var i GetEnrollmentTokenRow
+	var i EnrollmentToken
 	err := row.Scan(
 		&i.Value,
 		&i.FleetGroupID,
@@ -73,24 +62,15 @@ FROM enrollment_tokens
 ORDER BY issued_at ASC, value ASC
 `
 
-type ListEnrollmentTokensRow struct {
-	Value        string
-	FleetGroupID uuid.NullUUID
-	IssuedAt     time.Time
-	ExpiresAt    time.Time
-	ConsumedAt   sql.NullTime
-	RevokedAt    sql.NullTime
-}
-
-func (q *Queries) ListEnrollmentTokens(ctx context.Context) ([]ListEnrollmentTokensRow, error) {
+func (q *Queries) ListEnrollmentTokens(ctx context.Context) ([]EnrollmentToken, error) {
 	rows, err := q.db.QueryContext(ctx, listEnrollmentTokens)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListEnrollmentTokensRow
+	var items []EnrollmentToken
 	for rows.Next() {
-		var i ListEnrollmentTokensRow
+		var i EnrollmentToken
 		if err := rows.Scan(
 			&i.Value,
 			&i.FleetGroupID,

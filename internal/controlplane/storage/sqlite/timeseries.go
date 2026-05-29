@@ -333,9 +333,11 @@ func (s *Store) RollupServerLoadHourly(ctx context.Context, bucketHour time.Time
 			dc_coverage_min, dc_coverage_avg, sample_count
 		)
 		SELECT agent_id, ?,
-			AVG(cpu_pct_avg), MAX(cpu_pct_max), AVG(mem_pct_avg), MAX(mem_pct_max),
-			AVG(connections_avg), MAX(connections_max), AVG(active_users_avg), MAX(active_users_max),
-			MIN(dc_coverage_min_pct), AVG(dc_coverage_avg_pct), COUNT(*)
+			COALESCE(SUM(cpu_pct_avg * sample_count) * 1.0 / NULLIF(SUM(sample_count), 0), 0), MAX(cpu_pct_max),
+			COALESCE(SUM(mem_pct_avg * sample_count) * 1.0 / NULLIF(SUM(sample_count), 0), 0), MAX(mem_pct_max),
+			COALESCE(SUM(connections_avg * sample_count) * 1.0 / NULLIF(SUM(sample_count), 0), 0), MAX(connections_max),
+			COALESCE(SUM(active_users_avg * sample_count) * 1.0 / NULLIF(SUM(sample_count), 0), 0), MAX(active_users_max),
+			MIN(dc_coverage_min_pct), COALESCE(SUM(dc_coverage_avg_pct * sample_count) * 1.0 / NULLIF(SUM(sample_count), 0), 0), SUM(sample_count)
 		FROM ts_server_load
 		WHERE captured_at_unix >= ? AND captured_at_unix < ?
 		GROUP BY agent_id

@@ -197,7 +197,7 @@ export const instanceSchema = z.object({
   name: z.string(),
   version: z.string(),
   config_fingerprint: z.string(),
-  connected_users: z.number(),
+  connections: z.number(),
   read_only: z.boolean(),
   updated_at: timestamp,
 });

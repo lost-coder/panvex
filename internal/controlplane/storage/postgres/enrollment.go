@@ -14,9 +14,8 @@ import (
 // PutEnrollmentToken upserts one enrollment_tokens row.
 //
 // R-Q-03: routed through dbsqlc.UpsertEnrollmentToken so the postgres
-// path gains compile-time type safety on every column. value_hash is
-// left at its '' default by the SQL — when a caller needs to write the
-// hash, the params struct can be widened in one place.
+// path gains compile-time type safety on every column. The dead
+// value_hash column was dropped in migration 0044 (L-4).
 func (s *Store) PutEnrollmentToken(ctx context.Context, token storage.EnrollmentTokenRecord) error {
 	if s.sqlDB == nil {
 		return errTxBoundStore
@@ -67,7 +66,7 @@ func (s *Store) ListEnrollmentTokens(ctx context.Context) ([]storage.EnrollmentT
 }
 
 // enrollmentTokenFromRow is the SQL-row → domain-DTO bridge.
-func enrollmentTokenFromRow(row dbsqlc.ListEnrollmentTokensRow) storage.EnrollmentTokenRecord {
+func enrollmentTokenFromRow(row dbsqlc.EnrollmentToken) storage.EnrollmentTokenRecord {
 	rec := storage.EnrollmentTokenRecord{
 		Value:     row.Value,
 		IssuedAt:  row.IssuedAt.UTC(),
