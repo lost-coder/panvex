@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -32,5 +33,31 @@ func TestSettingsCLI_List(t *testing.T) {
 	// Operational keys show a source attribution.
 	if !strings.Contains(out, "source=") {
 		t.Fatalf("list output missing source attribution:\n%s", out)
+	}
+}
+
+func TestSettingsCLI_GetUnknownErrors(t *testing.T) {
+	dsn := newTempSQLite(t)
+	err := runSettingsOut(io.Discard, []string{"get", "-storage-driver", "sqlite", "-storage-dsn", dsn, "no.such.key"})
+	if err == nil {
+		t.Fatal("get of unknown key should error")
+	}
+}
+
+func TestSettingsCLI_GetOperationalDefault(t *testing.T) {
+	dsn := newTempSQLite(t)
+	var buf bytes.Buffer
+	// http.public_url is operational with an empty default; get should succeed.
+	if err := runSettingsOut(&buf, []string{"get", "-storage-driver", "sqlite", "-storage-dsn", dsn, "http.public_url"}); err != nil {
+		t.Fatalf("get http.public_url: %v", err)
+	}
+}
+
+func TestSettingsCLI_GetConfigManagedErrors(t *testing.T) {
+	dsn := newTempSQLite(t)
+	// storage.dsn is config/bootstrap-managed; get should report it is not in the DB.
+	err := runSettingsOut(io.Discard, []string{"get", "-storage-driver", "sqlite", "-storage-dsn", dsn, "storage.dsn"})
+	if err == nil {
+		t.Fatal("get of a config-managed key should error")
 	}
 }

@@ -117,7 +117,28 @@ func settingsList(out io.Writer, args []string) error {
 }
 
 func settingsGet(out io.Writer, args []string) error {
-	return fmt.Errorf("settings get: not implemented")
+	op, closer, positional, err := openSettingsStore(args)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = closer() }()
+	if len(positional) != 1 {
+		return fmt.Errorf("usage: settings get -storage-driver <d> -storage-dsn <dsn> <key>")
+	}
+	key := positional[0]
+	f, ok := fieldByName(key)
+	if !ok {
+		return fmt.Errorf("unknown setting %q", key)
+	}
+	if f.Class != settings.ClassOperational {
+		return fmt.Errorf("%q is managed via env/config (%s); not stored in the DB", key, f.Env)
+	}
+	val := op.RawByName(key)
+	if f.Secret && val != "" {
+		val = "***"
+	}
+	fmt.Fprintln(out, val)
+	return nil
 }
 
 func settingsSet(out io.Writer, args []string) error {
