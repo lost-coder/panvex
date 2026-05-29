@@ -11,24 +11,39 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 
 	"github.com/lost-coder/panvex/internal/security"
 	"golang.org/x/mod/semver"
 )
 
-// Payload is the JSON payload of an agent.self-update job.
+// defaultMaxChecksum bounds the .sha256 sidecar fetch. The file is a single
+// hex digest (64 chars) plus optional filename; 1 KiB is generous.
+const defaultMaxChecksum = 1 << 10
+
+// parseChecksumSidecar extracts the hex digest from a `.sha256` sidecar.
+// CI writes just the digest, but `sha256sum` output ("<hex>  <file>") is
+// also tolerated by taking the first whitespace-delimited field.
+func parseChecksumSidecar(b []byte) string {
+	fields := strings.Fields(string(b))
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields[0]
+}
+
+// Payload is the JSON payload of an agent.self-update job. The panel sends
+// only the release directory and target version; the agent resolves the
+// per-architecture asset names itself, so the panel can never pick the
+// wrong arch.
 type Payload struct {
-	Version          string `json:"version"`
-	DownloadURL      string `json:"download_url"`
-	ChecksumSHA256   string `json:"checksum_sha256"`
-	SignatureURL     string `json:"signature_url"`
-	DownloadViaPanel bool   `json:"download_via_panel"`
-	PanelProxyURL    string `json:"panel_proxy_url,omitempty"`
-	// AllowDowngrade lets an operator install an older binary on
-	// purpose (e.g. emergency rollback). Without it the agent refuses
-	// any version below the running one — protects against a
-	// compromised panel pinning agents to a vulnerable past release.
+	Version        string `json:"version"`
+	ReleaseBaseURL string `json:"release_base_url"`
+	// AllowDowngrade lets an operator install an older binary on purpose
+	// (e.g. emergency rollback). Without it the agent refuses any version
+	// below the running one — protects against a compromised panel pinning
+	// agents to a vulnerable past release.
 	AllowDowngrade bool `json:"allow_downgrade,omitempty"`
 }
 
@@ -47,35 +62,12 @@ func Execute(ctx context.Context, payload Payload, currentVersion string, logger
 // (HTTP client, host allowlist, archive cap) comes from cfg instead of
 // hard-coded production defaults.
 func executeWith(ctx context.Context, payload Payload, currentVersion string, logger *slog.Logger, cfg Config) error {
-	url := payload.DownloadURL
-	dlCfg := cfg
-	// Panel-proxy mode: the URL came from the panel this agent is enrolled
-	// with (mTLS-authenticated). Skip the public allowlist — the operator
-	// may legitimately host releases on the panel itself — but still
-	// require the same scheme/timeout/size policy.
-	if payload.DownloadViaPanel && payload.PanelProxyURL != "" {
-		url = payload.PanelProxyURL
-		dlCfg.AllowedHosts = nil
-	}
-	if url == "" {
-		return fmt.Errorf("no download URL provided")
-	}
-	if payload.SignatureURL == "" {
-		return fmt.Errorf("no signature URL provided; refusing to install unsigned update")
+	if strings.TrimSpace(payload.ReleaseBaseURL) == "" {
+		return fmt.Errorf("no release base URL provided")
 	}
 
-	// Downgrade gate (fail-closed). The whole point of this check is to
-	// defeat a hostile panel that pins agents back to a vulnerable
-	// release, so the un-pinned escape hatches must be explicit.
-	//
-	// - The agent's own version must parse as a real semver. A binary
-	//   without ldflags ("dev", "", "snapshot") cannot prove its lineage,
-	//   so any update must be opted in via AllowDowngrade.
-	// - The payload version must also parse as a real semver. A panel
-	//   that omits the field is sending an unsigned-in-spirit update;
-	//   refuse it for the same reason we refuse missing SignatureURL.
-	// - golang.org/x/mod/semver gives proper pre-release/build-metadata
-	//   ordering, so "1.4.7-rc1" sorts below "1.4.7", not equal.
+	// Downgrade gate (fail-closed). Defeats a hostile panel pinning agents
+	// back to a vulnerable release, so the escape hatches are explicit.
 	if !payload.AllowDowngrade {
 		curr, currOK := canonicalSemver(currentVersion)
 		next, nextOK := canonicalSemver(payload.Version)
@@ -98,14 +90,22 @@ func executeWith(ctx context.Context, payload Payload, currentVersion string, lo
 		}
 	}
 
-	logger.Info("agent self-update: downloading", "version", payload.Version, "url", url)
+	// The agent substitutes its OWN architecture — the panel never chooses
+	// it, so it cannot send the wrong-arch binary.
+	base := strings.TrimRight(payload.ReleaseBaseURL, "/")
+	archiveName := fmt.Sprintf("panvex-agent-linux-%s.tar.gz", runtime.GOARCH)
+	archiveURL := base + "/" + archiveName
+	checksumURL := archiveURL + ".sha256"
+	signatureURL := archiveURL + ".sig"
 
-	archivePath, err := downloadToTemp(ctx, url, dlCfg)
+	logger.Info("agent self-update: downloading", "version", payload.Version, "url", archiveURL)
+
+	archivePath, err := downloadToTemp(ctx, archiveURL, cfg)
 	if err != nil {
 		return fmt.Errorf("download: %w", err)
 	}
 
-	sigBytes, err := downloadBytes(ctx, payload.SignatureURL, defaultMaxSignature, dlCfg)
+	sigBytes, err := downloadBytes(ctx, signatureURL, defaultMaxSignature, cfg)
 	if err != nil {
 		_ = os.Remove(archivePath)
 		return fmt.Errorf("download signature: %w", err)
@@ -121,7 +121,12 @@ func executeWith(ctx context.Context, payload Payload, currentVersion string, lo
 	}
 	logger.Info("agent self-update: signature verified", "version", payload.Version)
 
-	if err := verifyChecksum(archivePath, payload.ChecksumSHA256); err != nil {
+	checksumBytes, err := downloadBytes(ctx, checksumURL, defaultMaxChecksum, cfg)
+	if err != nil {
+		_ = os.Remove(archivePath)
+		return fmt.Errorf("download checksum: %w", err)
+	}
+	if err := verifyChecksum(archivePath, parseChecksumSidecar(checksumBytes)); err != nil {
 		_ = os.Remove(archivePath)
 		return fmt.Errorf("verify: %w", err)
 	}

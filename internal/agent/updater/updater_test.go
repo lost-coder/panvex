@@ -3,8 +3,15 @@ package updater
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -49,6 +56,37 @@ func TestExtractAndReplace(t *testing.T) {
 	backup, _ := os.ReadFile(currentPath + ".bak")
 	if string(backup) != "old-binary" {
 		t.Fatalf("backup content = %q, want %q", backup, "old-binary")
+	}
+}
+
+func TestExecute_RequestsPerArchAsset(t *testing.T) {
+	var gotPaths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPaths = append(gotPaths, r.URL.Path)
+		_, _ = w.Write([]byte("some-bytes"))
+	}))
+	t.Cleanup(srv.Close)
+
+	cfg := defaultConfig()
+	cfg.HTTPClient = srv.Client()
+	cfg.AllowedHosts = []string{hostOf(t, srv.URL)}
+	cfg.AllowInsecure = true
+
+	err := executeWith(
+		context.Background(),
+		Payload{Version: "9.9.9", ReleaseBaseURL: srv.URL + "/download/agent/v9.9.9"},
+		"1.0.0",
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		cfg,
+	)
+	// The served bytes are not signed by the embedded key, so verification
+	// must fail — which proves we got past URL construction and download.
+	if err == nil || !strings.Contains(err.Error(), "verify signature") {
+		t.Fatalf("want signature verification error, got %v", err)
+	}
+	wantArchive := "/download/agent/v9.9.9/panvex-agent-linux-" + runtime.GOARCH + ".tar.gz"
+	if len(gotPaths) == 0 || gotPaths[0] != wantArchive {
+		t.Fatalf("first request path = %v, want %q", gotPaths, wantArchive)
 	}
 }
 
