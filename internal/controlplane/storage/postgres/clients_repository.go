@@ -341,26 +341,30 @@ func deploymentToUpsertParams(d clients.Deployment) dbsqlc.UpsertClientDeploymen
 
 func rowToUsage(row dbsqlc.ClientUsage) clients.Usage {
 	return clients.Usage{
-		ClientID:         clients.ClientID(row.ClientID),
-		AgentID:          row.AgentID,
-		TrafficUsedBytes: uint64(row.TrafficUsedBytes), //nolint:gosec
-		UniqueIPsUsed:    int(row.UniqueIpsUsed),
-		ActiveTCPConns:   int(row.ActiveTcpConns),
-		ActiveUniqueIPs:  int(row.ActiveUniqueIps),
-		LastSeq:          uint64(row.LastSeq), //nolint:gosec
-		ObservedAt:       row.ObservedAt.UTC(),
+		ClientID:           clients.ClientID(row.ClientID),
+		AgentID:            row.AgentID,
+		TrafficUsedBytes:   uint64(row.TrafficUsedBytes), //nolint:gosec
+		UniqueIPsUsed:      int(row.UniqueIpsUsed),
+		ActiveTCPConns:     int(row.ActiveTcpConns),
+		ActiveUniqueIPs:    int(row.ActiveUniqueIps),
+		QuotaUsedBytes:     uint64(row.QuotaUsedBytes),     //nolint:gosec
+		QuotaLastResetUnix: uint64(row.QuotaLastResetUnix), //nolint:gosec
+		LastSeq:            uint64(row.LastSeq),            //nolint:gosec
+		ObservedAt:         row.ObservedAt.UTC(),
 	}
 }
 
 func usageToUpsertParams(u clients.Usage) dbsqlc.UpsertClientUsageParams {
 	return dbsqlc.UpsertClientUsageParams{
-		ClientID:         string(u.ClientID),
-		AgentID:          u.AgentID,
-		TrafficUsedBytes: int64(u.TrafficUsedBytes), //nolint:gosec
-		UniqueIpsUsed:    int32(u.UniqueIPsUsed),    //nolint:gosec
-		ActiveTcpConns:   int32(u.ActiveTCPConns),   //nolint:gosec
-		ActiveUniqueIps:  int32(u.ActiveUniqueIPs),  //nolint:gosec
-		LastSeq:          int64(u.LastSeq),          //nolint:gosec
-		ObservedAt:       u.ObservedAt.UTC(),
+		ClientID:           string(u.ClientID),
+		AgentID:            u.AgentID,
+		TrafficUsedBytes:   int64(u.TrafficUsedBytes),   //nolint:gosec
+		UniqueIpsUsed:      int32(u.UniqueIPsUsed),      //nolint:gosec
+		ActiveTcpConns:     int32(u.ActiveTCPConns),     //nolint:gosec
+		ActiveUniqueIps:    int32(u.ActiveUniqueIPs),    //nolint:gosec
+		QuotaUsedBytes:     int64(u.QuotaUsedBytes),     //nolint:gosec
+		QuotaLastResetUnix: int64(u.QuotaLastResetUnix), //nolint:gosec
+		LastSeq:            int64(u.LastSeq),            //nolint:gosec
+		ObservedAt:         u.ObservedAt.UTC(),
 	}
 }

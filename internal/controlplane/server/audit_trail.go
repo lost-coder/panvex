@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 )
@@ -33,7 +34,13 @@ func (s *Server) appendAuditWithContext(ctx context.Context, actorID string, act
 		ActorID:   actorID,
 		Action:    action,
 		TargetID:  targetID,
-		CreatedAt: s.now().UTC(),
+		// Second precision: the at-rest store keeps created_at as whole
+		// Unix seconds (toUnix), and the hash-chain hashes CreatedAt via
+		// RFC3339Nano. Truncating here keeps the hashed value identical to
+		// the value read back from storage, so verify-audit-chain
+		// recomputes the same event_hash instead of reporting false
+		// tampering on every event.
+		CreatedAt: s.now().UTC().Truncate(time.Second),
 		Details:   normalizeAuditDetails(details),
 	}
 	s.appendAuditTrailLocked(event)
@@ -91,7 +98,9 @@ func (s *Server) appendAuditSync(ctx context.Context, actorID, action, targetID 
 		ActorID:   actorID,
 		Action:    action,
 		TargetID:  targetID,
-		CreatedAt: s.now().UTC(),
+		// See appendAuditWithContext: truncate to second so the hashed
+		// CreatedAt matches the whole-second value persisted at rest.
+		CreatedAt: s.now().UTC().Truncate(time.Second),
 		Details:   normalizeAuditDetails(details),
 	}
 	s.appendAuditTrailLocked(event)

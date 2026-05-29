@@ -272,7 +272,7 @@ func (c *Client) assembleRuntimeState(raw fetchRuntimeStateRaw, partial bool) Ru
 
 	return RuntimeState{
 		Version:        raw.slowData.Version,
-		ReadOnly:       raw.posture.ReadOnly || raw.posture.APIReadOnly,
+		ReadOnly:       raw.posture.APIReadOnly,
 		UptimeSeconds:  raw.slowData.UptimeSeconds,
 		ConnectedUsers: raw.connectionSummary.Data.Totals.CurrentConnections,
 		Gates: RuntimeGates{

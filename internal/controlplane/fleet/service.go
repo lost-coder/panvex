@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/lost-coder/panvex/internal/controlplane/fleet/integrations"
+	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
@@ -63,6 +64,49 @@ type Service struct {
 	newID                 func() string
 	integrations          *integrations.IntegrationRegistry
 	providerIntegrations  *integrations.ProviderRegistry
+	// vault seals integration-provider credential bundles at rest. A nil
+	// or disabled vault is a pass-through (dev installs without an
+	// encryption key); production wires it via SetVault at boot.
+	vault *secretvault.Vault
+}
+
+// SetVault wires the at-rest vault used to seal integration-provider
+// credentials. Called once at boot after the vault is constructed.
+func (s *Service) SetVault(vault *secretvault.Vault) {
+	s.vault = vault
+}
+
+// encryptProviderConfig seals the raw JSON credential blob under the
+// integration_config domain. A nil/disabled vault or empty config is a
+// no-op (returned unchanged), matching the pass-through contract used
+// elsewhere.
+func (s *Service) encryptProviderConfig(raw []byte) ([]byte, error) {
+	if s.vault == nil || !s.vault.Enabled() || len(raw) == 0 {
+		return raw, nil
+	}
+	// Idempotency guard: never re-encrypt an already-sealed blob.
+	if secretvault.IsEncrypted(string(raw)) {
+		return raw, nil
+	}
+	ct, err := s.vault.Encrypt(secretvault.DomainIntegrationConfig, string(raw))
+	if err != nil {
+		return nil, fmt.Errorf("encrypt provider config: %w", err)
+	}
+	return []byte(ct), nil
+}
+
+// decryptProviderConfig reverses encryptProviderConfig. Plaintext
+// (non-prefixed) blobs are returned unchanged for backwards
+// compatibility with dev installs and pre-encryption rows.
+func (s *Service) decryptProviderConfig(stored []byte) ([]byte, error) {
+	if s.vault == nil || !s.vault.Enabled() || len(stored) == 0 {
+		return stored, nil
+	}
+	pt, err := s.vault.Decrypt(secretvault.DomainIntegrationConfig, string(stored))
+	if err != nil {
+		return nil, fmt.Errorf("decrypt provider config: %w", err)
+	}
+	return []byte(pt), nil
 }
 
 // NewService wires a Service against the given store + clock. When
@@ -350,7 +394,9 @@ func (s *Service) InstallIntegration(ctx context.Context, fleetGroupID string, i
 
 	var providerRecord *storage.IntegrationProviderRecord
 	if input.ProviderID != nil && *input.ProviderID != "" {
-		p, err := s.store.GetIntegrationProvider(ctx, *input.ProviderID)
+		// GetProvider decrypts the credential bundle so integration
+		// validation/runtime sees the real config, not the sealed blob.
+		p, err := s.GetProvider(ctx, *input.ProviderID)
 		if err != nil {
 			return storage.FleetGroupIntegrationRecord{}, err
 		}
@@ -388,7 +434,9 @@ func (s *Service) UpdateIntegration(ctx context.Context, integrationID string, i
 
 	var providerRecord *storage.IntegrationProviderRecord
 	if input.ProviderID != nil && *input.ProviderID != "" {
-		p, err := s.store.GetIntegrationProvider(ctx, *input.ProviderID)
+		// GetProvider decrypts the credential bundle so integration
+		// validation/runtime sees the real config, not the sealed blob.
+		p, err := s.GetProvider(ctx, *input.ProviderID)
 		if err != nil {
 			return storage.FleetGroupIntegrationRecord{}, err
 		}
@@ -447,18 +495,24 @@ func (s *Service) CreateProvider(ctx context.Context, input CreateProviderInput)
 	if err := s.providerIntegrations.Validate(input.Kind, input.Config); err != nil {
 		return storage.IntegrationProviderRecord{}, err
 	}
+	sealed, err := s.encryptProviderConfig([]byte(input.Config))
+	if err != nil {
+		return storage.IntegrationProviderRecord{}, err
+	}
 	now := s.now().UTC()
 	record := storage.IntegrationProviderRecord{
 		ID:        s.newID(),
 		Kind:      input.Kind,
 		Label:     input.Label,
-		Config:    []byte(input.Config),
+		Config:    sealed,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
 	if err := s.store.CreateIntegrationProvider(ctx, record); err != nil {
 		return storage.IntegrationProviderRecord{}, err
 	}
+	// Return plaintext config to the caller (the persisted row is sealed).
+	record.Config = []byte(input.Config)
 	return record, nil
 }
 
@@ -470,21 +524,47 @@ func (s *Service) UpdateProvider(ctx context.Context, providerID string, input U
 	if err := s.providerIntegrations.Validate(existing.Kind, input.Config); err != nil {
 		return storage.IntegrationProviderRecord{}, err
 	}
+	sealed, err := s.encryptProviderConfig([]byte(input.Config))
+	if err != nil {
+		return storage.IntegrationProviderRecord{}, err
+	}
 	existing.Label = input.Label
-	existing.Config = []byte(input.Config)
+	existing.Config = sealed
 	existing.UpdatedAt = s.now().UTC()
 	if err := s.store.UpdateIntegrationProvider(ctx, existing); err != nil {
 		return storage.IntegrationProviderRecord{}, err
 	}
+	// Return plaintext config to the caller (the persisted row is sealed).
+	existing.Config = []byte(input.Config)
 	return existing, nil
 }
 
 func (s *Service) GetProvider(ctx context.Context, providerID string) (storage.IntegrationProviderRecord, error) {
-	return s.store.GetIntegrationProvider(ctx, providerID)
+	record, err := s.store.GetIntegrationProvider(ctx, providerID)
+	if err != nil {
+		return storage.IntegrationProviderRecord{}, err
+	}
+	plain, err := s.decryptProviderConfig(record.Config)
+	if err != nil {
+		return storage.IntegrationProviderRecord{}, err
+	}
+	record.Config = plain
+	return record, nil
 }
 
 func (s *Service) ListProviders(ctx context.Context) ([]storage.IntegrationProviderRecord, error) {
-	return s.store.ListIntegrationProviders(ctx)
+	records, err := s.store.ListIntegrationProviders(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range records {
+		plain, err := s.decryptProviderConfig(records[i].Config)
+		if err != nil {
+			return nil, err
+		}
+		records[i].Config = plain
+	}
+	return records, nil
 }
 
 // DeleteProvider removes the provider row. fleet_group_integrations

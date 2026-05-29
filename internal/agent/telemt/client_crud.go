@@ -25,6 +25,13 @@ var ErrResetQuotaUnsupported = errors.New("telemt: reset-quota endpoint not avai
 // connectivity).
 var ErrResetQuotaReadOnly = errors.New("telemt: API is in read-only mode")
 
+// ErrClientNotFound is returned by DeleteClient / UpdateClient when
+// Telemt reports HTTP 404 for the target user. Callers use it to make
+// operations idempotent: deleting an already-absent user is a no-op
+// success (disable path), and patching a missing user can fall back to
+// a create (re-enable / drift-heal path).
+var ErrClientNotFound = errors.New("telemt: user not found")
+
 // FetchActiveIPs fetches the /v1/stats/users/active-ips endpoint and returns per-user active IPs.
 func (c *Client) FetchActiveIPs(ctx context.Context) ([]UserActiveIPs, error) {
 	var users []UserActiveIPs
@@ -136,6 +143,9 @@ func (c *Client) DeleteClient(ctx context.Context, clientName string) error {
 	}
 	defer response.Body.Close()
 
+	if response.StatusCode == http.StatusNotFound {
+		return ErrClientNotFound
+	}
 	if response.StatusCode >= http.StatusBadRequest {
 		return fmt.Errorf("delete client failed: %w", decodeAPIError(response.Body, fmt.Sprintf("delete client failed with status %d", response.StatusCode)))
 	}
@@ -147,33 +157,48 @@ func (c *Client) applyClient(ctx context.Context, method string, path string, cl
 	payload := map[string]any{
 		"username": client.Name,
 		"secret":   client.Secret,
-		"enabled":  client.Enabled,
 	}
-	// Telemt models user_ad_tag as Option<String>: omitting the field
-	// means "no ad tag", while sending "" triggers a 32-hex validation
-	// error. Include the field only when the operator actually provided
-	// a value.
-	if strings.TrimSpace(client.UserADTag) != "" {
-		payload["user_ad_tag"] = client.UserADTag
+	// Panvex always ships the FULL desired client state on every apply,
+	// so the optional fields are mapped to two distinct wire encodings:
+	//
+	//   - POST /v1/users (create): Telemt models the optionals as
+	//     Option<…>. Sending "" for user_ad_tag triggers a 32-hex
+	//     validation error and sending 0 for a numeric limit materialises
+	//     a real zero-limit, so a cleared field must be *omitted* (= "no
+	//     value / no limit").
+	//   - PATCH /v1/users/{name} (update): Telemt uses JSON-Merge-Patch
+	//     tri-state — an omitted field means Unchanged (keep the old
+	//     value), explicit null means Remove. Because the panel sends the
+	//     complete desired state, a cleared field must be sent as explicit
+	//     null so it is actually removed; omitting it would silently
+	//     preserve the stale value on the node.
+	isPatch := method == http.MethodPatch
+	setOptionalString := func(key, value string) {
+		if strings.TrimSpace(value) != "" {
+			payload[key] = value
+		} else if isPatch {
+			payload[key] = nil // explicit null → Telemt Patch::Remove
+		}
 	}
-	// Telemt's CreateUserRequest models the numeric limits as
-	// `Option<usize>` — sending `0` materialises a real zero-limit
-	// (the client then can't open any connections, burn any quota,
-	// etc.), while *omitting* the field means "no limit". Map zero
-	// values to "no limit" so operators who leave the form blank get
-	// the expected unlimited client instead of a silently-broken one.
-	if client.MaxTCPConns > 0 {
-		payload["max_tcp_conns"] = client.MaxTCPConns
+	setOptionalInt := func(key string, value int) {
+		if value > 0 {
+			payload[key] = value
+		} else if isPatch {
+			payload[key] = nil
+		}
 	}
-	if client.MaxUniqueIPs > 0 {
-		payload["max_unique_ips"] = client.MaxUniqueIPs
+	setOptionalInt64 := func(key string, value int64) {
+		if value > 0 {
+			payload[key] = value
+		} else if isPatch {
+			payload[key] = nil
+		}
 	}
-	if client.DataQuotaBytes > 0 {
-		payload["data_quota_bytes"] = client.DataQuotaBytes
-	}
-	if strings.TrimSpace(client.ExpirationRFC3339) != "" {
-		payload["expiration_rfc3339"] = client.ExpirationRFC3339
-	}
+	setOptionalString("user_ad_tag", client.UserADTag)
+	setOptionalInt("max_tcp_conns", client.MaxTCPConns)
+	setOptionalInt("max_unique_ips", client.MaxUniqueIPs)
+	setOptionalInt64("data_quota_bytes", client.DataQuotaBytes)
+	setOptionalString("expiration_rfc3339", client.ExpirationRFC3339)
 
 	request, err := c.newRequest(ctx, method, path, payload)
 	if err != nil {
@@ -186,6 +211,9 @@ func (c *Client) applyClient(ctx context.Context, method string, path string, cl
 	}
 	defer response.Body.Close()
 
+	if response.StatusCode == http.StatusNotFound {
+		return ClientApplyResult{}, ErrClientNotFound
+	}
 	if response.StatusCode >= http.StatusBadRequest {
 		return ClientApplyResult{}, fmt.Errorf("apply client failed: %w", decodeAPIError(response.Body, fmt.Sprintf("apply client failed with status %d", response.StatusCode)))
 	}

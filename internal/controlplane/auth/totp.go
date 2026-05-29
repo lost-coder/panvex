@@ -258,6 +258,12 @@ func (s *Service) DisableTotp(ctx context.Context, userID, password, totpCode st
 		return User{}, err
 	}
 
+	// Note: self-service DisableTotp deliberately does NOT revoke sessions —
+	// the caller just re-authenticated with password + a live TOTP code, so
+	// their current session is trusted and logging them out would be hostile
+	// UX. The security-critical session revocation lives in ResetTotp (the
+	// admin/recovery "account may be compromised" path).
+
 	return user, nil
 }
 
@@ -278,6 +284,11 @@ func (s *Service) ResetTotp(ctx context.Context, userID string) (User, error) {
 	s.mu.Lock()
 	delete(s.pendingTotpSetup, userID)
 	s.mu.Unlock()
+
+	// A TOTP reset is typically an account-recovery / "possibly compromised"
+	// action: revoke every existing session so an attacker holding a live
+	// cookie is logged out rather than surviving the reset.
+	s.RevokeSessionsForUser(ctx, user.ID)
 
 	return user, nil
 }

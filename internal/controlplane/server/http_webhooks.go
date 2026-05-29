@@ -3,7 +3,6 @@ package server
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -106,7 +105,7 @@ func (s *Server) handleCreateWebhookEndpoint() http.HandlerFunc {
 			return
 		}
 		var req webhookCreateRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := decodeJSON(r, &req); err != nil {
 			writeErrorWithCode(w, http.StatusBadRequest, "request body must be JSON", "invalid_body")
 			return
 		}
@@ -154,7 +153,7 @@ func (s *Server) handleUpdateWebhookEndpoint() http.HandlerFunc {
 		}
 		id := chi.URLParam(r, "id")
 		var req webhookUpdateRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := decodeJSON(r, &req); err != nil {
 			writeErrorWithCode(w, http.StatusBadRequest, "request body must be JSON", "invalid_body")
 			return
 		}

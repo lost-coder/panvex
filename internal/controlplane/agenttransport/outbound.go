@@ -341,6 +341,11 @@ func jitter(d time.Duration) time.Duration {
 
 type outboundSupervisorEntry struct {
 	cancel context.CancelFunc
+	// dialAddress is the address this supervisor is dialing. Stored so a
+	// later OnNodeChanged with a different address tears the supervisor down
+	// and respawns it against the new target, instead of silently keeping
+	// the stale address until a panel restart (M-1).
+	dialAddress string
 }
 
 // SupervisorGaugeDelta is called by outboundTransport whenever a supervisor
@@ -436,13 +441,24 @@ func (t *outboundTransport) ensureSupervisor(_ context.Context, meta NodeMeta) {
 		t.mu.Unlock()
 		return
 	}
-	if _, exists := t.supervisors[meta.NodeID]; exists {
+	if existing, exists := t.supervisors[meta.NodeID]; exists {
+		if existing.dialAddress == meta.DialAddress {
+			t.mu.Unlock()
+			return
+		}
+		// Dial address changed: tear down the stale supervisor, then fall
+		// through to spawn a fresh one against the new address.
 		t.mu.Unlock()
-		return
+		t.removeSupervisor(meta.NodeID)
+		t.mu.Lock()
+		if t.stopped {
+			t.mu.Unlock()
+			return
+		}
 	}
 	//nolint:gosec // G118: supervisor cancel is stored in supervisors[meta.NodeID].cancel and invoked by stopAll/removeSupervisor.
 	ctx, cancel := context.WithCancel(t.lifecycleCtx)
-	t.supervisors[meta.NodeID] = &outboundSupervisorEntry{cancel: cancel}
+	t.supervisors[meta.NodeID] = &outboundSupervisorEntry{cancel: cancel, dialAddress: meta.DialAddress}
 	t.wg.Add(1)
 	fn := t.onSupervisorDelta
 	enrollFn := t.enrollFn

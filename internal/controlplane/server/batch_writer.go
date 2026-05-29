@@ -601,6 +601,14 @@ var streamAlerts = map[string]string{
 	// (cold-start hydrate failures in restoreFallbackState use the same
 	// key — see state_restore.go).
 	"fallback_state": "fallback_state_persist_failed",
+	// IN-L2: time-series streams. A persistent flush failure drops the batch
+	// (rows are not re-buffered), leaving silent gaps in the trend graphs and
+	// the hourly rollups derived from them. Surface them on stable alert keys
+	// so operators can page on sustained telemetry-persistence loss instead of
+	// only seeing a lone Error log line.
+	"server_load": "server_load_persist_failed",
+	"telemetry":   "telemetry_persist_failed",
+	"metrics":     "metrics_persist_failed",
 }
 
 func (w *storeBatchWriter) flushItem(buffer string, logAttrs []any, op func() error) {

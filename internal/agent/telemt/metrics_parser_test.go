@@ -24,6 +24,10 @@ telemt_user_connections_current{user="bob"} 1
 # TYPE telemt_user_unique_ips_current gauge
 telemt_user_unique_ips_current{user="alice"} 2
 telemt_user_unique_ips_current{user="bob"} 1
+# HELP telemt_user_unique_ips_recent_window Unique IPs over the observation window
+# TYPE telemt_user_unique_ips_recent_window gauge
+telemt_user_unique_ips_recent_window{user="alice"} 7
+telemt_user_unique_ips_recent_window{user="bob"} 4
 # HELP telemt_server_octets_total Server-level metric
 # TYPE telemt_server_octets_total counter
 telemt_server_octets_total 9999999
@@ -40,6 +44,7 @@ func TestParseUserMetricsExtractsPerUserCounters(t *testing.T) {
 	assert.Equal(t, uint64(7654321), alice.OctetsToClient)
 	assert.Equal(t, 3, alice.CurrentConnections)
 	assert.Equal(t, 2, alice.UniqueIPsCurrent)
+	assert.Equal(t, 7, alice.UniqueIPsRecentWindow)
 
 	bob, ok := result["bob"]
 	require.True(t, ok, "missing user bob")
@@ -47,6 +52,7 @@ func TestParseUserMetricsExtractsPerUserCounters(t *testing.T) {
 	assert.Equal(t, uint64(111), bob.OctetsToClient)
 	assert.Equal(t, 1, bob.CurrentConnections)
 	assert.Equal(t, 1, bob.UniqueIPsCurrent)
+	assert.Equal(t, 4, bob.UniqueIPsRecentWindow)
 }
 
 func TestParseUserMetricsHandlesEmptyInput(t *testing.T) {

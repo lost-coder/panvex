@@ -36,6 +36,12 @@ import (
 // tests pre-seed rows and assert state transitions via the BootstrapState field.
 type enrollFakeQueries struct {
 	rows map[string]*dbsqlc.GetAgentTransportRow
+	// forceConsumeZero simulates a concurrent enrollment having already
+	// claimed the token: ConsumeAgentBootstrapToken returns 0 rows even
+	// though GetAgentTransport still reported "pending".
+	forceConsumeZero bool
+	consumeCalls     int
+	revertCalls      int
 }
 
 func newEnrollFakeQueries(rows ...*dbsqlc.GetAgentTransportRow) *enrollFakeQueries {
@@ -66,6 +72,27 @@ func (f *enrollFakeQueries) ClearAgentBootstrapToken(_ context.Context, id strin
 		r.BootstrapState = "active"
 		r.BootstrapTokenHash = nil
 		r.BootstrapExpiresAt = sql.NullTime{}
+	}
+	return nil
+}
+
+func (f *enrollFakeQueries) ConsumeAgentBootstrapToken(_ context.Context, id string) (int64, error) {
+	f.consumeCalls++
+	if f.forceConsumeZero {
+		return 0, nil
+	}
+	r, ok := f.rows[id]
+	if !ok || r.BootstrapState != "pending" {
+		return 0, nil
+	}
+	r.BootstrapState = "active" // claimed; token hash/expiry preserved for revert
+	return 1, nil
+}
+
+func (f *enrollFakeQueries) RevertAgentBootstrapConsumed(_ context.Context, id string) error {
+	f.revertCalls++
+	if r, ok := f.rows[id]; ok && r.BootstrapState == "active" && len(r.BootstrapTokenHash) > 0 {
+		r.BootstrapState = "pending"
 	}
 	return nil
 }
@@ -302,6 +329,42 @@ func TestEnrollDriverHappyPath(t *testing.T) {
 
 	// Bootstrap state cleared.
 	require.Equal(t, "active", fq.rows[agentID].BootstrapState)
+	// Token claimed exactly once; no revert on the happy path.
+	require.Equal(t, 1, fq.consumeCalls)
+	require.Equal(t, 0, fq.revertCalls)
+}
+
+// TestEnrollDriverRejectsAlreadyConsumedToken guards H-4: when a concurrent
+// enrollment has already claimed the token (ConsumeAgentBootstrapToken
+// returns 0 rows), this Run must refuse to sign a second certificate.
+func TestEnrollDriverRejectsAlreadyConsumedToken(t *testing.T) {
+	tok := mustIssueToken(t, time.Hour)
+	agentID := "agent-raced"
+
+	row := &dbsqlc.GetAgentTransportRow{
+		ID:                 agentID,
+		BootstrapState:     "pending",
+		BootstrapTokenHash: tok.Hash[:],
+		BootstrapExpiresAt: sql.NullTime{Time: tok.ExpiresAt, Valid: true},
+	}
+	fq := newEnrollFakeQueries(row)
+	fq.forceConsumeZero = true // simulate a concurrent winner
+	ca := &fakeCA{}
+
+	stub := &agentEnrollStubServer{
+		bootstrapToken: tok.Raw,
+		agentID:        agentID,
+		csrPEM:         "fake-csr",
+	}
+	clientTLS, _ := startAgentEnrollStub(t, stub)
+
+	driver := NewEnrollDriver(fq, ca, nil, time.Now)
+	err := driver.Run(context.Background(), stub.address, clientTLS, agentID)
+	require.Error(t, err)
+
+	// No certificate was signed or sent off one already-consumed token.
+	require.Empty(t, ca.lastCSRPEM, "SignCSR must not run when the token is already consumed")
+	require.Nil(t, stub.receivedCert, "no cert may be sent for an already-consumed token")
 }
 
 func TestEnrollDriverRejectsExpiredToken(t *testing.T) {

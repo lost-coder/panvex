@@ -114,14 +114,16 @@ type ClientIpHistory struct {
 }
 
 type ClientUsage struct {
-	ClientID         string
-	AgentID          string
-	TrafficUsedBytes int64
-	UniqueIpsUsed    int32
-	ActiveTcpConns   int32
-	ActiveUniqueIps  int32
-	LastSeq          int64
-	ObservedAt       time.Time
+	ClientID           string
+	AgentID            string
+	TrafficUsedBytes   int64
+	UniqueIpsUsed      int32
+	ActiveTcpConns     int32
+	ActiveUniqueIps    int32
+	LastSeq            int64
+	ObservedAt         time.Time
+	QuotaUsedBytes     int64
+	QuotaLastResetUnix int64
 }
 
 type ConsumedTotp struct {

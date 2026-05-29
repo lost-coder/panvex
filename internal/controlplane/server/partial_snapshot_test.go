@@ -1,0 +1,68 @@
+package server
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/lost-coder/panvex/internal/gatewayrpc"
+)
+
+// TestApplyAgentSnapshotPartialPreservesLastKnown guards IN-H6: a partial
+// snapshot (a telemt sub-endpoint failed mid-cycle) must not overwrite the
+// last-known version / connected_users / uptime with blanks, which would
+// flap the dashboard to zeros during a transient outage.
+func TestApplyAgentSnapshotPartialPreservesLastKnown(t *testing.T) {
+	now := time.Date(2026, 5, 29, 12, 0, 0, 0, time.UTC)
+	server := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+	})
+
+	// Full snapshot establishes the baseline.
+	full := agentSnapshot{
+		AgentID:  "agent-1",
+		NodeName: "node-a",
+		Version:  "2026.03",
+		ReadOnly: true,
+		Instances: []instanceSnapshot{
+			{ID: "telemt-primary", Name: "telemt-primary", Version: "2026.03", ConnectedUsers: 42, ReadOnly: true},
+		},
+		HasRuntime: true,
+		Runtime:    &gatewayrpc.RuntimeSnapshot{UptimeSeconds: 1000},
+		ObservedAt: now,
+	}
+	if err := server.applyAgentSnapshot(context.Background(), full); err != nil {
+		t.Fatalf("applyAgentSnapshot(full) error = %v", err)
+	}
+
+	// Partial snapshot with blanked version / instances / uptime.
+	partial := agentSnapshot{
+		AgentID:    "agent-1",
+		Version:    "",
+		ReadOnly:   false,
+		Instances:  nil,
+		HasRuntime: true,
+		Runtime:    &gatewayrpc.RuntimeSnapshot{UptimeSeconds: 0},
+		Partial:    true,
+		ObservedAt: now.Add(time.Minute),
+	}
+	if err := server.applyAgentSnapshot(context.Background(), partial); err != nil {
+		t.Fatalf("applyAgentSnapshot(partial) error = %v", err)
+	}
+
+	agent := server.agents["agent-1"]
+	if agent.Version != "2026.03" {
+		t.Fatalf("version after partial = %q, want preserved 2026.03", agent.Version)
+	}
+	if !agent.ReadOnly {
+		t.Fatal("read_only after partial = false, want preserved true")
+	}
+	if agent.Runtime.UptimeSeconds != 1000 {
+		t.Fatalf("uptime after partial = %v, want preserved 1000", agent.Runtime.UptimeSeconds)
+	}
+	insts := server.instancesForAgentLocked("agent-1")
+	if len(insts) != 1 || insts[0].ConnectedUsers != 42 || insts[0].Version != "2026.03" {
+		t.Fatalf("instances after partial = %+v, want preserved [version=2026.03 connected_users=42]", insts)
+	}
+}

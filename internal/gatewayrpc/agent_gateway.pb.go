@@ -2185,8 +2185,14 @@ type Snapshot struct {
 	HasClientIps             bool                              `protobuf:"varint,16,opt,name=has_client_ips,json=hasClientIps,proto3" json:"has_client_ips,omitempty"`
 	RuntimeDiagnostics       *RuntimeDiagnosticsSnapshot       `protobuf:"bytes,17,opt,name=runtime_diagnostics,json=runtimeDiagnostics,proto3" json:"runtime_diagnostics,omitempty"`
 	RuntimeSecurityInventory *RuntimeSecurityInventorySnapshot `protobuf:"bytes,18,opt,name=runtime_security_inventory,json=runtimeSecurityInventory,proto3" json:"runtime_security_inventory,omitempty"`
-	unknownFields            protoimpl.UnknownFields
-	sizeCache                protoimpl.SizeCache
+	// partial=true means at least one telemt sub-endpoint failed or the
+	// per-cycle deadline fired, so version / connected_users / read_only /
+	// uptime in this snapshot may be missing (zero/empty). The panel must
+	// preserve its last-known values for those fields instead of overwriting
+	// them with the partial blanks (IN-H6).
+	Partial       bool `protobuf:"varint,19,opt,name=partial,proto3" json:"partial,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Snapshot) Reset() {
@@ -2336,6 +2342,13 @@ func (x *Snapshot) GetRuntimeSecurityInventory() *RuntimeSecurityInventorySnapsh
 		return x.RuntimeSecurityInventory
 	}
 	return nil
+}
+
+func (x *Snapshot) GetPartial() bool {
+	if x != nil {
+		return x.Partial
+	}
+	return false
 }
 
 type JobResult struct {
@@ -3965,7 +3978,7 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\fstate_reason\x18\x02 \x01(\tR\vstateReason\x12\x18\n" +
 	"\aenabled\x18\x03 \x01(\bR\aenabled\x12#\n" +
 	"\rentries_total\x18\x04 \x01(\x05R\fentriesTotal\x12!\n" +
-	"\fentries_json\x18\x05 \x01(\tR\ventriesJson\"\xdb\a\n" +
+	"\fentries_json\x18\x05 \x01(\tR\ventriesJson\"\xf5\a\n" +
 	"\bSnapshot\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x1b\n" +
 	"\tnode_name\x18\x02 \x01(\tR\bnodeName\x12$\n" +
@@ -3985,7 +3998,8 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\x10has_client_usage\x18\x0f \x01(\bR\x0ehasClientUsage\x12$\n" +
 	"\x0ehas_client_ips\x18\x10 \x01(\bR\fhasClientIps\x12^\n" +
 	"\x13runtime_diagnostics\x18\x11 \x01(\v2-.panvex.gateway.v1.RuntimeDiagnosticsSnapshotR\x12runtimeDiagnostics\x12q\n" +
-	"\x1aruntime_security_inventory\x18\x12 \x01(\v23.panvex.gateway.v1.RuntimeSecurityInventorySnapshotR\x18runtimeSecurityInventory\x1a:\n" +
+	"\x1aruntime_security_inventory\x18\x12 \x01(\v23.panvex.gateway.v1.RuntimeSecurityInventorySnapshotR\x18runtimeSecurityInventory\x12\x18\n" +
+	"\apartial\x18\x13 \x01(\bR\apartial\x1a:\n" +
 	"\fMetricsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\"\xbc\x01\n" +

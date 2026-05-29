@@ -35,6 +35,7 @@ var (
 	errClientUserADTag       = errors.New("user_ad_tag must contain exactly 32 hex characters")
 	errClientExpiration      = errors.New("expiration_rfc3339 must be a valid RFC3339 timestamp")
 	errClientTargetsRequired = errors.New("client must target at least one agent")
+	errClientLimitNegative   = errors.New("max_tcp_conns, max_unique_ips and data_quota_bytes must be >= 0")
 )
 
 // clientNameRegex mirrors Telemt's username constraint
@@ -145,6 +146,10 @@ func (s *Server) createClient(ctx context.Context, actorID string, input clientM
 		return managedClient{}, nil, nil, err
 	}
 
+	if err := validateClientLimits(input.MaxTCPConns, input.MaxUniqueIPs, input.DataQuotaBytes); err != nil {
+		return managedClient{}, nil, nil, err
+	}
+
 	enabled := true
 	if input.Enabled != nil {
 		enabled = *input.Enabled
@@ -219,6 +224,17 @@ func (s *Server) updateClient(ctx context.Context, clientID, actorID string, inp
 // applyClientMutationFields validates the mutation input and merges it
 // into currentClient in-place. Returns the pre-mutation Name (used for
 // rename detection in the apply flow) or any validation error.
+// validateClientLimits rejects negative numeric limits before they are
+// persisted and pushed to Telemt. Zero means "no limit" (a deliberate
+// clear); negative values are nonsensical and were previously accepted
+// verbatim into the DB and rollout payload.
+func validateClientLimits(maxTCPConns, maxUniqueIPs int, dataQuotaBytes int64) error {
+	if maxTCPConns < 0 || maxUniqueIPs < 0 || dataQuotaBytes < 0 {
+		return errClientLimitNegative
+	}
+	return nil
+}
+
 func applyClientMutationFields(currentClient *managedClient, input clientMutationInput, observedAt time.Time) (string, error) {
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
@@ -235,6 +251,10 @@ func applyClientMutationFields(currentClient *managedClient, input clientMutatio
 
 	expirationRFC3339, err := normalizedExpiration(input.ExpirationRFC3339)
 	if err != nil {
+		return "", err
+	}
+
+	if err := validateClientLimits(input.MaxTCPConns, input.MaxUniqueIPs, input.DataQuotaBytes); err != nil {
 		return "", err
 	}
 
@@ -568,20 +588,27 @@ func (s *Server) applyClientResetQuotaResult(ctx context.Context, agentID string
 	if !success {
 		return
 	}
-	if strings.TrimSpace(resultJSON) == "" {
-		return
-	}
-	var resetPayload clientResetQuotaJobResultPayload
-	if err := json.Unmarshal([]byte(resultJSON), &resetPayload); err != nil || resetPayload.LastResetEpochSecs == 0 {
-		return
-	}
 
 	var payload clientResetQuotaJobPayload
 	if err := json.Unmarshal([]byte(job.PayloadJSON), &payload); err != nil {
 		return
 	}
 
-	deployment, ok := s.recordClientResetQuotaTimestamp(payload.ClientID, agentID, resetPayload.LastResetEpochSecs, observedAt)
+	// L-1: prefer telemt's authoritative reset epoch, but fall back to the
+	// observation time when an older telemt (or a success response without
+	// the typed envelope) omits it. Previously such a success was silently
+	// dropped, so the job showed "succeeded" while the panel's reset history
+	// stayed empty — a status/state divergence for the operator.
+	//nolint:gosec // G115: observedAt is a wall-clock timestamp (well past the epoch), so Unix() is always positive.
+	effectiveEpoch := uint64(observedAt.UTC().Unix())
+	if strings.TrimSpace(resultJSON) != "" {
+		var resetPayload clientResetQuotaJobResultPayload
+		if err := json.Unmarshal([]byte(resultJSON), &resetPayload); err == nil && resetPayload.LastResetEpochSecs != 0 {
+			effectiveEpoch = resetPayload.LastResetEpochSecs
+		}
+	}
+
+	deployment, ok := s.recordClientResetQuotaTimestamp(payload.ClientID, agentID, effectiveEpoch, observedAt)
 	if !ok {
 		return
 	}

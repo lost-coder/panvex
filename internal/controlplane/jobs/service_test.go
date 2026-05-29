@@ -425,36 +425,47 @@ func TestServicePendingForAgentReturnsQueuedAndStaleSentJobs(t *testing.T) {
 	}
 }
 
-func TestServicePendingForAgentDropsAcknowledgedJobFromIndex(t *testing.T) {
+// TestServicePendingForAgentRedeliversAcknowledgedAfterRetryWindow guards
+// H-7: an acknowledged target must stay in the per-agent index so that, if
+// its JobResult is lost in transit after the ack (backpressure / stream drop
+// / agent crash), PendingForAgent re-dispatches it once the retryAfter window
+// elapses — instead of the job hanging in "running" until a CP restart or TTL
+// expiry. Within the window it must NOT be re-dispatched.
+func TestServicePendingForAgentRedeliversAcknowledgedAfterRetryWindow(t *testing.T) {
 	const retryAfter = 30 * time.Second
-	now := time.Date(2026, time.March, 19, 9, 45, 0, 0, time.UTC)
+	base := time.Date(2026, time.March, 19, 9, 45, 0, 0, time.UTC)
+	clock := base
 	service := NewService()
-	service.SetNow(func() time.Time {
-		return now
-	})
+	service.SetNow(func() time.Time { return clock })
 
 	job, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
-		IdempotencyKey: "pending-index-prune-ack",
+		IdempotencyKey: "pending-index-ack-redeliver",
 		ActorID:        "user-1",
-	}, now)
+	}, base)
 	if err != nil {
 		t.Fatalf("Enqueue() error = %v", err)
 	}
 
-	service.MarkDelivered(context.Background(), "agent-1", job.ID, now.Add(time.Second))
-	service.MarkAcknowledged(context.Background(), "agent-1", job.ID, now.Add(2*time.Second))
+	service.MarkDelivered(context.Background(), "agent-1", job.ID, base.Add(time.Second))
+	service.MarkAcknowledged(context.Background(), "agent-1", job.ID, base.Add(2*time.Second))
 
-	pending := service.PendingForAgent(context.Background(), "agent-1", retryAfter)
-	if len(pending) != 0 {
-		t.Fatalf("len(PendingForAgent) = %d, want %d", len(pending), 0)
+	// Within the retry window: not re-dispatched...
+	clock = base.Add(10 * time.Second)
+	if pending := service.PendingForAgent(context.Background(), "agent-1", retryAfter); len(pending) != 0 {
+		t.Fatalf("within retry window len(PendingForAgent) = %d, want 0", len(pending))
 	}
-	if agentJobs := service.agentJobs["agent-1"]; agentJobs != nil {
-		if _, exists := agentJobs[job.ID]; exists {
-			t.Fatalf("agentJobs[agent-1] still contains %q after acknowledgement", job.ID)
-		}
+	// ...but still indexed so a lost-after-ack result can be retried.
+	if _, ok := service.agentJobs["agent-1"][job.ID]; !ok {
+		t.Fatal("acknowledged job dropped from index; a result lost after ack could never be retried")
+	}
+
+	// After the retry window elapses, it is re-dispatched.
+	clock = base.Add(2*time.Second + retryAfter + time.Second)
+	if pending := service.PendingForAgent(context.Background(), "agent-1", retryAfter); len(pending) != 1 {
+		t.Fatalf("after retry window len(PendingForAgent) = %d, want 1 (redelivery)", len(pending))
 	}
 }
 

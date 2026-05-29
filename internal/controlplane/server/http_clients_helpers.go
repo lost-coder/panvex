@@ -165,7 +165,7 @@ func handleClientMutationError(w http.ResponseWriter, err error) bool {
 	switch {
 	case errors.Is(err, storage.ErrNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
-	case errors.Is(err, errClientNameRequired), errors.Is(err, errClientNameInvalid), errors.Is(err, errClientUserADTag), errors.Is(err, errClientExpiration), errors.Is(err, errClientTargetsRequired):
+	case errors.Is(err, errClientNameRequired), errors.Is(err, errClientNameInvalid), errors.Is(err, errClientUserADTag), errors.Is(err, errClientExpiration), errors.Is(err, errClientTargetsRequired), errors.Is(err, errClientLimitNegative):
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, jobs.ErrReadOnlyTarget):
 		writeError(w, http.StatusConflict, err.Error())

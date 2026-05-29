@@ -134,6 +134,10 @@ type agentSnapshot struct {
 	RuntimeSecurityInventory *gatewayrpc.RuntimeSecurityInventorySnapshot
 	Metrics                  map[string]uint64
 	ObservedAt               time.Time
+	// Partial=true when the agent could not collect a full telemt snapshot;
+	// the panel preserves last-known version/connected_users/read_only/uptime
+	// rather than overwriting them with blanks (IN-H6).
+	Partial bool
 }
 
 // clientUsageSnapshot now lives in controlplane/clients as
@@ -365,6 +369,19 @@ func (s *Server) shouldApplyClientUsageDelta(agentID string, clients []clientUsa
 		// gauges may still be refreshed below, but do not re-accumulate.
 		return false
 	default:
+		// IN-C1: a jump of more than one means at least one usage snapshot
+		// (and its one-shot delta) was lost in transit. With the non-drop
+		// enqueue fix this should be rare (agent-side outbound drop or a
+		// genuine reconnect reorder); surface it on a stable alert key so any
+		// residual traffic undercount is observable rather than silent.
+		if lastSeen > 0 && batchSeq > lastSeen+1 {
+			s.logger.Warn("client usage seq gap — usage delta(s) may have been lost",
+				"agent_id", agentID,
+				"last_seen", lastSeen,
+				"received", batchSeq,
+				"alert", "client_usage_seq_gap",
+			)
+		}
 		s.lastUsageSeq[agentID] = batchSeq
 		return true
 	}
@@ -409,14 +426,16 @@ func (s *Server) mergeClientUsageBatch(agentID string, clients []clientUsageSnap
 		s.clientUsage[string(usage.ClientID)][agentID] = current
 		s.trackClientUsageOwnerLocked(string(usage.ClientID), agentID)
 		toPersist = append(toPersist, storage.ClientUsageRecord{
-			ClientID:         string(usage.ClientID),
-			AgentID:          agentID,
-			TrafficUsedBytes: current.TrafficUsedBytes,
-			UniqueIPsUsed:    current.UniqueIPsUsed,
-			ActiveTCPConns:   current.ActiveTCPConns,
-			ActiveUniqueIPs:  current.ActiveUniqueIPs,
-			LastSeq:          s.lastUsageSeq[agentID],
-			ObservedAt:       current.ObservedAt,
+			ClientID:           string(usage.ClientID),
+			AgentID:            agentID,
+			TrafficUsedBytes:   current.TrafficUsedBytes,
+			UniqueIPsUsed:      current.UniqueIPsUsed,
+			ActiveTCPConns:     current.ActiveTCPConns,
+			ActiveUniqueIPs:    current.ActiveUniqueIPs,
+			QuotaUsedBytes:     current.QuotaUsedBytes,
+			QuotaLastResetUnix: current.QuotaLastResetUnix,
+			LastSeq:            s.lastUsageSeq[agentID],
+			ObservedAt:         current.ObservedAt,
 		})
 	}
 	return seen, toPersist
@@ -442,19 +461,44 @@ func (s *Server) persistClientUsageRecords(ctx context.Context, toPersist []stor
 	batch := make([]clients.Usage, len(toPersist))
 	for i, r := range toPersist {
 		batch[i] = clients.Usage{
-			ClientID:         clients.ClientID(r.ClientID),
-			AgentID:          r.AgentID,
-			TrafficUsedBytes: r.TrafficUsedBytes,
-			UniqueIPsUsed:    r.UniqueIPsUsed,
-			ActiveTCPConns:   r.ActiveTCPConns,
-			ActiveUniqueIPs:  r.ActiveUniqueIPs,
-			LastSeq:          r.LastSeq,
-			ObservedAt:       r.ObservedAt,
+			ClientID:           clients.ClientID(r.ClientID),
+			AgentID:            r.AgentID,
+			TrafficUsedBytes:   r.TrafficUsedBytes,
+			UniqueIPsUsed:      r.UniqueIPsUsed,
+			ActiveTCPConns:     r.ActiveTCPConns,
+			ActiveUniqueIPs:    r.ActiveUniqueIPs,
+			QuotaUsedBytes:     r.QuotaUsedBytes,
+			QuotaLastResetUnix: r.QuotaLastResetUnix,
+			LastSeq:            r.LastSeq,
+			ObservedAt:         r.ObservedAt,
 		}
 	}
-	if err := s.clientsSvc.UpsertUsageBulk(ctx, batch); err != nil {
-		s.logger.Warn("persist client_usage (bulk)", "rows", len(toPersist), "error", err)
+	// IN-H1: bounded retry + loud alert. The previous bare Warn made a
+	// persistence failure both invisible and lossy: client-usage deltas are
+	// one-shot (the agent never resends them), so a write dropped under a
+	// transient DB hiccup permanently undercounts traffic. Retry transient
+	// errors a few times with short backoff (this runs on the snapshot-drain
+	// goroutine, not the gRPC receive loop), and escalate to Error with a
+	// stable alert key so operators can page on the loss.
+	const maxUsagePersistAttempts = 3
+	var err error
+	for attempt := 1; ; attempt++ {
+		if err = s.clientsSvc.UpsertUsageBulk(ctx, batch); err == nil {
+			return
+		}
+		if attempt >= maxUsagePersistAttempts || classifyFlushError(err) == "persistent" || ctx.Err() != nil {
+			break
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(time.Duration(attempt) * 25 * time.Millisecond):
+		}
 	}
+	s.logger.Error("persist client_usage (bulk) failed",
+		"rows", len(toPersist),
+		"error", err,
+		"alert", "client_usage_persist_failed",
+	)
 }
 
 // zeroLiveGaugesForUntouchedClients zeros the live connection/IP gauges of
@@ -538,7 +582,11 @@ func (s *Server) applyClientIPSnapshot(agentID string, ipSnapshots []clientIPSna
 		}
 		current := usageByAgent[agentID]
 		current.ClientID = clients.ClientID(snapshot.ClientID)
-		current.UniqueIPsUsed = len(snapshot.ActiveIPs)
+		// IN-H3: the IP snapshot reports IPs active over the upload interval;
+		// it updates the active-now gauge only. UniqueIPsUsed ("unique over
+		// the observation window") is owned by the usage tick (telemt's
+		// recent_window) and the persisted client_ip_history — do NOT
+		// overwrite it here, which conflated the two distinct signals.
 		current.ActiveUniqueIPs = len(snapshot.ActiveIPs)
 		usageByAgent[agentID] = current
 		s.trackClientUsageOwnerLocked(snapshot.ClientID, agentID)

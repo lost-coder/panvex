@@ -42,6 +42,19 @@ func enqueueInboundAgentMessage(
 		}
 	}
 
+	// IN-C1: a snapshot carrying client usage holds one-shot traffic deltas
+	// the agent never resends. It must not be dropped from the regular queue
+	// under load — block (backpressure) until it is accepted. Heartbeats and
+	// gauge-only snapshots keep the drop-oldest path below.
+	if carriesClientUsage(message) {
+		select {
+		case <-connectionCtx.Done():
+			return false
+		case regularInbound <- message:
+			return true
+		}
+	}
+
 	select {
 	case <-connectionCtx.Done():
 		return false
@@ -74,6 +87,13 @@ func enqueueInboundAgentMessage(
 
 func isPriorityAgentMessage(message *gatewayrpc.ConnectClientMessage) bool {
 	return message.GetJobResult() != nil || message.GetJobAcknowledgement() != nil
+}
+
+// carriesClientUsage reports whether the message is a snapshot bearing
+// one-shot client-usage deltas, which must never be dropped (IN-C1).
+func carriesClientUsage(message *gatewayrpc.ConnectClientMessage) bool {
+	snap := message.GetSnapshot()
+	return snap != nil && snap.GetHasClientUsage()
 }
 
 func (s *Server) processRegularAgentMessage(
@@ -273,6 +293,26 @@ func (s *Server) handleInStreamRenewalRequest(ctx context.Context, agentID strin
 			Body: &gatewayrpc.ConnectServerMessage_RenewalResponse{
 				RenewalResponse: &gatewayrpc.RenewalResponse{
 					Error: "agent_id mismatch",
+				},
+			},
+		})
+		return
+	}
+
+	// Reject renewals from revoked agents. Without this, an agent whose
+	// stream is still alive in the window before the 30s revocation watcher
+	// tears it down could obtain a fresh 90-day cert AND have the panel
+	// re-pin its new serial (line ~323) — defeating both revocation and the
+	// serial-pin replay defense. Mirrors the unary RenewCertificate guard.
+	s.mu.RLock()
+	_, revoked := s.revokedAgentIDs[agentID]
+	s.mu.RUnlock()
+	if revoked {
+		s.logger.Warn("in-stream cert renewal: agent revoked", "agent_id", agentID)
+		_ = sess.Send(&gatewayrpc.ConnectServerMessage{
+			Body: &gatewayrpc.ConnectServerMessage_RenewalResponse{
+				RenewalResponse: &gatewayrpc.RenewalResponse{
+					Error: "agent certificate has been revoked",
 				},
 			},
 		})

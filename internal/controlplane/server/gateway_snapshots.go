@@ -43,6 +43,7 @@ func (s *Server) handleSnapshotMessage(connectionCtx context.Context, agentID st
 		RuntimeSecurityInventory: snap.RuntimeSecurityInventory,
 		Metrics:                  snap.Metrics,
 		ObservedAt:               observedAt,
+		Partial:                  snap.Partial,
 	})
 }
 

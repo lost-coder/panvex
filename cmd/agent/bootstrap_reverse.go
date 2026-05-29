@@ -54,7 +54,6 @@ type reverseBootstrapServer struct {
 	csrPEM         string
 
 	resultCh chan enrollResult
-	errCh    chan error
 }
 
 func (s *reverseBootstrapServer) EnrollOutbound(stream gatewayrpc.AgentGateway_EnrollOutboundServer) error {
@@ -160,14 +159,12 @@ func reverseBootstrap(cfg reverseBootstrapConfig) error {
 
 	// 5. Set up gRPC server.
 	resultCh := make(chan enrollResult, 1)
-	errCh := make(chan error, 1)
 
 	srv := &reverseBootstrapServer{
 		bootstrapToken: cfg.BootstrapToken,
 		agentID:        cfg.AgentID,
 		csrPEM:         csrPEM,
 		resultCh:       resultCh,
-		errCh:          errCh,
 	}
 
 	grpcServer := grpc.NewServer(grpc.Creds(credentials.NewTLS(tlsConfig)))
@@ -212,6 +209,15 @@ func reverseBootstrap(cfg reverseBootstrapConfig) error {
 	// carries and therefore the name the TLS stack must verify against.
 	grpcEndpoint := cfg.PanelURL
 	grpcServerName := cfg.PanelCN
+
+	// L-3: validate the panel-signed cert actually pairs with the key we
+	// generated before persisting. A mismatch would otherwise surface only
+	// later as an opaque mTLS handshake failure, leaving the agent with a
+	// persisted-but-unusable bundle. Mirrors the in-stream renewal guard.
+	if _, err := tls.X509KeyPair([]byte(result.certPEM), []byte(privKeyPEM)); err != nil {
+		return fmt.Errorf("issued certificate does not match generated key: %w", err)
+	}
+
 	creds := agentstate.Credentials{
 		AgentID:        cfg.AgentID,
 		CertificatePEM: result.certPEM,

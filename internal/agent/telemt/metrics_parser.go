@@ -10,7 +10,14 @@ type UserMetrics struct {
 	OctetsFromClient   uint64
 	OctetsToClient     uint64
 	CurrentConnections int
-	UniqueIPsCurrent   int
+	// UniqueIPsCurrent is the count of IPs active right now (gauge
+	// telemt_user_unique_ips_current). UniqueIPsRecentWindow is the count of
+	// distinct IPs seen over the configured observation window
+	// (telemt_user_unique_ips_recent_window) — i.e. "unique used", which the
+	// panel surfaces as UniqueIPsUsed. They are distinct telemt signals and
+	// must not be conflated (IN-H3).
+	UniqueIPsCurrent      int
+	UniqueIPsRecentWindow int
 }
 
 // UpstreamCounters holds global upstream connect counters scraped from Telemt.
@@ -119,7 +126,8 @@ func parseUserMetricLine(line string, users map[string]*UserMetrics) {
 	case "telemt_user_octets_from_client",
 		"telemt_user_octets_to_client",
 		"telemt_user_connections_current",
-		"telemt_user_unique_ips_current":
+		"telemt_user_unique_ips_current",
+		"telemt_user_unique_ips_recent_window":
 	default:
 		return
 	}
@@ -179,6 +187,10 @@ func applyUserMetric(m *UserMetrics, metricName, valuePart string) {
 	case "telemt_user_unique_ips_current":
 		if v, err := strconv.Atoi(valuePart); err == nil {
 			m.UniqueIPsCurrent = v
+		}
+	case "telemt_user_unique_ips_recent_window":
+		if v, err := strconv.Atoi(valuePart); err == nil {
+			m.UniqueIPsRecentWindow = v
 		}
 	}
 }

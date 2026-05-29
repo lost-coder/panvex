@@ -891,7 +891,8 @@ func TestClientFetchRuntimeStatePartialOnSomeFailures(t *testing.T) {
 		case "/v1/health":
 			writeSuccessEnvelope(w, map[string]any{"status": "ok"})
 		case "/v1/security/posture":
-			writeSuccessEnvelope(w, map[string]any{"read_only": true})
+			// telemt emits api_read_only (not read_only) on this endpoint.
+			writeSuccessEnvelope(w, map[string]any{"api_read_only": true})
 		case "/v1/system/info":
 			writeSuccessEnvelope(w, map[string]any{"version": "2026.03", "uptime_seconds": 360.0})
 		case "/v1/runtime/gates":
@@ -1083,6 +1084,60 @@ func TestClientCreateClientOmitsEmptyUserADTag(t *testing.T) {
 
 	if _, present := requestBody["user_ad_tag"]; present {
 		t.Fatalf("request body should omit user_ad_tag when empty; got %v", requestBody["user_ad_tag"])
+	}
+}
+
+// TestClientUpdateClientSendsNullToClearFields guards H-2: on PATCH the
+// agent must send explicit JSON null for cleared optional fields. Telemt's
+// JSON-Merge-Patch treats an omitted field as Unchanged (keep the old
+// value), so omitting a cleared limit/tag/expiry would silently preserve
+// the stale value on the node; explicit null maps to Patch::Remove. Panvex
+// always ships the full desired state, so a zero/empty optional is a
+// deliberate clear, not "unset".
+func TestClientUpdateClientSendsNullToClearFields(t *testing.T) {
+	var raw []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			t.Errorf("method = %s, want PATCH", r.Method)
+		}
+		raw, _ = io.ReadAll(r.Body)
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"links": map[string]any{}}})
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Config{BaseURL: server.URL, Authorization: "secret"}, server.Client())
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	if _, err := client.UpdateClient(context.Background(), ManagedClient{
+		Name:    "alice",
+		Secret:  "00000000000000000000000000000000",
+		Enabled: true,
+		// All optionals cleared — must arrive as explicit null on PATCH.
+		UserADTag:         "",
+		MaxTCPConns:       0,
+		MaxUniqueIPs:      0,
+		DataQuotaBytes:    0,
+		ExpirationRFC3339: "",
+	}); err != nil {
+		t.Fatalf("UpdateClient() error = %v", err)
+	}
+
+	// Decode preserving explicit nulls: a present key with null value
+	// decodes to a json.RawMessage of "null"; an omitted key is absent.
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatalf("unmarshal request: %v", err)
+	}
+	for _, key := range []string{"user_ad_tag", "max_tcp_conns", "max_unique_ips", "data_quota_bytes", "expiration_rfc3339"} {
+		v, present := fields[key]
+		if !present {
+			t.Fatalf("PATCH must send %q as explicit null to clear it, but it was omitted", key)
+		}
+		if string(v) != "null" {
+			t.Fatalf("PATCH %q = %s, want null", key, v)
+		}
 	}
 }
 

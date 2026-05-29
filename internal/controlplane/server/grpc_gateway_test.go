@@ -85,11 +85,16 @@ func TestServerPendingJobsForAgentRedeliversStaleSentTarget(t *testing.T) {
 	}
 }
 
-func TestServerPendingJobsForAgentSkipsAcknowledgedTarget(t *testing.T) {
+// TestServerPendingJobsForAgentRedeliversAcknowledgedAfterRetryWindow guards
+// H-7 at the server layer: an acknowledged target is skipped within the
+// retryAfter window, but re-dispatched once it elapses (so a JobResult lost
+// after the ack is retried instead of hanging until a CP restart). The
+// agent's idempotency cache dedups the replay.
+func TestServerPendingJobsForAgentRedeliversAcknowledgedAfterRetryWindow(t *testing.T) {
 	currentTime := time.Date(2026, time.March, 20, 9, 30, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return currentTime },
+		Now:              func() time.Time { return currentTime },
 	})
 
 	job := enqueueJobForAgent(t, server, "agent-1", "acknowledged-target", currentTime)
@@ -98,10 +103,16 @@ func TestServerPendingJobsForAgentSkipsAcknowledgedTarget(t *testing.T) {
 	server.jobs.MarkDelivered(context.Background(), "agent-1", job.ID, deliveredAt)
 	server.jobs.MarkAcknowledged(context.Background(), "agent-1", job.ID, acknowledgedAt)
 
+	// Within the retry window: not re-dispatched.
+	currentTime = acknowledgedAt.Add(time.Second)
+	if pending := server.pendingJobsForAgent(context.Background(), "agent-1"); len(pending) != 0 {
+		t.Fatalf("within retry window len(pendingJobsForAgent) = %d, want 0", len(pending))
+	}
+
+	// After the retry window: re-dispatched (lost-after-ack recovery).
 	currentTime = acknowledgedAt.Add(jobDispatchRetryAfter + time.Second)
-	pending := server.pendingJobsForAgent(context.Background(), "agent-1")
-	if len(pending) != 0 {
-		t.Fatalf("len(pendingJobsForAgent) = %d, want %d", len(pending), 0)
+	if pending := server.pendingJobsForAgent(context.Background(), "agent-1"); len(pending) != 1 {
+		t.Fatalf("after retry window len(pendingJobsForAgent) = %d, want 1 (redelivery)", len(pending))
 	}
 }
 
@@ -712,6 +723,65 @@ func TestServerConnectRateLimitRejectsBurstReconnects(t *testing.T) {
 	}
 }
 
+func usageSnapshotMessageForTest() *gatewayrpc.ConnectClientMessage {
+	return &gatewayrpc.ConnectClientMessage{
+		Body: &gatewayrpc.ConnectClientMessage_Snapshot{
+			Snapshot: &gatewayrpc.Snapshot{
+				AgentId:        "agent-1",
+				ObservedAtUnix: 1,
+				HasClientUsage: true,
+				Clients: []*gatewayrpc.ClientUsageSnapshot{
+					{ClientId: "client-1", TrafficDeltaBytes: 100, Seq: 5},
+				},
+			},
+		},
+	}
+}
+
+// TestEnqueueInboundAgentMessageDoesNotDropUsageSnapshot guards IN-C1: a
+// snapshot carrying one-shot client-usage deltas must NOT be dropped under
+// load (drop-oldest) — it blocks until accepted, preserving the queued
+// message instead of discarding traffic that the agent never resends.
+func TestEnqueueInboundAgentMessageDoesNotDropUsageSnapshot(t *testing.T) {
+	priorityInbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
+	regularInbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
+	stale := heartbeatMessageForTest("stale")
+	regularInbound <- stale // queue full
+
+	usage := usageSnapshotMessageForTest()
+	done := make(chan bool, 1)
+	go func() {
+		done <- enqueueInboundAgentMessage(context.Background(), priorityInbound, regularInbound, usage, nil)
+	}()
+
+	// The usage enqueue must block rather than drop the stale heartbeat.
+	select {
+	case got := <-regularInbound:
+		if got != stale {
+			t.Fatal("usage snapshot dropped the stale heartbeat; want blocking, not drop-oldest")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout draining stale heartbeat")
+	}
+	// After draining, the blocked enqueue completes and delivers the usage snapshot.
+	select {
+	case ok := <-done:
+		if !ok {
+			t.Fatal("enqueueInboundAgentMessage(usage) = false, want true")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("usage enqueue did not complete after space freed")
+	}
+	select {
+	case got := <-regularInbound:
+		if got != usage {
+			t.Fatal("usage snapshot not delivered to regularInbound")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("usage snapshot missing from regularInbound")
+	}
+}
+
 func heartbeatMessageForTest(nodeName string) *gatewayrpc.ConnectClientMessage {
 	return &gatewayrpc.ConnectClientMessage{
 		Body: &gatewayrpc.ConnectClientMessage_Heartbeat{
@@ -880,6 +950,41 @@ func (s *fakeSendSession) Recv() (*gatewayrpc.ConnectClientMessage, error) {
 
 func (s *fakeSendSession) Context() context.Context {
 	return context.Background()
+}
+
+// TestHandleInStreamRenewalRequestRejectsRevokedAgent guards H-3: a revoked
+// agent whose Connect stream is still alive must not be able to renew its
+// certificate over the stream (which would also re-pin its serial and defeat
+// the revocation + serial-pin defenses).
+func TestHandleInStreamRenewalRequestRejectsRevokedAgent(t *testing.T) {
+	now := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	srv := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+	})
+	srv.mu.Lock()
+	srv.revokedAgentIDs["agent-1"] = struct{}{}
+	srv.mu.Unlock()
+
+	sess := &fakeSendSession{}
+	srv.handleInStreamRenewalRequest(
+		context.Background(), "agent-1", sess,
+		&gatewayrpc.RenewalRequest{AgentId: "agent-1", CsrPem: "unused-because-revoked"},
+	)
+
+	if len(sess.sent) != 1 {
+		t.Fatalf("len(sent) = %d, want 1", len(sess.sent))
+	}
+	resp := sess.sent[0].GetRenewalResponse()
+	if resp == nil {
+		t.Fatal("response body is nil, want RenewalResponse")
+	}
+	if resp.GetError() == "" {
+		t.Fatal("revoked agent renewal must return an error")
+	}
+	if resp.GetCertificatePem() != "" {
+		t.Fatal("revoked agent must not receive a certificate")
+	}
 }
 
 func TestHandleInStreamRenewalRequestSucceeds(t *testing.T) {

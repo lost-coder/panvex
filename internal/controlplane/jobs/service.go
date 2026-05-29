@@ -1257,7 +1257,16 @@ func (s *Service) syncJobTargetsIndexLocked(job Job) {
 		if target.AgentID == "" {
 			continue
 		}
-		if target.Status == TargetStatusQueued || target.Status == TargetStatusSent {
+		// Keep queued/sent AND acknowledged targets in the per-agent index.
+		// Acknowledged must stay indexed so PendingForAgent can re-dispatch
+		// it after the retryAfter window when the JobResult was lost between
+		// ack and result (backpressure / stream drop / agent crash). Without
+		// this the only recovery was a CP restart (reindexAcknowledgedTargets)
+		// or TTL expiry. targetIsPending gates the actual re-dispatch by
+		// retryAfter, and the agent's idempotency cache dedups the replay, so
+		// retaining acknowledged here does not cause a dispatch storm. Only
+		// terminal states (succeeded/failed/expired) drop out of the index.
+		if target.Status == TargetStatusQueued || target.Status == TargetStatusSent || target.Status == TargetStatusAcknowledged {
 			if s.agentJobs[target.AgentID] == nil {
 				s.agentJobs[target.AgentID] = make(map[string]struct{})
 			}

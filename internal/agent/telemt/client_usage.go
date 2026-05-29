@@ -156,6 +156,11 @@ func (c *Client) FetchClientUsageFromMetrics(ctx context.Context) (ClientUsageMe
 			TrafficUsedBytes: m.OctetsFromClient + m.OctetsToClient,
 			ActiveTCPConns:   m.CurrentConnections,
 			CurrentIPsUsed:   m.UniqueIPsCurrent,
+			// IN-H3: "unique used" = distinct IPs over the observation window
+			// (recent_window), distinct from active-now (CurrentIPsUsed).
+			// Previously the metrics path left this 0, which then overwrote
+			// the panel's per-client UniqueIPsUsed to 0 on every tick.
+			UniqueIPsUsed: m.UniqueIPsRecentWindow,
 		})
 	}
 

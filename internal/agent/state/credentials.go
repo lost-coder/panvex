@@ -65,18 +65,48 @@ func Load(path string) (Credentials, error) {
 	return credentials, nil
 }
 
-// Save writes persisted agent credentials to disk with restricted permissions.
+// Save writes persisted agent credentials to disk with restricted
+// permissions. The write is atomic: data lands in a temp file in the same
+// directory, is fsynced, then renamed over the target. A crash, power loss,
+// or full disk mid-write therefore leaves the previous credentials intact
+// instead of a truncated bundle the agent cannot load on its next start
+// (which, for an outbound agent whose bootstrap token was already cleared,
+// would otherwise wedge enrollment).
 func Save(path string, credentials Credentials) error {
 	data, err := json.MarshalIndent(credentials, "", "  ")
 	if err != nil {
 		return err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0o600)
+	tmp, err := os.CreateTemp(dir, ".credentials-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	// Best-effort cleanup; a no-op once the rename below succeeds.
+	defer func() { _ = os.Remove(tmpName) }()
+
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
 
 // SaveUsageSeq rewrites the state file with a new UsageSeq value while

@@ -93,8 +93,11 @@ func makeIPUploadTick(connectionCtx context.Context, agent *runtime.Agent, telem
 			slog.Debug("ip snapshot enqueued", "agent_id", agent.AgentID(), "client_ips", len(snapshot.ClientIps))
 			return
 		}
+		// IN-H4: enqueue failed (backpressure) — restore the flushed IPs so
+		// they are retried on the next tick instead of being lost.
+		agent.RestoreIPSnapshot(snapshot)
 		if connectionCtx.Err() == nil {
-			slog.Warn("ip snapshot dropped due to outbound backpressure")
+			slog.Warn("ip snapshot dropped due to outbound backpressure; restored for retry")
 		}
 	}
 }

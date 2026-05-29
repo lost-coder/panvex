@@ -484,6 +484,10 @@ func (s *Server) handleResetClientQuota() http.HandlerFunc {
 			"target_agent_ids": job.TargetAgentIDs,
 			"job_id":           job.ID,
 		})
+		// L-2: redact the job payload before returning, consistent with the
+		// /api/jobs list endpoints (the reset-quota payload carries no secret
+		// today, but this keeps the contract uniform).
+		job.PayloadJSON = ""
 		writeJSON(w, http.StatusOK, resetClientQuotaResponse{
 			Client: s.buildClientDetailResponse(r.Context(), client, assignments, deployments, false),
 			Job:    job,
@@ -523,6 +527,10 @@ func (s *Server) handleResetClientQuotaOnAgent() http.HandlerFunc {
 			"agent_id": agentID,
 			"job_id":   job.ID,
 		})
+		// L-2: redact the job payload before returning, consistent with the
+		// /api/jobs list endpoints (the reset-quota payload carries no secret
+		// today, but this keeps the contract uniform).
+		job.PayloadJSON = ""
 		writeJSON(w, http.StatusOK, resetClientQuotaResponse{
 			Client: s.buildClientDetailResponse(r.Context(), client, assignments, deployments, false),
 			Job:    job,

@@ -31,12 +31,24 @@ func (s *Server) updateAgentRecordFromSnapshot(snapshot agentSnapshot) Agent {
 	if agent.FleetGroupID == "" {
 		agent.FleetGroupID = snapshot.FleetGroupID
 	}
-	agent.Version = snapshot.Version
-	agent.ReadOnly = snapshot.ReadOnly
+	// IN-H6: a partial snapshot may carry blanked version / read_only, so
+	// preserve the last-known values instead of flapping the UI to empty
+	// during a transient telemt sub-endpoint outage. LastSeenAt still
+	// advances — the agent is demonstrably alive.
+	if !snapshot.Partial {
+		agent.Version = snapshot.Version
+		agent.ReadOnly = snapshot.ReadOnly
+	}
 	agent.LastSeenAt = snapshot.ObservedAt.UTC()
 	if snapshot.HasRuntime && snapshot.Runtime != nil {
 		previousRuntime := agent.Runtime
-		agent.Runtime = agentRuntimeFromSnapshot(snapshot.Runtime, snapshot.ObservedAt)
+		next := agentRuntimeFromSnapshot(snapshot.Runtime, snapshot.ObservedAt)
+		if snapshot.Partial && next.UptimeSeconds == 0 {
+			// uptime comes from the slow /v1/system/info fetch; preserve the
+			// last-known value rather than reporting a regressed 0.
+			next.UptimeSeconds = previousRuntime.UptimeSeconds
+		}
+		agent.Runtime = next
 		s.refreshInitializationWatchCooldown(snapshot, agent.Runtime, previousRuntime)
 	}
 	return agent
@@ -101,6 +113,19 @@ func (s *Server) commitInstancesLocked(agentID string, instances []Instance) {
 	for _, instance := range instances {
 		s.instances[instance.ID] = instance
 	}
+}
+
+// instancesForAgentLocked returns the currently-committed instances for the
+// agent. Caller must hold s.mu. Used by the partial-snapshot path (IN-H6) to
+// keep last-known instances instead of overwriting them with blanked rows.
+func (s *Server) instancesForAgentLocked(agentID string) []Instance {
+	var out []Instance
+	for _, instance := range s.instances {
+		if instance.AgentID == agentID {
+			out = append(out, instance)
+		}
+	}
+	return out
 }
 
 // applyFallbackStateTransitionLocked classifies the agent's operating mode
@@ -209,9 +234,18 @@ func (s *Server) applyAgentSnapshot(ctx context.Context, snapshot agentSnapshot)
 		return nil
 	}
 	agent := s.updateAgentRecordFromSnapshot(snapshot)
-	instances := instancesFromSnapshot(snapshot)
 	s.agents[snapshot.AgentID] = agent
-	s.commitInstancesLocked(snapshot.AgentID, instances)
+	// IN-H6: on a partial snapshot the instance rows are blanked
+	// (version/connected_users/read_only); preserve the last-known instances
+	// instead of committing/persisting zeros. The agent is alive (LastSeenAt
+	// advanced); its telemt detail simply could not be fully read this cycle.
+	var instances []Instance
+	if snapshot.Partial {
+		instances = s.instancesForAgentLocked(snapshot.AgentID)
+	} else {
+		instances = instancesFromSnapshot(snapshot)
+		s.commitInstancesLocked(snapshot.AgentID, instances)
+	}
 	s.commitClientSnapshotsLocked(ctx, snapshot)
 	metricSnapshot := s.commitMetricSnapshotLocked(snapshot)
 	s.applyFallbackStateTransitionLocked(agent)
@@ -226,7 +260,13 @@ func (s *Server) applyAgentSnapshot(ctx context.Context, snapshot agentSnapshot)
 	// grpc_gateway.go) so the recorded connectedAt reflects the real
 	// stream-open moment instead of being rewritten to "now" by every
 	// heartbeat snapshot, which masked short disconnects.
-	s.presence.Heartbeat(snapshot.AgentID, snapshot.ObservedAt)
+	//
+	// M-5: stamp the heartbeat with the PANEL clock, not the agent-supplied
+	// ObservedAt. presence.Evaluate measures idle time against the panel's
+	// now(); mixing the agent's clock here means clock skew (agent ahead)
+	// yields a negative idle and the agent never transitions to
+	// degraded/offline (it "sticks" online after a real disconnect).
+	s.presence.Heartbeat(snapshot.AgentID, s.now().UTC())
 
 	s.events.Publish(eventbus.Event{
 		Type: "agents.updated",

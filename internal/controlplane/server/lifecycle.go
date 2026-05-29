@@ -201,6 +201,10 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 	s.auth.SetSessionStore(store)
 	s.auth.SetVault(vault)
 	s.auth.SetConsumedTotpStore(store)
+	// Seal integration-provider credentials at rest under the same vault.
+	if s.fleetSvc != nil {
+		s.fleetSvc.SetVault(vault)
+	}
 	// Webhook outbox subsystem: builds Storage + Producer if the
 	// caller wired a factory. Must run after the vault is available
 	// (it provides the SecretDecrypter), and before

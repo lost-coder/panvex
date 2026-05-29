@@ -49,12 +49,16 @@ const (
 	// webhook_endpoints.secret_ciphertext. Used by the webhook
 	// outbox worker to sign each delivery body.
 	DomainWebhookSecret = "webhook_secret"
+	// DomainIntegrationConfig protects the credential bundle stored in
+	// integration_providers.config (e.g. a Cloudflare API token). The
+	// whole JSON config blob is sealed under this domain at rest.
+	DomainIntegrationConfig = "integration_config"
 )
 
 // AllDomains is the canonical list of registered domains. Callers
 // should pass this to New to avoid reasoning about which subset is in
 // use at any given site.
-var AllDomains = []string{DomainClientSecret, DomainTOTP, DomainWebhookSecret}
+var AllDomains = []string{DomainClientSecret, DomainTOTP, DomainWebhookSecret, DomainIntegrationConfig}
 
 const (
 	// Prefix1 marks values encrypted under the legacy (hard-coded) HKDF

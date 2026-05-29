@@ -52,7 +52,7 @@ func (r *clientsRepository) Get(ctx context.Context, id clients.ClientID) (clien
 			max_tcp_conns, max_unique_ips, data_quota_bytes,
 			expiration_rfc3339, created_at_unix, updated_at_unix, deleted_at_unix
 		FROM clients
-		WHERE id = ?
+		WHERE id = ? AND deleted_at_unix IS NULL
 	`, string(id))
 	c, err := scanClient(row)
 	if errors.Is(err, storage.ErrNotFound) {
@@ -120,7 +120,13 @@ func (r *clientsRepository) Save(ctx context.Context, c clients.Client) error {
 			max_unique_ips     = excluded.max_unique_ips,
 			data_quota_bytes   = excluded.data_quota_bytes,
 			expiration_rfc3339 = excluded.expiration_rfc3339,
-			created_at_unix    = excluded.created_at_unix,
+			-- M-3: preserve the original created_at on update to match the
+			-- Postgres UpsertClient contract (which does not touch created_at
+			-- on conflict). SQLite previously overwrote it from the incoming
+			-- record, mutating a client's creation time on every save.
+			-- deleted_at_unix intentionally tracks the incoming record: the
+			-- SQLite delete flow soft-deletes by saving a tombstoned record,
+			-- while an active-client save carries nil (clearing it).
 			updated_at_unix    = excluded.updated_at_unix,
 			deleted_at_unix    = excluded.deleted_at_unix
 		RETURNING id
@@ -318,7 +324,8 @@ func (r *clientsRepository) UpsertUsageBulk(ctx context.Context, batch []clients
 func (r *clientsRepository) ListUsage(ctx context.Context) ([]clients.Usage, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT client_id, agent_id, traffic_used_bytes, unique_ips_used,
-			active_tcp_conns, active_unique_ips, last_seq, observed_at_unix
+			active_tcp_conns, active_unique_ips, quota_used_bytes,
+			quota_last_reset_unix, last_seq, observed_at_unix
 		FROM client_usage
 	`)
 	if err != nil {
@@ -425,20 +432,24 @@ func (r *clientsRepository) upsertUsageRow(ctx context.Context, exec dbtx, u cli
 	_, err := exec.ExecContext(ctx, `
 		INSERT INTO client_usage (
 			client_id, agent_id, traffic_used_bytes, unique_ips_used,
-			active_tcp_conns, active_unique_ips, last_seq, observed_at_unix
+			active_tcp_conns, active_unique_ips, quota_used_bytes,
+			quota_last_reset_unix, last_seq, observed_at_unix
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(client_id, agent_id) DO UPDATE SET
-			traffic_used_bytes = excluded.traffic_used_bytes,
-			unique_ips_used    = excluded.unique_ips_used,
-			active_tcp_conns   = excluded.active_tcp_conns,
-			active_unique_ips  = excluded.active_unique_ips,
-			last_seq           = excluded.last_seq,
-			observed_at_unix   = excluded.observed_at_unix
+			traffic_used_bytes    = excluded.traffic_used_bytes,
+			unique_ips_used       = excluded.unique_ips_used,
+			active_tcp_conns      = excluded.active_tcp_conns,
+			active_unique_ips     = excluded.active_unique_ips,
+			quota_used_bytes      = excluded.quota_used_bytes,
+			quota_last_reset_unix = excluded.quota_last_reset_unix,
+			last_seq              = excluded.last_seq,
+			observed_at_unix      = excluded.observed_at_unix
 	`,
 		string(u.ClientID), u.AgentID,
 		int64(u.TrafficUsedBytes), u.UniqueIPsUsed, //nolint:gosec
 		u.ActiveTCPConns, u.ActiveUniqueIPs,
+		int64(u.QuotaUsedBytes), int64(u.QuotaLastResetUnix), //nolint:gosec
 		int64(u.LastSeq), toUnix(u.ObservedAt), //nolint:gosec
 	)
 	return err
@@ -463,7 +474,7 @@ func (r *clientsRepository) bulkUpsertUsage(ctx context.Context, batch []clients
 		}
 	}()
 
-	const cols = 8
+	const cols = 10
 	exec := connExecutor{conn: conn}
 	for start := 0; start < len(batch); start += bulkChunkSize {
 		end := start + bulkChunkSize
@@ -477,21 +488,25 @@ func (r *clientsRepository) bulkUpsertUsage(ctx context.Context, batch []clients
 				string(u.ClientID), u.AgentID,
 				int64(u.TrafficUsedBytes), u.UniqueIPsUsed, //nolint:gosec
 				u.ActiveTCPConns, u.ActiveUniqueIPs,
+				int64(u.QuotaUsedBytes), int64(u.QuotaLastResetUnix), //nolint:gosec
 				int64(u.LastSeq), toUnix(u.ObservedAt), //nolint:gosec
 			)
 		}
 		query := fmt.Sprintf(`
 			INSERT INTO client_usage (
 				client_id, agent_id, traffic_used_bytes, unique_ips_used,
-				active_tcp_conns, active_unique_ips, last_seq, observed_at_unix
+				active_tcp_conns, active_unique_ips, quota_used_bytes,
+				quota_last_reset_unix, last_seq, observed_at_unix
 			) VALUES %s
 			ON CONFLICT(client_id, agent_id) DO UPDATE SET
-				traffic_used_bytes = excluded.traffic_used_bytes,
-				unique_ips_used    = excluded.unique_ips_used,
-				active_tcp_conns   = excluded.active_tcp_conns,
-				active_unique_ips  = excluded.active_unique_ips,
-				last_seq           = excluded.last_seq,
-				observed_at_unix   = excluded.observed_at_unix`,
+				traffic_used_bytes    = excluded.traffic_used_bytes,
+				unique_ips_used       = excluded.unique_ips_used,
+				active_tcp_conns      = excluded.active_tcp_conns,
+				active_unique_ips     = excluded.active_unique_ips,
+				quota_used_bytes      = excluded.quota_used_bytes,
+				quota_last_reset_unix = excluded.quota_last_reset_unix,
+				last_seq              = excluded.last_seq,
+				observed_at_unix      = excluded.observed_at_unix`,
 			rowPlaceholders(len(chunk), cols))
 		if _, err := exec.ExecContext(ctx, query, args...); err != nil {
 			return err
@@ -607,21 +622,26 @@ type usageScanner interface {
 
 func scanUsage(s usageScanner) (clients.Usage, error) {
 	var (
-		u          clients.Usage
-		clientID   string
-		traffic    int64
-		lastSeq    int64
-		observedAt int64
+		u              clients.Usage
+		clientID       string
+		traffic        int64
+		quotaUsed      int64
+		quotaLastReset int64
+		lastSeq        int64
+		observedAt     int64
 	)
 	if err := s.Scan(
 		&clientID, &u.AgentID, &traffic, &u.UniqueIPsUsed,
-		&u.ActiveTCPConns, &u.ActiveUniqueIPs, &lastSeq, &observedAt,
+		&u.ActiveTCPConns, &u.ActiveUniqueIPs, &quotaUsed, &quotaLastReset,
+		&lastSeq, &observedAt,
 	); err != nil {
 		return clients.Usage{}, err
 	}
 	u.ClientID = clients.ClientID(clientID)
-	u.TrafficUsedBytes = uint64(traffic) //nolint:gosec
-	u.LastSeq = uint64(lastSeq)          //nolint:gosec
+	u.TrafficUsedBytes = uint64(traffic)          //nolint:gosec
+	u.QuotaUsedBytes = uint64(quotaUsed)          //nolint:gosec
+	u.QuotaLastResetUnix = uint64(quotaLastReset) //nolint:gosec
+	u.LastSeq = uint64(lastSeq)                   //nolint:gosec
 	u.ObservedAt = fromUnix(observedAt)
 	return u, nil
 }

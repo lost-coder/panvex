@@ -56,6 +56,14 @@ type EnrollQueries interface {
 	GetAgentTransport(ctx context.Context, id string) (dbsqlc.GetAgentTransportRow, error)
 	ExpireAgentBootstrapToken(ctx context.Context, id string) error
 	ClearAgentBootstrapToken(ctx context.Context, id string) error
+	// ConsumeAgentBootstrapToken atomically claims a pending token,
+	// returning rows affected (1 = claimed by this caller, 0 = already
+	// consumed concurrently). Prevents two enrollments from signing two
+	// certs off one token within its TTL.
+	ConsumeAgentBootstrapToken(ctx context.Context, id string) (int64, error)
+	// RevertAgentBootstrapConsumed rolls a claimed-but-not-completed token
+	// back to pending so a sign failure remains retryable.
+	RevertAgentBootstrapConsumed(ctx context.Context, id string) error
 }
 
 // CertPinWriter is the subset of storage.FleetStore that EnrollDriver uses to
@@ -283,8 +291,32 @@ func (d *EnrollDriver) Run(ctx context.Context, agentAddr string, tlsCfg *tls.Co
 		return ErrBootstrapTokenMismatch
 	}
 
+	// Atomically claim the token BEFORE signing so two concurrent
+	// enrollments (e.g. duplicate outbound supervisors, or a replay within
+	// the TTL) cannot each obtain a signed cert for one token. The first
+	// caller flips bootstrap_state pending→active (1 row); a loser sees 0
+	// rows and aborts. The token hash/expiry stay intact so a sign failure
+	// below can revert the claim for a legitimate retry.
+	claimed, err := d.queries.ConsumeAgentBootstrapToken(ctx, agentID)
+	if err != nil {
+		d.record("error")
+		return fmt.Errorf("enroll: consume token: %w", err)
+	}
+	if claimed == 0 {
+		d.record("already_consumed")
+		return status.Errorf(codes.FailedPrecondition,
+			"agent %s bootstrap token already consumed", agentID)
+	}
+
 	certPEM, caPEM, expiresAt, err := d.ca.SignCSR(opening.CsrPem, opening.AgentId, agentCertTTL)
 	if err != nil {
+		// No cert left the panel — revert the claim so the operator's token
+		// remains usable for a retry instead of being burned by a transient
+		// signing failure.
+		if rbErr := d.queries.RevertAgentBootstrapConsumed(ctx, agentID); rbErr != nil {
+			d.logger.Warn("bootstrap: failed to revert bootstrap claim after sign failure",
+				"agent_id", agentID, "error", rbErr)
+		}
 		d.record("error")
 		return fmt.Errorf("enroll: sign csr: %w", err)
 	}

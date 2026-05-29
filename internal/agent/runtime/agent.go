@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -106,6 +107,17 @@ type Agent struct {
 	// on a fresh state file). See P2-LOG-06 / L-07.
 	usageSeq        uint64
 	persistUsageSeq func(seq uint64) error
+	// usageBaselinePrimed guards against double-counting all historical
+	// traffic on an agent-process restart. lastOctets (the per-client
+	// delta baseline) lives only in memory, so after a restart it is
+	// empty while telemt's counters carry the full cumulative total. Since
+	// usageSeq is persisted and resumes (it does NOT rewind to 1 on a
+	// restart with an intact state file), the control-plane would accept
+	// the first post-restart "delta" — really the entire cumulative total —
+	// and add it on top of what it already had. On the first
+	// BuildUsageSnapshot of the process we therefore treat current totals
+	// as the baseline and emit delta=0, then count normally from there.
+	usageBaselinePrimed bool
 }
 
 // New constructs a runtime agent bound to one local Telemt client.
@@ -262,6 +274,10 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 	wasRestarting := a.updateLifecycleState(state, observedAt)
 
 	snapshot := a.baseSnapshot(observedAt)
+	// IN-H6: tell the panel this snapshot is partial so it preserves
+	// last-known version/connected_users/read_only/uptime instead of
+	// overwriting them with the (possibly zeroed) partial values.
+	snapshot.Partial = state.Partial
 	snapshot.ReadOnly = state.ReadOnly
 	snapshot.Instances = []*gatewayrpc.InstanceSnapshot{
 		{
@@ -520,10 +536,16 @@ func (a *Agent) BuildUsageSnapshot(ctx context.Context, observedAt time.Time) (*
 	defer a.mu.Unlock()
 
 	restarted := metricsSnapshot.UptimeSeconds > 0 && metricsSnapshot.UptimeSeconds < a.lastMetricsUptime
+	// First tick after process start: lastOctets is empty but telemt may
+	// already hold large cumulative counters. Prime baselines and emit
+	// delta=0 so we never replay the full cumulative total as a single
+	// "delta" (which the control-plane would accumulate → double-count).
+	baselineTick := !a.usageBaselinePrimed
+	a.usageBaselinePrimed = true
 	clients := make([]*gatewayrpc.ClientUsageSnapshot, 0, len(usageRows))
 	seen := make(map[string]struct{}, len(usageRows))
 	for _, client := range usageRows {
-		if snap, ok := a.processUsageRowLocked(client, restarted, seen); ok {
+		if snap, ok := a.processUsageRowLocked(client, restarted, baselineTick, seen); ok {
 			clients = append(clients, snap)
 		}
 	}
@@ -559,7 +581,7 @@ func (a *Agent) BuildUsageSnapshot(ctx context.Context, observedAt time.Time) (*
 // processUsageRowLocked computes the per-client delta, updates last-known
 // trackers, and returns the gateway snapshot when the row contributes a
 // non-empty change. Caller must hold a.mu.
-func (a *Agent) processUsageRowLocked(client telemt.ClientUsage, restarted bool, seen map[string]struct{}) (*gatewayrpc.ClientUsageSnapshot, bool) {
+func (a *Agent) processUsageRowLocked(client telemt.ClientUsage, restarted, baselineTick bool, seen map[string]struct{}) (*gatewayrpc.ClientUsageSnapshot, bool) {
 	clientID := client.ClientID
 	if clientID == "" && client.ClientName != "" {
 		clientID = a.clientIDForNameLocked(client.ClientName)
@@ -577,7 +599,13 @@ func (a *Agent) processUsageRowLocked(client telemt.ClientUsage, restarted bool,
 	currentTotal := client.TrafficUsedBytes
 	previousTotal := a.lastOctets[trackingKey]
 	delta := currentTotal
-	if !restarted && currentTotal >= previousTotal {
+	switch {
+	case baselineTick:
+		// First tick of the process: adopt current totals as the baseline
+		// without emitting them as traffic. Counting resumes on the next
+		// tick from this baseline.
+		delta = 0
+	case !restarted && currentTotal >= previousTotal:
 		delta = currentTotal - previousTotal
 	}
 	connectionsChanged := a.lastConnections[trackingKey] != client.ActiveTCPConns
@@ -593,12 +621,26 @@ func (a *Agent) processUsageRowLocked(client telemt.ClientUsage, restarted bool,
 		ClientId:           clientID,
 		ClientName:         client.ClientName,
 		TrafficDeltaBytes:  delta,
-		UniqueIpsUsed:      int32(client.UniqueIPsUsed),
-		ActiveTcpConns:     int32(client.ActiveTCPConns),
-		ActiveUniqueIps:    int32(client.CurrentIPsUsed),
+		// IN-L1: clamp to int32 so a malformed/huge telemt gauge cannot wrap
+		// to a negative count on the wire.
+		UniqueIpsUsed:      clampInt32(client.UniqueIPsUsed),
+		ActiveTcpConns:     clampInt32(client.ActiveTCPConns),
+		ActiveUniqueIps:    clampInt32(client.CurrentIPsUsed),
 		QuotaUsedBytes:     client.QuotaUsedBytes,
 		QuotaLastResetUnix: client.QuotaLastResetUnix,
 	}, true
+}
+
+// clampInt32 bounds a non-negative count into the int32 wire range so an
+// out-of-range telemt gauge cannot wrap to a negative value (IN-L1).
+func clampInt32(v int) int32 {
+	if v < 0 {
+		return 0
+	}
+	if v > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int32(v)
 }
 
 // cleanupStaleUsageStateLocked drops tracker entries for clients absent
@@ -642,6 +684,25 @@ func (a *Agent) BuildIPSnapshot(observedAt time.Time) *gatewayrpc.Snapshot {
 	snapshot.ClientIps = clientIPs
 	snapshot.HasClientIps = true
 	return snapshot
+}
+
+// RestoreIPSnapshot re-merges a previously-built IP snapshot back into the
+// collector. BuildIPSnapshot flushes (clears) the collector, so when the
+// outbound send subsequently fails (backpressure), the caller must restore
+// the flushed IPs here — otherwise the accumulated union is lost permanently
+// (telemt only reports currently-active IPs; the union is never re-derived).
+func (a *Agent) RestoreIPSnapshot(snap *gatewayrpc.Snapshot) {
+	if snap == nil || len(snap.GetClientIps()) == 0 {
+		return
+	}
+	users := make([]telemt.UserActiveIPs, 0, len(snap.GetClientIps()))
+	for _, c := range snap.GetClientIps() {
+		users = append(users, telemt.UserActiveIPs{
+			Username:  c.GetClientName(),
+			ActiveIPs: append([]string(nil), c.GetActiveIps()...),
+		})
+	}
+	a.ipCollector.Update(users)
 }
 
 func (a *Agent) baseSnapshot(observedAt time.Time) *gatewayrpc.Snapshot {
@@ -786,6 +847,16 @@ func (a *Agent) handleClientJob(ctx context.Context, job *gatewayrpc.JobCommand,
 }
 
 func (a *Agent) handleClientCreateJob(ctx context.Context, payload clientJobPayload, managedClient telemt.ManagedClient, result *gatewayrpc.JobResult) *gatewayrpc.JobResult {
+	// A client created in the disabled state must not be deployed to the
+	// node: Telemt has no per-user enabled flag, so the only way to keep a
+	// disabled client from proxying is to not register it at all. Record
+	// the name mapping so a later enable can patch/create it.
+	if !managedClient.Enabled {
+		a.setClientName(payload.ClientID, managedClient.Name)
+		result.Success = true
+		result.Message = "client created (disabled; not deployed to node)"
+		return result
+	}
 	applyResult, err := a.telemt.CreateClient(ctx, managedClient)
 	if err != nil {
 		result.Message = err.Error()
@@ -799,7 +870,30 @@ func (a *Agent) handleClientCreateJob(ctx context.Context, payload clientJobPayl
 }
 
 func (a *Agent) handleClientUpdateJob(ctx context.Context, job *gatewayrpc.JobCommand, payload clientJobPayload, managedClient telemt.ManagedClient, result *gatewayrpc.JobResult) *gatewayrpc.JobResult {
+	// Disabled client → ensure it is absent from Telemt so it stops
+	// proxying. Telemt has no enabled flag (the field is silently dropped),
+	// so disable maps to a delete. Deleting an already-absent user is a
+	// success (idempotent disable); other failures (e.g. Telemt refusing to
+	// remove the last configured user) are surfaced to the operator.
+	if !managedClient.Enabled {
+		err := a.telemt.DeleteClient(ctx, managedClient.Name)
+		if err != nil && !errors.Is(err, telemt.ErrClientNotFound) {
+			result.Message = err.Error()
+			return result
+		}
+		a.setClientName(payload.ClientID, managedClient.Name)
+		result.Success = true
+		result.Message = "client disabled (removed from node)"
+		return result
+	}
+
 	applyResult, err := a.telemt.UpdateClient(ctx, managedClient)
+	// Re-enabling a previously-disabled client (or healing config drift)
+	// patches a user Telemt no longer has → 404. Fall back to create so the
+	// user is restored on the node.
+	if errors.Is(err, telemt.ErrClientNotFound) {
+		applyResult, err = a.telemt.CreateClient(ctx, managedClient)
+	}
 	if err != nil {
 		result.Message = err.Error()
 		return result
@@ -913,6 +1007,15 @@ func (a *Agent) handleSelfUpdateJob(ctx context.Context, job *gatewayrpc.JobComm
 	result.Success = true
 	result.Message = "self-update initiated"
 	return result
+}
+
+// CompletedJobResult returns the cached result for a previously-executed
+// job, if still retained. Used by the receive path to answer a duplicate
+// delivery with the real result instead of a bare ack — so a JobResult lost
+// in transit after the first ack still reaches the control-plane on the
+// CP's retry, without re-executing the job.
+func (a *Agent) CompletedJobResult(jobID string, observedAt time.Time) (*gatewayrpc.JobResult, bool) {
+	return a.findCompletedJobResult(jobID, observedAt)
 }
 
 func (a *Agent) findCompletedJobResult(jobID string, observedAt time.Time) (*gatewayrpc.JobResult, bool) {

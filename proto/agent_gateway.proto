@@ -296,6 +296,12 @@ message Snapshot {
   bool has_client_ips = 16;
   RuntimeDiagnosticsSnapshot runtime_diagnostics = 17;
   RuntimeSecurityInventorySnapshot runtime_security_inventory = 18;
+  // partial=true means at least one telemt sub-endpoint failed or the
+  // per-cycle deadline fired, so version / connected_users / read_only /
+  // uptime in this snapshot may be missing (zero/empty). The panel must
+  // preserve its last-known values for those fields instead of overwriting
+  // them with the partial blanks (IN-H6).
+  bool partial = 19;
 }
 
 message JobResult {

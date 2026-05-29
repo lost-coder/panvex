@@ -115,6 +115,20 @@ func enqueueRegularSnapshot(
 		return false
 	}
 
+	// IN-C1: usage-bearing snapshots carry one-shot traffic deltas the agent
+	// never resends. Dropping one permanently undercounts traffic (the seq
+	// dedup does not detect gaps). Deliver them with backpressure (block)
+	// instead of drop-oldest. Gauge-only snapshots (heartbeat / runtime
+	// state) keep freshest-wins drop semantics — losing a stale gauge is fine.
+	if snapshot.HasClients {
+		select {
+		case <-connectionCtx.Done():
+			return false
+		case regularSnapshots <- snapshot:
+			return true
+		}
+	}
+
 	select {
 	case <-connectionCtx.Done():
 		return false

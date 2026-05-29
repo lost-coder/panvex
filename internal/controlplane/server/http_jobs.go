@@ -303,6 +303,11 @@ func (s *Server) handleCreateJob() http.HandlerFunc {
 			Type: "jobs.created",
 			Data: job,
 		})
+		// L-2: redact PayloadJSON before returning, consistent with the
+		// /api/jobs list endpoints. Operator-created jobs carry no secret
+		// today, but centralising the scrub keeps a future secret-bearing
+		// action from leaking through this direct-response path.
+		job.PayloadJSON = ""
 		writeJSON(w, http.StatusAccepted, job)
 	}
 }

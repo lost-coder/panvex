@@ -366,7 +366,13 @@ func TestAgentBuildSnapshotIncludesClientUsageEntries(t *testing.T) {
 		Version:      "1.0.0",
 	}, client)
 
-	snapshot, err := agent.BuildUsageSnapshot(context.Background(), time.Date(2026, time.March, 14, 8, 5, 0, 0, time.UTC))
+	// First tick is the process baseline (delta 0); advance traffic and take
+	// a second tick to observe a real delta.
+	if _, err := agent.BuildUsageSnapshot(context.Background(), time.Date(2026, time.March, 14, 8, 5, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("BuildSnapshot(baseline) error = %v", err)
+	}
+	client.state.Clients[0].TrafficUsedBytes = 2048
+	snapshot, err := agent.BuildUsageSnapshot(context.Background(), time.Date(2026, time.March, 14, 8, 6, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("BuildSnapshot() error = %v", err)
 	}
@@ -378,7 +384,7 @@ func TestAgentBuildSnapshotIncludesClientUsageEntries(t *testing.T) {
 		t.Fatalf("snapshot.Clients[0].ClientId = %q, want %q", snapshot.Clients[0].ClientId, "client-1")
 	}
 	if snapshot.Clients[0].TrafficDeltaBytes != 1024 {
-		t.Fatalf("snapshot.Clients[0].TrafficDeltaBytes = %d, want %d", snapshot.Clients[0].TrafficDeltaBytes, 1024)
+		t.Fatalf("snapshot.Clients[0].TrafficDeltaBytes = %d, want %d (2048-1024)", snapshot.Clients[0].TrafficDeltaBytes, 1024)
 	}
 }
 
@@ -505,6 +511,96 @@ func TestAgentHandleJobCreatesManagedClientAndReturnsConnectionLink(t *testing.T
 	}
 	if client.createdClient.Name != "alice" {
 		t.Fatalf("created client name = %q, want %q", client.createdClient.Name, "alice")
+	}
+}
+
+// TestAgentHandleJobDisabledClientCreateSkipsTelemt guards H-1: a client
+// created in the disabled state must not be registered on the node (Telemt
+// has no enabled flag, so registering it would proxy traffic).
+func TestAgentHandleJobDisabledClientCreateSkipsTelemt(t *testing.T) {
+	client := &fakeTelemtClient{}
+	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
+
+	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
+		Id:          "job-disabled-create",
+		Action:      "client.create",
+		PayloadJson: `{"client_id":"client-1","name":"alice","secret":"secret-1","enabled":false}`,
+	}, time.Date(2026, time.May, 29, 12, 0, 0, 0, time.UTC))
+
+	if !result.Success {
+		t.Fatalf("HandleJob() Success = false, want true, message = %q", result.Message)
+	}
+	if client.createCalls != 0 {
+		t.Fatalf("CreateClient called %d times for a disabled client, want 0", client.createCalls)
+	}
+}
+
+// TestAgentHandleJobDisableRemovesTelemtUser guards H-1: disabling a client
+// (update with enabled=false) must delete the user from Telemt so it stops
+// proxying. An already-absent user is an idempotent success.
+func TestAgentHandleJobDisableRemovesTelemtUser(t *testing.T) {
+	client := &fakeTelemtClient{}
+	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
+
+	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
+		Id:          "job-disable",
+		Action:      "client.update",
+		PayloadJson: `{"client_id":"client-1","name":"alice","secret":"secret-1","enabled":false}`,
+	}, time.Date(2026, time.May, 29, 12, 1, 0, 0, time.UTC))
+
+	if !result.Success {
+		t.Fatalf("HandleJob() Success = false, want true, message = %q", result.Message)
+	}
+	if client.deleteCalls != 1 || client.deletedClientName != "alice" {
+		t.Fatalf("DeleteClient calls=%d name=%q, want 1 / alice", client.deleteCalls, client.deletedClientName)
+	}
+	if client.updateCalls != 0 {
+		t.Fatalf("UpdateClient called %d times while disabling, want 0", client.updateCalls)
+	}
+
+	// Already absent → still success (idempotent disable).
+	client2 := &fakeTelemtClient{deleteErr: telemt.ErrClientNotFound}
+	agent2 := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client2)
+	r2 := agent2.HandleJob(context.Background(), &gatewayrpc.JobCommand{
+		Id:          "job-disable-absent",
+		Action:      "client.update",
+		PayloadJson: `{"client_id":"client-1","name":"alice","secret":"secret-1","enabled":false}`,
+	}, time.Date(2026, time.May, 29, 12, 2, 0, 0, time.UTC))
+	if !r2.Success {
+		t.Fatalf("disable of absent user Success = false, want true, message = %q", r2.Message)
+	}
+}
+
+// TestAgentHandleJobReenableFallsBackToCreate guards H-1: re-enabling a
+// client that Telemt no longer has (404 on PATCH) must fall back to a
+// create so the user is restored on the node.
+func TestAgentHandleJobReenableFallsBackToCreate(t *testing.T) {
+	client := &fakeTelemtClient{
+		updateErr:    telemt.ErrClientNotFound,
+		createResult: telemt.ClientApplyResult{ConnectionLinks: []string{"tg://proxy?server=node-a&secret=reenable"}},
+	}
+	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
+
+	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
+		Id:          "job-reenable",
+		Action:      "client.update",
+		PayloadJson: `{"client_id":"client-1","name":"alice","secret":"secret-1","enabled":true}`,
+	}, time.Date(2026, time.May, 29, 12, 3, 0, 0, time.UTC))
+
+	if !result.Success {
+		t.Fatalf("HandleJob() Success = false, want true, message = %q", result.Message)
+	}
+	if client.updateCalls != 1 || client.createCalls != 1 {
+		t.Fatalf("calls update=%d create=%d, want 1/1 (PATCH 404 → create fallback)", client.updateCalls, client.createCalls)
+	}
+	var payload struct {
+		ConnectionLinks []string `json:"connection_links"`
+	}
+	if err := json.Unmarshal([]byte(result.ResultJson), &payload); err != nil {
+		t.Fatalf("json.Unmarshal(ResultJSON) error = %v", err)
+	}
+	if len(payload.ConnectionLinks) != 1 || payload.ConnectionLinks[0] != "tg://proxy?server=node-a&secret=reenable" {
+		t.Fatalf("connection_links = %v, want the create-fallback link", payload.ConnectionLinks)
 	}
 }
 
@@ -642,6 +738,12 @@ type fakeTelemtClient struct {
 	deletedClientName       string
 	createResult            telemt.ClientApplyResult
 	updateResult            telemt.ClientApplyResult
+	createErr               error
+	updateErr               error
+	deleteErr               error
+	createCalls             int
+	updateCalls             int
+	deleteCalls             int
 	invalidateSlowDataCalls int
 	resetQuotaUsername      string
 	resetQuotaCalls         int
@@ -675,18 +777,27 @@ func (c *fakeTelemtClient) ExecuteRuntimeReload(context.Context) error {
 }
 
 func (c *fakeTelemtClient) CreateClient(_ context.Context, client telemt.ManagedClient) (telemt.ClientApplyResult, error) {
+	c.createCalls++
 	c.createdClient = client
+	if c.createErr != nil {
+		return telemt.ClientApplyResult{}, c.createErr
+	}
 	return c.createResult, nil
 }
 
 func (c *fakeTelemtClient) UpdateClient(_ context.Context, client telemt.ManagedClient) (telemt.ClientApplyResult, error) {
+	c.updateCalls++
 	c.updatedClient = client
+	if c.updateErr != nil {
+		return telemt.ClientApplyResult{}, c.updateErr
+	}
 	return c.updateResult, nil
 }
 
 func (c *fakeTelemtClient) DeleteClient(_ context.Context, clientName string) error {
+	c.deleteCalls++
 	c.deletedClientName = clientName
-	return nil
+	return c.deleteErr
 }
 
 func (c *fakeTelemtClient) InvalidateSlowDataCache() {
@@ -714,10 +825,13 @@ func (c *fakeTelemtClient) ResetUserQuota(_ context.Context, username string) (t
 // stamps a strictly increasing seq on every ClientUsageSnapshot and invokes
 // the persistence hook with that value. Guards P2-LOG-06 / L-07.
 func TestAgentUsageSnapshotSeqIsMonotonic(t *testing.T) {
+	// ActiveTCPConns is non-zero so the first (baseline) tick still emits a
+	// snapshot (gauge change) — its traffic delta is 0 because the process
+	// just started; counting begins on the next tick.
 	client := &fakeTelemtClient{
 		state: telemt.RuntimeState{
 			Clients: []telemt.ClientUsage{
-				{ClientID: "client-1", TrafficUsedBytes: 500},
+				{ClientID: "client-1", TrafficUsedBytes: 500, ActiveTCPConns: 3},
 			},
 		},
 	}
@@ -739,6 +853,9 @@ func TestAgentUsageSnapshotSeqIsMonotonic(t *testing.T) {
 	if first.Clients[0].Seq != 1 {
 		t.Fatalf("first snapshot seq = %d, want 1", first.Clients[0].Seq)
 	}
+	if first.Clients[0].TrafficDeltaBytes != 0 {
+		t.Fatalf("baseline tick delta = %d, want 0", first.Clients[0].TrafficDeltaBytes)
+	}
 
 	// Advance usage so BuildUsageSnapshot emits another delta.
 	client.state.Clients[0].TrafficUsedBytes = 1300
@@ -748,6 +865,9 @@ func TestAgentUsageSnapshotSeqIsMonotonic(t *testing.T) {
 	}
 	if len(second.Clients) == 0 || second.Clients[0].Seq != 2 {
 		t.Fatalf("second snapshot seq = %d, want 2", second.Clients[0].Seq)
+	}
+	if second.Clients[0].TrafficDeltaBytes != 800 {
+		t.Fatalf("second tick delta = %d, want 800 (1300-500)", second.Clients[0].TrafficDeltaBytes)
 	}
 
 	if got := agent.UsageSeq(); got != 2 {
@@ -763,9 +883,11 @@ func TestAgentUsageSnapshotSeqIsMonotonic(t *testing.T) {
 // when the agent is simply reconnecting with prior state intact.
 // Guards P2-LOG-06 / L-07.
 func TestAgentUsageSeqPersists(t *testing.T) {
+	// Non-zero ActiveTCPConns so the baseline (first) tick still emits a
+	// snapshot carrying the resumed seq, even though its traffic delta is 0.
 	client := &fakeTelemtClient{
 		state: telemt.RuntimeState{
-			Clients: []telemt.ClientUsage{{ClientID: "client-1", TrafficUsedBytes: 1}},
+			Clients: []telemt.ClientUsage{{ClientID: "client-1", TrafficUsedBytes: 1, ActiveTCPConns: 1}},
 		},
 	}
 	agent := New(Config{
@@ -783,6 +905,52 @@ func TestAgentUsageSeqPersists(t *testing.T) {
 	}
 	if got := agent.UsageSeq(); got != 43 {
 		t.Fatalf("UsageSeq() = %d, want 43", got)
+	}
+}
+
+// TestAgentRestartDoesNotReplayCumulativeAsDelta is the regression guard for
+// the traffic double-count defect (C-2). lastOctets (the per-client delta
+// baseline) lives only in memory and is empty after a process restart, while
+// telemt keeps the full cumulative counter. Because usageSeq is persisted and
+// resumes (it does NOT rewind to 1), the control-plane would accept the first
+// post-restart "delta" — the entire cumulative total — and add it on top of
+// what it already had. The first tick must therefore emit delta=0 and resume
+// counting from the adopted baseline.
+func TestAgentRestartDoesNotReplayCumulativeAsDelta(t *testing.T) {
+	client := &fakeTelemtClient{
+		state: telemt.RuntimeState{
+			Clients: []telemt.ClientUsage{
+				{ClientID: "client-1", TrafficUsedBytes: 1_000_000, ActiveTCPConns: 2},
+			},
+		},
+	}
+	// Simulate a restart: fresh Agent (empty lastOctets) with a resumed,
+	// non-1 usage seq loaded from persisted state.
+	agent := New(Config{
+		AgentID:         "agent-1",
+		NodeName:        "node-a",
+		InitialUsageSeq: 500,
+	}, client)
+
+	now := time.Date(2026, time.May, 29, 12, 0, 0, 0, time.UTC)
+	first, err := agent.BuildUsageSnapshot(context.Background(), now)
+	if err != nil {
+		t.Fatalf("BuildUsageSnapshot(1) error = %v", err)
+	}
+	for _, c := range first.Clients {
+		if c.TrafficDeltaBytes != 0 {
+			t.Fatalf("baseline tick emitted delta %d for %s, want 0 (double-count regression)", c.TrafficDeltaBytes, c.ClientId)
+		}
+	}
+
+	// Subsequent real traffic counts normally from the adopted baseline.
+	client.state.Clients[0].TrafficUsedBytes = 1_000_300
+	second, err := agent.BuildUsageSnapshot(context.Background(), now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("BuildUsageSnapshot(2) error = %v", err)
+	}
+	if len(second.Clients) == 0 || second.Clients[0].TrafficDeltaBytes != 300 {
+		t.Fatalf("post-baseline delta = %+v, want a single 300-byte delta", second.Clients)
 	}
 }
 

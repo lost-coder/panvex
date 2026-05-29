@@ -64,7 +64,8 @@ type slowRuntimeState struct {
 // projection without re-declaring the inner struct types.
 type fetchRuntimeStateRaw struct {
 	posture struct {
-		ReadOnly             bool   `json:"read_only"`
+		// IN-L6: telemt's /v1/security/posture emits only api_read_only; the
+		// old read_only field was always its zero value (dead) — removed.
 		APIReadOnly          bool   `json:"api_read_only"`
 		APIWhitelistEnabled  bool   `json:"api_whitelist_enabled"`
 		APIWhitelistEntries  int    `json:"api_whitelist_entries"`

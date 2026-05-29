@@ -129,14 +129,16 @@ type UsageSnapshot struct {
 // Distinct from UsageSnapshot, which is the in-memory mirror's value
 // type (missing AgentID since the map key already encodes it).
 type Usage struct {
-	ClientID         ClientID
-	AgentID          string
-	TrafficUsedBytes uint64
-	UniqueIPsUsed    int
-	ActiveTCPConns   int
-	ActiveUniqueIPs  int
-	LastSeq          uint64
-	ObservedAt       time.Time
+	ClientID           ClientID
+	AgentID            string
+	TrafficUsedBytes   uint64
+	UniqueIPsUsed      int
+	ActiveTCPConns     int
+	ActiveUniqueIPs    int
+	QuotaUsedBytes     uint64
+	QuotaLastResetUnix uint64
+	LastSeq            uint64
+	ObservedAt         time.Time
 }
 
 // AggregatedUsage is the sum-over-agents of UsageSnapshot for a single

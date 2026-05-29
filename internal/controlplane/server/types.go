@@ -76,6 +76,13 @@ type AgentRuntime struct {
 	AcceptingNewConnections   bool                   `json:"accepting_new_connections"`
 	MERuntimeReady            bool                   `json:"me_runtime_ready"`
 	ME2DCFallbackEnabled      bool                   `json:"me2dc_fallback_enabled"`
+	// IN-H5: route_mode/reroute_active/me2dc_fast_enabled arrive in the
+	// snapshot (proto fields 31/32/33) but were previously dropped on the
+	// panel — the operator could not see the node's actual routing mode or
+	// active reroute/fast-fallback state.
+	ME2DCFastEnabled          bool                   `json:"me2dc_fast_enabled"`
+	RouteMode                 string                 `json:"route_mode"`
+	RerouteActive             bool                   `json:"reroute_active"`
 	UseMiddleProxy            bool                   `json:"use_middle_proxy"`
 	StartupStatus             string                 `json:"startup_status"`
 	StartupStage              string                 `json:"startup_stage"`

@@ -6,10 +6,12 @@ package storagetest
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 // OpenRepo is a factory that creates a fresh, empty Repository for a single
@@ -24,6 +26,7 @@ func RunContract(t *testing.T, open OpenRepo) {
 	t.Run("ListEmpty", func(t *testing.T) { runListEmpty(t, open(t)) })
 	t.Run("GetNotFound", func(t *testing.T) { runGetNotFound(t, open(t)) })
 	t.Run("DeleteCascadesAssignments", func(t *testing.T) { runDeleteCascadesAssignments(t, open(t)) })
+	t.Run("GetSoftDeletedReturnsNotFound", func(t *testing.T) { runGetSoftDeletedReturnsNotFound(t, open(t)) })
 	t.Run("UsageBulkRoundtrip", func(t *testing.T) { runUsageBulk(t, open(t)) })
 	// More subtests added as Repository surface grows.
 }
@@ -107,6 +110,27 @@ func runDeleteCascadesAssignments(t *testing.T, repo clients.Repository) {
 	}
 }
 
+// runGetSoftDeletedReturnsNotFound guards H-8: a soft-deleted client must be
+// invisible to Get on every backend (SQLite previously returned the row while
+// Postgres filtered it, a cross-backend correctness divergence).
+func runGetSoftDeletedReturnsNotFound(t *testing.T, repo clients.Repository) {
+	t.Helper()
+	ctx := context.Background()
+	id := clients.ClientID("c-softdel")
+	if err := repo.Save(ctx, clients.Client{ID: id, Name: "softdel"}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if _, err := repo.Get(ctx, id); err != nil {
+		t.Fatalf("precondition Get before delete: %v", err)
+	}
+	if err := repo.Delete(ctx, id); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, err := repo.Get(ctx, id); !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("Get after soft-delete error = %v, want storage.ErrNotFound", err)
+	}
+}
+
 func runUsageBulk(t *testing.T, repo clients.Repository) {
 	t.Helper()
 	ctx := context.Background()
@@ -118,7 +142,7 @@ func runUsageBulk(t *testing.T, repo clients.Repository) {
 		}
 	}
 	batch := []clients.Usage{
-		{ClientID: "c-u-1", AgentID: "a-1", TrafficUsedBytes: 100},
+		{ClientID: "c-u-1", AgentID: "a-1", TrafficUsedBytes: 100, QuotaUsedBytes: 4096, QuotaLastResetUnix: 1700000000},
 		{ClientID: "c-u-2", AgentID: "a-1", TrafficUsedBytes: 200},
 	}
 	if err := repo.UpsertUsageBulk(ctx, batch); err != nil {
@@ -130,5 +154,14 @@ func runUsageBulk(t *testing.T, repo clients.Repository) {
 	}
 	if len(got) != 2 {
 		t.Fatalf("ListUsage returned %d, want 2", len(got))
+	}
+	// IN-H2: quota counters must survive the round-trip (previously dropped).
+	byID := make(map[clients.ClientID]clients.Usage, len(got))
+	for _, u := range got {
+		byID[u.ClientID] = u
+	}
+	if u := byID["c-u-1"]; u.QuotaUsedBytes != 4096 || u.QuotaLastResetUnix != 1700000000 {
+		t.Fatalf("quota round-trip for c-u-1 = (used=%d, last_reset=%d), want (4096, 1700000000)",
+			u.QuotaUsedBytes, u.QuotaLastResetUnix)
 	}
 }

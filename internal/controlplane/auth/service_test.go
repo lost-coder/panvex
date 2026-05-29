@@ -316,6 +316,43 @@ func TestServiceSessionLifecycle(t *testing.T) {
 	}
 }
 
+// TestResetTotpRevokesSessions guards H-5: resetting a user's second factor
+// is an account-recovery action and must invalidate the user's live sessions
+// so a holder of an existing cookie cannot survive the reset.
+func TestResetTotpRevokesSessions(t *testing.T) {
+	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return now })
+
+	user, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
+		Username: "admin",
+		Password: "Admin1password",
+		Role:     RoleAdmin,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	session, err := service.Authenticate(context.Background(), LoginInput{
+		Username: "admin",
+		Password: "Admin1password",
+	}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("Authenticate() error = %v", err)
+	}
+	if _, err := service.GetSession(session.ID); err != nil {
+		t.Fatalf("precondition GetSession() error = %v", err)
+	}
+
+	if _, err := service.ResetTotp(context.Background(), user.ID); err != nil {
+		t.Fatalf("ResetTotp() error = %v", err)
+	}
+
+	if _, err := service.GetSession(session.ID); err == nil {
+		t.Fatal("session still valid after ResetTotp(); want revoked")
+	}
+}
+
 func TestServiceGetSessionPrunesOtherExpiredSessions(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	service := NewService()

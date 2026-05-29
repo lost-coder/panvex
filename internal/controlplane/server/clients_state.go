@@ -75,12 +75,14 @@ func (s *Server) restoreStoredClients() error {
 		}
 		for agentID, u := range byAgent {
 			s.clientUsage[string(id)][agentID] = clientUsageSnapshot{
-				ClientID:         u.ClientID,
-				TrafficUsedBytes: u.TrafficUsedBytes,
-				UniqueIPsUsed:    u.UniqueIPsUsed,
-				ActiveTCPConns:   u.ActiveTCPConns,
-				ActiveUniqueIPs:  u.ActiveUniqueIPs,
-				ObservedAt:       u.ObservedAt,
+				ClientID:           u.ClientID,
+				TrafficUsedBytes:   u.TrafficUsedBytes,
+				UniqueIPsUsed:      u.UniqueIPsUsed,
+				ActiveTCPConns:     u.ActiveTCPConns,
+				ActiveUniqueIPs:    u.ActiveUniqueIPs,
+				QuotaUsedBytes:     u.QuotaUsedBytes,
+				QuotaLastResetUnix: u.QuotaLastResetUnix,
+				ObservedAt:         u.ObservedAt,
 			}
 			s.trackClientUsageOwnerLocked(string(id), agentID)
 		}

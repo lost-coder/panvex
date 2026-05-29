@@ -265,7 +265,7 @@ func startInboundPump(
 			}
 			if job := message.GetJob(); job != nil {
 				slog.Debug("job received", "job_id", job.GetId(), "action", job.GetAction())
-				enqueueReceivedJob(connectionCtx, agent.AgentID(), jobInflight, jobQueues, criticalOutbound, job)
+				enqueueReceivedJob(connectionCtx, agent.AgentID(), agent, jobInflight, jobQueues, criticalOutbound, job)
 				continue
 			}
 			if req := message.GetClientDataRequest(); req != nil {

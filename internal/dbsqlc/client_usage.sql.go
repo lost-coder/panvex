@@ -21,7 +21,8 @@ func (q *Queries) DeleteClientUsageByClient(ctx context.Context, clientID string
 
 const listAllClientUsage = `-- name: ListAllClientUsage :many
 SELECT client_id, agent_id, traffic_used_bytes, unique_ips_used,
-       active_tcp_conns, active_unique_ips, last_seq, observed_at
+       active_tcp_conns, active_unique_ips, last_seq, observed_at,
+       quota_used_bytes, quota_last_reset_unix
 FROM client_usage
 ORDER BY client_id ASC, agent_id ASC
 `
@@ -44,6 +45,8 @@ func (q *Queries) ListAllClientUsage(ctx context.Context) ([]ClientUsage, error)
 			&i.ActiveUniqueIps,
 			&i.LastSeq,
 			&i.ObservedAt,
+			&i.QuotaUsedBytes,
+			&i.QuotaLastResetUnix,
 		); err != nil {
 			return nil, err
 		}
@@ -61,13 +64,16 @@ func (q *Queries) ListAllClientUsage(ctx context.Context) ([]ClientUsage, error)
 const listClientUsageForClient = `-- name: ListClientUsageForClient :many
 
 SELECT client_id, agent_id, traffic_used_bytes, unique_ips_used,
-       active_tcp_conns, active_unique_ips, last_seq, observed_at
+       active_tcp_conns, active_unique_ips, last_seq, observed_at,
+       quota_used_bytes, quota_last_reset_unix
 FROM client_usage
 WHERE client_id = $1
 `
 
 // R-Q-03: client_usage — per-(client, agent) usage counters reported
 // back from agents.
+// Column order matches the physical table (quota_* were ALTER-appended last)
+// so sqlc maps the row straight onto dbsqlc.ClientUsage.
 func (q *Queries) ListClientUsageForClient(ctx context.Context, clientID string) ([]ClientUsage, error) {
 	rows, err := q.db.QueryContext(ctx, listClientUsageForClient, clientID)
 	if err != nil {
@@ -86,6 +92,8 @@ func (q *Queries) ListClientUsageForClient(ctx context.Context, clientID string)
 			&i.ActiveUniqueIps,
 			&i.LastSeq,
 			&i.ObservedAt,
+			&i.QuotaUsedBytes,
+			&i.QuotaLastResetUnix,
 		); err != nil {
 			return nil, err
 		}
@@ -103,26 +111,31 @@ func (q *Queries) ListClientUsageForClient(ctx context.Context, clientID string)
 const upsertClientUsage = `-- name: UpsertClientUsage :exec
 INSERT INTO client_usage (client_id, agent_id, traffic_used_bytes,
                           unique_ips_used, active_tcp_conns,
-                          active_unique_ips, last_seq, observed_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                          active_unique_ips, quota_used_bytes,
+                          quota_last_reset_unix, last_seq, observed_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 ON CONFLICT (client_id, agent_id) DO UPDATE
-SET traffic_used_bytes = EXCLUDED.traffic_used_bytes,
-    unique_ips_used    = EXCLUDED.unique_ips_used,
-    active_tcp_conns   = EXCLUDED.active_tcp_conns,
-    active_unique_ips  = EXCLUDED.active_unique_ips,
-    last_seq           = EXCLUDED.last_seq,
-    observed_at        = EXCLUDED.observed_at
+SET traffic_used_bytes    = EXCLUDED.traffic_used_bytes,
+    unique_ips_used       = EXCLUDED.unique_ips_used,
+    active_tcp_conns      = EXCLUDED.active_tcp_conns,
+    active_unique_ips     = EXCLUDED.active_unique_ips,
+    quota_used_bytes      = EXCLUDED.quota_used_bytes,
+    quota_last_reset_unix = EXCLUDED.quota_last_reset_unix,
+    last_seq              = EXCLUDED.last_seq,
+    observed_at           = EXCLUDED.observed_at
 `
 
 type UpsertClientUsageParams struct {
-	ClientID         string
-	AgentID          string
-	TrafficUsedBytes int64
-	UniqueIpsUsed    int32
-	ActiveTcpConns   int32
-	ActiveUniqueIps  int32
-	LastSeq          int64
-	ObservedAt       time.Time
+	ClientID           string
+	AgentID            string
+	TrafficUsedBytes   int64
+	UniqueIpsUsed      int32
+	ActiveTcpConns     int32
+	ActiveUniqueIps    int32
+	QuotaUsedBytes     int64
+	QuotaLastResetUnix int64
+	LastSeq            int64
+	ObservedAt         time.Time
 }
 
 func (q *Queries) UpsertClientUsage(ctx context.Context, arg UpsertClientUsageParams) error {
@@ -133,6 +146,8 @@ func (q *Queries) UpsertClientUsage(ctx context.Context, arg UpsertClientUsagePa
 		arg.UniqueIpsUsed,
 		arg.ActiveTcpConns,
 		arg.ActiveUniqueIps,
+		arg.QuotaUsedBytes,
+		arg.QuotaLastResetUnix,
 		arg.LastSeq,
 		arg.ObservedAt,
 	)

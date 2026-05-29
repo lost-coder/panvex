@@ -55,12 +55,18 @@ func (s *Server) reconcileDiscoveredClients(ctx context.Context, agentID string,
 
 	managedNames, managedSecrets := s.managedClientIdentifiersForAgent(agentID)
 
+	// seenNames is every user the node currently reports. HandleClientDataRequest
+	// always returns the FULL set of configured Telemt users, so this is an
+	// authoritative snapshot of what exists on the node right now (IN-M5).
+	seenNames := make(map[string]struct{}, len(records))
+
 	var disc, skippedManaged, skippedPanelID int
 	for _, record := range records {
 		clientName := strings.TrimSpace(record.GetClientName())
 		if clientName == "" {
 			continue
 		}
+		seenNames[clientName] = struct{}{}
 
 		// Skip clients that are already managed by the panel.
 		if _, managed := managedNames[clientName]; managed {
@@ -72,6 +78,15 @@ func (s *Server) reconcileDiscoveredClients(ctx context.Context, agentID string,
 		secret := strings.TrimSpace(record.GetSecret())
 		if secret != "" {
 			if _, managed := managedSecrets[secret]; managed {
+				// IN-L4: secret reuse under a DIFFERENT name on the node is an
+				// operator anomaly (it masks a genuinely unmanaged user as
+				// "managed"). The name is not in managedNames (checked above),
+				// so log it as a conflict instead of silently swallowing it.
+				s.logger.Warn("discovered client shares a managed secret under a different name; skipping as managed",
+					"agent_id", agentID,
+					"client_name", clientName,
+					"alert", "discovered_secret_name_conflict",
+				)
 				skippedManaged++
 				continue
 			}
@@ -87,6 +102,46 @@ func (s *Server) reconcileDiscoveredClients(ctx context.Context, agentID string,
 		s.upsertDiscoveredClient(ctx, agentID, record, observedAt)
 	}
 	s.logger.Info("reconciled discovered clients", "agent_id", agentID, "total", len(records), "new", disc, "managed", skippedManaged, "panel_assigned", skippedPanelID)
+
+	// IN-M5: prune pending discovered records for this agent that the node no
+	// longer reports (e.g. the user was removed, or the agent's fleet group
+	// changed and its managed clients were rolled off). Safe because we only
+	// reach here on a non-empty response (early-return above) and the response
+	// is the full user set. Only PENDING records are pruned — adopted/ignored
+	// decisions are preserved.
+	s.pruneStaleDiscoveredForAgent(ctx, agentID, seenNames)
+}
+
+// pruneStaleDiscoveredForAgent deletes pending discovered records owned by the
+// agent whose client_name is absent from seenNames (the node's current full
+// user set). Best-effort: list/delete failures are logged, not fatal.
+func (s *Server) pruneStaleDiscoveredForAgent(ctx context.Context, agentID string, seenNames map[string]struct{}) {
+	if s.discoveredRepo == nil {
+		return
+	}
+	all, err := s.discoveredRepo.List(ctx)
+	if err != nil {
+		s.logger.Warn("pruneStaleDiscoveredForAgent: list failed", "agent_id", agentID, "error", err)
+		return
+	}
+	pruned := 0
+	for _, dc := range all {
+		if dc.AgentID != agentID || dc.Status != discovered.StatusPending {
+			continue
+		}
+		if _, seen := seenNames[dc.ClientName]; seen {
+			continue
+		}
+		if err := s.discoveredRepo.Delete(ctx, dc.ID); err != nil {
+			s.logger.Warn("pruneStaleDiscoveredForAgent: delete failed",
+				"agent_id", agentID, "discovered_id", string(dc.ID), "error", err)
+			continue
+		}
+		pruned++
+	}
+	if pruned > 0 {
+		s.logger.Info("pruned stale discovered clients", "agent_id", agentID, "pruned", pruned)
+	}
 }
 
 // managedClientIdentifiersForAgent returns the set of client names and secrets deployed on an agent.
@@ -501,7 +556,7 @@ func (s *Server) persistAdoptedClient(ctx context.Context, discoveredID string, 
 			return err
 		}
 		if freshRecord.Secret != "" {
-			if err := markDuplicateDiscoveredClientsAdoptedUoW(ctx, rs, discoveredID, freshRecord.Secret, observedAt); err != nil {
+			if err := markDuplicateDiscoveredClientsAdoptedUoW(ctx, rs, discoveredID, freshRecord.ClientName, freshRecord.Secret, observedAt); err != nil {
 				return err
 			}
 		}
@@ -511,7 +566,7 @@ func (s *Server) persistAdoptedClient(ctx context.Context, discoveredID string, 
 
 // markDuplicateDiscoveredClientsAdopted marks all other discovered clients with the same
 // secret as adopted, since they represent the same user on different servers.
-func (s *Server) markDuplicateDiscoveredClientsAdopted(ctx context.Context, excludeID, secret string, observedAt time.Time) {
+func (s *Server) markDuplicateDiscoveredClientsAdopted(ctx context.Context, excludeID, name, secret string, observedAt time.Time) {
 	if s.discoveredRepo == nil {
 		return
 	}
@@ -521,7 +576,7 @@ func (s *Server) markDuplicateDiscoveredClientsAdopted(ctx context.Context, excl
 	}
 	// Q2.U-P-10: collect all duplicate IDs and flip them in a single
 	// SQL UPDATE instead of N round-trips.
-	ids := collectDuplicateDiscoveredIDs(all, excludeID, secret)
+	ids := collectDuplicateDiscoveredIDs(all, excludeID, name, secret)
 	if len(ids) == 0 {
 		return
 	}
@@ -540,12 +595,12 @@ func (s *Server) markDuplicateDiscoveredClientsAdopted(ctx context.Context, excl
 // lands in the same atomic unit as the primary adopt writes. Unlike the
 // untransacted variant it surfaces errors to the caller — inside a UoW.Do,
 // failing one write must abort the whole transaction.
-func markDuplicateDiscoveredClientsAdoptedUoW(ctx context.Context, rs uow.RepoSet, excludeID, secret string, observedAt time.Time) error {
+func markDuplicateDiscoveredClientsAdoptedUoW(ctx context.Context, rs uow.RepoSet, excludeID, name, secret string, observedAt time.Time) error {
 	all, err := rs.Discovered().List(ctx)
 	if err != nil {
 		return err
 	}
-	ids := collectDuplicateDiscoveredIDs(all, excludeID, secret)
+	ids := collectDuplicateDiscoveredIDs(all, excludeID, name, secret)
 	if len(ids) == 0 {
 		return nil
 	}
@@ -557,15 +612,21 @@ func markDuplicateDiscoveredClientsAdoptedUoW(ctx context.Context, rs uow.RepoSe
 }
 
 // collectDuplicateDiscoveredIDs returns IDs of every non-adopted
-// duplicate of (secret) excluding the primary adopt target. Lifted into
-// a helper so the tx and non-tx paths share the same filter logic.
-func collectDuplicateDiscoveredIDs(all []discovered.DiscoveredClient, excludeID, secret string) []string {
+// duplicate of (name, secret) excluding the primary adopt target. Lifted
+// into a helper so the tx and non-tx paths share the same filter logic.
+//
+// IN-H7: the match requires BOTH name and secret, matching
+// collectAdoptSiblings. Matching on secret alone flipped a discovered
+// record with the SAME secret but a DIFFERENT name to "adopted" without
+// ever attaching it to a managed client — silently hiding a genuinely
+// unmanaged proxy user (secret reuse under a different name).
+func collectDuplicateDiscoveredIDs(all []discovered.DiscoveredClient, excludeID, name, secret string) []string {
 	if secret == "" {
 		return nil
 	}
 	ids := make([]string, 0)
 	for _, dc := range all {
-		if string(dc.ID) == excludeID || dc.Secret != secret || dc.Status == discovered.StatusAdopted {
+		if string(dc.ID) == excludeID || dc.Secret != secret || dc.ClientName != name || dc.Status == discovered.StatusAdopted {
 			continue
 		}
 		ids = append(ids, string(dc.ID))
@@ -681,7 +742,7 @@ func (s *Server) mergeAdoptIntoExistingClient(
 		}
 	}
 	if record.Secret != "" {
-		s.markDuplicateDiscoveredClientsAdopted(ctx, discoveredID, record.Secret, observedAt)
+		s.markDuplicateDiscoveredClientsAdopted(ctx, discoveredID, record.ClientName, record.Secret, observedAt)
 	}
 
 	s.appendAuditWithContext(ctx, actorID, "clients.adopted_merge", discoveredID, map[string]any{

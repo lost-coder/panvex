@@ -102,6 +102,63 @@ func TestUpsertDiscoveredClientDedupes(t *testing.T) {
 	}
 }
 
+// TestReconcilePrunesStaleDiscoveredOnFullSnapshot guards IN-M5: when an
+// agent's full user snapshot no longer lists a previously-discovered user
+// (removed on the node, or fleet-group change rolled it off), the stale
+// pending discovered record must be pruned rather than lingering forever.
+func TestReconcilePrunesStaleDiscoveredOnFullSnapshot(t *testing.T) {
+	now := time.Date(2026, time.May, 29, 12, 0, 0, 0, time.UTC)
+
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	fleetGroupID := seedTestFleetGroup(t, store, "default", now.Add(-time.Minute))
+	agentID := "agent-prune-1"
+	if err := store.PutAgent(ctx, storage.AgentRecord{
+		ID:           agentID,
+		NodeName:     "node-A",
+		FleetGroupID: fleetGroupID,
+		Version:      "dev",
+		LastSeenAt:   now.Add(-time.Minute),
+	}); err != nil {
+		t.Fatalf("PutAgent() error = %v", err)
+	}
+
+	server := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+		Store:            store,
+	})
+	defer server.Close()
+
+	alice := &gatewayrpc.ClientDetailRecord{ClientName: "ext-alice", Secret: "1111111111111111aaaaaaaaaaaaaaaa"}
+	bob := &gatewayrpc.ClientDetailRecord{ClientName: "ext-bob", Secret: "22222222222222222222222222222222"}
+
+	// First full snapshot: both unmanaged users present → two pending records.
+	server.reconcileDiscoveredClients(ctx, agentID, []*gatewayrpc.ClientDetailRecord{alice, bob}, now)
+	got, err := server.listDiscoveredClients(ctx)
+	if err != nil {
+		t.Fatalf("listDiscoveredClients() error = %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("after first snapshot len = %d, want 2", len(got))
+	}
+
+	// Second full snapshot: only alice remains on the node → bob is pruned.
+	server.reconcileDiscoveredClients(ctx, agentID, []*gatewayrpc.ClientDetailRecord{alice}, now.Add(time.Minute))
+	got2, err := server.listDiscoveredClients(ctx)
+	if err != nil {
+		t.Fatalf("listDiscoveredClients() error = %v", err)
+	}
+	if len(got2) != 1 || got2[0].ClientName != "ext-alice" {
+		t.Fatalf("after pruning snapshot = %+v, want exactly [ext-alice]", got2)
+	}
+}
+
 // TestUpsertDiscoveredClientPreservesIgnoredStatus ensures a later reconcile
 // cannot resurrect an ignored row back to pending_review.
 func TestUpsertDiscoveredClientPreservesIgnoredStatus(t *testing.T) {

@@ -513,14 +513,16 @@ type ClientIPAggregateRecord struct {
 // accumulated totals. LastSeq is the per-agent delta cursor (rewinds
 // to 1 on agent restart; the higher value wins).
 type ClientUsageRecord struct {
-	ClientID         string
-	AgentID          string
-	TrafficUsedBytes uint64
-	UniqueIPsUsed    int
-	ActiveTCPConns   int
-	ActiveUniqueIPs  int
-	LastSeq          uint64
-	ObservedAt       time.Time
+	ClientID           string
+	AgentID            string
+	TrafficUsedBytes   uint64
+	UniqueIPsUsed      int
+	ActiveTCPConns     int
+	ActiveUniqueIPs    int
+	QuotaUsedBytes     uint64
+	QuotaLastResetUnix uint64
+	LastSeq            uint64
+	ObservedAt         time.Time
 }
 
 // ServerLoadHourlyRecord stores one hourly rollup of server load metrics.

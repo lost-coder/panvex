@@ -88,6 +88,7 @@ func (t *jobInflightTracker) release(jobID string) {
 func enqueueReceivedJob(
 	connectionCtx context.Context,
 	agentID string,
+	agent *runtime.Agent,
 	tracker *jobInflightTracker,
 	jobQueues map[jobPipeline]chan *gatewayrpc.JobCommand,
 	criticalOutbound chan<- *gatewayrpc.ConnectClientMessage,
@@ -99,10 +100,23 @@ func enqueueReceivedJob(
 
 	jobID := job.GetId()
 	if jobID != "" && !tracker.reserve(jobID) {
+		// Duplicate delivery (job already in-flight or just completed). If we
+		// already have a cached result, resend it rather than a bare ack so a
+		// JobResult lost in transit after the first ack still reaches the
+		// control-plane on its retry — without re-executing the job. Falls
+		// back to an ack when no result is cached yet (still executing).
+		outbound := jobAcknowledgementMessage(agentID, jobID, time.Now())
+		if agent != nil {
+			if cached, ok := agent.CompletedJobResult(jobID, time.Now()); ok {
+				outbound = &gatewayrpc.ConnectClientMessage{
+					Body: &gatewayrpc.ConnectClientMessage_JobResult{JobResult: cached},
+				}
+			}
+		}
 		select {
 		case <-connectionCtx.Done():
 			return false
-		case criticalOutbound <- jobAcknowledgementMessage(agentID, jobID, time.Now()):
+		case criticalOutbound <- outbound:
 			return true
 		}
 	}

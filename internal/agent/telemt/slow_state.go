@@ -17,9 +17,17 @@ func (c *Client) loadSlowRuntimeStateForFetch(ctx context.Context) (slowRuntimeS
 		c.mu.RLock()
 		now := time.Now().UTC()
 		cached := c.slowData
-		fresh := c.hasSlowData && now.Sub(c.slowFetchedAt) < c.slowDataTTL
+		fetchedAt := c.slowFetchedAt
+		fresh := c.hasSlowData && now.Sub(fetchedAt) < c.slowDataTTL
 		c.mu.RUnlock()
 		if fresh {
+			// IN-M4: uptime_seconds is a monotonic counter. Serving the raw
+			// cached value would report a figure up to slowDataTTL stale and
+			// make the panel's uptime sawtooth on every cache refresh. Advance
+			// it by the time elapsed since the cache was populated so the
+			// reported uptime stays continuous between slow fetches. (cached is
+			// a value copy — the stored cache is untouched.)
+			cached.UptimeSeconds += now.Sub(fetchedAt).Seconds()
 			return cached, false, nil
 		}
 	}

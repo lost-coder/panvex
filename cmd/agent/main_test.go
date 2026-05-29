@@ -344,7 +344,7 @@ func TestEnqueueReceivedJobQueuesAndAcknowledges(t *testing.T) {
 		Action: "runtime.reload",
 	}
 
-	queued := enqueueReceivedJob(connectionCtx, "agent-1", tracker, jobQueues, criticalOutbound, job)
+	queued := enqueueReceivedJob(connectionCtx, "agent-1", nil, tracker, jobQueues, criticalOutbound, job)
 	if !queued {
 		t.Fatal("enqueueReceivedJob() = false, want true")
 	}
@@ -378,8 +378,8 @@ func TestEnqueueReceivedJobSkipsDuplicateQueueEntry(t *testing.T) {
 		Action: "runtime.reload",
 	}
 
-	firstQueued := enqueueReceivedJob(connectionCtx, "agent-1", tracker, jobQueues, criticalOutbound, job)
-	secondQueued := enqueueReceivedJob(connectionCtx, "agent-1", tracker, jobQueues, criticalOutbound, job)
+	firstQueued := enqueueReceivedJob(connectionCtx, "agent-1", nil, tracker, jobQueues, criticalOutbound, job)
+	secondQueued := enqueueReceivedJob(connectionCtx, "agent-1", nil, tracker, jobQueues, criticalOutbound, job)
 
 	if !firstQueued {
 		t.Fatal("first enqueueReceivedJob() = false, want true")
@@ -408,7 +408,7 @@ func TestEnqueueReceivedJobQueuesCommandWithoutIdentifier(t *testing.T) {
 		Action: "runtime.reload",
 	}
 
-	queued := enqueueReceivedJob(connectionCtx, "agent-1", tracker, jobQueues, criticalOutbound, job)
+	queued := enqueueReceivedJob(connectionCtx, "agent-1", nil, tracker, jobQueues, criticalOutbound, job)
 	if !queued {
 		t.Fatal("enqueueReceivedJob() = false, want true")
 	}

@@ -21,13 +21,15 @@ const seqClientAssignment = "client-assignment"
 // (in-memory mirror value type used by legacy methods) to avoid name
 // collision while we migrate in Phase 6.
 type usageMirror struct {
-	ClientID         ClientID
-	TrafficUsedBytes uint64
-	UniqueIPsUsed    int
-	ActiveTCPConns   int
-	ActiveUniqueIPs  int
-	ObservedAt       time.Time
-	LastSeq          uint64
+	ClientID           ClientID
+	TrafficUsedBytes   uint64
+	UniqueIPsUsed      int
+	ActiveTCPConns     int
+	ActiveUniqueIPs    int
+	QuotaUsedBytes     uint64
+	QuotaLastResetUnix uint64
+	ObservedAt         time.Time
+	LastSeq            uint64
 }
 
 // ErrNotFound is returned by Service.Get when the requested Client ID
@@ -684,13 +686,15 @@ func (s *Service) Restore(ctx context.Context) error {
 			s.mirrorUsage[u.ClientID] = make(map[string]usageMirror)
 		}
 		s.mirrorUsage[u.ClientID][u.AgentID] = usageMirror{
-			ClientID:         u.ClientID,
-			TrafficUsedBytes: u.TrafficUsedBytes,
-			UniqueIPsUsed:    u.UniqueIPsUsed,
-			ActiveTCPConns:   u.ActiveTCPConns,
-			ActiveUniqueIPs:  u.ActiveUniqueIPs,
-			ObservedAt:       u.ObservedAt,
-			LastSeq:          u.LastSeq,
+			ClientID:           u.ClientID,
+			TrafficUsedBytes:   u.TrafficUsedBytes,
+			UniqueIPsUsed:      u.UniqueIPsUsed,
+			ActiveTCPConns:     u.ActiveTCPConns,
+			ActiveUniqueIPs:    u.ActiveUniqueIPs,
+			QuotaUsedBytes:     u.QuotaUsedBytes,
+			QuotaLastResetUnix: u.QuotaLastResetUnix,
+			ObservedAt:         u.ObservedAt,
+			LastSeq:            u.LastSeq,
 		}
 		if u.LastSeq > s.mirrorLastUsageSeq[u.AgentID] {
 			s.mirrorLastUsageSeq[u.AgentID] = u.LastSeq
@@ -1060,13 +1064,15 @@ func (s *Service) PersistDeployment(ctx context.Context, d Deployment) error {
 // MirrorSnapshot. It mirrors usageMirror but is exported so the server
 // package can read it to sync its own legacy maps during Phase 7.
 type MirrorUsageEntry struct {
-	ClientID         ClientID
-	TrafficUsedBytes uint64
-	UniqueIPsUsed    int
-	ActiveTCPConns   int
-	ActiveUniqueIPs  int
-	ObservedAt       time.Time
-	LastSeq          uint64
+	ClientID           ClientID
+	TrafficUsedBytes   uint64
+	UniqueIPsUsed      int
+	ActiveTCPConns     int
+	ActiveUniqueIPs    int
+	QuotaUsedBytes     uint64
+	QuotaLastResetUnix uint64
+	ObservedAt         time.Time
+	LastSeq            uint64
 }
 
 // MirrorState is the full snapshot of the V2 in-memory mirror, returned by
@@ -1114,13 +1120,15 @@ func (s *Service) MirrorSnapshot() MirrorState {
 		cp := make(map[string]MirrorUsageEntry, len(byAgent))
 		for agentID, u := range byAgent {
 			cp[agentID] = MirrorUsageEntry{
-				ClientID:         u.ClientID,
-				TrafficUsedBytes: u.TrafficUsedBytes,
-				UniqueIPsUsed:    u.UniqueIPsUsed,
-				ActiveTCPConns:   u.ActiveTCPConns,
-				ActiveUniqueIPs:  u.ActiveUniqueIPs,
-				ObservedAt:       u.ObservedAt,
-				LastSeq:          u.LastSeq,
+				ClientID:           u.ClientID,
+				TrafficUsedBytes:   u.TrafficUsedBytes,
+				UniqueIPsUsed:      u.UniqueIPsUsed,
+				ActiveTCPConns:     u.ActiveTCPConns,
+				ActiveUniqueIPs:    u.ActiveUniqueIPs,
+				QuotaUsedBytes:     u.QuotaUsedBytes,
+				QuotaLastResetUnix: u.QuotaLastResetUnix,
+				ObservedAt:         u.ObservedAt,
+				LastSeq:            u.LastSeq,
 			}
 		}
 		usage[k] = cp
@@ -1154,13 +1162,15 @@ func (s *Service) applyUsageMirrorLocked(u Usage) {
 		s.mirrorUsage[u.ClientID] = make(map[string]usageMirror)
 	}
 	s.mirrorUsage[u.ClientID][u.AgentID] = usageMirror{
-		ClientID:         u.ClientID,
-		TrafficUsedBytes: u.TrafficUsedBytes,
-		UniqueIPsUsed:    u.UniqueIPsUsed,
-		ActiveTCPConns:   u.ActiveTCPConns,
-		ActiveUniqueIPs:  u.ActiveUniqueIPs,
-		ObservedAt:       u.ObservedAt,
-		LastSeq:          u.LastSeq,
+		ClientID:           u.ClientID,
+		TrafficUsedBytes:   u.TrafficUsedBytes,
+		UniqueIPsUsed:      u.UniqueIPsUsed,
+		ActiveTCPConns:     u.ActiveTCPConns,
+		ActiveUniqueIPs:    u.ActiveUniqueIPs,
+		QuotaUsedBytes:     u.QuotaUsedBytes,
+		QuotaLastResetUnix: u.QuotaLastResetUnix,
+		ObservedAt:         u.ObservedAt,
+		LastSeq:            u.LastSeq,
 	}
 	if u.LastSeq > s.mirrorLastUsageSeq[u.AgentID] {
 		s.mirrorLastUsageSeq[u.AgentID] = u.LastSeq

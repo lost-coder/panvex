@@ -94,6 +94,7 @@ func (s *Server) operationalEntry(f settings.FieldMeta) valuesEntry {
 		// env var is unset, so present it as locked.
 		Locked: overridden,
 		Apply:  string(f.Apply),
+		Secret: f.Secret,
 	}
 	// pending_restart bookkeeping
 	if f.Apply == settings.ApplyRestart && s.settingsActive != nil {
@@ -103,7 +104,24 @@ func (s *Server) operationalEntry(f settings.FieldMeta) valuesEntry {
 			entry.Value = rawToTyped(f, active)
 		}
 	}
+	// M-6: redact secret operational fields. bootstrapEntry already does
+	// this for bootstrap-class secrets; operationalEntry must do the same
+	// so a secret=true operational field is never disclosed to any logged-in
+	// user via GET /settings/values (the route is viewer-readable).
+	if f.Secret {
+		entry.Value = redactSecretValue(entry.Value)
+		entry.PendingValue = redactSecretValue(entry.PendingValue)
+	}
 	return entry
+}
+
+// redactSecretValue masks a non-empty string value to "***"; empty and
+// non-string values pass through unchanged (the field carries no secret).
+func redactSecretValue(v any) any {
+	if s, ok := v.(string); ok && s != "" {
+		return "***"
+	}
+	return v
 }
 
 func rawToTyped(f settings.FieldMeta, raw string) any {
@@ -144,8 +162,8 @@ func (s *Server) handleSettingsValuesPUT(w http.ResponseWriter, r *http.Request)
 	}
 
 	var body map[string]any
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json body", http.StatusBadRequest)
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
 	updates := make(map[string]string, len(body))
@@ -156,9 +174,9 @@ func (s *Server) handleSettingsValuesPUT(w http.ResponseWriter, r *http.Request)
 	if err := s.settings.Put(r.Context(), updates, who); err != nil {
 		switch {
 		case strings.Contains(err.Error(), "bootstrap setting"):
-			http.Error(w, err.Error(), http.StatusConflict)
+			writeError(w, http.StatusConflict, err.Error())
 		default:
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, err.Error())
 		}
 		return
 	}

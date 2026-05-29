@@ -23,6 +23,26 @@ func (q *Queries) ClearAgentBootstrapToken(ctx context.Context, id string) error
 	return err
 }
 
+const consumeAgentBootstrapToken = `-- name: ConsumeAgentBootstrapToken :execrows
+UPDATE agents
+SET bootstrap_state = 'active'
+WHERE id = $1 AND bootstrap_state = 'pending'
+`
+
+// Atomically claim a pending bootstrap token: flips the state out of
+// 'pending' so only the first concurrent enrollment proceeds. The
+// token hash/expiry are intentionally preserved so a sign failure can
+// revert the claim (RevertAgentBootstrapConsumed) and let the operator
+// retry. Returns the number of rows affected (1 = claimed, 0 = already
+// consumed by a concurrent enrollment / replay within the TTL).
+func (q *Queries) ConsumeAgentBootstrapToken(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, consumeAgentBootstrapToken, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const expireAgentBootstrapToken = `-- name: ExpireAgentBootstrapToken :exec
 UPDATE agents
 SET bootstrap_state = 'expired',
@@ -104,6 +124,21 @@ func (q *Queries) ListAgentsByTransportMode(ctx context.Context, transportMode s
 		return nil, err
 	}
 	return items, nil
+}
+
+const revertAgentBootstrapConsumed = `-- name: RevertAgentBootstrapConsumed :exec
+UPDATE agents
+SET bootstrap_state = 'pending'
+WHERE id = $1 AND bootstrap_state = 'active' AND bootstrap_token_hash IS NOT NULL
+`
+
+// Roll a claimed-but-not-completed token back to 'pending' for retry.
+// Guarded by bootstrap_token_hash IS NOT NULL so it only ever reverts a
+// row still mid-enrollment (the token has not been cleared), never a
+// fully-enrolled agent.
+func (q *Queries) RevertAgentBootstrapConsumed(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, revertAgentBootstrapConsumed, id)
+	return err
 }
 
 const setAgentBootstrapToken = `-- name: SetAgentBootstrapToken :exec
