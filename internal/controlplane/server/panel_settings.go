@@ -234,9 +234,6 @@ type UpdateState struct {
 	PanelDownloadURL   string `json:"panel_download_url"`
 	PanelChecksumURL   string `json:"panel_checksum_url"`
 	PanelSignatureURL  string `json:"panel_signature_url"`
-	AgentDownloadURL   string `json:"agent_download_url"`
-	AgentChecksumURL   string `json:"agent_checksum_url"`
-	AgentSignatureURL  string `json:"agent_signature_url"`
 	PanelChangelog     string `json:"panel_changelog"`
 	AgentChangelog     string `json:"agent_changelog"`
 	LastCheckedAt      int64  `json:"last_checked_at"`
