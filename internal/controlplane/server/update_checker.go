@@ -110,12 +110,10 @@ func (s *Server) checkForUpdates(ctx context.Context) {
 	}
 
 	if agent != nil {
+		// The agent resolves its own per-arch asset URLs at update time, so
+		// the panel only needs the version + changelog here.
 		_, version, _ := ParseReleaseTag(agent.TagName)
-		binaryURL, checksumURL, signatureURL := ResolveAssetURLs(agent, "agent")
 		state.LatestAgentVersion = version
-		state.AgentDownloadURL = binaryURL
-		state.AgentChecksumURL = checksumURL
-		state.AgentSignatureURL = signatureURL
 		state.AgentChangelog = agent.Body
 	}
 
