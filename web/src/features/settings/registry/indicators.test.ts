@@ -62,4 +62,16 @@ describe("resolveIndicator", () => {
     const r = resolveIndicator(schema({ apply: "live" }), values({ apply: "restart" }));
     expect(r.kind).toBe("needs-restart");
   });
+
+  it("flags a locked env-sourced field (not overriding) as grey lock", () => {
+    const r = resolveIndicator(schema(), values({ locked: true, source: "env", env_var: "PANVEX_X" }));
+    expect(r.kind).toBe("config-managed");
+    expect(r.bar).toBe("grey");
+  });
+
+  it("flags a locked default-sourced field as grey lock", () => {
+    const r = resolveIndicator(schema(), values({ locked: true, source: "default" }));
+    expect(r.kind).toBe("config-managed");
+    expect(r.bar).toBe("grey");
+  });
 });
