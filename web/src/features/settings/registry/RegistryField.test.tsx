@@ -32,6 +32,17 @@ describe("RegistryField", () => {
     expect(screen.getByRole("textbox", { name: "test.field" })).toHaveAttribute("placeholder", "e.g. 30s, 5m, 1h");
   });
 
+  it("renders url input for type=url", () => {
+    render(<RegistryField schema={makeSchema({ type: "url" })} values={makeValues({ value: "http://example.com" })} onChange={vi.fn()} />);
+    const input = screen.getByRole("textbox", { name: "test.field" });
+    expect((input as HTMLInputElement).type).toBe("url");
+  });
+
+  it("renders text input with placeholder for type=hostport", () => {
+    render(<RegistryField schema={makeSchema({ type: "hostport" })} values={makeValues({ value: "0.0.0.0:8080" })} onChange={vi.fn()} />);
+    expect(screen.getByRole("textbox", { name: "test.field" })).toHaveAttribute("placeholder", "e.g. 0.0.0.0:8080");
+  });
+
   it("renders toggle switch for type=bool", () => {
     render(<RegistryField schema={makeSchema({ type: "bool" })} values={makeValues({ value: true })} onChange={vi.fn()} />);
     expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "true");

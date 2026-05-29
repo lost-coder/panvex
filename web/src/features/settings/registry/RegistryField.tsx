@@ -4,7 +4,6 @@ import { Select } from "@/ui/base/select";
 import { Toggle } from "@/ui/base/toggle";
 import { Tooltip } from "@/ui/base/tooltip";
 import { SettingsRow } from "@/ui/components/SettingsRow";
-import { cn } from "@/ui/lib/cn";
 import type { SchemaEntry, ValuesEntry } from "./types";
 import { BAR_SHADOW, resolveIndicator } from "./indicators";
 import { IndicatorIcon } from "./IndicatorIcon";
@@ -36,17 +35,20 @@ export function RegistryField({ schema, values, onChange, error, hideIndicators 
   const rowClass = showIndicator && indicator.bar ? BAR_SHADOW[indicator.bar] : undefined;
 
   const iconEl =
-    showIndicator && indicator.icon ? (
+    showIndicator && indicator.icon && indicator.tooltipKey ? (
       <Tooltip
         content={t(`registryField.tooltip.${indicator.tooltipKey}`, {
           name: values.env_var ?? "",
         })}
       >
+        {/* Radix tooltip trigger: a focusable, informational button. The glyph
+              is aria-hidden; the accessible name lives on this button's aria-label. */}
         <button
           type="button"
           aria-label={t(`registryField.iconLabel.${indicator.icon}`)}
           className="inline-flex cursor-help items-center"
         >
+          {/* tone is always set when icon is set; ?? "grey" only satisfies the type */}
           <IndicatorIcon icon={indicator.icon} tone={indicator.tone ?? "grey"} spinning={indicator.spinning} />
         </button>
       </Tooltip>
@@ -55,7 +57,7 @@ export function RegistryField({ schema, values, onChange, error, hideIndicators 
   // json type — no editable input; just a note (plus any indicator icon).
   if (type === "json") {
     return (
-      <SettingsRow label={name} description={desc} className={rowClass}>
+      <SettingsRow label={name} description={desc} {...(rowClass ? { className: rowClass } : {})}>
         <div className="flex flex-col items-end gap-1">
           {iconEl}
           <span className="text-xs text-fg-muted italic">{t("registryField.jsonNotice")}</span>
@@ -107,7 +109,7 @@ export function RegistryField({ schema, values, onChange, error, hideIndicators 
   }
 
   return (
-    <SettingsRow label={name} description={desc} className={cn(rowClass)}>
+    <SettingsRow label={name} description={desc} {...(rowClass ? { className: rowClass } : {})}>
       <div className="flex flex-col items-end gap-1">
         <div className="flex items-center gap-2">
           {iconEl}
