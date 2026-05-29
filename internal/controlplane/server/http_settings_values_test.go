@@ -1,13 +1,41 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	settingspkg "github.com/lost-coder/panvex/internal/controlplane/settings"
 )
+
+func TestOperationalEntrySurfacesSource(t *testing.T) {
+	srv := testServerWithSQLite(t, time.Now())
+	ctx := context.Background()
+	if err := srv.settings.Put(ctx, map[string]string{"http.public_url": "https://p.example"}, "test"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	var set, unset settingspkg.FieldMeta
+	for _, f := range settingspkg.AllFields() {
+		if f.Name == "http.public_url" {
+			set = f
+		}
+		if f.Name == "grpc.public_endpoint" {
+			unset = f // operational, default "", never set here
+		}
+	}
+	if got := srv.operationalEntry(set).Source; got != "db" {
+		t.Errorf("set field Source = %q, want db", got)
+	}
+	if got := srv.operationalEntry(unset).Source; got != "default" {
+		t.Errorf("unset field Source = %q, want default (was hardcoded db)", got)
+	}
+	if srv.operationalEntry(set).OverriddenByEnv {
+		t.Errorf("http.public_url should not be env-overridden")
+	}
+}
 
 func TestHTTPSettingsValues_ReturnsOperationalAndBootstrap(t *testing.T) {
 	server, _, cookies := newAuthedServer(t)
@@ -30,7 +58,9 @@ func TestHTTPSettingsValues_ReturnsOperationalAndBootstrap(t *testing.T) {
 	if v["locked"] != false {
 		t.Errorf("operational locked = %v", v["locked"])
 	}
-	if v["source"] != "db" {
+	// Never set on this fixture, so its truthful source is the registry
+	// default (was previously hardcoded "db" before the source surfacing fix).
+	if v["source"] != "default" {
 		t.Errorf("operational source = %v", v["source"])
 	}
 }

@@ -12,14 +12,16 @@ import (
 )
 
 type valuesEntry struct {
-	Value          any    `json:"value"`
-	Source         string `json:"source"`
-	SourcePath     string `json:"source_path,omitempty"`
-	EnvVar         string `json:"env_var,omitempty"`
-	Secret         bool   `json:"secret,omitempty"`
-	Locked         bool   `json:"locked"`
-	PendingRestart bool   `json:"pending_restart,omitempty"`
-	PendingValue   any    `json:"pending_value,omitempty"`
+	Value           any    `json:"value"`
+	Source          string `json:"source"`
+	SourcePath      string `json:"source_path,omitempty"`
+	EnvVar          string `json:"env_var,omitempty"`
+	OverriddenByEnv bool   `json:"overridden_by_env,omitempty"`
+	Apply           string `json:"apply,omitempty"`
+	Secret          bool   `json:"secret,omitempty"`
+	Locked          bool   `json:"locked"`
+	PendingRestart  bool   `json:"pending_restart,omitempty"`
+	PendingValue    any    `json:"pending_value,omitempty"`
 }
 
 type valuesResponse struct {
@@ -78,13 +80,18 @@ func (s *Server) bootstrapEntry(f settings.FieldMeta) valuesEntry {
 
 func (s *Server) operationalEntry(f settings.FieldMeta) valuesEntry {
 	if s.settings == nil {
-		return valuesEntry{Source: "default", Locked: true}
+		return valuesEntry{Source: "default", Locked: true, Apply: string(f.Apply)}
 	}
 	raw := s.settings.RawByName(f.Name)
+	overridden := s.settings.OverriddenByEnv(f.Name)
 	entry := valuesEntry{
-		Value:  rawToTyped(f, raw),
-		Source: "db",
-		Locked: false,
+		Value:           rawToTyped(f, raw),
+		Source:          string(s.settings.Source(f.Name)),
+		OverriddenByEnv: overridden,
+		// An env-pinned value cannot be changed from the panel until the
+		// env var is unset, so present it as locked.
+		Locked: overridden,
+		Apply:  string(f.Apply),
 	}
 	// pending_restart bookkeeping
 	if f.Apply == settings.ApplyRestart && s.settingsActive != nil {
