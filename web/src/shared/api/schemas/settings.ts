@@ -21,12 +21,12 @@ export const panelSettingsResponseSchema = z.object({
   tls_key_file: z.string(),
   runtime_source: z.enum(["legacy", "config_file"]),
   runtime_config_path: z.string(),
-  password_min_length: z.number().int().min(8).max(128),
+  password_min_length: z.number().int().min(8).max(64),
   updated_at_unix: z.number().int(),
   restart: z.object({
     supported: z.boolean(),
     pending: z.boolean(),
-    state: z.enum(["ready", "pending", "unavailable"]),
+    state: z.enum(["ready", "unavailable"]),
   }),
 });
 
@@ -97,7 +97,6 @@ export const schemaEntrySchema = z.object({
   toml: z.string().optional(),
   secret: z.boolean().optional(),
   store: z.string().optional(),
-  restart: z.boolean().optional(),
   apply: z.enum(["live", "restart", "config"]).optional(),
   desc: z.string(),
 });

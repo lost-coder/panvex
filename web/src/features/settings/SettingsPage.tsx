@@ -192,7 +192,7 @@ export function SettingsPage({
                   type="number"
                   className="w-24"
                   min={8}
-                  max={128}
+                  max={64}
                   step={1}
                   value={panelSettings.passwordMinLength}
                   onChange={(e) =>

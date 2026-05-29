@@ -28,8 +28,8 @@ test("panelSettingsResponseSchema rejects password_min_length below 8", () => {
   assert.equal(result.success, false);
 });
 
-test("panelSettingsResponseSchema rejects password_min_length above 128", () => {
-  const result = panelSettingsResponseSchema.safeParse({ ...BASE, password_min_length: 256 });
+test("panelSettingsResponseSchema rejects password_min_length above 64", () => {
+  const result = panelSettingsResponseSchema.safeParse({ ...BASE, password_min_length: 65 });
   assert.equal(result.success, false);
 });
 

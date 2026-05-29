@@ -115,10 +115,10 @@ func TestProvisionOutboundAgentHappyPath(t *testing.T) {
 	// Command must carry the agent_id and dial-derived listen bind so
 	// the panel and agent agree on identity + transport without an
 	// extra round-trip after the agent comes up.
-	if !strings.Contains(body.Command, "--agent-id="+body.AgentID) {
+	if !strings.Contains(body.Command, "--agent-id='"+body.AgentID+"'") {
 		t.Fatalf("command missing --agent-id flag: %s", body.Command)
 	}
-	if !strings.Contains(body.Command, "--listen-addr=:8443") {
+	if !strings.Contains(body.Command, "--listen-addr=':8443'") {
 		t.Fatalf("command missing --listen-addr derived from dial port: %s", body.Command)
 	}
 }
@@ -324,7 +324,7 @@ func TestProvisionOutboundUsesLivePanelGRPCEndpoint(t *testing.T) {
 	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if !strings.Contains(body.Command, "--panel-url-grpc=grpc-live.example:443") {
+	if !strings.Contains(body.Command, "--panel-url-grpc='grpc-live.example:443'") {
 		t.Fatalf("command missing live panel gRPC endpoint:\n%s", body.Command)
 	}
 }

@@ -257,12 +257,12 @@ describe("updatePanelSettingsRequestSchema", () => {
     ).toThrow();
   });
 
-  it("rejects password_min_length above 128", () => {
+  it("rejects password_min_length above 64", () => {
     expect(() =>
       updatePanelSettingsRequestSchema.parse({
         http_public_url: "",
         grpc_public_endpoint: "",
-        password_min_length: 256,
+        password_min_length: 65,
       }),
     ).toThrow();
   });

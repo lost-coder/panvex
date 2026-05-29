@@ -34,7 +34,7 @@ export type PanelSettingsResponse = {
   restart: {
     supported: boolean;
     pending: boolean;
-    state: "ready" | "pending" | "unavailable";
+    state: "ready" | "unavailable";
   };
 };
 

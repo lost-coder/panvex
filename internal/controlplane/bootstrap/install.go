@@ -7,11 +7,20 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lost-coder/panvex/internal/dbsqlc"
 )
+
+// shellQuote wraps s in single quotes, escaping any embedded single quote
+// as '\'' — the standard POSIX-safe form. Used so operator-controlled
+// values (panel/script URLs) embedded in the install one-liner cannot
+// break out of the command.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
 
 // installCommandTTL bounds how long an issued bootstrap token is valid.
 // 5 minutes is the S-02 upper-bound: an operator copies the curl one-liner
@@ -236,12 +245,19 @@ type InstallCommandInput struct {
 // so the install path keeps working — at the cost of MITM exposure that
 // the deploy is opting into. (S-3.)
 func BuildInstallCommand(in InstallCommandInput) string {
+	// Every interpolated value is shell-single-quoted: Token, AgentID,
+	// ListenAddr, PanelCAPin, PanelCN and PanelURL are (now) operator- or
+	// request-controlled, so an unquoted %s would let a crafted value
+	// (e.g. a malicious grpc.public_endpoint / http.public_url) break out
+	// of the command an operator pastes into a root shell. The `=` stays
+	// outside the quotes so `--flag='value'` remains a single argv token.
 	flags := fmt.Sprintf(
 		"--mode=reverse --bootstrap-token=%s --agent-id=%s --listen-addr=%s --ca-pin=%s --panel-cn=%s --panel-url-grpc=%s",
-		in.Token, in.AgentID, in.ListenAddr, in.PanelCAPin, in.PanelCN, in.PanelURL,
+		shellQuote(in.Token), shellQuote(in.AgentID), shellQuote(in.ListenAddr),
+		shellQuote(in.PanelCAPin), shellQuote(in.PanelCN), shellQuote(in.PanelURL),
 	)
 	if in.ScriptHash == "" {
-		return fmt.Sprintf("curl -fsSL %s | sudo bash -s -- %s", in.ScriptURL, flags)
+		return fmt.Sprintf("curl -fsSL %s | sudo bash -s -- %s", shellQuote(in.ScriptURL), flags)
 	}
 	// The single-line form is intentional — operators copy the whole thing
 	// from the dashboard and paste it into a shell. Keeping it on one line
@@ -251,6 +267,6 @@ func BuildInstallCommand(in InstallCommandInput) string {
 	// `$()`-captured bytes would silently strip trailing newlines.
 	return fmt.Sprintf(
 		`TMP=$(mktemp /tmp/panvex-install.XXXXXX) || exit 1; trap 'rm -f "$TMP"' EXIT; curl -fsSL %s -o "$TMP" || { echo 'panvex: install-script download failed' >&2; exit 1; }; ACTUAL=$(sha256sum < "$TMP" | awk '{print $1}'); if [ "$ACTUAL" != "%s" ]; then echo "panvex: install-script hash mismatch (expected %s, got $ACTUAL)" >&2; exit 1; fi; sudo -E PANVEX_INSTALL_SCRIPT_SHA256="%s" bash "$TMP" %s`,
-		in.ScriptURL, in.ScriptHash, in.ScriptHash, in.ScriptHash, flags,
+		shellQuote(in.ScriptURL), in.ScriptHash, in.ScriptHash, in.ScriptHash, flags,
 	)
 }
