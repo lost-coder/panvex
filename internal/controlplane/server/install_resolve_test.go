@@ -19,7 +19,7 @@ func TestResolveInstallScriptURLUsesLivePublicURL(t *testing.T) {
 	if err := srv.settings.Put(ctx, map[string]string{"http.public_url": "https://panel.example"}, "test"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/api/agents/a1/install-command", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/agents/a1/install-command", nil)
 	got := srv.ResolveInstallScriptURL(req)
 	if got != "https://panel.example/install-agent.sh" {
 		t.Fatalf("ResolveInstallScriptURL = %q, want %q", got, "https://panel.example/install-agent.sh")
@@ -35,7 +35,7 @@ func TestResolveAgentGRPCEndpointUsesLiveEndpoint(t *testing.T) {
 	if err := srv.settings.Put(ctx, map[string]string{"grpc.public_endpoint": "grpc.example:8443"}, "test"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/api/agents/a1/install-command", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/agents/a1/install-command", nil)
 	if got := srv.ResolveAgentGRPCEndpoint(req); got != "grpc.example:8443" {
 		t.Fatalf("ResolveAgentGRPCEndpoint = %q, want %q", got, "grpc.example:8443")
 	}
