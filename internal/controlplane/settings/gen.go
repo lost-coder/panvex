@@ -116,7 +116,11 @@ func RenderExampleConfigTOML() ([]byte, error) {
 	}
 	sections := map[string][]sectionEntry{}
 	for _, f := range AllFields() {
-		if f.Class != ClassBootstrap || f.Toml == "" {
+		// Any field carrying a toml= tag is seedable from config.toml,
+		// regardless of class: bootstrap fields are loaded at startup,
+		// operational fields (e.g. the listen addresses) are seeded into
+		// the store on first boot. Both belong in the example config.
+		if f.Toml == "" {
 			continue
 		}
 		dot := strings.IndexByte(f.Toml, '.')

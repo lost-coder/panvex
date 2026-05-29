@@ -119,7 +119,7 @@ func TestOperationalStore_PutRejectsBootstrap(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := s.Put(context.Background(), map[string]string{
-		"http.listen_address": ":7777",
+		"tls.mode": "direct",
 	}, "tester")
 	if err == nil || !strings.Contains(err.Error(), "bootstrap") {
 		t.Fatalf("expected bootstrap rejection, got %v", err)
@@ -179,7 +179,9 @@ func TestSeedDefaultsNoOpWithoutSeedSources(t *testing.T) {
 	r := &fakeReader{panel: map[string]string{}, runtime: map[string]string{}}
 	w := newFakeWriter(r)
 	s := NewOperationalStoreRW(r, w)
-	if err := s.SeedDefaults(context.Background(), LoaderInput{Env: []string{"PANVEX_HTTP_ADDR=:9090"}}); err != nil {
+	// PANVEX_TLS_MODE maps to a bootstrap-only field, so it is not an
+	// operational seed source: SeedDefaults must write nothing.
+	if err := s.SeedDefaults(context.Background(), LoaderInput{Env: []string{"PANVEX_TLS_MODE=direct"}}); err != nil {
 		t.Fatal(err)
 	}
 	if w.writes != 0 {

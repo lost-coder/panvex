@@ -8,12 +8,10 @@ Bootstrap settings are read once at process start. Edit them via environment var
 
 | Name | Type | Default | ENV | TOML | Description |
 |---|---|---|---|---|---|
-| `http.listen_address` | hostport | `:8080` | `PANVEX_HTTP_ADDR` | `http.listen_address` | HTTP bind address for the control-plane API and dashboard. |
 | `http.root_path` | string | _(empty)_ | `PANVEX_HTTP_ROOT_PATH` | `http.root_path` | URL prefix when behind a path-rewriting reverse proxy (empty = none). |
 | `http.agent_root_path` | string | _(empty)_ | `PANVEX_HTTP_AGENT_ROOT_PATH` | `http.agent_root_path` | URL prefix for the agent gRPC-gateway when fronted separately. |
 | `http.panel_allowed_cidrs` | string | _(empty)_ | `PANVEX_PANEL_ALLOWED_CIDRS` | `http.panel_allowed_cidrs` | Comma-separated CIDRs allowed to reach the panel API (empty = no restriction). |
 | `http.trusted_proxy_cidrs` | string | _(empty)_ | `PANVEX_TRUSTED_PROXY_CIDRS` | `http.trusted_proxy_cidrs` | Trusted reverse-proxy CIDRs whose X-Forwarded-For headers are honoured. |
-| `grpc.listen_address` | hostport | `:8443` | `PANVEX_GRPC_ADDR` | `grpc.listen_address` | gRPC bind address for the agent gateway. |
 | `tls.mode` | enum | `proxy` | `PANVEX_TLS_MODE` | `tls.mode` | TLS termination mode. proxy = terminate at reverse proxy; direct = serve TLS from the panel. |
 | `tls.cert_file` | string | _(empty)_ | `PANVEX_TLS_CERT_FILE` | `tls.cert_file` | PEM certificate path when tls.mode=direct. |
 | `tls.key_file` | string | _(empty)_ | `PANVEX_TLS_KEY_FILE` | `tls.key_file` | PEM private key path when tls.mode=direct. |
@@ -41,7 +39,9 @@ Operational settings are stored in the database and edited via the panel UI or t
 
 | Name | Type | Default | ENV | TOML | Description |
 |---|---|---|---|---|---|
+| `http.listen_address` | hostport | `:8080` | `PANVEX_HTTP_ADDR` | `http.listen_address` | HTTP bind address for the control-plane API and dashboard. |
 | `http.public_url` | string | _(empty)_ | — | — | Externally visible URL of the panel; used in agent install scripts. |
+| `grpc.listen_address` | hostport | `:8443` | `PANVEX_GRPC_ADDR` | `grpc.listen_address` | gRPC bind address for the agent gateway. |
 | `grpc.public_endpoint` | string | _(empty)_ | — | — | Externally visible gRPC endpoint for agents to dial. |
 | `auth.password_min_length` | int | `10` | — | — | Minimum length for newly created or rotated passwords. |
 | `retention` | json | — | — | — | Retention policy: how long to keep audit events, metrics, jobs, presence rows. |

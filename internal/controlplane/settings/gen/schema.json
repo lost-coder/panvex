@@ -1,15 +1,5 @@
 [
   {
-    "name": "http.listen_address",
-    "class": "bootstrap",
-    "apply": "restart",
-    "type": "hostport",
-    "default": ":8080",
-    "env": "PANVEX_HTTP_ADDR",
-    "toml": "http.listen_address",
-    "desc": "HTTP bind address for the control-plane API and dashboard."
-  },
-  {
     "name": "http.root_path",
     "class": "bootstrap",
     "apply": "live",
@@ -48,16 +38,6 @@
     "env": "PANVEX_TRUSTED_PROXY_CIDRS",
     "toml": "http.trusted_proxy_cidrs",
     "desc": "Trusted reverse-proxy CIDRs whose X-Forwarded-For headers are honoured."
-  },
-  {
-    "name": "grpc.listen_address",
-    "class": "bootstrap",
-    "apply": "restart",
-    "type": "hostport",
-    "default": ":8443",
-    "env": "PANVEX_GRPC_ADDR",
-    "toml": "grpc.listen_address",
-    "desc": "gRPC bind address for the agent gateway."
   },
   {
     "name": "tls.mode",
@@ -281,6 +261,17 @@
     "desc": "Per-agent concurrency for the panel-side client-data fetcher."
   },
   {
+    "name": "http.listen_address",
+    "class": "operational",
+    "apply": "restart",
+    "type": "hostport",
+    "default": ":8080",
+    "env": "PANVEX_HTTP_ADDR",
+    "toml": "http.listen_address",
+    "store": "runtime_settings",
+    "desc": "HTTP bind address for the control-plane API and dashboard."
+  },
+  {
     "name": "http.public_url",
     "class": "operational",
     "apply": "live",
@@ -288,6 +279,17 @@
     "default": "",
     "store": "panel_settings.http_public_url",
     "desc": "Externally visible URL of the panel; used in agent install scripts."
+  },
+  {
+    "name": "grpc.listen_address",
+    "class": "operational",
+    "apply": "restart",
+    "type": "hostport",
+    "default": ":8443",
+    "env": "PANVEX_GRPC_ADDR",
+    "toml": "grpc.listen_address",
+    "store": "runtime_settings",
+    "desc": "gRPC bind address for the agent gateway."
   },
   {
     "name": "grpc.public_endpoint",

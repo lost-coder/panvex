@@ -11,9 +11,6 @@ client_data_concurrency = "4"
 listen_address = ":8443"
 
 [http]
-# HTTP bind address for the control-plane API and dashboard.
-listen_address = ":8080"
-
 # URL prefix when behind a path-rewriting reverse proxy (empty = none).
 root_path = ""
 
@@ -25,6 +22,9 @@ panel_allowed_cidrs = ""
 
 # Trusted reverse-proxy CIDRs whose X-Forwarded-For headers are honoured.
 trusted_proxy_cidrs = ""
+
+# HTTP bind address for the control-plane API and dashboard.
+listen_address = ":8080"
 
 [observability]
 # Logger verbosity.

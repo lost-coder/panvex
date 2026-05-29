@@ -7,13 +7,10 @@ package settings
 // namespace prefix to keep generated docs and example.config.toml
 // coherent.
 type Bootstrap struct {
-	HTTPListenAddress     string `setting:"name=http.listen_address, type=hostport, default=:8080, env=PANVEX_HTTP_ADDR, toml=http.listen_address, apply=restart, desc='HTTP bind address for the control-plane API and dashboard.'"`
 	HTTPRootPath          string `setting:"name=http.root_path, type=string, default=, env=PANVEX_HTTP_ROOT_PATH, toml=http.root_path, apply=live, desc='URL prefix when behind a path-rewriting reverse proxy (empty = none).'"`
 	HTTPAgentRootPath     string `setting:"name=http.agent_root_path, type=string, default=, env=PANVEX_HTTP_AGENT_ROOT_PATH, toml=http.agent_root_path, apply=live, desc='URL prefix for the agent gRPC-gateway when fronted separately.'"`
 	HTTPPanelAllowedCIDRs string `setting:"name=http.panel_allowed_cidrs, type=string, default=, env=PANVEX_PANEL_ALLOWED_CIDRS, toml=http.panel_allowed_cidrs, apply=live, desc='Comma-separated CIDRs allowed to reach the panel API (empty = no restriction).'"`
 	HTTPTrustedProxyCIDRs string `setting:"name=http.trusted_proxy_cidrs, type=string, default=, env=PANVEX_TRUSTED_PROXY_CIDRS, toml=http.trusted_proxy_cidrs, apply=live, desc='Trusted reverse-proxy CIDRs whose X-Forwarded-For headers are honoured.'"`
-
-	GRPCListenAddress string `setting:"name=grpc.listen_address, type=hostport, default=:8443, env=PANVEX_GRPC_ADDR, toml=grpc.listen_address, apply=restart, desc='gRPC bind address for the agent gateway.'"`
 
 	TLSMode     string `setting:"name=tls.mode, type=enum, values=proxy|direct, default=proxy, env=PANVEX_TLS_MODE, toml=tls.mode, apply=restart, desc='TLS termination mode. proxy = terminate at reverse proxy; direct = serve TLS from the panel.'"`
 	TLSCertFile string `setting:"name=tls.cert_file, type=string, default=, env=PANVEX_TLS_CERT_FILE, toml=tls.cert_file, apply=restart, desc='PEM certificate path when tls.mode=direct.'"`
@@ -47,7 +44,9 @@ type Bootstrap struct {
 // Operational is the registry of settings persisted in the database
 // and editable by panel administrators.
 type Operational struct {
+	HTTPListenAddress  string `setting:"name=http.listen_address, type=hostport, default=:8080, env=PANVEX_HTTP_ADDR, toml=http.listen_address, store=runtime_settings, apply=restart, desc='HTTP bind address for the control-plane API and dashboard.'"`
 	HTTPPublicURL      string `setting:"name=http.public_url, type=string, default=, apply=live, store=panel_settings.http_public_url, desc='Externally visible URL of the panel; used in agent install scripts.'"`
+	GRPCListenAddress  string `setting:"name=grpc.listen_address, type=hostport, default=:8443, env=PANVEX_GRPC_ADDR, toml=grpc.listen_address, store=runtime_settings, apply=restart, desc='gRPC bind address for the agent gateway.'"`
 	GRPCPublicEndpoint string `setting:"name=grpc.public_endpoint, type=string, default=, apply=live, store=panel_settings.grpc_public_endpoint, desc='Externally visible gRPC endpoint for agents to dial.'"`
 
 	AuthPasswordMinLength int `setting:"name=auth.password_min_length, type=int, default=10, min=8, max=64, apply=live, store=panel_settings.password_min_length, desc='Minimum length for newly created or rotated passwords.'"`

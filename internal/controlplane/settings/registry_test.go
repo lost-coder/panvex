@@ -28,7 +28,6 @@ func TestRegistry_BootstrapAllFieldsParse(t *testing.T) {
 func TestRegistry_BootstrapHasRequiredFields(t *testing.T) {
 	fields, _ := walkRegistry(reflect.TypeOf(Bootstrap{}), ClassBootstrap)
 	want := []string{
-		"http.listen_address", "grpc.listen_address",
 		"storage.driver", "storage.dsn",
 		"auth.encryption_key",
 		"observability.log_level",
@@ -40,6 +39,33 @@ func TestRegistry_BootstrapHasRequiredFields(t *testing.T) {
 	for _, w := range want {
 		if !have[w] {
 			t.Errorf("missing required setting %q", w)
+		}
+	}
+}
+
+func TestListenAddressesAreOperationalRuntimeStore(t *testing.T) {
+	want := map[string]bool{"http.listen_address": true, "grpc.listen_address": true}
+	seen := map[string]bool{}
+	for _, f := range AllFields() {
+		if want[f.Name] {
+			seen[f.Name] = true
+			if f.Class != ClassOperational {
+				t.Errorf("%s class = %q, want operational", f.Name, f.Class)
+			}
+			if f.Store != "runtime_settings" {
+				t.Errorf("%s store = %q, want runtime_settings", f.Name, f.Store)
+			}
+			if f.Apply != ApplyRestart {
+				t.Errorf("%s apply = %q, want restart", f.Name, f.Apply)
+			}
+			if f.Env == "" || f.Toml == "" {
+				t.Errorf("%s must keep env/toml for seeding (env=%q toml=%q)", f.Name, f.Env, f.Toml)
+			}
+		}
+	}
+	for k := range want {
+		if !seen[k] {
+			t.Errorf("missing setting %q", k)
 		}
 	}
 }
