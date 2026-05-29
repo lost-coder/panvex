@@ -288,10 +288,13 @@ func (s *Server) panelRestartStatus() panelRestartStatus {
 	if !s.panelRuntime.RestartSupported {
 		state = "unavailable"
 	}
-
+	pending := false
+	if s.settings != nil && s.settingsActive != nil {
+		pending = len(s.settings.PendingChanges(s.settingsActive)) > 0
+	}
 	return panelRestartStatus{
 		Supported: s.panelRuntime.RestartSupported,
-		Pending:   false,
+		Pending:   pending,
 		State:     state,
 	}
 }

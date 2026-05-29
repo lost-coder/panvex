@@ -36,3 +36,20 @@ func TestPublicURLChangeReachesAgentURL(t *testing.T) {
 		t.Fatalf("buildAgentPublicURL = %q, want %q", got, "https://newpanel.example")
 	}
 }
+
+// TestPanelRestartStatusReflectsPendingChanges pins Plan 5 Task 3:
+// panelRestartStatus().Pending must reflect real pending restart-tier changes
+// (via PendingChanges against the captured-active snapshot) instead of the
+// previously hardcoded false.
+func TestPanelRestartStatusReflectsPendingChanges(t *testing.T) {
+	srv := testServerWithSQLite(t, time.Now())
+	ctx := context.Background()
+	// Change a restart-tier operational setting away from its captured-active
+	// value (default 30m).
+	if err := srv.settings.Put(ctx, map[string]string{"auth.session_idle_timeout": "45m"}, "test"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if !srv.panelRestartStatus().Pending {
+		t.Fatal("panelRestartStatus().Pending = false, want true after a restart-tier change")
+	}
+}
