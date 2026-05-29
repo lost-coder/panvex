@@ -4,6 +4,7 @@ import { Input } from "@/ui/base/input";
 import { Select } from "@/ui/base/select";
 import { Toggle } from "@/ui/base/toggle";
 import { SettingsRow } from "@/ui/components/SettingsRow";
+import { Badge } from "@/ui/primitives/Badge";
 import type { SchemaEntry, ValuesEntry } from "./types";
 
 export interface RegistryFieldProps {
@@ -47,29 +48,41 @@ export function RegistryField({ schema, values, onChange, error }: Readonly<Regi
   const isRestartTier = apply === "restart";
 
   const tierBadge = isRestartTier ? (
-    <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-mono font-semibold bg-status-warn/15 text-status-warn">
-      {t("registryField.tierRestart")}
-    </span>
+    <Badge variant="warn">{t("registryField.tierRestart")}</Badge>
   ) : isConfigTier ? (
-    <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-mono font-semibold bg-fg-faint/20 text-fg-muted">
-      {t("registryField.tierConfig")}
-    </span>
+    <Badge variant="default">{t("registryField.tierConfig")}</Badge>
   ) : null;
 
   const envOverrideBadge =
     overridden_by_env === true ? (
-      <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-mono font-semibold bg-status-warn/15 text-status-warn">
+      <Badge variant="warn">
         {t("registryField.overriddenByEnv", { name: values.env_var ?? "" })}
+      </Badge>
+    ) : null;
+
+  const configManagedHint =
+    isConfigTier && locked ? (
+      <span className="text-xs text-fg-muted italic">
+        {t("registryField.configManagedHint")}
       </span>
     ) : null;
 
-  // json type — no editable input; just a note.
+  // json type — no editable input; just a note (plus any tier/env badges).
   if (type === "json") {
     return (
       <SettingsRow label={name} description={desc}>
-        <span className="text-xs text-fg-muted italic">
-          {t("registryField.jsonNotice")}
-        </span>
+        <div className="flex flex-col items-end gap-1">
+          {(tierBadge || envOverrideBadge) && (
+            <div className="flex items-center gap-2">
+              {tierBadge}
+              {envOverrideBadge}
+            </div>
+          )}
+          <span className="text-xs text-fg-muted italic">
+            {t("registryField.jsonNotice")}
+          </span>
+          {configManagedHint}
+        </div>
       </SettingsRow>
     );
   }
@@ -152,9 +165,7 @@ export function RegistryField({ schema, values, onChange, error }: Readonly<Regi
           {tierBadge}
           {envOverrideBadge}
           {locked && (
-            <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-mono font-semibold bg-fg-faint/20 text-fg-muted">
-              {sourceLabel(values, t)}
-            </span>
+            <Badge variant="default">{sourceLabel(values, t)}</Badge>
           )}
           {hasPendingChange && (
             <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-mono font-semibold bg-status-warn/15 text-status-warn">
@@ -162,11 +173,7 @@ export function RegistryField({ schema, values, onChange, error }: Readonly<Regi
             </span>
           )}
         </div>
-        {isConfigTier && (
-          <span className="text-xs text-fg-muted italic">
-            {t("registryField.configManagedHint")}
-          </span>
-        )}
+        {configManagedHint}
         {error && (
           <span className="text-xs text-status-error">{error}</span>
         )}

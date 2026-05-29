@@ -238,6 +238,18 @@ describe("RegistryField", () => {
     expect(screen.queryByText(/config \/ CLI/i)).not.toBeInTheDocument();
   });
 
+  it("shows no tier badge when apply is undefined on both schema and values", () => {
+    render(
+      <RegistryField
+        schema={makeSchema({ type: "string" })}
+        values={makeValues()}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText(/needs restart/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/config \/ CLI/i)).not.toBeInTheDocument();
+  });
+
   it("shows an env-override badge and disables the input", () => {
     render(
       <RegistryField
