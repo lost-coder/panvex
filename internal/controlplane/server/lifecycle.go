@@ -329,6 +329,29 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 				settings.NewDBStore(rawDB, ph),
 				settings.NewDBStore(rawDB, ph),
 			)
+			// Plan 6: the listen addresses are now operational settings
+			// seeded from env/config on first boot. Enable read-time env
+			// overrides (PANVEX_HTTP_ADDR/PANVEX_GRPC_ADDR still win) and
+			// persist any env/toml seed into the store so the UI shows
+			// source=db and the value survives env removal. This MUST run
+			// before Reload/CaptureActive so the captured baseline and the
+			// listener bind both observe the seeded values.
+			//
+			// Seeding is best-effort: a failure to persist the seed (e.g. a
+			// missing/unreadable config.toml) must NOT prevent the
+			// subsequent Reload, which is the step that populates the
+			// effective values (env-override > stored > registry default).
+			// RawByName is correct without seeding; seeding only adds DB
+			// persistence + source=db in the UI. Gating Reload behind the
+			// seed would otherwise boot the panel with an empty settings
+			// cache — the exact startup-reorder hazard this plan guards.
+			s.settings.UseEnv(os.Environ())
+			if err := s.settings.SeedDefaults(s.serverCtx, settings.LoaderInput{
+				ConfigPath: s.panelRuntime.ConfigPath,
+				Env:        os.Environ(),
+			}); err != nil {
+				s.logger.Warn("seed operational settings failed; continuing with env/defaults", "error", err)
+			}
 			s.trySetStartupErr(func() error {
 				return s.settings.Reload(s.serverCtx)
 			})
@@ -573,7 +596,10 @@ func New(options Options) (*Server, error) {
 	// address but no trusted-proxy CIDRs are configured. In that state
 	// X-Forwarded-For is silently ignored and rate-limit buckets the
 	// entire fleet as one client.
-	warnIfTrustedProxyMisconfigured(server.logger, server.panelRuntime.HTTPListenAddress, server.trustedProxyCIDRs)
+	// Plan 6: the bind address now lives in the settings store; read it via
+	// the effective accessor so the non-loopback check reflects the address
+	// the listener will actually use (env-override > db-seed > default).
+	warnIfTrustedProxyMisconfigured(server.logger, server.EffectiveHTTPListenAddress(), server.trustedProxyCIDRs)
 
 	server.startBackgroundWorkers()
 

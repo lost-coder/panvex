@@ -100,12 +100,10 @@ restart_mode = "supervised"
 	if configuration.Storage.Driver != config.StorageDriverSQLite {
 		t.Fatalf("configuration.Storage.Driver = %q, want %q", configuration.Storage.Driver, config.StorageDriverSQLite)
 	}
-	if configuration.HTTPAddr != ":19080" {
-		t.Fatalf("configuration.HTTPAddr = %q, want %q", configuration.HTTPAddr, ":19080")
-	}
-	if configuration.GRPCAddr != ":19443" {
-		t.Fatalf("configuration.GRPCAddr = %q, want %q", configuration.GRPCAddr, ":19443")
-	}
+	// Plan 6: the listen addresses are now DB-backed operational settings,
+	// seeded into the store inside server.New — they are no longer carried on
+	// serveConfig. The TOML [http]/[grpc] listen_address keys are seed sources
+	// read by SeedDefaults, not parseServeConfig.
 	if configuration.HTTPRootPath != "/runtime" {
 		t.Fatalf("configuration.HTTPRootPath = %q, want %q", configuration.HTTPRootPath, "/runtime")
 	}
@@ -154,9 +152,7 @@ func TestResolvePanelRuntimeUsesConfigManagedValuesWhenConfigFileIsPresent(t *te
 	}
 
 	runtime, err := resolvePanelRuntime(serveConfig{
-		HTTPAddr:             ":18080",
 		HTTPRootPath:         "/from-config",
-		GRPCAddr:             ":18443",
 		RestartMode:          config.RestartModeSupervised,
 		TLSMode:              config.PanelTLSModeProxy,
 		ConfigManagedRuntime: true,
@@ -166,14 +162,8 @@ func TestResolvePanelRuntimeUsesConfigManagedValuesWhenConfigFileIsPresent(t *te
 		t.Fatalf("resolvePanelRuntime() error = %v", err)
 	}
 
-	if runtime.HTTPListenAddress != ":18080" {
-		t.Fatalf("runtime.HTTPListenAddress = %q, want %q", runtime.HTTPListenAddress, ":18080")
-	}
 	if runtime.HTTPRootPath != "/from-config" {
 		t.Fatalf("runtime.HTTPRootPath = %q, want %q", runtime.HTTPRootPath, "/from-config")
-	}
-	if runtime.GRPCListenAddress != ":18443" {
-		t.Fatalf("runtime.GRPCListenAddress = %q, want %q", runtime.GRPCListenAddress, ":18443")
 	}
 	if runtime.TLSMode != config.PanelTLSModeProxy {
 		t.Fatalf("runtime.TLSMode = %q, want %q", runtime.TLSMode, config.PanelTLSModeProxy)
@@ -205,22 +195,15 @@ func TestResolvePanelRuntimeIgnoresStoredSharedSettingsWhenUsingLegacyStartup(t 
 		t.Fatalf("PutPanelSettings() error = %v", err)
 	}
 
-	runtime, err := resolvePanelRuntime(serveConfig{
-		HTTPAddr: ":8080",
-		GRPCAddr: ":8443",
-	})
+	runtime, err := resolvePanelRuntime(serveConfig{})
 	if err != nil {
 		t.Fatalf("resolvePanelRuntime() error = %v", err)
 	}
 
-	if runtime.HTTPListenAddress != ":8080" {
-		t.Fatalf("runtime.HTTPListenAddress = %q, want %q", runtime.HTTPListenAddress, ":8080")
-	}
+	// Plan 6: listen addresses are no longer carried on PanelRuntime; they
+	// are resolved from the store via (*Server).Effective*ListenAddress().
 	if runtime.HTTPRootPath != "" {
 		t.Fatalf("runtime.HTTPRootPath = %q, want empty", runtime.HTTPRootPath)
-	}
-	if runtime.GRPCListenAddress != ":8443" {
-		t.Fatalf("runtime.GRPCListenAddress = %q, want %q", runtime.GRPCListenAddress, ":8443")
 	}
 	if runtime.TLSMode != "proxy" {
 		t.Fatalf("runtime.TLSMode = %q, want %q", runtime.TLSMode, "proxy")
@@ -228,22 +211,13 @@ func TestResolvePanelRuntimeIgnoresStoredSharedSettingsWhenUsingLegacyStartup(t 
 }
 
 func TestResolvePanelRuntimeFallsBackToServeConfigDefaults(t *testing.T) {
-	runtime, err := resolvePanelRuntime(serveConfig{
-		HTTPAddr: ":8080",
-		GRPCAddr: ":8443",
-	})
+	runtime, err := resolvePanelRuntime(serveConfig{})
 	if err != nil {
 		t.Fatalf("resolvePanelRuntime() error = %v", err)
 	}
 
-	if runtime.HTTPListenAddress != ":8080" {
-		t.Fatalf("runtime.HTTPListenAddress = %q, want %q", runtime.HTTPListenAddress, ":8080")
-	}
 	if runtime.HTTPRootPath != "" {
 		t.Fatalf("runtime.HTTPRootPath = %q, want empty", runtime.HTTPRootPath)
-	}
-	if runtime.GRPCListenAddress != ":8443" {
-		t.Fatalf("runtime.GRPCListenAddress = %q, want %q", runtime.GRPCListenAddress, ":8443")
 	}
 	if runtime.TLSMode != "proxy" {
 		t.Fatalf("runtime.TLSMode = %q, want %q", runtime.TLSMode, "proxy")
@@ -255,9 +229,7 @@ func TestResolvePanelRuntimeFallsBackToServeConfigDefaults(t *testing.T) {
 
 func TestResolvePanelRuntimeMarksSupervisedRestartAsSupported(t *testing.T) {
 	runtime, err := resolvePanelRuntime(serveConfig{
-		HTTPAddr:     ":8080",
-		GRPCAddr:     ":8443",
-		RestartMode:  "supervised",
+		RestartMode: "supervised",
 	})
 	if err != nil {
 		t.Fatalf("resolvePanelRuntime() error = %v", err)

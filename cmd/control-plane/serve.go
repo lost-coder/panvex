@@ -25,11 +25,9 @@ import (
 type serveConfig struct {
 	ConfigPath           string
 	ConfigManagedRuntime bool
-	HTTPAddr             string
 	HTTPRootPath         string
 	AgentHTTPRootPath    string
 	PanelAllowedCIDRs    []string
-	GRPCAddr             string
 	RestartMode          string
 	TLSMode              string
 	TLSCertFile          string
@@ -152,7 +150,7 @@ func runServe(args []string) error {
 	// disabled (no endpoint set) the global no-op TracerProvider makes
 	// this effectively free.
 	httpHandler := otelhttp.NewHandler(api.Handler(), "panvex-api")
-	httpServer := newControlPlaneHTTPServer(panelRuntime.HTTPListenAddress, httpHandler)
+	httpServer := newControlPlaneHTTPServer(api.EffectiveHTTPListenAddress(), httpHandler)
 
 	// Use ListenConfig with a Background ctx — the listener is meant to
 	// outlive any single request and is closed via grpcListener.Close()
@@ -160,7 +158,7 @@ func runServe(args []string) error {
 	// surface errors via the cancellation channel; Background is correct
 	// here because the listener has no notion of "request lifetime".
 	listenConfig := net.ListenConfig{}
-	grpcListener, err := listenConfig.Listen(context.Background(), "tcp", panelRuntime.GRPCListenAddress)
+	grpcListener, err := listenConfig.Listen(context.Background(), "tcp", api.EffectiveGRPCListenAddress())
 	if err != nil {
 		return err
 	}
@@ -284,8 +282,8 @@ func runServe(args []string) error {
 	}
 
 	httpErrors := make(chan error, 4)
-	startHTTPServer(httpServer, panelRuntime, httpErrors)
-	startGRPCServer(grpcServer, grpcListener, panelRuntime.GRPCListenAddress, httpErrors)
+	startHTTPServer(httpServer, api.EffectiveHTTPListenAddress(), panelRuntime, httpErrors)
+	startGRPCServer(grpcServer, grpcListener, api.EffectiveGRPCListenAddress(), httpErrors)
 
 	return waitForServeShutdown(restartRequests, httpErrors, shutdownServers)
 }
@@ -419,11 +417,9 @@ func parseServeConfig(args []string) (serveConfig, error) {
 	return serveConfig{
 		ConfigPath:           strings.TrimSpace(*configPath),
 		ConfigManagedRuntime: configManagedRuntime,
-		HTTPAddr:             boot.HTTPListenAddress,
 		HTTPRootPath:         boot.HTTPRootPath,
 		AgentHTTPRootPath:    boot.HTTPAgentRootPath,
 		PanelAllowedCIDRs:    panelAllowedCIDRs,
-		GRPCAddr:             boot.GRPCListenAddress,
 		RestartMode:          boot.PanelRestartMode,
 		TLSMode:              boot.TLSMode,
 		TLSCertFile:          boot.TLSCertFile,
@@ -476,11 +472,14 @@ func resolvePanelRuntime(configuration serveConfig) (server.PanelRuntime, error)
 		tlsMode = config.PanelTLSModeProxy
 	}
 
+	// Plan 6: the listen addresses are now DB-backed operational settings,
+	// seeded from env/config inside server.New and read back via
+	// (*Server).EffectiveHTTPListenAddress()/EffectiveGRPCListenAddress().
+	// They are intentionally left unset on PanelRuntime here; the struct
+	// fields remain only as the no-store fallback for test fixtures.
 	runtime := server.PanelRuntime{
-		HTTPListenAddress: configuration.HTTPAddr,
-		HTTPRootPath:      configuration.HTTPRootPath,
-		GRPCListenAddress: configuration.GRPCAddr,
-		TLSMode:           tlsMode,
+		HTTPRootPath: configuration.HTTPRootPath,
+		TLSMode:      tlsMode,
 		TLSCertFile:       configuration.TLSCertFile,
 		TLSKeyFile:        configuration.TLSKeyFile,
 		RestartSupported:  configuration.RestartMode == config.RestartModeSupervised,

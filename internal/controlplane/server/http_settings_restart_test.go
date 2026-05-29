@@ -88,12 +88,8 @@ func exampleValueFor(name string) any {
 				return f.Max
 			}
 		}
-		// No Max — use the default as a safe fallback (may not trigger a
-		// change detection, but at least the PUT will not fail validation).
-		if f.HasDefault && f.Default != "" {
-			return f.Default
-		}
-		// Last resort: generic type-appropriate value.
+		// No Max — return a valid value guaranteed to differ from the
+		// default so the active-snapshot comparison detects a change.
 		switch f.Type {
 		case settingspkg2.TypeInt:
 			return 1
@@ -101,7 +97,13 @@ func exampleValueFor(name string) any {
 			return true
 		case settingspkg2.TypeDuration:
 			return "1h"
+		case settingspkg2.TypeHostPort:
+			// A distinct, validatable bind address (the default is :8080/:8443).
+			return "127.0.0.1:18080"
 		default:
+			if f.HasDefault && f.Default != "" {
+				return f.Default + "-changed"
+			}
 			return "x"
 		}
 	}

@@ -121,9 +121,9 @@ func newControlPlaneGRPCServer(tlsConfig *tls.Config) *grpc.Server {
 }
 
 // startHTTPServer launches the HTTP server in its own goroutine.
-func startHTTPServer(httpServer *http.Server, panelRuntime server.PanelRuntime, httpErrors chan<- error) {
+func startHTTPServer(httpServer *http.Server, addr string, panelRuntime server.PanelRuntime, httpErrors chan<- error) {
 	go func() {
-		slog.Info("http server listening", "address", panelRuntime.HTTPListenAddress)
+		slog.Info("http server listening", "address", addr)
 		if panelRuntime.TLSMode == "direct" {
 			httpErrors <- httpServer.ListenAndServeTLS(panelRuntime.TLSCertFile, panelRuntime.TLSKeyFile)
 			return

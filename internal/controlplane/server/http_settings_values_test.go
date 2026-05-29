@@ -114,7 +114,7 @@ func TestHTTPSettingsValues_PutOperationalSucceeds(t *testing.T) {
 func TestHTTPSettingsValues_PutBootstrapRejected(t *testing.T) {
 	server, _, cookies := newAuthedServer(t)
 	body := map[string]any{
-		"http.listen_address": ":7777",
+		"tls.mode": "direct",
 	}
 	resp := performJSONRequest(t, server, http.MethodPut, "/api/settings/values", body, cookies)
 	if resp.Code != http.StatusConflict {

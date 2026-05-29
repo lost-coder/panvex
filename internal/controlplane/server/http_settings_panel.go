@@ -57,7 +57,7 @@ func (s *Server) handleGetPanelSettings() http.HandlerFunc {
 		}
 
 		settings := s.panelSettingsFromStore()
-		writeJSON(w, http.StatusOK, panelSettingsResponseFromSettings(settings, s.panelRuntime, s.panelRestartStatus()))
+		writeJSON(w, http.StatusOK, panelSettingsResponseFromSettings(settings, s.panelRuntime, s.EffectiveHTTPListenAddress(), s.EffectiveGRPCListenAddress(), s.panelRestartStatus()))
 	}
 }
 
@@ -162,7 +162,7 @@ func (s *Server) handlePutPanelSettings() http.HandlerFunc {
 		})
 
 		restart := s.panelRestartStatus()
-		writeJSON(w, http.StatusOK, panelSettingsResponseFromSettings(settings, s.panelRuntime, restart))
+		writeJSON(w, http.StatusOK, panelSettingsResponseFromSettings(settings, s.panelRuntime, s.EffectiveHTTPListenAddress(), s.EffectiveGRPCListenAddress(), restart))
 	}
 }
 
@@ -195,11 +195,16 @@ func (s *Server) handleRestartPanel() http.HandlerFunc {
 			"pending_restart": restart.Pending,
 		})
 
-		writeJSON(w, http.StatusAccepted, panelSettingsResponseFromSettings(settings, s.panelRuntime, restart))
+		writeJSON(w, http.StatusAccepted, panelSettingsResponseFromSettings(settings, s.panelRuntime, s.EffectiveHTTPListenAddress(), s.EffectiveGRPCListenAddress(), restart))
 	}
 }
 
-func panelSettingsResponseFromSettings(settings PanelSettings, runtime PanelRuntime, restart panelRestartStatus) panelSettingsResponse {
+// panelSettingsResponseFromSettings builds the GET /settings/panel response.
+// httpListenAddr/grpcListenAddr carry the effective listen addresses; as of
+// Plan 6 these are DB-backed operational settings, so the caller passes
+// s.EffectiveHTTPListenAddress()/s.EffectiveGRPCListenAddress() (the live
+// store value) rather than the now-unset PanelRuntime fields.
+func panelSettingsResponseFromSettings(settings PanelSettings, runtime PanelRuntime, httpListenAddr, grpcListenAddr string, restart panelRestartStatus) panelSettingsResponse {
 	passwordMinLength := settings.PasswordMinLength
 	if passwordMinLength == 0 {
 		passwordMinLength = auth.DefaultPasswordMinLength
@@ -208,8 +213,8 @@ func panelSettingsResponseFromSettings(settings PanelSettings, runtime PanelRunt
 		HTTPPublicURL:      settings.HTTPPublicURL,
 		HTTPRootPath:       runtime.HTTPRootPath,
 		GRPCPublicEndpoint: settings.GRPCPublicEndpoint,
-		HTTPListenAddress:  runtime.HTTPListenAddress,
-		GRPCListenAddress:  runtime.GRPCListenAddress,
+		HTTPListenAddress:  httpListenAddr,
+		GRPCListenAddress:  grpcListenAddr,
 		TLSMode:            runtime.TLSMode,
 		TLSCertFile:        runtime.TLSCertFile,
 		TLSKeyFile:         runtime.TLSKeyFile,

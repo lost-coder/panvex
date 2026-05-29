@@ -14,7 +14,6 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" driver for migrate-schema
 	"github.com/lost-coder/panvex/internal/controlplane/config"
-	"github.com/lost-coder/panvex/internal/controlplane/server"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/postgres"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
@@ -183,32 +182,6 @@ func parseCIDRList(raw string) ([]*net.IPNet, error) {
 		result = append(result, network)
 	}
 	return result, nil
-}
-
-// installScriptURL derives the public URL for the agent install script from
-// the panel's HTTP listen address. The script is embedded into the
-// control-plane binary and served by the panel itself at /install-agent.sh
-// (see internal/controlplane/server/install_script.go), so there is no
-// external CDN dependency — the panel is its own distribution channel.
-//
-// Operators behind a reverse proxy / CDN with a custom hostname should set
-// PANVEX_INSTALL_SCRIPT_URL to the fully-qualified URL agents will reach.
-// (Q-05.)
-//
-// Deprecated: superseded by (*server.Server).ResolveInstallScriptURL (Plan 4); slated for removal in Plan 5.
-func installScriptURL(rt server.PanelRuntime) string {
-	if v := strings.TrimSpace(os.Getenv("PANVEX_INSTALL_SCRIPT_URL")); v != "" {
-		return v
-	}
-	// Fall back to a relative path on the panel itself. Operators who serve
-	// the panel behind a reverse proxy can set PANVEX_INSTALL_SCRIPT_URL to
-	// the fully-qualified URL instead.
-	host := rt.HTTPListenAddress
-	scheme := "http"
-	if rt.TLSMode == "direct" {
-		scheme = "https"
-	}
-	return scheme + "://" + host + "/install-agent.sh"
 }
 
 // openStore accepts a context so callers can propagate cancellation

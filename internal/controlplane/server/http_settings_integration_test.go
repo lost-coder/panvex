@@ -53,7 +53,7 @@ func TestSettingsIntegration_FullCycle(t *testing.T) {
 
 	// 5. PUT bootstrap is rejected (409)
 	bp := performJSONRequest(t, server, http.MethodPut, "/api/settings/values",
-		map[string]any{"http.listen_address": ":7777"}, cookies)
+		map[string]any{"tls.mode": "direct"}, cookies)
 	if bp.Code != http.StatusConflict {
 		t.Errorf("bootstrap put: status = %d, want 409", bp.Code)
 	}

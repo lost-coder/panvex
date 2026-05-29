@@ -316,20 +316,25 @@ func TestHTTPPanelSettingsExposesConfigManagedRuntimeAsReadOnly(t *testing.T) {
 	}
 	defer store.Close()
 
+	// Plan 6: the listen addresses are now DB-backed operational settings
+	// seeded from env/config in server.New. Set the env overrides so the
+	// store resolves to these addresses and the GET /settings/panel display
+	// reflects the live store value (no longer the PanelRuntime fields).
+	t.Setenv("PANVEX_HTTP_ADDR", ":18080")
+	t.Setenv("PANVEX_GRPC_ADDR", ":18443")
+
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:   func() time.Time { return now },
 		Store: store,
 		PanelRuntime: PanelRuntime{
-			HTTPListenAddress: ":18080",
-			HTTPRootPath:      "/runtime",
-			GRPCListenAddress: ":18443",
-			TLSMode:           "direct",
-			TLSCertFile:       "/etc/panvex/tls/panel.crt",
-			TLSKeyFile:        "/etc/panvex/tls/panel.key",
-			RestartSupported:  true,
-			ConfigSource:      PanelRuntimeSourceConfigFile,
-			ConfigPath:        "/etc/panvex/config.toml",
+			HTTPRootPath:     "/runtime",
+			TLSMode:          "direct",
+			TLSCertFile:      "/etc/panvex/tls/panel.crt",
+			TLSKeyFile:       "/etc/panvex/tls/panel.key",
+			RestartSupported: true,
+			ConfigSource:     PanelRuntimeSourceConfigFile,
+			ConfigPath:       "/etc/panvex/config.toml",
 		},
 	})
 	defer server.Close()
