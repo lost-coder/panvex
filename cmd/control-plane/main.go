@@ -194,6 +194,8 @@ func parseCIDRList(raw string) ([]*net.IPNet, error) {
 // Operators behind a reverse proxy / CDN with a custom hostname should set
 // PANVEX_INSTALL_SCRIPT_URL to the fully-qualified URL agents will reach.
 // (Q-05.)
+//
+// Deprecated: superseded by (*server.Server).ResolveInstallScriptURL (Plan 4); slated for removal in Plan 5.
 func installScriptURL(rt server.PanelRuntime) string {
 	if v := strings.TrimSpace(os.Getenv("PANVEX_INSTALL_SCRIPT_URL")); v != "" {
 		return v

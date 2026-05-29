@@ -131,11 +131,11 @@ func TestProvisionOutboundAgentRejectsInvalidNodeName(t *testing.T) {
 	f := setupProvisionOutboundFixture(t, nil)
 
 	for _, bad := range []string{
-		"",                            // empty
-		"name with spaces",            // space disallowed
-		"node;rm -rf /",               // shell metachar
-		strings.Repeat("a", 65),       // over 64 chars
-		"emoji-😀",                     // non-ASCII outside the class
+		"",                      // empty
+		"name with spaces",      // space disallowed
+		"node;rm -rf /",         // shell metachar
+		strings.Repeat("a", 65), // over 64 chars
+		"emoji-😀",               // non-ASCII outside the class
 	} {
 		resp := performJSONRequest(t, f.srv, http.MethodPost,
 			"/api/agents/provision-outbound",
@@ -157,10 +157,10 @@ func TestProvisionOutboundAgentRejectsInvalidDialAddress(t *testing.T) {
 	f := setupProvisionOutboundFixture(t, nil)
 
 	for _, bad := range []string{
-		"",                            // empty
-		"203.0.113.10",                // no port
-		"vps.example.com:",            // empty port
-		":8443",                       // empty host (net.SplitHostPort accepts this; our check rejects)
+		"",                                // empty
+		"203.0.113.10",                    // no port
+		"vps.example.com:",                // empty port
+		":8443",                           // empty host (net.SplitHostPort accepts this; our check rejects)
 		"vps.example.com:not-a-port:8443", // junk
 	} {
 		resp := performJSONRequest(t, f.srv, http.MethodPost,
@@ -292,6 +292,40 @@ func TestProvisionOutboundUsesLivePanelScriptURL(t *testing.T) {
 	}
 	if !strings.Contains(body.Command, wantURL) {
 		t.Fatalf("command missing live script URL %q:\n%s", wantURL, body.Command)
+	}
+}
+
+// TestProvisionOutboundUsesLivePanelGRPCEndpoint pins Plan 4: the
+// --panel-url-grpc flag baked into the install command must be derived from the
+// LIVE grpc.public_endpoint setting per request, so editing it in the panel
+// changes the rendered command without a restart (mirrors the http.public_url
+// live-resolution test above, for the gRPC endpoint).
+func TestProvisionOutboundUsesLivePanelGRPCEndpoint(t *testing.T) {
+	t.Setenv("PANVEX_INSTALL_SCRIPT_URL", "") // ensure no override masks the live URL
+	f := setupProvisionOutboundFixture(t, nil)
+	if err := f.srv.settings.Put(context.Background(),
+		map[string]string{"grpc.public_endpoint": "grpc-live.example:443"}, "test"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	resp := performJSONRequest(t, f.srv, http.MethodPost,
+		"/api/agents/provision-outbound",
+		map[string]any{
+			"node_name":     "edge-fra-98",
+			"dial_address":  "203.0.113.21:8443",
+			"script_source": "panel",
+		},
+		f.cookies)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201 (body=%s)", resp.Code, resp.Body.String())
+	}
+
+	var body provisionOutboundAgentResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !strings.Contains(body.Command, "--panel-url-grpc=grpc-live.example:443") {
+		t.Fatalf("command missing live panel gRPC endpoint:\n%s", body.Command)
 	}
 }
 

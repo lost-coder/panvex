@@ -200,6 +200,57 @@ func TestInstallCommandHandlerUsesResolverFns(t *testing.T) {
 	}
 }
 
+// TestInstallCommandReturns503WhenPanelURLFnEmpty pins the panelURL guard:
+// when PanelURLFn resolves to "" (e.g. grpc.public_endpoint not yet saved in
+// the live settings) the handler must return 503 rather than rendering a
+// command with an empty --panel-url-grpc. A valid static ScriptURL is supplied
+// so only the panel-URL path can trip the guard.
+func TestInstallCommandReturns503WhenPanelURLFnEmpty(t *testing.T) {
+	fake := &fakeInstallQueries{rows: map[string]dbsqlc.GetAgentTransportRow{
+		"agent-1": {ID: "agent-1", TransportMode: "outbound", DialAddress: sql.NullString{String: "vps:8443", Valid: true}},
+	}}
+	h := NewInstallCommandHandler(fake, InstallCommandConfig{
+		ScriptURL:  "https://example.com/install.sh",
+		PanelURLFn: func(*http.Request) string { return "" },
+		PanelCAPin: "pin",
+		PanelCN:    "cn",
+	})
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/agents/agent-1/install-command", nil)
+	rec := httptest.NewRecorder()
+	newInstallTestRouter(h).ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503; body = %s", rec.Code, rec.Body.String())
+	}
+	if fake.last != nil {
+		t.Fatal("token should not be persisted when panel_url is unresolved")
+	}
+}
+
+// TestInstallCommandReturns503WhenScriptURLFnEmpty pins the script_url guard
+// (I-1): when ScriptURLFn resolves to "" (e.g. http.public_url not yet saved)
+// the handler must return 503 instead of rendering a curl with an empty URL. A
+// valid static PanelURL is supplied so only the script-URL path can trip.
+func TestInstallCommandReturns503WhenScriptURLFnEmpty(t *testing.T) {
+	fake := &fakeInstallQueries{rows: map[string]dbsqlc.GetAgentTransportRow{
+		"agent-1": {ID: "agent-1", TransportMode: "outbound", DialAddress: sql.NullString{String: "vps:8443", Valid: true}},
+	}}
+	h := NewInstallCommandHandler(fake, InstallCommandConfig{
+		ScriptURLFn: func(*http.Request) string { return "" },
+		PanelURL:    "panel.example.com:8443",
+		PanelCAPin:  "pin",
+		PanelCN:     "cn",
+	})
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/agents/agent-1/install-command", nil)
+	rec := httptest.NewRecorder()
+	newInstallTestRouter(h).ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503; body = %s", rec.Code, rec.Body.String())
+	}
+	if fake.last != nil {
+		t.Fatal("token should not be persisted when script_url is unresolved")
+	}
+}
+
 func TestInstallCommandRejectsInboundAgent(t *testing.T) {
 	fake := &fakeInstallQueries{rows: map[string]dbsqlc.GetAgentTransportRow{
 		"agent-2": {ID: "agent-2", TransportMode: "inbound"},

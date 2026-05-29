@@ -73,10 +73,10 @@ type InstallCommandConfig struct {
 	// verification — only acceptable in tests or transitional deploys; any
 	// production caller should pass server.installScriptSHA256(). (S-3.)
 	ScriptHash string
-	PanelCAPin string // SHA-256 fingerprint of the panel's CA cert
-	PanelCN    string // CN agents use to verify the panel's TLS cert
-	PanelURL   string // gRPC endpoint (host:port) agents dial when switching back to inbound mode
-	ListenAddr string // agent-side listen addr; "" → defaultListenAddr
+	PanelCAPin string           // SHA-256 fingerprint of the panel's CA cert
+	PanelCN    string           // CN agents use to verify the panel's TLS cert
+	PanelURL   string           // gRPC endpoint (host:port) agents dial when switching back to inbound mode
+	ListenAddr string           // agent-side listen addr; "" → defaultListenAddr
 	Now        func() time.Time // injectable clock; nil → time.Now
 
 	// ScriptURLFn / PanelURLFn, when non-nil, are evaluated PER REQUEST and
@@ -107,11 +107,11 @@ func NewInstallCommandHandler(q Queries, cfg InstallCommandConfig) *InstallComma
 		now = time.Now
 	}
 	return &InstallCommandHandler{
-		queries:    q,
-		scriptURL:  cfg.ScriptURL,
-		scriptHash: cfg.ScriptHash,
-		panelCAPin: cfg.PanelCAPin,
-		panelCN:    cfg.PanelCN,
+		queries:     q,
+		scriptURL:   cfg.ScriptURL,
+		scriptHash:  cfg.ScriptHash,
+		panelCAPin:  cfg.PanelCAPin,
+		panelCN:     cfg.PanelCN,
 		panelURL:    cfg.PanelURL,
 		listenAddr:  listen,
 		now:         now,
@@ -136,6 +136,10 @@ func (h *InstallCommandHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 	panelURL := h.panelURL
 	if h.panelURLFn != nil {
 		panelURL = h.panelURLFn(r)
+	}
+	if scriptURL == "" {
+		http.Error(w, "install-command endpoint not configured: script_url not set", http.StatusServiceUnavailable)
+		return
 	}
 	if panelURL == "" {
 		http.Error(w, "install-command endpoint not configured: panel_url not set", http.StatusServiceUnavailable)
