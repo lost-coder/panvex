@@ -213,6 +213,60 @@ describe("RegistryField", () => {
     expect(screen.queryByText("restart pending")).not.toBeInTheDocument();
   });
 
+  // --- tier / env-override / config badges ---
+
+  it("shows a restart-tier badge", () => {
+    render(
+      <RegistryField
+        schema={makeSchema({ type: "string", apply: "restart" })}
+        values={makeValues({ apply: "restart" })}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/needs restart/i)).toBeInTheDocument();
+  });
+
+  it("shows no tier badge for the live tier", () => {
+    render(
+      <RegistryField
+        schema={makeSchema({ type: "string", apply: "live" })}
+        values={makeValues({ apply: "live" })}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText(/needs restart/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/config \/ CLI/i)).not.toBeInTheDocument();
+  });
+
+  it("shows an env-override badge and disables the input", () => {
+    render(
+      <RegistryField
+        schema={makeSchema({ type: "string" })}
+        values={makeValues({
+          overridden_by_env: true,
+          locked: true,
+          source: "env",
+          env_var: "PANVEX_HTTP_ADDR",
+        })}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/overridden by env PANVEX_HTTP_ADDR/)).toBeInTheDocument();
+    expect(screen.getByLabelText("test.field")).toBeDisabled();
+  });
+
+  it("shows a config-managed badge and hint for the config tier", () => {
+    render(
+      <RegistryField
+        schema={makeSchema({ type: "string", class: "bootstrap", apply: "config" })}
+        values={makeValues({ apply: "config", locked: true })}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/config \/ CLI/i)).toBeInTheDocument();
+    expect(screen.getByText(/Managed via config\.toml/i)).toBeInTheDocument();
+  });
+
   // --- error ---
 
   it("error prop renders red helper text", () => {

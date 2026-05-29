@@ -35,11 +35,33 @@ function toStr(v: unknown): string {
 export function RegistryField({ schema, values, onChange, error }: Readonly<RegistryFieldProps>) {
   const { t } = useTranslation("settings");
   const { name, type, desc, values: enumValues } = schema;
-  const { value, locked, pending_restart, pending_value } = values;
+  const { value, locked, pending_restart, pending_value, overridden_by_env } = values;
 
   const disabled = locked;
   const hasPendingChange =
     pending_restart === true && String(pending_value) !== String(value);
+
+  // Apply tier — prefer the values entry, fall back to the schema entry.
+  const apply = values.apply ?? schema.apply;
+  const isConfigTier = apply === "config" || schema.class === "bootstrap";
+  const isRestartTier = apply === "restart";
+
+  const tierBadge = isRestartTier ? (
+    <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-mono font-semibold bg-status-warn/15 text-status-warn">
+      {t("registryField.tierRestart")}
+    </span>
+  ) : isConfigTier ? (
+    <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-mono font-semibold bg-fg-faint/20 text-fg-muted">
+      {t("registryField.tierConfig")}
+    </span>
+  ) : null;
+
+  const envOverrideBadge =
+    overridden_by_env === true ? (
+      <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-mono font-semibold bg-status-warn/15 text-status-warn">
+        {t("registryField.overriddenByEnv", { name: values.env_var ?? "" })}
+      </span>
+    ) : null;
 
   // json type — no editable input; just a note.
   if (type === "json") {
@@ -127,6 +149,8 @@ export function RegistryField({ schema, values, onChange, error }: Readonly<Regi
       <div className="flex flex-col items-end gap-1">
         <div className="flex items-center gap-2">
           {renderInput()}
+          {tierBadge}
+          {envOverrideBadge}
           {locked && (
             <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-mono font-semibold bg-fg-faint/20 text-fg-muted">
               {sourceLabel(values, t)}
@@ -138,6 +162,11 @@ export function RegistryField({ schema, values, onChange, error }: Readonly<Regi
             </span>
           )}
         </div>
+        {isConfigTier && (
+          <span className="text-xs text-fg-muted italic">
+            {t("registryField.configManagedHint")}
+          </span>
+        )}
         {error && (
           <span className="text-xs text-status-error">{error}</span>
         )}
