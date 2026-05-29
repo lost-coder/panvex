@@ -88,6 +88,31 @@ func TestExecute_RequestsPerArchAsset(t *testing.T) {
 	if len(gotPaths) == 0 || gotPaths[0] != wantArchive {
 		t.Fatalf("first request path = %v, want %q", gotPaths, wantArchive)
 	}
+	if len(gotPaths) < 2 || gotPaths[1] != wantArchive+".sig" {
+		t.Fatalf("second request path = %v, want %q", gotPaths, wantArchive+".sig")
+	}
+}
+
+func TestParseChecksumSidecar(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"bare digest", "abc123", "abc123"},
+		{"sha256sum format", "abc123  panvex-agent-linux-amd64.tar.gz", "abc123"},
+		{"trailing newline", "abc123\n", "abc123"},
+		{"leading whitespace", "  abc123  ", "abc123"},
+		{"empty", "", ""},
+		{"whitespace only", "   \n\t ", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := parseChecksumSidecar([]byte(tc.in)); got != tc.want {
+				t.Fatalf("parseChecksumSidecar(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
 }
 
 func createTestArchive(t *testing.T, archivePath, entryName string, content []byte) {

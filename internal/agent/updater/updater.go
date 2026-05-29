@@ -62,10 +62,6 @@ func Execute(ctx context.Context, payload Payload, currentVersion string, logger
 // (HTTP client, host allowlist, archive cap) comes from cfg instead of
 // hard-coded production defaults.
 func executeWith(ctx context.Context, payload Payload, currentVersion string, logger *slog.Logger, cfg Config) error {
-	if strings.TrimSpace(payload.ReleaseBaseURL) == "" {
-		return fmt.Errorf("no release base URL provided")
-	}
-
 	// Downgrade gate (fail-closed). Defeats a hostile panel pinning agents
 	// back to a vulnerable release, so the escape hatches are explicit.
 	if !payload.AllowDowngrade {
@@ -92,7 +88,10 @@ func executeWith(ctx context.Context, payload Payload, currentVersion string, lo
 
 	// The agent substitutes its OWN architecture — the panel never chooses
 	// it, so it cannot send the wrong-arch binary.
-	base := strings.TrimRight(payload.ReleaseBaseURL, "/")
+	base := strings.TrimRight(strings.TrimSpace(payload.ReleaseBaseURL), "/")
+	if base == "" {
+		return fmt.Errorf("no release base URL provided")
+	}
 	archiveName := fmt.Sprintf("panvex-agent-linux-%s.tar.gz", runtime.GOARCH)
 	archiveURL := base + "/" + archiveName
 	checksumURL := archiveURL + ".sha256"
@@ -126,7 +125,12 @@ func executeWith(ctx context.Context, payload Payload, currentVersion string, lo
 		_ = os.Remove(archivePath)
 		return fmt.Errorf("download checksum: %w", err)
 	}
-	if err := verifyChecksum(archivePath, parseChecksumSidecar(checksumBytes)); err != nil {
+	expectedChecksum := parseChecksumSidecar(checksumBytes)
+	if expectedChecksum == "" {
+		_ = os.Remove(archivePath)
+		return fmt.Errorf("verify: checksum sidecar is empty or malformed")
+	}
+	if err := verifyChecksum(archivePath, expectedChecksum); err != nil {
 		_ = os.Remove(archivePath)
 		return fmt.Errorf("verify: %w", err)
 	}
@@ -151,10 +155,6 @@ func executeWith(ctx context.Context, payload Payload, currentVersion string, lo
 	// replaceBinary renames tmpPath into place, so no cleanup needed.
 	logger.Info("agent self-update: binary replaced, restarting", "version", payload.Version)
 
-	// Attempt systemd restart. If it fails, exit to let systemd auto-restart.
-	// The os.Exit(0) below makes the child a systemd-adopted orphan, so the
-	// ctx attachment here is mostly cosmetic — Start() is non-blocking and
-	// the parent process is gone before any cancellation could fire.
 	// Attempt systemd restart. On success systemd tears this process down.
 	// On failure we must exit NON-ZERO so the unit's `Restart=on-failure`
 	// relaunches the already-replaced binary — exit code 0 would not be
