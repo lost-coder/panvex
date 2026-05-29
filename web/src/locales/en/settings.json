@@ -129,18 +129,25 @@
     }
   },
   "registryField": {
-    "sourceEnvNamed": "Set via {{name}}",
-    "sourceEnv": "Set via env",
-    "sourceConfigFile": "Set in config.toml",
-    "sourceDefault": "Default",
     "jsonNotice": "Edit via the dedicated section below",
     "placeholderDuration": "e.g. 30s, 5m, 1h",
     "placeholderHostport": "e.g. 0.0.0.0:8080",
-    "pendingRestart": "restart pending",
-    "tierRestart": "needs restart",
-    "tierConfig": "config / CLI",
-    "overriddenByEnv": "overridden by env {{name}}",
-    "configManagedHint": "Managed via config.toml / environment, or the `panvex-control-plane settings` CLI."
+    "iconLabel": {
+      "lock": "Read-only",
+      "restart": "Restart-related"
+    },
+    "tooltip": {
+      "envOverride": "Overridden by environment variable {{name}} — the database value is ignored. Remove the variable to manage it here.",
+      "configManaged": "Managed via config.toml / environment, or the `panvex-control-plane settings` CLI.",
+      "needsRestart": "This change takes effect after a panel restart.",
+      "pendingRestart": "Saved. A panel restart is pending to apply the new value."
+    }
+  },
+  "settingsLegend": {
+    "configManaged": "set in config.toml (read-only)",
+    "envOverride": "overridden by env",
+    "needsRestart": "needs restart",
+    "pendingRestart": "restart pending"
   },
   "restartBanner": {
     "needs_one": "setting needs",

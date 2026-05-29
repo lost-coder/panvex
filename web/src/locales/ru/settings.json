@@ -130,18 +130,25 @@
     }
   },
   "registryField": {
-    "sourceEnvNamed": "Задано через {{name}}",
-    "sourceEnv": "Задано через env",
-    "sourceConfigFile": "Задано в config.toml",
-    "sourceDefault": "Default",
     "jsonNotice": "Изменяется в специальном разделе ниже",
     "placeholderDuration": "например, 30s, 5m, 1h",
     "placeholderHostport": "например, 0.0.0.0:8080",
-    "pendingRestart": "перезапуск ожидается",
-    "tierRestart": "нужен перезапуск",
-    "tierConfig": "config / CLI",
-    "overriddenByEnv": "перезаписано через env {{name}}",
-    "configManagedHint": "Управляется через config.toml / переменные окружения или CLI `panvex-control-plane settings`."
+    "iconLabel": {
+      "lock": "Только для чтения",
+      "restart": "Связано с перезапуском"
+    },
+    "tooltip": {
+      "envOverride": "Перезаписано переменной окружения {{name}} — значение из БД игнорируется. Удалите переменную, чтобы управлять отсюда.",
+      "configManaged": "Управляется через config.toml / переменные окружения или CLI `panvex-control-plane settings`.",
+      "needsRestart": "Изменение применится после перезапуска панели.",
+      "pendingRestart": "Сохранено. Перезапуск ожидается, чтобы применить новое значение."
+    }
+  },
+  "settingsLegend": {
+    "configManaged": "задаётся в config.toml (read-only)",
+    "envOverride": "перезаписано через env",
+    "needsRestart": "нужен перезапуск",
+    "pendingRestart": "перезапуск ожидается"
   },
   "restartBanner": {
     "needs_one": "настройка требует",
