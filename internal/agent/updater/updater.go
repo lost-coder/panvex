@@ -155,8 +155,13 @@ func executeWith(ctx context.Context, payload Payload, currentVersion string, lo
 	// The os.Exit(0) below makes the child a systemd-adopted orphan, so the
 	// ctx attachment here is mostly cosmetic — Start() is non-blocking and
 	// the parent process is gone before any cancellation could fire.
+	// Attempt systemd restart. On success systemd tears this process down.
+	// On failure we must exit NON-ZERO so the unit's `Restart=on-failure`
+	// relaunches the already-replaced binary — exit code 0 would not be
+	// restarted (and 78 is RestartPreventExitStatus, so it must not be 78).
 	if err := exec.CommandContext(ctx, "systemctl", "restart", "panvex-agent").Start(); err != nil {
-		logger.Warn("systemctl restart failed, exiting for auto-restart", "error", err)
+		logger.Warn("systemctl restart failed, exiting non-zero for on-failure restart", "error", err)
+		os.Exit(1)
 	}
 	os.Exit(0)
 	return nil // unreachable
