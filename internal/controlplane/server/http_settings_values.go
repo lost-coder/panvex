@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"sort"
 	"strings"
 
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
@@ -133,7 +134,6 @@ func (s *Server) handleSettingsValuesPUT(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusForbidden, msgAdminRoleRequired)
 		return
 	}
-	_ = session // retained for future audit wiring
 
 	var body map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -154,6 +154,26 @@ func (s *Server) handleSettingsValuesPUT(w http.ResponseWriter, r *http.Request)
 		}
 		return
 	}
+
+	// Reflect a password-policy change into the auth service immediately so
+	// it takes effect live (Reload happens inside Put), mirroring what
+	// handlePutPanelSettings does (S-01).
+	if _, ok := updates["auth.password_min_length"]; ok {
+		s.auth.SetPasswordPolicy(int32(s.settings.PasswordMinLength())) //nolint:gosec // bounded 8-64 in registry
+	}
+
+	// Audit the change by KEY NAMES only — values may carry secrets, and
+	// even though bootstrap keys are rejected above, names alone are the
+	// safe, useful audit surface.
+	keys := make([]string, 0, len(updates))
+	for k := range updates {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	s.appendAuditWithContext(r.Context(), session.UserID, "settings.values.update", "settings", map[string]any{
+		"keys": keys,
+	})
+
 	w.WriteHeader(http.StatusOK)
 }
 

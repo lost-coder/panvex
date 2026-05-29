@@ -206,6 +206,15 @@ func (s *Service) passwordMinLength() int {
 	return int(s.passwordPolicy)
 }
 
+// EffectivePasswordMinLength returns the minimum password length the
+// service currently enforces, after mapping the operator-configured value
+// through effectivePolicy (zero -> compiled-in default, sub-floor ->
+// floor). Exposed so callers (and tests) can observe the live policy
+// without attempting a password set.
+func (s *Service) EffectivePasswordMinLength() int {
+	return effectivePolicy(s.passwordMinLength())
+}
+
 // NewService constructs an in-memory local-auth service.
 func NewService() *Service {
 	return &Service{

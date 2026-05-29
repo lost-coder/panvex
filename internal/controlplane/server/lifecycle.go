@@ -356,6 +356,14 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 				return s.settings.Reload(s.serverCtx)
 			})
 			s.settingsActive = s.settings.CaptureActive()
+			// Mirror the password policy from the now-reloaded store. The
+			// line ~308 SetPasswordPolicy call ran before the store existed
+			// (no-store fallback); with the store wired, new writes go to
+			// scope=default not the legacy s.panelSettings, so re-apply from
+			// the store here or the policy stays stale across restarts (S-01).
+			if s.settings != nil {
+				s.auth.SetPasswordPolicy(int32(s.settings.PasswordMinLength())) //nolint:gosec // bounded 8-64 in registry
+			}
 			// Capture apply=restart session fields once at startup. A change
 			// to these fields only takes effect after an operator-initiated
 			// panel restart; the running process uses the values below.

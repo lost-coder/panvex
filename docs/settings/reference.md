@@ -19,7 +19,7 @@ Bootstrap settings are read once at process start. Edit them via environment var
 | `panel.env` | enum | `development` | `PANVEX_ENV` | `panel.env` | Deployment environment. production tightens defaults (cookies, HSTS, ws origin). |
 | `panel.multi_tenant` | bool | `false` | `PANVEX_MULTI_TENANT` | `panel.multi_tenant` | Enable per-fleet-group scoping for non-admin users. |
 | `storage.driver` | enum | `sqlite` | `PANVEX_STORAGE_DRIVER` | `storage.driver` | Storage backend driver. Use postgres for production deployments. |
-| `storage.dsn` | string | — | `PANVEX_STORAGE_DSN` | `storage.dsn` | Storage data source name. Required. SQLite path or postgres URL. |
+| `storage.dsn` | string | _(secret, no default)_ | `PANVEX_STORAGE_DSN` | `storage.dsn` | Storage data source name. Required. SQLite path or postgres URL. |
 | `storage.db_password` | string | _(secret, no default)_ | `PANVEX_DB_PASSWORD` | — | Postgres password override. Env-only — keeps the secret out of config files. |
 | `storage.allow_insecure_db` | bool | `false` | `PANVEX_ALLOW_INSECURE_DB` | — | Permit Postgres DSNs with sslmode=disable. Env-only safety guard. |
 | `storage.allow_empty_db_password` | bool | `false` | `PANVEX_ALLOW_EMPTY_DB_PASSWORD` | — | Permit empty Postgres password. Env-only safety guard for development only. |

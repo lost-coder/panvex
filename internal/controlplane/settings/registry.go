@@ -21,7 +21,7 @@ type Bootstrap struct {
 	PanelMultiTenant string `setting:"name=panel.multi_tenant, type=bool, default=false, env=PANVEX_MULTI_TENANT, toml=panel.multi_tenant, apply=live, desc='Enable per-fleet-group scoping for non-admin users.'"`
 
 	StorageDriver string `setting:"name=storage.driver, type=enum, values=sqlite|postgres, default=sqlite, env=PANVEX_STORAGE_DRIVER, toml=storage.driver, apply=config, desc='Storage backend driver. Use postgres for production deployments.'"`
-	StorageDSN    string `setting:"name=storage.dsn, type=string, env=PANVEX_STORAGE_DSN, toml=storage.dsn, apply=config, desc='Storage data source name. Required. SQLite path or postgres URL.'"`
+	StorageDSN    string `setting:"name=storage.dsn, type=string, secret=true, env=PANVEX_STORAGE_DSN, toml=storage.dsn, apply=config, desc='Storage data source name. Required. SQLite path or postgres URL.'"`
 
 	StorageDBPassword           string `setting:"name=storage.db_password, type=string, secret=true, env=PANVEX_DB_PASSWORD, default=, apply=config, desc='Postgres password override. Env-only — keeps the secret out of config files.'"`
 	StorageAllowInsecureDB      string `setting:"name=storage.allow_insecure_db, type=bool, default=false, env=PANVEX_ALLOW_INSECURE_DB, apply=live, desc='Permit Postgres DSNs with sslmode=disable. Env-only safety guard.'"`

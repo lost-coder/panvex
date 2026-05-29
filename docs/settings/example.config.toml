@@ -51,7 +51,7 @@ multi_tenant = "false"
 driver = "sqlite"
 
 # Storage data source name. Required. SQLite path or postgres URL.
-dsn = ""
+# dsn = ""  # set via env var instead
 
 [tls]
 # TLS termination mode. proxy = terminate at reverse proxy; direct = serve TLS from the panel.

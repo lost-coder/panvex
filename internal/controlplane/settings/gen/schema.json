@@ -132,6 +132,7 @@
     "type": "string",
     "env": "PANVEX_STORAGE_DSN",
     "toml": "storage.dsn",
+    "secret": true,
     "desc": "Storage data source name. Required. SQLite path or postgres URL."
   },
   {

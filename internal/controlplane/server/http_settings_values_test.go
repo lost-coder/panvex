@@ -133,6 +133,62 @@ func TestHTTPSettingsValues_PutInvalidValueRejected(t *testing.T) {
 	}
 }
 
+// TestHTTPSettingsValues_PutPasswordPolicyAppliesLive asserts that a PUT
+// of auth.password_min_length is mirrored into the auth service's live
+// policy (S-01) — the store-backed write path must not leave the enforced
+// minimum stale.
+func TestHTTPSettingsValues_PutPasswordPolicyAppliesLive(t *testing.T) {
+	server, _, cookies := newAuthedServer(t)
+
+	if got := server.auth.EffectivePasswordMinLength(); got != 10 {
+		t.Fatalf("baseline policy = %d, want compiled default 10", got)
+	}
+
+	body := map[string]any{"auth.password_min_length": 20}
+	resp := performJSONRequest(t, server, http.MethodPut, "/api/settings/values", body, cookies)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+
+	if got := server.auth.EffectivePasswordMinLength(); got != 20 {
+		t.Errorf("policy after PUT = %d, want 20 (not applied live)", got)
+	}
+}
+
+// TestHTTPSettingsValues_RedactsDSN asserts the postgres DSN (which embeds
+// the password) is masked to *** in GET /settings/values once set, now that
+// storage.dsn carries secret=true.
+func TestHTTPSettingsValues_RedactsDSN(t *testing.T) {
+	server, _, cookies := newAuthedServer(t)
+	const secretDSN = "postgres://user:sup3rsecret@db:5432/panvex"
+	server.SetTestBootstrap(&settingspkg.Bootstrap{StorageDSN: secretDSN}, settingspkg.SourceMap{})
+
+	resp := performJSONRequest(t, server, http.MethodGet, "/api/settings/values", nil, cookies)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d", resp.Code)
+	}
+	body := resp.Body.String()
+	if strings.Contains(body, "sup3rsecret") || strings.Contains(body, secretDSN) {
+		t.Fatalf("DSN secret leaked into /values response:\n%s", body)
+	}
+	var parsed struct {
+		Bootstrap map[string]map[string]any `json:"bootstrap"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	dsn, ok := parsed.Bootstrap["storage.dsn"]
+	if !ok {
+		t.Fatal("missing storage.dsn in bootstrap")
+	}
+	if dsn["value"] != "***" {
+		t.Errorf("storage.dsn value = %v, want *** (masked)", dsn["value"])
+	}
+	if dsn["secret"] != true {
+		t.Errorf("storage.dsn secret = %v, want true", dsn["secret"])
+	}
+}
+
 func testBootstrap(key string) *settingspkg.Bootstrap {
 	return &settingspkg.Bootstrap{AuthEncryptionKey: key}
 }
