@@ -63,9 +63,11 @@ func TestServeBindsHTTPListenerFromStore(t *testing.T) {
 	}
 
 	// Bind from the store-resolved address — the core safety assertion.
-	listener, err := net.Listen("tcp", addr)
+	// Mirror serve.go's ctx-aware ListenConfig pattern (noctx enforced).
+	listenConfig := net.ListenConfig{}
+	listener, err := listenConfig.Listen(context.Background(), "tcp", addr)
 	if err != nil {
-		t.Fatalf("net.Listen(%q) error = %v", addr, err)
+		t.Fatalf("ListenConfig.Listen(%q) error = %v", addr, err)
 	}
 
 	httpServer := newControlPlaneHTTPServer(addr, api.Handler())
@@ -83,7 +85,7 @@ func TestServeBindsHTTPListenerFromStore(t *testing.T) {
 	var resp *http.Response
 	deadline := time.Now().Add(3 * time.Second)
 	for {
-		resp, err = http.Get(url) //nolint:noctx // short-lived smoke probe
+		resp, err = http.Get(url) //nolint:gosec,noctx // G107: test requests a controlled loopback URL; short-lived smoke probe
 		if err == nil {
 			break
 		}
