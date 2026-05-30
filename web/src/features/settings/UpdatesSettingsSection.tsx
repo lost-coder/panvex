@@ -142,6 +142,34 @@ export function UpdatesSettingsSection() {
         </div>
       </SettingsRow>
 
+      {/* GitHub source: repository + API token. The token is returned masked
+          (e.g. "ghp_abcd…"); leaving it unchanged round-trips the mask, which
+          the backend preserves instead of overwriting the real token. */}
+      <SettingsRow label={t("updates.githubRepoLabel")}>
+        <Input
+          type="text"
+          className="w-64"
+          placeholder="owner/repo"
+          value={settings.github_repo}
+          onChange={(e) => applyDraft({ github_repo: e.target.value })}
+        />
+      </SettingsRow>
+
+      <SettingsRow label={t("updates.githubTokenLabel")}>
+        <div className="flex flex-col gap-1">
+          <Input
+            type="text"
+            className="w-64"
+            placeholder={t("updates.githubTokenPlaceholder")}
+            value={settings.github_token}
+            onChange={(e) => applyDraft({ github_token: e.target.value })}
+          />
+          <span className="text-xs text-fg-muted">
+            {t("updates.githubTokenHint")}
+          </span>
+        </div>
+      </SettingsRow>
+
       {/* Save / cancel */}
       {isDirty && (
         <div className="flex justify-end px-4 py-3">
