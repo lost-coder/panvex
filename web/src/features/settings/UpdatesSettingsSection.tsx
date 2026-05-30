@@ -155,19 +155,17 @@ export function UpdatesSettingsSection() {
         />
       </SettingsRow>
 
-      <SettingsRow label={t("updates.githubTokenLabel")}>
-        <div className="flex flex-col gap-1">
-          <Input
-            type="text"
-            className="w-64"
-            placeholder={t("updates.githubTokenPlaceholder")}
-            value={settings.github_token}
-            onChange={(e) => applyDraft({ github_token: e.target.value })}
-          />
-          <span className="text-xs text-fg-muted">
-            {t("updates.githubTokenHint")}
-          </span>
-        </div>
+      <SettingsRow
+        label={t("updates.githubTokenLabel")}
+        description={t("updates.githubTokenHint")}
+      >
+        <Input
+          type="text"
+          className="w-64"
+          placeholder={t("updates.githubTokenPlaceholder")}
+          value={settings.github_token}
+          onChange={(e) => applyDraft({ github_token: e.target.value })}
+        />
       </SettingsRow>
 
       {/* Save / cancel */}

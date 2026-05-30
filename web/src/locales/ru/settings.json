@@ -179,7 +179,7 @@
     "githubRepoLabel": "Репозиторий",
     "githubTokenLabel": "GitHub-токен",
     "githubTokenPlaceholder": "ghp_… (пусто — без токена)",
-    "githubTokenHint": "Поднимает лимит GitHub (60→5000/час) и даёт доступ к приватным репозиториям. Оставьте маскированное значение, чтобы сохранить текущий токен."
+    "githubTokenHint": "Поднимает лимит GitHub; оставьте маску, чтобы сохранить токен"
   },
   "geoip": {
     "title": "GeoIP",

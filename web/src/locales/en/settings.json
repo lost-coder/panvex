@@ -177,7 +177,7 @@
     "githubRepoLabel": "Repository",
     "githubTokenLabel": "GitHub Token",
     "githubTokenPlaceholder": "ghp_… (leave blank for none)",
-    "githubTokenHint": "Lifts the GitHub rate limit (60→5000/hr) and enables private repos. Leave the masked value to keep the current token."
+    "githubTokenHint": "Raises the GitHub rate limit; leave masked to keep the current token"
   },
   "geoip": {
     "title": "GeoIP",
