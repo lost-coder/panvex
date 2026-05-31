@@ -140,7 +140,7 @@ var dummyPasswordHash = sync.OnceValue(func() string {
 
 // SetSessionStore attaches a persistent session store to the auth service.
 // When set, sessions are persisted on creation and loaded on restart.
-func (s *Service) SetSessionStore(sessionStore storage.SessionStore) {
+func (s *Service) SetSessionStore(sessionStore SessionStore) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessionStore = sessionStore
