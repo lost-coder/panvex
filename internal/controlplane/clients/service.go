@@ -1036,7 +1036,16 @@ func (s *Service) applyUsageMirror(u Usage) {
 // When neither is wired (in-memory mode for tests) the call is a no-op.
 func (s *Service) PersistDeployment(ctx context.Context, d Deployment) error {
 	if s.repo != nil {
-		return s.repo.PutDeployment(ctx, d)
+		if err := s.repo.PutDeployment(ctx, d); err != nil {
+			return err
+		}
+		s.mu.Lock()
+		if s.mirrorDeployments[d.ClientID] == nil {
+			s.mirrorDeployments[d.ClientID] = make(map[string]Deployment)
+		}
+		s.mirrorDeployments[d.ClientID][d.AgentID] = d
+		s.mu.Unlock()
+		return nil
 	}
 	if s.store == nil {
 		return nil

@@ -676,6 +676,50 @@ func TestService_UpsertUsage_Single(t *testing.T) {
 	}
 }
 
+// --- Task A1: PersistDeployment keeps the V2 mirror consistent ---
+
+// seedClientWithDeployment writes a client + one deployment through the repo
+// and then Restores so the mirror is populated.
+func seedClientWithDeployment(t *testing.T, svc *Service, repo *fakeRepo, clientID ClientID, agentID string) {
+	t.Helper()
+	repo.clientsByID[clientID] = Client{ID: clientID, Name: string(clientID)}
+	if err := repo.PutDeployment(context.Background(), Deployment{ClientID: clientID, AgentID: agentID}); err != nil {
+		t.Fatalf("seed PutDeployment: %v", err)
+	}
+	if err := svc.Restore(context.Background()); err != nil {
+		t.Fatalf("seed Restore: %v", err)
+	}
+}
+
+func TestPersistDeploymentUpdatesMirror(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	svc := NewServiceV2(ServiceConfig{Repo: repo})
+	ctx := context.Background()
+
+	clientID := ClientID("client-1")
+	seedClientWithDeployment(t, svc, repo, clientID, "agent-1")
+
+	updated := Deployment{
+		ClientID:           clientID,
+		AgentID:            "agent-1",
+		LastResetEpochSecs: 12345,
+	}
+	if err := svc.PersistDeployment(ctx, updated); err != nil {
+		t.Fatalf("PersistDeployment: %v", err)
+	}
+
+	snap := svc.MirrorSnapshot()
+	got, ok := snap.Deployments[clientID]["agent-1"]
+	if !ok {
+		t.Fatalf("deployment missing from mirror after PersistDeployment")
+	}
+	if got.LastResetEpochSecs != 12345 {
+		t.Fatalf("mirror LastResetEpochSecs = %d, want 12345", got.LastResetEpochSecs)
+	}
+}
+
 // --- Phase 6.9 additional coverage tests ---
 
 func TestService_Save_NilVault_PlaintextRoundtrip(t *testing.T) {
