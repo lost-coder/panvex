@@ -158,6 +158,11 @@ func (s *Server) seedUsageFromDiscoveredLocked(ctx context.Context, snap clients
 				ObservedAt:       dc.updatedAt,
 			}
 			s.trackClientUsageOwnerLocked(string(id), a.AgentID)
+			// D1 (B3): mirror the discovered-seed fallback into the
+			// clients.Service mirror so the restored usage survives the C1
+			// removal of the server map. Mirror-only (no write-through) to
+			// preserve the legacy non-persisting fallback semantics.
+			s.clientsSvc.SeedUsageMirror(string(id), a.AgentID, dc.totalOctets, dc.tcpConns, dc.uniqueIPs, dc.updatedAt)
 		}
 	}
 }

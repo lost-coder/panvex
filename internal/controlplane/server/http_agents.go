@@ -232,6 +232,14 @@ func (s *Server) purgeAgentInMemory(agentID string) {
 	}
 	delete(s.agentClientUsage, agentID)
 	s.clientsMu.Unlock()
+	// D1 (B3): drop the same agent's rows from the clients.Service mirror
+	// so C1 can remove the server usage maps without leaving stale usage
+	// for a deregistered agent visible through the mirror-backed HTTP
+	// reads. Service.mu is acquired after Server.mu+clientsMu, preserving
+	// the documented Server.mu -> Service.mu lock ordering.
+	if s.clientsSvc != nil {
+		s.clientsSvc.DropAgentUsageMirror(agentID)
+	}
 	s.revokedAgentIDs[agentID] = struct{}{}
 	s.mu.Unlock()
 }

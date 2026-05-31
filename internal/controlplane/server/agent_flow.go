@@ -284,6 +284,14 @@ func (s *Server) applyClientUsageSnapshot(ctx context.Context, agentID string, c
 	s.persistClientUsageRecords(ctx, toPersist)
 	s.persistDeploymentsAfterReset(ctx, deploymentsToPersist)
 	s.zeroLiveGaugesForUntouchedClients(agentID, seen)
+	// D1 (B3): keep the clients.Service mirror consistent with the
+	// server-map gauge reset above so C1 can drop the server maps without
+	// changing the live-gauge zeroing behaviour observed via the HTTP
+	// listing/detail (which read from the mirror). Mirror-only, no DB write
+	// — matches zeroLiveGaugesForUntouchedClients which never persists.
+	if s.clientsSvc != nil {
+		s.clientsSvc.ZeroLiveGaugesForAgent(agentID, seen)
+	}
 }
 
 // advanceDeploymentsFromTelemtReset scans the usage batch and, for each
