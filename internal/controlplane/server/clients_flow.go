@@ -442,7 +442,7 @@ func (s *Server) deleteClient(ctx context.Context, clientID, actorID string, obs
 
 func (s *Server) replaceClientStateWithContext(ctx context.Context, client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment) error {
 	if s.clientsSvc.HasRepo() {
-		// NewServiceV2 path: SaveState atomically writes to the Repository and
+		// NewService path: SaveState atomically writes to the Repository and
 		// updates the Service mirror (the single owner of client state).
 		if err := s.clientsSvc.SaveState(ctx, client, assignments, deployments); err != nil {
 			return err
@@ -464,7 +464,7 @@ func (s *Server) replaceClientStateWithContext(ctx context.Context, client manag
 // the mirror was already updated inside SaveState, so this is an idempotent
 // re-write with the same (plaintext-secret) values.
 func (s *Server) replaceClientStateInMemory(client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment) {
-	s.clientsSvc.ReplaceMirrorInMemory(client, assignments, deployments)
+	s.clientsSvc.MirrorReplaceInMemory(client, assignments, deployments)
 }
 
 func (s *Server) buildClientAssignments(clientID clients.ClientID, input clientMutationInput, observedAt time.Time) []managedClientAssignment {
@@ -725,7 +725,7 @@ func (s *Server) jobByID(_ context.Context, jobID string) (jobs.Job, bool) {
 // clients.AggregateUsage, reading the per-(client, agent) usage from the
 // clients.Service mirror (the single owner of usage state).
 func (s *Server) aggregatedClientUsage(clientID string) aggregatedClientUsage {
-	return s.clientsSvc.AggregateUsage(s.clientsSvc.UsageByAgentMirror(clientID))
+	return s.clientsSvc.AggregateUsage(s.clientsSvc.MirrorUsageByAgent(clientID))
 }
 
 // resolveClientIDByName finds the panel client ID for a given client name
@@ -748,7 +748,7 @@ func (s *Server) resolveClientIDByName(agentID, clientName string) string {
 	}
 	s.mu.RUnlock()
 
-	return s.clientsSvc.ResolveMirrorIDByName(agentID, agentFleetGroupID, clientName)
+	return s.clientsSvc.MirrorResolveIDByName(agentID, agentFleetGroupID, clientName)
 }
 
 func (s *Server) nextClientID() clients.ClientID {

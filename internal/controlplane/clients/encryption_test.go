@@ -32,7 +32,7 @@ func TestSaveStateEncryptsClientSecretWhenVaultEnabled(t *testing.T) {
 	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo()}
 	uow := newFakeUoW(rs)
 
-	svc := NewServiceV2(ServiceConfig{
+	svc := NewService(ServiceConfig{
 		Repo:           repo,
 		DiscoveredRepo: newFakeDiscoveredRepo(),
 		UoW:            uow,
@@ -90,7 +90,7 @@ func TestRestoreDecryptsClientSecret(t *testing.T) {
 	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo()}
 	uow := newFakeUoW(rs)
 
-	writer := NewServiceV2(ServiceConfig{
+	writer := NewService(ServiceConfig{
 		Repo:           repo,
 		DiscoveredRepo: newFakeDiscoveredRepo(),
 		UoW:            uow,
@@ -102,7 +102,7 @@ func TestRestoreDecryptsClientSecret(t *testing.T) {
 
 	// Simulate a panel restart: a fresh Service over the same Repository
 	// whose mirror is rebuilt solely from Restore.
-	reloaded := NewServiceV2(ServiceConfig{
+	reloaded := NewService(ServiceConfig{
 		Repo:           repo,
 		DiscoveredRepo: newFakeDiscoveredRepo(),
 		UoW:            uow,
@@ -152,7 +152,7 @@ func TestRestoreHealsDoubleEncryptedSecret(t *testing.T) {
 		Enabled: true,
 	}
 
-	svc := NewServiceV2(ServiceConfig{
+	svc := NewService(ServiceConfig{
 		Repo:           repo,
 		DiscoveredRepo: newFakeDiscoveredRepo(),
 		Vault:          vault,
@@ -187,7 +187,7 @@ func TestEncryptSecretIsIdempotent(t *testing.T) {
 	repo := newFakeRepo()
 	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo()}
 	uow := newFakeUoW(rs)
-	svc := NewServiceV2(ServiceConfig{
+	svc := NewService(ServiceConfig{
 		Repo:           repo,
 		DiscoveredRepo: newFakeDiscoveredRepo(),
 		UoW:            uow,
@@ -228,7 +228,7 @@ func TestSaveStateLeavesPlaintextWhenVaultDisabled(t *testing.T) {
 	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo()}
 	uow := newFakeUoW(rs)
 
-	svc := NewServiceV2(ServiceConfig{
+	svc := NewService(ServiceConfig{
 		Repo:           repo,
 		DiscoveredRepo: newFakeDiscoveredRepo(),
 		UoW:            uow,

@@ -361,7 +361,7 @@ func (s *Server) shouldApplyClientUsageDelta(agentID string, clients []clientUsa
 		// incoming "delta" is actually an absolute baseline. Skip addition to
 		// avoid double-counting and rewind the CP-side cursor so subsequent
 		// in-order deltas (seq 2, 3, ...) are accepted.
-		s.clientsSvc.SetMirrorLastUsageSeq(agentID, 1)
+		s.clientsSvc.MirrorSetLastUsageSeq(agentID, 1)
 		return false
 	case batchSeq <= lastSeen:
 		// Duplicate or stale (in-flight retry, out-of-order reconnect). Live
@@ -381,7 +381,7 @@ func (s *Server) shouldApplyClientUsageDelta(agentID string, clients []clientUsa
 				"alert", "client_usage_seq_gap",
 			)
 		}
-		s.clientsSvc.SetMirrorLastUsageSeq(agentID, batchSeq)
+		s.clientsSvc.MirrorSetLastUsageSeq(agentID, batchSeq)
 		return true
 	}
 }
@@ -507,5 +507,5 @@ func (s *Server) persistClientUsageRecords(ctx context.Context, toPersist []stor
 // show real per-node traffic instead of synthetic placeholders. Reads from
 // the clients.Service mirror (the single owner of usage state).
 func (s *Server) agentTotalTraffic(agentID string) uint64 {
-	return s.clientsSvc.AgentTotalTrafficMirror(agentID)
+	return s.clientsSvc.MirrorAgentTotalTraffic(agentID)
 }

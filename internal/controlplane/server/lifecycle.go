@@ -138,7 +138,7 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		// nil (HasRepo() gates every persistence path). initStoreBackedSubsystems
 		// overwrites it with a Repository+UoW-backed Service once a *sql.DB is
 		// available (the only path that actually persists clients).
-		clientsSvc:       clients.NewServiceV2(clients.ServiceConfig{Vault: vault, Now: now}),
+		clientsSvc:       clients.NewService(clients.ServiceConfig{Vault: vault, Now: now}),
 		fleetSvc:         fleet.NewService(options.Store, func() time.Time { return now().UTC() }),
 		instances:        make(map[string]Instance),
 		metrics:          make([]MetricSnapshot, 0, maxInMemoryMetricSnapshots),
@@ -322,7 +322,7 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 			// callback to return the override repo (not the tx-bound real one).
 			uowAdapter = newClientsUoWAdapterWithOverride(uowImpl, options.ClientsRepoOverride)
 		}
-		s.clientsSvc = clients.NewServiceV2(clients.ServiceConfig{
+		s.clientsSvc = clients.NewService(clients.ServiceConfig{
 			Repo:           clientsRepo,
 			DiscoveredRepo: discoveredRepoV2,
 			UoW:            uowAdapter,

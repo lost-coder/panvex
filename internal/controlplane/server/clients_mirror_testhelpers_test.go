@@ -45,7 +45,7 @@ func seedClientAndAgentRows(t *testing.T, s *Server, clientID, agentID string, n
 // deployments into the Service mirror without touching the DB.
 func seedMirrorClient(t *testing.T, s *Server, client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment) {
 	t.Helper()
-	s.clientsSvc.ReplaceMirrorInMemory(client, assignments, deployments)
+	s.clientsSvc.MirrorReplaceInMemory(client, assignments, deployments)
 }
 
 // seedMirrorDeployment inserts a single deployment for (clientID, agentID)
@@ -67,7 +67,7 @@ func seedMirrorDeployment(t *testing.T, s *Server, clientID string, deployment m
 	if !replaced {
 		deployments = append(deployments, deployment)
 	}
-	s.clientsSvc.ReplaceMirrorInMemory(client, assignments, deployments)
+	s.clientsSvc.MirrorReplaceInMemory(client, assignments, deployments)
 }
 
 // seedMirrorUsage writes a usage row for (clientID, agentID) into the mirror

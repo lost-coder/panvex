@@ -49,7 +49,7 @@ func TestClientsState_RestoreHonoursServerCtxCancellation(t *testing.T) {
 	t.Cleanup(func() { _ = base.Close() })
 
 	now := time.Now().UTC()
-	// Use a real sqlite.Store so initStoreBackedSubsystems wires NewServiceV2.
+	// Use a real sqlite.Store so initStoreBackedSubsystems wires NewService.
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:              func() time.Time { return now },
@@ -69,7 +69,7 @@ func TestClientsState_RestoreHonoursServerCtxCancellation(t *testing.T) {
 	// Swap the repo-backed Service for one using our slow repo so the next
 	// Restore call stalls inside repo.List. This exercises the new code path
 	// (s.clientsSvc.Restore via repo) with the same BP-01 invariant.
-	server.clientsSvc = clients.NewServiceV2(clients.ServiceConfig{
+	server.clientsSvc = clients.NewService(clients.ServiceConfig{
 		Repo: slowRepo,
 		Now:  func() time.Time { return now },
 	})

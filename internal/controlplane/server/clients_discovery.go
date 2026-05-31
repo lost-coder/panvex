@@ -617,7 +617,7 @@ func collectDuplicateDiscoveredIDs(all []discovered.DiscoveredClient, excludeID,
 // both name and secret. Used to detect when a discovered client on a new node
 // corresponds to an already-adopted client from another node.
 func (s *Server) findManagedClientByNameAndSecret(name, secret string) (managedClient, bool) {
-	return s.clientsSvc.FindMirrorClientByNameAndSecret(name, secret)
+	return s.clientsSvc.MirrorFindClientByNameAndSecret(name, secret)
 }
 
 // mergeAdoptIntoExistingClient adds an assignment and deployment for a new agent

@@ -110,7 +110,7 @@ type Service struct {
 	mirrorLastUsageSeq map[string]uint64 // per-agent
 }
 
-// ServiceConfig carries the dependencies for NewServiceV2: a
+// ServiceConfig carries the dependencies for NewService: a
 // clients.Repository, a discovered.Repository, a UoW, and the vault.
 type ServiceConfig struct {
 	Repo           Repository
@@ -120,13 +120,11 @@ type ServiceConfig struct {
 	Now            func() time.Time
 }
 
-// NewServiceV2 constructs a Service with the full dependency set: a
+// NewService constructs a Service with the full dependency set: a
 // clients.Repository, a discovered.Repository, and a UoW. The in-memory
 // mirror maps are pre-allocated; call Service.Restore to populate them
 // from the Repository.
-//
-// (C3 renames this to NewService once the legacy constructors are gone.)
-func NewServiceV2(cfg ServiceConfig) *Service {
+func NewService(cfg ServiceConfig) *Service {
 	now := cfg.Now
 	if now == nil {
 		now = time.Now
@@ -257,10 +255,6 @@ func (s *Service) ReplaceState(ctx context.Context, client Client, assignments [
 // Restore loads all clients (and their assignments, deployments, usage)
 // from the Repository into the in-memory mirror. Idempotent: subsequent
 // calls overwrite the mirror with the latest snapshot.
-//
-// Phase 6.2: Service-owned mirror replaces the historical Server-owned
-// mirror in clients_state.go. The legacy restoreStoredClients on Server
-// delegates to this once Phase 7 lands.
 func (s *Service) Restore(ctx context.Context) error {
 	list, err := s.repo.List(ctx)
 	if err != nil {
@@ -341,9 +335,6 @@ func (s *Service) Restore(ctx context.Context) error {
 // Get returns the cached Client by ID. The mirror is populated by
 // Restore; after a Save/SaveState/AdoptDiscovered the mirror is updated
 // atomically. Returns ErrNotFound if the ID is unknown.
-//
-// No name collision with existing Service methods: legacy read paths use
-// DetailSnapshot (single-client) and ListSnapshot (all clients).
 func (s *Service) Get(ctx context.Context, id ClientID) (Client, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -356,9 +347,6 @@ func (s *Service) Get(ctx context.Context, id ClientID) (Client, error) {
 
 // List returns all cached Clients (snapshot of the mirror at call
 // time). Order is unspecified — callers that need ordering must sort.
-//
-// No name collision with existing Service methods: the legacy path uses
-// ListSnapshot which filters deleted clients and sorts by CreatedAt.
 func (s *Service) List(ctx context.Context) ([]Client, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -369,7 +357,7 @@ func (s *Service) List(ctx context.Context) ([]Client, error) {
 	return out, nil
 }
 
-// --- Phase 6.4–6.7: UoW-backed mutation methods ---
+// --- UoW-backed mutation methods ---
 
 // EncryptSecret seals the plaintext secret using the vault's
 // DomainClientSecret key. Delegates to encryptSecret. Exposed as a
@@ -574,7 +562,7 @@ func (s *Service) AdoptDiscovered(ctx context.Context, in AdoptInput) (Client, e
 // buildClientFromDiscovered constructs a managed Client from a
 // DiscoveredClient. Pure function — no I/O, no encryption.
 // ID generation uses the same sequential "client-N" scheme as
-// Service.NextClientID (legacy server.buildAdoptedClientState).
+// Service.NextClientID (see server.buildAdoptedClientState).
 func buildClientFromDiscovered(dc discovered.DiscoveredClient, secret, id string, observedAt time.Time) Client {
 	return Client{
 		ID:        ClientID(id),
@@ -588,9 +576,6 @@ func buildClientFromDiscovered(dc discovered.DiscoveredClient, secret, id string
 
 // Delete removes the client from the Repository via a UoW transaction
 // and evicts all mirror entries for that client ID on success.
-//
-// No name collision: the legacy Service has no Delete method; only the
-// fakeRepo in tests had a stub.
 func (s *Service) Delete(ctx context.Context, id ClientID) error {
 	if err := s.uow.Do(ctx, func(rs ClientsRepoSet) error {
 		return rs.Clients().Delete(ctx, id)
@@ -606,7 +591,7 @@ func (s *Service) Delete(ctx context.Context, id ClientID) error {
 	return nil
 }
 
-// --- Phase 6.8: UpsertUsage / UpsertUsageBulk ---
+// --- UpsertUsage / UpsertUsageBulk ---
 
 // UpsertUsage persists a single (client, agent) usage record and
 // updates the in-memory mirror. Bypasses UoW — usage updates are not
@@ -615,7 +600,7 @@ func (s *Service) UpsertUsage(ctx context.Context, u Usage) error {
 	// Update the in-memory mirror (the live accumulator) unconditionally,
 	// BEFORE attempting the persist. Client usage totals are cumulative
 	// absolutes and the seq cursor advances unconditionally upstream
-	// (server.shouldApplyClientUsageDelta -> SetMirrorLastUsageSeq). If the
+	// (server.shouldApplyClientUsageDelta -> MirrorSetLastUsageSeq). If the
 	// mirror total were gated on DB success, a failed persist would leave the
 	// cursor advanced but the total stale, permanently dropping this delta's
 	// bytes from the running total (the cumulative DB self-heal relies on the
@@ -629,8 +614,6 @@ func (s *Service) UpsertUsage(ctx context.Context, u Usage) error {
 // UpsertUsageBulk is the hot-path bulk variant called from agent-flow
 // telemetry tick. 500x50 batches flush in a single Repository call.
 // Empty slice is a no-op.
-//
-// No name collision: the legacy Service has no UpsertUsage(Bulk) method.
 func (s *Service) UpsertUsageBulk(ctx context.Context, batch []Usage) error {
 	if len(batch) == 0 {
 		return nil
@@ -673,11 +656,11 @@ func (s *Service) PersistDeployment(ctx context.Context, d Deployment) error {
 	return nil
 }
 
-// --- Phase 7: server-legacy bridge ---
+// --- mirror snapshot / read accessors ---
 
 // MirrorUsageEntry is the per-(client, agent) usage value returned by
 // MirrorSnapshot. It mirrors usageMirror but is exported so the server
-// package can read it to sync its own legacy maps during Phase 7.
+// package can read it.
 type MirrorUsageEntry struct {
 	ClientID           ClientID
 	TrafficUsedBytes   uint64
@@ -690,7 +673,7 @@ type MirrorUsageEntry struct {
 	LastSeq            uint64
 }
 
-// MirrorState is the full snapshot of the V2 in-memory mirror, returned by
+// MirrorState is the full snapshot of the in-memory mirror, returned by
 // MirrorSnapshot. Callers must treat the maps as read-only; they are copies.
 type MirrorState struct {
 	Clients      map[ClientID]Client
@@ -700,11 +683,9 @@ type MirrorState struct {
 	LastUsageSeq map[string]uint64 // per-agent
 }
 
-// MirrorSnapshot returns a deep copy of the current V2 mirror state.
-// Used by the server's restoreStoredClients bridge during Phase 7 so
-// the server's legacy maps are synced from the domain service rather
-// than queried directly from storage.Store. Safe to call from any
-// goroutine; acquires the read lock internally.
+// MirrorSnapshot returns a deep copy of the current mirror state for the
+// server's read paths. Safe to call from any goroutine; acquires the read
+// lock internally.
 func (s *Service) MirrorSnapshot() MirrorState {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -764,7 +745,7 @@ func (s *Service) MirrorSnapshot() MirrorState {
 }
 
 // HasRepo reports whether the service was wired with a Repository
-// (i.e. constructed via NewServiceV2). Used by the server to decide
+// (i.e. constructed via NewService). Used by the server to decide
 // whether to delegate persistence operations to the service.
 func (s *Service) HasRepo() bool {
 	return s.repo != nil
@@ -886,18 +867,17 @@ func (s *Service) applyUsageMirrorLocked(u Usage) {
 	}
 }
 
-// --- D1 (C1): mirror-backed reads/mutations for the server package ---
+// --- mirror-backed reads/mutations for the server package ---
 //
-// These replace the Server-owned client maps (s.clients / s.clientUsage /
-// s.clientDeployments / s.clientAssignments) that C1 removed. Each reads or
-// mutates the V2 mirror under s.mu, so the mirror is the single owner of
-// client/usage/deployment state. All are no-ops / zero-values when the
-// service was not wired with a Repository (mirror unused).
+// Each reads or mutates the in-memory mirror under s.mu, so the mirror is
+// the single owner of client/usage/deployment state. All are no-ops /
+// zero-values when the service was not wired with a Repository (mirror
+// unused).
 
-// AgentTotalTrafficMirror sums TrafficUsedBytes across every client this
+// MirrorAgentTotalTraffic sums TrafficUsedBytes across every client this
 // agent has a usage row for in the mirror. Mirror-side counterpart of the
 // server's agentTotalTrafficLocked; used by the telemetry summaries.
-func (s *Service) AgentTotalTrafficMirror(agentID string) uint64 {
+func (s *Service) MirrorAgentTotalTraffic(agentID string) uint64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var total uint64
@@ -909,10 +889,10 @@ func (s *Service) AgentTotalTrafficMirror(agentID string) uint64 {
 	return total
 }
 
-// UsageByAgentMirror returns a defensive copy of the per-(client, agent)
+// MirrorUsageByAgent returns a defensive copy of the per-(client, agent)
 // usage map for one client, projected to UsageSnapshot. Mirror-side
 // counterpart of the server's clientUsageByAgent.
-func (s *Service) UsageByAgentMirror(clientID string) map[string]UsageSnapshot {
+func (s *Service) MirrorUsageByAgent(clientID string) map[string]UsageSnapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	byAgent := s.mirrorUsage[ClientID(clientID)]
@@ -946,10 +926,10 @@ func (s *Service) MirrorDeployment(clientID, agentID string) (Deployment, bool) 
 	return d, ok
 }
 
-// FindMirrorClientByNameAndSecret returns the first non-deleted client in
+// MirrorFindClientByNameAndSecret returns the first non-deleted client in
 // the mirror whose name and secret both match. Mirror-side counterpart of
 // the server's findManagedClientByNameAndSecret.
-func (s *Service) FindMirrorClientByNameAndSecret(name, secret string) (Client, bool) {
+func (s *Service) MirrorFindClientByNameAndSecret(name, secret string) (Client, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, c := range s.mirrorClients {
@@ -987,10 +967,10 @@ func (s *Service) MirrorIdentifiersForAgent(agentID string) (names, secrets map[
 	return names, secrets
 }
 
-// ResolveMirrorIDByName resolves a panel client ID from the mirror's
+// MirrorResolveIDByName resolves a panel client ID from the mirror's
 // client + assignment maps. Mirror-side counterpart of the server's
 // resolveClientIDByName.
-func (s *Service) ResolveMirrorIDByName(agentID, agentFleetGroupID, clientName string) string {
+func (s *Service) MirrorResolveIDByName(agentID, agentFleetGroupID, clientName string) string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	clientsByID := make(map[string]Client, len(s.mirrorClients))
@@ -1028,22 +1008,22 @@ func (s *Service) MirrorLastUsageSeq(agentID string) uint64 {
 	return s.mirrorLastUsageSeq[agentID]
 }
 
-// SetMirrorLastUsageSeq records the per-agent usage seq cursor in the mirror.
+// MirrorSetLastUsageSeq records the per-agent usage seq cursor in the mirror.
 // Used by the seq-dedup path (shouldApplyClientUsageDelta) when an agent
 // restart rewinds the cursor or a duplicate batch is skipped without a
 // usage-row write that would otherwise advance it via UpsertUsageBulk.
-func (s *Service) SetMirrorLastUsageSeq(agentID string, seq uint64) {
+func (s *Service) MirrorSetLastUsageSeq(agentID string, seq uint64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.mirrorLastUsageSeq[agentID] = seq
 }
 
-// ReplaceMirrorInMemory updates the V2 mirror's client + assignments +
+// MirrorReplaceInMemory updates the mirror's client + assignments +
 // deployments for one client without touching the Repository. Callers that
 // drive persistence through a UnitOfWork (e.g. server.persistAdoptedClient)
 // apply this only after the transaction commits. The client's Secret must be
 // plaintext — the mirror holds plaintext so apply-jobs ship the real secret.
-func (s *Service) ReplaceMirrorInMemory(client Client, assignments []Assignment, deployments []Deployment) {
+func (s *Service) MirrorReplaceInMemory(client Client, assignments []Assignment, deployments []Deployment) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cid := client.ID

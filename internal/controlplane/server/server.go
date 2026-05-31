@@ -143,9 +143,9 @@ type Server struct {
 	// the new package; the server only holds a pointer.
 	sessions *agents.SessionManager
 	// clientsSvc is the managed-client service introduced by P3-ARCH-01b.
-	// Phase 7 wires it with the full NewServiceV2 deps (Repo, DiscoveredRepo,
-	// UoW) so persistence and mirror operations route through the domain
-	// service rather than the legacy storage.Store facade.
+	// initStoreBackedSubsystems wires it with the full NewService deps (Repo,
+	// DiscoveredRepo, UoW) so persistence and mirror operations route through
+	// the domain service.
 	clientsSvc *clients.Service
 	// uow is the raw UnitOfWork used by server-package code that needs to
 	// open a cross-domain transaction directly (e.g. persistAdoptedClient).

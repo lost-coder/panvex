@@ -28,7 +28,7 @@ func (s *Server) restoreStoredClients() error {
 	defer cancel()
 
 	if !s.clientsSvc.HasRepo() {
-		// NewServiceV2 not wired (no DB or unknown store type) — nothing to restore.
+		// NewService not wired (no DB or unknown store type) — nothing to restore.
 		return nil
 	}
 

@@ -8,7 +8,7 @@ import (
 func TestServiceSequenceHelpers(t *testing.T) {
 	t.Parallel()
 
-	svc := NewServiceV2(ServiceConfig{})
+	svc := NewService(ServiceConfig{})
 	if got := svc.NextClientID(); got != "client-0000001" {
 		t.Fatalf("NextClientID: got %q want client-0000001", got)
 	}
@@ -41,9 +41,9 @@ func TestServiceSequenceHelpers(t *testing.T) {
 func TestServiceSetNow(t *testing.T) {
 	t.Parallel()
 
-	svc := NewServiceV2(ServiceConfig{})
+	svc := NewService(ServiceConfig{})
 	if svc.now == nil {
-		t.Fatal("NewServiceV2: now must default to time.Now")
+		t.Fatal("NewService: now must default to time.Now")
 	}
 
 	fixed := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)

@@ -10,7 +10,7 @@
 //	clients.ServiceUoW.Do(ctx, func(clients.ClientsRepoSet) error)
 //
 // The adapter wraps the concrete uow.UnitOfWork and converts the inner
-// callback so the server/bootstrap layer can hand clients.NewServiceV2 a
+// callback so the server/bootstrap layer can hand clients.NewService a
 // clients.ServiceUoW without importing the uow package from the clients
 // package (which would create an import cycle).
 package server
