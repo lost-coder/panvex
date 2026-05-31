@@ -260,9 +260,6 @@ type TelemetryStore interface {
 	GetTelemetryDiagnosticsCurrent(ctx context.Context, agentID string) (TelemetryDiagnosticsCurrentRecord, error)
 	PutTelemetrySecurityInventoryCurrent(ctx context.Context, record TelemetrySecurityInventoryCurrentRecord) error
 	GetTelemetrySecurityInventoryCurrent(ctx context.Context, agentID string) (TelemetrySecurityInventoryCurrentRecord, error)
-	PutTelemetryDetailBoost(ctx context.Context, record TelemetryDetailBoostRecord) error
-	ListTelemetryDetailBoosts(ctx context.Context) ([]TelemetryDetailBoostRecord, error)
-	DeleteTelemetryDetailBoost(ctx context.Context, agentID string) error
 }
 
 // EnrollmentStore persists one-time agent enrollment tokens.

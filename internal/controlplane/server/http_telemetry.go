@@ -10,7 +10,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
-	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 // telemetryDetailBoostTTL is the compiled-in default for how long a
@@ -437,18 +436,11 @@ func (s *Server) handleTelemetryServerDetailBoost() http.HandlerFunc {
 		}
 		boostTTL := s.effectiveTelemetryDetailBoostTTL()
 		expiresAt := now.UTC().Add(boostTTL)
+		// Detail boost is ephemeral in-memory-only state (F4): a ~10m
+		// telemetry frequency bump for one agent. It is intentionally not
+		// persisted — if the panel restarts the operator simply re-enables it.
 		s.detailBoosts[agentID] = expiresAt
 		s.mu.Unlock()
-		if s.store != nil {
-			if err := s.store.PutTelemetryDetailBoost(r.Context(), storage.TelemetryDetailBoostRecord{
-				AgentID:   agentID,
-				ExpiresAt: expiresAt,
-				UpdatedAt: now.UTC(),
-			}); err != nil {
-				writeError(w, http.StatusInternalServerError, "internal error")
-				return
-			}
-		}
 
 		writeJSON(w, http.StatusOK, telemetryDetailBoostResponse{
 			Active:           true,

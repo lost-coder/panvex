@@ -36,7 +36,6 @@ type memoryStore struct {
 	telemetryRuntimeEvents         map[string][]storage.TelemetryRuntimeEventRecord
 	telemetryDiagnosticsCurrent    map[string]storage.TelemetryDiagnosticsCurrentRecord
 	telemetrySecurityCurrent       map[string]storage.TelemetrySecurityInventoryCurrentRecord
-	telemetryDetailBoosts          map[string]storage.TelemetryDetailBoostRecord
 	clients                        map[string]storage.ClientRecord
 	clientAssignments              map[string]storage.ClientAssignmentRecord
 	clientDeployments              map[string]storage.ClientDeploymentRecord
@@ -77,7 +76,6 @@ func newMemoryStore() *memoryStore {
 		telemetryRuntimeEvents:         make(map[string][]storage.TelemetryRuntimeEventRecord),
 		telemetryDiagnosticsCurrent:    make(map[string]storage.TelemetryDiagnosticsCurrentRecord),
 		telemetrySecurityCurrent:       make(map[string]storage.TelemetrySecurityInventoryCurrentRecord),
-		telemetryDetailBoosts:          make(map[string]storage.TelemetryDetailBoostRecord),
 		clients:                        make(map[string]storage.ClientRecord),
 		clientAssignments:              make(map[string]storage.ClientAssignmentRecord),
 		clientDeployments:              make(map[string]storage.ClientDeploymentRecord),
@@ -697,25 +695,6 @@ func (s *memoryStore) GetTelemetrySecurityInventoryCurrent(_ context.Context, ag
 	}
 
 	return record, nil
-}
-
-func (s *memoryStore) PutTelemetryDetailBoost(_ context.Context, record storage.TelemetryDetailBoostRecord) error {
-	s.telemetryDetailBoosts[record.AgentID] = record
-	return nil
-}
-
-func (s *memoryStore) ListTelemetryDetailBoosts(_ context.Context) ([]storage.TelemetryDetailBoostRecord, error) {
-	result := make([]storage.TelemetryDetailBoostRecord, 0, len(s.telemetryDetailBoosts))
-	for _, record := range s.telemetryDetailBoosts {
-		result = append(result, record)
-	}
-
-	return result, nil
-}
-
-func (s *memoryStore) DeleteTelemetryDetailBoost(_ context.Context, agentID string) error {
-	delete(s.telemetryDetailBoosts, agentID)
-	return nil
 }
 
 func (s *memoryStore) PutClient(_ context.Context, client storage.ClientRecord) error {
@@ -1510,7 +1489,6 @@ type memoryStoreSnapshot struct {
 	telemetryRuntimeEvents         map[string][]storage.TelemetryRuntimeEventRecord
 	telemetryDiagnosticsCurrent    map[string]storage.TelemetryDiagnosticsCurrentRecord
 	telemetrySecurityCurrent       map[string]storage.TelemetrySecurityInventoryCurrentRecord
-	telemetryDetailBoosts          map[string]storage.TelemetryDetailBoostRecord
 	clients                        map[string]storage.ClientRecord
 	clientAssignments              map[string]storage.ClientAssignmentRecord
 	clientDeployments              map[string]storage.ClientDeploymentRecord
@@ -1570,7 +1548,6 @@ func (s *memoryStore) snapshot() memoryStoreSnapshot {
 		telemetryRuntimeEvents:         copySliceMap(s.telemetryRuntimeEvents),
 		telemetryDiagnosticsCurrent:    copyMap(s.telemetryDiagnosticsCurrent),
 		telemetrySecurityCurrent:       copyMap(s.telemetrySecurityCurrent),
-		telemetryDetailBoosts:          copyMap(s.telemetryDetailBoosts),
 		clients:                        copyMap(s.clients),
 		clientAssignments:              copyMap(s.clientAssignments),
 		clientDeployments:              copyMap(s.clientDeployments),
@@ -1618,7 +1595,6 @@ func (s *memoryStore) restore(snap memoryStoreSnapshot) {
 	s.telemetryRuntimeEvents = snap.telemetryRuntimeEvents
 	s.telemetryDiagnosticsCurrent = snap.telemetryDiagnosticsCurrent
 	s.telemetrySecurityCurrent = snap.telemetrySecurityCurrent
-	s.telemetryDetailBoosts = snap.telemetryDetailBoosts
 	s.clients = snap.clients
 	s.clientAssignments = snap.clientAssignments
 	s.clientDeployments = snap.clientDeployments

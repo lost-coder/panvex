@@ -290,63 +290,6 @@ func runTelemetryContract(t *testing.T, open OpenStore) {
 		}
 	})
 
-	t.Run("telemetry detail boost round trip", func(t *testing.T) {
-		store := open(t)
-		defer store.Close()
-
-		ctx := context.Background()
-		group := storage.FleetGroupRecord{
-			ID:        testFleetGroupID,
-			Name:      "Default",
-			CreatedAt: time.Date(2026, time.March, 28, 11, 0, 0, 0, time.UTC),
-		}
-		agent := storage.AgentRecord{
-			ID:           "agent-boost-1",
-			NodeName:     "telemt-b",
-			FleetGroupID: group.ID,
-			Version:      "dev",
-			ReadOnly:     false,
-			LastSeenAt:   time.Date(2026, time.March, 28, 11, 1, 0, 0, time.UTC),
-		}
-		boost := storage.TelemetryDetailBoostRecord{
-			AgentID:   agent.ID,
-			ExpiresAt: time.Date(2026, time.March, 28, 11, 10, 0, 0, time.UTC),
-			UpdatedAt: time.Date(2026, time.March, 28, 11, 2, 0, 0, time.UTC),
-		}
-
-		if err := store.PutFleetGroup(ctx, group); err != nil {
-			t.Fatalf("PutFleetGroup() error = %v", err)
-		}
-		if err := store.PutAgent(ctx, agent); err != nil {
-			t.Fatalf("PutAgent() error = %v", err)
-		}
-		if err := store.PutTelemetryDetailBoost(ctx, boost); err != nil {
-			t.Fatalf("PutTelemetryDetailBoost() error = %v", err)
-		}
-
-		boosts, err := store.ListTelemetryDetailBoosts(ctx)
-		if err != nil {
-			t.Fatalf("ListTelemetryDetailBoosts() error = %v", err)
-		}
-		if len(boosts) != 1 {
-			t.Fatalf("len(ListTelemetryDetailBoosts()) = %d, want 1", len(boosts))
-		}
-		if boosts[0].AgentID != boost.AgentID {
-			t.Fatalf("ListTelemetryDetailBoosts()[0].AgentID = %q, want %q", boosts[0].AgentID, boost.AgentID)
-		}
-		if !boosts[0].ExpiresAt.Equal(boost.ExpiresAt) {
-			t.Fatalf("ListTelemetryDetailBoosts()[0].ExpiresAt = %v, want %v", boosts[0].ExpiresAt, boost.ExpiresAt)
-		}
-
-		if err := store.DeleteTelemetryDetailBoost(ctx, boost.AgentID); err != nil {
-			t.Fatalf("DeleteTelemetryDetailBoost() error = %v", err)
-		}
-		boosts, err = store.ListTelemetryDetailBoosts(ctx)
-		if err != nil {
-			t.Fatalf("ListTelemetryDetailBoosts() after delete error = %v", err)
-		}
-		if len(boosts) != 0 {
-			t.Fatalf("len(ListTelemetryDetailBoosts()) after delete = %d, want 0", len(boosts))
-		}
-	})
+	// F4: detail boost is in-memory only on the panel and no longer
+	// persisted, so there is no storage round-trip to contract-test.
 }
