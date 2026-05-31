@@ -162,7 +162,9 @@ func (s *Server) seedUsageFromDiscoveredLocked(ctx context.Context, snap clients
 			// clients.Service mirror so the restored usage survives the C1
 			// removal of the server map. Mirror-only (no write-through) to
 			// preserve the legacy non-persisting fallback semantics.
-			s.clientsSvc.SeedUsageMirror(string(id), a.AgentID, dc.totalOctets, dc.tcpConns, dc.uniqueIPs, dc.updatedAt)
+			if s.clientsSvc != nil {
+				s.clientsSvc.SeedUsageMirror(string(id), a.AgentID, dc.totalOctets, dc.tcpConns, dc.uniqueIPs, dc.updatedAt)
+			}
 		}
 	}
 }
