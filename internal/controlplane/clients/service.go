@@ -4,21 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"sync"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/discovered"
 	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
-	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 const seqClientAssignment = "client-assignment"
 
 // usageMirror is the in-Service snapshot of (client, agent) usage.
-// Distinct from clients.Usage (Repository row type) and clients.UsageSnapshot
-// (in-memory mirror value type used by legacy methods) to avoid name
-// collision while we migrate in Phase 6.
+// Distinct from clients.Usage (Repository row type) and
+// clients.UsageSnapshot (the handler-facing value type) to avoid a name
+// collision.
 type usageMirror struct {
 	ClientID           ClientID
 	TrafficUsedBytes   uint64
@@ -29,6 +27,22 @@ type usageMirror struct {
 	QuotaLastResetUnix uint64
 	ObservedAt         time.Time
 	LastSeq            uint64
+}
+
+// snapshot projects the in-memory usageMirror row onto the handler-facing
+// UsageSnapshot value type. Seq carries the mirror's LastSeq.
+func (u usageMirror) snapshot() UsageSnapshot {
+	return UsageSnapshot{
+		ClientID:           u.ClientID,
+		TrafficUsedBytes:   u.TrafficUsedBytes,
+		UniqueIPsUsed:      u.UniqueIPsUsed,
+		ActiveTCPConns:     u.ActiveTCPConns,
+		ActiveUniqueIPs:    u.ActiveUniqueIPs,
+		QuotaUsedBytes:     u.QuotaUsedBytes,
+		QuotaLastResetUnix: u.QuotaLastResetUnix,
+		ObservedAt:         u.ObservedAt,
+		Seq:                u.LastSeq,
+	}
 }
 
 // ErrNotFound is returned by Service.Get when the requested Client ID
@@ -54,9 +68,10 @@ type ServiceUoW interface {
 }
 
 // Service is the orchestration entry point for managed clients. It owns
-// the in-memory store for clients, assignments, deployments, and live
-// usage snapshots, and provides the pure-query surface that the
-// control-plane HTTP and gRPC handlers consume.
+// the in-memory mirror of clients, assignments, deployments, and live
+// usage snapshots — backed by a clients.Repository + UnitOfWork — and
+// provides the read/write surface that the control-plane HTTP and gRPC
+// handlers consume.
 //
 // Stateful mutation orchestration (create/update/rotate/delete/adopt)
 // still lives on controlplane/server.Server for now — those flows also
@@ -67,34 +82,23 @@ type ServiceUoW interface {
 //
 // # Lock discipline
 //
-// Service.mu protects the four in-memory maps (clients, assignments,
-// deployments, usage) and the client/assignment sequence counters. The
+// Service.mu protects the in-memory mirror maps (mirrorClients,
+// mirrorAssignments, mirrorDeployments, mirrorUsage, mirrorLastUsageSeq)
+// and the client/assignment/discovered sequence counters. The
 // caller-supplied agent-topology snapshot (AgentTopology) is produced
 // by the server under its own mu lock, so Service never holds mu while
 // asking the server for topology. This preserves the documented lock
 // ordering (Server.mu -> Service.mu -> Server.metricsAuditMu).
-//
-// # Nil-store mode
-//
-// When the optional Store dependency is nil, Service acts as a pure
-// in-memory store — no persistence is attempted. This matches how the
-// server is constructed in unit tests that set Options.Store = nil.
 type Service struct {
-	store storage.Store
 	now   func() time.Time
 	vault *secretvault.Vault
 
 	mu            sync.RWMutex
-	clients       map[string]Client
-	assignments   map[string][]Assignment
-	deployments   map[string]map[string]Deployment
-	usage         map[string]map[string]UsageSnapshot
-	lastUsageSeq  map[string]uint64
 	clientSeq     uint64
 	assignmentSeq uint64
 	discoveredSeq uint64
 
-	// Phase 6 additions: Repository + UoW + in-memory mirror.
+	// Repository + UoW + in-memory mirror: the only client-state path.
 	repo           Repository
 	discoveredRepo discovered.Repository
 	uow            ServiceUoW
@@ -106,82 +110,30 @@ type Service struct {
 	mirrorLastUsageSeq map[string]uint64 // per-agent
 }
 
-// NewService returns a Service with no Store and the wall clock. Kept
-// for callers (including tests) that only exercise the pure helpers.
-func NewService() *Service {
-	return NewServiceWithDeps(nil, nil)
-}
-
-// NewServiceWithDeps constructs a Service backed by the given Store and
-// clock. Either may be nil; nil store means "in-memory only", nil now
-// falls back to time.Now.
-func NewServiceWithDeps(store storage.Store, now func() time.Time) *Service {
-	return NewServiceWithVault(store, now, nil)
-}
-
-// NewServiceWithVault is the vault-aware constructor. A nil or disabled
-// vault keeps client secrets as plaintext at-rest (legacy behaviour);
-// any other vault encrypts them via the client_secret domain key.
-func NewServiceWithVault(store storage.Store, now func() time.Time, vault *secretvault.Vault) *Service {
-	if now == nil {
-		now = time.Now
-	}
-	return &Service{
-		store:        store,
-		now:          now,
-		vault:        vault,
-		clients:      make(map[string]Client),
-		assignments:  make(map[string][]Assignment),
-		deployments:  make(map[string]map[string]Deployment),
-		usage:        make(map[string]map[string]UsageSnapshot),
-		lastUsageSeq: make(map[string]uint64),
-		// Initialise the V2 mirror maps too so the mirror-backed accessors
-		// (ReplaceMirrorInMemory, SetMirrorLastUsageSeq, etc.) are safe to call
-		// on a no-repo Service (test doubles / pre-migrate stores). Mirror
-		// writes that go through the DB (UpsertUsage*, SeedUsageMirror) still
-		// no-op when repo == nil.
-		mirrorClients:      make(map[ClientID]Client),
-		mirrorAssignments:  make(map[ClientID][]Assignment),
-		mirrorDeployments:  make(map[ClientID]map[string]Deployment),
-		mirrorUsage:        make(map[ClientID]map[string]usageMirror),
-		mirrorLastUsageSeq: make(map[string]uint64),
-	}
-}
-
-// ServiceConfig carries the dependencies for NewServiceV2. Fields are
-// additive over the legacy constructors — Store is optional during
-// Phase 6 (legacy methods still use it).
+// ServiceConfig carries the dependencies for NewServiceV2: a
+// clients.Repository, a discovered.Repository, a UoW, and the vault.
 type ServiceConfig struct {
 	Repo           Repository
 	DiscoveredRepo discovered.Repository
 	UoW            ServiceUoW
 	Vault          *secretvault.Vault
-	Store          storage.Store
 	Now            func() time.Time
 }
 
-// NewServiceV2 constructs a Service with the full Phase 6 dependency
-// set: a clients.Repository, a discovered.Repository, a UoW, and the
-// optional legacy Store. The in-memory mirror maps are pre-allocated;
-// call Service.Restore to populate them from the Repository.
+// NewServiceV2 constructs a Service with the full dependency set: a
+// clients.Repository, a discovered.Repository, and a UoW. The in-memory
+// mirror maps are pre-allocated; call Service.Restore to populate them
+// from the Repository.
 //
-// Phase 7 will wire the server to use NewServiceV2 and migrate handlers
-// to the new mirror-backed methods; Phase 8 removes the legacy Store
-// path and the old constructors.
+// (C3 renames this to NewService once the legacy constructors are gone.)
 func NewServiceV2(cfg ServiceConfig) *Service {
 	now := cfg.Now
 	if now == nil {
 		now = time.Now
 	}
 	return &Service{
-		store:        cfg.Store,
-		now:          now,
-		vault:        cfg.Vault,
-		clients:      make(map[string]Client),
-		assignments:  make(map[string][]Assignment),
-		deployments:  make(map[string]map[string]Deployment),
-		usage:        make(map[string]map[string]UsageSnapshot),
-		lastUsageSeq: make(map[string]uint64),
+		now:   now,
+		vault: cfg.Vault,
 
 		repo:           cfg.Repo,
 		discoveredRepo: cfg.DiscoveredRepo,
@@ -293,336 +245,14 @@ func (s *Service) RecoverSequencesFromRecords(
 
 // --- State snapshots and mutation ---
 
-// ListSnapshot returns a sorted copy of all non-deleted managed
-// clients. Returned slice is safe to retain after the call.
-func (s *Service) ListSnapshot() []Client {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	result := make([]Client, 0, len(s.clients))
-	for _, client := range s.clients {
-		if client.DeletedAt != nil {
-			continue
-		}
-		result = append(result, client)
-	}
-	sort.Slice(result, func(left, right int) bool {
-		if result[left].CreatedAt.Equal(result[right].CreatedAt) {
-			return result[left].ID < result[right].ID
-		}
-		return result[left].CreatedAt.Before(result[right].CreatedAt)
-	})
-	return result
-}
-
-// DetailSnapshot returns the managed client, its assignments (sorted
-// by CreatedAt then ID), and its deployments (sorted by AgentID) for
-// the given ID. Returns storage.ErrNotFound when the client is
-// unknown.
-func (s *Service) DetailSnapshot(clientID string) (Client, []Assignment, []Deployment, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	client, ok := s.clients[clientID]
-	if !ok {
-		return Client{}, nil, nil, storage.ErrNotFound
-	}
-	assignments := append([]Assignment(nil), s.assignments[clientID]...)
-	sort.Slice(assignments, func(left, right int) bool {
-		if assignments[left].CreatedAt.Equal(assignments[right].CreatedAt) {
-			return assignments[left].ID < assignments[right].ID
-		}
-		return assignments[left].CreatedAt.Before(assignments[right].CreatedAt)
-	})
-	deploymentsMap := s.deployments[clientID]
-	deployments := make([]Deployment, 0, len(deploymentsMap))
-	for _, deployment := range deploymentsMap {
-		deployments = append(deployments, deployment)
-	}
-	sort.Slice(deployments, func(left, right int) bool {
-		return deployments[left].AgentID < deployments[right].AgentID
-	})
-	return client, assignments, deployments, nil
-}
-
-// ReplaceInMemory updates the in-memory mirror of client state without
-// touching the store. Callers that drive persistence through
-// Store.Transact apply the in-memory update only after the transaction
-// commits.
-func (s *Service) ReplaceInMemory(client Client, assignments []Assignment, deployments []Deployment) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.clients[string(client.ID)] = client
-	s.assignments[string(client.ID)] = append([]Assignment(nil), assignments...)
-	nextDeployments := make(map[string]Deployment, len(deployments))
-	for _, deployment := range deployments {
-		nextDeployments[deployment.AgentID] = deployment
-	}
-	s.deployments[string(client.ID)] = nextDeployments
-}
-
-// ReplaceState persists the client + assignments + deployments and mirrors
-// them in memory. Requires NewServiceV2 wiring (repo != nil); when the
-// Service has no Repository only the in-memory mirror is updated.
+// ReplaceState atomically persists client + assignments + deployments via
+// the Repository and mirrors them in memory. Thin alias over SaveState
+// retained for the server-side call sites.
 func (s *Service) ReplaceState(ctx context.Context, client Client, assignments []Assignment, deployments []Deployment) error {
-	if s.repo != nil {
-		// NewServiceV2 path: SaveState handles encryption + UoW + mirror.
-		return s.SaveState(ctx, client, assignments, deployments)
-	}
-	s.ReplaceInMemory(client, assignments, deployments)
-	return nil
+	return s.SaveState(ctx, client, assignments, deployments)
 }
 
-// FindByNameAndSecret returns the first non-deleted client matching
-// both the name and the secret, case-sensitive. The boolean is false
-// when no match exists.
-func (s *Service) FindByNameAndSecret(name, secret string) (Client, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, client := range s.clients {
-		if client.DeletedAt != nil {
-			continue
-		}
-		if client.Name == name && client.Secret == secret {
-			return client, true
-		}
-	}
-	return Client{}, false
-}
-
-// ManagedIdentifiersForAgent returns two sets — one of client names,
-// one of client secrets — for every non-deleted managed client
-// currently assigned (directly or via a fleet group) to the agent.
-// agentFleetGroupID is the fleet-group the agent currently belongs to
-// (may be empty).
-//
-// This is used by the discovery reconciliation loop to decide whether a
-// proxy client reported by an agent is already managed or genuinely
-// new.
-func (s *Service) ManagedIdentifiersForAgent(agentID, agentFleetGroupID string) (names, secrets map[string]struct{}) {
-	names = make(map[string]struct{})
-	secrets = make(map[string]struct{})
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	for clientID, client := range s.clients {
-		if client.DeletedAt != nil {
-			continue
-		}
-		if !assignmentMatchesAgent(s.assignments[clientID], agentID, agentFleetGroupID) {
-			continue
-		}
-		if client.Name != "" {
-			names[client.Name] = struct{}{}
-		}
-		if client.Secret != "" {
-			secrets[client.Secret] = struct{}{}
-		}
-	}
-	return names, secrets
-}
-
-// ResolveIDByNameForAgent finds the panel client ID assigned to the
-// given agent whose managed name matches. Returns "" when no match.
-// agentFleetGroupID is the fleet-group the agent currently belongs to
-// (may be empty).
-func (s *Service) ResolveIDByNameForAgent(agentID, agentFleetGroupID, clientName string) string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return ResolveIDByName(s.clients, s.assignments, agentID, agentFleetGroupID, clientName)
-}
-
-// AggregatedUsage returns the sum-over-agents usage for a single
-// client. Zero value is returned for unknown client IDs.
-func (s *Service) AggregatedUsage(clientID string) AggregatedUsage {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return AggregateUsage(s.usage[clientID])
-}
-
-// SeedUsage records (or overwrites) a per-(client, agent) usage
-// snapshot without touching the per-agent seq tracker. Used by the
-// adopt flow to seed initial counters from a discovered record.
-func (s *Service) SeedUsage(clientID, agentID string, trafficBytes uint64, activeConns, activeUniqueIPs int, observedAt time.Time) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, ok := s.usage[clientID]; !ok {
-		s.usage[clientID] = make(map[string]UsageSnapshot)
-	}
-	s.usage[clientID][agentID] = UsageSnapshot{
-		ClientID:         ClientID(clientID),
-		TrafficUsedBytes: trafficBytes,
-		UniqueIPsUsed:    activeUniqueIPs,
-		ActiveTCPConns:   activeConns,
-		ActiveUniqueIPs:  activeUniqueIPs,
-		ObservedAt:       observedAt,
-	}
-}
-
-// ApplyUsageSnapshot applies an agent's live usage reports to the
-// in-memory aggregator, deduplicating by per-agent Seq. Snapshots
-// whose Seq is <= the stored value are discarded as duplicates/replays.
-// A Seq == 1 after a non-zero stored value signals an agent restart:
-// the CP records the new baseline without double-counting. See
-// P2-LOG-06 / L-07.
-//
-// onlyKnownClients is the set of client IDs currently managed by the
-// caller. Snapshots for unknown client IDs are dropped (typically
-// proxy-client usage that belongs to a still-discovered record). When
-// onlyKnownClients is nil every snapshot ID is accepted.
-func (s *Service) ApplyUsageSnapshot(agentID string, snapshots []UsageSnapshot, onlyKnownClients map[string]struct{}) {
-	if len(snapshots) == 0 {
-		return
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	maxSeqSeen := highestSeq(snapshots)
-	if !s.acceptUsageSeqLocked(agentID, maxSeqSeen) {
-		return
-	}
-	for _, snapshot := range snapshots {
-		if !shouldRecordSnapshot(snapshot, onlyKnownClients) {
-			continue
-		}
-		s.storeUsageSnapshotLocked(agentID, snapshot)
-	}
-	if maxSeqSeen != 0 {
-		s.lastUsageSeq[agentID] = maxSeqSeen
-	}
-}
-
-func highestSeq(snapshots []UsageSnapshot) uint64 {
-	var max uint64
-	for _, s := range snapshots {
-		if s.Seq > max {
-			max = s.Seq
-		}
-	}
-	return max
-}
-
-// acceptUsageSeqLocked enforces the seq monotonicity contract: legacy
-// agents (seq == 0) accumulate unconditionally; modern agents require
-// strictly-increasing seq, except seq == 1 which signals an agent
-// restart baseline (P2-LOG-06 / L-07).
-func (s *Service) acceptUsageSeqLocked(agentID string, maxSeqSeen uint64) bool {
-	prior := s.lastUsageSeq[agentID]
-	if maxSeqSeen == 0 || prior == 0 {
-		return true
-	}
-	return maxSeqSeen > prior || maxSeqSeen == 1
-}
-
-func shouldRecordSnapshot(snapshot UsageSnapshot, onlyKnownClients map[string]struct{}) bool {
-	if snapshot.ClientID.IsZero() {
-		return false
-	}
-	if onlyKnownClients == nil {
-		return true
-	}
-	_, ok := onlyKnownClients[string(snapshot.ClientID)]
-	return ok
-}
-
-func (s *Service) storeUsageSnapshotLocked(agentID string, snapshot UsageSnapshot) {
-	byAgent, ok := s.usage[string(snapshot.ClientID)]
-	if !ok {
-		byAgent = make(map[string]UsageSnapshot)
-		s.usage[string(snapshot.ClientID)] = byAgent
-	}
-	byAgent[agentID] = snapshot
-}
-
-// DropAgentUsage removes all usage rows keyed on the given agent across
-// every client. Used when an agent is deregistered / forgotten.
-func (s *Service) DropAgentUsage(agentID string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for clientID, byAgent := range s.usage {
-		delete(byAgent, agentID)
-		if len(byAgent) == 0 {
-			delete(s.usage, clientID)
-		}
-	}
-	delete(s.lastUsageSeq, agentID)
-}
-
-// RestoreFromRecords loads persisted client + assignment + deployment
-// records into the in-memory store. Sequence counters are recovered
-// from the record IDs. Typically invoked once at server startup.
-func (s *Service) RestoreFromRecords(
-	clientRecords []storage.ClientRecord,
-	assignmentRecords []storage.ClientAssignmentRecord,
-	deploymentRecords []storage.ClientDeploymentRecord,
-) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for _, record := range clientRecords {
-		client := ClientFromRecord(record)
-		s.clients[string(client.ID)] = client
-		s.clientSeq = maxPrefixedSequence(s.clientSeq, "client", string(client.ID))
-	}
-	for _, record := range assignmentRecords {
-		assignment := AssignmentFromRecord(record)
-		s.assignments[string(assignment.ClientID)] = append(s.assignments[string(assignment.ClientID)], assignment)
-		s.assignmentSeq = maxPrefixedSequence(s.assignmentSeq, seqClientAssignment, string(assignment.ID))
-	}
-	for _, record := range deploymentRecords {
-		deployment := DeploymentFromRecord(record)
-		byAgent, ok := s.deployments[string(deployment.ClientID)]
-		if !ok {
-			byAgent = make(map[string]Deployment)
-			s.deployments[string(deployment.ClientID)] = byAgent
-		}
-		byAgent[deployment.AgentID] = deployment
-	}
-}
-
-// UpdateDeployment mutates a single deployment row in-place by its
-// (clientID, agentID) primary key and returns whether the row was
-// found. Used by recordClientJobResult to apply job outcomes.
-func (s *Service) UpdateDeployment(clientID, agentID string, mutate func(*Deployment)) (Deployment, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	byAgent, ok := s.deployments[clientID]
-	if !ok {
-		return Deployment{}, false
-	}
-	deployment, ok := byAgent[agentID]
-	if !ok {
-		return Deployment{}, false
-	}
-	mutate(&deployment)
-	byAgent[agentID] = deployment
-	return deployment, true
-}
-
-// WithStateLocked exposes the in-memory maps to the caller under a
-// read lock for callers that need a consistent cross-map snapshot
-// (e.g. the server's createClient flow reading the current client set
-// during persistence-failure recovery). The callback MUST NOT block on
-// any long-running operation and MUST NOT attempt to mutate the maps.
-func (s *Service) WithStateLocked(fn func(clients map[string]Client, assignments map[string][]Assignment, deployments map[string]map[string]Deployment, usage map[string]map[string]UsageSnapshot)) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	fn(s.clients, s.assignments, s.deployments, s.usage)
-}
-
-// WithStateWriteLocked is the mutation counterpart of WithStateLocked.
-// Used by server flows (adopt, discovery reconcile) that compose
-// multi-map updates not otherwise expressible as a single Service
-// method. The callback MUST release the maps (via the supplied
-// pointers) synchronously; long-running operations are forbidden.
-func (s *Service) WithStateWriteLocked(fn func(clients map[string]Client, assignments map[string][]Assignment, deployments map[string]map[string]Deployment, usage map[string]map[string]UsageSnapshot)) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	fn(s.clients, s.assignments, s.deployments, s.usage)
-}
-
-// --- Phase 6: Repository-backed mirror methods ---
+// --- Repository-backed mirror methods ---
 
 // Restore loads all clients (and their assignments, deployments, usage)
 // from the Repository into the in-memory mirror. Idempotent: subsequent
@@ -632,10 +262,6 @@ func (s *Service) WithStateWriteLocked(fn func(clients map[string]Client, assign
 // mirror in clients_state.go. The legacy restoreStoredClients on Server
 // delegates to this once Phase 7 lands.
 func (s *Service) Restore(ctx context.Context) error {
-	if s.repo == nil {
-		return errors.New("clients.Service: Restore requires Repository (NewServiceV2 wiring)")
-	}
-
 	list, err := s.repo.List(ctx)
 	if err != nil {
 		return fmt.Errorf("clients.Service.Restore: list clients: %w", err)
@@ -820,9 +446,6 @@ func (s *Service) decryptSecretFully(value string) (string, error) {
 // transaction, then updates the in-memory mirror with the plaintext
 // Client. The Repository always stores ciphertext for Secret.
 func (s *Service) Save(ctx context.Context, c Client) error {
-	if s.uow == nil || s.repo == nil {
-		return errors.New("clients.Service: Save requires UoW + Repository (NewServiceV2)")
-	}
 	encryptedSecret, err := s.encryptSecret(c.Secret)
 	if err != nil {
 		return fmt.Errorf("clients.Service.Save: encrypt secret: %w", err)
@@ -847,9 +470,6 @@ func (s *Service) Save(ctx context.Context, c Client) error {
 // one UoW transaction, then updates the in-memory mirror. On any Tx
 // error the mirror is left unchanged.
 func (s *Service) SaveState(ctx context.Context, c Client, assignments []Assignment, deployments []Deployment) error {
-	if s.uow == nil || s.repo == nil {
-		return errors.New("clients.Service: SaveState requires UoW + Repository (NewServiceV2)")
-	}
 	encryptedSecret, err := s.encryptSecret(c.Secret)
 	if err != nil {
 		return fmt.Errorf("clients.Service.SaveState: encrypt: %w", err)
@@ -909,9 +529,6 @@ type AdoptInput struct {
 // server append path after this returns — exactly as the live
 // discovery-adopt HTTP handler already does.
 func (s *Service) AdoptDiscovered(ctx context.Context, in AdoptInput) (Client, error) {
-	if s.uow == nil || s.repo == nil {
-		return Client{}, errors.New("clients.Service: AdoptDiscovered requires UoW + Repository (NewServiceV2)")
-	}
 	if in.ObservedAt.IsZero() {
 		in.ObservedAt = s.now().UTC()
 	}
@@ -975,9 +592,6 @@ func buildClientFromDiscovered(dc discovered.DiscoveredClient, secret, id string
 // No name collision: the legacy Service has no Delete method; only the
 // fakeRepo in tests had a stub.
 func (s *Service) Delete(ctx context.Context, id ClientID) error {
-	if s.uow == nil || s.repo == nil {
-		return errors.New("clients.Service: Delete requires UoW + Repository (NewServiceV2)")
-	}
 	if err := s.uow.Do(ctx, func(rs ClientsRepoSet) error {
 		return rs.Clients().Delete(ctx, id)
 	}); err != nil {
@@ -998,9 +612,6 @@ func (s *Service) Delete(ctx context.Context, id ClientID) error {
 // updates the in-memory mirror. Bypasses UoW — usage updates are not
 // part of any cross-domain transaction.
 func (s *Service) UpsertUsage(ctx context.Context, u Usage) error {
-	if s.repo == nil {
-		return errors.New("clients.Service: UpsertUsage requires Repository (NewServiceV2)")
-	}
 	// Update the in-memory mirror (the live accumulator) unconditionally,
 	// BEFORE attempting the persist. Client usage totals are cumulative
 	// absolutes and the seq cursor advances unconditionally upstream
@@ -1023,9 +634,6 @@ func (s *Service) UpsertUsage(ctx context.Context, u Usage) error {
 func (s *Service) UpsertUsageBulk(ctx context.Context, batch []Usage) error {
 	if len(batch) == 0 {
 		return nil
-	}
-	if s.repo == nil {
-		return errors.New("clients.Service: UpsertUsageBulk requires Repository (NewServiceV2)")
 	}
 	// Update the in-memory mirror (the live accumulator) unconditionally,
 	// BEFORE attempting the persist. See UpsertUsage for the rationale: usage
@@ -1050,39 +658,19 @@ func (s *Service) applyUsageMirror(u Usage) {
 	s.mu.Unlock()
 }
 
-// PersistDeployment writes a single deployment record. When wired with
-// NewServiceV2 (repo != nil) it calls Repository.PutDeployment; otherwise
-// it falls back to the legacy ClientStore.PutClientDeployment path via
-// type assertion on s.store (NewServiceWithVault wiring, Phase 7 fallback).
-// When neither is wired (in-memory mode for tests) the call is a no-op.
+// PersistDeployment writes a single deployment record via the
+// Repository and updates the in-memory mirror.
 func (s *Service) PersistDeployment(ctx context.Context, d Deployment) error {
-	if s.repo != nil {
-		if err := s.repo.PutDeployment(ctx, d); err != nil {
-			return err
-		}
-		s.mu.Lock()
-		if s.mirrorDeployments[d.ClientID] == nil {
-			s.mirrorDeployments[d.ClientID] = make(map[string]Deployment)
-		}
-		s.mirrorDeployments[d.ClientID][d.AgentID] = d
-		s.mu.Unlock()
-		return nil
+	if err := s.repo.PutDeployment(ctx, d); err != nil {
+		return err
 	}
-	if s.store == nil {
-		return nil
+	s.mu.Lock()
+	if s.mirrorDeployments[d.ClientID] == nil {
+		s.mirrorDeployments[d.ClientID] = make(map[string]Deployment)
 	}
-	// storage.ClientStore is deprecated for the hot path (Wave 4.2
-	// moved clients onto clients.Repository + UnitOfWork) but the
-	// pre-migration fallback here is intentional: this service is
-	// constructed with a bare Store when the operator has not yet
-	// finished the migrate-schema step. Retained until S26 deletes
-	// the legacy code path entirely.
-	//nolint:staticcheck // SA1019: legacy fallback for pre-migrate stores.
-	cs, ok := s.store.(storage.ClientStore)
-	if !ok {
-		return nil
-	}
-	return cs.PutClientDeployment(ctx, DeploymentToRecord(d))
+	s.mirrorDeployments[d.ClientID][d.AgentID] = d
+	s.mu.Unlock()
+	return nil
 }
 
 // --- Phase 7: server-legacy bridge ---
@@ -1330,17 +918,7 @@ func (s *Service) UsageByAgentMirror(clientID string) map[string]UsageSnapshot {
 	byAgent := s.mirrorUsage[ClientID(clientID)]
 	out := make(map[string]UsageSnapshot, len(byAgent))
 	for agentID, u := range byAgent {
-		out[agentID] = UsageSnapshot{
-			ClientID:           u.ClientID,
-			TrafficUsedBytes:   u.TrafficUsedBytes,
-			UniqueIPsUsed:      u.UniqueIPsUsed,
-			ActiveTCPConns:     u.ActiveTCPConns,
-			ActiveUniqueIPs:    u.ActiveUniqueIPs,
-			QuotaUsedBytes:     u.QuotaUsedBytes,
-			QuotaLastResetUnix: u.QuotaLastResetUnix,
-			ObservedAt:         u.ObservedAt,
-			Seq:                u.LastSeq,
-		}
+		out[agentID] = u.snapshot()
 	}
 	return out
 }
@@ -1491,15 +1069,5 @@ func (s *Service) MirrorUsageEntryFor(clientID, agentID string) (UsageSnapshot, 
 	if !ok {
 		return UsageSnapshot{}, false
 	}
-	return UsageSnapshot{
-		ClientID:           u.ClientID,
-		TrafficUsedBytes:   u.TrafficUsedBytes,
-		UniqueIPsUsed:      u.UniqueIPsUsed,
-		ActiveTCPConns:     u.ActiveTCPConns,
-		ActiveUniqueIPs:    u.ActiveUniqueIPs,
-		QuotaUsedBytes:     u.QuotaUsedBytes,
-		QuotaLastResetUnix: u.QuotaLastResetUnix,
-		ObservedAt:         u.ObservedAt,
-		Seq:                u.LastSeq,
-	}, true
+	return u.snapshot(), true
 }

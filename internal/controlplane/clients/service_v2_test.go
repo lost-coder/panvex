@@ -288,16 +288,6 @@ func TestService_Restore_PopulatesMirror(t *testing.T) {
 	}
 }
 
-func TestService_Restore_NoRepo(t *testing.T) {
-	t.Parallel()
-
-	svc := NewServiceV2(ServiceConfig{})
-	err := svc.Restore(context.Background())
-	if err == nil {
-		t.Fatal("Restore with nil repo: expected error, got nil")
-	}
-}
-
 func TestService_Restore_Idempotent(t *testing.T) {
 	t.Parallel()
 

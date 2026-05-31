@@ -134,14 +134,18 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		initializationWatchCooldowns: make(map[string]time.Time),
 		fallbackEnteredAt:            make(map[string]time.Time),
 		sessions:                     agents.NewSessionManager(),
-		clientsSvc:                   clients.NewServiceWithVault(options.Store, now, vault),
-		fleetSvc:                     fleet.NewService(options.Store, func() time.Time { return now().UTC() }),
-		instances:                    make(map[string]Instance),
-		metrics:                      make([]MetricSnapshot, 0, maxInMemoryMetricSnapshots),
-		intervals:                    options.Intervals.withDefaults(),
-		sqlitePath:                   options.SQLitePath,
-		bootstrap:                    options.Bootstrap,
-		bootstrapSources:             options.BootstrapSources,
+		// clientsSvc is constructed with a no-repo mirror here so it is never
+		// nil (HasRepo() gates every persistence path). initStoreBackedSubsystems
+		// overwrites it with a Repository+UoW-backed Service once a *sql.DB is
+		// available (the only path that actually persists clients).
+		clientsSvc:       clients.NewServiceV2(clients.ServiceConfig{Vault: vault, Now: now}),
+		fleetSvc:         fleet.NewService(options.Store, func() time.Time { return now().UTC() }),
+		instances:        make(map[string]Instance),
+		metrics:          make([]MetricSnapshot, 0, maxInMemoryMetricSnapshots),
+		intervals:        options.Intervals.withDefaults(),
+		sqlitePath:       options.SQLitePath,
+		bootstrap:        options.Bootstrap,
+		bootstrapSources: options.BootstrapSources,
 	}
 }
 
@@ -269,11 +273,14 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 	s.trySetStartupErr(func() error {
 		return s.restoreStoredState(s.serverCtx)
 	})
-	// Phase 7: wire clientsSvc with NewServiceV2 when a raw *sql.DB is
-	// available. Both SQLite and Postgres stores expose DB() *sql.DB; the
-	// concrete type determines which backend constructors to use.
-	// When the store does not expose DB() (e.g. test doubles), clientsSvc
-	// keeps its NewServiceWithVault wiring from newServerFromOptions.
+	// Wire clientsSvc with a Repository+UoW-backed Service when a raw
+	// *sql.DB is available. Both SQLite and Postgres stores expose
+	// DB() *sql.DB; the concrete type determines which backend
+	// constructors to use. When the store does not expose DB() (e.g. test
+	// doubles that embed storage.Store and so do not promote DB()),
+	// clientsSvc keeps the no-repo mirror from newServerFromOptions —
+	// HasRepo() is false and every persistence path is a no-op. No client
+	// flow runs on such a store.
 	s.trySetStartupErr(func() error {
 		rawDBer, ok := store.(interface{ DB() *sql.DB })
 		if !ok {
@@ -298,15 +305,14 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 			discoveredRepoV2 = postgres.NewDiscoveredRepository(rawDB)
 			uowImpl = postgres.NewUoW(rawDB)
 		default:
-			if options.ClientsRepoOverride == nil {
-				// Unknown concrete store type with no override — fall back to
-				// NewServiceWithVault wiring already set in newServerFromOptions.
-				return nil
-			}
-			// Test double wrapping a real SQLite store: use the override repo
-			// for clients while building UoW and discoveredRepo from rawDB
-			// (SQLite assumed; tests always use SQLite via failingStore).
+			// Unknown concrete store type that still exposes a *sql.DB —
+			// always a test double wrapping a real SQLite store (failingStore).
+			// Build the SQLite repo set from rawDB; use the override repo for
+			// clients when failure-injection tests supply one.
 			clientsRepo = options.ClientsRepoOverride
+			if clientsRepo == nil {
+				clientsRepo = sqlite.NewClientsRepository(rawDB)
+			}
 			discoveredRepoV2 = sqlite.NewDiscoveredRepository(rawDB)
 			uowImpl = sqlite.NewUoW(rawDB)
 		}
@@ -322,7 +328,6 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 			UoW:            uowAdapter,
 			Vault:          vault,
 			Now:            s.now,
-			Store:          store, // legacy methods coexist during phase 7
 		})
 		s.discoveredRepo = discoveredRepoV2
 		s.uow = uowImpl

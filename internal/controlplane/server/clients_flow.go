@@ -604,11 +604,16 @@ func (s *Server) applyClientResetQuotaResult(ctx context.Context, agentID string
 	}
 }
 
-// recordClientResetQuotaTimestamp updates the in-memory deployment with
-// the new last-reset timestamp under the clients lock and returns the
-// post-update deployment for persistence. Returns ok=false when the
-// (client, agent) pair is no longer tracked (e.g. the operator
-// unassigned the agent between job enqueue and result).
+// recordClientResetQuotaTimestamp computes the deployment carrying the new
+// last-reset timestamp for persistence. Returns ok=false when the (client,
+// agent) pair is no longer tracked (e.g. the operator unassigned the agent
+// between job enqueue and result).
+//
+// This performs two independent Service mirror reads (MirrorClientExists
+// then MirrorDeployment) rather than holding a single lock across both;
+// the brief non-atomic window between them is benign — a concurrent delete
+// is re-reconciled on the next telemetry tick, and the caller persists via
+// PersistDeployment which writes the mirror under its own lock.
 func (s *Server) recordClientResetQuotaTimestamp(clientID, agentID string, lastResetEpochSecs uint64, observedAt time.Time) (managedClientDeployment, bool) {
 	if !s.clientsSvc.MirrorClientExists(clientID) {
 		return managedClientDeployment{}, false

@@ -155,9 +155,9 @@ func TestAggregateUsage(t *testing.T) {
 func TestServiceWrappers(t *testing.T) {
 	t.Parallel()
 
-	svc := NewService()
+	svc := NewServiceV2(ServiceConfig{})
 	if svc == nil {
-		t.Fatalf("NewService returned nil")
+		t.Fatalf("NewServiceV2 returned nil")
 	}
 	if !svc.ValidateHexSecret("00112233445566778899aabbccddeeff") {
 		t.Fatalf("ValidateHexSecret rejected a known-valid hex secret")
