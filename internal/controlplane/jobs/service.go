@@ -178,9 +178,30 @@ type Service struct {
 	// so the call site no longer needs an O(N) ListWithContext scan to
 	// recover a client's connection_links result (P-4).
 	latestSucceededByClient map[string]Job
-	jobStore                storage.JobStore
+	jobStore                Store
 	startupErr              error
 	now                     func() time.Time
+}
+
+// Store is the subset of the storage layer that the jobs Service depends on
+// (A6). It lists exactly the four methods the Service calls, narrowing the
+// historical dependency on the ~9-method storage.JobStore. storage.JobStore —
+// and therefore the concrete *sqlite.Store / *postgres.Store — satisfies it,
+// so wiring is unchanged; tests can supply a small fake covering just these
+// methods.
+//
+// Distinct from Repository (repository.go), which is the write-side contract
+// used by cross-domain transactional callers.
+type Store interface {
+	// PutJob persists (inserts or updates) a single job record.
+	PutJob(ctx context.Context, job storage.JobRecord) error
+	// ListJobs returns every job record for restore on startup.
+	ListJobs(ctx context.Context) ([]storage.JobRecord, error)
+	// PutJobTarget persists (inserts or updates) one per-target result row.
+	PutJobTarget(ctx context.Context, target storage.JobTargetRecord) error
+	// ListAllJobTargets returns every job_targets row in one round-trip,
+	// used by restore() to avoid the per-job N+1 SELECT pattern.
+	ListAllJobTargets(ctx context.Context) ([]storage.JobTargetRecord, error)
 }
 
 type persistCandidate struct {
@@ -203,7 +224,7 @@ func NewService() *Service {
 }
 
 // NewServiceWithStore constructs a job service that persists state through the shared store.
-func NewServiceWithStore(jobStore storage.JobStore) *Service {
+func NewServiceWithStore(jobStore Store) *Service {
 	service := &Service{
 		jobs:                    make(map[string]Job),
 		agentJobs:               make(map[string]map[string]struct{}),
