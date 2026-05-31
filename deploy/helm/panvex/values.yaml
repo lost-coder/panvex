@@ -14,10 +14,15 @@ image:
   # Optional: imagePullSecrets, propagated into pod spec verbatim.
   pullSecrets: []
 
-# Number of replicas. The control-plane uses an external Postgres for
-# persistence and broadcasts state via WebSocket; multiple replicas behind a
-# load balancer are safe as long as session affinity is configured (or all
-# replicas trust the same auth.csrf secret + Postgres).
+# Number of replicas.
+#
+# SINGLE-INSTANCE BY DESIGN: Panvex currently runs as a single control-plane
+# instance. Multi-instance / HA is not yet supported — there is no leader
+# election or cross-instance coordination for the in-process workers
+# (job scheduler, presence, batch-writer), so running replicaCount > 1 will
+# cause duplicate work and racey state. Keep this at 1 until multi-instance
+# support lands. The PodDisruptionBudget below is intentionally skipped while
+# replicaCount < 2 (see podDisruptionBudget).
 replicaCount: 1
 
 # Storage driver: "postgres" or "sqlite". Sqlite is intended for dev only;
@@ -80,9 +85,15 @@ resources:
 # 60s gives a 15s buffer.
 terminationGracePeriodSeconds: 60
 
-# Pod disruption budget. Keeps at least one replica up during voluntary
-# disruptions (node drains, autoscaler events). For replicaCount=1, this
-# blocks node drain — that is intended; raise replicaCount before relying on PDB.
+# Pod disruption budget.
+#
+# A PDB of minAvailable: 1 with a single replica would block voluntary node
+# drains FOREVER (the only pod can never be evicted), which breaks routine
+# cluster maintenance and autoscaler scale-down. Because Panvex is
+# single-instance by design (see replicaCount above), the PDB template is
+# only rendered when replicaCount >= 2. Setting enabled: true here is
+# therefore a no-op at the default replicaCount: 1 — it takes effect only
+# once HA / multi-instance support lands and you raise replicaCount.
 podDisruptionBudget:
   enabled: true
   minAvailable: 1

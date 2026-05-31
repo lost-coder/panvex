@@ -1,11 +1,13 @@
-{{- if .Values.podDisruptionBudget.enabled }}
+{{- if and .Values.podDisruptionBudget.enabled (ge (int .Values.replicaCount) 2) }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: {{ include "panvex.fullname" . }}
-  labels: {{- include "panvex.labels" . | nindent 4 }}
+  labels:
+    {{- include "panvex.labels" . | nindent 4 }}
 spec:
   minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
   selector:
-    matchLabels: {{- include "panvex.selectorLabels" . | nindent 6 }}
+    matchLabels:
+      {{- include "panvex.labels" . | nindent 6 }}
 {{- end }}

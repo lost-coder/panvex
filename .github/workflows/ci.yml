@@ -140,17 +140,20 @@ jobs:
   go-test-next:
     name: Go Tests (next version, canary)
     needs: detect-changes
-    # Re-enable once Go 1.27 ships an RC build that actions/setup-go can
-    # resolve. The job is non-blocking (continue-on-error) but currently
-    # shows red because 1.27.0-rc.1 cannot be resolved (May 2026).
-    if: false
+    # Non-blocking canary (continue-on-error): surfaces toolchain
+    # regressions on the latest Go without gating merges. We track
+    # `stable` + check-latest rather than pinning a specific RC — an
+    # explicit RC tag (e.g. 1.27.0-rc.1) is not reliably resolvable by
+    # actions/setup-go and left the job permanently red. `stable` always
+    # resolves and automatically rolls onto the next Go minor the day it
+    # GAs, so this keeps giving signal without manual version bumps.
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.27.0-rc.1"
+          go-version: "stable"
           check-latest: true
       - name: Mirror install-agent.sh for //go:embed
         run: go generate ./internal/controlplane/server/...
@@ -446,6 +449,34 @@ jobs:
           scan-type: config
           scan-ref: Dockerfile
           severity: HIGH,CRITICAL
+          exit-code: '1'
+          format: table
+
+  # Scans the *built* image — trivy-fs and trivy-dockerfile cover source
+  # deps and Dockerfile misconfig, but neither catches a vulnerable OS
+  # package baked into the final runtime layer (distroless/alpine CVEs,
+  # transitively pulled libs). Build the image locally (no push) and run
+  # Trivy in `image` mode with the same HIGH,CRITICAL + ignore-unfixed
+  # gate the other Trivy jobs use, so behaviour stays consistent.
+  trivy-image:
+    name: Trivy image scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build image (load into local docker)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: panvex:ci
+      - name: Trivy scan (image)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: panvex:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
           exit-code: '1'
           format: table
 
