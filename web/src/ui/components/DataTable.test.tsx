@@ -42,11 +42,14 @@ describe("DataTable a11y (P2-FE-07 / M-F6)", () => {
     const user = userEvent.setup();
     render(<DataTable columns={columns} data={rows} keyExtractor={(r) => r.id} />);
     const nameHeader = screen.getByRole("columnheader", { name: /name/i });
+    // U3: the sort affordance is now a keyboard-operable <button> inside
+    // the <th>; click it, but assert aria-sort on the owning columnheader.
+    const nameButton = screen.getByRole("button", { name: /name/i });
 
-    await user.click(nameHeader);
+    await user.click(nameButton);
     expect(nameHeader).toHaveAttribute("aria-sort", "ascending");
 
-    await user.click(nameHeader);
+    await user.click(nameButton);
     expect(nameHeader).toHaveAttribute("aria-sort", "descending");
   });
 
@@ -55,11 +58,13 @@ describe("DataTable a11y (P2-FE-07 / M-F6)", () => {
     render(<DataTable columns={columns} data={rows} keyExtractor={(r) => r.id} />);
     const nameHeader = screen.getByRole("columnheader", { name: /name/i });
     const countHeader = screen.getByRole("columnheader", { name: /count/i });
+    const nameButton = screen.getByRole("button", { name: /name/i });
+    const countButton = screen.getByRole("button", { name: /count/i });
 
-    await user.click(nameHeader);
+    await user.click(nameButton);
     expect(nameHeader).toHaveAttribute("aria-sort", "ascending");
 
-    await user.click(countHeader);
+    await user.click(countButton);
     expect(countHeader).toHaveAttribute("aria-sort", "ascending");
     expect(nameHeader).toHaveAttribute("aria-sort", "none");
   });

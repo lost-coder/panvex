@@ -24,7 +24,7 @@ const DAY = 86_400;
 
 type JobTone = PulseTone;
 
-const JOB_STATUSES = ["all", "running", "queued", "succeeded", "failed"] as const;
+const JOB_STATUSES = ["all", "running", "queued", "succeeded", "partial", "failed"] as const;
 type JobStatusFilter = (typeof JOB_STATUSES)[number];
 
 type AuditWindow = "1h" | "24h" | "7d" | "all";

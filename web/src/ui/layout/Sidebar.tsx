@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { LogOut, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/ui/lib/cn";
 import type { NavItem } from "./types";
@@ -31,6 +32,7 @@ export function Sidebar({
   onLogout,
   className,
 }: Readonly<SidebarProps>) {
+  const { t } = useTranslation("ui");
   // Active-bar offset must equal half of (rail width − button width):
   // - compact rail: (64 − 44) / 2 = 10px gap, so the marker sits at -10px
   //   from the button's left edge to land flush with the aside's edge.
@@ -64,7 +66,7 @@ export function Sidebar({
         {onToggleExpand && (
           <button
             type="button"
-            aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
+            aria-label={expanded ? t("sidebar.collapse") : t("sidebar.expand")}
             aria-expanded={expanded}
             onClick={onToggleExpand}
             className={cn(
@@ -147,7 +149,7 @@ export function Sidebar({
           <div className="relative group">
             <button
               type="button"
-              aria-label="Log out"
+              aria-label={t("sidebar.logout")}
               onClick={onLogout}
               className={cn(
                 "flex items-center rounded-xs transition-colors",
@@ -159,14 +161,14 @@ export function Sidebar({
               )}
             >
               <LogOut className="w-5 h-5 shrink-0" />
-              {expanded && <span>Log out</span>}
+              {expanded && <span>{t("sidebar.logout")}</span>}
             </button>
             {!expanded && (
               <span
                 role="tooltip"
                 className="absolute left-full ml-2 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-xs bg-fg text-xs text-bg whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity delay-100 shadow-xl z-50"
               >
-                Log out
+                {t("sidebar.logout")}
               </span>
             )}
           </div>

@@ -33,6 +33,15 @@
     "live": "live"
   },
   "metrics": {
-    "noData": "No data available for this time range"
+    "noData": "No data available for this time range",
+    "tablistLabel": "Metric category",
+    "rangeLabel": "Time range",
+    "timeColumn": "Time",
+    "tabs": {
+      "system": "System",
+      "connections": "Connections",
+      "network": "Network",
+      "traffic": "Traffic"
+    }
   }
 }

@@ -35,6 +35,7 @@
     "running": "выполняются",
     "queued": "в очереди",
     "succeeded": "успех",
+    "partial": "частично",
     "failed": "ошибка"
   },
   "auditWindow": {

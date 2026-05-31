@@ -1,0 +1,7 @@
+{
+  "previous": "Previous page",
+  "next": "Next page",
+  "page": "Page {{page}}",
+  "showing": "Showing {{start}}–{{end}} of {{total}}",
+  "pageOf": "Page {{page}} of {{total}}"
+}

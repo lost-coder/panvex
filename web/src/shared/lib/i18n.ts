@@ -25,6 +25,7 @@ export const DEFAULT_LANGUAGE: SupportedLanguage = "en";
 export const LANGUAGE_COOKIE = "panvex_lang";
 
 const NAMESPACES = [
+  "common",
   "auth",
   "activity",
   "enrollment",

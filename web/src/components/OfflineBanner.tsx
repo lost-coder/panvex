@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useOnlineStatus } from "@/shared/hooks";
 
 /**
@@ -10,6 +11,7 @@ import { useOnlineStatus } from "@/shared/hooks";
  */
 export function OfflineBanner() {
   const online = useOnlineStatus();
+  const { t } = useTranslation("ui");
   if (online) return null;
   return (
     <div
@@ -19,7 +21,7 @@ export function OfflineBanner() {
       className="sticky top-0 z-40 w-full bg-status-error/20 border-b border-status-error/40 text-status-error text-xs px-4 py-1.5 flex items-center gap-2"
     >
       <span aria-hidden="true" className="inline-block w-2 h-2 rounded-full bg-status-error" />
-      <span>Соединение потеряно — изменения не будут сохранены.</span>
+      <span>{t("offlineBanner")}</span>
     </div>
   );
 }
