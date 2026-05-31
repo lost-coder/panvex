@@ -676,6 +676,102 @@ func TestService_UpsertUsage_Single(t *testing.T) {
 	}
 }
 
+// --- C1 follow-up: mirror must update unconditionally on DB-persist failure ---
+//
+// Client usage totals are cumulative absolutes and the seq cursor advances
+// unconditionally (server.shouldApplyClientUsageDelta -> SetMirrorLastUsageSeq)
+// before the persist call. If the mirror total is gated on DB success, a
+// failed persist leaves the cursor advanced but the total stale, permanently
+// dropping the failed delta's bytes from the running total. The mirror (live
+// accumulator) must therefore be updated whether or not the DB write succeeds,
+// while the DB error is still propagated to the caller (which alerts on
+// client_usage_persist_failed).
+
+func TestService_UpsertUsageBulk_PersistFailure_StillUpdatesMirror(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	repo.failOn = "UpsertUsageBulk"
+	svc := NewServiceV2(ServiceConfig{Repo: repo})
+	batch := []Usage{
+		{ClientID: ClientID("c-1"), AgentID: "a-1", TrafficUsedBytes: 100, LastSeq: 5},
+	}
+
+	err := svc.UpsertUsageBulk(context.Background(), batch)
+	if err == nil {
+		t.Fatal("expected DB persist error to be propagated, got nil")
+	}
+
+	snap := svc.MirrorSnapshot()
+	got, ok := snap.Usage[ClientID("c-1")]["a-1"]
+	if !ok {
+		t.Fatal("mirror usage c-1/a-1 missing after failed persist (mirror not updated)")
+	}
+	if got.TrafficUsedBytes != 100 {
+		t.Fatalf("mirror TrafficUsedBytes = %d, want 100 despite DB error", got.TrafficUsedBytes)
+	}
+	if snap.LastUsageSeq["a-1"] != 5 {
+		t.Fatalf("mirror LastUsageSeq[a-1] = %d, want 5", snap.LastUsageSeq["a-1"])
+	}
+}
+
+func TestService_UpsertUsage_PersistFailure_StillUpdatesMirror(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	repo.failOn = "UpsertUsage"
+	svc := NewServiceV2(ServiceConfig{Repo: repo})
+	u := Usage{ClientID: ClientID("c-x"), AgentID: "a-x", TrafficUsedBytes: 42, LastSeq: 3}
+
+	if err := svc.UpsertUsage(context.Background(), u); err == nil {
+		t.Fatal("expected DB persist error to be propagated, got nil")
+	}
+
+	snap := svc.MirrorSnapshot()
+	got, ok := snap.Usage[ClientID("c-x")]["a-x"]
+	if !ok {
+		t.Fatal("mirror usage c-x/a-x missing after failed persist (mirror not updated)")
+	}
+	if got.TrafficUsedBytes != 42 {
+		t.Fatalf("mirror TrafficUsedBytes = %d, want 42 despite DB error", got.TrafficUsedBytes)
+	}
+	if snap.LastUsageSeq["a-x"] != 3 {
+		t.Fatalf("mirror LastUsageSeq[a-x] = %d, want 3", snap.LastUsageSeq["a-x"])
+	}
+}
+
+// A failed delta followed by a successful in-order delta must leave the mirror
+// total reflecting BOTH deltas (cumulative absolutes), proving no permanent
+// byte drop. delta2 carries the new running total (300) — the same absolute
+// the agent would send next regardless of the earlier persist outcome.
+func TestService_UpsertUsageBulk_FailThenOK_NoPermanentDrop(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	svc := NewServiceV2(ServiceConfig{Repo: repo})
+	ctx := context.Background()
+
+	repo.failOn = "UpsertUsageBulk"
+	delta1 := []Usage{{ClientID: ClientID("c-1"), AgentID: "a-1", TrafficUsedBytes: 100, LastSeq: 1}}
+	if err := svc.UpsertUsageBulk(ctx, delta1); err == nil {
+		t.Fatal("expected DB error on delta1, got nil")
+	}
+
+	repo.failOn = ""
+	delta2 := []Usage{{ClientID: ClientID("c-1"), AgentID: "a-1", TrafficUsedBytes: 300, LastSeq: 2}}
+	if err := svc.UpsertUsageBulk(ctx, delta2); err != nil {
+		t.Fatalf("delta2 persist: %v", err)
+	}
+
+	snap := svc.MirrorSnapshot()
+	if got := snap.Usage[ClientID("c-1")]["a-1"].TrafficUsedBytes; got != 300 {
+		t.Fatalf("mirror TrafficUsedBytes = %d, want 300 (both deltas reflected)", got)
+	}
+	if got := repo.usage[0].TrafficUsedBytes; got != 300 {
+		t.Fatalf("repo TrafficUsedBytes = %d, want 300 (cumulative self-heal)", got)
+	}
+}
+
 // --- Task A1: PersistDeployment keeps the V2 mirror consistent ---
 
 // seedClientWithDeployment writes a client + one deployment through the repo

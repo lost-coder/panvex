@@ -1001,11 +1001,18 @@ func (s *Service) UpsertUsage(ctx context.Context, u Usage) error {
 	if s.repo == nil {
 		return errors.New("clients.Service: UpsertUsage requires Repository (NewServiceV2)")
 	}
-	if err := s.repo.UpsertUsage(ctx, u); err != nil {
-		return err
-	}
+	// Update the in-memory mirror (the live accumulator) unconditionally,
+	// BEFORE attempting the persist. Client usage totals are cumulative
+	// absolutes and the seq cursor advances unconditionally upstream
+	// (server.shouldApplyClientUsageDelta -> SetMirrorLastUsageSeq). If the
+	// mirror total were gated on DB success, a failed persist would leave the
+	// cursor advanced but the total stale, permanently dropping this delta's
+	// bytes from the running total (the cumulative DB self-heal relies on the
+	// in-memory total being correct). The DB error is still propagated below
+	// so callers can alert (client_usage_persist_failed); the next successful
+	// in-order snapshot carries the new absolute and self-heals the DB row.
 	s.applyUsageMirror(u)
-	return nil
+	return s.repo.UpsertUsage(ctx, u)
 }
 
 // UpsertUsageBulk is the hot-path bulk variant called from agent-flow
@@ -1020,15 +1027,19 @@ func (s *Service) UpsertUsageBulk(ctx context.Context, batch []Usage) error {
 	if s.repo == nil {
 		return errors.New("clients.Service: UpsertUsageBulk requires Repository (NewServiceV2)")
 	}
-	if err := s.repo.UpsertUsageBulk(ctx, batch); err != nil {
-		return err
-	}
+	// Update the in-memory mirror (the live accumulator) unconditionally,
+	// BEFORE attempting the persist. See UpsertUsage for the rationale: usage
+	// totals are cumulative absolutes and the seq cursor advances upstream
+	// regardless of DB success, so gating the mirror total on persist success
+	// would permanently drop a failed delta's bytes. The DB error is still
+	// propagated so callers can alert (client_usage_persist_failed); the next
+	// successful snapshot's absolute self-heals the DB row.
 	s.mu.Lock()
 	for _, u := range batch {
 		s.applyUsageMirrorLocked(u)
 	}
 	s.mu.Unlock()
-	return nil
+	return s.repo.UpsertUsageBulk(ctx, batch)
 }
 
 // applyUsageMirror acquires the write lock and delegates to
