@@ -581,6 +581,30 @@ func (s *Server) trackClientUsageOwnerLocked(clientID, agentID string) {
 	owned[clientID] = struct{}{}
 }
 
+// applyClientIPSnapshot records the (client, agent) pair seen in an IP
+// snapshot that arrived before the matching usage tick (IN-M6). It creates a
+// ZERO-VALUED placeholder usage entry plus its owner-index entry and touches
+// no gauges or traffic counters.
+//
+// D1: this write is deliberately NOT mirrored into the clients.Service V2
+// store, and that is safe to drop wholesale in C1 (which deletes s.clientUsage
+// / s.agentClientUsage). The placeholder is a Server-map-only optimisation
+// with no observable effect on any mirror-backed read path:
+//   - the listing/detail snapshots gate on len(usageByAgent) > 0 and then call
+//     AggregateUsage; a zero entry yields an all-zero AggregatedUsage, which is
+//     byte-for-byte identical in the JSON to a client whose usage key is absent
+//     (Go map zero-value semantics in buildClientListRow / the detail builder);
+//   - the owner-index consumers (zeroLiveGaugesForUntouchedClients,
+//     agentTotalTrafficLocked, purgeAgentInMemory) treat a zero entry as
+//     value-neutral: it contributes 0 to traffic sums and zeroing an
+//     already-zero gauge is a no-op;
+//   - the mirror has no owner index — its ZeroLiveGaugesForAgent walks
+//     mirrorUsage directly — so there is nothing for this placeholder to keep
+//     consistent.
+//
+// Once the usage tick lands, mergeClientUsageBatch (which DOES mirror via
+// clients.Service.UpsertUsageBulk) overwrites the placeholder with real
+// counters, so no information is lost by not seeding the mirror here.
 func (s *Server) applyClientIPSnapshot(agentID string, ipSnapshots []clientIPSnapshot) {
 	for _, snapshot := range ipSnapshots {
 		usageByAgent := s.clientUsage[snapshot.ClientID]

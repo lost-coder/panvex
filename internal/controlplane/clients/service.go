@@ -1196,9 +1196,16 @@ func (s *Service) ZeroLiveGaugesForAgent(agentID string, seen map[string]struct{
 // the given agent from the mirror, prunes any inner maps left empty, and
 // clears the agent's per-agent seq cursor. Mirror-side counterpart of the
 // server's purgeAgentInMemory usage cleanup (used when an agent is
-// deregistered / forgotten). Mirror-only: the underlying client_usage
-// rows are removed by the deregister flow's own Repository call.
-// No-op without a Repository.
+// deregistered / forgotten).
+//
+// Mirror-only by design: the DB client_usage rows are intentionally NOT
+// deleted here. The deregister flow (server.persistAgentDeregister) removes
+// only the agent's instances, the agent row, and a revocation record — it
+// never touches client_usage. This preserves the pre-B3 behaviour, where
+// deregistration purged the in-memory maps but left the persisted usage rows
+// in place. If reaping orphaned client_usage rows is ever wanted it is a
+// separate concern (a Repository-level delete in the deregister transaction),
+// not a side effect of this mirror cleanup. No-op without a Repository.
 func (s *Service) DropAgentUsageMirror(agentID string) {
 	if s.repo == nil {
 		return
