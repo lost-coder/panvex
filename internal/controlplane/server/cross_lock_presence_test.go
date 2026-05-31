@@ -12,11 +12,11 @@ import (
 // discipline of resolveClientTargetAgentIDs (P2-LOG-11 / M-C11 / L-08).
 //
 // Before the fix, the function read s.agents under s.mu.RLock while the
-// caller's `assignments` slice was captured under s.clientsMu — two
-// independent critical sections. Agents mutated concurrently with clients
+// caller's `assignments` slice was captured under a separate client lock —
+// two independent critical sections. Agents mutated concurrently with clients
 // could produce deployment rows that referenced ids inconsistent with the
 // current agent snapshot, and more importantly the reverse-order lock
-// hazard (clientsMu -> mu) was undocumented. After the fix, the function
+// hazard (Service.mu -> mu) was undocumented. After the fix, the function
 // snapshots needed agent fields under s.mu once, releases it, then
 // iterates the caller-provided assignments against the snapshot — keeping
 // the two lock windows strictly disjoint.
@@ -27,7 +27,7 @@ func TestResolveClientTargetAgentIDsRunsCleanUnderRace(t *testing.T) {
 	now := time.Date(2026, time.April, 17, 12, 0, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 	})
 	defer server.Close()
 
@@ -110,10 +110,10 @@ func TestResolveClientTargetAgentIDsRunsCleanUnderRace(t *testing.T) {
 		}
 	}()
 
-	// Parallel clientsMu user: takes s.clientsMu to exercise the
-	// mu -> clientsMu ordering rule from the other side. The resolver
-	// takes s.mu; this takes s.clientsMu. A reverse-order bug would be
-	// caught by the race detector or a deadlock.
+	// Parallel clients.Service user: takes the Service's own lock (via
+	// MirrorSnapshot) to exercise the mu -> Service.mu ordering rule from the
+	// other side. The resolver takes s.mu; this takes the Service lock. A
+	// reverse-order bug would be caught by the race detector or a deadlock.
 	mutatorsWG.Add(1)
 	go func() {
 		defer mutatorsWG.Done()
@@ -123,9 +123,7 @@ func TestResolveClientTargetAgentIDsRunsCleanUnderRace(t *testing.T) {
 				return
 			default:
 			}
-			server.clientsMu.Lock()
-			_ = server.clientAssignments
-			server.clientsMu.Unlock()
+			_ = server.clientsSvc.MirrorSnapshot()
 		}
 	}()
 
@@ -172,7 +170,7 @@ func TestPresenceConnectedAtPersistsAcrossSnapshots(t *testing.T) {
 	now := time.Date(2026, time.April, 17, 9, 0, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 	})
 	defer server.Close()
 

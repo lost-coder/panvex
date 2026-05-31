@@ -146,25 +146,7 @@ func (s *Server) pruneStaleDiscoveredForAgent(ctx context.Context, agentID strin
 
 // managedClientIdentifiersForAgent returns the set of client names and secrets deployed on an agent.
 func (s *Server) managedClientIdentifiersForAgent(agentID string) (names map[string]struct{}, secrets map[string]struct{}) {
-	s.clientsMu.RLock()
-	defer s.clientsMu.RUnlock()
-
-	names = make(map[string]struct{})
-	secrets = make(map[string]struct{})
-	for clientID, deployments := range s.clientDeployments {
-		if _, ok := deployments[agentID]; !ok {
-			continue
-		}
-		client, ok := s.clients[clientID]
-		if !ok || client.DeletedAt != nil {
-			continue
-		}
-		names[client.Name] = struct{}{}
-		if client.Secret != "" {
-			secrets[client.Secret] = struct{}{}
-		}
-	}
-	return names, secrets
+	return s.clientsSvc.MirrorIdentifiersForAgent(agentID)
 }
 
 func (s *Server) upsertDiscoveredClient(ctx context.Context, agentID string, record *gatewayrpc.ClientDetailRecord, observedAt time.Time) {
@@ -201,10 +183,7 @@ func (s *Server) upsertDiscoveredClient(ctx context.Context, agentID string, rec
 	if haveExisting {
 		id = string(existing.ID)
 	} else {
-		s.clientsMu.Lock()
-		s.discoveredClientSeq++
-		id = newSequenceID("discovered", s.discoveredClientSeq)
-		s.clientsMu.Unlock()
+		id = s.clientsSvc.NextDiscoveredID()
 	}
 
 	firstSeen := observedAt.UTC()
@@ -638,18 +617,7 @@ func collectDuplicateDiscoveredIDs(all []discovered.DiscoveredClient, excludeID,
 // both name and secret. Used to detect when a discovered client on a new node
 // corresponds to an already-adopted client from another node.
 func (s *Server) findManagedClientByNameAndSecret(name, secret string) (managedClient, bool) {
-	s.clientsMu.RLock()
-	defer s.clientsMu.RUnlock()
-
-	for _, client := range s.clients {
-		if client.DeletedAt != nil {
-			continue
-		}
-		if client.Name == name && client.Secret == secret {
-			return client, true
-		}
-	}
-	return managedClient{}, false
+	return s.clientsSvc.FindMirrorClientByNameAndSecret(name, secret)
 }
 
 // mergeAdoptIntoExistingClient adds an assignment and deployment for a new agent
@@ -674,13 +642,7 @@ func (s *Server) mergeAdoptIntoExistingClient(
 	// Snapshot current assignments/deployments and build a set of agents
 	// already covered so we don't append duplicates when adding the
 	// primary record + siblings.
-	s.clientsMu.RLock()
-	existingAssignments := append([]managedClientAssignment(nil), s.clientAssignments[string(existing.ID)]...)
-	existingDeployments := make([]managedClientDeployment, 0, len(s.clientDeployments[string(existing.ID)])+1+len(siblings))
-	for _, d := range s.clientDeployments[string(existing.ID)] {
-		existingDeployments = append(existingDeployments, d)
-	}
-	s.clientsMu.RUnlock()
+	existingAssignments, existingDeployments := s.clientsSvc.MirrorAssignmentsAndDeployments(string(existing.ID))
 
 	covered := make(map[string]struct{}, len(existingAssignments))
 	for _, a := range existingAssignments {
@@ -758,22 +720,7 @@ func (s *Server) mergeAdoptIntoExistingClient(
 // seedClientUsage initializes the in-memory usage for a client on a specific
 // agent with the values reported by Telemt at discovery time.
 func (s *Server) seedClientUsage(ctx context.Context, clientID, agentID string, trafficBytes uint64, connections, uniqueIPs int, observedAt time.Time) {
-	s.clientsMu.Lock()
-	if s.clientUsage[clientID] == nil {
-		s.clientUsage[clientID] = make(map[string]clientUsageSnapshot)
-	}
-	snap := clientUsageSnapshot{
-		ClientID:         clients.ClientID(clientID),
-		TrafficUsedBytes: trafficBytes,
-		UniqueIPsUsed:    uniqueIPs,
-		ActiveTCPConns:   connections,
-		ActiveUniqueIPs:  uniqueIPs,
-		ObservedAt:       observedAt,
-	}
-	s.clientUsage[clientID][agentID] = snap
-	s.trackClientUsageOwnerLocked(clientID, agentID)
-	lastSeq := s.lastUsageSeq[agentID]
-	s.clientsMu.Unlock()
+	lastSeq := s.clientsSvc.MirrorLastUsageSeq(agentID)
 
 	if s.clientsSvc != nil && s.clientsSvc.HasRepo() {
 		if err := s.clientsSvc.UpsertUsage(ctx, clients.Usage{
@@ -815,9 +762,13 @@ func (s *Server) restoreStoredDiscoveredClients() error {
 	if err != nil {
 		return err
 	}
+	discoveredIDs := make([]string, 0, len(recs))
 	for _, r := range recs {
-		s.discoveredClientSeq = maxPrefixedSequence(s.discoveredClientSeq, "discovered", string(r.ID))
+		discoveredIDs = append(discoveredIDs, string(r.ID))
 	}
+	// Seed the clients.Service discovered-seq cursor so the next
+	// NextDiscoveredID returns a value strictly greater than any persisted ID.
+	s.clientsSvc.RecoverSequencesFromRecords(nil, nil, discoveredIDs)
 	return nil
 }
 

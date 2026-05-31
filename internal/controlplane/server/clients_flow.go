@@ -17,16 +17,17 @@ import (
 
 // Lock ordering invariant for the Server struct (P2-LOG-11 / M-C11 / L-08):
 //
-//	s.mu  ->  s.clientsMu  ->  s.metricsAuditMu
+//	s.mu  ->  s.metricsAuditMu
 //
 // Whenever two of these locks must be observed together, they MUST be taken
-// in the order above and released in the reverse order. Reverse-order
-// acquisition (e.g. clientsMu -> mu) deadlocks against applyAgentSnapshot,
-// which holds s.mu while briefly taking s.clientsMu for client-usage writes.
+// in the order above and released in the reverse order.
 //
-// Functions that need data from BOTH sides (agents and clientAssignments)
-// snapshot the needed fields under the first lock, release it, then take
-// the second lock with a plain local copy — they never nest. See
+// Client/usage/deployment state is owned by clients.Service, which guards it
+// with its own internal lock. The server takes the Service lock (via Service
+// methods) while holding s.mu in applyAgentSnapshot/purgeAgentInMemory, so the
+// effective ordering is s.mu -> Service.mu. Functions that need data from BOTH
+// the agent maps and the Service snapshot the agent fields under s.mu, release
+// it, then call into the Service — they never nest the two. See
 // resolveClientTargetAgentIDs and resolveClientIDByName below for the
 // snapshot pattern.
 
@@ -441,34 +442,29 @@ func (s *Server) deleteClient(ctx context.Context, clientID, actorID string, obs
 
 func (s *Server) replaceClientStateWithContext(ctx context.Context, client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment) error {
 	if s.clientsSvc.HasRepo() {
-		// NewServiceV2 path: use the UoW-backed SaveState which atomically
-		// writes to the Repository and updates the Service mirror. The legacy
-		// s.clients / s.clientAssignments maps are kept in sync below so
-		// existing read paths continue to work until Phase 9 removes them.
+		// NewServiceV2 path: SaveState atomically writes to the Repository and
+		// updates the Service mirror (the single owner of client state).
 		if err := s.clientsSvc.SaveState(ctx, client, assignments, deployments); err != nil {
 			return err
 		}
+		return nil
 	}
 
+	// No-repo fallback (test doubles / pre-migrate stores): update the
+	// in-memory mirror directly.
 	s.replaceClientStateInMemory(client, assignments, deployments)
 	return nil
 }
 
-// replaceClientStateInMemory updates the in-memory mirror of client
-// state without touching the store. Factored out of
-// replaceClientStateWithContext so callers that drive persistence
-// through Store.Transact can apply the in-memory update only after the
-// transaction commits (see adoptDiscoveredClient, P2-ARCH-01).
+// replaceClientStateInMemory updates the clients.Service mirror for one
+// client without touching the store. Factored out of
+// replaceClientStateWithContext so callers that drive persistence through a
+// UnitOfWork can apply the in-memory update only after the transaction
+// commits (see adoptDiscoveredClient, P2-ARCH-01). For the SaveState path
+// the mirror was already updated inside SaveState, so this is an idempotent
+// re-write with the same (plaintext-secret) values.
 func (s *Server) replaceClientStateInMemory(client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment) {
-	s.clientsMu.Lock()
-	defer s.clientsMu.Unlock()
-	s.clients[string(client.ID)] = client
-	s.clientAssignments[string(client.ID)] = append([]managedClientAssignment(nil), assignments...)
-	nextDeployments := make(map[string]managedClientDeployment, len(deployments))
-	for _, deployment := range deployments {
-		nextDeployments[deployment.AgentID] = deployment
-	}
-	s.clientDeployments[string(client.ID)] = nextDeployments
+	s.clientsSvc.ReplaceMirrorInMemory(client, assignments, deployments)
 }
 
 func (s *Server) buildClientAssignments(clientID clients.ClientID, input clientMutationInput, observedAt time.Time) []managedClientAssignment {
@@ -495,33 +491,18 @@ func (s *Server) buildClientAssignments(clientID clients.ClientID, input clientM
 	return assignments
 }
 
-// resolveClientTargetAgentIDs maps a slice of client assignments to the
-// concrete set of agent IDs they currently resolve to.
+// resolveClientTargetAgentIDs snapshots the current agent topology under
+// s.mu and delegates the deterministic deduplication + sorting to
+// clients.Service.ResolveTargetAgentIDs.
 //
-// Lock discipline (P2-LOG-11 / M-C11 / L-08): callers typically obtain
-// `assignments` under s.clientsMu. We MUST NOT hold s.clientsMu while
-// taking s.mu (that would invert the mu -> clientsMu ordering observed
-// by applyAgentSnapshot and would deadlock). To keep the two lock windows
-// disjoint AND avoid iterating s.agents while holding s.mu for the full
-// loop body, we snapshot only the fields needed for resolution (agent ID
-// and fleet-group ID) into local maps, release s.mu, and iterate the
-// caller-provided assignments against those local snapshots.
-//
-// The snapshot can race with a concurrent agent mutation, but callers
-// already tolerate that: the result is used to build deployment rows that
-// are re-reconciled on the next snapshot. The race is therefore benign
-// and, crucially, lock-order-safe.
-// resolveClientTargetAgentIDs snapshots the current agent topology
-// under s.mu and delegates the deterministic deduplication + sorting
-// to clients.Service.ResolveTargetAgentIDs.
-//
-// Lock discipline (P2-LOG-11 / M-C11 / L-08): callers typically obtain
-// `assignments` under s.clientsMu. We MUST NOT hold s.clientsMu while
-// taking s.mu (that would invert the documented ordering). To keep
-// the two locks disjoint AND avoid iterating s.agents while holding
-// s.mu for the full target computation, snapshot the registered-agent
-// IDs and fleet-group membership into local maps, release s.mu, and
-// let the pure helper iterate against those local snapshots.
+// Lock discipline (P2-LOG-11 / M-C11 / L-08): the assignments are read from
+// the clients.Service mirror (its own lock) by the caller. To avoid iterating
+// s.agents while holding s.mu for the full target computation, snapshot the
+// registered-agent IDs and fleet-group membership into local maps, release
+// s.mu, and let the pure helper iterate against those local snapshots. The
+// snapshot can race with a concurrent agent mutation, but callers tolerate
+// that: the result builds deployment rows that are re-reconciled on the next
+// snapshot. The race is benign and lock-order-safe.
 func (s *Server) resolveClientTargetAgentIDs(assignments []managedClientAssignment) []string {
 	s.mu.RLock()
 	registeredAgents := make(map[string]struct{}, len(s.agents))
@@ -629,22 +610,16 @@ func (s *Server) applyClientResetQuotaResult(ctx context.Context, agentID string
 // (client, agent) pair is no longer tracked (e.g. the operator
 // unassigned the agent between job enqueue and result).
 func (s *Server) recordClientResetQuotaTimestamp(clientID, agentID string, lastResetEpochSecs uint64, observedAt time.Time) (managedClientDeployment, bool) {
-	s.clientsMu.Lock()
-	defer s.clientsMu.Unlock()
-
-	if _, ok := s.clients[clientID]; !ok {
+	if !s.clientsSvc.MirrorClientExists(clientID) {
 		return managedClientDeployment{}, false
 	}
-	deployment, ok := s.clientDeployments[clientID][agentID]
+	deployment, ok := s.clientsSvc.MirrorDeployment(clientID, agentID)
 	if !ok {
 		return managedClientDeployment{}, false
 	}
 	deployment.LastResetEpochSecs = lastResetEpochSecs
 	deployment.UpdatedAt = observedAt.UTC()
-	if s.clientDeployments[clientID] == nil {
-		s.clientDeployments[clientID] = make(map[string]managedClientDeployment)
-	}
-	s.clientDeployments[clientID][agentID] = deployment
+	// The caller persists via PersistDeployment, which writes the mirror.
 	return deployment, true
 }
 
@@ -661,14 +636,13 @@ func isClientJobAction(action jobs.Action) bool {
 // client job result and returns the updated deployment. Returns ok=false
 // when the client is no longer tracked.
 func (s *Server) applyClientJobDeployment(ctx context.Context, clientID, agentID string, job jobs.Job, success bool, message, resultJSON string, observedAt time.Time) (managedClientDeployment, bool) {
-	s.clientsMu.Lock()
-	defer s.clientsMu.Unlock()
-
-	client, ok := s.clients[clientID]
-	if !ok {
+	if !s.clientsSvc.MirrorClientExists(clientID) {
 		return managedClientDeployment{}, false
 	}
-	deployment := s.clientDeployments[clientID][agentID]
+	// Current deployment may not exist yet (first apply for this agent) — a
+	// zero deployment is the correct starting point, matching the prior
+	// map-read which returned the zero value for a missing inner key.
+	deployment, _ := s.clientsSvc.MirrorDeployment(clientID, agentID)
 
 	deployment.ClientID = clients.ClientID(clientID)
 	deployment.AgentID = agentID
@@ -676,11 +650,7 @@ func (s *Server) applyClientJobDeployment(ctx context.Context, clientID, agentID
 	deployment.UpdatedAt = observedAt.UTC()
 	applyClientJobOutcome(ctx, &deployment, job.Action, success, message, resultJSON, observedAt)
 
-	if s.clientDeployments[clientID] == nil {
-		s.clientDeployments[clientID] = make(map[string]managedClientDeployment)
-	}
-	s.clientDeployments[clientID][agentID] = deployment
-	s.clients[clientID] = client
+	// The caller persists via PersistDeployment, which writes the mirror.
 	return deployment, true
 }
 
@@ -747,26 +717,10 @@ func (s *Server) jobByID(_ context.Context, jobID string) (jobs.Job, bool) {
 }
 
 // aggregatedClientUsage delegates the sum-over-agents computation to
-// clients.AggregateUsage. The server still owns the in-memory usage
-// map (migrating that off Server is tracked as future follow-up work)
-// so we snapshot + release before calling into the pure helper.
+// clients.AggregateUsage, reading the per-(client, agent) usage from the
+// clients.Service mirror (the single owner of usage state).
 func (s *Server) aggregatedClientUsage(clientID string) aggregatedClientUsage {
-	return s.clientsSvc.AggregateUsage(s.clientUsageByAgent(clientID))
-}
-
-// clientUsageByAgent returns a defensive copy of the per-(client, agent)
-// usage map for one client. Snapshotting under the read lock keeps the
-// returned map safe to read after release. Callers that only need the
-// aggregate should prefer aggregatedClientUsage, which builds on top.
-func (s *Server) clientUsageByAgent(clientID string) map[string]clients.UsageSnapshot {
-	s.clientsMu.RLock()
-	usageByAgent := s.clientUsage[clientID]
-	snapshot := make(map[string]clients.UsageSnapshot, len(usageByAgent))
-	for agentID, value := range usageByAgent {
-		snapshot[agentID] = value
-	}
-	s.clientsMu.RUnlock()
-	return snapshot
+	return s.clientsSvc.AggregateUsage(s.clientsSvc.UsageByAgentMirror(clientID))
 }
 
 // resolveClientIDByName finds the panel client ID for a given client name
@@ -778,9 +732,9 @@ func (s *Server) clientUsageByAgent(clientID string) map[string]clients.UsageSna
 // the fleet-group fallback, usage stats for clients attached via fleet-group
 // assignments were silently dropped.
 // resolveClientIDByName snapshots the agent's current fleet group under
-// s.mu then delegates the name lookup to clients.Service.ResolveIDByName.
-// The two locks (s.mu and s.clientsMu) are never held together, which
-// preserves the documented lock ordering.
+// s.mu then delegates the name lookup to the clients.Service mirror. The
+// two locks (s.mu and the Service's own lock) are never held together,
+// which preserves the documented lock ordering.
 func (s *Server) resolveClientIDByName(agentID, clientName string) string {
 	s.mu.RLock()
 	agentFleetGroupID := ""
@@ -789,26 +743,15 @@ func (s *Server) resolveClientIDByName(agentID, clientName string) string {
 	}
 	s.mu.RUnlock()
 
-	s.clientsMu.RLock()
-	defer s.clientsMu.RUnlock()
-
-	return s.clientsSvc.ResolveIDByName(s.clients, s.clientAssignments, agentID, agentFleetGroupID, clientName)
+	return s.clientsSvc.ResolveMirrorIDByName(agentID, agentFleetGroupID, clientName)
 }
 
 func (s *Server) nextClientID() clients.ClientID {
-	s.clientsMu.Lock()
-	defer s.clientsMu.Unlock()
-
-	s.clientSeq++
-	return clients.ClientID(newSequenceID("client", s.clientSeq))
+	return clients.ClientID(s.clientsSvc.NextClientID())
 }
 
 func (s *Server) nextClientAssignmentID() clients.AssignmentID {
-	s.clientsMu.Lock()
-	defer s.clientsMu.Unlock()
-
-	s.assignmentSeq++
-	return clients.AssignmentID(newSequenceID("client-assignment", s.assignmentSeq))
+	return clients.AssignmentID(s.clientsSvc.NextAssignmentID())
 }
 
 // buildClientDeployments delegates to clients.BuildDeployments.

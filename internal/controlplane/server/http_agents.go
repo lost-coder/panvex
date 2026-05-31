@@ -201,42 +201,21 @@ func (s *Server) persistAgentDeregister(w http.ResponseWriter, r *http.Request, 
 }
 
 // purgeAgentInMemory clears every in-memory map associated with the agent.
-// Lock ordering: mu -> clientsMu.
+// Lock ordering: mu -> Service.mu (client usage lives in clients.Service).
 func (s *Server) purgeAgentInMemory(agentID string) {
 	s.mu.Lock()
 	delete(s.agents, agentID)
 	delete(s.detailBoosts, agentID)
 	delete(s.initializationWatchCooldowns, agentID)
-	delete(s.lastUsageSeq, agentID)
 	for instID, inst := range s.instances {
 		if inst.AgentID == agentID {
 			delete(s.instances, instID)
 		}
 	}
-	s.clientsMu.Lock()
-	// Remove every (clientID, agentID) usage entry that belongs to this
-	// agent. The previous implementation called delete(s.clientUsage,
-	// agentID) which used the wrong outer key — clientUsage is keyed by
-	// clientID. The agentClientUsage reverse index (P-11) records exactly
-	// the clientIDs this agent owns gauges for, so we can iterate the
-	// small set rather than the full clientUsage map.
-	for clientID := range s.agentClientUsage[agentID] {
-		inner := s.clientUsage[clientID]
-		if inner == nil {
-			continue
-		}
-		delete(inner, agentID)
-		if len(inner) == 0 {
-			delete(s.clientUsage, clientID)
-		}
-	}
-	delete(s.agentClientUsage, agentID)
-	s.clientsMu.Unlock()
-	// D1 (B3): drop the same agent's rows from the clients.Service mirror
-	// so C1 can remove the server usage maps without leaving stale usage
-	// for a deregistered agent visible through the mirror-backed HTTP
-	// reads. Service.mu is acquired after Server.mu+clientsMu, preserving
-	// the documented Server.mu -> Service.mu lock ordering.
+	// Drop the agent's usage rows (and per-agent seq cursor) from the
+	// clients.Service mirror — the single owner of usage state. Service.mu is
+	// acquired while holding Server.mu, matching the documented Server.mu ->
+	// Service.mu lock ordering.
 	if s.clientsSvc != nil {
 		s.clientsSvc.DropAgentUsageMirror(agentID)
 	}

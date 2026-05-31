@@ -67,19 +67,19 @@ const (
 // Server wires local-auth, inventory, jobs, and operator APIs into one HTTP surface.
 type Server struct {
 	gatewayrpc.UnimplementedAgentGatewayServer
-	auth                      *auth.Service
-	store                     storage.Store
-	uiFiles                   fs.FS
-	jobs                      *jobs.Service
-	presence                  *presence.Tracker
-	events                    *eventbus.Hub
-	authority                 *certificateAuthority
+	auth      *auth.Service
+	store     storage.Store
+	uiFiles   fs.FS
+	jobs      *jobs.Service
+	presence  *presence.Tracker
+	events    *eventbus.Hub
+	authority *certificateAuthority
 	// enrollmentRec records per-attempt timeline events for inbound and
 	// outbound enrollment (Task 13 of the enrollment-logging Phase 1 plan).
 	// Nil when no persistent store with a *sql.DB handle is wired — handlers
 	// must nil-check before calling. See initStoreBackedSubsystems for the
 	// wiring (only sqlite/postgres backends expose DB()).
-	enrollmentRec             *enrollment.Recorder
+	enrollmentRec *enrollment.Recorder
 	// runtimeEvents holds per-agent in-memory ring buffers of slog
 	// records shipped from agents over the Connect bidi-stream
 	// (Runtime Events Phase 3). Constructed unconditionally in
@@ -118,7 +118,6 @@ type Server struct {
 	intervals         Intervals
 
 	mu             sync.RWMutex
-	clientsMu      sync.RWMutex
 	metricsAuditMu sync.RWMutex
 	settingsMu     sync.RWMutex
 	// settings is the operational settings store, loaded at startup from the
@@ -198,12 +197,9 @@ type Server struct {
 	// fixtures, or operators with no webhook endpoints configured) —
 	// publishWebhookEvent is the nil-safe wrapper every event source
 	// uses, so callers don't have to nil-check at every site.
-	webhookStorage      webhooks.Storage
-	webhookProducer     *webhooks.Producer
-	metricSeq           uint64
-	clientSeq           uint64
-	assignmentSeq       uint64
-	discoveredClientSeq uint64
+	webhookStorage  webhooks.Storage
+	webhookProducer *webhooks.Producer
+	metricSeq       uint64
 	// revokedAgentIDs tracks deregistered agent IDs whose mTLS certificates
 	// may still be cryptographically valid. The set is checked during gRPC
 	// Connect to deny access. It is not persisted: on restart the set is
@@ -217,27 +213,8 @@ type Server struct {
 	// Run(); updated synchronously under mu and persisted asynchronously via
 	// the batch writer. Crash-window caveat: see spec.
 	fallbackEnteredAt map[string]time.Time
-	clients           map[string]managedClient
-	clientAssignments map[string][]managedClientAssignment
-	clientDeployments map[string]map[string]managedClientDeployment
-	clientUsage       map[string]map[string]clientUsageSnapshot
-	// agentClientUsage is the inverse of clientUsage's outer/inner key
-	// orientation: agentID -> set of clientIDs that this agent has a
-	// usage entry for. Maintained in lock-step with clientUsage so
-	// zeroLiveGaugesForUntouchedClients can iterate only the clients
-	// this agent owns instead of scanning every (clientID, agentID)
-	// combination on the entire panel (P-11).
-	//
-	// Same lock as clientUsage (s.clientsMu).
-	agentClientUsage map[string]map[string]struct{}
-	// lastUsageSeq tracks the highest client-usage snapshot sequence number
-	// applied per agent. Snapshots whose seq is <= the stored value are
-	// discarded (duplicate/replay). seq == 1 after a non-zero stored value
-	// signals an agent restart: the CP records the new baseline without
-	// double-counting the deltas. See P2-LOG-06 / L-07.
-	lastUsageSeq map[string]uint64
-	instances    map[string]Instance
-	metrics      []MetricSnapshot
+	instances         map[string]Instance
+	metrics           []MetricSnapshot
 	// auditTrail is a fixed-size ring buffer of the most recent audit events.
 	// Append is O(1) — we overwrite auditBuf[auditHead] and advance the head
 	// index, rather than performing an O(N) slice shift on every overflow.

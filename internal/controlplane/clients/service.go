@@ -135,6 +135,16 @@ func NewServiceWithVault(store storage.Store, now func() time.Time, vault *secre
 		deployments:  make(map[string]map[string]Deployment),
 		usage:        make(map[string]map[string]UsageSnapshot),
 		lastUsageSeq: make(map[string]uint64),
+		// Initialise the V2 mirror maps too so the mirror-backed accessors
+		// (ReplaceMirrorInMemory, SetMirrorLastUsageSeq, etc.) are safe to call
+		// on a no-repo Service (test doubles / pre-migrate stores). Mirror
+		// writes that go through the DB (UpsertUsage*, SeedUsageMirror) still
+		// no-op when repo == nil.
+		mirrorClients:      make(map[ClientID]Client),
+		mirrorAssignments:  make(map[ClientID][]Assignment),
+		mirrorDeployments:  make(map[ClientID]map[string]Deployment),
+		mirrorUsage:        make(map[ClientID]map[string]usageMirror),
+		mirrorLastUsageSeq: make(map[string]uint64),
 	}
 }
 
@@ -1275,4 +1285,210 @@ func (s *Service) applyUsageMirrorLocked(u Usage) {
 	if u.LastSeq > s.mirrorLastUsageSeq[u.AgentID] {
 		s.mirrorLastUsageSeq[u.AgentID] = u.LastSeq
 	}
+}
+
+// --- D1 (C1): mirror-backed reads/mutations for the server package ---
+//
+// These replace the Server-owned client maps (s.clients / s.clientUsage /
+// s.clientDeployments / s.clientAssignments) that C1 removed. Each reads or
+// mutates the V2 mirror under s.mu, so the mirror is the single owner of
+// client/usage/deployment state. All are no-ops / zero-values when the
+// service was not wired with a Repository (mirror unused).
+
+// AgentTotalTrafficMirror sums TrafficUsedBytes across every client this
+// agent has a usage row for in the mirror. Mirror-side counterpart of the
+// server's agentTotalTrafficLocked; used by the telemetry summaries.
+func (s *Service) AgentTotalTrafficMirror(agentID string) uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var total uint64
+	for _, byAgent := range s.mirrorUsage {
+		if u, ok := byAgent[agentID]; ok {
+			total += u.TrafficUsedBytes
+		}
+	}
+	return total
+}
+
+// UsageByAgentMirror returns a defensive copy of the per-(client, agent)
+// usage map for one client, projected to UsageSnapshot. Mirror-side
+// counterpart of the server's clientUsageByAgent.
+func (s *Service) UsageByAgentMirror(clientID string) map[string]UsageSnapshot {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	byAgent := s.mirrorUsage[ClientID(clientID)]
+	out := make(map[string]UsageSnapshot, len(byAgent))
+	for agentID, u := range byAgent {
+		out[agentID] = UsageSnapshot{
+			ClientID:           u.ClientID,
+			TrafficUsedBytes:   u.TrafficUsedBytes,
+			UniqueIPsUsed:      u.UniqueIPsUsed,
+			ActiveTCPConns:     u.ActiveTCPConns,
+			ActiveUniqueIPs:    u.ActiveUniqueIPs,
+			QuotaUsedBytes:     u.QuotaUsedBytes,
+			QuotaLastResetUnix: u.QuotaLastResetUnix,
+			ObservedAt:         u.ObservedAt,
+			Seq:                u.LastSeq,
+		}
+	}
+	return out
+}
+
+// MirrorClientExists reports whether a non-tombstone-agnostic client row
+// exists in the mirror for the given ID. (Tombstones are kept in the mirror;
+// callers that need to skip them check DeletedAt themselves.)
+func (s *Service) MirrorClientExists(clientID string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.mirrorClients[ClientID(clientID)]
+	return ok
+}
+
+// MirrorDeployment returns the deployment for a (client, agent) pair from
+// the mirror. ok=false when the pair is not tracked.
+func (s *Service) MirrorDeployment(clientID, agentID string) (Deployment, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	byAgent, ok := s.mirrorDeployments[ClientID(clientID)]
+	if !ok {
+		return Deployment{}, false
+	}
+	d, ok := byAgent[agentID]
+	return d, ok
+}
+
+// FindMirrorClientByNameAndSecret returns the first non-deleted client in
+// the mirror whose name and secret both match. Mirror-side counterpart of
+// the server's findManagedClientByNameAndSecret.
+func (s *Service) FindMirrorClientByNameAndSecret(name, secret string) (Client, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, c := range s.mirrorClients {
+		if c.DeletedAt != nil {
+			continue
+		}
+		if c.Name == name && c.Secret == secret {
+			return c, true
+		}
+	}
+	return Client{}, false
+}
+
+// MirrorIdentifiersForAgent returns the set of client names and secrets
+// deployed on an agent according to the mirror's deployment map. Mirror-side
+// counterpart of the server's managedClientIdentifiersForAgent.
+func (s *Service) MirrorIdentifiersForAgent(agentID string) (names, secrets map[string]struct{}) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	names = make(map[string]struct{})
+	secrets = make(map[string]struct{})
+	for clientID, byAgent := range s.mirrorDeployments {
+		if _, ok := byAgent[agentID]; !ok {
+			continue
+		}
+		c, ok := s.mirrorClients[clientID]
+		if !ok || c.DeletedAt != nil {
+			continue
+		}
+		names[c.Name] = struct{}{}
+		if c.Secret != "" {
+			secrets[c.Secret] = struct{}{}
+		}
+	}
+	return names, secrets
+}
+
+// ResolveMirrorIDByName resolves a panel client ID from the mirror's
+// client + assignment maps. Mirror-side counterpart of the server's
+// resolveClientIDByName.
+func (s *Service) ResolveMirrorIDByName(agentID, agentFleetGroupID, clientName string) string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	clientsByID := make(map[string]Client, len(s.mirrorClients))
+	assignmentsByClient := make(map[string][]Assignment, len(s.mirrorAssignments))
+	for id, c := range s.mirrorClients {
+		clientsByID[string(id)] = c
+	}
+	for id, as := range s.mirrorAssignments {
+		assignmentsByClient[string(id)] = as
+	}
+	return ResolveIDByName(clientsByID, assignmentsByClient, agentID, agentFleetGroupID, clientName)
+}
+
+// MirrorAssignmentsAndDeployments returns defensive copies of the
+// assignment slice and deployment list for one client from the mirror.
+// Used by the merge-adopt path to snapshot existing state.
+func (s *Service) MirrorAssignmentsAndDeployments(clientID string) ([]Assignment, []Deployment) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	cid := ClientID(clientID)
+	assignments := append([]Assignment(nil), s.mirrorAssignments[cid]...)
+	depMap := s.mirrorDeployments[cid]
+	deployments := make([]Deployment, 0, len(depMap))
+	for _, d := range depMap {
+		deployments = append(deployments, d)
+	}
+	return assignments, deployments
+}
+
+// MirrorLastUsageSeq returns the highest usage seq recorded for an agent in
+// the mirror. Zero when the agent has no usage rows.
+func (s *Service) MirrorLastUsageSeq(agentID string) uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.mirrorLastUsageSeq[agentID]
+}
+
+// SetMirrorLastUsageSeq records the per-agent usage seq cursor in the mirror.
+// Used by the seq-dedup path (shouldApplyClientUsageDelta) when an agent
+// restart rewinds the cursor or a duplicate batch is skipped without a
+// usage-row write that would otherwise advance it via UpsertUsageBulk.
+func (s *Service) SetMirrorLastUsageSeq(agentID string, seq uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.mirrorLastUsageSeq[agentID] = seq
+}
+
+// ReplaceMirrorInMemory updates the V2 mirror's client + assignments +
+// deployments for one client without touching the Repository. Callers that
+// drive persistence through a UnitOfWork (e.g. server.persistAdoptedClient)
+// apply this only after the transaction commits. The client's Secret must be
+// plaintext — the mirror holds plaintext so apply-jobs ship the real secret.
+func (s *Service) ReplaceMirrorInMemory(client Client, assignments []Assignment, deployments []Deployment) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cid := client.ID
+	s.mirrorClients[cid] = client
+	s.mirrorAssignments[cid] = append([]Assignment(nil), assignments...)
+	next := make(map[string]Deployment, len(deployments))
+	for _, d := range deployments {
+		next[d.AgentID] = d
+	}
+	s.mirrorDeployments[cid] = next
+}
+
+// MirrorUsageEntryFor returns the current usage snapshot for a (client,
+// agent) pair from the mirror. ok=false when the pair is not tracked.
+func (s *Service) MirrorUsageEntryFor(clientID, agentID string) (UsageSnapshot, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	byAgent, ok := s.mirrorUsage[ClientID(clientID)]
+	if !ok {
+		return UsageSnapshot{}, false
+	}
+	u, ok := byAgent[agentID]
+	if !ok {
+		return UsageSnapshot{}, false
+	}
+	return UsageSnapshot{
+		ClientID:           u.ClientID,
+		TrafficUsedBytes:   u.TrafficUsedBytes,
+		UniqueIPsUsed:      u.UniqueIPsUsed,
+		ActiveTCPConns:     u.ActiveTCPConns,
+		ActiveUniqueIPs:    u.ActiveUniqueIPs,
+		QuotaUsedBytes:     u.QuotaUsedBytes,
+		QuotaLastResetUnix: u.QuotaLastResetUnix,
+		ObservedAt:         u.ObservedAt,
+		Seq:                u.LastSeq,
+	}, true
 }

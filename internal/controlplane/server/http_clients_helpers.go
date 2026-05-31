@@ -181,7 +181,7 @@ func handleClientMutationError(w http.ResponseWriter, err error) bool {
 // a client, including resolved usage, unique-IP count, and deployment
 // status rows.
 func (s *Server) buildClientDetailResponse(ctx context.Context, client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment, showSecret bool) clientDetailResponse {
-	usageByAgent := s.clientUsageByAgent(string(client.ID))
+	usageByAgent := s.clientsSvc.UsageByAgentMirror(string(client.ID))
 	usage := s.clientsSvc.AggregateUsage(usageByAgent)
 	uniqueIPs := s.resolveUniqueClientIPs(ctx, string(client.ID), usage.UniqueIPsUsed)
 

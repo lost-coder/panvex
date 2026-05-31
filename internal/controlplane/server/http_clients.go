@@ -120,10 +120,9 @@ func (s *Server) handleClients() http.HandlerFunc {
 			return
 		}
 
-		// Q2.U-P-XX (M-1): one bulk snapshot under a single clientsMu
-		// RLock instead of N×clientDetailSnapshot + N×aggregatedClientUsage.
-		// On a 500-client fleet that collapses ~1500 lock-acquire pairs
-		// into one.
+		// Q2.U-P-XX (M-1): one bulk snapshot of the clients.Service mirror
+		// instead of N×clientDetailSnapshot + N×aggregatedClientUsage. On a
+		// 500-client fleet that collapses ~1500 lock-acquire pairs into one.
 		listing := s.listClientsListingSnapshot()
 		uniqueIPCounts := s.bulkUniqueIPCountsForClients(r.Context(), listing.clients)
 

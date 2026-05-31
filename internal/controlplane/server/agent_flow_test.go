@@ -1028,6 +1028,7 @@ func TestTrafficDedupViaSnapshotSeq(t *testing.T) {
 
 	const agentID = "agent-dedup"
 	const clientID = "client-dedup"
+	seedClientAndAgentRows(t, server, clientID, agentID, now)
 
 	first := []clientUsageSnapshot{{
 		ClientID:         clientID,
@@ -1047,7 +1048,7 @@ func TestTrafficDedupViaSnapshotSeq(t *testing.T) {
 	server.mu.Lock()
 	server.applyClientUsageSnapshot(context.Background(), agentID, first)
 	server.applyClientUsageSnapshot(context.Background(), agentID, duplicate)
-	got := server.clientUsage[clientID][agentID]
+	got := mirrorUsage(server, clientID, agentID)
 	server.mu.Unlock()
 
 	if got.TrafficUsedBytes != 1000 {
@@ -1069,6 +1070,7 @@ func TestUsageSeqResetOnAgentRestart(t *testing.T) {
 
 	const agentID = "agent-restart"
 	const clientID = "client-restart"
+	seedClientAndAgentRows(t, server, clientID, agentID, now)
 
 	prior := []clientUsageSnapshot{{
 		ClientID:         clientID,
@@ -1092,10 +1094,10 @@ func TestUsageSeqResetOnAgentRestart(t *testing.T) {
 	server.mu.Lock()
 	server.applyClientUsageSnapshot(context.Background(), agentID, prior)
 	server.applyClientUsageSnapshot(context.Background(), agentID, restart)
-	afterReset := server.clientUsage[clientID][agentID].TrafficUsedBytes
+	afterReset := mirrorUsage(server, clientID, agentID).TrafficUsedBytes
 	server.applyClientUsageSnapshot(context.Background(), agentID, afterRestart)
-	final := server.clientUsage[clientID][agentID].TrafficUsedBytes
-	storedSeq := server.lastUsageSeq[agentID]
+	final := mirrorUsage(server, clientID, agentID).TrafficUsedBytes
+	storedSeq := mirrorLastUsageSeq(server, agentID)
 	server.mu.Unlock()
 
 	if afterReset != 4096 {
@@ -1119,6 +1121,7 @@ func TestUsageDedupIgnoresOutOfOrderStaleSnapshots(t *testing.T) {
 
 	const agentID = "agent-stale"
 	const clientID = "client-stale"
+	seedClientAndAgentRows(t, server, clientID, agentID, now)
 
 	server.mu.Lock()
 	server.applyClientUsageSnapshot(context.Background(), agentID, []clientUsageSnapshot{{
@@ -1127,7 +1130,7 @@ func TestUsageDedupIgnoresOutOfOrderStaleSnapshots(t *testing.T) {
 	server.applyClientUsageSnapshot(context.Background(), agentID, []clientUsageSnapshot{{
 		ClientID: clientID, TrafficUsedBytes: 999, Seq: 3, ObservedAt: now, // stale
 	}})
-	got := server.clientUsage[clientID][agentID].TrafficUsedBytes
+	got := mirrorUsage(server, clientID, agentID).TrafficUsedBytes
 	server.mu.Unlock()
 
 	if got != 100 {
@@ -1147,12 +1150,13 @@ func TestUsageLegacySeqZeroFallsBackToUnconditionalAccumulation(t *testing.T) {
 
 	const agentID = "agent-legacy"
 	const clientID = "client-legacy"
+	seedClientAndAgentRows(t, server, clientID, agentID, now)
 	legacy := []clientUsageSnapshot{{ClientID: clientID, TrafficUsedBytes: 500, ObservedAt: now}} // Seq = 0
 
 	server.mu.Lock()
 	server.applyClientUsageSnapshot(context.Background(), agentID, legacy)
 	server.applyClientUsageSnapshot(context.Background(), agentID, legacy)
-	got := server.clientUsage[clientID][agentID].TrafficUsedBytes
+	got := mirrorUsage(server, clientID, agentID).TrafficUsedBytes
 	server.mu.Unlock()
 
 	if got != 1000 {
@@ -1209,23 +1213,24 @@ func TestZeroLiveGaugesForUntouchedClientsTouchedSubset(t *testing.T) {
 
 	const agentID = "agent-p11-touched"
 
-	clients := []clientUsageSnapshot{
+	batch := []clientUsageSnapshot{
 		{ClientID: "client-1", ActiveTCPConns: 7, ActiveUniqueIPs: 3, ObservedAt: now},
 		{ClientID: "client-2", ActiveTCPConns: 5, ActiveUniqueIPs: 2, ObservedAt: now},
 		{ClientID: "client-3", ActiveTCPConns: 1, ActiveUniqueIPs: 1, ObservedAt: now},
 	}
+	for _, c := range batch {
+		seedClientAndAgentRows(t, server, string(c.ClientID), agentID, now)
+	}
 
 	// Seed 3 clients via a snapshot, then re-publish the same set — none
 	// should be zeroed because every clientID is "touched" again.
-	server.clientsMu.Lock()
-	server.applyClientUsageSnapshot(context.Background(), agentID, clients)
-	server.applyClientUsageSnapshot(context.Background(), agentID, clients)
-	server.clientsMu.Unlock()
+	server.mu.Lock()
+	server.applyClientUsageSnapshot(context.Background(), agentID, batch)
+	server.applyClientUsageSnapshot(context.Background(), agentID, batch)
+	server.mu.Unlock()
 
-	server.clientsMu.RLock()
-	defer server.clientsMu.RUnlock()
-	for _, c := range clients {
-		got := server.clientUsage[string(c.ClientID)][agentID]
+	for _, c := range batch {
+		got := mirrorUsage(server, string(c.ClientID), agentID)
 		if got.ActiveTCPConns != c.ActiveTCPConns {
 			t.Fatalf("client %s ActiveTCPConns = %d, want %d (touched client must keep its gauge)", c.ClientID, got.ActiveTCPConns, c.ActiveTCPConns)
 		}
@@ -1242,6 +1247,9 @@ func TestZeroLiveGaugesForUntouchedClientsZerosUntouched(t *testing.T) {
 	defer server.Close()
 
 	const agentID = "agent-p11-untouched"
+	for _, id := range []string{"client-A", "client-B", "client-C"} {
+		seedClientAndAgentRows(t, server, id, agentID, now)
+	}
 
 	full := []clientUsageSnapshot{
 		{ClientID: "client-A", ActiveTCPConns: 9, ActiveUniqueIPs: 3, TrafficUsedBytes: 1024, ObservedAt: now},
@@ -1254,15 +1262,12 @@ func TestZeroLiveGaugesForUntouchedClientsZerosUntouched(t *testing.T) {
 		{ClientID: "client-C", ActiveTCPConns: 2, ActiveUniqueIPs: 1, TrafficUsedBytes: 50, ObservedAt: now.Add(time.Second)},
 	}
 
-	server.clientsMu.Lock()
+	server.mu.Lock()
 	server.applyClientUsageSnapshot(context.Background(), agentID, full)
 	server.applyClientUsageSnapshot(context.Background(), agentID, partial)
-	server.clientsMu.Unlock()
+	server.mu.Unlock()
 
-	server.clientsMu.RLock()
-	defer server.clientsMu.RUnlock()
-
-	gotB := server.clientUsage["client-B"][agentID]
+	gotB := mirrorUsage(server, "client-B", agentID)
 	if gotB.ActiveTCPConns != 0 {
 		t.Fatalf("client-B ActiveTCPConns = %d, want 0 (untouched client must be zeroed)", gotB.ActiveTCPConns)
 	}
@@ -1274,39 +1279,37 @@ func TestZeroLiveGaugesForUntouchedClientsZerosUntouched(t *testing.T) {
 	}
 
 	// Touched clients keep their fresh gauges.
-	gotA := server.clientUsage["client-A"][agentID]
+	gotA := mirrorUsage(server, "client-A", agentID)
 	if gotA.ActiveTCPConns != 11 {
 		t.Fatalf("client-A ActiveTCPConns = %d, want 11", gotA.ActiveTCPConns)
 	}
 }
 
-// TestAgentClientUsageReverseIndexTracksWrites verifies P-11: every write
-// to s.clientUsage updates the agentClientUsage reverse index so the
-// delta-only zero pass can iterate only the clients this agent owns
-// gauges for.
-func TestAgentClientUsageReverseIndexTracksWrites(t *testing.T) {
+// TestClientUsageMirrorTracksWrites verifies that applying a usage snapshot
+// records every (client, agent) pair in the clients.Service mirror — the
+// single owner of usage state after C1 removed the Server-owned maps and the
+// agentClientUsage reverse index.
+func TestClientUsageMirrorTracksWrites(t *testing.T) {
 	now := time.Date(2026, time.April, 20, 11, 0, 0, 0, time.UTC)
 	server := testServerWithSQLite(t, now)
 	defer server.Close()
 
 	const agentID = "agent-p11-index"
+	seedClientAndAgentRows(t, server, "c1", agentID, now)
+	seedClientAndAgentRows(t, server, "c2", agentID, now)
 
-	server.clientsMu.Lock()
+	server.mu.Lock()
 	server.applyClientUsageSnapshot(context.Background(), agentID, []clientUsageSnapshot{
 		{ClientID: "c1", ObservedAt: now},
 		{ClientID: "c2", ObservedAt: now},
 	})
-	server.clientsMu.Unlock()
+	server.mu.Unlock()
 
-	server.clientsMu.RLock()
-	owned := server.agentClientUsage[agentID]
-	server.clientsMu.RUnlock()
-
-	if _, ok := owned["c1"]; !ok {
-		t.Fatal("agentClientUsage missing c1 after write")
+	if _, ok := server.clientsSvc.MirrorUsageEntryFor("c1", agentID); !ok {
+		t.Fatal("mirror missing c1 usage after write")
 	}
-	if _, ok := owned["c2"]; !ok {
-		t.Fatal("agentClientUsage missing c2 after write")
+	if _, ok := server.clientsSvc.MirrorUsageEntryFor("c2", agentID); !ok {
+		t.Fatal("mirror missing c2 usage after write")
 	}
 }
 
@@ -1338,7 +1341,12 @@ func TestZeroLiveGaugesForUntouchedClientsScalesWithAgentNotPanel(t *testing.T) 
 		return out
 	}
 
-	server.clientsMu.Lock()
+	for i := 0; i < 100; i++ {
+		seedClientAndAgentRows(t, server, fmt.Sprintf("A-c%03d", i), agentA, now)
+		seedClientAndAgentRows(t, server, fmt.Sprintf("B-c%03d", i), agentB, now)
+	}
+
+	server.mu.Lock()
 	server.applyClientUsageSnapshot(context.Background(), agentA, mkBatch("A", 100))
 	server.applyClientUsageSnapshot(context.Background(), agentB, mkBatch("B", 100))
 
@@ -1347,27 +1355,24 @@ func TestZeroLiveGaugesForUntouchedClientsScalesWithAgentNotPanel(t *testing.T) 
 	server.applyClientUsageSnapshot(context.Background(), agentA, []clientUsageSnapshot{
 		{ClientID: "A-c000", ActiveTCPConns: 3, ActiveUniqueIPs: 2, ObservedAt: now.Add(time.Second)},
 	})
-	server.clientsMu.Unlock()
-
-	server.clientsMu.RLock()
-	defer server.clientsMu.RUnlock()
+	server.mu.Unlock()
 
 	// Agent A: c000 stays, c001..c099 zeroed.
-	if got := server.clientUsage["A-c000"][agentA].ActiveTCPConns; got != 3 {
+	if got := mirrorUsage(server, "A-c000", agentA).ActiveTCPConns; got != 3 {
 		t.Fatalf("agentA c000 ActiveTCPConns = %d, want 3", got)
 	}
 	for i := 1; i < 100; i++ {
 		key := fmt.Sprintf("A-c%03d", i)
-		if got := server.clientUsage[key][agentA].ActiveTCPConns; got != 0 {
+		if got := mirrorUsage(server, key, agentA).ActiveTCPConns; got != 0 {
 			t.Fatalf("agentA %s ActiveTCPConns = %d, want 0 (untouched)", key, got)
 		}
 	}
 
 	// Agent B's 100 gauges are owned by a different agent and must not be
-	// touched by A's snapshot processing — this is the core P-11 invariant.
+	// touched by A's snapshot processing.
 	for i := 0; i < 100; i++ {
 		key := fmt.Sprintf("B-c%03d", i)
-		if got := server.clientUsage[key][agentB].ActiveTCPConns; got != 3 {
+		if got := mirrorUsage(server, key, agentB).ActiveTCPConns; got != 3 {
 			t.Fatalf("agentB %s ActiveTCPConns = %d, want 3 (other agent must not affect B)", key, got)
 		}
 	}

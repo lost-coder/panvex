@@ -173,19 +173,20 @@ func (s *Server) applyFallbackStateTransitionLocked(agent Agent) {
 	}
 }
 
-// commitClientSnapshotsLocked applies any client usage / IP snapshot data
-// under s.clientsMu. Caller must hold s.mu.
+// commitClientSnapshotsLocked applies any client usage snapshot data through
+// the clients.Service mirror. Caller must hold s.mu.
+//
+// IP-only snapshots (HasClientIPs without HasClients) used to seed a
+// zero-valued placeholder usage entry in the Server-owned maps; that
+// placeholder was value-neutral (a zero entry is JSON-identical to an absent
+// key and contributes 0 to traffic/gauges) and was dropped with the Server
+// maps in C1. The subsequent usage tick populates the mirror via
+// applyClientUsageSnapshot regardless, so no information is lost. The IP
+// snapshot's addresses are still persisted to client_ip_history by
+// enqueueClientIPHistory elsewhere in the snapshot pipeline.
 func (s *Server) commitClientSnapshotsLocked(ctx context.Context, snapshot agentSnapshot) {
-	if !snapshot.HasClients && !snapshot.HasClientIPs {
-		return
-	}
-	s.clientsMu.Lock()
-	defer s.clientsMu.Unlock()
 	if snapshot.HasClients {
 		s.applyClientUsageSnapshot(ctx, snapshot.AgentID, snapshot.Clients)
-	}
-	if snapshot.HasClientIPs {
-		s.applyClientIPSnapshot(snapshot.AgentID, snapshot.ClientIPs)
 	}
 }
 
@@ -220,7 +221,8 @@ func (s *Server) applyAgentSnapshot(ctx context.Context, snapshot agentSnapshot)
 
 	// Lock section: build all state objects AND commit to in-memory maps
 	// atomically. No DB I/O happens under the locks.
-	// Lock ordering: mu -> clientsMu -> metricsAuditMu.
+	// Lock ordering: mu -> metricsAuditMu (client state lives in
+	// clients.Service, taken via its own lock while mu is held).
 	s.mu.Lock()
 	// Drop snapshots from agents that have been deregistered. Without this
 	// guard, an in-flight heartbeat that arrives between the operator's
