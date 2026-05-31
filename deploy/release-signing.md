@@ -1,119 +1,117 @@
-# Release Signing (S-4 verifier)
+# Release Signing (S1)
 
-`deploy/install.sh` ships an opt-in detached-signature verifier for the
-release archive. The default download flow still uses TLS + SHA-256 only
-(TOFU on first deploy); production rollouts should enable signature
-verification so a CDN/registry compromise cannot serve a tampered
-binary with a matching `.sha256` sidecar.
+Panvex release archives are signed with an **ECDSA P-256 / SHA-256**
+detached signature using `openssl`. The same key and scheme are used in
+three places, so there is exactly one trust anchor to manage:
 
-## What the installer expects
+1. **CI signs** each archive (`.github/workflows/release.yml`).
+2. **The in-app updater verifies** downloads against the public key
+   embedded in the binary (`internal/security/signature.go` +
+   `internal/security/signing_key.pub`).
+3. **The install scripts verify** downloads against the same public key,
+   embedded as a literal in `deploy/install.sh` and
+   `deploy/install-agent.sh` (they are fetched standalone via
+   `curl | bash`, so they cannot read a repo file at runtime).
 
-For each release asset `panvex-control-plane-linux-<arch>.tar.gz`, the
-installer expects two sidecars next to the archive on the GitHub
-release:
+Signature verification in the install scripts is **enabled by default**.
+`openssl` is the only dependency, and it is already present on every
+supported platform (the installer also uses it to generate keys).
+
+## What CI publishes
+
+For each release asset `panvex-<component>-linux-<arch>.tar.gz`, the
+release workflow uploads:
 
 ```
-panvex-control-plane-linux-<arch>.tar.gz
-panvex-control-plane-linux-<arch>.tar.gz.sha256
-panvex-control-plane-linux-<arch>.tar.gz.minisig   <-- NEW
+panvex-<component>-linux-<arch>.tar.gz
+panvex-<component>-linux-<arch>.tar.gz.sha256   # integrity
+panvex-<component>-linux-<arch>.tar.gz.sig      # authenticity (ECDSA, raw DER)
 ```
 
-The `.minisig` file is a minisign detached signature (Ed25519). The
-public key is short, single-line, RWQ-prefixed, and is embedded in
-`deploy/install.sh` as `PANVEX_INSTALL_PUBKEY`. Operators distributing
-their own builds may override the key at install time:
-
-```
-PANVEX_INSTALL_REQUIRE_SIGNATURE=1 \
-PANVEX_INSTALL_PUBKEY='RWQ...' \
-bash install.sh
-```
-
-When `PANVEX_INSTALL_REQUIRE_SIGNATURE=1` is unset, the verifier is a
-no-op and the installer behaves identically to previous releases.
-
-## Generating the release-signing key
-
-This is a one-time operator task. Pick a secure host (offline laptop,
-hardware token, or a CI secret store with manual approval — your call,
-documented in your runbook).
+The `.sig` is produced by:
 
 ```bash
-minisign -G -p panvex-release.pub -s panvex-release.key
+openssl dgst -sha256 -sign "$KEY_FILE" -out "${ARCHIVE}.sig" "${ARCHIVE}"
 ```
 
-minisign will prompt for a password protecting the private key. Store
-it in your password manager; you cannot recover it.
+where `$KEY_FILE` holds the PEM-encoded ECDSA P-256 private key sourced
+from the `PANVEX_SIGNING_KEY` GitHub Actions secret (written to a
+mode-0600 temp file and shredded after signing). The output is a **raw
+DER** signature — exactly what `openssl dgst -verify` consumes.
 
-The `.pub` file contains the public key on its second line, e.g.:
+## How the install scripts verify
 
-```
-untrusted comment: minisign public key 0123456789ABCDEF
-RWQabcdefghijk...
-```
+After the SHA-256 check (hash guards integrity, signature guards
+authenticity — both must pass), each installer:
 
-The single `RWQ...` line is what goes into `PANVEX_INSTALL_PUBKEY` /
-into the placeholder constant at the top of `deploy/install.sh`.
-
-## Signing a release tarball
-
-For each `panvex-control-plane-linux-<arch>.tar.gz` produced by the
-release pipeline:
-
-```bash
-minisign -S -s panvex-release.key \
-  -m panvex-control-plane-linux-amd64.tar.gz
-```
-
-This produces `panvex-control-plane-linux-amd64.tar.gz.minisig`.
-
-Upload the `.minisig` alongside the existing `.tar.gz` and `.sha256`
-on the GitHub release.
-
-## Publishing the public key
-
-1. Replace the placeholder constant in `deploy/install.sh`:
+1. Writes the embedded public-key PEM to a mode-0600 temp file (or uses
+   `PANVEX_INSTALL_PUBKEY_FILE` if the operator set one).
+2. Downloads `${archive_url}.sig`.
+3. Runs:
 
    ```bash
-   : "${PANVEX_INSTALL_PUBKEY:=RWReplaceMeWith...}"
+   openssl dgst -sha256 -verify "$pubkey" -signature "$sig" "$archive"
    ```
 
-   with the real `RWQ...` line. Commit and tag.
+4. Aborts the install on any failure (missing `openssl`, download
+   failure, or signature mismatch). Temp files are removed on all paths.
 
-2. Mirror the key in the repository (`deploy/release-signing.pub`) and
-   on the project website / README so operators can verify out of band
-   that the embedded constant matches what the project actually
-   publishes.
+### Operator opt-out and overrides
 
-3. Document the key fingerprint (the first 16 hex chars of the
-   `untrusted comment:` line) in CHANGELOG.md when introducing it,
-   and again whenever it rotates.
+* `PANVEX_INSTALL_SKIP_SIGNATURE=1` — disable verification entirely. A
+  warning is printed to stderr. Not recommended; intended only for
+  air-gapped or offline-mirror scenarios where the operator vouches for
+  the artifact out of band.
+* `PANVEX_INSTALL_PUBKEY_FILE=/path/to/key.pem` — verify against an
+  alternate public key instead of the embedded one. For operators who
+  build and sign their own archives.
 
-## Operator follow-ups (open)
+## The signing key
 
-* The constant in `deploy/install.sh` is currently a literal
-  placeholder (`RWReplaceMe...`). It MUST be replaced with a real
-  release-signing public key before `PANVEX_INSTALL_REQUIRE_SIGNATURE=1`
-  can be flipped on by default.
-* CI/release tooling does not yet sign archives. Wiring `minisign -S`
-  into the release workflow (with the private key stored in CI secret
-  storage and gated by manual approval, or, better, signing offline
-  and uploading the `.minisig` after the fact) is a separate operator
-  task — explicitly out of scope for the S-4 verifier commit.
-* Once the key is in place and the workflow signs archives, flip the
-  default in operator-facing docs (README install snippet) so new
-  installs use `PANVEX_INSTALL_REQUIRE_SIGNATURE=1` from day one.
+* **Public key** (the trust anchor): `internal/security/signing_key.pub`,
+  a PEM ECDSA P-256 key. It is embedded in the binary AND copied verbatim
+  into both install scripts as `PANVEX_RELEASE_PUBKEY_PEM`. These three
+  copies MUST stay byte-identical.
+* **Private key**: stored only as the `PANVEX_SIGNING_KEY` Actions secret.
+  It never lives in the repo. Generate it offline:
 
-## Verifying manually
+  ```bash
+  openssl ecparam -name prime256v1 -genkey -noout -out panvex-release.key
+  openssl ec -in panvex-release.key -pubout -out panvex-release.pub
+  ```
 
-To sanity-check a release without going through the installer:
+  Paste the contents of `panvex-release.key` into the `PANVEX_SIGNING_KEY`
+  repository secret, and commit `panvex-release.pub` to
+  `internal/security/signing_key.pub` (replacing the existing key) +
+  mirror it into both install scripts.
+
+## Key rotation
+
+The in-app updater supports **multiple trusted keys** (see the multi-key
+documentation in `internal/security/signature.go`), which makes rotation
+non-breaking:
+
+1. Generate a new keypair offline.
+2. Add the new public key alongside the current one in
+   `internal/security/signature.go`'s trusted-key set, and update
+   `PANVEX_RELEASE_PUBKEY_PEM` in both install scripts (the scripts verify
+   against a single embedded key, so ship the new key in the same release
+   that starts signing with it).
+3. Swap `PANVEX_SIGNING_KEY` to the new private key. New releases are now
+   signed with it; binaries that embed both keys still trust old archives.
+4. Once all in-field binaries have been updated past the rotation point,
+   drop the retired public key from the trusted set.
+
+Document the key fingerprint in `CHANGELOG.md` when introducing or
+rotating a key so operators can verify out of band.
+
+## Verifying a release manually
 
 ```bash
-minisign -V \
-  -P 'RWQ...your-real-pubkey...' \
-  -m panvex-control-plane-linux-amd64.tar.gz \
-  -x panvex-control-plane-linux-amd64.tar.gz.minisig
+openssl dgst -sha256 \
+  -verify internal/security/signing_key.pub \
+  -signature panvex-control-plane-linux-amd64.tar.gz.sig \
+  panvex-control-plane-linux-amd64.tar.gz
 ```
 
-`Signature and comment signature verified` means the archive matches
-the published key.
+`Verified OK` means the archive matches the published key.
