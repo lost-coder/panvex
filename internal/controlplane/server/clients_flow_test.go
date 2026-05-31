@@ -43,10 +43,12 @@ func TestDeleteClientPersistsStateBeforeJob(t *testing.T) {
 	// uow.Do → clients.Repository.Save, not s.store.PutClient. Failure is
 	// injected at the Repository layer so replaceClientStateWithContext
 	// returns the error before the in-memory state is committed.
+	// saveErr starts nil so the initial seed (below) can populate the
+	// clients.Service mirror via SaveState; it is set just before the
+	// delete so the persist-failure path is exercised.
 	failing := &failingStore{MigrationStore: baseStore}
 	failingRepo := &failingClientsRepository{
 		Repository: sqlite.NewClientsRepository(baseStore.DB()),
-		saveErr:    persistErr,
 	}
 
 	server := mustNew(t, Options{
@@ -69,8 +71,7 @@ func TestDeleteClientPersistsStateBeforeJob(t *testing.T) {
 	}
 	server.mu.Unlock()
 
-	server.clientsMu.Lock()
-	server.clients[clientID] = managedClient{
+	seedClient := managedClient{
 		ID:        clients.ClientID(clientID),
 		Name:      "alice",
 		Secret:    "0123456789abcdef0123456789abcdef",
@@ -78,25 +79,40 @@ func TestDeleteClientPersistsStateBeforeJob(t *testing.T) {
 		CreatedAt: now.Add(-time.Minute),
 		UpdatedAt: now.Add(-time.Minute),
 	}
-	server.clientAssignments[clientID] = []managedClientAssignment{{
+	seedAssignments := []managedClientAssignment{{
 		ID:         "assign-1",
 		ClientID:   clients.ClientID(clientID),
 		TargetType: clientAssignmentTargetAgent,
 		AgentID:    "agent-A",
 		CreatedAt:  now.Add(-time.Minute),
 	}}
+	seedDeployments := []managedClientDeployment{{
+		ClientID:         clients.ClientID(clientID),
+		AgentID:          "agent-A",
+		DesiredOperation: "create",
+		Status:           clientDeploymentStatusSucceeded,
+		UpdatedAt:        now.Add(-time.Minute),
+	}}
+
+	// Seed both the clients.Service mirror (read by clientDetailSnapshot
+	// after D1) and the legacy server maps (read by the rollback
+	// assertion below). SaveState populates the mirror; the direct
+	// server-map writes mirror what replaceClientStateInMemory does.
+	if err := server.clientsSvc.SaveState(ctx, seedClient, seedAssignments, seedDeployments); err != nil {
+		t.Fatalf("seed SaveState() error = %v", err)
+	}
+	server.clientsMu.Lock()
+	server.clients[clientID] = seedClient
+	server.clientAssignments[clientID] = seedAssignments
 	server.clientDeployments[clientID] = map[string]managedClientDeployment{
-		"agent-A": {
-			ClientID:         clients.ClientID(clientID),
-			AgentID:          "agent-A",
-			DesiredOperation: "create",
-			Status:           clientDeploymentStatusSucceeded,
-			UpdatedAt:        now.Add(-time.Minute),
-		},
+		"agent-A": seedDeployments[0],
 	}
 	server.clientsMu.Unlock()
 
 	jobsBefore := len(server.jobs.List())
+
+	// Now arm the persist failure for the delete tombstone write.
+	failingRepo.saveErr = persistErr
 
 	err = server.deleteClient(ctx, clientID, "user-1", now)
 	if !errors.Is(err, persistErr) {

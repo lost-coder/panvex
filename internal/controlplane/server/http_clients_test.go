@@ -436,6 +436,117 @@ func TestHTTPClientsAggregateUsageAcrossAgentSnapshots(t *testing.T) {
 	}
 }
 
+// TestHTTPClientsListingReflectsDeploymentAndUsage is a characterization
+// test (Task D1) that pins the GET /api/clients listing response shape:
+// after a client is created, its single deployment job completes, and a
+// usage snapshot arrives, the listing row must carry the recorded usage
+// (traffic/unique-ips/tcp-conns) and the deployment-derived
+// last_deploy_status. It locks the listing behaviour so repointing
+// listClientsListingSnapshot at the clients.Service mirror cannot drift.
+func TestHTTPClientsListingReflectsDeploymentAndUsage(t *testing.T) {
+	now := time.Date(2026, time.March, 19, 9, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+		Store:            store,
+	})
+	defer server.Close()
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
+		Username: "admin",
+		Password: "Admin1password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	defaultGroupID := seedClientTargetAgent(t, store, server, "default", now.Add(-2*time.Minute), storage.AgentRecord{
+		ID:         "agent-000001",
+		NodeName:   "node-a",
+		Version:    "dev",
+		LastSeenAt: now.Add(-time.Minute),
+	})
+	cookies := loginAdminForClients(t, server)
+	createResponse := performJSONRequest(t, server, http.MethodPost, "/api/clients", map[string]any{
+		"name":            "alice",
+		"fleet_group_ids": []string{defaultGroupID},
+	}, cookies)
+	if createResponse.Code != http.StatusCreated {
+		t.Fatalf("POST /api/clients status = %d, want %d", createResponse.Code, http.StatusCreated)
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(createResponse.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal(create) error = %v", err)
+	}
+
+	enqueuedJobs := server.jobs.List()
+	if len(enqueuedJobs) != 1 {
+		t.Fatalf("len(server.jobs.List()) = %d, want %d", len(enqueuedJobs), 1)
+	}
+	server.recordJobResult(context.Background(), "agent-000001", enqueuedJobs[0].ID, true, "applied", `{"connection_links":["tg://proxy?server=node-a&secret=alice"]}`, now.Add(time.Minute))
+
+	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+		AgentID:    "agent-000001",
+		NodeName:   "node-a",
+		Version:    "dev",
+		HasClients: true,
+		Clients: []clientUsageSnapshot{
+			{
+				ClientID:         clients.ClientID(created.ID),
+				TrafficUsedBytes: 1024,
+				UniqueIPsUsed:    2,
+				ActiveTCPConns:   3,
+				ObservedAt:       now.Add(time.Minute),
+			},
+		},
+		ObservedAt: now.Add(time.Minute),
+	}); err != nil {
+		t.Fatalf("applyAgentSnapshot(agent-000001) error = %v", err)
+	}
+
+	listResponse := performJSONRequest(t, server, http.MethodGet, "/api/clients", nil, cookies)
+	if listResponse.Code != http.StatusOK {
+		t.Fatalf("GET /api/clients status = %d, want %d", listResponse.Code, http.StatusOK)
+	}
+	var listing []struct {
+		ID               string `json:"id"`
+		Name             string `json:"name"`
+		TrafficUsedBytes uint64 `json:"traffic_used_bytes"`
+		UniqueIPsUsed    int    `json:"unique_ips_used"`
+		ActiveTCPConns   int    `json:"active_tcp_conns"`
+		LastDeployStatus string `json:"last_deploy_status"`
+	}
+	if err := json.Unmarshal(listResponse.Body.Bytes(), &listing); err != nil {
+		t.Fatalf("json.Unmarshal(listing) error = %v", err)
+	}
+	if len(listing) != 1 {
+		t.Fatalf("len(listing) = %d, want %d", len(listing), 1)
+	}
+	row := listing[0]
+	if row.ID != created.ID {
+		t.Fatalf("listing[0].id = %q, want %q", row.ID, created.ID)
+	}
+	if row.TrafficUsedBytes != 1024 {
+		t.Fatalf("listing[0].traffic_used_bytes = %d, want %d", row.TrafficUsedBytes, 1024)
+	}
+	if row.UniqueIPsUsed != 2 {
+		t.Fatalf("listing[0].unique_ips_used = %d, want %d", row.UniqueIPsUsed, 2)
+	}
+	if row.ActiveTCPConns != 3 {
+		t.Fatalf("listing[0].active_tcp_conns = %d, want %d", row.ActiveTCPConns, 3)
+	}
+	if row.LastDeployStatus != "succeeded" {
+		t.Fatalf("listing[0].last_deploy_status = %q, want %q", row.LastDeployStatus, "succeeded")
+	}
+}
+
 func TestHTTPClientsCreateReturnsInternalErrorWhenPersistenceFails(t *testing.T) {
 	now := time.Date(2026, time.March, 18, 13, 30, 0, 0, time.UTC)
 	sqliteStore, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
