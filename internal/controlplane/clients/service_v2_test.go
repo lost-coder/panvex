@@ -502,76 +502,6 @@ func TestService_SaveState_UpdatesMirror(t *testing.T) {
 	}
 }
 
-// --- Phase 6.6 tests: Service.AdoptDiscovered ---
-
-func TestService_AdoptDiscovered_AtomicCrossDomain(t *testing.T) {
-	t.Parallel()
-
-	repo := newFakeRepo()
-	discoveredRepo := newFakeDiscoveredRepo()
-	discoveredRepo.byID[discovered.DiscoveredID("d-1")] = discovered.DiscoveredClient{
-		ID:         discovered.DiscoveredID("d-1"),
-		ClientName: "alpha",
-		AgentID:    "a-1",
-		Status:     discovered.StatusPending,
-	}
-	rs := &fakeRepoSet{clients: repo, discovered: discoveredRepo}
-	svc := NewService(ServiceConfig{
-		Repo:           repo,
-		DiscoveredRepo: discoveredRepo,
-		UoW:            newFakeUoW(rs),
-		Vault:          makeTestVault(t),
-	})
-
-	c, err := svc.AdoptDiscovered(context.Background(), AdoptInput{
-		DiscoveredID: discovered.DiscoveredID("d-1"),
-		ActorID:      "u-admin",
-	})
-	if err != nil {
-		t.Fatalf("Adopt: %v", err)
-	}
-	if c.Name != "alpha" {
-		t.Fatalf("client name = %q, want alpha", c.Name)
-	}
-	// Both domains mutate atomically within the UoW: the managed client is
-	// created and the discovered record flips to Adopted.
-	if _, ok := repo.clientsByID[c.ID]; !ok {
-		t.Fatal("managed client not persisted")
-	}
-	if discoveredRepo.byID[discovered.DiscoveredID("d-1")].Status != discovered.StatusAdopted {
-		t.Fatal("discovered status not flipped")
-	}
-	// C-1b: audit is NOT written through the UoW. It is a cross-cutting
-	// concern owned by the serialized server-side hash-chainer; the caller
-	// emits "clients.adopted" via the server append path after this returns.
-	// The UoW RepoSet no longer exposes an Audit() repository at all, so the
-	// previous broken (unchained) audit write is structurally impossible.
-}
-
-func TestService_AdoptDiscovered_NonPendingFails(t *testing.T) {
-	t.Parallel()
-
-	repo := newFakeRepo()
-	discoveredRepo := newFakeDiscoveredRepo()
-	discoveredRepo.byID[discovered.DiscoveredID("d-2")] = discovered.DiscoveredClient{
-		ID:     discovered.DiscoveredID("d-2"),
-		Status: discovered.StatusAdopted,
-	}
-	rs := &fakeRepoSet{clients: repo, discovered: discoveredRepo}
-	svc := NewService(ServiceConfig{
-		Repo: repo, DiscoveredRepo: discoveredRepo,
-		UoW: newFakeUoW(rs), Vault: makeTestVault(t),
-	})
-
-	_, err := svc.AdoptDiscovered(context.Background(), AdoptInput{
-		DiscoveredID: discovered.DiscoveredID("d-2"),
-		ActorID:      "u-admin",
-	})
-	if err == nil {
-		t.Fatal("expected error adopting non-pending discovered client")
-	}
-}
-
 // --- Phase 6.7 tests: Service.Delete ---
 
 func TestService_Delete_RemovesFromMirror(t *testing.T) {
@@ -762,7 +692,7 @@ func TestService_UpsertUsageBulk_FailThenOK_NoPermanentDrop(t *testing.T) {
 	}
 }
 
-// --- Task A1: PersistDeployment keeps the V2 mirror consistent ---
+// --- Task A1: PersistDeployment keeps the mirror consistent ---
 
 // seedClientWithDeployment writes a client + one deployment through the repo
 // and then Restores so the mirror is populated.

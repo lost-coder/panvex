@@ -36,7 +36,7 @@ func seedClientAndAgentRows(t *testing.T, s *Server, clientID, agentID string, n
 	}
 }
 
-// These helpers let tests seed and read the clients.Service V2 mirror — the
+// These helpers let tests seed and read the clients.Service mirror — the
 // single owner of client/assignment/deployment/usage state after C1 removed
 // the Server-owned client maps. They replace direct s.clients / s.clientUsage
 // / s.clientDeployments map access from the pre-C1 tests.

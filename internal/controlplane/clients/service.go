@@ -145,12 +145,6 @@ func NewService(cfg ServiceConfig) *Service {
 	}
 }
 
-// Vault exposes the configured vault so other parts of the control
-// plane can encrypt/decrypt records at the same boundaries.
-func (s *Service) Vault() *secretvault.Vault {
-	return s.vault
-}
-
 // SetNow overrides the time source. Used by tests that inject a
 // controllable clock after construction.
 func (s *Service) SetNow(now func() time.Time) {
@@ -168,28 +162,10 @@ func (s *Service) ResolveTargetAgentIDs(assignments []Assignment, topology Agent
 	return ResolveTargetAgentIDs(assignments, topology)
 }
 
-// ResolveIDByName is a method wrapper over the package-level pure
-// helper. See ResolveIDByName in resolver.go.
-func (s *Service) ResolveIDByName(
-	clients map[string]Client,
-	assignmentsByClient map[string][]Assignment,
-	agentID string,
-	agentFleetGroupID string,
-	clientName string,
-) string {
-	return ResolveIDByName(clients, assignmentsByClient, agentID, agentFleetGroupID, clientName)
-}
-
 // AggregateUsage is a method wrapper over the package-level pure
 // helper. See AggregateUsage in resolver.go.
 func (s *Service) AggregateUsage(usageByAgent map[string]UsageSnapshot) AggregatedUsage {
 	return AggregateUsage(usageByAgent)
-}
-
-// ValidateHexSecret reports whether s is a 32-char hex string. Thin
-// method wrapper so mock services can stub validation.
-func (s *Service) ValidateHexSecret(secret string) bool {
-	return IsValidHexSecret(secret)
 }
 
 // --- Sequence helpers ---
@@ -239,15 +215,6 @@ func (s *Service) RecoverSequencesFromRecords(
 	for _, id := range discoveredIDs {
 		s.discoveredSeq = maxPrefixedSequence(s.discoveredSeq, "discovered", id)
 	}
-}
-
-// --- State snapshots and mutation ---
-
-// ReplaceState atomically persists client + assignments + deployments via
-// the Repository and mirrors them in memory. Thin alias over SaveState
-// retained for the server-side call sites.
-func (s *Service) ReplaceState(ctx context.Context, client Client, assignments []Assignment, deployments []Deployment) error {
-	return s.SaveState(ctx, client, assignments, deployments)
 }
 
 // --- Repository-backed mirror methods ---
@@ -333,8 +300,8 @@ func (s *Service) Restore(ctx context.Context) error {
 }
 
 // Get returns the cached Client by ID. The mirror is populated by
-// Restore; after a Save/SaveState/AdoptDiscovered the mirror is updated
-// atomically. Returns ErrNotFound if the ID is unknown.
+// Restore; after a Save/SaveState the mirror is updated atomically.
+// Returns ErrNotFound if the ID is unknown.
 func (s *Service) Get(ctx context.Context, id ClientID) (Client, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -490,88 +457,6 @@ func (s *Service) SaveState(ctx context.Context, c Client, assignments []Assignm
 	s.mirrorDeployments[c.ID] = dmap
 	s.mu.Unlock()
 	return nil
-}
-
-// AdoptInput carries the parameters for Service.AdoptDiscovered.
-type AdoptInput struct {
-	DiscoveredID discovered.DiscoveredID
-	// Secret is the plaintext MTProto secret for the client being adopted.
-	// The discovered.DiscoveredClient domain type does not carry the
-	// secret; callers that have it (e.g. the gRPC handler) supply it here.
-	// Empty is valid — the repository row will store an empty ciphertext.
-	Secret     string
-	ActorID    string
-	ObservedAt time.Time
-}
-
-// AdoptDiscovered promotes a discovered client to a managed client in
-// one cross-domain UoW transaction: reads the discovered record,
-// creates the managed client, and flips the discovered status to
-// Adopted. Mirror is updated on success only.
-//
-// Audit is intentionally NOT written inside this transaction. Audit is a
-// cross-cutting concern owned by the single serialized server-side
-// hash-chainer (appendAudit*); writing audit through the UoW bypassed
-// that chainer and broke the tamper-evident chain (C-1b). The caller is
-// responsible for emitting the "clients.adopted" audit event via the
-// server append path after this returns — exactly as the live
-// discovery-adopt HTTP handler already does.
-func (s *Service) AdoptDiscovered(ctx context.Context, in AdoptInput) (Client, error) {
-	if in.ObservedAt.IsZero() {
-		in.ObservedAt = s.now().UTC()
-	}
-	var adopted Client
-
-	err := s.uow.Do(ctx, func(rs ClientsRepoSet) error {
-		dc, err := rs.Discovered().Get(ctx, in.DiscoveredID)
-		if err != nil {
-			return err
-		}
-		if dc.Status != discovered.StatusPending {
-			return fmt.Errorf("clients.Service.AdoptDiscovered: cannot adopt %s in status %s", dc.ID, dc.Status)
-		}
-
-		c := buildClientFromDiscovered(dc, in.Secret, s.NextClientID(), in.ObservedAt)
-
-		encryptedSecret, err := s.encryptSecret(c.Secret)
-		if err != nil {
-			return fmt.Errorf("clients.Service.AdoptDiscovered: encrypt: %w", err)
-		}
-		toStore := c
-		toStore.Secret = encryptedSecret
-
-		if err := rs.Clients().Save(ctx, toStore); err != nil {
-			return err
-		}
-		if err := rs.Discovered().UpdateStatus(ctx, dc.ID, discovered.StatusAdopted, in.ObservedAt); err != nil {
-			return err
-		}
-		adopted = c
-		return nil
-	})
-	if err != nil {
-		return Client{}, err
-	}
-
-	s.mu.Lock()
-	s.mirrorClients[adopted.ID] = adopted
-	s.mu.Unlock()
-	return adopted, nil
-}
-
-// buildClientFromDiscovered constructs a managed Client from a
-// DiscoveredClient. Pure function — no I/O, no encryption.
-// ID generation uses the same sequential "client-N" scheme as
-// Service.NextClientID (see server.buildAdoptedClientState).
-func buildClientFromDiscovered(dc discovered.DiscoveredClient, secret, id string, observedAt time.Time) Client {
-	return Client{
-		ID:        ClientID(id),
-		Name:      dc.ClientName,
-		Secret:    secret,
-		Enabled:   true,
-		CreatedAt: observedAt,
-		UpdatedAt: observedAt,
-	}
 }
 
 // Delete removes the client from the Repository via a UoW transaction

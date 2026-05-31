@@ -118,7 +118,7 @@ func (s *Server) seedUsageFromDiscovered(ctx context.Context, snap clients.Mirro
 }
 
 // listClientsListingSnapshot returns every field handleClients needs in
-// one pass. It sources all listing data from the clients.Service V2 mirror
+// one pass. It sources all listing data from the clients.Service mirror
 // (the single owner of client/assignment/deployment/usage state). The mirror
 // is kept current on every write path (SaveState / PersistDeployment /
 // UpsertUsage*), so the projected JSON is identical to the prior server-map
@@ -196,7 +196,7 @@ func (s *Server) listClientsListingSnapshot() clientListingSnapshot {
 }
 
 func (s *Server) clientDetailSnapshot(clientID string) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
-	// Sources detail data from the clients.Service V2 mirror (the single
+	// Sources detail data from the clients.Service mirror (the single
 	// owner of client/assignment/deployment state). The mirror is kept
 	// current on every write path (SaveState / PersistDeployment /
 	// UpsertUsage*), so the projected shape and sort order are identical to
