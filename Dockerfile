@@ -56,17 +56,13 @@ RUN go build -ldflags="-s -w" -trimpath -o /out/panvex-control-plane ./cmd/contr
 # read it without re-deriving from go.sum. Release archives already
 # carry their own SBOM via release.yml; this entry covers the image
 # distribution path.
-# anchore/syft is initially un-pinned: Dependabot's docker rule
-# (.github/dependabot.yml, /) opens the first "add @sha256:..." PR
-# the next time it runs, then keeps the digest current alongside the
-# tag. Until that PR lands, every build pulls whatever the registry
-# resolves :v1.18 to that day — operators who care about strict
-# reproducibility before the first Dependabot PR should resolve the
-# digest manually:
-#     docker manifest inspect anchore/syft:v1.18 \
+# anchore/syft is digest-pinned like every other base image (O7).
+# Dependabot's docker rule (.github/dependabot.yml, /) keeps both the
+# tag and the digest current. To refresh the digest manually:
+#     docker manifest inspect anchore/syft:<tag> \
 #       | jq -r '.manifests[0].digest // .config.digest'
-# and replace `:v1.18` below with `:v1.18@sha256:<digest>`.
-FROM anchore/syft:v1.44.0 AS sbom-builder
+# and update the tag + @sha256 below together.
+FROM anchore/syft:v1.44.0@sha256:86fde6445b483d902fe011dd9f68c4987dd94e07da1e9edc004e3c2422650de6 AS sbom-builder
 COPY --from=control-plane-builder /out/panvex-control-plane /panvex-control-plane
 RUN /syft /panvex-control-plane -o cyclonedx-json=/sbom/control-plane.cdx.json && \
     # Defensive assert: a future syft major that changes the -o flag
