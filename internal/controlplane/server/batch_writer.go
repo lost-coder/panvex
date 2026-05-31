@@ -3,9 +3,13 @@ package server
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +26,15 @@ const (
 	// hot streams; 200 keeps the bound memory footprint reasonable for
 	// streams whose volume profile we have not measured.
 	defaultBatchMaxSize = 200
+
+	// defaultAuditDeadLetterDir is the on-disk directory where audit batches
+	// that exhaust their in-memory flush retries are persisted as JSONL so a
+	// permanent store failure cannot SILENTLY lose audit events (A4). It is a
+	// relative path resolved against the process working directory — the same
+	// convention as the workspace `data/` runtime dir — because the
+	// control-plane server has no first-class data-dir abstraction to thread
+	// through. Override via the storeBatchWriter.deadLetterDir field.
+	defaultAuditDeadLetterDir = "data/audit-deadletter"
 )
 
 // streamBatchSizes is the per-stream flush threshold (in items) used by
@@ -179,6 +192,18 @@ type storeBatchWriter struct {
 	// to assert deterministic ObserveFlushDuration values.
 	now func() time.Time
 
+	// deadLetterDir is the directory where audit batches that exhaust their
+	// in-memory flush retries are spooled as JSONL (A4). Telemetry/timeseries
+	// streams are NOT spooled — for them a drop-with-metric is acceptable, but
+	// audit is a CRITICAL stream and must never be lost silently. Empty falls
+	// back to defaultAuditDeadLetterDir.
+	deadLetterDir string
+
+	// writeDeadLetter is the injection seam used by flushAuditEvents to spool a
+	// failed audit record. Defaults to writeAuditDeadLetter; tests override it
+	// to capture spooled records (or to force a dead-letter write failure).
+	writeDeadLetter func(item storage.AuditEventRecord) error
+
 	agents     *batchBuffer[storage.AgentRecord]
 	instances  *batchBuffer[storage.InstanceRecord]
 	metricsBuf *batchBuffer[storage.MetricSnapshotRecord]
@@ -249,7 +274,11 @@ func newStoreBatchWriter(store storage.Store, metrics batchMetricsSink, now func
 		flushInterval: batchFlushInterval,
 		sleep:         time.Sleep,
 		now:           now,
+		deadLetterDir: defaultAuditDeadLetterDir,
 	}
+	// Default the dead-letter spool to the on-disk JSONL writer. Tests override
+	// w.writeDeadLetter to capture records without touching the filesystem.
+	w.writeDeadLetter = w.writeAuditDeadLetter
 
 	w.agents = newBatchBuffer(batchSizeFor("agents"), w.flushAgents)
 	w.instances = newBatchBuffer(batchSizeFor("instances"), w.flushInstances)
@@ -612,6 +641,15 @@ var streamAlerts = map[string]string{
 }
 
 func (w *storeBatchWriter) flushItem(buffer string, logAttrs []any, op func() error) {
+	w.flushItemTracked(buffer, logAttrs, op)
+}
+
+// flushItemTracked is flushItem with a return value: it reports whether the
+// item was ultimately persisted (true) or dropped after the retry sequence
+// resolved unsuccessfully (false). Critical streams (audit) use the bool to
+// decide whether to spool the record to the dead-letter file instead of
+// dropping it silently; non-critical streams call flushItem and ignore it.
+func (w *storeBatchWriter) flushItemTracked(buffer string, logAttrs []any, op func() error) bool {
 	// P2-OBS-03: measure end-to-end flush latency including retries and record
 	// the observation regardless of how the retry sequence resolved. Done via
 	// a deferred closure so early returns (first-try success, retry success)
@@ -626,11 +664,11 @@ func (w *storeBatchWriter) flushItem(buffer string, logAttrs []any, op func() er
 	})
 	switch outcome {
 	case retrySucceededFirstTry:
-		return
+		return true
 	case retrySucceededOnRetry:
 		// Retry saved us — record the positive outcome but do not log.
 		w.metrics.ObservePersistRetry(buffer, "success")
-		return
+		return true
 	case retryExhausted:
 		w.metrics.ObservePersistRetry(buffer, "exhausted")
 		w.metrics.ObserveFlushError(buffer, "persistent")
@@ -648,6 +686,7 @@ func (w *storeBatchWriter) flushItem(buffer string, logAttrs []any, op func() er
 		attrs = append(attrs, "alert", alert)
 	}
 	slog.Error("batch persist failed", attrs...)
+	return false
 }
 
 func outcomeLabel(o retryOutcome) string {
@@ -761,14 +800,79 @@ func (w *storeBatchWriter) flushAuditEvents(ctx context.Context, items []storage
 	slog.Debug(logBatchFlush, "domain", "audit", "count", len(items))
 	for _, item := range items {
 		item := item
-		w.flushItem("audit", []any{
+		persisted := w.flushItemTracked("audit", []any{
 			"audit_id", item.ID,
 			"action", item.Action,
 			"actor_id", item.ActorID,
 		}, func() error {
 			return w.store.AppendAuditEvent(ctx, item)
 		})
+		if persisted {
+			continue
+		}
+		// A4: audit is CRITICAL — a permanent store failure must not lose the
+		// event. Spool the record to the on-disk dead-letter file (JSONL) so it
+		// can be replayed/reconciled later. flushItemTracked already emitted the
+		// alert=audit_persist_failed log line + persistent metric; here we add
+		// the durable fallback. If the spool itself fails there is nowhere left
+		// to put the row, so we log at error with an explicit marker.
+		if err := w.writeDeadLetter(item); err != nil {
+			slog.Error("audit dead-letter write failed",
+				"domain", "audit",
+				"audit_id", item.ID,
+				"action", item.Action,
+				"actor_id", item.ActorID,
+				"error", err,
+				"error_chain", errorChain(err),
+				"alert", "audit_deadletter_write_failed",
+			)
+		}
 	}
+}
+
+// auditDeadLetterFileName is the JSONL spool file name inside deadLetterDir.
+// One append-only file keeps replay simple; rows are newline-delimited JSON of
+// the storage.AuditEventRecord plus the time the event was dead-lettered.
+const auditDeadLetterFileName = "audit-events.jsonl"
+
+// deadLetteredAuditEvent is the on-disk JSONL envelope: the original audit
+// record plus the wall-clock time it was spooled, so a later replay tool can
+// order and de-duplicate entries.
+type deadLetteredAuditEvent struct {
+	DeadLetteredAt time.Time                `json:"dead_lettered_at"`
+	Event          storage.AuditEventRecord `json:"event"`
+}
+
+// writeAuditDeadLetter appends one audit record to the dead-letter JSONL file,
+// creating the directory and file on first use. It is the default
+// w.writeDeadLetter implementation (A4). It opens with O_APPEND so concurrent
+// writers do not clobber each other, though in practice only the single flush
+// loop calls it.
+func (w *storeBatchWriter) writeAuditDeadLetter(item storage.AuditEventRecord) error {
+	dir := w.deadLetterDir
+	if dir == "" {
+		dir = defaultAuditDeadLetterDir
+	}
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return fmt.Errorf("create audit dead-letter dir %q: %w", dir, err)
+	}
+	line, err := json.Marshal(deadLetteredAuditEvent{
+		DeadLetteredAt: w.now().UTC(),
+		Event:          item,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal audit dead-letter record %q: %w", item.ID, err)
+	}
+	path := filepath.Join(dir, auditDeadLetterFileName)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o640) //nolint:gosec // path is server-controlled, not user input
+	if err != nil {
+		return fmt.Errorf("open audit dead-letter file %q: %w", path, err)
+	}
+	defer f.Close()
+	if _, err := f.Write(append(line, '\n')); err != nil {
+		return fmt.Errorf("append audit dead-letter record %q: %w", item.ID, err)
+	}
+	return nil
 }
 
 // flushFallbackState persists queued put/delete ops against

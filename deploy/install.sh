@@ -177,6 +177,40 @@ generate_encryption_key() {
   fi
 }
 
+# Prominent, hard-to-miss warning shown only when we auto-GENERATE a fresh
+# encryption key (not when the operator supplied one or we kept an existing
+# one). Losing this key permanently destroys every encrypted column
+# (client_secret / totp_secret / webhook_secret) — there is no recovery path.
+# The interactive "I saved it" confirmation is gated on a TTY (can_prompt) so
+# the non-interactive path (curl | bash, CI, config-management) never blocks.
+warn_encryption_key_backup() {
+  local secrets_file="$1"
+  echo "" >&2
+  echo "  ${RED}${BOLD}┌────────────────────────────────────────────────────────────┐${RESET}" >&2
+  echo "  ${RED}${BOLD}│  BACK UP YOUR ENCRYPTION KEY NOW                            │${RESET}" >&2
+  echo "  ${RED}${BOLD}└────────────────────────────────────────────────────────────┘${RESET}" >&2
+  echo "  ${YELLOW}A new ${BOLD}PANVEX_ENCRYPTION_KEY${RESET}${YELLOW} was generated automatically.${RESET}" >&2
+  echo "  ${YELLOW}It encrypts all client, TOTP and webhook secrets at rest.${RESET}" >&2
+  echo "  ${BOLD}If this key is lost, that data is permanently unrecoverable —${RESET}" >&2
+  echo "  ${BOLD}there is no reset and no recovery, only a clean reinstall.${RESET}" >&2
+  echo "" >&2
+  echo "  Export it to a secure secret store now, e.g.:" >&2
+  echo "    ${BLUE}grep '^PANVEX_ENCRYPTION_KEY=' ${secrets_file}${RESET}" >&2
+  echo "" >&2
+
+  # TTY-gated confirmation: never block non-interactive installs.
+  if can_prompt; then
+    local reply
+    read -rp "  ${CYAN}?${RESET} Type 'yes' once you have saved the key: " reply </dev/tty
+    if [[ "$reply" = "yes" ]]; then
+      success "Encryption key backup confirmed"
+    else
+      warn "Continuing without confirmation — remember to back up the key."
+    fi
+  fi
+  return 0
+}
+
 is_root() { [[ "$(id -u)" -eq 0 ]]; return 0; }
 
 has_systemd() { command -v systemctl >/dev/null 2>&1; return 0; }
@@ -664,7 +698,8 @@ EOF
   fi
   case "$secrets_action" in
     kept)      info "Encryption key preserved: $secrets_file" ;;
-    generated) success "Encryption key auto-generated: $secrets_file" ;;
+    generated) success "Encryption key auto-generated: $secrets_file"
+               warn_encryption_key_backup "$secrets_file" ;;
     stored)    success "Encryption key stored: $secrets_file" ;;
   esac
 

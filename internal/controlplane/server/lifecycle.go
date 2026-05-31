@@ -199,9 +199,32 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 	store := options.Store
 	s.jobs = jobs.NewServiceWithStore(store)
 	s.auth = auth.NewServiceWithStore(store)
+	// Wire the injected clock onto the freshly-constructed services BEFORE any
+	// restore runs. RestoreSessions -> restoreConsumedTotp (below, via line
+	// ~254) computes its 90s replay cutoff from the service clock; if the clock
+	// is still the default time.Now() at restore time, an injected/test clock
+	// (or a replayed boot) drops just-consumed codes as "expired" and reopens
+	// the TOTP replay window. The later SetNow in New() is now redundant for
+	// these two but harmless.
+	s.auth.SetNow(s.now)
+	s.jobs.SetNow(s.now)
 	s.auth.SetSessionStore(store)
 	s.auth.SetVault(vault)
-	s.auth.SetConsumedTotpStore(store)
+	// S3 (audit): TOTP replay-prevention (consumed-TOTP) MUST be backed by
+	// the persistent store on the production serve path. Without it, the
+	// service silently falls back to an in-memory map that is wiped on
+	// restart, reopening the replay window for any code consumed within the
+	// ~90s acceptance window before the restart. The aggregate storage.Store
+	// always embeds ConsumedTotpStore, so a non-nil store satisfying that
+	// contract is the invariant; if it is ever violated (a misconfigured or
+	// stub store), fail fast at startup rather than degrade silently.
+	if consumedStore, ok := store.(storage.ConsumedTotpStore); ok && consumedStore != nil {
+		s.auth.SetConsumedTotpStore(consumedStore)
+	} else {
+		s.trySetStartupErr(func() error {
+			return fmt.Errorf("auth: persistent consumed-TOTP store unavailable; refusing to start with in-memory TOTP replay protection (post-restart replay window)")
+		})
+	}
 	// Seal integration-provider credentials at rest under the same vault.
 	if s.fleetSvc != nil {
 		s.fleetSvc.SetVault(vault)

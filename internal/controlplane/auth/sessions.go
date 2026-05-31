@@ -26,7 +26,12 @@ func (s *Service) restoreConsumedTotp() {
 	if s.consumedTotpStore == nil {
 		return
 	}
-	totpCutoff := time.Now().UTC().Add(-90 * time.Second)
+	// Use the service clock (s.now), not the wall clock: the verifier's 90s
+	// acceptance window is computed against s.startedAt = now(), so the restore
+	// cutoff must agree with it. A wall-clock cutoff diverges whenever the
+	// clock is injected (tests, replays) and would drop just-consumed records
+	// as "expired", reopening the replay window the persist was meant to close.
+	totpCutoff := s.now().UTC().Add(-90 * time.Second)
 	if err := s.consumedTotpStore.DeleteExpiredConsumedTotp(context.Background(), totpCutoff); err != nil {
 		slog.Warn("auth: prune expired consumed TOTP failed", "error", err)
 	}
