@@ -773,3 +773,110 @@ func TestService_SaveState_EmptyAssignmentsAndDeployments(t *testing.T) {
 		t.Fatalf("mirrorDeployments[c-empty] len = %d, want 0", len(svc.mirrorDeployments["c-empty"]))
 	}
 }
+
+// --- D1 (B3): mirror-consistency methods for the server write-paths ---
+
+// TestService_ZeroLiveGaugesMirror verifies that ZeroLiveGaugesForAgent
+// zeros the live connection/IP gauges in the mirror for every client the
+// agent owns usage for but did NOT report in the current snapshot, while
+// preserving accumulated traffic and leaving reported (seen) clients
+// untouched. Mirrors the server's zeroLiveGaugesForUntouchedClients.
+func TestService_ZeroLiveGaugesMirror(t *testing.T) {
+	t.Parallel()
+
+	svc := NewServiceV2(ServiceConfig{Repo: newFakeRepo()})
+	// Two clients on agent-1: c-seen (reported this tick) and c-idle (not).
+	svc.applyUsageMirror(Usage{ClientID: "c-seen", AgentID: "agent-1", TrafficUsedBytes: 100, ActiveTCPConns: 3, ActiveUniqueIPs: 2})
+	svc.applyUsageMirror(Usage{ClientID: "c-idle", AgentID: "agent-1", TrafficUsedBytes: 500, ActiveTCPConns: 7, ActiveUniqueIPs: 4})
+	// A different agent's row on c-idle must be left alone.
+	svc.applyUsageMirror(Usage{ClientID: "c-idle", AgentID: "agent-2", TrafficUsedBytes: 9, ActiveTCPConns: 1, ActiveUniqueIPs: 1})
+
+	svc.ZeroLiveGaugesForAgent("agent-1", map[string]struct{}{"c-seen": {}})
+
+	svc.mu.RLock()
+	defer svc.mu.RUnlock()
+
+	seen := svc.mirrorUsage["c-seen"]["agent-1"]
+	if seen.ActiveTCPConns != 3 || seen.ActiveUniqueIPs != 2 {
+		t.Fatalf("seen client gauges changed: %+v", seen)
+	}
+	idle := svc.mirrorUsage["c-idle"]["agent-1"]
+	if idle.ActiveTCPConns != 0 || idle.ActiveUniqueIPs != 0 {
+		t.Fatalf("idle client gauges not zeroed: %+v", idle)
+	}
+	if idle.TrafficUsedBytes != 500 {
+		t.Fatalf("idle client traffic mutated: %d, want 500", idle.TrafficUsedBytes)
+	}
+	other := svc.mirrorUsage["c-idle"]["agent-2"]
+	if other.ActiveTCPConns != 1 || other.ActiveUniqueIPs != 1 {
+		t.Fatalf("other agent's gauges mutated: %+v", other)
+	}
+}
+
+// TestService_DropAgentUsageMirror verifies that DropAgentUsageMirror
+// removes every (client, agent) usage row owned by the agent plus its
+// per-agent seq cursor, while leaving other agents' rows intact.
+func TestService_DropAgentUsageMirror(t *testing.T) {
+	t.Parallel()
+
+	svc := NewServiceV2(ServiceConfig{Repo: newFakeRepo()})
+	svc.applyUsageMirror(Usage{ClientID: "c-1", AgentID: "agent-1", TrafficUsedBytes: 10, LastSeq: 4})
+	svc.applyUsageMirror(Usage{ClientID: "c-1", AgentID: "agent-2", TrafficUsedBytes: 20, LastSeq: 9})
+	svc.applyUsageMirror(Usage{ClientID: "c-2", AgentID: "agent-1", TrafficUsedBytes: 30, LastSeq: 4})
+
+	svc.DropAgentUsageMirror("agent-1")
+
+	svc.mu.RLock()
+	defer svc.mu.RUnlock()
+
+	if _, ok := svc.mirrorUsage["c-1"]["agent-1"]; ok {
+		t.Fatal("c-1/agent-1 still present after drop")
+	}
+	if _, ok := svc.mirrorUsage["c-1"]["agent-2"]; !ok {
+		t.Fatal("c-1/agent-2 wrongly dropped")
+	}
+	// c-2 had only agent-1 — the now-empty inner map should be removed.
+	if _, ok := svc.mirrorUsage["c-2"]; ok {
+		t.Fatal("c-2 inner map not pruned after dropping its only agent")
+	}
+	if _, ok := svc.mirrorLastUsageSeq["agent-1"]; ok {
+		t.Fatal("mirrorLastUsageSeq[agent-1] not dropped")
+	}
+	if svc.mirrorLastUsageSeq["agent-2"] != 9 {
+		t.Fatalf("mirrorLastUsageSeq[agent-2] = %d, want 9", svc.mirrorLastUsageSeq["agent-2"])
+	}
+}
+
+// TestService_SeedUsageMirror verifies that SeedUsageMirror writes a
+// usage row into the mirror without touching persistence, and only when
+// no row already exists for that (client, agent) pair (matching the
+// restore-time discovered-seed fallback semantics).
+func TestService_SeedUsageMirror(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	svc := NewServiceV2(ServiceConfig{Repo: repo})
+
+	now := time.Now()
+	svc.SeedUsageMirror("c-1", "agent-1", 4096, 5, 3, now)
+
+	svc.mu.RLock()
+	um := svc.mirrorUsage["c-1"]["agent-1"]
+	svc.mu.RUnlock()
+	if um.TrafficUsedBytes != 4096 || um.ActiveTCPConns != 5 || um.ActiveUniqueIPs != 3 || um.UniqueIPsUsed != 3 {
+		t.Fatalf("seeded mirror row wrong: %+v", um)
+	}
+	// Seed-mirror must not persist (it's a display fallback).
+	if got, err := repo.ListUsage(context.Background()); err != nil || len(got) != 0 {
+		t.Fatalf("SeedUsageMirror persisted to repo: rows=%d err=%v", len(got), err)
+	}
+
+	// Existing row must not be overwritten.
+	svc.SeedUsageMirror("c-1", "agent-1", 1, 1, 1, now.Add(time.Hour))
+	svc.mu.RLock()
+	um2 := svc.mirrorUsage["c-1"]["agent-1"]
+	svc.mu.RUnlock()
+	if um2.TrafficUsedBytes != 4096 {
+		t.Fatalf("SeedUsageMirror overwrote existing row: %+v", um2)
+	}
+}

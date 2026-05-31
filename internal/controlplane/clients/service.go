@@ -1161,6 +1161,93 @@ func (s *Service) HasRepo() bool {
 	return s.repo != nil
 }
 
+// ZeroLiveGaugesForAgent zeros the live connection/IP gauges in the
+// mirror for every client this agent owns a usage row for but did NOT
+// report in the current snapshot. Accumulated traffic and the persisted
+// quota fields are preserved — only the instantaneous gauges are reset.
+//
+// This is the mirror-side counterpart of the server's
+// zeroLiveGaugesForUntouchedClients. Like that path it is mirror-only:
+// the zeroed gauges are derived per-tick and are never persisted, so no
+// Repository write is performed. seen is the set of client IDs the agent
+// included in the snapshot just applied. No-op when the service was not
+// wired with a Repository (mirror unused).
+func (s *Service) ZeroLiveGaugesForAgent(agentID string, seen map[string]struct{}) {
+	if s.repo == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for clientID, byAgent := range s.mirrorUsage {
+		if _, ok := seen[string(clientID)]; ok {
+			continue
+		}
+		entry, ok := byAgent[agentID]
+		if !ok {
+			continue
+		}
+		entry.ActiveTCPConns = 0
+		entry.ActiveUniqueIPs = 0
+		byAgent[agentID] = entry
+	}
+}
+
+// DropAgentUsageMirror removes every (client, agent) usage row owned by
+// the given agent from the mirror, prunes any inner maps left empty, and
+// clears the agent's per-agent seq cursor. Mirror-side counterpart of the
+// server's purgeAgentInMemory usage cleanup (used when an agent is
+// deregistered / forgotten). Mirror-only: the underlying client_usage
+// rows are removed by the deregister flow's own Repository call.
+// No-op without a Repository.
+func (s *Service) DropAgentUsageMirror(agentID string) {
+	if s.repo == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for clientID, byAgent := range s.mirrorUsage {
+		if _, ok := byAgent[agentID]; !ok {
+			continue
+		}
+		delete(byAgent, agentID)
+		if len(byAgent) == 0 {
+			delete(s.mirrorUsage, clientID)
+		}
+	}
+	delete(s.mirrorLastUsageSeq, agentID)
+}
+
+// SeedUsageMirror writes a usage row into the mirror for the given
+// (client, agent) pair, but only when no row already exists. Mirror-only
+// (no persistence): this backs the restore-time discovered-client usage
+// fallback, which historically seeded the server map from
+// discovered_clients.total_octets without write-through. No-op without a
+// Repository.
+func (s *Service) SeedUsageMirror(clientID, agentID string, trafficBytes uint64, activeConns, activeUniqueIPs int, observedAt time.Time) {
+	if s.repo == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cid := ClientID(clientID)
+	byAgent, ok := s.mirrorUsage[cid]
+	if !ok {
+		byAgent = make(map[string]usageMirror)
+		s.mirrorUsage[cid] = byAgent
+	}
+	if _, exists := byAgent[agentID]; exists {
+		return
+	}
+	byAgent[agentID] = usageMirror{
+		ClientID:         cid,
+		TrafficUsedBytes: trafficBytes,
+		UniqueIPsUsed:    activeUniqueIPs,
+		ActiveTCPConns:   activeConns,
+		ActiveUniqueIPs:  activeUniqueIPs,
+		ObservedAt:       observedAt,
+	}
+}
+
 // applyUsageMirrorLocked updates the mirror maps. Must be called with
 // s.mu held for writing.
 func (s *Service) applyUsageMirrorLocked(u Usage) {
