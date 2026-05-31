@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 )
@@ -219,5 +220,156 @@ func TestNew_ReturnsErrorOnVaultSaltFailure(t *testing.T) {
 	}
 	if !errors.Is(err, errFailingCPSecretStore) && !strings.Contains(err.Error(), "vault HKDF salt") {
 		t.Fatalf("err = %v, want wrapping errFailingCPSecretStore or vault salt context", err)
+	}
+}
+
+// TestNew_ServePathWiresPersistentConsumedTotpStore pins audit S3: on the
+// production serve path (a real store passed to New), the auth service's
+// consumed-TOTP replay-prevention store MUST be backed by the persistent
+// store, never the silent in-memory fallback. The in-memory map is wiped
+// on restart, which reopens the TOTP replay window for any code consumed
+// within the ~90s acceptance window before the restart.
+//
+// initStoreBackedSubsystems fail-fasts (records a startup error) when the
+// store does not satisfy storage.ConsumedTotpStore. A real SQLite store
+// does satisfy it, so New must succeed with no startup error attributable
+// to the consumed-TOTP wiring. This test would fail if a future refactor
+// reintroduced a branch that left the store nil / in-memory.
+func TestNew_ServePathWiresPersistentConsumedTotpStore(t *testing.T) {
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	now := time.Date(2026, time.May, 2, 10, 0, 0, 0, time.UTC)
+	srv, err := New(Options{
+		Store:            store,
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	t.Cleanup(func() {
+		srv.Close()
+		store.Close()
+	})
+	if startupErr := srv.StartupError(); startupErr != nil &&
+		strings.Contains(startupErr.Error(), "consumed-TOTP") {
+		t.Fatalf("serve path left consumed-TOTP store unwired: %v", startupErr)
+	}
+}
+
+// TestNew_ConsumedTotpSurvivesRestart pins audit S3 end-to-end at the
+// serve path: a TOTP code consumed before a restart must still be seen as
+// consumed after the server is re-created over the same persistent store.
+// Pre-fix, the consumed-TOTP map could silently live only in memory, so a
+// restart reopened the replay window. The test drives the real auth flow
+// (enable TOTP, consume a code via login) against a shared SQLite file,
+// rebuilds the server, and asserts the same code is rejected as a replay.
+func TestNew_ConsumedTotpSurvivesRestart(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "panvex.db")
+	now := time.Date(2026, time.May, 2, 10, 0, 0, 0, time.UTC)
+
+	first, err := sqlite.Open(dbPath)
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	srv1 := mustNew(t, Options{
+		Store:            first,
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+	})
+
+	user, _, err := srv1.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
+		Username: "operator",
+		Password: "Correct1horse2battery",
+		Role:     auth.RoleOperator,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	secret, err := srv1.auth.StartTotpSetup(context.Background(), user.ID, now.Add(10*time.Second))
+	if err != nil {
+		t.Fatalf("StartTotpSetup: %v", err)
+	}
+	enableCode, err := srv1.auth.GenerateTotpCode(secret, now.Add(30*time.Second))
+	if err != nil {
+		t.Fatalf("GenerateTotpCode(enable): %v", err)
+	}
+	if _, err := srv1.auth.EnableTotp(context.Background(), user.ID, "Correct1horse2battery", enableCode, now.Add(30*time.Second)); err != nil {
+		t.Fatalf("EnableTotp: %v", err)
+	}
+
+	// Consume a login code at a fresh window so it differs from the enable code.
+	loginAt := now.Add(2 * time.Minute)
+	loginCode, err := srv1.auth.GenerateTotpCode(secret, loginAt)
+	if err != nil {
+		t.Fatalf("GenerateTotpCode(login): %v", err)
+	}
+	if _, err := srv1.auth.Authenticate(context.Background(), auth.LoginInput{
+		Username: "operator",
+		Password: "Correct1horse2battery",
+		TotpCode: loginCode,
+	}, loginAt); err != nil {
+		t.Fatalf("Authenticate(first): %v", err)
+	}
+
+	// verifyTotpAndConsumeLocked mirrors the consumed code to the store in a
+	// detached goroutine, so the write can still be in flight when Authenticate
+	// returns. Synchronise on it landing before tearing down — otherwise the
+	// restart below may restore an empty consumed-TOTP map and the replay would
+	// (wrongly) succeed. This is a test-only race; the async best-effort persist
+	// is the intended production behaviour.
+	waitForConsumedTotp(t, first)
+
+	srv1.Close()
+	first.Close()
+
+	// Restart over the SAME database file. The persistent consumed-TOTP
+	// store must rebuild the in-memory map so the just-used code is still
+	// rejected as a replay.
+	second, err := sqlite.Open(dbPath)
+	if err != nil {
+		t.Fatalf("sqlite.Open(restart) error = %v", err)
+	}
+	srv2 := mustNew(t, Options{
+		Store:            second,
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return loginAt },
+	})
+	t.Cleanup(func() {
+		srv2.Close()
+		second.Close()
+	})
+
+	_, err = srv2.auth.Authenticate(context.Background(), auth.LoginInput{
+		Username: "operator",
+		Password: "Correct1horse2battery",
+		TotpCode: loginCode,
+	}, loginAt.Add(time.Second))
+	if !errors.Is(err, auth.ErrInvalidTotpCode) {
+		t.Fatalf("Authenticate(after restart) error = %v, want ErrInvalidTotpCode (consumed-TOTP replay must survive restart)", err)
+	}
+}
+
+// waitForConsumedTotp blocks until at least one consumed-TOTP record is
+// visible in the persistent store, or fails the test after a short timeout.
+// The auth service persists consumed codes asynchronously, so tests that
+// restart over the same store must synchronise on the write completing.
+func waitForConsumedTotp(t *testing.T, store storage.ConsumedTotpStore) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		records, err := store.ListConsumedTotp(context.Background())
+		if err != nil {
+			t.Fatalf("ListConsumedTotp: %v", err)
+		}
+		if len(records) > 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for consumed TOTP code to persist")
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }

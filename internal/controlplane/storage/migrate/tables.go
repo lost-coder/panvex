@@ -13,8 +13,9 @@ package migrate
 
 // migratedTables: tables whose durable state the migration copies.
 //
-//nolint:gosec // G101: map of DB table names → human descriptions; values
 // such as "cp_secrets" are schema identifiers, not hardcoded credentials.
+//
+//nolint:gosec // G101: map of DB table names → human descriptions; values
 var migratedTables = map[string]string{
 	// --- typed Store-method copies (Tier 0, pre-existing) ---
 	"users":                             "typed: ListUsers → PutUser",
@@ -74,6 +75,5 @@ var skippedTables = map[string]string{
 	"telemt_runtime_upstreams_current":  "derived snapshot: overwritten by the next agent telemetry report",
 	"telemt_diagnostics_current":        "derived snapshot: overwritten by the next agent telemetry report",
 	"telemt_security_inventory_current": "derived snapshot: overwritten by the next agent telemetry report",
-	"telemt_detail_boosts":              "transient: per-agent detail-boost toggles, re-enabled on demand",
 	"telemt_runtime_events":             "recoverable: runtime event ring buffer, re-populated post cut-over",
 }

@@ -15,8 +15,8 @@ import (
 // (they are already being torn down by the enclosing delete flow).
 //
 // Pure function — no locks, no I/O. Callers typically pass `current`
-// from Service.DetailSnapshot and the resulting slice straight to
-// Service.ReplaceState.
+// from Service.MirrorAssignmentsAndDeployments and the resulting slice
+// straight to Service.SaveState.
 func BuildDeployments(
 	current []Deployment,
 	clientID ClientID,

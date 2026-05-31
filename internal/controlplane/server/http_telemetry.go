@@ -10,7 +10,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
-	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 // telemetryDetailBoostTTL is the compiled-in default for how long a
@@ -154,14 +153,11 @@ func (s *Server) handleTelemetryDashboard() http.HandlerFunc {
 
 		// Project the panel's per-agent client-traffic sum onto each
 		// summary so the dashboard server cards render the same Traffic
-		// figure as the /telemetry/servers list. Lock order s.mu ->
-		// s.clientsMu — collectTelemetryDashboardSnapshot already
-		// released s.mu before returning.
-		s.clientsMu.RLock()
+		// figure as the /telemetry/servers list. Reads through the
+		// clients.Service mirror (its own lock); no Server lock held here.
 		for i := range snapshot.items {
-			snapshot.items[i].TrafficBytes = s.agentTotalTrafficLocked(snapshot.items[i].Agent.ID)
+			snapshot.items[i].TrafficBytes = s.agentTotalTraffic(snapshot.items[i].Agent.ID)
 		}
-		s.clientsMu.RUnlock()
 
 		loadSeries := s.dashboardAgentLoadSeries(r.Context(), snapshot.agentIDs, now)
 
@@ -311,14 +307,11 @@ func (s *Server) handleTelemetryServers() http.HandlerFunc {
 		}
 		s.mu.RUnlock()
 
-		// Lock order is s.mu -> s.clientsMu (clients_flow.go), so taking
-		// clientsMu here AFTER releasing s.mu is safe. We sum in a single
-		// pass so the read lock is held for one short critical section.
-		s.clientsMu.RLock()
+		// Per-agent client-traffic sum, read through the clients.Service
+		// mirror (its own lock). s.mu was released above.
 		for i := range items {
-			items[i].TrafficBytes = s.agentTotalTrafficLocked(items[i].Agent.ID)
+			items[i].TrafficBytes = s.agentTotalTraffic(items[i].Agent.ID)
 		}
-		s.clientsMu.RUnlock()
 
 		sortTelemetrySummaries(items)
 		writeJSON(w, http.StatusOK, telemetryServersResponse{Servers: items})
@@ -369,9 +362,7 @@ func (s *Server) handleTelemetryServerDetail() http.HandlerFunc {
 			return
 		}
 
-		s.clientsMu.RLock()
-		summary.TrafficBytes = s.agentTotalTrafficLocked(agentID)
-		s.clientsMu.RUnlock()
+		summary.TrafficBytes = s.agentTotalTraffic(agentID)
 
 		diagnostics := telemetryDiagnosticsResponse{}
 		securityInventory := telemetrySecurityInventoryResponse{}
@@ -437,18 +428,11 @@ func (s *Server) handleTelemetryServerDetailBoost() http.HandlerFunc {
 		}
 		boostTTL := s.effectiveTelemetryDetailBoostTTL()
 		expiresAt := now.UTC().Add(boostTTL)
+		// Detail boost is ephemeral in-memory-only state (F4): a ~10m
+		// telemetry frequency bump for one agent. It is intentionally not
+		// persisted — if the panel restarts the operator simply re-enables it.
 		s.detailBoosts[agentID] = expiresAt
 		s.mu.Unlock()
-		if s.store != nil {
-			if err := s.store.PutTelemetryDetailBoost(r.Context(), storage.TelemetryDetailBoostRecord{
-				AgentID:   agentID,
-				ExpiresAt: expiresAt,
-				UpdatedAt: now.UTC(),
-			}); err != nil {
-				writeError(w, http.StatusInternalServerError, "internal error")
-				return
-			}
-		}
 
 		writeJSON(w, http.StatusOK, telemetryDetailBoostResponse{
 			Active:           true,

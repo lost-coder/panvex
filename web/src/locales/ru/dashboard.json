@@ -37,6 +37,15 @@
     "live": "live"
   },
   "metrics": {
-    "noData": "Нет данных за выбранный период"
+    "noData": "Нет данных за выбранный период",
+    "tablistLabel": "Категория метрик",
+    "rangeLabel": "Диапазон времени",
+    "timeColumn": "Время",
+    "tabs": {
+      "system": "Система",
+      "connections": "Подключения",
+      "network": "Сеть",
+      "traffic": "Трафик"
+    }
   }
 }

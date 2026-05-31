@@ -62,6 +62,7 @@ func TestMergeClientUsageBatchRetainsQuotaState(t *testing.T) {
 
 	const agentID = "agent-merge-quota"
 	const clientID = "client-merge-quota"
+	seedClientAndAgentRows(t, server, clientID, agentID, now)
 
 	first := []clientUsageSnapshot{{
 		ClientID:           clientID,
@@ -83,7 +84,7 @@ func TestMergeClientUsageBatchRetainsQuotaState(t *testing.T) {
 	server.mu.Lock()
 	server.applyClientUsageSnapshot(t.Context(), agentID, first)
 	server.applyClientUsageSnapshot(t.Context(), agentID, second)
-	got := server.clientUsage[clientID][agentID]
+	got := mirrorUsage(server, clientID, agentID)
 	server.mu.Unlock()
 
 	if got.QuotaUsedBytes != 750 {

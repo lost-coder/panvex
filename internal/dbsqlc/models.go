@@ -279,12 +279,6 @@ type Session struct {
 	LastSeenAt time.Time
 }
 
-type TelemtDetailBoost struct {
-	AgentID   string
-	ExpiresAt time.Time
-	UpdatedAt time.Time
-}
-
 type TelemtDiagnosticsCurrent struct {
 	AgentID             string
 	ObservedAt          time.Time

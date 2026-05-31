@@ -1,0 +1,15 @@
+apiVersion: 1
+
+# Loads every dashboard JSON under the mounted path on Grafana startup.
+# Mount deploy/grafana/dashboards -> /var/lib/grafana/dashboards.
+providers:
+  - name: panvex
+    orgId: 1
+    folder: Panvex
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

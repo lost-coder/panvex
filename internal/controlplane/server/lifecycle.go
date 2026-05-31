@@ -133,21 +133,19 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		detailBoosts:                 make(map[string]time.Time),
 		initializationWatchCooldowns: make(map[string]time.Time),
 		fallbackEnteredAt:            make(map[string]time.Time),
-		clients:                      make(map[string]managedClient),
-		clientAssignments:            make(map[string][]managedClientAssignment),
-		clientDeployments:            make(map[string]map[string]managedClientDeployment),
-		clientUsage:                  make(map[string]map[string]clientUsageSnapshot),
-		agentClientUsage:             make(map[string]map[string]struct{}),
-		lastUsageSeq:                 make(map[string]uint64),
 		sessions:                     agents.NewSessionManager(),
-		clientsSvc:                   clients.NewServiceWithVault(options.Store, now, vault),
-		fleetSvc:                     fleet.NewService(options.Store, func() time.Time { return now().UTC() }),
-		instances:                    make(map[string]Instance),
-		metrics:                      make([]MetricSnapshot, 0, maxInMemoryMetricSnapshots),
-		intervals:                    options.Intervals.withDefaults(),
-		sqlitePath:                   options.SQLitePath,
-		bootstrap:                    options.Bootstrap,
-		bootstrapSources:             options.BootstrapSources,
+		// clientsSvc is constructed with a no-repo mirror here so it is never
+		// nil (HasRepo() gates every persistence path). initStoreBackedSubsystems
+		// overwrites it with a Repository+UoW-backed Service once a *sql.DB is
+		// available (the only path that actually persists clients).
+		clientsSvc:       clients.NewService(clients.ServiceConfig{Vault: vault, Now: now}),
+		fleetSvc:         fleet.NewService(options.Store, func() time.Time { return now().UTC() }),
+		instances:        make(map[string]Instance),
+		metrics:          make([]MetricSnapshot, 0, maxInMemoryMetricSnapshots),
+		intervals:        options.Intervals.withDefaults(),
+		sqlitePath:       options.SQLitePath,
+		bootstrap:        options.Bootstrap,
+		bootstrapSources: options.BootstrapSources,
 	}
 }
 
@@ -199,9 +197,32 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 	store := options.Store
 	s.jobs = jobs.NewServiceWithStore(store)
 	s.auth = auth.NewServiceWithStore(store)
+	// Wire the injected clock onto the freshly-constructed services BEFORE any
+	// restore runs. RestoreSessions -> restoreConsumedTotp (below, via line
+	// ~254) computes its 90s replay cutoff from the service clock; if the clock
+	// is still the default time.Now() at restore time, an injected/test clock
+	// (or a replayed boot) drops just-consumed codes as "expired" and reopens
+	// the TOTP replay window. The later SetNow in New() is now redundant for
+	// these two but harmless.
+	s.auth.SetNow(s.now)
+	s.jobs.SetNow(s.now)
 	s.auth.SetSessionStore(store)
 	s.auth.SetVault(vault)
-	s.auth.SetConsumedTotpStore(store)
+	// S3 (audit): TOTP replay-prevention (consumed-TOTP) MUST be backed by
+	// the persistent store on the production serve path. Without it, the
+	// service silently falls back to an in-memory map that is wiped on
+	// restart, reopening the replay window for any code consumed within the
+	// ~90s acceptance window before the restart. The aggregate storage.Store
+	// always embeds ConsumedTotpStore, so a non-nil store satisfying that
+	// contract is the invariant; if it is ever violated (a misconfigured or
+	// stub store), fail fast at startup rather than degrade silently.
+	if consumedStore, ok := store.(storage.ConsumedTotpStore); ok && consumedStore != nil {
+		s.auth.SetConsumedTotpStore(consumedStore)
+	} else {
+		s.trySetStartupErr(func() error {
+			return fmt.Errorf("auth: persistent consumed-TOTP store unavailable; refusing to start with in-memory TOTP replay protection (post-restart replay window)")
+		})
+	}
 	// Seal integration-provider credentials at rest under the same vault.
 	if s.fleetSvc != nil {
 		s.fleetSvc.SetVault(vault)
@@ -252,11 +273,14 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 	s.trySetStartupErr(func() error {
 		return s.restoreStoredState(s.serverCtx)
 	})
-	// Phase 7: wire clientsSvc with NewServiceV2 when a raw *sql.DB is
-	// available. Both SQLite and Postgres stores expose DB() *sql.DB; the
-	// concrete type determines which backend constructors to use.
-	// When the store does not expose DB() (e.g. test doubles), clientsSvc
-	// keeps its NewServiceWithVault wiring from newServerFromOptions.
+	// Wire clientsSvc with a Repository+UoW-backed Service when a raw
+	// *sql.DB is available. Both SQLite and Postgres stores expose
+	// DB() *sql.DB; the concrete type determines which backend
+	// constructors to use. When the store does not expose DB() (e.g. test
+	// doubles that embed storage.Store and so do not promote DB()),
+	// clientsSvc keeps the no-repo mirror from newServerFromOptions —
+	// HasRepo() is false and every persistence path is a no-op. No client
+	// flow runs on such a store.
 	s.trySetStartupErr(func() error {
 		rawDBer, ok := store.(interface{ DB() *sql.DB })
 		if !ok {
@@ -281,15 +305,14 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 			discoveredRepoV2 = postgres.NewDiscoveredRepository(rawDB)
 			uowImpl = postgres.NewUoW(rawDB)
 		default:
-			if options.ClientsRepoOverride == nil {
-				// Unknown concrete store type with no override — fall back to
-				// NewServiceWithVault wiring already set in newServerFromOptions.
-				return nil
-			}
-			// Test double wrapping a real SQLite store: use the override repo
-			// for clients while building UoW and discoveredRepo from rawDB
-			// (SQLite assumed; tests always use SQLite via failingStore).
+			// Unknown concrete store type that still exposes a *sql.DB —
+			// always a test double wrapping a real SQLite store (failingStore).
+			// Build the SQLite repo set from rawDB; use the override repo for
+			// clients when failure-injection tests supply one.
 			clientsRepo = options.ClientsRepoOverride
+			if clientsRepo == nil {
+				clientsRepo = sqlite.NewClientsRepository(rawDB)
+			}
 			discoveredRepoV2 = sqlite.NewDiscoveredRepository(rawDB)
 			uowImpl = sqlite.NewUoW(rawDB)
 		}
@@ -299,13 +322,12 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 			// callback to return the override repo (not the tx-bound real one).
 			uowAdapter = newClientsUoWAdapterWithOverride(uowImpl, options.ClientsRepoOverride)
 		}
-		s.clientsSvc = clients.NewServiceV2(clients.ServiceConfig{
+		s.clientsSvc = clients.NewService(clients.ServiceConfig{
 			Repo:           clientsRepo,
 			DiscoveredRepo: discoveredRepoV2,
 			UoW:            uowAdapter,
 			Vault:          vault,
 			Now:            s.now,
-			Store:          store, // legacy methods coexist during phase 7
 		})
 		s.discoveredRepo = discoveredRepoV2
 		s.uow = uowImpl

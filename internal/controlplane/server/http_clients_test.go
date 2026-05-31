@@ -436,6 +436,238 @@ func TestHTTPClientsAggregateUsageAcrossAgentSnapshots(t *testing.T) {
 	}
 }
 
+// TestHTTPClientsListingReflectsDeploymentAndUsage is a characterization
+// test (Task D1) that pins the GET /api/clients listing response shape:
+// after a client is created, its single deployment job completes, and a
+// usage snapshot arrives, the listing row must carry the recorded usage
+// (traffic/unique-ips/tcp-conns) and the deployment-derived
+// last_deploy_status. It locks the listing behaviour so repointing
+// listClientsListingSnapshot at the clients.Service mirror cannot drift.
+func TestHTTPClientsListingReflectsDeploymentAndUsage(t *testing.T) {
+	now := time.Date(2026, time.March, 19, 9, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+		Store:            store,
+	})
+	defer server.Close()
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
+		Username: "admin",
+		Password: "Admin1password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	defaultGroupID := seedClientTargetAgent(t, store, server, "default", now.Add(-2*time.Minute), storage.AgentRecord{
+		ID:         "agent-000001",
+		NodeName:   "node-a",
+		Version:    "dev",
+		LastSeenAt: now.Add(-time.Minute),
+	})
+	cookies := loginAdminForClients(t, server)
+	createResponse := performJSONRequest(t, server, http.MethodPost, "/api/clients", map[string]any{
+		"name":            "alice",
+		"fleet_group_ids": []string{defaultGroupID},
+	}, cookies)
+	if createResponse.Code != http.StatusCreated {
+		t.Fatalf("POST /api/clients status = %d, want %d", createResponse.Code, http.StatusCreated)
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(createResponse.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal(create) error = %v", err)
+	}
+
+	enqueuedJobs := server.jobs.List()
+	if len(enqueuedJobs) != 1 {
+		t.Fatalf("len(server.jobs.List()) = %d, want %d", len(enqueuedJobs), 1)
+	}
+	server.recordJobResult(context.Background(), "agent-000001", enqueuedJobs[0].ID, true, "applied", `{"connection_links":["tg://proxy?server=node-a&secret=alice"]}`, now.Add(time.Minute))
+
+	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+		AgentID:    "agent-000001",
+		NodeName:   "node-a",
+		Version:    "dev",
+		HasClients: true,
+		Clients: []clientUsageSnapshot{
+			{
+				ClientID:         clients.ClientID(created.ID),
+				TrafficUsedBytes: 1024,
+				UniqueIPsUsed:    2,
+				ActiveTCPConns:   3,
+				ObservedAt:       now.Add(time.Minute),
+			},
+		},
+		ObservedAt: now.Add(time.Minute),
+	}); err != nil {
+		t.Fatalf("applyAgentSnapshot(agent-000001) error = %v", err)
+	}
+
+	listResponse := performJSONRequest(t, server, http.MethodGet, "/api/clients", nil, cookies)
+	if listResponse.Code != http.StatusOK {
+		t.Fatalf("GET /api/clients status = %d, want %d", listResponse.Code, http.StatusOK)
+	}
+	var listing []struct {
+		ID               string `json:"id"`
+		Name             string `json:"name"`
+		TrafficUsedBytes uint64 `json:"traffic_used_bytes"`
+		UniqueIPsUsed    int    `json:"unique_ips_used"`
+		ActiveTCPConns   int    `json:"active_tcp_conns"`
+		LastDeployStatus string `json:"last_deploy_status"`
+	}
+	if err := json.Unmarshal(listResponse.Body.Bytes(), &listing); err != nil {
+		t.Fatalf("json.Unmarshal(listing) error = %v", err)
+	}
+	if len(listing) != 1 {
+		t.Fatalf("len(listing) = %d, want %d", len(listing), 1)
+	}
+	row := listing[0]
+	if row.ID != created.ID {
+		t.Fatalf("listing[0].id = %q, want %q", row.ID, created.ID)
+	}
+	if row.TrafficUsedBytes != 1024 {
+		t.Fatalf("listing[0].traffic_used_bytes = %d, want %d", row.TrafficUsedBytes, 1024)
+	}
+	if row.UniqueIPsUsed != 2 {
+		t.Fatalf("listing[0].unique_ips_used = %d, want %d", row.UniqueIPsUsed, 2)
+	}
+	if row.ActiveTCPConns != 3 {
+		t.Fatalf("listing[0].active_tcp_conns = %d, want %d", row.ActiveTCPConns, 3)
+	}
+	if row.LastDeployStatus != "succeeded" {
+		t.Fatalf("listing[0].last_deploy_status = %q, want %q", row.LastDeployStatus, "succeeded")
+	}
+}
+
+// TestClientsServiceMirrorConsistentAfterWritePaths exercises the three
+// server write-paths B3 hardened — usage-snapshot apply, client job
+// deployment result, and reset-quota result — and asserts the
+// clients.Service mirror (read directly via MirrorSnapshot, the same
+// source the repointed HTTP listing/detail use) reflects every change.
+// This is the gate for C1: if the mirror diverges here, deleting the
+// server maps would change behaviour.
+func TestClientsServiceMirrorConsistentAfterWritePaths(t *testing.T) {
+	now := time.Date(2026, time.May, 31, 9, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+		Store:            store,
+	})
+	defer server.Close()
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
+		Username: "admin",
+		Password: "Admin1password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	defaultGroupID := seedClientTargetAgent(t, store, server, "default", now.Add(-2*time.Minute), storage.AgentRecord{
+		ID:         "agent-000001",
+		NodeName:   "node-a",
+		Version:    "dev",
+		LastSeenAt: now.Add(-time.Minute),
+	})
+	cookies := loginAdminForClients(t, server)
+	createResponse := performJSONRequest(t, server, http.MethodPost, "/api/clients", map[string]any{
+		"name":            "alice",
+		"fleet_group_ids": []string{defaultGroupID},
+	}, cookies)
+	if createResponse.Code != http.StatusCreated {
+		t.Fatalf("POST /api/clients status = %d, want %d", createResponse.Code, http.StatusCreated)
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(createResponse.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal(create) error = %v", err)
+	}
+
+	// (1) Job-deployment write-path: record a successful client-create job.
+	createJobs := server.jobs.List()
+	if len(createJobs) != 1 {
+		t.Fatalf("len(create jobs) = %d, want 1", len(createJobs))
+	}
+	server.recordJobResult(context.Background(), "agent-000001", createJobs[0].ID, true, "applied",
+		`{"connection_links":["tg://proxy?server=node-a&secret=alice"]}`, now.Add(time.Minute))
+
+	// (2) Usage-snapshot write-path: apply a live usage tick.
+	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+		AgentID:    "agent-000001",
+		NodeName:   "node-a",
+		Version:    "dev",
+		HasClients: true,
+		Clients: []clientUsageSnapshot{
+			{
+				ClientID:         clients.ClientID(created.ID),
+				TrafficUsedBytes: 2048,
+				UniqueIPsUsed:    4,
+				ActiveTCPConns:   5,
+				ObservedAt:       now.Add(time.Minute),
+			},
+		},
+		ObservedAt: now.Add(time.Minute),
+	}); err != nil {
+		t.Fatalf("applyAgentSnapshot() error = %v", err)
+	}
+
+	// (3) Reset-quota write-path: enqueue + record a successful reset.
+	resetResponse := performJSONRequest(t, server, http.MethodPost,
+		"/api/clients/"+created.ID+"/reset-quota", nil, cookies)
+	if resetResponse.Code != http.StatusOK && resetResponse.Code != http.StatusAccepted {
+		t.Fatalf("POST reset-quota status = %d, want 200/202", resetResponse.Code)
+	}
+	var resetJobID string
+	for _, j := range server.jobs.List() {
+		if j.Action == jobs.ActionClientResetQuota {
+			resetJobID = j.ID
+		}
+	}
+	if resetJobID == "" {
+		t.Fatal("no client.reset_quota job enqueued")
+	}
+	const resetEpoch = 1748682000 // arbitrary epoch newer than zero
+	server.recordJobResult(context.Background(), "agent-000001", resetJobID, true, "reset",
+		`{"last_reset_epoch_secs":1748682000}`, now.Add(2*time.Minute))
+
+	// Assert the Service mirror reflects all three write-paths.
+	mirror := server.clientsSvc.MirrorSnapshot()
+	cid := clients.ClientID(created.ID)
+
+	usage, ok := mirror.Usage[cid]["agent-000001"]
+	if !ok {
+		t.Fatalf("mirror.Usage[%s][agent-000001] missing", created.ID)
+	}
+	if usage.TrafficUsedBytes != 2048 || usage.UniqueIPsUsed != 4 || usage.ActiveTCPConns != 5 {
+		t.Fatalf("mirror usage = %+v, want traffic=2048 ips=4 conns=5", usage)
+	}
+
+	deployment, ok := mirror.Deployments[cid]["agent-000001"]
+	if !ok {
+		t.Fatalf("mirror.Deployments[%s][agent-000001] missing", created.ID)
+	}
+	if deployment.Status != clientDeploymentStatusSucceeded {
+		t.Fatalf("mirror deployment status = %q, want succeeded", deployment.Status)
+	}
+	if deployment.LastResetEpochSecs != resetEpoch {
+		t.Fatalf("mirror deployment LastResetEpochSecs = %d, want %d", deployment.LastResetEpochSecs, resetEpoch)
+	}
+}
+
 func TestHTTPClientsCreateReturnsInternalErrorWhenPersistenceFails(t *testing.T) {
 	now := time.Date(2026, time.March, 18, 13, 30, 0, 0, time.UTC)
 	sqliteStore, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))

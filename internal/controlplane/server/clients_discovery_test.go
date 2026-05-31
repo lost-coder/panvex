@@ -316,14 +316,12 @@ func TestAdoptDiscoveredClientConcurrentIsAtomic(t *testing.T) {
 	}
 
 	// Verify exactly one managed client with this name exists.
-	server.clientsMu.RLock()
 	var matching []managedClient
-	for _, c := range server.clients {
+	for _, c := range server.clientsSvc.MirrorSnapshot().Clients {
 		if c.DeletedAt == nil && c.Name == "external-charlie" {
 			matching = append(matching, c)
 		}
 	}
-	server.clientsMu.RUnlock()
 	if len(matching) != 1 {
 		t.Fatalf("managed clients named %q: got %d, want 1", "external-charlie", len(matching))
 	}
@@ -476,10 +474,11 @@ func TestMergeAdoptNoTOCTOU(t *testing.T) {
 	// follow up with a PUT to extend agent_ids (the bug that drove
 	// frontend rate-limit and ad_tag-generation issues during bulk
 	// imports).
-	server.clientsMu.RLock()
-	assignments := append([]managedClientAssignment(nil), server.clientAssignments[string(existing.ID)]...)
-	deployments := server.clientDeployments[string(existing.ID)]
-	server.clientsMu.RUnlock()
+	assignments, deploymentList := server.clientsSvc.MirrorAssignmentsAndDeployments(string(existing.ID))
+	deployments := make(map[string]managedClientDeployment, len(deploymentList))
+	for _, d := range deploymentList {
+		deployments[d.AgentID] = d
+	}
 
 	if len(assignments) != 2 {
 		t.Fatalf("assignments on existing client: got %d, want 2 (winner adds primary+sibling in one shot) %+v", len(assignments), assignments)
@@ -590,9 +589,7 @@ func TestRestoreStoredClients_RehydratesUsageFromDiscovered(t *testing.T) {
 		t.Fatalf("restoreStoredClients() error = %v", err)
 	}
 
-	server.clientsMu.RLock()
-	got := server.clientUsage[clientID][agentID]
-	server.clientsMu.RUnlock()
+	got := mirrorUsage(server, clientID, agentID)
 
 	if got.TrafficUsedBytes != 9001 {
 		t.Fatalf("TrafficUsedBytes after restore = %d, want 9001 (seeded from discovered_clients.total_octets)", got.TrafficUsedBytes)
@@ -690,10 +687,8 @@ func TestRestoreStoredClients_PrefersPersistedUsage(t *testing.T) {
 		t.Fatalf("restoreStoredClients() error = %v", err)
 	}
 
-	server.clientsMu.RLock()
-	got := server.clientUsage[clientID][agentID]
-	seq := server.lastUsageSeq[agentID]
-	server.clientsMu.RUnlock()
+	got := mirrorUsage(server, clientID, agentID)
+	seq := mirrorLastUsageSeq(server, agentID)
 
 	if got.TrafficUsedBytes != 777_777 {
 		t.Fatalf("TrafficUsedBytes after restore = %d, want 777777 (from client_usage, not discovered)", got.TrafficUsedBytes)

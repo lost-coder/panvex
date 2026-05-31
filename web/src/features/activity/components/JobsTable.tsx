@@ -15,6 +15,7 @@ type JobTone = PulseTone;
 
 const jobStatusVariant: Record<string, JobTone> = {
   succeeded: "ok",
+  partial: "warn",
   running: "warn",
   queued: "default",
   failed: "error",
@@ -29,8 +30,12 @@ export function prettyAction(action: string) {
 }
 
 export function JobStatusCell({ status }: Readonly<{ status: string }>) {
+  const { t } = useTranslation("activity");
   const tone: StatusTone = jobStatusVariant[status] ?? "default";
-  return <StatusLabel tone={tone} label={status} animate={status === "running"} />;
+  // Localise known statuses (jobStatus.*); fall back to the raw status
+  // string for any value the i18n bundle doesn't carry yet.
+  const label = t(`jobStatus.${status}`, { defaultValue: status });
+  return <StatusLabel tone={tone} label={label} animate={status === "running"} />;
 }
 
 // Q4.U-Q-09: column headers come from i18n so the operator sees the

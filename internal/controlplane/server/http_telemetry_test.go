@@ -219,34 +219,8 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 		t.Fatal("jobs.List() did not contain telemetry.refresh_diagnostics job")
 	}
 
-	restored := mustNew(t, Options{
-		LoginTimingFloor: -1,
-		Now:              func() time.Time { return now.Add(time.Minute) },
-		Store:            store,
-	})
-	defer restored.Close()
-	restored.agents["agent-a"] = server.agents["agent-a"]
-	restored.presence.MarkConnected("agent-a", now.Add(-5*time.Second))
-
-	restoredLogin := performJSONRequest(t, restored, http.MethodPost, "/api/auth/login", map[string]string{
-		"username": "admin",
-		"password": "Admin1password",
-	}, nil)
-	if restoredLogin.Code != http.StatusOK {
-		t.Fatalf("restored POST /api/auth/login status = %d, want %d", restoredLogin.Code, http.StatusOK)
-	}
-
-	restoredDetail := performJSONRequest(t, restored, http.MethodGet, "/api/telemetry/servers/agent-a", nil, restoredLogin.Result().Cookies())
-	if restoredDetail.Code != http.StatusOK {
-		t.Fatalf("restored GET /api/telemetry/servers/{id} status = %d, want %d", restoredDetail.Code, http.StatusOK)
-	}
-	var restoredDetailPayload telemetryServerDetailResponse
-	if err := json.Unmarshal(restoredDetail.Body.Bytes(), &restoredDetailPayload); err != nil {
-		t.Fatalf("json.Unmarshal(restored detail) error = %v", err)
-	}
-	if !restoredDetailPayload.Server.DetailBoost.Active {
-		t.Fatal("restored detail boost = false, want persisted boost")
-	}
+	// F4: detail boost is in-memory only and intentionally NOT persisted —
+	// no panel-restart restore assertion here.
 }
 
 func TestHTTPTelemetryDetailExposesInitializationWatchActiveAndCooldown(t *testing.T) {

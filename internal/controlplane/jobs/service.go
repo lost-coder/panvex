@@ -88,6 +88,12 @@ const (
 	StatusFailed Status = "failed"
 	// StatusExpired marks a job that exceeded its TTL before all targets completed.
 	StatusExpired Status = "expired"
+	// StatusPartial marks a job with a MIXED terminal outcome: at least one
+	// target succeeded AND at least one target ended terminally-unsuccessful
+	// (failed or expired), with no targets still making progress. Without this
+	// state a partial success was masked as expired/failed, hiding the fact
+	// that some targets did complete (F2). Wire format is exactly "partial".
+	StatusPartial Status = "partial"
 )
 
 // TargetStatus describes the lifecycle state for one target inside a job.
@@ -98,8 +104,6 @@ const (
 	TargetStatusQueued TargetStatus = "queued"
 	// TargetStatusSent marks a target command that was sent to an active agent stream.
 	TargetStatusSent TargetStatus = "sent"
-	// TargetStatusDelivered remains as a compatibility alias for historical code paths.
-	TargetStatusDelivered TargetStatus = TargetStatusSent
 	// TargetStatusAcknowledged marks a target command accepted by the agent runtime queue.
 	TargetStatusAcknowledged TargetStatus = "acknowledged"
 	// TargetStatusSucceeded marks a target that completed successfully.
@@ -121,16 +125,16 @@ type JobTarget struct {
 
 // Job stores the accepted job metadata required for later dispatch and auditing.
 type Job struct {
-	ID             string      `json:"id"`
-	Action         Action      `json:"action"`
-	TargetAgentIDs []string    `json:"target_agent_ids"`
-	Targets        []JobTarget `json:"targets"`
+	ID             string        `json:"id"`
+	Action         Action        `json:"action"`
+	TargetAgentIDs []string      `json:"target_agent_ids"`
+	Targets        []JobTarget   `json:"targets"`
 	TTL            time.Duration `json:"ttl"`
-	IdempotencyKey string      `json:"idempotency_key"`
-	ActorID        string      `json:"actor_id"`
-	Status         Status      `json:"status"`
-	CreatedAt      time.Time   `json:"created_at"`
-	PayloadJSON    string      `json:"payload_json"`
+	IdempotencyKey string        `json:"idempotency_key"`
+	ActorID        string        `json:"actor_id"`
+	Status         Status        `json:"status"`
+	CreatedAt      time.Time     `json:"created_at"`
+	PayloadJSON    string        `json:"payload_json"`
 }
 
 // CreateJobInput contains the validation inputs required to enqueue a new job.
@@ -153,12 +157,12 @@ type CreateJobInput struct {
 // mutating call site (Enqueue, *Locked helpers, prune workers, target
 // updates) still takes the exclusive write lock.
 type Service struct {
-	mu         sync.RWMutex
-	sequence   uint64
-	updateSeq  uint64
-	jobs       map[string]Job
-	agentJobs  map[string]map[string]struct{}
-	keys       map[string]string
+	mu        sync.RWMutex
+	sequence  uint64
+	updateSeq uint64
+	jobs      map[string]Job
+	agentJobs map[string]map[string]struct{}
+	keys      map[string]string
 	// keyTerminalAt records the time at which the job associated with the
 	// idempotency key entered a terminal state (Succeeded, Failed, Expired).
 	// Keys are removed from this map and from `keys` by PruneKeys once they
@@ -166,7 +170,7 @@ type Service struct {
 	// queued or running are NOT present; those keys stay live in `keys`
 	// until the job completes.
 	keyTerminalAt map[string]time.Time
-	jobVersion map[string]uint64
+	jobVersion    map[string]uint64
 	// latestSucceededByClient maps a Telemt client_id (extracted from a
 	// client.* job's PayloadJSON) to the most recently observed succeeded
 	// job for that client. Updated under s.mu whenever a client.* job
@@ -174,9 +178,30 @@ type Service struct {
 	// so the call site no longer needs an O(N) ListWithContext scan to
 	// recover a client's connection_links result (P-4).
 	latestSucceededByClient map[string]Job
-	jobStore   storage.JobStore
-	startupErr error
-	now        func() time.Time
+	jobStore                Store
+	startupErr              error
+	now                     func() time.Time
+}
+
+// Store is the subset of the storage layer that the jobs Service depends on
+// (A6). It lists exactly the four methods the Service calls, narrowing the
+// historical dependency on the ~9-method storage.JobStore. storage.JobStore —
+// and therefore the concrete *sqlite.Store / *postgres.Store — satisfies it,
+// so wiring is unchanged; tests can supply a small fake covering just these
+// methods.
+//
+// Distinct from Repository (repository.go), which is the write-side contract
+// used by cross-domain transactional callers.
+type Store interface {
+	// PutJob persists (inserts or updates) a single job record.
+	PutJob(ctx context.Context, job storage.JobRecord) error
+	// ListJobs returns every job record for restore on startup.
+	ListJobs(ctx context.Context) ([]storage.JobRecord, error)
+	// PutJobTarget persists (inserts or updates) one per-target result row.
+	PutJobTarget(ctx context.Context, target storage.JobTargetRecord) error
+	// ListAllJobTargets returns every job_targets row in one round-trip,
+	// used by restore() to avoid the per-job N+1 SELECT pattern.
+	ListAllJobTargets(ctx context.Context) ([]storage.JobTargetRecord, error)
 }
 
 type persistCandidate struct {
@@ -199,7 +224,7 @@ func NewService() *Service {
 }
 
 // NewServiceWithStore constructs a job service that persists state through the shared store.
-func NewServiceWithStore(jobStore storage.JobStore) *Service {
+func NewServiceWithStore(jobStore Store) *Service {
 	service := &Service{
 		jobs:                    make(map[string]Job),
 		agentJobs:               make(map[string]map[string]struct{}),
@@ -218,7 +243,7 @@ func NewServiceWithStore(jobStore storage.JobStore) *Service {
 // whose idempotency key may be evicted after the configured TTL.
 func isTerminalStatus(status Status) bool {
 	switch status {
-	case StatusSucceeded, StatusFailed, StatusExpired:
+	case StatusSucceeded, StatusFailed, StatusExpired, StatusPartial:
 		return true
 	default:
 		return false
@@ -1285,38 +1310,79 @@ func (s *Service) syncJobTargetsIndexLocked(job Job) {
 	}
 }
 
+// deriveJobStatus collapses per-target statuses into a single job status (F2).
+//
+// Priority order, chosen so a partial success is never hidden behind a blanket
+// expired/failed:
+//
+//  1. all targets succeeded                     -> succeeded
+//  2. any target still making progress, or some
+//     finished while others are still queued    -> running
+//  3. at least one succeeded AND at least one
+//     terminally-unsuccessful (failed/expired)  -> partial
+//  4. at least one failed (none succeeded)      -> failed
+//  5. only expirations (none succeeded)         -> expired
+//  6. only queued targets / no targets          -> queued
+//
+// Note: failure is no longer an early return. A single failed target used to
+// short-circuit to StatusFailed, which masked any sibling successes; we now
+// scan all targets first and let the success/failure mix decide.
 func deriveJobStatus(targets []JobTarget) Status {
-	allSucceeded := len(targets) > 0
-	anyProgress := false
+	if len(targets) == 0 {
+		return StatusQueued
+	}
+
+	anySucceeded := false
+	anyFailed := false
 	anyExpired := false
+	anyInFlight := false // sent / acknowledged — delivered but not yet terminal
+	anyQueued := false   // accepted but not yet sent
 	for _, target := range targets {
 		switch target.Status {
-		case TargetStatusFailed:
-			return StatusFailed
 		case TargetStatusSucceeded:
-			anyProgress = true
-		case TargetStatusSent, TargetStatusAcknowledged:
-			anyProgress = true
-			allSucceeded = false
+			anySucceeded = true
+		case TargetStatusFailed:
+			anyFailed = true
 		case TargetStatusExpired:
 			anyExpired = true
-			allSucceeded = false
+		case TargetStatusSent, TargetStatusAcknowledged:
+			anyInFlight = true
+		case TargetStatusQueued:
+			anyQueued = true
 		default:
-			allSucceeded = false
+			// Unknown/future target states are treated as in-flight so the job
+			// is never prematurely classified terminal.
+			anyInFlight = true
 		}
 	}
 
-	if allSucceeded {
-		return StatusSucceeded
-	}
-	if anyExpired {
-		return StatusExpired
-	}
-	if anyProgress {
-		return StatusRunning
-	}
+	anyUnsuccessful := anyFailed || anyExpired
+	anyTerminal := anySucceeded || anyUnsuccessful
 
-	return StatusQueued
+	switch {
+	case anySucceeded && !anyUnsuccessful && !anyInFlight && !anyQueued:
+		// Every target reached a terminal state and all succeeded.
+		return StatusSucceeded
+	case anyInFlight || (anyQueued && anyTerminal):
+		// At least one target is in flight, OR some targets already finished
+		// while others are still queued — either way the job is not terminal
+		// yet, so report running rather than collapsing to a mixed outcome.
+		return StatusRunning
+	case anySucceeded && anyUnsuccessful:
+		// Mixed terminal outcome (F2): some succeeded, some failed/expired.
+		// Surfaced as "partial" so the partial success is not hidden behind
+		// expired/failed.
+		return StatusPartial
+	case anyFailed:
+		// No successes, at least one hard failure.
+		return StatusFailed
+	case anyExpired:
+		// No successes, only expirations.
+		return StatusExpired
+	default:
+		// Only queued targets remain — nothing has started.
+		return StatusQueued
+	}
 }
 
 func jobToRecord(job Job) storage.JobRecord {

@@ -30,6 +30,7 @@ import { DeregisterDialog } from "./components/DeregisterDialog";
 import { DirectRelayDesktop } from "./direct-relay/DirectRelayDesktop";
 import { DirectRelayMobile } from "./direct-relay/DirectRelayMobile";
 import type { PulseTickData } from "./components/PulseGrid";
+import { buildPulseItems } from "./buildPulseItems";
 import {
   computeAlertItems,
   computeBadRate,
@@ -63,18 +64,6 @@ function TabSuspenseFallback() {
 import { ServerDetailProvider } from "./ServerDetailContext";
 
 const noop = () => {};
-
-function badRateTone(rate: number): "error" | "warn" | "default" {
-  if (rate > 5) return "error";
-  if (rate > 1) return "warn";
-  return "default";
-}
-
-function coverageTone(pct: number): "error" | "warn" | "ok" {
-  if (pct < 95) return "error";
-  if (pct < 100) return "warn";
-  return "ok";
-}
 
 // ─── Main page ────────────────────────────────────────────────────────
 export function ServerDetailPage({
@@ -206,55 +195,42 @@ export function ServerDetailPage({
     [pulseWord, systemInfo.version, systemInfo.uptimeSeconds, systemInfo.configReloadCount, t],
   );
 
-  // Desktop pulse ribbon — full hint strings, 4-col layout.
+  // ─── Pulse ribbon ────────────────────────────────────────────────
+  // The desktop (4-col) and mobile (2×2) ribbons share a single builder
+  // (buildPulseItems) and differ only in hint verbosity. Pulling the
+  // primitive fields out of the `connections`/`summary` objects first
+  // lets the memos depend on value-level scalars — so a fresh
+  // server-query object with identical numbers doesn't churn the cells,
+  // and exhaustive-deps is satisfied without a disable.
+  const { current, currentMe, currentDirect, activeUsers } = connections;
+  const { connectionsTotal, configuredUsers, connectionsBadTotal } = summary;
+
   const desktopPulseItems = useMemo<PulseTickData[]>(
-    () => [
-      {
-        label: t("detail.pulse.connections"),
-        value: connections.current.toLocaleString(),
-        hint: t("detail.pulse.connectionsHint", {
-          me: connections.currentMe.toLocaleString(),
-          direct: connections.currentDirect.toLocaleString(),
-          total: summary.connectionsTotal.toLocaleString(),
-        }),
-      },
-      {
-        label: t("detail.pulse.activeUsers"),
-        value: connections.activeUsers.toLocaleString(),
-        hint: t("detail.pulse.activeUsersHint", { configured: summary.configuredUsers.toLocaleString() }),
-      },
-      {
-        label: t("detail.pulse.badRate"),
-        value: `${badRate.toFixed(2)}%`,
-        hint: t("detail.pulse.badRateHint", {
-          bad: summary.connectionsBadTotal.toLocaleString(),
-          total: summary.connectionsTotal.toLocaleString(),
-        }),
-        tone: badRateTone(badRate),
-      },
-      {
-        label: t("detail.pulse.coverage"),
-        value: avgCoverage,
-        unit: "%",
-        hint: t("detail.pulse.coverageHint", { min: minCoverage, ok: dcOk, warn: dcWarn, err: dcErr }),
-        tone: coverageTone(avgCoverage),
-      },
-    ],
-    // The intent is to rebuild the pulse cells only when one of the
-    // numeric fields actually changes — listing `connections` or
-    // `summary` whole would also retrigger when the server query
-    // returns a fresh object with identical numbers. exhaustive-deps
-    // cannot statically prove the field reads are exhaustive, so the
-    // disable stays.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    () =>
+      buildPulseItems(t, "desktop", {
+        current,
+        currentMe,
+        currentDirect,
+        activeUsers,
+        connectionsTotal,
+        configuredUsers,
+        connectionsBadTotal,
+        badRate,
+        avgCoverage,
+        minCoverage,
+        dcOk,
+        dcWarn,
+        dcErr,
+      }),
     [
-      connections.current,
-      connections.currentMe,
-      connections.currentDirect,
-      connections.activeUsers,
-      summary.connectionsTotal,
-      summary.configuredUsers,
-      summary.connectionsBadTotal,
+      t,
+      current,
+      currentMe,
+      currentDirect,
+      activeUsers,
+      connectionsTotal,
+      configuredUsers,
+      connectionsBadTotal,
       badRate,
       avgCoverage,
       minCoverage,
@@ -264,47 +240,32 @@ export function ServerDetailPage({
     ],
   );
 
-  // Mobile pulse 2×2 — shorter hint strings to fit narrow cells.
   const mobilePulseItems = useMemo<PulseTickData[]>(
-    () => [
-      {
-        label: t("detail.pulse.connections"),
-        value: connections.current.toLocaleString(),
-        hint: t("detail.pulse.connectionsHintMobile", {
-          me: connections.currentMe.toLocaleString(),
-          direct: connections.currentDirect.toLocaleString(),
-        }),
-      },
-      {
-        label: t("detail.pulse.activeUsers"),
-        value: connections.activeUsers.toLocaleString(),
-        hint: t("detail.pulse.activeUsersHintMobile", { configured: summary.configuredUsers.toLocaleString() }),
-      },
-      {
-        label: t("detail.pulse.badRate"),
-        value: `${badRate.toFixed(2)}%`,
-        hint: t("detail.pulse.badRateHintMobile", { bad: summary.connectionsBadTotal.toLocaleString() }),
-        tone: badRateTone(badRate),
-      },
-      {
-        label: t("detail.pulse.coverage"),
-        value: avgCoverage,
-        unit: "%",
-        hint: t("detail.pulse.coverageHintMobile", { min: minCoverage, ok: dcOk, warn: dcWarn, err: dcErr }),
-        tone: coverageTone(avgCoverage),
-      },
-    ],
-    // Same rationale as desktopPulseItems above — value-level deps so
-    // the memo only recomputes when a primitive actually changes, not
-    // on every fresh server-query object.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    () =>
+      buildPulseItems(t, "mobile", {
+        current,
+        currentMe,
+        currentDirect,
+        activeUsers,
+        connectionsTotal,
+        configuredUsers,
+        connectionsBadTotal,
+        badRate,
+        avgCoverage,
+        minCoverage,
+        dcOk,
+        dcWarn,
+        dcErr,
+      }),
     [
-      connections.current,
-      connections.currentMe,
-      connections.currentDirect,
-      connections.activeUsers,
-      summary.configuredUsers,
-      summary.connectionsBadTotal,
+      t,
+      current,
+      currentMe,
+      currentDirect,
+      activeUsers,
+      connectionsTotal,
+      configuredUsers,
+      connectionsBadTotal,
       badRate,
       avgCoverage,
       minCoverage,

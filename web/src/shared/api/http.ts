@@ -1,3 +1,4 @@
+import i18next from "i18next";
 import type { ZodType } from "zod";
 
 import { resolveAPIBasePath, resolveConfiguredRootPath } from "@/shared/lib/runtime-path";
@@ -351,7 +352,9 @@ export async function api<T>(
   const method = (init?.method ?? "GET").toUpperCase();
   const isMutation = isMutationMethod(method);
   if (isMutation && navigator?.onLine === false) {
-    throw new ApiError("Соединение потеряно — попробуйте снова, когда сеть восстановится.", "offline");
+    // Data layer — no React context here, so resolve the string off the
+    // i18next instance directly rather than via the useTranslation hook.
+    throw new ApiError(i18next.t("ui:offline"), "offline");
   }
 
   // Phase-2 §2.5: attach the double-submit CSRF token on every state-

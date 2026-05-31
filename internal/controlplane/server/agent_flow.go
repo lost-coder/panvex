@@ -283,15 +283,19 @@ func (s *Server) applyClientUsageSnapshot(ctx context.Context, agentID string, c
 	deploymentsToPersist := s.advanceDeploymentsFromTelemtReset(agentID, clients)
 	s.persistClientUsageRecords(ctx, toPersist)
 	s.persistDeploymentsAfterReset(ctx, deploymentsToPersist)
-	s.zeroLiveGaugesForUntouchedClients(agentID, seen)
+	// Zero the live connection/IP gauges of any client this agent did not
+	// include in the snapshot. Accumulated traffic is preserved. Mirror-only
+	// (no DB write) — the gauges are derived per-tick and never persisted.
+	s.clientsSvc.ZeroLiveGaugesForAgent(agentID, seen)
 }
 
 // advanceDeploymentsFromTelemtReset scans the usage batch and, for each
 // (client, agent) where Telemt's reported quota_last_reset_unix is
 // strictly newer than the panel's recorded last_reset_epoch_secs,
 // updates the in-memory deployment and returns the changed deployments
-// for write-through. Runs under s.clientsMu (held by
-// commitClientSnapshotsLocked).
+// for write-through. The changed deployments are written back to the
+// clients.Service mirror (and DB) by persistDeploymentsAfterReset via
+// PersistDeployment, so this function only reads the current value.
 func (s *Server) advanceDeploymentsFromTelemtReset(agentID string, clients []clientUsageSnapshot) []managedClientDeployment {
 	if len(clients) == 0 {
 		return nil
@@ -302,11 +306,7 @@ func (s *Server) advanceDeploymentsFromTelemtReset(agentID string, clients []cli
 			continue
 		}
 		clientID := string(usage.ClientID)
-		deployments, ok := s.clientDeployments[clientID]
-		if !ok {
-			continue
-		}
-		deployment, ok := deployments[agentID]
+		deployment, ok := s.clientsSvc.MirrorDeployment(clientID, agentID)
 		if !ok {
 			continue
 		}
@@ -315,7 +315,6 @@ func (s *Server) advanceDeploymentsFromTelemtReset(agentID string, clients []cli
 		}
 		deployment.LastResetEpochSecs = usage.QuotaLastResetUnix
 		deployment.UpdatedAt = usage.ObservedAt.UTC()
-		s.clientDeployments[clientID][agentID] = deployment
 		changed = append(changed, deployment)
 	}
 	return changed
@@ -340,7 +339,7 @@ func (s *Server) persistDeploymentsAfterReset(ctx context.Context, deployments [
 
 // shouldApplyClientUsageDelta evaluates the seq-dedup rules (P2-LOG-06 / L-07)
 // and returns whether traffic deltas in the batch should be accumulated.
-// As a side effect it advances or rewinds s.lastUsageSeq for this agent.
+// As a side effect it advances or rewinds the agent's mirror usage-seq cursor.
 //
 // Dedup rules:
 //   - seq == 0 on the wire: legacy agent, fall back to unconditional
@@ -355,14 +354,14 @@ func (s *Server) shouldApplyClientUsageDelta(agentID string, clients []clientUsa
 	if batchSeq == 0 {
 		return true
 	}
-	lastSeen := s.lastUsageSeq[agentID]
+	lastSeen := s.clientsSvc.MirrorLastUsageSeq(agentID)
 	switch {
 	case lastSeen > 0 && batchSeq == 1:
 		// Agent restart: counters reset to zero on the agent side, so the
 		// incoming "delta" is actually an absolute baseline. Skip addition to
 		// avoid double-counting and rewind the CP-side cursor so subsequent
 		// in-order deltas (seq 2, 3, ...) are accepted.
-		s.lastUsageSeq[agentID] = 1
+		s.clientsSvc.MirrorSetLastUsageSeq(agentID, 1)
 		return false
 	case batchSeq <= lastSeen:
 		// Duplicate or stale (in-flight retry, out-of-order reconnect). Live
@@ -382,7 +381,7 @@ func (s *Server) shouldApplyClientUsageDelta(agentID string, clients []clientUsa
 				"alert", "client_usage_seq_gap",
 			)
 		}
-		s.lastUsageSeq[agentID] = batchSeq
+		s.clientsSvc.MirrorSetLastUsageSeq(agentID, batchSeq)
 		return true
 	}
 }
@@ -398,21 +397,25 @@ func firstNonZeroSeq(clients []clientUsageSnapshot) uint64 {
 	return 0
 }
 
-// mergeClientUsageBatch updates s.clientUsage for every entry in the batch
-// and returns the seen-set plus the list of records to persist write-through.
+// mergeClientUsageBatch computes the new absolute usage counters for every
+// entry in the batch (reading the current totals from the clients.Service
+// mirror) and returns the seen-set plus the list of records to persist
+// write-through.
 //
-// Persisted backing lets clientUsage survive a panel restart — otherwise each
+// Persisted backing lets usage survive a panel restart — otherwise each
 // adopted client would snap to zero bytes and wait for the next agent tick,
 // which only carries a single polling interval worth of delta.
 func (s *Server) mergeClientUsageBatch(agentID string, clients []clientUsageSnapshot, applyTrafficDelta bool) (map[string]struct{}, []storage.ClientUsageRecord) {
 	seen := make(map[string]struct{}, len(clients))
 	toPersist := make([]storage.ClientUsageRecord, 0, len(clients))
+	lastSeq := s.clientsSvc.MirrorLastUsageSeq(agentID)
 	for _, usage := range clients {
 		seen[string(usage.ClientID)] = struct{}{}
-		if s.clientUsage[string(usage.ClientID)] == nil {
-			s.clientUsage[string(usage.ClientID)] = make(map[string]clientUsageSnapshot)
-		}
-		current := s.clientUsage[string(usage.ClientID)][agentID]
+		// Read the current absolute counters from the mirror so the traffic
+		// delta accumulates onto the persisted total (mirror is the single
+		// owner of usage state; the persist below — UpsertUsageBulk — writes
+		// the new absolute value back).
+		current, _ := s.clientsSvc.MirrorUsageEntryFor(string(usage.ClientID), agentID)
 		current.ClientID = usage.ClientID
 		if applyTrafficDelta {
 			current.TrafficUsedBytes += usage.TrafficUsedBytes
@@ -423,8 +426,6 @@ func (s *Server) mergeClientUsageBatch(agentID string, clients []clientUsageSnap
 		current.QuotaUsedBytes = usage.QuotaUsedBytes
 		current.QuotaLastResetUnix = usage.QuotaLastResetUnix
 		current.ObservedAt = usage.ObservedAt
-		s.clientUsage[string(usage.ClientID)][agentID] = current
-		s.trackClientUsageOwnerLocked(string(usage.ClientID), agentID)
 		toPersist = append(toPersist, storage.ClientUsageRecord{
 			ClientID:           string(usage.ClientID),
 			AgentID:            agentID,
@@ -434,7 +435,7 @@ func (s *Server) mergeClientUsageBatch(agentID string, clients []clientUsageSnap
 			ActiveUniqueIPs:    current.ActiveUniqueIPs,
 			QuotaUsedBytes:     current.QuotaUsedBytes,
 			QuotaLastResetUnix: current.QuotaLastResetUnix,
-			LastSeq:            s.lastUsageSeq[agentID],
+			LastSeq:            lastSeq,
 			ObservedAt:         current.ObservedAt,
 		})
 	}
@@ -501,96 +502,10 @@ func (s *Server) persistClientUsageRecords(ctx context.Context, toPersist []stor
 	)
 }
 
-// zeroLiveGaugesForUntouchedClients zeros the live connection/IP gauges of
-// any client that this agent did not include in the snapshot. Accumulated
-// traffic is preserved — deleting the entry would lose the seeded/historical
-// total.
-//
-// P-11: walks only the per-agent reverse index (agentClientUsage[agentID])
-// rather than the full clientUsage map. With 5k clients × 50 agents, the
-// old outer×inner scan was 250k iterations per snapshot ack under
-// s.clientsMu; the delta-only walk visits at most "clients this agent
-// has gauges for" per ack — typically a small fraction of the total.
-//
-// Caller must hold s.clientsMu (write).
-func (s *Server) zeroLiveGaugesForUntouchedClients(agentID string, seen map[string]struct{}) {
-	owned := s.agentClientUsage[agentID]
-	if len(owned) == 0 {
-		return
-	}
-	for clientID := range owned {
-		if _, ok := seen[clientID]; ok {
-			continue
-		}
-		usageByAgent := s.clientUsage[clientID]
-		if usageByAgent == nil {
-			// Defensive: if the forward map disagrees with the reverse
-			// index, drop the stale reverse entry rather than crash.
-			delete(owned, clientID)
-			continue
-		}
-		current, ok := usageByAgent[agentID]
-		if !ok {
-			delete(owned, clientID)
-			continue
-		}
-		current.ActiveTCPConns = 0
-		current.ActiveUniqueIPs = 0
-		usageByAgent[agentID] = current
-	}
-}
-
-// agentTotalTrafficLocked sums TrafficUsedBytes across every client this
-// agent has reported usage for. Used by the telemetry summary so the
-// servers list can show real per-node traffic instead of synthetic
-// placeholders. Caller MUST already hold s.clientsMu (read or write) —
-// the function only reads the maps and never escalates the lock.
-func (s *Server) agentTotalTrafficLocked(agentID string) uint64 {
-	owned := s.agentClientUsage[agentID]
-	if len(owned) == 0 {
-		return 0
-	}
-	var total uint64
-	for clientID := range owned {
-		usage, ok := s.clientUsage[clientID][agentID]
-		if !ok {
-			continue
-		}
-		total += usage.TrafficUsedBytes
-	}
-	return total
-}
-
-// trackClientUsageOwnerLocked records that `agentID` owns a usage entry
-// for `clientID` in s.clientUsage. Idempotent. Caller must hold
-// s.clientsMu (write).
-func (s *Server) trackClientUsageOwnerLocked(clientID, agentID string) {
-	owned := s.agentClientUsage[agentID]
-	if owned == nil {
-		owned = make(map[string]struct{})
-		s.agentClientUsage[agentID] = owned
-	}
-	owned[clientID] = struct{}{}
-}
-
-func (s *Server) applyClientIPSnapshot(agentID string, ipSnapshots []clientIPSnapshot) {
-	for _, snapshot := range ipSnapshots {
-		usageByAgent := s.clientUsage[snapshot.ClientID]
-		if usageByAgent == nil {
-			usageByAgent = make(map[string]clientUsageSnapshot)
-			s.clientUsage[snapshot.ClientID] = usageByAgent
-		}
-		current := usageByAgent[agentID]
-		current.ClientID = clients.ClientID(snapshot.ClientID)
-		// IN-M6: the IP snapshot is a monotonic UNION of every IP seen over
-		// the upload interval (IPCollector only resets on Flush), so its
-		// length overstates "active now". Active-now (ActiveUniqueIPs) is
-		// owned exclusively by the usage tick (telemt's instantaneous
-		// CurrentIPsUsed → ActiveUniqueIps), and the snapshot's IPs are
-		// persisted to client_ip_history by enqueueClientIPHistory. So do
-		// NOT set the active-now gauge from the interval union here —
-		// preserve whatever the usage tick last reported.
-		usageByAgent[agentID] = current
-		s.trackClientUsageOwnerLocked(snapshot.ClientID, agentID)
-	}
+// agentTotalTraffic sums TrafficUsedBytes across every client this agent has
+// reported usage for. Used by the telemetry summary so the servers list can
+// show real per-node traffic instead of synthetic placeholders. Reads from
+// the clients.Service mirror (the single owner of usage state).
+func (s *Server) agentTotalTraffic(agentID string) uint64 {
+	return s.clientsSvc.MirrorAgentTotalTraffic(agentID)
 }

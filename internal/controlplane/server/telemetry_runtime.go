@@ -353,9 +353,8 @@ func (s *Server) restoreStoredTelemetry(ctx context.Context) error {
 		return nil
 	}
 
-	if err := s.restoreDetailBoosts(ctx); err != nil {
-		return err
-	}
+	// Detail boosts (F4) are ephemeral in-memory-only state and are not
+	// restored on boot — a panel restart simply clears any active boost.
 
 	for agentID, agent := range s.agents {
 		if err := s.restoreAgentRuntime(ctx, agentID, agent); err != nil {
@@ -363,22 +362,6 @@ func (s *Server) restoreStoredTelemetry(ctx context.Context) error {
 		}
 	}
 
-	return nil
-}
-
-func (s *Server) restoreDetailBoosts(ctx context.Context) error {
-	boosts, err := s.store.ListTelemetryDetailBoosts(ctx)
-	if err != nil {
-		return err
-	}
-	now := s.now().UTC()
-	for _, boost := range boosts {
-		if !boost.ExpiresAt.After(now) {
-			_ = s.store.DeleteTelemetryDetailBoost(ctx, boost.AgentID)
-			continue
-		}
-		s.detailBoosts[boost.AgentID] = boost.ExpiresAt.UTC()
-	}
 	return nil
 }
 

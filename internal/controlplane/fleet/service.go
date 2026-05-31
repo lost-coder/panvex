@@ -5,7 +5,7 @@
 // transactions, and stamps audit-friendly timestamps.
 //
 // The service does not hold any in-memory state — every operation
-// reads and writes through storage.Store.
+// reads and writes through its narrow Repository.
 package fleet
 
 import (
@@ -58,7 +58,7 @@ var nameRegexp = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 // Service orchestrates fleet-group lifecycle operations. Instantiate
 // with NewService; the zero value is not usable.
 type Service struct {
-	store storage.Store
+	store Repository
 	now   func() time.Time
 	// newID is the UUID factory — overridable in tests to keep
 	// fixtures deterministic.
@@ -114,7 +114,7 @@ func (s *Service) decryptProviderConfig(stored []byte) ([]byte, error) {
 // `now` is nil, time.Now (UTC) is used. Integration registries are
 // created empty; call RegisterIntegrationKind / RegisterProviderKind
 // (or pass them in via SetRegistries) at boot.
-func NewService(store storage.Store, now func() time.Time) *Service {
+func NewService(store Repository, now func() time.Time) *Service {
 	if now == nil {
 		now = func() time.Time { return time.Now().UTC() }
 	}

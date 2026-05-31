@@ -198,13 +198,6 @@ type TelemetrySecurityInventoryCurrentRecord struct {
 	EntriesJSON  string
 }
 
-// TelemetryDetailBoostRecord stores one persisted detail boost window for a node.
-type TelemetryDetailBoostRecord struct {
-	AgentID   string
-	ExpiresAt time.Time
-	UpdatedAt time.Time
-}
-
 // FleetGroupRecord stores one fleet group in the global control-plane namespace.
 //
 // ID is a UUID assigned at creation and never changes. Name is an

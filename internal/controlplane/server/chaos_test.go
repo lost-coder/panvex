@@ -121,11 +121,10 @@ func TestChaosDBDropDuringTransact(t *testing.T) {
 	// PutClientAssignment — replaceClientStateWithContext must NOT commit
 	// the in-memory map (the roll-forward contract: commit only after the
 	// full persist sequence succeeds).
-	server.clientsMu.RLock()
-	inMemoryClients := len(server.clients)
-	inMemoryAssignments := len(server.clientAssignments)
-	inMemoryDeployments := len(server.clientDeployments)
-	server.clientsMu.RUnlock()
+	mirror := server.clientsSvc.MirrorSnapshot()
+	inMemoryClients := len(mirror.Clients)
+	inMemoryAssignments := len(mirror.Assignments)
+	inMemoryDeployments := len(mirror.Deployments)
 
 	if inMemoryClients != 0 {
 		t.Fatalf("in-memory clients after failed transact = %d, want 0 (orphan record)", inMemoryClients)
@@ -281,11 +280,12 @@ func TestChaosShutdownMidAudit(t *testing.T) {
 
 func TestChaosAgentReconnectSeqReset(t *testing.T) {
 	now := time.Date(2026, time.April, 18, 13, 0, 0, 0, time.UTC)
-	server := mustNew(t, Options{Now: func() time.Time { return now }})
+	server := testServerWithSQLite(t, now)
 	defer server.Close()
 
 	const agentID = "chaos-agent"
 	const clientID = "chaos-client"
+	seedClientAndAgentRows(t, server, clientID, agentID, now)
 
 	// Pre-restart burst: seq 1 (baseline), 2 (+1024), 3 (+512).
 	// The first non-zero seq with lastSeen == 0 is the "legacy" path in
@@ -301,8 +301,8 @@ func TestChaosAgentReconnectSeqReset(t *testing.T) {
 	for _, snapshot := range preBurst {
 		server.applyClientUsageSnapshot(context.Background(), agentID, snapshot)
 	}
-	preRestartTotal := server.clientUsage[clientID][agentID].TrafficUsedBytes
-	preRestartSeq := server.lastUsageSeq[agentID]
+	preRestartTotal := mirrorUsage(server, clientID, agentID).TrafficUsedBytes
+	preRestartSeq := mirrorLastUsageSeq(server, agentID)
 	server.mu.Unlock()
 
 	// Pre-restart sanity: the three deltas accumulated.
@@ -326,11 +326,11 @@ func TestChaosAgentReconnectSeqReset(t *testing.T) {
 
 	server.mu.Lock()
 	server.applyClientUsageSnapshot(context.Background(), agentID, restartBaseline)
-	afterBaseline := server.clientUsage[clientID][agentID].TrafficUsedBytes
-	afterBaselineSeq := server.lastUsageSeq[agentID]
+	afterBaseline := mirrorUsage(server, clientID, agentID).TrafficUsedBytes
+	afterBaselineSeq := mirrorLastUsageSeq(server, agentID)
 	server.applyClientUsageSnapshot(context.Background(), agentID, postRestartDelta)
-	final := server.clientUsage[clientID][agentID].TrafficUsedBytes
-	finalSeq := server.lastUsageSeq[agentID]
+	final := mirrorUsage(server, clientID, agentID).TrafficUsedBytes
+	finalSeq := mirrorLastUsageSeq(server, agentID)
 	server.mu.Unlock()
 
 	// Invariant 1: the seq=1 restart baseline did NOT add its 256 bytes to

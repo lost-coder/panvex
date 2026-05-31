@@ -79,24 +79,19 @@ func TestAdvanceDeploymentsFromTelemtResetThreeBranches(t *testing.T) {
 			})
 			defer server.Close()
 
-			server.clientsMu.Lock()
-			server.clients[clientID] = managedClient{
+			seedMirrorClient(t, server, managedClient{
 				ID:        clients.ClientID(clientID),
 				Name:      "alice",
 				Enabled:   true,
 				CreatedAt: now,
 				UpdatedAt: now,
-			}
-			server.clientDeployments[clientID] = map[string]managedClientDeployment{
-				agentID: {
-					ClientID:           clients.ClientID(clientID),
-					AgentID:            agentID,
-					Status:             clientDeploymentStatusSucceeded,
-					UpdatedAt:          now,
-					LastResetEpochSecs: tc.panelTimestamp,
-				},
-			}
-			server.clientsMu.Unlock()
+			}, nil, []managedClientDeployment{{
+				ClientID:           clients.ClientID(clientID),
+				AgentID:            agentID,
+				Status:             clientDeploymentStatusSucceeded,
+				UpdatedAt:          now,
+				LastResetEpochSecs: tc.panelTimestamp,
+			}})
 
 			snapshot := []clientUsageSnapshot{{
 				ClientID:           clients.ClientID(clientID),
@@ -104,10 +99,15 @@ func TestAdvanceDeploymentsFromTelemtResetThreeBranches(t *testing.T) {
 				ObservedAt:         now,
 			}}
 
-			server.clientsMu.Lock()
 			changed := server.advanceDeploymentsFromTelemtReset(agentID, snapshot)
-			deployment := server.clientDeployments[clientID][agentID]
-			server.clientsMu.Unlock()
+			// advanceDeploymentsFromTelemtReset only computes the changed
+			// deployments; the actual mirror write happens via PersistDeployment.
+			// For this unit test we assert against the returned change set and
+			// the (possibly unchanged) mirror deployment.
+			deployment := mirrorDeployment(server, clientID, agentID)
+			if len(changed) > 0 {
+				deployment = changed[0]
+			}
 
 			if tc.wantChanged && len(changed) == 0 {
 				t.Fatalf("advanceDeploymentsFromTelemtReset returned no changes; want one")
@@ -172,26 +172,21 @@ func TestApplyClientResetQuotaResultRecordsTimestamp(t *testing.T) {
 	})
 	defer server.Close()
 
-	server.clientsMu.Lock()
-	server.clients[clientID] = managedClient{
+	seedMirrorClient(t, server, managedClient{
 		ID:        clients.ClientID(clientID),
 		Name:      "alice",
 		Secret:    "0123456789abcdef0123456789abcdef",
 		Enabled:   true,
 		CreatedAt: now.Add(-time.Hour),
 		UpdatedAt: now.Add(-time.Hour),
-	}
-	server.clientDeployments[clientID] = map[string]managedClientDeployment{
-		agentID: {
-			ClientID:         clients.ClientID(clientID),
-			AgentID:          agentID,
-			DesiredOperation: string(jobs.ActionClientCreate),
-			Status:           clientDeploymentStatusSucceeded,
-			ConnectionLinks:  []string{"tg://existing-link"},
-			UpdatedAt:        now.Add(-time.Hour),
-		},
-	}
-	server.clientsMu.Unlock()
+	}, nil, []managedClientDeployment{{
+		ClientID:         clients.ClientID(clientID),
+		AgentID:          agentID,
+		DesiredOperation: string(jobs.ActionClientCreate),
+		Status:           clientDeploymentStatusSucceeded,
+		ConnectionLinks:  []string{"tg://existing-link"},
+		UpdatedAt:        now.Add(-time.Hour),
+	}})
 
 	payload, err := json.Marshal(clientResetQuotaJobPayload{ClientID: clientID, Name: "alice"})
 	if err != nil {
@@ -213,9 +208,7 @@ func TestApplyClientResetQuotaResultRecordsTimestamp(t *testing.T) {
 
 	server.applyClientResetQuotaResult(ctx, agentID, job, true, string(resultJSON), now)
 
-	server.clientsMu.RLock()
-	got := server.clientDeployments[clientID][agentID]
-	server.clientsMu.RUnlock()
+	got := mirrorDeployment(server, clientID, agentID)
 	if got.LastResetEpochSecs != resetUnix {
 		t.Fatalf("in-memory LastResetEpochSecs = %d; want %d", got.LastResetEpochSecs, resetUnix)
 	}
@@ -271,24 +264,19 @@ func TestApplyClientResetQuotaResultFailureLeavesDeploymentUntouched(t *testing.
 	defer server.Close()
 
 	prevPanelTS := uint64(1_700_000_000)
-	server.clientsMu.Lock()
-	server.clients[clientID] = managedClient{
+	seedMirrorClient(t, server, managedClient{
 		ID:        clients.ClientID(clientID),
 		Name:      "alice",
 		Enabled:   true,
 		CreatedAt: now,
 		UpdatedAt: now,
-	}
-	server.clientDeployments[clientID] = map[string]managedClientDeployment{
-		agentID: {
-			ClientID:           clients.ClientID(clientID),
-			AgentID:            agentID,
-			Status:             clientDeploymentStatusSucceeded,
-			LastResetEpochSecs: prevPanelTS,
-			UpdatedAt:          now,
-		},
-	}
-	server.clientsMu.Unlock()
+	}, nil, []managedClientDeployment{{
+		ClientID:           clients.ClientID(clientID),
+		AgentID:            agentID,
+		Status:             clientDeploymentStatusSucceeded,
+		LastResetEpochSecs: prevPanelTS,
+		UpdatedAt:          now,
+	}})
 
 	payload, _ := json.Marshal(clientResetQuotaJobPayload{ClientID: clientID, Name: "alice"})
 	failureResult := `{"used_bytes":0,"last_reset_epoch_secs":0,"unsupported_telemt":true}`
@@ -301,9 +289,7 @@ func TestApplyClientResetQuotaResultFailureLeavesDeploymentUntouched(t *testing.
 
 	server.applyClientResetQuotaResult(context.Background(), agentID, job, false, failureResult, now)
 
-	server.clientsMu.RLock()
-	got := server.clientDeployments[clientID][agentID]
-	server.clientsMu.RUnlock()
+	got := mirrorDeployment(server, clientID, agentID)
 	if got.LastResetEpochSecs != prevPanelTS {
 		t.Fatalf("LastResetEpochSecs = %d; want %d (failed reset must not bump the timestamp)", got.LastResetEpochSecs, prevPanelTS)
 	}

@@ -38,6 +38,16 @@ var (
 	// prod start. PANVEX_ALLOW_EMPTY_DB_PASSWORD=1 escapes this for
 	// loopback-only fixtures and tests.
 	ErrEmptyPostgresPassword = errors.New("postgres dsn has empty password; set PANVEX_DB_PASSWORD or PANVEX_ALLOW_EMPTY_DB_PASSWORD=1 for dev")
+	// ErrInsecureDBDSNProd reports that the PostgreSQL DSN requests
+	// sslmode=disable while PANVEX_ENV=production. In production the
+	// PANVEX_ALLOW_INSECURE_DB escape hatch is intentionally ignored, so a
+	// dev configuration cannot be started against prod (S4).
+	ErrInsecureDBDSNProd = errors.New("postgres dsn has sslmode=disable; PANVEX_ALLOW_INSECURE_DB is ignored when PANVEX_ENV=production")
+	// ErrEmptyPostgresPasswordProd reports that the PostgreSQL DSN omits a
+	// password while PANVEX_ENV=production. In production the
+	// PANVEX_ALLOW_EMPTY_DB_PASSWORD escape hatch is intentionally ignored
+	// (S4).
+	ErrEmptyPostgresPasswordProd = errors.New("postgres dsn has empty password; PANVEX_ALLOW_EMPTY_DB_PASSWORD is ignored when PANVEX_ENV=production")
 
 	// EnvAllowEmptyDBPassword opts into accepting a PostgreSQL DSN with
 	// no password embedded and no PANVEX_DB_PASSWORD env. Default is to
@@ -93,17 +103,34 @@ func ValidateStorageSecurity(storage StorageConfig) error {
 	if storage.Driver != StorageDriverPostgres {
 		return nil
 	}
+	prod := isProductionEnv()
 	if dsnHasSSLModeDisabled(storage.DSN) {
+		if prod {
+			// S4: the dev-loopback opt-in must not weaken a prod start.
+			return ErrInsecureDBDSNProd
+		}
 		if strings.TrimSpace(os.Getenv(EnvAllowInsecureDB)) == "" {
 			return ErrInsecureDBDSN
 		}
 	}
 	if dsnHasEmptyPostgresPassword(storage.DSN) && strings.TrimSpace(os.Getenv(EnvDBPassword)) == "" {
+		if prod {
+			// S4: the empty-password escape hatch must not weaken a prod start.
+			return ErrEmptyPostgresPasswordProd
+		}
 		if strings.TrimSpace(os.Getenv(EnvAllowEmptyDBPassword)) == "" {
 			return ErrEmptyPostgresPassword
 		}
 	}
 	return nil
+}
+
+// isProductionEnv reports whether PANVEX_ENV selects the production
+// environment, case-insensitively. In production the insecure-DB escape
+// hatches (PANVEX_ALLOW_INSECURE_DB, PANVEX_ALLOW_EMPTY_DB_PASSWORD) are
+// ignored so a dev configuration cannot be started in prod (S4).
+func isProductionEnv() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("PANVEX_ENV")), "production")
 }
 
 // dsnHasEmptyPostgresPassword reports whether the DSN has a userinfo

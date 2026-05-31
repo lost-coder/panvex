@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { cn } from "@/ui/lib/cn";
 
@@ -16,6 +17,13 @@ export interface DataTableProps<T> {
   keyExtractor: (row: Readonly<T>) => string;
   onRowClick?: (row: Readonly<T>) => void;
   emptyMessage?: string;
+  /**
+   * Accessible name for the table, rendered as a visually-hidden
+   * `<caption>` and mirrored onto `aria-label`. Strongly recommended so
+   * screen-reader users get table context (axe: data tables should have a
+   * descriptive accessible name).
+   */
+  caption?: string;
   className?: string;
   /**
    * Row height in pixels used by the virtualizer to estimate the scroll
@@ -37,11 +45,17 @@ export function DataTable<T>({
   data,
   keyExtractor,
   onRowClick,
-  emptyMessage = "No data",
+  emptyMessage,
+  caption,
   className,
   rowHeight = 48,
   maxHeight = 600,
 }: Readonly<DataTableProps<T>>) {
+  const { t } = useTranslation();
+  // U3: don't hardcode an English default. `t` resolves against the
+  // "common" namespace (i18n defaultNS); `common.empty` gives a localized
+  // "No data" fallback when the caller doesn't pass emptyMessage.
+  const resolvedEmpty = emptyMessage ?? t("empty");
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const parentRef = useRef<HTMLDivElement | null>(null);
@@ -51,6 +65,16 @@ export function DataTable<T>({
     else {
       setSortKey(key);
       setSortDir("asc");
+    }
+  };
+
+  // U3: rows that navigate must be keyboard-operable. A <tr> can't be a
+  // <button>/<a> child of <tbody>, so we expose the button role +
+  // Enter/Space activation directly on the row, mirroring NodeSummaryCard.
+  const handleRowKeyDown = (e: React.KeyboardEvent, row: Readonly<T>) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onRowClick?.(row);
     }
   };
 
@@ -84,15 +108,17 @@ export function DataTable<T>({
         className={cn("hidden md:block overflow-auto", className)}
         style={{ maxHeight }}
       >
-        <table className="w-full table-fixed text-sm">
+        <table className="w-full table-fixed text-sm" aria-label={caption}>
+          {caption && <caption className="sr-only">{caption}</caption>}
           <thead className="sticky top-0 z-10 bg-bg">
             <tr className="border-b border-border">
               {columns.map((col) => {
-                // P2-FE-07 / M-F6: sortable headers must expose sort state to
-                // assistive tech. `scope="col"` anchors each header to its
-                // column; `aria-sort` reflects the active direction, with
-                // inactive sortable columns reporting "none" so a screen
-                // reader can surface "sortable but not currently sorted".
+                // P2-FE-07 / U3: sortable headers must expose sort state to
+                // assistive tech and be operable by keyboard. `scope="col"`
+                // anchors each header to its column; `aria-sort` reflects
+                // the active direction, with inactive sortable columns
+                // reporting "none". The clickable affordance is a real
+                // <button> inside the <th> so it gets focus + Enter/Space.
                 const isActiveSort = col.sortable && sortKey === col.key;
                 const ariaSort: "ascending" | "descending" | "none" | undefined = (() => {
                   if (!col.sortable) return undefined;
@@ -106,14 +132,24 @@ export function DataTable<T>({
                     aria-sort={ariaSort}
                     className={cn(
                       "text-left text-caption uppercase tracking-wider font-medium px-3 py-2 bg-bg",
-                      col.sortable && "cursor-pointer select-none hover:text-fg",
                       col.className,
                     )}
-                    onClick={col.sortable ? () => handleSort(col.key) : undefined}
                   >
-                    {col.header}
-                    {isActiveSort && (
-                      <span className="ml-1 text-accent">{sortDir === "asc" ? "↑" : "↓"}</span>
+                    {col.sortable ? (
+                      <button
+                        type="button"
+                        onClick={() => handleSort(col.key)}
+                        className="inline-flex items-center gap-1 select-none uppercase tracking-wider font-medium hover:text-fg"
+                      >
+                        {col.header}
+                        {isActiveSort && (
+                          <span className="text-accent" aria-hidden="true">
+                            {sortDir === "asc" ? "↑" : "↓"}
+                          </span>
+                        )}
+                      </button>
+                    ) : (
+                      col.header
                     )}
                   </th>
                 );
@@ -124,7 +160,7 @@ export function DataTable<T>({
             {data.length === 0 ? (
               <tr>
                 <td colSpan={columns.length} className="text-center text-fg-muted py-8">
-                  {emptyMessage}
+                  {resolvedEmpty}
                 </td>
               </tr>
             ) : (
@@ -145,11 +181,15 @@ export function DataTable<T>({
                     <tr
                       key={keyExtractor(row)}
                       data-index={virtualRow.index}
-                      onClick={() => onRowClick?.(row)}
+                      onClick={onRowClick ? () => onRowClick(row) : undefined}
+                      onKeyDown={onRowClick ? (e) => handleRowKeyDown(e, row) : undefined}
+                      role={onRowClick ? "button" : undefined}
+                      tabIndex={onRowClick ? 0 : undefined}
                       style={{ height: rowHeight }}
                       className={cn(
                         "border-b border-border/50 transition-colors",
-                        onRowClick && "cursor-pointer hover:bg-bg-hover",
+                        onRowClick &&
+                          "cursor-pointer hover:bg-bg-hover focus-visible:outline-2 focus-visible:outline-accent",
                       )}
                     >
                       {columns.map((col) => (
@@ -177,7 +217,7 @@ export function DataTable<T>({
           DOM and swallow click events meant for the inner control. */}
       <div className={cn("flex flex-col gap-2 md:hidden", className)}>
         {data.length === 0 ? (
-          <p className="text-center text-fg-muted py-8 text-sm">{emptyMessage}</p>
+          <p className="text-center text-fg-muted py-8 text-sm">{resolvedEmpty}</p>
         ) : (
           data.map((row) => {
             const content = (

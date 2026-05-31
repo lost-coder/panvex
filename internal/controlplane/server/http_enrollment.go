@@ -20,7 +20,7 @@ import (
 )
 
 var (
-	errEnrollmentTokenRevoked    = errors.New("enrollment token revoked")
+	errEnrollmentTokenRevoked     = errors.New("enrollment token revoked")
 	errEnrollmentStoreUnavailable = errors.New("enrollment storage is unavailable")
 )
 
@@ -30,16 +30,16 @@ var (
 const defaultGatewayHost = "control-plane.panvex.internal"
 
 const (
-	agentCertificateRecoveryProofSkew  = 5 * time.Minute
+	agentCertificateRecoveryProofSkew = 5 * time.Minute
 	// agentCertificateRecoveryGraceWindow defines how long after certificate
 	// expiry an agent can still use the recovery flow. Shorter values reduce
 	// the attack surface of a compromised agent credential. L-9: tightened
 	// from 24h to 2h — long enough that a transient outage during cert
 	// rotation does not need a manual panel-side grant, short enough that a
 	// stolen post-expiry credential cannot lurk for a workday.
-	agentCertificateRecoveryGraceWindow = 2 * time.Hour
+	agentCertificateRecoveryGraceWindow     = 2 * time.Hour
 	defaultAgentCertificateRecoveryGrantTTL = 15 * time.Minute
-	maxAgentCertificateRecoveryGrantTTL = time.Hour
+	maxAgentCertificateRecoveryGrantTTL     = time.Hour
 )
 
 type createEnrollmentTokenRequest struct {
@@ -48,12 +48,12 @@ type createEnrollmentTokenRequest struct {
 }
 
 type createEnrollmentTokenResponse struct {
-	Value         string                       `json:"value"`
-	PanelURL      string                       `json:"panel_url"`
-	FleetGroupID  string                       `json:"fleet_group_id"`
-	IssuedAtUnix  int64                        `json:"issued_at_unix"`
-	ExpiresAtUnix int64                        `json:"expires_at_unix"`
-	CAPEM         string                       `json:"ca_pem"`
+	Value         string                        `json:"value"`
+	PanelURL      string                        `json:"panel_url"`
+	FleetGroupID  string                        `json:"fleet_group_id"`
+	IssuedAtUnix  int64                         `json:"issued_at_unix"`
+	ExpiresAtUnix int64                         `json:"expires_at_unix"`
+	CAPEM         string                        `json:"ca_pem"`
 	ScriptSources createEnrollmentScriptSources `json:"script_sources"`
 }
 
@@ -157,8 +157,8 @@ type enrollmentTokenResponse struct {
 	// the listing endpoint masks it to MaskedValue + Handle so an
 	// operator browsing the table cannot accidentally exfiltrate a
 	// usable bootstrap secret (Q4.U-S-06).
-	Value          string `json:"value,omitempty"`
-	MaskedValue    string `json:"masked_value,omitempty"`
+	Value       string `json:"value,omitempty"`
+	MaskedValue string `json:"masked_value,omitempty"`
 	// Handle is a SHA-256 prefix of the raw value, hex-encoded. Stable
 	// across reads and safe to surface in URLs (revoke endpoint accepts
 	// it as an alias for the raw value).
@@ -565,7 +565,7 @@ func (s *Server) authorizeEnrollmentTokenRevoke(w http.ResponseWriter, r *http.R
 }
 
 func (s *Server) issueEnrollmentToken(scope security.EnrollmentScope, issuedAt time.Time) (security.EnrollmentToken, error) {
-	return s.issueEnrollmentTokenWithContext(context.Background(), scope, issuedAt)
+	return s.issueEnrollmentTokenWithContext(s.Context(), scope, issuedAt)
 }
 
 func (s *Server) issueEnrollmentTokenWithContext(ctx context.Context, scope security.EnrollmentScope, issuedAt time.Time) (security.EnrollmentToken, error) {
@@ -621,7 +621,7 @@ func (s *Server) issueEnrollmentTokenWithContext(ctx context.Context, scope secu
 }
 
 func (s *Server) consumeEnrollmentToken(value string, now time.Time) (security.EnrollmentToken, error) {
-	return s.consumeEnrollmentTokenWithContext(context.Background(), value, now)
+	return s.consumeEnrollmentTokenWithContext(s.Context(), value, now)
 }
 
 // resolveConsumeConflict figures out the precise security error to surface
@@ -693,7 +693,7 @@ func (s *Server) consumeEnrollmentTokenWithContext(ctx context.Context, value st
 }
 
 func (s *Server) listEnrollmentTokens(now time.Time, requestURL *url.URL, forwardedProto string, requestHost string) ([]enrollmentTokenResponse, error) {
-	return s.listEnrollmentTokensWithContext(context.Background(), now, requestURL, forwardedProto, requestHost)
+	return s.listEnrollmentTokensWithContext(s.Context(), now, requestURL, forwardedProto, requestHost)
 }
 
 func (s *Server) listEnrollmentTokensWithContext(ctx context.Context, now time.Time, requestURL *url.URL, forwardedProto string, requestHost string) ([]enrollmentTokenResponse, error) {
@@ -734,7 +734,7 @@ func (s *Server) listEnrollmentTokensWithContext(ctx context.Context, now time.T
 }
 
 func (s *Server) revokeEnrollmentToken(value string, now time.Time) (storage.EnrollmentTokenRecord, bool, error) {
-	return s.revokeEnrollmentTokenWithContext(context.Background(), value, now)
+	return s.revokeEnrollmentTokenWithContext(s.Context(), value, now)
 }
 
 func (s *Server) revokeEnrollmentTokenWithContext(ctx context.Context, value string, now time.Time) (storage.EnrollmentTokenRecord, bool, error) {

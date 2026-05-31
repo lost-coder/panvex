@@ -257,7 +257,7 @@ func TestService_Restore_PopulatesMirror(t *testing.T) {
 		},
 	}
 
-	svc := NewServiceV2(ServiceConfig{Repo: repo})
+	svc := NewService(ServiceConfig{Repo: repo})
 	if err := svc.Restore(context.Background()); err != nil {
 		t.Fatalf("Restore: %v", err)
 	}
@@ -288,23 +288,13 @@ func TestService_Restore_PopulatesMirror(t *testing.T) {
 	}
 }
 
-func TestService_Restore_NoRepo(t *testing.T) {
-	t.Parallel()
-
-	svc := NewServiceV2(ServiceConfig{})
-	err := svc.Restore(context.Background())
-	if err == nil {
-		t.Fatal("Restore with nil repo: expected error, got nil")
-	}
-}
-
 func TestService_Restore_Idempotent(t *testing.T) {
 	t.Parallel()
 
 	repo := newFakeRepo()
 	repo.clientsByID["c-1"] = Client{ID: "c-1", Name: "one"}
 
-	svc := NewServiceV2(ServiceConfig{Repo: repo})
+	svc := NewService(ServiceConfig{Repo: repo})
 	if err := svc.Restore(context.Background()); err != nil {
 		t.Fatalf("Restore (1st): %v", err)
 	}
@@ -335,7 +325,7 @@ func TestService_Restore_Idempotent(t *testing.T) {
 func TestService_Get_NotFound(t *testing.T) {
 	t.Parallel()
 
-	svc := NewServiceV2(ServiceConfig{Repo: newFakeRepo()})
+	svc := NewService(ServiceConfig{Repo: newFakeRepo()})
 	_, err := svc.Get(context.Background(), ClientID("missing"))
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
@@ -348,7 +338,7 @@ func TestService_GetList_FromMirror(t *testing.T) {
 	repo := newFakeRepo()
 	repo.clientsByID["c-1"] = Client{ID: "c-1", Name: "alpha"}
 
-	svc := NewServiceV2(ServiceConfig{Repo: repo})
+	svc := NewService(ServiceConfig{Repo: repo})
 	if err := svc.Restore(context.Background()); err != nil {
 		t.Fatalf("Restore: %v", err)
 	}
@@ -374,7 +364,7 @@ func TestService_Get_BeforeRestore_Empty(t *testing.T) {
 	t.Parallel()
 
 	// Without calling Restore, mirror is empty — Get must return ErrNotFound.
-	svc := NewServiceV2(ServiceConfig{Repo: newFakeRepo()})
+	svc := NewService(ServiceConfig{Repo: newFakeRepo()})
 	_, err := svc.Get(context.Background(), "c-1")
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Get before Restore: err = %v, want ErrNotFound", err)
@@ -395,7 +385,7 @@ func TestService_Save_EncryptsAndPersists(t *testing.T) {
 
 	repo := newFakeRepo()
 	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo()}
-	svc := NewServiceV2(ServiceConfig{
+	svc := NewService(ServiceConfig{
 		Repo:  repo,
 		UoW:   newFakeUoW(rs),
 		Vault: makeTestVault(t),
@@ -433,7 +423,7 @@ func TestService_Save_VaultEncryptsSecret(t *testing.T) {
 
 	repo := newFakeRepo()
 	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo()}
-	svc := NewServiceV2(ServiceConfig{
+	svc := NewService(ServiceConfig{
 		Repo:  repo,
 		UoW:   newFakeUoW(rs),
 		Vault: vault,
@@ -466,7 +456,7 @@ func TestService_SaveState_AtomicAcrossThreeWrites(t *testing.T) {
 	repo := newFakeRepo()
 	repo.failOn = "SaveAssignments"
 	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo()}
-	svc := NewServiceV2(ServiceConfig{
+	svc := NewService(ServiceConfig{
 		Repo:  repo,
 		UoW:   newFakeUoW(rs),
 		Vault: makeTestVault(t),
@@ -490,7 +480,7 @@ func TestService_SaveState_UpdatesMirror(t *testing.T) {
 
 	repo := newFakeRepo()
 	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo()}
-	svc := NewServiceV2(ServiceConfig{
+	svc := NewService(ServiceConfig{
 		Repo:  repo,
 		UoW:   newFakeUoW(rs),
 		Vault: makeTestVault(t),
@@ -512,76 +502,6 @@ func TestService_SaveState_UpdatesMirror(t *testing.T) {
 	}
 }
 
-// --- Phase 6.6 tests: Service.AdoptDiscovered ---
-
-func TestService_AdoptDiscovered_AtomicCrossDomain(t *testing.T) {
-	t.Parallel()
-
-	repo := newFakeRepo()
-	discoveredRepo := newFakeDiscoveredRepo()
-	discoveredRepo.byID[discovered.DiscoveredID("d-1")] = discovered.DiscoveredClient{
-		ID:         discovered.DiscoveredID("d-1"),
-		ClientName: "alpha",
-		AgentID:    "a-1",
-		Status:     discovered.StatusPending,
-	}
-	rs := &fakeRepoSet{clients: repo, discovered: discoveredRepo}
-	svc := NewServiceV2(ServiceConfig{
-		Repo:           repo,
-		DiscoveredRepo: discoveredRepo,
-		UoW:            newFakeUoW(rs),
-		Vault:          makeTestVault(t),
-	})
-
-	c, err := svc.AdoptDiscovered(context.Background(), AdoptInput{
-		DiscoveredID: discovered.DiscoveredID("d-1"),
-		ActorID:      "u-admin",
-	})
-	if err != nil {
-		t.Fatalf("Adopt: %v", err)
-	}
-	if c.Name != "alpha" {
-		t.Fatalf("client name = %q, want alpha", c.Name)
-	}
-	// Both domains mutate atomically within the UoW: the managed client is
-	// created and the discovered record flips to Adopted.
-	if _, ok := repo.clientsByID[c.ID]; !ok {
-		t.Fatal("managed client not persisted")
-	}
-	if discoveredRepo.byID[discovered.DiscoveredID("d-1")].Status != discovered.StatusAdopted {
-		t.Fatal("discovered status not flipped")
-	}
-	// C-1b: audit is NOT written through the UoW. It is a cross-cutting
-	// concern owned by the serialized server-side hash-chainer; the caller
-	// emits "clients.adopted" via the server append path after this returns.
-	// The UoW RepoSet no longer exposes an Audit() repository at all, so the
-	// previous broken (unchained) audit write is structurally impossible.
-}
-
-func TestService_AdoptDiscovered_NonPendingFails(t *testing.T) {
-	t.Parallel()
-
-	repo := newFakeRepo()
-	discoveredRepo := newFakeDiscoveredRepo()
-	discoveredRepo.byID[discovered.DiscoveredID("d-2")] = discovered.DiscoveredClient{
-		ID:     discovered.DiscoveredID("d-2"),
-		Status: discovered.StatusAdopted,
-	}
-	rs := &fakeRepoSet{clients: repo, discovered: discoveredRepo}
-	svc := NewServiceV2(ServiceConfig{
-		Repo: repo, DiscoveredRepo: discoveredRepo,
-		UoW: newFakeUoW(rs), Vault: makeTestVault(t),
-	})
-
-	_, err := svc.AdoptDiscovered(context.Background(), AdoptInput{
-		DiscoveredID: discovered.DiscoveredID("d-2"),
-		ActorID:      "u-admin",
-	})
-	if err == nil {
-		t.Fatal("expected error adopting non-pending discovered client")
-	}
-}
-
 // --- Phase 6.7 tests: Service.Delete ---
 
 func TestService_Delete_RemovesFromMirror(t *testing.T) {
@@ -590,7 +510,7 @@ func TestService_Delete_RemovesFromMirror(t *testing.T) {
 	repo := newFakeRepo()
 	repo.clientsByID[ClientID("c-del")] = Client{ID: ClientID("c-del"), Name: "del"}
 	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo()}
-	svc := NewServiceV2(ServiceConfig{
+	svc := NewService(ServiceConfig{
 		Repo:  repo,
 		UoW:   newFakeUoW(rs),
 		Vault: makeTestVault(t),
@@ -612,7 +532,7 @@ func TestService_Delete_PropagatesRepoError(t *testing.T) {
 	repo := newFakeRepo()
 	repo.failOn = "Delete"
 	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo()}
-	svc := NewServiceV2(ServiceConfig{
+	svc := NewService(ServiceConfig{
 		Repo:  repo,
 		UoW:   newFakeUoW(rs),
 		Vault: makeTestVault(t),
@@ -628,7 +548,7 @@ func TestService_UpsertUsageBulk_PersistsAndUpdatesMirror(t *testing.T) {
 	t.Parallel()
 
 	repo := newFakeRepo()
-	svc := NewServiceV2(ServiceConfig{Repo: repo})
+	svc := NewService(ServiceConfig{Repo: repo})
 	batch := []Usage{
 		{ClientID: ClientID("c-1"), AgentID: "a-1", TrafficUsedBytes: 100, LastSeq: 5},
 		{ClientID: ClientID("c-2"), AgentID: "a-1", TrafficUsedBytes: 200, LastSeq: 6},
@@ -653,7 +573,7 @@ func TestService_UpsertUsageBulk_EmptySlice(t *testing.T) {
 	t.Parallel()
 
 	repo := newFakeRepo()
-	svc := NewServiceV2(ServiceConfig{Repo: repo})
+	svc := NewService(ServiceConfig{Repo: repo})
 	if err := svc.UpsertUsageBulk(context.Background(), nil); err != nil {
 		t.Fatalf("empty bulk: %v", err)
 	}
@@ -666,13 +586,153 @@ func TestService_UpsertUsage_Single(t *testing.T) {
 	t.Parallel()
 
 	repo := newFakeRepo()
-	svc := NewServiceV2(ServiceConfig{Repo: repo})
+	svc := NewService(ServiceConfig{Repo: repo})
 	u := Usage{ClientID: ClientID("c-x"), AgentID: "a-x", TrafficUsedBytes: 42, LastSeq: 1}
 	if err := svc.UpsertUsage(context.Background(), u); err != nil {
 		t.Fatalf("UpsertUsage: %v", err)
 	}
 	if len(repo.usage) != 1 || repo.usage[0].TrafficUsedBytes != 42 {
 		t.Fatalf("repo.usage = %+v", repo.usage)
+	}
+}
+
+// --- C1 follow-up: mirror must update unconditionally on DB-persist failure ---
+//
+// Client usage totals are cumulative absolutes and the seq cursor advances
+// unconditionally (server.shouldApplyClientUsageDelta -> MirrorSetLastUsageSeq)
+// before the persist call. If the mirror total is gated on DB success, a
+// failed persist leaves the cursor advanced but the total stale, permanently
+// dropping the failed delta's bytes from the running total. The mirror (live
+// accumulator) must therefore be updated whether or not the DB write succeeds,
+// while the DB error is still propagated to the caller (which alerts on
+// client_usage_persist_failed).
+
+func TestService_UpsertUsageBulk_PersistFailure_StillUpdatesMirror(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	repo.failOn = "UpsertUsageBulk"
+	svc := NewService(ServiceConfig{Repo: repo})
+	batch := []Usage{
+		{ClientID: ClientID("c-1"), AgentID: "a-1", TrafficUsedBytes: 100, LastSeq: 5},
+	}
+
+	err := svc.UpsertUsageBulk(context.Background(), batch)
+	if err == nil {
+		t.Fatal("expected DB persist error to be propagated, got nil")
+	}
+
+	snap := svc.MirrorSnapshot()
+	got, ok := snap.Usage[ClientID("c-1")]["a-1"]
+	if !ok {
+		t.Fatal("mirror usage c-1/a-1 missing after failed persist (mirror not updated)")
+	}
+	if got.TrafficUsedBytes != 100 {
+		t.Fatalf("mirror TrafficUsedBytes = %d, want 100 despite DB error", got.TrafficUsedBytes)
+	}
+	if snap.LastUsageSeq["a-1"] != 5 {
+		t.Fatalf("mirror LastUsageSeq[a-1] = %d, want 5", snap.LastUsageSeq["a-1"])
+	}
+}
+
+func TestService_UpsertUsage_PersistFailure_StillUpdatesMirror(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	repo.failOn = "UpsertUsage"
+	svc := NewService(ServiceConfig{Repo: repo})
+	u := Usage{ClientID: ClientID("c-x"), AgentID: "a-x", TrafficUsedBytes: 42, LastSeq: 3}
+
+	if err := svc.UpsertUsage(context.Background(), u); err == nil {
+		t.Fatal("expected DB persist error to be propagated, got nil")
+	}
+
+	snap := svc.MirrorSnapshot()
+	got, ok := snap.Usage[ClientID("c-x")]["a-x"]
+	if !ok {
+		t.Fatal("mirror usage c-x/a-x missing after failed persist (mirror not updated)")
+	}
+	if got.TrafficUsedBytes != 42 {
+		t.Fatalf("mirror TrafficUsedBytes = %d, want 42 despite DB error", got.TrafficUsedBytes)
+	}
+	if snap.LastUsageSeq["a-x"] != 3 {
+		t.Fatalf("mirror LastUsageSeq[a-x] = %d, want 3", snap.LastUsageSeq["a-x"])
+	}
+}
+
+// A failed delta followed by a successful in-order delta must leave the mirror
+// total reflecting BOTH deltas (cumulative absolutes), proving no permanent
+// byte drop. delta2 carries the new running total (300) — the same absolute
+// the agent would send next regardless of the earlier persist outcome.
+func TestService_UpsertUsageBulk_FailThenOK_NoPermanentDrop(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	svc := NewService(ServiceConfig{Repo: repo})
+	ctx := context.Background()
+
+	repo.failOn = "UpsertUsageBulk"
+	delta1 := []Usage{{ClientID: ClientID("c-1"), AgentID: "a-1", TrafficUsedBytes: 100, LastSeq: 1}}
+	if err := svc.UpsertUsageBulk(ctx, delta1); err == nil {
+		t.Fatal("expected DB error on delta1, got nil")
+	}
+
+	repo.failOn = ""
+	delta2 := []Usage{{ClientID: ClientID("c-1"), AgentID: "a-1", TrafficUsedBytes: 300, LastSeq: 2}}
+	if err := svc.UpsertUsageBulk(ctx, delta2); err != nil {
+		t.Fatalf("delta2 persist: %v", err)
+	}
+
+	snap := svc.MirrorSnapshot()
+	if got := snap.Usage[ClientID("c-1")]["a-1"].TrafficUsedBytes; got != 300 {
+		t.Fatalf("mirror TrafficUsedBytes = %d, want 300 (both deltas reflected)", got)
+	}
+	if got := repo.usage[0].TrafficUsedBytes; got != 300 {
+		t.Fatalf("repo TrafficUsedBytes = %d, want 300 (cumulative self-heal)", got)
+	}
+}
+
+// --- Task A1: PersistDeployment keeps the mirror consistent ---
+
+// seedClientWithDeployment writes a client + one deployment through the repo
+// and then Restores so the mirror is populated.
+func seedClientWithDeployment(t *testing.T, svc *Service, repo *fakeRepo, clientID ClientID, agentID string) {
+	t.Helper()
+	repo.clientsByID[clientID] = Client{ID: clientID, Name: string(clientID)}
+	if err := repo.PutDeployment(context.Background(), Deployment{ClientID: clientID, AgentID: agentID}); err != nil {
+		t.Fatalf("seed PutDeployment: %v", err)
+	}
+	if err := svc.Restore(context.Background()); err != nil {
+		t.Fatalf("seed Restore: %v", err)
+	}
+}
+
+func TestPersistDeploymentUpdatesMirror(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	svc := NewService(ServiceConfig{Repo: repo})
+	ctx := context.Background()
+
+	clientID := ClientID("client-1")
+	seedClientWithDeployment(t, svc, repo, clientID, "agent-1")
+
+	updated := Deployment{
+		ClientID:           clientID,
+		AgentID:            "agent-1",
+		LastResetEpochSecs: 12345,
+	}
+	if err := svc.PersistDeployment(ctx, updated); err != nil {
+		t.Fatalf("PersistDeployment: %v", err)
+	}
+
+	snap := svc.MirrorSnapshot()
+	got, ok := snap.Deployments[clientID]["agent-1"]
+	if !ok {
+		t.Fatalf("deployment missing from mirror after PersistDeployment")
+	}
+	if got.LastResetEpochSecs != 12345 {
+		t.Fatalf("mirror LastResetEpochSecs = %d, want 12345", got.LastResetEpochSecs)
 	}
 }
 
@@ -684,7 +744,7 @@ func TestService_Save_NilVault_PlaintextRoundtrip(t *testing.T) {
 	repo := newFakeRepo()
 	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo()}
 	// nil Vault: encryptSecret is a no-op, secret stored as plaintext.
-	svc := NewServiceV2(ServiceConfig{
+	svc := NewService(ServiceConfig{
 		Repo:  repo,
 		UoW:   newFakeUoW(rs),
 		Vault: nil,
@@ -711,7 +771,7 @@ func TestService_SaveState_EmptyAssignmentsAndDeployments(t *testing.T) {
 
 	repo := newFakeRepo()
 	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo()}
-	svc := NewServiceV2(ServiceConfig{
+	svc := NewService(ServiceConfig{
 		Repo:  repo,
 		UoW:   newFakeUoW(rs),
 		Vault: nil,
@@ -727,5 +787,112 @@ func TestService_SaveState_EmptyAssignmentsAndDeployments(t *testing.T) {
 	}
 	if len(svc.mirrorDeployments["c-empty"]) != 0 {
 		t.Fatalf("mirrorDeployments[c-empty] len = %d, want 0", len(svc.mirrorDeployments["c-empty"]))
+	}
+}
+
+// --- D1 (B3): mirror-consistency methods for the server write-paths ---
+
+// TestService_ZeroLiveGaugesMirror verifies that ZeroLiveGaugesForAgent
+// zeros the live connection/IP gauges in the mirror for every client the
+// agent owns usage for but did NOT report in the current snapshot, while
+// preserving accumulated traffic and leaving reported (seen) clients
+// untouched. Mirrors the server's zeroLiveGaugesForUntouchedClients.
+func TestService_ZeroLiveGaugesMirror(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(ServiceConfig{Repo: newFakeRepo()})
+	// Two clients on agent-1: c-seen (reported this tick) and c-idle (not).
+	svc.applyUsageMirror(Usage{ClientID: "c-seen", AgentID: "agent-1", TrafficUsedBytes: 100, ActiveTCPConns: 3, ActiveUniqueIPs: 2})
+	svc.applyUsageMirror(Usage{ClientID: "c-idle", AgentID: "agent-1", TrafficUsedBytes: 500, ActiveTCPConns: 7, ActiveUniqueIPs: 4})
+	// A different agent's row on c-idle must be left alone.
+	svc.applyUsageMirror(Usage{ClientID: "c-idle", AgentID: "agent-2", TrafficUsedBytes: 9, ActiveTCPConns: 1, ActiveUniqueIPs: 1})
+
+	svc.ZeroLiveGaugesForAgent("agent-1", map[string]struct{}{"c-seen": {}})
+
+	svc.mu.RLock()
+	defer svc.mu.RUnlock()
+
+	seen := svc.mirrorUsage["c-seen"]["agent-1"]
+	if seen.ActiveTCPConns != 3 || seen.ActiveUniqueIPs != 2 {
+		t.Fatalf("seen client gauges changed: %+v", seen)
+	}
+	idle := svc.mirrorUsage["c-idle"]["agent-1"]
+	if idle.ActiveTCPConns != 0 || idle.ActiveUniqueIPs != 0 {
+		t.Fatalf("idle client gauges not zeroed: %+v", idle)
+	}
+	if idle.TrafficUsedBytes != 500 {
+		t.Fatalf("idle client traffic mutated: %d, want 500", idle.TrafficUsedBytes)
+	}
+	other := svc.mirrorUsage["c-idle"]["agent-2"]
+	if other.ActiveTCPConns != 1 || other.ActiveUniqueIPs != 1 {
+		t.Fatalf("other agent's gauges mutated: %+v", other)
+	}
+}
+
+// TestService_DropAgentUsageMirror verifies that DropAgentUsageMirror
+// removes every (client, agent) usage row owned by the agent plus its
+// per-agent seq cursor, while leaving other agents' rows intact.
+func TestService_DropAgentUsageMirror(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(ServiceConfig{Repo: newFakeRepo()})
+	svc.applyUsageMirror(Usage{ClientID: "c-1", AgentID: "agent-1", TrafficUsedBytes: 10, LastSeq: 4})
+	svc.applyUsageMirror(Usage{ClientID: "c-1", AgentID: "agent-2", TrafficUsedBytes: 20, LastSeq: 9})
+	svc.applyUsageMirror(Usage{ClientID: "c-2", AgentID: "agent-1", TrafficUsedBytes: 30, LastSeq: 4})
+
+	svc.DropAgentUsageMirror("agent-1")
+
+	svc.mu.RLock()
+	defer svc.mu.RUnlock()
+
+	if _, ok := svc.mirrorUsage["c-1"]["agent-1"]; ok {
+		t.Fatal("c-1/agent-1 still present after drop")
+	}
+	if _, ok := svc.mirrorUsage["c-1"]["agent-2"]; !ok {
+		t.Fatal("c-1/agent-2 wrongly dropped")
+	}
+	// c-2 had only agent-1 — the now-empty inner map should be removed.
+	if _, ok := svc.mirrorUsage["c-2"]; ok {
+		t.Fatal("c-2 inner map not pruned after dropping its only agent")
+	}
+	if _, ok := svc.mirrorLastUsageSeq["agent-1"]; ok {
+		t.Fatal("mirrorLastUsageSeq[agent-1] not dropped")
+	}
+	if svc.mirrorLastUsageSeq["agent-2"] != 9 {
+		t.Fatalf("mirrorLastUsageSeq[agent-2] = %d, want 9", svc.mirrorLastUsageSeq["agent-2"])
+	}
+}
+
+// TestService_SeedUsageMirror verifies that SeedUsageMirror writes a
+// usage row into the mirror without touching persistence, and only when
+// no row already exists for that (client, agent) pair (matching the
+// restore-time discovered-seed fallback semantics).
+func TestService_SeedUsageMirror(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	svc := NewService(ServiceConfig{Repo: repo})
+
+	now := time.Now()
+	svc.SeedUsageMirror("c-1", "agent-1", 4096, 5, 3, now)
+
+	svc.mu.RLock()
+	um := svc.mirrorUsage["c-1"]["agent-1"]
+	svc.mu.RUnlock()
+	if um.TrafficUsedBytes != 4096 || um.ActiveTCPConns != 5 || um.ActiveUniqueIPs != 3 || um.UniqueIPsUsed != 3 {
+		t.Fatalf("seeded mirror row wrong: %+v", um)
+	}
+	// Seed-mirror must not persist (it's a display fallback).
+	if got, err := repo.ListUsage(context.Background()); err != nil || len(got) != 0 {
+		t.Fatalf("SeedUsageMirror persisted to repo: rows=%d err=%v", len(got), err)
+	}
+
+	// Existing row must not be overwritten.
+	svc.SeedUsageMirror("c-1", "agent-1", 1, 1, 1, now.Add(time.Hour))
+	svc.mu.RLock()
+	um2 := svc.mirrorUsage["c-1"]["agent-1"]
+	svc.mu.RUnlock()
+	if um2.TrafficUsedBytes != 4096 {
+		t.Fatalf("SeedUsageMirror overwrote existing row: %+v", um2)
 	}
 }

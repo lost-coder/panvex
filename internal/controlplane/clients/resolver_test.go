@@ -155,19 +155,13 @@ func TestAggregateUsage(t *testing.T) {
 func TestServiceWrappers(t *testing.T) {
 	t.Parallel()
 
-	svc := NewService()
+	svc := NewService(ServiceConfig{})
 	if svc == nil {
 		t.Fatalf("NewService returned nil")
-	}
-	if !svc.ValidateHexSecret("00112233445566778899aabbccddeeff") {
-		t.Fatalf("ValidateHexSecret rejected a known-valid hex secret")
 	}
 	got := svc.ResolveTargetAgentIDs(nil, AgentTopology{})
 	if len(got) != 0 {
 		t.Fatalf("Service.ResolveTargetAgentIDs on empty input returned %v", got)
-	}
-	if svc.ResolveIDByName(nil, nil, "a", "", "name") != "" {
-		t.Fatalf("Service.ResolveIDByName on empty maps returned non-empty")
 	}
 	if svc.AggregateUsage(nil) != (AggregatedUsage{}) {
 		t.Fatalf("Service.AggregateUsage on nil returned non-zero")

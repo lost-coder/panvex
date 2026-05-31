@@ -2,7 +2,7 @@
 //
 // Repository is the minimal persistence surface needed by callers that
 // must enqueue jobs inside multi-domain transactions (e.g.
-// clients.Service.AdoptDiscovered). The full job query surface
+// server.persistAdoptedClient). The full job query surface
 // remains on storage.JobStore until a later wave promotes it.
 package jobs
 

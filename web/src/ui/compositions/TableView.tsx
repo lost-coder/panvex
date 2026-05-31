@@ -1,10 +1,12 @@
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 import { Search, ChevronLeft, ChevronRight, Columns3 } from "lucide-react";
 import { cn } from "@/ui/lib/cn";
 import { Input } from "@/ui/base/input";
 import { Select } from "@/ui/base/select";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/base/popover";
 import { ViewModeToggle } from "@/ui/compositions/ViewModeToggle";
+import { computePaginationRange } from "@/ui/compositions/paginationRange";
 import type { ViewMode } from "@/shared/api/types-pages/pages";
 
 export interface TableViewFilter {
@@ -71,6 +73,7 @@ export function TableView({
   children,
   className,
 }: Readonly<TableViewProps>) {
+  const { t } = useTranslation("pagination");
   const hasFilters = filters && filters.length > 0;
   const hasViewMode = viewMode !== undefined;
   const hasColumnPicker = columns !== undefined && columns.available.length > 0;
@@ -231,8 +234,15 @@ export function TableView({
             {rangeStart !== undefined &&
             rangeEnd !== undefined &&
             pagination?.totalItems !== undefined
-              ? `Showing ${rangeStart}–${rangeEnd} of ${pagination.totalItems}`
-              : `Page ${currentPage} of ${(pagination?.totalPages ?? 0)}`}
+              ? t("showing", {
+                  start: rangeStart,
+                  end: rangeEnd,
+                  total: pagination.totalItems,
+                })
+              : t("pageOf", {
+                  page: currentPage,
+                  total: pagination?.totalPages ?? 0,
+                })}
           </span>
 
           <div className="flex gap-1">
@@ -245,29 +255,44 @@ export function TableView({
                 "disabled:opacity-40 disabled:cursor-not-allowed",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
               )}
-              aria-label="Previous page"
+              aria-label={t("previous")}
             >
               <ChevronLeft className="size-4" />
             </button>
 
-            {/* Page numbers */}
-            {Array.from({ length: (pagination?.totalPages ?? 0) }, (_, i) => i + 1).map((page) => (
-              <button
-                key={page}
-                onClick={() => pagination?.onChange(page)}
-                className={cn(
-                  "flex items-center justify-center h-8 w-8 rounded-xs border font-mono text-xs transition-colors",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
-                  page === currentPage
-                    ? "bg-accent border-accent text-white"
-                    : "bg-bg-card border-border-hi text-fg-muted hover:text-fg",
-                )}
-                aria-label={`Page ${page}`}
-                aria-current={page === currentPage ? "page" : undefined}
-              >
-                {page}
-              </button>
-            ))}
+            {/* Collapsible page numbers — windowed around the current
+                page with first/last anchors and ellipsis gaps so the
+                control stays compact for large page counts. */}
+            {computePaginationRange(currentPage, pagination?.totalPages ?? 0).map(
+              (token, i) =>
+                token === "ellipsis" ? (
+                  <span
+                    // Index-based key is stable here: the token sequence is
+                    // positional and ellipses carry no identity of their own.
+                    key={`ellipsis-${i}`}
+                    aria-hidden="true"
+                    className="flex items-center justify-center h-8 w-8 text-fg-muted font-mono text-xs"
+                  >
+                    …
+                  </span>
+                ) : (
+                  <button
+                    key={token}
+                    onClick={() => pagination?.onChange(token)}
+                    className={cn(
+                      "flex items-center justify-center h-8 w-8 rounded-xs border font-mono text-xs transition-colors",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
+                      token === currentPage
+                        ? "bg-accent border-accent text-white"
+                        : "bg-bg-card border-border-hi text-fg-muted hover:text-fg",
+                    )}
+                    aria-label={t("page", { page: token })}
+                    aria-current={token === currentPage ? "page" : undefined}
+                  >
+                    {token}
+                  </button>
+                ),
+            )}
 
             <button
               onClick={() => pagination?.onChange(currentPage + 1)}
@@ -278,7 +303,7 @@ export function TableView({
                 "disabled:opacity-40 disabled:cursor-not-allowed",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
               )}
-              aria-label="Next page"
+              aria-label={t("next")}
             >
               <ChevronRight className="size-4" />
             </button>

@@ -1,0 +1,14 @@
+{
+  "offline": "Connection lost — retry once the network is back.",
+  "offlineBanner": "Connection lost — changes will not be saved.",
+  "loadingList": "Loading list…",
+  "notFound": {
+    "title": "Page not found",
+    "goDashboard": "Go to Dashboard"
+  },
+  "sidebar": {
+    "collapse": "Collapse sidebar",
+    "expand": "Expand sidebar",
+    "logout": "Log out"
+  }
+}

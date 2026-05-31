@@ -48,3 +48,76 @@ func TestStorageResolveRejectsEmptyPostgresDSN(t *testing.T) {
 		t.Fatalf("ResolveStorage() error = %v, want %v", err, ErrStorageDSNRequired)
 	}
 }
+
+// TestValidateStorageSecurityProductionIgnoresEscapeHatches verifies S4:
+// PANVEX_ENV=production disables the insecure-DB opt-ins
+// (PANVEX_ALLOW_INSECURE_DB / PANVEX_ALLOW_EMPTY_DB_PASSWORD), while
+// non-production keeps honouring them.
+func TestValidateStorageSecurityProductionIgnoresEscapeHatches(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     string // PANVEX_ENV value
+		dsn     string
+		setEnvs map[string]string
+		wantErr error
+	}{
+		{
+			name:    "production with insecure optin is rejected",
+			env:     "production",
+			dsn:     "postgres://user:pw@localhost:5432/panvex?sslmode=disable",
+			setEnvs: map[string]string{EnvAllowInsecureDB: "1"},
+			wantErr: ErrInsecureDBDSNProd,
+		},
+		{
+			name:    "production env is case-insensitive",
+			env:     "Production",
+			dsn:     "postgres://user:pw@localhost:5432/panvex?sslmode=disable",
+			setEnvs: map[string]string{EnvAllowInsecureDB: "1"},
+			wantErr: ErrInsecureDBDSNProd,
+		},
+		{
+			name:    "non-production with insecure optin is allowed",
+			env:     "development",
+			dsn:     "postgres://user:pw@localhost:5432/panvex?sslmode=disable",
+			setEnvs: map[string]string{EnvAllowInsecureDB: "1"},
+			wantErr: nil,
+		},
+		{
+			name:    "production with empty-password optin is rejected",
+			env:     "production",
+			dsn:     "postgres://user@localhost:5432/panvex?sslmode=require",
+			setEnvs: map[string]string{EnvAllowEmptyDBPassword: "1"},
+			wantErr: ErrEmptyPostgresPasswordProd,
+		},
+		{
+			name:    "non-production with empty-password optin is allowed",
+			env:     "",
+			dsn:     "postgres://user@localhost:5432/panvex?sslmode=require",
+			setEnvs: map[string]string{EnvAllowEmptyDBPassword: "1"},
+			wantErr: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("PANVEX_ENV", tt.env)
+			for k, v := range tt.setEnvs {
+				t.Setenv(k, v)
+			}
+
+			err := ValidateStorageSecurity(StorageConfig{
+				Driver: StorageDriverPostgres,
+				DSN:    tt.dsn,
+			})
+			if tt.wantErr == nil {
+				if err != nil {
+					t.Fatalf("ValidateStorageSecurity() error = %v, want nil", err)
+				}
+				return
+			}
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("ValidateStorageSecurity() error = %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}

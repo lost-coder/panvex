@@ -25,28 +25,27 @@ else
 fi
 readonly CURL_INSECURE_FLAG
 
-# ── S-4: detached signature verification (opt-in) ────────────────────────────
+# ── S1: detached release-signature verification (openssl ECDSA, on by default) ─
 #
-# Default flow: SHA-256 over TLS only (TOFU on first deploy). A CDN/registry
-# compromise can serve a matching archive+sha256 pair, so production deployments
-# should set PANVEX_INSTALL_REQUIRE_SIGNATURE=1 and replace PANVEX_INSTALL_PUBKEY
-# with the project's release-signing public key.
+# Every release archive is signed by CI (.github/workflows/release.yml) with
+# `openssl dgst -sha256 -sign` using the project's release-signing private key
+# (the PANVEX_SIGNING_KEY secret). The matching ECDSA P-256 public key is
+# embedded below — it is the SAME key the in-app updater pins
+# (internal/security/signing_key.pub), so the installer and the running binary
+# share one trust anchor. The detached signature is published as a
+# `<archive>.sig` sidecar (raw DER) on each GitHub release.
 #
-# Signature format: minisign detached signatures (RWQ-prefixed Ed25519 pubkey,
-# .minisig sidecar published alongside each release asset). minisign is a
-# single static binary with no GPG keyring complexity — see
-# deploy/release-signing.md for the operator guide (key generation,
-# signing a release, publishing the pubkey).
-#
-# Default release-signing public key (RWQ format). Replace via env if you
-# distribute your own builds. NOTE: the literal below is a placeholder — a
-# real release-signing key must be filled in by maintainers before the S-4
-# verifier is enabled in production. Operators distributing their own builds
-# can override at install time:
-#   PANVEX_INSTALL_REQUIRE_SIGNATURE=1 \
-#   PANVEX_INSTALL_PUBKEY='RWQ...' \
-#   bash install.sh
-: "${PANVEX_INSTALL_PUBKEY:=RWReplaceMeWithRealPanvexReleaseSigningKey/0000000000000000000000000000000000}"
+# Verification runs by DEFAULT (after the sha256 check, for defence in depth).
+# Operators can opt OUT with PANVEX_INSTALL_SKIP_SIGNATURE=1 (audit-visible;
+# prints a warning). Operators distributing their own builds can point the
+# verifier at their own public key:
+#   PANVEX_INSTALL_PUBKEY_FILE=/path/to/key.pem bash install.sh
+# See deploy/release-signing.md for the signing/rotation runbook.
+PANVEX_RELEASE_PUBKEY_PEM='-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEC2xj+WlinIj1Tes28/OFujjLQNia
+hqi7AKBwX4CCiCFwxjcjvRXX1LVyMUBGCSPkUMuuedOzSq7BIbKptjSbAA==
+-----END PUBLIC KEY-----'
+readonly PANVEX_RELEASE_PUBKEY_PEM
 
 # ── Colors ──────────────────────────────────────────────────────────────────
 
@@ -177,6 +176,40 @@ generate_encryption_key() {
   fi
 }
 
+# Prominent, hard-to-miss warning shown only when we auto-GENERATE a fresh
+# encryption key (not when the operator supplied one or we kept an existing
+# one). Losing this key permanently destroys every encrypted column
+# (client_secret / totp_secret / webhook_secret) — there is no recovery path.
+# The interactive "I saved it" confirmation is gated on a TTY (can_prompt) so
+# the non-interactive path (curl | bash, CI, config-management) never blocks.
+warn_encryption_key_backup() {
+  local secrets_file="$1"
+  echo "" >&2
+  echo "  ${RED}${BOLD}┌────────────────────────────────────────────────────────────┐${RESET}" >&2
+  echo "  ${RED}${BOLD}│  BACK UP YOUR ENCRYPTION KEY NOW                            │${RESET}" >&2
+  echo "  ${RED}${BOLD}└────────────────────────────────────────────────────────────┘${RESET}" >&2
+  echo "  ${YELLOW}A new ${BOLD}PANVEX_ENCRYPTION_KEY${RESET}${YELLOW} was generated automatically.${RESET}" >&2
+  echo "  ${YELLOW}It encrypts all client, TOTP and webhook secrets at rest.${RESET}" >&2
+  echo "  ${BOLD}If this key is lost, that data is permanently unrecoverable —${RESET}" >&2
+  echo "  ${BOLD}there is no reset and no recovery, only a clean reinstall.${RESET}" >&2
+  echo "" >&2
+  echo "  Export it to a secure secret store now, e.g.:" >&2
+  echo "    ${BLUE}grep '^PANVEX_ENCRYPTION_KEY=' ${secrets_file}${RESET}" >&2
+  echo "" >&2
+
+  # TTY-gated confirmation: never block non-interactive installs.
+  if can_prompt; then
+    local reply
+    read -rp "  ${CYAN}?${RESET} Type 'yes' once you have saved the key: " reply </dev/tty
+    if [[ "$reply" = "yes" ]]; then
+      success "Encryption key backup confirmed"
+    else
+      warn "Continuing without confirmation — remember to back up the key."
+    fi
+  fi
+  return 0
+}
+
 is_root() { [[ "$(id -u)" -eq 0 ]]; return 0; }
 
 has_systemd() { command -v systemctl >/dev/null 2>&1; return 0; }
@@ -246,47 +279,65 @@ download_file() {
   die "curl or wget is required"
 }
 
-# verify_signature checks a detached minisign signature for $archive against
-# $sig_url. Returns 0 if verification is not required (default) or if it
-# passes. Returns non-zero — caller MUST treat as fatal — only when the
-# operator opted in via PANVEX_INSTALL_REQUIRE_SIGNATURE=1 and verification
-# failed (missing tool, missing pubkey, download failure, signature mismatch).
+# verify_signature checks a detached ECDSA-P256/SHA-256 signature for $archive
+# against $sig_url using openssl — the same scheme the in-app updater uses and
+# the same scheme CI signs with (openssl dgst -sha256 -sign, raw DER .sig).
 #
-# This runs AFTER the existing sha256sum check, so both must pass: hash
-# guards integrity, signature guards authenticity.
+# Enabled BY DEFAULT. Returns 0 when verification passes, or when the operator
+# explicitly opts out via PANVEX_INSTALL_SKIP_SIGNATURE=1 (a warning is printed
+# in that case). Returns non-zero — caller MUST treat as fatal — on any failure
+# (missing openssl, bad pubkey, download failure, signature mismatch).
+#
+# Trust anchor: the embedded PANVEX_RELEASE_PUBKEY_PEM (matches
+# internal/security/signing_key.pub). Override with PANVEX_INSTALL_PUBKEY_FILE
+# to verify your own builds.
+#
+# This runs AFTER the existing sha256sum check, so both must pass: hash guards
+# integrity, signature guards authenticity.
 verify_signature() {
   local archive="$1"
   local sig_url="$2"
-  local require="${PANVEX_INSTALL_REQUIRE_SIGNATURE:-}"
-  if [[ -z "$require" ]] || [[ "$require" != "1" ]]; then
-    return 0  # not required — backward-compatible default
+
+  if [[ "${PANVEX_INSTALL_SKIP_SIGNATURE:-}" = "1" ]]; then
+    echo "panvex: WARNING — release signature verification DISABLED via PANVEX_INSTALL_SKIP_SIGNATURE=1" >&2
+    return 0
   fi
-  if [[ -z "${PANVEX_INSTALL_PUBKEY:-}" ]]; then
-    echo "panvex: PANVEX_INSTALL_REQUIRE_SIGNATURE=1 but PANVEX_INSTALL_PUBKEY is empty" >&2
+
+  if ! command -v openssl >/dev/null 2>&1; then
+    echo "panvex: signature verification requires 'openssl' (set PANVEX_INSTALL_SKIP_SIGNATURE=1 to bypass at your own risk)" >&2
     return 1
   fi
-  if ! command -v minisign >/dev/null 2>&1; then
-    echo "panvex: signature verification requires 'minisign' (install via 'apt install minisign' or equivalent)" >&2
-    return 1
+
+  local pubkey="" sig="" rc=0
+
+  # Resolve the public key: operator override file, else the embedded PEM.
+  if [[ -n "${PANVEX_INSTALL_PUBKEY_FILE:-}" ]]; then
+    if [[ ! -r "$PANVEX_INSTALL_PUBKEY_FILE" ]]; then
+      echo "panvex: PANVEX_INSTALL_PUBKEY_FILE not readable: $PANVEX_INSTALL_PUBKEY_FILE" >&2
+      return 1
+    fi
+    pubkey="$PANVEX_INSTALL_PUBKEY_FILE"
+  else
+    pubkey=$(mktemp /tmp/panvex-pub.XXXXXX) || return 1
+    chmod 600 "$pubkey"
+    printf '%s\n' "$PANVEX_RELEASE_PUBKEY_PEM" > "$pubkey"
   fi
-  local sig
-  sig=$(mktemp /tmp/panvex-sig.XXXXXX) || return 1
+
+  sig=$(mktemp /tmp/panvex-sig.XXXXXX) || { [[ -z "${PANVEX_INSTALL_PUBKEY_FILE:-}" ]] && rm -f "$pubkey"; return 1; }
+
   if ! download_file "$sig_url" "$sig"; then
-    echo "panvex: failed to download signature: $sig_url" >&2
-    rm -f "$sig"
-    return 1
+    echo "panvex: failed to download release signature: $sig_url" >&2
+    rc=1
+  elif ! openssl dgst -sha256 -verify "$pubkey" -signature "$sig" "$archive" >/dev/null 2>&1; then
+    echo "panvex: release signature verification FAILED for $archive" >&2
+    rc=1
+  else
+    echo "panvex: release signature verified" >&2
   fi
-  # minisign -P accepts the public key as a literal argument (avoids
-  # process-substitution incompatibility with /bin/sh). The pubkey is a
-  # short single-line RWQ string, safe to pass on the command line.
-  if ! minisign -V -P "$PANVEX_INSTALL_PUBKEY" -m "$archive" -x "$sig" >/dev/null 2>&1; then
-    echo "panvex: signature verification FAILED for $archive" >&2
-    rm -f "$sig"
-    return 1
-  fi
+
   rm -f "$sig"
-  echo "panvex: signature verified" >&2
-  return 0
+  [[ -z "${PANVEX_INSTALL_PUBKEY_FILE:-}" ]] && rm -f "$pubkey"
+  return $rc
 }
 
 # ── Firewall helper ──────────────────────────────────────────────────────────
@@ -566,11 +617,12 @@ install_panvex() {
   fi
   success "Checksum verified"
 
-  # S-4: detached signature verification (opt-in via
-  # PANVEX_INSTALL_REQUIRE_SIGNATURE=1). Runs AFTER the sha256 check so
-  # both must pass — defence in depth against a CDN/registry serving a
-  # matching archive+hash pair.
-  if ! verify_signature "$TMP_DIR/$asset_name" "${archive_url}.minisig"; then
+  # S1: detached ECDSA signature verification (on by default; opt out via
+  # PANVEX_INSTALL_SKIP_SIGNATURE=1). Runs AFTER the sha256 check so both
+  # must pass — defence in depth against a CDN/registry serving a matching
+  # archive+hash pair.
+  info "Verifying release signature..."
+  if ! verify_signature "$TMP_DIR/$asset_name" "${archive_url}.sig"; then
     die "Signature verification failed — refusing to install"
   fi
 
@@ -664,7 +716,8 @@ EOF
   fi
   case "$secrets_action" in
     kept)      info "Encryption key preserved: $secrets_file" ;;
-    generated) success "Encryption key auto-generated: $secrets_file" ;;
+    generated) success "Encryption key auto-generated: $secrets_file"
+               warn_encryption_key_backup "$secrets_file" ;;
     stored)    success "Encryption key stored: $secrets_file" ;;
   esac
 
@@ -1082,16 +1135,19 @@ Non-interactive mode (set environment variables):
   PANVEX_DATA_DIR         Data directory (default: /var/lib/panvex)
   PANVEX_REPO             GitHub repo (default: lost-coder/panvex)
 
-Security (S-4 release-asset signing):
-  PANVEX_INSTALL_REQUIRE_SIGNATURE
-                          Require minisign signature on release archive
-                          (default: unset — sha256-only TOFU). Set to 1
-                          for production deployments.
-  PANVEX_INSTALL_PUBKEY   Release-signing public key (RWQ format, one
-                          line). Replace the in-script placeholder with
-                          your real release-signing key. Required when
-                          PANVEX_INSTALL_REQUIRE_SIGNATURE=1.
-                          See deploy/release-signing.md.
+Security (release-asset signing):
+  The release archive's detached ECDSA (P-256/SHA-256) signature is
+  verified with openssl BY DEFAULT, against the public key embedded in
+  this script (the same key the in-app updater pins). See
+  deploy/release-signing.md.
+  PANVEX_INSTALL_SKIP_SIGNATURE
+                          Set to 1 to disable signature verification
+                          (NOT recommended — prints a warning). Default:
+                          verification is enabled.
+  PANVEX_INSTALL_PUBKEY_FILE
+                          Path to an alternate PEM public key to verify
+                          against (for operators distributing their own
+                          builds). Default: the embedded release key.
 EOF
   exit 0
 fi

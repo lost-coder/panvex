@@ -6,6 +6,7 @@
 // only — the cost is HMR latency on router edits, not production
 // behaviour.
 /* eslint-disable react-refresh/only-export-components */
+import { useTranslation } from "react-i18next";
 import type { QueryClient} from "@tanstack/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -377,15 +378,16 @@ const routeTree = rootRoute.addChildren([
 
 function NotFound() {
   const navigate = useNavigate();
+  const { t } = useTranslation("ui");
   return (
     <div className="flex flex-col items-center justify-center h-screen gap-4 text-fg-muted">
       <span className="text-6xl font-bold text-fg/20">404</span>
-      <p className="text-sm">Page not found</p>
+      <p className="text-sm">{t("notFound.title")}</p>
       <button
         onClick={() => navigate({ to: "/" })}
         className="px-4 py-2 text-sm bg-accent text-white rounded-xs hover:bg-accent/90 transition-colors"
       >
-        Go to Dashboard
+        {t("notFound.goDashboard")}
       </button>
     </div>
   );

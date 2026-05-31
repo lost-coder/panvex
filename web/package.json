@@ -9,6 +9,7 @@
     "build:embed": "node ./node_modules/typescript/bin/tsc --noEmit && node ./node_modules/vite/bin/vite.js build --mode embed --outDir ../cmd/control-plane/.embedded-ui --emptyOutDir",
     "preview": "vite preview",
     "lint": "eslint .",
+    "check:i18n": "node ./scripts/check-i18n-parity.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

@@ -48,7 +48,6 @@ func resetForTest(ctx context.Context, store *Store) error {
 			telemt_diagnostics_current,
 			telemt_security_inventory_current,
 			telemt_runtime_current,
-			telemt_detail_boosts,
 			job_targets,
 			jobs,
 			client_deployments,

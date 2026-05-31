@@ -1,0 +1,12 @@
+apiVersion: 1
+
+# Optional sample datasource. Adjust `url` to your Prometheus.
+# The name "Prometheus" lets Grafana auto-resolve the dashboards'
+# ${DS_PROMETHEUS} variable on first load.
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true

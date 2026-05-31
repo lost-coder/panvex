@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { useTranslation } from "react-i18next";
 
 import { cn } from "@/ui/lib/cn";
 import { usePrefersReducedMotion } from "@/ui/lib/usePrefersReducedMotion";
@@ -31,7 +32,8 @@ export interface SkeletonRowsProps {
   count: number;
   /** Per-row height Tailwind class. Defaults to `h-12`. */
   height?: string;
-  /** Aria label for the first row. Rest are silent to avoid noise. */
+  /** Aria label for the first row. Rest are silent to avoid noise.
+   *  Falls back to the localised "Loading list…" when omitted. */
   label?: string;
   className?: string;
 }
@@ -44,9 +46,11 @@ export interface SkeletonRowsProps {
 export function SkeletonRows({
   count,
   height = "h-12",
-  label = "Загрузка списка…",
+  label,
   className,
 }: Readonly<SkeletonRowsProps>) {
+  const { t } = useTranslation("ui");
+  const rowLabel = label ?? t("loadingList");
   // Stable per-instance prefix (useId) + per-row index combined makes
   // a unique non-positional key for the placeholder rows. Index alone
   // tripped Sonar S6479; a fresh UUID per render would defeat React's
@@ -58,7 +62,7 @@ export function SkeletonRows({
         <Skeleton
           key={`${id}-${i}`}
           className={cn(height, "w-full")}
-          label={i === 0 ? label : undefined}
+          label={i === 0 ? rowLabel : undefined}
         />
       ))}
     </div>

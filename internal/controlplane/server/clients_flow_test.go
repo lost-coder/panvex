@@ -43,10 +43,12 @@ func TestDeleteClientPersistsStateBeforeJob(t *testing.T) {
 	// uow.Do → clients.Repository.Save, not s.store.PutClient. Failure is
 	// injected at the Repository layer so replaceClientStateWithContext
 	// returns the error before the in-memory state is committed.
+	// saveErr starts nil so the initial seed (below) can populate the
+	// clients.Service mirror via SaveState; it is set just before the
+	// delete so the persist-failure path is exercised.
 	failing := &failingStore{MigrationStore: baseStore}
 	failingRepo := &failingClientsRepository{
 		Repository: sqlite.NewClientsRepository(baseStore.DB()),
-		saveErr:    persistErr,
 	}
 
 	server := mustNew(t, Options{
@@ -69,8 +71,7 @@ func TestDeleteClientPersistsStateBeforeJob(t *testing.T) {
 	}
 	server.mu.Unlock()
 
-	server.clientsMu.Lock()
-	server.clients[clientID] = managedClient{
+	seedClient := managedClient{
 		ID:        clients.ClientID(clientID),
 		Name:      "alice",
 		Secret:    "0123456789abcdef0123456789abcdef",
@@ -78,25 +79,31 @@ func TestDeleteClientPersistsStateBeforeJob(t *testing.T) {
 		CreatedAt: now.Add(-time.Minute),
 		UpdatedAt: now.Add(-time.Minute),
 	}
-	server.clientAssignments[clientID] = []managedClientAssignment{{
+	seedAssignments := []managedClientAssignment{{
 		ID:         "assign-1",
 		ClientID:   clients.ClientID(clientID),
 		TargetType: clientAssignmentTargetAgent,
 		AgentID:    "agent-A",
 		CreatedAt:  now.Add(-time.Minute),
 	}}
-	server.clientDeployments[clientID] = map[string]managedClientDeployment{
-		"agent-A": {
-			ClientID:         clients.ClientID(clientID),
-			AgentID:          "agent-A",
-			DesiredOperation: "create",
-			Status:           clientDeploymentStatusSucceeded,
-			UpdatedAt:        now.Add(-time.Minute),
-		},
+	seedDeployments := []managedClientDeployment{{
+		ClientID:         clients.ClientID(clientID),
+		AgentID:          "agent-A",
+		DesiredOperation: "create",
+		Status:           clientDeploymentStatusSucceeded,
+		UpdatedAt:        now.Add(-time.Minute),
+	}}
+
+	// Seed the clients.Service mirror (the single owner of client state, read
+	// by clientDetailSnapshot and the rollback assertion below).
+	if err := server.clientsSvc.SaveState(ctx, seedClient, seedAssignments, seedDeployments); err != nil {
+		t.Fatalf("seed SaveState() error = %v", err)
 	}
-	server.clientsMu.Unlock()
 
 	jobsBefore := len(server.jobs.List())
+
+	// Now arm the persist failure for the delete tombstone write.
+	failingRepo.saveErr = persistErr
 
 	err = server.deleteClient(ctx, clientID, "user-1", now)
 	if !errors.Is(err, persistErr) {
@@ -110,12 +117,10 @@ func TestDeleteClientPersistsStateBeforeJob(t *testing.T) {
 
 	// The in-memory record must remain live (DeletedAt=nil) because persist
 	// returned an error; replaceClientStateWithContext bails out before
-	// touching the in-memory map.
-	server.clientsMu.RLock()
-	stored, ok := server.clients[clientID]
-	server.clientsMu.RUnlock()
-	if !ok {
-		t.Fatalf("client %s missing from in-memory map after failed delete", clientID)
+	// touching the mirror.
+	stored, err := server.clientsSvc.Get(ctx, clients.ClientID(clientID))
+	if err != nil {
+		t.Fatalf("client %s missing from mirror after failed delete: %v", clientID, err)
 	}
 	if stored.DeletedAt != nil {
 		t.Fatalf("client DeletedAt = %v, want nil (state must remain consistent when persist fails)", stored.DeletedAt)
@@ -163,23 +168,20 @@ func TestResolveClientIDByNameHitsFleetGroupAssignment(t *testing.T) {
 	server.mu.Unlock()
 
 	clientID := "client-42"
-	server.clientsMu.Lock()
-	server.clients[clientID] = managedClient{
+	seedMirrorClient(t, server, managedClient{
 		ID:        clients.ClientID(clientID),
 		Name:      "bob",
 		Secret:    "0123456789abcdef0123456789abcdef",
 		Enabled:   true,
 		CreatedAt: now,
 		UpdatedAt: now,
-	}
-	server.clientAssignments[clientID] = []managedClientAssignment{{
+	}, []managedClientAssignment{{
 		ID:           "assign-fg",
 		ClientID:     clients.ClientID(clientID),
 		TargetType:   clientAssignmentTargetFleetGroup,
 		FleetGroupID: "eu",
 		CreatedAt:    now,
-	}}
-	server.clientsMu.Unlock()
+	}}, nil)
 
 	if got := server.resolveClientIDByName("agent-EU", "bob"); got != clientID {
 		t.Fatalf("resolveClientIDByName(agent-EU, bob) = %q, want %q (fleet-group member should resolve)", got, clientID)
@@ -196,23 +198,20 @@ func TestResolveClientIDByNameHitsFleetGroupAssignment(t *testing.T) {
 
 	// Sanity: direct agent assignments still work alongside fleet-group ones.
 	directClientID := "client-direct"
-	server.clientsMu.Lock()
-	server.clients[directClientID] = managedClient{
+	seedMirrorClient(t, server, managedClient{
 		ID:        clients.ClientID(directClientID),
 		Name:      "carol",
 		Secret:    "0123456789abcdef0123456789abcdef",
 		Enabled:   true,
 		CreatedAt: now,
 		UpdatedAt: now,
-	}
-	server.clientAssignments[directClientID] = []managedClientAssignment{{
+	}, []managedClientAssignment{{
 		ID:         "assign-direct",
 		ClientID:   clients.ClientID(directClientID),
 		TargetType: clientAssignmentTargetAgent,
 		AgentID:    "agent-US",
 		CreatedAt:  now,
-	}}
-	server.clientsMu.Unlock()
+	}}, nil)
 
 	if got := server.resolveClientIDByName("agent-US", "carol"); got != directClientID {
 		t.Fatalf("resolveClientIDByName(agent-US, carol) = %q, want %q (direct agent assignment)", got, directClientID)

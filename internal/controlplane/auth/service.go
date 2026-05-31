@@ -118,15 +118,15 @@ type Service struct {
 	// O(1) in the no-store fallback (M-16). Mutators use the
 	// putUserLocked / deleteUserLocked helpers to keep both maps in
 	// sync — never write to either map directly.
-	users            map[string]User
-	usersByID        map[string]User
-	sessions         map[string]Session
-	pendingTotpSetup map[string]pendingTotpSetup
-	consumedTotp     map[totpUseKey]time.Time
-	userStore        storage.UserStore
-	sessionStore     storage.SessionStore
+	users             map[string]User
+	usersByID         map[string]User
+	sessions          map[string]Session
+	pendingTotpSetup  map[string]pendingTotpSetup
+	consumedTotp      map[totpUseKey]time.Time
+	userStore         UserStore
+	sessionStore      SessionStore
 	consumedTotpStore storage.ConsumedTotpStore
-	vault            *secretvault.Vault
+	vault             *secretvault.Vault
 	// sessionLookupKey is the per-server HMAC key used to derive the
 	// internal Session.ID (DB primary key, in-memory map key) from the
 	// opaque cookie token (S-medium / S22 Task 5). Plumbed in by the
@@ -155,8 +155,8 @@ type Service struct {
 	// here as fixed-value closures (returning s.activeSessionIdleTimeout /
 	// s.activeSessionMaxLifetime from the Server). Nil falls back to the
 	// compiled-in constants (sessionIdleTimeout / sessionMaxLifetime).
-	idleTimeoutFn  func() time.Duration
-	maxLifetimeFn  func() time.Duration
+	idleTimeoutFn func() time.Duration
+	maxLifetimeFn func() time.Duration
 }
 
 // SetTOTPSetupTTLFn wires a live getter for the pending TOTP setup TTL
@@ -229,7 +229,7 @@ func NewService() *Service {
 }
 
 // NewServiceWithStore constructs an auth service that persists users through the shared store.
-func NewServiceWithStore(userStore storage.UserStore) *Service {
+func NewServiceWithStore(userStore UserStore) *Service {
 	return &Service{
 		users:            make(map[string]User),
 		usersByID:        make(map[string]User),
