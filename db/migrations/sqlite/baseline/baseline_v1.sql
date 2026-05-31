@@ -232,7 +232,7 @@ CREATE TABLE "jobs" (
     id TEXT PRIMARY KEY,
     action TEXT NOT NULL,
     actor_id TEXT NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('queued','running','succeeded','failed','expired')),
+    status TEXT NOT NULL CHECK (status IN ('queued','running','succeeded','failed','expired','partial')),
     created_at_unix INTEGER NOT NULL,
     ttl_nanos INTEGER NOT NULL,
     idempotency_key TEXT NOT NULL UNIQUE,
@@ -278,13 +278,6 @@ CREATE TABLE "sessions" (
     user_id TEXT NOT NULL,
     created_at_unix INTEGER NOT NULL, last_seen_at_unix INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-);
-
-CREATE TABLE telemt_detail_boosts (
-    agent_id TEXT PRIMARY KEY,
-    expires_at_unix INTEGER NOT NULL,
-    updated_at_unix INTEGER NOT NULL,
-    FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
 );
 
 CREATE TABLE telemt_diagnostics_current (
@@ -664,4 +657,6 @@ INSERT INTO goose_db_version (version_id, is_applied) VALUES
   (43, 1),
   (44, 1),
   (45, 1),
-  (46, 1);
+  (46, 1),
+  (47, 1),
+  (48, 1);

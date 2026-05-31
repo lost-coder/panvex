@@ -159,8 +159,11 @@ func TestServiceRecordResultPersistsTargetsAcrossRestart(t *testing.T) {
 	if len(list) != 1 {
 		t.Fatalf("len(List()) = %d, want %d", len(list), 1)
 	}
-	if list[0].Status != jobs.StatusFailed {
-		t.Fatalf("jobs[0].Status = %q, want %q", list[0].Status, jobs.StatusFailed)
+	// Mixed terminal outcome (F2): agent-1 succeeded, agent-2 failed. This is
+	// surfaced as "partial" rather than collapsing to "failed" — the sibling
+	// success must not be masked by the failure.
+	if list[0].Status != jobs.StatusPartial {
+		t.Fatalf("jobs[0].Status = %q, want %q", list[0].Status, jobs.StatusPartial)
 	}
 	if len(list[0].Targets) != 2 {
 		t.Fatalf("len(jobs[0].Targets) = %d, want %d", len(list[0].Targets), 2)
@@ -243,8 +246,8 @@ func TestServiceMarkDeliveredKeepsInMemoryStateWhenPersistenceFails(t *testing.T
 	if list[0].Status != jobs.StatusRunning {
 		t.Fatalf("jobs[0].Status = %q, want %q", list[0].Status, jobs.StatusRunning)
 	}
-	if list[0].Targets[0].Status != jobs.TargetStatusDelivered {
-		t.Fatalf("jobs[0].Targets[0].Status = %q, want %q", list[0].Targets[0].Status, jobs.TargetStatusDelivered)
+	if list[0].Targets[0].Status != jobs.TargetStatusSent {
+		t.Fatalf("jobs[0].Targets[0].Status = %q, want %q", list[0].Targets[0].Status, jobs.TargetStatusSent)
 	}
 }
 

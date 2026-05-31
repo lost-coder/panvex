@@ -970,8 +970,11 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 	if len(jobsPayload) != 1 {
 		t.Fatalf("len(jobs) = %d, want %d", len(jobsPayload), 1)
 	}
-	if jobsPayload[0].Status != jobs.StatusFailed {
-		t.Fatalf("jobs[0].Status = %q, want %q", jobsPayload[0].Status, jobs.StatusFailed)
+	// F2: one target succeeded ("ok") and one failed ("reload failed"), so the
+	// job is a MIXED terminal outcome and must surface as partial rather than
+	// being masked as failed/expired.
+	if jobsPayload[0].Status != jobs.StatusPartial {
+		t.Fatalf("jobs[0].Status = %q, want %q", jobsPayload[0].Status, jobs.StatusPartial)
 	}
 	if len(jobsPayload[0].Targets) != 2 {
 		t.Fatalf("len(jobs[0].Targets) = %d, want %d", len(jobsPayload[0].Targets), 2)
