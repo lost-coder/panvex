@@ -14,7 +14,12 @@ const (
 	testMaxInMemoryAuditEvents     = 1024
 )
 
-func TestServerApplyAgentSnapshotKeepsRecentMetricSnapshotsInMemory(t *testing.T) {
+// TestServerServesRecentMetricSnapshotsFromStore asserts the A2 guarantee:
+// after more than the cap is written, the store-backed read path serves
+// exactly the most recent testMaxInMemoryMetricSnapshots snapshots in
+// oldest→newest order. This is the same last-N window the removed in-memory
+// ring used to enforce; it is now the store query's LIMIT 512 responsibility.
+func TestServerServesRecentMetricSnapshotsFromStore(t *testing.T) {
 	now := time.Date(2026, time.March, 21, 9, 0, 0, 0, time.UTC)
 	server := testServerWithSQLite(t, now)
 	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
@@ -55,14 +60,19 @@ func TestServerApplyAgentSnapshotKeepsRecentMetricSnapshotsInMemory(t *testing.T
 		}
 	}
 
-	server.mu.RLock()
-	metricsLen := len(server.metrics)
-	first := server.metrics[0]
-	last := server.metrics[len(server.metrics)-1]
-	server.mu.RUnlock()
+	// Flush the async batch writer so every snapshot reaches the store, then
+	// read back through the same path /api/metrics uses.
+	server.batchWriter.metricsBuf.Drain(context.Background())
+	metrics, err := server.listMetricSnapshots(context.Background())
+	if err != nil {
+		t.Fatalf("listMetricSnapshots() error = %v", err)
+	}
+	metricsLen := len(metrics)
+	first := metrics[0]
+	last := metrics[len(metrics)-1]
 
 	if metricsLen != testMaxInMemoryMetricSnapshots {
-		t.Fatalf("len(server.metrics) = %d, want %d", metricsLen, testMaxInMemoryMetricSnapshots)
+		t.Fatalf("len(metrics) = %d, want %d", metricsLen, testMaxInMemoryMetricSnapshots)
 	}
 	expectedFirstValue := uint64(totalSnapshots - testMaxInMemoryMetricSnapshots)
 	if first.Values["requests_total"] != expectedFirstValue {
@@ -79,7 +89,7 @@ func TestServerAppendAuditKeepsRecentEventsInMemory(t *testing.T) {
 	now := start
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 	})
 
 	totalEvents := testMaxInMemoryAuditEvents + 4
@@ -118,7 +128,7 @@ func TestAuditTrailRingBuffer(t *testing.T) {
 	now := start
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 	})
 
 	const totalEvents = 2000

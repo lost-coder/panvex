@@ -18,9 +18,10 @@ import (
 //  2. Revocations — applied AFTER the agent map is populated so a
 //     restored revocation immediately gates any future stream.
 //  3. Instances — leaf objects under agents.
-//  4. Metrics + audit events — bounded by maxInMemoryMetricSnapshots /
-//     maxInMemoryAuditEvents so the working set never blows up under a
-//     long-lived store.
+//  4. Metric sequence + audit events — metric history is served from the
+//     store (no ring restored, just the sequence counter seeded); audit
+//     events are bounded by maxInMemoryAuditEvents so the working set never
+//     blows up under a long-lived store.
 //  5. Telemetry — delegated to restoreStoredTelemetry, which has its own
 //     ordering invariants.
 //
@@ -39,7 +40,7 @@ func (s *Server) restoreStoredState(ctx context.Context) error {
 		s.restoreAgents,
 		s.restoreAgentRevocations,
 		s.restoreInstances,
-		s.restoreMetrics,
+		s.restoreMetricSeq,
 		s.restoreAuditEvents,
 		s.restoreStoredTelemetry,
 		s.restoreFallbackState,
@@ -95,20 +96,17 @@ func (s *Server) restoreInstances(ctx context.Context) error {
 	return nil
 }
 
-func (s *Server) restoreMetrics(ctx context.Context) error {
+// restoreMetricSeq seeds the in-memory metric sequence counter from the
+// most-recently-persisted IDs so new IDs minted after a restart never collide
+// with old ones. The metric history itself is served straight from the store
+// (A2: the in-memory ring was removed), so nothing is hydrated into memory here.
+func (s *Server) restoreMetricSeq(ctx context.Context) error {
 	metrics, err := s.store.ListMetricSnapshots(ctx)
 	if err != nil {
 		return err
 	}
 	for _, record := range metrics {
 		s.metricSeq = maxPrefixedSequence(s.metricSeq, "metric", record.ID)
-	}
-	// Keep only the most recent entries to avoid O(n²) copy-shift.
-	if len(metrics) > maxInMemoryMetricSnapshots {
-		metrics = metrics[len(metrics)-maxInMemoryMetricSnapshots:]
-	}
-	for _, record := range metrics {
-		s.metrics = append(s.metrics, metricSnapshotFromRecord(record))
 	}
 	return nil
 }

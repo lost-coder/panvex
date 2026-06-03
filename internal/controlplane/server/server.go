@@ -50,7 +50,6 @@ const (
 	// under one prefix still works while a deployment toggles Secure.
 	sessionCookieNameHostPrefix          = "__Host-panvex_session"
 	apiBasePath                          = "/api"
-	maxInMemoryMetricSnapshots           = 512
 	maxInMemoryAuditEvents               = 1024
 	httpLoginRateLimitPerWindow          = 30
 	httpAgentBootstrapRateLimitPerWindow = 30
@@ -214,7 +213,6 @@ type Server struct {
 	// the batch writer. Crash-window caveat: see spec.
 	fallbackEnteredAt map[string]time.Time
 	instances         map[string]Instance
-	metrics           []MetricSnapshot
 	// auditTrail is a fixed-size ring buffer of the most recent audit events.
 	// Append is O(1) — we overwrite auditBuf[auditHead] and advance the head
 	// index, rather than performing an O(N) slice shift on every overflow.

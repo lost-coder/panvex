@@ -98,6 +98,18 @@ func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T
 		t.Fatal("presence state = empty, want tracked presence")
 	}
 
+	// A2: metric history now lives in the store, not an in-memory ring. Flush
+	// the async batch writer synchronously, then read back through the same
+	// store-backed path the /api/metrics handler uses.
+	server.batchWriter.metricsBuf.Drain(context.Background())
+	metrics, err := server.listMetricSnapshots(context.Background())
+	if err != nil {
+		t.Fatalf("listMetricSnapshots() error = %v", err)
+	}
+	if len(metrics) != 1 {
+		t.Fatalf("len(metrics) = %d, want %d", len(metrics), 1)
+	}
+
 	server.mu.RLock()
 	defer server.mu.RUnlock()
 
@@ -105,9 +117,6 @@ func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T
 		t.Fatalf("len(server.instances) = %d, want %d", len(server.instances), 1)
 	}
 
-	if len(server.metrics) != 1 {
-		t.Fatalf("len(server.metrics) = %d, want %d", len(server.metrics), 1)
-	}
 	if !server.agents[identity.AgentID].Runtime.AcceptingNewConnections {
 		t.Fatal("agent runtime accepting_new_connections = false, want true")
 	}

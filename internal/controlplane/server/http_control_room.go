@@ -40,9 +40,10 @@ func (s *Server) handleControlRoom() http.HandlerFunc {
 		now := s.now()
 		jobList := s.jobs.ListWithContext(r.Context())
 
+		metricSnapshots := s.metricSnapshotCount(r.Context())
+
 		s.metricsAuditMu.RLock()
 		recentActivity := controlRoomRecentActivity(s.snapshotAuditTrailLocked(), 5)
-		metricSnapshots := len(s.metrics)
 		s.metricsAuditMu.RUnlock()
 
 		s.mu.RLock()

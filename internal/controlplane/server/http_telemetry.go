@@ -145,9 +145,7 @@ func (s *Server) handleTelemetryDashboard() http.HandlerFunc {
 
 		now := s.now()
 
-		s.metricsAuditMu.RLock()
-		metricSnapshots := len(s.metrics)
-		s.metricsAuditMu.RUnlock()
+		metricSnapshots := s.metricSnapshotCount(r.Context())
 
 		snapshot := s.collectTelemetryDashboardSnapshot(scope, now, metricSnapshots)
 

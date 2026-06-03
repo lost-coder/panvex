@@ -9,16 +9,16 @@ import (
 )
 
 type fleetResponse struct {
-	TotalAgents     int `json:"total_agents"`
-	OnlineAgents    int `json:"online_agents"`
-	DegradedAgents  int `json:"degraded_agents"`
-	OfflineAgents   int `json:"offline_agents"`
-	TotalInstances  int `json:"total_instances"`
-	MetricSnapshots int `json:"metric_snapshots"`
-	LiveConnections int `json:"live_connections"`
+	TotalAgents                   int `json:"total_agents"`
+	OnlineAgents                  int `json:"online_agents"`
+	DegradedAgents                int `json:"degraded_agents"`
+	OfflineAgents                 int `json:"offline_agents"`
+	TotalInstances                int `json:"total_instances"`
+	MetricSnapshots               int `json:"metric_snapshots"`
+	LiveConnections               int `json:"live_connections"`
 	AcceptingNewConnectionsAgents int `json:"accepting_new_connections_agents"`
-	MiddleProxyAgents int `json:"middle_proxy_agents"`
-	DCIssueAgents int `json:"dc_issue_agents"`
+	MiddleProxyAgents             int `json:"middle_proxy_agents"`
+	DCIssueAgents                 int `json:"dc_issue_agents"`
 }
 
 func (s *Server) handleFleet() http.HandlerFunc {
@@ -28,9 +28,7 @@ func (s *Server) handleFleet() http.HandlerFunc {
 			return
 		}
 
-		s.metricsAuditMu.RLock()
-		metricSnapshots := len(s.metrics)
-		s.metricsAuditMu.RUnlock()
+		metricSnapshots := s.metricSnapshotCount(r.Context())
 
 		s.mu.RLock()
 		response := fleetResponse{
@@ -156,11 +154,49 @@ func (s *Server) handleMetrics() http.HandlerFunc {
 			return
 		}
 
-		s.metricsAuditMu.RLock()
-		defer s.metricsAuditMu.RUnlock()
+		snapshots, err := s.listMetricSnapshots(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "list metric snapshots failed")
+			return
+		}
 
-		writeJSON(w, http.StatusOK, s.metrics)
+		writeJSON(w, http.StatusOK, snapshots)
 	}
+}
+
+// listMetricSnapshots reads the last metric snapshots (≤512, oldest→newest)
+// directly from the store, converting storage records to the wire type. The
+// store query already applies the same order+limit the in-memory ring used to
+// enforce (A2: s.metrics ring removed). A nil store (test fixtures with no
+// persistence) yields an empty slice, matching the other nil-store handlers.
+func (s *Server) listMetricSnapshots(ctx context.Context) ([]MetricSnapshot, error) {
+	if s.store == nil {
+		return []MetricSnapshot{}, nil
+	}
+	records, err := s.store.ListMetricSnapshots(ctx)
+	if err != nil {
+		return nil, err
+	}
+	snapshots := make([]MetricSnapshot, 0, len(records))
+	for _, record := range records {
+		snapshots = append(snapshots, metricSnapshotFromRecord(record))
+	}
+	return snapshots, nil
+}
+
+// metricSnapshotCount returns the number of recent metric snapshots surfaced
+// by the dashboards (fleet, control-room, telemetry). It mirrors the old
+// len(s.metrics) semantics: the store query caps the result at 512, exactly
+// the bound the in-memory ring used to enforce (A2). On a store error the
+// count degrades to 0 rather than failing the dashboard — this is a cosmetic
+// counter, not load-bearing data, so the surrounding handlers stay resilient.
+func (s *Server) metricSnapshotCount(ctx context.Context) int {
+	snapshots, err := s.listMetricSnapshots(ctx)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "count metric snapshots failed", "error", err)
+		return 0
+	}
+	return len(snapshots)
 }
 
 func (s *Server) handleAudit() http.HandlerFunc {

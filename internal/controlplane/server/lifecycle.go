@@ -141,7 +141,6 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		clientsSvc:       clients.NewService(clients.ServiceConfig{Vault: vault, Now: now}),
 		fleetSvc:         fleet.NewService(options.Store, func() time.Time { return now().UTC() }),
 		instances:        make(map[string]Instance),
-		metrics:          make([]MetricSnapshot, 0, maxInMemoryMetricSnapshots),
 		intervals:        options.Intervals.withDefaults(),
 		sqlitePath:       options.SQLitePath,
 		bootstrap:        options.Bootstrap,

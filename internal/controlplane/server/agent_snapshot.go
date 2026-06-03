@@ -190,10 +190,12 @@ func (s *Server) commitClientSnapshotsLocked(ctx context.Context, snapshot agent
 	}
 }
 
-// commitMetricSnapshotLocked appends a new metric sample to the in-memory
-// ring buffer (capped at maxInMemoryMetricSnapshots) and returns it for
-// downstream batch-writer enqueueing. Returns nil when the snapshot carries
-// no metrics. Caller must hold s.mu.
+// commitMetricSnapshotLocked mints a new metric sample (ID + timestamp) and
+// returns it for downstream batch-writer enqueueing, which persists it to the
+// store. Returns nil when the snapshot carries no metrics. Caller must hold
+// s.mu. The store is the sole source of truth for metric history (A2: the old
+// in-memory ring is gone); the metricsAuditMu guards metricSeq so concurrent
+// minting stays race-free.
 func (s *Server) commitMetricSnapshotLocked(snapshot agentSnapshot) *MetricSnapshot {
 	if len(snapshot.Metrics) == 0 {
 		return nil
@@ -206,12 +208,6 @@ func (s *Server) commitMetricSnapshotLocked(snapshot agentSnapshot) *MetricSnaps
 		AgentID:    snapshot.AgentID,
 		CapturedAt: snapshot.ObservedAt.UTC(),
 		Values:     snapshot.Metrics,
-	}
-	if len(s.metrics) < maxInMemoryMetricSnapshots {
-		s.metrics = append(s.metrics, metric)
-	} else {
-		copy(s.metrics, s.metrics[1:])
-		s.metrics[len(s.metrics)-1] = metric
 	}
 	return &metric
 }
