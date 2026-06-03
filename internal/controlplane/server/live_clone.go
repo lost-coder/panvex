@@ -31,6 +31,18 @@ func cloneAgentForMirror(a Agent) Agent {
 	}
 	if a.CertificateRecovery != nil {
 		v := *a.CertificateRecovery
+		// Deep-clone the inner *int64 pointers so a returned copy never
+		// aliases the mirror's backing values. Defensive: this field is
+		// request-time and normally nil in the mirror, but the clone
+		// contract is "fully deep, no exceptions".
+		if v.UsedAtUnix != nil {
+			used := *v.UsedAtUnix
+			v.UsedAtUnix = &used
+		}
+		if v.RevokedAtUnix != nil {
+			revoked := *v.RevokedAtUnix
+			v.RevokedAtUnix = &revoked
+		}
 		out.CertificateRecovery = &v
 	}
 
