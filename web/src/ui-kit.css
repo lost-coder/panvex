@@ -31,6 +31,15 @@
      so a stack of fleet rows or timeline events doesn't blur into one
      slab. Paired with a light-mode value in `.light`. */
   --panvex-divider: rgba(255, 255, 255, 0.14);
+
+  /* Status + accent raw values. Themed here (not as static @theme
+     literals) so the light theme can swap them for contrast — they were
+     previously dark-only, washing out on light surfaces. */
+  --panvex-status-ok: #34d399;
+  --panvex-status-warn: #f59e0b;
+  --panvex-status-error: #ef4444;
+  --panvex-accent: #60a5fa;
+  --panvex-accent-muted: rgba(96, 165, 250, 0.15);
 }
 
 .light {
@@ -45,6 +54,14 @@
   --panvex-border: rgba(0, 0, 0, 0.08);
   --panvex-border-hi: rgba(0, 0, 0, 0.14);
   --panvex-divider: rgba(0, 0, 0, 0.18);
+
+  /* Darker status/accent shades for legible contrast on light surfaces
+     (the dark-theme greens/blues fail WCAG on white). */
+  --panvex-status-ok: #059669;
+  --panvex-status-warn: #b45309;
+  --panvex-status-error: #dc2626;
+  --panvex-accent: #2563eb;
+  --panvex-accent-muted: rgba(37, 99, 235, 0.12);
 }
 
 /* ─── Tailwind theme (replaces tailwind.config.ts in v4) ───────────────────
@@ -67,12 +84,16 @@
 
 /* Static (non-themed) tokens live directly in @theme. */
 @theme {
-  --color-status-ok: #34d399;
-  --color-status-warn: #f59e0b;
-  --color-status-error: #ef4444;
+  /* Reference the themed --panvex-* vars (defined in :root/.light) so these
+     swap with the active theme. Non-inline @theme still emits them to :root,
+     keeping raw var(--color-status-*) consumers (e.g. charts, loadTone)
+     working. */
+  --color-status-ok: var(--panvex-status-ok);
+  --color-status-warn: var(--panvex-status-warn);
+  --color-status-error: var(--panvex-status-error);
 
-  --color-accent: #60a5fa;
-  --color-accent-muted: rgba(96, 165, 250, 0.15);
+  --color-accent: var(--panvex-accent);
+  --color-accent-muted: var(--panvex-accent-muted);
 
   /* Chart palette — series colors for Recharts. Semantic series (ok/warn/
      error) reuse the status tokens; these two cover the neutral
