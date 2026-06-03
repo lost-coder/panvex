@@ -49,7 +49,7 @@ export function BottomNav({
               aria-current={isActive ? "page" : undefined}
               onClick={() => handleNavigate(item.id)}
               className={cn(
-                "flex-1 flex flex-col items-center gap-0.5 py-2 text-[10px]",
+                "flex-1 flex flex-col items-center justify-center gap-0.5 min-h-12 py-2 text-[10px]",
                 "transition-all active:scale-[0.97]",
                 "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-[-4px]",
                 isActive ? "text-accent" : "text-fg-muted active:text-fg",
@@ -71,7 +71,7 @@ export function BottomNav({
             aria-current={moreActive ? "page" : undefined}
             onClick={() => setMoreOpen(true)}
             className={cn(
-              "flex-1 flex flex-col items-center gap-0.5 py-2 text-[10px]",
+              "flex-1 flex flex-col items-center justify-center gap-0.5 min-h-12 py-2 text-[10px]",
               "transition-all active:scale-[0.97]",
               "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-[-4px]",
               moreActive ? "text-accent" : "text-fg-muted active:text-fg",
