@@ -22,7 +22,7 @@ import (
 // snapshots while fallback is still active — it must survive the live
 // store's replace-semantics snapshot overwrite, so it cannot live on the
 // Agent value. It also has a different persistence path (the batch writer,
-// not the identity Repository) than agents.Service, so a small dedicated
+// not the identity store) than the live store, so a small dedicated
 // owner keeps each concern's lock and lifecycle separate.
 //
 // The transition CLASSIFICATION (reading runtime flags to decide entry vs
@@ -32,7 +32,7 @@ import (
 // # Lock discipline
 //
 // FallbackTracker.mu protects the map. It owns its own mutex and never
-// reaches into Server.mu (mirroring LiveStore / agents.Service /
+// reaches into Server.mu (mirroring LiveStore /
 // clients.Service), so the documented control-plane lock ordering is
 // preserved: callers that already hold s.mu may call into the tracker
 // (s.mu -> tracker), and the tracker never calls back.

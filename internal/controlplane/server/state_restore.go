@@ -67,18 +67,6 @@ func (s *Server) restoreAgents(ctx context.Context) error {
 		// so the instance prune in ApplySnapshot has a fresh set to work with.
 		s.live.ApplySnapshot(agent.ID, agent, nil)
 	}
-	// A2/D.1: also populate the parallel agents.Service identity mirror from
-	// the same store. The live store owns the full live-state read path;
-	// agents.Service remains the identity-persistence write-through mirror
-	// (UpsertIdentity). Restore re-issues ListAgents, but the table is small
-	// and only queried at boot, so the extra round-trip is negligible.
-	// nil-guarded for the in-memory test fixtures that construct a Server
-	// without going through newServerFromOptions.
-	if s.agentsSvc != nil {
-		if err := s.agentsSvc.Restore(ctx); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 

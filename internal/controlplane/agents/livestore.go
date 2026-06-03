@@ -35,7 +35,7 @@ import "sync"
 // # Lock discipline
 //
 // LiveStore.mu protects both maps. The store owns its own mutex and never
-// reaches into Server.mu (mirroring agents.Service / clients.Service), so
+// reaches into Server.mu (mirroring clients.Service), so
 // the documented control-plane lock ordering is preserved.
 type LiveStore[A any, I any] struct {
 	cloneAgent    func(A) A

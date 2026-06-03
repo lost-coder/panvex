@@ -147,14 +147,8 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		// nil (HasRepo() gates every persistence path). initStoreBackedSubsystems
 		// overwrites it with a Repository+UoW-backed Service once a *sql.DB is
 		// available (the only path that actually persists clients).
-		clientsSvc: clients.NewService(clients.ServiceConfig{Vault: vault, Now: now}),
-		fleetSvc:   fleet.NewService(options.Store, func() time.Time { return now().UTC() }),
-		// agentsSvc (A2/D.1): identity-persistence write-through mirror over
-		// the same store. Any storage.Store satisfies agents.Repository
-		// (ListAgents + PutAgent). The live read path is owned by s.live; this
-		// service remains the identity persistence shell. Restore is wired in
-		// initStoreBackedSubsystems.
-		agentsSvc:        agents.NewService(options.Store, func() time.Time { return now().UTC() }),
+		clientsSvc:       clients.NewService(clients.ServiceConfig{Vault: vault, Now: now}),
+		fleetSvc:         fleet.NewService(options.Store, func() time.Time { return now().UTC() }),
 		intervals:        options.Intervals.withDefaults(),
 		sqlitePath:       options.SQLitePath,
 		bootstrap:        options.Bootstrap,

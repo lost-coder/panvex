@@ -173,14 +173,6 @@ type Server struct {
 	// checks, and multi-table reassignment transactions stay in one
 	// place. See internal/controlplane/fleet.
 	fleetSvc *fleet.Service
-	// agentsSvc is the agent IDENTITY-persistence domain service (A2/D.1).
-	// Modelled on clients.Service (mirror + write-through), it owns an
-	// identity-only mirror (storage.AgentRecord) backing UpsertIdentity. The
-	// full live read path (Agent value + instances) is owned by s.live (D.2);
-	// agentsSvc remains the identity persistence shell. Constructed in
-	// newServerFromOptions alongside fleetSvc; Restore is wired in
-	// initStoreBackedSubsystems.
-	agentsSvc *agents.Service
 	// adoptMu serializes adopt/merge-adopt of discovered clients. It closes
 	// the TOCTOU window between reading a discovered record's status,
 	// checking it, creating/updating the managed client, and marking the
