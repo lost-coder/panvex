@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -93,17 +94,20 @@ func TestServerServesRecentMetricSnapshotsFromStore(t *testing.T) {
 // ring used to enforce; it is now the store query's LIMIT 1024 responsibility.
 func TestServerServesRecentAuditEventsFromStore(t *testing.T) {
 	start := time.Date(2026, time.March, 21, 10, 0, 0, 0, time.UTC)
-	// By-reference clock so each appended event gets a distinct, ascending
-	// timestamp (the shared testServerWithSQLite helper captures `now` by
-	// value, which would stamp every event with the same instant).
-	currentTime := start
+	// Atomic clock so each appended event gets a distinct, ascending timestamp
+	// without racing the batch-writer goroutine, which calls Now() concurrently
+	// while we advance it (the shared testServerWithSQLite helper captures `now`
+	// by value, stamping every event identically).
+	var nowPtr atomic.Pointer[time.Time]
+	setNow := func(at time.Time) { tt := at; nowPtr.Store(&tt) }
+	setNow(start)
 	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
 	if err != nil {
 		t.Fatalf("sqlite.Open() error = %v", err)
 	}
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:              func() time.Time { return currentTime },
+		Now:              func() time.Time { return *nowPtr.Load() },
 		Store:            store,
 	})
 	t.Cleanup(func() {
@@ -113,7 +117,7 @@ func TestServerServesRecentAuditEventsFromStore(t *testing.T) {
 
 	totalEvents := testAuditFirstPageLimit + 4
 	for index := 0; index < totalEvents; index++ {
-		currentTime = start.Add(time.Duration(index+1) * time.Second)
+		setNow(start.Add(time.Duration(index+1) * time.Second))
 		server.appendAudit("user-1", "action-"+strconv.Itoa(index), "target-1", nil)
 	}
 
