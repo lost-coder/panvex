@@ -173,6 +173,15 @@ type Server struct {
 	// checks, and multi-table reassignment transactions stay in one
 	// place. See internal/controlplane/fleet.
 	fleetSvc *fleet.Service
+	// agentsSvc is the agent-state domain service (A2/D.1). Modelled on
+	// clients.Service (mirror + write-through), it is the designated
+	// future single owner of agent state. In its current D.1 shell it
+	// owns an identity-only mirror (storage.AgentRecord) and is NOT yet
+	// read or written by any handler — the server still owns s.agents.
+	// D.2 repoints reads/writes onto this service. Constructed in
+	// newServerFromOptions alongside fleetSvc; Restore is wired in
+	// initStoreBackedSubsystems.
+	agentsSvc *agents.Service
 	// adoptMu serializes adopt/merge-adopt of discovered clients. It closes
 	// the TOCTOU window between reading a discovered record's status,
 	// checking it, creating/updating the managed client, and marking the

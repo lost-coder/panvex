@@ -62,6 +62,18 @@ func (s *Server) restoreAgents(ctx context.Context) error {
 		agent := agentFromRecord(record)
 		s.agents[agent.ID] = agent
 	}
+	// A2/D.1: populate the parallel agents.Service identity mirror from the
+	// same store. This is additive — no handler reads the service mirror yet
+	// (the server still owns s.agents above); D.2 repoints reads/writes onto
+	// the service. Restore re-issues ListAgents, but the table is small and
+	// only queried at boot, so the extra round-trip is negligible. nil-guarded
+	// for the in-memory test fixtures that construct a Server without going
+	// through newServerFromOptions.
+	if s.agentsSvc != nil {
+		if err := s.agentsSvc.Restore(ctx); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
