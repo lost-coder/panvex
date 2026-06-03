@@ -1,4 +1,5 @@
 import { cn } from "@/ui/lib/cn";
+import { statusBgClass, statusTextClass } from "@/ui/lib/status";
 
 export type StatusTone = "ok" | "warn" | "error" | "default";
 
@@ -12,17 +13,15 @@ export interface StatusLabelProps {
   className?: string | undefined;
 }
 
+// Reuse the shared ok/warn/error maps and add the StatusLabel-only
+// "default" tone, so the status→token mapping stays single-sourced.
 const dotClass: Record<StatusTone, string> = {
-  ok: "bg-status-ok",
-  warn: "bg-status-warn",
-  error: "bg-status-error",
+  ...statusBgClass,
   default: "bg-fg-faint",
 };
 
 const textClass: Record<StatusTone, string> = {
-  ok: "text-status-ok",
-  warn: "text-status-warn",
-  error: "text-status-error",
+  ...statusTextClass,
   default: "text-fg-muted",
 };
 

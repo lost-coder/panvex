@@ -45,6 +45,24 @@ export function coverageStatus(pct: number): Status {
   return "ok";
 }
 
+/**
+ * Status severity → background-fill class (solid dot / beacon body).
+ * Single source for the dot color maps the status primitives used to each
+ * declare inline.
+ */
+export const statusBgClass: Record<Status, string> = {
+  ok: "bg-status-ok",
+  warn: "bg-status-warn",
+  error: "bg-status-error",
+};
+
+/** Status severity → text/foreground color class. */
+export const statusTextClass: Record<Status, string> = {
+  ok: "text-status-ok",
+  warn: "text-status-warn",
+  error: "text-status-error",
+};
+
 /** Numeric coverage percentage → status color class. */
 export function coverageColor(pct: number): string {
   const s = coverageStatus(pct);
