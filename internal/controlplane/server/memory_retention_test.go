@@ -2,10 +2,12 @@ package server
 
 import (
 	"context"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 	"github.com/lost-coder/panvex/internal/security"
 )
 
@@ -91,12 +93,27 @@ func TestServerServesRecentMetricSnapshotsFromStore(t *testing.T) {
 // ring used to enforce; it is now the store query's LIMIT 1024 responsibility.
 func TestServerServesRecentAuditEventsFromStore(t *testing.T) {
 	start := time.Date(2026, time.March, 21, 10, 0, 0, 0, time.UTC)
-	now := start
-	server := testServerWithSQLite(t, now)
+	// By-reference clock so each appended event gets a distinct, ascending
+	// timestamp (the shared testServerWithSQLite helper captures `now` by
+	// value, which would stamp every event with the same instant).
+	currentTime := start
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	server := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return currentTime },
+		Store:            store,
+	})
+	t.Cleanup(func() {
+		server.Close()
+		store.Close()
+	})
 
 	totalEvents := testAuditFirstPageLimit + 4
 	for index := 0; index < totalEvents; index++ {
-		now = start.Add(time.Duration(index+1) * time.Second)
+		currentTime = start.Add(time.Duration(index+1) * time.Second)
 		server.appendAudit("user-1", "action-"+strconv.Itoa(index), "target-1", nil)
 	}
 

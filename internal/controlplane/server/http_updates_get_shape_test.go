@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -36,7 +37,7 @@ func TestHandleGetUpdateSettingsReturnsNestedSettings(t *testing.T) {
 	server.settingsMu.Unlock()
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/settings/updates", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/settings/updates", nil)
 	server.handleGetUpdateSettings().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
