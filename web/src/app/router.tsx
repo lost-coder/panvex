@@ -21,7 +21,7 @@ import {
 } from "@tanstack/react-router";
 import { LayoutDashboard, Server, Users, Settings, Activity, User, Layers } from "lucide-react";
 
-import { AppShell, Spinner, type NavItem } from "@/ui";
+import { AppShell, ErrorBoundary, Spinner, type NavItem } from "@/ui";
 import { AppearanceProvider } from "@/app/providers/AppearanceProvider";
 import { AppErrorFallback } from "@/app/providers/AppErrorFallback";
 import { AuthProvider } from "@/app/providers/AuthProvider";
@@ -139,7 +139,13 @@ function ProtectedShell() {
         <OfflineBanner />
         {/* P2-UX-10: surface reconnection state above all page content. */}
         <WsStatusBanner />
-        <Outlet />
+        {/* Route-level error boundary: a crash in one page renders an inline
+            fallback while the shell (nav, banners) stays usable, instead of
+            the root boundary blowing the whole app to a full-screen reload.
+            Keyed by activeId so navigating away auto-resets the error. */}
+        <ErrorBoundary key={activeId}>
+          <Outlet />
+        </ErrorBoundary>
         {/* UX-13: keyboard-shortcut help dialog, toggled by `?`. */}
         <ShortcutsOverlay />
       </AppShell>
