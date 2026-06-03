@@ -105,10 +105,7 @@ func (s *Server) handleJobsCursor(w http.ResponseWriter, r *http.Request, scope 
 	for _, rec := range records {
 		job := jobs.JobFromRecord(rec)
 		if !scope.Global {
-			s.mu.RLock()
-			inScope := s.jobHasInScopeTargetLocked(job, scope)
-			s.mu.RUnlock()
-			if !inScope {
+			if !s.jobHasInScopeTarget(job, scope) {
 				continue
 			}
 		}
@@ -161,20 +158,18 @@ func (s *Server) filterJobsByScope(listed []jobs.Job, scope FleetScopeAccess) []
 	if scope.Global {
 		return listed
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
 	filtered := listed[:0]
 	for _, job := range listed {
-		if s.jobHasInScopeTargetLocked(job, scope) {
+		if s.jobHasInScopeTarget(job, scope) {
 			filtered = append(filtered, job)
 		}
 	}
 	return filtered
 }
 
-func (s *Server) jobHasInScopeTargetLocked(job jobs.Job, scope FleetScopeAccess) bool {
+func (s *Server) jobHasInScopeTarget(job jobs.Job, scope FleetScopeAccess) bool {
 	for _, agentID := range job.TargetAgentIDs {
-		agent, ok := s.agents[agentID]
+		agent, ok := s.live.Get(agentID)
 		if ok && scope.IsAllowed(agent.FleetGroupID) {
 			return true
 		}
@@ -188,10 +183,8 @@ func (s *Server) targetsInScope(targetIDs []string, scope FleetScopeAccess) bool
 	if scope.Global {
 		return true
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
 	for _, agentID := range targetIDs {
-		agent, ok := s.agents[agentID]
+		agent, ok := s.live.Get(agentID)
 		if !ok || !scope.IsAllowed(agent.FleetGroupID) {
 			return false
 		}
@@ -204,10 +197,8 @@ func (s *Server) targetsInScope(targetIDs []string, scope FleetScopeAccess) bool
 // agents without re-reading agent state.
 func (s *Server) readOnlyAgents(targetIDs []string) map[string]bool {
 	out := make(map[string]bool, len(targetIDs))
-	s.mu.RLock()
-	defer s.mu.RUnlock()
 	for _, agentID := range targetIDs {
-		if agent, ok := s.agents[agentID]; ok {
+		if agent, ok := s.live.Get(agentID); ok {
 			out[agentID] = agent.ReadOnly
 		}
 	}

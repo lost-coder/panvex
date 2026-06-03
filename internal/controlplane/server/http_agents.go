@@ -82,9 +82,7 @@ func decodeRenameAgentRequest(w http.ResponseWriter, r *http.Request) (string, s
 func (s *Server) checkRenameAgentScope(w http.ResponseWriter, r *http.Request, user auth.User, agentID string) bool {
 	// Verify the agent exists in memory before touching the store so a
 	// 404 does not leave an orphaned store update.
-	s.mu.RLock()
-	existing, exists := s.agents[agentID]
-	s.mu.RUnlock()
+	existing, exists := s.live.Get(agentID)
 	if !exists {
 		writeError(w, http.StatusNotFound, msgAgentNotFound)
 		return false
@@ -121,16 +119,16 @@ func (s *Server) persistAgentNodeName(w http.ResponseWriter, r *http.Request, ag
 // writing the 404) when the agent disappeared between checks.
 func (s *Server) applyAgentRename(w http.ResponseWriter, agentID, nodeName string) (Agent, string, bool) {
 	s.mu.Lock()
-	agent, exists := s.agents[agentID]
+	var oldName string
+	agent, exists := s.updateAgentIdentity(agentID, func(a *Agent) {
+		oldName = a.NodeName
+		a.NodeName = nodeName
+	})
+	s.mu.Unlock()
 	if !exists {
-		s.mu.Unlock()
 		writeError(w, http.StatusNotFound, msgAgentNotFound)
 		return Agent{}, "", false
 	}
-	oldName := agent.NodeName
-	agent.NodeName = nodeName
-	s.agents[agentID] = agent
-	s.mu.Unlock()
 	return agent, oldName, true
 }
 
@@ -143,9 +141,7 @@ func (s *Server) agentDeregisterScope(w http.ResponseWriter, r *http.Request, us
 		writeError(w, http.StatusBadRequest, "missing agent id")
 		return "", false
 	}
-	s.mu.RLock()
-	preCheck, preExists := s.agents[agentID]
-	s.mu.RUnlock()
+	preCheck, preExists := s.live.Get(agentID)
 	if !preExists {
 		writeError(w, http.StatusNotFound, msgAgentNotFound)
 		return "", false
@@ -204,14 +200,11 @@ func (s *Server) persistAgentDeregister(w http.ResponseWriter, r *http.Request, 
 // Lock ordering: mu -> Service.mu (client usage lives in clients.Service).
 func (s *Server) purgeAgentInMemory(agentID string) {
 	s.mu.Lock()
-	delete(s.agents, agentID)
+	// live.Remove evicts the agent and all of its instances from the mirror.
+	// Taken under s.mu (s.mu -> live) alongside the server-side map deletes.
+	s.live.Remove(agentID)
 	delete(s.detailBoosts, agentID)
 	delete(s.initializationWatchCooldowns, agentID)
-	for instID, inst := range s.instances {
-		if inst.AgentID == agentID {
-			delete(s.instances, instID)
-		}
-	}
 	// Drop the agent's usage rows (and per-agent seq cursor) from the
 	// clients.Service mirror — the single owner of usage state. Service.mu is
 	// acquired while holding Server.mu, matching the documented Server.mu ->
@@ -243,9 +236,7 @@ func (s *Server) handleDeregisterAgent() http.HandlerFunc {
 		s.sessions.Terminate(agentID)
 
 		// 2. Verify agent exists before doing any work.
-		s.mu.RLock()
-		agent, exists := s.agents[agentID]
-		s.mu.RUnlock()
+		agent, exists := s.live.Get(agentID)
 		if !exists {
 			writeError(w, http.StatusNotFound, msgAgentNotFound)
 			return
@@ -305,9 +296,7 @@ func (s *Server) handleUpdateAgentFleetGroup() http.HandlerFunc {
 		// Verify the agent exists and the caller is scoped over its
 		// CURRENT group before any work — otherwise an out-of-scope
 		// caller would learn the agent's existence via the 4xx code.
-		s.mu.RLock()
-		existing, exists := s.agents[agentID]
-		s.mu.RUnlock()
+		existing, exists := s.live.Get(agentID)
 		if !exists {
 			writeError(w, http.StatusNotFound, msgAgentNotFound)
 			return
@@ -363,16 +352,16 @@ func (s *Server) handleUpdateAgentFleetGroup() http.HandlerFunc {
 		// /fleet-groups reads reflect the move without waiting for the
 		// next heartbeat. Captures oldGroupID for the audit event.
 		s.mu.Lock()
-		current, stillExists := s.agents[agentID]
+		var oldGroupID string
+		current, stillExists := s.updateAgentIdentity(agentID, func(a *Agent) {
+			oldGroupID = a.FleetGroupID
+			a.FleetGroupID = newGroupID
+		})
+		s.mu.Unlock()
 		if !stillExists {
-			s.mu.Unlock()
 			writeError(w, http.StatusNotFound, msgAgentNotFound)
 			return
 		}
-		oldGroupID := current.FleetGroupID
-		current.FleetGroupID = newGroupID
-		s.agents[agentID] = current
-		s.mu.Unlock()
 
 		s.appendAuditWithContext(r.Context(), session.UserID, "agents.reassign_fleet_group", agentID, map[string]any{
 			"old_fleet_group_id": oldGroupID,

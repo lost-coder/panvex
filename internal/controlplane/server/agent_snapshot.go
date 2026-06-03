@@ -9,14 +9,16 @@ import (
 )
 
 // updateAgentRecordFromSnapshot folds the snapshot's identity / runtime
-// fields into the existing agent record under s.mu, refreshing the
-// initialization-watch cooldown table along the way. Returns the new agent
-// value (still owned by the caller, who is responsible for committing it
-// back into s.agents).
+// fields into the existing agent record, refreshing the initialization-watch
+// cooldown table along the way. Returns the new agent value (still owned by
+// the caller, who is responsible for committing it back via
+// live.ApplySnapshot). The previous value is read from the live store; the
+// cooldown table is mutated under s.mu, so callers hold s.mu.
 //
-// Caller must hold s.mu.
+// Caller must hold s.mu (for the cooldown table). The live store has its own
+// lock; live.Get is taken under s.mu, preserving the s.mu -> live ordering.
 func (s *Server) updateAgentRecordFromSnapshot(snapshot agentSnapshot) Agent {
-	agent := s.agents[snapshot.AgentID]
+	agent, _ := s.live.Get(snapshot.AgentID)
 	agent.ID = snapshot.AgentID
 	// Enrollment fixes the node name. Subsequent heartbeats must not
 	// overwrite it: operators rename nodes via the panel API, and the
@@ -52,6 +54,26 @@ func (s *Server) updateAgentRecordFromSnapshot(snapshot agentSnapshot) Agent {
 		s.refreshInitializationWatchCooldown(snapshot, agent.Runtime, previousRuntime)
 	}
 	return agent
+}
+
+// updateAgentIdentity applies an identity-only mutation to an agent in the
+// live store, PRESERVING the agent's instance set. live.ApplySnapshot replaces
+// the instance set, so the current instances must be re-supplied — this helper
+// re-reads them via live.InstancesForAgent so callers can never accidentally
+// pass nil and wipe an agent's instances. Returns the updated agent and true,
+// or (zero, false) if the agent is not present.
+//
+// The helper only touches s.live, which has its own lock; it does not require
+// s.mu. Callers that hold s.mu do so to order the surrounding read-modify-write
+// (and any batchWriter enqueue) against other s.mu holders, not for this call.
+func (s *Server) updateAgentIdentity(id string, mutate func(*Agent)) (Agent, bool) {
+	agent, ok := s.live.Get(id)
+	if !ok {
+		return Agent{}, false
+	}
+	mutate(&agent)
+	s.live.ApplySnapshot(id, agent, s.live.InstancesForAgent(id))
+	return agent, true
 }
 
 // refreshInitializationWatchCooldown maintains the per-agent cooldown so the
@@ -92,47 +114,11 @@ func instancesFromSnapshot(snapshot agentSnapshot) []Instance {
 	return instances
 }
 
-// commitInstancesLocked replaces the per-agent slice of instances with the
-// freshly-snapshotted set, pruning any previously-known instances that are
-// absent from `instances` so s.instances does not leak stale entries
-// (P2-LOG-09 / L-04). Caller must hold s.mu.
-func (s *Server) commitInstancesLocked(agentID string, instances []Instance) {
-	liveIDs := make(map[string]struct{}, len(instances))
-	for _, instance := range instances {
-		liveIDs[instance.ID] = struct{}{}
-	}
-	for id, entry := range s.instances {
-		if entry.AgentID != agentID {
-			continue
-		}
-		if _, ok := liveIDs[id]; ok {
-			continue
-		}
-		delete(s.instances, id)
-	}
-	for _, instance := range instances {
-		s.instances[instance.ID] = instance
-	}
-}
-
-// instancesForAgentLocked returns the currently-committed instances for the
-// agent. Caller must hold s.mu. Used by the partial-snapshot path (IN-H6) to
-// keep last-known instances instead of overwriting them with blanked rows.
-func (s *Server) instancesForAgentLocked(agentID string) []Instance {
-	var out []Instance
-	for _, instance := range s.instances {
-		if instance.AgentID == agentID {
-			out = append(out, instance)
-		}
-	}
-	return out
-}
-
-// applyFallbackStateTransitionLocked classifies the agent's operating mode
-// from runtime flags and updates the in-memory fallbackEnteredAt map. The
-// 30-min escalation timer tracks ME-pool downtime (the underlying outage),
-// not the agent's me2dc_fallback_enabled flag, which can flap independently
-// while the ME pool is still down. The mode→action table is therefore:
+// applyFallbackStateTransition classifies the agent's operating mode from
+// runtime flags and updates the in-memory fallback tracker. The 30-min
+// escalation timer tracks ME-pool downtime (the underlying outage), not the
+// agent's me2dc_fallback_enabled flag, which can flap independently while the
+// ME pool is still down. The mode→action table is therefore:
 //
 //	ModeFallback: stamp+enqueue Put on first entry; idempotent on repeat.
 //	ModeMeDown:   keep any existing timestamp (ME is still down — flag flap
@@ -140,8 +126,13 @@ func (s *Server) instancesForAgentLocked(agentID string) []Instance {
 //	ModeME:       ME pool is healthy again — clear timestamp + enqueue Delete.
 //	ModeDirect:   fallback is no longer relevant — clear timestamp + Delete.
 //
-// Caller must hold s.mu.
-func (s *Server) applyFallbackStateTransitionLocked(agent Agent) {
+// The in-memory set/clear and the hadPrev transition-edge read go through the
+// fallback tracker, which owns its own lock; this function does NOT itself
+// require s.mu. It is called from applyAgentSnapshot under s.mu so the
+// classification observes the same agent value committed to the live store in
+// that critical section; the tracker call nests harmlessly inside (s.mu ->
+// tracker ordering, the tracker never calls back).
+func (s *Server) applyFallbackStateTransition(agent Agent) {
 	mode := controltelemetry.ClassifyMode(controltelemetry.SeverityInput{
 		UseMiddleProxy:             agent.Runtime.UseMiddleProxy,
 		MERuntimeReady:             agent.Runtime.MERuntimeReady,
@@ -149,12 +140,12 @@ func (s *Server) applyFallbackStateTransitionLocked(agent Agent) {
 		TelemtUnreachable:          agent.Runtime.TelemtUnreachable,
 		TelemtUnreachableSinceUnix: agent.Runtime.TelemtUnreachableSinceUnix,
 	})
-	_, hadPrev := s.fallbackEnteredAt[agent.ID]
+	_, hadPrev := s.fallback.Get(agent.ID)
 	switch mode {
 	case controltelemetry.ModeFallback:
 		if !hadPrev {
 			now := time.Now().UTC()
-			s.fallbackEnteredAt[agent.ID] = now
+			s.fallback.Set(agent.ID, now)
 			if s.batchWriter != nil {
 				s.batchWriter.EnqueueFallbackPut(agent.ID, now)
 			}
@@ -165,7 +156,7 @@ func (s *Server) applyFallbackStateTransitionLocked(agent Agent) {
 		// so severity escalation crosses the 30-min boundary on time.
 	case controltelemetry.ModeME, controltelemetry.ModeDirect:
 		if hadPrev {
-			delete(s.fallbackEnteredAt, agent.ID)
+			s.fallback.Clear(agent.ID)
 			if s.batchWriter != nil {
 				s.batchWriter.EnqueueFallbackDelete(agent.ID)
 			}
@@ -190,10 +181,12 @@ func (s *Server) commitClientSnapshotsLocked(ctx context.Context, snapshot agent
 	}
 }
 
-// commitMetricSnapshotLocked appends a new metric sample to the in-memory
-// ring buffer (capped at maxInMemoryMetricSnapshots) and returns it for
-// downstream batch-writer enqueueing. Returns nil when the snapshot carries
-// no metrics. Caller must hold s.mu.
+// commitMetricSnapshotLocked mints a new metric sample (ID + timestamp) and
+// returns it for downstream batch-writer enqueueing, which persists it to the
+// store. Returns nil when the snapshot carries no metrics. Caller must hold
+// s.mu. The store is the sole source of truth for metric history (A2: the old
+// in-memory ring is gone); the metricsAuditMu guards metricSeq so concurrent
+// minting stays race-free.
 func (s *Server) commitMetricSnapshotLocked(snapshot agentSnapshot) *MetricSnapshot {
 	if len(snapshot.Metrics) == 0 {
 		return nil
@@ -207,12 +200,6 @@ func (s *Server) commitMetricSnapshotLocked(snapshot agentSnapshot) *MetricSnaps
 		CapturedAt: snapshot.ObservedAt.UTC(),
 		Values:     snapshot.Metrics,
 	}
-	if len(s.metrics) < maxInMemoryMetricSnapshots {
-		s.metrics = append(s.metrics, metric)
-	} else {
-		copy(s.metrics, s.metrics[1:])
-		s.metrics[len(s.metrics)-1] = metric
-	}
 	return &metric
 }
 
@@ -222,35 +209,45 @@ func (s *Server) applyAgentSnapshot(ctx context.Context, snapshot agentSnapshot)
 	// Lock section: build all state objects AND commit to in-memory maps
 	// atomically. No DB I/O happens under the locks.
 	// Lock ordering: mu -> metricsAuditMu (client state lives in
-	// clients.Service, taken via its own lock while mu is held).
+	// clients.Service, taken via its own lock while mu is held). The live
+	// store also has its own lock and is taken under s.mu (s.mu -> live);
+	// it never calls back into the server, so the ordering cannot invert.
 	s.mu.Lock()
-	// Drop snapshots from agents that have been deregistered. Without this
-	// guard, an in-flight heartbeat that arrives between the operator's
-	// DELETE and the gRPC stream tear-down would re-create the in-memory
-	// agent record (snapshot.AgentID is unconditionally written into
-	// s.agents below), and the agent would resurrect itself in the panel
-	// — typically with a "DEGRADED" badge as its telemetry caught up.
+	// Drop snapshots from agents that have been deregistered. The resurrection
+	// guard runs BEFORE any live-store write, so a revoked agent's snapshot
+	// never lands in s.live. Without this guard, an in-flight heartbeat that
+	// arrives between the operator's DELETE and the gRPC stream tear-down would
+	// re-create the live agent record (snapshot.AgentID is unconditionally
+	// written via live.ApplySnapshot below), and the agent would resurrect
+	// itself in the panel — typically with a "DEGRADED" badge as its telemetry
+	// caught up.
 	if _, revoked := s.revokedAgentIDs[snapshot.AgentID]; revoked {
 		s.mu.Unlock()
 		s.logger.Info("dropping snapshot from revoked agent", "agent_id", snapshot.AgentID)
 		return nil
 	}
 	agent := s.updateAgentRecordFromSnapshot(snapshot)
-	s.agents[snapshot.AgentID] = agent
 	// IN-H6: on a partial snapshot the instance rows are blanked
 	// (version/connections/read_only); preserve the last-known instances
 	// instead of committing/persisting zeros. The agent is alive (LastSeenAt
 	// advanced); its telemt detail simply could not be fully read this cycle.
+	// We read the last-known instances back from the live store and re-commit
+	// the agent value WITHOUT touching the instance set.
+	//
+	// Lock ordering: s.mu is held here; the live.* calls below take the live
+	// store's own lock under s.mu (s.mu -> live), consistent with every other
+	// call site. The live store never calls back into the server, so this can
+	// never invert.
 	var instances []Instance
 	if snapshot.Partial {
-		instances = s.instancesForAgentLocked(snapshot.AgentID)
+		instances = s.live.InstancesForAgent(snapshot.AgentID)
 	} else {
 		instances = instancesFromSnapshot(snapshot)
-		s.commitInstancesLocked(snapshot.AgentID, instances)
 	}
+	s.live.ApplySnapshot(snapshot.AgentID, agent, instances)
 	s.commitClientSnapshotsLocked(ctx, snapshot)
 	metricSnapshot := s.commitMetricSnapshotLocked(snapshot)
-	s.applyFallbackStateTransitionLocked(agent)
+	s.applyFallbackStateTransition(agent)
 	s.mu.Unlock()
 
 	// Enqueue all DB writes asynchronously via the batch writer. No DB I/O

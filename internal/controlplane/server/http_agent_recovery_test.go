@@ -2,8 +2,8 @@ package server
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/ecdsa"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
@@ -29,8 +29,8 @@ func TestHTTPAgentCertificateRecoveryRejectsWithoutActiveGrant(t *testing.T) {
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
 	seedRecoveryTestAgent(t, server, store, now)
@@ -60,8 +60,8 @@ func TestHTTPAgentCertificateRecoveryConsumesAdminGrant(t *testing.T) {
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
 	seedRecoveryTestAgent(t, server, store, now)
@@ -190,13 +190,13 @@ func seedRecoveryTestAgent(t *testing.T, server *Server, store *sqlite.Store, no
 		t.Fatalf("PutAgent() error = %v", err)
 	}
 
-	server.agents[record.ID] = Agent{
+	server.seedLiveAgentKeyed(record.ID, Agent{
 		ID:           record.ID,
 		NodeName:     record.NodeName,
 		FleetGroupID: record.FleetGroupID,
 		Version:      record.Version,
 		LastSeenAt:   record.LastSeenAt,
-	}
+	})
 }
 
 func TestHTTPAgentCertificateRecoveryGrantCreateResponseRoundTrip(t *testing.T) {
@@ -209,8 +209,8 @@ func TestHTTPAgentCertificateRecoveryGrantCreateResponseRoundTrip(t *testing.T) 
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
 	seedRecoveryTestAgent(t, server, store, now)
@@ -277,8 +277,8 @@ func TestHTTPAgentCertificateRecoveryGrantRejectsExcessiveTTL(t *testing.T) {
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
 	seedRecoveryTestAgent(t, server, store, now)
@@ -323,8 +323,8 @@ func TestHTTPAgentsExposeCertificateRecoveryStatus(t *testing.T) {
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
 	seedRecoveryTestAgent(t, server, store, now)

@@ -9,16 +9,16 @@ import (
 )
 
 type fleetResponse struct {
-	TotalAgents     int `json:"total_agents"`
-	OnlineAgents    int `json:"online_agents"`
-	DegradedAgents  int `json:"degraded_agents"`
-	OfflineAgents   int `json:"offline_agents"`
-	TotalInstances  int `json:"total_instances"`
-	MetricSnapshots int `json:"metric_snapshots"`
-	LiveConnections int `json:"live_connections"`
+	TotalAgents                   int `json:"total_agents"`
+	OnlineAgents                  int `json:"online_agents"`
+	DegradedAgents                int `json:"degraded_agents"`
+	OfflineAgents                 int `json:"offline_agents"`
+	TotalInstances                int `json:"total_instances"`
+	MetricSnapshots               int `json:"metric_snapshots"`
+	LiveConnections               int `json:"live_connections"`
 	AcceptingNewConnectionsAgents int `json:"accepting_new_connections_agents"`
-	MiddleProxyAgents int `json:"middle_proxy_agents"`
-	DCIssueAgents int `json:"dc_issue_agents"`
+	MiddleProxyAgents             int `json:"middle_proxy_agents"`
+	DCIssueAgents                 int `json:"dc_issue_agents"`
 }
 
 func (s *Server) handleFleet() http.HandlerFunc {
@@ -28,19 +28,17 @@ func (s *Server) handleFleet() http.HandlerFunc {
 			return
 		}
 
-		s.metricsAuditMu.RLock()
-		metricSnapshots := len(s.metrics)
-		s.metricsAuditMu.RUnlock()
+		metricSnapshots := s.metricSnapshotCount(r.Context())
 
-		s.mu.RLock()
+		liveAgents := s.live.List()
 		response := fleetResponse{
-			TotalAgents:     len(s.agents),
-			TotalInstances:  len(s.instances),
+			TotalAgents:     len(liveAgents),
+			TotalInstances:  len(s.live.AllInstances()),
 			MetricSnapshots: metricSnapshots,
 		}
 
-		for agentID := range s.agents {
-			switch s.presence.Evaluate(agentID, s.now()) {
+		for _, agent := range liveAgents {
+			switch s.presence.Evaluate(agent.ID, s.now()) {
 			case presence.StateOnline:
 				response.OnlineAgents++
 			case presence.StateDegraded:
@@ -49,7 +47,6 @@ func (s *Server) handleFleet() http.HandlerFunc {
 				response.OfflineAgents++
 			}
 		}
-		s.mu.RUnlock()
 
 		writeJSON(w, http.StatusOK, response)
 	}
@@ -95,15 +92,15 @@ func (s *Server) loadAgentRecoveryGrants(ctx context.Context) (map[string]storag
 	return out, nil
 }
 
-// buildAgentsResponse produces the scoped, presence-augmented agent
-// list under s.mu RLock. The lock window is intentionally narrow —
-// no I/O happens inside it.
+// buildAgentsResponse produces the scoped, presence-augmented agent list.
+// live.List returns deep copies, so the per-request fields (PresenceState,
+// CertificateRecovery) are layered onto those copies — they are request-time
+// state, never stored in the live mirror. presence has its own lock.
 func (s *Server) buildAgentsResponse(scope FleetScopeAccess, recoveryGrants map[string]storage.AgentCertificateRecoveryGrantRecord) []Agent {
 	now := s.now()
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	response := make([]Agent, 0, len(s.agents))
-	for _, agent := range s.agents {
+	liveAgents := s.live.List()
+	response := make([]Agent, 0, len(liveAgents))
+	for _, agent := range liveAgents {
 		if !scope.IsAllowed(agent.FleetGroupID) {
 			continue
 		}
@@ -131,13 +128,11 @@ func (s *Server) handleInstances() http.HandlerFunc {
 			return
 		}
 
-		s.mu.RLock()
-		defer s.mu.RUnlock()
-
-		response := make([]Instance, 0, len(s.instances))
-		for _, instance := range s.instances {
+		allInstances := s.live.AllInstances()
+		response := make([]Instance, 0, len(allInstances))
+		for _, instance := range allInstances {
 			if !scope.Global {
-				agent, agentOK := s.agents[instance.AgentID]
+				agent, agentOK := s.live.Get(instance.AgentID)
 				if !agentOK || !scope.IsAllowed(agent.FleetGroupID) {
 					continue
 				}
@@ -156,11 +151,49 @@ func (s *Server) handleMetrics() http.HandlerFunc {
 			return
 		}
 
-		s.metricsAuditMu.RLock()
-		defer s.metricsAuditMu.RUnlock()
+		snapshots, err := s.listMetricSnapshots(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "list metric snapshots failed")
+			return
+		}
 
-		writeJSON(w, http.StatusOK, s.metrics)
+		writeJSON(w, http.StatusOK, snapshots)
 	}
+}
+
+// listMetricSnapshots reads the last metric snapshots (≤512, oldest→newest)
+// directly from the store, converting storage records to the wire type. The
+// store query already applies the same order+limit the in-memory ring used to
+// enforce (A2: s.metrics ring removed). A nil store (test fixtures with no
+// persistence) yields an empty slice, matching the other nil-store handlers.
+func (s *Server) listMetricSnapshots(ctx context.Context) ([]MetricSnapshot, error) {
+	if s.store == nil {
+		return []MetricSnapshot{}, nil
+	}
+	records, err := s.store.ListMetricSnapshots(ctx)
+	if err != nil {
+		return nil, err
+	}
+	snapshots := make([]MetricSnapshot, 0, len(records))
+	for _, record := range records {
+		snapshots = append(snapshots, metricSnapshotFromRecord(record))
+	}
+	return snapshots, nil
+}
+
+// metricSnapshotCount returns the number of recent metric snapshots surfaced
+// by the dashboards (fleet, control-room, telemetry). It mirrors the old
+// len(s.metrics) semantics: the store query caps the result at 512, exactly
+// the bound the in-memory ring used to enforce (A2). On a store error the
+// count degrades to 0 rather than failing the dashboard — this is a cosmetic
+// counter, not load-bearing data, so the surrounding handlers stay resilient.
+func (s *Server) metricSnapshotCount(ctx context.Context) int {
+	snapshots, err := s.listMetricSnapshots(ctx)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "count metric snapshots failed", "error", err)
+		return 0
+	}
+	return len(snapshots)
 }
 
 func (s *Server) handleAudit() http.HandlerFunc {
@@ -182,12 +215,37 @@ func (s *Server) handleAudit() http.HandlerFunc {
 			return
 		}
 
-		s.metricsAuditMu.RLock()
-		trail := s.snapshotAuditTrailLocked()
-		s.metricsAuditMu.RUnlock()
+		trail, err := s.auditFirstPage(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "list audit events failed")
+			return
+		}
 
 		writeJSON(w, http.StatusOK, trail)
 	}
+}
+
+// auditFirstPage reads the most recent audit events (≤auditFirstPageLimit,
+// oldest→newest) directly from the store, converting storage records to the
+// wire type. The store query already applies the same order+limit the in-memory
+// ring used to enforce (A2: the audit ring was removed): ListAuditEvents with a
+// limit of auditFirstPageLimit returns the last 1024 events in ascending
+// order — byte-equivalent to the old snapshotAuditTrailLocked() output. A nil
+// store (test fixtures with no persistence) yields an empty slice, matching the
+// cursor branch's nil-store guard.
+func (s *Server) auditFirstPage(ctx context.Context) ([]AuditEvent, error) {
+	if s.store == nil {
+		return []AuditEvent{}, nil
+	}
+	records, err := s.store.ListAuditEvents(ctx, auditFirstPageLimit)
+	if err != nil {
+		return nil, err
+	}
+	events := make([]AuditEvent, 0, len(records))
+	for _, record := range records {
+		events = append(events, auditEventFromRecord(record))
+	}
+	return events, nil
 }
 
 // auditCursorResponse is the wire shape of /api/audit?cursor=. Items match

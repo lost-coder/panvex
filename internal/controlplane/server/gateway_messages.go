@@ -345,16 +345,14 @@ func (s *Server) handleInStreamRenewalRequest(ctx context.Context, agentID strin
 	certIssuedAt := s.now().UTC()
 	certExpiresAtUTC := expiresAt.UTC()
 	s.mu.Lock()
-	if agent, ok := s.agents[agentID]; ok {
-		agent.CertIssuedAt = &certIssuedAt
-		agent.CertExpiresAt = &certExpiresAtUTC
+	if agent, ok := s.updateAgentIdentity(agentID, func(a *Agent) {
+		a.CertIssuedAt = &certIssuedAt
+		a.CertExpiresAt = &certExpiresAtUTC
 		if newSerial != "" {
-			agent.CertSerial = newSerial
+			a.CertSerial = newSerial
 		}
-		s.agents[agentID] = agent
-		if s.batchWriter != nil {
-			s.batchWriter.agents.Enqueue(agentToRecord(agent))
-		}
+	}); ok && s.batchWriter != nil {
+		s.batchWriter.agents.Enqueue(agentToRecord(agent))
 	}
 	s.mu.Unlock()
 

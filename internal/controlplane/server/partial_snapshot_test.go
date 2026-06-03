@@ -51,7 +51,7 @@ func TestApplyAgentSnapshotPartialPreservesLastKnown(t *testing.T) {
 		t.Fatalf("applyAgentSnapshot(partial) error = %v", err)
 	}
 
-	agent := server.agents["agent-1"]
+	agent := server.liveAgent("agent-1")
 	if agent.Version != "2026.03" {
 		t.Fatalf("version after partial = %q, want preserved 2026.03", agent.Version)
 	}
@@ -61,7 +61,7 @@ func TestApplyAgentSnapshotPartialPreservesLastKnown(t *testing.T) {
 	if agent.Runtime.UptimeSeconds != 1000 {
 		t.Fatalf("uptime after partial = %v, want preserved 1000", agent.Runtime.UptimeSeconds)
 	}
-	insts := server.instancesForAgentLocked("agent-1")
+	insts := server.live.InstancesForAgent("agent-1")
 	if len(insts) != 1 || insts[0].Connections != 42 || insts[0].Version != "2026.03" {
 		t.Fatalf("instances after partial = %+v, want preserved [version=2026.03 connections=42]", insts)
 	}

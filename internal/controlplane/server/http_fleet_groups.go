@@ -24,14 +24,14 @@ const (
 // snapshot (not persisted), matching the legacy /fleet-groups
 // contract that the frontend already consumes.
 type fleetGroupResponse struct {
-	ID             string                           `json:"id"`
-	Name           string                           `json:"name"`
-	Label          string                           `json:"label"`
-	Description    string                           `json:"description"`
-	AgentCount     int                              `json:"agent_count"`
-	CreatedAtUnix  int64                            `json:"created_at_unix"`
-	UpdatedAtUnix  int64                            `json:"updated_at_unix"`
-	Integrations   []fleetGroupIntegrationResponse  `json:"integrations"`
+	ID            string                          `json:"id"`
+	Name          string                          `json:"name"`
+	Label         string                          `json:"label"`
+	Description   string                          `json:"description"`
+	AgentCount    int                             `json:"agent_count"`
+	CreatedAtUnix int64                           `json:"created_at_unix"`
+	UpdatedAtUnix int64                           `json:"updated_at_unix"`
+	Integrations  []fleetGroupIntegrationResponse `json:"integrations"`
 }
 
 type fleetGroupIntegrationResponse struct {
@@ -56,11 +56,11 @@ type updateFleetGroupRequest struct {
 }
 
 type fleetGroupDeletionPreviewResponse struct {
-	ID                      string `json:"id"`
-	AgentCount              int64  `json:"agent_count"`
-	EnrollmentTokenCount    int64  `json:"enrollment_token_count"`
-	ClientAssignmentCount   int64  `json:"client_assignment_count"`
-	ReassignRequired        bool   `json:"reassign_required"`
+	ID                    string `json:"id"`
+	AgentCount            int64  `json:"agent_count"`
+	EnrollmentTokenCount  int64  `json:"enrollment_token_count"`
+	ClientAssignmentCount int64  `json:"client_assignment_count"`
+	ReassignRequired      bool   `json:"reassign_required"`
 }
 
 type fleetGroupDeletionResponse struct {
@@ -271,9 +271,9 @@ func (s *Server) handleDeleteFleetGroup() http.HandlerFunc {
 			return
 		}
 		s.appendAuditWithContext(r.Context(), session.UserID, "fleet_groups.delete", id, map[string]any{
-			"reassign_to":             reassignTo,
-			"agents_moved":            moved.Agents,
-			"enrollment_tokens_moved": moved.EnrollmentTokens,
+			"reassign_to":              reassignTo,
+			"agents_moved":             moved.Agents,
+			"enrollment_tokens_moved":  moved.EnrollmentTokens,
 			"client_assignments_moved": moved.ClientAssignments,
 		})
 		// After reassigning agents.fleet_group_id in the DB the in-memory
@@ -337,10 +337,13 @@ func (s *Server) writeFleetGroupDeleteError(w http.ResponseWriter, id string, er
 func (s *Server) patchAgentFleetGroupMembership(deletedID, reassignTo string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for agentID, agent := range s.agents {
+	// Identity-only update across the affected agents. Taken under s.mu (s.mu ->
+	// live) so the membership rewrite is atomic w.r.t. other s.mu holders.
+	for _, agent := range s.live.List() {
 		if agent.FleetGroupID == deletedID {
-			agent.FleetGroupID = reassignTo
-			s.agents[agentID] = agent
+			s.updateAgentIdentity(agent.ID, func(a *Agent) {
+				a.FleetGroupID = reassignTo
+			})
 		}
 	}
 }
@@ -352,14 +355,12 @@ func (s *Server) patchAgentFleetGroupMembership(deletedID, reassignTo string) {
 // /agents endpoint — persistence lags heartbeats by a batch interval
 // and would show stale membership.
 func (s *Server) fleetGroupToResponse(ctx context.Context, g storage.FleetGroupRecord, withIntegrations bool) fleetGroupResponse {
-	s.mu.RLock()
 	agentCount := 0
-	for _, agent := range s.agents {
+	for _, agent := range s.live.List() {
 		if agent.FleetGroupID == g.ID {
 			agentCount++
 		}
 	}
-	s.mu.RUnlock()
 
 	response := fleetGroupResponse{
 		ID:            g.ID,

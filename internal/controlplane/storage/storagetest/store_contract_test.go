@@ -630,6 +630,15 @@ func (s *memoryStore) ListTelemetryRuntimeDCs(_ context.Context, agentID string)
 	return append([]storage.TelemetryRuntimeDCRecord(nil), s.telemetryRuntimeDCs[agentID]...), nil
 }
 
+func (s *memoryStore) ListAllTelemetryRuntimeDCs(_ context.Context) ([]storage.TelemetryRuntimeDCRecord, error) {
+	result := make([]storage.TelemetryRuntimeDCRecord, 0)
+	for _, records := range s.telemetryRuntimeDCs {
+		result = append(result, records...)
+	}
+
+	return result, nil
+}
+
 func (s *memoryStore) ReplaceTelemetryRuntimeUpstreams(_ context.Context, agentID string, records []storage.TelemetryRuntimeUpstreamRecord) error {
 	s.telemetryRuntimeUpstreams[agentID] = append([]storage.TelemetryRuntimeUpstreamRecord(nil), records...)
 	return nil
@@ -637,6 +646,15 @@ func (s *memoryStore) ReplaceTelemetryRuntimeUpstreams(_ context.Context, agentI
 
 func (s *memoryStore) ListTelemetryRuntimeUpstreams(_ context.Context, agentID string) ([]storage.TelemetryRuntimeUpstreamRecord, error) {
 	return append([]storage.TelemetryRuntimeUpstreamRecord(nil), s.telemetryRuntimeUpstreams[agentID]...), nil
+}
+
+func (s *memoryStore) ListAllTelemetryRuntimeUpstreams(_ context.Context) ([]storage.TelemetryRuntimeUpstreamRecord, error) {
+	result := make([]storage.TelemetryRuntimeUpstreamRecord, 0)
+	for _, records := range s.telemetryRuntimeUpstreams {
+		result = append(result, records...)
+	}
+
+	return result, nil
 }
 
 func (s *memoryStore) AppendTelemetryRuntimeEvents(_ context.Context, agentID string, records []storage.TelemetryRuntimeEventRecord) error {
@@ -651,6 +669,21 @@ func (s *memoryStore) ListTelemetryRuntimeEvents(_ context.Context, agentID stri
 	}
 
 	return records, nil
+}
+
+func (s *memoryStore) ListAllTelemetryRuntimeEventsPerAgent(_ context.Context, perAgentLimit int) ([]storage.TelemetryRuntimeEventRecord, error) {
+	result := make([]storage.TelemetryRuntimeEventRecord, 0)
+	for _, events := range s.telemetryRuntimeEvents {
+		records := append([]storage.TelemetryRuntimeEventRecord(nil), events...)
+		// Events are appended in ascending order, so the newest
+		// perAgentLimit are the tail — matching ListTelemetryRuntimeEvents.
+		if perAgentLimit > 0 && len(records) > perAgentLimit {
+			records = records[len(records)-perAgentLimit:]
+		}
+		result = append(result, records...)
+	}
+
+	return result, nil
 }
 
 func (s *memoryStore) PruneTelemetryRuntimeEvents(_ context.Context, olderThan time.Time) (int64, error) {

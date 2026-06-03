@@ -22,9 +22,7 @@ func (s *Server) agentVisibleInScope(scope FleetScopeAccess, agentID string) boo
 	if scope.Global {
 		return true
 	}
-	s.mu.RLock()
-	agent, ok := s.agents[agentID]
-	s.mu.RUnlock()
+	agent, ok := s.live.Get(agentID)
 	if !ok {
 		return true
 	}
@@ -250,7 +248,6 @@ func (s *Server) handleClientIPHistory() http.HandlerFunc {
 		})
 	}
 }
-
 
 // parseClientIPHistoryLimit honours the operator's ?limit= override
 // while clamping to defaultClientIPHistoryMax (Q4.U-P-04: a high-

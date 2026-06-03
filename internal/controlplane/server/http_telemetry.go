@@ -71,16 +71,21 @@ type telemetryDashboardSnapshot struct {
 // cannot infer the existence of "neighbour" fleets via metrics or the
 // recent-events feed.
 func (s *Server) collectTelemetryDashboardSnapshot(scope FleetScopeAccess, now time.Time, metricSnapshots int) telemetryDashboardSnapshot {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	scopedAgents := make(map[string]Agent, len(s.agents))
-	for id, agent := range s.agents {
+	// Read the live agents (own lock) before taking s.mu, then hold s.mu for
+	// the per-agent summary build (detailBoosts + fallbackEnteredAt are
+	// s.mu-guarded). Consistent s.mu -> live ordering: live is read first and
+	// not re-entered while s.mu is held below.
+	scopedAgents := make(map[string]Agent)
+	for _, agent := range s.live.List() {
 		if !scope.IsAllowed(agent.FleetGroupID) {
 			continue
 		}
-		scopedAgents[id] = agent
+		scopedAgents[agent.ID] = agent
 	}
+	instanceMap := s.liveInstanceMap()
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	snapshot := telemetryDashboardSnapshot{
 		items:               make([]telemetryServerSummary, 0, len(scopedAgents)),
@@ -100,7 +105,7 @@ func (s *Server) collectTelemetryDashboardSnapshot(scope FleetScopeAccess, now t
 	}
 	snapshot.recentEvents = controlRoomRecentRuntimeEvents(scopedAgents, telemetryDashboardEventLimit)
 	snapshot.recentEventsEnriched = dashboardRecentEvents(scopedAgents, telemetryDashboardEventLimit)
-	snapshot.fleet = controlRoomFleetFromState(scopedAgents, s.instances, metricSnapshots, s.presence, now)
+	snapshot.fleet = controlRoomFleetFromState(scopedAgents, instanceMap, metricSnapshots, s.presence, now)
 	return snapshot
 }
 
@@ -145,9 +150,7 @@ func (s *Server) handleTelemetryDashboard() http.HandlerFunc {
 
 		now := s.now()
 
-		s.metricsAuditMu.RLock()
-		metricSnapshots := len(s.metrics)
-		s.metricsAuditMu.RUnlock()
+		metricSnapshots := s.metricSnapshotCount(r.Context())
 
 		snapshot := s.collectTelemetryDashboardSnapshot(scope, now, metricSnapshots)
 
@@ -297,9 +300,10 @@ func (s *Server) handleTelemetryServers() http.HandlerFunc {
 
 		now := s.now()
 
+		liveAgents := s.live.List()
 		s.mu.RLock()
-		items := make([]telemetryServerSummary, 0, len(s.agents))
-		for _, agent := range s.agents {
+		items := make([]telemetryServerSummary, 0, len(liveAgents))
+		for _, agent := range liveAgents {
 			if !scope.IsAllowed(agent.FleetGroupID) {
 				continue
 			}
@@ -333,12 +337,13 @@ func (s *Server) handleTelemetryServerDetail() http.HandlerFunc {
 		agentID := chi.URLParam(r, "id")
 		now := s.now()
 
-		// Build the summary under s.mu.RLock so telemetrySummaryForAgent's
+		// Read the agent from the live store (own lock) before taking s.mu,
+		// then build the summary under s.mu.RLock so telemetrySummaryForAgent's
 		// fallbackEnteredAt lookup stays lock-free (sync.RWMutex is not
 		// reentrant — re-acquiring RLock here would deadlock if a writer
-		// were queued).
+		// were queued). Consistent s.mu -> live ordering: live is read first.
+		agent, ok := s.live.Get(agentID)
 		s.mu.RLock()
-		agent, ok := s.agents[agentID]
 		var (
 			summary                         telemetryServerSummary
 			initializationCooldownExpiresAt time.Time
@@ -414,18 +419,16 @@ func (s *Server) handleTelemetryServerDetailBoost() http.HandlerFunc {
 		agentID := chi.URLParam(r, "id")
 		now := s.now()
 
-		s.mu.Lock()
-		agent, ok := s.agents[agentID]
+		agent, ok := s.live.Get(agentID)
 		if !ok {
-			s.mu.Unlock()
 			writeError(w, http.StatusNotFound, msgServerNotFound)
 			return
 		}
 		if !scope.IsAllowed(agent.FleetGroupID) {
-			s.mu.Unlock()
 			writeError(w, http.StatusNotFound, msgServerNotFound)
 			return
 		}
+		s.mu.Lock()
 		boostTTL := s.effectiveTelemetryDetailBoostTTL()
 		expiresAt := now.UTC().Add(boostTTL)
 		// Detail boost is ephemeral in-memory-only state (F4): a ~10m
@@ -457,9 +460,7 @@ func (s *Server) handleTelemetryServerRefreshDiagnostics() http.HandlerFunc {
 		agentID := chi.URLParam(r, "id")
 		now := s.now()
 
-		s.mu.RLock()
-		agent, ok := s.agents[agentID]
-		s.mu.RUnlock()
+		agent, ok := s.live.Get(agentID)
 		if !ok {
 			writeError(w, http.StatusNotFound, msgServerNotFound)
 			return

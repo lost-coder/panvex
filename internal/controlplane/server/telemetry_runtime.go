@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"errors"
 	"sort"
 	"strings"
 	"time"
@@ -348,6 +347,11 @@ func runtimeLifecycleStateFromCurrent(runtime storage.TelemetryRuntimeCurrentRec
 	}
 }
 
+// telemetryRuntimeEventsPerAgentLimit is the per-agent cap on restored
+// runtime events. Kept identical to the historic per-agent path
+// (ListTelemetryRuntimeEvents(..., 10)) so restored state is unchanged.
+const telemetryRuntimeEventsPerAgentLimit = 10
+
 func (s *Server) restoreStoredTelemetry(ctx context.Context) error {
 	if s.store == nil {
 		return nil
@@ -356,36 +360,58 @@ func (s *Server) restoreStoredTelemetry(ctx context.Context) error {
 	// Detail boosts (F4) are ephemeral in-memory-only state and are not
 	// restored on boot — a panel restart simply clears any active boost.
 
-	for agentID, agent := range s.agents {
-		if err := s.restoreAgentRuntime(ctx, agentID, agent); err != nil {
-			return err
-		}
+	// A2: fetch all four runtime projections for the whole fleet in a
+	// bounded number of bulk queries instead of O(N×4) per-agent
+	// round-trips, then group by agent_id in memory. The reconstructed
+	// per-agent runtime is identical to the old per-agent path.
+	currents, err := s.store.ListTelemetryRuntimeCurrent(ctx)
+	if err != nil {
+		return err
+	}
+	dcs, err := s.store.ListAllTelemetryRuntimeDCs(ctx)
+	if err != nil {
+		return err
+	}
+	upstreams, err := s.store.ListAllTelemetryRuntimeUpstreams(ctx)
+	if err != nil {
+		return err
+	}
+	events, err := s.store.ListAllTelemetryRuntimeEventsPerAgent(ctx, telemetryRuntimeEventsPerAgentLimit)
+	if err != nil {
+		return err
 	}
 
-	return nil
-}
+	currentByAgent := make(map[string]storage.TelemetryRuntimeCurrentRecord, len(currents))
+	for _, current := range currents {
+		currentByAgent[current.AgentID] = current
+	}
+	dcsByAgent := make(map[string][]storage.TelemetryRuntimeDCRecord)
+	for _, dc := range dcs {
+		dcsByAgent[dc.AgentID] = append(dcsByAgent[dc.AgentID], dc)
+	}
+	upstreamsByAgent := make(map[string][]storage.TelemetryRuntimeUpstreamRecord)
+	for _, upstream := range upstreams {
+		upstreamsByAgent[upstream.AgentID] = append(upstreamsByAgent[upstream.AgentID], upstream)
+	}
+	eventsByAgent := make(map[string][]storage.TelemetryRuntimeEventRecord)
+	for _, event := range events {
+		eventsByAgent[event.AgentID] = append(eventsByAgent[event.AgentID], event)
+	}
 
-func (s *Server) restoreAgentRuntime(ctx context.Context, agentID string, agent Agent) error {
-	runtime, err := s.store.GetTelemetryRuntimeCurrent(ctx, agentID)
-	if err != nil {
-		if errors.Is(err, storage.ErrNotFound) {
-			return nil
+	for _, agent := range s.live.List() {
+		current, ok := currentByAgent[agent.ID]
+		if !ok {
+			// No persisted runtime row — same as the ErrNotFound branch
+			// in the historic per-agent path: skip this agent.
+			continue
 		}
-		return err
+		// Merge the restored runtime into the agent value and re-commit
+		// through the live store, preserving the agent's instances
+		// (restored separately in restoreInstances).
+		merged := restoreAgentRuntimeFromStorage(agent, current, dcsByAgent[agent.ID], upstreamsByAgent[agent.ID], eventsByAgent[agent.ID])
+		s.live.ApplySnapshot(agent.ID, merged, s.live.InstancesForAgent(agent.ID))
 	}
-	dcs, err := s.store.ListTelemetryRuntimeDCs(ctx, agentID)
-	if err != nil {
-		return err
-	}
-	upstreams, err := s.store.ListTelemetryRuntimeUpstreams(ctx, agentID)
-	if err != nil {
-		return err
-	}
-	events, err := s.store.ListTelemetryRuntimeEvents(ctx, agentID, 10)
-	if err != nil {
-		return err
-	}
-	s.agents[agentID] = restoreAgentRuntimeFromStorage(agent, runtime, dcs, upstreams, events)
+
 	return nil
 }
 
@@ -503,31 +529,21 @@ func (s *Server) telemetrySeverityAndReason(agent Agent, presenceState presence.
 	})
 }
 
-// lookupFallbackEnteredLocked returns the cached entered_at for an agent
-// and ok=true when fallback is currently active. Read-only; the caller
-// MUST already hold s.mu.RLock (or s.mu.Lock). sync.RWMutex is not
-// reentrant — taking the read lock here while a caller higher up the
-// stack already holds it risks deadlock when a writer is queued.
-func (s *Server) lookupFallbackEnteredLocked(agentID string) (time.Time, bool) {
-	t, ok := s.fallbackEnteredAt[agentID]
-	return t, ok
-}
-
 // telemetrySummaryForAgent builds the per-agent dashboard summary. The
-// caller MUST already hold s.mu.RLock — both the fallbackEnteredAt
-// lookup and the severity classification rely on lock-free reads of
-// state owned by s.mu.
+// caller holds s.mu.RLock for the detailBoosts lookup; the fallback
+// timestamp comes from the fallback tracker, which owns its own lock
+// (s.mu -> tracker ordering), so this read is independently safe.
 func (s *Server) telemetrySummaryForAgent(agent Agent, presenceState presence.State, now, boostExpiresAt time.Time) telemetryServerSummary {
 	agent.PresenceState = string(presenceState)
 	agent.Runtime = normalizeAgentRuntime(agent.Runtime)
-	fallbackEnteredAt, fallbackActive := s.lookupFallbackEnteredLocked(agent.ID)
+	fallbackEnteredAt, fallbackActive := s.fallback.Get(agent.ID)
 	if fallbackActive {
-		// `agent` is passed by value: this assignment mutates the local
-		// copy that gets embedded in the returned telemetryServerSummary,
-		// not s.agents[agent.ID]. The *int64 pointer is local to this
-		// scope (no aliasing back into shared state), so the write is
-		// safe and intentional — don't "fix" it by taking &agent or
-		// reaching into s.agents. See follow-up #6.
+		// `agent` is passed by value (a deep copy from s.live): this
+		// assignment mutates the local copy that gets embedded in the
+		// returned telemetryServerSummary, not the live mirror. The *int64
+		// pointer is local to this scope (no aliasing back into shared
+		// state), so the write is safe and intentional — don't "fix" it by
+		// taking &agent or reaching into the live store. See follow-up #6.
 		entered := fallbackEnteredAt.Unix()
 		agent.Runtime.FallbackEnteredAtUnix = &entered
 	}

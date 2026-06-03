@@ -93,13 +93,13 @@ func TestChaosDBDropDuringTransact(t *testing.T) {
 
 	// Seed the agent in-memory so createClient can resolve a target.
 	server.mu.Lock()
-	server.agents["agent-A"] = Agent{
+	server.seedLiveAgentKeyed("agent-A", Agent{
 		ID:           "agent-A",
 		NodeName:     "node-a",
 		FleetGroupID: fleetGroupID,
 		Version:      "dev",
 		LastSeenAt:   now.Add(-time.Minute),
-	}
+	})
 	server.mu.Unlock()
 
 	input := clientMutationInput{

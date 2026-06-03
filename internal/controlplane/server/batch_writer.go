@@ -219,8 +219,8 @@ type storeBatchWriter struct {
 	// streamAlerts[audit] so operators can page on persistent audit failures.
 	auditEvents *batchBuffer[storage.AuditEventRecord]
 	// fallbackState carries put/delete ops for agent_fallback_state. The
-	// authoritative in-memory copy lives on Server.fallbackEnteredAt; this
-	// buffer only persists transitions for restart durability.
+	// authoritative in-memory copy lives in s.fallback (agents.FallbackTracker);
+	// this buffer only persists transitions for restart durability.
 	fallbackState *batchBuffer[fallbackStateOp]
 }
 
@@ -623,7 +623,7 @@ var streamAlerts = map[string]string{
 	// operator paging rules can match a single stable key.
 	"audit": "audit_persist_failed",
 	// fallback_state is a CRITICAL stream too: a missed put/delete here
-	// silently drifts the in-memory fallbackEnteredAt map from the
+	// silently drifts the in-memory s.fallback (agents.FallbackTracker) from the
 	// persisted row, which in turn drifts the 30-min severity boundary
 	// after a control-plane restart. Surface flush failures via the same
 	// alert-key channel so operators can page on a single stable key
@@ -878,8 +878,8 @@ func (w *storeBatchWriter) writeAuditDeadLetter(item storage.AuditEventRecord) e
 // flushFallbackState persists queued put/delete ops against
 // agent_fallback_state. The Store exposes single-row Put/Delete only, so we
 // loop and route each op through flushItem to inherit the shared retry +
-// classification + metrics observations. The in-memory fallbackEnteredAt map
-// on Server is the read source — this buffer exists only for durability
+// classification + metrics observations. The in-memory s.fallback
+// (agents.FallbackTracker) is the read source — this buffer exists only for durability
 // across control-plane restarts.
 func (w *storeBatchWriter) flushFallbackState(ctx context.Context, items []fallbackStateOp) {
 	if len(items) == 0 {

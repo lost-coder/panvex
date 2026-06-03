@@ -21,8 +21,8 @@ func TestEnrollAgentWithContextUsesCallerContextForPersistence(t *testing.T) {
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
 
@@ -62,17 +62,17 @@ func TestApplyAgentSnapshotWithContextSucceedsRegardlessOfCallerContext(t *testi
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
-	server.agents["agent-1"] = Agent{
+	server.seedLiveAgentKeyed("agent-1", Agent{
 		ID:           "agent-1",
 		NodeName:     "node-a",
 		FleetGroupID: fleetGroupID,
 		Version:      "1.0.0",
 		LastSeenAt:   now,
-	}
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -90,7 +90,7 @@ func TestApplyAgentSnapshotWithContextSucceedsRegardlessOfCallerContext(t *testi
 	}
 
 	server.mu.RLock()
-	agent := server.agents["agent-1"]
+	agent := server.liveAgent("agent-1")
 	server.mu.RUnlock()
 	if agent.Version != "1.0.1" {
 		t.Fatalf("agent.Version = %q, want %q", agent.Version, "1.0.1")

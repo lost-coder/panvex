@@ -40,21 +40,35 @@ func (s *Server) handleControlRoom() http.HandlerFunc {
 		now := s.now()
 		jobList := s.jobs.ListWithContext(r.Context())
 
-		s.metricsAuditMu.RLock()
-		recentActivity := controlRoomRecentActivity(s.snapshotAuditTrailLocked(), 5)
-		metricSnapshots := len(s.metrics)
-		s.metricsAuditMu.RUnlock()
+		metricSnapshots := s.metricSnapshotCount(r.Context())
 
-		s.mu.RLock()
-		fleet := controlRoomFleetFromState(s.agents, s.instances, metricSnapshots, s.presence, now)
+		// A2: recent-activity now reads from the store-backed first page
+		// instead of the removed in-memory ring. auditFirstPage returns the
+		// same oldest→newest window the ring served, and
+		// controlRoomRecentActivity walks it newest-first to pick the most
+		// recent few. A store error degrades to an empty activity list rather
+		// than failing the whole control-room dashboard.
+		auditTrail, err := s.auditFirstPage(r.Context())
+		if err != nil {
+			s.logger.ErrorContext(r.Context(), "control-room recent activity read failed", "error", err)
+			auditTrail = []AuditEvent{}
+		}
+		recentActivity := controlRoomRecentActivity(auditTrail, 5)
+
+		// Materialise the live agent/instance maps once for the dashboard
+		// helpers, which take map[string]Agent / map[string]Instance. live.*
+		// returns deep copies, so the helpers see an isolated snapshot;
+		// presence has its own lock.
+		agentMap := s.liveAgentMap()
+		instanceMap := s.liveInstanceMap()
+		fleet := controlRoomFleetFromState(agentMap, instanceMap, metricSnapshots, s.presence, now)
 		response := controlRoomResponse{
-			Onboarding:          controlRoomOnboardingFromState(s.agents, s.instances),
+			Onboarding:          controlRoomOnboardingFromState(agentMap, instanceMap),
 			Fleet:               fleet,
 			Jobs:                controlRoomJobsFromList(jobList),
 			RecentActivity:      recentActivity,
-			RecentRuntimeEvents: controlRoomRecentRuntimeEvents(s.agents, 5),
+			RecentRuntimeEvents: controlRoomRecentRuntimeEvents(agentMap, 5),
 		}
-		s.mu.RUnlock()
 
 		writeJSON(w, http.StatusOK, response)
 	}

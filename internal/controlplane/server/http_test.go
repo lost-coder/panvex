@@ -238,12 +238,12 @@ func TestServerCreateJobRejectsViewerRole(t *testing.T) {
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
-	server.agents["agent-1"] = Agent{
+	server.seedLiveAgentKeyed("agent-1", Agent{
 		ID:           "agent-1",
 		NodeName:     "node-a",
 		FleetGroupID: "ams-1",
 		ReadOnly:     false,
-	}
+	})
 
 	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
@@ -275,12 +275,12 @@ func TestServerCreateJobAcceptsOperatorWithTotp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
-	server.agents["agent-1"] = Agent{
+	server.seedLiveAgentKeyed("agent-1", Agent{
 		ID:           "agent-1",
 		NodeName:     "node-a",
 		FleetGroupID: "ams-1",
 		ReadOnly:     false,
-	}
+	})
 
 	secret, err := server.auth.StartTotpSetup(context.Background(), user.ID, now)
 	if err != nil {
@@ -460,10 +460,9 @@ func TestHTTPAuthTotpSetupEnableDisableFlow(t *testing.T) {
 
 func TestHTTPUsersTotpResetRequiresAdminAndClearsTarget(t *testing.T) {
 	now := time.Date(2026, time.March, 15, 8, 30, 0, 0, time.UTC)
-	server := mustNew(t, Options{
-		LoginTimingFloor: -1,
-		Now:              func() time.Time { return now },
-	})
+	// A2: /api/audit serves from the store now, so this test needs a real
+	// store to read the reset audit row back through the HTTP handler.
+	server := testServerWithSQLite(t, now)
 	adminUser, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
@@ -561,6 +560,11 @@ func TestHTTPUsersTotpResetRequiresAdminAndClearsTarget(t *testing.T) {
 	if operatorLogin.Code != http.StatusOK {
 		t.Fatalf("POST /api/auth/login operator after reset status = %d, want %d", operatorLogin.Code, http.StatusOK)
 	}
+
+	// A2: /api/audit serves its first page from the store now, and the
+	// totp-reset audit above is written asynchronously via the batch writer.
+	// Drain it so the read-after-write assertion below is deterministic.
+	server.batchWriter.auditEvents.Drain(context.Background())
 
 	auditResponse := performJSONRequest(t, server, http.MethodGet, "/api/audit", nil, adminCookies)
 	if auditResponse.Code != http.StatusOK {
@@ -788,13 +792,13 @@ func TestHTTPAgentsReturnsEmptyRuntimeSlicesForAgentsWithoutRuntimeSnapshot(t *t
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	server.agents["agent-1"] = Agent{
+	server.seedLiveAgentKeyed("agent-1", Agent{
 		ID:           "agent-1",
 		NodeName:     "node-a",
 		FleetGroupID: "default",
 		Version:      "1.0.0",
 		LastSeenAt:   now,
-	}
+	})
 
 	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
@@ -1425,10 +1429,21 @@ func TestHTTPControlRoomShowsFirstServerOnboarding(t *testing.T) {
 
 func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 	currentTime := time.Date(2026, time.March, 16, 10, 0, 0, 0, time.UTC)
+	// A2: control-room recent-activity now reads the audit first page from the
+	// store, so this test needs a real store (and a drain before the assert).
+	// The clock closes over currentTime so the audit CreatedAt timestamps still
+	// advance across the two appends below.
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:              func() time.Time { return currentTime },
+		Store:            store,
 	})
+	t.Cleanup(server.Close)
 	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
@@ -1437,7 +1452,7 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	server.agents["agent-1"] = Agent{
+	server.seedLiveAgentKeyed("agent-1", Agent{
 		ID:           "agent-1",
 		NodeName:     "node-a",
 		FleetGroupID: "ams-1",
@@ -1462,8 +1477,8 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 			},
 		},
 		LastSeenAt: currentTime,
-	}
-	server.agents["agent-2"] = Agent{
+	})
+	server.seedLiveAgentKeyed("agent-2", Agent{
 		ID:           "agent-2",
 		NodeName:     "node-b",
 		FleetGroupID: "ams-1",
@@ -1488,8 +1503,8 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 			},
 		},
 		LastSeenAt: currentTime.Add(-45 * time.Second),
-	}
-	server.agents["agent-3"] = Agent{
+	})
+	server.seedLiveAgentKeyed("agent-3", Agent{
 		ID:           "agent-3",
 		NodeName:     "node-c",
 		FleetGroupID: "edge",
@@ -1506,23 +1521,23 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 			TotalUpstreams:           0,
 		},
 		LastSeenAt: currentTime.Add(-2 * time.Minute),
-	}
-	server.instances["instance-1"] = Instance{
+	})
+	server.seedLiveInstanceKeyed("instance-1", Instance{
 		ID:          "instance-1",
 		AgentID:     "agent-1",
 		Name:        "telemt-a",
 		Version:     "1.0.0",
 		Connections: 27,
 		UpdatedAt:   currentTime,
-	}
-	server.instances["instance-2"] = Instance{
+	})
+	server.seedLiveInstanceKeyed("instance-2", Instance{
 		ID:          "instance-2",
 		AgentID:     "agent-2",
 		Name:        "telemt-b",
 		Version:     "1.0.0",
 		Connections: 8,
 		UpdatedAt:   currentTime.Add(-30 * time.Second),
-	}
+	})
 	server.presence.MarkConnected("agent-1", currentTime)
 	server.presence.MarkConnected("agent-2", currentTime.Add(-45*time.Second))
 	server.presence.MarkConnected("agent-3", currentTime.Add(-2*time.Minute))
@@ -1573,6 +1588,10 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 		"action": string(queuedJob.Action),
 	})
 	currentTime = currentTime.Add(20 * time.Second)
+
+	// Flush the async audit appends so the store-backed recent-activity read
+	// below sees them deterministically (A2: the in-memory ring was removed).
+	server.batchWriter.auditEvents.Drain(context.Background())
 
 	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
@@ -1868,7 +1887,7 @@ func TestRenameAgentReturnsErrorWhenStorageFails(t *testing.T) {
 
 	// Verify in-memory agent still has the old name.
 	server.mu.RLock()
-	agent := server.agents[identity.AgentID]
+	agent := server.liveAgent(identity.AgentID)
 	server.mu.RUnlock()
 	if agent.NodeName != "node-a" {
 		t.Fatalf("agent.NodeName = %q, want %q (old name preserved after storage failure)", agent.NodeName, "node-a")
@@ -1938,7 +1957,7 @@ func TestDeregisterAgentReturnsErrorWhenStorageFails(t *testing.T) {
 
 	// Verify the agent still exists in-memory.
 	server.mu.RLock()
-	_, exists := server.agents[identity.AgentID]
+	_, exists := server.liveAgentGet(identity.AgentID)
 	server.mu.RUnlock()
 	if !exists {
 		t.Fatal("agent should still exist in-memory after storage failure during deregister")

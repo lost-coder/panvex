@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // restoreStoredState rehydrates the in-memory inventory from the storage
@@ -18,9 +19,11 @@ import (
 //  2. Revocations — applied AFTER the agent map is populated so a
 //     restored revocation immediately gates any future stream.
 //  3. Instances — leaf objects under agents.
-//  4. Metrics + audit events — bounded by maxInMemoryMetricSnapshots /
-//     maxInMemoryAuditEvents so the working set never blows up under a
-//     long-lived store.
+//  4. Metric + audit sequence — both histories are served straight from the
+//     store (A2: the in-memory rings were removed), so only the sequence
+//     counters are seeded so post-restart IDs never collide with old ones.
+//     restoreAuditSeq additionally seeds the audit hash-chain tail so the
+//     next in-process append continues the persisted chain.
 //  5. Telemetry — delegated to restoreStoredTelemetry, which has its own
 //     ordering invariants.
 //
@@ -39,8 +42,8 @@ func (s *Server) restoreStoredState(ctx context.Context) error {
 		s.restoreAgents,
 		s.restoreAgentRevocations,
 		s.restoreInstances,
-		s.restoreMetrics,
-		s.restoreAuditEvents,
+		s.restoreMetricSeq,
+		s.restoreAuditSeq,
 		s.restoreStoredTelemetry,
 		s.restoreFallbackState,
 	} {
@@ -58,7 +61,11 @@ func (s *Server) restoreAgents(ctx context.Context) error {
 	}
 	for _, record := range agents {
 		agent := agentFromRecord(record)
-		s.agents[agent.ID] = agent
+		// Restore the agent live-state baseline with no instances yet;
+		// restoreInstances + restoreStoredTelemetry layer the rest on top.
+		// Agents are restored before instances (see restoreStoredState order),
+		// so the instance prune in ApplySnapshot has a fresh set to work with.
+		s.live.ApplySnapshot(agent.ID, agent, nil)
 	}
 	return nil
 }
@@ -88,27 +95,32 @@ func (s *Server) restoreInstances(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Group instances by owning agent, then commit each agent's set via
+	// live.SetInstances (which prunes that agent's stale entries without
+	// touching the agent value restored by restoreAgents). Agents were
+	// restored first (see restoreStoredState order).
+	byAgent := make(map[string][]Instance)
 	for _, record := range instances {
 		instance := instanceFromRecord(record)
-		s.instances[instance.ID] = instance
+		byAgent[instance.AgentID] = append(byAgent[instance.AgentID], instance)
+	}
+	for agentID, set := range byAgent {
+		s.live.SetInstances(agentID, set)
 	}
 	return nil
 }
 
-func (s *Server) restoreMetrics(ctx context.Context) error {
+// restoreMetricSeq seeds the in-memory metric sequence counter from the
+// most-recently-persisted IDs so new IDs minted after a restart never collide
+// with old ones. The metric history itself is served straight from the store
+// (A2: the in-memory ring was removed), so nothing is hydrated into memory here.
+func (s *Server) restoreMetricSeq(ctx context.Context) error {
 	metrics, err := s.store.ListMetricSnapshots(ctx)
 	if err != nil {
 		return err
 	}
 	for _, record := range metrics {
 		s.metricSeq = maxPrefixedSequence(s.metricSeq, "metric", record.ID)
-	}
-	// Keep only the most recent entries to avoid O(n²) copy-shift.
-	if len(metrics) > maxInMemoryMetricSnapshots {
-		metrics = metrics[len(metrics)-maxInMemoryMetricSnapshots:]
-	}
-	for _, record := range metrics {
-		s.metrics = append(s.metrics, metricSnapshotFromRecord(record))
 	}
 	return nil
 }
@@ -136,32 +148,29 @@ func (s *Server) restoreFallbackState(ctx context.Context) error {
 		)
 		return nil
 	}
-	s.mu.Lock()
+	entered := make(map[string]time.Time, len(records))
 	for _, r := range records {
-		s.fallbackEnteredAt[r.AgentID] = r.EnteredAt.UTC()
+		entered[r.AgentID] = r.EnteredAt.UTC()
 	}
-	s.mu.Unlock()
+	s.fallback.Restore(entered)
 	return nil
 }
 
-func (s *Server) restoreAuditEvents(ctx context.Context) error {
-	auditEvents, err := s.store.ListAuditEvents(ctx, maxInMemoryAuditEvents)
+// restoreAuditSeq seeds the in-memory audit sequence counter from the
+// most-recently-persisted IDs so new IDs minted after a restart never collide
+// with old ones, and seeds the audit hash-chain tail so the next in-process
+// append continues the persisted chain instead of starting a fresh empty-prev
+// branch (migration 0038). The audit history itself is served straight from the
+// store (A2: the in-memory ring was removed), so nothing is hydrated into
+// memory here.
+func (s *Server) restoreAuditSeq(ctx context.Context) error {
+	auditEvents, err := s.store.ListAuditEvents(ctx, auditFirstPageLimit)
 	if err != nil {
 		return err
 	}
 	for _, record := range auditEvents {
 		s.auditSeq = maxPrefixedSequence(s.auditSeq, "audit", record.ID)
 	}
-	// Keep only the most recent entries to avoid O(n²) copy-shift.
-	if len(auditEvents) > maxInMemoryAuditEvents {
-		auditEvents = auditEvents[len(auditEvents)-maxInMemoryAuditEvents:]
-	}
-	for _, record := range auditEvents {
-		s.appendAuditTrailLocked(auditEventFromRecord(record))
-	}
-	// Seed the chain tail from the persisted store so the next
-	// in-process append continues the chain instead of starting a
-	// fresh empty-prev branch (migration 0038).
 	tail, err := s.store.LatestAuditChainHash(ctx)
 	if err != nil {
 		return err

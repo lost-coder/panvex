@@ -292,4 +292,158 @@ func runTelemetryContract(t *testing.T, open OpenStore) {
 
 	// F4: detail boost is in-memory only on the panel and no longer
 	// persisted, so there is no storage round-trip to contract-test.
+
+	t.Run("telemetry bulk rehydration per-agent windows", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		group := storage.FleetGroupRecord{
+			ID:        testFleetGroupID,
+			Name:      "Default",
+			CreatedAt: time.Date(2026, time.April, 1, 9, 0, 0, 0, time.UTC),
+		}
+		if err := store.PutFleetGroup(ctx, group); err != nil {
+			t.Fatalf("PutFleetGroup() error = %v", err)
+		}
+
+		base := time.Date(2026, time.April, 1, 9, 5, 0, 0, time.UTC)
+		agentA := storage.AgentRecord{ID: "agent-bulk-a", NodeName: "bulk-a", FleetGroupID: group.ID, Version: "dev", LastSeenAt: base}
+		agentB := storage.AgentRecord{ID: "agent-bulk-b", NodeName: "bulk-b", FleetGroupID: group.ID, Version: "dev", LastSeenAt: base}
+		for _, agent := range []storage.AgentRecord{agentA, agentB} {
+			if err := store.PutAgent(ctx, agent); err != nil {
+				t.Fatalf("PutAgent(%s) error = %v", agent.ID, err)
+			}
+			if err := store.PutTelemetryRuntimeCurrent(ctx, storage.TelemetryRuntimeCurrentRecord{
+				AgentID:    agent.ID,
+				ObservedAt: base,
+				State:      "fresh",
+			}); err != nil {
+				t.Fatalf("PutTelemetryRuntimeCurrent(%s) error = %v", agent.ID, err)
+			}
+		}
+
+		// Agent A: 2 DCs, 2 upstreams, 15 events. Agent B: 1 DC, 1 upstream, 3 events.
+		if err := store.ReplaceTelemetryRuntimeDCs(ctx, agentA.ID, []storage.TelemetryRuntimeDCRecord{
+			{AgentID: agentA.ID, DC: 1, ObservedAt: base, CoveragePct: 90},
+			{AgentID: agentA.ID, DC: 2, ObservedAt: base, CoveragePct: 80},
+		}); err != nil {
+			t.Fatalf("ReplaceTelemetryRuntimeDCs(A) error = %v", err)
+		}
+		if err := store.ReplaceTelemetryRuntimeDCs(ctx, agentB.ID, []storage.TelemetryRuntimeDCRecord{
+			{AgentID: agentB.ID, DC: 5, ObservedAt: base, CoveragePct: 70},
+		}); err != nil {
+			t.Fatalf("ReplaceTelemetryRuntimeDCs(B) error = %v", err)
+		}
+		if err := store.ReplaceTelemetryRuntimeUpstreams(ctx, agentA.ID, []storage.TelemetryRuntimeUpstreamRecord{
+			{AgentID: agentA.ID, UpstreamID: 1, ObservedAt: base, RouteKind: "direct", Address: "a-1:443", Healthy: true},
+			{AgentID: agentA.ID, UpstreamID: 2, ObservedAt: base, RouteKind: "direct", Address: "a-2:443", Healthy: false},
+		}); err != nil {
+			t.Fatalf("ReplaceTelemetryRuntimeUpstreams(A) error = %v", err)
+		}
+		if err := store.ReplaceTelemetryRuntimeUpstreams(ctx, agentB.ID, []storage.TelemetryRuntimeUpstreamRecord{
+			{AgentID: agentB.ID, UpstreamID: 9, ObservedAt: base, RouteKind: "direct", Address: "b-9:443", Healthy: true},
+		}); err != nil {
+			t.Fatalf("ReplaceTelemetryRuntimeUpstreams(B) error = %v", err)
+		}
+
+		eventsA := make([]storage.TelemetryRuntimeEventRecord, 0, 15)
+		for i := 0; i < 15; i++ {
+			eventsA = append(eventsA, storage.TelemetryRuntimeEventRecord{
+				AgentID:    agentA.ID,
+				Sequence:   int64(i + 1),
+				ObservedAt: base,
+				Timestamp:  base.Add(time.Duration(i) * time.Minute),
+				EventType:  "tick",
+				Context:    "a",
+				Severity:   "ok",
+			})
+		}
+		if err := store.AppendTelemetryRuntimeEvents(ctx, agentA.ID, eventsA); err != nil {
+			t.Fatalf("AppendTelemetryRuntimeEvents(A) error = %v", err)
+		}
+		eventsB := make([]storage.TelemetryRuntimeEventRecord, 0, 3)
+		for i := 0; i < 3; i++ {
+			eventsB = append(eventsB, storage.TelemetryRuntimeEventRecord{
+				AgentID:    agentB.ID,
+				Sequence:   int64(i + 1),
+				ObservedAt: base,
+				Timestamp:  base.Add(time.Duration(i) * time.Minute),
+				EventType:  "tick",
+				Context:    "b",
+				Severity:   "ok",
+			})
+		}
+		if err := store.AppendTelemetryRuntimeEvents(ctx, agentB.ID, eventsB); err != nil {
+			t.Fatalf("AppendTelemetryRuntimeEvents(B) error = %v", err)
+		}
+
+		// Bulk current: both agents.
+		allCurrent, err := store.ListTelemetryRuntimeCurrent(ctx)
+		if err != nil {
+			t.Fatalf("ListTelemetryRuntimeCurrent() error = %v", err)
+		}
+		if len(allCurrent) != 2 {
+			t.Fatalf("len(ListTelemetryRuntimeCurrent()) = %d, want 2", len(allCurrent))
+		}
+
+		// Bulk DCs grouped.
+		allDCs, err := store.ListAllTelemetryRuntimeDCs(ctx)
+		if err != nil {
+			t.Fatalf("ListAllTelemetryRuntimeDCs() error = %v", err)
+		}
+		dcsByAgent := map[string]int{}
+		for _, dc := range allDCs {
+			dcsByAgent[dc.AgentID]++
+		}
+		if dcsByAgent[agentA.ID] != 2 || dcsByAgent[agentB.ID] != 1 {
+			t.Fatalf("ListAllTelemetryRuntimeDCs() per-agent counts = %v, want A=2 B=1", dcsByAgent)
+		}
+
+		// Bulk upstreams grouped.
+		allUps, err := store.ListAllTelemetryRuntimeUpstreams(ctx)
+		if err != nil {
+			t.Fatalf("ListAllTelemetryRuntimeUpstreams() error = %v", err)
+		}
+		upsByAgent := map[string]int{}
+		for _, up := range allUps {
+			upsByAgent[up.AgentID]++
+		}
+		if upsByAgent[agentA.ID] != 2 || upsByAgent[agentB.ID] != 1 {
+			t.Fatalf("ListAllTelemetryRuntimeUpstreams() per-agent counts = %v, want A=2 B=1", upsByAgent)
+		}
+
+		// Bulk events with PER-AGENT limit of 10: agent A keeps its 10
+		// most recent (sequences 6..15), agent B keeps all 3.
+		allEvents, err := store.ListAllTelemetryRuntimeEventsPerAgent(ctx, 10)
+		if err != nil {
+			t.Fatalf("ListAllTelemetryRuntimeEventsPerAgent() error = %v", err)
+		}
+		eventsByAgent := map[string][]storage.TelemetryRuntimeEventRecord{}
+		for _, ev := range allEvents {
+			eventsByAgent[ev.AgentID] = append(eventsByAgent[ev.AgentID], ev)
+		}
+		if len(eventsByAgent[agentA.ID]) != 10 {
+			t.Fatalf("per-agent events for A = %d, want 10 (most-recent window)", len(eventsByAgent[agentA.ID]))
+		}
+		if len(eventsByAgent[agentB.ID]) != 3 {
+			t.Fatalf("per-agent events for B = %d, want 3", len(eventsByAgent[agentB.ID]))
+		}
+		// The 10 returned for A must be the newest (sequences 6..15); the
+		// oldest five (sequences 1..5) must be excluded.
+		seenSeq := map[int64]bool{}
+		for _, ev := range eventsByAgent[agentA.ID] {
+			seenSeq[ev.Sequence] = true
+		}
+		for seq := int64(1); seq <= 5; seq++ {
+			if seenSeq[seq] {
+				t.Fatalf("ListAllTelemetryRuntimeEventsPerAgent(10) returned stale sequence %d for A; want only 6..15", seq)
+			}
+		}
+		for seq := int64(6); seq <= 15; seq++ {
+			if !seenSeq[seq] {
+				t.Fatalf("ListAllTelemetryRuntimeEventsPerAgent(10) missing recent sequence %d for A", seq)
+			}
+		}
+	})
 }

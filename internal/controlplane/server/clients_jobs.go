@@ -47,13 +47,11 @@ func (s *Server) enqueueClientResetQuotaJob(ctx context.Context, actorID string,
 	}
 
 	readOnlyAgents := make(map[string]bool, len(targetAgentIDs))
-	s.mu.RLock()
 	for _, agentID := range targetAgentIDs {
-		if agent, ok := s.agents[agentID]; ok {
+		if agent, ok := s.live.Get(agentID); ok {
 			readOnlyAgents[agentID] = agent.ReadOnly
 		}
 	}
-	s.mu.RUnlock()
 
 	job, err := s.jobs.Enqueue(ctx, jobs.CreateJobInput{
 		Action:         jobs.ActionClientResetQuota,
@@ -98,14 +96,11 @@ func (s *Server) enqueueClientJob(ctx context.Context, actorID string, action jo
 	}
 
 	readOnlyAgents := make(map[string]bool, len(targetAgentIDs))
-	s.mu.RLock()
 	for _, agentID := range targetAgentIDs {
-		agent, ok := s.agents[agentID]
-		if ok {
+		if agent, ok := s.live.Get(agentID); ok {
 			readOnlyAgents[agentID] = agent.ReadOnly
 		}
 	}
-	s.mu.RUnlock()
 
 	job, err := s.jobs.Enqueue(ctx, jobs.CreateJobInput{
 		Action:         action,

@@ -48,10 +48,12 @@ const (
 	// We only emit this name when sessionCookieSecure(r) is true; otherwise the
 	// browser would refuse it. Reads accept either form so a session issued
 	// under one prefix still works while a deployment toggles Secure.
-	sessionCookieNameHostPrefix          = "__Host-panvex_session"
-	apiBasePath                          = "/api"
-	maxInMemoryMetricSnapshots           = 512
-	maxInMemoryAuditEvents               = 1024
+	sessionCookieNameHostPrefix = "__Host-panvex_session"
+	apiBasePath                 = "/api"
+	// auditFirstPageLimit bounds the no-cursor GET /api/audit first page (and the
+	// boot restore window). The store query returns the most recent N events
+	// oldest→newest; clients page older history via ?cursor=.
+	auditFirstPageLimit                  = 1024
 	httpLoginRateLimitPerWindow          = 30
 	httpAgentBootstrapRateLimitPerWindow = 30
 	grpcConnectRateLimitPerWindow        = 30
@@ -205,33 +207,26 @@ type Server struct {
 	// Connect to deny access. It is not persisted: on restart the set is
 	// empty, which is acceptable because the CA will not have issued new
 	// certificates for deleted agents and existing ones expire within 30 days.
-	revokedAgentIDs              map[string]struct{}
-	agents                       map[string]Agent
+	revokedAgentIDs map[string]struct{}
+	// live is the single owner of agent live-state (full Agent value:
+	// identity + runtime telemetry) and per-agent Telemt instances, with
+	// replace/prune semantics and deep-copy isolation (A2/A1). It replaces
+	// the former server-owned s.agents / s.instances maps; every read goes
+	// through live.Get/List/AllInstances/InstancesForAgent and every write
+	// through live.ApplySnapshot/SetInstances/Remove. LiveStore owns its own
+	// RWMutex and never reaches back into s.mu, so the documented control-
+	// plane lock ordering (s.mu -> live internal lock) is preserved: callers
+	// that need both take s.mu first.
+	live                         *agents.LiveStore[Agent, Instance]
 	detailBoosts                 map[string]time.Time
 	initializationWatchCooldowns map[string]time.Time
-	// fallbackEnteredAt mirrors agent_fallback_state in memory. Hydrated on
-	// Run(); updated synchronously under mu and persisted asynchronously via
-	// the batch writer. Crash-window caveat: see spec.
-	fallbackEnteredAt map[string]time.Time
-	instances         map[string]Instance
-	metrics           []MetricSnapshot
-	// auditTrail is a fixed-size ring buffer of the most recent audit events.
-	// Append is O(1) — we overwrite auditBuf[auditHead] and advance the head
-	// index, rather than performing an O(N) slice shift on every overflow.
-	//
-	// Layout: auditBuf is a pre-allocated array of length
-	// maxInMemoryAuditEvents. auditSize is the number of valid entries
-	// (<= maxInMemoryAuditEvents). When auditSize < len(auditBuf) the ring
-	// is still filling and valid entries live at indices [0, auditSize).
-	// Once full, auditHead points at the next slot to overwrite (which
-	// equals the oldest entry); valid entries in oldest-to-newest order
-	// are at indices auditHead, auditHead+1, ... (mod len).
-	//
-	// Callers must read/write this structure under metricsAuditMu and use
-	// snapshotAuditTrailLocked / appendAuditTrailLocked helpers.
-	auditBuf       [maxInMemoryAuditEvents]AuditEvent
-	auditHead      int
-	auditSize      int
+	// fallback owns the in-memory mirror of agent_fallback_state (A2): the
+	// per-agent ME->Direct fallback-entered-at timestamp. Hydrated on Run()
+	// via restoreFallbackState; the transition edge (set on entry / clear on
+	// exit) is driven by applyFallbackStateTransition and persisted
+	// asynchronously via the batch writer. The tracker owns its own lock and
+	// never reaches into s.mu. Crash-window caveat: see spec.
+	fallback       *agents.FallbackTracker
 	panelSettings  PanelSettings
 	updateSettings UpdateSettings
 	updateState    UpdateState

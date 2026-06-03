@@ -58,14 +58,12 @@ func (s *Server) RenewCertificate(ctx context.Context, request *gatewayrpc.Renew
 	certIssuedAt := now.UTC()
 	certExpiresAt := issued.ExpiresAt.UTC()
 	s.mu.Lock()
-	if agent, ok := s.agents[agentID]; ok {
-		agent.CertIssuedAt = &certIssuedAt
-		agent.CertExpiresAt = &certExpiresAt
-		agent.CertSerial = issued.Serial
-		s.agents[agentID] = agent
-		if s.batchWriter != nil {
-			s.batchWriter.agents.Enqueue(agentToRecord(agent))
-		}
+	if agent, ok := s.updateAgentIdentity(agentID, func(a *Agent) {
+		a.CertIssuedAt = &certIssuedAt
+		a.CertExpiresAt = &certExpiresAt
+		a.CertSerial = issued.Serial
+	}); ok && s.batchWriter != nil {
+		s.batchWriter.agents.Enqueue(agentToRecord(agent))
 	}
 	s.mu.Unlock()
 	// Q4.U-S-04: pin the new serial so the in-flight stream (and any
@@ -279,4 +277,3 @@ func authenticatedAgentIdentity(ctx context.Context) (string, string, error) {
 	cert := tlsInfo.State.PeerCertificates[0]
 	return cert.Subject.CommonName, cert.SerialNumber.Text(16), nil
 }
-
