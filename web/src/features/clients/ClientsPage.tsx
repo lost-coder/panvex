@@ -21,6 +21,7 @@ import { ClientsTableBody } from "@/features/clients/components/ClientsTableBody
 import { buildClientColumns } from "@/features/clients/components/ClientsTableColumns";
 import { useClientSelection } from "@/features/clients/components/useClientSelection";
 import { useNowSec } from "@/shared/hooks/useNowSec";
+import { useTableData } from "@/shared/hooks";
 import {
   BulkActionBar,
   Button,
@@ -67,7 +68,6 @@ export function ClientsPage({
   const { t } = useTranslation("clients");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [currentPage, setCurrentPage] = useState(1);
   const [createOpen, setCreateOpen] = useState(false);
   const [createData, setCreateData] = useState<ClientFormData>({ ...emptyFormData });
   const pageSize = 20;
@@ -95,9 +95,9 @@ export function ClientsPage({
     [clients, search, statusFilter, nowMs],
   );
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage = Math.min(currentPage, totalPages);
-  const paginated = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+  // Client-side pagination via the shared adapter — clamps the page when
+  // filters shrink the list (no stranded "page 8 of 3").
+  const { page, setPage, totalPages, totalItems, paginated } = useTableData(filtered, pageSize);
 
   // Selection helpers (scoped to the visible page — no fleet-wide select).
   const pageIds = useMemo(() => paginated.map((c) => c.id), [paginated]);
@@ -191,7 +191,7 @@ export function ClientsPage({
                 value: search,
                 onChange: (v) => {
                   setSearch(v);
-                  setCurrentPage(1);
+                  setPage(1);
                 },
                 placeholder: t("filters.searchPlaceholder"),
               }}
@@ -200,7 +200,7 @@ export function ClientsPage({
                   value: statusFilter,
                   onChange: (v) => {
                     setStatusFilter(v);
-                    setCurrentPage(1);
+                    setPage(1);
                   },
                   counts: statusCounts,
                   t,
@@ -212,11 +212,11 @@ export function ClientsPage({
                   : undefined
               }
               pagination={{
-                page: safePage,
+                page,
                 totalPages,
-                totalItems: filtered.length,
+                totalItems,
                 pageSize,
-                onChange: setCurrentPage,
+                onChange: setPage,
               }}
             >
               <ClientsTableBody
