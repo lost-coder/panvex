@@ -111,11 +111,11 @@ export function ResetQuotaHistory({ clientId, agentLabels }: Readonly<Props>) {
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm text-fg">{headline}</span>
-                <span className="text-[11px] font-mono text-fg-muted tabular-nums">
+                <span className="text-micro font-mono text-fg-muted tabular-nums">
                   {when.toLocaleString()} · {ageLabel}
                 </span>
               </div>
-              <div className="flex items-center gap-3 text-[11px] font-mono text-fg-muted">
+              <div className="flex items-center gap-3 text-micro font-mono text-fg-muted">
                 <span>{t("detail.quota.history.by", { actor: event.actor_id })}</span>
                 {agents.count > 1 && agents.label !== "" && (
                   <span className="truncate">{agents.label}</span>

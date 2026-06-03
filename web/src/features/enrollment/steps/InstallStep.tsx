@@ -47,7 +47,7 @@ export function InstallStep({
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-xs bg-bg-card border border-divider p-3">
-        <div className="text-[10px] font-medium text-fg-muted uppercase tracking-wider mb-2">
+        <div className="text-nano font-medium text-fg-muted uppercase tracking-wider mb-2">
           {t("installCommand.requirementsHeading")}
         </div>
         <div className="flex flex-col gap-1.5 text-xs text-fg">
@@ -66,7 +66,7 @@ export function InstallStep({
                   {r.label}
                 </span>
                 {r.detail && (
-                  <span className="text-[11px] font-mono text-fg-muted">{r.detail}</span>
+                  <span className="text-micro font-mono text-fg-muted">{r.detail}</span>
                 )}
               </div>
             </div>
@@ -76,7 +76,7 @@ export function InstallStep({
 
       <div>
         <div className="flex justify-between items-center mb-1.5">
-          <span className="text-[10px] font-medium text-fg-muted uppercase tracking-wider">
+          <span className="text-nano font-medium text-fg-muted uppercase tracking-wider">
             {t("installCommand.commandHeading")}
           </span>
           <CopyButton text={installCommand} />

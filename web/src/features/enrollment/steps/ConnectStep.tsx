@@ -88,11 +88,11 @@ export function ConnectStep({
                 >
                   {s.label}
                 </span>
-                <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">
+                <span className="text-nano font-mono uppercase tracking-wider text-fg-muted">
                   {t(`connect.stages.state.${s.state}`)}
                 </span>
               </div>
-              <div className="text-[11px] font-mono text-fg-muted">{s.detail}</div>
+              <div className="text-micro font-mono text-fg-muted">{s.detail}</div>
             </div>
           );
         })}

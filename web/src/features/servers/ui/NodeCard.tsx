@@ -103,7 +103,7 @@ function Metric({ value, label }: Readonly<{ value: string; label: string }>) {
   return (
     <div className="flex flex-col">
       <span className="text-xs font-mono font-medium text-fg leading-none">{value}</span>
-      <span className="text-[10px] text-fg-muted uppercase tracking-wider mt-0.5">{label}</span>
+      <span className="text-nano text-fg-muted uppercase tracking-wider mt-0.5">{label}</span>
     </div>
   );
 }

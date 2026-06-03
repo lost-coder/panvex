@@ -212,7 +212,7 @@ export function LoginPage({
             see "this is a live panel" before they even type a password. */}
         <div className="flex flex-col items-center gap-1">
           <span className="font-mono text-3xl font-bold text-fg tracking-tight">{t("login.brand")}</span>
-          <span className="text-[11px] text-fg-muted uppercase tracking-widest font-mono inline-flex items-center gap-1.5">
+          <span className="text-micro text-fg-muted uppercase tracking-widest font-mono inline-flex items-center gap-1.5">
             <span
               aria-hidden="true"
               className="h-1.5 w-1.5 rounded-full bg-status-ok shadow-[0_0_6px_var(--color-status-ok)]"

@@ -293,7 +293,7 @@ export function DataTable<T>({
             column picker + direction toggle wired to the same sort state. */}
         {sortableColumns.length > 0 && sortedData.length > 0 && (
           <label className="flex items-center gap-2">
-            <span className="text-[10px] text-fg-muted uppercase tracking-wider shrink-0">
+            <span className="text-nano text-fg-muted uppercase tracking-wider shrink-0">
               {t("sortBy")}
             </span>
             <Select
@@ -337,7 +337,7 @@ export function DataTable<T>({
                   .filter((col) => !col.cardHidden)
                   .map((col) => (
                   <div key={col.key} className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] text-fg-muted uppercase tracking-wider shrink-0">
+                    <span className="text-nano text-fg-muted uppercase tracking-wider shrink-0">
                       {col.header}
                     </span>
                     <span className="text-sm text-fg text-right truncate">{col.render(row)}</span>

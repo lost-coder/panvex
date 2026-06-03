@@ -97,7 +97,7 @@ export function UsersManagementPage({
           <AvatarInitial user={u} />
           <div className="flex flex-col min-w-0">
             <span className="text-sm font-medium text-fg truncate">{u.username}</span>
-            <span className="text-[10px] font-mono text-fg-muted">
+            <span className="text-nano font-mono text-fg-muted">
               {t("table.addedRelative", { when: formatRelative(u.createdAt) })}
             </span>
           </div>

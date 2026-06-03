@@ -54,7 +54,7 @@ export function FleetGroupsPage({
       render: (g: Readonly<FleetGroupEntry>) => (
         <div className="flex flex-col min-w-0">
           <span className="font-medium text-fg truncate">{g.label || g.name}</span>
-          <span className="text-[11px] font-mono text-fg-muted truncate">{g.name}</span>
+          <span className="text-micro font-mono text-fg-muted truncate">{g.name}</span>
         </div>
       ),
       className: "w-[40%]",
@@ -75,7 +75,7 @@ export function FleetGroupsPage({
         return count > 0 ? (
           <Badge variant="default">{count}</Badge>
         ) : (
-          <span className="text-[11px] font-mono text-fg-muted">—</span>
+          <span className="text-micro font-mono text-fg-muted">—</span>
         );
       },
       className: "hidden md:table-cell w-[120px]",

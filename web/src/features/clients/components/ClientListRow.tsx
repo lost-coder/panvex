@@ -53,7 +53,7 @@ export function ClientListRow({
       <StatusDot status={client.enabled ? "ok" : "error"} />
       <div className="flex flex-col min-w-0 flex-1">
         <span className="font-medium text-fg truncate">{client.name}</span>
-        <span className="text-[11px] font-mono text-fg-muted tabular-nums">
+        <span className="text-micro font-mono text-fg-muted tabular-nums">
           {client.activeTcpConns} {t("table.connsSuffix")} · {formatBytes(client.trafficUsedBytes)}
         </span>
       </div>

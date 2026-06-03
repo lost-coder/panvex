@@ -46,13 +46,13 @@ export function TimelineEvent({
                 long messages from fighting a narrow timestamp column. */}
             <div className="flex items-baseline justify-between gap-2 min-w-0">
               <span className="text-xs font-mono text-accent truncate min-w-0">{source}</span>
-              <span className="text-[11px] font-mono text-fg-muted shrink-0">{time}</span>
+              <span className="text-micro font-mono text-fg-muted shrink-0">{time}</span>
             </div>
             <p className="text-sm text-fg leading-snug break-words mt-0.5">{message}</p>
           </>
         ) : (
           <div className="flex items-baseline gap-2 min-w-0">
-            <span className="text-[11px] font-mono text-fg-muted shrink-0">{time}</span>
+            <span className="text-micro font-mono text-fg-muted shrink-0">{time}</span>
             <span className="text-sm text-fg leading-snug break-words min-w-0 flex-1">
               {message}
             </span>

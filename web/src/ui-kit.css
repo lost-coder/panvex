@@ -231,6 +231,18 @@
   line-height: 1.4;
   color: var(--color-fg-muted);
 }
+/* Pure sub-xs font-size tiers (font-size only, like the old text-[Npx]
+   arbitrary values they replace — color/weight/line-height stay with the
+   surrounding classes). These are the tokenized 9/10/11px scale. */
+@utility text-micro {
+  font-size: 11px;
+}
+@utility text-nano {
+  font-size: 10px;
+}
+@utility text-pico {
+  font-size: 9px;
+}
 @utility text-muted {
   font-size: 0.875rem;
   line-height: 1.25rem;

@@ -69,7 +69,7 @@ export function AuditRowTarget({ e }: Readonly<{ e: AuditListItem }>) {
       {e.targetKind && (
         <span
           className={cn(
-            "rounded-xs px-1 py-px text-[9px] font-mono uppercase tracking-wider",
+            "rounded-xs px-1 py-px text-pico font-mono uppercase tracking-wider",
             kindTone[e.targetKind] ?? "bg-fg-faint/30 text-fg-muted",
           )}
         >
@@ -176,7 +176,7 @@ export function AuditList({ events }: Readonly<{ events: AuditListItem[] }>) {
                 key={`h:${item.day}`}
                 ref={virtualizer.measureElement}
                 data-index={virtualRow.index}
-                className="absolute left-0 top-0 w-full bg-bg-card px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider text-fg-muted border-b border-divider"
+                className="absolute left-0 top-0 w-full bg-bg-card px-3 py-1.5 text-nano font-mono uppercase tracking-wider text-fg-muted border-b border-divider"
                 style={{ transform }}
               >
                 {item.day}
@@ -194,18 +194,18 @@ export function AuditList({ events }: Readonly<{ events: AuditListItem[] }>) {
               className="absolute left-0 top-0 w-full flex items-center gap-3 px-3 py-2 border-b border-divider hover:bg-bg-hover transition-colors"
               style={{ transform }}
             >
-              <span className="text-[10px] font-mono text-fg-muted tabular-nums w-[56px] shrink-0">
+              <span className="text-nano font-mono text-fg-muted tabular-nums w-[56px] shrink-0">
                 {formatTime(e.createdAtUnix)}
               </span>
               <div className="shrink-0">
                 <ActionCell action={e.action} />
               </div>
-              <span className="text-[11px] text-fg-muted flex items-center gap-1.5 min-w-0 flex-1">
+              <span className="text-micro text-fg-muted flex items-center gap-1.5 min-w-0 flex-1">
                 <span className="text-fg-faint shrink-0">{t("auditList.by")}</span>
                 <AuditRowActor e={e} />
                 <AuditRowTarget e={e} />
               </span>
-              <span className="ml-auto text-[10px] font-mono text-fg-faint shrink-0">
+              <span className="ml-auto text-nano font-mono text-fg-faint shrink-0">
                 {formatAge(e.createdAtUnix)}
               </span>
             </div>

@@ -66,7 +66,7 @@ export function ClientTrafficCell({ used, quota, nodes }: Readonly<{ used: numbe
   })();
   return (
     <div className="flex flex-col gap-1 min-w-[120px]">
-      <span className="text-[11px] font-mono text-fg tabular-nums">
+      <span className="text-micro font-mono text-fg tabular-nums">
         {formatBytes(used)}
         <span className="text-fg-muted"> / {formatQuota(denom)}</span>
       </span>
@@ -82,10 +82,10 @@ export function ClientExpiryCell({
   nowSec,
   t,
 }: Readonly<{ rfc: string; nowSec: number; t: TFunction<"clients"> }>) {
-  if (!rfc) return <span className="text-[11px] font-mono text-fg-muted">{t("expiry.never")}</span>;
+  if (!rfc) return <span className="text-micro font-mono text-fg-muted">{t("expiry.never")}</span>;
   const parsed = Date.parse(rfc);
   if (!Number.isFinite(parsed))
-    return <span className="text-[11px] font-mono text-fg-muted">{t("expiry.unknown")}</span>;
+    return <span className="text-micro font-mono text-fg-muted">{t("expiry.unknown")}</span>;
   const days = Math.floor((parsed / 1000 - nowSec) / 86_400);
   const tone = (() => {
     if (days < 0) return "text-status-error";
@@ -99,8 +99,8 @@ export function ClientExpiryCell({
   })();
   return (
     <div className="flex flex-col">
-      <span className="text-[11px] font-mono text-fg tabular-nums">{formatExpiry(rfc)}</span>
-      <span className={cn("text-[10px] font-mono", tone)}>{subtitle}</span>
+      <span className="text-micro font-mono text-fg tabular-nums">{formatExpiry(rfc)}</span>
+      <span className={cn("text-nano font-mono", tone)}>{subtitle}</span>
     </div>
   );
 }

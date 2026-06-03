@@ -179,7 +179,7 @@ export function ClientFormSheet({
               {t("form.deploymentTargets")}
             </span>
             {!hasDeploymentTargets && (
-              <span className="text-[11px] text-status-warn">{t("form.deploymentTargetsHint")}</span>
+              <span className="text-micro text-status-warn">{t("form.deploymentTargetsHint")}</span>
             )}
           </div>
 
@@ -225,7 +225,7 @@ export function ClientFormSheet({
               <div className="max-h-40 overflow-y-auto rounded-xs border border-border-hi bg-bg-card divide-y divide-border/60">
                 {Array.from(agentsByGroup.entries()).map(([groupId, list]) => (
                   <div key={groupId} className="flex flex-col">
-                    <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-fg-muted bg-bg-muted/40">
+                    <div className="px-2 py-1 text-nano uppercase tracking-wide text-fg-muted bg-bg-muted/40">
                       {groupId}
                     </div>
                     {(list ?? []).map((a) => {
@@ -247,7 +247,7 @@ export function ClientFormSheet({
                           />
                           <span className="font-mono text-fg truncate">{a.nodeName || a.id}</span>
                           {a.online === false && (
-                            <span className="ml-auto text-[10px] text-status-warn">{t("form.agentOffline")}</span>
+                            <span className="ml-auto text-nano text-status-warn">{t("form.agentOffline")}</span>
                           )}
                         </label>
                       );

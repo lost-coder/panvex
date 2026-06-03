@@ -59,7 +59,7 @@ export function DashboardPage({
                 pulling fresh telemetry. */}
             <span
               aria-live="polite"
-              className="hidden sm:flex items-center gap-1.5 text-[11px] font-mono text-fg-muted"
+              className="hidden sm:flex items-center gap-1.5 text-micro font-mono text-fg-muted"
             >
               <StatusDot status="ok" className="animate-pulse" />
               {t("page.live")}

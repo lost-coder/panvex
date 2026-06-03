@@ -57,13 +57,13 @@ export function ShortcutsOverlay() {
           {SHORTCUTS.map((item) => (
             <li key={item.keys} className="flex items-center justify-between gap-4">
               <span className="text-fg-muted">{item.description}</span>
-              <kbd className="rounded border border-border bg-bg px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-fg">
+              <kbd className="rounded border border-border bg-bg px-2 py-0.5 font-mono text-nano uppercase tracking-wide text-fg">
                 {item.keys}
               </kbd>
             </li>
           ))}
         </ul>
-        <p className="mt-4 text-[11px] text-fg-muted">
+        <p className="mt-4 text-micro text-fg-muted">
           Сочетания не срабатывают внутри полей ввода. Нажмите Esc, чтобы закрыть.
         </p>
       </div>

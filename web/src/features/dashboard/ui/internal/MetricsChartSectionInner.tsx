@@ -359,7 +359,7 @@ export default function MetricsChartSectionInner({
         <SectionHeader title="Performance" />
         <div className="flex items-center gap-2">
           {resolution && (
-            <span className="text-[10px] text-fg-muted bg-bg px-1.5 py-0.5 rounded-xs border border-border">
+            <span className="text-nano text-fg-muted bg-bg px-1.5 py-0.5 rounded-xs border border-border">
               {resolution}
             </span>
           )}

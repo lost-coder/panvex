@@ -47,7 +47,7 @@ export function StatusLabel({ tone, label, animate, className }: Readonly<Status
       />
       <span
         className={cn(
-          "text-[11px] font-mono uppercase tracking-wider",
+          "text-micro font-mono uppercase tracking-wider",
           textClass[tone],
         )}
       >

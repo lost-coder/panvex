@@ -46,7 +46,7 @@ function PulseTick({
         centered && "items-center text-center",
       )}
     >
-      <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted truncate">
+      <span className="text-nano font-mono uppercase tracking-wider text-fg-muted truncate">
         {label}
       </span>
       <div className={cn("flex items-baseline gap-1", toneClass[tone ?? "default"])}>
@@ -58,7 +58,7 @@ function PulseTick({
       {(deltaLabel || hint) && (
         <div
           className={cn(
-            "flex items-center gap-2 text-[10px] font-mono",
+            "flex items-center gap-2 text-nano font-mono",
             centered && "justify-center",
           )}
         >

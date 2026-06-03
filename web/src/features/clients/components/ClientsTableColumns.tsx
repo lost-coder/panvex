@@ -81,7 +81,7 @@ export function buildClientColumns(
       key: "usage",
       header: t("table.usage"),
       render: (c: ClientListItem) => (
-        <div className="flex flex-col font-mono text-[11px]">
+        <div className="flex flex-col font-mono text-micro">
           <span className="text-fg tabular-nums">
             {c.activeTcpConns} {t("table.connsSuffix")}
           </span>

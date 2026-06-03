@@ -54,23 +54,23 @@ export function ServerHero({
         </span>
         <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
           {server.ip && (
-            <span className="font-mono text-[11px] text-fg-muted px-2 py-0.5 rounded-xs border border-divider bg-bg">
+            <span className="font-mono text-micro text-fg-muted px-2 py-0.5 rounded-xs border border-divider bg-bg">
               {server.ip}
             </span>
           )}
-          <span className="font-mono text-[11px] text-fg-muted px-2 py-0.5 rounded-xs border border-divider bg-bg">
+          <span className="font-mono text-micro text-fg-muted px-2 py-0.5 rounded-xs border border-divider bg-bg">
             {t("detail.metaVersion", { version: systemInfo.version })}
           </span>
-          <span className="font-mono text-[11px] text-fg-muted px-2 py-0.5 rounded-xs border border-divider bg-bg">
+          <span className="font-mono text-micro text-fg-muted px-2 py-0.5 rounded-xs border border-divider bg-bg">
             {t("detail.metaUp", { value: formatUptime(systemInfo.uptimeSeconds) })}
           </span>
           {systemInfo.configReloadCount > 0 && (
-            <span className="font-mono text-[11px] text-fg-muted px-2 py-0.5 rounded-xs border border-divider bg-bg">
+            <span className="font-mono text-micro text-fg-muted px-2 py-0.5 rounded-xs border border-divider bg-bg">
               {t("detail.metaReloads", { count: systemInfo.configReloadCount })}
             </span>
           )}
           {server.telemtUnreachable && (
-            <span className="font-mono text-[11px] text-neutral-400 px-2 py-0.5 rounded-xs border border-neutral-500/30 bg-neutral-500/10">
+            <span className="font-mono text-micro text-neutral-400 px-2 py-0.5 rounded-xs border border-neutral-500/30 bg-neutral-500/10">
               {t("detail.modeUnknown")}
             </span>
           )}

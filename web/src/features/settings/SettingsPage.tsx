@@ -34,7 +34,7 @@ const OPERATIONAL_NAMESPACES = ["http", "agents", "auth", "jobs", "observability
 function AdminBadge() {
   const { t } = useTranslation("settings");
   return (
-    <span className="inline-flex items-center gap-1 rounded-xs border border-accent/20 bg-accent/5 px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wider text-accent">
+    <span className="inline-flex items-center gap-1 rounded-xs border border-accent/20 bg-accent/5 px-1.5 py-0.5 text-pico font-mono uppercase tracking-wider text-accent">
       <ShieldCheck className="h-2.5 w-2.5" aria-hidden />
       {t("page.adminBadge")}
     </span>
@@ -64,12 +64,12 @@ export function SettingsPage({
         subtitle={t("page.subtitle")}
         trailing={
           hasAdmin ? (
-            <span className="inline-flex items-center gap-1.5 rounded-xs border border-accent/30 bg-accent/10 px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-accent">
+            <span className="inline-flex items-center gap-1.5 rounded-xs border border-accent/30 bg-accent/10 px-2 py-1 text-nano font-mono uppercase tracking-wider text-accent">
               <ShieldCheck className="h-3 w-3" aria-hidden />
               {t("page.adminBadge")}
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1.5 rounded-xs border border-border bg-bg-card px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-fg-muted">
+            <span className="inline-flex items-center gap-1.5 rounded-xs border border-border bg-bg-card px-2 py-1 text-nano font-mono uppercase tracking-wider text-fg-muted">
               {t("page.userBadge")}
             </span>
           )

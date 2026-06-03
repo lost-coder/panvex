@@ -316,7 +316,7 @@ export function ServerDetailPage({
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold text-fg">{t("detail.upstreams.title")}</span>
-            <span className="text-[10px] font-mono text-fg-muted">
+            <span className="text-nano font-mono text-fg-muted">
               {t("detail.upstreams.peers", { count: server.upstreams.length })}
             </span>
           </div>

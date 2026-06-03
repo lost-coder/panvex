@@ -134,7 +134,7 @@ export function ClientsPage({
               >
                 {t("page.discovered")}
                 {pendingDiscoveredCount ? (
-                  <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-accent text-bg text-[10px] font-mono">
+                  <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-accent text-bg text-nano font-mono">
                     {pendingDiscoveredCount}
                   </span>
                 ) : null}

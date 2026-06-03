@@ -32,7 +32,7 @@ function LoadCell({
   const tone = loadTone(value);
   const hasSeries = Array.isArray(series) && series.length > 1;
   return (
-    <div className="flex items-center gap-1.5 text-[10px] font-mono leading-none">
+    <div className="flex items-center gap-1.5 text-nano font-mono leading-none">
       <span className="w-7 text-fg-muted shrink-0 uppercase tracking-wider">{label}</span>
       {hasSeries && series && <MiniChart data={series} width={56} height={18} color={tone.chart} />}
       <span className={`w-9 text-right tabular-nums shrink-0 ${tone.text}`}>{value}%</span>
@@ -84,11 +84,11 @@ const FleetRow = memo(function FleetRow({ node, onClick }: Readonly<{ node: Dash
           {node.name}
         </span>
         {isProblem && <Badge variant={badgeVariant}>{badgeLabel}</Badge>}
-        <span className="flex items-baseline gap-1 text-[11px] font-mono tabular-nums shrink-0 md:hidden">
+        <span className="flex items-baseline gap-1 text-micro font-mono tabular-nums shrink-0 md:hidden">
           <span className="text-fg">{node.connections.toLocaleString()}</span>
           <span className="text-fg-muted opacity-60">{t("fleet.connections")}</span>
         </span>
-        <span className="text-[11px] font-mono text-fg-muted tabular-nums shrink-0 md:hidden">
+        <span className="text-micro font-mono text-fg-muted tabular-nums shrink-0 md:hidden">
           {formatBytes(node.trafficBytes)}
         </span>
       </div>
@@ -99,11 +99,11 @@ const FleetRow = memo(function FleetRow({ node, onClick }: Readonly<{ node: Dash
       <div className="flex items-center justify-between md:justify-end gap-4 md:gap-4 pl-4 md:pl-0">
         {/* Desktop-only conn + traffic columns — mobile renders them in
             line 1 next to the name. */}
-        <span className="hidden md:flex items-baseline gap-1 text-[11px] font-mono tabular-nums shrink-0 w-[92px] justify-end">
+        <span className="hidden md:flex items-baseline gap-1 text-micro font-mono tabular-nums shrink-0 w-[92px] justify-end">
           <span className="text-fg">{node.connections.toLocaleString()}</span>
           <span className="text-fg-muted opacity-60">{t("fleet.connections")}</span>
         </span>
-        <span className="hidden md:inline text-[11px] font-mono text-fg-muted tabular-nums shrink-0 w-[64px] text-right">
+        <span className="hidden md:inline text-micro font-mono text-fg-muted tabular-nums shrink-0 w-[64px] text-right">
           {formatBytes(node.trafficBytes)}
         </span>
         <LoadCell label="CPU" value={node.cpuPct} series={node.cpuSeries} />
@@ -140,10 +140,10 @@ function FleetList({
       {attention.length > 0 && (
         <>
           <div className="px-4 pt-3 pb-1 flex items-center justify-between border-b border-divider">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-status-error">
+            <span className="text-nano font-mono uppercase tracking-wider text-status-error">
               {t("fleet.sectionAttention")}
             </span>
-            <span className="text-[10px] font-mono text-fg-muted">
+            <span className="text-nano font-mono text-fg-muted">
               {t("fleet.sectionCount", { count: attention.length })}
             </span>
           </div>
@@ -155,7 +155,7 @@ function FleetList({
       {trimmedHealthy.length > 0 && (
         <>
           {attention.length > 0 && (
-            <div className="px-4 pt-3 pb-1 text-[10px] font-mono uppercase tracking-wider text-fg-muted border-b border-divider">
+            <div className="px-4 pt-3 pb-1 text-nano font-mono uppercase tracking-wider text-fg-muted border-b border-divider">
               {t("fleet.sectionHealthy")}
             </div>
           )}
@@ -165,7 +165,7 @@ function FleetList({
         </>
       )}
       {hiddenCount > 0 && (
-        <div className="px-3 py-2 text-[11px] font-mono text-fg-muted text-center border-t border-border">
+        <div className="px-3 py-2 text-micro font-mono text-fg-muted text-center border-t border-border">
           {t("fleet.more", { count: hiddenCount })}
         </div>
       )}
@@ -190,7 +190,7 @@ export function FleetPanel({
       <header className="flex items-center justify-between gap-3 px-4 py-3 border-b border-divider">
         <div className="flex items-baseline gap-3 min-w-0">
           <h2 className="text-sm font-semibold text-fg">{t("fleet.title")}</h2>
-          <span className="text-[11px] font-mono text-fg-muted truncate">
+          <span className="text-micro font-mono text-fg-muted truncate">
             {t("fleet.summary", { count: totalFleet })}
             {issues > 0 && t("fleet.issues", { count: issues })}
           </span>
@@ -199,7 +199,7 @@ export function FleetPanel({
           <button
             type="button"
             onClick={onViewAll}
-            className="text-[11px] font-mono text-fg-muted hover:text-fg transition-colors shrink-0"
+            className="text-micro font-mono text-fg-muted hover:text-fg transition-colors shrink-0"
           >
             {t("fleet.viewAll")}
           </button>
