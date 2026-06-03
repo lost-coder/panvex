@@ -27,6 +27,7 @@ func TestGithubAPIError_RateLimitExhausted(t *testing.T) {
 			"X-RateLimit-Limit":     "60",
 			"X-RateLimit-Reset":     "1780093524",
 		})
+	defer resp.Body.Close()
 	err := githubAPIError(resp)
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -41,6 +42,7 @@ func TestGithubAPIError_RateLimitExhausted(t *testing.T) {
 
 func TestGithubAPIError_GenericIncludesMessage(t *testing.T) {
 	resp := respWith(http.StatusNotFound, `{"message":"Not Found"}`, nil)
+	defer resp.Body.Close()
 	err := githubAPIError(resp)
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -53,6 +55,7 @@ func TestGithubAPIError_GenericIncludesMessage(t *testing.T) {
 
 func TestGithubAPIError_NoBodyStillReportsStatus(t *testing.T) {
 	resp := respWith(http.StatusBadGateway, ``, nil)
+	defer resp.Body.Close()
 	err := githubAPIError(resp)
 	if err == nil || !strings.Contains(err.Error(), "502") {
 		t.Fatalf("expected status 502 in error, got %v", err)
