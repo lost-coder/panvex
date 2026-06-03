@@ -107,51 +107,57 @@ export function EnrollmentAttemptsPage() {
       )}
 
       {items.length > 0 && (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs text-fg-muted">
-              <th className="py-1 font-normal">{t("table.startedAt")}</th>
-              <th className="py-1 font-normal">{t("table.mode")}</th>
-              <th className="py-1 font-normal">{t("table.agent")}</th>
-              <th className="py-1 font-normal">{t("table.status")}</th>
-              <th className="py-1 font-normal">{t("table.errorCode")}</th>
-              <th className="py-1 font-normal">{t("table.requestId")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((a) => {
-              const isOpen = expanded === a.id;
-              return (
-                <Fragment key={a.id}>
-                  <tr
-                    onClick={() => setExpanded(isOpen ? null : a.id)}
-                    className="cursor-pointer border-t border-divider hover:bg-bg-card"
-                  >
-                    <td className="py-2 text-fg">
-                      {new Date(a.started_at).toLocaleString()}
-                    </td>
-                    <td className="text-fg-muted">{a.mode}</td>
-                    <td className="text-fg-muted">{a.agent_id ?? "—"}</td>
-                    <td>
-                      <StatusLabel tone={statusTone(a.status)} label={a.status} />
-                    </td>
-                    <td className="text-fg-muted">{a.error_code ?? ""}</td>
-                    <td className="font-mono text-xs text-fg-muted">
-                      {a.request_id.slice(0, 8)}
-                    </td>
-                  </tr>
-                  {isOpen && detail.data && (
-                    <tr>
-                      <td colSpan={6} className="bg-bg-card p-3">
-                        <EnrollmentTimeline detail={detail.data} />
+        // overflow-x-auto keeps the 6-column table usable on phones instead
+        // of crushing/clipping; the two least-critical columns (error code,
+        // request id) collapse below md so the core info still fits without
+        // horizontal scroll on the common case.
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[32rem] text-sm">
+            <thead>
+              <tr className="text-left text-xs text-fg-muted">
+                <th className="py-1 font-normal whitespace-nowrap">{t("table.startedAt")}</th>
+                <th className="py-1 font-normal">{t("table.mode")}</th>
+                <th className="py-1 font-normal">{t("table.agent")}</th>
+                <th className="py-1 font-normal">{t("table.status")}</th>
+                <th className="py-1 font-normal hidden md:table-cell">{t("table.errorCode")}</th>
+                <th className="py-1 font-normal hidden md:table-cell">{t("table.requestId")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((a) => {
+                const isOpen = expanded === a.id;
+                return (
+                  <Fragment key={a.id}>
+                    <tr
+                      onClick={() => setExpanded(isOpen ? null : a.id)}
+                      className="cursor-pointer border-t border-divider hover:bg-bg-card"
+                    >
+                      <td className="py-2 text-fg whitespace-nowrap">
+                        {new Date(a.started_at).toLocaleString()}
+                      </td>
+                      <td className="text-fg-muted">{a.mode}</td>
+                      <td className="text-fg-muted">{a.agent_id ?? "—"}</td>
+                      <td>
+                        <StatusLabel tone={statusTone(a.status)} label={a.status} />
+                      </td>
+                      <td className="text-fg-muted hidden md:table-cell">{a.error_code ?? ""}</td>
+                      <td className="font-mono text-xs text-fg-muted hidden md:table-cell">
+                        {a.request_id.slice(0, 8)}
                       </td>
                     </tr>
-                  )}
-                </Fragment>
-              );
-            })}
-          </tbody>
-        </table>
+                    {isOpen && detail.data && (
+                      <tr>
+                        <td colSpan={6} className="bg-bg-card p-3">
+                          <EnrollmentTimeline detail={detail.data} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {query.hasNextPage && (
