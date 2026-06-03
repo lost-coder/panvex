@@ -113,35 +113,35 @@ func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T
 	server.mu.RLock()
 	defer server.mu.RUnlock()
 
-	if len(server.instances) != 1 {
-		t.Fatalf("len(server.instances) = %d, want %d", len(server.instances), 1)
+	if len(server.live.AllInstances()) != 1 {
+		t.Fatalf("len(server.live.AllInstances()) = %d, want %d", len(server.live.AllInstances()), 1)
 	}
 
-	if !server.agents[identity.AgentID].Runtime.AcceptingNewConnections {
+	if !server.liveAgent(identity.AgentID).Runtime.AcceptingNewConnections {
 		t.Fatal("agent runtime accepting_new_connections = false, want true")
 	}
-	if server.agents[identity.AgentID].Runtime.TransportMode != "middle_proxy" {
-		t.Fatalf("agent runtime transport_mode = %q, want %q", server.agents[identity.AgentID].Runtime.TransportMode, "middle_proxy")
+	if server.liveAgent(identity.AgentID).Runtime.TransportMode != "middle_proxy" {
+		t.Fatalf("agent runtime transport_mode = %q, want %q", server.liveAgent(identity.AgentID).Runtime.TransportMode, "middle_proxy")
 	}
-	if server.agents[identity.AgentID].Runtime.UptimeSeconds != 90_061 {
-		t.Fatalf("agent runtime uptime_seconds = %v, want %v", server.agents[identity.AgentID].Runtime.UptimeSeconds, 90_061)
+	if server.liveAgent(identity.AgentID).Runtime.UptimeSeconds != 90_061 {
+		t.Fatalf("agent runtime uptime_seconds = %v, want %v", server.liveAgent(identity.AgentID).Runtime.UptimeSeconds, 90_061)
 	}
-	if got := server.agents[identity.AgentID].Runtime.FailRatePct5m; got != 12.5 {
+	if got := server.liveAgent(identity.AgentID).Runtime.FailRatePct5m; got != 12.5 {
 		t.Fatalf("agent runtime fail_rate_pct_5m = %v, want %v", got, 12.5)
 	}
-	if !server.agents[identity.AgentID].Runtime.FailRateKnown {
+	if !server.liveAgent(identity.AgentID).Runtime.FailRateKnown {
 		t.Fatal("agent runtime fail_rate_known = false, want true")
 	}
-	if got := server.agents[identity.AgentID].Runtime.ConnectAttemptTotal; got != 1000 {
+	if got := server.liveAgent(identity.AgentID).Runtime.ConnectAttemptTotal; got != 1000 {
 		t.Fatalf("agent runtime connect_attempt_total = %d, want %d", got, 1000)
 	}
-	if got := server.agents[identity.AgentID].Runtime.ConnectSuccessTotal; got != 875 {
+	if got := server.liveAgent(identity.AgentID).Runtime.ConnectSuccessTotal; got != 875 {
 		t.Fatalf("agent runtime connect_success_total = %d, want %d", got, 875)
 	}
-	if got := server.agents[identity.AgentID].Runtime.ConnectFailTotal; got != 125 {
+	if got := server.liveAgent(identity.AgentID).Runtime.ConnectFailTotal; got != 125 {
 		t.Fatalf("agent runtime connect_fail_total = %d, want %d", got, 125)
 	}
-	if got := server.agents[identity.AgentID].Runtime.ConnectFailfastTotal; got != 25 {
+	if got := server.liveAgent(identity.AgentID).Runtime.ConnectFailfastTotal; got != 25 {
 		t.Fatalf("agent runtime connect_failfast_total = %d, want %d", got, 25)
 	}
 }
@@ -178,7 +178,7 @@ func TestApplyAgentSnapshotIgnoresRevokedAgent(t *testing.T) {
 	// Mark the agent as revoked the same way handleDeregisterAgent →
 	// purgeAgentInMemory does.
 	server.mu.Lock()
-	delete(server.agents, identity.AgentID)
+	server.live.Remove(identity.AgentID)
 	server.revokedAgentIDs[identity.AgentID] = struct{}{}
 	server.mu.Unlock()
 
@@ -193,7 +193,7 @@ func TestApplyAgentSnapshotIgnoresRevokedAgent(t *testing.T) {
 	}
 
 	server.mu.RLock()
-	_, present := server.agents[identity.AgentID]
+	_, present := server.liveAgentGet(identity.AgentID)
 	server.mu.RUnlock()
 	if present {
 		t.Fatal("revoked agent reappeared in s.agents after a heartbeat snapshot")
@@ -344,7 +344,7 @@ func TestServerApplyAgentSnapshotUpdatesInMemoryStateEvenWhenPersistenceFails(t 
 
 	// In-memory state should still reflect the snapshot.
 	server.mu.RLock()
-	agent, exists := server.agents[identity.AgentID]
+	agent, exists := server.liveAgentGet(identity.AgentID)
 	server.mu.RUnlock()
 	if !exists {
 		t.Fatal("agent not found in in-memory state after snapshot with failing store")
@@ -388,8 +388,8 @@ func TestServerApplyAgentSnapshotTracksRuntimeLifecycleState(t *testing.T) {
 		t.Fatalf("applyAgentSnapshot() error = %v", err)
 	}
 
-	if server.agents[identity.AgentID].Runtime.LifecycleState != "degraded" {
-		t.Fatalf("runtime lifecycle_state = %q, want %q", server.agents[identity.AgentID].Runtime.LifecycleState, "degraded")
+	if server.liveAgent(identity.AgentID).Runtime.LifecycleState != "degraded" {
+		t.Fatalf("runtime lifecycle_state = %q, want %q", server.liveAgent(identity.AgentID).Runtime.LifecycleState, "degraded")
 	}
 }
 
@@ -611,10 +611,10 @@ func TestApplyAgentSnapshotPrunesStaleInstances(t *testing.T) {
 	}
 
 	server.mu.RLock()
-	initial := len(server.instances)
+	initial := len(server.live.AllInstances())
 	server.mu.RUnlock()
 	if initial != 3 {
-		t.Fatalf("len(server.instances) after seed = %d, want %d", initial, 3)
+		t.Fatalf("len(server.live.AllInstances()) after seed = %d, want %d", initial, 3)
 	}
 
 	// Apply a new snapshot reporting only two instances — inst-3 must be pruned.
@@ -634,16 +634,16 @@ func TestApplyAgentSnapshotPrunesStaleInstances(t *testing.T) {
 
 	server.mu.RLock()
 	defer server.mu.RUnlock()
-	if len(server.instances) != 2 {
-		t.Fatalf("len(server.instances) after prune = %d, want %d", len(server.instances), 2)
+	if len(server.live.AllInstances()) != 2 {
+		t.Fatalf("len(server.live.AllInstances()) after prune = %d, want %d", len(server.live.AllInstances()), 2)
 	}
-	if _, ok := server.instances["inst-3"]; ok {
+	if _, ok := server.liveInstanceGet("inst-3"); ok {
 		t.Fatal("server.instances still contains pruned inst-3, want removed")
 	}
-	if _, ok := server.instances["inst-1"]; !ok {
+	if _, ok := server.liveInstanceGet("inst-1"); !ok {
 		t.Fatal("server.instances missing inst-1, want present")
 	}
-	if _, ok := server.instances["inst-2"]; !ok {
+	if _, ok := server.liveInstanceGet("inst-2"); !ok {
 		t.Fatal("server.instances missing inst-2, want present")
 	}
 }
@@ -727,13 +727,13 @@ func TestApplyAgentSnapshotDoesNotPruneOtherAgentsInstances(t *testing.T) {
 
 	server.mu.RLock()
 	defer server.mu.RUnlock()
-	if _, ok := server.instances["inst-a2"]; ok {
+	if _, ok := server.liveInstanceGet("inst-a2"); ok {
 		t.Fatal("inst-a2 still present, want pruned for agent A")
 	}
-	if _, ok := server.instances["inst-a1"]; !ok {
+	if _, ok := server.liveInstanceGet("inst-a1"); !ok {
 		t.Fatal("inst-a1 missing, want present for agent A")
 	}
-	if _, ok := server.instances["inst-b1"]; !ok {
+	if _, ok := server.liveInstanceGet("inst-b1"); !ok {
 		t.Fatal("inst-b1 missing, must not be touched when agent A reports")
 	}
 }
@@ -943,7 +943,7 @@ func TestEnrollmentSetsCertificateDates(t *testing.T) {
 	}
 
 	server.mu.RLock()
-	agent := server.agents[identity.AgentID]
+	agent := server.liveAgent(identity.AgentID)
 	server.mu.RUnlock()
 
 	if agent.CertIssuedAt == nil {
@@ -1019,7 +1019,7 @@ func TestEnrollAgentCertIssuanceFailureLeavesNoPartialState(t *testing.T) {
 	// No in-memory mirror entry either.
 	server.mu.RLock()
 	defer server.mu.RUnlock()
-	for id, a := range server.agents {
+	for id, a := range server.liveAgentsForTest() {
 		if a.NodeName == "node-fail" {
 			t.Fatalf("partial in-memory agent entry id=%s: %+v", id, a)
 		}

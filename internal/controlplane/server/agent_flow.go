@@ -231,9 +231,10 @@ func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest
 		}
 	}
 
-	s.mu.Lock()
-	s.agents[agentID] = agent
-	s.mu.Unlock()
+	// Enrollment writes a fresh agent with no instances yet; ApplySnapshot
+	// with a nil instance set establishes the live-state baseline. No s.mu
+	// needed — the live store has its own lock.
+	s.live.ApplySnapshot(agentID, agent, nil)
 
 	if s.batchWriter != nil {
 		s.batchWriter.agents.Enqueue(agentToRecord(agent))

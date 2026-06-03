@@ -57,12 +57,14 @@ func (s *Server) RenewCertificate(ctx context.Context, request *gatewayrpc.Renew
 	// Update in-memory cert dates so the dashboard reflects the renewal.
 	certIssuedAt := now.UTC()
 	certExpiresAt := issued.ExpiresAt.UTC()
+	// Identity-only update: read-modify-write through the live store,
+	// preserving the agent's instances.
 	s.mu.Lock()
-	if agent, ok := s.agents[agentID]; ok {
+	if agent, ok := s.live.Get(agentID); ok {
 		agent.CertIssuedAt = &certIssuedAt
 		agent.CertExpiresAt = &certExpiresAt
 		agent.CertSerial = issued.Serial
-		s.agents[agentID] = agent
+		s.live.ApplySnapshot(agentID, agent, s.live.InstancesForAgent(agentID))
 		if s.batchWriter != nil {
 			s.batchWriter.agents.Enqueue(agentToRecord(agent))
 		}
@@ -279,4 +281,3 @@ func authenticatedAgentIdentity(ctx context.Context) (string, string, error) {
 	cert := tlsInfo.State.PeerCertificates[0]
 	return cert.Subject.CommonName, cert.SerialNumber.Text(16), nil
 }
-

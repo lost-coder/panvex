@@ -177,7 +177,7 @@ func (s *Server) handlePutUpdateSettings() http.HandlerFunc {
 		}
 
 		s.appendAuditWithContext(r.Context(), session.UserID, "settings.updates.update", "panel", map[string]any{
-			"github_repo":      updated.GitHubRepo,
+			"github_repo":       updated.GitHubRepo,
 			"auto_update_panel": updated.AutoUpdatePanel,
 		})
 
@@ -600,9 +600,7 @@ func (s *Server) handleAgentUpdate() http.HandlerFunc {
 // lookupAgentForUpdate returns the in-memory snapshot of the agent that the
 // update is targeting, writing a 404 when no such agent is enrolled.
 func (s *Server) lookupAgentForUpdate(w http.ResponseWriter, agentID string) (Agent, bool) {
-	s.mu.RLock()
-	agent, exists := s.agents[agentID]
-	s.mu.RUnlock()
+	agent, exists := s.live.Get(agentID)
 	if !exists {
 		writeError(w, http.StatusNotFound, "agent not found")
 		return Agent{}, false

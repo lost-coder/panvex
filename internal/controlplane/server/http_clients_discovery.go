@@ -76,11 +76,9 @@ func (s *Server) filterDiscoveredClientsByScope(clients []discoveredClient, scop
 	if scope.Global {
 		return clients
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
 	filtered := clients[:0]
 	for _, dc := range clients {
-		agent, agentOK := s.agents[dc.AgentID]
+		agent, agentOK := s.live.Get(dc.AgentID)
 		if !agentOK || !scope.IsAllowed(agent.FleetGroupID) {
 			continue
 		}
@@ -104,9 +102,7 @@ func (s *Server) discoveredClientInScope(ctx context.Context, scope FleetScopeAc
 	if err != nil {
 		return false, err
 	}
-	s.mu.RLock()
-	agent, agentOK := s.agents[rec.AgentID]
-	s.mu.RUnlock()
+	agent, agentOK := s.live.Get(rec.AgentID)
 	if !agentOK {
 		return false, nil
 	}
@@ -326,15 +322,12 @@ func discoveredClientToResponse(dc discoveredClient) discoveredClientResponse {
 
 // resolveAgentNodeNames maps agent IDs → node names from the agents cache.
 func (s *Server) resolveAgentNodeNames(clients []discoveredClient) map[string]string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	result := make(map[string]string)
 	for _, dc := range clients {
 		if _, ok := result[dc.AgentID]; ok {
 			continue
 		}
-		if agent, ok := s.agents[dc.AgentID]; ok {
+		if agent, ok := s.live.Get(dc.AgentID); ok {
 			result[dc.AgentID] = agent.NodeName
 		}
 	}

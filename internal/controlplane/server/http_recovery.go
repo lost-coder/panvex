@@ -106,9 +106,7 @@ func (s *Server) verifyRecoveryRequestCryptography(w http.ResponseWriter, reques
 // lookupEnrolledAgent returns the in-memory snapshot of the named agent
 // or writes 403 when no enrollment exists.
 func (s *Server) lookupEnrolledAgent(w http.ResponseWriter, agentID string) (Agent, bool) {
-	s.mu.RLock()
-	agent, exists := s.agents[agentID]
-	s.mu.RUnlock()
+	agent, exists := s.live.Get(agentID)
 	if !exists {
 		writeError(w, http.StatusForbidden, "agent is not enrolled")
 		return Agent{}, false
@@ -188,9 +186,7 @@ func (s *Server) handleCreateAgentCertificateRecoveryGrant() http.HandlerFunc {
 		}
 
 		agentID := chi.URLParam(r, "id")
-		s.mu.RLock()
-		agent, exists := s.agents[agentID]
-		s.mu.RUnlock()
+		agent, exists := s.live.Get(agentID)
 		if !exists {
 			writeError(w, http.StatusNotFound, "agent not found")
 			return

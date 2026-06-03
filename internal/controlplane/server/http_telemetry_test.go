@@ -36,7 +36,7 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 
 	euGroupID := seedTestFleetGroup(t, store, "eu", now)
 
-	server.agents["agent-a"] = Agent{
+	server.seedLiveAgentKeyed("agent-a", Agent{
 		ID:           "agent-a",
 		NodeName:     "fra-a",
 		FleetGroupID: euGroupID,
@@ -58,8 +58,8 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 			RecentEvents:             []RuntimeEvent{{Sequence: 1, TimestampUnix: now.Add(-15 * time.Second).Unix(), EventType: "upstream_recovered", Context: "dc=2 upstream=1"}},
 		},
 		LastSeenAt: now.Add(-5 * time.Second),
-	}
-	server.agents["agent-b"] = Agent{
+	})
+	server.seedLiveAgentKeyed("agent-b", Agent{
 		ID:           "agent-b",
 		NodeName:     "ams-b",
 		FleetGroupID: euGroupID,
@@ -83,13 +83,13 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 			RecentEvents:             []RuntimeEvent{{Sequence: 2, TimestampUnix: now.Add(-20 * time.Second).Unix(), EventType: "dc_coverage_dropped", Context: "dc=4 coverage=73"}},
 		},
 		LastSeenAt: now.Add(-40 * time.Second),
-	}
+	})
 	server.presence.MarkConnected("agent-a", now.Add(-5*time.Second))
 	server.presence.MarkConnected("agent-b", now.Add(-40*time.Second))
-	if err := store.PutAgent(context.Background(), agentToRecord(server.agents["agent-a"])); err != nil {
+	if err := store.PutAgent(context.Background(), agentToRecord(server.liveAgent("agent-a"))); err != nil {
 		t.Fatalf("PutAgent(agent-a) error = %v", err)
 	}
-	if err := store.PutAgent(context.Background(), agentToRecord(server.agents["agent-b"])); err != nil {
+	if err := store.PutAgent(context.Background(), agentToRecord(server.liveAgent("agent-b"))); err != nil {
 		t.Fatalf("PutAgent(agent-b) error = %v", err)
 	}
 	if err := store.PutTelemetryDiagnosticsCurrent(context.Background(), storage.TelemetryDiagnosticsCurrentRecord{
@@ -234,7 +234,7 @@ func TestHTTPTelemetryDetailExposesInitializationWatchActiveAndCooldown(t *testi
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	server.agents["agent-a"] = Agent{
+	server.seedLiveAgentKeyed("agent-a", Agent{
 		ID:           "agent-a",
 		NodeName:     "fra-a",
 		FleetGroupID: "eu",
@@ -251,7 +251,7 @@ func TestHTTPTelemetryDetailExposesInitializationWatchActiveAndCooldown(t *testi
 			UpdatedAt:                 now.Add(-5 * time.Second),
 		},
 		LastSeenAt: now.Add(-3 * time.Second),
-	}
+	})
 	server.presence.MarkConnected("agent-a", now.Add(-3*time.Second))
 
 	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
@@ -279,7 +279,7 @@ func TestHTTPTelemetryDetailExposesInitializationWatchActiveAndCooldown(t *testi
 	}
 
 	server.mu.Lock()
-	agent := server.agents["agent-a"]
+	agent := server.liveAgent("agent-a")
 	agent.Runtime.AcceptingNewConnections = true
 	agent.Runtime.MERuntimeReady = true
 	agent.Runtime.StartupStatus = "ready"
@@ -290,7 +290,7 @@ func TestHTTPTelemetryDetailExposesInitializationWatchActiveAndCooldown(t *testi
 	agent.Runtime.InitializationProgressPct = 100
 	agent.Runtime.LifecycleState = "ready"
 	agent.Runtime.UpdatedAt = now.Add(15 * time.Second)
-	server.agents["agent-a"] = agent
+	server.seedLiveAgentKeyed("agent-a", agent)
 	server.initializationWatchCooldowns["agent-a"] = now.Add(15 * time.Second).Add(telemetryInitializationWatchCooldown)
 	server.mu.Unlock()
 

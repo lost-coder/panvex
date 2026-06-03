@@ -238,12 +238,12 @@ func TestServerCreateJobRejectsViewerRole(t *testing.T) {
 	}, now); err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
-	server.agents["agent-1"] = Agent{
+	server.seedLiveAgentKeyed("agent-1", Agent{
 		ID:           "agent-1",
 		NodeName:     "node-a",
 		FleetGroupID: "ams-1",
 		ReadOnly:     false,
-	}
+	})
 
 	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
@@ -275,12 +275,12 @@ func TestServerCreateJobAcceptsOperatorWithTotp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
-	server.agents["agent-1"] = Agent{
+	server.seedLiveAgentKeyed("agent-1", Agent{
 		ID:           "agent-1",
 		NodeName:     "node-a",
 		FleetGroupID: "ams-1",
 		ReadOnly:     false,
-	}
+	})
 
 	secret, err := server.auth.StartTotpSetup(context.Background(), user.ID, now)
 	if err != nil {
@@ -792,13 +792,13 @@ func TestHTTPAgentsReturnsEmptyRuntimeSlicesForAgentsWithoutRuntimeSnapshot(t *t
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	server.agents["agent-1"] = Agent{
+	server.seedLiveAgentKeyed("agent-1", Agent{
 		ID:           "agent-1",
 		NodeName:     "node-a",
 		FleetGroupID: "default",
 		Version:      "1.0.0",
 		LastSeenAt:   now,
-	}
+	})
 
 	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "viewer",
@@ -1452,7 +1452,7 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	server.agents["agent-1"] = Agent{
+	server.seedLiveAgentKeyed("agent-1", Agent{
 		ID:           "agent-1",
 		NodeName:     "node-a",
 		FleetGroupID: "ams-1",
@@ -1477,8 +1477,8 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 			},
 		},
 		LastSeenAt: currentTime,
-	}
-	server.agents["agent-2"] = Agent{
+	})
+	server.seedLiveAgentKeyed("agent-2", Agent{
 		ID:           "agent-2",
 		NodeName:     "node-b",
 		FleetGroupID: "ams-1",
@@ -1503,8 +1503,8 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 			},
 		},
 		LastSeenAt: currentTime.Add(-45 * time.Second),
-	}
-	server.agents["agent-3"] = Agent{
+	})
+	server.seedLiveAgentKeyed("agent-3", Agent{
 		ID:           "agent-3",
 		NodeName:     "node-c",
 		FleetGroupID: "edge",
@@ -1521,23 +1521,23 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 			TotalUpstreams:           0,
 		},
 		LastSeenAt: currentTime.Add(-2 * time.Minute),
-	}
-	server.instances["instance-1"] = Instance{
+	})
+	server.seedLiveInstanceKeyed("instance-1", Instance{
 		ID:          "instance-1",
 		AgentID:     "agent-1",
 		Name:        "telemt-a",
 		Version:     "1.0.0",
 		Connections: 27,
 		UpdatedAt:   currentTime,
-	}
-	server.instances["instance-2"] = Instance{
+	})
+	server.seedLiveInstanceKeyed("instance-2", Instance{
 		ID:          "instance-2",
 		AgentID:     "agent-2",
 		Name:        "telemt-b",
 		Version:     "1.0.0",
 		Connections: 8,
 		UpdatedAt:   currentTime.Add(-30 * time.Second),
-	}
+	})
 	server.presence.MarkConnected("agent-1", currentTime)
 	server.presence.MarkConnected("agent-2", currentTime.Add(-45*time.Second))
 	server.presence.MarkConnected("agent-3", currentTime.Add(-2*time.Minute))
@@ -1887,7 +1887,7 @@ func TestRenameAgentReturnsErrorWhenStorageFails(t *testing.T) {
 
 	// Verify in-memory agent still has the old name.
 	server.mu.RLock()
-	agent := server.agents[identity.AgentID]
+	agent := server.liveAgent(identity.AgentID)
 	server.mu.RUnlock()
 	if agent.NodeName != "node-a" {
 		t.Fatalf("agent.NodeName = %q, want %q (old name preserved after storage failure)", agent.NodeName, "node-a")
@@ -1957,7 +1957,7 @@ func TestDeregisterAgentReturnsErrorWhenStorageFails(t *testing.T) {
 
 	// Verify the agent still exists in-memory.
 	server.mu.RLock()
-	_, exists := server.agents[identity.AgentID]
+	_, exists := server.liveAgentGet(identity.AgentID)
 	server.mu.RUnlock()
 	if !exists {
 		t.Fatal("agent should still exist in-memory after storage failure during deregister")

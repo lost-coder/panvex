@@ -62,13 +62,13 @@ func TestDeleteClientPersistsStateBeforeJob(t *testing.T) {
 	// Seed in-memory state directly: a live client assigned to the agent.
 	clientID := "client-1"
 	server.mu.Lock()
-	server.agents["agent-A"] = Agent{
+	server.seedLiveAgentKeyed("agent-A", Agent{
 		ID:           "agent-A",
 		NodeName:     "node-a",
 		FleetGroupID: fleetGroupID,
 		Version:      "dev",
 		LastSeenAt:   now.Add(-time.Minute),
-	}
+	})
 	server.mu.Unlock()
 
 	seedClient := managedClient{
@@ -142,29 +142,29 @@ func TestResolveClientIDByNameHitsFleetGroupAssignment(t *testing.T) {
 	defer server.Close()
 
 	server.mu.Lock()
-	server.agents["agent-EU"] = Agent{
+	server.seedLiveAgentKeyed("agent-EU", Agent{
 		ID:           "agent-EU",
 		NodeName:     "node-eu-1",
 		FleetGroupID: "eu",
 		Version:      "dev",
 		LastSeenAt:   now,
-	}
+	})
 	// Agent in a different fleet group — must NOT match.
-	server.agents["agent-US"] = Agent{
+	server.seedLiveAgentKeyed("agent-US", Agent{
 		ID:           "agent-US",
 		NodeName:     "node-us-1",
 		FleetGroupID: "us",
 		Version:      "dev",
 		LastSeenAt:   now,
-	}
+	})
 	// Agent without any fleet group — must NOT match a fleet-group assignment.
-	server.agents["agent-solo"] = Agent{
+	server.seedLiveAgentKeyed("agent-solo", Agent{
 		ID:           "agent-solo",
 		NodeName:     "node-solo",
 		FleetGroupID: "",
 		Version:      "dev",
 		LastSeenAt:   now,
-	}
+	})
 	server.mu.Unlock()
 
 	clientID := "client-42"

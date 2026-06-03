@@ -41,13 +41,13 @@ func TestResolveClientTargetAgentIDsRunsCleanUnderRace(t *testing.T) {
 		if idx%2 == 0 {
 			fleetGroupID = "group-b"
 		}
-		server.agents[id] = Agent{
+		server.seedLiveAgentKeyed(id, Agent{
 			ID:           id,
 			NodeName:     id,
 			FleetGroupID: fleetGroupID,
 			Version:      "dev",
 			LastSeenAt:   now,
-		}
+		})
 	}
 	server.mu.Unlock()
 
@@ -95,16 +95,16 @@ func TestResolveClientTargetAgentIDsRunsCleanUnderRace(t *testing.T) {
 			id := fmt.Sprintf("agent-churn-%d", counter%8)
 			counter++
 			server.mu.Lock()
-			if _, present := server.agents[id]; present {
-				delete(server.agents, id)
+			if _, present := server.liveAgentGet(id); present {
+				server.live.Remove(id)
 			} else {
-				server.agents[id] = Agent{
+				server.seedLiveAgentKeyed(id, Agent{
 					ID:           id,
 					NodeName:     id,
 					FleetGroupID: "group-a",
 					Version:      "dev",
 					LastSeenAt:   now,
-				}
+				})
 			}
 			server.mu.Unlock()
 		}
@@ -178,13 +178,13 @@ func TestPresenceConnectedAtPersistsAcrossSnapshots(t *testing.T) {
 
 	// Seed the agent so applyAgentSnapshot has a record to update.
 	server.mu.Lock()
-	server.agents[agentID] = Agent{
+	server.seedLiveAgentKeyed(agentID, Agent{
 		ID:           agentID,
 		NodeName:     "node-xyz",
 		FleetGroupID: "grp",
 		Version:      "dev",
 		LastSeenAt:   now,
-	}
+	})
 	server.mu.Unlock()
 
 	// Simulate a stream open: the Connect handler calls MarkConnected at

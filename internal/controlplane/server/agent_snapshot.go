@@ -9,14 +9,16 @@ import (
 )
 
 // updateAgentRecordFromSnapshot folds the snapshot's identity / runtime
-// fields into the existing agent record under s.mu, refreshing the
-// initialization-watch cooldown table along the way. Returns the new agent
-// value (still owned by the caller, who is responsible for committing it
-// back into s.agents).
+// fields into the existing agent record, refreshing the initialization-watch
+// cooldown table along the way. Returns the new agent value (still owned by
+// the caller, who is responsible for committing it back via
+// live.ApplySnapshot). The previous value is read from the live store; the
+// cooldown table is mutated under s.mu, so callers hold s.mu.
 //
-// Caller must hold s.mu.
+// Caller must hold s.mu (for the cooldown table). The live store has its own
+// lock; live.Get is taken under s.mu, preserving the s.mu -> live ordering.
 func (s *Server) updateAgentRecordFromSnapshot(snapshot agentSnapshot) Agent {
-	agent := s.agents[snapshot.AgentID]
+	agent, _ := s.live.Get(snapshot.AgentID)
 	agent.ID = snapshot.AgentID
 	// Enrollment fixes the node name. Subsequent heartbeats must not
 	// overwrite it: operators rename nodes via the panel API, and the
@@ -90,42 +92,6 @@ func instancesFromSnapshot(snapshot agentSnapshot) []Instance {
 		})
 	}
 	return instances
-}
-
-// commitInstancesLocked replaces the per-agent slice of instances with the
-// freshly-snapshotted set, pruning any previously-known instances that are
-// absent from `instances` so s.instances does not leak stale entries
-// (P2-LOG-09 / L-04). Caller must hold s.mu.
-func (s *Server) commitInstancesLocked(agentID string, instances []Instance) {
-	liveIDs := make(map[string]struct{}, len(instances))
-	for _, instance := range instances {
-		liveIDs[instance.ID] = struct{}{}
-	}
-	for id, entry := range s.instances {
-		if entry.AgentID != agentID {
-			continue
-		}
-		if _, ok := liveIDs[id]; ok {
-			continue
-		}
-		delete(s.instances, id)
-	}
-	for _, instance := range instances {
-		s.instances[instance.ID] = instance
-	}
-}
-
-// instancesForAgentLocked returns the currently-committed instances for the
-// agent. Caller must hold s.mu. Used by the partial-snapshot path (IN-H6) to
-// keep last-known instances instead of overwriting them with blanked rows.
-func (s *Server) instancesForAgentLocked(agentID string) []Instance {
-	var out []Instance
-	for _, instance := range s.instances {
-		if instance.AgentID == agentID {
-			out = append(out, instance)
-		}
-	}
-	return out
 }
 
 // applyFallbackStateTransitionLocked classifies the agent's operating mode
@@ -218,32 +184,42 @@ func (s *Server) applyAgentSnapshot(ctx context.Context, snapshot agentSnapshot)
 	// Lock section: build all state objects AND commit to in-memory maps
 	// atomically. No DB I/O happens under the locks.
 	// Lock ordering: mu -> metricsAuditMu (client state lives in
-	// clients.Service, taken via its own lock while mu is held).
+	// clients.Service, taken via its own lock while mu is held). The live
+	// store also has its own lock and is taken under s.mu (s.mu -> live);
+	// it never calls back into the server, so the ordering cannot invert.
 	s.mu.Lock()
-	// Drop snapshots from agents that have been deregistered. Without this
-	// guard, an in-flight heartbeat that arrives between the operator's
-	// DELETE and the gRPC stream tear-down would re-create the in-memory
-	// agent record (snapshot.AgentID is unconditionally written into
-	// s.agents below), and the agent would resurrect itself in the panel
-	// — typically with a "DEGRADED" badge as its telemetry caught up.
+	// Drop snapshots from agents that have been deregistered. The resurrection
+	// guard runs BEFORE any live-store write, so a revoked agent's snapshot
+	// never lands in s.live. Without this guard, an in-flight heartbeat that
+	// arrives between the operator's DELETE and the gRPC stream tear-down would
+	// re-create the live agent record (snapshot.AgentID is unconditionally
+	// written via live.ApplySnapshot below), and the agent would resurrect
+	// itself in the panel — typically with a "DEGRADED" badge as its telemetry
+	// caught up.
 	if _, revoked := s.revokedAgentIDs[snapshot.AgentID]; revoked {
 		s.mu.Unlock()
 		s.logger.Info("dropping snapshot from revoked agent", "agent_id", snapshot.AgentID)
 		return nil
 	}
 	agent := s.updateAgentRecordFromSnapshot(snapshot)
-	s.agents[snapshot.AgentID] = agent
 	// IN-H6: on a partial snapshot the instance rows are blanked
 	// (version/connections/read_only); preserve the last-known instances
 	// instead of committing/persisting zeros. The agent is alive (LastSeenAt
 	// advanced); its telemt detail simply could not be fully read this cycle.
+	// We read the last-known instances back from the live store and re-commit
+	// the agent value WITHOUT touching the instance set.
+	//
+	// Lock ordering: s.mu is held here; the live.* calls below take the live
+	// store's own lock under s.mu (s.mu -> live), consistent with every other
+	// call site. The live store never calls back into the server, so this can
+	// never invert.
 	var instances []Instance
 	if snapshot.Partial {
-		instances = s.instancesForAgentLocked(snapshot.AgentID)
+		instances = s.live.InstancesForAgent(snapshot.AgentID)
 	} else {
 		instances = instancesFromSnapshot(snapshot)
-		s.commitInstancesLocked(snapshot.AgentID, instances)
 	}
+	s.live.ApplySnapshot(snapshot.AgentID, agent, instances)
 	s.commitClientSnapshotsLocked(ctx, snapshot)
 	metricSnapshot := s.commitMetricSnapshotLocked(snapshot)
 	s.applyFallbackStateTransitionLocked(agent)

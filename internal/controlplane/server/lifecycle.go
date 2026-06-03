@@ -107,29 +107,38 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		// slog records shipped over the Connect bidi-stream. Always
 		// constructed (independent of Store wiring) so the message
 		// dispatcher and HTTP handler can rely on a non-nil pointer.
-		runtimeEvents:                runtimeevents.New(500),
-		now:                          now,
-		panelRuntime:                 defaultPanelRuntime(options.PanelRuntime),
-		requestRestart:               options.RequestRestart,
-		loginRateLimiter:             newFixedWindowRateLimiter(httpLoginRateLimitPerWindow, defaultRateLimitWindow),
-		agentBootstrapRateLimiter:    newFixedWindowRateLimiter(httpAgentBootstrapRateLimitPerWindow, defaultRateLimitWindow),
-		grpcConnectRateLimiter:       newFixedWindowRateLimiter(grpcConnectRateLimitPerWindow, defaultRateLimitWindow),
-		sensitiveRateLimiter:         newFixedWindowRateLimiter(httpSensitiveRateLimitPerWindow, defaultRateLimitWindow),
-		loginLockout:                 newAccountLockoutTracker(),
-		totpLockout:                  newTOTPLockoutTracker(),
-		ipLockout:                    newIPLockoutTracker(),
-		wsConnLimiter:                newWSConnLimiter(),
-		trustedProxyCIDRs:            options.TrustedProxyCIDRs,
-		encryptionKey:                options.EncryptionKey,
-		secretVault:                  vault,
-		logger:                       options.Logger,
-		version:                      options.Version,
-		commitSHA:                    options.CommitSHA,
-		buildTime:                    options.BuildTime,
-		csrfManager:                  csrfManager,
-		loginTimingFloor:             resolveLoginTimingFloor(options.LoginTimingFloor),
-		revokedAgentIDs:              make(map[string]struct{}),
-		agents:                       make(map[string]Agent),
+		runtimeEvents:             runtimeevents.New(500),
+		now:                       now,
+		panelRuntime:              defaultPanelRuntime(options.PanelRuntime),
+		requestRestart:            options.RequestRestart,
+		loginRateLimiter:          newFixedWindowRateLimiter(httpLoginRateLimitPerWindow, defaultRateLimitWindow),
+		agentBootstrapRateLimiter: newFixedWindowRateLimiter(httpAgentBootstrapRateLimitPerWindow, defaultRateLimitWindow),
+		grpcConnectRateLimiter:    newFixedWindowRateLimiter(grpcConnectRateLimitPerWindow, defaultRateLimitWindow),
+		sensitiveRateLimiter:      newFixedWindowRateLimiter(httpSensitiveRateLimitPerWindow, defaultRateLimitWindow),
+		loginLockout:              newAccountLockoutTracker(),
+		totpLockout:               newTOTPLockoutTracker(),
+		ipLockout:                 newIPLockoutTracker(),
+		wsConnLimiter:             newWSConnLimiter(),
+		trustedProxyCIDRs:         options.TrustedProxyCIDRs,
+		encryptionKey:             options.EncryptionKey,
+		secretVault:               vault,
+		logger:                    options.Logger,
+		version:                   options.Version,
+		commitSHA:                 options.CommitSHA,
+		buildTime:                 options.BuildTime,
+		csrfManager:               csrfManager,
+		loginTimingFloor:          resolveLoginTimingFloor(options.LoginTimingFloor),
+		revokedAgentIDs:           make(map[string]struct{}),
+		// live (A2/A1): single owner of agent live-state + instances. The
+		// clone funcs deep-copy every reference-type field of Agent/Instance
+		// so reads return isolated copies (see live_clone.go). instanceID /
+		// instanceAgent project the prune keys.
+		live: agents.NewLiveStore[Agent, Instance](
+			cloneAgentForMirror,
+			cloneInstanceForMirror,
+			func(i Instance) string { return i.ID },
+			func(i Instance) string { return i.AgentID },
+		),
 		detailBoosts:                 make(map[string]time.Time),
 		initializationWatchCooldowns: make(map[string]time.Time),
 		fallbackEnteredAt:            make(map[string]time.Time),
@@ -140,12 +149,12 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		// available (the only path that actually persists clients).
 		clientsSvc: clients.NewService(clients.ServiceConfig{Vault: vault, Now: now}),
 		fleetSvc:   fleet.NewService(options.Store, func() time.Time { return now().UTC() }),
-		// agentsSvc (A2/D.1): identity-only mirror over the same store.
-		// Any storage.Store satisfies agents.Repository (ListAgents +
-		// PutAgent). Coexists with s.agents for now; no handler reads it
-		// yet. Restore is wired in initStoreBackedSubsystems.
+		// agentsSvc (A2/D.1): identity-persistence write-through mirror over
+		// the same store. Any storage.Store satisfies agents.Repository
+		// (ListAgents + PutAgent). The live read path is owned by s.live; this
+		// service remains the identity persistence shell. Restore is wired in
+		// initStoreBackedSubsystems.
 		agentsSvc:        agents.NewService(options.Store, func() time.Time { return now().UTC() }),
-		instances:        make(map[string]Instance),
 		intervals:        options.Intervals.withDefaults(),
 		sqlitePath:       options.SQLitePath,
 		bootstrap:        options.Bootstrap,

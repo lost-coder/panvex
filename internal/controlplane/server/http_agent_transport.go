@@ -79,9 +79,7 @@ func (s *Server) handleUpdateAgentTransportMode() http.HandlerFunc {
 		}
 
 		// Verify the agent exists in memory and the caller can reach it.
-		s.mu.RLock()
-		existing, exists := s.agents[agentID]
-		s.mu.RUnlock()
+		existing, exists := s.live.Get(agentID)
 		if !exists {
 			writeError(w, http.StatusNotFound, msgAgentNotFound)
 			return

@@ -54,11 +54,11 @@ func setupTransportModeServer(t *testing.T) (*Server, []*http.Cookie) {
 	}
 	// Mirror the agent into the server's in-memory map.
 	srv.mu.Lock()
-	srv.agents["agent-tm-1"] = Agent{
+	srv.seedLiveAgentKeyed("agent-tm-1", Agent{
 		ID:           "agent-tm-1",
 		NodeName:     "transport-test-node",
 		FleetGroupID: "",
-	}
+	})
 	srv.mu.Unlock()
 
 	loginResp := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login", map[string]string{
@@ -255,7 +255,7 @@ func TestUpdateAgentTransportModeRequiresAdminRole(t *testing.T) {
 	}
 
 	srv.mu.Lock()
-	srv.agents["agent-tm-1"] = Agent{ID: "agent-tm-1", NodeName: "n", FleetGroupID: ""}
+	srv.seedLiveAgentKeyed("agent-tm-1", Agent{ID: "agent-tm-1", NodeName: "n", FleetGroupID: ""})
 	srv.mu.Unlock()
 
 	loginResp := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login", map[string]string{

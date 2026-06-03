@@ -356,8 +356,8 @@ func (s *Server) restoreStoredTelemetry(ctx context.Context) error {
 	// Detail boosts (F4) are ephemeral in-memory-only state and are not
 	// restored on boot — a panel restart simply clears any active boost.
 
-	for agentID, agent := range s.agents {
-		if err := s.restoreAgentRuntime(ctx, agentID, agent); err != nil {
+	for _, agent := range s.live.List() {
+		if err := s.restoreAgentRuntime(ctx, agent.ID, agent); err != nil {
 			return err
 		}
 	}
@@ -385,7 +385,11 @@ func (s *Server) restoreAgentRuntime(ctx context.Context, agentID string, agent 
 	if err != nil {
 		return err
 	}
-	s.agents[agentID] = restoreAgentRuntimeFromStorage(agent, runtime, dcs, upstreams, events)
+	// Merge the restored runtime into the agent value and re-commit through
+	// the live store, preserving the agent's instances (restored separately
+	// in restoreInstances).
+	merged := restoreAgentRuntimeFromStorage(agent, runtime, dcs, upstreams, events)
+	s.live.ApplySnapshot(agentID, merged, s.live.InstancesForAgent(agentID))
 	return nil
 }
 
@@ -522,12 +526,12 @@ func (s *Server) telemetrySummaryForAgent(agent Agent, presenceState presence.St
 	agent.Runtime = normalizeAgentRuntime(agent.Runtime)
 	fallbackEnteredAt, fallbackActive := s.lookupFallbackEnteredLocked(agent.ID)
 	if fallbackActive {
-		// `agent` is passed by value: this assignment mutates the local
-		// copy that gets embedded in the returned telemetryServerSummary,
-		// not s.agents[agent.ID]. The *int64 pointer is local to this
-		// scope (no aliasing back into shared state), so the write is
-		// safe and intentional — don't "fix" it by taking &agent or
-		// reaching into s.agents. See follow-up #6.
+		// `agent` is passed by value (a deep copy from s.live): this
+		// assignment mutates the local copy that gets embedded in the
+		// returned telemetryServerSummary, not the live mirror. The *int64
+		// pointer is local to this scope (no aliasing back into shared
+		// state), so the write is safe and intentional — don't "fix" it by
+		// taking &agent or reaching into the live store. See follow-up #6.
 		entered := fallbackEnteredAt.Unix()
 		agent.Runtime.FallbackEnteredAtUnix = &entered
 	}

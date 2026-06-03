@@ -173,12 +173,11 @@ type Server struct {
 	// checks, and multi-table reassignment transactions stay in one
 	// place. See internal/controlplane/fleet.
 	fleetSvc *fleet.Service
-	// agentsSvc is the agent-state domain service (A2/D.1). Modelled on
-	// clients.Service (mirror + write-through), it is the designated
-	// future single owner of agent state. In its current D.1 shell it
-	// owns an identity-only mirror (storage.AgentRecord) and is NOT yet
-	// read or written by any handler — the server still owns s.agents.
-	// D.2 repoints reads/writes onto this service. Constructed in
+	// agentsSvc is the agent IDENTITY-persistence domain service (A2/D.1).
+	// Modelled on clients.Service (mirror + write-through), it owns an
+	// identity-only mirror (storage.AgentRecord) backing UpsertIdentity. The
+	// full live read path (Agent value + instances) is owned by s.live (D.2);
+	// agentsSvc remains the identity persistence shell. Constructed in
 	// newServerFromOptions alongside fleetSvc; Restore is wired in
 	// initStoreBackedSubsystems.
 	agentsSvc *agents.Service
@@ -216,15 +215,23 @@ type Server struct {
 	// Connect to deny access. It is not persisted: on restart the set is
 	// empty, which is acceptable because the CA will not have issued new
 	// certificates for deleted agents and existing ones expire within 30 days.
-	revokedAgentIDs              map[string]struct{}
-	agents                       map[string]Agent
+	revokedAgentIDs map[string]struct{}
+	// live is the single owner of agent live-state (full Agent value:
+	// identity + runtime telemetry) and per-agent Telemt instances, with
+	// replace/prune semantics and deep-copy isolation (A2/A1). It replaces
+	// the former server-owned s.agents / s.instances maps; every read goes
+	// through live.Get/List/AllInstances/InstancesForAgent and every write
+	// through live.ApplySnapshot/SetInstances/Remove. LiveStore owns its own
+	// RWMutex and never reaches back into s.mu, so the documented control-
+	// plane lock ordering (s.mu -> live internal lock) is preserved: callers
+	// that need both take s.mu first.
+	live                         *agents.LiveStore[Agent, Instance]
 	detailBoosts                 map[string]time.Time
 	initializationWatchCooldowns map[string]time.Time
 	// fallbackEnteredAt mirrors agent_fallback_state in memory. Hydrated on
 	// Run(); updated synchronously under mu and persisted asynchronously via
 	// the batch writer. Crash-window caveat: see spec.
 	fallbackEnteredAt map[string]time.Time
-	instances         map[string]Instance
 	panelSettings     PanelSettings
 	updateSettings    UpdateSettings
 	updateState       UpdateState

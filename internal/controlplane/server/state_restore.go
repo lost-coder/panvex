@@ -60,15 +60,19 @@ func (s *Server) restoreAgents(ctx context.Context) error {
 	}
 	for _, record := range agents {
 		agent := agentFromRecord(record)
-		s.agents[agent.ID] = agent
+		// Restore the agent live-state baseline with no instances yet;
+		// restoreInstances + restoreStoredTelemetry layer the rest on top.
+		// Agents are restored before instances (see restoreStoredState order),
+		// so the instance prune in ApplySnapshot has a fresh set to work with.
+		s.live.ApplySnapshot(agent.ID, agent, nil)
 	}
-	// A2/D.1: populate the parallel agents.Service identity mirror from the
-	// same store. This is additive — no handler reads the service mirror yet
-	// (the server still owns s.agents above); D.2 repoints reads/writes onto
-	// the service. Restore re-issues ListAgents, but the table is small and
-	// only queried at boot, so the extra round-trip is negligible. nil-guarded
-	// for the in-memory test fixtures that construct a Server without going
-	// through newServerFromOptions.
+	// A2/D.1: also populate the parallel agents.Service identity mirror from
+	// the same store. The live store owns the full live-state read path;
+	// agents.Service remains the identity-persistence write-through mirror
+	// (UpsertIdentity). Restore re-issues ListAgents, but the table is small
+	// and only queried at boot, so the extra round-trip is negligible.
+	// nil-guarded for the in-memory test fixtures that construct a Server
+	// without going through newServerFromOptions.
 	if s.agentsSvc != nil {
 		if err := s.agentsSvc.Restore(ctx); err != nil {
 			return err
@@ -102,9 +106,17 @@ func (s *Server) restoreInstances(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Group instances by owning agent, then commit each agent's set via
+	// live.SetInstances (which prunes that agent's stale entries without
+	// touching the agent value restored by restoreAgents). Agents were
+	// restored first (see restoreStoredState order).
+	byAgent := make(map[string][]Instance)
 	for _, record := range instances {
 		instance := instanceFromRecord(record)
-		s.instances[instance.ID] = instance
+		byAgent[instance.AgentID] = append(byAgent[instance.AgentID], instance)
+	}
+	for agentID, set := range byAgent {
+		s.live.SetInstances(agentID, set)
 	}
 	return nil
 }

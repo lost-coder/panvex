@@ -810,7 +810,7 @@ func seedClientTargetAgent(t *testing.T, store storage.Store, server *Server, gr
 	}
 
 	server.mu.Lock()
-	server.agents[agent.ID] = agentFromRecord(agent)
+	server.seedLiveAgentKeyed(agent.ID, agentFromRecord(agent))
 	server.mu.Unlock()
 	return fleetGroupID
 }

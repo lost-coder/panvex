@@ -492,28 +492,26 @@ func (s *Server) buildClientAssignments(clientID clients.ClientID, input clientM
 }
 
 // resolveClientTargetAgentIDs snapshots the current agent topology under
-// s.mu and delegates the deterministic deduplication + sorting to
+// the live store and delegates the deterministic deduplication + sorting to
 // clients.Service.ResolveTargetAgentIDs.
 //
 // Lock discipline (P2-LOG-11 / M-C11 / L-08): the assignments are read from
-// the clients.Service mirror (its own lock) by the caller. To avoid iterating
-// s.agents while holding s.mu for the full target computation, snapshot the
-// registered-agent IDs and fleet-group membership into local maps, release
-// s.mu, and let the pure helper iterate against those local snapshots. The
-// snapshot can race with a concurrent agent mutation, but callers tolerate
+// the clients.Service mirror (its own lock) by the caller. The registered-
+// agent IDs and fleet-group membership are snapshotted from s.live (its own
+// lock) into local maps, and the pure helper iterates against those local
+// snapshots. The snapshot can race with a concurrent agent mutation, but callers tolerate
 // that: the result builds deployment rows that are re-reconciled on the next
 // snapshot. The race is benign and lock-order-safe.
 func (s *Server) resolveClientTargetAgentIDs(assignments []managedClientAssignment) []string {
-	s.mu.RLock()
-	registeredAgents := make(map[string]struct{}, len(s.agents))
+	liveAgents := s.live.List()
+	registeredAgents := make(map[string]struct{}, len(liveAgents))
 	fleetMembers := make(map[string][]string)
-	for _, agent := range s.agents {
+	for _, agent := range liveAgents {
 		registeredAgents[agent.ID] = struct{}{}
 		if agent.FleetGroupID != "" {
 			fleetMembers[agent.FleetGroupID] = append(fleetMembers[agent.FleetGroupID], agent.ID)
 		}
 	}
-	s.mu.RUnlock()
 
 	return s.clientsSvc.ResolveTargetAgentIDs(assignments, clients.AgentTopology{
 		RegisteredAgents: registeredAgents,
@@ -741,12 +739,10 @@ func (s *Server) aggregatedClientUsage(clientID string) aggregatedClientUsage {
 // two locks (s.mu and the Service's own lock) are never held together,
 // which preserves the documented lock ordering.
 func (s *Server) resolveClientIDByName(agentID, clientName string) string {
-	s.mu.RLock()
 	agentFleetGroupID := ""
-	if agent, ok := s.agents[agentID]; ok {
+	if agent, ok := s.live.Get(agentID); ok {
 		agentFleetGroupID = agent.FleetGroupID
 	}
-	s.mu.RUnlock()
 
 	return s.clientsSvc.MirrorResolveIDByName(agentID, agentFleetGroupID, clientName)
 }

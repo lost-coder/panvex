@@ -30,15 +30,15 @@ func (s *Server) handleFleet() http.HandlerFunc {
 
 		metricSnapshots := s.metricSnapshotCount(r.Context())
 
-		s.mu.RLock()
+		liveAgents := s.live.List()
 		response := fleetResponse{
-			TotalAgents:     len(s.agents),
-			TotalInstances:  len(s.instances),
+			TotalAgents:     len(liveAgents),
+			TotalInstances:  len(s.live.AllInstances()),
 			MetricSnapshots: metricSnapshots,
 		}
 
-		for agentID := range s.agents {
-			switch s.presence.Evaluate(agentID, s.now()) {
+		for _, agent := range liveAgents {
+			switch s.presence.Evaluate(agent.ID, s.now()) {
 			case presence.StateOnline:
 				response.OnlineAgents++
 			case presence.StateDegraded:
@@ -47,7 +47,6 @@ func (s *Server) handleFleet() http.HandlerFunc {
 				response.OfflineAgents++
 			}
 		}
-		s.mu.RUnlock()
 
 		writeJSON(w, http.StatusOK, response)
 	}
@@ -93,15 +92,15 @@ func (s *Server) loadAgentRecoveryGrants(ctx context.Context) (map[string]storag
 	return out, nil
 }
 
-// buildAgentsResponse produces the scoped, presence-augmented agent
-// list under s.mu RLock. The lock window is intentionally narrow —
-// no I/O happens inside it.
+// buildAgentsResponse produces the scoped, presence-augmented agent list.
+// live.List returns deep copies, so the per-request fields (PresenceState,
+// CertificateRecovery) are layered onto those copies — they are request-time
+// state, never stored in the live mirror. presence has its own lock.
 func (s *Server) buildAgentsResponse(scope FleetScopeAccess, recoveryGrants map[string]storage.AgentCertificateRecoveryGrantRecord) []Agent {
 	now := s.now()
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	response := make([]Agent, 0, len(s.agents))
-	for _, agent := range s.agents {
+	liveAgents := s.live.List()
+	response := make([]Agent, 0, len(liveAgents))
+	for _, agent := range liveAgents {
 		if !scope.IsAllowed(agent.FleetGroupID) {
 			continue
 		}
@@ -129,13 +128,11 @@ func (s *Server) handleInstances() http.HandlerFunc {
 			return
 		}
 
-		s.mu.RLock()
-		defer s.mu.RUnlock()
-
-		response := make([]Instance, 0, len(s.instances))
-		for _, instance := range s.instances {
+		allInstances := s.live.AllInstances()
+		response := make([]Instance, 0, len(allInstances))
+		for _, instance := range allInstances {
 			if !scope.Global {
-				agent, agentOK := s.agents[instance.AgentID]
+				agent, agentOK := s.live.Get(instance.AgentID)
 				if !agentOK || !scope.IsAllowed(agent.FleetGroupID) {
 					continue
 				}

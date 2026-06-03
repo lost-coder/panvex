@@ -55,16 +55,20 @@ func (s *Server) handleControlRoom() http.HandlerFunc {
 		}
 		recentActivity := controlRoomRecentActivity(auditTrail, 5)
 
-		s.mu.RLock()
-		fleet := controlRoomFleetFromState(s.agents, s.instances, metricSnapshots, s.presence, now)
+		// Materialise the live agent/instance maps once for the dashboard
+		// helpers, which take map[string]Agent / map[string]Instance. live.*
+		// returns deep copies, so the helpers see an isolated snapshot;
+		// presence has its own lock.
+		agentMap := s.liveAgentMap()
+		instanceMap := s.liveInstanceMap()
+		fleet := controlRoomFleetFromState(agentMap, instanceMap, metricSnapshots, s.presence, now)
 		response := controlRoomResponse{
-			Onboarding:          controlRoomOnboardingFromState(s.agents, s.instances),
+			Onboarding:          controlRoomOnboardingFromState(agentMap, instanceMap),
 			Fleet:               fleet,
 			Jobs:                controlRoomJobsFromList(jobList),
 			RecentActivity:      recentActivity,
-			RecentRuntimeEvents: controlRoomRecentRuntimeEvents(s.agents, 5),
+			RecentRuntimeEvents: controlRoomRecentRuntimeEvents(agentMap, 5),
 		}
-		s.mu.RUnlock()
 
 		writeJSON(w, http.StatusOK, response)
 	}
