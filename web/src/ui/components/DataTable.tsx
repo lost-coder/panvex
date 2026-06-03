@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { cn } from "@/ui/lib/cn";
+import { Select } from "@/ui/base/select";
 
 export interface DataTableColumn<T> {
   key: string;
@@ -21,6 +22,12 @@ export interface DataTableColumn<T> {
    * `data` prop itself (controlled sorting).
    */
   sortValue?: (row: Readonly<T>) => string | number | null | undefined;
+  /**
+   * Hide this column from the mobile card view. Use for low-signal or
+   * redundant columns so phone cards stay compact instead of stacking every
+   * column as a label/value row. Has no effect on the desktop table.
+   */
+  cardHidden?: boolean;
   className?: string;
 }
 
@@ -124,6 +131,14 @@ export function DataTable<T>({
       })
       .map((d) => d.row);
   }, [data, columns, sortKey, sortDir]);
+
+  // Columns the user can sort on (need both the flag and an accessor). The
+  // desktop header drives sort via per-column buttons; the mobile card view
+  // has no header, so it gets a dedicated sort control built from this list.
+  const sortableColumns = useMemo(
+    () => columns.filter((c) => c.sortable && c.sortValue),
+    [columns],
+  );
 
   // U3: rows that navigate must be keyboard-operable. A <tr> can't be a
   // <button>/<a> child of <tbody>, so we expose the button role +
@@ -273,13 +288,54 @@ export function DataTable<T>({
           column (e.g. a Revoke button) would create invalid nested-button
           DOM and swallow click events meant for the inner control. */}
       <div className={cn("flex flex-col gap-2 md:hidden", className)}>
+        {/* Mobile sort control. The desktop sort lives in the table header,
+            which is hidden on mobile — so the card view carries its own
+            column picker + direction toggle wired to the same sort state. */}
+        {sortableColumns.length > 0 && sortedData.length > 0 && (
+          <label className="flex items-center gap-2">
+            <span className="text-[10px] text-fg-muted uppercase tracking-wider shrink-0">
+              {t("sortBy")}
+            </span>
+            <Select
+              className="flex-1"
+              value={sortKey ?? ""}
+              onChange={(key) => {
+                if (!key) setSortKey(null);
+                else {
+                  setSortKey(key);
+                  setSortDir("asc");
+                }
+              }}
+              options={[
+                { value: "", label: t("sortNone") },
+                ...sortableColumns.map((c) => ({ value: c.key, label: c.header })),
+              ]}
+            />
+            <button
+              type="button"
+              disabled={!sortKey}
+              onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+              aria-label={sortDir === "asc" ? t("sortAscending") : t("sortDescending")}
+              className={cn(
+                "flex items-center justify-center h-10 w-10 rounded-xs border border-border-hi shrink-0",
+                "bg-bg-card text-fg-muted hover:text-fg transition-colors",
+                "disabled:opacity-40 disabled:cursor-not-allowed",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
+              )}
+            >
+              <span aria-hidden="true">{sortDir === "asc" ? "↑" : "↓"}</span>
+            </button>
+          </label>
+        )}
         {sortedData.length === 0 ? (
           <p className="text-center text-fg-muted py-8 text-sm">{resolvedEmpty}</p>
         ) : (
           sortedData.map((row) => {
             const content = (
               <div className="flex flex-col gap-1.5">
-                {columns.map((col) => (
+                {columns
+                  .filter((col) => !col.cardHidden)
+                  .map((col) => (
                   <div key={col.key} className="flex items-center justify-between gap-2">
                     <span className="text-[10px] text-fg-muted uppercase tracking-wider shrink-0">
                       {col.header}

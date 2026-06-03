@@ -1,3 +1,7 @@
 {
-  "empty": "Нет данных"
+  "empty": "Нет данных",
+  "sortBy": "Сортировка",
+  "sortNone": "По умолчанию",
+  "sortAscending": "По возрастанию",
+  "sortDescending": "По убыванию"
 }

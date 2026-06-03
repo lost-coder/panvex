@@ -1,3 +1,7 @@
 {
-  "empty": "No data"
+  "empty": "No data",
+  "sortBy": "Sort by",
+  "sortNone": "Default order",
+  "sortAscending": "Sort ascending",
+  "sortDescending": "Sort descending"
 }

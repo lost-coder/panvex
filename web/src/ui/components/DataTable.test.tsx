@@ -154,6 +154,31 @@ describe("DataTable sorting (reorders rows)", () => {
     const first = screen.getAllByText(/^(Alpha|beta)$/)[0]?.textContent ?? "";
     expect(first).toBe("Alpha");
   });
+
+  it("exposes a mobile sort control that reorders the cards", async () => {
+    const user = userEvent.setup();
+    render(<DataTable columns={sortCols} data={sortRows} keyExtractor={(r) => r.id} />);
+    // The mobile card view has no <thead>, so it carries its own sort
+    // <select> covering the sortable columns.
+    const sortSelect = screen.getByRole("combobox", { name: /sort/i });
+    await user.selectOptions(sortSelect, "count");
+    expect(firstSortedName()).toBe("beta");
+  });
+});
+
+describe("DataTable mobile cards (column priority)", () => {
+  it("omits cardHidden columns from the mobile card view", () => {
+    const cols: DataTableColumn<Row>[] = [
+      { key: "name", header: "NameCol", render: (r) => r.name },
+      { key: "secret", header: "SecretCol", render: () => "x", cardHidden: true },
+    ];
+    render(<DataTable columns={cols} data={rows} keyExtractor={(r) => r.id} />);
+    // Desktop <thead> renders "SecretCol" once; the mobile cards (2 rows)
+    // would add two more label occurrences if it weren't hidden.
+    expect(screen.getAllByText("SecretCol")).toHaveLength(1);
+    // A normal column still appears in both desktop header and mobile cards.
+    expect(screen.getAllByText("NameCol").length).toBeGreaterThan(1);
+  });
 });
 
 // P3-PERF-02: DataTable must virtualize the desktop <tbody> so that

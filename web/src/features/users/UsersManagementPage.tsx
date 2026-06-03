@@ -118,6 +118,8 @@ export function UsersManagementPage({
           </div>
         </div>
       ),
+      sortable: true,
+      sortValue: (u: Readonly<UserListItem>) => u.username,
       className: "min-w-[220px]",
     },
     {
@@ -126,6 +128,8 @@ export function UsersManagementPage({
       render: (u: Readonly<UserListItem>) => (
         <Badge variant={roleVariant[u.role] ?? "default"}>{u.role}</Badge>
       ),
+      sortable: true,
+      sortValue: (u: Readonly<UserListItem>) => u.role,
       className: "w-[120px]",
     },
     {
@@ -137,6 +141,8 @@ export function UsersManagementPage({
           label={u.totpEnabled ? t("totp.enabled") : t("totp.disabled")}
         />
       ),
+      sortable: true,
+      sortValue: (u: Readonly<UserListItem>) => (u.totpEnabled ? 1 : 0),
       className: "w-[110px]",
     },
     {
