@@ -200,6 +200,35 @@ func (s *Store) ListTelemetryRuntimeDCs(ctx context.Context, agentID string) ([]
 	return result, rows.Err()
 }
 
+// ListAllTelemetryRuntimeDCs returns DC rows for every agent in a single
+// query so cold-start rehydration groups by agent_id in memory instead of
+// issuing one query per agent (A2).
+func (s *Store) ListAllTelemetryRuntimeDCs(ctx context.Context) ([]storage.TelemetryRuntimeDCRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT agent_id, dc, observed_at, available_endpoints, available_pct,
+		       required_writers, alive_writers, coverage_pct, rtt_ms, load
+		FROM telemt_runtime_dcs_current
+		ORDER BY agent_id, dc
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]storage.TelemetryRuntimeDCRecord, 0)
+	for rows.Next() {
+		var record storage.TelemetryRuntimeDCRecord
+		if err := rows.Scan(&record.AgentID, &record.DC, &record.ObservedAt, &record.AvailableEndpoints, &record.AvailablePct,
+			&record.RequiredWriters, &record.AliveWriters, &record.CoveragePct, &record.RTTMs, &record.Load); err != nil {
+			return nil, err
+		}
+		record.ObservedAt = record.ObservedAt.UTC()
+		result = append(result, record)
+	}
+
+	return result, rows.Err()
+}
+
 func (s *Store) ReplaceTelemetryRuntimeUpstreams(ctx context.Context, agentID string, records []storage.TelemetryRuntimeUpstreamRecord) error {
 	tx, err := s.beginInternalTx(ctx)
 	if err != nil {
@@ -231,6 +260,32 @@ func (s *Store) ListTelemetryRuntimeUpstreams(ctx context.Context, agentID strin
 		WHERE agent_id = $1
 		ORDER BY upstream_id
 	`, agentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]storage.TelemetryRuntimeUpstreamRecord, 0)
+	for rows.Next() {
+		var record storage.TelemetryRuntimeUpstreamRecord
+		if err := rows.Scan(&record.AgentID, &record.UpstreamID, &record.ObservedAt, &record.RouteKind, &record.Address, &record.Healthy, &record.Fails, &record.EffectiveLatencyMs); err != nil {
+			return nil, err
+		}
+		record.ObservedAt = record.ObservedAt.UTC()
+		result = append(result, record)
+	}
+
+	return result, rows.Err()
+}
+
+// ListAllTelemetryRuntimeUpstreams returns upstream rows for every agent
+// in a single query (A2 cold-start rehydration).
+func (s *Store) ListAllTelemetryRuntimeUpstreams(ctx context.Context) ([]storage.TelemetryRuntimeUpstreamRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT agent_id, upstream_id, observed_at, route_kind, address, healthy, fails, effective_latency_ms
+		FROM telemt_runtime_upstreams_current
+		ORDER BY agent_id, upstream_id
+	`)
 	if err != nil {
 		return nil, err
 	}
@@ -288,6 +343,51 @@ func (s *Store) ListTelemetryRuntimeEvents(ctx context.Context, agentID string, 
 		rows, err = s.db.QueryContext(ctx, query, agentID, limit)
 	} else {
 		rows, err = s.db.QueryContext(ctx, query, agentID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]storage.TelemetryRuntimeEventRecord, 0)
+	for rows.Next() {
+		var record storage.TelemetryRuntimeEventRecord
+		if err := rows.Scan(&record.AgentID, &record.Sequence, &record.ObservedAt, &record.Timestamp, &record.EventType, &record.Context, &record.Severity); err != nil {
+			return nil, err
+		}
+		record.ObservedAt = record.ObservedAt.UTC()
+		record.Timestamp = record.Timestamp.UTC()
+		result = append(result, record)
+	}
+
+	return result, rows.Err()
+}
+
+// ListAllTelemetryRuntimeEventsPerAgent returns the most recent
+// perAgentLimit events PER agent for every agent in one query. The
+// per-agent window is enforced by ROW_NUMBER() OVER (PARTITION BY
+// agent_id ...) — NOT a global LIMIT — so each agent gets its own
+// newest-N slice. perAgentLimit <= 0 returns all events.
+func (s *Store) ListAllTelemetryRuntimeEventsPerAgent(ctx context.Context, perAgentLimit int) ([]storage.TelemetryRuntimeEventRecord, error) {
+	var rows *sql.Rows
+	var err error
+	if perAgentLimit > 0 {
+		rows, err = s.db.QueryContext(ctx, `
+			SELECT agent_id, sequence, observed_at, timestamp_at, event_type, context, severity
+			FROM (
+				SELECT agent_id, sequence, observed_at, timestamp_at, event_type, context, severity,
+				       ROW_NUMBER() OVER (PARTITION BY agent_id ORDER BY timestamp_at DESC, sequence DESC) AS rn
+				FROM telemt_runtime_events
+			) windowed
+			WHERE rn <= $1
+			ORDER BY agent_id, timestamp_at DESC, sequence DESC
+		`, perAgentLimit)
+	} else {
+		rows, err = s.db.QueryContext(ctx, `
+			SELECT agent_id, sequence, observed_at, timestamp_at, event_type, context, severity
+			FROM telemt_runtime_events
+			ORDER BY agent_id, timestamp_at DESC, sequence DESC
+		`)
 	}
 	if err != nil {
 		return nil, err

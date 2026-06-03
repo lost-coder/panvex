@@ -251,10 +251,22 @@ type TelemetryStore interface {
 	ListTelemetryRuntimeCurrent(ctx context.Context) ([]TelemetryRuntimeCurrentRecord, error)
 	ReplaceTelemetryRuntimeDCs(ctx context.Context, agentID string, records []TelemetryRuntimeDCRecord) error
 	ListTelemetryRuntimeDCs(ctx context.Context, agentID string) ([]TelemetryRuntimeDCRecord, error)
+	// ListAllTelemetryRuntimeDCs returns DC rows for every agent in one
+	// query. Cold-start rehydration groups the result by agent_id in
+	// memory instead of issuing one query per agent (A2).
+	ListAllTelemetryRuntimeDCs(ctx context.Context) ([]TelemetryRuntimeDCRecord, error)
 	ReplaceTelemetryRuntimeUpstreams(ctx context.Context, agentID string, records []TelemetryRuntimeUpstreamRecord) error
 	ListTelemetryRuntimeUpstreams(ctx context.Context, agentID string) ([]TelemetryRuntimeUpstreamRecord, error)
+	// ListAllTelemetryRuntimeUpstreams returns upstream rows for every
+	// agent in one query (A2 cold-start rehydration).
+	ListAllTelemetryRuntimeUpstreams(ctx context.Context) ([]TelemetryRuntimeUpstreamRecord, error)
 	AppendTelemetryRuntimeEvents(ctx context.Context, agentID string, records []TelemetryRuntimeEventRecord) error
 	ListTelemetryRuntimeEvents(ctx context.Context, agentID string, limit int) ([]TelemetryRuntimeEventRecord, error)
+	// ListAllTelemetryRuntimeEventsPerAgent returns the most recent
+	// perAgentLimit events PER agent (a windowed query, NOT a global
+	// limit) for every agent in one round-trip (A2 cold-start
+	// rehydration). When perAgentLimit <= 0 all events are returned.
+	ListAllTelemetryRuntimeEventsPerAgent(ctx context.Context, perAgentLimit int) ([]TelemetryRuntimeEventRecord, error)
 	PruneTelemetryRuntimeEvents(ctx context.Context, olderThan time.Time) (int64, error)
 	PutTelemetryDiagnosticsCurrent(ctx context.Context, record TelemetryDiagnosticsCurrentRecord) error
 	GetTelemetryDiagnosticsCurrent(ctx context.Context, agentID string) (TelemetryDiagnosticsCurrentRecord, error)

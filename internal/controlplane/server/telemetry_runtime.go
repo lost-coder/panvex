@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"errors"
 	"sort"
 	"strings"
 	"time"
@@ -348,6 +347,11 @@ func runtimeLifecycleStateFromCurrent(runtime storage.TelemetryRuntimeCurrentRec
 	}
 }
 
+// telemetryRuntimeEventsPerAgentLimit is the per-agent cap on restored
+// runtime events. Kept identical to the historic per-agent path
+// (ListTelemetryRuntimeEvents(..., 10)) so restored state is unchanged.
+const telemetryRuntimeEventsPerAgentLimit = 10
+
 func (s *Server) restoreStoredTelemetry(ctx context.Context) error {
 	if s.store == nil {
 		return nil
@@ -356,40 +360,58 @@ func (s *Server) restoreStoredTelemetry(ctx context.Context) error {
 	// Detail boosts (F4) are ephemeral in-memory-only state and are not
 	// restored on boot — a panel restart simply clears any active boost.
 
+	// A2: fetch all four runtime projections for the whole fleet in a
+	// bounded number of bulk queries instead of O(N×4) per-agent
+	// round-trips, then group by agent_id in memory. The reconstructed
+	// per-agent runtime is identical to the old per-agent path.
+	currents, err := s.store.ListTelemetryRuntimeCurrent(ctx)
+	if err != nil {
+		return err
+	}
+	dcs, err := s.store.ListAllTelemetryRuntimeDCs(ctx)
+	if err != nil {
+		return err
+	}
+	upstreams, err := s.store.ListAllTelemetryRuntimeUpstreams(ctx)
+	if err != nil {
+		return err
+	}
+	events, err := s.store.ListAllTelemetryRuntimeEventsPerAgent(ctx, telemetryRuntimeEventsPerAgentLimit)
+	if err != nil {
+		return err
+	}
+
+	currentByAgent := make(map[string]storage.TelemetryRuntimeCurrentRecord, len(currents))
+	for _, current := range currents {
+		currentByAgent[current.AgentID] = current
+	}
+	dcsByAgent := make(map[string][]storage.TelemetryRuntimeDCRecord)
+	for _, dc := range dcs {
+		dcsByAgent[dc.AgentID] = append(dcsByAgent[dc.AgentID], dc)
+	}
+	upstreamsByAgent := make(map[string][]storage.TelemetryRuntimeUpstreamRecord)
+	for _, upstream := range upstreams {
+		upstreamsByAgent[upstream.AgentID] = append(upstreamsByAgent[upstream.AgentID], upstream)
+	}
+	eventsByAgent := make(map[string][]storage.TelemetryRuntimeEventRecord)
+	for _, event := range events {
+		eventsByAgent[event.AgentID] = append(eventsByAgent[event.AgentID], event)
+	}
+
 	for _, agent := range s.live.List() {
-		if err := s.restoreAgentRuntime(ctx, agent.ID, agent); err != nil {
-			return err
+		current, ok := currentByAgent[agent.ID]
+		if !ok {
+			// No persisted runtime row — same as the ErrNotFound branch
+			// in the historic per-agent path: skip this agent.
+			continue
 		}
+		// Merge the restored runtime into the agent value and re-commit
+		// through the live store, preserving the agent's instances
+		// (restored separately in restoreInstances).
+		merged := restoreAgentRuntimeFromStorage(agent, current, dcsByAgent[agent.ID], upstreamsByAgent[agent.ID], eventsByAgent[agent.ID])
+		s.live.ApplySnapshot(agent.ID, merged, s.live.InstancesForAgent(agent.ID))
 	}
 
-	return nil
-}
-
-func (s *Server) restoreAgentRuntime(ctx context.Context, agentID string, agent Agent) error {
-	runtime, err := s.store.GetTelemetryRuntimeCurrent(ctx, agentID)
-	if err != nil {
-		if errors.Is(err, storage.ErrNotFound) {
-			return nil
-		}
-		return err
-	}
-	dcs, err := s.store.ListTelemetryRuntimeDCs(ctx, agentID)
-	if err != nil {
-		return err
-	}
-	upstreams, err := s.store.ListTelemetryRuntimeUpstreams(ctx, agentID)
-	if err != nil {
-		return err
-	}
-	events, err := s.store.ListTelemetryRuntimeEvents(ctx, agentID, 10)
-	if err != nil {
-		return err
-	}
-	// Merge the restored runtime into the agent value and re-commit through
-	// the live store, preserving the agent's instances (restored separately
-	// in restoreInstances).
-	merged := restoreAgentRuntimeFromStorage(agent, runtime, dcs, upstreams, events)
-	s.live.ApplySnapshot(agentID, merged, s.live.InstancesForAgent(agentID))
 	return nil
 }
 
