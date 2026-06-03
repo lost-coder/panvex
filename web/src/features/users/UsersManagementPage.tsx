@@ -16,6 +16,7 @@ import {
   roleVariant,
 } from "@/ui";
 import { UserFormSheet } from "@/features/users/ui/UserFormSheet";
+import { useRelativeTime } from "@/shared/hooks";
 import type {
   UsersManagementPageProps,
   UserListItem,
@@ -44,22 +45,6 @@ function AvatarInitial({ user }: Readonly<{ user: UserListItem }>) {
   );
 }
 
-function useFormatRelative() {
-  const { t } = useTranslation("users");
-  return (iso: string | undefined) => {
-    if (!iso) return "—";
-    const ts = Date.parse(iso);
-    if (!Number.isFinite(ts)) return "—";
-    const diff = Math.floor((Date.now() - ts) / 1000);
-    if (diff < 60) return t("relative.justNow");
-    if (diff < 3_600) return t("relative.minutesAgo", { count: Math.floor(diff / 60) });
-    if (diff < 86_400) return t("relative.hoursAgo", { count: Math.floor(diff / 3_600) });
-    if (diff < 30 * 86_400) return t("relative.daysAgo", { count: Math.floor(diff / 86_400) });
-    const d = new Date(ts);
-    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-  };
-}
-
 type TickTone = "default" | "ok" | "warn" | "error";
 
 function totpTone(total: number, pct: number): TickTone {
@@ -80,7 +65,7 @@ export function UsersManagementPage({
   sheet,
 }: Readonly<UsersManagementPageProps>) {
   const { t } = useTranslation("users");
-  const formatRelative = useFormatRelative();
+  const formatRelative = useRelativeTime();
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
 

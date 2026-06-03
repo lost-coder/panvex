@@ -8,3 +8,4 @@ export { useFocusMainOnRouteChange } from "./useFocusMainOnRouteChange";
 export { useKeyboardShortcut } from "./useKeyboardShortcut";
 export { useTableData } from "./useTableData";
 export type { UseTableDataResult } from "./useTableData";
+export { useRelativeTime, relativeTimeParts } from "./useRelativeTime";

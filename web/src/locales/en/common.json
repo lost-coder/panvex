@@ -3,5 +3,11 @@
   "sortBy": "Sort by",
   "sortNone": "Default order",
   "sortAscending": "Sort ascending",
-  "sortDescending": "Sort descending"
+  "sortDescending": "Sort descending",
+  "relative": {
+    "justNow": "just now",
+    "minutesAgo": "{{count}}m ago",
+    "hoursAgo": "{{count}}h ago",
+    "daysAgo": "{{count}}d ago"
+  }
 }
