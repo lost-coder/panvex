@@ -11,9 +11,8 @@ permissions:
   # Needed for cosign keyless SBOM signing AND actions/attest-build-provenance:
   # both trade the job's GitHub-issued OIDC token for a Fulcio cert (cosign)
   # or a Sigstore bundle (attest action). No long-lived signing key on either
-  # path — the archive's .sig is still signed with the pinned ECDSA key
-  # (PANVEX_SIGNING_KEY) because the embedded verifier in the agent pins
-  # to that pubkey.
+  # path. Artifact integrity at install/update time is verified via the
+  # published .sha256 sidecar (TLS + SHA-256).
   id-token: write
   # Phase-3 §3.4: actions/attest-build-provenance writes SLSA build
   # provenance attestations to GitHub's attestations API + Sigstore.
@@ -87,30 +86,6 @@ jobs:
           sha256sum "${ARCHIVE}" | awk '{print $1}' > "${ARCHIVE}.sha256"
           rm "${BINARY}"
 
-      # Sign the archive with the release private key. The key material comes
-      # from the PANVEX_SIGNING_KEY secret (PEM-encoded ECDSA P-256); it is
-      # written to a mode-0600 temp file and removed once signing completes.
-      # Verification at runtime uses the matching public key embedded in the
-      # binary at internal/security/signing_key.pub.
-      - name: Sign archive
-        env:
-          SIGNING_KEY: ${{ secrets.PANVEX_SIGNING_KEY }}
-          GOARCH: ${{ matrix.arch }}
-        run: |
-          if [ -z "${SIGNING_KEY:-}" ]; then
-            echo "::error::PANVEX_SIGNING_KEY secret is not configured" >&2
-            exit 1
-          fi
-          ARCHIVE_GLOB="panvex-*-linux-${GOARCH}.tar.gz"
-          KEY_FILE="$(mktemp)"
-          chmod 600 "$KEY_FILE"
-          trap 'shred -u "$KEY_FILE" 2>/dev/null || rm -f "$KEY_FILE"' EXIT
-          printf '%s\n' "$SIGNING_KEY" > "$KEY_FILE"
-          for ARCHIVE in ${ARCHIVE_GLOB}; do
-            openssl dgst -sha256 -sign "$KEY_FILE" -out "${ARCHIVE}.sig" "${ARCHIVE}"
-            echo "Signed ${ARCHIVE} -> ${ARCHIVE}.sig"
-          done
-
       # Generate a CycloneDX JSON SBOM for each release archive so downstream
       # consumers can audit the exact module tree shipped in the binary.
       - name: Generate SBOM
@@ -128,10 +103,8 @@ jobs:
       # off the runner with:
       #   gh attestation verify panvex-…tar.gz \
       #     --owner lost-coder --repo panvex
-      # Independent of the ECDSA archive .sig (which the agent pins
-      # to embedded keys for in-binary verification): provenance
-      # answers "where did this artifact come from", signature
-      # answers "is it intact and from a trusted signer".
+      # Provenance answers "where did this artifact come from"; the
+      # .sha256 sidecar answers "is it intact".
       - name: Attest build provenance for archive
         uses: actions/attest-build-provenance@v4
         with:
@@ -143,9 +116,7 @@ jobs:
       # Sign the SBOM keyless via Sigstore: the job swaps its
       # GitHub-Actions OIDC token for a short-lived Fulcio certificate,
       # cosign signs the SBOM with it, and the event lands in Rekor.
-      # No long-lived private key on the SBOM path — the archive's
-      # `.tar.gz.sig` is still signed with the pinned ECDSA key because
-      # the agent's embedded verifier pins to that pubkey.
+      # No long-lived private key on the SBOM path.
       #
       # Verification (off the runner):
       #   cosign verify-blob \
@@ -172,7 +143,6 @@ jobs:
           files: |
             panvex-*-linux-${{ matrix.arch }}.tar.gz
             panvex-*-linux-${{ matrix.arch }}.tar.gz.sha256
-            panvex-*-linux-${{ matrix.arch }}.tar.gz.sig
             panvex-*-linux-${{ matrix.arch }}.sbom.json
             panvex-*-linux-${{ matrix.arch }}.sbom.json.sig
             panvex-*-linux-${{ matrix.arch }}.sbom.json.crt

@@ -15,9 +15,9 @@ import (
 
 // GitHubRelease represents a single release from the GitHub Releases API.
 type GitHubRelease struct {
-	TagName     string              `json:"tag_name"`
-	Body        string              `json:"body"`
-	PublishedAt string              `json:"published_at"`
+	TagName     string               `json:"tag_name"`
+	Body        string               `json:"body"`
+	PublishedAt string               `json:"published_at"`
 	Assets      []GitHubReleaseAsset `json:"assets"`
 }
 
@@ -196,18 +196,17 @@ func pickLatestPanelAndAgent(releases []GitHubRelease) (*GitHubRelease, *GitHubR
 	return panel, agent
 }
 
-// ResolveAssetURLs finds the platform-specific binary, checksum, and
-// signature download URLs for the given component from a GitHub release's
-// assets. A missing signature URL is a fatal condition downstream — the
-// update subsystem refuses to install unsigned artifacts.
-func ResolveAssetURLs(release *GitHubRelease, component string) (binaryURL, checksumURL, signatureURL string) {
+// ResolveAssetURLs finds the platform-specific binary and checksum download
+// URLs for the given component from a GitHub release's assets. A missing
+// checksum URL is a fatal condition downstream — the update subsystem refuses
+// to install an artifact whose integrity it cannot verify.
+func ResolveAssetURLs(release *GitHubRelease, component string) (binaryURL, checksumURL string) {
 	if release == nil {
-		return "", "", ""
+		return "", ""
 	}
 	arch := runtime.GOARCH
 	archiveName := fmt.Sprintf("panvex-%s-linux-%s.tar.gz", component, arch)
 	checksumName := archiveName + ".sha256"
-	signatureName := archiveName + ".sig"
 
 	for _, asset := range release.Assets {
 		switch asset.Name {
@@ -215,9 +214,7 @@ func ResolveAssetURLs(release *GitHubRelease, component string) (binaryURL, chec
 			binaryURL = asset.BrowserDownloadURL
 		case checksumName:
 			checksumURL = asset.BrowserDownloadURL
-		case signatureName:
-			signatureURL = asset.BrowserDownloadURL
 		}
 	}
-	return binaryURL, checksumURL, signatureURL
+	return binaryURL, checksumURL
 }

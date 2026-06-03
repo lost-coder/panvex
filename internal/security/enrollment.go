@@ -1,3 +1,4 @@
+// Package security mints and validates short-lived agent enrollment tokens.
 package security
 
 import (
@@ -20,16 +21,16 @@ var (
 
 // EnrollmentScope defines where a newly enrolled agent is allowed to attach.
 type EnrollmentScope struct {
-	FleetGroupID  string
-	TTL           time.Duration
+	FleetGroupID string
+	TTL          time.Duration
 }
 
 // EnrollmentToken stores the minted token value and the scope bound to it.
 type EnrollmentToken struct {
-	Value         string
-	FleetGroupID  string
-	IssuedAt      time.Time
-	ExpiresAt     time.Time
+	Value        string
+	FleetGroupID string
+	IssuedAt     time.Time
+	ExpiresAt    time.Time
 }
 
 // MintEnrollmentToken produces one fresh token record for the given

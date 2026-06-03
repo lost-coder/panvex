@@ -7,7 +7,7 @@ host must provide for those updates to take effect.
 ## Panel self-update needs a supervisor that relaunches on exit 78
 
 When an operator applies a panel update, the control-plane downloads,
-verifies (signature + checksum), and atomically replaces its own binary,
+verifies (checksum), and atomically replaces its own binary,
 then **exits with code 78** to request a restart. A supervisor must
 relaunch the process for the new binary to take over.
 

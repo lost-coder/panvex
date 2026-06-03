@@ -14,7 +14,6 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/lost-coder/panvex/internal/security"
 	"golang.org/x/mod/semver"
 )
 
@@ -47,8 +46,8 @@ type Payload struct {
 	AllowDowngrade bool `json:"allow_downgrade,omitempty"`
 }
 
-// Execute performs the self-update: download, verify signature (required),
-// verify checksum (defence-in-depth), extract, replace, restart.
+// Execute performs the self-update: download, verify checksum (mandatory),
+// extract, replace, restart.
 //
 // currentVersion is the running agent's compiled-in version string
 // (cmd/agent/main.go's AgentVersion ldflag). It is compared to
@@ -95,7 +94,6 @@ func executeWith(ctx context.Context, payload Payload, currentVersion string, lo
 	archiveName := fmt.Sprintf("panvex-agent-linux-%s.tar.gz", runtime.GOARCH)
 	archiveURL := base + "/" + archiveName
 	checksumURL := archiveURL + ".sha256"
-	signatureURL := archiveURL + ".sig"
 
 	logger.Info("agent self-update: downloading", "version", payload.Version, "url", archiveURL)
 
@@ -103,22 +101,6 @@ func executeWith(ctx context.Context, payload Payload, currentVersion string, lo
 	if err != nil {
 		return fmt.Errorf("download: %w", err)
 	}
-
-	sigBytes, err := downloadBytes(ctx, signatureURL, defaultMaxSignature, cfg)
-	if err != nil {
-		_ = os.Remove(archivePath)
-		return fmt.Errorf("download signature: %w", err)
-	}
-	archiveBytes, err := os.ReadFile(archivePath) //nolint:gosec // path created by downloadToTemp
-	if err != nil {
-		_ = os.Remove(archivePath)
-		return fmt.Errorf("read archive for signature check: %w", err)
-	}
-	if err := security.VerifyArtifactBytes(archiveBytes, sigBytes); err != nil {
-		_ = os.Remove(archivePath)
-		return fmt.Errorf("verify signature: %w", err)
-	}
-	logger.Info("agent self-update: signature verified", "version", payload.Version)
 
 	checksumBytes, err := downloadBytes(ctx, checksumURL, defaultMaxChecksum, cfg)
 	if err != nil {

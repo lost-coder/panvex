@@ -79,17 +79,19 @@ func TestExecute_RequestsPerArchAsset(t *testing.T) {
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 		cfg,
 	)
-	// The served bytes are not signed by the embedded key, so verification
-	// must fail — which proves we got past URL construction and download.
-	if err == nil || !strings.Contains(err.Error(), "verify signature") {
-		t.Fatalf("want signature verification error, got %v", err)
+	// The flow now fetches the archive then the .sha256 sidecar. The served
+	// sidecar ("some-bytes") is not the real SHA-256 of the served archive, so
+	// verification must fail at the checksum step — which proves we got past URL
+	// construction, the archive download, and the checksum download.
+	if err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
+		t.Fatalf("want checksum mismatch error, got %v", err)
 	}
 	wantArchive := "/download/agent/v9.9.9/panvex-agent-linux-" + runtime.GOARCH + ".tar.gz"
 	if len(gotPaths) == 0 || gotPaths[0] != wantArchive {
 		t.Fatalf("first request path = %v, want %q", gotPaths, wantArchive)
 	}
-	if len(gotPaths) < 2 || gotPaths[1] != wantArchive+".sig" {
-		t.Fatalf("second request path = %v, want %q", gotPaths, wantArchive+".sig")
+	if len(gotPaths) < 2 || gotPaths[1] != wantArchive+".sha256" {
+		t.Fatalf("second request path = %v, want %q", gotPaths, wantArchive+".sha256")
 	}
 }
 

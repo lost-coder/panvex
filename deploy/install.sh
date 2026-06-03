@@ -25,28 +25,6 @@ else
 fi
 readonly CURL_INSECURE_FLAG
 
-# ── S1: detached release-signature verification (openssl ECDSA, on by default) ─
-#
-# Every release archive is signed by CI (.github/workflows/release.yml) with
-# `openssl dgst -sha256 -sign` using the project's release-signing private key
-# (the PANVEX_SIGNING_KEY secret). The matching ECDSA P-256 public key is
-# embedded below — it is the SAME key the in-app updater pins
-# (internal/security/signing_key.pub), so the installer and the running binary
-# share one trust anchor. The detached signature is published as a
-# `<archive>.sig` sidecar (raw DER) on each GitHub release.
-#
-# Verification runs by DEFAULT (after the sha256 check, for defence in depth).
-# Operators can opt OUT with PANVEX_INSTALL_SKIP_SIGNATURE=1 (audit-visible;
-# prints a warning). Operators distributing their own builds can point the
-# verifier at their own public key:
-#   PANVEX_INSTALL_PUBKEY_FILE=/path/to/key.pem bash install.sh
-# See deploy/release-signing.md for the signing/rotation runbook.
-PANVEX_RELEASE_PUBKEY_PEM='-----BEGIN PUBLIC KEY-----
-MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEC2xj+WlinIj1Tes28/OFujjLQNia
-hqi7AKBwX4CCiCFwxjcjvRXX1LVyMUBGCSPkUMuuedOzSq7BIbKptjSbAA==
------END PUBLIC KEY-----'
-readonly PANVEX_RELEASE_PUBKEY_PEM
-
 # ── Colors ──────────────────────────────────────────────────────────────────
 
 BOLD=$'\033[1m'
@@ -277,67 +255,6 @@ download_file() {
     return
   fi
   die "curl or wget is required"
-}
-
-# verify_signature checks a detached ECDSA-P256/SHA-256 signature for $archive
-# against $sig_url using openssl — the same scheme the in-app updater uses and
-# the same scheme CI signs with (openssl dgst -sha256 -sign, raw DER .sig).
-#
-# Enabled BY DEFAULT. Returns 0 when verification passes, or when the operator
-# explicitly opts out via PANVEX_INSTALL_SKIP_SIGNATURE=1 (a warning is printed
-# in that case). Returns non-zero — caller MUST treat as fatal — on any failure
-# (missing openssl, bad pubkey, download failure, signature mismatch).
-#
-# Trust anchor: the embedded PANVEX_RELEASE_PUBKEY_PEM (matches
-# internal/security/signing_key.pub). Override with PANVEX_INSTALL_PUBKEY_FILE
-# to verify your own builds.
-#
-# This runs AFTER the existing sha256sum check, so both must pass: hash guards
-# integrity, signature guards authenticity.
-verify_signature() {
-  local archive="$1"
-  local sig_url="$2"
-
-  if [[ "${PANVEX_INSTALL_SKIP_SIGNATURE:-}" = "1" ]]; then
-    echo "panvex: WARNING — release signature verification DISABLED via PANVEX_INSTALL_SKIP_SIGNATURE=1" >&2
-    return 0
-  fi
-
-  if ! command -v openssl >/dev/null 2>&1; then
-    echo "panvex: signature verification requires 'openssl' (set PANVEX_INSTALL_SKIP_SIGNATURE=1 to bypass at your own risk)" >&2
-    return 1
-  fi
-
-  local pubkey="" sig="" rc=0
-
-  # Resolve the public key: operator override file, else the embedded PEM.
-  if [[ -n "${PANVEX_INSTALL_PUBKEY_FILE:-}" ]]; then
-    if [[ ! -r "$PANVEX_INSTALL_PUBKEY_FILE" ]]; then
-      echo "panvex: PANVEX_INSTALL_PUBKEY_FILE not readable: $PANVEX_INSTALL_PUBKEY_FILE" >&2
-      return 1
-    fi
-    pubkey="$PANVEX_INSTALL_PUBKEY_FILE"
-  else
-    pubkey=$(mktemp /tmp/panvex-pub.XXXXXX) || return 1
-    chmod 600 "$pubkey"
-    printf '%s\n' "$PANVEX_RELEASE_PUBKEY_PEM" > "$pubkey"
-  fi
-
-  sig=$(mktemp /tmp/panvex-sig.XXXXXX) || { [[ -z "${PANVEX_INSTALL_PUBKEY_FILE:-}" ]] && rm -f "$pubkey"; return 1; }
-
-  if ! download_file "$sig_url" "$sig"; then
-    echo "panvex: failed to download release signature: $sig_url" >&2
-    rc=1
-  elif ! openssl dgst -sha256 -verify "$pubkey" -signature "$sig" "$archive" >/dev/null 2>&1; then
-    echo "panvex: release signature verification FAILED for $archive" >&2
-    rc=1
-  else
-    echo "panvex: release signature verified" >&2
-  fi
-
-  rm -f "$sig"
-  [[ -z "${PANVEX_INSTALL_PUBKEY_FILE:-}" ]] && rm -f "$pubkey"
-  return $rc
 }
 
 # ── Firewall helper ──────────────────────────────────────────────────────────
@@ -616,15 +533,6 @@ install_panvex() {
     die "Checksum verification failed (expected: $expected_hash, got: $actual_hash)"
   fi
   success "Checksum verified"
-
-  # S1: detached ECDSA signature verification (on by default; opt out via
-  # PANVEX_INSTALL_SKIP_SIGNATURE=1). Runs AFTER the sha256 check so both
-  # must pass — defence in depth against a CDN/registry serving a matching
-  # archive+hash pair.
-  info "Verifying release signature..."
-  if ! verify_signature "$TMP_DIR/$asset_name" "${archive_url}.sig"; then
-    die "Signature verification failed — refusing to install"
-  fi
 
   info "Extracting..."
   tar -xzf "$TMP_DIR/$asset_name" -C "$TMP_DIR"
@@ -1134,20 +1042,6 @@ Non-interactive mode (set environment variables):
   PANVEX_CONFIG_DIR       Config directory (default: /etc/panvex)
   PANVEX_DATA_DIR         Data directory (default: /var/lib/panvex)
   PANVEX_REPO             GitHub repo (default: lost-coder/panvex)
-
-Security (release-asset signing):
-  The release archive's detached ECDSA (P-256/SHA-256) signature is
-  verified with openssl BY DEFAULT, against the public key embedded in
-  this script (the same key the in-app updater pins). See
-  deploy/release-signing.md.
-  PANVEX_INSTALL_SKIP_SIGNATURE
-                          Set to 1 to disable signature verification
-                          (NOT recommended — prints a warning). Default:
-                          verification is enabled.
-  PANVEX_INSTALL_PUBKEY_FILE
-                          Path to an alternate PEM public key to verify
-                          against (for operators distributing their own
-                          builds). Default: the embedded release key.
 EOF
   exit 0
 fi

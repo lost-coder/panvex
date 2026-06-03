@@ -30,12 +30,6 @@ func DownloadChecksum(ctx context.Context, url, token string) (string, error) {
 	return updates.DownloadChecksum(ctx, url, token)
 }
 
-// DownloadSignature fetches a detached signature file and returns its
-// bytes. See updates.DownloadSignature for details.
-func DownloadSignature(ctx context.Context, url, token string) ([]byte, error) {
-	return updates.DownloadSignature(ctx, url, token)
-}
-
 // VerifyChecksum computes the SHA256 of the file at path and compares
 // it to the expected hex digest. See updates.VerifyChecksum for details.
 func VerifyChecksum(path, expected string) error {
