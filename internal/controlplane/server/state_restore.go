@@ -151,7 +151,7 @@ func (s *Server) restoreFallbackState(ctx context.Context) error {
 // store (A2: the in-memory ring was removed), so nothing is hydrated into
 // memory here.
 func (s *Server) restoreAuditSeq(ctx context.Context) error {
-	auditEvents, err := s.store.ListAuditEvents(ctx, maxInMemoryAuditEvents)
+	auditEvents, err := s.store.ListAuditEvents(ctx, auditFirstPageLimit)
 	if err != nil {
 		return err
 	}

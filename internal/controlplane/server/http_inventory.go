@@ -228,11 +228,11 @@ func (s *Server) handleAudit() http.HandlerFunc {
 	}
 }
 
-// auditFirstPage reads the most recent audit events (≤maxInMemoryAuditEvents,
+// auditFirstPage reads the most recent audit events (≤auditFirstPageLimit,
 // oldest→newest) directly from the store, converting storage records to the
 // wire type. The store query already applies the same order+limit the in-memory
 // ring used to enforce (A2: the audit ring was removed): ListAuditEvents with a
-// limit of maxInMemoryAuditEvents returns the last 1024 events in ascending
+// limit of auditFirstPageLimit returns the last 1024 events in ascending
 // order — byte-equivalent to the old snapshotAuditTrailLocked() output. A nil
 // store (test fixtures with no persistence) yields an empty slice, matching the
 // cursor branch's nil-store guard.
@@ -240,7 +240,7 @@ func (s *Server) auditFirstPage(ctx context.Context) ([]AuditEvent, error) {
 	if s.store == nil {
 		return []AuditEvent{}, nil
 	}
-	records, err := s.store.ListAuditEvents(ctx, maxInMemoryAuditEvents)
+	records, err := s.store.ListAuditEvents(ctx, auditFirstPageLimit)
 	if err != nil {
 		return nil, err
 	}

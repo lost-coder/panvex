@@ -11,7 +11,7 @@ import (
 
 const (
 	testMaxInMemoryMetricSnapshots = 512
-	testMaxInMemoryAuditEvents     = 1024
+	testAuditFirstPageLimit        = 1024
 )
 
 // TestServerServesRecentMetricSnapshotsFromStore asserts the A2 guarantee:
@@ -86,7 +86,7 @@ func TestServerServesRecentMetricSnapshotsFromStore(t *testing.T) {
 
 // TestServerServesRecentAuditEventsFromStore asserts the A2 guarantee for the
 // audit trail: after more than the cap is written, the store-backed first-page
-// read serves exactly the most recent testMaxInMemoryAuditEvents events in
+// read serves exactly the most recent testAuditFirstPageLimit events in
 // oldest→newest order. This is the same last-N window the removed in-memory
 // ring used to enforce; it is now the store query's LIMIT 1024 responsibility.
 func TestServerServesRecentAuditEventsFromStore(t *testing.T) {
@@ -94,7 +94,7 @@ func TestServerServesRecentAuditEventsFromStore(t *testing.T) {
 	now := start
 	server := testServerWithSQLite(t, now)
 
-	totalEvents := testMaxInMemoryAuditEvents + 4
+	totalEvents := testAuditFirstPageLimit + 4
 	for index := 0; index < totalEvents; index++ {
 		now = start.Add(time.Duration(index+1) * time.Second)
 		server.appendAudit("user-1", "action-"+strconv.Itoa(index), "target-1", nil)
@@ -111,10 +111,10 @@ func TestServerServesRecentAuditEventsFromStore(t *testing.T) {
 	first := trail[0]
 	last := trail[len(trail)-1]
 
-	if auditLen != testMaxInMemoryAuditEvents {
-		t.Fatalf("len(trail) = %d, want %d", auditLen, testMaxInMemoryAuditEvents)
+	if auditLen != testAuditFirstPageLimit {
+		t.Fatalf("len(trail) = %d, want %d", auditLen, testAuditFirstPageLimit)
 	}
-	expectedFirstAction := "action-" + strconv.Itoa(totalEvents-testMaxInMemoryAuditEvents)
+	expectedFirstAction := "action-" + strconv.Itoa(totalEvents-testAuditFirstPageLimit)
 	if first.Action != expectedFirstAction {
 		t.Fatalf("first audit action = %q, want %q", first.Action, expectedFirstAction)
 	}

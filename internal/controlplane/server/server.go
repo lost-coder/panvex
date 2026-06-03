@@ -48,9 +48,12 @@ const (
 	// We only emit this name when sessionCookieSecure(r) is true; otherwise the
 	// browser would refuse it. Reads accept either form so a session issued
 	// under one prefix still works while a deployment toggles Secure.
-	sessionCookieNameHostPrefix          = "__Host-panvex_session"
-	apiBasePath                          = "/api"
-	maxInMemoryAuditEvents               = 1024
+	sessionCookieNameHostPrefix = "__Host-panvex_session"
+	apiBasePath                 = "/api"
+	// auditFirstPageLimit bounds the no-cursor GET /api/audit first page (and the
+	// boot restore window). The store query returns the most recent N events
+	// oldest→newest; clients page older history via ?cursor=.
+	auditFirstPageLimit                  = 1024
 	httpLoginRateLimitPerWindow          = 30
 	httpAgentBootstrapRateLimitPerWindow = 30
 	grpcConnectRateLimitPerWindow        = 30
