@@ -111,7 +111,7 @@ func ExtractBinaryFromArchive(archivePath string) (string, error) {
 		_ = os.Remove(tmp.Name())
 		return "", fmt.Errorf("extract binary: %w", err)
 	}
-	_ = hdr // name not needed — archive contains a single binary
+	_ = hdr                                 // name not needed — archive contains a single binary
 	if err := tmp.Chmod(0755); err != nil { //nolint:gosec // executable binary requires 0755
 		tmp.Close()
 		_ = os.Remove(tmp.Name())
@@ -164,42 +164,6 @@ func DownloadChecksum(ctx context.Context, url, token string) (string, error) {
 	// The first field is the hex-encoded SHA256 hash.
 	fields := strings.Fields(line)
 	return fields[0], nil
-}
-
-// DownloadSignature fetches a detached signature file and returns its bytes.
-// Signatures are small (<256 bytes for ECDSA DER), so a 4 KB cap is ample and
-// protects against pathological responses. Host allow-list + redirect
-// restriction mirror DownloadArchive.
-func DownloadSignature(ctx context.Context, url, token string) ([]byte, error) {
-	if err := CheckDownloadURL(url); err != nil {
-		return nil, fmt.Errorf("download signature: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf(errCreateRequest, err)
-	}
-	if token != "" {
-		req.Header.Set("Authorization", bearerPrefix+token)
-	}
-	req.Header.Set("Accept", "application/octet-stream")
-
-	resp, err := SecureDownloadClient().Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("download signature: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("download signature: unexpected status %d", resp.StatusCode)
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	if err != nil {
-		return nil, fmt.Errorf("read signature: %w", err)
-	}
-	if len(body) == 0 {
-		return nil, fmt.Errorf("signature file is empty")
-	}
-	return body, nil
 }
 
 // VerifyChecksum computes the SHA256 of the file at path and compares it to

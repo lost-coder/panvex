@@ -36,7 +36,7 @@ func FetchLatestVersions(ctx context.Context, repo, token string) (panel, agent 
 }
 
 // ResolveAssetURLs delegates to updates.ResolveAssetURLs.
-func ResolveAssetURLs(release *GitHubRelease, component string) (binaryURL, checksumURL, signatureURL string) {
+func ResolveAssetURLs(release *GitHubRelease, component string) (binaryURL, checksumURL string) {
 	return updates.ResolveAssetURLs(release, component)
 }
 
@@ -102,11 +102,10 @@ func (s *Server) checkForUpdates(ctx context.Context) {
 
 	if panel != nil {
 		_, version, _ := ParseReleaseTag(panel.TagName)
-		binaryURL, checksumURL, signatureURL := ResolveAssetURLs(panel, "control-plane")
+		binaryURL, checksumURL := ResolveAssetURLs(panel, "control-plane")
 		state.LatestPanelVersion = version
 		state.PanelDownloadURL = binaryURL
 		state.PanelChecksumURL = checksumURL
-		state.PanelSignatureURL = signatureURL
 		state.PanelChangelog = panel.Body
 	}
 

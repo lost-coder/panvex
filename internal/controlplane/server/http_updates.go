@@ -14,7 +14,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
-	"github.com/lost-coder/panvex/internal/security"
 )
 
 // versionResponse is the JSON shape returned by GET /api/version.
@@ -283,7 +282,7 @@ func (s *Server) handlePanelUpdate() http.HandlerFunc {
 			return
 		}
 
-		downloadURL, checksumURL, signatureURL, ok := s.resolvePanelDownloadAssets(w, r, targetVersion, state, settings)
+		downloadURL, checksumURL, ok := s.resolvePanelDownloadAssets(w, r, targetVersion, state, settings)
 		if !ok {
 			return
 		}
@@ -304,7 +303,7 @@ func (s *Server) handlePanelUpdate() http.HandlerFunc {
 		//nolint:contextcheck,gosec // intentionally detached from request lifecycle
 		go func() {
 			defer s.bgWG.Done()
-			s.performPanelUpdate(session.UserID, targetVersion, downloadURL, checksumURL, signatureURL, settings.GitHubToken)
+			s.performPanelUpdate(session.UserID, targetVersion, downloadURL, checksumURL, settings.GitHubToken)
 		}()
 	}
 }
@@ -328,10 +327,9 @@ func (s *Server) resolvePanelTargetVersion(w http.ResponseWriter, requested stri
 	return targetVersion, true
 }
 
-func (s *Server) resolvePanelDownloadAssets(w http.ResponseWriter, r *http.Request, targetVersion string, state UpdateState, settings UpdateSettings) (string, string, string, bool) {
+func (s *Server) resolvePanelDownloadAssets(w http.ResponseWriter, r *http.Request, targetVersion string, state UpdateState, settings UpdateSettings) (string, string, bool) {
 	downloadURL := state.PanelDownloadURL
 	checksumURL := state.PanelChecksumURL
-	signatureURL := state.PanelSignatureURL
 
 	// If the target version differs from the cached latest, fetch the
 	// specific release from GitHub to resolve asset URLs.
@@ -343,42 +341,29 @@ func (s *Server) resolvePanelDownloadAssets(w http.ResponseWriter, r *http.Reque
 		panel, _, err := FetchLatestVersions(ctx, settings.GitHubRepo, settings.GitHubToken)
 		if err != nil || panel == nil || panel.TagName != tag {
 			writeError(w, http.StatusBadGateway, "failed to resolve download URLs for target version")
-			return "", "", "", false
+			return "", "", false
 		}
-		downloadURL, checksumURL, signatureURL = ResolveAssetURLs(panel, "control-plane")
+		downloadURL, checksumURL = ResolveAssetURLs(panel, "control-plane")
 	}
 
 	if downloadURL == "" {
 		writeError(w, http.StatusBadRequest, "no download URL available for target version")
-		return "", "", "", false
+		return "", "", false
 	}
-	if signatureURL == "" {
-		// Refuse to install unsigned artifacts; the signature is the
-		// primary defence against supply-chain tampering (SEC-02).
-		writeError(w, http.StatusBadRequest, "release is missing a signature (.sig) asset; cannot install")
-		return "", "", "", false
-	}
-	return downloadURL, checksumURL, signatureURL, true
+	return downloadURL, checksumURL, true
 }
 
-// performPanelUpdate downloads, verifies (signature required, checksum as a
-// secondary check), and installs a new panel binary, then requests a service
-// restart.
-func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksumURL, signatureURL, token string) {
+// performPanelUpdate downloads, verifies the SHA-256 checksum (mandatory), and
+// installs a new panel binary, then requests a service restart.
+func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksumURL, token string) {
 	ctx := context.Background()
-
-	// Signature is mandatory — a missing or empty URL is a hard stop.
-	if signatureURL == "" {
-		s.logger.Error("panel update: refusing to install without signature URL")
-		return
-	}
 
 	expectedChecksum, ok := s.fetchExpectedChecksum(ctx, checksumURL, token)
 	if !ok {
 		return
 	}
 
-	archivePath, ok := s.downloadAndVerifyPanelArchive(ctx, downloadURL, signatureURL, expectedChecksum, token)
+	archivePath, ok := s.downloadAndVerifyPanelArchive(ctx, downloadURL, expectedChecksum, token)
 	if !ok {
 		return
 	}
@@ -405,11 +390,13 @@ func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksu
 	}
 }
 
-// fetchExpectedChecksum optionally fetches the published checksum.
-// Returns ("", true) when no checksum URL was supplied.
+// fetchExpectedChecksum fetches the published SHA-256 checksum. The checksum is
+// mandatory — a missing .sha256 asset is a hard stop so we never install a
+// binary whose integrity we cannot verify.
 func (s *Server) fetchExpectedChecksum(ctx context.Context, checksumURL, token string) (string, bool) {
 	if checksumURL == "" {
-		return "", true
+		s.logger.Error("panel update: release is missing a .sha256 asset; cannot verify integrity")
+		return "", false
 	}
 	checksum, err := DownloadChecksum(ctx, checksumURL, token)
 	if err != nil {
@@ -420,15 +407,15 @@ func (s *Server) fetchExpectedChecksum(ctx context.Context, checksumURL, token s
 }
 
 // downloadAndVerifyPanelArchive downloads the panel archive and verifies it
-// against signature (mandatory) and checksum (optional). Returns the path on
-// disk and true on success; the caller is responsible for removing the file.
-func (s *Server) downloadAndVerifyPanelArchive(ctx context.Context, downloadURL, signatureURL, expectedChecksum, token string) (string, bool) {
+// against its SHA-256 checksum (mandatory). Returns the path on disk and true
+// on success; the caller is responsible for removing the file.
+func (s *Server) downloadAndVerifyPanelArchive(ctx context.Context, downloadURL, expectedChecksum, token string) (string, bool) {
 	archivePath, err := DownloadArchive(ctx, downloadURL, token)
 	if err != nil {
 		s.logger.Error("panel update: download archive failed", "error", err)
 		return "", false
 	}
-	if !s.verifyPanelArchive(ctx, archivePath, signatureURL, expectedChecksum, token) {
+	if !s.verifyPanelArchive(archivePath, expectedChecksum) {
 		// G703 false positive: archivePath comes from DownloadArchive's
 		// internal os.MkdirTemp + filepath.Join, not from a request param.
 		_ = os.Remove(archivePath) //nolint:gosec
@@ -437,28 +424,16 @@ func (s *Server) downloadAndVerifyPanelArchive(ctx context.Context, downloadURL,
 	return archivePath, true
 }
 
-// verifyPanelArchive runs signature verification and (if configured) checksum
-// verification against an already-downloaded archive.
-func (s *Server) verifyPanelArchive(ctx context.Context, archivePath, signatureURL, expectedChecksum, token string) bool {
-	sig, err := DownloadSignature(ctx, signatureURL, token)
-	if err != nil {
-		s.logger.Error("panel update: download signature failed", "error", err)
+// verifyPanelArchive runs mandatory SHA-256 checksum verification against an
+// already-downloaded archive.
+func (s *Server) verifyPanelArchive(archivePath, expectedChecksum string) bool {
+	if expectedChecksum == "" {
+		s.logger.Error("panel update: missing checksum; refusing to install without integrity verification")
 		return false
 	}
-	archiveBytes, err := os.ReadFile(archivePath) //nolint:gosec // path created by DownloadArchive
-	if err != nil {
-		s.logger.Error("panel update: read archive for signature check failed", "error", err)
+	if err := VerifyChecksum(archivePath, expectedChecksum); err != nil {
+		s.logger.Error("panel update: checksum verification failed", "error", err)
 		return false
-	}
-	if err := security.VerifyArtifactBytes(archiveBytes, sig); err != nil {
-		s.logger.Error("panel update: signature verification failed", "error", err)
-		return false
-	}
-	if expectedChecksum != "" {
-		if err := VerifyChecksum(archivePath, expectedChecksum); err != nil {
-			s.logger.Error("panel update: checksum verification failed", "error", err)
-			return false
-		}
 	}
 	return true
 }

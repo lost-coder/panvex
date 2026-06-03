@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/lost-coder/panvex/internal/controlplane/server"
-	"github.com/lost-coder/panvex/internal/security"
 )
 
 type selfUpdateOptions struct {
@@ -71,28 +70,23 @@ func resolveSelfUpdateTarget(ctx context.Context, opts selfUpdateOptions) (panel
 	return panel, targetVersion, currentVersion, true, nil
 }
 
-// downloadAndVerifySelfUpdateArchive downloads the archive + signature
-// (and checksum, if available) for the chosen release and verifies both
-// before returning the local archive path. Caller is responsible for
-// removing the path.
+// downloadAndVerifySelfUpdateArchive downloads the archive + checksum for the
+// chosen release and verifies the checksum (mandatory) before returning the
+// local archive path. Caller is responsible for removing the path.
 func downloadAndVerifySelfUpdateArchive(ctx context.Context, panel *server.GitHubRelease, token string) (string, error) {
-	binaryURL, checksumURL, signatureURL := server.ResolveAssetURLs(panel, "control-plane")
+	binaryURL, checksumURL := server.ResolveAssetURLs(panel, "control-plane")
 	if binaryURL == "" {
 		return "", errors.New("no binary download URL found for the current platform")
 	}
-	if signatureURL == "" {
-		return "", errors.New("release is missing a .sig asset; refusing to install unsigned binary")
+	if checksumURL == "" {
+		return "", errors.New("release is missing a .sha256 asset; cannot verify integrity")
 	}
 
-	var expectedChecksum string
-	if checksumURL != "" {
-		var err error
-		expectedChecksum, err = server.DownloadChecksum(ctx, checksumURL, token)
-		if err != nil {
-			return "", fmt.Errorf("download checksum: %w", err)
-		}
-		fmt.Println("Checksum downloaded.")
+	expectedChecksum, err := server.DownloadChecksum(ctx, checksumURL, token)
+	if err != nil {
+		return "", fmt.Errorf("download checksum: %w", err)
 	}
+	fmt.Println("Checksum downloaded.")
 
 	archivePath, err := server.DownloadArchive(ctx, binaryURL, token)
 	if err != nil {
@@ -100,7 +94,7 @@ func downloadAndVerifySelfUpdateArchive(ctx context.Context, panel *server.GitHu
 	}
 	fmt.Println("Archive downloaded.")
 
-	if err := verifySelfUpdateArchive(ctx, archivePath, signatureURL, expectedChecksum, token); err != nil {
+	if err := verifySelfUpdateArchive(archivePath, expectedChecksum); err != nil {
 		// G703 false positive: archivePath is the temp file we just created
 		// inside DownloadArchive (via os.MkdirTemp + filepath.Join), not a
 		// caller-supplied path.
@@ -110,28 +104,11 @@ func downloadAndVerifySelfUpdateArchive(ctx context.Context, panel *server.GitHu
 	return archivePath, nil
 }
 
-func verifySelfUpdateArchive(ctx context.Context, archivePath, signatureURL, expectedChecksum, token string) error {
-	// Mandatory signature verification: fetch the detached signature, verify
-	// against the embedded public key before any checksum or extraction.
-	sigBytes, err := server.DownloadSignature(ctx, signatureURL, token)
-	if err != nil {
-		return fmt.Errorf("download signature: %w", err)
+func verifySelfUpdateArchive(archivePath, expectedChecksum string) error {
+	if err := server.VerifyChecksum(archivePath, expectedChecksum); err != nil {
+		return fmt.Errorf("verify checksum: %w", err)
 	}
-	archiveBytes, err := os.ReadFile(archivePath) //nolint:gosec // archivePath from os.CreateTemp
-	if err != nil {
-		return fmt.Errorf("read archive for signature: %w", err)
-	}
-	if err := security.VerifyArtifactBytes(archiveBytes, sigBytes); err != nil {
-		return fmt.Errorf("verify signature: %w", err)
-	}
-	fmt.Println("Signature verified.")
-
-	if expectedChecksum != "" {
-		if err := server.VerifyChecksum(archivePath, expectedChecksum); err != nil {
-			return fmt.Errorf("verify checksum: %w", err)
-		}
-		fmt.Println("Checksum verified.")
-	}
+	fmt.Println("Checksum verified.")
 	return nil
 }
 

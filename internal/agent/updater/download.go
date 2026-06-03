@@ -21,7 +21,6 @@ const EnvAllowedHosts = "PANVEX_UPDATE_ALLOWED_HOSTS"
 const (
 	defaultDownloadTimeout = 5 * time.Minute
 	defaultMaxArchive      = 256 << 20 // 256 MB
-	defaultMaxSignature    = 4 << 10   // 4 KB
 )
 
 var defaultAllowedHosts = []string{
@@ -121,7 +120,7 @@ func hostMatchesAllowlist(host string, allowed []string) bool {
 }
 
 // downloadBytes fetches url and returns its body, bounded to maxBytes.
-// Used for small companion files (signature, checksum) where streaming
+// Used for small companion files (the checksum sidecar) where streaming
 // to disk is unnecessary.
 func downloadBytes(ctx context.Context, rawURL string, maxBytes int64, cfg Config) ([]byte, error) {
 	if err := validateDownloadURL(rawURL, cfg); err != nil {

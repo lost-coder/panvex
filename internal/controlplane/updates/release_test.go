@@ -44,8 +44,8 @@ func TestCompareVersions(t *testing.T) {
 }
 
 func TestResolveAssetURLsNilRelease(t *testing.T) {
-	b, c, s := ResolveAssetURLs(nil, "control-plane")
-	if b != "" || c != "" || s != "" {
-		t.Fatalf("ResolveAssetURLs(nil, ...) = (%q, %q, %q), want empty strings", b, c, s)
+	b, c := ResolveAssetURLs(nil, "control-plane")
+	if b != "" || c != "" {
+		t.Fatalf("ResolveAssetURLs(nil, ...) = (%q, %q), want empty strings", b, c)
 	}
 }

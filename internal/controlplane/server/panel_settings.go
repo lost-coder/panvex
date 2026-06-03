@@ -24,11 +24,11 @@ const (
 
 // PanelRuntime describes the currently applied network and restart runtime.
 type PanelRuntime struct {
-	HTTPListenAddress  string
-	HTTPRootPath       string
-	AgentHTTPRootPath  string
-	PanelAllowedCIDRs  []*net.IPNet
-	GRPCListenAddress  string
+	HTTPListenAddress string
+	HTTPRootPath      string
+	AgentHTTPRootPath string
+	PanelAllowedCIDRs []*net.IPNet
+	GRPCListenAddress string
 	TLSMode           string
 	TLSCertFile       string
 	TLSKeyFile        string
@@ -233,7 +233,6 @@ type UpdateState struct {
 	LatestAgentVersion string `json:"latest_agent_version"`
 	PanelDownloadURL   string `json:"panel_download_url"`
 	PanelChecksumURL   string `json:"panel_checksum_url"`
-	PanelSignatureURL  string `json:"panel_signature_url"`
 	PanelChangelog     string `json:"panel_changelog"`
 	AgentChangelog     string `json:"agent_changelog"`
 	LastCheckedAt      int64  `json:"last_checked_at"`

@@ -1,5 +1,5 @@
 // Package updates holds the control-plane's self-update subsystem:
-// release discovery, artifact download, signature/checksum verification,
+// release discovery, artifact download, SHA-256 checksum verification,
 // and atomic binary replacement.
 //
 // This is task P3-ARCH-01d of the god-package split (remediation plan v4).
@@ -9,7 +9,7 @@
 //     helpers (ParseReleaseTag, CompareVersions).
 //   - FetchLatestVersions / ResolveAssetURLs for querying the GitHub
 //     Releases API.
-//   - DownloadArchive, DownloadChecksum, DownloadSignature plus the
+//   - DownloadArchive, DownloadChecksum plus the
 //     ExtractBinaryFromArchive / VerifyChecksum / AtomicReplaceBinary
 //     helpers used by the apply path.
 //   - ValidateGitHubRepo, CheckDownloadURL and SecureDownloadClient —
