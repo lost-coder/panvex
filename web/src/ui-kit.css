@@ -74,6 +74,12 @@
   --color-accent: #60a5fa;
   --color-accent-muted: rgba(96, 165, 250, 0.15);
 
+  /* Chart palette — series colors for Recharts. Semantic series (ok/warn/
+     error) reuse the status tokens; these two cover the neutral
+     primary/secondary series so charts stop hard-coding hex literals. */
+  --color-chart-1: #3b82f6;
+  --color-chart-2: #8b5cf6;
+
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace;
 
