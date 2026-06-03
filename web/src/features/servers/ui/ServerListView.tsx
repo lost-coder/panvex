@@ -103,6 +103,7 @@ export function ServerListView({
         </div>
       ),
       sortable: true,
+      sortValue: (s: Readonly<ServerListItem>) => s.name,
       className: "w-[30%]",
     },
     {
@@ -138,6 +139,7 @@ export function ServerListView({
         );
       },
       sortable: true,
+      sortValue: (s: Readonly<ServerListItem>) => s.usersOnline ?? 0,
       className: "hidden sm:table-cell text-center w-[110px]",
     },
     {
@@ -149,6 +151,7 @@ export function ServerListView({
         </div>
       ),
       sortable: true,
+      sortValue: (s: Readonly<ServerListItem>) => s.trafficBytes,
       className: "hidden md:table-cell text-center w-[80px]",
     },
     {
@@ -166,6 +169,7 @@ export function ServerListView({
         );
       },
       sortable: true,
+      sortValue: (s: Readonly<ServerListItem>) => s.uptimeSeconds,
       className: "hidden lg:table-cell text-center w-[70px]",
     },
     {

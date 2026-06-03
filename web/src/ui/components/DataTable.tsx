@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { cn } from "@/ui/lib/cn";
@@ -7,8 +7,37 @@ export interface DataTableColumn<T> {
   key: string;
   header: string;
   render: (row: Readonly<T>) => React.ReactNode;
+  /**
+   * Marks the header as sortable (renders a clickable, keyboard-operable
+   * affordance + aria-sort). To actually reorder rows you must also supply
+   * `sortValue` — `render` returns ReactNode and can't be compared on.
+   */
   sortable?: boolean;
+  /**
+   * Comparable value the table sorts on when this column is active. Numbers
+   * compare numerically; everything else compares as a locale-aware,
+   * case-insensitive string. null/undefined always sort last regardless of
+   * direction. Omit on a `sortable` column only if the parent sorts the
+   * `data` prop itself (controlled sorting).
+   */
+  sortValue?: (row: Readonly<T>) => string | number | null | undefined;
   className?: string;
+}
+
+/**
+ * Comparator for two column sort values. Numbers compare numerically; mixed
+ * or string values fall back to a numeric-aware, case-insensitive locale
+ * compare so "item2" < "item10" and "Alpha" sorts next to "alpha".
+ */
+function compareSortValues(
+  a: string | number | null | undefined,
+  b: string | number | null | undefined,
+): number {
+  if (typeof a === "number" && typeof b === "number") return a - b;
+  return String(a).localeCompare(String(b), undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
 }
 
 export interface DataTableProps<T> {
@@ -68,6 +97,34 @@ export function DataTable<T>({
     }
   };
 
+  // Apply the active sort. A column is only sortable-with-effect when it
+  // provides `sortValue`; otherwise (no active column, or controlled
+  // sorting upstream) we render `data` untouched. The decorate-sort-
+  // undecorate keeps the sort stable so equal keys preserve input order.
+  const sortedData = useMemo(() => {
+    if (!sortKey) return data;
+    const activeCol = columns.find((c) => c.key === sortKey);
+    const accessor = activeCol?.sortValue;
+    if (!accessor) return data;
+    const dir = sortDir === "asc" ? 1 : -1;
+    return data
+      .map((row, index) => ({ row, index }))
+      .sort((a, b) => {
+        const av = accessor(a.row);
+        const bv = accessor(b.row);
+        const aNil = av === null || av === undefined;
+        const bNil = bv === null || bv === undefined;
+        // null/undefined always sink to the bottom, independent of dir.
+        if (aNil || bNil) {
+          if (aNil && bNil) return a.index - b.index;
+          return aNil ? 1 : -1;
+        }
+        const cmp = compareSortValues(av, bv);
+        return cmp !== 0 ? cmp * dir : a.index - b.index;
+      })
+      .map((d) => d.row);
+  }, [data, columns, sortKey, sortDir]);
+
   // U3: rows that navigate must be keyboard-operable. A <tr> can't be a
   // <button>/<a> child of <tbody>, so we expose the button role +
   // Enter/Space activation directly on the row, mirroring NodeSummaryCard.
@@ -87,7 +144,7 @@ export function DataTable<T>({
   // suppress the warning so it does not drown legitimate signals.
   // eslint-disable-next-line react-hooks/incompatible-library
   const rowVirtualizer = useVirtualizer({
-    count: data.length,
+    count: sortedData.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => rowHeight,
     overscan: 6,
@@ -157,7 +214,7 @@ export function DataTable<T>({
             </tr>
           </thead>
           <tbody>
-            {data.length === 0 ? (
+            {sortedData.length === 0 ? (
               <tr>
                 <td colSpan={columns.length} className="text-center text-fg-muted py-8">
                   {resolvedEmpty}
@@ -171,7 +228,7 @@ export function DataTable<T>({
                   </tr>
                 )}
                 {virtualItems.map((virtualRow) => {
-                  const row = data[virtualRow.index];
+                  const row = sortedData[virtualRow.index];
                   // The virtualizer is driven by `count: data.length`, so
                   // every rendered virtual index maps to a real row. The
                   // guard satisfies noUncheckedIndexedAccess without
@@ -216,10 +273,10 @@ export function DataTable<T>({
           column (e.g. a Revoke button) would create invalid nested-button
           DOM and swallow click events meant for the inner control. */}
       <div className={cn("flex flex-col gap-2 md:hidden", className)}>
-        {data.length === 0 ? (
+        {sortedData.length === 0 ? (
           <p className="text-center text-fg-muted py-8 text-sm">{resolvedEmpty}</p>
         ) : (
-          data.map((row) => {
+          sortedData.map((row) => {
             const content = (
               <div className="flex flex-col gap-1.5">
                 {columns.map((col) => (
