@@ -57,17 +57,13 @@ func (s *Server) RenewCertificate(ctx context.Context, request *gatewayrpc.Renew
 	// Update in-memory cert dates so the dashboard reflects the renewal.
 	certIssuedAt := now.UTC()
 	certExpiresAt := issued.ExpiresAt.UTC()
-	// Identity-only update: read-modify-write through the live store,
-	// preserving the agent's instances.
 	s.mu.Lock()
-	if agent, ok := s.live.Get(agentID); ok {
-		agent.CertIssuedAt = &certIssuedAt
-		agent.CertExpiresAt = &certExpiresAt
-		agent.CertSerial = issued.Serial
-		s.live.ApplySnapshot(agentID, agent, s.live.InstancesForAgent(agentID))
-		if s.batchWriter != nil {
-			s.batchWriter.agents.Enqueue(agentToRecord(agent))
-		}
+	if agent, ok := s.updateAgentIdentity(agentID, func(a *Agent) {
+		a.CertIssuedAt = &certIssuedAt
+		a.CertExpiresAt = &certExpiresAt
+		a.CertSerial = issued.Serial
+	}); ok && s.batchWriter != nil {
+		s.batchWriter.agents.Enqueue(agentToRecord(agent))
 	}
 	s.mu.Unlock()
 	// Q4.U-S-04: pin the new serial so the in-flight stream (and any

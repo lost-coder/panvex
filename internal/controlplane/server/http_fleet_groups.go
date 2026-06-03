@@ -337,14 +337,13 @@ func (s *Server) writeFleetGroupDeleteError(w http.ResponseWriter, id string, er
 func (s *Server) patchAgentFleetGroupMembership(deletedID, reassignTo string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// Identity-only update across the affected agents: read-modify-write each
-	// through the live store, preserving instances. live.List returns deep
-	// copies, so mutating + re-applying is safe. Taken under s.mu (s.mu ->
+	// Identity-only update across the affected agents. Taken under s.mu (s.mu ->
 	// live) so the membership rewrite is atomic w.r.t. other s.mu holders.
 	for _, agent := range s.live.List() {
 		if agent.FleetGroupID == deletedID {
-			agent.FleetGroupID = reassignTo
-			s.live.ApplySnapshot(agent.ID, agent, s.live.InstancesForAgent(agent.ID))
+			s.updateAgentIdentity(agent.ID, func(a *Agent) {
+				a.FleetGroupID = reassignTo
+			})
 		}
 	}
 }

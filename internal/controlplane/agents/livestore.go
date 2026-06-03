@@ -203,9 +203,10 @@ func (s *LiveStore[A, I]) Remove(agentID string) {
 	}
 }
 
-// Has reports whether the agent is present in the live mirror. Cheap
-// presence check for callers that don't need the value (e.g. the snapshot
-// guard that must not resurrect a deregistered agent).
+// Has reports whether the agent is present in the live mirror. Provided for
+// store completeness and test assertions; it is NOT used on the hot path. In
+// particular it is not the snapshot resurrection guard — that lives in the
+// server and keys off revokedAgentIDs, not live presence.
 func (s *LiveStore[A, I]) Has(agentID string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -213,7 +214,8 @@ func (s *LiveStore[A, I]) Has(agentID string) bool {
 	return ok
 }
 
-// Len reports the number of agents in the live mirror.
+// Len reports the number of agents in the live mirror. Provided for store
+// completeness and test assertions; not used on the hot path.
 func (s *LiveStore[A, I]) Len() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

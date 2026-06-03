@@ -56,6 +56,26 @@ func (s *Server) updateAgentRecordFromSnapshot(snapshot agentSnapshot) Agent {
 	return agent
 }
 
+// updateAgentIdentity applies an identity-only mutation to an agent in the
+// live store, PRESERVING the agent's instance set. live.ApplySnapshot replaces
+// the instance set, so the current instances must be re-supplied — this helper
+// re-reads them via live.InstancesForAgent so callers can never accidentally
+// pass nil and wipe an agent's instances. Returns the updated agent and true,
+// or (zero, false) if the agent is not present.
+//
+// The helper only touches s.live, which has its own lock; it does not require
+// s.mu. Callers that hold s.mu do so to order the surrounding read-modify-write
+// (and any batchWriter enqueue) against other s.mu holders, not for this call.
+func (s *Server) updateAgentIdentity(id string, mutate func(*Agent)) (Agent, bool) {
+	agent, ok := s.live.Get(id)
+	if !ok {
+		return Agent{}, false
+	}
+	mutate(&agent)
+	s.live.ApplySnapshot(id, agent, s.live.InstancesForAgent(id))
+	return agent, true
+}
+
 // refreshInitializationWatchCooldown maintains the per-agent cooldown so the
 // "initialization watch" UI signal does not flap on every heartbeat once the
 // agent has finished initializing. Caller must hold s.mu.

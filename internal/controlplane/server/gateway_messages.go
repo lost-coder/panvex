@@ -344,20 +344,15 @@ func (s *Server) handleInStreamRenewalRequest(ctx context.Context, agentID strin
 	// Update in-memory cert dates.
 	certIssuedAt := s.now().UTC()
 	certExpiresAtUTC := expiresAt.UTC()
-	// Identity-only update: read-modify-write through the live store,
-	// preserving the agent's instances (live.ApplySnapshot replaces the
-	// instance set, so we feed back the current instances).
 	s.mu.Lock()
-	if agent, ok := s.live.Get(agentID); ok {
-		agent.CertIssuedAt = &certIssuedAt
-		agent.CertExpiresAt = &certExpiresAtUTC
+	if agent, ok := s.updateAgentIdentity(agentID, func(a *Agent) {
+		a.CertIssuedAt = &certIssuedAt
+		a.CertExpiresAt = &certExpiresAtUTC
 		if newSerial != "" {
-			agent.CertSerial = newSerial
+			a.CertSerial = newSerial
 		}
-		s.live.ApplySnapshot(agentID, agent, s.live.InstancesForAgent(agentID))
-		if s.batchWriter != nil {
-			s.batchWriter.agents.Enqueue(agentToRecord(agent))
-		}
+	}); ok && s.batchWriter != nil {
+		s.batchWriter.agents.Enqueue(agentToRecord(agent))
 	}
 	s.mu.Unlock()
 

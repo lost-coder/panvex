@@ -118,19 +118,17 @@ func (s *Server) persistAgentNodeName(w http.ResponseWriter, r *http.Request, ag
 // lock. Returns the updated record + previous name, or ok=false (after
 // writing the 404) when the agent disappeared between checks.
 func (s *Server) applyAgentRename(w http.ResponseWriter, agentID, nodeName string) (Agent, string, bool) {
-	// Identity-only update: read-modify-write through the live store,
-	// preserving the agent's instances.
 	s.mu.Lock()
-	agent, exists := s.live.Get(agentID)
+	var oldName string
+	agent, exists := s.updateAgentIdentity(agentID, func(a *Agent) {
+		oldName = a.NodeName
+		a.NodeName = nodeName
+	})
+	s.mu.Unlock()
 	if !exists {
-		s.mu.Unlock()
 		writeError(w, http.StatusNotFound, msgAgentNotFound)
 		return Agent{}, "", false
 	}
-	oldName := agent.NodeName
-	agent.NodeName = nodeName
-	s.live.ApplySnapshot(agentID, agent, s.live.InstancesForAgent(agentID))
-	s.mu.Unlock()
 	return agent, oldName, true
 }
 
@@ -353,19 +351,17 @@ func (s *Server) handleUpdateAgentFleetGroup() http.HandlerFunc {
 		// Patch the in-memory snapshot so subsequent /agents and
 		// /fleet-groups reads reflect the move without waiting for the
 		// next heartbeat. Captures oldGroupID for the audit event.
-		// Identity-only update: read-modify-write through the live store,
-		// preserving the agent's instances.
 		s.mu.Lock()
-		current, stillExists := s.live.Get(agentID)
+		var oldGroupID string
+		current, stillExists := s.updateAgentIdentity(agentID, func(a *Agent) {
+			oldGroupID = a.FleetGroupID
+			a.FleetGroupID = newGroupID
+		})
+		s.mu.Unlock()
 		if !stillExists {
-			s.mu.Unlock()
 			writeError(w, http.StatusNotFound, msgAgentNotFound)
 			return
 		}
-		oldGroupID := current.FleetGroupID
-		current.FleetGroupID = newGroupID
-		s.live.ApplySnapshot(agentID, current, s.live.InstancesForAgent(agentID))
-		s.mu.Unlock()
 
 		s.appendAuditWithContext(r.Context(), session.UserID, "agents.reassign_fleet_group", agentID, map[string]any{
 			"old_fleet_group_id": oldGroupID,
