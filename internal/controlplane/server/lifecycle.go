@@ -141,7 +141,7 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		),
 		detailBoosts:                 make(map[string]time.Time),
 		initializationWatchCooldowns: make(map[string]time.Time),
-		fallbackEnteredAt:            make(map[string]time.Time),
+		fallback:                     agents.NewFallbackTracker(),
 		sessions:                     agents.NewSessionManager(),
 		// clientsSvc is constructed with a no-repo mirror here so it is never
 		// nil (HasRepo() gates every persistence path). initStoreBackedSubsystems

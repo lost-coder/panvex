@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // restoreStoredState rehydrates the in-memory inventory from the storage
@@ -159,11 +160,11 @@ func (s *Server) restoreFallbackState(ctx context.Context) error {
 		)
 		return nil
 	}
-	s.mu.Lock()
+	entered := make(map[string]time.Time, len(records))
 	for _, r := range records {
-		s.fallbackEnteredAt[r.AgentID] = r.EnteredAt.UTC()
+		entered[r.AgentID] = r.EnteredAt.UTC()
 	}
-	s.mu.Unlock()
+	s.fallback.Restore(entered)
 	return nil
 }
 

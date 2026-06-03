@@ -228,14 +228,17 @@ type Server struct {
 	live                         *agents.LiveStore[Agent, Instance]
 	detailBoosts                 map[string]time.Time
 	initializationWatchCooldowns map[string]time.Time
-	// fallbackEnteredAt mirrors agent_fallback_state in memory. Hydrated on
-	// Run(); updated synchronously under mu and persisted asynchronously via
-	// the batch writer. Crash-window caveat: see spec.
-	fallbackEnteredAt map[string]time.Time
-	panelSettings     PanelSettings
-	updateSettings    UpdateSettings
-	updateState       UpdateState
-	retention         RetentionSettings
+	// fallback owns the in-memory mirror of agent_fallback_state (A2): the
+	// per-agent ME->Direct fallback-entered-at timestamp. Hydrated on Run()
+	// via restoreFallbackState; the transition edge (set on entry / clear on
+	// exit) is driven by applyFallbackStateTransition and persisted
+	// asynchronously via the batch writer. The tracker owns its own lock and
+	// never reaches into s.mu. Crash-window caveat: see spec.
+	fallback       *agents.FallbackTracker
+	panelSettings  PanelSettings
+	updateSettings UpdateSettings
+	updateState    UpdateState
+	retention      RetentionSettings
 	// geoip owns the live City/ASN MaxMind readers. Constructed in
 	// New() (logger only) and reloaded from disk during boot if the
 	// configured paths exist; lookups are RWMutex-guarded inside the

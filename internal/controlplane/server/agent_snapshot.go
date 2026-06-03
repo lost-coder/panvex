@@ -114,11 +114,11 @@ func instancesFromSnapshot(snapshot agentSnapshot) []Instance {
 	return instances
 }
 
-// applyFallbackStateTransitionLocked classifies the agent's operating mode
-// from runtime flags and updates the in-memory fallbackEnteredAt map. The
-// 30-min escalation timer tracks ME-pool downtime (the underlying outage),
-// not the agent's me2dc_fallback_enabled flag, which can flap independently
-// while the ME pool is still down. The mode→action table is therefore:
+// applyFallbackStateTransition classifies the agent's operating mode from
+// runtime flags and updates the in-memory fallback tracker. The 30-min
+// escalation timer tracks ME-pool downtime (the underlying outage), not the
+// agent's me2dc_fallback_enabled flag, which can flap independently while the
+// ME pool is still down. The mode→action table is therefore:
 //
 //	ModeFallback: stamp+enqueue Put on first entry; idempotent on repeat.
 //	ModeMeDown:   keep any existing timestamp (ME is still down — flag flap
@@ -126,8 +126,13 @@ func instancesFromSnapshot(snapshot agentSnapshot) []Instance {
 //	ModeME:       ME pool is healthy again — clear timestamp + enqueue Delete.
 //	ModeDirect:   fallback is no longer relevant — clear timestamp + Delete.
 //
-// Caller must hold s.mu.
-func (s *Server) applyFallbackStateTransitionLocked(agent Agent) {
+// The in-memory set/clear and the hadPrev transition-edge read go through the
+// fallback tracker, which owns its own lock; this function does NOT itself
+// require s.mu. It is called from applyAgentSnapshot under s.mu so the
+// classification observes the same agent value committed to the live store in
+// that critical section; the tracker call nests harmlessly inside (s.mu ->
+// tracker ordering, the tracker never calls back).
+func (s *Server) applyFallbackStateTransition(agent Agent) {
 	mode := controltelemetry.ClassifyMode(controltelemetry.SeverityInput{
 		UseMiddleProxy:             agent.Runtime.UseMiddleProxy,
 		MERuntimeReady:             agent.Runtime.MERuntimeReady,
@@ -135,12 +140,12 @@ func (s *Server) applyFallbackStateTransitionLocked(agent Agent) {
 		TelemtUnreachable:          agent.Runtime.TelemtUnreachable,
 		TelemtUnreachableSinceUnix: agent.Runtime.TelemtUnreachableSinceUnix,
 	})
-	_, hadPrev := s.fallbackEnteredAt[agent.ID]
+	_, hadPrev := s.fallback.Get(agent.ID)
 	switch mode {
 	case controltelemetry.ModeFallback:
 		if !hadPrev {
 			now := time.Now().UTC()
-			s.fallbackEnteredAt[agent.ID] = now
+			s.fallback.Set(agent.ID, now)
 			if s.batchWriter != nil {
 				s.batchWriter.EnqueueFallbackPut(agent.ID, now)
 			}
@@ -151,7 +156,7 @@ func (s *Server) applyFallbackStateTransitionLocked(agent Agent) {
 		// so severity escalation crosses the 30-min boundary on time.
 	case controltelemetry.ModeME, controltelemetry.ModeDirect:
 		if hadPrev {
-			delete(s.fallbackEnteredAt, agent.ID)
+			s.fallback.Clear(agent.ID)
 			if s.batchWriter != nil {
 				s.batchWriter.EnqueueFallbackDelete(agent.ID)
 			}
@@ -242,7 +247,7 @@ func (s *Server) applyAgentSnapshot(ctx context.Context, snapshot agentSnapshot)
 	s.live.ApplySnapshot(snapshot.AgentID, agent, instances)
 	s.commitClientSnapshotsLocked(ctx, snapshot)
 	metricSnapshot := s.commitMetricSnapshotLocked(snapshot)
-	s.applyFallbackStateTransitionLocked(agent)
+	s.applyFallbackStateTransition(agent)
 	s.mu.Unlock()
 
 	// Enqueue all DB writes asynchronously via the batch writer. No DB I/O

@@ -58,8 +58,8 @@ func TestApplyFallbackStateTransitionNoneToFallbackStampsAndEnqueues(t *testing.
 
 	server.mu.Lock()
 	server.seedLiveAgentKeyed(agentID, Agent{ID: agentID, Runtime: runtimeFor(true, false, true)})
-	server.applyFallbackStateTransitionLocked(server.liveAgent(agentID))
-	stamped, ok := server.fallbackEnteredAt[agentID]
+	server.applyFallbackStateTransition(server.liveAgent(agentID))
+	stamped, ok := server.fallback.Get(agentID)
 	server.mu.Unlock()
 
 	if !ok {
@@ -91,16 +91,16 @@ func TestApplyFallbackStateTransitionFallbackToFallbackIsIdempotent(t *testing.T
 	server.mu.Lock()
 	agent := Agent{ID: agentID, Runtime: runtimeFor(true, false, true)}
 	server.seedLiveAgentKeyed(agentID, agent)
-	server.applyFallbackStateTransitionLocked(agent)
-	first := server.fallbackEnteredAt[agentID]
+	server.applyFallbackStateTransition(agent)
+	first, _ := server.fallback.Get(agentID)
 	server.mu.Unlock()
 	_ = drainPending(t, server.batchWriter)
 
 	// Second transition with the same fallback flags: no change.
 	time.Sleep(2 * time.Millisecond) // ensure time.Now() has moved forward
 	server.mu.Lock()
-	server.applyFallbackStateTransitionLocked(agent)
-	second := server.fallbackEnteredAt[agentID]
+	server.applyFallbackStateTransition(agent)
+	second, _ := server.fallback.Get(agentID)
 	server.mu.Unlock()
 
 	if !first.Equal(second) {
@@ -118,7 +118,7 @@ func TestApplyFallbackStateTransitionFallbackToMEClearsAndEnqueuesDelete(t *test
 	// Enter fallback first.
 	server.mu.Lock()
 	server.seedLiveAgentKeyed(agentID, Agent{ID: agentID, Runtime: runtimeFor(true, false, true)})
-	server.applyFallbackStateTransitionLocked(server.liveAgent(agentID))
+	server.applyFallbackStateTransition(server.liveAgent(agentID))
 	server.mu.Unlock()
 	_ = drainPending(t, server.batchWriter)
 
@@ -126,8 +126,8 @@ func TestApplyFallbackStateTransitionFallbackToMEClearsAndEnqueuesDelete(t *test
 	server.mu.Lock()
 	healthy := Agent{ID: agentID, Runtime: runtimeFor(true, true, true)}
 	server.seedLiveAgentKeyed(agentID, healthy)
-	server.applyFallbackStateTransitionLocked(healthy)
-	_, stillThere := server.fallbackEnteredAt[agentID]
+	server.applyFallbackStateTransition(healthy)
+	_, stillThere := server.fallback.Get(agentID)
 	server.mu.Unlock()
 
 	if stillThere {
@@ -147,7 +147,7 @@ func TestApplyFallbackStateTransitionFallbackToDirectClearsAndEnqueuesDelete(t *
 
 	server.mu.Lock()
 	server.seedLiveAgentKeyed(agentID, Agent{ID: agentID, Runtime: runtimeFor(true, false, true)})
-	server.applyFallbackStateTransitionLocked(server.liveAgent(agentID))
+	server.applyFallbackStateTransition(server.liveAgent(agentID))
 	server.mu.Unlock()
 	_ = drainPending(t, server.batchWriter)
 
@@ -155,8 +155,8 @@ func TestApplyFallbackStateTransitionFallbackToDirectClearsAndEnqueuesDelete(t *
 	server.mu.Lock()
 	direct := Agent{ID: agentID, Runtime: runtimeFor(false, false, false)}
 	server.seedLiveAgentKeyed(agentID, direct)
-	server.applyFallbackStateTransitionLocked(direct)
-	_, stillThere := server.fallbackEnteredAt[agentID]
+	server.applyFallbackStateTransition(direct)
+	_, stillThere := server.fallback.Get(agentID)
 	server.mu.Unlock()
 
 	if stillThere {
@@ -177,8 +177,8 @@ func TestApplyFallbackStateTransitionFallbackToMeDownKeepsTimestamp(t *testing.T
 	// Enter fallback.
 	server.mu.Lock()
 	server.seedLiveAgentKeyed(agentID, Agent{ID: agentID, Runtime: runtimeFor(true, false, true)})
-	server.applyFallbackStateTransitionLocked(server.liveAgent(agentID))
-	original := server.fallbackEnteredAt[agentID]
+	server.applyFallbackStateTransition(server.liveAgent(agentID))
+	original, _ := server.fallback.Get(agentID)
 	server.mu.Unlock()
 	_ = drainPending(t, server.batchWriter)
 
@@ -187,8 +187,8 @@ func TestApplyFallbackStateTransitionFallbackToMeDownKeepsTimestamp(t *testing.T
 	server.mu.Lock()
 	meDown := Agent{ID: agentID, Runtime: runtimeFor(true, false, false)}
 	server.seedLiveAgentKeyed(agentID, meDown)
-	server.applyFallbackStateTransitionLocked(meDown)
-	stillThere, ok := server.fallbackEnteredAt[agentID]
+	server.applyFallbackStateTransition(meDown)
+	stillThere, ok := server.fallback.Get(agentID)
 	server.mu.Unlock()
 
 	if !ok {
@@ -210,15 +210,15 @@ func TestApplyFallbackStateTransitionMeDownToFallbackKeepsOriginalTimestamp(t *t
 	// me_down (timestamp preserved by Issue 1 fix), then flip back to fallback.
 	server.mu.Lock()
 	server.seedLiveAgentKeyed(agentID, Agent{ID: agentID, Runtime: runtimeFor(true, false, true)})
-	server.applyFallbackStateTransitionLocked(server.liveAgent(agentID))
-	original := server.fallbackEnteredAt[agentID]
+	server.applyFallbackStateTransition(server.liveAgent(agentID))
+	original, _ := server.fallback.Get(agentID)
 	server.mu.Unlock()
 	_ = drainPending(t, server.batchWriter)
 
 	server.mu.Lock()
 	meDown := Agent{ID: agentID, Runtime: runtimeFor(true, false, false)}
 	server.seedLiveAgentKeyed(agentID, meDown)
-	server.applyFallbackStateTransitionLocked(meDown)
+	server.applyFallbackStateTransition(meDown)
 	server.mu.Unlock()
 	_ = drainPending(t, server.batchWriter)
 
@@ -227,8 +227,8 @@ func TestApplyFallbackStateTransitionMeDownToFallbackKeepsOriginalTimestamp(t *t
 	server.mu.Lock()
 	back := Agent{ID: agentID, Runtime: runtimeFor(true, false, true)}
 	server.seedLiveAgentKeyed(agentID, back)
-	server.applyFallbackStateTransitionLocked(back)
-	got := server.fallbackEnteredAt[agentID]
+	server.applyFallbackStateTransition(back)
+	got, _ := server.fallback.Get(agentID)
 	server.mu.Unlock()
 
 	if !got.Equal(original) {
