@@ -213,27 +213,10 @@ type Server struct {
 	// the batch writer. Crash-window caveat: see spec.
 	fallbackEnteredAt map[string]time.Time
 	instances         map[string]Instance
-	// auditTrail is a fixed-size ring buffer of the most recent audit events.
-	// Append is O(1) — we overwrite auditBuf[auditHead] and advance the head
-	// index, rather than performing an O(N) slice shift on every overflow.
-	//
-	// Layout: auditBuf is a pre-allocated array of length
-	// maxInMemoryAuditEvents. auditSize is the number of valid entries
-	// (<= maxInMemoryAuditEvents). When auditSize < len(auditBuf) the ring
-	// is still filling and valid entries live at indices [0, auditSize).
-	// Once full, auditHead points at the next slot to overwrite (which
-	// equals the oldest entry); valid entries in oldest-to-newest order
-	// are at indices auditHead, auditHead+1, ... (mod len).
-	//
-	// Callers must read/write this structure under metricsAuditMu and use
-	// snapshotAuditTrailLocked / appendAuditTrailLocked helpers.
-	auditBuf       [maxInMemoryAuditEvents]AuditEvent
-	auditHead      int
-	auditSize      int
-	panelSettings  PanelSettings
-	updateSettings UpdateSettings
-	updateState    UpdateState
-	retention      RetentionSettings
+	panelSettings     PanelSettings
+	updateSettings    UpdateSettings
+	updateState       UpdateState
+	retention         RetentionSettings
 	// geoip owns the live City/ASN MaxMind readers. Constructed in
 	// New() (logger only) and reloaded from disk during boot if the
 	// configured paths exist; lookups are RWMutex-guarded inside the

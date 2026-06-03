@@ -218,12 +218,37 @@ func (s *Server) handleAudit() http.HandlerFunc {
 			return
 		}
 
-		s.metricsAuditMu.RLock()
-		trail := s.snapshotAuditTrailLocked()
-		s.metricsAuditMu.RUnlock()
+		trail, err := s.auditFirstPage(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "list audit events failed")
+			return
+		}
 
 		writeJSON(w, http.StatusOK, trail)
 	}
+}
+
+// auditFirstPage reads the most recent audit events (≤maxInMemoryAuditEvents,
+// oldest→newest) directly from the store, converting storage records to the
+// wire type. The store query already applies the same order+limit the in-memory
+// ring used to enforce (A2: the audit ring was removed): ListAuditEvents with a
+// limit of maxInMemoryAuditEvents returns the last 1024 events in ascending
+// order — byte-equivalent to the old snapshotAuditTrailLocked() output. A nil
+// store (test fixtures with no persistence) yields an empty slice, matching the
+// cursor branch's nil-store guard.
+func (s *Server) auditFirstPage(ctx context.Context) ([]AuditEvent, error) {
+	if s.store == nil {
+		return []AuditEvent{}, nil
+	}
+	records, err := s.store.ListAuditEvents(ctx, maxInMemoryAuditEvents)
+	if err != nil {
+		return nil, err
+	}
+	events := make([]AuditEvent, 0, len(records))
+	for _, record := range records {
+		events = append(events, auditEventFromRecord(record))
+	}
+	return events, nil
 }
 
 // auditCursorResponse is the wire shape of /api/audit?cursor=. Items match

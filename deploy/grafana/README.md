@@ -67,6 +67,7 @@ All PromQL in these dashboards uses the actual exported names, all prefixed
   `panvex_db_pool_idle_connections`, `panvex_db_pool_max_open_connections`,
   `panvex_db_pool_wait_total`, `panvex_db_pool_wait_seconds_total`
 - `panvex_ratelimit_rejected_total`, `panvex_goroutine_panic_recovered_total`
-- `panvex_job_queue_depth`, `panvex_audit_buffer_depth`, `panvex_lockout_active`
+- `panvex_job_queue_depth`, `panvex_lockout_active` (audit-pipeline backlog is
+  surfaced by `panvex_batch_queue_depth{buffer="audit"}`)
 - `panvex_outbound_supervisors_total`, `panvex_bootstrap_attempts_total`,
   `panvex_agent_cert_pin_total`

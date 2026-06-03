@@ -263,10 +263,13 @@ func TestWebhookEndpointAuditFlow(t *testing.T) {
 		t.Fatalf("create: %d; %s", createResp.Code, createResp.Body.String())
 	}
 
-	// Audit ring buffer is in-memory; read it back.
-	server.metricsAuditMu.RLock()
-	events := server.snapshotAuditTrailLocked()
-	server.metricsAuditMu.RUnlock()
+	// A2: the audit trail is served from the store now. Drain the async
+	// batch writer, then read the first page back through the same path.
+	server.batchWriter.auditEvents.Drain(context.Background())
+	events, err := server.auditFirstPage(context.Background())
+	if err != nil {
+		t.Fatalf("auditFirstPage() error = %v", err)
+	}
 	found := false
 	for _, ev := range events {
 		if ev.Action == "webhook.endpoint.create" {

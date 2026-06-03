@@ -70,8 +70,6 @@ type metricsCollectors struct {
 	jobQueueDepth prometheus.Gauge
 	lockoutActive prometheus.Gauge
 
-	auditBufferDepth prometheus.Gauge
-
 	unsignedUpdateFallbackTotal prometheus.Counter
 
 	// P2-REL-04 / P2-REL-05: per-table row count deleted by the retention
@@ -212,10 +210,6 @@ func newMetricsCollectors() *metricsCollectors {
 			Name: "panvex_lockout_active",
 			Help: "Current number of usernames with an active account lockout.",
 		}),
-		auditBufferDepth: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "panvex_audit_buffer_depth",
-			Help: "Current depth of the audit-event buffer (pre-registered for P2-LOG-10).",
-		}),
 		unsignedUpdateFallbackTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "panvex_unsigned_update_fallback_total",
 			Help: "Total number of panel-update applications that fell back to an unsigned manifest.",
@@ -292,7 +286,6 @@ func newMetricsCollectors() *metricsCollectors {
 		mc.agentInboundDropsTotal,
 		mc.jobQueueDepth,
 		mc.lockoutActive,
-		mc.auditBufferDepth,
 		mc.unsignedUpdateFallbackTotal,
 		mc.retentionPrunedRowsTotal,
 		mc.panicRecoveredTotal,
@@ -710,7 +703,6 @@ func (s *Server) refreshPolledMetrics() {
 	if s.loginLockout != nil {
 		s.obs.lockoutActive.Set(float64(s.loginLockout.ActiveCount(s.now())))
 	}
-	s.obs.auditBufferDepth.Set(float64(s.auditBufferLen()))
 	s.refreshPoolMetrics()
 }
 
@@ -731,14 +723,6 @@ func (s *Server) refreshPoolMetrics() {
 	s.prevPoolStats = curr
 	s.poolStatsMu.Unlock()
 	s.obs.addPoolCounterDeltas(prev, curr)
-}
-
-// auditBufferLen returns the current length of the in-memory audit ring. It
-// is used by the metrics poller to expose panvex_audit_buffer_depth.
-func (s *Server) auditBufferLen() int {
-	s.metricsAuditMu.RLock()
-	defer s.metricsAuditMu.RUnlock()
-	return s.auditSize
 }
 
 // metricsShutdown stops the metrics polling goroutine, if any. It is safe to

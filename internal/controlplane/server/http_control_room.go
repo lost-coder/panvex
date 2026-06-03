@@ -42,9 +42,18 @@ func (s *Server) handleControlRoom() http.HandlerFunc {
 
 		metricSnapshots := s.metricSnapshotCount(r.Context())
 
-		s.metricsAuditMu.RLock()
-		recentActivity := controlRoomRecentActivity(s.snapshotAuditTrailLocked(), 5)
-		s.metricsAuditMu.RUnlock()
+		// A2: recent-activity now reads from the store-backed first page
+		// instead of the removed in-memory ring. auditFirstPage returns the
+		// same oldest→newest window the ring served, and
+		// controlRoomRecentActivity walks it newest-first to pick the most
+		// recent few. A store error degrades to an empty activity list rather
+		// than failing the whole control-room dashboard.
+		auditTrail, err := s.auditFirstPage(r.Context())
+		if err != nil {
+			s.logger.ErrorContext(r.Context(), "control-room recent activity read failed", "error", err)
+			auditTrail = []AuditEvent{}
+		}
+		recentActivity := controlRoomRecentActivity(auditTrail, 5)
 
 		s.mu.RLock()
 		fleet := controlRoomFleetFromState(s.agents, s.instances, metricSnapshots, s.presence, now)

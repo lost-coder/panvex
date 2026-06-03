@@ -219,7 +219,7 @@
       "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
         { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "panvex_job_queue_depth", "legendFormat": "job queue depth", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "panvex_audit_buffer_depth", "legendFormat": "audit buffer depth", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "panvex_batch_queue_depth{buffer=\"audit\"}", "legendFormat": "audit queue depth", "refId": "B" },
         { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "panvex_lockout_active", "legendFormat": "active lockouts", "refId": "C" }
       ],
       "title": "Queue / buffer / lockout depths",
