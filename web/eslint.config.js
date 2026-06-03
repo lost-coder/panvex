@@ -187,6 +187,19 @@ export default tseslint.config(
     },
   },
   {
+    // Repo tooling scripts (e.g. check-i18n-parity.mjs) run under Node, not the
+    // browser. Declare the Node globals they use so `no-undef` doesn't flag
+    // console/process. Scoped to scripts/ so app sources keep the browser env.
+    files: ["scripts/**/*.{js,mjs,cjs}"],
+    languageOptions: {
+      sourceType: "module",
+      globals: {
+        console: "readonly",
+        process: "readonly",
+      },
+    },
+  },
+  {
     ignores: ["dist/", "node_modules/"],
   }
 );
