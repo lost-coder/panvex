@@ -1,9 +1,10 @@
 import {
   MiniChart,
+  deltaClass,
+  deltaArrow,
   type DashboardOverviewData,
   type KpiItem,
 } from "@/ui";
-import { deltaClass, deltaArrow } from "../format";
 
 const TONE_VALUE_CLASS: Record<NonNullable<KpiItem["tone"]>, string> = {
   default: "text-fg",

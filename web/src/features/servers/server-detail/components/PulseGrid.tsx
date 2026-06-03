@@ -3,19 +3,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { memo } from "react";
 
-import { cn } from "@/ui";
-
-function deltaClass(dir: "up" | "down" | "flat" | undefined): string {
-  if (dir === "up") return "text-status-ok";
-  if (dir === "down") return "text-status-error";
-  return "text-fg-muted";
-}
-
-function deltaArrow(dir: "up" | "down" | "flat" | undefined): string {
-  if (dir === "up") return "▲";
-  if (dir === "down") return "▼";
-  return "·";
-}
+import { cn, deltaClass, deltaArrow } from "@/ui";
 
 // ─── Pulse row tick ──────────────────────────────────────────────────
 // "Ticker-style" metric without a card: compact label, large mono value,

@@ -11,6 +11,23 @@ export function formatBytes(bytes: number): string {
   return bytes + " B";
 }
 
+/**
+ * Trend-direction color class. up → ok (green), down → error (red),
+ * flat/unknown → muted. Canonical: do not re-declare per feature.
+ */
+export function deltaClass(dir: "up" | "down" | "flat" | undefined): string {
+  if (dir === "up") return "text-status-ok";
+  if (dir === "down") return "text-status-error";
+  return "text-fg-muted";
+}
+
+/** Trend-direction glyph matching deltaClass. */
+export function deltaArrow(dir: "up" | "down" | "flat" | undefined): string {
+  if (dir === "up") return "▲";
+  if (dir === "down") return "▼";
+  return "·";
+}
+
 /** Format seconds to "Xd Yh" uptime string */
 export function formatUptime(seconds: number): string {
   const d = Math.floor(seconds / 86400);
