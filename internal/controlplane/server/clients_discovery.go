@@ -48,7 +48,15 @@ type discoveredClient struct {
 
 // reconcileDiscoveredClients compares client data returned by an agent against
 // the panel's managed clients and creates discovered_client records for unknown users.
-func (s *Server) reconcileDiscoveredClients(ctx context.Context, agentID string, records []*gatewayrpc.ClientDetailRecord, observedAt time.Time) {
+func (s *Server) reconcileDiscoveredClients(ctx context.Context, agentID string, records []*gatewayrpc.ClientDetailRecord, telemtUnreachable bool, observedAt time.Time) {
+	if telemtUnreachable {
+		// The agent could not read Telemt's user list. An empty record set
+		// here means "unknown", NOT "zero clients" — do not prune, do not
+		// reconcile. The recovery-edge / periodic refresh will re-request a
+		// real snapshot once Telemt is back.
+		s.logger.Warn("skipping discovery reconcile: agent reported telemt unreachable", "agent_id", agentID)
+		return
+	}
 	if len(records) == 0 {
 		return
 	}
