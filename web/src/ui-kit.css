@@ -39,6 +39,11 @@
   --panvex-status-warn: #f59e0b;
   --panvex-status-warn-ink: #1a1306;
   --panvex-status-error: #ef4444;
+  /* Deepened error fill for the solid StatusPill: white text on #ef4444 is
+     only 3.76:1 (below AA). #c81e1e gives white ≈ 5.0:1 while staying a loud
+     alarm red. Do NOT fold this into --panvex-status-error — dots/borders/text
+     consumers rely on #ef4444. */
+  --panvex-status-error-strong: #c81e1e;
   --panvex-accent: #60a5fa;
   --panvex-accent-muted: rgba(96, 165, 250, 0.15);
 }
@@ -62,6 +67,9 @@
   --panvex-status-warn: #b45309;
   --panvex-status-warn-ink: #ffffff;
   --panvex-status-error: #dc2626;
+  /* Solid StatusPill fill; white on #dc2626 = 4.83:1 (clears AA). Matches the
+     light error token. */
+  --panvex-status-error-strong: #dc2626;
   --panvex-accent: #2563eb;
   --panvex-accent-muted: rgba(37, 99, 235, 0.12);
 }
@@ -94,6 +102,7 @@
   --color-status-warn: var(--panvex-status-warn);
   --color-status-warn-ink: var(--panvex-status-warn-ink);
   --color-status-error: var(--panvex-status-error);
+  --color-status-error-strong: var(--panvex-status-error-strong);
 
   --color-accent: var(--panvex-accent);
   --color-accent-muted: var(--panvex-accent-muted);

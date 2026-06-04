@@ -13,11 +13,13 @@ export interface StatusPillProps {
 // Solid-fill pills: high-emphasis call-out for problem states. Text colors
 // are chosen for AA contrast on each fill. The warn ink is a theme-aware token
 // (text-status-warn-ink) so it clears AA on both the dark- and light-theme
-// amber fills.
+// amber fills. The error pill uses a deepened fill (bg-status-error-strong, a
+// theme-aware token) rather than the base error color so white text clears AA
+// in both themes — the base #ef4444 only reached 3.76:1 in dark mode.
 const toneClass: Record<Status, string> = {
   ok: "bg-status-ok/15 text-status-ok",
   warn: "bg-status-warn text-status-warn-ink",
-  error: "bg-status-error text-white",
+  error: "bg-status-error-strong text-white",
 };
 
 export function StatusPill({ tone, label, glyph, className }: Readonly<StatusPillProps>) {

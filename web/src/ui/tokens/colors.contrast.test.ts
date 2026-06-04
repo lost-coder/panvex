@@ -42,3 +42,18 @@ describe("StatusPill warn ink contrast (both themes, WCAG AA)", () => {
     expect(contrast(warnInkLight, warnFillLight)).toBeGreaterThanOrEqual(4.5);
   });
 });
+
+describe("StatusPill error ink contrast (both themes, WCAG AA)", () => {
+  // Solid error pill: white text on the deepened error fill (themed
+  // --panvex-status-error-strong). Mirror the literals so the pill's
+  // text-vs-fill pairing is guarded.
+  const white = "#ffffff";
+  const errorStrongDark = "#c81e1e";
+  const errorStrongLight = "#dc2626";
+  it("dark error-strong fill vs white clears AA (4.5:1)", () => {
+    expect(contrast(white, errorStrongDark)).toBeGreaterThanOrEqual(4.5);
+  });
+  it("light error-strong fill vs white clears AA (4.5:1)", () => {
+    expect(contrast(white, errorStrongLight)).toBeGreaterThanOrEqual(4.5);
+  });
+});
