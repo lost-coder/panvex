@@ -1,10 +1,10 @@
 import type { PillTone, Status } from "@/ui/tokens/colors";
 
 /**
- * Operator-facing node lifecycle state. Plan 1 covers the three states
- * derivable from the legacy 3-state `Status`. Plan 2 extends this union
- * with "offline" | "pending" | "updating" once the data signals + the
- * deferred thresholds are settled.
+ * Operator-facing node lifecycle state. Five-state union: `offline` (no
+ * heartbeat) and `down` (agent running, traffic not served) are distinct red
+ * states; `pending` is the neutral startup state. Update-availability is
+ * surfaced separately (info chip), not as a state here.
  */
 export type NodeState = "ok" | "degraded" | "down" | "offline" | "pending";
 
