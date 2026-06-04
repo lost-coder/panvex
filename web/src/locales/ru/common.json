@@ -1,3 +1,13 @@
 {
-  "empty": "Нет данных"
+  "empty": "Нет данных",
+  "sortBy": "Сортировка",
+  "sortNone": "По умолчанию",
+  "sortAscending": "По возрастанию",
+  "sortDescending": "По убыванию",
+  "relative": {
+    "justNow": "только что",
+    "minutesAgo": "{{count}} мин назад",
+    "hoursAgo": "{{count}} ч назад",
+    "daysAgo": "{{count}} д назад"
+  }
 }

@@ -37,7 +37,7 @@ export function IPHistoryCard({
         row.countryName || row.countryCode ? (
           <span className="text-xs text-fg">
             {row.countryCode && (
-              <span className="font-mono text-[10px] text-fg-muted mr-1">{row.countryCode}</span>
+              <span className="font-mono text-nano text-fg-muted mr-1">{row.countryCode}</span>
             )}
             {row.countryName ?? ""}
           </span>
@@ -72,7 +72,7 @@ export function IPHistoryCard({
       key: "firstSeen",
       header: t("ipHistory.firstSeen"),
       render: (row: Readonly<IPRow>) => (
-        <span className="text-[11px] font-mono text-fg-muted tabular-nums">
+        <span className="text-micro font-mono text-fg-muted tabular-nums">
           {new Date(row.firstSeen).toLocaleString()}
         </span>
       ),
@@ -82,7 +82,7 @@ export function IPHistoryCard({
       key: "lastSeen",
       header: t("ipHistory.lastSeen"),
       render: (row: Readonly<IPRow>) => (
-        <span className="text-[11px] font-mono text-fg tabular-nums">
+        <span className="text-micro font-mono text-fg tabular-nums">
           {new Date(row.lastSeen).toLocaleString()}
         </span>
       ),
@@ -94,11 +94,11 @@ export function IPHistoryCard({
       <header className="px-4 py-3 border-b border-divider flex items-center justify-between gap-2">
         <div className="flex items-baseline gap-2">
           <span className="text-sm font-semibold text-fg">{t("ipHistory.title")}</span>
-          <span className="text-[11px] font-mono text-fg-muted">
+          <span className="text-micro font-mono text-fg-muted">
             {t("ipHistory.uniqueCount", { count: totalUnique })}
           </span>
         </div>
-        <span className="text-[10px] font-mono text-fg-muted truncate">
+        <span className="text-nano font-mono text-fg-muted truncate">
           {t("ipHistory.geoipNote")}
         </span>
       </header>

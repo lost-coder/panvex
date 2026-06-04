@@ -60,7 +60,7 @@ function DcTile({ dc, onClick }: Readonly<{ dc: ServerDcData; onClick: () => voi
       <div className="h-1 w-full rounded-full bg-border overflow-hidden">
         <div className={cn("h-full rounded-full", toneBar)} style={{ width: `${dc.coveragePct}%` }} />
       </div>
-      <div className="flex items-center justify-between text-[10px] font-mono text-fg-muted">
+      <div className="flex items-center justify-between text-nano font-mono text-fg-muted">
         <span>
           {t("detail.dcTileLabels.writers")}{" "}
           <span className={cn(dc.aliveWriters < dc.requiredWriters ? "text-status-warn" : "text-fg")}>

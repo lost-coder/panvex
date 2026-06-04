@@ -118,7 +118,7 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
               );
             })}
           </div>
-          <div className="text-[11px] text-fg-muted mt-1 leading-snug">
+          <div className="text-micro text-fg-muted mt-1 leading-snug">
             {effectiveMode === "inbound"
               ? t("configure.mode.inboundHint")
               : t("configure.mode.outboundHint")}
@@ -177,7 +177,7 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
             </Button>
           )}
         </div>
-        <div className="text-[11px] font-mono text-fg-muted mt-1">
+        <div className="text-micro font-mono text-fg-muted mt-1">
           {t("configure.fleetGroup.hint")}
         </div>
       </FormField>
@@ -202,7 +202,7 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
               {dialError}
             </div>
           )}
-          <div className="text-[11px] font-mono text-fg-muted mt-1">
+          <div className="text-micro font-mono text-fg-muted mt-1">
             {t("configure.dialAddress.hint")}
           </div>
         </FormField>
@@ -316,7 +316,7 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
                       );
                     })}
                   </fieldset>
-                  <div className="text-[11px] text-fg-muted mt-1 leading-snug">
+                  <div className="text-micro text-fg-muted mt-1 leading-snug">
                     {scriptSource === "panel"
                       ? t("configure.advanced.scriptSource.panelHint")
                       : t("configure.advanced.scriptSource.githubHint")}
@@ -377,7 +377,7 @@ export function ConfigureStep(props: Readonly<EnrollmentWizardProps>) {
                   <span className="text-xs font-medium text-status-warn">
                     {t("configure.advanced.insecure.title")}
                   </span>
-                  <span className="text-[11px] text-fg-muted leading-snug">
+                  <span className="text-micro text-fg-muted leading-snug">
                     <Trans
                       i18nKey="configure.advanced.insecure.description"
                       ns="enrollment"

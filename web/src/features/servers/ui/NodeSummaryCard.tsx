@@ -112,7 +112,7 @@ export function NodeSummaryCard({
           <span className="text-sm font-mono font-medium text-fg truncate">{name}</span>
 
           {issue && (
-            <span className={cn("text-[10px] font-mono shrink-0 ml-auto", issue.cls)}>
+            <span className={cn("text-nano font-mono shrink-0 ml-auto", issue.cls)}>
               {issueText}
             </span>
           )}
@@ -198,10 +198,10 @@ export function NodeSummaryCard({
                   className="flex items-center gap-1.5 rounded-[6px] px-2 py-[5px] bg-bg/60"
                 >
                   <span className={cn("h-[7px] w-[7px] rounded-full shrink-0", dcLed[dc.status])} />
-                  <span className="text-[11px] font-mono font-medium text-fg leading-none">
+                  <span className="text-micro font-mono font-medium text-fg leading-none">
                     {dc.dc}
                   </span>
-                  <span className="text-[10px] font-mono text-fg-muted ml-auto leading-none">
+                  <span className="text-nano font-mono text-fg-muted ml-auto leading-none">
                     {dc.rttMs === null ? "—" : `${dc.rttMs}`}
                   </span>
                 </div>

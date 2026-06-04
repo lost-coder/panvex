@@ -79,7 +79,7 @@ export function ProfilePage({
                 <Badge variant="warn">{t("profile.badges.totpDisabled")}</Badge>
               )}
               <span
-                className="font-mono text-[10px] text-fg-muted truncate"
+                className="font-mono text-nano text-fg-muted truncate"
                 title={user.id}
               >
                 {t("profile.idShort", { id: user.id.slice(0, 8) })}

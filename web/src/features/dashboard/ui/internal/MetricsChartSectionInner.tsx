@@ -100,8 +100,8 @@ function SystemChart({ points }: Readonly<{ points: MetricsPoint[] }>) {
           type="monotone"
           dataKey="cpuAvg"
           name="CPU"
-          stroke="#3b82f6"
-          fill="#3b82f6"
+          stroke="var(--color-chart-1)"
+          fill="var(--color-chart-1)"
           fillOpacity={0.15}
           strokeWidth={1.5}
           dot={false}
@@ -110,8 +110,8 @@ function SystemChart({ points }: Readonly<{ points: MetricsPoint[] }>) {
           type="monotone"
           dataKey="memAvg"
           name="Memory"
-          stroke="#8b5cf6"
-          fill="#8b5cf6"
+          stroke="var(--color-chart-2)"
+          fill="var(--color-chart-2)"
           fillOpacity={0.15}
           strokeWidth={1.5}
           dot={false}
@@ -120,8 +120,8 @@ function SystemChart({ points }: Readonly<{ points: MetricsPoint[] }>) {
           type="monotone"
           dataKey="diskAvg"
           name="Disk"
-          stroke="#f59e0b"
-          fill="#f59e0b"
+          stroke="var(--color-status-warn)"
+          fill="var(--color-status-warn)"
           fillOpacity={0.1}
           strokeWidth={1.5}
           dot={false}
@@ -156,8 +156,8 @@ function ConnectionsChart({ points }: Readonly<{ points: MetricsPoint[] }>) {
           type="monotone"
           dataKey="connectionsAvg"
           name="Connections"
-          stroke="#3b82f6"
-          fill="#3b82f6"
+          stroke="var(--color-chart-1)"
+          fill="var(--color-chart-1)"
           fillOpacity={0.2}
           strokeWidth={1.5}
           dot={false}
@@ -166,8 +166,8 @@ function ConnectionsChart({ points }: Readonly<{ points: MetricsPoint[] }>) {
           type="monotone"
           dataKey="activeUsersAvg"
           name="Active Users"
-          stroke="#10b981"
-          fill="#10b981"
+          stroke="var(--color-status-ok)"
+          fill="var(--color-status-ok)"
           fillOpacity={0.15}
           strokeWidth={1.5}
           dot={false}
@@ -208,8 +208,8 @@ function NetworkChart({ points }: Readonly<{ points: MetricsPoint[] }>) {
           type="monotone"
           dataKey="dcCoverageMin"
           name="DC Coverage (min)"
-          stroke="#ef4444"
-          fill="#ef4444"
+          stroke="var(--color-status-error)"
+          fill="var(--color-status-error)"
           fillOpacity={0.1}
           strokeWidth={1.5}
           dot={false}
@@ -249,8 +249,8 @@ function TrafficChart({ points }: Readonly<{ points: MetricsPoint[] }>) {
           type="monotone"
           dataKey="netUploadMbps"
           name="Upload"
-          stroke="#3b82f6"
-          fill="#3b82f6"
+          stroke="var(--color-chart-1)"
+          fill="var(--color-chart-1)"
           fillOpacity={0.15}
           strokeWidth={1.5}
           dot={false}
@@ -259,8 +259,8 @@ function TrafficChart({ points }: Readonly<{ points: MetricsPoint[] }>) {
           type="monotone"
           dataKey="netDownloadMbps"
           name="Download"
-          stroke="#10b981"
-          fill="#10b981"
+          stroke="var(--color-status-ok)"
+          fill="var(--color-status-ok)"
           fillOpacity={0.15}
           strokeWidth={1.5}
           dot={false}
@@ -359,7 +359,7 @@ export default function MetricsChartSectionInner({
         <SectionHeader title="Performance" />
         <div className="flex items-center gap-2">
           {resolution && (
-            <span className="text-[10px] text-fg-muted bg-bg px-1.5 py-0.5 rounded-xs border border-border">
+            <span className="text-nano text-fg-muted bg-bg px-1.5 py-0.5 rounded-xs border border-border">
               {resolution}
             </span>
           )}

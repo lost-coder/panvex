@@ -63,7 +63,7 @@ export function BulkActionBar<T extends string = string>({
           {count.toLocaleString()} {noun}
         </span>
         {hint && (
-          <span className="hidden sm:inline text-[11px] font-mono text-fg-muted">
+          <span className="hidden sm:inline text-micro font-mono text-fg-muted">
             · {hint}
           </span>
         )}

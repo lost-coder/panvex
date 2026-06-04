@@ -9,6 +9,7 @@ import {
 } from "@/ui";
 import { AgentConnectionSection } from "@/features/servers/ui/AgentConnectionSection";
 import type { ServerDetailPageProps, ServerDcData } from "@/shared/api/types-pages/pages";
+import { useIsDesktop } from "@/shared/hooks";
 
 import { useRelativeTime } from "./useRelativeTime";
 import { ServerActionsDropdown } from "./ServerActionsDropdown";
@@ -87,6 +88,11 @@ export function ServerDetailPage({
 }: Readonly<ServerDetailPageProps>) {
   const { t } = useTranslation("servers");
   const { label: relativeTime, stale: relativeTimeStale } = useRelativeTime(lastUpdatedAt);
+  // Render only the active breakpoint's layout instead of mounting both and
+  // CSS-hiding one (which doubled render cost and mounted the hidden tree's
+  // effects + lazy chunks). The two layouts consume the same derived data
+  // below, so this is purely which tree mounts.
+  const isDesktop = useIsDesktop();
   const { systemInfo, gates, connections, summary, dcs } = server;
 
   const [selectedDc, setSelectedDc] = useState<ServerDcData | null>(null);
@@ -316,7 +322,7 @@ export function ServerDetailPage({
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold text-fg">{t("detail.upstreams.title")}</span>
-            <span className="text-[10px] font-mono text-fg-muted">
+            <span className="text-nano font-mono text-fg-muted">
               {t("detail.upstreams.peers", { count: server.upstreams.length })}
             </span>
           </div>
@@ -408,19 +414,8 @@ export function ServerDetailPage({
           <TelemtUnreachableBanner sinceUnix={server.telemtUnreachableSinceUnix} />
         ) : (
           <>
-            {mode === "me" && (
-              <>
-                <MobileLayout
-                  initState={initState}
-                  pulseItems={mobilePulseItems}
-                  alertItems={alertItems}
-                  metricsChart={metricsChart}
-                  sortedDcs={sortedDcs}
-                  dcItems={dcItems}
-                  mobileTabs={mobileTabs}
-                  onSelectDc={handleSelectDc}
-                />
-
+            {mode === "me" &&
+              (isDesktop ? (
                 <DesktopLayout
                   server={server}
                   initState={initState}
@@ -437,32 +432,38 @@ export function ServerDetailPage({
                   eventsContent={eventsContent}
                   onSelectDc={handleSelectDc}
                 />
-              </>
-            )}
+              ) : (
+                <MobileLayout
+                  initState={initState}
+                  pulseItems={mobilePulseItems}
+                  alertItems={alertItems}
+                  metricsChart={metricsChart}
+                  sortedDcs={sortedDcs}
+                  dcItems={dcItems}
+                  mobileTabs={mobileTabs}
+                  onSelectDc={handleSelectDc}
+                />
+              ))}
 
-            {(mode === "direct" || mode === "fallback") && (
-              <>
-                <div className="md:hidden">
-                  <DirectRelayMobile
-                    server={server}
-                    initState={initState}
-                    metricsChart={metricsChart}
-                    mode={mode}
-                    fallback={fallback}
-                  />
-                </div>
-                <div className="hidden md:block">
-                  <DirectRelayDesktop
-                    server={server}
-                    initState={initState}
-                    alertItems={alertItems}
-                    metricsChart={metricsChart}
-                    mode={mode}
-                    fallback={fallback}
-                  />
-                </div>
-              </>
-            )}
+            {(mode === "direct" || mode === "fallback") &&
+              (isDesktop ? (
+                <DirectRelayDesktop
+                  server={server}
+                  initState={initState}
+                  alertItems={alertItems}
+                  metricsChart={metricsChart}
+                  mode={mode}
+                  fallback={fallback}
+                />
+              ) : (
+                <DirectRelayMobile
+                  server={server}
+                  initState={initState}
+                  metricsChart={metricsChart}
+                  mode={mode}
+                  fallback={fallback}
+                />
+              ))}
 
             {mode === "me_down" && <MeDownHero recentEvents={server.events} />}
 

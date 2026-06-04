@@ -99,12 +99,12 @@ function QuotaCell({
     if (quotaUsedBytes <= 0 && !resetControl && !driftBadge) {
       // Visually quieter option: collapse to em-dash when neither
       // quota, used-bytes nor a drift signal have any signal.
-      return <span className="text-[11px] font-mono text-fg-muted">—</span>;
+      return <span className="text-micro font-mono text-fg-muted">—</span>;
     }
     return (
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2">
-          <span className="text-[11px] font-mono text-fg-muted">
+          <span className="text-micro font-mono text-fg-muted">
             {quotaUsedBytes > 0
               ? t("detail.quota.usedNoQuota", { used: formatBytes(quotaUsedBytes) })
               : "—"}
@@ -113,7 +113,7 @@ function QuotaCell({
           {driftBadge}
         </div>
         {panelLabel && (
-          <div className="text-[10px] font-mono text-fg-muted">{panelLabel}</div>
+          <div className="text-nano font-mono text-fg-muted">{panelLabel}</div>
         )}
       </div>
     );
@@ -134,15 +134,15 @@ function QuotaCell({
         {resetControl}
         {driftBadge}
       </div>
-      <div className="text-[11px] font-mono text-fg-muted tabular-nums">
+      <div className="text-micro font-mono text-fg-muted tabular-nums">
         {t("detail.quota.usedOfQuota", {
           used: formatBytes(quotaUsedBytes),
           quota: formatQuota(dataQuotaBytes),
         })}
       </div>
-      <div className="text-[10px] font-mono text-fg-muted">{resetLabel}</div>
+      <div className="text-nano font-mono text-fg-muted">{resetLabel}</div>
       {panelLabel && (
-        <div className="text-[10px] font-mono text-fg-muted">{panelLabel}</div>
+        <div className="text-nano font-mono text-fg-muted">{panelLabel}</div>
       )}
     </div>
   );
@@ -179,7 +179,7 @@ function renderResetControl({ t, onReset, state, onDismiss }: ResetControlArgs):
   if (!onReset) return null;
   if (state?.kind === "pending") {
     return (
-      <span className="inline-flex items-center gap-1 text-[10px] font-mono text-fg-muted">
+      <span className="inline-flex items-center gap-1 text-nano font-mono text-fg-muted">
         <Spinner size="sm" />
         {t("detail.quota.resetting")}
       </span>
@@ -210,7 +210,7 @@ function renderResetControl({ t, onReset, state, onDismiss }: ResetControlArgs):
     return t("detail.quota.resetFailed", { error: state.error });
   })();
   return (
-    <span className="inline-flex items-center gap-1 text-[10px] font-mono text-status-error">
+    <span className="inline-flex items-center gap-1 text-nano font-mono text-status-error">
       {message}
       {onDismiss && (
         <button
@@ -245,7 +245,7 @@ function LinksStrip({ links }: Readonly<LinksStripProps>) {
   ).filter((g) => g.items.length > 0);
   if (groups.length === 0) {
     return (
-      <div className="mt-2 text-[11px] font-mono text-fg-muted">{t("deployments.links.none")}</div>
+      <div className="mt-2 text-micro font-mono text-fg-muted">{t("deployments.links.none")}</div>
     );
   }
   return (
@@ -253,7 +253,7 @@ function LinksStrip({ links }: Readonly<LinksStripProps>) {
       {groups.flatMap((g) =>
         g.items.map((item, idx) => (
           <div key={`${g.key}-${idx}`} className="flex items-center gap-2 min-w-0">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted shrink-0 w-[56px]">
+            <span className="text-nano font-mono uppercase tracking-wider text-fg-muted shrink-0 w-[56px]">
               {idx === 0 ? g.label : ""}
             </span>
             <span className="font-mono text-xs text-fg truncate min-w-0 flex-1">
@@ -312,7 +312,7 @@ export function DeployLinksCard({
       <header className="px-4 py-3 border-b border-divider flex items-center justify-between gap-2">
         <div className="flex items-baseline gap-2">
           <span className="text-sm font-semibold text-fg">{t("deployments.title")}</span>
-          <span className="text-[11px] font-mono text-fg-muted">
+          <span className="text-micro font-mono text-fg-muted">
             {t("deployments.nodeCount", { count: deployments.length })}
           </span>
         </div>
@@ -329,7 +329,7 @@ export function DeployLinksCard({
                   {label ?? d.agentId}
                 </span>
                 {label && (
-                  <span className="font-mono text-[10px] text-fg-muted truncate">
+                  <span className="font-mono text-nano text-fg-muted truncate">
                     {d.agentId.slice(0, 8)}…
                   </span>
                 )}
@@ -337,14 +337,14 @@ export function DeployLinksCard({
                 {d.desiredOperation && d.desiredOperation !== "none" && (
                   <Badge variant="accent">{d.desiredOperation}</Badge>
                 )}
-                <span className="ml-auto text-[11px] font-mono text-fg-muted tabular-nums">
+                <span className="ml-auto text-micro font-mono text-fg-muted tabular-nums">
                   {d.lastAppliedAtUnix > 0
                     ? new Date(d.lastAppliedAtUnix * 1000).toLocaleString()
                     : t("deployments.neverApplied")}
                 </span>
               </div>
               {d.lastError && (
-                <div className="mt-1 text-[11px] font-mono text-status-error break-words">
+                <div className="mt-1 text-micro font-mono text-status-error break-words">
                   {d.lastError}
                 </div>
               )}
@@ -357,7 +357,7 @@ export function DeployLinksCard({
                 the values verbatim.
               */}
               <div className="mt-2 flex flex-col gap-1">
-                <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">
+                <span className="text-nano font-mono uppercase tracking-wider text-fg-muted">
                   {t("detail.quota.cellHeader")}
                 </span>
                 <QuotaCell

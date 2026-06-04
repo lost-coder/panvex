@@ -188,7 +188,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
             <Kv
               k={t("detail.mePool.draining")}
               v={
-                <span className="font-mono text-[11px] text-fg-muted">
+                <span className="font-mono text-micro text-fg-muted">
                   [{generations.drainingGenerations.join(", ")}]
                 </span>
               }
@@ -197,7 +197,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
           <Kv
             k={t("detail.mePool.contour")}
             v={
-              <span className="font-mono text-[11px] text-fg-muted">
+              <span className="font-mono text-micro text-fg-muted">
                 A{contour.active} · W{contour.warm} · D{contour.draining}
               </span>
             }
@@ -276,7 +276,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
               {refill.byDc.map((e) => (
                 <span
                   key={`${e.dc}-${e.family}`}
-                  className="font-mono text-[10px] px-1.5 py-0.5 rounded-xs bg-bg border border-divider text-fg-muted"
+                  className="font-mono text-nano px-1.5 py-0.5 rounded-xs bg-bg border border-divider text-fg-muted"
                 >
                   {`DC${e.dc}`}
                   <span className="opacity-60">·{e.family}</span>{" "}
@@ -293,7 +293,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold text-fg">{t("detail.mePool.writers")}</span>
-            <span className="text-[11px] font-mono text-fg-muted">
+            <span className="text-micro font-mono text-fg-muted">
               {filteredWriters.length}/{writersList.length}
             </span>
           </div>
@@ -313,7 +313,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
                   type="button"
                   onClick={() => setStateFilter(key)}
                   className={cn(
-                    "h-6 px-2 rounded-xs text-[10px] font-mono transition-colors",
+                    "h-6 px-2 rounded-xs text-nano font-mono transition-colors",
                     active
                       ? "bg-bg-card-hi text-fg"
                       : "text-fg-muted hover:text-fg hover:bg-bg-hover",
@@ -358,7 +358,7 @@ function HealthHeroMetric({
   })();
   return (
     <div className="rounded-xs bg-bg-card border border-divider p-4 flex flex-col gap-2">
-      <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">
+      <span className="text-nano font-mono uppercase tracking-wider text-fg-muted">
         {label}
       </span>
       <div className="flex items-baseline gap-1">
@@ -373,7 +373,7 @@ function HealthHeroMetric({
           style={{ width: `${Math.max(0, Math.min(100, barPct))}%` }}
         />
       </div>
-      <span className="text-[11px] font-mono text-fg-muted">{caption}</span>
+      <span className="text-micro font-mono text-fg-muted">{caption}</span>
     </div>
   );
 }
@@ -391,7 +391,7 @@ function MiniCard({
     <div className="rounded-xs bg-bg-card border border-divider p-4 flex flex-col gap-2">
       <div className="flex items-baseline justify-between">
         <span className="text-sm font-semibold text-fg">{title}</span>
-        {hint && <span className="text-[10px] font-mono text-fg-muted">{hint}</span>}
+        {hint && <span className="text-nano font-mono text-fg-muted">{hint}</span>}
       </div>
       <div className="flex flex-col gap-1.5">{children}</div>
     </div>

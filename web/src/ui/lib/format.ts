@@ -1,8 +1,31 @@
-/** Format byte count to human-readable string */
+/**
+ * Format byte count to a human-readable string. Decimal (SI) base — this is
+ * the single canonical byte formatter for the whole dashboard; do not
+ * reimplement it per feature. Tiers: B < 1 KB ≤ KB < 1 MB ≤ MB < 1 GB ≤ GB.
+ */
 export function formatBytes(bytes: number): string {
+  if (bytes <= 0) return "0 B";
   if (bytes > 1e9) return (bytes / 1e9).toFixed(1) + " GB";
   if (bytes > 1e6) return (bytes / 1e6).toFixed(1) + " MB";
+  if (bytes > 1e3) return (bytes / 1e3).toFixed(1) + " KB";
   return bytes + " B";
+}
+
+/**
+ * Trend-direction color class. up → ok (green), down → error (red),
+ * flat/unknown → muted. Canonical: do not re-declare per feature.
+ */
+export function deltaClass(dir: "up" | "down" | "flat" | undefined): string {
+  if (dir === "up") return "text-status-ok";
+  if (dir === "down") return "text-status-error";
+  return "text-fg-muted";
+}
+
+/** Trend-direction glyph matching deltaClass. */
+export function deltaArrow(dir: "up" | "down" | "flat" | undefined): string {
+  if (dir === "up") return "▲";
+  if (dir === "down") return "▼";
+  return "·";
 }
 
 /** Format seconds to "Xd Yh" uptime string */

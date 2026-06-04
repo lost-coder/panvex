@@ -13,7 +13,7 @@ export interface FormFieldProps {
   /**
    * "default" — normal label (text-sm, sentence case)
    * "uppercase" — compact uppercase label used in sheets/wizards (text-xs, uppercase tracking-wider)
-   * "compact" — smallest uppercase label used in dense grids (text-[10px])
+   * "compact" — smallest uppercase label used in dense grids (text-nano)
    */
   variant?: "default" | "uppercase" | "compact";
 }
@@ -21,7 +21,7 @@ export interface FormFieldProps {
 const labelStyles = {
   default: "text-sm font-medium text-fg leading-none",
   uppercase: "text-xs font-medium text-fg-muted uppercase tracking-wider",
-  compact: "text-[10px] font-medium text-fg-muted uppercase tracking-wider",
+  compact: "text-nano font-medium text-fg-muted uppercase tracking-wider",
 } as const;
 
 export function FormField({

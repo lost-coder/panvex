@@ -79,7 +79,7 @@ export function DirectRelayDesktop({
 
       <section className="rounded-xs bg-bg-card border border-border p-4">
         <div className="flex items-center justify-between pb-2 border-b border-divider mb-3">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">
+          <span className="text-nano font-mono uppercase tracking-wider text-fg-muted">
             {metricsChart?.timeRange
               ? t("detail.directRelay.liveTelemetryRange", { range: metricsChart.timeRange })
               : t("detail.directRelay.liveTelemetry")}

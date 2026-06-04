@@ -43,7 +43,7 @@ export function AgentConnectionSection({
         <div className="flex items-center gap-2">
           <StatusBeacon status={presenceStatus} />
           <span className="text-sm font-semibold text-fg capitalize">{data.presenceState}</span>
-          <span className="ml-auto text-[10px] font-mono text-fg-muted">
+          <span className="ml-auto text-nano font-mono text-fg-muted">
             {t("detail.agentConnection.lastSeen", { value: data.lastSeenAt })}
           </span>
         </div>
@@ -57,7 +57,7 @@ export function AgentConnectionSection({
             </Badge>
           )}
         </div>
-        <div className="flex items-center justify-between gap-2 text-[11px] font-mono text-fg-muted">
+        <div className="flex items-center justify-between gap-2 text-micro font-mono text-fg-muted">
           <span>{t("detail.agentConnection.fleet", { value: data.fleetGroup })}</span>
         </div>
         {updateAvailable && data.onUpdate && (
@@ -83,7 +83,7 @@ export function AgentConnectionSection({
             }}
           />
         </div>
-        <div className="flex items-center justify-between text-[11px] font-mono text-fg-muted">
+        <div className="flex items-center justify-between text-micro font-mono text-fg-muted">
           <span>{t("detail.agentConnection.issued", { value: data.certificate.issuedAt })}</span>
           <span>{t("detail.agentConnection.expires", { value: data.certificate.expiresAt })}</span>
         </div>
@@ -95,7 +95,7 @@ export function AgentConnectionSection({
                 {t("detail.agentConnection.recoveryStatus", { status: data.recoveryGrant.status })}
               </Badge>
               {data.recoveryGrant.status === "allowed" && (
-                <span className="text-[10px] font-mono text-fg-muted">
+                <span className="text-nano font-mono text-fg-muted">
                   {t("detail.agentConnection.recoveryExpires", {
                     value: new Date(data.recoveryGrant.expiresAtUnix * 1000).toLocaleTimeString(),
                   })}

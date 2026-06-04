@@ -136,7 +136,7 @@ export function TableView({
                           aria-selected={active}
                           onClick={() => f.onChange(o.value)}
                           className={cn(
-                            "flex items-center gap-1.5 h-8 px-3 rounded-xs text-[11px] font-mono whitespace-nowrap transition-colors",
+                            "flex items-center gap-1.5 h-8 px-3 rounded-xs text-micro font-mono whitespace-nowrap transition-colors",
                             active
                               ? "bg-bg-card-hi text-fg"
                               : "text-fg-muted hover:text-fg hover:bg-bg-hover",

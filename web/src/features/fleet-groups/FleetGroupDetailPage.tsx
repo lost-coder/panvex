@@ -113,7 +113,7 @@ export function FleetGroupDetailPage({
                 >
                   <div className="flex flex-col">
                     <span className="text-sm text-fg font-mono">{i.kind}</span>
-                    <span className="text-[11px] text-fg-muted">
+                    <span className="text-micro text-fg-muted">
                       {i.enabled ? t("detail.enabled") : t("detail.disabled")}
                       {i.provider_id ? t("detail.providerSuffix", { id: i.provider_id.slice(0, 8) }) : ""}
                     </span>

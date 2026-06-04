@@ -22,7 +22,7 @@ export const InCards: Story = {
         { label: "RTT", data: [12, 11, 13, 12, 14, 12, 11, 12, 13, 12], color: "#34d399" },
       ].map((item) => (
         <div key={item.label} className="rounded-xs bg-bg-card p-3 flex flex-col gap-1">
-          <span className="text-[10px] text-fg-muted uppercase">{item.label}</span>
+          <span className="text-nano text-fg-muted uppercase">{item.label}</span>
           <MiniChart data={item.data} color={item.color} />
         </div>
       ))}

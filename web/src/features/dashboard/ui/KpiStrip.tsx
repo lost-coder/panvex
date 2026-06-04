@@ -1,9 +1,10 @@
 import {
   MiniChart,
+  deltaClass,
+  deltaArrow,
   type DashboardOverviewData,
   type KpiItem,
 } from "@/ui";
-import { deltaClass, deltaArrow } from "../format";
 
 const TONE_VALUE_CLASS: Record<NonNullable<KpiItem["tone"]>, string> = {
   default: "text-fg",
@@ -45,7 +46,7 @@ export function KpiStrip({ kpis }: Readonly<{ kpis: DashboardOverviewData["kpis"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex flex-col gap-0.5 min-w-0">
-                  <span className="text-[10px] text-fg-muted uppercase tracking-wider">
+                  <span className="text-nano text-fg-muted uppercase tracking-wider">
                     {k.label}
                   </span>
                   <span
@@ -63,7 +64,7 @@ export function KpiStrip({ kpis }: Readonly<{ kpis: DashboardOverviewData["kpis"
                   />
                 )}
               </div>
-              <div className="flex items-center gap-2 text-[10px] font-mono text-fg-muted mt-auto">
+              <div className="flex items-center gap-2 text-nano font-mono text-fg-muted mt-auto">
                 {k.deltaLabel && (
                   <span className={deltaClass(k.deltaDirection)}>
                     {deltaArrow(k.deltaDirection)}{" "}

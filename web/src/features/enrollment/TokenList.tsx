@@ -65,7 +65,7 @@ export function TokenList({ tokens, onRevoke, nowSec }: Readonly<TokenListProps>
       key: "issued",
       header: t("tokens.table.issued"),
       render: (tok: Readonly<EnrollmentTokenData>) => (
-        <span className="text-[11px] font-mono text-fg-muted tabular-nums">
+        <span className="text-micro font-mono text-fg-muted tabular-nums">
           {formatTime(tok.issuedAtUnix)}
         </span>
       ),
@@ -80,7 +80,7 @@ export function TokenList({ tokens, onRevoke, nowSec }: Readonly<TokenListProps>
         tok.status === "active" ? (
           <AgeCell unixSec={tok.expiresAtUnix} mode="expires" nowSec={nowSec} />
         ) : (
-          <span className="text-[11px] font-mono text-fg-muted tabular-nums">
+          <span className="text-micro font-mono text-fg-muted tabular-nums">
             {formatTime(tok.expiresAtUnix)}
           </span>
         ),

@@ -99,10 +99,11 @@ export function ServerListView({
             <StatusDot status={s.status} />
             <span className="text-sm font-medium text-fg truncate">{s.name}</span>
           </div>
-          {s.ip && <span className="pl-[14px] text-[10px] text-fg-muted font-mono">{s.ip}</span>}
+          {s.ip && <span className="pl-[14px] text-nano text-fg-muted font-mono">{s.ip}</span>}
         </div>
       ),
       sortable: true,
+      sortValue: (s: Readonly<ServerListItem>) => s.name,
       className: "w-[30%]",
     },
     {
@@ -138,6 +139,7 @@ export function ServerListView({
         );
       },
       sortable: true,
+      sortValue: (s: Readonly<ServerListItem>) => s.usersOnline ?? 0,
       className: "hidden sm:table-cell text-center w-[110px]",
     },
     {
@@ -149,6 +151,7 @@ export function ServerListView({
         </div>
       ),
       sortable: true,
+      sortValue: (s: Readonly<ServerListItem>) => s.trafficBytes,
       className: "hidden md:table-cell text-center w-[80px]",
     },
     {
@@ -166,6 +169,7 @@ export function ServerListView({
         );
       },
       sortable: true,
+      sortValue: (s: Readonly<ServerListItem>) => s.uptimeSeconds,
       className: "hidden lg:table-cell text-center w-[70px]",
     },
     {
@@ -173,14 +177,14 @@ export function ServerListView({
       header: t("list.columns.load"),
       render: (s: Readonly<ServerListItem>) => (
         <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-1.5 text-[10px] font-mono leading-none">
+          <div className="flex items-center gap-1.5 text-nano font-mono leading-none">
             <span className="w-7 text-fg-muted shrink-0">{t("list.columns.cpu")}</span>
             <div className="h-1.5 flex-1 bg-border rounded-full overflow-hidden">
               <div className="h-full bg-fg rounded-full" style={{ width: `${s.cpuPct}%` }} />
             </div>
             <span className="text-fg-muted w-7 text-right shrink-0">{s.cpuPct}%</span>
           </div>
-          <div className="flex items-center gap-1.5 text-[10px] font-mono leading-none">
+          <div className="flex items-center gap-1.5 text-nano font-mono leading-none">
             <span className="w-7 text-fg-muted shrink-0">{t("list.columns.mem")}</span>
             <div className="h-1.5 flex-1 bg-border rounded-full overflow-hidden">
               <div className="h-full bg-fg-muted rounded-full" style={{ width: `${s.memPct}%` }} />

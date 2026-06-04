@@ -19,8 +19,8 @@ export function TrafficCell({ bytes, label, className }: Readonly<TrafficCellPro
   return (
     <span className={cn("inline-flex items-baseline gap-0.5 font-mono", className)}>
       <span className="text-sm font-medium text-fg">{value}</span>
-      <span className="text-[10px] text-fg-muted">{unit}</span>
-      {label && <span className="text-[10px] text-fg-muted ml-1">{label}</span>}
+      <span className="text-nano text-fg-muted">{unit}</span>
+      {label && <span className="text-nano text-fg-muted ml-1">{label}</span>}
     </span>
   );
 }

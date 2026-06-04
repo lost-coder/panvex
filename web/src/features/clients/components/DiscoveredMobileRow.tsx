@@ -46,13 +46,13 @@ export function DiscoveredMobileRow({
         {row.discoveredOn.map((n) => (
           <span
             key={n}
-            className="font-mono text-[10px] text-fg-muted px-1.5 py-0.5 rounded-xs border border-divider bg-bg"
+            className="font-mono text-nano text-fg-muted px-1.5 py-0.5 rounded-xs border border-divider bg-bg"
           >
             {n}
           </span>
         ))}
       </div>
-      <div className="flex items-center justify-between pl-7 text-[11px] font-mono text-fg-muted">
+      <div className="flex items-center justify-between pl-7 text-micro font-mono text-fg-muted">
         <span>
           {row.currentConnections} {t("table.connsSuffix")} · {row.activeUniqueIps}{" "}
           {t("table.ipsSuffix")} · {formatBytes(row.totalOctets)}
@@ -101,7 +101,7 @@ export function DiscoveredPulseCell({ i, label, value, tone }: Readonly<Discover
       )}
     >
       <div className="flex flex-col gap-1 min-w-0">
-        <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">{label}</span>
+        <span className="text-nano font-mono uppercase tracking-wider text-fg-muted">{label}</span>
         <span
           className={cn(
             "text-2xl font-mono font-semibold leading-none tracking-tight tabular-nums",
