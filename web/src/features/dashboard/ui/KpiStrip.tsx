@@ -23,15 +23,23 @@ const SPARKLINE_COLOR_BY_TONE: Record<NonNullable<KpiItem["tone"]>, string> = {
 export function KpiStrip({ kpis }: Readonly<{ kpis: DashboardOverviewData["kpis"] }>) {
   return (
     <>
-      {/* Mobile: compact text — keeps the 4 KPIs in one line of signal */}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs font-mono md:hidden">
+      {/* Mobile: 2×2 tiles — large values, legible labels (was a 12px
+          inline string that forced squinting). */}
+      <div className="grid grid-cols-2 gap-2 md:hidden">
         {kpis.map((k) => {
-          const valueClass = k.tone ? TONE_VALUE_CLASS[k.tone] : "text-fg";
+          const tone: NonNullable<KpiItem["tone"]> = k.tone ?? "default";
           return (
-            <span key={k.label} className="text-fg-muted">
-              {k.label.toLowerCase()}{" "}
-              <span className={`font-medium ${valueClass}`}>{k.value}</span>
-            </span>
+            <div
+              key={k.label}
+              className="rounded-sm bg-bg-card border border-border px-3.5 py-3 flex flex-col gap-0.5"
+            >
+              <span className="text-caption uppercase tracking-wider">{k.label}</span>
+              <span
+                className={`text-2xl font-mono font-bold leading-none tracking-tight ${TONE_VALUE_CLASS[tone]}`}
+              >
+                {k.value}
+              </span>
+            </div>
           );
         })}
       </div>
