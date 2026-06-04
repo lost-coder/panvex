@@ -6,6 +6,9 @@ export * from "./status";
 export {
   nodeStatePresentation,
   nodeStateFromStatus,
+  deriveNodeState,
+  isStartupReason,
   type NodeState,
   type NodeStatePresentation,
+  type NodeStateInput,
 } from "./node-status";

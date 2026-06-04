@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   nodeStatePresentation,
   nodeStateFromStatus,
+  deriveNodeState,
   type NodeState,
 } from "./node-status";
 
@@ -48,5 +49,36 @@ describe("nodeStatePresentation", () => {
   it("covers every NodeState (exhaustive)", () => {
     const all: NodeState[] = ["ok", "degraded", "down", "offline", "pending"];
     for (const s of all) expect(nodeStatePresentation(s).glyph.length).toBeGreaterThan(0);
+  });
+});
+
+describe("deriveNodeState", () => {
+  const base = {
+    severity: "ok" as const,
+    presenceState: "online",
+    telemtUnreachable: false,
+    reason: "",
+  };
+  it("offline presence wins over everything", () => {
+    expect(deriveNodeState({ ...base, presenceState: "offline", severity: "critical" })).toBe("offline");
+  });
+  it("telemt unreachable → down", () => {
+    expect(deriveNodeState({ ...base, telemtUnreachable: true })).toBe("down");
+  });
+  it("critical severity → down", () => {
+    expect(deriveNodeState({ ...base, severity: "critical" })).toBe("down");
+  });
+  it("bad severity → down", () => {
+    expect(deriveNodeState({ ...base, severity: "bad" })).toBe("down");
+  });
+  it("startup reason → pending (even though severity is warn)", () => {
+    expect(deriveNodeState({ ...base, severity: "warn", reason: "Startup is still in progress" })).toBe("pending");
+  });
+  it("warn severity (non-startup) → degraded", () => {
+    expect(deriveNodeState({ ...base, severity: "warn", reason: "DC coverage is degraded" })).toBe("degraded");
+  });
+  it("healthy → ok", () => {
+    expect(deriveNodeState(base)).toBe("ok");
+    expect(deriveNodeState({ ...base, severity: "good" })).toBe("ok");
   });
 });
