@@ -28,7 +28,9 @@
     "connections": "соед.",
     "statusOk": "OK",
     "statusDown": "НЕДОСТУПЕН",
-    "statusDegraded": "ДЕГРАДАЦИЯ"
+    "statusDegraded": "ДЕГРАДАЦИЯ",
+    "statusOffline": "НЕ НА СВЯЗИ",
+    "statusPending": "ЗАПУСК"
   },
   "timeline": {
     "title": "Последние события",

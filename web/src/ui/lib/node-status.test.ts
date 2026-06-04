@@ -31,8 +31,22 @@ describe("nodeStatePresentation", () => {
     expect(p.tone).toBe("ok");
     expect(p.glyph).toBe("✓");
   });
+  it("offline is red with the offline label key", () => {
+    expect(nodeStatePresentation("offline")).toEqual({
+      tone: "error",
+      glyph: "⛔",
+      labelKey: "fleet.statusOffline",
+    });
+  });
+  it("pending is neutral with the pending label key", () => {
+    expect(nodeStatePresentation("pending")).toEqual({
+      tone: "neutral",
+      glyph: "●",
+      labelKey: "fleet.statusPending",
+    });
+  });
   it("covers every NodeState (exhaustive)", () => {
-    const all: NodeState[] = ["ok", "degraded", "down"];
+    const all: NodeState[] = ["ok", "degraded", "down", "offline", "pending"];
     for (const s of all) expect(nodeStatePresentation(s).glyph.length).toBeGreaterThan(0);
   });
 });

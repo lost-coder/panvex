@@ -25,7 +25,9 @@
     "connections": "conn",
     "statusOk": "OK",
     "statusDown": "DOWN",
-    "statusDegraded": "DEGRADED"
+    "statusDegraded": "DEGRADED",
+    "statusOffline": "OFFLINE",
+    "statusPending": "PENDING"
   },
   "timeline": {
     "title": "Recent Events",
