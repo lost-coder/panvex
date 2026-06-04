@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import type { DiscoveredClientItem } from "@/shared/api/types-pages/pages";
 import { apiClient } from "@/shared/api/api";
 import { transformDiscoveredClientList } from "@/shared/api/transforms/discoveredClients";
@@ -30,6 +31,7 @@ import { useEventAwareInterval } from "@/shared/hooks/useEventAwareInterval";
  */
 export function useDiscoveredClients() {
   const queryClient = useQueryClient();
+  const { t } = useTranslation("clients");
   // Each mutation here is fire-and-forget from the container, so failures
   // need to land in the toast channel or the operator has no signal that
   // the button they clicked actually hit an error.
@@ -120,10 +122,10 @@ export function useDiscoveredClients() {
   const rescanMutation = useMutation({
     mutationFn: () => apiClient.rescanDiscoveredClients(),
     onSuccess: (res) => {
-      toast.success(`Re-discovery requested on ${res.agents_notified} server(s)`);
+      toast.success(t("discovered.rescan.success", { count: res.agents_notified }));
       void queryClient.invalidateQueries({ queryKey: clientsKeys.discovered });
     },
-    onError: () => toast.error("Failed to request re-discovery"),
+    onError: () => toast.error(t("discovered.rescan.error")),
   });
 
   // Logical-client counts derived from the dedupe grouping. Consumers
