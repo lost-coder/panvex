@@ -16,11 +16,14 @@ export interface TimelineEventProps {
   className?: string | undefined;
 }
 
-const dotColor = {
-  ok: "bg-status-ok",
-  warn: "bg-status-warn",
-  error: "bg-status-error",
-} as const;
+// Severity glyph + color — matches the fleet StatusPill vocabulary so an
+// event reads the same way as a node row. Shape carries meaning, not just
+// color (color-blind safe).
+const glyph: Record<Status, { ch: string; color: string }> = {
+  ok: { ch: "✓", color: "text-status-ok" },
+  warn: { ch: "▲", color: "text-status-warn" },
+  error: { ch: "⛔", color: "text-status-error" },
+};
 
 export function TimelineEvent({
   status,
@@ -36,8 +39,10 @@ export function TimelineEvent({
           to match the absolute rail painted by the parent Timeline at
           `left-[4px]`. The dot is centered horizontally so it falls on
           the line, and `pt-1.5` aligns it with the first line of text. */}
-      <div className="w-2 shrink-0 flex justify-center pt-1.5">
-        <span className={cn("h-2 w-2 rounded-full shrink-0 relative z-10", dotColor[status])} />
+      <div className="w-4 shrink-0 flex justify-center pt-0.5">
+        <span aria-hidden="true" className={cn("text-[13px] leading-none relative z-10", glyph[status].color)}>
+          {glyph[status].ch}
+        </span>
       </div>
       <div className="flex-1 min-w-0">
         {source ? (
@@ -46,20 +51,20 @@ export function TimelineEvent({
                 long messages from fighting a narrow timestamp column. */}
             <div className="flex items-baseline justify-between gap-2 min-w-0">
               <span className="text-xs font-mono text-accent truncate min-w-0">{source}</span>
-              <span className="text-micro font-mono text-fg-muted shrink-0">{time}</span>
+              <span className="text-xs font-mono text-fg-muted shrink-0">{time}</span>
             </div>
-            <p className="text-sm text-fg leading-snug break-words mt-0.5">{message}</p>
+            <p className="text-[15px] text-fg leading-snug break-words mt-0.5">{message}</p>
           </>
         ) : (
           <div className="flex items-baseline gap-2 min-w-0">
-            <span className="text-micro font-mono text-fg-muted shrink-0">{time}</span>
-            <span className="text-sm text-fg leading-snug break-words min-w-0 flex-1">
+            <span className="text-xs font-mono text-fg-muted shrink-0">{time}</span>
+            <span className="text-[15px] text-fg leading-snug break-words min-w-0 flex-1">
               {message}
             </span>
           </div>
         )}
         {detail && (
-          <p className="text-xs text-fg-muted/70 mt-0.5 leading-relaxed break-words">
+          <p className="text-xs text-fg-muted mt-0.5 leading-relaxed break-words">
             {detail}
           </p>
         )}
