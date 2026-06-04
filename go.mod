@@ -28,7 +28,7 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260420184626-e10c466a9529
 	google.golang.org/grpc v1.81.1
 	google.golang.org/protobuf v1.36.11
-	modernc.org/sqlite v1.50.1
+	modernc.org/sqlite v1.51.0
 )
 
 require (
