@@ -62,7 +62,7 @@ RUN go build -ldflags="-s -w" -trimpath -o /out/panvex-control-plane ./cmd/contr
 #     docker manifest inspect anchore/syft:<tag> \
 #       | jq -r '.manifests[0].digest // .config.digest'
 # and update the tag + @sha256 below together.
-FROM anchore/syft:v1.44.0@sha256:86fde6445b483d902fe011dd9f68c4987dd94e07da1e9edc004e3c2422650de6 AS sbom-builder
+FROM anchore/syft:v1.45.0@sha256:e9695f12fca6bf93a6e106c8f7001a13d00608b92e8a73930aacc401a8727ac8 AS sbom-builder
 COPY --from=control-plane-builder /out/panvex-control-plane /panvex-control-plane
 RUN /syft /panvex-control-plane -o cyclonedx-json=/sbom/control-plane.cdx.json && \
     # Defensive assert: a future syft major that changes the -o flag
