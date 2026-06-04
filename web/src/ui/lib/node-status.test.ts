@@ -3,6 +3,7 @@ import {
   nodeStatePresentation,
   nodeStateFromStatus,
   deriveNodeState,
+  isStartupReason,
   type NodeState,
 } from "./node-status";
 
@@ -80,5 +81,21 @@ describe("deriveNodeState", () => {
   it("healthy → ok", () => {
     expect(deriveNodeState(base)).toBe("ok");
     expect(deriveNodeState({ ...base, severity: "good" })).toBe("ok");
+  });
+});
+
+describe("isStartupReason (backend contract)", () => {
+  // CONTRACT: this literal must match internal/controlplane/telemetry/projections.go
+  // SeverityAndReason → the "Startup is still in progress" return. If the Go
+  // literal changes, update STARTUP_REASONS and this test together.
+  it("recognizes the exact backend startup reason", () => {
+    expect(isStartupReason("Startup is still in progress")).toBe(true);
+  });
+  it("trims surrounding whitespace", () => {
+    expect(isStartupReason("  Startup is still in progress  ")).toBe(true);
+  });
+  it("rejects unrelated reasons", () => {
+    expect(isStartupReason("DC coverage is degraded")).toBe(false);
+    expect(isStartupReason("")).toBe(false);
   });
 });

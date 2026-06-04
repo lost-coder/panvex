@@ -116,6 +116,9 @@ func SeverityAndReason(input SeverityInput, freshness Freshness) (string, string
 	case !input.AcceptingNewConnections:
 		return "warn", "Admission is closed"
 	case input.StartupStatus != "" && input.StartupStatus != "ready":
+		// SYNC: the web UI maps this exact reason string to the neutral
+		// PENDING pill (web/src/ui/lib/node-status.ts: STARTUP_REASONS).
+		// If you change this literal, update that constant too.
 		return "warn", "Startup is still in progress"
 	}
 	// NOTE: input.Degraded reflects Telemt's /v1/runtime/initialization, which
