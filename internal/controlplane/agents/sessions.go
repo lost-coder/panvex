@@ -1,6 +1,9 @@
 package agents
 
-import "sync"
+import (
+	"sync"
+	"sync/atomic"
+)
 
 // Session tracks one active bi-directional gRPC stream between the
 // control-plane and an agent. Senders on the wake channel MUST first
@@ -20,7 +23,22 @@ type Session struct {
 	// Done is closed to force-terminate the stream (e.g. operator deletes
 	// the agent). Consumers must select on it alongside Wake.
 	Done chan struct{}
+
+	// rediscover is set by the control-plane to ask the stream's writer
+	// goroutine to re-request a FULL_SNAPSHOT client list on its next wake,
+	// without disturbing job dispatch. Consumed (and reset) via
+	// TakeRediscovery so each request triggers exactly one re-discovery.
+	rediscover atomic.Bool
 }
+
+// RequestRediscovery marks the session so the writer goroutine re-requests
+// a full client list on its next wake. Idempotent — repeated calls before a
+// TakeRediscovery coalesce into a single pending request.
+func (s *Session) RequestRediscovery() { s.rediscover.Store(true) }
+
+// TakeRediscovery atomically reports whether a re-discovery was requested and
+// clears the flag. Returns false when nothing is pending.
+func (s *Session) TakeRediscovery() bool { return s.rediscover.Swap(false) }
 
 // SessionManager multiplexes gRPC stream sessions by agent ID. It
 // replaces the ad-hoc sessionMu + agentSessions map that previously
@@ -88,6 +106,44 @@ func (m *SessionManager) NotifyMany(agentIDs []string) {
 		notified[agentID] = struct{}{}
 		m.Notify(agentID)
 	}
+}
+
+// RequestRediscovery sets the rediscovery flag on the session attached to
+// agentID and wakes it. Returns true when a live session was found. The wake
+// is guarded by Done, mirroring Notify, so it never writes to a channel whose
+// consumer has already exited.
+func (m *SessionManager) RequestRediscovery(agentID string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	session := m.sessions[agentID]
+	if session == nil {
+		return false
+	}
+	session.RequestRediscovery()
+	select {
+	case <-session.Done:
+	case session.Wake <- struct{}{}:
+	default:
+	}
+	return true
+}
+
+// RequestRediscoveryAll sets the rediscovery flag on every currently-attached
+// session and wakes each one. Returns the number of sessions notified.
+func (m *SessionManager) RequestRediscoveryAll() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	n := 0
+	for _, session := range m.sessions {
+		session.RequestRediscovery()
+		select {
+		case <-session.Done:
+		case session.Wake <- struct{}{}:
+		default:
+		}
+		n++
+	}
+	return n
 }
 
 // Terminate force-closes the session for agentID (if any) and removes

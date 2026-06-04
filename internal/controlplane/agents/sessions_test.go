@@ -90,3 +90,46 @@ func TestSessionManager_ConcurrentAccess(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestSessionRediscoverFlagTakeOnce(t *testing.T) {
+	m := NewSessionManager()
+	sess, unregister := m.Register("agent-1")
+	defer unregister()
+
+	if sess.TakeRediscovery() {
+		t.Fatal("fresh session should not have a pending rediscovery")
+	}
+
+	if ok := m.RequestRediscovery("agent-1"); !ok {
+		t.Fatal("RequestRediscovery should report a live session")
+	}
+
+	if !sess.TakeRediscovery() {
+		t.Fatal("flag should be set after RequestRediscovery")
+	}
+	if sess.TakeRediscovery() {
+		t.Fatal("flag must be consumed exactly once")
+	}
+}
+
+func TestRequestRediscoveryNoSession(t *testing.T) {
+	m := NewSessionManager()
+	if m.RequestRediscovery("missing") {
+		t.Fatal("RequestRediscovery on unknown agent should return false")
+	}
+}
+
+func TestRequestRediscoveryAllCountsAndWakes(t *testing.T) {
+	m := NewSessionManager()
+	a, ua := m.Register("a")
+	defer ua()
+	b, ub := m.Register("b")
+	defer ub()
+
+	if n := m.RequestRediscoveryAll(); n != 2 {
+		t.Fatalf("RequestRediscoveryAll() = %d, want 2", n)
+	}
+	if !a.TakeRediscovery() || !b.TakeRediscovery() {
+		t.Fatal("both sessions should have the flag set")
+	}
+}
