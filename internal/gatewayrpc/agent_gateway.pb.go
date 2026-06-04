@@ -2632,11 +2632,15 @@ func (x *ClientDataRequest) GetRequestId() string {
 }
 
 type ClientDataResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	Clients       []*ClientDetailRecord  `protobuf:"bytes,2,rep,name=clients,proto3" json:"clients,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Clients   []*ClientDetailRecord  `protobuf:"bytes,2,rep,name=clients,proto3" json:"clients,omitempty"`
+	// Set by the agent when it could not read the Telemt user list (Telemt API
+	// unreachable). Lets the panel distinguish a real "zero clients" snapshot
+	// from a failed fetch and skip pruning / mis-reconciling.
+	TelemtUnreachable bool `protobuf:"varint,3,opt,name=telemt_unreachable,json=telemtUnreachable,proto3" json:"telemt_unreachable,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *ClientDataResponse) Reset() {
@@ -2681,6 +2685,13 @@ func (x *ClientDataResponse) GetClients() []*ClientDetailRecord {
 		return x.Clients
 	}
 	return nil
+}
+
+func (x *ClientDataResponse) GetTelemtUnreachable() bool {
+	if x != nil {
+		return x.TelemtUnreachable
+	}
+	return false
 }
 
 type ClientDetailRecord struct {
@@ -4030,11 +4041,12 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"request_id\x18\x03 \x01(\tR\trequestId\"3\n" +
 	"\vRequestType\x12\x11\n" +
 	"\rSINGLE_CLIENT\x10\x00\x12\x11\n" +
-	"\rFULL_SNAPSHOT\x10\x01\"t\n" +
+	"\rFULL_SNAPSHOT\x10\x01\"\xa3\x01\n" +
 	"\x12ClientDataResponse\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12?\n" +
-	"\aclients\x18\x02 \x03(\v2%.panvex.gateway.v1.ClientDetailRecordR\aclients\"\x89\x04\n" +
+	"\aclients\x18\x02 \x03(\v2%.panvex.gateway.v1.ClientDetailRecordR\aclients\x12-\n" +
+	"\x12telemt_unreachable\x18\x03 \x01(\bR\x11telemtUnreachable\"\x89\x04\n" +
 	"\x12ClientDetailRecord\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12\x1f\n" +
 	"\vclient_name\x18\x02 \x01(\tR\n" +
