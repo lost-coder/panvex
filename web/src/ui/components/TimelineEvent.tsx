@@ -35,10 +35,10 @@ export function TimelineEvent({
 }: Readonly<TimelineEventProps>) {
   return (
     <div className={cn("flex items-start gap-3 py-2", className)}>
-      {/* Rail column: narrow lane containing just the status dot, sized
+      {/* Rail column: narrow lane containing just the status glyph, sized
           to match the absolute rail painted by the parent Timeline at
-          `left-[4px]`. The dot is centered horizontally so it falls on
-          the line, and `pt-1.5` aligns it with the first line of text. */}
+          `left-[4px]`. The glyph is centered horizontally so it falls on
+          the line, and `pt-0.5` aligns it with the first line of text. */}
       <div className="w-4 shrink-0 flex justify-center pt-0.5">
         <span aria-hidden="true" className={cn("text-[13px] leading-none relative z-10", glyph[status].color)}>
           {glyph[status].ch}
