@@ -139,7 +139,7 @@ func TestReconcilePrunesStaleDiscoveredOnFullSnapshot(t *testing.T) {
 	bob := &gatewayrpc.ClientDetailRecord{ClientName: "ext-bob", Secret: "22222222222222222222222222222222"}
 
 	// First full snapshot: both unmanaged users present → two pending records.
-	server.reconcileDiscoveredClients(ctx, agentID, []*gatewayrpc.ClientDetailRecord{alice, bob}, now)
+	server.reconcileDiscoveredClients(ctx, agentID, []*gatewayrpc.ClientDetailRecord{alice, bob}, false, now)
 	got, err := server.listDiscoveredClients(ctx)
 	if err != nil {
 		t.Fatalf("listDiscoveredClients() error = %v", err)
@@ -149,7 +149,7 @@ func TestReconcilePrunesStaleDiscoveredOnFullSnapshot(t *testing.T) {
 	}
 
 	// Second full snapshot: only alice remains on the node → bob is pruned.
-	server.reconcileDiscoveredClients(ctx, agentID, []*gatewayrpc.ClientDetailRecord{alice}, now.Add(time.Minute))
+	server.reconcileDiscoveredClients(ctx, agentID, []*gatewayrpc.ClientDetailRecord{alice}, false, now.Add(time.Minute))
 	got2, err := server.listDiscoveredClients(ctx)
 	if err != nil {
 		t.Fatalf("listDiscoveredClients() error = %v", err)
@@ -509,6 +509,57 @@ func TestMergeAdoptNoTOCTOU(t *testing.T) {
 		if dc.Status != discoveredClientStatusAdopted {
 			t.Fatalf("discovered %q status = %q, want %q", id, dc.Status, discoveredClientStatusAdopted)
 		}
+	}
+}
+
+// TestReconcileSkipsPruneWhenTelemtUnreachable verifies that an empty record
+// set returned with TelemtUnreachable=true is treated as "unknown" rather than
+// "zero clients" — pending discovered records must NOT be pruned.
+func TestReconcileSkipsPruneWhenTelemtUnreachable(t *testing.T) {
+	now := time.Date(2026, time.June, 4, 12, 0, 0, 0, time.UTC)
+
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	fleetGroupID := seedTestFleetGroup(t, store, "default", now.Add(-time.Minute))
+	const agentID = "agent-unreachable-1"
+	if err := store.PutAgent(ctx, storage.AgentRecord{
+		ID:           agentID,
+		NodeName:     "node-A",
+		FleetGroupID: fleetGroupID,
+		Version:      "dev",
+		LastSeenAt:   now.Add(-time.Minute),
+	}); err != nil {
+		t.Fatalf("PutAgent() error = %v", err)
+	}
+
+	s := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+		Store:            store,
+	})
+	defer s.Close()
+
+	// Seed one pending discovered record for the agent.
+	s.upsertDiscoveredClient(ctx, agentID, &gatewayrpc.ClientDetailRecord{
+		ClientName: "alice",
+		Secret:     "00112233445566778899aabbccddeeff",
+	}, s.now())
+
+	// An unreachable response carries no records. Assert the record SURVIVES
+	// (no prune) and the new flag arg is accepted.
+	s.reconcileDiscoveredClients(ctx, agentID, nil, true, s.now())
+
+	got, err := s.listDiscoveredClients(ctx)
+	if err != nil {
+		t.Fatalf("listDiscoveredClients error = %v", err)
+	}
+	if len(got) != 1 || got[0].ClientName != "alice" {
+		t.Fatalf("pending record must survive an unreachable reconcile; got %+v", got)
 	}
 }
 

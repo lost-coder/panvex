@@ -134,7 +134,7 @@ func (s *Server) processRegularAgentMessage(
 		s.logger.Debug(logMessageReceived, "agent_id", agentID, "type", "client_data_response")
 		// Run synchronously within the regular message processor goroutine
 		// to prevent unbounded goroutine accumulation from repeated responses.
-		s.reconcileDiscoveredClients(connectionCtx, agentID, resp.GetClients(), s.now())
+		s.reconcileDiscoveredClients(connectionCtx, agentID, resp.GetClients(), resp.GetTelemtUnreachable(), s.now())
 		return nil
 	}
 

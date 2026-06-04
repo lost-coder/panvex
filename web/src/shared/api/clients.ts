@@ -12,6 +12,8 @@ import {
   clientSchema,
   discoveredClientListSchema,
   resetQuotaResponseSchema,
+  rescanDiscoveredResponseSchema,
+  type RescanDiscoveredResponse,
 } from "./schemas";
 
 export type ClientListItem = {
@@ -264,6 +266,12 @@ export const clientsApi = {
     api<void>(`${apiBasePath}/discovered-clients/${id}/ignore`, {
       method: "POST"
     }),
+  rescanDiscoveredClients: () =>
+    api<RescanDiscoveredResponse>(
+      `${apiBasePath}/discovered-clients/rescan`,
+      { method: "POST" },
+      rescanDiscoveredResponseSchema,
+    ),
   // Single-call bulk variant: replaces the previous N-PUT/N-DELETE
   // fan-out from the dashboard with one authoritative POST. Capped at
   // 500 ids by the server; the UI typically operates on far fewer.

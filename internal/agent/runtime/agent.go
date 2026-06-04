@@ -1087,7 +1087,12 @@ func (a *Agent) HandleClientDataRequest(ctx context.Context, requestID string) *
 
 	users, err := a.telemt.FetchDiscoveredUsers(ctx, configPath)
 	if err != nil {
-		return &gatewayrpc.ClientDataResponse{RequestId: requestID}
+		slog.WarnContext(ctx, "client discovery skipped: telemt user list unavailable",
+			"request_id", requestID, "error", err)
+		return &gatewayrpc.ClientDataResponse{
+			RequestId:         requestID,
+			TelemtUnreachable: true,
+		}
 	}
 
 	records := make([]*gatewayrpc.ClientDetailRecord, 0, len(users))

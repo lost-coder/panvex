@@ -47,7 +47,9 @@ export function DiscoveredClientsPage({
   onAdoptMany,
   onIgnoreMany,
   onBack,
+  onRescan,
   busy,
+  rescanning,
 }: Readonly<DiscoveredClientsPageProps>) {
   const { t } = useTranslation("clients");
   const groups = useMemo(() => groupDiscovered(clients), [clients]);
@@ -171,33 +173,35 @@ export function DiscoveredClientsPage({
             t,
           })}
         >
-          {filtered.length === 0 ? (
-            <EmptyState
-              title={t("discovered.empty.title")}
-              description={t("discovered.empty.description")}
+          <div className="flex flex-col gap-6">
+            <DiscoveredPendingSection
+              rows={pendingList}
+              columns={pendingColumns}
+              selected={selected}
+              selectedRecordCount={selectedIds.length}
+              onToggleSelect={toggleOne}
+              onAdopt={runAdopt}
+              onIgnore={runIgnore}
+              onClearSelection={clearSelection}
+              onBulkAdopt={runBulkAdopt}
+              onBulkIgnore={runBulkIgnore}
+              onRescan={onRescan}
+              busy={busy}
+              rescanning={rescanning}
             />
-          ) : (
-            <div className="flex flex-col gap-6">
-              <DiscoveredPendingSection
-                rows={pendingList}
-                columns={pendingColumns}
-                selected={selected}
-                selectedRecordCount={selectedIds.length}
-                onToggleSelect={toggleOne}
-                onAdopt={runAdopt}
-                onIgnore={runIgnore}
-                onClearSelection={clearSelection}
-                onBulkAdopt={runBulkAdopt}
-                onBulkIgnore={runBulkIgnore}
-                busy={busy}
+            {filtered.length === 0 ? (
+              <EmptyState
+                title={t("discovered.empty.title")}
+                description={t("discovered.empty.description")}
               />
+            ) : (
               <DiscoveredReviewedSection
                 rows={reviewedList}
                 columns={reviewedColumns}
                 busy={busy}
               />
-            </div>
-          )}
+            )}
+          </div>
         </TableView>
       </div>
     </>

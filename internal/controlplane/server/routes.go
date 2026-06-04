@@ -170,6 +170,7 @@ func (s *Server) routes() http.Handler {
 					// fleet-wide imports — 25 clients × N nodes blows the
 					// 10/min budget within seconds).
 					operator.With(sensitive).Post("/discovered-clients/bulk-adopt", s.handleBulkAdoptDiscoveredClients())
+					operator.With(sensitive).Post("/discovered-clients/rescan", s.handleRescanDiscoveredClients())
 					operator.Post("/telemetry/servers/{id}/refresh-diagnostics", s.handleTelemetryServerRefreshDiagnostics())
 					operator.Get("/fleet-groups", s.handleListFleetGroups())
 					operator.Post("/fleet-groups", s.handleCreateFleetGroup())

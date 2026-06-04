@@ -340,6 +340,10 @@ message ClientDataRequest {
 message ClientDataResponse {
   string request_id = 1;
   repeated ClientDetailRecord clients = 2;
+  // Set by the agent when it could not read the Telemt user list (Telemt API
+  // unreachable). Lets the panel distinguish a real "zero clients" snapshot
+  // from a failed fetch and skip pruning / mis-reconciling.
+  bool telemt_unreachable = 3;
 }
 
 message ClientDetailRecord {

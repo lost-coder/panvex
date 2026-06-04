@@ -33,5 +33,7 @@ export interface DiscoveredClientsPageProps {
   onAdoptMany?: ((ids: string[]) => void) | undefined;
   onIgnoreMany?: ((ids: string[]) => void) | undefined;
   onBack?: (() => void) | undefined;
+  onRescan?: (() => void) | undefined;
   busy?: boolean | undefined;
+  rescanning?: boolean | undefined;
 }

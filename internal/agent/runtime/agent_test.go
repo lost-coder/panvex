@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -769,6 +770,7 @@ type fakeTelemtClient struct {
 	resetQuotaCalls         int
 	resetQuotaResult        telemt.ResetUserQuotaResult
 	resetQuotaErr           error
+	discoverErr             error
 }
 
 func (c *fakeTelemtClient) FetchRuntimeState(context.Context) (telemt.RuntimeState, error) {
@@ -829,6 +831,9 @@ func (c *fakeTelemtClient) FetchSystemInfo(context.Context) (telemt.SystemInfo, 
 }
 
 func (c *fakeTelemtClient) FetchDiscoveredUsers(_ context.Context, _ string) ([]telemt.DiscoveredUser, error) {
+	if c.discoverErr != nil {
+		return nil, c.discoverErr
+	}
 	return nil, nil
 }
 
@@ -1075,5 +1080,30 @@ func TestBuildRuntimeSnapshotHealthyTelemtUnreachableFalse(t *testing.T) {
 	if roundtrip.TelemtUnreachableSinceUnix != 0 {
 		t.Fatalf("roundtrip Runtime.TelemtUnreachableSinceUnix = %d, want 0",
 			roundtrip.TelemtUnreachableSinceUnix)
+	}
+}
+
+func TestHandleClientDataRequestFlagsTelemtUnreachable(t *testing.T) {
+	client := &fakeTelemtClient{discoverErr: errors.New("connection refused")}
+	agent := New(Config{
+		AgentID:      "agent-1",
+		NodeName:     "node-a",
+		FleetGroupID: "ams-1",
+		Version:      "1.0.0",
+	}, client)
+
+	resp := agent.HandleClientDataRequest(context.Background(), "req-1")
+
+	if resp == nil {
+		t.Fatal("response must not be nil")
+	}
+	if !resp.GetTelemtUnreachable() {
+		t.Fatal("telemt_unreachable should be true when FetchDiscoveredUsers fails")
+	}
+	if len(resp.GetClients()) != 0 {
+		t.Fatalf("expected no clients on failure, got %d", len(resp.GetClients()))
+	}
+	if resp.GetRequestId() != "req-1" {
+		t.Fatalf("request id = %q, want %q", resp.GetRequestId(), "req-1")
 	}
 }

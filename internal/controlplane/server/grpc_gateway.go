@@ -20,6 +20,11 @@ const (
 	jobDispatchRetryAfter = 30 * time.Second
 	// jobDispatchRetryInterval defines how often the dispatcher checks for unacknowledged commands.
 	jobDispatchRetryInterval = 5 * time.Second
+	// discoveryRefreshInterval is how often the panel re-requests a full client
+	// list from each connected agent, so a Telemt that recovered without a stream
+	// reconnect (and any other drift) is reconciled within one interval even if
+	// the recovery-edge trigger is missed.
+	discoveryRefreshInterval = 10 * time.Minute
 	// jobDispatchBatchSize bounds one dispatch pass to avoid monopolizing one stream under large backlogs.
 	jobDispatchBatchSize = 32
 	// priorityInboundWorkerCount defines how many workers consume critical job acknowledgements and results.
