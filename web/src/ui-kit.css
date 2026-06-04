@@ -22,15 +22,15 @@
   --panvex-bg-card: #141820;
   --panvex-bg-card-hi: #1a1f2a;
   --panvex-bg-hover: #1e2430;
-  --panvex-fg: #e2e6ed;
-  --panvex-fg-muted: #6e7787;
+  --panvex-fg: #f3f5f9;
+  --panvex-fg-muted: #9aa3b2;
   --panvex-fg-faint: #2a3040;
   --panvex-border: rgba(255, 255, 255, 0.06);
   --panvex-border-hi: rgba(255, 255, 255, 0.1);
   /* Visible row divider for lists/cards. Stronger than --panvex-border-hi
      so a stack of fleet rows or timeline events doesn't blur into one
      slab. Paired with a light-mode value in `.light`. */
-  --panvex-divider: rgba(255, 255, 255, 0.14);
+  --panvex-divider: rgba(255, 255, 255, 0.16);
 
   /* Status + accent raw values. Themed here (not as static @theme
      literals) so the light theme can swap them for contrast — they were
@@ -49,7 +49,7 @@
   --panvex-bg-card-hi: #f0f1f4;
   --panvex-bg-hover: #e9eaef;
   --panvex-fg: #1a1d23;
-  --panvex-fg-muted: #6b7280;
+  --panvex-fg-muted: #5b6470;
   --panvex-fg-faint: #dfe1e6;
   --panvex-border: rgba(0, 0, 0, 0.08);
   --panvex-border-hi: rgba(0, 0, 0, 0.14);
