@@ -17,4 +17,9 @@ describe("StatusPill", () => {
     render(<StatusPill tone="warn" glyph="▲" label="DEGRADED" />);
     expect(screen.getByText("▲")).toHaveAttribute("aria-hidden", "true");
   });
+  it("applies the neutral tone classes", () => {
+    render(<StatusPill tone="neutral" glyph="●" label="PENDING" />);
+    const pill = screen.getByText("PENDING").closest("span");
+    expect(pill?.className).toContain("text-fg-muted");
+  });
 });
