@@ -63,13 +63,13 @@
 
   /* Darker status/accent shades for legible contrast on light surfaces
      (the dark-theme greens/blues fail WCAG on white). */
-  --panvex-status-ok: #059669;
+  --panvex-status-ok: #047857;
   --panvex-status-warn: #b45309;
   --panvex-status-warn-ink: #ffffff;
-  --panvex-status-error: #dc2626;
-  /* Solid StatusPill fill; white on #dc2626 = 4.83:1 (clears AA). Matches the
-     light error token. */
-  --panvex-status-error-strong: #dc2626;
+  --panvex-status-error: #c81e1e;
+  /* Solid StatusPill fill; white on #c81e1e ≈ 5.0:1 (clears AA). Deepened
+     from #dc2626 to meet WCAG AA contrast on light surfaces. */
+  --panvex-status-error-strong: #c81e1e;
   --panvex-accent: #2563eb;
   --panvex-accent-muted: rgba(37, 99, 235, 0.12);
 }

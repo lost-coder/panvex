@@ -57,3 +57,20 @@ describe("StatusPill error ink contrast (both themes, WCAG AA)", () => {
     expect(contrast(white, errorStrongLight)).toBeGreaterThanOrEqual(4.5);
   });
 });
+
+describe("light theme token contrast (WCAG AA, text on light surfaces)", () => {
+  // Light tokens are CSS-only (--panvex-* under .light); mirror the literals
+  // so light-theme text legibility is guarded alongside dark.
+  const bg = "#f5f6f8";
+  const card = "#ffffff";
+  const pairs: Array<[string, string]> = [
+    ["#5b6470", bg], ["#5b6470", card],   // fg-muted
+    ["#047857", bg], ["#047857", card],   // status-ok (deepened)
+    ["#b45309", bg],                       // status-warn
+    ["#c81e1e", bg], ["#c81e1e", card],   // status-error (deepened)
+    ["#2563eb", bg],                       // accent
+  ];
+  it.each(pairs)("%s on %s clears AA (4.5:1)", (fg, surface) => {
+    expect(contrast(fg, surface)).toBeGreaterThanOrEqual(4.5);
+  });
+});
