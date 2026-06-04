@@ -33,7 +33,7 @@ export function KpiStrip({ kpis }: Readonly<{ kpis: DashboardOverviewData["kpis"
               key={k.label}
               className="rounded-sm bg-bg-card border border-border px-3.5 py-3 flex flex-col gap-0.5"
             >
-              <span className="text-caption uppercase tracking-wider">{k.label}</span>
+              <span className="text-xs uppercase tracking-wider text-fg-muted">{k.label}</span>
               <span
                 className={`text-2xl font-mono font-bold leading-none tracking-tight ${TONE_VALUE_CLASS[tone]}`}
               >
