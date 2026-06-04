@@ -227,6 +227,7 @@ type Server struct {
 	// asynchronously via the batch writer. The tracker owns its own lock and
 	// never reaches into s.mu. Crash-window caveat: see spec.
 	fallback       *agents.FallbackTracker
+	telemtReach    *agents.ReachabilityTracker
 	panelSettings  PanelSettings
 	updateSettings UpdateSettings
 	updateState    UpdateState

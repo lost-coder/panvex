@@ -164,6 +164,25 @@ func (s *Server) applyFallbackStateTransition(agent Agent) {
 	}
 }
 
+// applyTelemtReachabilityTransition detects the Telemt unreachable→reachable
+// edge for an agent and asks its live stream session to re-request a full
+// client list. Discovery is otherwise only requested at stream open and on the
+// periodic timer; a Telemt that recovered without a stream reconnect would
+// otherwise leave the panel's discovered-clients view stale for that node until
+// the next periodic refresh. Best-effort: if the agent has no live session
+// (e.g. reverse-mode not yet connected) the request is simply dropped and the
+// periodic refresh covers it.
+//
+// Called OUTSIDE s.mu (the agent value is a committed copy by then) so waking
+// the writer goroutine never happens while the snapshot critical section is
+// held.
+func (s *Server) applyTelemtReachabilityTransition(agent Agent) {
+	if s.telemtReach.Observe(agent.ID, agent.Runtime.TelemtUnreachable) {
+		s.logger.Info("telemt reachable again; requesting client re-discovery", "agent_id", agent.ID)
+		s.sessions.RequestRediscovery(agent.ID)
+	}
+}
+
 // commitClientSnapshotsLocked applies any client usage snapshot data through
 // the clients.Service mirror. Caller must hold s.mu.
 //
@@ -249,6 +268,9 @@ func (s *Server) applyAgentSnapshot(ctx context.Context, snapshot agentSnapshot)
 	metricSnapshot := s.commitMetricSnapshotLocked(snapshot)
 	s.applyFallbackStateTransition(agent)
 	s.mu.Unlock()
+
+	// Outside s.mu: detect Telemt recovery and nudge re-discovery for this agent.
+	s.applyTelemtReachabilityTransition(agent)
 
 	// Enqueue all DB writes asynchronously via the batch writer. No DB I/O
 	// blocks the caller — the background flush goroutine handles persistence.
