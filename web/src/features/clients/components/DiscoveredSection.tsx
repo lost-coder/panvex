@@ -25,7 +25,9 @@ export interface DiscoveredPendingSectionProps {
   onClearSelection: () => void;
   onBulkAdopt: () => void;
   onBulkIgnore: () => void;
+  onRescan?: (() => void) | undefined;
   busy?: boolean | undefined;
+  rescanning?: boolean | undefined;
 }
 
 export function DiscoveredPendingSection(props: Readonly<DiscoveredPendingSectionProps>) {
@@ -41,55 +43,67 @@ export function DiscoveredPendingSection(props: Readonly<DiscoveredPendingSectio
     onClearSelection,
     onBulkAdopt,
     onBulkIgnore,
+    onRescan,
     busy,
+    rescanning,
   } = props;
-  if (rows.length === 0) return null;
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h3 className="text-sm font-semibold text-fg">
           {t("discovered.pendingSection", { count: rows.length })}
         </h3>
-        {selected.size > 0 && (
-          <div className="flex items-center gap-2 rounded-xs bg-bg-card border border-accent/40 px-3 py-1.5">
-            <span className="text-xs font-mono text-fg">
-              {t("discovered.selection.summary", {
-                count: selected.size,
-                records: selectedRecordCount,
-              })}
-            </span>
-            <Button size="sm" disabled={busy} onClick={onBulkAdopt}>
-              {t("discovered.selection.adopt")}
+        <div className="flex items-center gap-2 flex-wrap">
+          {onRescan && (
+            <Button size="sm" variant="outline" disabled={rescanning} onClick={onRescan}>
+              {t("discovered.rescan.button")}
             </Button>
-            <Button size="sm" variant="outline" disabled={busy} onClick={onBulkIgnore}>
-              {t("discovered.selection.ignore")}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={onClearSelection}>
-              {t("discovered.selection.clear")}
-            </Button>
+          )}
+          {selected.size > 0 && (
+            <div className="flex items-center gap-2 rounded-xs bg-bg-card border border-accent/40 px-3 py-1.5">
+              <span className="text-xs font-mono text-fg">
+                {t("discovered.selection.summary", {
+                  count: selected.size,
+                  records: selectedRecordCount,
+                })}
+              </span>
+              <Button size="sm" disabled={busy} onClick={onBulkAdopt}>
+                {t("discovered.selection.adopt")}
+              </Button>
+              <Button size="sm" variant="outline" disabled={busy} onClick={onBulkIgnore}>
+                {t("discovered.selection.ignore")}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={onClearSelection}>
+                {t("discovered.selection.clear")}
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+      {rows.length > 0 && (
+        <>
+          <div className="md:hidden rounded-xs bg-bg-card border border-border overflow-hidden">
+            {rows.map((g) => (
+              <DiscoveredMobileRow
+                key={g.key}
+                row={g}
+                selected={selected.has(g.key)}
+                onToggleSelect={onToggleSelect}
+                onAdopt={onAdopt}
+                onIgnore={onIgnore}
+                busy={busy}
+              />
+            ))}
           </div>
-        )}
-      </div>
-      <div className="md:hidden rounded-xs bg-bg-card border border-border overflow-hidden">
-        {rows.map((g) => (
-          <DiscoveredMobileRow
-            key={g.key}
-            row={g}
-            selected={selected.has(g.key)}
-            onToggleSelect={onToggleSelect}
-            onAdopt={onAdopt}
-            onIgnore={onIgnore}
-            busy={busy}
-          />
-        ))}
-      </div>
-      <div className="hidden md:block rounded-xs bg-bg-card border border-border overflow-hidden">
-        <DataTable
-          columns={columns}
-          data={rows}
-          keyExtractor={(row: Readonly<DiscoveredGroup>) => row.key}
-        />
-      </div>
+          <div className="hidden md:block rounded-xs bg-bg-card border border-border overflow-hidden">
+            <DataTable
+              columns={columns}
+              data={rows}
+              keyExtractor={(row: Readonly<DiscoveredGroup>) => row.key}
+            />
+          </div>
+        </>
+      )}
     </section>
   );
 }

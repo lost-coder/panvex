@@ -11,7 +11,7 @@ import { groupDiscovered } from "./lib/groupDiscovered";
 
 export function DiscoveredClientsContainer() {
   const { t } = useTranslation("clients");
-  const { discoveredClients, isLoading, error, adopt, ignore, adoptMany, ignoreMany, isAdopting, isIgnoring } =
+  const { discoveredClients, isLoading, error, adopt, ignore, adoptMany, ignoreMany, rescan, isAdopting, isIgnoring, isRescanning } =
     useDiscoveredClients();
   const navigate = useNavigate();
   const confirm = useConfirm();
@@ -92,7 +92,9 @@ export function DiscoveredClientsContainer() {
       onAdoptMany={handleAdoptMany}
       onIgnoreMany={handleIgnoreMany}
       onBack={() => navigate({ to: "/clients" })}
+      onRescan={() => rescan()}
       busy={isAdopting || isIgnoring}
+      rescanning={isRescanning}
     />
   );
 }

@@ -117,6 +117,15 @@ export function useDiscoveredClients() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const rescanMutation = useMutation({
+    mutationFn: () => apiClient.rescanDiscoveredClients(),
+    onSuccess: (res) => {
+      toast.success(`Re-discovery requested on ${res.agents_notified} server(s)`);
+      void queryClient.invalidateQueries({ queryKey: clientsKeys.discovered });
+    },
+    onError: () => toast.error("Failed to request re-discovery"),
+  });
+
   // Logical-client counts derived from the dedupe grouping. Consumers
   // (Dashboard banner, Clients list banner, the discovered page itself)
   // should use these instead of `clients.filter(...).length` — the raw
@@ -136,7 +145,9 @@ export function useDiscoveredClients() {
     ignore: ignoreMutation.mutateAsync,
     adoptMany: adoptManyMutation.mutateAsync,
     ignoreMany: ignoreManyMutation.mutateAsync,
+    rescan: () => rescanMutation.mutateAsync(),
     isAdopting: adoptMutation.isPending || adoptManyMutation.isPending,
     isIgnoring: ignoreMutation.isPending || ignoreManyMutation.isPending,
+    isRescanning: rescanMutation.isPending,
   };
 }
