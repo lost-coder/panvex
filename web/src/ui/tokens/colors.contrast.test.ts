@@ -26,3 +26,19 @@ describe("token contrast (dark theme, WCAG AA)", () => {
     expect(contrast(fgColors.DEFAULT, bgColors.DEFAULT)).toBeGreaterThanOrEqual(7);
   });
 });
+
+describe("StatusPill warn ink contrast (both themes, WCAG AA)", () => {
+  // Fills + inks are CSS-only (themed --panvex-status-warn / -ink). Mirror the
+  // literals here so the pill's text-vs-fill pairing is guarded, not just the
+  // page/muted token pairs.
+  const warnFillDark = "#f59e0b";
+  const warnInkDark = "#1a1306";
+  const warnFillLight = "#b45309";
+  const warnInkLight = "#ffffff";
+  it("dark amber fill vs dark ink clears AA (4.5:1)", () => {
+    expect(contrast(warnInkDark, warnFillDark)).toBeGreaterThanOrEqual(4.5);
+  });
+  it("light amber fill vs white ink clears AA (4.5:1)", () => {
+    expect(contrast(warnInkLight, warnFillLight)).toBeGreaterThanOrEqual(4.5);
+  });
+});

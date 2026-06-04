@@ -37,6 +37,7 @@
      previously dark-only, washing out on light surfaces. */
   --panvex-status-ok: #34d399;
   --panvex-status-warn: #f59e0b;
+  --panvex-status-warn-ink: #1a1306;
   --panvex-status-error: #ef4444;
   --panvex-accent: #60a5fa;
   --panvex-accent-muted: rgba(96, 165, 250, 0.15);
@@ -59,6 +60,7 @@
      (the dark-theme greens/blues fail WCAG on white). */
   --panvex-status-ok: #059669;
   --panvex-status-warn: #b45309;
+  --panvex-status-warn-ink: #ffffff;
   --panvex-status-error: #dc2626;
   --panvex-accent: #2563eb;
   --panvex-accent-muted: rgba(37, 99, 235, 0.12);
@@ -90,6 +92,7 @@
      working. */
   --color-status-ok: var(--panvex-status-ok);
   --color-status-warn: var(--panvex-status-warn);
+  --color-status-warn-ink: var(--panvex-status-warn-ink);
   --color-status-error: var(--panvex-status-error);
 
   --color-accent: var(--panvex-accent);
