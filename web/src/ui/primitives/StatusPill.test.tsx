@@ -21,5 +21,6 @@ describe("StatusPill", () => {
     render(<StatusPill tone="neutral" glyph="●" label="PENDING" />);
     const pill = screen.getByText("PENDING").closest("span");
     expect(pill?.className).toContain("text-fg-muted");
+    expect(pill?.className).toContain("bg-fg-muted/15");
   });
 });
