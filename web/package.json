@@ -109,7 +109,7 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "jsdom": "^29.1.1",
     "size-limit": "^12.1.0",
-    "storybook": "^10.3.0",
+    "storybook": "^10.4.2",
     "tailwindcss": "^4.2.4",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.59.1",
