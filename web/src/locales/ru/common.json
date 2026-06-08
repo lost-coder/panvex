@@ -25,6 +25,6 @@
     "dcConnDegraded": "Деградация связности с DC",
     "noUpstreams": "Upstream'ы не настроены",
     "allUpstreamsDown": "Все upstream'ы недоступны",
-    "someUpstreamsUnhealthy": "Часть upstream'ов нездорова"
+    "someUpstreamsUnhealthy": "Часть upstream'ов неисправна"
   }
 }
