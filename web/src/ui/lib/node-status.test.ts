@@ -18,14 +18,14 @@ describe("nodeStatePresentation", () => {
     expect(nodeStatePresentation("down")).toEqual({
       tone: "error",
       glyph: "⛔",
-      labelKey: "fleet.statusDown",
+      labelKey: "status.down",
     });
   });
   it("degraded is amber with the degraded label key", () => {
     expect(nodeStatePresentation("degraded")).toEqual({
       tone: "warn",
       glyph: "▲",
-      labelKey: "fleet.statusDegraded",
+      labelKey: "status.degraded",
     });
   });
   it("ok is green with a check glyph", () => {
@@ -37,14 +37,14 @@ describe("nodeStatePresentation", () => {
     expect(nodeStatePresentation("offline")).toEqual({
       tone: "error",
       glyph: "⛔",
-      labelKey: "fleet.statusOffline",
+      labelKey: "status.offline",
     });
   });
   it("pending is neutral with the pending label key", () => {
     expect(nodeStatePresentation("pending")).toEqual({
       tone: "neutral",
       glyph: "●",
-      labelKey: "fleet.statusPending",
+      labelKey: "status.pending",
     });
   });
   it("covers every NodeState (exhaustive)", () => {

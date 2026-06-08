@@ -1,4 +1,11 @@
 {
+  "status": {
+    "ok": "OK",
+    "degraded": "DEGRADED",
+    "down": "DOWN",
+    "offline": "OFFLINE",
+    "pending": "PENDING"
+  },
   "empty": "No data",
   "sortBy": "Sort by",
   "sortNone": "Default order",

@@ -78,7 +78,7 @@ const FleetRow = memo(function FleetRow({ node, onClick }: Readonly<{ node: Dash
       <div className="flex flex-col gap-1 min-w-0 md:flex-1">
         <div className="flex items-center gap-2.5 min-w-0">
           {showPill ? (
-            <StatusPill tone={pres.tone} glyph={pres.glyph} label={t(pres.labelKey)} />
+            <StatusPill tone={pres.tone} glyph={pres.glyph} label={tc(pres.labelKey)} />
           ) : (
             <span
               aria-hidden="true"

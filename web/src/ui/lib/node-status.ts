@@ -18,11 +18,11 @@ export interface NodeStatePresentation {
 }
 
 const PRESENTATION: Record<NodeState, NodeStatePresentation> = {
-  ok: { tone: "ok", glyph: "✓", labelKey: "fleet.statusOk" },
-  degraded: { tone: "warn", glyph: "▲", labelKey: "fleet.statusDegraded" },
-  down: { tone: "error", glyph: "⛔", labelKey: "fleet.statusDown" },
-  offline: { tone: "error", glyph: "⛔", labelKey: "fleet.statusOffline" },
-  pending: { tone: "neutral", glyph: "●", labelKey: "fleet.statusPending" },
+  ok: { tone: "ok", glyph: "✓", labelKey: "status.ok" },
+  degraded: { tone: "warn", glyph: "▲", labelKey: "status.degraded" },
+  down: { tone: "error", glyph: "⛔", labelKey: "status.down" },
+  offline: { tone: "error", glyph: "⛔", labelKey: "status.offline" },
+  pending: { tone: "neutral", glyph: "●", labelKey: "status.pending" },
 };
 
 export function nodeStatePresentation(state: NodeState): NodeStatePresentation {

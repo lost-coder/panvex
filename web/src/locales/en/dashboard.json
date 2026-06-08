@@ -22,12 +22,7 @@
     "sectionHealthy": "Healthy",
     "more_one": "+ {{count}} more — open the Servers page to see the full fleet",
     "more_other": "+ {{count}} more — open the Servers page to see the full fleet",
-    "connections": "conn",
-    "statusOk": "OK",
-    "statusDown": "DOWN",
-    "statusDegraded": "DEGRADED",
-    "statusOffline": "OFFLINE",
-    "statusPending": "PENDING"
+    "connections": "conn"
   },
   "timeline": {
     "title": "Recent Events",
