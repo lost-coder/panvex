@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 
-import { StatusBeacon, cn, formatUptime } from "@/ui";
+import { NodeStateBadge, nodeStatePresentation, cn, formatUptime } from "@/ui";
 import type { ServerDetailPageProps } from "@/shared/api/types-pages/pages";
 
 import { ServerActionsDropdown } from "../ServerActionsDropdown";
@@ -33,11 +33,12 @@ export function ServerHero({
   onDeregister?: (() => void) | undefined;
 }>) {
   const { t } = useTranslation("servers");
+  const { t: tc } = useTranslation("common");
   const { systemInfo } = server;
   return (
     <section className="hidden md:block border-y border-divider">
       <div className="px-4 md:px-8 py-4 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <StatusBeacon status={server.status} size="sm" />
+        <NodeStateBadge state={server.state} label={tc(nodeStatePresentation(server.state).labelKey)} />
         <h2 className="font-mono text-lg font-semibold text-fg truncate">{server.name}</h2>
         <span className="text-fg-faint">/</span>
         <span
