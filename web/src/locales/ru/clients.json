@@ -26,7 +26,7 @@
       "expiring": "Истекает · {{count}}",
       "disabled": "Отключены · {{count}}",
       "expired": "Истекли · {{count}}",
-      "overQuota": "Квота · {{count}}",
+      "overQuota": "Сверх квоты · {{count}}",
       "notDeployed": "Не развёрнут · {{count}}",
       "deployFailed": "Ошибка деплоя · {{count}}"
     },
