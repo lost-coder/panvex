@@ -15,7 +15,7 @@ import { IPHistoryCard } from "./components/IPHistoryCard";
 import { LimitsCard } from "./components/LimitsCard";
 import { ResetQuotaHistory } from "./components/ResetQuotaHistory";
 import { SecretSection } from "./components/SecretSection";
-import { clientStatus } from "./components/clientDetailHelpers";
+import { deriveClientState } from "./components/ClientsPageCells";
 import {
   Breadcrumbs,
   SwipeTabView,
@@ -82,12 +82,27 @@ export function ClientDetailPage({
     setEditOpen(true);
   };
 
-  const status = clientStatus(client.enabled, client.expirationRfc3339);
-  const statusLabel = (() => {
-    if (status === "expired") return t("detail.statusExpired");
-    if (status === "disabled") return t("detail.statusDisabled");
-    return t("detail.statusActive");
+  // Plan 2h: unified 7-state badge. The detail payload lacks
+  // assignedNodesCount / lastDeployStatus, so synthesise them from
+  // deployments[] (assigned ≈ deployment count; deploy status mirrors
+  // backend deriveClientDeployStatus).
+  const lastDeployStatus = (() => {
+    if (client.deployments.length === 0) return "idle";
+    if (client.deployments.some((d) => d.status === "failed")) return "failed";
+    if (client.deployments.some((d) => d.status !== "succeeded")) return "pending";
+    return "succeeded";
   })();
+  const clientState = deriveClientState(
+    {
+      enabled: client.enabled,
+      expirationRfc3339: client.expirationRfc3339,
+      trafficUsedBytes: client.trafficUsedBytes,
+      dataQuotaBytes: client.dataQuotaBytes,
+      assignedNodesCount: client.deployments.length,
+      lastDeployStatus,
+    },
+    Date.now(),
+  );
 
   // Rotate confirmation is owned by the container (global ConfirmProvider
   // already wraps this flow with a `requireTypeMatch`-style dialog).
@@ -133,8 +148,7 @@ export function ClientDetailPage({
         enabled={client.enabled}
         expirationRfc3339={client.expirationRfc3339}
         fleetGroupIds={client.fleetGroupIds}
-        statusLabel={statusLabel}
-        status={status}
+        state={clientState}
         hasFailedDeployment={hasFailedDeployment}
         onEdit={onEdit ? openEdit : undefined}
         onDisable={onDisable}
