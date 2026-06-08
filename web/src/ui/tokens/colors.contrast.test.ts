@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bgColors, fgColors } from "./colors";
+import { bgColors, fgColors, statusColors } from "./colors";
 
 // WCAG 2.1 relative luminance + contrast ratio (sRGB hex → ratio).
 function luminance(hex: string): number {
@@ -72,5 +72,23 @@ describe("light theme token contrast (WCAG AA, text on light surfaces)", () => {
   ];
   it.each(pairs)("%s on %s clears AA (4.5:1)", (fg, surface) => {
     expect(contrast(fg, surface)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe("dark status tokens as small text (WCAG AA)", () => {
+  // statusColors are the dark-theme values, used as `text-status-*` foreground
+  // on the page bg (e.g. ClientExpiryCell / load cells). Guard them too.
+  it.each([
+    ["ok", statusColors.ok],
+    ["warn", statusColors.warn],
+    ["error", statusColors.error],
+  ])("status-%s text clears AA on page bg (4.5:1)", (_name, hex) => {
+    expect(contrast(hex, bgColors.DEFAULT)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe("light status-warn on card (WCAG AA)", () => {
+  it("light status-warn #b45309 clears AA on card #fff", () => {
+    expect(contrast("#b45309", "#ffffff")).toBeGreaterThanOrEqual(4.5);
   });
 });
