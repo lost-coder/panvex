@@ -13,7 +13,6 @@
   "error": {
     "title": "Failed to load fleet",
     "fallbackDescription": "Telemetry service unreachable. Retry once the panel recovers.",
-    "telemtUnreachable": "Telemt unreachable",
     "modeUnknown": "Mode unknown",
     "loadFleet": "Failed to load fleet",
     "bulkActionFailed": "Bulk action failed",
