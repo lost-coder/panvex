@@ -21,7 +21,7 @@ export function buildClientsStatusFilter(opts: ClientsStatusFilterOptions) {
     key: "status",
     value: opts.value,
     onChange: opts.onChange,
-    // Inline chip toggle so the four statuses are one click away —
+    // Inline chip toggle so the statuses are one click away —
     // no dropdown step for the most-used filter on a multi-thousand
     // client list.
     variant: "chips" as const,
