@@ -6,6 +6,13 @@ import type { ServerDetailPageProps } from "@/shared/api/types-pages/pages";
 import { ServerActionsDropdown } from "../ServerActionsDropdown";
 import { RelativeTimeBadge } from "./RelativeTimeBadge";
 
+const PULSE_TONE_CLASS: Record<PillTone, string> = {
+  ok: "text-status-ok",
+  warn: "text-status-warn",
+  error: "text-status-error",
+  neutral: "text-fg-muted",
+};
+
 /**
  * Desktop hero band (full-bleed border-y strip with name, status, meta
  * pills, and the actions dropdown). Hidden on mobile; phones use the
@@ -35,13 +42,7 @@ export function ServerHero({
   const { t } = useTranslation("servers");
   const { t: tc } = useTranslation("common");
   const { systemInfo } = server;
-  const toneTextClass: Record<PillTone, string> = {
-    ok: "text-status-ok",
-    warn: "text-status-warn",
-    error: "text-status-error",
-    neutral: "text-fg-muted",
-  };
-  const pulseColor = toneTextClass[nodeStatePresentation(server.state).tone];
+  const pulseColor = PULSE_TONE_CLASS[nodeStatePresentation(server.state).tone];
   return (
     <section className="hidden md:block border-y border-divider">
       <div className="px-4 md:px-8 py-4 flex flex-wrap items-center gap-x-4 gap-y-2">
