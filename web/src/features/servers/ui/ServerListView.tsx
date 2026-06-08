@@ -6,7 +6,9 @@ import { TransportBadge } from "@/features/servers/ui/TransportBadge";
 import { classifyMode } from "@/features/servers/server-detail/classifyMode";
 import {
   DataTable,
-  StatusDot,
+  NodeStateBadge,
+  nodeStatePresentation,
+  localizeReason,
   type ServerListItem,
 } from "@/ui";
 
@@ -55,6 +57,7 @@ export function ServerListView({
   selection?: ServerSelectionConfig | undefined;
 }>) {
   const { t } = useTranslation("servers");
+  const { t: tc } = useTranslation("common");
   // L-20: column array embeds inline render lambdas — without useMemo
   // every parent rerender produces a fresh array reference, defeating
   // any memoisation downstream of `columns`.
@@ -93,15 +96,22 @@ export function ServerListView({
     {
       key: "server",
       header: t("list.columns.server"),
-      render: (s: Readonly<ServerListItem>) => (
-        <div className="flex flex-col gap-0.5 min-w-0">
-          <div className="flex items-center gap-2">
-            <StatusDot status={s.status} />
-            <span className="text-sm font-medium text-fg truncate">{s.name}</span>
+      render: (s: Readonly<ServerListItem>) => {
+        const reasonText = s.reason ? localizeReason(s.reason, tc) : "";
+        return (
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <NodeStateBadge state={s.state} label={tc(nodeStatePresentation(s.state).labelKey)} />
+              <span className="text-sm font-medium text-fg truncate">{s.name}</span>
+            </div>
+            {reasonText ? (
+              <span className="text-xs text-fg-muted truncate">{reasonText}</span>
+            ) : (
+              s.ip && <span className="pl-[14px] text-nano text-fg-muted font-mono">{s.ip}</span>
+            )}
           </div>
-          {s.ip && <span className="pl-[14px] text-nano text-fg-muted font-mono">{s.ip}</span>}
-        </div>
-      ),
+        );
+      },
       sortable: true,
       sortValue: (s: Readonly<ServerListItem>) => s.name,
       className: "w-[30%]",
@@ -195,7 +205,7 @@ export function ServerListView({
       ),
       className: "hidden lg:table-cell w-[140px]",
     },
-  ], [selection, t]);
+  ], [selection, t, tc]);
 
   const columns = allColumns.filter((c) => c.key === "server" || visibleColumns[c.key] !== false);
 
@@ -208,6 +218,8 @@ export function ServerListView({
             key={s.id}
             name={s.name}
             status={s.status}
+            state={s.state}
+            reason={s.reason ? localizeReason(s.reason, tc) : ""}
             mode={classifyMode({
               useMiddleProxy: s.useMiddleProxy,
               meRuntimeReady: s.meRuntimeReady,
