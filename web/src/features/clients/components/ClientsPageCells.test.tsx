@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { deriveClientState } from "./ClientsPageCells";
-import type { ClientListItem } from "@/ui";
 
 const base = {
-  id: "1", name: "c", enabled: true,
-  expirationRfc3339: "", trafficUsedBytes: 0, dataQuotaBytes: 0,
-  assignedNodesCount: 0, lastDeployStatus: "succeeded",
-} as unknown as ClientListItem;
+  enabled: true,
+  expirationRfc3339: "",
+  trafficUsedBytes: 0,
+  dataQuotaBytes: 0,
+  assignedNodesCount: 0,
+  lastDeployStatus: "succeeded",
+};
 const NOW = Date.parse("2026-06-04T00:00:00Z");
 
 describe("deriveClientState", () => {
