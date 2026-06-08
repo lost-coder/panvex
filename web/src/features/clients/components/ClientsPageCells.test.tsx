@@ -31,4 +31,16 @@ describe("deriveClientState", () => {
   it("active otherwise", () => {
     expect(deriveClientState(base, NOW)).toBe("active");
   });
+  it("disabled wins over deploy_failed", () => {
+    expect(deriveClientState({ ...base, enabled: false, lastDeployStatus: "failed", assignedNodesCount: 1 }, NOW)).toBe("disabled");
+  });
+  it("deploy_failed wins over over_quota", () => {
+    expect(deriveClientState({ ...base, lastDeployStatus: "failed", assignedNodesCount: 1, dataQuotaBytes: 100, trafficUsedBytes: 500 }, NOW)).toBe("deploy_failed");
+  });
+  it("over_quota wins over expiring", () => {
+    expect(deriveClientState({ ...base, dataQuotaBytes: 100, assignedNodesCount: 1, trafficUsedBytes: 200, expirationRfc3339: "2026-06-07T00:00:00Z" }, NOW)).toBe("over_quota");
+  });
+  it("not_deployed wins over expiring", () => {
+    expect(deriveClientState({ ...base, assignedNodesCount: 1, lastDeployStatus: "pending", expirationRfc3339: "2026-06-07T00:00:00Z" }, NOW)).toBe("not_deployed");
+  });
 });

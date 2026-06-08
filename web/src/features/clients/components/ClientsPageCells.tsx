@@ -55,6 +55,11 @@ export type ClientState =
 
 const CLIENT_EXPIRING_DAYS = 7;
 
+/**
+ * 7-state client taxonomy for the unified status badge. The coarser 3-state
+ * `effectiveClientStatus` above still backs the status FILTER on ClientsPage —
+ * do not consolidate the two until the filter is migrated (Plan 2g).
+ */
 export function deriveClientState(c: ClientListItem, nowMs: number): ClientState {
   if (isClientExpired(c.expirationRfc3339, nowMs)) return "expired";
   if (!c.enabled) return "disabled";

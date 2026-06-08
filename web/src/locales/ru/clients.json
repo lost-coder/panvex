@@ -49,7 +49,7 @@
     "disabled": "Отключён",
     "expired": "Истёк",
     "expiring": "ИСТЕКАЕТ",
-    "overQuota": "КВОТА",
+    "overQuota": "КВОТА ИСЧЕРПАНА",
     "notDeployed": "НЕ РАЗВЁРНУТ",
     "deployFailed": "ОШИБКА РАЗВЁРТЫВАНИЯ"
   },
