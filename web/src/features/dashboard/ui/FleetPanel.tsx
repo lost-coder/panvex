@@ -4,7 +4,7 @@ import {
   MiniChart,
   StatusPill,
   formatBytes,
-  nodeStateFromStatus,
+  localizeReason,
   nodeStatePresentation,
   type DashboardNodeData,
   type DashboardOverviewData,
@@ -57,41 +57,52 @@ function LoadCell({
 // onClick callback from the parent.
 const FleetRow = memo(function FleetRow({ node, onClick }: Readonly<{ node: DashboardNodeData; onClick?: () => void }>) {
   const { t } = useTranslation("dashboard");
-  const state = nodeStateFromStatus(node.status);
-  const isProblem = state !== "ok";
+  const { t: tc } = useTranslation("common");
+  const state = node.state;
   const pres = nodeStatePresentation(state);
-  // Left-edge tint + row background scoped by severity. 4px border + 8% fill
-  // so a degraded/down node reads as a call-out, not just another row.
-  const rowClasses = isProblem
-    ? `border-l-4 ${state === "down" ? "border-l-status-error bg-status-error/8 hover:bg-status-error/12" : "border-l-status-warn bg-status-warn/8 hover:bg-status-warn/12"}`
-    : "border-l-4 border-l-transparent hover:bg-bg-hover";
+  const showPill = state !== "ok";
+  const reasonText = node.reason ? localizeReason(node.reason, tc) : "";
+  // Row tint by severity: down/offline alarm-red, degraded amber, pending/ok calm.
+  const rowTint =
+    state === "down" || state === "offline"
+      ? "border-l-status-error bg-status-error/8 hover:bg-status-error/12"
+      : state === "degraded"
+        ? "border-l-status-warn bg-status-warn/8 hover:bg-status-warn/12"
+        : "border-l-transparent hover:bg-bg-hover";
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`w-full flex flex-col gap-2 md:flex-row md:items-center md:gap-4 px-4 py-3.5 text-left transition-colors border-b border-divider last:border-b-0 min-h-[60px] ${rowClasses}`}
+      className={`w-full flex flex-col gap-2 md:flex-row md:items-center md:gap-4 px-4 py-3.5 text-left transition-colors border-b border-divider last:border-b-0 min-h-[60px] border-l-4 ${rowTint}`}
     >
-      <div className="flex items-center gap-2.5 min-w-0 md:flex-1">
-        {isProblem ? (
-          <StatusPill tone={pres.tone} glyph={pres.glyph} label={t(pres.labelKey)} />
-        ) : (
-          <span
-            aria-hidden="true"
-            className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-status-ok/15 text-status-ok text-micro font-bold shrink-0"
-          >
-            {pres.glyph}
+      <div className="flex flex-col gap-1 min-w-0 md:flex-1">
+        <div className="flex items-center gap-2.5 min-w-0">
+          {showPill ? (
+            <StatusPill tone={pres.tone} glyph={pres.glyph} label={t(pres.labelKey)} />
+          ) : (
+            <span
+              aria-hidden="true"
+              className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-status-ok/15 text-status-ok text-micro font-bold shrink-0"
+            >
+              {pres.glyph}
+            </span>
+          )}
+          <span className="text-base font-mono text-fg font-medium truncate min-w-0 flex-1">
+            {node.name}
+          </span>
+          <span className="flex items-baseline gap-1 text-micro font-mono tabular-nums shrink-0 md:hidden">
+            <span className="text-fg">{node.connections.toLocaleString()}</span>
+            <span className="text-fg-muted">{t("fleet.connections")}</span>
+          </span>
+          <span className="text-micro font-mono text-fg-muted tabular-nums shrink-0 md:hidden">
+            {formatBytes(node.trafficBytes)}
+          </span>
+        </div>
+        {reasonText && (
+          <span className="text-xs text-fg-muted leading-snug truncate pl-0.5">
+            {reasonText}
           </span>
         )}
-        <span className="text-base font-mono text-fg font-medium truncate min-w-0 flex-1">
-          {node.name}
-        </span>
-        <span className="flex items-baseline gap-1 text-micro font-mono tabular-nums shrink-0 md:hidden">
-          <span className="text-fg">{node.connections.toLocaleString()}</span>
-          <span className="text-fg-muted">{t("fleet.connections")}</span>
-        </span>
-        <span className="text-micro font-mono text-fg-muted tabular-nums shrink-0 md:hidden">
-          {formatBytes(node.trafficBytes)}
-        </span>
       </div>
 
       {/* Mobile line 2: CPU and MEM side-by-side, each gets equal width.
