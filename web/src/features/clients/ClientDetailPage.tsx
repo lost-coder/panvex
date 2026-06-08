@@ -16,6 +16,7 @@ import { LimitsCard } from "./components/LimitsCard";
 import { ResetQuotaHistory } from "./components/ResetQuotaHistory";
 import { SecretSection } from "./components/SecretSection";
 import { deriveClientState } from "./components/ClientsPageCells";
+import { useNowSec } from "@/shared/hooks/useNowSec";
 import {
   Breadcrumbs,
   SwipeTabView,
@@ -65,6 +66,9 @@ export function ClientDetailPage({
   resetEverywherePending,
 }: Readonly<ClientDetailPageProps>) {
   const { t } = useTranslation("clients");
+  // Auto-refreshing "now" — lifted out of the render path so the
+  // state derivation below stays pure (react-hooks/purity).
+  const nowMs = useNowSec() * 1000;
   // Expose "Redeploy" as a prominent action whenever at least one
   // deployment is not yet succeeded — failed (Telemt rejected the
   // apply) or queued (agent offline / job in flight too long).
@@ -101,7 +105,7 @@ export function ClientDetailPage({
       assignedNodesCount: client.deployments.length,
       lastDeployStatus,
     },
-    Date.now(),
+    nowMs,
   );
 
   // Rotate confirmation is owned by the container (global ConfirmProvider
