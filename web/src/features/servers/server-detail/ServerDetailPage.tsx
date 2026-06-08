@@ -3,9 +3,10 @@ import { useTranslation } from "react-i18next";
 
 import {
   Breadcrumbs,
+  NodeStateBadge,
   PageHeader,
-  StatusBeacon,
   formatUptime,
+  nodeStatePresentation,
 } from "@/ui";
 import { AgentConnectionSection } from "@/features/servers/ui/AgentConnectionSection";
 import type { ServerDetailPageProps, ServerDcData } from "@/shared/api/types-pages/pages";
@@ -87,6 +88,7 @@ export function ServerDetailPage({
   runtimeEventsSlot,
 }: Readonly<ServerDetailPageProps>) {
   const { t } = useTranslation("servers");
+  const { t: tc } = useTranslation("common");
   const { label: relativeTime, stale: relativeTimeStale } = useRelativeTime(lastUpdatedAt);
   // Render only the active breakpoint's layout instead of mounting both and
   // CSS-hiding one (which doubled render cost and mounted the hidden tree's
@@ -384,7 +386,7 @@ export function ServerDetailPage({
               {relativeTime && (
                 <RelativeTimeBadge label={relativeTime} stale={relativeTimeStale} />
               )}
-              <StatusBeacon status={server.status} size="xs" />
+              <NodeStateBadge state={server.state} label={tc(nodeStatePresentation(server.state).labelKey)} />
               <ServerActionsDropdown
                 onReload={onReload}
                 onBoostDetail={onBoostDetail}
