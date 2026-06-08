@@ -123,10 +123,7 @@
   },
   "detail": {
     "breadcrumb": "Clients",
-    "subtitle": "{{status}} · {{expires}}",
-    "statusActive": "ACTIVE",
-    "statusDisabled": "DISABLED",
-    "statusExpired": "EXPIRED",
+    "subtitle": "{{expires}}",
     "actions": {
       "edit": "Edit",
       "disable": "Disable",

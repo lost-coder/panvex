@@ -2,6 +2,11 @@
 // from ClientDetailPage.tsx. The layout twins (mobile PageHeader vs
 // desktop HeroStrip) live together so a designer changing the action
 // list updates one file instead of two parallel JSX sections.
+//
+// Plan 2h: status is the unified 7-state ClientStateBadge (same badge
+// the clients list/filter use). Desktop puts it in the HeroStrip
+// `prefix` slot (before the name); mobile puts it in the PageHeader
+// `trailing` slot — mirroring ServerHero / ServerDetailPage.
 
 import { useTranslation } from "react-i18next";
 
@@ -13,24 +18,16 @@ import {
   type StatusTone,
 } from "@/ui";
 
+import { ClientStateBadge } from "./ClientsPageCells";
+import type { ClientState } from "./ClientsPageCells";
 import { expiresSuffix, expiresTone } from "./clientDetailHelpers";
-
-function statusTone(
-  status: "active" | "disabled" | "expired",
-  enabled: boolean,
-): StatusTone {
-  if (status === "expired") return "error";
-  if (enabled) return "ok";
-  return "warn";
-}
 
 export interface ClientDetailHeroProps {
   name: string;
   enabled: boolean;
   expirationRfc3339: string;
   fleetGroupIds: string[];
-  statusLabel: string;
-  status: "active" | "disabled" | "expired";
+  state: ClientState;
   hasFailedDeployment: boolean;
   onEdit?: (() => void) | undefined;
   onDisable?: (() => void) | undefined;
@@ -51,8 +48,7 @@ export function ClientDetailHero({
   enabled,
   expirationRfc3339,
   fleetGroupIds,
-  statusLabel,
-  status,
+  state,
   hasFailedDeployment,
   onEdit,
   onDisable,
@@ -113,32 +109,31 @@ export function ClientDetailHero({
   );
   return (
     <>
-      {/* Mobile — PageHeader carries name + status subtitle. */}
+      {/* Mobile — PageHeader carries name + expiry subtitle; the unified
+          status badge sits in the trailing slot beside the Edit button. */}
       <div className="md:hidden">
         <PageHeader
           title={name}
-          subtitle={t("detail.subtitle", {
-            status: statusLabel.toLowerCase(),
-            expires: expiresSuffix(expirationRfc3339),
-          })}
+          subtitle={t("detail.subtitle", { expires: expiresSuffix(expirationRfc3339) })}
           trailing={
-            onEdit ? (
-              <Button size="sm" onClick={onEdit}>
-                {t("detail.actions.edit")}
-              </Button>
-            ) : undefined
+            <div className="flex items-center gap-3">
+              <ClientStateBadge state={state} />
+              {onEdit && (
+                <Button size="sm" onClick={onEdit}>
+                  {t("detail.actions.edit")}
+                </Button>
+              )}
+            </div>
           }
         />
       </div>
 
-      {/* Desktop hero — full-bleed band, matches the Server detail style. */}
+      {/* Desktop hero — full-bleed band, matches the Server detail style.
+          The status badge takes the prefix slot (before the name). */}
       <HeroStrip
         className="hidden md:flex"
+        prefix={<ClientStateBadge state={state} />}
         name={name}
-        status={{
-          tone: statusTone(status, enabled),
-          label: statusLabel,
-        }}
         pills={[
           ...fleetGroupIds.map<HeroMetaPill>((g) => ({
             label: t("detail.hero.group"),

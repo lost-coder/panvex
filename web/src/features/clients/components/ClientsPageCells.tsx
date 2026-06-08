@@ -18,7 +18,6 @@ import {
   formatBytes,
   formatExpiry,
   formatQuota,
-  type ClientListItem,
   type PillTone,
 } from "@/ui";
 
@@ -34,11 +33,25 @@ export type ClientState =
 const CLIENT_EXPIRING_DAYS = 7;
 
 /**
+ * Structural input for `deriveClientState`. `ClientListItem` satisfies it,
+ * so the clients-list call sites keep working; the client **detail** page
+ * supplies a synthetic object assembled from its `deployments[]` (Plan 2h).
+ */
+export interface ClientStateInput {
+  enabled: boolean;
+  expirationRfc3339: string;
+  trafficUsedBytes: number;
+  dataQuotaBytes: number;
+  assignedNodesCount: number;
+  lastDeployStatus: string;
+}
+
+/**
  * 7-state client taxonomy backing both the unified status badge and the
  * status FILTER + counts on ClientsPage (Plan 2g unified these onto a single
  * derivation; the old coarse 3-state helper was removed).
  */
-export function deriveClientState(c: ClientListItem, nowMs: number): ClientState {
+export function deriveClientState(c: ClientStateInput, nowMs: number): ClientState {
   if (isClientExpired(c.expirationRfc3339, nowMs)) return "expired";
   if (!c.enabled) return "disabled";
   if (c.lastDeployStatus === "failed") return "deploy_failed";
