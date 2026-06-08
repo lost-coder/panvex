@@ -22,8 +22,12 @@
       "placeholder": "Status",
       "all": "All · {{count}}",
       "active": "Active · {{count}}",
+      "expiring": "Expiring · {{count}}",
       "disabled": "Disabled · {{count}}",
-      "expired": "Expired · {{count}}"
+      "expired": "Expired · {{count}}",
+      "overQuota": "Over quota · {{count}}",
+      "notDeployed": "Not deployed · {{count}}",
+      "deployFailed": "Deploy failed · {{count}}"
     },
     "bulk": {
       "enable": "Enable",

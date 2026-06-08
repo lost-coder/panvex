@@ -23,8 +23,12 @@
       "placeholder": "Статус",
       "all": "Все · {{count}}",
       "active": "Активные · {{count}}",
+      "expiring": "Истекает · {{count}}",
       "disabled": "Отключены · {{count}}",
-      "expired": "Истекли · {{count}}"
+      "expired": "Истекли · {{count}}",
+      "overQuota": "Квота · {{count}}",
+      "notDeployed": "Не развёрнут · {{count}}",
+      "deployFailed": "Ошибка деплоя · {{count}}"
     },
     "bulk": {
       "enable": "Включить",

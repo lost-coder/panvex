@@ -33,13 +33,33 @@ export function buildClientsStatusFilter(opts: ClientsStatusFilterOptions) {
         tone: "ok" as const,
       },
       {
-        value: "disabled",
-        label: t("filters.status.disabled", { count: opts.counts.disabled }),
+        value: "expiring",
+        label: t("filters.status.expiring", { count: opts.counts.expiring }),
         tone: "warn" as const,
       },
       {
         value: "expired",
         label: t("filters.status.expired", { count: opts.counts.expired }),
+        tone: "error" as const,
+      },
+      {
+        value: "over_quota",
+        label: t("filters.status.overQuota", { count: opts.counts.overQuota }),
+        tone: "error" as const,
+      },
+      {
+        value: "disabled",
+        label: t("filters.status.disabled", { count: opts.counts.disabled }),
+        tone: "warn" as const,
+      },
+      {
+        value: "not_deployed",
+        label: t("filters.status.notDeployed", { count: opts.counts.notDeployed }),
+        tone: "warn" as const,
+      },
+      {
+        value: "deploy_failed",
+        label: t("filters.status.deployFailed", { count: opts.counts.deployFailed }),
         tone: "error" as const,
       },
     ],
