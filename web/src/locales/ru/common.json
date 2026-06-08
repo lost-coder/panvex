@@ -9,5 +9,22 @@
     "minutesAgo": "{{count}} мин назад",
     "hoursAgo": "{{count}} ч назад",
     "daysAgo": "{{count}} д назад"
+  },
+  "reason": {
+    "offline": "Агент не на связи",
+    "telemtUnreachable": "Telemt API недоступен с",
+    "stale": "Телеметрия устарела",
+    "readOnly": "Telemt API только для чтения",
+    "admissionClosed": "Приём подключений закрыт",
+    "startup": "Идёт запуск",
+    "noDcs": "Нет доступных DC",
+    "dcDegraded": "Покрытие DC деградировало",
+    "meDegraded": "ME-рантайм деградировал",
+    "meDown": "ME-пул недоступен, трафик остановлен",
+    "upstreamFailing": "Сбой подключения к upstream DC",
+    "dcConnDegraded": "Деградация связности с DC",
+    "noUpstreams": "Upstream'ы не настроены",
+    "allUpstreamsDown": "Все upstream'ы недоступны",
+    "someUpstreamsUnhealthy": "Часть upstream'ов нездорова"
   }
 }

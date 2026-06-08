@@ -9,5 +9,22 @@
     "minutesAgo": "{{count}}m ago",
     "hoursAgo": "{{count}}h ago",
     "daysAgo": "{{count}}d ago"
+  },
+  "reason": {
+    "offline": "Agent offline",
+    "telemtUnreachable": "Telemt API unreachable since",
+    "stale": "Telemetry is stale",
+    "readOnly": "Telemt API is read-only",
+    "admissionClosed": "Admission is closed",
+    "startup": "Starting up",
+    "noDcs": "No reachable DCs",
+    "dcDegraded": "DC coverage degraded",
+    "meDegraded": "ME runtime degraded",
+    "meDown": "ME pool unavailable, traffic stopped",
+    "upstreamFailing": "Upstream DC connection failing",
+    "dcConnDegraded": "Degraded DC connectivity",
+    "noUpstreams": "No upstreams configured",
+    "allUpstreamsDown": "All upstreams down",
+    "someUpstreamsUnhealthy": "Some upstreams unhealthy"
   }
 }

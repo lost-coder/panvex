@@ -12,3 +12,4 @@ export {
   type NodeStatePresentation,
   type NodeStateInput,
 } from "./node-status";
+export { localizeReason } from "./reason-text";
