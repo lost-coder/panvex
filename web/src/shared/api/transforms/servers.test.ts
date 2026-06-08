@@ -261,4 +261,31 @@ describe("transformServerList", () => {
     const [item] = transformServerList(listResponse(runtime, 1_500_000_000));
     expect(item!.trafficBytes).toBe(1_500_000_000);
   });
+
+  it("derives state + reason onto each server", () => {
+    const resp = {
+      servers: [
+        {
+          agent: {
+            id: "a-1",
+            node_name: "node-1",
+            fleet_group_id: "fg-1",
+            version: "1.0.0",
+            read_only: false,
+            presence_state: "offline",
+            runtime: makeRuntime({}),
+            last_seen_at: "2024-01-01T00:00:00Z",
+          },
+          severity: "bad",
+          reason: "Agent heartbeat is offline",
+          runtime_freshness: { state: "fresh", observed_at_unix: 0 },
+          detail_boost: { active: false, expires_at_unix: 0, remaining_seconds: 0 },
+          traffic_bytes: 0,
+        },
+      ],
+    } as unknown as Parameters<typeof transformServerList>[0];
+    const [item] = transformServerList(resp);
+    expect(item!.state).toBe("offline");
+    expect(item!.reason).toBe("Agent heartbeat is offline");
+  });
 });
