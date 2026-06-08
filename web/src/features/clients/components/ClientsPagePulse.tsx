@@ -10,38 +10,46 @@ import { useTranslation } from "react-i18next";
 
 import { PulseRow, type ClientListItem, type PulseTick } from "@/ui";
 
-import { effectiveClientStatus } from "./ClientsPageCells";
+import { deriveClientState } from "./ClientsPageCells";
 
 export interface ClientCounts {
   all: number;
   active: number;
-  disabled: number;
+  expiring: number;
   expired: number;
+  overQuota: number;
+  disabled: number;
+  notDeployed: number;
+  deployFailed: number;
   online: number;
   quotaExhausted: number;
 }
 
 export function buildClientCounts(clients: ClientListItem[], nowMs: number): ClientCounts {
-  let active = 0;
-  let disabled = 0;
-  let expired = 0;
-  let online = 0;
-  let quotaExhausted = 0;
-  for (const c of clients) {
-    const s = effectiveClientStatus(c, nowMs);
-    if (s === "active") active++;
-    else if (s === "disabled") disabled++;
-    else expired++;
-    if (c.activeTcpConns > 0) online++;
+  const c: ClientCounts = {
+    all: clients.length, active: 0, expiring: 0, expired: 0, overQuota: 0,
+    disabled: 0, notDeployed: 0, deployFailed: 0, online: 0, quotaExhausted: 0,
+  };
+  for (const client of clients) {
+    switch (deriveClientState(client, nowMs)) {
+      case "active": c.active++; break;
+      case "expiring": c.expiring++; break;
+      case "expired": c.expired++; break;
+      case "over_quota": c.overQuota++; break;
+      case "disabled": c.disabled++; break;
+      case "not_deployed": c.notDeployed++; break;
+      case "deploy_failed": c.deployFailed++; break;
+    }
+    if (client.activeTcpConns > 0) c.online++;
     // Quota is per-Telemt-node × deployment count (see LimitsCard).
     if (
-      c.dataQuotaBytes > 0 &&
-      c.trafficUsedBytes >= c.dataQuotaBytes * Math.max(1, c.assignedNodesCount)
+      client.dataQuotaBytes > 0 &&
+      client.trafficUsedBytes >= client.dataQuotaBytes * Math.max(1, client.assignedNodesCount)
     ) {
-      quotaExhausted++;
+      c.quotaExhausted++;
     }
   }
-  return { all: clients.length, active, disabled, expired, online, quotaExhausted };
+  return c;
 }
 
 export function ClientsPagePulse({ counts }: Readonly<{ counts: ClientCounts }>) {
