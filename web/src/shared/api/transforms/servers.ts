@@ -446,6 +446,12 @@ export function transformServerDetail(
     id: agent?.id ?? "",
     name: agent?.node_name ?? "",
     status: resolveAgentSeverity(agent ?? ({} as Agent)),
+    state: deriveNodeState({
+      severity: raw.server?.severity ?? "ok",
+      presenceState: agent?.presence_state ?? "online",
+      telemtUnreachable: runtime?.telemt_unreachable ?? false,
+      reason: raw.server?.reason ?? "",
+    }),
     systemInfo,
     gates,
     dcs,

@@ -1,4 +1,5 @@
 import type { Status } from "@/ui/tokens/colors";
+import type { NodeState } from "@/ui";
 import type { AgentConnectionData, InitCardProps, TransportMode } from "./common";
 import type {
   ServerConnectionsData,
@@ -28,6 +29,8 @@ export interface ServerDetailPageProps {
     name: string;
     ip?: string | undefined;
     status: Status;
+    /** Full lifecycle state (offline/down/degraded/pending/ok). */
+    state: NodeState;
 
     // /v1/system/info
     systemInfo: ServerSystemInfoData;
