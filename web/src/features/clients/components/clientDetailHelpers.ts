@@ -1,19 +1,6 @@
-// R-Q-08: status / expiry helpers extracted from ClientDetailPage.tsx
-// so the host page is left with composition-only concerns.
-
-export function isExpired(rfc: string): boolean {
-  if (!rfc) return false;
-  const t = Date.parse(rfc);
-  return Number.isFinite(t) && t < Date.now();
-}
-
-export function clientStatus(
-  enabled: boolean,
-  rfc: string,
-): "active" | "disabled" | "expired" {
-  if (isExpired(rfc)) return "expired";
-  return enabled ? "active" : "disabled";
-}
+// R-Q-08: expiry helpers used by ClientDetailHero. The old 3-state
+// `clientStatus`/`isExpired` were removed in Plan 2h — status now flows
+// through the unified `deriveClientState` (ClientsPageCells).
 
 export function expiresSuffix(rfc: string): string {
   if (!rfc) return "never";
