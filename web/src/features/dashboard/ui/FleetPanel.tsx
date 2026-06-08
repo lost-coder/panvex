@@ -2,7 +2,7 @@ import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import {
   MiniChart,
-  StatusPill,
+  NodeStateBadge,
   formatBytes,
   localizeReason,
   nodeStatePresentation,
@@ -60,7 +60,6 @@ const FleetRow = memo(function FleetRow({ node, onClick }: Readonly<{ node: Dash
   const { t: tc } = useTranslation("common");
   const state = node.state;
   const pres = nodeStatePresentation(state);
-  const showPill = state !== "ok";
   const reasonText = node.reason ? localizeReason(node.reason, tc) : "";
   // Row tint by severity: down/offline alarm-red, degraded amber, pending/ok calm.
   const rowTint =
@@ -77,16 +76,7 @@ const FleetRow = memo(function FleetRow({ node, onClick }: Readonly<{ node: Dash
     >
       <div className="flex flex-col gap-1 min-w-0 md:flex-1">
         <div className="flex items-center gap-2.5 min-w-0">
-          {showPill ? (
-            <StatusPill tone={pres.tone} glyph={pres.glyph} label={tc(pres.labelKey)} />
-          ) : (
-            <span
-              aria-hidden="true"
-              className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-status-ok/15 text-status-ok text-micro font-bold shrink-0"
-            >
-              {pres.glyph}
-            </span>
-          )}
+          <NodeStateBadge state={state} label={tc(pres.labelKey)} />
           <span className="text-base font-mono text-fg font-medium truncate min-w-0 flex-1">
             {node.name}
           </span>

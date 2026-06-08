@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { cn } from "@/ui/lib/cn";
 import type { Status } from "@/ui/tokens/colors";
 import { StatusDot } from "@/ui/primitives/StatusDot";
-import { StatusPill, nodeStatePresentation, type NodeState } from "@/ui";
+import { NodeStateBadge, nodeStatePresentation, type NodeState } from "@/ui";
 import { ArrowUpCircle } from "lucide-react";
 import { TransportBadge } from "@/features/servers/ui/TransportBadge";
 import type { ModeKind, Severity } from "@/shared/api/types-pages/pages";
@@ -75,17 +75,7 @@ export function NodeCard({
       )}
       <div className="flex items-center gap-2">
         {state ? (
-          state === "ok" ? (
-            <span aria-hidden="true" className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-status-ok/15 text-status-ok text-micro font-bold shrink-0">
-              {nodeStatePresentation("ok").glyph}
-            </span>
-          ) : (
-            <StatusPill
-              tone={nodeStatePresentation(state).tone}
-              glyph={nodeStatePresentation(state).glyph}
-              label={tc(nodeStatePresentation(state).labelKey)}
-            />
-          )
+          <NodeStateBadge state={state} label={tc(nodeStatePresentation(state).labelKey)} />
         ) : (
           <StatusDot status={status} size="md" />
         )}
