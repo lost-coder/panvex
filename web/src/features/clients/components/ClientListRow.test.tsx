@@ -10,8 +10,8 @@ import { ClientListRow } from "./ClientListRow";
 //
 // i18n is bootstrapped globally in vitest.setup.ts (default language "en", real
 // resources), so the status label resolves to English:
-//   clients:statusBadge.expired → "Expired"
-//   clients:statusBadge.active  → "Active" (never rendered as text — the active
+//   clients:statusBadge.expired → "EXPIRED"
+//   clients:statusBadge.active  → "ACTIVE" (never rendered as text — the active
 //                                 chip is an aria-hidden glyph only)
 
 const NOW = Date.parse("2026-06-04T00:00:00Z");
@@ -41,14 +41,14 @@ describe("ClientListRow / unified status badge", () => {
       />,
     );
 
-    expect(screen.getByText("Expired")).toBeInTheDocument();
+    expect(screen.getByText("EXPIRED")).toBeInTheDocument();
   });
 
   it("renders a quiet ✓ chip (no status word) for an active client", () => {
     render(<ClientListRow client={makeClient({})} nowMs={NOW} />);
 
     // Healthy state shows an aria-hidden glyph chip, not the "Active" word.
-    expect(screen.queryByText("Active")).not.toBeInTheDocument();
+    expect(screen.queryByText("ACTIVE")).not.toBeInTheDocument();
     // The client name still renders.
     expect(screen.getByText("alice")).toBeInTheDocument();
   });

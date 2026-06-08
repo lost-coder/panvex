@@ -44,9 +44,9 @@
     "quotaExhaustedHintNone": "all within limits"
   },
   "statusBadge": {
-    "active": "Active",
-    "disabled": "Disabled",
-    "expired": "Expired",
+    "active": "ACTIVE",
+    "disabled": "DISABLED",
+    "expired": "EXPIRED",
     "expiring": "EXPIRING",
     "overQuota": "OVER QUOTA",
     "notDeployed": "NOT DEPLOYED",

@@ -45,9 +45,9 @@
     "quotaExhaustedHintNone": "все в пределах лимитов"
   },
   "statusBadge": {
-    "active": "Активен",
-    "disabled": "Отключён",
-    "expired": "Истёк",
+    "active": "АКТИВЕН",
+    "disabled": "ОТКЛЮЧЁН",
+    "expired": "ИСТЁК",
     "expiring": "ИСТЕКАЕТ",
     "overQuota": "КВОТА ИСЧЕРПАНА",
     "notDeployed": "НЕ РАЗВЁРНУТ",
