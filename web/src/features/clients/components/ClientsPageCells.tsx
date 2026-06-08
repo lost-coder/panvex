@@ -14,11 +14,13 @@ import { useTranslation } from "react-i18next";
 import {
   Badge,
   MonoValue,
+  StateBadge,
   cn,
   formatBytes,
   formatExpiry,
   formatQuota,
   type ClientListItem,
+  type PillTone,
 } from "@/ui";
 
 export type EffectiveClientStatus = "active" | "disabled" | "expired";
@@ -46,6 +48,45 @@ export function ClientStatusBadge({ status }: Readonly<{ status: EffectiveClient
   };
   const { label, variant } = map[status];
   return <Badge variant={variant}>{label}</Badge>;
+}
+
+export type ClientState =
+  | "active" | "expiring" | "expired" | "over_quota" | "disabled" | "not_deployed" | "deploy_failed";
+
+const CLIENT_EXPIRING_DAYS = 7;
+
+export function deriveClientState(c: ClientListItem, nowMs: number): ClientState {
+  if (isClientExpired(c.expirationRfc3339, nowMs)) return "expired";
+  if (!c.enabled) return "disabled";
+  if (c.lastDeployStatus === "failed") return "deploy_failed";
+  const denom = c.dataQuotaBytes > 0 ? c.dataQuotaBytes * Math.max(1, c.assignedNodesCount) : 0;
+  if (denom > 0 && c.trafficUsedBytes >= denom) return "over_quota";
+  if (c.assignedNodesCount > 0 && c.lastDeployStatus !== "succeeded") return "not_deployed";
+  if (c.expirationRfc3339) {
+    const t = Date.parse(c.expirationRfc3339);
+    if (Number.isFinite(t) && (t - nowMs) / 86_400_000 < CLIENT_EXPIRING_DAYS) return "expiring";
+  }
+  return "active";
+}
+
+const CLIENT_PRESENTATION: Record<ClientState, { tone: PillTone; glyph: string; labelKey: string }> = {
+  active:        { tone: "ok",      glyph: "✓", labelKey: "statusBadge.active" },
+  expiring:      { tone: "warn",    glyph: "▲", labelKey: "statusBadge.expiring" },
+  expired:       { tone: "error",   glyph: "⛔", labelKey: "statusBadge.expired" },
+  over_quota:    { tone: "error",   glyph: "⛔", labelKey: "statusBadge.overQuota" },
+  disabled:      { tone: "neutral", glyph: "●", labelKey: "statusBadge.disabled" },
+  not_deployed:  { tone: "neutral", glyph: "●", labelKey: "statusBadge.notDeployed" },
+  deploy_failed: { tone: "error",   glyph: "⛔", labelKey: "statusBadge.deployFailed" },
+};
+
+export function clientStatePresentation(state: ClientState) {
+  return CLIENT_PRESENTATION[state];
+}
+
+export function ClientStateBadge({ state }: Readonly<{ state: ClientState }>) {
+  const { t } = useTranslation("clients");
+  const p = clientStatePresentation(state);
+  return <StateBadge tone={p.tone} glyph={p.glyph} label={t(p.labelKey)} />;
 }
 
 // `quota` is the per-Telemt-node value the operator entered. Each

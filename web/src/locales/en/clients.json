@@ -46,7 +46,11 @@
   "statusBadge": {
     "active": "Active",
     "disabled": "Disabled",
-    "expired": "Expired"
+    "expired": "Expired",
+    "expiring": "EXPIRING",
+    "overQuota": "OVER QUOTA",
+    "notDeployed": "NOT DEPLOYED",
+    "deployFailed": "DEPLOY FAILED"
   },
   "table": {
     "client": "Client",

@@ -47,7 +47,11 @@
   "statusBadge": {
     "active": "Активен",
     "disabled": "Отключён",
-    "expired": "Истёк"
+    "expired": "Истёк",
+    "expiring": "ИСТЕКАЕТ",
+    "overQuota": "КВОТА",
+    "notDeployed": "НЕ РАЗВЁРНУТ",
+    "deployFailed": "ОШИБКА РАЗВЁРТЫВАНИЯ"
   },
   "table": {
     "client": "Клиент",
