@@ -3,6 +3,7 @@ import type {
   DashboardTimelineData,
   DashboardNodeData,
 } from "@/ui";
+import { deriveNodeState } from "@/ui";
 import type {
   TelemetryDashboardResponse,
   TelemetryAttentionItem,
@@ -64,6 +65,13 @@ function mapAttentionItemToNode(
     id: item.agent_id,
     name: item.node_name,
     status: mapSeverity(item.severity),
+    state: deriveNodeState({
+      severity: item.severity,
+      presenceState: item.presence_state,
+      telemtUnreachable: runtime?.telemt_unreachable ?? false,
+      reason: item.reason,
+    }),
+    reason: item.reason,
     connections: runtime?.current_connections ?? 0,
     trafficBytes: 0,
     cpuPct: pct1(runtime?.system_load?.cpu_usage_pct),
@@ -252,6 +260,8 @@ export function transformDashboardOverview(
         id: card.agent?.id ?? "",
         name: card.agent?.node_name ?? "",
         status: "ok" as const,
+        state: "ok" as const,
+        reason: "",
         connections: runtime?.current_connections ?? 0,
         trafficBytes: 0,
         cpuPct: pct1(runtime?.system_load?.cpu_usage_pct),
