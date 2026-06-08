@@ -1,6 +1,7 @@
 export { StatusDot, type StatusDotProps } from "./StatusDot";
 export { StatusPill, type StatusPillProps } from "./StatusPill";
 export { NodeStateBadge, type NodeStateBadgeProps } from "./NodeStateBadge";
+export { StateBadge, type StateBadgeProps } from "./StateBadge";
 export { StatusLabel, type StatusLabelProps, type StatusTone } from "./StatusLabel";
 export { AgeCell, type AgeCellProps } from "./AgeCell";
 export { StatusBeacon, type StatusBeaconProps } from "./StatusBeacon";
