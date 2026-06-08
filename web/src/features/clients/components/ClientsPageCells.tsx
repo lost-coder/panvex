@@ -12,7 +12,6 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 
 import {
-  Badge,
   MonoValue,
   StateBadge,
   cn,
@@ -37,17 +36,6 @@ export function effectiveClientStatus(
 ): EffectiveClientStatus {
   if (isClientExpired(c.expirationRfc3339, nowMs)) return "expired";
   return c.enabled ? "active" : "disabled";
-}
-
-export function ClientStatusBadge({ status }: Readonly<{ status: EffectiveClientStatus }>) {
-  const { t } = useTranslation("clients");
-  const map = {
-    active: { label: t("statusBadge.active"), variant: "ok" as const },
-    disabled: { label: t("statusBadge.disabled"), variant: "default" as const },
-    expired: { label: t("statusBadge.expired"), variant: "error" as const },
-  };
-  const { label, variant } = map[status];
-  return <Badge variant={variant}>{label}</Badge>;
 }
 
 export type ClientState =

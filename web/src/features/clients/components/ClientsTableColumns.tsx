@@ -8,9 +8,9 @@ import { MonoValue, StatusDot, type ClientListItem } from "@/ui";
 
 import {
   ClientExpiryCell,
-  ClientStatusBadge,
+  ClientStateBadge,
   ClientTrafficCell,
-  effectiveClientStatus,
+  deriveClientState,
 } from "./ClientsPageCells";
 
 export interface ClientSelectionConfig {
@@ -73,7 +73,7 @@ export function buildClientColumns(
       key: "status",
       header: t("table.status"),
       render: (c: ClientListItem) => (
-        <ClientStatusBadge status={effectiveClientStatus(c, nowSec * 1000)} />
+        <ClientStateBadge state={deriveClientState(c, nowSec * 1000)} />
       ),
       className: "w-[120px]",
     },
