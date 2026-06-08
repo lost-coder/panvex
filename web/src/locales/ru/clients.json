@@ -125,10 +125,7 @@
   },
   "detail": {
     "breadcrumb": "Клиенты",
-    "subtitle": "{{status}} · {{expires}}",
-    "statusActive": "АКТИВЕН",
-    "statusDisabled": "ОТКЛЮЧЁН",
-    "statusExpired": "ИСТЁК",
+    "subtitle": "{{expires}}",
     "actions": {
       "edit": "Изменить",
       "disable": "Отключить",
