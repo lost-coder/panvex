@@ -288,4 +288,10 @@ describe("transformServerList", () => {
     expect(item!.state).toBe("offline");
     expect(item!.reason).toBe("Agent heartbeat is offline");
   });
+
+  it("derives state 'ok' and empty reason for a healthy server", () => {
+    const [item] = transformServerList(listResponse(makeRuntime({}), 0));
+    expect(item!.state).toBe("ok");
+    expect(item!.reason).toBe("");
+  });
 });
