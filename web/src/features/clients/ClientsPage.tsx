@@ -12,7 +12,7 @@ import {
   buildClientsBulkActions,
   buildClientsStatusFilter,
 } from "@/features/clients/components/ClientsFilters";
-import { effectiveClientStatus } from "@/features/clients/components/ClientsPageCells";
+import { deriveClientState } from "@/features/clients/components/ClientsPageCells";
 import {
   ClientsPagePulse,
   buildClientCounts,
@@ -89,7 +89,7 @@ export function ClientsPage({
       clients.filter((c) => {
         const matchSearch = !search || c.name.toLowerCase().includes(search.toLowerCase());
         const matchStatus =
-          statusFilter === "all" || effectiveClientStatus(c, nowMs) === statusFilter;
+          statusFilter === "all" || deriveClientState(c, nowMs) === statusFilter;
         return matchSearch && matchStatus;
       }),
     [clients, search, statusFilter, nowMs],

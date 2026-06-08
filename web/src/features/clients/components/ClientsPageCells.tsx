@@ -3,7 +3,7 @@
 // helper is pure: it accepts the snapshot inputs from props and returns
 // the cell markup, no hooks.
 //
-// R-Q-24: helpers (effectiveClientStatus, isClientExpired) ship next to
+// R-Q-24: helpers (isClientExpired, deriveClientState) ship next to
 // the cell components by design — splitting them into a dedicated file
 // would force ClientsPage to learn two import paths for the same domain.
 /* eslint-disable react-refresh/only-export-components */
@@ -22,20 +22,10 @@ import {
   type PillTone,
 } from "@/ui";
 
-export type EffectiveClientStatus = "active" | "disabled" | "expired";
-
 export function isClientExpired(expirationRfc3339: string, nowMs: number): boolean {
   if (!expirationRfc3339) return false;
   const t = Date.parse(expirationRfc3339);
   return Number.isFinite(t) && t < nowMs;
-}
-
-export function effectiveClientStatus(
-  c: ClientListItem,
-  nowMs: number,
-): EffectiveClientStatus {
-  if (isClientExpired(c.expirationRfc3339, nowMs)) return "expired";
-  return c.enabled ? "active" : "disabled";
 }
 
 export type ClientState =
@@ -44,9 +34,9 @@ export type ClientState =
 const CLIENT_EXPIRING_DAYS = 7;
 
 /**
- * 7-state client taxonomy for the unified status badge. The coarser 3-state
- * `effectiveClientStatus` above still backs the status FILTER on ClientsPage —
- * do not consolidate the two until the filter is migrated (Plan 2g).
+ * 7-state client taxonomy backing both the unified status badge and the
+ * status FILTER + counts on ClientsPage (Plan 2g unified these onto a single
+ * derivation; the old coarse 3-state helper was removed).
  */
 export function deriveClientState(c: ClientListItem, nowMs: number): ClientState {
   if (isClientExpired(c.expirationRfc3339, nowMs)) return "expired";
