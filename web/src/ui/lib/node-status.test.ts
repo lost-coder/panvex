@@ -1,17 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   nodeStatePresentation,
-  nodeStateFromStatus,
   deriveNodeState,
   isStartupReason,
   type NodeState,
 } from "./node-status";
-
-describe("nodeStateFromStatus", () => {
-  it("maps error → down", () => expect(nodeStateFromStatus("error")).toBe("down"));
-  it("maps warn → degraded", () => expect(nodeStateFromStatus("warn")).toBe("degraded"));
-  it("maps ok → ok", () => expect(nodeStateFromStatus("ok")).toBe("ok"));
-});
 
 describe("nodeStatePresentation", () => {
   it("down is red, glyphed, with the down label key", () => {

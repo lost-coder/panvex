@@ -1,4 +1,4 @@
-import type { PillTone, Status } from "@/ui/tokens/colors";
+import type { PillTone } from "@/ui/tokens/colors";
 
 /**
  * Operator-facing node lifecycle state. Five-state union: `offline` (no
@@ -27,13 +27,6 @@ const PRESENTATION: Record<NodeState, NodeStatePresentation> = {
 
 export function nodeStatePresentation(state: NodeState): NodeStatePresentation {
   return PRESENTATION[state];
-}
-
-/** Legacy 3-state Status → NodeState. */
-export function nodeStateFromStatus(status: Status): NodeState {
-  if (status === "error") return "down";
-  if (status === "warn") return "degraded";
-  return "ok";
 }
 
 /**

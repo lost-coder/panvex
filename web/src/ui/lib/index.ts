@@ -5,7 +5,6 @@ export * from "./format";
 export * from "./status";
 export {
   nodeStatePresentation,
-  nodeStateFromStatus,
   deriveNodeState,
   isStartupReason,
   type NodeState,
