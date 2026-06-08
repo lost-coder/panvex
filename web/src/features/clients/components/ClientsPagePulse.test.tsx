@@ -26,4 +26,23 @@ describe("buildClientCounts", () => {
     expect(counts.expiring).toBe(1);
     expect(counts.disabled).toBe(1);
   });
+
+  it("counts quotaExhausted independently from overQuota — expired+over-quota client increments quotaExhausted but not overQuota", () => {
+    const clients = [
+      {
+        ...base,
+        enabled: true,
+        expirationRfc3339: "2020-01-01T00:00:00Z", // expired
+        dataQuotaBytes: 100,
+        assignedNodesCount: 1,
+        trafficUsedBytes: 500, // over quota
+      },
+    ] as unknown as ClientListItem[];
+
+    const counts = buildClientCounts(clients, NOW);
+
+    expect(counts.expired).toBe(1);
+    expect(counts.overQuota).toBe(0);
+    expect(counts.quotaExhausted).toBe(1);
+  });
 });

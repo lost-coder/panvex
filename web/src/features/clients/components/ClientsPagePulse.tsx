@@ -41,6 +41,11 @@ export function buildClientCounts(clients: ClientListItem[], nowMs: number): Cli
       case "deploy_failed": c.deployFailed++; break;
     }
     if (client.activeTcpConns > 0) c.online++;
+    // quotaExhausted is an independent tally of ALL over-quota clients,
+    // regardless of lifecycle state — it differs from the `overQuota` STATE
+    // count (which only fires when a client isn't already expired/disabled/
+    // deploy_failed, since deriveClientState returns the higher-priority state
+    // first). The pulse wants the raw "how many are blowing quota" number.
     // Quota is per-Telemt-node × deployment count (see LimitsCard).
     if (
       client.dataQuotaBytes > 0 &&
