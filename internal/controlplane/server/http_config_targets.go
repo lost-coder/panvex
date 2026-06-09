@@ -104,13 +104,26 @@ func (s *Server) upsertConfigTarget(w http.ResponseWriter, r *http.Request, scop
 // group scope. Missing target → {"sections": {}}.
 func (s *Server) handleGetGroupConfigTarget() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, _, err := s.requireSession(r); err != nil {
+		_, user, err := s.requireSession(r)
+		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
 		id := chi.URLParam(r, "id")
 		if id == "" {
 			writeError(w, http.StatusBadRequest, msgConfigTargetIDReq)
+			return
+		}
+		// R-S-14: scope-check the fleet-group id before any read so an
+		// out-of-scope operator receives the same not-found response the
+		// sibling /fleet-groups/{id} endpoints return (no information
+		// disclosure about a group's existence).
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
+			return
+		}
+		if !scope.IsAllowed(id) {
+			writeError(w, http.StatusNotFound, msgFleetGroupNotFound)
 			return
 		}
 		sections, err := s.loadConfigTargetSections(r, storage.ConfigScopeGroup, id)
@@ -126,13 +139,23 @@ func (s *Server) handleGetGroupConfigTarget() http.HandlerFunc {
 // a fleet group scope.
 func (s *Server) handlePutGroupConfigTarget() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, _, err := s.requireSession(r); err != nil {
+		_, user, err := s.requireSession(r)
+		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
 		id := chi.URLParam(r, "id")
 		if id == "" {
 			writeError(w, http.StatusBadRequest, msgConfigTargetIDReq)
+			return
+		}
+		// R-S-14: writes are gated on scope to mirror reads.
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
+			return
+		}
+		if !scope.IsAllowed(id) {
+			writeError(w, http.StatusNotFound, msgFleetGroupNotFound)
 			return
 		}
 		s.upsertConfigTarget(w, r, storage.ConfigScopeGroup, id)
@@ -145,7 +168,8 @@ func (s *Server) handlePutGroupConfigTarget() http.HandlerFunc {
 // group config.
 func (s *Server) handleGetAgentConfigTarget() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, _, err := s.requireSession(r); err != nil {
+		_, user, err := s.requireSession(r)
+		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -154,10 +178,24 @@ func (s *Server) handleGetAgentConfigTarget() http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, msgConfigTargetIDReq)
 			return
 		}
-		groupID := ""
-		if agent, ok := s.live.Get(id); ok {
-			groupID = agent.FleetGroupID
+		// R-S-14: the agent must exist in the live snapshot and the
+		// operator's fleet scope must cover its group before any read.
+		// Out-of-scope (or unknown) agents get the same not-found
+		// response the sibling /agents/{id} endpoints return.
+		existing, exists := s.live.Get(id)
+		if !exists {
+			writeError(w, http.StatusNotFound, msgAgentNotFound)
+			return
 		}
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
+			return
+		}
+		if !scope.IsAllowed(existing.FleetGroupID) {
+			writeError(w, http.StatusNotFound, msgAgentNotFound)
+			return
+		}
+		groupID := existing.FleetGroupID
 		groupSections := map[string]any{}
 		if groupID != "" {
 			var err error
@@ -183,13 +221,29 @@ func (s *Server) handleGetAgentConfigTarget() http.HandlerFunc {
 // for an agent scope.
 func (s *Server) handlePutAgentConfigTarget() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, _, err := s.requireSession(r); err != nil {
+		_, user, err := s.requireSession(r)
+		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
 		id := chi.URLParam(r, "id")
 		if id == "" {
 			writeError(w, http.StatusBadRequest, msgConfigTargetIDReq)
+			return
+		}
+		// R-S-14: writes are gated on scope to mirror reads — the agent
+		// must exist and its fleet group must be in the operator's scope.
+		existing, exists := s.live.Get(id)
+		if !exists {
+			writeError(w, http.StatusNotFound, msgAgentNotFound)
+			return
+		}
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
+			return
+		}
+		if !scope.IsAllowed(existing.FleetGroupID) {
+			writeError(w, http.StatusNotFound, msgAgentNotFound)
 			return
 		}
 		s.upsertConfigTarget(w, r, storage.ConfigScopeAgent, id)

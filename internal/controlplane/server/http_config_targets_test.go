@@ -95,6 +95,10 @@ func TestConfigTargetAgentPutThenGet(t *testing.T) {
 	srv, cookies := newConfigTargetTestServer(t)
 	const agentID = "agent-override-1"
 
+	// Seed the agent into the live snapshot so the scope-checked handlers
+	// resolve it (admin scope is global, so any fleet group passes).
+	srv.live.ApplySnapshot(agentID, Agent{ID: agentID, NodeName: "node-override"}, nil)
+
 	body := map[string]any{
 		"sections": map[string]any{
 			"censorship": map[string]any{"tls_domain": "override.example"},
@@ -157,6 +161,92 @@ func TestConfigTargetAgentEffectiveMergePrefersOverride(t *testing.T) {
 	}
 	if tlsDomain := nestedString(got.Effective, "censorship", "tls_domain"); tlsDomain != "agent.example" {
 		t.Fatalf("effective.censorship.tls_domain = %q, want %q (override should win)", tlsDomain, "agent.example")
+	}
+}
+
+// loginScopedOperator bootstraps a non-admin operator whose fleet scope
+// is restricted to allowedGroupIDs, logs them in, and returns their
+// session cookies. With explicit scope rows the operator is no longer
+// global, so resolveFleetScope yields a narrow FleetScopeAccess and the
+// scope-checked config-target handlers enforce IsAllowed.
+func loginScopedOperator(t *testing.T, srv *Server, username string, allowedGroupIDs []string) []*http.Cookie {
+	t.Helper()
+	now := time.Date(2026, time.May, 2, 10, 0, 0, 0, time.UTC)
+	user, _, err := srv.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
+		Username: username,
+		Password: "Operator1password",
+		Role:     auth.RoleOperator,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser(operator) error = %v", err)
+	}
+	if err := srv.store.SetUserFleetGroupScopes(context.Background(), user.ID, allowedGroupIDs, "admin", now); err != nil {
+		t.Fatalf("SetUserFleetGroupScopes() error = %v", err)
+	}
+	loginResp := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login", map[string]string{
+		"username": username,
+		"password": "Operator1password",
+	}, nil)
+	if loginResp.Code != http.StatusOK {
+		t.Fatalf("operator login status = %d, want %d", loginResp.Code, http.StatusOK)
+	}
+	return loginResp.Result().Cookies()
+}
+
+// TestConfigTargetGroupDeniesOutOfScopeOperator asserts a fleet-scoped
+// operator whose scope excludes the target group gets the same 404 the
+// sibling /fleet-groups/{id} endpoints return — for both GET and PUT.
+func TestConfigTargetGroupDeniesOutOfScopeOperator(t *testing.T) {
+	srv, _ := newConfigTargetTestServer(t)
+	inScope := seedTestFleetGroup(t, srv.store, "cfg-scope-in", time.Time{})
+	outOfScope := seedTestFleetGroup(t, srv.store, "cfg-scope-out", time.Time{})
+	cookies := loginScopedOperator(t, srv, "scoped-op-group", []string{inScope})
+
+	getResp := performJSONRequest(t, srv, http.MethodGet, "/api/fleet-groups/"+outOfScope+"/config", nil, cookies)
+	if getResp.Code != http.StatusNotFound {
+		t.Fatalf("GET out-of-scope group config status = %d, want %d (body: %s)", getResp.Code, http.StatusNotFound, getResp.Body.String())
+	}
+
+	body := map[string]any{
+		"sections": map[string]any{
+			"censorship": map[string]any{"tls_domain": "x"},
+		},
+	}
+	putResp := performJSONRequest(t, srv, http.MethodPut, "/api/fleet-groups/"+outOfScope+"/config", body, cookies)
+	if putResp.Code != http.StatusNotFound {
+		t.Fatalf("PUT out-of-scope group config status = %d, want %d (body: %s)", putResp.Code, http.StatusNotFound, putResp.Body.String())
+	}
+
+	// The in-scope group remains accessible to the same operator.
+	if resp := performJSONRequest(t, srv, http.MethodGet, "/api/fleet-groups/"+inScope+"/config", nil, cookies); resp.Code != http.StatusOK {
+		t.Fatalf("GET in-scope group config status = %d, want %d (body: %s)", resp.Code, http.StatusOK, resp.Body.String())
+	}
+}
+
+// TestConfigTargetAgentDeniesOutOfScopeOperator asserts a fleet-scoped
+// operator whose scope excludes the agent's fleet group gets the agent
+// not-found response for both GET and PUT.
+func TestConfigTargetAgentDeniesOutOfScopeOperator(t *testing.T) {
+	srv, _ := newConfigTargetTestServer(t)
+	inScope := seedTestFleetGroup(t, srv.store, "cfg-agent-scope-in", time.Time{})
+	outOfScope := seedTestFleetGroup(t, srv.store, "cfg-agent-scope-out", time.Time{})
+	const agentID = "agent-out-of-scope-1"
+	srv.live.ApplySnapshot(agentID, Agent{ID: agentID, NodeName: "node-oos", FleetGroupID: outOfScope}, nil)
+	cookies := loginScopedOperator(t, srv, "scoped-op-agent", []string{inScope})
+
+	getResp := performJSONRequest(t, srv, http.MethodGet, "/api/agents/"+agentID+"/config", nil, cookies)
+	if getResp.Code != http.StatusNotFound {
+		t.Fatalf("GET out-of-scope agent config status = %d, want %d (body: %s)", getResp.Code, http.StatusNotFound, getResp.Body.String())
+	}
+
+	body := map[string]any{
+		"sections": map[string]any{
+			"censorship": map[string]any{"tls_domain": "x"},
+		},
+	}
+	putResp := performJSONRequest(t, srv, http.MethodPut, "/api/agents/"+agentID+"/config", body, cookies)
+	if putResp.Code != http.StatusNotFound {
+		t.Fatalf("PUT out-of-scope agent config status = %d, want %d (body: %s)", putResp.Code, http.StatusNotFound, putResp.Body.String())
 	}
 }
 
