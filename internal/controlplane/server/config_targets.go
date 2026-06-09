@@ -1,5 +1,27 @@
 package server
 
+import "fmt"
+
+// editableConfigSections is the allowlist of top-level Telemt config
+// sections an operator may store via the config-target endpoints. It
+// mirrors the agent's editable contract — any other top-level key
+// (e.g. access/server/network) is rejected with 400 on PUT.
+var editableConfigSections = map[string]struct{}{
+	"general": {}, "timeouts": {}, "censorship": {},
+	"upstreams": {}, "show_link": {}, "dc_overrides": {},
+}
+
+// validateEditableSections returns an error if any top-level key is not
+// in the editable allowlist.
+func validateEditableSections(sections map[string]any) error {
+	for k := range sections {
+		if _, ok := editableConfigSections[k]; !ok {
+			return fmt.Errorf("section not editable: %s", k)
+		}
+	}
+	return nil
+}
+
 // resolveEffectiveConfig merges a group config target with an agent override.
 // The agent override wins per field (deep-merged: nested section tables merge
 // key-by-key; scalars and arrays in the override replace the group value).
