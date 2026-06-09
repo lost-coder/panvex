@@ -4,10 +4,12 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/agent/telemt"
+	"github.com/lost-coder/panvex/internal/configcanon"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
@@ -183,5 +185,23 @@ func TestHandleConfigApplyJobHotChange(t *testing.T) {
 	res := a.handleConfigApplyJob(context.Background(), job, &gatewayrpc.JobResult{})
 	if !res.Success {
 		t.Fatalf("expected success, got %q", res.Message)
+	}
+}
+
+func TestHandleConfigFetchJob(t *testing.T) {
+	sections := map[string]any{"general": map[string]any{"log_level": "debug"}}
+	a := New(Config{}, &fakeTelemtClient{managedConfig: sections, managedRevision: "r7"})
+	res := a.handleConfigFetchJob(context.Background(), &gatewayrpc.JobResult{})
+	if !res.Success {
+		t.Fatalf("expected success, got %q", res.Message)
+	}
+	if !strings.Contains(res.ResultJson, `"log_level":"debug"`) {
+		t.Fatalf("ResultJson missing sections: %q", res.ResultJson)
+	}
+	if !strings.Contains(res.ResultJson, `"revision":"r7"`) {
+		t.Fatalf("ResultJson missing revision: %q", res.ResultJson)
+	}
+	if want := configcanon.Hash(sections); !strings.Contains(res.ResultJson, want) {
+		t.Fatalf("ResultJson missing hash %q: %q", want, res.ResultJson)
 	}
 }

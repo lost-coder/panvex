@@ -57,6 +57,9 @@ const (
 	// the agent (PATCH /v1/config + restart-if-needed + health-gated rollback).
 	// Payload: {"expected_revision":"", "patch":{...}, "health_timeout_s":0}.
 	ActionConfigApply Action = "config.apply"
+	// ActionConfigFetch asks the agent to return the node's current observed
+	// managed config (diagnostic/force-refresh; the push path is primary).
+	ActionConfigFetch Action = "config.fetch"
 )
 
 // IsValidAction reports whether the action is a recognized job type.
@@ -72,7 +75,8 @@ func IsValidAction(a Action) bool {
 		ActionTelemetryRefreshDiagnostics,
 		ActionAgentSelfUpdate,
 		ActionSwitchTransportMode,
-		ActionConfigApply:
+		ActionConfigApply,
+		ActionConfigFetch:
 		return true
 	default:
 		return false

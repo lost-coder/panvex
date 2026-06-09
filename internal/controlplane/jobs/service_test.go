@@ -879,3 +879,9 @@ func TestConfigApplyActionValid(t *testing.T) {
 		t.Fatalf("config.apply must be a valid action")
 	}
 }
+
+func TestConfigFetchActionValid(t *testing.T) {
+	if !IsValidAction(ActionConfigFetch) {
+		t.Fatalf("config.fetch must be a valid action")
+	}
+}
