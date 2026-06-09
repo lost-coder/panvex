@@ -54,7 +54,7 @@ var migratedTables = map[string]string{
 	"runtime_settings":  "raw row-copy: settings registry kv table copied verbatim",
 
 	// --- Telemt config targets (operator-desired config per scope) ---
-	"agent_config_targets": "typed: ListAgentConfigTargets → PutAgentConfigTarget",
+	"agent_config_targets": "typed: ListAgentConfigTargets → UpsertAgentConfigTarget",
 }
 
 // skippedTables: tables intentionally NOT copied, each with its reason.

@@ -60,6 +60,7 @@ type memoryStore struct {
 	certificateAuthority           *storage.CertificateAuthorityRecord
 	integrationProviders           map[string]storage.IntegrationProviderRecord
 	fleetGroupIntegrations         map[string]storage.FleetGroupIntegrationRecord
+	agentConfigTargets             map[string]storage.AgentConfigTargetRecord
 }
 
 func newMemoryStore() *memoryStore {
@@ -93,7 +94,42 @@ func newMemoryStore() *memoryStore {
 		agentFallbackState:             make(map[string]storage.AgentFallbackStateRecord),
 		integrationProviders:           make(map[string]storage.IntegrationProviderRecord),
 		fleetGroupIntegrations:         make(map[string]storage.FleetGroupIntegrationRecord),
+		agentConfigTargets:             make(map[string]storage.AgentConfigTargetRecord),
 	}
+}
+
+func agentConfigTargetKey(scopeType, scopeID string) string {
+	return scopeType + "\x00" + scopeID
+}
+
+func (s *memoryStore) GetAgentConfigTarget(_ context.Context, scopeType, scopeID string) (storage.AgentConfigTargetRecord, error) {
+	rec, ok := s.agentConfigTargets[agentConfigTargetKey(scopeType, scopeID)]
+	if !ok {
+		return storage.AgentConfigTargetRecord{}, storage.ErrNotFound
+	}
+	return rec, nil
+}
+
+func (s *memoryStore) ListAgentConfigTargets(_ context.Context) ([]storage.AgentConfigTargetRecord, error) {
+	out := make([]storage.AgentConfigTargetRecord, 0, len(s.agentConfigTargets))
+	for _, rec := range s.agentConfigTargets {
+		out = append(out, rec)
+	}
+	return out, nil
+}
+
+func (s *memoryStore) UpsertAgentConfigTarget(_ context.Context, rec storage.AgentConfigTargetRecord) error {
+	s.agentConfigTargets[agentConfigTargetKey(rec.ScopeType, rec.ScopeID)] = rec
+	return nil
+}
+
+func (s *memoryStore) DeleteAgentConfigTarget(_ context.Context, scopeType, scopeID string) (int64, error) {
+	key := agentConfigTargetKey(scopeType, scopeID)
+	if _, ok := s.agentConfigTargets[key]; !ok {
+		return 0, nil
+	}
+	delete(s.agentConfigTargets, key)
+	return 1, nil
 }
 
 func (s *memoryStore) UpsertLoginLockout(_ context.Context, record storage.LoginLockoutRecord) error {

@@ -170,6 +170,15 @@ type FleetStore interface {
 	// ListAgents above — deferred from S25 T1 to bound the change footprint.
 	ListInstances(ctx context.Context) ([]InstanceRecord, error)
 	DeleteInstancesByAgent(ctx context.Context, agentID string) error
+	// GetAgentConfigTarget returns the desired config for one scope, or
+	// storage.ErrNotFound when none is set.
+	GetAgentConfigTarget(ctx context.Context, scopeType, scopeID string) (AgentConfigTargetRecord, error)
+	// ListAgentConfigTargets returns all config targets (group + agent scopes).
+	ListAgentConfigTargets(ctx context.Context) ([]AgentConfigTargetRecord, error)
+	// UpsertAgentConfigTarget creates or replaces the config target for a scope.
+	UpsertAgentConfigTarget(ctx context.Context, rec AgentConfigTargetRecord) error
+	// DeleteAgentConfigTarget removes the config target for a scope; returns rows deleted.
+	DeleteAgentConfigTarget(ctx context.Context, scopeType, scopeID string) (int64, error)
 }
 
 // JobStore persists orchestration jobs and per-target result state.
