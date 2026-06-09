@@ -75,6 +75,14 @@ func (c *Client) newRequest(ctx context.Context, method string, path string, bod
 	return request, nil
 }
 
+func decodeJSONBody(body io.Reader, dest any) error {
+	payload, err := io.ReadAll(io.LimitReader(body, maxResponseBodySize))
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(payload, dest)
+}
+
 func decodeSuccessData(body io.Reader, dest any) error {
 	payload, err := io.ReadAll(io.LimitReader(body, maxResponseBodySize))
 	if err != nil {
