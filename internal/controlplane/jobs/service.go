@@ -53,6 +53,10 @@ const (
 	// mode between inbound (agent dials panel) and outbound (panel dials
 	// agent). The job payload carries {"mode":"dial"|"listen","listen_addr":"..."}.
 	ActionSwitchTransportMode Action = "switch_transport_mode"
+	// ActionConfigApply applies a managed-config patch to one node's Telemt via
+	// the agent (PATCH /v1/config + restart-if-needed + health-gated rollback).
+	// Payload: {"expected_revision":"", "patch":{...}, "health_timeout_s":0}.
+	ActionConfigApply Action = "config.apply"
 )
 
 // IsValidAction reports whether the action is a recognized job type.
@@ -67,7 +71,8 @@ func IsValidAction(a Action) bool {
 		ActionClientResetQuota,
 		ActionTelemetryRefreshDiagnostics,
 		ActionAgentSelfUpdate,
-		ActionSwitchTransportMode:
+		ActionSwitchTransportMode,
+		ActionConfigApply:
 		return true
 	default:
 		return false

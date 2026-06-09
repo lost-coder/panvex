@@ -873,3 +873,9 @@ func TestServiceLatestSucceededWithContextReturnsLatestSucceeded(t *testing.T) {
 		t.Fatal("LatestSucceededWithContext(unknown clientID) ok = true, want false")
 	}
 }
+
+func TestConfigApplyActionValid(t *testing.T) {
+	if !IsValidAction(ActionConfigApply) {
+		t.Fatalf("config.apply must be a valid action")
+	}
+}
