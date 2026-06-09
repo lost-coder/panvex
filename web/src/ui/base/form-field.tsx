@@ -2,7 +2,7 @@ import React from "react";
 import { cn } from "@/ui/lib/cn";
 
 export interface FormFieldProps {
-  label: string;
+  label: React.ReactNode;
   description?: string;
   error?: string;
   htmlFor?: string;

@@ -418,8 +418,7 @@
       "confirm": "Apply",
       "cancel": "Cancel",
       "applied": "Applied to {{count}} node(s)",
-      "failed": "Failed on {{agent}}: {{error}}",
-      "nothingToApply": "No configuration to apply"
+      "failed": "Failed on {{agent}}: {{error}}"
     },
     "nodesTitle": "Nodes",
     "noNodes": "No nodes in this group yet"

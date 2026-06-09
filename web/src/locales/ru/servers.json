@@ -428,8 +428,7 @@
       "confirm": "Применить",
       "cancel": "Отмена",
       "applied": "Применено к {{count}} ноде(ам)",
-      "failed": "Ошибка на {{agent}}: {{error}}",
-      "nothingToApply": "Нет конфигурации для применения"
+      "failed": "Ошибка на {{agent}}: {{error}}"
     },
     "nodesTitle": "Ноды",
     "noNodes": "В этой группе пока нет нод"

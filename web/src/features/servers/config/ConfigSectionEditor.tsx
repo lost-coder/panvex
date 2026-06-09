@@ -57,16 +57,21 @@ function FieldInput({
   value,
   onChange,
   disabled,
+  id,
 }: Readonly<{
   field: ConfigField;
   value: unknown;
   onChange: (path: string, value: unknown) => void;
   disabled?: boolean | undefined;
+  // Injected by FormField via cloneElement so the generated label's
+  // htmlFor resolves to the real focusable control (a11y association).
+  id?: string | undefined;
 }>) {
   switch (field.type) {
     case "boolean":
       return (
         <Toggle
+          id={id}
           checked={value === true}
           onChange={(checked) => onChange(field.path, checked)}
           disabled={disabled ?? false}
@@ -75,6 +80,7 @@ function FieldInput({
     case "number":
       return (
         <Input
+          id={id}
           type="number"
           value={value === undefined || value === null ? "" : String(value)}
           disabled={disabled}
@@ -87,6 +93,7 @@ function FieldInput({
     case "select":
       return (
         <Select
+          id={id}
           value={typeof value === "string" ? value : ""}
           disabled={disabled}
           onChange={(v) => onChange(field.path, v)}
@@ -96,6 +103,7 @@ function FieldInput({
     case "string[]":
       return (
         <Input
+          id={id}
           type="text"
           value={listToText(value)}
           disabled={disabled}
@@ -106,6 +114,7 @@ function FieldInput({
     default:
       return (
         <Input
+          id={id}
           type="text"
           value={typeof value === "string" ? value : ""}
           disabled={disabled}
@@ -132,18 +141,21 @@ export function ConfigSectionEditor({
           </h3>
           <div className="flex flex-col gap-5">
             {fields.map((field) => (
-              <FormField key={field.path} label={t(field.labelKey)}>
-                <div className="flex items-center gap-3">
-                  <div className="flex-1">
-                    <FieldInput
-                      field={field}
-                      value={values[field.path]}
-                      onChange={onChange}
-                      disabled={disabled}
-                    />
-                  </div>
-                  <ApplyModeBadge field={field} />
-                </div>
+              <FormField
+                key={field.path}
+                label={
+                  <span className="inline-flex items-center gap-2">
+                    {t(field.labelKey)}
+                    <ApplyModeBadge field={field} />
+                  </span>
+                }
+              >
+                <FieldInput
+                  field={field}
+                  value={values[field.path]}
+                  onChange={onChange}
+                  disabled={disabled}
+                />
               </FormField>
             ))}
           </div>

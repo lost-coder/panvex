@@ -48,6 +48,17 @@ describe("unflattenPaths", () => {
     expect(nested).toEqual({ general: { log_level: "info" } });
   });
 
+  it("drops forbidden/unknown sections, keeping only curated paths", () => {
+    // Locks the section-allowlist invariant: a path in a non-curated
+    // section (e.g. "access") must never round-trip into the PUT body.
+    const nested = unflattenPaths({
+      "access.users": { x: 1 },
+      "censorship.tls_domain": "a",
+    });
+    expect(nested).toEqual({ censorship: { tls_domain: "a" } });
+    expect(nested).not.toHaveProperty("access");
+  });
+
   it("omits empty values so blank overrides are not written", () => {
     const nested = unflattenPaths({
       "general.log_level": "",

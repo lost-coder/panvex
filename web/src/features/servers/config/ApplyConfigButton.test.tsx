@@ -84,4 +84,19 @@ describe("ApplyConfigButton", () => {
     expect(toastApi.error).toHaveBeenCalledWith("Failed on node-1: boom");
     expect(toastApi.success).not.toHaveBeenCalled();
   });
+
+  it("shows the error toast (not success) on the partial-failure path", async () => {
+    // applied:0 with a non-empty failed/error must surface as an error
+    // toast, never the success toast.
+    const onApply = vi
+      .fn()
+      .mockResolvedValue({ applied: 0, failed: "agent-x", error: "boom" } satisfies ApplyResult);
+    render(
+      <ApplyConfigButton changedPaths={["general.log_level"]} onApply={onApply} />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Apply to node" }));
+    await waitFor(() => expect(toastApi.error).toHaveBeenCalledTimes(1));
+    expect(toastApi.error).toHaveBeenCalledWith("Failed on agent-x: boom");
+    expect(toastApi.success).not.toHaveBeenCalled();
+  });
 });

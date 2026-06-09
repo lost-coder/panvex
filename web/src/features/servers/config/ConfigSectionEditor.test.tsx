@@ -72,6 +72,20 @@ describe("ConfigSectionEditor", () => {
     ]);
   });
 
+  it("associates each field label with its focusable control (a11y)", () => {
+    render(<ConfigSectionEditor values={{}} onChange={() => {}} />);
+    // The label now carries the field text + apply-mode badge, and its
+    // htmlFor resolves to the real control (not the old wrapper <div>).
+    // getByLabelText matches on the accessible name (label text content),
+    // so "Log level" resolves the select even though "Live" is appended.
+    const select = screen.getByLabelText(/Log level/);
+    // The control carries a generated id and the matching <label htmlFor>.
+    expect(select.id).toBeTruthy();
+    const label = document.querySelector(`label[for="${select.id}"]`);
+    expect(label).not.toBeNull();
+    expect(label).toHaveTextContent("Log level");
+  });
+
   it("disables inputs when disabled is set", () => {
     render(<ConfigSectionEditor values={{}} onChange={() => {}} disabled />);
     const inputs = screen.getAllByRole("textbox");
