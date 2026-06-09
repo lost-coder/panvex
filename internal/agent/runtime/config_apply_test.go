@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/agent/telemt"
+	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
 func TestBackupAndRestoreConfig(t *testing.T) {
@@ -141,5 +142,15 @@ func TestConfigApplyEmptyPatchFails(t *testing.T) {
 		configApplyPayload{Patch: nil})
 	if res.success {
 		t.Fatalf("expected failure on empty patch")
+	}
+}
+
+func TestHandleConfigApplyJobHotChange(t *testing.T) {
+	path := writeTempConfig(t)
+	a := New(Config{TelemtConfigPath: path}, &fakeTelemtClient{})
+	job := &gatewayrpc.JobCommand{Action: "config.apply", PayloadJson: `{"patch":{"general":{"log_level":"debug"}}}`}
+	res := a.handleConfigApplyJob(context.Background(), job, &gatewayrpc.JobResult{})
+	if !res.Success {
+		t.Fatalf("expected success, got %q", res.Message)
 	}
 }

@@ -49,6 +49,9 @@ type telemtClient interface {
 	DeleteClient(context.Context, string) error
 	ResetUserQuota(context.Context, string) (telemt.ResetUserQuotaResult, error)
 	InvalidateSlowDataCache()
+	PatchConfig(ctx context.Context, patch map[string]any, expectedRevision string) (telemt.PatchConfigResult, error)
+	GetManagedConfig(ctx context.Context) (map[string]any, string, error)
+	HealthReady(ctx context.Context) (bool, string, error)
 }
 
 // Config describes the control-plane identity reported by the agent.
@@ -776,6 +779,8 @@ func (a *Agent) HandleJob(ctx context.Context, job *gatewayrpc.JobCommand, obser
 		return a.handleSelfUpdateJob(ctx, job, result)
 	case "switch_transport_mode":
 		return a.handleSwitchTransportModeJob(result, job)
+	case "config.apply":
+		return a.handleConfigApplyJob(ctx, job, result)
 	default:
 		result.Message = fmt.Sprintf("unsupported action %s", job.GetAction())
 		return result

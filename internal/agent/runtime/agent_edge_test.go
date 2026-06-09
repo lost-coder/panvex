@@ -62,6 +62,15 @@ func (e *errTelemt) InvalidateSlowDataCache() {}
 func (e *errTelemt) ResetUserQuota(context.Context, string) (telemt.ResetUserQuotaResult, error) {
 	return telemt.ResetUserQuotaResult{}, nil
 }
+func (e *errTelemt) PatchConfig(context.Context, map[string]any, string) (telemt.PatchConfigResult, error) {
+	return telemt.PatchConfigResult{}, nil
+}
+func (e *errTelemt) GetManagedConfig(context.Context) (map[string]any, string, error) {
+	return nil, "", nil
+}
+func (e *errTelemt) HealthReady(context.Context) (bool, string, error) {
+	return true, "", nil
+}
 
 // TestBuildUsageSnapshotPropagatesTelemtError verifies that when Telemt
 // is unreachable the usage path returns the error WITHOUT advancing the

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/agent/telemt"
+	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
 // backupConfigFile copies path to "<path>.panvex.bak" and returns the backup
@@ -157,6 +158,36 @@ func waitHealthy(ctx context.Context, d configApplyDeps) bool {
 		}
 	}
 	return false
+}
+
+// handleConfigApplyJob runs a config.apply job against the local Telemt instance.
+func (a *Agent) handleConfigApplyJob(ctx context.Context, job *gatewayrpc.JobCommand, result *gatewayrpc.JobResult) *gatewayrpc.JobResult {
+	payload, err := parseConfigApplyPayload(job.GetPayloadJson())
+	if err != nil {
+		result.Message = fmt.Sprintf("config.apply: invalid payload: %v", err)
+		return result
+	}
+	out := runConfigApply(ctx, configApplyDeps{
+		telemt:     a.telemt,
+		restarter:  a.restarter,
+		configPath: a.resolveTelemtConfigPath(ctx),
+	}, payload)
+	result.Success = out.success
+	result.Message = out.message
+	if out.revision != "" {
+		result.ResultJson = marshalConfigApplyResult(out.revision)
+	}
+	return result
+}
+
+func marshalConfigApplyResult(revision string) string {
+	b, err := json.Marshal(struct {
+		Revision string `json:"revision"`
+	}{Revision: revision})
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 // parseConfigApplyPayload unmarshals a config.apply job payload.

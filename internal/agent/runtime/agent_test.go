@@ -826,6 +826,18 @@ func (c *fakeTelemtClient) InvalidateSlowDataCache() {
 	c.invalidateSlowDataCalls++
 }
 
+func (c *fakeTelemtClient) PatchConfig(context.Context, map[string]any, string) (telemt.PatchConfigResult, error) {
+	return telemt.PatchConfigResult{}, nil
+}
+
+func (c *fakeTelemtClient) GetManagedConfig(context.Context) (map[string]any, string, error) {
+	return nil, "", nil
+}
+
+func (c *fakeTelemtClient) HealthReady(context.Context) (bool, string, error) {
+	return true, "", nil
+}
+
 func (c *fakeTelemtClient) FetchSystemInfo(context.Context) (telemt.SystemInfo, error) {
 	return telemt.SystemInfo{}, nil
 }
