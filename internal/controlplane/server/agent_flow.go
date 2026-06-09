@@ -113,6 +113,8 @@ type instanceSnapshot struct {
 	Name              string
 	Version           string
 	ConfigFingerprint string
+	ManagedConfigHash string
+	ManagedConfigJSON string
 	Connections       int
 	ReadOnly          bool
 }

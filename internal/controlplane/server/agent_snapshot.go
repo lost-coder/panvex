@@ -106,12 +106,32 @@ func instancesFromSnapshot(snapshot agentSnapshot) []Instance {
 			Name:              instance.Name,
 			Version:           instance.Version,
 			ConfigFingerprint: instance.ConfigFingerprint,
+			ManagedConfigHash: instance.ManagedConfigHash,
+			ManagedConfigJSON: instance.ManagedConfigJSON,
 			Connections:       instance.Connections,
 			ReadOnly:          instance.ReadOnly,
 			UpdatedAt:         snapshot.ObservedAt.UTC(),
 		})
 	}
 	return instances
+}
+
+// carryForwardObservedConfig keeps the last non-empty ManagedConfigJSON when the
+// agent omitted it (delta-gated: the full JSON is only sent on the snapshot where
+// the observed config changed, empty otherwise). Matches instances by ID. The
+// hash is sent every snapshot, so it is not carried forward.
+func carryForwardObservedConfig(next []Instance, prev []Instance) {
+	byID := make(map[string]Instance, len(prev))
+	for _, p := range prev {
+		byID[p.ID] = p
+	}
+	for i := range next {
+		if next[i].ManagedConfigJSON == "" {
+			if p, ok := byID[next[i].ID]; ok {
+				next[i].ManagedConfigJSON = p.ManagedConfigJSON
+			}
+		}
+	}
 }
 
 // applyFallbackStateTransition classifies the agent's operating mode from
@@ -262,6 +282,11 @@ func (s *Server) applyAgentSnapshot(ctx context.Context, snapshot agentSnapshot)
 		instances = s.live.InstancesForAgent(snapshot.AgentID)
 	} else {
 		instances = instancesFromSnapshot(snapshot)
+		// Observed managed config is delta-gated: the agent sends the full JSON
+		// only on the snapshot where it changed (empty otherwise). Carry forward
+		// the last non-empty JSON from the previously stored instances so the
+		// cached observed config persists between changes.
+		carryForwardObservedConfig(instances, s.live.InstancesForAgent(snapshot.AgentID))
 	}
 	s.live.ApplySnapshot(snapshot.AgentID, agent, instances)
 	s.commitClientSnapshotsLocked(ctx, snapshot)
