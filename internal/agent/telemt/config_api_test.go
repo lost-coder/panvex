@@ -122,3 +122,19 @@ func TestPatchConfigRevisionConflict409(t *testing.T) {
 		t.Fatalf("want ErrConfigRevisionConflict, got %v", err)
 	}
 }
+
+func TestPatchConfigReadOnly403(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"ok":false,"error":{"code":"read_only"}}`))
+	}))
+	defer srv.Close()
+	c, err := NewClient(Config{BaseURL: srv.URL, Authorization: "test-token"}, srv.Client())
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	_, err = c.PatchConfig(context.Background(), map[string]any{"censorship": map[string]any{}}, "")
+	if !errors.Is(err, ErrConfigEditReadOnly) {
+		t.Fatalf("want ErrConfigEditReadOnly, got %v", err)
+	}
+}

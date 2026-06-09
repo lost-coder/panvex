@@ -167,11 +167,16 @@ func (a *Agent) handleConfigApplyJob(ctx context.Context, job *gatewayrpc.JobCom
 		result.Message = fmt.Sprintf("config.apply: invalid payload: %v", err)
 		return result
 	}
-	out := runConfigApply(ctx, configApplyDeps{
+	deps := configApplyDeps{
 		telemt:     a.telemt,
 		restarter:  a.restarter,
 		configPath: a.resolveTelemtConfigPath(ctx),
-	}, payload)
+	}
+	if payload.HealthTimeoutSec > 0 {
+		deps.healthInterval = time.Second
+		deps.healthAttempts = payload.HealthTimeoutSec
+	}
+	out := runConfigApply(ctx, deps, payload)
 	result.Success = out.success
 	result.Message = out.message
 	if out.revision != "" {

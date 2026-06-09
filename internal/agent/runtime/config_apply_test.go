@@ -136,6 +136,37 @@ func TestConfigApplyRestartRequiredButNoRestarter(t *testing.T) {
 	}
 }
 
+func TestConfigApplyPreflightUnhealthyAborts(t *testing.T) {
+	path := writeTempConfig(t)
+	tc := &fakeTelemt{healthSeq: []bool{false}} // preflight sees unhealthy
+	rest := &fakeRestarter{}
+	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, restarter: rest, configPath: path},
+		configApplyPayload{Patch: map[string]any{"censorship": map[string]any{"tls_domain": "b"}}})
+	if res.success {
+		t.Fatalf("expected failure when Telemt is unhealthy at preflight")
+	}
+	if tc.patchedWith != nil {
+		t.Fatalf("patch must NOT be attempted when preflight fails")
+	}
+	if rest.restarts != 0 {
+		t.Fatalf("no restart expected, got %d", rest.restarts)
+	}
+}
+
+func TestConfigApplyRevisionConflictNoRestart(t *testing.T) {
+	path := writeTempConfig(t)
+	tc := &fakeTelemt{patchErr: telemt.ErrConfigRevisionConflict, healthSeq: []bool{true}}
+	rest := &fakeRestarter{}
+	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, restarter: rest, configPath: path},
+		configApplyPayload{ExpectedRevision: "stale", Patch: map[string]any{"censorship": map[string]any{"tls_domain": "b"}}})
+	if res.success {
+		t.Fatalf("expected failure on revision conflict")
+	}
+	if rest.restarts != 0 {
+		t.Fatalf("no restart on patch error, got %d", rest.restarts)
+	}
+}
+
 func TestConfigApplyEmptyPatchFails(t *testing.T) {
 	path := writeTempConfig(t)
 	res := runConfigApply(context.Background(), configApplyDeps{telemt: &fakeTelemt{}, configPath: path},
