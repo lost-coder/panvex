@@ -561,3 +561,21 @@ type ServerLoadHourlyRecord struct {
 	DCCoverageAvg  float64
 	SampleCount    int
 }
+
+// AgentConfigTargetRecord is the operator's desired Telemt config for one scope.
+// ScopeType is ConfigScopeGroup (ScopeID = fleet group id) or ConfigScopeAgent
+// (ScopeID = agent id). SectionsJSON is a sparse JSON object of editable config
+// sections (general/timeouts/censorship/upstreams/show_link/dc_overrides).
+type AgentConfigTargetRecord struct {
+	ScopeType    string
+	ScopeID      string
+	SectionsJSON string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+// Config target scope kinds.
+const (
+	ConfigScopeGroup = "group"
+	ConfigScopeAgent = "agent"
+)
