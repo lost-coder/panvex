@@ -55,7 +55,11 @@ const (
 	ActionSwitchTransportMode Action = "switch_transport_mode"
 	// ActionConfigApply applies a managed-config patch to one node's Telemt via
 	// the agent (PATCH /v1/config + restart-if-needed + health-gated rollback).
-	// Payload: {"expected_revision":"", "patch":{...}, "health_timeout_s":0}.
+	// Payload: {"patch":{...}, "health_timeout_s":0}. The agent also accepts an
+	// optional "expected_revision" (If-Match optimistic concurrency, surfaced as
+	// a 409 conflict), but the control-plane does not populate it yet — applies
+	// are currently unconditional. Wiring the node's live Telemt revision through
+	// is a follow-up (see the config-editing spec).
 	ActionConfigApply Action = "config.apply"
 	// ActionConfigFetch asks the agent to return the node's current observed
 	// managed config (diagnostic/force-refresh; the push path is primary).
