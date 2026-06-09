@@ -15,7 +15,7 @@ import (
 // backupConfigFile copies path to "<path>.panvex.bak" and returns the backup
 // path. Used before a config patch so a failed restart can be rolled back.
 func backupConfigFile(path string) (string, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // G304: agent-configured Telemt config path, not untrusted input
 	if err != nil {
 		return "", fmt.Errorf("read config for backup: %w", err)
 	}
@@ -28,7 +28,7 @@ func backupConfigFile(path string) (string, error) {
 
 // restoreConfigFile atomically copies backup back over path.
 func restoreConfigFile(backup, path string) error {
-	data, err := os.ReadFile(backup)
+	data, err := os.ReadFile(backup) //nolint:gosec // G304: backup of the agent-configured Telemt config, not untrusted input
 	if err != nil {
 		return fmt.Errorf("read backup: %w", err)
 	}
@@ -44,17 +44,17 @@ func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 		return err
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName) // no-op once renamed
+	defer func() { _ = os.Remove(tmpName) }() // no-op once renamed
 	if err := tmp.Chmod(perm); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return err
 	}
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return err
 	}
 	if err := tmp.Sync(); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return err
 	}
 	if err := tmp.Close(); err != nil {

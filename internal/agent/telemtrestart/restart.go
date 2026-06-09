@@ -29,7 +29,7 @@ type ExecRunner struct{}
 
 // Run executes name+args, attaching combined output to any error.
 func (ExecRunner) Run(ctx context.Context, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec // G204: operator-configured restart strategy (systemd/docker/command), not untrusted input
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, strings.TrimSpace(string(out)))
