@@ -918,6 +918,18 @@ func (c *fakeInitialSyncTelemtClient) ResetUserQuota(context.Context, string) (t
 	return telemt.ResetUserQuotaResult{}, nil
 }
 
+func (c *fakeInitialSyncTelemtClient) PatchConfig(context.Context, map[string]any, string) (telemt.PatchConfigResult, error) {
+	return telemt.PatchConfigResult{}, nil
+}
+
+func (c *fakeInitialSyncTelemtClient) GetManagedConfig(context.Context) (map[string]any, string, error) {
+	return nil, "", nil
+}
+
+func (c *fakeInitialSyncTelemtClient) HealthReady(context.Context) (bool, string, error) {
+	return true, "", nil
+}
+
 type fakeDiagnosticsRefreshTelemtClient struct {
 	state                     telemt.RuntimeState
 	invalidateSlowDataCalls   int
@@ -969,6 +981,18 @@ func (c *fakeDiagnosticsRefreshTelemtClient) InvalidateSlowDataCache() {
 
 func (c *fakeDiagnosticsRefreshTelemtClient) ResetUserQuota(context.Context, string) (telemt.ResetUserQuotaResult, error) {
 	return telemt.ResetUserQuotaResult{}, nil
+}
+
+func (c *fakeDiagnosticsRefreshTelemtClient) PatchConfig(context.Context, map[string]any, string) (telemt.PatchConfigResult, error) {
+	return telemt.PatchConfigResult{}, nil
+}
+
+func (c *fakeDiagnosticsRefreshTelemtClient) GetManagedConfig(context.Context) (map[string]any, string, error) {
+	return nil, "", nil
+}
+
+func (c *fakeDiagnosticsRefreshTelemtClient) HealthReady(context.Context) (bool, string, error) {
+	return true, "", nil
 }
 
 func (r *fakeCertificateRenewer) RenewCertificate(_ context.Context, request *gatewayrpc.RenewCertificateRequest, _ ...grpc.CallOption) (*gatewayrpc.RenewCertificateResponse, error) {

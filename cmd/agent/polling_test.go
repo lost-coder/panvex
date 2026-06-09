@@ -41,6 +41,15 @@ func (failingTelemt) InvalidateSlowDataCache()                   {}
 func (failingTelemt) ResetUserQuota(context.Context, string) (telemt.ResetUserQuotaResult, error) {
 	return telemt.ResetUserQuotaResult{}, nil
 }
+func (failingTelemt) PatchConfig(context.Context, map[string]any, string) (telemt.PatchConfigResult, error) {
+	return telemt.PatchConfigResult{}, nil
+}
+func (failingTelemt) GetManagedConfig(context.Context) (map[string]any, string, error) {
+	return nil, "", nil
+}
+func (failingTelemt) HealthReady(context.Context) (bool, string, error) {
+	return true, "", nil
+}
 
 func TestRuntimePollEmitsUnreachableAfterThreshold(t *testing.T) {
 	agent := runtime.New(runtime.Config{AgentID: "agent-1", NodeName: "n"}, failingTelemt{})
@@ -163,4 +172,13 @@ func (r *recoveringTelemt) DeleteClient(context.Context, string) error { return 
 func (r *recoveringTelemt) InvalidateSlowDataCache()                   {}
 func (r *recoveringTelemt) ResetUserQuota(context.Context, string) (telemt.ResetUserQuotaResult, error) {
 	return telemt.ResetUserQuotaResult{}, nil
+}
+func (r *recoveringTelemt) PatchConfig(context.Context, map[string]any, string) (telemt.PatchConfigResult, error) {
+	return telemt.PatchConfigResult{}, nil
+}
+func (r *recoveringTelemt) GetManagedConfig(context.Context) (map[string]any, string, error) {
+	return nil, "", nil
+}
+func (r *recoveringTelemt) HealthReady(context.Context) (bool, string, error) {
+	return true, "", nil
 }
