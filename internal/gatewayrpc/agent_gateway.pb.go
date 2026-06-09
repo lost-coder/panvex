@@ -272,6 +272,14 @@ type InstanceSnapshot struct {
 	ConfigFingerprint string                 `protobuf:"bytes,4,opt,name=config_fingerprint,json=configFingerprint,proto3" json:"config_fingerprint,omitempty"`
 	Connections       int32                  `protobuf:"varint,5,opt,name=connections,proto3" json:"connections,omitempty"`
 	ReadOnly          bool                   `protobuf:"varint,6,opt,name=read_only,json=readOnly,proto3" json:"read_only,omitempty"`
+	// Canonical SHA-256 of the node's current editable config sections
+	// (general/timeouts/censorship/upstreams/show_link/dc_overrides). Sent every
+	// snapshot as a cheap drift change-detector; empty when local Telemt is too old.
+	ManagedConfigHash string `protobuf:"bytes,7,opt,name=managed_config_hash,json=managedConfigHash,proto3" json:"managed_config_hash,omitempty"`
+	// Full editable config sections as canonical JSON, sent ONLY when
+	// managed_config_hash changed since the agent last sent it (delta-gated); empty
+	// otherwise. The control plane caches the last non-empty value per agent.
+	ManagedConfigJson string `protobuf:"bytes,8,opt,name=managed_config_json,json=managedConfigJson,proto3" json:"managed_config_json,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -346,6 +354,20 @@ func (x *InstanceSnapshot) GetReadOnly() bool {
 		return x.ReadOnly
 	}
 	return false
+}
+
+func (x *InstanceSnapshot) GetManagedConfigHash() string {
+	if x != nil {
+		return x.ManagedConfigHash
+	}
+	return ""
+}
+
+func (x *InstanceSnapshot) GetManagedConfigJson() string {
+	if x != nil {
+		return x.ManagedConfigJson
+	}
+	return ""
 }
 
 type ClientUsageSnapshot struct {
@@ -3797,14 +3819,16 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\x0efleet_group_id\x18\x04 \x01(\tR\ffleetGroupId\x12\x18\n" +
 	"\aversion\x18\x05 \x01(\tR\aversion\x12\x1b\n" +
 	"\tread_only\x18\x06 \x01(\bR\breadOnly\x12(\n" +
-	"\x10observed_at_unix\x18\a \x01(\x03R\x0eobservedAtUnixJ\x04\b\x03\x10\x04\"\xbe\x01\n" +
+	"\x10observed_at_unix\x18\a \x01(\x03R\x0eobservedAtUnixJ\x04\b\x03\x10\x04\"\x9e\x02\n" +
 	"\x10InstanceSnapshot\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x12-\n" +
 	"\x12config_fingerprint\x18\x04 \x01(\tR\x11configFingerprint\x12 \n" +
 	"\vconnections\x18\x05 \x01(\x05R\vconnections\x12\x1b\n" +
-	"\tread_only\x18\x06 \x01(\bR\breadOnly\"\xf0\x02\n" +
+	"\tread_only\x18\x06 \x01(\bR\breadOnly\x12.\n" +
+	"\x13managed_config_hash\x18\a \x01(\tR\x11managedConfigHash\x12.\n" +
+	"\x13managed_config_json\x18\b \x01(\tR\x11managedConfigJson\"\xf0\x02\n" +
 	"\x13ClientUsageSnapshot\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12.\n" +
 	"\x13traffic_delta_bytes\x18\x02 \x01(\x04R\x11trafficDeltaBytes\x12&\n" +
