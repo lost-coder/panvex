@@ -421,6 +421,7 @@
       "failed": "Failed on {{agent}}: {{error}}",
       "nothingToApply": "No configuration to apply"
     },
-    "nodesTitle": "Nodes"
+    "nodesTitle": "Nodes",
+    "noNodes": "No nodes in this group yet"
   }
 }

@@ -431,6 +431,7 @@
       "failed": "Ошибка на {{agent}}: {{error}}",
       "nothingToApply": "Нет конфигурации для применения"
     },
-    "nodesTitle": "Ноды"
+    "nodesTitle": "Ноды",
+    "noNodes": "В этой группе пока нет нод"
   }
 }

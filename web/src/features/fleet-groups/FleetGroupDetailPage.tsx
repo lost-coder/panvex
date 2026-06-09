@@ -13,6 +13,7 @@ import {
 import type { FleetGroupEntry } from "@/shared/api/api";
 
 import { FleetGroupFormSheet, type FleetGroupFormData } from "./FleetGroupFormSheet";
+import { GroupConfigSection } from "./GroupConfigSection";
 
 interface FleetGroupDetailPageProps {
   group: FleetGroupEntry;
@@ -125,6 +126,8 @@ export function FleetGroupDetailPage({
             <p className="text-xs text-fg-muted">{t("detail.noIntegrations")}</p>
           )}
         </section>
+
+        <GroupConfigSection groupId={group.id} />
       </div>
 
       <Sheet open={editOpen} onOpenChange={(open) => { if (!open) onCancelEdit(); }}>
