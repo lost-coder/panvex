@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/agent/telemt"
+	"github.com/lost-coder/panvex/internal/agent/telemtrestart"
 	"github.com/lost-coder/panvex/internal/agent/updater"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
@@ -27,6 +28,14 @@ const jobActionRotateSecret = "client.rotate_secret"
 // payload (only the username) and its Telemt endpoint may be absent on
 // older Telemt builds — see handleClientResetQuotaJob.
 const jobActionResetQuota = "client.reset_quota"
+
+// configRestarter restarts the local Telemt process. Implemented by
+// *telemtrestart.Restarter; nil when no (valid) strategy is configured, in which
+// case restart-required config changes are refused.
+type configRestarter interface {
+	Verify(ctx context.Context) error
+	Restart(ctx context.Context) error
+}
 
 type telemtClient interface {
 	FetchRuntimeState(context.Context) (telemt.RuntimeState, error)
@@ -49,6 +58,10 @@ type Config struct {
 	FleetGroupID     string
 	Version          string
 	TelemtConfigPath string
+	// TelemtRestart is the restart strategy for the local Telemt process,
+	// e.g. "systemd:telemt.service", "docker:telemt", or "command:<argv>".
+	// Empty means restart-required config changes are refused on this node.
+	TelemtRestart string
 	// InitialUsageSeq is the last snapshot sequence number persisted from a
 	// previous agent incarnation. On fresh agents it is zero. See P2-LOG-06.
 	InitialUsageSeq uint64
@@ -85,9 +98,10 @@ type completedJobRecord struct {
 
 // Agent builds snapshots and executes control-plane commands against local Telemt.
 type Agent struct {
-	config Config
-	telemt telemtClient
-	mu     sync.RWMutex
+	config    Config
+	telemt    telemtClient
+	restarter configRestarter
+	mu        sync.RWMutex
 
 	clientNames                        map[string]string
 	lastOctets                         map[string]uint64
@@ -122,7 +136,7 @@ type Agent struct {
 
 // New constructs a runtime agent bound to one local Telemt client.
 func New(config Config, client telemtClient) *Agent {
-	return &Agent{
+	a := &Agent{
 		config:                config,
 		telemt:                client,
 		clientNames:           make(map[string]string),
@@ -134,6 +148,24 @@ func New(config Config, client telemtClient) *Agent {
 		usageSeq:              config.InitialUsageSeq,
 		persistUsageSeq:       config.PersistUsageSeq,
 	}
+	a.restarter = buildRestarter(config.TelemtRestart)
+	return a
+}
+
+// buildRestarter parses the restart strategy. Returns nil (an untyped nil
+// interface, so `restarter == nil` holds) when unset or invalid; an invalid
+// strategy is logged so the operator can fix it.
+func buildRestarter(spec string) configRestarter {
+	if strings.TrimSpace(spec) == "" {
+		return nil
+	}
+	r, err := telemtrestart.Parse(spec, telemtrestart.ExecRunner{})
+	if err != nil {
+		slog.Warn("invalid telemt restart strategy; restart-required config changes will be refused",
+			"strategy", spec, "error", err)
+		return nil
+	}
+	return r
 }
 
 // UsageSeq returns the last monotonic sequence number emitted on a client-usage
