@@ -893,6 +893,18 @@ func (c *fakeRuntimeReloadClient) FetchRuntimeState(context.Context) (telemt.Run
 	return telemt.RuntimeState{}, nil
 }
 
+func (c *fakeRuntimeReloadClient) PatchConfig(context.Context, map[string]any, string) (telemt.PatchConfigResult, error) {
+	return telemt.PatchConfigResult{}, nil
+}
+
+func (c *fakeRuntimeReloadClient) GetManagedConfig(context.Context) (map[string]any, string, error) {
+	return nil, "", nil
+}
+
+func (c *fakeRuntimeReloadClient) HealthReady(context.Context) (bool, string, error) {
+	return true, "", nil
+}
+
 func (c *fakeRuntimeReloadClient) FetchClientUsageFromMetrics(context.Context) (telemt.ClientUsageMetricsSnapshot, error) {
 	return telemt.ClientUsageMetricsSnapshot{}, nil
 }
