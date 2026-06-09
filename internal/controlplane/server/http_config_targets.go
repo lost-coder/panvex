@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -90,7 +91,14 @@ func driftView(effective, observed map[string]any, hasObserved bool) configDrift
 // returning an empty map when no target exists. A non-NotFound store
 // error is propagated to the caller.
 func (s *Server) loadConfigTargetSections(r *http.Request, scopeType, scopeID string) (map[string]any, error) {
-	rec, err := s.store.GetAgentConfigTarget(r.Context(), scopeType, scopeID)
+	return s.loadConfigTargetSectionsCtx(r.Context(), scopeType, scopeID)
+}
+
+// loadConfigTargetSectionsCtx is the context-only form of
+// loadConfigTargetSections, usable from non-HTTP-handler call sites (e.g.
+// the apply fan-out) that only have a context.
+func (s *Server) loadConfigTargetSectionsCtx(ctx context.Context, scopeType, scopeID string) (map[string]any, error) {
+	rec, err := s.store.GetAgentConfigTarget(ctx, scopeType, scopeID)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			return map[string]any{}, nil
@@ -267,13 +275,13 @@ func (s *Server) handleGetAgentConfigTarget() http.HandlerFunc {
 		groupSections := map[string]any{}
 		if groupID != "" {
 			var err error
-			groupSections, err = s.loadConfigTargetSections(r, storage.ConfigScopeGroup, groupID)
+			groupSections, err = s.loadConfigTargetSectionsCtx(r.Context(), storage.ConfigScopeGroup, groupID)
 			if err != nil {
 				writeErrorLogged(r.Context(), w, http.StatusInternalServerError, msgConfigTargetReadFailed, err)
 				return
 			}
 		}
-		overrideSections, err := s.loadConfigTargetSections(r, storage.ConfigScopeAgent, id)
+		overrideSections, err := s.loadConfigTargetSectionsCtx(r.Context(), storage.ConfigScopeAgent, id)
 		if err != nil {
 			writeErrorLogged(r.Context(), w, http.StatusInternalServerError, msgConfigTargetReadFailed, err)
 			return
