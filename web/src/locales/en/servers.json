@@ -409,6 +409,7 @@
     },
     "save": "Save",
     "saved": "Configuration saved",
+    "unsavedHint": "Save before applying",
     "apply": {
       "button": "Apply to node",
       "buttonGroup": "Apply to group",

@@ -24,6 +24,7 @@ import { MeDownHero } from "./components/MeDownHero";
 import { TelemtUnreachableBanner } from "./components/TelemtUnreachableBanner";
 import { BadConnectionsCard } from "./components/BadConnectionsCard";
 import { GatesPanel } from "./components/GatesPanel";
+import { Fold } from "./components/Fold";
 import { UpstreamsList } from "./components/UpstreamsList";
 import { DcDetailSheet } from "./components/DcDetailSheet";
 import { RenameDialog } from "./components/RenameDialog";
@@ -53,6 +54,9 @@ const MePoolTab = lazy(() =>
 );
 const EventsTab = lazy(() =>
   import("./tabs/EventsTab").then((m) => ({ default: m.EventsTab })),
+);
+const ConfigTab = lazy(() =>
+  import("./tabs/ConfigTab").then((m) => ({ default: m.ConfigTab })),
 );
 
 function TabSuspenseFallback() {
@@ -307,6 +311,14 @@ export function ServerDetailPage({
     ),
     [server],
   );
+  const configContent = useMemo(
+    () => (
+      <Suspense fallback={<TabSuspenseFallback />}>
+        <ConfigTab server={server} />
+      </Suspense>
+    ),
+    [server],
+  );
 
   // Mobile tab content for gates + upstreams — mirrors the desktop
   // "one card, two columns" composition but stacks vertically so it
@@ -344,8 +356,9 @@ export function ServerDetailPage({
       { id: "me-pool", label: t("detail.folds.mePool"), content: mePoolContent },
       { id: "gates", label: `${t("detail.gates.title")} & ${t("detail.upstreams.title")}`, content: gatesUpstreamsContent },
       { id: "events", label: t("detail.folds.events"), content: eventsContent },
+      { id: "config", label: t("config.tab"), content: configContent },
     ],
-    [connectionsContent, mePoolContent, gatesUpstreamsContent, eventsContent, t],
+    [connectionsContent, mePoolContent, gatesUpstreamsContent, eventsContent, configContent, t],
   );
 
   // Stable handlers so the dropdowns/sheets don't churn on every parent
@@ -483,6 +496,16 @@ export function ServerDetailPage({
             )}
           </>
         )}
+
+        {/* Config tab — surfaced on desktop as a fold so it's reachable in
+            every transport mode (ME, Direct/Fallback, ME-down), mirroring the
+            mobile swipe tab above. Mobile gets it via mobileTabs; the fold is
+            desktop-only to avoid a duplicate mount under the swipe pane. */}
+        <div className="hidden md:block">
+          <Fold title={t("config.tab")} defaultOpen={false}>
+            {configContent}
+          </Fold>
+        </div>
 
         {agentConnection && (
           <AgentConnectionSection
