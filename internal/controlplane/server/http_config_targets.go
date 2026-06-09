@@ -22,17 +22,68 @@ type configTargetRequest struct {
 	Sections map[string]any `json:"sections"`
 }
 
-// groupConfigTargetResponse is the GET shape for a group scope: just the
-// stored sections (empty object when no target exists).
+// groupConfigTargetResponse is the GET shape for a group scope: the stored
+// sections (empty object when no target exists) plus a per-agent drift
+// summary for the group's in-scope agents.
 type groupConfigTargetResponse struct {
-	Sections map[string]any `json:"sections"`
+	Sections map[string]any         `json:"sections"`
+	Nodes    []groupConfigNodeDrift `json:"nodes"`
 }
 
 // agentConfigTargetResponse is the GET shape for an agent scope: the
-// agent's own override plus the group⊕override effective merge.
+// agent's own override, the group⊕override effective merge, the node's
+// observed editable sections, and the drift of observed vs effective.
 type agentConfigTargetResponse struct {
-	Override  map[string]any `json:"override"`
-	Effective map[string]any `json:"effective"`
+	Override  map[string]any  `json:"override"`
+	Effective map[string]any  `json:"effective"`
+	Observed  map[string]any  `json:"observed"`
+	Drift     configDriftView `json:"drift"`
+}
+
+// configDriftView is the drift summary attached to a config GET response.
+// Status is one of "in_sync", "drifted", "unknown"; Fields is the list of
+// dotted paths that drift (empty unless Status == "drifted").
+type configDriftView struct {
+	Status string   `json:"status"`
+	Fields []string `json:"fields"`
+}
+
+// groupConfigNodeDrift summarizes one agent's drift status for the group
+// GET response.
+type groupConfigNodeDrift struct {
+	AgentID string `json:"agent_id"`
+	Status  string `json:"status"`
+}
+
+// observedConfigForAgent returns the parsed observed editable sections for an
+// agent (from the live store) and whether any observed data exists.
+func (s *Server) observedConfigForAgent(agentID string) (map[string]any, bool) {
+	for _, inst := range s.live.InstancesForAgent(agentID) {
+		if inst.ManagedConfigJSON == "" {
+			continue
+		}
+		var m map[string]any
+		if err := json.Unmarshal([]byte(inst.ManagedConfigJSON), &m); err == nil {
+			return m, true
+		}
+	}
+	return map[string]any{}, false
+}
+
+// driftView computes the drift view of observed vs effective.
+func driftView(effective, observed map[string]any, hasObserved bool) configDriftView {
+	if !hasObserved {
+		return configDriftView{Status: "unknown", Fields: []string{}}
+	}
+	drifted, fields := configDrift(effective, observed)
+	if fields == nil {
+		fields = []string{}
+	}
+	status := "in_sync"
+	if drifted {
+		status = "drifted"
+	}
+	return configDriftView{Status: status, Fields: fields}
 }
 
 // loadConfigTargetSections fetches the stored sections for one scope,
@@ -131,7 +182,24 @@ func (s *Server) handleGetGroupConfigTarget() http.HandlerFunc {
 			writeErrorLogged(r.Context(), w, http.StatusInternalServerError, msgConfigTargetReadFailed, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, groupConfigTargetResponse{Sections: sections})
+		nodes := []groupConfigNodeDrift{}
+		for _, agent := range s.live.List() {
+			if agent.FleetGroupID != id {
+				continue
+			}
+			override, err := s.loadConfigTargetSections(r, storage.ConfigScopeAgent, agent.ID)
+			if err != nil {
+				writeErrorLogged(r.Context(), w, http.StatusInternalServerError, msgConfigTargetReadFailed, err)
+				return
+			}
+			effective := resolveEffectiveConfig(sections, override)
+			observed, hasObserved := s.observedConfigForAgent(agent.ID)
+			nodes = append(nodes, groupConfigNodeDrift{
+				AgentID: agent.ID,
+				Status:  driftView(effective, observed, hasObserved).Status,
+			})
+		}
+		writeJSON(w, http.StatusOK, groupConfigTargetResponse{Sections: sections, Nodes: nodes})
 	}
 }
 
@@ -210,9 +278,13 @@ func (s *Server) handleGetAgentConfigTarget() http.HandlerFunc {
 			writeErrorLogged(r.Context(), w, http.StatusInternalServerError, msgConfigTargetReadFailed, err)
 			return
 		}
+		effective := resolveEffectiveConfig(groupSections, overrideSections)
+		observed, hasObserved := s.observedConfigForAgent(id)
 		writeJSON(w, http.StatusOK, agentConfigTargetResponse{
 			Override:  overrideSections,
-			Effective: resolveEffectiveConfig(groupSections, overrideSections),
+			Effective: effective,
+			Observed:  observed,
+			Drift:     driftView(effective, observed, hasObserved),
 		})
 	}
 }
