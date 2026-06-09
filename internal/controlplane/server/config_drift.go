@@ -1,6 +1,10 @@
 package server
 
-import "fmt"
+import (
+	"bytes"
+
+	"github.com/lost-coder/panvex/internal/configcanon"
+)
 
 // configDrift reports whether observed drifts from the (effective) target. Drift
 // is a PROJECTION of observed onto target: for every leaf (path,value) in target,
@@ -37,8 +41,9 @@ func walkConfigTarget(prefix string, target, observed map[string]any, diffs *[]s
 	}
 }
 
-// configLeafEqual compares scalar/array leaves by canonical string form so that
-// representation differences (e.g. JSON number forms) do not produce false drift.
+// configLeafEqual compares scalar/array leaves by the shared canonical encoding
+// so representation differences (e.g. JSON number forms) do not produce false
+// drift, while distinct types (e.g. bool true vs string "true") are not collapsed.
 func configLeafEqual(a, b any) bool {
-	return fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b)
+	return bytes.Equal(configcanon.CanonicalBytes(a), configcanon.CanonicalBytes(b))
 }

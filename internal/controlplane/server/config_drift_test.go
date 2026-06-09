@@ -24,3 +24,21 @@ func TestConfigDriftProjection(t *testing.T) {
 		t.Fatalf("empty target -> in sync")
 	}
 }
+
+func TestConfigDriftLeafTypesNotCollapsed(t *testing.T) {
+	// bool true and string "true" must be treated as different (drift), not
+	// collapsed by a %v-style comparison.
+	if d, _ := configDrift(
+		map[string]any{"general": map[string]any{"x": true}},
+		map[string]any{"general": map[string]any{"x": "true"}},
+	); !d {
+		t.Fatalf("bool true vs string \"true\" must be drift")
+	}
+	// equal numeric forms (float64) must NOT drift.
+	if d, _ := configDrift(
+		map[string]any{"timeouts": map[string]any{"n": float64(30)}},
+		map[string]any{"timeouts": map[string]any{"n": float64(30)}},
+	); d {
+		t.Fatalf("equal numeric leaves must be in sync")
+	}
+}
