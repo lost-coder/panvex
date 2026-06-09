@@ -12,6 +12,15 @@ CREATE TABLE "agent_certificate_recovery_grants" (
     FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
 );
 
+CREATE TABLE agent_config_targets (
+    scope_type    TEXT NOT NULL,
+    scope_id      TEXT NOT NULL,
+    sections_json TEXT NOT NULL DEFAULT '{}',
+    created_at    TIMESTAMP NOT NULL,
+    updated_at    TIMESTAMP NOT NULL,
+    PRIMARY KEY (scope_type, scope_id)
+);
+
 CREATE TABLE agent_fallback_state (
     agent_id        TEXT PRIMARY KEY,
     entered_at_unix INTEGER NOT NULL,
@@ -659,4 +668,5 @@ INSERT INTO goose_db_version (version_id, is_applied) VALUES
   (45, 1),
   (46, 1),
   (47, 1),
-  (48, 1);
+  (48, 1),
+  (49, 1);
