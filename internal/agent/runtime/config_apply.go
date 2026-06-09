@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/agent/telemt"
+	"github.com/lost-coder/panvex/internal/configcanon"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
@@ -189,6 +190,33 @@ func marshalConfigApplyResult(revision string) string {
 	b, err := json.Marshal(struct {
 		Revision string `json:"revision"`
 	}{Revision: revision})
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// handleConfigFetchJob returns the node's current observed managed config so the
+// control plane can force-refresh its drift view. The continuous snapshot push is
+// primary; this is a diagnostic adjunct.
+func (a *Agent) handleConfigFetchJob(ctx context.Context, result *gatewayrpc.JobResult) *gatewayrpc.JobResult {
+	sections, revision, err := a.telemt.GetManagedConfig(ctx)
+	if err != nil {
+		result.Message = fmt.Sprintf("config.fetch: %v", err)
+		return result
+	}
+	result.Success = true
+	result.Message = "config fetched"
+	result.ResultJson = marshalConfigFetchResult(sections, revision)
+	return result
+}
+
+func marshalConfigFetchResult(sections map[string]any, revision string) string {
+	b, err := json.Marshal(struct {
+		Revision string         `json:"revision"`
+		Hash     string         `json:"hash"`
+		Sections map[string]any `json:"sections"`
+	}{Revision: revision, Hash: configcanon.Hash(sections), Sections: sections})
 	if err != nil {
 		return ""
 	}

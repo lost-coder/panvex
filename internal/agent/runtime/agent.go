@@ -106,6 +106,8 @@ type Agent struct {
 	restarter configRestarter
 	mu        sync.RWMutex
 
+	observedConfig observedConfigReporter
+
 	clientNames                        map[string]string
 	lastOctets                         map[string]uint64
 	lastConnections                    map[string]int
@@ -314,6 +316,14 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 	// overwriting them with the (possibly zeroed) partial values.
 	snapshot.Partial = state.Partial
 	snapshot.ReadOnly = state.ReadOnly
+	// Report the agent's observed managed Telemt config, delta-gated: the
+	// canonical hash every snapshot, the full canonical JSON only when the
+	// hash changed. On any error (incl. telemt.ErrConfigEditUnsupported on
+	// older Telemt builds) both stay empty.
+	var managedConfigHash, managedConfigJSON string
+	if sections, _, err := a.telemt.GetManagedConfig(fetchCtx); err == nil {
+		managedConfigHash, managedConfigJSON = a.observedConfig.next(sections)
+	}
 	snapshot.Instances = []*gatewayrpc.InstanceSnapshot{
 		{
 			Id:                "telemt-primary",
@@ -322,6 +332,8 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 			ConfigFingerprint: "runtime",
 			Connections:       int32(state.Connections),
 			ReadOnly:          state.ReadOnly,
+			ManagedConfigHash: managedConfigHash,
+			ManagedConfigJson: managedConfigJSON,
 		},
 	}
 	snapshot.Metrics = map[string]uint64{
@@ -781,6 +793,8 @@ func (a *Agent) HandleJob(ctx context.Context, job *gatewayrpc.JobCommand, obser
 		return a.handleSwitchTransportModeJob(result, job)
 	case "config.apply":
 		return a.handleConfigApplyJob(ctx, job, result)
+	case "config.fetch":
+		return a.handleConfigFetchJob(ctx, result)
 	default:
 		result.Message = fmt.Sprintf("unsupported action %s", job.GetAction())
 		return result

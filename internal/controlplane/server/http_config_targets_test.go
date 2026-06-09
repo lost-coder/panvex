@@ -164,6 +164,142 @@ func TestConfigTargetAgentEffectiveMergePrefersOverride(t *testing.T) {
 	}
 }
 
+// seedGroupTargetAndAgent seeds a fleet group, PUTs a group config target
+// (censorship.tls_domain = groupDomain), and seeds the agent into the live
+// snapshot with the supplied observed instances. Returns the group id.
+func seedGroupTargetAndAgent(t *testing.T, srv *Server, cookies []*http.Cookie, groupName, groupDomain, agentID string, instances []Instance) string {
+	t.Helper()
+	groupID := seedTestFleetGroup(t, srv.store, groupName, time.Time{})
+	srv.live.ApplySnapshot(agentID, Agent{ID: agentID, NodeName: "node-" + agentID, FleetGroupID: groupID}, instances)
+	body := map[string]any{
+		"sections": map[string]any{
+			"censorship": map[string]any{"tls_domain": groupDomain},
+		},
+	}
+	if resp := performJSONRequest(t, srv, http.MethodPut, "/api/fleet-groups/"+groupID+"/config", body, cookies); resp.Code != http.StatusOK {
+		t.Fatalf("PUT group config status = %d, want %d (body: %s)", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	return groupID
+}
+
+// observedInstance builds a live Instance carrying a censorship.tls_domain
+// observed value as canonical JSON.
+func observedInstance(agentID, tlsDomain string) Instance {
+	managed, _ := json.Marshal(map[string]any{
+		"censorship": map[string]any{"tls_domain": tlsDomain},
+	})
+	return Instance{ID: "telemt-primary", AgentID: agentID, ManagedConfigJSON: string(managed)}
+}
+
+// getAgentConfig fetches the agent config GET response and decodes it.
+func getAgentConfig(t *testing.T, srv *Server, cookies []*http.Cookie, agentID string) agentConfigTargetResponse {
+	t.Helper()
+	getResp := performJSONRequest(t, srv, http.MethodGet, "/api/agents/"+agentID+"/config", nil, cookies)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("GET agent config status = %d, want %d (body: %s)", getResp.Code, http.StatusOK, getResp.Body.String())
+	}
+	var got agentConfigTargetResponse
+	if err := json.Unmarshal(getResp.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode agent config response: %v", err)
+	}
+	return got
+}
+
+// TestConfigTargetAgentDriftInSync seeds an observed instance matching the
+// effective target → drift.status == "in_sync".
+func TestConfigTargetAgentDriftInSync(t *testing.T) {
+	srv, cookies := newConfigTargetTestServer(t)
+	const agentID = "agent-drift-insync"
+	seedGroupTargetAndAgent(t, srv, cookies, "cfg-drift-insync", "match.example", agentID,
+		[]Instance{observedInstance(agentID, "match.example")})
+
+	got := getAgentConfig(t, srv, cookies, agentID)
+	if got.Drift.Status != "in_sync" {
+		t.Fatalf("drift.status = %q, want %q", got.Drift.Status, "in_sync")
+	}
+	if len(got.Drift.Fields) != 0 {
+		t.Fatalf("drift.fields = %v, want empty", got.Drift.Fields)
+	}
+}
+
+// TestConfigTargetAgentDriftDrifted seeds an observed instance whose value
+// mismatches the effective target → drift.status == "drifted" and the field
+// is listed.
+func TestConfigTargetAgentDriftDrifted(t *testing.T) {
+	srv, cookies := newConfigTargetTestServer(t)
+	const agentID = "agent-drift-drifted"
+	seedGroupTargetAndAgent(t, srv, cookies, "cfg-drift-drifted", "target.example", agentID,
+		[]Instance{observedInstance(agentID, "observed.example")})
+
+	got := getAgentConfig(t, srv, cookies, agentID)
+	if got.Drift.Status != "drifted" {
+		t.Fatalf("drift.status = %q, want %q", got.Drift.Status, "drifted")
+	}
+	found := false
+	for _, f := range got.Drift.Fields {
+		if f == "censorship.tls_domain" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("drift.fields = %v, want to contain %q", got.Drift.Fields, "censorship.tls_domain")
+	}
+}
+
+// TestConfigTargetAgentDriftUnknown seeds no observed instance → drift.status
+// == "unknown".
+func TestConfigTargetAgentDriftUnknown(t *testing.T) {
+	srv, cookies := newConfigTargetTestServer(t)
+	const agentID = "agent-drift-unknown"
+	seedGroupTargetAndAgent(t, srv, cookies, "cfg-drift-unknown", "target.example", agentID, nil)
+
+	got := getAgentConfig(t, srv, cookies, agentID)
+	if got.Drift.Status != "unknown" {
+		t.Fatalf("drift.status = %q, want %q", got.Drift.Status, "unknown")
+	}
+	if got.Drift.Fields == nil {
+		t.Fatalf("drift.fields = nil, want non-nil empty slice")
+	}
+}
+
+// TestConfigTargetAgentDriftEmptyJSONUnknown seeds an instance with an empty
+// ManagedConfigJSON → drift.status == "unknown".
+func TestConfigTargetAgentDriftEmptyJSONUnknown(t *testing.T) {
+	srv, cookies := newConfigTargetTestServer(t)
+	const agentID = "agent-drift-emptyjson"
+	seedGroupTargetAndAgent(t, srv, cookies, "cfg-drift-emptyjson", "target.example", agentID,
+		[]Instance{{ID: "telemt-primary", AgentID: agentID, ManagedConfigJSON: ""}})
+
+	got := getAgentConfig(t, srv, cookies, agentID)
+	if got.Drift.Status != "unknown" {
+		t.Fatalf("drift.status = %q, want %q", got.Drift.Status, "unknown")
+	}
+}
+
+// TestConfigTargetGroupNodesDrift asserts the group GET response surfaces a
+// per-agent drift summary for the group's in-scope agents.
+func TestConfigTargetGroupNodesDrift(t *testing.T) {
+	srv, cookies := newConfigTargetTestServer(t)
+	const agentID = "agent-group-nodes"
+	groupID := seedGroupTargetAndAgent(t, srv, cookies, "cfg-group-nodes", "target.example", agentID,
+		[]Instance{observedInstance(agentID, "observed.example")})
+
+	getResp := performJSONRequest(t, srv, http.MethodGet, "/api/fleet-groups/"+groupID+"/config", nil, cookies)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("GET group config status = %d, want %d (body: %s)", getResp.Code, http.StatusOK, getResp.Body.String())
+	}
+	var got groupConfigTargetResponse
+	if err := json.Unmarshal(getResp.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode group config response: %v", err)
+	}
+	if len(got.Nodes) != 1 {
+		t.Fatalf("group nodes = %v, want 1 entry", got.Nodes)
+	}
+	if got.Nodes[0].AgentID != agentID || got.Nodes[0].Status != "drifted" {
+		t.Fatalf("group node = %+v, want agent_id=%q status=drifted", got.Nodes[0], agentID)
+	}
+}
+
 // loginScopedOperator bootstraps a non-admin operator whose fleet scope
 // is restricted to allowedGroupIDs, logs them in, and returns their
 // session cookies. With explicit scope rows the operator is no longer

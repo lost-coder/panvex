@@ -199,6 +199,8 @@ type Instance struct {
 	Name              string    `json:"name"`
 	Version           string    `json:"version"`
 	ConfigFingerprint string    `json:"config_fingerprint"`
+	ManagedConfigHash string    `json:"managed_config_hash"`
+	ManagedConfigJSON string    `json:"managed_config_json"` // last non-empty observed editable sections (canonical JSON)
 	Connections       int       `json:"connections"`
 	ReadOnly          bool      `json:"read_only"`
 	UpdatedAt         time.Time `json:"updated_at"`

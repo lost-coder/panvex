@@ -771,6 +771,8 @@ type fakeTelemtClient struct {
 	resetQuotaResult        telemt.ResetUserQuotaResult
 	resetQuotaErr           error
 	discoverErr             error
+	managedConfig           map[string]any
+	managedRevision         string
 }
 
 func (c *fakeTelemtClient) FetchRuntimeState(context.Context) (telemt.RuntimeState, error) {
@@ -831,7 +833,7 @@ func (c *fakeTelemtClient) PatchConfig(context.Context, map[string]any, string) 
 }
 
 func (c *fakeTelemtClient) GetManagedConfig(context.Context) (map[string]any, string, error) {
-	return nil, "", nil
+	return c.managedConfig, c.managedRevision, nil
 }
 
 func (c *fakeTelemtClient) HealthReady(context.Context) (bool, string, error) {
