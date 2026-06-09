@@ -31,3 +31,4 @@ export * from "./webhooks.ts";
 // "one schemas/<name>.ts per api/<name>.ts" naming convention.
 export * from "./servers.ts";
 export * from "./requests/index.ts";
+export * from "./config.ts";

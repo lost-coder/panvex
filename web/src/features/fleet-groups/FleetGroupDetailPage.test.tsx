@@ -2,6 +2,29 @@ import { render } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
 
+// The page now embeds GroupConfigSection, which pulls in the global toast
+// channel and fetches the group config via useGroupConfig. Mock both so the
+// page renders without a ToastProvider, QueryClient, or network (the section
+// has its own dedicated test).
+vi.mock("@/app/providers/ToastProvider", () => ({
+  useToast: () => ({
+    success: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+    withAction: vi.fn(),
+    dismiss: vi.fn(),
+  }),
+}));
+vi.mock("@/features/servers/config/configHooks", () => ({
+  useGroupConfig: () => ({
+    data: { sections: {}, nodes: [] },
+    isLoading: false,
+    isError: false,
+  }),
+  usePutGroupConfig: () => ({ mutate: vi.fn(), isPending: false }),
+  useApplyGroupConfig: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
 import { FleetGroupDetailPage } from "./FleetGroupDetailPage";
 
 // R-Q-13: FleetGroupDetailPage smoke-test.

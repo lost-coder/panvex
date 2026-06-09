@@ -379,5 +379,48 @@
     "confirmTitle": "Deregister this server?",
     "confirmBody": "\"{{name}}\" will disconnect from the control-plane and stop receiving rollouts. Re-enrollment requires a new token.",
     "feedbackInitiated": "Update initiated"
+  },
+  "config": {
+    "tab": "Config",
+    "section": {
+      "general": "General",
+      "censorship": "Censorship",
+      "timeouts": "Timeouts"
+    },
+    "field": {
+      "log_level": "Log level",
+      "update_every": "ME update interval",
+      "modes": "Modes",
+      "tls_domain": "SNI domain",
+      "tls_domains": "Additional SNI domains",
+      "client_handshake": "Client handshake timeout"
+    },
+    "badge": {
+      "hot": "Live",
+      "restart": "Restart",
+      "hotHint": "Applied immediately",
+      "restartHint": "Requires a Telemt restart (brief connection drop)"
+    },
+    "drift": {
+      "in_sync": "In sync",
+      "drifted": "Drifted",
+      "unknown": "Unknown",
+      "fieldsLabel": "Diverging fields"
+    },
+    "save": "Save",
+    "saved": "Configuration saved",
+    "unsavedHint": "Save before applying",
+    "apply": {
+      "button": "Apply to node",
+      "buttonGroup": "Apply to group",
+      "restartWarningTitle": "Restart required",
+      "restartWarning": "Some changes require restarting Telemt, briefly dropping connections. Continue?",
+      "confirm": "Apply",
+      "cancel": "Cancel",
+      "applied": "Applied to {{count}} node(s)",
+      "failed": "Failed on {{agent}}: {{error}}"
+    },
+    "nodesTitle": "Nodes",
+    "noNodes": "No nodes in this group yet"
   }
 }
