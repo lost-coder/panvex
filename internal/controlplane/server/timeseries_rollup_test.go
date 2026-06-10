@@ -194,3 +194,30 @@ func TestRollupWorkerSkipsDisabledRetention(t *testing.T) {
 		t.Fatalf("expected metric_snapshots row to survive disabled retention, got len=%d", len(snapshots))
 	}
 }
+
+// TestRunTimeseriesRollupPrunesExpiredAgentRevocations (C4): the rollup
+// loop must call DeleteExpiredAgentRevocations — the method existed in
+// every backend but had no production caller.
+func TestRunTimeseriesRollupPrunesExpiredAgentRevocations(t *testing.T) {
+	now := time.Date(2026, time.June, 1, 12, 0, 0, 0, time.UTC)
+	server := testServerWithSQLite(t, now)
+	ctx := context.Background()
+
+	if err := server.store.PutAgentRevocation(ctx, storage.AgentRevocationRecord{
+		AgentID:       "agent-expired",
+		RevokedAt:     now.Add(-72 * time.Hour),
+		CertExpiresAt: now.Add(-time.Hour),
+	}); err != nil {
+		t.Fatalf("PutAgentRevocation() error = %v", err)
+	}
+
+	server.runTimeseriesRollup(ctx)
+
+	remaining, err := server.store.ListAgentRevocations(ctx)
+	if err != nil {
+		t.Fatalf("ListAgentRevocations() error = %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("revocations after rollup = %d, want 0", len(remaining))
+	}
+}

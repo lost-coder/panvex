@@ -162,6 +162,20 @@ func (s *Server) runTimeseriesRollup(ctx context.Context) {
 	if s.webhookStorage != nil {
 		s.runRetentionPrune(ctx, "webhook_outbox", now, retention.WebhookOutboxSeconds, s.webhookStorage.PruneOutbox)
 	}
+
+	// 11. Drop revocation rows whose certificate already expired (C4):
+	// the mTLS window they guard is closed, the row is pure dead weight.
+	// Cutoff is `now` by definition — no retention knob needed. The
+	// in-memory revokedAgentIDs set keeps its entries until restart,
+	// which is safe (it only over-rejects, never under-rejects).
+	if pruned, err := s.store.DeleteExpiredAgentRevocations(ctx, now); err != nil {
+		s.logger.Error("retention prune failed", "table", "agent_revocations", "error", err)
+	} else if pruned > 0 {
+		s.logger.Info("pruned rows by retention", "table", "agent_revocations", "count", pruned)
+		if s.obs != nil {
+			s.obs.retentionPrunedRowsTotal.WithLabelValues("agent_revocations").Add(float64(pruned))
+		}
+	}
 }
 
 // rollupRecentHours rebuilds hourly aggregates for the previous 2 hours so
