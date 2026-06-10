@@ -305,6 +305,9 @@ jobs:
       - name: Run coverage with thresholds
         working-directory: web
         run: npm run test:coverage
+      - name: Run node:test state suites
+        working-directory: web
+        run: npm run test:state
 
   frontend-lint:
     name: Frontend Lint

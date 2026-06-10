@@ -13,6 +13,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:state": "node --experimental-strip-types --test tests/*.test.mts src/router.test.ts src/shared/lib/appearance.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install --with-deps chromium firefox webkit",
     "test:e2e:integration": "playwright test --config=playwright.integration.config.ts",
