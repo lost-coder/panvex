@@ -87,6 +87,15 @@ func runServe(args []string) error {
 	// first among the defers registered below it.
 	defer shutdownOtel(otelShutdown)
 
+	// A8: refuse insecure storage configurations before the first
+	// connection attempt. ResolveStorage (in parseServeConfig) stays a
+	// pure normalizer; the security gate lives on the serve path only,
+	// so operator CLI subcommands (backup, diagnose, migrate-schema)
+	// can still open loopback dev databases without the prod guards.
+	if err := config.ValidateStorageSecurity(options.Storage); err != nil {
+		return fmt.Errorf("control-plane: storage config rejected: %w", err)
+	}
+
 	store, err := openStore(context.Background(), options.Storage)
 	if err != nil {
 		return err
