@@ -60,7 +60,6 @@ func (s *Server) handleAgentCertificateRecovery() http.HandlerFunc {
 		writeJSON(w, http.StatusOK, agentBootstrapResponse{
 			AgentID:        request.AgentID,
 			CertificatePEM: issued.CertificatePEM,
-			PrivateKeyPEM:  issued.PrivateKeyPEM,
 			CAPEM:          issued.CAPEM,
 			GRPCEndpoint:   grpcEndpoint,
 			GRPCServerName: grpcServerName,

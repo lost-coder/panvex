@@ -33,6 +33,7 @@ func TestServerEnrollAgentConsumesTokenAndIssuesIdentity(t *testing.T) {
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(10*time.Second))
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
@@ -72,6 +73,7 @@ func TestServerEnrollAgentRejectsAlreadyConsumedToken(t *testing.T) {
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(10*time.Second)); err != nil {
 		t.Fatalf("first enrollAgent() error = %v", err)
 	}
@@ -81,6 +83,7 @@ func TestServerEnrollAgentRejectsAlreadyConsumedToken(t *testing.T) {
 		Token:    token.Value,
 		NodeName: "node-b",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(20*time.Second)); err == nil {
 		t.Fatal("second enrollAgent() error = nil, want token-already-consumed error")
 	}
@@ -146,6 +149,7 @@ func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now)
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
@@ -253,6 +257,7 @@ func TestApplyAgentSnapshotIgnoresRevokedAgent(t *testing.T) {
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now)
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
@@ -309,6 +314,7 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(10*time.Second))
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
@@ -405,6 +411,7 @@ func TestServerApplyAgentSnapshotUpdatesInMemoryStateEvenWhenPersistenceFails(t 
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(10*time.Second))
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
@@ -445,7 +452,7 @@ func TestServerApplyAgentSnapshotTracksRuntimeLifecycleState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
-	identity, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{Token: token.Value, NodeName: "node-a", Version: "1.0.0"}, now.Add(10*time.Second))
+	identity, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{Token: token.Value, NodeName: "node-a", Version: "1.0.0", CSRPEM: testCSRPEM(t)}, now.Add(10*time.Second))
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
 	}
@@ -484,7 +491,7 @@ func TestServerApplyAgentSnapshotStartsInitializationWatchCooldownAfterReadyTran
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
-	identity, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{Token: token.Value, NodeName: "node-a", Version: "1.0.0"}, now.Add(10*time.Second))
+	identity, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{Token: token.Value, NodeName: "node-a", Version: "1.0.0", CSRPEM: testCSRPEM(t)}, now.Add(10*time.Second))
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
 	}
@@ -624,6 +631,7 @@ func TestServerApplyAgentSnapshotKeepsEnrolledScopeWhenSnapshotDiffers(t *testin
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(10*time.Second))
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
@@ -672,6 +680,7 @@ func TestApplyAgentSnapshotPrunesStaleInstances(t *testing.T) {
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now)
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
@@ -750,6 +759,7 @@ func TestApplyAgentSnapshotDoesNotPruneOtherAgentsInstances(t *testing.T) {
 		Token:    tokenA.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now)
 	if err != nil {
 		t.Fatalf("enrollAgent(A) error = %v", err)
@@ -766,6 +776,7 @@ func TestApplyAgentSnapshotDoesNotPruneOtherAgentsInstances(t *testing.T) {
 		Token:    tokenB.Value,
 		NodeName: "node-b",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now)
 	if err != nil {
 		t.Fatalf("enrollAgent(B) error = %v", err)
@@ -854,6 +865,7 @@ func TestServerEnrollmentTokenPersistsAcrossRestart(t *testing.T) {
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(10*time.Second))
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
@@ -911,6 +923,7 @@ func TestServerEnrollmentIssuesOperationalCertificateLifetime(t *testing.T) {
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, issuedAt)
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
@@ -972,6 +985,7 @@ func TestServerConsumedEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) 
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(10*time.Second)); err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
 	}
@@ -986,6 +1000,7 @@ func TestServerConsumedEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) 
 		Token:    token.Value,
 		NodeName: "node-b",
 		Version:  "1.0.1",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(20*time.Second)); !errors.Is(err, security.ErrEnrollmentTokenConsumed) {
 		t.Fatalf("enrollAgent() error = %v, want %v", err, security.ErrEnrollmentTokenConsumed)
 	}
@@ -1020,6 +1035,7 @@ func TestEnrollmentSetsCertificateDates(t *testing.T) {
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, enrolledAt)
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
@@ -1083,6 +1099,7 @@ func TestEnrollAgentCertIssuanceFailureLeavesNoPartialState(t *testing.T) {
 		Token:    token.Value,
 		NodeName: "node-fail",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(10*time.Second))
 	if err == nil {
 		t.Fatal("enrollAgent() error = nil, want cert issuance failure")
@@ -1289,6 +1306,7 @@ func TestServerExpiredEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) {
 		Token:    token.Value,
 		NodeName: "node-b",
 		Version:  "1.0.1",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(2*time.Second)); !errors.Is(err, security.ErrEnrollmentTokenExpired) {
 		t.Fatalf("enrollAgent() error = %v, want %v", err, security.ErrEnrollmentTokenExpired)
 	}

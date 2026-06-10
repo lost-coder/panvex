@@ -613,6 +613,7 @@ func TestNewConnectionScheduleDisablesZeroIntervals(t *testing.T) {
 
 func TestRunBootstrapCommandSavesIssuedState(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "agent-state.json")
+	ca := newTestCA(t)
 
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -628,6 +629,7 @@ func TestRunBootstrapCommandSavesIssuedState(t *testing.T) {
 		var request struct {
 			NodeName string `json:"node_name"`
 			Version  string `json:"version"`
+			CSRPEM   string `json:"csr_pem"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Fatalf("Decode(request) error = %v", err)
@@ -638,12 +640,16 @@ func TestRunBootstrapCommandSavesIssuedState(t *testing.T) {
 		if request.Version != "1.2.3" {
 			t.Fatalf("request.Version = %q, want %q", request.Version, "1.2.3")
 		}
+		if request.CSRPEM == "" {
+			t.Fatal("request.CSRPEM = empty, want a CSR")
+		}
 
+		// A9: sign the agent's CSR and return only the certificate.
+		certPEM := ca.signCSRForTest(t, request.CSRPEM)
 		if err := json.NewEncoder(w).Encode(map[string]any{
 			"agent_id":         "agent-123",
-			"certificate_pem":  "cert-pem",
-			"private_key_pem":  "key-pem",
-			"ca_pem":           "ca-pem",
+			"certificate_pem":  certPEM,
+			"ca_pem":           string(ca.certPEM),
 			"grpc_endpoint":    "grpc.panel.example.com:443",
 			"grpc_server_name": "grpc.panel.example.com",
 			"expires_at_unix":  time.Date(2026, time.March, 16, 18, 0, 0, 0, time.UTC).Unix(),
@@ -714,12 +720,22 @@ func TestRunBootstrapCommandAllowsOverwriteWithForce(t *testing.T) {
 		t.Fatalf("Save() error = %v", err)
 	}
 
+	ca := newTestCA(t)
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			CSRPEM string `json:"csr_pem"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("Decode(request) error = %v", err)
+		}
+		if request.CSRPEM == "" {
+			t.Fatal("request.CSRPEM = empty, want a CSR")
+		}
+		certPEM := ca.signCSRForTest(t, request.CSRPEM)
 		if err := json.NewEncoder(w).Encode(map[string]any{
 			"agent_id":         "agent-new",
-			"certificate_pem":  "new-cert",
-			"private_key_pem":  "new-key",
-			"ca_pem":           "new-ca",
+			"certificate_pem":  certPEM,
+			"ca_pem":           string(ca.certPEM),
 			"grpc_endpoint":    "panel.example.com:8443",
 			"grpc_server_name": "panel.example.com",
 			"expires_at_unix":  time.Date(2026, time.March, 16, 19, 0, 0, 0, time.UTC).Unix(),

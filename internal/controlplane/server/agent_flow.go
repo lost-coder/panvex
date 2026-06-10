@@ -26,6 +26,10 @@ type agentEnrollmentRequest struct {
 	Token    string
 	NodeName string
 	Version  string
+	// CSRPEM is the PEM-encoded CERTIFICATE REQUEST generated locally by
+	// the agent. A9: the panel signs it; the private key never crosses the
+	// wire. Required for inbound HTTP enrollment.
+	CSRPEM string
 	// AttemptID is the enrollment.Recorder attempt opened by the HTTP
 	// handler before this call. Optional — when empty, enrollAgent skips
 	// timeline emission. Always set in the production HTTP path so the
@@ -103,7 +107,6 @@ func (s *Server) mapAndFailEnrollment(ctx context.Context, attemptID string, err
 type agentEnrollmentResponse struct {
 	AgentID        string
 	CertificatePEM string
-	PrivateKeyPEM  string
 	CAPEM          string
 	ExpiresAt      time.Time
 }
@@ -191,10 +194,14 @@ func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest
 
 	// D-1: issue the cert FIRST (outside the enrollment tx) so that a cert
 	// failure never holds an open DB transaction. Cert issuance is pure
-	// in-memory crypto (ECDSA keygen + sign) with no IO. The atomicity
-	// guarantee — no consumed token without a matching agent row — is
-	// provided by the Transact block below (C2).
-	issued, err := s.authority.issueClientCertificate(agentID, now)
+	// in-memory crypto (ECDSA sign) with no IO. The atomicity guarantee —
+	// no consumed token without a matching agent row — is provided by the
+	// Transact block below (C2).
+	//
+	// A9: the agent generated the keypair locally; we sign its CSR. The
+	// agentID is minted server-side a moment ago, so the CSR's CN cannot
+	// match it — requireCNMatch=false and the template CN (agentID) wins.
+	issued, err := s.authority.issueAgentCertificateFromCSR(request.CSRPEM, agentID, agentCertificateLifetime, false, now)
 	if err != nil {
 		span.RecordError(err)
 		return agentEnrollmentResponse{}, &enrollmentError{
@@ -281,7 +288,6 @@ func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest
 	return agentEnrollmentResponse{
 		AgentID:        agentID,
 		CertificatePEM: issued.CertificatePEM,
-		PrivateKeyPEM:  issued.PrivateKeyPEM,
 		CAPEM:          issued.CAPEM,
 		ExpiresAt:      issued.ExpiresAt,
 	}, nil

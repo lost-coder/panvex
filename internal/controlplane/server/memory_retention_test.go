@@ -36,6 +36,7 @@ func TestServerServesRecentMetricSnapshotsFromStore(t *testing.T) {
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(5*time.Second))
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
