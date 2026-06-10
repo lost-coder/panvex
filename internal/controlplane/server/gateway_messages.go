@@ -301,7 +301,7 @@ func (s *Server) handleInStreamRenewalRequest(ctx context.Context, agentID strin
 
 	// Reject renewals from revoked agents. Without this, an agent whose
 	// stream is still alive in the window before the 30s revocation watcher
-	// tears it down could obtain a fresh 90-day cert AND have the panel
+	// tears it down could obtain a fresh 30-day cert (agentCertificateLifetime) AND have the panel
 	// re-pin its new serial (line ~323) — defeating both revocation and the
 	// serial-pin replay defense. Mirrors the unary RenewCertificate guard.
 	s.mu.RLock()

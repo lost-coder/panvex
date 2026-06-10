@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
 	"syscall"
 	"time"
@@ -220,6 +221,28 @@ func runRuntime(args []string) error {
 			time.AfterFunc(50*time.Millisecond, cancel)
 			return nil
 		},
+		ScheduleSelfRestart: func() {
+			// A3: the JobResult must reach the panel BEFORE this process
+			// goes away, otherwise the panel re-dispatches the job to the
+			// restarted agent (whose completedJobs cache is empty) in an
+			// infinite update/restart loop. Delay the restart so the job
+			// worker can flush the result onto the stream — same
+			// flush-window pattern as UpdateTransport above, with a much
+			// larger margin because systemd kills the whole process.
+			time.AfterFunc(selfUpdateRestartDelay, func() {
+				slog.Info("self-update: restarting via systemd")
+				// On success systemd tears this process down. On failure
+				// exit NON-ZERO so the unit's Restart=on-failure relaunches
+				// the already-replaced binary — exit 0 would not be
+				// restarted, and 78 is RestartPreventExitStatus.
+				// Background ctx: this is a fire-and-forget restart from an
+				// AfterFunc with no parent ctx; we never want to cancel it.
+				if err := exec.CommandContext(context.Background(), "systemctl", "restart", "panvex-agent").Start(); err != nil {
+					slog.Error("self-update: systemctl restart failed; exiting non-zero for on-failure restart", "error", err)
+					os.Exit(1)
+				}
+			})
+		},
 	}, telemtClient)
 
 	schedule := newConnectionSchedule(cfg.heartbeat, cfg.runtimePoll, cfg.runtimeUpload, cfg.usageSnapshot, cfg.ipPoll, cfg.ipUpload)
@@ -279,6 +302,10 @@ func runRuntime(args []string) error {
 // behaviour.
 func runRuntimeReconnectLoop(supervisorCtx context.Context, cfg *runtimeFlags, credentialsState *agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule, tr *transportReloadState, reporter *enrollmentReporter) error {
 	reconnectAttempt := 0
+	// B4: the in-flight tracker outlives individual connections so a job
+	// re-delivered right after a reconnect cannot run concurrently with its
+	// still-draining first execution from the previous connection.
+	jobInflight := newJobInflightTracker()
 	for {
 		// Honour shutdown before we begin another iteration.
 		if err := supervisorCtx.Err(); err != nil {
@@ -343,7 +370,7 @@ func runRuntimeReconnectLoop(supervisorCtx context.Context, cfg *runtimeFlags, c
 			*credentialsState = refreshed
 		}
 
-		afterConn, connErr := runConnection(supervisorCtx, cfg.gatewayAddr, cfg.gatewayServerName, cfg.stateFile, *credentialsState, agent, schedule, cfg.clientDataConcurrency, tr, reporter)
+		afterConn, connErr := runConnection(supervisorCtx, cfg.gatewayAddr, cfg.gatewayServerName, cfg.stateFile, *credentialsState, agent, schedule, cfg.clientDataConcurrency, tr, reporter, jobInflight)
 		*credentialsState = afterConn
 		if connErr == nil || errors.Is(connErr, errRuntimeCredentialsRefreshed) {
 			reconnectAttempt = 0

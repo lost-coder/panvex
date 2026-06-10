@@ -89,8 +89,22 @@ func heartbeatMessage(agent *runtime.Agent, observedAt time.Time) *gatewayrpc.Co
 	}
 }
 
+// sendOrAbort enqueues msg unless ctx is already done. The initial-sync
+// path runs before the per-connection workers are guaranteed alive, so a
+// bare `outbound <- msg` could block forever on a dead connection.
+func sendOrAbort(ctx context.Context, outbound chan<- *gatewayrpc.ConnectClientMessage, msg *gatewayrpc.ConnectClientMessage) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case outbound <- msg:
+		return nil
+	}
+}
+
 func sendInitialMessages(ctx context.Context, outbound chan<- *gatewayrpc.ConnectClientMessage, agent *runtime.Agent) error {
-	outbound <- heartbeatMessage(agent, time.Now())
+	if err := sendOrAbort(ctx, outbound, heartbeatMessage(agent, time.Now())); err != nil {
+		return err
+	}
 
 	runtimeCtx, cancelRuntime := context.WithTimeout(ctx, runtimeOperationTimeout)
 	runtimeSnapshot, err := agent.BuildRuntimeSnapshot(runtimeCtx, time.Now())
@@ -98,8 +112,10 @@ func sendInitialMessages(ctx context.Context, outbound chan<- *gatewayrpc.Connec
 	if err != nil {
 		return fmt.Errorf("initial runtime snapshot failed: %w", err)
 	}
-	outbound <- &gatewayrpc.ConnectClientMessage{
+	if err := sendOrAbort(ctx, outbound, &gatewayrpc.ConnectClientMessage{
 		Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: runtimeSnapshot},
+	}); err != nil {
+		return err
 	}
 	slog.Info("initial runtime snapshot sent", "agent_id", agent.AgentID(), "node", agent.NodeName())
 
@@ -107,8 +123,10 @@ func sendInitialMessages(ctx context.Context, outbound chan<- *gatewayrpc.Connec
 	usageSnapshot, err := agent.BuildUsageSnapshot(usageCtx, time.Now())
 	cancelUsage()
 	if err == nil {
-		outbound <- &gatewayrpc.ConnectClientMessage{
+		if err := sendOrAbort(ctx, outbound, &gatewayrpc.ConnectClientMessage{
 			Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: usageSnapshot},
+		}); err != nil {
+			return err
 		}
 	} else {
 		slog.Warn("initial usage snapshot unavailable, continuing without metrics", "error", err)
@@ -119,8 +137,11 @@ func sendInitialMessages(ctx context.Context, outbound chan<- *gatewayrpc.Connec
 		ipSnapshot := agent.BuildIPSnapshot(time.Now())
 		slog.Info("initial ip snapshot built", "client_ips_count", len(ipSnapshot.ClientIps))
 		if len(ipSnapshot.ClientIps) > 0 {
-			outbound <- &gatewayrpc.ConnectClientMessage{
+			if err := sendOrAbort(ctx, outbound, &gatewayrpc.ConnectClientMessage{
 				Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: ipSnapshot},
+			}); err != nil {
+				cancelIPPoll()
+				return err
 			}
 		}
 	} else {

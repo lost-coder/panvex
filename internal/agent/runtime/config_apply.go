@@ -27,6 +27,30 @@ func backupConfigFile(path string) (string, error) {
 	return backup, nil
 }
 
+// configApplyRollbackTimeout bounds the detached rollback path: restore the
+// backup and restart Telemt on it. Generous on purpose — rollback is the
+// last line of defence and must not be starved by the job deadline.
+const configApplyRollbackTimeout = 60 * time.Second
+
+// rollbackConfig restores the backup over the live config and restarts
+// Telemt under a fresh context detached from the (possibly already expired)
+// job ctx. A5: rolling back under the job deadline restored the file on
+// disk but skipped the restart, leaving Telemt on the unverified config.
+func rollbackConfig(ctx context.Context, d configApplyDeps, backup string) error {
+	rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), configApplyRollbackTimeout)
+	defer cancel()
+	if err := restoreConfigFile(backup, d.configPath); err != nil {
+		return fmt.Errorf("rollback write failed: %w", err)
+	}
+	if d.restarter == nil {
+		return nil
+	}
+	if err := d.restarter.Restart(rollbackCtx); err != nil {
+		return fmt.Errorf("rollback restart failed: %w", err)
+	}
+	return nil
+}
+
 // restoreConfigFile atomically copies backup back over path.
 func restoreConfigFile(backup, path string) error {
 	data, err := os.ReadFile(backup) //nolint:gosec // G304: backup of the agent-configured Telemt config, not untrusted input
@@ -129,19 +153,18 @@ func runConfigApply(ctx context.Context, d configApplyDeps, p configApplyPayload
 	}
 
 	if err := d.restarter.Restart(ctx); err != nil {
-		_ = restoreConfigFile(backup, d.configPath)
-		return configApplyResult{message: fmt.Sprintf("config.apply: restart failed: %v; reverted", err)}
+		if rbErr := rollbackConfig(ctx, d, backup); rbErr != nil {
+			return configApplyResult{message: fmt.Sprintf("config.apply: restart failed: %v; %v", err, rbErr)}
+		}
+		return configApplyResult{message: fmt.Sprintf("config.apply: restart failed: %v; rolled back to previous config", err)}
 	}
 
 	if waitHealthy(ctx, d) {
 		return configApplyResult{success: true, revision: res.Revision, message: "config applied with restart"}
 	}
 
-	if err := restoreConfigFile(backup, d.configPath); err != nil {
-		return configApplyResult{message: fmt.Sprintf("config.apply: unhealthy after restart AND rollback write failed: %v", err)}
-	}
-	if err := d.restarter.Restart(ctx); err != nil {
-		return configApplyResult{message: fmt.Sprintf("config.apply: unhealthy after restart; rollback restart failed: %v", err)}
+	if rbErr := rollbackConfig(ctx, d, backup); rbErr != nil {
+		return configApplyResult{message: fmt.Sprintf("config.apply: unhealthy after restart; %v", rbErr)}
 	}
 	return configApplyResult{message: "config.apply: unhealthy after restart; rolled back to previous config"}
 }

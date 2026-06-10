@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -118,7 +120,7 @@ func TestExecute_RefusesDowngrade(t *testing.T) {
 			cfg := defaultConfig()
 			cfg.AllowedHosts = []string{"never-resolves.invalid"}
 
-			err := executeWith(
+			_, err := executeWith(
 				context.Background(),
 				tt.payload,
 				tt.currentVersion,
@@ -143,7 +145,7 @@ func TestExecute_AllowsUpgrade(t *testing.T) {
 	cfg := defaultConfig()
 	cfg.AllowedHosts = []string{"never-resolves.invalid"}
 
-	err := executeWith(
+	_, err := executeWith(
 		context.Background(),
 		Payload{
 			Version:        "1.5.0",
@@ -158,5 +160,40 @@ func TestExecute_AllowsUpgrade(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "refusing downgrade") {
 		t.Fatalf("upgrade unexpectedly classified as downgrade: %v", err)
+	}
+}
+
+// TestExecute_NoopWhenAlreadyAtTargetVersion guards A3: a self-update to the
+// version the agent already runs must short-circuit to a successful no-op —
+// no download, no binary swap, no restart. Previously equality passed the
+// downgrade gate, the agent reinstalled itself and restarted before the
+// JobResult was sent, so the panel re-dispatched the job forever.
+func TestExecute_NoopWhenAlreadyAtTargetVersion(t *testing.T) {
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+	}))
+	t.Cleanup(srv.Close)
+
+	cfg := defaultConfig()
+	cfg.HTTPClient = srv.Client()
+	cfg.AllowedHosts = []string{hostOf(t, srv.URL)}
+	cfg.AllowInsecure = true
+
+	outcome, err := executeWith(
+		context.Background(),
+		Payload{Version: "1.4.7", ReleaseBaseURL: srv.URL + "/agent/v1.4.7"},
+		"v1.4.7", // leading-v form must compare equal to "1.4.7"
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		cfg,
+	)
+	if err != nil {
+		t.Fatalf("expected no-op success, got error: %v", err)
+	}
+	if outcome != OutcomeNoop {
+		t.Fatalf("outcome = %v, want OutcomeNoop", outcome)
+	}
+	if requests != 0 {
+		t.Fatalf("no-op must not touch the release server, got %d requests", requests)
 	}
 }

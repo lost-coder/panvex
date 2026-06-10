@@ -72,7 +72,7 @@ func TestExecute_RequestsPerArchAsset(t *testing.T) {
 	cfg.AllowedHosts = []string{hostOf(t, srv.URL)}
 	cfg.AllowInsecure = true
 
-	err := executeWith(
+	_, err := executeWith(
 		context.Background(),
 		Payload{Version: "9.9.9", ReleaseBaseURL: srv.URL + "/download/agent/v9.9.9"},
 		"1.0.0",

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/agent/runtime"
@@ -18,22 +19,23 @@ const telemtUnreachableThreshold = 30 * time.Second
 
 func startPollingWorkers(
 	connectionCtx context.Context,
+	streamWG *sync.WaitGroup,
 	schedule connectionSchedule,
 	agent *runtime.Agent,
 	telemetryOutbound chan<- *gatewayrpc.ConnectClientMessage,
 ) {
-	startPeriodicPollingWorker(connectionCtx, schedule.config(pollHeartbeat),
+	startPeriodicPollingWorker(connectionCtx, streamWG, schedule.config(pollHeartbeat),
 		makeHeartbeatTick(connectionCtx, agent, telemetryOutbound))
 
 	runtimeBuffer := runtime.NewRuntimeRingBuffer(8)
-	startRuntimePollWorker(connectionCtx, schedule.config(pollRuntime), agent, runtimeBuffer, telemetryOutbound)
-	startRuntimeUploadWorker(connectionCtx, schedule.config(pollRuntimeUpload), runtimeBuffer, telemetryOutbound)
+	startRuntimePollWorker(connectionCtx, streamWG, schedule.config(pollRuntime), agent, runtimeBuffer, telemetryOutbound)
+	startRuntimeUploadWorker(connectionCtx, streamWG, schedule.config(pollRuntimeUpload), runtimeBuffer, telemetryOutbound)
 
-	startPeriodicPollingWorker(connectionCtx, schedule.config(pollUsage),
+	startPeriodicPollingWorker(connectionCtx, streamWG, schedule.config(pollUsage),
 		makeUsageSnapshotTick(connectionCtx, agent, telemetryOutbound))
-	startPeriodicPollingWorker(connectionCtx, schedule.config(pollIPPoll),
+	startPeriodicPollingWorker(connectionCtx, streamWG, schedule.config(pollIPPoll),
 		makeIPPollTick(connectionCtx, agent))
-	startPeriodicPollingWorker(connectionCtx, schedule.config(pollIPUpload),
+	startPeriodicPollingWorker(connectionCtx, streamWG, schedule.config(pollIPUpload),
 		makeIPUploadTick(connectionCtx, agent, telemetryOutbound))
 }
 
@@ -104,6 +106,7 @@ func makeIPUploadTick(connectionCtx context.Context, agent *runtime.Agent, telem
 
 func startPeriodicPollingWorker(
 	connectionCtx context.Context,
+	streamWG *sync.WaitGroup,
 	config pollingGroupConfig,
 	run func(observedAt time.Time),
 ) {
@@ -111,7 +114,9 @@ func startPeriodicPollingWorker(
 		return
 	}
 
+	streamWG.Add(1)
 	go func() {
+		defer streamWG.Done()
 		ticker := time.NewTicker(config.Interval)
 		defer ticker.Stop()
 
@@ -136,6 +141,7 @@ type telemtReachabilityTracker struct {
 // startRuntimePollWorker polls Telemt at a fast interval and stores samples in the ring buffer.
 func startRuntimePollWorker(
 	connectionCtx context.Context,
+	streamWG *sync.WaitGroup,
 	config pollingGroupConfig,
 	agent *runtime.Agent,
 	buffer *runtime.RuntimeRingBuffer,
@@ -145,7 +151,11 @@ func startRuntimePollWorker(
 		return
 	}
 
-	go runRuntimePollLoop(connectionCtx, config, agent, buffer, telemetryOutbound)
+	streamWG.Add(1)
+	go func() {
+		defer streamWG.Done()
+		runRuntimePollLoop(connectionCtx, config, agent, buffer, telemetryOutbound)
+	}()
 }
 
 func runRuntimePollLoop(
@@ -242,6 +252,7 @@ func performRuntimePoll(
 // startRuntimeUploadWorker drains the ring buffer, aggregates samples, and sends one snapshot.
 func startRuntimeUploadWorker(
 	connectionCtx context.Context,
+	streamWG *sync.WaitGroup,
 	config pollingGroupConfig,
 	buffer *runtime.RuntimeRingBuffer,
 	telemetryOutbound chan<- *gatewayrpc.ConnectClientMessage,
@@ -250,7 +261,9 @@ func startRuntimeUploadWorker(
 		return
 	}
 
+	streamWG.Add(1)
 	go func() {
+		defer streamWG.Done()
 		ticker := time.NewTicker(config.Interval)
 		defer ticker.Stop()
 
