@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { apiClient, SESSION_EXPIRED_EVENT } from "@/shared/api/api";
+import { useAuth } from "@/app/providers/AuthProvider";
 import { eventEnvelopeSchema } from "@/shared/api/schemas/events";
 import { invalidateTelemetryQueries } from "@/shared/events/telemetry-query-invalidation";
 import { buildEventsURL, resolveConfiguredRootPath } from "@/shared/lib/runtime-path";
@@ -37,6 +38,7 @@ export function useWsStatus(): WsContextValue {
 
 export function EventsSynchronizer({ children }: Readonly<{ children?: React.ReactNode }>) {
   const queryClient = useQueryClient();
+  const { isAuthenticated } = useAuth();
   const [status, setStatus] = useState<WsStatus>("connecting");
   const [lastEventAt, setLastEventAt] = useState<number | null>(null);
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
@@ -49,6 +51,16 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
 
   useEffect(() => {
     if (globalThis.window === undefined) { return; }
+    // Gate the socket on authentication. EventsSynchronizer renders on every
+    // route (login included), but a session cookie is required for the
+    // /api/events upgrade — opening it before login yields a 401, a noisy
+    // "disconnected" banner, and a socket that never recovers until a manual
+    // reload. With isAuthenticated in the dependency list the effect re-runs
+    // when the session is established (post-login) and tears down on logout.
+    // The authed branch's cleanup resets `status` to a banner-hidden value,
+    // so we don't need to touch it here (and avoid a synchronous setState in
+    // the effect body).
+    if (!isAuthenticated) { return; }
     let socket: WebSocket | null = null;
     let reconnectDelayMs = 1_000;
     let reconnectTimerID: ReturnType<typeof setTimeout> | null = null;
@@ -85,8 +97,6 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
     };
     const connect = () => {
       if (stopped) { return; }
-      // Don't open a WebSocket on the login page — there's no session yet.
-      if (globalThis.location.pathname.endsWith("/login")) { return; }
       setStatus("connecting");
       const rootPath = resolveConfiguredRootPath();
       const url = buildEventsURL(globalThis.location.protocol, globalThis.location.host, rootPath);
@@ -149,11 +159,9 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
       // globalThis.location.href that bypasses React Query and misses the
       // toast announcement.
       socket.onclose = async () => {
-        if (globalThis.location.pathname.endsWith("/login")) {
-          stopped = true;
-          setStatus("closed");
-          return;
-        }
+        // Intentional teardown (unmount or logout) sets `stopped` before
+        // closing — don't probe the session or schedule a reconnect.
+        if (stopped) { return; }
         try {
           await apiClient.me();
           scheduleReconnect();
@@ -171,8 +179,12 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
       if (socket !== null && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
         socket.close();
       }
+      // Reset to a banner-hidden state on teardown (logout / session
+      // expiry / unmount) so a later re-login doesn't briefly flash a stale
+      // "disconnected" banner before the fresh socket reconnects.
+      setStatus("connecting");
     };
-  }, [queryClient]);
+  }, [queryClient, isAuthenticated]);
 
   const value = useMemo<WsContextValue>(
     () => ({ status, lastEventAt, reconnectAttempts }),

@@ -26,7 +26,8 @@ import { AppShell, ErrorBoundary, Spinner, type NavItem } from "@/ui";
 import { AppearanceProvider } from "@/app/providers/AppearanceProvider";
 import { AppErrorFallback } from "@/app/providers/AppErrorFallback";
 import { AuthProvider } from "@/app/providers/AuthProvider";
-import { useConfirm } from "@/app/providers/ConfirmProvider";
+import { ConfirmProvider, useConfirm } from "@/app/providers/ConfirmProvider";
+import { EventsSynchronizer } from "@/app/providers/EventsSynchronizer";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { ShortcutsOverlay } from "@/components/ShortcutsOverlay";
 import { ThemeToggleButton } from "@/components/ThemeToggleButton";
@@ -45,10 +46,21 @@ interface RouterContext {
 // (needs useNavigate) and the QueryClientProvider (needs useQueryClient)
 // for every page — login included, so a stale /login tab that receives
 // a 401 still gets its cache cleared.
+//
+// EventsSynchronizer sits INSIDE AuthProvider so it can gate the
+// /api/events WebSocket on isAuthenticated: opening it before login
+// produced a 401, a spurious "disconnected" banner, and a socket that
+// never recovered until a manual reload. ConfirmProvider stays nested
+// under it (was previously co-located in main.tsx) so confirm dialogs in
+// banner-adjacent UI keep working while the socket reconnects.
 function RootComponent() {
   return (
     <AuthProvider>
-      <Outlet />
+      <EventsSynchronizer>
+        <ConfirmProvider>
+          <Outlet />
+        </ConfirmProvider>
+      </EventsSynchronizer>
     </AuthProvider>
   );
 }

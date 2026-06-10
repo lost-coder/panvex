@@ -18,7 +18,10 @@ interface AuthContextValue {
   isAuthenticated: boolean;
 }
 
-const AuthContext = React.createContext<AuthContextValue>({
+// Exported so the WebSocket synchronizer (and tests) can gate behaviour on
+// auth state without pulling in AuthProvider's router/toast dependencies.
+// eslint-disable-next-line react-refresh/only-export-components
+export const AuthContext = React.createContext<AuthContextValue>({
   user: null,
   isLoading: true,
   isAuthenticated: false,
