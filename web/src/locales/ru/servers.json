@@ -95,7 +95,11 @@
     "ariaLabel": "Мастер добавления сервера",
     "close": "Закрыть",
     "quickCreateTitle": "Новая группа серверов",
-    "fleetGroupCreated": "Группа «{{label}}» создана."
+    "fleetGroupCreated": "Группа «{{label}}» создана.",
+    "closeConfirmTitle": "Прервать подключение?",
+    "closeConfirmBody": "Прогресс мастера будет потерян. Созданный токен останется действительным до конца TTL — его можно отозвать на странице токенов подключения.",
+    "closeConfirmAction": "Прервать",
+    "closeConfirmCancel": "Продолжить"
   },
   "detail": {
     "breadcrumbServers": "Серверы",
