@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -18,7 +19,7 @@ func TestInstallAgentScriptIsRateLimited(t *testing.T) {
 
 	for i := 0; i < httpInstallScriptRateLimitPerWindow; i++ {
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/install-agent.sh", nil)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/install-agent.sh", nil)
 		req.RemoteAddr = "203.0.113.7:1234"
 		handler.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
@@ -28,7 +29,7 @@ func TestInstallAgentScriptIsRateLimited(t *testing.T) {
 
 	// N+1-th request from the same IP must be rate-limited.
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/install-agent.sh", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/install-agent.sh", nil)
 	req.RemoteAddr = "203.0.113.7:1234"
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusTooManyRequests {
@@ -37,7 +38,7 @@ func TestInstallAgentScriptIsRateLimited(t *testing.T) {
 
 	// A different IP must have its own bucket — first request must succeed.
 	rec = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodGet, "/install-agent.sh", nil)
+	req = httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/install-agent.sh", nil)
 	req.RemoteAddr = "203.0.113.8:1234"
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {

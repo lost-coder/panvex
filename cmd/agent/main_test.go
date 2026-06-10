@@ -20,12 +20,11 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/agent/runtime"
-	"github.com/lost-coder/panvex/internal/agent/telemt"
 	agentstate "github.com/lost-coder/panvex/internal/agent/state"
+	"github.com/lost-coder/panvex/internal/agent/telemt"
 	agentTransport "github.com/lost-coder/panvex/internal/agent/transport"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
 )
 
 func TestJobPipelineForActionRoutesRuntimeReload(t *testing.T) {
@@ -63,7 +62,6 @@ func TestJobPipelineForActionRoutesUnknownActionsToDefault(t *testing.T) {
 		t.Fatalf("jobPipelineForAction(users.create) = %q, want %q", pipeline, jobPipelineDefault)
 	}
 }
-
 
 func TestShouldSendRuntimeSnapshotAfterJobOnlyForSuccessfulDiagnosticsRefresh(t *testing.T) {
 	if !shouldSendRuntimeSnapshotAfterJob("telemetry.refresh_diagnostics", true) {
@@ -300,9 +298,9 @@ func TestEnqueueReceivedJobQueuesAndAcknowledges(t *testing.T) {
 	connectionCtx := context.Background()
 	tracker := newJobInflightTracker()
 	jobQueues := map[jobPipeline]chan *gatewayrpc.JobCommand{
-		jobPipelineRuntimeReload: make(chan *gatewayrpc.JobCommand, 1),
+		jobPipelineRuntimeReload:  make(chan *gatewayrpc.JobCommand, 1),
 		jobPipelineClientMutation: make(chan *gatewayrpc.JobCommand, 1),
-		jobPipelineDefault:       make(chan *gatewayrpc.JobCommand, 1),
+		jobPipelineDefault:        make(chan *gatewayrpc.JobCommand, 1),
 	}
 	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
 	job := &gatewayrpc.JobCommand{
@@ -334,9 +332,9 @@ func TestEnqueueReceivedJobSkipsDuplicateQueueEntry(t *testing.T) {
 	connectionCtx := context.Background()
 	tracker := newJobInflightTracker()
 	jobQueues := map[jobPipeline]chan *gatewayrpc.JobCommand{
-		jobPipelineRuntimeReload: make(chan *gatewayrpc.JobCommand, 2),
+		jobPipelineRuntimeReload:  make(chan *gatewayrpc.JobCommand, 2),
 		jobPipelineClientMutation: make(chan *gatewayrpc.JobCommand, 1),
-		jobPipelineDefault:       make(chan *gatewayrpc.JobCommand, 1),
+		jobPipelineDefault:        make(chan *gatewayrpc.JobCommand, 1),
 	}
 	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 2)
 	job := &gatewayrpc.JobCommand{
@@ -365,9 +363,9 @@ func TestEnqueueReceivedJobQueuesCommandWithoutIdentifier(t *testing.T) {
 	connectionCtx := context.Background()
 	tracker := newJobInflightTracker()
 	jobQueues := map[jobPipeline]chan *gatewayrpc.JobCommand{
-		jobPipelineRuntimeReload: make(chan *gatewayrpc.JobCommand, 1),
+		jobPipelineRuntimeReload:  make(chan *gatewayrpc.JobCommand, 1),
 		jobPipelineClientMutation: make(chan *gatewayrpc.JobCommand, 1),
-		jobPipelineDefault:       make(chan *gatewayrpc.JobCommand, 1),
+		jobPipelineDefault:        make(chan *gatewayrpc.JobCommand, 1),
 	}
 	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
 	job := &gatewayrpc.JobCommand{
@@ -857,44 +855,6 @@ type fakeCertificateRenewer struct {
 	signCSR func(csrPEM string) *gatewayrpc.RenewCertificateResponse
 }
 
-type fakeAgentGatewayConnectClient struct {
-	ctx context.Context
-}
-
-func (c *fakeAgentGatewayConnectClient) Header() (metadata.MD, error) {
-	return metadata.MD{}, nil
-}
-
-func (c *fakeAgentGatewayConnectClient) Trailer() metadata.MD {
-	return metadata.MD{}
-}
-
-func (c *fakeAgentGatewayConnectClient) CloseSend() error {
-	return nil
-}
-
-func (c *fakeAgentGatewayConnectClient) Context() context.Context {
-	return c.ctx
-}
-
-func (c *fakeAgentGatewayConnectClient) Send(*gatewayrpc.ConnectClientMessage) error {
-	return nil
-}
-
-func (c *fakeAgentGatewayConnectClient) Recv() (*gatewayrpc.ConnectServerMessage, error) {
-	<-c.ctx.Done()
-	return nil, c.ctx.Err()
-}
-
-func (c *fakeAgentGatewayConnectClient) SendMsg(any) error {
-	return nil
-}
-
-func (c *fakeAgentGatewayConnectClient) RecvMsg(any) error {
-	<-c.ctx.Done()
-	return c.ctx.Err()
-}
-
 type fakeInitialSyncTelemtClient struct {
 	state      telemt.RuntimeState
 	metricsErr error
@@ -1305,7 +1265,7 @@ func TestStartInboundPumpRoutesRenewalResponseToChannel(t *testing.T) {
 		},
 	}
 	stream := &renewalTestBidiStream{
-		messages: []*gatewayrpc.ConnectServerMessage{serverMsg},
+		messages:       []*gatewayrpc.ConnectServerMessage{serverMsg},
 		cancelAfterAll: cancel,
 	}
 
