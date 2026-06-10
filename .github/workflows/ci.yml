@@ -130,12 +130,16 @@ jobs:
       # The threshold is intentionally below the current measured
       # number so a small regression flags rather than every PR — bump
       # in lockstep with new test waves.
-      - name: Enforce coverage floor (>=45%)
+      # Raised 45 -> 48 (audit F4). Measured total at the time was ~50.7%
+      # (the audit's "~61%" estimate was stale); 48 leaves ~2.7pp headroom
+      # for fluctuation while catching real regressions. Bump toward 55 as
+      # coverage grows with new test waves.
+      - name: Enforce coverage floor (>=48%)
         run: |
           set -eu
           total=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}' | tr -d '%')
           echo "total coverage: ${total}%"
-          awk -v t="$total" 'BEGIN { if (t+0 < 45.0) exit 1 }'
+          awk -v t="$total" 'BEGIN { if (t+0 < 48.0) exit 1 }'
       - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@v7
