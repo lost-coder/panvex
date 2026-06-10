@@ -45,10 +45,10 @@ func (s *Server) handleAgentCertificateRecovery() http.HandlerFunc {
 		if !s.checkAndConsumeRecoveryGrant(w, r, request.AgentID, now) {
 			return
 		}
-		issued, err := s.authority.issueClientCertificate(request.AgentID, now)
+		issued, err := s.authority.issueAgentCertificateFromCSR(request.CSRPEM, request.AgentID, agentCertificateLifetime, true, now)
 		if err != nil {
-			s.logger.Error("agent certificate recovery cert issue failed after grant consume", "agent_id", request.AgentID, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error; please recreate recovery grant")
+			s.logger.Warn("agent certificate recovery: sign CSR failed", "agent_id", request.AgentID, "error", err)
+			writeError(w, http.StatusBadRequest, "invalid recovery csr")
 			return
 		}
 
@@ -76,6 +76,7 @@ func validateRecoveryRequestFields(w http.ResponseWriter, request agentCertifica
 		strings.TrimSpace(request.CertificatePEM) == "" ||
 		strings.TrimSpace(request.ProofNonce) == "" ||
 		strings.TrimSpace(request.ProofSignature) == "" ||
+		strings.TrimSpace(request.CSRPEM) == "" ||
 		request.ProofTimestampUnix == 0 {
 		writeError(w, http.StatusBadRequest, "recovery payload is incomplete")
 		return false

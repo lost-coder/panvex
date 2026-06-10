@@ -140,6 +140,10 @@ type agentCertificateRecoveryRequest struct {
 	ProofTimestampUnix int64  `json:"proof_timestamp_unix"`
 	ProofNonce         string `json:"proof_nonce"`
 	ProofSignature     string `json:"proof_signature"`
+	// CSRPEM is the PEM-encoded CERTIFICATE REQUEST generated locally by
+	// the agent (A9). The panel validates CN == AgentID and signs it;
+	// the private key never crosses the wire.
+	CSRPEM string `json:"csr_pem"`
 }
 
 type agentCertificateRecoveryGrantRequest struct {
