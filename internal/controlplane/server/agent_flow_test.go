@@ -47,6 +47,44 @@ func TestServerEnrollAgentConsumesTokenAndIssuesIdentity(t *testing.T) {
 	}
 }
 
+// TestServerEnrollAgentDoesNotBurnTokenWhenPersistFails (C2): a PutAgent
+// failure inside enrollment must roll back the token consumption.
+// Deleting the fleet group between token issue and enroll makes the
+// agents.fleet_group_id FK fail inside the persistence step, while the
+// token row itself survives (enrollment_tokens FK is ON DELETE SET NULL).
+func TestServerEnrollAgentDoesNotBurnTokenWhenPersistFails(t *testing.T) {
+	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
+	server := testServerWithSQLite(t, now)
+	fleetGroupID := seedTestFleetGroup(t, server.store, "ams-1", now)
+	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
+		FleetGroupID: fleetGroupID,
+		TTL:          time.Minute,
+	}, now)
+	if err != nil {
+		t.Fatalf("issueEnrollmentToken() error = %v", err)
+	}
+
+	if err := server.store.DeleteFleetGroup(context.Background(), fleetGroupID); err != nil {
+		t.Fatalf("DeleteFleetGroup() error = %v", err)
+	}
+
+	if _, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{
+		Token:    token.Value,
+		NodeName: "node-a",
+		Version:  "1.0.0",
+	}, now.Add(10*time.Second)); err == nil {
+		t.Fatal("enrollAgent() error = nil, want persistence failure")
+	}
+
+	rec, err := server.store.GetEnrollmentToken(context.Background(), token.Value)
+	if err != nil {
+		t.Fatalf("GetEnrollmentToken() error = %v", err)
+	}
+	if rec.ConsumedAt != nil {
+		t.Fatalf("token burned by failed enrollment: ConsumedAt = %v, want nil", rec.ConsumedAt)
+	}
+}
+
 func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	server := testServerWithSQLite(t, now)

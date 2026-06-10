@@ -200,4 +200,46 @@ func runTransactContract(t *testing.T, open OpenStore) {
 		}
 	})
 
+	t.Run("consume token inside transact rolls back with the tx", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		if err := store.PutFleetGroup(ctx, storage.FleetGroupRecord{
+			ID:        testFleetGroupID,
+			Name:      "Default",
+			CreatedAt: time.Date(2026, time.March, 15, 8, 0, 0, 0, time.UTC),
+		}); err != nil {
+			t.Fatalf("PutFleetGroup() error = %v", err)
+		}
+		token := storage.EnrollmentTokenRecord{
+			Value:        "tx-rollback-token",
+			FleetGroupID: testFleetGroupID,
+			IssuedAt:     time.Date(2026, time.March, 15, 8, 5, 0, 0, time.UTC),
+			ExpiresAt:    time.Date(2026, time.March, 15, 9, 0, 0, 0, time.UTC),
+		}
+		if err := store.PutEnrollmentToken(ctx, token); err != nil {
+			t.Fatalf("PutEnrollmentToken() error = %v", err)
+		}
+
+		sentinel := errors.New("forced rollback after consume")
+		err := store.Transact(ctx, func(tx storage.Store) error {
+			if _, err := tx.ConsumeEnrollmentToken(ctx, token.Value, time.Date(2026, time.March, 15, 8, 10, 0, 0, time.UTC)); err != nil {
+				return err
+			}
+			return sentinel
+		})
+		if !errors.Is(err, sentinel) {
+			t.Fatalf("Transact() error = %v, want sentinel rollback error", err)
+		}
+
+		rec, err := store.GetEnrollmentToken(ctx, token.Value)
+		if err != nil {
+			t.Fatalf("GetEnrollmentToken() error = %v", err)
+		}
+		if rec.ConsumedAt != nil {
+			t.Fatalf("token consumed despite rollback: ConsumedAt = %v, want nil", rec.ConsumedAt)
+		}
+	})
+
 }
