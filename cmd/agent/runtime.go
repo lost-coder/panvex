@@ -300,6 +300,10 @@ func runRuntime(args []string) error {
 // behaviour.
 func runRuntimeReconnectLoop(supervisorCtx context.Context, cfg *runtimeFlags, credentialsState *agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule, tr *transportReloadState, reporter *enrollmentReporter) error {
 	reconnectAttempt := 0
+	// B4: the in-flight tracker outlives individual connections so a job
+	// re-delivered right after a reconnect cannot run concurrently with its
+	// still-draining first execution from the previous connection.
+	jobInflight := newJobInflightTracker()
 	for {
 		// Honour shutdown before we begin another iteration.
 		if err := supervisorCtx.Err(); err != nil {
@@ -364,7 +368,7 @@ func runRuntimeReconnectLoop(supervisorCtx context.Context, cfg *runtimeFlags, c
 			*credentialsState = refreshed
 		}
 
-		afterConn, connErr := runConnection(supervisorCtx, cfg.gatewayAddr, cfg.gatewayServerName, cfg.stateFile, *credentialsState, agent, schedule, cfg.clientDataConcurrency, tr, reporter)
+		afterConn, connErr := runConnection(supervisorCtx, cfg.gatewayAddr, cfg.gatewayServerName, cfg.stateFile, *credentialsState, agent, schedule, cfg.clientDataConcurrency, tr, reporter, jobInflight)
 		*credentialsState = afterConn
 		if connErr == nil || errors.Is(connErr, errRuntimeCredentialsRefreshed) {
 			reconnectAttempt = 0

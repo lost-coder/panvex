@@ -165,6 +165,7 @@ func enqueueReceivedJob(
 
 func startJobWorkers(
 	connectionCtx context.Context,
+	streamWG *sync.WaitGroup,
 	agent *runtime.Agent,
 	tracker *jobInflightTracker,
 	jobQueues map[jobPipeline]chan *gatewayrpc.JobCommand,
@@ -173,7 +174,34 @@ func startJobWorkers(
 	for pipeline, queue := range jobQueues {
 		workerCount := jobWorkerCountForPipeline(pipeline)
 		for workerIndex := 0; workerIndex < workerCount; workerIndex++ {
-			go runJobWorker(connectionCtx, agent, tracker, queue, criticalOutbound)
+			streamWG.Add(1)
+			go func(queue <-chan *gatewayrpc.JobCommand) {
+				defer streamWG.Done()
+				runJobWorker(connectionCtx, agent, tracker, queue, criticalOutbound)
+			}(queue)
+		}
+	}
+}
+
+// releaseQueuedJobs drains jobs still sitting in the per-connection queues
+// after the workers exited and releases their in-flight reservations. B4:
+// the tracker outlives the connection, so anything left reserved here
+// would never be executable again after reconnect.
+func releaseQueuedJobs(tracker *jobInflightTracker, jobQueues map[jobPipeline]chan *gatewayrpc.JobCommand) {
+	for _, queue := range jobQueues {
+		drainJobQueue(tracker, queue)
+	}
+}
+
+func drainJobQueue(tracker *jobInflightTracker, queue <-chan *gatewayrpc.JobCommand) {
+	for {
+		select {
+		case job := <-queue:
+			if job != nil {
+				tracker.release(job.GetId())
+			}
+		default:
+			return
 		}
 	}
 }
