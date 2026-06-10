@@ -43,5 +43,6 @@
     "body": "You have unsaved changes on this page. If you leave now, they will be lost.",
     "leave": "Discard and leave",
     "stay": "Stay"
-  }
+  },
+  "copy": { "copy": "Copy", "copied": "Copied" }
 }
