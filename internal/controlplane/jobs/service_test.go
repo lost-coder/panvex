@@ -967,3 +967,87 @@ func TestUpdateTargetUsesPanelClockNotAgentClock(t *testing.T) {
 		t.Fatalf("target.UpdatedAt = %v, want panel clock %v", got.Targets[0].UpdatedAt, panelNow)
 	}
 }
+
+// TestExpiryWatermarkTracksEnqueueAndExpiry guards B9e: the next-expiry
+// watermark must (a) hold the earliest CreatedAt+TTL across live jobs after
+// Enqueue, (b) keep the fast path negative before that deadline, and
+// (c) advance to the next live deadline after an expiry pass.
+func TestExpiryWatermarkTracksEnqueueAndExpiry(t *testing.T) {
+	base := time.Date(2026, time.June, 9, 12, 0, 0, 0, time.UTC)
+	current := base
+	service := NewService()
+	service.SetNow(func() time.Time { return current })
+
+	shortJob, err := service.Enqueue(context.Background(), CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            time.Minute,
+		IdempotencyKey: "wm-short",
+	}, current)
+	if err != nil {
+		t.Fatalf("enqueue short: %v", err)
+	}
+	if _, err := service.Enqueue(context.Background(), CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            2 * time.Minute,
+		IdempotencyKey: "wm-long",
+	}, current); err != nil {
+		t.Fatalf("enqueue long: %v", err)
+	}
+
+	service.mu.RLock()
+	watermark := service.nextExpiryAt
+	due := service.anyJobNeedsExpiryLocked(current)
+	service.mu.RUnlock()
+	if want := base.Add(time.Minute); !watermark.Equal(want) {
+		t.Fatalf("watermark after enqueue = %v, want %v", watermark, want)
+	}
+	if due {
+		t.Fatal("nothing should be due before the first TTL elapses")
+	}
+
+	current = base.Add(61 * time.Second)
+	service.ExpireStale()
+
+	got, ok := service.Get(shortJob.ID)
+	if !ok || got.Status != StatusExpired {
+		t.Fatalf("short job status = %v (ok=%v), want expired", got.Status, ok)
+	}
+	service.mu.RLock()
+	watermark = service.nextExpiryAt
+	service.mu.RUnlock()
+	if want := base.Add(2 * time.Minute); !watermark.Equal(want) {
+		t.Fatalf("watermark after expiry pass = %v, want %v", watermark, want)
+	}
+}
+
+// TestExpiryWatermarkClearedWhenNothingCanExpire pins the empty case: with
+// no TTL-bearing live jobs the watermark is zero and the fast path stays
+// O(1)-negative forever.
+func TestExpiryWatermarkClearedWhenNothingCanExpire(t *testing.T) {
+	base := time.Date(2026, time.June, 9, 12, 0, 0, 0, time.UTC)
+	current := base
+	service := NewService()
+	service.SetNow(func() time.Time { return current })
+
+	if _, err := service.Enqueue(context.Background(), CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            time.Minute,
+		IdempotencyKey: "wm-only",
+	}, current); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	current = base.Add(2 * time.Minute)
+	service.ExpireStale()
+
+	service.mu.RLock()
+	defer service.mu.RUnlock()
+	if !service.nextExpiryAt.IsZero() {
+		t.Fatalf("watermark = %v, want zero after the only TTL job expired", service.nextExpiryAt)
+	}
+	if service.anyJobNeedsExpiryLocked(current.Add(time.Hour)) {
+		t.Fatal("fast path must stay negative with an empty watermark")
+	}
+}

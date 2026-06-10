@@ -186,6 +186,15 @@ type Service struct {
 	// until the job completes.
 	keyTerminalAt map[string]time.Time
 	jobVersion    map[string]uint64
+	// nextExpiryAt is the earliest CreatedAt+TTL across jobs that are still
+	// queued/running, or zero when no live job carries a TTL. It makes
+	// anyJobNeedsExpiryLocked an O(1) compare instead of an O(all jobs) scan
+	// on every agent's 5s dispatch tick (B9e). Maintained conservatively:
+	// noteJobExpiryLocked min-updates it on every transition into a live
+	// state, and recomputeNextExpiryLocked rebuilds it exactly at the end of
+	// each expiry pass. It can be stale-EARLY (job already terminal) — that
+	// costs one empty slow pass which then recomputes — never stale-late.
+	nextExpiryAt time.Time
 	// latestSucceededByClient maps a Telemt client_id (extracted from a
 	// client.* job's PayloadJSON) to the most recently observed succeeded
 	// job for that client. Updated under s.mu whenever a client.* job
@@ -525,6 +534,7 @@ func (s *Service) Enqueue(ctx context.Context, input CreateJobInput, now time.Ti
 	s.keys[input.IdempotencyKey] = job.ID
 	s.updateSeq++
 	s.jobVersion[job.ID] = s.updateSeq
+	s.noteJobExpiryLocked(job)
 
 	slog.InfoContext(ctx, "job dispatched",
 		"job_id", job.ID,
@@ -690,17 +700,48 @@ func sortJobsByCreatedAt(jobs []Job) {
 	})
 }
 
-// anyJobNeedsExpiryLocked reports whether at least one queued/running job has
-// passed its TTL at `now`. Read-only; safe under either RLock or Lock. Used
-// by the read-mostly fast path of ListWithContext / PendingForAgent so we
-// can skip the exclusive-lock branch entirely when nothing is due to expire.
+// anyJobNeedsExpiryLocked reports whether at least one live job has passed
+// its TTL at `now`. O(1) against the nextExpiryAt watermark (B9e); safe
+// under either RLock or Lock. The comparison mirrors jobShouldExpire's
+// now.After(CreatedAt.Add(TTL)).
 func (s *Service) anyJobNeedsExpiryLocked(now time.Time) bool {
+	return !s.nextExpiryAt.IsZero() && now.After(s.nextExpiryAt)
+}
+
+// noteJobExpiryLocked lowers the watermark to include `job` if it is live
+// and carries a TTL. CreatedAt+TTL never changes for a given job, so the
+// min-update is always sound. Caller must hold s.mu (write).
+func (s *Service) noteJobExpiryLocked(job Job) {
+	if job.TTL <= 0 {
+		return
+	}
+	if job.Status != StatusQueued && job.Status != StatusRunning {
+		return
+	}
+	expiresAt := job.CreatedAt.Add(job.TTL)
+	if s.nextExpiryAt.IsZero() || expiresAt.Before(s.nextExpiryAt) {
+		s.nextExpiryAt = expiresAt
+	}
+}
+
+// recomputeNextExpiryLocked rebuilds the watermark from scratch — the exact
+// next deadline or zero when nothing can expire. Called at the end of every
+// expiry pass so a fired (or stale-early) watermark heals. Caller holds s.mu.
+func (s *Service) recomputeNextExpiryLocked() {
+	var next time.Time
 	for _, job := range s.jobs {
-		if jobShouldExpire(job, now) {
-			return true
+		if job.TTL <= 0 {
+			continue
+		}
+		if job.Status != StatusQueued && job.Status != StatusRunning {
+			continue
+		}
+		expiresAt := job.CreatedAt.Add(job.TTL)
+		if next.IsZero() || expiresAt.Before(next) {
+			next = expiresAt
 		}
 	}
-	return false
+	s.nextExpiryAt = next
 }
 
 // DefaultListRecentLimit caps the HTTP /jobs response so a long-lived
@@ -924,6 +965,7 @@ func (s *Service) commitPrunedJobLocked(jobID string, job Job, now time.Time, ca
 		s.markKeyTerminalLocked(job.IdempotencyKey, now)
 	}
 	s.indexLatestSucceededLocked(job)
+	s.noteJobExpiryLocked(job)
 	if s.jobStore == nil {
 		return candidates
 	}
@@ -1080,6 +1122,7 @@ func (s *Service) applyTargetMutationLocked(job Job, agentID string, now time.Ti
 	}
 	// P-4: keep latestSucceededByClient in sync with the canonical job map.
 	s.indexLatestSucceededLocked(job)
+	s.noteJobExpiryLocked(job)
 
 	if s.jobStore == nil {
 		return nil
@@ -1151,6 +1194,7 @@ func (s *Service) expireJobsLocked(now time.Time) []persistCandidate {
 			})
 		}
 	}
+	s.recomputeNextExpiryLocked()
 	return candidates
 }
 
@@ -1279,6 +1323,7 @@ func (s *Service) installRestoredJob(job Job) {
 	s.sequence = maxJobSequence(s.sequence, job.ID)
 	s.updateSeq++
 	s.jobVersion[job.ID] = s.updateSeq
+	s.noteJobExpiryLocked(job)
 }
 
 // reindexAcknowledgedTargets rebuilds the agentJobs entries for any target
