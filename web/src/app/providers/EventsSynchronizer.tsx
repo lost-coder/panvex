@@ -42,6 +42,10 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
   // Refs so the long-lived effect doesn't depend on state and re-subscribe.
   const attemptsRef = useRef(0);
+  // D6c: last seen hub sequence number for the current socket. null until
+  // the first numbered event arrives; reset on every (re)open because the
+  // hub counter is panel-global, not per-connection.
+  const lastSeqRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (globalThis.window === undefined) { return; }
@@ -88,6 +92,7 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
       const url = buildEventsURL(globalThis.location.protocol, globalThis.location.host, rootPath);
       socket = new WebSocket(url);
       socket.onopen = () => {
+        lastSeqRef.current = null;
         reconnectDelayMs = 1_000;
         attemptsRef.current = 0;
         setReconnectAttempts(0);
@@ -119,6 +124,18 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
           return;
         }
         const event = result.data;
+        if (typeof event.seq === "number") {
+          const last = lastSeqRef.current;
+          lastSeqRef.current = event.seq;
+          if (last !== null && event.seq > last + 1) {
+            // D6c: the hub dropped frames for this subscriber (slow tab or
+            // event burst) — per-event invalidation can no longer be
+            // trusted, so refetch everything once and resync.
+            setLastEventAt(Date.now());
+            void queryClient.invalidateQueries();
+            return;
+          }
+        }
         if (!isKnownEventType(event.type) && console !== undefined) {
           console.debug("events: unknown event type, falling back to broad sweep", event.type);
         }

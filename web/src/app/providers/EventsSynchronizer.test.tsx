@@ -171,4 +171,44 @@ describe("EventsSynchronizer onmessage decode", () => {
 
     expect(spy).not.toHaveBeenCalled();
   });
+
+  it("falls back to a broad refetch when a seq gap is detected", async () => {
+    const { qc } = mount();
+    const spy = vi.spyOn(qc, "invalidateQueries").mockResolvedValue();
+    const ws = FakeWebSocket.instances.at(-1)!;
+
+    ws.onmessage?.(new MessageEvent("message", {
+      data: JSON.stringify({ type: "audit.created", data: {}, seq: 1 }),
+    }));
+    await Promise.resolve();
+    await Promise.resolve();
+    spy.mockClear();
+
+    ws.onmessage?.(new MessageEvent("message", {
+      data: JSON.stringify({ type: "audit.created", data: {}, seq: 4 }),
+    }));
+    await Promise.resolve();
+
+    expect(spy).toHaveBeenCalledWith();
+  });
+
+  it("keeps per-event invalidation on contiguous seq", async () => {
+    const { qc } = mount();
+    const spy = vi.spyOn(qc, "invalidateQueries").mockResolvedValue();
+    const ws = FakeWebSocket.instances.at(-1)!;
+
+    ws.onmessage?.(new MessageEvent("message", {
+      data: JSON.stringify({ type: "audit.created", data: {}, seq: 1 }),
+    }));
+    ws.onmessage?.(new MessageEvent("message", {
+      data: JSON.stringify({ type: "audit.created", data: {}, seq: 2 }),
+    }));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(spy).toHaveBeenCalled();
+    for (const call of spy.mock.calls) {
+      expect(call.length).toBeGreaterThan(0); // never the broad no-arg form
+    }
+  });
 });
