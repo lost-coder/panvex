@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { Spinner } from "@/ui";
+import { SkeletonRows } from "@/ui";
 import { ServerDetailPage } from "./ServerDetailPage";
 import { ErrorState } from "@/components/ErrorState";
 import type { MetricsPoint } from "@/features/dashboard/ui/MetricsChartSection";
@@ -55,7 +55,7 @@ function toMetricsPoints(points: ServerLoadPoint[]): MetricsPoint[] {
 export function ServerDetailContainer() {
   const { t } = useTranslation("servers");
   const { serverId } = useParams({ strict: false });
-  const { server, initState, lastUpdatedAt, raw, isLoading, error } = useServerDetail(serverId ?? "");
+  const { server, initState, lastUpdatedAt, raw, isLoading, error, refetch } = useServerDetail(serverId ?? "");
   const {
     allowCertRecoveryMutation,
     revokeCertRecoveryMutation,
@@ -88,11 +88,15 @@ export function ServerDetailContainer() {
   const metricsPoints = useMemo(() => toMetricsPoints(rawPoints), [rawPoints]);
 
   if (isLoading || !server) {
-    return <div className="flex items-center justify-center h-64"><Spinner /></div>;
+    return (
+      <div className="px-4 md:px-8 py-8">
+        <SkeletonRows count={6} />
+      </div>
+    );
   }
 
   if (error) {
-    return <ErrorState description={error.message} onRetry={() => globalThis.location.reload()} />;
+    return <ErrorState description={error.message} onRetry={() => void refetch()} />;
   }
 
   const baseConnection = transformAgentConnection(raw?.server?.agent);

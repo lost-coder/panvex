@@ -1,3 +1,6 @@
+import { useTranslation } from "react-i18next";
+import { X } from "lucide-react";
+
 import { Button } from "@/ui/base/button";
 import { cn } from "@/ui/lib/cn";
 
@@ -54,6 +57,8 @@ export function BulkActionBar<T extends string = string>({
   error,
   className,
 }: Readonly<BulkActionBarProps<T>>) {
+  const { t } = useTranslation("common");
+
   if (count === 0) return null;
 
   return (
@@ -84,9 +89,9 @@ export function BulkActionBar<T extends string = string>({
             variant="ghost"
             onClick={onClear}
             disabled={pending}
-            aria-label="Clear selection"
+            aria-label={t("bulkBar.clear")}
           >
-            ✕
+            <X size={14} aria-hidden="true" />
           </Button>
         </div>
       </div>

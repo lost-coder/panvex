@@ -5,7 +5,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { SkeletonRows } from "@/ui";
 
 export function ActivityContainer() {
-  const { jobs, auditEvents, isLoading, error, lookupError } = useActivity();
+  const { jobs, auditEvents, isLoading, error, lookupError, refetch } = useActivity();
   const [activeTab, setActiveTab] = useState("jobs");
 
   if (isLoading) {
@@ -17,7 +17,7 @@ export function ActivityContainer() {
   }
 
   if (error) {
-    return <ErrorState description={error.message} onRetry={() => globalThis.location.reload()} />;
+    return <ErrorState description={error.message} onRetry={() => void refetch()} />;
   }
 
   return (

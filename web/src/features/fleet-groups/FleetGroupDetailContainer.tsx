@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 
-import { Spinner } from "@/ui";
+import { SkeletonRows } from "@/ui";
 import { useToast } from "@/app/providers/ToastProvider";
 import { useConfirm } from "@/app/providers/ConfirmProvider";
 
@@ -135,8 +135,8 @@ export function FleetGroupDetailContainer() {
 
   if (isLoading || !group) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Spinner />
+      <div className="px-4 md:px-8 py-8">
+        <SkeletonRows count={6} />
       </div>
     );
   }

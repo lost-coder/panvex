@@ -2,6 +2,7 @@
 // a container. It is intentionally minimal: no hooks, no API calls —
 // everything must work even if the store/query-client state is corrupted.
 import i18next from "i18next";
+import { AlertTriangle } from "lucide-react";
 
 export function AppErrorFallback({ error }: Readonly<{ error: Error }>) {
   // No hooks by design (state may be corrupted when this renders);
@@ -14,7 +15,7 @@ export function AppErrorFallback({ error }: Readonly<{ error: Error }>) {
       className="min-h-screen flex items-center justify-center bg-bg p-8"
     >
       <div className="max-w-md text-center space-y-4">
-        <div className="text-4xl">⚠️</div>
+        <AlertTriangle size={40} className="mx-auto text-status-warn" aria-hidden="true" />
         <h1 className="text-xl font-semibold text-fg">{t("errorFallback.title")}</h1>
         <p className="text-sm text-fg-muted">
           {t("errorFallback.body")}

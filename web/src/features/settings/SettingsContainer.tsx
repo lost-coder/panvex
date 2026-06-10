@@ -14,7 +14,7 @@ import { useSettingsRegistry } from "./registry";
 export function SettingsContainer() {
   const navigate = useNavigate();
   const { swipeNavigation, setSwipeNavigation } = useAppearance();
-  const { settings, isLoading, error, saveAppearance, savePanelSettings } = useSettings(swipeNavigation);
+  const { settings, isLoading, error, refetch, saveAppearance, savePanelSettings } = useSettings(swipeNavigation);
   const { profile } = useProfile();
   const { retention, save: saveRetention } = useRetentionSettings();
   const isAdmin = profile?.role === "admin";
@@ -30,7 +30,7 @@ export function SettingsContainer() {
   }
 
   if (error) {
-    return <ErrorState description={error.message} onRetry={() => globalThis.location.reload()} />;
+    return <ErrorState description={error.message} onRetry={() => void refetch()} />;
   }
 
   return (

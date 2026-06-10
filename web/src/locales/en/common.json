@@ -44,5 +44,6 @@
     "leave": "Discard and leave",
     "stay": "Stay"
   },
-  "copy": { "copy": "Copy", "copied": "Copied" }
+  "copy": { "copy": "Copy", "copied": "Copied" },
+  "bulkBar": { "clear": "Clear selection" }
 }

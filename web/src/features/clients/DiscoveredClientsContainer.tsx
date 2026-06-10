@@ -11,7 +11,7 @@ import { groupDiscovered } from "./lib/groupDiscovered";
 
 export function DiscoveredClientsContainer() {
   const { t } = useTranslation("clients");
-  const { discoveredClients, isLoading, error, adopt, ignore, adoptMany, ignoreMany, rescan, isAdopting, isIgnoring, isRescanning } =
+  const { discoveredClients, isLoading, error, refetch, adopt, ignore, adoptMany, ignoreMany, rescan, isAdopting, isIgnoring, isRescanning } =
     useDiscoveredClients();
   const navigate = useNavigate();
   const confirm = useConfirm();
@@ -81,7 +81,7 @@ export function DiscoveredClientsContainer() {
   }
 
   if (error) {
-    return <ErrorState description={error.message} onRetry={() => globalThis.location.reload()} />;
+    return <ErrorState description={error.message} onRetry={() => void refetch()} />;
   }
 
   return (

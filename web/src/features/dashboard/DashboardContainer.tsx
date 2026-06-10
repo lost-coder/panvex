@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Spinner } from "@/ui";
+import { SkeletonRows } from "@/ui";
 import { DashboardPage } from "@/features/dashboard/DashboardPage";
 import { useDashboardData } from "./hooks/useDashboardData";
 import { useDiscoveredClients } from "@/features/clients/hooks/useDiscoveredClients";
@@ -36,7 +36,11 @@ export function DashboardContainer() {
   }, [overview, latestAgentVersion, agentVersions]);
 
   if (isLoading || !enrichedOverview || !timeline) {
-    return <div className="flex items-center justify-center h-64"><Spinner /></div>;
+    return (
+      <div className="px-4 md:px-8 py-8">
+        <SkeletonRows count={6} />
+      </div>
+    );
   }
 
   return (

@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState, useEffect, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Spinner, formatBytes } from "@/ui";
+import { SkeletonRows, formatBytes } from "@/ui";
 import { ClientDetailPage } from "@/features/clients/ClientDetailPage";
 import { useClientDetail } from "./hooks/useClientDetail";
 import { useClientMutations } from "./hooks/useClientMutations";
@@ -168,7 +168,11 @@ export function ClientDetailContainer() {
   }
 
   if (isLoading || !client) {
-    return <div className="flex items-center justify-center h-64"><Spinner /></div>;
+    return (
+      <div className="px-4 md:px-8 py-8">
+        <SkeletonRows count={6} />
+      </div>
+    );
   }
 
   return (

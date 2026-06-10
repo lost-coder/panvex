@@ -6,7 +6,7 @@ import { useConfirm } from "@/app/providers/ConfirmProvider";
 import { useNavigate } from "@tanstack/react-router";
 
 export function EnrollmentTokensContainer() {
-  const { tokens, isLoading, error, createToken, revokeToken } = useEnrollmentTokens();
+  const { tokens, isLoading, error, refetch, createToken, revokeToken } = useEnrollmentTokens();
   const confirm = useConfirm();
   const navigate = useNavigate();
 
@@ -36,7 +36,7 @@ export function EnrollmentTokensContainer() {
   }
 
   if (error) {
-    return <ErrorState description={error.message} onRetry={() => globalThis.location.reload()} />;
+    return <ErrorState description={error.message} onRetry={() => void refetch()} />;
   }
 
   return (

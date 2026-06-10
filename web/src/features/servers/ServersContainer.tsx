@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation } from "@tanstack/react-query";
+import { Server } from "lucide-react";
 import { type BulkServerAction, type ViewMode, Button, EmptyState } from "@/ui";
 import { ServersPage } from "@/features/servers/ServersPage";
 import { SkeletonRows } from "@/ui";
@@ -22,7 +23,7 @@ const BULK_ACTION_MAP: Record<BulkServerAction, string> = {
 
 export function ServersContainer() {
   const { t } = useTranslation("servers");
-  const { servers, agentVersions, isLoading, error } = useServersList();
+  const { servers, agentVersions, isLoading, error, refetch } = useServersList();
   const { fleetGroups } = useFleetGroups();
   const { resolveMode, setMode } = useViewMode("servers");
   const { query: updatesQuery } = useUpdates();
@@ -82,7 +83,7 @@ export function ServersContainer() {
       <ErrorState
         title={t("error.loadFleet")}
         description={error.message || t("error.fallbackDescription")}
-        onRetry={() => globalThis.location.reload()}
+        onRetry={() => void refetch()}
       />
     );
   }
@@ -94,7 +95,7 @@ export function ServersContainer() {
     return (
       <div className="p-6">
         <EmptyState
-          icon="🖥️"
+          icon={<Server size={28} aria-hidden="true" />}
           title={t("empty.title")}
           description={t("empty.description")}
           action={
