@@ -160,13 +160,14 @@ jobs:
       - run: go test -count=1 ./...
 
   schema-sync:
-    # C9: verify the PostgreSQL and SQLite migration bundles produce
-    # the same set of tables and columns. The test is a no-op locally
-    # without PANVEX_POSTGRES_TEST_DSN; this job pipes it in so PRs
-    # that silently drift the two schemas fail here instead of in
-    # production (where 0011_column_drift.sql had to patch things up).
+    # C9 + A6: verify the PostgreSQL and SQLite migration bundles stay in
+    # sync AND run the full storage tree (contract suites, EXPLAIN plan
+    # gates, prune tests) against a live Postgres. Without the DSN the
+    # postgres-bound tests skip silently — this job is the only place
+    # the postgres backend is actually executed.
     name: Schema Sync (PG vs SQLite)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:16-alpine
@@ -189,15 +190,12 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
-      - name: Run schema-sync tests
-        run: go test -count=1 -run TestSchemaSync ./internal/controlplane/storage/migrate/...
-      # Plan-shape regression gate: piggybacks on this job's Postgres
-      # service so we don't spin up a second container. Locks in the
-      # query plan for the hottest read queries — a future migration
-      # that drops an index or rewrites a query into a Seq Scan fails
-      # here. Same skip-without-DSN convention as schema-sync above.
-      - name: Run EXPLAIN ANALYZE plan-shape tests
-        run: go test -count=1 -run TestExplainAnalyze ./internal/controlplane/storage/postgres/...
+      - name: Run storage tree against Postgres (contract + schema-sync + EXPLAIN)
+        # -p 1: the migrate schema-sync test DROPs/recreates the public
+        # schema while the postgres contract tests TRUNCATE the same
+        # database — package-level parallelism would race on the shared
+        # DSN. Expected duration ~3-5 min.
+        run: go test -p 1 -count=1 ./internal/controlplane/storage/...
 
   panel-build:
     name: Build Binaries
