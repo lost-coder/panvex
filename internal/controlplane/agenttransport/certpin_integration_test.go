@@ -32,7 +32,7 @@ func (f *fakePinReader) GetAgentCertPin(_ context.Context, agentID string) ([]by
 // the served leaf cert's SPKI hash, the connection succeeds and the handler
 // is invoked. (S-02)
 func TestOutboundSupervisor_PinMatch(t *testing.T) {
-	stub := newAgentStubServer(t)
+	stub := newAgentStubServer(t, "agent-match")
 	defer stub.Close()
 
 	// Compute the correct pin from the stub's server cert.
@@ -75,7 +75,7 @@ func TestOutboundSupervisor_PinMatch(t *testing.T) {
 // not match the served cert, the connection is rejected with ErrCertPinMismatch
 // wrapped in the returned error, and the handler is never invoked. (S-02)
 func TestOutboundSupervisor_PinMismatch(t *testing.T) {
-	stub := newAgentStubServer(t)
+	stub := newAgentStubServer(t, "agent-mismatch")
 	defer stub.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -127,7 +127,7 @@ func TestOutboundSupervisor_PinMismatch(t *testing.T) {
 // empty (agent enrolled pre-S-02), verification is skipped and the connection
 // succeeds. (S-02)
 func TestOutboundSupervisor_EmptyPinSkips(t *testing.T) {
-	stub := newAgentStubServer(t)
+	stub := newAgentStubServer(t, "agent-noop")
 	defer stub.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())

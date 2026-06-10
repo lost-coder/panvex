@@ -195,10 +195,11 @@ func runServe(args []string) error {
 	// agenttransport.Manager owns outbound supervisors and (in a later task)
 	// the inbound dispatch path. Now wired with real DB queries so outbound
 	// supervisors are restored at startup and the enrollment pre-flight runs.
-	// The outbound TLS config is the panel's server-side mTLS config (agents
-	// must present a cert signed by the panel CA). The CA is available via
-	// api.GRPCTLSConfig() once the server is constructed above.
-	outboundTLS := api.GRPCTLSConfig()
+	// A1: outbound supervisors dial agents as a TLS CLIENT — they need the
+	// panel CA in RootCAs and the panel's CLIENT certificate, not the gRPC
+	// listener's server config (which has ClientCAs and a ServerAuth-only
+	// cert and can never verify an agent's serving cert).
+	outboundTLS := api.OutboundGRPCTLSConfig()
 	manager := agenttransport.NewManager(queries, api.RunAgentSession, outboundTLS, logger)
 	api.SetAgentTransportManager(manager)
 
