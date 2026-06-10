@@ -354,6 +354,82 @@ jobs:
           path: web/playwright-report/
           retention-days: 7
 
+  frontend-e2e-integration:
+    name: Frontend E2E (integration, real backend)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Unlike frontend-e2e (hermetic, page.route() stubs), this job runs
+    # the suite in web/tests/e2e/integration/ against a REAL
+    # control-plane binary with the embedded UI and a SQLite store —
+    # the auth middleware, session store, and embedded-asset serving
+    # are exercised end-to-end (audit F2).
+    env:
+      PANVEX_ENCRYPTION_KEY: ci-e2e-integration-throwaway-key
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+      - name: Mirror install-agent.sh for //go:embed
+        run: go generate ./internal/controlplane/server/...
+      - name: Install npm deps
+        working-directory: web
+        run: npm ci
+      - name: Build embedded UI bundle
+        working-directory: web
+        run: npm run build:embed
+      - name: Build control-plane (embedded UI)
+        run: |
+          mkdir -p .tmp/e2e
+          go build -tags embeddedui -o .tmp/e2e/panvex-control-plane ./cmd/control-plane
+      - name: Bootstrap admin account (admin/e2e-secret per login.int.spec.ts)
+        run: |
+          PANVEX_BOOTSTRAP_ALLOW_INSECURE_FLAG=1 ./.tmp/e2e/panvex-control-plane bootstrap-admin \
+            -username admin \
+            -password e2e-secret \
+            -storage-driver sqlite \
+            -storage-dsn .tmp/e2e/panvex.db
+      - name: Start control-plane on :18080
+        run: |
+          PANVEX_HTTP_ADDR=:18080 \
+          PANVEX_GRPC_ADDR=:18443 \
+          PANVEX_STORAGE_DRIVER=sqlite \
+          PANVEX_STORAGE_DSN=.tmp/e2e/panvex.db \
+          ./.tmp/e2e/panvex-control-plane > .tmp/e2e/panel.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:18080/readyz >/dev/null 2>&1; then
+              echo "control-plane ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::control-plane never became ready on :18080"
+          cat .tmp/e2e/panel.log
+          exit 1
+      - name: Install Playwright browsers
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: Run integration suite
+        working-directory: web
+        run: npx playwright test -c playwright.integration.config.ts
+      - name: Show panel log on failure
+        if: failure()
+        run: tail -n 200 .tmp/e2e/panel.log
+      - name: Upload traces and report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-integration-report
+          path: |
+            web/playwright-report/
+            web/test-results/
+          retention-days: 7
+
   frontend-audit:
     name: Frontend npm audit
     runs-on: ubuntu-latest
